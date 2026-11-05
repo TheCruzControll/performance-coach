@@ -60,8 +60,8 @@ the CSRF Origin check, User-Agent and passkey labels, and the route access map â
   sign out); recovery (burn, any spelling refused afterwards, 15-minute restricted session, new
   passkey upgrades it, regeneration); passkey management (add, challenge bound to its session,
   rename validation, never the last, removal ends its sessions); rate limits on every entry point
-  with `Retry-After`, window reset and a global recovery ceiling. A controllable clock replaces
-  waiting.
+  with `Retry-After`, window reset and a global ceiling on failed recovery codes that never
+  refuses a valid one. A controllable clock replaces waiting.
 - **Logs:** quiet by default (`LOG_LEVEL=silent` via the project's `env`); run
   `LOG_LEVEL=debug pnpm test:integration` to see them.
 
