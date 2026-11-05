@@ -10,6 +10,5 @@ export {
 	getVitalsSummary,
 	InvalidVitalsError,
 	MAX_VITALS_PER_REQUEST,
-	recordVitals,
-	vitalsPayloadSchema
+	recordVitals
 } from './vitals';

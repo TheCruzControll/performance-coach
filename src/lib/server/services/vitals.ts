@@ -36,11 +36,6 @@ export const vitalSchema = z.object({
 	effectiveConnectionType: z.string().max(16).optional()
 });
 
-export const vitalsPayloadSchema = z.union([
-	vitalSchema.transform((v) => [v]),
-	z.array(vitalSchema).min(1).max(MAX_VITALS_PER_REQUEST)
-]);
-
 export type VitalInput = z.input<typeof vitalSchema>;
 
 export interface VitalsMeta {
