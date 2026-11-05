@@ -57,9 +57,10 @@ the CSRF Origin check, User-Agent and passkey labels, and the route access map â
   sign-in (counter update, rotation, replay, expired challenge, counter regression, unknown
   passkey, production RP and other origins refused, malformed bodies); sessions (sliding refresh
   at most daily, 90-day cap, 30-day idle expiry, last-seen resolution, revoke one / others /
-  sign out); recovery (burn, any spelling refused afterwards, 15-minute restricted session, new
-  passkey upgrades it, regeneration); passkey management (add, challenge bound to its session,
-  rename validation, never the last, removal ends its sessions); rate limits on every entry point
+  sign out, a malformed id is not found); recovery (burn, any spelling refused afterwards,
+  15-minute restricted session, new passkey upgrades it, regeneration); passkey management (add,
+  challenge bound to its session, rename validation, never the last, removal ends its sessions, a
+  malformed id is not found); rate limits on every entry point
   with `Retry-After`, window reset and a global recovery ceiling. A controllable clock replaces
   waiting.
 - **Logs:** quiet by default (`LOG_LEVEL=silent` via the project's `env`); run

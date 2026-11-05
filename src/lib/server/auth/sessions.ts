@@ -8,6 +8,7 @@
  * - A `recovery` session lives 15 minutes and can only register a new passkey or sign out.
  */
 import { createAuthRepository, type SessionKind, type SessionMethod, type SessionRow } from '../db';
+import { isUuid } from '../services/ids';
 import { recordAuthEvent } from './audit';
 import { resolveDeps, type AuthDeps, type AuthRequest } from './context';
 import { describeUserAgent } from './devices';
@@ -174,12 +175,9 @@ export async function revokeSession(
 	if (sessionId === session.id) {
 		throw new AuthError('invalid_input', 'Use Sign out to end this session.');
 	}
-	const revoked = await createAuthRepository(db).revokeSession(
-		sessionId,
-		'revoked',
-		now(),
-		session.ownerId
-	);
+	const revoked =
+		isUuid(sessionId) &&
+		(await createAuthRepository(db).revokeSession(sessionId, 'revoked', now(), session.ownerId));
 	if (!revoked) throw new AuthError('not_found', 'That session has already ended.');
 	await recordAuthEvent(db, request, {
 		type: 'session.revoked',

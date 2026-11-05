@@ -19,6 +19,7 @@ import {
 	type ProfileRepository
 } from '../../db';
 import { measure } from '../../observability/timing';
+import { isUuid } from '../ids';
 import {
 	parseWith,
 	ProfileInputError,
@@ -150,7 +151,7 @@ export async function updateGoal(
 		db.transaction(async (tx) => {
 			const repo = createProfileRepository(tx);
 			await repo.lockGoals(ownerId);
-			const existing = await repo.getGoal(ownerId, id);
+			const existing = isUuid(id) ? await repo.getGoal(ownerId, id) : null;
 			if (!existing) throw new ProfileNotFoundError('goal');
 			const at = now();
 			const status = goal.status ?? existing.status;
@@ -188,7 +189,7 @@ export async function setGoalStatus(
 ): Promise<Goal> {
 	const { status } = parseWith(goalStatusSchema, input);
 	const { db } = resolveDeps(deps);
-	const existing = await createProfileRepository(db).getGoal(ownerId, id);
+	const existing = isUuid(id) ? await createProfileRepository(db).getGoal(ownerId, id) : null;
 	if (!existing) throw new ProfileNotFoundError('goal');
 	return updateGoal(ownerId, id, { ...toGoal(existing), status }, deps);
 }
@@ -199,7 +200,7 @@ export async function deleteGoal(ownerId: string, id: string, deps: ProfileDeps 
 		db.transaction(async (tx) => {
 			const repo = createProfileRepository(tx);
 			await repo.lockGoals(ownerId);
-			const row = await repo.deleteGoal(ownerId, id);
+			const row = isUuid(id) ? await repo.deleteGoal(ownerId, id) : null;
 			if (!row) throw new ProfileNotFoundError('goal');
 			const at = now();
 			await repo.insertGoalEvents([

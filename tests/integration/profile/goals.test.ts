@@ -9,6 +9,7 @@ import {
 	deleteGoal,
 	goalHistory,
 	listGoals,
+	ProfileNotFoundError,
 	reorderGoals,
 	setGoalStatus,
 	updateGoal
@@ -240,6 +241,24 @@ describe('goals', () => {
 				'goal not found'
 			);
 			await expect(deleteGoal(stranger, goal.id, { db })).rejects.toThrow('goal not found');
+		});
+	});
+
+	it('answers a malformed goal id as not found, never with a database error', async () => {
+		await withRollback(async (db) => {
+			const owner = await makeOwner(db);
+			const goal = await createGoal(owner, eventGoal(), { db });
+			// Route params and the coach's tool calls (M5) pass ids through as given.
+			for (const bad of ['', 'abc', `${goal.id}x`]) {
+				await expect(updateGoal(owner, bad, generalGoal(), { db })).rejects.toBeInstanceOf(
+					ProfileNotFoundError
+				);
+				await expect(
+					setGoalStatus(owner, bad, { status: 'paused' }, { db })
+				).rejects.toBeInstanceOf(ProfileNotFoundError);
+				await expect(deleteGoal(owner, bad, { db })).rejects.toBeInstanceOf(ProfileNotFoundError);
+			}
+			expect(await listGoals(owner, { db })).toMatchObject([{ id: goal.id, status: 'active' }]);
 		});
 	});
 
