@@ -25,6 +25,8 @@
 		/** Stretch to the container width. */
 		block?: boolean;
 		onclick?: (event: MouseEvent) => void;
+		/** E.g. start loading code-split UI on first touch, before the click lands. */
+		onpointerdown?: (event: PointerEvent) => void;
 		'aria-label'?: string;
 		'aria-describedby'?: string;
 		'data-testid'?: string;
@@ -42,6 +44,7 @@
 		disabled = false,
 		block = false,
 		onclick,
+		onpointerdown,
 		children,
 		...aria
 	}: Props = $props();
@@ -62,7 +65,16 @@
 {/snippet}
 
 {#if href && !disabled}
-	<a {href} class="btn" class:block data-variant={variant} data-size={size} {onclick} {...aria}>
+	<a
+		{href}
+		class="btn"
+		class:block
+		data-variant={variant}
+		data-size={size}
+		{onclick}
+		{onpointerdown}
+		{...aria}
+	>
 		{@render content()}
 	</a>
 {:else}
@@ -75,6 +87,7 @@
 		disabled={disabled || loading}
 		aria-busy={loading || undefined}
 		{onclick}
+		{onpointerdown}
 		{...aria}
 	>
 		{@render content()}

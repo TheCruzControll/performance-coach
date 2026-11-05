@@ -89,11 +89,13 @@
 	.codes-card {
 		display: grid;
 		gap: var(--space-4);
+		container-type: inline-size;
 	}
 
+	/* One code per row on a phone (a code never wraps or clips); two columns when there is room. */
 	.codes {
 		display: grid;
-		grid-template-columns: 1fr;
+		grid-template-columns: minmax(0, 1fr);
 		gap: 1px;
 		margin: 0;
 		padding: 0;
@@ -104,31 +106,34 @@
 		background: var(--color-hairline);
 	}
 
-	@media (min-width: 380px) {
+	@container (min-width: 34rem) {
 		.codes {
-			grid-template-columns: 1fr 1fr;
+			grid-template-columns: repeat(2, minmax(0, 1fr));
 		}
 	}
 
 	.code {
 		display: flex;
 		align-items: baseline;
-		gap: var(--space-2);
-		padding: var(--space-3) var(--space-3);
+		gap: var(--space-3);
+		min-height: 2.75rem;
+		padding: var(--space-2) var(--space-4);
 		background: var(--color-surface-1);
 	}
 
 	.index {
-		font-size: var(--text-2xs);
+		flex: none;
+		width: 1.25rem;
+		font-size: var(--text-xs);
 		color: var(--color-text-tertiary);
 	}
 
 	.value {
 		font-family: var(--font-numeric);
-		font-size: var(--text-sm);
+		font-size: var(--text-base);
 		font-weight: var(--weight-semibold);
 		font-variant-numeric: tabular-nums;
-		letter-spacing: 0.04em;
+		letter-spacing: 0.06em;
 		white-space: nowrap;
 		user-select: all;
 	}

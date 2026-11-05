@@ -1,23 +1,19 @@
 <script lang="ts">
-	import type { SubmitFunction } from '$app/forms';
-	import { enhance } from '$app/forms';
+	import type { Component } from 'svelte';
+	import { enhance, type SubmitFunction } from '$app/forms';
 	import { invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import { addPasskey, PasskeyError } from '#lib/client/passkeys.ts';
-	import { signOut } from '#lib/client/signout.ts';
 	import Badge from '#lib/ui/components/Badge.svelte';
-	import BottomSheet from '#lib/ui/components/BottomSheet.svelte';
 	import Button from '#lib/ui/components/Button.svelte';
 	import Icon from '#lib/ui/components/Icon.svelte';
 	import IconButton from '#lib/ui/components/IconButton.svelte';
 	import Notice from '#lib/ui/components/Notice.svelte';
 	import PageHeader from '#lib/ui/components/PageHeader.svelte';
-	import RecoveryCodes from '#lib/ui/components/RecoveryCodes.svelte';
 	import Section from '#lib/ui/components/Section.svelte';
 	import Surface from '#lib/ui/components/Surface.svelte';
-	import TextField from '#lib/ui/components/TextField.svelte';
 	import { shortDate, timeAgo } from '#lib/ui/time.ts';
 	import { toast } from '#lib/ui/toast.svelte.ts';
+	import type { SheetRequest } from './SecuritySheets.svelte';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -36,6 +32,9 @@
 	};
 
 	// ---- add ------------------------------------------------------------------------------
+	// The passkey and sign-out helpers are fetched on intent too: this screen's initial JS
+	// stays within budget, and the WebAuthn library itself only ever loads on demand.
+	const passkeys = () => import('#lib/client/passkeys.ts');
 	let adding = $state(false);
 	let addError = $state<string | null>(null);
 
@@ -43,6 +42,7 @@
 		if (adding) return;
 		adding = true;
 		addError = null;
+		const { addPasskey, PasskeyError } = await passkeys();
 		try {
 			const { passkey } = await addPasskey();
 			toast.show(`Passkey added: ${passkey.nickname}`, { tone: 'positive' });
@@ -54,73 +54,36 @@
 		}
 	}
 
-	// ---- rename / remove -----------------------------------------------------------------
-	let target = $state<Passkey | null>(null);
-	let renameOpen = $state(false);
-	let removeOpen = $state(false);
-	let nickname = $state('');
-	let pending = $state(false);
+	// ---- sheets (rename, remove, new codes): code-split, fetched on first intent -----------
+	let sheets = $state<Promise<{ default: Component<{ request: SheetRequest | null }> }> | null>(
+		null
+	);
+	let request = $state<SheetRequest | null>(null);
 
-	function openRename(passkey: Passkey) {
-		target = passkey;
-		nickname = passkey.nickname;
-		renameOpen = true;
+	function loadSheets() {
+		sheets ??= import('./SecuritySheets.svelte');
 	}
 
-	function openRemove(passkey: Passkey) {
-		target = passkey;
-		removeOpen = true;
+	function open(next: SheetRequest) {
+		loadSheets();
+		request = next;
 	}
 
-	/** Shared `use:enhance` handler: toast the outcome, refresh the data, close the sheet. */
-	function submit(success: (data: Record<string, unknown>) => string, close?: () => void) {
-		return (() => {
-			pending = true;
-			return async ({ result, update }) => {
-				pending = false;
+	const target = (p: Passkey) => ({ id: p.id, nickname: p.nickname });
+
+	// ---- sessions ------------------------------------------------------------------------
+	function submit(success: (data: Record<string, unknown>) => string): SubmitFunction {
+		return () =>
+			async ({ result, update }) => {
 				if (result.type === 'success') {
 					toast.show(success(result.data ?? {}), { tone: 'positive' });
-					close?.();
-					await update({ reset: false });
 				} else if (result.type === 'failure') {
 					toast.show(String(result.data?.error ?? 'That didn’t work. Try again.'), {
 						tone: 'danger'
 					});
-					await update({ reset: false });
-				} else {
-					await update();
 				}
+				await update({ reset: false });
 			};
-		}) satisfies SubmitFunction;
-	}
-
-	// ---- recovery codes ------------------------------------------------------------------
-	let regenerateOpen = $state(false);
-	let codesOpen = $state(false);
-	let freshCodes = $state<string[]>([]);
-	let acknowledged = $state(false);
-
-	const regenerate: SubmitFunction = () => {
-		pending = true;
-		return async ({ result, update }) => {
-			pending = false;
-			if (result.type === 'success' && Array.isArray(result.data?.codes)) {
-				freshCodes = result.data.codes as string[];
-				acknowledged = false;
-				regenerateOpen = false;
-				codesOpen = true;
-				await update({ reset: false });
-			} else {
-				toast.show('Couldn’t create new codes. Try again.', { tone: 'danger' });
-				await update({ reset: false });
-			}
-		};
-	};
-
-	function closeCodes() {
-		if (!acknowledged) return;
-		codesOpen = false;
-		freshCodes = [];
 	}
 
 	// ---- sign out --------------------------------------------------------------------------
@@ -129,6 +92,7 @@
 	async function leave() {
 		signingOut = true;
 		try {
+			const { signOut } = await import('#lib/client/signout.ts');
 			await signOut();
 		} catch {
 			signingOut = false;
@@ -162,6 +126,7 @@
 				variant="secondary"
 				icon="plus"
 				loading={adding}
+				onpointerdown={() => void passkeys()}
 				onclick={add}
 				data-testid="add-passkey"
 			>
@@ -171,7 +136,7 @@
 		<Surface padding="none" radius="xl">
 			<ul class="rows" data-testid="passkeys">
 				{#each data.passkeys as passkey (passkey.id)}
-					<li class="row" data-testid="passkey-row">
+					<li class="row" data-testid="passkey-row" data-passkey-id={passkey.id}>
 						<span class="glyph" aria-hidden="true"><Icon name="passkey" size={22} /></span>
 						<div class="main">
 							<p class="title" data-testid="passkey-name">{passkey.nickname}</p>
@@ -190,7 +155,8 @@
 								icon="pencil"
 								label="Rename {passkey.nickname}"
 								size="sm"
-								onclick={() => openRename(passkey)}
+								onpointerdown={loadSheets}
+								onclick={() => open({ kind: 'rename', passkey: target(passkey) })}
 								data-testid="rename-passkey"
 							/>
 							<IconButton
@@ -200,7 +166,8 @@
 									: `Remove ${passkey.nickname}`}
 								size="sm"
 								disabled={onlyPasskey}
-								onclick={() => openRemove(passkey)}
+								onpointerdown={loadSheets}
+								onclick={() => open({ kind: 'remove', passkey: target(passkey) })}
 								data-testid="remove-passkey"
 							/>
 						</div>
@@ -243,7 +210,7 @@
 		<Surface padding="none" radius="xl">
 			<ul class="rows" data-testid="sessions">
 				{#each data.sessions as s (s.id)}
-					<li class="row" data-testid="session-row" data-current={s.current}>
+					<li class="row" data-testid="session-row" data-current={s.current} data-session-id={s.id}>
 						<span class="glyph" aria-hidden="true"><Icon name="device" size={22} /></span>
 						<div class="main">
 							<p class="title">
@@ -310,7 +277,8 @@
 					variant="secondary"
 					size="sm"
 					icon="refresh"
-					onclick={() => (regenerateOpen = true)}
+					onpointerdown={loadSheets}
+					onclick={() => open({ kind: 'regenerate' })}
 					data-testid="regenerate-codes"
 				>
 					Create new codes
@@ -353,96 +321,11 @@
 	</Button>
 </div>
 
-<BottomSheet bind:open={renameOpen} title="Rename passkey" data-testid="rename-sheet">
-	<form
-		method="POST"
-		action="?/rename"
-		class="sheet-form"
-		use:enhance={submit(
-			() => 'Passkey renamed',
-			() => (renameOpen = false)
-		)}
-	>
-		<input type="hidden" name="id" value={target?.id ?? ''} />
-		<TextField
-			label="Name"
-			name="nickname"
-			bind:value={nickname}
-			maxlength={64}
-			required
-			hint="For example “iPhone 15 Pro” or “YubiKey”."
-			data-testid="passkey-nickname"
-		/>
-		<Button type="submit" block loading={pending} data-testid="save-nickname">Save</Button>
-	</form>
-</BottomSheet>
-
-<BottomSheet
-	bind:open={removeOpen}
-	title="Remove {target?.nickname ?? 'passkey'}?"
-	description="You won’t be able to sign in with it any more. Devices that signed in with it are signed out."
-	data-testid="remove-sheet"
->
-	<form
-		method="POST"
-		action="?/remove"
-		class="sheet-form"
-		use:enhance={submit(
-			() => 'Passkey removed',
-			() => (removeOpen = false)
-		)}
-	>
-		<input type="hidden" name="id" value={target?.id ?? ''} />
-		<Button
-			type="submit"
-			variant="danger"
-			block
-			icon="trash"
-			loading={pending}
-			data-testid="confirm-remove"
-		>
-			Remove passkey
-		</Button>
-		<Button variant="ghost" block onclick={() => (removeOpen = false)}>Keep it</Button>
-	</form>
-</BottomSheet>
-
-<BottomSheet
-	bind:open={regenerateOpen}
-	title="Create new recovery codes?"
-	description="Your current codes stop working immediately. You’ll see the new ones once."
-	data-testid="regenerate-sheet"
->
-	<form method="POST" action="?/regenerate" class="sheet-form" use:enhance={regenerate}>
-		<Button type="submit" block icon="refresh" loading={pending} data-testid="confirm-regenerate">
-			Create new codes
-		</Button>
-		<Button variant="ghost" block onclick={() => (regenerateOpen = false)}>Cancel</Button>
-	</form>
-</BottomSheet>
-
-<BottomSheet
-	bind:open={codesOpen}
-	title="Your new recovery codes"
-	description="Save them now: this is the only time they’re shown."
-	onclose={() => {
-		if (!acknowledged) {
-			toast.show('Your new codes are active. If you didn’t save them, create another set.', {
-				tone: 'danger',
-				duration: 6000
-			});
-		}
-		freshCodes = [];
-	}}
-	data-testid="codes-sheet"
->
-	<div class="sheet-form">
-		<RecoveryCodes codes={freshCodes} bind:acknowledged data-testid="new-codes" />
-		<Button block disabled={!acknowledged} onclick={closeCodes} data-testid="codes-done"
-			>Done</Button
-		>
-	</div>
-</BottomSheet>
+{#if sheets}
+	{#await sheets then { default: SecuritySheets }}
+		<SecuritySheets bind:request />
+	{/await}
+{/if}
 
 <style>
 	.back {
@@ -601,11 +484,5 @@
 
 	.dot[data-tone='warning'] {
 		background: var(--color-warning);
-	}
-
-	.sheet-form {
-		display: grid;
-		gap: var(--space-3);
-		padding-bottom: var(--space-2);
 	}
 </style>
