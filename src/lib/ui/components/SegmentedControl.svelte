@@ -99,6 +99,8 @@
 	.segmented {
 		--height: var(--touch-target);
 		--pad: 3px;
+		/* Track height minus padding and the 1px border on each side. */
+		--option-height: calc(var(--height) - 2 * var(--pad) - 2px);
 		position: relative;
 		display: grid;
 		grid-template-columns: repeat(var(--count), minmax(0, 1fr));
@@ -129,6 +131,7 @@
 	}
 
 	.option {
+		position: relative;
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
@@ -141,6 +144,14 @@
 		color: var(--color-text-secondary);
 		white-space: nowrap;
 		transition: color var(--duration-base) var(--ease-standard);
+	}
+
+	/* Options are shorter than 44px (28px in the small size): extend the hit area vertically
+	   to the touch-target minimum, like Button does. Width is never the constraint here. */
+	.option::after {
+		content: '';
+		position: absolute;
+		inset: min(0px, calc((var(--option-height) - var(--touch-target)) / 2)) 0;
 	}
 
 	.option[aria-checked='true'] {

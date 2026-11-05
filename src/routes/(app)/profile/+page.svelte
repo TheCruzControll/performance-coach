@@ -45,10 +45,11 @@
 <div class="stack">
 	<Surface padding="md" radius="xl">
 		<div class="identity">
-			<span class="avatar numeric" aria-hidden="true">NC</span>
+			<!-- Identity comes from the signed-in account once passkey auth exists (M2). -->
+			<span class="avatar" aria-hidden="true"><Icon name="profile" size={26} /></span>
 			<div>
-				<p class="name">Niko Cruz</p>
-				<p class="meta"><Icon name="lock" size={14} /> Private · single user</p>
+				<p class="name">Preview mode</p>
+				<p class="meta"><Icon name="lock" size={14} /> Passkey sign-in coming soon</p>
 			</div>
 		</div>
 	</Surface>
@@ -87,10 +88,9 @@
 	</Card>
 
 	<Card title="Training profile" eyebrow="Goals & baseline">
-		{#snippet action()}<span class="soon">Next</span>{/snippet}
+		{#snippet action()}<span class="soon">Soon</span>{/snippet}
 		<p class="note">
-			Goals, schedule, experience and optional 1RMs — set up in the next release, editable any time
-			after.
+			Goals, schedule, experience and optional 1RMs. You'll be able to change any of it, any time.
 		</p>
 	</Card>
 
@@ -143,7 +143,7 @@
 							<span class="vital-value numeric"
 								>{formatVital(v.name, v.p75)}<small>{VITALS[v.name]?.unit}</small></span
 							>
-							<span class="vital-n">{v.samples} samples</span>
+							<span class="vital-n">{v.samples} {v.samples === 1 ? 'sample' : 'samples'}</span>
 						</li>
 					{/each}
 				</ul>
@@ -184,8 +184,7 @@
 			),
 			var(--color-surface-3);
 		border: 1px solid var(--color-border-strong);
-		font-size: var(--text-lg);
-		font-weight: var(--weight-bold);
+		color: var(--color-text-secondary);
 	}
 
 	.name {

@@ -25,7 +25,7 @@
 	];
 
 	function signIn() {
-		toast.show('Passkey sign-in arrives in the next milestone. Use the preview for now.');
+		toast.show('Passkey sign-in is coming soon. Use the preview for now.');
 	}
 </script>
 
@@ -82,8 +82,8 @@
 		min-height: 100dvh;
 		max-width: var(--content-max);
 		margin: 0 auto;
-		padding: calc(var(--safe-top) + var(--space-6)) max(var(--gutter), var(--safe-right))
-			calc(var(--safe-bottom) + var(--space-6)) max(var(--gutter), var(--safe-left));
+		padding: calc(var(--safe-top) + var(--space-4)) max(var(--gutter), var(--safe-right))
+			calc(var(--safe-bottom) + var(--space-4)) max(var(--gutter), var(--safe-left));
 		overflow: hidden;
 		isolation: isolate;
 	}
@@ -131,8 +131,8 @@
 		display: flex;
 		flex-direction: column;
 		justify-content: center;
-		gap: var(--space-5);
-		padding: var(--space-12) 0 var(--space-8);
+		gap: var(--space-4);
+		padding: var(--space-6) 0 var(--space-5);
 		outline: none;
 	}
 
@@ -157,8 +157,8 @@
 
 	.pillars {
 		display: grid;
-		gap: var(--space-4);
-		margin: var(--space-4) 0 0;
+		gap: var(--space-3);
+		margin: 0;
 		padding: 0;
 		list-style: none;
 	}
@@ -199,7 +199,7 @@
 	}
 
 	.fine {
-		margin-top: var(--space-3);
+		margin-top: var(--space-2);
 		text-align: center;
 		font-size: var(--text-xs);
 		color: var(--color-text-tertiary);

@@ -20,9 +20,10 @@
 
 <div class="coach">
 	<EmptyState
+		compact
 		icon="sparkle"
 		title="Your coach is getting ready"
-		description="Answers will come from your actual training data — facts, calculated metrics and recommendations, always labelled. Changes it proposes wait for your approval."
+		description="Answers grounded in your own training data. Changes it proposes wait for your approval."
 		data-testid="coach-empty"
 	/>
 
@@ -41,7 +42,7 @@
 	<input
 		id="coach-input"
 		class="composer-input"
-		placeholder="Coach arrives in Milestone 5"
+		placeholder="Ask your coach · coming soon"
 		disabled
 		autocomplete="off"
 	/>
@@ -49,19 +50,20 @@
 </form>
 
 <style>
+	/* Reserves the composer's height so nothing ends up under it at the end of the page. */
 	.coach {
 		display: grid;
-		gap: var(--space-4);
-		padding-bottom: calc(var(--space-20) + var(--space-4));
+		gap: var(--space-2);
+		padding-bottom: calc(var(--space-20) + var(--space-2));
 	}
 
 	.prompts-title {
-		margin-bottom: var(--space-3);
+		margin-bottom: var(--space-2);
 	}
 
 	.prompts {
 		display: grid;
-		gap: var(--space-2);
+		gap: var(--space-1-5);
 		margin: 0;
 		padding: 0;
 		list-style: none;
@@ -71,7 +73,8 @@
 		display: flex;
 		align-items: center;
 		gap: var(--space-3);
-		padding: var(--space-3) var(--space-4);
+		min-height: 2.5rem;
+		padding: var(--space-2) var(--space-4);
 		border-radius: var(--radius-lg);
 		border: 1px dashed var(--color-border-strong);
 		font-size: var(--text-sm);

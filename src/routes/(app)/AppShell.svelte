@@ -68,7 +68,6 @@
 		margin: 0 auto;
 		padding: 0 max(var(--gutter), var(--safe-right)) 0 max(var(--gutter), var(--safe-left));
 		outline: none;
-		view-transition-name: page;
 	}
 
 	.offline-notice {
@@ -94,15 +93,20 @@
 		color: var(--color-text);
 	}
 
+	/*
+	 * Tab changes cross-fade the page (the `root` snapshot) while the tab bar, named on its own,
+	 * stays put. No view-transition-name on the content column: a named ancestor becomes a
+	 * backdrop root and silently disables the blur of glass inside it (the coach composer).
+	 */
 	:global(.bottom-nav) {
 		view-transition-name: bottom-nav;
 	}
 
-	:global(::view-transition-old(page)) {
+	:global(::view-transition-old(root)) {
 		animation: 140ms var(--ease-in) both fade-out;
 	}
 
-	:global(::view-transition-new(page)) {
+	:global(::view-transition-new(root)) {
 		animation: 220ms var(--ease-out) both fade-in;
 	}
 

@@ -72,7 +72,7 @@
 <div class="stack">
 	<Card tone="accent" padding="lg" data-testid="today-session">
 		<div class="session">
-			<span class="badge"><Icon name="target" size={16} /> Week 1 · Baseline</span>
+			<span class="badge"><Icon name="target" size={16} /> First step</span>
 			<h2 class="session-title">Nothing scheduled yet</h2>
 			<p class="session-copy">
 				Your coach plans each week around your goals, schedule and recent training. Set up your

@@ -111,7 +111,14 @@ Tracking: `--tracking-display -0.032em`, `--tracking-tight -0.016em`, `--trackin
 - App shell: content column `--content-max` (34 rem) with safe-area-aware gutters; fixed
   **bottom navigation** (Today · Train · Progress · Coach · Profile), glass background,
   58 px tall + home-indicator inset; `aria-current="page"` on the active tab; tabs cross-fade
-  with the View Transitions API.
+  with the View Transitions API (the `root` snapshot fades while the named tab bar stays put).
+  Never put a `view-transition-name` on an ancestor of a glass surface: it becomes a backdrop
+  root and the blur silently stops working.
+- Every app screen fits a 393 × 659 iPhone viewport without sideways scrolling, and nothing
+  important sits under fixed chrome at rest (Coach suggestions end above the composer; both
+  landing CTAs are above the fold). `e2e/shell.e2e.ts` asserts all three.
+- Failure states keep the shell: offline and error screens render inside it with the screen's
+  title (`src/routes/ErrorView.svelte`), and a connectivity notice appears while offline.
 - Large titles (`PageHeader`): eyebrow + 34 px display title, iOS-style.
 - Toasts appear at the top (clear of the thumb zone and nav); sheets rise from the bottom.
 
@@ -125,7 +132,7 @@ Tracking: `--tracking-display -0.032em`, `--tracking-tight -0.016em`, `--trackin
 | `Surface` / `Card`  | Levels 1–3, padding, radius, discipline `tone` tint, `interactive`/`href`; `Card` adds eyebrow/title/action header (`aria-labelledby`).                                                                                      |
 | `NumberStepper`     | One-handed −/+ (56 px), press-and-hold accelerating repeat, tap-to-type (`inputmode=decimal`), `role=spinbutton` with ArrowUp/Down, PageUp/Down, Home/End.                                                                   |
 | `BottomSheet`       | Native `<dialog>` + `showModal()` (platform focus trap, inert background), Escape/backdrop close, focus returns to opener, swipe-to-dismiss (distance or velocity), content mounted only while open.                         |
-| `SegmentedControl`  | `radiogroup` with roving tabindex and arrow keys; spring-animated thumb.                                                                                                                                                     |
+| `SegmentedControl`  | `radiogroup` with roving tabindex and arrow keys; spring-animated thumb; `sm` (36 px track) options extend their hit area to 44 px.                                                                                          |
 | `Tabs`              | WAI-ARIA tabs (automatic activation, arrows/Home/End), animated accent indicator, renders active panel.                                                                                                                      |
 | `BottomNav`         | Primary navigation (real links, preload on tap).                                                                                                                                                                             |
 | `Skeleton`          | Shimmer placeholder (static under reduced motion); pair with `aria-busy` on the region.                                                                                                                                      |

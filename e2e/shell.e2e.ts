@@ -9,7 +9,7 @@ test.describe('app shell on an iPhone viewport', () => {
 		await captureScreen(page, testInfo, 'landing');
 
 		await page.getByTestId('passkey-signin').click();
-		await expect(page.getByRole('status')).toContainText(/passkey sign-in arrives/i);
+		await expect(page.getByRole('status')).toContainText(/passkey sign-in is coming soon/i);
 
 		await page.getByRole('link', { name: /preview the app/i }).click();
 		await expect(page).toHaveURL(/\/today$/);
@@ -109,5 +109,59 @@ test.describe('app shell on an iPhone viewport', () => {
 		await sheet.getByRole('button', { name: 'Close' }).click();
 		await expect(sheet).toBeHidden();
 		await expect(opener).toBeFocused();
+	});
+
+	test('no screen scrolls sideways', async ({ page }) => {
+		for (const path of ['/', ...TABS.map((t) => t.path), '/design', '/offline']) {
+			await page.goto(path);
+			await page.evaluate(() => document.fonts.ready);
+			const { scrollWidth, innerWidth } = await page.evaluate(() => ({
+				scrollWidth: document.documentElement.scrollWidth,
+				innerWidth: window.innerWidth
+			}));
+			expect(scrollWidth, `${path} is ${scrollWidth}px wide`).toBeLessThanOrEqual(innerWidth);
+			expect(innerWidth, `${path} widened the layout viewport`).toBe(page.viewportSize()!.width);
+		}
+	});
+
+	test('nothing sits under fixed chrome at rest', async ({ page }) => {
+		const viewport = page.viewportSize()!;
+
+		// Landing: both calls to action are above the fold.
+		await page.goto('/');
+		for (const cta of [
+			page.getByRole('button', { name: /sign in with passkey/i }),
+			page.getByRole('link', { name: /preview the app/i })
+		]) {
+			const box = await cta.boundingBox();
+			expect(box!.y + box!.height).toBeLessThanOrEqual(viewport.height);
+		}
+
+		// Coach: the docked composer does not cover the suggested questions.
+		await page.goto('/coach');
+		await page.evaluate(() => document.fonts.ready);
+		const composer = await page.getByRole('form', { name: 'Message your coach' }).boundingBox();
+		for (const prompt of await page.locator('.prompt').all()) {
+			const box = await prompt.boundingBox();
+			expect(box!.y + box!.height).toBeLessThanOrEqual(composer!.y);
+		}
+	});
+
+	test('compact segmented controls keep a 44px hit area', async ({ page }) => {
+		await page.goto('/profile');
+		const options = page.getByTestId('theme-control').getByRole('radio');
+		await expect(options).toHaveCount(3);
+		for (const option of await options.all()) {
+			const box = (await option.boundingBox())!;
+			const x = box.x + box.width / 2;
+			const mid = box.y + box.height / 2;
+			for (const y of [mid - 21, mid + 21]) {
+				const hit = await page.evaluate(
+					([px, py]) => document.elementFromPoint(px!, py!)?.closest('[role="radio"]')?.textContent,
+					[x, y]
+				);
+				expect(hit?.trim()).toBe((await option.textContent())?.trim());
+			}
+		}
 	});
 });

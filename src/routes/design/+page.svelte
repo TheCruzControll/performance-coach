@@ -211,6 +211,7 @@
 
 	.section {
 		display: grid;
+		grid-template-columns: minmax(0, 1fr);
 		gap: var(--space-3);
 		margin-bottom: var(--space-10);
 	}
@@ -244,19 +245,18 @@
 		color: var(--color-text-tertiary);
 	}
 
+	/* Specimens wrap at large steps instead of widening the page on a phone. */
 	.type-row {
-		display: flex;
+		display: grid;
+		grid-template-columns: 2.5rem minmax(0, 1fr);
 		align-items: baseline;
 		gap: var(--space-3);
-		line-height: 1.2;
+		line-height: 1.1;
 		padding: var(--space-1) 0;
-		white-space: nowrap;
-		overflow: hidden;
+		overflow-wrap: anywhere;
 	}
 
 	.type-step {
-		flex: none;
-		width: 2.5rem;
 		font-size: var(--text-2xs);
 		color: var(--color-text-tertiary);
 	}
