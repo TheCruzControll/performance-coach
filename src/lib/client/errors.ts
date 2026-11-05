@@ -1,12 +1,15 @@
 /**
  * Browser error reporting: uncaught exceptions, unhandled promise rejections and errors from the
  * client `handleError` hook are beaconed to POST /api/client-errors (→ `app_errors`, kind
- * `client`). Console output is kept for local debugging.
+ * `client`). Console output is kept for local debugging. Failures on a page that is being left
+ * are not errors (`leaving.ts`): they are neither reported nor logged.
  *
  * Cheap by design (it is in every page's initial JS): no dependencies, nothing runs until an
  * error happens, at most MAX_REPORTS per page load, and the same error is sent once.
  * Same-origin JSON beacon: no CORS preflight and not subject to SvelteKit's form CSRF check.
  */
+import { isLeaving } from './leaving.ts';
+
 const ENDPOINT = '/api/client-errors';
 export const MAX_REPORTS = 5;
 
@@ -82,8 +85,13 @@ export function reportClientError(error: unknown, source: ClientErrorSource): vo
 
 /** Listen for uncaught errors and unhandled rejections (once, at app start). */
 export function startErrorReporting(): void {
-	addEventListener('error', (event) => reportClientError(event.error ?? event.message, 'error'));
-	addEventListener('unhandledrejection', (event) =>
-		reportClientError(event.reason, 'unhandledrejection')
-	);
+	addEventListener('error', (event) => {
+		// Cancelling the event also keeps the browser from logging it as uncaught.
+		if (isLeaving()) return event.preventDefault();
+		reportClientError(event.error ?? event.message, 'error');
+	});
+	addEventListener('unhandledrejection', (event) => {
+		if (isLeaving()) return event.preventDefault();
+		reportClientError(event.reason, 'unhandledrejection');
+	});
 }
