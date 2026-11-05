@@ -4,23 +4,24 @@ Target: **Vercel** (Node.js 22, Fluid compute) at **coach.nikocruz.com**, DNS at
 (DNS-only), database **Neon Lakebase Postgres**. Deploys run through the **Vercel Git
 integration**; every deployed build migrates its own database first (`scripts/vercel-build.sh`).
 
-> **Status (M1):** the accounts, project, database branches, environment variables and domain
-> below exist and were configured through the Vercel and Neon APIs. Preview deployments build
-> from every pull request. **Production is switched off** until passkey auth ships (M2): nothing
-> is served on `coach.nikocruz.com` yet.
+> **Status (M2, in progress):** the accounts, project, database branches, environment variables
+> and domain below exist and were configured through the Vercel and Neon APIs. Preview
+> deployments build from every pull request. Passkey auth is implemented on the M2 branch
+> (docs/security.md); **production stays switched off** (the guards below are still committed)
+> until the M2 production cutover removes them. Nothing is served on `coach.nikocruz.com` yet.
 
 ## What exists
 
-| Piece      | Setting                                                                                                                                                                                                      |
-| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Vercel     | Project `performance-coach` (`prj_ofpkwho7FKmRXNr9Bem9phaD2AVN`) in team `thecruzcontrolls-projects`, Hobby plan. Framework SvelteKit, Node.js 22.x, Fluid compute.                                          |
-| Region     | Functions in **`pdx1`** (Portland), next to the Neon database in **`aws-us-west-2`** (Oregon), so a query is a same-region round trip.                                                                       |
-| Git        | GitHub `TheCruzControll/performance-coach` linked; Vercel builds every PR as a preview.                                                                                                                      |
-| Protection | Vercel Authentication on every deployment **except custom domains**: previews need a Vercel login; `coach.nikocruz.com` is public and protected by the app's own passkey auth.                               |
-| Neon       | Project `red-rain-59499468` ("Performance coach"), Postgres 18, free plan, 6 h history window. Database `neondb`, role `neondb_owner`.                                                                       |
-| Branches   | `production` (`br-green-block-bfh38xqf`, default) for Production; `preview` (`br-solitary-bonus-bf58ajx7`) shared by all preview deployments. Never point a preview at production.                           |
-| Env vars   | `DATABASE_URL` (pooled, host contains `-pooler`) and `DATABASE_URL_UNPOOLED` (direct) for Production and Preview, each pointing at its own branch; `ANTHROPIC_API_KEY` for Production. All marked sensitive. |
-| Domain     | `coach.nikocruz.com` attached and verified. Cloudflare: `CNAME coach → e8ec158fe2c98016.vercel-dns-017.com`, **DNS only** (grey cloud), so Vercel terminates TLS.                                            |
+| Piece      | Setting                                                                                                                                                                                                                                                                                                    |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Vercel     | Project `performance-coach` (`prj_ofpkwho7FKmRXNr9Bem9phaD2AVN`) in team `thecruzcontrolls-projects`, Hobby plan. Framework SvelteKit, Node.js 22.x, Fluid compute.                                                                                                                                        |
+| Region     | Functions in **`pdx1`** (Portland), next to the Neon database in **`aws-us-west-2`** (Oregon), so a query is a same-region round trip.                                                                                                                                                                     |
+| Git        | GitHub `TheCruzControll/performance-coach` linked; Vercel builds every PR as a preview.                                                                                                                                                                                                                    |
+| Protection | Vercel Authentication on every deployment **except custom domains**: previews need a Vercel login; `coach.nikocruz.com` is public and protected by the app's own passkey auth.                                                                                                                             |
+| Neon       | Project `red-rain-59499468` ("Performance coach"), Postgres 18, free plan, 6 h history window. Database `neondb`, role `neondb_owner`.                                                                                                                                                                     |
+| Branches   | `production` (`br-green-block-bfh38xqf`, default) for Production; `preview` (`br-solitary-bonus-bf58ajx7`) shared by all preview deployments. Never point a preview at production.                                                                                                                         |
+| Env vars   | `DATABASE_URL` (pooled, host contains `-pooler`) and `DATABASE_URL_UNPOOLED` (direct) for Production and Preview, each pointing at its own branch; `ANTHROPIC_API_KEY` for Production. All marked sensitive. M2 adds `OWNER_SETUP_TOKEN_HASH` (Production, only until setup completes; see "Owner setup"). |
+| Domain     | `coach.nikocruz.com` attached and verified. Cloudflare: `CNAME coach → e8ec158fe2c98016.vercel-dns-017.com`, **DNS only** (grey cloud), so Vercel terminates TLS.                                                                                                                                          |
 
 `ENABLE_TEST_ROUTES` must never be set on Vercel. See docs/environment.md for every variable.
 
@@ -75,6 +76,50 @@ migrating the production branch first. M2 also adds a post-deploy smoke check
 **Rollback:** Vercel → Deployments → promote the previous deployment (instant). Database rollbacks
 are forward fixes; for data loss use Neon point-in-time restore (6 h window on the current plan)
 or a backup (below).
+
+## Owner setup (first passkey)
+
+The app has exactly one account, created by first-run setup (docs/security.md). On a new
+production database, after the first deployment with auth:
+
+1. On a trusted machine: `pnpm auth:setup-token`. It prints a random token, its SHA-256 and the
+   link `https://coach.nikocruz.com/setup?token=…`. The token is shown once and stored nowhere.
+2. Vercel → Project → Settings → Environment Variables: add `OWNER_SETUP_TOKEN_HASH` = the
+   printed hash, **Production** only, marked sensitive. Redeploy production (the variable is read
+   at start-up).
+3. Send the owner the link through a private channel. On the iPhone, in Safari: open it, enter
+   the name, create the passkey (Face ID), then save the 10 recovery codes (copy into the password
+   manager or download) and confirm. The app opens on Today.
+4. `/setup` now answers 404 for good, even with the right token. Remove `OWNER_SETUP_TOKEN_HASH`
+   from Vercel (it can no longer be used, but there is no reason to keep it). Vercel's request
+   logs contain the setup URL with the token; it is useless once setup has completed.
+5. Recommended right away: Profile → Security → **Add passkey** on a second device (Mac, or a
+   hardware key) so losing the iPhone never needs a recovery code.
+
+A preview deployment can be set up the same way with
+`pnpm auth:setup-token --origin https://<preview-host>` and a **Preview**-scoped hash; previews
+use their own host as the passkey domain and their own database, so production passkeys never
+work there (and vice versa).
+
+## Lost passkeys
+
+- **Lost one device, another passkey still works:** sign in elsewhere, Profile → Security →
+  remove the lost passkey (this also signs out every session that used it) and, if in doubt,
+  **Sign out others**.
+- **Lost every passkey, recovery codes available:** sign-in screen → "Lost your passkey? Use a
+  recovery code" → enter one code → create a new passkey → Security: remove the lost passkeys,
+  review signed-in devices, and create new recovery codes if few are left.
+- **Lost every passkey and every code:** the tech lead resets the owner's credentials:
+
+  ```sh
+  DATABASE_URL_UNPOOLED='<Neon production direct URL>' pnpm auth:reset-owner --confirm
+  ```
+
+  It prints the target database, the owner and what will be deleted, and asks for the database
+  name to be typed back (it refuses to run non-interactively). In one transaction it deletes
+  every passkey, recovery code and pending challenge, revokes every session, reopens first-run
+  setup and writes an `owner.reset` audit event. **The owner row and all training data are
+  kept.** Then follow "Owner setup" above with a new token; setup re-attaches to the same owner.
 
 ## Backups (`backup.yml`)
 

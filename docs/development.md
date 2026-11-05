@@ -22,6 +22,23 @@ pnpm dev                # http://localhost:5173
 `PGADMIN_URL`/`PG*` variables when set), creates the `coach` login role and the three databases.
 Re-running it is safe.
 
+## Signing in locally
+
+Every screen needs a session (deny by default). On a fresh `coach_dev` database:
+
+```sh
+pnpm auth:setup-token --origin http://localhost:5173   # prints a token, its hash and the link
+# put OWNER_SETUP_TOKEN_HASH=<hash> in .env, restart `pnpm dev`, open the printed /setup link
+```
+
+Create the passkey (Touch ID, Windows Hello, a phone via QR, or Chrome DevTools → More tools →
+WebAuthn → "Enable virtual authenticator environment"), save the recovery codes, done. Passkeys
+work on `http://localhost` (a secure context) but not on `127.0.0.1`. To start over:
+`pnpm auth:reset-owner --confirm` (keeps the owner's data, reopens setup).
+
+`pnpm start` serves a Node build: build it with the origin it will be served on, e.g.
+`ORIGIN=http://localhost:4173 pnpm build:node && PORT=4173 pnpm start` (docs/environment.md).
+
 ## Everyday commands
 
 | Command                 | What it does                                                                  |
@@ -78,3 +95,6 @@ Re-running it is safe.
 - **Integration tests cannot connect**: start Postgres and run `pnpm db:setup`.
 - **`something is already serving http://localhost:4173`** in e2e: stop the other server or set
   `E2E_PORT`.
+- **"Cross-site request refused" from a local Node build**: it was built without (or with a
+  different) `ORIGIN`; rebuild with `ORIGIN=http://localhost:<port> pnpm build:node`.
+- **Every page redirects to `/`**: no session. Sign in, or set up the owner (above).

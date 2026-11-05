@@ -5,6 +5,46 @@ Performance is a first-class requirement (PRD §15): measure, set budgets, enfor
 build of commit `6586cf6` (M1 after review fix round 2; the commits after it touch only the
 Lighthouse runner, CI and docs).
 
+## M2 (authentication) — measured 2026-11-05
+
+Measured on the M2 branch after passkey auth landed (local 4-vCPU VM, same tools as below).
+
+| Route                     | Initial JS (gzip) | Route CSS (gzip) |
+| ------------------------- | ----------------: | ---------------: |
+| `/(app)/profile/security` |           59.6 KB |          10.2 KB |
+| `/(app)/train`            |           58.2 KB |          10.5 KB |
+| `/(app)/profile`          |           57.8 KB |           8.3 KB |
+| `/setup`                  |           56.3 KB |           6.4 KB |
+| `/(app)/today`            |           56.1 KB |           7.5 KB |
+| `/design`                 |           55.8 KB |          11.7 KB |
+| `/(app)/progress`         |           54.9 KB |           6.7 KB |
+| `/(app)/offline`          |           54.8 KB |           6.1 KB |
+| `/` (sign-in)             |           54.6 KB |           5.4 KB |
+| `/recover/passkey`        |           54.2 KB |           5.0 KB |
+| `/recover`                |           53.6 KB |           5.2 KB |
+| `/(app)/coach`            |           52.9 KB |           6.0 KB |
+
+Total CSS **19.6 KB** of 20 KB (39 files). All budgets pass, but headroom is now thin: the
+Security screen is at 59.6 KB (its sheets, the passkey helpers and sign-out code load on intent;
+without that it was 65 KB) and total CSS has 0.4 KB left. Against the M1 table every
+existing route grew by 2.3–3.3 KB; part of that is the shared icon set (the whole set ships with
+every screen; nine security icons were added), the rest is not yet attributed and should be
+before M3 adds screens. Anything new must be code-split or paid for elsewhere — record the
+trade-off here.
+
+- **`@simplewebauthn/browser` (≈5 KB gzip) is never in initial JS.** It is imported on demand by
+  `src/lib/client/passkeys.ts`; `pnpm budgets` fails if it appears in any route's initial JS or
+  is reachable (static or dynamic imports) from any route other than `/`, `/setup`,
+  `/recover/passkey` and `/(app)/profile/security`.
+- **Main-thread budget** (`E2E_PERF_ALONE=1 pnpm test:e2e --project=perf`, median of 5 loads at 4×
+  CPU; app screens signed in, `/` signed out): `/` 57 ms, `/today` 81, `/train` 72, `/progress`
+  67, `/coach` 40, `/profile` 87, `/profile/security` 60 — every screen meets the 200 ms target.
+- **Lighthouse, one run per screen** (signed in via a session the script mints; `/` signed out):
+  perf 98–100, accessibility 100, best practices 100, CLS 0.000 everywhere; `/profile/security`
+  LCP 1.07 s, TBT 103–153 ms. A single run is not a median: the 5-run CI assertion is the gate.
+- **Server:** every dynamic request now does one indexed session lookup, reported as
+  `Server-Timing: auth;dur=…`.
+
 ## Budgets (enforced)
 
 `pnpm budgets` (`scripts/check-budgets.ts`) reads the SvelteKit build output and fails CI when a
@@ -222,8 +262,8 @@ GET /profile           total ≈ 38 ms at first byte; streamed work settled ≈ 
 ## How to reproduce
 
 ```sh
-pnpm build:node
+ORIGIN=http://localhost:4174 pnpm build:node   # the origin is baked into Node builds
 pnpm budgets
-E2E_SKIP_BUILD=1 pnpm test:e2e --project=perf --no-deps     # main-thread budget alone (annotations)
+E2E_PERF_ALONE=1 pnpm test:e2e --project=perf  # owner setup, then the main-thread budget alone
 pnpm lighthouse --runs 5 --assert --min-perf 0.9 --max-tbt 300  # every screen (CI command)
 ```
