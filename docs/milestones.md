@@ -40,7 +40,7 @@ Acceptance criteria:
    `docs/performance.md`.
 7. Observability works: `Server-Timing` on responses, `/api/vitals` stores metrics in Postgres,
    server errors are logged and recorded.
-8. CI workflows exist and are valid; deploy and backup skip gracefully without secrets.
+8. CI workflows exist and are valid; the backup workflow skips gracefully without secrets; deployed builds migrate first (`scripts/vercel-build.sh`).
 9. Documentation set exists and is accurate.
 10. Code is separated into domain / server db / services / agent / auth / client / ui / routes;
     all work committed with Conventional Commits; no secrets or build output.

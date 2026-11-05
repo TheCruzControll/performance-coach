@@ -7,7 +7,7 @@
 ## Decision
 
 - **PostgreSQL** (16+). Production: **Neon Lakebase Postgres** (branching for previews, PITR,
-  scale-to-zero). Development/test/CI: **local Postgres 16** (or the CI service container).
+  scale-to-zero). Development/test: **local Postgres 16+**; CI: a **Postgres 18** service container, matching Neon production.
 - **Drizzle ORM** for a typed schema and queries; **drizzle-kit** generates SQL migrations that
   are **reviewed and committed** (`drizzle/`); `scripts/db-migrate.ts` applies them under a
   Postgres advisory lock over the **direct** (`DATABASE_URL_UNPOOLED`) connection.

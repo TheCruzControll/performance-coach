@@ -99,7 +99,7 @@ key. No key exists in CI today.
 ## CI
 
 `.github/workflows/ci.yml` runs lint, type-check, the migration drift check, unit + integration
-(postgres:16 service), both builds + budgets, Playwright (Chromium + WebKit) and an asserted
+(postgres:18 service), both builds + budgets, Playwright (Chromium + WebKit) and an asserted
 Lighthouse run on every PR and push to `main`.
 
 **Not yet verified:** the workflows have not run on GitHub (nothing has been pushed), and the

@@ -39,8 +39,12 @@ next one builds, so every migration must work with the code that is currently li
 backfill → contract over two releases).
 
 Preview deployments share the `preview` Neon branch. Migrations from an unmerged PR therefore
-land there; if a PR's migration changes before it merges, reset the branch from production
-(Neon → Branches → `preview` → Reset from parent) and redeploy.
+land there. Drizzle applies only migrations newer than the newest one already recorded, so two
+open PRs with migrations can make the older-timestamped one be **skipped silently** on `preview`
+(its build logs "0 new migration(s)" and its preview fails at runtime). Recovery, also when a PR's
+migration changes before it merges: reset the branch from production (Neon → Branches →
+`preview` → Reset from parent) and redeploy. On `main` the same ordering is enforced by a unit
+test (`scripts/drizzle-journal.test.ts`): journal entries must be strictly increasing in time.
 
 ## Production stays off until auth ships — how that is enforced
 
@@ -53,8 +57,15 @@ In M1 every page and `POST /api/vitals` are unauthenticated, so the app must not
 | Any production build Vercel starts itself (dashboard redeploy, branch rename, …) | `vercel.json` → `ignoreCommand` runs `scripts/vercel-ignore-build.sh`, which skips the build when `VERCEL_ENV=production`. |
 
 `scripts/vercel-ignore-build.test.ts` (unit suite) checks the committed config, the ignore step's
-exit codes and the build command's migrate-then-build order. There is no other path: no deploy
-token exists and no workflow deploys.
+exit codes and the build command's migrate-then-build order. No deploy token exists and no
+workflow deploys.
+
+**What the committed config cannot stop:** a production deploy made by hand from a logged-in
+Vercel CLI, especially `vercel build --prod && vercel deploy --prebuilt --prod` (a prebuilt upload
+skips the ignored build step). The custom domain is already attached and is exempt from Vercel
+Authentication, so such a deploy would be public. Do not deploy production by hand before M2. As
+of M1, the project's only production deployment is the failed placeholder created while
+configuring environment variables, so nothing is served on `coach.nikocruz.com`.
 
 **Switching production on is part of the M2 pull request that ships auth:** it removes both
 guards, and from then on every merge to `main` builds production through the Git integration,
@@ -82,6 +93,10 @@ end in M9.
 - `PG_CLIENT_VERSION` in the workflow must be ≥ the Neon server's major version.
 
 ### Restore
+
+Backups are written by `pg_dump` 18 (`PG_CLIENT_VERSION` in the workflow), and `pg_restore`
+refuses archives newer than itself: restore with **PostgreSQL 18 client tools** (Debian/Ubuntu:
+the PGDG `postgresql-client-18` package). `scripts/restore-backup.sh` checks this first.
 
 ```sh
 # 1. Download the artifact (GitHub → Actions → Backup run → Artifacts) and unzip it.

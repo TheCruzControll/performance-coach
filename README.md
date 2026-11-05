@@ -15,14 +15,14 @@ log every set and talk to the coach.
 | ------------- | ------------------------------------------------------------------------------------------------------------------------ |
 | App           | **SvelteKit 3** (Svelte 5 runes), TypeScript strict, Vite 8, pnpm 10, Node 22                                            |
 | Hosting       | Vercel (Node runtime, Fluid compute) · Cloudflare DNS (DNS-only CNAME)                                                   |
-| Database      | PostgreSQL — Neon Lakebase Postgres in prod, local Postgres 16 in dev/test/CI                                            |
+| Database      | PostgreSQL — Neon Lakebase Postgres 18 in prod/preview, Postgres 18 in CI, local Postgres 16+ in dev                     |
 | Data access   | Drizzle ORM + committed SQL migrations · node-postgres `Pool` + `attachDatabasePool`                                     |
 | Config        | zod-validated environment (`src/lib/server/env.ts`) · `neon.ts` (Postgres only)                                          |
 | UI            | Hand-built design system (CSS custom properties, dark-first), Mona Sans + Hubot Sans (self-hosted)                       |
 | PWA           | Web manifest, generated icons, SvelteKit service worker (versioned precache, offline fallback)                           |
 | Observability | Server-Timing, JSON logs, `app_errors` (server + browser errors), RUM via web-vitals → `web_vitals`                      |
 | Tests         | Vitest (unit + integration on real Postgres), Playwright 1.63 (iPhone viewport, axe in both themes), budgets, Lighthouse |
-| CI/CD         | GitHub Actions: CI, deploy (migrate → Vercel), nightly encrypted backups                                                 |
+| CI/CD         | GitHub Actions: CI and nightly encrypted backups · Vercel Git integration deploys, migrating first                       |
 
 ## Quick start
 
