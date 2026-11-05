@@ -10,7 +10,16 @@ updates:
       svelte:
         patterns: ['svelte', 'svelte-check', '@sveltejs/*', 'vite', 'vitest', '@vitest/*']
       lint:
-        patterns: ['eslint', '@eslint/*', 'eslint-*', 'typescript-eslint', 'prettier', 'prettier-*', 'globals']
+        patterns:
+          [
+            'eslint',
+            '@eslint/*',
+            'eslint-*',
+            'typescript-eslint',
+            'prettier',
+            'prettier-*',
+            'globals'
+          ]
       database:
         patterns: ['drizzle-orm', 'drizzle-kit', 'pg', '@types/pg', '@neon/*']
       testing:
