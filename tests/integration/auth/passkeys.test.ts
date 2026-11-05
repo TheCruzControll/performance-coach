@@ -9,6 +9,7 @@ import {
 	removePasskey,
 	renamePasskey
 } from '../../../src/lib/server/auth/passkeys';
+import { setupOpen } from '../../../src/lib/server/auth/setup';
 import { mintTestSession } from '../../../src/lib/server/auth/test-support';
 import { validateSessionToken } from '../../../src/lib/server/auth/sessions';
 import { withRollback } from '../helpers';
@@ -131,17 +132,19 @@ describe('passkey management', () => {
 		});
 	});
 
-	it('test-only sessions exist only when test routes are enabled, and only for an owner', async () => {
+	it('test-only sessions exist only when test routes are enabled', async () => {
 		await withRollback(async (tx) => {
 			await expect(mintTestSession(request(), { db: tx, enabled: false })).rejects.toMatchObject({
 				code: 'not_found'
 			});
-			await expect(mintTestSession(request(), { db: tx, enabled: true })).rejects.toMatchObject({
-				code: 'not_found'
-			});
-			await setUpOwner(tx);
+			// Without an owner: a placeholder owner with no passkey, so setup stays open.
+			const placeholder = await mintTestSession(request(), { db: tx, enabled: true });
+			expect(placeholder.session).toMatchObject({ kind: 'owner', method: 'test' });
+			expect(await setupOpen({ db: tx })).toBe(true);
+			const owner = await setUpOwner(tx);
+			expect(owner.ownerId).toBe(placeholder.session.ownerId);
 			const minted = await mintTestSession(request(), { db: tx, enabled: true });
-			expect(minted.session).toMatchObject({ kind: 'owner', method: 'test' });
+			expect(minted.session.ownerId).toBe(owner.ownerId);
 		});
 	});
 });

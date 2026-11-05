@@ -20,7 +20,7 @@ import { expect, test } from '@playwright/test';
 const TARGET_MS = 200;
 const GUARD_MS = 250;
 const LOADS = 5;
-const SCREENS = ['/', '/today', '/train', '/progress', '/coach', '/profile'];
+const SCREENS = ['/', '/today', '/train', '/progress', '/coach', '/profile', '/profile/security'];
 
 test.describe('main-thread budget (4× CPU)', () => {
 	test.skip(({ browserName }) => browserName !== 'chromium', 'CPU throttling uses CDP');
@@ -31,8 +31,14 @@ test.describe('main-thread budget (4× CPU)', () => {
 		}, testInfo) => {
 			const samples: number[] = [];
 			for (let i = 0; i < LOADS; i++) {
-				// A fresh context per load: cold caches, no service worker yet.
-				const context = await browser.newContext(testInfo.project.use);
+				// A fresh context per load: cold caches, no service worker yet. Signed in (the
+				// project's storage state), except for the sign-in screen, which only a signed-out
+				// browser sees.
+				const context = await browser.newContext(
+					path === '/'
+						? { ...testInfo.project.use, storageState: { cookies: [], origins: [] } }
+						: testInfo.project.use
+				);
 				const page = await context.newPage();
 				await page.addInitScript(() => {
 					const tasks: number[] = [];
