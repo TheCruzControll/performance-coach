@@ -1,9 +1,10 @@
 /**
  * Authentication tables (M2): the single owner, their passkeys, sessions, recovery codes,
- * WebAuthn challenges, an audit log and DB-backed rate-limit counters. See docs/security.md.
+ * WebAuthn challenges, used setup tokens, an audit log and DB-backed rate-limit counters. See
+ * docs/security.md.
  *
- * Secrets are never stored: sessions and recovery codes keep only a SHA-256 of a high-entropy
- * random value; passkeys keep only the public key.
+ * Secrets are never stored: sessions, recovery codes and used setup tokens keep only a SHA-256
+ * of a high-entropy random value; passkeys keep only the public key.
  */
 import { sql } from 'drizzle-orm';
 import {
@@ -50,6 +51,20 @@ export const owners = pgTable(
 		check('owners_singleton_ck', sql`${t.singleton}`),
 		check('owners_display_name_ck', sql`char_length(${t.displayName}) between 1 and 64`)
 	]
+);
+
+/**
+ * SHA-256 (hex) of every setup token that has completed a setup. A token works once:
+ * `pnpm auth:reset-owner` reopens setup but keeps these rows, so an old link (it sits in request
+ * logs) stays refused even while its hash is still configured, and a reset needs a new token.
+ */
+export const usedSetupTokens = pgTable(
+	'used_setup_tokens',
+	{
+		tokenHash: text('token_hash').primaryKey(),
+		usedAt: timestamp('used_at', { withTimezone: true }).notNull().defaultNow()
+	},
+	(t) => [check('used_setup_tokens_token_hash_ck', sql`${t.tokenHash} ~ '^[0-9a-f]{64}$'`)]
 );
 
 export const CREDENTIAL_DEVICE_TYPES = ['singleDevice', 'multiDevice'] as const;

@@ -1,7 +1,7 @@
 /**
- * Auth persistence: owner, passkeys, sessions, recovery codes, challenges, audit log and rate
- * limits. Every time-dependent query takes the time as a parameter (services pass their clock),
- * so expiry and windows are testable without waiting.
+ * Auth persistence: owner, used setup tokens, passkeys, sessions, recovery codes, challenges,
+ * audit log and rate limits. Every time-dependent query takes the time as a parameter (services
+ * pass their clock), so expiry and windows are testable without waiting.
  */
 import { and, asc, count, desc, eq, gt, isNull, lt, ne, sql } from 'drizzle-orm';
 import {
@@ -11,6 +11,7 @@ import {
 	owners,
 	passkeyCredentials,
 	recoveryCodes,
+	usedSetupTokens,
 	webauthnChallenges,
 	type ChallengePurpose
 } from '../schema';
@@ -67,6 +68,26 @@ export function createAuthRepository(db: Executor) {
 
 		async markSetupCompleted(ownerId: string, at: Date): Promise<void> {
 			await db.update(owners).set({ setupCompletedAt: at }).where(eq(owners.id, ownerId));
+		},
+
+		/** Has a setup already been completed with the token of this hash? */
+		async setupTokenUsed(tokenHash: string): Promise<boolean> {
+			const [row] = await db
+				.select({ tokenHash: usedSetupTokens.tokenHash })
+				.from(usedSetupTokens)
+				.where(eq(usedSetupTokens.tokenHash, tokenHash))
+				.limit(1);
+			return row !== undefined;
+		},
+
+		/** Record a setup token as used. False if it already was: a token completes one setup. */
+		async claimSetupToken(tokenHash: string, at: Date): Promise<boolean> {
+			const inserted = await db
+				.insert(usedSetupTokens)
+				.values({ tokenHash, usedAt: at })
+				.onConflictDoNothing()
+				.returning({ tokenHash: usedSetupTokens.tokenHash });
+			return inserted.length === 1;
 		},
 
 		// ---- passkeys ----------------------------------------------------------------------
