@@ -41,12 +41,12 @@
 	--color-accent-subtle: light-dark(rgb(124 160 0 / 0.14), rgb(200 240 49 / 0.12));
 	--color-accent-ring: light-dark(rgb(98 128 0 / 0.55), rgb(200 240 49 / 0.6));
 
-	/* ---- Color: status ------------------------------------------------------------- */
-	--color-positive: light-dark(#14894a, #5bd68a);
-	--color-warning: light-dark(#a8650a, #f5b54a);
-	--color-danger: light-dark(#c9302c, #ff5a52);
-	--color-danger-subtle: light-dark(rgb(201 48 44 / 0.1), rgb(255 90 82 / 0.14));
-	--color-info: light-dark(#1d6fc2, #6cb6ff);
+	/* ---- Color: status (text-safe: ≥ 4.5:1 on canvas, surface-1 and surface-2) ------- */
+	--color-positive: light-dark(#0f7a40, #5bd68a);
+	--color-warning: light-dark(#955a09, #f5b54a);
+	--color-danger: light-dark(#bb2c28, #ff5a52);
+	--color-danger-subtle: light-dark(rgb(187 44 40 / 0.1), rgb(255 90 82 / 0.14));
+	--color-info: light-dark(#1b66b3, #6cb6ff);
 
 	/* ---- Color: disciplines (use sparingly: tags, dots, chart series) ---------------- */
 	--color-strength: light-dark(#b37515, #f2b544);

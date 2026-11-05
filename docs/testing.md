@@ -58,8 +58,11 @@ Specs:
 
 - `shell.e2e.ts` — landing → preview; bottom nav pinned to the bottom with ≥ 44 px targets and a
   computed `backdrop-filter` blur; navigation across all five tabs with `aria-current`; no console
-  errors on any screen; plate calculator sheet (stepper, unit switch, Close returns focus); theme
-  applied before first paint and persisted (under the CSP); no screen scrolls sideways; nothing
+  errors on any screen; plate calculator sheet (stepper; Escape while typing cancels the edit
+  without closing the sheet; a target below the bar is explained and the stepper's minimum is the
+  bar; the kg/lb switch stays local to the calculator; Close returns focus); theme applied before
+  first paint and persisted (under the CSP), and Auto following an OS appearance change while
+  open (theme-color included); no screen scrolls sideways; nothing
   sits under fixed chrome at rest (landing CTAs, Coach composer); compact segmented controls keep
   a 44 px hit area.
 - `platform.e2e.ts` — `/api/health` reports `db: up` (and the Profile screen shows it);
@@ -73,6 +76,9 @@ Specs:
   reload; offline, every tab keeps the shell (screens without server data render, Profile shows
   the designed offline state, never a 500), a full reload offline gets the offline screen in the
   shell, and back online the screen loads live data; no dynamic page is ever cached.
+- `a11y.e2e.ts` — axe-core (`@axe-core/playwright`, WCAG 2.1 A/AA) on every screen, the
+  plate-calculator sheet and each `/design` component group, in the **dark and light** themes
+  (Lighthouse only audits dark). Zero violations required.
 - `perf.e2e.ts` (Chromium) — main-thread budget: real long tasks at 4× CPU while each screen
   loads, median of 3 cold loads ≤ 200 ms blocking (docs/performance.md).
 
