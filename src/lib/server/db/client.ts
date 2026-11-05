@@ -12,6 +12,7 @@ import { attachDatabasePool } from '@vercel/functions/db-connections';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import pg from 'pg';
 import { getEnv } from '../env';
+import { connectionConfig } from './connection.ts';
 import { logger } from '../observability/logger';
 import * as schema from './schema';
 import type { Database } from './types';
@@ -25,7 +26,7 @@ export interface PoolOptions {
 
 export function createPool(connectionString: string, options: PoolOptions = {}): pg.Pool {
 	const pool = new pg.Pool({
-		connectionString,
+		...connectionConfig(connectionString),
 		max: options.max ?? 5,
 		idleTimeoutMillis: options.idleTimeoutMs ?? 10_000,
 		connectionTimeoutMillis: options.connectionTimeoutMs ?? 5_000,

@@ -7,6 +7,7 @@ import path from 'node:path';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import pg from 'pg';
+import { connectionConfig } from './connection.ts';
 
 /** Local defaults created by scripts/db-setup.sh. Never used in preview/production. */
 export const LOCAL_DATABASE_URLS = {
@@ -38,7 +39,7 @@ export async function runMigrations(
 	options: { migrationsFolder?: string } = {}
 ): Promise<{ applied: number; total: number }> {
 	const client = new pg.Client({
-		connectionString: url,
+		...connectionConfig(url),
 		application_name: 'performance-coach-migrate'
 	});
 	await client.connect();
@@ -81,7 +82,7 @@ export async function resetDatabase(url: string): Promise<{ applied: number; tot
 			`Refusing to reset database "${name}": only databases ending in _test or _e2e can be reset.`
 		);
 	}
-	const client = new pg.Client({ connectionString: url });
+	const client = new pg.Client(connectionConfig(url));
 	await client.connect();
 	try {
 		await client.query(`drop schema if exists "${MIGRATIONS_SCHEMA}" cascade`);
