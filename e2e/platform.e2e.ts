@@ -111,6 +111,7 @@ test.describe('platform: health, PWA, observability', () => {
 		});
 		expect(cached).toContain('/manifest.webmanifest');
 		expect(cached).toContain('/offline');
+		expect(cached.filter((path) => path.startsWith('/icons/'))).toEqual([]);
 	});
 
 	test('/api/vitals stores a posted metric in Postgres', async ({ request }) => {

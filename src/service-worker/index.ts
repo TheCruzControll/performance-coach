@@ -22,11 +22,19 @@ const OFFLINE_URL = '/offline';
 /** A connected-but-dead network ("lie-fi") can hang a request for a minute; give up sooner. */
 const NAVIGATION_TIMEOUT_MS = 6000;
 
+/**
+ * Home-screen/manifest icons (~280 KB of PNGs) are fetched by the OS when the app is
+ * installed and never displayed by the running app: keep them out of the install download.
+ */
+const NOT_PRECACHED = /^\/icons\//;
+
 const PRECACHE = [
 	...immutable.map((f) => f.path),
 	...assets.map((f) => f.path),
 	...prerendered.map((f) => f.path)
-].map((path) => new URL(path, self.registration.scope).pathname);
+]
+	.map((path) => new URL(path, self.registration.scope).pathname)
+	.filter((path) => !NOT_PRECACHED.test(path));
 
 const PRECACHED = new Set(PRECACHE);
 
