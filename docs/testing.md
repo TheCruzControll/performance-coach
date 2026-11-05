@@ -3,20 +3,23 @@
 Priorities follow PRD §19: end-to-end browser tests first, then integration tests against a real
 database, then unit tests for calculations. Never claim a suite passed without running it.
 
-| Suite       | Command                 | Runner                     | Scope                                                           |
-| ----------- | ----------------------- | -------------------------- | --------------------------------------------------------------- |
-| Unit        | `pnpm test:unit`        | Vitest (`unit` project)    | `src/**/*.test.ts` — pure domain math                           |
-| Integration | `pnpm test:integration` | Vitest (`integration`)     | `tests/integration/**` — services/repositories on real Postgres |
-| E2E         | `pnpm test:e2e`         | Playwright 1.63.0          | `e2e/**/*.e2e.ts` — production server, iPhone viewport          |
-| Budgets     | `pnpm budgets`          | `scripts/check-budgets.ts` | initial JS / CSS / font preloads from the build output          |
-| Lighthouse  | `pnpm lighthouse`       | `scripts/lighthouse.ts`    | mobile audit of the local production server                     |
+| Suite       | Command                 | Runner                     | Scope                                                              |
+| ----------- | ----------------------- | -------------------------- | ------------------------------------------------------------------ |
+| Unit        | `pnpm test:unit`        | Vitest (`unit` project)    | `src/**/*.test.ts` — domain math, env validation, RUM attribution  |
+| Integration | `pnpm test:integration` | Vitest (`integration`)     | `tests/integration/**` — services/repositories on real Postgres    |
+| E2E         | `pnpm test:e2e`         | Playwright 1.63.0          | `e2e/**/*.e2e.ts` — production server, iPhone viewport             |
+| Budgets     | `pnpm budgets`          | `scripts/check-budgets.ts` | initial JS / CSS / font preloads + CSS prefix guard from the build |
+| Drift       | `pnpm db:drift`         | drizzle-kit + git          | fails when the schema changed without a committed migration        |
+| Lighthouse  | `pnpm lighthouse`       | `scripts/lighthouse.ts`    | mobile audit of the local production server                        |
 
 ## Unit tests
 
 Deterministic, no I/O. Current coverage: units (exact kg/lb, km/mi, rounding, pace, durations),
 RPE table and reps in reserve (including a structural consistency check of the chart), e1RM
 (always marked `estimated`), the plate calculator (exact DP incl. limited inventories), and load
-metrics (volume load, session-RPE, EWMA ACWR).
+metrics (volume load, session-RPE, EWMA ACWR). Outside the domain: `parseEnv` (defaults, `appEnv`
+derivation, the production guards incl. `VERCEL_ENV=production`, the API-key requirement) and the
+RUM attribution of each metric to the screen where it happened.
 
 ## Integration tests
 
@@ -27,8 +30,11 @@ metrics (volume load, session-RPE, EWMA ACWR).
 - **Isolation:** `withRollback()` runs each test in a transaction that is always rolled back;
   services accept the transaction as their `db` dependency. Files run serially.
 - **Covered:** migrations applied and constraints enforced; health up and down (unreachable
-  database); web-vitals ingest, validation, de-duplication and p75 summary; error recording,
-  including when the database is down.
+  database); web-vitals ingest, validation, de-duplication (across requests and within one
+  batch), route attribution and p75 summary; error recording, including when the database is
+  down and with SQL parameter values redacted from a real failed query.
+- **Logs:** quiet by default (`LOG_LEVEL=silent` via the project's `env`); run
+  `LOG_LEVEL=debug pnpm test:integration` to see them.
 
 ## End-to-end tests
 
@@ -44,14 +50,25 @@ or with `E2E_WEBKIT=1` (needs `pnpm exec playwright install webkit`).
 
 Specs:
 
-- `shell.e2e.ts` — landing → preview; bottom nav pinned to the bottom with ≥ 44 px targets;
-  navigation across all five tabs with `aria-current`; no console errors on any screen; plate
-  calculator sheet (stepper, unit switch, Close returns focus).
+- `shell.e2e.ts` — landing → preview; bottom nav pinned to the bottom with ≥ 44 px targets and a
+  computed `backdrop-filter` blur; navigation across all five tabs with `aria-current`; no console
+  errors on any screen; plate calculator sheet (stepper, unit switch, Close returns focus); theme
+  applied before first paint and persisted (under the CSP); no screen scrolls sideways; nothing
+  sits under fixed chrome at rest (landing CTAs, Coach composer); compact segmented controls keep
+  a 44 px hit area.
 - `platform.e2e.ts` — `/api/health` reports `db: up` (and the Profile screen shows it);
   `Server-Timing`, request id and security headers; ≤ 2 preloaded fonts; manifest + icons;
-  service worker activates and precaches the shell; `POST /api/vitals` stores a row (verified in
-  Postgres) and rejects invalid metrics; real browser RUM beacons arrive; a server error returns a
+  CSP header contents and enforcement (an injected inline script is refused); service worker
+  activates and precaches the shell (not the icons); `POST /api/vitals` stores a row (verified in
+  Postgres) and rejects invalid metrics; real browser RUM beacons arrive; vitals are attributed to
+  the screen where they happened (client-side navigation, INP on Train); a server error returns a
   safe message and is recorded with its request id.
+- `offline.e2e.ts` (Chromium) — the first visit is controlled by the service worker without a
+  reload; offline, every tab keeps the shell (screens without server data render, Profile shows
+  the designed offline state, never a 500), a full reload offline gets the offline screen in the
+  shell, and back online the screen loads live data; no dynamic page is ever cached.
+- `perf.e2e.ts` (Chromium) — main-thread budget: real long tasks at 4× CPU while each screen
+  loads, median of 3 cold loads ≤ 200 ms blocking (docs/performance.md).
 
 Artifacts: failure screenshots + traces in `test-results/`, key-screen screenshots in
 `test-results/screens/<project>/`, HTML report in `playwright-report/` (all uploaded by CI).
@@ -64,6 +81,11 @@ key. No key exists in CI today.
 
 ## CI
 
-`.github/workflows/ci.yml` runs lint, type-check, unit + integration (postgres:16 service), both
-builds + budgets, Playwright (Chromium + WebKit) and an asserted Lighthouse run on every PR and
-push to `main`.
+`.github/workflows/ci.yml` runs lint, type-check, the migration drift check, unit + integration
+(postgres:16 service), both builds + budgets, Playwright (Chromium + WebKit) and an asserted
+Lighthouse run on every PR and push to `main`.
+
+**Not yet verified:** the workflows have not run on GitHub (nothing has been pushed), and the
+WebKit project has never run locally (WebKit is not installed in the build environment), so iOS
+Safari behaviour (glass, PWA install, status bar) is unverified. The first CI run, including its
+WebKit screenshots, must be attached to the M1 PR as evidence.
