@@ -8,14 +8,18 @@
 
 - Deploy with `@sveltejs/adapter-vercel` on the **Node.js 22 runtime** (Fluid compute: one
   instance serves concurrent requests, so a small `pg` pool is reused).
-- DNS stays at **Cloudflare** as a **DNS-only CNAME** (`coach` → `cname.vercel-dns.com`), so Vercel
+- DNS stays at **Cloudflare** as a **DNS-only CNAME** (`coach` → the project-specific `*.vercel-dns-017.com` target Vercel assigns), so Vercel
   issues the certificate and its CDN serves assets (no double proxy).
 - The adapter is switchable: `ADAPTER=node` builds with `@sveltejs/adapter-node` so e2e tests,
   Lighthouse and CI run the **same production build** on a real Node server.
-- Production deploys run only from GitHub Actions (`deploy.yml`) with the Vercel CLI after CI is
-  green, applying database migrations first. Vercel's own Git deployments of `main` are disabled
-  and any production build Vercel starts itself is skipped, both by the committed `vercel.json`
-  (docs/deployment.md); preview deployments still build from Git.
+- Deploys run through the Vercel Git integration (every PR a preview, `main` production). The
+  committed build command (`scripts/vercel-build.sh`) migrates the deployment's own Neon branch
+  before building, so the schema is in place before the new code serves traffic, with no deploy
+  token or CI secret to manage. Until auth ships (M2), the committed `vercel.json` disables Git
+  deployments of `main` and skips any production build Vercel starts itself (docs/deployment.md).
+  _Revised after M1 review: a GitHub Actions + Vercel CLI deploy was first planned; it needed a
+  long-lived Vercel token in GitHub secrets for no extra safety, since Vercel only promotes a
+  deployment whose build (including its migration) succeeded._
 
 ## Alternatives considered
 

@@ -18,7 +18,7 @@ permissions:
 
 env:
   # Must be >= the Neon server's major version.
-  PG_CLIENT_VERSION: '17'
+  PG_CLIENT_VERSION: '18'
   RETENTION_DAYS: '30'
 
 jobs:

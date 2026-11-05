@@ -59,6 +59,6 @@ automatically; the app uses `VERCEL_ENV` for `appEnv` and the commit SHA for the
 - **Local:** `.env` (git-ignored). Never commit it.
 - **Vercel:** Project → Settings → Environment Variables, scoped per environment
   (`DATABASE_URL`, `DATABASE_URL_UNPOOLED`, later `ANTHROPIC_API_KEY`, auth secrets).
-- **GitHub Actions:** repository/environment secrets for deploy and backup
-  (`DATABASE_URL_UNPOOLED`, `VERCEL_TOKEN`, `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID`,
-  `BACKUP_PASSPHRASE`) — see docs/deployment.md.
+- **GitHub Actions:** only the nightly backup needs secrets (`DATABASE_URL_UNPOOLED`,
+  `BACKUP_PASSPHRASE`); it skips until they exist. Deploys need none: they run through the Vercel
+  Git integration (docs/deployment.md).

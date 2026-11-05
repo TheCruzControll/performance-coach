@@ -50,13 +50,12 @@ Known gaps:
 
 - WebKit e2e runs only in CI (not available locally), so iOS Safari rendering (glass, status
   bar, PWA) is unverified until the first CI run. **Merge gate for the M1 PR:** the first CI
-  run's WebKit results and screenshots are attached, and the real-device checklist in
-  docs/testing.md has been done on an iPhone (installed PWA).
-- Nothing deployed (no network access to Vercel/Neon/Cloudflare during M1). Production stays off
-  until M2 auth is live: `deploy.yml` is gated by `PRODUCTION_DEPLOY_ENABLED`, and the committed
-  `vercel.json` disables Vercel's Git deployments of `main` and skips any production build Vercel
-  starts itself (docs/deployment.md). These guards are unit-tested but not yet exercised against
-  a real Vercel account.
+  run's WebKit results are green. The real-device checklist in docs/testing.md moves to the M2
+  production cutover, when the owner first opens the app on their iPhone to register a passkey.
+- Production stays off until M2 auth is live: the committed `vercel.json` disables Vercel's Git
+  deployments of `main` and skips any production build Vercel starts itself
+  (docs/deployment.md). Preview deployments build from every PR, migrating the `preview` Neon
+  branch first.
 - Auth not yet enforced (M2): every page, `POST /api/vitals` (not rate-limited) and
   `POST /api/client-errors` (rate-limited per instance) are unauthenticated, and Profile shows
   version, environment and RUM data. Acceptable only because production is off (above).
@@ -85,8 +84,8 @@ Acceptance criteria:
 5. Screens designed for empty, loading, error states on an iPhone viewport.
 6. Sign-out clears everything the device holds for the account (Cache Storage entries other than
    the versioned app shell, and any IndexedDB data once it exists); `/api/vitals` and
-   `/api/client-errors` require a session; then, and only then, `PRODUCTION_DEPLOY_ENABLED` may
-   be set (docs/deployment.md).
+   `/api/client-errors` require a session; then, and only then, the same PR removes the
+   production guards in `vercel.json` (docs/deployment.md) and adds a post-deploy smoke check.
 
 ## M3 — Training data model & program management [§2, §5, §9, §11]
 

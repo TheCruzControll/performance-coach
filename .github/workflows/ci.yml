@@ -16,7 +16,8 @@ permissions:
   contents: read
 
 env:
-  # Local-style databases inside the postgres:16 service container (created by db:setup).
+  # Local-style databases inside the postgres:18 service container, created by db:setup
+  # (postgres:18 matches the Neon production branch).
   DATABASE_URL: postgres://coach:coach@localhost:5432/coach_dev
   DATABASE_URL_UNPOOLED: postgres://coach:coach@localhost:5432/coach_dev
   TEST_DATABASE_URL: postgres://coach:coach@localhost:5432/coach_test
@@ -49,7 +50,7 @@ jobs:
     timeout-minutes: 15
     services:
       postgres:
-        image: postgres:16
+        image: postgres:18
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -102,7 +103,7 @@ jobs:
     timeout-minutes: 25
     services:
       postgres:
-        image: postgres:16
+        image: postgres:18
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -150,7 +151,7 @@ jobs:
     timeout-minutes: 20
     services:
       postgres:
-        image: postgres:16
+        image: postgres:18
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
