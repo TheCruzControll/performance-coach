@@ -5,10 +5,11 @@ Code in this folder runs only in the browser. It must never import from `src/lib
 
 ## Today (M1)
 
-| Module                  | Purpose                                                                 |
-| ----------------------- | ----------------------------------------------------------------------- |
-| `vitals.ts`             | Real-user monitoring: lazy-loads `web-vitals`, beacons to `/api/vitals` |
-| `preferences.svelte.ts` | Per-device theme and unit preferences (localStorage)                    |
+| Module                   | Purpose                                                                                                                         |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
+| `vitals.ts`              | Real-user monitoring: lazy-loads `web-vitals`, beacons to `/api/vitals`; attributes each metric to the screen where it happened |
+| `preferences.svelte.ts`  | Per-device theme and unit preferences (localStorage)                                                                            |
+| `connectivity.svelte.ts` | `online` state from `navigator.onLine` + events (a hint: failed requests are still handled, see `src/hooks.client.ts`)          |
 
 ## Planned (M4): offline-first workout store
 
@@ -24,4 +25,6 @@ Workout logging must never lose data and must never wait on the network (PRD §9
 - **Sync triggers**: `online` event, `visibilitychange`, app start, and after each mutation;
   exponential backoff on failure. Background Sync is used where available (not on iOS).
 - **Restore**: on load, the active workout is rebuilt from IndexedDB before any network call.
-- The service worker caches the app shell so the workout screen opens offline.
+- The service worker caches the app shell (code, fonts, the `/offline` screen) so the workout
+  screen opens offline. It never stores server-rendered HTML or `__data.json`: private data
+  lives only in IndexedDB, where the app controls it and sign-out can erase it.
