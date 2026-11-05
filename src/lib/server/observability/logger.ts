@@ -30,17 +30,93 @@ function isQueryError(error: Error): error is Error & { query: string; params: u
 	return typeof candidate.query === 'string' && Array.isArray(candidate.params);
 }
 
+/** A Postgres server error as node-postgres reports it (`DatabaseError`): SQLSTATE + fields. */
+interface PostgresError extends Error {
+	code: string;
+	severity: string;
+	routine?: string;
+	schema?: string;
+	table?: string;
+	column?: string;
+	dataType?: string;
+	constraint?: string;
+}
+
+function isPostgresError(error: Error): error is PostgresError {
+	const candidate = error as { code?: unknown; severity?: unknown };
+	return (
+		typeof candidate.code === 'string' &&
+		/^[0-9A-Z]{5}$/.test(candidate.code) &&
+		typeof candidate.severity === 'string'
+	);
+}
+
 /**
- * Serialize an unknown thrown value into a log-safe object. Query parameter values are
- * redacted (they will carry personal training data); the SQL text and the driver's error
- * (`cause`, with its SQLSTATE `code`) are kept for diagnosis.
+ * SQLSTATE classes whose primary message names only identifiers from our own SQL (tables,
+ * columns, constraints, types) or server state, never a data value: Postgres puts the offending
+ * values of these errors in DETAIL, which is never logged. Every other class, notably 22 (data
+ * exception: `invalid input syntax for type double precision: "<value>"`) and P0 (raised by
+ * PL/pgSQL), can quote a value in the message itself, so that message is withheld.
+ */
+const IDENTIFIER_ONLY_CLASSES: Record<string, string> = {
+	'08': 'connection exception',
+	'23': 'integrity constraint violation',
+	'25': 'invalid transaction state',
+	'40': 'transaction rollback',
+	'42': 'syntax error or access rule violation',
+	'53': 'insufficient resources',
+	'54': 'program limit exceeded',
+	'55': 'object not in prerequisite state',
+	'57': 'operator intervention'
+};
+const WITHHELD_CLASSES: Record<string, string> = {
+	'22': 'data exception',
+	P0: 'PL/pgSQL error',
+	XX: 'internal error'
+};
+
+/** The message a Postgres error may be logged with. */
+function postgresMessage(error: PostgresError): string {
+	const cls = error.code.slice(0, 2);
+	if (IDENTIFIER_ONLY_CLASSES[cls]) return error.message;
+	const label = WITHHELD_CLASSES[cls] ?? `class ${cls}`;
+	return `Postgres error ${error.code} (${label}); message withheld because it can quote query values`;
+}
+
+/** Identifier-only fields of a Postgres error (no DETAIL, HINT, WHERE or internal query). */
+function postgresFields(error: PostgresError): Record<string, string> {
+	const fields: Record<string, string> = {};
+	for (const key of ['routine', 'schema', 'table', 'column', 'dataType', 'constraint'] as const) {
+		const value = error[key];
+		if (typeof value === 'string' && value) fields[key] = value;
+	}
+	return fields;
+}
+
+/** The stack's call frames under a new first line, so a replaced message cannot survive in it. */
+function restack(error: Error, message: string): string | undefined {
+	if (!error.stack) return undefined;
+	const frames = error.stack.split('\n').filter((line) => /^\s+at /.test(line));
+	return [`${error.name}: ${message}`, ...frames].join('\n');
+}
+
+/**
+ * Serialize an unknown thrown value into a log-safe object. Values that may carry personal
+ * training data are never included: Drizzle's query parameters are redacted (the SQL text is
+ * kept), and a Postgres error keeps its SQLSTATE `code`, severity, routine and identifier
+ * fields, plus its message only for classes that never quote values (see above).
  */
 export function serializeError(error: unknown): Record<string, unknown> {
 	if (error instanceof Error) {
 		let { message, stack } = error;
+		let extra: Record<string, string> = {};
 		if (isQueryError(error)) {
 			message = `Failed query: ${error.query}\nparams: [${error.params.length} redacted]`;
-			stack = stack?.replace(error.message, message);
+			stack = restack(error, message);
+		} else if (isPostgresError(error)) {
+			message = postgresMessage(error);
+			if (message !== error.message) stack = restack(error, message);
+			extra = { severity: error.severity, ...postgresFields(error) };
 		}
 		const code = (error as { code?: unknown }).code;
 		return {
@@ -48,6 +124,7 @@ export function serializeError(error: unknown): Record<string, unknown> {
 			message,
 			stack,
 			...(typeof code === 'string' ? { code } : {}),
+			...extra,
 			...(error.cause !== undefined ? { cause: serializeError(error.cause) } : {})
 		};
 	}

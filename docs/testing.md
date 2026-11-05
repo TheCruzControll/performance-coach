@@ -21,7 +21,9 @@ never silently dropped, malformed or sub-6 RPEs give no estimate, and sets past 
 extrapolated from reps to failure at `low` confidence), the plate calculator (exact DP incl. limited inventories), and load
 metrics (volume load, session-RPE, EWMA ACWR). Outside the domain: `parseEnv` (defaults, `appEnv`
 derivation, the production guards incl. `VERCEL_ENV=production`, the API-key requirement) and the
-RUM attribution of each metric to the screen where it happened.
+RUM attribution of each metric to the screen where it happened, and `serializeError` (Drizzle
+parameters redacted; Postgres messages withheld for SQLSTATE classes that can quote values, kept
+for identifier-only classes such as 23 and 42; DETAIL/HINT never logged).
 
 ## Integration tests
 
@@ -34,7 +36,9 @@ RUM attribution of each metric to the screen where it happened.
 - **Covered:** migrations applied and constraints enforced; health up and down (unreachable
   database); web-vitals ingest, validation, de-duplication (across requests and within one
   batch), route attribution and p75 summary; error recording, including when the database is
-  down and with SQL parameter values redacted from a real failed query.
+  down, with SQL parameter values redacted from a real failed query (check violation), and with
+  a real `22P02 invalid input syntax` whose driver message quotes the value: neither the
+  `app_errors` row nor the JSON log line contains it.
 - **Logs:** quiet by default (`LOG_LEVEL=silent` via the project's `env`); run
   `LOG_LEVEL=debug pnpm test:integration` to see them.
 

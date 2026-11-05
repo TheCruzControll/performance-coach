@@ -1,6 +1,8 @@
-import { describe, expect, it } from 'vitest';
-import { findErrorsByRequestId, recordServerError } from '../../src/lib/server/services/errors';
+import { sql } from 'drizzle-orm';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { webVitals } from '../../src/lib/server/db';
+import { setLogLevel } from '../../src/lib/server/observability/logger';
+import { findErrorsByRequestId, recordServerError } from '../../src/lib/server/services/errors';
 import { unreachableDb, withRollback } from './helpers';
 
 describe('error recording service', () => {
@@ -61,6 +63,54 @@ describe('error recording service', () => {
 				expect(text).not.toContain('/private/secret-path');
 			}
 			expect(row?.context).toMatchObject({ cause: { code: '23514' } });
+		});
+	});
+
+	describe('when Postgres quotes the offending value in its own message', () => {
+		afterEach(() => {
+			setLogLevel('silent');
+			vi.restoreAllMocks();
+		});
+
+		it('records and logs the failure without the value (22P02 invalid input syntax)', async () => {
+			const SECRET = 'PRIVATE-BODYWEIGHT-82.4kg';
+			// Capture what the JSON logger writes for this one test.
+			const lines: string[] = [];
+			vi.spyOn(console, 'error').mockImplementation((line: unknown) => lines.push(String(line)));
+			setLogLevel('error');
+
+			await withRollback(async (tx) => {
+				const failure = await tx
+					.transaction((sp) =>
+						sp.insert(webVitals).values({
+							metricId: 'm-22p02',
+							name: 'LCP',
+							value: sql`${SECRET}::double precision`,
+							rating: 'good',
+							path: '/today'
+						})
+					)
+					.catch((err: unknown) => err);
+				expect(failure).toBeInstanceOf(Error);
+				// Precondition: the driver's own message really does carry the value.
+				expect(String((failure as Error).cause)).toContain(SECRET);
+
+				const row = await recordServerError(
+					{ error: failure, kind: 'unknown', status: 500, requestId: 'req-22p02' },
+					{ db: tx }
+				);
+				expect(row?.message).toMatch(/params: \[\d+ redacted\]/);
+				expect(row?.context).toMatchObject({
+					cause: { code: '22P02', routine: expect.any(String) }
+				});
+				for (const text of [row?.message, row?.stack, JSON.stringify(row?.context)]) {
+					expect(text).not.toContain(SECRET);
+				}
+			});
+
+			expect(lines.length).toBeGreaterThan(0);
+			expect(lines.join('\n')).toContain('"code":"22P02"');
+			expect(lines.join('\n')).not.toContain(SECRET);
 		});
 	});
 
