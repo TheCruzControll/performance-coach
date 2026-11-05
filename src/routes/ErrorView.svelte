@@ -36,12 +36,76 @@
 		kind === 'offline' ? 'Offline' : kind === 'not-found' ? 'Not found' : 'Error'
 	);
 
-	// Back online: load the screen again by itself.
+	// "Offline" can mean no network at all, or a network that can't reach the server (lie-fi,
+	// captive portal, outage) while navigator.onLine still reads true. Say which.
+	let deviceOnline = $state(true);
+	const offlineTitle = $derived(deviceOnline ? "Can't reach the server" : "You're offline");
+	const offlineDescription = $derived(
+		deviceOnline
+			? 'Your connection looks up, but the server is not answering. This screen keeps retrying and loads by itself when it can.'
+			: "This screen needs a connection. It loads by itself as soon as you're back online."
+	);
+
+	// Recover by itself: probe the server with backoff and reload as soon as it answers, and
+	// probe immediately on the `online` event and whenever the app returns to the foreground.
+	// A single reload on `online` is not enough — that one attempt can still fail.
 	onMount(() => {
 		if (kind !== 'offline') return;
-		const retry = () => location.reload();
-		addEventListener('online', retry);
-		return () => removeEventListener('online', retry);
+		deviceOnline = navigator.onLine;
+		const delays = [2_000, 5_000, 10_000, 30_000];
+		let attempt = 0;
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		let probing = false;
+		let stopped = false;
+
+		const schedule = () => {
+			if (stopped) return;
+			clearTimeout(timer);
+			timer = setTimeout(probe, delays[Math.min(attempt++, delays.length - 1)]);
+		};
+
+		async function probe() {
+			if (stopped || probing) return;
+			deviceOnline = navigator.onLine;
+			if (!navigator.onLine) return schedule();
+			probing = true;
+			try {
+				const res = await fetch('/api/health', { cache: 'no-store' });
+				if (res.ok) {
+					stopped = true;
+					location.reload();
+					return;
+				}
+			} catch {
+				// still unreachable
+			} finally {
+				probing = false;
+			}
+			schedule();
+		}
+
+		const now = () => {
+			attempt = 0;
+			void probe();
+		};
+		const onVisible = () => {
+			if (document.visibilityState === 'visible') now();
+		};
+		const onOffline = () => (deviceOnline = false);
+
+		addEventListener('online', now);
+		addEventListener('offline', onOffline);
+		addEventListener('focus', now);
+		document.addEventListener('visibilitychange', onVisible);
+		schedule();
+		return () => {
+			stopped = true;
+			clearTimeout(timer);
+			removeEventListener('online', now);
+			removeEventListener('offline', onOffline);
+			removeEventListener('focus', now);
+			document.removeEventListener('visibilitychange', onVisible);
+		};
 	});
 </script>
 
@@ -65,8 +129,8 @@
 		<EmptyState
 			icon="wifi-off"
 			tone="neutral"
-			title="You're offline"
-			description="This screen needs a connection. It loads by itself as soon as you're back online."
+			title={offlineTitle}
+			description={offlineDescription}
 			data-testid="offline-state"
 		>
 			{#snippet actions()}

@@ -73,6 +73,37 @@ test.describe('offline behaviour (service worker)', () => {
 		});
 	});
 
+	test('server unreachable while the device is online: honest copy, recovers by itself', async ({
+		page,
+		context
+	}) => {
+		await page.goto('/today');
+		await waitForController(page);
+
+		// The device stays online, but the server stops answering (lie-fi, outage).
+		const unreachable = (route: { abort: (code: string) => Promise<void> }) =>
+			route.abort('connectionrefused');
+		// Context-level routes also cover requests that pass through the service worker.
+		await context.route('**/__data.json*', unreachable);
+		await context.route('**/api/health', unreachable);
+
+		await page
+			.getByRole('navigation', { name: 'Primary' })
+			.getByRole('link', { name: 'Profile' })
+			.click();
+		const state = page.getByTestId('offline-state');
+		await expect(state).toBeVisible();
+		await expect(state).toContainText("Can't reach the server");
+		expect(await page.evaluate(() => navigator.onLine)).toBe(true);
+
+		// The server comes back: with no `online` event to wait for, the screen's own retry
+		// (backoff probe of /api/health) brings live data back without a tap.
+		await context.unrouteAll({ behavior: 'ignoreErrors' });
+		await expect(page.getByTestId('db-status')).toContainText(/connected · \d+ ms/i, {
+			timeout: 20_000
+		});
+	});
+
 	test('dynamic pages are never stored by the service worker', async ({ page, context }) => {
 		await page.goto('/profile');
 		await waitForController(page);
