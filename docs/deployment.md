@@ -4,8 +4,10 @@ Target: **Vercel** (Node.js 22, Fluid compute) at **coach.nikocruz.com**, DNS at
 (DNS-only), database **Neon Lakebase Postgres**. Deploys and backups run from GitHub Actions.
 
 > **Status (M1):** nothing has been deployed. The workflows are in place and **skip with a notice**
-> until the secrets below exist. Network access to Vercel/Neon/Cloudflare was not available while
-> building M1, so none of the steps on this page have been executed against real accounts.
+> until the secrets below exist, and production deploys stay **switched off** until the owner sets
+> `PRODUCTION_DEPLOY_ENABLED=true` (only after passkey auth ships in M2). Network access to
+> Vercel/Neon/Cloudflare was not available while building M1, so none of the steps on this page
+> have been executed against real accounts.
 
 ## What the owner must do (one-time)
 
@@ -51,11 +53,21 @@ Repository (or `production` environment) secrets:
 | `VERCEL_PROJECT_ID`     | deploy                   | Vercel project id                                                                             |
 | `BACKUP_PASSPHRASE`     | backup                   | Long random passphrase; store it in a password manager — backups are unrecoverable without it |
 
+### 5. Production deploy switch (after M2)
+
+`deploy.yml` does nothing until the **repository variable** (Settings → Secrets and variables →
+Actions → Variables) `PRODUCTION_DEPLOY_ENABLED` is exactly `true`. Leave it unset until passkey
+auth (M2) is live: in M1 every page and `POST /api/vitals` are unauthenticated, and hidden URLs
+are not security (PRD §13). Unsetting the variable (or setting anything else) switches automatic
+production deploys off again without touching the workflow.
+
 ## How a production deploy works (`deploy.yml`)
 
 Triggered when **CI** completes successfully for a push to `main` (or manually):
 
-1. Checks secrets; if any is missing, emits a notice and exits successfully.
+1. Checks the `PRODUCTION_DEPLOY_ENABLED` switch, then the secrets; if the switch is off or a
+   secret is missing, emits a notice and exits successfully (both the automatic and the manual
+   trigger are gated).
 2. `pnpm install --frozen-lockfile`
 3. `pnpm db:migrate` against `DATABASE_URL_UNPOOLED` (advisory-locked, idempotent).
 4. `vercel pull --environment=production`, `vercel build --prod`, `vercel deploy --prebuilt --prod`
@@ -99,8 +111,9 @@ scale-to-zero compute.
 
 ## Security notes
 
-- Until M2 ships passkey auth, the deployed app contains no personal data, but should not be
-  promoted to the custom domain before auth is live (or protect it with Vercel deployment
-  protection).
+- Until M2 ships passkey auth the app must not be served on the production domain. This is
+  enforced by the `PRODUCTION_DEPLOY_ENABLED` switch above (off by default). Disable Vercel's
+  automatic Git production deployments (step 2.4) so that GitHub Actions is the only path, and
+  keep Vercel deployment protection on for previews.
 - Every response carries `x-robots-tag: noindex`, `x-frame-options: DENY`, `nosniff`,
   `referrer-policy` and `permissions-policy`. HSTS is provided by Vercel on the custom domain.

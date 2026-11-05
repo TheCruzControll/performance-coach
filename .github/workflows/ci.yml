@@ -40,6 +40,8 @@ jobs:
         run: pnpm lint
       - name: Type-check (svelte-check + service worker tsc)
         run: pnpm check
+      - name: Migrations match the schema (no drift)
+        run: pnpm db:drift
 
   test:
     name: Unit & integration tests
