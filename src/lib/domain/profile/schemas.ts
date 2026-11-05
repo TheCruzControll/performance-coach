@@ -62,7 +62,12 @@ const opt = <T extends z.ZodMiniType>(schema: T) =>
 const isoDate = (message = 'Use a real date') =>
 	z.iso.date(message).check(z.refine((d) => d >= '1900-01-01' && d <= '2100-12-31', message));
 
-const optDate = (message?: string) => opt(isoDate(message));
+/** Optional date: blank (`''`, as an empty date input gives) → null. */
+const optDate = (message?: string) =>
+	z.pipe(
+		z.nullish(z.union([z.literal(''), isoDate(message)])),
+		z.transform((v) => (v ? v : null))
+	);
 
 /**
  * Cross-field rules normally run only when every field parsed; with this they run anyway, so the

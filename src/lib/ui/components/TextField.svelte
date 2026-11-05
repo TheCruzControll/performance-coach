@@ -11,7 +11,7 @@
 		label: string;
 		value?: string;
 		name?: string;
-		type?: 'text' | 'search';
+		type?: 'text' | 'search' | 'date';
 		hint?: string;
 		error?: string | null;
 		placeholder?: string;
