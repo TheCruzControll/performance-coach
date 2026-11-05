@@ -32,6 +32,11 @@ export async function recordServerError(
 		path: input.path,
 		err: input.error
 	});
+	const cause = serialized.cause as Record<string, unknown> | undefined;
+	const context = {
+		...input.context,
+		...(cause ? { cause: { name: cause.name, message: cause.message, code: cause.code } } : {})
+	};
 	try {
 		return await createAppErrorsRepository(deps.db ?? getDb()).insert({
 			kind: input.kind,
@@ -43,7 +48,7 @@ export async function recordServerError(
 			message: String(serialized.message ?? 'Unknown error'),
 			stack: typeof serialized.stack === 'string' ? serialized.stack : null,
 			appVersion: input.appVersion ?? null,
-			context: input.context ?? null
+			context: Object.keys(context).length > 0 ? context : null
 		});
 	} catch (err) {
 		logger.error('failed to persist server error', { err, requestId: input.requestId });

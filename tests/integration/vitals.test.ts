@@ -52,6 +52,23 @@ describe('web vitals service', () => {
 		});
 	});
 
+	it('accepts a batch that repeats a metric instance (last report wins)', async () => {
+		await withRollback(async (tx) => {
+			const cls = { ...lcp, id: 'v6-dup-1', name: 'CLS', value: 0.02, rating: 'good' } as const;
+			const written = await recordVitals(
+				[cls, { ...lcp, id: 'v6-dup-2' }, { ...cls, value: 0.3, rating: 'poor' }],
+				{},
+				{ db: tx }
+			);
+			expect(written).toBe(2);
+			const rows = (await createWebVitalsRepository(tx).recent(10)).filter(
+				(r) => r.metricId === 'v6-dup-1'
+			);
+			expect(rows).toHaveLength(1);
+			expect(rows[0]).toMatchObject({ name: 'CLS', value: 0.3, rating: 'poor' });
+		});
+	});
+
 	it('rejects invalid payloads before touching the database', async () => {
 		await expect(recordVitals({ ...lcp, name: 'FID' })).rejects.toBeInstanceOf(InvalidVitalsError);
 		await expect(recordVitals({ ...lcp, path: 'https://evil.example' })).rejects.toThrow(

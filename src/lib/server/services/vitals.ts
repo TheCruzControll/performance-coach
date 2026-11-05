@@ -64,7 +64,15 @@ export async function recordVitals(
 			parsed.error.issues.map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`)
 		);
 	}
-	const rows: NewWebVital[] = parsed.data.map((v) => ({
+	// A batch may repeat a metric instance (web-vitals re-reports CLS/INP as they grow). One
+	// INSERT ... ON CONFLICT cannot touch the same row twice, so keep only the last report.
+	const latest = new Map<string, (typeof parsed.data)[number]>();
+	for (const v of parsed.data) {
+		const key = `${v.id}\u0000${v.name}`;
+		latest.delete(key);
+		latest.set(key, v);
+	}
+	const rows: NewWebVital[] = [...latest.values()].map((v) => ({
 		metricId: v.id,
 		name: v.name,
 		value: v.value,

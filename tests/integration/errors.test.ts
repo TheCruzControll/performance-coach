@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { findErrorsByRequestId, recordServerError } from '../../src/lib/server/services/errors';
+import { webVitals } from '../../src/lib/server/db';
 import { unreachableDb, withRollback } from './helpers';
 
 describe('error recording service', () => {
@@ -29,6 +30,37 @@ describe('error recording service', () => {
 				path: '/api/test-support/error'
 			});
 			expect(found[0]?.stack).toContain('kaboom');
+		});
+	});
+
+	it('records a failed query without its parameter values', async () => {
+		await withRollback(async (tx) => {
+			// A real constraint violation from Drizzle; the nested transaction is a savepoint, so
+			// the outer transaction stays usable for recording the error.
+			const failure = await tx
+				.transaction((sp) =>
+					sp.insert(webVitals).values({
+						metricId: 'secret-metric-id',
+						name: 'FID' as 'LCP',
+						value: 1,
+						rating: 'good',
+						path: '/private/secret-path'
+					})
+				)
+				.catch((err: unknown) => err);
+			expect(failure).toBeInstanceOf(Error);
+
+			const row = await recordServerError(
+				{ error: failure, kind: 'unknown', status: 500, requestId: 'req-query' },
+				{ db: tx }
+			);
+			expect(row?.message).toMatch(/^Failed query: insert into "web_vitals"/);
+			expect(row?.message).toMatch(/params: \[\d+ redacted\]/);
+			for (const text of [row?.message, row?.stack, JSON.stringify(row?.context)]) {
+				expect(text).not.toContain('secret-metric-id');
+				expect(text).not.toContain('/private/secret-path');
+			}
+			expect(row?.context).toMatchObject({ cause: { code: '23514' } });
 		});
 	});
 

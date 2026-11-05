@@ -24,13 +24,30 @@ export function setLogLevel(level: Threshold): void {
 	threshold = level;
 }
 
-/** Serialize an unknown thrown value into a log-safe object. */
+/** Drizzle's query error: its message embeds the SQL text *and every parameter value*. */
+function isQueryError(error: Error): error is Error & { query: string; params: unknown[] } {
+	const candidate = error as { query?: unknown; params?: unknown };
+	return typeof candidate.query === 'string' && Array.isArray(candidate.params);
+}
+
+/**
+ * Serialize an unknown thrown value into a log-safe object. Query parameter values are
+ * redacted (they will carry personal training data); the SQL text and the driver's error
+ * (`cause`, with its SQLSTATE `code`) are kept for diagnosis.
+ */
 export function serializeError(error: unknown): Record<string, unknown> {
 	if (error instanceof Error) {
+		let { message, stack } = error;
+		if (isQueryError(error)) {
+			message = `Failed query: ${error.query}\nparams: [${error.params.length} redacted]`;
+			stack = stack?.replace(error.message, message);
+		}
+		const code = (error as { code?: unknown }).code;
 		return {
 			name: error.name,
-			message: error.message,
-			stack: error.stack,
+			message,
+			stack,
+			...(typeof code === 'string' ? { code } : {}),
 			...(error.cause !== undefined ? { cause: serializeError(error.cause) } : {})
 		};
 	}
