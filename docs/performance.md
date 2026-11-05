@@ -48,15 +48,31 @@ trade-off here.
 ## Budgets (enforced)
 
 `pnpm budgets` (`scripts/check-budgets.ts`) reads the SvelteKit build output and fails CI when a
-budget is exceeded. "Initial JS" is exactly the set SvelteKit modulepreloads for a route: the app
-entry plus every layout and page node of the route and their static imports (gzip level 9).
+budget is exceeded. "Initial JS" (gzip level 9) is everything the browser must load before the
+route is interactive:
 
-| Budget                  | Limit            | Why                                                                  |
-| ----------------------- | ---------------- | -------------------------------------------------------------------- |
-| Initial JS per route    | **≤ 60 KB gzip** | parse/compile/hydrate cost on a mid-range phone; ~35 KB is framework |
-| Total CSS (whole build) | **≤ 20 KB gzip** | render-blocking; tokens + all components                             |
-| Preloaded font files    | **≤ 2**          | preloads compete with critical requests                              |
-| Main-thread blocking    | **≤ 200 ms**     | target per screen while loading, 4× CPU; CI fails above 250 ms       |
+- the **complete static import graph** of the app entry and the route's layout and page nodes,
+  read from Vite's manifest. SvelteKit's own modulepreload list can miss a chunk that is also
+  reachable through a dynamic import (its `find_deps` marks it seen on the dynamic path first);
+  the browser then fetches it late, after the chunk that imports it. The report lists such
+  chunks, and they count towards the budget either way;
+- plus the **largest dynamic import a universal `load` (`+page.ts` / `+layout.ts`) awaits**: the
+  page cannot hydrate before it arrives, so lazy-loading a screen's body this way does not take
+  it out of the budget (column "of which awaited by `load`").
+
+| Budget               | Limit            | Why                                                                  |
+| -------------------- | ---------------- | -------------------------------------------------------------------- |
+| Initial JS per route | **≤ 60 KB gzip** | parse/compile/hydrate cost on a mid-range phone; ~37 KB is framework |
+| CSS per route        | **≤ 14 KB gzip** | render-blocking: the stylesheets the route renders with              |
+| Preloaded font files | **≤ 2**          | preloads compete with critical requests                              |
+| Main-thread blocking | **≤ 200 ms**     | target per screen while loading, 4× CPU; CI fails above 250 ms       |
+
+The CSS budget was a whole-build total (≤ 20 KB) until M2's onboarding. A total counts every
+screen's and every on-demand sheet's styles at once, although no route loads them together;
+it grew with each screen (19.6 KB of 20 after passkey auth) and would have forced styles out of
+components for no gain to any single page load. The render-blocking cost is per route, so that
+is what is budgeted now: 14 KB is ~2 KB above the heaviest route when the change was made
+(`/design`, 11.7 KB). The report still prints the whole-build total for tracking.
 
 The same script also guards the CSS output: every built rule that ships a `-webkit-` property must
 ship the standard one too (see the glass note in `docs/design-system.md`).
