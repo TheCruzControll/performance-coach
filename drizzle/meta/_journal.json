@@ -29,6 +29,13 @@
       "when": 1793902432334,
       "tag": "0003_auth_owner_reset_event",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793905856086,
+      "tag": "0004_training_profile",
+      "breakpoints": true
     }
   ]
 }
