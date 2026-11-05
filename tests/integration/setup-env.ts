@@ -1,5 +1,6 @@
 /**
  * Per-worker setup: point the application's database client at the test database.
+ * (LOG_LEVEL is set by the `integration` project's `env` in vite.config.ts.)
  */
 import { afterAll } from 'vitest';
 import { closeDb } from '../../src/lib/server/db';
@@ -10,7 +11,6 @@ const url = process.env.TEST_DATABASE_URL || LOCAL_DATABASE_URLS.test;
 process.env.DATABASE_URL = url;
 process.env.DATABASE_URL_UNPOOLED = url;
 process.env.APP_ENV = 'test';
-process.env.LOG_LEVEL ??= 'silent';
 resetEnvCache();
 
 afterAll(async () => {

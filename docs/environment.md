@@ -21,7 +21,7 @@ cp .env.example .env
 | `APP_ENV`               | no                   | derived | `development` · `test` · `preview` · `production`. Falls back to `VERCEL_ENV`, then `NODE_ENV`. |
 | `DB_POOL_MAX`           | no                   | `5`     | Max pg clients per server instance (1–50). Keep small behind Neon's pooler.                     |
 | `DB_QUERY_TIMEOUT_MS`   | no                   | `10000` | Client-side per-query timeout (pooler-safe; no session `SET`).                                  |
-| `LOG_LEVEL`             | no                   | `info`  | `debug` · `info` · `warn` · `error` · `silent` (tests default to `warn`).                       |
+| `LOG_LEVEL`             | no                   | `info`  | `debug` · `info` · `warn` · `error` · `silent`. Integration tests default to `silent`.          |
 | `ENABLE_TEST_ROUTES`    | no                   | `false` | Enables `/api/test-support/*` for automated tests. **Rejected when `APP_ENV=production`.**      |
 | `LLM_PROVIDER`          | no                   | `mock`  | Coach model provider (M5): `mock` (deterministic, no key) or `anthropic`.                       |
 | `ANTHROPIC_API_KEY`     | if `anthropic`       | —       | Server-side only. Required when `LLM_PROVIDER=anthropic`.                                       |

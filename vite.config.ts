@@ -83,6 +83,9 @@ export default defineConfig(({ mode }) => {
 						include: ['tests/integration/**/*.test.ts'],
 						globalSetup: ['tests/integration/global-setup.ts'],
 						setupFiles: ['tests/integration/setup-env.ts'],
+						// Applied before any module loads (the logger reads LOG_LEVEL at import time).
+						// Quiet by default; `LOG_LEVEL=debug pnpm test:integration` to see logs.
+						env: { LOG_LEVEL: process.env.LOG_LEVEL || 'silent' },
 						// One shared Postgres test database: run files serially for determinism.
 						fileParallelism: false,
 						testTimeout: 15_000,
