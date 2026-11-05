@@ -99,7 +99,10 @@ jobs:
 
   e2e:
     name: E2E (iPhone viewport · Chromium + WebKit)
-    runs-on: ubuntu-latest
+    # Pinned to the newest Ubuntu release Playwright builds WebKit for (its browser builds are
+    # "ubuntu-24.04"). On ubuntu-latest (26.04) WebKit's ~140 MB of system packages came
+    # through a cold mirror at ~50 KB/s and the install timed out before any test ran.
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     services:
       postgres:
