@@ -1,0 +1,13 @@
+# Package managers
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
+
+# Generated / vendored
+/static/
+/drizzle/meta/
+/.claude/
+skills-lock.json
+
+# Source-of-truth requirements, captured verbatim from the owner brief
+/docs/product-requirements.md
