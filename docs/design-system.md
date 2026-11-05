@@ -104,7 +104,10 @@ Tracking: `--tracking-display -0.032em`, `--tracking-tight -0.016em`, `--trackin
   computed `backdrop-filter`.
 - **Layers:** `--z-raised 10 · sticky 50 · nav 100 · overlay 200 · sheet 210 · toast 300`.
 - **Safe areas:** `--safe-top/right/bottom/left` from `env(safe-area-inset-*)`;
-  `viewport-fit=cover` + `black-translucent` status bar.
+  `viewport-fit=cover`. Installed on iOS, the status bar is `black-translucent` (white text over
+  the dark canvas) and switches to `default` (dark text) when the light theme applies: the inline
+  theme script sets it before iOS reads it at launch, and changing the theme updates it for the
+  next launch. Not yet verified on a device (no iOS/WebKit available while building M1).
 
 ## Layout
 

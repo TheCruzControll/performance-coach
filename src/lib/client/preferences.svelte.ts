@@ -74,6 +74,11 @@ export function applyTheme(theme: ThemePreference): void {
 	document
 		.querySelector('meta[name="theme-color"]')
 		?.setAttribute('content', light ? THEME_COLORS.light : THEME_COLORS.dark);
+	// iOS reads the status-bar style when an installed web app launches: white text over the
+	// dark canvas (translucent, content runs under it), dark text in a light status bar.
+	document
+		.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]')
+		?.setAttribute('content', light ? 'default' : 'black-translucent');
 }
 
 export const preferences = new Preferences();

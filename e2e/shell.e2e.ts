@@ -111,6 +111,33 @@ test.describe('app shell on an iPhone viewport', () => {
 		await expect(opener).toBeFocused();
 	});
 
+	test('the theme preference applies before first paint and persists', async ({ page }) => {
+		const errors = trackConsoleErrors(page);
+		await page.goto('/profile');
+		const canvas = () =>
+			page.evaluate(() => getComputedStyle(document.body).backgroundColor.replace(/\s/g, ''));
+		expect(await canvas()).toBe('rgb(10,10,11)'); // dark by default
+
+		await page.getByTestId('theme-control').getByRole('radio', { name: 'Light' }).click();
+		await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+
+		// After a reload the inline script (allowed by its CSP hash) applies it before paint.
+		await page.reload();
+		await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+		expect(await canvas()).toBe('rgb(244,244,240)');
+		await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute('content', '#f4f4f0');
+		await expect(
+			page.locator('meta[name="apple-mobile-web-app-status-bar-style"]')
+		).toHaveAttribute('content', 'default');
+
+		await page.getByTestId('theme-control').getByRole('radio', { name: 'Dark' }).click();
+		await expect(page.locator('html')).not.toHaveAttribute('data-theme', /.*/);
+		await expect(
+			page.locator('meta[name="apple-mobile-web-app-status-bar-style"]')
+		).toHaveAttribute('content', 'black-translucent');
+		expect(errors).toEqual([]);
+	});
+
 	test('no screen scrolls sideways', async ({ page }) => {
 		for (const path of ['/', ...TABS.map((t) => t.path), '/design', '/offline']) {
 			await page.goto(path);

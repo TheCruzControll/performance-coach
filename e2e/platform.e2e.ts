@@ -22,6 +22,35 @@ test.describe('platform: health, PWA, observability', () => {
 		expect(headers['x-request-id']).toMatch(/^[\w.:-]{8,}$/);
 		expect(headers['x-content-type-options']).toBe('nosniff');
 		expect(headers['cache-control']).toBe('private, no-cache');
+		expect(headers['strict-transport-security']).toMatch(/max-age=\d+/);
+	});
+
+	test('a Content-Security-Policy is sent and enforced', async ({ page }) => {
+		const response = await page.goto('/profile'); // streams data: needs the nonce
+		const csp = response!.headers()['content-security-policy'];
+		expect(csp).toContain("default-src 'self'");
+		expect(csp).toContain("frame-ancestors 'none'");
+		expect(csp).toContain("object-src 'none'");
+		expect(csp).toMatch(/script-src 'self' 'sha256-[^']+' 'nonce-[^']+'/);
+		expect(csp).not.toMatch(/script-src[^;]*unsafe-inline/);
+		await expect(page.getByTestId('db-status')).toBeVisible(); // streamed script ran
+
+		// An injected inline script is refused.
+		const outcome = await page.evaluate(
+			() =>
+				new Promise<string>((resolve) => {
+					document.addEventListener(
+						'securitypolicyviolation',
+						(e) => resolve(`blocked:${e.effectiveDirective}`),
+						{ once: true }
+					);
+					const script = document.createElement('script');
+					script.textContent = 'window.__injected = true';
+					document.head.append(script);
+					setTimeout(() => resolve('__injected' in window ? 'ran' : 'silent'), 1_000);
+				})
+		);
+		expect(outcome).toMatch(/^blocked:script-src/);
 	});
 
 	test('preloads at most two font files', async ({ page }) => {
@@ -127,7 +156,17 @@ test.describe('platform: health, PWA, observability', () => {
 	});
 
 	test('vitals are attributed to the screen where they happened', async ({ page }) => {
-		const since = new Date();
+		// Record this page's own beacons, so assertions never pick up rows written by tests
+		// running in parallel against the same database.
+		await page.addInitScript(() => {
+			const sent: string[] = [];
+			Object.assign(window, { __beacons: sent });
+			const send = Navigator.prototype.sendBeacon;
+			Navigator.prototype.sendBeacon = function (url, data) {
+				if (data instanceof Blob) void data.text().then((text) => sent.push(text));
+				return send.call(this, url, data);
+			};
+		});
 		await page.goto('/today');
 		await expect(page.locator('html')).toHaveAttribute('data-rum', 'ready', { timeout: 10_000 });
 
@@ -137,38 +176,51 @@ test.describe('platform: health, PWA, observability', () => {
 			.getByRole('link', { name: 'Train' })
 			.click();
 		await expect(page.getByRole('heading', { level: 1, name: 'Train' })).toBeVisible();
+		// Let the tab's view transition finish: during it, clicks hit the transition overlay.
+		await page.waitForFunction(() => document.getAnimations().length === 0);
 		await page.evaluate(() => {
-			document.querySelector('h1')!.addEventListener('click', () => {
+			const block = () => {
 				const end = performance.now() + 150;
 				while (performance.now() < end) {
-					// block the main thread so the interaction is the page's worst
+					// block the main thread so this interaction is the page's worst
 				}
-			});
+			};
+			document.addEventListener('click', block, { capture: true, once: true });
 		});
 		await page.getByRole('heading', { level: 1, name: 'Train' }).click();
-		await page.waitForTimeout(500); // let the event-timing entry be dispatched after paint
+		await page.waitForTimeout(500); // the event-timing entry is dispatched after paint
 		await page.evaluate(() => {
 			Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
 			document.dispatchEvent(new Event('visibilitychange', { bubbles: true }));
 		});
 
-		// Other tests run in parallel against the same database: select this test's rows by
-		// the deliberately slow interaction (INP ≥ 150 ms) and the landing path.
-		const inp = await eventually(() =>
-			query<{ path: string; route_id: string | null }>(
-				`select path, route_id from web_vitals
-				 where name = 'INP' and value >= 150 and recorded_at >= $1`,
-				[since]
-			).then((r) => (r.length ? r : null))
-		);
-		expect(inp).toEqual([{ path: '/train', route_id: '/(app)/train' }]);
+		type Sent = { id: string; name: string; value: number; path: string; route: string | null };
+		const metrics = await page
+			.waitForFunction(() => {
+				const all = (window as unknown as { __beacons: string[] }).__beacons.flatMap(
+					(text) => JSON.parse(text) as { name: string }[]
+				);
+				return all.some((m) => m.name === 'INP') ? all : null;
+			})
+			.then((handle) => handle.jsonValue() as Promise<Sent[]>);
 
-		const landing = await query<{ route_id: string | null }>(
-			`select route_id from web_vitals where name = 'TTFB' and path = '/today' and recorded_at >= $1`,
-			[since]
+		const inp = metrics.find((m) => m.name === 'INP')!;
+		const ttfb = metrics.find((m) => m.name === 'TTFB')!;
+		expect(inp).toMatchObject({ path: '/train', route: '/(app)/train' });
+		expect(inp.value).toBeGreaterThanOrEqual(150);
+		expect(ttfb).toMatchObject({ path: '/today', route: '/(app)/today' });
+
+		// …and that is what Postgres stored.
+		const rows = await eventually(() =>
+			query<{ name: string; path: string; route_id: string | null }>(
+				'select name, path, route_id from web_vitals where metric_id = any($1) order by name',
+				[[inp.id, ttfb.id]]
+			).then((r) => (r.length === 2 ? r : null))
 		);
-		expect(landing.length).toBeGreaterThan(0);
-		expect(new Set(landing.map((r) => r.route_id))).toEqual(new Set(['/(app)/today']));
+		expect(rows).toEqual([
+			{ name: 'INP', path: '/train', route_id: '/(app)/train' },
+			{ name: 'TTFB', path: '/today', route_id: '/(app)/today' }
+		]);
 	});
 
 	test('server errors are logged with a request id and recorded', async ({ request }) => {

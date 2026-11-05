@@ -1,4 +1,5 @@
 import { execSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import adapterNode from '@sveltejs/adapter-node';
 import adapterVercel from '@sveltejs/adapter-vercel';
@@ -29,6 +30,17 @@ function appVersion(): string {
 	return `${pkg.version}+${sha.slice(0, 7)}`;
 }
 
+/**
+ * CSP hashes for the inline scripts in src/app.html (the pre-paint theme script). SvelteKit
+ * adds nonces/hashes for the scripts it generates, but not for scripts in the template.
+ */
+function templateScriptHashes(): `sha256-${string}`[] {
+	const html = readFileSync(new URL('./src/app.html', import.meta.url), 'utf8');
+	return [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(
+		([, body]) => `sha256-${createHash('sha256').update(body!).digest('base64')}` as const
+	);
+}
+
 export default defineConfig(({ mode }) => {
 	// Make `.env` values visible to server code that reads `process.env` during `vite dev`.
 	// Production servers receive real environment variables from the platform instead.
@@ -55,7 +67,31 @@ export default defineConfig(({ mode }) => {
 				inlineStyleThreshold: 4096,
 				output: { bundleStrategy: 'split' },
 				// Absolute URLs everywhere (served from the domain root); simpler for the service worker.
-				paths: { relative: false }
+				paths: { relative: false },
+				/**
+				 * Content-Security-Policy. `auto`: a per-response nonce on server-rendered pages (the
+				 * only option that also covers the scripts /profile streams after the headers are
+				 * sent) and hashes on prerendered ones (/offline, as a <meta>). Styles allow
+				 * 'unsafe-inline' because Svelte's `style:` directives render style attributes;
+				 * scripts never do.
+				 */
+				csp: {
+					mode: 'auto',
+					directives: {
+						'default-src': ['self'],
+						'script-src': ['self', ...templateScriptHashes()],
+						'style-src': ['self', 'unsafe-inline'],
+						'img-src': ['self'],
+						'font-src': ['self'],
+						'connect-src': ['self'],
+						'manifest-src': ['self'],
+						'worker-src': ['self'],
+						'object-src': ['none'],
+						'base-uri': ['self'],
+						'form-action': ['self'],
+						'frame-ancestors': ['none']
+					}
+				}
 			})
 		],
 		build: {

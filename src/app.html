@@ -20,12 +20,18 @@
 		<link rel="apple-touch-icon" href="%sveltekit.assets%/icons/apple-touch-icon.png" />
 		<script>
 			// Apply the saved theme before first paint (see src/lib/client/preferences.svelte.ts).
+			// Allowed by the CSP through its sha256 hash, computed from this file in vite.config.ts.
 			try {
 				var t = JSON.parse(localStorage.getItem('pc:prefs:v1') || '{}').theme;
 				if (t === 'light' || t === 'system') {
 					document.documentElement.dataset.theme = t;
 					var l = t === 'light' || matchMedia('(prefers-color-scheme: light)').matches;
-					if (l) document.querySelector('meta[name="theme-color"]').content = '#f4f4f0';
+					if (l) {
+						document.querySelector('meta[name="theme-color"]').content = '#f4f4f0';
+						// Dark status-bar text on the light canvas in an installed iOS web app.
+						document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]').content =
+							'default';
+					}
 				}
 			} catch (e) {}
 		</script>
