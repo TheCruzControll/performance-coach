@@ -1,0 +1,84 @@
+# Nightly encrypted logical backup of the production database.
+#   pg_dump (custom format, direct connection) → gpg AES-256 (symmetric, BACKUP_PASSPHRASE)
+#   → retained workflow artifact. Restore with scripts/restore-backup.sh (docs/deployment.md).
+# Complements Neon's own point-in-time restore; skips gracefully without secrets.
+name: Backup
+
+on:
+  schedule:
+    - cron: '23 3 * * *' # 03:23 UTC nightly
+  workflow_dispatch:
+
+concurrency:
+  group: backup
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  # Must be >= the Neon server's major version.
+  PG_CLIENT_VERSION: '18'
+  RETENTION_DAYS: '30'
+
+jobs:
+  backup:
+    name: pg_dump → encrypted artifact
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+    env:
+      DATABASE_URL_UNPOOLED: ${{ secrets.DATABASE_URL_UNPOOLED }}
+      BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+    steps:
+      - name: Check backup secrets
+        id: secrets
+        run: |
+          missing=()
+          for name in DATABASE_URL_UNPOOLED BACKUP_PASSPHRASE; do
+            if [ -z "${!name}" ]; then missing+=("$name"); fi
+          done
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::notice title=Backup skipped::Missing secrets: ${missing[*]}. See docs/deployment.md."
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install PostgreSQL client (PGDG)
+        if: steps.secrets.outputs.enabled == 'true'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-common gnupg
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          sudo apt-get install -y -qq "postgresql-client-${PG_CLIENT_VERSION}"
+
+      - name: Dump and encrypt
+        id: dump
+        if: steps.secrets.outputs.enabled == 'true'
+        run: |
+          set -euo pipefail
+          umask 077
+          stamp=$(date -u +%Y%m%dT%H%M%SZ)
+          file="coach-${stamp}.dump.gpg"
+          passfile="$RUNNER_TEMP/backup-passphrase"
+          printf '%s' "$BACKUP_PASSPHRASE" > "$passfile"
+          trap 'rm -f "$passfile"' EXIT
+          "/usr/lib/postgresql/${PG_CLIENT_VERSION}/bin/pg_dump" \
+            --format=custom --compress=9 --no-owner --no-privileges \
+            --dbname="$DATABASE_URL_UNPOOLED" \
+            | gpg --batch --yes --pinentry-mode loopback --passphrase-file "$passfile" \
+                  --symmetric --cipher-algo AES256 --output "$file"
+          sha256sum "$file" > "$file.sha256"
+          echo "stamp=$stamp" >> "$GITHUB_OUTPUT"
+          echo "Backup $file ($(du -h "$file" | cut -f1))" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload encrypted backup
+        if: steps.secrets.outputs.enabled == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: db-backup-${{ steps.dump.outputs.stamp }}
+          path: coach-*.dump.gpg*
+          retention-days: ${{ env.RETENTION_DAYS }}
+          compression-level: 0
+          if-no-files-found: error

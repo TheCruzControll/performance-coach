@@ -1,0 +1,34 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      svelte:
+        patterns: ['svelte', 'svelte-check', '@sveltejs/*', 'vite', 'vitest', '@vitest/*']
+      lint:
+        patterns:
+          [
+            'eslint',
+            '@eslint/*',
+            'eslint-*',
+            'typescript-eslint',
+            'prettier',
+            'prettier-*',
+            'globals'
+          ]
+      database:
+        patterns: ['drizzle-orm', 'drizzle-kit', 'pg', '@types/pg', '@neon/*']
+      testing:
+        patterns: ['lighthouse', 'chrome-launcher']
+    ignore:
+      # Pinned to match the preinstalled browser build; bump deliberately.
+      - dependency-name: '@playwright/test'
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday

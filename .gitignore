@@ -1,0 +1,36 @@
+node_modules
+
+# Build output
+.output
+.vercel
+.netlify
+/.svelte-kit
+/build
+
+# Test, performance and coverage artifacts
+/test-results
+/playwright-report
+/blob-report
+/playwright/.cache
+/lighthouse-reports
+/coverage
+/.e2e-server.log
+
+# Backups (never commit database dumps)
+*.dump
+*.dump.gpg
+*.sql.gz
+backups/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env
+.env
+.env.*
+!.env.example
+
+# Vite
+vite.config.js.timestamp-*
+vite.config.ts.timestamp-*

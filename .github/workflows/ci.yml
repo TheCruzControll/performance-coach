@@ -1,0 +1,209 @@
+# Continuous integration: every pull request and every push to main.
+# Jobs run in parallel; each is independently reproducible locally (see docs/testing.md).
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # Local-style databases inside the postgres:18 service container, created by db:setup
+  # (postgres:18 matches the Neon production branch).
+  DATABASE_URL: postgres://coach:coach@localhost:5432/coach_dev
+  DATABASE_URL_UNPOOLED: postgres://coach:coach@localhost:5432/coach_dev
+  TEST_DATABASE_URL: postgres://coach:coach@localhost:5432/coach_test
+  E2E_DATABASE_URL: postgres://coach:coach@localhost:5432/coach_e2e
+  PGADMIN_URL: postgres://postgres:postgres@localhost:5432/postgres
+
+jobs:
+  quality:
+    name: Lint & type-check
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Lint (Prettier + ESLint incl. import boundaries)
+        run: pnpm lint
+      - name: Type-check (svelte-check + service worker tsc)
+        run: pnpm check
+      - name: Migrations match the schema (no drift)
+        run: pnpm db:drift
+
+  test:
+    name: Unit & integration tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Create roles and databases
+        run: pnpm db:setup
+      - name: Apply migrations (dev database)
+        run: pnpm db:migrate
+      - name: Unit tests
+        run: pnpm test:unit
+      - name: Integration tests (real Postgres, committed migrations)
+        run: pnpm test:integration
+
+  build:
+    name: Build (Vercel + Node) & budgets
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build for Vercel (production target)
+        run: pnpm build
+      - name: Build for Node (used by e2e and Lighthouse)
+        run: pnpm build:node
+      - name: Performance budgets
+        run: pnpm budgets
+
+  e2e:
+    name: E2E (iPhone viewport · Chromium + WebKit)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+      - name: Install Playwright browsers
+        # Network installs (apt system deps, browser downloads) can hang on a runner: bound each
+        # attempt and retry, so a stuck mirror costs minutes rather than the whole job timeout.
+        timeout-minutes: 14
+        run: |
+          for attempt in 1 2 3; do
+            if timeout 240 pnpm exec playwright install --with-deps chromium webkit; then
+              exit 0
+            fi
+            echo "::warning::playwright install attempt ${attempt} failed or timed out; retrying"
+            sleep 10
+          done
+          echo "::error::playwright install failed 3 times"
+          exit 1
+      - name: Create roles and databases
+        run: pnpm db:setup
+      - name: Playwright (global setup builds and starts the production Node server)
+        run: pnpm test:e2e
+      - name: Upload screenshots and report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-${{ github.run_id }}
+          path: |
+            test-results/
+            playwright-report/
+            .e2e-server.log
+          retention-days: 14
+          if-no-files-found: ignore
+
+  lighthouse:
+    name: Lighthouse (mobile)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+      - name: Install Chromium
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Create roles and databases
+        run: pnpm db:setup
+      - name: Build for Node
+        run: pnpm build:node
+      # Every app screen (incl. the streamed, DB-backed /profile), a fresh browser per run,
+      # median of 5. Asserts the documented score target (>= 90); TBT gets 50% headroom over its
+      # 200 ms target for shared-runner noise. The tight hydration guard is the main-thread
+      # budget in the e2e job (e2e/perf.e2e.ts). See docs/performance.md.
+      - name: Lighthouse (median of 5 runs, asserted)
+        run: pnpm lighthouse --runs 5 --assert --min-perf 0.9 --max-tbt 300
+      - name: Upload Lighthouse reports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: lighthouse-${{ github.run_id }}
+          path: lighthouse-reports/
+          retention-days: 14
+          if-no-files-found: ignore

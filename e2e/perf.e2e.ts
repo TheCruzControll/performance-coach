@@ -1,0 +1,66 @@
+import { expect, test } from '@playwright/test';
+
+/**
+ * Main-thread budget while a screen loads and hydrates, measured from real long tasks
+ * (PerformanceObserver) under DevTools 4× CPU throttling: the sum of each task's time over
+ * 50 ms, i.e. total blocking time, over load + 1.5 s. Median of 5 cold loads per screen.
+ *
+ * This is the CI regression guard for hydration cost: it measures real work, while
+ * Lighthouse's TBT is a simulation (×4 of observed task time) that amplifies VM noise
+ * (docs/performance.md).
+ *
+ * Two numbers, deliberately separate:
+ * - TARGET_MS is the product target (Lighthouse's "good" TBT). Every run reports the median
+ *   against it; screens above it are listed in docs/performance.md as open work.
+ * - GUARD_MS fails the build. It sits above today's measured medians (≤ ~175 ms, with
+ *   single loads up to ~260 ms on a 4-vCPU VM) so it catches real regressions without failing
+ *   on scheduler noise. Lower it as screens get cheaper; never raise it without a measured
+ *   reason recorded in docs/performance.md.
+ */
+const TARGET_MS = 200;
+const GUARD_MS = 250;
+const LOADS = 5;
+const SCREENS = ['/', '/today', '/train', '/progress', '/coach', '/profile'];
+
+test.describe('main-thread budget (4× CPU)', () => {
+	test.skip(({ browserName }) => browserName !== 'chromium', 'CPU throttling uses CDP');
+
+	for (const path of SCREENS) {
+		test(`${path} blocks the main thread ≤ ${GUARD_MS} ms while loading`, async ({
+			browser
+		}, testInfo) => {
+			const samples: number[] = [];
+			for (let i = 0; i < LOADS; i++) {
+				// A fresh context per load: cold caches, no service worker yet.
+				const context = await browser.newContext(testInfo.project.use);
+				const page = await context.newPage();
+				await page.addInitScript(() => {
+					const tasks: number[] = [];
+					Object.assign(window, { __longTasks: tasks });
+					new PerformanceObserver((list) => {
+						for (const entry of list.getEntries()) tasks.push(entry.duration);
+					}).observe({ type: 'longtask', buffered: true });
+				});
+				const cdp = await context.newCDPSession(page);
+				await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 });
+				await page.goto(path, { waitUntil: 'load' });
+				await page.waitForTimeout(1_500);
+				const tasks = await page.evaluate(
+					() => (window as unknown as { __longTasks: number[] }).__longTasks
+				);
+				samples.push(tasks.reduce((sum, d) => sum + Math.max(0, d - 50), 0));
+				await context.close();
+			}
+			samples.sort((a, b) => a - b);
+			const median = samples[Math.floor(samples.length / 2)]!;
+			const status = median <= TARGET_MS ? 'meets target' : `above the ${TARGET_MS} ms target`;
+			testInfo.annotations.push({
+				type: 'blocking time (ms)',
+				description: `median ${Math.round(median)} (${status}) · runs ${samples.map(Math.round).join(', ')}`
+			});
+			expect(median, `${path}: ${samples.map(Math.round).join(', ')} ms`).toBeLessThanOrEqual(
+				GUARD_MS
+			);
+		});
+	}
+});

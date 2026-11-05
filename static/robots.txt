@@ -1,0 +1,3 @@
+# Private, single-user application.
+User-agent: *
+Disallow: /
