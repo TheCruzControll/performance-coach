@@ -82,8 +82,10 @@ Specs:
 - `a11y.e2e.ts` — axe-core (`@axe-core/playwright`, WCAG 2.1 A/AA) on every screen, the
   plate-calculator sheet and each `/design` component group, in the **dark and light** themes
   (Lighthouse only audits dark). Zero violations required.
-- `perf.e2e.ts` (Chromium) — main-thread budget: real long tasks at 4× CPU while each screen
-  loads, median of 3 cold loads ≤ 200 ms blocking (docs/performance.md).
+- `perf.e2e.ts` (Chromium, `perf` project) — main-thread budget: real long tasks at 4× CPU while
+  each screen loads, median of 5 cold loads; target ≤ 200 ms, fails above 250 ms (docs/performance.md). It runs
+  alone, with one worker, after the functional suite, so parallel specs cannot skew it. Run it by
+  itself with `pnpm test:e2e --project=perf --no-deps`.
 
 Artifacts: failure screenshots + traces in `test-results/`, key-screen screenshots in
 `test-results/screens/<project>/`, HTML report in `playwright-report/` (all uploaded by CI).

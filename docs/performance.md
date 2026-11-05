@@ -16,7 +16,7 @@ entry plus every layout and page node of the route and their static imports (gzi
 | Initial JS per route    | **≤ 60 KB gzip** | parse/compile/hydrate cost on a mid-range phone; ~35 KB is framework |
 | Total CSS (whole build) | **≤ 20 KB gzip** | render-blocking; tokens + all components                             |
 | Preloaded font files    | **≤ 2**          | preloads compete with critical requests                              |
-| Main-thread blocking    | **≤ 200 ms**     | per screen while loading, 4× CPU (see below)                         |
+| Main-thread blocking    | **≤ 200 ms**     | target per screen while loading, 4× CPU; CI fails above 250 ms       |
 
 The same script also guards the CSS output: every built rule that ships a `-webkit-` property must
 ship the standard one too (see the glass note in `docs/design-system.md`).
@@ -62,18 +62,35 @@ be the heaviest screen in the app. Plan, agreed before any M4 code lands:
 
 ### Main-thread budget (`e2e/perf.e2e.ts`, runs in CI with the e2e suite)
 
+It is its own Playwright project (`perf`, one worker) that starts only after the functional
+Chromium suite has finished, so no other spec competes for CPU while it measures. On a busy
+host (other builds, browsers or agents running) local numbers can still be noisy; re-run before
+chasing a regression.
+
 Real long tasks (PerformanceObserver) while each screen loads and hydrates, DevTools **4× CPU
 throttling**, iPhone 15 Pro viewport, cold context: blocking time = Σ (task − 50 ms) over
-load + 1.5 s, **median of 3 loads**, budget **≤ 200 ms**.
+load + 1.5 s, **median of 5 loads**. Two thresholds:
 
-| Screen      |        `/` |      `/today` |   `/train` | `/progress` |   `/coach` |  `/profile` |
-| ----------- | ---------: | ------------: | ---------: | ----------: | ---------: | ----------: |
-| Median (ms) |         34 |           121 |         65 |          69 |         59 |          98 |
-| Runs (ms)   | 20, 34, 91 | 105, 121, 232 | 63, 65, 96 | 64, 69, 100 | 48, 59, 70 | 90, 98, 247 |
+- **Target ≤ 200 ms** (Lighthouse's "good" TBT): every run reports each screen's median against
+  it in the test annotations.
+- **Guard ≤ 250 ms** fails the build. It is a regression guard, set above today's medians so
+  scheduler noise on a shared CI VM cannot fail it. Lower it as screens get cheaper; raise it
+  only with a measured reason recorded here.
+
+Measured after the perf project was isolated (two consecutive `--project=perf` runs, 4-vCPU VM):
+
+| Screen       |                 `/` |               `/today` |              `/train` |           `/progress` |             `/coach` |             `/profile` |
+| ------------ | ------------------: | ---------------------: | --------------------: | --------------------: | -------------------: | ---------------------: |
+| Run 1 median |                  60 |                    111 |                   113 |                   110 |                   68 |                    120 |
+| Run 1 loads  | 20, 30, 60, 86, 130 | 67, 105, 111, 159, 161 | 88, 91, 113, 114, 163 | 51, 95, 110, 124, 125 | 48, 65, 68, 118, 136 | 75, 101, 120, 184, 240 |
+| Run 2 median |                  76 |                    135 |                    71 |                    81 |                   43 |                    107 |
+| Run 2 loads  | 61, 75, 76, 80, 114 | 80, 132, 135, 148, 194 |   53, 69, 71, 86, 138 |  56, 58, 81, 101, 189 |   13, 38, 43, 47, 56 |  82, 83, 107, 113, 119 |
 
 This measures the actual work (navigation commit, parse, first layout, hydration) instead of
-Lighthouse's simulated timeline, which is why it is the tight regression guard. Individual loads
-above 200 ms (`/today`, `/profile`: one of three each) are why the guard is a median.
+Lighthouse's simulated timeline. Single loads vary a lot on a shared VM (a separate 10-load
+sample of `/profile` ranged 126–256 ms, median 174 ms, while other processes were busy), which is
+why the guard uses a median of five and sits above the target. With a median of three and the
+guard at 200 ms, `/profile` failed about one run in six on noise alone.
 
 ## Lighthouse (mobile)
 
@@ -159,7 +176,7 @@ this build reproduced it: per-run TBT up to 635 ms, perf 84–100. Findings:
 | LCP                       | ≤ 2.5 s (Lighthouse mobile)   | ≤ 2.5 s                 | **met** (0.9 s median; 1 outlier run of 60 at 2.56 s)                   |
 | CLS                       | ≤ 0.1                         | ≤ 0.1                   | **met** (0.000)                                                         |
 | TBT (Lighthouse, sim.)    | ≤ 200 ms                      | —                       | **met** at the median on all 6 screens (47–103 ms); 1 of 30 runs 216 ms |
-| Main-thread blocking      | ≤ 200 ms (4× CPU, real tasks) | —                       | **met** on all 6 screens (median 34–121 ms)                             |
+| Main-thread blocking      | ≤ 200 ms (4× CPU, real tasks) | —                       | **met** on all 6 screens (median 43–135 ms, 5 loads)                    |
 | INP                       | —                             | ≤ 200 ms                | no field data yet                                                       |
 | Performance score         | ≥ 90                          | —                       | **met** on every run (96–100; medians 99–100)                           |
 | Initial JS / CSS / fonts  | budgets above                 | —                       | **met** (tightest: `/train` 55.5 / 60 KB)                               |
@@ -207,6 +224,6 @@ GET /profile           total ≈ 38 ms at first byte; streamed work settled ≈ 
 ```sh
 pnpm build:node
 pnpm budgets
-E2E_SKIP_BUILD=1 pnpm test:e2e e2e/perf.e2e.ts               # main-thread budget (annotations)
+E2E_SKIP_BUILD=1 pnpm test:e2e --project=perf --no-deps     # main-thread budget alone (annotations)
 pnpm lighthouse --runs 5 --assert --min-perf 0.9 --max-tbt 300  # every screen (CI command)
 ```

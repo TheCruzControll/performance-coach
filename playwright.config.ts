@@ -5,7 +5,8 @@ import { defineConfig, devices } from '@playwright/test';
  * disposable Postgres database; both are prepared by e2e/global-setup.ts.
  *
  * Projects: iPhone-class viewport on Chromium everywhere; CI (or E2E_WEBKIT=1) adds WebKit,
- * the engine behind iOS Safari.
+ * the engine behind iOS Safari. The CPU-sensitive main-thread budget (perf.e2e.ts) is its own
+ * single-worker project that starts only after the Chromium suite, so nothing contends with it.
  */
 export const E2E_PORT = Number(process.env.E2E_PORT ?? 4173);
 const baseURL = process.env.E2E_BASE_URL ?? `http://localhost:${E2E_PORT}`;
@@ -31,12 +32,24 @@ export default defineConfig({
 	projects: [
 		{
 			name: 'iphone-chromium',
+			testIgnore: '**/perf.e2e.ts',
+			use: { ...devices['iPhone 15 Pro'], browserName: 'chromium' }
+		},
+		// The main-thread budget measures real CPU time, so it must not share the machine with
+		// other specs: it runs alone (one worker) after the functional suite has finished.
+		{
+			name: 'perf',
+			testMatch: '**/perf.e2e.ts',
+			dependencies: ['iphone-chromium'],
+			workers: 1,
+			fullyParallel: false,
 			use: { ...devices['iPhone 15 Pro'], browserName: 'chromium' }
 		},
 		...(withWebKit
 			? [
 					{
 						name: 'iphone-webkit',
+						testIgnore: '**/perf.e2e.ts',
 						use: { ...devices['iPhone 15 Pro'], browserName: 'webkit' as const }
 					}
 				]
