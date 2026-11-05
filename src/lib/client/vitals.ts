@@ -80,4 +80,6 @@ export async function startVitalsReporting(): Promise<void> {
 		if (document.visibilityState === 'hidden') flushVitals();
 	});
 	addEventListener('pagehide', flushVitals);
+	// Observable marker for tests and debugging: RUM observers are registered.
+	document.documentElement.dataset.rum = 'ready';
 }

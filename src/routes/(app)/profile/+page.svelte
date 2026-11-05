@@ -4,7 +4,6 @@
 	import { preferences, type ThemePreference } from '#lib/client/preferences.svelte.ts';
 	import type { WeightUnit } from '#lib/domain/units.ts';
 	import Card from '#lib/ui/components/Card.svelte';
-	import EmptyState from '#lib/ui/components/EmptyState.svelte';
 	import Icon from '#lib/ui/components/Icon.svelte';
 	import PageHeader from '#lib/ui/components/PageHeader.svelte';
 	import SegmentedControl from '#lib/ui/components/SegmentedControl.svelte';
@@ -87,13 +86,11 @@
 	</Card>
 
 	<Card title="Training profile" eyebrow="Goals & baseline">
-		<EmptyState
-			icon="target"
-			title="Onboarding arrives next"
-			description="Goals, schedule, experience and optional 1RMs — everything editable later."
-			tone="neutral"
-			compact
-		/>
+		{#snippet action()}<span class="soon">Next</span>{/snippet}
+		<p class="note">
+			Goals, schedule, experience and optional 1RMs — set up in the next release, editable any time
+			after.
+		</p>
 	</Card>
 
 	<Card title="System" eyebrow="Status" data-testid="system-card">
@@ -337,6 +334,19 @@
 	.note {
 		font-size: var(--text-sm);
 		color: var(--color-text-secondary);
+	}
+
+	.soon {
+		display: inline-block;
+		margin-top: var(--space-2);
+		padding: var(--space-1) var(--space-2);
+		border-radius: var(--radius-full);
+		background: var(--color-accent-subtle);
+		color: var(--color-accent-text);
+		font-size: var(--text-2xs);
+		font-weight: var(--weight-semibold);
+		letter-spacing: var(--tracking-caps);
+		text-transform: uppercase;
 	}
 
 	.design-link {
