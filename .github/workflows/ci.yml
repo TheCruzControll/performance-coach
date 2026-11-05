@@ -127,19 +127,25 @@ jobs:
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+      - name: Configure apt for slow mirrors
+        run: ./scripts/ci-apt-resilience.sh
+      - name: Install Playwright system dependencies
+        # Never killed midway: an interrupted apt-get keeps the dpkg lock and fails every later
+        # install. Slow or stalled mirror downloads time out and retry inside apt instead.
+        timeout-minutes: 12
+        run: pnpm exec playwright install-deps chromium webkit
       - name: Install Playwright browsers
-        # Network installs (apt system deps, browser downloads) can hang on a runner: bound each
-        # attempt and retry, so a stuck mirror costs minutes rather than the whole job timeout.
-        timeout-minutes: 14
+        # Usually restored from the cache above. A stuck download is safe to kill: bound and retry.
+        timeout-minutes: 8
         run: |
           for attempt in 1 2 3; do
-            if timeout 240 pnpm exec playwright install --with-deps chromium webkit; then
+            if timeout 150 pnpm exec playwright install chromium webkit; then
               exit 0
             fi
-            echo "::warning::playwright install attempt ${attempt} failed or timed out; retrying"
-            sleep 10
+            echo "::warning::browser download attempt ${attempt} failed or timed out; retrying"
+            sleep 5
           done
-          echo "::error::playwright install failed 3 times"
+          echo "::error::browser download failed 3 times"
           exit 1
       - name: Create roles and databases
         run: pnpm db:setup
@@ -187,8 +193,14 @@ jobs:
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+      - name: Configure apt for slow mirrors
+        run: ./scripts/ci-apt-resilience.sh
+      - name: Install Chromium system dependencies
+        timeout-minutes: 12
+        run: pnpm exec playwright install-deps chromium
       - name: Install Chromium
-        run: pnpm exec playwright install --with-deps chromium
+        timeout-minutes: 8
+        run: pnpm exec playwright install chromium
       - name: Create roles and databases
         run: pnpm db:setup
       - name: Build for Node (served on http://localhost:4174 by the Lighthouse script)
