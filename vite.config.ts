@@ -67,7 +67,15 @@ export default defineConfig(({ mode }) => {
 				inlineStyleThreshold: 4096,
 				output: { bundleStrategy: 'split' },
 				// Absolute URLs everywhere (served from the domain root); simpler for the service worker.
-				paths: { relative: false },
+				// adapter-node (SvelteKit 3) takes its public origin from here at build time, not from
+				// an ORIGIN variable at run time; without it every request looks like https://<host>.
+				// Local Node builds served over plain HTTP (e2e, Lighthouse, `pnpm start`) set ORIGIN
+				// when building, so CSRF checks, cookies and the WebAuthn origin see the real origin.
+				// Vercel builds leave it unset: the platform reports the real origin per request.
+				paths: {
+					relative: false,
+					origin: target === 'node' && process.env.ORIGIN ? process.env.ORIGIN : undefined
+				},
 				/**
 				 * Content-Security-Policy. `auto`: a per-response nonce on server-rendered pages (the
 				 * only option that also covers the scripts /profile streams after the headers are
