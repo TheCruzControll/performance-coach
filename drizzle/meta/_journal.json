@@ -15,6 +15,13 @@
       "when": 1793884249158,
       "tag": "0001_web_vitals_route",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1793901572996,
+      "tag": "0002_auth",
+      "breakpoints": true
     }
   ]
 }
