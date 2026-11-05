@@ -3,6 +3,7 @@
 	import { onMount } from 'svelte';
 	import { afterNavigate } from '$app/navigation';
 	import { page } from '$app/state';
+	import { setErrorContext } from '#lib/client/errors.ts';
 	import { applyTheme, preferences } from '#lib/client/preferences.svelte.ts';
 	import { noteNavigation, startVitalsReporting } from '#lib/client/vitals.ts';
 	import Toaster from '#lib/ui/components/Toaster.svelte';
@@ -15,6 +16,7 @@
 	// `to.route.id === null` (it is built before the router state is assigned).
 	afterNavigate(({ type }) => {
 		noteNavigation(page.url.pathname, page.route.id, type === 'enter' ? 0 : undefined);
+		setErrorContext(page.route.id);
 	});
 
 	onMount(() => {

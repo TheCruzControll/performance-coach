@@ -55,7 +55,9 @@ flowchart LR
 3. Routes call **services** (use-cases). Services call **repositories** in the DB layer, which
    use a small `pg.Pool` (reused across Fluid-compute invocations, `attachDatabasePool`).
 4. The browser hydrates, registers the service worker, and lazily loads `web-vitals`, which
-   beacons Core Web Vitals to `POST /api/vitals`.
+   beacons Core Web Vitals to `POST /api/vitals`. Uncaught exceptions, unhandled rejections and
+   unexpected navigation errors are beaconed to `POST /api/client-errors` (`hooks.client.ts`,
+   `src/lib/client/errors.ts`; at most 5 per page load, deduplicated, rate-limited server-side).
 
 ## Module boundaries
 
@@ -129,7 +131,8 @@ tests can wrap each test in a rolled-back transaction.
 | ---------------- | ------------------------------------------------------------- |
 | Access logs      | one JSON line per request (stdout → Vercel logs)              |
 | Request timing   | `Server-Timing` header (`db`, `total`)                        |
-| Errors           | JSON log + `app_errors` row with request id and stack         |
+| Server errors    | JSON log + `app_errors` row with request id and stack         |
+| Browser errors   | beacon → `POST /api/client-errors` → `app_errors` (`client`)  |
 | Real-user vitals | `web_vitals` table (LCP, INP, CLS, TTFB, FCP; p75 on Profile) |
 | Health           | `GET /api/health` → `{ ok, db, version, dbLatencyMs }`        |
 

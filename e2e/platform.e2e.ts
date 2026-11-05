@@ -224,6 +224,45 @@ test.describe('platform: health, PWA, observability', () => {
 		]);
 	});
 
+	test('browser errors are reported to the server and recorded', async ({ page, request }) => {
+		const marker = `e2e-client-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+		await page.goto('/train');
+		await expect(page.locator('html')).toHaveAttribute('data-rum', 'ready', { timeout: 10_000 });
+		// An uncaught exception and an unhandled rejection, as real app code would produce them.
+		await page.evaluate((m) => {
+			setTimeout(() => {
+				throw new TypeError(`${m} uncaught`);
+			});
+			void Promise.reject(new Error(`${m} rejected`));
+		}, marker);
+
+		const rows = await eventually(() =>
+			query<{ kind: string; message: string; route_id: string; source: string }>(
+				`select kind, message, route_id, context->>'source' as source from app_errors
+				 where message like $1 order by message`,
+				[`%${marker}%`]
+			).then((r) => (r.length === 2 ? r : null))
+		);
+		expect(rows).toEqual([
+			{
+				kind: 'client',
+				message: `Error: ${marker} rejected`,
+				route_id: '/(app)/train',
+				source: 'unhandledrejection'
+			},
+			{
+				kind: 'client',
+				message: `TypeError: ${marker} uncaught`,
+				route_id: '/(app)/train',
+				source: 'error'
+			}
+		]);
+
+		// The endpoint validates what it stores.
+		const bad = await request.post('/api/client-errors', { data: { source: 'console' } });
+		expect(bad.status()).toBe(422);
+	});
+
 	test('server errors are logged with a request id and recorded', async ({ request }) => {
 		const res = await request.get('/api/test-support/error', {
 			headers: { accept: 'application/json' }

@@ -21,7 +21,8 @@ never silently dropped, malformed or sub-6 RPEs give no estimate, and sets past 
 extrapolated from reps to failure at `low` confidence), the plate calculator (exact DP incl. limited inventories), and load
 metrics (volume load, session-RPE, EWMA ACWR). Outside the domain: `parseEnv` (defaults, `appEnv`
 derivation, the production guards incl. `VERCEL_ENV=production`, the API-key requirement) and the
-RUM attribution of each metric to the screen where it happened, and `serializeError` (Drizzle
+RUM attribution of each metric to the screen where it happened, client error reports (bounded
+fields, non-Error values), and `serializeError` (Drizzle
 parameters redacted; Postgres messages withheld for SQLSTATE classes that can quote values, kept
 for identifier-only classes such as 23 and 42; DETAIL/HINT never logged).
 
@@ -38,7 +39,8 @@ for identifier-only classes such as 23 and 42; DETAIL/HINT never logged).
   batch), route attribution and p75 summary; error recording, including when the database is
   down, with SQL parameter values redacted from a real failed query (check violation), and with
   a real `22P02 invalid input syntax` whose driver message quotes the value: neither the
-  `app_errors` row nor the JSON log line contains it.
+  `app_errors` row nor the JSON log line contains it; browser error reports stored as kind
+  `client`, validated (source, absolute path, size caps) and rate-limited.
 - **Logs:** quiet by default (`LOG_LEVEL=silent` via the project's `env`); run
   `LOG_LEVEL=debug pnpm test:integration` to see them.
 
@@ -70,8 +72,9 @@ Specs:
   CSP header contents and enforcement (an injected inline script is refused); service worker
   activates and precaches the shell (not the icons); `POST /api/vitals` stores a row (verified in
   Postgres) and rejects invalid metrics; real browser RUM beacons arrive; vitals are attributed to
-  the screen where they happened (client-side navigation, INP on Train); a server error returns a
-  safe message and is recorded with its request id.
+  the screen where they happened (client-side navigation, INP on Train); an uncaught exception
+  and an unhandled rejection in the browser are reported and stored as `client` rows with their
+  route; a server error returns a safe message and is recorded with its request id.
 - `offline.e2e.ts` (Chromium) — the first visit is controlled by the service worker without a
   reload; offline, every tab keeps the shell (screens without server data render, Profile shows
   the designed offline state, never a 500), a full reload offline gets the offline screen in the

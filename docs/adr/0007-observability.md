@@ -15,6 +15,10 @@
   (`serializeError`): query parameter values are redacted, and a Postgres error keeps its
   SQLSTATE, routine and identifier fields but not a message that can quote a value (class 22
   data exceptions and any class not known to be identifier-only); DETAIL/HINT are never kept.
+- Client errors: `hooks.client.ts` listens for uncaught exceptions and unhandled rejections and
+  reports unexpected navigation errors; `src/lib/client/errors.ts` beacons each (deduplicated,
+  ≤ 5 per page load, size-capped) to `POST /api/client-errors`, which validates, rate-limits
+  (30/min per instance) and stores them in `app_errors` with kind `client` and the route id.
 - Client RUM: `web-vitals` (lazy-loaded) beacons LCP/INP/CLS/TTFB/FCP to `POST /api/vitals`
   (validated, de-duplicated by metric id) → `web_vitals`; p75 shown on the Profile screen.
 - Sentry is optional later (`SENTRY_DSN`), never required.

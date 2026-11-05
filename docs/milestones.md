@@ -55,7 +55,9 @@ Known gaps:
   `vercel.json` disables Vercel's Git deployments of `main` and skips any production build Vercel
   starts itself (docs/deployment.md). These guards are unit-tested but not yet exercised against
   a real Vercel account.
-- Auth not yet enforced (M2); `POST /api/vitals` is unauthenticated and not rate-limited.
+- Auth not yet enforced (M2): every page, `POST /api/vitals` (not rate-limited) and
+  `POST /api/client-errors` (rate-limited per instance) are unauthenticated, and Profile shows
+  version, environment and RUM data. Acceptable only because production is off (above).
 - Lighthouse: LCP/CLS targets met; the simulated TBT target (≤ 200 ms) is met on `/today` only
   and the performance score is not reliably ≥ 90 (`/train` median 89). The real main-thread
   budget (≤ 200 ms at 4× CPU) is met on every screen. Both are M8 work.
@@ -79,8 +81,9 @@ Acceptance criteria:
 4. Security review of auth code (no hand-rolled crypto; secrets server-side only).
 5. Screens designed for empty, loading, error states on an iPhone viewport.
 6. Sign-out clears everything the device holds for the account (Cache Storage entries other than
-   the versioned app shell, and any IndexedDB data once it exists); `/api/vitals` requires a
-   session; then, and only then, `PRODUCTION_DEPLOY_ENABLED` may be set (docs/deployment.md).
+   the versioned app shell, and any IndexedDB data once it exists); `/api/vitals` and
+   `/api/client-errors` require a session; then, and only then, `PRODUCTION_DEPLOY_ENABLED` may
+   be set (docs/deployment.md).
 
 ## M3 — Training data model & program management [§2, §5, §9, §11]
 

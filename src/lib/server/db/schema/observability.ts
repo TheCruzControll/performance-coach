@@ -29,7 +29,10 @@ export const appErrors = pgTable(
 		occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull().defaultNow(),
 		/** Correlates with the `x-request-id` response header and JSON log lines. */
 		requestId: text('request_id'),
-		/** SvelteKit error kind: unknown | framework | app | validation. */
+		/**
+		 * unknown | framework | app | validation (SvelteKit's error kind), `streamed` (a load's
+		 * streamed promise failed) or `client` (reported by the browser; status is null).
+		 */
 		kind: text('kind').notNull(),
 		status: integer('status'),
 		method: text('method'),
