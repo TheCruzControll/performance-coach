@@ -131,7 +131,12 @@
 		editing = true;
 		draft = display;
 		const input = event.currentTarget as HTMLInputElement;
-		requestAnimationFrame(() => input.select());
+		// Select after the browser has placed the caret. Only while still editing this field:
+		// select() also focuses the input, so a frame that lands after Enter/Escape/blur (slow
+		// devices, busy CI) would otherwise pull focus back into a field the user just left.
+		requestAnimationFrame(() => {
+			if (editing && document.activeElement === input) input.select();
+		});
 	}
 
 	function commit() {

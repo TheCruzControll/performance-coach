@@ -137,6 +137,34 @@ test.describe('app shell on an iPhone viewport', () => {
 		await expect(units.getByRole('radio', { name: 'kg' })).toHaveAttribute('aria-checked', 'true');
 	});
 
+	test('a late animation frame never pulls focus back into a stepper the user left', async ({
+		page
+	}) => {
+		// Slow devices (and busy CI) can run a frame scheduled on focus after the user already
+		// pressed Escape or Enter. Make every frame late to turn that race into a certainty.
+		await page.addInitScript(() => {
+			const raf = window.requestAnimationFrame.bind(window);
+			window.requestAnimationFrame = (cb) => {
+				setTimeout(() => raf(cb), 400);
+				return 0;
+			};
+		});
+		await page.goto('/train');
+		await page.getByTestId('open-plates').click();
+		const sheet = page.getByRole('dialog', { name: 'Plate calculator' });
+		await expect(page.getByTestId('plates-sheet')).toHaveClass(/\bvisible\b/);
+		const target = sheet.getByRole('spinbutton', { name: 'Target weight' });
+
+		for (const key of ['Escape', 'Enter']) {
+			await target.focus();
+			await page.keyboard.type('7');
+			await page.keyboard.press(key);
+			await page.waitForTimeout(800); // let the late frames run
+			await expect(target, `after ${key}`).not.toBeFocused();
+		}
+		await expect(page.getByTestId('plates-sheet')).toHaveClass(/\bvisible\b/);
+	});
+
 	test('leaving a screen while a sheet is open releases the page scroll lock', async ({ page }) => {
 		const overflow = () => page.evaluate(() => document.documentElement.style.overflow);
 
