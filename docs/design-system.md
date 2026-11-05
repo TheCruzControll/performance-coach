@@ -25,7 +25,9 @@ Dark-first, iPhone-first, built by hand on CSS custom properties (ADR 0005). Liv
 | `data-theme="system"` | follows `prefers-color-scheme` |
 
 The choice (Profile → Appearance) is stored per device and applied before first paint by an inline
-script in `src/app.html`, which also updates `<meta name="theme-color">`.
+script in `src/app.html`, which also updates `<meta name="theme-color">`. With **Auto**, the app
+keeps listening to `prefers-color-scheme` while open, so when iOS switches appearance (e.g.
+automatic dark mode at sunset) the theme-color and status-bar metas follow the CSS (e2e-tested).
 **Browser baseline:** `light-dark()` needs Safari 17.5+ / Chrome 123+.
 
 ## Colour

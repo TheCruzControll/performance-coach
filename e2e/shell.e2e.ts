@@ -162,6 +162,20 @@ test.describe('app shell on an iPhone viewport', () => {
 			page.locator('meta[name="apple-mobile-web-app-status-bar-style"]')
 		).toHaveAttribute('content', 'black-translucent');
 
+		// Auto follows the OS while the app is open, browser chrome included.
+		const themeColor = page.locator('meta[name="theme-color"]');
+		await page.emulateMedia({ colorScheme: 'dark' });
+		await page.getByTestId('theme-control').getByRole('radio', { name: 'Auto' }).click();
+		await expect(themeColor).toHaveAttribute('content', '#0a0a0b');
+		await page.emulateMedia({ colorScheme: 'light' });
+		await expect(themeColor).toHaveAttribute('content', '#f4f4f0');
+		expect(await canvas()).toBe('rgb(244,244,240)');
+		await page.emulateMedia({ colorScheme: 'dark' });
+		await expect(themeColor).toHaveAttribute('content', '#0a0a0b');
+		// Leaving Auto stops following the OS.
+		await page.getByTestId('theme-control').getByRole('radio', { name: 'Dark' }).click();
+		await page.emulateMedia({ colorScheme: 'light' });
+		await expect(themeColor).toHaveAttribute('content', '#0a0a0b');
 		expect(errors).toEqual([]);
 	});
 

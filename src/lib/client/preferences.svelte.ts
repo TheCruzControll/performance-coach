@@ -64,13 +64,24 @@ class Preferences {
 	}
 }
 
+let systemScheme: MediaQueryList | undefined;
+const followSystem = () => applyTheme('system');
+
+/**
+ * Apply a theme to the document and the browser chrome. With 'system' (Auto) it also keeps
+ * following the OS: when iOS switches appearance while the app is open (e.g. automatic dark mode
+ * at sunset) the CSS follows by itself, and this listener updates the theme-color and status-bar
+ * metas to match. Any other theme removes the listener.
+ */
 export function applyTheme(theme: ThemePreference): void {
 	const root = document.documentElement;
 	if (theme === 'dark') delete root.dataset.theme;
 	else root.dataset.theme = theme;
-	const light =
-		theme === 'light' ||
-		(theme === 'system' && window.matchMedia('(prefers-color-scheme: light)').matches);
+	systemScheme ??= window.matchMedia('(prefers-color-scheme: light)');
+	// Same function reference: adding twice is a no-op, so this is safe to call repeatedly.
+	if (theme === 'system') systemScheme.addEventListener('change', followSystem);
+	else systemScheme.removeEventListener('change', followSystem);
+	const light = theme === 'light' || (theme === 'system' && systemScheme.matches);
 	document
 		.querySelector('meta[name="theme-color"]')
 		?.setAttribute('content', light ? THEME_COLORS.light : THEME_COLORS.dark);
