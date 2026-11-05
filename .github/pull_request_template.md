@@ -24,6 +24,7 @@ Milestone: M?
 - [ ] `pnpm build && pnpm build:node && pnpm budgets`
 - [ ] Lighthouse (`pnpm lighthouse`) for performance-relevant changes — numbers recorded in docs/performance.md
 - [ ] CI run linked, including the **WebKit** e2e project and its screenshots (WebKit cannot run in every dev environment)
+- [ ] UI changes: real-device checklist done on an iPhone (docs/testing.md), device/iOS version and screenshots attached
 
 ## Acceptance criteria
 

@@ -49,7 +49,9 @@ Evidence: see the PR description and docs/performance.md (local runs of every co
 Known gaps:
 
 - WebKit e2e runs only in CI (not available locally), so iOS Safari rendering (glass, status
-  bar, PWA) is unverified until the first CI run; attach its WebKit screenshots to the PR.
+  bar, PWA) is unverified until the first CI run. **Merge gate for the M1 PR:** the first CI
+  run's WebKit results and screenshots are attached, and the real-device checklist in
+  docs/testing.md has been done on an iPhone (installed PWA).
 - Nothing deployed (no network access to Vercel/Neon/Cloudflare during M1). Production stays off
   until M2 auth is live: `deploy.yml` is gated by `PRODUCTION_DEPLOY_ENABLED`, and the committed
   `vercel.json` disables Vercel's Git deployments of `main` and skips any production build Vercel
@@ -58,9 +60,10 @@ Known gaps:
 - Auth not yet enforced (M2): every page, `POST /api/vitals` (not rate-limited) and
   `POST /api/client-errors` (rate-limited per instance) are unauthenticated, and Profile shows
   version, environment and RUM data. Acceptable only because production is off (above).
-- Lighthouse: LCP/CLS targets met; the simulated TBT target (≤ 200 ms) is met on `/today` only
-  and the performance score is not reliably ≥ 90 (`/train` median 89). The real main-thread
-  budget (≤ 200 ms at 4× CPU) is met on every screen. Both are M8 work.
+- Performance is measured in the lab only (Lighthouse with simulated throttling and a real 4×
+  CPU main-thread budget, both met on every screen; docs/performance.md). Real-device and RUM p75
+  numbers start when the owner uses the deployed app; Lighthouse has not yet run on GitHub's
+  runners.
 
 ## M2 — Authentication & profile [§3, §13]
 

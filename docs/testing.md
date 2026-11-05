@@ -104,3 +104,23 @@ Lighthouse run on every PR and push to `main`.
 WebKit project has never run locally (WebKit is not installed in the build environment), so iOS
 Safari behaviour (glass, PWA install, status bar) is unverified. The first CI run, including its
 WebKit screenshots, must be attached to the M1 PR as evidence.
+
+Screenshots from the `iphone-chromium` project do **not** show the glass blur: headless Chromium
+does not paint `backdrop-filter` under mobile emulation (verified: the same page blurs with
+`isMobile` off). Judge glass on WebKit screenshots or a device.
+
+### Real-device checklist (merge gate for UI milestones)
+
+On an iPhone with current iOS, against a preview deployment (Vercel Authentication on):
+
+1. Safari: every tab renders; the bottom nav sits above the home indicator; glass blurs the
+   content behind it; nothing scrolls sideways.
+2. Share → Add to Home Screen; launch the installed app: standalone (no Safari chrome), status
+   bar text readable in dark and light (Profile → Appearance), splash/icon correct.
+3. Settings → Display → Automatic appearance, or Control Centre dark-mode toggle while the app is
+   open with Appearance = Auto: the theme and status bar follow.
+4. Airplane mode: tabs keep the shell, Profile shows the offline state; back online it loads.
+5. Plate calculator: one-handed stepper hold-to-repeat, typing with the decimal keypad, swipe the
+   sheet down to close.
+
+Record device, iOS version, date and screenshots in the PR.
