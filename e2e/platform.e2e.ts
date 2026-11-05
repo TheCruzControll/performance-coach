@@ -181,7 +181,9 @@ test.describe('platform: health, PWA, observability', () => {
 		await page.waitForFunction(() => document.getAnimations().length === 0);
 		await page.evaluate(() => {
 			const block = () => {
-				const end = performance.now() + 150;
+				// Far above anything else on the page: on a slow CI WebKit the navigation click
+				// itself can take a few hundred ms, and INP reports the worst interaction.
+				const end = performance.now() + 600;
 				while (performance.now() < end) {
 					// block the main thread so this interaction is the page's worst
 				}
@@ -208,7 +210,7 @@ test.describe('platform: health, PWA, observability', () => {
 		const inp = metrics.find((m) => m.name === 'INP')!;
 		const ttfb = metrics.find((m) => m.name === 'TTFB')!;
 		expect(inp).toMatchObject({ path: '/train', route: '/(app)/train' });
-		expect(inp.value).toBeGreaterThanOrEqual(150);
+		expect(inp.value).toBeGreaterThanOrEqual(600);
 		expect(ttfb).toMatchObject({ path: '/today', route: '/(app)/today' });
 
 		// …and that is what Postgres stored.
@@ -222,6 +224,28 @@ test.describe('platform: health, PWA, observability', () => {
 			{ name: 'INP', path: '/train', route_id: '/(app)/train' },
 			{ name: 'TTFB', path: '/today', route_id: '/(app)/today' }
 		]);
+	});
+
+	test('a stylesheet load cancelled by leaving the page is not an error', async ({ page }) => {
+		// Vite rejects a dynamic import whose stylesheet fails unless `vite:preloadError` is
+		// cancelled; WebKit fails stylesheets that are still loading when the page is left.
+		await page.goto('/');
+		await expect(page.locator('html')).toHaveAttribute('data-rum', 'ready', { timeout: 10_000 });
+		const cancelled = await page.evaluate(() => {
+			const fire = () => {
+				const event = new Event('vite:preloadError', { cancelable: true });
+				dispatchEvent(event);
+				return event.defaultPrevented;
+			};
+			const live = fire();
+			dispatchEvent(new Event('pagehide'));
+			const leaving = fire();
+			dispatchEvent(new Event('pageshow'));
+			const restored = fire();
+			return { live, leaving, restored };
+		});
+		// Only while leaving: a real failure on a live page keeps Vite's default (the import fails).
+		expect(cancelled).toEqual({ live: false, leaving: true, restored: false });
 	});
 
 	test('browser errors are reported to the server and recorded', async ({ page, request }) => {

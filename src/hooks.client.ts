@@ -3,6 +3,8 @@
  * - Errors are reported to the server (src/lib/client/errors.ts → POST /api/client-errors →
  *   `app_errors`, kind `client`): uncaught exceptions and unhandled rejections from `init`, and
  *   unexpected errors during navigation from `handleError`.
+ * - Stylesheet loads cancelled because the page is being left are not errors
+ *   (src/lib/client/preload.ts).
  * - A failed network request during client-side navigation (offline, "lie-fi", a dropped
  *   connection) is not an error worth reporting: it is marked so the error views render the
  *   designed offline state (src/routes/ErrorView.svelte) instead of "500 · Internal Error".
@@ -10,10 +12,13 @@
 import type { ClientInit, HandleClientError } from '@sveltejs/kit/hooks';
 import { version } from '$app/env';
 import { reportClientError, setErrorContext, startErrorReporting } from '#lib/client/errors.ts';
+import { ignorePreloadErrorsWhileLeaving } from '#lib/client/preload.ts';
 
 export const init: ClientInit = () => {
 	setErrorContext(null, version);
 	startErrorReporting();
+	// Before SvelteKit imports the root layout and error page (it runs right after `init`).
+	ignorePreloadErrorsWhileLeaving();
 };
 
 /** Fetch / dynamic-import network failures as worded by Chromium, WebKit and Gecko. */
