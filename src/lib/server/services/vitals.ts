@@ -27,6 +27,12 @@ export const vitalSchema = z.object({
 		.string()
 		.max(512)
 		.refine((p) => p.startsWith('/'), 'path must be absolute'),
+	/** SvelteKit route id where the metric happened (null for an unmatched route). */
+	route: z
+		.string()
+		.max(256)
+		.refine((r) => r.startsWith('/'), 'route must be a route id')
+		.nullish(),
 	effectiveConnectionType: z.string().max(16).optional()
 });
 
@@ -80,6 +86,7 @@ export async function recordVitals(
 		rating: v.rating,
 		navigationType: v.navigationType ?? null,
 		path: v.path,
+		routeId: v.route ?? null,
 		effectiveConnectionType: v.effectiveConnectionType ?? null,
 		appVersion: meta.appVersion ?? null,
 		userAgent: meta.userAgent?.slice(0, 512) ?? null

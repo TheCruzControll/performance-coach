@@ -58,7 +58,10 @@ export const webVitals = pgTable(
 		delta: doublePrecision('delta'),
 		rating: text('rating').$type<WebVitalRating>().notNull(),
 		navigationType: text('navigation_type'),
+		/** Pathname where the metric happened (INP/CLS: at the interaction/shift; others: landing). */
 		path: text('path').notNull(),
+		/** SvelteKit route id for that path, e.g. `/(app)/train`: groups dynamic URLs per screen. */
+		routeId: text('route_id'),
 		appVersion: text('app_version'),
 		effectiveConnectionType: text('effective_connection_type'),
 		userAgent: text('user_agent')
@@ -66,6 +69,7 @@ export const webVitals = pgTable(
 	(t) => [
 		uniqueIndex('web_vitals_metric_uq').on(t.metricId, t.name),
 		index('web_vitals_name_recorded_at_idx').on(t.name, t.recordedAt.desc()),
+		index('web_vitals_route_name_idx').on(t.routeId, t.name, t.recordedAt.desc()),
 		check(
 			'web_vitals_name_ck',
 			sql.raw(`${t.name.name} in (${WEB_VITAL_NAMES.map((n) => `'${n}'`).join(', ')})`)

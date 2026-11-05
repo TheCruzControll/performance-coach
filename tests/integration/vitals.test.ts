@@ -14,7 +14,8 @@ const lcp = {
 	delta: 1234.5,
 	rating: 'good',
 	navigationType: 'navigate',
-	path: '/today'
+	path: '/today',
+	route: '/(app)/today'
 } as const;
 
 describe('web vitals service', () => {
@@ -33,6 +34,7 @@ describe('web vitals service', () => {
 				value: 1234.5,
 				rating: 'good',
 				path: '/today',
+				routeId: '/(app)/today',
 				appVersion: '0.1.0+test',
 				userAgent: 'Vitest'
 			});
@@ -43,12 +45,30 @@ describe('web vitals service', () => {
 		await withRollback(async (tx) => {
 			const cls = { ...lcp, id: 'v6-cls-1', name: 'CLS', value: 0.01, rating: 'good' } as const;
 			await recordVitals([cls], {}, { db: tx });
-			await recordVitals([{ ...cls, value: 0.12, rating: 'needs-improvement' }], {}, { db: tx });
+			// The largest shift now happened on another screen: where it happened moves too.
+			await recordVitals(
+				[
+					{
+						...cls,
+						value: 0.12,
+						rating: 'needs-improvement',
+						path: '/train',
+						route: '/(app)/train'
+					}
+				],
+				{},
+				{ db: tx }
+			);
 			const rows = (await createWebVitalsRepository(tx).recent(10)).filter(
 				(r) => r.metricId === 'v6-cls-1'
 			);
 			expect(rows).toHaveLength(1);
-			expect(rows[0]).toMatchObject({ value: 0.12, rating: 'needs-improvement' });
+			expect(rows[0]).toMatchObject({
+				value: 0.12,
+				rating: 'needs-improvement',
+				path: '/train',
+				routeId: '/(app)/train'
+			});
 		});
 	});
 
@@ -76,6 +96,7 @@ describe('web vitals service', () => {
 		);
 		await expect(recordVitals(new Array(21).fill(lcp))).rejects.toThrow(InvalidVitalsError);
 		await expect(recordVitals('nope')).rejects.toThrow(InvalidVitalsError);
+		await expect(recordVitals({ ...lcp, route: 'today' })).rejects.toThrow(InvalidVitalsError);
 	});
 
 	it('summarises metrics at p75 per metric', async () => {

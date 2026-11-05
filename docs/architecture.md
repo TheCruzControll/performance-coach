@@ -90,7 +90,9 @@ tests can wrap each test in a rolled-back transaction.
   (`scripts/db-migrate.ts`, advisory-locked, direct connection). `drizzle-kit push` is never used.
 - Connections: `DATABASE_URL` (pooled, Neon `-pooler` host) for the app; `DATABASE_URL_UNPOOLED`
   (direct) for migrations and backups.
-- M1 tables: `app_errors` (server incidents) and `web_vitals` (RUM). The training data model
+- M1 tables: `app_errors` (server incidents) and `web_vitals` (RUM, attributed per screen via
+  `path` + `route_id`). CI's `pnpm db:drift` fails when the schema changes without a committed
+  migration. The training data model
   (profile, goals, programs, cycles, workouts, sets, sessions, decisions) lands in M3 with
   history-preserving, timestamped records (PRD §9).
 

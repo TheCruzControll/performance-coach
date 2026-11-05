@@ -28,7 +28,11 @@ describe('committed migrations', () => {
 			sql`select indexname from pg_indexes where tablename = 'web_vitals'`
 		);
 		expect(indexes.rows.map((r) => r.indexname)).toEqual(
-			expect.arrayContaining(['web_vitals_metric_uq', 'web_vitals_name_recorded_at_idx'])
+			expect.arrayContaining([
+				'web_vitals_metric_uq',
+				'web_vitals_name_recorded_at_idx',
+				'web_vitals_route_name_idx'
+			])
 		);
 	});
 

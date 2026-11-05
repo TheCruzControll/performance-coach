@@ -100,6 +100,12 @@ guard** (shared runners are noisier than this VM); the targets above are what M8
 - `web-vitals` 6 is lazy-loaded after hydration (`requestIdleCallback`) and reports LCP, INP, CLS,
   TTFB and FCP via `navigator.sendBeacon` when the page is hidden → `POST /api/vitals` →
   `web_vitals` (100% sampled; one user).
+- **Attribution:** each row stores the `path` and SvelteKit `route_id` of the screen where the
+  metric happened. The root layout records every client-side navigation; INP goes to the screen
+  showing when its interaction started, CLS to the screen of its largest shift, and the load
+  metrics (TTFB, FCP, LCP) to the landing page. Per-screen p75 (e.g. the M4 workout screen's INP)
+  therefore groups by `route_id` (indexed). Covered by unit tests and an e2e test that navigates
+  client-side and checks where INP lands.
 - The Profile screen shows p75 per metric for the last 7 days. Field data begins when the owner
   starts using the deployed app.
 

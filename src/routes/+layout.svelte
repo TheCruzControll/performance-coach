@@ -1,12 +1,21 @@
 <script lang="ts">
 	import '#lib/ui/styles/app.css';
 	import { onMount } from 'svelte';
+	import { afterNavigate } from '$app/navigation';
+	import { page } from '$app/state';
 	import { applyTheme, preferences } from '#lib/client/preferences.svelte.ts';
-	import { startVitalsReporting } from '#lib/client/vitals.ts';
+	import { noteNavigation, startVitalsReporting } from '#lib/client/vitals.ts';
 	import Toaster from '#lib/ui/components/Toaster.svelte';
 	import type { LayoutProps } from './$types';
 
 	let { children }: LayoutProps = $props();
+
+	// RUM attribution: remember which screen is showing (the landing page counts from t=0).
+	// Read `page`, not `to.route`: SvelteKit 3.1's initial 'enter' navigation reports
+	// `to.route.id === null` (it is built before the router state is assigned).
+	afterNavigate(({ type }) => {
+		noteNavigation(page.url.pathname, page.route.id, type === 'enter' ? 0 : undefined);
+	});
 
 	onMount(() => {
 		preferences.load();

@@ -126,6 +126,51 @@ test.describe('platform: health, PWA, observability', () => {
 		expect(rows?.map((r) => r.name)).toEqual(expect.arrayContaining(['TTFB', 'FCP']));
 	});
 
+	test('vitals are attributed to the screen where they happened', async ({ page }) => {
+		const since = new Date();
+		await page.goto('/today');
+		await expect(page.locator('html')).toHaveAttribute('data-rum', 'ready', { timeout: 10_000 });
+
+		// Client-side navigation, then a deliberately slow interaction on Train (the INP).
+		await page
+			.getByRole('navigation', { name: 'Primary' })
+			.getByRole('link', { name: 'Train' })
+			.click();
+		await expect(page.getByRole('heading', { level: 1, name: 'Train' })).toBeVisible();
+		await page.evaluate(() => {
+			document.querySelector('h1')!.addEventListener('click', () => {
+				const end = performance.now() + 150;
+				while (performance.now() < end) {
+					// block the main thread so the interaction is the page's worst
+				}
+			});
+		});
+		await page.getByRole('heading', { level: 1, name: 'Train' }).click();
+		await page.waitForTimeout(500); // let the event-timing entry be dispatched after paint
+		await page.evaluate(() => {
+			Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
+			document.dispatchEvent(new Event('visibilitychange', { bubbles: true }));
+		});
+
+		// Other tests run in parallel against the same database: select this test's rows by
+		// the deliberately slow interaction (INP ≥ 150 ms) and the landing path.
+		const inp = await eventually(() =>
+			query<{ path: string; route_id: string | null }>(
+				`select path, route_id from web_vitals
+				 where name = 'INP' and value >= 150 and recorded_at >= $1`,
+				[since]
+			).then((r) => (r.length ? r : null))
+		);
+		expect(inp).toEqual([{ path: '/train', route_id: '/(app)/train' }]);
+
+		const landing = await query<{ route_id: string | null }>(
+			`select route_id from web_vitals where name = 'TTFB' and path = '/today' and recorded_at >= $1`,
+			[since]
+		);
+		expect(landing.length).toBeGreaterThan(0);
+		expect(new Set(landing.map((r) => r.route_id))).toEqual(new Set(['/(app)/today']));
+	});
+
 	test('server errors are logged with a request id and recorded', async ({ request }) => {
 		const res = await request.get('/api/test-support/error', {
 			headers: { accept: 'application/json' }

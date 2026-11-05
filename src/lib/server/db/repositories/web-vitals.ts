@@ -15,7 +15,8 @@ export function createWebVitalsRepository(db: Executor) {
 	return {
 		/**
 		 * Insert metrics, de-duplicating on (metric_id, name): web-vitals may re-report a metric
-		 * instance (e.g. CLS/INP growing until the page is hidden); the latest value wins.
+		 * instance (e.g. CLS/INP growing until the page is hidden); the latest report wins,
+		 * including where it happened (the worst interaction may move to another screen).
 		 */
 		async upsertMany(rows: NewWebVital[]): Promise<number> {
 			if (rows.length === 0) return 0;
@@ -28,6 +29,8 @@ export function createWebVitalsRepository(db: Executor) {
 						value: sql`excluded.value`,
 						delta: sql`excluded.delta`,
 						rating: sql`excluded.rating`,
+						path: sql`excluded.path`,
+						routeId: sql`excluded.route_id`,
 						recordedAt: sql`now()`
 					}
 				})
