@@ -1,9 +1,10 @@
 /**
- * Server hooks: startup validation, request context, Server-Timing, structured access logs,
- * security headers and error recording.
+ * Server hooks: startup validation, request context, the auth guard (deny by default),
+ * Server-Timing, structured access logs, security headers and error recording.
  */
 import type { Handle, HandleServerError, ServerInit } from '@sveltejs/kit/hooks';
 import { building, version } from '$app/env';
+import { guardRequest } from '#lib/server/auth/guard.ts';
 import { getEnv } from '#lib/server/env.ts';
 import { createContext, runWithContext } from '#lib/server/observability/context.ts';
 import { logger } from '#lib/server/observability/logger.ts';
@@ -55,15 +56,21 @@ export const handle: Handle = async ({ event, resolve }) => {
 		event.request.headers.get('x-request-id') ?? event.request.headers.get('x-vercel-id');
 	const requestId = incoming && REQUEST_ID.test(incoming) ? incoming : crypto.randomUUID();
 	event.locals.requestId = requestId;
+	event.locals.session = null;
 
 	const ctx = createContext(requestId);
 	return runWithContext(ctx, async () => {
-		const response = await resolve(event, {
-			preload: (input) =>
-				input.type === 'js' ||
-				input.type === 'css' ||
-				(input.type === 'font' && shouldPreloadFont(input.filename))
-		});
+		// Every route needs a session unless src/lib/server/auth/routes.ts says otherwise.
+		// Prerendering (build time) renders only public, data-free pages and has no database.
+		const denied = building ? null : await guardRequest(event);
+		const response =
+			denied ??
+			(await resolve(event, {
+				preload: (input) =>
+					input.type === 'js' ||
+					input.type === 'css' ||
+					(input.type === 'font' && shouldPreloadFont(input.filename))
+			}));
 
 		const durationMs = performance.now() - ctx.startedAt;
 		const headers: Record<string, string> = {
