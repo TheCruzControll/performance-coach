@@ -1,0 +1,59 @@
+import type { Executor } from '../../../src/lib/server/db';
+import type { AuthRequest } from '../../../src/lib/server/auth/context';
+import { beginSetup, completeSetup } from '../../../src/lib/server/auth/setup';
+import { generateToken, hashToken } from '../../../src/lib/server/auth/tokens';
+import { SoftAuthenticator } from './soft-authenticator';
+
+export const ORIGIN = 'http://localhost:4173';
+export const RP = { rpID: 'localhost', origin: ORIGIN, rpName: 'Performance Coach' };
+export const UA =
+	'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
+
+let ipCounter = 1;
+/** A request from a fresh client address (so rate limits never couple unrelated steps). */
+export function request(overrides: Partial<AuthRequest> = {}): AuthRequest {
+	ipCounter += 1;
+	return {
+		rp: RP,
+		ip: `198.51.100.${ipCounter % 250}`,
+		userAgent: UA,
+		requestId: `test-${ipCounter}`,
+		...overrides
+	};
+}
+
+export const SETUP_TOKEN = generateToken();
+export const SETUP_CONFIG = { tokenHash: hashToken(SETUP_TOKEN) };
+
+/** A controllable clock. */
+export function clock(start = new Date('2026-11-05T12:00:00Z')) {
+	let t = start.getTime();
+	return {
+		now: () => new Date(t),
+		advance: (ms: number) => {
+			t += ms;
+		}
+	};
+}
+
+/** Run first-run setup through the services with a software authenticator. */
+export async function setUpOwner(
+	db: Executor,
+	options: { now?: () => Date; authenticator?: SoftAuthenticator; name?: string } = {}
+) {
+	const authenticator =
+		options.authenticator ?? new SoftAuthenticator({ rpId: RP.rpID, origin: ORIGIN });
+	const deps = { db, now: options.now, config: SETUP_CONFIG };
+	const opts = await beginSetup(
+		{ token: SETUP_TOKEN, name: options.name ?? 'Niko Cruz' },
+		request(),
+		deps
+	);
+	const result = await completeSetup(
+		{ token: SETUP_TOKEN, response: authenticator.register(opts) },
+		undefined,
+		request(),
+		deps
+	);
+	return { ...result, authenticator, registrationOptions: opts };
+}
