@@ -34,7 +34,13 @@ describe('recovery codes', () => {
 	});
 
 	it('reject anything that cannot be a code', () => {
-		for (const bad of ['', 'short', '7KQ2-M9XD-4TPA', '7KQ2-M9XD-4TPA-HC3R-X', 'UUUU-UUUU-UUUU-UUUU']) {
+		for (const bad of [
+			'',
+			'short',
+			'7KQ2-M9XD-4TPA',
+			'7KQ2-M9XD-4TPA-HC3R-X',
+			'UUUU-UUUU-UUUU-UUUU'
+		]) {
 			expect(normalizeRecoveryCode(bad), bad).toBeNull();
 			expect(hashRecoveryCode(bad), bad).toBeNull();
 		}

@@ -29,7 +29,8 @@ const LABELS: Record<AuthEventType, { label: string; tone: ActivityTone }> = {
 	'session.revoked': { label: 'Signed out another device', tone: 'neutral' },
 	'session.revoked_others': { label: 'Signed out everywhere else', tone: 'neutral' },
 	signout: { label: 'Signed out', tone: 'neutral' },
-	rate_limited: { label: 'Too many attempts blocked', tone: 'warning' }
+	rate_limited: { label: 'Too many attempts blocked', tone: 'warning' },
+	'owner.reset': { label: 'Passkeys reset by the administrator', tone: 'warning' }
 };
 
 export async function recentAuthActivity(

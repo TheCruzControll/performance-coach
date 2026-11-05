@@ -1,0 +1,2 @@
+ALTER TABLE "auth_events" DROP CONSTRAINT "auth_events_type_ck";--> statement-breakpoint
+ALTER TABLE "auth_events" ADD CONSTRAINT "auth_events_type_ck" CHECK (type in ('setup.completed', 'setup.failed', 'signin.succeeded', 'signin.failed', 'passkey.added', 'passkey.renamed', 'passkey.removed', 'recovery.used', 'recovery.failed', 'recovery.regenerated', 'session.revoked', 'session.revoked_others', 'signout', 'rate_limited', 'owner.reset'));
