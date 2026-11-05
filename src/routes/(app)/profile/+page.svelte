@@ -10,6 +10,7 @@
 	import Badge from '#lib/ui/components/Badge.svelte';
 	import Card from '#lib/ui/components/Card.svelte';
 	import Icon from '#lib/ui/components/Icon.svelte';
+	import ListRow from '#lib/ui/components/ListRow.svelte';
 	import PageHeader from '#lib/ui/components/PageHeader.svelte';
 	import SegmentedControl from '#lib/ui/components/SegmentedControl.svelte';
 	import Skeleton from '#lib/ui/components/Skeleton.svelte';
@@ -20,6 +21,15 @@
 	let { data }: PageProps = $props();
 
 	onMount(() => preferences.load());
+
+	const initials = $derived(
+		data.owner.name
+			.split(/\s+/)
+			.filter(Boolean)
+			.slice(0, 2)
+			.map((part) => part[0]!.toUpperCase())
+			.join('') || '·'
+	);
 
 	// Core Web Vitals thresholds (good / poor), https://web.dev/articles/vitals
 	const VITALS: Record<string, { good: number; poor: number; unit: 'ms' | '' }> = {
@@ -58,14 +68,21 @@
 <div class="stack">
 	<Surface padding="md" radius="xl">
 		<div class="identity">
-			<!-- Identity comes from the signed-in account once passkey auth exists (M2). -->
-			<span class="avatar" aria-hidden="true"><Icon name="profile" size={26} /></span>
+			<span class="avatar" aria-hidden="true">{initials}</span>
 			<div>
-				<p class="name">Preview mode</p>
-				<p class="meta"><Icon name="lock" size={14} /> Passkey sign-in coming soon</p>
+				<p class="name" data-testid="owner-name">{data.owner.name}</p>
+				<p class="meta"><Icon name="lock" size={14} /> Signed in with a passkey</p>
 			</div>
 		</div>
 	</Surface>
+
+	<ListRow
+		title="Security"
+		subtitle="Passkeys, signed-in devices, recovery codes"
+		icon="shield"
+		href={resolve('/(app)/profile/security')}
+		data-testid="security-link"
+	/>
 
 	<Card title="Preferences" eyebrow="This device">
 		<div class="prefs">
@@ -213,7 +230,11 @@
 			),
 			var(--color-surface-3);
 		border: 1px solid var(--color-border-strong);
-		color: var(--color-text-secondary);
+		color: var(--color-text);
+		font-family: var(--font-display);
+		font-size: var(--text-lg);
+		font-weight: var(--weight-bold);
+		letter-spacing: var(--tracking-tight);
 	}
 
 	.name {
