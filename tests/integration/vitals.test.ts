@@ -99,6 +99,25 @@ describe('web vitals service', () => {
 		await expect(recordVitals({ ...lcp, route: 'today' })).rejects.toThrow(InvalidVitalsError);
 	});
 
+	it('names the offending field for a single metric and for a batch', async () => {
+		const issues = async (payload: unknown) => {
+			try {
+				await recordVitals(payload);
+			} catch (error) {
+				if (error instanceof InvalidVitalsError) return error.issues;
+				throw error;
+			}
+			throw new Error('expected InvalidVitalsError');
+		};
+		const single = await issues({ ...lcp, name: 'FID', value: -1 });
+		expect(single.some((i) => i.startsWith('name:'))).toBe(true);
+		expect(single.some((i) => i.startsWith('value:'))).toBe(true);
+		expect(single.join(' ')).not.toContain('(root)');
+		expect(await issues([lcp, { ...lcp, name: 'FID' }])).toEqual([
+			expect.stringMatching(/^1\.name:/)
+		]);
+	});
+
 	it('summarises metrics at p75 per metric', async () => {
 		await withRollback(async (tx) => {
 			const values = [1000, 2000, 3000, 4000, 5000];

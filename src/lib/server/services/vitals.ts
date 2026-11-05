@@ -64,7 +64,11 @@ export async function recordVitals(
 	meta: VitalsMeta = {},
 	deps: { db?: Executor } = {}
 ): Promise<number> {
-	const parsed = vitalsPayloadSchema.safeParse(payload);
+	// Parse each shape with its own schema: a union would collapse field errors on a single
+	// metric into an uninformative "(root): Invalid input".
+	const parsed = Array.isArray(payload)
+		? z.array(vitalSchema).min(1).max(MAX_VITALS_PER_REQUEST).safeParse(payload)
+		: vitalSchema.transform((v) => [v]).safeParse(payload);
 	if (!parsed.success) {
 		throw new InvalidVitalsError(
 			parsed.error.issues.map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`)
