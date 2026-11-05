@@ -2,28 +2,41 @@
  * Lighthouse (mobile emulation, simulated slow 4G + 4× CPU) against the local production Node
  * server, using the preinstalled Playwright Chromium. Reports go to ./lighthouse-reports.
  *
- *   pnpm build:node && pnpm lighthouse                 # every app screen, 3 runs each
+ *   ORIGIN=http://localhost:4174 pnpm build:node && pnpm lighthouse   # every screen, 3 runs
  *   pnpm lighthouse --runs 5 --routes /,/today
  *   pnpm lighthouse --url https://preview.example.com   # audit an already-running server
  *   pnpm lighthouse --assert                            # exit 1 when a threshold is missed
  *
  * The local server uses E2E_DATABASE_URL (default: local coach_e2e) after applying migrations.
+ *
+ * Every app screen needs a session (deny by default), so the script mints one for the owner
+ * directly in that disposable database (a placeholder owner if setup never ran) and sends its
+ * cookie with every request; `/` (the sign-in screen) is audited signed out. Against an external
+ * server (--url) pass a session cookie value in LIGHTHOUSE_SESSION, or only `/` is meaningful.
+ * Build the Node server with ORIGIN=http://localhost:<port> so it knows it is served over HTTP.
  */
 import { spawn, type ChildProcess } from 'node:child_process';
-import { appendFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { createHash, randomBytes } from 'node:crypto';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 import { chromium } from '@playwright/test';
 import * as chromeLauncher from 'chrome-launcher';
 import lighthouse, { type RunnerResult } from 'lighthouse';
+import pg from 'pg';
 import { LOCAL_DATABASE_URLS, runMigrations } from '../src/lib/server/db/migrate.ts';
 
 const { values } = parseArgs({
 	options: {
 		url: { type: 'string' },
-		// Every app screen: the landing page, the five tabs (incl. the streamed, DB-backed Profile).
-		routes: { type: 'string', default: '/,/today,/train,/progress,/coach,/profile' },
+		// Every app screen: the sign-in screen, the five tabs (incl. the streamed, DB-backed
+		// Profile) and Security.
+		routes: {
+			type: 'string',
+			default: '/,/today,/train,/progress,/coach,/profile,/profile/security'
+		},
 		runs: { type: 'string', default: '3' },
-		port: { type: 'string', default: '4174' },
+		// Default: the port of the origin baked into the Node build (ORIGIN at build time).
+		port: { type: 'string' },
 		assert: { type: 'boolean', default: false },
 		'min-perf': { type: 'string', default: '0.9' },
 		'max-lcp': { type: 'string', default: '2500' },
@@ -64,27 +77,82 @@ async function waitForHealth(base: string, server: ChildProcess) {
 	}
 }
 
-async function startServer(): Promise<{ base: string; stop: () => void }> {
+/**
+ * A session for the owner in the disposable database (test tooling only — the app itself only
+ * ever issues sessions after a passkey or recovery-code sign-in).
+ */
+async function mintSession(db: string): Promise<string> {
+	const client = new pg.Client({ connectionString: db });
+	await client.connect();
+	try {
+		const token = randomBytes(32).toString('base64url');
+		const owner = await client.query<{ id: string }>(
+			`with existing as (select id from owners limit 1),
+			      created as (
+			        insert into owners (display_name, webauthn_user_id)
+			        select 'Test Owner', $1 where not exists (select 1 from existing)
+			        returning id)
+			 select id from existing union all select id from created`,
+			[randomBytes(32).toString('base64url')]
+		);
+		await client.query(
+			`insert into auth_sessions (owner_id, token_hash, method, expires_at, absolute_expires_at)
+			 values ($1, $2, 'test', now() + interval '1 day', now() + interval '1 day')`,
+			[owner.rows[0]!.id, createHash('sha256').update(token).digest('hex')]
+		);
+		return token;
+	} finally {
+		await client.end();
+	}
+}
+
+/**
+ * The public origin baked into the Node build (vite.config.ts → paths.origin). The server must
+ * listen there: CSRF checks compare it with each request's Origin, and the sign-in screen's
+ * passkey request is refused on any other port.
+ */
+function builtOrigin(): URL {
+	const config = readFileSync('build/adapter-node.js', 'utf8');
+	const origin = /export const origin = "([^"]+)"/.exec(config)?.[1];
+	if (!origin) {
+		throw new Error(
+			'The Node build has no public origin. Rebuild with ORIGIN=http://localhost:4174 pnpm build:node.'
+		);
+	}
+	return new URL(origin);
+}
+
+async function startServer(): Promise<{ base: string; stop: () => void; session: string }> {
 	if (!existsSync('build/index.js')) {
-		throw new Error('No Node build found. Run `pnpm build:node` first.');
+		throw new Error(
+			'No Node build found. Run `ORIGIN=http://localhost:4174 pnpm build:node` first.'
+		);
+	}
+	const origin = builtOrigin();
+	const port = values.port ?? origin.port;
+	if (origin.hostname !== 'localhost' || origin.port !== port) {
+		throw new Error(
+			`The build's origin is ${origin.origin}, but Lighthouse would serve http://localhost:${port}. ` +
+				`Rebuild with ORIGIN=http://localhost:${port} pnpm build:node.`
+		);
 	}
 	const db = process.env.E2E_DATABASE_URL || LOCAL_DATABASE_URLS.e2e;
 	await runMigrations(db);
-	const base = `http://localhost:${values.port}`;
+	const base = `http://localhost:${port}`;
 	const server = spawn(process.execPath, ['build/index.js'], {
 		stdio: 'ignore',
 		env: {
 			...process.env,
 			NODE_ENV: 'production',
 			APP_ENV: 'test',
-			PORT: values.port,
+			PORT: port,
 			ORIGIN: base,
 			DATABASE_URL: db,
 			LOG_LEVEL: 'warn'
 		}
 	});
 	await waitForHealth(base, server);
-	return { base, stop: () => server.kill('SIGTERM') };
+	return { base, stop: () => server.kill('SIGTERM'), session: await mintSession(db) };
 }
 
 const median = (xs: number[]) => {
@@ -94,8 +162,16 @@ const median = (xs: number[]) => {
 };
 
 const server = values.url
-	? { base: values.url.replace(/\/$/, ''), stop: () => {} }
+	? {
+			base: values.url.replace(/\/$/, ''),
+			stop: () => {},
+			session: process.env.LIGHTHOUSE_SESSION ?? ''
+		}
 	: await startServer();
+/** The cookie name depends on the origin's scheme (src/lib/server/auth/cookies.ts): send both. */
+const sessionHeaders = server.session
+	? { Cookie: `session=${server.session}; __Host-session=${server.session}` }
+	: undefined;
 const chromePath = process.env.LIGHTHOUSE_CHROME_PATH || chromium.executablePath();
 
 /**
@@ -126,8 +202,10 @@ let lighthouseVersion = '';
 async function auditOnce(url: string, attempt = 1): Promise<NonNullable<RunnerResult>> {
 	await chrome.kill();
 	chrome = await launchChrome();
+	const signedIn = new URL(url).pathname !== '/';
 	const result = await lighthouse(url, {
 		port: chrome.port,
+		...(signedIn && sessionHeaders ? { extraHeaders: sessionHeaders } : {}),
 		output: ['json', 'html'],
 		logLevel: 'error',
 		onlyCategories: (process.env.LH_CATEGORIES ?? 'performance,accessibility,best-practices').split(
@@ -175,7 +253,7 @@ try {
 				cls: audit('cumulative-layout-shift'),
 				si: audit('speed-index')
 			});
-			const name = `${route === '/' ? 'landing' : route.replace(/^\//, '').replace(/\//g, '-')}-run${i + 1}`;
+			const name = `${route === '/' ? 'sign-in' : route.replace(/^\//, '').replace(/\//g, '-')}-run${i + 1}`;
 			const [json, html] = result.report as string[];
 			writeFileSync(`${OUT_DIR}/${name}.report.json`, json!);
 			writeFileSync(`${OUT_DIR}/${name}.report.html`, html!);
