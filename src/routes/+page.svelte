@@ -64,7 +64,9 @@
 				const { redirectTo } = await signInWithPasskey({ next: data.next, autofill: true });
 				if (active) await finish(redirectTo);
 			} catch (err) {
-				if (active && !(err instanceof PasskeyError && err.kind === 'cancelled') && !busy) {
+				// Autofill is a quiet extra: a browser that cannot run it (or the owner dismissing
+				// it) is not an error. Only a passkey the server refused after it was picked is.
+				if (active && !busy && err instanceof PasskeyError && err.stage === 'server') {
 					explain(err);
 				}
 			}
