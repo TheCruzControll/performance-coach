@@ -1,13 +1,19 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { resolve } from '$app/paths';
-	import { preferences, type ThemePreference } from '#lib/client/preferences.svelte.ts';
+	import {
+		preferences,
+		type DistancePreference,
+		type ThemePreference
+	} from '#lib/client/preferences.svelte.ts';
 	import type { WeightUnit } from '#lib/domain/units.ts';
+	import Badge from '#lib/ui/components/Badge.svelte';
 	import Card from '#lib/ui/components/Card.svelte';
 	import Icon from '#lib/ui/components/Icon.svelte';
 	import PageHeader from '#lib/ui/components/PageHeader.svelte';
 	import SegmentedControl from '#lib/ui/components/SegmentedControl.svelte';
 	import Skeleton from '#lib/ui/components/Skeleton.svelte';
+	import Stat from '#lib/ui/components/Stat.svelte';
 	import Surface from '#lib/ui/components/Surface.svelte';
 	import type { PageProps } from './$types';
 
@@ -24,10 +30,17 @@
 		TTFB: { good: 800, poor: 1800, unit: 'ms' }
 	};
 
+	// Rated in words (the dot only reinforces them): never state by colour alone.
+	const RATINGS = {
+		good: { tone: 'positive', label: 'Good' },
+		fair: { tone: 'warning', label: 'Needs work' },
+		poor: { tone: 'danger', label: 'Poor' }
+	} as const;
+
 	function rating(name: string, value: number) {
 		const t = VITALS[name];
-		if (!t) return 'neutral';
-		return value <= t.good ? 'good' : value <= t.poor ? 'fair' : 'poor';
+		if (!t) return undefined;
+		return RATINGS[value <= t.good ? 'good' : value <= t.poor ? 'fair' : 'poor'];
 	}
 
 	function formatVital(name: string, value: number) {
@@ -70,6 +83,19 @@
 				/>
 			</div>
 			<div class="pref">
+				<span class="pref-label">Distance</span>
+				<SegmentedControl
+					label="Distance"
+					size="sm"
+					value={preferences.distance}
+					options={[
+						{ value: 'km', label: 'km' },
+						{ value: 'mi', label: 'mi' }
+					]}
+					onchange={(d: DistancePreference) => preferences.setDistance(d)}
+				/>
+			</div>
+			<div class="pref">
 				<span class="pref-label">Appearance</span>
 				<SegmentedControl
 					label="Appearance"
@@ -88,7 +114,7 @@
 	</Card>
 
 	<Card title="Training profile" eyebrow="Goals & baseline">
-		{#snippet action()}<span class="soon">Soon</span>{/snippet}
+		{#snippet action()}<span class="soon"><Badge>Soon</Badge></span>{/snippet}
 		<p class="note">
 			Goals, schedule, experience and optional 1RMs. You'll be able to change any of it, any time.
 		</p>
@@ -138,13 +164,16 @@
 			{#if vitals && vitals.length}
 				<ul class="vitals">
 					{#each vitals as v (v.name)}
-						<li class="vital" data-rating={rating(v.name, v.p75)}>
-							<span class="vital-name">{v.name}</span>
-							<span class="vital-value numeric"
-								>{formatVital(v.name, v.p75)}<small>{VITALS[v.name]?.unit}</small></span
-							>
-							<span class="vital-n">{v.samples} {v.samples === 1 ? 'sample' : 'samples'}</span>
-						</li>
+						<Stat
+							as="li"
+							level={2}
+							label={v.name}
+							value={formatVital(v.name, v.p75)}
+							unit={VITALS[v.name]?.unit || undefined}
+							rating={rating(v.name, v.p75)}
+							caption={`${v.samples} ${v.samples === 1 ? 'sample' : 'samples'}`}
+							data-testid={`vital-${v.name}`}
+						/>
 					{/each}
 				</ul>
 			{:else}
@@ -287,66 +316,14 @@
 		list-style: none;
 	}
 
-	.vital {
-		--rating: var(--color-text-tertiary);
-		display: grid;
-		gap: 2px;
-		padding: var(--space-3);
-		border-radius: var(--radius-md);
-		background: var(--color-surface-2);
-		border: 1px solid var(--color-border);
-	}
-
-	.vital[data-rating='good'] {
-		--rating: var(--color-positive);
-	}
-	.vital[data-rating='fair'] {
-		--rating: var(--color-warning);
-	}
-	.vital[data-rating='poor'] {
-		--rating: var(--color-danger);
-	}
-
-	.vital-name {
-		font-size: var(--text-2xs);
-		font-weight: var(--weight-semibold);
-		letter-spacing: var(--tracking-caps);
-		color: var(--rating);
-	}
-
-	.vital-value {
-		font-size: var(--text-xl);
-		font-weight: var(--weight-bold);
-	}
-
-	.vital-value small {
-		margin-left: 2px;
-		font-size: var(--text-xs);
-		font-weight: var(--weight-medium);
-		color: var(--color-text-tertiary);
-	}
-
-	.vital-n {
-		font-size: var(--text-2xs);
-		color: var(--color-text-tertiary);
-	}
-
 	.note {
 		font-size: var(--text-sm);
 		color: var(--color-text-secondary);
 	}
 
 	.soon {
-		display: inline-block;
+		display: inline-flex;
 		margin-top: var(--space-2);
-		padding: var(--space-1) var(--space-2);
-		border-radius: var(--radius-full);
-		background: var(--color-accent-subtle);
-		color: var(--color-accent-text);
-		font-size: var(--text-2xs);
-		font-weight: var(--weight-semibold);
-		letter-spacing: var(--tracking-caps);
-		text-transform: uppercase;
 	}
 
 	.design-link {

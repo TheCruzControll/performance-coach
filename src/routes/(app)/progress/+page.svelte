@@ -1,11 +1,17 @@
 <script lang="ts">
+	import { preferences } from '#lib/client/preferences.svelte.ts';
 	import EmptyState from '#lib/ui/components/EmptyState.svelte';
 	import PageHeader from '#lib/ui/components/PageHeader.svelte';
+	import Stat from '#lib/ui/components/Stat.svelte';
 	import Surface from '#lib/ui/components/Surface.svelte';
 	import Tabs from '#lib/ui/components/Tabs.svelte';
 
 	type TabId = 'strength' | 'running' | 'general';
 	let tab = $state<TabId>('strength');
+
+	// Units follow the device preferences (Profile → Preferences).
+	const weight = $derived(preferences.units);
+	const distance = $derived(preferences.distance);
 
 	const panels: Record<
 		TabId,
@@ -16,7 +22,7 @@
 			description: string;
 			metrics: { label: string; unit: string }[];
 		}
-	> = {
+	> = $derived({
 		strength: {
 			tone: 'strength',
 			icon: 'train',
@@ -24,8 +30,8 @@
 			description:
 				'Estimated 1RMs, PRs and weekly volume per muscle group appear after two logged sessions — always labelled as estimated until you test a max.',
 			metrics: [
-				{ label: 'Est. 1RM', unit: 'kg' },
-				{ label: 'Volume', unit: 'kg / wk' },
+				{ label: 'Est. 1RM', unit: weight },
+				{ label: 'Volume', unit: `${weight} / wk` },
 				{ label: 'Avg RPE', unit: 'last 7 d' }
 			]
 		},
@@ -36,9 +42,9 @@
 			description:
 				'Weekly mileage, pace trends and long-run progression build from your logged runs.',
 			metrics: [
-				{ label: 'Distance', unit: 'km / wk' },
-				{ label: 'Avg pace', unit: 'min / km' },
-				{ label: 'Long run', unit: 'km' }
+				{ label: 'Distance', unit: `${distance} / wk` },
+				{ label: 'Avg pace', unit: `min / ${distance}` },
+				{ label: 'Long run', unit: distance }
 			]
 		},
 		general: {
@@ -53,7 +59,7 @@
 				{ label: 'Adherence', unit: '%' }
 			]
 		}
-	};
+	});
 </script>
 
 <svelte:head>
@@ -73,14 +79,10 @@
 >
 	{#snippet panel(id)}
 		{@const p = panels[id]}
-		<div class="panel" style:--tone={`var(--color-${p.tone})`}>
+		<div class="panel">
 			<div class="metrics">
 				{#each p.metrics as m (m.label)}
-					<Surface padding="md" radius="lg">
-						<p class="metric-label">{m.label}</p>
-						<p class="metric-value numeric">—</p>
-						<p class="metric-unit">{m.unit}</p>
-					</Surface>
+					<Stat label={m.label} caption={m.unit} />
 				{/each}
 			</div>
 
@@ -91,10 +93,11 @@
 					preserveAspectRatio="none"
 					aria-hidden="true"
 				>
+					<!-- An empty plot: gridlines and a flat, neutral baseline. Never a made-up trend. -->
 					{#each [24, 52, 80, 108] as y (y)}
 						<line x1="0" x2="320" y1={y} y2={y} class="grid" />
 					{/each}
-					<path class="trend" d="M0 96 C 48 92, 72 84, 112 80 S 176 60, 216 58 S 280 36, 320 30" />
+					<line x1="0" x2="320" y1="66" y2="66" class="baseline" />
 				</svg>
 				<EmptyState
 					icon={p.icon}
@@ -120,28 +123,6 @@
 		gap: var(--space-2);
 	}
 
-	.metric-label {
-		font-size: var(--text-xs);
-		font-weight: var(--weight-medium);
-		color: var(--color-text-secondary);
-	}
-
-	.metric-value {
-		margin-top: var(--space-2);
-		font-size: var(--text-2xl);
-		font-weight: var(--weight-bold);
-		line-height: 1;
-		color: var(--color-text-tertiary);
-	}
-
-	.metric-unit {
-		margin-top: var(--space-1);
-		font-size: var(--text-2xs);
-		color: var(--color-text-tertiary);
-		letter-spacing: var(--tracking-caps);
-		text-transform: uppercase;
-	}
-
 	.ghost-chart {
 		width: 100%;
 		height: 7.5rem;
@@ -153,9 +134,8 @@
 		stroke-width: 1;
 	}
 
-	.trend {
-		fill: none;
-		stroke: color-mix(in srgb, var(--tone) 55%, transparent);
+	.baseline {
+		stroke: var(--color-border-strong);
 		stroke-width: 2;
 		stroke-dasharray: 4 6;
 		stroke-linecap: round;

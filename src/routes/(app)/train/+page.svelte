@@ -4,11 +4,13 @@
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { preferences } from '#lib/client/preferences.svelte.ts';
+	import Badge from '#lib/ui/components/Badge.svelte';
 	import BottomSheet from '#lib/ui/components/BottomSheet.svelte';
-	import Button from '#lib/ui/components/Button.svelte';
+	import Chip from '#lib/ui/components/Chip.svelte';
 	import EmptyState from '#lib/ui/components/EmptyState.svelte';
-	import Icon from '#lib/ui/components/Icon.svelte';
+	import ListRow from '#lib/ui/components/ListRow.svelte';
 	import PageHeader from '#lib/ui/components/PageHeader.svelte';
+	import Section from '#lib/ui/components/Section.svelte';
 	import Skeleton from '#lib/ui/components/Skeleton.svelte';
 	import Surface from '#lib/ui/components/Surface.svelte';
 	import type PlateCalculatorType from '#lib/ui/components/training/PlateCalculator.svelte';
@@ -16,12 +18,12 @@
 	type CalculatorProps = ComponentProps<typeof PlateCalculatorType>;
 
 	const disciplines = [
-		{ label: 'Strength', color: 'var(--color-strength)' },
-		{ label: 'Running', color: 'var(--color-running)' },
-		{ label: 'Muay Thai', color: 'var(--color-combat)' },
-		{ label: 'Hypertrophy', color: 'var(--color-hypertrophy)' },
-		{ label: 'Conditioning', color: 'var(--color-conditioning)' }
-	];
+		{ label: 'Strength', tone: 'strength' },
+		{ label: 'Running', tone: 'running' },
+		{ label: 'Muay Thai', tone: 'combat' },
+		{ label: 'Hypertrophy', tone: 'hypertrophy' },
+		{ label: 'Conditioning', tone: 'conditioning' }
+	] as const;
 
 	// The calculator is code-split: fetched on first intent (pointerdown/hover) or open, so the
 	// Train screen ships and hydrates without it.
@@ -62,53 +64,33 @@
 			data-testid="train-empty"
 		>
 			{#snippet actions()}
-				<Button
-					href={resolve('/(app)/profile')}
-					variant="secondary"
-					size="sm"
-					iconEnd="arrow-right"
-				>
-					Set goals
-				</Button>
+				<p class="next" data-testid="train-next-step">
+					Goal setup opens with passkey sign-in <Badge>Soon</Badge>
+				</p>
 			{/snippet}
 		</EmptyState>
 		<ul class="disciplines" aria-label="Supported disciplines">
 			{#each disciplines as d (d.label)}
-				<li class="chip"><span class="dot" style:background={d.color}></span>{d.label}</li>
+				<Chip as="li" tone={d.tone}>{d.label}</Chip>
 			{/each}
 		</ul>
 	</Surface>
 
-	<section aria-labelledby="tools-heading" class="tools">
-		<h2 id="tools-heading" class="section-title">Tools</h2>
-		<button
-			type="button"
-			class="tool"
+	<Section title="Tools">
+		<ListRow
+			icon="plate"
+			tone="strength"
+			title="Plate calculator"
+			subtitle="Exact loading in kg or lb"
 			onpointerdown={loadCalculator}
 			onpointerenter={loadCalculator}
 			onclick={openCalculator}
 			data-testid="open-plates"
-		>
-			<span class="tool-icon" style:--tone="var(--color-strength)"
-				><Icon name="plate" size={22} /></span
-			>
-			<span class="tool-text">
-				<span class="tool-title">Plate calculator</span>
-				<span class="tool-sub">Exact loading in kg or lb</span>
-			</span>
-			<Icon name="chevron-right" size={20} />
-		</button>
-		<div class="tool" aria-disabled="true">
-			<span class="tool-icon" style:--tone="var(--color-running)"
-				><Icon name="timer" size={22} /></span
-			>
-			<span class="tool-text">
-				<span class="tool-title">Rest timer</span>
-				<span class="tool-sub">Arrives with workout logging</span>
-			</span>
-			<span class="soon">Soon</span>
-		</div>
-	</section>
+		/>
+		<ListRow icon="timer" title="Rest timer" subtitle="Arrives with workout logging" disabled>
+			{#snippet trailing()}<Badge>Soon</Badge>{/snippet}
+		</ListRow>
+	</Section>
 </div>
 
 <BottomSheet
@@ -137,6 +119,15 @@
 		gap: var(--space-6);
 	}
 
+	.next {
+		display: flex;
+		align-items: center;
+		gap: var(--space-2);
+		font-size: var(--text-sm);
+		font-weight: var(--weight-medium);
+		color: var(--color-text-secondary);
+	}
+
 	.disciplines {
 		display: flex;
 		flex-wrap: wrap;
@@ -145,101 +136,6 @@
 		margin: 0;
 		padding: 0 var(--space-4) var(--space-6);
 		list-style: none;
-	}
-
-	.chip {
-		display: inline-flex;
-		align-items: center;
-		gap: var(--space-1-5);
-		padding: var(--space-1) var(--space-3);
-		border-radius: var(--radius-full);
-		border: 1px solid var(--color-border);
-		font-size: var(--text-xs);
-		font-weight: var(--weight-medium);
-		color: var(--color-text-secondary);
-	}
-
-	.dot {
-		width: 6px;
-		height: 6px;
-		border-radius: 50%;
-	}
-
-	.section-title {
-		margin-bottom: var(--space-3);
-		font-size: var(--text-sm);
-		font-weight: var(--weight-semibold);
-		letter-spacing: var(--tracking-normal);
-		color: var(--color-text-secondary);
-	}
-
-	.tools {
-		display: grid;
-		gap: var(--space-2);
-	}
-
-	.tools .section-title {
-		margin-bottom: var(--space-1);
-	}
-
-	.tool {
-		display: flex;
-		align-items: center;
-		gap: var(--space-3);
-		width: 100%;
-		min-height: 4.25rem;
-		padding: var(--space-3) var(--space-4);
-		border-radius: var(--radius-lg);
-		border: 1px solid var(--color-border);
-		background: var(--color-surface-1);
-		box-shadow: var(--elevation-1);
-		color: var(--color-text-tertiary);
-		text-align: left;
-		transition: transform var(--duration-fast) var(--ease-out);
-	}
-
-	button.tool:active {
-		transform: scale(0.985);
-		transition-duration: var(--duration-instant);
-	}
-
-	.tool[aria-disabled='true'] {
-		opacity: 0.6;
-	}
-
-	.tool-icon {
-		display: grid;
-		place-items: center;
-		width: 2.5rem;
-		height: 2.5rem;
-		border-radius: var(--radius-md);
-		background: color-mix(in srgb, var(--tone) 14%, transparent);
-		color: var(--tone);
-	}
-
-	.tool-text {
-		flex: 1;
-		display: grid;
-	}
-
-	.tool-title {
-		font-weight: var(--weight-semibold);
-		color: var(--color-text);
-	}
-
-	.tool-sub {
-		font-size: var(--text-sm);
-		color: var(--color-text-secondary);
-	}
-
-	.soon {
-		font-size: var(--text-2xs);
-		font-weight: var(--weight-semibold);
-		letter-spacing: var(--tracking-caps);
-		text-transform: uppercase;
-		padding: var(--space-1) var(--space-2);
-		border-radius: var(--radius-full);
-		background: var(--color-surface-2);
 	}
 
 	.loading {

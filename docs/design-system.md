@@ -56,6 +56,10 @@ Discipline colours (signals only — never large fills):
 | `--color-conditioning` | `#3fd6b5` | `#0e9b7c` |
 
 Status: `--color-positive`, `--color-warning`, `--color-danger` (+ `-subtle`), `--color-info`.
+All four are text-safe: ≥ 4.5:1 on canvas, surface-1 and surface-2 in both themes (the light
+values were darkened in M1 review round 2: positive `#0f7a40`, warning `#955a09`, danger
+`#bb2c28`, info `#1b66b3`). On their own 12% tint (badges) the light theme darkens the text a
+further 18%.
 Plate colours in the plate calculator follow the physical IWF convention on purpose.
 
 ## Typography
@@ -105,7 +109,10 @@ Tracking: `--tracking-display -0.032em`, `--tracking-tight -0.016em`, `--trackin
   (Writing both, standard first, makes the minifier keep only the prefixed one, which Chromium
   ignores.) `pnpm budgets` fails if a
   built rule ships a `-webkit-` property without its standard twin, and e2e asserts the nav's
-  computed `backdrop-filter`.
+  computed `backdrop-filter`. Judge glass on a device or WebKit: headless Chromium does not
+  paint `backdrop-filter` under mobile emulation (`isMobile`, as in the iPhone e2e project), so
+  those screenshots show unblurred content behind the nav (checked in M1 review round 2: the
+  same page blurs with mobile emulation off).
 - **Layers:** `--z-raised 10 · sticky 50 · nav 100 · overlay 200 · sheet 210 · toast 300`.
 - **Safe areas:** `--safe-top/right/bottom/left` from `env(safe-area-inset-*)`;
   `viewport-fit=cover`. Installed on iOS, the status bar is `black-translucent` (white text over
@@ -131,31 +138,42 @@ Tracking: `--tracking-display -0.032em`, `--tracking-tight -0.016em`, `--trackin
 
 ## Components (`src/lib/ui/components`)
 
-| Component           | Highlights                                                                                                                                                                                                                   |
-| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Button`            | `primary · secondary · ghost · danger`, `sm · md · lg` (36/48/56 px; hit area always ≥ 44 px), leading/trailing icon, `loading` (keeps width, `aria-busy`), `block`, renders `<a>` with `href`; pressed = scale 0.97 + tone. |
-| `IconButton`        | Circular, required `label` (accessible name), `ghost · filled · accent`, `sm · md · lg`.                                                                                                                                     |
-| `Icon`              | Inline SVG set (`src/lib/ui/icons/icons.ts`, 24 px grid, 1.75 px round strokes); decorative unless `label`.                                                                                                                  |
-| `Surface` / `Card`  | Levels 1–3, padding, radius, discipline `tone` tint, `interactive`/`href`; `Card` adds eyebrow/title/action header (`aria-labelledby`).                                                                                      |
-| `NumberStepper`     | One-handed −/+ (56 px), press-and-hold accelerating repeat, tap-to-type (`inputmode=decimal`), `role=spinbutton` with ArrowUp/Down, PageUp/Down, Home/End.                                                                   |
-| `BottomSheet`       | Native `<dialog>` + `showModal()` (platform focus trap, inert background), Escape/backdrop close, focus returns to opener, swipe-to-dismiss (distance or velocity), content mounted only while open.                         |
-| `SegmentedControl`  | `radiogroup` with roving tabindex and arrow keys; spring-animated thumb; `sm` (36 px track) options extend their hit area to 44 px.                                                                                          |
-| `Tabs`              | WAI-ARIA tabs (automatic activation, arrows/Home/End), animated accent indicator, renders active panel.                                                                                                                      |
-| `BottomNav`         | Primary navigation (real links, preload on tap).                                                                                                                                                                             |
-| `Skeleton`          | Shimmer placeholder (static under reduced motion); pair with `aria-busy` on the region.                                                                                                                                      |
-| `EmptyState`        | Medallion glyph (tone-tinted), title, guidance, optional actions; `compact` variant.                                                                                                                                         |
-| `Toaster` + `toast` | Polite live region; `neutral · positive · danger`; optional action; auto-dismiss.                                                                                                                                            |
-| `PageHeader`        | Eyebrow + large title + trailing slot.                                                                                                                                                                                       |
-| `BrandMark`         | The performance-gauge mark (also the PWA icon).                                                                                                                                                                              |
-| `training/*`        | `PlateDiagram` (sleeve picture), `PlateCalculator` (code-split sheet body).                                                                                                                                                  |
+| Component           | Highlights                                                                                                                                                                                                                                   |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Button`            | `primary · secondary · ghost · danger`, `sm · md · lg` (36/48/56 px; hit area always ≥ 44 px), leading/trailing icon, `loading` (keeps width, `aria-busy`), `block`, renders `<a>` with `href`; pressed = scale 0.97 + tone.                 |
+| `IconButton`        | Circular, required `label` (accessible name), `ghost · filled · accent`, `sm · md · lg`.                                                                                                                                                     |
+| `Icon`              | Inline SVG set (`src/lib/ui/icons/icons.ts`, 24 px grid, 1.75 px round strokes); decorative unless `label`.                                                                                                                                  |
+| `Surface` / `Card`  | Levels 1–3, padding, radius, discipline `tone` tint, `interactive`/`href`; `Card` adds eyebrow/title/action header (`aria-labelledby`).                                                                                                      |
+| `NumberStepper`     | One-handed −/+ (56 px), press-and-hold accelerating repeat, tap-to-type (`inputmode=decimal`), `role=spinbutton` with ArrowUp/Down, PageUp/Down, Home/End.                                                                                   |
+| `BottomSheet`       | Native `<dialog>` + `showModal()` (platform focus trap, inert background), Escape/backdrop close, focus returns to opener, swipe-to-dismiss (distance or velocity), content mounted only while open.                                         |
+| `SegmentedControl`  | `radiogroup` with roving tabindex and arrow keys; spring-animated thumb; `sm` (36 px track) options extend their hit area to 44 px.                                                                                                          |
+| `Tabs`              | WAI-ARIA tabs (automatic activation, arrows/Home/End), animated accent indicator, renders active panel.                                                                                                                                      |
+| `BottomNav`         | Primary navigation (real links, preload on tap).                                                                                                                                                                                             |
+| `Skeleton`          | Shimmer placeholder (static under reduced motion); pair with `aria-busy` on the region.                                                                                                                                                      |
+| `EmptyState`        | Medallion glyph (tone-tinted), title, guidance, optional actions; `compact` variant.                                                                                                                                                         |
+| `Toaster` + `toast` | Polite live region; `neutral · positive · danger`; optional action; auto-dismiss.                                                                                                                                                            |
+| `PageHeader`        | Eyebrow + large title + trailing slot.                                                                                                                                                                                                       |
+| `BrandMark`         | The performance-gauge mark (also the PWA icon).                                                                                                                                                                                              |
+| `Stat`              | The one metric tile: label, big value + inline unit, optional rating (word + dot), caption. `level 1` on the canvas (28 px value), `level 2` nested in a card (22 px). No value → a dash announced as "No data yet", never a made-up number. |
+| `Badge`             | Uppercase status pill: `neutral` (default; the only tone for "Soon"), `accent` (the next step, sparingly), `positive · warning · danger`; optional icon. Words carry the meaning.                                                            |
+| `Chip`              | Quiet outlined label (e.g. a discipline) with an optional discipline-colour dot; static, not a control.                                                                                                                                      |
+| `ListRow`           | Tool/destination row: tinted icon tile, title, subtitle, chevron or `trailing` snippet; renders a link (`href`), a button (`onclick`) or a dashed, non-interactive row (`disabled`, for "Soon").                                             |
+| `Section`           | Titled group on a screen ("This week", "Tools"): one heading style and spacing everywhere, `aria-labelledby` wired.                                                                                                                          |
+| `training/*`        | `PlateDiagram` (sleeve picture), `PlateCalculator` (code-split sheet body; its kg/lb switch is local and never changes the app-wide preference).                                                                                             |
+
+Screens compose these primitives instead of styling their own tiles, pills, rows or section
+headings, so the same pattern cannot drift between screens (PRD §16). `/design` shows every
+primitive (the Inputs, Data and Feedback groups load when their tab opens).
 
 ## Accessibility checklist (applies to every new component)
 
 - Touch targets ≥ 44 × 44 px; visible `:focus-visible` ring (`--color-accent-ring`).
-- Text contrast ≥ 4.5:1 (tertiary text was raised to meet this; verified by Lighthouse a11y 100
-  on audited routes).
+- Text contrast ≥ 4.5:1 in **both** themes. `e2e/a11y.e2e.ts` runs axe-core (WCAG 2.1 A/AA)
+  on every screen, the plate-calculator sheet and each `/design` group in dark and light; CI
+  runs it with the rest of the e2e suite (Lighthouse only audits the default dark theme).
 - Use native elements first (`<dialog>`, `<button>`, links); ARIA patterns for composites.
-- Never convey state by colour alone (status pills include text).
+- Never convey state by colour alone: badges are words, `Stat` ratings are a word plus a dot
+  (e.g. RUM p75 tiles: "Good" / "Needs work" / "Poor").
 - Respect `prefers-reduced-motion`.
 
 ## Iconography & brand

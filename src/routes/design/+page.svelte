@@ -1,25 +1,26 @@
 <script lang="ts">
-	import BottomSheet from '#lib/ui/components/BottomSheet.svelte';
+	import type { Component } from 'svelte';
 	import BrandMark from '#lib/ui/components/BrandMark.svelte';
 	import Button from '#lib/ui/components/Button.svelte';
 	import Card from '#lib/ui/components/Card.svelte';
-	import EmptyState from '#lib/ui/components/EmptyState.svelte';
 	import Icon from '#lib/ui/components/Icon.svelte';
 	import IconButton from '#lib/ui/components/IconButton.svelte';
-	import NumberStepper from '#lib/ui/components/NumberStepper.svelte';
 	import PageHeader from '#lib/ui/components/PageHeader.svelte';
-	import SegmentedControl from '#lib/ui/components/SegmentedControl.svelte';
 	import Skeleton from '#lib/ui/components/Skeleton.svelte';
 	import Surface from '#lib/ui/components/Surface.svelte';
 	import Tabs from '#lib/ui/components/Tabs.svelte';
 	import { icons, type IconName } from '#lib/ui/icons/icons.ts';
-	import { toast } from '#lib/ui/toast.svelte.ts';
 
-	let reps = $state(5);
-	let rpe = $state(8);
-	let range = $state<'4w' | '12w' | '1y'>('12w');
-	let tab = $state<'buttons' | 'inputs' | 'feedback'>('buttons');
-	let sheet = $state(false);
+	type Group = 'buttons' | 'inputs' | 'data' | 'feedback';
+	let tab = $state<Group>('buttons');
+
+	// Only the first group ships with the page; the others load when their tab opens, so the
+	// reference page stays inside the same initial-JS budget as the app screens.
+	const PANELS: Record<Exclude<Group, 'buttons'>, () => Promise<{ default: Component }>> = {
+		inputs: () => import('./InputsPanel.svelte'),
+		data: () => import('./DataPanel.svelte'),
+		feedback: () => import('./FeedbackPanel.svelte')
+	};
 
 	const colors = [
 		['canvas', 'surface-1', 'surface-2', 'surface-3'],
@@ -74,6 +75,7 @@
 			tabs={[
 				{ id: 'buttons', label: 'Buttons' },
 				{ id: 'inputs', label: 'Inputs' },
+				{ id: 'data', label: 'Data' },
 				{ id: 'feedback', label: 'Feedback' }
 			]}
 		>
@@ -97,70 +99,15 @@
 							<IconButton icon="minus" label="Remove" variant="filled" size="lg" />
 						</div>
 					</div>
-				{:else if id === 'inputs'}
-					<div class="grid">
-						<Surface padding="lg" radius="xl">
-							<div class="grid">
-								<NumberStepper bind:value={reps} label="Reps" min={0} max={50} />
-								<NumberStepper
-									bind:value={rpe}
-									label="RPE"
-									min={6}
-									max={10}
-									step={0.5}
-									hint="Reps in reserve: {10 - rpe}"
-								/>
-							</div>
-						</Surface>
-						<SegmentedControl
-							label="Range"
-							bind:value={range}
-							options={[
-								{ value: '4w', label: '4 weeks' },
-								{ value: '12w', label: '12 weeks' },
-								{ value: '1y', label: '1 year' }
-							]}
-						/>
-					</div>
 				{:else}
-					<div class="grid">
-						<div class="inline">
-							<Button
-								variant="secondary"
-								onclick={() => toast.show('Set logged · 140 kg × 5 @ 8', { tone: 'positive' })}
-								>Toast</Button
-							>
-							<Button
-								variant="secondary"
-								onclick={() =>
-									toast.show('Sync failed — will retry', {
-										tone: 'danger',
-										action: { label: 'Retry', onclick: () => {} }
-									})}>Error toast</Button
-							>
-							<Button variant="secondary" onclick={() => (sheet = true)} data-testid="open-sheet"
-								>Bottom sheet</Button
-							>
+					{#await PANELS[id]()}
+						<div class="grid" aria-busy="true">
+							<Skeleton height="10rem" radius="var(--radius-xl)" />
+							<Skeleton height="3rem" radius="var(--radius-full)" />
 						</div>
-						<Card eyebrow="Loading" title="Skeleton">
-							<div class="skeletons" aria-busy="true">
-								<Skeleton circle height="2.5rem" />
-								<div class="grid tight">
-									<Skeleton width="60%" />
-									<Skeleton width="85%" height="0.75rem" />
-								</div>
-							</div>
-						</Card>
-						<Surface padding="none" radius="xl">
-							<EmptyState
-								icon="pulse"
-								tone="running"
-								title="No runs yet"
-								description="Log a run and your pace trend appears here."
-								compact
-							/>
-						</Surface>
-					</div>
+					{:then { default: Panel }}
+						<Panel />
+					{/await}
 				{/if}
 			{/snippet}
 		</Tabs>
@@ -186,21 +133,6 @@
 		</div>
 	</section>
 </main>
-
-<BottomSheet bind:open={sheet} title="Substitute exercise" description="Same pattern, same intent.">
-	<div class="grid">
-		{#each ['Safety-bar squat', 'Hack squat', 'Belt squat'] as option (option)}
-			<Surface padding="md" interactive>
-				<div class="inline between">
-					<span>{option}</span><Icon name="chevron-right" size={18} />
-				</div>
-			</Surface>
-		{/each}
-	</div>
-	{#snippet footer()}
-		<Button block onclick={() => (sheet = false)}>Done</Button>
-	{/snippet}
-</BottomSheet>
 
 <style>
 	.design {
@@ -273,26 +205,11 @@
 		gap: var(--space-3);
 	}
 
-	.tight {
-		flex: 1;
-		gap: var(--space-2);
-	}
-
 	.inline {
 		display: flex;
 		flex-wrap: wrap;
 		align-items: center;
 		gap: var(--space-2);
-	}
-
-	.between {
-		justify-content: space-between;
-	}
-
-	.skeletons {
-		display: flex;
-		align-items: center;
-		gap: var(--space-3);
 	}
 
 	.muted {
