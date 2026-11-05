@@ -180,11 +180,12 @@ jobs:
         run: pnpm db:setup
       - name: Build for Node
         run: pnpm build:node
-      # Simulated TBT on shared VMs is bimodal (see docs/performance.md): the tight guard for
-      # hydration cost is the main-thread budget in the e2e job (e2e/perf.e2e.ts, real long
-      # tasks at 4x CPU). This is the coarser Lighthouse check, median of 5 runs.
+      # Every app screen (incl. the streamed, DB-backed /profile), a fresh browser per run,
+      # median of 5. Asserts the documented score target (>= 90); TBT gets 50% headroom over its
+      # 200 ms target for shared-runner noise. The tight hydration guard is the main-thread
+      # budget in the e2e job (e2e/perf.e2e.ts). See docs/performance.md.
       - name: Lighthouse (median of 5 runs, asserted)
-        run: pnpm lighthouse --runs 5 --assert --min-perf 0.85 --max-tbt 600
+        run: pnpm lighthouse --runs 5 --assert --min-perf 0.9 --max-tbt 300
       - name: Upload Lighthouse reports
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4

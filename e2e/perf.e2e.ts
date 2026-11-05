@@ -5,8 +5,9 @@ import { expect, test } from '@playwright/test';
  * (PerformanceObserver) under DevTools 4× CPU throttling: the sum of each task's time over
  * 50 ms, i.e. total blocking time, over load + 1.5 s. Median of 3 cold loads per screen.
  *
- * This is the CI regression guard for hydration cost. Lighthouse's simulated TBT is too
- * bimodal on shared VMs for a tight threshold (docs/performance.md).
+ * This is the tight CI regression guard for hydration cost: it measures real work, while
+ * Lighthouse's TBT is a simulation (×4 of observed task time) that amplifies VM noise
+ * (docs/performance.md).
  */
 const BUDGET_MS = 200; // the TBT target
 const LOADS = 3;

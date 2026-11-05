@@ -2,7 +2,7 @@
  * Lighthouse (mobile emulation, simulated slow 4G + 4× CPU) against the local production Node
  * server, using the preinstalled Playwright Chromium. Reports go to ./lighthouse-reports.
  *
- *   pnpm build:node && pnpm lighthouse
+ *   pnpm build:node && pnpm lighthouse                 # every app screen, 3 runs each
  *   pnpm lighthouse --runs 5 --routes /,/today
  *   pnpm lighthouse --url https://preview.example.com   # audit an already-running server
  *   pnpm lighthouse --assert                            # exit 1 when a threshold is missed
@@ -14,13 +14,14 @@ import { appendFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 import { chromium } from '@playwright/test';
 import * as chromeLauncher from 'chrome-launcher';
-import lighthouse from 'lighthouse';
+import lighthouse, { type RunnerResult } from 'lighthouse';
 import { LOCAL_DATABASE_URLS, runMigrations } from '../src/lib/server/db/migrate.ts';
 
 const { values } = parseArgs({
 	options: {
 		url: { type: 'string' },
-		routes: { type: 'string', default: '/,/today,/train' },
+		// Every app screen: the landing page, the five tabs (incl. the streamed, DB-backed Profile).
+		routes: { type: 'string', default: '/,/today,/train,/progress,/coach,/profile' },
 		runs: { type: 'string', default: '3' },
 		port: { type: 'string', default: '4174' },
 		assert: { type: 'boolean', default: false },
@@ -96,17 +97,52 @@ const server = values.url
 	? { base: values.url.replace(/\/$/, ''), stop: () => {} }
 	: await startServer();
 const chromePath = process.env.LIGHTHOUSE_CHROME_PATH || chromium.executablePath();
-const chrome = await chromeLauncher.launch({
-	chromePath,
-	chromeFlags: ['--headless=new', '--no-sandbox', '--disable-gpu', '--disable-dev-shm-usage']
-});
+
+/**
+ * A fresh browser for every run, as Lighthouse CI does. Reusing one browser made each run start
+ * by tearing down the previous run's page on the same renderer thread: an untraced task of
+ * 25–60 ms (observed; ×4 when simulated) *before our HTML is even parsed*, which Lighthouse
+ * reports as "Unattributable" and which made simulated TBT bimodal (docs/performance.md).
+ */
+const launchChrome = () =>
+	chromeLauncher.launch({
+		chromePath,
+		chromeFlags: ['--headless=new', '--no-sandbox', '--disable-gpu', '--disable-dev-shm-usage']
+	});
 
 mkdirSync(OUT_DIR, { recursive: true });
+let chrome = await launchChrome();
 const chromeVersion = await fetch(`http://127.0.0.1:${chrome.port}/json/version`)
 	.then((r) => r.json() as Promise<{ Browser: string }>)
 	.then((v) => v.Browser)
 	.catch(() => 'Chromium');
 let lighthouseVersion = '';
+
+/**
+ * One Lighthouse run in a fresh browser. A run that Lighthouse itself reports as broken (e.g.
+ * NO_NAVSTART: the trace missed the navigation, which happens occasionally right after a
+ * browser starts) is repeated, up to twice; it is never counted as a score of 0.
+ */
+async function auditOnce(url: string, attempt = 1): Promise<NonNullable<RunnerResult>> {
+	await chrome.kill();
+	chrome = await launchChrome();
+	const result = await lighthouse(url, {
+		port: chrome.port,
+		output: ['json', 'html'],
+		logLevel: 'error',
+		onlyCategories: (process.env.LH_CATEGORIES ?? 'performance,accessibility,best-practices').split(
+			','
+		)
+	});
+	if (!result) throw new Error(`Lighthouse returned no result for ${url}`);
+	const error = result.lhr.runtimeError;
+	if (error) {
+		if (attempt >= 3) throw new Error(`Lighthouse failed 3 times on ${url}: ${error.code}`);
+		console.warn(`lighthouse: ${url} attempt ${attempt} failed (${error.code}); retrying`);
+		return auditOnce(url, attempt + 1);
+	}
+	return result;
+}
 interface Summary {
 	route: string;
 	performance: number;
@@ -124,15 +160,7 @@ try {
 	for (const route of routes) {
 		const results: Summary[] = [];
 		for (let i = 0; i < runs; i++) {
-			const result = await lighthouse(`${server.base}${route}`, {
-				port: chrome.port,
-				output: ['json', 'html'],
-				logLevel: 'error',
-				onlyCategories: (
-					process.env.LH_CATEGORIES ?? 'performance,accessibility,best-practices'
-				).split(',')
-			});
-			if (!result) throw new Error(`Lighthouse returned no result for ${route}`);
+			const result = await auditOnce(`${server.base}${route}`);
 			const { lhr } = result;
 			lighthouseVersion = lhr.lighthouseVersion;
 			const audit = (id: string) => lhr.audits[id]?.numericValue ?? Number.NaN;

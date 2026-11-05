@@ -2,8 +2,8 @@
 
 Performance is a first-class requirement (PRD §15): measure, set budgets, enforce them, and record
 **real** numbers only. Everything below was measured locally on 2026-11-05 against the production
-build of commit `b10bafc` (M1 after review fix round 1; later commits touch only docs, CI and
-tests).
+build of commit `6586cf6` (M1 after review fix round 2; the commits after it touch only the
+Lighthouse runner, CI and docs).
 
 ## Budgets (enforced)
 
@@ -25,23 +25,40 @@ ship the standard one too (see the glass note in `docs/design-system.md`).
 
 | Route             | Initial JS (gzip) | Route CSS (gzip) | Preloaded fonts |
 | ----------------- | ----------------: | ---------------: | --------------: |
-| `/design`         |           57.2 KB |           9.3 KB |               2 |
-| `/(app)/train`    |           54.0 KB |          10.4 KB |               2 |
-| `/(app)/profile`  |           52.3 KB |           7.0 KB |               2 |
-| `/(app)/today`    |           51.5 KB |           6.8 KB |               2 |
-| `/(app)/progress` |           51.1 KB |           6.3 KB |               2 |
-| `/(app)/offline`  |           50.9 KB |           6.1 KB |               2 |
-| `/(app)/coach`    |           49.7 KB |           6.0 KB |               2 |
-| `/`               |           48.1 KB |           4.7 KB |               2 |
+| `/(app)/train`    |           55.5 KB |          10.4 KB |               2 |
+| `/(app)/profile`  |           54.5 KB |           7.8 KB |               2 |
+| `/(app)/today`    |           53.6 KB |           7.4 KB |               2 |
+| `/design`         |           53.5 KB |          11.6 KB |               2 |
+| `/(app)/progress` |           52.6 KB |           6.7 KB |               2 |
+| `/(app)/offline`  |           51.8 KB |           6.1 KB |               2 |
+| `/(app)/coach`    |           50.6 KB |           6.0 KB |               2 |
+| `/`               |           49.0 KB |           4.7 KB |               2 |
 
-Total CSS: **15.3 KB gzip** (23 files). Service worker: 1.6 KB gzip. Of the initial JS, the
-Svelte runtime (~19.7 KB) and the SvelteKit client (~15.9 KB) are shared by every route. The app
-shell (connectivity notice, client error hook, RUM navigation tracking) added ~2 KB per app route
-in review round 1.
+Total CSS: **16.6 KB gzip** (30 files). Service worker: 1.8 KB gzip. Of the initial JS, the
+Svelte runtime (~19.7 KB) and the SvelteKit client (~15.9 KB) are shared by every route.
+Review round 2 added ~0.7 KB per route (browser error reporting, in every page) and ~0.8–1.4 KB
+on the app screens (the shared `Stat`/`Badge`/`Chip`/`ListRow`/`Section` primitives). `/design`
+went down from 57.2 KB: its Inputs, Data and Feedback groups now load when their tab opens.
 Fonts: Mona Sans latin 39.8 KB + Hubot Sans latin 48.3 KB (woff2, preloaded, cached immutably).
 
-Service-worker install download (precache, measured in Chromium): **74 files, 353 KB** decoded.
-Home-screen icons are excluded; the OS fetches them once at install.
+Service-worker install download (precache, measured in Chromium in review round 1): **74 files,
+353 KB** decoded. Home-screen icons are excluded; the OS fetches them once at install.
+
+### Headroom and the M4 workout-screen plan
+
+The tightest route is `/train` at 55.5 KB of 60 KB (4.5 KB headroom); the M4 workout screen will
+be the heaviest screen in the app. Plan, agreed before any M4 code lands:
+
+- The workout route gets the same **60 KB** initial-JS budget. Only the logging path (current
+  exercise, set rows, the stepper, the optimistic log action) ships up front.
+- Everything opened on demand is code-split behind intent, as the plate calculator already is:
+  plate calculator, substitution sheet, rest-timer settings, history, notes.
+- IndexedDB/outbox code (M4 offline store) loads after first render (`requestIdleCallback`), not
+  in the hydration path.
+- Guards: `pnpm budgets` (size), `e2e/perf.e2e.ts` gains the workout screen (main-thread
+  ≤ 200 ms at 4× CPU), M4 criterion 3 (< 100 ms to visual confirmation of a logged set) and INP
+  p75 ≤ 200 ms on that `route_id` from RUM.
+- If the shell itself must grow, raise the budget only with a measured reason in this file.
 
 ### Main-thread budget (`e2e/perf.e2e.ts`, runs in CI with the e2e suite)
 
@@ -49,88 +66,110 @@ Real long tasks (PerformanceObserver) while each screen loads and hydrates, DevT
 throttling**, iPhone 15 Pro viewport, cold context: blocking time = Σ (task − 50 ms) over
 load + 1.5 s, **median of 3 loads**, budget **≤ 200 ms**.
 
-| Screen      |        `/` |     `/today` |   `/train` | `/progress` |    `/coach` | `/profile` |
-| ----------- | ---------: | -----------: | ---------: | ----------: | ----------: | ---------: |
-| Median (ms) |         48 |          119 |         74 |          39 |          47 |         90 |
-| Runs (ms)   | 20, 48, 53 | 52, 119, 135 | 67, 74, 86 |  19, 39, 93 | 32, 47, 171 | 79, 90, 93 |
+| Screen      |        `/` |      `/today` |   `/train` | `/progress` |   `/coach` |  `/profile` |
+| ----------- | ---------: | ------------: | ---------: | ----------: | ---------: | ----------: |
+| Median (ms) |         34 |           121 |         65 |          69 |         59 |          98 |
+| Runs (ms)   | 20, 34, 91 | 105, 121, 232 | 63, 65, 96 | 64, 69, 100 | 48, 59, 70 | 90, 98, 247 |
 
 This measures the actual work (navigation commit, parse, first layout, hydration) instead of
-Lighthouse's simulated timeline, which is why it is the tight regression guard.
+Lighthouse's simulated timeline, which is why it is the tight regression guard. Individual loads
+above 200 ms (`/today`, `/profile`: one of three each) are why the guard is a median.
 
 ## Lighthouse (mobile)
 
-Command: `pnpm build:node && pnpm lighthouse --runs 5 --routes /,/today,/train,/profile`
+Command (exactly what CI runs): `pnpm build:node && pnpm lighthouse --runs 5 --assert --min-perf
+0.9 --max-tbt 300` — every app screen, median of 5, a **fresh browser per run**.
 
 - Lighthouse **13.6.0**, Chrome **153.0.8010.12** (Playwright build, `--headless=new`), default
   mobile config: 412×823 @1.75x, simulated throttling (150 ms RTT, 1.6 Mbps, **4× CPU**).
 - Target: local production Node server (`node build/index.js`, adapter-node) + local Postgres.
   adapter-node does **not** compress HTML (Vercel does), so transfer sizes here are pessimistic.
-- Host: 4-vCPU Linux VM; Lighthouse `benchmarkIndex` varied **1440–2138** between runs.
+- Host: 4-vCPU Linux VM; Lighthouse `benchmarkIndex` varied **1246–2248** between runs.
+- Result: `lighthouse: all thresholds met` (exit 0).
 
 **Median of 5 runs per route:**
 
-| Route      | Perf | A11y | Best practices |    LCP |    FCP |    TBT |   CLS | Speed Index |
-| ---------- | ---: | ---: | -------------: | -----: | -----: | -----: | ----: | ----------: |
-| `/`        |   96 |  100 |            100 | 910 ms | 910 ms | 231 ms | 0.000 |      913 ms |
-| `/today`   |  100 |  100 |            100 | 908 ms | 908 ms |   6 ms | 0.000 |     1119 ms |
-| `/train`   |   89 |  100 |            100 | 907 ms | 907 ms | 458 ms | 0.000 |      980 ms |
-| `/profile` |   94 |  100 |            100 | 908 ms | 908 ms | 295 ms | 0.000 |     1144 ms |
+| Route       | Perf | A11y | Best practices |    LCP |    FCP |    TBT |   CLS | Speed Index |
+| ----------- | ---: | ---: | -------------: | -----: | -----: | -----: | ----: | ----------: |
+| `/`         |   99 |  100 |            100 | 905 ms | 905 ms | 103 ms | 0.000 |      905 ms |
+| `/today`    |  100 |  100 |            100 | 906 ms | 906 ms |  47 ms | 0.000 |      966 ms |
+| `/train`    |   99 |  100 |            100 | 904 ms | 904 ms |  92 ms | 0.000 |      904 ms |
+| `/progress` |   99 |  100 |            100 | 908 ms | 908 ms |  97 ms | 0.000 |      908 ms |
+| `/coach`    |  100 |  100 |            100 | 907 ms | 907 ms |  80 ms | 0.000 |      907 ms |
+| `/profile`  |   99 |  100 |            100 | 905 ms | 905 ms |  98 ms | 0.000 |     1020 ms |
 
 **Run-to-run spread (all 5 runs):**
 
-| Route      | Perf scores         | TBT (ms)                | LCP (ms) |
-| ---------- | ------------------- | ----------------------- | -------- |
-| `/`        | 100,96,93,100,89    | 36, 231, 336, 36, 431   | 907–913  |
-| `/today`   | 100,100,100,100,100 | 6, 2, 29, 0, 29         | 902–916  |
-| `/train`   | 89,88,91,85,93      | 458, 471, 374, 576, 326 | 906–920  |
-| `/profile` | 94,94,92,94,92      | 280, 284, 364, 295, 339 | 904–911  |
+| Route       | Perf scores         | TBT (ms)              | LCP (ms) |
+| ----------- | ------------------- | --------------------- | -------- |
+| `/`         | 99,100,99,100,99    | 146, 40, 115, 63, 103 | 901–909  |
+| `/today`    | 100,100,100,100,100 | 60, 45, 29, 88, 47    | 903–918  |
+| `/train`    | 100,99,99,99,100    | 24, 92, 100, 93, 70   | 902–906  |
+| `/progress` | 99,98,99,100,100    | 140, 173, 97, 89, 74  | 902–912  |
+| `/coach`    | 100,100,99,100,99   | 80, 62, 94, 16, 92    | 902–907  |
+| `/profile`  | 99,100,100,96,99    | 98, 78, 32, 216, 98   | 901–906  |
 
-Total page weight (incl. fonts): 168–192 KB transfer per route.
+Total page weight (incl. fonts): 169–196 KB transfer per route. A second 5-run batch of the same
+build just before this one gave medians of perf 99–100 and TBT 44–118 ms, with one `/progress`
+run at LCP 2558 ms (median 906 ms).
 
-Previous baseline (commit `cb0f2a0`, same command): TBT medians `/` 49, `/today` 280,
-`/train` 340, `/profile` 301 ms; perf 100 / 94 / 92 / 93.
+### The bimodal "Unattributable" task (investigated in review round 2)
+
+Review round 1 measured simulated TBT of 230–560 ms at the median on most screens, from one
+early task that Lighthouse reports as "Unattributable" and that was either ~60–70 ms or
+~450–750 ms (simulated) from run to run. With the old runner (one browser reused for every run)
+this build reproduced it: per-run TBT up to 635 ms, perf 84–100. Findings:
+
+- **It is not app work.** In 12 traced Lighthouse runs (`/today`, `/train`, one reused browser;
+  renderer main thread of the audited page), the longest task usually ran **before our HTML was
+  parsed**: 26–60 ms observed (Lighthouse multiplies observed CPU time by 4) containing almost
+  no traced events beyond V8 teardown (`V8.DeoptimizeCode`, GC sweeping) and
+  `DocumentLoader::~DocumentLoader`, i.e. the previous run's page being torn down on the same
+  renderer thread; it tended to grow as runs accumulated. The inline CSS and the `BrandMark` SVG
+  are not in it (they run later, in `ParseHTML`/`UpdateLayoutTree`/`Layout`: 16–45 ms observed
+  in total). None of those 12 runs hit the worst case (450–750 ms simulated), so that extreme
+  was not traced directly; it disappeared with the fix below.
+- A script-free control page served by `python -m http.server` showed the same "other" work
+  (90–327 ms simulated) under the same runner, but no TBT because its FCP came first.
+- **Fix (measurement, not the app):** `scripts/lighthouse.ts` now launches a fresh browser for
+  every run, as Lighthouse CI does, which is also what a real first visit looks like. A run that
+  Lighthouse itself reports as broken (`NO_NAVSTART`, seen twice in the first 30 fresh-browser
+  runs, none in the 30 above) is repeated instead of being counted as a score of 0. With this, every one of
+  the 30 runs above has perf ≥ 96 and TBT ≤ 216 ms.
 
 ### Reading these numbers honestly
 
-- **LCP (~0.91 s) and CLS (0.000) are stable and well inside "good"** on every run.
-- **Simulated TBT misses its 200 ms target at the median on `/`, `/train` and `/profile`**
-  (231–458 ms) and meets it on `/today` (6 ms). It is noisy and bimodal. The extra blocking comes
-  from one early task (navigation commit, HTML parse and first style/layout) that Lighthouse
-  reports as "Unattributable" and simulates at 450–560 ms. Whether it ends after the simulated
-  First Contentful Paint decides whether it counts. The same screens traced with DevTools 4×
-  throttling show that task at ~100 ms, and real blocking of 39–119 ms median (table above).
-  Compared with the previous baseline, `/today` improved and `/train` got worse at the median.
-  Under real 4× throttling `/train` and `/today` cost about the same, so we read this as
-  simulation and VM noise rather than as a change in page work. That remains a claim to re-check
-  on real hardware.
-- **Performance score ≥ 90 is met at the median on 3 of 4 routes; `/train` is 89** (runs 85–93).
-  The review's own 3-run medians on the previous build were 88 (`/profile`) and 90 (`/today`).
-  The score target is therefore **not reliably met** yet.
-- What was already done (measured with CPU profiles and traces during M1): removed `Intl`
-  formatter construction from hydration paths (~15–20 ms each), code-split the plate calculator,
-  mounted bottom-sheet content only while open.
-- Next steps (M8 performance council): reduce the first layout and per-route hydration (fewer
-  nodes above the fold, lighter shell), evaluate HTML compression in the local server for
-  representative transfer sizes, and confirm on real iPhone hardware + RUM p75 (Lighthouse's 4×
-  CPU throttle models a mid-range Android, much slower than a current iPhone).
+- **LCP (~0.9 s) and CLS (0.000) are stable and well inside "good"** on every run.
+- **Simulated TBT now meets its 200 ms target at the median on every screen (47–103 ms)**; one
+  individual run of 30 exceeded it (`/profile`, 216 ms). It is still a ×4 simulation of observed
+  task time on a shared VM, so individual runs vary by ±100 ms.
+- **Performance score ≥ 90 is met on every run** (96–100).
+- The first-round numbers (TBT medians up to 458 ms, `/train` perf 89) were dominated by the
+  runner artifact above; the app changed little in between (hydration work was already cut in
+  round 1). We therefore do not claim a large real-world speed-up, only a trustworthy
+  measurement.
+- Lighthouse's 4× CPU throttle models a mid-range Android phone, much slower than a current
+  iPhone. What counts in the end is RUM p75 from the owner's device (below), which starts when
+  the app is deployed.
 
 ## Targets
 
-| Metric                    | Target (lab)                  | Target (field, RUM p75) | M1 status                                                                  |
-| ------------------------- | ----------------------------- | ----------------------- | -------------------------------------------------------------------------- |
-| LCP                       | ≤ 2.5 s (Lighthouse mobile)   | ≤ 2.5 s                 | **met** (0.91 s median, every run)                                         |
-| CLS                       | ≤ 0.1                         | ≤ 0.1                   | **met** (0.000)                                                            |
-| TBT (Lighthouse, sim.)    | ≤ 200 ms                      | —                       | **not met** on 3/4 routes at median (231–458 ms); `/today` 6 ms            |
-| Main-thread blocking      | ≤ 200 ms (4× CPU, real tasks) | —                       | **met** on all 6 screens (median 39–119 ms)                                |
-| INP                       | —                             | ≤ 200 ms                | no field data yet                                                          |
-| Performance score         | ≥ 90                          | —                       | **not reliably met**: medians 89–100 (`/train` 89), individual runs 85–100 |
-| Initial JS / CSS / fonts  | budgets above                 | —                       | **met**                                                                    |
-| API latency `/api/health` | ≤ 50 ms server time           | p75 from logs           | local: cold 11.9 ms, warm 1.2–1.9 ms incl. DB round-trip                   |
+| Metric                    | Target (lab)                  | Target (field, RUM p75) | M1 status                                                               |
+| ------------------------- | ----------------------------- | ----------------------- | ----------------------------------------------------------------------- |
+| LCP                       | ≤ 2.5 s (Lighthouse mobile)   | ≤ 2.5 s                 | **met** (0.9 s median; 1 outlier run of 60 at 2.56 s)                   |
+| CLS                       | ≤ 0.1                         | ≤ 0.1                   | **met** (0.000)                                                         |
+| TBT (Lighthouse, sim.)    | ≤ 200 ms                      | —                       | **met** at the median on all 6 screens (47–103 ms); 1 of 30 runs 216 ms |
+| Main-thread blocking      | ≤ 200 ms (4× CPU, real tasks) | —                       | **met** on all 6 screens (median 34–121 ms)                             |
+| INP                       | —                             | ≤ 200 ms                | no field data yet                                                       |
+| Performance score         | ≥ 90                          | —                       | **met** on every run (96–100; medians 99–100)                           |
+| Initial JS / CSS / fonts  | budgets above                 | —                       | **met** (tightest: `/train` 55.5 / 60 KB)                               |
+| API latency `/api/health` | ≤ 50 ms server time           | p75 from logs           | local: cold 11.9 ms, warm 1.2–1.9 ms incl. DB round-trip (round 1)      |
 
 CI runs the main-thread budget (with the e2e suite) as the **tight regression guard**, plus
-`pnpm lighthouse --runs 5 --assert --min-perf 0.85 --max-tbt 600` as a coarser Lighthouse check.
-The local medians above clear both thresholds with margin; the previous CI setting (3 runs,
-TBT ≤ 800 ms) would have let a hydration regression of several hundred ms through.
+`pnpm lighthouse --runs 5 --assert --min-perf 0.9 --max-tbt 300` on **every app screen**
+(including the streamed, DB-backed `/profile`) as the Lighthouse check: the score target itself,
+and TBT with 50% headroom for shared-runner noise. Not yet run on GitHub's runners (nothing has
+been pushed); if their noise differs, adjust with numbers, not by dropping routes.
 
 ## Real-user monitoring
 
@@ -169,5 +208,5 @@ GET /profile           total ≈ 38 ms at first byte; streamed work settled ≈ 
 pnpm build:node
 pnpm budgets
 E2E_SKIP_BUILD=1 pnpm test:e2e e2e/perf.e2e.ts               # main-thread budget (annotations)
-pnpm lighthouse --runs 5 --routes /,/today,/train,/profile   # reports in lighthouse-reports/
+pnpm lighthouse --runs 5 --assert --min-perf 0.9 --max-tbt 300  # every screen (CI command)
 ```
