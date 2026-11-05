@@ -1,5 +1,5 @@
 import { error } from '@sveltejs/kit';
-import { getEnv } from '#lib/server/env.ts';
+import { testRoutesEnabled } from '#lib/server/env.ts';
 import type { RequestHandler } from './$types';
 
 /**
@@ -7,6 +7,6 @@ import type { RequestHandler } from './$types';
  * Exists only when ENABLE_TEST_ROUTES=true (rejected by env validation in production).
  */
 export const GET: RequestHandler = () => {
-	if (!getEnv().ENABLE_TEST_ROUTES) error(404, 'Not found');
+	if (!testRoutesEnabled()) error(404, 'Not found');
 	throw new Error('Intentional test error (observability check)');
 };
