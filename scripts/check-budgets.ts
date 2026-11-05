@@ -119,6 +119,28 @@ for (const route of routes) {
 const allCss = readdirSync(`${CLIENT}/_app/immutable/assets`).filter((f) => f.endsWith('.css'));
 const totalCss = allCss.reduce((sum, f) => sum + gzipBytes(`_app/immutable/assets/${f}`), 0);
 const cssOk = kb(totalCss) <= BUDGETS.totalCssKb;
+
+/**
+ * CSS output guard: every rule that ships a vendor-prefixed property must also ship the
+ * standard one. Lightning CSS drops an unprefixed declaration that is followed by its prefixed
+ * twin, so `backdrop-filter: …; -webkit-backdrop-filter: …` in source silently ships only the
+ * prefixed form and Chromium/Firefox lose the effect. Source declares only the standard
+ * property; the minifier adds prefixes for the build targets.
+ */
+const PREFIXED = ['backdrop-filter', 'mask-image', 'user-select', 'text-size-adjust'];
+const prefixProblems: string[] = [];
+for (const file of allCss) {
+	const css = readFileSync(path.join(CLIENT, '_app/immutable/assets', file), 'utf8');
+	for (const [, selector, body] of css.matchAll(/([^{}]*)\{([^{}]*)\}/g)) {
+		for (const property of PREFIXED) {
+			const prefixed = new RegExp(`(^|;)\\s*-webkit-${property}\\s*:`).test(body!);
+			const standard = new RegExp(`(^|;)\\s*${property}\\s*:`).test(body!);
+			if (prefixed && !standard) {
+				prefixProblems.push(`${file}: \`${selector!.trim()}\` has -webkit-${property} only`);
+			}
+		}
+	}
+}
 const sw = existsSync(`${CLIENT}/service-worker.js`) ? gzipBytes('service-worker.js') : 0;
 
 const lines = [
@@ -133,7 +155,8 @@ const lines = [
 	'',
 	`Total CSS (gzip): **${fmt(totalCss)}** across ${allCss.length} files — budget ${BUDGETS.totalCssKb} KB: ${cssOk ? 'pass' : 'FAIL'}`,
 	`Service worker (gzip): ${fmt(sw)}`,
-	`Budgets: initial JS ≤ ${BUDGETS.routeJsKb} KB per route · total CSS ≤ ${BUDGETS.totalCssKb} KB · preloaded fonts ≤ ${BUDGETS.preloadedFonts}`
+	`Budgets: initial JS ≤ ${BUDGETS.routeJsKb} KB per route · total CSS ≤ ${BUDGETS.totalCssKb} KB · preloaded fonts ≤ ${BUDGETS.preloadedFonts}`,
+	`CSS output guard (standard property kept next to every -webkit- prefix): ${prefixProblems.length ? 'FAIL' : 'pass'}`
 ];
 console.log(lines.join('\n'));
 
@@ -144,9 +167,18 @@ if (process.env.GITHUB_STEP_SUMMARY) {
 	);
 }
 
+if (prefixProblems.length > 0) {
+	console.error(`\nCSS output guard failed:\n  - ${prefixProblems.join('\n  - ')}`);
+}
+
 const failed = rows.filter((r) => !r.ok);
-if (failed.length > 0 || !cssOk) {
-	console.error(`\nbudgets: FAILED (${failed.map((r) => r.route).join(', ') || 'total CSS'})`);
+if (failed.length > 0 || !cssOk || prefixProblems.length > 0) {
+	const what = [
+		...failed.map((r) => r.route),
+		...(cssOk ? [] : ['total CSS']),
+		...(prefixProblems.length ? ['CSS prefixes'] : [])
+	];
+	console.error(`\nbudgets: FAILED (${what.join(', ')})`);
 	process.exit(1);
 }
 console.log('\nbudgets: all within budget');

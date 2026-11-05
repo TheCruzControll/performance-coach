@@ -188,7 +188,6 @@
 		inset: 0;
 		background: var(--color-overlay);
 		backdrop-filter: blur(2px);
-		-webkit-backdrop-filter: blur(2px);
 		opacity: 0;
 		transition: opacity var(--duration-slow) var(--ease-standard);
 	}

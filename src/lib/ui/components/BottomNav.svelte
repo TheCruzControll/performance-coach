@@ -59,7 +59,6 @@
 			max(var(--space-2), var(--safe-left));
 		background: var(--color-glass);
 		backdrop-filter: saturate(160%) blur(22px);
-		-webkit-backdrop-filter: saturate(160%) blur(22px);
 		border-top: 1px solid var(--color-hairline);
 	}
 

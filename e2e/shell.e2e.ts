@@ -38,6 +38,14 @@ test.describe('app shell on an iPhone viewport', () => {
 			const b = await link.boundingBox();
 			expect(b!.height).toBeGreaterThanOrEqual(44);
 		}
+
+		// Glass actually blurs: guards against the build pipeline dropping the standard
+		// `backdrop-filter` (Chromium and Firefox ignore the -webkit- form).
+		const glass = await nav.evaluate((el) => {
+			const style = getComputedStyle(el) as CSSStyleDeclaration & { webkitBackdropFilter?: string };
+			return style.backdropFilter || style.webkitBackdropFilter || 'none';
+		});
+		expect(glass).toContain('blur(');
 		await captureScreen(page, testInfo, 'today');
 	});
 

@@ -96,7 +96,6 @@
 		border-radius: var(--radius-full);
 		background: var(--color-glass);
 		backdrop-filter: blur(18px);
-		-webkit-backdrop-filter: blur(18px);
 		border: 1px solid var(--color-border);
 		box-shadow: var(--elevation-2);
 	}
