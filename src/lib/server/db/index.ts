@@ -16,3 +16,5 @@ export { createWebVitalsRepository } from './repositories/web-vitals';
 export type { NewWebVital, VitalSummaryRow, WebVitalRow } from './repositories/web-vitals';
 export * from './schema';
 export type { Database, Executor, Schema } from './types';
+export { createProfileRepository } from './repositories/profile';
+export type * from './repositories/profile';
