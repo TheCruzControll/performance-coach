@@ -180,11 +180,11 @@ jobs:
         run: pnpm db:setup
       - name: Build for Node
         run: pnpm build:node
-      # TBT on shared VMs is bimodal (see docs/performance.md), so CI asserts a regression
-      # guard rather than the targets: a real regression (e.g. a heavy dependency on the
-      # critical path) still fails, run-to-run noise does not.
-      - name: Lighthouse (median of 3 runs, asserted)
-        run: pnpm lighthouse --runs 3 --assert --min-perf 0.8 --max-tbt 800
+      # Simulated TBT on shared VMs is bimodal (see docs/performance.md): the tight guard for
+      # hydration cost is the main-thread budget in the e2e job (e2e/perf.e2e.ts, real long
+      # tasks at 4x CPU). This is the coarser Lighthouse check, median of 5 runs.
+      - name: Lighthouse (median of 5 runs, asserted)
+        run: pnpm lighthouse --runs 5 --assert --min-perf 0.85 --max-tbt 600
       - name: Upload Lighthouse reports
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
