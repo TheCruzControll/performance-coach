@@ -69,7 +69,18 @@ export const envSchema = z
 		return { ...env, appEnv };
 	})
 	.superRefine((env, ctx) => {
-		if (env.appEnv === 'production' && env.ENABLE_TEST_ROUTES) {
+		// Vercel's own signal wins: a stray APP_ENV must not relabel (and unlock) production.
+		if (env.VERCEL_ENV === 'production' && env.APP_ENV && env.APP_ENV !== 'production') {
+			ctx.addIssue({
+				code: 'custom',
+				path: ['APP_ENV'],
+				message: `must be 'production' (or unset) when VERCEL_ENV=production`
+			});
+		}
+		if (
+			(env.appEnv === 'production' || env.VERCEL_ENV === 'production') &&
+			env.ENABLE_TEST_ROUTES
+		) {
 			ctx.addIssue({
 				code: 'custom',
 				path: ['ENABLE_TEST_ROUTES'],

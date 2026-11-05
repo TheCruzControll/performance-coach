@@ -14,20 +14,20 @@ cp .env.example .env
 
 ## Variables
 
-| Variable                | Required             | Default | Purpose                                                                                         |
-| ----------------------- | -------------------- | ------- | ----------------------------------------------------------------------------------------------- |
-| `DATABASE_URL`          | **yes**              | —       | Pooled Postgres URL for app traffic. Neon: the `-pooler` host. Must start `postgres(ql)://`.    |
-| `DATABASE_URL_UNPOOLED` | migrations / backups | —       | Direct (non-pooled) URL. Used by `pnpm db:migrate`, deploy migrations and `pg_dump`.            |
-| `APP_ENV`               | no                   | derived | `development` · `test` · `preview` · `production`. Falls back to `VERCEL_ENV`, then `NODE_ENV`. |
-| `DB_POOL_MAX`           | no                   | `5`     | Max pg clients per server instance (1–50). Keep small behind Neon's pooler.                     |
-| `DB_QUERY_TIMEOUT_MS`   | no                   | `10000` | Client-side per-query timeout (pooler-safe; no session `SET`).                                  |
-| `LOG_LEVEL`             | no                   | `info`  | `debug` · `info` · `warn` · `error` · `silent`. Integration tests default to `silent`.          |
-| `ENABLE_TEST_ROUTES`    | no                   | `false` | Enables `/api/test-support/*` for automated tests. **Rejected when `APP_ENV=production`.**      |
-| `LLM_PROVIDER`          | no                   | `mock`  | Coach model provider (M5): `mock` (deterministic, no key) or `anthropic`.                       |
-| `ANTHROPIC_API_KEY`     | if `anthropic`       | —       | Server-side only. Required when `LLM_PROVIDER=anthropic`.                                       |
-| `SENTRY_DSN`            | no                   | —       | Optional error reporting; empty means disabled. No account is required.                         |
-| `ORIGIN`                | adapter-node only    | —       | Public origin for the local production server (CSRF checks), e.g. `http://localhost:4173`.      |
-| `PORT`                  | adapter-node only    | `3000`  | Port of `node build/index.js`.                                                                  |
+| Variable                | Required             | Default | Purpose                                                                                                                                                       |
+| ----------------------- | -------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`          | **yes**              | —       | Pooled Postgres URL for app traffic. Neon: the `-pooler` host. Must start `postgres(ql)://`.                                                                  |
+| `DATABASE_URL_UNPOOLED` | migrations / backups | —       | Direct (non-pooled) URL. Used by `pnpm db:migrate`, deploy migrations and `pg_dump`.                                                                          |
+| `APP_ENV`               | no                   | derived | `development` · `test` · `preview` · `production`. Falls back to `VERCEL_ENV`, then `NODE_ENV`; must be `production` (or unset) when `VERCEL_ENV=production`. |
+| `DB_POOL_MAX`           | no                   | `5`     | Max pg clients per server instance (1–50). Keep small behind Neon's pooler.                                                                                   |
+| `DB_QUERY_TIMEOUT_MS`   | no                   | `10000` | Client-side per-query timeout (pooler-safe; no session `SET`).                                                                                                |
+| `LOG_LEVEL`             | no                   | `info`  | `debug` · `info` · `warn` · `error` · `silent`. Integration tests default to `silent`.                                                                        |
+| `ENABLE_TEST_ROUTES`    | no                   | `false` | Enables `/api/test-support/*` for automated tests. **Rejected when `appEnv` or `VERCEL_ENV` is `production`.**                                                |
+| `LLM_PROVIDER`          | no                   | `mock`  | Coach model provider (M5): `mock` (deterministic, no key) or `anthropic`.                                                                                     |
+| `ANTHROPIC_API_KEY`     | if `anthropic`       | —       | Server-side only. Required when `LLM_PROVIDER=anthropic`.                                                                                                     |
+| `SENTRY_DSN`            | no                   | —       | Optional error reporting; empty means disabled. No account is required.                                                                                       |
+| `ORIGIN`                | adapter-node only    | —       | Public origin for the local production server (CSRF checks), e.g. `http://localhost:4173`.                                                                    |
+| `PORT`                  | adapter-node only    | `3000`  | Port of `node build/index.js`.                                                                                                                                |
 
 Test tooling (not read by the app):
 
