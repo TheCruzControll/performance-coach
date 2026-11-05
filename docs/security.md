@@ -78,7 +78,10 @@ app path (`return-path.ts`).
   reach only `/recover/passkey`, the add-passkey endpoints and sign-out. Pages redirect there;
   `/api/*` answers `403 passkey_required`.
 - Registering a passkey from that session rotates it into a full session (the recovery session is
-  revoked) and lands on Security with a prompt to remove the lost passkey.
+  revoked) and lands on Security with a prompt to remove the lost passkey. A recovery session
+  revoked or expired while that request is in flight (e.g. by Sign out everywhere else) adds no
+  passkey and gets no full session (see Passkey management). Sign out everywhere else that
+  arrives while the new passkey is being stored waits for it and then ends the full session too.
 - Codes can be regenerated from Security (all old codes stop working; new set shown once, with
   acknowledgement). A recovery session cannot regenerate codes.
 - Rate limits: 5 attempts per 15 min per client and 20 failed attempts per hour in total; the total
@@ -90,7 +93,9 @@ app path (`return-path.ts`).
 Add (a real registration bound to the current session: the challenge row stores the session id),
 rename (1–64 characters), remove. **The last passkey can never be removed**: the check runs under
 a row lock, so two concurrent removals cannot both pass. Removing a passkey also ends every other
-session that signed in with it.
+session that signed in with it. A new passkey is stored only if the session adding it is still
+live, re-checked under a row lock: a session revoked after the guard let the request in adds
+nothing.
 
 ### Sessions
 

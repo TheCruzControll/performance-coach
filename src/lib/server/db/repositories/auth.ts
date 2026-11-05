@@ -186,6 +186,26 @@ export function createAuthRepository(db: Executor) {
 			return row ?? null;
 		},
 
+		/**
+		 * Row-lock a session if it is still live (not revoked, not expired), so nothing can revoke
+		 * it before the transaction ends. False if it has ended.
+		 */
+		async lockLiveSession(id: string, now: Date): Promise<boolean> {
+			const rows = await db
+				.select({ id: authSessions.id })
+				.from(authSessions)
+				.where(
+					and(
+						eq(authSessions.id, id),
+						isNull(authSessions.revokedAt),
+						gt(authSessions.expiresAt, now),
+						gt(authSessions.absoluteExpiresAt, now)
+					)
+				)
+				.for('update');
+			return rows.length === 1;
+		},
+
 		async touchSession(id: string, values: { lastSeenAt: Date; expiresAt?: Date }) {
 			await db.update(authSessions).set(values).where(eq(authSessions.id, id));
 		},
@@ -218,6 +238,25 @@ export function createAuthRepository(db: Executor) {
 				)
 				.returning({ id: authSessions.id });
 			return updated.length === 1;
+		},
+
+		/**
+		 * Row-lock every unrevoked session of the owner except `exceptId` (in id order, so two
+		 * callers cannot deadlock), waiting for any transaction that holds one of them.
+		 */
+		async lockOtherSessions(ownerId: string, exceptId: string | null): Promise<void> {
+			await db
+				.select({ id: authSessions.id })
+				.from(authSessions)
+				.where(
+					and(
+						eq(authSessions.ownerId, ownerId),
+						isNull(authSessions.revokedAt),
+						exceptId ? ne(authSessions.id, exceptId) : undefined
+					)
+				)
+				.orderBy(asc(authSessions.id))
+				.for('update');
 		},
 
 		/** Revoke every live session of the owner except `exceptId`. Returns how many. */
