@@ -59,4 +59,18 @@ describe('calculatePlates', () => {
 		});
 		expect(calculatePlates(15, 20, STANDARD_PLATES.kg).exact).toBe(false);
 	});
+
+	it('reports a target lighter than the bar as a negative remainder', () => {
+		// The empty bar is the lightest possible load: achieved exceeds the target here only.
+		expect(calculatePlates(10, 20, STANDARD_PLATES.kg)).toEqual({
+			perSide: [],
+			achieved: 20,
+			remainder: -10,
+			exact: false
+		});
+		expect(calculatePlates(0, 45, STANDARD_PLATES.lb)).toMatchObject({
+			achieved: 45,
+			remainder: -45
+		});
+	});
 });

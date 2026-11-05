@@ -1,8 +1,9 @@
 <!--
   @component
   Big, one-handed numeric control for gym use: oversized −/+ targets, press-and-hold to repeat
-  (accelerating), tap the value to type, ArrowUp/ArrowDown/PageUp/PageDown/Home/End on the
-  keyboard. Exposed to assistive tech as a spinbutton.
+  (accelerating), tap the value to type (Enter commits, Escape cancels the edit without closing
+  an enclosing sheet), ArrowUp/ArrowDown/PageUp/PageDown/Home/End on the keyboard. Exposed to
+  assistive tech as a spinbutton.
 -->
 <script lang="ts">
 	import IconButton from './IconButton.svelte';
@@ -116,7 +117,11 @@
 		} else if (event.key === 'Enter') {
 			commit();
 			(event.currentTarget as HTMLInputElement).blur();
-		} else if (event.key === 'Escape') {
+		} else if (event.key === 'Escape' && editing) {
+			// Cancel typing only. Inside a modal <dialog> (BottomSheet) Escape is also the dialog's
+			// close request; a canceled keydown is not one, so the sheet stays open.
+			event.preventDefault();
+			event.stopPropagation();
 			editing = false;
 			(event.currentTarget as HTMLInputElement).blur();
 		}

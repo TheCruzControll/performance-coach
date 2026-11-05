@@ -126,7 +126,7 @@
 				<Skeleton height="10rem" radius="var(--radius-lg)" />
 			</div>
 		{:then { default: PlateCalculator }}
-			<PlateCalculator unit={preferences.units} onunitchange={(u) => preferences.setUnits(u)} />
+			<PlateCalculator defaultUnit={preferences.units} />
 		{/await}
 	{/if}
 </BottomSheet>

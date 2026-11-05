@@ -21,7 +21,10 @@ export interface PlateResult {
 	perSide: number[];
 	/** Total achievable weight including the bar. */
 	achieved: number;
-	/** target − achieved: 0 when exact, > 0 when the target cannot be loaded exactly. */
+	/**
+	 * target − achieved: 0 when exact, > 0 when the target cannot be loaded exactly, < 0 when the
+	 * target is lighter than the empty bar (achieved is then the bar itself).
+	 */
 	remainder: number;
 	exact: boolean;
 }
@@ -52,8 +55,10 @@ function gcd(a: number, b: number): number {
 }
 
 /**
- * Compute plates per side for `target` on a bar weighing `bar`. Never exceeds the target;
- * when the target is not loadable exactly, returns the heaviest achievable load below it.
+ * Compute plates per side for `target` on a bar weighing `bar`. When the target is not loadable
+ * exactly, returns the heaviest achievable load below it. The one case where `achieved` exceeds
+ * the target is a target lighter than the bar: nothing can be removed from an empty bar, so the
+ * result is the bar alone with a negative `remainder` (callers should say so).
  */
 export function calculatePlates(
 	target: number,

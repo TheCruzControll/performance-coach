@@ -99,16 +99,42 @@ test.describe('app shell on an iPhone viewport', () => {
 		await expect(sheet.getByTestId('plates-result')).toContainText('25 · 15 · 1.25');
 		await captureScreen(page, testInfo, 'plate-calculator');
 
+		// Escape while typing cancels the edit only: the sheet (a modal <dialog>) stays open.
+		const target = sheet.getByRole('spinbutton', { name: 'Target weight' });
+		await target.click();
+		await target.fill('140');
+		await page.keyboard.press('Escape');
+		// A closing sheet stays visible while it animates out, so check its open state too.
+		await expect(page.getByTestId('plates-sheet')).toHaveClass(/\bvisible\b/);
+		await expect(sheet).toBeVisible();
+		await expect(target).toHaveAttribute('aria-valuenow', '102.5');
+		await expect(target).not.toBeFocused();
+
+		// A target lighter than the bar is explained, and the stepper cannot go below the bar.
+		await sheet.getByRole('radio', { name: '10 kg bar' }).click();
+		await target.focus();
+		await page.keyboard.press('Home');
+		await expect(target).toHaveAttribute('aria-valuenow', '10');
+		await sheet.getByRole('radio', { name: '20 kg bar' }).click();
+		await expect(sheet.getByTestId('plates-warning')).toContainText('Below the 20 kg bar');
+		await expect(target).toHaveAttribute('aria-valuemin', '20');
+		await captureScreen(page, testInfo, 'plate-calculator-below-bar');
+		await target.fill('100');
+		await page.keyboard.press('Enter');
+		await expect(sheet.getByTestId('plates-warning')).toHaveCount(0);
+
 		await sheet.getByRole('radio', { name: 'Pounds' }).click();
-		await expect(sheet.getByRole('spinbutton', { name: 'Target weight' })).toHaveAttribute(
-			'aria-valuenow',
-			'225'
-		);
-		await expect(sheet.getByTestId('plates-result')).toContainText('45 · 45');
+		await expect(target).toHaveAttribute('aria-valuenow', '220');
+		await expect(sheet.getByTestId('plates-result')).toContainText('45 · 35 · 5');
 
 		await sheet.getByRole('button', { name: 'Close' }).click();
 		await expect(sheet).toBeHidden();
 		await expect(opener).toBeFocused();
+
+		// The calculator's unit switch is local: the app-wide preference is still kg.
+		await page.goto('/profile');
+		const units = page.getByRole('radiogroup', { name: 'Units' });
+		await expect(units.getByRole('radio', { name: 'kg' })).toHaveAttribute('aria-checked', 'true');
 	});
 
 	test('the theme preference applies before first paint and persists', async ({ page }) => {
@@ -135,6 +161,7 @@ test.describe('app shell on an iPhone viewport', () => {
 		await expect(
 			page.locator('meta[name="apple-mobile-web-app-status-bar-style"]')
 		).toHaveAttribute('content', 'black-translucent');
+
 		expect(errors).toEqual([]);
 	});
 

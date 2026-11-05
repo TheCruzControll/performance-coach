@@ -1,8 +1,9 @@
 <!--
   @component
   Plate calculator body: target weight stepper, bar choice and the loaded-sleeve picture.
-  Presentational: the caller owns the unit preference. Loaded on demand (dynamic import) so
-  the Train screen hydrates without it.
+  Opens in `defaultUnit` (the app-wide preference); switching units here is local to the
+  calculator and never changes the preference. Loaded on demand (dynamic import) so the Train
+  screen hydrates without it.
 -->
 <script lang="ts">
 	import { calculatePlates, STANDARD_BARS, STANDARD_PLATES } from '#lib/domain/plates.ts';
@@ -19,32 +20,35 @@
 	import PlateDiagram from './PlateDiagram.svelte';
 
 	interface Props {
-		unit: WeightUnit;
-		onunitchange: (unit: WeightUnit) => void;
+		/** Unit the calculator opens in. */
+		defaultUnit: WeightUnit;
 	}
 
-	let { unit, onunitchange }: Props = $props();
+	let { defaultUnit }: Props = $props();
 
 	const DEFAULTS: Record<WeightUnit, { target: number; bar: string }> = {
 		kg: { target: 100, bar: '20' },
 		lb: { target: 225, bar: '45' }
 	};
 
-	// Initial values follow the unit the calculator opens with.
+	// The calculator's own state, seeded from the preference it opens with.
 	// svelte-ignore state_referenced_locally
-	let target = $state(DEFAULTS[unit].target);
+	let unit = $state(defaultUnit);
 	// svelte-ignore state_referenced_locally
-	let barWeight = $state(DEFAULTS[unit].bar);
+	let target = $state(DEFAULTS[defaultUnit].target);
+	// svelte-ignore state_referenced_locally
+	let barWeight = $state(DEFAULTS[defaultUnit].bar);
 
 	const bars = $derived(STANDARD_BARS[unit]);
-	const result = $derived(calculatePlates(target, Number(barWeight), STANDARD_PLATES[unit]));
+	const bar = $derived(Number(barWeight));
+	const result = $derived(calculatePlates(target, bar, STANDARD_PLATES[unit]));
 
 	function changeUnit(next: WeightUnit) {
 		if (next === unit) return;
 		target = roundToIncrement(convertWeight(target, unit, next), DEFAULT_LOAD_INCREMENT[next]);
 		const index = STANDARD_BARS[unit].findIndex((b) => String(b.weight) === barWeight);
 		barWeight = String((STANDARD_BARS[next][Math.max(0, index)] ?? STANDARD_BARS[next][0]!).weight);
-		onunitchange(next);
+		unit = next;
 	}
 </script>
 
@@ -63,7 +67,7 @@
 		bind:value={target}
 		label="Target weight"
 		{unit}
-		min={0}
+		min={bar}
 		max={unit === 'kg' ? 500 : 1100}
 		step={DEFAULT_LOAD_INCREMENT[unit]}
 		bigStep={unit === 'kg' ? 10 : 25}
@@ -87,12 +91,19 @@
 		{:else}
 			<p class="per-side muted">Just the bar</p>
 		{/if}
-		{#if !result.exact && result.remainder > 0}
-			<p class="warning">
+		{#if result.remainder < 0}
+			<p class="warning" data-testid="plates-warning">
 				<Icon name="info" size={16} />
-				Closest loadable is {result.achieved}
-				{unit} — {cleanFloat(result.remainder, 2)}
-				{unit} short.
+				<span>Below the {bar} {unit} bar — the lightest load is the empty bar.</span>
+			</p>
+		{:else if !result.exact}
+			<p class="warning" data-testid="plates-warning">
+				<Icon name="info" size={16} />
+				<span
+					>Closest loadable is {result.achieved}
+					{unit} — {cleanFloat(result.remainder, 2)}
+					{unit} short.</span
+				>
 			</p>
 		{/if}
 	</div>
