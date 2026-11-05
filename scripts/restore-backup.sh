@@ -26,6 +26,16 @@ for tool in gpg pg_restore; do
 done
 [[ -f "$backup" ]] || { echo "restore: no such file: $backup" >&2; exit 1; }
 
+# Backups are written by pg_dump 18 (backup.yml PG_CLIENT_VERSION); older pg_restore
+# versions refuse newer archive formats.
+MIN_PG_RESTORE=18
+pg_major=$(pg_restore --version | sed -E 's/[^0-9]*([0-9]+).*/\1/')
+if [[ -z "$pg_major" || "$pg_major" -lt "$MIN_PG_RESTORE" ]]; then
+  echo "restore: pg_restore ${MIN_PG_RESTORE}+ is required (found: $(pg_restore --version))." >&2
+  echo "restore: install the PostgreSQL ${MIN_PG_RESTORE} client tools (Debian/Ubuntu: PGDG postgresql-client-${MIN_PG_RESTORE})." >&2
+  exit 1
+fi
+
 redacted=$(printf '%s' "$target" | sed -E 's#(://[^:/@]+):[^@]*@#\1:***@#')
 
 if [[ -f "$backup.sha256" ]]; then
