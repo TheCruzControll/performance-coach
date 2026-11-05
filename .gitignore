@@ -12,6 +12,7 @@ node_modules
 /playwright-report
 /blob-report
 /playwright/.cache
+/e2e/.auth
 /lighthouse-reports
 /coverage
 /.e2e-server.log

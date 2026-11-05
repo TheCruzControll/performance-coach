@@ -220,8 +220,10 @@ jobs:
         run: pnpm exec playwright install chromium
       - name: Create roles and databases
         run: pnpm db:setup
-      - name: Build for Node
+      - name: Build for Node (served on http://localhost:4174 by the Lighthouse script)
         run: pnpm build:node
+        env:
+          ORIGIN: http://localhost:4174
       # Every app screen (incl. the streamed, DB-backed /profile), a fresh browser per run,
       # median of 5. Asserts the documented score target (>= 90); TBT gets 50% headroom over its
       # 200 ms target for shared-runner noise. The tight hydration guard is the main-thread

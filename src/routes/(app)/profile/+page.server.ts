@@ -27,5 +27,11 @@ export const load: PageServerLoad = ({ locals, request, url, route }) => {
 	});
 	logWhenSettled(route.id, [health, vitals]);
 
-	return { version, appEnv: getEnv().appEnv, health, vitals };
+	return {
+		version,
+		appEnv: getEnv().appEnv,
+		owner: { name: locals.session?.ownerName ?? 'Owner' },
+		health,
+		vitals
+	};
 };

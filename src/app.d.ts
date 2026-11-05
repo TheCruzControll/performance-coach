@@ -1,4 +1,6 @@
 // See https://svelte.dev/docs/kit/types#app.d.ts
+import type { AuthSession } from '#lib/server/auth/sessions.ts';
+
 declare global {
 	namespace App {
 		interface Error {
@@ -9,6 +11,8 @@ declare global {
 		}
 		interface Locals {
 			requestId: string;
+			/** The live session (src/lib/server/auth/guard.ts), or null when signed out. */
+			session: AuthSession | null;
 		}
 		// interface PageData {}
 		// interface PageState {}

@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { eventually, query, trackConsoleErrors } from './support';
+import { eventually, query, SAME_ORIGIN, trackConsoleErrors } from './support';
 
 /**
  * Leaving a page cancels the loads it still had in flight, and WebKit reports each one as a
@@ -150,6 +150,7 @@ test.describe('platform: health, PWA, observability', () => {
 	test('/api/vitals stores a posted metric in Postgres', async ({ request }) => {
 		const id = `e2e-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 		const res = await request.post('/api/vitals', {
+			headers: SAME_ORIGIN,
 			data: {
 				id,
 				name: 'INP',
@@ -166,7 +167,10 @@ test.describe('platform: health, PWA, observability', () => {
 		);
 		expect(rows).toEqual([{ name: 'INP', value: 64, path: '/train' }]);
 
-		const bad = await request.post('/api/vitals', { data: { id, name: 'FID', value: 1 } });
+		const bad = await request.post('/api/vitals', {
+			headers: SAME_ORIGIN,
+			data: { id, name: 'FID', value: 1 }
+		});
 		expect(bad.status()).toBe(422);
 	});
 
@@ -314,7 +318,10 @@ test.describe('platform: health, PWA, observability', () => {
 		]);
 
 		// The endpoint validates what it stores.
-		const bad = await request.post('/api/client-errors', { data: { source: 'console' } });
+		const bad = await request.post('/api/client-errors', {
+			headers: SAME_ORIGIN,
+			data: { source: 'console' }
+		});
 		expect(bad.status()).toBe(422);
 	});
 

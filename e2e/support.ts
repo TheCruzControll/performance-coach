@@ -1,6 +1,16 @@
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import path from 'node:path';
 import { expect, type Page, type TestInfo } from '@playwright/test';
 import pg from 'pg';
 import { LOCAL_DATABASE_URLS } from '../src/lib/server/db/migrate';
+
+/** The app's origin: state-changing requests must send it (`Origin`), as browsers do. */
+export const ORIGIN =
+	process.env.E2E_BASE_URL ?? `http://localhost:${process.env.E2E_PORT ?? 4173}`;
+export const SAME_ORIGIN = { origin: ORIGIN } as const;
+
+/** A browser state with no session: for signed-out specs (`test.use({ storageState: signedOut })`). */
+export const signedOut = { cookies: [], origins: [] };
 
 export const TABS = [
 	{ label: 'Today', path: '/today', heading: 'Today' },
@@ -54,4 +64,50 @@ export async function captureScreen(page: Page, testInfo: TestInfo, name: string
 		path: `test-results/screens/${testInfo.project.name}/${name}.png`,
 		animations: 'disabled'
 	});
+}
+
+export interface AppRoute {
+	/** SvelteKit route id, e.g. `/(app)/profile/security`. */
+	id: string;
+	/** A URL path for it (groups removed, params filled with sample values). */
+	path: string;
+	page: boolean;
+	/** HTTP methods an endpoint exports (+server.ts). */
+	methods: string[];
+}
+
+const ROUTES_DIR = path.resolve(import.meta.dirname, '../src/routes');
+
+/** Every page and endpoint under src/routes, read from the file system (nothing hard-coded). */
+export function appRoutes(dir = ROUTES_DIR): AppRoute[] {
+	const routes: AppRoute[] = [];
+	const files = readdirSync(dir);
+	const page = files.some((f) => /^\+page(\.server)?\.(svelte|ts|js)$/.test(f));
+	const endpoint = files.find((f) => /^\+server\.(ts|js)$/.test(f));
+	if (page || endpoint) {
+		const segments = path.relative(ROUTES_DIR, dir).split(path.sep).filter(Boolean);
+		const id = `/${segments.join('/')}`;
+		const urlPath = `/${segments
+			.filter((s) => !/^\(.*\)$/.test(s))
+			.map((s) => s.replace(/^\[+\.{0,3}([\w-]+)(=[\w-]+)?\]+$/, 'sample'))
+			.join('/')}`;
+		const methods = endpoint
+			? [
+					...readFileSync(path.join(dir, endpoint), 'utf8').matchAll(
+						/export\s+(?:const|async function|function)\s+(GET|POST|PUT|PATCH|DELETE)\b/g
+					)
+				].map((m) => m[1]!)
+			: [];
+		routes.push({ id, path: urlPath, page, methods });
+	}
+	for (const entry of files) {
+		const full = path.join(dir, entry);
+		if (statSync(full).isDirectory()) routes.push(...appRoutes(full));
+	}
+	return routes;
+}
+
+/** A toast notification with this text (not the same words elsewhere on the screen). */
+export function toastWith(page: Page, text: string | RegExp) {
+	return page.locator('.toaster .toast').filter({ hasText: text });
 }

@@ -1,20 +1,32 @@
 import { expect, test } from '@playwright/test';
-import { captureScreen, TABS, trackConsoleErrors } from './support';
+import { captureScreen, signedOut, TABS, trackConsoleErrors } from './support';
 
 test.describe('app shell on an iPhone viewport', () => {
-	test('landing page renders and leads into the app', async ({ page }, testInfo) => {
+	test('the sign-in screen is the landing page; signed in, / goes to Today', async ({
+		page,
+		browser
+	}, testInfo) => {
 		const errors = trackConsoleErrors(page);
 		await page.goto('/');
-		await expect(page.getByRole('heading', { level: 1, name: /train with intent/i })).toBeVisible();
-		await captureScreen(page, testInfo, 'landing');
-
-		await page.getByTestId('passkey-signin').click();
-		await expect(page.getByRole('status')).toContainText(/passkey sign-in is coming soon/i);
-
-		await page.getByRole('link', { name: /preview the app/i }).click();
 		await expect(page).toHaveURL(/\/today$/);
 		await expect(page.getByRole('heading', { level: 1, name: 'Today' })).toBeVisible();
 		expect(errors).toEqual([]);
+
+		const context = await browser.newContext({ storageState: signedOut });
+		const signIn = await context.newPage();
+		const signInErrors = trackConsoleErrors(signIn);
+		await signIn.goto('/');
+		await expect(
+			signIn.getByRole('heading', { level: 1, name: /train with intent/i })
+		).toBeVisible();
+		await expect(signIn.getByTestId('passkey-signin')).toBeEnabled();
+		await expect(signIn.getByRole('textbox', { name: 'Account' })).toHaveAttribute(
+			'autocomplete',
+			'username webauthn'
+		);
+		await captureScreen(signIn, testInfo, 'landing');
+		expect(signInErrors).toEqual([]);
+		await context.close();
 	});
 
 	test('shell renders with the bottom navigation inside the safe viewport', async ({
@@ -70,7 +82,7 @@ test.describe('app shell on an iPhone viewport', () => {
 
 	test('no console errors on any screen, including interactive ones', async ({ page }) => {
 		const errors = trackConsoleErrors(page);
-		for (const path of ['/', ...TABS.map((t) => t.path), '/design', '/offline']) {
+		for (const path of [...TABS.map((t) => t.path), '/profile/security', '/design', '/offline']) {
 			await page.goto(path);
 			await page.waitForLoadState('networkidle');
 		}
@@ -239,7 +251,7 @@ test.describe('app shell on an iPhone viewport', () => {
 	});
 
 	test('no screen scrolls sideways', async ({ page }) => {
-		for (const path of ['/', ...TABS.map((t) => t.path), '/design', '/offline']) {
+		for (const path of [...TABS.map((t) => t.path), '/profile/security', '/design', '/offline']) {
 			await page.goto(path);
 			await page.evaluate(() => document.fonts.ready);
 			const { scrollWidth, innerWidth } = await page.evaluate(() => ({
@@ -251,18 +263,36 @@ test.describe('app shell on an iPhone viewport', () => {
 		}
 	});
 
-	test('nothing sits under fixed chrome at rest', async ({ page }) => {
+	test('signed-out screens do not scroll sideways either', async ({ browser }) => {
+		const context = await browser.newContext({ storageState: signedOut });
+		const page = await context.newPage();
+		for (const path of ['/', '/recover']) {
+			await page.goto(path);
+			await page.evaluate(() => document.fonts.ready);
+			const { scrollWidth, innerWidth } = await page.evaluate(() => ({
+				scrollWidth: document.documentElement.scrollWidth,
+				innerWidth: window.innerWidth
+			}));
+			expect(scrollWidth, `${path} is ${scrollWidth}px wide`).toBeLessThanOrEqual(innerWidth);
+		}
+		await context.close();
+	});
+
+	test('nothing sits under fixed chrome at rest', async ({ page, browser }) => {
 		const viewport = page.viewportSize()!;
 
-		// Landing: both calls to action are above the fold.
-		await page.goto('/');
+		// Sign-in: both ways in are above the fold.
+		const context = await browser.newContext({ storageState: signedOut });
+		const signIn = await context.newPage();
+		await signIn.goto('/');
 		for (const cta of [
-			page.getByRole('button', { name: /sign in with passkey/i }),
-			page.getByRole('link', { name: /preview the app/i })
+			signIn.getByRole('button', { name: /sign in with passkey/i }),
+			signIn.getByRole('link', { name: /use a recovery code/i })
 		]) {
 			const box = await cta.boundingBox();
 			expect(box!.y + box!.height).toBeLessThanOrEqual(viewport.height);
 		}
+		await context.close();
 
 		// Coach: the docked composer does not cover the suggested questions.
 		await page.goto('/coach');
@@ -278,6 +308,10 @@ test.describe('app shell on an iPhone viewport', () => {
 		await page.goto('/profile');
 		const options = page.getByTestId('theme-control').getByRole('radio');
 		await expect(options).toHaveCount(3);
+		// Measure in the middle of the screen, clear of the fixed tab bar.
+		await page
+			.getByTestId('theme-control')
+			.evaluate((el) => el.scrollIntoView({ block: 'center' }));
 		for (const option of await options.all()) {
 			const box = (await option.boundingBox())!;
 			const x = box.x + box.width / 2;

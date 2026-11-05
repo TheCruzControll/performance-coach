@@ -6,9 +6,12 @@
  */
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
-import { TABS } from './support';
+import { signedOut, TABS } from './support';
 
-const SCREENS = ['/', ...TABS.map((t) => t.path), '/offline', '/design'];
+const SCREENS = [...TABS.map((t) => t.path), '/profile/security', '/offline', '/design'];
+/** Screens a signed-out browser sees (setup and recovery-session screens are audited in
+ * auth.setup.ts and auth.e2e.ts, the only places they exist). */
+const SIGNED_OUT_SCREENS = ['/', '/recover'];
 const THEMES = ['dark', 'light'] as const;
 
 async function audit(page: Page): Promise<string[]> {
@@ -28,6 +31,21 @@ for (const theme of THEMES) {
 				(t) => localStorage.setItem('pc:prefs:v1', JSON.stringify({ theme: t })),
 				theme
 			);
+		});
+
+		test.describe('signed out', () => {
+			test.use({ storageState: signedOut });
+			for (const path of SIGNED_OUT_SCREENS) {
+				test(`${path} has no WCAG A/AA violations`, async ({ page }) => {
+					await page.goto(path);
+					await page.waitForLoadState('networkidle');
+					const html = page.locator('html');
+					if (theme === 'light') await expect(html).toHaveAttribute('data-theme', 'light');
+					await page.evaluate(() => document.fonts.ready);
+					await page.waitForTimeout(400);
+					expect(await audit(page)).toEqual([]);
+				});
+			}
 		});
 
 		for (const path of SCREENS) {

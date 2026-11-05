@@ -1,207 +1,192 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
+	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import BrandMark from '#lib/ui/components/BrandMark.svelte';
+	import {
+		cancelPendingPasskeyRequest,
+		passkeySupport,
+		PasskeyError,
+		signInWithPasskey
+	} from '#lib/client/passkeys.ts';
+	import { clearDeviceAccountData } from '#lib/client/signout.ts';
 	import Button from '#lib/ui/components/Button.svelte';
-	import Icon from '#lib/ui/components/Icon.svelte';
-	import type { IconName } from '#lib/ui/icons/icons.ts';
-	import { toast } from '#lib/ui/toast.svelte.ts';
+	import Notice from '#lib/ui/components/Notice.svelte';
+	import AuthScreen from './AuthScreen.svelte';
+	import type { PageProps } from './$types';
 
-	const pillars: { icon: IconName; title: string; text: string }[] = [
-		{
-			icon: 'target',
-			title: 'Adaptive programming',
-			text: 'Plans that change with every logged set.'
-		},
-		{
-			icon: 'bolt',
-			title: 'Instant logging',
-			text: 'One-handed, offline-first, never loses a set.'
-		},
-		{
-			icon: 'sparkle',
-			title: 'A coach that shows its work',
-			text: 'Facts, metrics and advice — labelled.'
-		}
-	];
+	let { data }: PageProps = $props();
 
-	function signIn() {
-		toast.show('Passkey sign-in is coming soon. Use the preview for now.');
+	let busy = $state(false);
+	let error = $state<string | null>(null);
+	let unsupported = $state(false);
+
+	async function finish(redirectTo: string) {
+		// A same-origin path the server already vetted (safeReturnPath), e.g. /today or ?next=.
+		// eslint-disable-next-line svelte/no-navigation-without-resolve
+		await goto(redirectTo, { replaceState: true, invalidateAll: true });
 	}
+
+	function explain(err: unknown) {
+		if (err instanceof PasskeyError && err.kind === 'unsupported') unsupported = true;
+		error = err instanceof PasskeyError ? err.message : 'Something went wrong. Try again.';
+	}
+
+	async function signIn() {
+		if (busy) return;
+		busy = true;
+		error = null;
+		try {
+			const { redirectTo } = await signInWithPasskey({ next: data.next });
+			await finish(redirectTo);
+		} catch (err) {
+			explain(err);
+			busy = false;
+		}
+	}
+
+	onMount(() => {
+		let active = true;
+		void (async () => {
+			if (data.signedOut) {
+				// Also covers a sign-out submitted without JavaScript.
+				await clearDeviceAccountData();
+			}
+			if (data.unavailable) return;
+			const support = await passkeySupport();
+			if (!support.webauthn) {
+				unsupported = true;
+				return;
+			}
+			if (!support.autofill || !active) return;
+			// Conditional UI: the browser offers the passkey in the field's autofill; a tap on the
+			// button aborts this quiet request and starts a modal one.
+			try {
+				const { redirectTo } = await signInWithPasskey({ next: data.next, autofill: true });
+				if (active) await finish(redirectTo);
+			} catch (err) {
+				// Autofill is a quiet extra: a browser that cannot run it (or the owner dismissing
+				// it) is not an error. Only a passkey the server refused after it was picked is.
+				if (active && !busy && err instanceof PasskeyError && err.stage === 'server') {
+					explain(err);
+				}
+			}
+		})();
+		return () => {
+			active = false;
+			void cancelPendingPasskeyRequest();
+		};
+	});
 </script>
 
 <svelte:head>
-	<title>Performance Coach</title>
+	<title>Sign in · Performance Coach</title>
 </svelte:head>
 
-<div class="landing">
-	<div class="backdrop" aria-hidden="true">
-		<BrandMark size={520} />
-	</div>
+<AuthScreen
+	eyebrow="Private performance coaching"
+	title="Train with intent."
+	lede="An AI coach that plans, adapts and explains — built on every set, run and round you log."
+	data-testid="signin-screen"
+>
+	{#snippet body()}
+		{#if data.signedOut && !error}
+			<Notice tone="positive" icon="shield" data-testid="signed-out-notice">
+				Signed out. This device no longer holds your account data.
+			</Notice>
+		{/if}
+	{/snippet}
 
-	<header class="brand">
-		<BrandMark size={30} />
-		<span class="wordmark">Performance Coach</span>
-	</header>
+	<form
+		class="signin"
+		onsubmit={(event) => {
+			event.preventDefault();
+			void signIn();
+		}}
+	>
+		<!-- Conditional UI anchor: Safari and Chrome offer saved passkeys in this field's autofill. -->
+		<label class="account">
+			<span class="visually-hidden">Account</span>
+			<input
+				name="username"
+				autocomplete="username webauthn"
+				placeholder="Choose a saved passkey"
+				autocapitalize="none"
+				spellcheck="false"
+				readonly={busy}
+				data-testid="passkey-field"
+			/>
+		</label>
 
-	<main id="main" class="hero" tabindex="-1">
-		<p class="eyebrow">Private performance coaching</p>
-		<h1 class="headline">Train with<br />intent.</h1>
-		<p class="lede">
-			An AI coach that plans, adapts and explains — built on every set, run and round you log.
-		</p>
+		{#if data.unavailable}
+			<Notice tone="warning" title="Passkeys aren’t available on this address">
+				{data.unavailable.reason}
+				{#if data.unavailable.signInUrl}
+					<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- external origin -->
+					<a href={data.unavailable.signInUrl}>Open {new URL(data.unavailable.signInUrl).host}</a>
+				{/if}
+			</Notice>
+		{:else if unsupported}
+			<Notice tone="warning" title="This browser can’t use passkeys">
+				Open the app in Safari on your iPhone, or sign in with a recovery code.
+			</Notice>
+		{:else if error}
+			<Notice tone="danger" data-testid="signin-error">{error}</Notice>
+		{/if}
 
-		<ul class="pillars">
-			{#each pillars as p (p.title)}
-				<li class="pillar">
-					<span class="pillar-icon"><Icon name={p.icon} size={20} /></span>
-					<span>
-						<span class="pillar-title">{p.title}</span>
-						<span class="pillar-text">{p.text}</span>
-					</span>
-				</li>
-			{/each}
-		</ul>
-	</main>
-
-	<footer class="actions">
-		<Button size="lg" block icon="key" onclick={signIn} data-testid="passkey-signin">
-			Sign in with passkey
+		<Button
+			type="submit"
+			size="lg"
+			block
+			icon="passkey"
+			loading={busy}
+			disabled={Boolean(data.unavailable) || unsupported}
+			data-testid="passkey-signin"
+		>
+			{busy ? 'Waiting for your passkey…' : 'Sign in with passkey'}
 		</Button>
-		<Button size="lg" block variant="ghost" href={resolve('/(app)/today')} iconEnd="arrow-right">
-			Preview the app
-		</Button>
-		<p class="fine">Private · Single user · coach.nikocruz.com</p>
-	</footer>
-</div>
+	</form>
+
+	<Button
+		size="md"
+		block
+		variant="ghost"
+		href={resolve('/recover')}
+		data-testid="use-recovery-code"
+	>
+		Lost your passkey? Use a recovery code
+	</Button>
+
+	{#snippet footer()}
+		<p>Private · Single owner · Passkeys only</p>
+	{/snippet}
+</AuthScreen>
 
 <style>
-	.landing {
-		position: relative;
-		display: flex;
-		flex-direction: column;
-		min-height: 100dvh;
-		max-width: var(--content-max);
-		margin: 0 auto;
-		padding: calc(var(--safe-top) + var(--space-4)) max(var(--gutter), var(--safe-right))
-			calc(var(--safe-bottom) + var(--space-4)) max(var(--gutter), var(--safe-left));
-		overflow: hidden;
-		isolation: isolate;
-	}
-
-	.backdrop {
-		position: absolute;
-		z-index: -1;
-		top: -6rem;
-		right: -15rem;
-		color: var(--color-text);
-		opacity: 0.11;
-		filter: blur(0.5px);
-		pointer-events: none;
-	}
-
-	.backdrop::after {
-		content: '';
-		position: absolute;
-		inset: 20%;
-		border-radius: 50%;
-		background: radial-gradient(
-			circle,
-			color-mix(in srgb, var(--color-accent) 50%, transparent),
-			transparent 65%
-		);
-		filter: blur(60px);
-	}
-
-	.brand {
-		display: flex;
-		align-items: center;
-		gap: var(--space-2);
-		color: var(--color-text);
-	}
-
-	.wordmark {
-		font-family: var(--font-display);
-		font-size: var(--text-base);
-		font-weight: var(--weight-bold);
-		letter-spacing: var(--tracking-tight);
-	}
-
-	.hero {
-		flex: 1;
-		display: flex;
-		flex-direction: column;
-		justify-content: center;
-		gap: var(--space-4);
-		padding: var(--space-6) 0 var(--space-5);
-		outline: none;
-	}
-
-	.eyebrow {
-		color: var(--color-accent-text);
-	}
-
-	.headline {
-		font-family: var(--font-display);
-		font-size: clamp(var(--text-5xl), 15vw, var(--text-6xl));
-		font-weight: var(--weight-black);
-		line-height: 0.95;
-		letter-spacing: -0.045em;
-	}
-
-	.lede {
-		max-width: 30ch;
-		font-size: var(--text-lg);
-		line-height: var(--leading-snug);
-		color: var(--color-text-secondary);
-	}
-
-	.pillars {
+	.signin {
 		display: grid;
 		gap: var(--space-3);
-		margin: 0;
-		padding: 0;
-		list-style: none;
 	}
 
-	.pillar {
-		display: flex;
-		align-items: flex-start;
-		gap: var(--space-3);
-	}
-
-	.pillar-icon {
-		display: grid;
-		place-items: center;
-		flex: none;
-		width: 2.25rem;
-		height: 2.25rem;
-		border-radius: var(--radius-sm);
-		background: var(--color-surface-2);
+	.account input {
+		width: 100%;
+		min-height: 3.25rem;
+		padding: 0 var(--space-4);
+		border-radius: var(--radius-full);
 		border: 1px solid var(--color-border);
-		color: var(--color-accent-text);
-	}
-
-	.pillar-title {
-		display: block;
-		font-size: var(--text-sm);
-		font-weight: var(--weight-semibold);
-	}
-
-	.pillar-text {
-		display: block;
-		font-size: var(--text-sm);
-		color: var(--color-text-secondary);
-	}
-
-	.actions {
-		display: grid;
-		gap: var(--space-2);
-	}
-
-	.fine {
-		margin-top: var(--space-2);
+		background: color-mix(in srgb, var(--color-surface-2) 80%, transparent);
+		color: var(--color-text);
+		font: inherit;
+		font-size: max(1rem, var(--text-base));
 		text-align: center;
-		font-size: var(--text-xs);
+	}
+
+	.account input::placeholder {
 		color: var(--color-text-tertiary);
+	}
+
+	.account input:focus-visible {
+		outline: none;
+		border-color: var(--color-accent);
+		box-shadow: 0 0 0 3px var(--color-accent-ring);
 	}
 </style>
