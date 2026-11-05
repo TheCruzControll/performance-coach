@@ -25,13 +25,18 @@ export type PasskeyErrorKind =
 	| 'unavailable'
 	| 'network';
 
-/** A failure worth explaining to the owner, in plain words. */
+/**
+ * A failure worth explaining to the owner, in plain words. `stage` says where it happened: in the
+ * browser's passkey prompt, or at the server after the browser produced a response.
+ */
 export class PasskeyError extends Error {
 	readonly kind: PasskeyErrorKind;
-	constructor(kind: PasskeyErrorKind, message: string) {
+	readonly stage: 'browser' | 'server';
+	constructor(kind: PasskeyErrorKind, message: string, stage: 'browser' | 'server' = 'server') {
 		super(message);
 		this.name = 'PasskeyError';
 		this.kind = kind;
+		this.stage = stage;
 	}
 }
 
@@ -85,19 +90,22 @@ function fromBrowserError(error: unknown): PasskeyError {
 	if (error instanceof PasskeyError) return error;
 	const { code, name, cause } = error as { code?: string; name?: string; cause?: unknown };
 	const causeName = (cause as { name?: string } | undefined)?.name;
+	const browser = (kind: PasskeyErrorKind) => new PasskeyError(kind, MESSAGES[kind], 'browser');
 	if (code === 'ERROR_AUTHENTICATOR_PREVIOUSLY_REGISTERED' || causeName === 'InvalidStateError') {
-		return fail('already-registered');
+		return browser('already-registered');
 	}
-	if (code === 'ERROR_INVALID_DOMAIN' || code === 'ERROR_INVALID_RP_ID') return fail('unavailable');
+	if (code === 'ERROR_INVALID_DOMAIN' || code === 'ERROR_INVALID_RP_ID') {
+		return browser('unavailable');
+	}
 	if (
 		code === 'ERROR_CEREMONY_ABORTED' ||
 		name === 'AbortError' ||
 		name === 'NotAllowedError' ||
 		causeName === 'NotAllowedError'
 	) {
-		return fail('cancelled');
+		return browser('cancelled');
 	}
-	return fail('rejected', MESSAGES.rejected);
+	return browser('rejected');
 }
 
 export interface PasskeySupport {
@@ -121,7 +129,8 @@ export async function signInWithPasskey(
 	options: { next?: string | null; autofill?: boolean } = {}
 ): Promise<{ redirectTo: string }> {
 	const lib = await loadLibrary();
-	if (!lib.browserSupportsWebAuthn()) throw fail('unsupported');
+	if (!lib.browserSupportsWebAuthn())
+		throw new PasskeyError('unsupported', MESSAGES.unsupported, 'browser');
 	const optionsJSON = await post<PublicKeyCredentialRequestOptionsJSON>('/api/auth/signin/options');
 	let response: AuthenticationResponseJSON;
 	try {
@@ -144,7 +153,8 @@ export async function createFirstPasskey(input: {
 	name: string;
 }): Promise<{ recoveryCodes: string[] }> {
 	const lib = await loadLibrary();
-	if (!lib.browserSupportsWebAuthn()) throw fail('unsupported');
+	if (!lib.browserSupportsWebAuthn())
+		throw new PasskeyError('unsupported', MESSAGES.unsupported, 'browser');
 	const optionsJSON = await post<PublicKeyCredentialCreationOptionsJSON>(
 		'/api/auth/setup/options',
 		input
@@ -170,7 +180,8 @@ export interface AddedPasskey {
 /** Add a passkey to the signed-in account (or replace a lost one after a recovery code). */
 export async function addPasskey(): Promise<AddedPasskey> {
 	const lib = await loadLibrary();
-	if (!lib.browserSupportsWebAuthn()) throw fail('unsupported');
+	if (!lib.browserSupportsWebAuthn())
+		throw new PasskeyError('unsupported', MESSAGES.unsupported, 'browser');
 	const optionsJSON = await post<PublicKeyCredentialCreationOptionsJSON>(
 		'/api/auth/passkeys/options'
 	);
