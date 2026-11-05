@@ -34,8 +34,11 @@ export async function recordServerError(
 	});
 	// The driver's error, already log-safe (serializeError withholds anything that can quote a
 	// query value); its stack and any deeper cause stay in the log line only.
-	const { stack: _stack, cause: _deeper, ...cause } =
-		(serialized.cause as Record<string, unknown> | undefined) ?? {};
+	const {
+		stack: _stack,
+		cause: _deeper,
+		...cause
+	} = (serialized.cause as Record<string, unknown> | undefined) ?? {};
 	const context = {
 		...input.context,
 		...(Object.keys(cause).length > 0 ? { cause } : {})
