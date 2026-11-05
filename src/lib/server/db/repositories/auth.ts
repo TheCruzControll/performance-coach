@@ -54,13 +54,19 @@ export function createAuthRepository(db: Executor) {
 			return first(await db.insert(owners).values(values).returning(), 'insert owner');
 		},
 
-		async markSetupCompleted(ownerId: string, at: Date): Promise<void> {
-			await db.update(owners).set({ setupCompletedAt: at }).where(eq(owners.id, ownerId));
+		/** Re-attach an existing owner to a new first passkey (after an owner reset). */
+		async updateOwnerIdentity(
+			ownerId: string,
+			values: { displayName: string; webauthnUserId: string }
+		): Promise<OwnerRow> {
+			return first(
+				await db.update(owners).set(values).where(eq(owners.id, ownerId)).returning(),
+				'update owner'
+			);
 		},
 
-		async deleteOwner(): Promise<number> {
-			const deleted = await db.delete(owners).returning({ id: owners.id });
-			return deleted.length;
+		async markSetupCompleted(ownerId: string, at: Date): Promise<void> {
+			await db.update(owners).set({ setupCompletedAt: at }).where(eq(owners.id, ownerId));
 		},
 
 		// ---- passkeys ----------------------------------------------------------------------

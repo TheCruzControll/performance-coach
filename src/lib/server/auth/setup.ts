@@ -3,8 +3,9 @@
  *
  * The tech lead generates a random token (`pnpm auth:setup-token`) and configures only its
  * SHA-256 (`OWNER_SETUP_TOKEN_HASH`); the owner opens `/setup?token=…`. Setup is possible only
- * while no owner exists; registering the first passkey creates the owner, closes setup for good
- * (the route answers 404 from then on) and returns 10 recovery codes, shown exactly once.
+ * while no passkey exists; registering the first passkey creates the owner (or re-attaches the
+ * existing one after `pnpm auth:reset-owner`), closes setup for good (the route answers 404 from
+ * then on) and returns 10 recovery codes, shown exactly once.
  */
 import type { PublicKeyCredentialCreationOptionsJSON } from '@simplewebauthn/server';
 import { createAuthRepository } from '../db';
@@ -37,12 +38,16 @@ export function setupTokenValid(token: unknown, config: SetupConfig = configFrom
 	return tokenMatchesHash(token, config.tokenHash);
 }
 
-/** True while no owner (and no passkey) exists. */
+/**
+ * True while no passkey exists and setup has never completed — on a fresh database, or after
+ * the tech lead ran `pnpm auth:reset-owner` (which keeps the owner and their training data but
+ * removes every credential and reopens setup).
+ */
 export async function setupOpen(deps: AuthDeps = {}): Promise<boolean> {
 	const { db } = resolveDeps(deps);
 	const repo = createAuthRepository(db);
 	const owner = await repo.getOwner();
-	return !owner && (await repo.countPasskeys()) === 0;
+	return (!owner || owner.setupCompletedAt === null) && (await repo.countPasskeys()) === 0;
 }
 
 /**
@@ -149,7 +154,13 @@ export async function completeSetup(
 				throw new AuthError('setup_unavailable', UNAVAILABLE);
 			}
 			const at = now();
-			const owner = await repo.insertOwner({ displayName: name, webauthnUserId: userHandle });
+			const existing = await repo.getOwner();
+			const owner = existing
+				? await repo.updateOwnerIdentity(existing.id, {
+						displayName: name,
+						webauthnUserId: userHandle
+					})
+				: await repo.insertOwner({ displayName: name, webauthnUserId: userHandle });
 			const passkey = await repo.insertPasskey({
 				id: info.credential.id,
 				ownerId: owner.id,
