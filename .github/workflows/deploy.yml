@@ -1,0 +1,92 @@
+# Production deploy: after CI succeeds on main (or manually).
+#   1. apply database migrations to Neon over the direct (non-pooled) connection,
+#   2. build and deploy to Vercel with the Vercel CLI (prebuilt).
+# Skips gracefully (notice, success) until the owner adds the secrets in docs/deployment.md.
+name: Deploy
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  VERCEL_CLI: vercel@64.7.0
+
+jobs:
+  deploy:
+    name: Migrate & deploy to Vercel
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: production
+      url: https://coach.nikocruz.com
+    env:
+      DATABASE_URL_UNPOOLED: ${{ secrets.DATABASE_URL_UNPOOLED }}
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+    steps:
+      - name: Check deployment secrets
+        id: secrets
+        run: |
+          missing=()
+          for name in DATABASE_URL_UNPOOLED VERCEL_TOKEN VERCEL_ORG_ID VERCEL_PROJECT_ID; do
+            if [ -z "${!name}" ]; then missing+=("$name"); fi
+          done
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::notice title=Deploy skipped::Missing secrets: ${missing[*]}. See docs/deployment.md."
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.secrets.outputs.enabled == 'true'
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      - uses: pnpm/action-setup@v4
+        if: steps.secrets.outputs.enabled == 'true'
+      - uses: actions/setup-node@v4
+        if: steps.secrets.outputs.enabled == 'true'
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - name: Install dependencies
+        if: steps.secrets.outputs.enabled == 'true'
+        run: pnpm install --frozen-lockfile
+
+      - name: Apply database migrations (Neon, direct connection)
+        if: steps.secrets.outputs.enabled == 'true'
+        run: pnpm db:migrate
+
+      - name: Pull Vercel production settings
+        if: steps.secrets.outputs.enabled == 'true'
+        run: pnpm dlx "$VERCEL_CLI" pull --yes --environment=production --token="$VERCEL_TOKEN"
+      - name: Build (Vercel adapter)
+        if: steps.secrets.outputs.enabled == 'true'
+        run: pnpm dlx "$VERCEL_CLI" build --prod --token="$VERCEL_TOKEN"
+      - name: Deploy prebuilt output
+        if: steps.secrets.outputs.enabled == 'true'
+        run: |
+          url=$(pnpm dlx "$VERCEL_CLI" deploy --prebuilt --prod --token="$VERCEL_TOKEN")
+          echo "Deployed: $url" | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Smoke test /api/health
+        if: steps.secrets.outputs.enabled == 'true'
+        run: |
+          for _ in 1 2 3 4 5 6; do
+            if curl -fsS https://coach.nikocruz.com/api/health; then exit 0; fi
+            sleep 10
+          done
+          echo "::error::Health check failed after deploy"; exit 1
