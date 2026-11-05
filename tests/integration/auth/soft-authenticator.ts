@@ -47,18 +47,21 @@ export class SoftAuthenticator {
 	#userHandle: string | undefined;
 	counter: number;
 
+	readonly rp: { rpId: string; origin: string };
+	/** Backup eligible and backed up (a synced passkey), or a single-device credential. */
+	synced: boolean;
+
 	constructor(
-		readonly rp: { rpId: string; origin: string },
+		rp: { rpId: string; origin: string },
 		options: { counter?: number; synced?: boolean } = {}
 	) {
 		const { privateKey, publicKey } = generateKeyPairSync('ec', { namedCurve: 'P-256' });
+		this.rp = rp;
 		this.#privateKey = privateKey;
 		this.#publicKey = publicKey;
 		this.counter = options.counter ?? 0;
 		this.synced = options.synced ?? true;
 	}
-
-	synced: boolean;
 
 	get id(): string {
 		return b64url(this.credentialId);

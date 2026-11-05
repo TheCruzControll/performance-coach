@@ -1,4 +1,5 @@
 import { sql } from 'drizzle-orm';
+import type { PoolClient } from 'pg';
 import { describe, expect, it } from 'vitest';
 import { createAuthRepository } from '../../../src/lib/server/db';
 import {
@@ -154,8 +155,7 @@ describe('first-run setup', () => {
 		await withRollback(async (tx) => {
 			const first = await setUpOwner(tx);
 			// The transaction's own connection: the script's statements join this rolled-back test.
-			const client = (tx as Executor & { session: { client: import('pg').PoolClient } }).session
-				.client;
+			const client = (tx as Executor & { session: { client: PoolClient } }).session.client;
 			const summary = await resetOwnerAuth(client, { transaction: false });
 			expect(summary).toEqual({
 				ownerName: 'Niko Cruz',
