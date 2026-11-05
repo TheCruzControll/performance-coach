@@ -1,7 +1,7 @@
 /*
  * Self-hosted variable fonts (from @fontsource-variable, latin subset, woff2).
- *   Mona Sans  — UI and body text (refined grotesk)
- *   Hubot Sans — display and numerals (Mona's mechanical sibling; tabular figures)
+ *   Mona Sans  — UI, body text and data numerals (refined grotesk; see design-system.md)
+ *   Hubot Sans — display titles (Mona's mechanical sibling)
  * Both are preloaded (hooks.server.ts) and swap in; metric-matched fallbacks keep layout
  * shift near zero while they load. Latin-ext is declared but only fetched when needed.
  */

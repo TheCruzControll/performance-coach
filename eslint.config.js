@@ -53,6 +53,16 @@ const LAYER = {
 	io: {
 		regex: '^(node:|pg$|drizzle-orm|@vercel/)',
 		message: 'The domain layer is pure: no I/O, Node built-ins or database drivers.'
+	},
+	driver: {
+		regex: '^(pg|pg-[\\w-]+|drizzle-orm|@neondatabase/[\\w-]+)($|/)',
+		message:
+			'Routes and hooks do not talk to the database: no driver or ORM imports. Call a service in #lib/server/services instead.'
+	},
+	observabilityDeps: {
+		regex: `${layer('server/db')}|${layer('server/services')}|${layer('server/agent')}|${layer('server/auth')}`,
+		message:
+			'Observability is a leaf: the logger, request context and timing helpers must not depend on db, services, agent or auth.'
 	}
 };
 
@@ -120,7 +130,16 @@ export default defineConfig(
 		rules: restrict([LAYER.db, LAYER.ui, LAYER.client, LAYER.framework])
 	},
 	{
+		// Auth may use services and the db layer; it never reaches into UI or browser code.
+		files: ['src/lib/server/auth/**'],
+		rules: restrict([LAYER.ui, LAYER.client])
+	},
+	{
+		files: ['src/lib/server/observability/**'],
+		rules: restrict([LAYER.observabilityDeps, LAYER.ui, LAYER.client, LAYER.framework])
+	},
+	{
 		files: ['src/routes/**', 'src/hooks.server.ts', 'src/hooks.client.ts'],
-		rules: restrict([LAYER.db])
+		rules: restrict([LAYER.db, LAYER.driver])
 	}
 );

@@ -59,20 +59,21 @@ flowchart LR
 
 ## Module boundaries
 
-Folders are layers. Allowed dependencies point inwards and are **enforced by ESLint**
-(`no-restricted-imports` rules in `eslint.config.js`; `pnpm lint` fails on a violation).
+Folders are layers. Allowed dependencies point inwards. Every "Must not import" entry below is
+**enforced by ESLint** (`no-restricted-imports` rules in `eslint.config.js`, one block per row;
+`pnpm lint` fails on a violation). "May import" is guidance, not a rule.
 
-| Folder                          | Responsibility                                                           | May import                                     | Must not import                                   |
-| ------------------------------- | ------------------------------------------------------------------------ | ---------------------------------------------- | ------------------------------------------------- |
-| `src/lib/domain/`               | Pure, isomorphic training math (units, e1RM, RPE, plates, load). No I/O. | nothing outside itself                         | server, client, ui, Svelte/Kit, `node:*`, drivers |
-| `src/lib/server/db/`            | Drizzle schema, pool/client, repositories, migration helpers             | `domain`, `server/env`, `server/observability` | services, agent, ui, client, SvelteKit            |
-| `src/lib/server/services/`      | Application use-cases shared by routes **and** the agent                 | `db`, `domain`, `observability`                | agent, ui, client, SvelteKit                      |
-| `src/lib/server/agent/`         | AI coach: provider interface, tools, orchestration (scaffold in M1)      | `services`, `domain`                           | `db` (tools go through services), ui, client      |
-| `src/lib/server/auth/`          | Passkey auth & sessions (scaffold in M1; M2)                             | `services`, `db`                               | ui, client                                        |
-| `src/lib/server/observability/` | Logger, request context, Server-Timing helpers                           | —                                              | —                                                 |
-| `src/lib/client/`               | Browser-only code: RUM, preferences, offline store/sync (M4)             | `domain`                                       | server, ui                                        |
-| `src/lib/ui/`                   | Design-system primitives, tokens, fonts, icons                           | `domain` (types)                               | server                                            |
-| `src/routes/`, `src/hooks*`     | Pages, layouts, `/api` endpoints, request hooks                          | everything above                               | `server/db` directly (call a service)             |
+| Folder                          | Responsibility                                                           | May import                                     | Must not import                                         |
+| ------------------------------- | ------------------------------------------------------------------------ | ---------------------------------------------- | ------------------------------------------------------- |
+| `src/lib/domain/`               | Pure, isomorphic training math (units, e1RM, RPE, plates, load). No I/O. | nothing outside itself                         | server, client, ui, Svelte/Kit, `node:*`, drivers       |
+| `src/lib/server/db/`            | Drizzle schema, pool/client, repositories, migration helpers             | `domain`, `server/env`, `server/observability` | services, agent, ui, client, SvelteKit                  |
+| `src/lib/server/services/`      | Application use-cases shared by routes **and** the agent                 | `db`, `domain`, `observability`                | agent, ui, client, SvelteKit                            |
+| `src/lib/server/agent/`         | AI coach: provider interface, tools, orchestration (scaffold in M1)      | `services`, `domain`                           | `db` (tools go through services), ui, client, SvelteKit |
+| `src/lib/server/auth/`          | Passkey auth & sessions (scaffold in M1; M2)                             | `services`, `db`                               | ui, client                                              |
+| `src/lib/server/observability/` | Logger, request context, Server-Timing helpers (a leaf)                  | Node built-ins only                            | db, services, agent, auth, ui, client, SvelteKit        |
+| `src/lib/client/`               | Browser-only code: RUM, preferences, offline store/sync (M4)             | `domain`                                       | server, ui                                              |
+| `src/lib/ui/`                   | Design-system primitives, tokens, fonts, icons                           | `domain` (types)                               | server                                                  |
+| `src/routes/`, `src/hooks*`     | Pages, layouts, `/api` endpoints, request hooks                          | everything above                               | `server/db`, `pg`, `drizzle-orm` (call a service)       |
 
 SvelteKit additionally refuses to bundle any `server/` module into client code.
 
