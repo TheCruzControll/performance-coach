@@ -4,6 +4,8 @@ declare global {
 		interface Error {
 			/** Correlates a user-visible error with server logs and the app_errors table. */
 			requestId?: string;
+			/** Set by src/hooks.client.ts when the failure was the network, not the server. */
+			offline?: boolean;
 		}
 		interface Locals {
 			requestId: string;

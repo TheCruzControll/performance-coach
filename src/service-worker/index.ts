@@ -3,10 +3,14 @@
 /// <reference lib="webworker" />
 /**
  * Service worker: precache the app shell and static assets per build version, clean up old
- * versions on activate, and serve:
+ * versions on activate (and take control of already-open pages), and serve:
  *   - build assets + static files  → cache-first (immutable, versioned)
- *   - page navigations             → network-first, fall back to the cached page, then /offline
- *   - /api/*                       → network only (never cached: live, private data)
+ *   - page navigations             → network only; on failure the prerendered /offline screen
+ *   - /api/*, __data.json          → network only (never cached: live, private data)
+ *
+ * Dynamic HTML is never stored: pages are sent `private, no-cache` because they carry personal
+ * data, and a stored copy would outlive sign-out and show stale state (e.g. a health check) as
+ * if it were live. Offline workout data (M4) will live in IndexedDB, owned by the app.
  */
 import { version } from '$app/env';
 import { assets, immutable, prerendered } from '$app/manifest';
@@ -14,9 +18,9 @@ import { self } from '$app/service-worker';
 
 const PREFIX = 'pc-';
 const SHELL_CACHE = `${PREFIX}shell-${version}`;
-const PAGES_CACHE = `${PREFIX}pages-${version}`;
 const OFFLINE_URL = '/offline';
-const NAVIGATION_TIMEOUT_MS = 4000;
+/** A connected-but-dead network ("lie-fi") can hang a request for a minute; give up sooner. */
+const NAVIGATION_TIMEOUT_MS = 6000;
 
 const PRECACHE = [
 	...immutable.map((f) => f.path),
@@ -33,11 +37,13 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
 	event.waitUntil(
 		(async () => {
+			// Drops previous versions, including the page snapshots older builds stored.
 			for (const key of await caches.keys()) {
-				if (key.startsWith(PREFIX) && key !== SHELL_CACHE && key !== PAGES_CACHE) {
-					await caches.delete(key);
-				}
+				if (key.startsWith(PREFIX) && key !== SHELL_CACHE) await caches.delete(key);
 			}
+			// Control the page that installed us (the first visit), so offline support starts
+			// now rather than after the next navigation.
+			await self.clients.claim();
 		})()
 	);
 });
@@ -47,21 +53,20 @@ async function cacheFirst(request: Request): Promise<Response> {
 	return cached ?? fetch(request);
 }
 
-async function networkFirstPage(request: Request): Promise<Response> {
-	const cache = await caches.open(PAGES_CACHE);
+async function navigate(request: Request): Promise<Response> {
 	try {
-		const response = await Promise.race([
+		return await Promise.race([
 			fetch(request),
 			new Promise<never>((_, reject) =>
 				setTimeout(() => reject(new Error('navigation timeout')), NAVIGATION_TIMEOUT_MS)
 			)
 		]);
-		if (response.ok && response.type === 'basic') await cache.put(request, response.clone());
-		return response;
 	} catch {
-		const cached = (await cache.match(request)) ?? (await caches.match(OFFLINE_URL));
+		// The offline screen holds no personal data; it renders in the app shell at the URL
+		// that failed, so tabs without server data keep working from the precache.
+		const offline = await caches.match(OFFLINE_URL, { cacheName: SHELL_CACHE });
 		return (
-			cached ?? new Response('Offline', { status: 503, headers: { 'content-type': 'text/plain' } })
+			offline ?? new Response('Offline', { status: 503, headers: { 'content-type': 'text/plain' } })
 		);
 	}
 }
@@ -77,6 +82,6 @@ self.addEventListener('fetch', (event) => {
 	if (PRECACHED.has(url.pathname)) {
 		event.respondWith(cacheFirst(request));
 	} else if (request.mode === 'navigate') {
-		event.respondWith(networkFirstPage(request));
+		event.respondWith(navigate(request));
 	}
 });

@@ -105,8 +105,16 @@ tests can wrap each test in a rolled-back transaction.
   are supported (`docs/design-system.md`).
 - PWA: web manifest, PNG/SVG icons, and a SvelteKit service worker
   (`src/service-worker/index.ts`) that precaches the versioned build + static assets, deletes old
-  caches on activate, serves navigations network-first with a prerendered `/offline` fallback,
-  and never caches `/api/*`.
+  caches and claims open pages on activate (so the first visit is already controlled), and
+  serves navigations from the network with the prerendered `/offline` screen as the fallback.
+  It **never stores dynamic HTML, `__data.json` or `/api/*`**: pages are `private, no-cache`
+  because they carry personal data, and a stored copy would outlive sign-out and show stale
+  state as live. Offline workout data (M4) will live in IndexedDB, owned by the app.
+- Offline UX: the `/offline` screen renders inside the app shell (tabs keep working), and
+  `src/hooks.client.ts` marks network failures during client-side navigation (`__data.json`
+  fetch errors) as `offline`, so `src/routes/ErrorView.svelte` shows the designed offline state
+  with the nav instead of a 500. A connectivity notice appears in the shell while offline.
+  Covered by `e2e/offline.e2e.ts`.
 - Code splitting per route; heavy, interaction-only UI (e.g. the plate calculator) is loaded on
   intent. Budgets are enforced in CI (`docs/performance.md`).
 
