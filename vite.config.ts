@@ -53,7 +53,9 @@ export default defineConfig(({ mode }) => {
 				version: { name: appVersion(), pollInterval: 0 },
 				// Small, render-critical CSS is inlined into the HTML to save a blocking round-trip.
 				inlineStyleThreshold: 4096,
-				output: { bundleStrategy: 'split' }
+				output: { bundleStrategy: 'split' },
+				// Absolute URLs everywhere (served from the domain root); simpler for the service worker.
+				paths: { relative: false }
 			})
 		],
 		build: {
