@@ -14,11 +14,13 @@ const gitignorePath = path.resolve(import.meta.dirname, '.gitignore');
  * relative paths, so a boundary cannot be bypassed with `../../`.
  *
  * @param {Array<{ regex: string, message: string }>} patterns
+ * @returns {import('eslint').Linter.RulesRecord}
  */
 const restrict = (patterns) => ({
 	'no-restricted-imports': ['error', { patterns }]
 });
 
+/** @param {string} name */
 const layer = (name) => `(^#lib/${name}|lib/${name}|^(\\.\\./)+${name.split('/').pop()})(/|$)`;
 
 const LAYER = {
@@ -95,7 +97,11 @@ export default defineConfig(
 	},
 	{
 		files: ['src/lib/ui/**'],
-		rules: restrict([LAYER.server])
+		rules: {
+			...restrict([LAYER.server]),
+			// UI primitives forward hrefs that callers already built with resolve().
+			'svelte/no-navigation-without-resolve': ['error', { ignoreLinks: true }]
+		}
 	},
 	{
 		files: ['src/lib/client/**'],
