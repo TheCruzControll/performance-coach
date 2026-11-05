@@ -16,6 +16,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { resolve } from '$app/paths';
+	import { OFFLINE_PATH, startOfflineRecovery } from '#lib/client/recovery.ts';
 	import Button from '#lib/ui/components/Button.svelte';
 	import EmptyState from '#lib/ui/components/EmptyState.svelte';
 	import PageHeader from '#lib/ui/components/PageHeader.svelte';
@@ -37,8 +38,9 @@
 	);
 
 	// "Offline" can mean no network at all, or a network that can't reach the server (lie-fi,
-	// captive portal, outage) while navigator.onLine still reads true. Say which.
-	let deviceOnline = $state(true);
+	// captive portal, outage) while navigator.onLine still reads true. Say which once known; until
+	// then (server render, the prerendered /offline document) assume the common case: no network.
+	let deviceOnline: boolean | null = $state(null);
 	const offlineTitle = $derived(deviceOnline ? "Can't reach the server" : "You're offline");
 	const offlineDescription = $derived(
 		deviceOnline
@@ -46,67 +48,16 @@
 			: "This screen needs a connection. It loads by itself as soon as you're back online."
 	);
 
-	// Recover by itself: probe the server with backoff and reload as soon as it answers, and
-	// probe immediately on the `online` event and whenever the app returns to the foreground.
-	// A single reload on `online` is not enough — that one attempt can still fail.
 	onMount(() => {
 		if (kind !== 'offline') return;
-		deviceOnline = navigator.onLine;
-		const delays = [2_000, 5_000, 10_000, 30_000];
-		let attempt = 0;
-		let timer: ReturnType<typeof setTimeout> | undefined;
-		let probing = false;
-		let stopped = false;
-
-		const schedule = () => {
-			if (stopped) return;
-			clearTimeout(timer);
-			timer = setTimeout(probe, delays[Math.min(attempt++, delays.length - 1)]);
-		};
-
-		async function probe() {
-			if (stopped || probing) return;
-			deviceOnline = navigator.onLine;
-			if (!navigator.onLine) return schedule();
-			probing = true;
-			try {
-				const res = await fetch('/api/health', { cache: 'no-store' });
-				if (res.ok) {
-					stopped = true;
-					location.reload();
-					return;
-				}
-			} catch {
-				// still unreachable
-			} finally {
-				probing = false;
-			}
-			schedule();
-		}
-
-		const now = () => {
-			attempt = 0;
-			void probe();
-		};
-		const onVisible = () => {
-			if (document.visibilityState === 'visible') now();
-		};
-		const onOffline = () => (deviceOnline = false);
-
-		addEventListener('online', now);
-		addEventListener('offline', onOffline);
-		addEventListener('focus', now);
-		document.addEventListener('visibilitychange', onVisible);
-		schedule();
-		return () => {
-			stopped = true;
-			clearTimeout(timer);
-			removeEventListener('online', now);
-			removeEventListener('offline', onOffline);
-			removeEventListener('focus', now);
-			document.removeEventListener('visibilitychange', onVisible);
-		};
+		return startOfflineRecovery({ onDeviceStatus: (online) => (deviceOnline = online) });
 	});
+
+	function tryAgain() {
+		// The /offline document at its own URL is always this screen: go into the app instead.
+		if (location.pathname === OFFLINE_PATH) location.assign(resolve('/(app)/today'));
+		else location.reload();
+	}
 </script>
 
 <svelte:head>
@@ -134,9 +85,7 @@
 			data-testid="offline-state"
 		>
 			{#snippet actions()}
-				<Button variant="secondary" icon="refresh" onclick={() => location.reload()}>
-					Try again
-				</Button>
+				<Button variant="secondary" icon="refresh" onclick={tryAgain}>Try again</Button>
 			{/snippet}
 		</EmptyState>
 	{:else if kind === 'not-found'}

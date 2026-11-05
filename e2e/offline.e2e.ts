@@ -50,10 +50,12 @@ test.describe('offline behaviour (service worker)', () => {
 		await expect(page.locator('body')).not.toContainText(/500|internal error/i);
 		await expect(page.getByTestId('offline-notice')).toHaveCount(0); // no duplicate notice
 
-		// A full page load offline gets the precached offline screen, still in the shell.
+		// A full page load offline gets the precached offline screen, still in the shell, worded
+		// for a device that is offline (not "can't reach the server").
 		await page.reload();
 		await expect(page).toHaveURL(/\/profile$/);
 		await expect(page.getByTestId('offline-state')).toBeVisible();
+		await expect(page.getByTestId('offline-state')).toContainText("You're offline");
 		await expect(nav).toBeVisible();
 		await expect(nav.getByRole('link', { name: 'Profile' })).toHaveAttribute(
 			'aria-current',
@@ -102,6 +104,19 @@ test.describe('offline behaviour (service worker)', () => {
 		await expect(page.getByTestId('db-status')).toContainText(/connected · \d+ ms/i, {
 			timeout: 20_000
 		});
+	});
+
+	test('the /offline document at its own URL never reloads itself', async ({ page }) => {
+		// Healthy server: the recovery probe would succeed, and reloading /offline lands on the
+		// offline screen again, so it must not probe or reload there at all.
+		await page.goto('/offline');
+		await expect(page.getByTestId('offline-state')).toContainText("You're offline");
+		await page.evaluate(() => Object.assign(window, { __sameDocument: true }));
+		const probes: string[] = [];
+		page.on('request', (r) => r.url().endsWith('/api/health') && probes.push(r.url()));
+		await page.waitForTimeout(3_000); // longer than the first retry delay (2 s)
+		expect(await page.evaluate(() => '__sameDocument' in window)).toBe(true);
+		expect(probes).toEqual([]);
 	});
 
 	test('dynamic pages are never stored by the service worker', async ({ page, context }) => {
