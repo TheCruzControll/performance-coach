@@ -170,8 +170,8 @@ const improvePrompt = (round, items) => `${BASE}
 
 === YOUR TASK: IMPLEMENT COUNCIL IMPROVEMENTS (round ${round}) ===
 Work on branch ${A.branch} only (never push, never switch branches, never rewrite history). Implement the work items below in priority order. For each: fix the root cause properly (no faked metrics, no weakened tests, no skipped tests), keep the design system consistent (update tokens/components rather than one-off styles), re-run the relevant checks (pnpm check, lint, unit/integration/e2e for affected areas, budgets, perf project, Lighthouse when relevant) and record real before/after numbers for performance items in docs/performance.md. Commit in small Conventional Commits; every commit message ends with exactly:
-Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_01BpPosRQF4PacWibcoaEuvm
+<commit trailer lines for your environment>
+Claude-Session: <session link>
 Before finishing run the full gate (pnpm check, pnpm lint, pnpm test:unit, pnpm test:integration, pnpm build, pnpm build:node, pnpm budgets, pnpm test:e2e) and make it green. Return what you changed per item (with evidence) and anything you could not do.
 Work items:
 ${JSON.stringify(items, null, 1)}`;

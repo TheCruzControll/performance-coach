@@ -25,8 +25,8 @@ Ground rules:
 - Product priorities are equal: intelligent adaptive coaching, exceptional performance, exceptional premium design (dark-first, iPhone-first). Do not ship generic/boilerplate UI.
 - Work ONLY inside ${REPO} on branch ${A.branch}. Never push, never create PRs, never switch branches, never rewrite history. Do not modify .claude/skills or skills-lock.json.
 - Commit in ATOMIC, PR-SIZED commits with Conventional Commit messages (feat:, fix:, docs:, test:, chore:, perf:, refactor:, ci:). Every commit becomes (part of) its own small pull request, so: keep each commit to one coherent change of roughly ≤ 600 lines of non-test code (tests ship in the same commit as the code they cover; generated files such as drizzle/meta snapshots and the lockfile don't count); order commits so the tree is green at EVERY commit (pnpm check, lint, unit, integration and e2e would pass if the branch stopped there) — e.g. add inert building blocks first, then wire them in, then the e2e updates together with the behaviour change that needs them; never leave a broken intermediate commit to be fixed later. Every commit message must end with exactly these two trailer lines:
-Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_01BpPosRQF4PacWibcoaEuvm
+<commit trailer lines for your environment>
+Claude-Session: <session link>
   Never put any AI model identifier anywhere else (code, comments, docs, commit subjects). Never commit secrets, .env files, node_modules, build output, or large binaries.
 - Environment facts: Linux, 4 CPUs, Node 22, pnpm 10. npm registry reachable. Network to neon.tech / vercel.com / cloudflare.com is BLOCKED from this machine. api.anthropic.com is reachable but there is NO API key here — the LLM must stay behind the provider interface with a deterministic mock provider for tests/dev; never fabricate a key.
 - Hosted infrastructure ALREADY EXISTS and is managed only by the tech lead (read docs/deployment.md): Vercel project with Git integration (every PR gets a preview; scripts/vercel-build.sh migrates that environment's Neon branch, then builds), Neon branches \`production\` and \`preview\`, env vars DATABASE_URL / DATABASE_URL_UNPOOLED / ANTHROPIC_API_KEY on Vercel. Do NOT call any Vercel, Neon, Cloudflare or GitHub tools/APIs, and do not change hosted settings. If your work needs a new hosted env var or setting, list it in your summary under "Infra the tech lead must set" (name, environments, purpose) instead.
@@ -152,8 +152,8 @@ Report only issues you can back with evidence (file:line, command output, screen
 
 phase('Verify');
 let round = 1;
-let verify = null;
-let critic = null;
+let verify;
+let critic;
 const history = [];
 const MAX = A.maxRounds || 3;
 while (true) {
