@@ -143,6 +143,70 @@ for (const file of allCss) {
 }
 const sw = existsSync(`${CLIENT}/service-worker.js`) ? gzipBytes('service-worker.js') : 0;
 
+/**
+ * @simplewebauthn/browser placement: it must never be part of a route's initial JS, and only the
+ * sign-in, setup, recovery and Security screens may load it at all (on demand, through
+ * src/lib/client/passkeys.ts). Chunks are identified by string literals the library ships, and
+ * "may load" follows every static and dynamic import reachable from a route's initial chunks.
+ */
+const WEBAUTHN_ROUTES = new Set(['/', '/setup', '/recover/passkey', '/(app)/profile/security']);
+// String literals only the library ships (our own code mentions its error *codes*, not these).
+const WEBAUTHN_SIGNATURES = [
+	'Authentication ceremony was sent an abort signal',
+	'Registration ceremony was sent an abort signal'
+];
+const IMPORT_SPECIFIER = /["'`](\.{1,2}\/[^"'`]+?\.js)["'`]/g;
+const chunkSource = new Map<string, string>();
+const read = (file: string) => {
+	let source = chunkSource.get(file);
+	if (source === undefined) {
+		source = existsSync(path.join(CLIENT, file))
+			? readFileSync(path.join(CLIENT, file), 'utf8')
+			: '';
+		chunkSource.set(file, source);
+	}
+	return source;
+};
+const isWebAuthnChunk = (file: string) =>
+	WEBAUTHN_SIGNATURES.some((sig) => read(file).includes(sig));
+function reachable(entries: Iterable<string>): Set<string> {
+	const seen = new Set<string>();
+	const queue = [...entries];
+	while (queue.length) {
+		const file = queue.pop()!;
+		if (seen.has(file)) continue;
+		seen.add(file);
+		// The app entry lists every route's node for the router: not something this route loads.
+		if (file.startsWith('_app/immutable/entry/')) continue;
+		for (const [, spec] of read(file).matchAll(IMPORT_SPECIFIER)) {
+			queue.push(path.posix.normalize(path.posix.join(path.posix.dirname(file), spec!)));
+		}
+	}
+	return seen;
+}
+const webauthnProblems: string[] = [];
+const webauthnRoutes: string[] = [];
+for (const route of routes) {
+	if (!route.page) continue;
+	const initial = new Set(client.imports);
+	for (const id of [...route.page.layouts, route.page.leaf]) {
+		if (id !== undefined) nodes[id]!.imports.forEach((f) => initial.add(f));
+	}
+	if ([...initial].some(isWebAuthnChunk)) {
+		webauthnProblems.push(`${route.id}: @simplewebauthn/browser is in the initial JS`);
+	}
+	if ([...reachable(initial)].some(isWebAuthnChunk)) {
+		webauthnRoutes.push(route.id);
+		if (!WEBAUTHN_ROUTES.has(route.id)) {
+			webauthnProblems.push(`${route.id}: can load @simplewebauthn/browser`);
+		}
+	}
+}
+for (const id of WEBAUTHN_ROUTES) {
+	if (!webauthnRoutes.includes(id))
+		webauthnProblems.push(`${id}: cannot load @simplewebauthn/browser`);
+}
+
 const lines = [
 	'| Route | Initial JS (gzip) | Route CSS (gzip) | Preloaded fonts | Status |',
 	'| --- | ---: | ---: | ---: | :---: |',
@@ -156,7 +220,11 @@ const lines = [
 	`Total CSS (gzip): **${fmt(totalCss)}** across ${allCss.length} files — budget ${BUDGETS.totalCssKb} KB: ${cssOk ? 'pass' : 'FAIL'}`,
 	`Service worker (gzip): ${fmt(sw)}`,
 	`Budgets: initial JS ≤ ${BUDGETS.routeJsKb} KB per route · total CSS ≤ ${BUDGETS.totalCssKb} KB · preloaded fonts ≤ ${BUDGETS.preloadedFonts}`,
-	`CSS output guard (standard property kept next to every -webkit- prefix): ${prefixProblems.length ? 'FAIL' : 'pass'}`
+	`CSS output guard (standard property kept next to every -webkit- prefix): ${prefixProblems.length ? 'FAIL' : 'pass'}`,
+	`@simplewebauthn/browser: on demand only, never in initial JS; loadable from ${webauthnRoutes
+		.sort()
+		.map((r) => `\`${r}\``)
+		.join(', ')}: ${webauthnProblems.length ? 'FAIL' : 'pass'}`
 ];
 console.log(lines.join('\n'));
 
@@ -171,12 +239,17 @@ if (prefixProblems.length > 0) {
 	console.error(`\nCSS output guard failed:\n  - ${prefixProblems.join('\n  - ')}`);
 }
 
+if (webauthnProblems.length > 0) {
+	console.error(`\nWebAuthn library placement failed:\n  - ${webauthnProblems.join('\n  - ')}`);
+}
+
 const failed = rows.filter((r) => !r.ok);
-if (failed.length > 0 || !cssOk || prefixProblems.length > 0) {
+if (failed.length > 0 || !cssOk || prefixProblems.length > 0 || webauthnProblems.length > 0) {
 	const what = [
 		...failed.map((r) => r.route),
 		...(cssOk ? [] : ['total CSS']),
-		...(prefixProblems.length ? ['CSS prefixes'] : [])
+		...(prefixProblems.length ? ['CSS prefixes'] : []),
+		...(webauthnProblems.length ? ['WebAuthn library placement'] : [])
 	];
 	console.error(`\nbudgets: FAILED (${what.join(', ')})`);
 	process.exit(1);
