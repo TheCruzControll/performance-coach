@@ -12,8 +12,10 @@
   issues the certificate and its CDN serves assets (no double proxy).
 - The adapter is switchable: `ADAPTER=node` builds with `@sveltejs/adapter-node` so e2e tests,
   Lighthouse and CI run the **same production build** on a real Node server.
-- Deploys run from GitHub Actions (`deploy.yml`) with the Vercel CLI after CI is green, applying
-  database migrations first.
+- Production deploys run only from GitHub Actions (`deploy.yml`) with the Vercel CLI after CI is
+  green, applying database migrations first. Vercel's own Git deployments of `main` are disabled
+  and any production build Vercel starts itself is skipped, both by the committed `vercel.json`
+  (docs/deployment.md); preview deployments still build from Git.
 
 ## Alternatives considered
 

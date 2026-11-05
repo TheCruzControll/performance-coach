@@ -147,7 +147,7 @@ Neon main branch). See `docs/environment.md`.
 docs/               product requirements, architecture, ADRs, guides
 drizzle/            committed SQL migrations + drizzle-kit snapshots
 e2e/                Playwright specs and global setup
-scripts/            db setup/migrate/reset, budgets, Lighthouse, icons, restore
+scripts/            db setup/migrate/reset, budgets, Lighthouse, icons, restore, Vercel build guard
 src/
   hooks.server.ts   request pipeline (timing, logs, errors, headers)
   service-worker/   PWA service worker (own tsconfig)
@@ -156,4 +156,5 @@ src/
 static/             manifest, icons, robots.txt
 tests/integration/  Vitest integration tests (real Postgres)
 neon.ts             Neon config-as-code (Postgres only)
+vercel.json         Vercel project config: no Git deploys of main, production build guard
 ```

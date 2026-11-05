@@ -107,7 +107,7 @@ export default defineConfig(({ mode }) => {
 					test: {
 						name: 'unit',
 						environment: 'node',
-						include: ['src/**/*.{test,spec}.ts'],
+						include: ['src/**/*.{test,spec}.ts', 'scripts/**/*.test.ts'],
 						exclude: ['src/**/*.svelte.{test,spec}.ts']
 					}
 				},

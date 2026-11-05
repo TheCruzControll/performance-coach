@@ -50,8 +50,11 @@ Known gaps:
 
 - WebKit e2e runs only in CI (not available locally), so iOS Safari rendering (glass, status
   bar, PWA) is unverified until the first CI run; attach its WebKit screenshots to the PR.
-- Nothing deployed (no network access to Vercel/Neon/Cloudflare during M1). Production deploys
-  are switched off (`PRODUCTION_DEPLOY_ENABLED`) until M2 auth is live.
+- Nothing deployed (no network access to Vercel/Neon/Cloudflare during M1). Production stays off
+  until M2 auth is live: `deploy.yml` is gated by `PRODUCTION_DEPLOY_ENABLED`, and the committed
+  `vercel.json` disables Vercel's Git deployments of `main` and skips any production build Vercel
+  starts itself (docs/deployment.md). These guards are unit-tested but not yet exercised against
+  a real Vercel account.
 - Auth not yet enforced (M2); `POST /api/vitals` is unauthenticated and not rate-limited.
 - Lighthouse: LCP/CLS targets met; the simulated TBT target (≤ 200 ms) is met on `/today` only
   and the performance score is not reliably ≥ 90 (`/train` median 89). The real main-thread

@@ -5,6 +5,9 @@
 #   - the repository variable PRODUCTION_DEPLOY_ENABLED is 'true' (set it only once passkey
 #     auth (M2) is live: until then every page and POST /api/vitals are unauthenticated), and
 #   - the secrets in docs/deployment.md exist.
+# This is the only production path: vercel.json disables Vercel's Git deployments of main and
+# skips any production build Vercel starts itself (scripts/vercel-ignore-build.sh). The build
+# below runs on the runner and is uploaded prebuilt, so that ignored build step does not apply.
 name: Deploy
 
 on:

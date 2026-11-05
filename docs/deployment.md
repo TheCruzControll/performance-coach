@@ -9,6 +9,25 @@ Target: **Vercel** (Node.js 22, Fluid compute) at **coach.nikocruz.com**, DNS at
 > Vercel/Neon/Cloudflare was not available while building M1, so none of the steps on this page
 > have been executed against real accounts.
 
+## Production stays off until auth ships — how that is enforced
+
+In M1 every page and `POST /api/vitals` are unauthenticated, so the app must not be served on
+`coach.nikocruz.com` before passkey auth (M2). Hidden URLs are not security (PRD §13). There is
+exactly **one** path to production, and it is closed by default:
+
+| Path to production                                                                  | Guard                                                                                                                                                                                                                                                                        |
+| ----------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Vercel Git integration: a push to `main`                                            | **`vercel.json` → `git.deploymentEnabled.main: false`** (committed): Vercel creates no deployment for `main`.                                                                                                                                                                |
+| Any production build Vercel starts itself (first build after import, redeploy, …)   | **`vercel.json` → `ignoreCommand`** runs `scripts/vercel-ignore-build.sh`, which skips the build whenever `VERCEL_ENV=production` (whatever the production branch is). Preview builds proceed.                                                                               |
+| GitHub Actions `deploy.yml` (migrate → `vercel build` → `vercel deploy --prebuilt`) | **`PRODUCTION_DEPLOY_ENABLED`** repository variable must be exactly `true` (section 5). The build runs on the runner and is uploaded prebuilt, so Vercel's ignored build step does not apply to it. This stays the only production path after M2, because it migrates first. |
+
+`scripts/vercel-ignore-build.test.ts` (unit suite) checks the committed config and the script's
+exit codes. Both `vercel.json` settings are documented Vercel project configuration, but they
+have **not** been exercised against a real Vercel account (no network access in M1): after
+creating the project, confirm under Deployments that no production deployment exists.
+The domain is attached only when production is switched on (section 5), so even a stray
+production deployment would not be served on `coach.nikocruz.com`.
+
 ## What the owner must do (one-time)
 
 ### 1. Neon (database)
@@ -24,17 +43,28 @@ Target: **Vercel** (Node.js 22, Fluid compute) at **coach.nikocruz.com**, DNS at
 
 ### 2. Vercel (hosting)
 
-1. Create a project from the GitHub repository. Framework preset: **SvelteKit** (build command
-   `pnpm build`, install `pnpm install --frozen-lockfile`). Node.js **22.x**.
-2. Set **Function Region** to match Neon (e.g. Neon `aws-us-east-1` → `iad1`).
-3. Environment variables (Production, and Preview with a Neon branch URL):
-   `DATABASE_URL`, `DATABASE_URL_UNPOOLED`. Leave `ENABLE_TEST_ROUTES` unset.
-4. Disable Vercel's automatic Git deployments for `main` if you want GitHub Actions
-   (`deploy.yml`) to be the only production path (recommended: it migrates first).
-5. Create a token (Account → Tokens) and read `orgId`/`projectId` (`vercel link` writes them to
-   `.vercel/project.json`; do not commit it).
+Do these in order. The committed `vercel.json` guards (above) are already in force for every
+Git-triggered build, so creating the project cannot put the app into production.
 
-### 3. Domain (Cloudflare DNS → Vercel)
+1. **Create the project without deploying**, from a checkout of `main`: `vercel link` (answer
+   "no" to linking an existing project, so it creates one) and then `vercel git connect` to
+   attach the GitHub repository. `vercel link` writes `orgId`/`projectId` to
+   `.vercel/project.json` (git-ignored; do not commit it). If you use the dashboard's
+   **Import** instead, it starts a production build of the default branch right away; the
+   ignored build step should skip it, which is not yet verified, so check **Deployments** and
+   delete any production deployment you find.
+2. Settings → General: framework preset **SvelteKit** (build command `pnpm build`, install
+   `pnpm install --frozen-lockfile`), Node.js **22.x**.
+3. Set **Function Region** to match Neon (e.g. Neon `aws-us-east-1` → `iad1`).
+4. Environment variables (Production, and Preview with a Neon branch URL):
+   `DATABASE_URL`, `DATABASE_URL_UNPOOLED`. Leave `ENABLE_TEST_ROUTES` unset.
+5. Settings → Deployment Protection: keep **Vercel Authentication** on for preview deployments
+   (previews still build from Git and serve the unauthenticated app until M2).
+6. Create a token (Account → Tokens) for `deploy.yml`.
+
+Do **not** add the domain yet: that is part of switching production on (section 5).
+
+### 3. Domain (Cloudflare DNS → Vercel) — only when switching production on
 
 1. Vercel → Project → Domains → add `coach.nikocruz.com`.
 2. Cloudflare → DNS for `nikocruz.com` → add `CNAME coach → cname.vercel-dns.com`,
@@ -53,13 +83,18 @@ Repository (or `production` environment) secrets:
 | `VERCEL_PROJECT_ID`     | deploy                   | Vercel project id                                                                             |
 | `BACKUP_PASSPHRASE`     | backup                   | Long random passphrase; store it in a password manager — backups are unrecoverable without it |
 
-### 5. Production deploy switch (after M2)
+### 5. Switching production on (after M2 only)
 
 `deploy.yml` does nothing until the **repository variable** (Settings → Secrets and variables →
 Actions → Variables) `PRODUCTION_DEPLOY_ENABLED` is exactly `true`. Leave it unset until passkey
-auth (M2) is live: in M1 every page and `POST /api/vitals` are unauthenticated, and hidden URLs
-are not security (PRD §13). Unsetting the variable (or setting anything else) switches automatic
-production deploys off again without touching the workflow.
+auth (M2) is live and docs/milestones.md M2 criterion 6 is met. Then, in this order:
+
+1. set `PRODUCTION_DEPLOY_ENABLED=true` and run **Deploy** (or merge to `main`);
+2. attach the domain (section 3) once the deployment's `/api/health` is green.
+
+Unsetting the variable (or setting anything else) switches production deploys off again without
+touching the workflow. `vercel.json` is not changed when switching on: `deploy.yml` remains the
+only production path because it applies migrations before the new code goes live.
 
 ## How a production deploy works (`deploy.yml`)
 
@@ -111,10 +146,12 @@ scale-to-zero compute.
 
 ## Security notes
 
-- Until M2 ships passkey auth the app must not be served on the production domain. This is
-  enforced by the `PRODUCTION_DEPLOY_ENABLED` switch above (off by default). Disable Vercel's
-  automatic Git production deployments (step 2.4) so that GitHub Actions is the only path, and
-  keep Vercel deployment protection on for previews.
+- Until M2 ships passkey auth the app must not be served on the production domain. What is
+  enforced by code: `vercel.json` (no Git deployments of `main`; Vercel-started production
+  builds skipped by the ignored build step) and `deploy.yml` (off unless
+  `PRODUCTION_DEPLOY_ENABLED` is `true`). What is process: the domain is attached only when
+  production is switched on, and preview deployments rely on Vercel's deployment protection.
+  None of this has been exercised against a real Vercel account yet (see the top of this page).
 - **Dynamic responses** (every page and `/api/*`, i.e. everything that runs `hooks.server.ts`)
   carry `x-robots-tag: noindex`, `x-frame-options: DENY`, `nosniff`, `referrer-policy`,
   `permissions-policy`, `cross-origin-opener-policy`, `strict-transport-security` (Vercel also
