@@ -98,7 +98,7 @@
 		padding: var(--space-1-5) var(--space-1-5) var(--space-1-5) var(--space-4);
 		border-radius: var(--radius-full);
 		background: var(--color-glass);
-		backdrop-filter: blur(18px);
+		backdrop-filter: saturate(180%) blur(32px);
 		border: 1px solid var(--color-border);
 		box-shadow: var(--elevation-2);
 	}

@@ -96,10 +96,12 @@ Tracking: `--tracking-display -0.032em`, `--tracking-tight -0.016em`, `--trackin
 - **Motion:** `--duration-instant 90ms · fast 160 · base 240 · slow 380 · slower 560`;
   `--ease-standard`, `--ease-out`, `--ease-in`, and `--ease-spring` (CSS `linear()` spring) for
   thumbs and indicators. `prefers-reduced-motion` sets durations to 0 and disables shimmer.
-- **Glass:** `--color-glass` (88% canvas) + `backdrop-filter` blur on the bottom nav, the
-  coach composer and the sheet scrim. Write only the standard `backdrop-filter`; Lightning CSS
-  adds `-webkit-backdrop-filter` for the Safari build targets. (Writing both, standard first, makes
-  the minifier keep only the prefixed one, which Chromium ignores.) `pnpm budgets` fails if a
+- **Glass:** `--color-glass` (92% canvas) + `backdrop-filter: saturate(180%) blur(32px)` on the
+  bottom nav and the coach composer (opaque and blurred enough that text scrolling behind a tab
+  label cannot be read); the sheet scrim uses a light 2 px blur. Write only the standard
+  `backdrop-filter`; Lightning CSS adds `-webkit-backdrop-filter` for the Safari build targets.
+  (Writing both, standard first, makes the minifier keep only the prefixed one, which Chromium
+  ignores.) `pnpm budgets` fails if a
   built rule ships a `-webkit-` property without its standard twin, and e2e asserts the nav's
   computed `backdrop-filter`.
 - **Layers:** `--z-raised 10 · sticky 50 · nav 100 · overlay 200 · sheet 210 · toast 300`.

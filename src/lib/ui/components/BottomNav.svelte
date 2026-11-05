@@ -58,7 +58,7 @@
 		padding: 0 max(var(--space-2), var(--safe-right)) var(--safe-bottom)
 			max(var(--space-2), var(--safe-left));
 		background: var(--color-glass);
-		backdrop-filter: saturate(160%) blur(22px);
+		backdrop-filter: saturate(180%) blur(32px);
 		border-top: 1px solid var(--color-hairline);
 	}
 
