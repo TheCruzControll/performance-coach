@@ -45,9 +45,13 @@ flowchart LR
    - validates the environment once at startup (`init` → `getEnv()`; zod),
    - assigns a request id (`x-request-id` / `x-vercel-id` or a UUID) and opens an
      `AsyncLocalStorage` request context,
-   - resolves the route, then adds `Server-Timing` (`db;dur=…`, `total;dur=…`), `x-request-id`
-     and security headers, and writes one JSON access-log line,
-   - `handleError` logs unexpected errors and records them in `app_errors`.
+   - resolves the route, then adds `Server-Timing` (`db;dur=…`, `total;dur=…`, measured to the
+     first byte), `x-request-id` and security headers incl. HSTS, and writes one JSON access-log
+     line (SvelteKit itself adds the nonce-based Content-Security-Policy, `csp` in
+     `vite.config.ts`; see docs/deployment.md),
+   - `handleError` logs unexpected errors and records them in `app_errors`; streamed load
+     failures are recorded by the load itself (`kind: streamed`).
+   - Static and prerendered files never reach the hooks (CDN / `sirv`).
 3. Routes call **services** (use-cases). Services call **repositories** in the DB layer, which
    use a small `pg.Pool` (reused across Fluid-compute invocations, `attachDatabasePool`).
 4. The browser hydrates, registers the service worker, and lazily loads `web-vitals`, which
