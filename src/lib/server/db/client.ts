@@ -8,7 +8,7 @@
  * - App traffic uses the pooled `DATABASE_URL` (Neon `-pooler` host); migrations use
  *   `DATABASE_URL_UNPOOLED` (see scripts/db-migrate.ts).
  */
-import { attachDatabasePool } from '@vercel/functions';
+import { attachDatabasePool } from '@vercel/functions/db-connections';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import pg from 'pg';
 import { getEnv } from '../env';
