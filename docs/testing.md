@@ -26,6 +26,13 @@ fields, non-Error values), and `serializeError` (Drizzle
 parameters redacted; Postgres messages withheld for SQLSTATE classes that can quote values, kept
 for identifier-only classes such as 23 and 42; DETAIL/HINT never logged).
 
+Auth unit tests (`src/lib/server/auth/*.test.ts`): relying-party derivation per environment
+(production is exactly `https://coach.nikocruz.com`, previews never the production RP, localhost
+only in dev/test), token generation and hashing with the constant-time comparison, recovery-code
+format, normalisation and hashing, cookie name and flags from the origin, the safe return path,
+the CSRF Origin check, User-Agent and passkey labels, and the route access map — which also walks
+`src/routes` and fails on any page or endpoint without an access decision.
+
 ## Integration tests
 
 - **Database:** `TEST_DATABASE_URL` (default local `coach_test`). The Vitest global setup
@@ -41,6 +48,20 @@ for identifier-only classes such as 23 and 42; DETAIL/HINT never logged).
   a real `22P02 invalid input syntax` whose driver message quotes the value: neither the
   `app_errors` row nor the JSON log line contains it; browser error reports stored as kind
   `client`, validated (source, absolute path, size caps) and rate-limited.
+- **Auth (`tests/integration/auth/`):** a software authenticator
+  (`soft-authenticator.ts`, test code only: ES256 keys from `node:crypto`, CBOR from
+  SimpleWebAuthn's helper) produces real registration and assertion responses, so every service
+  runs through `@simplewebauthn/server`'s genuine verification. Covered: setup once (token hash,
+  10 hashed codes, nothing secret stored, setup closed afterwards, refused origin/RP/UV/type,
+  single-use challenges, `auth:reset-owner` reopening setup and re-attaching the same owner);
+  sign-in (counter update, rotation, replay, expired challenge, counter regression, unknown
+  passkey, production RP and other origins refused, malformed bodies); sessions (sliding refresh
+  at most daily, 90-day cap, 30-day idle expiry, last-seen resolution, revoke one / others /
+  sign out); recovery (burn, any spelling refused afterwards, 15-minute restricted session, new
+  passkey upgrades it, regeneration); passkey management (add, challenge bound to its session,
+  rename validation, never the last, removal ends its sessions); rate limits on every entry point
+  with `Retry-After`, window reset and a global recovery ceiling. A controllable clock replaces
+  waiting.
 - **Logs:** quiet by default (`LOG_LEVEL=silent` via the project's `env`); run
   `LOG_LEVEL=debug pnpm test:integration` to see them.
 
@@ -53,12 +74,67 @@ for identifier-only classes such as 23 and 42; DETAIL/HINT never logged).
 3. starts `node build/index.js` on `E2E_PORT` (4173) with `ENABLE_TEST_ROUTES=true`, waits for
    `/api/health`, and stops it in teardown. Server output goes to `.e2e-server.log`.
 
-Projects: `iphone-chromium` (`devices['iPhone 15 Pro']` on Chromium) always; `iphone-webkit` in CI
-or with `E2E_WEBKIT=1` (needs `pnpm exec playwright install webkit`).
+Projects (all `devices['iPhone 15 Pro']`):
+
+| Project           | Browser  | Runs                                                                                            |
+| ----------------- | -------- | ----------------------------------------------------------------------------------------------- |
+| `setup`           | Chromium | `auth.setup.ts`: the owner's real first-run setup; saves the signed-in state                    |
+| `iphone-chromium` | Chromium | every functional spec, signed in from `setup`'s state                                           |
+| `perf`            | Chromium | `perf.e2e.ts`, alone with one worker, after the functional suite                                |
+| `setup-webkit`    | WebKit   | `auth-webkit.setup.ts`: a session from the test-only route (CI or `E2E_WEBKIT=1`)               |
+| `iphone-webkit`   | WebKit   | every functional spec on that session (CI or `E2E_WEBKIT=1`; needs `playwright install webkit`) |
+| `exclusive`       | Chromium | `*.exclusive.e2e.ts`, last and alone: account-wide actions                                      |
+
+### Authentication
+
+- **Chromium performs real WebAuthn ceremonies** through the DevTools Protocol's virtual
+  authenticator (`e2e/webauthn.ts`: CTAP2, internal transport, resident keys, user verification;
+  presence answered automatically). No Chromium test uses an auth bypass.
+- `global-setup.ts` mints each run's setup token and gives the server only its SHA-256, as in
+  production. The `setup` project opens `/setup?token=…`, creates the passkey, checks the
+  recovery codes (copy, download, acknowledgement) and saves `e2e/.auth/chromium.json`
+  (git-ignored) — the state every Chromium spec starts from.
+- Specs that need their own sign-in register **their own passkey** from that state (Security →
+  Add passkey, a real registration), forget the shared cookie on their own context and sign in
+  with it, so they never revoke the shared session and stay independent.
+- **WebKit has no virtual authenticator**: `setup-webkit` mints a session through
+  `POST /api/test-support/session` (exists only with `ENABLE_TEST_ROUTES`, which env validation
+  refuses on any hosted deployment). Passkey specs skip on WebKit with that reason; passkeys on iOS
+  Safari are part of the real-device checklist below.
+- Signed-out specs use `test.use({ storageState: signedOut })`.
+- Conditional UI: Chromium's virtual authenticator answers a conditional (autofill) request at
+  once, so `/` signs in without a tap when the authenticator holds the owner's passkey. One test
+  proves that path; the others hide conditional mediation (`isConditionalMediationAvailable →
+false`, as in browsers without it) to drive the button.
+- State-changing requests from the `request` fixture send the app's `Origin` (`SAME_ORIGIN` in
+  `e2e/support.ts`), as browsers do; without it the server refuses them (CSRF).
 
 Specs:
 
-- `shell.e2e.ts` — landing → preview; bottom nav pinned to the bottom with ≥ 44 px targets and a
+- `auth.setup.ts` — first-run setup with a real passkey: 404 without the token; axe in both themes
+  on the setup and recovery-code screens; name required; 10 codes in the expected format;
+  download and copy contain them; Continue only after acknowledgement; the authenticator holds a
+  discoverable credential; only hashes in Postgres; `/setup` is a 404 afterwards, even with the
+  token.
+- `auth.e2e.ts` (Chromium) — passkey sign-in from a denied page back to it (`?next=`); the session
+  cookie is opaque, HttpOnly, SameSite=Lax and stored only as a hash; conditional UI signs in
+  without a tap; a refused passkey (user verification fails) shows a designed, accessible error
+  and then works; add, rename and remove a passkey (a removed one no longer signs in); a recovery
+  code (wrong code refused; forgiving input) gives a session that reaches only the new-passkey
+  screen (pages redirect, `/api` 403), registering a passkey unlocks the app, the code is burned;
+  sessions list marks this device and signs out another; sign-out clears the cookie, every cache
+  but the versioned shell and every IndexedDB database, sends `Clear-Site-Data: "cache"` and keeps
+  the theme preference.
+- `access.e2e.ts` — routes enumerated from `src/routes`: every non-public page redirects to
+  sign-in with a safe return path (also as a client-side data request), every non-public `/api`
+  endpoint answers 401 JSON for every method it exports, the public endpoints are exactly the
+  allow-list, telemetry needs a session, unknown URLs are denied, forged cookies are refused and
+  cleared; signed in, cross-site JSON, form-action and `text/plain` requests are refused (403)
+  and change nothing.
+- `sessions.exclusive.e2e.ts` (runs last) — sign out everywhere else ends every other session,
+  not this one; the last passkey cannot be removed (button disabled, server answers 409).
+
+- `shell.e2e.ts` — the sign-in screen is the landing page (signed in, `/` goes to Today); bottom nav pinned to the bottom with ≥ 44 px targets and a
   computed `backdrop-filter` blur; navigation across all five tabs with `aria-current`; no console
   errors on any screen; plate calculator sheet (stepper; Escape while typing cancels the edit
   without closing the sheet; a target below the bar is explained and the stepper's minimum is the
@@ -79,13 +155,16 @@ Specs:
   reload; offline, every tab keeps the shell (screens without server data render, Profile shows
   the designed offline state, never a 500), a full reload offline gets the offline screen in the
   shell, and back online the screen loads live data; no dynamic page is ever cached.
-- `a11y.e2e.ts` — axe-core (`@axe-core/playwright`, WCAG 2.1 A/AA) on every screen, the
-  plate-calculator sheet and each `/design` component group, in the **dark and light** themes
-  (Lighthouse only audits dark). Zero violations required.
+- `a11y.e2e.ts` — axe-core (`@axe-core/playwright`, WCAG 2.1 A/AA) on every screen (Security
+  included; the signed-out sign-in and recovery screens too), the plate-calculator sheet and each
+  `/design` component group, in the **dark and light** themes (Lighthouse only audits dark). The
+  setup, recovery-codes, new-passkey and sign-in-error states are audited in both themes where
+  they occur (`auth.setup.ts`, `auth.e2e.ts`). Zero violations required.
 - `perf.e2e.ts` (Chromium, `perf` project) — main-thread budget: real long tasks at 4× CPU while
   each screen loads, median of 5 cold loads; target ≤ 200 ms, fails above 250 ms (docs/performance.md). It runs
-  alone, with one worker, after the functional suite, so parallel specs cannot skew it. Run it by
-  itself with `pnpm test:e2e --project=perf --no-deps`.
+  alone, with one worker, after the functional suite, so parallel specs cannot skew it. App
+  screens load signed in, `/` signed out. Run it by itself with
+  `E2E_PERF_ALONE=1 pnpm test:e2e --project=perf` (owner setup, then the budget).
 
 Artifacts: failure screenshots + traces in `test-results/`, key-screen screenshots in
 `test-results/screens/<project>/`, HTML report in `playwright-report/` (all uploaded by CI).
