@@ -112,7 +112,10 @@ guard** (shared runners are noisier than this VM); the targets above are what M8
 ## Server timing
 
 Every dynamic response carries `Server-Timing` (`db;dur=…;desc="n ops"`, `total;dur=…`) and an
-`x-request-id`. Measured against the local production server (8 sequential requests):
+`x-request-id`. Both the header and the access log's `durationMs` are measured when the response
+**starts**. Work a load streams afterwards (Profile's health check and p75 summary) is not in
+them; it gets its own `streamed work settled` log line with the request's full duration and its
+`db` time, and a streamed failure is logged and recorded in `app_errors` (`kind: streamed`). Measured against the local production server (8 sequential requests):
 
 ```
 GET /api/health  #1  server-timing: db;dur=24.6;desc="1 op", total;dur=31.0   (cold: pool connects)

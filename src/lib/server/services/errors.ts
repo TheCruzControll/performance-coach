@@ -24,7 +24,7 @@ export async function recordServerError(
 	deps: { db?: Executor } = {}
 ): Promise<AppErrorRow | null> {
 	const serialized = serializeError(input.error);
-	logger.error('unhandled server error', {
+	logger.error('server error', {
 		requestId: input.requestId,
 		kind: input.kind,
 		status: input.status,

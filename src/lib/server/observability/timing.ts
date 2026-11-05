@@ -1,4 +1,5 @@
 import { currentContext, type RequestContext } from './context';
+import { logger } from './logger';
 
 /**
  * Measure an async operation and attribute its duration to `metric` in the current request's
@@ -29,4 +30,27 @@ export function serverTimingHeader(ctx: RequestContext, totalMs: number): string
 	}
 	parts.push(`total;dur=${totalMs.toFixed(1)}`);
 	return parts.join(', ');
+}
+
+/**
+ * Server-Timing and the access log are written when the response *starts*. Work a load streams
+ * afterwards (promises resolved into the page) is not in them, so log one line when it settles
+ * with the request's full duration and its accumulated timings (db included).
+ */
+export function logWhenSettled(label: string, promises: Promise<unknown>[]): void {
+	const ctx = currentContext();
+	if (!ctx) return;
+	void Promise.allSettled(promises).then((results) => {
+		logger.info('streamed work settled', {
+			label,
+			durationMs: Math.round((performance.now() - ctx.startedAt) * 10) / 10,
+			rejected: results.filter((r) => r.status === 'rejected').length,
+			timings: Object.fromEntries(
+				[...ctx.timings].map(([name, t]) => [
+					name,
+					{ durMs: Math.round(t.dur * 10) / 10, count: t.count }
+				])
+			)
+		});
+	});
 }
