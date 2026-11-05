@@ -45,6 +45,11 @@ flowchart LR
    - validates the environment once at startup (`init` → `getEnv()`; zod),
    - assigns a request id (`x-request-id` / `x-vercel-id` or a UUID) and opens an
      `AsyncLocalStorage` request context,
+   - runs the **auth guard** (`src/lib/server/auth/guard.ts`, docs/security.md): refuses
+     state-changing requests without the app's own `Origin`, resolves the session cookie to a
+     live session (`locals.session`, one indexed query, `Server-Timing: auth`), and denies by
+     default — pages redirect to sign-in, `/api/*` answers 401 — unless the route is on the
+     public allow-list in `src/lib/server/auth/routes.ts`,
    - resolves the route, then adds `Server-Timing` (`db;dur=…`, `total;dur=…`, measured to the
      first byte), `x-request-id` and security headers incl. HSTS, and writes one JSON access-log
      line (SvelteKit itself adds the nonce-based Content-Security-Policy, `csp` in
@@ -54,8 +59,8 @@ flowchart LR
    - Static and prerendered files never reach the hooks (CDN / `sirv`).
 3. Routes call **services** (use-cases). Services call **repositories** in the DB layer, which
    use a small `pg.Pool` (reused across Fluid-compute invocations, `attachDatabasePool`).
-4. The browser hydrates, registers the service worker, and lazily loads `web-vitals`, which
-   beacons Core Web Vitals to `POST /api/vitals`. Uncaught exceptions, unhandled rejections and
+4. The browser hydrates, registers the service worker, and (in the signed-in app shell) lazily
+   loads `web-vitals`, which beacons Core Web Vitals to `POST /api/vitals` (owner-only). Uncaught exceptions, unhandled rejections and
    unexpected navigation errors are beaconed to `POST /api/client-errors` (`hooks.client.ts`,
    `src/lib/client/errors.ts`; at most 5 per page load, deduplicated, rate-limited server-side).
 
@@ -71,7 +76,7 @@ Folders are layers. Allowed dependencies point inwards. Every "Must not import" 
 | `src/lib/server/db/`            | Drizzle schema, pool/client, repositories, migration helpers             | `domain`, `server/env`, `server/observability` | services, agent, ui, client, SvelteKit                  |
 | `src/lib/server/services/`      | Application use-cases shared by routes **and** the agent                 | `db`, `domain`, `observability`                | agent, ui, client, SvelteKit                            |
 | `src/lib/server/agent/`         | AI coach: provider interface, tools, orchestration (scaffold in M1)      | `services`, `domain`                           | `db` (tools go through services), ui, client, SvelteKit |
-| `src/lib/server/auth/`          | Passkey auth & sessions (scaffold in M1; M2)                             | `services`, `db`                               | ui, client                                              |
+| `src/lib/server/auth/`          | Passkey auth (SimpleWebAuthn), sessions, recovery, the request guard     | `services`, `db`, `env`, `observability`       | ui, client                                              |
 | `src/lib/server/observability/` | Logger, request context, Server-Timing helpers (a leaf)                  | Node built-ins only                            | db, services, agent, auth, ui, client, SvelteKit        |
 | `src/lib/client/`               | Browser-only code: RUM, preferences, offline store/sync (M4)             | `domain`                                       | server, ui                                              |
 | `src/lib/ui/`                   | Design-system primitives, tokens, fonts, icons                           | `domain` (types)                               | server                                                  |
@@ -98,7 +103,9 @@ tests can wrap each test in a rolled-back transaction.
 - Connections: `DATABASE_URL` (pooled, Neon `-pooler` host) for the app; `DATABASE_URL_UNPOOLED`
   (direct) for migrations and backups.
 - M1 tables: `app_errors` (server incidents) and `web_vitals` (RUM, attributed per screen via
-  `path` + `route_id`). CI's `pnpm db:drift` fails when the schema changes without a committed
+  `path` + `route_id`). M2 auth tables: `owners` (exactly one row), `passkey_credentials`,
+  `auth_sessions` (token hashes), `recovery_codes` (hashes), `webauthn_challenges` (single-use),
+  `auth_events` (audit log) and `auth_rate_limits` (DB-backed counters); see docs/security.md. CI's `pnpm db:drift` fails when the schema changes without a committed
   migration. The training data model
   (profile, goals, programs, cycles, workouts, sets, sessions, decisions) lands in M3 with
   history-preserving, timestamped records (PRD §9).
@@ -127,14 +134,15 @@ tests can wrap each test in a rolled-back transaction.
 
 ## Observability
 
-| Signal           | Where                                                         |
-| ---------------- | ------------------------------------------------------------- |
-| Access logs      | one JSON line per request (stdout → Vercel logs)              |
-| Request timing   | `Server-Timing` header (`db`, `total`)                        |
-| Server errors    | JSON log + `app_errors` row with request id and stack         |
-| Browser errors   | beacon → `POST /api/client-errors` → `app_errors` (`client`)  |
-| Real-user vitals | `web_vitals` table (LCP, INP, CLS, TTFB, FCP; p75 on Profile) |
-| Health           | `GET /api/health` → `{ ok, db, version, dbLatencyMs }`        |
+| Signal           | Where                                                          |
+| ---------------- | -------------------------------------------------------------- |
+| Access logs      | one JSON line per request (stdout → Vercel logs)               |
+| Request timing   | `Server-Timing` header (`db`, `total`)                         |
+| Server errors    | JSON log + `app_errors` row with request id and stack          |
+| Browser errors   | beacon → `POST /api/client-errors` → `app_errors` (`client`)   |
+| Real-user vitals | `web_vitals` table (LCP, INP, CLS, TTFB, FCP; p75 on Profile)  |
+| Health           | `GET /api/health` → `{ ok, db, version, dbLatencyMs }`         |
+| Auth audit       | `auth_events` (sign-ins, passkeys, recovery, sessions, limits) |
 
 Sentry can be added later behind the optional `SENTRY_DSN` variable; nothing requires it.
 
@@ -153,12 +161,12 @@ drizzle/            committed SQL migrations + drizzle-kit snapshots
 e2e/                Playwright specs and global setup
 scripts/            db setup/migrate/reset, budgets, Lighthouse, icons, restore, Vercel build guard
 src/
-  hooks.server.ts   request pipeline (timing, logs, errors, headers)
+  hooks.server.ts   request pipeline (auth guard, timing, logs, errors, headers)
   service-worker/   PWA service worker (own tsconfig)
   lib/{domain,server,client,ui}
   routes/           pages and /api endpoints
 static/             manifest, icons, robots.txt
 tests/integration/  Vitest integration tests (real Postgres)
 neon.ts             Neon config-as-code (Postgres only)
-vercel.json         Vercel project config: build command (migrate, then build), no Git deploys of main until M2
+vercel.json         Vercel project config: build command (migrate, then build), no Git deploys of main until the M2 cutover
 ```
