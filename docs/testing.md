@@ -20,7 +20,9 @@ RPE table and reps in reserve (including a structural consistency check of the c
 never silently dropped, malformed or sub-6 RPEs give no estimate, and sets past the chart are
 extrapolated from reps to failure at `low` confidence), the plate calculator (exact DP incl. limited inventories), and load
 metrics (volume load, session-RPE, EWMA ACWR). Outside the domain: `parseEnv` (defaults, `appEnv`
-derivation, the production guards incl. `VERCEL_ENV=production`, the API-key requirement) and the
+derivation, the production guards incl. `VERCEL_ENV=production`, test routes refused in a Vercel
+build whatever its runtime environment, the API-key requirement), the build-time marker
+`vite.config.ts` sets for Vercel builds only (`scripts/vite-config.test.ts`) and the
 RUM attribution of each metric to the screen where it happened, client error reports (bounded
 fields, non-Error values), and `serializeError` (Drizzle
 parameters redacted; Postgres messages withheld for SQLSTATE classes that can quote values, kept
