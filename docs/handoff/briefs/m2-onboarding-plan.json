@@ -1,0 +1,835 @@
+{
+	"wipAssessment": "I checked both plans against the code instead of trusting either. I read every file in d8bfded, fede7f4 and c35fd8a, plus the domain, schemas, services, repositories, e2e support, Playwright config and route tests at 5abf1b4. The checkout was not modified. Budget numbers come from scratch builds made in the scratchpad (git archive of 5abf1b4, the fede7f4 patch applied, node_modules symlinked, ADAPTER=node vite build, then scripts/check-budgets.ts), and from the WIP build already in .svelte-kit/output.\n\nMEASURED FACTS THAT DECIDE THE SHAPE OF THE PLAN\n1. fede7f4 applies cleanly onto 5abf1b4 and passes as is. Every route passes the stricter accounting. /profile/security is 59.6 KB, the same as under the old accounting, which leaves only 0.4 KB of headroom. The largest route CSS is /design at 11.7 KB, and whole-build CSS is 19.6 KB. Under the new accounting, /setup, / and /recover/passkey are each 0.4 KB higher than the docs table says.\n2. The WIP fails budgets as designed. Every per-step route fails: 63.1 KB (/onboarding/exercises) to 69.0 KB (/onboarding/schedule). /profile/security fails at 60.8 KB. Welcome passes at 58.9 KB. There are three causes:\n   - each step page imports its editor statically;\n   - with bundleStrategy 'split', every route node is listed in the app entry's __vite__mapDeps, which ships on every route. The entry is 3.3 KB gzip with the WIP against 2.3 KB on the base;\n   - the 'grip' icon is added to the icon map, which every route ships.\n3. Route count alone breaks the budget. 20 empty static stub routes (Plan 1's 11 onboarding routes plus 9 Profile routes) add 0.54 KB to every route, and /profile/security fails at 60.1 KB.\n4. Param matchers cost more than the headroom. Two dynamic routes with SvelteKit 3 defineParams matchers put /profile/security at 60.1 KB (FAIL). Lean, hand-written standard-schema matchers give 59.9 KB. With no matchers it is 59.7 KB. Adding a stub onboarding layout node, a Today +page.server.ts and both dynamic routes still gives 59.7 KB. Bare stubs measure 50.8 KB for /(app)/profile/[section] and 49.1 KB for /onboarding/[[step]]. SvelteKit 3 also requires matchers in one src/params.ts that exports `params`, as standard schemas that return the value or undefined, not a boolean.\n5. Conclusion: use one dynamic route for Profile editing and one for onboarding, with no matchers (unknown keys 404 from load), and load editors lazily through a registry outside universal loads. Add no new icons. Every slice pastes the /profile/security row of its budgets output.\n\nPLAN 1 (per-step routes, onboarding first)\n- Its structure cannot pass budgets: see facts 2 and 3. It also needs a temporary Partial step map that falls back to Profile, which is a hack.\n- Two of its numbers are wrong:\n  - It says the stricter accounting may raise /profile/security from 59.6 KB. Measured, it stays at 59.6 KB.\n  - It says routes outside (app) start at 53.6 KB. A bare route outside (app) is 49.1 KB; /recover is heavier because of AuthScreen.\n- Extracting budget-graph.ts would rewrite a reviewed commit, so I deferred it.\n- Adopted from Plan 1:\n  - serial e2e projects with resetTrainingProfile(), profileAction() and gotoHydrated();\n  - a service-level guard so required steps cannot be skipped;\n  - the server helpers moved to src/lib/server;\n  - design-system rows kept within the current column width;\n  - many of the bug fixes.\n\nPLAN 2 (dynamic routes, Profile first)\n- Right on architecture and order, but:\n  - (a) its defineParams matchers fail the budget (fact 4);\n  - (b) its profile-* specs are parallel *.e2e.ts files, and the serial project only arrives at onboarding-flow. Chromium and WebKit, and two local workers, would race on the one owner's goals; WebKit would see Chromium's leftovers;\n  - (c) it misses the server-side skip hole;\n  - (d) its goals slice (~590 lines) is underestimated: the list, empty state and sheet without reorder, drag or manage are about 650 lines;\n  - (e) its body unit test locks in the 'other unit shows blank' bug;\n  - (f) its weeksUntil claim is off. The function compares calendar days correctly; the real question is whose 'today' (server or device). Compute it after hydration;\n  - (g) its optional sessions.exclusive change belongs to the CI-flake stack (task #14, done). Don't touch it;\n  - (h) changing appRoutes samples is not needed without matchers ('sample' still matches the route and redirects).\n\nWIP STATE AND BUGS (all confirmed by reading or running; each is folded into a slice)\nFormatting, dead code and docs:\n- Prettier fails on src/routes/profile-forms.server.ts, and that file is not a route.\n- Dead code: the goalStatus action (status already goes through updateGoal), sectionContext, scoped(), weeksUntil, disciplineNames, editAction, and Toggle's children prop (interactive content inside a <label>).\n- design-system.md re-pads the whole table: 56 lines of churn for 7 rows.\n\nServer and flow:\n- The `?/skip` action exists on every step, and advanceOnboarding never checks STEP_INFO.optional, so a crafted POST skips goals, experience or schedule.\n- then=back uses indexOf (-1 falls back to welcome) instead of previousStep().\n- Back on an invalid half-filled step shows and focuses the errors, then navigates away anyway.\n- Edit from review walks every later step again instead of returning to review.\n- A step that does not apply renders as '1 / N'.\n- The progress bar marks every earlier step done (`i < index`).\n- The step URL is built by string concatenation in 4 places, with eslint-disable comments.\n- rememberOnboardingStep is never called. Keep it that way so GET loads stay free of side effects; resume means the furthest step advanced.\n\nInputs and accessibility:\n- The race time and easy pace fields use inputmode=numeric (no ':' on the iPhone keypad), but parseDuration requires ':'.\n- NumberField marks its unit aria-hidden. NumberField and TextArea keep the hint id in aria-describedby while the error replaces the hint, leaving a dangling IDREF.\n- ChoiceGroup radios are used as 'add' actions (ExperienceEditor 'Also train something else?', BaselinesEditor 'Add a lift'). Arrow keys add every option passed.\n- Radios cannot be cleared once picked, so optional single choices need a decision.\n- ScheduleEditor passes errors to NumberStepper as `hint`: no aria-invalid, nothing announced.\n- GoalsEditor stacks two 36 px up/down buttons whose 44 px hit areas overlap by about 8 px.\n- GoalSheet never shows errors for weight class or target.\n- TagInput allows 80 characters and 40 items; the injury schema allows 60 and 12.\n- ProfileSummary prints raw lift keys, and its discipline dots are not aria-hidden.\n\nData and editors:\n- Exercise preferences lose their `reason` on every save.\n- bodyDraft shows a blank weight when the latest entry is in the other unit.\n- 'Not focusing on it' does not round-trip.\n- Injuries, commitments and races are keyed by index; lifts and experience use `${x}:${i}`. Removing a middle row moves row-local state (such as a half-typed TagInput entry) onto the wrong item.\n- scheduleDraft pre-fills 4 days and 60 min.\n- ScheduleDraft is exported from a component's instance script.\n- specificsDraft hard-codes the running keys instead of using RUNNING_DISCIPLINES.\n\nTests:\n- There is no test of any kind for the WIP: no unit, integration, e2e, axe or perf coverage, and no screenshots.\n\nc35fd8a is complete. forms.ts (446 lines) is split into one pure helper module per section, each landing with its section. All 53 WIP files are assigned to a slice below or explicitly dropped.",
+	"slices": [
+		{
+			"id": "budget-accounting",
+			"branch": "m2/13-budget-accounting",
+			"title": "perf(budgets): count every chunk a route waits for and budget CSS per route",
+			"goal": "Land fede7f4 unchanged, so the budget gate measures what a route really waits for before any onboarding screen lands. Initial JS becomes the full static import graph plus the largest dynamic import a universal load awaits. CSS is budgeted per route (\u2264 14 KB). Refresh the M2 table in docs/performance.md with the numbers this accounting gives on 5abf1b4.",
+			"fromWip": [
+				"scripts/check-budgets.ts (fede7f4, whole)",
+				"docs/performance.md (fede7f4, whole)"
+			],
+			"newOrChanged": [
+				"docs/performance.md: M2 table rows replaced with the new-accounting numbers measured on 5abf1b4 + fede7f4: /profile/security 59.6, /train 58.2, /profile 57.8, /setup 56.7, /today 56.2, /design 55.8, / 55.0, /progress 54.9, /offline 54.9, /recover/passkey 54.6, /recover 53.6, /coach 52.9 KB; whole-build CSS 19.6 KB in 39 files. Add a sentence that /profile/security has 0.4 KB of headroom and that new route nodes, matchers, icons and shared components cost every route"
+			],
+			"tests": [
+				"No new test file; the gate is the test. Paste the `pnpm build && pnpm budgets` output into the PR",
+				"CI: check, lint, unit, integration, build, build:node, budgets, full e2e including WebKit and perf"
+			],
+			"acceptance": [
+				"Cherry-picks onto origin/m2/11-profile-services (5abf1b4) with no conflicts (verified with git apply in a scratch tree)",
+				"pnpm budgets passes on every route; the largest is /(app)/profile/security at 59.6 KB; route CSS max is /design at 11.7 KB; \u2264 2 preloaded fonts",
+				"The report prints the 'awaited by load' column, the not-modulepreloaded chunk lines, the @simplewebauthn guard and whole-build CSS (for tracking only)",
+				"The docs table matches the script output",
+				"All gates green, including WebKit and perf"
+			],
+			"estNonTestLines": 140,
+			"risks": "0.4 KB of headroom on /profile/security constrains every later slice: each must paste the security row of its budgets output and must not add icons, matchers or shared-component growth. Load-import detection is a regex that sees string-literal relative imports only; document that limit. Plan 1's budget-graph.ts extraction with unit tests is deferred: it would change a reviewed commit."
+		},
+		{
+			"id": "e2e-hydration-wait",
+			"branch": "m2/14-e2e-hydration-wait",
+			"title": "fix(test): wait for hydration before tapping buttons that only work once hydrated",
+			"goal": "Land c35fd8a. Under parallel workers, the light-theme axe audit of the plate-calculator sheet and the add-passkey helper tapped server-rendered buttons before their handlers were attached.",
+			"fromWip": ["e2e/a11y.e2e.ts (c35fd8a)", "e2e/auth.e2e.ts (c35fd8a)"],
+			"newOrChanged": [],
+			"tests": [
+				"Repeat-run evidence in the PR: `pnpm test:e2e --project=iphone-chromium -g \"plate calculator sheet|passkey\" --repeat-each=10` with 2 workers, 0 failures, no retries",
+				"CI full e2e including WebKit"
+			],
+			"acceptance": [
+				"The plate-calculator sheet audit (dark and light) and every addOwnPasskey() spec pass 10/10 locally",
+				"CI green on Chromium and WebKit"
+			],
+			"estNonTestLines": 0,
+			"risks": "Independent of m2/13; either can merge first. Do not touch e2e/sessions.exclusive.e2e.ts even though otherDevice() has the same race: the CI-flake stack (task #14) owns that file. networkidle stands in for hydration; m2/21 turns it into a shared gotoHydrated() for the new JS-only buttons."
+		},
+		{
+			"id": "blank-optional-date",
+			"branch": "m2/15-blank-optional-date",
+			"title": "fix(profile): a blank optional date means no date",
+			"goal": "An empty <input type=date> submits ''. Every optional date in the shared schemas (goal target, 1RM date, race date, injury 'since', body target) now treats '' as null, matching the schemas' 'blank text becomes null' rule. This also applies to no-JS posts and to the coach tools in M5.",
+			"fromWip": ["src/lib/domain/profile/schemas.ts (optDate)"],
+			"newOrChanged": [
+				"src/lib/domain/profile/schemas.test.ts (new)",
+				"tests/integration/profile/sections.test.ts (one case)",
+				"tests/integration/profile/profile.test.ts (one case)"
+			],
+			"tests": [
+				"Unit: '', null and undefined become null for generalGoal.targetDate, baselineEntry.achievedOn, raceResult.racedOn, injury.since and body.targetDate; '2027-02-30' and '1899-12-31' are still rejected with 'Use a real date'; a required eventDate of '' still fails with 'Pick the event date'",
+				"Integration: saveBody with targetDate '' stores null; saveInjuries with since '' stores null"
+			],
+			"acceptance": [
+				"Optional blank dates validate as null; required dates are unchanged",
+				"All gates green"
+			],
+			"estNonTestLines": 6,
+			"risks": "This widens the input that services the coach will call accept. That is intended, and the new tests cover it."
+		},
+		{
+			"id": "required-steps-not-skippable",
+			"branch": "m2/16-required-steps-not-skippable",
+			"title": "fix(profile): refuse to skip a required onboarding step",
+			"goal": "advanceOnboarding throws ProfileInputError({ step }) when the action is 'skip' and STEP_INFO[step].optional is false, so even a crafted POST cannot skip welcome, goals, experience, schedule or review. The WIP's stepActions exposed `?/skip` on every step and nothing checked the step.",
+			"fromWip": [],
+			"newOrChanged": ["src/lib/server/services/profile/profile.ts (advanceOnboarding guard)"],
+			"tests": [
+				"Integration (tests/integration/profile/profile.test.ts): skip is refused for welcome, goals, experience, schedule and review with a field error, and onboarding_step, onboarding_completed and onboarding_skipped stay unchanged; strength, specifics, equipment, injuries, exercises and body still skip into onboarding_skipped"
+			],
+			"acceptance": [
+				"A required step can never be recorded as skipped through the service",
+				"All gates green"
+			],
+			"estNonTestLines": 8,
+			"risks": "Security-relevant hardening of the services the M5 coach will call; call it out in the PR. Nothing calls skip until m2/35, so this lands ahead of its consumer on purpose."
+		},
+		{
+			"id": "inputs-text",
+			"branch": "m2/17-inputs-text",
+			"title": "feat(ui): NumberField, TextArea and a date TextField",
+			"goal": "Text and number primitives for the profile editors: a number that may stay blank (null, never 0) with the right phone keypad and its unit, multi-line notes, and a date field. Each is shown on /design \u2192 Inputs and tested.",
+			"fromWip": [
+				"src/lib/ui/components/NumberField.svelte",
+				"src/lib/ui/components/TextArea.svelte",
+				"src/lib/ui/components/TextField.svelte (type 'date')",
+				"src/routes/design/InputsPanel.svelte ('Text & numbers' block only)",
+				"docs/design-system.md (NumberField and TextArea rows, TextField date note)"
+			],
+			"newOrChanged": [
+				"NumberField: expose the unit to assistive tech (visually hidden text in the accessible description); aria-describedby references only the message on screen (the error replaces the hint)",
+				"TextArea: the same aria-describedby fix",
+				"TextField: an `optional` marker prop matching NumberField and TextArea, so callers stop faking it with hint='Optional'",
+				"docs/design-system.md: new rows kept within the table's current column width, so Prettier does not re-pad the whole table",
+				"e2e/design-inputs.e2e.ts (new)",
+				"docs/testing.md (spec list)"
+			],
+			"tests": [
+				"e2e/design-inputs.e2e.ts on /design \u2192 Inputs (Chromium + WebKit). NumberField: inputmode is decimal, or numeric for integers; enterkeyhint is set; typing '8a2,5' shows '82.5'; only one decimal point survives; the integer variant drops '.'; clearing leaves it blank (placeholder, no 0); the accessible name is the label and the description includes the unit; an error sets aria-invalid and role=alert, and every id in aria-describedby exists. TextArea: label, Optional marker, maxlength honoured. The date TextField accepts fill('2027-03-14') on both engines",
+				"The existing a11y.e2e '/design component groups' axe audit stays at zero violations in dark and light"
+			],
+			"acceptance": [
+				"/design \u2192 Inputs shows each primitive blank, filled, with an error and optional",
+				"No route's initial JS changes (InputsPanel is lazy); budgets output pasted",
+				"The design-system.md diff only adds rows",
+				"All gates green, including WebKit"
+			],
+			"estNonTestLines": 350,
+			"risks": "field-sizing:content is Chromium-only (WebKit falls back to rows), so do not assert growth on WebKit. Check the date input's height on WebKit. Nothing uses these until m2/21; that is the accepted 'primitive with /design entry and tests' exception."
+		},
+		{
+			"id": "inputs-choice",
+			"branch": "m2/18-inputs-choice",
+			"title": "feat(ui): ChoiceGroup and DayPicker",
+			"goal": "Pick one or several as pills or cards (native radios and checkboxes in a fieldset, \u2265 44 px, selection never shown by colour alone), and a Monday-first day picker whose hit areas stay \u2265 44 px inside padded cards.",
+			"fromWip": [
+				"src/lib/ui/components/ChoiceGroup.svelte",
+				"src/lib/ui/components/DayPicker.svelte",
+				"src/routes/design/InputsPanel.svelte ('Choices' block)",
+				"docs/design-system.md (ChoiceGroup and DayPicker rows)"
+			],
+			"newOrChanged": [
+				"DayPicker: invalid styling (the WIP shows the error as text only)",
+				"Decision recorded in design-system.md: a ChoiceGroup records a choice and is never an 'add' action (the WIP misused it in two editors). Optional single choices offer an explicit 'Not set' or 'Any' option that callers map to null; there are no clearable radios",
+				"Rows within the current column width",
+				"e2e/design-inputs.e2e.ts (cases)",
+				"docs/testing.md"
+			],
+			"tests": [
+				"ChoiceGroup: arrow keys move a single selection; the legend names the group; the selected pill shows its tick and the selected card its filled mark; in the multiple variant, tapping in reverse order still gives option order; every option box is \u2265 44 px tall; an error is role=alert and the inputs get aria-invalid",
+				"DayPicker: seven checkboxes named Monday\u2026Sunday in that order; ticking Sunday then Monday gives Monday-first values; at the 393 px iPhone width inside a padded Surface every hit area is \u2265 44\u00d744 px and neighbours do not overlap (Chromium and WebKit)",
+				"axe on /design \u2192 Inputs, dark and light"
+			],
+			"acceptance": [
+				"Both primitives on /design in their single, multiple, card, error and hint states",
+				"Keyboard: Tab into the group, arrows move, Space toggles",
+				"No route's initial JS changes",
+				"All gates green, including WebKit"
+			],
+			"estNonTestLines": 445,
+			"risks": "ChoiceGroup is about 60% CSS, and its cost lands only where editors load lazily. The negative-inset hit areas of DayPicker must be asserted on WebKit too."
+		},
+		{
+			"id": "inputs-toggle-tags",
+			"branch": "m2/19-inputs-toggle-tags",
+			"title": "feat(ui): Toggle switch and TagInput",
+			"goal": "An on/off row (native checkbox with role=switch; the whole row is the hit area) and a short free-text list with removable 44 px pills, one-tap suggestions and polite announcements.",
+			"fromWip": [
+				"src/lib/ui/components/Toggle.svelte (without the unused children prop)",
+				"src/lib/ui/components/TagInput.svelte",
+				"src/routes/design/InputsPanel.svelte (Toggle and TagInput block)",
+				"docs/design-system.md (Toggle and TagInput rows)"
+			],
+			"newOrChanged": [
+				"Toggle: drop `children`, which would render interactive content inside a <label>",
+				"TagInput: a `maxlength` prop (default 80; injuries pass 60); announce when `max` is reached instead of a silent no-op; reset the status text so a repeated announcement is still read",
+				"e2e/design-inputs.e2e.ts (cases)",
+				"docs/testing.md"
+			],
+			"tests": [
+				"Toggle: role=switch; tapping the title text and pressing Space both flip aria-checked; the description is referenced by aria-describedby; the row is \u2265 44 px",
+				"TagInput: Return and Add both add a trimmed item and clear the field; Add is disabled when blank; a case-insensitive duplicate is refused; remove buttons are named 'Remove <item>' and are \u2265 44 px; a suggestion adds in one tap and disappears; the status region says 'Added \u2026' and 'Removed \u2026'; maxlength and max are enforced and announced",
+				"axe on /design \u2192 Inputs, dark and light"
+			],
+			"acceptance": [
+				"Both primitives on /design",
+				"No route's initial JS changes",
+				"All gates green, including WebKit"
+			],
+			"estNonTestLines": 370,
+			"risks": "Low. Identical consecutive announcements need the reset, or screen readers stay silent."
+		},
+		{
+			"id": "profile-save-path",
+			"branch": "m2/20-profile-save-path",
+			"title": "feat(profile): validate on demand and save profile sections through JSON form actions",
+			"goal": "Build the one save path that Profile edit screens and onboarding share. The browser validates with the services' own zod schemas, fetched on idle and never in initial JS. It posts the section as JSON to the page's form action (same-origin, so the CSRF Origin check passes). The server re-validates through the services: ProfileInputError becomes fail(400, { errors }) keyed by dotted path, and ProfileNotFoundError becomes 404 with an owner-facing message. SectionForm holds value, errors, busy and dirty.",
+			"fromWip": [
+				"src/lib/client/profile-form.ts (without the unused scoped())",
+				"src/lib/client/section-form.svelte.ts",
+				"src/routes/profile-forms.server.ts (ownerId, readForm, attempt and editAction only, moved; goalStatus and sectionContext dropped)"
+			],
+			"newOrChanged": [
+				"src/lib/server/forms/profile.ts (new home of the server helpers; Prettier-clean)",
+				"src/lib/client/profile-form.ts: toOutcome(ActionResult) extracted as a pure function",
+				"scripts/check-budgets.ts: fail when zod or src/lib/domain/profile/schemas.ts is in any route's initial JS (mirrors the @simplewebauthn guard)",
+				"src/lib/client/README.md (rows)",
+				"src/lib/client/profile-form.test.ts (new)",
+				"tests/integration/profile/form-actions.test.ts (new)"
+			],
+			"tests": [
+				"Unit, toOutcome: a failure with errors gives field errors; a failure with only a message gives `failed`; success returns data; a redirect counts as ok; a thrown fetch gives 'Can\u2019t reach the server\u2026'",
+				"Integration (real Postgres): editAction called with a constructed RequestEvent. Bad input returns fail(400, { errors }) keyed by dotted path from the real service; malformed JSON returns 400 'The form could not be read'; no session or a recovery session returns 401; a valid payload persists and returns { saved: true }",
+				"pnpm budgets prints 'pass' for the new validation-on-demand guard"
+			],
+			"acceptance": [
+				"No screen uses it yet, and no route's initial JS changes",
+				"Prettier and ESLint clean (the WIP file failed Prettier)",
+				"All gates green"
+			],
+			"estNonTestLines": 250,
+			"risks": "This is plumbing only: merging it into m2/21 would make that PR about 770 lines. No test in the repo imports $app/forms or $app/paths under vitest yet; mock them if needed. SectionForm (a .svelte.ts runes class, excluded from the unit project) is proven by m2/21's e2e, not by a unit test."
+		},
+		{
+			"id": "profile-equipment",
+			"branch": "m2/21-profile-equipment",
+			"title": "feat(profile): edit the training profile from Profile, starting with equipment",
+			"goal": "Profile's 'Training profile \u00b7 Soon' card becomes a list of sections backed by one dynamic edit route, /profile/[section], with no param matcher (unknown keys 404 from load). The edit screen loads its editor lazily through a client registry, with a Skeleton that reserves the space. Save sits in the thumb zone with a loading state and a 'Saved' toast. A failed save (offline) and a failed editor chunk (with Retry) each show a designed error, and leaving with unsaved changes asks before discarding. Equipment is the first section. This slice also lands the e2e infrastructure for specs that change the single owner's training profile.",
+			"fromWip": [
+				"src/lib/ui/profile/EquipmentEditor.svelte",
+				"src/lib/ui/profile/forms.ts (equipmentDraft \u2192 src/lib/ui/profile/equipment.ts)",
+				"src/lib/server/auth/routes.ts (approach replaced: one dynamic entry instead of per-screen routes)"
+			],
+			"newOrChanged": [
+				"src/lib/server/forms/sections.ts (server registry: section key \u2192 { load, save })",
+				"src/lib/ui/profile/editors.ts (client registry: key \u2192 lazy entry importing editor and helpers; imported only by the edit routes)",
+				"src/lib/ui/profile/sections.ts (keys, titles and existing icons for the Profile list; no loaders, so /profile does not carry them)",
+				"src/routes/(app)/profile/[section]/+page.server.ts (load: section data plus context { disciplines, units }; actions.save via editAction)",
+				"src/routes/(app)/profile/[section]/+page.svelte and SectionScreen.svelte (back to Profile, title, Skeleton, sticky Save, toast, error Notice, editor-chunk Retry, discard prompt through beforeNavigate)",
+				"src/routes/(app)/profile/+page.svelte (Training profile Section of ListRows; no 'Soon')",
+				"src/lib/server/auth/routes.ts ('/(app)/profile/[section]': 'owner')",
+				"playwright.config.ts (serial-chromium and serial-webkit for **/*.serial.e2e.ts, 1 worker, after the functional projects; serial-webkit after serial-chromium; perf and exclusive after both; *.serial.e2e.ts added to FUNCTIONAL_IGNORE)",
+				"e2e/support.ts (resetTrainingProfile() deletes the owner's rows from all 14 training-profile tables; profileAction() posts JSON to a form action with Origin and x-sveltekit-action, for seeding; gotoHydrated())",
+				"e2e/profile-equipment.serial.e2e.ts (new)",
+				"e2e/a11y.e2e.ts (+ /profile/equipment, waiting for the editor)",
+				"e2e/perf.e2e.ts (+ /profile/equipment)",
+				"e2e/access.e2e.ts (cross-site POST case)",
+				"docs/testing.md (serial projects, new spec)"
+			],
+			"tests": [
+				"e2e (Chromium + WebKit, serial, reset in beforeEach): Profile shows an Equipment row, not 'Soon', and it opens /profile/equipment. Pick 'Commercial gym', tick barbell and rack, turn on home training and add dumbbells, write a note, Save \u2192 'Saved' toast. Reload \u2192 same values, and the equipment_profiles row matches via query(). With the context offline, Save shows 'Can\u2019t reach the server' and keeps the input; back online, Save works. With the editor chunk aborted (page.route), the designed error appears and Retry loads it. Leaving with unsaved changes asks to discard: Cancel stays, Discard leaves. /profile/unknown shows the 404 page. Profile still shows Security and the device preferences. captureScreen 'profile-equipment'",
+				"access.e2e: signed out, /profile/sample redirects to sign-in automatically through route enumeration; signed in, a cross-site POST to /profile/equipment?/save gets 403 and the row is unchanged",
+				"a11y: /profile/equipment has zero violations in dark and light; perf: within the main-thread guard; routes.test.ts passes with the one new entry"
+			],
+			"acceptance": [
+				"Equipment is editable from Profile and persists across reload and in Postgres",
+				"/(app)/profile/[section] \u2264 58 KB initial JS; /(app)/profile/security \u2264 60 KB (scratch stub: 59.7); /(app)/profile \u2264 59 KB; validation guard passes; budgets rows pasted",
+				"No layout shift when the editor replaces the Skeleton",
+				"Serial specs never run concurrently with each other, with functional specs or with perf",
+				"All gates green, including WebKit and perf"
+			],
+			"estNonTestLines": 520,
+			"risks": "Budget, measured in scratch builds: two dynamic routes without matchers add 0.1 KB to every route (security 59.7). With defineParams matchers they add 0.5 KB (security 60.1, FAIL); lean hand-written matchers add 0.3 KB (59.9). So use no matchers, add no icons and do not grow shared components. The discard prompt must not block the post-save state or sign-out. Editor heights vary, so the Skeleton must reserve a realistic height. The parallel security-fix stack (task #15) may edit routes.ts and the Profile page; rebase carefully."
+		},
+		{
+			"id": "goals-event",
+			"branch": "m2/22-goals-event",
+			"title": "feat(profile): ranked goals on Profile \u2014 add and edit event goals",
+			"goal": "Profile \u2192 Goals shows an empty state, a ranked list where #1 is marked 'Top priority', and a code-split bottom sheet to add or edit an event goal: title, disciplines (custom included), event type with suggestions, date, weight class, target performance and requirements. Goals save the moment they change (this section has no Save bar), with source 'profile'.",
+			"fromWip": [
+				"src/lib/ui/profile/GoalsEditor.svelte (ranked list, empty state, add/edit, error notice; no reorder, drag, manage mode or past goals)",
+				"src/lib/ui/profile/GoalSheet.svelte (event fields, disciplines, custom discipline, event-type suggestions; no kind switch, status or delete)",
+				"src/lib/ui/profile/forms.ts (GoalDraft, newGoal, goalDraft, goalSummary, shortIsoDate \u2192 src/lib/ui/profile/goals.ts)",
+				"src/routes/profile-forms.server.ts (goalActions.saveGoal)"
+			],
+			"newOrChanged": [
+				"GoalSheet shows the weight class and target errors, which the WIP never did",
+				"GoalsEditor discipline chips use the Chip primitive, not a hand-styled pill",
+				"goals entries in sections.ts, editors.ts and forms/sections.ts",
+				"[section]/+page.server.ts: saveGoal action (source 'profile')",
+				"src/lib/ui/profile/goals.test.ts (new)",
+				"e2e/profile-goals.serial.e2e.ts (new)",
+				"e2e/a11y.e2e.ts (+ /profile/goals and the open sheet)",
+				"docs/testing.md"
+			],
+			"tests": [
+				"Unit: goalDraft \u2194 newGoal round-trip keeps event fields and turns null event fields into ''; goalSummary for an event goal ('Muay Thai fight \u00b7 14 Mar 2027 \u00b7 \u221271 kg'); shortIsoDate",
+				"e2e: the empty state shows. 'A specific event' opens the sheet: title, Muay Thai, a suggestion fills the event type, the date is filled as ISO \u2192 Save \u2192 row #1 'Top priority' plus a toast. A second goal becomes #2. Tap #1, change its title and target \u2192 reload \u2192 persisted (brief acceptance: edit a goal from Profile). An event without a date shows 'Pick the event date' as an alert and moves focus to it. DB: training_goals priorities 1 and 2; training_goal_events created \u00d72 and updated \u00d71 with source 'profile'. Closing the sheet returns focus to the opener. axe on the list and the open sheet in both themes; captureScreen 'profile-goals' and 'goal-sheet'",
+				"budgets: the GoalSheet chunk is not in the route's initial JS"
+			],
+			"acceptance": [
+				"Event goals can be created and edited from Profile and persist across reload and in Postgres, with a contiguous ranking",
+				"/profile/[section] \u2264 58 KB",
+				"All gates green, including WebKit"
+			],
+			"estNonTestLines": 480,
+			"risks": "The sheet loads on first intent (pointerdown); a tap before the chunk arrives must still open it. WebKit date inputs: fill ISO strings."
+		},
+		{
+			"id": "goals-general",
+			"branch": "m2/23-goals-general",
+			"title": "feat(profile): general goals and the \u201cseveral goals at once\u201d path",
+			"goal": "The sheet switches between Event and General: a general goal has what to improve, how it is measured, and a target date. The empty state offers PRD \u00a72's three ways in: a specific event, a general goal, or several at once. 'Several' keeps the 'Add another goal' prompt and the note to rank them.",
+			"fromWip": [
+				"src/lib/ui/profile/GoalSheet.svelte (kind SegmentedControl, general fields)",
+				"src/lib/ui/profile/GoalsEditor.svelte (three-path empty state, 'several' note)"
+			],
+			"newOrChanged": [
+				"src/lib/ui/profile/goals.test.ts (general summary)",
+				"e2e/profile-goals.serial.e2e.ts (cases)"
+			],
+			"tests": [
+				"e2e: a general goal saves only after 'what to improve' and 'how measured' are filled, and their errors are announced inside the sheet; switching event \u2192 general clears the event fields in Postgres; the 'Several goals at once' path adds two goals ranked 1 and 2 in creation order; captureScreen 'profile-goals-empty'",
+				"Unit: goalSummary for a general goal"
+			],
+			"acceptance": [
+				"General goals and several concurrent goals can be created from Profile",
+				"All gates green, including WebKit"
+			],
+			"estNonTestLines": 150,
+			"risks": "The 'several' path opens the same sheet as the WIP did. Decide whether it should start with a kind choice; keep the copy honest either way."
+		},
+		{
+			"id": "goal-status",
+			"branch": "m2/24-goal-status",
+			"title": "feat(profile): pause, achieve, drop or delete a goal; past goals leave the ranking",
+			"goal": "On Profile (manage mode), a goal's status can change, and achieved or dropped goals are listed apart under Past goals. Delete needs a second tap. The services keep the ranking contiguous.",
+			"fromWip": [
+				"src/lib/ui/profile/GoalSheet.svelte (status choice in manage mode, two-tap delete)",
+				"src/lib/ui/profile/GoalsEditor.svelte (manage prop, Past goals list)",
+				"src/routes/profile-forms.server.ts (goalActions.deleteGoal; the unused goalStatus action is DROPPED, because status goes through saveGoal/updateGoal)"
+			],
+			"newOrChanged": [
+				"[section]/+page.server.ts: deleteGoal action",
+				"e2e/profile-goals.serial.e2e.ts (cases)"
+			],
+			"tests": [
+				"e2e: marking #1 Achieved takes it out of the ranking, #2 becomes 'Top priority', and Past goals shows it as 'Achieved'. Setting it Active again puts it back at the bottom. Delete needs 'Delete for good' and the goal is gone after reload. Priorities stay contiguous, and training_goal_events has status_changed, deleted and reprioritized rows. axe on the sheet in manage mode, both themes"
+			],
+			"acceptance": [
+				"Status changes and deletion persist; the ranking has no gaps or ties",
+				"All gates green"
+			],
+			"estNonTestLines": 120,
+			"risks": "Low. Keep status changes on updateGoal; do not revive the goalStatus action."
+		},
+		{
+			"id": "goal-order",
+			"branch": "m2/25-goal-order",
+			"title": "feat(profile): reorder goal priorities with up and down buttons",
+			"goal": "One-handed, accessible reordering. The list moves at once (optimistic), the server confirms the ranking, a failed save rolls back with a toast, and the new rank is announced politely.",
+			"fromWip": [
+				"src/lib/ui/profile/GoalsEditor.svelte (up/down buttons, move(), optimistic reorder with rollback, live announcement)",
+				"src/routes/profile-forms.server.ts (goalActions.reorderGoals)"
+			],
+			"newOrChanged": [
+				"The up and down hit areas no longer overlap: md size or a gap (the WIP stacked two 36 px buttons extended to 44 px)",
+				"[section]/+page.server.ts: reorderGoals action",
+				"e2e/profile-goals.serial.e2e.ts (cases)"
+			],
+			"tests": [
+				"e2e (brief acceptance): with three goals, 'Move X up' twice makes X #1 'Top priority'; the live region says 'X is now priority 1 of 3'; after reload the order persists; DB priorities match and 'reprioritized' events carry source 'profile'",
+				"A failed reorder (page.route answers 500) restores the previous order and shows a danger toast",
+				"The first 'up' and the last 'down' are disabled; each button box is \u2265 44 px and the boxes do not overlap"
+			],
+			"acceptance": [
+				"Reordering priorities from Profile persists across reload and in Postgres",
+				"Works by keyboard and screen reader",
+				"All gates green, including WebKit"
+			],
+			"estNonTestLines": 120,
+			"risks": "The 'up' arrow is the down chevron rotated in CSS. Keep it that way: a new icon would ship on every route. After every reorder, replace the optimistic list with the server's ranking."
+		},
+		{
+			"id": "goal-drag",
+			"branch": "m2/26-goal-drag",
+			"title": "feat(profile): drag goals by their handle to reorder",
+			"goal": "OPTIONAL. Add drag-to-reorder as a second input next to up/down (brief: 'by drag or up/down'). The grip is drawn in CSS, not added as an icon.",
+			"fromWip": [
+				"src/lib/ui/profile/GoalsEditor.svelte (grab, dragMove, drop, shift, handle)",
+				"src/lib/ui/icons/icons.ts 'grip' \u2192 DROPPED (the icon map ships on every route, and /profile/security has about 0.3 KB left)"
+			],
+			"newOrChanged": ["GoalsEditor.svelte: CSS-drawn grip dots"],
+			"tests": [
+				"e2e (Chromium): a mouse drag of goal 3's handle up two rows makes it #1, and it persists after reload; the handle is aria-hidden and never focusable, so up/down stays the accessible path"
+			],
+			"acceptance": [
+				"Drag reorder persists",
+				"No other route's initial JS changes",
+				"All gates green, including WebKit (drag asserted on Chromium only)"
+			],
+			"estNonTestLines": 110,
+			"risks": "Optional: up/down alone meets the brief, so drop this slice if pointer capture cannot be made deterministic. Keep the step maths deterministic (row height plus gap)."
+		},
+		{
+			"id": "profile-experience",
+			"branch": "m2/27-profile-experience",
+			"title": "feat(profile): experience per discipline",
+			"goal": "For each discipline in play: level, years and current sessions per week. Goal disciplines are pre-seeded, other disciplines can be added, a custom one needs a name, and any entry can be removed.",
+			"fromWip": [
+				"src/lib/ui/profile/ExperienceEditor.svelte",
+				"src/lib/ui/profile/forms.ts (ExperienceDraft, experienceDraft, blankExperience \u2192 src/lib/ui/profile/experience.ts)"
+			],
+			"newOrChanged": [
+				"ExperienceEditor: 'Also train something else?' becomes a row of add buttons. The WIP used a radio group as an action, so arrow keys added every discipline they passed",
+				"A draft type for the missing level instead of `null as unknown as level`; stable row keys",
+				"Registry entries (context.disciplines from getOnboarding)",
+				"src/lib/ui/profile/experience.test.ts (new)",
+				"e2e/profile-experience.serial.e2e.ts (new)",
+				"e2e/a11y.e2e.ts (+ /profile/experience)"
+			],
+			"tests": [
+				"Unit: saved entries come first; one blank entry is added per goal discipline that has none, and none for custom",
+				"e2e: with powerlifting and Muay Thai goals seeded through profileAction(), both cards are pre-seeded. Save without a level shows the error on that entry and moves focus there. Set levels, years (decimal) and sessions (numeric) \u2192 Save \u2192 reload persisted; discipline_experience rows match. Add Running through its button; 'Other\u2026' requires a name (alert); removing a middle entry keeps the others' values; pressing arrow keys in the add row adds nothing. axe in both themes; captureScreen 'profile-experience'"
+			],
+			"acceptance": [
+				"Experience per discipline is editable and persisted; errors are announced",
+				"All gates green, including WebKit"
+			],
+			"estNonTestLines": 230,
+			"risks": "A goal discipline whose card the owner removed comes back as a blank card on reload. Decide whether that is intended, and document it."
+		},
+		{
+			"id": "profile-strength",
+			"branch": "m2/28-profile-strength",
+			"title": "feat(profile): optional strength baselines \u2014 measured or estimated, or \u201cI don\u2019t know my 1RMs\u201d",
+			"goal": "Every 1RM is optional. 'I don't know my 1RMs' is a first-class answer and shows the reassuring week-one explainer: RPE-based sets establish the baseline. A known max is either measured (tested or competition) or estimated (from a set with reps and RPE, with a live e1RM, or a best guess). The server derives the kind, and the two are never mixed.",
+			"fromWip": [
+				"src/lib/ui/profile/BaselinesEditor.svelte",
+				"src/lib/ui/profile/forms.ts (LiftDraft, liftDraft, suggestedLifts, liftName, trim, baselinesDraft, baselinesPayload, baselineSummary \u2192 src/lib/ui/profile/strength.ts)"
+			],
+			"newOrChanged": [
+				"'Add a lift' becomes buttons, not a self-resetting radio group",
+				"Measured and estimated are shown with Badge, not a hand-styled pill",
+				"Stable row keys",
+				"Registry entries",
+				"src/lib/ui/profile/strength.test.ts (new)",
+				"e2e/profile-strength.serial.e2e.ts (new)",
+				"e2e/a11y.e2e.ts (+ /profile/strength)"
+			],
+			"tests": [
+				"Unit: baselinesPayload sends no lifts when 'unknown'; liftDraft hides the value for set-based lifts; suggestedLifts per discipline, with the squat/bench/deadlift fallback; liftName for custom lifts; baselineSummary gives '\u2248 \u2026 Estimated, from 100 \u00d7 5 @ RPE 8'",
+				"e2e: the 'I don\u2019t know my 1RMs' toggle shows the explainer; Save stores baselines_unknown = true with no current strength_baselines rows. Untoggle and add a tested back squat of 140 kg with a date \u2192 shown as 'Measured', stored as kind measured, source tested. Bench from a set of 100 \u00d7 5 @ 8 shows a live '\u2248 \u2026 estimated 1RM' equal to estimateOneRepMax and is stored as kind estimated with method and confidence. After reload both kinds show distinctly. A lift added and left blank shows an error until removed; 600 kg shows a range alert; switching back to 'I don\u2019t know' supersedes the stored lifts while keeping history. axe in both themes; captureScreen 'profile-strength' and 'profile-strength-unknown'"
+			],
+			"acceptance": [
+				"Every 1RM can stay blank; an estimate is never stored or shown as measured, through the UI, after reload and in the DB",
+				"All gates green, including WebKit"
+			],
+			"estNonTestLines": 350,
+			"risks": "The e1RM table rides only in the lazy editor chunk; confirm /profile/[section] stays \u2264 58 KB."
+		},
+		{
+			"id": "profile-specifics",
+			"branch": "m2/29-profile-specifics",
+			"title": "feat(profile): running and Muay Thai specifics",
+			"goal": "Running: weekly volume, runs per week, longest run, easy pace and recent race times. Muay Thai: sessions, sparring and fights. Each section shows when its discipline is in play, and a designed empty state offers to add either.",
+			"fromWip": [
+				"src/lib/ui/profile/SpecificsEditor.svelte",
+				"src/lib/ui/profile/forms.ts (RaceDraft, RunningDraft, runningDraft, runningPayload, muayThaiDraft, specificsDraft, specificsPayload \u2192 src/lib/ui/profile/specifics.ts)"
+			],
+			"newOrChanged": [
+				"Times can be typed on the iPhone keypad: inputmode=decimal, and '.', ',', ' ' or ':' are accepted as separators and normalised before parseDuration, which requires ':'. The WIP used inputmode=numeric, whose keypad has no ':'",
+				"Client validation runs before posting: NaN becomes null in JSON, which would silently drop an unparseable time",
+				"specificsDraft uses RUNNING_DISCIPLINES",
+				"Empty state with 'Add running' and 'Add Muay Thai'; stable race keys",
+				"Registry entries",
+				"src/lib/ui/profile/specifics.test.ts (new)",
+				"e2e/profile-specifics.serial.e2e.ts (new)",
+				"e2e/a11y.e2e.ts (+ /profile/specifics)"
+			],
+			"tests": [
+				"Unit: the normaliser and runningPayload ('5.45' \u2192 345 s, '1.45.30' \u2192 6330 s, '1:45:30' \u2192 6330 s, '' \u2192 null, 'abc' \u2192 NaN \u2192 schema error); 'other' keeps customDistance, and the other distances set it to null",
+				"e2e, with running and Muay Thai goals seeded: 40 km a week and easy pace '5.45' store easy_pace_seconds 345; a half marathon in '1.45.30' stores 6330; 'Other' needs a distance; 3 Muay Thai sessions, 1 sparring and 2 fights are saved; 'abc' shows an alert on that race; removing a middle race keeps the others; reload shows the times formatted. With neither discipline in play, the empty state offers both. axe in both themes; captureScreen 'profile-specifics'"
+			],
+			"acceptance": [
+				"Running and Muay Thai data persist (running_profiles, race_results, muay_thai_profiles)",
+				"Durations can be entered with the keypad the field asks for",
+				"All gates green, including WebKit"
+			],
+			"estNonTestLines": 330,
+			"risks": "Playwright cannot show the iOS keyboard, so assert the inputmode attribute and add a line to the real-device checklist in docs/testing.md. '5.5' is ambiguous; the hint must state the m.ss form."
+		},
+		{
+			"id": "profile-injuries",
+			"branch": "m2/30-profile-injuries",
+			"title": "feat(profile): injuries, limitations and movements to avoid",
+			"goal": "Each injury records body area, side, severity, movements to avoid, notes, and whether it is active or resolved (resolved ones stay in history). An empty state reads 'nothing to work around'.",
+			"fromWip": [
+				"src/lib/ui/profile/InjuriesEditor.svelte",
+				"src/lib/ui/profile/forms.ts (injuryDraft, injuryTitle \u2192 src/lib/ui/profile/injuries.ts)"
+			],
+			"newOrChanged": [
+				"TagInput gets maxlength 60 and max 12, matching the schema (the WIP allowed 80 and 40)",
+				"Side is optional through the explicit option decided in m2/18",
+				"Stable row keys (client id) instead of the index",
+				"Registry entries",
+				"src/lib/ui/profile/injuries.test.ts (new)",
+				"e2e/profile-injuries.serial.e2e.ts (new)",
+				"e2e/a11y.e2e.ts (+ /profile/injuries)"
+			],
+			"tests": [
+				"Unit: injuryTitle for left, right, both and no side",
+				"e2e: the empty state shows. Add a moderate left-knee injury with 'Jumping lunges' and 'Box jumps' to avoid; the area is required (alert); an item over 60 characters cannot be entered. Add a second injury, remove the first: the second keeps its half-typed TagInput entry. Mark it resolved \u2192 it shows 'Resolved'. Save \u2192 reload; the injuries row has the avoid array and active = false. axe in both themes; captureScreen 'profile-injuries'"
+			],
+			"acceptance": [
+				"Injuries are editable and persisted; removing a row never moves another row's state",
+				"All gates green, including WebKit"
+			],
+			"estNonTestLines": 200,
+			"risks": "Low."
+		},
+		{
+			"id": "profile-exercises",
+			"branch": "m2/31-profile-exercises",
+			"title": "feat(profile): exercises you enjoy and ones you\u2019d rather swap out",
+			"goal": "Likes and dislikes as two TagInputs with catalogue suggestions. A dislike is a preference, not an injury. A save never loses what the coach stored about an exercise.",
+			"fromWip": [
+				"src/lib/ui/profile/ExercisesEditor.svelte",
+				"src/lib/ui/profile/forms.ts (exercisesDraft, exercisesPayload \u2192 src/lib/ui/profile/exercises.ts)"
+			],
+			"newOrChanged": [
+				"Keep each preference's `reason` from draft to payload (the WIP dropped it, and the save replaces the whole list)",
+				"Context-neutral hint copy: no 'previous step' on Profile",
+				"Registry entries",
+				"src/lib/ui/profile/exercises.test.ts (new)",
+				"e2e/profile-exercises.serial.e2e.ts (new)",
+				"e2e/a11y.e2e.ts (+ /profile/exercises)"
+			],
+			"tests": [
+				"Unit: draft \u2192 payload round-trips sentiments and reasons",
+				"e2e: a like added from a suggestion, a like typed in and one dislike \u2192 Save \u2192 reload; exercise_preferences has the right sentiments; the same exercise in both lists shows 'Each exercise once' as an alert and blocks the save; a reason seeded in SQL survives a save. axe in both themes; captureScreen 'profile-exercises'"
+			],
+			"acceptance": [
+				"Preferences persist, and existing reasons are preserved",
+				"All gates green, including WebKit"
+			],
+			"estNonTestLines": 110,
+			"risks": "Low."
+		},
+		{
+			"id": "profile-schedule",
+			"branch": "m2/32-profile-schedule",
+			"title": "feat(profile): schedule, availability and weekly commitments",
+			"goal": "Days per week and session length (NumberStepper, one-handed), the days the owner can train, preferred times, constraints, and commitments already in the week (for example Muay Thai classes on Tue/Thu) that the plan must work around.",
+			"fromWip": [
+				"src/lib/ui/profile/ScheduleEditor.svelte",
+				"src/lib/ui/profile/forms.ts (scheduleDraft, commitmentDraft, daysText, commitmentSummary, scheduleSummary \u2192 src/lib/ui/profile/schedule.ts)"
+			],
+			"newOrChanged": [
+				"src/lib/ui/components/NumberStepper.svelte: an `error` prop (aria-invalid, role=alert, replaces the hint), a /design example and a design-system row",
+				"ScheduleEditor passes errors to `error`, not `hint`",
+				"The ScheduleDraft type moves from the component's instance script into schedule.ts",
+				"Stable commitment keys; the prefilled 4 days and 60 min are labelled as a suggestion",
+				"Registry entries",
+				"src/lib/ui/profile/schedule.test.ts (new)",
+				"e2e/profile-schedule.serial.e2e.ts (new)",
+				"e2e/design-inputs.e2e.ts (stepper error case)",
+				"e2e/a11y.e2e.ts (+ /profile/schedule)",
+				"e2e/perf.e2e.ts (+ /profile/schedule, the heaviest editor)"
+			],
+			"tests": [
+				"Unit: draft defaults, daysText Monday-first, commitmentSummary, scheduleSummary",
+				"e2e: 5 days a week with only Mon/Wed/Fri available makes the stepper show its error with aria-invalid, announced, and blocks Save. 4 days, Tue/Thu/Sat/Sun, evenings and 75 min are stored in schedules. A 'Muay Thai class' commitment on Tue/Thu, evening, 90 min, hard is stored in schedule_commitments. Reload persists. design-inputs: the NumberStepper error state is announced. Train's plate-calculator specs still pass. axe in both themes (including the stepper error); captureScreen 'profile-schedule'"
+			],
+			"acceptance": [
+				"Schedule and commitments persist; the cross-field error is accessible",
+				"/train stays within budget after the NumberStepper change (58.2 KB at base)",
+				"All gates green, including WebKit"
+			],
+			"estNonTestLines": 320,
+			"risks": "NumberStepper is shared with Train, so re-run its e2e and the budgets. The prefill means an untouched stepper counts as an answer; it is acceptable only if the copy presents it as a suggestion the owner confirms."
+		},
+		{
+			"id": "profile-body",
+			"branch": "m2/33-profile-body",
+			"title": "feat(profile): body weight, nutrition phase and weight target",
+			"goal": "Today's body weight (kept as a dated history), birth year, nutrition phase (bulk, cut, maintenance, recomp or 'not focusing on it') and a weight target with a date. It informs training without overriding it.",
+			"fromWip": [
+				"src/lib/ui/profile/BodyEditor.svelte",
+				"src/lib/ui/profile/forms.ts (BodyDraft, bodyDraft, bodyPayload, phaseLabel \u2192 src/lib/ui/profile/body.ts)"
+			],
+			"newOrChanged": [
+				"The latest weight recorded in the other unit is shown converted with the domain unit helpers, and sent as null when untouched, so rounding noise never creates a history row (the WIP showed a blank)",
+				"A null phase is drafted as 'none', so 'Not focusing on it' round-trips",
+				"Registry entries",
+				"src/lib/ui/profile/body.test.ts (new)",
+				"e2e/profile-body.serial.e2e.ts (new)",
+				"e2e/a11y.e2e.ts (+ /profile/body)"
+			],
+			"tests": [
+				"Unit: bodyDraft with a matching unit, the other unit and no history; bodyPayload maps 'none' to null and an untouched converted weight to null",
+				"e2e: 82.4 kg is stored in body_weight_entries for today with source 'profile'; a second save the same day keeps a single row; 'Cut' with a 78 kg target by a date is stored on athlete_profiles; 'Not focusing on it' stores null and reloads selected; 400 kg and an out-of-range birth year show alerts. axe in both themes; captureScreen 'profile-body'"
+			],
+			"acceptance": [
+				"Body and nutrition persist with history, and re-saving the same day replaces that day's entry",
+				"All gates green, including WebKit"
+			],
+			"estNonTestLines": 150,
+			"risks": "Rounding must follow the domain unit helpers."
+		},
+		{
+			"id": "profile-basics",
+			"branch": "m2/34-profile-basics",
+			"title": "feat(profile): your name and units for the coach",
+			"goal": "The name and kg/lb, km/mi units the coach uses become editable in Profile, through the same editor the onboarding welcome step will use.",
+			"fromWip": [
+				"src/routes/onboarding/+page.svelte (name TextField and unit SegmentedControls \u2192 extracted BasicsEditor)"
+			],
+			"newOrChanged": [
+				"src/lib/ui/profile/BasicsEditor.svelte (new)",
+				"src/lib/ui/profile/basics.ts (new)",
+				"Registry entries (getAthleteProfile, saveBasics)",
+				"Saving units also sets this device's display units",
+				"The Profile identity card shows the athlete name when set",
+				"e2e/profile-basics.serial.e2e.ts (new)",
+				"e2e/a11y.e2e.ts (+ /profile/basics)"
+			],
+			"tests": [
+				"e2e: rename and switch to lb \u2192 reload persists; the Profile header shows the new name; the device Units control follows; an empty name shows 'Tell your coach what to call you' as an alert. axe in both themes; captureScreen 'profile-basics'"
+			],
+			"acceptance": [
+				"Name and units are editable from Profile and persisted",
+				"All gates green, including WebKit"
+			],
+			"estNonTestLines": 140,
+			"risks": "Owner decision needed. There are two names (the passkey owner's displayName and the athlete name) and two unit settings (coach units on athlete_profiles, display units on the device). This slice makes the coach units authoritative and the device follow on save, and keeps the device Preferences card. Confirm before merging."
+		},
+		{
+			"id": "onboarding-flow",
+			"branch": "m2/35-onboarding-flow",
+			"title": "feat(onboarding): guided setup with progress, skippable optional steps and a final confirm",
+			"goal": "/onboarding/[[step]] (one route, no matcher) walks welcome \u2192 goals \u2192 experience \u2192 strength \u2192 specifics (only with running or Muay Thai) \u2192 equipment \u2192 injuries \u2192 exercises \u2192 schedule \u2192 body \u2192 review. It reuses the Profile section editors (lazy, same registry) and the same services with source 'onboarding'. Continue saves and moves on (save-as-you-go). The frame has a segmented progress bar where only completed or skipped steps are marked done, a Back link, Skip on optional steps only, and 'Finish later' to Today. A step that does not apply redirects to the next one that does, a completed onboarding redirects to Today, and a minimal review step's 'Start coaching' completes onboarding (one open goal and a schedule are required).",
+			"fromWip": [
+				"src/routes/onboarding/+layout.server.ts",
+				"src/routes/onboarding/+layout.svelte",
+				"src/routes/onboarding/Step.svelte (without onback)",
+				"src/routes/onboarding/+page.server.ts and the 10 */+page.server.ts (folded into one dispatching +page.server.ts over the server registry)",
+				"src/routes/onboarding/+page.svelte and the 10 */+page.svelte (folded into one registry-driven page; titles and ledes kept in a step copy table)",
+				"src/routes/onboarding/review/+page.server.ts and review/+page.svelte (minimal confirm only)",
+				"src/routes/profile-forms.server.ts (stepActions save/skip, completeAction, goalActions('onboarding'), stepPath)",
+				"src/lib/server/auth/routes.ts (one '/onboarding/[[step]]' entry instead of 11)"
+			],
+			"newOrChanged": [
+				"src/routes/onboarding/[[step]]/+page.server.ts and +page.svelte (new)",
+				"src/routes/onboarding/paths.ts (one typed stepHref() using resolve(), replacing four string-concatenated copies and their eslint-disable comments)",
+				"src/lib/server/forms/profile.ts (stepActions, completeAction)",
+				"Step.svelte progress fix (done = completed or skipped, not `i < index`)",
+				"src/lib/server/auth/routes.ts",
+				"e2e/onboarding.serial.e2e.ts (new)",
+				"e2e/a11y.e2e.ts (every step URL that applies to an empty profile, dark and light)",
+				"e2e/perf.e2e.ts (+ /onboarding)",
+				"e2e/access.e2e.ts (cross-site POST to /onboarding?/save refused)",
+				"docs/testing.md"
+			],
+			"tests": [
+				"e2e journey (Chromium + WebKit, serial, from a reset profile; brief acceptance): welcome with name, kg and km \u2192 goals: a Muay Thai fight and a marathon \u2192 experience for both \u2192 strength: 'I don\u2019t know my 1RMs', then Continue with every 1RM blank \u2192 specifics is shown; fill an easy pace and Muay Thai sessions \u2192 Skip equipment, injuries, exercises and body \u2192 schedule: 4 days \u2192 review \u2192 Start coaching \u2192 /today. After reload, the DB shows onboarding_completed_at set, baselines_unknown = true, zero strength_baselines rows, 2 training_goals at priorities 1 and 2, schedules.days_per_week 4, and the four skipped steps in onboarding_skipped. GET /onboarding then redirects to /today. captureScreen 'onboarding-<step>' at every step",
+				"e2e rules: the progressbar's aria-valuenow advances and only completed or skipped segments are marked done; there is no Skip on welcome, goals, experience or schedule; Continue on goals with no goal shows an announced error; with strength-only goals, specifics is missing from the progress bar and /onboarding/specifics redirects to the next step; Continue offline shows the 'Can\u2019t reach the server' notice and stays on the step; a crafted POST ?/skip on goals returns 400 and changes nothing (the m2/16 guard)",
+				"axe at the specifics step in dark and light inside the journey (it never applies to an empty profile); a11y.e2e covers the other steps; perf: /onboarding within the guard; access: a cross-site POST to /onboarding?/save gets 403"
+			],
+			"acceptance": [
+				"Onboarding can be completed leaving every 1RM blank, and the profile persists across reload and in Postgres",
+				"The route is classified in ROUTE_ACCESS in this PR and swept by routes.test.ts and access.e2e",
+				"/onboarding/[[step]] \u2264 59 KB initial JS (bare stub 49.1 KB; editors lazy); /profile/security \u2264 60 KB; route CSS \u2264 14 KB",
+				"All gates green, including the WebKit serial run and perf"
+			],
+			"estNonTestLines": 570,
+			"risks": "At the size limit; Step.svelte is half CSS. If it grows, move 'Finish later' and the redirect for steps that do not apply into m2/37. Until m2/36 the flow is reachable only by URL. Continue and Skip work only once hydrated, so use gotoHydrated() after every redirect. Page loads must not call rememberOnboardingStep (a11y and perf visit them concurrently): the resume point is the furthest step advanced."
+		},
+		{
+			"id": "today-setup",
+			"branch": "m2/36-today-setup",
+			"title": "feat(today): a designed \u201cfinish setting up\u201d state until onboarding is complete",
+			"goal": "Today replaces 'Profile setup opens with passkey sign-in \u00b7 Soon' with a setup card: 'n of N' progress, the next step's name, and Continue to the stored resume step. Because Today is the signed-in landing page, this is how the owner gets into onboarding after first sign-in, and the brief's resume-after-reload path. Today gains a server load (a streamed overview that fails soft), so it gets the designed offline state like Profile.",
+			"fromWip": [],
+			"newOrChanged": [
+				"src/routes/(app)/today/+page.server.ts (new: getProfileOverview streamed with .catch(() => null))",
+				"src/routes/(app)/today/+page.svelte (setup card, skeleton while streaming, error state)",
+				"e2e/today.serial.e2e.ts (new)",
+				"e2e/offline.e2e.ts (Today joins Profile as a data screen)",
+				"docs/testing.md"
+			],
+			"tests": [
+				"e2e (serial, Chromium + WebKit): from a reset profile, Today shows 'Set up your training profile' with 0 of N, and Start opens /onboarding. After welcome and goals through the UI, Today says 'Continue: Experience' with 2 of N. Reload: the same. Continue lands on /onboarding/experience with nothing lost. captureScreen 'today-setup'",
+				"offline.e2e: Today offline shows the designed offline state, never a 500, and the other tabs still render",
+				"a11y: Today in the pre-onboarding state, dark and light (functional project, empty profile); perf: /today within the guard"
+			],
+			"acceptance": [
+				"Today has a designed pre-onboarding state with working resume after reload",
+				"/today \u2264 60 KB initial JS (56.2 at base)",
+				"All gates green, including WebKit and perf"
+			],
+			"estNonTestLines": 200,
+			"risks": "The offline behaviour of Today changes: it used to render from the precache. Shell, a11y and perf now see state-dependent content, so both states keep the h1 'Today'. Stream the overview so LCP does not regress. Product decision: first sign-in lands on Today's card, not a forced redirect. If the owner wants a redirect, make /setup's final Continue go to /onboarding in its own PR and update auth.setup.ts."
+		},
+		{
+			"id": "onboarding-save-on-leave",
+			"branch": "m2/37-onboarding-save-on-leave",
+			"title": "feat(onboarding): Back and Finish later save what you changed",
+			"goal": "Save-as-you-go when leaving a step: Back and 'Finish later' save a changed, valid step without marking it done. A half-filled step that cannot be saved still leaves, without flashing errors.",
+			"fromWip": [
+				"src/routes/onboarding/back.ts",
+				"src/routes/onboarding/Step.svelte (onback)",
+				"src/routes/profile-forms.server.ts (the then=back branch)"
+			],
+			"newOrChanged": [
+				"then=back uses the domain's previousStep() (the WIP used indexOf, and \u22121 fell back to welcome)",
+				"An invalid half-filled step leaves without showing or focusing errors (the WIP showed and focused them, then navigated anyway)",
+				"'Finish later' takes the same save-then-leave path",
+				"e2e/onboarding.serial.e2e.ts (cases)",
+				"tests/integration/profile/form-actions.test.ts (then=back case)"
+			],
+			"tests": [
+				"e2e: change the experience level and tap Back \u2192 goals; return \u2192 the level is kept and 'experience' is not in onboarding_completed. An invalid half-filled step: Back still goes back, saves nothing and shows no error flash. 'Finish later' on a changed, valid step \u2192 Today, and the change is saved",
+				"Integration: then=back from a step that no longer applies goes to the domain's previous step"
+			],
+			"acceptance": [
+				"Back and Finish later never lose a valid edit and never block on an invalid one",
+				"All gates green, including WebKit"
+			],
+			"estNonTestLines": 60,
+			"risks": "Low. Saving re-runs the full schema, so a partial step that cannot validate is dropped by design. Say so in the PR."
+		},
+		{
+			"id": "onboarding-resume",
+			"branch": "m2/38-onboarding-resume",
+			"title": "feat(onboarding): pick up where you left off, from /onboarding and from Profile",
+			"goal": "The welcome step shows 'What we\u2019ll ask' on a first visit. On a return it shows 'You stopped at <step>' with a link there. Profile's Training profile section gets a 'Continue setting up' row while onboarding is incomplete.",
+			"fromWip": [
+				"src/routes/onboarding/+page.svelte (resume card and 'What we\u2019ll ask' list)",
+				"src/routes/onboarding/+layout.server.ts (started, resume)"
+			],
+			"newOrChanged": [
+				"src/routes/onboarding/[[step]]/+page.svelte (welcome intro and resume card)",
+				"src/routes/(app)/profile/+page.server.ts (onboarding state streamed with .catch(() => null), so Profile still renders when the DB is down)",
+				"src/routes/(app)/profile/+page.svelte ('Continue setting up' row)",
+				"e2e/onboarding.serial.e2e.ts (resume case)"
+			],
+			"tests": [
+				"e2e (brief acceptance): stop at schedule, close the browser context, open a new one at /onboarding \u2192 'You stopped at Schedule' \u2192 'Pick up there' opens schedule with the earlier answers. Profile's 'Continue setting up' row links to the same step. A first visit shows the three 'What we\u2019ll ask' rows. axe in both themes; captureScreen 'onboarding-resume'"
+			],
+			"acceptance": [
+				"A half-finished onboarding resumes after a reload or a closed context, from /onboarding and from Profile as well as Today",
+				"/profile \u2264 59 KB",
+				"All gates green, including WebKit"
+			],
+			"estNonTestLines": 150,
+			"risks": "Low. The Profile load must keep failing soft, and offline.e2e's Profile expectations must still hold."
+		},
+		{
+			"id": "onboarding-review",
+			"branch": "m2/39-onboarding-review",
+			"title": "feat(onboarding): review every answer before starting",
+			"goal": "The review step shows the whole profile at a glance, one block per step: goals by rank, experience, baselines with Measured/Estimated badges ('Week one' when blank), specifics, equipment, injuries, preferences, schedule and body. 'Not told yet' is shown plainly. Each block's Edit returns to review after saving, and completion errors (no goal, no schedule) appear on the block they belong to.",
+			"fromWip": [
+				"src/routes/onboarding/review/ProfileSummary.svelte (\u2192 src/lib/ui/profile/ProfileSummary.svelte, loaded lazily through the registry)",
+				"src/routes/onboarding/review/+page.server.ts (getTrainingProfile, folded into the step dispatch)",
+				"Summary helpers already moved into the section modules (goalSummary, baselineSummary, trim, scheduleSummary, commitmentSummary, injuryTitle, phaseLabel, shortIsoDate)"
+			],
+			"newOrChanged": [
+				"Edit from review carries then=review, so Continue returns to review instead of walking every later step",
+				"Lift names come from liftName/LIFT_LABEL (the WIP printed raw keys such as 'weighted pull up'); discipline dots are aria-hidden",
+				"e2e/onboarding.serial.e2e.ts (review cases)"
+			],
+			"tests": [
+				"e2e: review lists every applicable block with the saved answers and 'Week one' for blank baselines. Edit on Schedule \u2192 change \u2192 Continue returns to review, not to body. With the schedule removed in SQL, 'Start coaching' shows the schedule block's alert and does not complete. axe in both themes; captureScreen 'onboarding-review'"
+			],
+			"acceptance": [
+				"The review is complete and accurate, and editing from it does not restart the flow",
+				"/onboarding/[[step]] stays \u2264 59 KB initial JS (ProfileSummary lazy) and route CSS \u2264 14 KB",
+				"All gates green, including WebKit"
+			],
+			"estNonTestLines": 420,
+			"risks": "ProfileSummary is about 370 lines, a third of it CSS. Keep it out of the step frame's static graph and check its chunk CSS."
+		},
+		{
+			"id": "today-summary",
+			"branch": "m2/40-today-summary",
+			"title": "feat(today): goals by priority and the shape of the week once set up",
+			"goal": "After onboarding, Today summarises the ranked goals (#1 'Top priority', weeks to each event, disciplines) and the week: days per week, session length, available days, and commitments such as Muay Thai on Tue/Thu. There is no programming until M3.",
+			"fromWip": [
+				"src/lib/ui/profile/forms.ts (weeksUntil, computed after hydration with the device's date like Today's eyebrow; disciplineNames, for the goal chips)"
+			],
+			"newOrChanged": [
+				"src/routes/(app)/today/+page.svelte (ready state)",
+				"weeksUntil and disciplineNames in src/lib/ui/profile/goals.ts, with unit tests",
+				"e2e/today.serial.e2e.ts (post-onboarding cases)"
+			],
+			"tests": [
+				"Unit: weeksUntil (a past date \u2192 null, rounds down, month and year boundaries); disciplineNames (custom label)",
+				"e2e (serial): onboarding completed by seeding through profileAction(), then Today lists goals in rank order with 'Top priority' and 'N weeks to go', '4 days a week \u00b7 60 min', and the Tue/Thu class marked on the week strip. Reordering in Profile changes Today's order. axe in both themes; captureScreen 'today-ready'; perf: /today within the guard"
+			],
+			"acceptance": [
+				"Today has a designed post-onboarding state with goals, priorities and schedule",
+				"/today \u2264 60 KB initial JS",
+				"All gates green, including WebKit and perf"
+			],
+			"estNonTestLines": 250,
+			"risks": "Combined with m2/36, /today grows about 3\u20134 KB, so reuse existing primitives and import no catalogue tables beyond the labels shown. Text that appears only after hydration must have reserved space (no CLS)."
+		},
+		{
+			"id": "docs-profile",
+			"branch": "m2/41-docs-profile",
+			"title": "docs: training-profile data model, the save path, onboarding and M2 status",
+			"goal": "Do the brief's docs step. architecture.md documents the training-profile data model: the 14 tables, ranked goals with event history, measured vs estimated baselines, body-weight history and onboarding progress. It also documents the services and shared schemas, the save path (on-demand client validation \u2192 JSON form action \u2192 service), and the single dynamic route each for Profile editing and onboarding with the lazy section registry, including the measured budget reasons. milestones.md and README record M2's status.",
+			"fromWip": [],
+			"newOrChanged": [
+				"docs/architecture.md (replace the stale line saying the profile lands in M3)",
+				"docs/milestones.md (M2 onboarding, Profile and Today done; production cutover named as the separate next PR)",
+				"README.md (status)"
+			],
+			"tests": ["No code: Prettier (lint) and the full CI gate stay green, and doc links resolve"],
+			"acceptance": [
+				"The data model and flow descriptions match migration 0004, the services and the routes as merged",
+				"The M2 status is accurate, and nothing in this PR touches the production cutover"
+			],
+			"estNonTestLines": 150,
+			"risks": "Write it from the merged code so it does not drift. testing.md and design-system.md were already kept current slice by slice."
+		}
+	],
+	"coverage": [
+		"Brief acceptance 4, goals: event, general and several concurrent goals with explicit priority ranking. m2/22 (event goals, ranked list, edit), m2/23 (general goals; the three ways in, including 'several at once'), m2/25 (reorder with up/down), m2/26 (drag, optional because 'drag or up/down' is already met), m2/24 (status, past goals, delete). Onboarding reuses all of it in m2/35",
+		"Brief acceptance 4, experience per discipline: m2/27 on Profile; the experience step in m2/35",
+		"Brief acceptance 4, optional 1RMs with measured vs estimated (date and source) and the 'I don\u2019t know my 1RM' week-one explainer: m2/28; blank optional dates in m2/15; m2/35's journey leaves every 1RM blank",
+		"Brief acceptance 4, running and Muay Thai specifics only when relevant: m2/29 (Profile, with an empty state); m2/35 (the step appears only with running or Muay Thai, and otherwise redirects)",
+		"Brief acceptance 4, the remaining sections: equipment m2/21, injuries and limitations m2/30, exercise likes and dislikes m2/31, schedule with commitments per discipline m2/32, body weight history with nutrition phase and target m2/33, name and units m2/34",
+		"Brief acceptance 4, everything editable later from Profile: m2/21 (the dynamic edit route and section list), then one section per slice in m2/22\u2013m2/34",
+		"Brief acceptance 5, complete onboarding leaving every 1RM blank, persisting across reload and in Postgres: m2/35 (Chromium and WebKit journey with DB assertions)",
+		"Brief acceptance 5, resume a half-finished onboarding after reload: m2/36 (Today's Continue goes to the stored step after reload) and m2/38 (/onboarding 'You stopped at\u2026' after closing the context, plus the Profile row)",
+		"Brief acceptance 5, editing a goal and reordering priorities from Profile persists: m2/22 (edit, checked after reload and in Postgres) and m2/25 (reorder, checked after reload and in Postgres)",
+		"Brief acceptance 6, integration round-trips with validation errors: already met by m2/11 (tests/integration/profile/{profile,goals,sections}.test.ts). Extended by m2/15 (blank dates), m2/16 (required steps cannot be skipped) and m2/20 (service errors become field errors through the action layer)",
+		"Brief acceptance 7, screenshots of every onboarding step, Profile and Today before and after onboarding: captureScreen in m2/21\u2013m2/34 (each Profile section and the goal sheet), m2/35 (every onboarding step), m2/38 (resume), m2/39 (review), m2/36 (Today before), m2/40 (Today after)",
+		"Brief acceptance 7, designed empty, loading and error states. Empty: goals' three ways in (m2/22, m2/23), injuries (m2/30), specifics (m2/29). Loading: the Skeleton for a lazy editor and the Save/Continue loading state (m2/21, m2/35), the streaming skeleton on Today (m2/36). Error: the offline save notice and the failed-editor Retry (m2/21), offline Continue (m2/35), Today offline (m2/36), and announced field errors in every section",
+		"Brief acceptance 7 and step 2, axe zero WCAG A/AA violations in dark and light on every new screen: /design \u2192 Inputs (m2/17, m2/18, m2/19, and m2/32 for the stepper error); every Profile section and the goal sheet in both modes (m2/21\u2013m2/34); every onboarding step (a11y.e2e in m2/35, plus the specifics step inside the journey); resume (m2/38), review (m2/39), Today before (m2/36) and after (m2/40)",
+		"Brief acceptance 2, deny by default with route enumeration: '/(app)/profile/[section]' (m2/21) and '/onboarding/[[step]]' (m2/35) are classified in ROUTE_ACCESS in the PR that adds them; routes.test.ts and access.e2e.ts sweep them automatically",
+		"Brief acceptance 3, cross-site state-changing requests rejected for form actions: m2/20 (same-origin JSON posts through SvelteKit's action pipeline); m2/21 and m2/35 (access.e2e: a cross-site POST to a section or step action returns 403 and changes nothing)",
+		"Brief acceptance 10, every gate including budgets and the perf project: m2/13 (accurate accounting, verified green on 5abf1b4); m2/20 (guard keeping zod out of initial JS); m2/21 and m2/35 (dynamic routes without matchers plus lazy editors, chosen from measured builds); perf entries in m2/21, m2/32, m2/35, m2/36 and m2/40; every slice pastes its budgets rows, including /profile/security",
+		"Brief step 2 UI, the flow mechanics: progress indicator, back and forward, skippable optional steps and thumb-zone actions in m2/35; save-as-you-go in m2/35 (Continue saves) and m2/37 (Back and Finish later save); resume in m2/36 and m2/38; review and confirm in m2/35 (minimal) and m2/39 (full, with Edit returning to review)",
+		"Brief step 2 UI, inputs: NumberStepper and keyboard-appropriate numeric inputs in m2/17 (NumberField keypads), m2/29 (durations typeable on the iPhone keypad) and m2/32 (NumberStepper with an error state); 44 px+ targets asserted in m2/18, m2/19 and m2/25 (reorder buttons that no longer overlap); one-handed thumb-zone actions in m2/21 and m2/35",
+		"Brief step 2: Profile keeps Security and device preferences. They stay untouched; m2/21's e2e checks they are still there, and m2/34 records the coach-units vs device-units decision",
+		"Brief step 2: Today shows a 'finish setting up' state (m2/36), then a summary of goals, priorities and schedule (m2/40)",
+		"Brief step 2: onboarding after first sign-in when the profile is incomplete. In m2/36, Today (the signed-in landing page) leads into /onboarding; a forced redirect from /setup is flagged as a separate owner decision",
+		"Brief step 2: lazy-load heavy step components with no layout shift. m2/21 and m2/35 use the editor registry with a height-reserving Skeleton; m2/22 code-splits GoalSheet; m2/39 loads ProfileSummary lazily",
+		"Brief step 2: docs. The data model and milestone status land in m2/41; docs/testing.md and docs/design-system.md are updated in each slice that adds specs or primitives",
+		"Out of scope here: passkey auth and sessions (acceptance 1, already in PRs #2\u2013#9); sign-out clearing (acceptance 8; onboarding stores nothing on the device); the production cutover (acceptance 9, a separate later PR)"
+	]
+}
