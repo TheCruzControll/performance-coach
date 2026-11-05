@@ -5,7 +5,8 @@
   opener. Drag the handle/header down to dismiss (distance or velocity threshold).
 -->
 <script lang="ts">
-	import type { Snippet } from 'svelte';
+	import { onDestroy, type Snippet } from 'svelte';
+	import { lockScroll } from '../scroll-lock.ts';
 	import IconButton from './IconButton.svelte';
 
 	interface Props {
@@ -38,10 +39,19 @@
 	let dragY = $state(0);
 	let dragging = $state(false);
 	let opener: HTMLElement | null = null;
+	let releaseScroll: (() => void) | null = null;
 
 	$effect(() => {
 		if (open) show();
 		else void hide();
+	});
+
+	// Teardown while open (e.g. navigating Back with the sheet up): hide() never runs, so
+	// release the page scroll lock and close the dialog here.
+	onDestroy(() => {
+		releaseScroll?.();
+		releaseScroll = null;
+		if (dialog?.open) dialog.close();
 	});
 
 	function show() {
@@ -52,7 +62,7 @@
 		dialog.showModal();
 		// Start focus on the sheet itself (announced via aria-labelledby), not the close button.
 		sheet?.focus({ preventScroll: true });
-		document.documentElement.style.overflow = 'hidden';
+		releaseScroll ??= lockScroll();
 		requestAnimationFrame(() => (visible = true));
 	}
 
@@ -62,7 +72,8 @@
 		await transitionDone();
 		dialog.close();
 		mounted = false;
-		document.documentElement.style.overflow = '';
+		releaseScroll?.();
+		releaseScroll = null;
 		dragY = 0;
 		if (opener?.isConnected) opener.focus({ preventScroll: true });
 	}

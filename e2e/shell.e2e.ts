@@ -137,6 +137,37 @@ test.describe('app shell on an iPhone viewport', () => {
 		await expect(units.getByRole('radio', { name: 'kg' })).toHaveAttribute('aria-checked', 'true');
 	});
 
+	test('leaving a screen while a sheet is open releases the page scroll lock', async ({ page }) => {
+		const overflow = () => page.evaluate(() => document.documentElement.style.overflow);
+
+		// Arrive with the sheet opening by itself (Today's shortcut), then go Back.
+		await page.goto('/today');
+		await page.locator('a[href="/train?tool=plates"]').click();
+		const sheet = page.getByRole('dialog', { name: 'Plate calculator' });
+		await expect(sheet).toBeVisible();
+		expect(await overflow()).toBe('hidden');
+		await page.goBack();
+		await expect(page).toHaveURL(/\/today$/);
+		await expect(page.getByRole('heading', { level: 1, name: 'Today' })).toBeVisible();
+		expect(await overflow()).toBe('');
+
+		// Same with the sheet opened by hand after a client-side tab change.
+		await page.evaluate(() => Object.assign(window, { __sameDocument: true }));
+		await page
+			.getByRole('navigation', { name: 'Primary' })
+			.getByRole('link', { name: 'Train' })
+			.click();
+		await expect(page.getByRole('heading', { level: 1, name: 'Train' })).toBeVisible();
+		await page.getByTestId('open-plates').click();
+		await expect(sheet).toBeVisible();
+		expect(await overflow()).toBe('hidden');
+		await page.goBack();
+		await expect(page.getByRole('heading', { level: 1, name: 'Today' })).toBeVisible();
+		expect(await overflow()).toBe('');
+		// Still the same document: these were client-side navigations, not reloads.
+		expect(await page.evaluate(() => '__sameDocument' in window)).toBe(true);
+	});
+
 	test('the theme preference applies before first paint and persists', async ({ page }) => {
 		const errors = trackConsoleErrors(page);
 		await page.goto('/profile');
