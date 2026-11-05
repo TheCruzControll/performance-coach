@@ -1,26 +1,19 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, type Component, type ComponentProps } from 'svelte';
 	import { replaceState } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { preferences } from '#lib/client/preferences.svelte.ts';
-	import { calculatePlates, STANDARD_BARS, STANDARD_PLATES } from '#lib/domain/plates.ts';
-	import {
-		cleanFloat,
-		convertWeight,
-		DEFAULT_LOAD_INCREMENT,
-		roundToIncrement,
-		type WeightUnit
-	} from '#lib/domain/units.ts';
 	import BottomSheet from '#lib/ui/components/BottomSheet.svelte';
 	import Button from '#lib/ui/components/Button.svelte';
 	import EmptyState from '#lib/ui/components/EmptyState.svelte';
 	import Icon from '#lib/ui/components/Icon.svelte';
-	import NumberStepper from '#lib/ui/components/NumberStepper.svelte';
 	import PageHeader from '#lib/ui/components/PageHeader.svelte';
-	import SegmentedControl from '#lib/ui/components/SegmentedControl.svelte';
+	import Skeleton from '#lib/ui/components/Skeleton.svelte';
 	import Surface from '#lib/ui/components/Surface.svelte';
-	import PlateDiagram from '#lib/ui/components/training/PlateDiagram.svelte';
+	import type PlateCalculatorType from '#lib/ui/components/training/PlateCalculator.svelte';
+
+	type CalculatorProps = ComponentProps<typeof PlateCalculatorType>;
 
 	const disciplines = [
 		{ label: 'Strength', color: 'var(--color-strength)' },
@@ -30,32 +23,23 @@
 		{ label: 'Conditioning', color: 'var(--color-conditioning)' }
 	];
 
-	// ---- Plate calculator ---------------------------------------------------------------
+	// The calculator is code-split: fetched on first intent (pointerdown/hover) or open, so the
+	// Train screen ships and hydrates without it.
+	let calculator = $state<Promise<{ default: Component<CalculatorProps> }> | null>(null);
 	let sheetOpen = $state(false);
-	let target = $state(100);
-	let barWeight = $state('20');
 
-	const unit = $derived(preferences.units);
-	const bars = $derived(STANDARD_BARS[unit]);
-	const result = $derived(calculatePlates(target, Number(barWeight), STANDARD_PLATES[unit]));
+	function loadCalculator() {
+		calculator ??= import('#lib/ui/components/training/PlateCalculator.svelte');
+	}
 
-	function changeUnit(next: WeightUnit) {
-		if (next === unit) return;
-		target = roundToIncrement(convertWeight(target, unit, next), DEFAULT_LOAD_INCREMENT[next]);
-		const index = STANDARD_BARS[unit].findIndex((b) => String(b.weight) === barWeight);
-		barWeight = String(
-			STANDARD_BARS[next][Math.max(0, index)]?.weight ?? STANDARD_BARS[next][0]!.weight
-		);
-		preferences.setUnits(next);
+	function openCalculator() {
+		loadCalculator();
+		sheetOpen = true;
 	}
 
 	onMount(() => {
 		preferences.load();
-		if (preferences.units === 'lb') {
-			target = 225;
-			barWeight = '45';
-		}
-		if (page.url.searchParams.get('tool') === 'plates') sheetOpen = true;
+		if (page.url.searchParams.get('tool') === 'plates') openCalculator();
 	});
 
 	function closeSheet() {
@@ -97,7 +81,14 @@
 
 	<section aria-labelledby="tools-heading" class="tools">
 		<h2 id="tools-heading" class="section-title">Tools</h2>
-		<button type="button" class="tool" onclick={() => (sheetOpen = true)} data-testid="open-plates">
+		<button
+			type="button"
+			class="tool"
+			onpointerdown={loadCalculator}
+			onpointerenter={loadCalculator}
+			onclick={openCalculator}
+			data-testid="open-plates"
+		>
 			<span class="tool-icon" style:--tone="var(--color-strength)"
 				><Icon name="plate" size={22} /></span
 			>
@@ -127,55 +118,17 @@
 	onclose={closeSheet}
 	data-testid="plates-sheet"
 >
-	<div class="calc">
-		<SegmentedControl
-			label="Units"
-			value={unit}
-			options={[
-				{ value: 'kg', label: 'Kilograms' },
-				{ value: 'lb', label: 'Pounds' }
-			]}
-			onchange={changeUnit}
-		/>
-
-		<NumberStepper
-			bind:value={target}
-			label="Target weight"
-			{unit}
-			min={0}
-			max={unit === 'kg' ? 500 : 1100}
-			step={DEFAULT_LOAD_INCREMENT[unit]}
-			bigStep={unit === 'kg' ? 10 : 25}
-			data-testid="plates-target"
-		/>
-
-		<SegmentedControl
-			label="Bar"
-			size="sm"
-			bind:value={barWeight}
-			options={bars.map((b) => ({ value: String(b.weight), label: `${b.weight} ${unit} bar` }))}
-		/>
-
-		<div class="result" aria-live="polite">
-			<PlateDiagram plates={result.perSide} {unit} />
-			{#if result.perSide.length}
-				<p class="per-side numeric" data-testid="plates-result">
-					{result.perSide.join(' · ')}
-					<span class="per-side-unit">{unit} per side</span>
-				</p>
-			{:else}
-				<p class="per-side muted">Just the bar</p>
-			{/if}
-			{#if !result.exact && result.remainder > 0}
-				<p class="warning">
-					<Icon name="info" size={16} />
-					Closest loadable is {result.achieved}
-					{unit} — {cleanFloat(result.remainder, 2)}
-					{unit} short.
-				</p>
-			{/if}
-		</div>
-	</div>
+	{#if calculator}
+		{#await calculator}
+			<div class="loading" aria-busy="true">
+				<Skeleton height="2.75rem" radius="var(--radius-full)" />
+				<Skeleton height="5rem" radius="var(--radius-lg)" />
+				<Skeleton height="10rem" radius="var(--radius-lg)" />
+			</div>
+		{:then { default: PlateCalculator }}
+			<PlateCalculator unit={preferences.units} onunitchange={(u) => preferences.setUnits(u)} />
+		{/await}
+	{/if}
 </BottomSheet>
 
 <style>
@@ -289,45 +242,8 @@
 		background: var(--color-surface-2);
 	}
 
-	.calc {
+	.loading {
 		display: grid;
 		gap: var(--space-5);
-	}
-
-	.result {
-		display: grid;
-		gap: var(--space-2);
-		padding: var(--space-3) var(--space-3) var(--space-4);
-		border-radius: var(--radius-lg);
-		background: var(--color-surface-2);
-		border: 1px solid var(--color-border);
-	}
-
-	.per-side {
-		text-align: center;
-		font-size: var(--text-2xl);
-		font-weight: var(--weight-bold);
-	}
-
-	.per-side-unit {
-		display: block;
-		font-family: var(--font-sans);
-		font-size: var(--text-xs);
-		font-weight: var(--weight-medium);
-		color: var(--color-text-tertiary);
-		letter-spacing: var(--tracking-normal);
-	}
-
-	.muted {
-		color: var(--color-text-tertiary);
-	}
-
-	.warning {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		gap: var(--space-1-5);
-		font-size: var(--text-sm);
-		color: var(--color-warning);
 	}
 </style>

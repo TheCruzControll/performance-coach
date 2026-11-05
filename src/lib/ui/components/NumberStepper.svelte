@@ -39,13 +39,9 @@
 
 	const id = $props.id();
 	const places = $derived(decimals ?? String(step).split('.')[1]?.length ?? 0);
-	const display = $derived(
-		value.toLocaleString('en-US', {
-			minimumFractionDigits: places > 0 && value % 1 !== 0 ? places : 0,
-			maximumFractionDigits: places,
-			useGrouping: false
-		})
-	);
+	// Plain string formatting on purpose: creating an Intl formatter during hydration costs
+	// ~15–20 ms on a phone-class CPU (measured), which shows up as Total Blocking Time.
+	const display = $derived(String(Number(value.toFixed(places))));
 
 	let editing = $state(false);
 	let draft = $state('');

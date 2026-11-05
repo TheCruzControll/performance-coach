@@ -31,7 +31,8 @@
 	}
 
 	function formatVital(name: string, value: number) {
-		return name === 'CLS' ? value.toFixed(3) : `${Math.round(value).toLocaleString('en-US')}`;
+		// No Intl here: formatter construction is measurable hydration cost on phones.
+		return name === 'CLS' ? value.toFixed(3) : String(Math.round(value));
 	}
 </script>
 

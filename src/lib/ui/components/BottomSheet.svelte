@@ -32,6 +32,9 @@
 	let dialog: HTMLDialogElement | undefined = $state();
 	let sheet: HTMLDivElement | undefined = $state();
 	let visible = $state(false);
+	// Content is mounted only while the sheet is open (or animating out): a closed sheet
+	// costs nothing at hydration.
+	let mounted = $state(false);
 	let dragY = $state(0);
 	let dragging = $state(false);
 	let opener: HTMLElement | null = null;
@@ -45,6 +48,7 @@
 		if (!dialog || dialog.open) return;
 		opener = document.activeElement as HTMLElement | null;
 		dragY = 0;
+		mounted = true;
 		dialog.showModal();
 		// Start focus on the sheet itself (announced via aria-labelledby), not the close button.
 		sheet?.focus({ preventScroll: true });
@@ -57,6 +61,7 @@
 		visible = false;
 		await transitionDone();
 		dialog.close();
+		mounted = false;
 		document.documentElement.style.overflow = '';
 		dragY = 0;
 		if (opener?.isConnected) opener.focus({ preventScroll: true });
@@ -149,9 +154,9 @@
 			</header>
 		</div>
 		<div class="body">
-			{@render children()}
+			{#if mounted}{@render children()}{/if}
 		</div>
-		{#if footer}
+		{#if footer && mounted}
 			<footer class="footer">{@render footer()}</footer>
 		{/if}
 	</div>
