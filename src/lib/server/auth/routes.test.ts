@@ -33,8 +33,14 @@ describe('route access policy', () => {
 
 	it('classifies every route under src/routes, and nothing that does not exist', () => {
 		const classified = Object.keys(ROUTE_ACCESS).sort();
-		expect(ids.filter((id) => !classified.includes(id)), 'unclassified routes').toEqual([]);
-		expect(classified.filter((id) => !ids.includes(id)), 'stale entries').toEqual([]);
+		expect(
+			ids.filter((id) => !classified.includes(id)),
+			'unclassified routes'
+		).toEqual([]);
+		expect(
+			classified.filter((id) => !ids.includes(id)),
+			'stale entries'
+		).toEqual([]);
 	});
 
 	it('keeps the public surface to the documented allow-list', () => {

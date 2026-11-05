@@ -193,7 +193,8 @@ export const AUTH_EVENT_TYPES = [
 	'session.revoked',
 	'session.revoked_others',
 	'signout',
-	'rate_limited'
+	'rate_limited',
+	'owner.reset'
 ] as const;
 export type AuthEventType = (typeof AUTH_EVENT_TYPES)[number];
 

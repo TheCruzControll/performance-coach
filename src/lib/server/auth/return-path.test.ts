@@ -29,7 +29,14 @@ describe('safe return path', () => {
 	});
 
 	it('never returns into the auth flow or an endpoint', () => {
-		for (const path of ['/', '/setup?token=x', '/recover', '/recover/passkey', '/api/vitals', '/today/__data.json']) {
+		for (const path of [
+			'/',
+			'/setup?token=x',
+			'/recover',
+			'/recover/passkey',
+			'/api/vitals',
+			'/today/__data.json'
+		]) {
 			expect(safeReturnPath(path), path).toBe(DEFAULT_RETURN_PATH);
 		}
 	});

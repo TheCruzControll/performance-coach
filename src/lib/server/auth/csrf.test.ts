@@ -8,7 +8,9 @@ const req = (method: string, headers: Record<string, string> = {}) =>
 describe('CSRF origin check', () => {
 	it('lets safe methods through untouched', () => {
 		for (const method of ['GET', 'HEAD', 'OPTIONS']) {
-			expect(checkOrigin(req(method, { origin: 'https://evil.example' }), APP)).toEqual({ ok: true });
+			expect(checkOrigin(req(method, { origin: 'https://evil.example' }), APP)).toEqual({
+				ok: true
+			});
 		}
 	});
 
@@ -35,9 +37,9 @@ describe('CSRF origin check', () => {
 	});
 
 	it('refuses a matching Origin when Fetch Metadata says the request is cross-site', () => {
-		expect(
-			checkOrigin(req('POST', { origin: APP, 'sec-fetch-site': 'cross-site' }), APP).ok
-		).toBe(false);
+		expect(checkOrigin(req('POST', { origin: APP, 'sec-fetch-site': 'cross-site' }), APP).ok).toBe(
+			false
+		);
 		expect(checkOrigin(req('POST', { origin: APP, 'sec-fetch-site': 'same-site' }), APP).ok).toBe(
 			false
 		);

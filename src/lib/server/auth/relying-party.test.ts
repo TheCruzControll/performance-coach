@@ -103,7 +103,11 @@ describe('relying party: preview', () => {
 describe('relying party: development and test', () => {
 	it('is localhost on any port and scheme', () => {
 		for (const appEnv of ['development', 'test'] as const) {
-			for (const origin of ['http://localhost:5173', 'http://localhost:4173', 'https://localhost']) {
+			for (const origin of [
+				'http://localhost:5173',
+				'http://localhost:4173',
+				'https://localhost'
+			]) {
 				expect(relyingPartyFor({ appEnv }, url(`${origin}/x`))).toEqual({
 					ok: true,
 					rpID: 'localhost',

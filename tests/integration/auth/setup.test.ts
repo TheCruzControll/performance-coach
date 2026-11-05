@@ -10,6 +10,9 @@ import {
 } from '../../../src/lib/server/auth/setup';
 import { hashRecoveryCode } from '../../../src/lib/server/auth/recovery-codes';
 import { hashToken } from '../../../src/lib/server/auth/tokens';
+import { resetOwnerAuth } from '../../../scripts/auth-reset-owner';
+import { validateSessionToken } from '../../../src/lib/server/auth/sessions';
+import type { Executor } from '../../../src/lib/server/db';
 import { withRollback } from '../helpers';
 import { ORIGIN, request, RP, SETUP_CONFIG, SETUP_TOKEN, setUpOwner } from './fixtures';
 import { SoftAuthenticator } from './soft-authenticator';
@@ -144,6 +147,34 @@ describe('first-run setup', () => {
 			await expect(
 				completeSetup({ token: SETUP_TOKEN, response }, undefined, request(), deps(tx))
 			).rejects.toMatchObject({ code: 'setup_unavailable' });
+		});
+	});
+
+	it('reopens after `pnpm auth:reset-owner`, keeping the owner (and their data)', async () => {
+		await withRollback(async (tx) => {
+			const first = await setUpOwner(tx);
+			// The transaction's own connection: the script's statements join this rolled-back test.
+			const client = (tx as Executor & { session: { client: import('pg').PoolClient } }).session
+				.client;
+			const summary = await resetOwnerAuth(client, { transaction: false });
+			expect(summary).toEqual({
+				ownerName: 'Niko Cruz',
+				passkeys: 1,
+				sessions: 1,
+				recoveryCodes: 10
+			});
+
+			expect(await validateSessionToken(first.token, { db: tx })).toBeNull();
+			expect(await setupOpen({ db: tx })).toBe(true);
+			const [reset] = await createAuthRepository(tx).recentEvents(1);
+			expect(reset).toMatchObject({ type: 'owner.reset', ownerId: first.ownerId });
+
+			// Setup runs again and re-attaches the same owner with a new passkey and new codes.
+			const second = await setUpOwner(tx, { name: 'Niko' });
+			expect(second.ownerId).toBe(first.ownerId);
+			expect(await createAuthRepository(tx).listPasskeys(first.ownerId)).toHaveLength(1);
+			expect(second.recoveryCodes.some((c) => first.recoveryCodes.includes(c))).toBe(false);
+			expect(await setupOpen({ db: tx })).toBe(false);
 		});
 	});
 });
