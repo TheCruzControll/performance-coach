@@ -1,17 +1,22 @@
 /**
  * Playwright global setup:
  *   1. recreate the disposable e2e database and apply all committed migrations,
- *   2. build the app with the Node adapter (skip with E2E_SKIP_BUILD=1 when CI already built),
- *   3. start the production server (`node build/index.js`) and wait until /api/health is up.
+ *   2. mint this run's one-time owner setup token (the server gets only its hash, as in
+ *      production; the `setup` project opens /setup?token=… with it),
+ *   3. build the app with the Node adapter (skip with E2E_SKIP_BUILD=1 when CI already built),
+ *   4. start the production server (`node build/index.js`) and wait until /api/health is up.
  * Returns a teardown that stops the server. Server output goes to .e2e-server.log.
  */
 import { execSync, spawn } from 'node:child_process';
 import { once } from 'node:events';
-import { openSync } from 'node:fs';
+import { createHash, randomBytes } from 'node:crypto';
+import { mkdirSync, openSync, rmSync } from 'node:fs';
 import type { FullConfig } from '@playwright/test';
 import { LOCAL_DATABASE_URLS, redactUrl, resetDatabase } from '../src/lib/server/db/migrate';
 
 export const E2E_DATABASE_URL = process.env.E2E_DATABASE_URL || LOCAL_DATABASE_URLS.e2e;
+/** Signed-in browser states written by the setup projects (git-ignored). */
+export const AUTH_DIR = 'e2e/.auth';
 
 async function isUp(url: string): Promise<boolean> {
 	try {
@@ -29,6 +34,13 @@ export default async function globalSetup(config: FullConfig) {
 	await resetDatabase(E2E_DATABASE_URL);
 	console.log(`[e2e] database ready: ${redactUrl(E2E_DATABASE_URL)}`);
 
+	rmSync(AUTH_DIR, { recursive: true, force: true });
+	mkdirSync(AUTH_DIR, { recursive: true });
+	// Workers inherit process.env from here: the setup project reads the token.
+	const setupToken = randomBytes(32).toString('base64url');
+	process.env.E2E_SETUP_TOKEN = setupToken;
+	const setupTokenHash = createHash('sha256').update(setupToken).digest('hex');
+
 	if (process.env.E2E_BASE_URL) return; // testing an externally managed server
 
 	if (await isUp(`${baseURL}/api/health`)) {
@@ -37,7 +49,11 @@ export default async function globalSetup(config: FullConfig) {
 
 	if (process.env.E2E_SKIP_BUILD !== '1') {
 		console.log('[e2e] building (ADAPTER=node)…');
-		execSync('pnpm build:node', { stdio: 'inherit', env: { ...process.env, ADAPTER: 'node' } });
+		// The public origin is baked into a Node build (vite.config.ts → paths.origin).
+		execSync('pnpm build:node', {
+			stdio: 'inherit',
+			env: { ...process.env, ADAPTER: 'node', ORIGIN: baseURL }
+		});
 	}
 
 	const port = new URL(baseURL).port || '80';
@@ -53,6 +69,7 @@ export default async function globalSetup(config: FullConfig) {
 			DATABASE_URL: E2E_DATABASE_URL,
 			DATABASE_URL_UNPOOLED: E2E_DATABASE_URL,
 			ENABLE_TEST_ROUTES: 'true',
+			OWNER_SETUP_TOKEN_HASH: setupTokenHash,
 			LOG_LEVEL: process.env.LOG_LEVEL ?? 'info'
 		}
 	});
