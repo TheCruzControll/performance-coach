@@ -16,7 +16,9 @@ database, then unit tests for calculations. Never claim a suite passed without r
 
 Deterministic, no I/O. Current coverage: units (exact kg/lb, km/mi, rounding, pace, durations),
 RPE table and reps in reserve (including a structural consistency check of the chart), e1RM
-(always marked `estimated`), the plate calculator (exact DP incl. limited inventories), and load
+(always marked `estimated`; for fixed weight and reps it rises as RPE falls, a recorded RPE is
+never silently dropped, malformed or sub-6 RPEs give no estimate, and sets past the chart are
+extrapolated from reps to failure at `low` confidence), the plate calculator (exact DP incl. limited inventories), and load
 metrics (volume load, session-RPE, EWMA ACWR). Outside the domain: `parseEnv` (defaults, `appEnv`
 derivation, the production guards incl. `VERCEL_ENV=production`, the API-key requirement) and the
 RUM attribution of each metric to the screen where it happened.

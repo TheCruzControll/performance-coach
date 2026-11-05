@@ -37,7 +37,8 @@ export function repsInReserve(rpe: number): number {
 /**
  * Fraction of 1RM a set of `reps` at `rpe` represents, or null when outside the table
  * (reps 1–12, RPE 6–10 in 0.5 steps). Out-of-range inputs are not extrapolated on purpose:
- * low-rep/low-RPE estimates are unreliable and the coach must not treat them as data.
+ * high-rep and low-RPE (< 6) estimates are unreliable and the coach must not treat them as data
+ * (estimateOneRepMax in e1rm.ts handles a recorded RPE outside the table explicitly).
  */
 export function percentOfOneRepMax(reps: number, rpe: number): number | null {
 	if (!Number.isInteger(reps) || reps < 1 || reps > REPS_MAX || !isValidRpe(rpe)) return null;
