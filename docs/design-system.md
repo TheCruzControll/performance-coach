@@ -160,10 +160,18 @@ Tracking: `--tracking-display -0.032em`, `--tracking-tight -0.016em`, `--trackin
 | `ListRow`           | Tool/destination row: tinted icon tile, title, subtitle, chevron or `trailing` snippet; renders a link (`href`), a button (`onclick`) or a dashed, non-interactive row (`disabled`, for "Soon").                                             |
 | `Section`           | Titled group on a screen ("This week", "Tools"): one heading style and spacing everywhere, `aria-labelledby` wired.                                                                                                                          |
 | `training/*`        | `PlateDiagram` (sleeve picture), `PlateCalculator` (code-split sheet body; its kg/lb switch is local and never changes the app-wide preference).                                                                                             |
+| `TextField`         | Labelled single-line input (label above, never placeholder-as-label), 56 px tall, 16 px text so iOS never zooms, hint and error wired with `aria-describedby`, `mono` variant for codes.                                                     |
+| `Notice`            | Inline state message: `danger` (role `alert`) · `positive` · `warning` · `neutral` (role `status`); tinted, icon + words.                                                                                                                    |
+| `RecoveryCodes`     | One-time display of recovery codes: numbered monospace list (one per row on a phone, two columns when the container allows), copy and download, required acknowledgement checkbox.                                                           |
 
 Screens compose these primitives instead of styling their own tiles, pills, rows or section
 headings, so the same pattern cannot drift between screens (PRD §16). `/design` shows every
 primitive (the Inputs, Data and Feedback groups load when their tab opens).
+
+Auth screens (`/`, `/setup`, `/recover`, `/recover/passkey`) share `src/routes/AuthScreen.svelte`:
+brand row, an editorial display headline, the brand mark as a quiet watermark, and the one action
+panel pinned to the thumb zone. Security (`/profile/security`) uses grouped rows on `Surface`s,
+destructive actions behind a confirming `BottomSheet`, and toasts for outcomes.
 
 ## Accessibility checklist (applies to every new component)
 

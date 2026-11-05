@@ -4,17 +4,17 @@ Source of scope: [`product-requirements.md`](product-requirements.md) (section n
 brackets). Each milestone ships as its own PR to `main` with evidence (PRD §20). "Done" means the
 acceptance criteria were verified by running them — compiling is not done.
 
-| #   | Milestone                       | Status                                                                      |
-| --- | ------------------------------- | --------------------------------------------------------------------------- |
-| M1  | Foundation & infrastructure     | **Implemented — awaiting independent review** (branch `feat/m1-foundation`) |
-| M2  | Auth & profile                  | Planned                                                                     |
-| M3  | Training data model & programs  | Planned                                                                     |
-| M4  | Workout application             | Planned                                                                     |
-| M5  | AI performance coach            | Planned                                                                     |
-| M6  | Analytics & reviews             | Planned                                                                     |
-| M7  | Advanced coaching               | Planned                                                                     |
-| M8  | Performance & design refinement | Planned                                                                     |
-| M9  | Final QA & production release   | Planned                                                                     |
+| #   | Milestone                       | Status                                                                                                               |
+| --- | ------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| M1  | Foundation & infrastructure     | **Implemented — awaiting independent review** (branch `feat/m1-foundation`)                                          |
+| M2  | Auth & profile                  | **In progress** (branch `feat/m2-auth-onboarding`): passkey auth implemented; onboarding and production cutover next |
+| M3  | Training data model & programs  | Planned                                                                                                              |
+| M4  | Workout application             | Planned                                                                                                              |
+| M5  | AI performance coach            | Planned                                                                                                              |
+| M6  | Analytics & reviews             | Planned                                                                                                              |
+| M7  | Advanced coaching               | Planned                                                                                                              |
+| M8  | Performance & design refinement | Planned                                                                                                              |
+| M9  | Final QA & production release   | Planned                                                                                                              |
 
 ---
 
@@ -86,6 +86,18 @@ Acceptance criteria:
    the versioned app shell, and any IndexedDB data once it exists); `/api/vitals` and
    `/api/client-errors` require a session; then, and only then, the same PR removes the
    production guards in `vercel.json` (docs/deployment.md) and adds a post-deploy smoke check.
+
+Progress (auth, verified locally on the branch — not yet in CI):
+
+- Done: passkey setup via one-time token, sign-in (button and conditional UI), recovery codes
+  (forcing a new passkey; regeneration), passkey add/rename/remove (never the last), session
+  list/revoke/sign-out-everywhere-else, deny by default with a route-enumerating test, Origin
+  check on every state-changing request, DB rate limits, audit log, sign-out device clearing,
+  `/api/vitals` and `/api/client-errors` behind a session; docs/security.md with an ASVS
+  self-review; ADR 0006 accepted. Evidence: unit, integration (real Postgres, real
+  SimpleWebAuthn verification) and Playwright with real WebAuthn ceremonies in Chromium.
+- Open in M2: onboarding & training profile; production cutover (removing the `vercel.json`
+  guards, post-deploy smoke check); WebKit results from the first CI run; the real-device check.
 
 ## M3 — Training data model & program management [§2, §5, §9, §11]
 
