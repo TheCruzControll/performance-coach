@@ -128,7 +128,19 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
       - name: Install Playwright browsers
-        run: pnpm exec playwright install --with-deps chromium webkit
+        # Network installs (apt system deps, browser downloads) can hang on a runner: bound each
+        # attempt and retry, so a stuck mirror costs minutes rather than the whole job timeout.
+        timeout-minutes: 14
+        run: |
+          for attempt in 1 2 3; do
+            if timeout 240 pnpm exec playwright install --with-deps chromium webkit; then
+              exit 0
+            fi
+            echo "::warning::playwright install attempt ${attempt} failed or timed out; retrying"
+            sleep 10
+          done
+          echo "::error::playwright install failed 3 times"
+          exit 1
       - name: Create roles and databases
         run: pnpm db:setup
       - name: Playwright (global setup builds and starts the production Node server)
