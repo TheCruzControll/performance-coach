@@ -5,7 +5,7 @@
 	import { page } from '$app/state';
 	import { setErrorContext } from '#lib/client/errors.ts';
 	import { applyTheme, preferences } from '#lib/client/preferences.svelte.ts';
-	import { noteNavigation, startVitalsReporting } from '#lib/client/vitals.ts';
+	import { noteNavigation } from '#lib/client/vitals.ts';
 	import Toaster from '#lib/ui/components/Toaster.svelte';
 	import type { LayoutProps } from './$types';
 
@@ -24,10 +24,7 @@
 		applyTheme(preferences.theme);
 		// iOS Safari only applies :active styles when a touch listener exists.
 		document.addEventListener('touchstart', () => {}, { passive: true });
-		// RUM after the page is interactive; never competes with hydration.
-		const start = () => void startVitalsReporting();
-		if ('requestIdleCallback' in window) requestIdleCallback(start, { timeout: 3000 });
-		else setTimeout(start, 1500);
+		// RUM starts in the signed-in app shell ((app)/+layout.svelte): /api/vitals needs a session.
 	});
 </script>
 
