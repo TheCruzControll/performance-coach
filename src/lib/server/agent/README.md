@@ -37,7 +37,8 @@ agent/
   prompt/            system.ts (frozen), context.ts (turn facts), layout.ts (cache-stable order)
   provider/          types.ts (LlmProvider), validate.ts (the API's rules), mock.ts and
                      mock-scripts/, faults.ts, select.ts, anthropic.ts (the only SDK import)
-  tools/             define.ts, output.ts, execute.ts, registry.ts and one file per tool group
+  tools/             schema.ts, define.ts, context.ts, output.ts, execute.ts, registry.ts and
+                     one file per tool group
   proposals/         draft.ts: structured-output drafts for program, workout and cycle proposals
 ```
 

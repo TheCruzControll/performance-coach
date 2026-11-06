@@ -8,6 +8,8 @@
  *   (absent, 0, 'abc', 1000) is the current week, never an error: WEEK_PARAM below.
  * - The current week is the one that holds today: week 1 before the program starts, and past the
  *   planned weeks the 'first block complete' view (`asked` false, `program.blockComplete`).
+ * - The whole plan, for the plan overview: each block with its weeks, this week, the weeks not
+ *   planned yet and the dated goals the plan leads to (timeline.ts).
  * - With no program, whether the training profile is complete picks the empty state's next step.
  * - It fails soft: a read that fails is recorded as a server error (kind 'load') and Train shows
  *   its designed error with Retry, inside the shell, instead of the 500 page.
@@ -16,7 +18,7 @@ import type { IsoDate } from '#lib/domain/calendar.ts';
 import { daysBetween } from '#lib/domain/calendar.ts';
 import { ownerToday } from '#lib/server/local-date.ts';
 import { recordServerError, type ServerErrorInput } from '#lib/server/services/errors.ts';
-import { getOnboarding } from '#lib/server/services/profile/index.ts';
+import { getOnboarding, listGoals } from '#lib/server/services/profile/index.ts';
 import {
 	getCurrentProgram,
 	getTrainingWeek,
@@ -24,6 +26,7 @@ import {
 	type TrainingWeek
 } from '#lib/server/services/programs/index.ts';
 import type { TrainingDeps } from '#lib/server/services/training/shared.ts';
+import { timelineView, type TimelineBlock } from '#lib/ui/program/timeline.ts';
 import { shortDate, type StripDayView } from '#lib/ui/program/words.ts';
 import {
 	BASELINE_BRIEF,
@@ -67,6 +70,8 @@ export type TrainWeekData =
 			brief: typeof BASELINE_BRIEF | null;
 			/** In place of the week's sessions: first block complete, or not planned yet. */
 			card: StateCard | null;
+			/** The whole plan in words, for the plan overview. */
+			plan: TimelineBlock[];
 	  };
 
 export interface TrainRequest {
@@ -134,7 +139,8 @@ export async function loadTrainWeek(
 				? null
 				: complete
 					? blockCompleteCard(program, shown.phase)
-					: notPlannedCard(number, shown.phase)
+					: notPlannedCard(number, shown.phase),
+			plan: timelineView(program, { today, goals: await listGoals(ownerId, { db }) })
 		};
 	} catch (error) {
 		await recordServerError(
