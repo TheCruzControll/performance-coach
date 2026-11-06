@@ -1,6 +1,7 @@
 /**
- * The text and number input primitives on /design → Inputs (NumberField, TextArea, the date
- * TextField): phone keypads, sanitising, blank-stays-blank, labels, descriptions and errors.
+ * The input primitives on /design → Inputs. NumberField, TextArea and the date TextField: phone
+ * keypads, sanitising, blank-stays-blank, labels, descriptions and errors. ChoiceGroup and
+ * DayPicker: keyboard, value order, selection marks, errors and hit areas.
  * Runs on Chromium and WebKit; axe for the same panel lives in a11y.e2e.ts.
  */
 import { expect, test, type Locator, type Page } from '@playwright/test';
@@ -168,5 +169,268 @@ test.describe('/design → Inputs: text and numbers', () => {
 
 		await raceDay.scrollIntoViewIfNeeded();
 		await captureScreen(page, testInfo, 'design-inputs-dates');
+	});
+});
+
+const WEEK = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
+/** The drawn part (`.tick`, `.mark`) of the option whose input is `control`. */
+function optionPart(control: Locator, part: '.tick' | '.mark') {
+	return control.locator(`xpath=following-sibling::*[1]`).locator(part);
+}
+
+/** A colour token as the browser computes it, to compare with a computed border. */
+function tokenColor(page: Page, token: string) {
+	return page.evaluate((t) => {
+		const probe = document.createElement('span');
+		probe.style.color = `var(${t})`;
+		document.body.append(probe);
+		const color = getComputedStyle(probe).color;
+		probe.remove();
+		return color;
+	}, token);
+}
+
+test.describe('/design → Inputs: choices and days', () => {
+	test('a single ChoiceGroup is named by its legend, is one tab stop and moves with arrow keys', async ({
+		page,
+		browserName
+	}) => {
+		const errors = trackConsoleErrors(page);
+		await openInputs(page);
+		const level = page.getByRole('group', { name: 'Level', exact: true });
+		await expect(level.getByRole('radio')).toHaveCount(3);
+		const novice = level.getByRole('radio', { name: 'Novice' });
+		const intermediate = level.getByRole('radio', { name: 'Intermediate' });
+		const advanced = level.getByRole('radio', { name: 'Advanced' });
+		await expect(intermediate).toBeChecked();
+
+		// Selected is a tick as well as a colour.
+		await expect(optionPart(intermediate, '.tick')).toBeVisible();
+		await expect(optionPart(novice, '.tick')).toBeHidden();
+
+		await intermediate.focus();
+		if (browserName === 'chromium') {
+			// Tab leaves the group and comes back to the selected option, not the first one.
+			// (macOS WebKit tabs only between text fields unless Full Keyboard Access is on.)
+			await page.keyboard.press('Shift+Tab');
+			await expect(level.getByRole('radio').and(page.locator(':focus'))).toHaveCount(0);
+			await page.keyboard.press('Tab');
+			await expect(intermediate).toBeFocused();
+		}
+
+		await page.keyboard.press('ArrowRight');
+		await expect(advanced).toBeFocused();
+		await expect(advanced).toBeChecked();
+		await page.keyboard.press('ArrowLeft');
+		await page.keyboard.press('ArrowLeft');
+		await expect(novice).toBeChecked();
+		await expect(level.getByRole('radio', { checked: true })).toHaveCount(1);
+		await expect(optionPart(novice, '.tick')).toBeVisible();
+		await expect(optionPart(intermediate, '.tick')).toBeHidden();
+
+		// An optional single choice is an explicit "Any" that the caller stores as null.
+		const time = page.getByRole('group', { name: 'Best time to train' });
+		await expect(time).toHaveAccessibleDescription('Any leaves it to the coach.');
+		await expect(time.getByRole('radio', { name: 'Any' })).toBeChecked();
+		await expect(page.getByTestId('time-value')).toHaveText('value: null');
+		await time.getByRole('radio', { name: 'Morning' }).check();
+		await expect(page.getByTestId('time-value')).toHaveText('value: "morning"');
+		await time.getByRole('radio', { name: 'Any' }).check();
+		await expect(page.getByTestId('time-value')).toHaveText('value: null');
+		expect(errors).toEqual([]);
+	});
+
+	test("a multiple ChoiceGroup keeps the options' order whatever order they are tapped in", async ({
+		page,
+		browserName
+	}) => {
+		await openInputs(page);
+		const group = page.getByRole('group', { name: 'Disciplines' });
+		await expect(group).toHaveAccessibleDescription('Pick any that apply.');
+		const value = page.getByTestId('disciplines-value');
+		await expect(value).toHaveText('value: ["strength"]');
+		const strength = group.getByRole('checkbox', { name: 'Strength' });
+		const running = group.getByRole('checkbox', { name: 'Running' });
+
+		await group.getByRole('checkbox', { name: 'Hypertrophy' }).click();
+		await running.click();
+		await expect(value).toHaveText('value: ["strength","running","hypertrophy"]');
+		await expect(optionPart(running, '.tick')).toBeVisible();
+		await expect(
+			optionPart(group.getByRole('checkbox', { name: 'Muay Thai' }), '.tick')
+		).toBeHidden();
+
+		// Every option is its own tab stop (asserted on Chromium, as above), and Space toggles it.
+		await strength.focus();
+		await page.keyboard.press('Space');
+		await expect(strength).not.toBeChecked();
+		if (browserName === 'chromium') {
+			await page.keyboard.press('Tab');
+			await expect(running).toBeFocused();
+		} else {
+			await running.focus();
+		}
+		await page.keyboard.press('Space');
+		await expect(value).toHaveText('value: ["hypertrophy"]');
+	});
+
+	test('a selected card shows a filled mark, and card errors are announced until one is picked', async ({
+		page
+	}, testInfo) => {
+		await openInputs(page);
+		// The mark fills (a thick ring) when its card is selected; the others stay a hairline.
+		const ring = (card: Locator) =>
+			optionPart(card, '.mark').evaluate((el) => parseFloat(getComputedStyle(el).borderTopWidth));
+		const gym = page.getByRole('group', { name: 'Where do you train most?' });
+		const commercial = gym.getByRole('radio', { name: /^Commercial gym/ });
+		const home = gym.getByRole('radio', { name: /^Home or garage gym/ });
+		await expect(commercial).toBeChecked();
+		expect(await ring(commercial)).toBeGreaterThan(4);
+		expect(await ring(home)).toBeLessThan(2);
+		await home.click();
+		await expect(home).toBeChecked();
+		await expect.poll(() => ring(home)).toBeGreaterThan(4);
+		await expect.poll(() => ring(commercial)).toBeLessThan(2);
+
+		const equipment = page.getByRole('group', { name: 'Equipment at home' });
+		const cards = equipment.getByRole('checkbox');
+		await expect(cards).toHaveCount(2);
+		const message = 'Pick at least one so the plan uses only what you have';
+		const alert = page.getByRole('alert').filter({ hasText: message });
+		await expect(alert).toBeVisible();
+		await expect(equipment).toHaveAccessibleDescription(message);
+		for (const card of await cards.all())
+			await expect(card).toHaveAttribute('aria-invalid', 'true');
+		expect(await missingDescribedBy(equipment)).toEqual([]);
+
+		await equipment.scrollIntoViewIfNeeded();
+		await captureScreen(page, testInfo, 'design-inputs-choices');
+
+		const dumbbells = equipment.getByRole('checkbox', { name: /^Dumbbells/ });
+		await dumbbells.click();
+		await expect(dumbbells).toBeChecked();
+		await expect(alert).toHaveCount(0);
+		for (const card of await cards.all()) await expect(card).not.toHaveAttribute('aria-invalid');
+		await expect(equipment).not.toHaveAttribute('aria-describedby');
+		await expect.poll(() => ring(dumbbells)).toBeGreaterThan(4);
+	});
+
+	test('every choice option is at least 44 px tall', async ({ page }) => {
+		await openInputs(page);
+		const options = page.getByRole('region', { name: 'Choice group' }).locator('input');
+		await expect(options).toHaveCount(15);
+		for (const option of await options.all()) {
+			const box = (await option.boundingBox())!;
+			expect(box.height).toBeGreaterThanOrEqual(44);
+			expect(box.width).toBeGreaterThanOrEqual(44);
+		}
+	});
+
+	test('DayPicker names seven days Monday first and keeps its value in week order', async ({
+		page
+	}) => {
+		await openInputs(page);
+		const picker = page.getByRole('group', { name: 'Days you can train' });
+		const days = picker.getByRole('checkbox');
+		await expect(days).toHaveCount(7);
+		for (const [i, day] of WEEK.entries()) await expect(days.nth(i)).toHaveAccessibleName(day);
+		await expect(picker).toHaveAccessibleDescription('Tap every day that works.');
+		const value = page.getByTestId('days-value');
+		await expect(value).toHaveText('value: ["tue","thu","sat"]');
+		// A picked day shows a tick as well as the fill.
+		const monday = picker.getByRole('checkbox', { name: 'Monday' });
+		const thursday = picker.getByRole('checkbox', { name: 'Thursday' });
+		await expect(optionPart(thursday, '.tick')).toBeVisible();
+		await expect(optionPart(monday, '.tick')).toBeHidden();
+
+		await picker.getByRole('checkbox', { name: 'Sunday' }).click();
+		await monday.click();
+		await expect(value).toHaveText('value: ["mon","tue","thu","sat","sun"]');
+		await expect(optionPart(monday, '.tick')).toBeVisible();
+
+		await thursday.focus();
+		await page.keyboard.press('Space');
+		await expect(thursday).not.toBeChecked();
+		await expect(value).toHaveText('value: ["mon","tue","sat","sun"]');
+		await expect(optionPart(thursday, '.tick')).toBeHidden();
+	});
+
+	test('DayPicker hit areas stay 44 × 44 px inside a padded card at 393 px and never overlap', async ({
+		page
+	}, testInfo) => {
+		await openInputs(page);
+		expect(page.viewportSize()?.width).toBe(393);
+		const picker = page.getByRole('group', { name: 'Days you can train' });
+		await picker.evaluate((el) => el.scrollIntoView({ block: 'center' }));
+
+		// The premise: the row sits inside a card's padding, which costs it 48 px of width.
+		const inset = await picker.evaluate((el) => {
+			const card = el.closest('.surface')!.getBoundingClientRect();
+			const own = el.getBoundingClientRect();
+			return Math.min(own.left - card.left, card.right - own.right);
+		});
+		expect(inset).toBeGreaterThanOrEqual(24);
+
+		const boxes = await Promise.all(
+			(await picker.getByRole('checkbox').all()).map(async (day) => (await day.boundingBox())!)
+		);
+		for (const [i, box] of boxes.entries()) {
+			expect(box.width, WEEK[i]).toBeGreaterThanOrEqual(44);
+			expect(box.height, WEEK[i]).toBeGreaterThanOrEqual(44);
+			if (i > 0) {
+				const before = boxes[i - 1]!;
+				expect(box.x, WEEK[i]).toBeGreaterThanOrEqual(before.x + before.width - 0.05);
+			}
+			// Each edge of the hit area belongs to that day: nothing covers it, no neighbour reaches in.
+			const midX = box.x + box.width / 2;
+			const midY = box.y + box.height / 2;
+			const edges = [
+				[box.x + 1, midY],
+				[box.x + box.width - 1, midY],
+				[midX, box.y + 1],
+				[midX, box.y + box.height - 1]
+			];
+			for (const [x, y] of edges) {
+				const hit = await page.evaluate(
+					([px, py]) => document.elementFromPoint(px!, py!)?.getAttribute('aria-label'),
+					[x, y]
+				);
+				expect(hit, `${WEEK[i]} at ${x}, ${y}`).toBe(WEEK[i]);
+			}
+		}
+		await captureScreen(page, testInfo, 'design-inputs-days');
+	});
+
+	test('DayPicker marks every day invalid and announces its error until it is fixed', async ({
+		page
+	}) => {
+		await openInputs(page);
+		const picker = page.getByRole('group', { name: 'Strength days' });
+		const days = picker.getByRole('checkbox');
+		const alert = page
+			.getByRole('alert')
+			.filter({ hasText: 'Pick at least two days for strength' });
+		await expect(alert).toBeVisible();
+		await expect(picker).toHaveAccessibleDescription('Pick at least two days for strength');
+		await expect(picker.getByText('Two or more.')).toHaveCount(0);
+		for (const day of await days.all()) await expect(day).toHaveAttribute('aria-invalid', 'true');
+		expect(await missingDescribedBy(picker)).toEqual([]);
+
+		// Not only words: the days still open take the danger border.
+		const danger = await tokenColor(page, '--color-danger');
+		const border = (day: Locator) =>
+			day.evaluate((el) => getComputedStyle(el.nextElementSibling!).borderTopColor);
+		const friday = picker.getByRole('checkbox', { name: 'Friday' });
+		await expect.poll(() => border(friday)).toBe(danger);
+
+		await friday.click();
+		await expect(alert).toHaveCount(0);
+		await expect(picker).toHaveAccessibleDescription('Two or more.');
+		for (const day of await days.all()) await expect(day).not.toHaveAttribute('aria-invalid');
+		await expect
+			.poll(() => border(picker.getByRole('checkbox', { name: 'Monday' })))
+			.not.toBe(danger);
+		expect(await missingDescribedBy(picker)).toEqual([]);
 	});
 });
