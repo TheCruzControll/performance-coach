@@ -288,6 +288,9 @@ type scale is the same at every width, because a 1024–1366 px window can be a 
 One line per screen as its desktop layout lands (the auth screens, the main screens, then each
 later-pass screen).
 
+- **Session** (`/train/session/[key]`): readable, one column centred beside the rail; its stats,
+  exercise cards and run timeline keep the phone's order, and Back has hover and focus states.
+
 ### Verification
 
 - Every UI slice is designed and verified at **393 × 659** (the iPhone projects) and at
@@ -333,6 +336,10 @@ later-pass screen).
 | `SessionCard`       | A session: discipline dot, title, 'Strength · 60 min · Hard · Evening'; Skipped, Moved from Mon, Done and Baseline as worded badges; with `href` one link named by its title; `pending` sets `aria-busy` and sweeps a progress line.         |
 | `PrescriptionLines` | describe.ts's words as a list: '3 × 5 @ RPE 7', the load only when describe could compute one, its basis, rest and tempo, the baseline instruction; run steps with each segment's pace and effort. It never computes a number.               |
 | `ProgramHeader`     | Train's program title, its block and place ('Baseline week · Week 1 of 5'), a status badge, the planned weeks as pills between previous and next (≥ 44 px, this week ringed, the loading week busy); week links keep scroll and focus.       |
+| `ExerciseBlock`     | A planned exercise as an `article` named by its heading: its name (a superset's 'A1' before it), the coach's instructions, then its sets as `PrescriptionLines`, from session-words.ts's `exerciseViews`.                                    |
+| `RunSegments`       | A run as a timeline in describe.ts's words: a dot per step on a rail, each repeat group as one bracketed block ('6×', 'Repeat 6 times') over its segments, each with its pace in the owner's unit and effort.                                |
+| `SessionDetails`    | A session at a glance: duration and target RPE as two `Stat`s (the intensity as the RPE's caption), then an other session's metrics as a grouped list, label left and value right, each row ≥ 44 px.                                         |
+| `BaselineCallout`   | Week 1's baseline instructions on a strength session, on an accent `Surface`: why it sets the loads ahead, how to work up to the target RPE, and what to record. Copy from session-words.ts.                                                 |
 | `TextField`         | Labelled single-line input (label above, never placeholder-as-label), 56 px tall, 16 px text so iOS never zooms, hint or error wired with `aria-describedby` (the error replaces the hint), `mono` for codes, `type="date"`, "Optional".     |
 | `NumberField`       | A number that may stay blank (`null`, never 0): decimal or numeric keypad, `enterkeyhint`, unit inside the field and in its description, digits and one decimal point only, "Optional" marker. For values people nudge: `NumberStepper`.     |
 | `TextArea`          | Multi-line notes: label above, 16 px text, grows with its content (`field-sizing`; `rows` and a resize handle where unsupported), `maxlength`, hint or error wired with `aria-describedby`, "Optional" marker.                               |
