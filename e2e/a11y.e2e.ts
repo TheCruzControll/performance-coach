@@ -12,6 +12,7 @@ const SCREENS = [
 	...TABS.map((t) => t.path),
 	'/profile/security',
 	'/profile/equipment',
+	'/profile/body',
 	'/offline',
 	'/design'
 ];

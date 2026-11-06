@@ -12,10 +12,11 @@ import {
 	sectionContext
 } from '../../../src/lib/server/forms/sections';
 import { createGoal, saveBasics, saveExperience } from '../../../src/lib/server/services/profile';
+import { bodyDraft, bodyPayload, type BodySaved } from '../../../src/lib/ui/profile/body';
 import { EDITORS } from '../../../src/lib/ui/profile/editors';
 import { SECTIONS } from '../../../src/lib/ui/profile/sections';
 import { withRollback } from '../helpers';
-import { eventGoal, makeOwner } from './fixtures';
+import { clock, eventGoal, makeOwner } from './fixtures';
 
 const equipment = {
 	gymType: 'home',
@@ -32,6 +33,33 @@ describe('a Profile section', () => {
 			expect(await section.load(owner, { db })).toBeNull();
 			await section.save(owner, equipment, { db, source: 'profile' });
 			expect(await section.load(owner, { db })).toMatchObject(equipment);
+		});
+	});
+
+	it('Body edits the profile and today’s weight, and a converted weight left as it was records nothing', async () => {
+		await withRollback(async (db) => {
+			const owner = await makeOwner(db);
+			const time = clock('2026-11-05T09:00:00Z');
+			const deps = { db, now: time.now, source: 'profile' as const };
+			const section = profileSection('body');
+			const blank = bodyDraft((await section.load(owner, deps)) as BodySaved);
+			expect(blank).toMatchObject({ weightUnit: 'kg', bodyWeight: null, nutritionPhase: 'none' });
+
+			await section.save(
+				owner,
+				bodyPayload({ ...blank, bodyWeight: 82.4, targetWeight: 78 }),
+				deps
+			);
+			await saveBasics(owner, { name: 'Niko', weightUnit: 'lb', distanceUnit: 'km' }, { db });
+			time.advanceDays(1);
+			const inPounds = bodyDraft((await section.load(owner, deps)) as BodySaved);
+			// The 78 kg target too: saved as it shows, it stays 78 kg, not 78 lb.
+			expect(inPounds).toMatchObject({ weightUnit: 'lb', bodyWeight: 181.7, targetWeight: 172 });
+			await section.save(owner, bodyPayload({ ...inPounds, nutritionPhase: 'cut' }), deps);
+			expect(await section.load(owner, deps)).toMatchObject({
+				profile: { nutritionPhase: 'cut', targetWeight: 172, targetWeightUnit: 'lb' },
+				bodyWeight: [{ value: 82.4, unit: 'kg', measuredOn: '2026-11-05', source: 'profile' }]
+			});
 		});
 	});
 
