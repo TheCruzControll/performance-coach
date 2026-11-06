@@ -142,6 +142,8 @@ setup(
 			const device = await context.newPage();
 			const key = await addVirtualAuthenticator(device);
 			await device.goto('/profile/security');
+			// Hydrated first: a tap on the server-rendered button before then does nothing.
+			await device.waitForLoadState('networkidle');
 			await device.getByTestId('add-passkey').click();
 			await expect(toastWith(device, /Passkey added: /)).toBeVisible();
 			ownerPasskeys.push(...(await key.credentials()));

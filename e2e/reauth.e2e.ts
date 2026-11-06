@@ -53,6 +53,8 @@ test('a stale session must confirm with a passkey before removing one, then it g
 	const sessionId = await signInAsOwner(context, testInfo);
 	const authenticator = await addVirtualAuthenticator(page);
 	await page.goto('/profile/security');
+	// Hydrated first: a tap on the server-rendered button before then does nothing.
+	await page.waitForLoadState('networkidle');
 	await page.getByTestId('add-passkey').click();
 	await expect(toastWith(page, /Passkey added: /)).toBeVisible();
 	const passkeyId = toBase64Url((await authenticator.credentials())[0]!.credentialId);
@@ -129,6 +131,8 @@ test('without a passkey check, signing out a device shows the prompt and changes
 	await api.dispose();
 
 	await page.goto('/profile/security');
+	// Hydrated first: before then the form would post without the screen's handling.
+	await page.waitForLoadState('networkidle');
 	const row = page.locator(`[data-session-id="${sessionId}"]`);
 	await row.getByTestId('revoke-session').click();
 	const sheet = page.getByTestId('reauth-sheet');
