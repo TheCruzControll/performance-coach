@@ -159,6 +159,11 @@ export interface KitExercise {
 	/** Always an estimate, labelled as one. */
 	bestE1rm: { kg: number; estimated: true } | null;
 	priorBests: PriorBest[];
+	/**
+	 * A bodyweight exercise's most reps in one set with no weight added (summary.ts's bestsOf), which
+	 * 'Most reps' beats; null when there is none.
+	 */
+	mostReps: number | null;
 	/** kit-alternatives: M3's ranked alternatives, best first. */
 	alternatives?: KitAlternative[];
 	/** Why nothing fits, when no alternative does. */

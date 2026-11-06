@@ -169,7 +169,8 @@ export function checkSet(
 	return errors;
 }
 
-const isWorking = (set: RuledSet) => !set.isWarmup && !set.isSkipped;
+/** A set that counts: performed, and not a warm-up. */
+export const isWorking = (set: RuledSet) => !set.isWarmup && !set.isSkipped;
 const counts = (exercise: RuledExercise) => exercise.measure === COUNTED_MEASURE;
 
 /**
