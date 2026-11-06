@@ -30,6 +30,8 @@ export interface SectionEditor {
 	draft(saved: unknown): unknown;
 	/** The schema the browser checks before posting (the services check it again). */
 	schema: SchemaName;
+	/** What else follows a save that went through, given what it saved (this device's units). */
+	afterSave?: (saved: unknown) => void;
 }
 
 /**
@@ -45,6 +47,13 @@ function section<T>(
 }
 
 export const EDITORS: Record<SectionKey, () => Promise<SectionEditor>> = {
+	basics: () =>
+		Promise.all([import('./BasicsEditor.svelte'), import('./basics')]).then(
+			([editor, { basicsDraft, deviceFollows }]) => ({
+				...section(editor.default, basicsDraft, 'basics'),
+				afterSave: deviceFollows as (saved: unknown) => void
+			})
+		),
 	equipment: () =>
 		Promise.all([import('./EquipmentEditor.svelte'), import('./equipment')]).then(
 			([editor, { equipmentDraft }]) => section(editor.default, equipmentDraft, 'equipment')

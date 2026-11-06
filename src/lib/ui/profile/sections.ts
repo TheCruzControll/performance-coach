@@ -17,6 +17,12 @@ export interface SectionInfo {
 
 export const SECTIONS = [
 	{
+		key: 'basics',
+		title: 'Name & units',
+		subtitle: 'Your name, kg or lb, km or mi',
+		icon: 'profile'
+	},
+	{
 		key: 'equipment',
 		title: 'Equipment',
 		subtitle: 'Where you train and what’s there',

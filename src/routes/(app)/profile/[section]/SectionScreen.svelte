@@ -34,6 +34,7 @@
 	let form = $state<SectionForm<unknown> | null>(null);
 	let Sheet = $state<typeof DiscardSheet | null>(null);
 	let failed = $state(false);
+	let afterSave: SectionEditor['afterSave'];
 
 	/** The editor, its form state and the discard sheet: all of them, or the error with Retry. */
 	onMount(async () => {
@@ -47,6 +48,7 @@
 			form = new SectionForm(editor.draft(saved), editor.schema);
 			Sheet = sheet.default;
 			Editor = editor.Editor;
+			afterSave = editor.afterSave;
 			warmValidation();
 		} catch {
 			failed = true;
@@ -56,11 +58,16 @@
 	async function save(event: MouseEvent) {
 		if (!form) return;
 		const button = event.currentTarget as HTMLElement;
+		// What this save sends: an edit made while it is in flight is not part of it.
+		const sent = JSON.stringify(form.value);
 		const outcome = await form.submit();
 		// The button is disabled while it saves, which drops keyboard focus: give it back.
 		if (document.activeElement === document.body) button.focus();
 		// Only the action's own answer: a redirect (the session ended) saved nothing.
-		if (outcome.data?.saved) toast.show('Saved', { tone: 'positive' });
+		if (outcome.data?.saved) {
+			afterSave?.(JSON.parse(sent));
+			toast.show('Saved', { tone: 'positive' });
+		}
 	}
 
 	// ---- leaving with unsaved changes ----------------------------------------------------------
