@@ -69,15 +69,16 @@ test('WebKit: sign-out clears the cookie, account caches and IndexedDB, keeps pr
 
 	const cookies = await context.cookies(ORIGIN);
 	expect(cookies.filter((c) => /session$/.test(c.name))).toEqual([]);
+	// Leaving the page lets SvelteKit write its history keys back into session storage; the
+	// sign-in page clears it again once it hydrates (src/routes/+page.svelte), so wait for that.
+	await expect.poll(() => page.evaluate(() => sessionStorage.length)).toBe(0);
 	const left = await page.evaluate(async () => ({
 		caches: await caches.keys(),
-		databases: (await indexedDB.databases()).map((d) => d.name),
-		sessionItems: sessionStorage.length
+		databases: (await indexedDB.databases()).map((d) => d.name)
 	}));
 	expect(left.caches.every((k) => k.startsWith('pc-shell-'))).toBe(true);
 	expect(left.caches).toHaveLength(1); // the versioned app shell survives (offline still works)
 	expect(left.databases).toEqual([]);
-	expect(left.sessionItems).toBe(0);
 	expect(await storedTheme()).toBe('light');
 	expect(
 		await query('select revoked_reason from auth_sessions where id = $1', [sessionId])
