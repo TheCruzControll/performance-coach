@@ -111,6 +111,20 @@ describe('athlete profile', () => {
 		});
 	});
 
+	it('stores a blank target date (an empty date input) as no date', async () => {
+		await withRollback(async (db) => {
+			const owner = await makeOwner(db);
+			const body = { weightUnit: 'kg', nutritionPhase: 'cut', targetWeight: 71 };
+			await saveBody(owner, { ...body, targetDate: '2027-03-13' }, { db });
+			const cleared = await saveBody(owner, { ...body, targetDate: '' }, { db });
+			expect(cleared.profile.targetDate).toBeNull();
+			const stored = await db.execute<{ target_date: string | null }>(
+				sql`select target_date from athlete_profiles where owner_id = ${owner}`
+			);
+			expect(stored.rows).toEqual([{ target_date: null }]);
+		});
+	});
+
 	it('refuses implausible body data', async () => {
 		await withRollback(async (db) => {
 			const owner = await makeOwner(db);
