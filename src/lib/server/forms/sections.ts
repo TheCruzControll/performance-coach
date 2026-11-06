@@ -17,6 +17,7 @@ import {
 	getSpecifics,
 	listGoals,
 	saveBaselines,
+	saveBasics,
 	saveEquipment,
 	saveExperience,
 	saveSpecifics,
@@ -36,6 +37,7 @@ const SECTIONS: Record<string, ProfileSection> = {
 	experience: { load: getExperience, save: saveExperience },
 	equipment: { load: getEquipment, save: saveEquipment },
 	strength: { load: getBaselines, save: saveBaselines },
+	basics: { load: getAthleteProfile, save: saveBasics },
 	specifics: { load: getSpecifics, save: saveSpecifics }
 };
 
