@@ -186,7 +186,10 @@ bound on distributed guessing, which rests on the per-client limit and the 80-bi
 SimpleWebAuthn), passkey added/renamed/removed, recovery used/failed/regenerated, session
 revoked / revoked others, sign-out, rate limiting and owner resets, with request id, client
 address and a User-Agent summary. Rows are kept if the owner is reset. Security shows the most
-recent events.
+recent events, folding each run of refused attempts (anyone can cause those) into one row such as
+"25 failed sign-in attempts", and always keeps the latest security changes (setup, passkeys
+added or removed, recovery codes used or replaced, sessions ended, owner resets) in view, so a
+flood of failures cannot push them out.
 
 ## Test-only routes
 
