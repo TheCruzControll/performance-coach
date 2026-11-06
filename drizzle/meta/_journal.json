@@ -43,6 +43,13 @@
       "when": 1793919681520,
       "tag": "0005_auth_used_setup_tokens",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1793926978135,
+      "tag": "0006_profile_time_zone",
+      "breakpoints": true
     }
   ]
 }
