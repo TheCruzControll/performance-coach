@@ -9,7 +9,7 @@
 	import Surface from '../components/Surface.svelte';
 	import TagInput from '../components/TagInput.svelte';
 	import type { EditorProps } from './editors';
-	import { listErrors, type ExercisesDraft } from './exercises';
+	import { listErrors, type ExercisesDraft } from './exercise-preferences';
 
 	let { value = $bindable(), errors = {} }: EditorProps<ExercisesDraft> = $props();
 

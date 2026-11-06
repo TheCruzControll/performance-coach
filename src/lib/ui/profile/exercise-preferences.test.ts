@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { SCHEMAS, validate } from '#lib/domain/profile/schemas.ts';
 import type { ExercisePreference } from '#lib/domain/profile/types.ts';
-import { exercisesDraft, exercisesPayload, listErrors } from './exercises';
+import { exercisesDraft, exercisesPayload, listErrors } from './exercise-preferences';
 
 /** As the services return them: dislikes first (the repository sorts by sentiment). */
 const saved: ExercisePreference[] = [
