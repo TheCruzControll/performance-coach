@@ -14,7 +14,7 @@ import { consumeChallenge, storeChallenge } from './challenges';
 import { resolveDeps, type AuthDeps, type AuthRequest } from './context';
 import { defaultPasskeyName, passkeyProvider } from './devices';
 import { AuthError, failureReason, isAuthError } from './errors';
-import { enforceRateLimit, pruneRateLimits } from './rate-limit';
+import { enforceRateLimit } from './rate-limit';
 import { requireRecentAuthentication } from './reauth';
 import type { RelyingParty } from './relying-party';
 import { issueSession, revokeToken, type AuthSession, type IssuedSession } from './sessions';
@@ -124,7 +124,6 @@ export async function completeSignIn(
 			sessionId: issued.session.id,
 			credentialId: credential.id
 		});
-		await pruneRateLimits({ db, now });
 		return issued;
 	} catch (err) {
 		if (isAuthError(err) && err.code !== 'rate_limited') {
