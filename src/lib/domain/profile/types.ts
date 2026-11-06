@@ -32,6 +32,8 @@ export interface AthleteProfile {
 	name: string;
 	weightUnit: WeightUnit;
 	distanceUnit: ProfileDistanceUnit;
+	/** IANA time zone (`UTC` until the owner's device sets it). */
+	timeZone: string;
 	birthYear: number | null;
 	nutritionPhase: NutritionPhase | null;
 	targetWeight: number | null;

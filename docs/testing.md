@@ -18,7 +18,8 @@ Deterministic, no I/O. Current coverage: units (exact kg/lb, km/mi, rounding, pa
 RPE table and reps in reserve (including a structural consistency check of the chart), e1RM
 (always marked `estimated`; for fixed weight and reps it rises as RPE falls, a recorded RPE is
 never silently dropped, malformed or sub-6 RPEs give no estimate, and sets past the chart are
-extrapolated from reps to failure at `low` confidence), the plate calculator (exact DP incl. limited inventories), and load
+extrapolated from reps to failure at `low` confidence), the plate calculator (exact DP incl. limited inventories), the owner's local
+calendar day (a weigh-in at 18:30 in Los Angeles is not tomorrow; daylight saving; only IANA zones), and load
 metrics (volume load, session-RPE, EWMA ACWR). Outside the domain: `parseEnv` (defaults, `appEnv`
 derivation, the production guards incl. `VERCEL_ENV=production`, test routes refused in a Vercel
 build whatever its runtime environment, the API-key requirement), the build-time marker
