@@ -3,7 +3,7 @@
  * audit log and rate limits. Every time-dependent query takes the time as a parameter (services
  * pass their clock), so expiry and windows are testable without waiting.
  */
-import { and, asc, count, desc, eq, gt, isNull, lt, ne, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, gt, inArray, isNull, lt, ne, sql } from 'drizzle-orm';
 import {
 	authEvents,
 	authRateLimits,
@@ -13,6 +13,7 @@ import {
 	recoveryCodes,
 	usedSetupTokens,
 	webauthnChallenges,
+	type AuthEventType,
 	type ChallengePurpose
 } from '../schema';
 import type { Executor } from '../types';
@@ -384,11 +385,13 @@ export function createAuthRepository(db: Executor) {
 			await db.insert(authEvents).values(values);
 		},
 
-		async recentEvents(limit = 20): Promise<AuthEventRow[]> {
+		/** The newest events, of any type or only of `types`. */
+		async recentEvents(limit = 20, types?: readonly AuthEventType[]): Promise<AuthEventRow[]> {
 			// `id` breaks ties: events written in one transaction share its now().
 			return db
 				.select()
 				.from(authEvents)
+				.where(types ? inArray(authEvents.type, [...types]) : undefined)
 				.orderBy(desc(authEvents.occurredAt), desc(authEvents.id))
 				.limit(limit);
 		},
