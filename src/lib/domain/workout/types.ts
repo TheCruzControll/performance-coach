@@ -58,6 +58,11 @@ export interface KitExerciseMeta extends ExerciseSummary {
 	restClass: RestClass;
 	/** The smallest load step, in the kit's weight unit. */
 	increment: number;
+	/**
+	 * What it needs, which Machine unavailable ranks the alternatives by (substitution.ts). The kit
+	 * and the library fill it. Optional, as every field added after v1: without it, the kit's order.
+	 */
+	equipment?: Equipment[];
 }
 
 // ---- Sets -----------------------------------------------------------------------------------
