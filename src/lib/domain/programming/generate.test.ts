@@ -1,6 +1,6 @@
 /**
  * generate.ts: the stage list runs in its documented order and each later stage is an identity
- * stub of its own until its slice replaces it (strength has); every scenario
+ * stub of its own until its slice replaces it (strength and timefit have); every scenario
  * composes into a plan the contract accepts; the minimal profile gets one default_assumed
  * decision per assumption; the same input gives byte-identical JSON.
  */
@@ -76,11 +76,10 @@ describe('the stage list', () => {
 		placement,
 		volume,
 		loads,
-		progression,
-		timefit
+		progression
 	};
 
-	it.each(Object.entries({ strength }))('runs the %s stage of its own', (name, run) => {
+	it.each(Object.entries({ strength, timefit }))('runs the %s stage of its own', (name, run) => {
 		expect(STAGES.find((s) => s.name === name)?.run).toBe(run);
 	});
 

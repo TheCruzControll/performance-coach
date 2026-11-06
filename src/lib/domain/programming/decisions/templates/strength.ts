@@ -27,7 +27,7 @@ export const strength = {
 		why: 'You asked to avoid “{text}”, but it names no movement the coach knows, so nothing was left out for it. Swap anything that does not suit you.'
 	},
 	time_trimmed: {
-		summary: '{session} trimmed to {minutes} min',
-		why: '{session} came to about {estimate} min, more than your {minutes}-minute sessions allow, so {trimmed} came out. The top set stays.'
+		summary: '{session} trimmed to about {after} min',
+		why: '{session} came to about {estimate} min, more than your {minutes}-minute sessions allow, so {trimmed}. It now takes about {after} min.'
 	}
 } as const satisfies Templates;

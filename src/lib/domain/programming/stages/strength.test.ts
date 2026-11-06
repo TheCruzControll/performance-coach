@@ -1,7 +1,8 @@
 /**
  * The strength stage, through generateProgram: the brief's dumbbells-only, injured-shoulder and
  * powerlifter scenarios; as many strength sessions as the day rule gives; naive spacing until
- * placement; each week at its own RPE cap.
+ * placement; each week at its own RPE cap; and every strength session within the session length
+ * once the timefit stage has run.
  */
 import { describe, expect, it } from 'vitest';
 import { weekdayOf } from '../../calendar';
@@ -14,6 +15,8 @@ import { allocateWeek, generatedFor, weekBudget } from '../demand';
 import { generateProgram } from '../generate';
 import { buildProgrammingInput } from '../input';
 import { SCENARIO_START, SCENARIOS, scenarioDay } from '../scenarios';
+import type { ScenarioKey } from '../scenarios';
+import { estimateMinutes } from '../timefit';
 import { naiveDays, strength } from './strength';
 
 const OPTIONS = { startsOn: SCENARIO_START, firstPlannedDay: SCENARIO_START };
@@ -230,4 +233,18 @@ describe('the strength stage', () => {
 		expect(strength(draft, { input, options: OPTIONS, log })).toBe(draft);
 		expect(log.list()).toHaveLength(before);
 	});
+
+	it.each(Object.keys(SCENARIOS) as ScenarioKey[])(
+		'%s: every strength session fits the session length once timefit has run',
+		(key) => {
+			const input = inputOf(SCENARIOS[key]());
+			const plan = generateProgram(input, OPTIONS);
+			const sessions = weeksOf(plan).flatMap((w) => strengthIn(w.sessions));
+			expect(sessions.length).toBeGreaterThan(0);
+			for (const s of sessions) {
+				expect(s.estMinutes).toBe(estimateMinutes(s, input));
+				expect(s.estMinutes).toBeLessThanOrEqual(input.sessionMinutes);
+			}
+		}
+	);
 });

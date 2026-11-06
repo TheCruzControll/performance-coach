@@ -232,7 +232,7 @@ export const INTENSITY_BY_RPE: readonly (readonly [under: number, SessionIntensi
 
 /**
  * An accessory supports the main work: an exercise that is neither compound nor explosive, such
- * as isolation, trunk work and carries.
+ * as isolation, trunk work and carries. Time fit trims accessories first.
  */
 export const isAccessory = (exercise: { tags: readonly ExerciseTag[] }) =>
 	!exercise.tags.includes('compound') && !exercise.tags.includes('explosive');
@@ -246,6 +246,13 @@ export const DEFAULT_METRES = 40;
  * carry one; a unilateral set is done once per side.
  */
 export const TIME = { warmUpMinutes: 10, secondsPerRep: 4, secondsPerMetre: 1 } as const;
+
+/**
+ * Session types the session length does not cap. The long run follows the running rules and may
+ * run longer, with a decision saying so (m3-plan open question 'Session length'); to cap it as
+ * well, empty this list. Commitments always keep their own length.
+ */
+export const BEYOND_SESSION_LENGTH: readonly SessionType[] = ['long_run'];
 
 /** The slots whose preferred lift is the discipline's competition lift. */
 export const COMPETITION_SLOTS: Partial<Record<LayoutKey, readonly SlotKindKey[]>> = {
