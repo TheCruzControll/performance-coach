@@ -30,8 +30,8 @@ export interface SectionEditor {
 	draft(saved: unknown): unknown;
 	/** The schema the browser checks before posting (the services check it again). */
 	schema: SchemaName;
-	/** What Save posts when the editing state holds more than the schema takes (row keys). */
-	payload?: (draft: unknown) => unknown;
+	/** What is posted, when that is not the editing state as it stands (SectionForm). */
+	payload?: (value: unknown) => unknown;
 }
 
 /**
@@ -42,7 +42,7 @@ function section<T>(
 	Editor: Component<EditorProps<T>>,
 	draft: (saved: never) => T,
 	schema: SchemaName,
-	payload?: (draft: T) => unknown
+	payload?: (value: T) => unknown
 ): SectionEditor {
 	return {
 		Editor: Editor as unknown as SectionEditor['Editor'],
@@ -56,6 +56,11 @@ export const EDITORS: Record<SectionKey, () => Promise<SectionEditor>> = {
 	equipment: () =>
 		Promise.all([import('./EquipmentEditor.svelte'), import('./equipment')]).then(
 			([editor, { equipmentDraft }]) => section(editor.default, equipmentDraft, 'equipment')
+		),
+	strength: () =>
+		Promise.all([import('./BaselinesEditor.svelte'), import('./strength')]).then(
+			([editor, { baselinesDraft, baselinesPayload }]) =>
+				section(editor.default, baselinesDraft, 'baselines', baselinesPayload)
 		),
 	schedule: () =>
 		Promise.all([import('./ScheduleEditor.svelte'), import('./schedule')]).then(

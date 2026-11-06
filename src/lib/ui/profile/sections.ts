@@ -23,6 +23,12 @@ export const SECTIONS = [
 		icon: 'plate'
 	},
 	{
+		key: 'strength',
+		title: 'Strength',
+		subtitle: 'Your 1RMs, or let week one find them',
+		icon: 'train'
+	},
+	{
 		key: 'schedule',
 		title: 'Schedule',
 		subtitle: 'Training days, session length, classes',
