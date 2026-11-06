@@ -66,6 +66,18 @@ const LAYER = {
 	}
 };
 
+/**
+ * domain/exercises (the catalogue) and domain/programming (the generator) by an alias (`#lib/`,
+ * `$lib/`), a path through `lib/`, or a relative path (`../programming`, `./exercises`,
+ * `../../domain/exercises`). Types are fine: `import type` is erased from the bundle.
+ */
+const SERVER_ONLY_PACKAGES = {
+	regex: '(lib/domain/|^(\\.\\.?/)+(domain/)?)(exercises|programming)(/|$)',
+	allowTypeImports: true,
+	message:
+		'domain/exercises and domain/programming are server-only: use them in server code (src/lib/server, +page.server.ts) and send the page the result. `import type` is fine.'
+};
+
 export default defineConfig(
 	includeIgnoreFile(gitignorePath),
 	{ ignores: ['.claude/**', 'drizzle/meta/**', 'static/**'] },
@@ -146,5 +158,33 @@ export default defineConfig(
 	{
 		files: ['src/routes/**', 'src/hooks.server.ts', 'src/hooks.client.ts'],
 		rules: restrict([LAYER.db, LAYER.driver])
+	},
+
+	// ---- Server-only packages ----------------------------------------------------------
+	// The catalogue and the generator never reach the browser (scripts/server-only-imports.test.ts).
+	// typescript-eslint's copy of no-restricted-imports has its own name, so this block never
+	// replaces the layer patterns restrict([...]) sets on the same files. (It is deprecated in
+	// favour of the core rule; if it is removed, add SERVER_ONLY_PACKAGES to those blocks.)
+	// Not listed, so free to import them: src/lib/server/**, +page.server.ts, +layout.server.ts,
+	// +server.ts, hooks, scripts/**, tests/** and e2e/** (m3/49's weekViolations runs the
+	// generator's checks in specs). A dynamic import() is not checked here; `pnpm budgets` fails
+	// if the catalogue is in any client chunk, lazy ones included.
+	{
+		files: [
+			'src/lib/ui/**',
+			'src/lib/client/**',
+			'src/routes/**/*.svelte',
+			'src/routes/**/+page.ts',
+			'src/routes/**/+layout.ts',
+			'src/lib/domain/**'
+		],
+		// The packages import their own files.
+		ignores: ['src/lib/domain/programming/**', 'src/lib/domain/exercises/**'],
+		rules: {
+			'@typescript-eslint/no-restricted-imports': ['error', { patterns: [SERVER_ONLY_PACKAGES] }],
+			// `import { type X }` stays a runtime import under verbatimModuleSyntax (Vite keeps
+			// `import 'X'`), so only `import type` gets past the rule above.
+			'@typescript-eslint/no-import-type-side-effects': 'error'
+		}
 	}
 );

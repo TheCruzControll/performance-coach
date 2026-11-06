@@ -85,6 +85,13 @@ Folders are layers. Allowed dependencies point inwards. Every "Must not import" 
 
 SvelteKit additionally refuses to bundle any `server/` module into client code.
 
+Two domain packages are server-only at runtime: `src/lib/domain/exercises/` (the catalogue) and
+`src/lib/domain/programming/` (the generator). UI, client code, route components, universal
+loads and the rest of the domain may only `import type` from them. ESLint enforces it with a rule
+of its own (`@typescript-eslint/no-restricted-imports`), so the layer rules above stay in force on
+the same files (`scripts/server-only-imports.test.ts`), and `pnpm budgets` fails if the
+catalogue's header is in any client chunk.
+
 ### Why services sit between routes and the database
 
 The coach (M5) must be able to do everything the UI can — read history, propose changes,
