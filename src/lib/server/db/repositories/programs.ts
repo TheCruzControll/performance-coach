@@ -405,6 +405,20 @@ export function createProgramsRepository(db: Executor) {
 			};
 		},
 
+		/** These weeks' sessions and every child of theirs, set prescriptions included. */
+		async weekSessions(
+			weekIds: string[]
+		): Promise<SessionLineRows & Pick<SessionChildRows, 'sets'>> {
+			const q = sessionsWithChildren(db, weekIds);
+			return {
+				sessions: await q.sessions,
+				exercises: await q.exercises,
+				sets: await q.sets,
+				segments: await q.segments,
+				details: await q.details
+			};
+		},
+
 		async plannedSessionsInRange(
 			versionId: string,
 			from: IsoDate,
