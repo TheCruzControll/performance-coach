@@ -4,6 +4,42 @@ This is everything a new Claude Code session needs to resume the build on anothe
 product spec is `docs/product-requirements.md` on `main`; milestone criteria are in
 `docs/milestones.md`. Read this file from `origin/handoff` (it is not on `main`).
 
+## Update: cloud session, 2026-11-06 (from 06:28 UTC)
+
+A claude.ai cloud session (4 CPUs, 15 GB, Linux; no T3, no Codex) took over with the goal "finish
+M1–M9 on main with evidence and the app live on coach.nikocruz.com". State at the last update:
+
+- **Merged:** #47 (Toggle + TagInput), #46 (program-plan contract). **#45** refreshed, CI running.
+- **Cutover:** PR #50 (`feat/m2-production-cutover`), Sol approved in 2 rounds (fixed: the reset
+  command read `.env`; a session-storage race in the WebKit sign-out test). No merge hold. It
+  merges after #45; then production deploys.
+- **Running:** two `dag-cloud.js` workflows. Wave A = the 5 M1 fixes + 21 M2 slices; wave B = the
+  28 M3 slices that do not wait on an M2 slice. 18 M3 slices wait for a later wave (they depend
+  on M2 slices without PRs yet). The planner (`milestone-plans-cloud.js`) plans M4 → M5 → M6 →
+  M7 → M9 into `<scratch>/plans/m{4,5,6,7,9}-plan.json`.
+
+How this session works (differences from the Mac setup below):
+
+- **sol-review** runs its Claude Code route: a fresh Claude Opus 5.5 reviewer per round. Inside
+  workflows the script runs the loop itself (review agent → fix agent → next round); see
+  `workflows/dag-cloud.js`. No Codex CLI.
+- **GitHub writes** (PRs, update-branch, merges) go through the GitHub MCP; `gh api` is REST
+  read-only here (GraphQL is blocked). `tools/steward-plan` is the steward with its writes
+  replaced by `ACTION merge|update <n> <sha>` lines for the main thread to run with the MCP; it
+  keeps the one-refresh-at-a-time queue.
+- **WebKit** is not installed in the container: local e2e is Chromium only; CI runs Chromium +
+  WebKit + Lighthouse on every PR and is the WebKit gate.
+- **Workflows** run at most min(16, CPUs − 2) agents at once, so `workflows/dag-waves.py` splits
+  the graph into waves that run side by side.
+- `tools/agent-env` uses nvm when present, else the machine's Node 22.
+
+To resume in a fresh cloud session: copy `tools/*` to `<scratch>/bin`, `plans/*` and the new
+plan files to `<scratch>/plans`, start Postgres (raise `max_connections` to 300), then
+`SCRATCH=<scratch> REPO=<repo> python3 workflows/build-dag-args.py --limit 2 > <scratch>/dag-args.json`,
+`python3 workflows/dag-waves.py <scratch>/dag-args.json <scratch>` and run `dag-cloud.js` (paths
+replaced) once per wave with the wave file as `args`. Branches with PRs become external
+dependencies automatically; a slice whose branch exists resumes from it.
+
 ## The owner's rules (follow them exactly)
 
 - **Small atomic PRs.** One concern each, green on its own, ideally ≤ 600 lines of non-test code.
