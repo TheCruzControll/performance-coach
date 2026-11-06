@@ -92,6 +92,13 @@ export interface PrescribedWeight {
 	basis: 'absolute' | 'measured' | 'estimated';
 }
 
+/** How a set's load is prescribed: M3's load kind, and its fraction of a 1RM where it has one. */
+export interface KitLoad {
+	kind: v.LoadKind;
+	/** A percent_1rm or from_e1rm load's loadValue, 0.7 for 70 %; null for the other kinds. */
+	fraction: number | null;
+}
+
 /** One set to perform, in order: a 3 × 5 prescription gives three. */
 export interface KitSet {
 	role: v.SetRole;
@@ -102,6 +109,13 @@ export interface KitSet {
 	targetRpe: number | null;
 	/** Only a load describe's prescribedLoad can compute; null for RPE-based and unknown loads. */
 	prescribedWeight: PrescribedWeight | null;
+	/**
+	 * Its load kind and fraction, so the device works a from_e1rm load out from today's top set
+	 * (prefill.ts). The server's kit sets it on every percent_1rm and from_e1rm set, as the shared
+	 * fixture's back-offs carry it. Optional, as every field added after v1: without it a
+	 * from_e1rm load reads as percent_1rm and stays the kit's estimate.
+	 */
+	load?: KitLoad;
 	restSeconds: number | null;
 	/** Its prescription in M3's words: describePrescription's headline, '3 × 5 @ RPE 7'. */
 	line: string;
