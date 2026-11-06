@@ -92,8 +92,11 @@ const withExtraSets = (exercises: readonly PlannedExercisePlan[], extra: number)
 			: e
 	);
 
-/** `week`'s strength sessions with its volume factor applied. */
-function withVolume(week: WeekPlan, input: ProgrammingInput, rules: LoadRules): WeekPlan {
+/**
+ * `week`'s strength sessions with its volume factor applied. The volume stage, which runs before,
+ * counts and fits each week as this will leave it.
+ */
+export function withVolume(week: WeekPlan, input: ProgrammingInput, rules: LoadRules): WeekPlan {
 	const factor = week.targets.volumeFactor;
 	if (factor === 1) return week;
 	const sessions = week.sessions.map((session) => {

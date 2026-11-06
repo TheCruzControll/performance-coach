@@ -93,6 +93,15 @@ export class DecisionLog {
 		return decision;
 	}
 
+	/**
+	 * Point every decision's refs at where their nodes went, once a stage has re-sorted or dropped
+	 * planned sessions: `to` maps a path to its new one, or to null for a node no longer planned.
+	 */
+	retarget(to: (path: PlanPath) => PlanPath | null): void {
+		for (const decision of this.#decisions)
+			decision.refs = decision.refs.flatMap((r) => to(r) ?? []);
+	}
+
 	/** Every decision: by kind in DECISION_KINDS order, then in the order they were made. */
 	list(): DecisionPlan[] {
 		const rank = (d: DecisionPlan) => DECISION_KINDS.indexOf(d.kind);
