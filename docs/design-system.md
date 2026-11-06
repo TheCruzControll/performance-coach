@@ -325,3 +325,8 @@ destructive actions behind a confirming `BottomSheet`, and toasts for outcomes.
 - App icons are rendered from `static/icons/*.svg` by `pnpm icons` (Playwright Chromium):
   `icon-192.png`, `icon-512.png`, `icon-maskable-512.png` (content inside the 80% safe zone),
   `apple-touch-icon.png` (180 px); `favicon.svg` for browsers.
+- Product icons (`<Icon name>`): 24 × 24 grid, 1.75 px round strokes, path data in
+  `src/lib/ui/icons/icons.ts`. `<Icon>` draws them with `<use>` from one generated sprite, so they
+  cost no JavaScript: after adding or changing one, run `pnpm icons:sprite` and commit
+  `sprite.svg` and `names.ts` (a unit test fails while they are stale; `pnpm budgets` fails if path
+  data reaches a client chunk).

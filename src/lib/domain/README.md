@@ -16,6 +16,8 @@ formulas. A slice that adds a reusable domain function adds it here.
 - `src/lib/domain/exercises/`: the catalogue (`CATALOGUE`, `catalogueByKey`,
   `SUBSTITUTION_GROUPS`) and `match.ts`'s `matchExercise(text, library)`, which links free text
   to one exercise key, or null rather than a guess. Server-only at runtime; `import type` is fine.
+- `src/lib/domain/programming/index.ts`: the generator's public entry point, below. Server-only
+  at runtime, like the catalogue.
 
 ## Conventions
 
@@ -157,3 +159,21 @@ goal priority.
 - `INTERFERENCE` holds every threshold and `INTERFERENCE_RULES` every rule with its reason, so
   tuning one is an edit there. `BLOCKS_EDIT` says which severities block an owner's edit rather
   than warn: none by default.
+
+## M3: the generator (`programming/index.ts`)
+
+PRD §5's week-1 program generation: pure, deterministic rules with no clock, randomness or I/O,
+so services and the M5 coach's tools call the same functions and get the same plan.
+
+- `buildProgrammingInput(profile, { catalogue, customExercises?, preferences? })` →
+  `ProgrammingInput`: the M2 profile normalised, every 'not told yet' default listed in
+  `assumptions`.
+- `generateProgram(input, { startsOn, firstPlannedDay })` → `ProgramPlan`: the first block and
+  its outline, every decision with its 'why' (`program_purpose` first), checked against
+  `programPlanSchema`. A plan the contract refuses throws `GeneratedPlanError` with its dotted
+  paths. `startsOn` is a Monday; a 'This week' start plans only from `firstPlannedDay`.
+- `catalogueDigest(catalogue, customExercises)`, `fingerprint(input, digest)` and
+  `GENERATOR_ID`: the same profile, library and generator give the same fingerprint, so a build
+  can tell a changed profile or library from a retry.
+- `checkWeek` (above) and `alternativesFor(exerciseKey, input)`: the swaps that keep an
+  exercise's intent, best first, with the blocked ones and why.
