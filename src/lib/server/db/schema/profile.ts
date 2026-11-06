@@ -61,17 +61,7 @@ import {
 } from '../../../domain/profile/catalog';
 import type { OnboardingStep } from '../../../domain/profile/onboarding';
 import { owners } from './auth';
-
-const inList = (column: string, values: readonly string[]) =>
-	sql.raw(`${column} in (${values.map((v) => `'${v}'`).join(', ')})`);
-
-const ownerRef = () =>
-	uuid('owner_id')
-		.notNull()
-		.references(() => owners.id, { onDelete: 'cascade' });
-
-const createdAt = () => timestamp('created_at', { withTimezone: true }).notNull().defaultNow();
-const updatedAt = () => timestamp('updated_at', { withTimezone: true }).notNull().defaultNow();
+import { createdAt, inList, ownerRef, updatedAt } from './columns';
 
 /** Weights: up to 9999.99 in the unit the owner entered (never converted, so never rounded). */
 const weight = (name: string) => numeric(name, { precision: 6, scale: 2, mode: 'number' });
