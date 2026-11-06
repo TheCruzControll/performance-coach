@@ -41,6 +41,20 @@ describe('newGoal', () => {
 			}
 		});
 	});
+
+	it('starts a general goal blank too, which the schema refuses until it says what and how', () => {
+		const draft = newGoal('general');
+		expect(draft).toEqual({ ...newGoal(), kind: 'general' });
+		expect(validate(SCHEMAS.goal, draft)).toEqual({
+			ok: false,
+			errors: {
+				title: 'Give this goal a name',
+				disciplines: 'Pick at least one discipline',
+				focus: 'What do you want to improve?',
+				measure: 'How will you know it’s working?'
+			}
+		});
+	});
 });
 
 describe('goalDraft', () => {
@@ -60,8 +74,20 @@ describe('goalDraft', () => {
 			focus: '',
 			measure: '',
 			targetDate: '',
-			notes: ''
+			notes: '',
+			status: 'active'
 		} satisfies GoalDraft);
+	});
+
+	it('keeps a goal’s status, so a save posts it back as stored unless it was changed', () => {
+		for (const status of ['paused', 'achieved', 'dropped'] as const) {
+			const draft = goalDraft(stored({ status, priority: status === 'paused' ? 1 : null }));
+			expect(draft.status).toBe(status);
+			const result = validate(SCHEMAS.goal, draft);
+			expect(result.ok && result.data.status, status).toBe(status);
+		}
+		expect(newGoal().status).toBe('active');
+		expect(newGoal('general').status).toBe('active');
 	});
 
 	it('round-trips: a new goal filled in saves as the goal that edits as the same draft', () => {
@@ -87,13 +113,14 @@ describe('goalDraft', () => {
 			eventDate: '2027-03-14',
 			weightClass: '−71 kg',
 			targetPerformance: null,
-			requirements: null
+			requirements: null,
+			status: 'active'
 		});
 		const goal = stored({ ...result.data, focus: null, measure: null, targetDate: null });
 		expect(goalDraft(goal)).toEqual({ ...filled, id: goal.id });
 	});
 
-	it('posts back what the sheet does not show: a general goal’s fields and the notes', () => {
+	it('edits a general goal as stored, and posts back the notes the sheet does not show', () => {
 		const general = stored({
 			kind: 'general',
 			title: 'Keep my strength',
@@ -119,7 +146,8 @@ describe('goalDraft', () => {
 				notes: 'Through fight camp',
 				focus: 'Hold squat and deadlift',
 				measure: 'Top sets at RPE 8 stay within 5%',
-				targetDate: '2027-06-30'
+				targetDate: '2027-06-30',
+				status: 'active'
 			}
 		});
 	});
@@ -151,6 +179,19 @@ describe('goalSummary', () => {
 			measure: 'e1RM trend'
 		});
 		expect(goalSummary(general)).toBe('Deadlift strength · e1RM trend');
+	});
+
+	it('says by when a general goal is due, when it has a target date', () => {
+		const general = stored({
+			kind: 'general',
+			eventType: null,
+			eventDate: null,
+			weightClass: null,
+			focus: 'Deadlift strength',
+			measure: 'e1RM trend',
+			targetDate: '2027-06-30'
+		});
+		expect(goalSummary(general)).toBe('Deadlift strength · e1RM trend · by 30 Jun 2027');
 	});
 });
 

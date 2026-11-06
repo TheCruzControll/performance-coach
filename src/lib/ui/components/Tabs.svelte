@@ -102,6 +102,7 @@
 
 	.list {
 		position: relative;
+		container-type: inline-size;
 		display: grid;
 		grid-template-columns: repeat(var(--count), minmax(0, 1fr));
 		border-bottom: 1px solid var(--color-hairline);
@@ -122,26 +123,21 @@
 		color: var(--color-text);
 	}
 
+	/* The pill is the moving box, centred under the active tab, stepped in tab widths of the list
+	   (cqi). A tab-wide box carrying the pill overshot the list's end by 8.5% of the travel on
+	   the spring, past a 393 px page, and mobile browsers keep a page widened by that. */
 	.indicator {
 		position: absolute;
 		bottom: -1px;
-		left: 0;
-		width: calc(100% / var(--count));
+		left: calc(100% / var(--count) / 2 - 16px);
+		width: 32px;
 		height: 2px;
-		transform: translateX(calc(var(--index) * 100%));
+		border-radius: var(--radius-full);
+		background: var(--color-accent);
+		transform: translateX(calc(var(--index) * 100cqi / var(--count)));
 		transition: transform var(--duration-slow) var(--ease-spring);
 		/* Decoration: a tap on the tab's bottom edge must reach the tab. */
 		pointer-events: none;
-	}
-
-	.indicator::before {
-		content: '';
-		display: block;
-		width: 32px;
-		height: 100%;
-		margin: 0 auto;
-		border-radius: var(--radius-full);
-		background: var(--color-accent);
 	}
 
 	.panel:focus-visible {

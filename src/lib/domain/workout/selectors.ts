@@ -68,11 +68,38 @@ export function progress(view: WorkoutView): Progress {
 }
 
 /** A planned set and the set logged in its place, or a logged set the plan did not ask for. */
-export interface PlannedSet {
+export interface Paired<P, L> {
 	setIndex: number;
-	planned: KitSet | null;
-	logged: Viewed<CanonicalSet> | null;
+	planned: P | null;
+	logged: L | null;
 }
+
+/**
+ * The slot numbering every reader pairs planned and logged sets by, the logger's and M6's
+ * analytics alike: planned set i (1-based) is the i-th of the exercise's planned sets, and the
+ * first set logged at index i, in the order given, takes it. Every other logged set (an extra
+ * set, or a second set at one index from two devices) is unplanned. Rows come by index, the
+ * planned row before the unplanned ones at an index.
+ */
+export function pairBySetIndex<P, L extends { setIndex: number }>(
+	planned: readonly P[],
+	logged: readonly L[]
+): Paired<P, L>[] {
+	const rows: Paired<P, L>[] = planned.map((set, i) => ({
+		setIndex: i + 1,
+		planned: set,
+		logged: null
+	}));
+	const unplanned: Paired<P, L>[] = [];
+	for (const set of logged) {
+		const row = rows[set.setIndex - 1];
+		if (row && !row.logged) row.logged = set;
+		else unplanned.push({ setIndex: set.setIndex, planned: null, logged: set });
+	}
+	return [...rows, ...unplanned].sort((a, b) => a.setIndex - b.setIndex);
+}
+
+export type PlannedSet = Paired<KitSet, Viewed<CanonicalSet>>;
 
 /**
  * A slot's planned sets, each with the first set logged at its index, then every other logged
@@ -80,17 +107,5 @@ export interface PlannedSet {
  */
 export function plannedVsLogged(view: WorkoutView, position: number): PlannedSet[] {
 	const slot = slotAt(view, position);
-	if (!slot) return [];
-	const rows: PlannedSet[] = (slot.kit?.sets ?? []).map((planned, i) => ({
-		setIndex: i + 1,
-		planned,
-		logged: null
-	}));
-	const unplanned: PlannedSet[] = [];
-	for (const set of slot.sets) {
-		const row = rows[set.setIndex - 1];
-		if (row && !row.logged) row.logged = set;
-		else unplanned.push({ setIndex: set.setIndex, planned: null, logged: set });
-	}
-	return [...rows, ...unplanned].sort((a, b) => a.setIndex - b.setIndex);
+	return slot ? pairBySetIndex(slot.kit?.sets ?? [], slot.sets) : [];
 }
