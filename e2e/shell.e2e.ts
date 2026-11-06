@@ -206,7 +206,7 @@ test.describe('app shell on an iPhone viewport', () => {
 			await page.goto(path);
 			await page.waitForLoadState('networkidle');
 		}
-		await page.goto('/train');
+		await gotoHydrated(page, '/train');
 		await page.getByTestId('open-plates').click();
 		await expect(page.getByTestId('plates-sheet')).toBeVisible();
 		await page.keyboard.press('Escape');
@@ -215,7 +215,7 @@ test.describe('app shell on an iPhone viewport', () => {
 	});
 
 	test('plate calculator sheet: stepper, unit switch, focus return', async ({ page }, testInfo) => {
-		await page.goto('/train');
+		await gotoHydrated(page, '/train');
 		const opener = page.getByTestId('open-plates');
 		await opener.click();
 
@@ -281,7 +281,8 @@ test.describe('app shell on an iPhone viewport', () => {
 				return 0;
 			};
 		});
-		await page.goto('/train');
+		// Hydrated first: a tap on the server-rendered row before then does nothing.
+		await gotoHydrated(page, '/train');
 		await page.getByTestId('open-plates').click();
 		const sheet = page.getByRole('dialog', { name: 'Plate calculator' });
 		await expect(page.getByTestId('plates-sheet')).toHaveClass(/\bvisible\b/);
