@@ -253,8 +253,11 @@ this build reproduced it: per-run TBT up to 635 ms, perf 84–100. Findings:
 CI runs the main-thread budget (with the e2e suite) as the **tight regression guard**, plus
 `pnpm lighthouse --runs 5 --assert --min-perf 0.9 --max-tbt 300` on **every app screen**
 (including the streamed, DB-backed `/profile`) as the Lighthouse check: the score target itself,
-and TBT with 50% headroom for shared-runner noise. Not yet run on GitHub's runners (nothing has
-been pushed); if their noise differs, adjust with numbers, not by dropping routes.
+and TBT with 50% headroom for shared-runner noise. On GitHub's runners (CI run
+[42148399101](https://github.com/TheCruzControll/performance-coach/actions/runs/42148399101),
+`main` at `47ec0cd`) the 5-run medians on all 7 routes were perf, accessibility and best practices
+100, LCP 0.91 s, TBT 8–35 ms and CLS 0.000; if their noise changes, adjust with numbers, not by
+dropping routes.
 
 ## Real-user monitoring
 

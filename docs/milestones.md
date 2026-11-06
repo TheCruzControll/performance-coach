@@ -6,8 +6,8 @@ acceptance criteria were verified by running them — compiling is not done.
 
 | #   | Milestone                       | Status                                                                                                               |
 | --- | ------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| M1  | Foundation & infrastructure     | **Implemented — awaiting independent review** (branch `feat/m1-foundation`)                                          |
-| M2  | Auth & profile                  | **In progress** (branch `feat/m2-auth-onboarding`): passkey auth implemented; onboarding and production cutover next |
+| M1  | Foundation & infrastructure     | **Done** (PR #1, merged 2026-11-05); deferred items carried below                                                    |
+| M2  | Auth & profile                  | **In progress** (slices merged to `main`): passkey auth, profile services; onboarding, Profile editing, cutover next |
 | M3  | Training data model & programs  | Planned                                                                                                              |
 | M4  | Workout application             | Planned                                                                                                              |
 | M5  | AI performance coach            | Planned                                                                                                              |
@@ -45,24 +45,27 @@ Acceptance criteria:
 10. Code is separated into domain / server db / services / agent / auth / client / ui / routes;
     all work committed with Conventional Commits; no secrets or build output.
 
-Evidence: see the PR description and docs/performance.md (local runs of every command above).
-Known gaps:
+Evidence: PR #1 (its CI run, Chromium + WebKit e2e and Lighthouse included, was green) and
+docs/performance.md (local runs of every command above).
+Deferred from M1 (carried forward):
 
-- WebKit e2e runs only in CI (not available locally), so iOS Safari rendering (glass, status
-  bar, PWA) is unverified until the first CI run. **Merge gate for the M1 PR:** the first CI
-  run's WebKit results are green. The real-device checklist in docs/testing.md moves to the M2
-  production cutover, when the owner first opens the app on their iPhone to register a passkey.
-- Production stays off until M2 auth is live: the committed `vercel.json` disables Vercel's Git
-  deployments of `main` and skips any production build Vercel starts itself
+- The real-device checklist in docs/testing.md moves to the M2 production cutover, when the owner
+  first opens the app on their iPhone to register a passkey. WebKit e2e runs in CI on every PR
+  (locally with `E2E_WEBKIT=1`), but neither browser paints `backdrop-filter` in CI's headless
+  iPhone projects (text behind the nav stays crisp in their screenshots), so glass is judged
+  only on a device.
+- Production stays off until M2's production cutover: the committed `vercel.json` disables
+  Vercel's Git deployments of `main` and skips any production build Vercel starts itself
   (docs/deployment.md). Preview deployments build from every PR, migrating the `preview` Neon
   branch first.
-- Auth not yet enforced (M2): every page, `POST /api/vitals` (not rate-limited) and
-  `POST /api/client-errors` (rate-limited per instance) are unauthenticated, and Profile shows
-  version, environment and RUM data. Acceptable only because production is off (above).
 - Performance is measured in the lab only (Lighthouse with simulated throttling and a real 4×
-  CPU main-thread budget, both met on every screen; docs/performance.md). Real-device and RUM p75
-  numbers start when the owner uses the deployed app; Lighthouse has not yet run on GitHub's
-  runners.
+  CPU main-thread budget, both met on every screen; docs/performance.md). Lighthouse also runs
+  in CI on GitHub's runners. Real-device and RUM p75 numbers come later, once the owner uses the
+  deployed app.
+
+M1's other known gap, unauthenticated pages and endpoints, closed in M2 (PR #7): deny by default
+guards every page and `/api/*` endpoint, `/api/vitals` and `/api/client-errors` included, except
+the sign-in, setup and recovery flow, `/api/health` and the prerendered offline screen.
 
 ## M2 — Authentication & profile [§3, §13]
 
@@ -87,7 +90,7 @@ Acceptance criteria:
    `/api/client-errors` require a session; then, and only then, the same PR removes the
    production guards in `vercel.json` (docs/deployment.md) and adds a post-deploy smoke check.
 
-Progress (auth, verified locally on the branch — not yet in CI):
+Progress (merged to `main` as slice PRs #2–#12 plus follow-up fixes, each green in CI):
 
 - Done: passkey setup via one-time token, sign-in (button and conditional UI), recovery codes
   (forcing a new passkey; regeneration), passkey add/rename/remove (never the last), session
@@ -96,8 +99,13 @@ Progress (auth, verified locally on the branch — not yet in CI):
   `/api/vitals` and `/api/client-errors` behind a session; docs/security.md with an ASVS
   self-review; ADR 0006 accepted. Evidence: unit, integration (real Postgres, real
   SimpleWebAuthn verification) and Playwright with real WebAuthn ceremonies in Chromium.
-- Open in M2: onboarding & training profile; production cutover (removing the `vercel.json`
-  guards, post-deploy smoke check); WebKit results from the first CI run; the real-device check.
+- Done: the training profile below the screens: domain model and validation, schema
+  (`drizzle/0004_training_profile.sql`) and services for the profile, ranked goals with history,
+  baselines, preferences, schedule and onboarding progress, with integration tests on real
+  Postgres; and the security and correctness fixes from reviewing the merged slices.
+- Open in M2: the onboarding and Profile editing screens (no route calls the profile services
+  yet); production cutover (removing the `vercel.json` guards, post-deploy smoke check); the
+  real-device check.
 
 ## M3 — Training data model & program management [§2, §5, §9, §11]
 
