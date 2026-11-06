@@ -14,6 +14,7 @@ const SCREENS = [
 	'/profile/goals',
 	'/profile/equipment',
 	'/profile/strength',
+	'/profile/experience',
 	'/offline',
 	'/design'
 ];
