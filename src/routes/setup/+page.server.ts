@@ -1,5 +1,10 @@
 import { error } from '@sveltejs/kit';
-import { authRequest, checkSetupAccess, relyingParty } from '#lib/server/auth/index.ts';
+import {
+	authRequest,
+	checkSetupAccess,
+	isAuthError,
+	relyingParty
+} from '#lib/server/auth/index.ts';
 import type { PageServerLoad } from './$types';
 
 /**
@@ -8,7 +13,13 @@ import type { PageServerLoad } from './$types';
  */
 export const load: PageServerLoad = async (event) => {
 	const token = event.url.searchParams.get('token');
-	if (!(await checkSetupAccess(token, authRequest(event)))) error(404, 'Not found');
+	const allowed = await checkSetupAccess(token, authRequest(event)).catch((err: unknown) => {
+		// Too many token checks get the same 404 as a wrong token (no 429 to tell a guesser),
+		// and are not a server incident: the limiter has already audited the refusal.
+		if (isAuthError(err) && err.code === 'rate_limited') return false;
+		throw err;
+	});
+	if (!allowed) error(404, 'Not found');
 	event.setHeaders({ 'cache-control': 'no-store' });
 	const rp = relyingParty(event.url);
 	return { unavailable: rp.ok ? null : rp.reason };

@@ -111,6 +111,70 @@ describe('athlete profile', () => {
 		});
 	});
 
+	it('dates body weight by the owner’s local day, not the UTC one', async () => {
+		await withRollback(async (db) => {
+			const owner = await makeOwner(db);
+			await saveBasics(
+				owner,
+				{ name: 'Niko', weightUnit: 'kg', distanceUnit: 'km', timeZone: 'America/Los_Angeles' },
+				{ db }
+			);
+			const at = (instant: string) => ({ db, now: () => new Date(instant) });
+			const body = { weightUnit: 'kg', nutritionPhase: null };
+			// 15:30 and 18:30 on 5 November in Los Angeles: two UTC days, one local day.
+			await saveBody(owner, { ...body, bodyWeight: 74.6 }, at('2026-11-05T23:30:00Z'));
+			const evening = await saveBody(
+				owner,
+				{ ...body, bodyWeight: 74.2 },
+				at('2026-11-06T02:30:00Z')
+			);
+			expect(evening.bodyWeight.map((w) => [w.measuredOn, w.value])).toEqual([
+				['2026-11-05', 74.2]
+			]);
+			// Local midnight starts the next day.
+			const morning = await saveBody(
+				owner,
+				{ ...body, bodyWeight: 74 },
+				at('2026-11-06T08:30:00Z')
+			);
+			expect(morning.bodyWeight.map((w) => [w.measuredOn, w.value])).toEqual([
+				['2026-11-06', 74],
+				['2026-11-05', 74.2]
+			]);
+		});
+	});
+
+	it('saves the owner’s time zone and keeps it when a save leaves it out', async () => {
+		await withRollback(async (db) => {
+			const owner = await makeOwner(db);
+			const basics = { name: 'Niko', weightUnit: 'kg', distanceUnit: 'km' };
+			expect((await getAthleteProfile(owner, { db })).timeZone).toBe('UTC');
+			const saved = await saveBasics(owner, { ...basics, timeZone: 'america/los_angeles' }, { db });
+			expect(saved.timeZone).toBe('America/Los_Angeles');
+			expect((await saveBasics(owner, basics, { db })).timeZone).toBe('America/Los_Angeles');
+			for (const timeZone of ['Mars/Olympus', '+05:30', '', null]) {
+				expect(await fieldErrors(saveBasics(owner, { ...basics, timeZone }, { db }))).toEqual({
+					timeZone: 'Pick your time zone'
+				});
+			}
+			expect((await getAthleteProfile(owner, { db })).timeZone).toBe('America/Los_Angeles');
+		});
+	});
+
+	it('stores a blank target date (an empty date input) as no date', async () => {
+		await withRollback(async (db) => {
+			const owner = await makeOwner(db);
+			const body = { weightUnit: 'kg', nutritionPhase: 'cut', targetWeight: 71 };
+			await saveBody(owner, { ...body, targetDate: '2027-03-13' }, { db });
+			const cleared = await saveBody(owner, { ...body, targetDate: '' }, { db });
+			expect(cleared.profile.targetDate).toBeNull();
+			const stored = await db.execute<{ target_date: string | null }>(
+				sql`select target_date from athlete_profiles where owner_id = ${owner}`
+			);
+			expect(stored.rows).toEqual([{ target_date: null }]);
+		});
+	});
+
 	it('refuses implausible body data', async () => {
 		await withRollback(async (db) => {
 			const owner = await makeOwner(db);

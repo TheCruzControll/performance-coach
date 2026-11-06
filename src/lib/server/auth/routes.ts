@@ -39,6 +39,10 @@ export const ROUTE_ACCESS = {
 	'/api/auth/passkeys/options': 'any-session',
 	'/api/auth/passkeys/verify': 'any-session',
 
+	// Step-up re-authentication: a full owner session confirms with one of its passkeys
+	'/api/auth/reauth/options': 'owner',
+	'/api/auth/reauth/verify': 'owner',
+
 	// The app
 	'/(app)/today': 'owner',
 	'/(app)/train': 'owner',
