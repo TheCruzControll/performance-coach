@@ -63,6 +63,16 @@ const LAYER = {
 		regex: `${layer('server/db')}|${layer('server/services')}|${layer('server/agent')}|${layer('server/auth')}`,
 		message:
 			'Observability is a leaf: the logger, request context and timing helpers must not depend on db, services, agent or auth.'
+	},
+	mailDeps: {
+		regex: [
+			...['db', 'services', 'agent', 'auth', 'forms'].map((name) => layer(`server/${name}`)),
+			'(^#lib/server/env|lib/server/env|^(\\.\\./)+env)(\\.ts)?$',
+			'^\\$env/',
+			'^(pg|drizzle-orm)($|/)'
+		].join('|'),
+		message:
+			'Mail is a leaf: it is built from explicit options (the caller passes the key and the addresses) and may use the logger, never db, services, agent, auth, forms, the env or a driver.'
 	}
 };
 
@@ -154,6 +164,18 @@ export default defineConfig(
 	{
 		files: ['src/lib/server/observability/**'],
 		rules: restrict([LAYER.observabilityDeps, LAYER.ui, LAYER.client, LAYER.framework])
+	},
+	{
+		// Mail reads no configuration itself, so the provider is chosen in one place
+		// (auth/email-link-config.ts), where a test server always gets the recording mailer.
+		files: ['src/lib/server/mail/**'],
+		rules: {
+			...restrict([LAYER.mailDeps, LAYER.ui, LAYER.client, LAYER.framework]),
+			'no-restricted-properties': [
+				'error',
+				{ object: 'process', property: 'env', message: LAYER.mailDeps.message }
+			]
+		}
 	},
 	{
 		files: ['src/routes/**', 'src/hooks.server.ts', 'src/hooks.client.ts'],

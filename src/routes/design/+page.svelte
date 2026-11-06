@@ -9,7 +9,7 @@
 	import Skeleton from '#lib/ui/components/Skeleton.svelte';
 	import Surface from '#lib/ui/components/Surface.svelte';
 	import Tabs from '#lib/ui/components/Tabs.svelte';
-	import { icons, type IconName } from '#lib/ui/icons/icons.ts';
+	import { ICON_NAMES as iconNames } from '#lib/ui/icons/names.ts';
 
 	type Group = 'buttons' | 'inputs' | 'data' | 'feedback' | 'program';
 	let tab = $state<Group>('buttons');
@@ -32,7 +32,6 @@
 		['strength', 'running', 'combat', 'hypertrophy', 'conditioning'],
 		['positive', 'warning', 'danger', 'info']
 	];
-	const iconNames = Object.keys(icons) as IconName[];
 	const typeScale = ['6xl', '5xl', '4xl', '3xl', '2xl', 'xl', 'lg', 'base', 'sm', 'xs'];
 </script>
 
@@ -134,7 +133,7 @@
 		<h2 class="h">Icons</h2>
 		<div class="icons">
 			{#each iconNames as name (name)}
-				<span class="icon-cell" title={name}><Icon {name} /></span>
+				<span class="icon-cell" title={name}><Icon {name} label={name} /></span>
 			{/each}
 		</div>
 	</section>

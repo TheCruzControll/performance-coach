@@ -72,6 +72,9 @@ builds; once it is ready Vercel assigns `coach.nikocruz.com` to it, and the prev
 serves until then.
 `scripts/vercel-build.test.ts` (unit suite) checks the committed config (nothing skips a
 production build) and the build command's migrate-then-build order.
+`vercel.json` also sends the prerendered pages, static files that never run `hooks.server.ts`,
+`STATIC_PAGE_HEADERS` (`src/lib/server/security-headers.ts`); `scripts/vercel-headers.test.ts`
+fails when a prerendered page has no rule or its headers differ from that constant.
 
 Production deploys only from `main` through Git: no deploy token exists and no workflow deploys.
 Do not deploy production by hand from a logged-in Vercel CLI (`vercel deploy --prod`): it skips
@@ -111,6 +114,7 @@ from outside, signed out, with no secrets:
 | `GET /api/health`                                                       | 200 with `ok: true` and `db: "up"` (a real query)                                                                                                                                                                          |
 | `GET /`                                                                 | 200: the sign-in screen with passkey sign-in, not the "passkeys aren't available on this address" notice                                                                                                                   |
 | Security headers on `/`                                                 | CSP with `frame-ancestors 'none'`, `object-src 'none'` and no inline scripts; `Strict-Transport-Security`; `nosniff`; `X-Frame-Options: DENY`; referrer and permissions policies; COOP; `X-Robots-Tag: noindex`; `private` |
+| Security headers on the prerendered pages (`/offline`)                  | Exactly `STATIC_PAGE_HEADERS`, sent from `vercel.json`: the hooks' security headers (not `private`: these pages hold no personal data) and a CSP of `frame-ancestors 'none'`                                               |
 | `GET /today`                                                            | 303 to `/?next=%2Ftoday`                                                                                                                                                                                                   |
 | `POST /api/vitals`, `POST /api/client-errors` (with the app's `Origin`) | 401 `unauthenticated` (without the `Origin` the CSRF check would answer 403 first)                                                                                                                                         |
 | `POST /api/test-support/session`                                        | 404: the test-only session route does not exist in production                                                                                                                                                              |
@@ -308,6 +312,7 @@ ID under "What exists".
   injected inline script is refused.
 - **Static and prerendered files** (`/_app/immutable/*`, icons, `manifest.webmanifest`,
   `robots.txt`, `/offline`) are served by the CDN (Vercel) or `sirv` (adapter-node) without
-  running hooks, so they do **not** carry these headers. They contain no personal data; the
-  prerendered `/offline` page carries its CSP as a `<meta>` tag (which cannot express
-  `frame-ancestors`). `robots.txt` disallows everything and every page has `noindex` meta.
+  running hooks. They contain no personal data. On Vercel the prerendered pages get the same
+  headers from `vercel.json`, plus a CSP header of `frame-ancestors 'none'`: their own CSP is a
+  `<meta>` tag, which cannot express it. Other static files, and every static file under `sirv`,
+  carry none of them. `robots.txt` disallows everything and every page has `noindex` meta.

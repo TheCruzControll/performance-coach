@@ -364,9 +364,19 @@ test.describe('passkey authentication (real WebAuthn ceremonies)', () => {
 				page.evaluate(() => JSON.parse(localStorage.getItem('pc:prefs:v1') ?? '{}').theme)
 			)
 			.toBe('light');
-		await page.waitForFunction(() => navigator.serviceWorker.controller !== null, null, {
-			timeout: 15_000
-		});
+		// The app shell is installed and its worker activated (the activate step, which drops other
+		// `pc-` caches, is over). Not "this page is controlled": signInAsOwner's page installed the
+		// worker, and a page whose navigation starts before the worker is active and commits after
+		// its clients.claim() stays uncontrolled until its next load. Sign-out needs no controller.
+		await expect
+			.poll(
+				() =>
+					page.evaluate(
+						async () => (await navigator.serviceWorker.getRegistration())?.active?.state
+					),
+				{ message: 'the service worker is activated', timeout: 15_000 }
+			)
+			.toBe('activated');
 		// Account data a device can hold: cached responses and the offline store (M4).
 		await page.evaluate(async () => {
 			const cache = await caches.open('pc-account-data');
