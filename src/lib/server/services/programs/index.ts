@@ -39,6 +39,16 @@ export {
 	type VersionHistoryEntry,
 	type WeekCopies
 } from './revise';
+export {
+	checkMove,
+	getMoveTargets,
+	moveSession,
+	skipSession,
+	type EditAt,
+	type MovedSession,
+	type MoveTarget,
+	type MoveWarning
+} from './edits';
 export type {
 	ProgramVersion,
 	StoredBlock,

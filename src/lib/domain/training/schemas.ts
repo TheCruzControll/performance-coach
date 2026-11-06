@@ -1,8 +1,9 @@
 /**
  * Validation for the program-plan contract (./types.ts), on zod/mini. The generator checks its
  * output with programPlanSchema and createProgramFromPlan parses with it; edits and their sheets
- * reuse the part schemas. Import this file by path (servers always, browsers on demand), never
- * through ./index.ts, so no page carries zod in its initial JavaScript.
+ * reuse the part schemas; the training log's writes (m3/30) have theirs at the end. Import this
+ * file by path (servers always, browsers on demand), never through ./index.ts, so no page
+ * carries zod in its initial JavaScript.
  *
  * - Each schema's output is exactly its ./types.ts type; nullable fields are given as null.
  * - Errors carry dotted paths through ../validation.ts, such as
@@ -13,7 +14,7 @@
 import * as z from 'zod/mini';
 import { addDays, daysBetween, mondayOf } from '../calendar.ts';
 import { DISCIPLINES, EQUIPMENT, LIFTS, TIMES_OF_DAY, WEIGHT_UNITS } from '../profile/catalog.ts';
-import type { BaselineLift, ProgramPlan, SetPrescription } from './types.ts';
+import type { BaselineLift, ProgramPlan, SessionKind, SetPrescription } from './types.ts';
 import * as v from './vocabulary.ts';
 
 /**
@@ -450,3 +451,112 @@ export const programPlanSchema = z
 		decisions: list(decisionPlanSchema, 500)
 	})
 	.check(rules(checkPlan, whenValid));
+
+// ---- the training log -----------------------------------------------------------------------
+
+/**
+ * Inclusive bounds a logged set is held to (m3/30), inside the set_records CHECKs. A weight has
+ * the column's two decimals, so a replay compares equal to the stored row.
+ */
+export const LOG_LIMITS = {
+	position: [1, 50],
+	/** Completed: 0 for a missed single (1 missed). */
+	reps: [0, 100],
+	missedReps: [0, 50],
+	seconds: [1, 86_400],
+	metres: [1, 100_000],
+	weight: { kg: 1000, lb: 2200 }
+} as const;
+const G = LOG_LIMITS;
+
+const SESSION_KINDS = ['strength', 'run', 'other'] as const satisfies readonly SessionKind[];
+
+/** An instant as a device sends it (toISOString), read as a Date. */
+const instant = z.pipe(
+	z.iso.datetime({ offset: true, message: 'Use a date and time' }),
+	z.transform((value: string) => new Date(value))
+);
+const hundredths = (n: number) => Math.abs(n * 100 - Math.round(n * 100)) < 1e-6;
+
+/** A set's values, all of them: what a logged set records and an edit replaces. */
+const setValues = {
+	weight: z.nullable(
+		z.number('Enter the weight').check(z.positive('Above 0'), z.refine(hundredths, 'Two decimals'))
+	),
+	unit,
+	reps: z.nullable(whole(...G.reps, `Reps between ${G.reps[0]} and ${G.reps[1]}`)),
+	missedReps: whole(...G.missedReps, `Up to ${G.missedReps[1]} missed reps`),
+	seconds: z.nullable(whole(...G.seconds, 'Up to a day')),
+	metres: z.nullable(whole(...G.metres, `Up to ${G.metres[1] / 1000} km`)),
+	rpe: z.nullable(sessionRpe),
+	isWarmup: z.boolean(),
+	isExtra: z.boolean(),
+	isSkipped: z.boolean()
+};
+type SetValues = z.output<z.ZodMiniObject<typeof setValues>>;
+
+function checkSetValues(s: SetValues, fail: Fail) {
+	if (!s.isSkipped && s.reps === null && s.seconds === null && s.metres === null) {
+		fail(['reps'], 'Record reps, a time or a distance');
+	}
+	// As set_records_missed_reps_ck: missed reps only where reps are counted.
+	if (s.missedReps > 0 && s.reps === null) {
+		fail(['missedReps'], 'Missed reps go with the reps done');
+	}
+	if (s.weight !== null && s.weight > G.weight[s.unit]) {
+		fail(['weight'], `Up to ${G.weight[s.unit]} ${s.unit}`);
+	}
+}
+
+/** A workout as it starts, under the device's id; a planned one names its session's row. */
+export const startWorkoutSchema = z.object({
+	clientId: uuid,
+	kind: z.enum(SESSION_KINDS, 'Strength, run or other?'),
+	discipline: z.enum(DISCIPLINES, 'Pick a discipline'),
+	sessionType: z.enum(v.SESSION_TYPES, 'Pick a session type'),
+	title: text(60),
+	plannedSessionId: z.nullable(uuid),
+	startedAt: instant
+});
+
+/** One set as performed, under the device's id, in its workout (by the workout's client id). */
+export const logSetSchema = z
+	.object({
+		clientMutationId: uuid,
+		workoutClientId: uuid,
+		exerciseId: uuid,
+		plannedExerciseLineageId: z.nullable(uuid),
+		exercisePosition: whole(...G.position, 'Exercise 1 to 50'),
+		setIndex: whole(...G.position, 'Set 1 to 50'),
+		...setValues,
+		performedAt: instant
+	})
+	.check(rules(checkSetValues));
+
+/** An edit of a set: every value after the edit, never a difference. */
+export const editSetSchema = z.object(setValues).check(rules(checkSetValues));
+
+/** Finishing (or abandoning) a workout; a summary field left out keeps its value, null clears it. */
+export const finishWorkoutSchema = z.object({
+	status: z.enum(['completed', 'abandoned'], 'Completed or abandoned?'),
+	finishedAt: instant,
+	durationSeconds: z.optional(z.nullable(whole(1, 86_400, 'Up to a day'))),
+	sessionRpe: z.optional(z.nullable(sessionRpe)),
+	notes: z.optional(optText(500))
+});
+
+/** An exercise swapped in a workout, under the device's id: it stays on the workout. */
+export const substitutionSchema = z
+	.object({
+		clientMutationId: uuid,
+		workoutClientId: uuid,
+		plannedExerciseLineageId: z.nullable(uuid),
+		fromExerciseId: uuid,
+		toExerciseId: uuid,
+		reason: z.enum(v.SUBSTITUTION_REASONS, 'Pick a reason')
+	})
+	.check(
+		rules((s, fail) => {
+			if (s.fromExerciseId === s.toExerciseId) fail(['toExerciseId'], 'Pick a different exercise');
+		})
+	);
