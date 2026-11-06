@@ -39,6 +39,20 @@ describe('the exercise catalogue under plain Node', () => {
 		});
 	});
 
+	it('loads src/lib/server/db/migrate.ts, the chain db:migrate and the Vercel build run', () => {
+		// migrate.ts → seed/exercises.ts → domain/exercises: one bad specifier breaks every deploy.
+		const result = plainNode(
+			path.join(root, 'src/lib/server/db/migrate.ts'),
+			'{ runMigrations: typeof m.runMigrations, resetDatabase: typeof m.resetDatabase }'
+		);
+		expect(result.stderr).not.toMatch(/Error/);
+		expect(result.status).toBe(0);
+		expect(JSON.parse(result.stdout)).toEqual({
+			runMigrations: 'function',
+			resetDatabase: 'function'
+		});
+	});
+
 	it('would fail on an extensionless runtime import, which only Vite resolves', () => {
 		const dir = mkdtempSync(path.join(tmpdir(), 'catalogue-node-'));
 		try {

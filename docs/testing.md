@@ -262,6 +262,15 @@ Migrations, the CHECKs on closed vocabularies and the history guards on real Pos
   intact; `truncate programs cascade` and `withCommitted` purge a whole program. The unit test
   `scripts/history-guards.test.ts` keeps `truncate`, `session_replication_role` and
   `disable trigger` out of server code.
+- **Exercise library** (`tests/integration/training/exercise-seed.test.ts`): after the global
+  setup's migrate run every catalogue entry is stored exactly as defined (unilateral and default
+  seconds included); a rerun reports no change and leaves `updated_at` alone; a new key is
+  inserted and a changed entry updated in place, keeping its id; a removed key is retired,
+  readable by id, and restored with the same id; custom rows are never touched, cannot take a key
+  and are unique per owner by lower-cased name; measure, skill level, load type, reps, seconds and
+  primary muscles are CHECKed while pattern stays open; the catalogue survives `withCommitted`
+  (custom rows have no owner FK, so they survive it too and the test removes its own).
+  `scripts/catalogue-node.test.ts` also loads `migrate.ts` under plain Node, as `db:migrate` does.
 
 ### Programs
 

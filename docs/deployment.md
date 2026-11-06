@@ -49,6 +49,17 @@ migrates it from scratch ("Resetting the preview database" below). Never reset i
 production. On `main` the same ordering is enforced by a unit test
 (`scripts/drizzle-journal.test.ts`): journal entries must be strictly increasing in time.
 
+**Exercise catalogue seed.** Every `pnpm db:migrate` (so every deployed build, CI, and the test
+and e2e resets) seeds the exercise library after migrating, under the same lock: one upsert from
+`CATALOGUE` in code (`src/lib/server/db/seed/exercises.ts`). It inserts new keys, updates changed
+entries in place, retires keys the catalogue no longer has (`retired_at`, never deleted) and
+restores a retired key that comes back, then logs the counts
+(`db:migrate: exercise catalogue N inserted, N updated, N retired, N restored`). A rerun changes
+nothing. Previews share the one `preview` branch, so previews of PRs with different catalogues
+retire and restore each other's keys in turn. This is expected and harmless: ids are stable,
+retired rows stay readable, and the generator reads the catalogue from code, never from these
+rows.
+
 ## Production stays off until auth ships — how that is enforced
 
 In M1 every page and `POST /api/vitals` are unauthenticated, so the app must not be served on
