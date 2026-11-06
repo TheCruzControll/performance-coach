@@ -131,8 +131,10 @@ with an empty database and no owner, so after the cutover deploy (or an owner re
 1. On a trusted machine, in the repository: `pnpm auth:setup-token`. It prints a random token,
    its SHA-256 and the link `https://coach.nikocruz.com/setup?token=<token>`. The token is shown
    once and stored nowhere; never paste it into chat, issues or logs.
-2. Vercel → Project → Settings → Environment Variables: add `OWNER_SETUP_TOKEN_HASH` = the
-   printed hash, environment **Production** only, marked **Sensitive**. Redeploy production
+2. Vercel → Project → Settings → Environment Variables: add `OWNER_SETUP_TOKEN_HASH` (or edit it,
+   if it is already there) = the printed hash, environment **Production** only, marked
+   **Sensitive**. Until setup completes, whoever holds that token can claim the account, so only
+   ever set the hash of a token you alone hold. Redeploy production
    (Deployments → the current production deployment → ⋯ → Redeploy): the variable is read when
    the server starts. Run the smoke check afterwards if it does not start by itself.
 3. On the iPhone, in Safari (the link travels to it through a private channel): open
@@ -150,8 +152,10 @@ with an empty database and no owner, so after the cutover deploy (or an owner re
    moment) and record device, iOS version, date and screenshots.
 
 If the link answers 404: the running deployment does not have the hash yet (redeploy after
-setting it), the link is incomplete, the token was already used, or too many wrong links were
-tried from that network in the last 15 minutes (wait, then retry).
+setting it), the link is incomplete, the token was already used, or there were too many setup
+attempts from that network in the last 15 minutes (wait, then retry). Every request counts, right
+token or wrong: each load of the link, and each passkey options and verify call (10 per 15 minutes
+per IP).
 
 A preview deployment can be set up the same way with
 `pnpm auth:setup-token --origin https://<preview-host>` and a **Preview**-scoped hash; previews
