@@ -225,7 +225,7 @@ Specs:
 
 Artifacts: failure screenshots + traces in `test-results/`, key-screen screenshots in
 `test-results/screens/<project>/`, HTML report in `playwright-report/` (all uploaded by CI).
-CI uploads the production server's `.e2e-server.log` in the same artifact.
+CI uploads the production server's `.e2e-server.log` in the same artifact (`scripts/ci-workflow.test.ts`).
 
 ## Training (M3)
 
