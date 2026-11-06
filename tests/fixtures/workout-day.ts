@@ -156,6 +156,7 @@ export function workoutDayKits({
 		previous: null,
 		bestE1rm: null,
 		priorBests: [],
+		mostReps: null,
 		...more
 	});
 	const working = { role: 'working', prescribedWeight: null } as const;
