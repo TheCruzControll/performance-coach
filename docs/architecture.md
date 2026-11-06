@@ -105,7 +105,7 @@ tests can wrap each test in a rolled-back transaction.
 - M1 tables: `app_errors` (server incidents) and `web_vitals` (RUM, attributed per screen via
   `path` + `route_id`). M2 auth tables: `owners` (exactly one row), `passkey_credentials`,
   `auth_sessions` (token hashes), `recovery_codes` (hashes), `webauthn_challenges` (single-use),
-  `auth_events` (audit log) and `auth_rate_limits` (DB-backed counters); see docs/security.md. CI's `pnpm db:drift` fails when the schema changes without a committed
+  `used_setup_tokens` (hashes of spent setup tokens), `auth_events` (audit log) and `auth_rate_limits` (DB-backed counters); see docs/security.md. CI's `pnpm db:drift` fails when the schema changes without a committed
   migration. The training data model
   (profile, goals, programs, cycles, workouts, sets, sessions, decisions) lands in M3 with
   history-preserving, timestamped records (PRD §9).

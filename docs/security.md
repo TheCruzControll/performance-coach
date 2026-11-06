@@ -50,13 +50,17 @@ extension on the owner's browser can act as the owner.
    hash is configured (`OWNER_SETUP_TOKEN_HASH`); the token travels to the owner in the link
    `https://coach.nikocruz.com/setup?token=…`.
 2. `/setup` answers **404** unless the token's SHA-256 equals the configured hash (compared with
-   `timingSafeEqual` on the two digests) **and** no passkey exists. Wrong tokens are audited and
-   rate-limited (10 per 15 min per client).
+   `timingSafeEqual` on the two digests), that token has never completed a setup, **and** no
+   passkey exists. Wrong tokens are audited and rate-limited (10 per 15 min per client).
 3. The owner enters a name and creates a passkey. In one transaction (advisory-locked, so two
    concurrent setups cannot both win): the owner and passkey are created, setup is marked
-   complete, 10 recovery codes are generated and stored hashed, and a session starts.
+   complete, the token's hash is recorded as used (`used_setup_tokens`), 10 recovery codes are
+   generated and stored hashed, and a session starts.
 4. The 10 codes are returned **once** in that response and shown with copy/download and a
    required acknowledgement. From then on `/setup` is a 404 for good (even with the right token).
+   A token works for **one** setup: `pnpm auth:reset-owner` reopens setup but keeps the used
+   hashes, so the old link (audited as `token_used` if tried) stays refused even while its hash is
+   still configured, and the reset needs a new token.
 
 ### Sign-in
 
@@ -193,10 +197,11 @@ uses it: every Chromium sign-in is a real WebAuthn ceremony.
 - Server-only configuration is validated by `src/lib/server/env.ts` and never bundled for the
   browser (SvelteKit refuses `server/` imports in client code). `ANTHROPIC_API_KEY` never reaches
   the browser.
-- The setup **token** is never stored anywhere: only its hash is configured. Vercel's own request
-  logs record full URLs, so the setup request's token appears there; it is useless once setup has
-  completed (and `OWNER_SETUP_TOKEN_HASH` can then be removed). The app's own logs record paths
-  without query strings.
+- The setup **token** is never stored anywhere: only its hash is configured (and, once used,
+  recorded in `used_setup_tokens`). Vercel's own request logs record full URLs, so the setup
+  request's token appears there; it is useless once setup has completed, also after an owner
+  reset (a used token is refused for good). Remove `OWNER_SETUP_TOKEN_HASH` after setup. The app's
+  own logs record paths without query strings.
 - `.env` is git-ignored; nothing secret is committed.
 
 ## What is and isn't protected

@@ -53,7 +53,8 @@ the CSRF Origin check, User-Agent and passkey labels, and the route access map â
   SimpleWebAuthn's helper) produces real registration and assertion responses, so every service
   runs through `@simplewebauthn/server`'s genuine verification. Covered: setup once (token hash,
   10 hashed codes, nothing secret stored, setup closed afterwards, refused origin/RP/UV/type,
-  single-use challenges, `auth:reset-owner` reopening setup and re-attaching the same owner);
+  single-use challenges, `auth:reset-owner` reopening setup and re-attaching the same owner, a
+  token working for one setup only, also across resets);
   sign-in (counter update, rotation, replay, expired challenge, counter regression, unknown
   passkey, production RP and other origins refused, malformed bodies); sessions (sliding refresh
   at most daily, 90-day cap, 30-day idle expiry, last-seen resolution, revoke one / others /

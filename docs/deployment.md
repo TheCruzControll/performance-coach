@@ -92,7 +92,8 @@ production database, after the first deployment with auth:
    manager or download) and confirm. The app opens on Today.
 4. `/setup` now answers 404 for good, even with the right token. Remove `OWNER_SETUP_TOKEN_HASH`
    from Vercel (it can no longer be used, but there is no reason to keep it). Vercel's request
-   logs contain the setup URL with the token; it is useless once setup has completed.
+   logs contain the setup URL with the token; it is useless once setup has completed: a token
+   works for one setup, and its hash is recorded so it stays refused even after an owner reset.
 5. Recommended right away: Profile → Security → **Add passkey** on a second device (Mac, or a
    hardware key) so losing the iPhone never needs a recovery code.
 
@@ -119,7 +120,8 @@ work there (and vice versa).
   name to be typed back (it refuses to run non-interactively). In one transaction it deletes
   every passkey, recovery code and pending challenge, revokes every session, reopens first-run
   setup and writes an `owner.reset` audit event. **The owner row and all training data are
-  kept.** Then follow "Owner setup" above with a new token; setup re-attaches to the same owner.
+  kept.** Then follow "Owner setup" above with a **new** token (the previous link stays refused:
+  each token works for one setup); setup re-attaches to the same owner.
 
 ## Backups (`backup.yml`)
 

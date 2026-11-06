@@ -37,12 +37,13 @@ if (values.json) {
 			'',
 			`   OWNER_SETUP_TOKEN_HASH=${hash}`,
 			'',
-			'2. Give the owner this link through a private channel (it works until the first passkey',
-			'   is registered; after that /setup answers 404 for good):',
+			'2. Give the owner this link through a private channel. It works for one setup: once the',
+			'   first passkey is registered with it, it answers 404 for good, even after an owner reset:',
 			'',
 			`   ${link}`,
 			'',
-			'3. After setup, remove OWNER_SETUP_TOKEN_HASH from Vercel (optional: it can no longer be used).',
+			'3. After setup, remove OWNER_SETUP_TOKEN_HASH from Vercel. After `pnpm auth:reset-owner`,',
+			'   run this again: setup needs a new token (the used one stays refused).',
 			''
 		].join('\n')
 	);
