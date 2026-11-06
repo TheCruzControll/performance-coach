@@ -17,9 +17,17 @@ limit = int(opt('--limit', 2))
 only = set(opt('--only', '').split(',')) - {''}
 max_items = int(opt('--max', 999))
 
-prs = json.loads(subprocess.check_output(
-    ['gh', 'api', '--paginate', f'{R}/pulls?state=all&per_page=100', '--jq',
-     '[.[] | {n: .number, ref: .head.ref, merged: (.merged_at != null), state}]'], text=True).replace('][', ','))
+# Page by number: gh's --paginate follows Link headers that name repositories/<id>/..., which
+# the session's GitHub proxy refuses.
+prs, page = [], 1
+while True:
+    batch = json.loads(subprocess.check_output(
+        ['gh', 'api', f'{R}/pulls?state=all&per_page=100&page={page}', '--jq',
+         '[.[] | {n: .number, ref: .head.ref, merged: (.merged_at != null), state}]'], text=True))
+    prs += batch
+    if len(batch) < 100:
+        break
+    page += 1
 by_branch = {}
 for p in sorted(prs, key=lambda p: p['n']):
     if p['state'] == 'closed' and not p['merged']:

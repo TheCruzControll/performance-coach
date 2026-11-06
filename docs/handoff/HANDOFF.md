@@ -4,10 +4,10 @@ This is everything a new Claude Code session needs to resume the build on anothe
 product spec is `docs/product-requirements.md` on `main`; milestone criteria are in
 `docs/milestones.md`. Read this file from `origin/handoff` (it is not on `main`).
 
-## Update: cloud session, 2026-11-06 (06:28 → 13:40 UTC, still running)
+## Update: cloud session, 2026-11-06 (06:28 → 15:40 UTC, still running)
 
 A claude.ai cloud session (4 CPUs, 15 GB, Linux; no T3, no Codex) is working the goal "finish
-M1–M9 on main with evidence and the app live on coach.nikocruz.com". State at 13:40 UTC:
+M1–M9 on main with evidence and the app live on coach.nikocruz.com". State at 15:40 UTC:
 
 - **Production is live** on coach.nikocruz.com since the cutover (#50, 07:13 UTC); every merge to
   `main` deploys it, and the post-deploy smoke check runs after each deploy.
@@ -16,25 +16,32 @@ M1–M9 on main with evidence and the app live on coach.nikocruz.com". State at 
   `OWNER_SETUP_TOKEN_HASH` cleared in Vercel (an empty value; the owner deletes the variable when
   at a desk). The real-device checklist passed in Chrome; record it in M2's docs PR and change the
   checklist in `docs/testing.md` to target Chrome for iOS (Add to Home Screen optional).
-- **Merged today:** #12, #18–#47, #50–#67, #69–#72, #75, #78–#80, #85 (59 PRs): M1 audit fixes,
-  the cutover, M2 profile services and Equipment/Strength/Experience editors, most of M3's data
-  layer and generator, and the first M2X slice.
-- **Plans** (all in `plans/`): `m3-plan.json`, `m2x-plan.json` (desktop view + email sign-in link,
-  21 slices), `m4-plan.json` (61), `m5-plan.json` (61). The planner (`milestone-plans-cloud.js`,
-  run `wf_3f53c5db-7bb`) is on M6, then M7 and M9. Each plan's `openQuestions` are answered with
-  defaults; slices list the default under "## Owner decisions" in their PR.
+- **Merged today: 76 PRs.** By 13:40: #12, #18–#47, #50–#67, #69–#72, #75, #78–#80, #82, #85, #87,
+  #88. Since: #68 (ranked goals), #86 (section pages load no editor CSS), #91 (e2e fixture programs
+  and full M3 reset), #92 (week-1 loads), #94 (history queries), #95 (program versions), #96
+  (desktop rules), #97 (weekly volume), #98 (M4 timers), #99 (e2e race fixes), #100 (week
+  placement), #101 (M5 coach contracts), #102 (M4 outbox rules).
+- **Plans** (all in `plans/`): `m3-plan.json`, `m2x-plan.json` (21 slices), `m4-plan.json` (61),
+  `m5-plan.json` (61). The planner (`milestone-plans-cloud.js`, run `wf_3f53c5db-7bb`) is on M6,
+  then M7 and M9. Each plan's `openQuestions` are answered with defaults; slices list the default
+  under "## Owner decisions" in their PR.
 
 ### Open PRs and how they merge
 
-- **Profile stack** (all add entries to the same section registries, so they merge one after
-  another, each stacked on the previous): #68 (goals, being stacked now) → **#86** (section pages
-  load no editor CSS; carries the same guard line as #68) → #73 → #74 → #76 → #77 → #81 → #83 →
-  #84 → #89, then goal order/drag. Held ones are listed in `<scratch>/steward-hold`
-  (`tools/steward-hold.example`); `workflows/stack-siblings.js` merges main and the previous
-  sibling into each, resolves registry conflicts (keep every entry), runs the gates, gets the
-  resolution reviewed (remerge-diff) and pushes.
-- **In CI:** #82 (program reads), #87 (M4 workout contract), #88 (M3 runs/Muay Thai), #90 (M4 icon
-  sprite). **#84** has a WebKit-only test fix in progress (`pr-ci-fix.js`).
+- **Profile chain** (they add entries to the same section registries): `workflows/profile-chain.js`
+  (run `wf_ee68f6ee-303`) restacks #73 → #74 → #76 → #77 → #81 → #83 → #84 → #89 → #93 as one
+  chain on main + #86: each link merges main and the previous link and resolves the registry
+  conflicts (keep every entry), a fresh reviewer reads the remerge-diff and full gates run while
+  the next link stacks, fixes cascade down, then all are pushed in order with "Depends on <previous
+  link>" and an audit checks no section was lost. Until it pushes they are held in
+  `<scratch>/steward-hold`; remove those lines after the push and the steward merges them in order.
+  **#104** (goal drag) is built on the old #93 and is restacked onto the new one after that.
+- **#90** (M4 icon sprite): its two WebKit test bugs are fixed (a `minus` icon's zero-height box;
+  `document.fonts.ready` waits for the load event in WebKit), and main is merged in (both budget
+  guards kept). One WebKit e2e fails with this PR + current main: leaving `/design` while its
+  startup CSS is held throws an uncaught "Unable to preload CSS" (the test holds the sprite too, and
+  a held `<use>` sprite holds WebKit's load event). Fix in progress (`pr-ci-fix.js`).
+- **In CI:** #103 (M4 set logging rules), #105 (M3 move/skip a session).
 - **Never merge #13** (this branch). **#14** is an old paused WIP branch; leave it.
 
 ### Rules learned today (now in `workflows/dag-cloud.js`'s instructions)
@@ -49,6 +56,16 @@ M1–M9 on main with evidence and the app live on coach.nikocruz.com". State at 
   modulepreload stuck (bug 270357), so Retry could never load a lazy chunk on Safari/Chrome iOS.
 - **Profile section editors stay out of the server build** (#86): SvelteKit links the CSS of every
   dynamic import the server build can reach, render-blocking; `pnpm budgets` now guards it.
+- **WebKit's `document.fonts.ready`** resolves only after the load event; tests that hold a request
+  wait on `document.fonts.status === 'loaded'` instead (Playwright's screenshots await `ready`).
+- **Lighthouse LCP artefact** (found on #90, main is equally exposed): Chrome truncates the FCP
+  trace timestamp through seconds-as-double, so at some runner uptimes LCP lands 1 µs after FCP
+  for the same frame and Lantern takes its slow path (≈2.5 s simulated LCP on `/profile`). It shows
+  when CI's apt step runs slow and the audits start late. Owner decision pending (below).
+- **Lost runners**: a job "cancelled" at its timeout with no log and no artifacts is a lost runner;
+  re-runs are refused to this integration, so bring main in (a real change) for a fresh run.
+- **GitHub pagination**: `gh api --paginate` follows `repositories/<id>/...` links that the
+  session's proxy refuses; page by number (`&page=N`) instead (`build-plan-wave.py` does).
 - **Shared docs** (`docs/testing.md`, `security.md`, `performance.md`, `milestones.md`): code
   slices put their lines in a "## Docs to add" section of the PR body; each milestone's docs PR
   collects them from the merged PRs.
@@ -59,13 +76,13 @@ M1–M9 on main with evidence and the app live on coach.nikocruz.com". State at 
 
 ### Running workflows (scripts in `workflows/`, args in `<scratch>/dag-*.json`)
 
-`dag-cloud.js` waves: A1 (M2 goals chain), B1 (M3 generator), B2 (M3 data + Train screens), X1
-(M2X desktop shell + email-link base), C1b (M4 domain + offline store, two lanes); plus the stack
-workflow, the #84 fix and an e2e flake hunt (sign-out device clearing, shell screenshots). Agent
-cap: 12 (owner-approved). `build-plan-wave.py <plan> <M> <brief> <slug> <port>` builds a wave's
-args from any milestone plan: every slice whose dependencies are merged, have a PR, or are earlier
-in the same wave. Next: M5 (D1) when a slot frees, with the claude-api skill; M2's onboarding and
-Today slices once the profile stack has merged.
+`dag-cloud.js` waves: B1 (M3 generator: scenarios), B2 (M3 Train week, db-explain, …), X1 (M2X
+desktop shell, email link), C1b (M4 projection, store, sync, …), D1 (M5 tool catalogue, markdown,
+mock provider, tool framework); plus the profile chain, the #90 fix and the M6/M7/M9 planner.
+Agent cap: 12 (owner-approved). `build-plan-wave.py <plan> <M> <brief> <slug> <port>` builds a
+wave's args from any milestone plan. Next once the profile chain is pushed: M3 `preferences-link`
+(on #83) and M2 `onboarding-flow` (on the whole chain), then Today setup, onboarding save/resume/
+review, Today summary and M2's docs PR.
 
 ### Waiting on the owner
 
@@ -73,9 +90,14 @@ Today slices once the profile stack has merged.
   the session asks before setting `OWNER_EMAIL`.
 - M8: the council bar (`args.bar`), asked when M4 lands. M8/M9: real-traffic Core Web Vitals at
   p75 and the owner's sign-off.
-- Defaults to confirm (none blocking): the plans' open questions (`openQuestions` in each plan),
-  e.g. M2X link lifetime 15 min vs ASVS 10 and link-session lifetime; M4 focus mode and default
-  rest times; #73's coach units vs device units; #63's restore of a retired custom exercise name.
+- **Lighthouse gate**: patch `scripts/lighthouse.ts` to treat a same-frame LCP candidate 1 µs after
+  FCP as FCP (a measurement correction, with a test), or accept a rare red Lighthouse run.
+- Defaults to confirm (none blocking; each PR's "## Owner decisions"): tablet 640–1023 px keeps the
+  bottom bar and Security stays one column on desktop (#96); default rests 3:00/2:00/1:30/1:00
+  (#98); coach off = every turn refused, tagged-label answers (#101); a failing change is parked
+  after 50 failures or 24 h, backoff 1–60 s (#102); assisted/bodyweight logging rules (#103); the
+  plans' `openQuestions`, e.g. M2X link lifetime; #73's coach units vs device units; #63's restore
+  of a retired custom exercise name.
 
 To resume in a fresh cloud session: copy `tools/*` to `<scratch>/bin`, `plans/*` to
 `<scratch>/plans`, start Postgres 16 (raise `max_connections` to 300) and `tools/pg18`, then build
