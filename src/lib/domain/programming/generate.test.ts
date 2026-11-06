@@ -1,6 +1,6 @@
 /**
  * generate.ts: the stage list runs in its documented order and each later stage is an identity
- * stub of its own until its slice replaces it (strength and timefit have); every scenario
+ * stub of its own until its slice replaces it (strength, placement and timefit have); every scenario
  * composes into a plan the contract accepts; the minimal profile gets one default_assumed
  * decision per assumption; the same input gives byte-identical JSON.
  */
@@ -67,15 +67,17 @@ describe('the stage list', () => {
 	});
 
 	const STUBS: Record<string, Stage> = {
-		placement,
 		volume,
 		loads,
 		progression
 	};
 
-	it.each(Object.entries({ strength, timefit }))('runs the %s stage of its own', (name, run) => {
-		expect(STAGES.find((s) => s.name === name)?.run).toBe(run);
-	});
+	it.each(Object.entries({ strength, placement, timefit }))(
+		'runs the %s stage of its own',
+		(name, run) => {
+			expect(STAGES.find((s) => s.name === name)?.run).toBe(run);
+		}
+	);
 
 	it.each(Object.entries(STUBS))(
 		'%s is its own stub, returning its input unchanged',
