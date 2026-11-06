@@ -26,10 +26,12 @@ export interface EditorProps<T> {
 /** One section, ready to edit. */
 export interface SectionEditor {
 	Editor: Component<EditorProps<unknown>>;
-	/** The editing state, built from what the section's load returned. */
-	draft(saved: unknown): unknown;
+	/** The editing state, built from what the section's load returned and the context. */
+	draft(saved: unknown, context: SectionContext): unknown;
 	/** The schema the browser checks before posting (the services check it again). */
 	schema: SchemaName;
+	/** What Save posts when the editing state holds more than the schema takes (row keys). */
+	payload?: (draft: unknown) => unknown;
 }
 
 /**
@@ -38,13 +40,24 @@ export interface SectionEditor {
  */
 function section<T>(
 	Editor: Component<EditorProps<T>>,
-	draft: (saved: never) => T,
-	schema: SchemaName
+	draft: (saved: never, context: SectionContext) => T,
+	schema: SchemaName,
+	payload?: (draft: T) => unknown
 ): SectionEditor {
-	return { Editor: Editor as unknown as SectionEditor['Editor'], draft, schema };
+	return {
+		Editor: Editor as unknown as SectionEditor['Editor'],
+		draft,
+		schema,
+		payload: payload as SectionEditor['payload']
+	};
 }
 
 export const EDITORS: Record<SectionKey, () => Promise<SectionEditor>> = {
+	experience: () =>
+		Promise.all([import('./ExperienceEditor.svelte'), import('./experience')]).then(
+			([editor, { experienceDraft, experiencePayload }]) =>
+				section(editor.default, experienceDraft, 'experience', experiencePayload)
+		),
 	equipment: () =>
 		Promise.all([import('./EquipmentEditor.svelte'), import('./equipment')]).then(
 			([editor, { equipmentDraft }]) => section(editor.default, equipmentDraft, 'equipment')

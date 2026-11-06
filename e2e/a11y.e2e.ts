@@ -12,6 +12,7 @@ const SCREENS = [
 	...TABS.map((t) => t.path),
 	'/profile/security',
 	'/profile/equipment',
+	'/profile/experience',
 	'/offline',
 	'/design'
 ];
@@ -59,8 +60,8 @@ for (const theme of THEMES) {
 				await page.goto(path);
 				await page.waitForLoadState('networkidle');
 				if (path === '/profile') await expect(page.getByTestId('db-status')).toBeVisible();
-				// The section's editor loads after the screen, in place of its skeleton.
-				if (path === '/profile/equipment') {
+				// A Profile section's editor loads after the screen, in place of its skeleton.
+				if (path.startsWith('/profile/') && path !== '/profile/security') {
 					await expect(page.getByTestId('section-editor')).toHaveAttribute('aria-busy', 'false');
 				}
 				const html = page.locator('html');

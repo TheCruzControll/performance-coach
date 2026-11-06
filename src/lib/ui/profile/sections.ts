@@ -17,6 +17,12 @@ export interface SectionInfo {
 
 export const SECTIONS = [
 	{
+		key: 'experience',
+		title: 'Experience',
+		subtitle: 'Your level in each discipline',
+		icon: 'progress'
+	},
+	{
 		key: 'equipment',
 		title: 'Equipment',
 		subtitle: 'Where you train and what’s there',
