@@ -154,7 +154,7 @@ assertion with one of the owner's existing passkeys on this session within the l
 | Revocation              | Checked on every request (no cache): revoked or expired sessions are rejected immediately                 |
 | Rotation                | New token on every passkey sign-in, setup and recovery; the presented one is revoked                      |
 | Step-up                 | Passkey assertion on the session within 5 minutes for sensitive Security actions (see above)              |
-| Management              | List (current marked), sign out one, sign out everywhere else, sign out                                   |
+| Management              | List (current marked, recovery sign-ins flagged), sign out one, sign out everywhere else, sign out        |
 
 ### Sign-out
 
@@ -235,8 +235,11 @@ its session only once, so this cannot be used to flood.
 `auth_events` records setup completed/failed, sign-in succeeded/failed (with the reason from
 SimpleWebAuthn), passkey added/renamed/removed, recovery used/failed/regenerated, session
 revoked / revoked others, step-up succeeded/failed, sign-out, rate limiting and owner resets,
-with request id, client address and a User-Agent summary. Rows are kept if the owner is reset. Security shows the most
-recent events.
+with request id, client address and a User-Agent summary. Rows are kept if the owner is reset.
+Security shows the most recent events, folding each run of refused attempts (anyone can cause
+those) into one row such as "25 failed sign-in attempts", and always keeps the latest security
+changes (setup, passkeys added or removed, recovery codes used or replaced, sessions ended, owner
+resets) in view, so a flood of failures cannot push them out.
 
 ## Test-only routes
 

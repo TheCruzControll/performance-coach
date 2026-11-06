@@ -41,7 +41,7 @@ node of the app), each param matcher, each icon added to the shared set and any 
 shared component costs every route, Security included.
 
 - **Step-up re-authentication** (docs/security.md) costs `/(app)/profile/security` 0.1 KB
-  (59.6 → 59.7 KB: retrying an action the server refused). The "Confirm it's you" sheet and the
+  (59.7 → 59.8 KB: retrying an action the server refused). The "Confirm it's you" sheet and the
   ceremony load on demand with the other sheets and passkey helpers; `/` and
   `/recover/passkey` gain 0.1 KB (one error mapping in those helpers).
 

@@ -216,17 +216,27 @@
 		<Surface padding="none" radius="xl">
 			<ul class="rows" data-testid="sessions">
 				{#each data.sessions as s (s.id)}
+					{@const recovery = s.kind === 'recovery'}
 					<li class="row" data-testid="session-row" data-current={s.current} data-session-id={s.id}>
-						<span class="glyph" aria-hidden="true"><Icon name="device" size={22} /></span>
+						<span class="glyph" aria-hidden="true">
+							<Icon name={recovery ? 'key' : 'device'} size={22} />
+						</span>
 						<div class="main">
 							<p class="title">
 								{s.device}
-								{#if s.current}<Badge tone="accent">This device</Badge>{/if}
+								{#if s.current}<Badge tone="accent">This device</Badge>
+								{:else if recovery}<Badge tone="warning">Recovery sign-in</Badge>{/if}
 							</p>
 							<p class="meta">
 								{s.current ? 'Active now' : `Active ${timeAgo(s.lastSeenAt, now)}`} · Signed in
 								{shortDate(s.createdAt, now)} with {METHOD[s.method] ?? s.method}
 							</p>
+							{#if recovery}
+								<p class="meta">
+									It can only add a passkey, for 15 minutes. Not you? Sign it out and create new
+									codes.
+								</p>
+							{/if}
 						</div>
 						{#if !s.current}
 							<form
