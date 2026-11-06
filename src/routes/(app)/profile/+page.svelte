@@ -7,15 +7,16 @@
 		type ThemePreference
 	} from '#lib/client/preferences.svelte.ts';
 	import type { WeightUnit } from '#lib/domain/units.ts';
-	import Badge from '#lib/ui/components/Badge.svelte';
 	import Card from '#lib/ui/components/Card.svelte';
 	import Icon from '#lib/ui/components/Icon.svelte';
 	import ListRow from '#lib/ui/components/ListRow.svelte';
 	import PageHeader from '#lib/ui/components/PageHeader.svelte';
+	import Section from '#lib/ui/components/Section.svelte';
 	import SegmentedControl from '#lib/ui/components/SegmentedControl.svelte';
 	import Skeleton from '#lib/ui/components/Skeleton.svelte';
 	import Stat from '#lib/ui/components/Stat.svelte';
 	import Surface from '#lib/ui/components/Surface.svelte';
+	import { SECTIONS } from '#lib/ui/profile/sections.ts';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -130,12 +131,17 @@
 		</div>
 	</Card>
 
-	<Card title="Training profile" eyebrow="Goals & baseline">
-		{#snippet action()}<span class="soon"><Badge>Soon</Badge></span>{/snippet}
-		<p class="note">
-			Goals, schedule, experience and optional 1RMs. You'll be able to change any of it, any time.
-		</p>
-	</Card>
+	<Section title="Training profile" data-testid="training-profile">
+		{#each SECTIONS as section (section.key)}
+			<ListRow
+				title={section.title}
+				subtitle={section.subtitle}
+				icon={section.icon}
+				href={resolve('/(app)/profile/[section]', { section: section.key })}
+				data-testid="section-{section.key}"
+			/>
+		{/each}
+	</Section>
 
 	<Card title="System" eyebrow="Status" data-testid="system-card">
 		<dl class="rows">
@@ -340,11 +346,6 @@
 	.note {
 		font-size: var(--text-sm);
 		color: var(--color-text-secondary);
-	}
-
-	.soon {
-		display: inline-flex;
-		margin-top: var(--space-2);
 	}
 
 	.design-link {
