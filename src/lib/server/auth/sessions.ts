@@ -202,12 +202,14 @@ export async function revokeOtherSessions(
 ): Promise<number> {
 	const { db, now } = resolveDeps(deps);
 	await enforceRateLimit('manage', { session: session.id }, request, { db, now });
-	const count = await createAuthRepository(db).revokeOtherSessions(
-		session.ownerId,
-		session.id,
-		'signed_out_elsewhere',
-		now()
-	);
+	const count = await db.transaction(async (tx) => {
+		const repo = createAuthRepository(tx);
+		// A passkey registration in flight holds its session's row lock and may replace that
+		// session with a new one (a recovery upgrade). Lock first, which waits for it, then revoke
+		// in a new statement, whose snapshot includes any session it created.
+		await repo.lockOtherSessions(session.ownerId, session.id);
+		return repo.revokeOtherSessions(session.ownerId, session.id, 'signed_out_elsewhere', now());
+	});
 	await recordAuthEvent(db, request, {
 		type: 'session.revoked_others',
 		ownerId: session.ownerId,
@@ -217,20 +219,26 @@ export async function revokeOtherSessions(
 	return count;
 }
 
-/** Sign out: revoke the presented session (if any). Idempotent. */
+/**
+ * Sign out: revoke the presented session (if any). Idempotent. Only a request that ends no
+ * session counts against the per-client limit: everyone behind one NAT or Wi-Fi shares that
+ * bucket, and filling it must never keep a live session signed in. A token ends its session
+ * only once, so skipping the limit for it cannot be used to flood.
+ */
 export async function signOut(
 	token: string | undefined,
 	request: AuthRequest,
 	deps: AuthDeps = {}
 ): Promise<void> {
 	const { db, now } = resolveDeps(deps);
-	await enforceRateLimit('signout', { ip: request.ip }, request, { db, now });
 	const revoked = await revokeToken(token, 'signout', { db, now });
-	if (revoked) {
-		await recordAuthEvent(db, request, {
-			type: 'signout',
-			ownerId: revoked.ownerId,
-			sessionId: revoked.id
-		});
+	if (!revoked) {
+		await enforceRateLimit('signout', { ip: request.ip }, request, { db, now });
+		return;
 	}
+	await recordAuthEvent(db, request, {
+		type: 'signout',
+		ownerId: revoked.ownerId,
+		sessionId: revoked.id
+	});
 }

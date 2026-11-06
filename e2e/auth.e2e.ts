@@ -57,6 +57,8 @@ async function audit(page: Page, label: string) {
 async function addOwnPasskey(page: Page): Promise<VirtualAuthenticator & { passkeyId: string }> {
 	const authenticator = await addVirtualAuthenticator(page);
 	await page.goto('/profile/security');
+	// Hydrated first: a tap on the server-rendered button before then does nothing.
+	await page.waitForLoadState('networkidle');
 	await page.getByTestId('add-passkey').click();
 	await expect(toastWith(page, /Passkey added: /)).toBeVisible();
 	const [credential] = await authenticator.credentials();

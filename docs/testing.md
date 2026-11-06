@@ -20,7 +20,9 @@ RPE table and reps in reserve (including a structural consistency check of the c
 never silently dropped, malformed or sub-6 RPEs give no estimate, and sets past the chart are
 extrapolated from reps to failure at `low` confidence), the plate calculator (exact DP incl. limited inventories), and load
 metrics (volume load, session-RPE, EWMA ACWR). Outside the domain: `parseEnv` (defaults, `appEnv`
-derivation, the production guards incl. `VERCEL_ENV=production`, the API-key requirement) and the
+derivation, the production guards incl. `VERCEL_ENV=production`, test routes refused in a Vercel
+build whatever its runtime environment, the API-key requirement), the build-time marker
+`vite.config.ts` sets for Vercel builds only (`scripts/vite-config.test.ts`) and the
 RUM attribution of each metric to the screen where it happened, client error reports (bounded
 fields, non-Error values), and `serializeError` (Drizzle
 parameters redacted; Postgres messages withheld for SQLSTATE classes that can quote values, kept
@@ -40,7 +42,12 @@ the CSRF Origin check, User-Agent and passkey labels, and the route access map â
   committed migration with the same code `pnpm db:migrate` uses. The reset refuses any database
   whose name does not end in `_test`/`_e2e`.
 - **Isolation:** `withRollback()` runs each test in a transaction that is always rolled back;
-  services accept the transaction as their `db` dependency. Files run serially.
+  services accept the transaction as their `db` dependency. Files run serially. The few tests
+  that race real connections commit for real and clean up afterwards: a goal status change
+  waiting behind a concurrent edit and two saves of one profile section queued behind a third
+  delete their owner; the auth races use `withCommitted()` (committed rows, truncated
+  afterwards), `holdTransaction()` to keep one step's locks held and `lockWaiters()` to wait
+  until the other steps are blocked, so every interleaving is exact rather than timed.
 - **Covered:** migrations applied and constraints enforced; health up and down (unreachable
   database); web-vitals ingest, validation, de-duplication (across requests and within one
   batch), route attribution and p75 summary; error recording, including when the database is
@@ -60,10 +67,13 @@ the CSRF Origin check, User-Agent and passkey labels, and the route access map â
   at most daily, 90-day cap, 30-day idle expiry, last-seen resolution, revoke one / others /
   sign out, a malformed id is not found); recovery (burn, any spelling refused afterwards,
   15-minute restricted session, new passkey upgrades it, regeneration); passkey management (add,
-  challenge bound to its session, rename validation, never the last, removal ends its sessions, a
-  malformed id is not found); rate limits on every entry point with `Retry-After`, window reset
-  and a global ceiling on failed recovery codes that never refuses a valid one. A controllable
-  clock replaces waiting.
+  challenge bound to its session, nothing added or upgraded for a session revoked or expired
+  mid-request, including a revocation that commits while the request waits on the session's row
+  lock, sign out everywhere else during a recovery upgrade ending the new session, rename
+  validation, never the last, removal ends its sessions, a malformed id is not found); rate limits
+  on every entry point with `Retry-After`, window reset, a global ceiling on failed recovery codes
+  that never refuses a valid one, and a full sign-out bucket that still lets a live session sign
+  out. A controllable clock replaces waiting.
 - **Logs:** quiet by default (`LOG_LEVEL=silent` via the project's `env`); run
   `LOG_LEVEL=debug pnpm test:integration` to see them.
 
