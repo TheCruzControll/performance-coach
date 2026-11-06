@@ -110,7 +110,7 @@ shape before any query (base64url, UUID): a malformed id is answered like an unk
 | Absolute expiry         | 90 days after sign-in, however active                                                                     |
 | Revocation              | Checked on every request (no cache): revoked or expired sessions are rejected immediately                 |
 | Rotation                | New token on every passkey sign-in, setup and recovery; the presented one is revoked                      |
-| Management              | List (current marked), sign out one, sign out everywhere else, sign out                                   |
+| Management              | List (current marked, recovery sign-ins flagged), sign out one, sign out everywhere else, sign out        |
 
 ### Sign-out
 
