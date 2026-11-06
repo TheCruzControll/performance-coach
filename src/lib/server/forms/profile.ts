@@ -11,6 +11,7 @@
 import { error, fail, type RequestEvent } from '@sveltejs/kit';
 import {
 	createGoal,
+	deleteGoal,
 	isProfileInputError,
 	listGoals,
 	ProfileNotFoundError,
@@ -95,4 +96,22 @@ export async function saveGoalAction(
 	);
 	if (!result.ok) return result.failure;
 	return { goals: await listGoals(owner, deps), saved: result.value.id };
+}
+
+/**
+ * Profile → Goals' `deleteGoal` action: delete for good the goal its `id` names (an id that names
+ * none of the owner's goals is a 404), as a Profile change. The services close the gap it leaves
+ * in the ranking and keep its history; returns the ranking as stored.
+ */
+export async function deleteGoalAction(
+	{ locals, request }: FormEvent,
+	deps: Pick<ProfileDeps, 'db'> = {}
+) {
+	const owner = ownerId(locals);
+	const { payload } = await readForm(request);
+	const { id } = (payload ?? {}) as { id?: unknown };
+	const change = { ...deps, source: 'profile' } as const;
+	const result = await attempt(() => deleteGoal(owner, typeof id === 'string' ? id : '', change));
+	if (!result.ok) return result.failure;
+	return { goals: await listGoals(owner, deps) };
 }
