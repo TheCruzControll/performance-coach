@@ -1,13 +1,14 @@
 /**
  * The owner's first-run setup, for real: a WebAuthn registration through a CDP virtual
  * authenticator (Chromium), recovery codes shown once, then the signed-in browser state every
- * Chromium spec starts from. Also audits the setup screens and checks the setup link's rate
- * limit (both exist only until this runs), and registers the owner passkeys specs sign in with
- * (one per worker, e2e/webauthn.ts).
+ * Chromium spec starts from. Also audits the setup screens, on the iPhone and in a desktop
+ * window, and checks the setup link's rate limit (both exist only until this runs), and registers
+ * the owner passkeys specs sign in with (one per worker, e2e/webauthn.ts).
  */
 import AxeBuilder from '@axe-core/playwright';
-import { expect, test as setup, type Page } from '@playwright/test';
+import { expect, test as setup, type Page, type TestInfo } from '@playwright/test';
 import { RATE_LIMITS } from '../src/lib/server/auth/policy';
+import { DESKTOP, expectCardBeside } from './desktop';
 import { captureScreen, query, toastWith, trackConsoleErrors } from './support';
 import { addVirtualAuthenticator, saveOwnerPasskeys, type StoredPasskey } from './webauthn';
 
@@ -66,9 +67,35 @@ async function auditBothThemes(page: Page, label: string) {
 	await page.evaluate(() => delete document.documentElement.dataset.theme);
 }
 
+/**
+ * The same page in a desktop window (docs/design-system.md, Responsive layout → Screens): resized
+ * to 1440 × 900, so no request is made and the setup link's limit counts nothing more. The card
+ * sits beside the headline with every control above the fold, the screen is captured and audited,
+ * and the iPhone viewport is back before the next step.
+ */
+async function atDesktopWidth(page: Page, testInfo: TestInfo, name: string, label: string) {
+	const phone = page.viewportSize()!;
+	await page.setViewportSize(DESKTOP.viewport);
+	try {
+		await page.evaluate(() => document.fonts.ready);
+		await expectCardBeside(page, {
+			card: page.locator('main#main > :is(.body, .panel)'),
+			beside: page.getByRole('heading', { level: 1 })
+		});
+		await captureScreen(page, testInfo, name);
+		await auditBothThemes(page, `${label} at 1440 × 900`);
+	} finally {
+		await page.setViewportSize(phone);
+	}
+	expect(page.viewportSize(), 'the iPhone viewport is back').toEqual(phone);
+	expect(await page.evaluate(() => innerWidth)).toBe(phone.width);
+}
+
 setup(
 	'owner completes first-run setup with a real passkey',
 	async ({ page, context }, testInfo) => {
+		// Both setup screens are checked, captured and audited at two sizes.
+		setup.slow();
 		const token = process.env.E2E_SETUP_TOKEN;
 		expect(token, 'global setup mints the setup token').toBeTruthy();
 		const errors = trackConsoleErrors(page);
@@ -84,6 +111,7 @@ setup(
 		await expect(page.getByRole('heading', { level: 1, name: 'Make it yours.' })).toBeVisible();
 		await captureScreen(page, testInfo, 'setup');
 		await auditBothThemes(page, 'setup');
+		await atDesktopWidth(page, testInfo, 'setup-desktop', 'setup');
 
 		// The name is required (designed inline error).
 		await page.getByTestId('create-passkey').click();
@@ -100,6 +128,7 @@ setup(
 		await expect(page.getByTestId('setup-done')).toBeDisabled();
 		await captureScreen(page, testInfo, 'setup-recovery-codes');
 		await auditBothThemes(page, 'recovery codes');
+		await atDesktopWidth(page, testInfo, 'recovery-codes-desktop', 'recovery codes');
 
 		const [download] = await Promise.all([
 			page.waitForEvent('download'),

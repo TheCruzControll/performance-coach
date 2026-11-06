@@ -154,4 +154,96 @@
 		font-size: var(--text-xs);
 		color: var(--color-text-tertiary);
 	}
+
+	/* A tablet keeps the phone's one column, at the readable width. */
+	@media (width >= 40rem) {
+		.screen {
+			max-width: var(--content-readable);
+		}
+	}
+
+	/* There the frame ends inside the window, so the watermark fades out before the frame's edge. */
+	@media (40rem <= width < 64rem) {
+		.backdrop {
+			mask-image: linear-gradient(to left, transparent 15rem, #000 26rem);
+		}
+	}
+
+	/*
+	 * A desktop window: two columns on <main> itself, which keeps its box for the skip link's
+	 * focus. The hero sits at the left; the body and the panel sit at the right as one card,
+	 * vertically centred, drawn by main's ::before across their rows and the card's padding rows.
+	 * Nothing is pinned to the bottom.
+	 */
+	@media (width >= 64rem) {
+		.screen {
+			/* The card's width and padding, the space between the columns, the watermark's size. */
+			--auth-card-width: 28rem;
+			--auth-card-padding: var(--space-8);
+			--auth-columns-gap: var(--space-16);
+			--auth-mark-size: min(46rem, 86dvh);
+			max-width: var(--content-wide);
+			padding-block: calc(var(--safe-top) + var(--space-8))
+				calc(var(--safe-bottom) + var(--space-8));
+			padding-inline: max(var(--space-12), var(--safe-left)) max(var(--space-12), var(--safe-right));
+		}
+
+		/* The watermark, larger, centred on the line between the columns, inside the frame. */
+		.backdrop {
+			top: 50%;
+			right: calc(var(--space-12) + var(--auth-card-width) + var(--auth-columns-gap) / 2);
+			translate: 50% -50%;
+		}
+
+		.backdrop :global(svg) {
+			display: block;
+			width: var(--auth-mark-size);
+			height: var(--auth-mark-size);
+		}
+
+		.content {
+			display: grid;
+			grid-template-columns: minmax(0, 1fr) var(--auth-card-width);
+			grid-template-rows: 1fr var(--auth-card-padding) auto auto var(--auth-card-padding) 1fr;
+			gap: 0 var(--auth-columns-gap);
+		}
+
+		.content::before {
+			content: '';
+			grid-area: 2 / 2 / 6 / 3;
+			border: 1px solid var(--color-border);
+			border-radius: var(--radius-xl);
+			background: var(--color-surface-1);
+			box-shadow: var(--elevation-2);
+		}
+
+		.hero {
+			grid-area: 1 / 1 / -1 / 2;
+		}
+
+		.body,
+		.panel {
+			grid-column: 2;
+			padding-inline: var(--auth-card-padding);
+		}
+
+		.body {
+			grid-row: 3;
+			padding-bottom: var(--space-6);
+		}
+
+		.body:empty {
+			display: none;
+		}
+
+		.panel {
+			grid-row: 4;
+		}
+
+		.footer {
+			justify-items: start;
+			margin-right: calc(var(--auth-card-width) + var(--auth-columns-gap));
+			text-align: start;
+		}
+	}
 </style>
