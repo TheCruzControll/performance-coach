@@ -344,7 +344,7 @@ describe('the timefit stage', () => {
 			...p.schedule,
 			daysPerWeek: 4,
 			availableDays: [...WEEKDAYS],
-			sessionMinutes: 20
+			sessionMinutes: 15
 		};
 		const plan = generateProgram(buildProgrammingInput(p, { catalogue: CATALOGUE }), OPTIONS);
 		expect(validate(programPlanSchema, plan)).toEqual({ ok: true, data: plan });

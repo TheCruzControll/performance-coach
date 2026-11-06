@@ -20,6 +20,7 @@ import { pathToFileURL } from 'node:url';
 import { gzipSync } from 'node:zlib';
 import { CATALOGUE_HEADER } from '../src/lib/domain/exercises/format.ts';
 import { PRELOADED_FONT_PATTERN } from '../src/lib/ui/fonts.ts';
+import { icons } from '../src/lib/ui/icons/icons.ts';
 
 export const BUDGETS = {
 	/** Initial JS per route (gzip), including the shared shell. */
@@ -51,6 +52,7 @@ interface ViteChunk {
 	src?: string;
 	imports?: string[];
 	dynamicImports?: string[];
+	css?: string[];
 }
 
 if (!existsSync(`${OUT}/server/manifest-full.js`)) {
@@ -317,6 +319,61 @@ if (schemasChunk) {
 }
 
 /**
+ * Profile sections: a section page renders with the CSS of what it imports up front (the screen,
+ * its skeleton and Save bar), never with an editor's, its own or another section's. Each editor
+ * loads on demand from the registry and its styles arrive with it, before it mounts, so adding a
+ * section costs no section page anything. SvelteKit links into a page the CSS of every dynamic
+ * import its server build can reach (`eager_css` in @sveltejs/kit's build_server.js), so the
+ * server build leaves the registry out (SectionScreen.svelte). The editors are the registry's
+ * `import('./….svelte')` specifiers; a section page is any route whose page can load one.
+ */
+const EDITOR_REGISTRY = 'src/lib/ui/profile/editors.ts';
+const EDITOR_IMPORT = /import\(\s*['"`](\.\/[^'"`]+\.svelte)['"`]\s*\)/g;
+const editorKeys = [...readFileSync(EDITOR_REGISTRY, 'utf8').matchAll(EDITOR_IMPORT)].map(
+	([, spec]) => path.posix.join(path.posix.dirname(EDITOR_REGISTRY), spec!)
+);
+/** Manifest keys reachable from `keys` through static and dynamic imports (inclusive). */
+function loadable(keys: Iterable<string>): Set<string> {
+	const seen = new Set<string>();
+	const queue = [...keys];
+	while (queue.length) {
+		const key = queue.pop()!;
+		if (seen.has(key)) continue;
+		seen.add(key);
+		queue.push(...(vite[key]?.imports ?? []), ...(vite[key]?.dynamicImports ?? []));
+	}
+	return seen;
+}
+const keysOf = (files: Iterable<string>) =>
+	[...files].map((file) => keyOf.get(file)).filter((key): key is string => key !== undefined);
+const cssOf = (keys: Iterable<string>) => new Set([...keys].flatMap((key) => vite[key]?.css ?? []));
+const sectionProblems: string[] = editorKeys.length
+	? editorKeys.filter((key) => !vite[key]).map((key) => `${key} is not in the build`)
+	: [`no editor found in ${EDITOR_REGISTRY}: update this guard`];
+const editorCss = cssOf(loadable(editorKeys));
+const sectionRoutes: string[] = [];
+/** The stylesheets only an editor brings to some section page: none of them may be linked. */
+const keptOut = new Set<string>();
+for (const route of routes) {
+	if (!route.page) continue;
+	const ids = [...route.page.layouts, route.page.leaf].filter((n): n is number => n !== undefined);
+	const canLoad = loadable(keysOf(nodes[route.page.leaf]!.imports));
+	if (!editorKeys.some((key) => canLoad.has(key))) continue;
+	sectionRoutes.push(route.id);
+	const upFront = cssOf(
+		keysOf(staticClosure([...client.imports, ...ids.flatMap((id) => nodes[id]!.imports)]))
+	);
+	const linked = new Set([...client.stylesheets, ...ids.flatMap((id) => nodes[id]!.stylesheets)]);
+	for (const file of [...editorCss].filter((f) => !upFront.has(f))) {
+		keptOut.add(file);
+		if (linked.has(file)) {
+			sectionProblems.push(`${route.id}: links an editor's ${path.basename(file)}`);
+		}
+	}
+}
+if (!sectionRoutes.length) sectionProblems.push('no route can load a section editor');
+
+/**
  * Server-only packages: the exercise catalogue (src/lib/domain/exercises) is in no client file at
  * all, initial or loaded later, the service worker included. Every catalogue table starts with
  * CATALOGUE_HEADER, the literal format.ts reserves as its bundle signature. This is the second
@@ -326,6 +383,40 @@ if (schemasChunk) {
 const catalogueChunks = readdirSync(CLIENT, { recursive: true, encoding: 'utf8' })
 	.map((file) => file.split(path.sep).join('/'))
 	.filter((file) => file.endsWith('.js') && read(file).includes(CATALOGUE_HEADER));
+
+/**
+ * Icon placement: every icon draws from the SVG sprite (src/lib/ui/icons/sprite.svg, through
+ * <use>), so no client chunk may contain icon path data, and the sprite must ship as its own
+ * file (a data: URL would put it back in JS, and Chrome does not draw data: URLs in <use>). Each
+ * path in icons.ts is looked for as a quoted string, as a module or template would carry it.
+ */
+const iconsDrawing = new Map<string, string[]>();
+for (const [name, paths] of Object.entries(icons)) {
+	for (const d of paths.map((p) => p.replace(/^fill:/, ''))) {
+		iconsDrawing.set(d, [...(iconsDrawing.get(d) ?? []), name]);
+	}
+}
+// A quote, the path (optionally `fill:`-prefixed), then a quote (escaped inside a string).
+const ICON_PATH_LITERAL = new RegExp(
+	String.raw`["'${'`'}](?:fill:)?(${[...iconsDrawing.keys()]
+		.sort((a, b) => b.length - a.length)
+		.map((d) => d.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+		.join('|')})\\?["'${'`'}]`,
+	'g'
+);
+const iconProblems: string[] = [];
+const clientJs = readdirSync(`${CLIENT}/_app/immutable`, { recursive: true, encoding: 'utf8' })
+	.filter((f) => f.endsWith('.js'))
+	.map((f) => `_app/immutable/${f}`);
+for (const file of clientJs) {
+	const names = new Set(
+		[...read(file).matchAll(ICON_PATH_LITERAL)].flatMap((m) => iconsDrawing.get(m[1]!) ?? [])
+	);
+	if (names.size) iconProblems.push(`${file}: path data of ${[...names].join(', ')}`);
+}
+if (!readdirSync(`${CLIENT}/_app/immutable/assets`).some((f) => /^sprite\.[\w-]+\.svg$/.test(f))) {
+	iconProblems.push('the icon sprite is not a file in the build (inlined as a data: URL?)');
+}
 
 const lines = [
 	'| Route | Initial JS (gzip) | of which awaited by `load` | Route CSS (gzip) | Preloaded fonts | Status |',
@@ -352,7 +443,9 @@ const lines = [
 		.map((r) => `\`${r}\``)
 		.join(', ')}: ${webauthnProblems.length ? 'FAIL' : 'pass'}`,
 	`Validation (zod, profile schemas): on demand only, never in initial JS: ${validationProblems.length ? 'FAIL' : 'pass'}`,
-	`Exercise catalogue (server-only): in no client chunk: ${catalogueChunks.length ? 'FAIL' : 'pass'}`
+	`Profile sections: no editor's CSS on a section page (${sectionRoutes.map((r) => `\`${r}\``).join(', ')}; ${editorKeys.length} editors, ${keptOut.size} of their stylesheets left to load with them): ${sectionProblems.length ? 'FAIL' : 'pass'}`,
+	`Exercise catalogue (server-only): in no client chunk: ${catalogueChunks.length ? 'FAIL' : 'pass'}`,
+	`Icon paths in JS (every icon draws from the SVG sprite): ${iconProblems.length ? 'FAIL' : 'pass'}`
 ];
 console.log(lines.join('\n'));
 
@@ -375,10 +468,18 @@ if (validationProblems.length > 0) {
 	console.error(`\nValidation placement failed:\n  - ${validationProblems.join('\n  - ')}`);
 }
 
+if (sectionProblems.length > 0) {
+	console.error(`\nProfile section CSS failed:\n  - ${sectionProblems.join('\n  - ')}`);
+}
+
 if (catalogueChunks.length > 0) {
 	console.error(
 		`\nThe exercise catalogue reached the browser (its header is in):\n  - ${catalogueChunks.join('\n  - ')}`
 	);
+}
+
+if (iconProblems.length > 0) {
+	console.error(`\nIcon placement failed:\n  - ${iconProblems.join('\n  - ')}`);
 }
 
 const failed = rows.filter((r) => !r.ok);
@@ -387,14 +488,18 @@ if (
 	prefixProblems.length > 0 ||
 	webauthnProblems.length > 0 ||
 	validationProblems.length > 0 ||
-	catalogueChunks.length > 0
+	sectionProblems.length > 0 ||
+	catalogueChunks.length > 0 ||
+	iconProblems.length > 0
 ) {
 	const what = [
 		...failed.map((r) => r.route),
 		...(prefixProblems.length ? ['CSS prefixes'] : []),
 		...(webauthnProblems.length ? ['WebAuthn library placement'] : []),
 		...(validationProblems.length ? ['validation placement'] : []),
-		...(catalogueChunks.length ? ['catalogue placement'] : [])
+		...(sectionProblems.length ? ['profile section CSS'] : []),
+		...(catalogueChunks.length ? ['catalogue placement'] : []),
+		...(iconProblems.length ? ['icon paths in JS'] : [])
 	];
 	console.error(`\nbudgets: FAILED (${what.join(', ')})`);
 	process.exit(1);

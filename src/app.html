@@ -19,8 +19,21 @@
 		<link rel="icon" href="%sveltekit.assets%/favicon.svg" type="image/svg+xml" />
 		<link rel="apple-touch-icon" href="%sveltekit.assets%/icons/apple-touch-icon.png" />
 		<script>
-			// Apply the saved theme before first paint (see src/lib/client/preferences.svelte.ts).
 			// Allowed by the CSP through its sha256 hash, computed from this file in vite.config.ts.
+			// Note when the page starts being left, from its first moment: a navigation away can
+			// start before the app's code has loaded (see src/lib/client/leaving.ts).
+			addEventListener('beforeunload', function () {
+				window.__pcLeftAt = Date.now();
+			});
+			addEventListener('pagehide', function () {
+				window.__pcLeftAt = Date.now();
+			});
+			addEventListener('pageshow', function (e) {
+				// Only a restore from the back/forward cache ends it: a page's first `pageshow` can
+				// arrive after a navigation away has already started.
+				if (e.persisted) window.__pcLeftAt = undefined;
+			});
+			// Apply the saved theme before first paint (see src/lib/client/preferences.svelte.ts).
 			try {
 				var t = JSON.parse(localStorage.getItem('pc:prefs:v1') || '{}').theme;
 				if (t === 'light' || t === 'system') {

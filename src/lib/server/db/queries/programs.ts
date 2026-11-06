@@ -7,11 +7,14 @@ import {
 	and,
 	asc,
 	between,
+	desc,
 	eq,
 	getTableColumns,
 	gt,
 	inArray,
 	isNull,
+	lt,
+	sql,
 	type SQL,
 	type SQLWrapper
 } from 'drizzle-orm';
@@ -24,6 +27,7 @@ import {
 	plannedSessionDetails,
 	plannedSessions,
 	programBlocks,
+	programmingDecisions,
 	programs,
 	programVersionBlocks,
 	programVersions,
@@ -54,17 +58,22 @@ export function versionTree(db: Executor, versionId: string) {
 			.innerJoin(programBlocks, eq(programBlocks.id, programVersionBlocks.blockId))
 			.where(eq(programVersionBlocks.versionId, versionId))
 			.orderBy(asc(programBlocks.position)),
-		weeks: db
-			.select(getTableColumns(programWeeks))
-			.from(programVersionWeeks)
-			.innerJoin(programWeeks, eq(programWeeks.id, programVersionWeeks.weekId))
-			.where(inVersion)
-			.orderBy(asc(programWeeks.startsOn)),
+		weeks: versionWeeks(db, versionId),
 		...sessionsWithChildren(
 			db,
 			db.select({ weekId: programVersionWeeks.weekId }).from(programVersionWeeks).where(inVersion)
 		)
 	};
+}
+
+/** A version's weeks by date, through its membership rows (program_version_weeks_pk). */
+export function versionWeeks(db: Executor, versionId: string) {
+	return db
+		.select(getTableColumns(programWeeks))
+		.from(programVersionWeeks)
+		.innerJoin(programWeeks, eq(programWeeks.id, programVersionWeeks.weekId))
+		.where(eq(programVersionWeeks.versionId, versionId))
+		.orderBy(asc(programWeeks.startsOn));
 }
 
 /** What each versionTree builder returns. */
@@ -218,6 +227,67 @@ export function completedLineages(db: Executor, ownerId: string, lineages: strin
 				isNull(workouts.deletedAt)
 			)
 		);
+}
+
+// ---- version history (History, the coach) ---------------------------------------------------
+
+/**
+ * One page of a program's versions, newest first, with each one's decisions in the order they
+ * were written, in one query: a keyset on (program, number) (program_versions_program_number_uq)
+ * below `beforeNumber` when given, then programming_decisions_version_idx. A version with no
+ * decisions comes once, with decision: null.
+ */
+export function versionHistory(
+	db: Executor,
+	programId: string,
+	{ beforeNumber, limit }: { beforeNumber?: number; limit: number }
+) {
+	const page = db
+		.select({ id: programVersions.id })
+		.from(programVersions)
+		.where(
+			and(
+				eq(programVersions.programId, programId),
+				beforeNumber === undefined ? undefined : lt(programVersions.number, beforeNumber)
+			)
+		)
+		.orderBy(desc(programVersions.number))
+		.limit(limit);
+	return db
+		.select({ version: programVersions, decision: programmingDecisions })
+		.from(programVersions)
+		.leftJoin(programmingDecisions, eq(programmingDecisions.versionId, programVersions.id))
+		.where(inArray(programVersions.id, page))
+		.orderBy(desc(programVersions.number), asc(programmingDecisions.id));
+}
+
+/**
+ * The sessions and planned exercises named in `lineages`, in each of these versions, with the
+ * title and date History shows for them: each version's membership, then its sessions by week
+ * and their exercises by session. `lineages` travels as one jsonb parameter, so the statement
+ * never grows with the decisions it resolves.
+ */
+export function affectedNodes(db: Executor, versionIds: string[], lineages: string[]) {
+	const named = sql`(select value::uuid from jsonb_array_elements_text(${JSON.stringify(lineages)}::jsonb))`;
+	const member = and(
+		inArray(programVersionWeeks.versionId, versionIds),
+		eq(programVersionWeeks.weekId, plannedSessions.weekId)
+	);
+	const place = { versionId: programVersionWeeks.versionId, date: plannedSessions.scheduledOn };
+	return {
+		sessions: db
+			.select({ ...place, lineage: plannedSessions.lineageId, title: plannedSessions.title })
+			.from(plannedSessions)
+			.innerJoin(programVersionWeeks, member)
+			.where(inArray(plannedSessions.lineageId, named)),
+		exercises: db
+			.select({ ...place, lineage: plannedExercises.lineageId, title: exercises.name })
+			.from(plannedSessions)
+			.innerJoin(programVersionWeeks, member)
+			.innerJoin(plannedExercises, eq(plannedExercises.sessionId, plannedSessions.id))
+			.innerJoin(exercises, eq(exercises.id, plannedExercises.exerciseId))
+			.where(inArray(plannedExercises.lineageId, named))
+	};
 }
 
 /** What the read builders return. */

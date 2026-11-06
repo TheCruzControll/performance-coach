@@ -288,8 +288,10 @@ export type WeekView =
 	| { planned: false; phase: v.Phase | null; startsOn: IsoDate; endsOn: IsoDate };
 
 /** A decision as History and the coach show it, with what it touched resolved for display. */
-export interface DecisionView extends Omit<DecisionPlan, 'refs' | 'evidence'> {
+export interface DecisionView extends Omit<DecisionPlan, 'refs' | 'evidence' | 'ruleKey'> {
 	id: string;
+	/** Null for an owner's edit that no rule made. */
+	ruleKey: string | null;
 	version: number;
 	createdAt: Date;
 	affected: { lineage: string; title: string; date: IsoDate | null }[];

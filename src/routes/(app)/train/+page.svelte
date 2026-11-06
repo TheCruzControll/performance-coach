@@ -371,7 +371,7 @@
 		min-height: var(--touch-target);
 		padding: 0 var(--space-2);
 		margin: calc(var(--space-2) * -1);
-		scroll-margin-bottom: calc(var(--nav-height) + var(--safe-bottom) + var(--space-4));
+		scroll-margin-bottom: calc(var(--nav-inset-bottom) + var(--space-4));
 		font-size: var(--text-sm);
 		font-weight: var(--weight-bold);
 		color: var(--color-accent-text);

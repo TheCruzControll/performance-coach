@@ -141,7 +141,7 @@
 		box-shadow: var(--elevation-1);
 	}
 
-	@media (hover: hover) {
+	@media (hover: hover) and (pointer: fine) {
 		.day:hover::before {
 			border-color: var(--color-border-strong);
 		}

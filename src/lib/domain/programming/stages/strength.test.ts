@@ -128,7 +128,8 @@ describe('the strength stage', () => {
 		for (const week of weeksOf(plan)) {
 			const sessions = strengthIn(week.sessions);
 			expect(sessions).toHaveLength(2);
-			expect(sessions.map((s) => weekdayOf(s.date))).toEqual(['mon', 'fri']);
+			// Placement keeps the Saturday session a day clear of the hard Thursday class.
+			expect(sessions.map((s) => weekdayOf(s.date))).toEqual(['mon', 'sat']);
 		}
 		const split = plan.decisions.find((d) => d.kind === 'split_chosen')!;
 		expect(split.why).toBe(

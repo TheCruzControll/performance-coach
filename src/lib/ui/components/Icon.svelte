@@ -1,10 +1,14 @@
 <!--
   @component
-  Inline SVG icon from the product icon set. Decorative by default (aria-hidden); pass
-  `label` when the icon alone conveys meaning.
+  SVG icon from the product icon set, drawn from one cached sprite (`<use href="sprite#name">`),
+  so no icon path data ships in JavaScript. The sprite is generated from ../icons/icons.ts by
+  `pnpm icons:sprite`. Decorative by default (aria-hidden); pass `label` when the icon alone
+  conveys meaning.
 -->
 <script lang="ts">
-	import { icons, type IconName } from '../icons/icons';
+	import type { IconName } from '../icons/icons';
+	// Always a hashed file, never a data: URL (Chrome no longer draws data: URLs in <use>).
+	import sprite from '../icons/sprite.svg?url&no-inline';
 
 	interface Props {
 		name: IconName;
@@ -15,12 +19,6 @@
 	}
 
 	let { name, size = 24, strokeWidth = 1.75, label, class: className }: Props = $props();
-
-	const paths = $derived(
-		icons[name].map((d) =>
-			d.startsWith('fill:') ? { d: d.slice(5), fill: true } : { d, fill: false }
-		)
-	);
 </script>
 
 <svg
@@ -38,13 +36,7 @@
 	aria-hidden={label ? undefined : 'true'}
 	focusable="false"
 >
-	{#each paths as path (path.d)}
-		<path
-			d={path.d}
-			fill={path.fill ? 'currentColor' : undefined}
-			stroke={path.fill ? 'none' : undefined}
-		/>
-	{/each}
+	<use href="{sprite}#{name}" />
 </svg>
 
 <style>

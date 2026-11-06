@@ -14,20 +14,33 @@ Code in this folder runs only in the browser. It must never import from `src/lib
 | `profile-form.ts`        | Saves profile sections: validates with the services' zod schemas (loaded on idle, never initial JS), posts JSON to the action   |
 | `section-form.svelte.ts` | One profile section's form state (value, field errors, busy, dirty); `submit()` validates, then saves through `profile-form.ts` |
 
-## Planned (M4): offline-first workout store
+## Workouts (M4)
 
-Workout logging must never lose data and must never wait on the network (PRD §9, §15, §18).
+Workout logging never loses a set and never waits on the network (PRD §9, §15, §18). The design
+is the offline workout sync ADR (`docs/adr/`); the wire format is `src/lib/domain/workout/`.
+Logic lives in plain `.ts`, because Vitest's unit project excludes `*.svelte.test.ts`; the two
+`.svelte.ts` modules are thin `$state.raw` wrappers.
 
-- **IndexedDB** (via a ~1 KB wrapper such as `idb-keyval`, or raw IDB) holds the active
-  workout: completed sets, current exercise, timer state, pending mutations.
-- **Outbox pattern**: every user action becomes an idempotent mutation with a client-generated
-  UUIDv7 (`mutationId`). The UI applies it optimistically, persists it to IndexedDB in the same
-  task, then a sync loop POSTs pending mutations in order.
-- **No duplicates**: the server stores `mutationId` with a unique constraint and treats replays
-  as no-ops, so retries after a network drop are safe.
-- **Sync triggers**: `online` event, `visibilitychange`, app start, and after each mutation;
-  exponential backoff on failure. Background Sync is used where available (not on iOS).
-- **Restore**: on load, the active workout is rebuilt from IndexedDB before any network call.
-- The service worker caches the app shell (code, fonts, the `/offline` screen) so the workout
-  screen opens offline. It never stores server-rendered HTML or `__data.json`: private data
-  lives only in IndexedDB, where the app controls it and sign-out can erase it.
+This table is written once, for every M4 client module. Later slices do not edit it; docs-m4
+checks it against the merged code.
+
+| Module                     | What it holds                                                                                                                                                             | Slice                                          |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| `workout/names.ts`         | `'pc-offline'` (the name M2's sign-out deletes), its version 1 and its store names, with no runtime imports, so the e2e helpers cannot drift                              | workout-store                                  |
+| `workout/db.ts`            | `openDB` through idb with every store at version 1 (workouts, outbox, kits, library, meta); a database with missing stores is recreated; closed for good on versionchange | workout-store                                  |
+| `workout/store.ts`         | `createStore({ table })`: `dispatch` with its follow-ups in one transaction, 'Not saved on this device' and `retry`, `acknowledge`, kits, `prune`, `onChange`             | workout-store; sync-engine; reconcile-and-tabs |
+| `workout/probe.ts`         | Raw IndexedDB reads for the other screens, `activeSummary()` and `pendingCount()`: never creates the database, reads a foreign one as empty                               | workout-store                                  |
+| `workout/outbox-rules.ts`  | `nextBatch` (FIFO within the caps; a parked or waiting entry holds only its dependants), `applyResults`, the 'Needs attention' cap, Discard, Try again, Fix, `syncStatus` | outbox-rules                                   |
+| `workout/sync.ts`          | `startSync`: one flusher per device under the Web Lock `pc-workout-sync`, 15 s aborts, the 48 KB keepalive send on pagehide, 401 and 403                                  | sync-engine                                    |
+| `workout/status.svelte.ts` | The reactive sync status for the screens                                                                                                                                  | sync-engine                                    |
+| `workout/reconcile.ts`     | `reconcile(workoutId)` with a 10 s abort, a pending edit of a deleted set parked, the 404 rule; `adoptRemote(workoutId)`                                                  | reconcile-and-tabs                             |
+| `workout/channel.ts`       | BroadcastChannel `pc-workout`: changed, purged, closed and signed-out                                                                                                     | reconcile-and-tabs                             |
+| `workout/settings.ts`      | `pc:workout:v1`, validated field by field: rest per class, auto-start rest, sound, vibration and keep-awake                                                               | device-settings                                |
+| `workout/feedback.ts`      | Vibration where it exists, a short Web Audio tone unlocked by the first tap, the Screen Wake Lock; loaded only by the screens that use it                                 | device-settings                                |
+| `workout/kinds.ts`         | Workout kind → route path: `/workout`, `/workout/run`, `/workout/session`                                                                                                 | workout-shell                                  |
+| `workout/active.svelte.ts` | The reactive active workout over the store, with the route's reducer table, and the store's `onChange` for the engine                                                     | workout-shell; workout-sync-wiring             |
+| `workout/start.ts`         | `startPlanned`, `startAdHoc` and `saveKits(lineages)`; loaded only for `?start` or `?new`                                                                                 | workout-start                                  |
+| `workout/library.ts`       | The exercise library, fetched with If-None-Match, cached and searched; a created exercise joins it at once, with the local name clash check                               | add-exercise; custom-exercises-ui              |
+| `workout/shutdown.ts`      | What sign-out loads lazily: the pending check, the flush bounded to 5 s, and closing every tab's store before `pc-offline` is deleted                                     | signout-workout-data                           |
+| `workout/previous.ts`      | The last session of an exercise the kit holds none for (5 s timeout), attached with `kit.attach` when its slot becomes current                                            | substitutions                                  |
+| `plates.ts`                | `pc:plates:v1`: one plate inventory per unit, defaulting to M1's `STANDARD_BARS` and `STANDARD_PLATES`                                                                    | device-settings                                |

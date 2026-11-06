@@ -64,6 +64,7 @@ one setup).
 | `pnpm db:reset:test`    | drop + re-migrate `coach_test` (guarded: only `_test`/`_e2e` names)           |
 | `pnpm db:studio`        | Drizzle Studio                                                                |
 | `pnpm icons`            | re-render PNG icons from `static/icons/*.svg`                                 |
+| `pnpm icons:sprite`     | regenerate the icon sprite and names from `src/lib/ui/icons/icons.ts`         |
 
 ## Conventions
 
