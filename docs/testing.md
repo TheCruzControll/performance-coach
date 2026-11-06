@@ -257,6 +257,19 @@ Unit tests (`src/lib/domain/training/`, `src/lib/domain/exercises/`, `src/lib/do
   `spinal_loading`, gives squat, hinge and single-leg work ≥ 2 dumbbell-only and ≥ 1 bodyweight
   options, links its six M2 lifts and matches M2's lower-body and conditioning suggestions. The matcher ignores case, accents, punctuation, spacing and plurals, and gives
   null, never a guess, for unknown text, part of a name or a name two exercises share.
+- **Whole catalogue and part 2** (`integrity.test.ts`, `match.test.ts`): ≥ 150 entries, ≥ 3 per
+  movement pattern, and the brief's categories (barbell, dumbbell and bodyweight ≥ 15, machine,
+  cable, plyometric and conditioning ≥ 8, kettlebell and Olympic ≥ 6, mobility ≥ 10);
+  conditioning and mobility never counted in reps; Olympic lifts intermediate or above; every M2
+  lift but `custom` linked; every M2 suggestion matched or on `NOT_EXERCISES`, which the matcher
+  never matches whatever the library holds ('Running intervals': running is run segments).
+  Part 2 has ≥ 75 entries and one measure per group, flags single-arm rows and presses, offset
+  carries and rotation work unilateral, tags the standing barbell presses and the barbell row
+  `spinal_loading`, tags every overhead press `overhead` and no horizontal push, keeps the
+  landmine press's group `shoulder_friendly` and off `overhead`, gives horizontal and
+  vertical push and pull ≥ 2 dumbbell-only options (a bench allowed), links bench press,
+  overhead press and weighted pull-up, and matches 'Bench press', 'Overhead press', 'Pull-ups'
+  and 'Dips'.
 - **Plain Node** (`scripts/catalogue-node.test.ts`): Node with type stripping alone, as the seed
   runs, loads `src/lib/domain/exercises/index.ts` and sees the catalogue Vite sees; an
   extensionless import fails there, which is why the package uses `.ts` specifiers.
@@ -279,15 +292,6 @@ Unit tests (`src/lib/domain/training/`, `src/lib/domain/exercises/`, `src/lib/do
   repeat groups as one step); session lines for strength, timed and distance runs and every
   other-session kind, with M2's time of day but never 'varies'. `describe.ts` imports only
   domain modules and no package (`scripts/training-index-imports.test.ts`).
-- **Training metrics** (`training/metrics.test.ts`): a set's e1RM is M1's `estimateOneRepMax`
-  in kg (with and without an RPE, pounds converted exactly) and none for warm-ups, skipped sets
-  and RPE under 6; the best e1RM is always an estimate; best e1RM and rep records give a tie to
-  the latest set in any order, and rep records ignore warm-ups; bench is 1 hard set for chest and
-  0.5 for triceps and front delts, RPE-6 and warm-up sets never count, a group is credited once
-  per set and weeks split on the owner's Monday; planned and logged hard sets agree on the same
-  sets, and runs and classes (a strength class included) credit none; session load is M1's
-  `sessionLoad` for logged and planned sessions; weekly distance mixes km and mi exactly, free of
-  floating-point noise, and keeps a Sunday-evening run in its week.
 
 ### Schema
 
