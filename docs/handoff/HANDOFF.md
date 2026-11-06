@@ -4,49 +4,58 @@ This is everything a new Claude Code session needs to resume the build on anothe
 product spec is `docs/product-requirements.md` on `main`; milestone criteria are in
 `docs/milestones.md`. Read this file from `origin/handoff` (it is not on `main`).
 
-## Final state, 2026-11-06 22:47 UTC (read this first)
+## Final state, 2026-11-06 23:41 UTC (read this first)
 
 The owner asked to finish only the work already in progress and then hand off. That is done: every
-run that was building a slice has finished or been stopped, every PR it produced is merged or in CI
-after passing its checks locally, and no slice was started after the request. Production runs `main` on coach.nikocruz.com
+run that was building a slice has finished or been stopped, every PR it produced is merged, and no
+slice was started until the owner asked to resume. Production runs `main` on coach.nikocruz.com
 (`/api/health` at 22:00 UTC: `ok`, db up, version `0.1.0+6d76691`).
 
-### Merged during the wind-down (20:10 → 22:47 UTC)
+### Merged during the wind-down (20:10 → 23:41 UTC)
 
-| Milestone    | PRs                                                                                                  |
-| ------------ | ---------------------------------------------------------------------------------------------------- |
-| M2 Profile   | #73 basics, #74 specifics, #76 body, #77 general goals, #81 injuries, #83 exercises, #84 goal status |
-| M2X Desktop  | #132 sign-in, setup and recovery on desktop, #138 desktop sheets, hover and focus states             |
-| M3 Programs  | #125 session detail, #128 plan overview                                                              |
-| M4 Workout   | #134 run and other-session rules, #137 log-gaps schema, #139 substitution and pain rules             |
-| M5 Coach     | #131 typed coach tools, #136 coach analytics service                                                 |
-| M6 Analytics | #130 trend classifier, #133 prescribed vs actual, #135 adherence                                     |
-| CI           | #141 the E2E job gets 40 minutes (see the lessons below)                                             |
+| Milestone    | PRs                                                                                                                                                |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| M2 Profile   | #73 basics, #74 specifics, #76 body, #77 general goals, #81 injuries, #83 exercises, #84 goal status, #89 schedule, #93 goal order, #104 goal drag |
+| M2X Desktop  | #132 sign-in, setup and recovery on desktop, #138 desktop sheets, hover and focus states                                                           |
+| M3 Programs  | #125 session detail, #128 plan overview, #140 move a session                                                                                       |
+| M4 Workout   | #134 run and other-session rules, #137 log-gaps schema, #139 substitution and pain rules                                                           |
+| M5 Coach     | #131 typed coach tools, #136 coach analytics service                                                                                               |
+| M6 Analytics | #130 trend classifier, #133 prescribed vs actual, #135 adherence                                                                                   |
+| CI           | #141 the E2E job gets 40 minutes (see the lessons below)                                                                                           |
 
 ### Still open at hand-off
 
-| PR   | What           | State                                                          |
-| ---- | -------------- | -------------------------------------------------------------- |
-| #89  | schedule       | green locally and refreshed onto main; CI running at 22:47 UTC |
-| #93  | goal order     | green locally and refreshed onto main; CI running at 22:47 UTC |
-| #104 | goal drag      | green locally and refreshed onto main; CI running at 22:47 UTC |
-| #140 | move a session | green locally and refreshed onto main; CI running at 22:47 UTC |
+None apart from #13 (this branch, never merged) and #14 (the old paused onboarding WIP).
 
-They merge in this order: #89, then #93, then #104 (each contains the one before). #140 can merge independently. Use `tools/steward-plan` as below. Never merge #13.
+### Build resumed (23:20 UTC): the owner set the goal "finish the app"
+
+Seven waves of `dag-cloud.js` run with 12 agents in total. Their scripts are `<scratch>/wave-<M>.js`: `dag-cloud-resume.js` with the args embedded, built by `workflows/build-plan-wave.py`.
+
+| Wave | Run               | Limit | Slices                                                                                                                                                                                              |
+| ---- | ----------------- | ----: | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| M9   | `wf_f88f2fc2-e2a` |     2 | report-skeletons, docs-guards, the backup pipeline (format, envelope, store, export, config, run service, CLI) and the restore steps                                                                |
+| M2   | `wf_8031ff65-d34` |     2 | onboarding-flow, today-setup, save-on-leave, resume, review, today-summary, docs-profile                                                                                                            |
+| M3   | `wf_37e7ec18-88f` |     2 | preferences-link, programming-service, edit-swap-adjust, swap-exercise, program-history, adjust-skip                                                                                                |
+| M4   | `wf_be1afe62-090` |     2 | reconcile-and-tabs, log-gaps-service, mutation-schemas, sync-ledger-db, pain-reports-db, sync-endpoint, canonical-reads, run-other-handlers, start-kit, workout-history-data, exercise-library-json |
+| M6   | `wf_986bf2b8-9c1` |     2 | strength, running and workload analytics, metric-catalogue, chart-tokens, progression-rules, test support, the review snapshot and composers                                                        |
+| M2X  | `wf_99857716-c45` |     1 | desk-main-screens, desk-e2e, the email sign-in link (schema, service, endpoints, sign-in), docs-email-security                                                                                      |
+| M5   | `wf_a3136819-aa6` |     1 | coach-safety-rules, prompt-layout, agent-orchestrator                                                                                                                                               |
+
+If this session stops, do not resume these runs (their limit is above 1). Rebuild each wave with `build-plan-wave.py`. Slices with a PR become dependencies, and a slice whose worktree exists resumes from it.
 
 ### Slices on main, by milestone (from `tools/slice-counts.py`)
 
 | Milestone | On main | Open PR | Not started | Plan                                  |
 | --------- | ------: | ------: | ----------: | ------------------------------------- |
-| M2        |      18 |       3 |           7 | `briefs/m2-onboarding-plan.json` (28) |
+| M2        |      21 |       0 |           7 | `briefs/m2-onboarding-plan.json` (28) |
 | M2X       |       7 |       0 |          14 | `plans/m2x-plan.json` (21)            |
-| M3        |      36 |       1 |          13 | `plans/m3-plan.json` (50)             |
+| M3        |      37 |       0 |          13 | `plans/m3-plan.json` (50)             |
 | M4        |      16 |       0 |          45 | `plans/m4-plan.json` (61)             |
 | M5        |       6 |       0 |          55 | `plans/m5-plan.json` (61)             |
 | M6        |       4 |       0 |          59 | `plans/m6-plan.json` (63)             |
 | M7        |       0 |       0 |          59 | `plans/m7-plan.json` (59)             |
 | M9        |       0 |       0 |          62 | `plans/m9-plan.json` (62)             |
-| **Total** |  **87** |   **4** |     **314** | 405 slices                            |
+| **Total** |  **91** |   **0** |     **314** | 405 slices                            |
 
 M1 is done (its audit is in `plans/m1-audit.json`). M8 has no slice plan: it runs
 `workflows/councils.js` after M4 and again at the end (the owner passes the bar as `args.bar`).
