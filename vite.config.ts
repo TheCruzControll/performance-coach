@@ -130,7 +130,10 @@ export default defineConfig(({ command, mode }) => {
 						environment: 'node',
 						include: ['tests/integration/**/*.test.ts'],
 						globalSetup: ['tests/integration/global-setup.ts'],
-						setupFiles: ['tests/integration/setup-env.ts'],
+						setupFiles: [
+							'tests/integration/setup-env.ts',
+							'tests/integration/one-query-per-client.ts'
+						],
 						// Applied before any module loads (the logger reads LOG_LEVEL at import time).
 						// Quiet by default; `LOG_LEVEL=debug pnpm test:integration` to see logs.
 						env: { LOG_LEVEL: process.env.LOG_LEVEL || 'silent' },
