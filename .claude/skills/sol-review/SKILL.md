@@ -25,15 +25,21 @@ request. In Claude Code without T3, Claude Opus 5.5 takes Sol's place.
 
 ## Which harness?
 
-- Decide once per invocation. If any `mcp__t3-code__` tool is listed or loads
-  with ToolSearch (`select:mcp__t3-code__orchestrator_capabilities`), you are
-  in T3 Code: read [t3.md](t3.md) in this skill's directory and follow it.
-- Otherwise (Claude Code in a terminal, Claude Desktop, or a claude.ai cloud
-  session): read [claude.md](claude.md) and follow it.
-- Codex or another harness with a native Sol subagent and no ToolSearch: if T3
-  tools are not listed, try one direct capability call. If it works, you are in
-  T3 Code; otherwise use the native Sol subagent (section 2).
-- The rules in this file apply in both; the path file says which tools to use.
+Decide once per invocation, in this order:
+
+1. Any `mcp__t3-code__` tool is listed or loads with tool search
+   (`mcp__t3-code__orchestrator_capabilities`): T3 Code, read [t3.md](t3.md).
+   T3 Code runs Claude Code or Codex underneath; T3 wins.
+2. You are Claude Code (terminal, Claude Desktop, or a claude.ai cloud session;
+   tools such as Agent, ToolSearch, Skill): read [claude.md](claude.md).
+3. You are Codex (your instructions start "You are Codex" or mention the Codex
+   CLI; tools such as exec_command, apply_patch, spawn_agent): read
+   [codex.md](codex.md).
+4. You are Pi (the pi coding agent; tools such as read, bash, edit, write, and
+   a skill path given by Pi): read [pi.md](pi.md).
+
+Paths are relative to this skill's directory. The rules in this file apply
+everywhere; the path file says which tools to use.
 
 Make the most minimal possible changes to appease the Sol reviewers. Be careful
 of scope creep and don't be scared to push back.
@@ -120,14 +126,15 @@ or pre-failing checks in the brief.
 Pick the reviewer for your harness (tools: see your path file):
 
 - T3 Code: GPT Sol through T3 (see t3.md).
-- Codex (or any harness with a native Sol subagent): use the native Sol
-  subagent at the chosen effort and keep its ID. Pick the newest Sol it lists.
+- Codex: GPT Sol as a native Codex subagent (see codex.md).
+- Pi: GPT Sol through a Pi subagent (see pi.md).
 - Claude Code without T3 (terminal, Desktop, cloud): the reviewer is Claude
   Opus 5.5 (`claude-opus-5-5`), started as a subagent (see claude.md). Use
   another model only if the user names one (e.g. Claude Fable 5.1).
 
-Outside T3, stay inside the harness's own model family. Never call another
-vendor's CLI from a single-vendor harness.
+Outside T3 and Pi (multi-vendor through their own providers), stay inside the
+harness's own model family. Never call another vendor's CLI from a
+single-vendor harness.
 
 Reasoning effort: `high` unless the user names one. Use `xhigh` for security,
 permissions, auth, data loss, or concurrency. `ultra` makes Sol start
@@ -186,7 +193,7 @@ end the loop.
 
 Start one only if budget remains and a blocker or should is open, behavior code
 changed, or approval does not cover the current behavior diff. Start it fresh
-the way your path file says (Codex: follow up the saved native ID).
+the way your path file says.
 Send the round 1 brief, the ledger (`fixed:` / `disagree:` /
 `declined:` + evidence), the same base diff, and the change since last round.
 To get that change, save `git stash create` before each round. It prints a

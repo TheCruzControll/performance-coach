@@ -12,18 +12,27 @@ right.
 
 ## Which harness?
 
-- Decide once per invocation. If any `mcp__t3-code__` tool is listed or loads
-  with ToolSearch (`select:mcp__t3-code__orchestrator_capabilities`), you are
-  in T3 Code: read [t3.md](t3.md) in this skill's directory and follow it.
-- Otherwise (Claude Code in a terminal, Claude Desktop, or a claude.ai cloud
-  session): read [claude.md](claude.md) and follow it.
-- The rules in this file apply in both; the path file says which tools to use.
+Decide once per invocation, in this order:
+
+1. Any `mcp__t3-code__` tool is listed or loads with tool search
+   (`mcp__t3-code__orchestrator_capabilities`): T3 Code. Read [t3.md](t3.md).
+   (T3 Code runs Claude Code or Codex underneath; T3 wins.)
+2. You are Claude Code (terminal, Claude Desktop, or a claude.ai cloud session;
+   you have tools such as Agent, ToolSearch, Skill): read [claude.md](claude.md).
+3. You are Codex (your instructions start "You are Codex" or mention the Codex
+   CLI; tools such as exec_command, apply_patch, spawn_agent): read
+   [codex.md](codex.md).
+4. You are Pi (the pi coding agent; tools such as read, bash, edit, write, and
+   a skill path given by Pi): read [pi.md](pi.md).
+
+Paths are relative to this skill's directory; follow the file you read. The
+rules in this file apply everywhere; the path file says which tools to use.
 
 ## Waiting
 
 GitHub access: use whatever the session has, such as the `gh` CLI (if
-logged in), a GitHub MCP server, or built-in GitHub tools (search ToolSearch
-for `github`). The steps in this skill say what to do, not which command to run. If
+logged in), a GitHub MCP server, or built-in GitHub tools (in Claude Code, search
+ToolSearch for `github`). The steps in this skill say what to do, not which command to run. If
 nothing reaches GitHub, report that and stop.
 
 Never write your own watcher, polling loop, or `sleep` loop. Use one watcher

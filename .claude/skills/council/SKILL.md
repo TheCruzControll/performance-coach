@@ -9,21 +9,22 @@ metadata:
 
 ## Which harness?
 
-Decide once per invocation.
+Decide once per invocation, in this order:
 
-- If any `mcp__t3-code__` tool is listed or loads with ToolSearch
-  (`select:mcp__t3-code__orchestrator_capabilities`), you are in T3 Code: read
-  [t3.md](t3.md) in this skill's directory and follow it.
-- Otherwise (Claude Code in a terminal, Claude Desktop, or a claude.ai cloud
-  session): read [claude.md](claude.md) and follow it.
-- Codex outside T3 Code: use neither path file. Seat the three
-  highest-priority models in `codex debug models` with `visibility == "list"`
-  that belong to different lines (for example GPT-6.1-Sol, GPT-6-Astra,
-  GPT-6.1-Terra; not two versions of Sol). Resolve them from the list at run
-  time; do not hardcode. Start all three in parallel with Codex's subagent
-  tool.
+1. Any `mcp__t3-code__` tool is listed or loads with tool search
+   (`mcp__t3-code__orchestrator_capabilities`): T3 Code. Read [t3.md](t3.md).
+   T3 Code runs Claude Code or Codex underneath; T3 wins.
+2. You are Claude Code (terminal, Claude Desktop, or a claude.ai cloud
+   session; tools such as Agent, ToolSearch, Skill): read
+   [claude.md](claude.md).
+3. You are Codex (your instructions start "You are Codex" or mention the
+   Codex CLI; tools such as exec_command, apply_patch, spawn_agent): read
+   [codex.md](codex.md).
+4. You are Pi (the pi coding agent; tools such as read, bash, edit, write,
+   and a skill path given by Pi): read [pi.md](pi.md).
 
-The rules below apply in every harness; the path file says which tools to use.
+Paths are relative to this skill's directory. The rules in this file apply
+everywhere; the path file says which tools to use.
 
 ## Before the audit
 
@@ -37,7 +38,7 @@ new ideas, skip fixes to code being replaced.
 Bring in three delegates to help with the user's request, usually for review
 or feedback, at high reasoning effort. If the user's instructions name council
 members, use those. Otherwise the seats depend on the harness (see your path
-file, or the Codex line above).
+file).
 
 In a single-vendor harness (Claude Code without T3, Codex), use only that
 vendor's models. Never call another vendor's CLI. Seat three different models
