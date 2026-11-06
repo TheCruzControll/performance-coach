@@ -21,6 +21,7 @@ import {
 } from '@playwright/test';
 import {
 	captureScreen,
+	gotoHydrated,
 	ORIGIN,
 	query,
 	SAME_ORIGIN,
@@ -153,7 +154,8 @@ test.describe('passkey authentication (real WebAuthn ceremonies)', () => {
 		const authenticator = await ownerPasskey(page, testInfo);
 		await withoutPasskeyAutofill(page);
 		await authenticator.setUserVerified(false); // Face ID fails: user verification is required
-		await page.goto('/');
+		// Hydrated first, or the tap submits the sign-in form as a plain GET (`/?username=`).
+		await gotoHydrated(page, '/');
 		await page.getByTestId('passkey-signin').click();
 		await expect(page.getByTestId('signin-error')).toBeVisible();
 		await expect(page).toHaveURL(/\/$/);
@@ -201,7 +203,7 @@ test.describe('passkey authentication (real WebAuthn ceremonies)', () => {
 		// The authenticator still holds it, but the server no longer accepts it.
 		await context.clearCookies();
 		await withoutPasskeyAutofill(page);
-		await page.goto('/');
+		await gotoHydrated(page, '/');
 		await page.getByTestId('passkey-signin').click();
 		await expect(page.getByTestId('signin-error')).toContainText('not registered');
 		expect(errors.filter((e) => !/401/.test(e))).toEqual([]);
