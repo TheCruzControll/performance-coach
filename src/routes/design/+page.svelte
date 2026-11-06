@@ -11,7 +11,7 @@
 	import Tabs from '#lib/ui/components/Tabs.svelte';
 	import { icons, type IconName } from '#lib/ui/icons/icons.ts';
 
-	type Group = 'buttons' | 'inputs' | 'data' | 'feedback';
+	type Group = 'buttons' | 'inputs' | 'data' | 'feedback' | 'program';
 	let tab = $state<Group>('buttons');
 
 	// Only the first group ships with the page; the others load when their tab opens, so the
@@ -22,7 +22,8 @@
 	const PANELS: Record<Exclude<Group, 'buttons'>, () => Promise<{ default: Component }>> = {
 		inputs: () => (import.meta.env.SSR ? never() : import('./InputsPanel.svelte')),
 		data: () => (import.meta.env.SSR ? never() : import('./DataPanel.svelte')),
-		feedback: () => (import.meta.env.SSR ? never() : import('./FeedbackPanel.svelte'))
+		feedback: () => (import.meta.env.SSR ? never() : import('./FeedbackPanel.svelte')),
+		program: () => (import.meta.env.SSR ? never() : import('./ProgramPanel.svelte'))
 	};
 
 	const colors = [
@@ -79,7 +80,9 @@
 				{ id: 'buttons', label: 'Buttons' },
 				{ id: 'inputs', label: 'Inputs' },
 				{ id: 'data', label: 'Data' },
-				{ id: 'feedback', label: 'Feedback' }
+				{ id: 'feedback', label: 'Feedback' },
+				// 'Program' is too wide for a fifth of the row at 393 px; it ran into 'Feedback'.
+				{ id: 'program', label: 'Plan' }
 			]}
 		>
 			{#snippet panel(id)}
