@@ -18,6 +18,7 @@ import { appendFileSync, existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { gzipSync } from 'node:zlib';
+import { CATALOGUE_HEADER } from '../src/lib/domain/exercises/format.ts';
 import { PRELOADED_FONT_PATTERN } from '../src/lib/ui/fonts.ts';
 import { icons } from '../src/lib/ui/icons/icons.ts';
 
@@ -317,6 +318,17 @@ if (schemasChunk) {
 }
 
 /**
+ * Server-only packages: the exercise catalogue (src/lib/domain/exercises) is in no client file at
+ * all, initial or loaded later, the service worker included. Every catalogue table starts with
+ * CATALOGUE_HEADER, the literal format.ts reserves as its bundle signature. This is the second
+ * line of defence behind the server-only lint rule (eslint.config.js), and it also sees dynamic
+ * imports, which the rule does not.
+ */
+const catalogueChunks = readdirSync(CLIENT, { recursive: true, encoding: 'utf8' })
+	.map((file) => file.split(path.sep).join('/'))
+	.filter((file) => file.endsWith('.js') && read(file).includes(CATALOGUE_HEADER));
+
+/**
  * Icon placement: every icon draws from the SVG sprite (src/lib/ui/icons/sprite.svg, through
  * <use>), so no client chunk may contain icon path data, and the sprite must ship as its own
  * file (a data: URL would put it back in JS, and Chrome does not draw data: URLs in <use>). Each
@@ -375,6 +387,7 @@ const lines = [
 		.map((r) => `\`${r}\``)
 		.join(', ')}: ${webauthnProblems.length ? 'FAIL' : 'pass'}`,
 	`Validation (zod, profile schemas): on demand only, never in initial JS: ${validationProblems.length ? 'FAIL' : 'pass'}`,
+	`Exercise catalogue (server-only): in no client chunk: ${catalogueChunks.length ? 'FAIL' : 'pass'}`,
 	`Icon paths in JS (every icon draws from the SVG sprite): ${iconProblems.length ? 'FAIL' : 'pass'}`
 ];
 console.log(lines.join('\n'));
@@ -398,6 +411,12 @@ if (validationProblems.length > 0) {
 	console.error(`\nValidation placement failed:\n  - ${validationProblems.join('\n  - ')}`);
 }
 
+if (catalogueChunks.length > 0) {
+	console.error(
+		`\nThe exercise catalogue reached the browser (its header is in):\n  - ${catalogueChunks.join('\n  - ')}`
+	);
+}
+
 if (iconProblems.length > 0) {
 	console.error(`\nIcon placement failed:\n  - ${iconProblems.join('\n  - ')}`);
 }
@@ -408,6 +427,7 @@ if (
 	prefixProblems.length > 0 ||
 	webauthnProblems.length > 0 ||
 	validationProblems.length > 0 ||
+	catalogueChunks.length > 0 ||
 	iconProblems.length > 0
 ) {
 	const what = [
@@ -415,6 +435,7 @@ if (
 		...(prefixProblems.length ? ['CSS prefixes'] : []),
 		...(webauthnProblems.length ? ['WebAuthn library placement'] : []),
 		...(validationProblems.length ? ['validation placement'] : []),
+		...(catalogueChunks.length ? ['catalogue placement'] : []),
 		...(iconProblems.length ? ['icon paths in JS'] : [])
 	];
 	console.error(`\nbudgets: FAILED (${what.join(', ')})`);
