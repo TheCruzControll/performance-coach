@@ -15,3 +15,4 @@ Status values: Proposed · Accepted · Superseded.
 | [0008](0008-testing-strategy.md)         | Testing pyramid: Playwright e2e, real-Postgres integration    | Accepted |
 | [0009](0009-llm-provider-interface.md)   | LLM behind a provider interface with a deterministic mock     | Accepted |
 | [0010](0010-program-versioning.md)       | Immutable program versions with copy-on-write membership      | Accepted |
+| [0012](0012-offline-workout-sync.md)     | Offline workout sync: device inputs, one projection, a ledger | Proposed |
