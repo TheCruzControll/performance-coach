@@ -368,8 +368,9 @@ deliberate, documented choice. **N/A**: the mechanism does not exist here.
 ### Fixed in the cutover pull request
 
 - **`pnpm auth:reset-owner` could reset the wrong database.** Without `DATABASE_URL_UNPOOLED` it
-  fell back to `DATABASE_URL`, then to the local development database. It now refuses before
-  connecting unless `DATABASE_URL_UNPOOLED` names the target, and still refuses without
+  fell back to `DATABASE_URL`, then to the local development database, and the package script
+  read `.env`, which sets it to that database. It now refuses before connecting unless
+  `DATABASE_URL_UNPOOLED` names the target on the command line, and still refuses without
   `--confirm` or outside an interactive terminal. The real command is tested for all three
   refusals (`scripts/auth-reset-owner.test.ts`, `tests/integration/auth/reset-owner-cli.test.ts`).
 - **The deny-by-default walks missed layout-reset pages.** `routes.test.ts` and the e2e
