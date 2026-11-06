@@ -3,11 +3,11 @@ import type { Templates } from '../../decisions.ts';
 
 export const strength = {
 	split_chosen: {
-		summary: '{split} split',
-		why: 'With {days} strength days a week, a {split} split {reason}.'
+		summary: 'Split: {split}, {days} days a week',
+		why: 'With {days} strength days a week{classes}, {article} {split} split {reason}.'
 	},
 	exercise_selected: {
-		summary: '{exercise} for {slot}',
+		summary: '{exercise} for the {slot}',
 		why: '{exercise} fills the {slot} slot: {reason}.'
 	},
 	exercise_excluded: {
@@ -19,15 +19,15 @@ export const strength = {
 		why: '{original} would be the usual choice, but {reason}. {exercise} keeps its purpose: {intent}'
 	},
 	slot_empty: {
-		summary: 'Nothing fits {slot}',
-		why: 'No exercise in the library fits the {slot} slot: {reason}. The session goes ahead without it.'
+		summary: 'Nothing fits the {slot} slot',
+		why: 'Nothing in the library can fill the {slot} slot in {sessions}. {reason}. The rest of the session goes ahead.'
 	},
 	unmapped_avoidance: {
 		summary: 'Could not match “{text}”',
 		why: 'You asked to avoid “{text}”, but it names no movement the coach knows, so nothing was left out for it. Swap anything that does not suit you.'
 	},
 	time_trimmed: {
-		summary: '{session} trimmed to {minutes} min',
-		why: '{session} came to about {estimate} min, more than your {minutes}-minute sessions allow, so {trimmed} came out. The top set stays.'
+		summary: '{session} trimmed to about {after} min',
+		why: '{session} came to about {estimate} min, more than your {minutes}-minute sessions allow, so {trimmed}. It now takes about {after} min.'
 	}
 } as const satisfies Templates;

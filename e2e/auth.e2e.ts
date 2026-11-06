@@ -316,6 +316,28 @@ test.describe('passkey authentication (real WebAuthn ceremonies)', () => {
 		).toHaveCount(0);
 		const bRow = a.page.locator(`[data-session-id="${b.sessionId}"]`);
 		await expect(bRow).toHaveAttribute('data-current', 'false');
+		// The server words the method and "how long ago"; the date is the browser's, in this
+		// device's time zone ("6 Nov").
+		const signedInOn = async (sessionId: string) => {
+			const [row] = await query<{ created_at: Date }>(
+				'select created_at from auth_sessions where id = $1',
+				[sessionId]
+			);
+			return a.page.evaluate((at) => {
+				const d = new Date(at);
+				const month = 'Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec'.split(' ')[d.getMonth()];
+				return `${d.getDate()} ${month}`;
+			}, row!.created_at.toISOString());
+		};
+		await expect(a.page.locator(`[data-session-id="${a.sessionId}"]`)).toContainText(
+			`Active now · Signed in ${await signedInOn(a.sessionId)} with passkey`
+		);
+		await expect(bRow).toContainText(
+			`Active just now · Signed in ${await signedInOn(b.sessionId)} with passkey`
+		);
+		await expect(a.page.getByTestId('activity').getByRole('listitem').first()).toHaveText(
+			/\bjust now\s*$/
+		);
 		await captureScreen(a.page, testInfo, 'security-sessions');
 		await bRow.getByTestId('revoke-session').click();
 		await expect(toastWith(a.page, /Signed out /)).toBeVisible();
@@ -342,9 +364,19 @@ test.describe('passkey authentication (real WebAuthn ceremonies)', () => {
 				page.evaluate(() => JSON.parse(localStorage.getItem('pc:prefs:v1') ?? '{}').theme)
 			)
 			.toBe('light');
-		await page.waitForFunction(() => navigator.serviceWorker.controller !== null, null, {
-			timeout: 15_000
-		});
+		// The app shell is installed and its worker activated (the activate step, which drops other
+		// `pc-` caches, is over). Not "this page is controlled": signInAsOwner's page installed the
+		// worker, and a page whose navigation starts before the worker is active and commits after
+		// its clients.claim() stays uncontrolled until its next load. Sign-out needs no controller.
+		await expect
+			.poll(
+				() =>
+					page.evaluate(
+						async () => (await navigator.serviceWorker.getRegistration())?.active?.state
+					),
+				{ message: 'the service worker is activated', timeout: 15_000 }
+			)
+			.toBe('activated');
 		// Account data a device can hold: cached responses and the offline store (M4).
 		await page.evaluate(async () => {
 			const cache = await caches.open('pc-account-data');

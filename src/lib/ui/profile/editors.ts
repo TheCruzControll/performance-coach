@@ -28,8 +28,8 @@ export interface EditorProps<T> {
 /** One section, ready to edit. */
 export interface SectionEditor {
 	Editor: Component<EditorProps<unknown>>;
-	/** The editing state, built from what the section's load returned. */
-	draft(saved: unknown): unknown;
+	/** The editing state, built from what the section's load returned and the context. */
+	draft(saved: unknown, context: SectionContext): unknown;
 	/** The schema the browser checks before posting (the services check it again). */
 	schema: SchemaName;
 	/** What is posted, when that is not the editing state as it stands (SectionForm). */
@@ -42,7 +42,7 @@ export interface SectionEditor {
  */
 function section<T>(
 	Editor: Component<EditorProps<T>>,
-	draft: (saved: never) => T,
+	draft: (saved: never, context: SectionContext) => T,
 	schema: SchemaName,
 	payload?: (value: T) => unknown
 ): SectionEditor {
@@ -59,6 +59,11 @@ export const EDITORS: Record<SectionKey, () => Promise<SectionEditor>> = {
 	goals: () =>
 		import('./GoalsEditor.svelte').then((editor) =>
 			section(editor.default, (goals: Goal[]) => goals, 'goal')
+		),
+	experience: () =>
+		Promise.all([import('./ExperienceEditor.svelte'), import('./experience')]).then(
+			([editor, { experienceDraft, experiencePayload }]) =>
+				section(editor.default, experienceDraft, 'experience', experiencePayload)
 		),
 	equipment: () =>
 		Promise.all([import('./EquipmentEditor.svelte'), import('./equipment')]).then(
