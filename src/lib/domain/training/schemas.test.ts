@@ -6,15 +6,21 @@ import {
 	customExerciseSchema,
 	customMetricsSchema,
 	decisionPlanSchema,
+	editRecoveryNoteSchema,
+	editRunSchema,
 	editSetSchema,
 	exerciseRefSchema,
 	finishWorkoutSchema,
 	LOG_LIMITS,
+	logOtherSessionSchema,
+	logRunSchema,
 	logSetSchema,
 	otherDetailsSchema,
 	PARTIAL_FIRST_WEEK,
 	plannedExerciseSchema,
 	programPlanSchema,
+	RECORD_LIMITS,
+	recoveryNoteSchema,
 	runSegmentSchema,
 	runSegmentsSchema,
 	sessionPlanSchema,
@@ -958,6 +964,104 @@ describe('the training log schemas', () => {
 		expect(validate(substitutionSchema, swap).ok).toBe(true);
 		expect(errorsOf(substitutionSchema, { ...swap, toExerciseId: CUSTOM_ROW })).toEqual({
 			toExerciseId: 'Pick a different exercise'
+		});
+	});
+});
+
+describe('the run, other session and recovery note schemas', () => {
+	const segment = {
+		clientMutationId: GOAL,
+		position: 1,
+		kind: 'interval',
+		distance: { value: 400, unit: 'm' },
+		durationSeconds: 84,
+		avgHr: null,
+		rpe: 9
+	};
+	const totals = {
+		distance: { value: 5, unit: 'mi' },
+		durationSeconds: 2400,
+		avgHr: 150,
+		rpe: 7,
+		notes: null
+	};
+	const run = { workoutClientId: COMMITMENT, ...totals, segments: [segment] };
+
+	it('read a run with its segments, each distance as entered', () => {
+		expect(validate(logRunSchema, run)).toEqual({ ok: true, data: run });
+		expect(validate(logRunSchema, { ...run, segments: [] }).ok).toBe(true);
+		expect(validate(editRunSchema, totals)).toEqual({ ok: true, data: totals });
+		const { notes: _, ...partial } = totals;
+		expect(errorsOf(editRunSchema, partial)).toEqual({ notes: expect.any(String) });
+	});
+
+	it.each([
+		['a distance in yards', { distance: { value: 5, unit: 'yd' } }, 'distance.unit'],
+		['a fourth decimal', { distance: { value: 5.0001, unit: 'km' } }, 'distance.value'],
+		['over 500 km, in miles', { distance: { value: 311, unit: 'mi' } }, 'distance.value'],
+		['a heart rate off the scale', { avgHr: RECORD_LIMITS.heartRate[0] - 1 }, 'avgHr'],
+		['an RPE off the half steps', { rpe: 7.3 }, 'rpe'],
+		['more than a day', { durationSeconds: RECORD_LIMITS.seconds[1] + 1 }, 'durationSeconds']
+	])('refuse %s, logged or edited', (_, change, path) => {
+		expect(Object.keys(errorsOf(logRunSchema, { ...run, ...change }))).toEqual([path]);
+		expect(Object.keys(errorsOf(editRunSchema, { ...totals, ...change }))).toEqual([path]);
+	});
+
+	it('hold each segment to a measure, a place of its own and an id of its own', () => {
+		const other = { ...segment, clientMutationId: CUSTOM_ROW, position: 2 };
+		const unmeasured = { ...other, distance: null, durationSeconds: null };
+		expect(errorsOf(logRunSchema, { ...run, segments: [segment, unmeasured] })).toEqual({
+			'segments.1.distance': 'Give a distance or a duration'
+		});
+		expect(
+			errorsOf(logRunSchema, { ...run, segments: [segment, { ...other, position: 1 }] })
+		).toEqual({ 'segments.1.position': 'Each position once' });
+		expect(
+			errorsOf(logRunSchema, { ...run, segments: [segment, { ...other, clientMutationId: GOAL }] })
+		).toEqual({ 'segments.1.clientMutationId': 'Each segment once' });
+		const many = Array.from({ length: RECORD_LIMITS.segments + 1 }, () => segment);
+		expect(errorsOf(logRunSchema, { ...run, segments: many })).toMatchObject({
+			segments: `Up to ${RECORD_LIMITS.segments}`
+		});
+	});
+
+	it('check an other session’s metrics as a planned session’s are', () => {
+		const session = {
+			workoutClientId: COMMITMENT,
+			kind: 'sparring',
+			durationMinutes: 60,
+			rpe: 8,
+			metrics: [{ key: 'rounds', label: 'Rounds', unit: null, value: 6 }],
+			notes: null
+		};
+		expect(validate(logOtherSessionSchema, session)).toEqual({ ok: true, data: session });
+		expect(Object.keys(errorsOf(logOtherSessionSchema, { ...session, metrics: {} }))).toEqual([
+			'metrics'
+		]);
+		expect(errorsOf(logOtherSessionSchema, { ...session, kind: 'karaoke' })).toEqual({
+			kind: 'Pick a session type'
+		});
+	});
+
+	it('take a recovery note with anything recorded, on its scales, logged or edited', () => {
+		const values = {
+			notedOn: '2026-11-10',
+			sleepHours: null,
+			soreness: null,
+			energy: null,
+			stress: null,
+			note: 'Slept badly'
+		};
+		const note = { clientMutationId: GOAL, ...values };
+		expect(validate(recoveryNoteSchema, note)).toEqual({ ok: true, data: note });
+		expect(validate(editRecoveryNoteSchema, { ...values, note: null, stress: 5 }).ok).toBe(true);
+		const nothing = { ...values, note: null };
+		const empty = { sleepHours: 'Record sleep, soreness, energy, stress or a note' };
+		expect(errorsOf(recoveryNoteSchema, { ...note, ...nothing })).toEqual(empty);
+		expect(errorsOf(editRecoveryNoteSchema, nothing)).toEqual(empty);
+		expect(errorsOf(editRecoveryNoteSchema, { ...values, sleepHours: 25, soreness: 0 })).toEqual({
+			sleepHours: 'Between 0 and 24 hours',
+			soreness: 'From 1 to 5'
 		});
 	});
 });

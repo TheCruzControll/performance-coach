@@ -1,9 +1,9 @@
 /**
  * Validation for the program-plan contract (./types.ts), on zod/mini. The generator checks its
  * output with programPlanSchema and createProgramFromPlan parses with it; edits and their sheets
- * reuse the part schemas; the training log's writes (m3/30) have theirs at the end. Import this
- * file by path (servers always, browsers on demand), never through ./index.ts, so no page
- * carries zod in its initial JavaScript.
+ * reuse the part schemas; the training log's writes (m3/30, m3/35) have theirs at the end.
+ * Import this file by path (servers always, browsers on demand), never through ./index.ts, so no
+ * page carries zod in its initial JavaScript.
  *
  * - Each schema's output is exactly its ./types.ts type; nullable fields are given as null.
  * - Errors carry dotted paths through ../validation.ts, such as
@@ -14,6 +14,7 @@
 import * as z from 'zod/mini';
 import { addDays, daysBetween, mondayOf } from '../calendar.ts';
 import { DISCIPLINES, EQUIPMENT, LIFTS, TIMES_OF_DAY, WEIGHT_UNITS } from '../profile/catalog.ts';
+import { toMetres, type DistanceUnit } from '../units.ts';
 import type { BaselineLift, ProgramPlan, SessionKind, SetPrescription } from './types.ts';
 import * as v from './vocabulary.ts';
 
@@ -560,3 +561,130 @@ export const substitutionSchema = z
 			if (s.fromExerciseId === s.toExerciseId) fail(['toExerciseId'], 'Pick a different exercise');
 		})
 	);
+
+// ---- runs, other sessions and recovery notes (m3/35) ----------------------------------------
+
+/**
+ * Inclusive bounds a logged run, other session or recovery note is held to, inside their tables'
+ * CHECKs. A distance is held to `metres` once converted, whatever unit it was entered in.
+ */
+export const RECORD_LIMITS = {
+	metres: 500_000,
+	seconds: [1, 86_400],
+	heartRate: [20, 250],
+	segments: 100,
+	otherMinutes: [1, 600],
+	sleepHours: [0, 24],
+	scale: [1, 5]
+} as const;
+const R = RECORD_LIMITS;
+
+const DISTANCE_UNITS = ['km', 'mi', 'm'] as const satisfies readonly DistanceUnit[];
+const decimals = (places: number) => (n: number) =>
+	Math.abs(n * 10 ** places - Math.round(n * 10 ** places)) < 1e-6;
+
+/** A distance as entered; the service stores it in metres through toMetres (5 mi is 8046.72). */
+export const distanceSchema = z
+	.object({
+		value: z
+			.number('Enter the distance')
+			.check(z.positive('Above 0'), z.refine(decimals(3), 'Three decimals')),
+		unit: z.enum(DISTANCE_UNITS, 'Pick km, mi or m')
+	})
+	.check(
+		rules((d, fail) => {
+			if (toMetres(d.value, d.unit) > R.metres) fail(['value'], `Up to ${R.metres / 1000} km`);
+		})
+	);
+
+/** What a run and each of its segments record, beside the run's notes; any may wait. */
+const runValues = {
+	distance: z.nullable(distanceSchema),
+	durationSeconds: z.nullable(whole(...R.seconds, 'Up to a day')),
+	avgHr: z.nullable(whole(...R.heartRate, `Heart rate between ${R.heartRate.join(' and ')}`)),
+	rpe: z.nullable(sessionRpe)
+};
+
+/** One segment as run, under the device's id, at its 1-based place in the run. */
+export const runSegmentLogSchema = z
+	.object({
+		clientMutationId: uuid,
+		position: whole(1, R.segments, `Segment 1 to ${R.segments}`),
+		kind: z.enum(v.RUN_SEGMENT_KINDS, 'Pick a segment type'),
+		...runValues
+	})
+	.check(
+		rules((s, fail) => {
+			// As run_record_segments_measure_ck.
+			if (s.distance === null && s.durationSeconds === null) {
+				fail(['distance'], 'Give a distance or a duration');
+			}
+		})
+	);
+
+/** A run's own values, all of them: what logRun records and editRun replaces. */
+const runFields = { ...runValues, notes: optText(500) };
+
+/** A run as logged in its run workout (by the workout's client id): its totals and segments. */
+export const logRunSchema = z.object({
+	workoutClientId: uuid,
+	...runFields,
+	segments: list(runSegmentLogSchema, R.segments).check(
+		rules((segments, fail) =>
+			segments.forEach((s, k) => {
+				if (segments.findIndex((o) => o.position === s.position) < k) {
+					fail([k, 'position'], 'Each position once');
+				}
+				if (segments.findIndex((o) => o.clientMutationId === s.clientMutationId) < k) {
+					fail([k, 'clientMutationId'], 'Each segment once');
+				}
+			})
+		)
+	)
+});
+
+/** An edit of a run's own values: every value after the edit, never a difference. */
+export const editRunSchema = z.object(runFields);
+
+/** An other session as logged in its workout: what it was, how long and hard, what was tracked. */
+export const logOtherSessionSchema = z.object({
+	workoutClientId: uuid,
+	kind: z.enum(v.OTHER_SESSION_KINDS, 'Pick a session type'),
+	durationMinutes: whole(...R.otherMinutes, `Between ${R.otherMinutes.join(' and ')} minutes`),
+	rpe: z.nullable(sessionRpe),
+	metrics: customMetricsSchema,
+	notes: optText(500)
+});
+
+const scale = z.nullable(whole(...R.scale, `From ${R.scale.join(' to ')}`));
+
+/** A recovery note's values, all of them: what it records and an edit replaces. */
+const recoveryValues = {
+	/** The owner's calendar day, as the device has it. */
+	notedOn: isoDate,
+	sleepHours: z.nullable(
+		between(...R.sleepHours, `Between ${R.sleepHours.join(' and ')} hours`).check(
+			z.refine(decimals(1), 'One decimal')
+		)
+	),
+	soreness: scale,
+	energy: scale,
+	stress: scale,
+	note: optText(1000)
+};
+type RecoveryValues = z.output<z.ZodMiniObject<typeof recoveryValues>>;
+
+function checkRecovery(n: RecoveryValues, fail: Fail) {
+	// As recovery_notes_content_ck: something recorded.
+	if ([n.sleepHours, n.soreness, n.energy, n.stress, n.note].every((value) => value === null)) {
+		fail(['sleepHours'], 'Record sleep, soreness, energy, stress or a note');
+	}
+}
+
+/** How the owner felt on a day, under the device's id. Body weight stays M2's saveBody. */
+export const recoveryNoteSchema = z
+	.object({ clientMutationId: uuid, ...recoveryValues })
+	.check(rules(checkRecovery));
+
+/** An edit of a recovery note: every value after the edit, never a difference. */
+export const editRecoveryNoteSchema = z.object(recoveryValues).check(rules(checkRecovery));
