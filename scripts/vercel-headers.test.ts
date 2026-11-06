@@ -3,7 +3,8 @@
  * file: Vercel serves it without running hooks.server.ts, so vercel.json must send it
  * STATIC_PAGE_HEADERS, the hooks' SECURITY_HEADERS plus the `frame-ancestors` that a <meta> CSP
  * cannot carry. The pages are found in src/routes, so neither a new prerendered page nor a header
- * added to SECURITY_HEADERS can be left out of vercel.json.
+ * added to SECURITY_HEADERS can be left out of vercel.json, or out of the post-deploy smoke check
+ * that asserts them in production.
  */
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -22,6 +23,7 @@ const routesDir = fileURLToPath(new URL('src/routes', root));
 const vercelRules = (
 	JSON.parse(readFileSync(new URL('vercel.json', root), 'utf8')) as { headers?: HeaderRule[] }
 ).headers;
+const smoke = readFileSync(new URL('.github/workflows/post-deploy-smoke.yml', root), 'utf8');
 
 const ROUTE_MODULE = /^\+(page|layout)(\.server)?\.[jt]s$/;
 const PRERENDER = /^export\s+const\s+prerender\s*=\s*(?:true|'auto'|"auto")/m;
@@ -104,6 +106,18 @@ describe('security headers on prerendered pages', () => {
 	it('are sent from vercel.json on every prerendered page', () => {
 		expect(pages).toContain('/offline');
 		expect(headerProblems(pages, vercelRules, STATIC_PAGE_HEADERS)).toEqual([]);
+	});
+
+	it('are asserted by the post-deploy smoke check on every prerendered page', () => {
+		const listed = /^\s*prerendered_pages="([^"]*)"$/m.exec(smoke)?.[1] ?? '';
+		expect(listed.split(/\s+/).filter(Boolean).sort()).toEqual(pages);
+
+		const block = /<<'STATIC_PAGE_HEADERS'\n([\s\S]*?)\n\s*STATIC_PAGE_HEADERS\n/.exec(smoke);
+		const lines = (block?.[1] ?? '').split('\n').map((line) => line.trim());
+		const expected = Object.fromEntries(
+			lines.map((line) => [line.slice(0, line.indexOf(': ')), line.slice(line.indexOf(': ') + 2)])
+		);
+		expect(expected).toEqual(STATIC_PAGE_HEADERS);
 	});
 });
 
