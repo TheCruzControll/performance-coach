@@ -1,0 +1,138 @@
+# Post-deploy smoke check of production (docs/deployment.md).
+#
+# Runs when Vercel reports a production deployment as ready (its GitHub deployment status), and
+# on demand (e.g. after a rollback). It checks https://coach.nikocruz.com from outside, signed
+# out, with no secrets: the app is up and reaches its database, the sign-in page renders, deny
+# by default holds (an app page redirects to sign-in, the telemetry endpoints answer 401, the
+# test-only session route does not exist) and the security headers are sent.
+name: Post-deploy smoke
+
+on:
+  deployment_status:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  # A newer production deployment supersedes the check of an older one. Other statuses
+  # (pending, in progress, preview deployments) get their own groups and never cancel it.
+  group: post-deploy-smoke-${{ github.event.deployment.environment || 'manual' }}-${{ github.event.deployment_status.state || 'manual' }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    name: Smoke check coach.nikocruz.com
+    # Vercel names its GitHub deployment environments "Production" and "Preview". Expression
+    # string comparisons ignore case, so this also matches a "production" environment.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.deployment_status.state == 'success' &&
+       startsWith(github.event.deployment.environment, 'Production'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      APP_ORIGIN: https://coach.nikocruz.com
+      DEPLOYED_SHA: ${{ github.event.deployment.sha }}
+    steps:
+      - name: Wait until the domain serves this deployment
+        if: github.event_name == 'deployment_status'
+        run: |
+          # /api/health reports the version `<package version>+<commit sha7>`. Until the domain
+          # serves the new deployment, every other check would test the previous one.
+          want="+${DEPLOYED_SHA:0:7}"
+          for attempt in $(seq 1 30); do
+            version=$(curl -sS --max-time 15 "$APP_ORIGIN/api/health" | jq -r '.version // empty' 2>/dev/null || true)
+            if [[ "$version" == *"$want" ]]; then
+              echo "$APP_ORIGIN serves $version"
+              exit 0
+            fi
+            echo "Attempt $attempt: serving '${version:-nothing}', waiting for *$want"
+            sleep 10
+          done
+          echo "::error::$APP_ORIGIN did not serve commit $DEPLOYED_SHA within 5 minutes"
+          exit 1
+
+      - name: Check health, sign-in, deny by default and security headers
+        run: |
+          set +e
+          dir=$(mktemp -d)
+          failures=0
+          pass() { echo "ok      $1"; echo "- ok: $1" >> "$GITHUB_STEP_SUMMARY"; }
+          fail() { echo "::error::$1"; echo "- **FAILED**: $1" >> "$GITHUB_STEP_SUMMARY"; failures=$((failures + 1)); }
+          check() { if [ "$2" = 0 ]; then pass "$1"; else fail "$1"; fi; }
+
+          # fetch NAME [curl args…] → prints the HTTP status; saves NAME.headers and NAME.body.
+          fetch() {
+            local name=$1 code
+            shift
+            code=$(curl -sS --max-time 20 --retry 2 --retry-all-errors \
+              -D "$dir/$name.headers" -o "$dir/$name.body" -w '%{http_code}' "$@")
+            echo "${code:-000}"
+          }
+          # header NAME FIELD → the field's value in NAME's response (last one wins).
+          header() { grep -i "^$2:" "$dir/$1.headers" | tail -n 1 | cut -d: -f2- | tr -d '\r' | sed 's/^ *//'; }
+          contains() { case "$1" in *"$2"*) return 0 ;; *) return 1 ;; esac; }
+
+          echo "## Smoke check of $APP_ORIGIN" >> "$GITHUB_STEP_SUMMARY"
+
+          # 1. Up, and reaching Postgres with a real query.
+          status=$(fetch health "$APP_ORIGIN/api/health")
+          body=$(head -c 300 "$dir/health.body")
+          [ "$status" = 200 ] && jq -e '.ok == true and .db == "up"' "$dir/health.body" > /dev/null
+          check "GET /api/health → 200 with db up (got $status: $body)" $?
+
+          # 2. The sign-in screen, rendered for this domain (passkeys available here).
+          status=$(fetch signin "$APP_ORIGIN/")
+          [ "$status" = 200 ] \
+            && grep -q 'data-testid="signin-screen"' "$dir/signin.body" \
+            && grep -q 'data-testid="passkey-signin"' "$dir/signin.body" \
+            && ! grep -q 'available on this address' "$dir/signin.body"
+          check "GET / → 200 sign-in screen with passkey sign-in (got $status)" $?
+
+          # 3. Security headers on that page (set by hooks.server.ts; CSP by SvelteKit).
+          csp=$(header signin content-security-policy)
+          script_src=$(grep -o "script-src [^;]*" <<< "$csp")
+          contains "$csp" "frame-ancestors 'none'" && contains "$csp" "object-src 'none'" \
+            && [ -n "$script_src" ] && ! contains "$script_src" "unsafe-inline"
+          check "Content-Security-Policy: frame-ancestors/object-src 'none', no inline scripts" $?
+          expect_header() {
+            local value
+            value=$(header signin "$1")
+            contains "$value" "$2"
+            check "$1: $2 (got '${value}')" $?
+          }
+          expect_header strict-transport-security "max-age="
+          expect_header x-content-type-options nosniff
+          expect_header x-frame-options DENY
+          expect_header referrer-policy strict-origin-when-cross-origin
+          expect_header permissions-policy "camera=()"
+          expect_header cross-origin-opener-policy same-origin
+          expect_header x-robots-tag noindex
+          expect_header cache-control private
+
+          # 4. Deny by default: an app page without a session redirects to sign-in.
+          status=$(fetch today "$APP_ORIGIN/today")
+          location=$(header today location)
+          message="GET /today signed out → 303 to /?next=%2Ftoday (got $status '$location')"
+          if [ "$status" = 303 ] && [ "$location" = "/?next=%2Ftoday" ]; then pass "$message"; else fail "$message"; fi
+
+          # 5. Telemetry needs a session: 401 JSON. Same-origin Origin header, as a browser
+          #    sends, so the CSRF check (403) lets it through to the session check.
+          for endpoint in /api/vitals /api/client-errors; do
+            status=$(fetch telemetry "$APP_ORIGIN$endpoint" -X POST \
+              -H "origin: $APP_ORIGIN" -H 'content-type: application/json' --data '{}')
+            [ "$status" = 401 ] && jq -e '.error == "unauthenticated"' "$dir/telemetry.body" > /dev/null
+            check "POST $endpoint signed out → 401 unauthenticated (got $status)" $?
+          done
+
+          # 6. The test-only session route (an auth bypass for WebKit e2e) does not exist here.
+          status=$(fetch testsupport "$APP_ORIGIN/api/test-support/session" -X POST \
+            -H "origin: $APP_ORIGIN")
+          message="POST /api/test-support/session → 404 (got $status)"
+          if [ "$status" = 404 ]; then pass "$message"; else fail "$message"; fi
+
+          if [ "$failures" -gt 0 ]; then
+            echo "::error::$failures smoke check(s) failed against $APP_ORIGIN"
+            exit 1
+          fi
+          echo "All smoke checks passed against $APP_ORIGIN."

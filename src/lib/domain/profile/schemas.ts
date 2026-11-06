@@ -528,25 +528,9 @@ export type BodyData = z.output<typeof bodySchema>;
 
 // ---- results ---------------------------------------------------------------------------------
 
-/** Field path → first message, e.g. `{ 'entries.0.level': 'Pick your level' }`. */
-export type FieldErrors = Record<string, string>;
-
-export type Validated<T> = { ok: true; data: T } | { ok: false; errors: FieldErrors };
-
-/** Validate with a shared schema; errors keyed by dotted path (root errors under `''`). */
-export function validate<S extends z.ZodMiniType>(
-	schema: S,
-	input: unknown
-): Validated<z.output<S>> {
-	const result = z.safeParse(schema, input);
-	if (result.success) return { ok: true, data: result.data };
-	const errors: FieldErrors = {};
-	for (const issue of result.error.issues) {
-		const key = issue.path.map(String).join('.');
-		errors[key] ??= issue.message;
-	}
-	return { ok: false, errors };
-}
+// validate() lives in ../validation.ts, shared with the training schemas; re-exported here so
+// every profile call site keeps importing it from this file.
+export { validate, type FieldErrors, type Validated } from '../validation';
 
 export const SCHEMAS = {
 	basics: basicsSchema,

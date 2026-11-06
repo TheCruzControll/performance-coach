@@ -8,8 +8,10 @@
 	import Section from '#lib/ui/components/Section.svelte';
 	import SegmentedControl from '#lib/ui/components/SegmentedControl.svelte';
 	import Surface from '#lib/ui/components/Surface.svelte';
+	import TagInput from '#lib/ui/components/TagInput.svelte';
 	import TextArea from '#lib/ui/components/TextArea.svelte';
 	import TextField from '#lib/ui/components/TextField.svelte';
+	import Toggle from '#lib/ui/components/Toggle.svelte';
 
 	let reps = $state(5);
 	let rpe = $state(8);
@@ -39,6 +41,17 @@
 	let equipment = $state<string[]>([]);
 	let days = $state<Weekday[]>(['tue', 'thu', 'sat']);
 	let strengthDays = $state<Weekday[]>(['wed']);
+
+	// A switch with and without a description; a list with suggestions, a limit of three and
+	// 60 characters an item; two lists whose error clears once they no longer overlap.
+	let unknownMaxes = $state(true);
+	let home = $state(false);
+	let avoid = $state(['Overhead press']);
+	let likes = $state(['Front squat']);
+	let dislikes = $state(['Burpees', 'front squat']);
+	const overlap = $derived(
+		dislikes.some((d) => likes.some((l) => l.toLowerCase() === d.toLowerCase()))
+	);
 </script>
 
 {#snippet readout(testId: string, value: unknown)}
@@ -220,6 +233,57 @@
 					bind:value={strengthDays}
 					hint="Two or more."
 					error={strengthDays.length >= 2 ? null : 'Pick at least two days for strength'}
+				/>
+			</div>
+		</Surface>
+	</Section>
+
+	<Section title="Toggle">
+		<Surface padding="lg" radius="xl">
+			<div class="fields">
+				<div class="with-value">
+					<Toggle
+						label="I don’t know my 1RMs"
+						description="Week one finds them from how hard the sets feel."
+						bind:checked={unknownMaxes}
+					/>
+					{@render readout('toggle-value', unknownMaxes)}
+				</div>
+				<Toggle label="I also train at home" bind:checked={home} />
+			</div>
+		</Surface>
+	</Section>
+
+	<Section title="Tag input">
+		<Surface padding="lg" radius="xl">
+			<div class="fields">
+				<div class="with-value">
+					<TagInput
+						label="Movements to avoid"
+						bind:value={avoid}
+						max={3}
+						maxlength={60}
+						placeholder="e.g. Upright row"
+						hint="Up to three here, 60 characters each."
+						suggestions={['Dips', 'Behind-the-neck press', 'Upright row']}
+						data-testid="tags-avoid"
+					/>
+					{@render readout('tags-value', avoid)}
+				</div>
+				<TagInput
+					label="Exercises you enjoy"
+					bind:value={likes}
+					placeholder="e.g. Front squat"
+					hint="The coach leans on these when there’s a choice."
+					data-testid="tags-likes"
+				/>
+				<TagInput
+					label="Exercises you’d rather skip"
+					bind:value={dislikes}
+					placeholder="e.g. Burpees"
+					hint="Swapped for an equivalent."
+					error={overlap ? 'Each exercise once: it can’t be liked and skipped' : null}
+					data-testid="tags-skip"
 				/>
 			</div>
 		</Surface>
