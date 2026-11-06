@@ -17,8 +17,14 @@
 		else setTimeout(start, 1500);
 	});
 
-	// Cross-fade between tabs with the View Transitions API where available.
+	// Cross-fade between tabs with the View Transitions API where available. SvelteKit renders a
+	// navigation once this callback lets it go, which is when the browser has captured the old
+	// screen: WebKit can take a second or more, while the new URL is already in place. A later
+	// navigation (Back, another tab) can finish in the meantime, and SvelteKit would still render
+	// the earlier one over it, so a navigation overtaken like that is left unrendered.
+	let latest = 0;
 	onNavigate((navigation) => {
+		const id = ++latest;
 		if (
 			!document.startViewTransition ||
 			navigation.from?.url.pathname === navigation.to?.url.pathname ||
@@ -27,7 +33,12 @@
 			return;
 		}
 		return new Promise((done) => {
-			document.startViewTransition(async () => {
+			const transition = document.startViewTransition(async () => {
+				if (id !== latest) {
+					transition.ready.catch(() => {}); // skipped on purpose: nothing to report
+					transition.skipTransition();
+					return;
+				}
 				done();
 				await navigation.complete;
 			});

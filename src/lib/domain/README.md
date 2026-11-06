@@ -132,3 +132,28 @@ in the unit entered); planned ones as the program-plan contract's `WeekPlan`.
 Caveat for M4: `setE1rm`, `bestE1rm` and `personalRecords` read `weight` as external load. An
 assisted exercise logs its assistance, where less is harder, so pass `weight: null` for it. A
 bodyweight exercise's added load gives records of that added load and an e1RM without body weight.
+
+## M3: concurrent-training interference (`programming/interference.ts`)
+
+PRD §5's concurrent-training rules as pure checks over sessions: placement builds each week with
+them and the move edit warns with them. Server-only at runtime, like all of `programming/` (it
+reads the catalogue); import it by path. It reads only the sessions given: no clock, profile or
+goal priority.
+
+- `demandOf(session, traitsOf = catalogueTraits)` → `SessionDemand`: `heavyLower`, `heavyUpper`,
+  `hardCombat`, `longRun`, `intervals`, `veryDemanding`, `hard` and `easy`. A region is worked
+  heavily by a compound lift in a hard session or at a heavy set (RPE 8, or 80 % of a 1RM), or by
+  `highVolumeHardSets` (10) of `isHardSet`'s hard sets at any load. Sparring is hard combat at any
+  intensity. A hard commitment is also read by its discipline (`INTERFERENCE.hardCommitment`): a
+  hard strength, athletic or custom class is very demanding, a hard running club is intervals.
+  `traitsOf` gives an exercise's pattern, primary muscles and tags: the catalogue's by key, none
+  for the owner's own unless the caller's lookup has them (they then count as neither region).
+- `checkWeek(sessions, { traitsOf?, openDates? })` → `Violation[]`: `rule`, `severity` ('avoid'
+  is a rule to keep, 'prefer' advice), `days`, the caller's own `sessions` and a `message` naming
+  the days and sessions. By first day, then in `INTERFERENCE_RULES` order, and the same for any
+  input order. Pass the sessions that will happen, a week or more. `openDates` (by default every
+  date of the sessions' weeks) are where generated sessions could still move, for
+  `hard_days_apart`; commitments never move.
+- `INTERFERENCE` holds every threshold and `INTERFERENCE_RULES` every rule with its reason, so
+  tuning one is an edit there. `BLOCKS_EDIT` says which severities block an owner's edit rather
+  than warn: none by default.
