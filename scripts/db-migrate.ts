@@ -1,5 +1,6 @@
 /**
- * Apply committed SQL migrations (./drizzle) to the target database.
+ * Apply committed SQL migrations (./drizzle) to the target database, then seed the exercise
+ * catalogue (runMigrations does both, under one lock).
  *
  *   pnpm db:migrate                  # uses DATABASE_URL_UNPOOLED, else DATABASE_URL
  *   DATABASE_URL_UNPOOLED=... pnpm db:migrate
@@ -20,10 +21,14 @@ if (!url) {
 
 const started = performance.now();
 try {
-	const { applied, total } = await runMigrations(url);
+	const { applied, total, library } = await runMigrations(url);
 	const ms = Math.round(performance.now() - started);
 	console.log(
 		`db:migrate: ${applied} new migration(s) applied, ${total} total on ${redactUrl(url)} (${ms} ms)`
+	);
+	console.log(
+		`db:migrate: exercise catalogue ${library.inserted} inserted, ${library.updated} updated, ` +
+			`${library.retired} retired, ${library.restored} restored`
 	);
 } catch (err) {
 	console.error(`db:migrate: failed on ${redactUrl(url)}`);

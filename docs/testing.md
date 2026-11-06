@@ -179,6 +179,13 @@ Specs:
   open (theme-color included); no screen scrolls sideways; nothing
   sits under fixed chrome at rest (landing CTAs, Coach composer); compact segmented controls keep
   a 44 px hit area.
+- `plate-calculator.e2e.ts` — Train's lazy plate-calculator sheet (no service worker, chunks
+  routed): its code is not in Train's load and arrives on the first tap, through the import
+  alone (no modulepreload tag, whose failure WebKit would keep), which opens the sheet once it
+  does (the row busy meanwhile); a failed fetch on hover says nothing, a failed tap shows
+  a Retry notice under the row (44 px target, axe in both themes) that a later failed prefetch
+  leaves in place; Retry back online opens the sheet, offline the notice stays, a tap that fails
+  again online reloads Train with `?tool=plates`, and leaving Train mid-retry stays left (WebKit).
 - `platform.e2e.ts` — `/api/health` reports `db: up` (and the Profile screen shows it);
   `Server-Timing`, request id and security headers; ≤ 2 preloaded fonts; manifest + icons;
   CSP header contents and enforcement (an injected inline script is refused); service worker
@@ -367,9 +374,10 @@ WebKit project has never run locally (WebKit is not installed in the build envir
 Safari behaviour (glass, PWA install, status bar) is unverified. The first CI run, including its
 WebKit screenshots, must be attached to the M1 PR as evidence.
 
-Screenshots from the `iphone-chromium` project do **not** show the glass blur: headless Chromium
-does not paint `backdrop-filter` under mobile emulation (verified: the same page blurs with
-`isMobile` off). Judge glass on WebKit screenshots or a device.
+Do not judge the glass from e2e screenshots, where text behind the 92% glass can show through:
+headless Chromium's `blur(32px)` only dims the text behind the tab labels (checked on Linux, as in
+CI), and Playwright's WebKit painted no `backdrop-filter` into screenshots on macOS (`invert(1)` on
+the nav left them untouched; unchecked on CI's Linux WebKit). Judge glass on a device.
 
 ### Real-device checklist (merge gate for UI milestones)
 
