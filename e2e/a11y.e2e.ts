@@ -65,6 +65,8 @@ for (const theme of THEMES) {
 
 		test('the plate calculator sheet has no violations', async ({ page }) => {
 			await page.goto('/train');
+			// Hydrated first: a tap on the server-rendered row before then does nothing.
+			await page.waitForLoadState('networkidle');
 			await page.getByTestId('open-plates').click();
 			await expect(page.getByTestId('plates-result')).toBeVisible();
 			await page.waitForTimeout(500);

@@ -24,7 +24,6 @@ export async function redeemRecoveryCode(
 ): Promise<IssuedSession & { remaining: number }> {
 	const { db, now } = resolveDeps(deps);
 	await enforceRateLimit('recovery', { ip: request.ip }, request, { db, now });
-	await enforceRateLimit('recovery.global', 'global', request, { db, now });
 
 	const hash = typeof code === 'string' && code.length <= 64 ? hashRecoveryCode(code) : null;
 	const result = hash
@@ -47,6 +46,9 @@ export async function redeemRecoveryCode(
 			type: 'recovery.failed',
 			detail: { malformed: hash === null }
 		});
+		// The global cap counts failures only, after the lookup: charged up front, one client
+		// staying within its own limit could fill it and refuse the owner's valid code.
+		await enforceRateLimit('recovery.global', 'global', request, { db, now });
 		throw new AuthError('invalid_code', INVALID);
 	}
 	await recordAuthEvent(db, request, {

@@ -67,6 +67,16 @@ export function parseAuthenticationResponse(input: unknown): AuthenticationRespo
 	return parsed.data as unknown as AuthenticationResponseJSON;
 }
 
+const credentialId = b64url(1024).min(1);
+
+/**
+ * A passkey id in the shape the responses above carry (and the database stores): base64url.
+ * Anything else names no passkey, and some values (a NUL byte) make Postgres throw instead.
+ */
+export function isCredentialId(value: unknown): value is string {
+	return credentialId.safeParse(value).success;
+}
+
 const toBytes = (b64: string) => new Uint8Array(Buffer.from(b64, 'base64url'));
 
 export function registrationOptions(input: {

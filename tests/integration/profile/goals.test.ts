@@ -4,17 +4,33 @@
  */
 import { sql } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
+import { getDb, type Executor } from '../../../src/lib/server/db';
 import {
 	createGoal,
 	deleteGoal,
 	goalHistory,
 	listGoals,
+	ProfileNotFoundError,
 	reorderGoals,
 	setGoalStatus,
 	updateGoal
 } from '../../../src/lib/server/services/profile';
 import { withRollback } from '../helpers';
 import { clock, eventGoal, fieldErrors, generalGoal, makeOwner } from './fixtures';
+
+/** Resolves once another connection to this database waits for an advisory lock. */
+async function queuedBehindLock(db: Executor, timeoutMs = 5_000) {
+	const deadline = Date.now() + timeoutMs;
+	while (Date.now() < deadline) {
+		const { rows } = await db.execute<{ waiting: boolean }>(
+			sql`select exists (select 1 from pg_locks l join pg_database d on d.oid = l.database
+				where d.datname = current_database() and l.locktype = 'advisory' and not l.granted) as waiting`
+		);
+		if (rows[0]?.waiting) return;
+		await new Promise((resolve) => setTimeout(resolve, 10));
+	}
+	throw new Error('nothing queued behind the advisory lock');
+}
 
 describe('goals', () => {
 	it('stores an event goal and a general goal with their own fields, ranked in order', async () => {
@@ -215,6 +231,35 @@ describe('goals', () => {
 		});
 	});
 
+	it('a status change never writes back over an edit committed while it waited', async () => {
+		// Two real connections that commit: a rolled-back test transaction cannot race itself.
+		const db = getDb();
+		const owner = await makeOwner(db);
+		let achieved!: ReturnType<typeof setGoalStatus>;
+		try {
+			const fight = await createGoal(owner, eventGoal(), { db });
+			const strength = await createGoal(owner, generalGoal(), { db });
+			const edit = { title: 'Renamed', eventDate: '2027-04-18' };
+			// Another edit (a second tab, or the coach in M5) holds the goal lock until it commits.
+			await db.transaction(async (tx) => {
+				await updateGoal(owner, fight.id, eventGoal(edit), { db: tx });
+				achieved = setGoalStatus(owner, fight.id, { status: 'achieved' }, { db });
+				await queuedBehindLock(tx);
+			});
+			expect(await achieved).toMatchObject({ ...edit, status: 'achieved', priority: null });
+			expect((await listGoals(owner, { db })).map((g) => [g.id, g.title, g.priority])).toEqual([
+				[strength.id, 'Keep my strength', 1],
+				[fight.id, 'Renamed', null]
+			]);
+			const history = await goalHistory(owner, { db });
+			expect(history.find((e) => e.change === 'status_changed')?.snapshot).toMatchObject(edit);
+		} finally {
+			// Let the status change settle before its owner goes.
+			await Promise.allSettled([achieved]);
+			await db.execute(sql`delete from owners where id = ${owner}`);
+		}
+	});
+
 	it('deleting a goal keeps its history and closes the gap in the ranking', async () => {
 		await withRollback(async (db) => {
 			const owner = await makeOwner(db);
@@ -240,6 +285,24 @@ describe('goals', () => {
 				'goal not found'
 			);
 			await expect(deleteGoal(stranger, goal.id, { db })).rejects.toThrow('goal not found');
+		});
+	});
+
+	it('answers a malformed goal id as not found, never with a database error', async () => {
+		await withRollback(async (db) => {
+			const owner = await makeOwner(db);
+			const goal = await createGoal(owner, eventGoal(), { db });
+			// Route params and the coach's tool calls (M5) pass ids through as given.
+			for (const bad of ['', 'abc', `${goal.id}x`]) {
+				await expect(updateGoal(owner, bad, generalGoal(), { db })).rejects.toBeInstanceOf(
+					ProfileNotFoundError
+				);
+				await expect(
+					setGoalStatus(owner, bad, { status: 'paused' }, { db })
+				).rejects.toBeInstanceOf(ProfileNotFoundError);
+				await expect(deleteGoal(owner, bad, { db })).rejects.toBeInstanceOf(ProfileNotFoundError);
+			}
+			expect(await listGoals(owner, { db })).toMatchObject([{ id: goal.id, status: 'active' }]);
 		});
 	});
 

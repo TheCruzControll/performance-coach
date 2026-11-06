@@ -48,7 +48,7 @@ export const RATE_LIMITS = {
 	setup: { limit: 10, windowMs: 15 * MINUTE },
 	/** Recovery-code sign-in, per client. */
 	recovery: { limit: 5, windowMs: 15 * MINUTE },
-	/** Recovery-code sign-in, all clients together. */
+	/** Failed recovery-code sign-ins, all clients together (a valid code is never refused). */
 	'recovery.global': { limit: 20, windowMs: HOUR },
 	/** Adding a passkey (options + verification), per session. */
 	register: { limit: 20, windowMs: 15 * MINUTE },

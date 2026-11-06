@@ -63,7 +63,12 @@ const opt = <T extends z.ZodMiniType>(schema: T) =>
 const isoDate = (message = 'Use a real date') =>
 	z.iso.date(message).check(z.refine((d) => d >= '1900-01-01' && d <= '2100-12-31', message));
 
-const optDate = (message?: string) => opt(isoDate(message));
+/** Optional date: blank (`''`, what an empty date input submits) → null. */
+const optDate = (message = 'Use a real date') =>
+	z.pipe(
+		z.nullish(z.union([z.literal(''), isoDate(message)], message)),
+		z.transform((v) => (v ? v : null))
+	);
 
 /** An IANA time zone (the browser's, e.g. `America/Los_Angeles`), saved as `Intl` spells it. */
 const timeZone = z.string('Pick your time zone').check(

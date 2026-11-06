@@ -19,6 +19,7 @@ import {
 	type ProfileRepository
 } from '../../db';
 import { measure } from '../../observability/timing';
+import { isUuid } from '../ids';
 import {
 	parseWith,
 	ProfileInputError,
@@ -138,22 +139,26 @@ export async function createGoal(
 	);
 }
 
-export async function updateGoal(
+/**
+ * Change one goal under the goal lock, starting from the row as it is once the lock is held.
+ * `columns` are the goal's own fields (none for a status change: what is stored stays); a status
+ * change also moves the goal into or out of the ranking.
+ */
+async function changeGoal(
 	ownerId: string,
 	id: string,
-	input: unknown,
-	deps: ProfileDeps = {}
+	patch: { columns?: ReturnType<typeof goalColumns>; status?: GoalStatus },
+	deps: ProfileDeps
 ): Promise<Goal> {
-	const goal = parseWith(goalSchema, input);
 	const { db, now, source } = resolveDeps(deps);
 	return measure('db', () =>
 		db.transaction(async (tx) => {
 			const repo = createProfileRepository(tx);
 			await repo.lockGoals(ownerId);
-			const existing = await repo.getGoal(ownerId, id);
+			const existing = isUuid(id) ? await repo.getGoal(ownerId, id) : null;
 			if (!existing) throw new ProfileNotFoundError('goal');
 			const at = now();
-			const status = goal.status ?? existing.status;
+			const status = patch.status ?? existing.status;
 			const reopened = isOpen(status) && !isOpen(existing.status);
 			const closed = !isOpen(status) && isOpen(existing.status);
 			let priority = existing.priority;
@@ -163,7 +168,7 @@ export async function updateGoal(
 				priority = null;
 			}
 			const row = await repo.updateGoal(ownerId, id, {
-				...goalColumns(goal),
+				...patch.columns,
 				status,
 				priority,
 				closedAt: isOpen(status) ? null : (existing.closedAt ?? at),
@@ -179,7 +184,20 @@ export async function updateGoal(
 	);
 }
 
-/** Change only a goal's status (achieved, paused, dropped, active again). */
+export async function updateGoal(
+	ownerId: string,
+	id: string,
+	input: unknown,
+	deps: ProfileDeps = {}
+): Promise<Goal> {
+	const goal = parseWith(goalSchema, input);
+	return changeGoal(ownerId, id, { columns: goalColumns(goal), status: goal.status }, deps);
+}
+
+/**
+ * Change only a goal's status (achieved, paused, dropped, active again). Nothing else is written,
+ * so an edit committed while this waited for the lock (a second tab, the coach) is kept.
+ */
 export async function setGoalStatus(
 	ownerId: string,
 	id: string,
@@ -187,10 +205,7 @@ export async function setGoalStatus(
 	deps: ProfileDeps = {}
 ): Promise<Goal> {
 	const { status } = parseWith(goalStatusSchema, input);
-	const { db } = resolveDeps(deps);
-	const existing = await createProfileRepository(db).getGoal(ownerId, id);
-	if (!existing) throw new ProfileNotFoundError('goal');
-	return updateGoal(ownerId, id, { ...toGoal(existing), status }, deps);
+	return changeGoal(ownerId, id, { status }, deps);
 }
 
 export async function deleteGoal(ownerId: string, id: string, deps: ProfileDeps = {}) {
@@ -199,7 +214,7 @@ export async function deleteGoal(ownerId: string, id: string, deps: ProfileDeps 
 		db.transaction(async (tx) => {
 			const repo = createProfileRepository(tx);
 			await repo.lockGoals(ownerId);
-			const row = await repo.deleteGoal(ownerId, id);
+			const row = isUuid(id) ? await repo.deleteGoal(ownerId, id) : null;
 			if (!row) throw new ProfileNotFoundError('goal');
 			const at = now();
 			await repo.insertGoalEvents([
