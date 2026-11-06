@@ -4,10 +4,10 @@ This is everything a new Claude Code session needs to resume the build on anothe
 product spec is `docs/product-requirements.md` on `main`; milestone criteria are in
 `docs/milestones.md`. Read this file from `origin/handoff` (it is not on `main`).
 
-## Update: cloud session, 2026-11-06 (06:28 → 15:40 UTC, still running)
+## Update: cloud session, 2026-11-06 (06:28 → 17:45 UTC, still running)
 
 A claude.ai cloud session (4 CPUs, 15 GB, Linux; no T3, no Codex) is working the goal "finish
-M1–M9 on main with evidence and the app live on coach.nikocruz.com". State at 15:40 UTC:
+M1–M9 on main with evidence and the app live on coach.nikocruz.com". State at 17:45 UTC:
 
 - **Production is live** on coach.nikocruz.com since the cutover (#50, 07:13 UTC); every merge to
   `main` deploys it, and the post-deploy smoke check runs after each deploy.
@@ -20,10 +20,15 @@ M1–M9 on main with evidence and the app live on coach.nikocruz.com". State at 
   #88. Since: #68 (ranked goals), #86 (section pages load no editor CSS), #91 (e2e fixture programs
   and full M3 reset), #92 (week-1 loads), #94 (history queries), #95 (program versions), #96
   (desktop rules), #97 (weekly volume), #98 (M4 timers), #99 (e2e race fixes), #100 (week
-  placement), #101 (M5 coach contracts), #102 (M4 outbox rules).
+  placement), #101 (M5 coach contracts), #102 (M4 outbox rules), then #90 (M4 icon sprite, with a
+  real WebKit fix: leaving detection now lives in `app.html`'s inline script), #103, #105–#116.
+  **~104 PRs merged in 24 h; 60 of 269 planned slices are on main.**
+- **Status page for the owner's phone** (private artifact, republished from the session):
+  https://claude.ai/artifact/JDAZPdKRPVXrQ7ZgScuLHR. Built by `<scratch>/status/status.py` then
+  `to_artifact.py`; a new session republishes it by passing that URL as `url`.
 - **Plans** (all in `plans/`): `m3-plan.json`, `m2x-plan.json` (21 slices), `m4-plan.json` (61),
-  `m5-plan.json` (61). The planner (`milestone-plans-cloud.js`, run `wf_3f53c5db-7bb`) is on M6,
-  then M7 and M9. Each plan's `openQuestions` are answered with defaults; slices list the default
+  `m5-plan.json` (61), `m6-plan.json` (63). The planner (`milestone-plans-cloud.js`, run
+  `wf_3f53c5db-7bb`) is on M7's second critic round, then M9. Each plan's `openQuestions` are answered with defaults; slices list the default
   under "## Owner decisions" in their PR.
 
 ### Open PRs and how they merge
@@ -36,12 +41,10 @@ M1–M9 on main with evidence and the app live on coach.nikocruz.com". State at 
   link>" and an audit checks no section was lost. Until it pushes they are held in
   `<scratch>/steward-hold`; remove those lines after the push and the steward merges them in order.
   **#104** (goal drag) is built on the old #93 and is restacked onto the new one after that.
-- **#90** (M4 icon sprite): its two WebKit test bugs are fixed (a `minus` icon's zero-height box;
-  `document.fonts.ready` waits for the load event in WebKit), and main is merged in (both budget
-  guards kept). One WebKit e2e fails with this PR + current main: leaving `/design` while its
-  startup CSS is held throws an uncaught "Unable to preload CSS" (the test holds the sprite too, and
-  a held `<use>` sprite holds WebKit's load event). Fix in progress (`pr-ci-fix.js`).
-- **In CI:** #103 (M4 set logging rules), #105 (M3 move/skip a session).
+- **#117** (M3 Train week): its desktop e2e asserted the old 34 rem column; #113 widened the shell.
+  `pr-ci-fix.js` run `wf_3f7a0eaa-efa` fixes the test to use the shared layout helpers.
+- **#118** (M4 set prefill) in CI. Main-red follow-up (WebKit `version.json` pageerror, a TBT
+  blip on `/`) in run `wf_66add95f-f81`; main is green again.
 - **Never merge #13** (this branch). **#14** is an old paused WIP branch; leave it.
 
 ### Rules learned today (now in `workflows/dag-cloud.js`'s instructions)
