@@ -1,11 +1,12 @@
 /**
  * Training-log persistence (schema/training-log.ts): workouts, their sets and in-workout
- * substitutions. Plain data access: validation and the replay contract belong to
- * src/lib/server/services/training/log.ts.
+ * substitutions, runs with their segments, other sessions and recovery notes. Plain data access:
+ * validation and the replay contract belong to src/lib/server/services/training/log.ts.
  *
  * - A create inserts ON CONFLICT DO NOTHING on its device id, then returns the stored row, and
  *   whether this call wrote it. The stored row is read by owner, so a device id never returns
- *   another owner's row.
+ *   another owner's row. A workout's 1:1 record (its run, its other session) is unique by the
+ *   workout, which is the owner's already.
  * - An edit or a soft delete runs in its own transaction (a savepoint inside the caller's) that
  *   first sets app.actor, so the audit trigger records who changed the row.
  * - Rows are read by owner and device id, which their unique indexes cover.
@@ -14,10 +15,14 @@ import { and, asc, eq, sql } from 'drizzle-orm';
 import type { Decider } from '../../../domain/training/vocabulary';
 import {
 	AUDIT_ACTOR_SETTING,
+	otherSessionRecords,
 	plannedSessions,
 	programBlocks,
 	programs,
 	programWeeks,
+	recoveryNotes,
+	runRecords,
+	runRecordSegments,
 	setRecords,
 	workouts,
 	workoutSubstitutions
@@ -30,6 +35,14 @@ export type SubstitutionRow = typeof workoutSubstitutions.$inferSelect;
 export type NewWorkout = typeof workouts.$inferInsert;
 export type NewSet = typeof setRecords.$inferInsert;
 export type NewSubstitution = typeof workoutSubstitutions.$inferInsert;
+export type RunRow = typeof runRecords.$inferSelect;
+export type RunSegmentRow = typeof runRecordSegments.$inferSelect;
+export type OtherSessionRow = typeof otherSessionRecords.$inferSelect;
+export type RecoveryNoteRow = typeof recoveryNotes.$inferSelect;
+export type NewRun = typeof runRecords.$inferInsert;
+export type NewRunSegment = typeof runRecordSegments.$inferInsert;
+export type NewOtherSession = typeof otherSessionRecords.$inferInsert;
+export type NewRecoveryNote = typeof recoveryNotes.$inferInsert;
 
 /** What a create left stored: the row, and false when its device id was already stored. */
 export interface Stored<Row> {
@@ -55,6 +68,14 @@ export type SetEdit = Pick<
 export type WorkoutEdit = Pick<
 	NewWorkout,
 	'status' | 'finishedAt' | 'durationSeconds' | 'sessionRpe' | 'notes'
+>;
+export type RunEdit = Pick<
+	NewRun,
+	'distanceMetres' | 'durationSeconds' | 'avgHr' | 'rpe' | 'notes'
+>;
+export type RecoveryNoteEdit = Pick<
+	NewRecoveryNote,
+	'notedOn' | 'sleepHours' | 'soreness' | 'energy' | 'stress' | 'note'
 >;
 
 interface Lookup {
@@ -162,6 +183,112 @@ export function createTrainingLogRepository(db: Executor) {
 					.update(setRecords)
 					.set({ deletedAt: at })
 					.where(eq(setRecords.id, id))
+					.returning();
+				return row!;
+			});
+		},
+
+		/** A workout's run record. */
+		async run(workoutId: string, { lock }: Lookup = {}) {
+			const query = db.select().from(runRecords).where(eq(runRecords.workoutId, workoutId));
+			const [row] = await (lock ? query.for('update') : query);
+			return row ?? null;
+		},
+
+		/** A run's segments in order (run_record_segments_run_order_idx). */
+		async runSegments(workoutId: string) {
+			return db
+				.select()
+				.from(runRecordSegments)
+				.where(eq(runRecordSegments.workoutId, workoutId))
+				.orderBy(asc(runRecordSegments.position));
+		},
+
+		async otherSession(workoutId: string) {
+			const [row] = await db
+				.select()
+				.from(otherSessionRecords)
+				.where(eq(otherSessionRecords.workoutId, workoutId));
+			return row ?? null;
+		},
+
+		async recoveryNote(ownerId: string, clientMutationId: string, { lock }: Lookup = {}) {
+			const query = db
+				.select()
+				.from(recoveryNotes)
+				.where(
+					and(
+						eq(recoveryNotes.ownerId, ownerId),
+						eq(recoveryNotes.clientMutationId, clientMutationId)
+					)
+				);
+			const [row] = await (lock ? query.for('update') : query);
+			return row ?? null;
+		},
+
+		async insertRun(values: NewRun): Promise<Stored<RunRow>> {
+			const [row] = await db
+				.insert(runRecords)
+				.values(values)
+				.onConflictDoNothing({ target: runRecords.workoutId })
+				.returning();
+			if (row) return { row, created: true };
+			return { row: (await repo.run(values.workoutId))!, created: false };
+		},
+
+		/** The segments it wrote: one whose device id is already stored is left out. */
+		async insertRunSegments(values: NewRunSegment[]): Promise<RunSegmentRow[]> {
+			if (values.length === 0) return [];
+			return db
+				.insert(runRecordSegments)
+				.values(values)
+				.onConflictDoNothing({ target: runRecordSegments.clientMutationId })
+				.returning();
+		},
+
+		async insertOtherSession(values: NewOtherSession): Promise<Stored<OtherSessionRow>> {
+			const [row] = await db
+				.insert(otherSessionRecords)
+				.values(values)
+				.onConflictDoNothing({ target: otherSessionRecords.workoutId })
+				.returning();
+			if (row) return { row, created: true };
+			return { row: (await repo.otherSession(values.workoutId))!, created: false };
+		},
+
+		/** Null only when another owner's row holds the device id. */
+		async insertRecoveryNote(values: NewRecoveryNote): Promise<Stored<RecoveryNoteRow> | null> {
+			const [row] = await db
+				.insert(recoveryNotes)
+				.values(values)
+				.onConflictDoNothing({ target: recoveryNotes.clientMutationId })
+				.returning();
+			if (row) return { row, created: true };
+			const stored = await repo.recoveryNote(values.ownerId, values.clientMutationId);
+			return stored && { row: stored, created: false };
+		},
+
+		async updateRun(workoutId: string, values: RunEdit, actor: Decider): Promise<RunRow> {
+			return asActor(actor, async (tx) => {
+				const [row] = await tx
+					.update(runRecords)
+					.set(values)
+					.where(eq(runRecords.workoutId, workoutId))
+					.returning();
+				return row!;
+			});
+		},
+
+		async updateRecoveryNote(
+			id: string,
+			values: RecoveryNoteEdit,
+			actor: Decider
+		): Promise<RecoveryNoteRow> {
+			return asActor(actor, async (tx) => {
+				const [row] = await tx
+					.update(recoveryNotes)
+					.set(values)
+					.where(eq(recoveryNotes.id, id))
 					.returning();
 				return row!;
 			});

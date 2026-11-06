@@ -26,6 +26,7 @@ env:
   DATABASE_URL_UNPOOLED: postgres://coach:coach@localhost:5432/coach_dev
   TEST_DATABASE_URL: postgres://coach:coach@localhost:5432/coach_test
   E2E_DATABASE_URL: postgres://coach:coach@localhost:5432/coach_e2e
+  EXPLAIN_DATABASE_URL: postgres://coach:coach@localhost:5432/coach_explain
   PGADMIN_URL: postgres://postgres:postgres@localhost:5432/postgres
 
 jobs:
@@ -81,6 +82,18 @@ jobs:
         run: pnpm test:unit
       - name: Integration tests (real Postgres, committed migrations)
         run: pnpm test:integration
+      # The history and program queries' plans on a two-year dataset: on a large table, each
+      # builder's declared index and no sequential scan (scripts/explain/, docs/development.md).
+      - name: Query plans (db:explain)
+        run: pnpm db:explain
+      - name: Upload the query plans
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: explain-${{ github.run_id }}
+          path: test-results/explain.md
+          retention-days: 14
+          if-no-files-found: ignore
 
   build:
     name: Build (Vercel + Node) & budgets
