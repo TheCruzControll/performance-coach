@@ -94,7 +94,9 @@ app path (`return-path.ts`).
 Add (a real registration bound to the current session: the challenge row stores the session id),
 rename (1–64 characters), remove. **The last passkey can never be removed**: the check runs under
 a row lock, so two concurrent removals cannot both pass. Removing a passkey also ends every other
-session that signed in with it.
+session that signed in with it. The passkey and session ids these actions receive are checked by
+shape before any query (base64url, UUID): a malformed id is answered like an unknown one (`404`,
+`not_found`), never with a database error.
 
 ### Sessions
 
