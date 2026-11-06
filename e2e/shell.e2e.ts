@@ -1,5 +1,33 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { captureScreen, signedOut, TABS, trackConsoleErrors } from './support';
+
+/**
+ * Share of the bottom nav's colour channels that two full-viewport screenshots of a screen paint
+ * more than an eighth of the range apart: 0 when the tab bar looks the same in both.
+ */
+async function navDifference(page: Page, a: Buffer, b: Buffer): Promise<number> {
+	const nav = await page.getByRole('navigation', { name: 'Primary' }).boundingBox();
+	return page.evaluate(
+		async ({ first, second, top }) => {
+			const pixels = async (base64: string) => {
+				const png = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+				const image = await createImageBitmap(new Blob([png], { type: 'image/png' }));
+				const offset = Math.round((top * image.width) / innerWidth);
+				const canvas = Object.assign(document.createElement('canvas'), {
+					width: image.width,
+					height: image.height - offset
+				});
+				const context = canvas.getContext('2d')!;
+				context.drawImage(image, 0, -offset);
+				return context.getImageData(0, 0, canvas.width, canvas.height).data;
+			};
+			const [x, y] = await Promise.all([pixels(first), pixels(second)]);
+			const differing = x.filter((value, i) => i % 4 < 3 && Math.abs(value - y[i]!) > 32);
+			return differing.length / ((x.length * 3) / 4);
+		},
+		{ first: a.toString('base64'), second: b.toString('base64'), top: nav!.y }
+	);
+}
 
 test.describe('app shell on an iPhone viewport', () => {
 	test('the sign-in screen is the landing page; signed in, / goes to Today', async ({
@@ -126,9 +154,48 @@ test.describe('app shell on an iPhone viewport', () => {
 				'page'
 			);
 			await expect(nav.locator('[aria-current="page"]')).toHaveCount(1);
-			if (tab.path !== '/today') await captureScreen(page, testInfo, tab.path.slice(1));
+			if (tab.path === '/today') continue;
+			const shot = await captureScreen(page, testInfo, tab.path.slice(1));
+
+			// The shot shows the tab bar as a fresh load of the tab paints it (CI's WebKit once saved
+			// tab-change shots without the bar, or with the page showing through it).
+			await page.reload();
+			await expect(page.getByRole('heading', { level: 1, name: tab.heading })).toBeVisible();
+			await page.evaluate(() => document.fonts.ready);
+			const fresh = await page.screenshot({ animations: 'disabled' });
+			expect(await navDifference(page, shot, fresh), `${tab.label}: tab bar differs`).toBeLessThan(
+				0.01
+			);
 		}
 		expect(errors).toEqual([]);
+	});
+
+	test('key-screen screenshots wait for the tab change to finish', async ({ page }, testInfo) => {
+		// A shot taken during the tab cross-fade can lose the tab bar on WebKit. Slow the fade so
+		// it is certainly still running when the next tab's heading shows.
+		await page.goto('/today');
+		await page.addStyleTag({
+			content:
+				'::view-transition-old(root), ::view-transition-new(root) { animation-duration: 2s !important; }'
+		});
+		// Checked with the pseudo-class, independently of captureScreen's activeViewTransition test.
+		const transitioning = () =>
+			page.evaluate(() => document.documentElement.matches(':active-view-transition'));
+		await page
+			.getByRole('navigation', { name: 'Primary' })
+			.getByRole('link', { name: 'Train' })
+			.click();
+		await expect(page.getByRole('heading', { level: 1, name: 'Train' })).toBeVisible();
+		expect(await transitioning(), 'the tab change is still running').toBe(true);
+
+		// Note, instead of saving a picture, whether the tab change was over when it was taken.
+		const midTransition: boolean[] = [];
+		page.screenshot = async () => {
+			midTransition.push(await transitioning());
+			return Buffer.alloc(0);
+		};
+		await captureScreen(page, testInfo, 'train-settled');
+		expect(midTransition, 'one shot, taken after the tab change ended').toEqual([false]);
 	});
 
 	test('no console errors on any screen, including interactive ones', async ({ page }) => {

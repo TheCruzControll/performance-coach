@@ -5,7 +5,8 @@
  * ignored, and `&` reads as `and`. A text matches when it equals a name or an alias after that,
  * and only then: no substrings, no word order, no fuzzy scores. When two exercises share the
  * normalised text, it matches neither, so the matcher never guesses between two. Text that
- * matches nothing stays free text for its caller to explain.
+ * matches nothing stays free text for its caller to explain. Text on NOT_EXERCISES names
+ * training that is not an exercise, so it matches nothing by design.
  *
  * The catalogue's integrity test keeps every name and alias distinct after normalising, so each
  * of them matches its own entry. A library that adds the owner's custom exercises can still share
@@ -46,6 +47,16 @@ export function normaliseExerciseName(text: string): string {
 		.join('');
 }
 
+/**
+ * Free text that names training but no exercise. It never matches, whatever the library holds,
+ * even an owner's custom exercise of that name. Running work is planned as run segments, not as
+ * catalogue exercises, so M2's 'Running intervals' suggestion stays free text for the running
+ * rules to read. Entries compare normalised, as names do.
+ */
+export const NOT_EXERCISES: readonly string[] = ['Running intervals'];
+
+const notExercises: ReadonlySet<string> = new Set(NOT_EXERCISES.map(normaliseExerciseName));
+
 /** Normalised name → key, or null where two exercises share it. Cached per library array. */
 const indexes = new WeakMap<readonly MatchableExercise[], ReadonlyMap<string, string | null>>();
 
@@ -67,9 +78,12 @@ function indexOf(library: readonly MatchableExercise[]): ReadonlyMap<string, str
 
 /**
  * The key of the one exercise in `library` whose name or alias is `text` (see above), or null
- * when none is, or more than one is. Pass CATALOGUE, or a new array of it plus custom exercises:
- * each array's index is built once, so never change an array after passing it.
+ * when none is, more than one is, or the text is on NOT_EXERCISES. Pass CATALOGUE, or a new
+ * array of it plus custom exercises: each array's index is built once, so never change an array
+ * after passing it.
  */
 export function matchExercise(text: string, library: readonly MatchableExercise[]): string | null {
-	return indexOf(library).get(normaliseExerciseName(text)) ?? null;
+	const normal = normaliseExerciseName(text);
+	if (notExercises.has(normal)) return null;
+	return indexOf(library).get(normal) ?? null;
 }
