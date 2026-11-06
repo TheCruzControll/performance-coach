@@ -1,10 +1,11 @@
 import { execSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import adapterNode from '@sveltejs/adapter-node';
 import adapterVercel from '@sveltejs/adapter-vercel';
 import { sveltekit } from '@sveltejs/kit/vite';
-import { loadEnv } from 'vite';
+import { loadEnv, type Plugin } from 'vite';
 import { defineConfig } from 'vitest/config';
 
 /**
@@ -39,6 +40,44 @@ function templateScriptHashes(): `sha256-${string}`[] {
 	return [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(
 		([, body]) => `sha256-${createHash('sha256').update(body!).digest('base64')}` as const
 	);
+}
+
+/**
+ * Lazy modules whose JavaScript arrives through their `import()` alone, never through the
+ * `<link rel=modulepreload>` tags Vite adds for a dynamic import's chunks (their stylesheets
+ * still load first). WebKit keeps a modulepreload that failed and answers every later import of
+ * that URL with the same failure, without a request, even after a reload
+ * (https://bugs.webkit.org/show_bug.cgi?id=270357), while a failed `import()` it fetches again:
+ * a screen that offers Retry for one of these can then recover on Safari. The cost is on a fetch
+ * from the network (before the service worker holds the build): chunks arrive in import order,
+ * not all at once.
+ */
+const IMPORTED_WITHOUT_MODULEPRELOAD = ['src/routes/(app)/train/PlateSheet.svelte'];
+
+function importWithoutModulepreload(modules: string[]): Plugin {
+	const ids = new Set(modules.map((path) => fileURLToPath(new URL(path, import.meta.url))));
+	const files = new Set<string>();
+	return {
+		name: 'performance-coach:import-without-modulepreload',
+		apply: 'build',
+		config: () => ({
+			build: {
+				modulePreload: {
+					// The JavaScript to preload for one dynamic import; Vite adds its stylesheets.
+					resolveDependencies: (file, deps) => (files.has(file) ? [] : deps)
+				}
+			}
+		}),
+		applyToEnvironment: (environment) => environment.name === 'client',
+		// Before Vite's import analysis (a post plugin) writes each import's preload list.
+		generateBundle(_options, bundle) {
+			for (const chunk of Object.values(bundle)) {
+				if (chunk.type === 'chunk' && chunk.facadeModuleId && ids.has(chunk.facadeModuleId)) {
+					files.add(chunk.fileName);
+				}
+			}
+		}
+	};
 }
 
 export default defineConfig(({ command, mode }) => {
@@ -100,7 +139,8 @@ export default defineConfig(({ command, mode }) => {
 						'frame-ancestors': ['none']
 					}
 				}
-			})
+			}),
+			importWithoutModulepreload(IMPORTED_WITHOUT_MODULEPRELOAD)
 		],
 		// A build-time fact for src/lib/server/env.ts: a server built for Vercel can never enable
 		// test-only routes, whatever its runtime environment says. Builds only: `vite dev` and
