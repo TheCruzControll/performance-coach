@@ -206,6 +206,11 @@ it is set on **any** hosted deployment (`VERCEL`, any `VERCEL_ENV`) or with `app
 `production`, and each test route re-checks `testRoutesEnabled()` at runtime. Chromium e2e never
 uses it: every Chromium sign-in is a real WebAuthn ceremony.
 
+`VERCEL` and `VERCEL_ENV` are runtime variables only, so the build carries the same fact: a server
+built for Vercel (`pnpm build`; `__VERCEL_BUILD__`, defined in `vite.config.ts`) refuses test
+routes whatever its runtime environment says. Only Node builds (`pnpm build:node`, used by e2e and
+Lighthouse) can enable them.
+
 ## Secrets
 
 - Server-only configuration is validated by `src/lib/server/env.ts` and never bundled for the
