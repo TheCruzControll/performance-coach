@@ -6,7 +6,7 @@ integration**; every deployed build migrates its own database first (`scripts/ve
 
 > **Status (M2, in progress):** the accounts, project, database branches, environment variables
 > and domain below exist and were configured through the Vercel and Neon APIs. Preview
-> deployments build from every pull request. Passkey auth is implemented on the M2 branch
+> deployments build from every pull request. Passkey auth is merged to `main`
 > (docs/security.md); **production stays switched off** (the guards below are still committed)
 > until the M2 production cutover removes them. Nothing is served on `coach.nikocruz.com` yet.
 
@@ -69,7 +69,7 @@ Authentication, so such a deploy would be public. Do not deploy production by ha
 of M1, the project's only production deployment is the failed placeholder created while
 configuring environment variables, so nothing is served on `coach.nikocruz.com`.
 
-**Switching production on is part of the M2 pull request that ships auth:** it removes both
+**Switching production on is the M2 production cutover pull request:** it removes both
 guards, and from then on every merge to `main` builds production through the Git integration,
 migrating the production branch first. M2 also adds a post-deploy smoke check
 (`GET https://coach.nikocruz.com/api/health` must return 200).
@@ -140,6 +140,11 @@ end in M9.
 - This complements Neon's built-in point-in-time restore (history window depends on the plan).
 - `PG_CLIENT_VERSION` in the workflow must be ≥ the Neon server's major version.
 
+`main` is the repository's default branch, so GitHub runs the schedule. The skip is verified:
+run [42147437996](https://github.com/TheCruzControll/performance-coach/actions/runs/42147437996)
+(on demand, on `main`) ended green with the notice "Backup skipped: Missing secrets:
+DATABASE_URL_UNPOOLED BACKUP_PASSPHRASE".
+
 ### Restore
 
 Backups are written by `pg_dump` 18 (`PG_CLIENT_VERSION` in the workflow), and `pg_restore`
@@ -208,7 +213,7 @@ ID under "What exists".
 
 ## Security notes
 
-- Until M2 ships passkey auth the app must not be served on the production domain. Enforced by
+- Until the M2 production cutover the app must not be served on the production domain. Enforced by
   committed config: `vercel.json` (no Git deployments of `main`; Vercel-started production builds
   skipped by the ignored build step). Preview deployments sit behind Vercel Authentication.
 - **Dynamic responses** (every page and `/api/*`, i.e. everything that runs `hooks.server.ts`)

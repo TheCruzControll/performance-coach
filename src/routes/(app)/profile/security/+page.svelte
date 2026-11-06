@@ -48,7 +48,11 @@
 			toast.show(`Passkey added: ${passkey.nickname}`, { tone: 'positive' });
 			await invalidateAll();
 		} catch (err) {
-			addError = err instanceof PasskeyError ? err.message : 'Something went wrong. Try again.';
+			// Step-up: the sheets confirm with an existing passkey, then add again.
+			if (err instanceof PasskeyError && err.kind === 'reauth')
+				open({ kind: 'reauth', retry: add });
+			else
+				addError = err instanceof PasskeyError ? err.message : 'Something went wrong. Try again.';
 		} finally {
 			adding = false;
 		}
@@ -73,10 +77,12 @@
 
 	// ---- sessions ------------------------------------------------------------------------
 	function submit(success: (data: Record<string, unknown>) => string): SubmitFunction {
-		return () =>
+		return ({ formElement }) =>
 			async ({ result, update }) => {
 				if (result.type === 'success') {
 					toast.show(success(result.data ?? {}), { tone: 'positive' });
+				} else if (result.type === 'failure' && result.data?.code === 'reauth_required') {
+					open({ kind: 'reauth', retry: () => formElement.requestSubmit() });
 				} else if (result.type === 'failure') {
 					toast.show(String(result.data?.error ?? 'That didn’t work. Try again.'), {
 						tone: 'danger'
@@ -210,17 +216,27 @@
 		<Surface padding="none" radius="xl">
 			<ul class="rows" data-testid="sessions">
 				{#each data.sessions as s (s.id)}
+					{@const recovery = s.kind === 'recovery'}
 					<li class="row" data-testid="session-row" data-current={s.current} data-session-id={s.id}>
-						<span class="glyph" aria-hidden="true"><Icon name="device" size={22} /></span>
+						<span class="glyph" aria-hidden="true">
+							<Icon name={recovery ? 'key' : 'device'} size={22} />
+						</span>
 						<div class="main">
 							<p class="title">
 								{s.device}
-								{#if s.current}<Badge tone="accent">This device</Badge>{/if}
+								{#if s.current}<Badge tone="accent">This device</Badge>
+								{:else if recovery}<Badge tone="warning">Recovery sign-in</Badge>{/if}
 							</p>
 							<p class="meta">
 								{s.current ? 'Active now' : `Active ${timeAgo(s.lastSeenAt, now)}`} · Signed in
 								{shortDate(s.createdAt, now)} with {METHOD[s.method] ?? s.method}
 							</p>
+							{#if recovery}
+								<p class="meta">
+									It can only add a passkey, for 15 minutes. Not you? Sign it out and create new
+									codes.
+								</p>
+							{/if}
 						</div>
 						{#if !s.current}
 							<form

@@ -1,8 +1,9 @@
 <!--
   @component
   The Security screen's sheets — rename or remove a passkey, create new recovery codes and show
-  them once. Interaction-only UI: the screen imports this on first intent (pointerdown) or tap,
-  so it never weighs on the screen's initial JavaScript.
+  them once, and confirm it's the owner with a passkey when the server asks for it (step-up)
+  before retrying the action. Interaction-only UI: the screen imports this on first intent
+  (pointerdown) or tap, so it never weighs on the screen's initial JavaScript.
 -->
 <script lang="ts" module>
 	export interface PasskeyTarget {
@@ -13,13 +14,16 @@
 	export type SheetRequest =
 		| { kind: 'rename'; passkey: PasskeyTarget }
 		| { kind: 'remove'; passkey: PasskeyTarget }
-		| { kind: 'regenerate' };
+		| { kind: 'regenerate' }
+		/** The server answered `reauth_required`: confirm with a passkey, then `retry`. */
+		| { kind: 'reauth'; retry: () => void };
 </script>
 
 <script lang="ts">
-	import { enhance, type SubmitFunction } from '$app/forms';
+	import { enhance, type ActionResult, type SubmitFunction } from '$app/forms';
 	import BottomSheet from '#lib/ui/components/BottomSheet.svelte';
 	import Button from '#lib/ui/components/Button.svelte';
+	import Notice from '#lib/ui/components/Notice.svelte';
 	import RecoveryCodes from '#lib/ui/components/RecoveryCodes.svelte';
 	import TextField from '#lib/ui/components/TextField.svelte';
 	import { toast } from '#lib/ui/toast.svelte.ts';
@@ -41,6 +45,10 @@
 	let codes = $state<string[]>([]);
 	let acknowledged = $state(false);
 	let pending = $state(false);
+	let reauthOpen = $state(false);
+	let reauthError = $state<string | null>(null);
+	let verifying = $state(false);
+	let retry: (() => void) | null = null;
 
 	$effect(() => {
 		const next = request;
@@ -50,22 +58,64 @@
 			nickname = next.passkey.nickname;
 			renameOpen = true;
 		} else if (next.kind === 'remove') removeOpen = true;
-		else regenerateOpen = true;
+		else if (next.kind === 'regenerate') regenerateOpen = true;
+		else confirm(next.retry);
 	});
 
 	function closed() {
 		request = null;
 	}
 
+	// ---- step-up: over the sheet that asked (or on its own), then retry the action ----------
+	function confirm(action: () => void) {
+		retry = action;
+		reauthError = null;
+		reauthOpen = true;
+	}
+
+	function reauthClosed() {
+		// Dismissed (Cancel, Escape, swipe) before confirming: the refused action never ran.
+		if (retry) toast.show('Nothing was changed.', { tone: 'neutral' });
+		retry = null;
+		if (request?.kind === 'reauth') closed();
+	}
+
+	async function verify() {
+		verifying = true;
+		reauthError = null;
+		try {
+			const { reauthenticate, PasskeyError } = await import('#lib/client/passkeys.ts');
+			try {
+				await reauthenticate();
+			} catch (err) {
+				reauthError =
+					err instanceof PasskeyError ? err.message : 'Something went wrong. Try again.';
+				return;
+			}
+			const action = retry;
+			retry = null;
+			reauthOpen = false;
+			reauthClosed();
+			action?.();
+		} finally {
+			verifying = false;
+		}
+	}
+
+	const needsPasskey = (result: ActionResult) =>
+		result.type === 'failure' && result.data?.code === 'reauth_required';
+
 	/** Shared `use:enhance` handler: toast the outcome, refresh the screen, close the sheet. */
 	function submit(message: string, close: () => void): SubmitFunction {
-		return () => {
+		return ({ formElement }) => {
 			pending = true;
 			return async ({ result, update }) => {
 				pending = false;
 				if (result.type === 'success') {
 					toast.show(message, { tone: 'positive' });
 					close();
+				} else if (needsPasskey(result)) {
+					confirm(() => formElement.requestSubmit());
 				} else if (result.type === 'failure') {
 					toast.show(String(result.data?.error ?? 'That didn’t work. Try again.'), {
 						tone: 'danger'
@@ -76,7 +126,7 @@
 		};
 	}
 
-	const regenerate: SubmitFunction = () => {
+	const regenerate: SubmitFunction = ({ formElement }) => {
 		pending = true;
 		return async ({ result, update }) => {
 			pending = false;
@@ -85,6 +135,8 @@
 				acknowledged = false;
 				regenerateOpen = false;
 				codesOpen = true;
+			} else if (needsPasskey(result)) {
+				confirm(() => formElement.requestSubmit());
 			} else {
 				toast.show('Couldn’t create new codes. Try again.', { tone: 'danger' });
 			}
@@ -218,6 +270,35 @@
 			data-testid="codes-done"
 		>
 			Done
+		</Button>
+	</div>
+</BottomSheet>
+
+<BottomSheet
+	bind:open={reauthOpen}
+	title="Confirm it’s you"
+	description="Changes to passkeys, recovery codes and signed-in devices need one of your passkeys. You won’t be asked again for 5 minutes."
+	onclose={reauthClosed}
+	data-testid="reauth-sheet"
+>
+	<div class="sheet-form">
+		{#if reauthError}
+			<Notice tone="danger" title="Nothing was changed" data-testid="reauth-error">
+				{reauthError}
+			</Notice>
+		{/if}
+		<Button block icon="passkey" loading={verifying} onclick={verify} data-testid="reauth-continue">
+			Continue with passkey
+		</Button>
+		<Button
+			variant="ghost"
+			block
+			onclick={() => {
+				reauthOpen = false;
+				reauthClosed();
+			}}
+		>
+			Cancel
 		</Button>
 	</div>
 </BottomSheet>
