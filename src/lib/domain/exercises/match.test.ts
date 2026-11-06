@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { matchExercise, normaliseExerciseName, type MatchableExercise } from './match';
+import {
+	NOT_EXERCISES,
+	matchExercise,
+	normaliseExerciseName,
+	type MatchableExercise
+} from './match';
 
 /** A small library, so these cases test the matcher's rules rather than the catalogue's data. */
 const LIBRARY: readonly MatchableExercise[] = [
@@ -74,6 +79,14 @@ describe('matchExercise', () => {
 		expect(matchExercise('Squats', library)).toBeNull();
 		expect(matchExercise('Back squat', library)).toBe('back_squat');
 		expect(matchExercise('Front squat', library)).toBe('front_squat');
+	});
+
+	it('never matches text on NOT_EXERCISES, even when a library entry has that name', () => {
+		const library = [...LIBRARY, { key: 'custom:9c2e', name: 'Running intervals', aliases: [] }];
+		expect(NOT_EXERCISES).toContain('Running intervals');
+		expect(matchExercise('Running intervals', library)).toBeNull();
+		expect(matchExercise('running interval', library)).toBeNull();
+		expect(matchExercise('Back squat', library)).toBe('back_squat');
 	});
 
 	it("returns null when an owner's own exercise shares a catalogue name", () => {

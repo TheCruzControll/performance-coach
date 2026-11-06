@@ -71,6 +71,13 @@
       "when": 1793936394726,
       "tag": "0009_program_history_guards",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1793937460409,
+      "tag": "0010_exercise_library",
+      "breakpoints": true
     }
   ]
 }

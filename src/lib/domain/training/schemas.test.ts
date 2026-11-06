@@ -835,10 +835,15 @@ describe('customExerciseSchema', () => {
 			'secondaryMuscles'
 		],
 		['an alias listed twice', { aliases: ['Landmine', 'Landmine'] }, 'aliases'],
-		['reps on a timed exercise', { measure: 'time', repMin: 8, repMax: 8 }, 'repMin'],
+		[
+			'reps on a timed exercise',
+			{ measure: 'time', repMin: 8, repMax: 8, defaultSeconds: 30 },
+			'repMin'
+		],
 		['half a rep range', { repMin: 8 }, 'repMax'],
 		['reps high to low', { repMin: 12, repMax: 8 }, 'repMax'],
 		['seconds on a reps exercise', { defaultSeconds: 30 }, 'defaultSeconds'],
+		['a timed exercise without seconds', { measure: 'time' }, 'defaultSeconds'],
 		['a group that is not a key', { substitutionGroup: 'Vertical push' }, 'substitutionGroup'],
 		['a blank name', { name: '  ' }, 'name']
 	])('refuses %s', (_, change, path) => {
