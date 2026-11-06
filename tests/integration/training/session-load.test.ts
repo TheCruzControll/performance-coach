@@ -28,6 +28,8 @@ import { makeOwner } from '../profile/fixtures';
 
 /** Week 1's Monday: the hybrid fixture's strength day; Tuesday and Thursday hold Muay Thai. */
 const MONDAY = '2026-11-09';
+/** When each request comes in: that Monday morning, in the owner's zone (UTC until set). */
+const NOW = new Date(`${MONDAY}T08:00:00Z`);
 
 const origin = (requestId = crypto.randomUUID()) => ({
 	requestId,
@@ -51,7 +53,7 @@ function lineageOf(stored: ProgramVersion, week: number, title: string) {
 }
 
 function load(db: Executor, owner: string, key: string, version: string | null = null) {
-	return loadSessionDetail(owner, { key, version, origin: origin() }, { db });
+	return loadSessionDetail(owner, { key, version, now: NOW, origin: origin() }, { db });
 }
 
 /** The session view (fails the test for the error state). */
@@ -258,7 +260,7 @@ describe('the session screen’s load', () => {
 				const request = origin();
 				const data = await loadSessionDetail(
 					crypto.randomUUID(),
-					{ key: crypto.randomUUID(), version: null, origin: request },
+					{ key: crypto.randomUUID(), version: null, now: NOW, origin: request },
 					{ db: broken.db, errorsDb: tx }
 				);
 				expect(data).toEqual({
