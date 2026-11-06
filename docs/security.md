@@ -185,6 +185,11 @@ refuses a valid one: a client staying within its own limit cannot fill it and lo
 of recovery. It is a tripwire (audited when it trips; further wrong codes answer `429`), not a
 bound on distributed guessing, which rests on the per-client limit and the 80-bit codes.
 
+`signout` counts only requests that end no session. A sign-out that presents a live session is
+never refused (the session is revoked, the cookie deleted), so someone sharing the owner's
+address (the same NAT or Wi-Fi) cannot fill the bucket and keep the owner signed in. A token ends
+its session only once, so this cannot be used to flood.
+
 ## Audit log
 
 `auth_events` records setup completed/failed, sign-in succeeded/failed (with the reason from

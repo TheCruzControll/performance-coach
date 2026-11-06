@@ -4,6 +4,7 @@ import { beginSignIn, completeSignIn } from '../../../src/lib/server/auth/passke
 import { RATE_LIMITS } from '../../../src/lib/server/auth/policy';
 import { enforceRateLimit } from '../../../src/lib/server/auth/rate-limit';
 import { redeemRecoveryCode } from '../../../src/lib/server/auth/recovery';
+import { signOut, validateSessionToken } from '../../../src/lib/server/auth/sessions';
 import { checkSetupAccess } from '../../../src/lib/server/auth/setup';
 import { withRollback } from '../helpers';
 import { clock, request, SETUP_CONFIG, SETUP_TOKEN, setUpOwner } from './fixtures';
@@ -111,6 +112,34 @@ describe('DB-backed rate limits', () => {
 			await expect(
 				redeemRecoveryCode(owner.recoveryCodes[0], undefined, request(), deps)
 			).resolves.toMatchObject({ remaining: 9, session: { kind: 'recovery' } });
+		});
+	});
+
+	it('never let a full sign-out bucket keep a live session signed in', async () => {
+		await withRollback(async (tx) => {
+			const deps = { db: tx };
+			const owner = await setUpOwner(tx);
+			// Someone on the same NAT or Wi-Fi (one client address) fills the sign-out bucket.
+			const sameNetwork = request({ ip: '203.0.113.77' });
+			for (let i = 0; i < RATE_LIMITS.signout.limit; i++) {
+				await signOut(undefined, sameNetwork, deps);
+			}
+			await expect(signOut(undefined, sameNetwork, deps)).rejects.toMatchObject({
+				code: 'rate_limited',
+				status: 429
+			});
+			// The owner's sign-out from that address still ends the session...
+			await expect(signOut(owner.token, sameNetwork, deps)).resolves.toBeUndefined();
+			expect(await validateSessionToken(owner.token, deps)).toBeNull();
+			const repo = createAuthRepository(tx);
+			expect(await repo.findSession(owner.session.id)).toMatchObject({ revokedReason: 'signout' });
+			expect(await repo.recentEvents(1)).toMatchObject([
+				{ type: 'signout', sessionId: owner.session.id }
+			]);
+			// ...once: the ended token is just another request without a session, limited again.
+			await expect(signOut(owner.token, sameNetwork, deps)).rejects.toMatchObject({
+				code: 'rate_limited'
+			});
 		});
 	});
 });
