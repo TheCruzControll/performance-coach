@@ -1,7 +1,10 @@
 <!--
   @component
-  Primary tab bar. Fixed to the bottom, glass background, respects the home-indicator safe
-  area. Each item is a real link (works without JS) with aria-current on the active tab.
+  Primary navigation, one element at every width (docs/design-system.md, Responsive layout →
+  Shell). Below 1024 px a glass tab bar fixed to the bottom, clear of the home indicator; from
+  1024 px a solid rail at the left, under the brand mark that layout.css draws. Each item is a
+  real link (works without JS) with aria-current on the active tab, so the destinations, their
+  order and the current one are the same in both.
 -->
 <script lang="ts" module>
 	import type { IconName } from '../icons/icons';
@@ -27,7 +30,7 @@
 	const isActive = (href: string) => pathname === href || pathname.startsWith(`${href}/`);
 </script>
 
-<nav class="bottom-nav" aria-label="Primary">
+<nav class="app-nav" aria-label="Primary">
 	<ul>
 		{#each items as item (item.href)}
 			{@const active = isActive(item.href)}
@@ -49,7 +52,7 @@
 </nav>
 
 <style>
-	.bottom-nav {
+	.app-nav {
 		position: fixed;
 		z-index: var(--z-nav);
 		left: 0;
@@ -117,5 +120,42 @@
 	.item:focus-visible {
 		outline-offset: -4px;
 		border-radius: var(--radius-md);
+	}
+
+	@media (hover: hover) and (pointer: fine) {
+		.item:not([aria-current]):hover {
+			color: var(--color-text-secondary);
+		}
+
+		.item:not([aria-current]):hover .glyph {
+			background: var(--color-surface-2);
+		}
+	}
+
+	/* The rail: solid, full height, items stacked under the brand mark (layout.css). */
+	@media (width >= 64rem) {
+		.app-nav {
+			top: 0;
+			right: auto;
+			width: calc(var(--rail-width) + var(--safe-left));
+			padding: calc(var(--safe-top) + var(--rail-mark) + 2 * var(--space-6)) 0 var(--safe-bottom)
+				var(--safe-left);
+			background: var(--color-surface-1);
+			backdrop-filter: none;
+			border-top: 0;
+			border-right: 1px solid var(--color-hairline);
+		}
+
+		ul {
+			grid-template-columns: minmax(0, 1fr);
+			gap: var(--space-1);
+			padding: 0 var(--space-1-5);
+		}
+
+		.item {
+			height: auto;
+			min-height: 3.5rem;
+			gap: var(--space-1);
+		}
 	}
 </style>

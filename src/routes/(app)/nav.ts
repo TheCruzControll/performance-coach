@@ -3,7 +3,7 @@
  * keeps the shell (and the way back) when a screen fails to load, e.g. offline.
  */
 import { resolve } from '$app/paths';
-import type { NavItem } from '#lib/ui/components/BottomNav.svelte';
+import type { NavItem } from '#lib/ui/components/AppNav.svelte';
 
 export const APP_NAV: NavItem[] = [
 	{ href: resolve('/(app)/today'), label: 'Today', icon: 'today' },

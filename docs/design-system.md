@@ -120,10 +120,11 @@ Tracking: `--tracking-display -0.032em`, `--tracking-tight -0.016em`, `--trackin
 
 ## Layout
 
-- App shell: content column `--content-max` (34 rem) with safe-area-aware gutters; fixed
-  **bottom navigation** (Today · Train · Progress · Coach · Profile), glass background,
-  58 px tall + home-indicator inset; `aria-current="page"` on the active tab; tabs cross-fade
-  with the View Transitions API (the `root` snapshot fades while the named tab bar stays put).
+- App shell: content column `--content-column` (34 rem on a phone, 40 rem from 640 px) with
+  safe-area-aware gutters; fixed **bottom navigation** (Today · Train · Progress · Coach ·
+  Profile), glass background, 58 px tall + home-indicator inset, a left rail from 1024 px
+  (Responsive layout → Shell); `aria-current="page"` on the active tab; tabs cross-fade with the
+  View Transitions API (the `root` snapshot fades while the named nav stays put).
   Never put a `view-transition-name` on an ancestor of a glass surface: it becomes a backdrop
   root and the blur silently stops working.
 - Every app screen fits a 393 × 659 iPhone viewport without sideways scrolling, and nothing
@@ -133,6 +134,157 @@ Tracking: `--tracking-display -0.032em`, `--tracking-tight -0.016em`, `--trackin
   title (`src/routes/ErrorView.svelte`), and a connectivity notice appears while offline.
 - Large titles (`PageHeader`): eyebrow + 34 px display title, iOS-style.
 - Toasts appear at the top (clear of the thumb zone and nav); sheets rise from the bottom.
+
+## Responsive layout
+
+iPhone-first, and laid out for a desktop window too, never as a stretched phone layout (PRD §7,
+§16). `scripts/layout-rules.test.ts` enforces the rules marked **(guard)** on every stylesheet and
+on the browser code, naming the file, the line and the fix; `e2e/desktop.ts` holds the helpers
+that specs verify the rest with.
+
+### Widths & tokens
+
+- Three widths: **phone** below 640 px (the default every rule starts from), **tablet** 640–1023
+  px, **desktop** from 1024 px.
+- Media queries use only `(width >= 40rem)`, `(width >= 64rem)`, `(width < 40rem)`,
+  `(width < 64rem)` and `(40rem <= width < 64rem)` **(guard)**; `min-width`, `max-width`, other
+  values, height and orientation queries fail. They are written out, because custom properties
+  cannot be used inside `@media`, and in rem, so a larger default text size moves to the narrower
+  layout (WCAG reflow). Lightning CSS rewrites the range syntax to `min-width` for the build
+  targets.
+- Components adapt to their container with `@container`, not to the window.
+- Layout changes only in CSS **(guard)**: SSR paints the final layout, nothing shifts when the page
+  hydrates, and no route gains JavaScript for it. `matchMedia` and Svelte's `MediaQuery` ask only
+  `prefers-reduced-motion`, `prefers-color-scheme` or `display-mode`; nothing reads `innerWidth`,
+  `innerHeight`, `outerWidth`, `outerHeight`, `visualViewport` or `screen.width`/`height`, or
+  listens for `resize` (`<svelte:window bind:innerWidth>` and `onresize` included). Allowed:
+  `@container`, `@supports`, `prefers-*`, `display-mode`, `forced-colors`, `print` and the CSS
+  `resize` property.
+- Tokens (`tokens.css`):
+  - `--content-max` 34 rem: the phone column.
+  - `--content-readable` 40 rem: the readable column from 640 px.
+  - `--content-wide` 72 rem: a wide screen's content.
+  - `--content-list` 20 rem: the list beside its editor on a split screen.
+  - `--rail-width` 5.5 rem: the navigation rail from 1024 px.
+  - `--rail-mark` 2.25 rem: the brand mark atop the rail.
+  - `--content-column`: the shell's column, which screen chrome is centred over: `--content-max`,
+    and `--content-readable` from 640 px.
+  - `--nav-inset-bottom`: what fixed chrome clears at the bottom: in the shell, the bottom bar and
+    the home indicator (`--nav-height` + `--safe-bottom`), and the home indicator alone from
+    1024 px; `0px` outside the shell (set under `:root:has(.app-nav)`).
+  - `--nav-inset-left`: what it clears at the left: `0px`, and in the shell the rail and the left
+    safe area from 1024 px.
+
+### Content width
+
+A screen declares its width with `data-layout` on its root element:
+
+- **readable**, the default: forms, text, settings (Security), conversations (Coach). The column
+  is `--content-readable` from 640 px; the phone column stays `--content-max`.
+- **wide**: dashboards and grids, up to `--content-wide`.
+- **split**: a list and its editor, `--content-list` beside a readable detail.
+- Never a single text column wider than `--content-readable`.
+
+### Shell
+
+`AppNav` is one `<nav>` at every width, restyled by CSS, so its five destinations, their order,
+links and `aria-current` cannot differ between widths. `e2e/shell.desktop.e2e.ts` verifies the
+shell at 1440 × 900 and the widths around it.
+
+- **Below 1024 px** the glass bottom bar, unchanged. On a tablet (640–1023 px) only the column
+  widens, from 34 to 40 rem.
+- **From 1024 px** a solid left rail, `--rail-width` (88 px) plus the left safe area, on
+  `--color-surface-1` with a hairline right border and no blur. Items are stacked icon above
+  label, each at least 56 px tall, with a hover tint for fine pointers and the focus ring inside
+  the item. Nothing is fixed to the bottom edge. A rail rather than a labelled sidebar: the five
+  labels are short, and it leaves the most width at 1024 px (a sidebar would be CSS only).
+- **The brand mark** tops the rail: two masked pseudo-elements of the nav (`layout.css`) fill
+  `static/brand/mark-track.svg` with `--color-text` at 18% and `static/brand/mark-arc.svg` with
+  `--color-accent`. They are the favicon's two strokes on no background; the favicon's opaque
+  dark tile can be neither a mask nor a themed image. The mark follows the theme with no markup
+  and no script, and the service worker precaches both files with the other static files, so it
+  renders offline.
+- **Order.** The nav comes before `<main>`, after the skip link, so on a desktop window Tab goes
+  skip link → rail → content, as the eye reads it, and the skip link skips past the rail into
+  the content. On an iPhone nothing moves, but VoiceOver reads the tab bar before the content.
+- **Content.** `<main>` is `--content-column` wide, centred beside the rail; a screen that
+  declares `data-layout="wide"` or `"split"` widens it to `--content-wide` from 1024 px
+  (`layout.css`). Screen chrome follows the column through the insets and `--content-column`,
+  so no screen file needs an edit; outside the shell the insets are `0px`, so a toast on
+  `/design` is centred in the window.
+- **CSS only**, so no route gains initial JS for the layout. The shell's own stylesheet (`AppShell`
+  with `AppNav`) is inlined into every app page while it stays under SvelteKit's
+  `inlineStyleThreshold` (4,096 characters, `vite.config.ts`). `scripts/check-budgets.ts` fails
+  if it is ever linked instead, so page-agnostic shell rules go in `src/lib/ui/styles/layout.css`.
+
+### Fixed and sticky chrome
+
+Two kinds, and neither is offset by `--nav-height` **(guard)**: only `tokens.css` and the nav
+itself read it.
+
+- **Screen chrome** belongs to a whole readable screen (Coach's composer; a section's Save bar
+  until Profile is laid out in columns) or to the app (toasts). It is `position: fixed` at
+  `bottom: var(--nav-inset-bottom)` (toasts keep their top inset), centred with
+  `left: calc(50% + var(--nav-inset-left) / 2)` and `translateX(-50%)`, and at most
+  `var(--content-column)` wide. Only readable screens have it at the bottom.
+- **Column chrome** belongs to one column of a wide or split screen (an editor's Save bar, Build's
+  "Start week 1", a session's actions). From 1024 px it is `position: sticky` at
+  `bottom: var(--nav-inset-bottom)`, the last child of its column, with no left offset and no
+  transform, so it takes the column's width and never covers another column. No ancestor up to the
+  column sets `overflow`. Below 1024 px the column is the whole content, so it may stay screen
+  chrome.
+- Specs check chrome against the element it belongs to, never against `<main>` for a column:
+  `expectCentredOver(page, chrome, area)` for screen chrome and
+  `expectInColumn(page, chrome, column, others)` for column chrome. A screen that later turns
+  from readable to split then keeps its specs green.
+
+### Density
+
+Density comes from columns, not from smaller targets or type: targets stay at least 44 px and the
+type scale is the same at every width, because a 1024–1366 px window can be a touch iPad.
+
+### Pointer & hover
+
+- Hover styles live only inside `@media (hover: hover) and (pointer: fine)` **(guard)**: a bare
+  `:hover`, `(hover: hover)` alone, `(pointer: coarse)`, `any-hover` and `any-pointer` fail. The
+  iPhone has no hover, and a touch laptop or an iPad never gets a hover state that sticks.
+- Hover is never the only cue: what it shows is also there on focus or press.
+
+### Keyboard & focus
+
+- The skip link comes first and moves focus to `<main>`.
+- Focus order matches reading order and visual order.
+- Every interactive element shows a visible `:focus-visible` ring.
+- Escape closes the top dialog only; arrow keys move inside composite controls.
+- No keyboard traps, and no shortcuts that take over typing keys.
+
+### Dialogs & toasts
+
+How sheets open as centred dialogs on a desktop window lands with the primitives' desktop pass
+(desk-primitives). Until then sheets rise from the bottom at every width, and toasts stay at the
+top as screen chrome.
+
+### Screens
+
+One line per screen as its desktop layout lands (the auth screens, the main screens, then each
+later-pass screen).
+
+### Verification
+
+- Every UI slice is designed and verified at **393 × 659** (the iPhone projects) and at
+  **1440 × 900** (`test.use(DESKTOP)` from `e2e/desktop.ts`, or a `*.desktop.e2e.ts` spec), and
+  its PR attaches both screenshots.
+- A desktop spec checks that nothing scrolls sideways (`expectNoSideScroll`, at `DESKTOP_WIDTHS`
+  and at `BELOW_DESKTOP_WIDTH`, 1023 px, where the layout changes), its chrome against the element
+  the chrome belongs to, and that a swap moves nothing with
+  `expectNoShift(page, { action, boxes })`, never `layoutShiftDuring` alone: WebKit reports no
+  layout-shift entries, so `layoutShiftDuring` throws there and `expectNoShift` checks the named
+  boxes, with an annotation.
+- A screen in the shell checks `<main>` against the rail, never the window, at the width its
+  `data-layout` declares, read from the token rather than written as a number:
+  `expectMainCentred(page, await tokenPx(page, '--content-readable'))` (or `--content-wide`).
+- `*.desktop.e2e.ts` specs run in the iPhone projects at desktop size, on Chromium and WebKit,
+  until desktop projects exist.
 
 ## Components (`src/lib/ui/components`)
 
@@ -146,7 +298,7 @@ Tracking: `--tracking-display -0.032em`, `--tracking-tight -0.016em`, `--trackin
 | `BottomSheet`       | Native `<dialog>` + `showModal()` (platform focus trap, inert background), Escape/backdrop close, focus returns to opener, swipe-to-dismiss (distance or velocity), content mounted only while open.                                         |
 | `SegmentedControl`  | `radiogroup` with roving tabindex and arrow keys; spring-animated thumb; `sm` (36 px track) options extend their hit area to 44 px.                                                                                                          |
 | `Tabs`              | WAI-ARIA tabs (automatic activation, arrows/Home/End), animated accent indicator, renders active panel.                                                                                                                                      |
-| `BottomNav`         | Primary navigation (real links, preload on tap).                                                                                                                                                                                             |
+| `AppNav`            | Primary navigation (real links, preload on tap): the glass bottom bar, a solid left rail from 1024 px under the brand mark; one `<nav>`, so destinations, order and `aria-current` match at every width (Responsive layout → Shell).         |
 | `Skeleton`          | Shimmer placeholder (static under reduced motion); pair with `aria-busy` on the region.                                                                                                                                                      |
 | `EmptyState`        | Medallion glyph (tone-tinted), title, guidance, optional actions; `compact` variant.                                                                                                                                                         |
 | `Toaster` + `toast` | Polite live region; `neutral · positive · danger`; optional action; auto-dismiss.                                                                                                                                                            |
@@ -161,6 +313,7 @@ Tracking: `--tracking-display -0.032em`, `--tracking-tight -0.016em`, `--trackin
 | `WeekStrip`         | `src/lib/ui/program`, like the next two. Seven days Monday first in a radiogroup (roving tabindex, arrows, Home/End), each ≥ 44 px at 393 px; a dot per session (a ring if skipped), counted in its name; the server's today ringed.         |
 | `SessionCard`       | A session: discipline dot, title, 'Strength · 60 min · Hard · Evening'; Skipped, Moved from Mon, Done and Baseline as worded badges; with `href` one link named by its title; `pending` sets `aria-busy` and sweeps a progress line.         |
 | `PrescriptionLines` | describe.ts's words as a list: '3 × 5 @ RPE 7', the load only when describe could compute one, its basis, rest and tempo, the baseline instruction; run steps with each segment's pace and effort. It never computes a number.               |
+| `ProgramHeader`     | Train's program title, its block and place ('Baseline week · Week 1 of 5'), a status badge, the planned weeks as pills between previous and next (≥ 44 px, this week ringed, the loading week busy); week links keep scroll and focus.       |
 | `TextField`         | Labelled single-line input (label above, never placeholder-as-label), 56 px tall, 16 px text so iOS never zooms, hint or error wired with `aria-describedby` (the error replaces the hint), `mono` for codes, `type="date"`, "Optional".     |
 | `NumberField`       | A number that may stay blank (`null`, never 0): decimal or numeric keypad, `enterkeyhint`, unit inside the field and in its description, digits and one decimal point only, "Optional" marker. For values people nudge: `NumberStepper`.     |
 | `TextArea`          | Multi-line notes: label above, 16 px text, grows with its content (`field-sizing`; `rows` and a resize handle where unsupported), `maxlength`, hint or error wired with `aria-describedby`, "Optional" marker.                               |
@@ -196,6 +349,7 @@ destructive actions behind a confirming `BottomSheet`, and toasts for outcomes.
 - Never convey state by colour alone: badges are words, `Stat` ratings are a word plus a dot
   (e.g. RUM p75 tiles: "Good" / "Needs work" / "Poor").
 - Respect `prefers-reduced-motion`.
+- Verified at 393 × 659 and 1440 × 900 (Responsive layout → Verification).
 
 ## Iconography & brand
 
@@ -203,3 +357,8 @@ destructive actions behind a confirming `BottomSheet`, and toasts for outcomes.
 - App icons are rendered from `static/icons/*.svg` by `pnpm icons` (Playwright Chromium):
   `icon-192.png`, `icon-512.png`, `icon-maskable-512.png` (content inside the 80% safe zone),
   `apple-touch-icon.png` (180 px); `favicon.svg` for browsers.
+- Product icons (`<Icon name>`): 24 × 24 grid, 1.75 px round strokes, path data in
+  `src/lib/ui/icons/icons.ts`. `<Icon>` draws them with `<use>` from one generated sprite, so they
+  cost no JavaScript: after adding or changing one, run `pnpm icons:sprite` and commit
+  `sprite.svg` and `names.ts` (a unit test fails while they are stale; `pnpm budgets` fails if path
+  data reaches a client chunk).

@@ -25,6 +25,30 @@ export {
 	type TrainingWeek,
 	type WeekAt
 } from './read';
+export {
+	getVersionHistory,
+	getVersionWeek,
+	HISTORY_PAGE_SIZE,
+	reviseProgram,
+	type Copy,
+	type CopyChanges,
+	type RevisedVersion,
+	type Revision,
+	type RevisionDecision,
+	type VersionHistory,
+	type VersionHistoryEntry,
+	type WeekCopies
+} from './revise';
+export {
+	checkMove,
+	getMoveTargets,
+	moveSession,
+	skipSession,
+	type EditAt,
+	type MovedSession,
+	type MoveTarget,
+	type MoveWarning
+} from './edits';
 export type {
 	ProgramVersion,
 	StoredBlock,
