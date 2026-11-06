@@ -8,8 +8,13 @@
   week shown is the current page, this week is ringed (as WeekStrip rings today), and the week
   `pending` names is busy while it loads. Pills scroll sideways inside their row when a plan has
   more weeks than fit; the screen itself never does. Every target is ≥ 44 px.
+
+  `actions`, a row under the titles, holds the program's own screens and sheets ('Plan', then
+  'History'): each a `.action` the caller renders (a button or a link), styled here alike, and
+  busy (`aria-busy`) while what it opens is on its way.
 -->
 <script lang="ts">
+	import type { Snippet } from 'svelte';
 	import Badge from '../components/Badge.svelte';
 	import Icon from '../components/Icon.svelte';
 	import type { IconName } from '../icons/icons';
@@ -31,6 +36,8 @@
 		next?: string;
 		/** A status in words beside the position, e.g. 'Starts Mon 9 Nov'. */
 		status?: string | null;
+		/** The actions row: `.action` buttons or links, and any notice about them. */
+		actions?: Snippet;
 	}
 
 	let {
@@ -42,7 +49,8 @@
 		pending = null,
 		previous,
 		next,
-		status
+		status,
+		actions
 	}: Props = $props();
 	const id = $props.id();
 </script>
@@ -66,6 +74,7 @@
 			<p class="status"><Badge icon="clock" data-testid="program-status">{status}</Badge></p>
 		{/if}
 	</div>
+	{#if actions}<div class="actions">{@render actions()}</div>{/if}
 	<nav class="weeks" aria-label="Weeks" data-sveltekit-replacestate data-sveltekit-reset="false">
 		{@render step(previous, 'Previous week', 'chevron-left', 'previous-week')}
 		<ol class="pills">
@@ -114,6 +123,62 @@
 
 	.status {
 		margin-top: var(--space-1);
+	}
+
+	.actions {
+		display: flex;
+		flex-wrap: wrap;
+		gap: var(--space-2);
+	}
+
+	/* An action: a quiet outlined pill, icon then word, 44 px tall. Busy, a spinner takes the
+	   icon's place after a beat, so a fast load shows nothing. */
+	.actions :global(.action) {
+		position: relative;
+		display: inline-flex;
+		align-items: center;
+		gap: var(--space-2);
+		min-height: var(--touch-target);
+		padding: 0 var(--space-4) 0 var(--space-3);
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-full);
+		background: var(--color-surface-1);
+		font-size: var(--text-sm);
+		font-weight: var(--weight-semibold);
+		color: var(--color-text);
+		transition:
+			border-color var(--duration-fast) var(--ease-standard),
+			transform var(--duration-fast) var(--ease-out);
+	}
+
+	.actions :global(.action[aria-busy='true'] svg) {
+		animation: shown 0s 150ms reverse forwards;
+	}
+
+	.actions :global(.action[aria-busy='true'])::before {
+		content: '';
+		position: absolute;
+		top: 50%;
+		left: calc(var(--space-3) + 1px);
+		width: 16px;
+		height: 16px;
+		margin-top: -8px;
+		border: 2px solid color-mix(in srgb, currentColor 25%, transparent);
+		border-top-color: currentColor;
+		border-radius: var(--radius-full);
+		opacity: 0;
+		animation:
+			shown 0s 150ms forwards,
+			spin 0.8s linear infinite;
+	}
+
+	@keyframes shown {
+		from {
+			opacity: 0;
+		}
+		to {
+			opacity: 1;
+		}
 	}
 
 	.weeks {
@@ -183,18 +248,21 @@
 
 	@media (hover: hover) and (pointer: fine) {
 		a.step:hover,
-		.pill:hover {
+		.pill:hover,
+		.actions :global(.action:hover) {
 			border-color: var(--color-border-strong);
 		}
 	}
 
 	a.step:active,
-	.pill:active {
+	.pill:active,
+	.actions :global(.action:active) {
 		transform: scale(0.94);
 	}
 
 	.step:focus-visible,
-	.pill:focus-visible {
+	.pill:focus-visible,
+	.actions :global(.action:focus-visible) {
 		outline: 2px solid var(--color-accent-ring);
 		outline-offset: -2px;
 	}

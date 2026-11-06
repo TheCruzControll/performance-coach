@@ -7,6 +7,7 @@ import { otherTable, strengthTable } from './reducers/tables';
 import {
 	currentExercise,
 	nextExercise,
+	pairBySetIndex,
 	plannedVsLogged,
 	previousFor,
 	progress,
@@ -283,5 +284,25 @@ describe('plannedVsLogged', () => {
 		expect(plannedVsLogged(view([START]), 3).map((r) => r.planned)).toEqual(
 			KIT.exercises.find((e) => e.exercise.id === RDL)!.sets
 		);
+	});
+});
+
+describe('pairBySetIndex', () => {
+	it('numbers any planned list from 1 and gives each index to the first set logged at it', () => {
+		const logged = [
+			{ setIndex: 2, id: 'x' },
+			{ setIndex: 1, id: 'y' },
+			{ setIndex: 1, id: 'z' },
+			{ setIndex: 4, id: 'w' }
+		];
+		const rows = pairBySetIndex(['a', 'b', 'c'], logged);
+		expect(rows.map((r) => [r.setIndex, r.planned, r.logged?.id ?? null])).toEqual([
+			[1, 'a', 'y'],
+			[1, null, 'z'],
+			[2, 'b', 'x'],
+			[3, 'c', null],
+			[4, null, 'w']
+		]);
+		expect(pairBySetIndex([], [])).toEqual([]);
 	});
 });
