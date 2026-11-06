@@ -41,6 +41,20 @@ describe('newGoal', () => {
 			}
 		});
 	});
+
+	it('starts a general goal blank too, which the schema refuses until it says what and how', () => {
+		const draft = newGoal('general');
+		expect(draft).toEqual({ ...newGoal(), kind: 'general' });
+		expect(validate(SCHEMAS.goal, draft)).toEqual({
+			ok: false,
+			errors: {
+				title: 'Give this goal a name',
+				disciplines: 'Pick at least one discipline',
+				focus: 'What do you want to improve?',
+				measure: 'How will you know it’s working?'
+			}
+		});
+	});
 });
 
 describe('goalDraft', () => {
@@ -93,7 +107,7 @@ describe('goalDraft', () => {
 		expect(goalDraft(goal)).toEqual({ ...filled, id: goal.id });
 	});
 
-	it('posts back what the sheet does not show: a general goal’s fields and the notes', () => {
+	it('edits a general goal as stored, and posts back the notes the sheet does not show', () => {
 		const general = stored({
 			kind: 'general',
 			title: 'Keep my strength',
@@ -151,6 +165,19 @@ describe('goalSummary', () => {
 			measure: 'e1RM trend'
 		});
 		expect(goalSummary(general)).toBe('Deadlift strength · e1RM trend');
+	});
+
+	it('says by when a general goal is due, when it has a target date', () => {
+		const general = stored({
+			kind: 'general',
+			eventType: null,
+			eventDate: null,
+			weightClass: null,
+			focus: 'Deadlift strength',
+			measure: 'e1RM trend',
+			targetDate: '2027-06-30'
+		});
+		expect(goalSummary(general)).toBe('Deadlift strength · e1RM trend · by 30 Jun 2027');
 	});
 });
 
