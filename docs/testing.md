@@ -178,8 +178,9 @@ Specs:
   sits under fixed chrome at rest (landing CTAs, Coach composer); compact segmented controls keep
   a 44 px hit area.
 - `plate-calculator.e2e.ts` — Train's lazy plate-calculator sheet (no service worker, chunks
-  routed): its code is not in Train's load and arrives on the first tap, which opens the sheet
-  once it does (the row busy meanwhile); a failed fetch on hover says nothing, a failed tap shows
+  routed): its code is not in Train's load and arrives on the first tap, through the import
+  alone (no modulepreload tag, whose failure WebKit would keep), which opens the sheet once it
+  does (the row busy meanwhile); a failed fetch on hover says nothing, a failed tap shows
   a Retry notice under the row (44 px target, axe in both themes) that a later failed prefetch
   leaves in place; Retry back online opens the sheet, offline the notice stays, a tap that fails
   again online reloads Train with `?tool=plates`, and leaving Train mid-retry stays left (WebKit).

@@ -68,6 +68,13 @@ test('on a cold page the first tap opens the sheet, whose code is fetched on int
 	});
 
 	await openTrain();
+	const modulepreloads = () =>
+		page.evaluate(() =>
+			[...document.querySelectorAll<HTMLLinkElement>('link[rel="modulepreload"]')].map(
+				(l) => l.href
+			)
+		);
+	const preloaded = await modulepreloads();
 	await page.getByTestId('open-plates').tap();
 	await expect.poll(() => requested.length, { message: 'fetched on the tap' }).toBe(1);
 	await expect(page.getByTestId('plates-sheet')).toHaveCount(0);
@@ -81,6 +88,13 @@ test('on a cold page the first tap opens the sheet, whose code is fetched on int
 	await expect(sheet.getByTestId('plates-result')).toContainText('25 · 15');
 	await expect(page.getByTestId('open-plates').locator('..')).toHaveAttribute('aria-busy', 'false');
 	expect(requested).toHaveLength(1);
+	// Its code came through the import alone, never a <link rel=modulepreload>: WebKit answers
+	// every later import of a URL whose modulepreload failed with that failure, even after a
+	// reload, so Retry could never recover (vite.config.ts).
+	expect(
+		(await modulepreloads()).filter((href) => !preloaded.includes(href)),
+		'no modulepreload for the sheet'
+	).toEqual([]);
 });
 
 const failedNotice = (page: Page) =>

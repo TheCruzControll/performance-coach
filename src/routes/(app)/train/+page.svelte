@@ -54,9 +54,11 @@
 	}
 
 	// After a failure, a tap on Retry (or on the row again) imports again in place, which WebKit
-	// fetches anew. Chromium keeps a failed module fetch for the document's lifetime, and after a
-	// deploy the old chunk is gone: if the import fails again while online, Train reloads asking
-	// for the sheet (?tool=plates), which opens once its code arrives. Offline, the notice stays.
+	// fetches anew because the sheet's code has no modulepreload tag (a failed one WebKit never
+	// fetches again, reloads included: vite.config.ts). Chromium keeps a failed module fetch for
+	// the document's lifetime, and after a deploy the old chunk is gone: if the import fails again
+	// while online, Train reloads asking for the sheet (?tool=plates), which opens once its code
+	// arrives. Offline, the notice stays.
 	function openCalculator() {
 		retrying ||= failed;
 		failed = false;
