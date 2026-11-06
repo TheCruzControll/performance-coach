@@ -18,8 +18,9 @@
  *   record is unique by its workout.
  * - Rows are append-only except for audited edits (drizzle/<n>_training_log_guards.sql): an
  *   UPDATE that changes a row stamps updated_at and writes training_audit, with the actor from
- *   AUDIT_ACTOR_SETTING; one that changes nothing leaves no trace. DELETE is refused: workouts
- *   and sets are deleted softly (deleted_at). Only test and reset code bypasses this (ADR 0010).
+ *   AUDIT_ACTOR_SETTING; one that changes nothing leaves no trace. DELETE is refused: workouts,
+ *   sets and substitutions are deleted softly (deleted_at). Only test and reset code bypasses
+ *   this (ADR 0010).
  * - The generated columns use M1's exact factor: weight_kg beside the weight and unit as
  *   entered, and the pace of each run and segment.
  * - CHECKs cover the closed lists, the scales (RPE 1–10 in half steps, heart rate, recovery 1–5)
@@ -28,6 +29,10 @@
  * - Reps are the reps completed, as the metrics' LoggedSet has them; missed reps are attempts
  *   that failed, so a missed single is 0 reps and 1 missed. A set row is a LoggedSet (its
  *   exercise by id) and a workout row a LoggedSessionLoad.
+ * - A set is measured in reps, seconds or metres, and one that is not skipped records at least
+ *   one of them. An assisted set keeps its assistance in its own column, in the set's unit and
+ *   never beside a weight, so weight_kg and every read built on it (volume, rep maxes, e1RM)
+ *   leave assistance out.
  * - The history indexes are the ones the history queries (m3/26) use and db:explain (m3/33)
  *   measures. Descending columns are DESC NULLS FIRST, the order `order by … desc` asks for
  *   (drizzle's bare .desc() writes NULLS LAST, which such a query cannot use), and a query
@@ -90,6 +95,9 @@ const RPE_SCALE = [1, 10] as const;
 const HEART_RATE = [20, 250] as const;
 const RECOVERY_SCALE = [1, 5] as const;
 const SLEEP_HOURS = [0, 24] as const;
+/** A timed set, up to a day; missed reps per set, as the log schemas bound them (LOG_LIMITS). */
+const SET_SECONDS = [1, 86_400] as const;
+const MISSED_REPS = [0, 50] as const;
 
 /** Kilograms per unit: M1's exact factors (domain/units.ts). */
 const KG_PER_UNIT: Readonly<Record<WeightUnit, number>> = { kg: 1, lb: KG_PER_LB };
@@ -199,9 +207,11 @@ export const setRecords = pgTable(
 		weightKg: amount('weight_kg').generatedAlwaysAs((): SQL =>
 			inKg(setRecords.weight, setRecords.unit)
 		),
+		/** An assisted set's help, in the set's unit (lower is harder); never beside a weight. */
+		assistance: numeric('assistance', { precision: 6, scale: 2, mode: 'number' }),
 		/** Completed; null for a set measured in time or distance. */
 		reps: integer('reps'),
-		/** Attempted and failed. */
+		/** Attempted and failed, beside the reps done: a 1-of-5 set is 1 rep and 4 missed. */
 		missedReps: integer('missed_reps').notNull().default(0),
 		seconds: integer('seconds'),
 		metres: integer('metres'),
@@ -244,10 +254,18 @@ export const setRecords = pgTable(
 		// Missed reps only where reps are counted.
 		check(
 			'set_records_missed_reps_ck',
-			sql`${t.missedReps} >= 0 and (${t.missedReps} = 0 or ${t.reps} is not null)`
+			sql`${within(t.missedReps, MISSED_REPS)} and (${t.missedReps} = 0 or ${t.reps} is not null)`
 		),
-		check('set_records_seconds_ck', sql`${t.seconds} >= 1`),
+		check('set_records_seconds_ck', within(t.seconds, SET_SECONDS)),
 		check('set_records_metres_ck', sql`${t.metres} >= 1`),
+		// A set that is not skipped records what it is measured in.
+		check(
+			'set_records_measure_ck',
+			sql`${t.isSkipped} or num_nonnulls(${t.reps}, ${t.seconds}, ${t.metres}) > 0`
+		),
+		check('set_records_assistance_ck', sql`${t.assistance} > 0`),
+		// A weight (external or added) or an assistance, never both.
+		check('set_records_load_ck', sql`${t.weight} is null or ${t.assistance} is null`),
 		check('set_records_rpe_ck', halfSteps(t.rpe)),
 		// As setE1rm: a warm-up or a skipped set has no e1RM. (Spelled out for null: in SQL,
 		// null and false is false.)
@@ -385,8 +403,8 @@ export const recoveryNotes = pgTable(
 );
 
 /**
- * An exercise swapped in a workout. It stays on the session: it never becomes an exercise
- * preference, whatever its reason (only an explicit 'never prescribe this again' does).
+ * An exercise swapped in a workout, in its slot. It stays on the session: it never becomes an
+ * exercise preference, whatever its reason (only an explicit 'never prescribe this again' does).
  */
 export const workoutSubstitutions = pgTable(
 	'workout_substitutions',
@@ -399,6 +417,11 @@ export const workoutSubstitutions = pgTable(
 			.references(() => workouts.id),
 		/** The planned exercise it replaced (its lineage); null off plan. */
 		plannedExerciseLineageId: uuid('planned_exercise_lineage_id'),
+		/**
+		 * Its slot: the exercise's 1-based place in the workout, as its sets' exercise_position.
+		 * Null when the writer names none (M3's recordSubstitution, until it takes the slot).
+		 */
+		exercisePosition: integer('exercise_position'),
 		fromExerciseId: uuid('from_exercise_id')
 			.notNull()
 			.references(() => exercises.id, { onDelete: 'restrict' }),
@@ -407,10 +430,14 @@ export const workoutSubstitutions = pgTable(
 			.references(() => exercises.id, { onDelete: 'restrict' }),
 		reason: text('reason').$type<SubstitutionReason>().notNull(),
 		createdAt: createdAt(),
-		updatedAt: updatedAt()
+		updatedAt: updatedAt(),
+		deletedAt: deletedAt()
 	},
 	(t) => [
 		uniqueIndex('workout_substitutions_client_mutation_id_uq').on(t.clientMutationId),
+		// A workout's substitutions, deleted ones included (the device keeps their tombstones).
+		index('workout_substitutions_workout_idx').on(t.workoutId),
+		check('workout_substitutions_exercise_position_ck', sql`${t.exercisePosition} >= 1`),
 		check('workout_substitutions_exercises_ck', sql`${t.fromExerciseId} <> ${t.toExerciseId}`)
 	]
 );

@@ -13,10 +13,11 @@ import {
 	sectionContext
 } from '../../../src/lib/server/forms/sections';
 import { createGoal, saveBasics, saveExperience } from '../../../src/lib/server/services/profile';
+import { bodyDraft, bodyPayload, type BodySaved } from '../../../src/lib/ui/profile/body';
 import { EDITORS } from '../../../src/lib/ui/profile/editors';
 import { SECTIONS } from '../../../src/lib/ui/profile/sections';
 import { withRollback } from '../helpers';
-import { eventGoal, makeOwner } from './fixtures';
+import { clock, eventGoal, makeOwner } from './fixtures';
 
 const equipment = {
 	gymType: 'home',
@@ -52,6 +53,57 @@ describe('a Profile section', () => {
 			for (const key of SECTION_KEYS.filter((k) => k !== 'goals')) {
 				expect(profileSection(key).save, key).toBeTypeOf('function');
 			}
+		});
+	});
+
+	it('Name & units starts from the owner’s name in kg and km, then loads what it saved', async () => {
+		await withRollback(async (db) => {
+			const owner = await makeOwner(db, 'Niko Cruz');
+			const basics = profileSection('basics');
+			expect(await basics.load(owner, { db })).toMatchObject({
+				name: 'Niko Cruz',
+				weightUnit: 'kg',
+				distanceUnit: 'km'
+			});
+			await saveBasics(
+				owner,
+				{ name: 'Niko Cruz', weightUnit: 'kg', distanceUnit: 'km', timeZone: 'Europe/London' },
+				{ db }
+			);
+			const edited = { name: 'Niko', weightUnit: 'lb', distanceUnit: 'mi' };
+			await basics.save!(owner, edited, { db, source: 'profile' });
+			// The editor sends no time zone: the saved one stays.
+			expect(await basics.load(owner, { db })).toMatchObject({
+				...edited,
+				timeZone: 'Europe/London'
+			});
+		});
+	});
+
+	it('Body edits the profile and today’s weight, and a converted weight left as it was records nothing', async () => {
+		await withRollback(async (db) => {
+			const owner = await makeOwner(db);
+			const time = clock('2026-11-05T09:00:00Z');
+			const deps = { db, now: time.now, source: 'profile' as const };
+			const section = profileSection('body');
+			const blank = bodyDraft((await section.load(owner, deps)) as BodySaved);
+			expect(blank).toMatchObject({ weightUnit: 'kg', bodyWeight: null, nutritionPhase: 'none' });
+
+			await section.save!(
+				owner,
+				bodyPayload({ ...blank, bodyWeight: 82.4, targetWeight: 78 }),
+				deps
+			);
+			await saveBasics(owner, { name: 'Niko', weightUnit: 'lb', distanceUnit: 'km' }, { db });
+			time.advanceDays(1);
+			const inPounds = bodyDraft((await section.load(owner, deps)) as BodySaved);
+			// The 78 kg target too: saved as it shows, it stays 78 kg, not 78 lb.
+			expect(inPounds).toMatchObject({ weightUnit: 'lb', bodyWeight: 181.7, targetWeight: 172 });
+			await section.save!(owner, bodyPayload({ ...inPounds, nutritionPhase: 'cut' }), deps);
+			expect(await section.load(owner, deps)).toMatchObject({
+				profile: { nutritionPhase: 'cut', targetWeight: 172, targetWeightUnit: 'lb' },
+				bodyWeight: [{ value: 82.4, unit: 'kg', measuredOn: '2026-11-05', source: 'profile' }]
+			});
 		});
 	});
 

@@ -240,7 +240,26 @@ totals, averages, trends and comparisons never set part of a week against whole 
 
 ### Trends (`analytics/trend.ts`)
 
-Not built yet (m6/02, trend-classifier).
+Whether a series is really moving or only varying, decided once for every screen, review and
+coach answer (the trend classification ADR). Every series varies from week to week: sleep, food
+and a busy day move an e1RM or a pace a little either way. **Normal variation** means the ups and
+downs are no bigger, and no more one-sided, than that everyday scatter. A **real trend** is a
+change that is consistent in direction, unlikely to be chance, and big enough to matter.
+
+- `classifyTrend(points, { direction, mpc?, minPoints?, minSpanDays?, alpha? })` → `real_trend`
+  (with `direction` up or down and `good`, null when the metric has no better way),
+  `normal_variation`, or `insufficient_data` (with `needs: { points, days }` still to come).
+  Every result carries `n`, `spanDays`, `slopePerWeek`, `change`, `changePct`, `noise`,
+  `minChange`, `p`, `outliers` and `method` (`TREND_METHOD`, `theil-sen+mann-kendall/1`).
+- Points in progress and gaps are dropped first; pass the weeks of `trendWindow(period)`.
+- A verdict needs 6 points over 21 days (`TREND_MIN_POINTS`, `TREND_MIN_SPAN_DAYS`). It is real
+  when the Mann–Kendall p is under 0.05 (`TREND_ALPHA`) and the Theil–Sen change over the window
+  is at least the larger of the metric's minimal practical change (`mpc`: `abs` in its units,
+  `rel` a share of the line's starting level) and twice the noise (`TREND_NOISE_MULTIPLE`).
+- Points more than 3 robust SDs off the line (`TREND_OUTLIER_SDS`) are listed in `outliers` and
+  kept in every figure; a real trend must also be real with any one of them left out.
+- Deterministic and independent of the order of the points; `RangeError` for a value that is not
+  finite or an option out of range.
 
 ### Strength (`analytics/strength.ts`)
 
@@ -248,7 +267,43 @@ Not built yet (m6/03, strength-analytics).
 
 ### Prescribed against actual (`analytics/prescribed.ts`)
 
-Not built yet (m6/04, prescribed-vs-actual).
+Every logged set is paired with the prescription line it was logged against, so actual against
+target RPE, missed reps, completion and 'consistently below target' have one definition for the
+dashboards, the reviews and the progression rules.
+
+- `matchPrescription({ lineage, exerciseId, lines }, sets, { unit, e1rmKg? })` → each set by
+  index: `done`, `skipped`, `missing` or `extra`, with its `target` and `actual`. Sets pair with
+  lines by M4's slot numbering (`pairBySetIndex` in `workout/selectors.ts`, which
+  `plannedVsLogged` uses too): the lines give the planned sets in order, and the first set
+  logged at index i, of the planned exercise's lineage, takes the i-th.
+  - Warm-up and ramp lines (`NON_WORKING_ROLES`) take warm-up sets; every other line, an unknown
+    role included, takes working sets. A set of the other kind leaves its line missing and is
+    extra, as is a set the device marked extra, a set beyond the lines and a second set at one
+    index. A skip has no kind (`set.skip` carries none), so it takes the line at its index.
+  - A target's `kg` is M3's `prescribedLoad` in the owner's unit, in kg: absolute, percent_1rm
+    from its reference, from_e1rm only through the `e1rmKg` resolver; null for RPE-picked loads.
+  - `rpeDeviation` is actual minus target RPE (positive: harder than prescribed), null when either
+    is missing, never 0. `repsShort` is the reps under the line's lower bound; `hit` whether its
+    reps, seconds or metres were reached.
+  - A substitute's sets (another exercise at the planned lineage) fill their slots but compare
+    against nothing.
+- `exposure(match, day)` → one planned exercise in one workout: working sets prescribed,
+  completed and extra, missed reps (per set, the larger of those logged and the reps short), the
+  deviations and their mean, the top set (the first top-set line's, else the heaviest working set
+  by M4's `topSetOf`) with its load in kg, and whether every target was hit. `substituted` when
+  only a substitute's sets were done.
+- `consistency(exposures, window = 3)` → `below`, `above`, `within` or `too_few`, from the lift's
+  own last `window` exposures by day, with the ones that missed reps. Below or above is a mean
+  deviation of at least 1.0 either way in 2 of them (`CONSISTENCY`); too few until 2 have an RPE.
+- `rpeDeviationSummary(exposures)` → the mean, the mean absolute deviation, and the count and
+  share within ±0.5 (`RPE_WITHIN`), overall, by exercise and by week (Monday).
+- `sessionCompletion(session, matches | null, today)` → `completed`, `partial`, `skipped`,
+  `missed` or `pending`. A completed workout is completed when it did `COMPLETED_SHARE` (80 %) of
+  its prescribed working sets, else partial, and wins over a stored skip; without one, a session
+  is skipped by choice, missed once its day has passed, and pending until then.
+
+`CONSISTENCY`, `RPE_WITHIN` and `COMPLETED_SHARE` are coaching judgements the owner can change in
+one place.
 
 ### Running (`analytics/running.ts`)
 
