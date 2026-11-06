@@ -265,6 +265,15 @@ Unit tests (`src/lib/domain/training/`, `src/lib/domain/exercises/`, `src/lib/do
   `pnpm check`); `validate()` is the function the profile schemas re-export; and the runtime
   imports reachable from `domain/training/index.ts` include no schemas, edits or zod, with the
   walk shown to catch a re-export, a zod import and an inline `type` import.
+- **Training metrics** (`training/metrics.test.ts`): a set's e1RM is M1's `estimateOneRepMax`
+  in kg (with and without an RPE, pounds converted exactly) and none for warm-ups, skipped sets
+  and RPE under 6; the best e1RM is always an estimate; best e1RM and rep records give a tie to
+  the latest set in any order, and rep records ignore warm-ups; bench is 1 hard set for chest and
+  0.5 for triceps and front delts, RPE-6 and warm-up sets never count, a group is credited once
+  per set and weeks split on the owner's Monday; planned and logged hard sets agree on the same
+  sets, and runs and classes (a strength class included) credit none; session load is M1's
+  `sessionLoad` for logged and planned sessions; weekly distance mixes km and mi exactly, free of
+  floating-point noise, and keeps a Sunday-evening run in its week.
 
 ### Schema
 
