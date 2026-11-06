@@ -34,6 +34,7 @@ function built(source: string): { file: string; css?: string[] } {
 
 const chunkFile = (source: string) => built(source).file;
 
+const EDITOR = 'src/lib/ui/profile/GoalsEditor.svelte';
 const SHEET = 'src/lib/ui/profile/GoalSheet.svelte';
 
 /** A fight in March and a marathon in December, as the sheet saves them. */
@@ -340,6 +341,25 @@ test('goal saves belong to Goals, which has no Save of its own', async ({ reques
 	expect((await post('/profile/equipment?/saveGoal')).status()).toBe(404);
 	expect((await post('/profile/goals?/save')).status()).toBe(404);
 	expect(await query('select id from training_goals')).toEqual([]);
+});
+
+test('the page carries none of the editor’s styles: they arrive with the editor', async ({
+	page,
+	request
+}) => {
+	const styles = built(EDITOR).css ?? [];
+	expect(styles.length).toBeGreaterThan(0);
+	const html = await (await request.get('/profile/goals')).text();
+	for (const file of styles) {
+		// Neither linked nor inlined, so they never hold up the first paint.
+		expect(html).not.toContain(path.basename(file));
+		expect(html).not.toContain(readFileSync(`${CLIENT}/${file}`, 'utf8').trim().slice(0, 120));
+	}
+	await profileAction(request, '/profile/goals?/saveGoal', FIGHT);
+	await gotoHydrated(page, '/profile/goals');
+	await editorReady(page);
+	const row = page.getByTestId('goal-row').first();
+	expect(await row.evaluate((el) => getComputedStyle(el).borderTopLeftRadius)).not.toBe('0px');
 });
 
 test.describe('with the network in the test’s hands', () => {
