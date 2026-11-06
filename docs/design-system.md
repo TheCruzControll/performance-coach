@@ -269,6 +269,13 @@ top as screen chrome.
 One line per screen as its desktop layout lands (the auth screens, the main screens, then each
 later-pass screen).
 
+- **Auth screens** (`AuthScreen`: `/`, `/setup`, `/recover`, `/recover/passkey`): from 1024 px
+  `<main>` itself is a two-column grid (never `display: contents`: the skip link's target keeps
+  its box). The brand, the headline and the footer sit at the left; the body and the panel sit at
+  the right as one `--color-surface-1` card, 28 rem wide and vertically centred, with every notice
+  and error inside it. The frame is at most `--content-wide`, and the watermark is larger and stays
+  inside it. Tablets keep the phone's column, pinned to the thumb zone, at `--content-readable`,
+  the watermark fading out before the frame's edge. CSS only: no route gains initial JS.
 - **Session** (`/train/session/[key]`): readable, one column centred beside the rail; its stats,
   exercise cards and run timeline keep the phone's order, and Back has hover and focus states.
 
@@ -345,8 +352,9 @@ program components on a fixture week, their pending and status states included.
 
 Auth screens (`/`, `/setup`, `/recover`, `/recover/passkey`) share `src/routes/AuthScreen.svelte`:
 brand row, an editorial display headline, the brand mark as a quiet watermark, and the one action
-panel pinned to the thumb zone. Security (`/profile/security`) uses grouped rows on `Surface`s,
-destructive actions behind a confirming `BottomSheet`, and toasts for outcomes.
+panel pinned to the thumb zone (a card beside the headline from 1024 px: Responsive layout →
+Screens). Security (`/profile/security`) uses grouped rows on `Surface`s, destructive actions
+behind a confirming `BottomSheet`, and toasts for outcomes.
 
 ## Accessibility checklist (applies to every new component)
 
