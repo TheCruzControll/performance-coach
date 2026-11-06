@@ -1,10 +1,12 @@
 <!--
   @component
-  Add or edit one goal in a bottom sheet, which GoalsEditor loads on first intent. An event goal
-  has a name, its disciplines (your own one included), the event (suggested for the disciplines
-  picked), its date, a weight class, a target and its requirements. A general goal, which it
-  cannot add yet, keeps what it does not show. Checked with the shared schema, then saved
-  through the route's `?/saveGoal` action, which answers with the ranking.
+  Add or edit one goal in a bottom sheet, which GoalsEditor loads on first intent. Either kind
+  has a name and its disciplines (your own one included). An event goal adds the event
+  (suggested for the disciplines picked), its date, a weight class, a target and its
+  requirements; a general goal adds what to improve, how it is measured and a target date.
+  Switching kind keeps what was typed for the other, but only the chosen kind's fields are
+  saved. Checked with the shared schema, then saved through the route's `?/saveGoal` action,
+  which answers with the ranking.
 -->
 <script lang="ts">
 	import { tick } from 'svelte';
@@ -20,6 +22,7 @@
 	import Button from '../components/Button.svelte';
 	import ChoiceGroup from '../components/ChoiceGroup.svelte';
 	import Notice from '../components/Notice.svelte';
+	import SegmentedControl from '../components/SegmentedControl.svelte';
 	import TextArea from '../components/TextArea.svelte';
 	import TextField from '../components/TextField.svelte';
 	import type { GoalDraft } from './goals';
@@ -48,9 +51,19 @@
 		label: DISCIPLINE_INFO[d].short,
 		tone: DISCIPLINE_INFO[d].tone
 	}));
+	const kinds: { value: GoalDraft['kind']; label: string }[] = [
+		{ value: 'event', label: 'Event' },
+		{ value: 'general', label: 'General' }
+	];
 	const suggestions = $derived(
 		[...new Set(goal.disciplines.flatMap((d) => EVENT_TYPE_SUGGESTIONS[d]))].slice(0, 6)
 	);
+
+	/** The errors on screen were said about the other kind's fields; Save checks this one. */
+	function switched() {
+		errors = {};
+		failed = null;
+	}
 
 	async function submit(event: MouseEvent) {
 		const button = event.currentTarget as HTMLElement;
@@ -84,11 +97,18 @@
 	data-testid="goal-sheet"
 >
 	<div class="fields" bind:this={fields}>
+		<SegmentedControl
+			label="Kind of goal"
+			bind:value={goal.kind}
+			options={kinds}
+			onchange={switched}
+			data-testid="goal-kind"
+		/>
 		<TextField
 			label="Goal"
 			bind:value={goal.title}
 			error={errors.title}
-			placeholder="First Muay Thai fight"
+			placeholder={goal.kind === 'event' ? 'First Muay Thai fight' : 'A stronger deadlift'}
 			maxlength={80}
 		/>
 		<ChoiceGroup
@@ -156,6 +176,28 @@
 				rows={2}
 				placeholder="Make weight the day before; rules; travel…"
 				maxlength={500}
+			/>
+		{:else}
+			<TextField
+				label="What to improve"
+				bind:value={goal.focus}
+				error={errors.focus}
+				placeholder="Deadlift strength, 10K pace, upper-body size…"
+				maxlength={200}
+			/>
+			<TextField
+				label="How it’s measured"
+				bind:value={goal.measure}
+				error={errors.measure}
+				placeholder="e1RM trend, a 10K time trial, the tape…"
+				maxlength={200}
+			/>
+			<TextField
+				label="Target date"
+				type="date"
+				bind:value={goal.targetDate}
+				error={errors.targetDate}
+				optional
 			/>
 		{/if}
 	</div>
