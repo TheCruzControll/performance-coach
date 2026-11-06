@@ -8,7 +8,7 @@
  * - Errors carry dotted paths through ../validation.ts, such as
  *   `blocks.0.weeks.0.sessions.2.exercises.0.sets.1.loadValue`.
  * - Open vocabularies are checked here, not by Postgres. The prescriptions tables' CHECKs mirror
- *   the structural rules, so a change to PRESCRIPTION_LIMITS changes them too.
+ *   the structural rules, so a change to PRESCRIPTION_LIMITS or LOAD_NEEDS changes them too.
  */
 import * as z from 'zod/mini';
 import { addDays, daysBetween, mondayOf } from '../calendar.ts';
@@ -138,8 +138,8 @@ export const customExerciseSchema = z
 
 // ---- strength prescriptions -----------------------------------------------------------------
 
-/** What each load kind needs; it leaves every other load field null. */
-const LOAD_NEEDS = {
+/** What each load kind needs, leaving every other load field null (a set_prescriptions CHECK). */
+export const LOAD_NEEDS = {
 	absolute: ['loadValue', 'loadUnit'],
 	percent_1rm: ['loadValue', 'loadBasis', 'reference1rm', 'reference1rmUnit'],
 	from_e1rm: ['loadValue'],
