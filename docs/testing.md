@@ -355,9 +355,10 @@ WebKit project has never run locally (WebKit is not installed in the build envir
 Safari behaviour (glass, PWA install, status bar) is unverified. The first CI run, including its
 WebKit screenshots, must be attached to the M1 PR as evidence.
 
-Screenshots from the `iphone-chromium` project do **not** show the glass blur: headless Chromium
-does not paint `backdrop-filter` under mobile emulation (verified: the same page blurs with
-`isMobile` off). Judge glass on WebKit screenshots or a device.
+Do not judge the glass from e2e screenshots, where text behind the 92% glass can show through:
+headless Chromium's `blur(32px)` only dims the text behind the tab labels (checked on Linux, as in
+CI), and Playwright's WebKit painted no `backdrop-filter` into screenshots on macOS (`invert(1)` on
+the nav left them untouched; unchecked on CI's Linux WebKit). Judge glass on a device.
 
 ### Real-device checklist (merge gate for UI milestones)
 
