@@ -212,20 +212,26 @@ export async function revokeOtherSessions(
 	return count;
 }
 
-/** Sign out: revoke the presented session (if any). Idempotent. */
+/**
+ * Sign out: revoke the presented session (if any). Idempotent. Only a request that ends no
+ * session counts against the per-client limit: everyone behind one NAT or Wi-Fi shares that
+ * bucket, and filling it must never keep a live session signed in. A token ends its session
+ * only once, so skipping the limit for it cannot be used to flood.
+ */
 export async function signOut(
 	token: string | undefined,
 	request: AuthRequest,
 	deps: AuthDeps = {}
 ): Promise<void> {
 	const { db, now } = resolveDeps(deps);
-	await enforceRateLimit('signout', { ip: request.ip }, request, { db, now });
 	const revoked = await revokeToken(token, 'signout', { db, now });
-	if (revoked) {
-		await recordAuthEvent(db, request, {
-			type: 'signout',
-			ownerId: revoked.ownerId,
-			sessionId: revoked.id
-		});
+	if (!revoked) {
+		await enforceRateLimit('signout', { ip: request.ip }, request, { db, now });
+		return;
 	}
+	await recordAuthEvent(db, request, {
+		type: 'signout',
+		ownerId: revoked.ownerId,
+		sessionId: revoked.id
+	});
 }
