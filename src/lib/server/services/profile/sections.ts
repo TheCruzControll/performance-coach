@@ -2,7 +2,9 @@
  * Training-profile sections saved as a whole: experience, strength baselines, running and
  * Muay Thai specifics, equipment, injuries, exercise likes/dislikes, schedule. Each save
  * validates with the shared schema (src/lib/domain/profile/schemas.ts), runs in one
- * transaction, and keeps ids (and history, for baselines) for what did not change.
+ * transaction, and keeps ids (and history, for baselines) for what did not change. A save that
+ * replaces a set of rows takes its section's lock first, so concurrent saves of one section (a
+ * double-tapped Save, a second tab) run one after the other and the last one is stored whole.
  */
 import { estimateOneRepMax } from '../../../domain/e1rm';
 import { BASELINE_SOURCE_KIND, RACE_DISTANCE_INFO } from '../../../domain/profile/catalog';
@@ -59,6 +61,7 @@ export async function saveExperience(
 	return measure('db', () =>
 		db.transaction(async (tx) => {
 			const repo = createProfileRepository(tx);
+			await repo.lockSection(ownerId, 'experience');
 			await repo.ensureProfile(ownerId);
 			await repo.replaceExperience(
 				ownerId,
@@ -121,6 +124,7 @@ export async function saveBaselines(
 	return measure('db', () =>
 		db.transaction(async (tx) => {
 			const repo = createProfileRepository(tx);
+			await repo.lockSection(ownerId, 'baselines');
 			await repo.ensureProfile(ownerId);
 			const at = now();
 			const current = await repo.listCurrentBaselines(ownerId);
@@ -232,6 +236,7 @@ export async function saveSpecifics(
 	await measure('db', () =>
 		db.transaction(async (tx) => {
 			const repo = createProfileRepository(tx);
+			await repo.lockSection(ownerId, 'specifics');
 			await repo.ensureProfile(ownerId);
 			const at = now();
 			if (data.running) {
@@ -317,6 +322,7 @@ export async function saveInjuries(
 	return measure('db', () =>
 		db.transaction(async (tx) => {
 			const repo = createProfileRepository(tx);
+			await repo.lockSection(ownerId, 'injuries');
 			await repo.ensureProfile(ownerId);
 			const at = now();
 			const existing = new Map((await repo.listInjuries(ownerId)).map((row) => [row.id, row]));
@@ -371,6 +377,7 @@ export async function saveExercisePreferences(
 	return measure('db', () =>
 		db.transaction(async (tx) => {
 			const repo = createProfileRepository(tx);
+			await repo.lockSection(ownerId, 'exercisePreferences');
 			await repo.ensureProfile(ownerId);
 			await repo.replaceExercisePreferences(ownerId, items, now());
 			return (await repo.listExercisePreferences(ownerId)).map(toExercisePreference);
@@ -407,6 +414,7 @@ export async function saveSchedule(
 	await measure('db', () =>
 		db.transaction(async (tx) => {
 			const repo = createProfileRepository(tx);
+			await repo.lockSection(ownerId, 'schedule');
 			await repo.ensureProfile(ownerId);
 			const at = now();
 			await repo.upsertSchedule(ownerId, schedule, at);
