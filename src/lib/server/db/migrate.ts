@@ -15,7 +15,9 @@ import { seedExerciseCatalogue, type CatalogueSeed } from './seed/exercises.ts';
 export const LOCAL_DATABASE_URLS = {
 	development: 'postgres://coach:coach@localhost:5432/coach_dev',
 	test: 'postgres://coach:coach@localhost:5432/coach_test',
-	e2e: 'postgres://coach:coach@localhost:5432/coach_e2e'
+	e2e: 'postgres://coach:coach@localhost:5432/coach_e2e',
+	/** `pnpm db:explain`'s scratch database, reset and loaded on every run. */
+	explain: 'postgres://coach:coach@localhost:5432/coach_explain'
 } as const;
 
 export const MIGRATIONS_FOLDER = path.resolve(process.cwd(), 'drizzle');
@@ -87,13 +89,13 @@ async function countApplied(client: pg.Client): Promise<number> {
 
 /**
  * Drop everything in a disposable database and re-apply migrations.
- * Refuses to touch any database whose name does not end in `_test` or `_e2e`.
+ * Refuses to touch any database whose name does not end in `_test`, `_e2e` or `_explain`.
  */
 export async function resetDatabase(url: string): Promise<MigrationRun> {
 	const name = databaseName(url);
-	if (!/_(test|e2e)$/.test(name)) {
+	if (!/_(test|e2e|explain)$/.test(name)) {
 		throw new Error(
-			`Refusing to reset database "${name}": only databases ending in _test or _e2e can be reset.`
+			`Refusing to reset database "${name}": only databases ending in _test, _e2e or _explain can be reset.`
 		);
 	}
 	const client = new pg.Client(connectionConfig(url));

@@ -1,0 +1,559 @@
+/**
+ * The on-device workout store (PRD §9, §15, §18; the offline workout sync ADR): the device is the
+ * first home of every workout action, and nothing here touches the network.
+ *
+ * - It keeps inputs, not derived state: per workout the kit, the server's canonical rows and the
+ *   device state, plus the outbox. A screen shows the projection over them with its route's
+ *   reducer table, and so does a reload: restore reads IndexedDB alone.
+ * - dispatch applies an action and its follow-ups to the in-memory view at once, then writes the
+ *   outbox entries and the device state in one readwrite transaction. A superset's set.log and its
+ *   goTo, or an exercise.create and its substitution, are written together or not at all.
+ * - A write that fails (quota, private mode) keeps the action in the view, marked not saved; the
+ *   next write, or retry, writes it first, so the outbox keeps the order of the actions.
+ * - Writes are serial within a page. Each one reads what other tabs wrote in its transaction, so
+ *   none is lost; the device state is the last tab's to write.
+ * - One workout is in progress at a time; a second workout.start is refused.
+ * - It closes for good when the database is deleted or upgraded under it (db.ts).
+ * Plain .ts with no runes, so Vitest's unit project runs it against fake-indexeddb.
+ */
+import { entityKey } from '#lib/domain/workout/index.ts';
+import type {
+	CanonicalWorkout,
+	DeviceState,
+	EntityKey,
+	LocalAction,
+	Mutation,
+	StartKit,
+	SyncResult,
+	WorkoutView
+} from '#lib/domain/workout/index.ts';
+import { applyLocal, applyMutation, replay, viewOf } from '#lib/domain/workout/project.ts';
+import type { AnyTable, WorkoutState } from '#lib/domain/workout/project.ts';
+import { initialDevice } from '#lib/domain/workout/reducers/device.ts';
+import type { IDBPTransaction, StoreNames } from 'idb';
+import { openWorkoutDb, StoreClosedError } from './db.ts';
+import type { CloseReason, StoredWorkout, WorkoutDb, WorkoutSchema } from './db.ts';
+import { OUTBOX_INDEXES, STORES } from './names.ts';
+import { applyResults, queued } from './outbox-rules.ts';
+import type { OutboxEntry } from './outbox-rules.ts';
+
+const DAY = 24 * 60 * 60 * 1000;
+
+/**
+ * prune's ages: a finished workout whose changes have all synced after a day (History reads the
+ * server), a saved kit after a week. An unsynced workout is never pruned.
+ */
+export const PRUNE_AFTER = { finishedMs: DAY, kitMs: 7 * DAY };
+
+export type Action = Mutation | LocalAction;
+
+/** saved: in IndexedDB; not-saved: kept in the view for retry; refused: another workout is active. */
+export type WriteOutcome = 'saved' | 'not-saved' | 'refused';
+
+/** quota: the device is out of space; storage: any other IndexedDB failure (private mode). */
+export type NotSavedReason = 'quota' | 'storage';
+
+/** An action shown but not saved on this device: its id and the rows it touches. */
+export interface NotSaved {
+	id: string;
+	entities: EntityKey[];
+	reason: NotSavedReason;
+}
+
+export interface WorkoutSnapshot {
+	workoutId: string;
+	/** null while no rows hold the workout. */
+	view: WorkoutView | null;
+	notSaved: NotSaved[];
+}
+
+export interface Dispatched {
+	/** The action's id: its first mutation's, or a new one for device actions alone. */
+	id: string;
+	/** The view with the action applied, before anything is written. */
+	snapshot: WorkoutSnapshot;
+	saved: Promise<WriteOutcome>;
+}
+
+export type WorkoutHeader = Pick<StoredWorkout, 'kind' | 'title' | 'startedAt' | 'status'>;
+const headerOf = ({ kind, title, startedAt, status }: StoredWorkout): WorkoutHeader => ({
+	kind,
+	title,
+	startedAt,
+	status
+});
+
+/** A workout with changes in the outbox; its header is null when only the changes remain. */
+export interface UnsyncedWorkout {
+	workoutId: string;
+	pending: number;
+	workout: WorkoutHeader | null;
+}
+
+export type StoreChange =
+	| { type: 'view' | 'saved' | 'not-saved'; workoutId: string }
+	| { type: 'closed'; reason: CloseReason };
+
+export class ActiveWorkoutError extends Error {
+	override name = 'ActiveWorkoutError';
+	readonly workoutId: string;
+	constructor(workoutId: string) {
+		super(`Workout ${workoutId} is already in progress on this device`);
+		this.workoutId = workoutId;
+	}
+}
+
+export interface StoreOptions {
+	table: AnyTable;
+	/** Epoch ms on this device: backoff after a sync response, kit and prune ages. */
+	now?: () => number;
+	random?: () => number;
+}
+
+export interface WorkoutStore {
+	readonly closed: CloseReason | null;
+	/** The workout in progress on this device, read into memory; null when there is none. */
+	getActive(): Promise<WorkoutSnapshot | null>;
+	/** A workout read into memory again, with what this page has not written yet on top. */
+	load(workoutId: string): Promise<WorkoutSnapshot | null>;
+	/** What memory holds for a workout, without reading anything. */
+	snapshot(workoutId: string): WorkoutSnapshot | null;
+	listUnsynced(): Promise<UnsyncedWorkout[]>;
+	/** Throws StoreClosedError, ActiveWorkoutError, or RangeError for a workout not loaded. */
+	dispatch(action: Action, ...followUps: Action[]): Dispatched;
+	retry(actionId: string): Promise<WriteOutcome>;
+	/** A sync response: entries leave the outbox or are parked, the canonical rows are stored. */
+	acknowledge(results: readonly SyncResult[]): Promise<void>;
+	saveKit(lineage: string, kit: StartKit): Promise<void>;
+	getKit(lineage: string): Promise<StartKit | null>;
+	prune(): Promise<{ workouts: string[]; kits: string[] }>;
+	onChange(listener: (change: StoreChange) => void): () => void;
+}
+
+/** Best effort: Safari evicts a site's storage after 7 days unused unless it is installed. */
+export async function requestPersistence(
+	storage: Pick<StorageManager, 'persist'> | undefined = globalThis.navigator?.storage
+): Promise<boolean> {
+	try {
+		return (await storage?.persist()) ?? false;
+	} catch {
+		return false;
+	}
+}
+
+// ---- Internals ------------------------------------------------------------------------------
+
+/** A dispatch not written yet: its write is on its way, or failed (`failed`). */
+interface Queued {
+	id: string;
+	actions: Action[];
+	mutations: Mutation[];
+	kitChanged: boolean;
+	/** The kit and device state once it is applied: what its write stores. */
+	after: { kit: StartKit | null; device: DeviceState };
+	failed: NotSavedReason | null;
+	outcome: WriteOutcome | null;
+	/** Settles `saved` with the first outcome; later ones change nothing. */
+	settle: (outcome: WriteOutcome) => void;
+}
+
+interface Loaded {
+	workoutId: string;
+	/** What IndexedDB held at this page's last read or write. */
+	record: StoredWorkout | undefined;
+	entries: OutboxEntry[];
+	queue: Queued[];
+	state: WorkoutState;
+	view: WorkoutView | null;
+}
+
+type Stores = StoreNames<WorkoutSchema>;
+type Tx<N extends Stores> = IDBPTransaction<WorkoutSchema, N[], 'readwrite'>;
+
+const { byMutation: BY_MUTATION, byWorkout: BY_WORKOUT } = OUTBOX_INDEXES;
+const isMutation = (action: Action): action is Mutation => 'v' in action;
+
+/**
+ * One readwrite transaction. `run` awaits nothing but its IndexedDB requests, because Safari
+ * commits a transaction that awaits anything else; on any error the whole transaction aborts.
+ */
+async function transact<N extends Stores, T>(
+	db: WorkoutDb,
+	names: N[],
+	run: (tx: Tx<N>) => Promise<T>
+): Promise<T> {
+	const tx = db.transaction(names, 'readwrite');
+	const done = tx.done;
+	done.catch(() => {}); // an abort below rejects it; the caller sees the error that caused it
+	try {
+		const value = await run(tx);
+		await done;
+		return value;
+	} catch (error) {
+		try {
+			tx.abort();
+		} catch {
+			// it had already finished or aborted
+		}
+		throw error;
+	}
+}
+
+const reasonOf = (error: unknown): NotSavedReason =>
+	error instanceof DOMException && error.name === 'QuotaExceededError' ? 'quota' : 'storage';
+
+/** A new outbox entry: IndexedDB assigns its seq. */
+function entryOf(m: Mutation): OutboxEntry {
+	const { seq: _assigned, ...entry } = queued(0, m);
+	return entry as OutboxEntry;
+}
+
+const fold = (table: AnyTable, state: WorkoutState, actions: readonly Action[]) =>
+	actions.reduce(
+		(s, a) => (isMutation(a) ? applyMutation(table, s, a) : applyLocal(table, s, a)),
+		state
+	);
+
+/** A workout's record, its header read from the projection of what it holds. */
+function recordOf(
+	table: AnyTable,
+	workoutId: string,
+	inputs: Pick<StoredWorkout, 'kit' | 'canonical' | 'device'> & { entries: OutboxEntry[] },
+	previous: StoredWorkout | undefined
+): StoredWorkout {
+	const { kit, canonical, device, entries } = inputs;
+	const pending = entries.map((e) => e.envelope);
+	const row = replay(table, { workoutId, kit, canonical, pending, device }).rows?.workout;
+	const header = row ?? previous;
+	return {
+		id: workoutId,
+		kind: header?.kind ?? table.kind,
+		title: header?.title ?? '',
+		startedAt: header?.startedAt ?? '',
+		status: header?.status ?? 'in_progress',
+		finishedAt: header?.finishedAt ?? null,
+		kit,
+		canonical,
+		device
+	};
+}
+
+export async function createStore({
+	table,
+	now = Date.now,
+	random = Math.random
+}: StoreOptions): Promise<WorkoutStore> {
+	const listeners = new Set<(change: StoreChange) => void>();
+	const emit = (change: StoreChange) => listeners.forEach((listener) => listener(change));
+	let closed: CloseReason | null = null;
+	const db = await openWorkoutDb((reason) => {
+		closed = reason;
+		emit({ type: 'closed', reason });
+	});
+
+	const memory = new Map<string, Loaded>();
+	let chain: Promise<unknown> = Promise.resolve();
+	/** Writes run one at a time, in the order they were asked for. */
+	const serial = <T>(task: () => Promise<T>): Promise<T> => {
+		const run = chain.then(task);
+		chain = run.catch(() => {});
+		return run;
+	};
+	const assertOpen = () => {
+		if (closed) throw new StoreClosedError(closed);
+	};
+
+	const snapshotOf = (loaded: Loaded): WorkoutSnapshot => ({
+		workoutId: loaded.workoutId,
+		view: loaded.view,
+		notSaved: loaded.queue.flatMap((q) =>
+			q.failed ? [{ id: q.id, entities: q.mutations.map(entityKey), reason: q.failed }] : []
+		)
+	});
+
+	/** The stored inputs replayed, then what this page has not written yet, in order. */
+	function rebuild(loaded: Loaded) {
+		const { workoutId, record, entries } = loaded;
+		let state = replay(table, {
+			workoutId,
+			kit: record?.kit ?? null,
+			canonical: record?.canonical ?? null,
+			pending: entries.map((e) => e.envelope),
+			device: record?.device ?? initialDevice()
+		});
+		for (const item of loaded.queue) {
+			state = fold(table, state, item.actions);
+			item.after = { kit: state.kit, device: state.device };
+		}
+		loaded.state = state;
+		loaded.view = viewOf(table, state);
+	}
+
+	/** A workout this page holds nothing for yet. */
+	const blank = (workoutId: string): Loaded => ({
+		workoutId,
+		record: undefined,
+		entries: [],
+		queue: [],
+		state: replay(table, { workoutId, kit: null, canonical: null, pending: [] }),
+		view: null
+	});
+
+	/** What IndexedDB holds for a workout, as memory's new base; null when nothing is left. */
+	function remember(workoutId: string, record: StoredWorkout | undefined, entries: OutboxEntry[]) {
+		const loaded = memory.get(workoutId) ?? blank(workoutId);
+		if (!record && entries.length === 0 && loaded.queue.length === 0) {
+			memory.delete(workoutId);
+			return null;
+		}
+		Object.assign(loaded, { record, entries });
+		rebuild(loaded);
+		memory.set(workoutId, loaded);
+		return loaded;
+	}
+
+	/** Reads are serial with the writes too, so memory always moves forward. */
+	const load = (workoutId: string) =>
+		serial(async (): Promise<WorkoutSnapshot | null> => {
+			assertOpen();
+			const tx = db.transaction([STORES.workouts, STORES.outbox], 'readonly');
+			const record = await tx.objectStore(STORES.workouts).get(workoutId);
+			const entries = await tx.objectStore(STORES.outbox).index(BY_WORKOUT).getAll(workoutId);
+			await tx.done;
+			const loaded = remember(workoutId, record, entries);
+			return loaded && snapshotOf(loaded);
+		});
+
+	/** Writes every queued action of a workout, in order, with the device state after the last. */
+	async function write(workoutId: string): Promise<void> {
+		const loaded = memory.get(workoutId);
+		if (!loaded || loaded.queue.length === 0) return;
+		const items = [...loaded.queue];
+		const finish = (outcome: WriteOutcome) => items.forEach((i) => (i.outcome = outcome));
+		const fail = (reason: NotSavedReason) => {
+			for (const item of items) {
+				item.failed = reason;
+				item.settle('not-saved');
+			}
+			finish('not-saved');
+			emit({ type: 'not-saved', workoutId });
+		};
+		if (closed) return fail('storage');
+		const mutations = items.flatMap((i) => i.mutations);
+		const { after } = items.at(-1)!;
+		const kitChanged = items.some((i) => i.kitChanged);
+
+		let written: { record: StoredWorkout; entries: OutboxEntry[] } | 'refused';
+		try {
+			written = await transact(db, [STORES.workouts, STORES.outbox], async (tx) => {
+				const workouts = tx.objectStore(STORES.workouts);
+				const outbox = tx.objectStore(STORES.outbox);
+				const previous = await workouts.get(workoutId);
+				if (!previous && mutations.some((m) => m.type === 'workout.start')) {
+					const others = await workouts.getAll();
+					if (others.some((w) => w.status === 'in_progress')) return 'refused';
+				}
+				for (const m of mutations) {
+					const known = await outbox.index(BY_MUTATION).getKey(m.id);
+					if (known === undefined) await outbox.add(entryOf(m));
+				}
+				const entries = await outbox.index(BY_WORKOUT).getAll(workoutId);
+				const kit = kitChanged || !previous ? after.kit : previous.kit;
+				const canonical = previous?.canonical ?? null;
+				const inputs = { kit, canonical, device: after.device, entries };
+				const record = recordOf(table, workoutId, inputs, previous);
+				await workouts.put(record);
+				return { record, entries };
+			});
+		} catch (error) {
+			return fail(reasonOf(error));
+		}
+
+		if (written === 'refused') {
+			// Another tab started a workout first: this one never existed.
+			memory.delete(workoutId);
+			for (const item of loaded.queue) item.settle('refused');
+			finish('refused');
+			emit({ type: 'view', workoutId });
+			return;
+		}
+		loaded.queue = loaded.queue.filter((q) => !items.includes(q));
+		Object.assign(loaded, written);
+		rebuild(loaded);
+		for (const item of items) item.settle('saved');
+		finish('saved');
+		emit({ type: 'saved', workoutId });
+	}
+
+	function dispatch(action: Action, ...followUps: Action[]): Dispatched {
+		assertOpen();
+		const actions = [action, ...followUps];
+		const { workoutId } = action;
+		if (actions.some((a) => a.workoutId !== workoutId)) {
+			throw new RangeError('One dispatch changes one workout');
+		}
+		let loaded = memory.get(workoutId);
+		if (!loaded && actions.some((a) => a.type === 'workout.start')) {
+			for (const other of memory.values()) {
+				if (other.view?.workout.status === 'in_progress') {
+					throw new ActiveWorkoutError(other.workoutId);
+				}
+			}
+			loaded = blank(workoutId);
+			memory.set(workoutId, loaded);
+		}
+		if (!loaded) throw new RangeError(`Load workout ${workoutId} before changing it`);
+
+		const mutations = actions.filter(isMutation);
+		const state = fold(table, loaded.state, actions);
+		let settle!: (outcome: WriteOutcome) => void;
+		const saved = new Promise<WriteOutcome>((resolve) => (settle = resolve));
+		loaded.queue.push({
+			id: mutations[0]?.id ?? crypto.randomUUID(),
+			actions,
+			mutations,
+			kitChanged: actions.some((a) => a.type === 'kit.attach' && 'kit' in a),
+			after: { kit: state.kit, device: state.device },
+			failed: null,
+			outcome: null,
+			settle
+		});
+		loaded.state = state;
+		loaded.view = viewOf(table, state);
+		emit({ type: 'view', workoutId });
+		void serial(() => write(workoutId));
+		return { id: loaded.queue.at(-1)!.id, snapshot: snapshotOf(loaded), saved };
+	}
+
+	async function retry(actionId: string): Promise<WriteOutcome> {
+		assertOpen();
+		for (const loaded of memory.values()) {
+			const item = loaded.queue.find((q) => q.id === actionId);
+			if (!item) continue;
+			await serial(() => write(loaded.workoutId));
+			return item.outcome ?? 'saved';
+		}
+		return 'saved';
+	}
+
+	async function acknowledge(results: readonly SyncResult[]): Promise<void> {
+		assertOpen();
+		const stored = await serial(() =>
+			transact(db, [STORES.workouts, STORES.outbox], async (tx) => {
+				const workouts = tx.objectStore(STORES.workouts);
+				const outbox = tx.objectStore(STORES.outbox);
+				const entries: OutboxEntry[] = [];
+				for (const result of results) {
+					const entry = await outbox.index(BY_MUTATION).get(result.id);
+					if (entry) entries.push(entry);
+				}
+				const after = new Map(applyResults(entries, results, now(), random).map((e) => [e.seq, e]));
+				for (const entry of entries) {
+					const next = after.get(entry.seq);
+					if (!next) await outbox.delete(entry.seq);
+					else if (next !== entry) await outbox.put(next);
+				}
+				// The server's whole workout, on the last result of each workout that carries it.
+				const rows = new Map<string, CanonicalWorkout>();
+				for (const r of results) if (r.canonical) rows.set(r.canonical.workout.id, r.canonical);
+				const touched = new Set([...entries.map((e) => e.envelope.workoutId), ...rows.keys()]);
+				const read = new Map<string, { record: StoredWorkout; entries: OutboxEntry[] }>();
+				for (const workoutId of touched) {
+					const previous = await workouts.get(workoutId);
+					if (!previous) continue; // not on this device: reconcile adopts it
+					const left = await outbox.index(BY_WORKOUT).getAll(workoutId);
+					const canonical = rows.get(workoutId) ?? previous.canonical;
+					const inputs = { kit: previous.kit, canonical, device: previous.device, entries: left };
+					const record = recordOf(table, workoutId, inputs, previous);
+					await workouts.put(record);
+					read.set(workoutId, { record, entries: left });
+				}
+				return read;
+			})
+		);
+		for (const [workoutId, { record, entries }] of stored) {
+			if (!memory.has(workoutId)) continue;
+			remember(workoutId, record, entries);
+			emit({ type: 'view', workoutId });
+		}
+	}
+
+	async function listUnsynced(): Promise<UnsyncedWorkout[]> {
+		assertOpen();
+		const tx = db.transaction([STORES.workouts, STORES.outbox], 'readonly');
+		const pending = new Map<string, number>();
+		for (const { envelope } of await tx.objectStore(STORES.outbox).getAll()) {
+			pending.set(envelope.workoutId, (pending.get(envelope.workoutId) ?? 0) + 1);
+		}
+		const list: UnsyncedWorkout[] = [];
+		for (const [workoutId, count] of pending) {
+			const record = await tx.objectStore(STORES.workouts).get(workoutId);
+			list.push({ workoutId, pending: count, workout: record ? headerOf(record) : null });
+		}
+		await tx.done;
+		return list;
+	}
+
+	async function prune() {
+		assertOpen();
+		const gone = await serial(() =>
+			transact(db, [STORES.workouts, STORES.outbox, STORES.kits], async (tx) => {
+				const at = now();
+				const pruned = { workouts: [] as string[], kits: [] as string[] };
+				for (const w of await tx.objectStore(STORES.workouts).getAll()) {
+					if (w.status === 'in_progress' || w.finishedAt === null) continue;
+					if (at - Date.parse(w.finishedAt) < PRUNE_AFTER.finishedMs) continue;
+					if (memory.get(w.id)?.queue.length) continue; // not saved yet: not synced
+					if ((await tx.objectStore(STORES.outbox).index(BY_WORKOUT).count(w.id)) > 0) continue;
+					await tx.objectStore(STORES.workouts).delete(w.id);
+					pruned.workouts.push(w.id);
+				}
+				for (const { lineage, savedAt } of await tx.objectStore(STORES.kits).getAll()) {
+					if (at - savedAt < PRUNE_AFTER.kitMs) continue;
+					await tx.objectStore(STORES.kits).delete(lineage);
+					pruned.kits.push(lineage);
+				}
+				return pruned;
+			})
+		);
+		for (const workoutId of gone.workouts) {
+			if (memory.delete(workoutId)) emit({ type: 'view', workoutId });
+		}
+		return gone;
+	}
+
+	return {
+		get closed() {
+			return closed;
+		},
+		async getActive() {
+			assertOpen();
+			const active = (await db.getAll(STORES.workouts))
+				.filter((w) => w.status === 'in_progress')
+				.sort((a, b) => (a.startedAt < b.startedAt ? 1 : -1))[0];
+			return active ? load(active.id) : null;
+		},
+		load,
+		snapshot: (workoutId) => {
+			const loaded = memory.get(workoutId);
+			return loaded ? snapshotOf(loaded) : null;
+		},
+		listUnsynced,
+		dispatch,
+		retry,
+		acknowledge,
+		async saveKit(lineage, kit) {
+			assertOpen();
+			await db.put(STORES.kits, { lineage, kit, savedAt: now() });
+		},
+		async getKit(lineage) {
+			assertOpen();
+			return (await db.get(STORES.kits, lineage))?.kit ?? null;
+		},
+		prune,
+		onChange(listener) {
+			listeners.add(listener);
+			return () => listeners.delete(listener);
+		}
+	};
+}

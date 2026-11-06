@@ -1,7 +1,8 @@
 <!--
   @component
   Renders the toast queue in a polite live region at the top of the viewport (clear of the
-  thumb zone and the bottom navigation). Mount once in the root layout.
+  thumb zone and the bottom navigation), centred over the content column beside the rail. Mount
+  once in the root layout.
 -->
 <script lang="ts">
 	import { fly } from 'svelte/transition';
@@ -51,9 +52,10 @@
 		position: fixed;
 		z-index: var(--z-toast);
 		top: calc(var(--safe-top) + var(--space-3));
-		left: 50%;
+		/* Screen chrome: centred over the content column, clear of the rail. */
+		left: calc(50% + var(--nav-inset-left) / 2);
 		transform: translateX(-50%);
-		width: min(calc(100% - 2 * var(--space-4)), var(--content-max));
+		width: min(calc(100% - var(--nav-inset-left) - 2 * var(--space-4)), var(--content-column));
 		display: grid;
 		gap: var(--space-2);
 		pointer-events: none;
