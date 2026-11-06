@@ -94,7 +94,10 @@ unreviewed. Fold it into a real commit (or redo it) before publishing.
       `https://coach.nikocruz.com/setup?token=<token>` on the iPhone, registers the passkey, stores
       the recovery codes, then removes the hash from Vercel.
 
-   Remove the hold line once the hash is set. If Vercel refuses the production deploy with
+   **Update 2026-11-06:** the owner has set `OWNER_SETUP_TOKEN_HASH` in Vercel Production and
+   holds the link, so the PR needs no merge hold. Their first try at the link returned Vercel's
+   `404 DEPLOYMENT_NOT_FOUND`, as expected with production still off; the token is unused. Remove
+   the hold line if the PR has one. If Vercel refuses the production deploy with
    "Resource is limited", wait for the 24-hour window and redeploy.
 
 4. **Resume the build graph.** `workflows/build-dag-args.py` reads the M3 plan, the M2 slice list
@@ -115,7 +118,7 @@ unreviewed. Fold it into a real commit (or redo it) before publishing.
 
 ## Waiting on the owner
 
-- **Setup token hash** for the cutover (step 3 above).
+- **The cutover.** The setup token hash is set; once production is live, the owner opens the link.
 - **M3 product defaults.** The planner chose these; each is a named constant, cheap to change:
   - a program starts next Monday (the build preview also offers "This week");
   - the first block is 1 baseline + 3 accumulation weeks + a deload, shortened to build + taper
