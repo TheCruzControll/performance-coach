@@ -1,0 +1,228 @@
+/**
+ * Program read builders (ADR 0010). Each is one keyed query that a repository runs and that
+ * `pnpm db:explain` (m3/33) explains as it is; later M3 slices add the week, session and history
+ * builders here.
+ */
+import {
+	and,
+	asc,
+	between,
+	eq,
+	getTableColumns,
+	gt,
+	inArray,
+	isNull,
+	type SQL,
+	type SQLWrapper
+} from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
+import type { IsoDate } from '../../../domain/calendar';
+import {
+	exercises,
+	plannedExercises,
+	plannedRunSegments,
+	plannedSessionDetails,
+	plannedSessions,
+	programBlocks,
+	programs,
+	programVersionBlocks,
+	programVersions,
+	programVersionWeeks,
+	programWeeks,
+	setPrescriptions,
+	workouts
+} from '../schema';
+import type { Executor } from '../types';
+
+const substitutedFrom = alias(exercises, 'substituted_from');
+
+/**
+ * One version's whole tree through its membership rows: its blocks, weeks, sessions, and their
+ * exercises, set prescriptions, run segments and details, one query each. Every query is keyed by
+ * the version alone (the membership primary keys, then each child's parent index), so the count
+ * never grows with the program. Rows come in stored order and name their parent:
+ * - blocks by position, weeks by date, sessions by day and order in the day
+ * - exercises, sets and segments by their parent, then position
+ * Nothing runs until a builder is awaited; await them in turn on one connection.
+ */
+export function versionTree(db: Executor, versionId: string) {
+	const inVersion = eq(programVersionWeeks.versionId, versionId);
+	return {
+		blocks: db
+			.select(getTableColumns(programBlocks))
+			.from(programVersionBlocks)
+			.innerJoin(programBlocks, eq(programBlocks.id, programVersionBlocks.blockId))
+			.where(eq(programVersionBlocks.versionId, versionId))
+			.orderBy(asc(programBlocks.position)),
+		weeks: db
+			.select(getTableColumns(programWeeks))
+			.from(programVersionWeeks)
+			.innerJoin(programWeeks, eq(programWeeks.id, programVersionWeeks.weekId))
+			.where(inVersion)
+			.orderBy(asc(programWeeks.startsOn)),
+		...sessionsWithChildren(
+			db,
+			db.select({ weekId: programVersionWeeks.weekId }).from(programVersionWeeks).where(inVersion)
+		)
+	};
+}
+
+/** What each versionTree builder returns. */
+export type VersionTreeRows = {
+	[K in keyof ReturnType<typeof versionTree>]: Awaited<ReturnType<typeof versionTree>[K]>;
+};
+
+// ---- program reads (Train, Today, the session screen, the coach) ----------------------------
+
+/**
+ * The owner's active program with its current version, or with version `number` of it: one row
+ * or none, by the owner's one active program (programs_owner_active_uq), then the version's
+ * primary key or (program, number).
+ */
+export function currentProgram(db: Executor, ownerId: string, number?: number) {
+	return db
+		.select({ program: programs, version: programVersions })
+		.from(programs)
+		.innerJoin(
+			programVersions,
+			number === undefined
+				? eq(programVersions.id, programs.currentVersionId)
+				: and(eq(programVersions.programId, programs.id), eq(programVersions.number, number))
+		)
+		.where(and(eq(programs.ownerId, ownerId), eq(programs.status, 'active')));
+}
+
+/**
+ * A version's sessions that `where` picks, by day and order in the day: its membership rows,
+ * then each week's sessions through planned_sessions_week_day_idx.
+ */
+function versionSessions(db: Executor, versionId: string, where: SQL) {
+	return db
+		.select(getTableColumns(plannedSessions))
+		.from(programVersionWeeks)
+		.innerJoin(plannedSessions, eq(plannedSessions.weekId, programVersionWeeks.weekId))
+		.where(and(eq(programVersionWeeks.versionId, versionId), where))
+		.orderBy(asc(plannedSessions.scheduledOn), asc(plannedSessions.orderInDay));
+}
+
+/**
+ * The one planned-session range builder: a version's sessions dated `from` to `to`, both
+ * included. history.ts's sessionsInRange composes it with the logged workouts (m3/26).
+ */
+export function plannedSessionsInRange(
+	db: Executor,
+	versionId: string,
+	from: IsoDate,
+	to: IsoDate
+) {
+	return versionSessions(db, versionId, between(plannedSessions.scheduledOn, from, to));
+}
+
+/** A version's next `limit` sessions dated after `after`, across week boundaries. */
+export function upcomingSessions(db: Executor, versionId: string, after: IsoDate, limit: number) {
+	return versionSessions(db, versionId, gt(plannedSessions.scheduledOn, after)).limit(limit);
+}
+
+/** The version's session with this lineage (planned_sessions_lineage_idx), its week and block. */
+export function sessionByLineage(db: Executor, versionId: string, lineage: string) {
+	return db
+		.select({ session: plannedSessions, week: programWeeks, block: programBlocks })
+		.from(plannedSessions)
+		.innerJoin(
+			programVersionWeeks,
+			and(
+				eq(programVersionWeeks.versionId, versionId),
+				eq(programVersionWeeks.weekId, plannedSessions.weekId)
+			)
+		)
+		.innerJoin(programWeeks, eq(programWeeks.id, plannedSessions.weekId))
+		.innerJoin(programBlocks, eq(programBlocks.id, programWeeks.blockId))
+		.where(eq(plannedSessions.lineageId, lineage));
+}
+
+/**
+ * The exercises (with their library names), set prescriptions, run segments and details of the
+ * sessions `where` picks, each through its parent's index, by parent and then position. Lazy:
+ * a read awaits only the builders it needs.
+ */
+function childrenOf(db: Executor, where: SQL) {
+	return {
+		exercises: db
+			.select({
+				...getTableColumns(plannedExercises),
+				exerciseKey: exercises.key,
+				exerciseName: exercises.name,
+				substitutedFromKey: substitutedFrom.key
+			})
+			.from(plannedSessions)
+			.innerJoin(plannedExercises, eq(plannedExercises.sessionId, plannedSessions.id))
+			.innerJoin(exercises, eq(exercises.id, plannedExercises.exerciseId))
+			.leftJoin(substitutedFrom, eq(substitutedFrom.id, plannedExercises.substitutedFromExerciseId))
+			.where(where)
+			.orderBy(asc(plannedExercises.sessionId), asc(plannedExercises.position)),
+		sets: db
+			.select(getTableColumns(setPrescriptions))
+			.from(plannedSessions)
+			.innerJoin(plannedExercises, eq(plannedExercises.sessionId, plannedSessions.id))
+			.innerJoin(setPrescriptions, eq(setPrescriptions.plannedExerciseId, plannedExercises.id))
+			.where(where)
+			.orderBy(asc(setPrescriptions.plannedExerciseId), asc(setPrescriptions.position)),
+		segments: db
+			.select(getTableColumns(plannedRunSegments))
+			.from(plannedSessions)
+			.innerJoin(plannedRunSegments, eq(plannedRunSegments.sessionId, plannedSessions.id))
+			.where(where)
+			.orderBy(asc(plannedRunSegments.sessionId), asc(plannedRunSegments.position)),
+		details: db
+			.select(getTableColumns(plannedSessionDetails))
+			.from(plannedSessions)
+			.innerJoin(plannedSessionDetails, eq(plannedSessionDetails.sessionId, plannedSessions.id))
+			.where(where)
+	};
+}
+
+/**
+ * The sessions of these weeks (planned_sessions_week_day_idx), by day and order in the day, and
+ * their children. `weekIds` may be a subquery: versionTree passes its version's membership.
+ */
+export function sessionsWithChildren(db: Executor, weekIds: string[] | SQLWrapper) {
+	const inWeeks = inArray(plannedSessions.weekId, weekIds);
+	return {
+		sessions: db
+			.select(getTableColumns(plannedSessions))
+			.from(plannedSessions)
+			.where(inWeeks)
+			.orderBy(asc(plannedSessions.scheduledOn), asc(plannedSessions.orderInDay)),
+		...childrenOf(db, inWeeks)
+	};
+}
+
+/** The children of these sessions, by their ids. */
+export function sessionChildren(db: Executor, sessionIds: string[]) {
+	return childrenOf(db, inArray(plannedSessions.id, sessionIds));
+}
+
+/**
+ * Which of `lineages` has a completed, undeleted workout of the owner's logged against it
+ * (workouts_planned_lineage_idx). 'Completed' goes by lineage, so it holds in every version.
+ */
+export function completedLineages(db: Executor, ownerId: string, lineages: string[]) {
+	return db
+		.selectDistinct({ lineage: workouts.plannedLineageId })
+		.from(workouts)
+		.where(
+			and(
+				inArray(workouts.plannedLineageId, lineages),
+				eq(workouts.ownerId, ownerId),
+				eq(workouts.status, 'completed'),
+				isNull(workouts.deletedAt)
+			)
+		);
+}
+
+/** What the read builders return. */
+export type SessionRow = Awaited<ReturnType<typeof plannedSessionsInRange>>[number];
+export type SessionLineageRow = Awaited<ReturnType<typeof sessionByLineage>>[number];
+export type SessionChildRows = {
+	[K in keyof ReturnType<typeof sessionChildren>]: Awaited<ReturnType<typeof sessionChildren>[K]>;
+};

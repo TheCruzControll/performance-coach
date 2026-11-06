@@ -17,16 +17,34 @@ export interface SectionInfo {
 
 export const SECTIONS = [
 	{
-		key: 'basics',
-		title: 'Name & units',
-		subtitle: 'Your name, kg or lb, km or mi',
-		icon: 'profile'
+		key: 'goals',
+		title: 'Goals',
+		subtitle: 'What you’re training for, in order',
+		icon: 'target'
+	},
+	{
+		key: 'experience',
+		title: 'Experience',
+		subtitle: 'Your level in each discipline',
+		icon: 'progress'
 	},
 	{
 		key: 'equipment',
 		title: 'Equipment',
 		subtitle: 'Where you train and what’s there',
 		icon: 'plate'
+	},
+	{
+		key: 'strength',
+		title: 'Strength',
+		subtitle: 'Your 1RMs, or let week one find them',
+		icon: 'train'
+	},
+	{
+		key: 'basics',
+		title: 'Name & units',
+		subtitle: 'Your name, kg or lb, km or mi',
+		icon: 'profile'
 	}
 ] as const satisfies readonly SectionInfo[];
 

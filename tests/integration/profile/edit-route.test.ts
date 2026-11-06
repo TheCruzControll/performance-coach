@@ -1,11 +1,12 @@
 /**
  * The sections Profile edits at /profile/[section] (src/lib/server/forms/sections.ts) on real
- * Postgres: each loads what its editor starts from and saves through its service, every editor
- * is told the athlete's disciplines and units, and a key that is not a section is a 404, so the
- * route needs no param matcher.
+ * Postgres: each loads what its editor starts from and saves through its service (goals one at a
+ * time instead), every editor is told the athlete's disciplines and units, and a key that is not
+ * a section is a 404, so the route needs no param matcher.
  */
 import { isHttpError } from '@sveltejs/kit';
 import { describe, expect, it } from 'vitest';
+import type { Goal } from '../../../src/lib/domain/profile/types';
 import {
 	profileSection,
 	SECTION_KEYS,
@@ -30,8 +31,27 @@ describe('a Profile section', () => {
 			const owner = await makeOwner(db);
 			const section = profileSection('equipment');
 			expect(await section.load(owner, { db })).toBeNull();
-			await section.save(owner, equipment, { db, source: 'profile' });
+			await section.save!(owner, equipment, { db, source: 'profile' });
 			expect(await section.load(owner, { db })).toMatchObject(equipment);
+		});
+	});
+
+	it('loads the goals top priority first; they save one at a time, never as a whole', async () => {
+		await withRollback(async (db) => {
+			const owner = await makeOwner(db);
+			const goals = profileSection('goals');
+			expect(goals.save).toBeUndefined();
+			expect(await goals.load(owner, { db })).toEqual([]);
+			await createGoal(owner, eventGoal(), { db });
+			await createGoal(owner, eventGoal({ title: 'Valencia marathon' }), { db });
+			const loaded = (await goals.load(owner, { db })) as Goal[];
+			expect(loaded.map((g) => [g.title, g.priority])).toEqual([
+				['First Muay Thai fight', 1],
+				['Valencia marathon', 2]
+			]);
+			for (const key of SECTION_KEYS.filter((k) => k !== 'goals')) {
+				expect(profileSection(key).save, key).toBeTypeOf('function');
+			}
 		});
 	});
 
@@ -50,7 +70,7 @@ describe('a Profile section', () => {
 				{ db }
 			);
 			const edited = { name: 'Niko', weightUnit: 'lb', distanceUnit: 'mi' };
-			await basics.save(owner, edited, { db, source: 'profile' });
+			await basics.save!(owner, edited, { db, source: 'profile' });
 			// The editor sends no time zone: the saved one stays.
 			expect(await basics.load(owner, { db })).toMatchObject({
 				...edited,
