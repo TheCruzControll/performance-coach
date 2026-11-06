@@ -56,13 +56,13 @@ for (const theme of THEMES) {
 
 		for (const path of SCREENS) {
 			test(`${path} has no WCAG A/AA violations`, async ({ page }) => {
-				await page.goto(path);
+				// An error page in its place would pass the audit: the screen itself must load.
+				expect((await page.goto(path))?.status(), path).toBe(200);
 				await page.waitForLoadState('networkidle');
 				if (path === '/profile') await expect(page.getByTestId('db-status')).toBeVisible();
-				// The section's editor loads after the screen, in place of its skeleton.
-				if (path === '/profile/equipment') {
-					await expect(page.getByTestId('section-editor')).toHaveAttribute('aria-busy', 'false');
-				}
+				// A Profile section's editor loads after the screen, in place of its skeleton.
+				const editor = page.getByTestId('section-editor');
+				if (await editor.count()) await expect(editor).toHaveAttribute('aria-busy', 'false');
 				const html = page.locator('html');
 				if (theme === 'light') await expect(html).toHaveAttribute('data-theme', 'light');
 				else await expect(html).not.toHaveAttribute('data-theme', /.*/);
