@@ -1,7 +1,8 @@
 <!--
   /design: the program display components (loaded when its tab opens), on one fixture week of a
   hybrid plan, Wednesday 4 November 2026 being today: every session state, a card whose link is
-  navigating (pending), and prescriptions in describe.ts's words.
+  navigating (pending), prescriptions in describe.ts's words, and the Move sheet's body with the
+  days left this week and with none left.
 -->
 <script lang="ts">
 	import { addDays, type IsoDate } from '#lib/domain/calendar.ts';
@@ -14,8 +15,10 @@
 	} from '#lib/domain/training/index.ts';
 	import Section from '#lib/ui/components/Section.svelte';
 	import Surface from '#lib/ui/components/Surface.svelte';
+	import MoveSheet from '#lib/ui/program/MoveSheet.svelte';
 	import PrescriptionLines from '#lib/ui/program/PrescriptionLines.svelte';
 	import SessionCard from '#lib/ui/program/SessionCard.svelte';
+	import { moveOption } from '#lib/ui/program/session-words.ts';
 	import WeekStrip from '#lib/ui/program/WeekStrip.svelte';
 	import {
 		cardView,
@@ -73,6 +76,16 @@
 	) as Record<keyof typeof SESSIONS, CardView>;
 
 	let selected = $state<IsoDate | null>(TODAY);
+
+	/** Wednesday's Upper body moving: the days after today, each with what is planned there. */
+	const MOVE_TO = [3, 4, 5, 6].map((day) => {
+		const date = addDays(MONDAY, day);
+		const titles = Object.values(SESSIONS)
+			.filter((s) => s.date === date)
+			.map((s) => s.title);
+		return moveOption({ date, planned: titles.join(' · ') || 'Rest day' });
+	});
+	const MOVING = '00000000-0000-4000-8000-000000000041';
 
 	const set = (over: Partial<SetPrescription>): SetPrescription => ({
 		role: 'working',
@@ -158,6 +171,15 @@
 		<SessionCard session={CARDS.mobility} href="#mobility" data-testid="card-moved" />
 		<!-- Read-only, as an older version shows it: no link. -->
 		<SessionCard session={CARDS.thursdayThai} data-testid="card-read-only" />
+	</Section>
+
+	<Section title="Move sheet">
+		<Surface padding="md" data-testid="move-days-fixture">
+			<MoveSheet lineage={MOVING} version={1} targets={MOVE_TO} />
+		</Surface>
+		<Surface padding="md" data-testid="move-empty-fixture">
+			<MoveSheet lineage={MOVING} version={1} targets={[]} />
+		</Surface>
 	</Section>
 
 	<Section title="Prescription lines">
