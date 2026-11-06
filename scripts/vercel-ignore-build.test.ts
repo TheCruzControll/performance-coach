@@ -28,7 +28,13 @@ function ignoreStep(env: Record<string, string>) {
 
 describe('Vercel production guard', () => {
 	it('never deploys main from Git', () => {
-		expect(config.git?.deploymentEnabled).toEqual({ main: false });
+		expect(config.git?.deploymentEnabled).toMatchObject({ main: false });
+	});
+
+	it('creates no Git deployment for other branches either', () => {
+		// Hobby caps an account at 100 deployments a day; a preview for every push to every PR
+		// branch used that up and left production unable to deploy. CI runs the Vercel build.
+		expect(config.git?.deploymentEnabled).toEqual({ main: false, '**': false });
 	});
 
 	it('skips every production build Vercel starts itself', () => {
