@@ -204,44 +204,6 @@ test.describe('a program that starts next week', () => {
 		await auditThemes(page, open(thai));
 	});
 
-	test('the tapped card is busy until its session renders; Back returns to the same week and day', async ({
-		page
-	}) => {
-		await gotoHydrated(page, '/train?week=2');
-		const thursday = addDays(seeded.weekStart, 10);
-		await dayOf(page, thursday).click();
-		const easy = cards(page).filter({ hasText: 'Easy run' });
-		const thai = cards(page).filter({ hasText: 'Muay Thai class' });
-		await expect(easy).toHaveAttribute('href', open(titled('Easy run', 1)));
-
-		let release!: () => void;
-		const held = new Promise<void>((resolve) => (release = resolve));
-		await page.route('**/train/session/*/__data.json*', async (route) => {
-			await held;
-			await route.continue();
-		});
-		await easy.click();
-		await expect(easy).toHaveAttribute('aria-busy', 'true');
-		await expect(thai).not.toHaveAttribute('aria-busy');
-		release();
-		await expect(heading(page)).toHaveText('Easy run');
-		await expect(page).toHaveURL(new RegExp(`${open(titled('Easy run', 1))}$`));
-		await page.unrouteAll({ behavior: 'ignoreErrors' });
-
-		// The browser's Back (an iPhone's swipe): the week and the day the owner picked.
-		await page.goBack();
-		await expect(page).toHaveURL(/\/train\?week=2$/);
-		await expect(dayOf(page, thursday)).toHaveAttribute('aria-checked', 'true');
-
-		// The screen's own Back does the same.
-		await easy.click();
-		await expect(heading(page)).toHaveText('Easy run');
-		await page.getByTestId('back-to-train').click();
-		await expect(page).toHaveURL(/\/train\?week=2$/);
-		await expect(dayOf(page, thursday)).toHaveAttribute('aria-checked', 'true');
-		await expect(easy).not.toHaveAttribute('aria-busy');
-	});
-
 	test('an unknown or malformed session or version is the 404 page, in the shell', async ({
 		page
 	}) => {
@@ -277,31 +239,76 @@ test.describe('a program that starts next week', () => {
 		await expect(page.getByTestId('session-status')).toHaveText('Skipped');
 	});
 
-	// A session whose data request fails (500) is the (app) layout's error view, inside the shell,
-	// as SvelteKit renders a failed client navigation. The screen's own error, for a server read
-	// that fails, is the load's fail-soft payload (tests/integration/training/session-load.test.ts).
-	test('a session whose data fails to load shows the designed error, whose Try again loads it', async ({
-		page
-	}, testInfo) => {
-		await gotoHydrated(page, '/train');
-		await page.route('**/train/session/*/__data.json*', (route) =>
-			route.fulfill({
-				status: 500,
-				contentType: 'application/json',
-				body: JSON.stringify({ message: 'Something went wrong on our side.', requestId: 'e2e' })
-			})
-		);
-		await cards(page).first().click();
-		const error = page.getByTestId('error-view');
-		await expect(error).toBeVisible();
-		await expect(error).toContainText('Something went wrong');
-		await expect(page.getByRole('heading', { level: 1, name: 'Train' })).toBeVisible();
-		await expect(page.getByRole('navigation', { name: 'Primary' })).toBeVisible();
-		await captureScreen(page, testInfo, 'session-error');
+	test.describe('with the network in the test’s hands', () => {
+		// page.route never sees a request from a page the service worker controls on WebKit, even
+		// one the worker leaves to the network (__data.json), and the worker takes control of Train
+		// during gotoHydrated (clients.claim). Chromium routes that request either way.
+		test.use({ serviceWorkers: 'block' });
 
-		await page.unrouteAll({ behavior: 'ignoreErrors' });
-		await error.getByRole('button', { name: 'Try again' }).click();
-		await expect(heading(page)).toHaveText('Full body');
+		test('the tapped card is busy until its session renders; Back returns to the same week and day', async ({
+			page
+		}) => {
+			await gotoHydrated(page, '/train?week=2');
+			const thursday = addDays(seeded.weekStart, 10);
+			await dayOf(page, thursday).click();
+			const easy = cards(page).filter({ hasText: 'Easy run' });
+			const thai = cards(page).filter({ hasText: 'Muay Thai class' });
+			await expect(easy).toHaveAttribute('href', open(titled('Easy run', 1)));
+
+			let release!: () => void;
+			const held = new Promise<void>((resolve) => (release = resolve));
+			await page.route('**/train/session/*/__data.json*', async (route) => {
+				await held;
+				await route.continue();
+			});
+			await easy.click();
+			await expect(easy).toHaveAttribute('aria-busy', 'true');
+			await expect(thai).not.toHaveAttribute('aria-busy');
+			release();
+			await expect(heading(page)).toHaveText('Easy run');
+			await expect(page).toHaveURL(new RegExp(`${open(titled('Easy run', 1))}$`));
+			await page.unrouteAll({ behavior: 'ignoreErrors' });
+
+			// The browser's Back (an iPhone's swipe): the week and the day the owner picked.
+			await page.goBack();
+			await expect(page).toHaveURL(/\/train\?week=2$/);
+			await expect(dayOf(page, thursday)).toHaveAttribute('aria-checked', 'true');
+
+			// The screen's own Back does the same.
+			await easy.click();
+			await expect(heading(page)).toHaveText('Easy run');
+			await page.getByTestId('back-to-train').click();
+			await expect(page).toHaveURL(/\/train\?week=2$/);
+			await expect(dayOf(page, thursday)).toHaveAttribute('aria-checked', 'true');
+			await expect(easy).not.toHaveAttribute('aria-busy');
+		});
+
+		// A session whose data request fails (500) is the (app) layout's error view, inside the shell,
+		// as SvelteKit renders a failed client navigation. The screen's own error, for a server read
+		// that fails, is the load's fail-soft payload (tests/integration/training/session-load.test.ts).
+		test('a session whose data fails to load shows the designed error, whose Try again loads it', async ({
+			page
+		}, testInfo) => {
+			await gotoHydrated(page, '/train');
+			await page.route('**/train/session/*/__data.json*', (route) =>
+				route.fulfill({
+					status: 500,
+					contentType: 'application/json',
+					body: JSON.stringify({ message: 'Something went wrong on our side.', requestId: 'e2e' })
+				})
+			);
+			await cards(page).first().click();
+			const error = page.getByTestId('error-view');
+			await expect(error).toBeVisible();
+			await expect(error).toContainText('Something went wrong');
+			await expect(page.getByRole('heading', { level: 1, name: 'Train' })).toBeVisible();
+			await expect(page.getByRole('navigation', { name: 'Primary' })).toBeVisible();
+			await captureScreen(page, testInfo, 'session-error');
+
+			await page.unrouteAll({ behavior: 'ignoreErrors' });
+			await error.getByRole('button', { name: 'Try again' }).click();
+			await expect(heading(page)).toHaveText('Full body');
+		});
 	});
 
 	test.describe('offline', () => {
