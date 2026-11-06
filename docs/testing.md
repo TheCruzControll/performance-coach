@@ -41,9 +41,11 @@ the CSRF Origin check, User-Agent and passkey labels, and the route access map â
   whose name does not end in `_test`/`_e2e`.
 - **Isolation:** `withRollback()` runs each test in a transaction that is always rolled back;
   services accept the transaction as their `db` dependency. Files run serially. The few tests
-  that race real connections use `withCommitted()` (committed rows, truncated afterwards),
-  `holdTransaction()` to keep one step's locks held and `lockWaiters()` to wait until the other
-  steps are blocked, so every interleaving is exact rather than timed.
+  that race real connections commit for real and clean up afterwards: a goal status change
+  waiting behind a concurrent edit deletes its owner; the auth races use `withCommitted()`
+  (committed rows, truncated afterwards), `holdTransaction()` to keep one step's locks held and
+  `lockWaiters()` to wait until the other steps are blocked, so every interleaving is exact
+  rather than timed.
 - **Covered:** migrations applied and constraints enforced; health up and down (unreachable
   database); web-vitals ingest, validation, de-duplication (across requests and within one
   batch), route attribution and p75 summary; error recording, including when the database is
@@ -56,19 +58,20 @@ the CSRF Origin check, User-Agent and passkey labels, and the route access map â
   SimpleWebAuthn's helper) produces real registration and assertion responses, so every service
   runs through `@simplewebauthn/server`'s genuine verification. Covered: setup once (token hash,
   10 hashed codes, nothing secret stored, setup closed afterwards, refused origin/RP/UV/type,
-  single-use challenges, `auth:reset-owner` reopening setup and re-attaching the same owner);
+  single-use challenges, `auth:reset-owner` reopening setup and re-attaching the same owner, a
+  token working for one setup only, also across resets);
   sign-in (counter update, rotation, replay, expired challenge, counter regression, unknown
   passkey, production RP and other origins refused, malformed bodies); sessions (sliding refresh
   at most daily, 90-day cap, 30-day idle expiry, last-seen resolution, revoke one / others /
-  sign out); recovery (burn, any spelling refused afterwards, 15-minute restricted session, new
-  passkey upgrades it, regeneration); passkey management (add, challenge bound to its session,
-  nothing added or upgraded for a session revoked or expired mid-request, including a revocation
-  that commits while the request waits on the session's row lock, sign out everywhere else
-  during a recovery upgrade ending the new session, rename validation, never the last, removal
-  ends its sessions); rate limits on every entry point
-  with `Retry-After`, window reset, a global ceiling on failed recovery codes that never
-  refuses a valid one, and a full sign-out bucket that still lets a live session sign out. A
-  controllable clock replaces waiting.
+  sign out, a malformed id is not found); recovery (burn, any spelling refused afterwards,
+  15-minute restricted session, new passkey upgrades it, regeneration); passkey management (add,
+  challenge bound to its session, nothing added or upgraded for a session revoked or expired
+  mid-request, including a revocation that commits while the request waits on the session's row
+  lock, sign out everywhere else during a recovery upgrade ending the new session, rename
+  validation, never the last, removal ends its sessions, a malformed id is not found); rate limits
+  on every entry point with `Retry-After`, window reset, a global ceiling on failed recovery codes
+  that never refuses a valid one, and a full sign-out bucket that still lets a live session sign
+  out. A controllable clock replaces waiting.
 - **Logs:** quiet by default (`LOG_LEVEL=silent` via the project's `env`); run
   `LOG_LEVEL=debug pnpm test:integration` to see them.
 

@@ -34,7 +34,7 @@ export async function withCommitted<T>(fn: (db: Executor) => Promise<T>): Promis
 	} finally {
 		await Promise.allSettled([...held].map((commit) => commit()));
 		await getDb().execute(
-			sql`truncate owners, auth_events, auth_rate_limits, webauthn_challenges cascade`
+			sql`truncate owners, used_setup_tokens, auth_events, auth_rate_limits, webauthn_challenges cascade`
 		);
 	}
 }

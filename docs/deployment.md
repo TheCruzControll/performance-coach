@@ -43,9 +43,10 @@ Preview deployments share the `preview` Neon branch. Migrations from an unmerged
 land there. Drizzle applies only migrations newer than the newest one already recorded, so two
 open PRs with migrations can make the older-timestamped one be **skipped silently** on `preview`
 (its build logs "0 new migration(s)" and its preview fails at runtime). Recovery, also when a PR's
-migration changes before it merges: reset the branch from production (Neon → Branches →
-`preview` → Reset from parent) and redeploy. On `main` the same ordering is enforced by a unit
-test (`scripts/drizzle-journal.test.ts`): journal entries must be strictly increasing in time.
+migration changes before it merges: empty the `preview` database and redeploy, so the build
+migrates it from scratch ("Resetting the preview database" below). Never reset it from
+production. On `main` the same ordering is enforced by a unit test
+(`scripts/drizzle-journal.test.ts`): journal entries must be strictly increasing in time.
 
 ## Production stays off until auth ships — how that is enforced
 
@@ -92,7 +93,8 @@ production database, after the first deployment with auth:
    manager or download) and confirm. The app opens on Today.
 4. `/setup` now answers 404 for good, even with the right token. Remove `OWNER_SETUP_TOKEN_HASH`
    from Vercel (it can no longer be used, but there is no reason to keep it). Vercel's request
-   logs contain the setup URL with the token; it is useless once setup has completed.
+   logs contain the setup URL with the token; it is useless once setup has completed: a token
+   works for one setup, and its hash is recorded so it stays refused even after an owner reset.
 5. Recommended right away: Profile → Security → **Add passkey** on a second device (Mac, or a
    hardware key) so losing the iPhone never needs a recovery code.
 
@@ -119,7 +121,8 @@ work there (and vice versa).
   name to be typed back (it refuses to run non-interactively). In one transaction it deletes
   every passkey, recovery code and pending challenge, revokes every session, reopens first-run
   setup and writes an `owner.reset` audit event. **The owner row and all training data are
-  kept.** Then follow "Owner setup" above with a new token; setup re-attaches to the same owner.
+  kept.** Then follow "Owner setup" above with a **new** token (the previous link stays refused:
+  each token works for one setup); setup re-attaches to the same owner.
 
 ## Backups (`backup.yml`)
 
@@ -161,6 +164,47 @@ wrong passphrase fails without touching the target.
 Vercel builds every PR against the `preview` Neon branch (migrated by the build). They are behind
 Vercel Authentication. `ANTHROPIC_API_KEY` is production-only; previews use the deterministic mock
 coach provider unless a key is added for Preview.
+
+### Resetting the preview database
+
+**Never copy production data into `preview`:** no Neon **Reset from parent** (it replaces
+`preview` with production's current schema _and rows_), no **Restore** from `production`, no new
+branch from `production` other than schema-only, no backup restored into it. Once production is
+live it holds the owner's training history and profile (injuries included) and the auth tables:
+the owner, passkey public keys, session and recovery-code hashes, audit events with IP addresses
+and user agents. A copy puts all of it in the one database that every PR preview reads and
+writes, under code that has not been reviewed or merged, and breaks the assumption that previews
+have their own database (docs/security.md). It does not even give a working preview: the copied
+owner closes first-run setup there, and production passkeys do not work on a preview host.
+
+To reset it, empty it and let the next preview build migrate it from scratch. The branch and its
+connection strings stay, so nothing changes in Vercel:
+
+1. Neon → **SQL Editor**, branch **`preview`**, database `neondb`. Check the branch selector
+   first: on `production` these statements delete everything.
+
+   ```sql
+   DROP SCHEMA IF EXISTS drizzle CASCADE; -- the migrations journal
+   DROP SCHEMA public CASCADE;            -- every app table and its rows
+   CREATE SCHEMA public;
+   ```
+
+   They are what `pnpm db:reset:test` runs on the test databases (`resetDatabase` in
+   `src/lib/server/db/migrate.ts`).
+
+2. Redeploy the PR's preview (Vercel → Deployments → ⋯ → Redeploy). Its build logs
+   `db:migrate: N new migration(s) applied, N total`, N being every committed migration plus the
+   PR's own; until a preview has rebuilt, running previews fail at runtime. The database now has
+   no owner: set a preview up again with its own token to sign in ("Owner setup" above).
+
+If the branch itself has to be recreated, make it a **schema-only** branch (Beta): Neon →
+Branches → New branch, parent `production`, **Schema only**, and untick "Automatically delete
+branch after" (the console defaults to one day). It copies tables but never rows, and it is a root
+branch, so it has no Reset from parent to click by mistake. Run step 1 on it before its first
+build anyway: it has production's tables but an empty migrations journal, so `db:migrate` would
+replay the first migration and fail with `relation "…" already exists`. Then point Vercel's
+Preview `DATABASE_URL` (pooled) and `DATABASE_URL_UNPOOLED` (direct) at it and update its branch
+ID under "What exists".
 
 ## Security notes
 

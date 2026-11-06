@@ -203,6 +203,37 @@ describe('recovery codes', () => {
 		});
 	});
 
+	it('a recovery session that expires while its request waits for the session lock adds no passkey', async () => {
+		await withCommitted(async (db) => {
+			const time = clock();
+			const owner = await setUpOwner(db, { now: time.now });
+			const recovered = await redeemRecoveryCode(owner.recoveryCodes[7], undefined, request(), {
+				db,
+				now: time.now
+			});
+			time.advance(SESSION.recoveryMs - 60_000);
+			const session = (await validateSessionToken(recovered.token, { db, now: time.now }))!.session;
+			const intruder = new SoftAuthenticator({ rpId: RP.rpID, origin: ORIGIN });
+			const options = await beginPasskeyRegistration(session, request(), { db, now: time.now });
+
+			// Another request holds the recovery session's row when this one reaches its transaction,
+			// and the session's 15 minutes run out while it waits.
+			const other = await holdTransaction((tx) =>
+				tx.execute(sql`select id from auth_sessions where id = ${session.id} for update`)
+			);
+			const adding = completePasskeyRegistration(session, intruder.register(options), request(), {
+				db,
+				now: time.now
+			});
+			await lockWaiters(1);
+			time.advance(61_000);
+			await other.commit();
+
+			await expect(adding).rejects.toMatchObject({ code: 'not_found' });
+			expect(await createAuthRepository(db).countPasskeys(owner.ownerId)).toBe(1);
+		});
+	});
+
 	it('regenerate: every old code stops working, 10 new ones do', async () => {
 		await withRollback(async (tx) => {
 			const owner = await setUpOwner(tx);
