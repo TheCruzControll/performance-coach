@@ -56,5 +56,10 @@ export const EDITORS: Record<SectionKey, () => Promise<SectionEditor>> = {
 	equipment: () =>
 		Promise.all([import('./EquipmentEditor.svelte'), import('./equipment')]).then(
 			([editor, { equipmentDraft }]) => section(editor.default, equipmentDraft, 'equipment')
+		),
+	strength: () =>
+		Promise.all([import('./BaselinesEditor.svelte'), import('./strength')]).then(
+			([editor, { baselinesDraft, baselinesPayload }]) =>
+				section(editor.default, baselinesDraft, 'baselines', baselinesPayload)
 		)
 };
