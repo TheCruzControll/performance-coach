@@ -1,7 +1,6 @@
 /**
- * Column helpers shared by the schema files. They are M2's private copies in profile.ts, defined
- * exactly the same way, so a table that switches to them generates the same SQL (`pnpm db:drift`
- * proves it). profile.ts moves to these in M3's coaching-memory slice.
+ * Column helpers shared by the schema files. M2's profile.ts defined them first; it uses these
+ * now, and switching generated no SQL (`pnpm db:drift` proves it).
  */
 import { sql } from 'drizzle-orm';
 import { timestamp, uuid } from 'drizzle-orm/pg-core';
