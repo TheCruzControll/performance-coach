@@ -209,22 +209,20 @@ export function createAuthRepository(db: Executor) {
 
 		/**
 		 * Row-lock a session if it is still live (not revoked, not expired), so nothing can revoke
-		 * it before the transaction ends. False if it has ended.
+		 * it before the transaction ends. False if it has ended. The clock is read once the lock is
+		 * held, so a session that expires while waiting for it counts as ended.
 		 */
-		async lockLiveSession(id: string, now: Date): Promise<boolean> {
-			const rows = await db
-				.select({ id: authSessions.id })
+		async lockLiveSession(id: string, now: () => Date): Promise<boolean> {
+			const [row] = await db
+				.select({
+					expiresAt: authSessions.expiresAt,
+					absoluteExpiresAt: authSessions.absoluteExpiresAt
+				})
 				.from(authSessions)
-				.where(
-					and(
-						eq(authSessions.id, id),
-						isNull(authSessions.revokedAt),
-						gt(authSessions.expiresAt, now),
-						gt(authSessions.absoluteExpiresAt, now)
-					)
-				)
+				.where(and(eq(authSessions.id, id), isNull(authSessions.revokedAt)))
 				.for('update');
-			return rows.length === 1;
+			const at = now();
+			return !!row && row.expiresAt > at && row.absoluteExpiresAt > at;
 		},
 
 		async touchSession(id: string, values: { lastSeenAt: Date; expiresAt?: Date }) {
