@@ -280,6 +280,9 @@ later-pass screen).
   `expectNoShift(page, { action, boxes })`, never `layoutShiftDuring` alone: WebKit reports no
   layout-shift entries, so `layoutShiftDuring` throws there and `expectNoShift` checks the named
   boxes, with an annotation.
+- A screen in the shell checks `<main>` against the rail, never the window, at the width its
+  `data-layout` declares, read from the token rather than written as a number:
+  `expectMainCentred(page, await tokenPx(page, '--content-readable'))` (or `--content-wide`).
 - `*.desktop.e2e.ts` specs run in the iPhone projects at desktop size, on Chromium and WebKit,
   until desktop projects exist.
 
