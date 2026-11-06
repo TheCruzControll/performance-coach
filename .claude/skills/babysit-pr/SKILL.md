@@ -10,6 +10,15 @@ metadata:
 Many repos have AI review bots. They're helpful, even if they are not always
 right.
 
+## Which harness?
+
+- Decide once per invocation. If any `mcp__t3-code__` tool is listed or loads
+  with ToolSearch (`select:mcp__t3-code__orchestrator_capabilities`), you are
+  in T3 Code: read [t3.md](t3.md) in this skill's directory and follow it.
+- Otherwise (Claude Code in a terminal, Claude Desktop, or a claude.ai cloud
+  session): read [claude.md](claude.md) and follow it.
+- The rules in this file apply in both; the path file says which tools to use.
+
 ## Waiting
 
 GitHub access: use whatever the session has, such as the `gh` CLI (if
@@ -18,74 +27,14 @@ for `github`). The steps in this skill say what to do, not which command to run.
 nothing reaches GitHub, report that and stop.
 
 Never write your own watcher, polling loop, or `sleep` loop. Use one watcher
-per PR: `watch_pull_request` in T3 Code, `pr-wait` everywhere else. Never run
-both on the same PR. Every watcher on a GitHub account shares one rate limit.
+per PR (which one: see your path file). Never run two watchers on the same PR.
+Every watcher on a GitHub account shares one rate limit.
 
-### In T3 Code: `watch_pull_request`
+Handle the existing checks and comments first, then start the watcher.
 
-In Claude Code, T3 tools are deferred. Load them first with ToolSearch
-`select:mcp__t3-code__watch_pull_request,mcp__t3-code__unwatch_pull_request`.
-If they don't load, you are not in T3 Code: use `pr-wait`.
+A wake is news, not a merge decision. Check the merge gate yourself.
 
-Handle the existing checks and comments first. Then call
-`watch_pull_request` and end your turn. T3 Code wakes you with a message when
-a check fails, the required checks pass, someone comments or reviews, or the
-branch conflicts.
-
-- **Only the thread that owns the PR watches it.** If you are a delegated
-  child task (a reviewer, a Sol round, any `delegate_task` child), never call
-  `watch_pull_request`. The parent owns the PR. Do not watch PRs you are not
-  working on.
-- **A wake is news, not a merge decision.** Check the merge gate yourself.
-- **Unwatch when you hand off.** A watched thread stays in Working and out of
-  the user's inbox. When you stop (ready, blocked, or asking the user a question),
-  call `unwatch_pull_request` first. A merge or close ends the watch on its
-  own.
-- **"Stopped watching, could not read it"** usually means GitHub's rate limit
-  is used up. Check the GraphQL rate limit (`remaining`, `reset`) before you
-  watch again. If `remaining` is near 0, wait for `reset` with one background
-  command, then watch again. Never watch again in a tight loop.
-
-### Everywhere else (Claude Code CLI, Claude Desktop, cloud): `pr-wait`
-
-Wait with `scripts/pr-wait` from this skill's directory (use its absolute
-path). It needs the `gh` CLI: your login on a local machine, or the
-pre-installed `gh` that cloud sessions authenticate through their GitHub proxy.
-It uses GraphQL when it can and switches to the REST API by itself when
-GraphQL is blocked, as it is in cloud sessions.
-
-```bash
-pr-wait <pr> [--repo owner/name] [--until ready|green|any-change]
-```
-
-It prints one line per real event. It exits 0 when the `--until` condition is
-met or the PR merges, 1 when it needs you (a required check failed, conflicts,
-unresolved threads, PR closed), and 2 on bad input.
-
-- `ready` (default): required checks green, Greptile or Macroscope reviewed the
-  head, and no unresolved threads. Use this to babysit.
-- `green`: required checks only. Use it when the repo has no Greptile or
-  Macroscope.
-- `any-change`: exit on the first event.
-
-In Claude Code (CLI or Desktop, local or cloud), run it with the Monitor tool,
-so each line wakes you. Always pass `timeout_ms: 1800000`: the default is 5
-minutes and 30 minutes is the maximum. Without a monitor, run it in the
-background (`run_in_background`, `timeout: 7200000`; cloud sessions cap
-background commands at 30 minutes) and wait for it to exit. Append `2>&1` so a
-crash message reaches you.
-
-In REST mode (its summary says `threads unchecked`), `pr-wait` cannot see
-whether review threads are resolved, so `ready` does not wait on them. Before
-you call the PR ready, make sure every review comment has a reply or a fix.
-
-Start it again after you push, after you handle an exit 1, after a resume, and
-when the Monitor timeout ends while the PR is still open.
-It remembers what it already reported, so nothing that arrived in between is
-lost. If it says another pid already watches the PR, do not start a second one.
-Kill the old one only if its events do not reach you.
-
-With either watcher: when an event needs no action, end your turn without a
+With any watcher: when an event needs no action, end your turn without a
 message. Never post or say "still waiting".
 
 ## GitHub rate limits
@@ -93,18 +42,10 @@ message. Never post or say "still waiting".
 GitHub's GraphQL and REST APIs have separate rate limits. When one is used
 up, read the PR, its check runs, and its comments through the other.
 
-No `gh` at all: read the PR, its checks, and its comments once with whatever
-GitHub access the session has, handle what is there, report the PR's state,
-and stop. Do not poll.
-
-## Claude Desktop and cloud sessions
-
-A cloud session is reclaimed after it sits idle, and its watcher goes with it.
-When you hand off or stop and the PR is still open, tell the user they can turn
-on auto-fix (the ⋮ menu next to the PR title in the session's Changes card).
-GitHub then wakes Claude on new CI failures and review comments. You cannot
-turn it on yourself.
-
+No watcher available at all (for example no `gh` and no T3 or cloud PR
+watcher): read the PR, its checks, and its comments once
+with whatever GitHub access the session has, handle what is there, report the
+PR's state, and stop. Do not poll.
 
 ## Reviews
 
@@ -134,16 +75,15 @@ narrows code.
 
 ## Base branch and merging
 
-Keep an eye on changes to `main` and rebase when needed. `pr-wait` reports when
-new base commits touch this PR's files, and when the PR becomes BEHIND or DIRTY.
-`watch_pull_request` reports conflicts only, so check for BEHIND yourself
-before you call the PR ready.
+Keep an eye on changes to `main` and rebase when needed. Before you call the PR
+ready, make sure it is not BEHIND or DIRTY (whether your watcher reports this:
+see your path file).
 If an overlapping PR makes this one obsolete, stop monitoring, report it to the
 user, and ask before closing the PR unless closure was explicitly authorized.
 
 If nothing has changed, stay quiet rather than posting filler comments. Stop
-when `pr-wait` exits 0, or in T3 Code when the merge gate passes on the latest
-head. Merge only when the user explicitly requested it;
+when the merge gate passes on the latest head (how your watcher signals it:
+see your path file). Merge only when the user explicitly requested it;
 otherwise report that the PR is ready. Right before a merge, run `git fetch` and
 check the PR again. Never merge when it is BEHIND or DIRTY, or when base commits
 that landed after the last green run touch this PR's files. Rebase, push, and

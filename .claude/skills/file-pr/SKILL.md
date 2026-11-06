@@ -7,9 +7,20 @@ metadata:
 
 # File PR
 
+## Which harness?
+
+- Decide once per invocation. If any `mcp__t3-code__` tool is listed or loads
+  with ToolSearch (`select:mcp__t3-code__orchestrator_capabilities`), you are
+  in T3 Code: read [t3.md](t3.md) in this skill's directory and follow it.
+- Otherwise (Claude Code in a terminal, Claude Desktop, or a claude.ai cloud
+  session): read [claude.md](claude.md) and follow it.
+- The rules in this file apply in both; the path file says which tools to use.
+
+## Steps
+
 Before filing, check whether a PR for this branch already exists. Review the
 diff locally against the base branch (usually `origin/main`) to make sure its
-contents match the goal.
+contents match the goal. (tools: see your path file)
 
 PR titles usually become commit messages, so follow the repository's title
 conventions. Look at recently merged PRs and Git history for examples. Prefer a
@@ -39,14 +50,16 @@ End the description with the public model name and harness that made the
 changes, for example `Created with <model> in <harness>.` Include subagent
 models that wrote part of the change. Use the model name the harness reports.
 If model identity is unavailable, name the harness without guessing a model.
+If the harness requires its own attribution lines at the end of PR
+descriptions, keep them last and put this line before them.
 
 Before submission, check the title, description, quotes, and attachments for
 secrets and private details.
 
 GitHub access: use whatever the session has, such as the `gh` CLI (if
 logged in), a GitHub MCP server, or built-in GitHub tools (search ToolSearch
-for `github`). The steps below say what to do, not which command to run. If
-nothing reaches GitHub, stop and say so.
+for `github`). The steps in this skill say what to do, not which command to
+run (tools: see your path file). If nothing reaches GitHub, stop and say so.
 
 Open a real PR rather than a draft so review bots run. If opening it fails
 because a GitHub rate limit is used up, try another route the session has
