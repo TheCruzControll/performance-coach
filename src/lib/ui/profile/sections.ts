@@ -17,6 +17,12 @@ export interface SectionInfo {
 
 export const SECTIONS = [
 	{
+		key: 'goals',
+		title: 'Goals',
+		subtitle: 'What you’re training for, in order',
+		icon: 'target'
+	},
+	{
 		key: 'experience',
 		title: 'Experience',
 		subtitle: 'Your level in each discipline',

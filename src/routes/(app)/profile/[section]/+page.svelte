@@ -13,5 +13,11 @@
      mounts it afresh. ({#key} would do the same, but its helper would join the runtime that
      every route loads.) -->
 {#each [data.key] as key (key)}
-	<SectionScreen {key} title={data.title} saved={data.saved} context={data.context} />
+	<SectionScreen
+		{key}
+		title={data.title}
+		saved={data.saved}
+		context={data.context}
+		saveBar={data.saveBar}
+	/>
 {/each}
