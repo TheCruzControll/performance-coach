@@ -41,8 +41,10 @@ export class SectionForm<T> {
 		if (this.busy) return { ok: false, errors: {} };
 		this.busy = true;
 		this.failed = null;
-		// What is sent: edits made while the request is in flight stay unsaved.
-		const value = $state.snapshot(this.value) as T;
+		// What is sent: edits made while the request is in flight stay unsaved. A JSON copy, as
+		// the section is posted and compared as JSON: `$state.snapshot` would add its clone
+		// helper to the Svelte runtime that every route loads.
+		const value = JSON.parse(JSON.stringify(this.value)) as T;
 		try {
 			const outcome = await save(
 				action,
