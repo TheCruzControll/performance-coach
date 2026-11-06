@@ -7,43 +7,48 @@ metadata:
 
 # Council
 
-Before an audit, address outstanding PR comments, fix known issues, and run
-relevant checks. Give council the updated implementation; do not defer known
-fixes until reviews return. If the user wants to discard the implementation
-and explore new ideas, skip fixes to code being replaced.
+## Which harness?
+
+Decide once per invocation, in this order:
+
+1. Any `mcp__t3-code__` tool is listed or loads with tool search
+   (`mcp__t3-code__orchestrator_capabilities`): T3 Code. Read [t3.md](t3.md).
+   T3 Code runs Claude Code or Codex underneath; T3 wins.
+2. You are Claude Code (terminal, Claude Desktop, or a claude.ai cloud
+   session; tools such as Agent, ToolSearch, Skill): read
+   [claude.md](claude.md).
+3. You are Codex (your instructions start "You are Codex" or mention the
+   Codex CLI; tools such as exec_command, apply_patch, spawn_agent): read
+   [codex.md](codex.md).
+4. You are Pi (the pi coding agent; tools such as read, bash, edit, write,
+   and a skill path given by Pi): read [pi.md](pi.md).
+
+Paths are relative to this skill's directory. The rules in this file apply
+everywhere; the path file says which tools to use.
+
+## Before the audit
+
+Address outstanding PR comments, fix known issues, and run relevant checks.
+Give council the updated implementation; do not defer known fixes until
+reviews return. If the user wants to discard the implementation and explore
+new ideas, skip fixes to code being replaced.
+
+## Seats
 
 Bring in three delegates to help with the user's request, usually for review
 or feedback, at high reasoning effort. If the user's instructions name council
-members, use those. Otherwise the seats depend on the harness.
+members, use those. Otherwise the seats depend on the harness (see your path
+file).
 
-**T3 Code (multi-vendor):** one strong model from each of three different
-providers: the latest flagship from each, for example Claude Opus, GPT Sol,
-and Gemini Pro. Use `orchestrator_capabilities` to resolve the models, then
-`delegate_task` to start one delegate per model in parallel. Gemini comes from
-the `antigravity` provider. In Claude Code, T3 tools are deferred: load them
-first with ToolSearch
-`select:mcp__t3-code__orchestrator_capabilities,mcp__t3-code__delegate_task`.
-If a vendor's flagship is not on the account (e.g. no Gemini Pro), seat that
-vendor's strongest available model and use its real name in the results.
-Providers are model vendors (Anthropic, OpenAI, Google), not T3 provider
-instances; a second model from a vendor already seated does not count.
-
-**Single-vendor harness (Claude Code without T3, Codex):** use only that
+In a single-vendor harness (Claude Code without T3, Codex), use only that
 vendor's models. Never call another vendor's CLI. Seat three different models
 from the family, and start all three in parallel with the harness's subagent
-tool:
-
-- Claude Code (terminal, Desktop, cloud): Claude Fable 5.1, Claude Opus 5.5,
-  and Claude Sonnet 5.5 (Agent tool `model: "fable"`, `"opus"`, `"sonnet"`,
-  `effort: "high"`). If one is not on the account, use Claude Haiku 5.5
-  (`"haiku"`) in its place.
-- Codex: the three highest-priority models in `codex debug models` with
-  `visibility == "list"` that belong to different lines (for example
-  GPT-6.1-Sol, GPT-6-Astra, GPT-6.1-Terra; not two versions of Sol). Resolve
-  them from the list at run time; do not hardcode.
+tool.
 
 If you cannot seat three different models, or a named member is unavailable,
 report it instead of substituting.
+
+## Brief and collect
 
 Give each delegate the request and relevant context. For review or feedback,
 keep their work read-only, and tell them to answer directly without using the
@@ -53,6 +58,8 @@ findings, disagreements, and recommended next steps.
 For a code review, ask each delegate for a score out of 10.
 Count each full review pass as one round.
 A fresh review after fixes starts a new round.
+
+## Results
 
 If the work ends in a pull request, put the results in the PR description.
 Put this section before the model and harness line at the end:
@@ -73,8 +80,11 @@ Name each delegate by the model that ran (in Claude Code without T3, for
 example Claude Fable 5.1, Claude Opus 5.5, Claude Sonnet 5.5).
 
 If a delegate gives no score, write `no score`. Do not invent one.
-If the PR is open, edit the description. Do not post a comment for this.
+If the PR is open, edit the description (tools: see your path file). Do not
+post a comment for this.
 If there is no PR, put the same results in the final reply only.
+
+## Loop
 
 If you agree with their recommendations, make the changes and request a fresh
 review after. Continue this process until all delegates are satisfied with the

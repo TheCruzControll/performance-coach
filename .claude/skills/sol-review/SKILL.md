@@ -23,13 +23,31 @@ The user's main code reviewer, adapted from tstack's sol-loop. tl;dr: use
 OpenAI's GPT Sol to review code in a loop, before or after filing a pull
 request. In Claude Code without T3, Claude Opus 5.5 takes Sol's place.
 
+## Which harness?
+
+Decide once per invocation, in this order:
+
+1. Any `mcp__t3-code__` tool is listed or loads with tool search
+   (`mcp__t3-code__orchestrator_capabilities`): T3 Code, read [t3.md](t3.md).
+   T3 Code runs Claude Code or Codex underneath; T3 wins.
+2. You are Claude Code (terminal, Claude Desktop, or a claude.ai cloud session;
+   tools such as Agent, ToolSearch, Skill): read [claude.md](claude.md).
+3. You are Codex (your instructions start "You are Codex" or mention the Codex
+   CLI; tools such as exec_command, apply_patch, spawn_agent): read
+   [codex.md](codex.md).
+4. You are Pi (the pi coding agent; tools such as read, bash, edit, write, and
+   a skill path given by Pi): read [pi.md](pi.md).
+
+Paths are relative to this skill's directory. The rules in this file apply
+everywhere; the path file says which tools to use.
+
 Make the most minimal possible changes to appease the Sol reviewers. Be careful
 of scope creep and don't be scared to push back.
 
 If the user names a different reviewer or command (`/code-review`, council, a
 non-Sol model), use that instead. If you are a delegate or subagent (a council
-member, a `delegate_task` child), review directly and return findings. Do not
-start this skill or another reviewer.
+member, a `delegate_task` child, an `Agent` subagent), review directly and
+return findings. Do not start this skill or another reviewer.
 
 ## 0. Mode
 
@@ -57,6 +75,7 @@ Sol.
   doc, or format-only fixes need no new round.
 - One reviewer only. Sol must not start subagents or reviewers.
 - Keep a ledger: id, severity, outcome, usage if returned. Never guess it.
+  (tools: see your path file)
 
 ## 1. Scope
 
@@ -67,7 +86,7 @@ paths if they separate cleanly. Otherwise stop and ask.
 GitHub access: use whatever the session has, such as the `gh` CLI (if
 logged in), a GitHub MCP server, or built-in GitHub tools (search ToolSearch
 for `github`). The steps below say what to do, not which command to run. If
-nothing reaches GitHub, stop and say so.
+nothing reaches GitHub, stop and say so. (tools: see your path file)
 
 Find the base after `git fetch origin`. Default branch: the repo's default
 branch on GitHub (or `git symbolic-ref refs/remotes/origin/HEAD`). If an
@@ -104,37 +123,23 @@ or pre-failing checks in the brief.
 
 ## 2. Start Sol
 
-In Claude Code, T3 tools are deferred. Load them first with ToolSearch
-`select:mcp__t3-code__orchestrator_capabilities,mcp__t3-code__delegate_task,mcp__t3-code__task_cancel`.
-Elsewhere, if T3 tools are not listed, try one direct capability call.
+Pick the reviewer for your harness (tools: see your path file):
 
-In T3, call `orchestrator_capabilities`. If Sol is not listed, search `sol`.
-Pick the latest Sol unless the user named a version. Do not hardcode an ID.
-Prefer the `codex` provider instance. Reasoning effort: `high` unless the user
-names one. Use `xhigh` for security, permissions, auth, data loss, or
-concurrency. `ultra` makes Sol start subagents, so use `max` unless the user
-confirms `ultra`. Sol defaults to low, so always set it. Use the effort option
-id that capabilities lists for that model (`reasoningEffort` on codex), never a
-guessed one. Record provider, model, and effort. Use `delegate_task` every
-round (`role: "review"`, `mode: "async"`, `target` with `providerInstanceId`,
-`model`, `options`). Keep `isolation` shared; a worktree drops uncommitted
-edits. Save `taskId`. New `clientRequestId` per round. `childThreadId` is
-storage, not the next target. Do not use `t3_thread_send`, `create_threads`,
-or `t3_thread_launch` for review.
-
-Outside T3, stay inside the harness's own model family. Never call another
-vendor's CLI from a single-vendor harness.
-
-- Codex (or any harness with a native Sol subagent): use the native Sol
-  subagent at the chosen effort and keep its ID. Pick the newest Sol it lists.
+- T3 Code: GPT Sol through T3 (see t3.md).
+- Codex: GPT Sol as a native Codex subagent (see codex.md).
+- Pi: GPT Sol through a Pi subagent (see pi.md).
 - Claude Code without T3 (terminal, Desktop, cloud): the reviewer is Claude
-  Opus 5.5 (`claude-opus-5-5`). Start it with the Agent tool: `model: "opus"`, `effort`
-  as chosen above (the skill sets it explicitly), `subagent_type:
-  "general-purpose"`, `run_in_background: false`. Use a fresh Agent call each
-  round with the round 1 brief plus the ledger, as in section 4. Use another
-  model only if the user names one (e.g. `fable` for Claude Fable 5.1). A reply
-  is a non-empty final message with a `VERDICT:` line; anything else is a
-  failure. Record model `Claude Opus 5.5` (or what ran) and the effort.
+  Opus 5.5 (`claude-opus-5-5`), started as a subagent (see claude.md). Use
+  another model only if the user names one (e.g. Claude Fable 5.1).
+
+Outside T3 and Pi (multi-vendor through their own providers), stay inside the
+harness's own model family. Never call another vendor's CLI from a
+single-vendor harness.
+
+Reasoning effort: `high` unless the user names one. Use `xhigh` for security,
+permissions, auth, data loss, or concurrency. `ultra` makes Sol start
+subagents, so use `max` unless the user confirms `ultra`. Sol defaults to low,
+so always set it. Record provider, model, and effort.
 
 Everywhere below, "Sol" means whichever reviewer this section picked.
 
@@ -145,7 +150,7 @@ Do not edit scoped files while review runs. Wait for the notice. Do not
 poll or start a second reviewer. Timeout, error, or no reply is not
 approval. On failure, cancel, verify stop, restart with the ledger.
 
-Round 1 brief (T3 children get no history):
+Round 1 brief (the reviewer gets no history):
 
 ```
 Review only. Do not edit, commit, push, comment on PRs, start subagents, or use
@@ -187,9 +192,9 @@ end the loop.
 ## 4. Next round
 
 Start one only if budget remains and a blocker or should is open, behavior code
-changed, or approval does not cover the current behavior diff. Use a fresh
-`delegate_task` in T3, follow up the saved native ID, or make a fresh Agent
-call in Claude Code. Send the round 1 brief, the ledger (`fixed:` / `disagree:` /
+changed, or approval does not cover the current behavior diff. Start it fresh
+the way your path file says.
+Send the round 1 brief, the ledger (`fixed:` / `disagree:` /
 `declined:` + evidence), the same base diff, and the change since last round.
 To get that change, save `git stash create` before each round. It prints a
 snapshot SHA and changes nothing; empty means use `HEAD`. Send
@@ -207,7 +212,7 @@ Do not push during the loop. Push after agreement only if the user asked
 to push, ship, or update the PR. If you push to a PR, edit the PR description
 (not a comment). Put this line above file-pr's `Created with <model> in
 <harness>.` line, or at the end if there is none. Replace any earlier
-`Reviewed with sol-review` line:
+`Reviewed with sol-review` line (tools: see your path file):
 
 `Reviewed with sol-review: <N> rounds with <model> on <effort>. Sol verdict: approved`.
 
