@@ -85,6 +85,13 @@ Folders are layers. Allowed dependencies point inwards. Every "Must not import" 
 
 SvelteKit additionally refuses to bundle any `server/` module into client code.
 
+Two domain packages are server-only at runtime: `src/lib/domain/exercises/` (the catalogue) and
+`src/lib/domain/programming/` (the generator). UI, client code, route components, universal
+loads and the rest of the domain may only `import type` from them. ESLint enforces it with a rule
+of its own (`@typescript-eslint/no-restricted-imports`), so the layer rules above stay in force on
+the same files (`scripts/server-only-imports.test.ts`), and `pnpm budgets` fails if the
+catalogue's header is in any client chunk.
+
 ### Why services sit between routes and the database
 
 The coach (M5) must be able to do everything the UI can — read history, propose changes,
@@ -93,6 +100,13 @@ in `services/` (not in route files) makes the agent's tools thin adapters over s
 routes thin, and makes business logic testable without HTTP. Repositories accept an `Executor`
 (the database _or_ a transaction), so services decide transaction boundaries and integration
 tests can wrap each test in a rolled-back transaction.
+
+A transaction is one connection, and a connection runs one query at a time, so code handed an
+`Executor` awaits its queries in turn and never starts several together (`Promise.all` over one
+`db`). node-postgres 8 still queues such queries but has deprecated it for pg@9, and integration
+tests fail on any query sent to a busy connection (`tests/integration/one-query-per-client.ts`).
+A route may still await several services together when none is handed a transaction: the pool
+gives each of their queries its own connection.
 
 ## Data
 

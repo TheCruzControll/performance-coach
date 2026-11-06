@@ -51,6 +51,21 @@ shared component costs every route, Security included.
   The server only renders Buttons, so those imports are now left out of its build
   (`import.meta.env.SSR`) and each group's CSS loads with its tab; `/design` JS gains 23 B.
 
+- **Train's plate-calculator sheet loads with the calculator** (`/(app)/train` 58.2 → 56.5 KB).
+  Train imported `BottomSheet` statically although only the plate calculator opens in it; the
+  route-local `PlateSheet` (sheet and calculator) now loads on intent, as the calculator alone
+  did, and the first tap fetches 5.7 KB instead of 3.9 KB. Its failed-chunk state (a `Notice`
+  with Retry under the row; the notice's chunk is 0.5 KB) and a CSS-only pending spinner stay in
+  Train, whose route CSS grows 10.5 → 11.1 KB. Chromium keeps a failed module fetch for the
+  page's lifetime, so a retry that fails again online reloads Train with `?tool=plates`. Every
+  other route is 33 B lighter: the app entry lists fewer of Train's static imports.
+  The sheet's JavaScript has no `<link rel=modulepreload>`, as no code loaded on demand has (the
+  one `build.modulePreload` rule in `vite.config.ts`, below): WebKit keeps a modulepreload that
+  failed and fails every later import of that URL without a request, reloads included (WebKit
+  bug 270357), so Retry could never recover on Safari. Before the service worker holds the build,
+  a first tap fetches the sheet's chunks in import order after its stylesheets (three round
+  trips) where the modulepreload tags fetched them alongside.
+
 - **`@simplewebauthn/browser` (≈5 KB gzip) is never in initial JS.** It is imported on demand by
   `src/lib/client/passkeys.ts`; `pnpm budgets` fails if it appears in any route's initial JS or
   is reachable (static or dynamic imports) from any route other than `/`, `/setup`,
@@ -69,6 +84,18 @@ shared component costs every route, Security included.
   cost 228 B (now a JSON copy) and a `{#key}` block 80 B (a keyed each of one). Importing a shared
   component on demand cost `/train` 181 B (a module namespace in a chunk it loads up front), so the
   sheet is its own small component.
+- **Code loaded on demand carries no `<link rel="modulepreload">` hints** (`build.modulePreload`
+  in `vite.config.ts`: one rule for every lazy import, Train's plate sheet and each profile
+  editor included, so new lazy code needs no list; only SvelteKit's router, in its entry chunks,
+  keeps them). Its JavaScript arrives through the module graph and its CSS still loads with it.
+  WebKit keeps a failed modulepreload in its memory cache until the page that made it is
+  garbage-collected and serves that failure to the next page too (WebKit bug 270357), so a Retry
+  that reloads could never load the editor again on Safari. Measured with it:
+  `/(app)/profile/security` 61350 → 61231 B of 61440 and `/design` 57327 → 57143 B (their
+  on-demand code lost its hints); with main's Train sheet merged, `/(app)/profile/security` is
+  61194 B. The (app) layout's guard against rendering a navigation that a later one has overtaken
+  costs every app screen 33 B, on top of 43 B every route pays for the app entry (its list of
+  route files, reordered).
 - **Main-thread budget** (`E2E_PERF_ALONE=1 pnpm test:e2e --project=perf`, median of 5 loads at 4×
   CPU; app screens signed in, `/` signed out): `/` 57 ms, `/today` 81, `/train` 72, `/progress`
   67, `/coach` 40, `/profile` 87, `/profile/security` 60 — every screen meets the 200 ms target.

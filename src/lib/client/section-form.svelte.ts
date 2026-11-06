@@ -32,6 +32,11 @@ export class SectionForm<T> {
 		return JSON.stringify(this.value) !== this.#saved;
 	}
 
+	/** A new form at the last saved value: what is left once the edits are discarded. */
+	reverted(): SectionForm<T> {
+		return new SectionForm(JSON.parse(this.#saved) as T, this.#schema, this.#toPayload);
+	}
+
 	/** Validate and post to `action`; redirects (the next step) are followed. */
 	async submit(
 		action = '?/save',
