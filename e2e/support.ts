@@ -1,8 +1,11 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
-import { expect, type Page, type TestInfo } from '@playwright/test';
+import { expect, type APIRequestContext, type Page, type TestInfo } from '@playwright/test';
+import { getTableName, is } from 'drizzle-orm';
+import { PgTable } from 'drizzle-orm/pg-core';
 import pg from 'pg';
 import { LOCAL_DATABASE_URLS } from '../src/lib/server/db/migrate';
+import * as profileSchema from '../src/lib/server/db/schema/profile';
 
 /** The app's origin: state-changing requests must send it (`Origin`), as browsers do. */
 export const ORIGIN =
@@ -34,6 +37,47 @@ export async function query<T extends pg.QueryResultRow>(
 	} finally {
 		await client.end();
 	}
+}
+
+/** Every training-profile table (src/lib/server/db/schema/profile.ts); none references another. */
+const TRAINING_PROFILE_TABLES = Object.values(profileSchema)
+	.filter((table) => is(table, PgTable))
+	.map((table) => getTableName(table));
+
+/**
+ * Start from a blank training profile: delete the owner's rows from every training-profile
+ * table, in one transaction. For serial specs (`*.serial.e2e.ts`), which run one at a time.
+ */
+export async function resetTrainingProfile(): Promise<void> {
+	await query(
+		TRAINING_PROFILE_TABLES.map(
+			(table) => `delete from ${table} where owner_id in (select id from owners)`
+		).join(';\n')
+	);
+}
+
+/**
+ * Save a training-profile section through its form action, as the screen's Save does (a JSON
+ * `payload`, the app's Origin, SvelteKit's action headers): to seed what a serial spec starts
+ * from. Fails the test unless the action saved.
+ */
+export async function profileAction(
+	request: APIRequestContext,
+	action: string,
+	payload: unknown
+): Promise<void> {
+	const response = await request.post(action, {
+		headers: { ...SAME_ORIGIN, accept: 'application/json', 'x-sveltekit-action': 'true' },
+		multipart: { payload: JSON.stringify(payload) }
+	});
+	expect(response.status(), `${action} answered`).toBe(200);
+	expect(await response.json(), action).toMatchObject({ type: 'success' });
+}
+
+/** Open a page and wait until it has hydrated: once the network settles, its code has run. */
+export async function gotoHydrated(page: Page, path: string): Promise<void> {
+	await page.goto(path);
+	await page.waitForLoadState('networkidle');
 }
 
 /** Poll until `fn` returns a truthy value (or time out). */

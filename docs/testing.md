@@ -102,6 +102,8 @@ Projects (all `devices['iPhone 15 Pro']`):
 | `perf`            | Chromium | `perf.e2e.ts`, alone with one worker, after the functional suite                                |
 | `setup-webkit`    | WebKit   | `auth-webkit.setup.ts`: a session from the test-only route (CI or `E2E_WEBKIT=1`)               |
 | `iphone-webkit`   | WebKit   | every functional spec on that session (CI or `E2E_WEBKIT=1`; needs `playwright install webkit`) |
+| `serial-chromium` | Chromium | `*.serial.e2e.ts` one at a time, after the functional specs: they change the training profile   |
+| `serial-webkit`   | WebKit   | the same specs after `serial-chromium` (CI or `E2E_WEBKIT=1`)                                   |
 | `exclusive`       | Chromium | `*.exclusive.e2e.ts`, last and alone: account-wide actions                                      |
 
 ### Authentication
