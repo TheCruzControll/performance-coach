@@ -18,6 +18,7 @@ import { appendFileSync, existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { gzipSync } from 'node:zlib';
+import { CATALOGUE_HEADER } from '../src/lib/domain/exercises/format.ts';
 import { PRELOADED_FONT_PATTERN } from '../src/lib/ui/fonts.ts';
 
 export const BUDGETS = {
@@ -315,6 +316,17 @@ if (schemasChunk) {
 	}
 }
 
+/**
+ * Server-only packages: the exercise catalogue (src/lib/domain/exercises) is in no client file at
+ * all, initial or loaded later, the service worker included. Every catalogue table starts with
+ * CATALOGUE_HEADER, the literal format.ts reserves as its bundle signature. This is the second
+ * line of defence behind the server-only lint rule (eslint.config.js), and it also sees dynamic
+ * imports, which the rule does not.
+ */
+const catalogueChunks = readdirSync(CLIENT, { recursive: true, encoding: 'utf8' })
+	.map((file) => file.split(path.sep).join('/'))
+	.filter((file) => file.endsWith('.js') && read(file).includes(CATALOGUE_HEADER));
+
 const lines = [
 	'| Route | Initial JS (gzip) | of which awaited by `load` | Route CSS (gzip) | Preloaded fonts | Status |',
 	'| --- | ---: | ---: | ---: | ---: | :---: |',
@@ -339,7 +351,8 @@ const lines = [
 		.sort()
 		.map((r) => `\`${r}\``)
 		.join(', ')}: ${webauthnProblems.length ? 'FAIL' : 'pass'}`,
-	`Validation (zod, profile schemas): on demand only, never in initial JS: ${validationProblems.length ? 'FAIL' : 'pass'}`
+	`Validation (zod, profile schemas): on demand only, never in initial JS: ${validationProblems.length ? 'FAIL' : 'pass'}`,
+	`Exercise catalogue (server-only): in no client chunk: ${catalogueChunks.length ? 'FAIL' : 'pass'}`
 ];
 console.log(lines.join('\n'));
 
@@ -362,18 +375,26 @@ if (validationProblems.length > 0) {
 	console.error(`\nValidation placement failed:\n  - ${validationProblems.join('\n  - ')}`);
 }
 
+if (catalogueChunks.length > 0) {
+	console.error(
+		`\nThe exercise catalogue reached the browser (its header is in):\n  - ${catalogueChunks.join('\n  - ')}`
+	);
+}
+
 const failed = rows.filter((r) => !r.ok);
 if (
 	failed.length > 0 ||
 	prefixProblems.length > 0 ||
 	webauthnProblems.length > 0 ||
-	validationProblems.length > 0
+	validationProblems.length > 0 ||
+	catalogueChunks.length > 0
 ) {
 	const what = [
 		...failed.map((r) => r.route),
 		...(prefixProblems.length ? ['CSS prefixes'] : []),
 		...(webauthnProblems.length ? ['WebAuthn library placement'] : []),
-		...(validationProblems.length ? ['validation placement'] : [])
+		...(validationProblems.length ? ['validation placement'] : []),
+		...(catalogueChunks.length ? ['catalogue placement'] : [])
 	];
 	console.error(`\nbudgets: FAILED (${what.join(', ')})`);
 	process.exit(1);
