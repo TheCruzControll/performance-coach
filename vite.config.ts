@@ -162,6 +162,17 @@ export default defineConfig(({ command, mode }) => {
 						testTimeout: 15_000,
 						hookTimeout: 30_000
 					}
+				},
+				{
+					// `pnpm db:explain`: query plans on a scratch database (scripts/explain/).
+					extends: './vite.config.ts',
+					test: {
+						name: 'explain',
+						environment: 'node',
+						include: ['scripts/explain/**/*.explain.ts'],
+						testTimeout: 15_000,
+						hookTimeout: 120_000
+					}
 				}
 			]
 		}
