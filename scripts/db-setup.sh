@@ -8,12 +8,12 @@
 #   2. PGHOST/PGUSER/...      standard libpq environment variables
 #   3. the local `postgres` OS user via peer auth (runuser as root, else sudo)
 #
-# Override names with DB_USER, DB_PASSWORD, DB_NAMES ("coach_dev coach_test coach_e2e").
+# Override names with DB_USER, DB_PASSWORD, DB_NAMES ("coach_dev coach_test coach_e2e coach_explain").
 set -euo pipefail
 
 DB_USER="${DB_USER:-coach}"
 DB_PASSWORD="${DB_PASSWORD:-coach}"
-read -r -a DB_NAMES <<<"${DB_NAMES:-coach_dev coach_test coach_e2e}"
+read -r -a DB_NAMES <<<"${DB_NAMES:-coach_dev coach_test coach_e2e coach_explain}"
 
 psql_admin() {
   local args=(-v ON_ERROR_STOP=1 -X -q -v "db_user=${DB_USER}" -v "db_password=${DB_PASSWORD}" "$@")

@@ -4,11 +4,13 @@
  */
 import type { Handle, HandleServerError, ServerInit } from '@sveltejs/kit/hooks';
 import { building, version } from '$app/env';
+import { emailLinkConfigured, emailLinkLogFields } from '#lib/server/auth/email-link-config.ts';
 import { guardRequest } from '#lib/server/auth/guard.ts';
 import { getEnv } from '#lib/server/env.ts';
 import { createContext, runWithContext } from '#lib/server/observability/context.ts';
 import { logger } from '#lib/server/observability/logger.ts';
 import { serverTimingHeader } from '#lib/server/observability/timing.ts';
+import { SECURITY_HEADERS } from '#lib/server/security-headers.ts';
 import { recordServerError } from '#lib/server/services/errors.ts';
 import { shouldPreloadFont } from '#lib/ui/fonts.ts';
 
@@ -16,28 +18,16 @@ export const init: ServerInit = () => {
 	if (building) return;
 	// Fail fast on a misconfigured deployment: throws with every invalid variable listed.
 	const env = getEnv();
-	logger.info('server ready', { appEnv: env.appEnv, version, node: process.version });
+	// The email sign-in link never stops the server: off, with the variables named, or on.
+	logger.info('server ready', {
+		appEnv: env.appEnv,
+		version,
+		node: process.version,
+		...emailLinkLogFields(emailLinkConfigured())
+	});
 };
 
 const REQUEST_ID = /^[\w.:-]{8,128}$/;
-
-/**
- * Sent on every dynamic response (pages, endpoints). The Content-Security-Policy is set by
- * SvelteKit itself (`csp` in vite.config.ts). Static and prerendered files are served by the
- * CDN / adapter without running hooks; they hold no personal data, and the prerendered
- * /offline page carries its CSP as a <meta> tag.
- */
-const SECURITY_HEADERS: Record<string, string> = {
-	'x-content-type-options': 'nosniff',
-	'x-frame-options': 'DENY',
-	'referrer-policy': 'strict-origin-when-cross-origin',
-	'permissions-policy': 'camera=(), microphone=(), geolocation=(), payment=(), usb=()',
-	'cross-origin-opener-policy': 'same-origin',
-	// Vercel adds HSTS on its domains; this covers any other host (ignored over plain HTTP).
-	'strict-transport-security': 'max-age=63072000; includeSubDomains',
-	// Private, single-user app: never indexed.
-	'x-robots-tag': 'noindex, nofollow'
-};
 
 function withHeaders(response: Response, headers: Record<string, string>): Response {
 	try {
