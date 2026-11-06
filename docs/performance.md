@@ -40,6 +40,11 @@ Whatever every route ships spends that 0.4 KB: each new route node (the app entr
 node of the app), each param matcher, each icon added to the shared set and any growth of a
 shared component costs every route, Security included.
 
+- **Step-up re-authentication** (docs/security.md) costs `/(app)/profile/security` 0.1 KB
+  (59.7 → 59.8 KB: retrying an action the server refused). The "Confirm it's you" sheet and the
+  ceremony load on demand with the other sheets and passkey helpers; `/` and
+  `/recover/passkey` gain 0.1 KB (one error mapping in those helpers).
+
 - **`@simplewebauthn/browser` (≈5 KB gzip) is never in initial JS.** It is imported on demand by
   `src/lib/client/passkeys.ts`; `pnpm budgets` fails if it appears in any route's initial JS or
   is reachable (static or dynamic imports) from any route other than `/`, `/setup`,

@@ -230,6 +230,16 @@ export function createAuthRepository(db: Executor) {
 			await db.update(authSessions).set(values).where(eq(authSessions.id, id));
 		},
 
+		/** Record a step-up on a live session. False if it has been revoked meanwhile. */
+		async markSessionReauthenticated(id: string, at: Date): Promise<boolean> {
+			const updated = await db
+				.update(authSessions)
+				.set({ reauthenticatedAt: at })
+				.where(and(eq(authSessions.id, id), isNull(authSessions.revokedAt)))
+				.returning({ id: authSessions.id });
+			return updated.length === 1;
+		},
+
 		async listActiveSessions(ownerId: string, now: Date): Promise<SessionRow[]> {
 			return db
 				.select()

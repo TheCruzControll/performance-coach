@@ -132,6 +132,11 @@ export const authSessions = pgTable(
 		absoluteExpiresAt: timestamp('absolute_expires_at', { withTimezone: true }).notNull(),
 		/** e.g. "Safari on iPhone" — a summary, not the raw User-Agent. */
 		userAgent: text('user_agent'),
+		/**
+		 * Last user-verified passkey assertion on this session: sign-in, setup, the passkey that
+		 * finished a recovery, or a step-up. Sensitive Security actions need it to be recent.
+		 */
+		reauthenticatedAt: timestamp('reauthenticated_at', { withTimezone: true }),
 		revokedAt: timestamp('revoked_at', { withTimezone: true }),
 		revokedReason: text('revoked_reason')
 	},
@@ -167,7 +172,7 @@ export const recoveryCodes = pgTable(
 	]
 );
 
-export const CHALLENGE_PURPOSES = ['setup', 'authenticate', 'register'] as const;
+export const CHALLENGE_PURPOSES = ['setup', 'authenticate', 'register', 'reauthenticate'] as const;
 export type ChallengePurpose = (typeof CHALLENGE_PURPOSES)[number];
 
 /** Short-lived, single-use WebAuthn challenges, each bound to one purpose (and session). */
@@ -180,7 +185,7 @@ export const webauthnChallenges = pgTable(
 		purpose: text('purpose').$type<ChallengePurpose>().notNull(),
 		/** RP ID the options were issued for: verification must use the same. */
 		rpId: text('rp_id').notNull(),
-		/** For `register`: the session that asked (a challenge cannot move between sessions). */
+		/** For `register` and `reauthenticate`: the session that asked (it cannot move to another). */
 		sessionId: uuid('session_id').references(() => authSessions.id, { onDelete: 'cascade' }),
 		/** Purpose-specific data, e.g. the owner name chosen during setup. */
 		data: jsonb('data').$type<Record<string, unknown>>(),
@@ -207,6 +212,8 @@ export const AUTH_EVENT_TYPES = [
 	'recovery.regenerated',
 	'session.revoked',
 	'session.revoked_others',
+	'reauth.succeeded',
+	'reauth.failed',
 	'signout',
 	'rate_limited',
 	'owner.reset'

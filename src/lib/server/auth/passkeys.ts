@@ -1,6 +1,8 @@
 /**
  * Passkey use-cases: sign in with a passkey, add another passkey (also how a recovery session
- * replaces a lost one), rename, remove (never the last) and list.
+ * replaces a lost one), rename, remove (never the last) and list. Adding and removing need a
+ * recent passkey assertion on the session (reauth.ts); renaming changes no credential and
+ * does not.
  */
 import type {
 	PublicKeyCredentialCreationOptionsJSON,
@@ -13,6 +15,7 @@ import { resolveDeps, type AuthDeps, type AuthRequest } from './context';
 import { defaultPasskeyName, passkeyProvider } from './devices';
 import { AuthError, failureReason, isAuthError } from './errors';
 import { enforceRateLimit, pruneRateLimits } from './rate-limit';
+import { requireRecentAuthentication } from './reauth';
 import type { RelyingParty } from './relying-party';
 import { issueSession, revokeToken, type AuthSession, type IssuedSession } from './sessions';
 import {
@@ -109,7 +112,8 @@ export async function completeSignIn(
 					ownerId: owner.id,
 					method: 'passkey',
 					credentialId: credential!.id,
-					userAgent: request.userAgent
+					userAgent: request.userAgent,
+					reauthenticated: true
 				},
 				{ db: tx, now }
 			);
@@ -144,6 +148,10 @@ export async function beginPasskeyRegistration(
 ): Promise<PublicKeyCredentialCreationOptionsJSON> {
 	const { db, now } = resolveDeps(deps);
 	const rp = requireRp(request);
+	// A recovery session has no passkey to confirm with: it may register its new one. Checked
+	// when the ceremony starts (the challenge is bound to this session and lives 5 minutes):
+	// refusing at the end would leave a passkey on the device that the server never stored.
+	if (session.kind === 'owner') requireRecentAuthentication(session, now());
 	await enforceRateLimit('register', { session: session.id }, request, { db, now });
 	const repo = createAuthRepository(db);
 	const owner = await repo.getOwner();
@@ -220,7 +228,9 @@ export async function completePasskeyRegistration(
 					ownerId: session.ownerId,
 					method: 'recovery',
 					credentialId: passkey.id,
-					userAgent: request.userAgent
+					userAgent: request.userAgent,
+					// The new passkey was just verified (UV): removing the lost one needs no second prompt.
+					reauthenticated: true
 				},
 				{ db: tx, now }
 			);
@@ -312,6 +322,7 @@ export async function removePasskey(
 	deps: AuthDeps = {}
 ): Promise<{ endedSessions: number }> {
 	const { db, now } = resolveDeps(deps);
+	requireRecentAuthentication(session, now());
 	await enforceRateLimit('manage', { session: session.id }, request, { db, now });
 	const endedSessions = await db.transaction(async (tx) => {
 		const repo = createAuthRepository(tx);
