@@ -22,7 +22,7 @@ import {
 } from '../../../src/lib/server/test-support/program-fixtures';
 import { loadTrainWeek, type TrainWeekData } from '../../../src/routes/(app)/train/week.server';
 import { unreachableDb, withRollback } from '../helpers';
-import { generalGoal, makeOwner } from '../profile/fixtures';
+import { eventGoal, generalGoal, makeOwner } from '../profile/fixtures';
 
 /**
  * Week 1's Monday. The owner's profile is on UTC (M2's default), so `at` gives today exactly.
@@ -158,6 +158,51 @@ describe('Train’s load', () => {
 			expect(back).toMatchObject({ shown: 1, asked: true, card: null });
 			const ahead = program(await load(db, owner, '2026-11-19', '3'));
 			expect(ahead).toMatchObject({ shown: 3, asked: true, card: { id: 'train-not-planned' } });
+		});
+	});
+
+	it('lays out the whole plan: each block’s weeks, this week, the outline and the event it leads to', async () => {
+		await withRollback(async (db) => {
+			const owner = await makeOwner(db);
+			// The fight is on the Saturday of week 4, the outline's last week.
+			const fight = await createGoal(owner, eventGoal({ eventDate: '2026-12-05' }), { db });
+			const other = await createGoal(owner, eventGoal({ title: 'Not in this plan' }), { db });
+			const plan = programFixture('one-week', {
+				monday: MONDAY,
+				today: MONDAY,
+				goalRefs: [fight.id]
+			});
+			await createProgramFromPlan(owner, plan, { source: 'rules' }, { db });
+
+			const data = program(await load(db, owner, '2026-11-11', '3'));
+			expect(other.eventDate).toBe('2027-03-14');
+			expect(
+				data.plan.map(({ name, span, outline, current }) => ({ name, span, outline, current }))
+			).toEqual([
+				{
+					name: 'Baseline week',
+					span: 'Mon 9 Nov – Sun 15 Nov · 1 week',
+					outline: false,
+					current: true
+				},
+				{
+					name: 'Accumulation',
+					span: 'Mon 16 Nov – Sun 6 Dec · 3 weeks',
+					outline: true,
+					current: false
+				}
+			]);
+			// The week shown (?week=3) does not move this week: today's week is marked.
+			const weeks = data.plan.flatMap((block) => block.weeks);
+			expect(weeks.map((w) => [w.number, w.planned, w.current])).toEqual([
+				[1, true, true],
+				[2, false, false],
+				[3, false, false],
+				[4, false, false]
+			]);
+			expect(weeks.flatMap((w) => w.events.map((e) => [w.number, e.title, e.date]))).toEqual([
+				[4, 'First Muay Thai fight', 'Sat 5 Dec']
+			]);
 		});
 	});
 
