@@ -20,7 +20,16 @@ import { expect, test } from '@playwright/test';
 const TARGET_MS = 200;
 const GUARD_MS = 250;
 const LOADS = 5;
-const SCREENS = ['/', '/today', '/train', '/progress', '/coach', '/profile', '/profile/security'];
+const SCREENS = [
+	'/',
+	'/today',
+	'/train',
+	'/progress',
+	'/coach',
+	'/profile',
+	'/profile/security',
+	'/profile/equipment'
+];
 
 test.describe('main-thread budget (4× CPU)', () => {
 	test.skip(({ browserName }) => browserName !== 'chromium', 'CPU throttling uses CDP');
