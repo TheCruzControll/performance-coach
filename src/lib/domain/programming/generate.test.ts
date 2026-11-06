@@ -14,7 +14,6 @@ import { buildProgrammingInput } from './input';
 import { SCENARIO_START, SCENARIOS, scenarioDay } from './scenarios';
 import { demandIn } from './stage';
 import type { Draft, Stage } from './stage';
-import { commitments } from './stages/commitments';
 import { loads } from './stages/loads';
 import { other } from './stages/other';
 import { placement } from './stages/placement';
@@ -68,7 +67,6 @@ describe('the stage list', () => {
 	});
 
 	const STUBS: Record<string, Stage> = {
-		commitments,
 		strength,
 		running,
 		other,

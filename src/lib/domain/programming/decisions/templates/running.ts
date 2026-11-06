@@ -1,10 +1,13 @@
-/** Fixed commitments and the running week: volume, paces and quality sessions (m3/18). */
+/**
+ * Fixed commitments and the running week: volume, paces and quality sessions (m3/18). `time` and
+ * `assumed` are empty or start with a separator, so a sentence reads whole either way.
+ */
 import type { Templates } from '../../decisions.ts';
 
 export const running = {
 	commitment_placed: {
 		summary: '{commitment} on {days}',
-		why: '{commitment} is one of your fixed commitments, so it goes in first, every {days}, and the rest of the week is planned around it.'
+		why: '{commitment} is one of your fixed commitments, so it goes in first, every {days}{time}, for {minutes} min at {intensity} intensity, and the rest of the week is planned around it. {counts}{assumed}'
 	},
 	run_volume: {
 		summary: 'Week 1 running: {volume}',
