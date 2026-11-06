@@ -4,6 +4,7 @@
  */
 import type { Handle, HandleServerError, ServerInit } from '@sveltejs/kit/hooks';
 import { building, version } from '$app/env';
+import { emailLinkConfigured, emailLinkLogFields } from '#lib/server/auth/email-link-config.ts';
 import { guardRequest } from '#lib/server/auth/guard.ts';
 import { getEnv } from '#lib/server/env.ts';
 import { createContext, runWithContext } from '#lib/server/observability/context.ts';
@@ -17,7 +18,13 @@ export const init: ServerInit = () => {
 	if (building) return;
 	// Fail fast on a misconfigured deployment: throws with every invalid variable listed.
 	const env = getEnv();
-	logger.info('server ready', { appEnv: env.appEnv, version, node: process.version });
+	// The email sign-in link never stops the server: off, with the variables named, or on.
+	logger.info('server ready', {
+		appEnv: env.appEnv,
+		version,
+		node: process.version,
+		...emailLinkLogFields(emailLinkConfigured())
+	});
 };
 
 const REQUEST_ID = /^[\w.:-]{8,128}$/;
