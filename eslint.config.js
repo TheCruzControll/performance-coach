@@ -135,6 +135,11 @@ export default defineConfig(
 		rules: restrict([LAYER.ui, LAYER.client])
 	},
 	{
+		// Form actions are route code that routes share: they call services, never the database.
+		files: ['src/lib/server/forms/**'],
+		rules: restrict([LAYER.db, LAYER.driver, LAYER.agent, LAYER.ui, LAYER.client])
+	},
+	{
 		files: ['src/lib/server/observability/**'],
 		rules: restrict([LAYER.observabilityDeps, LAYER.ui, LAYER.client, LAYER.framework])
 	},
