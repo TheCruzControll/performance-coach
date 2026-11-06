@@ -30,6 +30,8 @@ export interface SectionEditor {
 	draft(saved: unknown): unknown;
 	/** The schema the browser checks before posting (the services check it again). */
 	schema: SchemaName;
+	/** What is posted, when that is not the editing state as it stands (SectionForm). */
+	payload?: (value: unknown) => unknown;
 }
 
 /**
@@ -39,9 +41,15 @@ export interface SectionEditor {
 function section<T>(
 	Editor: Component<EditorProps<T>>,
 	draft: (saved: never) => T,
-	schema: SchemaName
+	schema: SchemaName,
+	payload?: (value: T) => unknown
 ): SectionEditor {
-	return { Editor: Editor as unknown as SectionEditor['Editor'], draft, schema };
+	return {
+		Editor: Editor as unknown as SectionEditor['Editor'],
+		draft,
+		schema,
+		payload: payload as SectionEditor['payload']
+	};
 }
 
 export const EDITORS: Record<SectionKey, () => Promise<SectionEditor>> = {
