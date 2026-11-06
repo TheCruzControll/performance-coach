@@ -40,6 +40,11 @@ Whatever every route ships spends that 0.4 KB: each new route node (the app entr
 node of the app), each param matcher, each icon added to the shared set and any growth of a
 shared component costs every route, Security included.
 
+- **Step-up re-authentication** (docs/security.md) costs `/(app)/profile/security` 0.1 KB
+  (59.7 → 59.8 KB: retrying an action the server refused). The "Confirm it's you" sheet and the
+  ceremony load on demand with the other sheets and passkey helpers; `/` and
+  `/recover/passkey` gain 0.1 KB (one error mapping in those helpers).
+
 - **`@simplewebauthn/browser` (≈5 KB gzip) is never in initial JS.** It is imported on demand by
   `src/lib/client/passkeys.ts`; `pnpm budgets` fails if it appears in any route's initial JS or
   is reachable (static or dynamic imports) from any route other than `/`, `/setup`,
@@ -253,8 +258,11 @@ this build reproduced it: per-run TBT up to 635 ms, perf 84–100. Findings:
 CI runs the main-thread budget (with the e2e suite) as the **tight regression guard**, plus
 `pnpm lighthouse --runs 5 --assert --min-perf 0.9 --max-tbt 300` on **every app screen**
 (including the streamed, DB-backed `/profile`) as the Lighthouse check: the score target itself,
-and TBT with 50% headroom for shared-runner noise. Not yet run on GitHub's runners (nothing has
-been pushed); if their noise differs, adjust with numbers, not by dropping routes.
+and TBT with 50% headroom for shared-runner noise. On GitHub's runners (CI run
+[42148399101](https://github.com/TheCruzControll/performance-coach/actions/runs/42148399101),
+`main` at `47ec0cd`) the 5-run medians on all 7 routes were perf, accessibility and best practices
+100, LCP 0.91 s, TBT 8–35 ms and CLS 0.000; if their noise changes, adjust with numbers, not by
+dropping routes.
 
 ## Real-user monitoring
 

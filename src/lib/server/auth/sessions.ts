@@ -6,6 +6,7 @@
  * - Signing in (passkey or recovery code) always issues a *new* token and revokes the session the
  *   device presented, so a token planted before sign-in is useless afterwards (rotation).
  * - A `recovery` session lives 15 minutes and can only register a new passkey or sign out.
+ * - Signing devices out needs a recent passkey assertion on this session (reauth.ts).
  */
 import { createAuthRepository, type SessionKind, type SessionMethod, type SessionRow } from '../db';
 import { isUuid } from '../services/ids';
@@ -15,6 +16,7 @@ import { describeUserAgent } from './devices';
 import { AuthError } from './errors';
 import { SESSION } from './policy';
 import { enforceRateLimit } from './rate-limit';
+import { requireRecentAuthentication } from './reauth';
 import { generateToken, hashToken } from './tokens';
 
 export interface AuthSession {
@@ -23,6 +25,8 @@ export interface AuthSession {
 	ownerName: string;
 	kind: SessionKind;
 	expiresAt: Date;
+	/** Last passkey assertion on this session (null: none yet). See reauth.ts. */
+	reauthenticatedAt: Date | null;
 }
 
 export interface IssuedSession {
@@ -45,6 +49,8 @@ export async function issueSession(
 		method: SessionMethod;
 		credentialId?: string | null;
 		userAgent: string | null;
+		/** A user-verified passkey ceremony just established it: it starts out fresh. */
+		reauthenticated?: boolean;
 	},
 	deps: AuthDeps = {}
 ): Promise<IssuedSession> {
@@ -66,7 +72,8 @@ export async function issueSession(
 		lastSeenAt: at,
 		expiresAt: idle < absolute ? idle : absolute,
 		absoluteExpiresAt: absolute,
-		userAgent: describeUserAgent(input.userAgent)
+		userAgent: describeUserAgent(input.userAgent),
+		reauthenticatedAt: input.reauthenticated ? at : null
 	});
 	return { token, session };
 }
@@ -127,7 +134,8 @@ export async function validateSessionToken(
 			ownerId: owner.id,
 			ownerName: owner.displayName,
 			kind: session.kind,
-			expiresAt
+			expiresAt,
+			reauthenticatedAt: session.reauthenticatedAt
 		},
 		refreshedExpiry
 	};
@@ -136,6 +144,8 @@ export async function validateSessionToken(
 export interface SessionSummary {
 	id: string;
 	current: boolean;
+	/** `recovery`: signed in with a recovery code; it can only add a passkey, for 15 minutes. */
+	kind: SessionKind;
 	method: SessionMethod;
 	device: string;
 	createdAt: Date;
@@ -143,24 +153,29 @@ export interface SessionSummary {
 	expiresAt: Date;
 }
 
+/**
+ * Every live session of the owner: this one first, then recovery sign-ins (a recovery code in
+ * someone else's hands shows up here, to be signed out), then the rest by last activity.
+ */
 export async function listSessions(
 	session: AuthSession,
 	deps: AuthDeps = {}
 ): Promise<SessionSummary[]> {
 	const { db, now } = resolveDeps(deps);
 	const rows = await createAuthRepository(db).listActiveSessions(session.ownerId, now());
+	const rank = (s: SessionSummary) => (s.current ? 2 : s.kind === 'recovery' ? 1 : 0);
 	return rows
-		.filter((row) => row.kind === 'owner' || row.id === session.id)
 		.map((row) => ({
 			id: row.id,
 			current: row.id === session.id,
+			kind: row.kind,
 			method: row.method,
 			device: row.userAgent ?? 'Unknown device',
 			createdAt: row.createdAt,
 			lastSeenAt: row.lastSeenAt,
 			expiresAt: row.expiresAt
 		}))
-		.sort((a, b) => Number(b.current) - Number(a.current));
+		.sort((a, b) => rank(b) - rank(a));
 }
 
 /** Revoke one of the owner's other sessions (Security → Sessions). */
@@ -171,6 +186,7 @@ export async function revokeSession(
 	deps: AuthDeps = {}
 ): Promise<void> {
 	const { db, now } = resolveDeps(deps);
+	requireRecentAuthentication(session, now());
 	await enforceRateLimit('manage', { session: session.id }, request, { db, now });
 	if (sessionId === session.id) {
 		throw new AuthError('invalid_input', 'Use Sign out to end this session.');
@@ -194,6 +210,7 @@ export async function revokeOtherSessions(
 	deps: AuthDeps = {}
 ): Promise<number> {
 	const { db, now } = resolveDeps(deps);
+	requireRecentAuthentication(session, now());
 	await enforceRateLimit('manage', { session: session.id }, request, { db, now });
 	const count = await db.transaction(async (tx) => {
 		const repo = createAuthRepository(tx);

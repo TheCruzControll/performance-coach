@@ -1,8 +1,8 @@
 <!--
   @component
   Labelled single-line text input. Large (56 px) for thumbs, a visible label above (never a
-  placeholder-as-label), hint and error text wired to the input with aria-describedby, and a
-  16 px font so iOS Safari does not zoom on focus.
+  placeholder-as-label), hint or error text wired to the input with aria-describedby, and a
+  16 px font so iOS Safari does not zoom on focus. `type="date"` takes and gives `YYYY-MM-DD`.
 -->
 <script lang="ts">
 	import type { HTMLInputAttributes } from 'svelte/elements';
@@ -11,9 +11,12 @@
 		label: string;
 		value?: string;
 		name?: string;
-		type?: 'text' | 'search';
+		type?: 'text' | 'search' | 'date';
 		hint?: string;
+		/** Replaces the hint while shown. */
 		error?: string | null;
+		/** Show "Optional" beside the label. */
+		optional?: boolean;
 		placeholder?: string;
 		autocomplete?: HTMLInputAttributes['autocomplete'];
 		autocapitalize?: HTMLInputAttributes['autocapitalize'];
@@ -36,6 +39,7 @@
 		type = 'text',
 		hint,
 		error = null,
+		optional = false,
 		mono = false,
 		input = $bindable(),
 		'data-testid': testId,
@@ -43,14 +47,14 @@
 	}: Props = $props();
 
 	const id = $props.id();
-	const describedBy = $derived(
-		[hint ? `${id}-hint` : null, error ? `${id}-error` : null].filter(Boolean).join(' ') ||
-			undefined
-	);
+	// Only the message on screen: the error replaces the hint.
+	const describedBy = $derived(error ? `${id}-error` : hint ? `${id}-hint` : undefined);
 </script>
 
 <div class="field" class:invalid={Boolean(error)}>
-	<label class="label" for={id}>{label}</label>
+	<label class="label" for={id}>
+		{label}{#if optional}<span class="eyebrow">&nbsp;Optional</span>{/if}
+	</label>
 	<input
 		bind:this={input}
 		bind:value
@@ -77,6 +81,11 @@
 	}
 
 	.label {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: var(--space-2);
 		font-size: var(--text-sm);
 		font-weight: var(--weight-medium);
 		color: var(--color-text-secondary);
@@ -101,6 +110,11 @@
 
 	.input::placeholder {
 		color: var(--color-text-tertiary);
+	}
+
+	/* iOS Safari centres a date's value; keep it aligned with every other field's text. */
+	.input::-webkit-date-and-time-value {
+		text-align: start;
 	}
 
 	.input:focus-visible {

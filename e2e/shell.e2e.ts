@@ -4,7 +4,8 @@ import { captureScreen, signedOut, TABS, trackConsoleErrors } from './support';
 test.describe('app shell on an iPhone viewport', () => {
 	test('the sign-in screen is the landing page; signed in, / goes to Today', async ({
 		page,
-		browser
+		browser,
+		browserName
 	}, testInfo) => {
 		const errors = trackConsoleErrors(page);
 		await page.goto('/');
@@ -19,12 +20,46 @@ test.describe('app shell on an iPhone viewport', () => {
 		await expect(
 			signIn.getByRole('heading', { level: 1, name: /train with intent/i })
 		).toBeVisible();
-		await expect(signIn.getByTestId('passkey-signin')).toBeEnabled();
 		await expect(signIn.getByRole('textbox', { name: 'Account' })).toHaveAttribute(
 			'autocomplete',
 			'username webauthn'
 		);
+
+		// Passkey sign-in is offered exactly when the browser has WebAuthn: once hydrated, the
+		// screen asks passkeySupport() and otherwise says so and points to recovery. Some of CI's
+		// Linux WebKit builds have none, so ask this page the app's own question
+		// (@simplewebauthn/browser's browserSupportsWebAuthn), after the network settles: by then
+		// the screen has hydrated and loaded the library that answers it.
+		await signIn.waitForLoadState('networkidle');
+		const webauthn = await signIn.evaluate(
+			() => typeof globalThis.PublicKeyCredential === 'function'
+		);
+		if (browserName === 'chromium') expect(webauthn, 'Chromium always has WebAuthn').toBe(true);
+		const passkeySignIn = signIn.getByTestId('passkey-signin');
+		const noPasskeys = signIn
+			.getByRole('status')
+			.filter({ hasText: 'This browser can’t use passkeys' });
+		const recovery = signIn.getByRole('link', { name: 'Lost your passkey? Use a recovery code' });
+		await expect(recovery).toBeVisible();
+		await expect(recovery).toHaveAttribute('href', '/recover');
+		if (webauthn) {
+			await expect(passkeySignIn).toBeEnabled();
+			await expect(noPasskeys).toHaveCount(0);
+		} else {
+			await expect(noPasskeys).toBeVisible();
+			await expect(noPasskeys).toContainText('sign in with a recovery code');
+			await expect(passkeySignIn).toBeDisabled();
+		}
 		await captureScreen(signIn, testInfo, 'landing');
+
+		if (!webauthn) {
+			// The way in that is left: the recovery link opens recovery.
+			await recovery.click();
+			await expect(signIn).toHaveURL(/\/recover$/);
+			await expect(
+				signIn.getByRole('heading', { level: 1, name: 'Lost your passkey?' })
+			).toBeVisible();
+		}
 		expect(signInErrors).toEqual([]);
 		await context.close();
 	});

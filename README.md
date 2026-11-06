@@ -6,9 +6,10 @@ running, Muay Thai, hypertrophy and conditioning — and a fast, premium, iPhone
 log every set and talk to the coach.
 
 > Status: **Milestone 2 — Authentication & profile, in progress** (see
-> [docs/milestones.md](docs/milestones.md)). Passkey authentication is in place (first-run setup,
-> sign-in, recovery codes, passkey and session management, deny by default); onboarding and the
-> production cutover follow on the same branch.
+> [docs/milestones.md](docs/milestones.md)). Milestone 1 is done (PR #1). Passkey authentication
+> (first-run setup, sign-in, recovery codes, passkey and session management, deny by default) and
+> the training-profile services are merged to `main`; the onboarding and Profile editing screens
+> and the production cutover come next.
 
 ## Stack
 
