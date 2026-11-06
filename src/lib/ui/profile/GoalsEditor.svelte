@@ -541,7 +541,7 @@
 		transition-duration: var(--duration-instant);
 	}
 
-	@media (hover: hover) {
+	@media (hover: hover) and (pointer: fine) {
 		.goal:hover {
 			border-color: var(--color-border-strong);
 		}

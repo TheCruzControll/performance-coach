@@ -43,7 +43,7 @@
 		position: relative;
 		min-height: 100dvh;
 		padding-top: var(--safe-top);
-		padding-bottom: calc(var(--nav-height) + var(--safe-bottom) + var(--space-8));
+		padding-bottom: calc(var(--nav-inset-bottom) + var(--space-8));
 		isolation: isolate;
 	}
 

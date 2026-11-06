@@ -104,7 +104,7 @@
 		background: var(--color-accent-pressed);
 	}
 
-	@media (hover: hover) {
+	@media (hover: hover) and (pointer: fine) {
 		.icon-btn[data-variant='ghost']:hover:not(:disabled) {
 			background: var(--color-surface-2);
 		}

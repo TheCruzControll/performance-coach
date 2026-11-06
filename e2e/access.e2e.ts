@@ -3,12 +3,16 @@
  * appRoutes), so a route added later is covered automatically — and an unclassified one fails
  * here, as it fails `pnpm check` and the unit suite (src/lib/server/auth/routes.ts).
  */
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { expect, test } from '@playwright/test';
 import { ROUTE_ACCESS, routeAccess } from '../src/lib/server/auth/routes';
 import { signInUrl } from '../src/lib/server/auth/return-path';
 import { appRoutes, ORIGIN, query, SAME_ORIGIN, signedOut } from './support';
 
 const ROUTES = appRoutes();
+/** A request the program fixture route would answer by storing a program. */
+const SEED_PROGRAM = { fixture: 'hybrid', start: 'next_week', timeZone: 'Europe/London' };
 const PUBLIC_ENDPOINTS = [
 	'/api/auth/setup/options',
 	'/api/auth/setup/verify',
@@ -100,6 +104,36 @@ test.describe('signed out: deny by default', () => {
 		}
 	});
 
+	test('test-only endpoints answer 404 unless test routes are enabled, before anything else', () => {
+		const testRoutes = ROUTES.filter((r) => r.id.startsWith('/api/test-support/'));
+		expect(testRoutes.map((r) => r.id)).toEqual(
+			expect.arrayContaining(['/api/test-support/session', '/api/test-support/program'])
+		);
+		for (const route of testRoutes) {
+			const file = path.resolve(import.meta.dirname, `../src/routes${route.id}/+server.ts`);
+			const source = readFileSync(file, 'utf8');
+			for (const method of route.methods) {
+				// The handler's first statement: a hosted deployment never reaches the rest.
+				const guarded = new RegExp(
+					`export const ${method}: RequestHandler = (async )?\\([^)]*\\) => \\{\\s*` +
+						`if \\(!testRoutesEnabled\\(\\)\\) error\\(404, 'Not found'\\);`
+				);
+				expect(source, `${method} ${route.id}`).toMatch(guarded);
+			}
+		}
+	});
+
+	test('the program fixture route needs an owner session', async ({ request }) => {
+		// Classified as owner-only, not merely unknown (which falls back to owner too).
+		expect(ROUTE_ACCESS).toHaveProperty(['/api/test-support/program'], 'owner');
+		const res = await request.post('/api/test-support/program', {
+			headers: SAME_ORIGIN,
+			data: SEED_PROGRAM
+		});
+		expect(res.status()).toBe(401);
+		expect(await query('select id from programs')).toEqual([]);
+	});
+
 	test('/api/vitals and /api/client-errors refuse telemetry without a session', async ({
 		request
 	}) => {
@@ -187,6 +221,29 @@ test.describe('signed in: cross-site requests are refused', () => {
 		const profile = await request.get('/profile', { maxRedirects: 0 });
 		expect(profile.status()).toBe(200);
 		expect(new URL(ORIGIN).hostname).toBe('localhost');
+	});
+
+	test('a cross-site request cannot seed a program through the test-only route', async ({
+		request
+	}) => {
+		const before = await query('select id from programs');
+		const attempts: Record<string, string>[] = [
+			{ origin: 'https://evil.example' },
+			{ origin: 'null' },
+			{}
+		];
+		for (const headers of attempts) {
+			const res = await request.post('/api/test-support/program', { headers, data: SEED_PROGRAM });
+			expect(res.status(), JSON.stringify(headers)).toBe(403);
+		}
+		// From the app itself the route is reached: a fixture it does not know is refused there.
+		const own = await request.post('/api/test-support/program', {
+			headers: SAME_ORIGIN,
+			data: { ...SEED_PROGRAM, fixture: 'marathon' }
+		});
+		expect(own.status()).toBe(400);
+		expect(await own.json()).toMatchObject({ error: 'invalid' });
+		expect(await query('select id from programs')).toEqual(before);
 	});
 
 	test('a cross-site save of a training-profile section is refused and stores nothing', async ({
