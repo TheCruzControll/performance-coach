@@ -43,10 +43,10 @@ the CSRF Origin check, User-Agent and passkey labels, the rate-limit client netw
 - **Isolation:** `withRollback()` runs each test in a transaction that is always rolled back;
   services accept the transaction as their `db` dependency. Files run serially. The few tests
   that race real connections commit for real and clean up afterwards: a goal status change
-  waiting behind a concurrent edit deletes its owner; the auth races use `withCommitted()`
-  (committed rows, truncated afterwards), `holdTransaction()` to keep one step's locks held and
-  `lockWaiters()` to wait until the other steps are blocked, so every interleaving is exact
-  rather than timed.
+  waiting behind a concurrent edit and two saves of one profile section queued behind a third
+  delete their owner; the auth races use `withCommitted()` (committed rows, truncated
+  afterwards), `holdTransaction()` to keep one step's locks held and `lockWaiters()` to wait
+  until the other steps are blocked, so every interleaving is exact rather than timed.
 - **Covered:** migrations applied and constraints enforced; health up and down (unreachable
   database); web-vitals ingest, validation, de-duplication (across requests and within one
   batch), route attribution and p75 summary; error recording, including when the database is
@@ -123,7 +123,8 @@ false`, as in browsers without it) to drive the button.
 
 Specs:
 
-- `auth.setup.ts` — first-run setup with a real passkey: 404 without the token; axe in both themes
+- `auth.setup.ts` — first-run setup with a real passkey: 404 without the token, and still a 404
+  (even with the token, no `app_errors` row) once the setup rate limit is spent; axe in both themes
   on the setup and recovery-code screens; name required; 10 codes in the expected format;
   download and copy contain them; Continue only after acknowledgement; the authenticator holds a
   discoverable credential; only hashes in Postgres; `/setup` is a 404 afterwards, even with the

@@ -51,7 +51,8 @@ extension on the owner's browser can act as the owner.
    `https://coach.nikocruz.com/setup?token=…`.
 2. `/setup` answers **404** unless the token's SHA-256 equals the configured hash (compared with
    `timingSafeEqual` on the two digests), that token has never completed a setup, **and** no
-   passkey exists. Wrong tokens are audited and rate-limited (10 per 15 min per client).
+   passkey exists. Wrong tokens are audited and rate-limited (10 per 15 min per client); past the
+   limit the page is a 404 as well, even with the right token, and not recorded as a server error.
 3. The owner enters a name and creates a passkey. In one transaction (advisory-locked, so two
    concurrent setups cannot both win): the owner and passkey are created, setup is marked
    complete, the token's hash is recorded as used (`used_setup_tokens`), 10 recovery codes are
@@ -181,7 +182,8 @@ one host or LAN normally holds a whole /64 (SLAAC, privacy addresses) and could 
 through fresh buckets. IPv4-mapped IPv6 (`::ffff:203.0.113.7`) counts as its IPv4 address. A
 network routed a larger prefix (a /56 or /48) still spans many /64s, just as an attacker may hold
 many IPv4 addresses: per-client limits slow abuse rather than bound it. The audit log keeps the
-full address. Refusals answer `429` with `Retry-After`.
+full address. Refusals answer `429` with `Retry-After`, except the `/setup` page, which answers
+`404` like any other refused setup link.
 
 Stale counters are pruned on writes: the first hit of each window also deletes up to 100 counters
 whose window started over a day ago (longer than any window; `RATE_LIMIT_PRUNE` in `policy.ts`),
