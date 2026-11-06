@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { EnvValidationError, parseEnv } from './env';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { EnvValidationError, parseEnv, testRoutesEnabled } from './env';
 
 const DB = 'postgres://coach:coach@localhost:5432/coach_dev';
 
@@ -81,14 +81,88 @@ describe('parseEnv', () => {
 			);
 		});
 
-		it('allows test routes outside production', () => {
+		it('allows test routes only in local development and tests', () => {
+			const test = parseEnv({ DATABASE_URL: DB, APP_ENV: 'test', ENABLE_TEST_ROUTES: 'true' });
+			expect(test.ENABLE_TEST_ROUTES).toBe(true);
+			expect(testRoutesEnabled(test)).toBe(true);
+			const dev = parseEnv({ DATABASE_URL: DB, ENABLE_TEST_ROUTES: 'true' });
+			expect(testRoutesEnabled(dev)).toBe(true);
+			expect(testRoutesEnabled(parseEnv({ DATABASE_URL: DB, APP_ENV: 'test' }))).toBe(false);
+		});
+
+		it('rejects test routes on every hosted deployment, previews included', () => {
+			// One of the test routes mints an owner session without a passkey.
+			for (const hosted of [
+				{ VERCEL_ENV: 'preview' },
+				{ VERCEL_ENV: 'development' },
+				{ VERCEL: '1', APP_ENV: 'test' },
+				{ APP_ENV: 'preview' }
+			]) {
+				expect(
+					issuesOf({ DATABASE_URL: DB, ENABLE_TEST_ROUTES: 'true', ...hosted }),
+					JSON.stringify(hosted)
+				).toEqual([expect.stringMatching(/^ENABLE_TEST_ROUTES: test routes are only allowed/)]);
+			}
+		});
+
+		it('re-checks where test routes may run even for a hand-built environment', () => {
+			const env = parseEnv({ DATABASE_URL: DB, APP_ENV: 'test', ENABLE_TEST_ROUTES: 'true' });
+			expect(testRoutesEnabled({ ...env, appEnv: 'production' })).toBe(false);
+			expect(testRoutesEnabled({ ...env, VERCEL_ENV: 'preview' })).toBe(false);
+		});
+
+		describe('in a server built for Vercel', () => {
+			// What vite.config.ts bakes into a Vercel build; unset in Vitest, like a local run.
+			const vercelBuild = () => vi.stubGlobal('__VERCEL_BUILD__', true);
+			afterEach(() => vi.unstubAllGlobals());
+
+			// A runtime environment without Vercel's own variables that claims to be a test run.
+			const unmarked = {
+				DATABASE_URL: DB,
+				NODE_ENV: 'production',
+				APP_ENV: 'test',
+				ENABLE_TEST_ROUTES: 'true'
+			};
+
+			it('refuses to start with test routes enabled, whatever the runtime environment says', () => {
+				vercelBuild();
+				expect(issuesOf(unmarked)).toEqual([
+					expect.stringMatching(/^ENABLE_TEST_ROUTES: test routes are only allowed/)
+				]);
+			});
+
+			it('keeps the test routes disabled at runtime', () => {
+				const env = parseEnv(unmarked);
+				expect(testRoutesEnabled(env)).toBe(true); // allowed in a local build
+				vercelBuild();
+				expect(testRoutesEnabled(env)).toBe(false);
+			});
+		});
+	});
+
+	describe('owner setup token hash', () => {
+		const HASH = 'a'.repeat(64);
+
+		it('is optional and treats an empty value as unset', () => {
+			expect(parseEnv({ DATABASE_URL: DB }).OWNER_SETUP_TOKEN_HASH).toBeUndefined();
 			expect(
-				parseEnv({ DATABASE_URL: DB, APP_ENV: 'test', ENABLE_TEST_ROUTES: 'true' })
-					.ENABLE_TEST_ROUTES
-			).toBe(true);
+				parseEnv({ DATABASE_URL: DB, OWNER_SETUP_TOKEN_HASH: '' }).OWNER_SETUP_TOKEN_HASH
+			).toBeUndefined();
+		});
+
+		it('accepts a hex SHA-256 digest (normalised to lower case)', () => {
 			expect(
-				parseEnv({ DATABASE_URL: DB, VERCEL_ENV: 'preview', ENABLE_TEST_ROUTES: 'true' }).appEnv
-			).toBe('preview');
+				parseEnv({ DATABASE_URL: DB, OWNER_SETUP_TOKEN_HASH: ` ${HASH.toUpperCase()} ` })
+					.OWNER_SETUP_TOKEN_HASH
+			).toBe(HASH);
+		});
+
+		it('rejects anything that is not a SHA-256 hex digest (e.g. the raw token)', () => {
+			for (const bad of ['abc', 'g'.repeat(64), 'a'.repeat(63), 'Zm9vYmFy'.repeat(8)]) {
+				expect(issuesOf({ DATABASE_URL: DB, OWNER_SETUP_TOKEN_HASH: bad })).toEqual([
+					expect.stringMatching(/^OWNER_SETUP_TOKEN_HASH:/)
+				]);
+			}
 		});
 
 		it('requires an API key only for the anthropic provider', () => {

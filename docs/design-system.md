@@ -160,10 +160,27 @@ Tracking: `--tracking-display -0.032em`, `--tracking-tight -0.016em`, `--trackin
 | `ListRow`           | Tool/destination row: tinted icon tile, title, subtitle, chevron or `trailing` snippet; renders a link (`href`), a button (`onclick`) or a dashed, non-interactive row (`disabled`, for "Soon").                                             |
 | `Section`           | Titled group on a screen ("This week", "Tools"): one heading style and spacing everywhere, `aria-labelledby` wired.                                                                                                                          |
 | `training/*`        | `PlateDiagram` (sleeve picture), `PlateCalculator` (code-split sheet body; its kg/lb switch is local and never changes the app-wide preference).                                                                                             |
+| `TextField`         | Labelled single-line input (label above, never placeholder-as-label), 56 px tall, 16 px text so iOS never zooms, hint or error wired with `aria-describedby` (the error replaces the hint), `mono` for codes, `type="date"`, "Optional".     |
+| `NumberField`       | A number that may stay blank (`null`, never 0): decimal or numeric keypad, `enterkeyhint`, unit inside the field and in its description, digits and one decimal point only, "Optional" marker. For values people nudge: `NumberStepper`.     |
+| `TextArea`          | Multi-line notes: label above, 16 px text, grows with its content (`field-sizing`; `rows` and a resize handle where unsupported), `maxlength`, hint or error wired with `aria-describedby`, "Optional" marker.                               |
+| `ChoiceGroup`       | One (radio) or several (checkbox) from a short list as wrapping pills or cards with a hint line; native inputs in a `fieldset` (Tab, arrows, Space), ≥ 44 px, selected shows a tick or a filled mark (never colour alone), discipline dot.   |
+| `DayPicker`         | Monday-first row of seven round toggles, ticked when picked: native checkboxes named with the full day, value always in week order, hit areas reaching into the gaps so each stays ≥ 44 × 44 px inside a padded card at 393 px, error state. |
+| `Notice`            | Inline state message: `danger` (role `alert`) · `positive` · `warning` · `neutral` (role `status`); tinted, icon + words.                                                                                                                    |
+| `RecoveryCodes`     | One-time display of recovery codes: numbered monospace list (one per row on a phone, two columns when the container allows), copy and download, required acknowledgement checkbox.                                                           |
+
+A `ChoiceGroup` records a choice; it is never an "add" action (arrow keys check every radio they
+pass, so a radio that adds a row adds one per keypress). An optional single choice offers an
+explicit option such as "Not set" or "Any" that the caller maps to `null`: there are no clearable
+radios.
 
 Screens compose these primitives instead of styling their own tiles, pills, rows or section
 headings, so the same pattern cannot drift between screens (PRD §16). `/design` shows every
 primitive (the Inputs, Data and Feedback groups load when their tab opens).
+
+Auth screens (`/`, `/setup`, `/recover`, `/recover/passkey`) share `src/routes/AuthScreen.svelte`:
+brand row, an editorial display headline, the brand mark as a quiet watermark, and the one action
+panel pinned to the thumb zone. Security (`/profile/security`) uses grouped rows on `Surface`s,
+destructive actions behind a confirming `BottomSheet`, and toasts for outcomes.
 
 ## Accessibility checklist (applies to every new component)
 

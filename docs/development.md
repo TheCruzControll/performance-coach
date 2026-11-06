@@ -22,6 +22,24 @@ pnpm dev                # http://localhost:5173
 `PGADMIN_URL`/`PG*` variables when set), creates the `coach` login role and the three databases.
 Re-running it is safe.
 
+## Signing in locally
+
+Every screen needs a session (deny by default). On a fresh `coach_dev` database:
+
+```sh
+pnpm auth:setup-token --origin http://localhost:5173   # prints a token, its hash and the link
+# put OWNER_SETUP_TOKEN_HASH=<hash> in .env, restart `pnpm dev`, open the printed /setup link
+```
+
+Create the passkey (Touch ID, Windows Hello, a phone via QR, or Chrome DevTools → More tools →
+WebAuthn → "Enable virtual authenticator environment"), save the recovery codes, done. Passkeys
+work on `http://localhost` (a secure context) but not on `127.0.0.1`. To start over:
+`pnpm auth:reset-owner --confirm` (keeps the owner's data, reopens setup), then a new
+`pnpm auth:setup-token` (a token works for one setup).
+
+`pnpm start` serves a Node build: build it with the origin it will be served on, e.g.
+`ORIGIN=http://localhost:4173 pnpm build:node && PORT=4173 pnpm start` (docs/environment.md).
+
 ## Everyday commands
 
 | Command                 | What it does                                                                  |
@@ -72,9 +90,28 @@ Re-running it is safe.
 4. Commit schema + SQL + `drizzle/meta`. Keep changes backward compatible with the deployed code
    (expand → migrate data → contract in a later release).
 
+**Guards and triggers** (ADR 0010) go in a custom migration, never in a generated file, which a
+regenerate would overwrite: `pnpm drizzle-kit generate --custom --name <guards>` adds an empty
+SQL file to the journal; write the SQL there.
+
+**After a rebase onto a newer migration** (another branch merged one first):
+
+1. Copy your custom migrations' SQL somewhere safe.
+2. Delete your generated SQL files and their `drizzle/meta/<n>_snapshot.json`, and take the base
+   branch's `drizzle/meta/_journal.json` (`git checkout <base> -- drizzle/meta/_journal.json`).
+3. Re-run `pnpm db:generate --name <change>`. For each custom migration, in its original order,
+   run `pnpm drizzle-kit generate --custom --name <guards>` and re-paste its SQL.
+4. `pnpm db:drift`, `pnpm test:unit` (`scripts/drizzle-journal.test.ts` checks the journal is in
+   order) and `pnpm test:integration`.
+
+Never hand-edit the journal or a snapshot.
+
 ## Troubleshooting
 
 - **`Invalid environment configuration`** at startup: the message lists each bad variable.
 - **Integration tests cannot connect**: start Postgres and run `pnpm db:setup`.
 - **`something is already serving http://localhost:4173`** in e2e: stop the other server or set
   `E2E_PORT`.
+- **"Cross-site request refused" from a local Node build**: it was built without (or with a
+  different) `ORIGIN`; rebuild with `ORIGIN=http://localhost:<port> pnpm build:node`.
+- **Every page redirects to `/`**: no session. Sign in, or set up the owner (above).

@@ -10,6 +10,9 @@ Code in this folder runs only in the browser. It must never import from `src/lib
 | `vitals.ts`              | Real-user monitoring: lazy-loads `web-vitals`, beacons to `/api/vitals`; attributes each metric to the screen where it happened |
 | `preferences.svelte.ts`  | Per-device theme and unit preferences (localStorage)                                                                            |
 | `connectivity.svelte.ts` | `online` state from `navigator.onLine` + events (a hint: failed requests are still handled, see `src/hooks.client.ts`)          |
+| `leaving.ts`             | Is the page being left? Loads it cancels on the way out (WebKit reports each) are then not logged or reported as errors         |
+| `profile-form.ts`        | Saves profile sections: validates with the services' zod schemas (loaded on idle, never initial JS), posts JSON to the action   |
+| `section-form.svelte.ts` | One profile section's form state (value, field errors, busy, dirty); `submit()` validates, then saves through `profile-form.ts` |
 
 ## Planned (M4): offline-first workout store
 

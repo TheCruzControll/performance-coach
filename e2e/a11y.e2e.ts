@@ -6,9 +6,12 @@
  */
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
-import { TABS } from './support';
+import { signedOut, TABS } from './support';
 
-const SCREENS = ['/', ...TABS.map((t) => t.path), '/offline', '/design'];
+const SCREENS = [...TABS.map((t) => t.path), '/profile/security', '/offline', '/design'];
+/** Screens a signed-out browser sees (setup and recovery-session screens are audited in
+ * auth.setup.ts and auth.e2e.ts, the only places they exist). */
+const SIGNED_OUT_SCREENS = ['/', '/recover'];
 const THEMES = ['dark', 'light'] as const;
 
 async function audit(page: Page): Promise<string[]> {
@@ -30,6 +33,21 @@ for (const theme of THEMES) {
 			);
 		});
 
+		test.describe('signed out', () => {
+			test.use({ storageState: signedOut });
+			for (const path of SIGNED_OUT_SCREENS) {
+				test(`${path} has no WCAG A/AA violations`, async ({ page }) => {
+					await page.goto(path);
+					await page.waitForLoadState('networkidle');
+					const html = page.locator('html');
+					if (theme === 'light') await expect(html).toHaveAttribute('data-theme', 'light');
+					await page.evaluate(() => document.fonts.ready);
+					await page.waitForTimeout(400);
+					expect(await audit(page)).toEqual([]);
+				});
+			}
+		});
+
 		for (const path of SCREENS) {
 			test(`${path} has no WCAG A/AA violations`, async ({ page }) => {
 				await page.goto(path);
@@ -47,6 +65,8 @@ for (const theme of THEMES) {
 
 		test('the plate calculator sheet has no violations', async ({ page }) => {
 			await page.goto('/train');
+			// Hydrated first: a tap on the server-rendered row before then does nothing.
+			await page.waitForLoadState('networkidle');
 			await page.getByTestId('open-plates').click();
 			await expect(page.getByTestId('plates-result')).toBeVisible();
 			await page.waitForTimeout(500);

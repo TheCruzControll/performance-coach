@@ -35,6 +35,26 @@ export const envSchema = z
 		/** Set by Vercel: 'production' | 'preview' | 'development'. */
 		VERCEL_ENV: z.enum(['production', 'preview', 'development']).optional(),
 		VERCEL: booleanString,
+		/** Set by Vercel: this deployment's own host (no scheme), e.g. `app-abc123.vercel.app`. */
+		VERCEL_URL: z.string().optional(),
+		/** Set by Vercel on Git deployments: the branch alias host (no scheme). */
+		VERCEL_BRANCH_URL: z.string().optional(),
+
+		/**
+		 * Hex SHA-256 of the one-time owner setup token (`pnpm auth:setup-token`). Only the hash is
+		 * configured; the token itself is the secret in the setup link `/setup?token=…`. Optional:
+		 * without it, first-run setup is closed (the route returns 404). See docs/security.md.
+		 */
+		OWNER_SETUP_TOKEN_HASH: z
+			.union([
+				z
+					.string()
+					.trim()
+					.toLowerCase()
+					.regex(/^[0-9a-f]{64}$/, 'must be a 64-character hex SHA-256 digest'),
+				z.literal('').transform(() => undefined)
+			])
+			.optional(),
 
 		/** Pooled connection string used for application traffic (Neon: the `-pooler` host). */
 		DATABASE_URL: postgresUrl,
@@ -77,14 +97,17 @@ export const envSchema = z
 				message: `must be 'production' (or unset) when VERCEL_ENV=production`
 			});
 		}
-		if (
-			(env.appEnv === 'production' || env.VERCEL_ENV === 'production') &&
-			env.ENABLE_TEST_ROUTES
-		) {
+		// Test routes include one that mints an owner session without a passkey (WebKit e2e):
+		// an authentication bypass. Only local development and automated tests may enable them,
+		// never a hosted deployment (any Vercel environment, preview included) or production.
+		if (env.ENABLE_TEST_ROUTES && !testRoutesAllowed(env)) {
 			ctx.addIssue({
 				code: 'custom',
 				path: ['ENABLE_TEST_ROUTES'],
-				message: 'test routes must never be enabled in production'
+				message:
+					env.appEnv === 'production' || env.VERCEL_ENV === 'production'
+						? 'test routes must never be enabled in production'
+						: 'test routes are only allowed in local development and tests (never on Vercel or in preview)'
 			});
 		}
 		if (env.LLM_PROVIDER === 'anthropic' && !env.ANTHROPIC_API_KEY) {
@@ -97,6 +120,32 @@ export const envSchema = z
 	});
 
 export type Env = z.output<typeof envSchema>;
+
+/**
+ * Replaced at build time by vite.config.ts: `true` in a build for Vercel, `false` in a Node
+ * build. Undefined where Vite did not build the code (`vite dev`, Vitest, scripts run by Node).
+ */
+declare const __VERCEL_BUILD__: boolean | undefined;
+
+/**
+ * Where test-only routes may exist: local development and automated tests, never on a hosted
+ * deployment. Checked by env validation (startup fails) and again by every test-only route.
+ */
+function testRoutesAllowed(env: {
+	appEnv: AppEnv;
+	VERCEL?: boolean;
+	VERCEL_ENV?: string;
+}): boolean {
+	// Defence in depth: `VERCEL`/`VERCEL_ENV` are runtime variables only. A server built for
+	// Vercel never allows test routes, even if they are missing.
+	if (typeof __VERCEL_BUILD__ !== 'undefined' && __VERCEL_BUILD__) return false;
+	return (env.appEnv === 'development' || env.appEnv === 'test') && !env.VERCEL && !env.VERCEL_ENV;
+}
+
+/** True when test-only routes are enabled *and* allowed here (defence in depth for routes). */
+export function testRoutesEnabled(env: Env = getEnv()): boolean {
+	return env.ENABLE_TEST_ROUTES && testRoutesAllowed(env);
+}
 
 export class EnvValidationError extends Error {
 	readonly issues: string[];

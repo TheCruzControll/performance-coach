@@ -5,9 +5,11 @@ A **private, single-user AI performance coaching platform** for Niko Cruz, serve
 running, Muay Thai, hypertrophy and conditioning — and a fast, premium, iPhone-first web app to
 log every set and talk to the coach.
 
-> Status: **Milestone 1 — Foundation & infrastructure** (see [docs/milestones.md](docs/milestones.md)).
-> The app shell, design system, database, observability, tests and CI/CD are in place; product
-> features arrive from M2 onwards.
+> Status: **Milestone 2 — Authentication & profile, in progress** (see
+> [docs/milestones.md](docs/milestones.md)). Milestone 1 is done (PR #1). Passkey authentication
+> (first-run setup, sign-in, recovery codes, passkey and session management, deny by default) and
+> the training-profile services are merged to `main`; the onboarding and Profile editing screens
+> and the production cutover come next.
 
 ## Stack
 
@@ -37,15 +39,16 @@ pnpm dev                         # http://localhost:5173
 
 ## Scripts
 
-| Script                                                                     | Purpose                                                    |
-| -------------------------------------------------------------------------- | ---------------------------------------------------------- |
-| `pnpm dev`                                                                 | dev server                                                 |
-| `pnpm check` · `pnpm lint` · `pnpm format`                                 | types (svelte-check + SW tsc) · Prettier + ESLint · format |
-| `pnpm test:unit` · `pnpm test:integration` · `pnpm test:e2e` · `pnpm test` | test suites                                                |
-| `pnpm build` · `pnpm build:node`                                           | Vercel build · Node build (e2e/Lighthouse/self-host)       |
-| `pnpm budgets` · `pnpm lighthouse`                                         | performance budgets · Lighthouse mobile                    |
-| `pnpm db:setup` · `db:generate` · `db:migrate` · `db:reset:test`           | database lifecycle                                         |
-| `pnpm icons`                                                               | render PWA icons from SVG                                  |
+| Script                                                                     | Purpose                                                     |
+| -------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| `pnpm dev`                                                                 | dev server                                                  |
+| `pnpm check` · `pnpm lint` · `pnpm format`                                 | types (svelte-check + SW tsc) · Prettier + ESLint · format  |
+| `pnpm test:unit` · `pnpm test:integration` · `pnpm test:e2e` · `pnpm test` | test suites                                                 |
+| `pnpm build` · `pnpm build:node`                                           | Vercel build · Node build (e2e/Lighthouse/self-host)        |
+| `pnpm budgets` · `pnpm lighthouse`                                         | performance budgets · Lighthouse mobile                     |
+| `pnpm db:setup` · `db:generate` · `db:migrate` · `db:reset:test`           | database lifecycle                                          |
+| `pnpm icons`                                                               | render PWA icons from SVG                                   |
+| `pnpm auth:setup-token` · `pnpm auth:reset-owner`                          | owner setup link · guarded credential reset (lost passkeys) |
 
 ## Repository map
 
@@ -54,7 +57,7 @@ src/lib/domain            pure training math (units, e1RM, RPE, plates, load)
 src/lib/server/db         Drizzle schema, pool, repositories, migrations helper
 src/lib/server/services   use-cases shared by routes and the coach
 src/lib/server/agent      AI coach (M5) — provider interface, tools, memory
-src/lib/server/auth       passkey auth (M2)
+src/lib/server/auth       passkey auth: SimpleWebAuthn, sessions, recovery, deny-by-default guard
 src/lib/client            browser-only: RUM, preferences, offline store (M4)
 src/lib/ui                design system: tokens, fonts, icons, components
 src/routes                screens and /api endpoints
@@ -68,7 +71,8 @@ e2e/ · tests/integration  Playwright and integration tests
 - [Product requirements](docs/product-requirements.md) — source of truth for scope
 - [Architecture](docs/architecture.md) and [ADRs](docs/adr/README.md)
 - [Environment](docs/environment.md) · [Development](docs/development.md) · [Testing](docs/testing.md)
-- [Deployment](docs/deployment.md) (Vercel + Neon + Cloudflare, secrets, backups/restore)
+- [Security](docs/security.md) (passkeys, sessions, CSRF, rate limits, threat model)
+- [Deployment](docs/deployment.md) (Vercel + Neon + Cloudflare, owner setup, lost passkeys, backups)
 - [Performance](docs/performance.md) (budgets + measured baseline)
 - [Design system](docs/design-system.md) · live at `/design`
 - [Agent architecture](docs/agent-architecture.md) (plan for the coach)
@@ -76,6 +80,7 @@ e2e/ · tests/integration  Playwright and integration tests
 
 ## Privacy
 
-Single owner, no public registration, not indexed (`noindex` everywhere). Authentication
-(passkeys) lands in M2; until then the app holds no personal data and must not be exposed on the
-production domain. LLM credentials never reach the browser.
+Single owner, no public registration, not indexed (`noindex` everywhere). Every page and endpoint
+requires a passkey session except the sign-in, setup and recovery flow and `/api/health`
+([docs/security.md](docs/security.md)). Sign-out clears the device's account data. LLM
+credentials never reach the browser.

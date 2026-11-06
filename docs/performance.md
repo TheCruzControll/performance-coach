@@ -5,18 +5,97 @@ Performance is a first-class requirement (PRD §15): measure, set budgets, enfor
 build of commit `6586cf6` (M1 after review fix round 2; the commits after it touch only the
 Lighthouse runner, CI and docs).
 
+## M2 (authentication) — measured 2026-11-05
+
+Measured on the M2 branch after passkey auth landed (local 4-vCPU VM, same tools as below). The
+sizes were measured again with the accounting described under "Budgets (enforced)" once the
+training-profile services landed (`pnpm build:node && pnpm budgets`; no route awaits a dynamic
+import in its `load`, and no chunk is missing from SvelteKit's modulepreload list).
+
+| Route                     | Initial JS (gzip) | Route CSS (gzip) |
+| ------------------------- | ----------------: | ---------------: |
+| `/(app)/profile/security` |           59.6 KB |          10.2 KB |
+| `/(app)/train`            |           58.2 KB |          10.5 KB |
+| `/(app)/profile`          |           57.8 KB |           8.3 KB |
+| `/setup`                  |           56.7 KB |           6.4 KB |
+| `/(app)/today`            |           56.2 KB |           7.5 KB |
+| `/design`                 |           55.8 KB |          11.7 KB |
+| `/` (sign-in)             |           55.0 KB |           5.4 KB |
+| `/(app)/progress`         |           54.9 KB |           6.7 KB |
+| `/(app)/offline`          |           54.9 KB |           6.1 KB |
+| `/recover/passkey`        |           54.6 KB |           5.0 KB |
+| `/recover`                |           53.6 KB |           5.2 KB |
+| `/(app)/coach`            |           52.9 KB |           6.0 KB |
+
+Whole-build CSS is 19.6 KB in 39 files (tracked, no longer a budget); the heaviest route CSS is
+`/design` at 11.7 KB of 14 KB. All budgets pass, but headroom is now thin: the Security screen is
+at 59.6 KB (its sheets, the passkey helpers and sign-out code load on intent; without that it was
+65 KB), so `/(app)/profile/security` has **0.4 KB of headroom**. Against the M1 table every
+existing route grew by 2.3–3.3 KB; part of that is the shared icon set (the whole set ships with
+every screen; nine security icons were added), the rest is not yet attributed and should be
+before M3 adds screens. Anything new must be code-split or paid for elsewhere — record the
+trade-off here.
+
+Whatever every route ships spends that 0.4 KB: each new route node (the app entry lists every
+node of the app), each param matcher, each icon added to the shared set and any growth of a
+shared component costs every route, Security included.
+
+- **Step-up re-authentication** (docs/security.md) costs `/(app)/profile/security` 0.1 KB
+  (59.7 → 59.8 KB: retrying an action the server refused). The "Confirm it's you" sheet and the
+  ceremony load on demand with the other sheets and passkey helpers; `/` and
+  `/recover/passkey` gain 0.1 KB (one error mapping in those helpers).
+
+- **`@simplewebauthn/browser` (≈5 KB gzip) is never in initial JS.** It is imported on demand by
+  `src/lib/client/passkeys.ts`; `pnpm budgets` fails if it appears in any route's initial JS or
+  is reachable (static or dynamic imports) from any route other than `/`, `/setup`,
+  `/recover/passkey` and `/(app)/profile/security`.
+- **Validation (zod and the profile schemas: one 12.5 KB gzip chunk) is never in initial JS.**
+  `src/lib/client/profile-form.ts` imports `src/lib/domain/profile/schemas.ts` on demand (on
+  idle, once a form is on screen); `pnpm budgets` fails if zod or the schemas are in any route's
+  initial JS, including what its `load` awaits. The save path itself is not free: a scratch route
+  that imported `profile-form.ts` and `section-form.svelte.ts` statically grew by 2.5 KB (with
+  `$app/forms`), so it belongs in what an editor loads on demand.
+- **Main-thread budget** (`E2E_PERF_ALONE=1 pnpm test:e2e --project=perf`, median of 5 loads at 4×
+  CPU; app screens signed in, `/` signed out): `/` 57 ms, `/today` 81, `/train` 72, `/progress`
+  67, `/coach` 40, `/profile` 87, `/profile/security` 60 — every screen meets the 200 ms target.
+- **Lighthouse, one run per screen** (signed in via a session the script mints; `/` signed out):
+  perf 98–100, accessibility 100, best practices 100, CLS 0.000 everywhere; `/profile/security`
+  LCP 1.07 s, TBT 103–153 ms. A single run is not a median: the 5-run CI assertion is the gate.
+- **Server:** every dynamic request now does one indexed session lookup, reported as
+  `Server-Timing: auth;dur=…`.
+
 ## Budgets (enforced)
 
 `pnpm budgets` (`scripts/check-budgets.ts`) reads the SvelteKit build output and fails CI when a
-budget is exceeded. "Initial JS" is exactly the set SvelteKit modulepreloads for a route: the app
-entry plus every layout and page node of the route and their static imports (gzip level 9).
+budget is exceeded. "Initial JS" (gzip level 9) is everything the browser must load before the
+route is interactive:
 
-| Budget                  | Limit            | Why                                                                  |
-| ----------------------- | ---------------- | -------------------------------------------------------------------- |
-| Initial JS per route    | **≤ 60 KB gzip** | parse/compile/hydrate cost on a mid-range phone; ~35 KB is framework |
-| Total CSS (whole build) | **≤ 20 KB gzip** | render-blocking; tokens + all components                             |
-| Preloaded font files    | **≤ 2**          | preloads compete with critical requests                              |
-| Main-thread blocking    | **≤ 200 ms**     | target per screen while loading, 4× CPU; CI fails above 250 ms       |
+- the **complete static import graph** of the app entry and the route's layout and page nodes,
+  read from Vite's manifest. SvelteKit's own modulepreload list can miss a chunk that is also
+  reachable through a dynamic import (its `find_deps` marks it seen on the dynamic path first);
+  the browser then fetches it late, after the chunk that imports it. The report lists such
+  chunks, and they count towards the budget either way;
+- plus the **largest dynamic import a universal `load` (`+page.ts` / `+layout.ts`) awaits**: the
+  page cannot hydrate before it arrives, so lazy-loading a screen's body this way does not take
+  it out of the budget (column "of which awaited by `load`"). The script finds these imports
+  with a regular expression over the load file's own source, so it sees only a string-literal
+  relative path that names the real file (`import('./Body.svelte')`); an aliased (`#lib/…`),
+  computed or extension-less specifier, or an import made in a module the load calls, is not
+  counted. Write load-awaited imports in that form.
+
+| Budget               | Limit            | Why                                                                  |
+| -------------------- | ---------------- | -------------------------------------------------------------------- |
+| Initial JS per route | **≤ 60 KB gzip** | parse/compile/hydrate cost on a mid-range phone; ~37 KB is framework |
+| CSS per route        | **≤ 14 KB gzip** | render-blocking: the stylesheets the route renders with              |
+| Preloaded font files | **≤ 2**          | preloads compete with critical requests                              |
+| Main-thread blocking | **≤ 200 ms**     | target per screen while loading, 4× CPU; CI fails above 250 ms       |
+
+The CSS budget was a whole-build total (≤ 20 KB) until M2's onboarding. A total counts every
+screen's and every on-demand sheet's styles at once, although no route loads them together;
+it grew with each screen (19.6 KB of 20 after passkey auth) and would have forced styles out of
+components for no gain to any single page load. The render-blocking cost is per route, so that
+is what is budgeted now: 14 KB is ~2 KB above the heaviest route when the change was made
+(`/design`, 11.7 KB). The report still prints the whole-build total for tracking.
 
 The same script also guards the CSS output: every built rule that ships a `-webkit-` property must
 ship the standard one too (see the glass note in `docs/design-system.md`).
@@ -185,8 +264,11 @@ this build reproduced it: per-run TBT up to 635 ms, perf 84–100. Findings:
 CI runs the main-thread budget (with the e2e suite) as the **tight regression guard**, plus
 `pnpm lighthouse --runs 5 --assert --min-perf 0.9 --max-tbt 300` on **every app screen**
 (including the streamed, DB-backed `/profile`) as the Lighthouse check: the score target itself,
-and TBT with 50% headroom for shared-runner noise. Not yet run on GitHub's runners (nothing has
-been pushed); if their noise differs, adjust with numbers, not by dropping routes.
+and TBT with 50% headroom for shared-runner noise. On GitHub's runners (CI run
+[42148399101](https://github.com/TheCruzControll/performance-coach/actions/runs/42148399101),
+`main` at `47ec0cd`) the 5-run medians on all 7 routes were perf, accessibility and best practices
+100, LCP 0.91 s, TBT 8–35 ms and CLS 0.000; if their noise changes, adjust with numbers, not by
+dropping routes.
 
 ## Real-user monitoring
 
@@ -222,8 +304,8 @@ GET /profile           total ≈ 38 ms at first byte; streamed work settled ≈ 
 ## How to reproduce
 
 ```sh
-pnpm build:node
+ORIGIN=http://localhost:4174 pnpm build:node   # the origin is baked into Node builds
 pnpm budgets
-E2E_SKIP_BUILD=1 pnpm test:e2e --project=perf --no-deps     # main-thread budget alone (annotations)
+E2E_PERF_ALONE=1 pnpm test:e2e --project=perf  # owner setup, then the main-thread budget alone
 pnpm lighthouse --runs 5 --assert --min-perf 0.9 --max-tbt 300  # every screen (CI command)
 ```

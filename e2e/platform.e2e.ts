@@ -1,5 +1,38 @@
-import { expect, test } from '@playwright/test';
-import { eventually, query } from './support';
+import { expect, test, type Page } from '@playwright/test';
+import { eventually, query, SAME_ORIGIN, trackConsoleErrors } from './support';
+
+/**
+ * Leaving a page cancels the loads it still had in flight, and WebKit reports each one as a
+ * failure (src/lib/client/leaving.ts). Hold back the requests `held` matches, leave while they
+ * are pending, then require that neither page logged an error and nothing was recorded.
+ */
+async function leaveWhilePending(page: Page, path: string, held: (url: string) => boolean) {
+	const errors = trackConsoleErrors(page);
+	const since = (await query<{ now: Date }>('select now()'))[0]!.now;
+	let pending = 0;
+	let left = false;
+	await page.route('**/*', async (route) => {
+		if (left || !held(route.request().url())) return route.fallback();
+		pending += 1;
+		await new Promise((resolve) => setTimeout(resolve, 5_000));
+		await route.continue().catch(() => {}); // cancelled along with the page that asked
+	});
+	await page.goto(path, { waitUntil: 'commit' });
+	await expect
+		.poll(() => pending, { message: `${path} started no load that matches what is held` })
+		.toBeGreaterThan(0);
+	left = true;
+	await page.goto('/today');
+	await expect(page.getByRole('heading', { level: 1, name: 'Today' })).toBeVisible();
+	await page.waitForLoadState('networkidle');
+	expect(errors).toEqual([]);
+	expect(
+		await query(
+			`select message from app_errors where kind = 'client' and path = $1 and occurred_at >= $2`,
+			[path, since]
+		)
+	).toEqual([]);
+}
 
 test.describe('platform: health, PWA, observability', () => {
 	test('/api/health reports the database up via a real query', async ({ request, page }) => {
@@ -117,6 +150,7 @@ test.describe('platform: health, PWA, observability', () => {
 	test('/api/vitals stores a posted metric in Postgres', async ({ request }) => {
 		const id = `e2e-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 		const res = await request.post('/api/vitals', {
+			headers: SAME_ORIGIN,
 			data: {
 				id,
 				name: 'INP',
@@ -133,7 +167,10 @@ test.describe('platform: health, PWA, observability', () => {
 		);
 		expect(rows).toEqual([{ name: 'INP', value: 64, path: '/train' }]);
 
-		const bad = await request.post('/api/vitals', { data: { id, name: 'FID', value: 1 } });
+		const bad = await request.post('/api/vitals', {
+			headers: SAME_ORIGIN,
+			data: { id, name: 'FID', value: 1 }
+		});
 		expect(bad.status()).toBe(422);
 	});
 
@@ -226,26 +263,24 @@ test.describe('platform: health, PWA, observability', () => {
 		]);
 	});
 
-	test('a stylesheet load cancelled by leaving the page is not an error', async ({ page }) => {
-		// Vite rejects a dynamic import whose stylesheet fails unless `vite:preloadError` is
-		// cancelled; WebKit fails stylesheets that are still loading when the page is left.
-		await page.goto('/');
-		await expect(page.locator('html')).toHaveAttribute('data-rum', 'ready', { timeout: 10_000 });
-		const cancelled = await page.evaluate(() => {
-			const fire = () => {
-				const event = new Event('vite:preloadError', { cancelable: true });
-				dispatchEvent(event);
-				return event.defaultPrevented;
-			};
-			const live = fire();
-			dispatchEvent(new Event('pagehide'));
-			const leaving = fire();
-			dispatchEvent(new Event('pageshow'));
-			const restored = fire();
-			return { live, leaving, restored };
+	test('leaving while startup stylesheets load is not an error', async ({ page }) => {
+		// SvelteKit imports the root layout and error page on every start; the stylesheets they
+		// need that the HTML does not link (inlined ones, the shell's on pages without it) are
+		// fetched then. Hold those back.
+		const html = await (await page.request.get('/design')).text();
+		const linked = new Set([...html.matchAll(/(\/_app\/immutable\/[^"]+)"/g)].map((m) => m[1]));
+		await leaveWhilePending(page, '/design', (url) => {
+			const { pathname } = new URL(url);
+			return pathname.startsWith('/_app/immutable/') && !linked.has(pathname);
 		});
-		// Only while leaving: a real failure on a live page keeps Vite's default (the import fails).
-		expect(cancelled).toEqual({ live: false, leaving: true, restored: false });
+	});
+
+	test('leaving while the service worker registers is not an error', async ({
+		page,
+		browserName
+	}) => {
+		test.skip(browserName === 'chromium', 'Chromium does not route the service-worker script');
+		await leaveWhilePending(page, '/train', (url) => url.endsWith('/service-worker.js'));
 	});
 
 	test('browser errors are reported to the server and recorded', async ({ page, request }) => {
@@ -283,7 +318,10 @@ test.describe('platform: health, PWA, observability', () => {
 		]);
 
 		// The endpoint validates what it stores.
-		const bad = await request.post('/api/client-errors', { data: { source: 'console' } });
+		const bad = await request.post('/api/client-errors', {
+			headers: SAME_ORIGIN,
+			data: { source: 'console' }
+		});
 		expect(bad.status()).toBe(422);
 	});
 

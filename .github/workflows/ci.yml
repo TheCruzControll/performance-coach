@@ -99,7 +99,10 @@ jobs:
 
   e2e:
     name: E2E (iPhone viewport · Chromium + WebKit)
-    runs-on: ubuntu-latest
+    # Pinned to the newest Ubuntu release Playwright builds WebKit for (its browser builds are
+    # "ubuntu-24.04"). On ubuntu-latest (26.04) WebKit's ~140 MB of system packages came
+    # through a cold mirror at ~50 KB/s and the install timed out before any test ran.
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     services:
       postgres:
@@ -122,24 +125,49 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # Browser builds are per OS release (WebKit links that release's ICU), so the cache is
+      # keyed by the runner image: a WebKit downloaded on ubuntu-26.04 fails to launch on 24.04.
+      - name: Runner image
+        id: image
+        run: echo "os=${ImageOS:-unknown}" >> "$GITHUB_OUTPUT"
       - name: Cache Playwright browsers
         uses: actions/cache@v4
         with:
           path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          key: playwright-${{ steps.image.outputs.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+      - name: Playwright version
+        id: playwright
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+      # WebKit's system packages are ~140 MB, and the runner's Ubuntu mirror sometimes trickles
+      # at ~50 KB/s (a 12-minute timeout on #5 before any test ran). Keep the downloaded
+      # packages between runs so a slow mirror costs one run, not every run.
+      - name: Cache Playwright system packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/apt-archives
+          key: apt-playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-v1
+          restore-keys: apt-playwright-${{ runner.os }}-
+      - name: Configure apt for slow mirrors (and keep packages for the cache)
+        run: ./scripts/ci-apt-resilience.sh ~/.cache/apt-archives
+      - name: Install Playwright system dependencies
+        # Never killed midway: an interrupted apt-get keeps the dpkg lock and fails every later
+        # install. Slow or stalled mirror downloads time out and retry inside apt instead.
+        timeout-minutes: 12
+        run: pnpm exec playwright install-deps chromium webkit
+      - name: Make the kept packages readable for the cache
+        run: ./scripts/ci-apt-resilience.sh --release ~/.cache/apt-archives
       - name: Install Playwright browsers
-        # Network installs (apt system deps, browser downloads) can hang on a runner: bound each
-        # attempt and retry, so a stuck mirror costs minutes rather than the whole job timeout.
-        timeout-minutes: 14
+        # Usually restored from the cache above. A stuck download is safe to kill: bound and retry.
+        timeout-minutes: 8
         run: |
           for attempt in 1 2 3; do
-            if timeout 240 pnpm exec playwright install --with-deps chromium webkit; then
+            if timeout 150 pnpm exec playwright install chromium webkit; then
               exit 0
             fi
-            echo "::warning::playwright install attempt ${attempt} failed or timed out; retrying"
-            sleep 10
+            echo "::warning::browser download attempt ${attempt} failed or timed out; retrying"
+            sleep 5
           done
-          echo "::error::playwright install failed 3 times"
+          echo "::error::browser download failed 3 times"
           exit 1
       - name: Create roles and databases
         run: pnpm db:setup
@@ -182,17 +210,30 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # Browser builds are per OS release (WebKit links that release's ICU), so the cache is
+      # keyed by the runner image: a WebKit downloaded on ubuntu-26.04 fails to launch on 24.04.
+      - name: Runner image
+        id: image
+        run: echo "os=${ImageOS:-unknown}" >> "$GITHUB_OUTPUT"
       - name: Cache Playwright browsers
         uses: actions/cache@v4
         with:
           path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          key: playwright-${{ steps.image.outputs.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+      - name: Configure apt for slow mirrors
+        run: ./scripts/ci-apt-resilience.sh
+      - name: Install Chromium system dependencies
+        timeout-minutes: 12
+        run: pnpm exec playwright install-deps chromium
       - name: Install Chromium
-        run: pnpm exec playwright install --with-deps chromium
+        timeout-minutes: 8
+        run: pnpm exec playwright install chromium
       - name: Create roles and databases
         run: pnpm db:setup
-      - name: Build for Node
+      - name: Build for Node (served on http://localhost:4174 by the Lighthouse script)
         run: pnpm build:node
+        env:
+          ORIGIN: http://localhost:4174
       # Every app screen (incl. the streamed, DB-backed /profile), a fresh browser per run,
       # median of 5. Asserts the documented score target (>= 90); TBT gets 50% headroom over its
       # 200 ms target for shared-runner noise. The tight hydration guard is the main-thread

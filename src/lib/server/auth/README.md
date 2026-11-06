@@ -1,16 +1,25 @@
-# `src/lib/server/auth` — authentication (scaffold)
+# `src/lib/server/auth` — passkey authentication
 
-Milestone 2 implements authentication here. Requirements (PRD §13):
+Single-owner passkey (WebAuthn) authentication on SimpleWebAuthn. How it works and why:
+[docs/security.md](../../../../docs/security.md) and ADR 0006. Routes import from `index.ts`.
 
-- **Passkeys (WebAuthn) as the primary factor**, using an established library
-  (e.g. SimpleWebAuthn) — no hand-rolled crypto or protocol code.
-- Single owner account, **no public registration**. The first passkey is enrolled with a
-  one-time, short-lived setup token provisioned out of band (environment secret).
-- Recovery: printed one-time recovery codes (hashed at rest) plus the ability to enrol
-  multiple passkeys (phone + laptop + hardware key).
-- Sessions: opaque random session id in an `HttpOnly; Secure; SameSite=Lax` cookie, hashed in
-  Postgres, sliding expiry, revocable. Checked in `hooks.server.ts` for every request.
-- Every route and `/api/*` endpoint is protected by default (allow-list for `/`, the sign-in
-  flow, `/api/health` and static assets).
+| Module                                               | Responsibility                                                                 |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `relying-party.ts`                                   | RP ID and expected origin per environment (production is exactly the domain)   |
+| `webauthn.ts`                                        | SimpleWebAuthn calls with this app's policy; response shape checks             |
+| `challenges.ts`                                      | Single-use, purpose-bound challenges in Postgres                               |
+| `setup.ts`                                           | First-run setup (token hash, owner, first passkey, recovery codes)             |
+| `passkeys.ts`                                        | Sign in, add / rename / remove passkeys                                        |
+| `recovery.ts`, `recovery-codes.ts`                   | Recovery-code sign-in, regeneration; code format and hashing                   |
+| `sessions.ts`                                        | Issue, validate (sliding + absolute expiry), list, revoke, sign out            |
+| `reauth.ts`                                          | Step-up: a recent passkey assertion for sensitive actions, and its ceremony    |
+| `guard.ts`, `routes.ts`, `csrf.ts`, `return-path.ts` | Deny by default for every request (used by `hooks.server.ts`)                  |
+| `cookies.ts`, `http.ts`                              | Cookie name and flags from the origin; SvelteKit glue for routes               |
+| `rate-limit.ts`, `client-network.ts`, `policy.ts`    | DB-backed rate limits (IPv6 per /64); every timing and limit in one place      |
+| `audit.ts`, `activity.ts`                            | `auth_events` audit log and the Security screen's recent activity              |
+| `tokens.ts`                                          | Random tokens, SHA-256, constant-time digest comparison (`node:crypto` only)   |
+| `test-support.ts`                                    | Test-only session minting (refused unless test routes are enabled and allowed) |
 
-See ADR 0006 in `docs/adr/` for why auth lives in-app instead of a hosted identity provider.
+Pure modules have unit tests next to them; the use-cases are covered by
+`tests/integration/auth/` (real Postgres, real SimpleWebAuthn verification) and the flows by
+`e2e/auth*.ts` (real WebAuthn ceremonies in Chromium).
