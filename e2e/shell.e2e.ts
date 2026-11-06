@@ -29,6 +29,22 @@ test.describe('app shell on an iPhone viewport', () => {
 		await context.close();
 	});
 
+	test('signed in, Today and Train name the training profile as the next step', async ({
+		page
+	}) => {
+		for (const [path, testId] of [
+			['/today', 'today-next-step'],
+			['/train', 'train-next-step']
+		] as const) {
+			await page.goto(path);
+			const next = page.getByTestId(testId);
+			await expect(next).toContainText('Training profile');
+			await expect(next).toContainText('Coming next');
+			// The owner is already signed in with a passkey: never point them back at it.
+			await expect(next).not.toContainText(/passkey|sign.in/i);
+		}
+	});
+
 	test('shell renders with the bottom navigation inside the safe viewport', async ({
 		page
 	}, testInfo) => {
