@@ -9,6 +9,7 @@ import {
 	validateSessionToken
 } from '../../../src/lib/server/auth/sessions';
 import { SESSION } from '../../../src/lib/server/auth/policy';
+import { redeemRecoveryCode } from '../../../src/lib/server/auth/recovery';
 import { withRollback } from '../helpers';
 import { clock, request, setUpOwner, UA } from './fixtures';
 
@@ -137,6 +138,41 @@ describe('sessions', () => {
 			expect(types).toEqual(
 				expect.arrayContaining(['signout', 'session.revoked_others', 'session.revoked'])
 			);
+		});
+	});
+
+	it('list recovery sign-ins, marked, for the owner to end (one, or everywhere else)', async () => {
+		await withRollback(async (tx) => {
+			const time = clock();
+			const deps = { db: tx, now: time.now };
+			const owner = await setUpOwner(tx, { now: time.now });
+			const current = (await validateSessionToken(owner.token, deps))!.session;
+			const laptop = await issueSession(
+				{ ownerId: owner.ownerId, method: 'passkey', userAgent: null },
+				deps
+			);
+			// Recovery codes in someone else's hands: each grants a 15-minute recovery session.
+			time.advance(60_000);
+			const first = await redeemRecoveryCode(owner.recoveryCodes[0], undefined, request(), deps);
+			time.advance(60_000);
+			const second = await redeemRecoveryCode(owner.recoveryCodes[1], undefined, request(), deps);
+
+			// This device first, then recovery sign-ins (newest first), then the rest.
+			expect(
+				(await listSessions(current, deps)).map((s) => [s.id, s.kind, s.method, s.current])
+			).toEqual([
+				[current.id, 'owner', 'setup', true],
+				[second.session.id, 'recovery', 'recovery', false],
+				[first.session.id, 'recovery', 'recovery', false],
+				[laptop.session.id, 'owner', 'passkey', false]
+			]);
+
+			await revokeSession(current, first.session.id, request(), deps);
+			expect(await validateSessionToken(first.token, deps)).toBeNull();
+			expect(await revokeOtherSessions(current, request(), deps)).toBe(2);
+			expect(await validateSessionToken(second.token, deps)).toBeNull();
+			expect(await validateSessionToken(laptop.token, deps)).toBeNull();
+			expect((await listSessions(current, deps)).map((s) => s.id)).toEqual([current.id]);
 		});
 	});
 

@@ -122,6 +122,12 @@ export const envSchema = z
 export type Env = z.output<typeof envSchema>;
 
 /**
+ * Replaced at build time by vite.config.ts: `true` in a build for Vercel, `false` in a Node
+ * build. Undefined where Vite did not build the code (`vite dev`, Vitest, scripts run by Node).
+ */
+declare const __VERCEL_BUILD__: boolean | undefined;
+
+/**
  * Where test-only routes may exist: local development and automated tests, never on a hosted
  * deployment. Checked by env validation (startup fails) and again by every test-only route.
  */
@@ -130,6 +136,9 @@ function testRoutesAllowed(env: {
 	VERCEL?: boolean;
 	VERCEL_ENV?: string;
 }): boolean {
+	// Defence in depth: `VERCEL`/`VERCEL_ENV` are runtime variables only. A server built for
+	// Vercel never allows test routes, even if they are missing.
+	if (typeof __VERCEL_BUILD__ !== 'undefined' && __VERCEL_BUILD__) return false;
 	return (env.appEnv === 'development' || env.appEnv === 'test') && !env.VERCEL && !env.VERCEL_ENV;
 }
 

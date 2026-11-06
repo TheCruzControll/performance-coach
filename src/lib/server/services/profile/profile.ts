@@ -2,12 +2,14 @@
  * The athlete profile (name, units, body, nutrition phase), onboarding progress, and the
  * read models the screens and the coach use: the full training profile and a short overview.
  */
+import { localDay } from '../../../domain/dates';
 import {
 	isOnboardingStep,
 	nextStep,
 	onboardingFraction,
 	onboardingSteps,
 	resumeStep,
+	STEP_INFO,
 	type OnboardingProgress,
 	type OnboardingStep
 } from '../../../domain/profile/onboarding';
@@ -32,7 +34,6 @@ import {
 	getSpecifics
 } from './sections';
 import {
-	isoDay,
 	parseWith,
 	ProfileInputError,
 	resolveDeps,
@@ -51,7 +52,7 @@ export async function getAthleteProfile(
 	return toProfile(row);
 }
 
-/** Name and units (onboarding's first step; Profile → Body & units). */
+/** Name, units and time zone (onboarding's first step; Profile → Body & units). */
 export async function saveBasics(
 	ownerId: string,
 	input: unknown,
@@ -95,6 +96,7 @@ export async function getBody(ownerId: string, deps: ProfileDeps = {}) {
 /**
  * Body weight, nutrition phase and weight target. A body weight is recorded as today's entry
  * in the history (re-saving the same day replaces it); leaving it blank never deletes history.
+ * "Today" is the owner's calendar day in their time zone, not the UTC one.
  */
 export async function saveBody(ownerId: string, input: unknown, deps: ProfileDeps = {}) {
 	const body = parseWith(bodySchema, input);
@@ -102,8 +104,9 @@ export async function saveBody(ownerId: string, input: unknown, deps: ProfileDep
 	await measure('db', () =>
 		db.transaction(async (tx) => {
 			const repo = createProfileRepository(tx);
-			await repo.ensureProfile(ownerId);
+			const profile = await repo.ensureProfile(ownerId);
 			const at = now();
+			const today = localDay(at, profile.timeZone);
 			await repo.updateProfile(
 				ownerId,
 				{
@@ -119,12 +122,12 @@ export async function saveBody(ownerId: string, input: unknown, deps: ProfileDep
 				const [latest] = await repo.listBodyWeight(ownerId, 1);
 				const unchanged =
 					latest && latest.value === body.bodyWeight && latest.unit === body.weightUnit;
-				if (!unchanged || latest.measuredOn === isoDay(at)) {
+				if (!unchanged || latest.measuredOn === today) {
 					await repo.upsertBodyWeightForDay({
 						ownerId,
 						value: body.bodyWeight,
 						unit: body.weightUnit,
-						measuredOn: isoDay(at),
+						measuredOn: today,
 						source,
 						createdAt: at
 					});
@@ -192,7 +195,14 @@ export async function advanceOnboarding(
 	input: { step: OnboardingStep; action: 'complete' | 'skip' },
 	deps: ProfileDeps = {}
 ): Promise<OnboardingStep> {
+	// The types do not hold at runtime: form posts and coach tool calls arrive untyped.
 	if (!isOnboardingStep(input.step)) throw new ProfileInputError({ step: 'Unknown step' });
+	if (input.action !== 'complete' && input.action !== 'skip') {
+		throw new ProfileInputError({ action: 'Unknown action' });
+	}
+	if (input.action === 'skip' && !STEP_INFO[input.step].optional) {
+		throw new ProfileInputError({ step: 'This step can’t be skipped' });
+	}
 	const { db, now } = resolveDeps(deps);
 	return measure('db', () =>
 		db.transaction(async (tx) => {
@@ -229,6 +239,7 @@ export async function rememberOnboardingStep(
 	step: OnboardingStep,
 	deps: ProfileDeps = {}
 ): Promise<void> {
+	if (!isOnboardingStep(step)) throw new ProfileInputError({ step: 'Unknown step' });
 	const { db, now } = resolveDeps(deps);
 	await measure('db', async () => {
 		const repo = createProfileRepository(db);

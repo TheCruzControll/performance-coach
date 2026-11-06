@@ -41,7 +41,7 @@ function templateScriptHashes(): `sha256-${string}`[] {
 	);
 }
 
-export default defineConfig(({ mode }) => {
+export default defineConfig(({ command, mode }) => {
 	// Make `.env` values visible to server code that reads `process.env` during `vite dev`.
 	// Production servers receive real environment variables from the platform instead.
 	if (mode === 'development') {
@@ -102,6 +102,10 @@ export default defineConfig(({ mode }) => {
 				}
 			})
 		],
+		// A build-time fact for src/lib/server/env.ts: a server built for Vercel can never enable
+		// test-only routes, whatever its runtime environment says. Builds only: `vite dev` and
+		// Vitest leave it undefined and behave like a local run.
+		define: command === 'build' ? { __VERCEL_BUILD__: JSON.stringify(target === 'vercel') } : {},
 		build: {
 			target: 'es2022',
 			// Report gzip sizes in build output; budgets are enforced by scripts/check-budgets.ts.

@@ -8,6 +8,7 @@
  * are ISO `YYYY-MM-DD`; messages are written for the owner, not for developers.
  */
 import * as z from 'zod/mini';
+import { canonicalTimeZone } from '../dates';
 import { estimateOneRepMax } from '../e1rm';
 import {
 	BASELINE_SOURCES,
@@ -62,7 +63,18 @@ const opt = <T extends z.ZodMiniType>(schema: T) =>
 const isoDate = (message = 'Use a real date') =>
 	z.iso.date(message).check(z.refine((d) => d >= '1900-01-01' && d <= '2100-12-31', message));
 
-const optDate = (message?: string) => opt(isoDate(message));
+/** Optional date: blank (`''`, what an empty date input submits) → null. */
+const optDate = (message = 'Use a real date') =>
+	z.pipe(
+		z.nullish(z.union([z.literal(''), isoDate(message)], message)),
+		z.transform((v) => (v ? v : null))
+	);
+
+/** An IANA time zone (the browser's, e.g. `America/Los_Angeles`), saved as `Intl` spells it. */
+const timeZone = z.string('Pick your time zone').check(
+	z.refine((v) => canonicalTimeZone(v) !== null, 'Pick your time zone'),
+	z.overwrite((v) => canonicalTimeZone(v) ?? v)
+);
 
 /**
  * Cross-field rules normally run only when every field parsed; with this they run anyway, so the
@@ -80,7 +92,9 @@ const uniqueBy = <T>(items: T[], key: (item: T) => string) =>
 export const basicsSchema = z.object({
 	name: words(64, 'Tell your coach what to call you'),
 	weightUnit: z.enum(WEIGHT_UNITS, 'Pick kg or lb'),
-	distanceUnit: z.enum(DISTANCE_UNITS, 'Pick km or mi')
+	distanceUnit: z.enum(DISTANCE_UNITS, 'Pick km or mi'),
+	/** Decides the day a weigh-in belongs to. Left out, the saved zone stays. */
+	timeZone: z.optional(timeZone)
 });
 export type BasicsInput = z.input<typeof basicsSchema>;
 export type Basics = z.output<typeof basicsSchema>;

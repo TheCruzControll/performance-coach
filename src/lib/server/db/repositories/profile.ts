@@ -53,6 +53,17 @@ type Upsert<T extends { $inferInsert: unknown }> = Omit<
 	'ownerId' | 'createdAt' | 'updatedAt'
 >;
 
+/** First advisory-lock key of each section save that replaces a set of rows (727101: goals). */
+const SECTION_LOCKS = {
+	experience: 727102,
+	baselines: 727103,
+	specifics: 727104,
+	injuries: 727105,
+	exercisePreferences: 727106,
+	schedule: 727107
+} as const;
+export type LockedSection = keyof typeof SECTION_LOCKS;
+
 export function createProfileRepository(db: Executor) {
 	return {
 		// ---- athlete profile -----------------------------------------------------------------
@@ -75,6 +86,17 @@ export function createProfileRepository(db: Executor) {
 			const row = await this.getProfile(ownerId);
 			if (!row) throw new Error('ensureProfile: unknown owner');
 			return row;
+		},
+
+		/**
+		 * Serialise saves of one section for this owner within the current transaction. Such a save
+		 * reads the stored rows and writes the difference, so two at once (a double-tapped Save)
+		 * would both insert: a unique violation, or the rows of both kept.
+		 */
+		async lockSection(ownerId: string, section: LockedSection): Promise<void> {
+			await db.execute(
+				sql`select pg_advisory_xact_lock(${SECTION_LOCKS[section]}, hashtext(${ownerId}))`
+			);
 		},
 
 		async updateProfile(ownerId: string, patch: ProfilePatch, now: Date) {
