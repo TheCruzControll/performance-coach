@@ -204,7 +204,14 @@ Specs:
   Monday…Sunday in order, a picked day shows its tick, a Monday-first value (Sunday then Monday
   ticked), and at 393 px inside a padded card every hit area is ≥ 44 × 44 px, owns its edges and
   never overlaps a neighbour; its error is announced and also shown as a danger border on the
-  days still open.
+  days still open. Toggle: a `switch` named by its title alone and described by its
+  description, ≥ 44 px, the title, description and track all its hit area, flipped by a tap on
+  the title and by Space. TagInput: Return and Add add the trimmed text and clear the field
+  (Add stays disabled while it is blank), a repeat in any case is refused and the text kept,
+  remove buttons are named "Remove …" with a 44 × 44 px hit area, a suggestion adds in one tap
+  and leaves the list, `maxlength` and `max` hold and are announced, keyboard focus survives a
+  removed button, and the status region says "Added …", "Removed …" and every refusal, even
+  the same words twice (a recorded live region shows them cleared and set again).
 - `a11y.e2e.ts` — axe-core (`@axe-core/playwright`, WCAG 2.1 A/AA) on every screen (Security
   included; the signed-out sign-in and recovery screens too), the plate-calculator sheet and each
   `/design` component group, in the **dark and light** themes (Lighthouse only audits dark). The
@@ -244,6 +251,15 @@ Unit tests (`src/lib/domain/training/`, `src/lib/domain/exercises/`, `src/lib/do
 - **Plain Node** (`scripts/catalogue-node.test.ts`): Node with type stripping alone, as the seed
   runs, loads `src/lib/domain/exercises/index.ts` and sees the catalogue Vite sees; an
   extensionless import fails there, which is why the package uses `.ts` specifiers.
+- **Program-plan contract** (`training/schemas.test.ts`, `validation.test.ts`,
+  `scripts/training-index-imports.test.ts`): a minimal hybrid plan (intervals, a Muay Thai class,
+  a strength session, an outline block) passes `programPlanSchema` unchanged and each part passes
+  its own schema; every rule (load-kind coherence, one measure per set, RPE in half steps, rep,
+  pace and repeat groups, metrics, commitment refs, block and week dates, sessions in their week,
+  decision refs) fails at its dotted path; each schema's type equals its contract type (checked by
+  `pnpm check`); `validate()` is the function the profile schemas re-export; and the runtime
+  imports reachable from `domain/training/index.ts` include no schemas, edits or zod, with the
+  walk shown to catch a re-export, a zod import and an inline `type` import.
 
 ### Schema
 
