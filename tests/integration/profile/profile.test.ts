@@ -4,6 +4,7 @@
  */
 import { sql } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
+import { ONBOARDING_STEPS, STEP_INFO } from '../../../src/lib/domain/profile/onboarding';
 import {
 	advanceOnboarding,
 	completeOnboarding,
@@ -193,6 +194,32 @@ describe('onboarding progress', () => {
 
 			await rememberOnboardingStep(owner, 'goals', { db });
 			expect((await getOnboarding(owner, { db })).resume).toBe('goals');
+		});
+	});
+
+	it('refuses unknown steps and actions, and skipping a step that is not optional', async () => {
+		await withRollback(async (db) => {
+			const owner = await makeOwner(db);
+			// Form posts and coach tool calls arrive untyped.
+			const advance = (step: string, action: string) =>
+				advanceOnboarding(owner, { step, action } as never, { db });
+			expect(await fieldErrors(advance('goals', 'finish'))).toEqual({ action: 'Unknown action' });
+			for (const step of ONBOARDING_STEPS.filter((s) => !STEP_INFO[s].optional)) {
+				expect(await fieldErrors(advance(step, 'skip'))).toEqual({
+					step: 'This step can’t be skipped'
+				});
+			}
+			expect(
+				await fieldErrors(rememberOnboardingStep(owner, 'not-a-step' as never, { db }))
+			).toEqual({ step: 'Unknown step' });
+			expect((await getOnboarding(owner, { db })).progress).toMatchObject({
+				current: null,
+				completed: [],
+				skipped: []
+			});
+
+			expect(await advance('strength', 'skip')).toBe('equipment');
+			expect((await getOnboarding(owner, { db })).progress.skipped).toEqual(['strength']);
 		});
 	});
 
