@@ -56,6 +56,30 @@ describe('a Profile section', () => {
 		});
 	});
 
+	it('Name & units starts from the owner’s name in kg and km, then loads what it saved', async () => {
+		await withRollback(async (db) => {
+			const owner = await makeOwner(db, 'Niko Cruz');
+			const basics = profileSection('basics');
+			expect(await basics.load(owner, { db })).toMatchObject({
+				name: 'Niko Cruz',
+				weightUnit: 'kg',
+				distanceUnit: 'km'
+			});
+			await saveBasics(
+				owner,
+				{ name: 'Niko Cruz', weightUnit: 'kg', distanceUnit: 'km', timeZone: 'Europe/London' },
+				{ db }
+			);
+			const edited = { name: 'Niko', weightUnit: 'lb', distanceUnit: 'mi' };
+			await basics.save!(owner, edited, { db, source: 'profile' });
+			// The editor sends no time zone: the saved one stays.
+			expect(await basics.load(owner, { db })).toMatchObject({
+				...edited,
+				timeZone: 'Europe/London'
+			});
+		});
+	});
+
 	it('Body edits the profile and today’s weight, and a converted weight left as it was records nothing', async () => {
 		await withRollback(async (db) => {
 			const owner = await makeOwner(db);
