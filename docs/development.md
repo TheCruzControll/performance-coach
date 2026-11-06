@@ -33,9 +33,11 @@ pnpm auth:setup-token --origin http://localhost:5173   # prints a token, its has
 
 Create the passkey (Touch ID, Windows Hello, a phone via QR, or Chrome DevTools → More tools →
 WebAuthn → "Enable virtual authenticator environment"), save the recovery codes, done. Passkeys
-work on `http://localhost` (a secure context) but not on `127.0.0.1`. To start over:
-`pnpm auth:reset-owner --confirm` (keeps the owner's data, reopens setup), then a new
-`pnpm auth:setup-token` (a token works for one setup).
+work on `http://localhost` (a secure context) but not on `127.0.0.1`. To start over, name the
+database (there is no default, and `.env` is not read):
+`DATABASE_URL_UNPOOLED=postgres://coach:coach@localhost:5432/coach_dev pnpm auth:reset-owner --confirm`
+(keeps the owner's data, reopens setup), then a new `pnpm auth:setup-token` (a token works for
+one setup).
 
 `pnpm start` serves a Node build: build it with the origin it will be served on, e.g.
 `ORIGIN=http://localhost:4173 pnpm build:node && PORT=4173 pnpm start` (docs/environment.md).

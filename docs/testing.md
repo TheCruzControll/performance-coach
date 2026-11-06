@@ -163,6 +163,10 @@ Specs:
   from the test-minted session shows the prompt, and cancelling changes nothing and says so.
 - `sessions.exclusive.e2e.ts` (runs last) — sign out everywhere else ends every other session,
   not this one; the last passkey cannot be removed (button disabled, server answers 409).
+- `signout.e2e.ts` (WebKit) — M2 acceptance 6 on the iPhone's engine, on a session minted for
+  this test alone: sign-out clears the cookie, every cache but the versioned shell, every
+  IndexedDB database and session storage, sends `Clear-Site-Data: "cache"` and keeps the theme
+  preference.
 
 - `shell.e2e.ts` — the sign-in screen is the landing page (signed in, `/` goes to Today); bottom nav pinned to the bottom with ≥ 44 px targets and a
   computed `backdrop-filter` blur; navigation across all five tabs with `aria-current`; no console
@@ -318,6 +322,10 @@ key. No key exists in CI today.
 `.github/workflows/ci.yml` runs lint, type-check, the migration drift check, unit + integration
 (postgres:18 service), both builds + budgets, Playwright (Chromium + WebKit) and an asserted
 Lighthouse run on every PR and push to `main`.
+
+`.github/workflows/post-deploy-smoke.yml` checks production from outside after every production
+deploy (health with the database up, the sign-in screen, deny by default, security headers, no
+test-only routes; docs/deployment.md). It needs no secrets and runs by hand too.
 
 **Not yet verified:** the workflows have not run on GitHub (nothing has been pushed), and the
 WebKit project has never run locally (WebKit is not installed in the build environment), so iOS

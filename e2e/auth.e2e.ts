@@ -335,7 +335,13 @@ test.describe('passkey authentication (real WebAuthn ceremonies)', () => {
 	}, testInfo) => {
 		const { context, page, sessionId } = await ownDevice(browser, testInfo);
 		await page.goto('/profile');
+		await page.waitForLoadState('networkidle'); // hydrated: a tap before then changes nothing
 		await page.getByTestId('theme-control').getByRole('radio', { name: 'Light' }).click();
+		await expect
+			.poll(() =>
+				page.evaluate(() => JSON.parse(localStorage.getItem('pc:prefs:v1') ?? '{}').theme)
+			)
+			.toBe('light');
 		await page.waitForFunction(() => navigator.serviceWorker.controller !== null, null, {
 			timeout: 15_000
 		});

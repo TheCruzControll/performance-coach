@@ -3,9 +3,8 @@
 	"buildCommand": "sh scripts/vercel-build.sh",
 	"git": {
 		"deploymentEnabled": {
-			"main": false,
+			"main": true,
 			"**": false
 		}
-	},
-	"ignoreCommand": "sh scripts/vercel-ignore-build.sh"
+	}
 }
