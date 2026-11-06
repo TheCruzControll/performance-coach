@@ -1,13 +1,13 @@
 /**
- * The first block's shape, event tapers and the week's days (m3/13). `available` is empty or
- * starts with a separator, so the sentence reads whole either way.
+ * The first block's shape, the outline after it, event tapers and the week's days (m3/13).
+ * `available` and `notes` are empty or start with a separator, so a sentence reads whole either way.
  */
 import type { Templates } from '../../decisions.ts';
 
 export const blocks = {
 	block_structure: {
-		summary: 'First block: {structure}',
-		why: 'The first block runs {weeks} weeks: {structure}. {reason}'
+		summary: '{block}: {structure}',
+		why: '{block} runs {weeks} weeks: {structure}. {reason}{notes}'
 	},
 	event_taper: {
 		summary: 'Taper before {event}',
