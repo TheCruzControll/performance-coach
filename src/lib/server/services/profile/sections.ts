@@ -85,9 +85,10 @@ export async function saveExperience(
 export async function getBaselines(ownerId: string, deps: ProfileDeps = {}) {
 	const { db } = resolveDeps(deps);
 	const repo = createProfileRepository(db);
-	const [profile, rows] = await measure('db', () =>
-		Promise.all([repo.getProfile(ownerId), repo.listCurrentBaselines(ownerId)])
-	);
+	const { profile, rows } = await measure('db', async () => ({
+		profile: await repo.getProfile(ownerId),
+		rows: await repo.listCurrentBaselines(ownerId)
+	}));
 	return { unknown: profile?.baselinesUnknown ?? false, lifts: rows.map(toBaseline) };
 }
 
@@ -197,9 +198,11 @@ export interface Specifics {
 export async function getSpecifics(ownerId: string, deps: ProfileDeps = {}): Promise<Specifics> {
 	const { db } = resolveDeps(deps);
 	const repo = createProfileRepository(db);
-	const [running, races, muayThai] = await measure('db', () =>
-		Promise.all([repo.getRunning(ownerId), repo.listRaces(ownerId), repo.getMuayThai(ownerId)])
-	);
+	const { running, races, muayThai } = await measure('db', async () => ({
+		running: await repo.getRunning(ownerId),
+		races: await repo.listRaces(ownerId),
+		muayThai: await repo.getMuayThai(ownerId)
+	}));
 	return {
 		running: running
 			? {
@@ -390,9 +393,10 @@ export async function saveExercisePreferences(
 export async function getSchedule(ownerId: string, deps: ProfileDeps = {}): Promise<Schedule> {
 	const { db } = resolveDeps(deps);
 	const repo = createProfileRepository(db);
-	const [row, commitments] = await measure('db', () =>
-		Promise.all([repo.getSchedule(ownerId), repo.listCommitments(ownerId)])
-	);
+	const { row, commitments } = await measure('db', async () => ({
+		row: await repo.getSchedule(ownerId),
+		commitments: await repo.listCommitments(ownerId)
+	}));
 	return {
 		daysPerWeek: row?.daysPerWeek ?? null,
 		availableDays: row?.availableDays ?? [],
