@@ -133,6 +133,10 @@ export const customExerciseSchema = z
 			if (e.measure !== 'time' && e.defaultSeconds !== null) {
 				fail(['defaultSeconds'], 'Seconds are for an exercise measured in time');
 			}
+			// The exercises table requires them, as the catalogue format does.
+			if (e.measure === 'time' && e.defaultSeconds === null) {
+				fail(['defaultSeconds'], 'How long is one bout or hold?');
+			}
 		})
 	);
 
