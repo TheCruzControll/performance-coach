@@ -78,6 +78,8 @@ function pushPull(week: WeekPlan) {
 }
 
 describe('weekly hard sets per major group', () => {
+	// A week above full volume, whose main lifts progression gives a back-off set more, has its
+	// ceiling scaled by its volume factor.
 	it('gives a hypertrophy goal 10–20 hard sets for every major group in every full-volume week', () => {
 		const p = hypertrophy(4, 75);
 		const before = withoutVolume(p);
@@ -87,7 +89,9 @@ describe('weekly hard sets per major group', () => {
 		for (const week of fullWeeks(plan)) {
 			for (const group of MAJOR) {
 				expect(hardSets(week, group), `${group} in ${week.startsOn}`).toBeGreaterThanOrEqual(10);
-				expect(hardSets(week, group), `${group} in ${week.startsOn}`).toBeLessThanOrEqual(20);
+				expect(hardSets(week, group), `${group} in ${week.startsOn}`).toBeLessThanOrEqual(
+					20 * week.targets.volumeFactor
+				);
 			}
 		}
 	});
@@ -99,7 +103,9 @@ describe('weekly hard sets per major group', () => {
 		for (const week of fullWeeks(plan)) {
 			for (const group of MAJOR) {
 				expect(hardSets(week, group), `${group} in ${week.startsOn}`).toBeGreaterThanOrEqual(4);
-				expect(hardSets(week, group), `${group} in ${week.startsOn}`).toBeLessThanOrEqual(10);
+				expect(hardSets(week, group), `${group} in ${week.startsOn}`).toBeLessThanOrEqual(
+					10 * week.targets.volumeFactor
+				);
 			}
 		}
 		const hamstrings = plan.decisions.find(
@@ -107,25 +113,28 @@ describe('weekly hard sets per major group', () => {
 		);
 		expect(hamstrings).toMatchObject({
 			ruleKey: 'volume.maintenance',
-			summary: 'Hamstrings: 4.5–6.5 hard sets a week',
-			why: 'Hamstrings gets 4.5–6.5 hard sets a week, for the 4–10 that suits keeping your strength. Sets were added to Sliding leg curl.',
+			summary: 'Hamstrings: 4–7 hard sets a week',
+			why: 'Hamstrings gets 4–7 hard sets a week, for the 4–10 that suits keeping your strength. Sets were added to Sliding leg curl.',
 			refs: ['blocks.0']
 		});
 	});
 
-	it('says why a group stays over the range: in its heaviest weeks, or in every week and why', () => {
+	it('says why a group stays over the range: in its overreach or heaviest weeks, or every week', () => {
 		const why = (plan: ProgramPlan, group: string) =>
 			plan.decisions.find((d) => d.kind === 'volume_adjusted' && d.evidence.group === group)?.why;
 		const plan = generate(SCENARIOS.minimal());
 		expect(why(plan, 'Quads')).toBe(
-			"Quads gets 8.5–16 hard sets a week, for the 8–14 that suits getting stronger. Its main lifts' back-off sets count as hard in the heaviest weeks, so those go over."
+			"Quads gets 8.5–18.5 hard sets a week, for the 8–14 that suits getting stronger. Its main lifts' back-off sets count as hard in the heaviest weeks, so those go over."
 		);
 		expect(why(plan, 'Back')).toBe(
-			'Back gets 16–23.5 hard sets a week, for the 8–14 that suits getting stronger. Pulling keeps level with pushing, so it goes over every week.'
+			'Back gets 17–27 hard sets a week, for the 8–14 that suits getting stronger. Sets were added to Chin-up. Pulling keeps level with pushing, so it goes over every week.'
 		);
-		const bulk = SCENARIOS.minimal();
-		bulk.profile.nutritionPhase = 'bulk';
-		expect(why(generate(bulk), 'Glutes & hips')).toMatch(
+		expect(why(generate(hypertrophy(4, 75)), 'Shoulders')).toMatch(
+			/^Shoulders gets 14–22 hard sets a week, .+\. The heaviest week gives each main lift a back-off set more, so it goes over by design\.$/
+		);
+		const cut = SCENARIOS.minimal();
+		cut.profile.nutritionPhase = 'cut';
+		expect(why(generate(cut), 'Glutes & hips')).toMatch(
 			/\. Its main lifts, and work it shares with other groups, keep it over every week\.$/
 		);
 	});
@@ -152,11 +161,11 @@ describe('weekly hard sets per major group', () => {
 		}
 		expect(plan.decisions.find((d) => d.ruleKey === 'volume.push_pull')).toMatchObject({
 			kind: 'volume_adjusted',
-			summary: 'Pulling: 12 hard sets a week',
+			summary: 'Pulling: 14 hard sets a week',
 			refs: ['blocks.0']
 		});
 		expect(plan.decisions.find((d) => d.ruleKey === 'volume.push_pull')?.why).toMatch(
-			/^Pulling gets 12 hard sets a week, for at least as many as pushing gets \(6–12\), so the shoulders stay balanced\. Sets came off .+\.$/
+			/^Pulling gets 14 hard sets a week, for at least as many as pushing gets \(6–14\), so the shoulders stay balanced\. Sets came off .+\.$/
 		);
 	});
 
@@ -196,7 +205,9 @@ describe('the nutrition phase', () => {
 		expect(share).toBeLessThanOrEqual(0.85);
 		for (const g of MAJOR) expect(spreadOf(cut, g)[1]).toBeLessThanOrEqual(spreadOf(kept, g)[1]);
 		expect(intensity(cut)).toEqual(intensity(kept));
-		const decisions = cut.decisions.filter((d) => d.kind === 'volume_adjusted');
+		const decisions = cut.decisions.filter(
+			(d) => d.kind === 'volume_adjusted' && d.ruleKey !== 'volume.push_pull'
+		);
 		expect(decisions.length).toBeGreaterThan(0);
 		for (const d of decisions) {
 			expect(d.ruleKey).toBe('volume.cut');
@@ -243,7 +254,7 @@ describe('the nutrition phase', () => {
 			}
 		});
 		expect(cut.decisions.find((d) => d.ruleKey === 'volume.session_length')?.summary).toBe(
-			'Your 45-minute sessions over more shoulders, hamstrings and pulling work'
+			'Your 45-minute sessions over more chest, shoulders, hamstrings and pulling work'
 		);
 	});
 
@@ -268,7 +279,9 @@ describe('the nutrition phase', () => {
 			expect(spreadOf(bulk, g)[0], g).toBeGreaterThanOrEqual(spreadOf(kept, g)[0]);
 			expect(spreadOf(bulk, g)[0], g).toBeGreaterThanOrEqual(14);
 		}
-		const decisions = bulk.decisions.filter((d) => d.kind === 'volume_adjusted');
+		const decisions = bulk.decisions.filter(
+			(d) => d.kind === 'volume_adjusted' && d.ruleKey !== 'volume.push_pull'
+		);
 		expect(decisions.length).toBeGreaterThan(0);
 		for (const d of decisions) {
 			expect(d.ruleKey).toBe('volume.bulk');
@@ -329,14 +342,18 @@ describe('the volume stage', () => {
 		const weeks = generate(p).blocks[0]!.weeks;
 		const mains = (w: WeekPlan) =>
 			strengthIn(w).map((s) => s.exercises.filter((e) => e.sets.some((l) => l.role === 'top')));
+		// Progression gives the main lifts more back-off sets in a week above full volume.
 		const shape = (w: WeekPlan) =>
 			strengthIn(w).map((s) => [
 				s.title,
-				s.exercises.map((e) => [keyOf(e), e.sets.map((l) => l.sets)])
+				s.exercises
+					.filter((e) => !e.sets.some((l) => l.role === 'top'))
+					.map((e) => [keyOf(e), e.sets.map((l) => l.sets)])
 			]);
 		weeks.forEach((week, i) => {
 			expect(mains(week)).toEqual(mains(before[i]!));
-			expect(shape(week)).toEqual(shape(weeks[0]!));
+			// The deload keeps its share of every session's sets (progression).
+			if (week.targets.volumeFactor >= 1) expect(shape(week)).toEqual(shape(weeks[0]!));
 		});
 		expect(shape(weeks[0]!)).not.toEqual(shape(before[0]!));
 	});

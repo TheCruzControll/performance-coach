@@ -6,7 +6,9 @@
  *
  * - The range is the split's: its style's, or maintenance's when a goal of another kind ranks
  *   first (splits.ts). It holds in every week at full volume (VOLUME_WEEK_MIN); the deload, taper
- *   and event weeks take their share of it through their volume factor (progression, m3/21).
+ *   and event weeks take their share of it through their volume factor (progression, m3/21), and a
+ *   week above full volume, whose main lifts progression gives a back-off set more, has its
+ *   ceiling raised by its volume factor in the same way.
  * - Pulling gets at least as many hard sets as pushing (PULL_PER_PUSH), weighed set for set with
  *   the groups' floors: where the time holds neither, the trade-off names pulling.
  * - A group's floor comes before its ceiling: the main lifts keep their sets, and their back-off

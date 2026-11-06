@@ -4,9 +4,11 @@
  * pushing and the nutrition phase moves the range, all within the session length.
  *
  * - Hard sets are plannedHardSets' (training/metrics.ts), counted in every full-volume week as
- *   the timefit stage will leave it, so a session over its length counts as fitSession trims it.
+ *   progression's withVolume and then the timefit stage will leave it: a week above full volume
+ *   with its extra back-off sets, and a session over its length as fitSession trims it.
  *   A group's floor holds in its lightest week and its ceiling in its heaviest, since back-off
- *   sets turn hard once a week's RPE cap is 8.
+ *   sets turn hard once a week's RPE cap is 8. A week above full volume (an overreach week) has
+ *   its ceiling scaled by its volume factor, as the deload's and taper's sets scale by theirs.
  * - One set at a time, it makes the change that brings the weeks closest to their targets: a set
  *   more or fewer on any line but a top set, or an exercise added through selection's
  *   plannedExercise from the eligible candidates (eligibility.ts), so equipment, injuries and
@@ -16,7 +18,7 @@
  * - A cut first plans the goal's sets, then only takes sets off, a main lift's back-offs among
  *   them, toward four fifths of each group's lightest and heaviest weeks; RPEs never change.
  * - A session changes alike in every week of the block, so weeks differ only by their own
- *   targets, which progression (m3/21) applies after.
+ *   targets, which progression applies after.
  * - Each major group changed gets a volume_adjusted decision, and pulling one when it had to
  *   catch up; what stays short because no more fits the time gets one priority_tradeoff.
  *
@@ -54,6 +56,8 @@ import {
 	VOLUME_WEEK_MIN
 } from './rules/volume.ts';
 import type { MajorGroup } from './rules/volume.ts';
+import { withVolume } from './progression.ts';
+import { LOAD_RULES } from './rules/loads.ts';
 import { exerciseOf, listing, plannedExercise } from './selection.ts';
 import type { Selected } from './selection.ts';
 import type { Split } from './splits.ts';
@@ -61,8 +65,13 @@ import { estimateMinutes, fitSession, fitWeek } from './timefit.ts';
 
 const GROUPS = Object.keys(MAJOR_GROUPS) as MajorGroup[];
 
-/** Why a group stays over its range: in its heaviest weeks, or in every week as well. */
+/**
+ * Why a group stays over its range: only in a week above full volume, whose volume factor scales
+ * its ceiling; in its heaviest weeks; or in every week as well.
+ */
 const OVER = {
+	overreach:
+		' The heaviest week gives each main lift a back-off set more, so it goes over by design.',
 	heaviest: " Its main lifts' back-off sets count as hard in the heaviest weeks, so those go over.",
 	pulling: ' Pulling keeps level with pushing, so it goes over every week.',
 	every: ' Its main lifts, and work it shares with other groups, keep it over every week.'
@@ -109,6 +118,13 @@ const spread = (tallies: readonly Tally[], count: (t: Tally) => number): [number
 	const counts = tallies.map(count);
 	return [Math.min(...counts), Math.max(...counts)];
 };
+/**
+ * The most of a group's hard sets in any week, in full-volume terms: each week's count over its
+ * volume factor (`scales`), so an overreach week's extra back-off sets do not count against the
+ * ceiling.
+ */
+const peak = (tallies: readonly Tally[], g: MajorGroup, scales: readonly number[]) =>
+	Math.max(...tallies.map((t, w) => t.groups[g] / scales[w]!));
 const words = ([lo, hi]: readonly [number, number]) => (lo === hi ? `${lo}` : `${lo}–${hi}`);
 const pullsBehind = (t: Tally) => t.push * PULL_PER_PUSH > t.pull;
 
@@ -117,13 +133,16 @@ const pullsBehind = (t: Tally) => t.push * PULL_PER_PUSH > t.pull;
  * pulling as much as pushing, then what is over a ceiling. A floor is never given up for a ceiling.
  * A pulling set short weighs the same as a set short of a floor, so neither gives way to the other.
  */
-function distance(tallies: readonly Tally[], targets: Targets): [under: number, over: number] {
+function distance(
+	tallies: readonly Tally[],
+	targets: Targets,
+	scales: readonly number[]
+): [under: number, over: number] {
 	let under = Math.max(0, ...tallies.map((t) => t.push * PULL_PER_PUSH - t.pull));
 	let over = 0;
 	for (const g of GROUPS) {
-		const [lo, hi] = spread(tallies, (t) => t.groups[g]);
-		under += Math.max(0, targets[g].floor - lo);
-		over += Math.max(0, hi - targets[g].ceiling);
+		under += Math.max(0, targets[g].floor - spread(tallies, (t) => t.groups[g])[0]);
+		over += Math.max(0, peak(tallies, g, scales) - targets[g].ceiling);
 	}
 	return [under, over];
 }
@@ -182,6 +201,7 @@ export function balanceBlock(
 	if (!weeks.length) return block;
 
 	const minutes = input.sessionMinutes;
+	const scales = weeks.map((w) => w.targets.volumeFactor);
 	const muscles = new Map(libraryOf(input).map((e) => [e.key, e]));
 	const ex = (key: ExerciseKey) => exerciseOf(input, key)!;
 	const keyOf = (e: PlannedExercisePlan) => toExerciseKey(e.exercise);
@@ -206,9 +226,14 @@ export function balanceBlock(
 	const edits = new Map<string, Edit>(titles.map((t) => [t, { added: [], sets: new Map() }]));
 	const edited = (week: WeekPlan, title: string, edit = edits.get(title)!) =>
 		withEdit(sessionOf(week, title)!, edit, split, week.targets.rpeCap, input);
-	/** A session's count as timefit will leave it: one over its length is trimmed first. */
-	const counted = (w: number, s: StrengthSessionPlan) =>
-		count(weeks[w]!, [s.estMinutes > minutes ? fitSession(s, input, minutes).session : s]);
+	/** `s` in week `w` as progression will leave it, with that week's volume factor applied. */
+	const ahead = (w: number, s: StrengthSessionPlan) =>
+		withVolume({ ...weeks[w]!, sessions: [s] }, input, LOAD_RULES).sessions[0] as typeof s;
+	/** A session's count as progression and timefit will leave it: one over its length trimmed. */
+	const counted = (w: number, session: StrengthSessionPlan) => {
+		const s = ahead(w, session);
+		return count(weeks[w]!, [s.estMinutes > minutes ? fitSession(s, input, minutes).session : s]);
+	};
 	let current = weeks.map((w) => new Map(titles.map((t) => [t, edited(w, t)])));
 	const own = new Map(titles.map((t) => [t, weeks.map((_, w) => counted(w, current[w]!.get(t)!))]));
 
@@ -281,7 +306,9 @@ export function balanceBlock(
 			return count(week, [{ ...session, exercises: [{ ...e, sets: [{ ...line, sets: 1 }] }] }]);
 		});
 
-	const entry = weeks.map((week) => count(week, fitWeek(week, input).week.sessions));
+	const entry = weeks.map((week) =>
+		count(week, fitWeek(withVolume(week, input, LOAD_RULES), input).week.sessions)
+	);
 	let tallies = entry;
 	const made: { move: Move; delta: Tally[] }[] = [];
 	let short = new Set<MajorGroup | 'pulling'>();
@@ -291,17 +318,19 @@ export function balanceBlock(
 	 */
 	function search(targets: Targets, cutting = false) {
 		for (;;) {
-			const now = distance(tallies, targets);
+			const now = distance(tallies, targets, scales);
 			let best: { move: Move; delta: Tally[]; next: Tally[]; d: [number, number] } | null = null;
 			if (!cutting) short = new Set();
 			for (const move of closer([0, 0], now) ? moves(cutting) : []) {
 				const delta = deltaOf(move);
 				const next = tallies.map((t, w) => plus(t, delta[w]!));
-				const d = distance(next, targets);
+				const d = distance(next, targets, scales);
 				if (!closer(d, now) || (best && !closer(d, best.d))) continue;
 				if (cutting && delta.some((t) => GROUPS.some((g) => t.groups[g] > 0))) continue;
 				const edit = moved(edits.get(move.title)!, move);
-				if (move.by > 0 && edited(weeks[0]!, move.title, edit).estMinutes > minutes) {
+				const tooLong = (w: number) =>
+					ahead(w, edited(weeks[w]!, move.title, edit)).estMinutes > minutes;
+				if (move.by > 0 && weeks.some((_, w) => tooLong(w))) {
 					for (const g of GROUPS) {
 						const lightest = spread(tallies, (t) => t.groups[g])[0];
 						if (lightest < targets[g].floor && delta.some((t) => t.groups[g] > 0)) short.add(g);
@@ -338,8 +367,7 @@ export function balanceBlock(
 		Object.fromEntries(GROUPS.map((g) => [g, target(g)])) as Targets;
 	// A bulk raises the floor only as far as the heaviest week stays in the range.
 	const spreadOf = (g: MajorGroup) => {
-		const [least, most] = spread(entry, (t) => t.groups[g]);
-		return most - least;
+		return peak(entry, g, scales) - spread(entry, (t) => t.groups[g])[0];
 	};
 	let targets = targetsBy((g) => ({
 		floor: Math.max(lo, Math.min(lo + toward * (hi - lo), hi - spreadOf(g))),
@@ -348,10 +376,13 @@ export function balanceBlock(
 	search(targets);
 	if (keep < 1) {
 		// The cut keeps `keep` of what the goal's sets came to, lightest and heaviest weeks alike.
-		const planned = GROUPS.map((g) => spread(tallies, (t) => t.groups[g]));
+		const planned = GROUPS.map((g) => [
+			spread(tallies, (t) => t.groups[g])[0],
+			peak(tallies, g, scales)
+		]);
 		targets = targetsBy((g) => {
 			const [least, most] = planned[GROUPS.indexOf(g)]!;
-			return { floor: keep * Math.max(lo, least), ceiling: keep * Math.max(lo, most) };
+			return { floor: keep * Math.max(lo, least!), ceiling: keep * Math.max(lo, most!) };
 		});
 		search(targets, true);
 		for (const g of GROUPS)
@@ -399,17 +430,22 @@ export function balanceBlock(
 			spread(entry, (t) => t.groups[g]),
 			spread(tallies, (t) => t.groups[g])
 		];
-		const over = after[1] > keep * hi;
+		const over = after[1] > keep * hi + EPSILON;
 		if (before[0] === after[0] && before[1] === after[1] && !over) continue;
 		const pulling =
 			MAJOR_GROUPS[g].patterns.some((p) => PULL_PATTERNS.includes(p)) &&
 			tallies.some((t) => t.pull - t.push * PULL_PER_PUSH < 1);
+		const why = (): string => {
+			if (!over) return '';
+			if (peak(tallies, g, scales) <= keep * hi + EPSILON) return OVER.overreach;
+			return after[0] <= keep * hi ? OVER.heaviest : OVER[pulling ? 'pulling' : 'every'];
+		};
 		log.add('volume_adjusted', phase ? `volume.${phaseKey}` : `volume.${style}`, refs, {
 			group: MUSCLE_GROUP_LABEL[g],
 			sets: words(after),
 			target: band,
 			reason: because((d) => d.groups[g]),
-			over: !over ? '' : after[0] <= keep * hi ? OVER.heaviest : OVER[pulling ? 'pulling' : 'every']
+			over: why()
 		});
 	}
 	if (entry.some(pullsBehind) && made.some((m) => m.delta.some((d) => d.push || d.pull))) {
