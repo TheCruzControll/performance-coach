@@ -31,6 +31,7 @@
 		"db:migrate": "node --env-file-if-exists=.env scripts/db-migrate.ts",
 		"db:reset:test": "node --env-file-if-exists=.env scripts/db-reset.ts --target test",
 		"db:reset:e2e": "node --env-file-if-exists=.env scripts/db-reset.ts --target e2e",
+		"db:explain": "vitest run --project explain",
 		"db:studio": "drizzle-kit studio",
 		"test": "pnpm test:unit && pnpm test:integration && pnpm test:e2e",
 		"test:unit": "vitest run --project unit",
