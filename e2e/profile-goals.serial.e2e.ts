@@ -2,9 +2,9 @@
  * Profile → Goals: event and general goals ranked by priority, added (one path per kind, or
  * several at once) and edited in a code-split sheet, each saved the moment it changes (the
  * screen has no Save bar); paused, achieved, dropped or deleted from the same sheet; moved up
- * or down the ranking with their arrows. Serial (one test at a time, after the functional
- * suites): every test starts from a blank training profile, which every browser and worker
- * shares.
+ * or down the ranking with their arrows, or dragged by their handle. Serial (one test at a
+ * time, after the functional suites): every test starts from a blank training profile, which
+ * every browser and worker shares.
  */
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -75,6 +75,12 @@ const textbox = (page: Page, name: string | RegExp) =>
 	sheetOf(page).getByRole('textbox', { name, exact: typeof name === 'string' });
 const arrow = (page: Page, title: string, way: 'up' | 'down') =>
 	page.getByRole('button', { name: `Move ${title} ${way}`, exact: true });
+
+/** Scroll the ranked goals as high as they go, clear of the tab bar. */
+const raiseList = (page: Page) =>
+	page
+		.getByTestId('goal-list')
+		.evaluate((list) => window.scrollBy(0, list.getBoundingClientRect().top - 16));
 
 /** The fight, the marathon and the strength goal, ranked 1, 2 and 3. */
 async function threeGoals(request: APIRequestContext) {
@@ -884,6 +890,165 @@ test('the top goal cannot go up nor the last one down, and every arrow is its ow
 		).toBe(true);
 	}
 	await captureScreen(page, testInfo, 'profile-goals-order-desktop');
+});
+
+test('a goal dragged by its handle up two rows becomes the top priority, and one dragged past the last row goes last: each drag stored once, announced, and still there after a reload', async ({
+	page,
+	request,
+	browserName
+}, testInfo) => {
+	test.skip(browserName !== 'chromium', 'The drag is asserted on Chromium; arrows work everywhere');
+	const errors = trackConsoleErrors(page);
+	await threeGoals(request);
+	await gotoHydrated(page, '/profile/goals');
+	await editorReady(page);
+	const rows = page.getByTestId('goal-row');
+	const saves: string[] = [];
+	page.on('request', (r) => {
+		if (new URL(r.url()).search === '?/reorderGoals') saves.push(r.url());
+	});
+	const box = async (i: number) => (await rows.nth(i).boundingBox())!;
+	const at = (i: number, y: number) => async () => Math.abs((await box(i)).y - y);
+	/** Press the handle of goal `i` (nothing covers it), move the pointer `dy` px, and hold. */
+	async function lift(i: number, dy: number) {
+		const handle = page.getByTestId('goal-handle').nth(i);
+		await expect(handle).toBeVisible();
+		const grip = (await handle.boundingBox())!;
+		const x = grip.x + grip.width / 2;
+		const y = grip.y + grip.height / 2;
+		expect(
+			await handle.evaluate((el, [x, y]) => document.elementFromPoint(x!, y!) === el, [x, y])
+		).toBe(true);
+		await page.mouse.move(x, y);
+		await page.mouse.down();
+		await page.mouse.move(x, y + dy, { steps: 10 });
+	}
+	await raiseList(page);
+	const [first, second, third] = [await box(0), await box(1), await box(2)];
+	const gap = second.y - first.y - first.height;
+	// The badge and the summaries wrap: the rows are not all one height.
+	expect(Math.abs(first.height - third.height)).toBeGreaterThan(1);
+
+	// Let go less than half a row from where it was picked up: it stays where it was.
+	await lift(2, -20);
+	await expect.poll(at(2, third.y - 20)).toBeLessThan(1.5);
+	await page.mouse.up();
+	await expect.poll(at(2, third.y)).toBeLessThan(1.5);
+	await expect(rows.nth(2)).toHaveAccessibleName(/^Priority 3: Keep my strength/);
+
+	await lift(2, first.y - third.y);
+	// Held over the top row, it follows the pointer; the two it passed move down by its height.
+	await expect.poll(at(2, first.y)).toBeLessThan(1.5);
+	await expect.poll(at(0, first.y + third.height + gap)).toBeLessThan(1.5);
+	await expect.poll(at(1, first.y + third.height + gap + first.height + gap)).toBeLessThan(1.5);
+	await expect(rows.first()).toHaveAccessibleName(/^Priority 1: First Muay Thai fight/);
+	await captureScreen(page, testInfo, 'profile-goals-dragging');
+	expect(saves).toEqual([]);
+	await page.mouse.up();
+
+	await expect(rows.first()).toHaveAccessibleName(/^Priority 1: Keep my strength/);
+	await expect(rows.first()).toContainText('Top priority');
+	await expect(rows.nth(1)).toHaveAccessibleName(/^Priority 2: First Muay Thai fight/);
+	await expect(rows.nth(1)).not.toContainText('Top priority');
+	await expect(rows.nth(2)).toHaveAccessibleName(/^Priority 3: Valencia marathon/);
+	await expect(page.getByTestId('goal-order-status')).toHaveText(
+		'Keep my strength is now priority 1 of 3'
+	);
+	// Settled where it was let go, and the drag opened no goal.
+	expect(await at(0, first.y)()).toBeLessThan(1.5);
+	await expect(sheetOf(page)).toHaveCount(0);
+	await expect
+		.poll(storedRanking)
+		.toEqual(['Keep my strength', 'First Muay Thai fight', 'Valencia marathon']);
+	// One drag is one save; the nudge that went nowhere was none.
+	expect(saves).toHaveLength(1);
+	expect(
+		await query(
+			`select count(*)::int as times from training_goal_events where change = 'reprioritized'`
+		)
+	).toEqual([{ times: 3 }]);
+
+	await page.reload();
+	await editorReady(page);
+	await expect(rows.first()).toHaveAccessibleName(/^Priority 1: Keep my strength/);
+	await expect(rows.nth(1)).toHaveAccessibleName(/^Priority 2: First Muay Thai fight/);
+	await expect(rows.nth(2)).toHaveAccessibleName(/^Priority 3: Valencia marathon/);
+
+	// On a desktop, dragged down past the last row: it stops at the end of the list, and goes last.
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await raiseList(page);
+	const [top, , last] = [await box(0), await box(1), await box(2)];
+	await lift(0, last.y + last.height + 40 - top.y);
+	await expect.poll(at(0, last.y + last.height - top.height)).toBeLessThan(1.5);
+	await page.mouse.up();
+	await expect(rows.nth(2)).toHaveAccessibleName(/^Priority 3: Keep my strength/);
+	await expect(rows.first()).toHaveAccessibleName(/^Priority 1: First Muay Thai fight/);
+	await expect(page.getByTestId('goal-order-status')).toHaveText(
+		'Keep my strength is now priority 3 of 3'
+	);
+	await expect
+		.poll(storedRanking)
+		.toEqual(['First Muay Thai fight', 'Valencia marathon', 'Keep my strength']);
+	expect(saves).toHaveLength(2);
+	expect(errors).toEqual([]);
+});
+
+test('the drag handle is for a pointer only: hidden from assistive tech, never focused, drawn without an icon, a 44 px target after the arrows on a phone and on a desktop', async ({
+	page,
+	request
+}, testInfo) => {
+	await threeGoals(request);
+	await gotoHydrated(page, '/profile/goals');
+	await editorReady(page);
+	const handles = page.getByTestId('goal-handle');
+	await expect(handles).toHaveCount(3);
+	for (const handle of await handles.all()) {
+		await expect(handle).toHaveAttribute('aria-hidden', 'true');
+		// Up and down stay the accessible way: the handle takes no focus, by script or by Tab.
+		expect(await handle.evaluate((el: HTMLElement) => el.tabIndex)).toBe(-1);
+		expect(
+			await handle.evaluate((el: HTMLElement) => {
+				el.focus();
+				return document.activeElement === el;
+			})
+		).toBe(false);
+		// Its grip is drawn by its styles: no icon of its own in every route's bundle.
+		await expect(handle.locator('svg, img')).toHaveCount(0);
+		expect(await handle.evaluate((el) => getComputedStyle(el, '::before').backgroundImage)).toMatch(
+			/^radial-gradient/
+		);
+	}
+
+	const titles = ['First Muay Thai fight', 'Valencia marathon', 'Keep my strength'];
+	for (const viewport of [null, { width: 1440, height: 900 }]) {
+		if (viewport) await page.setViewportSize(viewport);
+		await raiseList(page);
+		for (const [i, title] of titles.entries()) {
+			const handle = (await handles.nth(i).boundingBox())!;
+			const goal = (await page.getByTestId('goal-row').nth(i).boundingBox())!;
+			const down = (await arrow(page, title, 'down').boundingBox())!;
+			// As tall as its goal, after the arrows and clear of them.
+			expect(Math.abs(handle.y - goal.y), title).toBeLessThan(1);
+			expect(Math.abs(handle.height - goal.height), title).toBeLessThan(1);
+			expect(handle.x, title).toBeGreaterThanOrEqual(down.x + down.width);
+			// Drawn narrow, so the goal keeps its width, but a 44 px hit area from the arrows on.
+			const hits = await handles
+				.nth(i)
+				.evaluate(
+					(el, [left, y]) =>
+						[left! - 1, left! + 1, left! + 43, left! + 45].map(
+							(x) => document.elementFromPoint(x, y!) === el
+						),
+					[handle.x, handle.y + handle.height / 2]
+				);
+			expect(hits, title).toEqual([false, true, true, false]);
+		}
+		expect(await handles.first().evaluate((el) => getComputedStyle(el).cursor)).toBe('grab');
+		expect(
+			await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)
+		).toBe(true);
+	}
+	await captureScreen(page, testInfo, 'profile-goals-handles-desktop');
 });
 
 test('goal saves, deletes and reorders belong to Goals, which has no Save of its own', async ({
