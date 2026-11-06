@@ -40,7 +40,9 @@ the CSRF Origin check, User-Agent and passkey labels, and the route access map â
   committed migration with the same code `pnpm db:migrate` uses. The reset refuses any database
   whose name does not end in `_test`/`_e2e`.
 - **Isolation:** `withRollback()` runs each test in a transaction that is always rolled back;
-  services accept the transaction as their `db` dependency. Files run serially.
+  services accept the transaction as their `db` dependency. Files run serially. A race that
+  needs two connections (a goal status change waiting behind a concurrent edit) commits for real
+  and deletes its owner afterwards.
 - **Covered:** migrations applied and constraints enforced; health up and down (unreachable
   database); web-vitals ingest, validation, de-duplication (across requests and within one
   batch), route attribution and p75 summary; error recording, including when the database is
