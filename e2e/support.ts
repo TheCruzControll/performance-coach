@@ -106,7 +106,8 @@ const ROUTES_DIR = path.resolve(import.meta.dirname, '../src/routes');
 export function appRoutes(dir = ROUTES_DIR): AppRoute[] {
 	const routes: AppRoute[] = [];
 	const files = readdirSync(dir);
-	const page = files.some((f) => /^\+page(\.server)?\.(svelte|ts|js)$/.test(f));
+	// `+page@.svelte` / `+page@(group).svelte` reset the layout: still a page.
+	const page = files.some((f) => /^\+(page(@[^.]*)?\.svelte|page(\.server)?\.(ts|js))$/.test(f));
 	const endpoint = files.find((f) => /^\+server\.(ts|js)$/.test(f));
 	if (page || endpoint) {
 		const segments = path.relative(ROUTES_DIR, dir).split(path.sep).filter(Boolean);

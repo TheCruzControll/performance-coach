@@ -163,6 +163,10 @@ Specs:
   from the test-minted session shows the prompt, and cancelling changes nothing and says so.
 - `sessions.exclusive.e2e.ts` (runs last) — sign out everywhere else ends every other session,
   not this one; the last passkey cannot be removed (button disabled, server answers 409).
+- `signout.e2e.ts` (WebKit) — M2 acceptance 6 on the iPhone's engine, on a session minted for
+  this test alone: sign-out clears the cookie, every cache but the versioned shell, every
+  IndexedDB database and session storage, sends `Clear-Site-Data: "cache"` and keeps the theme
+  preference.
 
 - `shell.e2e.ts` — the sign-in screen is the landing page (signed in, `/` goes to Today); bottom nav pinned to the bottom with ≥ 44 px targets and a
   computed `backdrop-filter` blur; navigation across all five tabs with `aria-current`; no console
@@ -244,9 +248,27 @@ Unit tests (`src/lib/domain/training/`, `src/lib/domain/exercises/`, `src/lib/do
   muscle, equipment, skill, tag, discipline, lift, measure or load type; reps that run high to
   low, are zero or are not numbers; reps or seconds on the wrong measure; a time measure without
   seconds; `uni` other than `y` or `-`; a duplicate key; a wrong column count; a missing header.
+- **Catalogue data and matcher** (`integrity.test.ts`, `match.test.ts`): keys unique across
+  parts; names and aliases distinct after the matcher's normalising, each matching its own entry;
+  only M2 equipment keys; each group defined in one part, with an intent and ≥ 2 members sharing
+  its pattern (and, in part 1, its measure); default seconds exactly on time-measured entries;
+  each M2 lift linked from at most one entry. Part 1 has ≥ 75 entries, flags split squats,
+  lunges and single-leg work unilateral, tags barbell squats, hinges and Olympic lifts
+  `spinal_loading`, gives squat, hinge and single-leg work ≥ 2 dumbbell-only and ≥ 1 bodyweight
+  options, links its six M2 lifts and matches M2's lower-body and conditioning suggestions. The matcher ignores case, accents, punctuation, spacing and plurals, and gives
+  null, never a guess, for unknown text, part of a name or a name two exercises share.
 - **Plain Node** (`scripts/catalogue-node.test.ts`): Node with type stripping alone, as the seed
   runs, loads `src/lib/domain/exercises/index.ts` and sees the catalogue Vite sees; an
   extensionless import fails there, which is why the package uses `.ts` specifiers.
+- **Program-plan contract** (`training/schemas.test.ts`, `validation.test.ts`,
+  `scripts/training-index-imports.test.ts`): a minimal hybrid plan (intervals, a Muay Thai class,
+  a strength session, an outline block) passes `programPlanSchema` unchanged and each part passes
+  its own schema; every rule (load-kind coherence, one measure per set, RPE in half steps, rep,
+  pace and repeat groups, metrics, commitment refs, block and week dates, sessions in their week,
+  decision refs) fails at its dotted path; each schema's type equals its contract type (checked by
+  `pnpm check`); `validate()` is the function the profile schemas re-export; and the runtime
+  imports reachable from `domain/training/index.ts` include no schemas, edits or zod, with the
+  walk shown to catch a re-export, a zod import and an inline `type` import.
 
 ### Schema
 
@@ -300,6 +322,10 @@ key. No key exists in CI today.
 `.github/workflows/ci.yml` runs lint, type-check, the migration drift check, unit + integration
 (postgres:18 service), both builds + budgets, Playwright (Chromium + WebKit) and an asserted
 Lighthouse run on every PR and push to `main`.
+
+`.github/workflows/post-deploy-smoke.yml` checks production from outside after every production
+deploy (health with the database up, the sign-in screen, deny by default, security headers, no
+test-only routes; docs/deployment.md). It needs no secrets and runs by hand too.
 
 **Not yet verified:** the workflows have not run on GitHub (nothing has been pushed), and the
 WebKit project has never run locally (WebKit is not installed in the build environment), so iOS

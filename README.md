@@ -8,8 +8,10 @@ log every set and talk to the coach.
 > Status: **Milestone 2 — Authentication & profile, in progress** (see
 > [docs/milestones.md](docs/milestones.md)). Milestone 1 is done (PR #1). Passkey authentication
 > (first-run setup, sign-in, recovery codes, passkey and session management, deny by default) and
-> the training-profile services are merged to `main`; the onboarding and Profile editing screens
-> and the production cutover come next.
+> the training-profile services are merged to `main`, and **production is on**: every merge to
+> `main` deploys coach.nikocruz.com, checked from outside after each deploy
+> ([docs/deployment.md](docs/deployment.md)). The onboarding and Profile editing screens come
+> next.
 
 ## Stack
 
@@ -24,7 +26,7 @@ log every set and talk to the coach.
 | PWA           | Web manifest, generated icons, SvelteKit service worker (versioned precache, offline fallback)                           |
 | Observability | Server-Timing, JSON logs, `app_errors` (server + browser errors), RUM via web-vitals → `web_vitals`                      |
 | Tests         | Vitest (unit + integration on real Postgres), Playwright 1.63 (iPhone viewport, axe in both themes), budgets, Lighthouse |
-| CI/CD         | GitHub Actions: CI and nightly encrypted backups · Vercel Git integration deploys, migrating first                       |
+| CI/CD         | GitHub Actions: CI, nightly backups, post-deploy smoke check · Vercel Git integration deploys `main`, migrating first    |
 
 ## Quick start
 
@@ -72,7 +74,7 @@ e2e/ · tests/integration  Playwright and integration tests
 - [Architecture](docs/architecture.md) and [ADRs](docs/adr/README.md)
 - [Environment](docs/environment.md) · [Development](docs/development.md) · [Testing](docs/testing.md)
 - [Security](docs/security.md) (passkeys, sessions, CSRF, rate limits, threat model)
-- [Deployment](docs/deployment.md) (Vercel + Neon + Cloudflare, owner setup, lost passkeys, backups)
+- [Deployment](docs/deployment.md) (Vercel + Neon + Cloudflare, production deploys and rollback, owner setup, lost passkeys, backups)
 - [Performance](docs/performance.md) (budgets + measured baseline)
 - [Design system](docs/design-system.md) · live at `/design`
 - [Agent architecture](docs/agent-architecture.md) (plan for the coach)
