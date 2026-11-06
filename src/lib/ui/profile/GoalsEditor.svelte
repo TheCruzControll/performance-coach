@@ -1,10 +1,12 @@
 <!--
   @component
   Profile → Goals (PRD §2): the goals in priority order, #1 marked "Top priority" because it wins
-  when goals compete for time or recovery, or a designed empty state. A goal saves the moment it
-  changes, through the route's `?/saveGoal` action, so the screen has no Save bar. The sheet that
-  adds or edits a goal is code-split: it starts loading on first intent (pointerdown), and a tap
-  that lands before it arrives still opens it.
+  when goals compete for time or recovery, or a designed empty state with PRD §2's three ways in:
+  a specific event, a general goal, or several at once (added one by one, each ranked below the
+  ones before, as a note under "Add another goal" says). A goal saves the moment it changes,
+  through the route's `?/saveGoal` action, so the screen has no Save bar. The sheet that adds or
+  edits a goal is code-split: it starts loading on first intent (pointerdown), and a tap that
+  lands before it arrives still opens it.
 -->
 <script lang="ts">
 	import { DISCIPLINE_INFO } from '#lib/domain/profile/catalog.ts';
@@ -34,6 +36,8 @@
 	let unavailable = $state(false);
 	let open = $state(false);
 	let draft = $state.raw<GoalDraft | null>(null);
+	/** Started from "Several goals at once": the next goal is asked for, and its rank explained. */
+	let several = $state(false);
 
 	/** Fetch the sheet on first intent, so it is usually here by the time the tap lands. */
 	function preload() {
@@ -47,6 +51,11 @@
 		preload();
 		draft = next;
 		open = true;
+	}
+
+	function start(path: 'event' | 'general' | 'several') {
+		several = path === 'several';
+		edit(newGoal(path === 'general' ? 'general' : 'event'));
 	}
 
 	function saved(goals: Goal[]) {
@@ -65,14 +74,32 @@
 			compact
 			data-testid="goals-empty"
 		/>
-		<ListRow
-			icon="today"
-			title="A specific event"
-			subtitle="A meet, race, fight or test day with a date"
-			onpointerdown={preload}
-			onclick={() => edit(newGoal())}
-			data-testid="goal-path-event"
-		/>
+		<div class="paths">
+			<ListRow
+				icon="today"
+				title="A specific event"
+				subtitle="A meet, race, fight or test day"
+				onpointerdown={preload}
+				onclick={() => start('event')}
+				data-testid="goal-path-event"
+			/>
+			<ListRow
+				icon="progress"
+				title="A general goal"
+				subtitle="Get stronger, faster or fitter"
+				onpointerdown={preload}
+				onclick={() => start('general')}
+				data-testid="goal-path-general"
+			/>
+			<ListRow
+				icon="plus"
+				title="Several goals at once"
+				subtitle="One by one, top priority first"
+				onpointerdown={preload}
+				onclick={() => start('several')}
+				data-testid="goal-path-several"
+			/>
+		</div>
 	{:else}
 		<p class="rule" id="{id}-rule">
 			<Icon name="info" size={16} />When goals compete for time or recovery, the higher one wins.
@@ -118,10 +145,16 @@
 			block
 			onpointerdown={preload}
 			onclick={() => edit(newGoal())}
+			aria-describedby={several ? `${id}-several` : undefined}
 			data-testid="add-goal"
 		>
-			Add a goal
+			{several || ranked.length > 1 ? 'Add another goal' : 'Add a goal'}
 		</Button>
+		{#if several}
+			<p class="note" id="{id}-several" data-testid="goals-several-note">
+				Goals rank in the order you add them, so add the next most important one.
+			</p>
+		{/if}
 	{/if}
 
 	{#if unavailable}
@@ -147,6 +180,17 @@
 	.unavailable {
 		display: grid;
 		gap: var(--space-4);
+	}
+
+	.paths {
+		display: grid;
+		gap: var(--space-2);
+	}
+
+	.note {
+		font-size: var(--text-sm);
+		color: var(--color-text-secondary);
+		text-align: center;
 	}
 
 	.unavailable {
