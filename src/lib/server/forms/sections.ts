@@ -14,11 +14,13 @@ import {
 	getEquipment,
 	getExperience,
 	getOnboarding,
+	getSpecifics,
 	listGoals,
 	saveBaselines,
 	saveBasics,
 	saveEquipment,
 	saveExperience,
+	saveSpecifics,
 	type ProfileDeps
 } from '../services/profile';
 import type { SaveSection } from './profile';
@@ -35,7 +37,8 @@ const SECTIONS: Record<string, ProfileSection> = {
 	experience: { load: getExperience, save: saveExperience },
 	equipment: { load: getEquipment, save: saveEquipment },
 	strength: { load: getBaselines, save: saveBaselines },
-	basics: { load: getAthleteProfile, save: saveBasics }
+	basics: { load: getAthleteProfile, save: saveBasics },
+	specifics: { load: getSpecifics, save: saveSpecifics }
 };
 
 export const SECTION_KEYS = Object.keys(SECTIONS);

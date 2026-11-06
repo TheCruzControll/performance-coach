@@ -45,6 +45,12 @@ export const SECTIONS = [
 		title: 'Name & units',
 		subtitle: 'Your name, kg or lb, km or mi',
 		icon: 'profile'
+	},
+	{
+		key: 'specifics',
+		title: 'Running & Muay Thai',
+		subtitle: 'Your runs and races, sessions and fights',
+		icon: 'pulse'
 	}
 ] as const satisfies readonly SectionInfo[];
 

@@ -80,5 +80,10 @@ export const EDITORS: Record<SectionKey, () => Promise<SectionEditor>> = {
 				...section(editor.default, basicsDraft, 'basics'),
 				afterSave: deviceFollows as (saved: unknown) => void
 			})
+		),
+	specifics: () =>
+		Promise.all([import('./SpecificsEditor.svelte'), import('./specifics')]).then(
+			([editor, { specificsDraft, specificsPayload }]) =>
+				section(editor.default, specificsDraft, 'specifics', specificsPayload)
 		)
 };
