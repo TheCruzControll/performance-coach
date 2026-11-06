@@ -163,7 +163,7 @@
 		border-radius: var(--radius-full);
 	}
 
-	@media (hover: hover) {
+	@media (hover: hover) and (pointer: fine) {
 		.option[aria-checked='false']:hover {
 			color: var(--color-text);
 		}

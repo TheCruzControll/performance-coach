@@ -143,7 +143,7 @@
 		border-color: var(--color-border-strong);
 		transition-duration: var(--duration-instant);
 	}
-	@media (hover: hover) {
+	@media (hover: hover) and (pointer: fine) {
 		.interactive:hover {
 			border-color: var(--color-border-strong);
 		}
