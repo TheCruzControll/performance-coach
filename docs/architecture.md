@@ -107,8 +107,11 @@ tests can wrap each test in a rolled-back transaction.
   `path` + `route_id`). M2 auth tables: `owners` (exactly one row), `passkey_credentials`,
   `auth_sessions` (token hashes), `recovery_codes` (hashes), `webauthn_challenges` (single-use),
   `used_setup_tokens` (hashes of spent setup tokens), `auth_events` (audit log) and `auth_rate_limits` (DB-backed counters); see docs/security.md. CI's `pnpm db:drift` fails when the schema changes without a committed
-  migration. The training data model
-  (profile, goals, programs, cycles, workouts, sets, sessions, decisions) lands in M3 with
+  migration. M2 training-profile tables (`drizzle/0004_training_profile.sql`, `schema/profile.ts`):
+  the athlete profile, ranked goals with a `training_goal_events` history, strength baselines
+  that are superseded rather than overwritten, dated body-weight entries, experience, running and
+  Muay Thai specifics, equipment, injuries, exercise preferences and schedule. The training data
+  model (programs, cycles, workouts, sets, sessions, decisions) lands in M3 with
   history-preserving, timestamped records (PRD §9).
 
 ## Frontend

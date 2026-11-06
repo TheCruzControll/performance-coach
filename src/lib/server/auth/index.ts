@@ -23,6 +23,7 @@ export {
 	renamePasskey,
 	type PasskeyView
 } from './passkeys';
+export { beginReauthentication, completeReauthentication } from './reauth';
 export { recoveryCodeStatus, redeemRecoveryCode, regenerateRecoveryCodes } from './recovery';
 export { RECOVERY_CODE_COUNT } from './recovery-codes';
 export { DEFAULT_RETURN_PATH, safeReturnPath } from './return-path';

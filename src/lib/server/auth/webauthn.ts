@@ -101,12 +101,19 @@ export function registrationOptions(input: {
 	});
 }
 
-export function authenticationOptions(rp: RelyingParty) {
+/**
+ * Without `allow` (sign-in): discoverable credentials, the browser offers the owner's passkeys.
+ * With it (step-up): only these passkeys are acceptable.
+ */
+export function authenticationOptions(
+	rp: RelyingParty,
+	allow?: Pick<PasskeyRow, 'id' | 'transports'>[]
+) {
 	return generateAuthenticationOptions({
 		rpID: rp.rpID,
 		timeout: CHALLENGE.ceremonyMs,
-		userVerification: 'required'
-		// No allowCredentials: discoverable credentials, the browser offers the owner's passkeys.
+		userVerification: 'required',
+		allowCredentials: allow?.map((c) => ({ id: c.id, transports: c.transports }))
 	}) satisfies Promise<PublicKeyCredentialRequestOptionsJSON>;
 }
 

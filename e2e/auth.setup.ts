@@ -1,14 +1,52 @@
 /**
  * The owner's first-run setup, for real: a WebAuthn registration through a CDP virtual
  * authenticator (Chromium), recovery codes shown once, then the signed-in browser state every
- * Chromium spec starts from. Also audits the setup screens (they exist only until this runs).
+ * Chromium spec starts from. Also audits the setup screens and checks the setup link's rate
+ * limit (both exist only until this runs), and registers the owner passkeys specs sign in with
+ * (one per worker, e2e/webauthn.ts).
  */
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test as setup, type Page } from '@playwright/test';
-import { captureScreen, query, trackConsoleErrors } from './support';
-import { addVirtualAuthenticator } from './webauthn';
+import { RATE_LIMITS } from '../src/lib/server/auth/policy';
+import { captureScreen, query, toastWith, trackConsoleErrors } from './support';
+import { addVirtualAuthenticator, saveOwnerPasskeys, type StoredPasskey } from './webauthn';
 
 const STATE = 'e2e/.auth/chromium.json';
+
+// Runs first, while setup is still open: only then does /setup check tokens (and count them).
+setup('a rate-limited setup link is a 404 too, never a server error', async ({ request }) => {
+	const token = process.env.E2E_SETUP_TOKEN;
+	expect(token, 'global setup mints the setup token').toBeTruthy();
+	const { limit } = RATE_LIMITS.setup;
+	try {
+		// Spend this client's budget on wrong tokens; past it even the right token is refused,
+		// with the same 404 as any other refusal (nothing tells a guesser they were limited).
+		const responses = [];
+		for (let i = 0; i < limit + 2; i++) {
+			responses.push(
+				await request.get(`/setup?token=${i < limit ? 'not-the-token-but-long-enough' : token}`)
+			);
+		}
+		expect(responses.map((res) => res.status())).toEqual(Array(limit + 2).fill(404));
+		const requestIds = responses.map((res) => res.headers()['x-request-id']);
+
+		// The limiter did refuse the last two (its first refusal is audited) …
+		const limited = await query<{ request_id: string }>(
+			`select request_id from auth_events where type = 'rate_limited' and request_id = any($1)`,
+			[requestIds]
+		);
+		expect(limited.map((row) => row.request_id)).toEqual([requestIds[limit]]);
+		// … and no refusal was recorded as a server incident.
+		const incidents = await query(
+			'select kind, status from app_errors where request_id = any($1)',
+			[requestIds]
+		);
+		expect(incidents).toEqual([]);
+	} finally {
+		// As if the window had passed: the owner's real setup below starts with a full budget.
+		await query(`delete from auth_rate_limits where key like 'setup:%'`);
+	}
+});
 
 async function auditBothThemes(page: Page, label: string) {
 	for (const theme of ['dark', 'light'] as const) {
@@ -96,6 +134,23 @@ setup(
 
 		// Setup is gone for good, even with the right token.
 		expect((await page.request.get(`/setup?token=${token}`)).status()).toBe(404);
+
+		// One more owner passkey per worker, each on a device of its own, added while this session
+		// is fresh (setup just verified a passkey, so no step-up) and kept with its private key.
+		const ownerPasskeys: StoredPasskey[] = [];
+		for (let i = 0; i < testInfo.config.workers; i++) {
+			const device = await context.newPage();
+			const key = await addVirtualAuthenticator(device);
+			await device.goto('/profile/security');
+			// Hydrated first: a tap on the server-rendered button before then does nothing.
+			await device.waitForLoadState('networkidle');
+			await device.getByTestId('add-passkey').click();
+			await expect(toastWith(device, /Passkey added: /)).toBeVisible();
+			ownerPasskeys.push(...(await key.credentials()));
+			await device.close();
+		}
+		expect(ownerPasskeys).toHaveLength(testInfo.config.workers);
+		saveOwnerPasskeys(ownerPasskeys);
 
 		expect(errors).toEqual([]);
 		await context.storageState({ path: STATE });

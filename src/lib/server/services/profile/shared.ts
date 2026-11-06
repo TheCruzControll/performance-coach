@@ -80,9 +80,6 @@ export function parseWith<S extends z.ZodMiniType>(schema: S, input: unknown): z
 	return result.data;
 }
 
-/** ISO date (YYYY-MM-DD) of `now` in UTC. */
-export const isoDay = (now: Date) => now.toISOString().slice(0, 10);
-
 // ---- mapping -----------------------------------------------------------------------------------
 
 export function toProfile(row: AthleteProfileRow): AthleteProfile {
@@ -90,6 +87,7 @@ export function toProfile(row: AthleteProfileRow): AthleteProfile {
 		name: row.name,
 		weightUnit: row.weightUnit,
 		distanceUnit: row.distanceUnit,
+		timeZone: row.timeZone,
 		birthYear: row.birthYear,
 		nutritionPhase: row.nutritionPhase,
 		targetWeight: row.targetWeight,

@@ -12,9 +12,10 @@ Single-owner passkey (WebAuthn) authentication on SimpleWebAuthn. How it works a
 | `passkeys.ts`                                        | Sign in, add / rename / remove passkeys                                        |
 | `recovery.ts`, `recovery-codes.ts`                   | Recovery-code sign-in, regeneration; code format and hashing                   |
 | `sessions.ts`                                        | Issue, validate (sliding + absolute expiry), list, revoke, sign out            |
+| `reauth.ts`                                          | Step-up: a recent passkey assertion for sensitive actions, and its ceremony    |
 | `guard.ts`, `routes.ts`, `csrf.ts`, `return-path.ts` | Deny by default for every request (used by `hooks.server.ts`)                  |
 | `cookies.ts`, `http.ts`                              | Cookie name and flags from the origin; SvelteKit glue for routes               |
-| `rate-limit.ts`, `policy.ts`                         | DB-backed rate limits; every timing and limit in one place                     |
+| `rate-limit.ts`, `client-network.ts`, `policy.ts`    | DB-backed rate limits (IPv6 per /64); every timing and limit in one place      |
 | `audit.ts`, `activity.ts`                            | `auth_events` audit log and the Security screen's recent activity              |
 | `tokens.ts`                                          | Random tokens, SHA-256, constant-time digest comparison (`node:crypto` only)   |
 | `test-support.ts`                                    | Test-only session minting (refused unless test routes are enabled and allowed) |

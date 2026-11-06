@@ -1,0 +1,1 @@
+ALTER TABLE "athlete_profiles" ADD COLUMN "time_zone" text DEFAULT 'UTC' NOT NULL;

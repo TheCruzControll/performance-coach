@@ -205,7 +205,8 @@ export async function completeSetup(
 					ownerId: owner.id,
 					method: 'setup',
 					credentialId: passkey.id,
-					userAgent: request.userAgent
+					userAgent: request.userAgent,
+					reauthenticated: true
 				},
 				{ db: tx, now }
 			);
