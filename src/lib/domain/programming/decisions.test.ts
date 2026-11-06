@@ -1,7 +1,8 @@
 /**
  * decisions.ts and its templates: every decision kind has words in exactly one area file, every
  * rendered decision is complete (no placeholder left, within the plan contract's limits), and
- * the log keeps a stable order. The 'not told yet' defaults are rendered from a real input.
+ * the log keeps a stable order and retargets refs when sessions move. The 'not told yet' defaults
+ * are rendered from a real input.
  */
 import { describe, expect, it } from 'vitest';
 import { CATALOGUE } from '../exercises/index';
@@ -114,6 +115,33 @@ describe('DecisionLog', () => {
 			['session_placed', 'Lower A on Monday'],
 			['session_placed', 'Upper A on Wednesday']
 		]);
+	});
+
+	it('retargets every decision’s refs, dropping those to nodes no longer planned', () => {
+		const log = new DecisionLog();
+		const facts = { session: 'Lower A', day: 'Monday', reason: 'it is free' };
+		const a = log.add(
+			'session_placed',
+			'placement.spacing',
+			['blocks.0', 'blocks.0.weeks.0.sessions.0'],
+			facts
+		);
+		const b = log.add(
+			'session_placed',
+			'placement.spacing',
+			['blocks.0.weeks.0.sessions.1.exercises.2'],
+			facts
+		);
+		const moves: Record<string, string | null> = {
+			'blocks.0.weeks.0.sessions.0': null,
+			'blocks.0.weeks.0.sessions.1.exercises.2': 'blocks.0.weeks.0.sessions.0.exercises.2'
+		};
+		log.retarget((ref) => (ref in moves ? moves[ref]! : ref));
+		expect(log.list().map((d) => d.refs)).toEqual([
+			['blocks.0'],
+			['blocks.0.weeks.0.sessions.0.exercises.2']
+		]);
+		expect([a.refs, b.refs]).toEqual(log.list().map((d) => d.refs));
 	});
 });
 

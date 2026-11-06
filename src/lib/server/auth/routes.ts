@@ -34,6 +34,7 @@ export const ROUTE_ACCESS = {
 	// Test-only: 404 unless ENABLE_TEST_ROUTES (never allowed on a hosted deployment)
 	'/api/test-support/session': 'public',
 	'/api/test-support/error': 'owner',
+	'/api/test-support/program': 'owner',
 
 	// Adding a passkey: a signed-in owner, or a recovery session replacing a lost passkey
 	'/api/auth/passkeys/options': 'any-session',
