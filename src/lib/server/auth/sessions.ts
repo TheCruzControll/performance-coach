@@ -147,11 +147,24 @@ export interface SessionSummary {
 	/** `recovery`: signed in with a recovery code; it can only add a passkey, for 15 minutes. */
 	kind: SessionKind;
 	method: SessionMethod;
+	/** How it signed in, as Security says it: "Signed in 5 Nov with {signedInWith}". */
+	signedInWith: string;
 	device: string;
 	createdAt: Date;
 	lastSeenAt: Date;
 	expiresAt: Date;
 }
+
+/**
+ * Labelled here, not on the page: every method needs one (the Record is exhaustive, so a new
+ * method does not type-check without it), and the words cost Security's initial JS nothing.
+ */
+const SIGNED_IN_WITH: Record<SessionMethod, string> = {
+	setup: 'set up',
+	passkey: 'passkey',
+	recovery: 'recovery code',
+	test: 'test session'
+};
 
 /**
  * Every live session of the owner: this one first, then recovery sign-ins (a recovery code in
@@ -170,6 +183,7 @@ export async function listSessions(
 			current: row.id === session.id,
 			kind: row.kind,
 			method: row.method,
+			signedInWith: SIGNED_IN_WITH[row.method],
 			device: row.userAgent ?? 'Unknown device',
 			createdAt: row.createdAt,
 			lastSeenAt: row.lastSeenAt,

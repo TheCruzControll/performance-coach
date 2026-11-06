@@ -83,7 +83,7 @@ export function commitmentQuota(commitment: Pick<InputCommitment, 'discipline'>)
 }
 
 /** The stream a commitment's sessions count toward: an 'other' class counts as its own kind. */
-function commitmentStream(commitment: InputCommitment): string {
+export function commitmentStream(commitment: InputCommitment): string {
 	const quota = commitmentQuota(commitment);
 	return quota === 'other' ? commitment.discipline : quota;
 }
