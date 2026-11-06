@@ -71,8 +71,9 @@ the CSRF Origin check, User-Agent and passkey labels, and the route access map â
   mid-request, including a revocation that commits while the request waits on the session's row
   lock, sign out everywhere else during a recovery upgrade ending the new session, rename
   validation, never the last, removal ends its sessions, a malformed id is not found); rate limits
-  on every entry point with `Retry-After`, window reset and a global ceiling on failed recovery
-  codes that never refuses a valid one. A controllable clock replaces waiting.
+  on every entry point with `Retry-After`, window reset, a global ceiling on failed recovery codes
+  that never refuses a valid one, and a full sign-out bucket that still lets a live session sign
+  out. A controllable clock replaces waiting.
 - **Logs:** quiet by default (`LOG_LEVEL=silent` via the project's `env`); run
   `LOG_LEVEL=debug pnpm test:integration` to see them.
 
