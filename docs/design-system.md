@@ -276,6 +276,8 @@ later-pass screen).
   and error inside it. The frame is at most `--content-wide`, and the watermark is larger and stays
   inside it. Tablets keep the phone's column, pinned to the thumb zone, at `--content-readable`,
   the watermark fading out before the frame's edge. CSS only: no route gains initial JS.
+- **Session** (`/train/session/[key]`): readable, one column centred beside the rail; its stats,
+  exercise cards and run timeline keep the phone's order, and Back has hover and focus states.
 
 ### Verification
 
@@ -288,6 +290,9 @@ later-pass screen).
   `expectNoShift(page, { action, boxes })`, never `layoutShiftDuring` alone: WebKit reports no
   layout-shift entries, so `layoutShiftDuring` throws there and `expectNoShift` checks the named
   boxes, with an annotation.
+- A screen in the shell checks `<main>` against the rail, never the window, at the width its
+  `data-layout` declares, read from the token rather than written as a number:
+  `expectMainCentred(page, await tokenPx(page, '--content-readable'))` (or `--content-wide`).
 - `*.desktop.e2e.ts` specs run in the iPhone projects at desktop size, on Chromium and WebKit,
   until desktop projects exist.
 
@@ -318,6 +323,11 @@ later-pass screen).
 | `WeekStrip`         | `src/lib/ui/program`, like the next two. Seven days Monday first in a radiogroup (roving tabindex, arrows, Home/End), each ≥ 44 px at 393 px; a dot per session (a ring if skipped), counted in its name; the server's today ringed.         |
 | `SessionCard`       | A session: discipline dot, title, 'Strength · 60 min · Hard · Evening'; Skipped, Moved from Mon, Done and Baseline as worded badges; with `href` one link named by its title; `pending` sets `aria-busy` and sweeps a progress line.         |
 | `PrescriptionLines` | describe.ts's words as a list: '3 × 5 @ RPE 7', the load only when describe could compute one, its basis, rest and tempo, the baseline instruction; run steps with each segment's pace and effort. It never computes a number.               |
+| `ProgramHeader`     | Train's program title, its block and place ('Baseline week · Week 1 of 5'), a status badge, the planned weeks as pills between previous and next (≥ 44 px, this week ringed, the loading week busy); week links keep scroll and focus.       |
+| `ExerciseBlock`     | A planned exercise as an `article` named by its heading: its name (a superset's 'A1' before it), the coach's instructions, then its sets as `PrescriptionLines`, from session-words.ts's `exerciseViews`.                                    |
+| `RunSegments`       | A run as a timeline in describe.ts's words: a dot per step on a rail, each repeat group as one bracketed block ('6×', 'Repeat 6 times') over its segments, each with its pace in the owner's unit and effort.                                |
+| `SessionDetails`    | A session at a glance: duration and target RPE as two `Stat`s (the intensity as the RPE's caption), then an other session's metrics as a grouped list, label left and value right, each row ≥ 44 px.                                         |
+| `BaselineCallout`   | Week 1's baseline instructions on a strength session, on an accent `Surface`: why it sets the loads ahead, how to work up to the target RPE, and what to record. Copy from session-words.ts.                                                 |
 | `TextField`         | Labelled single-line input (label above, never placeholder-as-label), 56 px tall, 16 px text so iOS never zooms, hint or error wired with `aria-describedby` (the error replaces the hint), `mono` for codes, `type="date"`, "Optional".     |
 | `NumberField`       | A number that may stay blank (`null`, never 0): decimal or numeric keypad, `enterkeyhint`, unit inside the field and in its description, digits and one decimal point only, "Optional" marker. For values people nudge: `NumberStepper`.     |
 | `TextArea`          | Multi-line notes: label above, 16 px text, grows with its content (`field-sizing`; `rows` and a resize handle where unsupported), `maxlength`, hint or error wired with `aria-describedby`, "Optional" marker.                               |
