@@ -15,6 +15,8 @@
 
 	let reps = $state(5);
 	let rpe = $state(8);
+	// A stepper with an error until it fits the three free days.
+	let trainingDays = $state(5);
 	let range = $state<'4w' | '12w' | '1y'>('12w');
 
 	// Each primitive blank and optional, filled, and with an error that clears once fixed.
@@ -69,6 +71,14 @@
 				max={10}
 				step={0.5}
 				hint="Reps in reserve: {10 - rpe}"
+			/>
+			<NumberStepper
+				bind:value={trainingDays}
+				label="Training days"
+				min={1}
+				max={7}
+				hint="Tue, Thu and Sat are free."
+				error={trainingDays > 3 ? `Only 3 days are free: ${trainingDays} won’t fit` : null}
 			/>
 		</div>
 	</Surface>

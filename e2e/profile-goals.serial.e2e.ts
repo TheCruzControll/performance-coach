@@ -1,14 +1,15 @@
 /**
  * Profile → Goals: event and general goals ranked by priority, added (one path per kind, or
  * several at once) and edited in a code-split sheet, each saved the moment it changes (the
- * screen has no Save bar); paused, achieved, dropped or deleted from the same sheet. Serial (one test at a time, after the
- * functional suites): every test starts from a blank training profile, which every browser and
- * worker shares.
+ * screen has no Save bar); paused, achieved, dropped or deleted from the same sheet; moved up
+ * or down the ranking with their arrows, or dragged by their handle. Serial (one test at a
+ * time, after the functional suites): every test starts from a blank training profile, which
+ * every browser and worker shares.
  */
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import AxeBuilder from '@axe-core/playwright';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 import {
 	captureScreen,
 	gotoHydrated,
@@ -72,6 +73,29 @@ const sheetOf = (page: Page) => page.getByTestId('goal-sheet');
 const statusOf = (page: Page) => sheetOf(page).getByRole('group', { name: 'Status' });
 const textbox = (page: Page, name: string | RegExp) =>
 	sheetOf(page).getByRole('textbox', { name, exact: typeof name === 'string' });
+const arrow = (page: Page, title: string, way: 'up' | 'down') =>
+	page.getByRole('button', { name: `Move ${title} ${way}`, exact: true });
+
+/** Scroll the ranked goals as high as they go, clear of the tab bar. */
+const raiseList = (page: Page) =>
+	page
+		.getByTestId('goal-list')
+		.evaluate((list) => window.scrollBy(0, list.getBoundingClientRect().top - 16));
+
+/** The fight, the marathon and the strength goal, ranked 1, 2 and 3. */
+async function threeGoals(request: APIRequestContext) {
+	for (const goal of [FIGHT, MARATHON, STRENGTH]) {
+		await profileAction(request, '/profile/goals?/saveGoal', goal);
+	}
+}
+
+/** The open goals' titles as Postgres ranks them. */
+const storedRanking = async () =>
+	(
+		await query<{ title: string }>(
+			'select title from training_goals where priority is not null order by priority'
+		)
+	).map((g) => g.title);
 
 test.beforeEach(async () => {
 	await resetTrainingProfile();
@@ -744,7 +768,290 @@ test('deleting a goal takes a second tap that says it is for good; the goals bel
 	expect(unsent).toHaveLength(1);
 });
 
-test('goal saves and deletes belong to Goals, which has no Save of its own', async ({
+test('a goal moves up the ranking by its arrow: the move is announced, and the order is stored and still there after a reload', async ({
+	page,
+	request
+}, testInfo) => {
+	const errors = trackConsoleErrors(page);
+	await threeGoals(request);
+	await gotoHydrated(page, '/profile/goals');
+	await editorReady(page);
+	const rows = page.getByTestId('goal-row');
+	const status = page.getByTestId('goal-order-status');
+	await expect(rows.nth(2)).toHaveAccessibleName(/^Priority 3: Keep my strength/);
+
+	await arrow(page, 'Keep my strength', 'up').click();
+	await expect(rows.nth(1)).toHaveAccessibleName(/^Priority 2: Keep my strength/);
+	await expect(status).toHaveText('Keep my strength is now priority 2 of 3');
+	await arrow(page, 'Keep my strength', 'up').click();
+	await expect(rows.first()).toHaveAccessibleName(/^Priority 1: Keep my strength/);
+	await expect(rows.first()).toContainText('Top priority');
+	await expect(rows.nth(1)).not.toContainText('Top priority');
+	await expect(status).toHaveText('Keep my strength is now priority 1 of 3');
+	await expect(arrow(page, 'Keep my strength', 'up')).toBeDisabled();
+	await expect(arrow(page, 'First Muay Thai fight', 'up')).toBeEnabled();
+	await expect
+		.poll(storedRanking)
+		.toEqual(['Keep my strength', 'First Muay Thai fight', 'Valencia marathon']);
+	expect(
+		await query(
+			`select change, source, count(*)::int as times from training_goal_events
+			  group by change, source order by change`
+		)
+	).toEqual([
+		{ change: 'created', source: 'profile', times: 3 },
+		// Each move re-ranks the two goals that swap places.
+		{ change: 'reprioritized', source: 'profile', times: 4 }
+	]);
+	await captureScreen(page, testInfo, 'profile-goals-reordered');
+
+	await page.reload();
+	await editorReady(page);
+	await expect(rows.first()).toHaveAccessibleName(/^Priority 1: Keep my strength/);
+	await expect(rows.first()).toContainText('Top priority');
+	await expect(rows.nth(1)).toHaveAccessibleName(/^Priority 2: First Muay Thai fight/);
+	await expect(rows.nth(2)).toHaveAccessibleName(/^Priority 3: Valencia marathon/);
+	expect(errors).toEqual([]);
+});
+
+test('by keyboard, focus stays with the goal that moves, the other arrow taking over at either end', async ({
+	page,
+	request
+}) => {
+	await threeGoals(request);
+	await gotoHydrated(page, '/profile/goals');
+	await editorReady(page);
+	const rows = page.getByTestId('goal-row');
+
+	await arrow(page, 'Valencia marathon', 'up').focus();
+	await page.keyboard.press('Enter');
+	await expect(rows.first()).toHaveAccessibleName(/^Priority 1: Valencia marathon/);
+	// At the top it cannot go up again: focus moves to its other arrow instead of being lost.
+	await expect(arrow(page, 'Valencia marathon', 'down')).toBeFocused();
+	await page.keyboard.press('Enter');
+	await expect(rows.nth(1)).toHaveAccessibleName(/^Priority 2: Valencia marathon/);
+	await expect(arrow(page, 'Valencia marathon', 'down')).toBeFocused();
+	await page.keyboard.press('Enter');
+	await expect(rows.nth(2)).toHaveAccessibleName(/^Priority 3: Valencia marathon/);
+	await expect(arrow(page, 'Valencia marathon', 'up')).toBeFocused();
+	// Three moves in quick succession, stored one after another: the last one is what is kept.
+	await expect
+		.poll(storedRanking)
+		.toEqual(['First Muay Thai fight', 'Keep my strength', 'Valencia marathon']);
+	await expect(rows.nth(2)).toHaveAccessibleName(/^Priority 3: Valencia marathon/);
+});
+
+test('the top goal cannot go up nor the last one down, and every arrow is its own 44 px target, on a phone and on a desktop', async ({
+	page,
+	request
+}, testInfo) => {
+	await threeGoals(request);
+	await gotoHydrated(page, '/profile/goals');
+	await editorReady(page);
+	const titles = ['First Muay Thai fight', 'Valencia marathon', 'Keep my strength'];
+	await expect(arrow(page, titles[0]!, 'up')).toBeDisabled();
+	await expect(arrow(page, titles[0]!, 'down')).toBeEnabled();
+	await expect(arrow(page, titles[1]!, 'up')).toBeEnabled();
+	await expect(arrow(page, titles[1]!, 'down')).toBeEnabled();
+	await expect(arrow(page, titles[2]!, 'up')).toBeEnabled();
+	await expect(arrow(page, titles[2]!, 'down')).toBeDisabled();
+	// The up arrow is the down chevron turned over.
+	const turn = (way: 'up' | 'down') =>
+		arrow(page, titles[1]!, way)
+			.locator('svg')
+			.evaluate((svg) => {
+				const m = new DOMMatrix(getComputedStyle(svg).transform);
+				return [Math.round(m.a), Math.round(m.d)];
+			});
+	expect(await turn('up')).toEqual([-1, -1]);
+	expect(await turn('down')).toEqual([1, 1]);
+
+	type Box = { x: number; y: number; width: number; height: number };
+	const apart = (a: Box, b: Box) =>
+		a.x + a.width <= b.x || b.x + b.width <= a.x || a.y + a.height <= b.y || b.y + b.height <= a.y;
+	for (const viewport of [null, { width: 1440, height: 900 }]) {
+		if (viewport) await page.setViewportSize(viewport);
+		const boxes: Box[] = [];
+		for (const [i, title] of titles.entries()) {
+			const up = (await arrow(page, title, 'up').boundingBox())!;
+			const down = (await arrow(page, title, 'down').boundingBox())!;
+			for (const box of [up, down]) {
+				expect(box.width, title).toBeGreaterThanOrEqual(44);
+				expect(box.height, title).toBeGreaterThanOrEqual(44);
+			}
+			boxes.push(up, down, (await page.getByTestId('goal-row').nth(i).boundingBox())!);
+		}
+		for (const [i, a] of boxes.entries()) {
+			for (const b of boxes.slice(i + 1)) expect(apart(a, b), JSON.stringify([a, b])).toBe(true);
+		}
+		// Beside the goals, not past the edge of the screen.
+		expect(
+			await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)
+		).toBe(true);
+	}
+	await captureScreen(page, testInfo, 'profile-goals-order-desktop');
+});
+
+test('a goal dragged by its handle up two rows becomes the top priority, and one dragged past the last row goes last: each drag stored once, announced, and still there after a reload', async ({
+	page,
+	request,
+	browserName
+}, testInfo) => {
+	test.skip(browserName !== 'chromium', 'The drag is asserted on Chromium; arrows work everywhere');
+	const errors = trackConsoleErrors(page);
+	await threeGoals(request);
+	await gotoHydrated(page, '/profile/goals');
+	await editorReady(page);
+	const rows = page.getByTestId('goal-row');
+	const saves: string[] = [];
+	page.on('request', (r) => {
+		if (new URL(r.url()).search === '?/reorderGoals') saves.push(r.url());
+	});
+	const box = async (i: number) => (await rows.nth(i).boundingBox())!;
+	const at = (i: number, y: number) => async () => Math.abs((await box(i)).y - y);
+	/** Press the handle of goal `i` (nothing covers it), move the pointer `dy` px, and hold. */
+	async function lift(i: number, dy: number) {
+		const handle = page.getByTestId('goal-handle').nth(i);
+		await expect(handle).toBeVisible();
+		const grip = (await handle.boundingBox())!;
+		const x = grip.x + grip.width / 2;
+		const y = grip.y + grip.height / 2;
+		expect(
+			await handle.evaluate((el, [x, y]) => document.elementFromPoint(x!, y!) === el, [x, y])
+		).toBe(true);
+		await page.mouse.move(x, y);
+		await page.mouse.down();
+		await page.mouse.move(x, y + dy, { steps: 10 });
+	}
+	await raiseList(page);
+	const [first, second, third] = [await box(0), await box(1), await box(2)];
+	const gap = second.y - first.y - first.height;
+	// The badge and the summaries wrap: the rows are not all one height.
+	expect(Math.abs(first.height - third.height)).toBeGreaterThan(1);
+
+	// Let go less than half a row from where it was picked up: it stays where it was.
+	await lift(2, -20);
+	await expect.poll(at(2, third.y - 20)).toBeLessThan(1.5);
+	await page.mouse.up();
+	await expect.poll(at(2, third.y)).toBeLessThan(1.5);
+	await expect(rows.nth(2)).toHaveAccessibleName(/^Priority 3: Keep my strength/);
+
+	await lift(2, first.y - third.y);
+	// Held over the top row, it follows the pointer; the two it passed move down by its height.
+	await expect.poll(at(2, first.y)).toBeLessThan(1.5);
+	await expect.poll(at(0, first.y + third.height + gap)).toBeLessThan(1.5);
+	await expect.poll(at(1, first.y + third.height + gap + first.height + gap)).toBeLessThan(1.5);
+	await expect(rows.first()).toHaveAccessibleName(/^Priority 1: First Muay Thai fight/);
+	await captureScreen(page, testInfo, 'profile-goals-dragging');
+	expect(saves).toEqual([]);
+	await page.mouse.up();
+
+	await expect(rows.first()).toHaveAccessibleName(/^Priority 1: Keep my strength/);
+	await expect(rows.first()).toContainText('Top priority');
+	await expect(rows.nth(1)).toHaveAccessibleName(/^Priority 2: First Muay Thai fight/);
+	await expect(rows.nth(1)).not.toContainText('Top priority');
+	await expect(rows.nth(2)).toHaveAccessibleName(/^Priority 3: Valencia marathon/);
+	await expect(page.getByTestId('goal-order-status')).toHaveText(
+		'Keep my strength is now priority 1 of 3'
+	);
+	// Settled where it was let go, and the drag opened no goal.
+	expect(await at(0, first.y)()).toBeLessThan(1.5);
+	await expect(sheetOf(page)).toHaveCount(0);
+	await expect
+		.poll(storedRanking)
+		.toEqual(['Keep my strength', 'First Muay Thai fight', 'Valencia marathon']);
+	// One drag is one save; the nudge that went nowhere was none.
+	expect(saves).toHaveLength(1);
+	expect(
+		await query(
+			`select count(*)::int as times from training_goal_events where change = 'reprioritized'`
+		)
+	).toEqual([{ times: 3 }]);
+
+	await page.reload();
+	await editorReady(page);
+	await expect(rows.first()).toHaveAccessibleName(/^Priority 1: Keep my strength/);
+	await expect(rows.nth(1)).toHaveAccessibleName(/^Priority 2: First Muay Thai fight/);
+	await expect(rows.nth(2)).toHaveAccessibleName(/^Priority 3: Valencia marathon/);
+
+	// On a desktop, dragged down past the last row: it stops at the end of the list, and goes last.
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await raiseList(page);
+	const [top, , last] = [await box(0), await box(1), await box(2)];
+	await lift(0, last.y + last.height + 40 - top.y);
+	await expect.poll(at(0, last.y + last.height - top.height)).toBeLessThan(1.5);
+	await page.mouse.up();
+	await expect(rows.nth(2)).toHaveAccessibleName(/^Priority 3: Keep my strength/);
+	await expect(rows.first()).toHaveAccessibleName(/^Priority 1: First Muay Thai fight/);
+	await expect(page.getByTestId('goal-order-status')).toHaveText(
+		'Keep my strength is now priority 3 of 3'
+	);
+	await expect
+		.poll(storedRanking)
+		.toEqual(['First Muay Thai fight', 'Valencia marathon', 'Keep my strength']);
+	expect(saves).toHaveLength(2);
+	expect(errors).toEqual([]);
+});
+
+test('the drag handle is for a pointer only: hidden from assistive tech, never focused, drawn without an icon, a 44 px target after the arrows on a phone and on a desktop', async ({
+	page,
+	request
+}, testInfo) => {
+	await threeGoals(request);
+	await gotoHydrated(page, '/profile/goals');
+	await editorReady(page);
+	const handles = page.getByTestId('goal-handle');
+	await expect(handles).toHaveCount(3);
+	for (const handle of await handles.all()) {
+		await expect(handle).toHaveAttribute('aria-hidden', 'true');
+		// Up and down stay the accessible way: the handle takes no focus, by script or by Tab.
+		expect(await handle.evaluate((el: HTMLElement) => el.tabIndex)).toBe(-1);
+		expect(
+			await handle.evaluate((el: HTMLElement) => {
+				el.focus();
+				return document.activeElement === el;
+			})
+		).toBe(false);
+		// Its grip is drawn by its styles: no icon of its own in every route's bundle.
+		await expect(handle.locator('svg, img')).toHaveCount(0);
+		expect(await handle.evaluate((el) => getComputedStyle(el, '::before').backgroundImage)).toMatch(
+			/^radial-gradient/
+		);
+	}
+
+	const titles = ['First Muay Thai fight', 'Valencia marathon', 'Keep my strength'];
+	for (const viewport of [null, { width: 1440, height: 900 }]) {
+		if (viewport) await page.setViewportSize(viewport);
+		await raiseList(page);
+		for (const [i, title] of titles.entries()) {
+			const handle = (await handles.nth(i).boundingBox())!;
+			const goal = (await page.getByTestId('goal-row').nth(i).boundingBox())!;
+			const down = (await arrow(page, title, 'down').boundingBox())!;
+			// As tall as its goal, after the arrows and clear of them.
+			expect(Math.abs(handle.y - goal.y), title).toBeLessThan(1);
+			expect(Math.abs(handle.height - goal.height), title).toBeLessThan(1);
+			expect(handle.x, title).toBeGreaterThanOrEqual(down.x + down.width);
+			// Drawn narrow, so the goal keeps its width, but a 44 px hit area from the arrows on.
+			const hits = await handles
+				.nth(i)
+				.evaluate(
+					(el, [left, y]) =>
+						[left! - 1, left! + 1, left! + 43, left! + 45].map(
+							(x) => document.elementFromPoint(x, y!) === el
+						),
+					[handle.x, handle.y + handle.height / 2]
+				);
+			expect(hits, title).toEqual([false, true, true, false]);
+		}
+		expect(await handles.first().evaluate((el) => getComputedStyle(el).cursor)).toBe('grab');
+		expect(
+			await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)
+		).toBe(true);
+	}
+	await captureScreen(page, testInfo, 'profile-goals-handles-desktop');
+});
+
+test('goal saves, deletes and reorders belong to Goals, which has no Save of its own', async ({
 	request
 }) => {
 	const post = (action: string, payload: unknown) =>
@@ -759,6 +1066,7 @@ test('goal saves and deletes belong to Goals, which has no Save of its own', asy
 	await profileAction(request, '/profile/goals?/saveGoal', FIGHT);
 	const [goal] = await query<{ id: string }>('select id from training_goals');
 	expect((await post('/profile/equipment?/deleteGoal', { id: goal!.id })).status()).toBe(404);
+	expect((await post('/profile/equipment?/reorderGoals', { ids: [goal!.id] })).status()).toBe(404);
 	// A status changes through saveGoal: there is no action of its own.
 	const achieved = { id: goal!.id, status: 'achieved' };
 	expect((await post('/profile/goals?/goalStatus', achieved)).status()).toBe(404);
@@ -814,6 +1122,52 @@ test.describe('with the network in the test’s hands', () => {
 		await expect(sheetOf(page)).toBeHidden();
 		release();
 		await expect(sheetOf(page).getByRole('heading', { name: 'New goal' })).toBeVisible();
+	});
+
+	test('a reorder the server does not store puts the order back and says so; tried again, it saves', async ({
+		page,
+		request
+	}) => {
+		await threeGoals(request);
+		let release!: () => void;
+		const held = new Promise<void>((resolve) => (release = resolve));
+		const reorder = (url: URL) => url.search === '?/reorderGoals';
+		await page.route(reorder, async (route) => {
+			await held;
+			// What SvelteKit answers when an action throws.
+			await route.fulfill({
+				status: 500,
+				contentType: 'application/json',
+				body: JSON.stringify({ type: 'error', error: { message: 'Internal Error' } })
+			});
+		});
+		await gotoHydrated(page, '/profile/goals');
+		await editorReady(page);
+		const rows = page.getByTestId('goal-row');
+
+		await arrow(page, 'Valencia marathon', 'up').click();
+		// The list moves before the server answers.
+		await expect(rows.first()).toHaveAccessibleName(/^Priority 1: Valencia marathon/);
+		release();
+		const failed = toastWith(page, 'The new order didn’t save. Try again.');
+		await expect(failed).toBeVisible();
+		await expect(failed).toHaveAttribute('data-tone', 'danger');
+		await expect(rows.first()).toHaveAccessibleName(/^Priority 1: First Muay Thai fight/);
+		await expect(rows.first()).toContainText('Top priority');
+		await expect(rows.nth(1)).toHaveAccessibleName(/^Priority 2: Valencia marathon/);
+		await expect(page.getByTestId('goal-order-status')).toHaveText('');
+		expect(await storedRanking()).toEqual([
+			'First Muay Thai fight',
+			'Valencia marathon',
+			'Keep my strength'
+		]);
+
+		await page.unroute(reorder);
+		await arrow(page, 'Valencia marathon', 'up').click();
+		await expect
+			.poll(storedRanking)
+			.toEqual(['Valencia marathon', 'First Muay Thai fight', 'Keep my strength']);
+		await expect(rows.first()).toHaveAccessibleName(/^Priority 1: Valencia marathon/);
 	});
 
 	test('a sheet that does not load says so, and Retry loads it', async ({ page }) => {
