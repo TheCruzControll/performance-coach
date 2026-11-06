@@ -1,10 +1,13 @@
-/** The first block's shape, event tapers and the week's days (m3/13). */
+/**
+ * The first block's shape, the outline after it, event tapers and the week's days (m3/13).
+ * `available` and `notes` are empty or start with a separator, so a sentence reads whole either way.
+ */
 import type { Templates } from '../../decisions.ts';
 
 export const blocks = {
 	block_structure: {
-		summary: 'First block: {structure}',
-		why: 'The first block runs {weeks} weeks: {structure}. {reason}'
+		summary: '{block}: {structure}',
+		why: '{block} runs {weeks} weeks: {structure}. {reason}{notes}'
 	},
 	event_taper: {
 		summary: 'Taper before {event}',
@@ -12,6 +15,6 @@ export const blocks = {
 	},
 	day_allocation: {
 		summary: '{days} training days a week',
-		why: 'You train {days} days a week. Your fixed commitments take {commitmentDays}, and the {freeDays} free days go to your goals in priority order: {allocation}.'
+		why: 'You train {stated} days a week{available}. Your fixed commitments take {commitmentDays}, which leaves {freeDays} free: {allocation}.'
 	}
 } as const satisfies Templates;

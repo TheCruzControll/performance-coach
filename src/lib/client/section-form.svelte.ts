@@ -32,6 +32,11 @@ export class SectionForm<T> {
 		return JSON.stringify(this.value) !== this.#saved;
 	}
 
+	/** A new form at the last saved value: what is left once the edits are discarded. */
+	reverted(): SectionForm<T> {
+		return new SectionForm(JSON.parse(this.#saved) as T, this.#schema, this.#toPayload);
+	}
+
 	/** Validate and post to `action`; redirects (the next step) are followed. */
 	async submit(
 		action = '?/save',
@@ -41,8 +46,10 @@ export class SectionForm<T> {
 		if (this.busy) return { ok: false, errors: {} };
 		this.busy = true;
 		this.failed = null;
-		// What is sent: edits made while the request is in flight stay unsaved.
-		const value = $state.snapshot(this.value) as T;
+		// What is sent: edits made while the request is in flight stay unsaved. A JSON copy, as
+		// the section is posted and compared as JSON: `$state.snapshot` would add its clone
+		// helper to the Svelte runtime that every route loads.
+		const value = JSON.parse(JSON.stringify(this.value)) as T;
 		try {
 			const outcome = await save(
 				action,
