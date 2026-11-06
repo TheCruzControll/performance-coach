@@ -11,8 +11,10 @@ import { signedOut, TABS } from './support';
 const SCREENS = [
 	...TABS.map((t) => t.path),
 	'/profile/security',
+	'/profile/goals',
 	'/profile/equipment',
 	'/profile/strength',
+	'/profile/experience',
 	'/profile/schedule',
 	'/offline',
 	'/design'
@@ -123,6 +125,21 @@ for (const theme of THEMES) {
 			await expect(bench.getByTestId('baseline-estimate')).toContainText('estimated 1RM');
 			await page.waitForTimeout(300);
 			expect(await audit(page), 'lifts').toEqual([]);
+		});
+
+		test('the goal sheet, blank and showing its errors, has no violations', async ({ page }) => {
+			await page.goto('/profile/goals');
+			await expect(page.getByTestId('section-editor')).toHaveAttribute('aria-busy', 'false');
+			// The browser refuses the blank goal before posting: nothing reaches the database.
+			await page.getByTestId('goal-path-event').or(page.getByTestId('add-goal')).click();
+			const sheet = page.getByTestId('goal-sheet');
+			await expect(sheet.getByRole('heading', { name: 'New goal' })).toBeVisible();
+			await page.waitForTimeout(500);
+			expect(await audit(page), 'blank').toEqual([]);
+			await sheet.getByRole('button', { name: 'Save goal' }).click();
+			await expect(sheet.getByRole('alert').first()).toBeVisible();
+			await page.waitForTimeout(300);
+			expect(await audit(page), 'errors').toEqual([]);
 		});
 
 		test('Schedule’s stepper and commitment errors have no violations', async ({ page }) => {

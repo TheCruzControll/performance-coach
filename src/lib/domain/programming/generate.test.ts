@@ -1,25 +1,24 @@
 /**
- * generate.ts: the stage list runs in its documented order and each later stage is an identity
- * stub of its own; every scenario composes into a plan the contract accepts; the minimal profile
- * gets one default_assumed decision per assumption; the same input gives byte-identical JSON.
+ * generate.ts: the stage list runs in its documented order and each later stage runs its own
+ * implementation; every scenario composes into a plan the contract accepts; the minimal profile gets
+ * one default_assumed decision per assumption; the same input gives byte-identical JSON.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CATALOGUE } from '../exercises/index';
 import type { TrainingProfile } from '../profile/types';
 import { programPlanSchema } from '../training/schemas';
 import { validate } from '../validation';
-import { DecisionLog } from './decisions';
+import { loads as loadsTemplates } from './decisions/templates/loads';
+import { strength as strengthTemplates } from './decisions/templates/strength';
+import { volume as volumeTemplates } from './decisions/templates/volume';
 import { generateProgram, STAGES } from './generate';
 import { buildProgrammingInput } from './input';
 import { SCENARIO_START, SCENARIOS, scenarioDay } from './scenarios';
 import { demandIn } from './stage';
-import type { Draft, Stage } from './stage';
-import { commitments } from './stages/commitments';
+import type { Draft } from './stage';
 import { loads } from './stages/loads';
-import { other } from './stages/other';
 import { placement } from './stages/placement';
 import { progression } from './stages/progression';
-import { running } from './stages/running';
 import { strength } from './stages/strength';
 import { timefit } from './stages/timefit';
 import { volume } from './stages/volume';
@@ -67,27 +66,10 @@ describe('the stage list', () => {
 		expect(drafts[2]!.blocks).toHaveLength(1);
 	});
 
-	const STUBS: Record<string, Stage> = {
-		commitments,
-		strength,
-		running,
-		other,
-		placement,
-		volume,
-		loads,
-		progression,
-		timefit
-	};
-
-	it.each(Object.entries(STUBS))(
-		'%s is its own stub, returning its input unchanged',
-		(name, stub) => {
-			expect(STAGES.find((s) => s.name === name)?.run).toBe(stub);
-			const input = inputOf(SCENARIOS.journey());
-			const draft: Draft = { demand: null, blocks: [] };
-			const context = { input, options: OPTIONS, log: new DecisionLog() };
-			expect(stub(draft, context)).toBe(draft);
-			expect(context.log.list()).toEqual([]);
+	it.each(Object.entries({ strength, volume, loads, progression, placement, timefit }))(
+		'runs the %s stage of its own',
+		(name, run) => {
+			expect(STAGES.find((s) => s.name === name)?.run).toBe(run);
 		}
 	);
 
@@ -110,11 +92,17 @@ describe('generateProgram', () => {
 		expect(
 			plan.decisions.filter((d) => d.kind === 'default_assumed').map((d) => d.ruleKey)
 		).toEqual(input.assumptions.map((a) => a.ruleKey));
-		expect(plan.decisions.map((d) => d.kind)).toEqual([
+		const ownKinds: string[] = [
+			...Object.keys(strengthTemplates),
+			...Object.keys(volumeTemplates),
+			...Object.keys(loadsTemplates)
+		];
+		expect(plan.decisions.map((d) => d.kind).filter((k) => !ownKinds.includes(k))).toEqual([
 			'block_structure',
 			...input.assumptions.map(() => 'default_assumed'),
 			'day_allocation'
 		]);
+		expect(plan.decisions.filter((d) => d.kind === 'split_chosen')).toHaveLength(1);
 	});
 
 	it.each(Object.keys(SCENARIOS) as (keyof typeof SCENARIOS)[])(

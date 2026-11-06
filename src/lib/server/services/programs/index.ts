@@ -10,6 +10,35 @@ export {
 	type CreatedProgram,
 	type ProgramOrigin
 } from './store';
+export {
+	getCurrentProgram,
+	getPlannedSession,
+	getTodayPlan,
+	getTrainingWeek,
+	UP_NEXT_LIMIT,
+	type CurrentProgram,
+	type PlannedSession,
+	type ReadOptions,
+	type SessionExercise,
+	type SessionWeek,
+	type TodayPlan,
+	type TrainingWeek,
+	type WeekAt
+} from './read';
+export {
+	getVersionHistory,
+	getVersionWeek,
+	HISTORY_PAGE_SIZE,
+	reviseProgram,
+	type Copy,
+	type CopyChanges,
+	type RevisedVersion,
+	type Revision,
+	type RevisionDecision,
+	type VersionHistory,
+	type VersionHistoryEntry,
+	type WeekCopies
+} from './revise';
 export type {
 	ProgramVersion,
 	StoredBlock,

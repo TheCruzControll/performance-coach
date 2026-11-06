@@ -3,7 +3,8 @@
   One training-profile section, edited from Profile. The server renders the screen with a
   skeleton where the editor goes; the editor, its form state and the discard sheet load on demand
   (no editor is in the route's initial JavaScript) and replace the skeleton in place. Save sits in
-  the thumb zone above the tab bar, and leaving with unsaved changes asks first.
+  the thumb zone above the tab bar, and leaving with unsaved changes asks first. A section whose
+  every change saves itself (Goals) has neither.
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
@@ -26,9 +27,11 @@
 		/** What the section's load returned: the editor's state is built from it. */
 		saved: unknown;
 		context: SectionContext;
+		/** The section saves as a whole, from the Save bar (false: each change saves itself). */
+		saveBar: boolean;
 	}
 
-	let { key, title, saved, context }: Props = $props();
+	let { key, title, saved, context, saveBar }: Props = $props();
 
 	let Editor = $state<SectionEditor['Editor'] | null>(null);
 	let form = $state<SectionForm<unknown> | null>(null);
@@ -48,7 +51,8 @@
 				import('#lib/client/profile-form.ts'),
 				import('./DiscardSheet.svelte')
 			]);
-			formFor = (stored) => new SectionForm(editor.draft(stored), editor.schema, editor.payload);
+			formFor = (stored) =>
+				new SectionForm(editor.draft(stored, context), editor.schema, editor.payload);
 			form = formFor(saved);
 			Sheet = sheet.default;
 			Editor = editor.Editor;
@@ -77,9 +81,9 @@
 	let pending: BeforeNavigate | null = null;
 
 	beforeNavigate((navigation) => {
-		// Nothing to lose. A save in flight can end in a redirect (to sign in again, say), which
-		// must go through.
-		if (!form?.dirty || (form.busy && navigation.type === 'goto')) return;
+		// Nothing to lose (every change already saved itself, or none was made). A save in flight
+		// can end in a redirect (to sign in again, say), which must go through.
+		if (!saveBar || !form?.dirty || (form.busy && navigation.type === 'goto')) return;
 		navigation.cancel();
 		// Reloading, closing the tab or leaving the app: the browser asks instead.
 		if (navigation.type === 'leave') return;
@@ -107,7 +111,7 @@
 </a>
 <PageHeader {title} eyebrow="Training profile" />
 
-<div class="editor" aria-busy={!Editor && !failed} data-testid="section-editor">
+<div class="editor" class:bar={saveBar} aria-busy={!Editor && !failed} data-testid="section-editor">
 	{#if Editor && form}
 		<!-- A new editor for a new form (after Discard or Save): its own state starts from the draft. -->
 		{#each [form] as current (current)}
@@ -150,21 +154,23 @@
 	{/if}
 </div>
 
-<div class="actions">
-	{#if form?.failed}
-		<Notice tone="danger" data-testid="save-error">{form.failed}</Notice>
-	{/if}
-	<Button
-		size="lg"
-		block
-		loading={form?.busy}
-		disabled={!form}
-		onclick={save}
-		data-testid="save-section"
-	>
-		Save
-	</Button>
-</div>
+{#if saveBar}
+	<div class="actions">
+		{#if form?.failed}
+			<Notice tone="danger" data-testid="save-error">{form.failed}</Notice>
+		{/if}
+		<Button
+			size="lg"
+			block
+			loading={form?.busy}
+			disabled={!form}
+			onclick={save}
+			data-testid="save-section"
+		>
+			Save
+		</Button>
+	</div>
+{/if}
 
 {#if Sheet}
 	<Sheet bind:open={asking} section={title} ondiscard={discard} />
@@ -182,9 +188,12 @@
 		color: var(--color-text-secondary);
 	}
 
-	/* Room for the Save bar below, so nothing ends up under it at the end of the page. */
 	.editor {
 		min-height: 28rem;
+	}
+
+	/* Room for the Save bar below, so nothing ends up under it at the end of the page. */
+	.editor.bar {
 		padding-bottom: calc(var(--space-20) + var(--space-2));
 	}
 
@@ -210,16 +219,17 @@
 		gap: var(--space-2);
 	}
 
-	/* The thumb zone: fixed above the tab bar, over a fade so scrolling content reads as behind. */
+	/* The thumb zone: fixed above the tab bar, over a fade so scrolling content reads as behind.
+	   Screen chrome: centred over the content column, clear of the bottom bar or the rail. */
 	.actions {
 		position: fixed;
 		z-index: var(--z-sticky);
-		left: 50%;
-		bottom: calc(var(--nav-height) + var(--safe-bottom));
+		left: calc(50% + var(--nav-inset-left) / 2);
+		bottom: var(--nav-inset-bottom);
 		transform: translateX(-50%);
 		display: grid;
 		gap: var(--space-3);
-		width: min(calc(100% - 2 * var(--gutter)), var(--content-max));
+		width: min(calc(100% - var(--nav-inset-left) - 2 * var(--gutter)), var(--content-column));
 		padding: var(--space-3) 0;
 	}
 
