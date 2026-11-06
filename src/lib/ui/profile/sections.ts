@@ -39,6 +39,24 @@ export const SECTIONS = [
 		title: 'Strength',
 		subtitle: 'Your 1RMs, or let week one find them',
 		icon: 'train'
+	},
+	{
+		key: 'basics',
+		title: 'Name & units',
+		subtitle: 'Your name, kg or lb, km or mi',
+		icon: 'profile'
+	},
+	{
+		key: 'specifics',
+		title: 'Running & Muay Thai',
+		subtitle: 'Your runs and races, sessions and fights',
+		icon: 'pulse'
+	},
+	{
+		key: 'body',
+		title: 'Body & nutrition',
+		subtitle: 'Body weight, nutrition phase and a target',
+		icon: 'flame'
 	}
 ] as const satisfies readonly SectionInfo[];
 
