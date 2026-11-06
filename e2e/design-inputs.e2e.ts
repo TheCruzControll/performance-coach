@@ -1,6 +1,7 @@
 /**
  * The input primitives on /design → Inputs. NumberField, TextArea and the date TextField: phone
- * keypads, sanitising, blank-stays-blank, labels, descriptions and errors. ChoiceGroup and
+ * keypads, sanitising, blank-stays-blank, labels, descriptions and errors. NumberStepper: its
+ * error. ChoiceGroup and
  * DayPicker: keyboard, value order, selection marks, errors and hit areas. Toggle: a switch
  * the whole row flips. TagInput: adding, refusing, removing, suggestions, limits and what it
  * announces.
@@ -171,6 +172,42 @@ test.describe('/design → Inputs: text and numbers', () => {
 
 		await raceDay.scrollIntoViewIfNeeded();
 		await captureScreen(page, testInfo, 'design-inputs-dates');
+	});
+
+	test('NumberStepper marks its value invalid and announces its error until it is fixed', async ({
+		page
+	}, testInfo) => {
+		await openInputs(page);
+		const days = page.getByRole('spinbutton', { name: 'Training days', exact: true });
+		const message = 'Only 3 days are free: 5 won’t fit';
+		await expect(days).toHaveAttribute('aria-valuenow', '5');
+		await expect(days).toHaveAttribute('aria-invalid', 'true');
+		await expect(page.getByRole('alert').filter({ hasText: message })).toBeVisible();
+		// The error replaces the hint, and the description follows what is on screen.
+		await expect(page.getByText('Tue, Thu and Sat are free.')).toHaveCount(0);
+		await expect(days).toHaveAccessibleDescription(message);
+		expect(await missingDescribedBy(days)).toEqual([]);
+		await days.scrollIntoViewIfNeeded();
+		await captureScreen(page, testInfo, 'design-inputs-stepper-error');
+
+		// Still too many: the new count is announced.
+		await page.getByRole('button', { name: 'Decrease Training days' }).click();
+		await expect(
+			page.getByRole('alert').filter({ hasText: 'Only 3 days are free: 4 won’t fit' })
+		).toBeVisible();
+		await page.getByRole('button', { name: 'Decrease Training days' }).click();
+		await expect(days).toHaveAttribute('aria-valuenow', '3');
+		await expect(days).not.toHaveAttribute('aria-invalid');
+		await expect(page.getByRole('alert').filter({ hasText: 'Only 3 days are free' })).toHaveCount(
+			0
+		);
+		await expect(days).toHaveAccessibleDescription('Tue, Thu and Sat are free.');
+		expect(await missingDescribedBy(days)).toEqual([]);
+
+		// A stepper with no hint and no error is described by nothing.
+		await expect(page.getByRole('spinbutton', { name: 'Reps' })).not.toHaveAttribute(
+			'aria-describedby'
+		);
 	});
 });
 

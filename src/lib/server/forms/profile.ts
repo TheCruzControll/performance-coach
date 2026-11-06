@@ -66,14 +66,17 @@ async function attempt<T>(save: () => Promise<T>) {
 	}
 }
 
-/** A Profile edit screen's `save` action: store the section, then `{ saved: true }`. */
+/**
+ * A Profile edit screen's `save` action: store the section, then `{ saved: true, section }`
+ * with the section as stored, which the screen edits from then on (a new injury's id, say).
+ */
 export function editAction(saveSection: SaveSection) {
 	return async ({ locals, request }: FormEvent) => {
 		const owner = ownerId(locals);
 		const { payload } = await readForm(request);
 		const result = await attempt(() => saveSection(owner, payload, { source: 'profile' }));
 		if (!result.ok) return result.failure;
-		return { saved: true as const };
+		return { saved: true as const, section: result.value };
 	};
 }
 

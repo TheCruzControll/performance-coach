@@ -71,12 +71,12 @@ async function thrown(promise: Promise<unknown>): Promise<unknown> {
 }
 
 describe('a Profile edit screen’s save action', () => {
-	it('stores a valid section and says it was saved', async () => {
+	it('stores a valid section and answers with it as stored', async () => {
 		await withRollback(async (db) => {
 			const owner = await makeOwner(db);
 			const save = editAction(within(db, saveEquipment));
 			const result = await save({ locals: session(owner), request: post(equipment) });
-			expect(result).toEqual({ saved: true });
+			expect(result).toEqual({ saved: true, section: await getEquipment(owner, { db }) });
 			expect(await getEquipment(owner, { db })).toMatchObject(equipment);
 		});
 	});

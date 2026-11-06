@@ -15,6 +15,12 @@ const SCREENS = [
 	'/profile/equipment',
 	'/profile/strength',
 	'/profile/experience',
+	'/profile/basics',
+	'/profile/specifics',
+	'/profile/body',
+	'/profile/injuries',
+	'/profile/exercises',
+	'/profile/schedule',
 	'/offline',
 	'/design'
 ];
@@ -139,6 +145,43 @@ for (const theme of THEMES) {
 			await expect(sheet.getByRole('alert').first()).toBeVisible();
 			await page.waitForTimeout(300);
 			expect(await audit(page), 'errors').toEqual([]);
+		});
+
+		test('an injury card with an error and a resolved badge has no violations', async ({
+			page
+		}) => {
+			await page.goto('/profile/injuries');
+			await page.waitForLoadState('networkidle');
+			await expect(page.getByTestId('section-editor')).toHaveAttribute('aria-busy', 'false');
+			// Changes that are never saved: the browser refuses the card before posting it.
+			await page.getByRole('button', { name: /^Add (an injury or limitation|another)$/ }).click();
+			const card = page.getByTestId('injury').last();
+			await card.getByRole('switch', { name: 'Still affecting training' }).uncheck();
+			await expect(card.getByTestId('injury-resolved')).toBeVisible();
+			await page.getByTestId('save-section').click();
+			await expect(card.getByRole('group', { name: 'Where?' }).getByRole('alert')).toBeVisible();
+			await page.waitForTimeout(300);
+			expect(await audit(page)).toEqual([]);
+		});
+
+		test('Schedule’s stepper and commitment errors have no violations', async ({ page }) => {
+			await page.goto('/profile/schedule');
+			await expect(page.getByTestId('section-editor')).toHaveAttribute('aria-busy', 'false');
+			// Never saved: the browser refuses both errors before posting.
+			const free = page.getByRole('group', { name: 'Days you can train' });
+			for (const day of ['Monday', 'Wednesday', 'Friday']) {
+				await free.getByRole('checkbox', { name: day }).check();
+			}
+			await page.getByRole('button', { name: 'Increase Training days a week' }).click();
+			await page.getByTestId('add-commitment').click();
+			await page.getByTestId('save-section').click();
+			await expect(page.getByRole('spinbutton', { name: 'Training days a week' })).toHaveAttribute(
+				'aria-invalid',
+				'true'
+			);
+			await expect(page.getByTestId('commitment').getByRole('alert').first()).toBeVisible();
+			await page.waitForTimeout(300);
+			expect(await audit(page)).toEqual([]);
 		});
 
 		test('every /design component group has no violations', async ({ page }) => {

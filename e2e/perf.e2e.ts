@@ -28,7 +28,8 @@ const SCREENS = [
 	'/coach',
 	'/profile',
 	'/profile/security',
-	'/profile/equipment'
+	'/profile/equipment',
+	'/profile/schedule'
 ];
 
 test.describe('main-thread budget (4× CPU)', () => {
