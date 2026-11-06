@@ -34,6 +34,8 @@
 	let form = $state<SectionForm<unknown> | null>(null);
 	let Sheet = $state<typeof DiscardSheet | null>(null);
 	let failed = $state(false);
+	/** A form for the section as stored: what the load returned, then what each save stored. */
+	let formFor: ((stored: unknown) => SectionForm<unknown>) | undefined;
 
 	/** The editor, its form state and the discard sheet: all of them, or the error with Retry. */
 	onMount(async () => {
@@ -44,7 +46,8 @@
 				import('#lib/client/profile-form.ts'),
 				import('./DiscardSheet.svelte')
 			]);
-			form = new SectionForm(editor.draft(saved), editor.schema);
+			formFor = (stored) => new SectionForm(editor.draft(stored), editor.schema, editor.payload);
+			form = formFor(saved);
 			Sheet = sheet.default;
 			Editor = editor.Editor;
 			warmValidation();
@@ -60,7 +63,11 @@
 		// The button is disabled while it saves, which drops keyboard focus: give it back.
 		if (document.activeElement === document.body) button.focus();
 		// Only the action's own answer: a redirect (the session ended) saved nothing.
-		if (outcome.data?.saved) toast.show('Saved', { tone: 'positive' });
+		if (!outcome.data?.saved) return;
+		// Go on from what was stored: a new injury has its id now, so saving again updates it
+		// instead of adding it once more. Edits made while it saved stay, unsaved.
+		if (!form.dirty && formFor) form = formFor(outcome.data.section);
+		toast.show('Saved', { tone: 'positive' });
 	}
 
 	// ---- leaving with unsaved changes ----------------------------------------------------------
@@ -100,7 +107,7 @@
 
 <div class="editor" aria-busy={!Editor && !failed} data-testid="section-editor">
 	{#if Editor && form}
-		<!-- A new editor for a new form (after Discard): its own state starts from the draft. -->
+		<!-- A new editor for a new form (after Discard or Save): its own state starts from the draft. -->
 		{#each [form] as current (current)}
 			<Editor bind:value={current.value} errors={current.errors} {context} />
 		{/each}

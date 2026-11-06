@@ -12,6 +12,7 @@ const SCREENS = [
 	...TABS.map((t) => t.path),
 	'/profile/security',
 	'/profile/equipment',
+	'/profile/injuries',
 	'/offline',
 	'/design'
 ];
@@ -59,8 +60,8 @@ for (const theme of THEMES) {
 				await page.goto(path);
 				await page.waitForLoadState('networkidle');
 				if (path === '/profile') await expect(page.getByTestId('db-status')).toBeVisible();
-				// The section's editor loads after the screen, in place of its skeleton.
-				if (path === '/profile/equipment') {
+				// A Profile section's editor loads after the screen, in place of its skeleton.
+				if (path.startsWith('/profile/') && path !== '/profile/security') {
 					await expect(page.getByTestId('section-editor')).toHaveAttribute('aria-busy', 'false');
 				}
 				const html = page.locator('html');
@@ -91,6 +92,23 @@ for (const theme of THEMES) {
 			await page.getByTestId('back-to-profile').click();
 			await expect(page.getByTestId('discard-sheet')).toBeVisible();
 			await page.waitForTimeout(500);
+			expect(await audit(page)).toEqual([]);
+		});
+
+		test('an injury card with an error and a resolved badge has no violations', async ({
+			page
+		}) => {
+			await page.goto('/profile/injuries');
+			await page.waitForLoadState('networkidle');
+			await expect(page.getByTestId('section-editor')).toHaveAttribute('aria-busy', 'false');
+			// Changes that are never saved: the browser refuses the card before posting it.
+			await page.getByRole('button', { name: /^Add (an injury or limitation|another)$/ }).click();
+			const card = page.getByTestId('injury').last();
+			await card.getByRole('switch', { name: 'Still affecting training' }).uncheck();
+			await expect(card.getByTestId('injury-resolved')).toBeVisible();
+			await page.getByTestId('save-section').click();
+			await expect(card.getByRole('group', { name: 'Where?' }).getByRole('alert')).toBeVisible();
+			await page.waitForTimeout(300);
 			expect(await audit(page)).toEqual([]);
 		});
 
