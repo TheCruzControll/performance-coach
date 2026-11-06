@@ -8,7 +8,8 @@
  * What it does (one transaction): deletes every passkey, recovery code and pending challenge,
  * revokes every session, reopens setup (owners.setup_completed_at = null) and writes an
  * `owner.reset` audit event. The owner row and all training data are kept: the next setup
- * re-attaches to the same owner. Then issue a new setup link (`pnpm auth:setup-token`).
+ * re-attaches to the same owner. Then issue a new setup link (`pnpm auth:setup-token`): used setup
+ * tokens stay recorded, so the previous link keeps answering 404.
  * Procedure: docs/deployment.md ("Lost passkeys").
  */
 import { stdin, stdout } from 'node:process';
@@ -126,7 +127,8 @@ async function main() {
 			[
 				'',
 				`Reset done: ${summary.passkeys} passkey(s) and ${summary.recoveryCodes} recovery code(s) deleted, ${summary.sessions} session(s) revoked.`,
-				'Next: `pnpm auth:setup-token`, set OWNER_SETUP_TOKEN_HASH on Vercel, redeploy, send the link.',
+				'Next: `pnpm auth:setup-token` (a new token: the previous link stays refused), set',
+				'OWNER_SETUP_TOKEN_HASH on Vercel, redeploy, send the link.',
 				''
 			].join('\n')
 		);

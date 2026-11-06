@@ -17,6 +17,7 @@ import type { RelyingParty } from './relying-party';
 import { issueSession, revokeToken, type AuthSession, type IssuedSession } from './sessions';
 import {
 	authenticationOptions,
+	isCredentialId,
 	parseAuthenticationResponse,
 	parseRegistrationResponse,
 	registrationOptions,
@@ -284,7 +285,10 @@ export async function renamePasskey(
 	const { db, now } = resolveDeps(deps);
 	await enforceRateLimit('manage', { session: session.id }, request, { db, now });
 	const name = parseNickname(nickname);
-	if (!(await createAuthRepository(db).renamePasskey(session.ownerId, id, name))) {
+	if (
+		!isCredentialId(id) ||
+		!(await createAuthRepository(db).renamePasskey(session.ownerId, id, name))
+	) {
 		throw new AuthError('not_found', 'That passkey no longer exists.');
 	}
 	await recordAuthEvent(db, request, {
@@ -312,7 +316,7 @@ export async function removePasskey(
 	const endedSessions = await db.transaction(async (tx) => {
 		const repo = createAuthRepository(tx);
 		const total = await repo.lockPasskeys(session.ownerId);
-		const target = await repo.findPasskey(id);
+		const target = isCredentialId(id) ? await repo.findPasskey(id) : null;
 		if (!target || target.ownerId !== session.ownerId) {
 			throw new AuthError('not_found', 'That passkey no longer exists.');
 		}

@@ -36,21 +36,26 @@ export function clock(start = new Date('2026-11-05T12:00:00Z')) {
 	};
 }
 
-/** Run first-run setup through the services with a software authenticator. */
+/**
+ * Run first-run setup through the services with a software authenticator. `token` (default
+ * `SETUP_TOKEN`) is the link's token; its hash is the configured one.
+ */
 export async function setUpOwner(
 	db: Executor,
-	options: { now?: () => Date; authenticator?: SoftAuthenticator; name?: string } = {}
+	options: {
+		now?: () => Date;
+		authenticator?: SoftAuthenticator;
+		name?: string;
+		token?: string;
+	} = {}
 ) {
 	const authenticator =
 		options.authenticator ?? new SoftAuthenticator({ rpId: RP.rpID, origin: ORIGIN });
-	const deps = { db, now: options.now, config: SETUP_CONFIG };
-	const opts = await beginSetup(
-		{ token: SETUP_TOKEN, name: options.name ?? 'Niko Cruz' },
-		request(),
-		deps
-	);
+	const token = options.token ?? SETUP_TOKEN;
+	const deps = { db, now: options.now, config: { tokenHash: hashToken(token) } };
+	const opts = await beginSetup({ token, name: options.name ?? 'Niko Cruz' }, request(), deps);
 	const result = await completeSetup(
-		{ token: SETUP_TOKEN, response: authenticator.register(opts) },
+		{ token, response: authenticator.register(opts) },
 		undefined,
 		request(),
 		deps

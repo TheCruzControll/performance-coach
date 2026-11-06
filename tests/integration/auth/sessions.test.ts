@@ -149,4 +149,19 @@ describe('sessions', () => {
 			).rejects.toMatchObject({ code: 'not_found' });
 		});
 	});
+
+	it('answer a malformed id as not found, never with a database error', async () => {
+		await withRollback(async (tx) => {
+			const owner = await setUpOwner(tx);
+			const current = (await validateSessionToken(owner.token, { db: tx }))!.session;
+			// A form field the client tampered with (or left out: ''), not a uuid Postgres accepts.
+			for (const bad of ['', 'not-a-uuid', `${current.id}x`]) {
+				await expect(revokeSession(current, bad, request(), { db: tx })).rejects.toMatchObject({
+					code: 'not_found',
+					status: 404
+				});
+			}
+			expect(await validateSessionToken(owner.token, { db: tx })).not.toBeNull();
+		});
+	});
 });
