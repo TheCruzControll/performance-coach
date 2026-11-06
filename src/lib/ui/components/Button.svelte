@@ -201,7 +201,7 @@
 		background: color-mix(in srgb, var(--color-danger) 22%, transparent);
 	}
 
-	@media (hover: hover) {
+	@media (hover: hover) and (pointer: fine) {
 		.btn[data-variant='primary']:hover:not(:disabled) {
 			background: var(--color-accent-hover);
 		}

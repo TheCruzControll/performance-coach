@@ -13,10 +13,13 @@ import {
 	getBaselines,
 	getEquipment,
 	getExercisePreferences,
+	getExperience,
 	getOnboarding,
+	listGoals,
 	saveBaselines,
 	saveEquipment,
 	saveExercisePreferences,
+	saveExperience,
 	type ProfileDeps
 } from '../services/profile';
 import type { SaveSection } from './profile';
@@ -24,10 +27,13 @@ import type { SaveSection } from './profile';
 export interface ProfileSection {
 	/** What the section's editor starts from. */
 	load: (owner: string, deps?: ProfileDeps) => Promise<unknown>;
-	save: SaveSection;
+	/** Saves the whole section (the screen's Save bar). Without one, each change saves itself. */
+	save?: SaveSection;
 }
 
 const SECTIONS: Record<string, ProfileSection> = {
+	goals: { load: listGoals },
+	experience: { load: getExperience, save: saveExperience },
 	equipment: { load: getEquipment, save: saveEquipment },
 	strength: { load: getBaselines, save: saveBaselines },
 	exercises: { load: getExercisePreferences, save: saveExercisePreferences }
