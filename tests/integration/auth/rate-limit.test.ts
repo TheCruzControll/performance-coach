@@ -4,9 +4,10 @@ import { beginSignIn, completeSignIn } from '../../../src/lib/server/auth/passke
 import { RATE_LIMITS } from '../../../src/lib/server/auth/policy';
 import { enforceRateLimit } from '../../../src/lib/server/auth/rate-limit';
 import { redeemRecoveryCode } from '../../../src/lib/server/auth/recovery';
+import { signOut, validateSessionToken } from '../../../src/lib/server/auth/sessions';
 import { checkSetupAccess } from '../../../src/lib/server/auth/setup';
 import { withRollback } from '../helpers';
-import { clock, request, SETUP_CONFIG, SETUP_TOKEN } from './fixtures';
+import { clock, request, SETUP_CONFIG, SETUP_TOKEN, setUpOwner } from './fixtures';
 
 describe('DB-backed rate limits', () => {
 	it('allow the limit, refuse the next hit with Retry-After, and reset with the window', async () => {
@@ -86,6 +87,59 @@ describe('DB-backed rate limits', () => {
 			await expect(
 				redeemRecoveryCode('AAAA-AAAA-AAAA-AAAA', undefined, request(), { db: tx })
 			).rejects.toMatchObject({ code: 'rate_limited' });
+		});
+	});
+
+	it('never let the global recovery cap refuse a valid code', async () => {
+		await withRollback(async (tx) => {
+			const time = clock();
+			const deps = { db: tx, now: time.now };
+			const owner = await setUpOwner(tx, { now: time.now });
+			// One client fills the global cap alone, never exceeding its own per-client limit.
+			const attacker = request({ ip: '203.0.113.66' });
+			const { limit: perClient, windowMs } = RATE_LIMITS.recovery;
+			for (let i = 0; i < RATE_LIMITS['recovery.global'].limit; i++) {
+				if (i > 0 && i % perClient === 0) time.advance(windowMs);
+				await expect(
+					redeemRecoveryCode('AAAA-AAAA-AAAA-AAAA', undefined, attacker, deps)
+				).rejects.toMatchObject({ code: 'invalid_code' });
+			}
+			// Wrong codes are now refused from any client...
+			await expect(
+				redeemRecoveryCode('AAAA-AAAA-AAAA-AAAA', undefined, request(), deps)
+			).rejects.toMatchObject({ code: 'rate_limited', status: 429 });
+			// ...but the owner's valid code, from another network, still signs in.
+			await expect(
+				redeemRecoveryCode(owner.recoveryCodes[0], undefined, request(), deps)
+			).resolves.toMatchObject({ remaining: 9, session: { kind: 'recovery' } });
+		});
+	});
+
+	it('never let a full sign-out bucket keep a live session signed in', async () => {
+		await withRollback(async (tx) => {
+			const deps = { db: tx };
+			const owner = await setUpOwner(tx);
+			// Someone on the same NAT or Wi-Fi (one client address) fills the sign-out bucket.
+			const sameNetwork = request({ ip: '203.0.113.77' });
+			for (let i = 0; i < RATE_LIMITS.signout.limit; i++) {
+				await signOut(undefined, sameNetwork, deps);
+			}
+			await expect(signOut(undefined, sameNetwork, deps)).rejects.toMatchObject({
+				code: 'rate_limited',
+				status: 429
+			});
+			// The owner's sign-out from that address still ends the session...
+			await expect(signOut(owner.token, sameNetwork, deps)).resolves.toBeUndefined();
+			expect(await validateSessionToken(owner.token, deps)).toBeNull();
+			const repo = createAuthRepository(tx);
+			expect(await repo.findSession(owner.session.id)).toMatchObject({ revokedReason: 'signout' });
+			expect(await repo.recentEvents(1)).toMatchObject([
+				{ type: 'signout', sessionId: owner.session.id }
+			]);
+			// ...once: the ended token is just another request without a session, limited again.
+			await expect(signOut(owner.token, sameNetwork, deps)).rejects.toMatchObject({
+				code: 'rate_limited'
+			});
 		});
 	});
 });

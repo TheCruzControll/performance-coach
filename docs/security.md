@@ -51,7 +51,8 @@ extension on the owner's browser can act as the owner.
    `https://coach.nikocruz.com/setup?token=…`.
 2. `/setup` answers **404** unless the token's SHA-256 equals the configured hash (compared with
    `timingSafeEqual` on the two digests), that token has never completed a setup, **and** no
-   passkey exists. Wrong tokens are audited and rate-limited (10 per 15 min per client).
+   passkey exists. Wrong tokens are audited and rate-limited (10 per 15 min per client); past the
+   limit the page is a 404 as well, even with the right token, and not recorded as a server error.
 3. The owner enters a name and creates a passkey. In one transaction (advisory-locked, so two
    concurrent setups cannot both win): the owner and passkey are created, setup is marked
    complete, the token's hash is recorded as used (`used_setup_tokens`), 10 recovery codes are
@@ -82,10 +83,14 @@ app path (`return-path.ts`).
   reach only `/recover/passkey`, the add-passkey endpoints and sign-out. Pages redirect there;
   `/api/*` answers `403 passkey_required`.
 - Registering a passkey from that session rotates it into a full session (the recovery session is
-  revoked) and lands on Security with a prompt to remove the lost passkey.
+  revoked) and lands on Security with a prompt to remove the lost passkey. A recovery session
+  revoked or expired while that request is in flight (e.g. by Sign out everywhere else) adds no
+  passkey and gets no full session (see Passkey management). Sign out everywhere else that
+  arrives while the new passkey is being stored waits for it and then ends the full session too.
 - Codes can be regenerated from Security (all old codes stop working; new set shown once, with
   acknowledgement). A recovery session cannot regenerate codes.
-- Rate limits: 5 attempts per 15 min per client and 20 per hour in total.
+- Rate limits: 5 attempts per 15 min per client and 20 failed attempts per hour in total; the total
+  never refuses a valid code (see Rate limits).
 - Lost every passkey **and** every code: the guarded `pnpm auth:reset-owner` (docs/deployment.md).
 
 ### Passkey management (Profile → Security)
@@ -93,7 +98,11 @@ app path (`return-path.ts`).
 Add (a real registration bound to the current session: the challenge row stores the session id),
 rename (1–64 characters), remove. **The last passkey can never be removed**: the check runs under
 a row lock, so two concurrent removals cannot both pass. Removing a passkey also ends every other
-session that signed in with it.
+session that signed in with it. A new passkey is stored only if the session adding it is still
+live, re-checked under a row lock: a session revoked after the guard let the request in adds
+nothing. The passkey and session ids these actions receive are checked by shape before any query
+(base64url, UUID): a malformed id is answered like an unknown one (`404`, `not_found`), never
+with a database error.
 
 ### Sessions
 
@@ -168,7 +177,18 @@ every server instance shares the counters. The first refusal of a window is audi
 | `signout`         | 30 / minute     | client   |
 
 The client address is the platform's (`getClientAddress()`: `x-forwarded-for` as set by Vercel).
-Refusals answer `429` with `Retry-After`.
+Refusals answer `429` with `Retry-After`, except the `/setup` page, which answers `404` like any
+other refused setup link.
+
+`recovery.global` counts failed codes only, charged after the code is looked up, so it never
+refuses a valid one: a client staying within its own limit cannot fill it and lock the owner out
+of recovery. It is a tripwire (audited when it trips; further wrong codes answer `429`), not a
+bound on distributed guessing, which rests on the per-client limit and the 80-bit codes.
+
+`signout` counts only requests that end no session. A sign-out that presents a live session is
+never refused (the session is revoked, the cookie deleted), so someone sharing the owner's
+address (the same NAT or Wi-Fi) cannot fill the bucket and keep the owner signed in. A token ends
+its session only once, so this cannot be used to flood.
 
 ## Audit log
 

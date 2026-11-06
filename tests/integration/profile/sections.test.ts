@@ -2,12 +2,14 @@
  * Training-profile sections through the services on real Postgres (PRD §3): experience per
  * discipline, optional strength baselines (measured vs estimated never conflated), running and
  * Muay Thai specifics, equipment, injuries, exercise likes/dislikes and schedule — each with a
- * round trip and validation errors for bad input.
+ * round trip and validation errors for bad input — and concurrent saves of one section.
  */
 import { sql } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
+import { getDb, type Executor } from '../../../src/lib/server/db';
 import {
 	baselineHistory,
+	getAthleteProfile,
 	getBaselines,
 	getEquipment,
 	getExercisePreferences,
@@ -21,7 +23,8 @@ import {
 	saveExperience,
 	saveInjuries,
 	saveSchedule,
-	saveSpecifics
+	saveSpecifics,
+	type ProfileDeps
 } from '../../../src/lib/server/services/profile';
 import { withRollback } from '../helpers';
 import { clock, fieldErrors, makeOwner } from './fixtures';
@@ -475,6 +478,24 @@ describe('injuries and limitations', () => {
 		});
 	});
 
+	it('stores a blank “since” (an empty date input) as no date', async () => {
+		await withRollback(async (db) => {
+			const owner = await makeOwner(db);
+			const injury = { bodyArea: 'knee', side: 'left', severity: 'mild', avoid: [], active: true };
+			const [dated] = await saveInjuries(
+				owner,
+				{ injuries: [{ ...injury, since: '2026-09-01' }] },
+				{ db }
+			);
+			const [cleared] = await saveInjuries(owner, { injuries: [{ ...dated, since: '' }] }, { db });
+			expect(cleared).toMatchObject({ id: dated!.id, since: null });
+			const stored = await db.execute<{ since: string | null }>(
+				sql`select since from injuries where id = ${dated!.id}`
+			);
+			expect(stored.rows).toEqual([{ since: null }]);
+		});
+	});
+
 	it('refuses an injury without an area or severity, or with an unknown id', async () => {
 		await withRollback(async (db) => {
 			const owner = await makeOwner(db);
@@ -645,4 +666,182 @@ describe('schedule and availability', () => {
 			});
 		});
 	});
+});
+
+/**
+ * Resolves once every save has finished or is waiting for a lock (queued behind the open
+ * transaction). Bounded, so a save stuck for another reason fails the test instead of hanging it.
+ */
+async function finishedOrWaiting(db: Executor, saves: Promise<unknown>[], timeoutMs = 5_000) {
+	let finished = 0;
+	for (const save of saves) {
+		void save.then(
+			() => finished++,
+			() => finished++
+		);
+	}
+	const deadline = Date.now() + timeoutMs;
+	while (Date.now() < deadline) {
+		// A transaction keeps its first view of pg_stat_activity until told to drop it.
+		await db.execute(sql`select pg_stat_clear_snapshot()`);
+		const { rows } = await db.execute<{ waiting: number }>(
+			sql`select count(*)::int as waiting from pg_stat_activity
+				where datname = current_database() and wait_event_type = 'Lock'`
+		);
+		if (rows[0]!.waiting + finished >= saves.length) return;
+		await new Promise((resolve) => setTimeout(resolve, 10));
+	}
+	throw new Error('a save neither finished nor queued behind the open transaction');
+}
+
+const commitment = (label: string) => ({
+	discipline: 'muay_thai',
+	label,
+	days: ['tue'],
+	timeOfDay: null,
+	intensity: null
+});
+const injury = (bodyArea: string) => ({
+	bodyArea,
+	side: null,
+	severity: 'mild',
+	avoid: [],
+	active: true
+});
+const schedule = (...labels: string[]) => ({
+	daysPerWeek: 3,
+	availableDays: ['mon', 'wed', 'fri'],
+	preferredTimes: [],
+	commitments: labels.map(commitment)
+});
+const races = (...list: [distance: string, timeSeconds: number][]) => ({
+	running: {
+		unit: 'km',
+		races: list.map(([distance, timeSeconds]) => ({ distance, timeSeconds }))
+	},
+	muayThai: null
+});
+const squat = (value: number) => ({ lift: 'back_squat', source: 'tested', value, unit: 'kg' });
+
+/**
+ * Every section save that replaces a set of rows. `inputs[0]` is saved first and left
+ * uncommitted while `inputs[1]` and `inputs[2]` start; `stored` reads the section back in the
+ * shape of `expected` (what `inputs[1]` and `inputs[2]` store on their own).
+ */
+const SECTIONS: {
+	section: string;
+	save: (ownerId: string, input: unknown, deps: ProfileDeps) => Promise<unknown>;
+	stored: (ownerId: string, db: Executor) => Promise<string[]>;
+	inputs: [unknown, unknown, unknown];
+	expected: [string[], string[]];
+}[] = [
+	{
+		section: 'experience',
+		save: saveExperience,
+		stored: async (owner, db) => (await getExperience(owner, { db })).map((e) => e.discipline),
+		inputs: [
+			{ entries: [{ discipline: 'powerlifting', level: 'intermediate' }] },
+			{ entries: [{ discipline: 'muay_thai', level: 'novice' }] },
+			{ entries: [{ discipline: 'running', level: 'new' }] }
+		],
+		expected: [['muay_thai'], ['running']]
+	},
+	{
+		section: 'strength baselines',
+		save: saveBaselines,
+		stored: async (owner, db) =>
+			(await getBaselines(owner, { db })).lifts.map((l) => `${l.lift} ${l.value}`).sort(),
+		inputs: [
+			{ unknown: false, lifts: [squat(180)] },
+			{ unknown: false, lifts: [squat(185)] },
+			{
+				unknown: false,
+				lifts: [squat(190), { lift: 'bench_press', source: 'tested', value: 120, unit: 'kg' }]
+			}
+		],
+		expected: [['back_squat 185'], ['back_squat 190', 'bench_press 120']]
+	},
+	{
+		section: 'running specifics',
+		save: saveSpecifics,
+		stored: async (owner, db) =>
+			(await getSpecifics(owner, { db })).running!.races.map(
+				(r) => `${r.distance} ${r.timeSeconds}`
+			),
+		inputs: [
+			races(['5k', 1500]),
+			races(['10k', 3000]),
+			races(['5k', 1450], ['half_marathon', 6300])
+		],
+		expected: [['10k 3000'], ['5k 1450', 'half_marathon 6300']]
+	},
+	{
+		section: 'injuries',
+		save: saveInjuries,
+		stored: async (owner, db) => (await getInjuries(owner, { db })).map((i) => i.bodyArea).sort(),
+		inputs: [
+			{ injuries: [injury('knee')] },
+			{ injuries: [injury('shoulder')] },
+			{ injuries: [injury('lower_back'), injury('wrist_hand')] }
+		],
+		expected: [['shoulder'], ['lower_back', 'wrist_hand']]
+	},
+	{
+		section: 'exercise likes and dislikes',
+		save: saveExercisePreferences,
+		stored: async (owner, db) =>
+			(await getExercisePreferences(owner, { db })).map((p) => `${p.exercise} ${p.sentiment}`),
+		inputs: [
+			{ items: [{ exercise: 'Front squat', sentiment: 'like' }] },
+			{ items: [{ exercise: 'front squat', sentiment: 'dislike' }] },
+			{
+				items: [
+					{ exercise: 'Front Squat', sentiment: 'like' },
+					{ exercise: 'Dips', sentiment: 'dislike' }
+				]
+			}
+		],
+		expected: [['front squat dislike'], ['Dips dislike', 'Front Squat like']]
+	},
+	{
+		section: 'schedule',
+		save: saveSchedule,
+		stored: async (owner, db) =>
+			(await getSchedule(owner, { db })).commitments.map((c) => c.label).sort(),
+		inputs: [schedule('Muay Thai class'), schedule('Club run'), schedule('Sparring', 'Yoga')],
+		expected: [['Club run'], ['Sparring', 'Yoga']]
+	}
+];
+
+describe('concurrent saves of one section (a double-tapped Save, a second tab)', () => {
+	it.each(SECTIONS)(
+		'$section: every save succeeds and the stored section is one of them, whole',
+		async ({ save, stored, inputs: [first, second, third], expected }) => {
+			// Real connections that commit: a rolled-back test transaction cannot race itself.
+			const db = getDb();
+			const owner = await makeOwner(db);
+			// Create the profile now: its first insert would queue the saves on its own.
+			await getAthleteProfile(owner, { db });
+			let racing: Promise<unknown>[] = [];
+			try {
+				await db.transaction(async (tx) => {
+					await save(owner, first, { db: tx });
+					racing = [save(owner, second, { db }), save(owner, third, { db })];
+					await finishedOrWaiting(tx, racing);
+				});
+				const outcomes = await Promise.allSettled(racing);
+				// A failed save shows the Postgres error (the driver's, not the query text).
+				expect(
+					outcomes.map((o) =>
+						o.status === 'fulfilled' ? 'saved' : String((o.reason as Error).cause ?? o.reason)
+					)
+				).toEqual(['saved', 'saved']);
+				expect(expected).toContainEqual(await stored(owner, db));
+			} finally {
+				// Let both saves settle before their owner goes.
+				await Promise.allSettled(racing);
+				await db.execute(sql`delete from owners where id = ${owner}`);
+			}
+		}
+	);
 });

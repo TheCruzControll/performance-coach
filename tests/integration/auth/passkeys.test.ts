@@ -11,8 +11,8 @@ import {
 } from '../../../src/lib/server/auth/passkeys';
 import { setupOpen } from '../../../src/lib/server/auth/setup';
 import { mintTestSession } from '../../../src/lib/server/auth/test-support';
-import { validateSessionToken } from '../../../src/lib/server/auth/sessions';
-import { withRollback } from '../helpers';
+import { revokeSession, validateSessionToken } from '../../../src/lib/server/auth/sessions';
+import { holdTransaction, lockWaiters, withCommitted, withRollback } from '../helpers';
 import { ORIGIN, request, RP, setUpOwner } from './fixtures';
 import { SoftAuthenticator } from './soft-authenticator';
 
@@ -72,6 +72,48 @@ describe('passkey management', () => {
 		});
 	});
 
+	it('adds nothing for a session revoked after its request was validated', async () => {
+		await withRollback(async (tx) => {
+			const owner = await setUpOwner(tx);
+			const session = (await validateSessionToken(owner.token, { db: tx }))!.session;
+			const stolen = await mintTestSession(request(), { db: tx, enabled: true });
+			const stolenSession = (await validateSessionToken(stolen.token, { db: tx }))!.session;
+			const key = new SoftAuthenticator({ rpId: RP.rpID, origin: ORIGIN });
+			const options = await beginPasskeyRegistration(stolenSession, request(), { db: tx });
+
+			await revokeSession(session, stolenSession.id, request(), { db: tx });
+			await expect(
+				completePasskeyRegistration(stolenSession, key.register(options), request(), { db: tx })
+			).rejects.toMatchObject({ code: 'not_found' });
+			expect(await createAuthRepository(tx).countPasskeys(owner.ownerId)).toBe(1);
+		});
+	});
+
+	it('waits for a revocation in progress, then adds nothing', async () => {
+		await withCommitted(async (db) => {
+			const owner = await setUpOwner(db);
+			const session = (await validateSessionToken(owner.token, { db }))!.session;
+			const stolen = await mintTestSession(request(), { db, enabled: true });
+			const stolenSession = (await validateSessionToken(stolen.token, { db }))!.session;
+			const key = new SoftAuthenticator({ rpId: RP.rpID, origin: ORIGIN });
+			const options = await beginPasskeyRegistration(stolenSession, request(), { db });
+
+			// The owner's revocation has updated the row but not committed when the stolen
+			// session's request reaches its transaction.
+			const revocation = await holdTransaction((tx) =>
+				revokeSession(session, stolenSession.id, request(), { db: tx })
+			);
+			const adding = completePasskeyRegistration(stolenSession, key.register(options), request(), {
+				db
+			});
+			await lockWaiters(1);
+			await revocation.commit();
+
+			await expect(adding).rejects.toMatchObject({ code: 'not_found' });
+			expect(await createAuthRepository(db).countPasskeys(owner.ownerId)).toBe(1);
+		});
+	});
+
 	it('renames (validated) and removes — never the last passkey', async () => {
 		await withRollback(async (tx) => {
 			const owner = await setUpOwner(tx);
@@ -95,6 +137,24 @@ describe('passkey management', () => {
 				status: 409
 			});
 			expect(await createAuthRepository(tx).countPasskeys()).toBe(1);
+		});
+	});
+
+	it('answers a malformed passkey id as not found, never with a database error', async () => {
+		await withRollback(async (tx) => {
+			const owner = await setUpOwner(tx);
+			const session = (await validateSessionToken(owner.token, { db: tx }))!.session;
+			// Credential ids are base64url; a NUL byte is one Postgres cannot even compare.
+			for (const bad of ['', 'not base64url!', `${owner.authenticator.id}\u0000`]) {
+				await expect(renamePasskey(session, bad, 'X', request(), { db: tx })).rejects.toMatchObject(
+					{ code: 'not_found', status: 404 }
+				);
+				await expect(removePasskey(session, bad, request(), { db: tx })).rejects.toMatchObject({
+					code: 'not_found',
+					status: 404
+				});
+			}
+			expect(await listPasskeys(session, { db: tx })).toHaveLength(1);
 		});
 	});
 
