@@ -1,204 +1,223 @@
-# Performance Coach: handoff (paused 2026-11-05, ~23:45 UTC)
+# Performance Coach: handoff (paused 2026-11-06, ~04:20 UTC)
 
-This is everything needed to pick up the build somewhere else. The full product spec is
-`docs/product-requirements.md` on `main`.
+This is everything a new Claude Code session needs to resume the build on another machine. The
+product spec is `docs/product-requirements.md` on `main`; milestone criteria are in
+`docs/milestones.md`. Read this file from `origin/handoff` (it is not on `main`).
 
-**The owner's working rules:** every change lands as a small, atomic PR, green on its own, ideally
-600 lines or fewer of non-test code. Merge each PR when it is green, with a merge commit. Ask first
-only before deleting real data, spending money beyond the free plans, or touching anything outside
-this project.
+## The owner's rules (follow them exactly)
+
+- **Small atomic PRs.** One concern each, green on its own, ideally ≤ 600 lines of non-test code.
+  Real tests that prove behaviour; a regression test must fail without its fix.
+- **Merge each PR when it is green, with a merge commit** titled `Merge <PR title> (#N)`. Ask first
+  only before deleting real data, spending money beyond the free plans, or touching anything
+  outside this project.
+- **Every PR goes through the owner's three skills** (user-level skills in `~/.claude/skills/`;
+  install them on the new machine, or ask the owner for them):
+  - `/sol-review`: Sol (GPT Sol, currently `gpt-6.1-sol`) reviews the branch in a fix loop until it
+    approves. Effort `xhigh` for auth, security, data loss and concurrency, `high` otherwise.
+    Docs-only PRs skip it. Workflow agents cannot use T3's `delegate_task` (it fails with
+    `parent_not_active`), so they use the skill's Codex CLI route (`codex exec … -s read-only`).
+  - `/file-pr`: title is a concise human-readable Conventional Commit that says why it matters. The
+    body opens with the problem in plain words, then the change (no inventory), a short "Tests"
+    section, then one `Depends on #N.` line per unmerged dependency, then
+    `Reviewed with sol-review: <N> rounds with <model> on <effort>. Sol verdict: approved` (or
+    `sol-review: not applicable (docs only).`), and last `Created with <model> in Claude Code.`
+  - `/babysit-pr`: only the main thread watches PRs (`watch_pull_request` in T3 Code); children
+    never do. Before every merge: never merge DIRTY or BEHIND, or when a `main` commit that landed
+    after the last green run touches the PR's files. Refresh the branch and wait for green again.
+- **Commits:** Conventional Commits, a plain-prose body, and the trailer
+  `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. No AI model names anywhere else.
+- **Agent load:** on the old Mac (8 GB RAM) the owner capped it at **8 agents at once** and heavy
+  commands (svelte-check, vite build, Playwright) at 2 at a time. Ask the owner what the new
+  machine allows before raising either.
 
 ## Where things stand
 
-| Area                                                             | State                                                      |
-| ---------------------------------------------------------------- | ---------------------------------------------------------- |
-| **M1** Foundation                                                | ✅ Merged (#1)                                             |
-| CI fixes                                                         | ✅ Merged (#15, #16, #17); details below                   |
-| **M2** auth: tables, primitives, services, scripts, sign-in      | ✅ Merged (#2–#7): `main` has deny-by-default passkey auth |
-| **M2** budget guard, security docs, profile domain, db, services | 🟢 Open, green or nearly (#8–#12): merge in order          |
-| **M2** security review fixes                                     | 🟡 3 PRs green (#18–#20), 3 branches pushed, 8 not started |
-| **M2** onboarding, Profile editing, Today states                 | 📋 Planned as 29 slices (`briefs/m2-onboarding-plan.json`) |
-| **M2** production cutover (turn on coach.nikocruz.com)           | ⏳ After the security fixes and onboarding                 |
-| **M3–M7, M9**                                                    | ⏳ Briefs in `briefs/`                                     |
-| **M8** councils                                                  | ⏳ `workflows/councils.js` (pass the bar privately)        |
+| Area                                       | State                                                                                                           |
+| ------------------------------------------ | --------------------------------------------------------------------------------------------------------------- |
+| **M1** Foundation                          | Merged (#1). An independent audit (`plans/m1-audit.json`) found 3 gaps: 2 fixed, 1 (WebKit nav screenshots) WIP |
+| **M2** auth + training profile             | Merged (#2–#12)                                                                                                 |
+| **M2** security review (15 fixes)          | **All merged** (#18–#20, #23–#31, #34, #35, #40 step-up re-authentication)                                      |
+| **M2** input primitives, save path         | Merged: #32, #36, #37, #42. #47 (Toggle + TagInput) open, green, needs a branch refresh                         |
+| **M2** Profile editing, onboarding, Today  | Not started, except `m2/21-profile-equipment` (WIP branch). Plan: `briefs/m2-onboarding-plan.json`              |
+| **M2** production cutover                  | Branch `feat/m2-production-cutover` (7 commits, Sol round 1 was running). Needs the owner's setup-token hash    |
+| **M3** data model and programs (50 slices) | Plan: `plans/m3-plan.json`. Merged #41, #43. Open #45, #46. Six more slices in progress (branches below)        |
+| **M4–M7, M9**                              | Briefs in `briefs/`; not yet planned into slices                                                                |
+| **M8** councils                            | `workflows/councils.js`; the bar is held privately by the owner (pass it as `args.bar`)                         |
 
-Production is still off: the `vercel.json` guards stay in place until the cutover PR.
+Production is still off: `vercel.json` keeps `main` from deploying until the cutover PR merges.
 
-```mermaid
-flowchart LR
-  main((main<br/>M1 + M2 auth)) --> p8[#8 budget guard]
-  p8 --> p9[#9 security docs]
-  p9 --> p10[#10 profile domain]
-  p10 --> p11[#11 profile db]
-  p11 --> p12[#12 profile services]
-  p12 --> f18[#18 recovery cap]
-  p12 --> f19[#19 setup token once]
-  p12 --> f20[#20 malformed ids]
-  p12 --> onb[onboarding slices<br/>m2/13…m2/41]
-```
+### Open PRs
+
+| PR  | What                                 | State                                                      |
+| --- | ------------------------------------ | ---------------------------------------------------------- |
+| #47 | feat(ui): Toggle switch and TagInput | Green, Sol approved; refresh from `main`, merge **first**  |
+| #45 | M3 exercise catalogue part 1         | Refreshed, CI was running; Sol approved                    |
+| #46 | M3 program-plan contract             | Green, Sol approved; refresh from `main`                   |
+| #13 | this handoff (branch `handoff`)      | Keep open; never merge it with the steward                 |
+| #14 | the old WIP onboarding PR            | Close it once the Profile and onboarding slices replace it |
+
+### Pushed branches without a PR yet
+
+Every one is on `origin`. "WIP" means the last commit is `wip(handoff): …`: unfinished, ungated and
+unreviewed. Fold it into a real commit (or redo it) before publishing.
+
+| Branch                                      | State                                                                      |
+| ------------------------------------------- | -------------------------------------------------------------------------- |
+| `feat/m2-production-cutover`                | Implemented and gated; Sol round 1 was running when paused. Finish Sol, PR |
+| `fix/m1-screenshots-after-view-transitions` | Implemented; needs mutation check, Sol, PR                                 |
+| `fix/m1-today-train-next-step-copy`         | Implemented; needs Sol, PR                                                 |
+| `ci/m1-keep-server-log-and-main-runs`       | Implemented; workflow YAML, Sol not applicable; PR                         |
+| `ci/m1-actions-node-24`                     | Implemented; workflow YAML, Sol not applicable; PR                         |
+| `fix/m1-one-query-at-a-time-per-client`     | Implemented (3 commits); needs mutation check, Sol, PR                     |
+| `m2/21-profile-equipment`                   | WIP (stacked on #42 and #47)                                               |
+| `m3/02-train-headroom`                      | Implemented, plus a WIP commit from a resume                               |
+| `m3/04-training-metrics`                    | WIP (stacked on #46)                                                       |
+| `m3/06-exercise-catalogue-upper`            | Implementation in progress (stacked on #45)                                |
+| `m3/08-describe-prescriptions`              | Started from #46; no own commits yet                                       |
+| `m3/11-exercise-library-db`                 | WIP (stacked on #43 and #45); adds a migration                             |
 
 ## Next steps, in order
 
-### 1. Merge the rest of the M2 stack
+1. **Set up the machine** (see "How to work" below), then copy `docs/handoff/tools/*` into your
+   scratchpad's `bin/` and run `steward --dry-run` from the repo.
+2. **Drain the merge queue.** Put `47` in `<scratch>/steward-priority`, then run `steward` whenever
+   a watched PR wakes you. It refreshes one stale PR at a time and merges what is ready.
+3. **Production cutover.** Finish `feat/m2-production-cutover` (`workflows/m2-cutover.js` is the
+   prompt that built it). Its PR must carry
+   `Merge hold: OWNER_SETUP_TOKEN_HASH must be set in Vercel Production first …`; the steward
+   skips any PR with a `Merge hold:` line. Then the owner:
+   1. runs `pnpm auth:setup-token` on their own machine (the token never goes in chat);
+   2. sets the printed hash as `OWNER_SETUP_TOKEN_HASH` in Vercel → Production (sensitive), or sends
+      you only the hash to set;
+   3. after the cutover merges and production deploys, opens
+      `https://coach.nikocruz.com/setup?token=<token>` on the iPhone, registers the passkey, stores
+      the recovery codes, then removes the hash from Vercel.
 
-Merge #8, #9, #10, #11, #12 in that order. After each merge, set the next PR's base to `main`.
-At pause, all were green except #10 (Lighthouse running) and #12 (E2E running). Every head already
-has the CI fixes from `main` merged in.
+   Remove the hold line once the hash is set. If Vercel refuses the production deploy with
+   "Resource is limited", wait for the 24-hour window and redeploy.
 
-Then retarget #18, #19 and #20 to `main` and merge them. They are siblings, not a stack, so
-merge `main` into each before merging if GitHub reports a conflict.
+4. **Resume the build graph.** `workflows/build-dag-args.py` reads the M3 plan, the M2 slice list
+   and the M1 items, asks GitHub which branches already have PRs, and emits the graph (merged or
+   open slices become external dependencies, the rest become items). Generate a runnable script by
+   embedding that JSON as `const DATA` into `workflows/dag-main.js` (replace `args.limit`,
+   `args.external`, `args.items` with `DATA.*`) and run it with the Workflow tool. Each item:
+   implement (resuming an existing branch or worktree if one exists) → mutation check → Sol fix
+   loop → gates → push → PR with one `Depends on #N.` line per open dependency. A priority limiter
+   runs the longest dependency chain first, which puts M2's Profile editing ahead of the M3
+   backend. Known quirk: the limiter only orders once it is saturated, so the first slots go to
+   whatever is ready first; add a tick of delay before dispatch if that matters.
+5. **Plan M4, M5, M6, M7 and M9** with `workflows/milestone-slice-plan.js` (two planners →
+   synthesizer → completeness critic; pass `{milestone, brief, priorPlans: ['m3-plan.json']}`), then
+   add their slices to the graph. M5 (the AI coach) uses the `claude-api` skill; `ANTHROPIC_API_KEY`
+   is set in Vercel Production. M8 runs `workflows/councils.js` after M4 and again at the end. M9
+   adds backups (Vercel Cron → encrypted export → Vercel Blob), the restore drill and the reports.
 
-Close #14 (the old WIP onboarding PR) once the onboarding slices replace it.
+## Waiting on the owner
 
-### 2. Finish the security review fixes
+- **Setup token hash** for the cutover (step 3 above).
+- **M3 product defaults.** The planner chose these; each is a named constant, cheap to change:
+  - a program starts next Monday (the build preview also offers "This week");
+  - the first block is 1 baseline + 3 accumulation weeks + a deload, shortened to build + taper
+    when the top event is under 6 weeks away;
+  - the highest-priority dated goal shapes the block; another event inside it gets a taper week;
+  - days per week count fixed commitments (5 days with Muay Thai Tue/Thu leaves 3 free days);
+  - unset equipment means a commercial gym; an unset session length is 60 min;
+  - session length caps every session except the long run (explained when longer);
+  - "Never prescribe this again" swaps every upcoming occurrence in the current program;
+  - a move that breaks an interference rule is warned and recorded, not blocked.
+- **Resetting the shared `preview` Neon branch.** Per-PR previews applied migrations from unmerged
+  branches, so it is in a mixed state. Nothing uses it now. Before any on-demand preview, empty it
+  and re-migrate (docs/deployment.md, "Resetting the preview database"). Ask first: it is a Neon
+  change, though it only deletes disposable preview data.
 
-An independent review of the M2 stack found no critical issue: nothing personal is reachable
-without a session, and there is no auth bypass, open redirect or CSRF hole. It found one major
-issue and 12 minor ones (13 in all); finding 14 has two informational parts, which makes the 15
-fix items below. Every item has a full description, failure scenario and fix in
-`workflows/m2-security-fixes.js` (the `F` map). Each fix needs a regression test that fails without the fix.
+## Changes made to the project's settings this session
 
-| Fix                                                      | Branch                                           | State                                  |
-| -------------------------------------------------------- | ------------------------------------------------ | -------------------------------------- |
-| **Major:** one IP can block all recovery-code sign-ins   | `fix/m2-recovery-global-cap`                     | PR #18, green                          |
-| An old setup link works again after `auth:reset-owner`   | `fix/m2-setup-token-single-use`                  | PR #19, green (adds a migration)       |
-| Malformed ids return 500 instead of "not found"          | `fix/m2-malformed-ids-not-found`                 | PR #20, green                          |
-| A revoked recovery session can still upgrade             | `fix/m2-recovery-upgrade-revoked`                | pushed, verify, then open a PR         |
-| Test routes enabled by env misconfiguration on Vercel    | `fix/m2-test-routes-build-flag`                  | pushed, verify, then open a PR         |
-| Changing a goal's status undoes a concurrent edit        | `fix/m2-goal-status-no-lost-update`              | pushed, verify, then open a PR         |
-| Rate-limited sign-out leaves the session live            | `fix/m2-signout-always-revokes`                  | not started                            |
-| Rate-limited `/setup` answers 500                        | `fix/m2-setup-rate-limit-status`                 | not started                            |
-| Rate limits per full IPv6 address; counters never pruned | `fix/m2-rate-limit-ipv6-prune`                   | not started                            |
-| Recovery sessions hidden; activity feed floodable        | `fix/m2-recovery-sessions-visible`               | not started                            |
-| Preview DB reset copies production data (docs)           | `docs/m2-preview-branch-without-production-data` | not started                            |
-| Body weight dated by UTC day                             | `fix/m2-body-weight-local-day`                   | not started (migration, after #19's)   |
-| Concurrent section saves give a 500                      | `fix/m2-section-saves-serialize`                 | not started                            |
-| Onboarding accepts unknown and required-step skips       | `fix/m2-onboarding-progress-validation`          | not started                            |
-| **Step-up re-authentication** for sensitive actions      | `feat/m2-step-up-reauthentication`               | not started (migration, last; largest) |
-
-The three pushed branches were implemented, but their adversarial verification had not finished.
-Run the verifier (step 2 of `doFinding` in the script) before opening their PRs.
-
-Keep migrations in order: setup token (#19), then body-weight time zone, then step-up. The journal
-order is enforced by a unit test.
-
-### 3. Build onboarding, Profile editing and Today from the plan
-
-`briefs/m2-onboarding-plan.json` has 29 slices (`m2/13`…`m2/41`). Two independent planners wrote
-it, and a synthesizer checked both against real builds and budgets. Read `wipAssessment` first.
-Key decisions:
-
-- **One dynamic route each** for onboarding (`/onboarding/[[step]]`) and Profile editing
-  (`/(app)/profile/[section]`), with **no param matchers**. Editors load lazily from a registry.
-  - Per-step routes break the 60 KB initial-JS budget on every step (measured at 63–69 KB).
-  - Every route node also costs every route bytes through the entry's `__vite__mapDeps`.
-  - `/profile/security` has only 0.4 KB of headroom. Every slice pastes its budget row.
-- **Order:**
-  1. Budget accounting and test fixes.
-  2. Input primitives.
-  3. The JSON save path.
-  4. Profile editing, one section per slice.
-  5. The onboarding flow, then save-on-leave, then resume.
-  6. Review.
-  7. The Today states.
-  8. Docs.
-- **Drop slice `m2/16`:** the security fix "onboarding progress validation" covers it.
-- The WIP code lives on branch `m2/12-onboarding` (commit `d8bfded`). Slices take files from it
-  and fix the bugs listed in `wipAssessment`.
-
-Start after the profile-track security fixes are merged (ids, goal status, section saves,
-onboarding validation, body-weight time zone), so the slices build on fixed services.
-
-### 4. Production cutover (its own PR)
-
-Follow `briefs/m2.json`, step 3:
-
-1. Remove the `vercel.json` guards.
-2. Add the post-deploy smoke workflow.
-3. Generate a token and hash with `pnpm auth:setup-token`. Set the hash as `OWNER_SETUP_TOKEN_HASH`
-   in Vercel → Production, and keep the token private.
-4. Merge, then open `https://coach.nikocruz.com/setup?token=<token>` on the iPhone to register the
-   passkey, and save the recovery codes.
-
-### 5. M3 → M7, then M8 and M9
-
-Use the briefs in `briefs/`. Each milestone lands as small stacked PRs.
-
-- **M5 (the AI coach):** use the `claude-api` skill. `ANTHROPIC_API_KEY` is set in Vercel
-  Production and in the cloud environment "Home".
-- **M8:** run an early council pass after M4, then `workflows/councils.js` until every reviewer
-  meets the bar. The bar is in the original spec and is never stored in the repo; pass it as
-  `args.bar`.
-- **M9:** backups via Vercel Cron → encrypted export → Vercel Blob, plus the restore drill and the
-  final reports.
-
-## Infrastructure
-
-| Piece             | State                                                                                                                                                                                                                      |
-| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| GitHub            | `TheCruzControll/performance-coach` (public)                                                                                                                                                                               |
-| Vercel            | Project `performance-coach` (`prj_ofpkwho7FKmRXNr9Bem9phaD2AVN`), team `thecruzcontrolls-projects`, Hobby. Every PR gets a preview. Node 22, functions in `pdx1`. Production is off until the cutover                      |
-| Neon              | Project `red-rain-59499468`, `aws-us-west-2`, Postgres 18, free plan. Branches `production` and `preview`. The preview branch is shared by every PR preview; recreate it schema-only, never copy production data into it   |
-| Env vars (Vercel) | `DATABASE_URL`, `DATABASE_URL_UNPOOLED` (Production and Preview), `ANTHROPIC_API_KEY` (Production). **Missing:** `OWNER_SETUP_TOKEN_HASH` (at cutover), and for M9 `CRON_SECRET`, `BACKUP_ENCRYPTION_KEY` and a Blob store |
-| Domain            | `coach.nikocruz.com` attached and verified; Cloudflare `CNAME coach → e8ec158fe2c98016.vercel-dns-017.com`, DNS only                                                                                                       |
-| CI                | The E2E job runs on `ubuntu-24.04`, with Playwright's system packages cached (`~/.cache/apt-archives`). The other jobs run on `ubuntu-latest`                                                                              |
-| Cloud environment | "Home" allows `cdn.playwright.dev`, so WebKit can be installed locally: `pnpm exec playwright install webkit && pnpm exec playwright install-deps webkit`                                                                  |
-
-Details are in `docs/deployment.md`.
+- GitHub default branch switched from `claude/install-neon-skills` to `main`. That registered the
+  Backup workflow (run 42147437996 skipped gracefully without secrets) and turns on Dependabot's
+  weekly PRs (Mondays).
+- Branch protection on `main`: the 5 CI jobs are required checks, `strict: false`, admins not
+  enforced, no required reviews. Auto-merge is not enabled; the steward merges.
+- Vercel Git deployments now happen only for `main` (#44: `git.deploymentEnabled` has
+  `"**": false`). The Hobby plan caps an account at 100 deployments a day and per-PR previews hit
+  it. CI runs the Vercel build and the migrations on every PR.
+- Stale Playwright browser caches were deleted (#21 keys the cache by runner image).
 
 ## How to work on it
 
 ```sh
-pnpm install && pnpm db:setup       # Node 22, pnpm 10, local Postgres 16+
+nvm use                                # Node 22 (the shell may default to another version)
+pnpm install && pnpm db:setup          # local Postgres 16+; the old Mac used Homebrew postgresql@18
 pnpm check && pnpm lint && pnpm test:unit && pnpm test:integration
 pnpm build && pnpm build:node && pnpm budgets
-pnpm test:e2e                       # Chromium; E2E_WEBKIT=1 adds WebKit (CI always runs both)
-# Running suites in parallel? Give each its own databases and port:
-#   TEST_DATABASE_URL=…/coach_x_test E2E_DATABASE_URL=…/coach_x_e2e E2E_PORT=4373
+pnpm test:e2e                          # Chromium; E2E_WEBKIT=1 adds WebKit (CI always runs both)
 ```
 
-Workflow scripts (Claude Code workflows) are in `workflows/`. Replace the placeholder commit-trailer
-lines and the hard-coded scratch paths with your environment's before you run one.
+### Tools in `docs/handoff/tools/` (copy them to `<scratch>/bin/`)
 
-- `m2-security-fixes.js`: parallel tracks (auth; setup then step-up; profile). For each finding:
-  implement, then an adversarial verifier that reverts the fix to prove the test fails, then
-  fixes, then publish. Remove the findings that are already done before re-running it.
-- `m2-onboarding-plan.js`: the planner that produced the slice plan.
-- `milestone-build.js`: implement → verifier and critic → fix rounds, for a brief in `briefs/`.
-- `m2-stack-review.js`: the security review prompt that found the issues above.
-- `councils.js`: 5 performance and 5 design reviewers, evaluating blind, until all meet `args.bar`.
+- `agent-env <slug> <port>`, run inside a git worktree: installs that worktree's own
+  `node_modules`, creates `coach_<slug>_{dev,test,e2e}`, migrates dev, and writes
+  `<scratch>/env/<slug>.sh`, which every later command sources. One slug and port per agent.
+- `slot <cmd…>`: a machine-wide semaphore for heavy commands (`SLOT_COUNT`, default 2 here).
+- `steward [--dry-run]`: the merge gate. In PR-number order (the numbers in `steward-priority`
+  first), it merges a PR only when it is open against `main`, has no WIP title and no
+  `Merge hold:` line, every `Depends on #N.` is merged, the latest run of each required job passed,
+  the body carries the Sol line, and GitHub says clean. Staleness is exact: it compares the tree CI
+  tested (head merged with `main` as of the run) with the tree a merge would make now, and counts
+  only the PR's own files. It refreshes one stale PR at a time (strict queue, `steward-queue`)
+  through GitHub's update-branch. It skips #13 and #14. Set `REPO_DIR` if you run it outside the
+  checkout.
 
-## Lessons learned
+### Workflows in `docs/handoff/workflows/`
 
-**Process**
+Replace `<SCRATCH>` and `<REPO>` with your paths first.
 
-- **Small PRs from the start.** Splitting work after the fact found intermediate states that had
-  never been green.
-- **You can't re-run CI jobs from a cloud session** (403). A real fix pushed, or `main` merged into
-  the branch, re-runs it. Never push an empty commit to trigger CI.
+- `dag-main.js` + `build-dag-args.py` (+ `m1-items.json`): the build graph (step 4).
+- `m2-cutover.js`: the cutover slice's full prompt.
+- `milestone-slice-plan.js`: the planner that produced `plans/m3-plan.json`.
+- `m1-audit.js`: the M1 audit (its verdict is `plans/m1-audit.json`).
+- `councils.js`, `m2-security-fixes.js`, `m2-onboarding-plan.js`, `milestone-build.js`,
+  `m2-stack-review.js`: from the earlier session.
 
-**Local environment**
+## Lessons learned (this session)
 
-- **Give every git worktree its own `node_modules`.** SvelteKit 3 writes generated types into
-  `node_modules/$app`, so a symlinked `node_modules` type-checks against another checkout's routes.
-- **The local Postgres stops when the worker restarts.** Run `pg_ctlcluster 16 main start`.
-  Playwright is pinned to 1.63.0.
+**Merging**
 
-**CI and test failures**
+- **Shared docs serialise everything.** Nearly every PR edited the same paragraphs of
+  `docs/testing.md` and `docs/security.md`, so each merge made every other PR stale and forced
+  another CI run. Code slices must not rewrite those paragraphs; add one new line, or land a
+  wave's doc updates as one docs PR at the end.
+- **Refresh one stale PR at a time.** Refreshing all of them wastes CI, because the next merge
+  makes them stale again.
+- **Stacked PRs need care.** `gh pr merge` on a stacked PR merges it into its stacked base, not
+  `main`. Merge with REST (`PUT /pulls/N/merge` with `sha` and `commit_title`) only when the base is
+  `main`. Prefer every PR based on `main` with `Depends on #N.` lines over GitHub base branches.
+- **`gh pr create/edit/merge` fail here** with a Projects (classic) GraphQL deprecation error. Use
+  `gh api` REST calls.
+- **Semantic conflicts happen.** Two PRs, each green on its own, broke together twice: a test
+  helper reused a setup token after #19 made tokens single-use, and a fake session lacked step-up's
+  new `reauthenticatedAt`. Run the type-check and the tests after every merge of `main` into a
+  branch.
+- **Migrations clash in parallel.** Two branches both generated `0007`. Renumber the later one: take
+  `main`'s journal and snapshot, delete your migration files, `drizzle-kit generate --name …`,
+  re-create custom SQL with `--custom`, then verify on a fresh database. The journal order is
+  unit-tested.
 
-- **WebKit reports every cancelled load as a failure.** `src/lib/client/leaving.ts` keeps the error
-  reporters quiet while a page is being left. Startup stylesheets that were inlined are fetched
-  again by the root layout's imports.
-- **`ubuntu-latest` is Ubuntu 26.04.** Its Azure mirror served WebKit's packages at ~50 KB/s, which
-  is why the E2E job is pinned to 24.04.
-- **e2e rate limits.** Every spec registers passkeys from one owner session, whose `register`
-  bucket allows 20 hits per 15 minutes. Account-wide specs reset that counter.
-- **The virtual authenticator answers autofill at once.** A signed-out device that still holds its
-  passkey signs itself back in, so take the passkey away before asserting a sign-out.
+**CI and infrastructure**
 
-**Branch housekeeping**
+- **Linux WebKit on CI sometimes has no WebAuthn.** The sign-in page then correctly says it
+  cannot use passkeys; #39 made the test check real support.
+- **Old browser caches broke WebKit** (ICU mismatch between Ubuntu releases). #21 keys the cache by
+  `ImageOS`.
+- **A CI "failure" is often infrastructure.** Read the job log before touching code: apt timeouts,
+  browser downloads, the Vercel deployment cap. Re-run with `gh run rerun <id> --failed`.
 
-- **The git proxy refuses branch deletion.** Delete stale branches in the GitHub UI. Candidates:
-  - superseded `m2/*` names from before the regroup;
-  - `feat/m2-auth-onboarding`, `wip/m2-onboarding-ui`;
-  - merged `fix/leaving-page-errors`, `fix/ci-playwright-install`, `fix/ci-cache-apt-packages`.
+**Local machine**
+
+- **macOS WebKit differs from CI's Linux WebKit.** On `main`, three `e2e/shell.e2e.ts` tests fail
+  locally only (plate calculator focus, late animation frame, theme before first paint). CI is
+  the gate.
+- **Give every agent its own worktree, `node_modules`, databases and e2e port.** Raise Postgres
+  `max_connections` (300 here).
+- **8 GB of RAM could not take 16 agents.** Agents leave Playwright browsers and Node servers
+  behind: kill them, and remove worktrees when items finish.

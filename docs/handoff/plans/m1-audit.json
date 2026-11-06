@@ -1,0 +1,174 @@
+{
+	"commit": "646c586222f16f0e9958917e5938ed173988335c",
+	"verified_at": "2026-11-06T01:55Z",
+	"note": "main has since moved to c8eedfe (CI in progress); this verification is pinned to 646c586.",
+	"criteria": [
+		{
+			"criterion": 1,
+			"status": "met",
+			"evidence": "Re-run by the verifier in the fresh clone at 646c586: `pnpm install --frozen-lockfile` succeeded; `pnpm lint` exited 0 (\"All matched files use Prettier code style!\", ESLint silent); `slot pnpm check` exited 0 with \"COMPLETED 1562 FILES 0 ERRORS 0 WARNINGS\". CI job 127640591074 (run 42140735773, head 646c586) agrees: \"Lockfile is up to date\", \"svelte-check found 0 errors and 0 warnings\", and `pnpm db:drift` printed \"No schema changes, nothing to migrate\"."
+		},
+		{
+			"criterion": 2,
+			"status": "met",
+			"evidence": "Re-run by the verifier: `pnpm test:unit` passed 20 files / 114 tests, and `pnpm test:integration` passed 14 files / 89 tests against the real Postgres database coach_m1aud_test. tests/integration/global-setup.ts resets that database and applies every committed migration (drizzle/0000–0005). CI job 127640590708 (postgres:18) logged \"db:migrate: 6 new migration(s) applied, 6 total\" and the same 114 and 89 passes. The pg deprecation warning appears twice but fails nothing (see the info defect)."
+		},
+		{
+			"criterion": 3,
+			"status": "met",
+			"evidence": "CI job 127640590904 logs \"> Using @sveltejs/adapter-vercel … ✔ done\" (line 531–540) and, after `ADAPTER=node vite build`, \"> Using @sveltejs/adapter-node … ✔ done\" (line 851–854). The real Vercel build log of preview dpl_DNGDmfF8QAE9PCUB1FLH9GrqURz2 (PR #22 head 2cf8068, which merged as 646c586), read via the Vercel API, also shows `vite build` running after migration."
+		},
+		{
+			"criterion": 4,
+			"status": "met",
+			"evidence": "CI job 127640590971: \"Running 153 tests\", 140 passed, 13 skipped, 0 failed, 0 flaky. e2e/global-setup.ts:50-75 runs `pnpm build:node` and then spawns `node build/index.js` with NODE_ENV=production. The device is iPhone 15 Pro (playwright.config.ts:25). These tests passed in both Chromium and WebKit: shell renders with bottom nav (#62/#141), all tabs (#63/#142), no console errors (#64/#143), /api/health db up (#48/#127; asserts db:'up' and a db;dur Server-Timing entry; checkHealth uses a real ping), manifest (#52/#131), service worker activates (#53/#132). The 13 skips are 7 WebKit passkey specs (no virtual authenticator), 5 WebKit offline specs, and 1 Chromium test (#58 \"leaving while the service worker registers\")."
+		},
+		{
+			"criterion": 5,
+			"status": "partially-met",
+			"evidence": "The foundations are met. tokens.css uses light-dark() 31 times with color-scheme dark by default. Fonts are self-hosted from @fontsource-variable (fonts.css), with 2 preloads in every route's budget. Every primitive in design-system.md:139-165 exists in src/lib/ui/components (Spinner exists but is undocumented). Light support is real: axe runs in the light theme on every screen (#14-25), and the theme applies before first paint (shell.e2e.ts:211). The Chromium iPhone screenshots are cohesive and premium. The iOS engine evidence does not hold up. In CI's WebKit screenshots train.png and coach.png there is no bottom nav at all. In progress.png and profile.png, content shows through the nav (the Dark/Light/Auto pill on Profile). All four were captured right after a click-driven tab change, which runs document.startViewTransition, and captureScreen (e2e/support.ts:59-66) waits only for fonts. today.png, reached by page.goto, shows the nav normally. CI cannot tell whether this is capture timing or a real WebKit tab-bar flicker. Today and Train also still tell a signed-in owner that setup \"opens with passkey sign-in · SOON\"."
+		},
+		{
+			"criterion": 6,
+			"status": "met",
+			"evidence": "CI job 127640590904: `pnpm budgets` printed \"budgets: all within budget\". /(app)/profile/security is tightest at 59.6 of 60 KB initial JS, /design has the heaviest route CSS at 11.7 of 14 KB, every route preloads 2 fonts, and the service worker is 2.0 KB. The table in docs/performance.md:15-28 matches CI row for row. A local Lighthouse mobile run is recorded with real numbers (performance.md:170-199: 6 M1 screens, 5 runs, medians perf 99–100, TBT 47–103 ms), which is what the criterion asks for. CI Lighthouse job 127640591130 (5 runs, asserted), recomputed from the downloaded reports: medians of 100 for perf, a11y and best practices on all 7 routes (individual perf runs 97–100), LCP medians 905–909 ms, TBT medians 3–20 ms, CLS ≤ 0.00003. finalDisplayedUrl equals requestedUrl on every run, so the runs were signed in, and benchmarkIndex ranges 3580–4328 (the audit's 3809–4224 was too narrow)."
+		},
+		{
+			"criterion": 7,
+			"status": "met",
+			"evidence": "hooks.server.ts:75-79 sets server-timing and x-request-id, and :86-94 writes a JSON access log at error level for status ≥500. handleError (:101-122) calls recordServerError, which logs 'server error' and inserts into app_errors (services/errors.ts:27,47). These e2e tests passed in both engines: Server-Timing (#49/#128), /api/vitals stores a metric in Postgres (#54/#133), browser beacons (#55/#134), and the server error recorded in app_errors with kind unknown and status 500 under its request id (#60/#139). The audit said the \"logged\" half had no CI evidence, which is wrong. tests/integration/errors.test.ts:75-115 spies on console.error and asserts that the JSON log line for a recorded server error contains \"code\":\"22P02\", and it passed in CI job 127640590708 and locally."
+		},
+		{
+			"criterion": 8,
+			"status": "partially-met",
+			"evidence": "CI is valid and enforced: run 42140735773 is green on 646c586, and branch protection on main requires all 5 jobs. ci.yml, backup.yml and dependabot.yml all parse with 0 YAML errors. Deployed builds migrate first: in the Vercel build log of dpl_DNGDmfF8QAE9PCUB1FLH9GrqURz2 the verifier saw \"vercel-build: migrating the preview database\", then \"db:migrate: 0 new migration(s) applied, 6 total\", then `vite build` (scripts/vercel-build.sh). Read as code, backup.yml's skip logic is correct: it checks both secrets, emits a notice, sets enabled=false and gates every later step. No repo secrets and no `production` environment exist, so a run would skip. It has never run, though. The repo's default branch is `claude/install-neon-skills` (e32acbf, which has no .github). `GET /actions/workflows` lists only CI, `GET /actions/workflows/backup.yml` returns 404, and there are 0 schedule and 0 workflow_dispatch runs. So \"skips gracefully without secrets\" has never been exercised, and the nightly schedule promised in docs/deployment.md:136 is not active."
+		},
+		{
+			"criterion": 9,
+			"status": "partially-met",
+			"evidence": "The reference parts are accurate. Every documented `pnpm` script exists in package.json. Every runtime variable in src/lib/server/env.ts is in docs/environment.md. The M2 budget table matches CI. The status text is stale at 646c586. milestones.md:9 says M1 is \"awaiting independent review (branch feat/m1-foundation)\", but it merged as PR #1. :10 and :90 say M2 is on branch feat/m2-auth-onboarding and \"not yet in CI\", but PRs #2–#22 merged to main with CI. :51 says WebKit is \"not available locally\", but E2E_WEBKIT=1 is documented in testing.md:86-87. :59 says \"Auth not yet enforced\", but deny-by-default is live. :64 and performance.md:256-257 say Lighthouse has not run on GitHub (\"nothing has been pushed\"). testing.md:186-189 says the workflows have never run. README.md:11 says work continues \"on the same branch\". deployment.md:9-10 says auth is implemented \"on the M2 branch\". architecture.md:110-112 says profile and goals land in M3, but drizzle/0004_training_profile.sql is merged. testing.md:193 and design-system.md:112 say to judge glass on WebKit screenshots, but CI's Linux WebKit does not paint backdrop-filter either: crisp \"S WEEK\", \"AU\" and \"M\" show behind the tab labels on today.png, a 32px blur would erase them, and that shot involved no transition. The audit also flagged deployment.md:52 and the vercel-ignore-build.sh comment, but both are phrased historically or conditionally and are dropped."
+		},
+		{
+			"criterion": 10,
+			"status": "met",
+			"evidence": "All the layers exist: src/lib/domain, server/db, server/services, server/agent (a README scaffold, enough for M1), server/auth, server/observability, client, ui and routes. eslint.config.js:105-142 gives each layer its own no-restricted-imports patterns, built by one helper at :20, and `pnpm lint` passes. Of 92 non-merge commits, only the root commit e32acbf (\"Install Neon agent skills for Claude Code\", which predates M1) is not a Conventional Commit. No build output or .env is tracked (`git ls-files`). A regex scan of the full history for Anthropic, AWS, GitHub and Neon key formats and private-key headers found nothing."
+		}
+	],
+	"defects": [
+		{
+			"severity": "major",
+			"criterion": 8,
+			"title": "The repo's default branch is claude/install-neon-skills, so backup.yml is never registered or run",
+			"evidence": "`gh api repos/TheCruzControll/performance-coach --jq .default_branch` returns \"claude/install-neon-skills\" (e32acbf, with no .github directory). `/actions/workflows` lists only CI, and `/actions/workflows/backup.yml` returns 404. There are 0 schedule runs and 0 workflow_dispatch runs. GitHub runs scheduled workflows, and reads dependabot.yml, only from the default branch. So the nightly backup and its graceful skip have never run, and Dependabot version updates are inactive. The audit cited \"0 Dependabot PRs\" as evidence, but that proves nothing: M1 merged on Thursday 5 November and its weekly Monday schedule has not come round yet. The mechanism alone is the evidence.",
+			"fix": "A settings change: `gh api -X PATCH repos/TheCruzControll/performance-coach -f default_branch=main`, then `gh workflow run backup.yml --ref main`, and confirm the run ends green with the \"Backup skipped: Missing secrets\" notice. Then delete the stale claude/install-neon-skills branch and record the verified skip run in docs/deployment.md."
+		},
+		{
+			"severity": "major",
+			"criterion": 9,
+			"title": "The milestone status and several docs describe a pre-merge, never-pushed state",
+			"evidence": "milestones.md:9 (M1 \"awaiting independent review (branch feat/m1-foundation)\", but merged as #1), :10 and :90 (M2 \"on the branch … not yet in CI\", but #2–#22 merged with CI), :51 (WebKit \"not available locally\"), :59 (\"Auth not yet enforced\"), :64 and performance.md:256-257 (Lighthouse \"not yet run on GitHub's runners (nothing has been pushed)\"), testing.md:186-189 (\"the workflows have not run on GitHub\"), README.md:11 (\"on the same branch\"), deployment.md:9-10 (auth \"on the M2 branch\"), architecture.md:110-112 (profile and goals \"land in M3\", though drizzle/0004_training_profile.sql is on main), and testing.md:193 and design-system.md:112 (\"Judge glass on WebKit screenshots\", but CI's Linux WebKit does not paint backdrop-filter: crisp ghost text behind the labels in today.png).",
+			"fix": "One docs PR. Mark M1 Done in the milestones table and carry the deferred items (real-iPhone checklist → M2 cutover, production off until M2, RUM p75 later). Describe M2 as merged slices on main, with onboarding UI and cutover still open. Replace every \"not yet run on GitHub\" sentence with a link to CI run 42140735773 and add its 7-route Lighthouse medians to performance.md. Update the README, deployment.md and architecture.md status lines. Say that glass can only be judged on a device."
+		},
+		{
+			"severity": "major",
+			"criterion": 5,
+			"title": "CI's WebKit (iOS engine) screenshots after tab changes show the bottom nav missing or see-through",
+			"evidence": "In artifact playwright-42140735773/test-results/screens/iphone-webkit, train.png and coach.png have no bottom nav at all. In progress.png and profile.png, content shows through it (on profile.png the Dark/Light/Auto pill reads across the nav's top edge). The Chromium shots of the same states show the nav normally. All four WebKit shots come from shell.e2e.ts:64-81, which clicks a nav link, so (app)/+layout.svelte:21-35 runs document.startViewTransition with the nav as its own `bottom-nav` group (AppShell.svelte:100-102). captureScreen (e2e/support.ts:59-66) waits only for document.fonts.ready. WebKit today.png, reached with page.goto and no transition, renders the nav. From CI this cannot be told apart from a real WebKit tab-bar flicker on every tab change, and the real-device check is deferred to M2.",
+			"fix": "Before the screenshot, have captureScreen wait until no view transition is active and no animations are running, e.g. `await page.waitForFunction(() => document.getAnimations().every(a => a.playState !== 'running'))` plus a check that `document.documentElement` has no active view transition. Also assert the nav's bounding box is visible. Re-check the WebKit shots. If the nav is still missing after the transition ends, it is a real WebKit bug to fix before the M2 cutover, and the M2 real-iPhone checklist should cover tab switching explicitly."
+		},
+		{
+			"severity": "minor",
+			"criterion": 5,
+			"title": "Today and Train tell a signed-in owner that setup 'opens with passkey sign-in · Soon'",
+			"evidence": "src/routes/(app)/today/+page.svelte:86 says \"Profile setup opens with passkey sign-in\", and src/routes/(app)/train/+page.svelte:68 says \"Goal setup opens with passkey sign-in <Badge>Soon</Badge>\". Both are visible in CI today.png and train.png, while profile.png says \"Signed in with a passkey\".",
+			"fix": "A copy-only change: reword both rows to the real next step (e.g. \"Training profile · Coming next\"), and link them to onboarding when the M2 onboarding UI lands."
+		},
+		{
+			"severity": "minor",
+			"criterion": 8,
+			"title": "The e2e server log is never uploaded from CI",
+			"evidence": "ci.yml:176-186 lists `.e2e-server.log` in the upload paths, but actions/upload-artifact@v4 runs with include-hidden-files: false (shown in the job log), and the downloaded artifact contains only playwright-report/ and test-results/. Server-side output from e2e failures is therefore lost. This is a CI debugging gap, not a criterion-7 gap: logging of server errors is asserted in tests/integration/errors.test.ts:75-115.",
+			"fix": "Add `include-hidden-files: true` to that step, or write the log to test-results/e2e-server.log in e2e/global-setup.ts:60."
+		},
+		{
+			"severity": "info",
+			"criterion": 8,
+			"title": "Pushes to main cancel each other's CI runs",
+			"evidence": "ci.yml:11-13 sets `cancel-in-progress: true` for every ref, and branch protection has strict:false. Of the last 12 push runs on main, 7 were cancelled (for example 42137537047 for #20 and 42135559495 for #12). Every cancelled run was superseded by a later run on a newer tree, and 646c586 itself completed green, so the tip is always tested. Intermediate merge commits are not.",
+			"fix": "Optional: `cancel-in-progress: ${{ github.event_name == 'pull_request' }}`."
+		},
+		{
+			"severity": "info",
+			"criterion": 2,
+			"title": "Profile services run concurrent queries on one pg client",
+			"evidence": "Every integration run prints pg's \"client.query() when the client is already executing a query\" deprecation, twice in the verifier's run. One source is a Promise.all inside a transaction (services/profile/profile.ts:252, inside db.transaction at :249). The other Promise.all calls (profile.ts:142,181,297,338 and sections.ts:86,197,387) share one client when the tests pass a rollback transaction. pg 8 queues these queries, so nothing is wrong today. It only blocks a future pg@9 upgrade. This is M2 code and does not affect criterion 2.",
+			"fix": "Run these small reads sequentially, and optionally make vitest fail on this deprecation."
+		},
+		{
+			"severity": "info",
+			"criterion": 5,
+			"title": "No light-theme screenshots in CI",
+			"evidence": "playwright.config.ts:96 sets colorScheme 'dark', and all 31 CI screenshots are dark. Light support itself is verified: axe passes in the light theme on every screen (a11y.e2e.ts, #14-25), and the theme-before-paint test passes. Only the visual review of the light theme is missing.",
+			"fix": "Capture each key screen a second time with data-theme=\"light\", saved as `<name>-light.png`."
+		},
+		{
+			"severity": "info",
+			"criterion": 6,
+			"title": "Only 0.4 KB of initial-JS headroom on the Security route",
+			"evidence": "CI budgets show /(app)/profile/security at 59.6 / 60 KB and /(app)/train at 58.2 KB. performance.md:31-41 notes that the 2.3–3.3 KB per-route growth is unattributed and that the whole icon set ships with every screen.",
+			"fix": "Split the icon set per route, or attribute and cut the growth, before onboarding UI lands."
+		},
+		{
+			"severity": "info",
+			"criterion": 9,
+			"title": "Small omissions in the component and command docs",
+			"evidence": "design-system.md's component table omits Spinner.svelte. development.md:51 and testing.md:8 give the unit scope as src/**/*.test.ts, but vite.config.ts:118 also includes scripts/**/*.test.ts. development.md's command table omits db:drift, db:reset:e2e and build:all.",
+			"fix": "Fold these into the docs PR."
+		},
+		{
+			"severity": "info",
+			"criterion": 10,
+			"title": "The root commit is not a Conventional Commit, and nothing in CI checks commit messages",
+			"evidence": "e32acbf \"Install Neon agent skills for Claude Code\" predates M1 and is the only non-conventional commit among the 92 non-merge commits.",
+			"fix": "Optional: add a PR-title lint job as a required check."
+		},
+		{
+			"severity": "info",
+			"criterion": 8,
+			"title": "CI actions target the deprecated Node 20 runtime",
+			"evidence": "The job logs warn \"Node.js 20 is deprecated … actions/cache@v4, actions/checkout@v4, actions/setup-node@v4, actions/upload-artifact@v4, pnpm/action-setup@v4\".",
+			"fix": "Bump these actions to their Node 24 majors."
+		},
+		{
+			"severity": "info",
+			"criterion": 10,
+			"title": "The public repo publishes infrastructure identifiers",
+			"evidence": "The repo is public. docs/deployment.md:17-24 lists the Vercel project and team IDs, Neon project and branch IDs, and the CNAME target. None of these are secrets.",
+			"fix": "Confirm that this is intended."
+		}
+	],
+	"refuted": [
+		{
+			"title": "Progress empty state fills a large card with discipline colour",
+			"reason": "design-system.md:146 documents a discipline `tone` tint on Surface, and Surface.svelte:68-75 renders it as a 9%→2% gradient wash, not a fill. That is the documented use, not a breach of the 'never large fills' rule."
+		},
+		{
+			"title": "Display tracking collides word spaces and periods",
+			"reason": "This is a matter of taste. At full resolution the word spaces and final periods are visibly separated, and no acceptance criterion is broken."
+		},
+		{
+			"title": "Glass nav has no opaque fallback where the blur isn't painted",
+			"reason": "This is a CI artefact. Every target browser, iOS Safari included, supports and paints backdrop-filter. Headless CI engines support the property but don't paint it, so an @supports fallback would never trigger, and Safari does not implement prefers-reduced-transparency. The proposed fix would change nothing on a real device."
+		},
+		{
+			"title": "performance.md Targets table is out of date (criterion 6)",
+			"reason": "That table's column is headed \"M1 status\", so \"tightest: /train 55.5 KB\" is an accurate M1 snapshot, and the M2 table above it is current. The criterion asks for a local run to be recorded, and it is. The one false sentence (\"not yet run on GitHub\") is folded into the criterion-9 docs defect."
+		},
+		{
+			"title": "The 'logged' half of criterion 7 has no CI evidence",
+			"reason": "tests/integration/errors.test.ts:75-115 asserts the JSON log line for a recorded server error and passes in CI."
+		}
+	],
+	"finished": false,
+	"summary": "Milestone 1 is not finished at 646c586. Criteria 1–4, 6, 7 and 10 hold under direct verification. The verifier re-ran frozen install, lint, `pnpm check` (0/0), unit (114) and integration (89) locally, and CI run 42140735773 is green. Criteria 5, 8 and 9 are partly met. What remains: (1) switch the repo's default branch from claude/install-neon-skills to main, then dispatch backup.yml once to prove the graceful skip (it has never been registered or run; Dependabot activates too); (2) a docs PR to bring the milestone table, README, deployment, testing, architecture and performance status in line with reality (M1 merged, M2 slices on main, CI and Lighthouse running on GitHub, glass judged only on a device); (3) make captureScreen wait for tab view transitions and re-check that the WebKit Train and Coach screenshots show the bottom nav, fixing the nav if it is truly missing in WebKit; (4) reword the stale 'opens with passkey sign-in · Soon' rows on Today and Train. Smaller: upload the e2e server log. The real-iPhone checklist, production off and RUM p75 are deferred by design and do not count against M1."
+}
