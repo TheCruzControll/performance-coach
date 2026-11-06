@@ -12,6 +12,11 @@ right.
 
 ## Waiting
 
+GitHub access: use whatever the session has, such as the `gh` CLI (if
+logged in), a GitHub MCP server, or built-in GitHub tools (search ToolSearch
+for `github`). The steps in this skill say what to do, not which command to run. If
+nothing reaches GitHub, report that and stop.
+
 Never write your own watcher, polling loop, or `sleep` loop. Use one watcher
 per PR: `watch_pull_request` in T3 Code, `pr-wait` everywhere else. Never run
 both on the same PR. Every watcher on a GitHub account shares one rate limit.
@@ -37,7 +42,7 @@ branch conflicts.
   call `unwatch_pull_request` first. A merge or close ends the watch on its
   own.
 - **"Stopped watching, could not read it"** usually means GitHub's rate limit
-  is used up. Run `gh api rate_limit --jq .resources.graphql` before you
+  is used up. Check the GraphQL rate limit (`remaining`, `reset`) before you
   watch again. If `remaining` is near 0, wait for `reset` with one background
   command, then watch again. Never watch again in a tight loop.
 
@@ -76,21 +81,13 @@ message. Never post or say "still waiting".
 
 ## GitHub rate limits
 
-`gh pr create`, `gh pr view`, and `gh pr checks` use GraphQL. When GraphQL is
-used up, the REST limit is separate and usually still has room. Use
-`gh api repos/<owner>/<repo>/pulls/<n>` to read a PR, and
-`gh api repos/<owner>/<repo>/commits/<sha>/check-runs` for checks.
+GitHub's GraphQL and REST APIs have separate rate limits. When one is used
+up, read the PR, its check runs, and its comments through the other.
 
-Claude Code cloud sessions block GraphQL entirely, so `pr-wait` cannot run
-there. Read the PR, checks, and comments once through REST
-(`gh api repos/<owner>/<repo>/pulls/<n>/comments` and `.../issues/<n>/comments`
-for comments), handle what is there, report the PR's state, and stop. Do not
-poll.
-
-No `gh` login (some cloud sessions reach GitHub only through their own
-tools): check with `gh auth status`. If it fails, do the same GitHub
-reads and replies with the session's GitHub tools (search ToolSearch for `github`).
-If there are none, report that GitHub is unreachable.
+`pr-wait` needs a logged-in `gh` with GraphQL. Without that (for example in
+cloud sessions), read the PR, its checks, and its comments once with whatever
+GitHub access the session has, handle what is there, report the PR's state,
+and stop. Do not poll.
 
 
 ## Reviews

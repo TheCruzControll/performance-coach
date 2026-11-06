@@ -43,15 +43,15 @@ If model identity is unavailable, name the harness without guessing a model.
 Before submission, check the title, description, quotes, and attachments for
 secrets and private details.
 
-No `gh` login (some cloud sessions reach GitHub only through their own
-tools): check with `gh auth status`. If it fails, do the same GitHub
-operations with the session's GitHub tools (search ToolSearch for `github`).
-If there are none, stop and say GitHub is unreachable.
+GitHub access: use whatever the session has, such as the `gh` CLI (if
+logged in), a GitHub MCP server, or built-in GitHub tools (search ToolSearch
+for `github`). The steps below say what to do, not which command to run. If
+nothing reaches GitHub, stop and say so.
 
-Open a real PR rather than a draft so review bots run. If `gh pr create` fails
-because the GraphQL rate limit is used up, open it through REST with
-`gh api repos/<owner>/<repo>/pulls -f title=... -f head=... -f base=... -F body=@<file>`. If the user also asked
-to babysit it, continue with the `babysit-pr` skill.
+Open a real PR rather than a draft so review bots run. If opening it fails
+because a GitHub rate limit is used up, try another route the session has
+(GitHub's REST API has its own limit, separate from GraphQL). If the user also
+asked to babysit it, continue with the `babysit-pr` skill.
 
 Do not post a follow-up PR comment unless it serves the user's request. When a
 comment is needed, use the `leaving-pr-comments` skill.

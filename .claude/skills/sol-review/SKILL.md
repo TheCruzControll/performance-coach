@@ -64,22 +64,22 @@ Run `git status --short`. Do not stash or discard. When the head is the
 working tree, do not include unrelated changes: limit review to the change
 paths if they separate cleanly. Otherwise stop and ask.
 
-No `gh` login (some cloud sessions reach GitHub only through their own
-tools): check with `gh auth status`. If it fails, do the same GitHub
-operations with the session's GitHub tools (search ToolSearch for `github`).
-If there are none, stop and say GitHub is unreachable.
+GitHub access: use whatever the session has, such as the `gh` CLI (if
+logged in), a GitHub MCP server, or built-in GitHub tools (search ToolSearch
+for `github`). The steps below say what to do, not which command to run. If
+nothing reaches GitHub, stop and say so.
 
-Find the base after `git fetch origin`. Default branch:
-`gh repo view --json defaultBranchRef --jq .defaultBranchRef.name`. If an
+Find the base after `git fetch origin`. Default branch: the repo's default
+branch on GitHub (or `git symbolic-ref refs/remotes/origin/HEAD`). If an
 `upstream` remote hosts the base repo, use it instead of `origin` here.
 
 - Local (default): `git merge-base HEAD origin/<default-branch>`. No remote: a
   base the user names, or `HEAD` for uncommitted changes only.
-- PR: `gh pr view <n> --json baseRefName,headRefOid,author,state,mergeCommit`.
-  Fix loop if the PR is open and the author is the user
-  (`gh api user --jq .login`) or the user asks for fixes. Already on the PR
-  branch: stay, dirty or not. Another branch: `gh pr checkout <n>` only if
-  clean, and report the branch you left. Confirm `HEAD` is the PR head, or
+- PR: read its base branch (`baseRefName`), head commit (`headRefOid`),
+  author, state, and merge commit. Fix loop if the PR is open and the author
+  is the user (the logged-in GitHub account) or the user asks for fixes.
+  Already on the PR branch: stay, dirty or not. Another branch: check out the
+  PR branch only if clean, and report the branch you left. Confirm `HEAD` is the PR head, or
   ahead only by this change. Base: `git merge-base HEAD origin/<baseRefName>`.
   Otherwise review only. Do not check out. Run `git fetch origin pull/<n>/head`.
   Head is `headRefOid`. Base: `git merge-base <head> origin/<baseRefName>`, or
