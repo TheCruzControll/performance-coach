@@ -18,9 +18,12 @@ Deterministic, no I/O. Current coverage: units (exact kg/lb, km/mi, rounding, pa
 RPE table and reps in reserve (including a structural consistency check of the chart), e1RM
 (always marked `estimated`; for fixed weight and reps it rises as RPE falls, a recorded RPE is
 never silently dropped, malformed or sub-6 RPEs give no estimate, and sets past the chart are
-extrapolated from reps to failure at `low` confidence), the plate calculator (exact DP incl. limited inventories), and load
+extrapolated from reps to failure at `low` confidence), the plate calculator (exact DP incl. limited inventories), the owner's local
+calendar day (a weigh-in at 18:30 in Los Angeles is not tomorrow; daylight saving; only IANA zones), and load
 metrics (volume load, session-RPE, EWMA ACWR). Outside the domain: `parseEnv` (defaults, `appEnv`
-derivation, the production guards incl. `VERCEL_ENV=production`, the API-key requirement) and the
+derivation, the production guards incl. `VERCEL_ENV=production`, test routes refused in a Vercel
+build whatever its runtime environment, the API-key requirement), the build-time marker
+`vite.config.ts` sets for Vercel builds only (`scripts/vite-config.test.ts`) and the
 RUM attribution of each metric to the screen where it happened, client error reports (bounded
 fields, non-Error values), and `serializeError` (Drizzle
 parameters redacted; Postgres messages withheld for SQLSTATE classes that can quote values, kept
@@ -168,6 +171,14 @@ Specs:
   reload; offline, every tab keeps the shell (screens without server data render, Profile shows
   the designed offline state, never a 500), a full reload offline gets the offline screen in the
   shell, and back online the screen loads live data; no dynamic page is ever cached.
+- `design-inputs.e2e.ts` — the text and number primitives on `/design` → Inputs: NumberField opens
+  the decimal (or, for whole numbers, numeric) keypad with an `enterkeyhint`, keeps digits and
+  one decimal point as typed ("8a2,5" → 82.5), drops the point for whole numbers and stays
+  blank, never 0, when cleared; its name is the label and its description the unit plus the
+  message on screen. TextArea: label, Optional marker, `maxlength` (growth with `field-sizing` is
+  asserted on Chromium only). The date TextField takes `fill('2027-03-14')` and stays 56 px tall
+  blank or filled. Errors set `aria-invalid`, are announced (`role=alert`) and replace the hint,
+  and every id in `aria-describedby` exists.
 - `a11y.e2e.ts` — axe-core (`@axe-core/playwright`, WCAG 2.1 A/AA) on every screen (Security
   included; the signed-out sign-in and recovery screens too), the plate-calculator sheet and each
   `/design` component group, in the **dark and light** themes (Lighthouse only audits dark). The

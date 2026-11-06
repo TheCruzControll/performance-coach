@@ -478,6 +478,24 @@ describe('injuries and limitations', () => {
 		});
 	});
 
+	it('stores a blank “since” (an empty date input) as no date', async () => {
+		await withRollback(async (db) => {
+			const owner = await makeOwner(db);
+			const injury = { bodyArea: 'knee', side: 'left', severity: 'mild', avoid: [], active: true };
+			const [dated] = await saveInjuries(
+				owner,
+				{ injuries: [{ ...injury, since: '2026-09-01' }] },
+				{ db }
+			);
+			const [cleared] = await saveInjuries(owner, { injuries: [{ ...dated, since: '' }] }, { db });
+			expect(cleared).toMatchObject({ id: dated!.id, since: null });
+			const stored = await db.execute<{ since: string | null }>(
+				sql`select since from injuries where id = ${dated!.id}`
+			);
+			expect(stored.rows).toEqual([{ since: null }]);
+		});
+	});
+
 	it('refuses an injury without an area or severity, or with an unknown id', async () => {
 		await withRollback(async (db) => {
 			const owner = await makeOwner(db);

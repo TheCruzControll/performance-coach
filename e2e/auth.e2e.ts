@@ -291,6 +291,26 @@ test.describe('passkey authentication (real WebAuthn ceremonies)', () => {
 		await third.getByTestId('recovery-code-input').fill(codes[0]!);
 		await third.getByTestId('recovery-submit').click();
 		await expect(third.getByRole('alert')).toContainText("That code didn't work");
+
+		// A code in someone else's hands: the owner sees that recovery sign-in, flagged, and ends it.
+		await third.getByTestId('recovery-code-input').fill(codes[1]!);
+		await third.getByTestId('recovery-submit').click();
+		await expect(third).toHaveURL(/\/recover\/passkey$/);
+		const [recovery] = await query<{ id: string }>(
+			'select id from auth_sessions where token_hash = $1',
+			[sha256((await sessionCookie(again))!.value)]
+		);
+		await page.goto('/profile/security');
+		const row = page.locator(`[data-session-id="${recovery!.id}"]`);
+		await expect(row).toContainText('Recovery sign-in');
+		await row.scrollIntoViewIfNeeded();
+		await captureScreen(page, testInfo, 'security-recovery-session');
+		await audit(page, 'security with a recovery sign-in');
+		await row.getByTestId('revoke-session').click();
+		await expect(toastWith(page, /Signed out /)).toBeVisible();
+		await expect(row).toHaveCount(0);
+		await third.goto('/recover/passkey');
+		await expect(third.getByTestId('signin-screen')).toBeVisible();
 		await again.close();
 		await device.close();
 	});

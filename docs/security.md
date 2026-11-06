@@ -115,7 +115,7 @@ with a database error.
 | Absolute expiry         | 90 days after sign-in, however active                                                                     |
 | Revocation              | Checked on every request (no cache): revoked or expired sessions are rejected immediately                 |
 | Rotation                | New token on every passkey sign-in, setup and recovery; the presented one is revoked                      |
-| Management              | List (current marked), sign out one, sign out everywhere else, sign out                                   |
+| Management              | List (current marked, recovery sign-ins flagged), sign out one, sign out everywhere else, sign out        |
 
 ### Sign-out
 
@@ -206,7 +206,10 @@ its session only once, so this cannot be used to flood.
 SimpleWebAuthn), passkey added/renamed/removed, recovery used/failed/regenerated, session
 revoked / revoked others, sign-out, rate limiting and owner resets, with request id, client
 address and a User-Agent summary. Rows are kept if the owner is reset. Security shows the most
-recent events.
+recent events, folding each run of refused attempts (anyone can cause those) into one row such as
+"25 failed sign-in attempts", and always keeps the latest security changes (setup, passkeys
+added or removed, recovery codes used or replaced, sessions ended, owner resets) in view, so a
+flood of failures cannot push them out.
 
 ## Test-only routes
 
@@ -215,6 +218,11 @@ without a passkey (WebKit e2e has no virtual authenticator). Env validation refu
 it is set on **any** hosted deployment (`VERCEL`, any `VERCEL_ENV`) or with `appEnv` `preview` or
 `production`, and each test route re-checks `testRoutesEnabled()` at runtime. Chromium e2e never
 uses it: every Chromium sign-in is a real WebAuthn ceremony.
+
+`VERCEL` and `VERCEL_ENV` are runtime variables only, so the build carries the same fact: a server
+built for Vercel (`pnpm build`; `__VERCEL_BUILD__`, defined in `vite.config.ts`) refuses test
+routes whatever its runtime environment says. Only Node builds (`pnpm build:node`, used by e2e and
+Lighthouse) can enable them.
 
 ## Secrets
 
