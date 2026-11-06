@@ -15,6 +15,7 @@ import {
 	isProfileInputError,
 	listGoals,
 	ProfileNotFoundError,
+	reorderGoals,
 	updateGoal,
 	type ProfileDeps
 } from '../services/profile';
@@ -114,4 +115,20 @@ export async function deleteGoalAction(
 	const result = await attempt(() => deleteGoal(owner, typeof id === 'string' ? id : '', change));
 	if (!result.ok) return result.failure;
 	return { goals: await listGoals(owner, deps) };
+}
+
+/**
+ * Profile → Goals' `reorderGoals` action: rank the open goals in the order its `ids` list them,
+ * top priority first, as a Profile change. The services refuse a list that leaves out, repeats or
+ * adds a goal (a field error, so nothing is stored); returns the ranking as stored.
+ */
+export async function reorderGoalsAction(
+	{ locals, request }: FormEvent,
+	deps: Pick<ProfileDeps, 'db'> = {}
+) {
+	const owner = ownerId(locals);
+	const { payload } = await readForm(request);
+	const result = await attempt(() => reorderGoals(owner, payload, { ...deps, source: 'profile' }));
+	if (!result.ok) return result.failure;
+	return { goals: result.value };
 }

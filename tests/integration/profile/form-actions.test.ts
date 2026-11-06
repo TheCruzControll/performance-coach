@@ -11,6 +11,7 @@ import type { Executor } from '../../../src/lib/server/db';
 import {
 	deleteGoalAction,
 	editAction,
+	reorderGoalsAction,
 	saveGoalAction,
 	type SaveSection
 } from '../../../src/lib/server/forms/profile';
@@ -355,6 +356,86 @@ describe('Profile → Goals’ deleteGoal action', () => {
 		for (const locals of [{ requestId: 'test', session: null }, session(owner, 'recovery')]) {
 			const err = await thrown(
 				deleteGoalAction({ locals, request: post({ id: crypto.randomUUID() }) })
+			);
+			expect(isHttpError(err, 401)).toBe(true);
+		}
+	});
+});
+
+describe('Profile → Goals’ reorderGoals action', () => {
+	it('ranks the open goals in the order posted as a Profile change, and returns the ranking', async () => {
+		await withRollback(async (db) => {
+			const owner = await makeOwner(db);
+			const fight = await createGoal(owner, eventGoal(), { db });
+			const strength = await createGoal(owner, generalGoal(), { db });
+			const marathon = await createGoal(owner, eventGoal({ title: 'Valencia marathon' }), { db });
+			const smoker = await createGoal(owner, eventGoal({ status: 'dropped' }), { db });
+			const ids = [marathon.id, strength.id, fight.id];
+			const result = await reorderGoalsAction(
+				{ locals: session(owner), request: post({ ids }) },
+				{ db }
+			);
+			const ranking = [
+				[marathon.id, 1],
+				[strength.id, 2],
+				[fight.id, 3],
+				[smoker.id, null]
+			];
+			expect(result).not.toHaveProperty('status');
+			expect('goals' in result && result.goals.map((g) => [g.id, g.priority])).toEqual(ranking);
+			expect((await listGoals(owner, { db })).map((g) => [g.id, g.priority])).toEqual(ranking);
+			// Each goal whose rank changed, from Profile; the one that kept its rank has no event.
+			expect(await changes(owner, db)).toEqual(
+				[
+					['reprioritized', marathon.id, 'profile'],
+					['reprioritized', fight.id, 'profile']
+				].sort()
+			);
+		});
+	});
+
+	it('refuses a ranking that leaves out, repeats or adds a goal, and changes nothing', async () => {
+		await withRollback(async (db) => {
+			const owner = await makeOwner(db);
+			const fight = await createGoal(owner, eventGoal(), { db });
+			const strength = await createGoal(owner, generalGoal(), { db });
+			const dropped = await createGoal(owner, eventGoal({ status: 'dropped' }), { db });
+			const attempts: [string, unknown][] = [
+				[owner, { ids: [strength.id] }],
+				[owner, { ids: [strength.id, strength.id] }],
+				[owner, { ids: [strength.id, fight.id, dropped.id] }],
+				[owner, { ids: [strength.id, crypto.randomUUID()] }],
+				[owner, { ids: [strength.id, 'not-a-goal'] }],
+				[owner, { ids: [] }],
+				[owner, { ids: 'all' }],
+				[owner, {}],
+				[owner, null],
+				// One owner today, but an action never trusts a goal id on its own.
+				[crypto.randomUUID(), { ids: [strength.id, fight.id] }]
+			];
+			for (const [who, payload] of attempts) {
+				const result = await reorderGoalsAction(
+					{ locals: session(who), request: post(payload) },
+					{ db }
+				);
+				expect(isActionFailure(result), JSON.stringify(payload)).toBe(true);
+				expect(result, JSON.stringify(payload)).toMatchObject({ status: 400 });
+				expect(Object.keys((result as { data: { errors: object } }).data.errors)).not.toEqual([]);
+			}
+			expect((await listGoals(owner, { db })).map((g) => [g.id, g.priority])).toEqual([
+				[fight.id, 1],
+				[strength.id, 2],
+				[dropped.id, null]
+			]);
+			expect(await changes(owner, db)).toEqual([]);
+		});
+	});
+
+	it('refuses without an owner session, and with a recovery session', async () => {
+		const owner = crypto.randomUUID();
+		for (const locals of [{ requestId: 'test', session: null }, session(owner, 'recovery')]) {
+			const err = await thrown(
+				reorderGoalsAction({ locals, request: post({ ids: [crypto.randomUUID()] }) })
 			);
 			expect(isHttpError(err, 401)).toBe(true);
 		}
