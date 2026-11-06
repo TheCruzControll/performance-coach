@@ -23,7 +23,8 @@ export type PasskeyErrorKind =
 	| 'rate-limited'
 	| 'expired'
 	| 'unavailable'
-	| 'network';
+	| 'network'
+	| 'reauth';
 
 /**
  * A failure worth explaining to the owner, in plain words. `stage` says where it happened: in the
@@ -48,7 +49,8 @@ const MESSAGES: Record<PasskeyErrorKind, string> = {
 	'rate-limited': 'Too many attempts. Wait a minute and try again.',
 	expired: 'That request expired. Try again.',
 	unavailable: 'Passkeys aren’t available on this address.',
-	network: 'Can’t reach the server. Check your connection and try again.'
+	network: 'Can’t reach the server. Check your connection and try again.',
+	reauth: 'Confirm it’s you with one of your passkeys.'
 };
 
 const fail = (kind: PasskeyErrorKind, message = MESSAGES[kind]) => new PasskeyError(kind, message);
@@ -81,6 +83,8 @@ async function post<T>(url: string, body: unknown = {}): Promise<T> {
 			throw fail('unavailable', data.message ?? MESSAGES.unavailable);
 		case 'already_registered':
 			throw fail('already-registered');
+		case 'reauth_required':
+			throw fail('reauth');
 		default:
 			throw fail('rejected', data.message ?? MESSAGES.rejected);
 	}
@@ -192,6 +196,24 @@ export async function addPasskey(): Promise<AddedPasskey> {
 		throw fromBrowserError(error);
 	}
 	return post<AddedPasskey>('/api/auth/passkeys/verify', { response });
+}
+
+/**
+ * Step-up: confirm it's the owner with one of their existing passkeys (Face ID / Touch ID), so
+ * the Security action the server refused with `reauth_required` can be retried.
+ */
+export async function reauthenticate(): Promise<void> {
+	const lib = await loadLibrary();
+	if (!lib.browserSupportsWebAuthn())
+		throw new PasskeyError('unsupported', MESSAGES.unsupported, 'browser');
+	const optionsJSON = await post<PublicKeyCredentialRequestOptionsJSON>('/api/auth/reauth/options');
+	let response: AuthenticationResponseJSON;
+	try {
+		response = await lib.startAuthentication({ optionsJSON });
+	} catch (error) {
+		throw fromBrowserError(error);
+	}
+	await post('/api/auth/reauth/verify', { response });
 }
 
 /** Stop a pending autofill (conditional UI) request, e.g. when leaving the sign-in screen. */

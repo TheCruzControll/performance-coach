@@ -48,7 +48,11 @@
 			toast.show(`Passkey added: ${passkey.nickname}`, { tone: 'positive' });
 			await invalidateAll();
 		} catch (err) {
-			addError = err instanceof PasskeyError ? err.message : 'Something went wrong. Try again.';
+			// Step-up: the sheets confirm with an existing passkey, then add again.
+			if (err instanceof PasskeyError && err.kind === 'reauth')
+				open({ kind: 'reauth', retry: add });
+			else
+				addError = err instanceof PasskeyError ? err.message : 'Something went wrong. Try again.';
 		} finally {
 			adding = false;
 		}
@@ -73,10 +77,12 @@
 
 	// ---- sessions ------------------------------------------------------------------------
 	function submit(success: (data: Record<string, unknown>) => string): SubmitFunction {
-		return () =>
+		return ({ formElement }) =>
 			async ({ result, update }) => {
 				if (result.type === 'success') {
 					toast.show(success(result.data ?? {}), { tone: 'positive' });
+				} else if (result.type === 'failure' && result.data?.code === 'reauth_required') {
+					open({ kind: 'reauth', retry: () => formElement.requestSubmit() });
 				} else if (result.type === 'failure') {
 					toast.show(String(result.data?.error ?? 'That didn’t work. Try again.'), {
 						tone: 'danger'

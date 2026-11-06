@@ -33,6 +33,8 @@ const LABELS: Record<AuthEventType, { label: string; tone: ActivityTone }> = {
 	'recovery.regenerated': { label: 'New recovery codes created', tone: 'neutral' },
 	'session.revoked': { label: 'Signed out another device', tone: 'neutral' },
 	'session.revoked_others': { label: 'Signed out everywhere else', tone: 'neutral' },
+	'reauth.succeeded': { label: 'Confirmed with a passkey', tone: 'neutral' },
+	'reauth.failed': { label: 'Passkey confirmation failed', tone: 'warning' },
 	signout: { label: 'Signed out', tone: 'neutral' },
 	rate_limited: { label: 'Too many attempts blocked', tone: 'warning' },
 	'owner.reset': { label: 'Passkeys reset by the administrator', tone: 'warning' }

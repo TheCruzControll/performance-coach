@@ -40,13 +40,16 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 
 type Action = 'rename' | 'remove' | 'revoke' | 'revokeOthers' | 'regenerate';
 
-/** Run a security action; auth failures become form errors the screen can show. */
+/**
+ * Run a security action; auth failures become form errors the screen can show. `code` tells
+ * the screen when to ask for a passkey first (`reauth_required`) and retry.
+ */
 async function run<T>(action: Action, fn: () => Promise<T>) {
 	try {
 		return { action, ok: true as const, ...(await fn()) };
 	} catch (err) {
 		if (!isAuthError(err)) throw err;
-		return fail(err.status, { action, error: err.message });
+		return fail(err.status, { action, code: err.code, error: err.message });
 	}
 }
 

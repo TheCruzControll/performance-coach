@@ -11,9 +11,13 @@ import {
 } from '../../../src/lib/server/auth/passkeys';
 import { setupOpen } from '../../../src/lib/server/auth/setup';
 import { mintTestSession } from '../../../src/lib/server/auth/test-support';
-import { revokeSession, validateSessionToken } from '../../../src/lib/server/auth/sessions';
+import {
+	issueSession,
+	revokeSession,
+	validateSessionToken
+} from '../../../src/lib/server/auth/sessions';
 import { holdTransaction, lockWaiters, withCommitted, withRollback } from '../helpers';
-import { ORIGIN, request, RP, setUpOwner } from './fixtures';
+import { ORIGIN, request, RP, setUpOwner, UA } from './fixtures';
 import { SoftAuthenticator } from './soft-authenticator';
 
 describe('passkey management', () => {
@@ -76,7 +80,11 @@ describe('passkey management', () => {
 		await withRollback(async (tx) => {
 			const owner = await setUpOwner(tx);
 			const session = (await validateSessionToken(owner.token, { db: tx }))!.session;
-			const stolen = await mintTestSession(request(), { db: tx, enabled: true });
+			// Fresh (it has just used a passkey), so it may start a registration (step-up).
+			const stolen = await issueSession(
+				{ ownerId: owner.ownerId, method: 'passkey', userAgent: UA, reauthenticated: true },
+				{ db: tx }
+			);
 			const stolenSession = (await validateSessionToken(stolen.token, { db: tx }))!.session;
 			const key = new SoftAuthenticator({ rpId: RP.rpID, origin: ORIGIN });
 			const options = await beginPasskeyRegistration(stolenSession, request(), { db: tx });
@@ -93,7 +101,10 @@ describe('passkey management', () => {
 		await withCommitted(async (db) => {
 			const owner = await setUpOwner(db);
 			const session = (await validateSessionToken(owner.token, { db }))!.session;
-			const stolen = await mintTestSession(request(), { db, enabled: true });
+			const stolen = await issueSession(
+				{ ownerId: owner.ownerId, method: 'passkey', userAgent: UA, reauthenticated: true },
+				{ db }
+			);
 			const stolenSession = (await validateSessionToken(stolen.token, { db }))!.session;
 			const key = new SoftAuthenticator({ rpId: RP.rpID, origin: ORIGIN });
 			const options = await beginPasskeyRegistration(stolenSession, request(), { db });
