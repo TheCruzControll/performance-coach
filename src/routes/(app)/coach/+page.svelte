@@ -88,10 +88,11 @@
 	.composer {
 		position: fixed;
 		z-index: var(--z-sticky);
-		left: 50%;
+		/* Screen chrome: centred over the content column, clear of the bottom bar or the rail. */
+		left: calc(50% + var(--nav-inset-left) / 2);
 		transform: translateX(-50%);
-		bottom: calc(var(--nav-height) + var(--safe-bottom) + var(--space-3));
-		width: min(calc(100% - 2 * var(--gutter)), var(--content-max));
+		bottom: calc(var(--nav-inset-bottom) + var(--space-3));
+		width: min(calc(100% - var(--nav-inset-left) - 2 * var(--gutter)), var(--content-column));
 		display: flex;
 		align-items: center;
 		gap: var(--space-2);

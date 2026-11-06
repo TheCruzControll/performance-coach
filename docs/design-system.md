@@ -134,6 +134,127 @@ Tracking: `--tracking-display -0.032em`, `--tracking-tight -0.016em`, `--trackin
 - Large titles (`PageHeader`): eyebrow + 34 px display title, iOS-style.
 - Toasts appear at the top (clear of the thumb zone and nav); sheets rise from the bottom.
 
+## Responsive layout
+
+iPhone-first, and laid out for a desktop window too, never as a stretched phone layout (PRD §7,
+§16). `scripts/layout-rules.test.ts` enforces the rules marked **(guard)** on every stylesheet and
+on the browser code, naming the file, the line and the fix; `e2e/desktop.ts` holds the helpers
+that specs verify the rest with.
+
+### Widths & tokens
+
+- Three widths: **phone** below 640 px (the default every rule starts from), **tablet** 640–1023
+  px, **desktop** from 1024 px.
+- Media queries use only `(width >= 40rem)`, `(width >= 64rem)`, `(width < 40rem)`,
+  `(width < 64rem)` and `(40rem <= width < 64rem)` **(guard)**; `min-width`, `max-width`, other
+  values, height and orientation queries fail. They are written out, because custom properties
+  cannot be used inside `@media`, and in rem, so a larger default text size moves to the narrower
+  layout (WCAG reflow). Lightning CSS rewrites the range syntax to `min-width` for the build
+  targets.
+- Components adapt to their container with `@container`, not to the window.
+- Layout changes only in CSS **(guard)**: SSR paints the final layout, nothing shifts when the page
+  hydrates, and no route gains JavaScript for it. `matchMedia` and Svelte's `MediaQuery` ask only
+  `prefers-reduced-motion`, `prefers-color-scheme` or `display-mode`; nothing reads `innerWidth`,
+  `innerHeight`, `outerWidth`, `outerHeight`, `visualViewport` or `screen.width`/`height`, or
+  listens for `resize` (`<svelte:window bind:innerWidth>` and `onresize` included). Allowed:
+  `@container`, `@supports`, `prefers-*`, `display-mode`, `forced-colors`, `print` and the CSS
+  `resize` property.
+- Tokens (`tokens.css`):
+  - `--content-max` 34 rem: the phone column.
+  - `--content-readable` 40 rem: the readable column from 640 px.
+  - `--content-wide` 72 rem: a wide screen's content.
+  - `--content-list` 20 rem: the list beside its editor on a split screen.
+  - `--rail-width` 5.5 rem: the navigation rail from 1024 px.
+  - `--content-column`: the column screen chrome is centred over; `--content-max` until the shell
+    raises it to `--content-readable` from 640 px.
+  - `--nav-inset-bottom`: what fixed chrome clears at the bottom, the bottom bar and the home
+    indicator (`--nav-height` + `--safe-bottom`).
+  - `--nav-inset-left`: what it clears at the left: `0px`, and the rail from 1024 px.
+
+### Content width
+
+A screen declares its width with `data-layout` on its root element:
+
+- **readable**, the default: forms, text, settings (Security), conversations (Coach). The column
+  is `--content-readable` from 640 px; the phone column stays `--content-max`.
+- **wide**: dashboards and grids, up to `--content-wide`.
+- **split**: a list and its editor, `--content-list` beside a readable detail.
+- Never a single text column wider than `--content-readable`.
+
+### Shell
+
+Below 1024 px the glass bottom bar, unchanged. From 1024 px the same navigation is a left rail
+(`--rail-width`) with the same five destinations in the same order, the same links and
+`aria-current`, a visible focus ring and no glass bar at the bottom; the content is centred beside
+it at its declared width, and the theme and offline states are unchanged. CSS only, so no route
+gains initial JS. Until the shell lands (desk-shell), every width uses the bottom bar.
+
+### Fixed and sticky chrome
+
+Two kinds, and neither is offset by `--nav-height` **(guard)**: only `tokens.css` and the nav
+itself read it.
+
+- **Screen chrome** belongs to a whole readable screen (Coach's composer; a section's Save bar
+  until Profile is laid out in columns) or to the app (toasts). It is `position: fixed` at
+  `bottom: var(--nav-inset-bottom)` (toasts keep their top inset), centred with
+  `left: calc(50% + var(--nav-inset-left) / 2)` and `translateX(-50%)`, and at most
+  `var(--content-column)` wide. Only readable screens have it at the bottom.
+- **Column chrome** belongs to one column of a wide or split screen (an editor's Save bar, Build's
+  "Start week 1", a session's actions). From 1024 px it is `position: sticky` at
+  `bottom: var(--nav-inset-bottom)`, the last child of its column, with no left offset and no
+  transform, so it takes the column's width and never covers another column. No ancestor up to the
+  column sets `overflow`. Below 1024 px the column is the whole content, so it may stay screen
+  chrome.
+- Specs check chrome against the element it belongs to, never against `<main>` for a column:
+  `expectCentredOver(page, chrome, area)` for screen chrome and
+  `expectInColumn(page, chrome, column, others)` for column chrome. A screen that later turns
+  from readable to split then keeps its specs green.
+
+### Density
+
+Density comes from columns, not from smaller targets or type: targets stay at least 44 px and the
+type scale is the same at every width, because a 1024–1366 px window can be a touch iPad.
+
+### Pointer & hover
+
+- Hover styles live only inside `@media (hover: hover) and (pointer: fine)` **(guard)**: a bare
+  `:hover`, `(hover: hover)` alone, `(pointer: coarse)`, `any-hover` and `any-pointer` fail. The
+  iPhone has no hover, and a touch laptop or an iPad never gets a hover state that sticks.
+- Hover is never the only cue: what it shows is also there on focus or press.
+
+### Keyboard & focus
+
+- The skip link comes first and moves focus to `<main>`.
+- Focus order matches reading order and visual order.
+- Every interactive element shows a visible `:focus-visible` ring.
+- Escape closes the top dialog only; arrow keys move inside composite controls.
+- No keyboard traps, and no shortcuts that take over typing keys.
+
+### Dialogs & toasts
+
+How sheets open as centred dialogs on a desktop window lands with the primitives' desktop pass
+(desk-primitives). Until then sheets rise from the bottom at every width, and toasts stay at the
+top as screen chrome.
+
+### Screens
+
+One line per screen as its desktop layout lands (the auth screens, the main screens, then each
+later-pass screen).
+
+### Verification
+
+- Every UI slice is designed and verified at **393 × 659** (the iPhone projects) and at
+  **1440 × 900** (`test.use(DESKTOP)` from `e2e/desktop.ts`, or a `*.desktop.e2e.ts` spec), and
+  its PR attaches both screenshots.
+- A desktop spec checks that nothing scrolls sideways (`expectNoSideScroll`, at `DESKTOP_WIDTHS`
+  and at `BELOW_DESKTOP_WIDTH`, 1023 px, where the layout changes), its chrome against the element
+  the chrome belongs to, and that a swap moves nothing with
+  `expectNoShift(page, { action, boxes })`, never `layoutShiftDuring` alone: WebKit reports no
+  layout-shift entries, so `layoutShiftDuring` throws there and `expectNoShift` checks the named
+  boxes, with an annotation.
+- `*.desktop.e2e.ts` specs run in the iPhone projects at desktop size, on Chromium and WebKit,
+  until desktop projects exist.
+
 ## Components (`src/lib/ui/components`)
 
 | Component           | Highlights                                                                                                                                                                                                                                   |
@@ -196,6 +317,7 @@ destructive actions behind a confirming `BottomSheet`, and toasts for outcomes.
 - Never convey state by colour alone: badges are words, `Stat` ratings are a word plus a dot
   (e.g. RUM p75 tiles: "Good" / "Needs work" / "Poor").
 - Respect `prefers-reduced-motion`.
+- Verified at 393 × 659 and 1440 × 900 (Responsive layout → Verification).
 
 ## Iconography & brand
 

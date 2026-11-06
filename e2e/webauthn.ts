@@ -21,7 +21,7 @@ import {
 	type Page,
 	type TestInfo
 } from '@playwright/test';
-import { ORIGIN, query } from './support';
+import { gotoHydrated, ORIGIN, query } from './support';
 
 /** A passkey as the virtual authenticator holds it (base64 ids, PKCS#8 private key). */
 export interface StoredPasskey {
@@ -154,7 +154,9 @@ export async function signInAsOwner(context: BrowserContext, testInfo: TestInfo)
 	const page = await context.newPage();
 	await ownerPasskey(page, testInfo);
 	await withoutPasskeyAutofill(page);
-	await page.goto('/');
+	// Hydrated first: `load` comes before SvelteKit has fetched its root error page and started,
+	// and a tap before then submits the sign-in form as a plain GET (`/?username=`).
+	await gotoHydrated(page, '/');
 	await page.getByTestId('passkey-signin').click();
 	await expect(page).toHaveURL(/\/today$/);
 	await page.close();

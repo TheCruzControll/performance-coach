@@ -9,7 +9,14 @@
  * `fail(404, { message })`.
  */
 import { error, fail, type RequestEvent } from '@sveltejs/kit';
-import { isProfileInputError, ProfileNotFoundError, type ProfileDeps } from '../services/profile';
+import {
+	createGoal,
+	isProfileInputError,
+	listGoals,
+	ProfileNotFoundError,
+	updateGoal,
+	type ProfileDeps
+} from '../services/profile';
 
 /** What a form action reads from its request (any route's RequestEvent is one). */
 export type FormEvent = Pick<RequestEvent, 'locals' | 'request'>;
@@ -66,4 +73,26 @@ export function editAction(saveSection: SaveSection) {
 		if (!result.ok) return result.failure;
 		return { saved: true as const };
 	};
+}
+
+/**
+ * Profile → Goals' `saveGoal` action: add a goal, or change the one its `id` names (an id that
+ * names no goal is a 404, never a new goal), as a Profile change. Returns the ranking the
+ * services keep, so the screen shows it as stored, and the saved goal's id.
+ */
+export async function saveGoalAction(
+	{ locals, request }: FormEvent,
+	deps: Pick<ProfileDeps, 'db'> = {}
+) {
+	const owner = ownerId(locals);
+	const { payload } = await readForm(request);
+	const { id, ...goal } = (payload ?? {}) as { id?: unknown };
+	const change = { ...deps, source: 'profile' } as const;
+	const result = await attempt(() =>
+		id === undefined
+			? createGoal(owner, goal, change)
+			: updateGoal(owner, typeof id === 'string' ? id : '', goal, change)
+	);
+	if (!result.ok) return result.failure;
+	return { goals: await listGoals(owner, deps), saved: result.value.id };
 }

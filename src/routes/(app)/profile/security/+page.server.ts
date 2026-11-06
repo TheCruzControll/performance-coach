@@ -13,6 +13,7 @@ import {
 	revokeSession,
 	type AuthSession
 } from '#lib/server/auth/index.ts';
+import { relativeTime } from '#lib/ui/time.ts';
 import type { Actions, PageServerLoad } from './$types';
 
 function requireSession(locals: App.Locals): AuthSession {
@@ -28,12 +29,17 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		recoveryCodeStatus(session),
 		recentAuthActivity(session)
 	]);
+	const now = new Date();
+	// Relative times ("3 h ago") are labelled here, with the `now` the page gets, so their
+	// wording ships no JS. Dates ("5 Nov") stay in the browser, in the device's time zone: the
+	// page shows one wherever a label here is null (7 days and older).
+	const ago = (at: Date | null) => (at ? relativeTime(at, now) : null);
 	return {
-		now: new Date(),
-		passkeys,
-		sessions,
+		now,
+		passkeys: passkeys.map((p) => ({ ...p, lastUsedAgo: ago(p.lastUsedAt) })),
+		sessions: sessions.map((s) => ({ ...s, lastSeenAgo: ago(s.lastSeenAt) })),
 		codes,
-		activity,
+		activity: activity.map((e) => ({ ...e, ago: ago(e.at) })),
 		recovered: url.searchParams.has('recovered')
 	};
 };
