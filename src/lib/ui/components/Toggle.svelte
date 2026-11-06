@@ -124,4 +124,14 @@
 		outline: 2px solid var(--color-accent-ring);
 		outline-offset: 2px;
 	}
+
+	@media (hover: hover) and (pointer: fine) {
+		.input:not(:checked):hover + .track {
+			border-color: var(--color-text-tertiary);
+		}
+
+		.input:checked:hover + .track {
+			background: var(--color-accent-hover);
+		}
+	}
 </style>

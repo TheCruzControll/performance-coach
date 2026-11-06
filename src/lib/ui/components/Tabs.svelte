@@ -114,7 +114,9 @@
 		font-size: var(--text-sm);
 		font-weight: var(--weight-semibold);
 		color: var(--color-text-tertiary);
-		transition: color var(--duration-base) var(--ease-standard);
+		transition:
+			color var(--duration-base) var(--ease-standard),
+			background-color var(--duration-fast) var(--ease-standard);
 	}
 
 	.tab[aria-selected='true'] {
@@ -134,10 +136,20 @@
 		background: var(--color-accent);
 		transform: translateX(calc(var(--index) * 100cqi / var(--count)));
 		transition: transform var(--duration-slow) var(--ease-spring);
+		/* Decoration: a tap on the tab's bottom edge must reach the tab. */
+		pointer-events: none;
 	}
 
 	.panel:focus-visible {
 		outline-offset: 4px;
 		border-radius: var(--radius-md);
+	}
+
+	@media (hover: hover) and (pointer: fine) {
+		.tab[aria-selected='false']:hover {
+			border-radius: var(--radius-md);
+			background: var(--color-surface-2);
+			color: var(--color-text-secondary);
+		}
 	}
 </style>

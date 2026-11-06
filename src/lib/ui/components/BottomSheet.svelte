@@ -2,7 +2,8 @@
   @component
   Modal bottom sheet built on the native <dialog> (showModal): focus is trapped and the page
   behind is inert by the platform itself; Escape and backdrop tap close; focus returns to the
-  opener. Drag the handle/header down to dismiss (distance or velocity threshold).
+  opener. Drag the handle/header down with a finger or a pen to dismiss (distance or velocity
+  threshold). From 1024 px it opens as a dialog centred in the window, with no handle.
 -->
 <script lang="ts">
 	import { onDestroy, type Snippet } from 'svelte';
@@ -56,7 +57,13 @@
 
 	function show() {
 		if (!dialog || dialog.open) return;
-		opener = document.activeElement as HTMLElement | null;
+		// Focus goes back where it was; when it was nowhere (the button that asked was disabled
+		// while it worked), into the sheet this one opens over.
+		const focused = document.activeElement;
+		opener =
+			focused instanceof HTMLElement && focused !== document.body
+				? focused
+				: document.querySelector<HTMLElement>('.sheet-dialog[open] > .sheet');
 		dragY = 0;
 		mounted = true;
 		dialog.showModal();
@@ -103,7 +110,9 @@
 	let startT = 0;
 
 	function onpointerdown(event: PointerEvent) {
-		if (event.button !== 0 || (event.target as HTMLElement).closest('button')) return;
+		// Only a finger or a pen drags the sheet: a mouse has Escape, the backdrop and Close.
+		if (!['touch', 'pen'].includes(event.pointerType) || event.button !== 0) return;
+		if ((event.target as HTMLElement).closest('button')) return;
 		dragging = true;
 		startY = event.clientY;
 		startT = event.timeStamp;
@@ -240,7 +249,6 @@
 	.grab-zone {
 		flex: none;
 		touch-action: none;
-		cursor: grab;
 		padding: var(--space-2) var(--gutter) var(--space-2);
 	}
 
@@ -292,5 +300,38 @@
 
 	.body:last-child {
 		padding-bottom: calc(var(--space-6) + var(--safe-bottom));
+	}
+
+	/* A desktop window: a dialog centred in the window that fades in as it rises 8 px, with no
+	   handle; its content scrolls inside. A finger still swipes it down: a wide screen can be a
+	   touch screen. */
+	@media (width >= 64rem) {
+		.sheet {
+			inset: 0;
+			width: min(100% - 2 * var(--gutter), 32rem);
+			height: fit-content;
+			max-height: min(85dvh, 48rem);
+			margin: auto;
+			border-bottom: 1px solid var(--color-border);
+			border-radius: var(--radius-xl);
+			opacity: 0;
+			transform: translateY(8px);
+			transition:
+				opacity var(--duration-base) var(--ease-standard),
+				transform var(--duration-base) var(--ease-out);
+		}
+
+		.visible .sheet {
+			opacity: 1;
+			transform: translateY(var(--drag, 0px));
+		}
+
+		.handle {
+			display: none;
+		}
+
+		.grab-zone {
+			padding-top: var(--space-5);
+		}
 	}
 </style>

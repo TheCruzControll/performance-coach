@@ -274,4 +274,11 @@
 	.error {
 		color: var(--color-danger);
 	}
+
+	@media (hover: hover) and (pointer: fine) {
+		.input:not(:checked):hover + .face {
+			border-color: var(--color-border-strong);
+			background: var(--color-surface-3);
+		}
+	}
 </style>

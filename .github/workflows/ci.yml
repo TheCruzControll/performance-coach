@@ -120,7 +120,10 @@ jobs:
     # "ubuntu-24.04"). On ubuntu-latest (26.04) WebKit's ~140 MB of system packages came
     # through a cold mirror at ~50 KB/s and the install timed out before any test ran.
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    # Both engines run on one worker. With the Profile and desktop specs the suite takes 22–25
+    # minutes (611 tests on #104), so 25 cut a passing run off mid-suite. 40 leaves room until
+    # M9's e2e-ci-capacity splits the suite into parallel legs with their own measured ceilings.
+    timeout-minutes: 40
     services:
       postgres:
         image: postgres:18
