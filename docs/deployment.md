@@ -49,16 +49,17 @@ migrates it from scratch ("Resetting the preview database" below). Never reset i
 production. On `main` the same ordering is enforced by a unit test
 (`scripts/drizzle-journal.test.ts`): journal entries must be strictly increasing in time.
 
-**Exercise catalogue seed.** Every `pnpm db:migrate` (so every deployed build, CI, and the test
-and e2e resets) seeds the exercise library after migrating, under the same lock: one upsert from
-`CATALOGUE` in code (`src/lib/server/db/seed/exercises.ts`). It inserts new keys, updates changed
-entries in place, retires keys the catalogue no longer has (`retired_at`, never deleted) and
-restores a retired key that comes back, then logs the counts
+**Exercise catalogue seed.** Every migrate run seeds the exercise library after migrating, under
+the same lock: `pnpm db:migrate` (so every deployed build and CI) and the test and e2e resets,
+which call the same `runMigrations`. One upsert from `CATALOGUE` in code
+(`src/lib/server/db/seed/exercises.ts`) inserts new keys, updates changed entries in place,
+retires keys the catalogue no longer has (`retired_at`, never deleted) and restores a retired key
+that comes back; `db:migrate` logs the counts
 (`db:migrate: exercise catalogue N inserted, N updated, N retired, N restored`). A rerun changes
-nothing. Previews share the one `preview` branch, so previews of PRs with different catalogues
-retire and restore each other's keys in turn. This is expected and harmless: ids are stable,
-retired rows stay readable, and the generator reads the catalogue from code, never from these
-rows.
+nothing. Previews, deployed on demand, all share the one `preview` branch, so previews of branches
+with different catalogues retire and restore each other's keys in turn. This is expected and
+harmless: ids are stable, retired rows stay readable, and the generator reads the catalogue from
+code, never from these rows.
 
 ## Production deploys
 
