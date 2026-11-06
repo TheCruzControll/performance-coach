@@ -50,13 +50,17 @@ extension on the owner's browser can act as the owner.
    hash is configured (`OWNER_SETUP_TOKEN_HASH`); the token travels to the owner in the link
    `https://coach.nikocruz.com/setup?token=…`.
 2. `/setup` answers **404** unless the token's SHA-256 equals the configured hash (compared with
-   `timingSafeEqual` on the two digests) **and** no passkey exists. Wrong tokens are audited and
-   rate-limited (10 per 15 min per client).
+   `timingSafeEqual` on the two digests), that token has never completed a setup, **and** no
+   passkey exists. Wrong tokens are audited and rate-limited (10 per 15 min per client).
 3. The owner enters a name and creates a passkey. In one transaction (advisory-locked, so two
    concurrent setups cannot both win): the owner and passkey are created, setup is marked
-   complete, 10 recovery codes are generated and stored hashed, and a session starts.
+   complete, the token's hash is recorded as used (`used_setup_tokens`), 10 recovery codes are
+   generated and stored hashed, and a session starts.
 4. The 10 codes are returned **once** in that response and shown with copy/download and a
    required acknowledgement. From then on `/setup` is a 404 for good (even with the right token).
+   A token works for **one** setup: `pnpm auth:reset-owner` reopens setup but keeps the used
+   hashes, so the old link (audited as `token_used` if tried) stays refused even while its hash is
+   still configured, and the reset needs a new token.
 
 ### Sign-in
 
@@ -81,7 +85,8 @@ app path (`return-path.ts`).
   revoked) and lands on Security with a prompt to remove the lost passkey.
 - Codes can be regenerated from Security (all old codes stop working; new set shown once, with
   acknowledgement). A recovery session cannot regenerate codes.
-- Rate limits: 5 attempts per 15 min per client and 20 per hour in total.
+- Rate limits: 5 attempts per 15 min per client and 20 failed attempts per hour in total; the total
+  never refuses a valid code (see Rate limits).
 - Lost every passkey **and** every code: the guarded `pnpm auth:reset-owner` (docs/deployment.md).
 
 ### Passkey management (Profile → Security)
@@ -168,6 +173,11 @@ every server instance shares the counters. The first refusal of a window is audi
 The client address is the platform's (`getClientAddress()`: `x-forwarded-for` as set by Vercel).
 Refusals answer `429` with `Retry-After`.
 
+`recovery.global` counts failed codes only, charged after the code is looked up, so it never
+refuses a valid one: a client staying within its own limit cannot fill it and lock the owner out
+of recovery. It is a tripwire (audited when it trips; further wrong codes answer `429`), not a
+bound on distributed guessing, which rests on the per-client limit and the 80-bit codes.
+
 ## Audit log
 
 `auth_events` records setup completed/failed, sign-in succeeded/failed (with the reason from
@@ -189,10 +199,11 @@ uses it: every Chromium sign-in is a real WebAuthn ceremony.
 - Server-only configuration is validated by `src/lib/server/env.ts` and never bundled for the
   browser (SvelteKit refuses `server/` imports in client code). `ANTHROPIC_API_KEY` never reaches
   the browser.
-- The setup **token** is never stored anywhere: only its hash is configured. Vercel's own request
-  logs record full URLs, so the setup request's token appears there; it is useless once setup has
-  completed (and `OWNER_SETUP_TOKEN_HASH` can then be removed). The app's own logs record paths
-  without query strings.
+- The setup **token** is never stored anywhere: only its hash is configured (and, once used,
+  recorded in `used_setup_tokens`). Vercel's own request logs record full URLs, so the setup
+  request's token appears there; it is useless once setup has completed, also after an owner
+  reset (a used token is refused for good). Remove `OWNER_SETUP_TOKEN_HASH` after setup. The app's
+  own logs record paths without query strings.
 - `.env` is git-ignored; nothing secret is committed.
 
 ## What is and isn't protected
