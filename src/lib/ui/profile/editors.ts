@@ -7,7 +7,7 @@
 import type { Component } from 'svelte';
 import type { Discipline } from '#lib/domain/profile/catalog.ts';
 import type { FieldErrors, SchemaName } from '#lib/domain/profile/schemas.ts';
-import type { AthleteProfile } from '#lib/domain/profile/types.ts';
+import type { AthleteProfile, Goal } from '#lib/domain/profile/types.ts';
 import type { SectionKey } from './sections';
 
 /** What every editor is told about the athlete (from the edit route's load). */
@@ -30,8 +30,8 @@ export interface SectionEditor {
 	draft(saved: unknown, context: SectionContext): unknown;
 	/** The schema the browser checks before posting (the services check it again). */
 	schema: SchemaName;
-	/** What Save posts when the editing state holds more than the schema takes (row keys). */
-	payload?: (draft: unknown) => unknown;
+	/** What is posted, when that is not the editing state as it stands (SectionForm). */
+	payload?: (value: unknown) => unknown;
 }
 
 /**
@@ -42,7 +42,7 @@ function section<T>(
 	Editor: Component<EditorProps<T>>,
 	draft: (saved: never, context: SectionContext) => T,
 	schema: SchemaName,
-	payload?: (draft: T) => unknown
+	payload?: (value: T) => unknown
 ): SectionEditor {
 	return {
 		Editor: Editor as unknown as SectionEditor['Editor'],
@@ -53,13 +53,28 @@ function section<T>(
 }
 
 export const EDITORS: Record<SectionKey, () => Promise<SectionEditor>> = {
-	specifics: () =>
-		Promise.all([import('./SpecificsEditor.svelte'), import('./specifics')]).then(
-			([editor, { specificsDraft, specificsPayload }]) =>
-				section(editor.default, specificsDraft, 'specifics', specificsPayload)
+	// The goals as loaded: each goal is drafted in its own sheet, and saves on its own.
+	goals: () =>
+		import('./GoalsEditor.svelte').then((editor) =>
+			section(editor.default, (goals: Goal[]) => goals, 'goal')
+		),
+	experience: () =>
+		Promise.all([import('./ExperienceEditor.svelte'), import('./experience')]).then(
+			([editor, { experienceDraft, experiencePayload }]) =>
+				section(editor.default, experienceDraft, 'experience', experiencePayload)
 		),
 	equipment: () =>
 		Promise.all([import('./EquipmentEditor.svelte'), import('./equipment')]).then(
 			([editor, { equipmentDraft }]) => section(editor.default, equipmentDraft, 'equipment')
+		),
+	strength: () =>
+		Promise.all([import('./BaselinesEditor.svelte'), import('./strength')]).then(
+			([editor, { baselinesDraft, baselinesPayload }]) =>
+				section(editor.default, baselinesDraft, 'baselines', baselinesPayload)
+		),
+	specifics: () =>
+		Promise.all([import('./SpecificsEditor.svelte'), import('./specifics')]).then(
+			([editor, { specificsDraft, specificsPayload }]) =>
+				section(editor.default, specificsDraft, 'specifics', specificsPayload)
 		)
 };
