@@ -16,18 +16,21 @@ import {
 	trackConsoleErrors
 } from './support';
 
-/** A module's chunk in the build under test (`_app/immutable/chunks/….js`), from Vite's manifest. */
-function chunkFile(source: string): string {
-	const manifest = JSON.parse(
-		readFileSync(
-			path.resolve(import.meta.dirname, '../.svelte-kit/output/client/.vite/manifest.json'),
-			'utf8'
-		)
-	) as Record<string, { file: string } | undefined>;
+const CLIENT = path.resolve(import.meta.dirname, '../.svelte-kit/output/client');
+
+/** A module's chunk in the build under test (its file and stylesheets), from Vite's manifest. */
+function built(source: string): { file: string; css?: string[] } {
+	const manifest = JSON.parse(readFileSync(`${CLIENT}/.vite/manifest.json`, 'utf8')) as Record<
+		string,
+		{ file: string; css?: string[] } | undefined
+	>;
 	const chunk = manifest[source];
 	if (!chunk) throw new Error(`${source} is not in the build under test`);
-	return chunk.file;
+	return chunk;
 }
+
+/** A module's chunk in the build under test (`_app/immutable/chunks/….js`). */
+const chunkFile = (source: string) => built(source).file;
 
 /** The URL pattern of a module's chunk in the build under test. */
 const chunkOf = (source: string) => `**/${chunkFile(source)}`;
@@ -192,6 +195,49 @@ test.describe('with the network in the test’s hands', () => {
 		await editorReady(page);
 		await expect(place(page, 'Commercial gym')).toBeVisible();
 		await expect(page.getByTestId('save-section')).toBeEnabled();
+	});
+
+	test('the page renders without the editor’s styles, and the editor shows already styled', async ({
+		page,
+		request
+	}) => {
+		const styles = built(EDITOR).css ?? [];
+		expect(styles.length).toBeGreaterThan(0);
+		// Neither linked nor inlined, so they never hold up the page's first paint.
+		const html = await (await request.get('/profile/equipment')).text();
+		for (const file of styles) {
+			expect(html).not.toContain(path.basename(file));
+			expect(html).not.toContain(readFileSync(`${CLIENT}/${file}`, 'utf8').trim().slice(0, 120));
+		}
+		// How the editor looks the moment it replaces the skeleton, before anything can repaint.
+		await page.addInitScript(() => {
+			new MutationObserver((_, observer) => {
+				const region = document.querySelector('[data-testid="section-editor"]');
+				if (region?.getAttribute('aria-busy') !== 'false') return;
+				observer.disconnect();
+				const display = getComputedStyle(region.firstElementChild!).display;
+				Object.assign(window, { __firstDisplay: display });
+			}).observe(document, { subtree: true, childList: true, attributeFilter: ['aria-busy'] });
+		});
+		// Hold its stylesheet: the skeleton stays until it has arrived.
+		let release!: () => void;
+		const held = new Promise<void>((resolve) => (release = resolve));
+		const sheet = `**/${styles[0]}`;
+		await page.route(sheet, async (route) => {
+			await held;
+			await route.continue();
+		});
+		const asked = page.waitForRequest(sheet);
+		await page.goto('/profile/equipment', { waitUntil: 'domcontentloaded' });
+		await asked;
+		await expect(page.getByTestId('section-editor')).toHaveAttribute('aria-busy', 'true');
+		release();
+		await editorReady(page);
+		await expect(place(page, 'Commercial gym')).toBeVisible();
+		// Its root is a grid (EquipmentEditor.svelte), a plain block without its stylesheet.
+		expect(
+			await page.evaluate(() => (window as unknown as { __firstDisplay: string }).__firstDisplay)
+		).toBe('grid');
 	});
 
 	test('the editor takes the skeleton’s place without moving anything', async ({ page }) => {
