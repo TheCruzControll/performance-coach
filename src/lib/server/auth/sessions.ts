@@ -195,12 +195,14 @@ export async function revokeOtherSessions(
 ): Promise<number> {
 	const { db, now } = resolveDeps(deps);
 	await enforceRateLimit('manage', { session: session.id }, request, { db, now });
-	const count = await createAuthRepository(db).revokeOtherSessions(
-		session.ownerId,
-		session.id,
-		'signed_out_elsewhere',
-		now()
-	);
+	const count = await db.transaction(async (tx) => {
+		const repo = createAuthRepository(tx);
+		// A passkey registration in flight holds its session's row lock and may replace that
+		// session with a new one (a recovery upgrade). Lock first, which waits for it, then revoke
+		// in a new statement, whose snapshot includes any session it created.
+		await repo.lockOtherSessions(session.ownerId, session.id);
+		return repo.revokeOtherSessions(session.ownerId, session.id, 'signed_out_elsewhere', now());
+	});
 	await recordAuthEvent(db, request, {
 		type: 'session.revoked_others',
 		ownerId: session.ownerId,
