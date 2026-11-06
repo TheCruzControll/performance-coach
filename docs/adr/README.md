@@ -14,3 +14,4 @@ Status values: Proposed · Accepted · Superseded.
 | [0007](0007-observability.md)            | Built-in observability: Server-Timing, JSON logs, RUM table   | Accepted |
 | [0008](0008-testing-strategy.md)         | Testing pyramid: Playwright e2e, real-Postgres integration    | Accepted |
 | [0009](0009-llm-provider-interface.md)   | LLM behind a provider interface with a deterministic mock     | Accepted |
+| [0010](0010-program-versioning.md)       | Immutable program versions with copy-on-write membership      | Accepted |

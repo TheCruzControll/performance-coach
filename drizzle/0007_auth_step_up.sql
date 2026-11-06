@@ -1,0 +1,5 @@
+ALTER TABLE "auth_events" DROP CONSTRAINT "auth_events_type_ck";--> statement-breakpoint
+ALTER TABLE "webauthn_challenges" DROP CONSTRAINT "webauthn_challenges_purpose_ck";--> statement-breakpoint
+ALTER TABLE "auth_sessions" ADD COLUMN "reauthenticated_at" timestamp with time zone;--> statement-breakpoint
+ALTER TABLE "auth_events" ADD CONSTRAINT "auth_events_type_ck" CHECK (type in ('setup.completed', 'setup.failed', 'signin.succeeded', 'signin.failed', 'passkey.added', 'passkey.renamed', 'passkey.removed', 'recovery.used', 'recovery.failed', 'recovery.regenerated', 'session.revoked', 'session.revoked_others', 'reauth.succeeded', 'reauth.failed', 'signout', 'rate_limited', 'owner.reset'));--> statement-breakpoint
+ALTER TABLE "webauthn_challenges" ADD CONSTRAINT "webauthn_challenges_purpose_ck" CHECK (purpose in ('setup', 'authenticate', 'register', 'reauthenticate'));

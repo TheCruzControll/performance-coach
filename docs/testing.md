@@ -33,7 +33,8 @@ Auth unit tests (`src/lib/server/auth/*.test.ts`): relying-party derivation per 
 (production is exactly `https://coach.nikocruz.com`, previews never the production RP, localhost
 only in dev/test), token generation and hashing with the constant-time comparison, recovery-code
 format, normalisation and hashing, cookie name and flags from the origin, the safe return path,
-the CSRF Origin check, User-Agent and passkey labels, and the route access map — which also walks
+the CSRF Origin check, User-Agent and passkey labels, the rate-limit client network (IPv6 per
+/64, IPv4-mapped IPv6 as IPv4), and the route access map — which also walks
 `src/routes` and fails on any page or endpoint without an access decision.
 
 ## Integration tests
@@ -71,10 +72,15 @@ the CSRF Origin check, User-Agent and passkey labels, and the route access map �
   challenge bound to its session, nothing added or upgraded for a session revoked or expired
   mid-request, including a revocation that commits while the request waits on the session's row
   lock, sign out everywhere else during a recovery upgrade ending the new session, rename
-  validation, never the last, removal ends its sessions, a malformed id is not found); rate limits
-  on every entry point with `Retry-After`, window reset, a global ceiling on failed recovery codes
-  that never refuses a valid one, and a full sign-out bucket that still lets a live session sign
-  out. A controllable clock replaces waiting.
+  validation, never the last, removal ends its sessions, a malformed id is not found); step-up
+  (`reauth.test.ts`: 5 minutes after its last passkey use a session can no longer add or remove
+  passkeys, create codes or sign devices out, but can rename; sign-in, setup and the recovery
+  passkey start fresh, test and recovery sessions do not; re-authentication with an owner passkey
+  unlocks them again and refuses missing UV, a stranger's passkey, another session's or a sign-in
+  challenge and replay; owner sessions only, rate-limited); rate limits on every entry point with
+  `Retry-After`, window reset, IPv6 counted per /64, stale counters pruned on writes in bounded
+  batches, a global ceiling on failed recovery codes that never refuses a valid one, and a full
+  sign-out bucket that still lets a live session sign out. A controllable clock replaces waiting.
 - **Logs:** quiet by default (`LOG_LEVEL=silent` via the project's `env`); run
   `LOG_LEVEL=debug pnpm test:integration` to see them.
 
@@ -107,9 +113,13 @@ Projects (all `devices['iPhone 15 Pro']`):
   production. The `setup` project opens `/setup?token=…`, creates the passkey, checks the
   recovery codes (copy, download, acknowledgement) and saves `e2e/.auth/chromium.json`
   (git-ignored) — the state every Chromium spec starts from.
-- Specs that need their own sign-in register **their own passkey** from that state (Security →
-  Add passkey, a real registration), forget the shared cookie on their own context and sign in
-  with it, so they never revoke the shared session and stay independent.
+- That shared session is fresh only for 5 minutes after setup (step-up, docs/security.md), so
+  specs that change passkeys, codes or devices sign in for themselves: right after setup the
+  `setup` project registers **one owner passkey per worker** and exports it from the virtual
+  authenticator (`e2e/.auth/owner-passkeys.json`, git-ignored). `signInAsOwner` (e2e/webauthn.ts)
+  imports the worker's passkey (its counter picked up from Postgres; one per worker, so no two
+  tests use one at once), clears the context's cookies (never rotating the shared session) and
+  signs in from the sign-in screen: a real ceremony and a fresh session.
 - **WebKit has no virtual authenticator**: `setup-webkit` mints a session through
   `POST /api/test-support/session` (exists only with `ENABLE_TEST_ROUTES`, which env validation
   refuses on any hosted deployment). Passkey specs skip on WebKit with that reason; passkeys on iOS
@@ -129,7 +139,7 @@ Specs:
   on the setup and recovery-code screens; name required; 10 codes in the expected format;
   download and copy contain them; Continue only after acknowledgement; the authenticator holds a
   discoverable credential; only hashes in Postgres; `/setup` is a 404 afterwards, even with the
-  token.
+  token; then the per-worker owner passkeys are added.
 - `auth.e2e.ts` (Chromium) — passkey sign-in from a denied page back to it (`?next=`); the session
   cookie is opaque, HttpOnly, SameSite=Lax and stored only as a hash; conditional UI signs in
   without a tap; a refused passkey (user verification fails) shows a designed, accessible error
@@ -145,6 +155,12 @@ Specs:
   allow-list, telemetry needs a session, unknown URLs are denied, forged cookies are refused and
   cleared; signed in, cross-site JSON, form-action and `text/plain` requests are refused (403)
   and change nothing.
+- `reauth.e2e.ts` — step-up: a session whose last passkey use is over 5 minutes old cannot
+  remove a passkey (the form action answers 403); on the screen a **Confirm it's you** sheet
+  opens over the remove sheet (axe in both themes), a failed Face ID check says nothing was
+  changed, and a passing one (Chromium's virtual authenticator) removes it without another tap
+  and refreshes the session. WebKit has no virtual authenticator: there, signing out a device
+  from the test-minted session shows the prompt, and cancelling changes nothing and says so.
 - `sessions.exclusive.e2e.ts` (runs last) — sign out everywhere else ends every other session,
   not this one; the last passkey cannot be removed (button disabled, server answers 409).
 
@@ -199,6 +215,73 @@ Specs:
 Artifacts: failure screenshots + traces in `test-results/`, key-screen screenshots in
 `test-results/screens/<project>/`, HTML report in `playwright-report/` (all uploaded by CI).
 
+## Training (M3)
+
+One subsection per M3 track. Each slice adds to its own subsection only.
+
+### Foundation & catalogue
+
+Unit tests (`src/lib/domain/training/`, `src/lib/domain/exercises/`, `src/lib/domain/calendar.ts`):
+
+- **Vocabulary:** every list has unique snake_case keys, each with a label, and a new list fails
+  the test until it is listed there; every muscle is in exactly one hard-set group and no group
+  is empty; `skillForExperience` and `fromCommitmentIntensity` cover every M2 value, in order;
+  every session type has an M2 discipline tone; no list shadows or copies an M2 catalogue list
+  (load bases are M2's baseline kinds themselves); every M3 decision kind and M4 substitution
+  reason is listed; a closed list changes only together with the migration that CHECKs it.
+- **Calendar dates:** month, year and leap boundaries (century rules included); Monday-first
+  weeks; ISO week 53 and week-numbering years; `daysBetween` across year ends; the same answers
+  in any process time zone, across daylight saving.
+- **Catalogue format:** a valid table parses (unilateral and time-measured entries, padded
+  cells); each of these throws, naming the file, the line and the entry: an unknown pattern,
+  muscle, equipment, skill, tag, discipline, lift, measure or load type; reps that run high to
+  low, are zero or are not numbers; reps or seconds on the wrong measure; a time measure without
+  seconds; `uni` other than `y` or `-`; a duplicate key; a wrong column count; a missing header.
+- **Plain Node** (`scripts/catalogue-node.test.ts`): Node with type stripping alone, as the seed
+  runs, loads `src/lib/domain/exercises/index.ts` and sees the catalogue Vite sees; an
+  extensionless import fails there, which is why the package uses `.ts` specifiers.
+
+### Schema
+
+Migrations, the CHECKs on closed vocabularies and the history guards on real Postgres.
+
+- **Programs** (`tests/integration/training/program-schema.test.ts`, ADR 0010): UPDATE and DELETE
+  are refused on every program table, in or outside a transaction, so deleting the owner is
+  refused too; a program head moves only forward to its own version and changes nothing else;
+  one active program per owner; a week is exactly 7 days; status, plan status and `decided_by`
+  are CHECKed while phase and decision kind stay open; deleting an M2 goal leaves programs
+  intact; `truncate programs cascade` and `withCommitted` purge a whole program. The unit test
+  `scripts/history-guards.test.ts` keeps `truncate`, `session_replication_role` and
+  `disable trigger` out of server code.
+
+### Programs
+
+The program store, program reads, versioning and owner edits, on real Postgres. No tests yet.
+
+### History
+
+Logged training, the history queries and `pnpm db:explain`. No tests yet.
+
+### Generator
+
+The deterministic week-1 generator: its rules, stages and scenarios. No tests yet.
+
+### Concurrent training
+
+Commitments, running, interference rules and placement across disciplines. No tests yet.
+
+### Train screens
+
+The Train week, the plan overview, session detail and the edit sheets. No tests yet.
+
+### Program history
+
+Versions and their decisions with the why; older versions stay viewable. No tests yet.
+
+### Today screens
+
+Build my program, today's sessions and what is next this week. No tests yet.
+
 ## The LLM in tests
 
 Milestone 5 adds the coach behind `LlmProvider`. Tests use the deterministic `mock` provider by
@@ -233,5 +316,9 @@ On an iPhone with current iOS, against a preview deployment (Vercel Authenticati
 4. Airplane mode: tabs keep the shell, Profile shows the offline state; back online it loads.
 5. Plate calculator: one-handed stepper hold-to-repeat, typing with the decimal keypad, swipe the
    sheet down to close.
+6. Step-up (Profile → Security, more than 5 minutes after signing in): removing a passkey and
+   signing out a device each ask "Confirm it's you" once; Face ID passes and the action
+   completes; cancelling Face ID says nothing was changed. Add passkey after the check opens the
+   passkey prompt (if Safari wants a fresh tap for that second prompt, the next tap works).
 
 Record device, iOS version, date and screenshots in the PR.

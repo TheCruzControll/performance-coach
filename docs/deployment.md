@@ -5,8 +5,9 @@ Target: **Vercel** (Node.js 22, Fluid compute) at **coach.nikocruz.com**, DNS at
 integration**; every deployed build migrates its own database first (`scripts/vercel-build.sh`).
 
 > **Status (M2, in progress):** the accounts, project, database branches, environment variables
-> and domain below exist and were configured through the Vercel and Neon APIs. Preview
-> deployments build from every pull request. Passkey auth is merged to `main`
+> and domain below exist and were configured through the Vercel and Neon APIs. Previews are
+> deployed on demand, not from every pull request (see "Preview deployments"). Passkey auth is
+> merged to `main`
 > (docs/security.md); **production stays switched off** (the guards below are still committed)
 > until the M2 production cutover removes them. Nothing is served on `coach.nikocruz.com` yet.
 
@@ -16,7 +17,7 @@ integration**; every deployed build migrates its own database first (`scripts/ve
 | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Vercel     | Project `performance-coach` (`prj_ofpkwho7FKmRXNr9Bem9phaD2AVN`) in team `thecruzcontrolls-projects`, Hobby plan. Framework SvelteKit, Node.js 22.x, Fluid compute.                                                                                                                                        |
 | Region     | Functions in **`pdx1`** (Portland), next to the Neon database in **`aws-us-west-2`** (Oregon), so a query is a same-region round trip.                                                                                                                                                                     |
-| Git        | GitHub `TheCruzControll/performance-coach` linked; Vercel builds every PR as a preview.                                                                                                                                                                                                                    |
+| Git        | GitHub `TheCruzControll/performance-coach` linked; Git deployments only for `main` (previews on demand).                                                                                                                                                                                                   |
 | Protection | Vercel Authentication on every deployment **except custom domains**: previews need a Vercel login; `coach.nikocruz.com` is public and protected by the app's own passkey auth.                                                                                                                             |
 | Neon       | Project `red-rain-59499468` ("Performance coach"), Postgres 18, free plan, 6 h history window. Database `neondb`, role `neondb_owner`.                                                                                                                                                                     |
 | Branches   | `production` (`br-green-block-bfh38xqf`, default) for Production; `preview` (`br-solitary-bonus-bf58ajx7`) shared by all preview deployments. Never point a preview at production.                                                                                                                         |
@@ -166,8 +167,13 @@ wrong passphrase fails without touching the target.
 
 ## Preview deployments
 
-Vercel builds every PR against the `preview` Neon branch (migrated by the build). They are behind
-Vercel Authentication. `ANTHROPIC_API_KEY` is production-only; previews use the deterministic mock
+Vercel no longer builds a preview for every PR: `git.deploymentEnabled` in `vercel.json` turns
+Git deployments off for every branch but `main` (`"**": false`). The Hobby plan caps an account
+at 100 deployments a day, and a preview for each push to each PR branch used that up on
+2026-11-06 and left production unable to deploy. CI runs the Vercel-adapter build and the
+migrations on every PR instead. When a hosted preview is useful, deploy one on demand with the
+Vercel CLI (`vercel deploy` from the branch); it builds against the `preview` Neon branch
+(migrated by the build). Previews are behind Vercel Authentication. `ANTHROPIC_API_KEY` is production-only; previews use the deterministic mock
 coach provider unless a key is added for Preview.
 
 ### Resetting the preview database

@@ -230,6 +230,16 @@ export function createAuthRepository(db: Executor) {
 			await db.update(authSessions).set(values).where(eq(authSessions.id, id));
 		},
 
+		/** Record a step-up on a live session. False if it has been revoked meanwhile. */
+		async markSessionReauthenticated(id: string, at: Date): Promise<boolean> {
+			const updated = await db
+				.update(authSessions)
+				.set({ reauthenticatedAt: at })
+				.where(and(eq(authSessions.id, id), isNull(authSessions.revokedAt)))
+				.returning({ id: authSessions.id });
+			return updated.length === 1;
+		},
+
 		async listActiveSessions(ownerId: string, now: Date): Promise<SessionRow[]> {
 			return db
 				.select()
@@ -417,8 +427,18 @@ export function createAuthRepository(db: Executor) {
 			return row?.count ?? 1;
 		},
 
-		async pruneRateLimits(olderThan: Date): Promise<void> {
-			await db.delete(authRateLimits).where(lt(authRateLimits.windowStart, olderThan));
+		/**
+		 * Delete up to `limit` counters whose window started before `olderThan`. Rows another
+		 * transaction holds (a concurrent hit or prune) are skipped, never waited on.
+		 */
+		async pruneRateLimits(olderThan: Date, limit: number): Promise<void> {
+			const stale = db
+				.select({ key: authRateLimits.key })
+				.from(authRateLimits)
+				.where(lt(authRateLimits.windowStart, olderThan))
+				.limit(limit)
+				.for('update', { skipLocked: true });
+			await db.delete(authRateLimits).where(inArray(authRateLimits.key, stale));
 		}
 	};
 }
