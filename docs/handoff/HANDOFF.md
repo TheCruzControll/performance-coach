@@ -140,7 +140,12 @@ unreviewed. Fold it into a real commit (or redo it) before publishing.
   enforced, no required reviews. Auto-merge is not enabled; the steward merges.
 - Vercel Git deployments now happen only for `main` (#44: `git.deploymentEnabled` has
   `"**": false`). The Hobby plan caps an account at 100 deployments a day and per-PR previews hit
-  it. CI runs the Vercel build and the migrations on every PR.
+  it (`api-deployments-free-per-day`). CI runs the Vercel build and the migrations on every PR.
+  Vercel reads `vercel.json` from the pushed commit, so **a branch cut before #44 still deploys on
+  every push**: merge `main` into it first. Every branch listed above already has it (except the
+  superseded `m2/12-onboarding`). The cap is a rolling 24-hour window; the heavy use ended about
+  2026-11-06 04:00 UTC. If the cutover's production deploy is refused, redeploy after that, or ask
+  the owner about Vercel Pro (it costs money).
 - Stale Playwright browser caches were deleted (#21 keys the cache by runner image).
 
 ## How to work on it
