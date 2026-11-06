@@ -14,7 +14,8 @@ Two interconnected components:
 1. **AI Performance Coach** — an agent that creates programs, analyzes performance, tracks progress,
    and continuously adapts programming from the owner's training history and goals.
 2. **Training Application** — a mobile-first web app (iPhone first) to view workouts, log sessions,
-   track performance, and talk to the coach.
+   track performance, and talk to the coach. It is also a first-class desktop browser app (owner
+   request, 2026-11-06): every screen is laid out for a desktop window, not a stretched phone screen.
 
 It must feel like a premium dedicated fitness product — **not** a generic chatbot with a tracker
 bolted on. Three equal priorities, none sacrificed for another:
@@ -125,7 +126,9 @@ or stopping the movement; no medical diagnoses.
 ## 7. Workout application & interface
 
 Designed primarily for **iPhone**, for someone actively training in a gym. The workout screen is
-simple, fast, easy between sets.
+simple, fast, easy between sets. Every screen also works in a desktop browser: navigation in a rail
+beside the content, the content centred at a readable width, pointer hover and keyboard focus
+states, and wider layouts where the width helps (analytics, a list beside its editor).
 
 - Strength display per exercise: name, target sets × reps, target RPE, prescribed weight, previous
   performance, rest timer. Other disciplines show their relevant metrics (running: distance, pace,
@@ -196,6 +199,14 @@ secrets stored securely; AI credentials never reach the frontend; protect person
 recovery. Use established auth libraries — no hand-rolled crypto/protocols. Hidden URLs are not
 security.
 
+**Email sign-in link** (owner request, 2026-11-06): a second way in, next to passkeys. "Email me a
+sign-in link" sends a one-time link only ever to the owner's address, which is configuration
+(`OWNER_EMAIL`), never taken from the request. Links are single-use, expire after 15 minutes, are
+stored only as hashes, and need one tap to sign in, so mail scanners that open links cannot use them.
+A link gives a full session, but the actions that already need step-up re-authentication (adding or
+removing passkeys, new recovery codes, signing out other devices) still require a passkey. Mail goes
+through Resend (free tier); without its key or the owner's address the option is switched off.
+
 ## 14. Technical architecture
 
 Best-in-class, standard, maintainable, single-user-appropriate; no needless microservices.
@@ -227,7 +238,8 @@ p75 once RUM exists. Set budgets. **Document real measurements — no unevidence
 Premium, cohesive visual identity — not generic AI dashboards, SaaS templates, or stock component
 library looks. Excellent typography, spacing/hierarchy, consistent tokens, beautiful data viz,
 purposeful animation, high-quality interactions, designed empty/loading/error states, consistent
-components, thoughtful mobile layouts. Modern minimal premium aesthetic; **dark mode primary**.
+components, thoughtful mobile and desktop layouts. Modern minimal premium aesthetic; **dark mode
+primary**.
 Balance high-end training app feel with analytical depth. Usability over effects.
 
 Workout-specific: how fast the next exercise is understood; one-handed set logging; rest timer
@@ -277,8 +289,8 @@ real agent-integration tests where appropriate.
 Playwright journeys: login via supported auth test flow; onboarding; leaving 1RMs blank; generate
 week-1 baseline program; start workout; log sets/reps/RPE; rest timer; plate calculator; substitute an
 unavailable exercise; refresh and restore active workout; complete workout; view history; weekly
-review; generate next week; multiple concurrent disciplines. iPhone-sized viewports. Screenshots/
-artifacts in CI.
+review; generate next week; multiple concurrent disciplines. iPhone-sized viewports, and desktop
+(1440 × 900) for the shell and every main screen. Screenshots/artifacts in CI.
 
 Every milestone has explicit acceptance criteria; compiling ≠ done; PRs include evidence; never claim
 tests passed unless executed.

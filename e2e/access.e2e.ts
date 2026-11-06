@@ -1,10 +1,10 @@
 /**
  * Deny by default, proven over HTTP. Routes are enumerated from src/routes (e2e/support.ts →
- * appRoutes), so a route added later is covered automatically — and an unclassified one already
- * fails `pnpm check` and the unit suite (src/lib/server/auth/routes.ts).
+ * appRoutes), so a route added later is covered automatically — and an unclassified one fails
+ * here, as it fails `pnpm check` and the unit suite (src/lib/server/auth/routes.ts).
  */
 import { expect, test } from '@playwright/test';
-import { routeAccess } from '../src/lib/server/auth/routes';
+import { ROUTE_ACCESS, routeAccess } from '../src/lib/server/auth/routes';
 import { signInUrl } from '../src/lib/server/auth/return-path';
 import { appRoutes, ORIGIN, query, SAME_ORIGIN, signedOut } from './support';
 
@@ -27,6 +27,18 @@ test.describe('signed out: deny by default', () => {
 		expect(ROUTES.map((r) => r.id)).toEqual(
 			expect.arrayContaining(['/(app)/today', '/(app)/profile/security', '/api/vitals'])
 		);
+		// At runtime an unclassified route falls back to `owner`, so it would pass every check
+		// below: fail on it here.
+		expect(
+			ROUTES.map((r) => r.id).filter((id) => !(id in ROUTE_ACCESS)),
+			'routes missing from ROUTE_ACCESS'
+		).toEqual([]);
+		// Every route is exercised below: a page, or an endpoint with a recognised handler. One
+		// the walk cannot exercise (e.g. only a `fallback` export) fails here, not silently.
+		expect(
+			ROUTES.filter((r) => !r.page && r.methods.length === 0).map((r) => r.id),
+			'routes the walk cannot exercise'
+		).toEqual([]);
 	});
 
 	test('every app page redirects to sign-in with a safe same-origin return path', async ({
