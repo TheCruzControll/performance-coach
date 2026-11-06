@@ -161,7 +161,7 @@ export async function createProgramFromPlan(
 }
 
 /** Postgres's integer: a larger version number would be a 500, not 'not found'. */
-const MAX_VERSION = 2 ** 31 - 1;
+export const MAX_VERSION = 2 ** 31 - 1;
 
 /** Version `number` of one of the owner's programs, its whole tree and the decisions it made. */
 export async function getProgramVersion(

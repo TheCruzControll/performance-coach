@@ -218,17 +218,22 @@ function sessionColumns(s: SessionPlan) {
 // ---- rows → the stored tree -----------------------------------------------------------------
 
 /** An exercise row's reference: a catalogue row by key, or the owner's own by id. */
-const refOf = (id: string, key: string | null): ExerciseRef => (key ? { key } : { customId: id });
+export const refOf = (id: string, key: string | null): ExerciseRef =>
+	key ? { key } : { customId: id };
 
-export function toProgramVersion(
-	{ program, version }: VersionRow,
-	rows: VersionTreeRows,
-	decisions: DecisionRow[]
-): ProgramVersion {
-	const weeksOf = Map.groupBy(rows.weeks, (row) => row.blockId);
-	const sessionsOf = Map.groupBy(rows.sessions, (row) => row.weekId);
+/** Session rows and their children, as versionTree or a program read returns them. */
+export interface SessionRows extends Pick<
+	VersionTreeRows,
+	'sessions' | 'exercises' | 'segments' | 'details'
+> {
+	/** Left out by reads that show a session's line only: its exercises then have no sets. */
+	sets?: VersionTreeRows['sets'];
+}
+
+/** Each session row as a stored session, by row id, in the rows' order. */
+export function toStoredSessions(rows: SessionRows): Map<string, StoredSession> {
 	const exercisesOf = Map.groupBy(rows.exercises, (row) => row.sessionId);
-	const setsOf = Map.groupBy(rows.sets, (row) => row.plannedExerciseId);
+	const setsOf = Map.groupBy(rows.sets ?? [], (row) => row.plannedExerciseId);
 	const segmentsOf = Map.groupBy(rows.segments, (row) => row.sessionId);
 	const detailsOf = new Map(rows.details.map((row) => [row.sessionId, row]));
 
@@ -282,6 +287,18 @@ export function toProgramVersion(
 		throw new Error(`planned session ${id} has no exercises, segments or details`);
 	};
 
+	return new Map(rows.sessions.map((row) => [row.id, toSession(row)]));
+}
+
+export function toProgramVersion(
+	{ program, version }: VersionRow,
+	rows: VersionTreeRows,
+	decisions: DecisionRow[]
+): ProgramVersion {
+	const weeksOf = Map.groupBy(rows.weeks, (row) => row.blockId);
+	const sessionsOf = Map.groupBy(rows.sessions, (row) => row.weekId);
+	const sessions = toStoredSessions(rows);
+
 	const { programId: _program, startsOn, firstPlannedDay, ...info } = version;
 	return {
 		programId: program.id,
@@ -301,7 +318,7 @@ export function toProgramVersion(
 					id: weekId,
 					lineage,
 					targets: week.targets as unknown as WeekTargets,
-					sessions: (sessionsOf.get(weekId) ?? []).map(toSession)
+					sessions: (sessionsOf.get(weekId) ?? []).map((row) => sessions.get(row.id)!)
 				})
 			)
 		})),
