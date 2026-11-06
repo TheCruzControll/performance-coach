@@ -1,5 +1,5 @@
-import { expect, test, type Page } from '@playwright/test';
-import { eventually, query, SAME_ORIGIN, trackConsoleErrors } from './support';
+import { expect, test, type Page, type Route } from '@playwright/test';
+import { eventually, gotoHydrated, query, SAME_ORIGIN, trackConsoleErrors } from './support';
 
 /**
  * Leaving a page cancels the loads it still had in flight, and WebKit reports each one as a
@@ -7,8 +7,7 @@ import { eventually, query, SAME_ORIGIN, trackConsoleErrors } from './support';
  * are pending, then require that neither page logged an error and nothing was recorded.
  */
 async function leaveWhilePending(page: Page, path: string, held: (url: string) => boolean) {
-	const errors = trackConsoleErrors(page);
-	const since = (await query<{ now: Date }>('select now()'))[0]!.now;
+	const quietly = await expectLeftQuietly(page, path);
 	let pending = 0;
 	let left = false;
 	await page.route('**/*', async (route) => {
@@ -22,16 +21,28 @@ async function leaveWhilePending(page: Page, path: string, held: (url: string) =
 		.poll(() => pending, { message: `${path} started no load that matches what is held` })
 		.toBeGreaterThan(0);
 	left = true;
-	await page.goto('/today');
-	await expect(page.getByRole('heading', { level: 1, name: 'Today' })).toBeVisible();
-	await page.waitForLoadState('networkidle');
-	expect(errors).toEqual([]);
-	expect(
-		await query(
-			`select message from app_errors where kind = 'client' and path = $1 and occurred_at >= $2`,
-			[path, since]
-		)
-	).toEqual([]);
+	await quietly();
+}
+
+/**
+ * Start watching `page` for errors; the returned check goes to /today and then requires that
+ * neither page logged an error and nothing was recorded for `path`.
+ */
+async function expectLeftQuietly(page: Page, path: string) {
+	const errors = trackConsoleErrors(page);
+	const since = (await query<{ now: Date }>('select now()'))[0]!.now;
+	return async () => {
+		await page.goto('/today');
+		await expect(page.getByRole('heading', { level: 1, name: 'Today' })).toBeVisible();
+		await page.waitForLoadState('networkidle');
+		expect(errors).toEqual([]);
+		expect(
+			await query(
+				`select message from app_errors where kind = 'client' and path = $1 and occurred_at >= $2`,
+				[path, since]
+			)
+		).toEqual([]);
+	};
 }
 
 test.describe('platform: health, PWA, observability', () => {
@@ -266,13 +277,67 @@ test.describe('platform: health, PWA, observability', () => {
 	test('leaving while startup stylesheets load is not an error', async ({ page }) => {
 		// SvelteKit imports the root layout and error page on every start; the stylesheets they
 		// need that the HTML does not link (inlined ones, the shell's on pages without it) are
-		// fetched then. Hold those back.
+		// fetched then. Hold those back. A fragment is not part of what is fetched: the icons'
+		// `<use href="…/sprite….svg#name">` link the sprite, which the page requests as it renders.
 		const html = await (await page.request.get('/design')).text();
-		const linked = new Set([...html.matchAll(/(\/_app\/immutable\/[^"]+)"/g)].map((m) => m[1]));
+		const linked = new Set([...html.matchAll(/(\/_app\/immutable\/[^"#]+)[#"]/g)].map((m) => m[1]));
 		await leaveWhilePending(page, '/design', (url) => {
 			const { pathname } = new URL(url);
 			return pathname.startsWith('/_app/immutable/') && !linked.has(pathname);
 		});
+	});
+
+	test('leaving as soon as a page renders is not an error', async ({ page }) => {
+		// The icons request the sprite as /design renders, before SvelteKit has started (it starts
+		// once its code has loaded): leave right then. The page goes on starting while /today
+		// loads, and in WebKit the startup loads it begins fail on the way out.
+		await leaveWhilePending(page, '/design', (url) =>
+			/^\/_app\/immutable\/assets\/sprite\.[\w-]+\.svg$/.test(new URL(url).pathname)
+		);
+	});
+
+	test('failures of a page left before the app has started are not errors', async ({
+		page,
+		browserName
+	}) => {
+		test.skip(
+			browserName === 'webkit',
+			'WebKit cancels the held entry as the leave starts, so the app never starts there'
+		);
+		// Hold the app's entry until /today is requested, which is after `beforeunload`. The page
+		// then starts while /today loads, and its startup stylesheets are cancelled, which WebKit
+		// reports as a failure. Only a leave noted from the page's first moment (src/app.html) is known by
+		// then: the app's own listeners would have missed `beforeunload`, and WebKit fires no
+		// `pagehide` for a page that has not finished loading.
+		const quietly = await expectLeftQuietly(page, '/design');
+		let entryRequested = false;
+		let left = false;
+		let release = () => {};
+		const entry = new Promise<void>((resolve) => (release = resolve));
+		await page.route('**/*', async (route) => {
+			const request = route.request();
+			const { pathname } = new URL(request.url());
+			if (!left && pathname.startsWith('/_app/immutable/entry/app.')) {
+				entryRequested = true;
+				await entry;
+				return route.continue().catch(() => {});
+			}
+			if (request.isNavigationRequest() && pathname === '/today') {
+				left = true;
+				release();
+				await new Promise((resolve) => setTimeout(resolve, 1_500)); // while /design starts
+				return route.continue();
+			}
+			const from = request.headers()['referer'] ?? '';
+			// Cancelled, as a load is when its page is left.
+			if (left && from.endsWith('/design') && pathname.endsWith('.css')) {
+				return route.abort('aborted');
+			}
+			return route.fallback();
+		});
+		await page.goto('/design', { waitUntil: 'domcontentloaded' });
+		await expect.poll(() => entryRequested, { message: 'the entry is held' }).toBe(true);
+		await quietly();
 	});
 
 	test('leaving while the service worker registers is not an error', async ({
@@ -281,6 +346,88 @@ test.describe('platform: health, PWA, observability', () => {
 	}) => {
 		test.skip(browserName === 'chromium', 'Chromium does not route the service-worker script');
 		await leaveWhilePending(page, '/train', (url) => url.endsWith('/service-worker.js'));
+	});
+
+	test.describe('with the network in the test’s hands', () => {
+		// page.route never sees a request the service worker answers.
+		test.use({ serviceWorkers: 'block' });
+
+		test('reloading while a screen’s data loads is not an error, and the page being left shows no error screen and checks for no new version', async ({
+			page
+		}) => {
+			// The reload cancels the data request of the navigation still under way. SvelteKit takes
+			// a failed navigation for a sign of a new deployment: it renders the error page and
+			// fetches /_app/version.json. WebKit refuses every load a page starts once the next page
+			// is loading and logs each as an error ("Fetch API cannot load …/_app/version.json due to
+			// access control checks."). Do to the page being left what WebKit does, on any engine:
+			// fail its held data request once the reload has started, then let the reload through.
+			const quietly = await expectLeftQuietly(page, '/profile');
+			await page.addInitScript(() => {
+				// Kept across the reload: whether a page ever showed the error screen.
+				new MutationObserver(() => {
+					if (document.querySelector('[data-testid="error-view"]')) {
+						sessionStorage.setItem('e2e:error-view', location.pathname);
+					}
+				}).observe(document, { childList: true, subtree: true });
+			});
+			await gotoHydrated(page, '/profile');
+			await page
+				.getByRole('region', { name: 'Training profile' })
+				.getByRole('link', { name: /Goals/ })
+				.click();
+			await expect(page.getByRole('heading', { level: 1, name: 'Goals' })).toBeVisible();
+
+			let data: Route | undefined;
+			await page.route(
+				(url) => url.pathname === '/profile/__data.json',
+				(route) => void (data = route) // held
+			);
+			await page.goBack(); // to Profile, whose data the navigation now requests
+			await expect(page).toHaveURL('/profile');
+			await expect.poll(() => data !== undefined, { message: 'Profile’s data is held' }).toBe(true);
+
+			let leaving = false;
+			const versionChecks: string[] = [];
+			page.on('request', (request) => {
+				if (leaving && new URL(request.url()).pathname === '/_app/version.json') {
+					versionChecks.push(request.url());
+				}
+			});
+			await page.route('**/profile', async (route) => {
+				if (!route.request().isNavigationRequest()) return route.fallback();
+				leaving = true;
+				// WebKit has cancelled it already, as the reload started.
+				await data!.abort('aborted').catch(() => {});
+				await new Promise((resolve) => setTimeout(resolve, 1_000)); // the page being left reacts
+				leaving = false;
+				await route.continue();
+			});
+			await page.reload();
+			await expect(page.getByRole('heading', { level: 1, name: 'Profile' })).toBeVisible();
+
+			const errorScreen = await page.evaluate(() => sessionStorage.getItem('e2e:error-view'));
+			expect({ versionChecks, errorScreen }).toEqual({ versionChecks: [], errorScreen: null });
+			await quietly();
+		});
+
+		test('a screen’s data that fails while nobody leaves still shows its failure', async ({
+			page
+		}) => {
+			// Only a leave holds a failed navigation back (see the test above).
+			await gotoHydrated(page, '/profile');
+			await page
+				.getByRole('region', { name: 'Training profile' })
+				.getByRole('link', { name: /Goals/ })
+				.click();
+			await expect(page.getByRole('heading', { level: 1, name: 'Goals' })).toBeVisible();
+			await page.route(
+				(url) => url.pathname === '/profile/__data.json',
+				(route) => route.abort('connectionrefused')
+			);
+			await page.goBack();
+			await expect(page.getByTestId('error-view')).toBeVisible();
+			await expect(page.getByRole('heading', { level: 1, name: 'Profile' })).toBeVisible();
+		});
 	});
 
 	test('browser errors are reported to the server and recorded', async ({ page, request }) => {

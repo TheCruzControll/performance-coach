@@ -17,7 +17,13 @@
 	import PrescriptionLines from '#lib/ui/program/PrescriptionLines.svelte';
 	import SessionCard from '#lib/ui/program/SessionCard.svelte';
 	import WeekStrip from '#lib/ui/program/WeekStrip.svelte';
-	import type { CardSession, StripDay } from '#lib/ui/program/words.ts';
+	import {
+		cardView,
+		stripDay,
+		type CardSession,
+		type CardView,
+		type StripDay
+	} from '#lib/ui/program/words.ts';
 
 	const MONDAY = '2026-11-02';
 	const TODAY = '2026-11-04';
@@ -59,6 +65,12 @@
 		const date = addDays(MONDAY, i);
 		return { date, weekday, sessions: Object.values(SESSIONS).filter((s) => s.date === date) };
 	});
+
+	/** In words, as a screen's load composes them. */
+	const STRIP = WEEK.map((day) => stripDay(day, TODAY));
+	const CARDS = Object.fromEntries(
+		Object.entries(SESSIONS).map(([key, s]) => [key, cardView(s)])
+	) as Record<keyof typeof SESSIONS, CardView>;
 
 	let selected = $state<IsoDate | null>(TODAY);
 
@@ -134,18 +146,18 @@
 
 <div class="grid">
 	<Section title="Week strip">
-		<WeekStrip days={WEEK} today={TODAY} bind:selected label="Week 1" data-testid="week-strip" />
+		<WeekStrip days={STRIP} today={TODAY} bind:selected label="Week 1" data-testid="week-strip" />
 		<p class="readout" data-testid="week-value">selected: {selected}</p>
 	</Section>
 
 	<Section title="Session card">
-		<SessionCard session={SESSIONS.upper} href="#upper" baseline data-testid="card-baseline" />
-		<SessionCard session={SESSIONS.easy} href="#easy" pending data-testid="card-pending" />
-		<SessionCard session={SESSIONS.lower} href="#lower" data-testid="card-done" />
-		<SessionCard session={SESSIONS.intervals} href="#intervals" data-testid="card-skipped" />
-		<SessionCard session={SESSIONS.mobility} href="#mobility" data-testid="card-moved" />
+		<SessionCard session={CARDS.upper} href="#upper" baseline data-testid="card-baseline" />
+		<SessionCard session={CARDS.easy} href="#easy" pending data-testid="card-pending" />
+		<SessionCard session={CARDS.lower} href="#lower" data-testid="card-done" />
+		<SessionCard session={CARDS.intervals} href="#intervals" data-testid="card-skipped" />
+		<SessionCard session={CARDS.mobility} href="#mobility" data-testid="card-moved" />
 		<!-- Read-only, as an older version shows it: no link. -->
-		<SessionCard session={SESSIONS.thursdayThai} data-testid="card-read-only" />
+		<SessionCard session={CARDS.thursdayThai} data-testid="card-read-only" />
 	</Section>
 
 	<Section title="Prescription lines">

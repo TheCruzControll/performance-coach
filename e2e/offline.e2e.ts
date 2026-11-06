@@ -1,6 +1,9 @@
 import { expect, test, type Page } from '@playwright/test';
 import { TABS } from './support';
 
+/** Tabs whose screen loads server data, so offline they show the designed offline state. */
+const DATA_SCREENS: string[] = ['/train', '/profile'];
+
 /** Resolves once the service worker controls the page (no reload: it claims clients). */
 async function waitForController(page: Page) {
 	await page.waitForFunction(() => navigator.serviceWorker.controller !== null, null, {
@@ -31,11 +34,18 @@ test.describe('offline behaviour (service worker)', () => {
 		await expect(page.getByTestId('offline-notice')).toBeVisible();
 
 		// Screens without server data render from the precached build.
-		for (const tab of TABS.filter((t) => t.path !== '/profile')) {
+		for (const tab of TABS.filter((t) => !DATA_SCREENS.includes(t.path))) {
 			await nav.getByRole('link', { name: tab.label }).click();
 			await expect(page).toHaveURL(new RegExp(`${tab.path}$`));
 			await expect(page.getByRole('heading', { level: 1, name: tab.heading })).toBeVisible();
 		}
+
+		// Train needs server data (the program's week): the designed offline state in the shell.
+		await nav.getByRole('link', { name: 'Train' }).click();
+		await expect(page).toHaveURL(/\/train$/);
+		await expect(page.getByTestId('offline-state')).toBeVisible();
+		await expect(page.getByRole('heading', { level: 1, name: 'Train' })).toBeVisible();
+		await expect(page.locator('body')).not.toContainText(/500|internal error/i);
 
 		// Profile needs server data: a designed offline state inside the shell, never a 500.
 		await nav.getByRole('link', { name: 'Profile' }).click();
@@ -63,8 +73,9 @@ test.describe('offline behaviour (service worker)', () => {
 		);
 
 		// …from which the tabs that need no server data still work.
-		await nav.getByRole('link', { name: 'Train' }).click();
-		await expect(page.getByRole('heading', { level: 1, name: 'Train' })).toBeVisible();
+		await nav.getByRole('link', { name: 'Progress' }).click();
+		await expect(page.getByRole('heading', { level: 1, name: 'Progress' })).toBeVisible();
+		await expect(page.getByTestId('offline-state')).toHaveCount(0);
 
 		// Back online, the screen loads live data again.
 		await nav.getByRole('link', { name: 'Profile' }).click();

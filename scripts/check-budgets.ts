@@ -20,6 +20,7 @@ import { pathToFileURL } from 'node:url';
 import { gzipSync } from 'node:zlib';
 import { CATALOGUE_HEADER } from '../src/lib/domain/exercises/format.ts';
 import { PRELOADED_FONT_PATTERN } from '../src/lib/ui/fonts.ts';
+import { icons } from '../src/lib/ui/icons/icons.ts';
 
 export const BUDGETS = {
 	/** Initial JS per route (gzip), including the shared shell. */
@@ -41,6 +42,10 @@ interface NodeInfo {
 	imports: string[];
 	stylesheets: string[];
 	fonts: FontRef[];
+	/** The stylesheets SvelteKit inlines into the page instead of linking them. */
+	inlineStyles: string[];
+	/** The node's component, e.g. `(app)/_layout` (null for a node without one). */
+	component: string | null;
 }
 interface Route {
 	id: string;
@@ -80,10 +85,14 @@ function readNode(index: number): NodeInfo & { universal: string | null } {
 		return (match ? JSON.parse(match[1]!) : []) as T;
 	};
 	const universal = /export const universal_id = ("[^"]*");/.exec(source);
+	const inline = /export const inline_styles = \(\) => \(\{([\s\S]*?)\}\);/.exec(source);
+	const component = /import\('\.\.\/entries\/pages\/(.+?)\.svelte\.js'\)/.exec(source);
 	return {
 		imports: grab('imports'),
 		stylesheets: grab('stylesheets'),
 		fonts: grab('fonts'),
+		inlineStyles: [...(inline?.[1] ?? '').matchAll(/"([^"]+)":/g)].map((m) => m[1]!),
+		component: component?.[1] ?? null,
 		universal: universal ? (JSON.parse(universal[1]!) as string) : null
 	};
 }
@@ -201,7 +210,7 @@ const totalCss = allCss.reduce((sum, f) => sum + gzipBytes(`_app/immutable/asset
  * prefixed form and Chromium/Firefox lose the effect. Source declares only the standard
  * property; the minifier adds prefixes for the build targets.
  */
-const PREFIXED = ['backdrop-filter', 'mask-image', 'user-select', 'text-size-adjust'];
+const PREFIXED = ['backdrop-filter', 'mask', 'mask-image', 'user-select', 'text-size-adjust'];
 const prefixProblems: string[] = [];
 for (const file of allCss) {
 	const css = readFileSync(path.join(CLIENT, '_app/immutable/assets', file), 'utf8');
@@ -216,6 +225,38 @@ for (const file of allCss) {
 	}
 }
 const sw = existsSync(`${CLIENT}/service-worker.js`) ? gzipBytes('service-worker.js') : 0;
+
+/**
+ * App shell inlining: the (app) layout's own stylesheets (AppShell with the nav, and the icons)
+ * are inlined into every app page while each is shorter than SvelteKit's inlineStyleThreshold
+ * (vite.config.ts). One that grows past it becomes a render-blocking request on every app route,
+ * phone included, and no gzip budget notices. The server node lists what it inlined
+ * (`inline_styles`); page-agnostic shell rules belong in src/lib/ui/styles/layout.css instead.
+ */
+const INLINE_STYLE_THRESHOLD = Number(
+	/inlineStyleThreshold:\s*(\d+)/.exec(readFileSync('vite.config.ts', 'utf8'))?.[1]
+);
+const SHELL_LAYOUT = '(app)/_layout';
+const shellNode = nodes.find((node) => node.component === SHELL_LAYOUT);
+const lengthOf = (file: string) => readFileSync(path.join(CLIENT, file), 'utf8').length;
+const count = (n: number) => n.toLocaleString('en');
+const shellProblems: string[] = [];
+if (!Number.isFinite(INLINE_STYLE_THRESHOLD)) {
+	shellProblems.push('no inlineStyleThreshold in vite.config.ts: update this guard');
+}
+if (!shellNode) shellProblems.push(`no ${SHELL_LAYOUT} node in the build: update this guard`);
+for (const file of shellNode?.stylesheets ?? []) {
+	if (!shellNode!.inlineStyles.includes(file)) {
+		shellProblems.push(
+			`${path.basename(file)} is ${count(lengthOf(file))} characters, not under ${count(INLINE_STYLE_THRESHOLD)}, ` +
+				'so it is linked instead of inlined: move page-agnostic rules to src/lib/ui/styles/layout.css'
+		);
+	}
+}
+const shellSheet = shellNode?.stylesheets.find((file) =>
+	path.basename(file).startsWith('AppShell.')
+);
+if (shellNode && !shellSheet) shellProblems.push(`no AppShell stylesheet in ${SHELL_LAYOUT}`);
 
 /**
  * @simplewebauthn/browser placement: it must never be part of a route's initial JS, and only the
@@ -383,6 +424,40 @@ const catalogueChunks = readdirSync(CLIENT, { recursive: true, encoding: 'utf8' 
 	.map((file) => file.split(path.sep).join('/'))
 	.filter((file) => file.endsWith('.js') && read(file).includes(CATALOGUE_HEADER));
 
+/**
+ * Icon placement: every icon draws from the SVG sprite (src/lib/ui/icons/sprite.svg, through
+ * <use>), so no client chunk may contain icon path data, and the sprite must ship as its own
+ * file (a data: URL would put it back in JS, and Chrome does not draw data: URLs in <use>). Each
+ * path in icons.ts is looked for as a quoted string, as a module or template would carry it.
+ */
+const iconsDrawing = new Map<string, string[]>();
+for (const [name, paths] of Object.entries(icons)) {
+	for (const d of paths.map((p) => p.replace(/^fill:/, ''))) {
+		iconsDrawing.set(d, [...(iconsDrawing.get(d) ?? []), name]);
+	}
+}
+// A quote, the path (optionally `fill:`-prefixed), then a quote (escaped inside a string).
+const ICON_PATH_LITERAL = new RegExp(
+	String.raw`["'${'`'}](?:fill:)?(${[...iconsDrawing.keys()]
+		.sort((a, b) => b.length - a.length)
+		.map((d) => d.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+		.join('|')})\\?["'${'`'}]`,
+	'g'
+);
+const iconProblems: string[] = [];
+const clientJs = readdirSync(`${CLIENT}/_app/immutable`, { recursive: true, encoding: 'utf8' })
+	.filter((f) => f.endsWith('.js'))
+	.map((f) => `_app/immutable/${f}`);
+for (const file of clientJs) {
+	const names = new Set(
+		[...read(file).matchAll(ICON_PATH_LITERAL)].flatMap((m) => iconsDrawing.get(m[1]!) ?? [])
+	);
+	if (names.size) iconProblems.push(`${file}: path data of ${[...names].join(', ')}`);
+}
+if (!readdirSync(`${CLIENT}/_app/immutable/assets`).some((f) => /^sprite\.[\w-]+\.svg$/.test(f))) {
+	iconProblems.push('the icon sprite is not a file in the build (inlined as a data: URL?)');
+}
+
 const lines = [
 	'| Route | Initial JS (gzip) | of which awaited by `load` | Route CSS (gzip) | Preloaded fonts | Status |',
 	'| --- | ---: | ---: | ---: | ---: | :---: |',
@@ -403,13 +478,15 @@ const lines = [
 				`Not modulepreloaded (counted above; fetched after its importer): \`${r.route}\` ${r.late.map((f) => `${path.basename(f)} (${fmt(gzipBytes(f))})`).join(', ')}`
 		),
 	`CSS output guard (standard property kept next to every -webkit- prefix): ${prefixProblems.length ? 'FAIL' : 'pass'}`,
+	`App shell stylesheets inlined into every app page (AppShell ${shellSheet ? count(lengthOf(shellSheet)) : '?'} of ${count(INLINE_STYLE_THRESHOLD)} characters): ${shellProblems.length ? 'FAIL' : 'pass'}`,
 	`@simplewebauthn/browser: on demand only, never in initial JS; loadable from ${webauthnRoutes
 		.sort()
 		.map((r) => `\`${r}\``)
 		.join(', ')}: ${webauthnProblems.length ? 'FAIL' : 'pass'}`,
 	`Validation (zod, profile schemas): on demand only, never in initial JS: ${validationProblems.length ? 'FAIL' : 'pass'}`,
 	`Profile sections: no editor's CSS on a section page (${sectionRoutes.map((r) => `\`${r}\``).join(', ')}; ${editorKeys.length} editors, ${keptOut.size} of their stylesheets left to load with them): ${sectionProblems.length ? 'FAIL' : 'pass'}`,
-	`Exercise catalogue (server-only): in no client chunk: ${catalogueChunks.length ? 'FAIL' : 'pass'}`
+	`Exercise catalogue (server-only): in no client chunk: ${catalogueChunks.length ? 'FAIL' : 'pass'}`,
+	`Icon paths in JS (every icon draws from the SVG sprite): ${iconProblems.length ? 'FAIL' : 'pass'}`
 ];
 console.log(lines.join('\n'));
 
@@ -422,6 +499,10 @@ if (process.env.GITHUB_STEP_SUMMARY) {
 
 if (prefixProblems.length > 0) {
 	console.error(`\nCSS output guard failed:\n  - ${prefixProblems.join('\n  - ')}`);
+}
+
+if (shellProblems.length > 0) {
+	console.error(`\nApp shell inlining failed:\n  - ${shellProblems.join('\n  - ')}`);
 }
 
 if (webauthnProblems.length > 0) {
@@ -442,22 +523,30 @@ if (catalogueChunks.length > 0) {
 	);
 }
 
+if (iconProblems.length > 0) {
+	console.error(`\nIcon placement failed:\n  - ${iconProblems.join('\n  - ')}`);
+}
+
 const failed = rows.filter((r) => !r.ok);
 if (
 	failed.length > 0 ||
 	prefixProblems.length > 0 ||
+	shellProblems.length > 0 ||
 	webauthnProblems.length > 0 ||
 	validationProblems.length > 0 ||
 	sectionProblems.length > 0 ||
-	catalogueChunks.length > 0
+	catalogueChunks.length > 0 ||
+	iconProblems.length > 0
 ) {
 	const what = [
 		...failed.map((r) => r.route),
 		...(prefixProblems.length ? ['CSS prefixes'] : []),
+		...(shellProblems.length ? ['app shell inlining'] : []),
 		...(webauthnProblems.length ? ['WebAuthn library placement'] : []),
 		...(validationProblems.length ? ['validation placement'] : []),
 		...(sectionProblems.length ? ['profile section CSS'] : []),
-		...(catalogueChunks.length ? ['catalogue placement'] : [])
+		...(catalogueChunks.length ? ['catalogue placement'] : []),
+		...(iconProblems.length ? ['icon paths in JS'] : [])
 	];
 	console.error(`\nbudgets: FAILED (${what.join(', ')})`);
 	process.exit(1);
