@@ -84,6 +84,22 @@ export async function lockWaiters(count: number, timeoutMs = 5_000): Promise<voi
 	}
 }
 
+let restrictCode: '23001' | '23503' | undefined;
+
+/**
+ * The SQLSTATE an ON DELETE RESTRICT foreign key refuses with: PostgreSQL 18 (CI, Neon production)
+ * reports restrict_violation, 16 (local) foreign_key_violation; NO ACTION keys 23503 on both.
+ */
+export async function restrictRefusalCode(db: Executor): Promise<'23001' | '23503'> {
+	if (!restrictCode) {
+		const { rows } = await db.execute<{ version: number }>(
+			sql`select current_setting('server_version_num')::int as version`
+		);
+		restrictCode = rows[0]!.version >= 180000 ? '23001' : '23503';
+	}
+	return restrictCode;
+}
+
 /** A database handle that can never connect (nothing listens on port 1). */
 export function unreachableDb() {
 	const pool = createPool('postgres://coach:coach@127.0.0.1:1/nowhere', {
