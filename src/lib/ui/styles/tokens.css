@@ -165,6 +165,47 @@
 	--content-max: 34rem;
 	--nav-height: 3.625rem;
 	--touch-target: 2.75rem; /* 44px minimum (Apple HIG) */
+
+	/*
+	 * Responsive layout (docs/design-system.md#responsive-layout). Three widths, two breakpoints:
+	 * phone below (width >= 40rem), 640 px; tablet up to (width >= 64rem), 1024 px; desktop from
+	 * there. Media queries write them out, because custom properties cannot be used inside
+	 * @media, and in rem, so a larger default text size moves to the narrower layout.
+	 * scripts/layout-rules.test.ts refuses any other width query.
+	 */
+	--content-readable: 40rem; /* forms, text, settings, conversations */
+	--content-wide: 72rem; /* dashboards and grids */
+	--content-list: 20rem; /* the list beside its editor on a split screen */
+	/* The rail, from 1024 px, is labelled under each icon (not a sidebar): the five labels are
+	   short, and it leaves the most width at 1024 px. A sidebar is a CSS-only change. */
+	--rail-width: 5.5rem;
+	--rail-mark: 2.25rem; /* the brand mark atop the rail (layout.css) */
+	/* The column that screen chrome (Coach's composer, the Save bar) is centred over: the
+	   shell's readable column, which widens from the phone's to --content-readable at 640 px. */
+	--content-column: var(--content-max);
+	/* What fixed chrome clears (the nav, in the shell; nothing outside it, below). Fixed chrome
+	   uses these, never --nav-height. */
+	--nav-inset-bottom: 0px;
+	--nav-inset-left: 0px;
+}
+
+@media (width >= 40rem) {
+	:root {
+		--content-column: var(--content-readable);
+	}
+}
+
+/* In the shell: the bottom bar and the home indicator below 1024 px; from there the rail and
+   the left safe area at the left, and the home indicator alone at the bottom. */
+:root:has(.app-nav) {
+	--nav-inset-bottom: calc(var(--nav-height) + var(--safe-bottom));
+}
+
+@media (width >= 64rem) {
+	:root:has(.app-nav) {
+		--nav-inset-bottom: var(--safe-bottom);
+		--nav-inset-left: calc(var(--rail-width) + var(--safe-left));
+	}
 }
 
 :root[data-theme='light'] {

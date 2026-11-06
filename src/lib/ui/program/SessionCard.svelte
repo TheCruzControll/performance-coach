@@ -6,16 +6,16 @@
   Baseline. With `href` the whole card is one link, named by everything it shows (label in name),
   ≥ 44 px, with hover, pressed and focus states; `pending` marks it aria-busy, with a progress
   line along its edge, while that link navigates. Words carry every state; colour only reinforces.
+  It lays out the words cardView composed where the week was read (words.ts).
 -->
 <script lang="ts">
-	import { sessionTone } from '#lib/domain/training/vocabulary.ts';
 	import type { IconName } from '../icons/icons';
 	import Badge from '../components/Badge.svelte';
 	import Icon from '../components/Icon.svelte';
-	import { sessionLine, statusWords, type CardSession } from './words.ts';
+	import type { CardView } from './words.ts';
 
 	interface Props {
-		session: CardSession;
+		session: CardView;
 		/** A resolved link to the session; without one the card is read-only. */
 		href?: string;
 		/** A week-1 session that establishes a baseline. */
@@ -28,7 +28,7 @@
 	let { session, href, baseline = false, pending = false, 'data-testid': testId }: Props = $props();
 
 	const STATUS_BADGE: Record<
-		CardSession['status'],
+		CardView['status'],
 		{ tone: 'neutral' | 'positive'; icon: IconName } | null
 	> = {
 		planned: null,
@@ -38,18 +38,18 @@
 	};
 
 	const status = $derived(STATUS_BADGE[session.status]);
-	const tone = $derived(`var(--color-${sessionTone(session.type)})`);
+	const tone = $derived(`var(--color-${session.tone})`);
 </script>
 
 {#snippet body()}
 	<span class="dot" class:ring={session.status === 'skipped'} style:--tone={tone}></span>
 	<span class="text">
 		<span class="title">{session.title}</span>
-		<span class="line">{sessionLine(session)}</span>
+		<span class="line">{session.line}</span>
 		{#if baseline || status}
 			<span class="badges">
 				{#if baseline}<Badge icon="target">Baseline</Badge>{/if}
-				{#if status}<Badge tone={status.tone} icon={status.icon}>{statusWords(session)}</Badge>{/if}
+				{#if status}<Badge tone={status.tone} icon={status.icon}>{session.statusWords}</Badge>{/if}
 			</span>
 		{/if}
 	</span>
@@ -100,7 +100,7 @@
 		transition-duration: var(--duration-instant);
 	}
 
-	@media (hover: hover) {
+	@media (hover: hover) and (pointer: fine) {
 		a.card:hover {
 			border-color: var(--color-border-strong);
 		}

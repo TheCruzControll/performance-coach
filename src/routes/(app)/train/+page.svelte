@@ -1,26 +1,82 @@
 <script lang="ts">
 	import { onMount, type Component, type ComponentProps } from 'svelte';
-	import { replaceState } from '$app/navigation';
+	import { invalidateAll, replaceState } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import { page } from '$app/state';
+	import { navigating, page } from '$app/state';
 	import { preferences } from '#lib/client/preferences.svelte.ts';
 	import Badge from '#lib/ui/components/Badge.svelte';
-	import Chip from '#lib/ui/components/Chip.svelte';
 	import EmptyState from '#lib/ui/components/EmptyState.svelte';
 	import ListRow from '#lib/ui/components/ListRow.svelte';
 	import Notice from '#lib/ui/components/Notice.svelte';
 	import PageHeader from '#lib/ui/components/PageHeader.svelte';
 	import Section from '#lib/ui/components/Section.svelte';
 	import Surface from '#lib/ui/components/Surface.svelte';
+	import ProgramHeader from '#lib/ui/program/ProgramHeader.svelte';
+	import SessionCard from '#lib/ui/program/SessionCard.svelte';
+	import WeekStrip from '#lib/ui/program/WeekStrip.svelte';
 	import type PlateSheetType from './PlateSheet.svelte';
+	import type { PageProps } from './$types';
 
-	const disciplines = [
-		{ label: 'Strength', tone: 'strength' },
-		{ label: 'Running', tone: 'running' },
-		{ label: 'Muay Thai', tone: 'combat' },
-		{ label: 'Hypertrophy', tone: 'hypertrophy' },
-		{ label: 'Conditioning', tone: 'conditioning' }
-	] as const;
+	let { data }: PageProps = $props();
+
+	/**
+	 * Where 'no program yet' sends the owner: Today builds a program once the training profile is
+	 * complete (Build my program); until then the profile is filled in from Profile's sections.
+	 * Decision: point SETUP at M2's onboarding screen once it has a route.
+	 */
+	const BUILD_HREF = resolve('/(app)/today');
+	const SETUP_HREF = resolve('/(app)/profile');
+
+	const weekHref = (n: number) => `${resolve('/(app)/train')}?week=${n}`;
+
+	// ---- The week shown ----------------------------------------------------------------------
+
+	const view = $derived(data.state === 'program' ? data : null);
+	const week = $derived(view?.week.planned ? view.week : null);
+
+	/** A week change in flight: Train itself, with another ?week (or none). */
+	const loading = $derived(
+		navigating.to?.url.pathname === page.url.pathname &&
+			navigating.to.url.search !== page.url.search
+	);
+	const pendingWeek = $derived(
+		loading ? Number(navigating.to?.url.searchParams.get('week')) || null : null
+	);
+
+	/** The state card's next step as a link (none for Retry); `inTrain` when it changes week. */
+	const next = $derived.by(() => {
+		const to = data.card?.next.to;
+		if (to === 'today') return { href: BUILD_HREF };
+		if (to === 'profile') return { href: SETUP_HREF };
+		if (to === 'this-week') return { href: resolve('/(app)/train'), inTrain: true };
+		if (typeof to === 'object') return { href: weekHref(to.week), inTrain: true };
+		return { href: undefined };
+	});
+
+	/** The weekday the owner tapped, kept across weeks; until then today, else the first session. */
+	let chosen = $state<number | null>(null);
+	const selectedIndex = $derived.by(() => {
+		if (chosen !== null || !week) return chosen ?? 0;
+		const today = week.days.findIndex((d) => d.date === view!.today);
+		return today >= 0
+			? today
+			: Math.max(
+					0,
+					week.days.findIndex((d) => d.sessions.length > 0)
+				);
+	});
+	const day = $derived(week?.days[selectedIndex]);
+	/** That day in words, from the server. */
+	const words = $derived(view?.days[selectedIndex]);
+
+	let reloading = $state(false);
+	async function reload() {
+		reloading = true;
+		await invalidateAll();
+		reloading = false;
+	}
+
+	// ---- The plate calculator ----------------------------------------------------------------
 
 	// The plate calculator and the sheet it opens in are code-split together (PlateSheet),
 	// fetched on first intent (pointerdown/hover), on open, or for ?tool=plates, so Train ships
@@ -88,25 +144,110 @@
 <PageHeader title="Train" eyebrow="Program" />
 
 <div class="stack">
-	<Surface padding="none" radius="xl">
-		<EmptyState
-			icon="train"
-			title="No active program"
-			description="Once your goals are in, your coach builds one plan across every discipline — and adapts it to each session you log."
-			data-testid="train-empty"
-		>
-			{#snippet actions()}
-				<p class="next" data-testid="train-next-step">
-					Training profile <Badge>Coming next</Badge>
-				</p>
-			{/snippet}
-		</EmptyState>
-		<ul class="disciplines" aria-label="Supported disciplines">
-			{#each disciplines as d (d.label)}
-				<Chip as="li" tone={d.tone}>{d.label}</Chip>
-			{/each}
-		</ul>
-	</Surface>
+	{#if view}
+		<ProgramHeader
+			title={view.program.title}
+			position={view.position}
+			weeks={Array.from({ length: view.program.plannedWeeks }, (_, i) => ({
+				number: i + 1,
+				href: weekHref(i + 1)
+			}))}
+			shown={view.shown}
+			current={view.program.currentWeek}
+			pending={pendingWeek}
+			previous={view.shown > 1 ? weekHref(Math.min(view.shown - 1, view.totalWeeks)) : undefined}
+			next={view.shown < view.totalWeeks ? weekHref(view.shown + 1) : undefined}
+			status={view.status}
+		/>
+		<p class="visually-hidden" role="status">{loading ? 'Loading the week…' : ''}</p>
+	{/if}
+
+	<!-- Busy while the next week loads; only the week's own strip and cards go inert, never the
+	     state card's link, which may hold the focus of the change it started. -->
+	<div class="week" aria-busy={loading} inert={loading && !data.card} data-testid="train-week">
+		{#if data.card}
+			{@const card = data.card}
+			<Surface padding="none" radius="xl">
+				<EmptyState
+					icon={card.icon}
+					tone={card.tone}
+					title={card.title}
+					description={card.description}
+					data-testid={card.id}
+				/>
+			</Surface>
+			<div
+				class="tool"
+				aria-busy={reloading}
+				data-sveltekit-replacestate={next.inTrain ? '' : undefined}
+				data-sveltekit-reset={next.inTrain ? 'false' : undefined}
+			>
+				<ListRow
+					icon={card.next.icon}
+					title={card.next.title}
+					subtitle={card.next.subtitle}
+					href={next.href}
+					onclick={next.href ? undefined : reload}
+					data-testid="train-next"
+				/>
+			</div>
+		{:else if week}
+			<WeekStrip
+				days={view!.strip}
+				today={view!.today}
+				selected={day?.date ?? null}
+				label={`Week ${week.number}`}
+				onselect={(date) => (chosen = week.days.findIndex((d) => d.date === date))}
+				data-testid="week-strip"
+			/>
+
+			{#if day && words}
+				<Section title={words.heading} data-testid="day-sessions">
+					{#snippet action()}
+						{#if day.date === view!.today}<Badge tone="accent">Today</Badge>{/if}
+					{/snippet}
+					{#each words.cards as card (card.lineage)}
+						<SessionCard
+							session={card}
+							baseline={card.baseline}
+							pending={loading}
+							data-testid="session-card"
+						/>
+					{:else}
+						<Surface padding="none" radius="lg">
+							<EmptyState
+								compact
+								icon="moon"
+								tone="neutral"
+								title="Rest day"
+								description={words.rest ?? undefined}
+								data-testid="rest-day"
+							/>
+						</Surface>
+					{/each}
+				</Section>
+			{/if}
+
+			{#if view!.brief}
+				{@const brief = view!.brief}
+				<Surface
+					as="section"
+					tone="accent"
+					aria-labelledby="brief-title"
+					data-testid="baseline-brief"
+				>
+					<div class="brief">
+						<span class="eyebrow">{brief.eyebrow}</span>
+						<h2 id="brief-title" class="brief-title">{brief.title}</h2>
+						<p>{brief.lead}</p>
+						<ul>
+							{#each brief.points as point (point)}<li>{point}</li>{/each}
+						</ul>
+					</div>
+				</Surface>
+			{/if}
+		{/if}
+	</div>
 
 	<Section title="Tools">
 		<div class="tool" aria-busy={sheetOpen && !PlateSheet}>
@@ -136,28 +277,46 @@
 <PlateSheet bind:open={sheetOpen} unit={preferences.units} onclose={closeSheet} />
 
 <style>
-	.stack {
+	.stack,
+	.week {
 		display: grid;
 		gap: var(--space-6);
 	}
 
-	.next {
-		display: flex;
-		align-items: center;
-		gap: var(--space-2);
+	/* Loading the next week: the week stays where it is, dimmed, while its cards show their
+	   progress line; after a beat, so a fast load shows nothing. */
+	.week {
+		transition: opacity var(--duration-base) var(--ease-standard);
+	}
+
+	.week[aria-busy='true'] {
+		opacity: 0.55;
+		transition-delay: 150ms;
+	}
+
+	.brief {
+		display: grid;
+		gap: var(--space-3);
 		font-size: var(--text-sm);
-		font-weight: var(--weight-medium);
+		line-height: var(--leading-normal);
 		color: var(--color-text-secondary);
 	}
 
-	.disciplines {
-		display: flex;
-		flex-wrap: wrap;
-		justify-content: center;
-		gap: var(--space-2);
+	/* The eyebrow and title as Card sets them, closer together than the paragraphs. */
+	.brief-title {
+		margin-top: calc(var(--space-2) * -1);
+		font-size: var(--text-lg);
+		font-weight: var(--weight-semibold);
+		letter-spacing: var(--tracking-tight);
+		line-height: var(--leading-snug);
+		color: var(--color-text);
+	}
+
+	.brief ul {
+		display: grid;
+		gap: var(--space-1-5);
 		margin: 0;
-		padding: 0 var(--space-4) var(--space-6);
-		list-style: none;
+		padding-left: var(--space-5);
 	}
 
 	.tool {
@@ -212,7 +371,7 @@
 		min-height: var(--touch-target);
 		padding: 0 var(--space-2);
 		margin: calc(var(--space-2) * -1);
-		scroll-margin-bottom: calc(var(--nav-height) + var(--safe-bottom) + var(--space-4));
+		scroll-margin-bottom: calc(var(--nav-inset-bottom) + var(--space-4));
 		font-size: var(--text-sm);
 		font-weight: var(--weight-bold);
 		color: var(--color-accent-text);

@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import type { SessionStatus, SessionType } from '#lib/domain/training/vocabulary.ts';
-import { dayName, sessionLine, statusWords, type CardSession, type StripDay } from './words';
+import {
+	cardView,
+	dayName,
+	longDate,
+	sessionLine,
+	shortDate,
+	statusWords,
+	stripDay,
+	type CardSession,
+	type StripDay
+} from './words';
 
 const day = (date: string, weekday: StripDay['weekday'], ...statuses: SessionStatus[]) => ({
 	date,
@@ -26,6 +36,16 @@ describe('dayName', () => {
 	it('says how many sessions are done and skipped; moved and planned ones only count', () => {
 		const tuesday = day('2026-11-03', 'tue', 'completed', 'skipped', 'moved', 'completed');
 		expect(dayName(tuesday, null)).toBe('Tuesday 3 November, 4 sessions, 2 done, 1 skipped');
+	});
+});
+
+describe('longDate and shortDate', () => {
+	it('read a calendar string in words, whatever the device clock or zone says', () => {
+		expect(longDate('2026-11-09')).toBe('Monday 9 November');
+		expect(longDate('2027-01-01')).toBe('Friday 1 January');
+		expect(shortDate('2026-11-09')).toBe('Mon 9 Nov');
+		expect(shortDate('2026-09-30')).toBe('Wed 30 Sep');
+		expect(shortDate('2028-02-29')).toBe('Tue 29 Feb');
 	});
 });
 
@@ -80,5 +100,29 @@ describe('statusWords', () => {
 			'Moved from Sun'
 		);
 		expect(statusWords(session({ status: 'moved' }))).toBe('Moved');
+	});
+});
+
+describe('stripDay and cardView', () => {
+	it('compose every word the strip and the card lay out, so neither ships the vocabulary', () => {
+		expect(stripDay(day('2026-11-04', 'wed', 'planned', 'skipped'), '2026-11-04')).toEqual({
+			date: '2026-11-04',
+			name: 'Wednesday 4 November, today, 2 sessions, 1 skipped',
+			letter: 'W',
+			short: 'Wed',
+			dots: [
+				{ tone: 'strength', skipped: false },
+				{ tone: 'strength', skipped: true }
+			]
+		});
+		expect(
+			cardView(session({ type: 'easy_run', status: 'moved', movedFrom: '2026-11-02' }))
+		).toEqual({
+			title: 'Lower body',
+			status: 'moved',
+			line: 'Easy run · 60 min · Hard · Evening',
+			statusWords: 'Moved from Mon',
+			tone: 'running'
+		});
 	});
 });

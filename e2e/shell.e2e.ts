@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { captureScreen, signedOut, TABS, trackConsoleErrors } from './support';
+import { captureScreen, gotoHydrated, signedOut, TABS, trackConsoleErrors } from './support';
 
 /**
  * Share of the bottom nav's colour channels that two full-viewport screenshots of a screen paint
@@ -95,17 +95,19 @@ test.describe('app shell on an iPhone viewport', () => {
 	test('signed in, Today and Train name the training profile as the next step', async ({
 		page
 	}) => {
-		for (const [path, testId] of [
-			['/today', 'today-next-step'],
-			['/train', 'train-next-step']
-		] as const) {
-			await page.goto(path);
-			const next = page.getByTestId(testId);
-			await expect(next).toContainText('Training profile');
-			await expect(next).toContainText('Coming next');
-			// The owner is already signed in with a passkey: never point them back at it.
-			await expect(next).not.toContainText(/passkey|sign.in/i);
-		}
+		await page.goto('/today');
+		const next = page.getByTestId('today-next-step');
+		await expect(next).toContainText('Training profile');
+		await expect(next).toContainText('Coming next');
+		// The owner is already signed in with a passkey: never point them back at it.
+		await expect(next).not.toContainText(/passkey|sign.in/i);
+
+		// With no program and the profile not yet complete, Train sends the owner to it.
+		await page.goto('/train');
+		const empty = page.getByTestId('train-empty');
+		await expect(empty).toContainText('Finish your training profile first');
+		await expect(page.getByTestId('train-next')).toHaveAttribute('href', '/profile');
+		await expect(empty).not.toContainText(/passkey|sign.in/i);
 	});
 
 	test('shell renders with the bottom navigation inside the safe viewport', async ({
@@ -172,8 +174,10 @@ test.describe('app shell on an iPhone viewport', () => {
 
 	test('key-screen screenshots wait for the tab change to finish', async ({ page }, testInfo) => {
 		// A shot taken during the tab cross-fade can lose the tab bar on WebKit. Slow the fade so
-		// it is certainly still running when the next tab's heading shows.
-		await page.goto('/today');
+		// it is certainly still running when the next tab's heading shows. Hydrated first: `load`
+		// comes before SvelteKit has fetched its root error page and started the router, and a tap
+		// before then is a full page load, which has no cross-fade.
+		await gotoHydrated(page, '/today');
 		await page.addStyleTag({
 			content:
 				'::view-transition-old(root), ::view-transition-new(root) { animation-duration: 2s !important; }'
