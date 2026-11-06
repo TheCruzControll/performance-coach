@@ -240,7 +240,26 @@ totals, averages, trends and comparisons never set part of a week against whole 
 
 ### Trends (`analytics/trend.ts`)
 
-Not built yet (m6/02, trend-classifier).
+Whether a series is really moving or only varying, decided once for every screen, review and
+coach answer (the trend classification ADR). Every series varies from week to week: sleep, food
+and a busy day move an e1RM or a pace a little either way. **Normal variation** means the ups and
+downs are no bigger, and no more one-sided, than that everyday scatter. A **real trend** is a
+change that is consistent in direction, unlikely to be chance, and big enough to matter.
+
+- `classifyTrend(points, { direction, mpc?, minPoints?, minSpanDays?, alpha? })` → `real_trend`
+  (with `direction` up or down and `good`, null when the metric has no better way),
+  `normal_variation`, or `insufficient_data` (with `needs: { points, days }` still to come).
+  Every result carries `n`, `spanDays`, `slopePerWeek`, `change`, `changePct`, `noise`,
+  `minChange`, `p`, `outliers` and `method` (`TREND_METHOD`, `theil-sen+mann-kendall/1`).
+- Points in progress and gaps are dropped first; pass the weeks of `trendWindow(period)`.
+- A verdict needs 6 points over 21 days (`TREND_MIN_POINTS`, `TREND_MIN_SPAN_DAYS`). It is real
+  when the Mann–Kendall p is under 0.05 (`TREND_ALPHA`) and the Theil–Sen change over the window
+  is at least the larger of the metric's minimal practical change (`mpc`: `abs` in its units,
+  `rel` a share of the line's starting level) and twice the noise (`TREND_NOISE_MULTIPLE`).
+- Points more than 3 robust SDs off the line (`TREND_OUTLIER_SDS`) are listed in `outliers` and
+  kept in every figure; a real trend must also be real with any one of them left out.
+- Deterministic and independent of the order of the points; `RangeError` for a value that is not
+  finite or an option out of range.
 
 ### Strength (`analytics/strength.ts`)
 
