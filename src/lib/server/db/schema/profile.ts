@@ -60,8 +60,10 @@ import {
 	type Weekday
 } from '../../../domain/profile/catalog';
 import type { OnboardingStep } from '../../../domain/profile/onboarding';
+import { PREFERENCE_SOURCES, type PreferenceSource } from '../../../domain/training/vocabulary';
 import { owners } from './auth';
 import { createdAt, inList, ownerRef, updatedAt } from './columns';
+import { exercises } from './exercises';
 
 /** Weights: up to 9999.99 in the unit the owner entered (never converted, so never rounded). */
 const weight = (name: string) => numeric(name, { precision: 6, scale: 2, mode: 'number' });
@@ -396,22 +398,42 @@ export const injuries = pgTable(
 	]
 );
 
+/**
+ * The source of a preference that names none: M2 recorded no source, so its rows (backfilled by
+ * the migration that adds the column) and every Profile save read as Profile edits.
+ */
+export const PREFERENCE_SOURCE_DEFAULT = 'profile' satisfies PreferenceSource;
+
+/**
+ * Exercise likes and dislikes, in the owner's words, linked to the library when the name matches
+ * an exercise: one exercise is liked or disliked once, however the owner names it. Deleting a
+ * custom exercise unlinks its preference and keeps the words. Only the owner's explicit choices
+ * are stored here; a situational swap stays on its session.
+ */
 export const exercisePreferences = pgTable(
 	'exercise_preferences',
 	{
 		id: uuid('id').primaryKey().defaultRandom(),
 		ownerId: ownerRef(),
-		/** The owner's words; M3 links these to the exercise catalog. */
+		/** The owner's words. */
 		exercise: text('exercise').notNull(),
+		/** The library exercise they name; null when nothing matched. */
+		exerciseId: uuid('exercise_id').references(() => exercises.id, { onDelete: 'set null' }),
 		sentiment: text('sentiment').$type<Sentiment>().notNull(),
 		reason: text('reason'),
+		/** Where it was recorded: onboarding, Profile, a swap, a workout, the coach. */
+		source: text('source').$type<PreferenceSource>().notNull().default(PREFERENCE_SOURCE_DEFAULT),
 		createdAt: createdAt(),
 		updatedAt: updatedAt()
 	},
 	(t) => [
 		uniqueIndex('exercise_preferences_owner_exercise_uq').on(t.ownerId, sql`lower(${t.exercise})`),
+		uniqueIndex('exercise_preferences_owner_exercise_id_uq')
+			.on(t.ownerId, t.exerciseId)
+			.where(sql`${t.exerciseId} is not null`),
 		check('exercise_preferences_sentiment_ck', inList('sentiment', SENTIMENTS)),
-		check('exercise_preferences_exercise_ck', sql`char_length(${t.exercise}) between 1 and 80`)
+		check('exercise_preferences_exercise_ck', sql`char_length(${t.exercise}) between 1 and 80`),
+		check('exercise_preferences_source_ck', inList('source', PREFERENCE_SOURCES))
 	]
 );
 
