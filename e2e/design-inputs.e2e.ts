@@ -1,7 +1,9 @@
 /**
  * The input primitives on /design → Inputs. NumberField, TextArea and the date TextField: phone
  * keypads, sanitising, blank-stays-blank, labels, descriptions and errors. ChoiceGroup and
- * DayPicker: keyboard, value order, selection marks, errors and hit areas.
+ * DayPicker: keyboard, value order, selection marks, errors and hit areas. Toggle: a switch
+ * the whole row flips. TagInput: adding, refusing, removing, suggestions, limits and what it
+ * announces.
  * Runs on Chromium and WebKit; axe for the same panel lives in a11y.e2e.ts.
  */
 import { expect, test, type Locator, type Page } from '@playwright/test';
@@ -432,5 +434,302 @@ test.describe('/design → Inputs: choices and days', () => {
 			.poll(() => border(picker.getByRole('checkbox', { name: 'Monday' })))
 			.not.toBe(danger);
 		expect(await missingDescribedBy(picker)).toEqual([]);
+	});
+});
+
+/** The centre of an element's box, in viewport coordinates. */
+async function centre(target: Locator) {
+	const box = (await target.boundingBox())!;
+	return [box.x + box.width / 2, box.y + box.height / 2] as const;
+}
+
+/** Whether `element` is what a tap at each point lands on. */
+function ownsPoints(element: Locator, points: (readonly [number, number])[]) {
+	return element.evaluate(
+		(el, pts) => pts.map(([x, y]) => document.elementFromPoint(x, y) === el),
+		points
+	);
+}
+
+test.describe('/design → Inputs: toggle and tags', () => {
+	test('a Toggle is a named switch that the whole row, a tap or Space flips', async ({
+		page
+	}, testInfo) => {
+		const errors = trackConsoleErrors(page);
+		await openInputs(page);
+		const toggle = page.getByRole('switch', { name: 'I don’t know my 1RMs' });
+		const value = page.getByTestId('toggle-value');
+		await toggle.scrollIntoViewIfNeeded();
+
+		// The title is the name and the description its aria-describedby, not part of the name.
+		await expect(toggle).toHaveAccessibleName('I don’t know my 1RMs');
+		await expect(toggle).toHaveAccessibleDescription(
+			'Week one finds them from how hard the sets feel.'
+		);
+		expect(await missingDescribedBy(toggle)).toEqual([]);
+		await expect(toggle).toBeChecked();
+		await expect(value).toHaveText('value: true');
+
+		// The checkbox covers the row: at least 44 px tall, and the title, the description and
+		// the track are all its hit area.
+		const row = (await toggle.boundingBox())!;
+		expect(row.height).toBeGreaterThanOrEqual(44);
+		const title = page.getByText('I don’t know my 1RMs', { exact: true });
+		const description = page.getByText('Week one finds them from how hard the sets feel.');
+		const track = [row.x + row.width - 26, row.y + row.height / 2] as const;
+		expect(
+			await ownsPoints(toggle, [await centre(title), await centre(description), track])
+		).toEqual([true, true, true]);
+
+		await captureScreen(page, testInfo, 'design-inputs-toggle');
+
+		// Tapping the title text flips it, and so does Space.
+		const [x, y] = await centre(title);
+		await page.touchscreen.tap(x, y);
+		await expect(
+			page.getByRole('switch', { name: 'I don’t know my 1RMs', checked: false })
+		).toBeVisible();
+		await expect(value).toHaveText('value: false');
+		await toggle.focus();
+		await page.keyboard.press('Space');
+		await expect(
+			page.getByRole('switch', { name: 'I don’t know my 1RMs', checked: true })
+		).toBeVisible();
+		await expect(value).toHaveText('value: true');
+
+		// Without a description there is nothing to describe it.
+		const home = page.getByRole('switch', { name: 'I also train at home' });
+		await expect(home).not.toBeChecked();
+		await expect(home).not.toHaveAttribute('aria-describedby');
+		expect((await home.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+		await home.focus();
+		await page.keyboard.press('Space');
+		await expect(home).toBeChecked();
+		expect(errors).toEqual([]);
+	});
+
+	test('TagInput adds a trimmed item with Return or Add and clears the field; Add waits for text', async ({
+		page
+	}) => {
+		const errors = trackConsoleErrors(page);
+		await openInputs(page);
+		const tags = page.getByTestId('tags-avoid');
+		const field = tags.getByRole('textbox', { name: 'Movements to avoid' });
+		const add = tags.getByRole('button', { name: 'Add to movements to avoid' });
+		const status = tags.getByRole('status');
+		const value = page.getByTestId('tags-value');
+		await expect(value).toHaveText('value: ["Overhead press"]');
+		await expect(field).toHaveAccessibleDescription('Up to three here, 60 characters each.');
+
+		// Blank, or only spaces, is nothing to add.
+		await expect(add).toBeDisabled();
+		await field.fill('   ');
+		await expect(add).toBeDisabled();
+		await field.press('Enter');
+		await expect(value).toHaveText('value: ["Overhead press"]');
+
+		await field.fill('  Lateral raise ');
+		await expect(add).toBeEnabled();
+		await field.press('Enter');
+		await expect(value).toHaveText('value: ["Overhead press","Lateral raise"]');
+		await expect(field).toHaveValue('');
+		await expect(field).toBeFocused();
+		await expect(status).toHaveText('Added Lateral raise');
+		await expect(tags.getByRole('listitem')).toHaveText(['Overhead press', 'Lateral raise']);
+
+		// Add does the same, then hands the field back for the next one.
+		const likes = page.getByTestId('tags-likes');
+		const likesField = likes.getByRole('textbox', { name: 'Exercises you enjoy' });
+		await likesField.fill(' Romanian deadlift  ');
+		await likes.getByRole('button', { name: 'Add to exercises you enjoy' }).click();
+		await expect(likes.getByRole('listitem')).toHaveText(['Front squat', 'Romanian deadlift']);
+		await expect(likesField).toHaveValue('');
+		await expect(likesField).toBeFocused();
+		await expect(likes.getByRole('status')).toHaveText('Added Romanian deadlift');
+		await expect(likes.getByRole('button', { name: 'Add to exercises you enjoy' })).toBeDisabled();
+		expect(errors).toEqual([]);
+	});
+
+	test('TagInput refuses a repeat in any case, keeps the text and says so every time', async ({
+		page
+	}) => {
+		await openInputs(page);
+		const tags = page.getByTestId('tags-avoid');
+		const field = tags.getByRole('textbox', { name: 'Movements to avoid' });
+		const add = tags.getByRole('button', { name: 'Add to movements to avoid' });
+		const status = tags.getByRole('status');
+		// Every text the live region shows, in order: a live region only speaks when it changes.
+		await status.evaluate((el) => {
+			const seen: string[] = [];
+			Object.assign(window, { seen });
+			new MutationObserver(() => seen.push(el.textContent ?? '')).observe(el, {
+				childList: true,
+				characterData: true,
+				subtree: true
+			});
+		});
+
+		const message = 'Overhead press is already on the list';
+		await field.fill('overhead PRESS');
+		await field.press('Enter');
+		await expect(status).toHaveText(message);
+		await expect(field).toHaveValue('overhead PRESS');
+		await add.click();
+		// The same words a second time: cleared first, so they are read again.
+		await expect
+			.poll(() => page.evaluate(() => (window as unknown as { seen: string[] }).seen.join('|')))
+			.toMatch(new RegExp(`${message}\\|+${message}$`));
+		await expect(tags.getByRole('listitem')).toHaveText(['Overhead press']);
+		await expect(page.getByTestId('tags-value')).toHaveText('value: ["Overhead press"]');
+	});
+
+	test('TagInput remove buttons are named, have a 44 px hit area, keep focus and are announced', async ({
+		page
+	}, testInfo) => {
+		await openInputs(page);
+		const tags = page.getByTestId('tags-avoid');
+		const field = tags.getByRole('textbox', { name: 'Movements to avoid' });
+		const status = tags.getByRole('status');
+		const value = page.getByTestId('tags-value');
+		await field.fill('Dips');
+		await field.press('Enter');
+		await expect(value).toHaveText('value: ["Overhead press","Dips"]');
+
+		const removes = tags.getByRole('list', { name: 'Movements to avoid' }).getByRole('button');
+		await expect(removes).toHaveCount(2);
+		await expect(removes.nth(0)).toHaveAccessibleName('Remove Overhead press');
+		await expect(removes.nth(1)).toHaveAccessibleName('Remove Dips');
+		await tags.scrollIntoViewIfNeeded();
+		for (const remove of await removes.all()) {
+			const [cx, cy] = await centre(remove);
+			// The corners of a 43.5 px square around the centre: the hit area is 44 × 44.
+			const d = 21.75;
+			const corners = [
+				[cx - d, cy - d],
+				[cx + d, cy - d],
+				[cx - d, cy + d],
+				[cx + d, cy + d]
+			] as const;
+			expect(await ownsPoints(remove, [...corners])).toEqual([true, true, true, true]);
+			const pill = (await remove.locator('xpath=..').boundingBox())!;
+			expect(pill.height).toBeGreaterThanOrEqual(44);
+		}
+		await captureScreen(page, testInfo, 'design-inputs-tags');
+
+		// From the keyboard, focus moves to the next item, then back to the field once the
+		// list is empty.
+		await removes.nth(0).focus();
+		await page.keyboard.press('Enter');
+		await expect(value).toHaveText('value: ["Dips"]');
+		await expect(status).toHaveText('Removed Overhead press');
+		await expect(tags.getByRole('button', { name: 'Remove Dips' })).toBeFocused();
+		await page.keyboard.press('Enter');
+		await expect(value).toHaveText('value: []');
+		await expect(status).toHaveText('Removed Dips');
+		await expect(tags.getByRole('list', { name: 'Movements to avoid' })).toHaveCount(0);
+		await expect(field).toBeFocused();
+	});
+
+	test('a TagInput suggestion adds in one tap and is no longer offered', async ({ page }) => {
+		await openInputs(page);
+		const tags = page.getByTestId('tags-avoid');
+		const field = tags.getByRole('textbox', { name: 'Movements to avoid' });
+		const offered = tags.getByRole('group', { name: 'Suggestions for Movements to avoid' });
+		const value = page.getByTestId('tags-value');
+		await tags.getByRole('button', { name: 'Remove Overhead press' }).click();
+		await expect(value).toHaveText('value: []');
+		await expect(offered.getByRole('button')).toHaveText([
+			'Dips',
+			'Behind-the-neck press',
+			'Upright row'
+		]);
+
+		await offered.getByRole('button', { name: 'Add Dips' }).tap();
+		await expect(value).toHaveText('value: ["Dips"]');
+		await expect(tags.getByRole('status')).toHaveText('Added Dips');
+		await expect(offered.getByRole('button')).toHaveText(['Behind-the-neck press', 'Upright row']);
+
+		// Typed in another case, a suggestion counts as added.
+		await field.fill('upright ROW');
+		await field.press('Enter');
+		await expect(value).toHaveText('value: ["Dips","upright ROW"]');
+		await expect(offered.getByRole('button')).toHaveText(['Behind-the-neck press']);
+
+		// From the keyboard: the last suggestion fills the list, the suggestions go, and focus
+		// returns to the field instead of being lost.
+		await offered.getByRole('button', { name: 'Add Behind-the-neck press' }).focus();
+		await page.keyboard.press('Enter');
+		await expect(value).toHaveText('value: ["Dips","upright ROW","Behind-the-neck press"]');
+		await expect(offered).toHaveCount(0);
+		await expect(field).toBeFocused();
+	});
+
+	test('TagInput holds maxlength and says why typing stopped', async ({ page }) => {
+		await openInputs(page);
+		const tags = page.getByTestId('tags-avoid');
+		const field = tags.getByRole('textbox', { name: 'Movements to avoid' });
+		const status = tags.getByRole('status');
+
+		// 60 characters: typing stops there, and the field says why.
+		await expect(field).toHaveAttribute('maxlength', '60');
+		await field.fill('x'.repeat(58));
+		await field.pressSequentially('abcd');
+		await expect(field).toHaveValue(`${'x'.repeat(58)}ab`);
+		await expect(status).toHaveText('Up to 60 characters');
+		await expect(field).toHaveAccessibleDescription('Up to 60 characters.');
+		await field.fill('');
+		await expect(field).toHaveAccessibleDescription('Up to three here, 60 characters each.');
+	});
+
+	test('TagInput holds max and says so when the list fills and when it refuses', async ({
+		page
+	}) => {
+		await openInputs(page);
+		const tags = page.getByTestId('tags-avoid');
+		const field = tags.getByRole('textbox', { name: 'Movements to avoid' });
+		const status = tags.getByRole('status');
+		const value = page.getByTestId('tags-value');
+		const offered = tags.getByRole('group', { name: 'Suggestions for Movements to avoid' });
+
+		// Three items: the one that fills the list says so, and the suggestions step aside.
+		await offered.getByRole('button', { name: 'Add Dips' }).click();
+		await offered.getByRole('button', { name: 'Add Upright row' }).click();
+		await expect(value).toHaveText('value: ["Overhead press","Dips","Upright row"]');
+		await expect(status).toHaveText('Added Upright row. That’s the limit of 3.');
+		await expect(offered).toHaveCount(0);
+		const limit = 'That’s the limit of 3. Remove one to add another.';
+		await expect(field).toHaveAccessibleDescription(limit);
+
+		// A fourth is refused out loud, not silently, and what was typed stays.
+		await field.fill('Lunges');
+		await field.press('Enter');
+		await expect(status).toHaveText(limit);
+		await expect(field).toHaveValue('Lunges');
+		await expect(value).toHaveText('value: ["Overhead press","Dips","Upright row"]');
+
+		await tags.getByRole('button', { name: 'Remove Dips' }).click();
+		await field.press('Enter');
+		await expect(value).toHaveText('value: ["Overhead press","Upright row","Lunges"]');
+	});
+
+	test('a TagInput error is announced, replaces the hint and clears once fixed', async ({
+		page
+	}) => {
+		await openInputs(page);
+		const tags = page.getByTestId('tags-skip');
+		const field = tags.getByRole('textbox', { name: 'Exercises you’d rather skip' });
+		const message = 'Each exercise once: it can’t be liked and skipped';
+		const alert = page.getByRole('alert').filter({ hasText: message });
+		await expect(alert).toBeVisible();
+		await expect(field).toHaveAttribute('aria-invalid', 'true');
+		await expect(field).toHaveAccessibleDescription(message);
+		await expect(tags.getByText('Swapped for an equivalent.')).toHaveCount(0);
+		expect(await missingDescribedBy(field)).toEqual([]);
+
+		await tags.getByRole('button', { name: 'Remove front squat' }).click();
+		await expect(alert).toHaveCount(0);
+		await expect(field).not.toHaveAttribute('aria-invalid');
+		await expect(field).toHaveAccessibleDescription('Swapped for an equivalent.');
+		expect(await missingDescribedBy(field)).toEqual([]);
 	});
 });

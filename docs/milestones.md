@@ -7,7 +7,7 @@ acceptance criteria were verified by running them — compiling is not done.
 | #   | Milestone                       | Status                                                                                                               |
 | --- | ------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
 | M1  | Foundation & infrastructure     | **Done** (PR #1, merged 2026-11-05); deferred items carried below                                                    |
-| M2  | Auth & profile                  | **In progress** (slices merged to `main`): passkey auth, profile services; onboarding, Profile editing, cutover next |
+| M2  | Auth & profile                  | **In progress** (slices merged to `main`): auth, profile services, production live; onboarding, Profile editing next |
 | M3  | Training data model & programs  | Planned                                                                                                              |
 | M4  | Workout application             | Planned                                                                                                              |
 | M5  | AI performance coach            | Planned                                                                                                              |
@@ -54,10 +54,10 @@ Deferred from M1 (carried forward):
   (locally with `E2E_WEBKIT=1`), but neither browser paints `backdrop-filter` in CI's headless
   iPhone projects (text behind the nav stays crisp in their screenshots), so glass is judged
   only on a device.
-- Production stays off until M2's production cutover: the committed `vercel.json` disables
-  Vercel's Git deployments of `main` and skips any production build Vercel starts itself
-  (docs/deployment.md). Preview deployments build from every PR, migrating the `preview` Neon
-  branch first.
+- Production stayed off until M2's production cutover, which removed the committed
+  `vercel.json` guards (Git deployments of `main` disabled, Vercel-started production builds
+  skipped); since then every merge to `main` deploys production (docs/deployment.md). Previews
+  are deployed on demand, not from every PR, migrating the `preview` Neon branch first.
 - Performance is measured in the lab only (Lighthouse with simulated throttling and a real 4×
   CPU main-thread budget, both met on every screen; docs/performance.md). Lighthouse also runs
   in CI on GitHub's runners. Real-device and RUM p75 numbers come later, once the owner uses the
@@ -103,9 +103,16 @@ Progress (merged to `main` as slice PRs #2–#12 plus follow-up fixes, each gree
   (`drizzle/0004_training_profile.sql`) and services for the profile, ranked goals with history,
   baselines, preferences, schedule and onboarding progress, with integration tests on real
   Postgres; and the security and correctness fixes from reviewing the merged slices.
+- Production cutover (criterion 6): the pull request that removes the `vercel.json` guards, so
+  every merge to `main` deploys `coach.nikocruz.com`, and adds the post-deploy smoke check
+  (`.github/workflows/post-deploy-smoke.yml`). Verified first: sign-out clears the device's
+  account data on Chromium (`auth.e2e.ts`) and WebKit (`signout.e2e.ts`), and `/api/vitals` and
+  `/api/client-errors` answer 401 without a session (route map unit test, `access.e2e.ts`, and
+  the smoke check against production). It also records the ASVS level 2 review of the auth and
+  session code (docs/security.md, "Production cutover review") and its fixes.
 - Open in M2: the onboarding and Profile editing screens (no route calls the profile services
-  yet); production cutover (removing the `vercel.json` guards, post-deploy smoke check); the
-  real-device check.
+  yet); the owner's one-time setup on the iPhone once production is live, with the real-device
+  check (docs/deployment.md, "Owner setup").
 
 ## M3 — Training data model & program management [§2, §5, §9, §11]
 
