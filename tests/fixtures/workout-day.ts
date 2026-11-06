@@ -187,6 +187,7 @@ export function workoutDayKits({
 							role: 'back_off',
 							targetRpe: null,
 							prescribedWeight: { value: 100, unit: 'kg', basis: 'estimated' },
+							load: { kind: 'from_e1rm', fraction: 0.8 },
 							restSeconds: 180,
 							line: '3 × 5'
 						})

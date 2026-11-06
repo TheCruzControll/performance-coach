@@ -10,6 +10,14 @@ import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { addDays } from '../src/lib/domain/calendar';
 import { longDate, shortDate } from '../src/lib/ui/program/words';
+import {
+	BELOW_DESKTOP_WIDTH,
+	DESKTOP,
+	DESKTOP_WIDTHS,
+	expectMainCentred,
+	expectNoSideScroll,
+	tokenPx
+} from './desktop';
 import { PROGRAM_TZ, seedProgram, type SeededProgram } from './program-support';
 import { captureScreen, gotoHydrated, resetTrainingProfile, trackConsoleErrors } from './support';
 
@@ -200,60 +208,101 @@ test.describe('a program this week', () => {
 		await expect(page.getByTestId('previous-week')).toBeFocused();
 	});
 
-	test('while the next week loads, the week is busy and nothing moves', async ({
-		page
-	}, testInfo) => {
-		await gotoHydrated(page, '/train');
-		await dayOf(page, seeded.weekStart).click(); // Monday: a card to watch
-		let release!: () => void;
-		const held = new Promise<void>((resolve) => (release = resolve));
-		await page.route('**/__data.json*', async (route) => {
-			await held;
-			await route.continue();
+	test.describe('with the network in the test’s hands', () => {
+		// page.route never sees a request from a page the service worker controls on WebKit, even
+		// one the worker leaves to the network (__data.json), and the worker takes control of Train
+		// during gotoHydrated (clients.claim). Chromium routes that request either way.
+		test.use({ serviceWorkers: 'block' });
+
+		test('while the next week loads, the week is busy and nothing moves', async ({
+			page
+		}, testInfo) => {
+			await gotoHydrated(page, '/train');
+			await dayOf(page, seeded.weekStart).click(); // Monday: a card to watch
+			let release!: () => void;
+			const held = new Promise<void>((resolve) => (release = resolve));
+			await page.route('**/__data.json*', async (route) => {
+				await held;
+				await route.continue();
+			});
+			const boxes = () =>
+				Promise.all([strip(page), page.getByTestId('day-sessions')].map((l) => l.boundingBox()));
+			const before = await boxes();
+
+			await press(page.getByTestId('next-week'));
+			await expect(weekRegion(page)).toHaveAttribute('aria-busy', 'true');
+			await expect(page.getByRole('link', { name: /^Week 2$/ })).toHaveAttribute(
+				'aria-busy',
+				'true'
+			);
+			await expect(page.getByRole('status').filter({ hasText: 'Loading the week' })).toHaveCount(1);
+			await page.waitForTimeout(500); // past the dimming's delay
+			expect(await boxes(), 'the strip and the cards keep their place and size').toEqual(before);
+			await captureScreen(page, testInfo, 'train-pending');
+
+			release();
+			await expect(weekRegion(page)).toHaveAttribute('aria-busy', 'false');
+			await expect(position(page)).toHaveText('Accumulation · Week 2 of 5');
+			await expect(page.getByTestId('next-week')).toBeFocused();
 		});
-		const boxes = () =>
-			Promise.all([strip(page), page.getByTestId('day-sessions')].map((l) => l.boundingBox()));
-		const before = await boxes();
 
-		await press(page.getByTestId('next-week'));
-		await expect(weekRegion(page)).toHaveAttribute('aria-busy', 'true');
-		await expect(page.getByRole('link', { name: /^Week 2$/ })).toHaveAttribute('aria-busy', 'true');
-		await expect(page.getByRole('status').filter({ hasText: 'Loading the week' })).toHaveCount(1);
-		await page.waitForTimeout(500); // past the dimming's delay
-		expect(await boxes(), 'the strip and the cards keep their place and size').toEqual(before);
-		await captureScreen(page, testInfo, 'train-pending');
+		// A week whose data request fails (500) is the (app) layout's error view, inside the shell:
+		// SvelteKit renders a failed client navigation there. Train's own error card, for a server
+		// read that fails, is the load's fail-soft payload (tests/integration/training/train-load.test.ts).
+		test('a week whose data fails to load shows the shell’s error view, whose Try again loads it', async ({
+			page
+		}) => {
+			await gotoHydrated(page, '/train');
+			await page.route('**/__data.json*', (route) =>
+				route.fulfill({
+					status: 500,
+					contentType: 'application/json',
+					body: JSON.stringify({ message: 'Something went wrong on our side.', requestId: 'e2e' })
+				})
+			);
+			await press(page.getByTestId('next-week'));
+			const error = page.getByTestId('error-view');
+			await expect(error).toBeVisible();
+			await expect(page.getByRole('heading', { level: 1, name: 'Train' })).toBeVisible();
+			await expect(error).toContainText('Something went wrong');
+			await expect(page.getByRole('navigation', { name: 'Primary' })).toBeVisible();
 
-		release();
-		await expect(weekRegion(page)).toHaveAttribute('aria-busy', 'false');
-		await expect(position(page)).toHaveText('Accumulation · Week 2 of 5');
-		await expect(page.getByTestId('next-week')).toBeFocused();
-	});
+			await page.unrouteAll({ behavior: 'ignoreErrors' });
+			await error.getByRole('button', { name: 'Try again' }).click();
+			await expect(position(page)).toHaveText('Accumulation · Week 2 of 5');
+			await expect(page).toHaveURL(/\/train\?week=2$/);
+		});
 
-	// A week whose data request fails (500) is the (app) layout's error view, inside the shell:
-	// SvelteKit renders a failed client navigation there. Train's own error card, for a server
-	// read that fails, is the load's fail-soft payload (tests/integration/training/train-load.test.ts).
-	test('a week whose data fails to load shows the shell’s error view, whose Try again loads it', async ({
-		page
-	}) => {
-		await gotoHydrated(page, '/train');
-		await page.route('**/__data.json*', (route) =>
-			route.fulfill({
-				status: 500,
-				contentType: 'application/json',
-				body: JSON.stringify({ message: 'Something went wrong on our side.', requestId: 'e2e' })
-			})
-		);
-		await press(page.getByTestId('next-week'));
-		const error = page.getByTestId('error-view');
-		await expect(error).toBeVisible();
-		await expect(page.getByRole('heading', { level: 1, name: 'Train' })).toBeVisible();
-		await expect(error).toContainText('Something went wrong');
-		await expect(page.getByRole('navigation', { name: 'Primary' })).toBeVisible();
+		test('?week past the plan is not planned yet; a malformed ?week is the current week', async ({
+			page
+		}) => {
+			await gotoHydrated(page, '/train?week=99');
+			await expect(position(page)).toHaveText('Week 99 · Not planned yet');
+			await expect(page.getByTestId('train-not-planned')).toContainText(
+				'Week 99 is past the end of your plan.'
+			);
+			await expect(strip(page)).toHaveCount(0);
 
-		await page.unrouteAll({ behavior: 'ignoreErrors' });
-		await error.getByRole('button', { name: 'Try again' }).click();
-		await expect(position(page)).toHaveText('Accumulation · Week 2 of 5');
-		await expect(page).toHaveURL(/\/train\?week=2$/);
+			// While this week loads, the link that asked for it keeps the focus: only the week's strip
+			// and cards go inert, never the state card.
+			let release!: () => void;
+			const held = new Promise<void>((resolve) => (release = resolve));
+			await page.route('**/__data.json*', async (route) => {
+				await held;
+				await route.continue();
+			});
+			const back = page.getByRole('link', { name: 'Back to this week' });
+			await press(back);
+			await expect(weekRegion(page)).toHaveAttribute('aria-busy', 'true');
+			await expect(back).toBeFocused();
+			release();
+			await expect(page).toHaveURL(/\/train$/);
+			await expect(position(page)).toHaveText('Baseline week · Week 1 of 5');
+
+			await gotoHydrated(page, '/train?week=abc');
+			await expect(position(page)).toHaveText('Baseline week · Week 1 of 5');
+			await expect(dayOf(page, seeded.today)).toHaveAttribute('aria-checked', 'true');
+		});
 	});
 
 	test.describe('offline', () => {
@@ -275,54 +324,40 @@ test.describe('a program this week', () => {
 		});
 	});
 
-	test('?week past the plan is not planned yet; a malformed ?week is the current week', async ({
-		page
-	}) => {
-		await gotoHydrated(page, '/train?week=99');
-		await expect(position(page)).toHaveText('Week 99 · Not planned yet');
-		await expect(page.getByTestId('train-not-planned')).toContainText(
-			'Week 99 is past the end of your plan.'
-		);
-		await expect(strip(page)).toHaveCount(0);
+	test.describe('on a desktop window', () => {
+		test.use(DESKTOP);
 
-		// While this week loads, the link that asked for it keeps the focus: only the week's strip
-		// and cards go inert, never the state card.
-		let release!: () => void;
-		const held = new Promise<void>((resolve) => (release = resolve));
-		await page.route('**/__data.json*', async (route) => {
-			await held;
-			await route.continue();
+		// Train is a readable screen (it declares no data-layout): the shell's readable column,
+		// centred beside the rail, with the week inside it and nothing scrolling sideways.
+		test('the week sits in the readable column, centred beside the rail', async ({
+			page
+		}, testInfo) => {
+			await gotoHydrated(page, '/train');
+			const readable = await tokenPx(page, '--content-readable');
+			const parts = [
+				page.getByTestId('program-header'),
+				strip(page),
+				page.getByTestId('day-sessions'),
+				page.getByTestId('baseline-brief')
+			];
+			for (const width of DESKTOP_WIDTHS) {
+				await page.setViewportSize({ width, height: 900 });
+				await expectMainCentred(page, readable);
+				const main = (await page.locator('main#main').boundingBox())!;
+				for (const part of parts) {
+					const box = (await part.boundingBox())!;
+					expect(box.x, `${part} at ${width}px`).toBeGreaterThanOrEqual(main.x - 1);
+					expect(box.x + box.width, `${part} at ${width}px`).toBeLessThanOrEqual(
+						main.x + main.width + 1
+					);
+				}
+				await expectNoSideScroll(page);
+			}
+			await page.setViewportSize({ width: BELOW_DESKTOP_WIDTH, height: 900 });
+			await expectNoSideScroll(page);
+			await page.setViewportSize(DESKTOP.viewport);
+			await captureScreen(page, testInfo, 'train-week-desktop');
 		});
-		const back = page.getByRole('link', { name: 'Back to this week' });
-		await press(back);
-		await expect(weekRegion(page)).toHaveAttribute('aria-busy', 'true');
-		await expect(back).toBeFocused();
-		release();
-		await expect(page).toHaveURL(/\/train$/);
-		await expect(position(page)).toHaveText('Baseline week · Week 1 of 5');
-
-		await gotoHydrated(page, '/train?week=abc');
-		await expect(position(page)).toHaveText('Baseline week · Week 1 of 5');
-		await expect(dayOf(page, seeded.today)).toHaveAttribute('aria-checked', 'true');
-	});
-
-	test('on a desktop window the week sits centred at a readable width', async ({
-		page
-	}, testInfo) => {
-		await page.setViewportSize({ width: 1440, height: 900 });
-		await gotoHydrated(page, '/train');
-		// The readable column (40 rem from 640 px), centred in the space beside the rail.
-		const main = (await page.locator('main#main').boundingBox())!;
-		const rail = (await page.getByRole('navigation', { name: 'Primary' }).boundingBox())!;
-		const width = await page.evaluate(() => document.documentElement.getBoundingClientRect().width);
-		expect(main.width).toBeLessThanOrEqual(40 * 16);
-		expect(
-			Math.abs(main.x - (rail.x + rail.width) - (width - main.x - main.width))
-		).toBeLessThanOrEqual(1);
-		expect(
-			await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)
-		).toBe(true);
-		await captureScreen(page, testInfo, 'train-week-desktop');
 	});
 });
 
