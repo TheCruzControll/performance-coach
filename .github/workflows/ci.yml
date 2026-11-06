@@ -30,9 +30,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -62,9 +62,9 @@ jobs:
           --health-timeout 5s
           --health-retries 12
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -83,9 +83,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -118,9 +118,9 @@ jobs:
           --health-timeout 5s
           --health-retries 12
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -131,7 +131,7 @@ jobs:
         id: image
         run: echo "os=${ImageOS:-unknown}" >> "$GITHUB_OUTPUT"
       - name: Cache Playwright browsers
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ steps.image.outputs.os }}-${{ hashFiles('pnpm-lock.yaml') }}
@@ -142,7 +142,7 @@ jobs:
       # at ~50 KB/s (a 12-minute timeout on #5 before any test ran). Keep the downloaded
       # packages between runs so a slow mirror costs one run, not every run.
       - name: Cache Playwright system packages
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cache/apt-archives
           key: apt-playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-v1
@@ -175,7 +175,7 @@ jobs:
         run: pnpm test:e2e
       - name: Upload screenshots and report
         if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-${{ github.run_id }}
           path: |
@@ -203,9 +203,9 @@ jobs:
           --health-timeout 5s
           --health-retries 12
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -216,7 +216,7 @@ jobs:
         id: image
         run: echo "os=${ImageOS:-unknown}" >> "$GITHUB_OUTPUT"
       - name: Cache Playwright browsers
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ steps.image.outputs.os }}-${{ hashFiles('pnpm-lock.yaml') }}
@@ -242,7 +242,7 @@ jobs:
         run: pnpm lighthouse --runs 5 --assert --min-perf 0.9 --max-tbt 300
       - name: Upload Lighthouse reports
         if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: lighthouse-${{ github.run_id }}
           path: lighthouse-reports/

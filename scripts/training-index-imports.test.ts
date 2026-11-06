@@ -48,15 +48,17 @@ function resolve(from: string, specifier: string): string | null {
 	return file;
 }
 
-/** Every chain of runtime imports from `entry` to a validator, and the modules visited. */
+/** Every chain of runtime imports from `entry` to a validator, the modules and the packages. */
 function validatorChains(entry: string) {
 	const chains: string[] = [];
 	const visited = new Set<string>();
+	const packages = new Set<string>();
 	const visit = (file: string, chain: string[]) => {
 		if (visited.has(file)) return;
 		visited.add(file);
 		for (const specifier of runtimeImports(file)) {
 			const target = resolve(file, specifier);
+			if (!target) packages.add(specifier);
 			const next = [...chain, target ? path.relative(root, target) : specifier];
 			if (isZod(specifier) || (target && VALIDATORS.includes(target)))
 				chains.push(next.join(' → '));
@@ -64,7 +66,8 @@ function validatorChains(entry: string) {
 		}
 	};
 	visit(entry, [path.relative(root, entry)]);
-	return { chains, visited: [...visited].map((file) => path.relative(root, file)) };
+	const relative = [...visited].map((file) => path.relative(root, file));
+	return { chains, visited: relative, packages: [...packages] };
 }
 
 describe('domain/training/index.ts', () => {
@@ -73,7 +76,15 @@ describe('domain/training/index.ts', () => {
 		expect(chains).toEqual([]);
 		// The walk really follows the index's runtime re-exports.
 		expect(visited).toContain('src/lib/domain/training/vocabulary.ts');
+		expect(visited).toContain('src/lib/domain/training/describe.ts');
 		expect(visited).toContain('src/lib/domain/profile/catalog.ts');
+	});
+
+	it('keeps describe.ts, in Train’s and Today’s initial JS, to domain modules and no package', () => {
+		const { packages, visited } = validatorChains(training('describe.ts'));
+		expect(packages).toEqual([]);
+		expect(visited.filter((file) => !file.startsWith('src/lib/domain/'))).toEqual([]);
+		expect(visited).toContain('src/lib/domain/units.ts');
 	});
 });
 
