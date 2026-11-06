@@ -201,16 +201,17 @@
 		gap: var(--space-2);
 	}
 
-	/* The thumb zone: fixed above the tab bar, over a fade so scrolling content reads as behind. */
+	/* The thumb zone: fixed above the tab bar, over a fade so scrolling content reads as behind.
+	   Screen chrome: centred over the content column, clear of the bottom bar or the rail. */
 	.actions {
 		position: fixed;
 		z-index: var(--z-sticky);
-		left: 50%;
-		bottom: calc(var(--nav-height) + var(--safe-bottom));
+		left: calc(50% + var(--nav-inset-left) / 2);
+		bottom: var(--nav-inset-bottom);
 		transform: translateX(-50%);
 		display: grid;
 		gap: var(--space-3);
-		width: min(calc(100% - 2 * var(--gutter)), var(--content-max));
+		width: min(calc(100% - var(--nav-inset-left) - 2 * var(--gutter)), var(--content-column));
 		padding: var(--space-3) 0;
 	}
 

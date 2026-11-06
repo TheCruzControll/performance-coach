@@ -165,6 +165,24 @@
 	--content-max: 34rem;
 	--nav-height: 3.625rem;
 	--touch-target: 2.75rem; /* 44px minimum (Apple HIG) */
+
+	/*
+	 * Responsive layout (docs/design-system.md#responsive-layout). Three widths, two breakpoints:
+	 * phone below (width >= 40rem), 640 px; tablet up to (width >= 64rem), 1024 px; desktop from
+	 * there. Media queries write them out, because custom properties cannot be used inside
+	 * @media, and in rem, so a larger default text size moves to the narrower layout.
+	 * scripts/layout-rules.test.ts refuses any other width query.
+	 */
+	--content-readable: 40rem; /* forms, text, settings, conversations */
+	--content-wide: 72rem; /* dashboards and grids */
+	--content-list: 20rem; /* the list beside its editor on a split screen */
+	--rail-width: 5.5rem;
+	/* The column that screen chrome (Coach's composer, the Save bar) is centred over. */
+	--content-column: var(--content-max);
+	/* What fixed chrome clears: the bottom bar and the home indicator; the rail, at the left.
+	   Fixed chrome uses these, never --nav-height. */
+	--nav-inset-bottom: calc(var(--nav-height) + var(--safe-bottom));
+	--nav-inset-left: 0px;
 }
 
 :root[data-theme='light'] {
