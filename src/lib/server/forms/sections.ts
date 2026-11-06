@@ -14,6 +14,7 @@ import {
 	getBody,
 	getEquipment,
 	getExperience,
+	getInjuries,
 	getOnboarding,
 	getSpecifics,
 	listGoals,
@@ -22,6 +23,7 @@ import {
 	saveBody,
 	saveEquipment,
 	saveExperience,
+	saveInjuries,
 	saveSpecifics,
 	type ProfileDeps
 } from '../services/profile';
@@ -30,7 +32,10 @@ import type { SaveSection } from './profile';
 export interface ProfileSection {
 	/** What the section's editor starts from. */
 	load: (owner: string, deps?: ProfileDeps) => Promise<unknown>;
-	/** Saves the whole section (the screen's Save bar). Without one, each change saves itself. */
+	/**
+	 * Saves the whole section (the screen's Save bar). Without one, each change saves itself.
+	 * Returns the section as `load` would: the editor goes on from what was stored.
+	 */
 	save?: SaveSection;
 }
 
@@ -41,7 +46,8 @@ const SECTIONS: Record<string, ProfileSection> = {
 	strength: { load: getBaselines, save: saveBaselines },
 	basics: { load: getAthleteProfile, save: saveBasics },
 	specifics: { load: getSpecifics, save: saveSpecifics },
-	body: { load: getBody, save: saveBody }
+	body: { load: getBody, save: saveBody },
+	injuries: { load: getInjuries, save: saveInjuries }
 };
 
 export const SECTION_KEYS = Object.keys(SECTIONS);
