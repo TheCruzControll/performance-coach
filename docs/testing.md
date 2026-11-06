@@ -171,14 +171,22 @@ Specs:
   reload; offline, every tab keeps the shell (screens without server data render, Profile shows
   the designed offline state, never a 500), a full reload offline gets the offline screen in the
   shell, and back online the screen loads live data; no dynamic page is ever cached.
-- `design-inputs.e2e.ts` — the text and number primitives on `/design` → Inputs: NumberField opens
+- `design-inputs.e2e.ts` — the input primitives on `/design` → Inputs. NumberField opens
   the decimal (or, for whole numbers, numeric) keypad with an `enterkeyhint`, keeps digits and
   one decimal point as typed ("8a2,5" → 82.5), drops the point for whole numbers and stays
   blank, never 0, when cleared; its name is the label and its description the unit plus the
   message on screen. TextArea: label, Optional marker, `maxlength` (growth with `field-sizing` is
   asserted on Chromium only). The date TextField takes `fill('2027-03-14')` and stays 56 px tall
   blank or filled. Errors set `aria-invalid`, are announced (`role=alert`) and replace the hint,
-  and every id in `aria-describedby` exists.
+  and every id in `aria-describedby` exists. ChoiceGroup: the legend names the group, a single
+  choice is one tab stop that arrow keys move, Space toggles each of several, the value keeps the
+  options' order whatever order they were tapped in, an optional choice's "Any" stores `null`, a
+  selected pill shows its tick and a selected card its filled mark, every option is ≥ 44 px, and
+  an error is announced with `aria-invalid` on every input. DayPicker: seven checkboxes named
+  Monday…Sunday in order, a picked day shows its tick, a Monday-first value (Sunday then Monday
+  ticked), and at 393 px inside a padded card every hit area is ≥ 44 × 44 px, owns its edges and
+  never overlaps a neighbour; its error is announced and also shown as a danger border on the
+  days still open.
 - `a11y.e2e.ts` — axe-core (`@axe-core/playwright`, WCAG 2.1 A/AA) on every screen (Security
   included; the signed-out sign-in and recovery screens too), the plate-calculator sheet and each
   `/design` component group, in the **dark and light** themes (Lighthouse only audits dark). The
