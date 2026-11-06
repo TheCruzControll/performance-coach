@@ -311,9 +311,14 @@ test.describe('a program this week', () => {
 	}, testInfo) => {
 		await page.setViewportSize({ width: 1440, height: 900 });
 		await gotoHydrated(page, '/train');
-		const main = await page.locator('main').boundingBox();
-		expect(main!.width).toBeLessThanOrEqual(34 * 16);
-		expect(Math.abs(main!.x - (1440 - main!.x - main!.width))).toBeLessThanOrEqual(1);
+		// The readable column (40 rem from 640 px), centred in the space beside the rail.
+		const main = (await page.locator('main#main').boundingBox())!;
+		const rail = (await page.getByRole('navigation', { name: 'Primary' }).boundingBox())!;
+		const width = await page.evaluate(() => document.documentElement.getBoundingClientRect().width);
+		expect(main.width).toBeLessThanOrEqual(40 * 16);
+		expect(
+			Math.abs(main.x - (rail.x + rail.width) - (width - main.x - main.width))
+		).toBeLessThanOrEqual(1);
 		expect(
 			await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)
 		).toBe(true);
