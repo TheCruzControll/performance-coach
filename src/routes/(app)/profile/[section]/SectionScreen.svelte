@@ -39,7 +39,9 @@
 	onMount(async () => {
 		try {
 			const [editor, { SectionForm }, { warmValidation }, sheet] = await Promise.all([
-				EDITORS[key](),
+				// Left out of the server build, which only renders the skeleton: while the server
+				// can reach an editor, SvelteKit links its CSS into every section's page.
+				import.meta.env.SSR ? Promise.reject(new Error('client only')) : EDITORS[key](),
 				import('#lib/client/section-form.svelte.ts'),
 				import('#lib/client/profile-form.ts'),
 				import('./DiscardSheet.svelte')
