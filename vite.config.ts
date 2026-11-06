@@ -109,7 +109,17 @@ export default defineConfig(({ command, mode }) => {
 		build: {
 			target: 'es2022',
 			// Report gzip sizes in build output; budgets are enforced by scripts/check-budgets.ts.
-			reportCompressedSize: true
+			reportCompressedSize: true,
+			// Code a screen loads on demand (an editor, a sheet) fetches its JavaScript through the
+			// module graph, without <link rel="modulepreload"> hints; its CSS still loads with it.
+			// WebKit keeps a failed modulepreload in its memory cache, still marked as a preload,
+			// until the page that made it is garbage-collected, and hands that failure to every
+			// later request for the URL, the reload behind a Retry included (WebKit bug 270357).
+			// The router's imports of route code (SvelteKit's entry chunks) keep their hints.
+			modulePreload: {
+				resolveDependencies: (_url, deps, { hostId, hostType }) =>
+					hostType === 'html' || hostId.includes('/immutable/entry/') ? deps : []
+			}
 		},
 		test: {
 			expect: { requireAssertions: true },

@@ -16,8 +16,8 @@ import {
 	trackConsoleErrors
 } from './support';
 
-/** The URL pattern of a module's chunk in the build under test, from Vite's manifest. */
-function chunkOf(source: string): string {
+/** A module's chunk in the build under test (`_app/immutable/chunks/….js`), from Vite's manifest. */
+function chunkFile(source: string): string {
 	const manifest = JSON.parse(
 		readFileSync(
 			path.resolve(import.meta.dirname, '../.svelte-kit/output/client/.vite/manifest.json'),
@@ -26,8 +26,11 @@ function chunkOf(source: string): string {
 	) as Record<string, { file: string } | undefined>;
 	const chunk = manifest[source];
 	if (!chunk) throw new Error(`${source} is not in the build under test`);
-	return `**/${chunk.file}`;
+	return chunk.file;
 }
+
+/** The URL pattern of a module's chunk in the build under test. */
+const chunkOf = (source: string) => `**/${chunkFile(source)}`;
 
 const EDITOR = 'src/lib/ui/profile/EquipmentEditor.svelte';
 
@@ -178,6 +181,11 @@ test.describe('with the network in the test’s hands', () => {
 		await expect(page.getByTestId('editor-error')).toContainText('This section didn’t load');
 		await expect(page.getByTestId('section-editor')).toHaveAttribute('aria-busy', 'false');
 		await expect(page.getByTestId('save-section')).toBeDisabled();
+		// Fetched as a module, never as a modulepreload: WebKit would keep that failed preload and
+		// hand it to the reloaded page as well (vite.config.ts, build.modulePreload).
+		await expect(
+			page.locator(`link[rel="modulepreload"][href$="/${chunkFile(EDITOR)}"]`)
+		).toHaveCount(0);
 
 		await page.unroute(chunk);
 		await page.getByRole('button', { name: 'Retry' }).click();
@@ -271,6 +279,59 @@ test('leaving with unsaved changes asks first: Keep editing stays, Discard leave
 	await expect(page).toHaveURL('/profile/equipment');
 	await sheet.getByRole('button', { name: 'Discard changes' }).click();
 	await expect(page).toHaveURL('/profile');
+});
+
+test('Back before the next screen has rendered comes back to the saved section', async ({
+	page,
+	request
+}) => {
+	// WebKit can capture the old screen for a view transition (and so let the navigation render)
+	// a second or more after the new URL is in place: make every browser that late.
+	await page.addInitScript(() => {
+		const start = document.startViewTransition?.bind(document);
+		const late = { supported: Boolean(start), updates: 0 };
+		Object.assign(window, { __late: late });
+		if (!start) return;
+		document.startViewTransition = ((update: () => unknown) =>
+			start(async () => {
+				await new Promise((resolve) => setTimeout(resolve, 1500));
+				try {
+					return await update();
+				} finally {
+					late.updates += 1;
+				}
+			})) as typeof document.startViewTransition;
+	});
+	const errors = trackConsoleErrors(page);
+	await profileAction(request, '/profile/equipment?/save', {
+		gymType: 'strength',
+		equipment: ['barbell'],
+		homeEquipment: [],
+		notes: null
+	});
+	await gotoHydrated(page, '/profile');
+	await page.getByRole('link', { name: /Equipment/ }).click();
+	await editorReady(page);
+	await place(page, 'Minimal or travel').check();
+	await page
+		.getByRole('navigation', { name: 'Primary' })
+		.getByRole('link', { name: 'Today' })
+		.click();
+	await page.getByTestId('discard-sheet').getByRole('button', { name: 'Discard changes' }).click();
+	await expect(page).toHaveURL('/today');
+
+	// Back while Today is still waiting to render: the edits are gone already…
+	await page.evaluate(() => history.back());
+	await expect(page).toHaveURL('/profile/equipment');
+	await expect(place(page, 'Strength club')).toBeChecked();
+	// …and once the browser runs the overtaken navigation's update, Today never covers the editor.
+	await page.waitForFunction(() => {
+		const late = (window as unknown as { __late: { supported: boolean; updates: number } }).__late;
+		return !late.supported || late.updates >= 2; // the editor's own transition, then Today's
+	});
+	await expect(page.getByRole('heading', { level: 1, name: 'Equipment' })).toBeVisible();
+	await expect(place(page, 'Strength club')).toBeChecked();
+	expect(errors).toEqual([]); // the overtaken transition is skipped quietly
 });
 
 test('only the listed sections exist: any other key is the 404 page', async ({ page }) => {
