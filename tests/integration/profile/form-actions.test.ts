@@ -35,7 +35,14 @@ const within =
 function session(ownerId: string, kind: AuthSession['kind'] = 'owner'): App.Locals {
 	return {
 		requestId: 'test',
-		session: { id: crypto.randomUUID(), ownerId, ownerName: 'Niko', kind, expiresAt: new Date() }
+		session: {
+			id: crypto.randomUUID(),
+			ownerId,
+			ownerName: 'Niko',
+			kind,
+			expiresAt: new Date(),
+			reauthenticatedAt: null
+		}
 	};
 }
 
