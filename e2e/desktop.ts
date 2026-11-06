@@ -243,3 +243,55 @@ export async function pixelAt(
 		{ png: shot.toString('base64'), x, y }
 	);
 }
+
+/**
+ * The action card of a two-column screen outside the shell (AuthScreen from 1024 px), made of
+ * `card`'s visible elements: it starts at or right of `beside`'s right edge, every control in it
+ * is inside the window with the page unscrolled, its middle is within 10% of the window's height
+ * of the window's middle, and each of `contains` (a notice, an error) lies inside it.
+ */
+export async function expectCardBeside(
+	page: Page,
+	{ card, beside, contains = [] }: { card: Locator; beside: Locator; contains?: Locator[] }
+): Promise<void> {
+	const parts: Box[] = [];
+	for (const part of await card.all()) {
+		const box = await part.boundingBox();
+		if (box && box.width > 0 && box.height > 0) parts.push(box);
+	}
+	expect(parts.length, `${card} is on the page`).toBeGreaterThan(0);
+	const left = Math.min(...parts.map((b) => b.x));
+	const top = Math.min(...parts.map((b) => b.y));
+	const right = Math.max(...parts.map((b) => b.x + b.width));
+	const bottom = Math.max(...parts.map((b) => b.y + b.height));
+	const side = await boxOf(beside);
+	const { scrollY, height } = await page.evaluate(() => ({
+		scrollY: window.scrollY,
+		height: window.innerHeight
+	}));
+	const problems: string[] = [];
+	if (left < side.x + side.width - 1) {
+		problems.push(`the card starts at ${left.toFixed(1)}px, left of ${beside}'s right edge`);
+	}
+	const middle = (top + bottom) / 2 + scrollY;
+	if (Math.abs(middle - height / 2) > height * 0.1) {
+		problems.push(`the card's middle is at ${middle.toFixed(1)}px in a ${height}px window`);
+	}
+	for (const control of await card.locator('a[href], button, input, select, textarea').all()) {
+		if (!(await control.isVisible())) continue;
+		const box = await boxOf(control);
+		if (box.y + scrollY < 0 || box.y + box.height + scrollY > height + 1) {
+			problems.push(`${control} is outside the unscrolled window`);
+		}
+	}
+	for (const inner of contains) {
+		const box = await boxOf(inner);
+		const within =
+			box.x >= left - 1 &&
+			box.x + box.width <= right + 1 &&
+			box.y >= top - 1 &&
+			box.y + box.height <= bottom + 1;
+		if (!within) problems.push(`${inner} is outside the card`);
+	}
+	expect(problems).toEqual([]);
+}
