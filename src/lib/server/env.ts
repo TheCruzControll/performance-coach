@@ -24,6 +24,15 @@ const postgresUrl = z
 		message: 'must be a postgres:// or postgresql:// connection string'
 	});
 
+/**
+ * An optional string, trimmed, where a blank value means unset. It accepts any string, so it
+ * never fails validation: a consumer decides whether the value is usable.
+ */
+const lenientText = z
+	.string()
+	.optional()
+	.transform((value) => value?.trim() || undefined);
+
 export const APP_ENVS = ['development', 'test', 'preview', 'production'] as const;
 export type AppEnv = (typeof APP_ENVS)[number];
 
@@ -75,7 +84,17 @@ export const envSchema = z
 
 		/** LLM provider for the coach (M5). `mock` is deterministic and needs no key. */
 		LLM_PROVIDER: z.enum(['mock', 'anthropic']).default('mock'),
-		ANTHROPIC_API_KEY: z.string().optional()
+		ANTHROPIC_API_KEY: z.string().optional(),
+
+		/**
+		 * The email sign-in link (ADR 0011): the only recipient, the Resend key and the sender.
+		 * Parsed leniently on purpose: a missing or malformed value never stops the server, it
+		 * switches the feature off (`auth/email-link-config.ts` decides, and the startup log names
+		 * the variable, never its value).
+		 */
+		OWNER_EMAIL: lenientText,
+		RESEND_API_KEY: lenientText,
+		EMAIL_FROM: lenientText
 	})
 	.transform((env) => {
 		const appEnv: AppEnv =

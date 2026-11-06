@@ -1,13 +1,15 @@
 <!--
   @component
-  The app shell: safe-area-aware content column, fixed bottom navigation and a connectivity
-  notice. Used by the (app) layout and by the root error page for app URLs, so a screen that
+  The app shell: the primary navigation (a bottom bar, a rail from 1024 px), a safe-area-aware
+  content column centred beside it, and a connectivity notice. The nav comes before <main>, so
+  on a desktop window Tab goes from the skip link through the rail to the content, as the eye
+  reads it. Used by the (app) layout and by the root error page for app URLs, so a screen that
   fails to load (e.g. offline) never strands the user without navigation.
 -->
 <script lang="ts">
 	import { onMount, type Snippet } from 'svelte';
 	import { connectivity } from '#lib/client/connectivity.svelte.ts';
-	import BottomNav from '#lib/ui/components/BottomNav.svelte';
+	import AppNav from '#lib/ui/components/AppNav.svelte';
 	import Icon from '#lib/ui/components/Icon.svelte';
 	import { APP_NAV } from './nav';
 
@@ -24,6 +26,7 @@
 </script>
 
 <div class="shell">
+	<AppNav items={APP_NAV} {pathname} />
 	<main id="main" class="content" tabindex="-1">
 		<div class="notice-region" role="status">
 			{#if !connectivity.online && !hideOfflineNotice}
@@ -35,7 +38,6 @@
 		</div>
 		{@render children()}
 	</main>
-	<BottomNav items={APP_NAV} {pathname} />
 </div>
 
 <style>
@@ -44,6 +46,7 @@
 		min-height: 100dvh;
 		padding-top: var(--safe-top);
 		padding-bottom: calc(var(--nav-inset-bottom) + var(--space-8));
+		padding-left: var(--nav-inset-left);
 		isolation: isolate;
 	}
 
@@ -64,7 +67,7 @@
 
 	.content {
 		width: 100%;
-		max-width: var(--content-max);
+		max-width: var(--content-column);
 		margin: 0 auto;
 		padding: 0 max(var(--gutter), var(--safe-right)) 0 max(var(--gutter), var(--safe-left));
 		outline: none;
@@ -94,12 +97,13 @@
 	}
 
 	/*
-	 * Tab changes cross-fade the page (the `root` snapshot) while the tab bar, named on its own,
-	 * stays put. No view-transition-name on the content column: a named ancestor becomes a
-	 * backdrop root and silently disables the blur of glass inside it (the coach composer).
+	 * Tab changes cross-fade the page (the `root` snapshot) while the nav, named on its own, stays
+	 * put (the bar and the rail alike). No view-transition-name on the content column: a named
+	 * ancestor becomes a backdrop root and silently disables the blur of glass inside it (the
+	 * coach composer).
 	 */
-	:global(.bottom-nav) {
-		view-transition-name: bottom-nav;
+	:global(.app-nav) {
+		view-transition-name: app-nav;
 	}
 
 	:global(::view-transition-old(root)) {

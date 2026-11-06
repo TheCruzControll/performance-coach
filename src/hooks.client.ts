@@ -5,7 +5,7 @@
  *   unexpected errors during navigation from `handleError`.
  * - Failures on a page that is being left (cancelled stylesheet and chunk loads, the
  *   service-worker registration) are not errors: nothing is logged or reported
- *   (src/lib/client/leaving.ts).
+ *   (src/lib/client/leaving.ts), and a navigation the leave cancels goes no further.
  * - A failed network request during client-side navigation (offline, "lie-fi", a dropped
  *   connection) is not an error worth reporting: it is marked so the error views render the
  *   designed offline state (src/routes/ErrorView.svelte) instead of "500 · Internal Error".
@@ -13,11 +13,10 @@
 import type { ClientInit, HandleClientError } from '@sveltejs/kit/hooks';
 import { version } from '$app/env';
 import { reportClientError, setErrorContext, startErrorReporting } from '#lib/client/errors.ts';
-import { isLeaving, trackLeaving } from '#lib/client/leaving.ts';
+import { isLeaving, whenLeaveEnds } from '#lib/client/leaving.ts';
 
 export const init: ClientInit = () => {
 	// Before SvelteKit imports the root layout and error page (it runs right after `init`).
-	trackLeaving();
 	setErrorContext(null, version);
 	startErrorReporting();
 };
@@ -30,9 +29,16 @@ function isNetworkFailure(error: unknown): boolean {
 	return error instanceof TypeError && NETWORK_FAILURE.test(error.message);
 }
 
-export const handleError: HandleClientError = ({ kind, error }) => {
+export const handleError: HandleClientError = async ({ kind, error }) => {
 	if (kind !== 'unknown') return; // app/framework errors (e.g. 404) keep their own status
-	if (isLeaving()) return; // nobody will see this page again
+	if (isLeaving()) {
+		// Nobody will see this page again, and the leave is what failed it: it cancels the data
+		// request of a navigation still under way. SvelteKit waits for this hook, then renders the
+		// error page and, as after any failed navigation, fetches /_app/version.json to look for a
+		// new deployment; a page that is being left must do neither (see whenLeaveEnds).
+		await whenLeaveEnds();
+		return;
+	}
 	if (!navigator.onLine || isNetworkFailure(error)) {
 		return { message: "You're offline", offline: true };
 	}

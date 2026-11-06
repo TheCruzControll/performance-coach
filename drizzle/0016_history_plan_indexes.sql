@@ -1,0 +1,1 @@
+CREATE INDEX "planned_exercises_lineage_idx" ON "planned_exercises" USING btree ("lineage_id");
