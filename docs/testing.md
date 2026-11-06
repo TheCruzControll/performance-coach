@@ -290,7 +290,8 @@ Migrations, the CHECKs on closed vocabularies and the history guards on real Pos
   and are unique per owner by lower-cased name; measure, skill level, load type, reps, seconds and
   primary muscles are CHECKed while pattern stays open; the catalogue survives `withCommitted`
   (custom rows have no owner FK, so they survive it too and the test removes its own).
-  `scripts/catalogue-node.test.ts` also loads `migrate.ts` under plain Node, as `db:migrate` does.
+  `scripts/catalogue-node.test.ts` also loads `migrate.ts` under plain Node, as `db:migrate` does,
+  and checks that the seed and both catalogue parts load with it.
 
 ### Programs
 
