@@ -118,7 +118,8 @@
 	}
 
 	.input:focus-visible {
-		outline: none;
+		/* The ring is the shadow; forced colours drop shadows and draw this outline instead. */
+		outline: 2px solid transparent;
 		border-color: var(--color-accent);
 		box-shadow: 0 0 0 3px var(--color-accent-ring);
 	}

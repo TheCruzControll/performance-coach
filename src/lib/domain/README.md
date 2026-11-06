@@ -311,7 +311,32 @@ Not built yet (m6/05, running-analytics).
 
 ### Adherence (`analytics/adherence.ts`)
 
-Not built yet (m6/06, adherence-analytics).
+Planned against completed, skipped and missed, with the weekly sessions and training time beside
+it. Inputs: the planned sessions (M3's `SessionView` fits), the lineages with a completed,
+undeleted workout (M3's `completedLineages`), and the completed workouts with their day (M4's
+`CanonicalWorkoutRow` fits).
+
+- `outcomeOf(session, completed, today)` → `completed` by lineage, in any version, as M3's program
+  reads derive it (over a stored skip too); else `skipped` (the owner's choice, ahead of its day
+  too), `missed` once its day has passed, or `pending` today and after.
+- `weekAdherence(monday, facts, today)` → `planned` (= completed + skipped + missed + pending),
+  each outcome, `moved` (those moved here), `extra` (off-plan workouts, outside the rate) and
+  `pct`: completed ÷ (completed + skipped + missed) × 100. `pct` is null with `noRate`:
+  `no_plan` ('No plan for this period') or `nothing_due` (`NO_RATE`). The week in progress is
+  flagged `inProgress`, counted `through` today. Throws `RangeError` for a day not a Monday.
+  - A session counts on the day it is planned now: a moved one on its new day, in its new week.
+  - A lineage is one session: given in two versions' rows, the later row counts (pass versions
+    oldest first), and a session logged late, in a later week, completes it and is never extra.
+- `periodAdherence(facts, window)` → each complete week of a `periodWindow`, the week in progress
+  apart, and `total`: the complete weeks' counts added, never their rates averaged.
+- `adherenceByDiscipline(facts, weeks, today)`, in the catalogue's order, and
+  `adherenceByWeekday(facts, weeks, today)`, Monday first, `oftenMissed` once a weekday is missed
+  `OFTEN_MISSED` (3) times or more. A skip never counts toward it.
+- `weeklySessions(workouts, window)` → completed workouts, planned and off plan, per week and
+  discipline; `trainingTime(workouts, window)` → recorded seconds per week and discipline, with
+  each session that has no duration named in `untimed`: never taken as 0, so a week of only such
+  sessions has `seconds: null`, and a week with none has 0. Both give `{ weeks, inProgress, total }`,
+  the total over the complete weeks only.
 
 ### Workload (`analytics/workload.ts`)
 
