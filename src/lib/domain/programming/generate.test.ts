@@ -18,7 +18,6 @@ import { loads } from './stages/loads';
 import { other } from './stages/other';
 import { placement } from './stages/placement';
 import { progression } from './stages/progression';
-import { running } from './stages/running';
 import { strength } from './stages/strength';
 import { timefit } from './stages/timefit';
 import { volume } from './stages/volume';
@@ -68,7 +67,6 @@ describe('the stage list', () => {
 
 	const STUBS: Record<string, Stage> = {
 		strength,
-		running,
 		other,
 		placement,
 		volume,

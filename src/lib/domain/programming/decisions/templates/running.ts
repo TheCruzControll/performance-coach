@@ -1,6 +1,6 @@
 /**
- * Fixed commitments and the running week: volume, paces and quality sessions (m3/18). `time` and
- * `assumed` are empty or start with a separator, so a sentence reads whole either way.
+ * Fixed commitments and the running week: volume, paces and quality sessions (m3/18). `time`,
+ * `assumed` and `notes` are empty or start with a separator, so a sentence reads whole either way.
  */
 import type { Templates } from '../../decisions.ts';
 
@@ -11,11 +11,11 @@ export const running = {
 	},
 	run_volume: {
 		summary: 'Week 1 running: {volume}',
-		why: 'Week 1 starts from {basis}. After it, running grows by at most {step} a week, so your legs adapt before the load does.'
+		why: 'Week 1 starts from {basis}. After it, a week runs at most {step} more than the biggest week before it, and the lighter weeks drop it, so your legs adapt before the load does.{notes}'
 	},
 	run_pace_source: {
-		summary: 'Paces from {source}',
-		why: 'Target paces come from {source}, so they match what you can run now. Effort (RPE) stays alongside as the check.'
+		summary: 'Run targets from {source}',
+		why: '{reason} Every segment also has an RPE and a heart-rate zone, so effort stays the check.'
 	},
 	quality_session: {
 		summary: 'Quality running: {choice}',
