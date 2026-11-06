@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """pr-wait: watch one GitHub pull request and print one line per real event.
 
-  pr-wait <pr> [--repo owner/name] [--until green|ready|any-change] [--interval 20]
+  pr-wait <pr> [--repo owner/name] [--until green|ready|any-change] [--interval 20] [--rest]
 
 <pr> is a PR number or PR URL. Without --repo, the repo comes from the URL or
 from the current checkout. Stdout carries only events, one line each, so a
@@ -36,6 +36,11 @@ Events
 CodeRabbit is advisory: pr-wait reports it but never waits for it. Comment
 edits are never events, and top-level comments from CI and deploy bots
 (github-actions, Vercel) are skipped, because checks already carry that news.
+
+GraphQL is used when it works. When it is blocked (Claude Code cloud sessions
+reach GitHub through a proxy that only allows REST), pr-wait switches to the
+REST API on its own; --rest forces that. REST cannot see whether a review
+thread is resolved, so in REST mode `ready` does not wait on threads.
 
 State lives in ~/.local/state/pr-wait/. A lock makes a second watcher for the
 same PR exit at once. A state file lets a restarted watcher report what arrived
@@ -146,6 +151,25 @@ def gh_lines(args: list[str]) -> list[str]:
     return [line for line in gh(args).stdout.splitlines() if line]
 
 
+def rest_list(path: str, jq: str = ".[]") -> list[Json]:
+    """Every item of a paginated REST list (gh prints one JSON object per line)."""
+    sep = "&" if "?" in path else "?"
+    return [json.loads(line) for line in gh_lines(["api", "--paginate", f"{path}{sep}per_page=100", "--jq", jq])]
+
+
+def rest_author(user: Json | None) -> Json:
+    user = user or {}
+    return {"login": user.get("login") or "ghost", "__typename": "Bot" if user.get("type") == "Bot" else "User"}
+
+
+# REST check-run conclusions and commit-status states, as gh pr checks buckets.
+RUN_BUCKET = {
+    "success": "pass", "neutral": "pass", "skipped": "skipping", "cancelled": "cancel",
+    "failure": "fail", "timed_out": "fail", "action_required": "fail", "startup_failure": "fail",
+}
+STATUS_BUCKET = {"success": "pass", "pending": "pending", "failure": "fail", "error": "fail"}
+
+
 def bot_name(text: str | None) -> str | None:
     """Which review bot a login or check name belongs to, if any."""
     lowered = (text or "").lower()
@@ -197,11 +221,15 @@ def parse_target(raw: str | None, repo: str | None) -> tuple[str, int]:
         try:
             repo = gh(["repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"]).stdout.strip()
         except GhError as error:
-            fail(f"no --repo given and the current directory has no GitHub repo ({error})")
+            remote = subprocess.run(["git", "remote", "get-url", "origin"], capture_output=True, text=True).stdout.strip()
+            match = re.search(r"github\.com[:/]([^/\s]+/[^/\s]+?)(?:\.git)?$", remote)
+            if not match:
+                fail(f"no --repo given and the current directory has no GitHub repo ({error})")
+            repo = match.group(1)
     if not re.fullmatch(r"[\w.-]+/[\w.-]+", repo):
         fail(f"'{repo}' is not owner/name")
     try:
-        gh(["pr", "view", str(pr), "-R", repo, "--json", "number"])
+        gh(["api", f"repos/{repo}/pulls/{pr}", "--jq", ".number"])
     except GhError as error:
         if not error.transient:  # a transient failure is retried by the poll loop
             fail(f"cannot read {repo}#{pr}: {error}")
@@ -253,8 +281,10 @@ def required_checks(repo: str, base: str) -> set[str]:
 
 
 class Watcher:
-    def __init__(self, repo: str, pr: int, until: str, interval: int) -> None:
+    def __init__(self, repo: str, pr: int, until: str, interval: int, rest: bool = False) -> None:
         self.repo, self.pr, self.until, self.interval = repo, pr, until, interval
+        self.rest = rest
+        self.viewer: str | None = None
         self.owner, self.name = repo.split("/")
         self.path = STATE_DIR / f"{repo.replace('/', '__')}__{pr}.json"
         state = self.load()
@@ -303,6 +333,56 @@ class Watcher:
         sys.exit(code)
 
     def fetch_pr(self) -> Json:
+        if not self.rest:
+            try:
+                return self.fetch_pr_graphql()
+            except GhError as error:
+                if error.transient:
+                    raise
+                log(f"GraphQL failed ({error}); switching to the REST API")
+                self.rest = True
+        return self.fetch_pr_rest()
+
+    def fetch_pr_rest(self) -> Json:
+        """The same shape fetch_pr_graphql returns, built from REST. Node ids match
+        GraphQL ids, so switching modes does not repeat events. Thread resolution is
+        not in REST, so isResolved is None."""
+        repo, n = self.repo, self.pr
+        raw = json.loads(gh(["api", f"repos/{repo}/pulls/{n}"]).stdout)
+        if self.viewer is None:
+            try:
+                self.viewer = gh(["api", "user", "--jq", ".login"]).stdout.strip()
+            except GhError:  # app or proxy tokens cannot read /user
+                self.viewer = ""
+
+        def node(item: Json) -> Json:
+            return {"id": item["node_id"], "url": item["html_url"], "body": item.get("body") or "", "author": rest_author(item.get("user"))}
+
+        threads: dict[int, Json] = {}
+        for item in rest_list(f"repos/{repo}/pulls/{n}/comments"):
+            root = item.get("in_reply_to_id") or item["id"]
+            thread = threads.setdefault(root, {
+                "isResolved": None, "path": item.get("path"),
+                "line": item.get("line") or item.get("original_line"), "comments": {"nodes": []},
+            })
+            thread["comments"]["nodes"].append(node(item))
+        base = raw["base"]["ref"]
+        state = "MERGED" if raw.get("merged_at") else ("CLOSED" if raw["state"] == "closed" else "OPEN")
+        return {
+            "url": raw["html_url"], "state": state, "headRefOid": raw["head"]["sha"], "baseRefName": base,
+            "mergeStateStatus": (raw.get("mergeable_state") or "unknown").upper(),
+            "author": rest_author(raw.get("user")),
+            "baseRef": {"target": {"oid": gh(["api", f"repos/{repo}/branches/{base}", "--jq", ".commit.sha"]).stdout.strip()}},
+            "comments": {"nodes": [node(c) for c in rest_list(f"repos/{repo}/issues/{n}/comments")]},
+            "reviews": {"nodes": [
+                {**node(r), "state": r["state"], "commit": {"oid": r.get("commit_id")}}
+                for r in rest_list(f"repos/{repo}/pulls/{n}/reviews")
+            ]},
+            "reviewThreads": {"nodes": list(threads.values())},
+            "viewer": self.viewer,
+        }
+
+    def fetch_pr_graphql(self) -> Json:
         proc = gh([
             "api", "graphql", "-f", f"query={QUERY}",
             "-f", f"owner={self.owner}", "-f", f"name={self.name}", "-F", f"number={self.pr}",
@@ -312,16 +392,34 @@ class Watcher:
         pr["viewer"] = data["viewer"]["login"]
         return pr
 
-    def fetch_checks(self) -> dict[str, Json]:
-        # gh pr checks exits 8 while checks are pending and 1 when one failed.
-        # Those are states, not errors: read the JSON and ignore the exit code.
-        proc = gh(["pr", "checks", str(self.pr), "-R", self.repo, "--json", "name,bucket,link,description"], allow=(0, 1, 8))
-        if not proc.stdout.strip():
-            if "no checks reported" in proc.stderr:
-                return {}
-            raise GhError(proc.stderr.strip() or f"gh pr checks exited {proc.returncode}", False)
+    def check_rows_rest(self, head: str) -> list[Json]:
+        rows = []
+        for run in rest_list(f"repos/{self.repo}/commits/{head}/check-runs", ".check_runs[]"):
+            bucket = RUN_BUCKET.get(run.get("conclusion") or "", "pending") if run["status"] == "completed" else "pending"
+            link = run.get("html_url") or run.get("details_url") or ""
+            rows.append({"name": run["name"], "bucket": bucket, "link": link, "description": (run.get("output") or {}).get("title") or ""})
+        status = json.loads(gh(["api", f"repos/{self.repo}/commits/{head}/status"]).stdout)
+        for item in status.get("statuses", []):
+            rows.append({
+                "name": item["context"], "bucket": STATUS_BUCKET.get(item["state"], "pending"),
+                "link": item.get("target_url") or "", "description": item.get("description") or "",
+            })
+        return rows
+
+    def fetch_checks(self, head: str) -> dict[str, Json]:
+        if self.rest:
+            rows = self.check_rows_rest(head)
+        else:
+            # gh pr checks exits 8 while checks are pending and 1 when one failed.
+            # Those are states, not errors: read the JSON and ignore the exit code.
+            proc = gh(["pr", "checks", str(self.pr), "-R", self.repo, "--json", "name,bucket,link,description"], allow=(0, 1, 8))
+            if not proc.stdout.strip():
+                if "no checks reported" in proc.stderr:
+                    return {}
+                raise GhError(proc.stderr.strip() or f"gh pr checks exited {proc.returncode}", False)
+            rows = json.loads(proc.stdout)
         checks: dict[str, Json] = {}
-        for row in json.loads(proc.stdout):
+        for row in rows:
             current = checks.get(row["name"])
             if current is None or RANK.get(row["bucket"], 2) > RANK.get(current["bucket"], 2):
                 checks[row["name"]] = row
@@ -331,7 +429,7 @@ class Watcher:
         """Files this PR touches that the new base commits also touch."""
         try:
             if head not in self.pr_files:
-                self.pr_files[head] = set(gh_lines(["pr", "diff", str(self.pr), "-R", self.repo, "--name-only"]))
+                self.pr_files[head] = {f["filename"] for f in rest_list(f"repos/{self.repo}/pulls/{self.pr}/files")}
             moved = gh_lines(["api", f"repos/{self.repo}/compare/{old}...{new}", "--jq", ".files[].filename"])
         except GhError as error:
             log(f"could not compare base commits: {error}")
@@ -360,8 +458,8 @@ class Watcher:
             self.required = required_checks(self.repo, base)
             gate = ", ".join(sorted(self.required)) or "none set, so every CI check gates"
             log(f"watching {self.repo}#{self.pr} until {self.until}; required checks: {gate}")
-        checks = self.fetch_checks()
         head = pr["headRefOid"]
+        checks = self.fetch_checks(head)
         short = head[:7]
         mine = {who(pr)[0], pr["viewer"]}
         comments = pr["comments"]["nodes"]
@@ -409,7 +507,7 @@ class Watcher:
         unresolved: list[str] = []
         for thread in threads:
             nodes = thread["comments"]["nodes"]
-            if not thread["isResolved"] and nodes:
+            if thread["isResolved"] is False and nodes:
                 unresolved.append(nodes[0]["url"])
             where = f"{thread['path']}:{thread['line']}" if thread["line"] else thread["path"]
             for index, comment in enumerate(nodes):
@@ -494,7 +592,7 @@ class Watcher:
             else "",
             ", ".join(bot_status[b] for b in GATING_BOTS + ADVISORY_BOTS if b in bot_status)
             or "no Greptile or Macroscope yet",
-            f"{len(unresolved)} unresolved threads",
+            "threads unchecked (REST cannot see resolution)" if self.rest else f"{len(unresolved)} unresolved threads",
             f"merge state {merge_state}",
         ]
         summary = "; ".join(p for p in parts if p)
@@ -550,10 +648,11 @@ def main() -> None:
     parser.add_argument("--repo", help="owner/name (default: from the URL or the current checkout)")
     parser.add_argument("--until", choices=("green", "ready", "any-change"), default="ready")
     parser.add_argument("--interval", type=int, default=20, help="seconds between polls (default 20, min 5)")
+    parser.add_argument("--rest", action="store_true", help="use only GitHub's REST API (automatic when GraphQL is blocked)")
     args = parser.parse_args()
     repo, pr = parse_target(args.pr, args.repo)
     _lock = lock(repo, pr)
-    Watcher(repo, pr, args.until, max(args.interval, 5)).run()
+    Watcher(repo, pr, args.until, max(args.interval, 5), args.rest).run()
 
 
 if __name__ == "__main__":

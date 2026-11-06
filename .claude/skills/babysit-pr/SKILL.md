@@ -46,10 +46,13 @@ branch conflicts.
   watch again. If `remaining` is near 0, wait for `reset` with one background
   command, then watch again. Never watch again in a tight loop.
 
-### Everywhere else: `pr-wait`
+### Everywhere else (Claude Code CLI, Claude Desktop, cloud): `pr-wait`
 
 Wait with `scripts/pr-wait` from this skill's directory (use its absolute
-path).
+path). It needs the `gh` CLI: your login on a local machine, or the
+pre-installed `gh` that cloud sessions authenticate through their GitHub proxy.
+It uses GraphQL when it can and switches to the REST API by itself when
+GraphQL is blocked, as it is in cloud sessions.
 
 ```bash
 pr-wait <pr> [--repo owner/name] [--until ready|green|any-change]
@@ -65,10 +68,16 @@ unresolved threads, PR closed), and 2 on bad input.
   Macroscope.
 - `any-change`: exit on the first event.
 
-In Claude Code, run it with the Monitor tool (`timeout_ms: 1800000`, the
-maximum), so each line wakes you. Without a monitor, run it in the background
-(`run_in_background`, `timeout: 7200000`) and wait for it to exit. Append
-`2>&1` so a crash message reaches you.
+In Claude Code (CLI or Desktop, local or cloud), run it with the Monitor tool,
+so each line wakes you. Always pass `timeout_ms: 1800000`: the default is 5
+minutes and 30 minutes is the maximum. Without a monitor, run it in the
+background (`run_in_background`, `timeout: 7200000`; cloud sessions cap
+background commands at 30 minutes) and wait for it to exit. Append `2>&1` so a
+crash message reaches you.
+
+In REST mode (its summary says `threads unchecked`), `pr-wait` cannot see
+whether review threads are resolved, so `ready` does not wait on them. Before
+you call the PR ready, make sure every review comment has a reply or a fix.
 
 Start it again after you push, after you handle an exit 1, after a resume, and
 when the Monitor timeout ends while the PR is still open.
@@ -84,10 +93,17 @@ message. Never post or say "still waiting".
 GitHub's GraphQL and REST APIs have separate rate limits. When one is used
 up, read the PR, its check runs, and its comments through the other.
 
-`pr-wait` needs a logged-in `gh` with GraphQL. Without that (for example in
-cloud sessions), read the PR, its checks, and its comments once with whatever
+No `gh` at all: read the PR, its checks, and its comments once with whatever
 GitHub access the session has, handle what is there, report the PR's state,
 and stop. Do not poll.
+
+## Claude Desktop and cloud sessions
+
+A cloud session is reclaimed after it sits idle, and its watcher goes with it.
+When you hand off or stop and the PR is still open, tell the user they can turn
+on auto-fix (the ⋮ menu next to the PR title in the session's Changes card).
+GitHub then wakes Claude on new CI failures and review comments. You cannot
+turn it on yourself.
 
 
 ## Reviews
