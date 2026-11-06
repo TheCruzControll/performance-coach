@@ -83,8 +83,8 @@
 			</p>
 			<p class="session-next" data-testid="today-next-step">
 				<Icon name="lock" size={16} />
-				<span class="next-text">Profile setup opens with passkey sign-in</span>
-				<Badge>Soon</Badge>
+				<span class="next-text">Training profile</span>
+				<Badge>Coming next</Badge>
 			</p>
 		</div>
 	</Card>
