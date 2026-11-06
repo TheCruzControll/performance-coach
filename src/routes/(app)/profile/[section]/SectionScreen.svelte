@@ -44,7 +44,7 @@
 				import('#lib/client/profile-form.ts'),
 				import('./DiscardSheet.svelte')
 			]);
-			form = new SectionForm(editor.draft(saved), editor.schema, editor.payload);
+			form = new SectionForm(editor.draft(saved, context), editor.schema, editor.payload);
 			Sheet = sheet.default;
 			Editor = editor.Editor;
 			warmValidation();
