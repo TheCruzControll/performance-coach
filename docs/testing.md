@@ -159,6 +159,14 @@ Specs:
   reload; offline, every tab keeps the shell (screens without server data render, Profile shows
   the designed offline state, never a 500), a full reload offline gets the offline screen in the
   shell, and back online the screen loads live data; no dynamic page is ever cached.
+- `design-inputs.e2e.ts` — the text and number primitives on `/design` → Inputs: NumberField opens
+  the decimal (or, for whole numbers, numeric) keypad with an `enterkeyhint`, keeps digits and
+  one decimal point as typed ("8a2,5" → 82.5), drops the point for whole numbers and stays
+  blank, never 0, when cleared; its name is the label and its description the unit plus the
+  message on screen. TextArea: label, Optional marker, `maxlength` (growth with `field-sizing` is
+  asserted on Chromium only). The date TextField takes `fill('2027-03-14')` and stays 56 px tall
+  blank or filled. Errors set `aria-invalid`, are announced (`role=alert`) and replace the hint,
+  and every id in `aria-describedby` exists.
 - `a11y.e2e.ts` — axe-core (`@axe-core/playwright`, WCAG 2.1 A/AA) on every screen (Security
   included; the signed-out sign-in and recovery screens too), the plate-calculator sheet and each
   `/design` component group, in the **dark and light** themes (Lighthouse only audits dark). The
