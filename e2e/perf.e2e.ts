@@ -21,10 +21,13 @@ import { resetPrograms, seedProgram } from './program-support';
 const TARGET_MS = 200;
 const GUARD_MS = 250;
 const LOADS = 5;
+/** The hybrid fixture's week-1 strength session, whose lineage is known once it is seeded. */
+const STRENGTH_SESSION = '/train/session/<strength>';
 const SCREENS = [
 	'/',
 	'/today',
 	'/train',
+	STRENGTH_SESSION,
 	'/progress',
 	'/coach',
 	'/profile',
@@ -42,8 +45,14 @@ test.describe('main-thread budget (4× CPU)', () => {
 			browser,
 			request
 		}, testInfo) => {
-			// Train is measured in its program state: a hybrid week, strength, runs and Muay Thai.
-			if (path === '/train') await seedProgram(request, { fixture: 'hybrid', start: 'this_week' });
+			// Train is measured in its program state: a hybrid week, strength, runs and Muay Thai;
+			// the session screen on that week's strength session, its longest.
+			let url = path;
+			if (path === '/train' || path === STRENGTH_SESSION) {
+				const seeded = await seedProgram(request, { fixture: 'hybrid', start: 'this_week' });
+				const strength = seeded.sessions.find((s) => s.title === 'Full body');
+				if (path === STRENGTH_SESSION) url = `/train/session/${strength!.lineage}`;
+			}
 			const samples: number[] = [];
 			for (let i = 0; i < LOADS; i++) {
 				// A fresh context per load: cold caches, no service worker yet. Signed in (the
@@ -64,7 +73,7 @@ test.describe('main-thread budget (4× CPU)', () => {
 				});
 				const cdp = await context.newCDPSession(page);
 				await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 });
-				await page.goto(path, { waitUntil: 'load' });
+				await page.goto(url, { waitUntil: 'load' });
 				await page.waitForTimeout(1_500);
 				const tasks = await page.evaluate(
 					() => (window as unknown as { __longTasks: number[] }).__longTasks
