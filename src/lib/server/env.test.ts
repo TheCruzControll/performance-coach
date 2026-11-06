@@ -172,4 +172,82 @@ describe('parseEnv', () => {
 			expect(issuesOf({ DATABASE_URL: DB, LLM_PROVIDER: 'mock' })).toEqual([]);
 		});
 	});
+
+	describe('email sign-in link variables (ADR 0011)', () => {
+		const EMAIL_VARIABLES = ['OWNER_EMAIL', 'RESEND_API_KEY', 'EMAIL_FROM'] as const;
+
+		it('are optional and unset by default', () => {
+			const env = parseEnv({ DATABASE_URL: DB });
+			for (const name of EMAIL_VARIABLES) expect(env[name], name).toBeUndefined();
+		});
+
+		it('are trimmed, and a blank value means unset', () => {
+			const env = parseEnv({
+				DATABASE_URL: DB,
+				OWNER_EMAIL: '  Owner@Example.test\n',
+				RESEND_API_KEY: '\tre_example_not_a_real_key ',
+				EMAIL_FROM: ' Coach <coach@example.test> '
+			});
+			expect(env.OWNER_EMAIL).toBe('Owner@Example.test');
+			expect(env.RESEND_API_KEY).toBe('re_example_not_a_real_key');
+			expect(env.EMAIL_FROM).toBe('Coach <coach@example.test>');
+
+			for (const blank of ['', '   ', '\n\t ']) {
+				const unset = parseEnv({
+					DATABASE_URL: DB,
+					OWNER_EMAIL: blank,
+					RESEND_API_KEY: blank,
+					EMAIL_FROM: blank
+				});
+				for (const name of EMAIL_VARIABLES)
+					expect(unset[name], JSON.stringify(blank)).toBe(undefined);
+			}
+		});
+
+		it('never make env validation fail, however malformed (the feature switches off instead)', () => {
+			for (const bad of [
+				'not an address',
+				'owner@example.test, other@example.test',
+				'sk_live_not_resend',
+				'Coach\r\nBcc: other@example.test',
+				'<<>>',
+				'\u0000',
+				'x'.repeat(10_000)
+			]) {
+				expect(
+					issuesOf({
+						DATABASE_URL: DB,
+						APP_ENV: 'production',
+						OWNER_EMAIL: bad,
+						RESEND_API_KEY: bad,
+						EMAIL_FROM: bad
+					}),
+					JSON.stringify(bad.slice(0, 40))
+				).toEqual([]);
+			}
+		});
+
+		it('leave every other variable as it was', () => {
+			const source = {
+				DATABASE_URL: DB,
+				DATABASE_URL_UNPOOLED: DB,
+				NODE_ENV: 'production',
+				APP_ENV: 'production',
+				DB_POOL_MAX: '3',
+				LOG_LEVEL: 'warn',
+				OWNER_SETUP_TOKEN_HASH: 'b'.repeat(64),
+				LLM_PROVIDER: 'anthropic',
+				ANTHROPIC_API_KEY: 'sk-ant-example'
+			};
+			const withEmail = parseEnv({
+				...source,
+				OWNER_EMAIL: 'owner@example.test',
+				RESEND_API_KEY: 're_example_not_a_real_key',
+				EMAIL_FROM: 'Coach <coach@example.test>'
+			});
+			const { OWNER_EMAIL, RESEND_API_KEY, EMAIL_FROM, ...rest } = withEmail;
+			expect([OWNER_EMAIL, RESEND_API_KEY, EMAIL_FROM].every(Boolean)).toBe(true);
+			expect(rest).toEqual(parseEnv(source));
+		});
+	});
 });

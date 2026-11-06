@@ -40,10 +40,7 @@ const BREAKPOINTS = [
 ];
 const FINE_POINTER = ['(hover:hover)', '(pointer:fine)'];
 /** The files that may read --nav-height: the token itself and the nav it measures. */
-const NAV_HEIGHT_OWNERS = [
-	'src/lib/ui/styles/tokens.css',
-	'src/lib/ui/components/BottomNav.svelte'
-];
+const NAV_HEIGHT_OWNERS = ['src/lib/ui/styles/tokens.css', 'src/lib/ui/components/AppNav.svelte'];
 /** What matchMedia and MediaQuery may ask: preferences and display mode, never the viewport. */
 const MATCH_MEDIA_FEATURES = ['prefers-reduced-motion', 'prefers-color-scheme', 'display-mode'];
 const STYLESHEET = /\.(css|svelte|html)$/;
@@ -440,7 +437,7 @@ describe('the responsive layout rules', () => {
 			expect(check(module, source)).toEqual([]);
 			const nav =
 				'<nav style:min-height="var(--nav-height)"></nav>\n\n<style>\n\t.item {\n\t\theight: var(--nav-height);\n\t}\n</style>\n';
-			expect(check('src/lib/ui/components/BottomNav.svelte', nav)).toEqual([]);
+			expect(check('src/lib/ui/components/AppNav.svelte', nav)).toEqual([]);
 		});
 	});
 });
