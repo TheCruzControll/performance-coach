@@ -66,12 +66,11 @@
 	// ---- leaving with unsaved changes ----------------------------------------------------------
 	let asking = $state(false);
 	let pending: BeforeNavigate | null = null;
-	let discarding = false;
 
 	beforeNavigate((navigation) => {
-		// Nothing to lose, or the owner chose to discard. A save in flight can end in a redirect
-		// (to sign in again, say), which must go through.
-		if (!form?.dirty || discarding || (form.busy && navigation.type === 'goto')) return;
+		// Nothing to lose. A save in flight can end in a redirect (to sign in again, say), which
+		// must go through.
+		if (!form?.dirty || (form.busy && navigation.type === 'goto')) return;
 		navigation.cancel();
 		// Reloading, closing the tab or leaving the app: the browser asks instead.
 		if (navigation.type === 'leave') return;
@@ -82,8 +81,10 @@
 	/** Carry on to where the owner was going, without the changes. */
 	function discard() {
 		const to = pending?.to;
-		if (!pending || !to) return;
-		discarding = true;
+		if (!pending || !to || !form) return;
+		// The edits go now, not when the next screen shows: Back before it has rendered (a
+		// navigation can wait on the view transition) comes back to this screen as saved.
+		form = form.reverted();
 		asking = false;
 		if (pending.type === 'popstate') history.go(pending.delta);
 		else if (pending.willUnload) location.assign(to.url);
@@ -99,14 +100,19 @@
 
 <div class="editor" aria-busy={!Editor && !failed} data-testid="section-editor">
 	{#if Editor && form}
-		<Editor bind:value={form.value} errors={form.errors} {context} />
+		<!-- A new editor for a new form (after Discard): its own state starts from the draft. -->
+		{#each [form] as current (current)}
+			<Editor bind:value={current.value} errors={current.errors} {context} />
+		{/each}
 	{:else if failed}
 		<div class="failed">
 			<Notice tone="danger" title="This section didn’t load" data-testid="editor-error">
 				Check your connection, then try again.
 			</Notice>
 			<!-- A reload: the browser keeps a failed module fetch for the life of the page, so
-			     importing it again fails at once (and a deploy may have replaced the chunk). -->
+			     importing it again fails at once (and a deploy may have replaced the chunk). The
+			     editor's code is never a modulepreload, whose failure WebKit would carry over the
+			     reload (vite.config.ts, build.modulePreload). -->
 			<Button variant="secondary" icon="refresh" onclick={() => location.reload()}>Retry</Button>
 		</div>
 	{:else}
