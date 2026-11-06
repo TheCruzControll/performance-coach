@@ -1,5 +1,5 @@
-import { expect, test, type Page } from '@playwright/test';
-import { eventually, query, SAME_ORIGIN, trackConsoleErrors } from './support';
+import { expect, test, type Page, type Route } from '@playwright/test';
+import { eventually, gotoHydrated, query, SAME_ORIGIN, trackConsoleErrors } from './support';
 
 /**
  * Leaving a page cancels the loads it still had in flight, and WebKit reports each one as a
@@ -346,6 +346,88 @@ test.describe('platform: health, PWA, observability', () => {
 	}) => {
 		test.skip(browserName === 'chromium', 'Chromium does not route the service-worker script');
 		await leaveWhilePending(page, '/train', (url) => url.endsWith('/service-worker.js'));
+	});
+
+	test.describe('with the network in the test’s hands', () => {
+		// page.route never sees a request the service worker answers.
+		test.use({ serviceWorkers: 'block' });
+
+		test('reloading while a screen’s data loads is not an error, and the page being left shows no error screen and checks for no new version', async ({
+			page
+		}) => {
+			// The reload cancels the data request of the navigation still under way. SvelteKit takes
+			// a failed navigation for a sign of a new deployment: it renders the error page and
+			// fetches /_app/version.json. WebKit refuses every load a page starts once the next page
+			// is loading and logs each as an error ("Fetch API cannot load …/_app/version.json due to
+			// access control checks."). Do to the page being left what WebKit does, on any engine:
+			// fail its held data request once the reload has started, then let the reload through.
+			const quietly = await expectLeftQuietly(page, '/profile');
+			await page.addInitScript(() => {
+				// Kept across the reload: whether a page ever showed the error screen.
+				new MutationObserver(() => {
+					if (document.querySelector('[data-testid="error-view"]')) {
+						sessionStorage.setItem('e2e:error-view', location.pathname);
+					}
+				}).observe(document, { childList: true, subtree: true });
+			});
+			await gotoHydrated(page, '/profile');
+			await page
+				.getByRole('region', { name: 'Training profile' })
+				.getByRole('link', { name: /Goals/ })
+				.click();
+			await expect(page.getByRole('heading', { level: 1, name: 'Goals' })).toBeVisible();
+
+			let data: Route | undefined;
+			await page.route(
+				(url) => url.pathname === '/profile/__data.json',
+				(route) => void (data = route) // held
+			);
+			await page.goBack(); // to Profile, whose data the navigation now requests
+			await expect(page).toHaveURL('/profile');
+			await expect.poll(() => data !== undefined, { message: 'Profile’s data is held' }).toBe(true);
+
+			let leaving = false;
+			const versionChecks: string[] = [];
+			page.on('request', (request) => {
+				if (leaving && new URL(request.url()).pathname === '/_app/version.json') {
+					versionChecks.push(request.url());
+				}
+			});
+			await page.route('**/profile', async (route) => {
+				if (!route.request().isNavigationRequest()) return route.fallback();
+				leaving = true;
+				// WebKit has cancelled it already, as the reload started.
+				await data!.abort('aborted').catch(() => {});
+				await new Promise((resolve) => setTimeout(resolve, 1_000)); // the page being left reacts
+				leaving = false;
+				await route.continue();
+			});
+			await page.reload();
+			await expect(page.getByRole('heading', { level: 1, name: 'Profile' })).toBeVisible();
+
+			const errorScreen = await page.evaluate(() => sessionStorage.getItem('e2e:error-view'));
+			expect({ versionChecks, errorScreen }).toEqual({ versionChecks: [], errorScreen: null });
+			await quietly();
+		});
+
+		test('a screen’s data that fails while nobody leaves still shows its failure', async ({
+			page
+		}) => {
+			// Only a leave holds a failed navigation back (see the test above).
+			await gotoHydrated(page, '/profile');
+			await page
+				.getByRole('region', { name: 'Training profile' })
+				.getByRole('link', { name: /Goals/ })
+				.click();
+			await expect(page.getByRole('heading', { level: 1, name: 'Goals' })).toBeVisible();
+			await page.route(
+				(url) => url.pathname === '/profile/__data.json',
+				(route) => route.abort('connectionrefused')
+			);
+			await page.goBack();
+			await expect(page.getByTestId('error-view')).toBeVisible();
+			await expect(page.getByRole('heading', { level: 1, name: 'Profile' })).toBeVisible();
+		});
 	});
 
 	test('browser errors are reported to the server and recorded', async ({ page, request }) => {
