@@ -664,7 +664,18 @@ test('deleting a goal takes a second tap that says it is for good; the goals bel
 	request,
 	context
 }, testInfo) => {
-	const errors = trackConsoleErrors(page);
+	// The one error expected is the browser's own, for the delete it could not post offline. Each
+	// engine words it its own way (Chromium net::ERR_INTERNET_DISCONNECTED, WebKit “WebKit
+	// encountered an internal error”), so it is told apart by the resource it names.
+	const unsent: string[] = [];
+	const errors = trackConsoleErrors(page, (msg) => {
+		const at = new URL(msg.location().url || 'about:blank');
+		const ours =
+			msg.text().startsWith('Failed to load resource') &&
+			`${at.pathname}${at.search}` === '/profile/goals?/deleteGoal';
+		if (ours) unsent.push(msg.text());
+		return ours;
+	});
 	await profileAction(request, '/profile/goals?/saveGoal', FIGHT);
 	await profileAction(request, '/profile/goals?/saveGoal', MARATHON);
 	await gotoHydrated(page, '/profile/goals');
@@ -746,8 +757,9 @@ test('deleting a goal takes a second tap that says it is for good; the goals bel
 			`select snapshot->>'title' as title from training_goal_events where change = 'deleted'`
 		)
 	).toEqual([{ title: 'First Muay Thai fight' }]);
-	// The one error is the browser's own, for the post it could not send offline.
-	expect(errors.filter((e) => !/ERR_INTERNET_DISCONNECTED/.test(e))).toEqual([]);
+	// No error but the browser’s report of the one delete it could not post offline.
+	expect(errors).toEqual([]);
+	expect(unsent).toHaveLength(1);
 });
 
 test('a goal moves up the ranking by its arrow: the move is announced, and the order is stored and still there after a reload', async ({
