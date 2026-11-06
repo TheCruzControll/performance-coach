@@ -15,11 +15,14 @@
 	let tab = $state<Group>('buttons');
 
 	// Only the first group ships with the page; the others load when their tab opens, so the
-	// reference page stays inside the same initial-JS budget as the app screens.
+	// reference page stays inside the same initial-JS budget as the app screens. The server
+	// only renders Buttons, so its build leaves the other imports out: while the server can
+	// reach them, SvelteKit links their CSS into the page as render-blocking stylesheets.
+	const never = () => new Promise<never>(() => {});
 	const PANELS: Record<Exclude<Group, 'buttons'>, () => Promise<{ default: Component }>> = {
-		inputs: () => import('./InputsPanel.svelte'),
-		data: () => import('./DataPanel.svelte'),
-		feedback: () => import('./FeedbackPanel.svelte')
+		inputs: () => (import.meta.env.SSR ? never() : import('./InputsPanel.svelte')),
+		data: () => (import.meta.env.SSR ? never() : import('./DataPanel.svelte')),
+		feedback: () => (import.meta.env.SSR ? never() : import('./FeedbackPanel.svelte'))
 	};
 
 	const colors = [
