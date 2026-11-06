@@ -110,13 +110,23 @@ export default defineConfig(({ command, mode }) => {
 			target: 'es2022',
 			// Report gzip sizes in build output; budgets are enforced by scripts/check-budgets.ts.
 			reportCompressedSize: true,
-			// Code a screen loads on demand (an editor, a sheet) fetches its JavaScript through the
-			// module graph, without <link rel="modulepreload"> hints; its CSS still loads with it.
-			// WebKit keeps a failed modulepreload in its memory cache, still marked as a preload,
-			// until the page that made it is garbage-collected, and hands that failure to every
-			// later request for the URL, the reload behind a Retry included (WebKit bug 270357).
-			// The router's imports of route code (SvelteKit's entry chunks) keep their hints.
+			/**
+			 * Code a screen loads on demand (an editor, a sheet) gets its JavaScript through its
+			 * `import()` alone, never through the `<link rel=modulepreload>` tags Vite adds for a
+			 * dynamic import's chunks; its stylesheets still load first. WebKit keeps a
+			 * modulepreload that failed in its memory cache, still marked as a preload, until the
+			 * page that made it is garbage-collected, and answers every later load of that URL with
+			 * the same failure without fetching it, the reload behind a Retry included
+			 * (https://bugs.webkit.org/show_bug.cgi?id=270357), while a failed `import()` it fetches
+			 * again: a screen that offers Retry for lazy code can then recover on Safari. One rule
+			 * covers every lazy import, so new lazy code needs no list. Only the router keeps its
+			 * hints: SvelteKit's entry chunks, whose imports are the route nodes (and an HTML entry,
+			 * which SvelteKit does not have). The cost is on a fetch from the network (before the
+			 * service worker holds the build): a lazy module's chunks arrive in import order, not
+			 * all at once.
+			 */
 			modulePreload: {
+				// `deps`: the JavaScript to preload for one dynamic import; Vite adds its stylesheets.
 				resolveDependencies: (_url, deps, { hostId, hostType }) =>
 					hostType === 'html' || hostId.includes('/immutable/entry/') ? deps : []
 			}
@@ -140,7 +150,10 @@ export default defineConfig(({ command, mode }) => {
 						environment: 'node',
 						include: ['tests/integration/**/*.test.ts'],
 						globalSetup: ['tests/integration/global-setup.ts'],
-						setupFiles: ['tests/integration/setup-env.ts'],
+						setupFiles: [
+							'tests/integration/setup-env.ts',
+							'tests/integration/one-query-per-client.ts'
+						],
 						// Applied before any module loads (the logger reads LOG_LEVEL at import time).
 						// Quiet by default; `LOG_LEVEL=debug pnpm test:integration` to see logs.
 						env: { LOG_LEVEL: process.env.LOG_LEVEL || 'silent' },

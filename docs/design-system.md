@@ -109,10 +109,8 @@ Tracking: `--tracking-display -0.032em`, `--tracking-tight -0.016em`, `--trackin
   (Writing both, standard first, makes the minifier keep only the prefixed one, which Chromium
   ignores.) `pnpm budgets` fails if a
   built rule ships a `-webkit-` property without its standard twin, and e2e asserts the nav's
-  computed `backdrop-filter`. Judge glass on a device or WebKit: headless Chromium does not
-  paint `backdrop-filter` under mobile emulation (`isMobile`, as in the iPhone e2e project), so
-  those screenshots show unblurred content behind the nav (checked in M1 review round 2: the
-  same page blurs with mobile emulation off).
+  computed `backdrop-filter`. Judge glass on a device, not on e2e screenshots, which can show
+  text through the nav (see docs/testing.md).
 - **Layers:** `--z-raised 10 · sticky 50 · nav 100 · overlay 200 · sheet 210 · toast 300`.
 - **Safe areas:** `--safe-top/right/bottom/left` from `env(safe-area-inset-*)`;
   `viewport-fit=cover`. Installed on iOS, the status bar is `black-translucent` (white text over
@@ -160,6 +158,9 @@ Tracking: `--tracking-display -0.032em`, `--tracking-tight -0.016em`, `--trackin
 | `ListRow`           | Tool/destination row: tinted icon tile, title, subtitle, chevron or `trailing` snippet; renders a link (`href`), a button (`onclick`) or a dashed, non-interactive row (`disabled`, for "Soon").                                             |
 | `Section`           | Titled group on a screen ("This week", "Tools"): one heading style and spacing everywhere, `aria-labelledby` wired.                                                                                                                          |
 | `training/*`        | `PlateDiagram` (sleeve picture), `PlateCalculator` (code-split sheet body; its kg/lb switch is local and never changes the app-wide preference).                                                                                             |
+| `WeekStrip`         | `src/lib/ui/program`, like the next two. Seven days Monday first in a radiogroup (roving tabindex, arrows, Home/End), each ≥ 44 px at 393 px; a dot per session (a ring if skipped), counted in its name; the server's today ringed.         |
+| `SessionCard`       | A session: discipline dot, title, 'Strength · 60 min · Hard · Evening'; Skipped, Moved from Mon, Done and Baseline as worded badges; with `href` one link named by its title; `pending` sets `aria-busy` and sweeps a progress line.         |
+| `PrescriptionLines` | describe.ts's words as a list: '3 × 5 @ RPE 7', the load only when describe could compute one, its basis, rest and tempo, the baseline instruction; run steps with each segment's pace and effort. It never computes a number.               |
 | `TextField`         | Labelled single-line input (label above, never placeholder-as-label), 56 px tall, 16 px text so iOS never zooms, hint or error wired with `aria-describedby` (the error replaces the hint), `mono` for codes, `type="date"`, "Optional".     |
 | `NumberField`       | A number that may stay blank (`null`, never 0): decimal or numeric keypad, `enterkeyhint`, unit inside the field and in its description, digits and one decimal point only, "Optional" marker. For values people nudge: `NumberStepper`.     |
 | `TextArea`          | Multi-line notes: label above, 16 px text, grows with its content (`field-sizing`; `rows` and a resize handle where unsupported), `maxlength`, hint or error wired with `aria-describedby`, "Optional" marker.                               |
@@ -177,7 +178,8 @@ radios.
 
 Screens compose these primitives instead of styling their own tiles, pills, rows or section
 headings, so the same pattern cannot drift between screens (PRD §16). `/design` shows every
-primitive (the Inputs, Data and Feedback groups load when their tab opens).
+primitive (the Inputs, Data and Feedback groups load when their tab opens), and the Plan tab the
+program components on a fixture week, their pending and status states included.
 
 Auth screens (`/`, `/setup`, `/recover`, `/recover/passkey`) share `src/routes/AuthScreen.svelte`:
 brand row, an editorial display headline, the brand mark as a quiet watermark, and the one action

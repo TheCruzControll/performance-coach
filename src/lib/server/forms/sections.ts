@@ -10,9 +10,11 @@
 import { error } from '@sveltejs/kit';
 import {
 	getAthleteProfile,
+	getBaselines,
 	getEquipment,
 	getOnboarding,
 	listGoals,
+	saveBaselines,
 	saveEquipment,
 	type ProfileDeps
 } from '../services/profile';
@@ -27,7 +29,8 @@ export interface ProfileSection {
 
 const SECTIONS: Record<string, ProfileSection> = {
 	goals: { load: listGoals },
-	equipment: { load: getEquipment, save: saveEquipment }
+	equipment: { load: getEquipment, save: saveEquipment },
+	strength: { load: getBaselines, save: saveBaselines }
 };
 
 export const SECTION_KEYS = Object.keys(SECTIONS);
@@ -38,12 +41,13 @@ export function profileSection(key: string): ProfileSection {
 	return SECTIONS[key]!;
 }
 
-/** What every section editor is told about the athlete: the disciplines in play and units. */
+/**
+ * What every section editor is told about the athlete: the disciplines in play and units. The
+ * reads take turns, as `deps` may hand both one transaction (docs/architecture.md).
+ */
 export async function sectionContext(owner: string, deps: ProfileDeps = {}) {
-	const [onboarding, profile] = await Promise.all([
-		getOnboarding(owner, deps),
-		getAthleteProfile(owner, deps)
-	]);
+	const onboarding = await getOnboarding(owner, deps);
+	const profile = await getAthleteProfile(owner, deps);
 	return {
 		disciplines: onboarding.disciplines,
 		units: { weight: profile.weightUnit, distance: profile.distanceUnit }
