@@ -17,3 +17,5 @@ Status values: Proposed · Accepted · Superseded.
 | [0010](0010-program-versioning.md)       | Immutable program versions with copy-on-write membership      | Accepted |
 | [0011](0011-email-sign-in-link.md)       | Email sign-in link: one-time links to the owner's address     | Accepted |
 | [0012](0012-offline-workout-sync.md)     | Offline workout sync: device inputs, one projection, a ledger | Proposed |
+| [0013](0013-coach-agent-loop.md)         | Coach agent loop: a manual loop, streamed as labelled blocks  | Proposed |
+| [0014](0014-coach-memory-proposals.md)   | Coach memory from records; changes only as proposals          | Proposed |
