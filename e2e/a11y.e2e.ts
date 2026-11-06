@@ -8,7 +8,13 @@ import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
 import { signedOut, TABS } from './support';
 
-const SCREENS = [...TABS.map((t) => t.path), '/profile/security', '/offline', '/design'];
+const SCREENS = [
+	...TABS.map((t) => t.path),
+	'/profile/security',
+	'/profile/equipment',
+	'/offline',
+	'/design'
+];
 /** Screens a signed-out browser sees (setup and recovery-session screens are audited in
  * auth.setup.ts and auth.e2e.ts, the only places they exist). */
 const SIGNED_OUT_SCREENS = ['/', '/recover'];
@@ -53,6 +59,10 @@ for (const theme of THEMES) {
 				await page.goto(path);
 				await page.waitForLoadState('networkidle');
 				if (path === '/profile') await expect(page.getByTestId('db-status')).toBeVisible();
+				// The section's editor loads after the screen, in place of its skeleton.
+				if (path === '/profile/equipment') {
+					await expect(page.getByTestId('section-editor')).toHaveAttribute('aria-busy', 'false');
+				}
 				const html = page.locator('html');
 				if (theme === 'light') await expect(html).toHaveAttribute('data-theme', 'light');
 				else await expect(html).not.toHaveAttribute('data-theme', /.*/);
@@ -73,12 +83,24 @@ for (const theme of THEMES) {
 			expect(await audit(page)).toEqual([]);
 		});
 
+		test('a Profile section asking to discard its changes has no violations', async ({ page }) => {
+			await page.goto('/profile/equipment');
+			await expect(page.getByTestId('section-editor')).toHaveAttribute('aria-busy', 'false');
+			// A change that is never saved: nothing reaches the database.
+			await page.getByRole('radio', { name: 'Strength club' }).check();
+			await page.getByTestId('back-to-profile').click();
+			await expect(page.getByTestId('discard-sheet')).toBeVisible();
+			await page.waitForTimeout(500);
+			expect(await audit(page)).toEqual([]);
+		});
+
 		test('every /design component group has no violations', async ({ page }) => {
 			await page.goto('/design');
 			const loaded = {
 				Inputs: page.getByRole('spinbutton', { name: 'Reps' }),
 				Data: page.getByRole('heading', { name: 'List row' }),
-				Feedback: page.getByRole('button', { name: 'Bottom sheet' })
+				Feedback: page.getByRole('button', { name: 'Bottom sheet' }),
+				Plan: page.getByRole('heading', { name: 'Session card' })
 			};
 			for (const [tab, ready] of Object.entries(loaded)) {
 				await page.getByRole('tab', { name: tab }).click();
