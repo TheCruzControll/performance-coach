@@ -10,9 +10,13 @@
 import { error } from '@sveltejs/kit';
 import {
 	getAthleteProfile,
+	getBaselines,
 	getEquipment,
+	getExperience,
 	getOnboarding,
+	saveBaselines,
 	saveEquipment,
+	saveExperience,
 	type ProfileDeps
 } from '../services/profile';
 import type { SaveSection } from './profile';
@@ -24,7 +28,9 @@ export interface ProfileSection {
 }
 
 const SECTIONS: Record<string, ProfileSection> = {
-	equipment: { load: getEquipment, save: saveEquipment }
+	experience: { load: getExperience, save: saveExperience },
+	equipment: { load: getEquipment, save: saveEquipment },
+	strength: { load: getBaselines, save: saveBaselines }
 };
 
 export const SECTION_KEYS = Object.keys(SECTIONS);
