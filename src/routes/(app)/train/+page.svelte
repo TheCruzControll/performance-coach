@@ -65,7 +65,7 @@
 		>
 			{#snippet actions()}
 				<p class="next" data-testid="train-next-step">
-					Goal setup opens with passkey sign-in <Badge>Soon</Badge>
+					Training profile <Badge>Coming next</Badge>
 				</p>
 			{/snippet}
 		</EmptyState>

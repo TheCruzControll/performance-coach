@@ -9,7 +9,12 @@ import { describe, expect, it } from 'vitest';
 import { ROUTE_ACCESS, routeAccess } from './routes';
 
 const ROUTES_DIR = path.resolve(import.meta.dirname, '../../../routes');
-const ROUTE_FILE = /^\+(page(\.server)?\.(svelte|ts|js)|server\.(ts|js))$/;
+/**
+ * Files that make a directory a route: a page (`+page.svelte`, also `+page@.svelte` /
+ * `+page@(group).svelte`, which reset the layout), its loads (`+page.ts`, `+page.server.ts`) or
+ * an endpoint (`+server.ts`). Layouts and error pages alone are not routes.
+ */
+const ROUTE_FILE = /^\+(page(@[^.]*)?\.svelte|page(\.server)?\.(ts|js)|server\.(ts|js))$/;
 
 function routeIds(dir = ROUTES_DIR): string[] {
 	const ids = new Set<string>();
@@ -26,6 +31,23 @@ function routeIds(dir = ROUTES_DIR): string[] {
 
 describe('route access policy', () => {
 	const ids = routeIds();
+
+	it('recognises every SvelteKit route file, layout resets included', () => {
+		const routeFiles = [
+			'+page.svelte',
+			'+page@.svelte',
+			'+page@(app).svelte',
+			'+page.ts',
+			'+page.js',
+			'+page.server.ts',
+			'+page.server.js',
+			'+server.ts',
+			'+server.js'
+		];
+		const notRoutes = ['+layout.svelte', '+layout@.svelte', '+layout.server.ts', '+error.svelte'];
+		expect(routeFiles.filter((f) => !ROUTE_FILE.test(f))).toEqual([]);
+		expect(notRoutes.filter((f) => ROUTE_FILE.test(f))).toEqual([]);
+	});
 
 	it('finds the routes on disk', () => {
 		expect(ids).toEqual(expect.arrayContaining(['/', '/api/health', '/(app)/today']));
@@ -62,6 +84,16 @@ describe('route access policy', () => {
 				'/recover',
 				'/setup'
 			].sort()
+		);
+	});
+
+	it('keeps what a recovery session can reach to the new-passkey screen and its endpoints', () => {
+		const anySession = Object.entries(ROUTE_ACCESS)
+			.filter(([, access]) => access === 'any-session')
+			.map(([id]) => id)
+			.sort();
+		expect(anySession).toEqual(
+			['/api/auth/passkeys/options', '/api/auth/passkeys/verify', '/recover/passkey'].sort()
 		);
 	});
 

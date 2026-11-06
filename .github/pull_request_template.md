@@ -34,6 +34,6 @@ Milestone: M?
 
 - [ ] Conventional Commit messages
 - [ ] Migrations are committed SQL, backward compatible with the running app (expand → contract); `pnpm db:drift` clean
-- [ ] Production guards unchanged (`vercel.json` Git/ignored-build settings), or changed deliberately with the reason stated
+- [ ] Deployment config unchanged (`vercel.json`, `scripts/vercel-build.sh`: every merge to `main` deploys production), or changed deliberately with the reason stated
 - [ ] No secrets, `.env` files, build output or large binaries
 - [ ] Docs updated (README / docs/*) where behaviour or setup changed
