@@ -1,5 +1,5 @@
-import { error } from '@sveltejs/kit';
-import { editAction, ownerId } from '#lib/server/forms/profile.ts';
+import { error, type RequestEvent } from '@sveltejs/kit';
+import { editAction, ownerId, saveGoalAction } from '#lib/server/forms/profile.ts';
 import { profileSection, sectionContext } from '#lib/server/forms/sections.ts';
 import { SECTIONS } from '#lib/ui/profile/sections.ts';
 import type { Actions, PageServerLoad } from './$types';
@@ -14,9 +14,24 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 	if (!info) error(404, 'Not found');
 	const owner = ownerId(locals);
 	const [saved, context] = await Promise.all([section.load(owner), sectionContext(owner)]);
-	return { key: info.key, title: info.title, saved, context };
+	// A section saved as a whole has a Save bar; one whose every change saves itself has none.
+	const saveBar = section.save !== undefined;
+	return { key: info.key, title: info.title, saved, context, saveBar };
 };
 
+/** Goal actions exist on the goals section only. */
+const goals =
+	<T>(action: (event: RequestEvent) => T) =>
+	(event: RequestEvent) => {
+		if (event.params.section !== 'goals') error(404, 'Not found');
+		return action(event);
+	};
+
 export const actions: Actions = {
-	save: (event) => editAction(profileSection(event.params.section).save)(event)
+	save: (event) => {
+		const { save } = profileSection(event.params.section);
+		if (!save) error(404, 'Not found');
+		return editAction(save)(event);
+	},
+	saveGoal: goals(saveGoalAction)
 };
