@@ -3,6 +3,7 @@ import {
 	deleteGoalAction,
 	editAction,
 	ownerId,
+	reorderGoalsAction,
 	saveGoalAction
 } from '#lib/server/forms/profile.ts';
 import { profileSection, sectionContext } from '#lib/server/forms/sections.ts';
@@ -39,5 +40,6 @@ export const actions: Actions = {
 		return editAction(save)(event);
 	},
 	saveGoal: goals(saveGoalAction),
-	deleteGoal: goals(deleteGoalAction)
+	deleteGoal: goals(deleteGoalAction),
+	reorderGoals: goals(reorderGoalsAction)
 };

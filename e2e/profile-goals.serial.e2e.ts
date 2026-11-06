@@ -1,14 +1,15 @@
 /**
  * Profile → Goals: event and general goals ranked by priority, added (one path per kind, or
  * several at once) and edited in a code-split sheet, each saved the moment it changes (the
- * screen has no Save bar); paused, achieved, dropped or deleted from the same sheet. Serial (one test at a time, after the
- * functional suites): every test starts from a blank training profile, which every browser and
- * worker shares.
+ * screen has no Save bar); paused, achieved, dropped or deleted from the same sheet; moved up
+ * or down the ranking with their arrows. Serial (one test at a time, after the functional
+ * suites): every test starts from a blank training profile, which every browser and worker
+ * shares.
  */
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import AxeBuilder from '@axe-core/playwright';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 import {
 	captureScreen,
 	gotoHydrated,
@@ -72,6 +73,23 @@ const sheetOf = (page: Page) => page.getByTestId('goal-sheet');
 const statusOf = (page: Page) => sheetOf(page).getByRole('group', { name: 'Status' });
 const textbox = (page: Page, name: string | RegExp) =>
 	sheetOf(page).getByRole('textbox', { name, exact: typeof name === 'string' });
+const arrow = (page: Page, title: string, way: 'up' | 'down') =>
+	page.getByRole('button', { name: `Move ${title} ${way}`, exact: true });
+
+/** The fight, the marathon and the strength goal, ranked 1, 2 and 3. */
+async function threeGoals(request: APIRequestContext) {
+	for (const goal of [FIGHT, MARATHON, STRENGTH]) {
+		await profileAction(request, '/profile/goals?/saveGoal', goal);
+	}
+}
+
+/** The open goals' titles as Postgres ranks them. */
+const storedRanking = async () =>
+	(
+		await query<{ title: string }>(
+			'select title from training_goals where priority is not null order by priority'
+		)
+	).map((g) => g.title);
 
 test.beforeEach(async () => {
 	await resetTrainingProfile();
@@ -744,7 +762,131 @@ test('deleting a goal takes a second tap that says it is for good; the goals bel
 	expect(unsent).toHaveLength(1);
 });
 
-test('goal saves and deletes belong to Goals, which has no Save of its own', async ({
+test('a goal moves up the ranking by its arrow: the move is announced, and the order is stored and still there after a reload', async ({
+	page,
+	request
+}, testInfo) => {
+	const errors = trackConsoleErrors(page);
+	await threeGoals(request);
+	await gotoHydrated(page, '/profile/goals');
+	await editorReady(page);
+	const rows = page.getByTestId('goal-row');
+	const status = page.getByTestId('goal-order-status');
+	await expect(rows.nth(2)).toHaveAccessibleName(/^Priority 3: Keep my strength/);
+
+	await arrow(page, 'Keep my strength', 'up').click();
+	await expect(rows.nth(1)).toHaveAccessibleName(/^Priority 2: Keep my strength/);
+	await expect(status).toHaveText('Keep my strength is now priority 2 of 3');
+	await arrow(page, 'Keep my strength', 'up').click();
+	await expect(rows.first()).toHaveAccessibleName(/^Priority 1: Keep my strength/);
+	await expect(rows.first()).toContainText('Top priority');
+	await expect(rows.nth(1)).not.toContainText('Top priority');
+	await expect(status).toHaveText('Keep my strength is now priority 1 of 3');
+	await expect(arrow(page, 'Keep my strength', 'up')).toBeDisabled();
+	await expect(arrow(page, 'First Muay Thai fight', 'up')).toBeEnabled();
+	await expect
+		.poll(storedRanking)
+		.toEqual(['Keep my strength', 'First Muay Thai fight', 'Valencia marathon']);
+	expect(
+		await query(
+			`select change, source, count(*)::int as times from training_goal_events
+			  group by change, source order by change`
+		)
+	).toEqual([
+		{ change: 'created', source: 'profile', times: 3 },
+		// Each move re-ranks the two goals that swap places.
+		{ change: 'reprioritized', source: 'profile', times: 4 }
+	]);
+	await captureScreen(page, testInfo, 'profile-goals-reordered');
+
+	await page.reload();
+	await editorReady(page);
+	await expect(rows.first()).toHaveAccessibleName(/^Priority 1: Keep my strength/);
+	await expect(rows.first()).toContainText('Top priority');
+	await expect(rows.nth(1)).toHaveAccessibleName(/^Priority 2: First Muay Thai fight/);
+	await expect(rows.nth(2)).toHaveAccessibleName(/^Priority 3: Valencia marathon/);
+	expect(errors).toEqual([]);
+});
+
+test('by keyboard, focus stays with the goal that moves, the other arrow taking over at either end', async ({
+	page,
+	request
+}) => {
+	await threeGoals(request);
+	await gotoHydrated(page, '/profile/goals');
+	await editorReady(page);
+	const rows = page.getByTestId('goal-row');
+
+	await arrow(page, 'Valencia marathon', 'up').focus();
+	await page.keyboard.press('Enter');
+	await expect(rows.first()).toHaveAccessibleName(/^Priority 1: Valencia marathon/);
+	// At the top it cannot go up again: focus moves to its other arrow instead of being lost.
+	await expect(arrow(page, 'Valencia marathon', 'down')).toBeFocused();
+	await page.keyboard.press('Enter');
+	await expect(rows.nth(1)).toHaveAccessibleName(/^Priority 2: Valencia marathon/);
+	await expect(arrow(page, 'Valencia marathon', 'down')).toBeFocused();
+	await page.keyboard.press('Enter');
+	await expect(rows.nth(2)).toHaveAccessibleName(/^Priority 3: Valencia marathon/);
+	await expect(arrow(page, 'Valencia marathon', 'up')).toBeFocused();
+	// Three moves in quick succession, stored one after another: the last one is what is kept.
+	await expect
+		.poll(storedRanking)
+		.toEqual(['First Muay Thai fight', 'Keep my strength', 'Valencia marathon']);
+	await expect(rows.nth(2)).toHaveAccessibleName(/^Priority 3: Valencia marathon/);
+});
+
+test('the top goal cannot go up nor the last one down, and every arrow is its own 44 px target, on a phone and on a desktop', async ({
+	page,
+	request
+}, testInfo) => {
+	await threeGoals(request);
+	await gotoHydrated(page, '/profile/goals');
+	await editorReady(page);
+	const titles = ['First Muay Thai fight', 'Valencia marathon', 'Keep my strength'];
+	await expect(arrow(page, titles[0]!, 'up')).toBeDisabled();
+	await expect(arrow(page, titles[0]!, 'down')).toBeEnabled();
+	await expect(arrow(page, titles[1]!, 'up')).toBeEnabled();
+	await expect(arrow(page, titles[1]!, 'down')).toBeEnabled();
+	await expect(arrow(page, titles[2]!, 'up')).toBeEnabled();
+	await expect(arrow(page, titles[2]!, 'down')).toBeDisabled();
+	// The up arrow is the down chevron turned over.
+	const turn = (way: 'up' | 'down') =>
+		arrow(page, titles[1]!, way)
+			.locator('svg')
+			.evaluate((svg) => {
+				const m = new DOMMatrix(getComputedStyle(svg).transform);
+				return [Math.round(m.a), Math.round(m.d)];
+			});
+	expect(await turn('up')).toEqual([-1, -1]);
+	expect(await turn('down')).toEqual([1, 1]);
+
+	type Box = { x: number; y: number; width: number; height: number };
+	const apart = (a: Box, b: Box) =>
+		a.x + a.width <= b.x || b.x + b.width <= a.x || a.y + a.height <= b.y || b.y + b.height <= a.y;
+	for (const viewport of [null, { width: 1440, height: 900 }]) {
+		if (viewport) await page.setViewportSize(viewport);
+		const boxes: Box[] = [];
+		for (const [i, title] of titles.entries()) {
+			const up = (await arrow(page, title, 'up').boundingBox())!;
+			const down = (await arrow(page, title, 'down').boundingBox())!;
+			for (const box of [up, down]) {
+				expect(box.width, title).toBeGreaterThanOrEqual(44);
+				expect(box.height, title).toBeGreaterThanOrEqual(44);
+			}
+			boxes.push(up, down, (await page.getByTestId('goal-row').nth(i).boundingBox())!);
+		}
+		for (const [i, a] of boxes.entries()) {
+			for (const b of boxes.slice(i + 1)) expect(apart(a, b), JSON.stringify([a, b])).toBe(true);
+		}
+		// Beside the goals, not past the edge of the screen.
+		expect(
+			await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)
+		).toBe(true);
+	}
+	await captureScreen(page, testInfo, 'profile-goals-order-desktop');
+});
+
+test('goal saves, deletes and reorders belong to Goals, which has no Save of its own', async ({
 	request
 }) => {
 	const post = (action: string, payload: unknown) =>
@@ -759,6 +901,7 @@ test('goal saves and deletes belong to Goals, which has no Save of its own', asy
 	await profileAction(request, '/profile/goals?/saveGoal', FIGHT);
 	const [goal] = await query<{ id: string }>('select id from training_goals');
 	expect((await post('/profile/equipment?/deleteGoal', { id: goal!.id })).status()).toBe(404);
+	expect((await post('/profile/equipment?/reorderGoals', { ids: [goal!.id] })).status()).toBe(404);
 	// A status changes through saveGoal: there is no action of its own.
 	const achieved = { id: goal!.id, status: 'achieved' };
 	expect((await post('/profile/goals?/goalStatus', achieved)).status()).toBe(404);
@@ -814,6 +957,52 @@ test.describe('with the network in the test’s hands', () => {
 		await expect(sheetOf(page)).toBeHidden();
 		release();
 		await expect(sheetOf(page).getByRole('heading', { name: 'New goal' })).toBeVisible();
+	});
+
+	test('a reorder the server does not store puts the order back and says so; tried again, it saves', async ({
+		page,
+		request
+	}) => {
+		await threeGoals(request);
+		let release!: () => void;
+		const held = new Promise<void>((resolve) => (release = resolve));
+		const reorder = (url: URL) => url.search === '?/reorderGoals';
+		await page.route(reorder, async (route) => {
+			await held;
+			// What SvelteKit answers when an action throws.
+			await route.fulfill({
+				status: 500,
+				contentType: 'application/json',
+				body: JSON.stringify({ type: 'error', error: { message: 'Internal Error' } })
+			});
+		});
+		await gotoHydrated(page, '/profile/goals');
+		await editorReady(page);
+		const rows = page.getByTestId('goal-row');
+
+		await arrow(page, 'Valencia marathon', 'up').click();
+		// The list moves before the server answers.
+		await expect(rows.first()).toHaveAccessibleName(/^Priority 1: Valencia marathon/);
+		release();
+		const failed = toastWith(page, 'The new order didn’t save. Try again.');
+		await expect(failed).toBeVisible();
+		await expect(failed).toHaveAttribute('data-tone', 'danger');
+		await expect(rows.first()).toHaveAccessibleName(/^Priority 1: First Muay Thai fight/);
+		await expect(rows.first()).toContainText('Top priority');
+		await expect(rows.nth(1)).toHaveAccessibleName(/^Priority 2: Valencia marathon/);
+		await expect(page.getByTestId('goal-order-status')).toHaveText('');
+		expect(await storedRanking()).toEqual([
+			'First Muay Thai fight',
+			'Valencia marathon',
+			'Keep my strength'
+		]);
+
+		await page.unroute(reorder);
+		await arrow(page, 'Valencia marathon', 'up').click();
+		await expect
+			.poll(storedRanking)
+			.toEqual(['Valencia marathon', 'First Muay Thai fight', 'Keep my strength']);
+		await expect(rows.first()).toHaveAccessibleName(/^Priority 1: Valencia marathon/);
 	});
 
 	test('a sheet that does not load says so, and Retry loads it', async ({ page }) => {
