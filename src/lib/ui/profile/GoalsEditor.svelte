@@ -1,13 +1,16 @@
 <!--
   @component
   Profile → Goals (PRD §2): the goals in priority order, #1 marked "Top priority" because it wins
-  when goals compete for time or recovery, or a designed empty state. A goal saves the moment it
-  changes, through the route's `?/saveGoal` action, so the screen has no Save bar. The sheet that
-  adds or edits a goal is code-split: it starts loading on first intent (pointerdown), and a tap
-  that lands before it arrives still opens it.
+  when goals compete for time or recovery, or a designed empty state with PRD §2's three ways in:
+  a specific event, a general goal, or several at once (added one by one, each ranked below the
+  ones before, as a note under "Add another goal" says). A goal saves the moment it changes,
+  through the route's `?/saveGoal` action, so the screen has no Save bar. The sheet that adds or
+  edits a goal is code-split: it starts loading on first intent (pointerdown), and a tap that
+  lands before it arrives still opens it. On Profile (`manage`) the sheet also pauses, achieves
+  or drops a goal, and the goals that left the ranking are listed apart under Past goals.
 -->
 <script lang="ts">
-	import { DISCIPLINE_INFO } from '#lib/domain/profile/catalog.ts';
+	import { DISCIPLINE_INFO, GOAL_STATUS_LABEL } from '#lib/domain/profile/catalog.ts';
 	import type { Goal } from '#lib/domain/profile/types.ts';
 	import Badge from '../components/Badge.svelte';
 	import Button from '../components/Button.svelte';
@@ -16,24 +19,29 @@
 	import Icon from '../components/Icon.svelte';
 	import ListRow from '../components/ListRow.svelte';
 	import Notice from '../components/Notice.svelte';
+	import Section from '../components/Section.svelte';
 	import { toast } from '../toast.svelte';
 	import type { EditorProps } from './editors';
 	import { goalDraft, goalSummary, newGoal, type GoalDraft } from './goals';
 	import type GoalSheet from './GoalSheet.svelte';
 
-	let { value = $bindable() }: EditorProps<Goal[]> = $props();
+	let { value = $bindable(), manage = false }: EditorProps<Goal[]> = $props();
 	const id = $props.id();
 
 	/** Open goals, top priority first (achieved and dropped goals hold no rank). */
 	const ranked = $derived(
 		value.filter((g) => g.priority !== null).sort((a, b) => a.priority! - b.priority!)
 	);
+	/** Achieved and dropped goals, as the services list them: the latest to leave first. */
+	const past = $derived(value.filter((g) => g.priority === null));
 
 	let Sheet = $state<typeof GoalSheet | null>(null);
 	let loading: Promise<unknown> | null = null;
 	let unavailable = $state(false);
 	let open = $state(false);
 	let draft = $state.raw<GoalDraft | null>(null);
+	/** Started from "Several goals at once": the next goal is asked for, and its rank explained. */
+	let several = $state(false);
 
 	/** Fetch the sheet on first intent, so it is usually here by the time the tap lands. */
 	function preload() {
@@ -49,10 +57,15 @@
 		open = true;
 	}
 
-	function saved(goals: Goal[]) {
+	function start(path: 'event' | 'general' | 'several') {
+		several = path === 'several';
+		edit(newGoal(path === 'general' ? 'general' : 'event'));
+	}
+
+	function changed(goals: Goal[], message: string) {
 		value = goals;
 		open = false;
-		toast.show('Goal saved', { tone: 'positive' });
+		toast.show(message, { tone: 'positive' });
 	}
 </script>
 
@@ -65,14 +78,32 @@
 			compact
 			data-testid="goals-empty"
 		/>
-		<ListRow
-			icon="today"
-			title="A specific event"
-			subtitle="A meet, race, fight or test day with a date"
-			onpointerdown={preload}
-			onclick={() => edit(newGoal())}
-			data-testid="goal-path-event"
-		/>
+		<div class="paths">
+			<ListRow
+				icon="today"
+				title="A specific event"
+				subtitle="A meet, race, fight or test day"
+				onpointerdown={preload}
+				onclick={() => start('event')}
+				data-testid="goal-path-event"
+			/>
+			<ListRow
+				icon="progress"
+				title="A general goal"
+				subtitle="Get stronger, faster or fitter"
+				onpointerdown={preload}
+				onclick={() => start('general')}
+				data-testid="goal-path-general"
+			/>
+			<ListRow
+				icon="plus"
+				title="Several goals at once"
+				subtitle="One by one, top priority first"
+				onpointerdown={preload}
+				onclick={() => start('several')}
+				data-testid="goal-path-several"
+			/>
+		</div>
 	{:else}
 		<p class="rule" id="{id}-rule">
 			<Icon name="info" size={16} />When goals compete for time or recovery, the higher one wins.
@@ -95,6 +126,7 @@
 							<span class="heading">
 								<span class="title">{goal.title}</span>
 								{#if i === 0}<Badge tone="accent">Top priority</Badge>{/if}
+								{#if goal.status === 'paused'}<Badge>Paused</Badge>{/if}
 							</span>
 							{#if summary}<span class="summary">{summary}</span>{/if}
 							<span class="chips">
@@ -118,10 +150,48 @@
 			block
 			onpointerdown={preload}
 			onclick={() => edit(newGoal())}
+			aria-describedby={several ? `${id}-several` : undefined}
 			data-testid="add-goal"
 		>
-			Add a goal
+			{several || ranked.length > 1 ? 'Add another goal' : 'Add a goal'}
 		</Button>
+		{#if several}
+			<p class="note" id="{id}-several" data-testid="goals-several-note">
+				Goals rank in the order you add them, so add the next most important one.
+			</p>
+		{/if}
+	{/if}
+
+	{#if manage && past.length > 0}
+		<div class="past">
+			<Section title="Past goals" data-testid="past-goals">
+				<ul class="list">
+					{#each past as goal (goal.id)}
+						{@const summary = goalSummary(goal)}
+						<li>
+							<button
+								type="button"
+								class="goal closed"
+								onpointerdown={preload}
+								onclick={() => edit(goalDraft(goal))}
+								data-testid="past-goal-row"
+							>
+								<span class="text">
+									<span class="heading">
+										<span class="title">{goal.title}</span>
+										<Badge tone={goal.status === 'achieved' ? 'positive' : 'neutral'}>
+											{GOAL_STATUS_LABEL[goal.status]}
+										</Badge>
+									</span>
+									{#if summary}<span class="summary">{summary}</span>{/if}
+								</span>
+								<span class="chevron"><Icon name="chevron-right" size={20} /></span>
+							</button>
+						</li>
+					{/each}
+				</ul>
+			</Section>
+		</div>
 	{/if}
 
 	{#if unavailable}
@@ -138,7 +208,13 @@
 {#if Sheet && draft}
 	<!-- One sheet per draft: a keyed block of one mounts it afresh for each goal opened. -->
 	{#each [draft] as current (current)}
-		<Sheet bind:open draft={current} onsaved={saved} />
+		<Sheet
+			bind:open
+			draft={current}
+			{manage}
+			onsaved={(goals) => changed(goals, 'Goal saved')}
+			ondeleted={(goals) => changed(goals, 'Goal deleted')}
+		/>
 	{/each}
 {/if}
 
@@ -147,6 +223,17 @@
 	.unavailable {
 		display: grid;
 		gap: var(--space-4);
+	}
+
+	.paths {
+		display: grid;
+		gap: var(--space-2);
+	}
+
+	.note {
+		font-size: var(--text-sm);
+		color: var(--color-text-secondary);
+		text-align: center;
 	}
 
 	.unavailable {
@@ -162,7 +249,8 @@
 		color: var(--color-text-secondary);
 	}
 
-	.ranked {
+	.ranked,
+	.list {
 		display: grid;
 		gap: var(--space-2);
 		padding: 0;
@@ -188,6 +276,14 @@
 
 	.goal.top {
 		border-color: color-mix(in srgb, var(--color-accent) 40%, var(--color-border));
+	}
+
+	/* Out of the ranking: no rank, and flat, so it reads as history rather than a goal in play. */
+	.goal.closed {
+		min-height: var(--touch-target);
+		padding-left: var(--space-4);
+		background: transparent;
+		box-shadow: none;
 	}
 
 	.goal:active {
@@ -248,5 +344,9 @@
 	.chevron {
 		display: grid;
 		color: var(--color-text-tertiary);
+	}
+
+	.past {
+		margin-top: var(--space-4);
 	}
 </style>
