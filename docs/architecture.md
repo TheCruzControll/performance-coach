@@ -77,6 +77,7 @@ Folders are layers. Allowed dependencies point inwards. Every "Must not import" 
 | `src/lib/server/services/`      | Application use-cases shared by routes **and** the agent                 | `db`, `domain`, `observability`                | agent, ui, client, SvelteKit                            |
 | `src/lib/server/agent/`         | AI coach: provider interface, tools, orchestration (scaffold in M1)      | `services`, `domain`                           | `db` (tools go through services), ui, client, SvelteKit |
 | `src/lib/server/auth/`          | Passkey auth (SimpleWebAuthn), sessions, recovery, the request guard     | `services`, `db`, `env`, `observability`       | ui, client                                              |
+| `src/lib/server/forms/`         | Form actions for routes: owner check, JSON payload → service, failures   | `services`, `domain`, SvelteKit                | `db`, `pg`, `drizzle-orm`, agent, ui, client            |
 | `src/lib/server/observability/` | Logger, request context, Server-Timing helpers (a leaf)                  | Node built-ins only                            | db, services, agent, auth, ui, client, SvelteKit        |
 | `src/lib/client/`               | Browser-only code: RUM, preferences, offline store/sync (M4)             | `domain`                                       | server, ui                                              |
 | `src/lib/ui/`                   | Design-system primitives, tokens, fonts, icons                           | `domain` (types)                               | server                                                  |
@@ -106,8 +107,11 @@ tests can wrap each test in a rolled-back transaction.
   `path` + `route_id`). M2 auth tables: `owners` (exactly one row), `passkey_credentials`,
   `auth_sessions` (token hashes), `recovery_codes` (hashes), `webauthn_challenges` (single-use),
   `used_setup_tokens` (hashes of spent setup tokens), `auth_events` (audit log) and `auth_rate_limits` (DB-backed counters); see docs/security.md. CI's `pnpm db:drift` fails when the schema changes without a committed
-  migration. The training data model
-  (profile, goals, programs, cycles, workouts, sets, sessions, decisions) lands in M3 with
+  migration. M2 training-profile tables (`drizzle/0004_training_profile.sql`, `schema/profile.ts`):
+  the athlete profile, ranked goals with a `training_goal_events` history, strength baselines
+  that are superseded rather than overwritten, dated body-weight entries, experience, running and
+  Muay Thai specifics, equipment, injuries, exercise preferences and schedule. The training data
+  model (programs, cycles, workouts, sets, sessions, decisions) lands in M3 with
   history-preserving, timestamped records (PRD §9).
 
 ## Frontend

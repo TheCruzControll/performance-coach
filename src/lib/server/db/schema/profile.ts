@@ -91,6 +91,8 @@ export const athleteProfiles = pgTable(
 		name: text('name').notNull(),
 		weightUnit: text('weight_unit').$type<'kg' | 'lb'>().notNull().default('kg'),
 		distanceUnit: text('distance_unit').$type<'km' | 'mi'>().notNull().default('km'),
+		/** IANA time zone (validated by the services): the owner's calendar day for weigh-ins. */
+		timeZone: text('time_zone').notNull().default('UTC'),
 		birthYear: integer('birth_year'),
 		nutritionPhase: text('nutrition_phase').$type<NutritionPhase>(),
 		targetWeight: weight('target_weight'),

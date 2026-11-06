@@ -2,13 +2,14 @@
  * The owner's first-run setup, for real: a WebAuthn registration through a CDP virtual
  * authenticator (Chromium), recovery codes shown once, then the signed-in browser state every
  * Chromium spec starts from. Also audits the setup screens and checks the setup link's rate
- * limit (both exist only until this runs).
+ * limit (both exist only until this runs), and registers the owner passkeys specs sign in with
+ * (one per worker, e2e/webauthn.ts).
  */
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test as setup, type Page } from '@playwright/test';
 import { RATE_LIMITS } from '../src/lib/server/auth/policy';
-import { captureScreen, query, trackConsoleErrors } from './support';
-import { addVirtualAuthenticator } from './webauthn';
+import { captureScreen, query, toastWith, trackConsoleErrors } from './support';
+import { addVirtualAuthenticator, saveOwnerPasskeys, type StoredPasskey } from './webauthn';
 
 const STATE = 'e2e/.auth/chromium.json';
 
@@ -133,6 +134,23 @@ setup(
 
 		// Setup is gone for good, even with the right token.
 		expect((await page.request.get(`/setup?token=${token}`)).status()).toBe(404);
+
+		// One more owner passkey per worker, each on a device of its own, added while this session
+		// is fresh (setup just verified a passkey, so no step-up) and kept with its private key.
+		const ownerPasskeys: StoredPasskey[] = [];
+		for (let i = 0; i < testInfo.config.workers; i++) {
+			const device = await context.newPage();
+			const key = await addVirtualAuthenticator(device);
+			await device.goto('/profile/security');
+			// Hydrated first: a tap on the server-rendered button before then does nothing.
+			await device.waitForLoadState('networkidle');
+			await device.getByTestId('add-passkey').click();
+			await expect(toastWith(device, /Passkey added: /)).toBeVisible();
+			ownerPasskeys.push(...(await key.credentials()));
+			await device.close();
+		}
+		expect(ownerPasskeys).toHaveLength(testInfo.config.workers);
+		saveOwnerPasskeys(ownerPasskeys);
 
 		expect(errors).toEqual([]);
 		await context.storageState({ path: STATE });

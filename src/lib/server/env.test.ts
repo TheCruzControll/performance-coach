@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { EnvValidationError, parseEnv, testRoutesEnabled } from './env';
 
 const DB = 'postgres://coach:coach@localhost:5432/coach_dev';
@@ -109,6 +109,34 @@ describe('parseEnv', () => {
 			const env = parseEnv({ DATABASE_URL: DB, APP_ENV: 'test', ENABLE_TEST_ROUTES: 'true' });
 			expect(testRoutesEnabled({ ...env, appEnv: 'production' })).toBe(false);
 			expect(testRoutesEnabled({ ...env, VERCEL_ENV: 'preview' })).toBe(false);
+		});
+
+		describe('in a server built for Vercel', () => {
+			// What vite.config.ts bakes into a Vercel build; unset in Vitest, like a local run.
+			const vercelBuild = () => vi.stubGlobal('__VERCEL_BUILD__', true);
+			afterEach(() => vi.unstubAllGlobals());
+
+			// A runtime environment without Vercel's own variables that claims to be a test run.
+			const unmarked = {
+				DATABASE_URL: DB,
+				NODE_ENV: 'production',
+				APP_ENV: 'test',
+				ENABLE_TEST_ROUTES: 'true'
+			};
+
+			it('refuses to start with test routes enabled, whatever the runtime environment says', () => {
+				vercelBuild();
+				expect(issuesOf(unmarked)).toEqual([
+					expect.stringMatching(/^ENABLE_TEST_ROUTES: test routes are only allowed/)
+				]);
+			});
+
+			it('keeps the test routes disabled at runtime', () => {
+				const env = parseEnv(unmarked);
+				expect(testRoutesEnabled(env)).toBe(true); // allowed in a local build
+				vercelBuild();
+				expect(testRoutesEnabled(env)).toBe(false);
+			});
 		});
 	});
 
