@@ -275,49 +275,56 @@ test.describe('every state of the frame, in the card', () => {
 		await auditBothThemes(page, 'no passkeys');
 	});
 
-	test('an address passkeys cannot use: the notice names localhost, in the card', async ({
-		page
-	}, testInfo) => {
-		// What the test relying party says of the app opened on 127.0.0.1. The e2e server pins its
-		// origin (ORIGIN, adapter-node), so it calls every address localhost: the refusal reaches
-		// the sign-in page as that route's own data, on a client-side navigation to it.
-		const verdict = relyingPartyFor(
-			{ appEnv: 'test' },
-			new URL(ORIGIN.replace('//localhost', '//127.0.0.1'))
-		);
-		expect(verdict.ok).toBe(false);
-		const { reason, signInUrl } = verdict as { reason: string; signInUrl?: string };
-		expect(reason).toContain('http://localhost');
-		await page.route(
-			(url) => url.pathname === '/__data.json',
-			async (route) => {
-				const response = await route.fetch();
-				// SvelteKit's data: per node, devalue's flat form (values by index, objects of indexes).
-				const body = (await response.json()) as { nodes: ({ data?: unknown[] } | null)[] };
-				for (const node of body.nodes) {
-					const values = node?.data;
-					const data = values?.[0];
-					if (!values || typeof data !== 'object' || !data || !('unavailable' in data)) continue;
-					const refusal = {
-						reason: values.push(reason) - 1,
-						signInUrl: values.push(signInUrl ?? null) - 1
-					};
-					Object.assign(data, { unavailable: values.push(refusal) - 1 });
+	test.describe('with the sign-in page’s data in the test’s hands', () => {
+		// page.route never sees a request from a page the service worker controls on WebKit, and
+		// the worker takes control during gotoHydrated (clients.claim): the rewritten __data.json
+		// would reach the server instead. Chromium routes that request either way.
+		test.use({ serviceWorkers: 'block' });
+
+		test('an address passkeys cannot use: the notice names localhost, in the card', async ({
+			page
+		}, testInfo) => {
+			// What the test relying party says of the app opened on 127.0.0.1. The e2e server pins its
+			// origin (ORIGIN, adapter-node), so it calls every address localhost: the refusal reaches
+			// the sign-in page as that route's own data, on a client-side navigation to it.
+			const verdict = relyingPartyFor(
+				{ appEnv: 'test' },
+				new URL(ORIGIN.replace('//localhost', '//127.0.0.1'))
+			);
+			expect(verdict.ok).toBe(false);
+			const { reason, signInUrl } = verdict as { reason: string; signInUrl?: string };
+			expect(reason).toContain('http://localhost');
+			await page.route(
+				(url) => url.pathname === '/__data.json',
+				async (route) => {
+					const response = await route.fetch();
+					// SvelteKit's data: per node, devalue's flat form (values by index, objects of indexes).
+					const body = (await response.json()) as { nodes: ({ data?: unknown[] } | null)[] };
+					for (const node of body.nodes) {
+						const values = node?.data;
+						const data = values?.[0];
+						if (!values || typeof data !== 'object' || !data || !('unavailable' in data)) continue;
+						const refusal = {
+							reason: values.push(reason) - 1,
+							signInUrl: values.push(signInUrl ?? null) - 1
+						};
+						Object.assign(data, { unavailable: values.push(refusal) - 1 });
+					}
+					await route.fulfill({ response, json: body });
 				}
-				await route.fulfill({ response, json: body });
-			}
-		);
-		await gotoHydrated(page, '/recover');
-		await page.getByRole('link', { name: 'Back to sign in' }).click();
-		await expect(page).toHaveURL(/\/$/);
-		const notice = page
-			.getByRole('status')
-			.filter({ hasText: 'Passkeys aren’t available on this address' });
-		await expect(notice).toContainText(reason);
-		await expect(page.getByTestId('passkey-signin')).toBeDisabled();
-		await expectDesktopFrame(page, [notice]);
-		await captureScreen(page, testInfo, 'unavailable-desktop');
-		await auditBothThemes(page, 'unavailable address');
+			);
+			await gotoHydrated(page, '/recover');
+			await page.getByRole('link', { name: 'Back to sign in' }).click();
+			await expect(page).toHaveURL(/\/$/);
+			const notice = page
+				.getByRole('status')
+				.filter({ hasText: 'Passkeys aren’t available on this address' });
+			await expect(notice).toContainText(reason);
+			await expect(page.getByTestId('passkey-signin')).toBeDisabled();
+			await expectDesktopFrame(page, [notice]);
+			await captureScreen(page, testInfo, 'unavailable-desktop');
+			await auditBothThemes(page, 'unavailable address');
+		});
 	});
 
 	test('a wrong recovery code: the error under the field, in the card', async ({
