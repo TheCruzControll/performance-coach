@@ -60,6 +60,7 @@
 		width: var(--size);
 		height: var(--size);
 		border-radius: var(--radius-full);
+		border: 1px solid transparent;
 		color: var(--color-text);
 		user-select: none;
 		-webkit-user-select: none;
@@ -69,10 +70,11 @@
 			color var(--duration-fast) var(--ease-standard);
 	}
 
+	/* The hit area: ≥ 44 px. It is laid out in the padding box, inside the 1 px border. */
 	.icon-btn::after {
 		content: '';
 		position: absolute;
-		inset: min(0px, calc((var(--size) - var(--touch-target)) / 2));
+		inset: min(0px, calc((var(--size) - var(--touch-target)) / 2 - 1px));
 	}
 
 	.icon-btn[data-size='sm'] {
@@ -107,6 +109,13 @@
 	@media (hover: hover) and (pointer: fine) {
 		.icon-btn[data-variant='ghost']:hover:not(:disabled) {
 			background: var(--color-surface-2);
+		}
+		.icon-btn[data-variant='filled']:hover:not(:disabled) {
+			background: var(--color-surface-3);
+			border-color: var(--color-border-strong);
+		}
+		.icon-btn[data-variant='accent']:hover:not(:disabled) {
+			background: var(--color-accent-hover);
 		}
 	}
 

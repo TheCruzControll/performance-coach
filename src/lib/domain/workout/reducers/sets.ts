@@ -36,8 +36,8 @@ const valuesOf = (set: LoggedSet): LoggedSet => ({
 	isExtra: set.isExtra
 });
 
-/** A set not done carries no amount, load or effort. */
-const NOT_DONE = {
+/** A set not done carries no amount, load or effort (set.skip, and structure's exercise.skip). */
+export const NOT_DONE = {
 	reps: null,
 	seconds: null,
 	metres: null,

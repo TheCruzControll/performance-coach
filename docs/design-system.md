@@ -133,7 +133,8 @@ Tracking: `--tracking-display -0.032em`, `--tracking-tight -0.016em`, `--trackin
 - Failure states keep the shell: offline and error screens render inside it with the screen's
   title (`src/routes/ErrorView.svelte`), and a connectivity notice appears while offline.
 - Large titles (`PageHeader`): eyebrow + 34 px display title, iOS-style.
-- Toasts appear at the top (clear of the thumb zone and nav); sheets rise from the bottom.
+- Toasts appear at the top (clear of the thumb zone and nav); sheets rise from the bottom, and
+  open as centred dialogs from 1024 px (Responsive layout → Dialogs & toasts).
 
 ## Responsive layout
 
@@ -249,20 +250,38 @@ type scale is the same at every width, because a 1024–1366 px window can be a 
   `:hover`, `(hover: hover)` alone, `(pointer: coarse)`, `any-hover` and `any-pointer` fail. The
   iPhone has no hover, and a touch laptop or an iPad never gets a hover state that sticks.
 - Hover is never the only cue: what it shows is also there on focus or press.
+- Every interactive primitive has one: buttons and icon buttons tint, rows and cards strengthen
+  their border, an unselected tab gets a tinted pill, a choice or a day not yet picked lifts to
+  `--color-surface-3` with a stronger border, a switch that is off strengthens its track's border,
+  and a picked day or a switch that is on takes `--color-accent-hover`. Native controls drawn by a
+  face (`ChoiceGroup`, `DayPicker`, `Toggle`) cover it, so the whole face shows the pointer cursor
+  and takes the click.
+- A mouse never drags a sheet: only a finger or a pen swipes it down. Touch targets keep 44 px
+  at every width (hit areas reach past a control's 1 px border).
 
 ### Keyboard & focus
 
 - The skip link comes first and moves focus to `<main>`.
 - Focus order matches reading order and visual order.
-- Every interactive element shows a visible `:focus-visible` ring.
+- Every interactive element shows a visible `:focus-visible` ring, at least 2 px. Fields draw
+  theirs as a 3 px shadow over a transparent 2 px outline: forced colours (Windows contrast
+  themes) drop shadows and draw the outline instead.
 - Escape closes the top dialog only; arrow keys move inside composite controls.
 - No keyboard traps, and no shortcuts that take over typing keys.
 
 ### Dialogs & toasts
 
-How sheets open as centred dialogs on a desktop window lands with the primitives' desktop pass
-(desk-primitives). Until then sheets rise from the bottom at every width, and toasts stay at the
-top as screen chrome.
+- Below 1024 px a `BottomSheet` rises from the bottom with its handle, and a swipe down closes
+  it.
+- From 1024 px the same `<dialog>` opens centred in the window: `min(100% − 2 gutters, 32rem)`
+  wide, at most `min(85dvh, 48rem)` tall with its content scrolling inside under the title, every
+  corner rounded and bordered all round. It fades in as it rises 8 px, and has no handle. The
+  focus trap and Escape are the platform's; the backdrop and focus return work as on a phone.
+- Stacked dialogs (Security's step-up over Remove passkey) stay usable: the top one is on top,
+  holds focus, and is the only one Escape closes; focus then returns into the one below. When the
+  button that opened a dialog cannot take focus back (it was disabled while it worked), focus
+  returns to the dialog underneath.
+- Toasts stay at the top as screen chrome.
 
 ### Screens
 
@@ -305,7 +324,7 @@ later-pass screen).
 | `Icon`              | Inline SVG set (`src/lib/ui/icons/icons.ts`, 24 px grid, 1.75 px round strokes); decorative unless `label`.                                                                                                                                                                        |
 | `Surface` / `Card`  | Levels 1–3, padding, radius, discipline `tone` tint, `interactive`/`href`; `Card` adds eyebrow/title/action header (`aria-labelledby`).                                                                                                                                            |
 | `NumberStepper`     | One-handed −/+ (56 px), press-and-hold accelerating repeat, tap-to-type (`inputmode=decimal`), `role=spinbutton` with ArrowUp/Down, PageUp/Down, Home/End.                                                                                                                         |
-| `BottomSheet`       | Native `<dialog>` + `showModal()` (platform focus trap, inert background), Escape/backdrop close, focus returns to opener, swipe-to-dismiss (distance or velocity), content mounted only while open.                                                                               |
+| `BottomSheet`       | Native `<dialog>` + `showModal()` (platform focus trap, inert background), Escape/backdrop close, focus returns to opener, touch swipe-to-dismiss (distance or velocity), content mounted only while open. A centred dialog from 1024 px.                                          |
 | `SegmentedControl`  | `radiogroup` with roving tabindex and arrow keys; spring-animated thumb; `sm` (36 px track) options extend their hit area to 44 px.                                                                                                                                                |
 | `Tabs`              | WAI-ARIA tabs (automatic activation, arrows/Home/End), animated accent indicator, renders active panel.                                                                                                                                                                            |
 | `AppNav`            | Primary navigation (real links, preload on tap): the glass bottom bar, a solid left rail from 1024 px under the brand mark; one `<nav>`, so destinations, order and `aria-current` match at every width (Responsive layout → Shell).                                               |
