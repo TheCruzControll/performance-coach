@@ -15,7 +15,7 @@
 	import SessionCard from '#lib/ui/program/SessionCard.svelte';
 	import WeekStrip from '#lib/ui/program/WeekStrip.svelte';
 	import type PlateSheetType from './PlateSheet.svelte';
-	import type { PageProps } from './$types';
+	import type { PageProps, Snapshot } from './$types';
 
 	let { data }: PageProps = $props();
 
@@ -68,6 +68,14 @@
 	const day = $derived(week?.days[selectedIndex]);
 	/** That day in words, from the server. */
 	const words = $derived(view?.days[selectedIndex]);
+
+	/** Back from a session (history) comes back to the weekday the owner had picked. */
+	export const snapshot: Snapshot<number | null> = {
+		capture: () => chosen,
+		restore: (value) => (chosen = value)
+	};
+
+	const sessionHref = (lineage: string) => resolve('/(app)/train/session/[key]', { key: lineage });
 
 	let reloading = $state(false);
 	async function reload() {
@@ -207,10 +215,12 @@
 						{#if day.date === view!.today}<Badge tone="accent">Today</Badge>{/if}
 					{/snippet}
 					{#each words.cards as card (card.lineage)}
+						{@const href = sessionHref(card.lineage)}
 						<SessionCard
 							session={card}
+							{href}
 							baseline={card.baseline}
-							pending={loading}
+							pending={loading || navigating.to?.url.pathname === href}
 							data-testid="session-card"
 						/>
 					{:else}
