@@ -107,6 +107,44 @@ describe('a Profile section', () => {
 		});
 	});
 
+	it('Schedule starts with nothing set, then loads what it saved, commitments included', async () => {
+		await withRollback(async (db) => {
+			const owner = await makeOwner(db);
+			const schedule = profileSection('schedule');
+			expect(await schedule.load(owner, { db })).toMatchObject({
+				daysPerWeek: null,
+				sessionMinutes: null,
+				commitments: []
+			});
+			const week = {
+				daysPerWeek: 4,
+				availableDays: ['tue', 'thu', 'sat', 'sun'],
+				preferredTimes: ['evening'],
+				sessionMinutes: 75,
+				constraints: null,
+				commitments: [
+					{
+						id: null,
+						discipline: 'muay_thai',
+						label: 'Muay Thai class',
+						days: ['tue', 'thu'],
+						timeOfDay: 'evening',
+						durationMinutes: 90,
+						intensity: 'hard',
+						notes: null
+					}
+				]
+			};
+			await schedule.save!(owner, week, { db, source: 'profile' });
+			const { commitments, ...rest } = week;
+			const loaded = await schedule.load(owner, { db });
+			expect(loaded).toMatchObject(rest);
+			expect(loaded).toMatchObject({
+				commitments: [{ ...commitments[0], id: expect.any(String) }]
+			});
+		});
+	});
+
 	it('is a 404 for any key that is not a section, inherited object keys included', () => {
 		for (const key of [
 			'unknown',
