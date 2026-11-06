@@ -6,17 +6,16 @@
   today, 2 sessions, 1 done'). Today comes from the server (the owner's local date), never from
   the device clock, and is ringed. Every day fills its column, so at 393 px each stays ≥ 44 px
   wide even inside a padded card, and nothing scrolls sideways; a wide column shows 'Mon'. Sits
-  on the canvas: the selected day is a raised surface.
+  on the canvas: the selected day is a raised surface. It lays out the words stripDay composed
+  where the week was read (words.ts), so it ships no vocabulary.
 -->
 <script lang="ts">
 	import type { IsoDate } from '#lib/domain/calendar.ts';
-	import { WEEKDAY_INFO } from '#lib/domain/profile/catalog.ts';
-	import { sessionTone } from '#lib/domain/training/vocabulary.ts';
-	import { dayName, type StripDay } from './words.ts';
+	import type { StripDayView } from './words.ts';
 
 	interface Props {
 		/** Seven days, Monday first. */
-		days: readonly StripDay[];
+		days: readonly StripDayView[];
 		/** The owner's local date, from the server; null when it is not this week. */
 		today: IsoDate | null;
 		selected?: IsoDate | null;
@@ -81,20 +80,17 @@
 			class="day"
 			aria-checked={day.date === selected}
 			aria-current={day.date === today ? 'date' : undefined}
-			aria-label={dayName(day, today)}
+			aria-label={day.name}
 			tabindex={i === stop ? 0 : -1}
 			onclick={() => select(i)}
 			onkeydown={(event) => onkeydown(event, i)}
 		>
-			<span class="name letter">{WEEKDAY_INFO[day.weekday].letter}</span>
-			<span class="name short">{WEEKDAY_INFO[day.weekday].short}</span>
+			<span class="name letter">{day.letter}</span>
+			<span class="name short">{day.short}</span>
 			<span class="date numeric">{Number(day.date.slice(8))}</span>
 			<span class="dots" aria-hidden="true">
-				{#each day.sessions.slice(0, MAX_DOTS) as session, j (j)}
-					<span
-						class="dot"
-						class:ring={session.status === 'skipped'}
-						style:--tone={`var(--color-${sessionTone(session.type)})`}
+				{#each day.dots.slice(0, MAX_DOTS) as dot, j (j)}
+					<span class="dot" class:ring={dot.skipped} style:--tone={`var(--color-${dot.tone})`}
 					></span>
 				{/each}
 			</span>
