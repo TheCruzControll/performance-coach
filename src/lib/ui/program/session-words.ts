@@ -5,8 +5,8 @@
  * route's load, on the server), so the screen's JavaScript carries none of the vocabulary and
  * no describe.ts (docs/performance.md); the components only lay the words out.
  */
-import type { IsoDate } from '#lib/domain/calendar.ts';
-import { TIME_OF_DAY_LABEL, type TimeOfDay } from '#lib/domain/profile/catalog.ts';
+import { weekdayOf, type IsoDate } from '#lib/domain/calendar.ts';
+import { TIME_OF_DAY_LABEL, WEEKDAY_INFO, type TimeOfDay } from '#lib/domain/profile/catalog.ts';
 import {
 	BASELINE_INSTRUCTION,
 	describePrescription,
@@ -26,7 +26,7 @@ import {
 	type SessionIntensity,
 	type SessionType
 } from '#lib/domain/training/vocabulary.ts';
-import { longDate } from './words.ts';
+import { longDate, shortDate } from './words.ts';
 
 /** 'Tuesday 10 November · Evening'; the time of day only when known (never 'varies'). */
 export function whenWords(date: IsoDate, timeOfDay: TimeOfDay | null): string {
@@ -171,3 +171,46 @@ export const BASELINE_CALLOUT = {
 } as const;
 
 export type BaselineCallout = typeof BASELINE_CALLOUT;
+
+/** A day the Move sheet offers, as a card: 'Wed 11 Nov', with what is planned there under it. */
+export interface MoveOption {
+	date: IsoDate;
+	/** 'Wed 11 Nov'. */
+	label: string;
+	/** 'Wednesday': where the toast says it moved. */
+	day: string;
+	/** 'Easy run · Muay Thai class', or 'Rest day'. */
+	planned: string;
+}
+
+/** A day a session can move to (the program services' getMoveTargets), in the sheet's words. */
+export function moveOption({ date, planned }: { date: IsoDate; planned: string }): MoveOption {
+	return { date, label: shortDate(date), day: WEEKDAY_INFO[weekdayOf(date)].label, planned };
+}
+
+/** What the session's edit row offers, on the version shown. */
+export interface SessionEdits {
+	/** The version shown: an edit names it, so one made from a page left open conflicts. */
+	version: number;
+	/** Why the session can no longer change (EDITS_LOCKED); null while it can. */
+	locked: string | null;
+	/** The days Move offers, earliest first; none when no day of its week is left. */
+	moveTo: MoveOption[];
+}
+
+/** What an edit sheet opens on: the session screen's session, with its edits. */
+export interface EditTarget {
+	lineage: string;
+	title: string;
+	/** 'Monday 9 November · Morning'. */
+	when: string;
+	/** None on an older version, which is read-only. */
+	edits: SessionEdits | null;
+}
+
+/** Why a session's edits are off, as the line under its disabled edit row says. */
+export const EDITS_LOCKED = {
+	completed: 'You’ve logged it, so it stays as it was.',
+	skipped: 'It’s skipped, so it stays off your week.',
+	passed: 'Its day has passed, so it stays as it was planned.'
+} as const;
