@@ -5,8 +5,11 @@ import {
 	DESKTOP,
 	DESKTOP_WIDTHS,
 	expectCentredOver,
+	expectMainCentred,
 	expectNoSideScroll,
-	pixelAt
+	layoutWidth,
+	pixelAt,
+	tokenPx
 } from './desktop';
 import { captureScreen, gotoHydrated, TABS, toastWith, trackConsoleErrors } from './support';
 
@@ -51,24 +54,6 @@ const workerActivated = (page: Page) =>
 		)
 		.toBe('activated');
 
-/** A length token (e.g. `--rail-width: 5.5rem`) in CSS pixels. */
-const tokenPx = (page: Page, token: string) =>
-	page.evaluate((name) => {
-		const probe = document.createElement('div');
-		probe.style.width = `var(${name})`;
-		document.body.append(probe);
-		const width = probe.getBoundingClientRect().width;
-		probe.remove();
-		return width;
-	}, token);
-
-/**
- * The width the page lays out in: the window's, less the gutter base.css keeps for a classic
- * scrollbar (`scrollbar-gutter: stable`), which headless Chromium reserves without drawing.
- */
-const layoutWidth = (page: Page) =>
-	page.evaluate(() => document.documentElement.getBoundingClientRect().width);
-
 async function boxOf(locator: Locator) {
 	const box = await locator.boundingBox();
 	expect(box, `${locator} is on the page`).not.toBeNull();
@@ -84,16 +69,6 @@ const fixedToBottom = (page: Page) =>
 			.filter(({ box }) => box.width > 0 && box.height > 0 && box.bottom >= innerHeight - 1)
 			.map(({ el }) => el.outerHTML.slice(0, 80))
 	);
-
-/** `<main>` is centred in the area right of the rail (both gaps within 1 px) and `width` wide. */
-async function expectMainCentred(page: Page, width: number) {
-	const rail = await boxOf(railOf(page));
-	const main = await boxOf(mainOf(page));
-	const left = main.x - (rail.x + rail.width);
-	const right = (await layoutWidth(page)) - (main.x + main.width);
-	expect(Math.abs(left - right), `gaps beside main: ${left} and ${right}`).toBeLessThanOrEqual(1);
-	expect(Math.abs(main.width - width), `main is ${main.width}px wide`).toBeLessThanOrEqual(1);
-}
 
 /** The nearest rgb() of a colour expression, as this page resolves it on the rail. */
 const colourOf = (page: Page, expression: string) =>
