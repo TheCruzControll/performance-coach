@@ -4,10 +4,10 @@ This is everything a new Claude Code session needs to resume the build on anothe
 product spec is `docs/product-requirements.md` on `main`; milestone criteria are in
 `docs/milestones.md`. Read this file from `origin/handoff` (it is not on `main`).
 
-## Update: cloud session, 2026-11-06 (06:28 → 17:45 UTC, still running)
+## Update: cloud session, 2026-11-06 (06:28 → 19:15 UTC, still running)
 
 A claude.ai cloud session (4 CPUs, 15 GB, Linux; no T3, no Codex) is working the goal "finish
-M1–M9 on main with evidence and the app live on coach.nikocruz.com". State at 17:45 UTC:
+M1–M9 on main with evidence and the app live on coach.nikocruz.com". State at 19:15 UTC:
 
 - **Production is live** on coach.nikocruz.com since the cutover (#50, 07:13 UTC); every merge to
   `main` deploys it, and the post-deploy smoke check runs after each deploy.
@@ -22,13 +22,16 @@ M1–M9 on main with evidence and the app live on coach.nikocruz.com". State at 
   (desktop rules), #97 (weekly volume), #98 (M4 timers), #99 (e2e race fixes), #100 (week
   placement), #101 (M5 coach contracts), #102 (M4 outbox rules), then #90 (M4 icon sprite, with a
   real WebKit fix: leaving detection now lives in `app.html`'s inline script), #103, #105–#116.
-  **~104 PRs merged in 24 h; 60 of 269 planned slices are on main.**
+  Since 17:45: #118 (set prefill), #119 (M6 analytics foundation), #120 (on-device workout store),
+  #121 (coach markdown), #122 (leaving + version.json fix), #123 (LlmProvider + MockProvider),
+  #124 (mail layer), #117 (Train week). **66 of 328 planned slices are on main** (M7 added 59).
 - **Status page for the owner's phone** (private artifact, republished from the session):
   https://claude.ai/artifact/JDAZPdKRPVXrQ7ZgScuLHR. Built by `<scratch>/status/status.py` then
   `to_artifact.py`; a new session republishes it by passing that URL as `url`.
 - **Plans** (all in `plans/`): `m3-plan.json`, `m2x-plan.json` (21 slices), `m4-plan.json` (61),
-  `m5-plan.json` (61), `m6-plan.json` (63). The planner (`milestone-plans-cloud.js`, run
-  `wf_3f53c5db-7bb`) is on M7's second critic round, then M9. Each plan's `openQuestions` are answered with defaults; slices list the default
+  `m5-plan.json` (61), `m6-plan.json` (63), `m7-plan.json` (59). The planner (`milestone-plans-cloud.js`,
+  run `wf_3f53c5db-7bb`) is on M9. Its `write:` step refuses to retype a 150 KB plan, so take the
+  final plan from its journal (the `revise:M<n>#2` result) with a script and save it to `plans/`. Each plan's `openQuestions` are answered with defaults; slices list the default
   under "## Owner decisions" in their PR.
 
 ### Open PRs and how they merge
@@ -41,10 +44,9 @@ M1–M9 on main with evidence and the app live on coach.nikocruz.com". State at 
   link>" and an audit checks no section was lost. Until it pushes they are held in
   `<scratch>/steward-hold`; remove those lines after the push and the steward merges them in order.
   **#104** (goal drag) is built on the old #93 and is restacked onto the new one after that.
-- **#117** (M3 Train week): its desktop e2e asserted the old 34 rem column; #113 widened the shell.
-  `pr-ci-fix.js` run `wf_3f7a0eaa-efa` fixes the test to use the shared layout helpers.
-- **#118** (M4 set prefill) in CI. Main-red follow-up (WebKit `version.json` pageerror, a TBT
-  blip on `/`) in run `wf_66add95f-f81`; main is green again.
+- **#125** (session detail) and **#128** (plan overview) were cut from #117 before its WebKit fix;
+  `pr-ci-fix.js` run `wf_46f49909-9d2` merges main and blocks the service worker in their routed
+  tests. **#126**, **#127** (M4 workout flow, sync engine) in CI.
 - **Never merge #13** (this branch). **#14** is an old paused WIP branch; leave it.
 
 ### Rules learned today (now in `workflows/dag-cloud.js`'s instructions)
@@ -59,6 +61,9 @@ M1–M9 on main with evidence and the app live on coach.nikocruz.com". State at 
   modulepreload stuck (bug 270357), so Retry could never load a lazy chunk on Safari/Chrome iOS.
 - **Profile section editors stay out of the server build** (#86): SvelteKit links the CSS of every
   dynamic import the server build can reach, render-blocking; `pnpm budgets` now guards it.
+- **WebKit + service worker + `page.route`**: on WebKit, `page.route` does not see requests from a
+  page the app's service worker controls (it calls `clients.claim()`), so a test that holds or fails
+  `__data.json` must run in a describe with `test.use({ serviceWorkers: 'block' })` (#117).
 - **WebKit's `document.fonts.ready`** resolves only after the load event; tests that hold a request
   wait on `document.fonts.status === 'loaded'` instead (Playwright's screenshots await `ready`).
 - **Lighthouse LCP artefact** (found on #90, main is equally exposed): Chrome truncates the FCP

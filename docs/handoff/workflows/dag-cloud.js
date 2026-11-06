@@ -36,7 +36,7 @@ function makeLimiter(n) {
 }
 const limit = makeLimiter(args.limit || 2);
 
-const S = '<scratch>';
+const S = '/tmp/claude-0/-home-user-performance-coach/7dfac99c-7ffa-543a-b71b-13de33c61bd5/scratchpad';
 const BIN = `${S}/bin`;
 const MAIN = '/home/user/performance-coach'; // the main checkout (never modified by agents)
 const R = 'repos/TheCruzControll/performance-coach';
@@ -67,6 +67,7 @@ const prio = (it) => depth(it.id) * 10 + (it.kind === 'm2' ? 5 : 0) + (it.boost 
 const MACHINE = (slug, port) => `MACHINE RULES (a 4-CPU, 15 GB Linux cloud container shared by several agents):
 - Work only in your worktree ${S}/wt/${slug} (never in ${MAIN} or another worktree). Run \`bash ${BIN}/agent-env ${slug} ${port}\` once inside it (safe to re-run), then prefix every node/pnpm command with \`source ${envf(slug)} && \`. Your e2e port is ${port}. Postgres 16 runs locally (role coach/coach).
 - Heavy commands (svelte-check, vite build, Playwright) go through \`slot\` (at most two machine-wide; expect to wait). Give heavy Bash calls timeout 600000. A git command that fails on a lock (another agent fetching) is retried after a moment.
+- WebKit-only traps (CI runs WebKit, this container cannot): (a) an e2e test that holds, fails or fulfils a request with page.route must run with the service worker blocked (\`test.use({ serviceWorkers: 'block' })\` in a describe, as profile-goals and train-week do), because on WebKit page.route does not see requests from a page the service worker controls; (b) wait on \`document.fonts.status === 'loaded'\`, never \`document.fonts.ready\`, while a request is held (WebKit resolves it only after the load event).
 - Run only the e2e specs you touch or add; never the full suite, never --repeat-each above 3, never the 'perf' or 'exclusive' projects. Kill servers and browsers you start. Never \`playwright install\`: Chromium is preinstalled; WebKit is not available in this container, so never set E2E_WEBKIT=1 (CI runs Chromium + WebKit + Lighthouse on every PR and is the final gate).
 - GitHub: read with REST (\`gh api ${R}/...\`; GraphQL and \`gh pr …\` fail here). Write ONLY through the GitHub MCP tools (load them with ToolSearch, e.g. \`select:mcp__github__create_pull_request\`). You are a child agent: never subscribe to or watch PRs, never merge, never post PR comments, never touch Vercel, Neon or GitHub settings.
 - Shared docs belong to the milestone's docs slice: a code slice does NOT edit docs/testing.md, docs/security.md, docs/performance.md or docs/milestones.md at all (one edit there makes every other open PR stale and forces another CI run for each). Put the exact lines that belong there in a "## Docs to add" section of the PR body (target file and section for each); the milestone's docs slice adds them. If your branch already edits those files (an earlier session's work), move those edits into that section and restore the files to the base. Docs-only slices are the exception: they own those files and collect the "## Docs to add" sections from the milestone's merged PRs (\`gh api "${R}/pulls?state=closed&per_page=100"\` bodies). Registries and lists other parallel slices also extend (section registries, route-access tables, design-system rows): add your entry as its own line, never reformat neighbours.`;
