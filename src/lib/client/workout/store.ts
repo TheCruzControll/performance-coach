@@ -34,7 +34,7 @@ import type { IDBPTransaction, StoreNames } from 'idb';
 import { openWorkoutDb, StoreClosedError } from './db.ts';
 import type { CloseReason, StoredWorkout, WorkoutDb, WorkoutSchema } from './db.ts';
 import { OUTBOX_INDEXES, STORES } from './names.ts';
-import { applyResults, queued } from './outbox-rules.ts';
+import { applyResults, backOnline, countFailure, queued } from './outbox-rules.ts';
 import type { OutboxEntry } from './outbox-rules.ts';
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -124,6 +124,19 @@ export interface WorkoutStore {
 	retry(actionId: string): Promise<WriteOutcome>;
 	/** A sync response: entries leave the outbox or are parked, the canonical rows are stored. */
 	acknowledge(results: readonly SyncResult[]): Promise<void>;
+	/** Every outbox entry in seq order, as IndexedDB holds it: what the sync engine sends from. */
+	outbox(): Promise<OutboxEntry[]>;
+	/** A 5xx or a timeout of a batch the entry heads, counted against it (outbox-rules). */
+	countFailure(seq: number, error: string): Promise<void>;
+	/** Back online after being offline since `offlineSince`: every entry's wait ends. */
+	backOnline(offlineSince: number): Promise<void>;
+	/**
+	 * The session is gone (a 401): deletes everything the server already holds, which are the saved
+	 * kits, the cached library, the owner's units, every canonical row and kit, and every finished
+	 * workout. It keeps only the outbox and an unfinished workout's device state, less the previous
+	 * sets attached from the server.
+	 */
+	purgeServerCopies(): Promise<void>;
 	saveKit(lineage: string, kit: StartKit): Promise<void>;
 	getKit(lineage: string): Promise<StartKit | null>;
 	prune(): Promise<{ workouts: string[]; kits: string[] }>;
@@ -478,6 +491,58 @@ export async function createStore({
 		}
 	}
 
+	async function outbox(): Promise<OutboxEntry[]> {
+		assertOpen();
+		return db.getAll(STORES.outbox);
+	}
+
+	/** An outbox rule that keeps every entry in its place (counts and waits): no view changes. */
+	async function revise(rule: (entries: OutboxEntry[]) => OutboxEntry[]): Promise<void> {
+		assertOpen();
+		await serial(() =>
+			transact(db, [STORES.outbox], async (tx) => {
+				const store = tx.objectStore(STORES.outbox);
+				const entries = await store.getAll();
+				const next = rule(entries);
+				for (const [i, entry] of next.entries()) if (entry !== entries[i]) await store.put(entry);
+			})
+		);
+	}
+
+	async function purgeServerCopies(): Promise<void> {
+		assertOpen();
+		const names = [STORES.workouts, STORES.outbox, STORES.kits, STORES.library, STORES.meta];
+		const left = await serial(() =>
+			transact(db, names, async (tx) => {
+				await tx.objectStore(STORES.kits).clear();
+				await tx.objectStore(STORES.library).clear();
+				await tx.objectStore(STORES.meta).clear();
+				const workouts = tx.objectStore(STORES.workouts);
+				const kept = new Map<string, { record?: StoredWorkout; entries: OutboxEntry[] }>();
+				for (const workout of await workouts.getAll()) {
+					const entries = await tx.objectStore(STORES.outbox).index(BY_WORKOUT).getAll(workout.id);
+					if (workout.status !== 'in_progress') {
+						await workouts.delete(workout.id);
+						kept.set(workout.id, { entries });
+						continue;
+					}
+					// Its header comes only from changes still in the outbox: none from the server.
+					const device = { ...workout.device, attached: {} };
+					const inputs = { kit: null, canonical: null, device, entries };
+					const record = recordOf(table, workout.id, inputs, undefined);
+					await workouts.put(record);
+					kept.set(workout.id, { record, entries });
+				}
+				return kept;
+			})
+		);
+		for (const [workoutId, { record, entries }] of left) {
+			if (!memory.has(workoutId)) continue;
+			remember(workoutId, record, entries);
+			emit({ type: 'view', workoutId });
+		}
+	}
+
 	async function listUnsynced(): Promise<UnsyncedWorkout[]> {
 		assertOpen();
 		const tx = db.transaction([STORES.workouts, STORES.outbox], 'readonly');
@@ -542,6 +607,10 @@ export async function createStore({
 		dispatch,
 		retry,
 		acknowledge,
+		outbox,
+		countFailure: (seq, error) => revise((entries) => countFailure(entries, seq, error, now())),
+		backOnline: (offlineSince) => revise((entries) => backOnline(entries, offlineSince, now())),
+		purgeServerCopies,
 		async saveKit(lineage, kit) {
 			assertOpen();
 			await db.put(STORES.kits, { lineage, kit, savedAt: now() });

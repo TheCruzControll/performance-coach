@@ -95,17 +95,19 @@ test.describe('app shell on an iPhone viewport', () => {
 	test('signed in, Today and Train name the training profile as the next step', async ({
 		page
 	}) => {
-		for (const [path, testId] of [
-			['/today', 'today-next-step'],
-			['/train', 'train-next-step']
-		] as const) {
-			await page.goto(path);
-			const next = page.getByTestId(testId);
-			await expect(next).toContainText('Training profile');
-			await expect(next).toContainText('Coming next');
-			// The owner is already signed in with a passkey: never point them back at it.
-			await expect(next).not.toContainText(/passkey|sign.in/i);
-		}
+		await page.goto('/today');
+		const next = page.getByTestId('today-next-step');
+		await expect(next).toContainText('Training profile');
+		await expect(next).toContainText('Coming next');
+		// The owner is already signed in with a passkey: never point them back at it.
+		await expect(next).not.toContainText(/passkey|sign.in/i);
+
+		// With no program and the profile not yet complete, Train sends the owner to it.
+		await page.goto('/train');
+		const empty = page.getByTestId('train-empty');
+		await expect(empty).toContainText('Finish your training profile first');
+		await expect(page.getByTestId('train-next')).toHaveAttribute('href', '/profile');
+		await expect(empty).not.toContainText(/passkey|sign.in/i);
 	});
 
 	test('shell renders with the bottom navigation inside the safe viewport', async ({
