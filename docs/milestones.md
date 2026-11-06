@@ -4,17 +4,17 @@ Source of scope: [`product-requirements.md`](product-requirements.md) (section n
 brackets). Each milestone ships as its own PR to `main` with evidence (PRD §20). "Done" means the
 acceptance criteria were verified by running them — compiling is not done.
 
-| #   | Milestone                       | Status                                                                                                               |
-| --- | ------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| M1  | Foundation & infrastructure     | **Done** (PR #1, merged 2026-11-05); deferred items carried below                                                    |
-| M2  | Auth & profile                  | **In progress** (slices merged to `main`): passkey auth, profile services; onboarding, Profile editing, cutover next |
-| M3  | Training data model & programs  | Planned                                                                                                              |
-| M4  | Workout application             | Planned                                                                                                              |
-| M5  | AI performance coach            | Planned                                                                                                              |
-| M6  | Analytics & reviews             | Planned                                                                                                              |
-| M7  | Advanced coaching               | Planned                                                                                                              |
-| M8  | Performance & design refinement | Planned                                                                                                              |
-| M9  | Final QA & production release   | Planned                                                                                                              |
+| #   | Milestone                       | Status                                                                                                                           |
+| --- | ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| M1  | Foundation & infrastructure     | **Done** (PR #1, merged 2026-11-05); deferred items carried below                                                                |
+| M2  | Auth & profile                  | **In progress** (slices merged to `main`): auth, profile services, production live (#50); screens, desktop view, email link next |
+| M3  | Training data model & programs  | Planned                                                                                                                          |
+| M4  | Workout application             | Planned                                                                                                                          |
+| M5  | AI performance coach            | Planned                                                                                                                          |
+| M6  | Analytics & reviews             | Planned                                                                                                                          |
+| M7  | Advanced coaching               | Planned                                                                                                                          |
+| M8  | Performance & design refinement | Planned                                                                                                                          |
+| M9  | Final QA & production release   | Planned                                                                                                                          |
 
 ---
 
@@ -54,10 +54,10 @@ Deferred from M1 (carried forward):
   (locally with `E2E_WEBKIT=1`), but neither browser paints `backdrop-filter` in CI's headless
   iPhone projects (text behind the nav stays crisp in their screenshots), so glass is judged
   only on a device.
-- Production stays off until M2's production cutover: the committed `vercel.json` disables
-  Vercel's Git deployments of `main` and skips any production build Vercel starts itself
-  (docs/deployment.md). Preview deployments build from every PR, migrating the `preview` Neon
-  branch first.
+- Production stayed off until M2's production cutover, which removed the committed
+  `vercel.json` guards (Git deployments of `main` disabled, Vercel-started production builds
+  skipped); since then every merge to `main` deploys production (docs/deployment.md). Previews
+  are deployed on demand, not from every PR, migrating the `preview` Neon branch first.
 - Performance is measured in the lab only (Lighthouse with simulated throttling and a real 4×
   CPU main-thread budget, both met on every screen; docs/performance.md). Lighthouse also runs
   in CI on GitHub's runners. Real-device and RUM p75 numbers come later, once the owner uses the
@@ -76,6 +76,8 @@ the sign-in, setup and recovery flow, `/api/health` and the prerendered offline 
 - Onboarding: event / general / multiple-goal paths; experience per discipline; optional 1RMs
   (measured vs estimated distinguished); equipment, injuries, preferences, schedule; body-weight
   and nutrition phase. Everything editable later.
+- Added by the owner on 2026-11-06: an emailed one-time sign-in link, only ever to the owner's
+  address (PRD §13), and a desktop browser view of the shell and every M2 screen (PRD §7, §16).
 
 Acceptance criteria:
 
@@ -89,6 +91,15 @@ Acceptance criteria:
    the versioned app shell, and any IndexedDB data once it exists); `/api/vitals` and
    `/api/client-errors` require a session; then, and only then, the same PR removes the
    production guards in `vercel.json` (docs/deployment.md) and adds a post-deploy smoke check.
+7. Email sign-in link: Playwright requests a link from the sign-in screen, reads it from the test
+   mail adapter, taps to sign in and lands on Today; integration tests on real Postgres refuse a
+   used, expired, concurrently used or merely prefetched link; the request never carries an
+   address and only `OWNER_EMAIL` is ever mailed; requests are rate-limited; adding a passkey after
+   a link sign-in still asks for a passkey; without `RESEND_API_KEY` or `OWNER_EMAIL` the option is
+   hidden and the endpoint answers 404.
+8. Desktop: at 1440 × 900 the shell (a navigation rail) and every M2 screen are laid out for the
+   width, with Playwright desktop specs and screenshots in CI on Chromium and WebKit; the iPhone
+   viewport and its specs are unchanged; no route's initial JS grows past its budget.
 
 Progress (merged to `main` as slice PRs #2–#12 plus follow-up fixes, each green in CI):
 
@@ -103,9 +114,19 @@ Progress (merged to `main` as slice PRs #2–#12 plus follow-up fixes, each gree
   (`drizzle/0004_training_profile.sql`) and services for the profile, ranked goals with history,
   baselines, preferences, schedule and onboarding progress, with integration tests on real
   Postgres; and the security and correctness fixes from reviewing the merged slices.
+- Done: production cutover (criterion 6), PR #50, merged 2026-11-06 as `b708ab3`. It removes the
+  `vercel.json` guards, so every merge to `main` deploys `coach.nikocruz.com`, and adds the
+  post-deploy smoke check (`.github/workflows/post-deploy-smoke.yml`). The first production deploy
+  was ready at 07:13 UTC: `curl -sI https://coach.nikocruz.com` answered `HTTP/2 200`,
+  `/api/health` reported `db: up` on `0.1.0+b708ab3`, and smoke run 42179469627 passed all 15
+  checks. Verified before merging: sign-out clears the device's
+  account data on Chromium (`auth.e2e.ts`) and WebKit (`signout.e2e.ts`), and `/api/vitals` and
+  `/api/client-errors` answer 401 without a session (route map unit test, `access.e2e.ts`, and
+  the smoke check against production). It also records the ASVS level 2 review of the auth and
+  session code (docs/security.md, "Production cutover review") and its fixes.
 - Open in M2: the onboarding and Profile editing screens (no route calls the profile services
-  yet); production cutover (removing the `vercel.json` guards, post-deploy smoke check); the
-  real-device check.
+  yet); the email sign-in link (criterion 7); the desktop view (criterion 8); the owner's one-time
+  setup on the iPhone, with the real-device check (docs/deployment.md, "Owner setup").
 
 ## M3 — Training data model & program management [§2, §5, §9, §11]
 
@@ -132,7 +153,8 @@ Acceptance criteria:
 Acceptance criteria:
 
 1. Playwright: start workout, log sets/reps/RPE, rest timer, plate calculator, substitute an
-   unavailable exercise, **refresh mid-workout and restore**, complete workout, view history.
+   unavailable exercise, **refresh mid-workout and restore**, complete workout, view history
+   (iPhone viewport; the same screens laid out for desktop too).
 2. Persistence tests: offline logging, reconnect sync, failed-sync recovery, no duplicate sets.
 3. Logging a set is optimistic (< 100 ms to visual confirmation, measured) and never depends on
    the agent.
@@ -159,7 +181,7 @@ Acceptance criteria:
 Acceptance criteria:
 
 1. Analytics computed by tested domain functions (e1RM trends, volume per muscle, mileage, load).
-2. Playwright: weekly review and "generate next week" journeys.
+2. Playwright: weekly review and "generate next week" journeys (iPhone and desktop viewports).
 3. Charts accessible (text alternatives) and within budgets.
 
 ## M7 — Advanced coaching [§2, §5]
@@ -174,7 +196,8 @@ Acceptance criteria:
 
 ## M8 — Performance & design refinement [§15–17]
 
-- Independent performance and design councils evaluate real screens and measurements; iterate.
+- Independent performance and design councils evaluate real screens (iPhone and desktop) and
+  measurements; iterate.
 
 Acceptance criteria:
 
@@ -188,6 +211,7 @@ Acceptance criteria:
 
 Acceptance criteria:
 
-1. Full e2e suite green on Chromium + WebKit against a production-like deployment.
+1. Full e2e suite green on Chromium + WebKit, iPhone and desktop viewports, against a
+   production-like deployment.
 2. Restore drill from an encrypted backup into a Neon branch documented with timestamps.
 3. Owner sign-off on the deployed app.

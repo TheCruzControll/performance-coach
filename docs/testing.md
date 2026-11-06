@@ -163,6 +163,10 @@ Specs:
   from the test-minted session shows the prompt, and cancelling changes nothing and says so.
 - `sessions.exclusive.e2e.ts` (runs last) — sign out everywhere else ends every other session,
   not this one; the last passkey cannot be removed (button disabled, server answers 409).
+- `signout.e2e.ts` (WebKit) — M2 acceptance 6 on the iPhone's engine, on a session minted for
+  this test alone: sign-out clears the cookie, every cache but the versioned shell, every
+  IndexedDB database and session storage, sends `Clear-Site-Data: "cache"` and keeps the theme
+  preference.
 
 - `shell.e2e.ts` — the sign-in screen is the landing page (signed in, `/` goes to Today); bottom nav pinned to the bottom with ≥ 44 px targets and a
   computed `backdrop-filter` blur; navigation across all five tabs with `aria-current`; no console
@@ -265,6 +269,16 @@ Unit tests (`src/lib/domain/training/`, `src/lib/domain/exercises/`, `src/lib/do
   `pnpm check`); `validate()` is the function the profile schemas re-export; and the runtime
   imports reachable from `domain/training/index.ts` include no schemas, edits or zod, with the
   walk shown to catch a re-export, a zod import and an inline `type` import.
+- **Plans in words** (`training/describe.test.ts`, on fixtures the contract's schemas accept):
+  sets × reps or a range, a held time or metres, @ RPE when set; only an RPE-based top or ramp
+  set reads 'Work up to a set of 5 @ RPE 7' with the recording instruction; every load kind in kg
+  and lb, each computed load exactly M1's `roundToIncrement` to `DEFAULT_LOAD_INCREMENT`, none
+  when it cannot be computed (RPE-based, from_e1rm before an estimate), percent_1rm from its own
+  snapshot, and an estimated 1RM never called measured; rests through `formatDuration`; segments
+  in km and mi (paces by `convertPace` or implied by `paceSecondsPer`, HR-zone or RPE targets,
+  repeat groups as one step); session lines for strength, timed and distance runs and every
+  other-session kind, with M2's time of day but never 'varies'. `describe.ts` imports only
+  domain modules and no package (`scripts/training-index-imports.test.ts`).
 - **Training metrics** (`training/metrics.test.ts`): a set's e1RM is M1's `estimateOneRepMax`
   in kg (with and without an RPE, pounds converted exactly) and none for warm-ups, skipped sets
   and RPE under 6; the best e1RM is always an estimate; best e1RM and rep records give a tie to
@@ -327,6 +341,10 @@ key. No key exists in CI today.
 `.github/workflows/ci.yml` runs lint, type-check, the migration drift check, unit + integration
 (postgres:18 service), both builds + budgets, Playwright (Chromium + WebKit) and an asserted
 Lighthouse run on every PR and push to `main`.
+
+`.github/workflows/post-deploy-smoke.yml` checks production from outside after every production
+deploy (health with the database up, the sign-in screen, deny by default, security headers, no
+test-only routes; docs/deployment.md). It needs no secrets and runs by hand too.
 
 **Not yet verified:** the workflows have not run on GitHub (nothing has been pushed), and the
 WebKit project has never run locally (WebKit is not installed in the build environment), so iOS
