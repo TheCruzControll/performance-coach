@@ -41,9 +41,11 @@ the CSRF Origin check, User-Agent and passkey labels, and the route access map â
   whose name does not end in `_test`/`_e2e`.
 - **Isolation:** `withRollback()` runs each test in a transaction that is always rolled back;
   services accept the transaction as their `db` dependency. Files run serially. The few tests
-  that race real connections use `withCommitted()` (committed rows, truncated afterwards),
-  `holdTransaction()` to keep one step's locks held and `lockWaiters()` to wait until the other
-  steps are blocked, so every interleaving is exact rather than timed.
+  that race real connections commit for real and clean up afterwards: a goal status change
+  waiting behind a concurrent edit deletes its owner; the auth races use `withCommitted()`
+  (committed rows, truncated afterwards), `holdTransaction()` to keep one step's locks held and
+  `lockWaiters()` to wait until the other steps are blocked, so every interleaving is exact
+  rather than timed.
 - **Covered:** migrations applied and constraints enforced; health up and down (unreachable
   database); web-vitals ingest, validation, de-duplication (across requests and within one
   batch), route attribution and p75 summary; error recording, including when the database is
