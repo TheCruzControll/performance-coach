@@ -100,7 +100,7 @@
 		transition-duration: var(--duration-instant);
 	}
 
-	@media (hover: hover) {
+	@media (hover: hover) and (pointer: fine) {
 		a.card:hover {
 			border-color: var(--color-border-strong);
 		}
