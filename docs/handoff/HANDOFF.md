@@ -4,6 +4,25 @@ This is everything a new Claude Code session needs to resume the build on anothe
 product spec is `docs/product-requirements.md` on `main`; milestone criteria are in
 `docs/milestones.md`. Read this file from `origin/handoff` (it is not on `main`).
 
+## Wind-down, 2026-11-06 21:00 UTC (in progress)
+
+The owner asked to finish only the work already in progress and then hand off. No new slice is
+started. Merged since 20:10: #125 (session detail), #130 (trend classifier), #131 (coach tool
+framework), #128 (plan overview). In flight at 21:00, each finishing its started slice(s) and then
+stopped:
+
+| Run | Finishing | Not started (left for the next session) |
+| --- | --- | --- |
+| profile-chain-finish `wf_73d5b399-642` | main into #73 → #93, gates, push, audit | then #104 restack |
+| M4 C2 `wf_35eac1e9-b9e` | run-other-rules, substitution-rules, log-gaps-db | 11 M4 slices (reconcile-and-tabs, log-gaps-service, mutation-schemas, sync-ledger-db, …) |
+| M2X X1 `wf_8b198cf0-2e4` | desk-auth-screens (#132), desk-primitives | desk-main-screens, desk-e2e |
+| M6 F1 `wf_c5e1e5d9-cc8` | prescribed-vs-actual (#133), adherence-analytics | rest of M6 |
+| M3 B3 `wf_f5435f32-765` | move-session | program-history and the rest of M3 |
+| M5 D2 `wf_e44fe1f7-5c8` | coach-analytics-service | rest of M5 |
+| planner `wf_3f53c5db-7bb` | writing the M9 plan | — |
+
+The final state replaces this section when the wind-down ends.
+
 ## Update: cloud session, 2026-11-06 (06:28 → 20:10 UTC, still running)
 
 A claude.ai cloud session (4 CPUs, 15 GB, Linux; no T3, no Codex) is working the goal "finish
