@@ -46,6 +46,15 @@ async function routeSheetChunk(
 	};
 }
 
+// routeSheetChunk handles every script, and one can still be on its way when a spec ends: the
+// app loads web-vitals once the browser is idle, or 1.5 s after mount without
+// requestIdleCallback, which can be a spec's last moments. Closing the context then disposes the
+// response its handler is reading, and "Response has been disposed" fails a spec whose
+// assertions all passed. So routing stops with the spec, and a handler still running is dropped.
+test.afterEach(async ({ page }) => {
+	await page.unrouteAll({ behavior: 'ignoreErrors' });
+});
+
 async function audit(page: Page): Promise<string[]> {
 	const { violations } = await new AxeBuilder({ page })
 		.withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
