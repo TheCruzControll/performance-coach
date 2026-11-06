@@ -10,7 +10,7 @@ import {
 	setupTokenValid
 } from '../../../src/lib/server/auth/setup';
 import { hashRecoveryCode } from '../../../src/lib/server/auth/recovery-codes';
-import { hashToken } from '../../../src/lib/server/auth/tokens';
+import { generateToken, hashToken } from '../../../src/lib/server/auth/tokens';
 import { resetOwnerAuth } from '../../../scripts/auth-reset-owner';
 import { validateSessionToken } from '../../../src/lib/server/auth/sessions';
 import type { Executor } from '../../../src/lib/server/db';
@@ -169,12 +169,52 @@ describe('first-run setup', () => {
 			const [reset] = await createAuthRepository(tx).recentEvents(1);
 			expect(reset).toMatchObject({ type: 'owner.reset', ownerId: first.ownerId });
 
-			// Setup runs again and re-attaches the same owner with a new passkey and new codes.
-			const second = await setUpOwner(tx, { name: 'Niko' });
+			// Setup runs again (with a new token) and re-attaches the same owner with a new passkey
+			// and new codes.
+			const second = await setUpOwner(tx, { name: 'Niko', token: generateToken() });
 			expect(second.ownerId).toBe(first.ownerId);
 			expect(await createAuthRepository(tx).listPasskeys(first.ownerId)).toHaveLength(1);
 			expect(second.recoveryCodes.some((c) => first.recoveryCodes.includes(c))).toBe(false);
 			expect(await setupOpen({ db: tx })).toBe(false);
+		});
+	});
+
+	it('takes each token once: after a reset the old link stays refused, a new one works', async () => {
+		await withRollback(async (tx) => {
+			const first = await setUpOwner(tx);
+			const client = (tx as Executor & { session: { client: PoolClient } }).session.client;
+			await resetOwnerAuth(client, { transaction: false });
+			expect(await setupOpen({ db: tx })).toBe(true);
+
+			// The old hash is still configured and the old link sits in Vercel's request logs:
+			// whoever holds it must not get the existing owner (and their training data).
+			expect(await checkSetupAccess(SETUP_TOKEN, request(), deps(tx))).toBe(false);
+			await expect(
+				beginSetup({ token: SETUP_TOKEN, name: 'Mallory' }, request(), deps(tx))
+			).rejects.toMatchObject({ code: 'setup_unavailable', status: 404 });
+			const repo = createAuthRepository(tx);
+			expect((await repo.recentEvents(2)).map((e) => [e.type, e.detail])).toEqual([
+				['setup.failed', { code: 'setup_unavailable' }],
+				['setup.failed', { code: 'token_used' }]
+			]);
+			expect((await repo.getOwner())!.displayName).toBe('Niko Cruz');
+
+			// Only the hash of a used token is kept, never the token.
+			const used = await tx.execute<{ token_hash: string }>(
+				sql`select token_hash from used_setup_tokens`
+			);
+			expect(used.rows).toEqual([{ token_hash: SETUP_CONFIG.tokenHash }]);
+
+			// A new token works, re-attaches the same owner, and is then spent in turn.
+			const token = generateToken();
+			const second = await setUpOwner(tx, { token });
+			expect(second.ownerId).toBe(first.ownerId);
+			await resetOwnerAuth(client, { transaction: false });
+			await expect(setUpOwner(tx, { token })).rejects.toMatchObject({
+				code: 'setup_unavailable'
+			});
+			await expect(setUpOwner(tx)).rejects.toMatchObject({ code: 'setup_unavailable' });
+			expect(await repo.countPasskeys()).toBe(0);
 		});
 	});
 });

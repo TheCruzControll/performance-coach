@@ -98,6 +98,24 @@ describe('passkey management', () => {
 		});
 	});
 
+	it('answers a malformed passkey id as not found, never with a database error', async () => {
+		await withRollback(async (tx) => {
+			const owner = await setUpOwner(tx);
+			const session = (await validateSessionToken(owner.token, { db: tx }))!.session;
+			// Credential ids are base64url; a NUL byte is one Postgres cannot even compare.
+			for (const bad of ['', 'not base64url!', `${owner.authenticator.id}\u0000`]) {
+				await expect(renamePasskey(session, bad, 'X', request(), { db: tx })).rejects.toMatchObject(
+					{ code: 'not_found', status: 404 }
+				);
+				await expect(removePasskey(session, bad, request(), { db: tx })).rejects.toMatchObject({
+					code: 'not_found',
+					status: 404
+				});
+			}
+			expect(await listPasskeys(session, { db: tx })).toHaveLength(1);
+		});
+	});
+
 	it('removing a passkey signs out the other devices that used it', async () => {
 		await withRollback(async (tx) => {
 			const owner = await setUpOwner(tx);

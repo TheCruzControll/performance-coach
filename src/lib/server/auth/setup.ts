@@ -5,7 +5,9 @@
  * SHA-256 (`OWNER_SETUP_TOKEN_HASH`); the owner opens `/setup?token=…`. Setup is possible only
  * while no passkey exists; registering the first passkey creates the owner (or re-attaches the
  * existing one after `pnpm auth:reset-owner`), closes setup for good (the route answers 404 from
- * then on) and returns 10 recovery codes, shown exactly once.
+ * then on) and returns 10 recovery codes, shown exactly once. Each token works for one setup:
+ * its hash is recorded when setup completes, so after a reset a new token is needed (the old
+ * link sits in Vercel's request logs).
  */
 import type { PublicKeyCredentialCreationOptionsJSON } from '@simplewebauthn/server';
 import { createAuthRepository } from '../db';
@@ -18,7 +20,7 @@ import { AuthError, failureReason, isAuthError } from './errors';
 import { enforceRateLimit } from './rate-limit';
 import { generateRecoveryCodes, hashRecoveryCode } from './recovery-codes';
 import { issueSession, revokeToken, type IssuedSession } from './sessions';
-import { generateUserHandle, tokenMatchesHash } from './tokens';
+import { generateUserHandle, hashToken, tokenMatchesHash } from './tokens';
 import { parseRegistrationResponse, registrationOptions, verifyRegistration } from './webauthn';
 
 const UNAVAILABLE = 'Setup is not available.';
@@ -37,6 +39,10 @@ export function setupTokenValid(token: unknown, config: SetupConfig = configFrom
 	}
 	return tokenMatchesHash(token, config.tokenHash);
 }
+
+/** The presented token's hash if it is the configured token, else null. */
+const validTokenHash = (token: unknown, config?: SetupConfig): string | null =>
+	typeof token === 'string' && setupTokenValid(token, config) ? hashToken(token) : null;
 
 /**
  * True while no passkey exists and setup has never completed — on a fresh database, or after
@@ -62,14 +68,16 @@ export async function checkSetupAccess(
 	const { db, now } = resolveDeps(deps);
 	if (!(await setupOpen({ db }))) return false;
 	await enforceRateLimit('setup', { ip: request.ip }, request, { db, now });
-	const ok = setupTokenValid(token, deps.config);
-	if (!ok) {
+	const tokenHash = validTokenHash(token, deps.config);
+	// The configured token, but already spent: an old link after an owner reset. Audited apart.
+	const used = tokenHash !== null && (await createAuthRepository(db).setupTokenUsed(tokenHash));
+	if (!tokenHash || used) {
 		await recordAuthEvent(db, request, {
 			type: 'setup.failed',
-			detail: { code: 'invalid_token' }
+			detail: { code: used ? 'token_used' : 'invalid_token' }
 		});
 	}
-	return ok;
+	return tokenHash !== null && !used;
 }
 
 export function parseOwnerName(input: unknown): string {
@@ -80,20 +88,27 @@ export function parseOwnerName(input: unknown): string {
 	return value;
 }
 
+/** Returns the hash of the presented token: the configured one, not yet used for a setup. */
 async function assertSetupAllowed(
 	token: unknown,
 	request: AuthRequest,
 	deps: AuthDeps & { config?: SetupConfig }
-) {
+): Promise<string> {
 	const { db, now } = resolveDeps(deps);
 	await enforceRateLimit('setup', { ip: request.ip }, request, { db, now });
-	if (!setupTokenValid(token, deps.config) || !(await setupOpen({ db }))) {
+	const tokenHash = validTokenHash(token, deps.config);
+	if (
+		!tokenHash ||
+		(await createAuthRepository(db).setupTokenUsed(tokenHash)) ||
+		!(await setupOpen({ db }))
+	) {
 		await recordAuthEvent(db, request, {
 			type: 'setup.failed',
 			detail: { code: 'setup_unavailable' }
 		});
 		throw new AuthError('setup_unavailable', UNAVAILABLE);
 	}
+	return tokenHash;
 }
 
 export async function beginSetup(
@@ -134,7 +149,7 @@ export async function completeSetup(
 	const { db, now } = resolveDeps(deps);
 	const rp = request.rp;
 	if (!rp) throw new AuthError('wrong_origin', 'Passkeys are not available here.');
-	await assertSetupAllowed(input.token, request, deps);
+	const tokenHash = await assertSetupAllowed(input.token, request, deps);
 	const response = parseRegistrationResponse(input.response);
 
 	try {
@@ -154,6 +169,11 @@ export async function completeSetup(
 				throw new AuthError('setup_unavailable', UNAVAILABLE);
 			}
 			const at = now();
+			// Spend the token with the setup it completes (atomically: a token completes one
+			// setup), so the same link never reopens the account after `pnpm auth:reset-owner`.
+			if (!(await repo.claimSetupToken(tokenHash, at))) {
+				throw new AuthError('setup_unavailable', UNAVAILABLE);
+			}
 			const existing = await repo.getOwner();
 			const owner = existing
 				? await repo.updateOwnerIdentity(existing.id, {
