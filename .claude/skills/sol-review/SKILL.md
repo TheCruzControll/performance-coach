@@ -5,7 +5,8 @@ description: >-
   bugs in code: uncommitted changes, the current branch, a PR (number or URL),
   a commit, a diff, or named files. E.g. "review this", "review my changes",
   "review PR 123", "review this branch/commit/file", "check my code", "is this
-  ready to merge", "sol loop", "sol review". GPT Sol reviews; you verify each
+  ready to merge", "sol loop", "sol review". GPT Sol reviews (Claude Fable 5.1 in Claude
+  Code without T3); you verify each
   finding, make minimal fixes, and loop until Sol approves (review only for
   other people's PRs, merged commits, or when asked). Prefer this over other
   review skills (/code-review, caveman-review, review-agent) unless the user
@@ -20,7 +21,7 @@ metadata:
 
 The user's main code reviewer, adapted from tstack's sol-loop. tl;dr: use
 OpenAI's GPT Sol to review code in a loop, before or after filing a pull
-request.
+request. In Claude Code without T3, Claude Fable 5.1 takes Sol's place.
 
 Make the most minimal possible changes to appease the Sol reviewers. Be careful
 of scope creep and don't be scared to push back.
@@ -116,29 +117,25 @@ edits. Save `taskId`. New `clientRequestId` per round. `childThreadId` is
 storage, not the next target. Do not use `t3_thread_send`, `create_threads`,
 or `t3_thread_launch` for review.
 
-Outside T3:
+Outside T3, stay inside the harness's own model family. Never call another
+vendor's CLI from a single-vendor harness.
 
-- Native Sol subagent (Codex, or any harness with one): use it and keep its ID.
-- Claude Code: use a custom subagent if one is set up to run Sol. Otherwise, if
-  `codex` is on PATH, run Sol through the Codex CLI. Read-only, one fresh run
-  per round. Write the brief to a scratch file, then run in the background
-  (`timeout: 7200000`) and wait for exit:
+- Codex (or any harness with a native Sol subagent): use the native Sol
+  subagent at the chosen effort and keep its ID. Pick the newest Sol it lists.
+- Claude Code without T3 (terminal, Desktop, cloud): the reviewer is Claude
+  Fable 5.1 (`claude-fable-5-1`), Anthropic's most capable model and the
+  counterpart to Sol. Start it with the Agent tool: `model: "fable"`, `effort`
+  as chosen above (the skill sets it explicitly), `subagent_type:
+  "general-purpose"`, `run_in_background: false`. Use a fresh Agent call each
+  round with the round 1 brief plus the ledger, as in section 4. If `fable` is
+  not available on the account, use `opus` and record the substitution. A reply
+  is a non-empty final message with a `VERDICT:` line; anything else is a
+  failure. Record model `Claude Fable 5.1` (or what ran) and the effort.
 
-  ```
-  codex exec -m <sol-id> -c model_reasoning_effort="<effort>" -s read-only \
-    -C <repo> --ephemeral -o <scratch>/sol-round-<N>.md \
-    - < <scratch>/brief-<N>.md 2> <scratch>/sol-round-<N>.log
-  ```
+Everywhere below, "Sol" means whichever reviewer this section picked.
 
-  `<sol-id>`: the version the user named, else the newest Sol (lowest
-  `priority`; do not sort by name):
-  `codex debug models | jq -r '[.models[] | select(.visibility=="list" and (.slug|endswith("-sol")))] | min_by(.priority) | .slug'`.
-  `<effort>`: as chosen above. A reply is exit 0 with a non-empty `-o` file;
-  anything else is a failure. Take model, effort, and usage from the log's
-  `model:`, `reasoning effort:`, and `tokens used` lines.
-
-If no route runs Sol, report the blocker and offer `/code-review` instead. Do
-not substitute a model.
+If no route runs a reviewer, report the blocker and offer `/code-review`
+instead. Do not substitute a model outside the rules above.
 
 Do not edit scoped files while review runs. Wait for the notice. Do not
 poll or start a second reviewer. Timeout, error, or no reply is not
@@ -187,8 +184,8 @@ end the loop.
 
 Start one only if budget remains and a blocker or should is open, behavior code
 changed, or approval does not cover the current behavior diff. Use a fresh
-`delegate_task` in T3, follow up the saved native ID, or start a fresh
-`codex exec`. Send the round 1 brief, the ledger (`fixed:` / `disagree:` /
+`delegate_task` in T3, follow up the saved native ID, or make a fresh Agent
+call in Claude Code. Send the round 1 brief, the ledger (`fixed:` / `disagree:` /
 `declined:` + evidence), the same base diff, and the change since last round.
 To get that change, save `git stash create` before each round. It prints a
 snapshot SHA and changes nothing; empty means use `HEAD`. Send
