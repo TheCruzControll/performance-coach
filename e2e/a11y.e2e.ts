@@ -115,7 +115,8 @@ for (const theme of THEMES) {
 			const loaded = {
 				Inputs: page.getByRole('spinbutton', { name: 'Reps' }),
 				Data: page.getByRole('heading', { name: 'List row' }),
-				Feedback: page.getByRole('button', { name: 'Bottom sheet' })
+				Feedback: page.getByRole('button', { name: 'Bottom sheet' }),
+				Plan: page.getByRole('heading', { name: 'Session card' })
 			};
 			for (const [tab, ready] of Object.entries(loaded)) {
 				await page.getByRole('tab', { name: tab }).click();

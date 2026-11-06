@@ -92,6 +92,20 @@
       "when": 1793958248532,
       "tag": "0012_prescription_history_guards",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1793962160947,
+      "tag": "0013_training_log",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1793962165537,
+      "tag": "0014_training_log_guards",
+      "breakpoints": true
     }
   ]
 }
