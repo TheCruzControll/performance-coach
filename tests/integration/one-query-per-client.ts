@@ -18,26 +18,30 @@ interface QueryQueue {
 	_queryQueue: unknown[];
 }
 
-let overlap: Error | undefined;
+const overlaps: Error[] = [];
 
 const query = pg.Client.prototype.query;
 pg.Client.prototype.query = function (this: pg.Client & QueryQueue, ...args: unknown[]) {
 	if (this._activeQuery || this._queryQueue.length > 0) {
-		overlap ??= new Error('client.query() was called while this client was running a query');
+		overlaps.push(new Error('client.query() was called while this client was running a query'));
 	}
 	return Reflect.apply(query, this, args);
 } as typeof query;
 
 function onWarning(warning: Error) {
 	if (warning.name === 'DeprecationWarning' && warning.message.startsWith(DEPRECATION)) {
-		overlap ??= warning;
+		overlaps.push(warning);
 	}
 }
 process.on('warning', onWarning);
 
+/** What this setup caught since it last looked, cleared. Exported for its own test. */
+export function takeOverlaps(): Error[] {
+	return overlaps.splice(0);
+}
+
 function failOnOverlap() {
-	const cause = overlap;
-	overlap = undefined;
+	const [cause] = takeOverlaps();
 	if (cause) {
 		throw new Error(
 			'A query was sent to a pg client that was still running another. Await each query in ' +
