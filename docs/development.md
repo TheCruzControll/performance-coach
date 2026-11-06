@@ -90,6 +90,22 @@ work on `http://localhost` (a secure context) but not on `127.0.0.1`. To start o
 4. Commit schema + SQL + `drizzle/meta`. Keep changes backward compatible with the deployed code
    (expand → migrate data → contract in a later release).
 
+**Guards and triggers** (ADR 0010) go in a custom migration, never in a generated file, which a
+regenerate would overwrite: `pnpm drizzle-kit generate --custom --name <guards>` adds an empty
+SQL file to the journal; write the SQL there.
+
+**After a rebase onto a newer migration** (another branch merged one first):
+
+1. Copy your custom migrations' SQL somewhere safe.
+2. Delete your generated SQL files and their `drizzle/meta/<n>_snapshot.json`, and take the base
+   branch's `drizzle/meta/_journal.json` (`git checkout <base> -- drizzle/meta/_journal.json`).
+3. Re-run `pnpm db:generate --name <change>`. For each custom migration, in its original order,
+   run `pnpm drizzle-kit generate --custom --name <guards>` and re-paste its SQL.
+4. `pnpm db:drift`, `pnpm test:unit` (`scripts/drizzle-journal.test.ts` checks the journal is in
+   order) and `pnpm test:integration`.
+
+Never hand-edit the journal or a snapshot.
+
 ## Troubleshooting
 
 - **`Invalid environment configuration`** at startup: the message lists each bad variable.
