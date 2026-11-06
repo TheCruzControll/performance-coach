@@ -16,6 +16,7 @@ import {
 	getOnboarding,
 	listGoals,
 	saveBaselines,
+	saveBasics,
 	saveEquipment,
 	saveExperience,
 	type ProfileDeps
@@ -33,7 +34,8 @@ const SECTIONS: Record<string, ProfileSection> = {
 	goals: { load: listGoals },
 	experience: { load: getExperience, save: saveExperience },
 	equipment: { load: getEquipment, save: saveEquipment },
-	strength: { load: getBaselines, save: saveBaselines }
+	strength: { load: getBaselines, save: saveBaselines },
+	basics: { load: getAthleteProfile, save: saveBasics }
 };
 
 export const SECTION_KEYS = Object.keys(SECTIONS);
