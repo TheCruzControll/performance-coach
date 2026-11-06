@@ -20,7 +20,7 @@ Milestone: M?
 - [ ] `pnpm check` — 0 errors
 - [ ] `pnpm test:unit`
 - [ ] `pnpm test:integration`
-- [ ] `pnpm test:e2e` (iPhone viewport) — screenshots attached for UI changes
+- [ ] `pnpm test:e2e` — UI changes: phone (393 × 659) and desktop (1440 × 900) screenshots attached
 - [ ] `pnpm build && pnpm build:node && pnpm budgets`
 - [ ] Lighthouse (`pnpm lighthouse`) for performance-relevant changes — numbers recorded in docs/performance.md
 - [ ] CI run linked, including the **WebKit** e2e project and its screenshots (WebKit cannot run in every dev environment)

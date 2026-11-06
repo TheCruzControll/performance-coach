@@ -13,6 +13,8 @@ const SCREENS = [
 	'/profile/security',
 	'/profile/goals',
 	'/profile/equipment',
+	'/profile/strength',
+	'/profile/experience',
 	'/offline',
 	'/design'
 ];
@@ -57,13 +59,13 @@ for (const theme of THEMES) {
 
 		for (const path of SCREENS) {
 			test(`${path} has no WCAG A/AA violations`, async ({ page }) => {
-				await page.goto(path);
+				// An error page in its place would pass the audit: the screen itself must load.
+				expect((await page.goto(path))?.status(), path).toBe(200);
 				await page.waitForLoadState('networkidle');
 				if (path === '/profile') await expect(page.getByTestId('db-status')).toBeVisible();
 				// A Profile section's editor loads after the screen, in place of its skeleton.
-				if (path.startsWith('/profile/') && path !== '/profile/security') {
-					await expect(page.getByTestId('section-editor')).toHaveAttribute('aria-busy', 'false');
-				}
+				const editor = page.getByTestId('section-editor');
+				if (await editor.count()) await expect(editor).toHaveAttribute('aria-busy', 'false');
 				const html = page.locator('html');
 				if (theme === 'light') await expect(html).toHaveAttribute('data-theme', 'light');
 				else await expect(html).not.toHaveAttribute('data-theme', /.*/);
@@ -95,6 +97,35 @@ for (const theme of THEMES) {
 			expect(await audit(page)).toEqual([]);
 		});
 
+		test('Strength’s week-one explainer, both kinds of lift and an error have no violations', async ({
+			page
+		}) => {
+			await page.goto('/profile/strength');
+			await expect(page.getByTestId('section-editor')).toHaveAttribute('aria-busy', 'false');
+			// Changes that are never saved: the browser refuses the invalid one before posting.
+			const unknown = page.getByRole('switch', { name: 'I don’t know my 1RMs' });
+			await unknown.check();
+			await expect(page.getByTestId('baselines-explainer')).toBeVisible();
+			await page.waitForTimeout(300);
+			expect(await audit(page), 'explainer').toEqual([]);
+
+			await unknown.uncheck();
+			await page.getByRole('button', { name: 'Back squat', exact: true }).click();
+			const squat = page.getByRole('region', { name: 'Back squat' });
+			await squat.getByRole('radio', { name: 'Tested max' }).check();
+			await squat.getByRole('textbox', { name: '1RM' }).fill('600');
+			await page.getByRole('button', { name: 'Bench press', exact: true }).click();
+			const bench = page.getByRole('region', { name: 'Bench press' });
+			await bench.getByRole('radio', { name: 'From a recent set' }).check();
+			await bench.getByRole('textbox', { name: 'Weight' }).fill('100');
+			await bench.getByRole('textbox', { name: 'Reps' }).fill('5');
+			await page.getByTestId('save-section').click();
+			await expect(squat.getByRole('alert')).toBeVisible();
+			await expect(bench.getByTestId('baseline-estimate')).toContainText('estimated 1RM');
+			await page.waitForTimeout(300);
+			expect(await audit(page), 'lifts').toEqual([]);
+		});
+
 		test('the goal sheet, blank and showing its errors, has no violations', async ({ page }) => {
 			await page.goto('/profile/goals');
 			await expect(page.getByTestId('section-editor')).toHaveAttribute('aria-busy', 'false');
@@ -115,7 +146,8 @@ for (const theme of THEMES) {
 			const loaded = {
 				Inputs: page.getByRole('spinbutton', { name: 'Reps' }),
 				Data: page.getByRole('heading', { name: 'List row' }),
-				Feedback: page.getByRole('button', { name: 'Bottom sheet' })
+				Feedback: page.getByRole('button', { name: 'Bottom sheet' }),
+				Plan: page.getByRole('heading', { name: 'Session card' })
 			};
 			for (const [tab, ready] of Object.entries(loaded)) {
 				await page.getByRole('tab', { name: tab }).click();
