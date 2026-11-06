@@ -1,7 +1,8 @@
 /**
  * generate.ts: the stage list runs in its documented order and each later stage is an identity
- * stub of its own; every scenario composes into a plan the contract accepts; the minimal profile
- * gets one default_assumed decision per assumption; the same input gives byte-identical JSON.
+ * stub of its own until its slice replaces it (strength has); every scenario
+ * composes into a plan the contract accepts; the minimal profile gets one default_assumed
+ * decision per assumption; the same input gives byte-identical JSON.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CATALOGUE } from '../exercises/index';
@@ -9,6 +10,7 @@ import type { TrainingProfile } from '../profile/types';
 import { programPlanSchema } from '../training/schemas';
 import { validate } from '../validation';
 import { DecisionLog } from './decisions';
+import { strength as strengthTemplates } from './decisions/templates/strength';
 import { generateProgram, STAGES } from './generate';
 import { buildProgrammingInput } from './input';
 import { SCENARIO_START, SCENARIOS, scenarioDay } from './scenarios';
@@ -69,7 +71,6 @@ describe('the stage list', () => {
 
 	const STUBS: Record<string, Stage> = {
 		commitments,
-		strength,
 		running,
 		other,
 		placement,
@@ -78,6 +79,10 @@ describe('the stage list', () => {
 		progression,
 		timefit
 	};
+
+	it.each(Object.entries({ strength }))('runs the %s stage of its own', (name, run) => {
+		expect(STAGES.find((s) => s.name === name)?.run).toBe(run);
+	});
 
 	it.each(Object.entries(STUBS))(
 		'%s is its own stub, returning its input unchanged',
@@ -110,11 +115,13 @@ describe('generateProgram', () => {
 		expect(
 			plan.decisions.filter((d) => d.kind === 'default_assumed').map((d) => d.ruleKey)
 		).toEqual(input.assumptions.map((a) => a.ruleKey));
-		expect(plan.decisions.map((d) => d.kind)).toEqual([
+		const strengthKinds: string[] = Object.keys(strengthTemplates);
+		expect(plan.decisions.map((d) => d.kind).filter((k) => !strengthKinds.includes(k))).toEqual([
 			'block_structure',
 			...input.assumptions.map(() => 'default_assumed'),
 			'day_allocation'
 		]);
+		expect(plan.decisions.filter((d) => d.kind === 'split_chosen')).toHaveLength(1);
 	});
 
 	it.each(Object.keys(SCENARIOS) as (keyof typeof SCENARIOS)[])(
