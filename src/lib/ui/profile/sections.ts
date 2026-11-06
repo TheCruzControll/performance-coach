@@ -17,6 +17,12 @@ export interface SectionInfo {
 
 export const SECTIONS = [
 	{
+		key: 'specifics',
+		title: 'Running & Muay Thai',
+		subtitle: 'Your runs and races, sessions and fights',
+		icon: 'pulse'
+	},
+	{
 		key: 'equipment',
 		title: 'Equipment',
 		subtitle: 'Where you train and what’s there',

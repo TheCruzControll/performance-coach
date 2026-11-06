@@ -12,7 +12,9 @@ import {
 	getAthleteProfile,
 	getEquipment,
 	getOnboarding,
+	getSpecifics,
 	saveEquipment,
+	saveSpecifics,
 	type ProfileDeps
 } from '../services/profile';
 import type { SaveSection } from './profile';
@@ -24,6 +26,7 @@ export interface ProfileSection {
 }
 
 const SECTIONS: Record<string, ProfileSection> = {
+	specifics: { load: getSpecifics, save: saveSpecifics },
 	equipment: { load: getEquipment, save: saveEquipment }
 };
 
