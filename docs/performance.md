@@ -51,6 +51,21 @@ shared component costs every route, Security included.
   The server only renders Buttons, so those imports are now left out of its build
   (`import.meta.env.SSR`) and each group's CSS loads with its tab; `/design` JS gains 23 B.
 
+- **Train's plate-calculator sheet loads with the calculator** (`/(app)/train` 58.2 → 56.5 KB).
+  Train imported `BottomSheet` statically although only the plate calculator opens in it; the
+  route-local `PlateSheet` (sheet and calculator) now loads on intent, as the calculator alone
+  did, and the first tap fetches 5.7 KB instead of 3.9 KB. Its failed-chunk state (a `Notice`
+  with Retry under the row; the notice's chunk is 0.5 KB) and a CSS-only pending spinner stay in
+  Train, whose route CSS grows 10.5 → 11.1 KB. Chromium keeps a failed module fetch for the
+  page's lifetime, so a retry that fails again online reloads Train with `?tool=plates`. Every
+  other route is 33 B lighter: the app entry lists fewer of Train's static imports.
+  The sheet's JavaScript has no `<link rel=modulepreload>` (`vite.config.ts`,
+  `IMPORTED_WITHOUT_MODULEPRELOAD`): WebKit keeps a modulepreload that failed and fails every
+  later import of that URL without a request, reloads included (WebKit bug 270357), so Retry
+  could never recover on Safari. Before the service worker holds the build, a first tap fetches
+  the sheet's chunks in import order after its stylesheets (three round trips) where the
+  modulepreload tags fetched them alongside.
+
 - **`@simplewebauthn/browser` (≈5 KB gzip) is never in initial JS.** It is imported on demand by
   `src/lib/client/passkeys.ts`; `pnpm budgets` fails if it appears in any route's initial JS or
   is reachable (static or dynamic imports) from any route other than `/`, `/setup`,
