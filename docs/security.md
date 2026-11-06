@@ -51,7 +51,8 @@ extension on the owner's browser can act as the owner.
    `https://coach.nikocruz.com/setup?token=…`.
 2. `/setup` answers **404** unless the token's SHA-256 equals the configured hash (compared with
    `timingSafeEqual` on the two digests) **and** no passkey exists. Wrong tokens are audited and
-   rate-limited (10 per 15 min per client).
+   rate-limited (10 per 15 min per client); past the limit the page is a 404 as well, even with
+   the right token, and not recorded as a server error.
 3. The owner enters a name and creates a passkey. In one transaction (advisory-locked, so two
    concurrent setups cannot both win): the owner and passkey are created, setup is marked
    complete, 10 recovery codes are generated and stored hashed, and a session starts.
@@ -164,7 +165,8 @@ every server instance shares the counters. The first refusal of a window is audi
 | `signout`         | 30 / minute     | client   |
 
 The client address is the platform's (`getClientAddress()`: `x-forwarded-for` as set by Vercel).
-Refusals answer `429` with `Retry-After`.
+Refusals answer `429` with `Retry-After`, except the `/setup` page, which answers `404` like any
+other refused setup link.
 
 ## Audit log
 

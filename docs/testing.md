@@ -111,7 +111,8 @@ false`, as in browsers without it) to drive the button.
 
 Specs:
 
-- `auth.setup.ts` — first-run setup with a real passkey: 404 without the token; axe in both themes
+- `auth.setup.ts` — first-run setup with a real passkey: 404 without the token, and still a 404
+  (even with the token, no `app_errors` row) once the setup rate limit is spent; axe in both themes
   on the setup and recovery-code screens; name required; 10 codes in the expected format;
   download and copy contain them; Continue only after acknowledgement; the authenticator holds a
   discoverable credential; only hashes in Postgres; `/setup` is a 404 afterwards, even with the
