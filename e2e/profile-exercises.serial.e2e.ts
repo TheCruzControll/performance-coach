@@ -18,6 +18,8 @@ import {
 const LIKES = 'Exercises you enjoy';
 const DISLIKES = 'Exercises you’d rather swap out';
 const BOTH = 'Each exercise once — it can’t be liked and disliked';
+/** How far above the Save bar its fade reaches (`--space-6`). */
+const FADE = 24;
 
 /** The owner's preferences, by name. */
 const rows = () =>
@@ -120,6 +122,11 @@ test('the same exercise in both lists is refused with one alert, and nothing sav
 	await expect(page.getByTestId('dislikes').getByRole('alert')).toHaveText(BOTH);
 	await expect(field(page, DISLIKES)).toBeFocused();
 	await expect(page.getByTestId('save-error')).toContainText('Check the highlighted fields');
+	// In view: the message clears the Save bar, now taller with its notice, and the fade above it.
+	const message = (await page.getByTestId('dislikes').getByRole('alert').boundingBox())!;
+	const bar = (await page.getByTestId('save-error').locator('..').boundingBox())!;
+	expect(message.y).toBeGreaterThanOrEqual(0);
+	expect(message.y + message.height).toBeLessThanOrEqual(bar.y - FADE);
 	expect(await rows()).toEqual([{ exercise: 'Deadlift', sentiment: 'like', reason: null }]);
 
 	// In one list only, it saves.

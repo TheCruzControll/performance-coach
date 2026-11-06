@@ -23,10 +23,18 @@
 	const taken = $derived(new Set([...value.likes, ...value.dislikes].map((e) => e.toLowerCase())));
 	const free = $derived(EXERCISE_SUGGESTIONS.filter((e) => !taken.has(e.toLowerCase())));
 	const shown = $derived(listErrors(errors, value.likes.length));
+
+	// A refused save focuses the first field it marks, but this low on the screen the field and
+	// its message (under the suggestions) can sit behind the Save bar: bring its list to the top.
+	let root = $state<HTMLElement>();
+	$effect(() => {
+		if (!Object.keys(errors).length) return;
+		root?.querySelector('[aria-invalid="true"]')?.closest('.list')?.scrollIntoView();
+	});
 </script>
 
-<div class="exercises">
-	<Surface padding="md" radius="xl">
+<div class="exercises" bind:this={root}>
+	<Surface padding="md" radius="xl" class="list">
 		<TagInput
 			label="Exercises you enjoy"
 			bind:value={value.likes}
@@ -38,7 +46,7 @@
 			data-testid="likes"
 		/>
 	</Surface>
-	<Surface padding="md" radius="xl">
+	<Surface padding="md" radius="xl" class="list">
 		<TagInput
 			label="Exercises you’d rather swap out"
 			bind:value={value.dislikes}
@@ -56,5 +64,9 @@
 	.exercises {
 		display: grid;
 		gap: var(--space-4);
+	}
+
+	.exercises :global(.list) {
+		scroll-margin-top: calc(var(--safe-top) + var(--space-4));
 	}
 </style>
