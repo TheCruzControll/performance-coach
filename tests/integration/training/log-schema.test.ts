@@ -537,9 +537,14 @@ function badValues(log: Log): Record<Table, Bad[]> {
 			['a negative weight', { weight: -2.5 }, 'weight'],
 			['negative reps', { reps: -1 }, 'reps'],
 			['negative missed reps', { missedReps: -1 }, 'missed_reps'],
+			['51 missed reps', { reps: 0, missedReps: 51 }, 'missed_reps'],
 			['missed reps on a timed set', { reps: null, seconds: 30, missedReps: 1 }, 'missed_reps'],
 			['a 0 s hold', { reps: null, seconds: 0 }, 'seconds'],
+			['a hold over a day', { reps: null, seconds: 86_401 }, 'seconds'],
 			['a 0 m carry', { reps: null, metres: 0 }, 'metres'],
+			['nothing recorded on a set that is not skipped', { reps: null }, 'measure'],
+			['0 kg of assistance', { weight: null, assistance: 0 }, 'assistance'],
+			['a weight beside an assistance', { assistance: 20 }, 'load'],
 			...RPE('rpe'),
 			['an e1RM of 0', { e1rmKg: 0 }, 'e1rm'],
 			['an e1RM from a warm-up', { isWarmup: true }, 'e1rm'],
@@ -582,7 +587,8 @@ function badValues(log: Log): Record<Table, Bad[]> {
 			]
 		],
 		workout_substitutions: [
-			['a swap for the same exercise', { toExerciseId: log.frontSquat }, 'exercises']
+			['a swap for the same exercise', { toExerciseId: log.frontSquat }, 'exercises'],
+			['slot 0', { exercisePosition: 0 }, 'exercise_position']
 		],
 		training_audit: [
 			['an unknown action', { action: 'insert' }, 'action'],
@@ -621,9 +627,12 @@ function goodValues(log: Log): Record<Table, Good[]> {
 		set_records: [
 			['a missed single: no rep done, one missed', { reps: 0, missedReps: 1, e1rmKg: null }],
 			['2 of 5 done', { reps: 2, missedReps: 3 }],
+			['50 missed reps', { reps: 0, missedReps: 50, e1rmKg: null }],
 			['a bodyweight set', { weight: null, e1rmKg: null }],
 			['a 60 s plank', { weight: null, reps: null, seconds: 60, e1rmKg: null }],
 			['a 40 m carry, timed', { reps: null, metres: 40, seconds: 35, e1rmKg: null }],
+			['a day-long hold', { weight: null, reps: null, seconds: 86_400, e1rmKg: null }],
+			['an assisted set', { weight: null, assistance: 20, e1rmKg: null }],
 			['1.25 kg', { weight: 1.25 }],
 			['9999.99 lb', { weight: 9999.99, unit: 'lb' }],
 			['RPE 1', { rpe: 1 }],
@@ -670,6 +679,7 @@ function goodValues(log: Log): Record<Table, Good[]> {
 		],
 		workout_substitutions: [
 			['off plan', { plannedExerciseLineageId: null }],
+			['in its slot', { exercisePosition: 3 }],
 			['a reason of its own', { reason: 'too_crowded' }]
 		],
 		training_audit: [
@@ -1082,7 +1092,9 @@ describe('training log structure', () => {
 		run_record_segments_run_order_idx:
 			'CREATE INDEX run_record_segments_run_order_idx ON public.run_record_segments USING btree (workout_id, "position")',
 		training_audit_row_idx:
-			'CREATE INDEX training_audit_row_idx ON public.training_audit USING btree (owner_id, table_name, row_id)'
+			'CREATE INDEX training_audit_row_idx ON public.training_audit USING btree (owner_id, table_name, row_id)',
+		workout_substitutions_workout_idx:
+			'CREATE INDEX workout_substitutions_workout_idx ON public.workout_substitutions USING btree (workout_id)'
 	};
 
 	it('has every history index, in the shape the history queries use', async () => {

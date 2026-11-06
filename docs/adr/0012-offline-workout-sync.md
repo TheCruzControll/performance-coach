@@ -94,12 +94,13 @@
 → `workout_substitutions` (a dislike also through M3's preference and swap services);
 `exercise.create` → `exercises` through `createCustomExercise` with the device's id;
 `pain.report` → M4's `pain_reports`; `run.log`, `run.segment` → `run_records`,
-`run_record_segments`; `other.log` → `other_session_records`. Main's log still lacks M3
-amendments A1–A4 and A6: `set_records.assistance`, the not-skipped amount CHECK and a 50 cap on
-missed reps; `workout_substitutions.exercise_position` and `deleted_at`; segment and other-session
-edits by client id, services in the caller's transaction, and a swap that re-bases on the current
-version. M3 adopts them, or the fallback slices log-gaps-db and log-gaps-service do; the wire
-format is the same either way. A set's distance is whole metres, as `set_records.metres` keeps it.
+`run_record_segments`; `other.log` → `other_session_records`. The fallback slice log-gaps-db
+added M3 amendments A1–A2 to the log: `set_records.assistance`, the not-skipped amount CHECK, a
+day's cap on seconds and a 50 cap on missed reps; `workout_substitutions.exercise_position` and
+`deleted_at`. Main's log still lacks A3–A4 and A6: segment and other-session edits by client id,
+services in the caller's transaction, and a swap that re-bases on the current version. M3 adopts
+them, or the fallbacks do (log-gaps-service, and substitution-handlers for A6); the wire format is
+the same either way. A set's distance is whole metres, as `set_records.metres` keeps it.
 
 ## Alternatives considered
 
