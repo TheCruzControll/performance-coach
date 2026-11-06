@@ -6,7 +6,7 @@
 import { expect, test } from '@playwright/test';
 import { routeAccess } from '../src/lib/server/auth/routes';
 import { signInUrl } from '../src/lib/server/auth/return-path';
-import { appRoutes, ORIGIN, SAME_ORIGIN, signedOut } from './support';
+import { appRoutes, ORIGIN, query, SAME_ORIGIN, signedOut } from './support';
 
 const ROUTES = appRoutes();
 const PUBLIC_ENDPOINTS = [
@@ -175,5 +175,30 @@ test.describe('signed in: cross-site requests are refused', () => {
 		const profile = await request.get('/profile', { maxRedirects: 0 });
 		expect(profile.status()).toBe(200);
 		expect(new URL(ORIGIN).hostname).toBe('localhost');
+	});
+
+	test('a cross-site save of a training-profile section is refused and stores nothing', async ({
+		request
+	}) => {
+		const stored = () => query('select * from equipment_profiles');
+		const before = await stored();
+		const save = (origin: string, payload: unknown) =>
+			request.post('/profile/equipment?/save', {
+				headers: { origin, accept: 'application/json', 'x-sveltekit-action': 'true' },
+				multipart: { payload: JSON.stringify(payload) }
+			});
+		// From the app itself the action runs: an invalid section comes back with its errors.
+		const own = await save(ORIGIN, { gymType: 'castle', equipment: [], homeEquipment: [] });
+		expect(own.status()).toBe(400);
+		expect(await own.json()).toMatchObject({ type: 'failure', status: 400 });
+		// From another site it is refused before it runs.
+		const cross = await save('https://evil.example', {
+			gymType: 'none',
+			equipment: [],
+			homeEquipment: [],
+			notes: 'Cross-site'
+		});
+		expect(cross.status()).toBe(403);
+		expect(await stored()).toEqual(before);
 	});
 });

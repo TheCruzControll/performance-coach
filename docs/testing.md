@@ -210,6 +210,13 @@ Specs:
   and leaves the list, `maxlength` and `max` hold and are announced, keyboard focus survives a
   removed button, and the status region says "Added …", "Removed …" and every refusal, even
   the same words twice (a recorded live region shows them cleared and set again).
+- `profile-equipment.serial.e2e.ts` (serial: `resetTrainingProfile()` before each test;
+  `E2E_SERIAL_ALONE=1` runs it right after setup) — Profile lists Equipment, which opens
+  `/profile/[section]`; a save survives a reload and is in Postgres, and keyboard focus stays on
+  Save; offline, Save says so and keeps the edit; a failed editor chunk shows Retry, which loads
+  it; the editor replaces its skeleton without moving anything; unsaved changes ask before
+  leaving (link, tab bar, Back); an unknown section is a 404. `a11y.e2e.ts` audits the screen and
+  its discard prompt in both themes.
 - `a11y.e2e.ts` — axe-core (`@axe-core/playwright`, WCAG 2.1 A/AA) on every screen (Security
   included; the signed-out sign-in and recovery screens too), the plate-calculator sheet and each
   `/design` component group, in the **dark and light** themes (Lighthouse only audits dark). The

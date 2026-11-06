@@ -61,6 +61,14 @@ shared component costs every route, Security included.
   initial JS, including what its `load` awaits. The save path itself is not free: a scratch route
   that imported `profile-form.ts` and `section-form.svelte.ts` statically grew by 2.5 KB (with
   `$app/forms`), so it belongs in what an editor loads on demand.
+- **Profile sections (`/profile/[section]`, 55.2 KB)** cost every other route 54 B: the app entry
+  lists one more node (`/(app)/profile/security` 61296 → 61350 B of 61440; `/design` 41 B more, its
+  Inputs panel now sharing the input primitives with the editor). The editor, the save path and the
+  discard sheet load after the screen. A Svelte runtime helper that any code uses, even code
+  loaded on demand, joins the runtime chunk every route loads: `$state.snapshot` in `SectionForm`
+  cost 228 B (now a JSON copy) and a `{#key}` block 80 B (a keyed each of one). Importing a shared
+  component on demand cost `/train` 181 B (a module namespace in a chunk it loads up front), so the
+  sheet is its own small component.
 - **Main-thread budget** (`E2E_PERF_ALONE=1 pnpm test:e2e --project=perf`, median of 5 loads at 4×
   CPU; app screens signed in, `/` signed out): `/` 57 ms, `/today` 81, `/train` 72, `/progress`
   67, `/coach` 40, `/profile` 87, `/profile/security` 60 — every screen meets the 200 ms target.
