@@ -3,7 +3,7 @@
   Big, one-handed numeric control for gym use: oversized −/+ targets, press-and-hold to repeat
   (accelerating), tap the value to type (Enter commits, Escape cancels the edit without closing
   an enclosing sheet), ArrowUp/ArrowDown/PageUp/PageDown/Home/End on the keyboard. Exposed to
-  assistive tech as a spinbutton.
+  assistive tech as a spinbutton; an error marks it invalid and is announced in place of the hint.
 -->
 <script lang="ts">
 	import IconButton from './IconButton.svelte';
@@ -20,6 +20,8 @@
 		/** Decimal places shown; defaults to the precision of `step`. */
 		decimals?: number;
 		hint?: string;
+		/** Replaces the hint while shown. */
+		error?: string | null;
 		onchange?: (value: number) => void;
 		'data-testid'?: string;
 	}
@@ -34,11 +36,14 @@
 		unit,
 		decimals,
 		hint,
+		error = null,
 		onchange,
 		'data-testid': testId
 	}: Props = $props();
 
 	const id = $props.id();
+	// Only the message on screen describes the value: the error replaces the hint.
+	const describedBy = $derived(error ? `${id}-error` : hint ? `${id}-hint` : undefined);
 	const places = $derived(decimals ?? String(step).split('.')[1]?.length ?? 0);
 	// Plain string formatting on purpose: creating an Intl formatter during hydration costs
 	// ~15–20 ms on a phone-class CPU (measured), which shows up as Total Blocking Time.
@@ -147,7 +152,7 @@
 	}
 </script>
 
-<div class="stepper" data-testid={testId}>
+<div class="stepper" class:invalid={Boolean(error)} data-testid={testId}>
 	<label class="label" for={id}>{label}</label>
 	<div class="row">
 		<IconButton
@@ -175,7 +180,8 @@
 				aria-valuemin={min}
 				aria-valuemax={max}
 				aria-valuetext={unit ? `${display} ${unit}` : display}
-				aria-describedby={hint ? `${id}-hint` : undefined}
+				aria-invalid={error ? 'true' : undefined}
+				aria-describedby={describedBy}
 				value={editing ? draft : display}
 				style:width={`calc(${Math.max(2, (editing ? draft : display).length)}ch + 0.25em)`}
 				oninput={(e) => (draft = e.currentTarget.value)}
@@ -198,7 +204,11 @@
 			onpointercancel={stopHold}
 		/>
 	</div>
-	{#if hint}<p id={`${id}-hint`} class="hint">{hint}</p>{/if}
+	{#if error}
+		<p id="{id}-error" class="hint error" role="alert">{error}</p>
+	{:else if hint}
+		<p id="{id}-hint" class="hint">{hint}</p>
+	{/if}
 </div>
 
 <style>
@@ -266,5 +276,10 @@
 		font-size: var(--text-sm);
 		color: var(--color-text-tertiary);
 		text-align: center;
+	}
+
+	.invalid .value,
+	.error {
+		color: var(--color-danger);
 	}
 </style>

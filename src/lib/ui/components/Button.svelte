@@ -124,11 +124,12 @@
 			opacity var(--duration-fast) var(--ease-standard);
 	}
 
-	/* Every size keeps a ≥44px hit area, even when the visual is smaller. */
+	/* Every size keeps a ≥44px hit area, even when the visual is smaller. It is laid out in the
+	   padding box, inside the 1 px border. */
 	.btn::after {
 		content: '';
 		position: absolute;
-		inset: min(0px, calc((var(--btn-height) - var(--touch-target)) / 2));
+		inset: min(0px, calc((var(--btn-height) - var(--touch-target)) / 2 - 1px));
 	}
 
 	.btn[data-size='sm'] {
@@ -208,6 +209,9 @@
 		.btn[data-variant='secondary']:hover:not(:disabled),
 		.btn[data-variant='ghost']:hover:not(:disabled) {
 			background: var(--color-surface-3);
+		}
+		.btn[data-variant='danger']:hover:not(:disabled) {
+			background: color-mix(in srgb, var(--color-danger) 16%, transparent);
 		}
 	}
 

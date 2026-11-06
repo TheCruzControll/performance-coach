@@ -1,5 +1,11 @@
 import { error, type RequestEvent } from '@sveltejs/kit';
-import { editAction, ownerId, saveGoalAction } from '#lib/server/forms/profile.ts';
+import {
+	deleteGoalAction,
+	editAction,
+	ownerId,
+	reorderGoalsAction,
+	saveGoalAction
+} from '#lib/server/forms/profile.ts';
 import { profileSection, sectionContext } from '#lib/server/forms/sections.ts';
 import { SECTIONS } from '#lib/ui/profile/sections.ts';
 import type { Actions, PageServerLoad } from './$types';
@@ -33,5 +39,7 @@ export const actions: Actions = {
 		if (!save) error(404, 'Not found');
 		return editAction(save)(event);
 	},
-	saveGoal: goals(saveGoalAction)
+	saveGoal: goals(saveGoalAction),
+	deleteGoal: goals(deleteGoalAction),
+	reorderGoals: goals(reorderGoalsAction)
 };

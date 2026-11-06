@@ -37,6 +37,9 @@
 	let form = $state<SectionForm<unknown> | null>(null);
 	let Sheet = $state<typeof DiscardSheet | null>(null);
 	let failed = $state(false);
+	/** A form for the section as stored: what the load returned, then what each save stored. */
+	let formFor: ((stored: unknown) => SectionForm<unknown>) | undefined;
+	let afterSave: SectionEditor['afterSave'];
 
 	/** The editor, its form state and the discard sheet: all of them, or the error with Retry. */
 	onMount(async () => {
@@ -49,9 +52,12 @@
 				import('#lib/client/profile-form.ts'),
 				import('./DiscardSheet.svelte')
 			]);
-			form = new SectionForm(editor.draft(saved, context), editor.schema, editor.payload);
+			formFor = (stored) =>
+				new SectionForm(editor.draft(stored, context), editor.schema, editor.payload);
+			form = formFor(saved);
 			Sheet = sheet.default;
 			Editor = editor.Editor;
+			afterSave = editor.afterSave;
 			warmValidation();
 		} catch {
 			failed = true;
@@ -61,11 +67,18 @@
 	async function save(event: MouseEvent) {
 		if (!form) return;
 		const button = event.currentTarget as HTMLElement;
+		// What this save sends: an edit made while it is in flight is not part of it.
+		const sent = JSON.stringify(form.value);
 		const outcome = await form.submit();
 		// The button is disabled while it saves, which drops keyboard focus: give it back.
 		if (document.activeElement === document.body) button.focus();
 		// Only the action's own answer: a redirect (the session ended) saved nothing.
-		if (outcome.data?.saved) toast.show('Saved', { tone: 'positive' });
+		if (!outcome.data?.saved) return;
+		afterSave?.(JSON.parse(sent));
+		// Go on from what was stored: a new injury has its id now, so saving again updates it
+		// instead of adding it once more. Edits made while it saved stay, unsaved.
+		if (!form.dirty && formFor) form = formFor(outcome.data.section);
+		toast.show('Saved', { tone: 'positive' });
 	}
 
 	// ---- leaving with unsaved changes ----------------------------------------------------------
@@ -103,11 +116,17 @@
 </a>
 <PageHeader {title} eyebrow="Training profile" />
 
-<div class="editor" class:bar={saveBar} aria-busy={!Editor && !failed} data-testid="section-editor">
+<div
+	class="editor"
+	class:bar={saveBar}
+	class:with-message={form?.failed}
+	aria-busy={!Editor && !failed}
+	data-testid="section-editor"
+>
 	{#if Editor && form}
-		<!-- A new editor for a new form (after Discard): its own state starts from the draft. -->
+		<!-- A new editor for a new form (after Discard or Save): its own state starts from the draft. -->
 		{#each [form] as current (current)}
-			<Editor bind:value={current.value} errors={current.errors} {context} />
+			<Editor bind:value={current.value} errors={current.errors} {context} manage />
 		{/each}
 	{:else if failed}
 		<div class="failed">
@@ -187,6 +206,11 @@
 	/* Room for the Save bar below, so nothing ends up under it at the end of the page. */
 	.editor.bar {
 		padding-bottom: calc(var(--space-20) + var(--space-2));
+	}
+
+	/* A message over Save (up to two lines) makes the bar taller: the room grows with it. */
+	.editor.with-message {
+		padding-bottom: calc(var(--space-20) * 2 + var(--space-2));
 	}
 
 	.placeholder,

@@ -102,6 +102,7 @@
 
 	.list {
 		position: relative;
+		container-type: inline-size;
 		display: grid;
 		grid-template-columns: repeat(var(--count), minmax(0, 1fr));
 		border-bottom: 1px solid var(--color-hairline);
@@ -113,35 +114,42 @@
 		font-size: var(--text-sm);
 		font-weight: var(--weight-semibold);
 		color: var(--color-text-tertiary);
-		transition: color var(--duration-base) var(--ease-standard);
+		transition:
+			color var(--duration-base) var(--ease-standard),
+			background-color var(--duration-fast) var(--ease-standard);
 	}
 
 	.tab[aria-selected='true'] {
 		color: var(--color-text);
 	}
 
+	/* The pill is the moving box, centred under the active tab, stepped in tab widths of the list
+	   (cqi). A tab-wide box carrying the pill overshot the list's end by 8.5% of the travel on
+	   the spring, past a 393 px page, and mobile browsers keep a page widened by that. */
 	.indicator {
 		position: absolute;
 		bottom: -1px;
-		left: 0;
-		width: calc(100% / var(--count));
-		height: 2px;
-		transform: translateX(calc(var(--index) * 100%));
-		transition: transform var(--duration-slow) var(--ease-spring);
-	}
-
-	.indicator::before {
-		content: '';
-		display: block;
+		left: calc(100% / var(--count) / 2 - 16px);
 		width: 32px;
-		height: 100%;
-		margin: 0 auto;
+		height: 2px;
 		border-radius: var(--radius-full);
 		background: var(--color-accent);
+		transform: translateX(calc(var(--index) * 100cqi / var(--count)));
+		transition: transform var(--duration-slow) var(--ease-spring);
+		/* Decoration: a tap on the tab's bottom edge must reach the tab. */
+		pointer-events: none;
 	}
 
 	.panel:focus-visible {
 		outline-offset: 4px;
 		border-radius: var(--radius-md);
+	}
+
+	@media (hover: hover) and (pointer: fine) {
+		.tab[aria-selected='false']:hover {
+			border-radius: var(--radius-md);
+			background: var(--color-surface-2);
+			color: var(--color-text-secondary);
+		}
 	}
 </style>

@@ -11,9 +11,11 @@
 import { fail } from '@sveltejs/kit';
 import {
 	createGoal,
+	deleteGoal,
 	isProfileInputError,
 	listGoals,
 	ProfileNotFoundError,
+	reorderGoals,
 	updateGoal,
 	type ProfileDeps
 } from '../services/profile';
@@ -40,14 +42,17 @@ async function attempt<T>(save: () => Promise<T>) {
 	}
 }
 
-/** A Profile edit screen's `save` action: store the section, then `{ saved: true }`. */
+/**
+ * A Profile edit screen's `save` action: store the section, then `{ saved: true, section }`
+ * with the section as stored, which the screen edits from then on (a new injury's id, say).
+ */
 export function editAction(saveSection: SaveSection) {
 	return async ({ locals, request }: FormEvent) => {
 		const owner = ownerId(locals);
 		const { payload } = await readForm(request);
 		const result = await attempt(() => saveSection(owner, payload, { source: 'profile' }));
 		if (!result.ok) return result.failure;
-		return { saved: true as const };
+		return { saved: true as const, section: result.value };
 	};
 }
 
@@ -71,4 +76,38 @@ export async function saveGoalAction(
 	);
 	if (!result.ok) return result.failure;
 	return { goals: await listGoals(owner, deps), saved: result.value.id };
+}
+
+/**
+ * Profile → Goals' `deleteGoal` action: delete for good the goal its `id` names (an id that names
+ * none of the owner's goals is a 404), as a Profile change. The services close the gap it leaves
+ * in the ranking and keep its history; returns the ranking as stored.
+ */
+export async function deleteGoalAction(
+	{ locals, request }: FormEvent,
+	deps: Pick<ProfileDeps, 'db'> = {}
+) {
+	const owner = ownerId(locals);
+	const { payload } = await readForm(request);
+	const { id } = (payload ?? {}) as { id?: unknown };
+	const change = { ...deps, source: 'profile' } as const;
+	const result = await attempt(() => deleteGoal(owner, typeof id === 'string' ? id : '', change));
+	if (!result.ok) return result.failure;
+	return { goals: await listGoals(owner, deps) };
+}
+
+/**
+ * Profile → Goals' `reorderGoals` action: rank the open goals in the order its `ids` list them,
+ * top priority first, as a Profile change. The services refuse a list that leaves out, repeats or
+ * adds a goal (a field error, so nothing is stored); returns the ranking as stored.
+ */
+export async function reorderGoalsAction(
+	{ locals, request }: FormEvent,
+	deps: Pick<ProfileDeps, 'db'> = {}
+) {
+	const owner = ownerId(locals);
+	const { payload } = await readForm(request);
+	const result = await attempt(() => reorderGoals(owner, payload, { ...deps, source: 'profile' }));
+	if (!result.ok) return result.failure;
+	return { goals: result.value };
 }

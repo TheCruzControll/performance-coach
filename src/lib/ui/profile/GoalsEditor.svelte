@@ -1,39 +1,56 @@
 <!--
   @component
   Profile → Goals (PRD §2): the goals in priority order, #1 marked "Top priority" because it wins
-  when goals compete for time or recovery, or a designed empty state. A goal saves the moment it
-  changes, through the route's `?/saveGoal` action, so the screen has no Save bar. The sheet that
-  adds or edits a goal is code-split: it starts loading on first intent (pointerdown), and a tap
-  that lands before it arrives still opens it.
+  when goals compete for time or recovery, or a designed empty state with PRD §2's three ways in:
+  a specific event, a general goal, or several at once (added one by one, each ranked below the
+  ones before, as a note under "Add another goal" says). A goal saves the moment it changes,
+  through the route's `?/saveGoal` action, so the screen has no Save bar. The sheet that adds or
+  edits a goal is code-split: it starts loading on first intent (pointerdown), and a tap that
+  lands before it arrives still opens it. On Profile (`manage`) the sheet also pauses, achieves
+  or drops a goal, and the goals that left the ranking are listed apart under Past goals.
+  Each ranked goal moves up or down with its arrows: the list moves at once, the new rank is
+  announced politely, `?/reorderGoals` stores it and its answer replaces the list; a failed save
+  puts the order back and says so. A pointer can also drag a goal by the handle after its
+  arrows; the handle is hidden from assistive tech and never focused, so the arrows stay the
+  accessible way. Let go, the goal takes the place it was dragged to and is stored the same way.
 -->
 <script lang="ts">
-	import { DISCIPLINE_INFO } from '#lib/domain/profile/catalog.ts';
+	import { tick } from 'svelte';
+	import { applyAction } from '$app/forms';
+	import { post } from '#lib/client/profile-form.ts';
+	import { DISCIPLINE_INFO, GOAL_STATUS_LABEL } from '#lib/domain/profile/catalog.ts';
 	import type { Goal } from '#lib/domain/profile/types.ts';
 	import Badge from '../components/Badge.svelte';
 	import Button from '../components/Button.svelte';
 	import Chip from '../components/Chip.svelte';
 	import EmptyState from '../components/EmptyState.svelte';
 	import Icon from '../components/Icon.svelte';
+	import IconButton from '../components/IconButton.svelte';
 	import ListRow from '../components/ListRow.svelte';
 	import Notice from '../components/Notice.svelte';
+	import Section from '../components/Section.svelte';
 	import { toast } from '../toast.svelte';
 	import type { EditorProps } from './editors';
 	import { goalDraft, goalSummary, newGoal, type GoalDraft } from './goals';
 	import type GoalSheet from './GoalSheet.svelte';
 
-	let { value = $bindable() }: EditorProps<Goal[]> = $props();
+	let { value = $bindable(), manage = false }: EditorProps<Goal[]> = $props();
 	const id = $props.id();
 
 	/** Open goals, top priority first (achieved and dropped goals hold no rank). */
 	const ranked = $derived(
 		value.filter((g) => g.priority !== null).sort((a, b) => a.priority! - b.priority!)
 	);
+	/** Achieved and dropped goals, as the services list them: the latest to leave first. */
+	const past = $derived(value.filter((g) => g.priority === null));
 
 	let Sheet = $state<typeof GoalSheet | null>(null);
 	let loading: Promise<unknown> | null = null;
 	let unavailable = $state(false);
 	let open = $state(false);
 	let draft = $state.raw<GoalDraft | null>(null);
+	/** Started from "Several goals at once": the next goal is asked for, and its rank explained. */
+	let several = $state(false);
 
 	/** Fetch the sheet on first intent, so it is usually here by the time the tap lands. */
 	function preload() {
@@ -49,10 +66,130 @@
 		open = true;
 	}
 
-	function saved(goals: Goal[]) {
+	function start(path: 'event' | 'general' | 'several') {
+		several = path === 'several';
+		edit(newGoal(path === 'general' ? 'general' : 'event'));
+	}
+
+	function changed(goals: Goal[], message: string) {
 		value = goals;
 		open = false;
-		toast.show('Goal saved', { tone: 'positive' });
+		toast.show(message, { tone: 'positive' });
+	}
+
+	// ---- reordering ------------------------------------------------------------------------------
+	let list = $state<HTMLElement>();
+	/** What the polite live region last said: where the goal that moved is now. */
+	let announcement = $state('');
+	/** Orders are stored one after another, so the last one sent is the one kept. */
+	let queue = Promise.resolve();
+	/** Moves not answered yet: only the answer to the last one replaces the list. */
+	let unanswered = 0;
+	/** A failed save starts a new round, which drops the moves queued behind it. */
+	let round = 0;
+
+	function move(goal: Goal, by: -1 | 1, event: MouseEvent) {
+		const ids = ranked.map((g) => g.id);
+		const from = ids.indexOf(goal.id);
+		const to = from + by;
+		if (to < 0 || to >= ids.length) return;
+		[ids[from], ids[to]] = [ids[to]!, ids[from]!];
+		reorder(goal, ids);
+		if (event.currentTarget === document.activeElement) void refocus(goal, by);
+	}
+
+	/** Rank the open goals in the order of `ids` now, and store it after the moves before it. */
+	function reorder(goal: Goal, ids: string[]) {
+		const before = value;
+		value = value.map((g) => (g.priority === null ? g : { ...g, priority: ids.indexOf(g.id) + 1 }));
+		announcement = `${goal.title} is now priority ${ids.indexOf(goal.id) + 1} of ${ids.length}`;
+		unanswered++;
+		const sent = round;
+		queue = queue.then(() => store(ids, before, sent));
+	}
+
+	async function store(ids: string[], before: Goal[], sent: number) {
+		const result = sent === round ? await post('?/reorderGoals', { ids }).catch(() => null) : null;
+		unanswered--;
+		if (sent !== round) return;
+		if (result?.type === 'success') {
+			if (unanswered === 0 && result.data) value = result.data.goals as Goal[];
+		} else if (result?.type === 'redirect') {
+			await applyAction(result); // the session ended: sign in again
+		} else {
+			round++;
+			value = before;
+			announcement = '';
+			toast.show('The new order didn’t save. Try again.', { tone: 'danger' });
+		}
+	}
+
+	/** The row moves under the arrow that moved it: keep focus there (the other arrow at an end). */
+	async function refocus(goal: Goal, by: -1 | 1) {
+		await tick();
+		const row = list?.querySelector(`[data-goal="${goal.id}"]`);
+		const [up, down] = row?.querySelectorAll<HTMLButtonElement>('.order button') ?? [];
+		const next = by < 0 ? (up?.disabled ? down : up) : down?.disabled ? up : down;
+		if (next !== document.activeElement) next?.focus();
+	}
+
+	// ---- dragging by the handle -----------------------------------------------------------------
+	/**
+	 * The goal being dragged: its rank when picked up (`from`), where it would land (`over`), how
+	 * far it has moved, and each row's step (its height plus the gap), measured when picked up.
+	 */
+	let drag = $state<{ id: string; from: number; over: number; dy: number; steps: number[] }>();
+	let pointer = { id: -1, y: 0 };
+
+	const total = (steps: number[]) => steps.reduce((sum, step) => sum + step, 0);
+
+	function grab(event: PointerEvent, goal: Goal, from: number) {
+		if (!event.isPrimary || event.button !== 0 || !list) return;
+		const gap = parseFloat(getComputedStyle(list).rowGap) || 0;
+		const steps = [...list.children].map((row) => row.getBoundingClientRect().height + gap);
+		(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+		pointer = { id: event.pointerId, y: event.pageY };
+		drag = { id: goal.id, from, over: from, dy: 0, steps };
+	}
+
+	/** The goal follows the pointer, within the list; it passes a row once past half its step. */
+	function follow(event: PointerEvent) {
+		if (!drag || event.pointerId !== pointer.id) return;
+		const { from, steps } = drag;
+		const dy = Math.max(
+			-total(steps.slice(0, from)),
+			Math.min(total(steps.slice(from + 1)), event.pageY - pointer.y)
+		);
+		const way = Math.sign(dy);
+		let over = from;
+		let left = Math.abs(dy);
+		while (way && left > (steps[over + way] ?? Infinity) / 2) {
+			over += way;
+			left -= steps[over]!;
+		}
+		drag = { ...drag, dy, over };
+	}
+
+	function drop(event: PointerEvent) {
+		if (!drag || event.pointerId !== pointer.id) return;
+		const { id, over } = drag;
+		drag = undefined;
+		const ids = ranked.map((g) => g.id);
+		const from = ids.indexOf(id);
+		if (from < 0 || from === over) return;
+		const goal = ranked[from]!;
+		ids.splice(over, 0, ...ids.splice(from, 1));
+		reorder(goal, ids);
+	}
+
+	/** How far row `i` is drawn from its place: the dragged one with the pointer, the rest aside. */
+	function offset(i: number): number {
+		if (!drag) return 0;
+		const { from, over, dy, steps } = drag;
+		if (i === from) return dy;
+		if (from < i && i <= over) return -steps[from]!;
+		if (over <= i && i < from) return steps[from]!;
+		return 0;
 	}
 </script>
 
@@ -65,22 +202,52 @@
 			compact
 			data-testid="goals-empty"
 		/>
-		<ListRow
-			icon="today"
-			title="A specific event"
-			subtitle="A meet, race, fight or test day with a date"
-			onpointerdown={preload}
-			onclick={() => edit(newGoal())}
-			data-testid="goal-path-event"
-		/>
+		<div class="paths">
+			<ListRow
+				icon="today"
+				title="A specific event"
+				subtitle="A meet, race, fight or test day"
+				onpointerdown={preload}
+				onclick={() => start('event')}
+				data-testid="goal-path-event"
+			/>
+			<ListRow
+				icon="progress"
+				title="A general goal"
+				subtitle="Get stronger, faster or fitter"
+				onpointerdown={preload}
+				onclick={() => start('general')}
+				data-testid="goal-path-general"
+			/>
+			<ListRow
+				icon="plus"
+				title="Several goals at once"
+				subtitle="One by one, top priority first"
+				onpointerdown={preload}
+				onclick={() => start('several')}
+				data-testid="goal-path-several"
+			/>
+		</div>
 	{:else}
 		<p class="rule" id="{id}-rule">
 			<Icon name="info" size={16} />When goals compete for time or recovery, the higher one wins.
 		</p>
-		<ol class="ranked" aria-describedby="{id}-rule" data-testid="goal-list">
+		<ol
+			class="ranked"
+			class:sorting={drag !== undefined}
+			aria-describedby="{id}-rule"
+			data-testid="goal-list"
+			bind:this={list}
+		>
 			{#each ranked as goal, i (goal.id)}
 				{@const summary = goalSummary(goal)}
-				<li>
+				{@const dy = offset(i)}
+				<li
+					class="row"
+					class:lifted={drag?.id === goal.id}
+					style:translate={dy ? `0 ${dy}px` : undefined}
+					data-goal={goal.id}
+				>
 					<button
 						type="button"
 						class="goal"
@@ -95,6 +262,7 @@
 							<span class="heading">
 								<span class="title">{goal.title}</span>
 								{#if i === 0}<Badge tone="accent">Top priority</Badge>{/if}
+								{#if goal.status === 'paused'}<Badge>Paused</Badge>{/if}
 							</span>
 							{#if summary}<span class="summary">{summary}</span>{/if}
 							<span class="chips">
@@ -109,6 +277,34 @@
 						</span>
 						<span class="chevron"><Icon name="chevron-right" size={20} /></span>
 					</button>
+					{#if ranked.length > 1}
+						<span class="order">
+							<IconButton
+								icon="chevron-down"
+								label="Move {goal.title} up"
+								disabled={i === 0}
+								onclick={(event) => move(goal, -1, event)}
+								data-testid="goal-up"
+							/>
+							<IconButton
+								icon="chevron-down"
+								label="Move {goal.title} down"
+								disabled={i === ranked.length - 1}
+								onclick={(event) => move(goal, 1, event)}
+								data-testid="goal-down"
+							/>
+						</span>
+						<span
+							class="handle"
+							aria-hidden="true"
+							onpointerdown={(event) => grab(event, goal, i)}
+							onpointermove={follow}
+							onpointerup={drop}
+							onpointercancel={() => (drag = undefined)}
+							onlostpointercapture={() => (drag = undefined)}
+							data-testid="goal-handle"
+						></span>
+					{/if}
 				</li>
 			{/each}
 		</ol>
@@ -118,11 +314,51 @@
 			block
 			onpointerdown={preload}
 			onclick={() => edit(newGoal())}
+			aria-describedby={several ? `${id}-several` : undefined}
 			data-testid="add-goal"
 		>
-			Add a goal
+			{several || ranked.length > 1 ? 'Add another goal' : 'Add a goal'}
 		</Button>
+		{#if several}
+			<p class="note" id="{id}-several" data-testid="goals-several-note">
+				Goals rank in the order you add them, so add the next most important one.
+			</p>
+		{/if}
 	{/if}
+
+	{#if manage && past.length > 0}
+		<div class="past">
+			<Section title="Past goals" data-testid="past-goals">
+				<ul class="list">
+					{#each past as goal (goal.id)}
+						{@const summary = goalSummary(goal)}
+						<li>
+							<button
+								type="button"
+								class="goal closed"
+								onpointerdown={preload}
+								onclick={() => edit(goalDraft(goal))}
+								data-testid="past-goal-row"
+							>
+								<span class="text">
+									<span class="heading">
+										<span class="title">{goal.title}</span>
+										<Badge tone={goal.status === 'achieved' ? 'positive' : 'neutral'}>
+											{GOAL_STATUS_LABEL[goal.status]}
+										</Badge>
+									</span>
+									{#if summary}<span class="summary">{summary}</span>{/if}
+								</span>
+								<span class="chevron"><Icon name="chevron-right" size={20} /></span>
+							</button>
+						</li>
+					{/each}
+				</ul>
+			</Section>
+		</div>
+	{/if}
+
+	<p class="visually-hidden" role="status" data-testid="goal-order-status">{announcement}</p>
 
 	{#if unavailable}
 		<div class="unavailable">
@@ -138,7 +374,13 @@
 {#if Sheet && draft}
 	<!-- One sheet per draft: a keyed block of one mounts it afresh for each goal opened. -->
 	{#each [draft] as current (current)}
-		<Sheet bind:open draft={current} onsaved={saved} />
+		<Sheet
+			bind:open
+			draft={current}
+			{manage}
+			onsaved={(goals) => changed(goals, 'Goal saved')}
+			ondeleted={(goals) => changed(goals, 'Goal deleted')}
+		/>
 	{/each}
 {/if}
 
@@ -147,6 +389,17 @@
 	.unavailable {
 		display: grid;
 		gap: var(--space-4);
+	}
+
+	.paths {
+		display: grid;
+		gap: var(--space-2);
+	}
+
+	.note {
+		font-size: var(--text-sm);
+		color: var(--color-text-secondary);
+		text-align: center;
 	}
 
 	.unavailable {
@@ -162,11 +415,95 @@
 		color: var(--color-text-secondary);
 	}
 
-	.ranked {
+	.ranked,
+	.list {
 		display: grid;
 		gap: var(--space-2);
 		padding: 0;
 		list-style: none;
+	}
+
+	/* A ranked goal, then its arrows: 44 px targets side by side with it, apart from each other. */
+	.row {
+		display: flex;
+		gap: var(--space-2);
+	}
+
+	.row > .goal {
+		flex: 1;
+		min-width: 0;
+	}
+
+	.order {
+		display: grid;
+		flex: none;
+		align-content: center;
+		gap: var(--space-1);
+	}
+
+	/* The up arrow is the down chevron turned over: no icon of its own in every route's bundle. */
+	.order > :global(:first-child svg) {
+		transform: rotate(180deg);
+	}
+
+	/* A goal being dragged follows the pointer, raised; the rows it passes slide out of its way. */
+	.sorting > .row {
+		transition: translate var(--duration-base) var(--ease-out);
+	}
+
+	.sorting > .lifted {
+		z-index: var(--z-raised);
+		transition: none;
+	}
+
+	.lifted > .goal {
+		border-color: var(--color-border-strong);
+		background: var(--color-surface-2);
+		box-shadow: var(--elevation-3);
+	}
+
+	/*
+	 * The handle: a narrow column flush with the arrows, whose circles already leave room around
+	 * their glyphs, so the goal keeps its width. Its grip is six dots drawn here, so no icon joins
+	 * every route's bundle.
+	 */
+	.handle {
+		position: relative;
+		display: grid;
+		flex: none;
+		place-items: center;
+		width: 2rem;
+		margin-inline-start: calc(-1 * var(--space-2));
+		color: var(--color-text-tertiary);
+		cursor: grab;
+		touch-action: none;
+		user-select: none;
+		transition: color var(--duration-fast) var(--ease-standard);
+	}
+
+	.handle::before {
+		content: '';
+		width: 0.75rem;
+		height: 1.125rem;
+		background: radial-gradient(circle, currentColor 1.5px, transparent 2px) 0 0 / 6px 6px;
+	}
+
+	/* Its hit area is 44 px wide all the same: what it lacks comes from the gutter past its edge. */
+	.handle::after {
+		content: '';
+		position: absolute;
+		inset: 0 calc(2rem - var(--touch-target)) 0 0;
+	}
+
+	@media (hover: hover) and (pointer: fine) {
+		.handle:hover {
+			color: var(--color-text-secondary);
+		}
+	}
+
+	.lifted .handle {
+		color: var(--color-accent-text);
+		cursor: grabbing;
 	}
 
 	/* One row per goal, shaped like ListRow, with the rank where ListRow has its icon. */
@@ -188,6 +525,14 @@
 
 	.goal.top {
 		border-color: color-mix(in srgb, var(--color-accent) 40%, var(--color-border));
+	}
+
+	/* Out of the ranking: no rank, and flat, so it reads as history rather than a goal in play. */
+	.goal.closed {
+		min-height: var(--touch-target);
+		padding-left: var(--space-4);
+		background: transparent;
+		box-shadow: none;
 	}
 
 	.goal:active {
@@ -248,5 +593,9 @@
 	.chevron {
 		display: grid;
 		color: var(--color-text-tertiary);
+	}
+
+	.past {
+		margin-top: var(--space-4);
 	}
 </style>
