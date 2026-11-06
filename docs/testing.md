@@ -257,6 +257,19 @@ Unit tests (`src/lib/domain/training/`, `src/lib/domain/exercises/`, `src/lib/do
   `spinal_loading`, gives squat, hinge and single-leg work ≥ 2 dumbbell-only and ≥ 1 bodyweight
   options, links its six M2 lifts and matches M2's lower-body and conditioning suggestions. The matcher ignores case, accents, punctuation, spacing and plurals, and gives
   null, never a guess, for unknown text, part of a name or a name two exercises share.
+- **Whole catalogue and part 2** (`integrity.test.ts`, `match.test.ts`): ≥ 150 entries, ≥ 3 per
+  movement pattern, and the brief's categories (barbell, dumbbell and bodyweight ≥ 15, machine,
+  cable, plyometric and conditioning ≥ 8, kettlebell and Olympic ≥ 6, mobility ≥ 10);
+  conditioning and mobility never counted in reps; Olympic lifts intermediate or above; every M2
+  lift but `custom` linked; every M2 suggestion matched or on `NOT_EXERCISES`, which the matcher
+  never matches whatever the library holds ('Running intervals': running is run segments).
+  Part 2 has ≥ 75 entries and one measure per group, flags single-arm rows and presses, offset
+  carries and rotation work unilateral, tags the standing barbell presses and the barbell row
+  `spinal_loading`, tags every overhead press `overhead` and no horizontal push, keeps the
+  landmine press's group `shoulder_friendly` and off `overhead`, gives horizontal and
+  vertical push and pull ≥ 2 dumbbell-only options (a bench allowed), links bench press,
+  overhead press and weighted pull-up, and matches 'Bench press', 'Overhead press', 'Pull-ups'
+  and 'Dips'.
 - **Plain Node** (`scripts/catalogue-node.test.ts`): Node with type stripping alone, as the seed
   runs, loads `src/lib/domain/exercises/index.ts` and sees the catalogue Vite sees; an
   extensionless import fails there, which is why the package uses `.ts` specifiers.
@@ -269,6 +282,16 @@ Unit tests (`src/lib/domain/training/`, `src/lib/domain/exercises/`, `src/lib/do
   `pnpm check`); `validate()` is the function the profile schemas re-export; and the runtime
   imports reachable from `domain/training/index.ts` include no schemas, edits or zod, with the
   walk shown to catch a re-export, a zod import and an inline `type` import.
+- **Plans in words** (`training/describe.test.ts`, on fixtures the contract's schemas accept):
+  sets × reps or a range, a held time or metres, @ RPE when set; only an RPE-based top or ramp
+  set reads 'Work up to a set of 5 @ RPE 7' with the recording instruction; every load kind in kg
+  and lb, each computed load exactly M1's `roundToIncrement` to `DEFAULT_LOAD_INCREMENT`, none
+  when it cannot be computed (RPE-based, from_e1rm before an estimate), percent_1rm from its own
+  snapshot, and an estimated 1RM never called measured; rests through `formatDuration`; segments
+  in km and mi (paces by `convertPace` or implied by `paceSecondsPer`, HR-zone or RPE targets,
+  repeat groups as one step); session lines for strength, timed and distance runs and every
+  other-session kind, with M2's time of day but never 'varies'. `describe.ts` imports only
+  domain modules and no package (`scripts/training-index-imports.test.ts`).
 
 ### Schema
 
@@ -282,16 +305,6 @@ Migrations, the CHECKs on closed vocabularies and the history guards on real Pos
   intact; `truncate programs cascade` and `withCommitted` purge a whole program. The unit test
   `scripts/history-guards.test.ts` keeps `truncate`, `session_replication_role` and
   `disable trigger` out of server code.
-- **Exercise library** (`tests/integration/training/exercise-seed.test.ts`): after the global
-  setup's migrate run every catalogue entry is stored exactly as defined (unilateral and default
-  seconds included); a rerun reports no change and leaves `updated_at` alone; a new key is
-  inserted and a changed entry updated in place, keeping its id; a removed key is retired,
-  readable by id, and restored with the same id; custom rows are never touched, cannot take a key
-  and are unique per owner by lower-cased name; measure, skill level, load type, reps, seconds and
-  primary muscles are CHECKed while pattern stays open; the catalogue survives `withCommitted`
-  (custom rows have no owner FK, so they survive it too and the test removes its own).
-  `scripts/catalogue-node.test.ts` also loads `migrate.ts` under plain Node, as `db:migrate` does,
-  and checks that the seed and both catalogue parts load with it.
 
 ### Programs
 
