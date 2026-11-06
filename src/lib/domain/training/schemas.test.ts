@@ -6,7 +6,11 @@ import {
 	customExerciseSchema,
 	customMetricsSchema,
 	decisionPlanSchema,
+	editSetSchema,
 	exerciseRefSchema,
+	finishWorkoutSchema,
+	LOG_LIMITS,
+	logSetSchema,
 	otherDetailsSchema,
 	PARTIAL_FIRST_WEEK,
 	plannedExerciseSchema,
@@ -14,7 +18,9 @@ import {
 	runSegmentSchema,
 	runSegmentsSchema,
 	sessionPlanSchema,
-	setPrescriptionSchema
+	setPrescriptionSchema,
+	startWorkoutSchema,
+	substitutionSchema
 } from './schemas';
 import type {
 	CustomExercise,
@@ -848,6 +854,111 @@ describe('customExerciseSchema', () => {
 		['a blank name', { name: '  ' }, 'name']
 	])('refuses %s', (_, change, path) => {
 		expect(Object.keys(errorsOf(customExerciseSchema, { ...minimal, ...change }))).toEqual([path]);
+	});
+});
+
+describe('the training log schemas', () => {
+	const values = {
+		weight: 100,
+		unit: 'kg',
+		reps: 5,
+		missedReps: 0,
+		seconds: null,
+		metres: null,
+		rpe: 8,
+		isWarmup: false,
+		isExtra: false,
+		isSkipped: false
+	};
+	const logged = {
+		clientMutationId: GOAL,
+		workoutClientId: COMMITMENT,
+		exerciseId: CUSTOM_ROW,
+		plannedExerciseLineageId: null,
+		exercisePosition: 1,
+		setIndex: 1,
+		...values,
+		performedAt: '2026-11-10T07:10:00.000Z'
+	};
+
+	it('read a set and its instant as a device sends them', () => {
+		expect(validate(logSetSchema, logged)).toEqual({
+			ok: true,
+			data: { ...logged, performedAt: new Date('2026-11-10T07:10:00.000Z') }
+		});
+		const offset = { ...logged, performedAt: '2026-11-10T08:10:00+01:00' };
+		expect(validate(logSetSchema, offset)).toMatchObject({
+			data: { performedAt: new Date('2026-11-10T07:10:00.000Z') }
+		});
+		expect(errorsOf(logSetSchema, { ...logged, performedAt: '10/11/2026' })).toEqual({
+			performedAt: 'Use a date and time'
+		});
+	});
+
+	it.each([
+		['no reps, time or distance', { reps: null }, { reps: 'Record reps, a time or a distance' }],
+		[
+			'missed reps without reps',
+			{ reps: null, seconds: 30, missedReps: 1 },
+			{ missedReps: 'Missed reps go with the reps done' }
+		],
+		['a third decimal', { weight: 100.125 }, { weight: 'Two decimals' }],
+		[
+			'more than the unit allows',
+			{ weight: LOG_LIMITS.weight.lb + 1, unit: 'lb' },
+			{ weight: `Up to ${LOG_LIMITS.weight.lb} lb` }
+		],
+		['an RPE off the half steps', { rpe: 8.2 }, { rpe: 'RPE between 1 and 10, in half steps' }]
+	])('refuse %s, logged or edited', (_, change, errors) => {
+		expect(errorsOf(logSetSchema, { ...logged, ...change })).toEqual(errors);
+		expect(errorsOf(editSetSchema, { ...values, ...change })).toEqual(errors);
+	});
+
+	it('take a skipped set with no amount, and a missed single as 0 reps and 1 missed', () => {
+		const skipped = { ...values, weight: null, reps: null, rpe: null, isSkipped: true };
+		expect(validate(editSetSchema, skipped).ok).toBe(true);
+		expect(validate(editSetSchema, { ...values, reps: 0, missedReps: 1 }).ok).toBe(true);
+	});
+
+	it('take an edit only with every value: it is absolute', () => {
+		const { rpe: _, ...partial } = values;
+		expect(errorsOf(editSetSchema, partial)).toEqual({ rpe: expect.any(String) });
+	});
+
+	it('start a workout, finish it with the summary it carries, and swap for another exercise', () => {
+		const start = {
+			clientId: GOAL,
+			kind: 'strength',
+			discipline: 'strength',
+			sessionType: 'strength',
+			title: 'Lower body',
+			plannedSessionId: null,
+			startedAt: '2026-11-10T07:00:00.000Z'
+		};
+		expect(validate(startWorkoutSchema, start).ok).toBe(true);
+		expect(errorsOf(startWorkoutSchema, { ...start, kind: 'swim' })).toEqual({
+			kind: 'Strength, run or other?'
+		});
+		const finish = { status: 'completed', finishedAt: '2026-11-10T08:00:00.000Z' };
+		expect(validate(finishWorkoutSchema, finish)).toEqual({
+			ok: true,
+			data: { status: 'completed', finishedAt: new Date(finish.finishedAt) }
+		});
+		expect(validate(finishWorkoutSchema, { ...finish, sessionRpe: null })).toMatchObject({
+			data: { sessionRpe: null }
+		});
+		const swap = {
+			clientMutationId: GOAL,
+			workoutClientId: COMMITMENT,
+			plannedExerciseLineageId: null,
+			fromExerciseId: CUSTOM_ROW,
+			toExerciseId: GOAL,
+			reason: 'equipment_unavailable'
+		};
+		expect(validate(substitutionSchema, swap).ok).toBe(true);
+		expect(errorsOf(substitutionSchema, { ...swap, toExerciseId: CUSTOM_ROW })).toEqual({
+			toExerciseId: 'Pick a different exercise'
+		});
 	});
 });
 
