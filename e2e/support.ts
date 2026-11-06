@@ -57,7 +57,7 @@ export function trackConsoleErrors(page: Page): string[] {
 }
 
 /**
- * Save a named full-viewport screenshot of a key screen for review (uploaded by CI).
+ * Save a named full-viewport screenshot of a key screen for review (uploaded by CI); returns it.
  *
  * Waits until the screen has settled: no view transition (a tab change cross-fades, see
  * (app)/+layout.svelte) and no finite animation still running. Otherwise `animations:
@@ -84,7 +84,7 @@ export async function captureScreen(page: Page, testInfo: TestInfo, name: string
 			{ message: 'the screen settles: no view transition or finite animation running' }
 		)
 		.toBe(true);
-	await page.screenshot({
+	return page.screenshot({
 		path: `test-results/screens/${testInfo.project.name}/${name}.png`,
 		animations: 'disabled'
 	});
