@@ -102,6 +102,8 @@ Projects (all `devices['iPhone 15 Pro']`):
 | `perf`            | Chromium | `perf.e2e.ts`, alone with one worker, after the functional suite                                |
 | `setup-webkit`    | WebKit   | `auth-webkit.setup.ts`: a session from the test-only route (CI or `E2E_WEBKIT=1`)               |
 | `iphone-webkit`   | WebKit   | every functional spec on that session (CI or `E2E_WEBKIT=1`; needs `playwright install webkit`) |
+| `serial-chromium` | Chromium | `*.serial.e2e.ts` one at a time, after the functional specs: they change the training profile   |
+| `serial-webkit`   | WebKit   | the same specs after `serial-chromium` (CI or `E2E_WEBKIT=1`)                                   |
 | `exclusive`       | Chromium | `*.exclusive.e2e.ts`, last and alone: account-wide actions                                      |
 
 ### Authentication
@@ -179,8 +181,9 @@ Specs:
   a 44 px hit area.
 - `plate-calculator.e2e.ts` — Train's lazy plate-calculator sheet (no service worker, chunks
   routed): its code is not in Train's load and arrives on the first tap, through the import
-  alone (no modulepreload tag, whose failure WebKit would keep), which opens the sheet once it
-  does (the row busy meanwhile); a failed fetch on hover says nothing, a failed tap shows
+  alone (no modulepreload tag, whose failure WebKit would keep: `build.modulePreload` in
+  `vite.config.ts` gives no lazy import one), which opens the sheet once it does (the row busy
+  meanwhile); a failed fetch on hover says nothing, a failed tap shows
   a Retry notice under the row (44 px target, axe in both themes) that a later failed prefetch
   leaves in place; Retry back online opens the sheet, offline the notice stays, a tap that fails
   again online reloads Train with `?tool=plates`, and leaving Train mid-retry stays left (WebKit).
@@ -219,6 +222,16 @@ Specs:
   and leaves the list, `maxlength` and `max` hold and are announced, keyboard focus survives a
   removed button, and the status region says "Added …", "Removed …" and every refusal, even
   the same words twice (a recorded live region shows them cleared and set again).
+- `profile-equipment.serial.e2e.ts` (serial: `resetTrainingProfile()` before each test;
+  `E2E_SERIAL_ALONE=1` runs it right after setup) — Profile lists Equipment, which opens
+  `/profile/[section]`; a save survives a reload and is in Postgres, and keyboard focus stays on
+  Save; offline, Save says so and keeps the edit; a failed editor chunk (never a modulepreload,
+  which WebKit would keep failing across the reload) shows Retry, which loads it; the editor
+  replaces its skeleton without moving anything; unsaved changes ask before leaving (link, tab
+  bar, Back); Back before the next screen has rendered (every browser made to start its view
+  transition 1.5 s late, as WebKit can) comes back to the saved section, never covered by the
+  overtaken screen; an unknown section is a 404. `a11y.e2e.ts` audits the screen and its discard
+  prompt in both themes.
 - `a11y.e2e.ts` — axe-core (`@axe-core/playwright`, WCAG 2.1 A/AA) on every screen (Security
   included; the signed-out sign-in and recovery screens too), the plate-calculator sheet and each
   `/design` component group, in the **dark and light** themes (Lighthouse only audits dark). The
