@@ -1,7 +1,9 @@
 /**
- * Inline SVG icon set: 24×24 grid, 1.75px round strokes, drawn for this product.
- * Each icon is a list of path data strings rendered by <Icon>. No icon font, no runtime fetch.
- * Paths prefixed with `fill:` are filled instead of stroked (small accents such as dots).
+ * SVG icon set: 24×24 grid, 1.75px round strokes, drawn for this product. Each icon is a list of
+ * path data strings; paths prefixed with `fill:` are filled instead of stroked (small accents
+ * such as dots). The single source of icon path data: `pnpm icons:sprite` turns it into
+ * sprite.svg, which <Icon> draws with <use>, so app code imports only its types (no icon path
+ * data in JavaScript). Run it after any change here and commit the result.
  */
 export const icons = {
 	today: [

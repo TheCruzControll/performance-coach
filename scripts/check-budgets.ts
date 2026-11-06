@@ -20,6 +20,7 @@ import { pathToFileURL } from 'node:url';
 import { gzipSync } from 'node:zlib';
 import { CATALOGUE_HEADER } from '../src/lib/domain/exercises/format.ts';
 import { PRELOADED_FONT_PATTERN } from '../src/lib/ui/fonts.ts';
+import { icons } from '../src/lib/ui/icons/icons.ts';
 
 export const BUDGETS = {
 	/** Initial JS per route (gzip), including the shared shell. */
@@ -383,6 +384,40 @@ const catalogueChunks = readdirSync(CLIENT, { recursive: true, encoding: 'utf8' 
 	.map((file) => file.split(path.sep).join('/'))
 	.filter((file) => file.endsWith('.js') && read(file).includes(CATALOGUE_HEADER));
 
+/**
+ * Icon placement: every icon draws from the SVG sprite (src/lib/ui/icons/sprite.svg, through
+ * <use>), so no client chunk may contain icon path data, and the sprite must ship as its own
+ * file (a data: URL would put it back in JS, and Chrome does not draw data: URLs in <use>). Each
+ * path in icons.ts is looked for as a quoted string, as a module or template would carry it.
+ */
+const iconsDrawing = new Map<string, string[]>();
+for (const [name, paths] of Object.entries(icons)) {
+	for (const d of paths.map((p) => p.replace(/^fill:/, ''))) {
+		iconsDrawing.set(d, [...(iconsDrawing.get(d) ?? []), name]);
+	}
+}
+// A quote, the path (optionally `fill:`-prefixed), then a quote (escaped inside a string).
+const ICON_PATH_LITERAL = new RegExp(
+	String.raw`["'${'`'}](?:fill:)?(${[...iconsDrawing.keys()]
+		.sort((a, b) => b.length - a.length)
+		.map((d) => d.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+		.join('|')})\\?["'${'`'}]`,
+	'g'
+);
+const iconProblems: string[] = [];
+const clientJs = readdirSync(`${CLIENT}/_app/immutable`, { recursive: true, encoding: 'utf8' })
+	.filter((f) => f.endsWith('.js'))
+	.map((f) => `_app/immutable/${f}`);
+for (const file of clientJs) {
+	const names = new Set(
+		[...read(file).matchAll(ICON_PATH_LITERAL)].flatMap((m) => iconsDrawing.get(m[1]!) ?? [])
+	);
+	if (names.size) iconProblems.push(`${file}: path data of ${[...names].join(', ')}`);
+}
+if (!readdirSync(`${CLIENT}/_app/immutable/assets`).some((f) => /^sprite\.[\w-]+\.svg$/.test(f))) {
+	iconProblems.push('the icon sprite is not a file in the build (inlined as a data: URL?)');
+}
+
 const lines = [
 	'| Route | Initial JS (gzip) | of which awaited by `load` | Route CSS (gzip) | Preloaded fonts | Status |',
 	'| --- | ---: | ---: | ---: | ---: | :---: |',
@@ -409,7 +444,8 @@ const lines = [
 		.join(', ')}: ${webauthnProblems.length ? 'FAIL' : 'pass'}`,
 	`Validation (zod, profile schemas): on demand only, never in initial JS: ${validationProblems.length ? 'FAIL' : 'pass'}`,
 	`Profile sections: no editor's CSS on a section page (${sectionRoutes.map((r) => `\`${r}\``).join(', ')}; ${editorKeys.length} editors, ${keptOut.size} of their stylesheets left to load with them): ${sectionProblems.length ? 'FAIL' : 'pass'}`,
-	`Exercise catalogue (server-only): in no client chunk: ${catalogueChunks.length ? 'FAIL' : 'pass'}`
+	`Exercise catalogue (server-only): in no client chunk: ${catalogueChunks.length ? 'FAIL' : 'pass'}`,
+	`Icon paths in JS (every icon draws from the SVG sprite): ${iconProblems.length ? 'FAIL' : 'pass'}`
 ];
 console.log(lines.join('\n'));
 
@@ -442,6 +478,10 @@ if (catalogueChunks.length > 0) {
 	);
 }
 
+if (iconProblems.length > 0) {
+	console.error(`\nIcon placement failed:\n  - ${iconProblems.join('\n  - ')}`);
+}
+
 const failed = rows.filter((r) => !r.ok);
 if (
 	failed.length > 0 ||
@@ -449,7 +489,8 @@ if (
 	webauthnProblems.length > 0 ||
 	validationProblems.length > 0 ||
 	sectionProblems.length > 0 ||
-	catalogueChunks.length > 0
+	catalogueChunks.length > 0 ||
+	iconProblems.length > 0
 ) {
 	const what = [
 		...failed.map((r) => r.route),
@@ -457,7 +498,8 @@ if (
 		...(webauthnProblems.length ? ['WebAuthn library placement'] : []),
 		...(validationProblems.length ? ['validation placement'] : []),
 		...(sectionProblems.length ? ['profile section CSS'] : []),
-		...(catalogueChunks.length ? ['catalogue placement'] : [])
+		...(catalogueChunks.length ? ['catalogue placement'] : []),
+		...(iconProblems.length ? ['icon paths in JS'] : [])
 	];
 	console.error(`\nbudgets: FAILED (${what.join(', ')})`);
 	process.exit(1);

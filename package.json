@@ -40,7 +40,8 @@
 		"auth:reset-owner": "node scripts/auth-reset-owner.ts",
 		"budgets": "node scripts/check-budgets.ts",
 		"lighthouse": "node scripts/lighthouse.ts",
-		"icons": "node scripts/generate-icons.ts"
+		"icons": "node scripts/generate-icons.ts",
+		"icons:sprite": "node scripts/generate-icon-sprite.ts"
 	},
 	"dependencies": {
 		"@simplewebauthn/server": "^14.0.3",
