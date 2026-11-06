@@ -280,6 +280,41 @@ for (const id of WEBAUTHN_ROUTES) {
 		webauthnProblems.push(`${id}: cannot load @simplewebauthn/browser`);
 }
 
+/**
+ * Validation placement: zod and the training-profile schemas (src/lib/domain/profile/schemas.ts)
+ * load on demand (src/lib/client/profile-form.ts) and are never part of a route's initial JS,
+ * including what its universal `load` awaits. Chunks are identified by string literals: zod's
+ * base type name, and messages only the schemas file contains (keep them out of UI copy). When
+ * the build has a chunk for the schemas, each literal must still be found in it or its imports.
+ */
+const VALIDATION_SIGNATURES = [
+	'$ZodType',
+	'Pick an event or a general goal',
+	'Clear your lifts, or untick'
+];
+const isValidationChunk = (file: string) =>
+	VALIDATION_SIGNATURES.some((sig) => read(file).includes(sig));
+const validationProblems: string[] = [];
+for (const route of routes) {
+	if (!route.page) continue;
+	const ids = [...route.page.layouts, route.page.leaf].filter((n): n is number => n !== undefined);
+	const initial = staticClosure([
+		...client.imports,
+		...ids.flatMap((id) => nodes[id]!.imports),
+		...ids.flatMap((id) => loadImports(nodes[id]!.universal))
+	]);
+	if ([...initial].some(isValidationChunk)) {
+		validationProblems.push(`${route.id}: zod or the profile schemas are in the initial JS`);
+	}
+}
+const schemasChunk = vite['src/lib/domain/profile/schemas.ts']?.file;
+if (schemasChunk) {
+	const shipped = [...staticClosure([schemasChunk])].map(read).join('\n');
+	for (const sig of VALIDATION_SIGNATURES.filter((s) => !shipped.includes(s))) {
+		validationProblems.push(`"${sig}" is not in the schemas chunk: update VALIDATION_SIGNATURES`);
+	}
+}
+
 const lines = [
 	'| Route | Initial JS (gzip) | of which awaited by `load` | Route CSS (gzip) | Preloaded fonts | Status |',
 	'| --- | ---: | ---: | ---: | ---: | :---: |',
@@ -303,7 +338,8 @@ const lines = [
 	`@simplewebauthn/browser: on demand only, never in initial JS; loadable from ${webauthnRoutes
 		.sort()
 		.map((r) => `\`${r}\``)
-		.join(', ')}: ${webauthnProblems.length ? 'FAIL' : 'pass'}`
+		.join(', ')}: ${webauthnProblems.length ? 'FAIL' : 'pass'}`,
+	`Validation (zod, profile schemas): on demand only, never in initial JS: ${validationProblems.length ? 'FAIL' : 'pass'}`
 ];
 console.log(lines.join('\n'));
 
@@ -322,12 +358,22 @@ if (webauthnProblems.length > 0) {
 	console.error(`\nWebAuthn library placement failed:\n  - ${webauthnProblems.join('\n  - ')}`);
 }
 
+if (validationProblems.length > 0) {
+	console.error(`\nValidation placement failed:\n  - ${validationProblems.join('\n  - ')}`);
+}
+
 const failed = rows.filter((r) => !r.ok);
-if (failed.length > 0 || prefixProblems.length > 0 || webauthnProblems.length > 0) {
+if (
+	failed.length > 0 ||
+	prefixProblems.length > 0 ||
+	webauthnProblems.length > 0 ||
+	validationProblems.length > 0
+) {
 	const what = [
 		...failed.map((r) => r.route),
 		...(prefixProblems.length ? ['CSS prefixes'] : []),
-		...(webauthnProblems.length ? ['WebAuthn library placement'] : [])
+		...(webauthnProblems.length ? ['WebAuthn library placement'] : []),
+		...(validationProblems.length ? ['validation placement'] : [])
 	];
 	console.error(`\nbudgets: FAILED (${what.join(', ')})`);
 	process.exit(1);
