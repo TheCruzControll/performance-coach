@@ -1,6 +1,12 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
-import { expect, type APIRequestContext, type Page, type TestInfo } from '@playwright/test';
+import {
+	expect,
+	type APIRequestContext,
+	type ConsoleMessage,
+	type Page,
+	type TestInfo
+} from '@playwright/test';
 import { getTableName, is } from 'drizzle-orm';
 import { PgTable } from 'drizzle-orm/pg-core';
 import pg from 'pg';
@@ -93,11 +99,17 @@ export async function eventually<T>(fn: () => Promise<T>, timeoutMs = 10_000): P
 	}
 }
 
-/** Collect console errors and uncaught exceptions for the lifetime of a page. */
-export function trackConsoleErrors(page: Page): string[] {
+/**
+ * Collect console errors and uncaught exceptions for the lifetime of a page. `expected` picks
+ * out a console error the test causes on purpose, which is then left out.
+ */
+export function trackConsoleErrors(
+	page: Page,
+	expected: (msg: ConsoleMessage) => boolean = () => false
+): string[] {
 	const errors: string[] = [];
 	page.on('console', (msg) => {
-		if (msg.type() === 'error') errors.push(`console.error: ${msg.text()}`);
+		if (msg.type() === 'error' && !expected(msg)) errors.push(`console.error: ${msg.text()}`);
 	});
 	page.on('pageerror', (err) => errors.push(`pageerror: ${err.message}`));
 	return errors;

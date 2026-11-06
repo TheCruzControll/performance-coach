@@ -74,8 +74,20 @@ describe('goalDraft', () => {
 			focus: '',
 			measure: '',
 			targetDate: '',
-			notes: ''
+			notes: '',
+			status: 'active'
 		} satisfies GoalDraft);
+	});
+
+	it('keeps a goal’s status, so a save posts it back as stored unless it was changed', () => {
+		for (const status of ['paused', 'achieved', 'dropped'] as const) {
+			const draft = goalDraft(stored({ status, priority: status === 'paused' ? 1 : null }));
+			expect(draft.status).toBe(status);
+			const result = validate(SCHEMAS.goal, draft);
+			expect(result.ok && result.data.status, status).toBe(status);
+		}
+		expect(newGoal().status).toBe('active');
+		expect(newGoal('general').status).toBe('active');
 	});
 
 	it('round-trips: a new goal filled in saves as the goal that edits as the same draft', () => {
@@ -101,7 +113,8 @@ describe('goalDraft', () => {
 			eventDate: '2027-03-14',
 			weightClass: '−71 kg',
 			targetPerformance: null,
-			requirements: null
+			requirements: null,
+			status: 'active'
 		});
 		const goal = stored({ ...result.data, focus: null, measure: null, targetDate: null });
 		expect(goalDraft(goal)).toEqual({ ...filled, id: goal.id });
@@ -133,7 +146,8 @@ describe('goalDraft', () => {
 				notes: 'Through fight camp',
 				focus: 'Hold squat and deadlift',
 				measure: 'Top sets at RPE 8 stay within 5%',
-				targetDate: '2027-06-30'
+				targetDate: '2027-06-30',
+				status: 'active'
 			}
 		});
 	});

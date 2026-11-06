@@ -21,6 +21,8 @@ export interface EditorProps<T> {
 	value: T;
 	errors?: FieldErrors;
 	context: SectionContext;
+	/** Profile: the section's whole story, such as a goal's status and past goals. */
+	manage?: boolean;
 }
 
 /** One section, ready to edit. */

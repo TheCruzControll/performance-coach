@@ -3,7 +3,7 @@
  * shows under its title. No Intl: a stored date needs no formatter, and building one is
  * measurable hydration cost on a phone (docs/performance.md).
  */
-import type { Discipline } from '#lib/domain/profile/catalog.ts';
+import type { Discipline, GoalStatus } from '#lib/domain/profile/catalog.ts';
 import type { GoalInput } from '#lib/domain/profile/schemas.ts';
 import type { Goal } from '#lib/domain/profile/types.ts';
 
@@ -28,6 +28,8 @@ export interface GoalDraft {
 	measure: string;
 	targetDate: string;
 	notes: string;
+	/** Profile changes it in the sheet; elsewhere it is posted back as stored. */
+	status: GoalStatus;
 }
 
 /** A blank goal of either kind: an event unless asked for a general goal. */
@@ -45,7 +47,8 @@ export function newGoal(kind: GoalDraft['kind'] = 'event'): GoalDraft {
 		focus: '',
 		measure: '',
 		targetDate: '',
-		notes: ''
+		notes: '',
+		status: 'active'
 	};
 }
 
@@ -66,7 +69,8 @@ export function goalDraft(goal: Goal): GoalDraft {
 		focus: text(goal.focus),
 		measure: text(goal.measure),
 		targetDate: text(goal.targetDate),
-		notes: text(goal.notes)
+		notes: text(goal.notes),
+		status: goal.status
 	};
 }
 
