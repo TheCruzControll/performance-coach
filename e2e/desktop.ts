@@ -243,3 +243,35 @@ export async function pixelAt(
 		{ png: shot.toString('base64'), x, y }
 	);
 }
+
+/** A length token (e.g. `--rail-width: 5.5rem`) in CSS pixels, as this page resolves it. */
+export const tokenPx = (page: Page, token: string) =>
+	page.evaluate((name) => {
+		const probe = document.createElement('div');
+		probe.style.width = `var(${name})`;
+		document.body.append(probe);
+		const width = probe.getBoundingClientRect().width;
+		probe.remove();
+		return width;
+	}, token);
+
+/**
+ * The width the page lays out in: the window's, less the gutter base.css keeps for a classic
+ * scrollbar (`scrollbar-gutter: stable`), which headless Chromium reserves without drawing.
+ */
+export const layoutWidth = (page: Page) =>
+	page.evaluate(() => document.documentElement.getBoundingClientRect().width);
+
+/**
+ * In the shell from 1024 px, `<main>` is centred in the area right of the rail (both gaps within
+ * 1 px), not in the window, and `width` wide: the column the screen declares, read from its
+ * token, e.g. `await tokenPx(page, '--content-readable')` for a readable screen.
+ */
+export async function expectMainCentred(page: Page, width: number): Promise<void> {
+	const rail = await boxOf(page.getByRole('navigation', { name: 'Primary' }));
+	const main = await boxOf(page.locator('main#main'));
+	const left = main.x - (rail.x + rail.width);
+	const right = (await layoutWidth(page)) - (main.x + main.width);
+	expect(Math.abs(left - right), `gaps beside main: ${left} and ${right}`).toBeLessThanOrEqual(1);
+	expect(Math.abs(main.width - width), `main is ${main.width}px wide`).toBeLessThanOrEqual(1);
+}
