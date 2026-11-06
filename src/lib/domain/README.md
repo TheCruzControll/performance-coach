@@ -18,6 +18,8 @@ formulas. A slice that adds a reusable domain function adds it here.
   to one exercise key, or null rather than a guess. Server-only at runtime; `import type` is fine.
 - `src/lib/domain/programming/index.ts`: the generator's public entry point, below. Server-only
   at runtime, like the catalogue.
+- `src/lib/domain/analytics/*` (M6), by path: there is no index file. Server-only at runtime
+  except `periods.ts` and `types.ts` (`scripts/analytics-client-imports.test.ts`).
 
 ## Conventions
 
@@ -177,3 +179,134 @@ so services and the M5 coach's tools call the same functions and get the same pl
   can tell a changed profile or library from a retry.
 - `checkWeek` (above) and `alternativesFor(exerciseKey, input)`: the swaps that keep an
   exercise's intent, best first, with the blocked ones and why.
+
+## M6: analytics (`analytics/`)
+
+Every number on Progress, in the reviews and in the coach's analytics tools comes from these
+modules: pure, with today always an argument, imported by path (no index file), no zod and no
+runtime import of `programming/` or `exercises/`. Only `periods.ts` and `types.ts` may reach the
+browser (`CLIENT_SAFE` in `scripts/analytics-client-imports.test.ts`); screens receive the rest's
+results. Any change to a definition bumps `ANALYTICS_VERSION` (`version.ts`), which stored reviews
+keep.
+
+### Periods (`analytics/periods.ts`, client-safe)
+
+A period is whole Monday-to-Sunday weeks that have ended, with today's week kept apart, so
+totals, averages, trends and comparisons never set part of a week against whole ones.
+
+- `PERIODS` (`4w`, `12w`, `26w`, `52w`, `all`), `PERIOD_LABEL` and `DEFAULT_PERIOD` (`12w`).
+  `parsePeriod(value)` gives the default for anything unknown.
+- `periodWindow(today, period, firstActivityOn)` → the period, its `weeks`, the week
+  `inProgress`, the `previous` window and the `bucket`:
+  - `weeks`: `{ from, to, count }`, the complete weeks ending the Sunday before today's week.
+    For `all` they start on the Monday of the first activity's week, and are null before a first
+    full week (a new owner sees only the week in progress).
+  - `inProgress`: `{ weekStart, through: today, days }`, 1 on a Monday to 7 on a Sunday; never
+    part of `weeks`.
+  - `previous`: as many complete weeks, ending the day before `weeks`; null for `all`.
+  - `bucket`: `week`, or `month` once `all` holds more than `MONTHLY_AFTER_WEEKS` (104) weeks.
+- `weekStarts(range)` → each Monday of a range, oldest first.
+- `trendWindow(window)` → the weeks a trend verdict reads: the period's own when it is at least
+  `TREND_MIN_WEEKS` (12) weeks or `all`, otherwise the last 12 complete weeks, with
+  `sameAsPeriod: false` and the label 'Trend over the last 12 weeks' for the tile to show.
+- `sameDaysLastWeek(inProgress)` → last week's Monday to the same weekday, for 'This week so
+  far: 6,200 kg · 5,900 kg by Wednesday last week'.
+
+`types.ts` holds the shared shapes: `MetricKind` (measured, estimated, calculated, reported),
+`Availability` (`{ ready: true }` or what it has and needs), `Bucket`, `SeriesPoint`
+`{ at, value, inProgress }`, `MetricValue`, `Direction`, `Change` and `Comparison`.
+
+### Series and statistics (`analytics/series.ts`)
+
+- `byDay`, `byWeek` (through M3's `weekStartOf`) and `byMonth`. The first two group `Timed`
+  values `{ at, value }` on the owner's calendar, summed unless given another `Reduce` (`mean`,
+  `median`, a best). `byMonth` regroups weekly points by the month of each week's Thursday, so a
+  month holds 4 or 5 whole weeks; its value is their mean (the axis keeps weekly units) unless
+  told to sum.
+- `fillWeeks(buckets, weeks, 'zero' | 'gap', inProgress?)` → one `SeriesPoint` per complete
+  week, then the week in progress marked `inProgress`. A gap (null) is no data, not zero: fill
+  `zero` only for counts of nothing.
+- `totalOf`, `averageOf` and `rollingMedian(points, window)` leave out the point in progress and
+  gaps; a rolling median is null until its window is full.
+- `mean`, `median`, `mad` (unscaled; × 1.4826 estimates an SD), `sd` (sample, n − 1) and `total`:
+  null without enough values, exactly 0 spread for a constant series, `RangeError` for NaN or an
+  infinity.
+- `compare(current, previous, direction)` → `{ delta, pct, change }`. All null, never NaN or
+  Infinity, when the previous value is missing or 0: a period with nothing in it is not
+  something to compare with. `change` is better or worse by the metric's direction, up or down
+  when neither is better, or same.
+- `soFar(values, inProgress, { timeZone, direction, reduce? })` → this week so far against the
+  same days of last week, values on other days ignored, with the comparison and last week's days.
+
+### Trends (`analytics/trend.ts`)
+
+Not built yet (m6/02, trend-classifier).
+
+### Strength (`analytics/strength.ts`)
+
+Not built yet (m6/03, strength-analytics).
+
+### Prescribed against actual (`analytics/prescribed.ts`)
+
+Not built yet (m6/04, prescribed-vs-actual).
+
+### Running (`analytics/running.ts`)
+
+Not built yet (m6/05, running-analytics).
+
+### Adherence (`analytics/adherence.ts`)
+
+Not built yet (m6/06, adherence-analytics).
+
+### Workload (`analytics/workload.ts`)
+
+Not built yet (m6/07, workload-analytics).
+
+### Metric catalogue (`analytics/metrics.ts`)
+
+Not built yet (m6/08, metric-catalogue).
+
+### Overview (`analytics/overview.ts`)
+
+Not built yet (m6/08, metric-catalogue).
+
+## M6: reviews and progression (`programming/`)
+
+Weekly and cycle reviews and the next block, built on the analytics above. Server-only at
+runtime, like all of `programming/`.
+
+### Progression from results (`programming/results.ts`, `rules/results.ts`)
+
+Not built yet (m6/12, progression-rules).
+
+### Review contract (`programming/review/snapshot.ts`, `brief.ts`, `digest.ts`)
+
+Not built yet (m6/24, review-snapshot).
+
+### Weekly review (`programming/review/weekly.ts`)
+
+Not built yet (m6/25, weekly-review-compose).
+
+### Next week (`programming/review/next-week.ts`)
+
+Not built yet (m6/26, next-week-adjustments).
+
+### Cycle review (`programming/review/cycle.ts`, `cycle-snapshot.ts`)
+
+Not built yet (m6/27, cycle-review-compose).
+
+### Directives (`programming/review/directives.ts`)
+
+Not built yet (m6/28, cycle-directives).
+
+### Next-block dates (`programming/next-block/dates.ts`)
+
+Not built yet (m6/28, cycle-directives).
+
+### Next-block input (`programming/next-block/input.ts`)
+
+Not built yet (m6/29, next-block-input).
+
+### Next block (`programming/next-block/generate.ts`)
+
+Not built yet (m6/30, next-block-generator).

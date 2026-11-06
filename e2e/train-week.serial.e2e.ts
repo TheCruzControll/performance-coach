@@ -10,6 +10,14 @@ import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { addDays } from '../src/lib/domain/calendar';
 import { longDate, shortDate } from '../src/lib/ui/program/words';
+import {
+	BELOW_DESKTOP_WIDTH,
+	DESKTOP,
+	DESKTOP_WIDTHS,
+	expectMainCentred,
+	expectNoSideScroll,
+	tokenPx
+} from './desktop';
 import { PROGRAM_TZ, seedProgram, type SeededProgram } from './program-support';
 import { captureScreen, gotoHydrated, resetTrainingProfile, trackConsoleErrors } from './support';
 
@@ -306,18 +314,40 @@ test.describe('a program this week', () => {
 		await expect(dayOf(page, seeded.today)).toHaveAttribute('aria-checked', 'true');
 	});
 
-	test('on a desktop window the week sits centred at a readable width', async ({
-		page
-	}, testInfo) => {
-		await page.setViewportSize({ width: 1440, height: 900 });
-		await gotoHydrated(page, '/train');
-		const main = await page.locator('main').boundingBox();
-		expect(main!.width).toBeLessThanOrEqual(34 * 16);
-		expect(Math.abs(main!.x - (1440 - main!.x - main!.width))).toBeLessThanOrEqual(1);
-		expect(
-			await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)
-		).toBe(true);
-		await captureScreen(page, testInfo, 'train-week-desktop');
+	test.describe('on a desktop window', () => {
+		test.use(DESKTOP);
+
+		// Train is a readable screen (it declares no data-layout): the shell's readable column,
+		// centred beside the rail, with the week inside it and nothing scrolling sideways.
+		test('the week sits in the readable column, centred beside the rail', async ({
+			page
+		}, testInfo) => {
+			await gotoHydrated(page, '/train');
+			const readable = await tokenPx(page, '--content-readable');
+			const parts = [
+				page.getByTestId('program-header'),
+				strip(page),
+				page.getByTestId('day-sessions'),
+				page.getByTestId('baseline-brief')
+			];
+			for (const width of DESKTOP_WIDTHS) {
+				await page.setViewportSize({ width, height: 900 });
+				await expectMainCentred(page, readable);
+				const main = (await page.locator('main#main').boundingBox())!;
+				for (const part of parts) {
+					const box = (await part.boundingBox())!;
+					expect(box.x, `${part} at ${width}px`).toBeGreaterThanOrEqual(main.x - 1);
+					expect(box.x + box.width, `${part} at ${width}px`).toBeLessThanOrEqual(
+						main.x + main.width + 1
+					);
+				}
+				await expectNoSideScroll(page);
+			}
+			await page.setViewportSize({ width: BELOW_DESKTOP_WIDTH, height: 900 });
+			await expectNoSideScroll(page);
+			await page.setViewportSize(DESKTOP.viewport);
+			await captureScreen(page, testInfo, 'train-week-desktop');
+		});
 	});
 });
 
