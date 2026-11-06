@@ -5,7 +5,7 @@ description: >-
   bugs in code: uncommitted changes, the current branch, a PR (number or URL),
   a commit, a diff, or named files. E.g. "review this", "review my changes",
   "review PR 123", "review this branch/commit/file", "check my code", "is this
-  ready to merge", "sol loop", "sol review". GPT Sol reviews (Claude Fable 5.1 in Claude
+  ready to merge", "sol loop", "sol review". GPT Sol reviews (Claude Opus 5.5 in Claude
   Code without T3); you verify each
   finding, make minimal fixes, and loop until Sol approves (review only for
   other people's PRs, merged commits, or when asked). Prefer this over other
@@ -21,7 +21,7 @@ metadata:
 
 The user's main code reviewer, adapted from tstack's sol-loop. tl;dr: use
 OpenAI's GPT Sol to review code in a loop, before or after filing a pull
-request. In Claude Code without T3, Claude Fable 5.1 takes Sol's place.
+request. In Claude Code without T3, Claude Opus 5.5 takes Sol's place.
 
 Make the most minimal possible changes to appease the Sol reviewers. Be careful
 of scope creep and don't be scared to push back.
@@ -123,14 +123,13 @@ vendor's CLI from a single-vendor harness.
 - Codex (or any harness with a native Sol subagent): use the native Sol
   subagent at the chosen effort and keep its ID. Pick the newest Sol it lists.
 - Claude Code without T3 (terminal, Desktop, cloud): the reviewer is Claude
-  Fable 5.1 (`claude-fable-5-1`), Anthropic's most capable model and the
-  counterpart to Sol. Start it with the Agent tool: `model: "fable"`, `effort`
+  Opus 5.5 (`claude-opus-5-5`). Start it with the Agent tool: `model: "opus"`, `effort`
   as chosen above (the skill sets it explicitly), `subagent_type:
   "general-purpose"`, `run_in_background: false`. Use a fresh Agent call each
-  round with the round 1 brief plus the ledger, as in section 4. If `fable` is
-  not available on the account, use `opus` and record the substitution. A reply
+  round with the round 1 brief plus the ledger, as in section 4. Use another
+  model only if the user names one (e.g. `fable` for Claude Fable 5.1). A reply
   is a non-empty final message with a `VERDICT:` line; anything else is a
-  failure. Record model `Claude Fable 5.1` (or what ran) and the effort.
+  failure. Record model `Claude Opus 5.5` (or what ran) and the effort.
 
 Everywhere below, "Sol" means whichever reviewer this section picked.
 
