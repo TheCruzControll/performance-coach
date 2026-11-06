@@ -45,6 +45,12 @@ shared component costs every route, Security included.
   ceremony load on demand with the other sheets and passkey helpers; `/` and
   `/recover/passkey` gain 0.1 KB (one error mapping in those helpers).
 
+- **`/design` renders with the CSS of its Buttons group only** (13.8 → 6.7 KB). Its Inputs, Data
+  and Feedback groups loaded their JS with their tab, but SvelteKit still linked their CSS into
+  the page as render-blocking stylesheets, because the server build could reach their imports.
+  The server only renders Buttons, so those imports are now left out of its build
+  (`import.meta.env.SSR`) and each group's CSS loads with its tab; `/design` JS gains 23 B.
+
 - **`@simplewebauthn/browser` (≈5 KB gzip) is never in initial JS.** It is imported on demand by
   `src/lib/client/passkeys.ts`; `pnpm budgets` fails if it appears in any route's initial JS or
   is reachable (static or dynamic imports) from any route other than `/`, `/setup`,
