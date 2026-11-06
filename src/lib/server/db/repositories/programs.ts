@@ -1,6 +1,7 @@
 /**
  * Program persistence (schema/programs.ts, schema/prescriptions.ts; ADR 0010): a new program's
- * whole tree in bulk, its decisions, and any version read back through queries/programs.ts.
+ * whole tree in bulk, its decisions, and any version, week or session read back through
+ * queries/programs.ts.
  * Plain data access: validation and the store's rules belong to src/lib/server/services/programs.
  *
  * Rows arrive with their ids and lineages already assigned, so each table takes one multi-row
@@ -8,7 +9,21 @@
  */
 import { and, asc, eq, sql } from 'drizzle-orm';
 import { alias, type PgTable } from 'drizzle-orm/pg-core';
-import { versionTree, type VersionTreeRows } from '../queries/programs';
+import type { IsoDate } from '../../../domain/calendar';
+import {
+	completedLineages,
+	currentProgram,
+	plannedSessionsInRange,
+	sessionByLineage,
+	sessionChildren,
+	sessionsWithChildren,
+	upcomingSessions,
+	versionTree,
+	type SessionChildRows,
+	type SessionLineageRow,
+	type SessionRow,
+	type VersionTreeRows
+} from '../queries/programs';
 import {
 	plannedExercises,
 	plannedRunSegments,
@@ -25,7 +40,19 @@ import {
 } from '../schema';
 import type { Executor } from '../types';
 
-export type { VersionTreeRows } from '../queries/programs';
+export type {
+	SessionChildRows,
+	SessionLineageRow,
+	SessionRow,
+	VersionTreeRows
+} from '../queries/programs';
+
+/** A version's blocks and weeks, without their sessions. */
+export type VersionOutlineRows = Pick<VersionTreeRows, 'blocks' | 'weeks'>;
+
+/** The children a session's one-line description reads: no set prescriptions. */
+export type LineChildRows = Omit<SessionChildRows, 'sets'>;
+export type SessionLineRows = LineChildRows & { sessions: SessionRow[] };
 
 type Insert<T extends PgTable> = T['$inferInsert'];
 
@@ -153,6 +180,71 @@ export function createProgramsRepository(db: Executor) {
 				segments: await q.segments,
 				details: await q.details
 			};
+		},
+
+		/** The owner's active program with its current version, or with version `number`. */
+		async currentProgram(ownerId: string, number?: number): Promise<VersionRow | null> {
+			const [row] = await currentProgram(db, ownerId, number);
+			return row ?? null;
+		},
+
+		async versionOutline(versionId: string): Promise<VersionOutlineRows> {
+			const q = versionTree(db, versionId);
+			return { blocks: await q.blocks, weeks: await q.weeks };
+		},
+
+		async sessionsWithChildren(weekIds: string[]): Promise<SessionLineRows> {
+			const q = sessionsWithChildren(db, weekIds);
+			return {
+				sessions: await q.sessions,
+				exercises: await q.exercises,
+				segments: await q.segments,
+				details: await q.details
+			};
+		},
+
+		async plannedSessionsInRange(
+			versionId: string,
+			from: IsoDate,
+			to: IsoDate
+		): Promise<SessionRow[]> {
+			return plannedSessionsInRange(db, versionId, from, to);
+		},
+
+		async upcomingSessions(
+			versionId: string,
+			after: IsoDate,
+			limit: number
+		): Promise<SessionRow[]> {
+			return upcomingSessions(db, versionId, after, limit);
+		},
+
+		/** What these sessions' lines read: their exercises, segments and details, not their sets. */
+		async lineChildren(sessionIds: string[]): Promise<LineChildRows> {
+			if (!sessionIds.length) return { exercises: [], segments: [], details: [] };
+			const q = sessionChildren(db, sessionIds);
+			return { exercises: await q.exercises, segments: await q.segments, details: await q.details };
+		},
+
+		/** Every child of these sessions, their set prescriptions included. */
+		async sessionChildren(sessionIds: string[]): Promise<SessionChildRows> {
+			const lines = await this.lineChildren(sessionIds);
+			return {
+				...lines,
+				sets: sessionIds.length ? await sessionChildren(db, sessionIds).sets : []
+			};
+		},
+
+		async sessionByLineage(versionId: string, lineage: string): Promise<SessionLineageRow | null> {
+			const [row] = await sessionByLineage(db, versionId, lineage);
+			return row ?? null;
+		},
+
+		/** The lineages among `lineages` that a completed workout of the owner's was logged against. */
+		async completedLineages(ownerId: string, lineages: string[]): Promise<Set<string>> {
+			if (!lineages.length) return new Set();
+			const rows = await completedLineages(db, ownerId, lineages);
+			return new Set(rows.flatMap((row) => (row.lineage ? [row.lineage] : [])));
 		},
 
 		/** The decisions that produced a version, in the order they were written. */

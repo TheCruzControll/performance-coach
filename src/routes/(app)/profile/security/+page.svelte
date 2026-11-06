@@ -11,7 +11,7 @@
 	import PageHeader from '#lib/ui/components/PageHeader.svelte';
 	import Section from '#lib/ui/components/Section.svelte';
 	import Surface from '#lib/ui/components/Surface.svelte';
-	import { shortDate, timeAgo } from '#lib/ui/time.ts';
+	import { shortDate } from '#lib/ui/time.ts';
 	import { toast } from '#lib/ui/toast.svelte.ts';
 	import type { SheetRequest } from './SecuritySheets.svelte';
 	import type { PageProps } from './$types';
@@ -23,13 +23,6 @@
 	const now = $derived(new Date(data.now));
 	const others = $derived(data.sessions.filter((s) => !s.current).length);
 	const onlyPasskey = $derived(data.passkeys.length <= 1);
-
-	const METHOD: Record<string, string> = {
-		setup: 'set up',
-		passkey: 'passkey',
-		recovery: 'recovery code',
-		test: 'test session'
-	};
 
 	// ---- add ------------------------------------------------------------------------------
 	// The passkey and sign-out helpers are fetched on intent too: this screen's initial JS
@@ -152,7 +145,7 @@
 							</p>
 							<p class="meta">
 								{passkey.lastUsedAt
-									? `Last used ${timeAgo(passkey.lastUsedAt, now)}`
+									? `Last used ${passkey.lastUsedAgo ?? shortDate(passkey.lastUsedAt, now)}`
 									: 'Not used to sign in yet'}
 							</p>
 						</div>
@@ -228,8 +221,10 @@
 								{:else if recovery}<Badge tone="warning">Recovery sign-in</Badge>{/if}
 							</p>
 							<p class="meta">
-								{s.current ? 'Active now' : `Active ${timeAgo(s.lastSeenAt, now)}`} · Signed in
-								{shortDate(s.createdAt, now)} with {METHOD[s.method] ?? s.method}
+								{s.current
+									? 'Active now'
+									: `Active ${s.lastSeenAgo ?? shortDate(s.lastSeenAt, now)}`}
+								· Signed in {shortDate(s.createdAt, now)} with {s.signedInWith}
 							</p>
 							{#if recovery}
 								<p class="meta">
@@ -313,7 +308,7 @@
 							<div class="main">
 								<p class="title small">{event.label}</p>
 								<p class="meta">
-									{event.device ? `${event.device} · ` : ''}{timeAgo(event.at, now)}
+									{event.device ? `${event.device} · ` : ''}{event.ago ?? shortDate(event.at, now)}
 								</p>
 							</div>
 						</li>
