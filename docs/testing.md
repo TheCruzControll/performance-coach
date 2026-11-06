@@ -83,10 +83,6 @@ the CSRF Origin check, User-Agent and passkey labels, the rate-limit client netw
   sign-out bucket that still lets a live session sign out. A controllable clock replaces waiting.
 - **Logs:** quiet by default (`LOG_LEVEL=silent` via the project's `env`); run
   `LOG_LEVEL=debug pnpm test:integration` to see them.
-- **One query per connection:** `tests/integration/one-query-per-client.ts` fails any test that
-  sends a query to a pg client still running one (a `Promise.all` over one transaction), or during
-  which pg prints its deprecation warning for that. Its own test proves it catches both and lets
-  the pool run queries together.
 
 ## End-to-end tests
 
