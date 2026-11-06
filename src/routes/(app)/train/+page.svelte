@@ -1,79 +1,128 @@
 <script lang="ts">
-	import { onMount, type Component, type ComponentProps } from 'svelte';
-	import { replaceState } from '$app/navigation';
+	import { onMount, type ComponentProps } from 'svelte';
+	import { goto, invalidateAll, replaceState } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import { page } from '$app/state';
+	import { navigating, page } from '$app/state';
 	import { preferences } from '#lib/client/preferences.svelte.ts';
 	import Badge from '#lib/ui/components/Badge.svelte';
-	import Chip from '#lib/ui/components/Chip.svelte';
 	import EmptyState from '#lib/ui/components/EmptyState.svelte';
+	import Icon from '#lib/ui/components/Icon.svelte';
 	import ListRow from '#lib/ui/components/ListRow.svelte';
 	import Notice from '#lib/ui/components/Notice.svelte';
 	import PageHeader from '#lib/ui/components/PageHeader.svelte';
 	import Section from '#lib/ui/components/Section.svelte';
 	import Surface from '#lib/ui/components/Surface.svelte';
+	import ProgramHeader from '#lib/ui/program/ProgramHeader.svelte';
+	import SessionCard from '#lib/ui/program/SessionCard.svelte';
+	import type PlanSheetType from '#lib/ui/program/PlanOverviewSheet.svelte';
+	import WeekStrip from '#lib/ui/program/WeekStrip.svelte';
+	import { LazySheet } from './lazy-sheet.svelte.ts';
 	import type PlateSheetType from './PlateSheet.svelte';
+	import type { PageProps, Snapshot } from './$types';
 
-	const disciplines = [
-		{ label: 'Strength', tone: 'strength' },
-		{ label: 'Running', tone: 'running' },
-		{ label: 'Muay Thai', tone: 'combat' },
-		{ label: 'Hypertrophy', tone: 'hypertrophy' },
-		{ label: 'Conditioning', tone: 'conditioning' }
-	] as const;
+	let { data }: PageProps = $props();
 
-	// The plate calculator and the sheet it opens in are code-split together (PlateSheet),
-	// fetched on first intent (pointerdown/hover), on open, or for ?tool=plates, so Train ships
-	// and hydrates without either. A tap made before they arrive is kept: the sheet opens when
-	// they do. A failed fetch is forgotten, so the next tap imports again.
-	type Sheet = Component<ComponentProps<typeof PlateSheetType>>;
-	let fetching: Promise<{ default: Sheet }> | null = null;
-	let PlateSheet = $state.raw<Sheet | null>(null);
-	let sheetOpen = $state(false);
-	let failed = $state(false);
-	/** A tap after a reported failure, with the screen still here: failing again online reloads. */
-	let retrying = false;
+	/**
+	 * Where 'no program yet' sends the owner: Today builds a program once the training profile is
+	 * complete (Build my program); until then the profile is filled in from Profile's sections.
+	 * Decision: point SETUP at M2's onboarding screen once it has a route.
+	 */
+	const BUILD_HREF = resolve('/(app)/today');
+	const SETUP_HREF = resolve('/(app)/profile');
 
-	function loadSheet() {
-		if (fetching) return;
-		fetching = import('./PlateSheet.svelte');
-		// Kept apart from the import() expression: Vite moves `import(…).then(…)` whole into its
-		// preloader, whose own failures would then skip these handlers.
-		fetching.then(
-			(module) => (PlateSheet = module.default),
-			() => {
-				fetching = null;
-				// Resolved against Train's own URL: the same screen, asking for the sheet.
-				if (retrying && sheetOpen && navigator.onLine) return location.replace('?tool=plates');
-				// A failed tap is reported; a failed prefetch (hover) says nothing, and never takes
-				// away a notice already shown.
-				failed ||= sheetOpen;
-				sheetOpen = false;
-			}
-		);
+	const weekHref = (n: number) => `${resolve('/(app)/train')}?week=${n}`;
+
+	// ---- The week shown ----------------------------------------------------------------------
+
+	const view = $derived(data.state === 'program' ? data : null);
+	const week = $derived(view?.week.planned ? view.week : null);
+
+	/** A week change in flight: Train itself, with another ?week (or none). */
+	const loading = $derived(
+		navigating.to?.url.pathname === page.url.pathname &&
+			navigating.to.url.search !== page.url.search
+	);
+	const pendingWeek = $derived(
+		loading ? Number(navigating.to?.url.searchParams.get('week')) || null : null
+	);
+
+	/** The state card's next step as a link (none for Retry); `inTrain` when it changes week. */
+	const next = $derived.by(() => {
+		const to = data.card?.next.to;
+		if (to === 'today') return { href: BUILD_HREF };
+		if (to === 'profile') return { href: SETUP_HREF };
+		if (to === 'this-week') return { href: resolve('/(app)/train'), inTrain: true };
+		if (typeof to === 'object') return { href: weekHref(to.week), inTrain: true };
+		return { href: undefined };
+	});
+
+	/** The weekday the owner tapped, kept across weeks; until then today, else the first session. */
+	let chosen = $state<number | null>(null);
+	const selectedIndex = $derived.by(() => {
+		if (chosen !== null || !week) return chosen ?? 0;
+		const today = week.days.findIndex((d) => d.date === view!.today);
+		return today >= 0
+			? today
+			: Math.max(
+					0,
+					week.days.findIndex((d) => d.sessions.length > 0)
+				);
+	});
+	const day = $derived(week?.days[selectedIndex]);
+	/** That day in words, from the server. */
+	const words = $derived(view?.days[selectedIndex]);
+
+	/** Back from a session (history) comes back to the weekday the owner had picked. */
+	export const snapshot: Snapshot<number | null> = {
+		capture: () => chosen,
+		restore: (value) => (chosen = value)
+	};
+
+	const sessionHref = (lineage: string) => resolve('/(app)/train/session/[key]', { key: lineage });
+
+	let reloading = $state(false);
+	async function reload() {
+		reloading = true;
+		await invalidateAll();
+		reloading = false;
 	}
 
-	// After a failure, a tap on Retry (or on the row again) imports again in place, which WebKit
-	// fetches anew because the sheet's code has no modulepreload tag (a failed one WebKit never
-	// fetches again, reloads included: vite.config.ts). Chromium keeps a failed module fetch for
-	// the document's lifetime, and after a deploy the old chunk is gone: if the import fails again
-	// while online, Train reloads asking for the sheet (?tool=plates), which opens once its code
-	// arrives. Offline, the notice stays.
-	function openCalculator() {
-		retrying ||= failed;
-		failed = false;
-		sheetOpen = true;
-		loadSheet();
-	}
+	// ---- The sheets: the plate calculator and the plan -------------------------------------
+
+	// Each is code-split with the BottomSheet it opens in and loads on intent (lazy-sheet.svelte.ts).
+	const plates = new LazySheet<ComponentProps<typeof PlateSheetType>>(
+		() => import('./PlateSheet.svelte'),
+		'plates'
+	);
+	const plan = new LazySheet<ComponentProps<typeof PlanSheetType>>(
+		// Left out of the server build, which never renders it: SvelteKit links into a page the
+		// CSS of every dynamic import its server build can reach (check-budgets.ts), and its own
+		// stylesheet arrives with it.
+		() =>
+			import.meta.env.SSR
+				? Promise.reject(new Error('client only'))
+				: import('#lib/ui/program/PlanOverviewSheet.svelte'),
+		'plan'
+	);
+
+	/** A week tapped in the plan: shown as a week pill shows it (keeping scroll and focus), pending
+	 * state included. */
+	const openWeek = (week: number) =>
+		// eslint-disable-next-line svelte/no-navigation-without-resolve -- resolve() + a query
+		goto(weekHref(week), { replace: true, reset: false });
 
 	/** The notice can appear under the bottom navigation: bring it into view. */
 	const reveal = (node: HTMLElement) => node.scrollIntoView({ block: 'nearest' });
 
 	onMount(() => {
 		preferences.load();
-		if (page.url.searchParams.get('tool') === 'plates') openCalculator();
-		// Left mid-retry: a late failure must not pull the owner back to Train.
-		return () => (retrying = false);
+		const tool = page.url.searchParams.get('tool');
+		if (tool === 'plates') plates.show();
+		if (tool === 'plan' && view) plan.show();
+		return () => {
+			plates.leave();
+			plan.leave();
+		};
 	});
 
 	function closeSheet() {
@@ -88,41 +137,150 @@
 <PageHeader title="Train" eyebrow="Program" />
 
 <div class="stack">
-	<Surface padding="none" radius="xl">
-		<EmptyState
-			icon="train"
-			title="No active program"
-			description="Once your goals are in, your coach builds one plan across every discipline — and adapts it to each session you log."
-			data-testid="train-empty"
+	{#if view}
+		<ProgramHeader
+			title={view.program.title}
+			position={view.position}
+			weeks={Array.from({ length: view.program.plannedWeeks }, (_, i) => ({
+				number: i + 1,
+				href: weekHref(i + 1)
+			}))}
+			shown={view.shown}
+			current={view.program.currentWeek}
+			pending={pendingWeek}
+			previous={view.shown > 1 ? weekHref(Math.min(view.shown - 1, view.totalWeeks)) : undefined}
+			next={view.shown < view.totalWeeks ? weekHref(view.shown + 1) : undefined}
+			status={view.status}
 		>
 			{#snippet actions()}
-				<p class="next" data-testid="train-next-step">
-					Training profile <Badge>Coming next</Badge>
-				</p>
+				<button
+					type="button"
+					class="action"
+					aria-haspopup="dialog"
+					aria-busy={plan.busy}
+					onpointerdown={plan.prefetch}
+					onpointerenter={plan.prefetch}
+					onclick={plan.show}
+					data-testid="open-plan"
+				>
+					<Icon name="progress" size={18} />Plan
+				</button>
+				{#if plan.failed}
+					<div class="plan-failed">
+						<Notice tone="danger" title="Couldn’t open your plan">
+							<button type="button" class="retry" onclick={plan.show}>Retry</button>
+						</Notice>
+					</div>
+				{/if}
 			{/snippet}
-		</EmptyState>
-		<ul class="disciplines" aria-label="Supported disciplines">
-			{#each disciplines as d (d.label)}
-				<Chip as="li" tone={d.tone}>{d.label}</Chip>
-			{/each}
-		</ul>
-	</Surface>
+		</ProgramHeader>
+		<p class="visually-hidden" role="status">{loading ? 'Loading the week…' : ''}</p>
+	{/if}
+
+	<!-- Busy while the next week loads; only the week's own strip and cards go inert, never the
+	     state card's link, which may hold the focus of the change it started. -->
+	<div class="week" aria-busy={loading} inert={loading && !data.card} data-testid="train-week">
+		{#if data.card}
+			{@const card = data.card}
+			<Surface padding="none" radius="xl">
+				<EmptyState
+					icon={card.icon}
+					tone={card.tone}
+					title={card.title}
+					description={card.description}
+					data-testid={card.id}
+				/>
+			</Surface>
+			<div
+				class="tool"
+				aria-busy={reloading}
+				data-sveltekit-replacestate={next.inTrain ? '' : undefined}
+				data-sveltekit-reset={next.inTrain ? 'false' : undefined}
+			>
+				<ListRow
+					icon={card.next.icon}
+					title={card.next.title}
+					subtitle={card.next.subtitle}
+					href={next.href}
+					onclick={next.href ? undefined : reload}
+					data-testid="train-next"
+				/>
+			</div>
+		{:else if week}
+			<WeekStrip
+				days={view!.strip}
+				today={view!.today}
+				selected={day?.date ?? null}
+				label={`Week ${week.number}`}
+				onselect={(date) => (chosen = week.days.findIndex((d) => d.date === date))}
+				data-testid="week-strip"
+			/>
+
+			{#if day && words}
+				<Section title={words.heading} data-testid="day-sessions">
+					{#snippet action()}
+						{#if day.date === view!.today}<Badge tone="accent">Today</Badge>{/if}
+					{/snippet}
+					{#each words.cards as card (card.lineage)}
+						{@const href = sessionHref(card.lineage)}
+						<SessionCard
+							session={card}
+							{href}
+							baseline={card.baseline}
+							pending={loading || navigating.to?.url.pathname === href}
+							data-testid="session-card"
+						/>
+					{:else}
+						<Surface padding="none" radius="lg">
+							<EmptyState
+								compact
+								icon="moon"
+								tone="neutral"
+								title="Rest day"
+								description={words.rest ?? undefined}
+								data-testid="rest-day"
+							/>
+						</Surface>
+					{/each}
+				</Section>
+			{/if}
+
+			{#if view!.brief}
+				{@const brief = view!.brief}
+				<Surface
+					as="section"
+					tone="accent"
+					aria-labelledby="brief-title"
+					data-testid="baseline-brief"
+				>
+					<div class="brief">
+						<span class="eyebrow">{brief.eyebrow}</span>
+						<h2 id="brief-title" class="brief-title">{brief.title}</h2>
+						<p>{brief.lead}</p>
+						<ul>
+							{#each brief.points as point (point)}<li>{point}</li>{/each}
+						</ul>
+					</div>
+				</Surface>
+			{/if}
+		{/if}
+	</div>
 
 	<Section title="Tools">
-		<div class="tool" aria-busy={sheetOpen && !PlateSheet}>
+		<div class="tool" aria-busy={plates.busy}>
 			<ListRow
 				icon="plate"
 				tone="strength"
 				title="Plate calculator"
 				subtitle="Exact loading in kg or lb"
-				onpointerdown={loadSheet}
-				onpointerenter={loadSheet}
-				onclick={openCalculator}
+				onpointerdown={plates.prefetch}
+				onpointerenter={plates.prefetch}
+				onclick={plates.show}
 				data-testid="open-plates"
 			/>
-			{#if failed}
+			{#if plates.failed}
 				<Notice tone="danger" title="Couldn’t open the plate calculator">
-					<button type="button" class="retry" onclick={openCalculator} use:reveal>Retry</button>
+					<button type="button" class="retry" onclick={plates.show} use:reveal>Retry</button>
 				</Notice>
 			{/if}
 		</div>
@@ -132,38 +290,71 @@
 	</Section>
 </div>
 
-<!-- Renders nothing until its code has arrived (a dynamic component that is null). -->
-<PlateSheet bind:open={sheetOpen} unit={preferences.units} onclose={closeSheet} />
+<!-- Each renders nothing until its code has arrived (a dynamic component that is null). -->
+<plates.component bind:open={plates.open} unit={preferences.units} onclose={closeSheet} />
+{#if view}
+	<plan.component
+		bind:open={plan.open}
+		title={view.program.title}
+		blocks={view.plan}
+		{weekHref}
+		onweek={openWeek}
+		onclose={closeSheet}
+	/>
+{/if}
 
 <style>
-	.stack {
+	.stack,
+	.week {
 		display: grid;
 		gap: var(--space-6);
 	}
 
-	.next {
-		display: flex;
-		align-items: center;
-		gap: var(--space-2);
+	/* Loading the next week: the week stays where it is, dimmed, while its cards show their
+	   progress line; after a beat, so a fast load shows nothing. */
+	.week {
+		transition: opacity var(--duration-base) var(--ease-standard);
+	}
+
+	.week[aria-busy='true'] {
+		opacity: 0.55;
+		transition-delay: 150ms;
+	}
+
+	.brief {
+		display: grid;
+		gap: var(--space-3);
 		font-size: var(--text-sm);
-		font-weight: var(--weight-medium);
+		line-height: var(--leading-normal);
 		color: var(--color-text-secondary);
 	}
 
-	.disciplines {
-		display: flex;
-		flex-wrap: wrap;
-		justify-content: center;
-		gap: var(--space-2);
+	/* The eyebrow and title as Card sets them, closer together than the paragraphs. */
+	.brief-title {
+		margin-top: calc(var(--space-2) * -1);
+		font-size: var(--text-lg);
+		font-weight: var(--weight-semibold);
+		letter-spacing: var(--tracking-tight);
+		line-height: var(--leading-snug);
+		color: var(--color-text);
+	}
+
+	.brief ul {
+		display: grid;
+		gap: var(--space-1-5);
 		margin: 0;
-		padding: 0 var(--space-4) var(--space-6);
-		list-style: none;
+		padding-left: var(--space-5);
 	}
 
 	.tool {
 		position: relative;
 		display: grid;
 		gap: var(--space-2);
+	}
+
+	/* The plan's failure notice: under its button, the row's whole width. */
+	.plan-failed {
+		flex-basis: 100%;
 	}
 
 	/* Pending (tapped, the sheet's code on its way): a spinner takes the chevron's place after

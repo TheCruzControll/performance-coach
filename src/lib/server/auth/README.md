@@ -18,6 +18,7 @@ Single-owner passkey (WebAuthn) authentication on SimpleWebAuthn. How it works a
 | `rate-limit.ts`, `client-network.ts`, `policy.ts`    | DB-backed rate limits (IPv6 per /64); every timing and limit in one place      |
 | `audit.ts`, `activity.ts`                            | `auth_events` audit log and the Security screen's recent activity              |
 | `tokens.ts`                                          | Random tokens, SHA-256, constant-time digest comparison (`node:crypto` only)   |
+| `email-link-config.ts`                               | Whether the email sign-in link is on, and its provider (ADR 0011; pure)        |
 | `test-support.ts`                                    | Test-only session minting (refused unless test routes are enabled and allowed) |
 
 Pure modules have unit tests next to them; the use-cases are covered by

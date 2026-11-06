@@ -1,0 +1,46 @@
+/*
+ * Page-agnostic layout (docs/design-system.md, Responsive layout): the widths a screen declares
+ * with data-layout, and the brand mark atop the navigation rail. Global, because every screen
+ * uses the contract, and so that the app shell's own stylesheet stays small enough to be inlined
+ * into every app page (scripts/check-budgets.ts fails otherwise): later shell rules go here too.
+ */
+
+@media (width >= 64rem) {
+	/* A wide or a split screen widens the shell's column; readable is the default. */
+	#main:has([data-layout='wide'], [data-layout='split']) {
+		max-width: var(--content-wide);
+	}
+
+	/* The list beside its readable detail, aligned to the start, so column chrome (sticky at the
+	   foot of the detail) stays inside its own column. */
+	[data-layout='split'] {
+		display: grid;
+		grid-template-columns: var(--content-list) minmax(0, var(--content-readable));
+		gap: var(--space-8);
+		align-items: start;
+	}
+
+	/*
+	 * The brand mark: the favicon's two strokes as masks, without its dark tile, so it follows the
+	 * theme. The track is the text colour at 18%, the arc the accent (--color-accent-text would
+	 * read darker on the light rail; the volt matches the favicon). Decorative: no markup and no
+	 * script, and both files are precached with the other static files.
+	 */
+	.app-nav::before,
+	.app-nav::after {
+		content: '';
+		position: absolute;
+		top: calc(var(--safe-top) + var(--space-6));
+		left: calc(var(--safe-left) + (var(--rail-width) - var(--rail-mark)) / 2);
+		width: var(--rail-mark);
+		height: var(--rail-mark);
+		pointer-events: none;
+		background: color-mix(in srgb, var(--color-text) 18%, transparent);
+		mask: url('/brand/mark-track.svg') center / contain no-repeat;
+	}
+
+	.app-nav::after {
+		background: var(--color-accent);
+		mask-image: url('/brand/mark-arc.svg');
+	}
+}

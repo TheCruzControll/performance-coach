@@ -5,12 +5,15 @@ import {
 	DESKTOP_WIDTHS,
 	expectCentredOver,
 	expectInColumn,
+	expectMainCentred,
 	expectNoShift,
 	expectNoSideScroll,
 	expectStableBoxes,
 	isDesktopPage,
 	layoutShiftDuring,
-	pixelAt
+	layoutWidth,
+	pixelAt,
+	tokenPx
 } from './desktop';
 
 /**
@@ -178,6 +181,33 @@ test.describe('layout shift', () => {
 		await expect(
 			expectNoShift(p, { action: () => fill(p), boxes: [p.locator('#content')] })
 		).rejects.toThrow(/locator\('#content'\): y 100\.0 → 300\.0/);
+	});
+});
+
+test.describe('the column', () => {
+	/** An 88 px rail fixed at the left and a 40rem column, centred beside it or in the window. */
+	const shell = (besideRail: boolean) => `${FIXTURE_STYLE}
+		<style>:root { --rail: 88px; --column: 40rem; }</style>
+		<nav aria-label="Primary" style="position: fixed; inset: 0 auto 0 0; width: var(--rail);
+			background: #222"></nav>
+		<div style="padding-left: ${besideRail ? 'var(--rail)' : '0'}">
+			<main id="main" style="max-width: var(--column); height: 100px; margin: 0 auto"></main>
+		</div>`;
+
+	test('tokenPx reads a token in px; expectMainCentred passes a column centred beside the rail, and fails one centred in the window or of another width', async ({
+		page: p
+	}) => {
+		await p.setContent(shell(true));
+		const column = await tokenPx(p, '--column');
+		expect(column).toBe(640);
+		expect(await layoutWidth(p)).toBe(1440);
+		await expectMainCentred(p, column);
+		// The phone's 34rem column is not this one.
+		await expect(expectMainCentred(p, 34 * 16)).rejects.toThrow(/main is 640px wide/);
+
+		// Centred in the whole window, as before the rail: 88 px more room on its right.
+		await p.setContent(shell(false));
+		await expect(expectMainCentred(p, column)).rejects.toThrow(/gaps beside main: 312 and 400/);
 	});
 });
 
