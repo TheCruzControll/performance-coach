@@ -5,12 +5,22 @@
  * the plan first: tests/integration/auth/reset-owner-cli.test.ts).
  */
 import { spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { resetTarget } from './auth-reset-owner';
 
 const root = new URL('../', import.meta.url);
 
 describe('owner reset target', () => {
+	it('is not read from .env by `pnpm auth:reset-owner`', () => {
+		// .env (copied from .env.example) sets DATABASE_URL_UNPOOLED to the local dev database, so
+		// loading it would hand the reset a target nobody named on the command line.
+		const pkg = JSON.parse(readFileSync(new URL('package.json', root), 'utf8')) as {
+			scripts: Record<string, string>;
+		};
+		expect(pkg.scripts['auth:reset-owner']).not.toMatch(/--env-file/);
+	});
+
 	it('is only ever DATABASE_URL_UNPOOLED, never DATABASE_URL or a local default', () => {
 		const direct = 'postgres://u:p@ep-x.us-west-2.aws.neon.tech/neondb?sslmode=require';
 		expect(resetTarget({ DATABASE_URL_UNPOOLED: direct })).toBe(direct);

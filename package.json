@@ -37,7 +37,7 @@
 		"test:integration": "vitest run --project integration",
 		"test:e2e": "playwright test",
 		"auth:setup-token": "node scripts/auth-setup-token.ts",
-		"auth:reset-owner": "node --env-file-if-exists=.env scripts/auth-reset-owner.ts",
+		"auth:reset-owner": "node scripts/auth-reset-owner.ts",
 		"budgets": "node scripts/check-budgets.ts",
 		"lighthouse": "node scripts/lighthouse.ts",
 		"icons": "node scripts/generate-icons.ts"
