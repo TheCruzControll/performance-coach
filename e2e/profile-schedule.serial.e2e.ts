@@ -4,6 +4,8 @@
  * test at a time, after the functional suites): every test starts from a blank training
  * profile, which every browser and worker shares.
  */
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import {
 	captureScreen,
@@ -327,4 +329,31 @@ test('removing a commitment leaves every other card, and its errors, with its ow
 		{ label: 'Club run', days: ['wed'] },
 		{ label: 'Yoga', days: ['sat'] }
 	]);
+});
+
+test('a section page links none of an editor’s styles: they arrive with the editor', async ({
+	page,
+	request
+}) => {
+	const client = path.resolve(import.meta.dirname, '../.svelte-kit/output/client');
+	const manifest = JSON.parse(readFileSync(`${client}/.vite/manifest.json`, 'utf8')) as Record<
+		string,
+		{ css?: string[] } | undefined
+	>;
+	const styles = manifest['src/lib/ui/profile/ScheduleEditor.svelte']?.css ?? [];
+	expect(styles.length).toBeGreaterThan(0);
+	for (const section of ['schedule', 'equipment']) {
+		const html = await (await request.get(`/profile/${section}`)).text();
+		for (const file of styles) {
+			// Neither linked nor inlined, so they never hold up the first paint.
+			expect(html, section).not.toContain(path.basename(file));
+			const rules = readFileSync(`${client}/${file}`, 'utf8').trim().slice(0, 120);
+			expect(html, section).not.toContain(rules);
+		}
+	}
+	// Yet the editor is styled once it has loaded (the empty state's dashed outline is its own).
+	await page.goto('/profile/schedule');
+	await editorReady(page);
+	const empty = page.getByTestId('no-commitments');
+	expect(await empty.evaluate((el) => getComputedStyle(el).borderTopStyle)).toBe('dashed');
 });
