@@ -8,7 +8,7 @@
  * `fail(400, { errors })` keyed by dotted field path, a record that no longer exists
  * `fail(404, { message })`.
  */
-import { error, fail, type RequestEvent } from '@sveltejs/kit';
+import { fail } from '@sveltejs/kit';
 import {
 	createGoal,
 	deleteGoal,
@@ -19,36 +19,12 @@ import {
 	updateGoal,
 	type ProfileDeps
 } from '../services/profile';
+import { ownerId, readForm, type FormEvent } from './read';
 
-/** What a form action reads from its request (any route's RequestEvent is one). */
-export type FormEvent = Pick<RequestEvent, 'locals' | 'request'>;
+export { ownerId, type FormEvent };
 
 /** A service function that saves one section, e.g. `saveEquipment`. */
 export type SaveSection = (owner: string, payload: unknown, deps: ProfileDeps) => Promise<unknown>;
-
-const UNREADABLE = 'The form could not be read. Reload and try again.';
-
-/** The signed-in owner (the auth guard already refused anyone else; this is the second lock). */
-export function ownerId(locals: App.Locals): string {
-	if (!locals.session || locals.session.kind !== 'owner') error(401, 'Sign in to continue.');
-	return locals.session.ownerId;
-}
-
-/** The section's JSON `payload` (`undefined` when the field is absent or blank). */
-async function readForm(request: Request): Promise<{ payload: unknown }> {
-	let raw: FormDataEntryValue | null;
-	try {
-		raw = (await request.formData()).get('payload');
-	} catch {
-		error(400, UNREADABLE);
-	}
-	if (typeof raw !== 'string' || raw === '') return { payload: undefined };
-	try {
-		return { payload: JSON.parse(raw) };
-	} catch {
-		error(400, UNREADABLE);
-	}
-}
 
 /** Run a save; the owner's input errors and missing records become form failures. */
 async function attempt<T>(save: () => Promise<T>) {

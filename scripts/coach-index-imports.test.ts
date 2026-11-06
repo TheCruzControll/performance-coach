@@ -110,6 +110,7 @@ describe('the import walk', () => {
 		return file;
 	};
 	const answer = JSON.stringify(domain('coach/answer.ts'));
+	const markdown = JSON.stringify(domain('coach/markdown.ts'));
 	const exercises = JSON.stringify(domain('exercises/index.ts'));
 
 	it.each([
@@ -123,6 +124,11 @@ describe('the import walk', () => {
 		[
 			'an inline type import, which keeps the import',
 			`import { type AnswerBlock } from ${answer};`,
+			'a server-only coach module'
+		],
+		[
+			'a re-export of the markdown parser',
+			`export * from ${markdown};`,
 			'a server-only coach module'
 		],
 		['a re-export of domain/exercises', `export * from ${exercises};`, 'a server-only package']

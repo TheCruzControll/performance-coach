@@ -30,6 +30,7 @@
 import { sql } from 'drizzle-orm';
 import {
 	check,
+	index,
 	integer,
 	jsonb,
 	numeric,
@@ -123,6 +124,8 @@ export const plannedExercises = pgTable(
 	},
 	(t) => [
 		uniqueIndex('planned_exercises_session_position_uq').on(t.sessionId, t.position),
+		// Every copy of an exercise across versions, as History resolves a decision's (m3/33).
+		index('planned_exercises_lineage_idx').on(t.lineageId),
 		check('planned_exercises_position_ck', sql`${t.position} >= 1`),
 		check('planned_exercises_superset_ck', sql`${t.superset} >= 1`),
 		check(
