@@ -9,8 +9,8 @@ export const meta = {
 	]
 };
 
-const S = '<SCRATCH>';
-const MAIN = '<REPO>';
+const S = '<scratch>';
+const MAIN = '/home/user/performance-coach';
 const BASE = 'origin/main';
 
 const SLICE = {

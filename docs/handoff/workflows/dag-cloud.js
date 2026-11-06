@@ -36,9 +36,9 @@ function makeLimiter(n) {
 }
 const limit = makeLimiter(args.limit || 2);
 
-const S = '<SCRATCH>';
+const S = '<scratch>';
 const BIN = `${S}/bin`;
-const MAIN = '<REPO>'; // the main checkout (never modified by agents)
+const MAIN = '/home/user/performance-coach'; // the main checkout (never modified by agents)
 const R = 'repos/TheCruzControll/performance-coach';
 const TRAILERS =
 	'Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_01BpPosSc4jpv9ky7GSNsgpd';
@@ -69,21 +69,25 @@ const MACHINE = (slug, port) => `MACHINE RULES (a 4-CPU, 15 GB Linux cloud conta
 - Heavy commands (svelte-check, vite build, Playwright) go through \`slot\` (at most two machine-wide; expect to wait). Give heavy Bash calls timeout 600000. A git command that fails on a lock (another agent fetching) is retried after a moment.
 - Run only the e2e specs you touch or add; never the full suite, never --repeat-each above 3, never the 'perf' or 'exclusive' projects. Kill servers and browsers you start. Never \`playwright install\`: Chromium is preinstalled; WebKit is not available in this container, so never set E2E_WEBKIT=1 (CI runs Chromium + WebKit + Lighthouse on every PR and is the final gate).
 - GitHub: read with REST (\`gh api ${R}/...\`; GraphQL and \`gh pr …\` fail here). Write ONLY through the GitHub MCP tools (load them with ToolSearch, e.g. \`select:mcp__github__create_pull_request\`). You are a child agent: never subscribe to or watch PRs, never merge, never post PR comments, never touch Vercel, Neon or GitHub settings.
-- Shared docs hotspots: do not rewrite docs/testing.md, docs/security.md or docs/performance.md paragraphs (every open PR touches them and each edit forces the others to re-run CI). If a fact truly belongs there, add ONE new line or bullet; prefer the docs the slice owns. Registries and lists other parallel slices also extend (section registries, route-access tables, design-system rows): add your entry as its own line, never reformat neighbours.`;
+- Shared docs belong to the milestone's docs slice: a code slice does NOT edit docs/testing.md, docs/security.md, docs/performance.md or docs/milestones.md at all (one edit there makes every other open PR stale and forces another CI run for each). Put the exact lines that belong there in a "## Docs to add" section of the PR body (target file and section for each); the milestone's docs slice adds them. If your branch already edits those files (an earlier session's work), move those edits into that section and restore the files to the base. Docs-only slices are the exception: they own those files and collect the "## Docs to add" sections from the milestone's merged PRs (\`gh api "${R}/pulls?state=closed&per_page=100"\` bodies). Registries and lists other parallel slices also extend (section registries, route-access tables, design-system rows): add your entry as its own line, never reformat neighbours.`;
 
-const PROJECT = `Project: "Performance Coach" (GitHub TheCruzControll/performance-coach), a private single-user AI training PWA: SvelteKit 3 / Svelte 5 runes, TypeScript strict, Postgres + Drizzle, passkeys, Vercel. Spec: docs/product-requirements.md. Read what you need: docs/architecture.md (layers and import boundaries), docs/testing.md, docs/design-system.md, docs/performance.md (budgets), docs/agent-architecture.md. The owner's rules: each PR is ONE small atomic concern (ideally ≤ 600 non-test lines), green on its own, no drive-by refactors, real tests that prove behaviour (a regression test must fail without its fix), premium UI per docs/design-system.md (dark-first + light, existing primitives, 44 px targets, designed empty/loading/error states, axe-clean). Drizzle migrations: \`pnpm db:generate\` only; the journal order is enforced by a unit test.`;
+const PROJECT = `Project: "Performance Coach" (GitHub TheCruzControll/performance-coach), a private single-user AI training PWA: SvelteKit 3 / Svelte 5 runes, TypeScript strict, Postgres + Drizzle, passkeys, Vercel. Spec: docs/product-requirements.md. Read what you need: docs/architecture.md (layers and import boundaries), docs/testing.md, docs/design-system.md, docs/performance.md (budgets), docs/agent-architecture.md. The owner's rules: each PR is ONE small atomic concern (ideally ≤ 600 non-test lines), green on its own, no drive-by refactors, real tests that prove behaviour (a regression test must fail without its fix), premium UI per docs/design-system.md (dark-first + light, existing primitives, 44 px targets, designed empty/loading/error states, axe-clean). DESKTOP TOO (owner request, PRD §7 and §16): every screen is iPhone-first but must also be laid out for a desktop browser (1440 × 900: navigation rail, content centred at a readable width, no stretched phone layout, hover and keyboard focus states); follow docs/design-system.md's breakpoint rules where they exist, and when a \`desktop-chromium\` Playwright project exists, run your UI specs on it too. Drizzle migrations: \`pnpm db:generate\` only; the journal order is enforced by a unit test. One query at a time per Executor (main since #62, docs/architecture.md): never \`Promise.all\` over one \`db\` handle or one transaction; await each query in turn (separate pool calls may run together). The integration setup fails any test that sends a query to a busy pg client, so merge origin/main before your gates.`;
 
 const specFor = (it) => {
 	if (it.kind === 'm3')
 		return `YOUR SLICE is M3 plan slice '${it.id}' (branch ${it.branch}). Read it in full: \`jq '.slices[] | select(.id=="${it.id}")' ${M3PLAN}\` (goal, newOrChanged, tests, acceptance, risks, estNonTestLines), and the plan's decisions: \`jq -r '.decisions[]' ${M3PLAN}\` (measured budget facts, layer and naming decisions you must follow). Where the plan's openQuestions (\`jq -r '.openQuestions[]' ${M3PLAN}\`) touch your slice, implement the plan's stated default as a named, documented constant or decision so the owner can change it cheaply. The brief behind it: \`git -C ${MAIN} show origin/handoff:docs/handoff/briefs/m3.json\`. PR title = the slice's title.${it.migration ? ' MIGRATIONS: you add a migration; keep the journal in order after every migration already on main and in the PRs you stack on (regenerate yours if main gained one; ADR 0010 docs/adr describes keeping custom guard SQL through a regenerate).' : ''}`;
 	if (it.kind === 'm2')
 		return `YOUR SLICE is M2 onboarding-plan slice '${it.id}' (branch ${it.branch}). Read it in full: \`${M2PLAN} | jq '.slices[] | select(.id=="${it.id}")'\` and the plan's \`.wipAssessment\` (budget facts, WIP bugs not to carry over). WIP code it may reuse: commit d8bfded (\`git show d8bfded:<path>\`); take only what the slice lists. Main has moved on since the plan was written: the security fixes it mentions are merged (malformed ids, goal status, section-save locks, onboarding progress validation, the body-weight time zone, step-up re-authentication), the input primitives (NumberField, TextArea, date TextField, ChoiceGroup, DayPicker, Toggle, TagInput) exist, and the JSON save path is in; build on what is on main and in the PRs you stack on, not on the plan's assumptions. PR title = the slice's title.`;
+	if (it.kind === 'plan') {
+		const P = `${S}/plans/${it.plan}`;
+		return `YOUR SLICE is ${it.milestone} plan slice '${it.id}' (branch ${it.branch}). Read it in full: \`jq '.slices[] | select(.id=="${it.id}")' ${P}\` (goal, newOrChanged, tests, acceptance, risks, estNonTestLines), and the plan's decisions: \`jq -r '.decisions[]' ${P}\` (layer, naming, budget and architecture decisions you must follow). Where the plan's openQuestions (\`jq -r '.openQuestions[]' ${P}\`) touch your slice, implement the plan's stated default as a named, documented constant or decision so the owner can change it cheaply, and list the question in the PR body under "## Owner decisions" with the default you chose. The brief behind it: \`git -C ${MAIN} show origin/handoff:docs/handoff/briefs/${it.brief}\`. Slices of earlier milestones it depends on are described in ${S}/plans/m3-plan.json (and the M2 onboarding plan, \`${M2PLAN}\`). PR title = the slice's title.${it.migration ? ' MIGRATIONS: you add a migration; keep the journal in order after every migration already on main and in the PRs you stack on (regenerate yours if main gained one; ADR 0010 docs/adr describes keeping custom guard SQL through a regenerate).' : ''}${it.extra ? `\n${it.extra}` : ''}`;
+	}
 	return `YOUR ITEM (${it.id}):\n${it.task}`;
 };
 
 const COMMITS = `Commits: Conventional Commits; subject, blank line, short plain-prose body (problem, then change); end every message with exactly these two trailer lines:\n${TRAILERS}\nMention no AI model anywhere except those trailers and the PR description lines.`;
 const GATES = (slug, ui, migration) =>
-	`GATES (each with \`source ${envf(slug)} && \`): pnpm lint; slot pnpm check; pnpm test:unit; pnpm db:reset:test && pnpm test:integration; ${migration ? 'pnpm db:drift; ' : ''}${ui ? 'slot pnpm build:node && pnpm budgets (paste the rows for the routes you touched and /profile/security); slot pnpm build; the e2e specs you touched or added on Chromium (`slot pnpm exec playwright test <specs> --project=setup --project=iphone-chromium --reporter=line`)' : 'e2e only if you touched routes, components or anything the browser loads (Chromium, as above)'}. Report real output excerpts.`;
+	`GATES (each with \`source ${envf(slug)} && \`): pnpm lint; slot pnpm check; pnpm test:unit; pnpm db:reset:test && pnpm test:integration (local Postgres 16); the full integration suite again on Postgres 18, which CI and production run (\`bash ${S}/bin/pg18 coach_${slug}_test\`, then \`TEST_DATABASE_URL=postgres://coach:coach@localhost:5433/coach_${slug}_test slot pnpm test:integration\`; error codes can differ by version, e.g. an ON DELETE RESTRICT refusal is 23001 on 18 and 23503 on 16: assert what 18 does and stay exact on 16, as tests/integration/helpers.ts restrictRefusalCode does once #64 is in); ${migration ? 'pnpm db:drift; ' : ''}${ui ? 'slot pnpm build:node && pnpm budgets (paste the rows for the routes you touched and /profile/security); slot pnpm build; the e2e specs you touched or added on Chromium (`slot pnpm exec playwright test <specs> --project=setup --project=iphone-chromium --reporter=line`)' : 'e2e only if you touched routes, components or anything the browser loads (Chromium, as above)'}. Report real output excerpts.`;
 
 const OUT = {
 	type: 'object',
@@ -277,7 +281,7 @@ Report id="${it.id}", branch, base (the BASE sha), head (\`git rev-parse HEAD\`)
 	const sol = it.docsOnly ? { approved: false, rounds: 0, ledger: {}, disputes: '' } : await solLoop(it, impl, p);
 	if (!it.docsOnly) log(`${it.id}: Sol ${sol.approved ? `approved in ${sol.rounds} round(s)` : `not approved (${sol.disputes})`}`);
 
-	const pub = await limit(p + 3, () =>
+	let pub = await limit(p + 3, () =>
 		agent(
 			`${PROJECT}
 
@@ -297,6 +301,22 @@ Report id="${it.id}", branch, PR number and URL, gates, summary, problems.`,
 			{ label: `publish:${it.id}`, phase: 'Publish', schema: OUT, effort: 'medium' }
 		)
 	);
+	if (!pub || !pub.prNumber) {
+		// A publish can stop on a permission refusal (e.g. a force-push) that the main thread then
+		// resolves by hand: look the PR up before failing the slice and every slice that waits on it.
+		const found = await limit(p + 3, () =>
+			agent(
+				`Look up the open pull request for branch ${it.branch} of TheCruzControll/performance-coach: \`gh api "${R}/pulls?head=TheCruzControll:${it.branch}&state=open" --jq '.[0] | {number, html_url}'\`. Report prNumber and prUrl (omit both if there is none). Change nothing.`,
+				{
+					label: `lookup:${it.id}`,
+					phase: 'Publish',
+					effort: 'low',
+					schema: { type: 'object', properties: { prNumber: { type: 'number' }, prUrl: { type: 'string' } } }
+				}
+			)
+		);
+		if (found && found.prNumber) pub = { ...(pub || {}), prNumber: found.prNumber, prUrl: found.prUrl };
+	}
 	if (!pub || !pub.prNumber) return { id: it.id, branch: it.branch, error: 'publish failed', impl, pub };
 	log(`${it.id}: PR #${pub.prNumber}${depPrs.length ? ` (depends on ${depPrs.map((n) => '#' + n).join(', ')})` : ''}, Sol ${sol.approved ? 'approved' : it.docsOnly ? 'n/a' : 'NOT approved'}`);
 	return {

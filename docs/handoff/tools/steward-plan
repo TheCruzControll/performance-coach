@@ -91,6 +91,9 @@ for n in $ORDERED; do
 	# A PR can hold itself: a "Merge hold: <reason>" line keeps the steward off it until removed.
 	hold=$(grep -m1 -oE 'Merge hold:.*' <<<"$body")
 	if [[ -n "$hold" ]]; then echo "#$n HOLD (ci $state, sol $sol): ${hold#Merge hold: }  $title"; continue; fi
+	# Local holds (scratchpad/steward-hold: "<number> <reason>" per line), e.g. a stack order.
+	lhold=$(awk -v n="$n" '$1==n {$1=""; print substr($0,2); exit}' "$(dirname "$0")/../steward-hold" 2>/dev/null)
+	if [[ -n "$lhold" ]]; then echo "#$n HOLD (local; ci $state, sol $sol): $lhold  $title"; continue; fi
 	if [[ -n "$deps_open" ]]; then echo "#$n waits on$deps_open (ci $state, sol $sol)  $title"; continue; fi
 	if [[ "$state" != success ]]; then echo "#$n ci $state (sol $sol, $mstate)  $title"; continue; fi
 	if [[ "$sol" == pending ]]; then echo "#$n green, waiting for Sol review  $title"; continue; fi
@@ -102,7 +105,16 @@ for n in $ORDERED; do
 	fi
 	# When did the last green CI run start? Main commits after that were not tested with this PR.
 	since=$(gh api "$R/actions/runs?head_sha=$sha&event=pull_request&per_page=20" --jq '[.workflow_runs[] | select(.name=="CI")] | sort_by(.created_at) | last | .created_at')
-	ov=$(overlap_since "$n" "$since" "$sha")
+	# A head that already holds everything main has (merging main into it changes no file) was
+	# tested as the post-merge state, e.g. a sibling stacked on the PR that merged just before it.
+	ov=""
+	if git -C "$REPO_DIR" fetch -q origin main "+refs/pull/$n/head:refs/steward/pr$n" 2>/dev/null &&
+		mt=$(git -C "$REPO_DIR" merge-tree --write-tree origin/main "refs/steward/pr$n" 2>/dev/null) &&
+		[[ "$(head -1 <<<"$mt")" == "$(git -C "$REPO_DIR" rev-parse "$sha^{tree}")" ]]; then
+		echo "#$n holds all of main (merging main changes nothing)"
+	else
+		ov=$(overlap_since "$n" "$since" "$sha")
+	fi
 	if [[ -n "${ov// /}" ]]; then
 		# Merge-queue behaviour: refresh one stale PR per pass. Refreshing the rest now would waste
 		# CI, because merging this one makes them stale again.

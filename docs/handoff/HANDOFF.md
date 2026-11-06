@@ -1,44 +1,87 @@
-# Performance Coach: handoff (paused 2026-11-06, ~04:20 UTC)
+# Performance Coach: handoff (cloud session running; last updated 2026-11-06 13:40 UTC)
 
 This is everything a new Claude Code session needs to resume the build on another machine. The
 product spec is `docs/product-requirements.md` on `main`; milestone criteria are in
 `docs/milestones.md`. Read this file from `origin/handoff` (it is not on `main`).
 
-## Update: cloud session, 2026-11-06 (from 06:28 UTC)
+## Update: cloud session, 2026-11-06 (06:28 → 13:40 UTC, still running)
 
-A claude.ai cloud session (4 CPUs, 15 GB, Linux; no T3, no Codex) took over with the goal "finish
-M1–M9 on main with evidence and the app live on coach.nikocruz.com". State at the last update:
+A claude.ai cloud session (4 CPUs, 15 GB, Linux; no T3, no Codex) is working the goal "finish
+M1–M9 on main with evidence and the app live on coach.nikocruz.com". State at 13:40 UTC:
 
-- **Merged:** #47 (Toggle + TagInput), #46 (program-plan contract). **#45** refreshed, CI running.
-- **Cutover:** PR #50 (`feat/m2-production-cutover`), Sol approved in 2 rounds (fixed: the reset
-  command read `.env`; a session-storage race in the WebKit sign-out test). No merge hold. It
-  merges after #45; then production deploys.
-- **Running:** two `dag-cloud.js` workflows. Wave A = the 5 M1 fixes + 21 M2 slices; wave B = the
-  28 M3 slices that do not wait on an M2 slice. 18 M3 slices wait for a later wave (they depend
-  on M2 slices without PRs yet). The planner (`milestone-plans-cloud.js`) plans M4 → M5 → M6 →
-  M7 → M9 into `<scratch>/plans/m{4,5,6,7,9}-plan.json`.
+- **Production is live** on coach.nikocruz.com since the cutover (#50, 07:13 UTC); every merge to
+  `main` deploys it, and the post-deploy smoke check runs after each deploy.
+- **Owner setup done** (10:43 UTC) on the owner's iPhone 16 Pro Max, iOS 27.0.1, in **Chrome for
+  iOS** (the browser they use; WebKit engine). Passkey and recovery codes stored;
+  `OWNER_SETUP_TOKEN_HASH` cleared in Vercel (an empty value; the owner deletes the variable when
+  at a desk). The real-device checklist passed in Chrome; record it in M2's docs PR and change the
+  checklist in `docs/testing.md` to target Chrome for iOS (Add to Home Screen optional).
+- **Merged today:** #12, #18–#47, #50–#67, #69–#72, #75, #78–#80, #85 (59 PRs): M1 audit fixes,
+  the cutover, M2 profile services and Equipment/Strength/Experience editors, most of M3's data
+  layer and generator, and the first M2X slice.
+- **Plans** (all in `plans/`): `m3-plan.json`, `m2x-plan.json` (desktop view + email sign-in link,
+  21 slices), `m4-plan.json` (61), `m5-plan.json` (61). The planner (`milestone-plans-cloud.js`,
+  run `wf_3f53c5db-7bb`) is on M6, then M7 and M9. Each plan's `openQuestions` are answered with
+  defaults; slices list the default under "## Owner decisions" in their PR.
 
-How this session works (differences from the Mac setup below):
+### Open PRs and how they merge
 
-- **sol-review** runs its Claude Code route: a fresh Claude Opus 5.5 reviewer per round. Inside
-  workflows the script runs the loop itself (review agent → fix agent → next round); see
-  `workflows/dag-cloud.js`. No Codex CLI.
-- **GitHub writes** (PRs, update-branch, merges) go through the GitHub MCP; `gh api` is REST
-  read-only here (GraphQL is blocked). `tools/steward-plan` is the steward with its writes
-  replaced by `ACTION merge|update <n> <sha>` lines for the main thread to run with the MCP; it
-  keeps the one-refresh-at-a-time queue.
-- **WebKit** is not installed in the container: local e2e is Chromium only; CI runs Chromium +
-  WebKit + Lighthouse on every PR and is the WebKit gate.
-- **Workflows** run at most min(16, CPUs − 2) agents at once, so `workflows/dag-waves.py` splits
-  the graph into waves that run side by side.
-- `tools/agent-env` uses nvm when present, else the machine's Node 22.
+- **Profile stack** (all add entries to the same section registries, so they merge one after
+  another, each stacked on the previous): #68 (goals, being stacked now) → **#86** (section pages
+  load no editor CSS; carries the same guard line as #68) → #73 → #74 → #76 → #77 → #81 → #83 →
+  #84 → #89, then goal order/drag. Held ones are listed in `<scratch>/steward-hold`
+  (`tools/steward-hold.example`); `workflows/stack-siblings.js` merges main and the previous
+  sibling into each, resolves registry conflicts (keep every entry), runs the gates, gets the
+  resolution reviewed (remerge-diff) and pushes.
+- **In CI:** #82 (program reads), #87 (M4 workout contract), #88 (M3 runs/Muay Thai), #90 (M4 icon
+  sprite). **#84** has a WebKit-only test fix in progress (`pr-ci-fix.js`).
+- **Never merge #13** (this branch). **#14** is an old paused WIP branch; leave it.
 
-To resume in a fresh cloud session: copy `tools/*` to `<scratch>/bin`, `plans/*` and the new
-plan files to `<scratch>/plans`, start Postgres (raise `max_connections` to 300), then
-`SCRATCH=<scratch> REPO=<repo> python3 workflows/build-dag-args.py --limit 2 > <scratch>/dag-args.json`,
-`python3 workflows/dag-waves.py <scratch>/dag-args.json <scratch>` and run `dag-cloud.js` (paths
-replaced) once per wave with the wave file as `args`. Branches with PRs become external
-dependencies automatically; a slice whose branch exists resumes from it.
+### Rules learned today (now in `workflows/dag-cloud.js`'s instructions)
+
+- **One query at a time per Executor** (#62): never `Promise.all` over one `db` handle or
+  transaction; the integration suite fails any test that does.
+- **Postgres 18 locally**: CI and Neon run 18, the container's server is 16, and they differ (an ON
+  DELETE RESTRICT refusal is 23001 on 18, 23503 on 16). `tools/pg18` starts an embedded Postgres
+  18 on port 5433 (binaries in `/var/lib/pg18`, from npm `@embedded-postgres/linux-x64`); gates
+  run the integration suite on both; `tests/integration/helpers.ts` has `restrictRefusalCode`.
+- **Lazy imports get no JS modulepreload** (one rule in `vite.config.ts`): WebKit keeps a failed
+  modulepreload stuck (bug 270357), so Retry could never load a lazy chunk on Safari/Chrome iOS.
+- **Profile section editors stay out of the server build** (#86): SvelteKit links the CSS of every
+  dynamic import the server build can reach, render-blocking; `pnpm budgets` now guards it.
+- **Shared docs** (`docs/testing.md`, `security.md`, `performance.md`, `milestones.md`): code
+  slices put their lines in a "## Docs to add" section of the PR body; each milestone's docs PR
+  collects them from the merged PRs.
+- **Stacked history**: a PR built on another slice's branch shows "dirty" on GitHub once that
+  slice merges, though `git merge-tree` merges it cleanly; merge main into it locally, run quick
+  checks on its files, push. `tools/steward-plan` also passes a PR whose head already holds all of
+  main (merging main changes nothing) without another refresh.
+
+### Running workflows (scripts in `workflows/`, args in `<scratch>/dag-*.json`)
+
+`dag-cloud.js` waves: A1 (M2 goals chain), B1 (M3 generator), B2 (M3 data + Train screens), X1
+(M2X desktop shell + email-link base), C1b (M4 domain + offline store, two lanes); plus the stack
+workflow, the #84 fix and an e2e flake hunt (sign-out device clearing, shell screenshots). Agent
+cap: 12 (owner-approved). `build-plan-wave.py <plan> <M> <brief> <slug> <port>` builds a wave's
+args from any milestone plan: every slice whose dependencies are merged, have a PR, or are earlier
+in the same wave. Next: M5 (D1) when a slot frees, with the claude-api skill; M2's onboarding and
+Today slices once the profile stack has merged.
+
+### Waiting on the owner
+
+- Email sign-in link: create a Resend account and add `RESEND_API_KEY` (Production, Sensitive);
+  the session asks before setting `OWNER_EMAIL`.
+- M8: the council bar (`args.bar`), asked when M4 lands. M8/M9: real-traffic Core Web Vitals at
+  p75 and the owner's sign-off.
+- Defaults to confirm (none blocking): the plans' open questions (`openQuestions` in each plan),
+  e.g. M2X link lifetime 15 min vs ASVS 10 and link-session lifetime; M4 focus mode and default
+  rest times; #73's coach units vs device units; #63's restore of a retired custom exercise name.
+
+To resume in a fresh cloud session: copy `tools/*` to `<scratch>/bin`, `plans/*` to
+`<scratch>/plans`, start Postgres 16 (raise `max_connections` to 300) and `tools/pg18`, then build
+wave args with `workflows/build-plan-wave.py` (M2X/M4/M5…) or `build-dag-args.py` (M2/M3) and run
+`workflows/dag-cloud.js` (paths replaced) once per wave. Branches with PRs become external
+dependencies; a slice whose branch exists resumes from it.
 
 ## The owner's rules (follow them exactly)
 
