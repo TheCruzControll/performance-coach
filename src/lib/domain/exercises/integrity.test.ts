@@ -4,16 +4,18 @@
  * what no single row can: uniqueness across parts, the substitution groups, the links to M2 and
  * what each part must cover.
  *
- * Layout: 'the whole catalogue' holds the invariants every part keeps. Each part then has its own
- * block, part 1 (catalogue/lower.ts) below; part 2 adds its block and the whole-catalogue counts.
+ * Layout: 'the whole catalogue' holds the invariants every part keeps, and 'what the whole
+ * catalogue covers' the brief's counts. Each part then has its own block: part 1
+ * (catalogue/lower.ts), then part 2 (catalogue/upper.ts).
  */
 import { describe, expect, it } from 'vitest';
 import { EQUIPMENT, EXERCISE_SUGGESTIONS, LIFTS, LIFT_LABEL } from '../profile/catalog';
 import type { Equipment } from '../profile/catalog';
+import { MOVEMENT_PATTERNS } from '../training/vocabulary';
 import * as lower from './catalogue/lower';
 import * as upper from './catalogue/upper';
 import { CATALOGUE, SUBSTITUTION_GROUPS, catalogueByKey, type CatalogueExercise } from './index';
-import { matchExercise, normaliseExerciseName } from './match';
+import { NOT_EXERCISES, matchExercise, normaliseExerciseName } from './match';
 
 const PARTS = { lower, upper };
 
@@ -96,6 +98,64 @@ describe('the whole catalogue', () => {
 				expect(matchExercise(LIFT_LABEL[lift], CATALOGUE)).toBe(lift);
 			}
 		}
+	});
+});
+
+describe('what the whole catalogue covers', () => {
+	it('has at least 150 entries, as the brief asks', () => {
+		expect(CATALOGUE.length).toBeGreaterThanOrEqual(150);
+	});
+
+	it('gives every movement pattern at least 3 entries', () => {
+		const thin = MOVEMENT_PATTERNS.filter(
+			(pattern) => CATALOGUE.filter((e) => e.pattern === pattern).length < 3
+		);
+		expect(thin).toEqual([]);
+	});
+
+	/** The brief's categories, each found by its M2 equipment key or by its pattern. */
+	const CATEGORIES: [string, number, (exercise: CatalogueExercise) => boolean][] = [
+		['barbell', 15, (e) => e.equipment.includes('barbell')],
+		['dumbbell', 15, (e) => e.equipment.includes('dumbbells')],
+		['machine', 8, (e) => e.equipment.includes('machines')],
+		['cable', 8, (e) => e.equipment.includes('cables')],
+		// Trainable anywhere: no equipment, and the body is the load.
+		['bodyweight', 15, (e) => needsOnly(e) && e.loadType === 'bodyweight'],
+		['kettlebell', 6, (e) => e.equipment.includes('kettlebells')],
+		['Olympic', 6, (e) => e.pattern === 'olympic'],
+		['plyometric', 8, (e) => e.pattern === 'plyometric'],
+		['conditioning', 8, (e) => e.pattern === 'conditioning'],
+		['mobility', 10, (e) => e.pattern === 'mobility']
+	];
+
+	it.each(CATEGORIES)('has %s work: at least %i entries', (_category, minimum, isIn) => {
+		expect(CATALOGUE.filter(isIn).length).toBeGreaterThanOrEqual(minimum);
+	});
+
+	it('measures conditioning and mobility in time or distance, never in reps', () => {
+		const counted = CATALOGUE.filter(
+			(e) => ['conditioning', 'mobility'].includes(e.pattern) && e.measure === 'reps'
+		);
+		expect(keys(counted)).toEqual([]);
+	});
+
+	it('rates every Olympic entry intermediate or above', () => {
+		const easy = CATALOGUE.filter((e) => e.pattern === 'olympic' && e.skillLevel === 'beginner');
+		expect(keys(easy)).toEqual([]);
+	});
+
+	it('links every M2 lift but custom to an entry', () => {
+		const unlinked = LIFTS.filter(
+			(lift) => lift !== 'custom' && !CATALOGUE.some((e) => e.baselineLift === lift)
+		);
+		expect(unlinked).toEqual([]);
+	});
+
+	it('matches every M2 suggestion to an entry, unless NOT_EXERCISES lists it', () => {
+		const unmatched = EXERCISE_SUGGESTIONS.filter(
+			(text) => matchExercise(text, CATALOGUE) === null && !NOT_EXERCISES.includes(text)
+		);
+		expect(unmatched).toEqual([]);
 	});
 });
 
@@ -228,5 +288,143 @@ describe('part 1: lower body, Olympic, plyometric, conditioning and lower mobili
 		const library = [...CATALOGUE, { key: 'custom:1', name: 'Lunges', aliases: [] }];
 		expect(matchExercise('Lunges', library)).toBeNull();
 		expect(matchExercise('Walking lunges', library)).toBe('walking_lunge');
+	});
+});
+
+describe('part 2: pressing, pulling, arms, carries, core, neck and upper mobility', () => {
+	const part = upper.exercises;
+
+	it('has at least 75 entries, each in one of its substitution groups', () => {
+		expect(part.length).toBeGreaterThanOrEqual(75);
+		expect(keys(part.filter((e) => !e.substitutionGroup))).toEqual([]);
+	});
+
+	it('has the groups the rest of M3 names', () => {
+		for (const group of [
+			'horizontal_press',
+			'vertical_press_overhead',
+			'vertical_press_shoulder_friendly',
+			'horizontal_row',
+			'vertical_pull',
+			'elbow_flexion',
+			'elbow_extension',
+			'loaded_carry',
+			'anti_rotation'
+		]) {
+			expect(upper.groups, group).toHaveProperty(group);
+		}
+	});
+
+	it('keeps one measure within each group, so a swap keeps its prescription', () => {
+		for (const group of Object.keys(upper.groups)) {
+			expect(new Set(membersOf(group).map((e) => e.measure)).size, group).toBe(1);
+		}
+	});
+
+	it('flags single-arm rows and presses, offset carries and rotation work unilateral', () => {
+		// Pressed one arm at a time, though their names do not say so.
+		const oneArm = ['half_kneeling_landmine_press', 'bottoms_up_kettlebell_press'];
+		const oneSided = part.filter(
+			(e) =>
+				oneArm.includes(e.key) ||
+				e.substitutionGroup === 'offset_carry' ||
+				// A twist, or a twisting pull resisted, works one side at a time.
+				e.pattern === 'rotation' ||
+				e.pattern === 'anti_rotation' ||
+				[e.name, ...e.aliases].some((term) => /single-arm|one-arm|suitcase/i.test(term))
+		);
+		expect(keys(oneSided)).toEqual(
+			expect.arrayContaining([
+				'single_arm_dumbbell_overhead_press',
+				'kettlebell_press',
+				'landmine_press',
+				...oneArm,
+				'single_arm_dumbbell_row',
+				'cable_lateral_raise',
+				'suitcase_carry',
+				'waiters_walk',
+				'pallof_press',
+				'side_plank',
+				'cable_woodchop'
+			])
+		);
+		expect(keys(oneSided.filter((e) => !e.unilateral))).toEqual([]);
+	});
+
+	it('tags the standing barbell presses and the barbell row spinal_loading', () => {
+		const loaded = part.filter(
+			(e) =>
+				e.equipment.includes('barbell') &&
+				e.loadType === 'external' &&
+				(e.substitutionGroup === 'vertical_press_overhead' ||
+					e.substitutionGroup === 'horizontal_row')
+		);
+		expect(keys(loaded)).toEqual(
+			expect.arrayContaining(['overhead_press', 'push_press', 'barbell_row'])
+		);
+		expect(keys(loaded.filter((e) => !e.tags.includes('spinal_loading')))).toEqual([]);
+	});
+
+	it('tags every overhead press overhead, and keeps the shoulder-friendly press off it', () => {
+		const overhead = membersOf('vertical_press_overhead');
+		const friendly = membersOf('vertical_press_shoulder_friendly');
+		expect(keys(overhead)).toEqual(
+			expect.arrayContaining(['overhead_press', 'push_press', 'handstand_push_up'])
+		);
+		expect(keys(overhead.filter((e) => !e.tags.includes('overhead')))).toEqual([]);
+		// An owner who cannot press overhead keeps a vertical press: the landmine press.
+		expect(keys(friendly)).toContain('landmine_press');
+		const notFriendly = friendly.filter(
+			(e) => e.tags.includes('overhead') || !e.tags.includes('shoulder_friendly')
+		);
+		expect(keys(notFriendly)).toEqual([]);
+	});
+
+	it('never tags a horizontal push overhead, so horizontal pressing stays open', () => {
+		const overhead = part.filter(
+			(e) => e.pattern === 'horizontal_push' && e.tags.includes('overhead')
+		);
+		expect(keys(overhead)).toEqual([]);
+	});
+
+	/**
+	 * What the brief's dumbbells-only gym can do. Upper-body dumbbell work mostly lies or sits on
+	 * a bench, and that scenario (m3/17) counts one in, so a bench is allowed here.
+	 */
+	const dumbbellsOnly = (e: CatalogueExercise) =>
+		needsOnly(e, 'dumbbells') || needsOnly(e, 'dumbbells', 'bench');
+
+	it.each(['horizontal_push', 'vertical_push', 'horizontal_pull', 'vertical_pull'] as const)(
+		'gives %s work ≥ 2 dumbbell-only options, a bench allowed',
+		(pattern) => {
+			const options = part.filter((e) => e.pattern === pattern && dumbbellsOnly(e));
+			expect(options.length).toBeGreaterThanOrEqual(2);
+		}
+	);
+
+	it.each(['bench_press', 'overhead_press', 'weighted_pull_up'] as const)(
+		'links %s to its M2 lift',
+		(lift) => {
+			expect(part.find((e) => e.baselineLift === lift)?.key).toBe(lift);
+		}
+	);
+
+	const SUGGESTIONS: Record<string, string> = {
+		'Bench press': 'bench_press',
+		'Overhead press': 'overhead_press',
+		'Pull-ups': 'pull_up',
+		Dips: 'dip'
+	};
+
+	it.each(Object.entries(SUGGESTIONS))("matches M2's suggestion '%s' to %s", (text, key) => {
+		expect(EXERCISE_SUGGESTIONS).toContain(text);
+		expect(matchExercise(text, CATALOGUE)).toBe(key);
+		expect(part).toContainEqual(expect.objectContaining({ key }));
+	});
+
+	it("leaves M2's 'Running intervals' unmatched: running is planned as run segments", () => {
+		expect(EXERCISE_SUGGESTIONS).toContain('Running intervals');
+		expect(NOT_EXERCISES).toContain('Running intervals');
+		expect(matchExercise('Running intervals', CATALOGUE)).toBeNull();
 	});
 });

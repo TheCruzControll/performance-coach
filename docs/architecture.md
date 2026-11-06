@@ -94,6 +94,13 @@ routes thin, and makes business logic testable without HTTP. Repositories accept
 (the database _or_ a transaction), so services decide transaction boundaries and integration
 tests can wrap each test in a rolled-back transaction.
 
+A transaction is one connection, and a connection runs one query at a time, so code handed an
+`Executor` awaits its queries in turn and never starts several together (`Promise.all` over one
+`db`). node-postgres 8 still queues such queries but has deprecated it for pg@9, and integration
+tests fail on any query sent to a busy connection (`tests/integration/one-query-per-client.ts`).
+A route may still await several services together when none is handed a transaction: the pool
+gives each of their queries its own connection.
+
 ## Data
 
 - **PostgreSQL 16+** everywhere: Neon Lakebase Postgres 18 in production/preview, Postgres 18 in

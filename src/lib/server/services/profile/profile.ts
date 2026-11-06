@@ -142,10 +142,8 @@ export async function saveBody(ownerId: string, input: unknown, deps: ProfileDep
 
 /** Disciplines the athlete trains (from open goals and experience): decides the steps. */
 async function trainedDisciplines(repo: ProfileRepository, ownerId: string) {
-	const [goals, experience] = await Promise.all([
-		repo.listGoals(ownerId),
-		repo.listExperience(ownerId)
-	]);
+	const goals = await repo.listGoals(ownerId);
+	const experience = await repo.listExperience(ownerId);
 	const set = new Set<Discipline>();
 	for (const g of goals) if (g.priority !== null) g.disciplines.forEach((d) => set.add(d));
 	for (const e of experience) set.add(e.discipline);
@@ -180,9 +178,10 @@ export async function getOnboarding(
 ): Promise<OnboardingState> {
 	const { db } = resolveDeps(deps);
 	const repo = createProfileRepository(db);
-	const [profile, disciplines] = await measure('db', () =>
-		Promise.all([repo.ensureProfile(ownerId), trainedDisciplines(repo, ownerId)])
-	);
+	const { profile, disciplines } = await measure('db', async () => ({
+		profile: await repo.ensureProfile(ownerId),
+		disciplines: await trainedDisciplines(repo, ownerId)
+	}));
 	return onboardingState(toProfile(profile), disciplines);
 }
 
@@ -260,10 +259,8 @@ export async function completeOnboarding(ownerId: string, deps: ProfileDeps = {}
 		db.transaction(async (tx) => {
 			const repo = createProfileRepository(tx);
 			const profile = await repo.ensureProfile(ownerId);
-			const [goals, schedule] = await Promise.all([
-				repo.listGoals(ownerId),
-				repo.getSchedule(ownerId)
-			]);
+			const goals = await repo.listGoals(ownerId);
+			const schedule = await repo.getSchedule(ownerId);
 			const errors: Record<string, string> = {};
 			if (!goals.some((g) => g.priority !== null)) errors.goals = 'Add at least one goal';
 			if (!schedule?.daysPerWeek) errors.schedule = 'Tell your coach how many days you can train';
@@ -295,27 +292,15 @@ export async function getTrainingProfile(
 	const { db } = resolveDeps(deps);
 	const repo = createProfileRepository(db);
 	const profileRow = await measure('db', () => repo.ensureProfile(ownerId));
-	const [
-		bodyWeight,
-		goals,
-		experience,
-		baselines,
-		specifics,
-		equipment,
-		injuries,
-		exercises,
-		schedule
-	] = await Promise.all([
-		measure('db', () => repo.listBodyWeight(ownerId)),
-		listGoals(ownerId, deps),
-		getExperience(ownerId, deps),
-		measure('db', () => repo.listCurrentBaselines(ownerId)),
-		getSpecifics(ownerId, deps),
-		getEquipment(ownerId, deps),
-		getInjuries(ownerId, deps),
-		getExercisePreferences(ownerId, deps),
-		getSchedule(ownerId, deps)
-	]);
+	const bodyWeight = await measure('db', () => repo.listBodyWeight(ownerId));
+	const goals = await listGoals(ownerId, deps);
+	const experience = await getExperience(ownerId, deps);
+	const baselines = await measure('db', () => repo.listCurrentBaselines(ownerId));
+	const specifics = await getSpecifics(ownerId, deps);
+	const equipment = await getEquipment(ownerId, deps);
+	const injuries = await getInjuries(ownerId, deps);
+	const exercises = await getExercisePreferences(ownerId, deps);
+	const schedule = await getSchedule(ownerId, deps);
 	return {
 		profile: toProfile(profileRow),
 		bodyWeight: bodyWeight.map(toWeight),
@@ -346,12 +331,10 @@ export async function getProfileOverview(
 ): Promise<ProfileOverview> {
 	const { db } = resolveDeps(deps);
 	const repo = createProfileRepository(db);
-	const [profileRow, goals, experience, schedule] = await Promise.all([
-		measure('db', () => repo.ensureProfile(ownerId)),
-		measure('db', () => repo.listGoals(ownerId)),
-		measure('db', () => repo.listExperience(ownerId)),
-		getSchedule(ownerId, deps)
-	]);
+	const profileRow = await measure('db', () => repo.ensureProfile(ownerId));
+	const goals = await measure('db', () => repo.listGoals(ownerId));
+	const experience = await measure('db', () => repo.listExperience(ownerId));
+	const schedule = await getSchedule(ownerId, deps);
 	const open = goals.filter((g) => g.priority !== null);
 	const disciplines = new Set<Discipline>();
 	for (const g of open) g.disciplines.forEach((d) => disciplines.add(d));
