@@ -42,7 +42,9 @@ the CSRF Origin check, User-Agent and passkey labels, and the route access map â
   committed migration with the same code `pnpm db:migrate` uses. The reset refuses any database
   whose name does not end in `_test`/`_e2e`.
 - **Isolation:** `withRollback()` runs each test in a transaction that is always rolled back;
-  services accept the transaction as their `db` dependency. Files run serially.
+  services accept the transaction as their `db` dependency. Files run serially. A race that
+  needs two connections (a goal status change waiting behind a concurrent edit) commits for real
+  and deletes its owner afterwards.
 - **Covered:** migrations applied and constraints enforced; health up and down (unreachable
   database); web-vitals ingest, validation, de-duplication (across requests and within one
   batch), route attribution and p75 summary; error recording, including when the database is
@@ -60,11 +62,12 @@ the CSRF Origin check, User-Agent and passkey labels, and the route access map â
   sign-in (counter update, rotation, replay, expired challenge, counter regression, unknown
   passkey, production RP and other origins refused, malformed bodies); sessions (sliding refresh
   at most daily, 90-day cap, 30-day idle expiry, last-seen resolution, revoke one / others /
-  sign out); recovery (burn, any spelling refused afterwards, 15-minute restricted session, new
-  passkey upgrades it, regeneration); passkey management (add, challenge bound to its session,
-  rename validation, never the last, removal ends its sessions); rate limits on every entry point
-  with `Retry-After`, window reset and a global recovery ceiling. A controllable clock replaces
-  waiting.
+  sign out, a malformed id is not found); recovery (burn, any spelling refused afterwards,
+  15-minute restricted session, new passkey upgrades it, regeneration); passkey management (add,
+  challenge bound to its session, rename validation, never the last, removal ends its sessions, a
+  malformed id is not found); rate limits on every entry point with `Retry-After`, window reset
+  and a global ceiling on failed recovery codes that never refuses a valid one. A controllable
+  clock replaces waiting.
 - **Logs:** quiet by default (`LOG_LEVEL=silent` via the project's `env`); run
   `LOG_LEVEL=debug pnpm test:integration` to see them.
 

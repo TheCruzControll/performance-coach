@@ -85,7 +85,8 @@ app path (`return-path.ts`).
   revoked) and lands on Security with a prompt to remove the lost passkey.
 - Codes can be regenerated from Security (all old codes stop working; new set shown once, with
   acknowledgement). A recovery session cannot regenerate codes.
-- Rate limits: 5 attempts per 15 min per client and 20 per hour in total.
+- Rate limits: 5 attempts per 15 min per client and 20 failed attempts per hour in total; the total
+  never refuses a valid code (see Rate limits).
 - Lost every passkey **and** every code: the guarded `pnpm auth:reset-owner` (docs/deployment.md).
 
 ### Passkey management (Profile → Security)
@@ -93,7 +94,9 @@ app path (`return-path.ts`).
 Add (a real registration bound to the current session: the challenge row stores the session id),
 rename (1–64 characters), remove. **The last passkey can never be removed**: the check runs under
 a row lock, so two concurrent removals cannot both pass. Removing a passkey also ends every other
-session that signed in with it.
+session that signed in with it. The passkey and session ids these actions receive are checked by
+shape before any query (base64url, UUID): a malformed id is answered like an unknown one (`404`,
+`not_found`), never with a database error.
 
 ### Sessions
 
@@ -169,6 +172,11 @@ every server instance shares the counters. The first refusal of a window is audi
 
 The client address is the platform's (`getClientAddress()`: `x-forwarded-for` as set by Vercel).
 Refusals answer `429` with `Retry-After`.
+
+`recovery.global` counts failed codes only, charged after the code is looked up, so it never
+refuses a valid one: a client staying within its own limit cannot fill it and lock the owner out
+of recovery. It is a tripwire (audited when it trips; further wrong codes answer `429`), not a
+bound on distributed guessing, which rests on the per-client limit and the 80-bit codes.
 
 ## Audit log
 

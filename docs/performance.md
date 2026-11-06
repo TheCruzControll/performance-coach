@@ -7,30 +7,38 @@ Lighthouse runner, CI and docs).
 
 ## M2 (authentication) — measured 2026-11-05
 
-Measured on the M2 branch after passkey auth landed (local 4-vCPU VM, same tools as below).
+Measured on the M2 branch after passkey auth landed (local 4-vCPU VM, same tools as below). The
+sizes were measured again with the accounting described under "Budgets (enforced)" once the
+training-profile services landed (`pnpm build:node && pnpm budgets`; no route awaits a dynamic
+import in its `load`, and no chunk is missing from SvelteKit's modulepreload list).
 
 | Route                     | Initial JS (gzip) | Route CSS (gzip) |
 | ------------------------- | ----------------: | ---------------: |
 | `/(app)/profile/security` |           59.6 KB |          10.2 KB |
 | `/(app)/train`            |           58.2 KB |          10.5 KB |
 | `/(app)/profile`          |           57.8 KB |           8.3 KB |
-| `/setup`                  |           56.3 KB |           6.4 KB |
-| `/(app)/today`            |           56.1 KB |           7.5 KB |
+| `/setup`                  |           56.7 KB |           6.4 KB |
+| `/(app)/today`            |           56.2 KB |           7.5 KB |
 | `/design`                 |           55.8 KB |          11.7 KB |
+| `/` (sign-in)             |           55.0 KB |           5.4 KB |
 | `/(app)/progress`         |           54.9 KB |           6.7 KB |
-| `/(app)/offline`          |           54.8 KB |           6.1 KB |
-| `/` (sign-in)             |           54.6 KB |           5.4 KB |
-| `/recover/passkey`        |           54.2 KB |           5.0 KB |
+| `/(app)/offline`          |           54.9 KB |           6.1 KB |
+| `/recover/passkey`        |           54.6 KB |           5.0 KB |
 | `/recover`                |           53.6 KB |           5.2 KB |
 | `/(app)/coach`            |           52.9 KB |           6.0 KB |
 
-Total CSS **19.6 KB** of 20 KB (39 files). All budgets pass, but headroom is now thin: the
-Security screen is at 59.6 KB (its sheets, the passkey helpers and sign-out code load on intent;
-without that it was 65 KB) and total CSS has 0.4 KB left. Against the M1 table every
+Whole-build CSS is 19.6 KB in 39 files (tracked, no longer a budget); the heaviest route CSS is
+`/design` at 11.7 KB of 14 KB. All budgets pass, but headroom is now thin: the Security screen is
+at 59.6 KB (its sheets, the passkey helpers and sign-out code load on intent; without that it was
+65 KB), so `/(app)/profile/security` has **0.4 KB of headroom**. Against the M1 table every
 existing route grew by 2.3–3.3 KB; part of that is the shared icon set (the whole set ships with
 every screen; nine security icons were added), the rest is not yet attributed and should be
 before M3 adds screens. Anything new must be code-split or paid for elsewhere — record the
 trade-off here.
+
+Whatever every route ships spends that 0.4 KB: each new route node (the app entry lists every
+node of the app), each param matcher, each icon added to the shared set and any growth of a
+shared component costs every route, Security included.
 
 - **`@simplewebauthn/browser` (≈5 KB gzip) is never in initial JS.** It is imported on demand by
   `src/lib/client/passkeys.ts`; `pnpm budgets` fails if it appears in any route's initial JS or
@@ -48,15 +56,35 @@ trade-off here.
 ## Budgets (enforced)
 
 `pnpm budgets` (`scripts/check-budgets.ts`) reads the SvelteKit build output and fails CI when a
-budget is exceeded. "Initial JS" is exactly the set SvelteKit modulepreloads for a route: the app
-entry plus every layout and page node of the route and their static imports (gzip level 9).
+budget is exceeded. "Initial JS" (gzip level 9) is everything the browser must load before the
+route is interactive:
 
-| Budget                  | Limit            | Why                                                                  |
-| ----------------------- | ---------------- | -------------------------------------------------------------------- |
-| Initial JS per route    | **≤ 60 KB gzip** | parse/compile/hydrate cost on a mid-range phone; ~35 KB is framework |
-| Total CSS (whole build) | **≤ 20 KB gzip** | render-blocking; tokens + all components                             |
-| Preloaded font files    | **≤ 2**          | preloads compete with critical requests                              |
-| Main-thread blocking    | **≤ 200 ms**     | target per screen while loading, 4× CPU; CI fails above 250 ms       |
+- the **complete static import graph** of the app entry and the route's layout and page nodes,
+  read from Vite's manifest. SvelteKit's own modulepreload list can miss a chunk that is also
+  reachable through a dynamic import (its `find_deps` marks it seen on the dynamic path first);
+  the browser then fetches it late, after the chunk that imports it. The report lists such
+  chunks, and they count towards the budget either way;
+- plus the **largest dynamic import a universal `load` (`+page.ts` / `+layout.ts`) awaits**: the
+  page cannot hydrate before it arrives, so lazy-loading a screen's body this way does not take
+  it out of the budget (column "of which awaited by `load`"). The script finds these imports
+  with a regular expression over the load file's own source, so it sees only a string-literal
+  relative path that names the real file (`import('./Body.svelte')`); an aliased (`#lib/…`),
+  computed or extension-less specifier, or an import made in a module the load calls, is not
+  counted. Write load-awaited imports in that form.
+
+| Budget               | Limit            | Why                                                                  |
+| -------------------- | ---------------- | -------------------------------------------------------------------- |
+| Initial JS per route | **≤ 60 KB gzip** | parse/compile/hydrate cost on a mid-range phone; ~37 KB is framework |
+| CSS per route        | **≤ 14 KB gzip** | render-blocking: the stylesheets the route renders with              |
+| Preloaded font files | **≤ 2**          | preloads compete with critical requests                              |
+| Main-thread blocking | **≤ 200 ms**     | target per screen while loading, 4× CPU; CI fails above 250 ms       |
+
+The CSS budget was a whole-build total (≤ 20 KB) until M2's onboarding. A total counts every
+screen's and every on-demand sheet's styles at once, although no route loads them together;
+it grew with each screen (19.6 KB of 20 after passkey auth) and would have forced styles out of
+components for no gain to any single page load. The render-blocking cost is per route, so that
+is what is budgeted now: 14 KB is ~2 KB above the heaviest route when the change was made
+(`/design`, 11.7 KB). The report still prints the whole-build total for tracking.
 
 The same script also guards the CSS output: every built rule that ships a `-webkit-` property must
 ship the standard one too (see the glass note in `docs/design-system.md`).
