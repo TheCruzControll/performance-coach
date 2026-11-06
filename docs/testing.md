@@ -248,6 +248,15 @@ Unit tests (`src/lib/domain/training/`, `src/lib/domain/exercises/`, `src/lib/do
   muscle, equipment, skill, tag, discipline, lift, measure or load type; reps that run high to
   low, are zero or are not numbers; reps or seconds on the wrong measure; a time measure without
   seconds; `uni` other than `y` or `-`; a duplicate key; a wrong column count; a missing header.
+- **Catalogue data and matcher** (`integrity.test.ts`, `match.test.ts`): keys unique across
+  parts; names and aliases distinct after the matcher's normalising, each matching its own entry;
+  only M2 equipment keys; each group defined in one part, with an intent and ≥ 2 members sharing
+  its pattern (and, in part 1, its measure); default seconds exactly on time-measured entries;
+  each M2 lift linked from at most one entry. Part 1 has ≥ 75 entries, flags split squats,
+  lunges and single-leg work unilateral, tags barbell squats, hinges and Olympic lifts
+  `spinal_loading`, gives squat, hinge and single-leg work ≥ 2 dumbbell-only and ≥ 1 bodyweight
+  options, links its six M2 lifts and matches M2's lower-body and conditioning suggestions. The matcher ignores case, accents, punctuation, spacing and plurals, and gives
+  null, never a guess, for unknown text, part of a name or a name two exercises share.
 - **Plain Node** (`scripts/catalogue-node.test.ts`): Node with type stripping alone, as the seed
   runs, loads `src/lib/domain/exercises/index.ts` and sees the catalogue Vite sees; an
   extensionless import fails there, which is why the package uses `.ts` specifiers.
