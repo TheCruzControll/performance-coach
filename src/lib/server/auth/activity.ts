@@ -73,11 +73,9 @@ export async function recentAuthActivity(
 ): Promise<AuthActivity[]> {
 	const { db } = resolveDeps(deps);
 	const repo = createAuthRepository(db);
+	const recent = await repo.recentEvents(WINDOW);
 	// Half the feed is kept for the latest security changes, however much happened since.
-	const [recent, significant] = await Promise.all([
-		repo.recentEvents(WINDOW),
-		repo.recentEvents(Math.floor(limit / 2), SIGNIFICANT)
-	]);
+	const significant = await repo.recentEvents(Math.floor(limit / 2), SIGNIFICANT);
 	// Older events were not read: a run of attempts that reaches the oldest one may go on.
 	const cutoff = recent.length === WINDOW ? recent.at(-1)!.id : null;
 	const rows = [...new Map([...recent, ...significant].map((r) => [r.id, r])).values()];
