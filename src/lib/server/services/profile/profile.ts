@@ -90,7 +90,11 @@ export async function getBody(ownerId: string, deps: ProfileDeps = {}) {
 		const p = await repo.ensureProfile(ownerId);
 		return [p, await repo.listBodyWeight(ownerId)] as const;
 	});
-	return { profile: toProfile(profile), bodyWeight: history.map(toWeight) };
+	// With the target's unit, which may no longer be the owner's (the editor converts it).
+	return {
+		profile: { ...toProfile(profile), targetWeightUnit: profile.targetWeightUnit },
+		bodyWeight: history.map(toWeight)
+	};
 }
 
 /**
