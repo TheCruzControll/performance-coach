@@ -51,6 +51,7 @@ interface ViteChunk {
 	src?: string;
 	imports?: string[];
 	dynamicImports?: string[];
+	css?: string[];
 }
 
 if (!existsSync(`${OUT}/server/manifest-full.js`)) {
@@ -317,6 +318,61 @@ if (schemasChunk) {
 }
 
 /**
+ * Profile sections: a section page renders with the CSS of what it imports up front (the screen,
+ * its skeleton and Save bar), never with an editor's, its own or another section's. Each editor
+ * loads on demand from the registry and its styles arrive with it, before it mounts, so adding a
+ * section costs no section page anything. SvelteKit links into a page the CSS of every dynamic
+ * import its server build can reach (`eager_css` in @sveltejs/kit's build_server.js), so the
+ * server build leaves the registry out (SectionScreen.svelte). The editors are the registry's
+ * `import('./….svelte')` specifiers; a section page is any route whose page can load one.
+ */
+const EDITOR_REGISTRY = 'src/lib/ui/profile/editors.ts';
+const EDITOR_IMPORT = /import\(\s*['"`](\.\/[^'"`]+\.svelte)['"`]\s*\)/g;
+const editorKeys = [...readFileSync(EDITOR_REGISTRY, 'utf8').matchAll(EDITOR_IMPORT)].map(
+	([, spec]) => path.posix.join(path.posix.dirname(EDITOR_REGISTRY), spec!)
+);
+/** Manifest keys reachable from `keys` through static and dynamic imports (inclusive). */
+function loadable(keys: Iterable<string>): Set<string> {
+	const seen = new Set<string>();
+	const queue = [...keys];
+	while (queue.length) {
+		const key = queue.pop()!;
+		if (seen.has(key)) continue;
+		seen.add(key);
+		queue.push(...(vite[key]?.imports ?? []), ...(vite[key]?.dynamicImports ?? []));
+	}
+	return seen;
+}
+const keysOf = (files: Iterable<string>) =>
+	[...files].map((file) => keyOf.get(file)).filter((key): key is string => key !== undefined);
+const cssOf = (keys: Iterable<string>) => new Set([...keys].flatMap((key) => vite[key]?.css ?? []));
+const sectionProblems: string[] = editorKeys.length
+	? editorKeys.filter((key) => !vite[key]).map((key) => `${key} is not in the build`)
+	: [`no editor found in ${EDITOR_REGISTRY}: update this guard`];
+const editorCss = cssOf(loadable(editorKeys));
+const sectionRoutes: string[] = [];
+/** The stylesheets only an editor brings to some section page: none of them may be linked. */
+const keptOut = new Set<string>();
+for (const route of routes) {
+	if (!route.page) continue;
+	const ids = [...route.page.layouts, route.page.leaf].filter((n): n is number => n !== undefined);
+	const canLoad = loadable(keysOf(nodes[route.page.leaf]!.imports));
+	if (!editorKeys.some((key) => canLoad.has(key))) continue;
+	sectionRoutes.push(route.id);
+	const upFront = cssOf(
+		keysOf(staticClosure([...client.imports, ...ids.flatMap((id) => nodes[id]!.imports)]))
+	);
+	const linked = new Set([...client.stylesheets, ...ids.flatMap((id) => nodes[id]!.stylesheets)]);
+	for (const file of [...editorCss].filter((f) => !upFront.has(f))) {
+		keptOut.add(file);
+		if (linked.has(file)) {
+			sectionProblems.push(`${route.id}: links an editor's ${path.basename(file)}`);
+		}
+	}
+}
+if (!sectionRoutes.length) sectionProblems.push('no route can load a section editor');
+
+/**
  * Server-only packages: the exercise catalogue (src/lib/domain/exercises) is in no client file at
  * all, initial or loaded later, the service worker included. Every catalogue table starts with
  * CATALOGUE_HEADER, the literal format.ts reserves as its bundle signature. This is the second
@@ -352,6 +408,7 @@ const lines = [
 		.map((r) => `\`${r}\``)
 		.join(', ')}: ${webauthnProblems.length ? 'FAIL' : 'pass'}`,
 	`Validation (zod, profile schemas): on demand only, never in initial JS: ${validationProblems.length ? 'FAIL' : 'pass'}`,
+	`Profile sections: no editor's CSS on a section page (${sectionRoutes.map((r) => `\`${r}\``).join(', ')}; ${editorKeys.length} editors, ${keptOut.size} of their stylesheets left to load with them): ${sectionProblems.length ? 'FAIL' : 'pass'}`,
 	`Exercise catalogue (server-only): in no client chunk: ${catalogueChunks.length ? 'FAIL' : 'pass'}`
 ];
 console.log(lines.join('\n'));
@@ -375,6 +432,10 @@ if (validationProblems.length > 0) {
 	console.error(`\nValidation placement failed:\n  - ${validationProblems.join('\n  - ')}`);
 }
 
+if (sectionProblems.length > 0) {
+	console.error(`\nProfile section CSS failed:\n  - ${sectionProblems.join('\n  - ')}`);
+}
+
 if (catalogueChunks.length > 0) {
 	console.error(
 		`\nThe exercise catalogue reached the browser (its header is in):\n  - ${catalogueChunks.join('\n  - ')}`
@@ -387,6 +448,7 @@ if (
 	prefixProblems.length > 0 ||
 	webauthnProblems.length > 0 ||
 	validationProblems.length > 0 ||
+	sectionProblems.length > 0 ||
 	catalogueChunks.length > 0
 ) {
 	const what = [
@@ -394,6 +456,7 @@ if (
 		...(prefixProblems.length ? ['CSS prefixes'] : []),
 		...(webauthnProblems.length ? ['WebAuthn library placement'] : []),
 		...(validationProblems.length ? ['validation placement'] : []),
+		...(sectionProblems.length ? ['profile section CSS'] : []),
 		...(catalogueChunks.length ? ['catalogue placement'] : [])
 	];
 	console.error(`\nbudgets: FAILED (${what.join(', ')})`);
