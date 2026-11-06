@@ -72,6 +72,9 @@ builds; once it is ready Vercel assigns `coach.nikocruz.com` to it, and the prev
 serves until then.
 `scripts/vercel-build.test.ts` (unit suite) checks the committed config (nothing skips a
 production build) and the build command's migrate-then-build order.
+`vercel.json` also sends the prerendered pages, static files that never run `hooks.server.ts`,
+`STATIC_PAGE_HEADERS` (`src/lib/server/security-headers.ts`); `scripts/vercel-headers.test.ts`
+fails when a prerendered page has no rule or its headers differ from that constant.
 
 Production deploys only from `main` through Git: no deploy token exists and no workflow deploys.
 Do not deploy production by hand from a logged-in Vercel CLI (`vercel deploy --prod`): it skips
@@ -308,6 +311,7 @@ ID under "What exists".
   injected inline script is refused.
 - **Static and prerendered files** (`/_app/immutable/*`, icons, `manifest.webmanifest`,
   `robots.txt`, `/offline`) are served by the CDN (Vercel) or `sirv` (adapter-node) without
-  running hooks, so they do **not** carry these headers. They contain no personal data; the
-  prerendered `/offline` page carries its CSP as a `<meta>` tag (which cannot express
-  `frame-ancestors`). `robots.txt` disallows everything and every page has `noindex` meta.
+  running hooks. They contain no personal data. On Vercel the prerendered pages get the same
+  headers from `vercel.json`, plus a CSP header of `frame-ancestors 'none'`: their own CSP is a
+  `<meta>` tag, which cannot express it. Other static files, and every static file under `sirv`,
+  carry none of them. `robots.txt` disallows everything and every page has `noindex` meta.
