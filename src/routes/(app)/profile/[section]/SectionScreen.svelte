@@ -107,7 +107,7 @@
 	{#if Editor && form}
 		<!-- A new editor for a new form (after Discard): its own state starts from the draft. -->
 		{#each [form] as current (current)}
-			<Editor bind:value={current.value} errors={current.errors} {context} />
+			<Editor bind:value={current.value} errors={current.errors} {context} manage />
 		{/each}
 	{:else if failed}
 		<div class="failed">

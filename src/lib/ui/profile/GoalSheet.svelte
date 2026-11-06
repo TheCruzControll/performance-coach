@@ -6,7 +6,8 @@
   requirements; a general goal adds what to improve, how it is measured and a target date.
   Switching kind keeps what was typed for the other, but only the chosen kind's fields are
   saved. Checked with the shared schema, then saved through the route's `?/saveGoal` action,
-  which answers with the ranking.
+  which answers with the ranking. On Profile (`manage`) a stored goal's status changes here too.
+  A stored goal is deleted through `?/deleteGoal`, after a second tap that says it is for good.
 -->
 <script lang="ts">
 	import { tick } from 'svelte';
@@ -14,7 +15,9 @@
 	import {
 		DISCIPLINES,
 		DISCIPLINE_INFO,
-		EVENT_TYPE_SUGGESTIONS
+		EVENT_TYPE_SUGGESTIONS,
+		GOAL_STATUSES,
+		GOAL_STATUS_LABEL
 	} from '#lib/domain/profile/catalog.ts';
 	import type { FieldErrors } from '#lib/domain/profile/schemas.ts';
 	import type { Goal } from '#lib/domain/profile/types.ts';
@@ -31,11 +34,16 @@
 		open: boolean;
 		/** What it edits: a stored goal's draft or a new one. */
 		draft: GoalDraft;
+		/** Profile: a stored goal's status can change too. */
+		manage?: boolean;
 		/** Saved: the goals as the services rank them. */
 		onsaved: (goals: Goal[]) => void;
+		/** Deleted: the goals left, as the services rank them. */
+		ondeleted: (goals: Goal[]) => void;
 	}
 
-	let { open = $bindable(), draft, onsaved }: Props = $props();
+	let { open = $bindable(), draft, manage = false, onsaved, ondeleted }: Props = $props();
+	const id = $props.id();
 
 	// The draft is read once: another goal is another sheet (GoalsEditor mounts one per draft),
 	// so an edit is kept only once it is saved.
@@ -44,13 +52,18 @@
 	let errors = $state<FieldErrors>({});
 	let failed = $state<string | null>(null);
 	let busy = $state(false);
+	let deleting = $state(false);
+	/** Delete was tapped once: the next tap deletes the goal for good. */
+	let confirming = $state(false);
 	let fields = $state<HTMLElement>();
+	let warning = $state<HTMLElement>();
 
 	const disciplines = DISCIPLINES.map((d) => ({
 		value: d,
 		label: DISCIPLINE_INFO[d].short,
 		tone: DISCIPLINE_INFO[d].tone
 	}));
+	const statuses = GOAL_STATUSES.map((s) => ({ value: s, label: GOAL_STATUS_LABEL[s] }));
 	const kinds: { value: GoalDraft['kind']; label: string }[] = [
 		{ value: 'event', label: 'Event' },
 		{ value: 'general', label: 'General' }
@@ -81,7 +94,32 @@
 		const invalid = Object.keys(errors).length > 0;
 		failed = outcome.failed ?? errors[''] ?? (invalid ? 'Check the highlighted fields.' : null);
 		if (invalid) return focusFirstError(fields);
-		// The button is disabled while it saves, which drops keyboard focus: give it back.
+		await refocus(button);
+	}
+
+	async function remove(event: MouseEvent) {
+		if (!confirming) {
+			confirming = true;
+			// What a second tap does is said under the button: bring it into view too.
+			await tick();
+			warning?.scrollIntoView({ block: 'nearest' });
+			return;
+		}
+		const button = event.currentTarget as HTMLElement;
+		deleting = true;
+		failed = null;
+		const outcome = await save<{ goals: Goal[] }>('?/deleteGoal', { id: goal.id });
+		deleting = false;
+		if (outcome.ok) {
+			if (outcome.data) ondeleted(outcome.data.goals);
+			return;
+		}
+		failed = outcome.failed ?? 'That didn’t delete. Try again.';
+		await refocus(button);
+	}
+
+	/** A button is disabled while it posts, which drops keyboard focus: give it back. */
+	async function refocus(button: HTMLElement) {
 		await tick();
 		if (document.activeElement === document.body) button.focus();
 	}
@@ -200,13 +238,49 @@
 				optional
 			/>
 		{/if}
+		{#if manage && goal.id}
+			<ChoiceGroup
+				legend="Status"
+				hint="A paused goal keeps its rank. Achieved and dropped goals move to Past goals."
+				bind:value={goal.status}
+				error={errors.status}
+				options={statuses}
+				data-testid="goal-status"
+			/>
+		{/if}
+		{#if goal.id}
+			<div class="delete">
+				<Button
+					variant={confirming ? 'danger' : 'secondary'}
+					icon="trash"
+					loading={deleting}
+					disabled={busy}
+					onclick={remove}
+					aria-describedby={confirming ? `${id}-delete` : undefined}
+					data-testid="goal-delete"
+				>
+					{confirming ? 'Delete for good' : 'Delete goal'}
+				</Button>
+				<div aria-live="polite">
+					{#if confirming}
+						<p class="warning" id="{id}-delete" bind:this={warning}>
+							Deleting can’t be undone.{manage
+								? ' To keep it under Past goals, mark it achieved or dropped instead.'
+								: ''}
+						</p>
+					{/if}
+				</div>
+			</div>
+		{/if}
 	</div>
 </BottomSheet>
 
 {#snippet footer()}
 	<div class="actions">
 		{#if failed}<Notice tone="danger" data-testid="goal-sheet-error">{failed}</Notice>{/if}
-		<Button block loading={busy} onclick={submit} data-testid="goal-save">Save goal</Button>
+		<Button block loading={busy} disabled={deleting} onclick={submit} data-testid="goal-save">
+			Save goal
+		</Button>
 	</div>
 {/snippet}
 
@@ -227,5 +301,19 @@
 		display: flex;
 		flex-wrap: wrap;
 		gap: var(--space-2);
+	}
+
+	/* Apart from the fields: deleting is not an edit. */
+	.delete {
+		display: grid;
+		justify-items: start;
+		padding-top: var(--space-5);
+		border-top: 1px solid var(--color-border);
+	}
+
+	.warning {
+		margin-top: var(--space-2);
+		font-size: var(--text-sm);
+		color: var(--color-text-secondary);
 	}
 </style>

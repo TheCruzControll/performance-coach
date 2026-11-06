@@ -1,7 +1,7 @@
 /**
  * Profile → Goals: event and general goals ranked by priority, added (one path per kind, or
  * several at once) and edited in a code-split sheet, each saved the moment it changes (the
- * screen has no Save bar). Serial (one test at a time, after the
+ * screen has no Save bar); paused, achieved, dropped or deleted from the same sheet. Serial (one test at a time, after the
  * functional suites): every test starts from a blank training profile, which every browser and
  * worker shares.
  */
@@ -55,6 +55,13 @@ const MARATHON = {
 	eventDate: '2027-12-05',
 	targetPerformance: 'Sub 3:30'
 };
+const STRENGTH = {
+	kind: 'general',
+	title: 'Keep my strength',
+	disciplines: ['strength'],
+	focus: 'Hold squat and deadlift',
+	measure: 'Top sets at RPE 8 stay within 5%'
+};
 
 /** The editor has loaded in place of the skeleton. */
 async function editorReady(page: Page) {
@@ -62,6 +69,7 @@ async function editorReady(page: Page) {
 }
 
 const sheetOf = (page: Page) => page.getByTestId('goal-sheet');
+const statusOf = (page: Page) => sheetOf(page).getByRole('group', { name: 'Status' });
 const textbox = (page: Page, name: string | RegExp) =>
 	sheetOf(page).getByRole('textbox', { name, exact: typeof name === 'string' });
 
@@ -535,15 +543,216 @@ test('closing the sheet gives focus back to what opened it', async ({ page, requ
 	]);
 });
 
-test('goal saves belong to Goals, which has no Save of its own', async ({ request }) => {
-	const post = (action: string) =>
+test('a goal achieved leaves the ranking for Past goals and the rest move up; made active again, it goes last', async ({
+	page,
+	request
+}, testInfo) => {
+	const errors = trackConsoleErrors(page);
+	for (const goal of [FIGHT, MARATHON, STRENGTH]) {
+		await profileAction(request, '/profile/goals?/saveGoal', goal);
+	}
+	await gotoHydrated(page, '/profile/goals');
+	await editorReady(page);
+	const rows = page.getByTestId('goal-row');
+	const past = page.getByRole('region', { name: 'Past goals' });
+	const pastRows = past.getByTestId('past-goal-row');
+	await expect(rows).toHaveCount(3);
+	await expect(past).toHaveCount(0);
+
+	const sheet = sheetOf(page);
+	const status = statusOf(page);
+	const save = sheet.getByRole('button', { name: 'Save goal' });
+	await rows.first().click();
+	await expect(sheet.getByRole('heading', { name: 'Edit goal' })).toBeVisible();
+	await expect(status.getByRole('radio', { name: 'Active' })).toBeChecked();
+	await status.getByRole('radio', { name: 'Achieved' }).check();
+	await save.click();
+	await expect(toastWith(page, 'Goal saved')).toBeVisible();
+	await expect(sheet).toBeHidden();
+	await expect(rows).toHaveCount(2);
+	await expect(rows.nth(0)).toHaveAccessibleName(/^Priority 1: Valencia marathon/);
+	await expect(rows.nth(0)).toContainText('Top priority');
+	await expect(rows.nth(1)).toHaveAccessibleName(/^Priority 2: Keep my strength/);
+	await expect(pastRows).toHaveCount(1);
+	await expect(pastRows.first()).toContainText('First Muay Thai fight');
+	await expect(pastRows.first()).toContainText('Achieved');
+	await expect(pastRows.first()).toContainText('Muay Thai fight · 14 Mar 2027 · −71 kg');
+
+	// Paused keeps its rank, and says so.
+	await rows.nth(1).click();
+	await status.getByRole('radio', { name: 'Paused' }).check();
+	await save.click();
+	await expect(sheet).toBeHidden();
+	await expect(rows.nth(1)).toHaveAccessibleName(/^Priority 2: Keep my strength/);
+	await expect(rows.nth(1)).toContainText('Paused');
+	await expect(rows.nth(0)).not.toContainText('Paused');
+	expect(
+		await query(
+			`select title, status, priority, closed_at is not null as closed
+			   from training_goals order by priority nulls last`
+		)
+	).toEqual([
+		{ title: 'Valencia marathon', status: 'active', priority: 1, closed: false },
+		{ title: 'Keep my strength', status: 'paused', priority: 2, closed: false },
+		{ title: 'First Muay Thai fight', status: 'achieved', priority: null, closed: true }
+	]);
+
+	await page.reload();
+	await editorReady(page);
+	await expect(rows).toHaveCount(2);
+	await expect(rows.nth(0)).toContainText('Top priority');
+	await expect(rows.nth(1)).toContainText('Paused');
+	await expect(pastRows).toHaveCount(1);
+	await expect(pastRows.first()).toContainText('Achieved');
+	await page.evaluate(() => scrollTo(0, document.body.scrollHeight));
+	await captureScreen(page, testInfo, 'profile-goals-past');
+
+	// Active again: back in the ranking, below the goals that stayed in it.
+	await pastRows.first().click();
+	await expect(sheet.getByRole('heading', { name: 'Edit goal' })).toBeVisible();
+	await expect(status.getByRole('radio', { name: 'Achieved' })).toBeChecked();
+	await status.getByRole('radio', { name: 'Active' }).check();
+	await captureScreen(page, testInfo, 'goal-sheet-status');
+	await save.click();
+	await expect(sheet).toBeHidden();
+	await expect(rows).toHaveCount(3);
+	await expect(rows.nth(2)).toHaveAccessibleName(/^Priority 3: First Muay Thai fight/);
+	await expect(past).toHaveCount(0);
+	expect(
+		await query(
+			`select title, status, priority, closed_at is not null as closed
+			   from training_goals order by priority`
+		)
+	).toEqual([
+		{ title: 'Valencia marathon', status: 'active', priority: 1, closed: false },
+		{ title: 'Keep my strength', status: 'paused', priority: 2, closed: false },
+		{ title: 'First Muay Thai fight', status: 'active', priority: 3, closed: false }
+	]);
+	expect(
+		await query(
+			`select change, source, count(*)::int as times from training_goal_events
+			  group by change, source order by change`
+		)
+	).toEqual([
+		{ change: 'created', source: 'profile', times: 3 },
+		{ change: 'reprioritized', source: 'profile', times: 2 },
+		{ change: 'status_changed', source: 'profile', times: 3 }
+	]);
+	expect(errors).toEqual([]);
+});
+
+test('deleting a goal takes a second tap that says it is for good; the goals below move up, and it is gone after a reload', async ({
+	page,
+	request,
+	context
+}, testInfo) => {
+	const errors = trackConsoleErrors(page);
+	await profileAction(request, '/profile/goals?/saveGoal', FIGHT);
+	await profileAction(request, '/profile/goals?/saveGoal', MARATHON);
+	await gotoHydrated(page, '/profile/goals');
+	await editorReady(page);
+	const sheet = sheetOf(page);
+	const remove = sheet.getByTestId('goal-delete');
+	const close = sheet.getByRole('button', { name: 'Close' });
+
+	// A new goal has nothing to delete, and no status to change yet.
+	await page.getByTestId('add-goal').click();
+	await expect(sheet.getByRole('heading', { name: 'New goal' })).toBeVisible();
+	await expect(remove).toHaveCount(0);
+	await expect(statusOf(page)).toHaveCount(0);
+	await close.click();
+	await expect(sheet).toBeHidden();
+
+	const rows = page.getByTestId('goal-row');
+	await rows.first().click();
+	await expect(remove).toHaveText('Delete goal');
+	await remove.click();
+	// The first tap only asks, and says what to do instead.
+	await expect(remove).toHaveText('Delete for good');
+	await expect(remove).toHaveAccessibleDescription(
+		'Deleting can’t be undone. To keep it under Past goals, mark it achieved or dropped instead.'
+	);
+	await expect(sheet).toBeVisible();
+	await expect(sheet.getByText('Deleting can’t be undone.', { exact: false })).toBeInViewport();
+	expect(await query('select title from training_goals order by priority')).toEqual([
+		{ title: 'First Muay Thai fight' },
+		{ title: 'Valencia marathon' }
+	]);
+	await captureScreen(page, testInfo, 'goal-sheet-delete');
+
+	// Closed, the sheet forgets it: the next time, Delete asks again.
+	await close.click();
+	await expect(sheet).toBeHidden();
+	await rows.first().click();
+	await expect(remove).toHaveText('Delete goal');
+	await remove.click();
+	await expect(remove).toHaveText('Delete for good');
+
+	// Offline, nothing is deleted, the sheet says why and Delete keeps the keyboard focus.
+	await context.setOffline(true);
+	await remove.focus();
+	await page.keyboard.press('Enter');
+	await expect(sheet.getByTestId('goal-sheet-error')).toContainText('Can’t reach the server');
+	await expect(remove).toBeFocused();
+	await expect(rows).toHaveCount(2);
+	await context.setOffline(false);
+
+	await remove.click();
+	await expect(toastWith(page, 'Goal deleted')).toBeVisible();
+	await expect(sheet).toBeHidden();
+	await expect(rows).toHaveCount(1);
+	await expect(rows.first()).toHaveAccessibleName(/^Priority 1: Valencia marathon/);
+	await expect(rows.first()).toContainText('Top priority');
+	// Deleted is not past: it is gone.
+	await expect(page.getByRole('region', { name: 'Past goals' })).toHaveCount(0);
+
+	await page.reload();
+	await editorReady(page);
+	await expect(rows).toHaveCount(1);
+	await expect(rows.first()).toContainText('Valencia marathon');
+	expect(await query('select title, priority from training_goals')).toEqual([
+		{ title: 'Valencia marathon', priority: 1 }
+	]);
+	expect(
+		await query(
+			`select change, source, count(*)::int as times from training_goal_events
+			  group by change, source order by change`
+		)
+	).toEqual([
+		{ change: 'created', source: 'profile', times: 2 },
+		{ change: 'deleted', source: 'profile', times: 1 },
+		{ change: 'reprioritized', source: 'profile', times: 1 }
+	]);
+	expect(
+		await query(
+			`select snapshot->>'title' as title from training_goal_events where change = 'deleted'`
+		)
+	).toEqual([{ title: 'First Muay Thai fight' }]);
+	// The one error is the browser's own, for the post it could not send offline.
+	expect(errors.filter((e) => !/ERR_INTERNET_DISCONNECTED/.test(e))).toEqual([]);
+});
+
+test('goal saves and deletes belong to Goals, which has no Save of its own', async ({
+	request
+}) => {
+	const post = (action: string, payload: unknown) =>
 		request.post(action, {
 			headers: { ...SAME_ORIGIN, accept: 'application/json', 'x-sveltekit-action': 'true' },
-			multipart: { payload: JSON.stringify(FIGHT) }
+			multipart: { payload: JSON.stringify(payload) }
 		});
-	expect((await post('/profile/equipment?/saveGoal')).status()).toBe(404);
-	expect((await post('/profile/goals?/save')).status()).toBe(404);
+	expect((await post('/profile/equipment?/saveGoal', FIGHT)).status()).toBe(404);
+	expect((await post('/profile/goals?/save', FIGHT)).status()).toBe(404);
 	expect(await query('select id from training_goals')).toEqual([]);
+
+	await profileAction(request, '/profile/goals?/saveGoal', FIGHT);
+	const [goal] = await query<{ id: string }>('select id from training_goals');
+	expect((await post('/profile/equipment?/deleteGoal', { id: goal!.id })).status()).toBe(404);
+	// A status changes through saveGoal: there is no action of its own.
+	const achieved = { id: goal!.id, status: 'achieved' };
+	expect((await post('/profile/goals?/goalStatus', achieved)).status()).toBe(404);
+	expect(await query('select status, priority from training_goals')).toEqual([
+		{ status: 'active', priority: 1 }
+	]);
 });
 
 test('the page carries none of the editor’s styles: they arrive with the editor', async ({
@@ -614,7 +823,7 @@ test.describe('with the network in the test’s hands', () => {
 });
 
 for (const theme of ['dark', 'light'] as const) {
-	test(`the ways in, the ranked list and an open goal of each kind have no WCAG A/AA violations (${theme} theme)`, async ({
+	test(`the ways in, the ranked and past goals, and an open goal of each kind with its status and Delete have no WCAG A/AA violations (${theme} theme)`, async ({
 		page,
 		request
 	}) => {
@@ -636,15 +845,26 @@ for (const theme of ['dark', 'light'] as const) {
 		expect(await audit(), 'ways in').toEqual([]);
 
 		await profileAction(request, '/profile/goals?/saveGoal', FIGHT);
-		await profileAction(request, '/profile/goals?/saveGoal', MARATHON);
+		await profileAction(request, '/profile/goals?/saveGoal', { ...MARATHON, status: 'paused' });
+		await profileAction(request, '/profile/goals?/saveGoal', { ...STRENGTH, status: 'achieved' });
+		await profileAction(request, '/profile/goals?/saveGoal', {
+			...FIGHT,
+			title: 'Spring smoker',
+			status: 'dropped'
+		});
 		await page.reload();
 		await editorReady(page);
 		await expect(page.getByTestId('goal-row')).toHaveCount(2);
+		await expect(page.getByTestId('past-goal-row')).toHaveCount(2);
 		expect(await audit(), 'list').toEqual([]);
 		await page.getByTestId('goal-row').first().click();
 		const sheet = sheetOf(page);
 		await expect(sheet.getByRole('heading', { name: 'Edit goal' })).toBeVisible();
+		await expect(statusOf(page)).toBeVisible();
 		expect(await audit(), 'sheet').toEqual([]);
+		await sheet.getByTestId('goal-delete').click();
+		await expect(sheet.getByTestId('goal-delete')).toHaveText('Delete for good');
+		expect(await audit(), 'delete').toEqual([]);
 		// Not saved: the sheet only shows the general goal's fields.
 		await sheet.getByRole('radio', { name: 'General' }).click();
 		await expect(textbox(page, 'What to improve')).toBeVisible();
