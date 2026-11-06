@@ -1,8 +1,8 @@
 /**
  * generate.ts: the stage list runs in its documented order and each later stage is an identity
- * stub of its own until its slice replaces it (strength and timefit have); every scenario
- * composes into a plan the contract accepts; the minimal profile gets one default_assumed
- * decision per assumption; the same input gives byte-identical JSON.
+ * stub of its own until its slice replaces it (strength, volume and timefit have); every
+ * scenario composes into a plan the contract accepts; the minimal profile gets one
+ * default_assumed decision per assumption; the same input gives byte-identical JSON.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CATALOGUE } from '../exercises/index';
@@ -11,6 +11,7 @@ import { programPlanSchema } from '../training/schemas';
 import { validate } from '../validation';
 import { DecisionLog } from './decisions';
 import { strength as strengthTemplates } from './decisions/templates/strength';
+import { volume as volumeTemplates } from './decisions/templates/volume';
 import { generateProgram, STAGES } from './generate';
 import { buildProgrammingInput } from './input';
 import { SCENARIO_START, SCENARIOS, scenarioDay } from './scenarios';
@@ -74,14 +75,16 @@ describe('the stage list', () => {
 		running,
 		other,
 		placement,
-		volume,
 		loads,
 		progression
 	};
 
-	it.each(Object.entries({ strength, timefit }))('runs the %s stage of its own', (name, run) => {
-		expect(STAGES.find((s) => s.name === name)?.run).toBe(run);
-	});
+	it.each(Object.entries({ strength, volume, timefit }))(
+		'runs the %s stage of its own',
+		(name, run) => {
+			expect(STAGES.find((s) => s.name === name)?.run).toBe(run);
+		}
+	);
 
 	it.each(Object.entries(STUBS))(
 		'%s is its own stub, returning its input unchanged',
@@ -114,8 +117,8 @@ describe('generateProgram', () => {
 		expect(
 			plan.decisions.filter((d) => d.kind === 'default_assumed').map((d) => d.ruleKey)
 		).toEqual(input.assumptions.map((a) => a.ruleKey));
-		const strengthKinds: string[] = Object.keys(strengthTemplates);
-		expect(plan.decisions.map((d) => d.kind).filter((k) => !strengthKinds.includes(k))).toEqual([
+		const ownKinds: string[] = [...Object.keys(strengthTemplates), ...Object.keys(volumeTemplates)];
+		expect(plan.decisions.map((d) => d.kind).filter((k) => !ownKinds.includes(k))).toEqual([
 			'block_structure',
 			...input.assumptions.map(() => 'default_assumed'),
 			'day_allocation'
