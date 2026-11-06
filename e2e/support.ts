@@ -100,11 +100,35 @@ export function trackConsoleErrors(page: Page): string[] {
 	return errors;
 }
 
-/** Save a named full-viewport screenshot of a key screen for review (uploaded by CI). */
+/**
+ * Save a named full-viewport screenshot of a key screen for review (uploaded by CI); returns it.
+ *
+ * Waits until the screen has settled: no view transition (a tab change cross-fades, see
+ * (app)/+layout.svelte) and no finite animation still running. Otherwise `animations:
+ * 'disabled'` cuts the transition short mid-capture, and WebKit can save the frame in which the
+ * tab bar is out of the page but its transition snapshot is already gone (a shot with no nav).
+ * Infinite animations (spinner, skeleton) never settle; the screenshot option stops those.
+ */
 export async function captureScreen(page: Page, testInfo: TestInfo, name: string) {
 	await page.evaluate(() => document.fonts.ready);
 	await expect(page.locator('body')).toBeVisible();
-	await page.screenshot({
+	await expect
+		.poll(
+			() =>
+				page.evaluate(
+					() =>
+						!document.activeViewTransition &&
+						document
+							.getAnimations()
+							.every(
+								(a) =>
+									a.playState !== 'running' || a.effect?.getComputedTiming().endTime === Infinity
+							)
+				),
+			{ message: 'the screen settles: no view transition or finite animation running' }
+		)
+		.toBe(true);
+	return page.screenshot({
 		path: `test-results/screens/${testInfo.project.name}/${name}.png`,
 		animations: 'disabled'
 	});

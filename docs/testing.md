@@ -179,6 +179,14 @@ Specs:
   open (theme-color included); no screen scrolls sideways; nothing
   sits under fixed chrome at rest (landing CTAs, Coach composer); compact segmented controls keep
   a 44 px hit area.
+- `plate-calculator.e2e.ts` — Train's lazy plate-calculator sheet (no service worker, chunks
+  routed): its code is not in Train's load and arrives on the first tap, through the import
+  alone (no modulepreload tag, whose failure WebKit would keep: `build.modulePreload` in
+  `vite.config.ts` gives no lazy import one), which opens the sheet once it does (the row busy
+  meanwhile); a failed fetch on hover says nothing, a failed tap shows
+  a Retry notice under the row (44 px target, axe in both themes) that a later failed prefetch
+  leaves in place; Retry back online opens the sheet, offline the notice stays, a tap that fails
+  again online reloads Train with `?tool=plates`, and leaving Train mid-retry stays left (WebKit).
 - `platform.e2e.ts` — `/api/health` reports `db: up` (and the Profile screen shows it);
   `Server-Timing`, request id and security headers; ≤ 2 preloaded fonts; manifest + icons;
   CSP header contents and enforcement (an injected inline script is refused); service worker
@@ -217,10 +225,13 @@ Specs:
 - `profile-equipment.serial.e2e.ts` (serial: `resetTrainingProfile()` before each test;
   `E2E_SERIAL_ALONE=1` runs it right after setup) — Profile lists Equipment, which opens
   `/profile/[section]`; a save survives a reload and is in Postgres, and keyboard focus stays on
-  Save; offline, Save says so and keeps the edit; a failed editor chunk shows Retry, which loads
-  it; the editor replaces its skeleton without moving anything; unsaved changes ask before
-  leaving (link, tab bar, Back); an unknown section is a 404. `a11y.e2e.ts` audits the screen and
-  its discard prompt in both themes.
+  Save; offline, Save says so and keeps the edit; a failed editor chunk (never a modulepreload,
+  which WebKit would keep failing across the reload) shows Retry, which loads it; the editor
+  replaces its skeleton without moving anything; unsaved changes ask before leaving (link, tab
+  bar, Back); Back before the next screen has rendered (every browser made to start its view
+  transition 1.5 s late, as WebKit can) comes back to the saved section, never covered by the
+  overtaken screen; an unknown section is a 404. `a11y.e2e.ts` audits the screen and its discard
+  prompt in both themes.
 - `a11y.e2e.ts` — axe-core (`@axe-core/playwright`, WCAG 2.1 A/AA) on every screen (Security
   included; the signed-out sign-in and recovery screens too), the plate-calculator sheet and each
   `/design` component group, in the **dark and light** themes (Lighthouse only audits dark). The
@@ -266,6 +277,19 @@ Unit tests (`src/lib/domain/training/`, `src/lib/domain/exercises/`, `src/lib/do
   `spinal_loading`, gives squat, hinge and single-leg work ≥ 2 dumbbell-only and ≥ 1 bodyweight
   options, links its six M2 lifts and matches M2's lower-body and conditioning suggestions. The matcher ignores case, accents, punctuation, spacing and plurals, and gives
   null, never a guess, for unknown text, part of a name or a name two exercises share.
+- **Whole catalogue and part 2** (`integrity.test.ts`, `match.test.ts`): ≥ 150 entries, ≥ 3 per
+  movement pattern, and the brief's categories (barbell, dumbbell and bodyweight ≥ 15, machine,
+  cable, plyometric and conditioning ≥ 8, kettlebell and Olympic ≥ 6, mobility ≥ 10);
+  conditioning and mobility never counted in reps; Olympic lifts intermediate or above; every M2
+  lift but `custom` linked; every M2 suggestion matched or on `NOT_EXERCISES`, which the matcher
+  never matches whatever the library holds ('Running intervals': running is run segments).
+  Part 2 has ≥ 75 entries and one measure per group, flags single-arm rows and presses, offset
+  carries and rotation work unilateral, tags the standing barbell presses and the barbell row
+  `spinal_loading`, tags every overhead press `overhead` and no horizontal push, keeps the
+  landmine press's group `shoulder_friendly` and off `overhead`, gives horizontal and
+  vertical push and pull ≥ 2 dumbbell-only options (a bench allowed), links bench press,
+  overhead press and weighted pull-up, and matches 'Bench press', 'Overhead press', 'Pull-ups'
+  and 'Dips'.
 - **Plain Node** (`scripts/catalogue-node.test.ts`): Node with type stripping alone, as the seed
   runs, loads `src/lib/domain/exercises/index.ts` and sees the catalogue Vite sees; an
   extensionless import fails there, which is why the package uses `.ts` specifiers.
@@ -351,9 +375,10 @@ WebKit project has never run locally (WebKit is not installed in the build envir
 Safari behaviour (glass, PWA install, status bar) is unverified. The first CI run, including its
 WebKit screenshots, must be attached to the M1 PR as evidence.
 
-Screenshots from the `iphone-chromium` project do **not** show the glass blur: headless Chromium
-does not paint `backdrop-filter` under mobile emulation (verified: the same page blurs with
-`isMobile` off). Judge glass on WebKit screenshots or a device.
+Do not judge the glass from e2e screenshots, where text behind the 92% glass can show through:
+headless Chromium's `blur(32px)` only dims the text behind the tab labels (checked on Linux, as in
+CI), and Playwright's WebKit painted no `backdrop-filter` into screenshots on macOS (`invert(1)` on
+the nav left them untouched; unchecked on CI's Linux WebKit). Judge glass on a device.
 
 ### Real-device checklist (merge gate for UI milestones)
 
