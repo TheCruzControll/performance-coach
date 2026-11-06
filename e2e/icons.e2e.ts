@@ -7,7 +7,7 @@
  * Runs on Chromium and WebKit (the offline test on Chromium, as in offline.e2e.ts); it opts
  * into the desktop projects once they exist.
  */
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 import { ICON_NAMES } from '../src/lib/ui/icons/names';
 import { captureScreen, TABS, trackConsoleErrors } from './support';
 
@@ -17,23 +17,81 @@ const SPRITE = /^(https?:\/\/[^/]+)?\/_app\/immutable\/assets\/sprite\.[\w-]+\.s
 const visibleIcons = (page: Page) => page.locator('svg.icon:visible');
 
 /**
- * Icons on screen that do not draw yet, by their <use> reference: a box with neither width nor
- * height. (getBBox leaves out the stroke, so a line such as `minus` has a width but no height.)
+ * Every icon on screen, by its <use> reference, and whether its <use> has a geometry box (a
+ * width or a height): it has one as soon as the sprite's symbol is drawn. getBBox leaves out the
+ * stroke, so a symbol that is one straight line has a degenerate box: Chromium reports `minus`
+ * as 14 × 0, but WebKit as 0 × 0, the same as a symbol that is not drawn at all.
  */
-function undrawn(page: Page) {
+function iconBoxes(page: Page) {
 	return visibleIcons(page).evaluateAll((svgs) =>
-		svgs.flatMap((svg) => {
+		svgs.map((svg) => {
 			const use = svg.querySelector('use');
 			const box = use?.getBBox();
-			return box && box.width + box.height > 0 ? [] : [use?.getAttribute('href') ?? 'no <use>'];
+			return {
+				href: use?.getAttribute('href') ?? 'no <use>',
+				boxed: Boolean(box && box.width + box.height > 0)
+			};
 		})
 	);
+}
+
+/** One icon's `boxed`, as iconBoxes measures it. */
+function hasBox(svg: Element): boolean {
+	const box = svg.querySelector('use')?.getBBox();
+	return Boolean(box && box.width + box.height > 0);
+}
+
+/**
+ * Whether an icon puts pixels on screen: its screenshot changes when its <use> is hidden. For
+ * the icons whose box cannot tell. Leaves the page as it found it (the <use> shown, the scroll
+ * position). Not while a request is held: Playwright waits for `document.fonts.ready` before a
+ * screenshot, and WebKit settles that only after the load event.
+ */
+async function drawsPixels(page: Page, icon: Locator): Promise<boolean> {
+	const scroll = await page.evaluate(() => ({ left: scrollX, top: scrollY }));
+	const setHidden = (hidden: boolean) =>
+		icon.evaluate((svg, hidden) => {
+			svg.querySelector('use')!.style.visibility = hidden ? 'hidden' : '';
+		}, hidden);
+	const shot = () => icon.screenshot({ animations: 'disabled', scale: 'css' });
+	try {
+		// Centred, so that nothing fixed (the tab bar) covers it in either screenshot.
+		await icon.evaluate((svg) =>
+			svg.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' })
+		);
+		const drawn = await shot();
+		await setHidden(true);
+		return !drawn.equals(await shot());
+	} finally {
+		await setHidden(false);
+		await page.evaluate((to) => scrollTo({ ...to, behavior: 'instant' }), scroll);
+	}
+}
+
+/**
+ * Icons on screen that draw nothing, by their <use> reference: no geometry box, and (for a
+ * straight line, whose box WebKit reports as empty) no pixels of their own either. Each pixel
+ * check takes two screenshots, so it stops at the first icon that draws nothing and reports the
+ * icons without a box from there on, unchecked: `expect.poll` asks again. An icon whose box has
+ * appeared meanwhile (the sprite arrived) needs no screenshots.
+ */
+async function undrawn(page: Page): Promise<string[]> {
+	const unboxed = (await iconBoxes(page)).flatMap(({ href, boxed }, i) =>
+		boxed ? [] : [{ href, i }]
+	);
+	for (const [k, { href, i }] of unboxed.entries()) {
+		const icon = visibleIcons(page).nth(i);
+		const draws =
+			href !== 'no <use>' && ((await icon.evaluate(hasBox)) || (await drawsPixels(page, icon)));
+		if (!draws) return unboxed.slice(k).map((u) => u.href);
+	}
+	return [];
 }
 
 async function expectEveryIconDrawn(page: Page) {
 	await expect(visibleIcons(page).first()).toBeVisible();
 	await expect
-		.poll(() => undrawn(page), { message: 'every icon on screen draws a non-empty box' })
+		.poll(() => undrawn(page), { message: 'every icon on screen draws (a box, or its pixels)' })
 		.toEqual([]);
 }
 
@@ -168,15 +226,23 @@ test.describe('icons', () => {
 				message: 'only the held sprite is still loading'
 			})
 			.toBe(true);
-		const releasedAt = await page.evaluate(async () => {
-			await document.fonts.ready;
-			await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-			return performance.now();
-		});
-		const before = await boxes();
-		expect((await undrawn(page)).length, 'nothing draws while the sprite is held').toBe(
-			before.length
+		// The fonts have loaded, then two frames. Not `document.fonts.ready`: WebKit settles it only
+		// after the load event, which the held sprite holds (Chromium does not wait for it).
+		await expect
+			.poll(() => page.evaluate(() => document.fonts.status), { message: 'the fonts have loaded' })
+			.toBe('loaded');
+		const releasedAt = await page.evaluate(
+			() =>
+				new Promise<number>((resolve) =>
+					requestAnimationFrame(() => requestAnimationFrame(() => resolve(performance.now())))
+				)
 		);
+		const before = await boxes();
+		// By geometry alone: a screenshot would wait for `document.fonts.ready` (see drawsPixels).
+		expect(
+			(await iconBoxes(page)).filter((icon) => !icon.boxed).length,
+			'no icon has its symbol while the sprite is held'
+		).toBe(before.length);
 		release();
 		await expectEveryIconDrawn(page);
 		expect(await boxes()).toEqual(before);
