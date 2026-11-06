@@ -82,7 +82,9 @@ app path (`return-path.ts`).
   reach only `/recover/passkey`, the add-passkey endpoints and sign-out. Pages redirect there;
   `/api/*` answers `403 passkey_required`.
 - Registering a passkey from that session rotates it into a full session (the recovery session is
-  revoked) and lands on Security with a prompt to remove the lost passkey.
+  revoked) and lands on Security with a prompt to remove the lost passkey. That registration is
+  the one change a recovery session may make without step-up (below), and the new session counts
+  as freshly authenticated: it has just verified its new passkey.
 - Codes can be regenerated from Security (all old codes stop working; new set shown once, with
   acknowledgement). A recovery session cannot regenerate codes.
 - Rate limits: 5 attempts per 15 min per client and 20 per hour in total.
@@ -93,7 +95,43 @@ app path (`return-path.ts`).
 Add (a real registration bound to the current session: the challenge row stores the session id),
 rename (1–64 characters), remove. **The last passkey can never be removed**: the check runs under
 a row lock, so two concurrent removals cannot both pass. Removing a passkey also ends every other
-session that signed in with it.
+session that signed in with it. Adding and removing need step-up (below); renaming does not.
+
+### Step-up re-authentication (ASVS V3.7)
+
+A session cookie alone must not be enough to take the account over (add a passkey, remove the
+owner's, sign the owner out, mint new recovery codes). So these actions need a **user-verified
+assertion with one of the owner's existing passkeys on this session within the last 5 minutes**
+(`reauth.ts`, `SESSION.reauthMs`):
+
+| Action                                | Step-up | Why                                                                   |
+| ------------------------------------- | ------- | --------------------------------------------------------------------- |
+| Add a passkey                         | yes     | a new way in                                                          |
+| Remove a passkey                      | yes     | locks the owner out of a device                                       |
+| Create new recovery codes             | yes     | a new way in (and voids the owner's codes)                            |
+| Sign out one device / everywhere else | yes     | signs the owner out; "everywhere else" would keep only the thief's    |
+| Rename a passkey                      | no      | changes no credential, session or secret; audited; removal still asks |
+| Sign out (this device), view anything | no      | harmless to the owner                                                 |
+
+- `auth_sessions.reauthenticated_at` records the last passkey assertion on the session. A
+  passkey sign-in, first-run setup and the passkey that finishes a recovery set it (each is a
+  user-verified ceremony that just happened); test-minted and recovery sessions start without it.
+- The server is the boundary: the use-cases throw `reauth_required` (403) when it is missing or
+  older than 5 minutes; form actions pass the code to the screen. Registration is checked when
+  its ceremony starts (its challenge is bound to the session and lives 5 minutes): refusing at
+  the end would leave a passkey on the device that the server never stored.
+- The ceremony: `POST /api/auth/reauth/options` (owner sessions only) issues a challenge with
+  purpose `reauthenticate`, bound to the session, with `allowCredentials` set to the owner's
+  passkeys and user verification required; `POST /api/auth/reauth/verify` verifies it with
+  SimpleWebAuthn (challenge, origin, RP ID, the owner's public key, counter, UV), advances the
+  counter and stamps the session (only if it is still live). Rate-limited per session; success
+  and failure are audited.
+- The Security screen asks only when the server refuses: a **Confirm it's you** sheet (over the
+  sheet that was refused, or on its own), then the action is retried. Cancelled or failed
+  checks say "Nothing was changed". Its code is in the lazily loaded sheets and passkey helpers.
+- Exception: a recovery session (no usable passkey) may register its new passkey; it cannot
+  start a step-up, regenerate codes or reach anything else.
+- Existing sessions have no timestamp when this ships: their first sensitive action asks once.
 
 ### Sessions
 
@@ -106,6 +144,7 @@ session that signed in with it.
 | Absolute expiry         | 90 days after sign-in, however active                                                                     |
 | Revocation              | Checked on every request (no cache): revoked or expired sessions are rejected immediately                 |
 | Rotation                | New token on every passkey sign-in, setup and recovery; the presented one is revoked                      |
+| Step-up                 | Passkey assertion on the session within 5 minutes for sensitive Security actions (see above)              |
 | Management              | List (current marked), sign out one, sign out everywhere else, sign out                                   |
 
 ### Sign-out
@@ -131,7 +170,7 @@ union, so an unclassified route fails `pnpm check`); an unknown route is `owner`
 | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `public`      | `/` (sign-in), `/setup`, `/recover`, `/api/auth/signin/{options,verify}`, `/api/auth/setup/{options,verify}`, `/api/auth/signout`, `/api/health`, `/offline` (prerendered), `/api/test-support/session` (404 unless test routes are enabled) |
 | `any-session` | `/recover/passkey`, `/api/auth/passkeys/{options,verify}`                                                                                                                                                                                    |
-| `owner`       | everything else, including `/api/vitals` and `/api/client-errors`                                                                                                                                                                            |
+| `owner`       | everything else, including `/api/auth/reauth/{options,verify}`, `/api/vitals` and `/api/client-errors`                                                                                                                                       |
 
 Without a session, pages answer `303` to `/?next=<path>` (a JSON redirect for client-side data
 requests and enhanced form actions) and `/api/*` answers `401 {"error":"unauthenticated"}`. A
@@ -164,6 +203,7 @@ every server instance shares the counters. The first refusal of a window is audi
 | `recovery`        | 5 / 15 minutes  | client   |
 | `recovery.global` | 20 / hour       | all      |
 | `register`        | 20 / 15 minutes | session  |
+| `reauth`          | 20 / 15 minutes | session  |
 | `manage`          | 60 / minute     | session  |
 | `signout`         | 30 / minute     | client   |
 
@@ -174,8 +214,8 @@ Refusals answer `429` with `Retry-After`.
 
 `auth_events` records setup completed/failed, sign-in succeeded/failed (with the reason from
 SimpleWebAuthn), passkey added/renamed/removed, recovery used/failed/regenerated, session
-revoked / revoked others, sign-out, rate limiting and owner resets, with request id, client
-address and a User-Agent summary. Rows are kept if the owner is reset. Security shows the most
+revoked / revoked others, step-up succeeded/failed, sign-out, rate limiting and owner resets,
+with request id, client address and a User-Agent summary. Rows are kept if the owner is reset. Security shows the most
 recent events.
 
 ## Test-only routes
@@ -210,7 +250,9 @@ Protected: every page and endpoint except the allow-list above; sessions against
 phishing (WebAuthn is origin-bound) and brute force (rate limits, 80+ bit secrets).
 
 Not protected (by design or out of scope): a session cookie copied off an unlocked device is
-valid until it expires or is revoked from Security (there is no device binding); the app does not
+valid until it expires or is revoked from Security (there is no device binding) — it can read
+everything, but cannot change passkeys, recovery codes or devices without one of the owner's
+passkeys, except within 5 minutes of the owner's own passkey use on that session; the app does not
 detect unusual sign-in locations; the audit log is not tamper-proof against someone with database
 access; denial of service by exhausting a client's rate limit from the same IP is possible.
 
@@ -228,7 +270,7 @@ access; denial of service by exhausting a client's rate limit from the same IP i
 | V3.3 Session termination                     | Met     | Sign-out, revoke one / all others; idle 30 d + absolute 90 d; revocation immediate (tests).          |
 | V3.4 Cookie-based sessions                   | Met     | `__Host-` prefix, Secure, HttpOnly, SameSite=Lax, Path=/ (unit + e2e).                               |
 | V3.5 Token-based sessions                    | N/A     | Cookie sessions only.                                                                                |
-| V3.7 Defenses against session exploits       | Partial | Re-authentication is not required for sensitive actions (adding/removing passkeys) within a session. |
+| V3.7 Defenses against session exploits       | Met     | Step-up: a recent passkey assertion (5 min) before passkey, recovery-code or device changes (tests). |
 | V4.1/4.2 Access control                      | Met     | Deny by default with a typed, tested route map; single owner, no IDOR surface.                       |
 | V4.2.2 CSRF                                  | Met     | Origin check on all unsafe methods + SvelteKit form check + SameSite (e2e).                          |
 | V7 Logging                                   | Met     | Audit log for auth events; no secrets or query strings in app logs.                                  |
@@ -236,7 +278,6 @@ access; denial of service by exhausting a client's rate limit from the same IP i
 | V13 API                                      | Met     | JSON endpoints validate input (zod), cap body size, answer `no-store`.                               |
 | V14.4 HTTP security headers                  | Met     | CSP, HSTS, nosniff, frame-ancestors none, referrer policy (e2e).                                     |
 
-Open items: step-up re-authentication before adding or removing a passkey (V3.7) — a single
-owner with device-bound biometrics makes this lower risk, but it is the next hardening step;
-WebKit runs only on the test-minted session in e2e, so passkey ceremonies on iOS Safari are
-verified on a real device (docs/testing.md checklist) rather than in CI.
+Open items: WebKit runs only on the test-minted session in e2e, so passkey ceremonies on iOS
+Safari (sign-in, setup, step-up) are verified on a real device (docs/testing.md checklist) rather
+than in CI.

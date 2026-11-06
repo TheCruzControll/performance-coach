@@ -6,6 +6,7 @@
  * - Signing in (passkey or recovery code) always issues a *new* token and revokes the session the
  *   device presented, so a token planted before sign-in is useless afterwards (rotation).
  * - A `recovery` session lives 15 minutes and can only register a new passkey or sign out.
+ * - Signing devices out needs a recent passkey assertion on this session (reauth.ts).
  */
 import { createAuthRepository, type SessionKind, type SessionMethod, type SessionRow } from '../db';
 import { recordAuthEvent } from './audit';
@@ -14,6 +15,7 @@ import { describeUserAgent } from './devices';
 import { AuthError } from './errors';
 import { SESSION } from './policy';
 import { enforceRateLimit } from './rate-limit';
+import { requireRecentAuthentication } from './reauth';
 import { generateToken, hashToken } from './tokens';
 
 export interface AuthSession {
@@ -22,6 +24,8 @@ export interface AuthSession {
 	ownerName: string;
 	kind: SessionKind;
 	expiresAt: Date;
+	/** Last passkey assertion on this session (null: none yet). See reauth.ts. */
+	reauthenticatedAt: Date | null;
 }
 
 export interface IssuedSession {
@@ -44,6 +48,8 @@ export async function issueSession(
 		method: SessionMethod;
 		credentialId?: string | null;
 		userAgent: string | null;
+		/** A user-verified passkey ceremony just established it: it starts out fresh. */
+		reauthenticated?: boolean;
 	},
 	deps: AuthDeps = {}
 ): Promise<IssuedSession> {
@@ -65,7 +71,8 @@ export async function issueSession(
 		lastSeenAt: at,
 		expiresAt: idle < absolute ? idle : absolute,
 		absoluteExpiresAt: absolute,
-		userAgent: describeUserAgent(input.userAgent)
+		userAgent: describeUserAgent(input.userAgent),
+		reauthenticatedAt: input.reauthenticated ? at : null
 	});
 	return { token, session };
 }
@@ -126,7 +133,8 @@ export async function validateSessionToken(
 			ownerId: owner.id,
 			ownerName: owner.displayName,
 			kind: session.kind,
-			expiresAt
+			expiresAt,
+			reauthenticatedAt: session.reauthenticatedAt
 		},
 		refreshedExpiry
 	};
@@ -170,6 +178,7 @@ export async function revokeSession(
 	deps: AuthDeps = {}
 ): Promise<void> {
 	const { db, now } = resolveDeps(deps);
+	requireRecentAuthentication(session, now());
 	await enforceRateLimit('manage', { session: session.id }, request, { db, now });
 	if (sessionId === session.id) {
 		throw new AuthError('invalid_input', 'Use Sign out to end this session.');
@@ -196,6 +205,7 @@ export async function revokeOtherSessions(
 	deps: AuthDeps = {}
 ): Promise<number> {
 	const { db, now } = resolveDeps(deps);
+	requireRecentAuthentication(session, now());
 	await enforceRateLimit('manage', { session: session.id }, request, { db, now });
 	const count = await createAuthRepository(db).revokeOtherSessions(
 		session.ownerId,

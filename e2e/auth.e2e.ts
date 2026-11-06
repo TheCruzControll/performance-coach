@@ -3,14 +3,22 @@
  * authenticator; no auth bypass): sign-in, adding/renaming/removing passkeys, recovery-code
  * sign-in that forces a new passkey, session management and sign-out.
  *
- * Every test works on passkeys and sessions of its own (created through the real flows from the
- * shared signed-in state), so tests stay independent and never revoke the shared session.
+ * Every test starts signed out and signs in for itself with its worker's owner passkey
+ * (e2e/webauthn.ts), so its session is fresh (no step-up prompt) and its passkeys and sessions
+ * are its own: tests stay independent and never revoke the shared session.
  * "Sign out everywhere else" and "never the last passkey" change global state: they live in
  * sessions.exclusive.e2e.ts, which runs last.
  */
 import { createHash } from 'node:crypto';
 import AxeBuilder from '@axe-core/playwright';
-import { expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test';
+import {
+	expect,
+	test,
+	type Browser,
+	type BrowserContext,
+	type Page,
+	type TestInfo
+} from '@playwright/test';
 import {
 	captureScreen,
 	ORIGIN,
@@ -20,12 +28,20 @@ import {
 	toastWith,
 	trackConsoleErrors
 } from './support';
-import { addVirtualAuthenticator, chromiumOnly, type VirtualAuthenticator } from './webauthn';
+import {
+	addVirtualAuthenticator,
+	chromiumOnly,
+	ownerPasskey,
+	signInAsOwner,
+	toBase64Url,
+	withoutPasskeyAutofill,
+	type VirtualAuthenticator
+} from './webauthn';
 
 test.skip(...chromiumOnly);
+test.use({ storageState: signedOut });
 
 const sha256 = (value: string) => createHash('sha256').update(value).digest('hex');
-const toBase64Url = (b64: string) => Buffer.from(b64, 'base64').toString('base64url');
 
 async function sessionCookie(context: BrowserContext) {
 	const cookies = await context.cookies(ORIGIN);
@@ -51,8 +67,8 @@ async function audit(page: Page, label: string) {
 }
 
 /**
- * From the shared signed-in state, register a passkey of this test's own (a real
- * registration ceremony from Profile → Security). Returns the authenticator holding it.
+ * Signed in (and fresh), register a passkey of this test's own (a real registration ceremony
+ * from Profile → Security). Returns the authenticator holding it.
  */
 async function addOwnPasskey(page: Page): Promise<VirtualAuthenticator & { passkeyId: string }> {
 	const authenticator = await addVirtualAuthenticator(page);
@@ -66,40 +82,11 @@ async function addOwnPasskey(page: Page): Promise<VirtualAuthenticator & { passk
 	return Object.assign(authenticator, { passkeyId });
 }
 
-/**
- * Browsers without conditional UI (passkeys offered in autofill): the button is the way in.
- * Where conditional UI exists, Chromium's virtual authenticator answers it at once, which
- * signs in without a tap; that path has its own test.
- */
-async function withoutPasskeyAutofill(page: Page) {
-	await page.addInitScript(() => {
-		Object.defineProperty(PublicKeyCredential, 'isConditionalMediationAvailable', {
-			value: async () => false
-		});
-	});
-}
-
-/** Sign in from the sign-in screen (button) with whatever passkey the page's authenticator holds. */
-async function signInWithPasskey(page: Page) {
-	await withoutPasskeyAutofill(page);
-	await page.goto('/');
-	await expect(page.getByTestId('signin-screen')).toBeVisible();
-	await page.getByTestId('passkey-signin').click();
-	await expect(page).toHaveURL(/\/today$/);
-}
-
-/** A device of its own: a new browser context that signs in with its own passkey. */
-async function ownDevice(browser: Browser) {
+/** A device of its own: a new browser context, signed in with a passkey ceremony. */
+async function ownDevice(browser: Browser, testInfo: TestInfo) {
 	const context = await browser.newContext();
-	const page = await context.newPage();
-	const authenticator = await addOwnPasskey(page);
-	await context.clearCookies(); // forget the shared session on this device only
-	await signInWithPasskey(page);
-	const cookie = (await sessionCookie(context))!;
-	const [row] = await query<{ id: string }>('select id from auth_sessions where token_hash = $1', [
-		sha256(cookie.value)
-	]);
-	return { context, page, authenticator, sessionId: row!.id };
+	const sessionId = await signInAsOwner(context, testInfo);
+	return { context, page: await context.newPage(), sessionId };
 }
 
 test.describe('passkey authentication (real WebAuthn ceremonies)', () => {
@@ -107,8 +94,7 @@ test.describe('passkey authentication (real WebAuthn ceremonies)', () => {
 		page,
 		context
 	}, testInfo) => {
-		await addOwnPasskey(page);
-		await context.clearCookies();
+		await ownerPasskey(page, testInfo);
 		await withoutPasskeyAutofill(page);
 
 		await page.goto('/profile');
@@ -140,14 +126,14 @@ test.describe('passkey authentication (real WebAuthn ceremonies)', () => {
 	test('conditional UI: the passkey offered in autofill signs in without a tap', async ({
 		page,
 		context
-	}) => {
+	}, testInfo) => {
 		const errors = trackConsoleErrors(page);
-		await addOwnPasskey(page);
-		await context.clearCookies();
+		await page.goto('/recover'); // a signed-out screen that starts no passkey request
 		const supported = await page.evaluate(() =>
 			PublicKeyCredential.isConditionalMediationAvailable?.()
 		);
 		test.skip(!supported, 'this browser build has no conditional mediation');
+		await ownerPasskey(page, testInfo);
 		await page.goto('/?next=%2Fprogress');
 		// The sign-in screen starts a conditional request; the authenticator answers it.
 		await expect(page).toHaveURL(/\/progress$/);
@@ -161,12 +147,8 @@ test.describe('passkey authentication (real WebAuthn ceremonies)', () => {
 		expect(errors).toEqual([]);
 	});
 
-	test('a refused passkey shows a designed, accessible error', async ({
-		page,
-		context
-	}, testInfo) => {
-		const authenticator = await addOwnPasskey(page);
-		await context.clearCookies();
+	test('a refused passkey shows a designed, accessible error', async ({ page }, testInfo) => {
+		const authenticator = await ownerPasskey(page, testInfo);
 		await withoutPasskeyAutofill(page);
 		await authenticator.setUserVerified(false); // Face ID fails: user verification is required
 		await page.goto('/');
@@ -187,6 +169,7 @@ test.describe('passkey authentication (real WebAuthn ceremonies)', () => {
 		context
 	}, testInfo) => {
 		const errors = trackConsoleErrors(page);
+		await signInAsOwner(context, testInfo);
 		const key = await addOwnPasskey(page);
 		const row = page.locator(`[data-passkey-id="${key.passkeyId}"]`);
 		await captureScreen(page, testInfo, 'security');
@@ -224,9 +207,11 @@ test.describe('passkey authentication (real WebAuthn ceremonies)', () => {
 
 	test('a recovery code burns, forces a new passkey, then works as a full session', async ({
 		page,
+		context,
 		browser
 	}, testInfo) => {
 		// Fresh codes from Security (shown once), as the owner would after setup.
+		await signInAsOwner(context, testInfo);
 		await page.goto('/profile/security');
 		await page.getByTestId('regenerate-codes').click();
 		await page.getByTestId('confirm-regenerate').click();
@@ -296,8 +281,8 @@ test.describe('passkey authentication (real WebAuthn ceremonies)', () => {
 	test('sessions: this device is marked and another device can be signed out', async ({
 		browser
 	}, testInfo) => {
-		const a = await ownDevice(browser);
-		const b = await ownDevice(browser);
+		const a = await ownDevice(browser, testInfo);
+		const b = await ownDevice(browser, testInfo);
 
 		await a.page.goto('/profile/security');
 		await expect(a.page.locator(`[data-session-id="${a.sessionId}"]`)).toHaveAttribute(
@@ -326,7 +311,7 @@ test.describe('passkey authentication (real WebAuthn ceremonies)', () => {
 	test('sign-out clears the session cookie, account caches and IndexedDB, keeps preferences', async ({
 		browser
 	}, testInfo) => {
-		const { context, page, sessionId } = await ownDevice(browser);
+		const { context, page, sessionId } = await ownDevice(browser, testInfo);
 		await page.goto('/profile');
 		await page.getByTestId('theme-control').getByRole('radio', { name: 'Light' }).click();
 		await page.waitForFunction(() => navigator.serviceWorker.controller !== null, null, {

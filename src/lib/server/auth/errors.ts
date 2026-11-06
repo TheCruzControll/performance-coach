@@ -13,6 +13,7 @@ export type AuthErrorCode =
 	| 'invalid_code'
 	| 'last_passkey'
 	| 'not_found'
+	| 'reauth_required'
 	| 'rate_limited'
 	| 'wrong_origin';
 
@@ -26,6 +27,7 @@ const STATUS: Record<AuthErrorCode, number> = {
 	invalid_code: 401,
 	last_passkey: 409,
 	not_found: 404,
+	reauth_required: 403,
 	rate_limited: 429,
 	wrong_origin: 400
 };

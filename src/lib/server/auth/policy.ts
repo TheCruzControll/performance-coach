@@ -15,7 +15,12 @@ export const SESSION = {
 	/** `last_seen_at` resolution: written at most this often between refreshes. */
 	lastSeenEveryMs: 10 * MINUTE,
 	/** A recovery session exists only to register a new passkey. */
-	recoveryMs: 15 * MINUTE
+	recoveryMs: 15 * MINUTE,
+	/**
+	 * Step-up: adding or removing a passkey, new recovery codes and signing devices out need a
+	 * passkey assertion on the session (sign-in, setup or re-authentication) this recent.
+	 */
+	reauthMs: 5 * MINUTE
 } as const;
 
 /** WebAuthn ceremonies: the browser times out at `ceremonyMs`, the challenge a little later. */
@@ -47,6 +52,8 @@ export const RATE_LIMITS = {
 	'recovery.global': { limit: 20, windowMs: HOUR },
 	/** Adding a passkey (options + verification), per session. */
 	register: { limit: 20, windowMs: 15 * MINUTE },
+	/** Step-up re-authentication (options + verification), per session. */
+	reauth: { limit: 20, windowMs: 15 * MINUTE },
 	/** Rename/remove passkeys, revoke sessions, regenerate codes, per session. */
 	manage: { limit: 60, windowMs: MINUTE },
 	/** Sign-out requests, per client. */

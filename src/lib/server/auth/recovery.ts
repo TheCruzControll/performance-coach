@@ -10,6 +10,7 @@ import { recordAuthEvent } from './audit';
 import { resolveDeps, type AuthDeps, type AuthRequest } from './context';
 import { AuthError } from './errors';
 import { enforceRateLimit } from './rate-limit';
+import { requireRecentAuthentication } from './reauth';
 import { generateRecoveryCodes, hashRecoveryCode, RECOVERY_CODE_COUNT } from './recovery-codes';
 import { issueSession, revokeToken, type AuthSession, type IssuedSession } from './sessions';
 
@@ -65,7 +66,10 @@ export async function recoveryCodeStatus(
 	return createAuthRepository(db).recoveryCodeStatus(session.ownerId);
 }
 
-/** Replace every recovery code with a fresh set; the plain codes are returned once. */
+/**
+ * Replace every recovery code with a fresh set; the plain codes are returned once. Needs a
+ * recent passkey assertion (reauth.ts): new codes are a way back in.
+ */
 export async function regenerateRecoveryCodes(
 	session: AuthSession,
 	request: AuthRequest,
@@ -75,6 +79,7 @@ export async function regenerateRecoveryCodes(
 	if (session.kind !== 'owner') {
 		throw new AuthError('invalid_input', 'Add a passkey before creating new recovery codes.');
 	}
+	requireRecentAuthentication(session, now());
 	await enforceRateLimit('manage', { session: session.id }, request, { db, now });
 	const codes = generateRecoveryCodes(RECOVERY_CODE_COUNT);
 	await db.transaction((tx) =>

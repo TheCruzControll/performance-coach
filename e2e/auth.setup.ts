@@ -1,12 +1,13 @@
 /**
  * The owner's first-run setup, for real: a WebAuthn registration through a CDP virtual
  * authenticator (Chromium), recovery codes shown once, then the signed-in browser state every
- * Chromium spec starts from. Also audits the setup screens (they exist only until this runs).
+ * Chromium spec starts from. Also audits the setup screens (they exist only until this runs),
+ * and registers the owner passkeys specs sign in with (one per worker, e2e/webauthn.ts).
  */
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test as setup, type Page } from '@playwright/test';
-import { captureScreen, query, trackConsoleErrors } from './support';
-import { addVirtualAuthenticator } from './webauthn';
+import { captureScreen, query, toastWith, trackConsoleErrors } from './support';
+import { addVirtualAuthenticator, saveOwnerPasskeys, type StoredPasskey } from './webauthn';
 
 const STATE = 'e2e/.auth/chromium.json';
 
@@ -96,6 +97,21 @@ setup(
 
 		// Setup is gone for good, even with the right token.
 		expect((await page.request.get(`/setup?token=${token}`)).status()).toBe(404);
+
+		// One more owner passkey per worker, each on a device of its own, added while this session
+		// is fresh (setup just verified a passkey, so no step-up) and kept with its private key.
+		const ownerPasskeys: StoredPasskey[] = [];
+		for (let i = 0; i < testInfo.config.workers; i++) {
+			const device = await context.newPage();
+			const key = await addVirtualAuthenticator(device);
+			await device.goto('/profile/security');
+			await device.getByTestId('add-passkey').click();
+			await expect(toastWith(device, /Passkey added: /)).toBeVisible();
+			ownerPasskeys.push(...(await key.credentials()));
+			await device.close();
+		}
+		expect(ownerPasskeys).toHaveLength(testInfo.config.workers);
+		saveOwnerPasskeys(ownerPasskeys);
 
 		expect(errors).toEqual([]);
 		await context.storageState({ path: STATE });
