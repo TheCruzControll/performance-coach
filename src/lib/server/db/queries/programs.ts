@@ -7,15 +7,18 @@ import {
 	and,
 	asc,
 	between,
+	desc,
 	eq,
 	getTableColumns,
 	gt,
 	inArray,
 	isNull,
+	lt,
+	sql,
 	type SQL,
 	type SQLWrapper
 } from 'drizzle-orm';
-import { alias } from 'drizzle-orm/pg-core';
+import { alias, type AnyPgColumn } from 'drizzle-orm/pg-core';
 import type { IsoDate } from '../../../domain/calendar';
 import {
 	exercises,
@@ -24,6 +27,7 @@ import {
 	plannedSessionDetails,
 	plannedSessions,
 	programBlocks,
+	programmingDecisions,
 	programs,
 	programVersionBlocks,
 	programVersions,
@@ -54,17 +58,22 @@ export function versionTree(db: Executor, versionId: string) {
 			.innerJoin(programBlocks, eq(programBlocks.id, programVersionBlocks.blockId))
 			.where(eq(programVersionBlocks.versionId, versionId))
 			.orderBy(asc(programBlocks.position)),
-		weeks: db
-			.select(getTableColumns(programWeeks))
-			.from(programVersionWeeks)
-			.innerJoin(programWeeks, eq(programWeeks.id, programVersionWeeks.weekId))
-			.where(inVersion)
-			.orderBy(asc(programWeeks.startsOn)),
+		weeks: versionWeeks(db, versionId),
 		...sessionsWithChildren(
 			db,
 			db.select({ weekId: programVersionWeeks.weekId }).from(programVersionWeeks).where(inVersion)
 		)
 	};
+}
+
+/** A version's weeks by date, through its membership rows (program_version_weeks_pk). */
+export function versionWeeks(db: Executor, versionId: string) {
+	return db
+		.select(getTableColumns(programWeeks))
+		.from(programVersionWeeks)
+		.innerJoin(programWeeks, eq(programWeeks.id, programVersionWeeks.weekId))
+		.where(eq(programVersionWeeks.versionId, versionId))
+		.orderBy(asc(programWeeks.startsOn));
 }
 
 /** What each versionTree builder returns. */
@@ -140,12 +149,24 @@ export function sessionByLineage(db: Executor, versionId: string, lineage: strin
 		.where(eq(plannedSessions.lineageId, lineage));
 }
 
+/** `column` is one of the ids `parents` selects, gathered once: a probe of the column's index. */
+const oneOf = (column: AnyPgColumn, parents: SQLWrapper) => sql`${column} = any(array(${parents}))`;
+
 /**
  * The exercises (with their library names), set prescriptions, run segments and details of the
- * sessions `where` picks, each through its parent's index, by parent and then position. Lazy:
- * a read awaits only the builders it needs.
+ * sessions `where` picks, by parent and then position. Each child table is probed through its
+ * parent's index with its parents' ids (oneOf) rather than joined to them: a child's rows sit
+ * together on disk, but their random uuids give the planner no sign of it, so a join would rather
+ * scan a large child table than probe it for one week's sessions (db:explain, m3/33). Lazy: a
+ * read awaits only the builders it needs.
  */
 function childrenOf(db: Executor, where: SQL) {
+	const sessionIds = db.select({ id: plannedSessions.id }).from(plannedSessions).where(where);
+	const ofSessions = (sessionId: AnyPgColumn) => oneOf(sessionId, sessionIds);
+	const exerciseIds = db
+		.select({ id: plannedExercises.id })
+		.from(plannedExercises)
+		.where(ofSessions(plannedExercises.sessionId));
 	return {
 		exercises: db
 			.select({
@@ -154,30 +175,25 @@ function childrenOf(db: Executor, where: SQL) {
 				exerciseName: exercises.name,
 				substitutedFromKey: substitutedFrom.key
 			})
-			.from(plannedSessions)
-			.innerJoin(plannedExercises, eq(plannedExercises.sessionId, plannedSessions.id))
+			.from(plannedExercises)
 			.innerJoin(exercises, eq(exercises.id, plannedExercises.exerciseId))
 			.leftJoin(substitutedFrom, eq(substitutedFrom.id, plannedExercises.substitutedFromExerciseId))
-			.where(where)
+			.where(ofSessions(plannedExercises.sessionId))
 			.orderBy(asc(plannedExercises.sessionId), asc(plannedExercises.position)),
 		sets: db
 			.select(getTableColumns(setPrescriptions))
-			.from(plannedSessions)
-			.innerJoin(plannedExercises, eq(plannedExercises.sessionId, plannedSessions.id))
-			.innerJoin(setPrescriptions, eq(setPrescriptions.plannedExerciseId, plannedExercises.id))
-			.where(where)
+			.from(setPrescriptions)
+			.where(oneOf(setPrescriptions.plannedExerciseId, exerciseIds))
 			.orderBy(asc(setPrescriptions.plannedExerciseId), asc(setPrescriptions.position)),
 		segments: db
 			.select(getTableColumns(plannedRunSegments))
-			.from(plannedSessions)
-			.innerJoin(plannedRunSegments, eq(plannedRunSegments.sessionId, plannedSessions.id))
-			.where(where)
+			.from(plannedRunSegments)
+			.where(ofSessions(plannedRunSegments.sessionId))
 			.orderBy(asc(plannedRunSegments.sessionId), asc(plannedRunSegments.position)),
 		details: db
 			.select(getTableColumns(plannedSessionDetails))
-			.from(plannedSessions)
-			.innerJoin(plannedSessionDetails, eq(plannedSessionDetails.sessionId, plannedSessions.id))
-			.where(where)
+			.from(plannedSessionDetails)
+			.where(ofSessions(plannedSessionDetails.sessionId))
 	};
 }
 
@@ -218,6 +234,68 @@ export function completedLineages(db: Executor, ownerId: string, lineages: strin
 				isNull(workouts.deletedAt)
 			)
 		);
+}
+
+// ---- version history (History, the coach) ---------------------------------------------------
+
+/**
+ * One page of a program's versions, newest first, with each one's decisions in the order they
+ * were written, in one query: a keyset on (program, number) (program_versions_program_number_uq)
+ * below `beforeNumber` when given, then programming_decisions_version_idx. A version with no
+ * decisions comes once, with decision: null.
+ */
+export function versionHistory(
+	db: Executor,
+	programId: string,
+	{ beforeNumber, limit }: { beforeNumber?: number; limit: number }
+) {
+	const page = db
+		.select({ id: programVersions.id })
+		.from(programVersions)
+		.where(
+			and(
+				eq(programVersions.programId, programId),
+				beforeNumber === undefined ? undefined : lt(programVersions.number, beforeNumber)
+			)
+		)
+		.orderBy(desc(programVersions.number))
+		.limit(limit);
+	return db
+		.select({ version: programVersions, decision: programmingDecisions })
+		.from(programVersions)
+		.leftJoin(programmingDecisions, eq(programmingDecisions.versionId, programVersions.id))
+		.where(inArray(programVersions.id, page))
+		.orderBy(desc(programVersions.number), asc(programmingDecisions.id));
+}
+
+/**
+ * The sessions and planned exercises named in `lineages`, in each of these versions, with the
+ * title and date History shows for them: every copy of each lineage through its lineage index
+ * (planned_sessions_lineage_idx, planned_exercises_lineage_idx; oneOf), kept where a version's
+ * membership lists its week. `lineages` travels as one jsonb parameter, so the statement never
+ * grows with the decisions it resolves.
+ */
+export function affectedNodes(db: Executor, versionIds: string[], lineages: string[]) {
+	const named = sql`(select value::uuid from jsonb_array_elements_text(${JSON.stringify(lineages)}::jsonb))`;
+	const member = and(
+		inArray(programVersionWeeks.versionId, versionIds),
+		eq(programVersionWeeks.weekId, plannedSessions.weekId)
+	);
+	const place = { versionId: programVersionWeeks.versionId, date: plannedSessions.scheduledOn };
+	return {
+		sessions: db
+			.select({ ...place, lineage: plannedSessions.lineageId, title: plannedSessions.title })
+			.from(plannedSessions)
+			.innerJoin(programVersionWeeks, member)
+			.where(oneOf(plannedSessions.lineageId, named)),
+		exercises: db
+			.select({ ...place, lineage: plannedExercises.lineageId, title: exercises.name })
+			.from(plannedSessions)
+			.innerJoin(programVersionWeeks, member)
+			.innerJoin(plannedExercises, eq(plannedExercises.sessionId, plannedSessions.id))
+			.innerJoin(exercises, eq(exercises.id, plannedExercises.exerciseId))
+			.where(oneOf(plannedExercises.lineageId, named))
+	};
 }
 
 /** What the read builders return. */

@@ -6,6 +6,7 @@ import { PgTable } from 'drizzle-orm/pg-core';
 import pg from 'pg';
 import { LOCAL_DATABASE_URLS } from '../src/lib/server/db/migrate';
 import * as profileSchema from '../src/lib/server/db/schema/profile';
+import { resetPrograms } from './program-support';
 
 /** The app's origin: state-changing requests must send it (`Origin`), as browsers do. */
 export const ORIGIN =
@@ -46,7 +47,8 @@ const TRAINING_PROFILE_TABLES = Object.values(profileSchema)
 
 /**
  * Start from a blank training profile: delete the owner's rows from every training-profile
- * table, in one transaction. For serial specs (`*.serial.e2e.ts`), which run one at a time.
+ * table, in one transaction, and every program (resetPrograms). For serial specs
+ * (`*.serial.e2e.ts`), which run one at a time.
  */
 export async function resetTrainingProfile(): Promise<void> {
 	await query(
@@ -54,6 +56,7 @@ export async function resetTrainingProfile(): Promise<void> {
 			(table) => `delete from ${table} where owner_id in (select id from owners)`
 		).join(';\n')
 	);
+	await resetPrograms();
 }
 
 /**

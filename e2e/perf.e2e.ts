@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { resetPrograms, seedProgram } from './program-support';
 
 /**
  * Main-thread budget while a screen loads and hydrates, measured from real long tasks
@@ -33,11 +34,15 @@ const SCREENS = [
 
 test.describe('main-thread budget (4× CPU)', () => {
 	test.skip(({ browserName }) => browserName !== 'chromium', 'CPU throttling uses CDP');
+	test.afterAll(() => resetPrograms());
 
 	for (const path of SCREENS) {
 		test(`${path} blocks the main thread ≤ ${GUARD_MS} ms while loading`, async ({
-			browser
+			browser,
+			request
 		}, testInfo) => {
+			// Train is measured in its program state: a hybrid week, strength, runs and Muay Thai.
+			if (path === '/train') await seedProgram(request, { fixture: 'hybrid', start: 'this_week' });
 			const samples: number[] = [];
 			for (let i = 0; i < LOADS; i++) {
 				// A fresh context per load: cold caches, no service worker yet. Signed in (the
