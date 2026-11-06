@@ -13,11 +13,10 @@
 import type { ClientInit, HandleClientError } from '@sveltejs/kit/hooks';
 import { version } from '$app/env';
 import { reportClientError, setErrorContext, startErrorReporting } from '#lib/client/errors.ts';
-import { isLeaving, trackLeaving } from '#lib/client/leaving.ts';
+import { isLeaving } from '#lib/client/leaving.ts';
 
 export const init: ClientInit = () => {
 	// Before SvelteKit imports the root layout and error page (it runs right after `init`).
-	trackLeaving();
 	setErrorContext(null, version);
 	startErrorReporting();
 };
