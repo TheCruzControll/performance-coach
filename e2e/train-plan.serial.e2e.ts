@@ -111,34 +111,44 @@ test.describe('a program this week', () => {
 		expect(errors).toEqual([]);
 	});
 
-	test('a week tapped in the plan shows on Train, through the week change’s pending state', async ({
-		page
-	}) => {
-		await gotoHydrated(page, '/train');
-		await openPlan(page);
-		let release!: () => void;
-		const held = new Promise<void>((resolve) => (release = resolve));
-		await page.route('**/__data.json*', async (route) => {
-			await held;
-			await route.continue();
+	test.describe('with the network in the test’s hands', () => {
+		// page.route never sees a request from a page the service worker controls on WebKit, even
+		// one the worker leaves to the network (__data.json), and the worker takes control of Train
+		// during gotoHydrated (clients.claim). Chromium routes that request either way.
+		test.use({ serviceWorkers: 'block' });
+
+		test('a week tapped in the plan shows on Train, through the week change’s pending state', async ({
+			page
+		}) => {
+			await gotoHydrated(page, '/train');
+			await openPlan(page);
+			let release!: () => void;
+			const held = new Promise<void>((resolve) => (release = resolve));
+			await page.route('**/__data.json*', async (route) => {
+				await held;
+				await route.continue();
+			});
+
+			await sheet(page)
+				.getByRole('link', { name: /^Week 3\b/ })
+				.click();
+			await expect(sheet(page)).toBeHidden();
+			await expect(page.getByTestId('train-week')).toHaveAttribute('aria-busy', 'true');
+			await expect(page.getByRole('link', { name: /^Week 3$/ })).toHaveAttribute(
+				'aria-busy',
+				'true'
+			);
+			await expect(position(page)).toHaveText('Baseline week · Week 1 of 5');
+
+			release();
+			await expect(page).toHaveURL(/\/train\?week=3$/);
+			await expect(position(page)).toHaveText('Accumulation · Week 3 of 5');
+			await expect(page.getByTestId('train-week')).toHaveAttribute('aria-busy', 'false');
+			await expect(page.getByRole('link', { name: /^Week 3$/ })).toHaveAttribute(
+				'aria-current',
+				'page'
+			);
 		});
-
-		await sheet(page)
-			.getByRole('link', { name: /^Week 3\b/ })
-			.click();
-		await expect(sheet(page)).toBeHidden();
-		await expect(page.getByTestId('train-week')).toHaveAttribute('aria-busy', 'true');
-		await expect(page.getByRole('link', { name: /^Week 3$/ })).toHaveAttribute('aria-busy', 'true');
-		await expect(position(page)).toHaveText('Baseline week · Week 1 of 5');
-
-		release();
-		await expect(page).toHaveURL(/\/train\?week=3$/);
-		await expect(position(page)).toHaveText('Accumulation · Week 3 of 5');
-		await expect(page.getByTestId('train-week')).toHaveAttribute('aria-busy', 'false');
-		await expect(page.getByRole('link', { name: /^Week 3$/ })).toHaveAttribute(
-			'aria-current',
-			'page'
-		);
 	});
 
 	test('Close and Escape give the focus back to Plan', async ({ page }) => {
