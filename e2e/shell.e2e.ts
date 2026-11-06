@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { captureScreen, signedOut, TABS, trackConsoleErrors } from './support';
+import { captureScreen, gotoHydrated, signedOut, TABS, trackConsoleErrors } from './support';
 
 /**
  * Share of the bottom nav's colour channels that two full-viewport screenshots of a screen paint
@@ -172,8 +172,10 @@ test.describe('app shell on an iPhone viewport', () => {
 
 	test('key-screen screenshots wait for the tab change to finish', async ({ page }, testInfo) => {
 		// A shot taken during the tab cross-fade can lose the tab bar on WebKit. Slow the fade so
-		// it is certainly still running when the next tab's heading shows.
-		await page.goto('/today');
+		// it is certainly still running when the next tab's heading shows. Hydrated first: `load`
+		// comes before SvelteKit has fetched its root error page and started the router, and a tap
+		// before then is a full page load, which has no cross-fade.
+		await gotoHydrated(page, '/today');
 		await page.addStyleTag({
 			content:
 				'::view-transition-old(root), ::view-transition-new(root) { animation-duration: 2s !important; }'
