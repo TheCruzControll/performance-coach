@@ -41,7 +41,7 @@ import {
 	type Executor
 } from '../../../src/lib/server/db';
 import * as prescriptionSchema from '../../../src/lib/server/db/schema/prescriptions';
-import { withRollback } from '../helpers';
+import { restrictRefusalCode, withRollback } from '../helpers';
 import { makeOwner } from '../profile/fixtures';
 
 /** Every table prescriptions.ts defines, so a new one cannot miss its guard. */
@@ -917,13 +917,15 @@ describe('prescription history', () => {
 			]);
 			const remove = (id: string) => (tx: Executor) =>
 				tx.delete(exercises).where(eq(exercises.id, id));
+			// Both exercise keys are ON DELETE RESTRICT, whose refusal code depends on the server major.
+			const restrict = await restrictRefusalCode(db);
 
 			expect(await attempt(db, remove(prescribed))).toEqual(
-				refused('23503', 'planned_exercises', 'planned_exercises_exercise_id_exercises_id_fk')
+				refused(restrict, 'planned_exercises', 'planned_exercises_exercise_id_exercises_id_fk')
 			);
 			expect(await attempt(db, remove(replaced))).toEqual(
 				refused(
-					'23503',
+					restrict,
 					'planned_exercises',
 					'planned_exercises_substituted_from_exercise_id_exercises_id_fk'
 				)
