@@ -215,6 +215,65 @@ Specs:
 Artifacts: failure screenshots + traces in `test-results/`, key-screen screenshots in
 `test-results/screens/<project>/`, HTML report in `playwright-report/` (all uploaded by CI).
 
+## Training (M3)
+
+One subsection per M3 track. Each slice adds to its own subsection only.
+
+### Foundation & catalogue
+
+Unit tests (`src/lib/domain/training/`, `src/lib/domain/exercises/`, `src/lib/domain/calendar.ts`):
+
+- **Vocabulary:** every list has unique snake_case keys, each with a label, and a new list fails
+  the test until it is listed there; every muscle is in exactly one hard-set group and no group
+  is empty; `skillForExperience` and `fromCommitmentIntensity` cover every M2 value, in order;
+  every session type has an M2 discipline tone; no list shadows or copies an M2 catalogue list
+  (load bases are M2's baseline kinds themselves); every M3 decision kind and M4 substitution
+  reason is listed; a closed list changes only together with the migration that CHECKs it.
+- **Calendar dates:** month, year and leap boundaries (century rules included); Monday-first
+  weeks; ISO week 53 and week-numbering years; `daysBetween` across year ends; the same answers
+  in any process time zone, across daylight saving.
+- **Catalogue format:** a valid table parses (unilateral and time-measured entries, padded
+  cells); each of these throws, naming the file, the line and the entry: an unknown pattern,
+  muscle, equipment, skill, tag, discipline, lift, measure or load type; reps that run high to
+  low, are zero or are not numbers; reps or seconds on the wrong measure; a time measure without
+  seconds; `uni` other than `y` or `-`; a duplicate key; a wrong column count; a missing header.
+- **Plain Node** (`scripts/catalogue-node.test.ts`): Node with type stripping alone, as the seed
+  runs, loads `src/lib/domain/exercises/index.ts` and sees the catalogue Vite sees; an
+  extensionless import fails there, which is why the package uses `.ts` specifiers.
+
+### Schema
+
+Migrations, the CHECKs on closed vocabularies and the history guards on real Postgres. No tests
+yet.
+
+### Programs
+
+The program store, program reads, versioning and owner edits, on real Postgres. No tests yet.
+
+### History
+
+Logged training, the history queries and `pnpm db:explain`. No tests yet.
+
+### Generator
+
+The deterministic week-1 generator: its rules, stages and scenarios. No tests yet.
+
+### Concurrent training
+
+Commitments, running, interference rules and placement across disciplines. No tests yet.
+
+### Train screens
+
+The Train week, the plan overview, session detail and the edit sheets. No tests yet.
+
+### Program history
+
+Versions and their decisions with the why; older versions stay viewable. No tests yet.
+
+### Today screens
+
+Build my program, today's sessions and what is next this week. No tests yet.
+
 ## The LLM in tests
 
 Milestone 5 adds the coach behind `LlmProvider`. Tests use the deterministic `mock` provider by
