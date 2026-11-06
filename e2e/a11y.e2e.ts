@@ -11,6 +11,7 @@ import { signedOut, TABS } from './support';
 const SCREENS = [
 	...TABS.map((t) => t.path),
 	'/profile/security',
+	'/profile/goals',
 	'/profile/equipment',
 	'/offline',
 	'/design'
@@ -59,8 +60,8 @@ for (const theme of THEMES) {
 				await page.goto(path);
 				await page.waitForLoadState('networkidle');
 				if (path === '/profile') await expect(page.getByTestId('db-status')).toBeVisible();
-				// The section's editor loads after the screen, in place of its skeleton.
-				if (path === '/profile/equipment') {
+				// A Profile section's editor loads after the screen, in place of its skeleton.
+				if (path.startsWith('/profile/') && path !== '/profile/security') {
 					await expect(page.getByTestId('section-editor')).toHaveAttribute('aria-busy', 'false');
 				}
 				const html = page.locator('html');
@@ -92,6 +93,21 @@ for (const theme of THEMES) {
 			await expect(page.getByTestId('discard-sheet')).toBeVisible();
 			await page.waitForTimeout(500);
 			expect(await audit(page)).toEqual([]);
+		});
+
+		test('the goal sheet, blank and showing its errors, has no violations', async ({ page }) => {
+			await page.goto('/profile/goals');
+			await expect(page.getByTestId('section-editor')).toHaveAttribute('aria-busy', 'false');
+			// The browser refuses the blank goal before posting: nothing reaches the database.
+			await page.getByTestId('goal-path-event').or(page.getByTestId('add-goal')).click();
+			const sheet = page.getByTestId('goal-sheet');
+			await expect(sheet.getByRole('heading', { name: 'New goal' })).toBeVisible();
+			await page.waitForTimeout(500);
+			expect(await audit(page), 'blank').toEqual([]);
+			await sheet.getByRole('button', { name: 'Save goal' }).click();
+			await expect(sheet.getByRole('alert').first()).toBeVisible();
+			await page.waitForTimeout(300);
+			expect(await audit(page), 'errors').toEqual([]);
 		});
 
 		test('every /design component group has no violations', async ({ page }) => {

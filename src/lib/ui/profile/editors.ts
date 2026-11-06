@@ -7,7 +7,7 @@
 import type { Component } from 'svelte';
 import type { Discipline } from '#lib/domain/profile/catalog.ts';
 import type { FieldErrors, SchemaName } from '#lib/domain/profile/schemas.ts';
-import type { AthleteProfile } from '#lib/domain/profile/types.ts';
+import type { AthleteProfile, Goal } from '#lib/domain/profile/types.ts';
 import type { SectionKey } from './sections';
 
 /** What every editor is told about the athlete (from the edit route's load). */
@@ -45,6 +45,11 @@ function section<T>(
 }
 
 export const EDITORS: Record<SectionKey, () => Promise<SectionEditor>> = {
+	// The goals as loaded: each goal is drafted in its own sheet, and saves on its own.
+	goals: () =>
+		import('./GoalsEditor.svelte').then((editor) =>
+			section(editor.default, (goals: Goal[]) => goals, 'goal')
+		),
 	equipment: () =>
 		Promise.all([import('./EquipmentEditor.svelte'), import('./equipment')]).then(
 			([editor, { equipmentDraft }]) => section(editor.default, equipmentDraft, 'equipment')
