@@ -8,9 +8,13 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# A new push to a pull request cancels that pull request's older run. Every other run (each merge
+# to main, a manual run) has a group of its own, so it always finishes. One group for all of main
+# would leave merges untested: cancel-in-progress stops the running one, and even without it a
+# newer run replaces the one still waiting.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -182,6 +186,8 @@ jobs:
             test-results/
             playwright-report/
             .e2e-server.log
+          # The production server's log is a dot-file, which upload-artifact skips by default.
+          include-hidden-files: true
           retention-days: 14
           if-no-files-found: ignore
 
