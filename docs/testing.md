@@ -243,8 +243,16 @@ Unit tests (`src/lib/domain/training/`, `src/lib/domain/exercises/`, `src/lib/do
 
 ### Schema
 
-Migrations, the CHECKs on closed vocabularies and the history guards on real Postgres. No tests
-yet.
+Migrations, the CHECKs on closed vocabularies and the history guards on real Postgres.
+
+- **Programs** (`tests/integration/training/program-schema.test.ts`, ADR 0010): UPDATE and DELETE
+  are refused on every program table, in or outside a transaction, so deleting the owner is
+  refused too; a program head moves only forward to its own version and changes nothing else;
+  one active program per owner; a week is exactly 7 days; status, plan status and `decided_by`
+  are CHECKed while phase and decision kind stay open; deleting an M2 goal leaves programs
+  intact; `truncate programs cascade` and `withCommitted` purge a whole program. The unit test
+  `scripts/history-guards.test.ts` keeps `truncate`, `session_replication_role` and
+  `disable trigger` out of server code.
 
 ### Programs
 
