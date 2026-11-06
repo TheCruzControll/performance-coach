@@ -30,10 +30,10 @@ export interface GoalDraft {
 	notes: string;
 }
 
-/** A blank event goal: where "A specific event" starts. */
-export function newGoal(): GoalDraft {
+/** A blank goal of either kind: an event unless asked for a general goal. */
+export function newGoal(kind: GoalDraft['kind'] = 'event'): GoalDraft {
 	return {
-		kind: 'event',
+		kind,
 		title: '',
 		disciplines: [],
 		customDiscipline: '',
@@ -79,11 +79,14 @@ export function shortIsoDate(iso: string | null): string {
 	return `${day} ${MONTHS[month! - 1]} ${year}`;
 }
 
-/** The line under a goal's title, e.g. `Muay Thai fight · 14 Mar 2027 · −71 kg`. */
+/**
+ * The line under a goal's title: `Muay Thai fight · 14 Mar 2027 · −71 kg` for an event,
+ * `Deadlift strength · e1RM trend · by 30 Jun 2027` for a general goal.
+ */
 export function goalSummary(goal: Goal): string {
 	const parts =
 		goal.kind === 'event'
 			? [goal.eventType, shortIsoDate(goal.eventDate), goal.weightClass]
-			: [goal.focus, goal.measure];
+			: [goal.focus, goal.measure, goal.targetDate && `by ${shortIsoDate(goal.targetDate)}`];
 	return parts.filter(Boolean).join(' · ');
 }

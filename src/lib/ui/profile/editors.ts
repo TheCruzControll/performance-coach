@@ -32,6 +32,8 @@ export interface SectionEditor {
 	schema: SchemaName;
 	/** What is posted, when that is not the editing state as it stands (SectionForm). */
 	payload?: (value: unknown) => unknown;
+	/** What else follows a save that went through, given what it saved (this device's units). */
+	afterSave?: (saved: unknown) => void;
 }
 
 /**
@@ -71,6 +73,23 @@ export const EDITORS: Record<SectionKey, () => Promise<SectionEditor>> = {
 		Promise.all([import('./BaselinesEditor.svelte'), import('./strength')]).then(
 			([editor, { baselinesDraft, baselinesPayload }]) =>
 				section(editor.default, baselinesDraft, 'baselines', baselinesPayload)
+		),
+	basics: () =>
+		Promise.all([import('./BasicsEditor.svelte'), import('./basics')]).then(
+			([editor, { basicsDraft, deviceFollows }]) => ({
+				...section(editor.default, basicsDraft, 'basics'),
+				afterSave: deviceFollows as (saved: unknown) => void
+			})
+		),
+	specifics: () =>
+		Promise.all([import('./SpecificsEditor.svelte'), import('./specifics')]).then(
+			([editor, { specificsDraft, specificsPayload }]) =>
+				section(editor.default, specificsDraft, 'specifics', specificsPayload)
+		),
+	body: () =>
+		Promise.all([import('./BodyEditor.svelte'), import('./body')]).then(
+			([editor, { bodyDraft, bodyPayload }]) =>
+				section(editor.default, bodyDraft, 'body', bodyPayload)
 		),
 	injuries: () =>
 		Promise.all([import('./InjuriesEditor.svelte'), import('./injuries')]).then(

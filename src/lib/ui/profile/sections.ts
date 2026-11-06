@@ -41,6 +41,24 @@ export const SECTIONS = [
 		icon: 'train'
 	},
 	{
+		key: 'basics',
+		title: 'Name & units',
+		subtitle: 'Your name, kg or lb, km or mi',
+		icon: 'profile'
+	},
+	{
+		key: 'specifics',
+		title: 'Running & Muay Thai',
+		subtitle: 'Your runs and races, sessions and fights',
+		icon: 'pulse'
+	},
+	{
+		key: 'body',
+		title: 'Body & nutrition',
+		subtitle: 'Body weight, nutrition phase and a target',
+		icon: 'flame'
+	},
+	{
 		key: 'injuries',
 		title: 'Injuries',
 		subtitle: 'Limitations and movements to avoid',

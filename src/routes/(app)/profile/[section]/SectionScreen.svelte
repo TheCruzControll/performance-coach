@@ -39,6 +39,7 @@
 	let failed = $state(false);
 	/** A form for the section as stored: what the load returned, then what each save stored. */
 	let formFor: ((stored: unknown) => SectionForm<unknown>) | undefined;
+	let afterSave: SectionEditor['afterSave'];
 
 	/** The editor, its form state and the discard sheet: all of them, or the error with Retry. */
 	onMount(async () => {
@@ -56,6 +57,7 @@
 			form = formFor(saved);
 			Sheet = sheet.default;
 			Editor = editor.Editor;
+			afterSave = editor.afterSave;
 			warmValidation();
 		} catch {
 			failed = true;
@@ -65,11 +67,14 @@
 	async function save(event: MouseEvent) {
 		if (!form) return;
 		const button = event.currentTarget as HTMLElement;
+		// What this save sends: an edit made while it is in flight is not part of it.
+		const sent = JSON.stringify(form.value);
 		const outcome = await form.submit();
 		// The button is disabled while it saves, which drops keyboard focus: give it back.
 		if (document.activeElement === document.body) button.focus();
 		// Only the action's own answer: a redirect (the session ended) saved nothing.
 		if (!outcome.data?.saved) return;
+		afterSave?.(JSON.parse(sent));
 		// Go on from what was stored: a new injury has its id now, so saving again updates it
 		// instead of adding it once more. Edits made while it saved stay, unsaved.
 		if (!form.dirty && formFor) form = formFor(outcome.data.section);
