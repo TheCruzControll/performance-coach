@@ -13,13 +13,13 @@
 ```sh
 pnpm install            # also runs `svelte-kit sync`
 cp .env.example .env    # local defaults work as-is
-pnpm db:setup           # creates role `coach` and databases coach_dev / coach_test / coach_e2e (idempotent)
+pnpm db:setup           # creates role `coach` and databases coach_dev / coach_test / coach_e2e / coach_explain (idempotent)
 pnpm db:migrate         # applies drizzle/*.sql to coach_dev
 pnpm dev                # http://localhost:5173
 ```
 
 `pnpm db:setup` connects as the local `postgres` superuser via peer auth (or uses
-`PGADMIN_URL`/`PG*` variables when set), creates the `coach` login role and the three databases.
+`PGADMIN_URL`/`PG*` variables when set), creates the `coach` login role and the four databases.
 Re-running it is safe.
 
 ## Signing in locally
@@ -63,6 +63,7 @@ one setup).
 | `pnpm db:migrate`       | apply migrations (`DATABASE_URL_UNPOOLED` → `DATABASE_URL` → local dev)       |
 | `pnpm db:reset:test`    | drop + re-migrate `coach_test` (guarded: only `_test`/`_e2e` names)           |
 | `pnpm db:studio`        | Drizzle Studio                                                                |
+| `pnpm db:explain`       | query plans on a two-year dataset in `coach_explain`, gated (see below)       |
 | `pnpm icons`            | re-render PNG icons from `static/icons/*.svg`                                 |
 
 ## Conventions
@@ -107,6 +108,36 @@ SQL file to the journal; write the SQL there.
    order) and `pnpm test:integration`.
 
 Never hand-edit the journal or a snapshot.
+
+## Query plans (`pnpm db:explain`)
+
+`pnpm db:explain` (the Vitest project `explain`, `scripts/explain/`) proves the history and
+program queries use their indexes on realistic data. CI runs it after the integration tests. It:
+
+1. drops and re-migrates `EXPLAIN_DATABASE_URL` (default local `coach_explain`; the reset refuses
+   a name that does not end in `_test`, `_e2e` or `_explain`, so it would wipe a test database
+   too: give it its own), which seeds the exercise catalogue;
+2. loads one owner's deterministic two-year dataset (`dataset.ts`, from a fixed seed): ~620
+   strength workouts with ~16k sets over 40 exercises, ~400 runs with ~6k segments, Muay Thai and
+   mobility, recovery notes, and eight 13-week programs with 4–26 copy-on-write versions each,
+   plus the owner's audited edits and soft deletes; then `ANALYZE`;
+3. runs `EXPLAIN (ANALYZE, BUFFERS)` on every builder in `src/lib/server/db/queries/` with the
+   parameters its service passes, prints each plan and writes `test-results/explain.md` (CI keeps
+   it as the `explain-<run>` artifact).
+
+**Reading it.** A relation is _large_ when `pg_class` says it has ≥ 5,000 rows or ≥ 50 pages
+(`LARGE_TUPLES`, `LARGE_PAGES` in `plan-check.ts`), _small_ otherwise. On a large relation a plan
+fails if it has a `Seq Scan` anywhere (under joins, in an InitPlan) or does not use each index the
+builder declares (`HISTORY_INDEXES` in `queries/history.ts`; the program builders' lists in
+`history.explain.ts`). Small relations' plans are recorded, never gated: at one owner's scale a
+sequential scan of `workouts` or `exercises` is the right plan. The report's first table gives each
+relation's rows, pages and class, the second each query's scans (large relations in bold), rows,
+execution and planning time, shared buffers (hit/read) and the gate's verdict; then every plan
+follows, node by node, with its actual rows, loops, time and buffers. Timings are recorded, never
+asserted: they vary by machine, and CI's Postgres may cost the same plan differently from Neon's.
+
+**When it fails**, the message names the scan or the missing index. Fix the builder or add an
+index (a migration, newest in the journal), and record the plan before and after in the PR.
 
 ## Troubleshooting
 
