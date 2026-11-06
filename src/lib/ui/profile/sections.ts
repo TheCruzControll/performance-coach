@@ -51,6 +51,12 @@ export const SECTIONS = [
 		title: 'Running & Muay Thai',
 		subtitle: 'Your runs and races, sessions and fights',
 		icon: 'pulse'
+	},
+	{
+		key: 'body',
+		title: 'Body & nutrition',
+		subtitle: 'Body weight, nutrition phase and a target',
+		icon: 'flame'
 	}
 ] as const satisfies readonly SectionInfo[];
 

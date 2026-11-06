@@ -11,6 +11,7 @@ import { error } from '@sveltejs/kit';
 import {
 	getAthleteProfile,
 	getBaselines,
+	getBody,
 	getEquipment,
 	getExperience,
 	getOnboarding,
@@ -18,6 +19,7 @@ import {
 	listGoals,
 	saveBaselines,
 	saveBasics,
+	saveBody,
 	saveEquipment,
 	saveExperience,
 	saveSpecifics,
@@ -38,7 +40,8 @@ const SECTIONS: Record<string, ProfileSection> = {
 	equipment: { load: getEquipment, save: saveEquipment },
 	strength: { load: getBaselines, save: saveBaselines },
 	basics: { load: getAthleteProfile, save: saveBasics },
-	specifics: { load: getSpecifics, save: saveSpecifics }
+	specifics: { load: getSpecifics, save: saveSpecifics },
+	body: { load: getBody, save: saveBody }
 };
 
 export const SECTION_KEYS = Object.keys(SECTIONS);

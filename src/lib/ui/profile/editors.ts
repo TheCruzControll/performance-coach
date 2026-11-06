@@ -85,5 +85,10 @@ export const EDITORS: Record<SectionKey, () => Promise<SectionEditor>> = {
 		Promise.all([import('./SpecificsEditor.svelte'), import('./specifics')]).then(
 			([editor, { specificsDraft, specificsPayload }]) =>
 				section(editor.default, specificsDraft, 'specifics', specificsPayload)
+		),
+	body: () =>
+		Promise.all([import('./BodyEditor.svelte'), import('./body')]).then(
+			([editor, { bodyDraft, bodyPayload }]) =>
+				section(editor.default, bodyDraft, 'body', bodyPayload)
 		)
 };
