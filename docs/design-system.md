@@ -109,10 +109,8 @@ Tracking: `--tracking-display -0.032em`, `--tracking-tight -0.016em`, `--trackin
   (Writing both, standard first, makes the minifier keep only the prefixed one, which Chromium
   ignores.) `pnpm budgets` fails if a
   built rule ships a `-webkit-` property without its standard twin, and e2e asserts the nav's
-  computed `backdrop-filter`. Judge glass on a device or WebKit: headless Chromium does not
-  paint `backdrop-filter` under mobile emulation (`isMobile`, as in the iPhone e2e project), so
-  those screenshots show unblurred content behind the nav (checked in M1 review round 2: the
-  same page blurs with mobile emulation off).
+  computed `backdrop-filter`. Judge glass on a device, not on e2e screenshots, which can show
+  text through the nav (see docs/testing.md).
 - **Layers:** `--z-raised 10 · sticky 50 · nav 100 · overlay 200 · sheet 210 · toast 300`.
 - **Safe areas:** `--safe-top/right/bottom/left` from `env(safe-area-inset-*)`;
   `viewport-fit=cover`. Installed on iOS, the status bar is `black-translucent` (white text over
