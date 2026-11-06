@@ -42,6 +42,10 @@ interface NodeInfo {
 	imports: string[];
 	stylesheets: string[];
 	fonts: FontRef[];
+	/** The stylesheets SvelteKit inlines into the page instead of linking them. */
+	inlineStyles: string[];
+	/** The node's component, e.g. `(app)/_layout` (null for a node without one). */
+	component: string | null;
 }
 interface Route {
 	id: string;
@@ -81,10 +85,14 @@ function readNode(index: number): NodeInfo & { universal: string | null } {
 		return (match ? JSON.parse(match[1]!) : []) as T;
 	};
 	const universal = /export const universal_id = ("[^"]*");/.exec(source);
+	const inline = /export const inline_styles = \(\) => \(\{([\s\S]*?)\}\);/.exec(source);
+	const component = /import\('\.\.\/entries\/pages\/(.+?)\.svelte\.js'\)/.exec(source);
 	return {
 		imports: grab('imports'),
 		stylesheets: grab('stylesheets'),
 		fonts: grab('fonts'),
+		inlineStyles: [...(inline?.[1] ?? '').matchAll(/"([^"]+)":/g)].map((m) => m[1]!),
+		component: component?.[1] ?? null,
 		universal: universal ? (JSON.parse(universal[1]!) as string) : null
 	};
 }
@@ -202,7 +210,7 @@ const totalCss = allCss.reduce((sum, f) => sum + gzipBytes(`_app/immutable/asset
  * prefixed form and Chromium/Firefox lose the effect. Source declares only the standard
  * property; the minifier adds prefixes for the build targets.
  */
-const PREFIXED = ['backdrop-filter', 'mask-image', 'user-select', 'text-size-adjust'];
+const PREFIXED = ['backdrop-filter', 'mask', 'mask-image', 'user-select', 'text-size-adjust'];
 const prefixProblems: string[] = [];
 for (const file of allCss) {
 	const css = readFileSync(path.join(CLIENT, '_app/immutable/assets', file), 'utf8');
@@ -217,6 +225,38 @@ for (const file of allCss) {
 	}
 }
 const sw = existsSync(`${CLIENT}/service-worker.js`) ? gzipBytes('service-worker.js') : 0;
+
+/**
+ * App shell inlining: the (app) layout's own stylesheets (AppShell with the nav, and the icons)
+ * are inlined into every app page while each is shorter than SvelteKit's inlineStyleThreshold
+ * (vite.config.ts). One that grows past it becomes a render-blocking request on every app route,
+ * phone included, and no gzip budget notices. The server node lists what it inlined
+ * (`inline_styles`); page-agnostic shell rules belong in src/lib/ui/styles/layout.css instead.
+ */
+const INLINE_STYLE_THRESHOLD = Number(
+	/inlineStyleThreshold:\s*(\d+)/.exec(readFileSync('vite.config.ts', 'utf8'))?.[1]
+);
+const SHELL_LAYOUT = '(app)/_layout';
+const shellNode = nodes.find((node) => node.component === SHELL_LAYOUT);
+const lengthOf = (file: string) => readFileSync(path.join(CLIENT, file), 'utf8').length;
+const count = (n: number) => n.toLocaleString('en');
+const shellProblems: string[] = [];
+if (!Number.isFinite(INLINE_STYLE_THRESHOLD)) {
+	shellProblems.push('no inlineStyleThreshold in vite.config.ts: update this guard');
+}
+if (!shellNode) shellProblems.push(`no ${SHELL_LAYOUT} node in the build: update this guard`);
+for (const file of shellNode?.stylesheets ?? []) {
+	if (!shellNode!.inlineStyles.includes(file)) {
+		shellProblems.push(
+			`${path.basename(file)} is ${count(lengthOf(file))} characters, not under ${count(INLINE_STYLE_THRESHOLD)}, ` +
+				'so it is linked instead of inlined: move page-agnostic rules to src/lib/ui/styles/layout.css'
+		);
+	}
+}
+const shellSheet = shellNode?.stylesheets.find((file) =>
+	path.basename(file).startsWith('AppShell.')
+);
+if (shellNode && !shellSheet) shellProblems.push(`no AppShell stylesheet in ${SHELL_LAYOUT}`);
 
 /**
  * @simplewebauthn/browser placement: it must never be part of a route's initial JS, and only the
@@ -438,6 +478,7 @@ const lines = [
 				`Not modulepreloaded (counted above; fetched after its importer): \`${r.route}\` ${r.late.map((f) => `${path.basename(f)} (${fmt(gzipBytes(f))})`).join(', ')}`
 		),
 	`CSS output guard (standard property kept next to every -webkit- prefix): ${prefixProblems.length ? 'FAIL' : 'pass'}`,
+	`App shell stylesheets inlined into every app page (AppShell ${shellSheet ? count(lengthOf(shellSheet)) : '?'} of ${count(INLINE_STYLE_THRESHOLD)} characters): ${shellProblems.length ? 'FAIL' : 'pass'}`,
 	`@simplewebauthn/browser: on demand only, never in initial JS; loadable from ${webauthnRoutes
 		.sort()
 		.map((r) => `\`${r}\``)
@@ -458,6 +499,10 @@ if (process.env.GITHUB_STEP_SUMMARY) {
 
 if (prefixProblems.length > 0) {
 	console.error(`\nCSS output guard failed:\n  - ${prefixProblems.join('\n  - ')}`);
+}
+
+if (shellProblems.length > 0) {
+	console.error(`\nApp shell inlining failed:\n  - ${shellProblems.join('\n  - ')}`);
 }
 
 if (webauthnProblems.length > 0) {
@@ -486,6 +531,7 @@ const failed = rows.filter((r) => !r.ok);
 if (
 	failed.length > 0 ||
 	prefixProblems.length > 0 ||
+	shellProblems.length > 0 ||
 	webauthnProblems.length > 0 ||
 	validationProblems.length > 0 ||
 	sectionProblems.length > 0 ||
@@ -495,6 +541,7 @@ if (
 	const what = [
 		...failed.map((r) => r.route),
 		...(prefixProblems.length ? ['CSS prefixes'] : []),
+		...(shellProblems.length ? ['app shell inlining'] : []),
 		...(webauthnProblems.length ? ['WebAuthn library placement'] : []),
 		...(validationProblems.length ? ['validation placement'] : []),
 		...(sectionProblems.length ? ['profile section CSS'] : []),
