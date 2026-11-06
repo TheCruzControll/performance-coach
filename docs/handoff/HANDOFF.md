@@ -4,10 +4,10 @@ This is everything a new Claude Code session needs to resume the build on anothe
 product spec is `docs/product-requirements.md` on `main`; milestone criteria are in
 `docs/milestones.md`. Read this file from `origin/handoff` (it is not on `main`).
 
-## Update: cloud session, 2026-11-06 (06:28 → 19:15 UTC, still running)
+## Update: cloud session, 2026-11-06 (06:28 → 20:10 UTC, still running)
 
 A claude.ai cloud session (4 CPUs, 15 GB, Linux; no T3, no Codex) is working the goal "finish
-M1–M9 on main with evidence and the app live on coach.nikocruz.com". State at 19:15 UTC:
+M1–M9 on main with evidence and the app live on coach.nikocruz.com". State at 20:10 UTC:
 
 - **Production is live** on coach.nikocruz.com since the cutover (#50, 07:13 UTC); every merge to
   `main` deploys it, and the post-deploy smoke check runs after each deploy.
@@ -24,29 +24,45 @@ M1–M9 on main with evidence and the app live on coach.nikocruz.com". State at 
   real WebKit fix: leaving detection now lives in `app.html`'s inline script), #103, #105–#116.
   Since 17:45: #118 (set prefill), #119 (M6 analytics foundation), #120 (on-device workout store),
   #121 (coach markdown), #122 (leaving + version.json fix), #123 (LlmProvider + MockProvider),
-  #124 (mail layer), #117 (Train week). **66 of 328 planned slices are on main** (M7 added 59).
+  #124 (mail layer), #117 (Train week), #126 (workout flow), #127 (sync engine), #129 (workout
+  summary). **69 of 328 planned slices are on main** (M7 added 59). `curl -sI
+  https://coach.nikocruz.com` at 19:46 UTC: `HTTP/2 200`.
+- **Usage limit, 19:20–20:00 UTC**: the owner's weekly usage limit stopped every subagent ("You've
+  hit your weekly limit · resets 8pm (UTC)"), then the session's worker restarted. After the restart
+  the primary working directory is `/workspace` (empty) and the new scratchpad is
+  `/tmp/claude-0/-workspace/<session>/scratchpad`; the repo (`/home/user/performance-coach`), the
+  old scratchpad (`<scratch>` below, with worktrees, env files, plans, tools) and the workflow
+  journals all survived. Postgres 16 had stopped: `pg_ctlcluster 16 main start`, then `<scratch>/bin/pg18`.
+  The Workflow tool only loads a `scriptPath` inside the working directory or the new scratchpad,
+  so the scripts were copied to `<new scratch>/wf/`.
 - **Status page for the owner's phone** (private artifact, republished from the session):
   https://claude.ai/artifact/JDAZPdKRPVXrQ7ZgScuLHR. Built by `<scratch>/status/status.py` then
   `to_artifact.py`; a new session republishes it by passing that URL as `url`.
 - **Plans** (all in `plans/`): `m3-plan.json`, `m2x-plan.json` (21 slices), `m4-plan.json` (61),
   `m5-plan.json` (61), `m6-plan.json` (63), `m7-plan.json` (59). The planner (`milestone-plans-cloud.js`,
-  run `wf_3f53c5db-7bb`) is on M9. Its `write:` step refuses to retype a 150 KB plan, so take the
+  run `wf_3f53c5db-7bb`, resumed at 20:01) is revising M9. Its `write:` step refuses to retype a 150 KB plan, so take the
   final plan from its journal (the `revise:M<n>#2` result) with a script and save it to `plans/`. Each plan's `openQuestions` are answered with defaults; slices list the default
   under "## Owner decisions" in their PR.
 
 ### Open PRs and how they merge
 
 - **Profile chain** (they add entries to the same section registries): `workflows/profile-chain.js`
-  (run `wf_ee68f6ee-303`) restacks #73 → #74 → #76 → #77 → #81 → #83 → #84 → #89 → #93 as one
+  (run `wf_ee68f6ee-303`) restacked #73 → #74 → #76 → #77 → #81 → #83 → #84 → #89 → #93 as one
   chain on main + #86: each link merges main and the previous link and resolves the registry
   conflicts (keep every entry), a fresh reviewer reads the remerge-diff and full gates run while
-  the next link stacks, fixes cascade down, then all are pushed in order with "Depends on <previous
-  link>" and an audit checks no section was lost. Until it pushes they are held in
-  `<scratch>/steward-hold`; remove those lines after the push and the steward merges them in order.
+  the next link stacks. Every link was reviewed (APPROVE) and passed full gates; fixes on #74 and
+  #84 were cascaded down locally before the usage limit stopped it at the push. Its resume re-ran
+  finished steps (see the resume rule below), so it was stopped and `workflows/profile-chain-finish.js`
+  (run `wf_73d5b399-642`, started 20:05) finishes it: merge current main into #73 and carry it down
+  the chain with lint + check per link and full gates at #93, push in order (fast-forward), update
+  each PR body ("Depends on" the previous link, no "Merge hold:"), then audit. Until it pushes the
+  PRs are held in `<scratch>/steward-hold`; remove those lines after the push and the steward
+  merges them in order.
   **#104** (goal drag) is built on the old #93 and is restacked onto the new one after that.
-- **#125** (session detail) and **#128** (plan overview) were cut from #117 before its WebKit fix;
-  `pr-ci-fix.js` run `wf_46f49909-9d2` merges main and blocks the service worker in their routed
-  tests. **#126**, **#127** (M4 workout flow, sync engine) in CI.
+- **#125** (session detail) and **#128** (plan overview) were cut from #117 before its WebKit fix.
+  Fixed by hand at 19:58 (6c482cf, feb708d): main merged in and the routed tests moved into a
+  describe that blocks the service worker; the specs passed 59/59 and 56/56 on Chromium with
+  `--repeat-each=3`. CI (with WebKit) running at 20:10; the steward merges them when green.
 - **Never merge #13** (this branch). **#14** is an old paused WIP branch; leave it.
 
 ### Rules learned today (now in `workflows/dag-cloud.js`'s instructions)
@@ -77,6 +93,12 @@ M1–M9 on main with evidence and the app live on coach.nikocruz.com". State at 
 - **Shared docs** (`docs/testing.md`, `security.md`, `performance.md`, `milestones.md`): code
   slices put their lines in a "## Docs to add" section of the PR body; each milestone's docs PR
   collects them from the merged PRs.
+- **Workflow resume is prefix-based**: a resumed run replays cached agents only while its agent()
+  calls happen in the same order as before. A pipelined or `limit > 1` run calls agents in a
+  timing-dependent order, so its resume re-runs finished steps (seen on the profile chain and C1b).
+  Resume only sequential runs (`limit: 1`); otherwise start a fresh wave with `build-plan-wave.py`
+  (slices that already have a PR become external dependencies; a slice whose worktree exists
+  resumes from it). Editing a script also changes every prompt after the edit.
 - **Stacked history**: a PR built on another slice's branch shows "dirty" on GitHub once that
   slice merges, though `git merge-tree` merges it cleanly; merge main into it locally, run quick
   checks on its files, push. `tools/steward-plan` also passes a PR whose head already holds all of
@@ -84,9 +106,16 @@ M1–M9 on main with evidence and the app live on coach.nikocruz.com". State at 
 
 ### Running workflows (scripts in `workflows/`, args in `<scratch>/dag-*.json`)
 
-`dag-cloud.js` waves: B1 (M3 generator: scenarios), B2 (M3 Train week, db-explain, …), X1 (M2X
-desktop shell, email link), C1b (M4 projection, store, sync, …), D1 (M5 tool catalogue, markdown,
-mock provider, tool framework); plus the profile chain, the #90 fix and the M6/M7/M9 planner.
+At 20:10 UTC (`dag-cloud.js` unless noted; scripts copied to `<new scratch>/wf/`):
+- C2 `wf_35eac1e9-b9e` (M4: run/other rules, substitutions, reconcile and tabs, log gaps, sync
+  ledger, pain reports, sync endpoint, canonical reads, start kit, workout history, library JSON),
+  fresh at 20:06.
+- D1 `wf_08f629f2-6f6` (M5 tool framework, publishing), X1 `wf_8b198cf0-2e4` (M2X desktop auth
+  screens publish, primitives, main screens, desktop e2e), F1 `wf_c5e1e5d9-cc8` (M6 trend
+  classifier publish, prescribed vs actual, adherence), all resumed at 20:01 from
+  `dag-cloud-pre1846.js` (the script text they started with).
+- B3 `wf_f5435f32-765` (M3 move-session, then program-history); profile-chain-finish
+  `wf_73d5b399-642`; planner `wf_3f53c5db-7bb` (M9).
 Agent cap: 12 (owner-approved). `build-plan-wave.py <plan> <M> <brief> <slug> <port>` builds a
 wave's args from any milestone plan. Next once the profile chain is pushed: M3 `preferences-link`
 (on #83) and M2 `onboarding-flow` (on the whole chain), then Today setup, onboarding save/resume/
@@ -98,6 +127,10 @@ review, Today summary and M2's docs PR.
   the session asks before setting `OWNER_EMAIL`.
 - M8: the council bar (`args.bar`), asked when M4 lands. M8/M9: real-traffic Core Web Vitals at
   p75 and the owner's sign-off.
+- **Lighthouse TBT** (#122): one shared-runner sample put `/` at 316 ms TBT (budget 300) on code
+  byte-identical to runs at 16–76 ms. Raise the CI run count, loosen TBT for CI, or accept it.
+- **M7 plan defaults** (21, in `<scratch>/m7-open-questions.md`), e.g. event lead windows (fight 8
+  weeks, half 12, marathon 16, meet 10, other race 6) and same-day order by goal rank, 6 h apart.
 - **Lighthouse gate**: patch `scripts/lighthouse.ts` to treat a same-frame LCP candidate 1 µs after
   FCP as FCP (a measurement correction, with a test), or accept a rare red Lighthouse run.
 - Defaults to confirm (none blocking; each PR's "## Owner decisions"): tablet 640–1023 px keeps the

@@ -36,7 +36,7 @@ function makeLimiter(n) {
 }
 const limit = makeLimiter(args.limit || 2);
 
-const S = '/tmp/claude-0/-home-user-performance-coach/7dfac99c-7ffa-543a-b71b-13de33c61bd5/scratchpad';
+const S = '<scratch>';
 const BIN = `${S}/bin`;
 const MAIN = '/home/user/performance-coach'; // the main checkout (never modified by agents)
 const R = 'repos/TheCruzControll/performance-coach';
