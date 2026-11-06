@@ -64,6 +64,11 @@ Run `git status --short`. Do not stash or discard. When the head is the
 working tree, do not include unrelated changes: limit review to the change
 paths if they separate cleanly. Otherwise stop and ask.
 
+No `gh` login (some cloud sessions reach GitHub only through their own
+tools): check with `gh auth status`. If it fails, do the same GitHub
+operations with the session's GitHub tools (search ToolSearch for `github`).
+If there are none, stop and say GitHub is unreachable.
+
 Find the base after `git fetch origin`. Default branch:
 `gh repo view --json defaultBranchRef --jq .defaultBranchRef.name`. If an
 `upstream` remote hosts the base repo, use it instead of `origin` here.

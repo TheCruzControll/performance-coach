@@ -43,6 +43,11 @@ If model identity is unavailable, name the harness without guessing a model.
 Before submission, check the title, description, quotes, and attachments for
 secrets and private details.
 
+No `gh` login (some cloud sessions reach GitHub only through their own
+tools): check with `gh auth status`. If it fails, do the same GitHub
+operations with the session's GitHub tools (search ToolSearch for `github`).
+If there are none, stop and say GitHub is unreachable.
+
 Open a real PR rather than a draft so review bots run. If `gh pr create` fails
 because the GraphQL rate limit is used up, open it through REST with
 `gh api repos/<owner>/<repo>/pulls -f title=... -f head=... -f base=... -F body=@<file>`. If the user also asked

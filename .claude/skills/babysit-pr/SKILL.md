@@ -87,6 +87,12 @@ there. Read the PR, checks, and comments once through REST
 for comments), handle what is there, report the PR's state, and stop. Do not
 poll.
 
+No `gh` login (some cloud sessions reach GitHub only through their own
+tools): check with `gh auth status`. If it fails, do the same GitHub
+reads and replies with the session's GitHub tools (search ToolSearch for `github`).
+If there are none, report that GitHub is unreachable.
+
+
 ## Reviews
 
 Only act on checks and comments newer than the latest push. Verify every bot

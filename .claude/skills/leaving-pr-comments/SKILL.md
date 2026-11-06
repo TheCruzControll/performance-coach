@@ -41,6 +41,11 @@ Write the comment itself in a direct style:
 - Keep it concise and avoid filler, canned thanks, or status narration.
 - Distinguish verified facts from judgment.
 
+No `gh` login (some cloud sessions reach GitHub only through their own
+tools): check with `gh auth status`. If it fails, do the same GitHub
+operations with the session's GitHub tools (search ToolSearch for `github`).
+If there are none, stop and say GitHub is unreachable.
+
 Preview the final Markdown before posting so quoting and blank lines render as
 shown. After posting, verify that GitHub returned the comment or review URL.
 Resolve a review thread only after its response was posted successfully.
