@@ -1,4 +1,7 @@
-/** The first block's shape, event tapers and the week's days (m3/13). */
+/**
+ * The first block's shape, event tapers and the week's days (m3/13). `available` is empty or
+ * starts with a separator, so the sentence reads whole either way.
+ */
 import type { Templates } from '../../decisions.ts';
 
 export const blocks = {
@@ -12,6 +15,6 @@ export const blocks = {
 	},
 	day_allocation: {
 		summary: '{days} training days a week',
-		why: 'You train {days} days a week. Your fixed commitments take {commitmentDays}, and the {freeDays} free days go to your goals in priority order: {allocation}.'
+		why: 'You train {stated} days a week{available}. Your fixed commitments take {commitmentDays}, which leaves {freeDays} free: {allocation}.'
 	}
 } as const satisfies Templates;
