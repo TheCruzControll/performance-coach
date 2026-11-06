@@ -15,7 +15,6 @@ import { SCENARIO_START, SCENARIOS, scenarioDay } from './scenarios';
 import { demandIn } from './stage';
 import type { Draft, Stage } from './stage';
 import { loads } from './stages/loads';
-import { other } from './stages/other';
 import { placement } from './stages/placement';
 import { progression } from './stages/progression';
 import { strength } from './stages/strength';
@@ -67,7 +66,6 @@ describe('the stage list', () => {
 
 	const STUBS: Record<string, Stage> = {
 		strength,
-		other,
 		placement,
 		volume,
 		loads,

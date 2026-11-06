@@ -1,12 +1,14 @@
 /**
  * The concurrent-training numbers (PRD §5; m3-plan 'Not told yet' defaults and 'Session
- * length'): fixed commitments and the running week. commitments.ts and running.ts apply them, and
- * each number lives here and nowhere else, so changing one, such as whether the long run may
- * outrun the session length (an open question), is a one-line edit.
+ * length'): fixed commitments, the running week and the other sessions. commitments.ts,
+ * running.ts and other.ts apply them, and each number lives here and nowhere else, so changing
+ * one, such as whether the long run may outrun the session length (an open question), is a
+ * one-line edit.
  */
 import type { Discipline, ExperienceLevel, Intensity } from '../../profile/catalog.ts';
 import type { RunSegment } from '../../training/types.ts';
 import type {
+	OtherSessionKind,
 	Phase,
 	RunSegmentKind,
 	SessionIntensity,
@@ -169,3 +171,27 @@ export const MARATHON_HOOKS: Readonly<Partial<Record<Phase, Record<string, numbe
 	// Taper: volume falls to race day while the quality stays.
 	marathon_taper: { runVolumeFactor: 0.6, qualityPerWeek: 1, longRunShareMax: 0.3 }
 };
+
+// ---- Other sessions -------------------------------------------------------------------------
+
+/**
+ * Generated Muay Thai sessions, by their format: technical by default (DEFAULTS
+ * .muay_thai_sessions). With the Muay Thai profile told, they alternate technique and pad work,
+ * and one a week is sparring if the owner spars, in the `sparringWeeks` only.
+ */
+export const MUAY_THAI = {
+	technical: { title: 'Muay Thai technique', rpe: 6, intensity: 'moderate', rounds: 8 },
+	pad_work: { title: 'Muay Thai pad work', rpe: 7, intensity: 'hard', rounds: 6 },
+	sparring: { title: 'Muay Thai sparring', rpe: 8, intensity: 'very_hard', rounds: 4 },
+	roundMinutes: 3,
+	sparringWeeks: ['accumulation', 'intensification', 'build', 'peak'] as readonly WeekKind[]
+} as const satisfies Record<
+	Extract<OtherSessionKind, 'technical' | 'pad_work' | 'sparring'>,
+	{ title: string; rpe: number; intensity: SessionIntensity; rounds: number }
+> & { roundMinutes: number; sparringWeeks: readonly WeekKind[] };
+
+/** A mobility session on a free day no goal asks for: short and easy, within the session length. */
+export const MOBILITY = { minutes: 30, rpe: 3 } as const;
+
+/** A custom-discipline goal with no commitment: sessions of the session length at this RPE. */
+export const CUSTOM_SESSION_RPE = 6;
