@@ -6,7 +6,7 @@
  */
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
-import { signedOut, TABS } from './support';
+import { gotoHydrated, signedOut, TABS } from './support';
 
 const SCREENS = [
 	...TABS.map((t) => t.path),
@@ -164,7 +164,8 @@ for (const theme of THEMES) {
 		});
 
 		test('every /design component group has no violations', async ({ page }) => {
-			await page.goto('/design');
+			// The tabs only switch once the page has hydrated: a tap before then changes nothing.
+			await gotoHydrated(page, '/design');
 			const loaded = {
 				Inputs: page.getByRole('spinbutton', { name: 'Reps' }),
 				Data: page.getByRole('heading', { name: 'List row' }),
