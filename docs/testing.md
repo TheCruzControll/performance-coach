@@ -282,6 +282,16 @@ Unit tests (`src/lib/domain/training/`, `src/lib/domain/exercises/`, `src/lib/do
   `pnpm check`); `validate()` is the function the profile schemas re-export; and the runtime
   imports reachable from `domain/training/index.ts` include no schemas, edits or zod, with the
   walk shown to catch a re-export, a zod import and an inline `type` import.
+- **Plans in words** (`training/describe.test.ts`, on fixtures the contract's schemas accept):
+  sets × reps or a range, a held time or metres, @ RPE when set; only an RPE-based top or ramp
+  set reads 'Work up to a set of 5 @ RPE 7' with the recording instruction; every load kind in kg
+  and lb, each computed load exactly M1's `roundToIncrement` to `DEFAULT_LOAD_INCREMENT`, none
+  when it cannot be computed (RPE-based, from_e1rm before an estimate), percent_1rm from its own
+  snapshot, and an estimated 1RM never called measured; rests through `formatDuration`; segments
+  in km and mi (paces by `convertPace` or implied by `paceSecondsPer`, HR-zone or RPE targets,
+  repeat groups as one step); session lines for strength, timed and distance runs and every
+  other-session kind, with M2's time of day but never 'varies'. `describe.ts` imports only
+  domain modules and no package (`scripts/training-index-imports.test.ts`).
 
 ### Schema
 
