@@ -176,6 +176,36 @@ describe('sessions', () => {
 		});
 	});
 
+	it('say how each one signed in, in the words Security shows', async () => {
+		await withRollback(async (tx) => {
+			const owner = await setUpOwner(tx);
+			const current = (await validateSessionToken(owner.token, { db: tx }))!.session;
+			const issue = async (method: 'passkey' | 'recovery' | 'test') =>
+				(
+					await issueSession(
+						{
+							ownerId: owner.ownerId,
+							kind: method === 'recovery' ? 'recovery' : 'owner',
+							method,
+							userAgent: UA
+						},
+						{ db: tx }
+					)
+				).session.id;
+			const passkey = await issue('passkey');
+			const recovery = await issue('recovery');
+			const test = await issue('test');
+
+			const listed = await listSessions(current, { db: tx });
+			expect(Object.fromEntries(listed.map((s) => [s.id, [s.method, s.signedInWith]]))).toEqual({
+				[current.id]: ['setup', 'set up'],
+				[passkey]: ['passkey', 'passkey'],
+				[recovery]: ['recovery', 'recovery code'],
+				[test]: ['test', 'test session']
+			});
+		});
+	});
+
 	it('cannot be revoked across owners or by a stranger’s id', async () => {
 		await withRollback(async (tx) => {
 			const owner = await setUpOwner(tx);

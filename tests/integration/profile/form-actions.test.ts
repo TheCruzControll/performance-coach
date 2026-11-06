@@ -1,18 +1,23 @@
 /**
- * The Profile edit screens' form action (src/lib/server/forms/profile.ts) on real Postgres,
- * through the real services: a section posted as JSON is validated again on the server, saved
- * as a Profile change, and every way it can fail reaches the form as something the owner can act
- * on — field errors by dotted path, a message, or a refusal without a session.
+ * The Profile edit screens' form actions (src/lib/server/forms/profile.ts) on real Postgres,
+ * through the real services: a section (or one goal) posted as JSON is validated again on the
+ * server, saved as a Profile change, and every way it can fail reaches the form as something the
+ * owner can act on — field errors by dotted path, a message, or a refusal without a session.
  */
 import { isActionFailure, isHttpError } from '@sveltejs/kit';
 import { describe, expect, it, vi } from 'vitest';
 import type { AuthSession } from '../../../src/lib/server/auth/sessions';
 import type { Executor } from '../../../src/lib/server/db';
-import { editAction, type SaveSection } from '../../../src/lib/server/forms/profile';
+import {
+	editAction,
+	saveGoalAction,
+	type SaveSection
+} from '../../../src/lib/server/forms/profile';
 import {
 	createGoal,
 	getEquipment,
 	goalHistory,
+	listGoals,
 	saveEquipment,
 	updateGoal
 } from '../../../src/lib/server/services/profile';
@@ -142,5 +147,100 @@ describe('a Profile edit screen’s save action', () => {
 			expect(isHttpError(err, 401)).toBe(true);
 		}
 		expect(service).not.toHaveBeenCalled();
+	});
+});
+
+/** What a goal save returned once it saved (fails the test otherwise). */
+function savedGoal(result: Awaited<ReturnType<typeof saveGoalAction>>) {
+	if (!('goals' in result)) throw new Error(`not saved: ${JSON.stringify(result)}`);
+	return result;
+}
+
+describe('Profile → Goals’ saveGoal action', () => {
+	it('adds a goal as a Profile change and returns the ranking, the new goal last', async () => {
+		await withRollback(async (db) => {
+			const owner = await makeOwner(db);
+			const first = savedGoal(
+				await saveGoalAction({ locals: session(owner), request: post(eventGoal()) }, { db })
+			);
+			const marathon = eventGoal({ title: 'Valencia marathon', disciplines: ['distance_running'] });
+			const second = savedGoal(
+				await saveGoalAction({ locals: session(owner), request: post(marathon) }, { db })
+			);
+			expect(first.goals.map((g) => [g.title, g.priority])).toEqual([['First Muay Thai fight', 1]]);
+			expect(second.goals.map((g) => [g.title, g.priority])).toEqual([
+				['First Muay Thai fight', 1],
+				['Valencia marathon', 2]
+			]);
+			expect(second.saved).toBe(second.goals[1]!.id);
+			const history = await goalHistory(owner, { db });
+			expect(history.map((e) => [e.change, e.source])).toEqual([
+				['created', 'profile'],
+				['created', 'profile']
+			]);
+		});
+	});
+
+	it('updates the goal its id names, which keeps its rank', async () => {
+		await withRollback(async (db) => {
+			const owner = await makeOwner(db);
+			const fight = await createGoal(owner, eventGoal(), { db, source: 'onboarding' });
+			await createGoal(owner, eventGoal({ title: 'Valencia marathon' }), { db });
+			const edit = { id: fight.id, ...eventGoal({ title: 'A-class fight', weightClass: null }) };
+			const result = savedGoal(
+				await saveGoalAction({ locals: session(owner), request: post(edit) }, { db })
+			);
+			expect(result.saved).toBe(fight.id);
+			expect(result.goals.map((g) => [g.id, g.title, g.priority, g.weightClass])).toEqual([
+				[fight.id, 'A-class fight', 1, null],
+				[result.goals[1]!.id, 'Valencia marathon', 2, '-71 kg']
+			]);
+			const history = await goalHistory(owner, { db });
+			expect(history.map((e) => [e.change, e.source])).toContainEqual(['updated', 'profile']);
+			expect(history).toHaveLength(3);
+		});
+	});
+
+	it('returns the sheet’s field errors by field name, and stores nothing', async () => {
+		await withRollback(async (db) => {
+			const owner = await makeOwner(db);
+			const goal = eventGoal({ eventDate: '', weightClass: 'x'.repeat(41) });
+			const result = await saveGoalAction({ locals: session(owner), request: post(goal) }, { db });
+			expect(isActionFailure(result)).toBe(true);
+			expect(result).toMatchObject({
+				status: 400,
+				data: {
+					errors: {
+						eventDate: 'Pick the event date',
+						weightClass: 'Keep it under 40 characters'
+					}
+				}
+			});
+			expect(await listGoals(owner, { db })).toEqual([]);
+		});
+	});
+
+	it('never adds a goal for an id that names none: the owner is told it is gone', async () => {
+		await withRollback(async (db) => {
+			const owner = await makeOwner(db);
+			for (const id of [crypto.randomUUID(), 'not-a-goal', 42, null]) {
+				const result = await saveGoalAction(
+					{ locals: session(owner), request: post({ id, ...eventGoal() }) },
+					{ db }
+				);
+				expect(result, String(id)).toMatchObject({
+					status: 404,
+					data: { message: 'That no longer exists. Reload to see the latest.' }
+				});
+			}
+			expect(await listGoals(owner, { db })).toEqual([]);
+		});
+	});
+
+	it('refuses without an owner session, before reading the form', async () => {
+		const err = await thrown(
+			saveGoalAction({ locals: { requestId: 'test', session: null }, request: post(eventGoal()) })
+		);
+		expect(isHttpError(err, 401)).toBe(true);
 	});
 });

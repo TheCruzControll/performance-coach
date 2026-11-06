@@ -11,7 +11,10 @@ import { signedOut, TABS } from './support';
 const SCREENS = [
 	...TABS.map((t) => t.path),
 	'/profile/security',
+	'/profile/goals',
 	'/profile/equipment',
+	'/profile/strength',
+	'/profile/experience',
 	'/profile/body',
 	'/offline',
 	'/design'
@@ -95,12 +98,57 @@ for (const theme of THEMES) {
 			expect(await audit(page)).toEqual([]);
 		});
 
+		test('Strength’s week-one explainer, both kinds of lift and an error have no violations', async ({
+			page
+		}) => {
+			await page.goto('/profile/strength');
+			await expect(page.getByTestId('section-editor')).toHaveAttribute('aria-busy', 'false');
+			// Changes that are never saved: the browser refuses the invalid one before posting.
+			const unknown = page.getByRole('switch', { name: 'I don’t know my 1RMs' });
+			await unknown.check();
+			await expect(page.getByTestId('baselines-explainer')).toBeVisible();
+			await page.waitForTimeout(300);
+			expect(await audit(page), 'explainer').toEqual([]);
+
+			await unknown.uncheck();
+			await page.getByRole('button', { name: 'Back squat', exact: true }).click();
+			const squat = page.getByRole('region', { name: 'Back squat' });
+			await squat.getByRole('radio', { name: 'Tested max' }).check();
+			await squat.getByRole('textbox', { name: '1RM' }).fill('600');
+			await page.getByRole('button', { name: 'Bench press', exact: true }).click();
+			const bench = page.getByRole('region', { name: 'Bench press' });
+			await bench.getByRole('radio', { name: 'From a recent set' }).check();
+			await bench.getByRole('textbox', { name: 'Weight' }).fill('100');
+			await bench.getByRole('textbox', { name: 'Reps' }).fill('5');
+			await page.getByTestId('save-section').click();
+			await expect(squat.getByRole('alert')).toBeVisible();
+			await expect(bench.getByTestId('baseline-estimate')).toContainText('estimated 1RM');
+			await page.waitForTimeout(300);
+			expect(await audit(page), 'lifts').toEqual([]);
+		});
+
+		test('the goal sheet, blank and showing its errors, has no violations', async ({ page }) => {
+			await page.goto('/profile/goals');
+			await expect(page.getByTestId('section-editor')).toHaveAttribute('aria-busy', 'false');
+			// The browser refuses the blank goal before posting: nothing reaches the database.
+			await page.getByTestId('goal-path-event').or(page.getByTestId('add-goal')).click();
+			const sheet = page.getByTestId('goal-sheet');
+			await expect(sheet.getByRole('heading', { name: 'New goal' })).toBeVisible();
+			await page.waitForTimeout(500);
+			expect(await audit(page), 'blank').toEqual([]);
+			await sheet.getByRole('button', { name: 'Save goal' }).click();
+			await expect(sheet.getByRole('alert').first()).toBeVisible();
+			await page.waitForTimeout(300);
+			expect(await audit(page), 'errors').toEqual([]);
+		});
+
 		test('every /design component group has no violations', async ({ page }) => {
 			await page.goto('/design');
 			const loaded = {
 				Inputs: page.getByRole('spinbutton', { name: 'Reps' }),
 				Data: page.getByRole('heading', { name: 'List row' }),
-				Feedback: page.getByRole('button', { name: 'Bottom sheet' })
+				Feedback: page.getByRole('button', { name: 'Bottom sheet' }),
+				Plan: page.getByRole('heading', { name: 'Session card' })
 			};
 			for (const [tab, ready] of Object.entries(loaded)) {
 				await page.getByRole('tab', { name: tab }).click();

@@ -7,7 +7,7 @@ export const loads = {
 		why: '{exercise} is loaded from {basis}. {reason}'
 	},
 	progression: {
-		summary: 'Progression: {change}',
+		summary: 'Week {week}: {change}',
 		why: '{reason}'
 	}
 } as const satisfies Templates;
