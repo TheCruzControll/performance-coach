@@ -13,6 +13,7 @@ import {
 	getBaselines,
 	getBody,
 	getEquipment,
+	getExercisePreferences,
 	getExperience,
 	getInjuries,
 	getOnboarding,
@@ -22,6 +23,7 @@ import {
 	saveBasics,
 	saveBody,
 	saveEquipment,
+	saveExercisePreferences,
 	saveExperience,
 	saveInjuries,
 	saveSpecifics,
@@ -47,7 +49,8 @@ const SECTIONS: Record<string, ProfileSection> = {
 	basics: { load: getAthleteProfile, save: saveBasics },
 	specifics: { load: getSpecifics, save: saveSpecifics },
 	body: { load: getBody, save: saveBody },
-	injuries: { load: getInjuries, save: saveInjuries }
+	injuries: { load: getInjuries, save: saveInjuries },
+	exercises: { load: getExercisePreferences, save: saveExercisePreferences }
 };
 
 export const SECTION_KEYS = Object.keys(SECTIONS);

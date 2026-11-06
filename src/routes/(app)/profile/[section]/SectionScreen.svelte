@@ -116,7 +116,13 @@
 </a>
 <PageHeader {title} eyebrow="Training profile" />
 
-<div class="editor" class:bar={saveBar} aria-busy={!Editor && !failed} data-testid="section-editor">
+<div
+	class="editor"
+	class:bar={saveBar}
+	class:with-message={form?.failed}
+	aria-busy={!Editor && !failed}
+	data-testid="section-editor"
+>
 	{#if Editor && form}
 		<!-- A new editor for a new form (after Discard or Save): its own state starts from the draft. -->
 		{#each [form] as current (current)}
@@ -200,6 +206,11 @@
 	/* Room for the Save bar below, so nothing ends up under it at the end of the page. */
 	.editor.bar {
 		padding-bottom: calc(var(--space-20) + var(--space-2));
+	}
+
+	/* A message over Save (up to two lines) makes the bar taller: the room grows with it. */
+	.editor.with-message {
+		padding-bottom: calc(var(--space-20) * 2 + var(--space-2));
 	}
 
 	.placeholder,
