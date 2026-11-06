@@ -1,7 +1,9 @@
 /**
  * Lost every passkey *and* every recovery code? Reset the owner's credentials so first-run
- * setup can run again. Guarded: it shows exactly what it will do to which database and asks
- * for the database name to be typed back.
+ * setup can run again. Guarded: it refuses to run without `--confirm`, without
+ * DATABASE_URL_UNPOOLED (there is no default database: never DATABASE_URL, never a local one)
+ * and outside an interactive terminal; it shows exactly what it will do to which database and
+ * asks for the database name to be typed back.
  *
  *   DATABASE_URL_UNPOOLED='postgres://…neon…/neondb' pnpm auth:reset-owner --confirm
  *
@@ -17,7 +19,7 @@ import { createInterface } from 'node:readline/promises';
 import { parseArgs } from 'node:util';
 import pg from 'pg';
 import { connectionConfig } from '../src/lib/server/db/connection.ts';
-import { databaseName, LOCAL_DATABASE_URLS, redactUrl } from '../src/lib/server/db/migrate.ts';
+import { databaseName, redactUrl } from '../src/lib/server/db/migrate.ts';
 
 export interface ResetSummary {
 	ownerName: string | null;
@@ -74,12 +76,27 @@ export async function resetOwnerAuth(
 	}
 }
 
+/**
+ * The database to reset: only ever the one named explicitly by DATABASE_URL_UNPOOLED (the direct
+ * connection, as for migrations). No fallback to DATABASE_URL or a local default, so a missing
+ * variable can never point the reset at whatever database happens to be configured.
+ */
+export function resetTarget(env: Record<string, string | undefined>): string | null {
+	const url = env.DATABASE_URL_UNPOOLED?.trim();
+	return url ? url : null;
+}
+
 async function main() {
 	const { values } = parseArgs({ options: { confirm: { type: 'boolean', default: false } } });
-	const url =
-		process.env.DATABASE_URL_UNPOOLED ??
-		process.env.DATABASE_URL ??
-		LOCAL_DATABASE_URLS.development;
+	const url = resetTarget(process.env);
+	if (!url) {
+		console.error(
+			'Refusing to run: set DATABASE_URL_UNPOOLED to the direct (non-pooled) connection string of\n' +
+				'the database to reset (Neon → production branch → direct connection). There is no default.'
+		);
+		process.exitCode = 2;
+		return;
+	}
 	const name = databaseName(url);
 	const host = new URL(url).hostname;
 

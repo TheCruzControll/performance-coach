@@ -1,8 +1,7 @@
 /**
- * The "no production before auth" rule is enforced by committed config, not by a dashboard
- * setting (docs/deployment.md): Vercel never deploys `main` from Git, and the ignored build step
- * skips every production build Vercel starts by itself. The build command migrates the
- * deployment's own database before building.
+ * Committed Vercel configuration (docs/deployment.md). Production is on: every merge to `main`
+ * deploys through the Vercel Git integration, with no committed step that skips it. The build
+ * command migrates the deployment's own database before building.
  */
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -17,35 +16,17 @@ const config = JSON.parse(readFileSync(new URL('vercel.json', root), 'utf8')) as
 	ignoreCommand?: string;
 };
 
-function ignoreStep(env: Record<string, string>) {
-	const [command, ...args] = config.ignoreCommand!.split(' ');
-	return spawnSync(command!, args, {
-		cwd: root,
-		env: { PATH: process.env.PATH ?? '', ...env },
-		encoding: 'utf8'
-	});
-}
-
-describe('Vercel production guard', () => {
-	it('never deploys main from Git', () => {
-		expect(config.git?.deploymentEnabled).toMatchObject({ main: false });
+describe('Vercel deployments', () => {
+	it('deploys main from Git, and no other branch', () => {
+		// A branch matching several rules deploys if any matching rule is true, so `main` needs its
+		// own `true` next to `"**": false`. Hobby caps an account at 100 deployments a day; a
+		// preview for every push to every PR branch used that up (CI runs the Vercel build).
+		expect(config.git?.deploymentEnabled).toEqual({ main: true, '**': false });
 	});
 
-	it('creates no Git deployment for other branches either', () => {
-		// Hobby caps an account at 100 deployments a day; a preview for every push to every PR
-		// branch used that up and left production unable to deploy. CI runs the Vercel build.
-		expect(config.git?.deploymentEnabled).toEqual({ main: false, '**': false });
-	});
-
-	it('skips every production build Vercel starts itself', () => {
-		const result = ignoreStep({ VERCEL_ENV: 'production' });
-		expect(result.status).toBe(0); // 0 = ignore the build
-		expect(result.stdout).toContain('until passkey auth ships');
-	});
-
-	it('lets preview builds through', () => {
-		expect(ignoreStep({ VERCEL_ENV: 'preview' }).status).toBe(1); // 1 = build
-		expect(ignoreStep({}).status).toBe(1);
+	it('has no ignored build step that could skip a production build', () => {
+		expect(config.ignoreCommand).toBeUndefined();
+		expect(existsSync(new URL('scripts/vercel-ignore-build.sh', root))).toBe(false);
 	});
 });
 
@@ -77,10 +58,12 @@ describe('Vercel build command', () => {
 	});
 
 	it('refuses to build a deployed environment without a direct database URL', () => {
-		const result = buildStep({ VERCEL_ENV: 'preview' });
-		expect(result.status).not.toBe(0);
-		expect(result.stderr).toContain('DATABASE_URL_UNPOOLED');
-		expect(result.calls).toEqual([]);
+		for (const VERCEL_ENV of ['preview', 'production']) {
+			const result = buildStep({ VERCEL_ENV });
+			expect(result.status, VERCEL_ENV).not.toBe(0);
+			expect(result.stderr).toContain('DATABASE_URL_UNPOOLED');
+			expect(result.calls).toEqual([]);
+		}
 	});
 
 	it('only builds outside Vercel deployments (no database to migrate)', () => {

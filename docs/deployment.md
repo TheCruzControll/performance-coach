@@ -4,12 +4,12 @@ Target: **Vercel** (Node.js 22, Fluid compute) at **coach.nikocruz.com**, DNS at
 (DNS-only), database **Neon Lakebase Postgres**. Deploys run through the **Vercel Git
 integration**; every deployed build migrates its own database first (`scripts/vercel-build.sh`).
 
-> **Status (M2, in progress):** the accounts, project, database branches, environment variables
-> and domain below exist and were configured through the Vercel and Neon APIs. Previews are
-> deployed on demand, not from every pull request (see "Preview deployments"). Passkey auth is
-> merged to `main`
-> (docs/security.md); **production stays switched off** (the guards below are still committed)
-> until the M2 production cutover removes them. Nothing is served on `coach.nikocruz.com` yet.
+> **Status (M2):** production is **on**. Every merge to `main` deploys `coach.nikocruz.com`
+> through the Vercel Git integration, migrating the production database first, and a smoke check
+> runs against the domain after each deploy. Passkey auth guards every page and endpoint
+> (docs/security.md). Until the owner completes the one-time setup below, the domain serves the
+> sign-in screen and nobody can sign in. Previews are deployed on demand, not from every pull
+> request (see "Preview deployments").
 
 ## What exists
 
@@ -21,7 +21,7 @@ integration**; every deployed build migrates its own database first (`scripts/ve
 | Protection | Vercel Authentication on every deployment **except custom domains**: previews need a Vercel login; `coach.nikocruz.com` is public and protected by the app's own passkey auth.                                                                                                                             |
 | Neon       | Project `red-rain-59499468` ("Performance coach"), Postgres 18, free plan, 6 h history window. Database `neondb`, role `neondb_owner`.                                                                                                                                                                     |
 | Branches   | `production` (`br-green-block-bfh38xqf`, default) for Production; `preview` (`br-solitary-bonus-bf58ajx7`) shared by all preview deployments. Never point a preview at production.                                                                                                                         |
-| Env vars   | `DATABASE_URL` (pooled, host contains `-pooler`) and `DATABASE_URL_UNPOOLED` (direct) for Production and Preview, each pointing at its own branch; `ANTHROPIC_API_KEY` for Production. All marked sensitive. M2 adds `OWNER_SETUP_TOKEN_HASH` (Production, only until setup completes; see "Owner setup"). |
+| Env vars   | `DATABASE_URL` (pooled, host contains `-pooler`) and `DATABASE_URL_UNPOOLED` (direct) for Production and Preview, each pointing at its own branch; `ANTHROPIC_API_KEY` for Production. All marked sensitive. Plus `OWNER_SETUP_TOKEN_HASH` (Production, only during the owner's setup; see "Owner setup"). |
 | Domain     | `coach.nikocruz.com` attached and verified. Cloudflare: `CNAME coach → e8ec158fe2c98016.vercel-dns-017.com`, **DNS only** (grey cloud), so Vercel terminates TLS.                                                                                                                                          |
 
 `ENABLE_TEST_ROUTES` must never be set on Vercel. See docs/environment.md for every variable.
@@ -60,55 +60,113 @@ retire and restore each other's keys in turn. This is expected and harmless: ids
 retired rows stay readable, and the generator reads the catalogue from code, never from these
 rows.
 
-## Production stays off until auth ships — how that is enforced
+## Production deploys
 
-In M1 every page and `POST /api/vitals` are unauthenticated, so the app must not be served on
-`coach.nikocruz.com` before passkey auth (M2). Hidden URLs are not security (PRD §13).
+Every merge to `main` builds a production deployment through the Vercel Git integration:
+`vercel.json` holds the build command and `git.deploymentEnabled` `{ "main": true, "**": false }`,
+and there is no ignored-build step. A branch matching several rules deploys if any of them is
+`true`, so `main` needs its own `true` next to the `"**": false` that keeps other branches from
+deploying ("Preview deployments" below). The build migrates the production Neon branch, then
+builds; once it is ready Vercel assigns `coach.nikocruz.com` to it, and the previous deployment
+serves until then.
+`scripts/vercel-build.test.ts` (unit suite) checks the committed config (nothing skips a
+production build) and the build command's migrate-then-build order.
 
-| Path to production                                                               | Guard                                                                                                                      |
-| -------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| Vercel Git integration: a push to `main`                                         | `vercel.json` → `git.deploymentEnabled.main: false` (committed): Vercel creates no deployment for `main`.                  |
-| Any production build Vercel starts itself (dashboard redeploy, branch rename, …) | `vercel.json` → `ignoreCommand` runs `scripts/vercel-ignore-build.sh`, which skips the build when `VERCEL_ENV=production`. |
+Production deploys only from `main` through Git: no deploy token exists and no workflow deploys.
+Do not deploy production by hand from a logged-in Vercel CLI (`vercel deploy --prod`): it skips
+review and CI.
 
-`scripts/vercel-ignore-build.test.ts` (unit suite) checks the committed config, the ignore step's
-exit codes and the build command's migrate-then-build order. No deploy token exists and no
-workflow deploys.
+### Hosted environment variables (needed before the cutover merges)
 
-**What the committed config cannot stop:** a production deploy made by hand from a logged-in
-Vercel CLI, especially `vercel build --prod && vercel deploy --prebuilt --prod` (a prebuilt upload
-skips the ignored build step). The custom domain is already attached and is exempt from Vercel
-Authentication, so such a deploy would be public. Do not deploy production by hand before M2. As
-of M1, the project's only production deployment is the failed placeholder created while
-configuring environment variables, so nothing is served on `coach.nikocruz.com`.
+Checked against `src/lib/server/env.ts` (validated at start-up: a missing or invalid variable
+stops the server, listing every problem) and `scripts/vercel-build.sh` (a deployed build without
+the direct URL fails):
 
-**Switching production on is the M2 production cutover pull request:** it removes both
-guards, and from then on every merge to `main` builds production through the Git integration,
-migrating the production branch first. M2 also adds a post-deploy smoke check
-(`GET https://coach.nikocruz.com/api/health` must return 200).
+| Variable                                                                        | Production                                                 | Preview                                | Why                                                                         |
+| ------------------------------------------------------------------------------- | ---------------------------------------------------------- | -------------------------------------- | --------------------------------------------------------------------------- |
+| `DATABASE_URL`                                                                  | **required**: `production` branch, pooled (`-pooler` host) | **required**: `preview` branch, pooled | App traffic. Env validation refuses to start without it.                    |
+| `DATABASE_URL_UNPOOLED`                                                         | **required**: `production` branch, direct                  | **required**: `preview` branch, direct | Migrations in the build: `vercel-build.sh` fails without it.                |
+| `OWNER_SETUP_TOKEN_HASH`                                                        | only during the owner setup (below), sensitive             | optional: only to set a preview up     | Unset: `/setup` is a 404.                                                   |
+| `ANTHROPIC_API_KEY`                                                             | exists; not needed until `LLM_PROVIDER=anthropic` (M5)     | not set                                | Required only with `LLM_PROVIDER=anthropic`.                                |
+| `ENABLE_TEST_ROUTES`                                                            | **must not exist**                                         | **must not exist**                     | The server refuses to start with it on any Vercel deployment.               |
+| `APP_ENV`                                                                       | unset (or `production`)                                    | unset (or `preview`)                   | Any other value on production refuses to start; Vercel's `VERCEL_ENV` wins. |
+| `LLM_PROVIDER`, `LOG_LEVEL`, `DB_POOL_MAX`, `DB_QUERY_TIMEOUT_MS`, `SENTRY_DSN` | optional (defaults: `mock`, `info`, `5`, `10000`, off)     | optional                               | Validated when set.                                                         |
 
-**Rollback:** Vercel → Deployments → promote the previous deployment (instant). Database rollbacks
-are forward fixes; for data loss use Neon point-in-time restore (6 h window on the current plan)
-or a backup (below).
+Vercel's system variables (`VERCEL`, `VERCEL_ENV`, `VERCEL_URL`, `VERCEL_BRANCH_URL`,
+`VERCEL_GIT_COMMIT_SHA`) must stay exposed (Settings → Environment Variables → "Automatically
+expose System Environment Variables", on by default): `VERCEL_ENV` names the environment (a
+preview without it is treated as production and refuses passkeys on its host), and the commit
+SHA is the version `/api/health` reports, which the smoke check waits for.
 
-## Owner setup (first passkey)
+### Post-deploy smoke check (`post-deploy-smoke.yml`)
 
-The app has exactly one account, created by first-run setup (docs/security.md). On a new
-production database, after the first deployment with auth:
+A GitHub Actions workflow triggered by Vercel's GitHub deployment statuses. When a
+**Production** deployment reports **success**, it waits (up to 5 minutes) until
+`https://coach.nikocruz.com/api/health` reports that deployment's commit, then checks the domain
+from outside, signed out, with no secrets:
 
-1. On a trusted machine: `pnpm auth:setup-token`. It prints a random token, its SHA-256 and the
-   link `https://coach.nikocruz.com/setup?token=…`. The token is shown once and stored nowhere.
-2. Vercel → Project → Settings → Environment Variables: add `OWNER_SETUP_TOKEN_HASH` = the
-   printed hash, **Production** only, marked sensitive. Redeploy production (the variable is read
-   at start-up).
-3. Send the owner the link through a private channel. On the iPhone, in Safari: open it, enter
-   the name, create the passkey (Face ID), then save the 10 recovery codes (copy into the password
-   manager or download) and confirm. The app opens on Today.
-4. `/setup` now answers 404 for good, even with the right token. Remove `OWNER_SETUP_TOKEN_HASH`
-   from Vercel (it can no longer be used, but there is no reason to keep it). Vercel's request
-   logs contain the setup URL with the token; it is useless once setup has completed: a token
-   works for one setup, and its hash is recorded so it stays refused even after an owner reset.
-5. Recommended right away: Profile → Security → **Add passkey** on a second device (Mac, or a
+| Check                                                                   | Expected                                                                                                                                                                                                                   |
+| ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/health`                                                       | 200 with `ok: true` and `db: "up"` (a real query)                                                                                                                                                                          |
+| `GET /`                                                                 | 200: the sign-in screen with passkey sign-in, not the "passkeys aren't available on this address" notice                                                                                                                   |
+| Security headers on `/`                                                 | CSP with `frame-ancestors 'none'`, `object-src 'none'` and no inline scripts; `Strict-Transport-Security`; `nosniff`; `X-Frame-Options: DENY`; referrer and permissions policies; COOP; `X-Robots-Tag: noindex`; `private` |
+| `GET /today`                                                            | 303 to `/?next=%2Ftoday`                                                                                                                                                                                                   |
+| `POST /api/vitals`, `POST /api/client-errors` (with the app's `Origin`) | 401 `unauthenticated` (without the `Origin` the CSRF check would answer 403 first)                                                                                                                                         |
+| `POST /api/test-support/session`                                        | 404: the test-only session route does not exist in production                                                                                                                                                              |
+
+Every check runs and is listed in the run's summary; any failure fails the run (Actions →
+**Post-deploy smoke**; the trigger is Vercel's bot, so check there after a merge rather than
+waiting for a notification). It never signs in, so it reads no account data, and none of its
+requests counts against a rate limit. Run it by hand from Actions → **Post-deploy smoke** → Run
+workflow (it then skips the commit wait), for example after a rollback.
+
+### Rollback
+
+- **Code:** Vercel → Deployments → the previous production deployment → ⋯ → **Instant
+  Rollback**. The domain switches at once, with no build and no migration; then run the smoke
+  check by hand. On the Hobby plan only the immediately previous production deployment can be
+  rolled back to; to go further, revert the commit on `main` (a normal deploy). After a rollback
+  Vercel no longer assigns the domain to new production deployments: merges still build but do
+  not go live (and their smoke check fails waiting for the new commit, as it should) until a
+  deployment is promoted (Deployments → ⋯ → **Promote**).
+- **Schema:** never rolled back. Migrations are expand → contract, so the previous deployment
+  runs on the newer schema; fixes go forward.
+- **Data:** Neon point-in-time restore (6 h window on the current plan) into a new branch, or a
+  nightly backup (below).
+
+## Owner setup (one time, on the iPhone)
+
+The app has exactly one account, created by first-run setup (docs/security.md). Production starts
+with an empty database and no owner, so after the cutover deploy (or an owner reset):
+
+1. On a trusted machine, in the repository: `pnpm auth:setup-token`. It prints a random token,
+   its SHA-256 and the link `https://coach.nikocruz.com/setup?token=<token>`. The token is shown
+   once and stored nowhere; never paste it into chat, issues or logs.
+2. Vercel → Project → Settings → Environment Variables: add `OWNER_SETUP_TOKEN_HASH` (or edit it,
+   if it is already there) = the printed hash, environment **Production** only, marked
+   **Sensitive**. Until setup completes, whoever holds that token can claim the account, so only
+   ever set the hash of a token you alone hold. Redeploy production
+   (Deployments → the current production deployment → ⋯ → Redeploy): the variable is read when
+   the server starts. Run the smoke check afterwards if it does not start by itself.
+3. On the iPhone, in Safari (the link travels to it through a private channel): open
+   `https://coach.nikocruz.com/setup?token=<token>`, enter the name and create the passkey
+   (Face ID).
+4. Store the 10 recovery codes shown next (copy them into the password manager, or download them)
+   and confirm. They are never shown again. The app opens on Today.
+5. Remove `OWNER_SETUP_TOKEN_HASH` from Vercel. No redeploy is needed: `/setup` already answers
+   404 for good, even with the right token, and the next deploy starts without the variable.
+   Vercel's request logs keep the setup URL with the token; it is useless once setup has
+   completed (a token works for one setup, and stays refused even after an owner reset).
+6. Recommended right away: Profile → Security → **Add passkey** on a second device (Mac, or a
    hardware key) so losing the iPhone never needs a recovery code.
+7. Run the real-device checklist in docs/testing.md on the iPhone (deferred from M1 to this
+   moment) and record device, iOS version, date and screenshots.
+
+If the link answers 404: the running deployment does not have the hash yet (redeploy after
+setting it), the link is incomplete, the token was already used, or there were too many setup
+attempts from that network in the last 15 minutes (wait, then retry). Every request counts, right
+token or wrong: each load of the link, and each passkey options and verify call (10 per 15 minutes
+per IP).
 
 A preview deployment can be set up the same way with
 `pnpm auth:setup-token --origin https://<preview-host>` and a **Preview**-scoped hash; previews
@@ -129,8 +187,12 @@ work there (and vice versa).
   DATABASE_URL_UNPOOLED='<Neon production direct URL>' pnpm auth:reset-owner --confirm
   ```
 
-  It prints the target database, the owner and what will be deleted, and asks for the database
-  name to be typed back (it refuses to run non-interactively). In one transaction it deletes
+  It refuses to run unless `DATABASE_URL_UNPOOLED` is set (there is no default: it never falls
+  back to `DATABASE_URL` or a local database), `--confirm` is given and it runs in an interactive
+  terminal; all three refusals were verified for the cutover and are tested
+  (`scripts/auth-reset-owner.test.ts`, `tests/integration/auth/reset-owner-cli.test.ts`). It
+  prints the target database (password redacted), the owner and what will be deleted, then asks
+  for `<database>@<host>` to be typed back. In one transaction it deletes
   every passkey, recovery code and pending challenge, revokes every session, reopens first-run
   setup and writes an `owner.reset` audit event. **The owner row and all training data are
   kept.** Then follow "Owner setup" above with a **new** token (the previous link stays refused:
@@ -230,9 +292,10 @@ ID under "What exists".
 
 ## Security notes
 
-- Until the M2 production cutover the app must not be served on the production domain. Enforced by
-  committed config: `vercel.json` (no Git deployments of `main`; Vercel-started production builds
-  skipped by the ignored build step). Preview deployments sit behind Vercel Authentication.
+- Production serves `coach.nikocruz.com` from `main` only (Git integration). Every page and
+  endpoint except the sign-in, setup and recovery flow, `/api/health` and static files needs a
+  passkey session (docs/security.md), and the post-deploy smoke check verifies that from outside
+  after every deploy. Preview deployments sit behind Vercel Authentication.
 - **Dynamic responses** (every page and `/api/*`, i.e. everything that runs `hooks.server.ts`)
   carry `x-robots-tag: noindex`, `x-frame-options: DENY`, `nosniff`, `referrer-policy`,
   `permissions-policy`, `cross-origin-opener-policy`, `strict-transport-security` (Vercel also

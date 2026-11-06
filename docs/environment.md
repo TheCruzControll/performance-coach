@@ -66,7 +66,8 @@ Vercel sets `VERCEL`, `VERCEL_ENV`, `VERCEL_URL`, `VERCEL_BRANCH_URL`, `VERCEL_R
 - **Local:** `.env` (git-ignored). Never commit it.
 - **Vercel:** Project → Settings → Environment Variables, scoped per environment
   (`DATABASE_URL`, `DATABASE_URL_UNPOOLED`, `ANTHROPIC_API_KEY`, and `OWNER_SETUP_TOKEN_HASH`
-  while first-run setup is pending). Auth needs no other secret: sessions and recovery codes
+  while first-run setup is pending). Exactly what Production and Preview need, and what must
+  never be set there: docs/deployment.md → "Hosted environment variables". Auth needs no other secret: sessions and recovery codes
   are random values stored only as hashes in Postgres.
 - **GitHub Actions:** only the nightly backup needs secrets (`DATABASE_URL_UNPOOLED`,
   `BACKUP_PASSPHRASE`); it skips until they exist. Deploys need none: they run through the Vercel

@@ -163,6 +163,10 @@ Specs:
   from the test-minted session shows the prompt, and cancelling changes nothing and says so.
 - `sessions.exclusive.e2e.ts` (runs last) — sign out everywhere else ends every other session,
   not this one; the last passkey cannot be removed (button disabled, server answers 409).
+- `signout.e2e.ts` (WebKit) — M2 acceptance 6 on the iPhone's engine, on a session minted for
+  this test alone: sign-out clears the cookie, every cache but the versioned shell, every
+  IndexedDB database and session storage, sends `Clear-Site-Data: "cache"` and keeps the theme
+  preference.
 
 - `shell.e2e.ts` — the sign-in screen is the landing page (signed in, `/` goes to Today); bottom nav pinned to the bottom with ≥ 44 px targets and a
   computed `backdrop-filter` blur; navigation across all five tabs with `aria-current`; no console
@@ -200,7 +204,14 @@ Specs:
   Monday…Sunday in order, a picked day shows its tick, a Monday-first value (Sunday then Monday
   ticked), and at 393 px inside a padded card every hit area is ≥ 44 × 44 px, owns its edges and
   never overlaps a neighbour; its error is announced and also shown as a danger border on the
-  days still open.
+  days still open. Toggle: a `switch` named by its title alone and described by its
+  description, ≥ 44 px, the title, description and track all its hit area, flipped by a tap on
+  the title and by Space. TagInput: Return and Add add the trimmed text and clear the field
+  (Add stays disabled while it is blank), a repeat in any case is refused and the text kept,
+  remove buttons are named "Remove …" with a 44 × 44 px hit area, a suggestion adds in one tap
+  and leaves the list, `maxlength` and `max` hold and are announced, keyboard focus survives a
+  removed button, and the status region says "Added …", "Removed …" and every refusal, even
+  the same words twice (a recorded live region shows them cleared and set again).
 - `a11y.e2e.ts` — axe-core (`@axe-core/playwright`, WCAG 2.1 A/AA) on every screen (Security
   included; the signed-out sign-in and recovery screens too), the plate-calculator sheet and each
   `/design` component group, in the **dark and light** themes (Lighthouse only audits dark). The
@@ -249,6 +260,15 @@ Unit tests (`src/lib/domain/training/`, `src/lib/domain/exercises/`, `src/lib/do
 - **Plain Node** (`scripts/catalogue-node.test.ts`): Node with type stripping alone, as the seed
   runs, loads `src/lib/domain/exercises/index.ts` and sees the catalogue Vite sees; an
   extensionless import fails there, which is why the package uses `.ts` specifiers.
+- **Program-plan contract** (`training/schemas.test.ts`, `validation.test.ts`,
+  `scripts/training-index-imports.test.ts`): a minimal hybrid plan (intervals, a Muay Thai class,
+  a strength session, an outline block) passes `programPlanSchema` unchanged and each part passes
+  its own schema; every rule (load-kind coherence, one measure per set, RPE in half steps, rep,
+  pace and repeat groups, metrics, commitment refs, block and week dates, sessions in their week,
+  decision refs) fails at its dotted path; each schema's type equals its contract type (checked by
+  `pnpm check`); `validate()` is the function the profile schemas re-export; and the runtime
+  imports reachable from `domain/training/index.ts` include no schemas, edits or zod, with the
+  walk shown to catch a re-export, a zod import and an inline `type` import.
 
 ### Schema
 
@@ -311,6 +331,10 @@ key. No key exists in CI today.
 `.github/workflows/ci.yml` runs lint, type-check, the migration drift check, unit + integration
 (postgres:18 service), both builds + budgets, Playwright (Chromium + WebKit) and an asserted
 Lighthouse run on every PR and push to `main`.
+
+`.github/workflows/post-deploy-smoke.yml` checks production from outside after every production
+deploy (health with the database up, the sign-in screen, deny by default, security headers, no
+test-only routes; docs/deployment.md). It needs no secrets and runs by hand too.
 
 **Not yet verified:** the workflows have not run on GitHub (nothing has been pushed), and the
 WebKit project has never run locally (WebKit is not installed in the build environment), so iOS

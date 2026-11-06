@@ -45,10 +45,22 @@ shared component costs every route, Security included.
   ceremony load on demand with the other sheets and passkey helpers; `/` and
   `/recover/passkey` gain 0.1 KB (one error mapping in those helpers).
 
+- **`/design` renders with the CSS of its Buttons group only** (13.8 → 6.7 KB). Its Inputs, Data
+  and Feedback groups loaded their JS with their tab, but SvelteKit still linked their CSS into
+  the page as render-blocking stylesheets, because the server build could reach their imports.
+  The server only renders Buttons, so those imports are now left out of its build
+  (`import.meta.env.SSR`) and each group's CSS loads with its tab; `/design` JS gains 23 B.
+
 - **`@simplewebauthn/browser` (≈5 KB gzip) is never in initial JS.** It is imported on demand by
   `src/lib/client/passkeys.ts`; `pnpm budgets` fails if it appears in any route's initial JS or
   is reachable (static or dynamic imports) from any route other than `/`, `/setup`,
   `/recover/passkey` and `/(app)/profile/security`.
+- **Validation (zod and the profile schemas: one 12.5 KB gzip chunk) is never in initial JS.**
+  `src/lib/client/profile-form.ts` imports `src/lib/domain/profile/schemas.ts` on demand (on
+  idle, once a form is on screen); `pnpm budgets` fails if zod or the schemas are in any route's
+  initial JS, including what its `load` awaits. The save path itself is not free: a scratch route
+  that imported `profile-form.ts` and `section-form.svelte.ts` statically grew by 2.5 KB (with
+  `$app/forms`), so it belongs in what an editor loads on demand.
 - **Main-thread budget** (`E2E_PERF_ALONE=1 pnpm test:e2e --project=perf`, median of 5 loads at 4×
   CPU; app screens signed in, `/` signed out): `/` 57 ms, `/today` 81, `/train` 72, `/progress`
   67, `/coach` 40, `/profile` 87, `/profile/security` 60 — every screen meets the 200 ms target.
