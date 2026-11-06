@@ -21,6 +21,12 @@ export const SECTIONS = [
 		title: 'Equipment',
 		subtitle: 'Where you train and what’s there',
 		icon: 'plate'
+	},
+	{
+		key: 'schedule',
+		title: 'Schedule',
+		subtitle: 'Training days, session length, classes',
+		icon: 'clock'
 	}
 ] as const satisfies readonly SectionInfo[];
 
