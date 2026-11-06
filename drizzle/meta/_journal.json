@@ -113,6 +113,13 @@
       "when": 1793965611664,
       "tag": "0015_coaching_memory",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1793977296363,
+      "tag": "0016_history_plan_indexes",
+      "breakpoints": true
     }
   ]
 }

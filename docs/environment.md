@@ -48,6 +48,12 @@ Test tooling (not read by the app):
 | `ADAPTER`            | `vercel`                                           | `node` builds with adapter-node                   |
 | `PGADMIN_URL`        | unset                                              | `pnpm db:setup` admin connection (CI)             |
 
+`EXPLAIN_DATABASE_URL` (default `postgres://coach:coach@localhost:5432/coach_explain`) is the
+scratch database `pnpm db:explain` drops, migrates and fills with a two-year dataset on every run;
+the reset refuses any name that does not end in `_test`, `_e2e` or `_explain`, so never point it
+at the test or e2e database either. Local and CI only: never set it on Vercel, and never point it
+at a database whose data matters (docs/development.md).
+
 Vercel sets `VERCEL`, `VERCEL_ENV`, `VERCEL_URL`, `VERCEL_BRANCH_URL`, `VERCEL_REGION` and
 `VERCEL_GIT_COMMIT_SHA` automatically; the app uses `VERCEL_ENV` for `appEnv`, `VERCEL_URL` /
 `VERCEL_BRANCH_URL` to recognise a preview's own host as its WebAuthn relying party
