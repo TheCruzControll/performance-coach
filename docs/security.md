@@ -51,7 +51,8 @@ extension on the owner's browser can act as the owner.
    `https://coach.nikocruz.com/setup?token=…`.
 2. `/setup` answers **404** unless the token's SHA-256 equals the configured hash (compared with
    `timingSafeEqual` on the two digests), that token has never completed a setup, **and** no
-   passkey exists. Wrong tokens are audited and rate-limited (10 per 15 min per client).
+   passkey exists. Wrong tokens are audited and rate-limited (10 per 15 min per client); past the
+   limit the page is a 404 as well, even with the right token, and not recorded as a server error.
 3. The owner enters a name and creates a passkey. In one transaction (advisory-locked, so two
    concurrent setups cannot both win): the owner and passkey are created, setup is marked
    complete, the token's hash is recorded as used (`used_setup_tokens`), 10 recovery codes are
@@ -176,7 +177,8 @@ every server instance shares the counters. The first refusal of a window is audi
 | `signout`         | 30 / minute     | client   |
 
 The client address is the platform's (`getClientAddress()`: `x-forwarded-for` as set by Vercel).
-Refusals answer `429` with `Retry-After`.
+Refusals answer `429` with `Retry-After`, except the `/setup` page, which answers `404` like any
+other refused setup link.
 
 `recovery.global` counts failed codes only, charged after the code is looked up, so it never
 refuses a valid one: a client staying within its own limit cannot fill it and lock the owner out
@@ -203,6 +205,11 @@ without a passkey (WebKit e2e has no virtual authenticator). Env validation refu
 it is set on **any** hosted deployment (`VERCEL`, any `VERCEL_ENV`) or with `appEnv` `preview` or
 `production`, and each test route re-checks `testRoutesEnabled()` at runtime. Chromium e2e never
 uses it: every Chromium sign-in is a real WebAuthn ceremony.
+
+`VERCEL` and `VERCEL_ENV` are runtime variables only, so the build carries the same fact: a server
+built for Vercel (`pnpm build`; `__VERCEL_BUILD__`, defined in `vite.config.ts`) refuses test
+routes whatever its runtime environment says. Only Node builds (`pnpm build:node`, used by e2e and
+Lighthouse) can enable them.
 
 ## Secrets
 
