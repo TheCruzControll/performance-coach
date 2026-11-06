@@ -11,7 +11,7 @@ import { validate } from '../validation';
 import { loads as loadsTemplates } from './decisions/templates/loads';
 import { strength as strengthTemplates } from './decisions/templates/strength';
 import { volume as volumeTemplates } from './decisions/templates/volume';
-import { generateProgram, STAGES } from './generate';
+import { GeneratedPlanError, generateProgram, STAGES } from './generate';
 import { buildProgrammingInput } from './input';
 import { SCENARIO_START, SCENARIOS, scenarioDay } from './scenarios';
 import { demandIn } from './stage';
@@ -98,6 +98,7 @@ describe('generateProgram', () => {
 			...Object.keys(loadsTemplates)
 		];
 		expect(plan.decisions.map((d) => d.kind).filter((k) => !ownKinds.includes(k))).toEqual([
+			'program_purpose',
 			'block_structure',
 			...input.assumptions.map(() => 'default_assumed'),
 			'day_allocation'
@@ -143,6 +144,58 @@ describe('generateProgram', () => {
 		expect(JSON.stringify(generate(SCENARIOS.journey()))).toBe(once);
 		const input = inputOf(SCENARIOS.journey());
 		expect(JSON.stringify(generateProgram(structuredClone(input), OPTIONS))).toBe(once);
+	});
+
+	describe('checks its plan against the contract before returning it', () => {
+		/** The last stage, made to break the plan with `breakIt` after it runs. */
+		function breakLastStage(breakIt: (draft: Draft) => Draft) {
+			const last = STAGES.at(-1)!;
+			const run = last.run;
+			vi.spyOn(last, 'run').mockImplementation((draft, context) => breakIt(run(draft, context)));
+		}
+		const inWeek1 = (
+			draft: Draft,
+			edit: (week: Draft['blocks'][number]['weeks'][number]) => void
+		) => {
+			const blocks = structuredClone(draft.blocks);
+			edit(blocks[0]!.weeks[0]!);
+			return { ...draft, blocks };
+		};
+
+		it('refuses a session before a ‘this_week’ start’s first planned day', () => {
+			const thursday = scenarioDay(1, 3);
+			breakLastStage((draft) =>
+				inWeek1(draft, (week) => {
+					week.sessions.push({ ...week.sessions[0]!, date: scenarioDay(1, 1) });
+				})
+			);
+			const input = inputOf(SCENARIOS.beginner());
+			const attempt = () => generateProgram(input, { ...OPTIONS, firstPlannedDay: thursday });
+			expect(attempt).toThrow(GeneratedPlanError);
+			expect(attempt).toThrow(
+				'The generated plan breaks the contract at blocks.0.weeks.0.sessions.1.date: Not before the first planned day'
+			);
+		});
+
+		it('lists every path it refuses, such as sessions out of their week', () => {
+			breakLastStage((draft) =>
+				inWeek1(draft, (week) => {
+					week.sessions[0]!.date = scenarioDay(2, 0);
+					week.sessions[1]!.date = scenarioDay(2, 2);
+				})
+			);
+			let error: unknown;
+			try {
+				generate(SCENARIOS.minimal());
+			} catch (e) {
+				error = e;
+			}
+			expect(error).toBeInstanceOf(GeneratedPlanError);
+			expect((error as GeneratedPlanError).errors).toEqual({
+				'blocks.0.weeks.0.sessions.0.date': 'In its week',
+				'blocks.0.weeks.0.sessions.1.date': 'In its week'
+			});
+		});
 	});
 
 	it('keeps the start dates it was given and refuses a week 1 that is not a Monday', () => {
