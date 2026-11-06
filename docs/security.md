@@ -176,7 +176,17 @@ every server instance shares the counters. The first refusal of a window is audi
 | `signout`         | 30 / minute     | client   |
 
 The client address is the platform's (`getClientAddress()`: `x-forwarded-for` as set by Vercel).
-Refusals answer `429` with `Retry-After`.
+A client bucket keys on the whole address for IPv4 and on the /64 for IPv6 (`client-network.ts`):
+one host or LAN normally holds a whole /64 (SLAAC, privacy addresses) and could otherwise rotate
+through fresh buckets. IPv4-mapped IPv6 (`::ffff:203.0.113.7`) counts as its IPv4 address. A
+network routed a larger prefix (a /56 or /48) still spans many /64s, just as an attacker may hold
+many IPv4 addresses: per-client limits slow abuse rather than bound it. The audit log keeps the
+full address. Refusals answer `429` with `Retry-After`.
+
+Stale counters are pruned on writes: the first hit of each window also deletes up to 100 counters
+whose window started over a day ago (longer than any window; `RATE_LIMIT_PRUNE` in `policy.ts`),
+skipping rows another request holds. One-off clients cannot grow `auth_rate_limits` without bound,
+and no request pays for more than one small indexed delete.
 
 `recovery.global` counts failed codes only, charged after the code is looked up, so it never
 refuses a valid one: a client staying within its own limit cannot fill it and lock the owner out

@@ -3,7 +3,7 @@
  * audit log and rate limits. Every time-dependent query takes the time as a parameter (services
  * pass their clock), so expiry and windows are testable without waiting.
  */
-import { and, asc, count, desc, eq, gt, isNull, lt, ne, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, gt, inArray, isNull, lt, ne, sql } from 'drizzle-orm';
 import {
 	authEvents,
 	authRateLimits,
@@ -414,8 +414,18 @@ export function createAuthRepository(db: Executor) {
 			return row?.count ?? 1;
 		},
 
-		async pruneRateLimits(olderThan: Date): Promise<void> {
-			await db.delete(authRateLimits).where(lt(authRateLimits.windowStart, olderThan));
+		/**
+		 * Delete up to `limit` counters whose window started before `olderThan`. Rows another
+		 * transaction holds (a concurrent hit or prune) are skipped, never waited on.
+		 */
+		async pruneRateLimits(olderThan: Date, limit: number): Promise<void> {
+			const stale = db
+				.select({ key: authRateLimits.key })
+				.from(authRateLimits)
+				.where(lt(authRateLimits.windowStart, olderThan))
+				.limit(limit)
+				.for('update', { skipLocked: true });
+			await db.delete(authRateLimits).where(inArray(authRateLimits.key, stale));
 		}
 	};
 }

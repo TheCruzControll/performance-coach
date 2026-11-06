@@ -54,3 +54,10 @@ export const RATE_LIMITS = {
 } as const satisfies Record<string, RateLimitPolicy>;
 
 export type RateLimitBucket = keyof typeof RATE_LIMITS;
+
+/**
+ * Counters whose window started over `staleAfterMs` ago (far longer than any window) are deleted
+ * on writes: each new window retires up to `batch` of them, so one-off clients cannot grow
+ * `auth_rate_limits` without bound and no request pays for more than one small delete.
+ */
+export const RATE_LIMIT_PRUNE = { staleAfterMs: DAY, batch: 100 } as const;

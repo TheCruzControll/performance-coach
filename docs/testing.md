@@ -30,7 +30,8 @@ Auth unit tests (`src/lib/server/auth/*.test.ts`): relying-party derivation per 
 (production is exactly `https://coach.nikocruz.com`, previews never the production RP, localhost
 only in dev/test), token generation and hashing with the constant-time comparison, recovery-code
 format, normalisation and hashing, cookie name and flags from the origin, the safe return path,
-the CSRF Origin check, User-Agent and passkey labels, and the route access map — which also walks
+the CSRF Origin check, User-Agent and passkey labels, the rate-limit client network (IPv6 per
+/64, IPv4-mapped IPv6 as IPv4), and the route access map — which also walks
 `src/routes` and fails on any page or endpoint without an access decision.
 
 ## Integration tests
@@ -69,9 +70,10 @@ the CSRF Origin check, User-Agent and passkey labels, and the route access map �
   mid-request, including a revocation that commits while the request waits on the session's row
   lock, sign out everywhere else during a recovery upgrade ending the new session, rename
   validation, never the last, removal ends its sessions, a malformed id is not found); rate limits
-  on every entry point with `Retry-After`, window reset, a global ceiling on failed recovery codes
-  that never refuses a valid one, and a full sign-out bucket that still lets a live session sign
-  out. A controllable clock replaces waiting.
+  on every entry point with `Retry-After`, window reset, IPv6 counted per /64, stale counters
+  pruned on writes in bounded batches, a global ceiling on failed recovery codes that never
+  refuses a valid one, and a full sign-out bucket that still lets a live session sign out. A
+  controllable clock replaces waiting.
 - **Logs:** quiet by default (`LOG_LEVEL=silent` via the project's `env`); run
   `LOG_LEVEL=debug pnpm test:integration` to see them.
 
