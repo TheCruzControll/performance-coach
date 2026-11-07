@@ -88,6 +88,65 @@ const SERVER_ONLY_PACKAGES = {
 		'domain/exercises and domain/programming are server-only: use them in server code (src/lib/server, +page.server.ts) and send the page the result. `import type` is fine.'
 };
 
+/**
+ * domain/coach's server-only modules (M5): the answer parser, the markdown reader, the proposal
+ * payloads, rules and diff, and the grounding, memory, summary, trend and note formatters. The
+ * browser gets their results, never the modules. `import type` is fine.
+ */
+const COACH_SERVER_ONLY_NAMES =
+	'(answer|markdown|proposals|proposal-rules|diff|grounding|memory-format|summary|trends|notes)(\\.ts)?$';
+const COACH_SERVER_ONLY_MESSAGE =
+	"domain/coach's answer, markdown, proposals, proposal-rules, diff, grounding, memory-format, summary, trends and notes modules are server-only: use them in server code and send the page the result. `import type` is fine.";
+/** By an alias, a path through `lib/`, or a relative path through `domain/`. */
+const SERVER_ONLY_COACH = {
+	regex: `(lib/domain/|^(\\.\\.?/)+domain/)coach/${COACH_SERVER_ONLY_NAMES}`,
+	allowTypeImports: true,
+	message: COACH_SERVER_ONLY_MESSAGE
+};
+/** From a sibling domain package (`../coach/markdown.ts`). */
+const SERVER_ONLY_COACH_FROM_DOMAIN = {
+	regex: `^\\.\\./coach/${COACH_SERVER_ONLY_NAMES}`,
+	allowTypeImports: true,
+	message: COACH_SERVER_ONLY_MESSAGE
+};
+/** From inside domain/coach (`./markdown.ts`). */
+const SERVER_ONLY_COACH_FROM_COACH = {
+	regex: `^\\./${COACH_SERVER_ONLY_NAMES}`,
+	allowTypeImports: true,
+	message: COACH_SERVER_ONLY_MESSAGE
+};
+/** The server-only coach modules and their tests, which may import each other. */
+const COACH_SERVER_ONLY_FILES = [
+	'answer',
+	'markdown',
+	'proposals',
+	'proposal-rules',
+	'diff',
+	'grounding',
+	'memory-format',
+	'summary',
+	'trends',
+	'notes'
+].flatMap((name) => [`src/lib/domain/coach/${name}.ts`, `src/lib/domain/coach/${name}.test.ts`]);
+
+/** The LLM SDK: types anywhere on the server, a runtime import only in the Anthropic provider. */
+const LLM_SDK = {
+	regex: '^@anthropic-ai/',
+	allowTypeImports: true,
+	message:
+		'@anthropic-ai/* is imported at runtime only by src/lib/server/agent/provider/anthropic.ts (by a dynamic import), so neither the SDK nor a key reaches anything else. `import type` is fine.'
+};
+
+/**
+ * The coach's modules, which workout logging never imports (M5). The agent and the SDKs are
+ * already refused there (CORE_LOGGING, LAYER.server and LLM_SDK).
+ */
+const COACH_MODULES = {
+	regex: ['domain/coach', 'ui/coach', 'client/coach', 'server/services/coach'].map(layer).join('|'),
+	message:
+		'Workout logging never depends on the coach: no domain/coach, ui/coach, client/coach or services/coach imports, so logging works whatever the coach is doing.'
+};
+
 /** The agent and the LLM SDKs, which core workout logging never imports (M4). */
 const CORE_LOGGING = {
 	regex: `${layer('server/agent')}|^(@anthropic-ai/[\\w.-]+|openai)($|/)`,
@@ -208,11 +267,94 @@ export default defineConfig(
 			'src/lib/domain/**'
 		],
 		// The packages import their own files.
-		ignores: ['src/lib/domain/programming/**', 'src/lib/domain/exercises/**'],
+		ignores: [
+			'src/lib/domain/programming/**',
+			'src/lib/domain/exercises/**',
+			...COACH_SERVER_ONLY_FILES
+		],
 		rules: {
-			'@typescript-eslint/no-restricted-imports': ['error', { patterns: [SERVER_ONLY_PACKAGES] }],
+			'@typescript-eslint/no-restricted-imports': [
+				'error',
+				{ patterns: [SERVER_ONLY_PACKAGES, SERVER_ONLY_COACH, LLM_SDK] }
+			],
 			// `import { type X }` stays a runtime import under verbatimModuleSyntax (Vite keeps
 			// `import 'X'`), so only `import type` gets past the rule above.
+			'@typescript-eslint/no-import-type-side-effects': 'error'
+		}
+	},
+
+	// ---- The coach (M5) ----------------------------------------------------------------
+	// The blocks below replace the server-only rule's patterns on the files they match, so each
+	// repeats the patterns above before adding its own (scripts/server-only-imports.test.ts).
+	{
+		// The rest of the domain, which may reach domain/coach by `../coach/…`.
+		files: ['src/lib/domain/**'],
+		ignores: [
+			'src/lib/domain/programming/**',
+			'src/lib/domain/exercises/**',
+			'src/lib/domain/coach/**',
+			'**/*.test.ts'
+		],
+		rules: {
+			'@typescript-eslint/no-restricted-imports': [
+				'error',
+				{
+					patterns: [
+						SERVER_ONLY_PACKAGES,
+						SERVER_ONLY_COACH,
+						SERVER_ONLY_COACH_FROM_DOMAIN,
+						LLM_SDK
+					]
+				}
+			]
+		}
+	},
+	{
+		// domain/coach's client-safe modules (vocabulary, events, safety, statements, …), which reach
+		// the server-only ones by `./…`. Tests never ship, so they may.
+		files: ['src/lib/domain/coach/**'],
+		ignores: [...COACH_SERVER_ONLY_FILES, '**/*.test.ts'],
+		rules: {
+			'@typescript-eslint/no-restricted-imports': [
+				'error',
+				{
+					patterns: [SERVER_ONLY_PACKAGES, SERVER_ONLY_COACH, SERVER_ONLY_COACH_FROM_COACH, LLM_SDK]
+				}
+			]
+		}
+	},
+	{
+		// The server-only coach modules may import each other, but names and eligibility arrive as
+		// data: they still never load the catalogue or the generator.
+		files: COACH_SERVER_ONLY_FILES.filter((file) => !file.endsWith('.test.ts')),
+		rules: {
+			'@typescript-eslint/no-restricted-imports': [
+				'error',
+				{ patterns: [SERVER_ONLY_PACKAGES, LLM_SDK] }
+			]
+		}
+	},
+	{
+		// Server code may use the SDK's types; only the Anthropic provider loads it.
+		// scripts/anthropic-sdk-imports.test.ts also catches dynamic imports.
+		files: [
+			'src/lib/server/**',
+			'src/routes/**/+server.ts',
+			'src/routes/**/+page.server.ts',
+			'src/routes/**/+layout.server.ts',
+			'src/hooks.server.ts'
+		],
+		ignores: [
+			'src/lib/server/agent/provider/anthropic.ts',
+			'src/lib/server/agent/provider/anthropic.test.ts',
+			// Workout logging refuses the SDK, types included, with its own message (CORE_LOGGING).
+			'src/routes/**/workout/**',
+			'src/routes/api/workouts/**',
+			'src/routes/api/exercises/**',
+			'src/lib/server/services/workouts/**'
+		],
+		rules: {
+			'@typescript-eslint/no-restricted-imports': ['error', { patterns: [LLM_SDK] }],
 			'@typescript-eslint/no-import-type-side-effects': 'error'
 		}
 	},
@@ -229,6 +371,19 @@ export default defineConfig(
 	{
 		files: ['src/lib/server/services/workouts/**'],
 		rules: restrict([LAYER.agent, LAYER.ui, LAYER.client, LAYER.framework, CORE_LOGGING])
+	},
+	// The workout screens and their client code never reach the coach either (M5).
+	{
+		files: ['src/routes/**/workout/**', 'src/routes/api/workouts/**'],
+		rules: restrict([LAYER.db, LAYER.driver, CORE_LOGGING, COACH_MODULES])
+	},
+	{
+		files: ['src/lib/client/workout/**'],
+		rules: restrict([LAYER.server, LAYER.ui, COACH_MODULES])
+	},
+	{
+		files: ['src/lib/ui/workout/**'],
+		rules: restrict([LAYER.server, COACH_MODULES])
 	},
 
 	// ---- Backups (M9) ------------------------------------------------------------------

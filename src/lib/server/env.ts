@@ -82,8 +82,12 @@ export const envSchema = z
 		/** Optional error reporting. Unused until a Sentry account exists; never required. */
 		SENTRY_DSN: z.union([z.url(), z.literal('').transform(() => undefined)]).optional(),
 
-		/** LLM provider for the coach (M5). `mock` is deterministic and needs no key. */
-		LLM_PROVIDER: z.enum(['mock', 'anthropic']).default('mock'),
+		/**
+		 * LLM provider for the coach (M5). Unset means anthropic in production once launched and the
+		 * mock elsewhere; `off` switches the coach off. A missing key never stops the server: the
+		 * coach is reported unavailable instead (agent/provider/select.ts decides).
+		 */
+		LLM_PROVIDER: z.enum(['mock', 'anthropic', 'off']).optional(),
 		ANTHROPIC_API_KEY: z.string().optional(),
 
 		/**
@@ -139,13 +143,6 @@ export const envSchema = z
 					env.appEnv === 'production' || env.VERCEL_ENV === 'production'
 						? 'test routes must never be enabled in production'
 						: 'test routes are only allowed in local development and tests (never on Vercel or in preview)'
-			});
-		}
-		if (env.LLM_PROVIDER === 'anthropic' && !env.ANTHROPIC_API_KEY) {
-			ctx.addIssue({
-				code: 'custom',
-				path: ['ANTHROPIC_API_KEY'],
-				message: 'required when LLM_PROVIDER=anthropic'
 			});
 		}
 	});
