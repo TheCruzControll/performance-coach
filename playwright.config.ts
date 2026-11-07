@@ -1,5 +1,6 @@
 import { defineConfig, devices, type Project } from '@playwright/test';
 import { DESKTOP } from './e2e/desktop';
+import { ENGINES, GROUPS, parseChoice, selectProjects } from './e2e/projects';
 
 /**
  * End-to-end tests run against the real production Node server (adapter-node build) and a
@@ -24,15 +25,20 @@ import { DESKTOP } from './e2e/desktop';
  * it. `exclusive` specs change state every other session depends on ("sign out everywhere
  * else"), so they run last, alone. `serial` specs change the one owner's training profile, so
  * they run one at a time after the functional suites (Chromium, then WebKit), before perf.
+ * Heavy `*.sweep.e2e.ts` specs run one at a time in `sweep-chromium` and `sweep-webkit`, after
+ * perf and before exclusive. E2E_ENGINE and E2E_GROUP run one CI leg (e2e/projects.ts).
  */
 export const E2E_PORT = Number(process.env.E2E_PORT ?? 4173);
 const baseURL = process.env.E2E_BASE_URL ?? `http://localhost:${E2E_PORT}`;
-const withWebKit = Boolean(process.env.CI) || process.env.E2E_WEBKIT === '1';
+const engine = parseChoice('E2E_ENGINE', process.env.E2E_ENGINE, ENGINES);
+const group = parseChoice('E2E_GROUP', process.env.E2E_GROUP, GROUPS);
+const withWebKit = Boolean(process.env.CI) || process.env.E2E_WEBKIT === '1' || engine === 'webkit';
 
 const iphone = devices['iPhone 15 Pro'];
 const CHROMIUM_STATE = 'e2e/.auth/chromium.json';
 const WEBKIT_STATE = 'e2e/.auth/webkit.json';
-const FUNCTIONAL_IGNORE = ['**/perf.e2e.ts', '**/*.exclusive.e2e.ts', '**/*.serial.e2e.ts'];
+const SWEEP = '**/*.sweep.e2e.ts';
+const FUNCTIONAL_IGNORE = ['**/perf.e2e.ts', '**/*.exclusive.e2e.ts', '**/*.serial.e2e.ts', SWEEP];
 const DESKTOP_ONLY = '**/*.desktop.e2e.ts';
 /** What the desktop projects run: desktop specs and the width-agnostic shell and offline specs. */
 const DESKTOP_SPECS = [DESKTOP_ONLY, '**/shell.e2e.ts', '**/offline.e2e.ts'];
@@ -134,6 +140,27 @@ if (withWebKit) {
 	});
 }
 
+// Heavy sweeps, one at a time, after every functional, serial and perf project. In CI they run
+// in legs of their own, which start them right after the setup projects (e2e/projects.ts).
+projects.push({
+	name: 'sweep-chromium',
+	testMatch: SWEEP,
+	dependencies: projects.filter((p) => !p.name!.startsWith('setup')).map((p) => p.name!),
+	workers: 1,
+	fullyParallel: false,
+	use: { ...iphone, browserName: 'chromium', storageState: CHROMIUM_STATE }
+});
+if (withWebKit) {
+	projects.push({
+		name: 'sweep-webkit',
+		testMatch: SWEEP,
+		dependencies: ['setup-webkit', 'sweep-chromium'],
+		workers: 1,
+		fullyParallel: false,
+		use: { ...iphone, browserName: 'webkit', storageState: WEBKIT_STATE }
+	});
+}
+
 projects.push({
 	name: 'exclusive',
 	testMatch: '**/*.exclusive.e2e.ts',
@@ -153,12 +180,17 @@ export default defineConfig({
 	workers: process.env.CI ? 1 : 2,
 	timeout: 30_000,
 	expect: { timeout: 7_500 },
-	reporter: [['list'], ['html', { open: 'never', outputFolder: 'playwright-report' }]],
+	reporter: [
+		['list'],
+		['html', { open: 'never', outputFolder: 'playwright-report' }],
+		// Read by scripts/e2e-timing.ts: where each CI leg's minutes go.
+		...(process.env.CI ? [['json', { outputFile: 'test-results/report.json' }] as const] : [])
+	],
 	use: {
 		baseURL,
 		screenshot: 'only-on-failure',
 		trace: 'retain-on-failure',
 		colorScheme: 'dark'
 	},
-	projects
+	projects: selectProjects(projects, { engine, group })
 });
