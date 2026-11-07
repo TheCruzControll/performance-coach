@@ -7,6 +7,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { ENGINES, GROUPS, LEGS } from '../e2e/projects.ts';
+import { KEY_PATTERN, MIN_SCANNED_KEY_LENGTH } from './client-secret-scan.ts';
 import { CEILING_MINUTES } from './e2e-timing.ts';
 
 /** A line of the workflow and the more-indented lines under it. */
@@ -308,5 +309,25 @@ describe('CI e2e legs', () => {
 		const fields = [step, ...step.children];
 		expect(value(under(fields, 'env'), 'LEGS')).toBe('${{ needs.e2e-legs.result }}');
 		expect(value(fields, 'run')).toMatch(/^if \[ "\$LEGS" != success \]; then\n.*\n\s*exit 1\n/);
+	});
+});
+
+describe('CI client-secret canary', () => {
+	it('builds both targets and runs the budgets with a canary ANTHROPIC_API_KEY', () => {
+		const job = under(under(ci, 'jobs'), 'build');
+		const key = value(under(job, 'env'), 'ANTHROPIC_API_KEY') ?? '';
+		// Long enough to be scanned for, and not an sk-ant- key, so the canary check stands alone.
+		expect(key.length).toBeGreaterThanOrEqual(MIN_SCANNED_KEY_LENGTH);
+		expect(key).not.toMatch(KEY_PATTERN);
+		expect(key).not.toMatch(/\$\{\{/);
+		// Job-level, so every step below sees it; no step overrides it.
+		const steps = under(job, 'steps').map((step) => [step, ...step.children]);
+		expect(steps.map((fields) => value(fields, 'run')).filter(Boolean)).toEqual(
+			expect.arrayContaining(['pnpm build', 'pnpm build:node', 'pnpm budgets'])
+		);
+		const overrides = steps.filter((fields) => find(fields, 'env'));
+		expect(overrides.flatMap((fields) => flatten(find(fields, 'env')!))).not.toContainEqual(
+			expect.stringMatching(/^ANTHROPIC_API_KEY:/)
+		);
 	});
 });

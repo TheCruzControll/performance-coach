@@ -99,6 +99,10 @@ jobs:
     name: Build (Vercel + Node) & budgets
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # A canary, not a key: both builds see it, and pnpm budgets fails if it, an sk-ant- key or
+    # the Anthropic SDK reaches a client file of either build (scripts/client-secret-scan.ts).
+    env:
+      ANTHROPIC_API_KEY: ci-canary-anthropic-key-never-in-a-bundle
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6

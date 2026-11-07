@@ -19,6 +19,13 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { gzipSync } from 'node:zlib';
 import { CATALOGUE_HEADER } from '../src/lib/domain/exercises/format.ts';
+import {
+	CHUNK_MODULES,
+	coachIsolation,
+	missingSignatures,
+	scanForSecrets,
+	UNSCANNED_FILE
+} from './client-secret-scan.ts';
 import { PRELOADED_FONT_PATTERN } from '../src/lib/ui/fonts.ts';
 import { icons } from '../src/lib/ui/icons/icons.ts';
 
@@ -458,6 +465,70 @@ if (!readdirSync(`${CLIENT}/_app/immutable/assets`).some((f) => /^sprite\.[\w-]+
 	iconProblems.push('the icon sprite is not a file in the build (inlined as a data: URL?)');
 }
 
+/**
+ * Client secrets: no Anthropic SDK code, sk-ant- key or build-time ANTHROPIC_API_KEY (CI builds
+ * with a canary) in any file of either build the browser can fetch: `pnpm build` leaves the
+ * Vercel output and `pnpm build:node` the Node one, and .svelte-kit/output holds the last.
+ * Positive control: once the provider exists, the server build carries every signature, so a
+ * signature the SDK no longer ships fails here instead of letting the scan go blind.
+ */
+const CLIENT_OUTPUTS = [
+	CLIENT,
+	`${OUT}/prerendered`,
+	'build/client',
+	'build/prerendered',
+	'.vercel/output/static'
+].filter((dir) => existsSync(dir));
+const BUILD_KEY = process.env.ANTHROPIC_API_KEY;
+const filesIn = (dir: string) =>
+	readdirSync(dir, { recursive: true, encoding: 'utf8', withFileTypes: true })
+		.filter((entry) => entry.isFile())
+		.map((entry) => path.join(entry.parentPath, entry.name));
+const secretProblems: string[] = [];
+if (process.env.GITHUB_ACTIONS === 'true' && !BUILD_KEY) {
+	secretProblems.push('ANTHROPIC_API_KEY (the CI canary) is not set for the build and budgets');
+}
+let scannedFiles = 0;
+for (const file of CLIENT_OUTPUTS.flatMap(filesIn).filter((f) => !UNSCANNED_FILE.test(f))) {
+	scannedFiles++;
+	for (const what of scanForSecrets(readFileSync(file, 'utf8'), BUILD_KEY)) {
+		secretProblems.push(`${file}: ${what}`);
+	}
+}
+const PROVIDER = 'src/lib/server/agent/provider/anthropic.ts';
+const SDK_DIST = 'node_modules/@anthropic-ai/sdk';
+let control = 'not built yet';
+if (existsSync(PROVIDER)) {
+	const text = (dir: string, keep: RegExp) =>
+		existsSync(dir)
+			? filesIn(dir)
+					.filter((f) => keep.test(f))
+					.map((f) => readFileSync(f, 'utf8'))
+					.join('\n')
+			: '';
+	const missing = missingSignatures(text(`${OUT}/server`, /\.js$/), text(SDK_DIST, /\.mjs$/));
+	control = missing.length ? 'FAIL' : 'pass';
+	for (const sig of missing) {
+		secretProblems.push(`"${sig}" is not in the server build: update SDK_SIGNATURES`);
+	}
+}
+
+/** Coach isolation: no /workout route can load a coach module (scripts/client-secret-scan.ts). */
+const isolation = coachIsolation(
+	routes
+		.filter((route) => route.page)
+		.map((route) => ({
+			id: route.id,
+			keys: keysOf(
+				[...route.page!.layouts, route.page!.leaf]
+					.filter((n): n is number => n !== undefined)
+					.flatMap((id) => nodes[id]!.imports)
+			)
+		})),
+	vite,
+	JSON.parse(readFileSync(`${CLIENT}/${CHUNK_MODULES}`, 'utf8')) as Record<string, string[]>
+);
+
 const lines = [
 	'| Route | Initial JS (gzip) | of which awaited by `load` | Route CSS (gzip) | Preloaded fonts | Status |',
 	'| --- | ---: | ---: | ---: | ---: | :---: |',
@@ -486,7 +557,9 @@ const lines = [
 	`Validation (zod, profile schemas): on demand only, never in initial JS: ${validationProblems.length ? 'FAIL' : 'pass'}`,
 	`Profile sections: no editor's CSS on a section page (${sectionRoutes.map((r) => `\`${r}\``).join(', ')}; ${editorKeys.length} editors, ${keptOut.size} of their stylesheets left to load with them): ${sectionProblems.length ? 'FAIL' : 'pass'}`,
 	`Exercise catalogue (server-only): in no client chunk: ${catalogueChunks.length ? 'FAIL' : 'pass'}`,
-	`Icon paths in JS (every icon draws from the SVG sprite): ${iconProblems.length ? 'FAIL' : 'pass'}`
+	`Icon paths in JS (every icon draws from the SVG sprite): ${iconProblems.length ? 'FAIL' : 'pass'}`,
+	`Client secrets (Anthropic SDK, sk-ant- keys, the build-time key) in ${scannedFiles} files of ${CLIENT_OUTPUTS.map((d) => `\`${d}\``).join(', ')}: ${secretProblems.length ? 'FAIL' : 'pass'}; positive control (every SDK signature in the server build): ${control}`,
+	`Coach isolation (no coach module loadable from ${isolation.checked.map((r) => `\`${r}\``).join(', ')}): ${isolation.problems.length ? 'FAIL' : 'pass'}`
 ];
 console.log(lines.join('\n'));
 
@@ -527,6 +600,14 @@ if (iconProblems.length > 0) {
 	console.error(`\nIcon placement failed:\n  - ${iconProblems.join('\n  - ')}`);
 }
 
+if (secretProblems.length > 0) {
+	console.error(`\nClient secrets failed:\n  - ${secretProblems.join('\n  - ')}`);
+}
+
+if (isolation.problems.length > 0) {
+	console.error(`\nCoach isolation failed:\n  - ${isolation.problems.join('\n  - ')}`);
+}
+
 const failed = rows.filter((r) => !r.ok);
 if (
 	failed.length > 0 ||
@@ -536,7 +617,9 @@ if (
 	validationProblems.length > 0 ||
 	sectionProblems.length > 0 ||
 	catalogueChunks.length > 0 ||
-	iconProblems.length > 0
+	iconProblems.length > 0 ||
+	secretProblems.length > 0 ||
+	isolation.problems.length > 0
 ) {
 	const what = [
 		...failed.map((r) => r.route),
@@ -546,7 +629,9 @@ if (
 		...(validationProblems.length ? ['validation placement'] : []),
 		...(sectionProblems.length ? ['profile section CSS'] : []),
 		...(catalogueChunks.length ? ['catalogue placement'] : []),
-		...(iconProblems.length ? ['icon paths in JS'] : [])
+		...(iconProblems.length ? ['icon paths in JS'] : []),
+		...(secretProblems.length ? ['client secrets'] : []),
+		...(isolation.problems.length ? ['coach isolation'] : [])
 	];
 	console.error(`\nbudgets: FAILED (${what.join(', ')})`);
 	process.exit(1);
