@@ -47,6 +47,7 @@ export const M1_M2_TABLES = [
 	'auth_events',
 	'auth_rate_limits',
 	'auth_sessions',
+	'email_sign_in_links',
 	'owners',
 	'passkey_credentials',
 	'recovery_codes',

@@ -163,7 +163,8 @@ const SIGNED_IN_WITH: Record<SessionMethod, string> = {
 	setup: 'set up',
 	passkey: 'passkey',
 	recovery: 'recovery code',
-	test: 'test session'
+	test: 'test session',
+	email_link: 'email link'
 };
 
 /**

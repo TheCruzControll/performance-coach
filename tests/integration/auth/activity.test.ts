@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import type { Executor } from '../../../src/lib/server/db';
+import type { AuthEventType, Executor } from '../../../src/lib/server/db';
 import { recentAuthActivity } from '../../../src/lib/server/auth/activity';
+import { recordAuthEvent } from '../../../src/lib/server/auth/audit';
 import {
 	beginPasskeyRegistration,
 	beginSignIn,
@@ -25,6 +26,11 @@ async function failSignIns(tx: Executor, times: number) {
 }
 
 const labels = (feed: { label: string }[]) => feed.map((e) => e.label);
+
+/** Audit events as the email-link use-case writes them. */
+async function record(tx: Executor, ownerId: string | null, ...types: AuthEventType[]) {
+	for (const type of types) await recordAuthEvent(tx, request(), { type, ownerId });
+}
 
 describe('recent security activity', () => {
 	it('folds each run of failed attempts into one row, so a flood hides nothing', async () => {
@@ -81,6 +87,57 @@ describe('recent security activity', () => {
 				...Array(6).fill('Signed in with a passkey'),
 				'Passkey added',
 				'Account set up'
+			]);
+		});
+	});
+
+	it('keeps an email-link sign-in in view under a flood of refused links', async () => {
+		await withRollback(async (tx) => {
+			const owner = await setUpOwner(tx);
+			const session = (await validateSessionToken(owner.token, { db: tx }))!.session;
+			await record(tx, owner.ownerId, 'email_link.used');
+			// Refused and expired links are attempts anyone can make: they fold into one run.
+			for (let i = 0; i < 30; i++) {
+				await record(tx, null, 'email_link.refused', 'email_link.expired');
+			}
+
+			const feed = await recentAuthActivity(session, 8, { db: tx });
+			expect(labels(feed)).toEqual([
+				'50+ failed sign-in attempts',
+				'Signed in with an email link',
+				'Account set up'
+			]);
+			expect(feed[0]).toMatchObject({ tone: 'warning' });
+			expect(feed[1]).toMatchObject({ tone: 'neutral' });
+		});
+	});
+
+	it('never shows a link being asked for or sent, nor lets those crowd the feed', async () => {
+		await withRollback(async (tx) => {
+			const owner = await setUpOwner(tx);
+			const session = (await validateSessionToken(owner.token, { db: tx }))!.session;
+			await failSignIns(tx, 3);
+			for (let i = 0; i < 30; i++) {
+				await record(tx, owner.ownerId, 'email_link.requested', 'email_link.sent');
+			}
+			expect(labels(await recentAuthActivity(session, 8, { db: tx }))).toEqual([
+				'3 failed sign-in attempts',
+				'Account set up'
+			]);
+		});
+	});
+
+	it('shows a sign-in email that could not be sent as a warning', async () => {
+		await withRollback(async (tx) => {
+			const owner = await setUpOwner(tx);
+			const session = (await validateSessionToken(owner.token, { db: tx }))!.session;
+			await record(tx, owner.ownerId, 'email_link.requested', 'email_link.send_failed');
+			await record(tx, null, 'email_link.refused');
+			const feed = await recentAuthActivity(session, 8, { db: tx });
+			expect(feed.map(({ label, tone }) => [label, tone])).toEqual([
+				['Email link refused', 'warning'],
+				['Sign-in email couldn’t be sent', 'warning'],
+				['Account set up', 'positive']
 			]);
 		});
 	});
