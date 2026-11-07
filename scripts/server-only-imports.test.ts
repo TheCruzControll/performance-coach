@@ -252,3 +252,226 @@ describe('the layer boundaries on the same files still fire', () => {
 		TIMEOUT
 	);
 });
+
+/** A runtime import of `name` from `specifier`, used so no-unused-vars stays quiet. */
+const runtimeImport = (name: string, specifier: string) =>
+	`import { ${name} } from '${specifier}';\nexport const used = ${name};\n`;
+const typeImport = (name: string, specifier: string) =>
+	`import type { ${name} } from '${specifier}';\nexport type Used = ${name};\n`;
+
+describe("domain/coach's server-only modules (M5)", () => {
+	it(
+		'a component, a universal load and a client-safe coach module may not load the markdown reader',
+		async () => {
+			const component = svelte(
+				"import { parseRich } from '#lib/domain/coach/markdown.ts';",
+				'<p>{parseRich.name}</p>'
+			);
+			const cases: [string, string][] = [
+				['src/lib/ui/program/SessionCard.svelte', component],
+				[
+					'src/routes/(app)/coach/+page.svelte',
+					svelte(
+						"import { parseRich } from '$lib/domain/coach/markdown.ts';",
+						'<p>{parseRich.name}</p>'
+					)
+				],
+				[
+					'src/routes/(app)/train/+page.ts',
+					runtimeImport('parseRich', '../../../lib/domain/coach/markdown.ts')
+				],
+				['src/lib/client/program.ts', runtimeImport('parseRich', '#lib/domain/coach/markdown')],
+				['src/lib/domain/coach/events.ts', runtimeImport('parseRich', './markdown.ts')],
+				['src/lib/domain/coach/statements.ts', runtimeImport('parseAnswer', './answer')],
+				['src/lib/domain/training/week.ts', runtimeImport('parseRich', '../coach/markdown.ts')]
+			];
+			for (const [file, code] of cases) {
+				const findings = await lint(file, code);
+				expect(
+					findings.map((f) => f.rule),
+					file
+				).toEqual([SERVER_ONLY]);
+				expect(findings[0]!.message).toMatch(/domain\/coach's answer, markdown/);
+			}
+		},
+		TIMEOUT
+	);
+
+	it(
+		'`import type` from them is clean, in a component and in a client-safe coach module',
+		async () => {
+			expect(
+				await rules(
+					'src/lib/ui/program/SessionCard.svelte',
+					svelte(
+						[
+							"import type { AnswerBlock } from '#lib/domain/coach/answer.ts';",
+							'let { data }: { data: { block: AnswerBlock } } = $props();'
+						].join('\n'),
+						'<p>{data.block.kind}</p>'
+					)
+				)
+			).toEqual([]);
+			expect(
+				await rules('src/lib/domain/coach/events.ts', typeImport('AnswerBlock', './answer.ts'))
+			).toEqual([]);
+		},
+		TIMEOUT
+	);
+
+	it(
+		'they import each other: diff and proposal-rules from proposals, grounding from answer',
+		async () => {
+			const cases: [string, string][] = [
+				['src/lib/domain/coach/diff.ts', runtimeImport('proposalSchema', './proposals.ts')],
+				[
+					'src/lib/domain/coach/proposal-rules.ts',
+					runtimeImport('proposalSchema', './proposals.ts')
+				],
+				['src/lib/domain/coach/grounding.ts', runtimeImport('parseAnswer', './answer.ts')],
+				['src/lib/domain/coach/trends.test.ts', runtimeImport('METHOD_MAX', './answer')]
+			];
+			for (const [file, code] of cases) expect(await rules(file, code), file).toEqual([]);
+		},
+		TIMEOUT
+	);
+
+	it(
+		'they, and the client-safe coach modules, still never load the catalogue or the generator',
+		async () => {
+			for (const file of ['src/lib/domain/coach/statements.ts', 'src/lib/domain/coach/diff.ts']) {
+				const findings = await lint(file, runtimeImport('CATALOGUE', '../exercises/index.ts'));
+				expect(
+					findings.map((f) => f.rule),
+					file
+				).toEqual([SERVER_ONLY]);
+				expect(findings[0]!.message).toMatch(/domain\/exercises and domain\/programming/);
+			}
+		},
+		TIMEOUT
+	);
+
+	it(
+		'server code may load them, and another package may have a file of the same name',
+		async () => {
+			expect(
+				await rules(
+					'src/lib/server/agent/turn.ts',
+					runtimeImport('parseAnswer', '#lib/domain/coach/answer.ts')
+				)
+			).toEqual([]);
+			// domain/workout/summary.ts is not the coach's summary module.
+			expect(
+				await rules('src/lib/domain/workout/index.ts', runtimeImport('summarise', './summary.ts'))
+			).toEqual([]);
+		},
+		TIMEOUT
+	);
+});
+
+describe('the LLM SDK (M5)', () => {
+	const SDK_RUNTIME = "import Anthropic from '@anthropic-ai/sdk';\nexport const sdk = Anthropic;\n";
+	const SDK_TYPES =
+		"import type { BetaMessage } from '@anthropic-ai/sdk/resources/beta/messages';\nexport type Message = BetaMessage;\n";
+
+	it(
+		'a runtime import fails in the agent, a route, a client module and the domain',
+		async () => {
+			for (const file of [
+				'src/lib/server/agent/turn.ts',
+				'src/routes/api/coach/turn/+server.ts',
+				'src/lib/client/program.ts',
+				'src/lib/domain/coach/events.ts',
+				'src/lib/domain/coach/answer.ts'
+			]) {
+				const findings = await lint(file, SDK_RUNTIME);
+				expect(
+					findings.map((f) => f.rule),
+					file
+				).toEqual([SERVER_ONLY]);
+				expect(findings[0]!.message).toMatch(/provider\/anthropic\.ts/);
+			}
+		},
+		TIMEOUT
+	);
+
+	it(
+		'`import { type X }` fails on the server too, because it keeps the runtime import',
+		async () => {
+			const code =
+				"import { type BetaMessage } from '@anthropic-ai/sdk/resources/beta/messages';\nexport type Message = BetaMessage;\n";
+			expect(await rules('src/lib/server/agent/turn.ts', code)).toEqual([SIDE_EFFECT]);
+		},
+		TIMEOUT
+	);
+
+	it(
+		'the Anthropic provider may load it, and every server file may import its types',
+		async () => {
+			expect(await rules('src/lib/server/agent/provider/anthropic.ts', SDK_RUNTIME)).toEqual([]);
+			for (const file of [
+				'src/lib/server/agent/turn.ts',
+				'src/lib/server/agent/provider/types.ts',
+				'src/lib/domain/coach/events.ts'
+			]) {
+				expect(await rules(file, SDK_TYPES), file).toEqual([]);
+			}
+		},
+		TIMEOUT
+	);
+});
+
+describe('workout logging never imports the coach (M5)', () => {
+	it(
+		'a workout route, workout client code and workout UI may not import coach modules',
+		async () => {
+			const cases: [string, string][] = [
+				[
+					'src/routes/(app)/workout/[id]/+page.ts',
+					runtimeImport('CoachThread', '#lib/ui/coach/CoachThread.svelte')
+				],
+				[
+					'src/routes/(app)/workout/[id]/+page.server.ts',
+					runtimeImport('runCoachTurn', '#lib/server/services/coach/turn.ts')
+				],
+				[
+					'src/routes/api/workouts/sync/+server.ts',
+					runtimeImport('TOOL_NAMES', '#lib/domain/coach/index.ts')
+				],
+				['src/lib/client/workout/sync.ts', runtimeImport('coachStream', '../coach/stream.ts')],
+				['src/lib/ui/workout/SetRow.ts', runtimeImport('Answer', '$lib/ui/coach/Answer.svelte')]
+			];
+			for (const [file, code] of cases) {
+				const findings = await lint(file, code);
+				expect(
+					findings.map((f) => f.rule),
+					file
+				).toEqual([LAYER]);
+				expect(findings[0]!.message).toMatch(/Workout logging never depends on the coach/);
+			}
+		},
+		TIMEOUT
+	);
+
+	it(
+		"each workout block keeps its folder's layer patterns",
+		async () => {
+			expect(
+				await rules(
+					'src/routes/(app)/workout/[id]/+page.server.ts',
+					runtimeImport('db', '#lib/server/db/index.ts')
+				)
+			).toEqual([LAYER]);
+			expect(
+				await rules(
+					'src/lib/client/workout/sync.ts',
+					runtimeImport('Badge', '#lib/ui/components/Badge.svelte')
+				)
+			).toEqual([LAYER]);
+			expect(
+				await rules('src/lib/ui/workout/SetRow.ts', runtimeImport('getEnv', '#lib/server/env.ts'))
+			).toEqual([LAYER]);
+		},
+		TIMEOUT
+	);
+});
