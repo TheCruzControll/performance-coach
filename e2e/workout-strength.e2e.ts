@@ -193,13 +193,18 @@ test.describe('the strength view (IndexedDB only)', () => {
 	}) => {
 		await seedAt(page, kit, 3);
 		const workouts = await watchWorkouts(page);
+		// The logger shows once its chunk and the store have loaded, after the first render: compare
+		// the view with it on both sides of the reload.
+		const logger = page.getByTestId('workout-main').getByTestId('set-logger');
 		await gotoWorkout(page);
 		await expect(card(page).getByRole('heading', { level: 2 })).toHaveText('Romanian deadlift');
 		await workouts.expectNothingNew();
+		await expect(logger).toBeVisible();
 		const shown = await page.getByTestId('workout-main').innerText();
 		await page.reload();
 		await expect(page.locator('main#main[data-ready]')).toBeAttached();
 		await expect(card(page).getByRole('heading', { level: 2 })).toHaveText('Romanian deadlift');
+		await expect(logger).toBeVisible();
 		expect(await page.getByTestId('workout-main').innerText()).toBe(shown);
 		await workouts.expectNothingNew();
 	});
