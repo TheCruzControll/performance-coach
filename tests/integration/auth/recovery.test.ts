@@ -225,11 +225,14 @@ describe('recovery codes', () => {
 				db,
 				now: time.now
 			});
+			// Expect the refusal before awaiting anything else: the request can fail as soon as the
+			// lock is released, before other.commit() returns, and must not reject unobserved.
+			const refused = expect(adding).rejects.toMatchObject({ code: 'not_found' });
 			await lockWaiters(1);
 			time.advance(61_000);
 			await other.commit();
 
-			await expect(adding).rejects.toMatchObject({ code: 'not_found' });
+			await refused;
 			expect(await createAuthRepository(db).countPasskeys(owner.ownerId)).toBe(1);
 		});
 	});
