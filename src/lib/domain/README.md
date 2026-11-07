@@ -467,11 +467,57 @@ change in one place.
 
 ### Metric catalogue (`analytics/metrics.ts`)
 
-Not built yet (m6/08, metric-catalogue).
+Every figure's context as data, so a tile, a review line and a coach answer describe it the same
+way. `METRICS` by id (`METRIC_IDS` in order, by `METRIC_AREAS`):
+
+- strength: `e1rm`, `top_set`, `tonnage`, `hard_sets`, `group_sets`, `avg_rpe`, `rpe_deviation`
+- running: `mileage`, `pace_easy`, `pace_long`, `pace_tempo`, `pace_intervals`, `long_run`,
+  `run_frequency`
+- general: `sessions`, `training_time`, `adherence`, `srpe_load`, `acwr`, `monotony`, `strain`,
+  `muay_thai_load`
+- recovery: `sleep`, `soreness`, `energy`, `stress`
+
+Each has a `label`, its canonical `unit` (kg, metres, seconds, s/km, AU, counts, percentage
+points, hours, the 1–5 scales), its `kind` (the e1RM `estimated`, a top set `measured`), its
+`direction`, `minData` (the least data it is shown with), a `good` rule with its words, a
+one-sentence `method`, any `caveat` (`caveatAlways` on the ACWR, whose every sentence carries
+`ACWR_CAVEAT`) and its minimal practical change `mpc` for `classifyTrend`: e1RM and top set 2.5 %,
+weekly volumes 10 %, pace 2 %, load 15 %, adherence 10 points, hard sets 2 sets, sleep 0.5 h and
+the scales 0.5.
+
+A `good` rule is `trend` (good is a real trend the better way, judged by the verdict), `bands`
+(good, watch or low by value, good winning on an edge), `target` (the week's muscle-group range:
+below is low, above is watch) or `none` (load and strain: neither more nor less is better on its
+own). The thresholds are `GOOD`, coaching judgements the owner can change in one place.
 
 ### Overview (`analytics/overview.ts`)
 
-Not built yet (m6/08, metric-catalogue).
+'Am I improving?' composed on the catalogue and `classifyTrend`, with written rules that are never
+optimistic by default. Words use canonical units unless given a `Format` (`formatCanonical` is
+the default; the services pass the profile's units).
+
+- `trendOf(metric, points, window)` → `classifyTrend` over the complete weeks of
+  `trendWindow(window)` with the metric's direction and MPC, and that window (its label says
+  'Trend over the last 12 weeks' at 4w). A point in progress, or dated after the last complete
+  week, is never read, so a Wednesday never looks like a decline.
+- `kpi(metric, current, previous)` → the figure over complete weeks, the comparison and its words
+  ('Up 4.5 kg on the previous 12 weeks', '12 s/km faster than the previous 12 weeks'). Compared
+  only when both cover as many complete weeks, the previous before the current; otherwise no
+  comparison at all ('No earlier weeks like these to compare with').
+- `soFarLine(metric, soFar)` → 'This week so far: 6,200 kg · 5,900 kg by Wednesday last week',
+  from series.ts's `soFar`: two figures and no verdict.
+- `goodness(metric, value, target?)` → `good`, `watch` or `low` with its words; null without a
+  value, for a metric judged by its trend or by nothing, and for a target metric without a range.
+- `disciplineVerdict(area, evidence)` → `improving`, `holding`, `mixed`, `declining` or
+  `not_enough_data`, with its counts, a sentence ('3 of 4 main lifts trending up, 1 declining · 1
+  without enough data yet') and every piece of evidence judged and worded, in subject order.
+  Evidence without enough data is counted and listed, never judged. One real decline makes it
+  mixed, all declining makes it declining, and improving needs more than `IMPROVING_SHARE` (half)
+  of the judged evidence rising the better way; otherwise holding.
+- `headline(verdicts)` → 'Strength improving · Running holding steady': the disciplines with a
+  verdict, in the catalogue's order (a running-only owner reads on running alone). Overall it is
+  declining when all are, mixed when any declines or is mixed, improving only when all improve,
+  otherwise holding.
 
 ## M6: reviews and progression (`programming/`)
 
@@ -530,3 +576,18 @@ under plain Node. Server-only by use: nothing in a page needs it.
   `keep`, `delete` and `unparseable`: the newest of each of the last 30 UTC days and the earliest
   of each of the last 12 UTC months (`RETENTION.monthlyKeeps`), never a future-dated, must-keep
   or unparseable name, the same answer for any input order.
+
+## M9: restore order (`backup/plan.ts`)
+
+By path; no imports, so scripts load it under plain Node.
+
+- `planRestore(catalog, excluded)` → `{ order, late }`: the tables a backup holds, in the order
+  restore loads them, and the keys whose columns restore inserts as NULL and fills in afterwards.
+  - Only a NOT DEFERRABLE key into another table constrains the order. A self-reference loads in
+    one statement; a DEFERRABLE key is checked at COMMIT.
+  - A cycle (Tarjan's components) is broken on a key whose columns are all nullable, the fewest
+    columns first, then by table and key name: programs ↔ program_versions makes
+    `programs.current_version_id` late. Ties in the order go by name, so input order never matters.
+  - Throws `RestorePlanError` naming tables and keys (never values): `unbreakable_cycle`, or
+    `references_excluded_table` for a key into a table in `excluded`. A malformed catalog (a
+    repeated table, a key into an unknown table or column) is a `RangeError`.

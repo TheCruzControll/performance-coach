@@ -1,10 +1,10 @@
 /**
  * Authentication tables (M2): the single owner, their passkeys, sessions, recovery codes,
- * WebAuthn challenges, used setup tokens, an audit log and DB-backed rate-limit counters. See
- * docs/security.md.
+ * WebAuthn challenges, used setup tokens, email sign-in links (M2X), an audit log and DB-backed
+ * rate-limit counters. See docs/security.md.
  *
- * Secrets are never stored: sessions, recovery codes and used setup tokens keep only a SHA-256
- * of a high-entropy random value; passkeys keep only the public key.
+ * Secrets are never stored: sessions, recovery codes, used setup tokens and email sign-in links
+ * keep only a SHA-256 of a high-entropy random value; passkeys keep only the public key.
  */
 import { sql } from 'drizzle-orm';
 import {
@@ -106,7 +106,7 @@ export const passkeyCredentials = pgTable(
 export const SESSION_KINDS = ['owner', 'recovery'] as const;
 export type SessionKind = (typeof SESSION_KINDS)[number];
 
-export const SESSION_METHODS = ['setup', 'passkey', 'recovery', 'test'] as const;
+export const SESSION_METHODS = ['setup', 'passkey', 'recovery', 'test', 'email_link'] as const;
 export type SessionMethod = (typeof SESSION_METHODS)[number];
 
 export const authSessions = pgTable(
@@ -216,9 +216,61 @@ export const AUTH_EVENT_TYPES = [
 	'reauth.failed',
 	'signout',
 	'rate_limited',
-	'owner.reset'
+	'owner.reset',
+	'email_link.requested',
+	'email_link.sent',
+	'email_link.send_failed',
+	'email_link.used',
+	'email_link.expired',
+	'email_link.refused'
 ] as const;
 export type AuthEventType = (typeof AUTH_EVENT_TYPES)[number];
+
+/**
+ * The longest an email sign-in link can live, in minutes: the owner's choice (ASVS 2.7.2 says
+ * 10, recorded as a deviation in ADR 0011). Postgres refuses a longer `expires_at`, so a bug in
+ * the service cannot mint a longer-lived link. Changing it needs a migration (the CHECK).
+ */
+export const EMAIL_LINK_MAX_LIFETIME_MINUTES = 15;
+
+/**
+ * One-time email sign-in links (ADR 0011). Only the SHA-256 of the token is stored. A link is
+ * live while it is unused, unrevoked and unexpired; it is used at most once (one conditional
+ * UPDATE), and a newer link revokes the older live ones. Not bound to a browser (ADR 0011).
+ */
+export const emailSignInLinks = pgTable(
+	'email_sign_in_links',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		ownerId: uuid('owner_id')
+			.notNull()
+			.references(() => owners.id, { onDelete: 'cascade' }),
+		/** SHA-256 (hex) of the token in the emailed URL's fragment. */
+		tokenHash: text('token_hash').notNull(),
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+		expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+		/** Redeemed: never again. */
+		usedAt: timestamp('used_at', { withTimezone: true }),
+		/** Superseded by a newer link, or cancelled by "Sign out everywhere else". */
+		revokedAt: timestamp('revoked_at', { withTimezone: true }),
+		/** The session the link created (null until then, or once that session is deleted). */
+		sessionId: uuid('session_id').references(() => authSessions.id, { onDelete: 'set null' })
+	},
+	(t) => [
+		uniqueIndex('email_sign_in_links_token_hash_uq').on(t.tokenHash),
+		index('email_sign_in_links_owner_live_idx')
+			.on(t.ownerId)
+			.where(sql`${t.usedAt} is null and ${t.revokedAt} is null`),
+		index('email_sign_in_links_expires_idx').on(t.expiresAt),
+		check('email_sign_in_links_token_hash_ck', sql`${t.tokenHash} ~ '^[0-9a-f]{64}$'`),
+		check(
+			'email_sign_in_links_lifetime_ck',
+			sql`${t.expiresAt} > ${t.createdAt} and ${t.expiresAt} <= ${t.createdAt} + ${sql.raw(`interval '${EMAIL_LINK_MAX_LIFETIME_MINUTES} minutes'`)}`
+		),
+		check('email_sign_in_links_state_ck', sql`${t.usedAt} is null or ${t.revokedAt} is null`),
+		check('email_sign_in_links_session_ck', sql`${t.sessionId} is null or ${t.usedAt} is not null`)
+	]
+);
 
 /** Append-only audit log of everything security-relevant. */
 export const authEvents = pgTable(
