@@ -37,15 +37,18 @@ export class SectionForm<T> {
 		return new SectionForm(JSON.parse(this.#saved) as T, this.#schema, this.#toPayload);
 	}
 
-	/** Validate and post to `action`; redirects (the next step) are followed. */
+	/**
+	 * Validate and post to `action`; redirects (the next step) are followed. `quiet` is for
+	 * leaving the form: a failure is only returned, never shown or focused.
+	 */
 	async submit(
 		action = '?/save',
 		fields?: Record<string, string>,
-		options: { validate?: boolean } = {}
+		options: { validate?: boolean; quiet?: boolean } = {}
 	): Promise<SaveOutcome> {
 		if (this.busy) return { ok: false, errors: {} };
 		this.busy = true;
-		this.failed = null;
+		if (!options.quiet) this.failed = null;
 		// What is sent: edits made while the request is in flight stay unsaved. A JSON copy, as
 		// the section is posted and compared as JSON: `$state.snapshot` would add its clone
 		// helper to the Svelte runtime that every route loads.
@@ -57,14 +60,15 @@ export class SectionForm<T> {
 				options.validate === false ? undefined : this.#schema,
 				fields
 			);
+			if (outcome.ok) this.#saved = JSON.stringify(value);
+			if (options.quiet) return outcome;
 			const fieldCount = Object.keys(outcome.errors).length;
 			this.errors = outcome.errors;
 			this.failed =
 				outcome.failed ??
 				outcome.errors[''] ??
 				(fieldCount ? 'Check the highlighted fields.' : null);
-			if (outcome.ok) this.#saved = JSON.stringify(value);
-			else if (fieldCount) focusFirstError();
+			if (!outcome.ok && fieldCount) focusFirstError();
 			return outcome;
 		} finally {
 			this.busy = false;
