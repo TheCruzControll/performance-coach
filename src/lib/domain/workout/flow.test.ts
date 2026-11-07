@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { workoutDayKits } from '../../../../tests/fixtures/workout-day';
-import { afterSet, groups, SUPERSET_FLOW, upNext } from './flow';
+import { afterSet, groups, SUPERSET_FLOW } from './flow';
+import { upNext } from './up-next';
 import type { AfterSet } from './flow';
 import { createMutation } from './mutations';
 import type { LocalAction, Mutation, MutationInput, MutationType } from './mutations';
