@@ -256,10 +256,13 @@ test.describe('/design → Plan at 1440 × 900', () => {
 		page
 	}, testInfo) => {
 		const strip = await openProgram(page);
-		// The reference page's column, not a phone layout stretched to the window.
+		// The reference page's column, not a phone layout stretched to the window: from 1024 px
+		// the gallery pairs its groups (main-screens.desktop.e2e.ts), Components on the left.
 		const panel = (await page.getByRole('tabpanel').boundingBox())!;
+		const gallery = (await page.locator('main#main').boundingBox())!;
 		expect(panel.width).toBeLessThanOrEqual(34 * 16);
-		expect(panel.x).toBeGreaterThan((1440 - 34 * 16) / 2 - 1);
+		expect(panel.x).toBeGreaterThanOrEqual(gallery.x);
+		expect(panel.x + panel.width).toBeLessThan(gallery.x + gallery.width / 2);
 		await expect(strip.getByText('Wed', { exact: true })).toBeVisible();
 		await expect(strip.getByText('W', { exact: true })).toBeHidden();
 
