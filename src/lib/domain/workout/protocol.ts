@@ -1,7 +1,8 @@
 /**
  * The sync protocol (wire format v1; the offline workout sync ADR): POST /api/workouts/sync takes
  * a SyncRequest and answers a SyncResponse, one result per mutation in request order, and
- * GET /api/workouts/[id] answers a CanonicalWorkout. Rows are keyed by client ids.
+ * GET /api/workouts/[id] answers a CanonicalWorkout and GET /api/workouts/active the workouts in
+ * progress (ActiveWorkouts). Rows are keyed by client ids.
  */
 import type { Discipline } from '../profile/catalog.ts';
 import type { SessionKind } from '../training/types.ts';
@@ -133,4 +134,26 @@ export interface CanonicalWorkout {
 	other: CanonicalOther | null;
 	/** Every exercise a row names, custom ones included. */
 	exercises: Record<string, ExerciseSummary>;
+}
+
+// ---- Workouts in progress -------------------------------------------------------------------
+
+/** A workout in progress, as GET /api/workouts/active lists it to offer 'Continue here'. */
+export type ActiveWorkout = Pick<
+	CanonicalWorkoutRow,
+	| 'id'
+	| 'kind'
+	| 'title'
+	| 'sessionType'
+	| 'discipline'
+	| 'plannedSessionId'
+	| 'plannedLineage'
+	| 'programId'
+	| 'startedAt'
+>;
+
+/** The owner's workouts in progress, newest first. */
+export interface ActiveWorkouts {
+	v: 1;
+	workouts: ActiveWorkout[];
 }

@@ -41,7 +41,6 @@ import { claimMutation, createSyncRepository } from '../../db/repositories/sync'
 import { createWorkoutSyncRepository } from '../../db/repositories/workout-sync';
 import type { Executor } from '../../db/types';
 import { logger } from '../../observability/logger';
-import { getExercisesByIds } from '../exercises/index';
 import { TrainingLogConflictError } from '../training/log';
 import {
 	resolveDeps,
@@ -49,7 +48,7 @@ import {
 	TrainingNotFoundError,
 	type ResolvedTrainingDeps
 } from '../training/shared';
-import { exerciseIdsOf, toCanonicalWorkout } from './dto';
+import { getCanonicalWorkout } from './canonical';
 import { exerciseHandlers } from './apply/exercises';
 import { UnsupportedMutationError, type Handler, type Handlers } from './apply/handler';
 import { otherHandlers } from './apply/other';
@@ -228,13 +227,6 @@ function waitsFor(m: Mutation, held: unknown): boolean {
 	}
 }
 
-async function canonicalOf(ownerId: string, workoutClientId: string, db: Executor) {
-	const rows = await createWorkoutSyncRepository(db).canonicalRows(ownerId, workoutClientId);
-	if (!rows) return null;
-	const exercises = await getExercisesByIds(ownerId, exerciseIdsOf(rows), { db });
-	return toCanonicalWorkout(rows, exercises);
-}
-
 /**
  * Apply a batch's mutations (parseSyncBody's) for the owner, in order, and answer one result per
  * mutation. Throws SyncUnavailableError when the first mutation already fails for a non-domain
@@ -301,7 +293,7 @@ async function attachCanonical(
 	});
 	for (const [workout, i] of last) {
 		try {
-			const canonical = await canonicalOf(ownerId, workout, db);
+			const canonical = await getCanonicalWorkout(ownerId, workout, { db });
 			if (canonical) results[i]!.canonical = canonical;
 		} catch (err) {
 			// Applied is applied: the device reconciles the rows later.
