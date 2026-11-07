@@ -939,7 +939,8 @@ describe('pagehide', () => {
 		vi.stubGlobal('navigator', {
 			sendBeacon: (_url: string, blob: Blob) => (beacons.push(blob.size), true)
 		});
-		const { noteNavigation, startVitalsReporting } = await import('../vitals');
+		const { startVitalsReporting } = await import('../vitals');
+		const { noteNavigation } = await import('../visits');
 		noteNavigation('/workout', '/workout', 0);
 		await startVitalsReporting();
 		for (let i = 0; i < 19; i++) {

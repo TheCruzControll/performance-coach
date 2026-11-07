@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { preferences } from '#lib/client/preferences.svelte.ts';
 	import EmptyState from '#lib/ui/components/EmptyState.svelte';
 	import PageHeader from '#lib/ui/components/PageHeader.svelte';
@@ -10,6 +11,7 @@
 	let tab = $state<TabId>('strength');
 
 	// Units follow the device preferences (Profile → Preferences).
+	onMount(() => preferences.load());
 	const weight = $derived(preferences.units);
 	const distance = $derived(preferences.distance);
 
