@@ -30,9 +30,7 @@ export const PANELS = {
 	 * into every Today page.
 	 */
 	preview: () =>
-		import.meta.env.SSR
-			? Promise.reject(new Error('client only'))
-			: import('./BuildPreview.svelte')
+		import.meta.env.SSR ? Promise.reject(new Error('client only')) : import('./BuildPreview.svelte')
 } satisfies Record<string, PanelImport>;
 
 export type PanelName = keyof typeof PANELS;
