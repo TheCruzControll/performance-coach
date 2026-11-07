@@ -56,7 +56,19 @@ export const ROUTE_ACCESS = {
 	'/onboarding/[[step]]': 'owner',
 	'/design': 'owner',
 	'/api/vitals': 'owner',
-	'/api/client-errors': 'owner'
+	'/api/client-errors': 'owner',
+
+	// Workouts (M4): owner-only JSON, one anchor per area; each slice adds its line under its own.
+	// sync
+	'/api/workouts/sync': 'owner'
+
+	// reads
+
+	// kit
+
+	// history
+
+	// exercises
 } as const satisfies Record<RouteId, RouteAccess>;
 
 export function routeAccess(routeId: string | null): RouteAccess {
