@@ -107,11 +107,12 @@ describe('exportDatabase', () => {
 		expect(first.header.excluded).toEqual([
 			{ name: 'auth_rate_limits', reason: EXCLUDED_TABLES.auth_rate_limits },
 			{ name: 'auth_sessions', reason: EXCLUDED_TABLES.auth_sessions },
+			{ name: 'email_sign_in_links', reason: EXCLUDED_TABLES.email_sign_in_links },
 			{ name: 'webauthn_challenges', reason: EXCLUDED_TABLES.webauthn_challenges }
 		]);
-		expect(first.absentExcluded).toEqual(['backup_runs', 'email_sign_in_links']);
+		expect(first.absentExcluded).toEqual(['backup_runs']);
 		expect(first.text).not.toMatch(
-			/"kind":"section","table":"(auth_sessions|webauthn_challenges|auth_rate_limits)"/
+			/"kind":"section","table":"(auth_sessions|webauthn_challenges|auth_rate_limits|email_sign_in_links)"/
 		);
 
 		for (const table of first.header.tables) {
