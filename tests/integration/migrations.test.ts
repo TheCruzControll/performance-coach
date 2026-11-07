@@ -117,6 +117,52 @@ describe('committed migrations', () => {
 		expect(def.email_sign_in_links_session_id_auth_sessions_id_fk).toContain('ON DELETE SET NULL');
 	});
 
+	it('create the M4 sync ledger with its index and guards', async () => {
+		const columns = await getDb().execute<{ column_name: string; is_nullable: string }>(
+			sql`select column_name, is_nullable from information_schema.columns
+				where table_schema = 'public' and table_name = 'sync_mutations' order by ordinal_position`
+		);
+		expect(columns.rows).toEqual([
+			{ column_name: 'mutation_id', is_nullable: 'NO' },
+			{ column_name: 'owner_id', is_nullable: 'NO' },
+			{ column_name: 'type', is_nullable: 'NO' },
+			{ column_name: 'entity_id', is_nullable: 'NO' },
+			{ column_name: 'workout_client_id', is_nullable: 'YES' },
+			{ column_name: 'client_at', is_nullable: 'NO' },
+			{ column_name: 'applied_at', is_nullable: 'NO' },
+			{ column_name: 'request_id', is_nullable: 'YES' }
+		]);
+
+		const indexes = await getDb().execute<{ indexname: string; indexdef: string }>(
+			sql`select indexname, indexdef from pg_indexes where tablename = 'sync_mutations' order by 1`
+		);
+		expect(indexes.rows).toEqual([
+			{
+				indexname: 'sync_mutations_owner_workout_idx',
+				indexdef: expect.stringContaining('USING btree (owner_id, workout_client_id)')
+			},
+			{
+				indexname: 'sync_mutations_pkey',
+				indexdef: expect.stringContaining('USING btree (mutation_id)')
+			}
+		]);
+
+		// The type stays open: no CHECK, so a later milestone adds types without a migration.
+		const checks = await getDb().execute<{ conname: string }>(
+			sql`select conname from pg_constraint
+				where conrelid = 'sync_mutations'::regclass and contype = 'c'`
+		);
+		expect(checks.rows).toEqual([]);
+
+		const triggers = await getDb().execute<{ tgname: string }>(
+			sql`select tgname from pg_trigger where not tgisinternal and tgrelid = 'sync_mutations'::regclass order by 1`
+		);
+		expect(triggers.rows.map((r) => r.tgname)).toEqual([
+			'sync_mutations_refuse_delete',
+			'sync_mutations_refuse_update'
+		]);
+	});
+
 	it('enforce check constraints at the database level', async () => {
 		const error = await withRollback((tx) =>
 			tx.execute(
