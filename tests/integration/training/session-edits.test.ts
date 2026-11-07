@@ -68,6 +68,8 @@ async function screen(db: Executor, owner: string, key: string, now: Date, versi
 		{ db }
 	);
 	if (data.state !== 'session') throw new Error(`expected a session, got ${data.state}`);
+	// Swap's stream shares the test's transaction: settled before the test's next query.
+	await data.swaps;
 	return data;
 }
 

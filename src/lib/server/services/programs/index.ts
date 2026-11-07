@@ -41,6 +41,7 @@ export {
 } from './revise';
 export {
 	alternativesFor,
+	alternativesForExercises,
 	type ExerciseAlternative,
 	type ExerciseAlternatives,
 	type PlannedExerciseAt
