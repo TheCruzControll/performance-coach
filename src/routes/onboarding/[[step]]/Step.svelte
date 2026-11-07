@@ -5,19 +5,27 @@
   and the actions in the thumb zone. The editor, its form state and validation load on demand,
   from the same registry as Profile (no editor is in the route's initial JavaScript), in place of
   a skeleton. Continue saves the step and moves on (save as you go); Skip, on optional steps
-  only, moves on without saving. Review edits nothing: Start coaching finishes the setup.
+  only, moves on without saving. Review shows every answer (ProfileSummary, also on demand),
+  each with an Edit that comes back to it; Start coaching finishes the setup.
 -->
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, type Component, type ComponentProps } from 'svelte';
 	import type { SectionForm } from '#lib/client/section-form.svelte.ts';
 	import { previousStep, STEP_INFO, type OnboardingStep } from '#lib/domain/profile/onboarding.ts';
+	import type { TrainingProfile } from '#lib/domain/profile/types.ts';
 	import Button from '#lib/ui/components/Button.svelte';
 	import Icon from '#lib/ui/components/Icon.svelte';
 	import Notice from '#lib/ui/components/Notice.svelte';
 	import Skeleton from '#lib/ui/components/Skeleton.svelte';
-	import { EDITORS, type SectionContext, type SectionEditor } from '#lib/ui/profile/editors.ts';
+	import {
+		EDITORS,
+		loadSummary,
+		type SectionContext,
+		type SectionEditor
+	} from '#lib/ui/profile/editors.ts';
+	import type ProfileSummary from '#lib/ui/profile/ProfileSummary.svelte';
 	import type { SectionKey } from '#lib/ui/profile/sections.ts';
-	import { stepHref, todayHref } from '../paths';
+	import { fromReviewHref, stepHref, todayHref } from '../paths';
 
 	interface Props {
 		step: OnboardingStep;
@@ -29,32 +37,50 @@
 		key: SectionKey | null;
 		saved: unknown;
 		context: SectionContext | null;
+		/** On review: the whole training profile. */
+		profile: TrainingProfile | null;
+		/** Opened from the review's Edit: Back, Continue and Skip return to the review. */
+		fromReview: boolean;
 		title: string;
 		lede: string;
 		continueLabel: string;
 	}
 
-	let { step, steps, completed, skipped, key, saved, context, title, lede, continueLabel }: Props =
-		$props();
+	let {
+		step,
+		steps,
+		completed,
+		skipped,
+		key,
+		saved,
+		context,
+		profile,
+		fromReview,
+		title,
+		lede,
+		continueLabel
+	}: Props = $props();
 
 	const index = $derived(steps.indexOf(step));
-	const previous = $derived(previousStep(steps, step));
+	const previous = $derived(fromReview ? 'review' : previousStep(steps, step));
 	const optional = $derived(STEP_INFO[step].optional);
 	const finished = (s: OnboardingStep) => completed.includes(s) || skipped.includes(s);
 	/** A section saved as a whole (goals save one at a time, from their sheet). */
 	const savesSection = $derived(key !== null && key !== 'goals');
 
 	let Editor = $state<SectionEditor['Editor'] | null>(null);
+	let Summary = $state<Component<ComponentProps<typeof ProfileSummary>> | null>(null);
 	let form = $state<SectionForm<unknown> | null>(null);
 	let failed = $state(false);
 	let afterSave: SectionEditor['afterSave'];
 
 	onMount(async () => {
 		try {
-			const [editor, { SectionForm }, { warmValidation }] = await Promise.all([
+			const [editor, summary, { SectionForm }, { warmValidation }] = await Promise.all([
 				// Left out of the server build, which renders the skeleton (as on Profile): while the
 				// server can reach an editor, SvelteKit links its CSS into the page.
 				key === null || import.meta.env.SSR ? null : EDITORS[key](),
+				key !== null || import.meta.env.SSR ? null : loadSummary(),
 				import('#lib/client/section-form.svelte.ts'),
 				import('#lib/client/profile-form.ts')
 			]);
@@ -62,6 +88,7 @@
 				? new SectionForm(editor.draft(saved, context!), editor.schema, editor.payload)
 				: new SectionForm<unknown>({});
 			Editor = editor?.Editor ?? null;
+			Summary = summary?.default ?? null;
 			afterSave = editor?.afterSave;
 			warmValidation();
 		} catch {
@@ -69,9 +96,13 @@
 		}
 	});
 
-	/** Messages about the step as a whole (no goal yet, no schedule), else the form's own. */
+	/**
+	 * Messages about the step as a whole (no goal yet), else the form's own. On review, what
+	 * Start coaching needs is shown on the block it belongs to instead.
+	 */
 	const messages = $derived.by(() => {
 		if (!form) return [];
+		if (key === null && Object.keys(form.errors).length) return [];
 		const own = savesSection ? [] : Object.values(form.errors);
 		return own.length ? own : form.failed ? [form.failed] : [];
 	});
@@ -79,7 +110,8 @@
 	async function go(action: '?/save' | '?/skip' | '?/complete') {
 		if (!form) return;
 		const sent = JSON.parse(JSON.stringify(form.value)) as unknown;
-		const outcome = await form.submit(action, undefined, {
+		const to = fromReview ? `${action}&then=review` : action;
+		const outcome = await form.submit(to, undefined, {
 			validate: action === '?/save' && savesSection
 		});
 		// The redirect to the next step has been followed: the device's units follow a welcome.
@@ -140,18 +172,8 @@
 			</div>
 		{:else if Editor && form}
 			<Editor bind:value={form.value} errors={form.errors} context={context!} />
-		{:else if key === null}
-			<ul class="summary" aria-label="Your setup">
-				{#each steps.filter((s) => s !== 'review') as s (s)}
-					<li data-testid="summary-step">
-						<span>{STEP_INFO[s].title}</span>
-						<span class="state" class:done={completed.includes(s)}>
-							{#if completed.includes(s)}<Icon name="check" size={16} /> Done
-							{:else if skipped.includes(s)}Skipped{:else}Not yet{/if}
-						</span>
-					</li>
-				{/each}
-			</ul>
+		{:else if Summary && form && profile}
+			<Summary {profile} {steps} errors={form.errors} href={fromReviewHref} />
 		{:else}
 			<div class="placeholder">
 				<span class="visually-hidden">Loading {title}…</span>
@@ -307,34 +329,6 @@
 	.failed {
 		justify-items: start;
 		gap: var(--space-3);
-	}
-
-	.summary {
-		display: grid;
-		margin: 0;
-		padding: 0;
-		list-style: none;
-	}
-
-	.summary li {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: var(--space-3);
-		min-height: 3rem;
-		border-bottom: 1px solid var(--color-border);
-	}
-
-	.state {
-		display: inline-flex;
-		align-items: center;
-		gap: var(--space-1);
-		font-size: var(--text-sm);
-		color: var(--color-text-secondary);
-	}
-
-	.state.done {
-		color: var(--color-positive);
 	}
 
 	/* Column chrome: sticky at the foot of the step's column, content scrolling under a fade. */
