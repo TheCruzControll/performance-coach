@@ -340,7 +340,47 @@ undeleted workout (M3's `completedLineages`), and the completed workouts with th
 
 ### Workload (`analytics/workload.ts`)
 
-Not built yet (m6/07, workload-analytics).
+Session-RPE load across disciplines, the acute:chronic ratio, monotony and strain, Muay Thai load
+and recovery. Inputs: completed, undeleted workouts with their run or other-session record
+(`LoggedSession`) and M3's recovery notes (`RecoveryEntry`).
+
+- `sessionLoads(sessions, timeZone)` → each session's load through M3's `sessionLoadOf` (minutes ×
+  RPE, AU), on the owner's calendar day (`localDay`, so a clock change never moves it), in its
+  chart group (`sessionTone`). The RPE is the workout's own, else the run record's, else the other
+  record's (`rpeFrom`); the duration falls back the same way.
+  - A session with no RPE or no duration is **load unknown**: `load` null and `missing` (`rpe`,
+    `duration` or `both`). It is counted and named, never taken as 0. Totals add the known loads
+    only; a day or week of only unknown loads has no total (null), one with no sessions has 0.
+- `dailyLoads(loads, from, through)` → one entry per calendar day, rest days 0.
+- `weeklyLoad(loads, window)` → each complete week, the week in progress apart (flagged, never in
+  the total), and the total. `byGroup` lists every group in the charts' stack order (`LOAD_STACK`:
+  strength · hypertrophy · conditioning · combat · running) and adds up to `load`.
+  - `monotony` = the mean of a complete week's 7 daily loads ÷ their sample SD, null when the SD
+    is 0 (every day the same, an empty week too); `strain` = the week's load × its monotony. The
+    week in progress has neither.
+- `acwr(days)` → M1's `acuteChronicRatio` (7-day acute and 28-day chronic EWMA) over daily loads
+  that start on the first activity, unchanged; null before 28 days (`CHRONIC_DAYS`). It carries
+  `ACWR_CAVEAT` as data and a `zone` by its bands, and counts the unknown loads it left out:
+
+  > A rough guide to how fast your load is rising, not an injury predictor. About 0.8–1.3 is
+  > typical and above 1.5 is a sharp rise: both are rules of thumb.
+
+  The link between this ratio and injury is debated: never present it as a risk score, and never
+  without the caveat. `ACWR_PLACEMENT` (`shown`) is where Progress shows it, an open question
+  for the owner (shown, behind 'More', or dropped).
+
+- `muayThaiLoad(sessions, timeZone, window)` → per week: sessions, known minutes, known sRPE load,
+  the unknown loads, hard sessions (RPE ≥ `HARD_RPE`, 7) and rounds. Rounds add the whole-number
+  metrics keyed by `ROUND_KEYS` (`rounds`, `sparring_rounds`), split by session kind; a round
+  metric with any other value is listed in `malformed`, and every other key is ignored and named
+  in `ignoredKeys`. With no round metric recorded, the rounds total is null.
+- `recoverySummary(notes, window)` → weekly means of sleep, soreness, energy and stress, blanks
+  left out, each with its count; a weekly series per measure (gaps null, the week in progress
+  flagged); and the `LATEST_NOTES` (3) latest notes as M5's untrusted text: data, never
+  instructions.
+
+`HARD_RPE`, `ROUND_KEYS`, `LATEST_NOTES` and the caveat's bands are judgements the owner can
+change in one place.
 
 ### Metric catalogue (`analytics/metrics.ts`)
 
