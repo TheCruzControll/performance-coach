@@ -97,10 +97,12 @@
 `run_record_segments`; `other.log` → `other_session_records`. The fallback slice log-gaps-db
 added M3 amendments A1–A2 to the log: `set_records.assistance`, the not-skipped amount CHECK, a
 day's cap on seconds and a 50 cap on missed reps; `workout_substitutions.exercise_position` and
-`deleted_at`. Main's log still lacks A3–A4 and A6: segment and other-session edits by client id,
-services in the caller's transaction, and a swap that re-bases on the current version. M3 adopts
-them, or the fallbacks do (log-gaps-service, and substitution-handlers for A6); the wire format is
-the same either way. A set's distance is whole metres, as `set_records.metres` keeps it.
+`deleted_at`. The fallback slice log-gaps-service added A3–A4 to the write services: sets by
+measure and load type (checkSet), `addRunSegment`, `editRunSegment` and `editOtherSession` by
+client id, every write in the caller's transaction, and a start's pinned planned session checked
+against the lineage and program it names. Main's log still lacks A6, a swap that re-bases on the
+current version; substitution-handlers adds it if M3 does not. The wire format is the same either
+way. A set's distance is whole metres, as `set_records.metres` keeps it.
 
 ## Alternatives considered
 
