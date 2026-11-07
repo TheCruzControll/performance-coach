@@ -7,7 +7,7 @@
  *   them to `pnpm db:explain`.
  * Nothing runs until a builder is awaited; await them in turn on one connection.
  */
-import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, inArray, isNull, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import type { ProposalStatus } from '../../../domain/training/vocabulary';
 import { coachProposals, programVersions } from '../schema';
@@ -18,7 +18,8 @@ export const COACH_PROPOSAL_INDEXES = {
 	proposal: 'coach_proposals_pkey',
 	lockProposal: 'coach_proposals_pkey',
 	openDuplicate: 'coach_proposals_owner_status_idx',
-	proposalPage: 'coach_proposals_owner_status_idx'
+	proposalPage: 'coach_proposals_owner_status_idx',
+	decidedSince: 'coach_proposals_owner_status_idx'
 } as const;
 
 /** A proposal as its card, the inbox and get_coach_proposals read it (no payload). */
@@ -126,5 +127,15 @@ export function proposalPage(db: Executor, ownerId: string, page: ProposalPage) 
 			)
 		)
 		.orderBy(desc(coachProposals.createdAt), desc(coachProposals.id))
+		.limit(limit);
+}
+
+/** The owner's proposals decided after `since`, most recently decided first, `limit` of them. */
+export function decidedSince(db: Executor, ownerId: string, since: Date, limit: number) {
+	return db
+		.select({ id: coachProposals.id, kind: coachProposals.kind, status: coachProposals.status })
+		.from(coachProposals)
+		.where(and(eq(coachProposals.ownerId, ownerId), gt(coachProposals.closedAt, since)))
+		.orderBy(desc(coachProposals.closedAt), desc(coachProposals.id))
 		.limit(limit);
 }

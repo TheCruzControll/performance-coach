@@ -680,6 +680,25 @@ export async function listProposals(
 	return { proposals: page.map(toView), next: rows.length > limit ? page.at(-1)!.id : null };
 }
 
+/**
+ * The owner's proposals decided after `since`, most recently decided first and at most
+ * PROPOSAL_IDS_MAX of them (one get_coach_proposals call): ids, kinds and statuses only, as the
+ * turn context carries them (never the owner's note, which get_coach_proposals returns).
+ */
+export async function listDecidedSince(
+	ownerId: string,
+	since: Date,
+	deps: CoachDeps = {}
+): Promise<{ id: string; kind: ProposalKind; status: ProposalStatus }[]> {
+	const { db } = resolveDeps(deps);
+	const rows = await createCoachProposalsRepository(db).decidedSince(
+		ownerId,
+		since,
+		PROPOSAL_IDS_MAX
+	);
+	return rows.map(({ id, kind, status }) => ({ id, kind: kind as ProposalKind, status }));
+}
+
 /** One of the owner's proposals as its card and the inbox's detail show it. */
 export async function getProposalView(
 	ownerId: string,
