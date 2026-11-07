@@ -134,6 +134,15 @@ describe('Strength: below target RPE consistently → consider adding load', () 
 			from: 200,
 			to: 205
 		});
+
+		// Past one plate's rounding, the step is the table's 2.5 %: 200 kg → 205 kg.
+		const heavy = bench({ loadValue: 200 });
+		expect(decideFromResults(sessions(heavy, 7, 7, 7), heavy, null, KG)).toMatchObject({
+			action: 'add_load',
+			from: 200,
+			to: 205,
+			pct: 2.5
+		});
 	});
 
 	it('a lower-body lift takes +5 % only when all three sessions agree; two of three take +2.5 %', () => {
