@@ -91,10 +91,10 @@ the direct URL fails):
 | `DATABASE_URL`                                                                  | **required**: `production` branch, pooled (`-pooler` host) | **required**: `preview` branch, pooled | App traffic. Env validation refuses to start without it.                    |
 | `DATABASE_URL_UNPOOLED`                                                         | **required**: `production` branch, direct                  | **required**: `preview` branch, direct | Migrations in the build: `vercel-build.sh` fails without it.                |
 | `OWNER_SETUP_TOKEN_HASH`                                                        | only during the owner setup (below), sensitive             | optional: only to set a preview up     | Unset: `/setup` is a 404.                                                   |
-| `ANTHROPIC_API_KEY`                                                             | exists; not needed until `LLM_PROVIDER=anthropic` (M5)     | not set                                | Required only with `LLM_PROVIDER=anthropic`.                                |
+| `ANTHROPIC_API_KEY`                                                             | exists; used once the coach launches (M5)                  | not set                                | Missing: the coach is unavailable; the app is unaffected.                   |
 | `ENABLE_TEST_ROUTES`                                                            | **must not exist**                                         | **must not exist**                     | The server refuses to start with it on any Vercel deployment.               |
 | `APP_ENV`                                                                       | unset (or `production`)                                    | unset (or `preview`)                   | Any other value on production refuses to start; Vercel's `VERCEL_ENV` wins. |
-| `LLM_PROVIDER`, `LOG_LEVEL`, `DB_POOL_MAX`, `DB_QUERY_TIMEOUT_MS`, `SENTRY_DSN` | optional (defaults: `mock`, `info`, `5`, `10000`, off)     | optional                               | Validated when set.                                                         |
+| `LLM_PROVIDER`, `LOG_LEVEL`, `DB_POOL_MAX`, `DB_QUERY_TIMEOUT_MS`, `SENTRY_DSN` | optional (defaults: unset, `info`, `5`, `10000`, off)      | optional                               | Validated when set.                                                         |
 
 Vercel's system variables (`VERCEL`, `VERCEL_ENV`, `VERCEL_URL`, `VERCEL_BRANCH_URL`,
 `VERCEL_GIT_COMMIT_SHA`) must stay exposed (Settings → Environment Variables → "Automatically
@@ -114,7 +114,7 @@ from outside, signed out, with no secrets:
 | `GET /api/health`                                                       | 200 with `ok: true` and `db: "up"` (a real query)                                                                                                                                                                          |
 | `GET /`                                                                 | 200: the sign-in screen with passkey sign-in, not the "passkeys aren't available on this address" notice                                                                                                                   |
 | Security headers on `/`                                                 | CSP with `frame-ancestors 'none'`, `object-src 'none'` and no inline scripts; `Strict-Transport-Security`; `nosniff`; `X-Frame-Options: DENY`; referrer and permissions policies; COOP; `X-Robots-Tag: noindex`; `private` |
-| Security headers on the prerendered pages (`/offline`)                  | Exactly `STATIC_PAGE_HEADERS`, sent from `vercel.json`: the hooks' security headers (not `private`: these pages hold no personal data) and a CSP of `frame-ancestors 'none'`                                               |
+| Security headers on the prerendered pages (`/offline`, `/workout`)      | Exactly `STATIC_PAGE_HEADERS`, sent from `vercel.json`: the hooks' security headers (not `private`: these pages hold no personal data) and a CSP of `frame-ancestors 'none'`                                               |
 | `GET /today`                                                            | 303 to `/?next=%2Ftoday`                                                                                                                                                                                                   |
 | `POST /api/vitals`, `POST /api/client-errors` (with the app's `Origin`) | 401 `unauthenticated` (without the `Origin` the CSRF check would answer 403 first)                                                                                                                                         |
 | `POST /api/test-support/session`                                        | 404: the test-only session route does not exist in production                                                                                                                                                              |
@@ -316,7 +316,7 @@ ID under "What exists".
   `'unsafe-inline'` because Svelte renders `style` attributes. e2e asserts the header and that an
   injected inline script is refused.
 - **Static and prerendered files** (`/_app/immutable/*`, icons, `manifest.webmanifest`,
-  `robots.txt`, `/offline`) are served by the CDN (Vercel) or `sirv` (adapter-node) without
+  `robots.txt`, `/offline`, `/workout`) are served by the CDN (Vercel) or `sirv` (adapter-node) without
   running hooks. They contain no personal data. On Vercel the prerendered pages get the same
   headers from `vercel.json`, plus a CSP header of `frame-ancestors 'none'`: their own CSP is a
   `<meta>` tag, which cannot express it. Other static files, and every static file under `sirv`,

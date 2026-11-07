@@ -22,10 +22,11 @@ describe('parseEnv', () => {
 			DB_POOL_MAX: 5,
 			DB_QUERY_TIMEOUT_MS: 10_000,
 			LOG_LEVEL: 'info',
-			LLM_PROVIDER: 'mock',
 			ENABLE_TEST_ROUTES: false
 		});
 		expect(env.SENTRY_DSN).toBeUndefined();
+		// Unset is not 'mock': production runs the real coach when it is unset (provider/select.ts).
+		expect(env.LLM_PROVIDER).toBeUndefined();
 	});
 
 	it('derives appEnv from APP_ENV, then VERCEL_ENV, then NODE_ENV', () => {
@@ -166,11 +167,25 @@ describe('parseEnv', () => {
 			}
 		});
 
-		it('requires an API key only for the anthropic provider', () => {
-			expect(issuesOf({ DATABASE_URL: DB, LLM_PROVIDER: 'anthropic' })).toEqual([
-				expect.stringMatching(/^ANTHROPIC_API_KEY: required/)
-			]);
-			expect(issuesOf({ DATABASE_URL: DB, LLM_PROVIDER: 'mock' })).toEqual([]);
+		it('accepts every LLM_PROVIDER, with or without a key: select.ts decides, startup never fails', () => {
+			for (const LLM_PROVIDER of ['mock', 'anthropic', 'off'] as const) {
+				expect(parseEnv({ DATABASE_URL: DB, LLM_PROVIDER }).LLM_PROVIDER).toBe(LLM_PROVIDER);
+				expect(
+					parseEnv({ DATABASE_URL: DB, NODE_ENV: 'production', LLM_PROVIDER }).LLM_PROVIDER
+				).toBe(LLM_PROVIDER);
+			}
+			expect(issuesOf({ DATABASE_URL: DB, LLM_PROVIDER: 'anthropic' })).toEqual([]);
+			expect(
+				issuesOf({ DATABASE_URL: DB, LLM_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: '' })
+			).toEqual([]);
+		});
+
+		it('rejects an unknown LLM_PROVIDER', () => {
+			for (const bad of ['openai', 'Mock', 'OFF']) {
+				expect(issuesOf({ DATABASE_URL: DB, LLM_PROVIDER: bad })).toEqual([
+					expect.stringMatching(/^LLM_PROVIDER:/)
+				]);
+			}
 		});
 	});
 
