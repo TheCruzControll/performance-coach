@@ -99,3 +99,4 @@
 - 18:45 UTC MERGED #211 today-lazy-panels (Sol r4, click-through pass, /today 56.8 KB).
 - 19:00 UTC owner: drop auth-change-email (dropped.json); backups stay off; offline mode not needed but keep what's built, no extra offline scope. 401 total.
 - 19:10 UTC owner: 3 waves allowed (GOAL.md updated). Started M9 backend wave wf_9c9c3e4e2fe0 (limit 2, 8 slices: restore/backup chain + recovery-codes-120-bit), backups built but switched off.
+- 19:25 UTC PAUSED for cloud resume. Waves stopped by owner; in-flight branches pushed (m3/42, m3/48, m4/32, m4/33, m9/12 wip); HANDOFF 5e4c2b2. caffeinate and status server stopped.
