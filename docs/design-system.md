@@ -377,6 +377,9 @@ later-pass screen).
   the watermark fading out before the frame's edge. CSS only: no route gains initial JS.
 - **Session** (`/train/session/[key]`): readable, one column centred beside the rail; its stats,
   exercise cards and run timeline keep the phone's order, and Back has hover and focus states.
+- **Onboarding** (`/onboarding/[[step]]`): outside the shell, one readable column centred in the
+  window; Continue and Skip stay sticky at the column's foot, and Back and Finish later have hover
+  and focus states.
 
 ### Verification
 
