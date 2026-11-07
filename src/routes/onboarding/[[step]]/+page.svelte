@@ -2,6 +2,9 @@
 	import { onMount } from 'svelte';
 	import { startVitalsReporting } from '#lib/client/vitals.ts';
 	import { STEP_INFO, type OnboardingStep } from '#lib/domain/profile/onboarding.ts';
+	import Button from '#lib/ui/components/Button.svelte';
+	import Icon from '#lib/ui/components/Icon.svelte';
+	import { stepHref } from '../paths';
 	import Step from './Step.svelte';
 	import type { PageProps } from './$types';
 
@@ -57,6 +60,13 @@
 		}
 	};
 
+	/** What a first visit is told is ahead. */
+	const AHEAD = [
+		{ icon: 'target', title: 'Goals & priorities', text: 'An event, a general goal, or several' },
+		{ icon: 'bolt', title: 'Experience & strength', text: 'Maxes optional: week one finds them' },
+		{ icon: 'today', title: 'Your week', text: 'Days, time and the classes you already have' }
+	] as const;
+
 	// Signed in (owner only), so real-user monitoring runs here as in the app shell, once idle.
 	onMount(() => {
 		const start = () => void startVitalsReporting();
@@ -84,14 +94,100 @@
 			context={data.context}
 			profile={data.profile}
 			fromReview={data.fromReview}
-			title={COPY[step].title}
+			title={data.resume ? 'Welcome back' : COPY[step].title}
 			lede={COPY[step].lede}
-			continueLabel={COPY[step].next ?? 'Continue'}
-		/>
+			continueLabel={data.resume ? 'Continue' : (COPY[step].next ?? 'Continue')}
+		>
+			<!-- Opened from the review's Edit, the welcome is only its name and units: neither the
+			     first visit's outline nor the return visit's card. -->
+			{#if step === 'welcome' && !data.fromReview}
+				{#if data.resume}
+					<!-- A return visit: the furthest step advanced, with everything before it saved. -->
+					<div class="resume" data-testid="resume-card">
+						<p>
+							You stopped at <strong>{STEP_INFO[data.resume].title}</strong>. Your answers so far
+							are saved.
+						</p>
+						<Button
+							variant="secondary"
+							href={stepHref(data.resume)}
+							iconEnd="arrow-right"
+							data-testid="resume-link">Pick up there</Button
+						>
+					</div>
+				{:else}
+					<ul class="ahead" aria-label="What we’ll ask">
+						{#each AHEAD as item (item.title)}
+							<li>
+								<span class="glyph" aria-hidden="true"><Icon name={item.icon} size={20} /></span>
+								<span class="ahead-text">
+									<span class="ahead-title">{item.title}</span>
+									<span>{item.text}</span>
+								</span>
+							</li>
+						{/each}
+					</ul>
+				{/if}
+			{/if}
+		</Step>
 	{/each}
 </main>
 
 <style>
+	.ahead {
+		display: grid;
+		gap: var(--space-1);
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+
+	.ahead li {
+		display: flex;
+		align-items: center;
+		gap: var(--space-4);
+		min-height: 3.5rem;
+	}
+
+	.glyph {
+		display: grid;
+		flex: none;
+		place-items: center;
+		width: 2.75rem;
+		height: 2.75rem;
+		border-radius: var(--radius-md);
+		background: var(--color-accent-subtle);
+		color: var(--color-accent-text);
+	}
+
+	.ahead-text {
+		display: grid;
+		font-size: var(--text-sm);
+		color: var(--color-text-secondary);
+	}
+
+	.ahead-title {
+		font-size: var(--text-base);
+		font-weight: var(--weight-semibold);
+		color: var(--color-text);
+	}
+
+	.resume {
+		display: grid;
+		justify-items: start;
+		gap: var(--space-3);
+		padding: var(--space-4);
+		border-radius: var(--radius-lg);
+		border: 1px solid color-mix(in srgb, var(--color-accent) 35%, transparent);
+		background: var(--color-accent-subtle);
+		font-size: var(--text-sm);
+		color: var(--color-text-secondary);
+	}
+
+	.resume strong {
+		color: var(--color-text);
+	}
+
 	.onboarding {
 		position: relative;
 		width: 100%;

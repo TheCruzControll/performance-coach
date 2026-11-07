@@ -48,7 +48,7 @@ function sectionOf(step: OnboardingStep): SectionKey | null {
 export const load: PageServerLoad = async ({ locals, params, url }) => {
 	const step = stepOf(params.step);
 	const owner = ownerId(locals);
-	const { complete, steps, progress } = await getOnboarding(owner);
+	const { complete, steps, progress, resume } = await getOnboarding(owner);
 	if (complete) redirect(303, todayHref());
 	// Specifics without a running or Muay Thai goal, say: on to the next step that applies.
 	if (!steps.includes(step)) redirect(303, stepHref(nextStep(steps, step)));
@@ -67,7 +67,10 @@ export const load: PageServerLoad = async ({ locals, params, url }) => {
 		fromReview: step !== 'review' && fromReview(url),
 		steps,
 		completed: progress.completed.filter((s) => steps.includes(s)),
-		skipped: progress.skipped.filter((s) => steps.includes(s))
+		skipped: progress.skipped.filter((s) => steps.includes(s)),
+		// On the welcome, once the owner has moved past it: the step to pick up at. Not when the
+		// review's Edit opened it: the owner is editing their name, and goes back to the review.
+		resume: step === 'welcome' && !fromReview(url) && resume !== 'welcome' ? resume : null
 	};
 };
 

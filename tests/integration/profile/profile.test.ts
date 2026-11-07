@@ -256,6 +256,12 @@ describe('onboarding progress', () => {
 			expect(state.resume).toBe('equipment');
 			expect(state.fraction).toBeCloseTo(4 / 9);
 
+			// Finishing an earlier step again moves on from it but keeps the furthest step.
+			expect(await advanceOnboarding(owner, { step: 'welcome', action: 'complete' }, { db })).toBe(
+				'goals'
+			);
+			expect((await getOnboarding(owner, { db })).resume).toBe('equipment');
+
 			await rememberOnboardingStep(owner, 'goals', { db });
 			expect((await getOnboarding(owner, { db })).resume).toBe('goals');
 		});

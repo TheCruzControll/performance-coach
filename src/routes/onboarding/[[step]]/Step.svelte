@@ -9,10 +9,12 @@
   marking it done, and leave even when it cannot save yet. Review shows every answer
   (ProfileSummary, also on demand), each with an Edit that opens its step and comes back to the
   review: from there Continue, Skip and Back return to the review (Back and Finish later still
-  save a changed step first). Start coaching finishes the setup.
+  save a changed step first). Start coaching finishes the setup. The page can put more between
+  the title and the editor: the welcome's intro, or on a return visit its card to pick up at the
+  furthest step advanced.
 -->
 <script lang="ts">
-	import { onMount, type Component, type ComponentProps } from 'svelte';
+	import { onMount, type Component, type ComponentProps, type Snippet } from 'svelte';
 	import { goto } from '$app/navigation';
 	import type { SectionForm } from '#lib/client/section-form.svelte.ts';
 	import { previousStep, STEP_INFO, type OnboardingStep } from '#lib/domain/profile/onboarding.ts';
@@ -48,6 +50,8 @@
 		title: string;
 		lede: string;
 		continueLabel: string;
+		/** Shown between the title and the editor (the welcome's intro or resume card). */
+		children?: Snippet;
 	}
 
 	let {
@@ -62,7 +66,8 @@
 		fromReview,
 		title,
 		lede,
-		continueLabel
+		continueLabel,
+		children
 	}: Props = $props();
 
 	const index = $derived(steps.indexOf(step));
@@ -196,6 +201,7 @@
 		</p>
 		<h1 class="title">{title}</h1>
 		<p class="lede">{lede}</p>
+		{#if children}<div class="lead">{@render children()}</div>{/if}
 	</div>
 
 	<div class="body" aria-busy={!form && !failed} data-testid="section-editor">
@@ -351,6 +357,10 @@
 
 	.lede {
 		color: var(--color-text-secondary);
+	}
+
+	.lead {
+		margin-top: var(--space-4);
 	}
 
 	.body {

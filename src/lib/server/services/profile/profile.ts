@@ -190,8 +190,9 @@ export async function getOnboarding(
 }
 
 /**
- * Record a finished step (`complete` after its save, or `skip` for an optional step) and move
- * the resume point to the next applicable step. Returns that step.
+ * Record a finished step (`complete` after its save, or `skip` for an optional step) and return
+ * the next applicable step. The resume point only moves forward: finishing an earlier step again
+ * (the welcome on a return visit, say) keeps the furthest step advanced.
  */
 export async function advanceOnboarding(
 	ownerId: string,
@@ -213,6 +214,8 @@ export async function advanceOnboarding(
 			const profile = await repo.ensureProfile(ownerId);
 			const steps = onboardingSteps(await trainedDisciplines(repo, ownerId));
 			const next = nextStep(steps, input.step);
+			const stored = profile.onboardingStep;
+			const resume = stored && steps.indexOf(stored) > steps.indexOf(next) ? stored : next;
 			const completed = new Set(profile.onboardingCompleted);
 			const skipped = new Set(profile.onboardingSkipped);
 			if (input.action === 'complete') {
@@ -225,7 +228,7 @@ export async function advanceOnboarding(
 			await repo.updateProfile(
 				ownerId,
 				{
-					onboardingStep: next,
+					onboardingStep: resume,
 					onboardingCompleted: [...completed],
 					onboardingSkipped: [...skipped]
 				},
