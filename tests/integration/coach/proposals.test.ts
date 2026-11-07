@@ -463,11 +463,15 @@ describe('acceptProposal', () => {
 			const [bench] = await exerciseIds(db, 'bench_press');
 			const { proposal } = await createProposal(ownerId, { proposal: preference(bench!) }, deps);
 
-			// Until its applier lands, the stub refuses and nothing is written.
+			// An applier that refuses, as a stub does until its slice lands, writes nothing.
+			vi.spyOn(APPLIERS, 'preference_update').mockRejectedValue(
+				new ApplierUnavailableError('preference_update')
+			);
 			await expect(acceptProposal(ownerId, proposal.id, deps)).rejects.toBeInstanceOf(
 				ApplierUnavailableError
 			);
 			expect((await getProposalView(ownerId, proposal.id, deps)).status).toBe('proposed');
+			vi.restoreAllMocks();
 
 			// An applier that writes and then fails leaves nothing behind: it shares the transaction.
 			const failing = vi
