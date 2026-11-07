@@ -12,14 +12,14 @@
 	import ListRow from '#lib/ui/components/ListRow.svelte';
 	import PageHeader from '#lib/ui/components/PageHeader.svelte';
 	import Section from '#lib/ui/components/Section.svelte';
-	import Skeleton from '#lib/ui/components/Skeleton.svelte';
 	import Stat from '#lib/ui/components/Stat.svelte';
 	import { stepHref } from '../../onboarding/paths';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
+	const setup = $derived(data.setup);
 
-	/** The setup card failed to load: Retry runs the load again (the card streams in afresh). */
+	/** The setup card failed to load: Retry runs the load again. */
 	let retrying = $state(false);
 	async function retry() {
 		retrying = true;
@@ -90,91 +90,71 @@
 </ol>
 
 <div class="stack">
-	<!-- The setup card streams in (+page.server.ts): a skeleton of its shape until then. -->
-	{#await data.setup}
-		<Card padding="lg" data-testid="today-setup-loading">
-			<div class="session" aria-busy="true">
-				<Skeleton width="6.5rem" height="1.5rem" radius="var(--radius-full)" />
-				<Skeleton width="80%" height="1.875rem" radius="var(--radius-sm)" />
-				<div class="lines">
-					<Skeleton height="0.875rem" />
-					<Skeleton height="0.875rem" />
-					<Skeleton width="60%" height="0.875rem" />
-				</div>
+	<!-- The setup card is server-rendered (+page.server.ts), so it paints with the screen. -->
+	{#if setup && !setup.complete}
+		{@const started = setup.done > 0}
+		<Card tone="accent" padding="lg" data-testid="today-setup">
+			<div class="session">
+				<Badge tone="accent" icon="target">{started ? 'Setup in progress' : 'First step'}</Badge>
+				<h2 class="session-title">
+					{started ? 'Finish setting up your profile' : 'Set up your training profile'}
+				</h2>
+				<p class="session-copy">
+					Your coach plans each week around your goals, schedule and recent training. About five
+					minutes: skip what you don’t know yet, and change anything later in Profile.
+				</p>
 				<div class="progress">
-					<Skeleton width="8rem" height="0.875rem" />
-					<Skeleton height="0.375rem" radius="var(--radius-full)" />
+					<p class="count numeric" data-testid="today-setup-count">
+						{setup.done} of {setup.total} steps done
+					</p>
+					<!-- The count above says it in words; the bar only shows it. -->
+					<span class="bar" aria-hidden="true">
+						<span class="fill" style:width="{(setup.done / setup.total) * 100}%"></span>
+					</span>
 				</div>
-				<Skeleton height="var(--touch-target)" radius="var(--radius-full)" />
-				<span class="visually-hidden">Loading your setup…</span>
+				<Button
+					href={stepHref(setup.next)}
+					iconEnd="arrow-right"
+					block
+					data-testid="today-setup-continue"
+				>
+					{started ? `Continue: ${STEP_INFO[setup.next].title}` : 'Start setup'}
+				</Button>
 			</div>
 		</Card>
-	{:then setup}
-		{#if setup && !setup.complete}
-			{@const started = setup.done > 0}
-			<Card tone="accent" padding="lg" data-testid="today-setup">
-				<div class="session">
-					<Badge tone="accent" icon="target">{started ? 'Setup in progress' : 'First step'}</Badge>
-					<h2 class="session-title">
-						{started ? 'Finish setting up your profile' : 'Set up your training profile'}
-					</h2>
-					<p class="session-copy">
-						Your coach plans each week around your goals, schedule and recent training. About five
-						minutes: skip what you don’t know yet, and change anything later in Profile.
-					</p>
-					<div class="progress">
-						<p class="count numeric" data-testid="today-setup-count">
-							{setup.done} of {setup.total} steps done
-						</p>
-						<!-- The count above says it in words; the bar only shows it. -->
-						<span class="bar" aria-hidden="true">
-							<span class="fill" style:width="{(setup.done / setup.total) * 100}%"></span>
-						</span>
-					</div>
-					<Button
-						href={stepHref(setup.next)}
-						iconEnd="arrow-right"
-						block
-						data-testid="today-setup-continue"
-					>
-						{started ? `Continue: ${STEP_INFO[setup.next].title}` : 'Start setup'}
+	{:else if setup}
+		<Card tone="accent" padding="lg" data-testid="today-session">
+			<div class="session">
+				<Badge tone="accent" icon="target">First week</Badge>
+				<h2 class="session-title">Nothing scheduled yet</h2>
+				<p class="session-copy">
+					Your coach plans each week around your goals, schedule and recent training. Week one
+					establishes your baseline, so 1RMs are optional.
+				</p>
+				<p class="session-next" data-testid="today-next-step">
+					<Icon name="check" size={16} />
+					<span class="next-text">Training profile</span>
+					<Badge tone="positive">Ready</Badge>
+				</p>
+			</div>
+		</Card>
+	{:else}
+		<Card padding="lg" data-testid="today-setup-error">
+			<EmptyState
+				compact
+				icon="alert"
+				tone="combat"
+				title="Couldn’t load your setup"
+				description="Your profile is safe. Check your connection, then try again."
+			>
+				{#snippet actions()}
+					<Button variant="secondary" icon="refresh" loading={retrying} onclick={retry}>
+						Retry
 					</Button>
-				</div>
-			</Card>
-		{:else if setup}
-			<Card tone="accent" padding="lg" data-testid="today-session">
-				<div class="session">
-					<Badge tone="accent" icon="target">First week</Badge>
-					<h2 class="session-title">Nothing scheduled yet</h2>
-					<p class="session-copy">
-						Your coach plans each week around your goals, schedule and recent training. Week one
-						establishes your baseline, so 1RMs are optional.
-					</p>
-					<p class="session-next" data-testid="today-next-step">
-						<Icon name="check" size={16} />
-						<span class="next-text">Training profile</span>
-						<Badge tone="positive">Ready</Badge>
-					</p>
-				</div>
-			</Card>
-		{:else}
-			<Card padding="lg" data-testid="today-setup-error">
-				<EmptyState
-					compact
-					icon="alert"
-					tone="combat"
-					title="Couldn’t load your setup"
-					description="Your profile is safe. Check your connection, then try again."
-				>
-					{#snippet actions()}
-						<Button variant="secondary" icon="refresh" loading={retrying} onclick={retry}>
-							Retry
-						</Button>
-					{/snippet}
-				</EmptyState>
-			</Card>
-		{/if}
-	{/await}
+				{/snippet}
+			</EmptyState>
+		</Card>
+	{/if}
 
 	<Section title="This week">
 		<div class="stats">
@@ -268,11 +248,6 @@
 	.session-copy {
 		font-size: var(--text-sm);
 		color: var(--color-text-secondary);
-	}
-
-	.lines {
-		display: grid;
-		gap: var(--space-2);
 	}
 
 	.progress {
