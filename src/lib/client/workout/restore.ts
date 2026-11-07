@@ -6,6 +6,8 @@
  * - It never creates 'pc-offline' (the upgrade of a missing one is aborted), and it closes at once.
  * - A 'pc-offline' without the workout stores reads as none: the store recreates it when it opens.
  * - A database a newer app has upgraded is 'upgraded'.
+ * - signedOut: a 401 purged this device and the server has not answered as the owner since
+ *   (store.ts signedOut), so the page shows none of it until the sync engine says otherwise.
  * - It rejects when this browser refuses IndexedDB (missing, private mode): the page says so.
  */
 import type { WorkoutInputs } from '#lib/domain/workout/project.ts';
@@ -14,7 +16,7 @@ import { DB_NAME, DB_VERSION, OUTBOX_INDEXES, STORES } from './names.ts';
 import type { OutboxEntry } from './outbox-rules.ts';
 
 export type RestoreRead =
-	{ status: 'none' | 'upgraded' } | { status: 'found'; inputs: WorkoutInputs };
+	{ status: 'none' | 'upgraded' } | { status: 'found'; inputs: WorkoutInputs; signedOut: boolean };
 
 const result = <T>(request: IDBRequest<T>) =>
 	new Promise<T>((resolve, reject) => {
@@ -41,7 +43,7 @@ export async function readActive(): Promise<RestoreRead> {
 	if (!db) return { status: 'none' };
 	try {
 		if (db.version > DB_VERSION) return { status: 'upgraded' };
-		const names = [STORES.workouts, STORES.outbox];
+		const names = [STORES.workouts, STORES.outbox, STORES.meta];
 		if (!names.every((name) => db.objectStoreNames.contains(name))) return { status: 'none' };
 		const tx = db.transaction(names, 'readonly');
 		const workouts = await result<StoredWorkout[]>(tx.objectStore(STORES.workouts).getAll());
@@ -51,9 +53,11 @@ export async function readActive(): Promise<RestoreRead> {
 		if (!active) return { status: 'none' };
 		const byWorkout = tx.objectStore(STORES.outbox).index(OUTBOX_INDEXES.byWorkout);
 		const entries = await result<OutboxEntry[]>(byWorkout.getAll(active.id));
+		const flag = await result(tx.objectStore(STORES.meta).count('signedOut'));
 		const { id: workoutId, kit, canonical, device } = active;
 		const pending = entries.map((entry) => entry.envelope);
-		return { status: 'found', inputs: { workoutId, kit, canonical, pending, device } };
+		const inputs = { workoutId, kit, canonical, pending, device };
+		return { status: 'found', inputs, signedOut: flag > 0 };
 	} finally {
 		db.close();
 	}

@@ -19,6 +19,7 @@ import type {
 } from '@anthropic-ai/sdk/resources/beta/messages';
 import { parseIsoDate, weekdayOf, type IsoDate } from '../../../domain/calendar.ts';
 import type { MemorySnapshot } from '../../../domain/coach/memory.ts';
+import { memoryData } from '../../../domain/coach/memory-format.ts';
 import { parseRef } from '../../../domain/coach/sources.ts';
 import { WEEKDAY_INFO } from '../../../domain/profile/catalog.ts';
 import { canonicalJson } from '../../../domain/programming/random.ts';
@@ -168,37 +169,16 @@ export function turnContext(facts: TurnFacts): BetaSystemMessageParam {
 }
 
 /**
- * Snapshot fields whose strings the server itself writes (dates, vocabulary, source ids); every
- * other string is stored text and becomes untrusted_text.
- */
-const STRUCTURAL = new Set(
-	'asOf date targetDate decidedOn status stance origin kind direction severity scope decider unit type id workoutId'.split(
-		' '
-	)
-);
-
-/** The snapshot as data: every stored string wrapped, everything else as it is. */
-function asData(value: unknown, key?: string): unknown {
-	if (typeof value === 'string')
-		return key !== undefined && STRUCTURAL.has(key) ? value : untrusted(value, UNTRUSTED_MAX);
-	if (Array.isArray(value)) return value.map((item) => asData(item));
-	if (value && typeof value === 'object')
-		return Object.fromEntries(
-			Object.entries(value).map(([field, child]) => [field, asData(child, field)])
-		);
-	return value;
-}
-
-/**
- * The message that opens a segment: the memory snapshot, and the previous segment's summary when
- * the segment continues a thread, as labelled data in a user message.
+ * The message that opens a segment: the memory snapshot (memoryData: every stored string wrapped,
+ * capped by section priority), and the previous segment's summary when the segment continues a
+ * thread, as labelled data in a user message.
  */
 export function segmentPreamble(
 	snapshot: MemorySnapshot,
 	summary: string | null = null
 ): BetaUserMessageParam {
 	const data = {
-		memory: asData(snapshot),
+		memory: memoryData(snapshot),
 		previousSummary: summary === null ? null : untrusted(summary, SUMMARY_MAX)
 	};
 	return {

@@ -8,6 +8,8 @@
  *
  * - One row per applied mutation, keyed by the mutation's id. Rejected, deferred and retried
  *   mutations leave no row, so a corrected payload can be re-sent under the same id.
+ * - One row, type 'discarded', per id the owner discarded on the device: a request still carrying
+ *   it then answers 'duplicate', so a discarded change never lands after a newer one.
  * - owner_id is ownerRef, so the test cleanup (withCommitted) and the e2e reset clear it.
  * - type is open: the sync endpoint's schemas validate the contract's types and Postgres never
  *   CHECKs them, so later milestones add types without a migration.

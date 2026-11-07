@@ -121,11 +121,14 @@ type Step =
 	| 'stranger'
 	/** No answer, ever: only an abort ends it. */
 	| 'hang'
+	/** No answer, but the server goes on and applies the batch when the test says (landLate). */
+	| 'late'
 	/** Cancelled by the browser, as when the page is being left. */
 	| 'cancelled';
 
 interface Received {
 	ids: string[];
+	discarded: string[];
 	keepalive: boolean;
 	bytes: number;
 	signal: AbortSignal | undefined;
@@ -156,6 +159,8 @@ function fakeServer() {
 	let maxInFlight = 0;
 	/** Real milliseconds each answer takes, so concurrent requests overlap. */
 	let latency = 0;
+	/** The batches the server is still running after the device stopped waiting ('late'). */
+	const running: Mutation[][] = [];
 
 	const rowsOf = (workoutId: string) =>
 		replay(strengthTable, {
@@ -202,20 +207,30 @@ function fakeServer() {
 
 	async function fetch(url: string, init: RequestInit): Promise<Response> {
 		const body = init.body as string;
-		const { mutations } = JSON.parse(body) as SyncRequest;
+		const { mutations, discarded = [] } = JSON.parse(body) as SyncRequest;
 		received.push({
 			ids: mutations.map((m) => m.id),
+			discarded,
 			keepalive: init.keepalive === true,
 			bytes: encoder.encode(body).length,
 			signal: init.signal ?? undefined,
 			url
 		});
 		const step = script.shift() ?? 'ok';
+		// Claimed first, as the real server does: a request still carrying one answers duplicate.
+		if (step === 'ok') for (const id of discarded) ledger.add(id);
 		maxInFlight = Math.max(maxInFlight, ++inFlight);
 		try {
 			if (latency > 0) await new Promise((resolve) => setTimeout(resolve, latency));
 			switch (step) {
 				case 'hang':
+					return await new Promise<never>((_, reject) =>
+						init.signal!.addEventListener('abort', () =>
+							reject(new DOMException('This operation was aborted', 'AbortError'))
+						)
+					);
+				case 'late':
+					running.push(mutations);
 					return await new Promise<never>((_, reject) =>
 						init.signal!.addEventListener('abort', () =>
 							reject(new DOMException('This operation was aborted', 'AbortError'))
@@ -252,6 +267,8 @@ function fakeServer() {
 		refuse,
 		script,
 		rowsOf,
+		/** The server reaches the batches it was still running ('late'), after everything else. */
+		landLate: () => running.splice(0).map(apply),
 		/** The rows a create made: one, however often its mutation arrived. */
 		rows: (entityId: string) => applied.filter((m) => m.id === entityId).length,
 		/** How often a mutation arrived, in any request. */
@@ -856,7 +873,7 @@ describe('a lost session', () => {
 		const workouts = (await after.getAll(STORES.workouts)) as StoredWorkout[];
 		expect(await after.getAll(STORES.kits)).toEqual([]);
 		expect(await after.getAll(STORES.library)).toEqual([]);
-		expect(await after.getAll(STORES.meta)).toEqual([]);
+		expect(await after.getAll(STORES.meta)).toEqual([{ key: 'signedOut', value: true }]);
 		after.close();
 		expect(workouts.map((w) => w.id)).toEqual([W2]);
 		const [kept] = workouts;
@@ -879,6 +896,17 @@ describe('a lost session', () => {
 		expect(server.received).toHaveLength(requests);
 		expect(clock.pending).toBe(0);
 		expect(await outboxIds()).toEqual(['s3', 's4']);
+
+		// A later page still shows it signed out, offline too, until the server answers as the owner.
+		sync.stop();
+		online = false;
+		const later = engine(store);
+		await later.flush();
+		expect(later.status()).toEqual({ state: 'signed-out', waiting: 2 });
+		online = true;
+		page.window.dispatchEvent(new Event('online'));
+		await eventually(() => expect(later.status()?.state).not.toBe('signed-out'));
+		expect(await store.signedOut()).toBe(false);
 	});
 
 	it('403 passkey_required keeps everything and stops', async () => {
@@ -966,5 +994,102 @@ describe('pagehide', () => {
 		expect(keepalive[0]!.bytes).toBeGreaterThan(SYNC_LIMITS.keepaliveBytes - 4 * KB);
 		expect(beacons).toHaveLength(1);
 		expect(keepalive[0]!.bytes + beacons[0]!).toBeLessThanOrEqual(64 * KB);
+	});
+});
+
+describe('a discard while a request may still be running on the server (finding F1)', () => {
+	it('sends the discarded id first, so the late request never lands it after the newer edit', async () => {
+		const store = await open();
+		await withSets(store, 's1');
+		const e = engine(store);
+		await eventually(async () => expect(await outboxIds()).toEqual([]));
+
+		// The edit's POST passes 15 s while the server is still running it.
+		server.script.push('late');
+		const stale = edit('s1', 6);
+		await saved(store, stale);
+		void e.flush();
+		await eventually(() => expect(server.received.at(-1)!.ids).toEqual([stale.id]));
+		clock.advance(REQUEST_TIMEOUT_MS);
+		await eventually(async () => expect((await outbox())[0]!.attempts).toBe(1));
+
+		// The owner discards it and edits the set again.
+		await store.discard((await outbox())[0]!.seq);
+		const newer = edit('s1', 4);
+		await saved(store, newer);
+		clock.advance(BACKOFF.maxMs);
+		await e.flush();
+		await eventually(async () => expect(await outboxIds()).toEqual([]));
+
+		// The server reaches the stale request last: the discarded edit is a duplicate, not applied.
+		expect(server.landLate()).toMatchObject([[{ id: stale.id, status: 'duplicate' }]]);
+		expect(server.rowsOf(W)!.sets.find((s) => s.id === 's1')!.reps).toBe(4);
+		expect(server.received.at(-1)).toMatchObject({ ids: [newer.id], discarded: [stale.id] });
+		expect(await store.discarded()).toEqual([]);
+	});
+
+	it('claims every discarded id before a newer change, more than one request holds too', async () => {
+		const store = await open();
+		await withSets(store, 's1');
+		const stale = edit('s1', 6);
+		const newer = edit('s1', 4);
+		const late: SyncResult[][] = [];
+		const e = engine(store, {
+			async fetch(url, init) {
+				const answer = await server.fetch(url, init);
+				// The server reaches the stale request right after the first one carrying the newer edit.
+				if ((init.body as string).includes(newer.id)) late.push(...server.landLate());
+				return answer;
+			}
+		});
+		await eventually(async () => expect(await outboxIds()).toEqual([]));
+		server.script.push('late');
+		await saved(store, stale);
+		void e.flush();
+		await eventually(() => expect(server.received.at(-1)!.ids).toEqual([stale.id]));
+		clock.advance(REQUEST_TIMEOUT_MS);
+		await eventually(async () => expect((await outbox())[0]!.attempts).toBe(1));
+
+		// As many older discards as one request holds still wait, so the stale edit's id is the 26th.
+		const older = Array.from({ length: SYNC_LIMITS.maxMutations }, fresh);
+		const db = await openDB(DB_NAME);
+		await db.put(STORES.meta, { key: 'discarded', value: older });
+		db.close();
+		await store.discard((await outbox())[0]!.seq);
+		await saved(store, newer);
+		clock.advance(BACKOFF.maxMs);
+		await e.flush();
+		await eventually(async () => expect(await outboxIds()).toEqual([]));
+
+		expect(late).toMatchObject([[{ id: stale.id, status: 'duplicate' }]]);
+		expect(server.rowsOf(W)!.sets.find((s) => s.id === 's1')!.reps).toBe(4);
+		expect(server.received.slice(-2).map((r) => [r.ids, r.discarded.length])).toEqual([
+			[[], SYNC_LIMITS.maxMutations],
+			[[newer.id], 1]
+		]);
+	});
+
+	it('sends a discard alone when nothing else is waiting, and on pagehide', async () => {
+		const store = await open();
+		await withSets(store, 's1');
+		const e = engine(store);
+		await eventually(async () => expect(await outboxIds()).toEqual([]));
+		await saved(store, edit('s1', 6));
+		server.script.push(500);
+		await e.flush();
+		const [entry] = await outbox();
+
+		await store.discard(entry!.seq);
+		await e.flush(); // the store's change flushes; mid-backoff it only reads the outbox
+		page.window.dispatchEvent(new Event('pagehide'));
+		clock.advance(BACKOFF.maxMs);
+
+		await eventually(() => expect(server.received).toHaveLength(4));
+		const last = server.received.slice(-2);
+		expect(last.map((r) => [r.ids, r.discarded, r.keepalive])).toEqual([
+			[[], [entry!.envelope.id], true],
+			[[], [entry!.envelope.id], false]
+		]);
+		await eventually(async () => expect(await store.discarded()).toEqual([]));
 	});
 });

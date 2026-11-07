@@ -43,6 +43,7 @@ import {
 	getWeeklyMileage,
 	getWeeklyMuscleVolume,
 	type LoggedSession,
+	type WeeklyMileage,
 	type PlannedSessionInRange
 } from '../training/history';
 import { TrainingInputError, type TrainingDeps } from '../training/shared';
@@ -353,10 +354,27 @@ export async function getPerformanceTrends(
 	);
 	if (logged.length === 0) return noTraining();
 	const from = mondayOf(logged[0]!.date);
+	// No run, no running trend: the mileage read is left out.
+	const mileage = logged.some((w) => w.kind === 'run')
+		? await getWeeklyMileage(ownerId, { from, to }, {}, deps)
+		: null;
+	return trendsOf(logged, to, mileage);
+}
+
+/**
+ * getPerformanceTrends' figures from the workouts it read: `logged` (by start, none after `to`,
+ * a Sunday) and the weekly mileage of their weeks, or null for no running trend. Pure, so the
+ * coaching memory states the same trends from workouts it read already.
+ */
+export function trendsOf(
+	logged: readonly LoggedSession[],
+	to: IsoDate,
+	mileage: WeeklyMileage | null
+): PerformanceTrends | InsufficientData {
+	if (logged.length === 0) return noTraining();
+	const from = mondayOf(logged[0]!.date);
 	const count = (daysBetween(from, to) + 1) / 7;
 	const runs = logged.filter((w) => w.kind === 'run');
-	// No run, no running trend: the mileage read is left out.
-	const mileage = runs.length > 0 ? await getWeeklyMileage(ownerId, { from, to }, {}, deps) : null;
 
 	const mondays = Array.from({ length: count }, (_, n) => addDays(from, 7 * n));
 	const label = `${count} week${count === 1 ? '' : 's'} from ${from}`;
