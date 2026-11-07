@@ -25,23 +25,20 @@ export const PANELS = {
 } satisfies Record<string, PanelImport>;
 
 /**
- * What the page holds in place of a panel the server rendered, while its code is on its way: the
- * markup itself on the server, and this while the browser hydrates it (Svelte keeps the server's
- * markup of an `{@html}` block as sent, whatever the browser's value).
+ * What the browser's load passes for a panel the server rendered, while Today hydrates: any
+ * markup will do, as PanelLoader keeps the server's (ServedInPlace).
  */
-export const SERVED_IN_PLACE = '<!-- served -->';
+export const SERVED_IN_PLACE = 'served';
 
 /**
- * A panel's markup as static HTML for the server to send in its place. Comments go: they are
- * Svelte's hydration markers, which this markup never needs, and an empty one would end the
- * `{@html}` block early when the browser hydrates it. Text from data is escaped by `render`, so
- * no comment comes from the owner's data. Server only: `import.meta.env.SSR` keeps the renderer
- * out of the browser's build, whose shared chunk it would otherwise grow on every route.
+ * A panel's markup as static HTML for the server to send in its place. Server only:
+ * `import.meta.env.SSR` keeps the renderer out of the browser's build, whose shared chunk it
+ * would otherwise grow on every route.
  */
 export async function servedPanel(Panel: Component, props: Record<string, unknown>) {
 	const server = import.meta.env.SSR ? await import('svelte/server') : undefined;
 	if (!server) throw new Error('A panel is served by the server only');
-	return server.render(Panel, { props }).body.replace(/<!--[\s\S]*?-->/g, '');
+	return server.render(Panel, { props }).body;
 }
 
 /** What each panel's latest import came to: its component, or the error it failed with. */

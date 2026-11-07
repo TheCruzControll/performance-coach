@@ -16,6 +16,8 @@
 	import EmptyState from '#lib/ui/components/EmptyState.svelte';
 	import Skeleton from '#lib/ui/components/Skeleton.svelte';
 	import { preloadPanel, settledPanel, type PanelImport } from './index';
+	import ServedInPlace from './ServedInPlace.svelte';
+	import ServedMarkup from './ServedMarkup.svelte';
 
 	interface Props {
 		load: PanelImport<P>;
@@ -41,6 +43,10 @@
 	let mounted = $state(false);
 	onMount(() => (mounted = true));
 	const held = $derived(mounted && current !== undefined ? undefined : served);
+	/** The markup on the server; in the browser, the same element kept as sent (no props). */
+	const Served: Component<{ markup: string }> = import.meta.env.SSR
+		? ServedMarkup
+		: (ServedInPlace as Component<{ markup: string }>);
 
 	async function fetchPanel() {
 		loading = true;
@@ -66,8 +72,7 @@
 </script>
 
 {#if held}
-	<!-- eslint-disable-next-line svelte/no-at-html-tags -- the server's own render of the panel -->
-	{@html held}
+	<Served markup={held} />
 {:else if Panel}
 	<Panel {...props} />
 {:else}
