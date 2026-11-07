@@ -188,6 +188,42 @@ export function moveOption({ date, planned }: { date: IsoDate; planned: string }
 	return { date, label: shortDate(date), day: WEEKDAY_INFO[weekdayOf(date)].label, planned };
 }
 
+/** A planned exercise on the session screen: its words, and what Swap names. */
+export interface SessionExerciseView extends ExerciseView {
+	/** Its planned exercise's lineage, which a swap names. */
+	lineage: string;
+	/** SWAPPED_ONCE after a one-off swap; null otherwise, a 'never again' swap included. */
+	swapped: string | null;
+}
+
+/** What an exercise swapped for this session only says, under its name. */
+export const SWAPPED_ONCE = 'This session only';
+
+/** An exercise Swap offers: the library row a swap posts, and why it keeps the purpose. */
+export interface SwapChoice {
+	id: string;
+	name: string;
+	reason: string;
+}
+
+/** What one planned exercise can be swapped for, best first, or why nothing fits. */
+export interface SwapChoices {
+	alternatives: SwapChoice[];
+	/** Why none fits the owner's equipment and injuries, when none does; otherwise null. */
+	blocked: string | null;
+}
+
+/** Each exercise's swaps, by its lineage: what the session screen streams. */
+export type SwapOptions = Record<string, SwapChoices>;
+
+/** The planned exercise a Swap sheet opens on. */
+export interface SwapTarget {
+	lineage: string;
+	name: string;
+	/** Undefined while the session screen streams them; null if they could not be read. */
+	choices: SwapChoices | null | undefined;
+}
+
 /** What the session's edit row offers, on the version shown. */
 export interface SessionEdits {
 	/** The version shown: an edit names it, so one made from a page left open conflicts. */
