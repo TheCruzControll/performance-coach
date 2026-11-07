@@ -13,7 +13,9 @@
     (the row's hover, focus or touch), whose Save sends a set.edit and whose Delete, confirmed, a
     set.delete. A chunk that cannot load (gone
     after a deploy) turns the page to 'App updated — reload to continue', never a broken sheet.
-  exercise-navigation adds the ways to change the current exercise.
+  - Under the card, its navigation (Navigation.svelte, loaded after the first render and shown
+    once the store can write, as the logger is, its space reserved meanwhile): Up next, Previous and Next, the swipe across the card and, from 1024 px, the side
+    list. Each is a goTo, stored with the workout, so a reload returns to it.
 -->
 <script lang="ts">
 	import type {
@@ -37,6 +39,7 @@
 	import { onMount } from 'svelte';
 	import ExerciseList from './ExerciseList.svelte';
 	import type LoggerView from './Logger.svelte';
+	import type NavigationView from './Navigation.svelte';
 	import type SetEditor from './SetEditor.svelte';
 
 	interface Props {
@@ -118,14 +121,21 @@
 	});
 
 	// The logger and its prefill rules load after the first render (Logger.svelte says why); it
-	// shows once the store (the Shell's, on idle) can write too.
+	// shows once the store (the Shell's, on idle) can write too. The navigation loads with it.
 	let Logger = $state.raw<typeof LoggerView | null>(null);
+	let Navigation = $state.raw<typeof NavigationView | null>(null);
 	onMount(() => {
 		if (import.meta.env.SSR) return;
 		void load(() => import('./Logger.svelte')).then((module) => {
 			if (module) Logger = module.default;
 		});
+		void load(() => import('./Navigation.svelte')).then((module) => {
+			if (module) Navigation = module.default;
+		});
 	});
+
+	/** The card's area, which a swipe crosses. */
+	let area = $state<HTMLElement>();
 
 	// The set editor: fetched on a row's first intent; a chunk that is gone shows 'App updated'.
 	let Editor = $state.raw<typeof SetEditor | null>(null);
@@ -152,12 +162,21 @@
 
 <div class="main" data-testid="workout-main">
 	{#if current}
-		<ExerciseCard exercise={current}>
-			{#each current.rows as row, i (i)}
-				{@const set = 'set' in row && row.set}
-				<SetRow {row} onedit={set ? (event) => edit(set, event) : undefined} onintent={prefetch} />
-			{/each}
-		</ExerciseCard>
+		<div class="swipe" bind:this={area}>
+			<ExerciseCard exercise={current}>
+				{#each current.rows as row, i (i)}
+					{@const set = 'set' in row && row.set}
+					<SetRow
+						{row}
+						onedit={set ? (event) => edit(set, event) : undefined}
+						onintent={prefetch}
+					/>
+				{/each}
+			</ExerciseCard>
+		</div>
+		<div class="navigation">
+			{#if Navigation && area && active.store}<Navigation {view} {area} store={active.store} />{/if}
+		</div>
 	{/if}
 	{#if current && Logger && active.store}
 		<Logger
@@ -180,5 +199,19 @@
 		flex-direction: column;
 		gap: var(--space-4);
 		min-width: 0;
+	}
+
+	/* Vertical drags scroll the page; sideways ones are the swipe's, so it never scrolls sideways. */
+	.swipe {
+		touch-action: pan-y;
+		-webkit-user-select: none;
+		user-select: none;
+	}
+
+	/* Up next, then Previous and Next: their height is kept while they load. */
+	.navigation {
+		display: grid;
+		gap: var(--space-4);
+		min-height: 9.5rem;
 	}
 </style>

@@ -57,7 +57,6 @@ test.describe('the workout screen on a desktop', () => {
 	test('Minimise has hover and focus-visible states', async ({ page }) => {
 		await openWorkout(page);
 		await page.mouse.move(0, 0);
-		// The exercise list is a progress list until exercise-navigation makes its rows controls.
 		const targets = [page.getByRole('link', { name: 'Minimise' })];
 		for (const target of targets) {
 			const rest = await background(target);
@@ -75,7 +74,7 @@ test.describe('the workout screen on a desktop', () => {
 		await openWorkout(page);
 		await page.locator('body').focus();
 		const order: string[] = [];
-		for (let i = 0; i < 2; i++) {
+		for (let i = 0; i < 3; i++) {
 			await page.keyboard.press('Tab');
 			order.push(
 				await page.evaluate(() =>
@@ -85,7 +84,8 @@ test.describe('the workout screen on a desktop', () => {
 		}
 		expect(order[0]).toBe('Skip to content');
 		expect(order[1]).toBe('Minimise');
-		// Nothing on the strength view takes focus yet (exercise-navigation adds its controls).
-		await expect(page.getByTestId('workout-side').locator('a, button, [tabindex]')).toHaveCount(0);
+		// The side list is one stop, at the current exercise, before the main column.
+		expect(order[2]).toBe('1 Back squat 0/4 sets');
+		await expect(page.getByTestId('workout-side').locator('[tabindex="0"]')).toHaveCount(1);
 	});
 });
