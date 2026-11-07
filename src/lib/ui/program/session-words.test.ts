@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { BASELINE_INSTRUCTION } from '#lib/domain/training/describe.ts';
-import type { OtherDetails, SetPrescription } from '#lib/domain/training/types.ts';
+import type { OtherDetails, RunSegment, SetPrescription } from '#lib/domain/training/types.ts';
 import {
+	adjustValues,
 	BASELINE_CALLOUT,
 	detailsView,
 	disciplineWords,
@@ -255,5 +256,148 @@ describe('moveOption', () => {
 			label: 'Tue 1 Dec',
 			day: 'Tuesday'
 		});
+	});
+});
+
+describe('adjustValues', () => {
+	const segment = (over: Partial<RunSegment>): RunSegment => ({
+		kind: 'easy',
+		repeatGroup: null,
+		repeats: null,
+		distanceMetres: null,
+		durationSeconds: null,
+		paceMinSecondsPerKm: null,
+		paceMaxSecondsPerKm: null,
+		hrZone: null,
+		targetRpe: null,
+		...over
+	});
+
+	it('gives each set prescription its position, its words and only the values it has', () => {
+		const sets = [
+			set({ role: 'top', sets: 1, restSeconds: 180 }),
+			set({
+				role: 'back_off',
+				sets: 2,
+				loadKind: 'percent_1rm',
+				loadValue: 0.72,
+				loadBasis: 'measured',
+				reference1rm: 100,
+				reference1rmUnit: 'kg'
+			}),
+			set({
+				repsMin: 8,
+				repsMax: 10,
+				targetRpe: null,
+				loadKind: 'absolute',
+				loadValue: 60,
+				loadUnit: 'lb',
+				restSeconds: null
+			}),
+			set({ repsMin: null, repsMax: null, seconds: 45 })
+		];
+		const values = adjustValues(
+			{ kind: 'strength', exercises: [{ lineage: 'squat', sets }] },
+			{ distanceUnit: 'km' }
+		);
+		expect(values).toEqual({
+			kind: 'strength',
+			exercises: {
+				squat: [
+					{
+						position: 1,
+						label: 'Top set · Work up to a set of 5 @ RPE 7',
+						sets: 1,
+						repsMin: 5,
+						repsMax: 5,
+						targetRpe: 7,
+						load: null,
+						restSeconds: 180
+					},
+					{
+						position: 2,
+						label: 'Back-off · 2 × 5 @ RPE 7',
+						sets: 2,
+						repsMin: 5,
+						repsMax: 5,
+						targetRpe: 7,
+						load: { value: 0.72, unit: '%' },
+						restSeconds: 120
+					},
+					{
+						position: 3,
+						label: 'Working · 3 × 8–10',
+						sets: 3,
+						repsMin: 8,
+						repsMax: 10,
+						targetRpe: null,
+						load: { value: 60, unit: 'lb' },
+						restSeconds: null
+					},
+					{
+						position: 4,
+						label: 'Working · 3 × 0:45 @ RPE 7',
+						sets: 3,
+						repsMin: null,
+						repsMax: null,
+						targetRpe: 7,
+						load: null,
+						restSeconds: 120
+					}
+				]
+			}
+		});
+	});
+
+	it('names each run segment with its repeats, and keeps paces per km for the owner’s unit', () => {
+		const values = adjustValues(
+			{
+				kind: 'run',
+				segments: [
+					segment({ kind: 'warm_up', durationSeconds: 600, targetRpe: 3 }),
+					segment({
+						kind: 'interval',
+						repeatGroup: 1,
+						repeats: 6,
+						distanceMetres: 400,
+						paceMinSecondsPerKm: 225,
+						paceMaxSecondsPerKm: 240
+					})
+				]
+			},
+			{ distanceUnit: 'mi' }
+		);
+		expect(values).toEqual({
+			kind: 'run',
+			paceUnit: 'mi',
+			segments: [
+				{
+					position: 1,
+					label: 'Warm-up 10:00',
+					distanceMetres: null,
+					durationSeconds: 600,
+					paceMinSecondsPerKm: null,
+					paceMaxSecondsPerKm: null,
+					targetRpe: 3,
+					repeats: null
+				},
+				{
+					position: 2,
+					label: '6 × Interval 400 m',
+					distanceMetres: 400,
+					durationSeconds: null,
+					paceMinSecondsPerKm: 225,
+					paceMaxSecondsPerKm: 240,
+					targetRpe: null,
+					repeats: 6
+				}
+			]
+		});
+	});
+
+	it('gives another session its own length and RPE', () => {
+		expect(
+			adjustValues({ kind: 'other', details: details({ targetRpe: null }) }, { distanceUnit: 'km' })
+		).toEqual({ kind: 'other', durationMinutes: 90, targetRpe: null });
 	});
 });
