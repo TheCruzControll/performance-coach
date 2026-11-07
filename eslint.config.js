@@ -88,6 +88,13 @@ const SERVER_ONLY_PACKAGES = {
 		'domain/exercises and domain/programming are server-only: use them in server code (src/lib/server, +page.server.ts) and send the page the result. `import type` is fine.'
 };
 
+/** The agent and the LLM SDKs, which core workout logging never imports (M4). */
+const CORE_LOGGING = {
+	regex: `${layer('server/agent')}|^(@anthropic-ai/[\\w.-]+|openai)($|/)`,
+	message:
+		'Core workout logging never reaches the agent or an LLM: the coach reads logged workouts through services, never the other way round.'
+};
+
 export default defineConfig(
 	includeIgnoreFile(gitignorePath),
 	{ ignores: ['.claude/**', 'drizzle/meta/**', 'static/**'] },
@@ -208,6 +215,20 @@ export default defineConfig(
 			// `import 'X'`), so only `import type` gets past the rule above.
 			'@typescript-eslint/no-import-type-side-effects': 'error'
 		}
+	},
+
+	// ---- Core workout logging (M4) -----------------------------------------------------
+	// The sync endpoint and the workout reads are core logging: they never reach the agent or an
+	// LLM SDK, so logging works whatever the coach is doing (scripts/workout-boundaries.test.ts).
+	// A later block's no-restricted-imports replaces an earlier one's patterns for the same files,
+	// so each block repeats its folder's layer patterns before adding CORE_LOGGING.
+	{
+		files: ['src/routes/api/workouts/**', 'src/routes/api/exercises/**'],
+		rules: restrict([LAYER.db, LAYER.driver, CORE_LOGGING])
+	},
+	{
+		files: ['src/lib/server/services/workouts/**'],
+		rules: restrict([LAYER.agent, LAYER.ui, LAYER.client, LAYER.framework, CORE_LOGGING])
 	},
 
 	// ---- Backups (M9) ------------------------------------------------------------------
