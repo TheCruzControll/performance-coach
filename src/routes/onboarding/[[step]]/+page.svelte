@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { startVitalsReporting } from '#lib/client/vitals.ts';
 	import { STEP_INFO, type OnboardingStep } from '#lib/domain/profile/onboarding.ts';
 	import Button from '#lib/ui/components/Button.svelte';
 	import Icon from '#lib/ui/components/Icon.svelte';
@@ -69,7 +68,8 @@
 
 	// Signed in (owner only), so real-user monitoring runs here as in the app shell, once idle.
 	onMount(() => {
-		const start = () => void startVitalsReporting();
+		const start = () =>
+			void import('#lib/client/vitals.ts').then((rum) => rum.startVitalsReporting());
 		if ('requestIdleCallback' in window) requestIdleCallback(start, { timeout: 3000 });
 		else setTimeout(start, 1500);
 	});

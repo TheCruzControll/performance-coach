@@ -4,8 +4,7 @@
 	import { afterNavigate } from '$app/navigation';
 	import { page } from '$app/state';
 	import { setErrorContext } from '#lib/client/errors.ts';
-	import { applyTheme, preferences } from '#lib/client/preferences.svelte.ts';
-	import { noteNavigation } from '#lib/client/vitals.ts';
+	import { noteNavigation } from '#lib/client/visits.ts';
 	import Toaster from '#lib/ui/components/Toaster.svelte';
 	import type { LayoutProps } from './$types';
 
@@ -20,8 +19,7 @@
 	});
 
 	onMount(() => {
-		preferences.load();
-		applyTheme(preferences.theme);
+		void import('#lib/client/preferences-start.ts').then((module) => module.startPreferences());
 		// iOS Safari only applies :active styles when a touch listener exists.
 		document.addEventListener('touchstart', () => {}, { passive: true });
 		// RUM starts in the signed-in app shell ((app)/+layout.svelte): /api/vitals needs a session.

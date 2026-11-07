@@ -163,6 +163,89 @@ describe('committed migrations', () => {
 		]);
 	});
 
+	it('create the M5 coach conversation tables with their indexes and guards', async () => {
+		const tables = [
+			'coach_threads',
+			'coach_messages',
+			'agent_runs',
+			'agent_model_calls',
+			'agent_tool_calls'
+		];
+		const names = `{${tables.join(',')}}`;
+		const columns = await getDb().execute<{
+			table_name: string;
+			column_name: string;
+			data_type: string;
+		}>(
+			sql`select table_name, column_name, data_type from information_schema.columns
+				where table_schema = 'public' and table_name = any(${names}::text[]) order by 1, 2`
+		);
+		const type = (table: string, column: string) =>
+			columns.rows.find((r) => r.table_name === table && r.column_name === column)?.data_type;
+		// json keeps the exact text; jsonb would reorder keys.
+		expect(type('coach_messages', 'content')).toBe('json');
+		expect(type('coach_messages', 'display')).toBe('jsonb');
+		for (const table of ['agent_runs', 'agent_model_calls']) {
+			for (const column of [
+				'input_tokens',
+				'output_tokens',
+				'cache_read_tokens',
+				'cache_write_tokens',
+				'cost_micros',
+				'cap_cost_micros'
+			]) {
+				expect(type(table, column), `${table}.${column}`).toBe('bigint');
+			}
+		}
+
+		const indexes = await getDb().execute<{ indexname: string; indexdef: string }>(
+			sql`select indexname, indexdef from pg_indexes where tablename = any(${names}::text[])`
+		);
+		const index = Object.fromEntries(indexes.rows.map((r) => [r.indexname, r.indexdef]));
+		expect(index.coach_threads_owner_recent_idx).toMatch(
+			/\(owner_id, last_message_at DESC\) WHERE \(archived_at IS NULL\)$/
+		);
+		expect(index.coach_threads_owner_archived_idx).toMatch(
+			/\(owner_id, archived_at DESC\) WHERE \(archived_at IS NOT NULL\)$/
+		);
+		expect(index.coach_messages_thread_seq_uq).toMatch(
+			/^CREATE UNIQUE INDEX .*\(thread_id, seq\)$/
+		);
+		expect(index.coach_messages_client_message_uq).toMatch(
+			/^CREATE UNIQUE INDEX .*\(client_message_id\)$/
+		);
+		expect(index.coach_messages_thread_segment_seq_idx).toMatch(/\(thread_id, segment, seq\)$/);
+		expect(index.agent_runs_thread_running_uq).toMatch(
+			/^CREATE UNIQUE INDEX .*\(thread_id\) WHERE \(status = 'running'::text\)$/
+		);
+		expect(index.agent_runs_owner_started_idx).toMatch(/\(owner_id, started_at DESC\)$/);
+		expect(index.agent_model_calls_run_call_uq).toMatch(
+			/^CREATE UNIQUE INDEX .*\(run_id, call_index\)$/
+		);
+		expect(index.agent_tool_calls_run_idx).toMatch(/\(run_id, call_index\)$/);
+
+		// Row triggers only: TRUNCATE (tgtype bit 32) stays the test and reset bypass.
+		const triggers = await getDb().execute<{ tgname: string; truncate: boolean }>(
+			sql`select tgname, (tgtype & 32) <> 0 as truncate from pg_trigger
+				where not tgisinternal and tgrelid::regclass::text = any(${names}::text[]) order by 1`
+		);
+		expect(triggers.rows).toEqual(
+			[
+				'agent_model_calls_refuse_delete',
+				'agent_model_calls_refuse_update',
+				'agent_runs_guard',
+				'agent_runs_refuse_delete',
+				'agent_tool_calls_refuse_delete',
+				'agent_tool_calls_refuse_update',
+				'coach_messages_refuse_delete',
+				'coach_messages_refuse_update',
+				'coach_threads_guard',
+				'coach_threads_refuse_delete',
+				'coach_threads_touch'
+			].map((tgname) => ({ tgname, truncate: false }))
+		);
+	});
+
 	it('enforce check constraints at the database level', async () => {
 		const error = await withRollback((tx) =>
 			tx.execute(

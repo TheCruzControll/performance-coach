@@ -8,3 +8,5 @@ export * from './training-log';
 export * from './coaching';
 export * from './sync';
 export * from './feedback';
+export * from './coach';
+export * from './agent-runs';

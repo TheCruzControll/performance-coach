@@ -39,6 +39,7 @@
 	 */
 	let weeksUntil = $state<typeof WeeksUntil>();
 	onMount(() => {
+		preferences.load();
 		today = new Date();
 		import('#lib/ui/profile/goals.ts').then(
 			(m) => (weeksUntil = m.weeksUntil),
