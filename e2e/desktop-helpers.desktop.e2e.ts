@@ -18,7 +18,7 @@ import {
 
 /**
  * The desktop helpers (e2e/desktop.ts), proven on page.setContent fixtures with no server state:
- * each passes where the layout is right and fails where it is not, on Chromium and on WebKit.
+ * each passes where the layout is right and fails where it is not.
  */
 test.use(DESKTOP);
 
@@ -43,7 +43,7 @@ const fill = (p: Page) =>
 		else document.getElementById('slot')!.append(block);
 	});
 
-/** Act as an engine with no layout-shift entries (WebKit), on Chromium too. */
+/** Act as an engine with no layout-shift entries (WebKit). */
 const withoutLayoutShift = (p: Page) =>
 	p.evaluate(() => {
 		const types = PerformanceObserver.supportedEntryTypes.filter((t) => t !== 'layout-shift');
@@ -90,10 +90,8 @@ test('desktop widths start at 1024 px, and nothing scrolls sideways at any of th
 
 test.describe('layout shift', () => {
 	test('layoutShiftDuring measures a block inserted above the content, and 0 for a reserved swap', async ({
-		page: p,
-		browserName
+		page: p
 	}) => {
-		test.skip(browserName === 'webkit', 'WebKit reports no layout-shift entries (next test)');
 		await p.setContent(fixture());
 		expect(await layoutShiftDuring(p, () => fill(p))).toBeGreaterThan(0.05);
 		await p.setContent(fixture('<div class="skeleton"></div>'));
@@ -101,11 +99,10 @@ test.describe('layout shift', () => {
 	});
 
 	test('layoutShiftDuring throws where no layout-shift entries are reported', async ({
-		page: p,
-		browserName
+		page: p
 	}) => {
 		await p.setContent(fixture());
-		if (browserName !== 'webkit') await withoutLayoutShift(p);
+		await withoutLayoutShift(p);
 		await expect(layoutShiftDuring(p, () => fill(p))).rejects.toThrow(
 			'layout-shift entries are not reported here: use expectStableBoxes'
 		);
@@ -138,11 +135,7 @@ test.describe('layout shift', () => {
 		await expectStableBoxes(p, [p.locator('#slot'), content], () => fill(p));
 	});
 
-	test('expectNoShift needs boxes, and catches a shift the boxes miss', async ({
-		page: p,
-		browserName
-	}) => {
-		test.skip(browserName === 'webkit', 'WebKit measures the boxes alone (next test)');
+	test('expectNoShift needs boxes, and catches a shift the boxes miss', async ({ page: p }) => {
 		await p.setContent(fixture('<div class="skeleton"></div>'));
 		await expect(
 			// @ts-expect-error -- the boxes are required
@@ -163,11 +156,10 @@ test.describe('layout shift', () => {
 	});
 
 	test('without layout-shift entries, expectNoShift checks the boxes and says so', async ({
-		page: p,
-		browserName
+		page: p
 	}) => {
 		await p.setContent(fixture('<div class="skeleton"></div>'));
-		if (browserName !== 'webkit') await withoutLayoutShift(p);
+		await withoutLayoutShift(p);
 		await expectNoShift(p, { action: () => fill(p), boxes: [p.locator('#content')] });
 		expect(test.info().annotations).toEqual([
 			{
@@ -177,7 +169,7 @@ test.describe('layout shift', () => {
 		]);
 
 		await p.setContent(fixture());
-		if (browserName !== 'webkit') await withoutLayoutShift(p);
+		await withoutLayoutShift(p);
 		await expect(
 			expectNoShift(p, { action: () => fill(p), boxes: [p.locator('#content')] })
 		).rejects.toThrow(/locator\('#content'\): y 100\.0 → 300\.0/);

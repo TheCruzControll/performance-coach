@@ -15,10 +15,10 @@ import { ENGINES, GROUPS, parseChoice, selectProjects } from './e2e/projects';
  * - Specs that need a signed-out browser opt out with `test.use({ storageState: signedOut })`.
  *
  * Projects: iPhone-class viewport on Chromium everywhere; CI (or E2E_WEBKIT=1) adds WebKit,
- * the engine behind iOS Safari. `desktop-chromium` (and `desktop-webkit` with WebKit) open a
- * 1440 × 900 desktop window and run whole files: every `*.desktop.e2e.ts`, which the iPhone
- * projects skip, plus the shell and offline specs, and the axe audit on Chromium only (to bound
- * CI time). They reuse the setup sessions, so they run only specs that leave shared state as
+ * the engine behind iOS Safari (and Chrome for iOS). `desktop-chromium` opens a 1440 × 900
+ * desktop window and runs whole files: every `*.desktop.e2e.ts`, which the iPhone projects skip,
+ * plus the shell, offline and axe specs. There is no desktop WebKit project: the one user's
+ * desktop browser is Chrome. It reuses the setup session, so they run only specs that leave shared state as
  * they found it; desktop cases that change the training profile live in serial specs with
  * `test.use(DESKTOP)`. The CPU-sensitive main-thread budget (perf.e2e.ts) is its own
  * single-worker project that starts only after the functional suites, so nothing contends with
@@ -40,10 +40,8 @@ const WEBKIT_STATE = 'e2e/.auth/webkit.json';
 const SWEEP = '**/*.sweep.e2e.ts';
 const FUNCTIONAL_IGNORE = ['**/perf.e2e.ts', '**/*.exclusive.e2e.ts', '**/*.serial.e2e.ts', SWEEP];
 const DESKTOP_ONLY = '**/*.desktop.e2e.ts';
-/** What the desktop projects run: desktop specs and the width-agnostic shell and offline specs. */
-const DESKTOP_SPECS = [DESKTOP_ONLY, '**/shell.e2e.ts', '**/offline.e2e.ts'];
-/** The axe audit at desktop size runs on Chromium only, to bound CI time. */
-const DESKTOP_CHROMIUM_SPECS = [...DESKTOP_SPECS, '**/a11y.e2e.ts'];
+/** What the desktop project runs: desktop specs, the width-agnostic shell and offline specs, and axe. */
+const DESKTOP_SPECS = [DESKTOP_ONLY, '**/shell.e2e.ts', '**/offline.e2e.ts', '**/a11y.e2e.ts'];
 /** A device descriptor resized to the DESKTOP window (e2e/desktop.ts) that desktop specs use. */
 const desktopWindow = (device: string) => ({ ...devices[device], ...DESKTOP });
 const SERIAL = '**/*.serial.e2e.ts';
@@ -64,7 +62,7 @@ const projects: Project[] = [
 	},
 	{
 		name: 'desktop-chromium',
-		testMatch: DESKTOP_CHROMIUM_SPECS,
+		testMatch: DESKTOP_SPECS,
 		testIgnore: FUNCTIONAL_IGNORE,
 		dependencies: ['setup'],
 		use: {
@@ -102,13 +100,6 @@ if (withWebKit) {
 			testIgnore: [...FUNCTIONAL_IGNORE, DESKTOP_ONLY],
 			dependencies: ['setup-webkit'],
 			use: { ...iphone, browserName: 'webkit', storageState: WEBKIT_STATE }
-		},
-		{
-			name: 'desktop-webkit',
-			testMatch: DESKTOP_SPECS,
-			testIgnore: FUNCTIONAL_IGNORE,
-			dependencies: ['setup-webkit'],
-			use: { ...desktopWindow('Desktop Safari'), browserName: 'webkit', storageState: WEBKIT_STATE }
 		}
 	);
 }
@@ -120,11 +111,7 @@ projects.push({
 	testMatch: SERIAL,
 	dependencies: serialAlone
 		? ['setup']
-		: [
-				'iphone-chromium',
-				'desktop-chromium',
-				...(withWebKit ? ['iphone-webkit', 'desktop-webkit'] : [])
-			],
+		: ['iphone-chromium', 'desktop-chromium', ...(withWebKit ? ['iphone-webkit'] : [])],
 	workers: 1,
 	fullyParallel: false,
 	use: { ...iphone, browserName: 'chromium', storageState: CHROMIUM_STATE }

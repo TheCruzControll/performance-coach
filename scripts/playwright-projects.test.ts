@@ -1,7 +1,7 @@
 /**
- * playwright.config.ts's desktop projects (docs/testing.md, Desktop): `desktop-chromium` and,
- * wherever WebKit runs, `desktop-webkit` open a 1440 × 900 desktop window and select whole files
- * (every *.desktop.e2e.ts, the shell and offline specs, and the axe audit on Chromium only). The
+ * playwright.config.ts's desktop project (docs/testing.md, Desktop): `desktop-chromium` opens a
+ * 1440 × 900 desktop window and selects whole files (every *.desktop.e2e.ts, the shell, offline
+ * and axe specs); there is no desktop WebKit project, even where WebKit runs. The
  * iPhone projects stop running *.desktop.e2e.ts and nothing else; the serial projects start after
  * every functional one, and perf and exclusive after those, so perf still runs alone.
  */
@@ -67,42 +67,33 @@ const E2E_FILES = readdirSync(new URL('../e2e/', import.meta.url)).filter((f) =>
 const DESKTOP_FILES = E2E_FILES.filter((f) => f.endsWith('.desktop.e2e.ts'));
 const SHARED = ['offline.e2e.ts', 'shell.e2e.ts'];
 
-describe('playwright.config.ts desktop projects', () => {
+describe('playwright.config.ts desktop project', () => {
 	afterEach(() => vi.unstubAllEnvs());
 
-	it('open a 1440 × 900 desktop window with the setup sessions, on both engines', async () => {
-		const projects = await ciProjects();
-		for (const [name, browserName, setup, state] of [
-			['desktop-chromium', 'chromium', 'setup', 'e2e/.auth/chromium.json'],
-			['desktop-webkit', 'webkit', 'setup-webkit', 'e2e/.auth/webkit.json']
-		] as const) {
-			const project = byName(projects, name);
-			expect(project.use, name).toMatchObject({
-				browserName,
-				viewport: { width: 1440, height: 900 },
-				contextOptions: { screen: { width: 1440, height: 900 } },
-				deviceScaleFactor: 1,
-				isMobile: false,
-				hasTouch: false,
-				storageState: state
-			});
-			expect(project.dependencies, name).toEqual([setup]);
-		}
+	it('opens a 1440 × 900 desktop window with the Chromium setup session', async () => {
+		const project = byName(await ciProjects(), 'desktop-chromium');
+		expect(project.use).toMatchObject({
+			browserName: 'chromium',
+			viewport: { width: 1440, height: 900 },
+			contextOptions: { screen: { width: 1440, height: 900 } },
+			deviceScaleFactor: 1,
+			isMobile: false,
+			hasTouch: false,
+			storageState: 'e2e/.auth/chromium.json'
+		});
+		expect(project.dependencies).toEqual(['setup']);
 	});
 
-	it('leave out WebKit where it does not run', async () => {
-		vi.resetModules();
-		vi.stubEnv('CI', '');
-		vi.stubEnv('E2E_WEBKIT', '');
-		const { default: config } = await import('../playwright.config.ts');
-		const names = (config.projects ?? []).map((p) => p.name);
-		expect(names).toContain('desktop-chromium');
-		expect(names).not.toContain('desktop-webkit');
+	it('is the only desktop-size project, even with WebKit on', async () => {
+		const desktop = (await ciProjects()).filter(
+			(p) => (p.use as { viewport?: { width: number } }).viewport?.width === 1440
+		);
+		expect(desktop.map((p) => p.name)).toEqual(['desktop-chromium']);
 	});
 
 	it('run serial, perf and exclusive specs only after the desktop projects', async () => {
 		const projects = await ciProjects();
-		const functional = ['iphone-chromium', 'iphone-webkit', 'desktop-chromium', 'desktop-webkit'];
+		const functional = ['iphone-chromium', 'iphone-webkit', 'desktop-chromium'];
 		for (const name of ['serial-chromium', 'serial-webkit', 'perf', 'exclusive']) {
 			expect([...after(projects, name)], name).toEqual(expect.arrayContaining(functional));
 		}
@@ -142,7 +133,6 @@ describe('playwright.config.ts desktop projects', () => {
 		expect(filesOf(listing, 'desktop-chromium')).toEqual(
 			[...DESKTOP_FILES, ...SHARED, 'a11y.e2e.ts'].sort()
 		);
-		expect(filesOf(listing, 'desktop-webkit')).toEqual([...DESKTOP_FILES, ...SHARED].sort());
 
 		// The iPhone projects run every functional spec but the desktop ones.
 		const iphone = E2E_FILES.filter(
