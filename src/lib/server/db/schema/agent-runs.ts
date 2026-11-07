@@ -14,8 +14,9 @@
  * - Guards (drizzle/<n>_coach_conversations_guards.sql): a run changes only while it is running,
  *   never its identity, and its usage and cost only grow; model and tool calls are insert-only;
  *   DELETE is refused. Only test and reset code bypasses them (ADR 0010).
- * - agent_tool_calls.proposal_id names the proposal a tool created; coach-proposals-db adds its
- *   foreign key.
+ * - agent_tool_calls.proposal_id names the proposal a tool created, by foreign key. coaching.ts
+ *   names agent_runs for coach_proposals.run_id, so the two modules import each other; every
+ *   cross-table reference is a lazy callback, so either loads first.
  */
 import { sql } from 'drizzle-orm';
 import {
@@ -39,6 +40,7 @@ import {
 } from '../../../domain/coach/vocabulary';
 import { createdAt, inList, ownerRef } from './columns';
 import { coachMessages, coachThreads } from './coach';
+import { coachProposals } from './coaching';
 
 /**
  * The most bytes a tool call's stored input or output takes, as jsonb text. Tool outputs are
@@ -184,8 +186,8 @@ export const agentToolCalls = pgTable(
 		errorCode: text('error_code'),
 		/** The output was cut to fit. */
 		truncated: boolean('truncated').notNull().default(false),
-		/** The proposal it created (coach-proposals-db adds the foreign key). */
-		proposalId: uuid('proposal_id'),
+		/** The proposal it created. */
+		proposalId: uuid('proposal_id').references(() => coachProposals.id),
 		startedAt: timestamp('started_at', { withTimezone: true }).notNull(),
 		durationMs: integer('duration_ms').notNull(),
 		createdAt: createdAt()
