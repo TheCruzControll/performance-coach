@@ -112,7 +112,7 @@ export interface Pr {
 type Beaten = Pick<Pr, 'kind' | 'reps' | 'value' | 'previous'>;
 
 /** Above beyond floating-point noise, so a load converted by another route still ties. */
-const above = (value: number, prior: number) => cleanFloat(value) > cleanFloat(prior);
+export const above = (value: number, prior: number) => cleanFloat(value) > cleanFloat(prior);
 
 /** Today's bests that beat the prior ones, in kg or reps: a kind with no prior best sets none. */
 function beaten(today: ExerciseBests, prior: ExerciseBests): Beaten[] {
