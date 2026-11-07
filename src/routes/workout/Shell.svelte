@@ -11,7 +11,8 @@
   - On idle after that, the store loads (its write path stays out of the first render) with the
     page's one sync engine (online.ts), which every change the store reports flushes, from any
     view or sheet; unmounting stops it. RUM loads on idle too, so INP is attributed to the
-    workout route.
+    workout route. data-store marks the store open; the view gets the active workout, to write
+    through it.
   - Nothing reads the URL while prerendering: the HTML is the same, data-free, for everyone.
   - Layout: one column below 1024 px; from there the header spans the page, and the view's side
     and main columns sit side by side, centred, at --content-list beside --content-readable.
@@ -38,7 +39,7 @@
 		/** The route's reducer table (reducers/tables.ts): it decides the kind this page shows. */
 		table: AnyTable;
 		/** The view: its side column (if any), then its main column, as siblings. */
-		children: Snippet<[ActiveSnapshot, ChunkLoad]>;
+		children: Snippet<[ActiveSnapshot, ChunkLoad, ActiveWorkout]>;
 	}
 
 	let { table, children }: Props = $props();
@@ -78,6 +79,7 @@
 	tabindex="-1"
 	data-phase={restore.phase}
 	data-ready={waiting ? undefined : ''}
+	data-store={active.store ? '' : undefined}
 >
 	<WorkoutHeader
 		title={waiting ? null : (view?.workout.title ?? 'Workout')}
@@ -89,7 +91,7 @@
 
 	<div class="body">
 		{#if restore.phase === 'active'}
-			<div class="columns">{@render children(restore.snapshot, load)}</div>
+			<div class="columns">{@render children(restore.snapshot, load, active)}</div>
 		{:else if waiting}
 			<div class="restoring" role="status" aria-busy="true" data-testid="workout-restoring">
 				<span class="visually-hidden">Restoring your workout</span>
@@ -138,12 +140,21 @@
 		outline: none;
 	}
 
+	/* Below 1024 px the view's main column fills the screen, so its logger reaches the foot. */
 	.body {
+		display: flex;
+		flex-direction: column;
 		width: 100%;
 		max-width: var(--content-column);
 		margin: 0 auto;
 		padding: var(--space-2) max(var(--gutter), var(--safe-right)) var(--space-8)
 			max(var(--gutter), var(--safe-left));
+	}
+
+	.columns {
+		display: flex;
+		flex: 1;
+		flex-direction: column;
 	}
 
 	.restoring {
