@@ -4,6 +4,7 @@
  *
  * An endpoint maps the errors without knowing which service threw: CoachInputError → 400,
  * CoachNotFoundError → 404 ('not_found'), CoachArchivedError → 409. CoachTranscriptError is a caller's bug, never the owner's: a 500.
+ * CoachBusyError → 409 ('busy'); CoachRunFinishedError is a caller's bug: a 500.
  */
 import { PgTransaction } from 'drizzle-orm/pg-core';
 import { getDb, type Executor } from '../../db';
@@ -60,6 +61,22 @@ export class CoachArchivedError extends Error {
 	constructor() {
 		super('the conversation is archived; unarchive it to continue');
 		this.name = 'CoachArchivedError';
+	}
+}
+
+/** The conversation already has a live run: one answer at a time per conversation. */
+export class CoachBusyError extends Error {
+	constructor() {
+		super('the coach is still answering in this conversation');
+		this.name = 'CoachBusyError';
+	}
+}
+
+/** The run has finished (or was expired): it records and changes nothing more. */
+export class CoachRunFinishedError extends Error {
+	constructor() {
+		super('the run has finished');
+		this.name = 'CoachRunFinishedError';
 	}
 }
 
