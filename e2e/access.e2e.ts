@@ -270,4 +270,24 @@ test.describe('signed in: cross-site requests are refused', () => {
 		expect(cross.status()).toBe(403);
 		expect(await stored()).toEqual(before);
 	});
+
+	test('a cross-site move of a planned session is refused and changes nothing', async ({
+		request
+	}) => {
+		const versions = () => query('select id from program_versions order by id');
+		const before = await versions();
+		const lineage = crypto.randomUUID();
+		const move = (origin: string, toDate: string) =>
+			request.post(`/train/session/${lineage}?/move`, {
+				headers: { origin, accept: 'application/json', 'x-sveltekit-action': 'true' },
+				multipart: { payload: JSON.stringify({ sessionLineage: lineage, toDate, version: 1 }) }
+			});
+		// From the app itself the action runs: a day that is not a date comes back with its error.
+		const own = await move(ORIGIN, 'Wednesday');
+		expect(own.status()).toBe(400);
+		expect(await own.json()).toMatchObject({ type: 'failure', status: 400 });
+		// From another site it is refused before it runs.
+		expect((await move('https://evil.example', '2026-11-11')).status()).toBe(403);
+		expect(await versions()).toEqual(before);
+	});
 });
