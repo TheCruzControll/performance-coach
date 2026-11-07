@@ -1,0 +1,47 @@
+[
+	{
+		"id": "nav-screens",
+		"branch": "fix/m1-screenshots-after-view-transitions",
+		"ui": true,
+		"slug": "m1nav",
+		"port": 4601,
+		"effort": "high",
+		"task": "Audit defect \"CI's WebKit (iOS engine) screenshots after tab changes show the bottom nav missing or see-through\" (criterion 5). First find out whether this is only the screenshot helper (captureScreen in e2e/support.ts firing mid view-transition or mid-animation) or a REAL rendering bug in WebKit: download the latest green CI run's artifacts on main (`gh run list --branch main --workflow CI --limit 3`), look at the WebKit Train/Coach/Progress/Profile screenshots and the Chromium ones with the Read tool, read the nav and view-transition code, and test locally on WebKit with captureScreen waiting for `document.getAnimations()` to settle and for no active view transition. If it is only timing: make captureScreen wait (and note it in the PR). If the nav really disappears or turns see-through in WebKit after a tab change: fix the UI (that is then the PR's main change) and add an e2e assertion that the bottom nav is visible and opaque after each tab change on both engines.\nIntent: screenshots of every tab show the settled screen with its bottom nav on both engines, and the nav never disappears after a tab change"
+	},
+	{
+		"id": "stale-copy",
+		"branch": "fix/m1-today-train-next-step-copy",
+		"ui": true,
+		"slug": "m1copy",
+		"port": 4602,
+		"effort": "high",
+		"task": "Audit defect \"Today and Train tell a signed-in owner that setup 'opens with passkey sign-in · Soon'\" (criterion 5). Passkey sign-in exists now. Reword both rows to the real next step in calm, premium product copy (e.g. \"Training profile · Coming next\"); copy-only, matching docs/design-system.md voice; update any e2e text assertions.\nIntent: Today and Train describe the real next step, not a feature that already shipped"
+	},
+	{
+		"id": "ci-hygiene",
+		"branch": "ci/m1-keep-server-log-and-main-runs",
+		"ui": false,
+		"slug": "m1ci",
+		"port": 4603,
+		"effort": "high",
+		"task": "Two audit findings (criterion 8): (a) \"The e2e server log is never uploaded from CI\": .e2e-server.log is a hidden file, so upload-artifact skips it; fix with `include-hidden-files: true` on that step or by writing the log under test-results/ (pick the cleaner; keep local behaviour and docs consistent). (b) \"Pushes to main cancel each other's CI runs\": with `cancel-in-progress: true` a second merge to main cancels the first merge's run, so some merges are never tested on main; make it `cancel-in-progress: ${{ github.event_name == 'pull_request' }}`. One PR, subject like \"ci: keep the e2e server log and let every merge to main finish its run\".\nIntent: every merge to main gets a complete CI run, and failed e2e runs ship the server log"
+	},
+	{
+		"id": "actions-node24",
+		"branch": "ci/m1-actions-node-24",
+		"ui": false,
+		"slug": "m1node",
+		"port": 4604,
+		"effort": "high",
+		"task": "Audit info finding (criterion 8): \"CI actions target the deprecated Node 20 runtime\". Bump every action in .github/workflows/*.yml (checkout, setup-node, cache, upload-artifact, pnpm/action-setup, anything else) to its current major that runs on Node 24. Verify each version exists and its breaking changes do not affect our usage: read the release notes with `gh api repos/<owner>/<action>/releases --jq '.[0:5][] | .tag_name+\" \"+.name'` and the action's README for changed inputs (e.g. upload-artifact hidden files, cache keys). This PR's own CI run is the test.\nIntent: CI runs on actions supported on Node 24 with unchanged behaviour"
+	},
+	{
+		"id": "pg-sequential",
+		"branch": "fix/m1-one-query-at-a-time-per-client",
+		"ui": false,
+		"slug": "m1pg",
+		"port": 4605,
+		"effort": "xhigh",
+		"task": "Audit finding (criterion 2): \"Profile services run concurrent queries on one pg client\" (node-postgres warns this is deprecated and will throw in a future version; inside a transaction, concurrent queries on one client are also unsafe). Find every place that issues queries concurrently on one client/transaction (Promise.all over the same db/tx in src/lib/server/services and repositories), make them sequential (or use the pool, not a single client, where that is what is meant), and make the test run fail on that deprecation warning so it cannot come back (e.g. a vitest setup that turns that specific process warning into a failure). Show the warning before and its absence after.\nIntent: no code path issues concurrent queries on one pg client, and the tests fail if one does"
+	}
+]

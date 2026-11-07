@@ -1,0 +1,92 @@
+#!/usr/bin/env node
+// Machine-wide semaphore for heavy commands (svelte-check, vite build, Playwright).
+// This Mac has 8 CPUs and 8 GB RAM shared by several agents: at most SLOT_COUNT (default 2)
+// heavy commands run at once; the rest wait their turn. Each slot is a directory (mkdir is atomic,
+// no flock needed). After SLOT_MAX_WAIT_MS it exits 75 without running the command.
+//
+//   slot pnpm build:node
+//   slot pnpm exec playwright test e2e/auth.e2e.ts --project=setup --project=iphone-chromium
+import { mkdirSync, writeFileSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { spawn } from 'node:child_process';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const DIR = process.env.SLOT_DIR || join(dirname(fileURLToPath(import.meta.url)), '..', 'slots');
+const N = Number(process.env.SLOT_COUNT || 2);
+const MAX_WAIT_MS = Number(process.env.SLOT_MAX_WAIT_MS || 12 * 60_000);
+const argv = process.argv.slice(2);
+if (!argv.length) {
+	console.error('usage: slot <command> [args...]');
+	process.exit(2);
+}
+mkdirSync(DIR, { recursive: true });
+
+const alive = (pid) => {
+	try {
+		process.kill(pid, 0);
+		return true;
+	} catch {
+		return false;
+	}
+};
+
+function tryAcquire() {
+	for (let i = 0; i < N; i++) {
+		const p = join(DIR, `slot-${i}`);
+		try {
+			mkdirSync(p);
+			writeFileSync(join(p, 'pid'), String(process.pid));
+			return p;
+		} catch {
+			// Held: reclaim it if its owner died.
+			try {
+				const pid = Number(readFileSync(join(p, 'pid'), 'utf8'));
+				if (pid && !alive(pid)) rmSync(p, { recursive: true, force: true });
+			} catch {
+				try {
+					if (Date.now() - statSync(p).mtimeMs > 10_000)
+						rmSync(p, { recursive: true, force: true });
+				} catch {
+					/* gone already */
+				}
+			}
+		}
+	}
+	return null;
+}
+
+const started = Date.now();
+let held = tryAcquire();
+if (!held) console.error(`[slot] all ${N} heavy slots busy; waiting…`);
+while (!held && Date.now() - started < MAX_WAIT_MS) {
+	await new Promise((r) => setTimeout(r, 1500));
+	held = tryAcquire();
+}
+if (!held) {
+	console.error(`[slot] waited ${MAX_WAIT_MS / 60000} min for one of ${N} slots; not running: ${argv.join(' ')}`);
+	process.exit(75);
+}
+if (Date.now() - started > 3000)
+	console.error(`[slot] acquired after ${Math.round((Date.now() - started) / 1000)}s`);
+
+const release = () => {
+	if (held) rmSync(held, { recursive: true, force: true });
+	held = null;
+};
+const child = spawn(argv[0], argv.slice(1), { stdio: 'inherit' });
+for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
+	process.on(sig, () => {
+		child.kill(sig);
+		release();
+		process.exit(130);
+	});
+}
+child.on('error', (e) => {
+	console.error(`[slot] ${e.message}`);
+	release();
+	process.exit(127);
+});
+child.on('exit', (code, signal) => {
+	release();
+	process.exit(code ?? (signal ? 1 : 0));
+});

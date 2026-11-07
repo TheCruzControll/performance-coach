@@ -1,0 +1,7 @@
+76 joins the profile stack after #74 (same section registries)
+77 goals chain after #68; joins the profile stack after the section-CSS fix
+81 profile sibling (injuries); joins the profile stack after the section-CSS fix
+83 profile sibling (exercises); joins the profile stack after the section-CSS fix
+84 goals chain after #77; joins the profile stack after the section-CSS fix
+86 section-CSS fix: merge right after #68 (which carries the same guard line), before the other siblings
+89 profile sibling (schedule); joins the profile stack after the section-CSS fix
