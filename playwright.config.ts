@@ -1,4 +1,5 @@
 import { defineConfig, devices, type Project } from '@playwright/test';
+import { DESKTOP } from './e2e/desktop';
 
 /**
  * End-to-end tests run against the real production Node server (adapter-node build) and a
@@ -13,7 +14,12 @@ import { defineConfig, devices, type Project } from '@playwright/test';
  * - Specs that need a signed-out browser opt out with `test.use({ storageState: signedOut })`.
  *
  * Projects: iPhone-class viewport on Chromium everywhere; CI (or E2E_WEBKIT=1) adds WebKit,
- * the engine behind iOS Safari. The CPU-sensitive main-thread budget (perf.e2e.ts) is its own
+ * the engine behind iOS Safari. `desktop-chromium` (and `desktop-webkit` with WebKit) open a
+ * 1440 × 900 desktop window and run whole files: every `*.desktop.e2e.ts`, which the iPhone
+ * projects skip, plus the shell and offline specs, and the axe audit on Chromium only (to bound
+ * CI time). They reuse the setup sessions, so they run only specs that leave shared state as
+ * they found it; desktop cases that change the training profile live in serial specs with
+ * `test.use(DESKTOP)`. The CPU-sensitive main-thread budget (perf.e2e.ts) is its own
  * single-worker project that starts only after the functional suites, so nothing contends with
  * it. `exclusive` specs change state every other session depends on ("sign out everywhere
  * else"), so they run last, alone. `serial` specs change the one owner's training profile, so
@@ -27,6 +33,13 @@ const iphone = devices['iPhone 15 Pro'];
 const CHROMIUM_STATE = 'e2e/.auth/chromium.json';
 const WEBKIT_STATE = 'e2e/.auth/webkit.json';
 const FUNCTIONAL_IGNORE = ['**/perf.e2e.ts', '**/*.exclusive.e2e.ts', '**/*.serial.e2e.ts'];
+const DESKTOP_ONLY = '**/*.desktop.e2e.ts';
+/** What the desktop projects run: desktop specs and the width-agnostic shell and offline specs. */
+const DESKTOP_SPECS = [DESKTOP_ONLY, '**/shell.e2e.ts', '**/offline.e2e.ts'];
+/** The axe audit at desktop size runs on Chromium only, to bound CI time. */
+const DESKTOP_CHROMIUM_SPECS = [...DESKTOP_SPECS, '**/a11y.e2e.ts'];
+/** A device descriptor resized to the DESKTOP window (e2e/desktop.ts) that desktop specs use. */
+const desktopWindow = (device: string) => ({ ...devices[device], ...DESKTOP });
 const SERIAL = '**/*.serial.e2e.ts';
 // E2E_SERIAL_ALONE=1: run serial specs right after the owner setup, without the functional suite.
 const serialAlone = process.env.E2E_SERIAL_ALONE === '1';
@@ -39,9 +52,20 @@ const projects: Project[] = [
 	},
 	{
 		name: 'iphone-chromium',
-		testIgnore: FUNCTIONAL_IGNORE,
+		testIgnore: [...FUNCTIONAL_IGNORE, DESKTOP_ONLY],
 		dependencies: ['setup'],
 		use: { ...iphone, browserName: 'chromium', storageState: CHROMIUM_STATE }
+	},
+	{
+		name: 'desktop-chromium',
+		testMatch: DESKTOP_CHROMIUM_SPECS,
+		testIgnore: FUNCTIONAL_IGNORE,
+		dependencies: ['setup'],
+		use: {
+			...desktopWindow('Desktop Chrome'),
+			browserName: 'chromium',
+			storageState: CHROMIUM_STATE
+		}
 	},
 	// The main-thread budget measures real CPU time, so it must not share the machine with
 	// other specs: it runs alone (one worker) after the functional suite has finished.
@@ -69,9 +93,16 @@ if (withWebKit) {
 		},
 		{
 			name: 'iphone-webkit',
-			testIgnore: FUNCTIONAL_IGNORE,
+			testIgnore: [...FUNCTIONAL_IGNORE, DESKTOP_ONLY],
 			dependencies: ['setup-webkit'],
 			use: { ...iphone, browserName: 'webkit', storageState: WEBKIT_STATE }
+		},
+		{
+			name: 'desktop-webkit',
+			testMatch: DESKTOP_SPECS,
+			testIgnore: FUNCTIONAL_IGNORE,
+			dependencies: ['setup-webkit'],
+			use: { ...desktopWindow('Desktop Safari'), browserName: 'webkit', storageState: WEBKIT_STATE }
 		}
 	);
 }
@@ -83,7 +114,11 @@ projects.push({
 	testMatch: SERIAL,
 	dependencies: serialAlone
 		? ['setup']
-		: ['iphone-chromium', ...(withWebKit ? ['iphone-webkit'] : [])],
+		: [
+				'iphone-chromium',
+				'desktop-chromium',
+				...(withWebKit ? ['iphone-webkit', 'desktop-webkit'] : [])
+			],
 	workers: 1,
 	fullyParallel: false,
 	use: { ...iphone, browserName: 'chromium', storageState: CHROMIUM_STATE }
