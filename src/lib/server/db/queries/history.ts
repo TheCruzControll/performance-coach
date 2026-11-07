@@ -31,6 +31,7 @@ export const HISTORY_INDEXES = {
 	setsInRange: 'set_records_owner_performed_idx',
 	runsInRange: 'workouts_owner_kind_started_idx',
 	workoutsInRange: 'workouts_owner_started_idx',
+	activeWorkouts: 'workouts_owner_started_idx',
 	sessionsInRange: {
 		planned: 'planned_sessions_week_day_idx',
 		logged: 'workouts_owner_started_idx'
@@ -301,6 +302,36 @@ export function workoutsInRange(db: Executor, ownerId: string, range: InstantRan
 }
 
 /**
+ * The owner's undeleted workouts in progress, newest first, at most `limit`: the index's owner
+ * prefix and its started_at DESC order, with the status filtered on the way (the owner has a few
+ * workouts in progress at most, usually one). Keyed by client id, as the device knows them.
+ */
+export function activeWorkouts(db: Executor, ownerId: string, limit: number) {
+	return db
+		.select({
+			id: workouts.clientId,
+			kind: workouts.kind,
+			title: workouts.title,
+			sessionType: workouts.sessionType,
+			discipline: workouts.discipline,
+			plannedSessionId: workouts.plannedSessionId,
+			plannedLineage: workouts.plannedLineageId,
+			programId: workouts.programId,
+			startedAt: workouts.startedAt
+		})
+		.from(workouts)
+		.where(
+			and(
+				eq(workouts.ownerId, ownerId),
+				isNull(workouts.deletedAt),
+				eq(workouts.status, 'in_progress')
+			)
+		)
+		.orderBy(desc(workouts.startedAt), desc(workouts.id))
+		.limit(limit);
+}
+
+/**
  * A date range's sessions, planned and logged: the version's sessions dated `from` to `to`
  * (plannedSessionsInRange, composed and never redefined) and the owner's workouts started within
  * `logged`, the instants those dates span.
@@ -324,3 +355,4 @@ export type HistorySetRow = Awaited<ReturnType<typeof exerciseHistory>>[number];
 export type PerformanceRow = Awaited<ReturnType<typeof lastPerformances>>[number];
 export type RecordRow = Awaited<ReturnType<typeof bestE1rms>>[number];
 export type WorkoutRow = Awaited<ReturnType<typeof workoutsInRange>>[number];
+export type ActiveWorkoutRow = Awaited<ReturnType<typeof activeWorkouts>>[number];

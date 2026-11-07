@@ -25,6 +25,7 @@ import { LOCAL_DATABASE_URLS, redactUrl, resetDatabase } from '../../src/lib/ser
 import * as h from '../../src/lib/server/db/queries/history';
 import * as p from '../../src/lib/server/db/queries/programs';
 import * as schema from '../../src/lib/server/db/schema';
+import { ACTIVE_WORKOUTS_LIMIT } from '../../src/lib/server/services/workouts/canonical';
 import { FIRST_MONDAY, generateDataset, loadDataset, WEEKS } from './dataset';
 import { checkPlan, scansOf, sizeClass, type Catalog, type PlanNode } from './plan-check';
 
@@ -121,6 +122,11 @@ const CASES: Case[] = (() => {
 			'runsInRange, 12 weeks (mileage)',
 			[H.runsInRange],
 			() => h.runsInRange(db, owner, instants(lastWeeks(12)))
+		],
+		[
+			'activeWorkouts (continue on another device)',
+			[H.activeWorkouts],
+			() => h.activeWorkouts(db, owner, ACTIVE_WORKOUTS_LIMIT)
 		],
 		['sessionsInRange, 4 weeks: planned', [...byWeek], () => range.planned],
 		['sessionsInRange, 4 weeks: logged', [H.sessionsInRange.logged], () => range.logged],
