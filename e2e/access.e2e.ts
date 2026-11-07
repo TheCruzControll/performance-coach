@@ -5,7 +5,7 @@
  */
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { expect, test } from '@playwright/test';
+import { expect, test, type APIRequestContext } from '@playwright/test';
 import { createSseDecoder } from '../src/lib/domain/coach/events';
 import { ROUTE_ACCESS, routeAccess } from '../src/lib/server/auth/routes';
 import { signInUrl } from '../src/lib/server/auth/return-path';
@@ -23,6 +23,34 @@ const PUBLIC_ENDPOINTS = [
 	'/api/health',
 	'/api/test-support/session'
 ];
+/** Scheduled jobs (`cron`): only `Bearer <CRON_SECRET>` opens them, never a session. */
+const CRON_ROUTES = ROUTES.filter((r) => routeAccess(r.id) === 'cron');
+
+/**
+ * A cron route without its bearer: 401, and only GET (HEAD and POST 405). 404 against a server
+ * started without CRON_SECRET (an external E2E_BASE_URL); global-setup.ts always sets one.
+ */
+async function expectCronRefusals(request: APIRequestContext) {
+	expect(CRON_ROUTES.map((r) => r.id)).toEqual(['/api/cron/backup']);
+	const refused = process.env.E2E_CRON_SECRET
+		? { status: 401, error: 'unauthorized' }
+		: { status: 404, error: 'not_found' };
+	for (const route of CRON_ROUTES) {
+		const res = await request.get(route.path, { maxRedirects: 0 });
+		expect(res.status(), route.id).toBe(refused.status);
+		expect(await res.json(), route.id).toEqual({
+			error: refused.error,
+			message: expect.any(String)
+		});
+		expect(res.headers()['cache-control'], route.id).toBe('no-store');
+		if (!process.env.E2E_CRON_SECRET) continue;
+		for (const method of ['HEAD', 'POST']) {
+			const other = await request.fetch(route.path, { method, headers: SAME_ORIGIN });
+			expect(other.status(), `${method} ${route.id}`).toBe(405);
+			expect(other.headers().allow, `${method} ${route.id}`).toBe('GET');
+		}
+	}
+}
 
 test.describe('signed out: deny by default', () => {
 	test.use({ storageState: signedOut });
@@ -77,7 +105,7 @@ test.describe('signed out: deny by default', () => {
 		request
 	}) => {
 		const endpoints = ROUTES.filter((r) => r.methods.length > 0);
-		const protectedOnes = endpoints.filter((r) => routeAccess(r.id) !== 'public');
+		const protectedOnes = endpoints.filter((r) => !['public', 'cron'].includes(routeAccess(r.id)));
 		expect(
 			endpoints
 				.filter((r) => routeAccess(r.id) === 'public')
@@ -103,6 +131,12 @@ test.describe('signed out: deny by default', () => {
 				expect(res.headers()['cache-control'], route.id).toBe('no-store');
 			}
 		}
+	});
+
+	test('a scheduled job answers only its bearer: 401 signed out, and GET alone', async ({
+		request
+	}) => {
+		await expectCronRefusals(request);
 	});
 
 	test('test-only endpoints answer 404 unless test routes are enabled, before anything else', () => {
@@ -201,6 +235,12 @@ test.describe('signed out: deny by default', () => {
 });
 
 test.describe('signed in: cross-site requests are refused', () => {
+	test('the owner’s session never opens a scheduled job', async ({ request }) => {
+		await expectCronRefusals(request);
+		// Still signed in: the refusal is the cron's, not a lost session.
+		expect((await request.get('/profile', { maxRedirects: 0 })).status()).toBe(200);
+	});
+
 	test('JSON endpoints need the app’s own Origin', async ({ request }) => {
 		const metric = {
 			id: `csrf-${Date.now()}`,
