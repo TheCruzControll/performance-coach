@@ -31,12 +31,21 @@ class ToastQueue {
 		};
 		// Keep at most three; the oldest leaves first.
 		this.items = [...this.items.slice(-2), item];
-		if (item.duration > 0)
-			this.#timers.set(
-				id,
-				setTimeout(() => this.dismiss(id), item.duration)
-			);
 		return id;
+	}
+
+	/**
+	 * Starts a toast's time on screen. The toasts' code loads on demand (Toaster), so it calls this
+	 * when the toast appears, not `show`: a toast shown before that code arrives still gets its
+	 * full duration.
+	 */
+	appeared(id: number): void {
+		const item = this.items.find((t) => t.id === id);
+		if (!item || item.duration <= 0) return;
+		this.#timers.set(
+			id,
+			setTimeout(() => this.dismiss(id), item.duration)
+		);
 	}
 
 	dismiss(id: number): void {

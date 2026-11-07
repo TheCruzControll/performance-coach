@@ -150,19 +150,19 @@ Before and after the slimmer shared entry (2026-11-07). Before is main at that d
 | `/(app)/today`                     |           59.6 KB |          57.6 KB |         10.1 KB |               2 |
 | `/(app)/train`                     |           59.2 KB |          57.2 KB |         13.5 KB |               2 |
 | `/(app)/train/session/[key]`       |           58.8 KB |          56.1 KB |          9.6 KB |               2 |
-| `/workout`                         |           58.7 KB |          56.6 KB |          6.5 KB |               2 |
-| `/(app)/profile/security`          |           58.5 KB |          55.7 KB |         11.0 KB |               2 |
-| `/(app)/profile`                   |           57.6 KB |          55.5 KB |          8.6 KB |               2 |
+| `/workout`                         |           58.7 KB |          56.7 KB |          6.5 KB |               2 |
+| `/(app)/profile/security`          |           58.5 KB |          55.8 KB |         11.0 KB |               2 |
+| `/(app)/profile`                   |           57.6 KB |          55.6 KB |          8.6 KB |               2 |
 | `/(app)/train/history/[[version]]` |           57.1 KB |          54.4 KB |          9.7 KB |               2 |
-| `/setup`                           |           55.7 KB |          52.9 KB |          7.3 KB |               2 |
-| `/onboarding/[[step]]`             |           55.4 KB |          52.6 KB |          6.1 KB |               2 |
-| `/(app)/profile/[section]`         |           55.3 KB |          52.5 KB |          6.9 KB |               2 |
+| `/setup`                           |           55.7 KB |          53.0 KB |          7.3 KB |               2 |
+| `/onboarding/[[step]]`             |           55.4 KB |          52.7 KB |          6.1 KB |               2 |
+| `/(app)/profile/[section]`         |           55.3 KB |          52.6 KB |          6.9 KB |               2 |
 | `/design`                          |           55.0 KB |          52.2 KB |          7.3 KB |               2 |
 | `/`                                |           54.0 KB |          51.3 KB |          6.1 KB |               2 |
 | `/(app)/progress`                  |           53.9 KB |          51.9 KB |          7.4 KB |               2 |
-| `/(app)/offline`                   |           53.9 KB |          51.1 KB |          6.7 KB |               2 |
-| `/recover/passkey`                 |           53.6 KB |          50.8 KB |          5.8 KB |               2 |
-| `/recover`                         |           52.6 KB |          49.8 KB |          6.1 KB |               2 |
+| `/(app)/offline`                   |           53.9 KB |          51.2 KB |          6.7 KB |               2 |
+| `/recover/passkey`                 |           53.6 KB |          50.9 KB |          5.8 KB |               2 |
+| `/recover`                         |           52.6 KB |          49.9 KB |          6.1 KB |               2 |
 | `/(app)/coach`                     |           51.9 KB |          49.2 KB |          6.6 KB |               2 |
 
 The JS every route loads (the app entry, the root layout and what they import) went from
@@ -173,12 +173,14 @@ region, and the record of screens shown for RUM. These moved out of the initial 
 
 - **The toasts** (`ToastList`, loaded on idle or at the first toast). They slide with CSS
   animations, not `svelte/transition`: its runtime sat in the Svelte chunk of every route for
-  this one component (1.1 KB). The empty live region stays in the root layout.
+  this one component (1.1 KB). The empty live region stays in the root layout. Each toast's
+  time on screen starts when it appears, so one shown before `ToastList` arrives is not cut short.
 - **RUM** (`vitals.ts`), now imported when it starts on idle. The root layout keeps only
   `visits.ts`, which records each screen for attribution.
 - **Preferences** (`preferences.svelte.ts`). The theme is applied by `src/app.html` before
   paint, so the root layout loads the module after mount (`preferences-start.ts`) and only the
-  screens that show a unit have it up front: this step costs those four routes nothing.
+  screens that show a unit have it up front, and load the saved units on mount themselves: this
+  step costs those four routes nothing.
 
 Deleting all of the root layout's and the client hooks' own code takes 5.5 KB off the shared JS
 and 3.6 KB off `/(app)/today` (measured, not shipped): that is the ceiling for the app's code.
@@ -205,7 +207,7 @@ screen in the app. Plan, agreed before any M4 code lands:
   p75 ≤ 200 ms on that `route_id` from RUM.
 - If the shell itself must grow, raise the budget only with a measured reason in this file.
 - `/workout` measured 58.7 KB after the workout shell, against 53.8 KB planned. The slimmer
-  shared entry (table above) took it to 56.6 KB, so the later workout slices have 3.4 KB, not
+  shared entry (table above) took it to 56.7 KB, so the later workout slices have 3.3 KB, not
   1.3 KB, under the 60 KB gate.
 
 ### Main-thread budget (`e2e/perf.e2e.ts`, runs in CI with the e2e suite)

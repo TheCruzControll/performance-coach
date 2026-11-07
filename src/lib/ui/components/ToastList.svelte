@@ -16,7 +16,9 @@
 			(item) => live.get(item.id) ?? { ...item, leaving: true }
 		);
 		const known = new Set(kept.map((item) => item.id));
-		shown = [...kept, ...toast.items.filter((item) => !known.has(item.id))];
+		const added = toast.items.filter((item) => !known.has(item.id));
+		shown = [...kept, ...added];
+		for (const item of added) toast.appeared(item.id);
 	});
 	const remove = (id: number) => (shown = shown.filter((item) => item.id !== id));
 </script>

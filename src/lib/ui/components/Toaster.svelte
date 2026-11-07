@@ -10,9 +10,9 @@
 
 	// The toasts themselves (ToastList) are no route's initial JS: they load once the page is
 	// idle, or at the first toast if that is sooner. The live region is in the page from the
-	// start, so the first toast is announced like any other. Left out of the server build, which
-	// renders no toast: while the server can reach ToastList, SvelteKit links its CSS into every
-	// page.
+	// start, so the first toast is announced like any other, and its time on screen starts when it
+	// appears (toast.appeared). Left out of the server build, which renders no toast: while the
+	// server can reach ToastList, SvelteKit links its CSS into every page.
 	let List = $state<Component>();
 	let loading = false;
 	function load() {
