@@ -2,7 +2,7 @@
  * Coaching memory (PRD §4, §11; M3 lays the tables, M5 and M6 fill them): what the coach proposed
  * and what each weekly and cycle review found.
  *
- *   coach_proposals   a suggested change, proposed → accepted or rejected → applied (M5)
+ *   coach_proposals   a suggested change, proposed → accepted, rejected, applied or superseded (M5)
  *   weekly_reviews    one per owner and week (M6)
  *   cycle_reviews     one per block, naming the version that plans the next block (M6)
  *
@@ -17,15 +17,50 @@
  *   snapshot of the figures), so they read the same after the log is edited.
  * - Programs and versions are referenced by foreign key; they are never deleted. A block is
  *   named by its lineage, which outlives the edits that copy it (ADR 0010).
+ * - M5 (coach-proposals-db) ties a proposal to the conversation, run and tool call that made it,
+ *   and adds its payload's version and hash, diff, impact, decision, revision and supersession.
+ *   Guards (drizzle/<n>_coach_proposals_guards.sql): a proposal is inserted 'proposed'; its
+ *   content never changes; its status only moves forward; an applied, rejected or superseded row
+ *   is frozen; DELETE is refused. The lifecycle columns (applied_*, closed_at, decision_note,
+ *   superseded_reason) are left to the CHECKs below. Only test and reset code bypasses the guards
+ *   (ADR 0010), and the backup restore loads rows with user triggers disabled.
+ * - agent-runs.ts names coach_proposals for agent_tool_calls.proposal_id, so the two modules
+ *   import each other; every cross-table reference is a lazy callback, so either loads first.
  */
 import { sql } from 'drizzle-orm';
-import { check, date, index, jsonb, pgTable, text, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import {
+	check,
+	date,
+	index,
+	integer,
+	jsonb,
+	pgTable,
+	text,
+	timestamp,
+	uniqueIndex,
+	uuid,
+	type AnyPgColumn
+} from 'drizzle-orm/pg-core';
+import { SUPERSEDED_REASONS, type SupersededReason } from '../../../domain/coach/vocabulary';
 import { PROPOSAL_STATUSES, type ProposalStatus } from '../../../domain/training/vocabulary';
+import { agentRuns } from './agent-runs';
+import { coachThreads } from './coach';
 import { createdAt, inList, ownerRef, updatedAt } from './columns';
 import { programs, programVersions } from './programs';
 
 /** Free-form structured data (a proposal's change and evidence, a review's figures). */
 type Json = Record<string, unknown>;
+
+/** A decision note's longest, in characters (the owner's optional reason for a rejection). */
+export const DECISION_NOTE_MAX = 500;
+
+/** What applying a proposal changed, when it made no program version. */
+export const APPLIED_REF_KINDS = ['goal', 'preference', 'substitution', 'program'] as const;
+export type AppliedRefKind = (typeof APPLIED_REF_KINDS)[number];
+export interface AppliedRef {
+	kind: AppliedRefKind;
+	id: string;
+}
 
 /** Something the coach suggests; nothing changes until the owner accepts and it is applied. */
 export const coachProposals = pgTable(
@@ -48,8 +83,28 @@ export const coachProposals = pgTable(
 		/** The program it would change, and the version it was proposed against. */
 		programId: uuid('program_id').references(() => programs.id),
 		baseVersionId: uuid('base_version_id').references(() => programVersions.id),
-		/** The version applying it made: set exactly when it is applied. */
+		/** The version applying it made, when it made one. */
 		appliedVersionId: uuid('applied_version_id').references(() => programVersions.id),
+		/** What applying it changed otherwise (a goal, a preference, a substitution). */
+		appliedRef: jsonb('applied_ref').$type<AppliedRef>(),
+		/** The conversation, run and tool call that proposed it; null for a proposal from elsewhere. */
+		threadId: uuid('thread_id').references(() => coachThreads.id),
+		runId: uuid('run_id').references(() => agentRuns.id),
+		toolUseId: text('tool_use_id'),
+		/** The payload schema's version (PAYLOAD_VERSION) and payloadHash(payload). */
+		payloadVersion: integer('payload_version'),
+		payloadHash: text('payload_hash'),
+		/** What would change, as the card shows it, and what it would affect. */
+		diff: jsonb('diff').$type<Json>(),
+		impact: jsonb('impact').$type<Json>(),
+		/** When it left 'proposed'; the guard stamps it on that move when the update does not. */
+		closedAt: timestamp('closed_at', { withTimezone: true }),
+		/** The owner's note on the decision (an optional reason for a rejection). */
+		decisionNote: text('decision_note'),
+		/** The proposal this one revises ('Ask for changes'). */
+		revisionOf: uuid('revision_of').references((): AnyPgColumn => coachProposals.id),
+		/** Why it was superseded: set exactly when it is. */
+		supersededReason: text('superseded_reason').$type<SupersededReason>(),
 		createdAt: createdAt(),
 		updatedAt: updatedAt()
 	},
@@ -60,11 +115,39 @@ export const coachProposals = pgTable(
 			t.status,
 			t.createdAt.desc().nullsFirst()
 		),
+		// A conversation's proposals, in order.
+		index('coach_proposals_thread_idx').on(t.threadId, t.createdAt),
 		check('coach_proposals_status_ck', inList('status', PROPOSAL_STATUSES)),
 		check(
 			'coach_proposals_applied_ck',
-			sql`(${t.status} = 'applied') = (${t.appliedVersionId} is not null)`
+			sql`(${t.status} = 'applied') = (${t.appliedVersionId} is not null or ${t.appliedRef} is not null)`
 		),
+		check(
+			'coach_proposals_applied_ref_ck',
+			// IS TRUE: a missing key is null, which a CHECK would otherwise let through.
+			sql`${t.appliedRef} is null or (jsonb_typeof(${t.appliedRef}) = 'object' and ${t.appliedRef} ->> 'kind' in (${sql.raw(APPLIED_REF_KINDS.map((kind) => `'${kind}'`).join(', '))}) and jsonb_typeof(${t.appliedRef} -> 'id') = 'string' and char_length(${t.appliedRef} ->> 'id') > 0) is true`
+		),
+		check(
+			'coach_proposals_superseded_ck',
+			sql`(${t.status} = 'superseded') = (${t.supersededReason} is not null)`
+		),
+		check('coach_proposals_superseded_reason_ck', inList('superseded_reason', SUPERSEDED_REASONS)),
+		// CHECKs run in name order: an unknown status is left to coach_proposals_status_ck to name.
+		check(
+			'coach_proposals_closed_ck',
+			sql`(${t.status} = 'proposed') = (${t.closedAt} is null) or not (${inList('status', PROPOSAL_STATUSES)})`
+		),
+		check(
+			'coach_proposals_decision_ck',
+			sql`${t.decisionNote} is null or ${t.status} <> 'proposed'`
+		),
+		check(
+			'coach_proposals_decision_note_ck',
+			sql`char_length(${t.decisionNote}) between 1 and ${sql.raw(String(DECISION_NOTE_MAX))}`
+		),
+		check('coach_proposals_payload_version_ck', sql`${t.payloadVersion} >= 1`),
+		check('coach_proposals_payload_hash_ck', sql`${t.payloadHash} ~ '^[0-9a-f]{16}$'`),
+		check('coach_proposals_tool_use_ck', sql`char_length(${t.toolUseId}) > 0`),
 		check(
 			'coach_proposals_program_ck',
 			sql`${t.programId} is not null or (${t.baseVersionId} is null and ${t.appliedVersionId} is null)`

@@ -176,6 +176,20 @@
       "when": 1794050660023,
       "tag": "0024_coach_conversations_guards",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1794061746975,
+      "tag": "0025_coach_proposals",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1794061747766,
+      "tag": "0026_coach_proposals_guards",
+      "breakpoints": true
     }
   ]
 }
