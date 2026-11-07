@@ -6,6 +6,7 @@
  * every functional one, and perf and exclusive after those, so perf still runs alone.
  */
 import { readdirSync } from 'node:fs';
+import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Project } from '@playwright/test';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -17,7 +18,15 @@ const root = fileURLToPath(new URL('../', import.meta.url));
 async function ciProjects(): Promise<Project[]> {
 	vi.resetModules(); // the config reads CI when it loads
 	vi.stubEnv('CI', '1');
-	for (const name of ['E2E_WEBKIT', 'E2E_SERIAL_ALONE', 'E2E_PERF_ALONE']) vi.stubEnv(name, '');
+	for (const name of [
+		'E2E_WEBKIT',
+		'E2E_SERIAL_ALONE',
+		'E2E_PERF_ALONE',
+		'E2E_ENGINE',
+		'E2E_GROUP'
+	]) {
+		vi.stubEnv(name, '');
+	}
 	const { default: config } = await import('../playwright.config.ts');
 	return config.projects ?? [];
 }
@@ -97,12 +106,34 @@ describe('playwright.config.ts desktop projects', () => {
 		for (const name of ['serial-chromium', 'serial-webkit', 'perf', 'exclusive']) {
 			expect([...after(projects, name)], name).toEqual(expect.arrayContaining(functional));
 		}
-		// perf runs alone: after every project but exclusive, which waits for perf in turn.
+		// perf runs alone: after every project but the sweeps and exclusive, which wait for it.
 		const others = projects
 			.map((p) => p.name!)
-			.filter((n) => !['perf', 'exclusive'].includes(n) && !n.startsWith('setup'));
+			.filter(
+				(n) =>
+					!['perf', 'exclusive'].includes(n) && !n.startsWith('setup') && !n.startsWith('sweep-')
+			);
 		expect([...after(projects, 'perf')]).toEqual(expect.arrayContaining(others));
+		for (const sweep of ['sweep-chromium', 'sweep-webkit']) {
+			expect([...after(projects, sweep)], sweep).toEqual(
+				expect.arrayContaining([...others, 'perf'])
+			);
+			expect([...after(projects, 'exclusive')], 'exclusive').toContain(sweep);
+		}
 		expect([...after(projects, 'exclusive')]).toContain('perf');
+	});
+
+	it('give a *.sweep.e2e.ts file to the sweep projects only', async () => {
+		const projects = await ciProjects();
+		const globs = (value: Project['testMatch']) => [value ?? []].flat() as string[];
+		const runs = (project: Project, file: string) =>
+			globs(project.testMatch ?? '**/*.e2e.ts').some((g) => path.matchesGlob(file, g)) &&
+			!globs(project.testIgnore).some((g) => path.matchesGlob(file, g));
+		const running = (file: string) => projects.filter((p) => runs(p, file)).map((p) => p.name);
+		expect(running('e2e/state-gallery.sweep.e2e.ts')).toEqual(['sweep-chromium', 'sweep-webkit']);
+		expect(running('e2e/state-gallery.e2e.ts')).toEqual(
+			expect.arrayContaining(['iphone-chromium', 'iphone-webkit'])
+		);
 	});
 
 	it('select whole files: desktop specs move off the iPhone projects, nothing else does', () => {
@@ -119,6 +150,7 @@ describe('playwright.config.ts desktop projects', () => {
 				!f.endsWith('.desktop.e2e.ts') &&
 				!f.endsWith('.serial.e2e.ts') &&
 				!f.endsWith('.exclusive.e2e.ts') &&
+				!f.endsWith('.sweep.e2e.ts') &&
 				f !== 'perf.e2e.ts'
 		).sort();
 		for (const project of ['iphone-chromium', 'iphone-webkit']) {
