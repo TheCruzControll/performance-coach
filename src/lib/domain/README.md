@@ -307,7 +307,42 @@ one place.
 
 ### Running (`analytics/running.ts`)
 
-Not built yet (m6/05, running-analytics).
+Weekly mileage, pace by run type, long-run progression, best efforts and reported races,
+frequency and optional heart rate. Input: `RunFact` `{ workout, startedAt, sessionType, metres,
+seconds, avgHr, rpe, segments }`, one completed, undeleted run with its record's totals (exact
+metres: 5 mi is 8046.72 m) and its segments as run. `wholeRun(run)` gives its totals, each one
+the record lacks taken from M4's `runTotals` of its segments. Every pace is M4's `segmentPace`
+in s/km (lower is better) of amounts `runTotals` adds up; nothing here does pace arithmetic.
+Weeks are M3's (`weekStartOf`), so a Sunday-evening run stays in its week, and the week in
+progress is kept apart and flagged.
+
+- `weeklyRunning(runs, window, unit, timeZone)` → each complete week, zero-filled, and the week
+  in progress: `metres` (through M3's `weeklyDistance`), `distance` in km or mi, `runs`,
+  `seconds` recorded and `longestMetres`, with `points` (metres per week) for a mileage trend.
+- `runFrequency(runs, window, timeZone)` → runs over the complete weeks, the average week, runs
+  by session type, and the week in progress's runs apart.
+- `runPace(run)` → one run's pace input `{ basis, distanceMetres, durationSeconds,
+paceSecondsPerKm }`, by the part of the run that shows its type (`PACE_PART`): a tempo run's
+  tempo segments, else the whole run; intervals' interval segments only, pooled so longer reps
+  weigh more, and no input without one; every other type, an unknown one included, the whole
+  run. A segment counts only with a distance and a time; a run without a pace is left out.
+  `paceByType(runs, window, timeZone)` → per session type its inputs, a weekly pace (a gap for a
+  week without one) and the period's pace over the complete weeks.
+- `longRuns(runs, window, timeZone)` → each week's long run: its longest `long_run` session,
+  otherwise its longest run when at least `LONG_RUN_OF_MEAN` (1.5) × the week's mean run, with
+  `changePct` from the latest earlier long run and `jump` when more than `LONG_RUN_JUMP_PCT`
+  (10 %) longer.
+- `bestEfforts(runs, races)` → for 5K, 10K, half and marathon (`EFFORT_DISTANCES`): logged runs
+  within `EFFORT_TOLERANCE` (±2 %, edges included), the fastest by pace labelled `best_effort`
+  (measured), the rest `effort`; and M2's race results at the distance labelled `reported`. An
+  `other` race has no standard distance and is left out.
+- `heartRateByType(runs, window, timeZone)` → per session type with a tracked run in the
+  complete weeks: how many carry a heart rate and a time, and their time-weighted mean through
+  `runTotals` once `HR_MIN_RUNS` (4) do; until then `availability` says how many it has.
+
+`PACE_PART`, `LONG_RUN_OF_MEAN`, `LONG_RUN_JUMP_PCT`, `EFFORT_TOLERANCE` and `HR_MIN_RUNS` are
+coaching judgements the owner can change in one place. There is no `race` session type: races
+are best efforts and reported results (an open question for the owner).
 
 ### Adherence (`analytics/adherence.ts`)
 
