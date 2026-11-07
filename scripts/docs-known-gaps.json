@@ -33,5 +33,25 @@
 		"test": "docs-env",
 		"doc": "docs/environment.md",
 		"item": "PORT: not a key of envSchema"
+	},
+	{
+		"test": "docs-env",
+		"doc": "docs/environment.md",
+		"item": "CRON_SECRET: no row"
+	},
+	{
+		"test": "docs-env",
+		"doc": "docs/environment.md",
+		"item": "BACKUP_ENCRYPTION_KEY: no row"
+	},
+	{
+		"test": "docs-env",
+		"doc": "docs/environment.md",
+		"item": "BLOB_READ_WRITE_TOKEN: no row"
+	},
+	{
+		"test": "docs-env",
+		"doc": "docs/environment.md",
+		"item": "BACKUP_DIR: no row"
 	}
 ]
