@@ -43,5 +43,7 @@ agent/
   proposals/         draft.ts: structured-output drafts for program, workout and cycle proposals
 ```
 
-The provider is selected by `LLM_PROVIDER` (`mock` by default; `anthropic` requires
-`ANTHROPIC_API_KEY`), validated in `src/lib/server/env.ts`.
+The provider is chosen by `provider/select.ts` from `LLM_PROVIDER` (`mock`, `anthropic` or `off`)
+and `ANTHROPIC_API_KEY`. Unset means `anthropic` in production once `launch.ts`'s
+`COACH_LAUNCHED` is true, and `mock` elsewhere. A misconfiguration never stops the server: the
+coach reports itself unavailable (`disabled`, `not_launched`, `no_key` or `mock_in_production`).
