@@ -6,12 +6,18 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
 import { BASELINE_INSTRUCTION } from '../src/lib/domain/training/describe';
-import type { StartKit, StrengthKit } from '../src/lib/domain/workout';
+import type { StartKit, StrengthKit, SyncRequest } from '../src/lib/domain/workout';
 import { createMutation } from '../src/lib/domain/workout/mutations';
 import { DB_NAME, STORES } from '../src/lib/client/workout/names';
 import { expectNoSideScroll } from './desktop';
 import { captureScreen } from './support';
-import { gotoWorkout, injectMutation, seedWorkout, workoutDay } from './workout-support';
+import {
+	gotoWorkout,
+	injectMutation,
+	readOutbox,
+	seedWorkout,
+	workoutDay
+} from './workout-support';
 
 let kit: StrengthKit;
 test.beforeAll(async () => {
@@ -47,6 +53,36 @@ async function setPosition(page: Page, workoutId: string, position: number) {
 	);
 }
 
+/**
+ * Records /api/workouts traffic. `unexpected` returns every request other than the sync engine
+ * sending what the outbox already held: the view reads nothing from the server and queues nothing.
+ */
+function watchWorkouts(page: Page) {
+	const requests: { method: string; path: string; ids: string[] }[] = [];
+	page.on('request', (request) => {
+		const url = new URL(request.url());
+		if (!url.pathname.startsWith('/api/workouts')) return;
+		const body = request.method() === 'POST' ? (request.postDataJSON() as SyncRequest) : null;
+		requests.push({
+			method: request.method(),
+			path: url.pathname,
+			ids: body?.mutations.map(({ id }) => id) ?? []
+		});
+	});
+	return {
+		async unexpected() {
+			const queued = new Set((await readOutbox(page)).map(({ envelope }) => envelope.id));
+			return requests.filter(
+				({ method, path, ids }) =>
+					method !== 'POST' ||
+					path !== '/api/workouts/sync' ||
+					ids.length === 0 ||
+					!ids.every((id) => queued.has(id))
+			);
+		}
+	};
+}
+
 const card = (page: Page) => page.getByTestId('workout-main').getByTestId('exercise');
 const target = (page: Page) => card(page).getByTestId('exercise-target');
 const lines = (page: Page) => target(page).locator('.lines');
@@ -68,10 +104,7 @@ test.describe('the strength view (IndexedDB only)', () => {
 	test('the back squat asks to work up to a set of 5 @ RPE 7, with no weight, and shows last time', async ({
 		page
 	}, testInfo) => {
-		const workouts: string[] = [];
-		page.on('request', (request) => {
-			if (request.url().includes('/api/workouts')) workouts.push(request.url());
-		});
+		const workouts = watchWorkouts(page);
 		await seedWorkout(page, kit);
 		await gotoWorkout(page);
 
@@ -98,7 +131,7 @@ test.describe('the strength view (IndexedDB only)', () => {
 		]);
 		await expect(card(page).getByTestId('set').first()).toHaveAttribute('aria-current', 'step');
 		await captureScreen(page, testInfo, 'workout-baseline');
-		expect(workouts).toEqual([]);
+		expect(await workouts.unexpected()).toEqual([]);
 	});
 
 	test('the leg press shows 3 × 10 @ RPE 7 and its rest, and says it has no previous sets', async ({
@@ -138,13 +171,10 @@ test.describe('the strength view (IndexedDB only)', () => {
 		await expect(card(page).getByTestId('set').first()).toHaveText(/^1\s*0:45\s*Now$/);
 	});
 
-	test('a reload restores the same exercise, and no request reaches /api/workouts', async ({
+	test('a reload restores the same exercise, and nothing is read from /api/workouts', async ({
 		page
 	}) => {
-		const workouts: string[] = [];
-		page.on('request', (request) => {
-			if (request.url().includes('/api/workouts')) workouts.push(request.url());
-		});
+		const workouts = watchWorkouts(page);
 		await seedAt(page, kit, 3);
 		await gotoWorkout(page);
 		await expect(card(page).getByRole('heading', { level: 2 })).toHaveText('Romanian deadlift');
@@ -153,7 +183,7 @@ test.describe('the strength view (IndexedDB only)', () => {
 		await expect(page.locator('main#main[data-ready]')).toBeAttached();
 		await expect(card(page).getByRole('heading', { level: 2 })).toHaveText('Romanian deadlift');
 		expect(await page.getByTestId('workout-main').innerText()).toBe(shown);
-		expect(workouts).toEqual([]);
+		expect(await workouts.unexpected()).toEqual([]);
 	});
 
 	test('set rows say done, missed, skipped, extra and now in words', async ({ page }) => {
