@@ -35,11 +35,13 @@ export const SERVED_IN_PLACE = '<!-- served -->';
  * A panel's markup as static HTML for the server to send in its place. Comments go: they are
  * Svelte's hydration markers, which this markup never needs, and an empty one would end the
  * `{@html}` block early when the browser hydrates it. Text from data is escaped by `render`, so
- * no comment comes from the owner's data.
+ * no comment comes from the owner's data. Server only: `import.meta.env.SSR` keeps the renderer
+ * out of the browser's build, whose shared chunk it would otherwise grow on every route.
  */
 export async function servedPanel(Panel: Component, props: Record<string, unknown>) {
-	const { render } = await import('svelte/server');
-	return render(Panel, { props }).body.replace(/<!--[\s\S]*?-->/g, '');
+	const server = import.meta.env.SSR ? await import('svelte/server') : undefined;
+	if (!server) throw new Error('A panel is served by the server only');
+	return server.render(Panel, { props }).body.replace(/<!--[\s\S]*?-->/g, '');
 }
 
 /** What each panel's latest import came to: its component, or the error it failed with. */
