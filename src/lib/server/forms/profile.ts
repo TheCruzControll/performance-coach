@@ -10,12 +10,13 @@
  * `fail(404, { message })`.
  */
 import { fail, redirect } from '@sveltejs/kit';
-import type { OnboardingStep } from '../../domain/profile/onboarding';
+import { previousStep, type OnboardingStep } from '../../domain/profile/onboarding';
 import {
 	advanceOnboarding,
 	completeOnboarding,
 	createGoal,
 	deleteGoal,
+	getOnboarding,
 	isProfileInputError,
 	listGoals,
 	ProfileNotFoundError,
@@ -136,6 +137,11 @@ async function advance(
  * as an onboarding change, marks the step done and redirects to the next step: save as you go.
  * Goals save one at a time, so their Continue only checks that one is open. `skip` marks an
  * optional step skipped and moves on without saving; the services refuse it on a required step.
+ *
+ * Leaving a step saves it too, without marking it done: `then=back` (Back) redirects to the step
+ * before among those that apply now (the domain's previousStep, so a step that no longer applies
+ * goes back to the one before it in the full order), and `then=later` (Finish later) returns
+ * `{ saved: true }` for the screen to go on to Today.
  */
 export function stepActions(
 	step: OnboardingStep,
@@ -146,11 +152,17 @@ export function stepActions(
 	return {
 		save: async ({ locals, request }: FormEvent) => {
 			const owner = ownerId(locals);
-			const { payload } = await readForm(request);
+			const { payload, then } = await readForm(request);
 			if (saveSection) {
 				const change = { ...deps, source: 'onboarding' } as const;
 				const result = await attempt(() => saveSection(owner, payload, change));
 				if (!result.ok) return result.failure;
+			}
+			if (then === 'later') return { saved: true as const };
+			if (then === 'back') {
+				// The steps that apply once this save is in: experience can bring or drop specifics.
+				const { steps } = await getOnboarding(owner, deps);
+				redirect(303, href(previousStep(steps, step) ?? step));
 			}
 			if (step === 'goals' && !(await listGoals(owner, deps)).some((g) => g.priority !== null)) {
 				return fail(400, { errors: { goals: 'Add at least one goal to continue.' } });

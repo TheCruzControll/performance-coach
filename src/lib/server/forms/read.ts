@@ -17,17 +17,25 @@ export function ownerId(locals: App.Locals): string {
 	return locals.session.ownerId;
 }
 
-/** The form's JSON `payload` (`undefined` when the field is absent or blank); 400 if unreadable. */
-export async function readForm(request: Request): Promise<{ payload: unknown }> {
-	let raw: FormDataEntryValue | null;
+/**
+ * The form's JSON `payload` (`undefined` when the field is absent or blank) and its `then` field,
+ * where to go once it is saved (onboarding's Back and Finish later); 400 if unreadable.
+ */
+export async function readForm(
+	request: Request
+): Promise<{ payload: unknown; then: string | undefined }> {
+	let form: FormData;
 	try {
-		raw = (await request.formData()).get('payload');
+		form = await request.formData();
 	} catch {
 		error(400, UNREADABLE);
 	}
-	if (typeof raw !== 'string' || raw === '') return { payload: undefined };
+	const raw = form.get('payload');
+	const then = form.get('then');
+	const rest = { then: typeof then === 'string' ? then : undefined };
+	if (typeof raw !== 'string' || raw === '') return { payload: undefined, ...rest };
 	try {
-		return { payload: JSON.parse(raw) };
+		return { payload: JSON.parse(raw), ...rest };
 	} catch {
 		error(400, UNREADABLE);
 	}
