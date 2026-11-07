@@ -9,6 +9,9 @@
  *   matcher, which would cost every route JavaScript (docs/performance.md).
  * - It fails soft: a read that fails is recorded as a server error (kind 'load') and the screen
  *   shows its designed error with Retry, inside the shell, instead of the 500 page.
+ * - The current version's session carries its edits: the days Move offers (getMoveTargets),
+ *   from the owner's today (ownerToday), or why it can no longer change. An older version has
+ *   none, being read-only.
  */
 import { error } from '@sveltejs/kit';
 import type { DisciplineTone } from '#lib/domain/profile/catalog.ts';
@@ -16,19 +19,27 @@ import type { AthleteProfile } from '#lib/domain/profile/types.ts';
 import { describeSegments, type RunStep } from '#lib/domain/training/describe.ts';
 import type { SessionKind } from '#lib/domain/training/types.ts';
 import { sessionTone, type SessionStatus } from '#lib/domain/training/vocabulary.ts';
+import { ownerToday } from '#lib/server/local-date.ts';
 import { recordServerError, type ServerErrorInput } from '#lib/server/services/errors.ts';
 import { getAthleteProfile } from '#lib/server/services/profile/index.ts';
-import { getPlannedSession, type PlannedSession } from '#lib/server/services/programs/index.ts';
+import {
+	getMoveTargets,
+	getPlannedSession,
+	type PlannedSession
+} from '#lib/server/services/programs/index.ts';
 import { TrainingNotFoundError, type TrainingDeps } from '#lib/server/services/training/shared.ts';
 import {
 	BASELINE_CALLOUT,
 	detailsView,
 	disciplineWords,
+	EDITS_LOCKED,
 	exerciseViews,
+	moveOption,
 	whenWords,
 	type BaselineCallout,
 	type DetailsView,
-	type ExerciseView
+	type ExerciseView,
+	type SessionEdits
 } from '#lib/ui/program/session-words.ts';
 import { statusWords } from '#lib/ui/program/words.ts';
 
@@ -66,6 +77,8 @@ export interface SessionScreen {
 	steps: RunStep[];
 	instructions: string | null;
 	notes: string | null;
+	/** Its edits; none on an older version, which is read-only. */
+	edits: SessionEdits | null;
 }
 
 export type SessionDetailData =
@@ -76,6 +89,8 @@ export interface SessionRequest {
 	key: string;
 	/** The ?v parameter as given. */
 	version: string | null;
+	/** When the request came in: the owner's today, in their time zone, follows from it. */
+	now: Date;
 	/** What a recorded failure carries: the request's id, method, path, route and app version. */
 	origin: Pick<ServerErrorInput, 'requestId' | 'method' | 'path' | 'routeId' | 'appVersion'>;
 }
@@ -89,7 +104,7 @@ export interface SessionLoadDeps extends Pick<TrainingDeps, 'db'> {
 function screenOf(
 	session: PlannedSession,
 	{ weightUnit, distanceUnit }: Pick<AthleteProfile, 'weightUnit' | 'distanceUnit'>
-): SessionScreen {
+): Omit<SessionScreen, 'edits'> {
 	const { version, week } = session;
 	return {
 		lineage: session.lineage,
@@ -115,9 +130,32 @@ function screenOf(
 	};
 }
 
+/**
+ * The current version's edits on the owner's today: Move's days for a session dated today or
+ * later, as the edit services allow it; otherwise why it stays as it is.
+ */
+async function editsOf(
+	ownerId: string,
+	session: PlannedSession,
+	now: Date,
+	db: TrainingDeps['db']
+): Promise<SessionEdits> {
+	const today = await ownerToday(ownerId, now, { db });
+	const locked =
+		session.status === 'completed'
+			? EDITS_LOCKED.completed
+			: session.status === 'skipped'
+				? EDITS_LOCKED.skipped
+				: session.date < today
+					? EDITS_LOCKED.passed
+					: null;
+	const moveTo = locked ? [] : await getMoveTargets(ownerId, session.lineage, today, { db });
+	return { version: session.version.number, locked, moveTo: moveTo.map(moveOption) };
+}
+
 export async function loadSessionDetail(
 	ownerId: string,
-	{ key, version, origin }: SessionRequest,
+	{ key, version, now, origin }: SessionRequest,
 	{ db, errorsDb }: SessionLoadDeps = {}
 ): Promise<SessionDetailData> {
 	if (version !== null && !VERSION_PARAM.test(version)) error(404, 'Not found');
@@ -125,7 +163,8 @@ export async function loadSessionDetail(
 		const asked = version === null ? undefined : Number(version);
 		const session = await getPlannedSession(ownerId, key, { version: asked }, { db });
 		const profile = await getAthleteProfile(ownerId, { db });
-		return { state: 'session', ...screenOf(session, profile) };
+		const edits = session.version.current ? await editsOf(ownerId, session, now, db) : null;
+		return { state: 'session', ...screenOf(session, profile), edits };
 	} catch (err) {
 		if (err instanceof TrainingNotFoundError) error(404, 'Not found');
 		await recordServerError(

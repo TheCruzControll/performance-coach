@@ -7,6 +7,7 @@
  * 393 px; at 1440 × 900 the panel keeps a readable width, with hover and focus states.
  * Runs on Chromium and WebKit; axe for the same panel lives in a11y.e2e.ts.
  */
+import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
 import { captureScreen, trackConsoleErrors } from './support';
 
@@ -200,6 +201,51 @@ test.describe('/design → Plan', () => {
 
 		await page.getByRole('list', { name: 'Bench press' }).scrollIntoViewIfNeeded();
 		await captureScreen(page, testInfo, 'design-program-lines');
+	});
+
+	test('the Move sheet offers the days left with what is planned, and with none left offers Skip', async ({
+		page
+	}, testInfo) => {
+		await openProgram(page);
+		const days = page.getByTestId('move-days-fixture');
+		await expect(days.getByRole('group', { name: 'Move it to' })).toBeVisible();
+		const options = days.getByRole('radio');
+		await expect(options).toHaveCount(4);
+		await expect(options.nth(0)).toHaveAccessibleName(/^Thu 5 Nov\s+Easy run · Muay Thai class$/);
+		await expect(options.nth(1)).toHaveAccessibleName(/^Fri 6 Nov\s+Rest day$/);
+		await expect(options.nth(2)).toHaveAccessibleName(/^Sat 7 Nov\s+Long run$/);
+		await expect(options.nth(3)).toHaveAccessibleName(/^Sun 8 Nov\s+Rest day$/);
+		await expect(days.getByRole('radio', { checked: true })).toHaveCount(0);
+
+		const empty = page.getByTestId('move-empty-fixture');
+		await expect(empty.getByRole('heading', { name: 'No other day left this week' })).toBeVisible();
+		await expect(empty).toContainText('If you can’t train that day, skip it instead.');
+		await expect(empty.getByRole('radio')).toHaveCount(0);
+		// Skip is the way out, coming soon until the Skip edit exists: a row, not yet a control.
+		const skip = empty.getByTestId('move-skip');
+		await expect(skip).toContainText('Skip this session');
+		await expect(skip).toContainText('Soon');
+		await expect(skip).toHaveAttribute('aria-disabled', 'true');
+		await empty.scrollIntoViewIfNeeded();
+		await captureScreen(page, testInfo, 'design-program-move');
+
+		for (const theme of ['dark', 'light'] as const) {
+			await page.evaluate(
+				(t) => localStorage.setItem('pc:prefs:v1', JSON.stringify({ theme: t })),
+				theme
+			);
+			await openProgram(page);
+			await page.waitForTimeout(400); // the tab's entrance settles: contrast on final colours
+			const { violations } = await new AxeBuilder({ page })
+				.include('[data-testid="move-days-fixture"]')
+				.include('[data-testid="move-empty-fixture"]')
+				.withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
+				.analyze();
+			expect(
+				violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`),
+				`axe, ${theme}`
+			).toEqual([]);
+		}
 	});
 
 	test('every target is at least 44 × 44 px', async ({ page }) => {
