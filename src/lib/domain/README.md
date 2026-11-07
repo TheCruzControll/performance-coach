@@ -426,6 +426,23 @@ Not built yet (m6/29, next-block-input).
 
 Not built yet (m6/30, next-block-generator).
 
+## M9: backups (`backup/`)
+
+What a backup is, before anything writes one (the app-level encrypted backups ADR). Pure,
+imported by path (no index file), with relative `.ts` specifiers so `scripts/backup/` runs it
+under plain Node. Server-only by use: nothing in a page needs it.
+
+- `format.ts`: `FORMAT_VERSION`, `SESSION_SETTINGS` and the zod/mini schemas of the archive's
+  control lines (header, section, sequences, trailer). Row lines are Postgres's own
+  `row_to_json` text and never parsed here. `parseControlLine`, `formatControlLine`,
+  `isRowLine` and `schemaTag(header)` (`'<count>-<hash8>'`).
+- `pathnames.ts`: `backupPathname(date)` gives `backups/YYYY/MM/DD/coach-YYYYMMDDTHHMMSSZ.pcbk`
+  in UTC; `parseBackupPathname(name)` is strict and answers null for anything else.
+- `retention.ts`: `selectForDeletion(names, now, RETENTION, mustKeep)` splits a listing into
+  `keep`, `delete` and `unparseable`: the newest of each of the last 30 UTC days and the earliest
+  of each of the last 12 UTC months (`RETENTION.monthlyKeeps`), never a future-dated, must-keep
+  or unparseable name, the same answer for any input order.
+
 ## M9: restore order (`backup/plan.ts`)
 
 By path; no imports, so scripts load it under plain Node.
