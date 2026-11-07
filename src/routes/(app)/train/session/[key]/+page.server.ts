@@ -19,5 +19,5 @@ export const load: PageServerLoad = ({ locals, params, request, route, url }) =>
 		}
 	});
 
-/** Move, and its check before saving (edits.server.ts). */
+/** Move and its check before saving, Swap, Adjust and Skip (edits.server.ts). */
 export const actions = editActions() satisfies Actions;

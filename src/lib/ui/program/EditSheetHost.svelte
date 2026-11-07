@@ -1,6 +1,6 @@
 <!--
   @component
-  The sheet every session edit opens in (Move and Swap now; Adjust and Skip add theirs to SHEETS),
+  The sheet every session edit opens in (Move, Swap, Adjust and Skip, each in SHEETS),
   code-split with the BottomSheet it holds: the session screen loads it on intent and names the
   edit (`kind`). It loads that edit's sheet when it opens, and owns what every edit shares:
   - Save in the footer, disabled and aria-busy while the edit is posted, so a second tap posts
@@ -13,7 +13,7 @@
     'Couldn’t load this editor' and Retry, which loads it again in place (WebKit fetches anew);
     if that fails too while online, the screen reloads asking for the sheet (`?edit=<kind>`),
     because Chromium keeps a failed module fetch for the document's lifetime. An edit of one
-    exercise (Swap) names it too (`&exercise=<lineage>`).
+    exercise (Swap, Adjust on an exercise) names it too (`&exercise=<lineage>`).
   The toast links to History, where the new version and its why are listed.
 -->
 <script module lang="ts">
@@ -39,7 +39,12 @@
 		action: (edits: SessionEdits, exercise: SwapTarget | undefined) => string | null;
 		/** The sheet, code-split: fetched when the host first opens it. */
 		load: () => Promise<{ default: Component<P, EditSheetExports> }>;
-		props: (session: EditTarget, edits: SessionEdits, exercise: SwapTarget | undefined) => P;
+		props: (
+			session: EditTarget,
+			edits: SessionEdits,
+			exercise: SwapTarget | undefined,
+			onskip: (() => void) | undefined
+		) => P;
 	}
 
 	/** An entry checked against its sheet's props, then stored without their type. */
@@ -51,7 +56,12 @@
 			title: 'Move session',
 			action: (edits) => (edits.moveTo.length ? 'Move' : null),
 			load: () => import('./MoveSheet.svelte'),
-			props: ({ lineage }, { version, moveTo }) => ({ lineage, version, targets: moveTo })
+			props: ({ lineage }, { version, moveTo }, _exercise, onskip) => ({
+				lineage,
+				version,
+				targets: moveTo,
+				onskip
+			})
 		}),
 		swap: entry({
 			title: 'Swap exercise',
@@ -62,6 +72,24 @@
 				version,
 				exercise: exercise!
 			})
+		}),
+		adjust: entry({
+			title: 'Adjust',
+			action: () => 'Save',
+			load: () => import('./AdjustSheet.svelte'),
+			props: ({ lineage, title, adjust }, { version }, exercise) => ({
+				sessionLineage: lineage,
+				version,
+				values: adjust!,
+				exercise: exercise?.lineage,
+				name: exercise?.name ?? title
+			})
+		}),
+		skip: entry({
+			title: 'Skip session',
+			action: () => 'Skip',
+			load: () => import('./SkipSheet.svelte'),
+			props: ({ lineage, title }, { version }) => ({ lineage, title, version })
 		})
 	};
 
@@ -86,11 +114,13 @@
 		session: EditTarget;
 		/** What opened the sheet: focus returns to it. */
 		trigger: HTMLElement | undefined;
-		/** The exercise an edit of one exercise (Swap) is about. */
+		/** The exercise an edit of one exercise (Swap, Adjust) is about. */
 		exercise?: SwapTarget;
+		/** Skip the session instead: Move offers it when no day is left. */
+		onskip?: () => void;
 	}
 
-	let { open = $bindable(), kind, session, trigger, exercise }: Props = $props();
+	let { open = $bindable(), kind, session, trigger, exercise, onskip }: Props = $props();
 
 	/** What reopens this sheet after a reload. */
 	const reopen = $derived(
@@ -177,6 +207,13 @@
 		await invalidateAll();
 	}
 
+	// A reload after a conflict can find the session skipped or done elsewhere: Adjust then has
+	// nothing to step (`adjust` is null), so the sheet closes onto the session's new state.
+	const offered = $derived(!!session.edits && (kind !== 'adjust' || !!session.adjust));
+	$effect(() => {
+		if (open && !offered) close();
+	});
+
 	const action = $derived(session.edits && spec.action(session.edits, exercise));
 </script>
 
@@ -188,8 +225,8 @@
 	onclose={close}
 	data-testid="edit-sheet"
 >
-	{#if Sheet && session.edits}
-		<Sheet bind:this={sheet} {...spec.props(session, session.edits, exercise)} />
+	{#if Sheet && session.edits && offered}
+		<Sheet bind:this={sheet} {...spec.props(session, session.edits, exercise, onskip)} />
 	{:else if failed}
 		<EmptyState
 			compact
