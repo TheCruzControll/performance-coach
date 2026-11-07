@@ -35,6 +35,7 @@ export const ROUTE_ACCESS = {
 	'/api/test-support/session': 'public',
 	'/api/test-support/error': 'owner',
 	'/api/test-support/program': 'owner',
+	'/api/test-support/analytics': 'owner',
 
 	// Adding a passkey: a signed-in owner, or a recovery session replacing a lost passkey
 	'/api/auth/passkeys/options': 'any-session',
@@ -48,6 +49,7 @@ export const ROUTE_ACCESS = {
 	'/(app)/today': 'owner',
 	'/(app)/train': 'owner',
 	'/(app)/train/session/[key]': 'owner',
+	'/(app)/train/history/[[version]]': 'owner',
 	'/(app)/progress': 'owner',
 	'/(app)/coach': 'owner',
 	'/(app)/profile': 'owner',
