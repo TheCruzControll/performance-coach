@@ -890,7 +890,8 @@ describe('the training log schemas', () => {
 	it('read a set and its instant as a device sends them', () => {
 		expect(validate(logSetSchema, logged)).toEqual({
 			ok: true,
-			data: { ...logged, performedAt: new Date('2026-11-10T07:10:00.000Z') }
+			// Assistance left out is none: only an assisted exercise's set records it.
+			data: { ...logged, assistance: null, performedAt: new Date('2026-11-10T07:10:00.000Z') }
 		});
 		const offset = { ...logged, performedAt: '2026-11-10T08:10:00+01:00' };
 		expect(validate(logSetSchema, offset)).toMatchObject({
@@ -914,7 +915,18 @@ describe('the training log schemas', () => {
 			{ weight: LOG_LIMITS.weight.lb + 1, unit: 'lb' },
 			{ weight: `Up to ${LOG_LIMITS.weight.lb} lb` }
 		],
-		['an RPE off the half steps', { rpe: 8.2 }, { rpe: 'RPE between 1 and 10, in half steps' }]
+		['an RPE off the half steps', { rpe: 8.2 }, { rpe: 'RPE between 1 and 10, in half steps' }],
+		['two amounts', { seconds: 30 }, { seconds: 'Reps, a time or a distance: one of them' }],
+		[
+			'a weight beside an assistance',
+			{ assistance: 20 },
+			{ assistance: 'A weight or the assistance, not both' }
+		],
+		[
+			'more assistance than the unit allows',
+			{ weight: null, assistance: LOG_LIMITS.weight.lb + 1, unit: 'lb' },
+			{ assistance: `Up to ${LOG_LIMITS.weight.lb} lb` }
+		]
 	])('refuse %s, logged or edited', (_, change, errors) => {
 		expect(errorsOf(logSetSchema, { ...logged, ...change })).toEqual(errors);
 		expect(errorsOf(editSetSchema, { ...values, ...change })).toEqual(errors);
