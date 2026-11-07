@@ -2,7 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { TABS } from './support';
 
 /** Tabs whose screen loads server data, so offline they show the designed offline state. */
-const DATA_SCREENS: string[] = ['/train', '/profile'];
+const DATA_SCREENS: string[] = ['/today', '/train', '/profile'];
 
 /** Resolves once the service worker controls the page (no reload: it claims clients). */
 async function waitForController(page: Page) {
@@ -39,6 +39,13 @@ test.describe('offline behaviour (service worker)', () => {
 			await expect(page).toHaveURL(new RegExp(`${tab.path}$`));
 			await expect(page.getByRole('heading', { level: 1, name: tab.heading })).toBeVisible();
 		}
+
+		// Today needs server data (the setup card): the designed offline state in the shell.
+		await nav.getByRole('link', { name: 'Today' }).click();
+		await expect(page).toHaveURL(/\/today$/);
+		await expect(page.getByTestId('offline-state')).toBeVisible();
+		await expect(page.getByRole('heading', { level: 1, name: 'Today' })).toBeVisible();
+		await expect(page.locator('body')).not.toContainText(/500|internal error/i);
 
 		// Train needs server data (the program's week): the designed offline state in the shell.
 		await nav.getByRole('link', { name: 'Train' }).click();
