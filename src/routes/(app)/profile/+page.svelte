@@ -17,6 +17,7 @@
 	import Stat from '#lib/ui/components/Stat.svelte';
 	import Surface from '#lib/ui/components/Surface.svelte';
 	import { SECTIONS } from '#lib/ui/profile/sections.ts';
+	import { stepHref } from '../../onboarding/paths';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -132,6 +133,20 @@
 	</Card>
 
 	<Section title="Training profile" data-testid="training-profile">
+		<!-- Streamed: nothing until it settles, and nothing if setup is done or the read failed. -->
+		{#await data.setup then setup}
+			{#if setup}
+				<ListRow
+					title="Continue setting up"
+					subtitle={setup.stoppedAt
+						? `You stopped at ${setup.stoppedAt}`
+						: 'About five minutes: your goals, experience and week'}
+					icon="target"
+					href={stepHref(setup.resume)}
+					data-testid="continue-setup"
+				/>
+			{/if}
+		{/await}
 		{#each SECTIONS as section (section.key)}
 			<ListRow
 				title={section.title}

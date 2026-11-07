@@ -41,7 +41,7 @@ function sectionOf(step: OnboardingStep): SectionKey | null {
 export const load: PageServerLoad = async ({ locals, params }) => {
 	const step = stepOf(params.step);
 	const owner = ownerId(locals);
-	const { complete, steps, progress } = await getOnboarding(owner);
+	const { complete, steps, progress, resume } = await getOnboarding(owner);
 	if (complete) redirect(303, todayHref());
 	// Specifics without a running or Muay Thai goal, say: on to the next step that applies.
 	if (!steps.includes(step)) redirect(303, stepHref(nextStep(steps, step)));
@@ -57,7 +57,9 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 		context,
 		steps,
 		completed: progress.completed.filter((s) => steps.includes(s)),
-		skipped: progress.skipped.filter((s) => steps.includes(s))
+		skipped: progress.skipped.filter((s) => steps.includes(s)),
+		// On the welcome, once the owner has moved past it: the step to pick up at.
+		resume: step === 'welcome' && resume !== 'welcome' ? resume : null
 	};
 };
 

@@ -8,7 +8,7 @@
  * suites find onboarding open.
  */
 import AxeBuilder from '@axe-core/playwright';
-import { expect, test, type Page } from '@playwright/test';
+import { devices, expect, test, type Page } from '@playwright/test';
 import { DESKTOP, expectCentredOver, expectNoSideScroll, layoutWidth, tokenPx } from './desktop';
 import {
 	captureScreen,
@@ -35,6 +35,7 @@ const doneSteps = (page: Page) =>
 		.locator('.segment[data-done="true"]')
 		.evaluateAll((els) => els.map((el) => el.getAttribute('data-step')));
 const next = (page: Page) => page.getByTestId('step-continue');
+const ahead = (page: Page) => page.getByRole('list', { name: 'What we’ll ask' });
 const skip = (page: Page) => page.getByTestId('step-skip');
 
 /** Continue (or Skip) and land on the next step, ready. */
@@ -92,6 +93,14 @@ test('a fight and a marathon, every 1RM blank: set up step by step, stored, and 
 	await expect(page.getByRole('heading', { level: 1 })).toHaveText(
 		'Let’s build your plan around you'
 	);
+	// A first visit says what is ahead; there is nothing to pick up yet.
+	await expect(ahead(page).getByRole('listitem')).toContainText([
+		'Goals & priorities',
+		'Experience & strength',
+		'Your week'
+	]);
+	await expect(ahead(page).getByRole('listitem')).toHaveCount(3);
+	await expect(page.getByTestId('resume-card')).toHaveCount(0);
 	await expect(skip(page)).toHaveCount(0);
 	await captureScreen(page, testInfo, 'onboarding-welcome');
 	await page.getByRole('textbox', { name: 'What should your coach call you?' }).fill('Niko');
@@ -211,7 +220,100 @@ test('a fight and a marathon, every 1RM blank: set up step by step, stored, and 
 	// Finished: onboarding sends the owner to Today.
 	await page.goto('/onboarding/goals');
 	await expect(page).toHaveURL('/today');
+	// …and Profile has nothing left to continue.
+	await gotoHydrated(page, '/profile');
+	await expect(page.getByTestId('section-goals')).toBeVisible();
+	await expect(page.getByTestId('continue-setup')).toHaveCount(0);
 	expect(errors).toEqual([]);
+});
+
+test('stopped at schedule: a new browser context picks up there, from /onboarding and from Profile', async ({
+	browser,
+	context,
+	page,
+	request
+}, testInfo) => {
+	test.setTimeout(90_000);
+	await profileAction(request, '/onboarding/goals?/saveGoal', strengthGoal);
+	await gotoHydrated(page, '/onboarding');
+	await stepReady(page, 'welcome');
+	await page.getByRole('textbox', { name: 'What should your coach call you?' }).fill('Niko');
+	await moveOn(page, 'continue', 'goals');
+	await moveOn(page, 'continue', 'experience');
+	await page
+		.getByTestId('experience-entry')
+		.getByRole('radio', { name: 'Novice', exact: true })
+		.check();
+	await moveOn(page, 'continue', 'strength');
+	await moveOn(page, 'skip', 'equipment');
+	await moveOn(page, 'skip', 'injuries');
+	await moveOn(page, 'skip', 'exercises');
+	await moveOn(page, 'skip', 'schedule');
+
+	// The owner closes the app here; later, a new browser context with the same sign-in.
+	const storageState = await context.storageState();
+	await context.close();
+	const { defaultBrowserType: _engine, ...phone } = devices['iPhone 15 Pro'];
+	const later = await browser.newContext({ ...phone, storageState });
+	try {
+		const again = await later.newPage();
+		const errors = trackConsoleErrors(again);
+		await gotoHydrated(again, '/onboarding');
+		await stepReady(again, 'welcome');
+		await expect(again.getByRole('heading', { level: 1 })).toHaveText('Welcome back');
+		const card = again.getByTestId('resume-card');
+		await expect(card).toContainText('You stopped at Schedule');
+		await expect(ahead(again)).toHaveCount(0);
+		await expect(next(again)).toHaveText('Continue');
+		// The answers so far are kept: the name, as the welcome's own field shows it.
+		await expect(
+			again.getByRole('textbox', { name: 'What should your coach call you?' })
+		).toHaveValue('Niko');
+		expect(await audit(again)).toEqual([]);
+		await again.evaluate(() => document.documentElement.setAttribute('data-theme', 'light'));
+		await again.waitForTimeout(400);
+		expect(await audit(again)).toEqual([]);
+		await again.evaluate(() => document.documentElement.removeAttribute('data-theme'));
+		await captureScreen(again, testInfo, 'onboarding-resume');
+
+		await card.getByRole('link', { name: 'Pick up there' }).click();
+		await expect(again).toHaveURL('/onboarding/schedule');
+		await stepReady(again, 'schedule');
+		expect(await doneSteps(again)).toEqual([
+			'welcome',
+			'goals',
+			'experience',
+			'strength',
+			'equipment',
+			'injuries',
+			'exercises'
+		]);
+
+		// Profile's Training profile section links to the same step while setup is unfinished.
+		await gotoHydrated(again, '/profile');
+		const row = again.getByTestId('training-profile').getByTestId('continue-setup');
+		await expect(row).toContainText('Continue setting up');
+		await expect(row).toContainText('You stopped at Schedule');
+		await expect(row).toHaveAttribute('href', '/onboarding/schedule');
+		await row.click();
+		await expect(again).toHaveURL('/onboarding/schedule');
+		await stepReady(again, 'schedule');
+		expect(errors).toEqual([]);
+	} finally {
+		await later.close();
+	}
+});
+
+test('a profile never set up: Profile’s row starts at the welcome', async ({ page }) => {
+	await gotoHydrated(page, '/profile');
+	const row = page.getByTestId('continue-setup');
+	await expect(row).toContainText('Continue setting up');
+	await expect(row).toHaveAttribute('href', '/onboarding');
+	await row.click();
+	await expect(page).toHaveURL('/onboarding');
+	await stepReady(page, 'welcome');
+	await expect(page.getByTestId('resume-card')).toHaveCount(0);
+	await expect(ahead(page).getByRole('listitem')).toHaveCount(3);
 });
 
 test('the progress bar marks only finished steps, and required steps have no Skip', async ({
@@ -418,5 +520,28 @@ test.describe('in a desktop window', () => {
 		await later.hover();
 		await expect.poll(colour).not.toBe(resting);
 		await captureScreen(page, testInfo, 'onboarding-desktop');
+	});
+
+	test('a return visit: the resume card sits in the same column, its link with a hover state', async ({
+		page
+	}, testInfo) => {
+		await gotoHydrated(page, '/onboarding');
+		await stepReady(page, 'welcome');
+		await moveOn(page, 'continue', 'goals');
+		await gotoHydrated(page, '/onboarding');
+		await stepReady(page, 'welcome');
+		const card = page.getByTestId('resume-card');
+		await expect(card).toContainText('You stopped at Your goals');
+		const main = page.locator('main#main');
+		const [cardBox, mainBox] = [(await card.boundingBox())!, (await main.boundingBox())!];
+		expect(cardBox.x).toBeGreaterThanOrEqual(mainBox.x);
+		expect(cardBox.x + cardBox.width).toBeLessThanOrEqual(mainBox.x + mainBox.width);
+		await expectNoSideScroll(page);
+		const link = card.getByRole('link', { name: 'Pick up there' });
+		const background = () => link.evaluate((el) => getComputedStyle(el).backgroundColor);
+		const resting = await background();
+		await link.hover();
+		await expect.poll(background).not.toBe(resting);
+		await captureScreen(page, testInfo, 'onboarding-resume-desktop');
 	});
 });

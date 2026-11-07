@@ -10,7 +10,7 @@
   finishes the setup.
 -->
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, type Snippet } from 'svelte';
 	import { goto } from '$app/navigation';
 	import type { SectionForm } from '#lib/client/section-form.svelte.ts';
 	import { previousStep, STEP_INFO, type OnboardingStep } from '#lib/domain/profile/onboarding.ts';
@@ -35,10 +35,23 @@
 		title: string;
 		lede: string;
 		continueLabel: string;
+		/** Shown between the title and the editor (the welcome's intro or resume card). */
+		children?: Snippet;
 	}
 
-	let { step, steps, completed, skipped, key, saved, context, title, lede, continueLabel }: Props =
-		$props();
+	let {
+		step,
+		steps,
+		completed,
+		skipped,
+		key,
+		saved,
+		context,
+		title,
+		lede,
+		continueLabel,
+		children
+	}: Props = $props();
 
 	const index = $derived(steps.indexOf(step));
 	const previous = $derived(previousStep(steps, step));
@@ -159,6 +172,7 @@
 		</p>
 		<h1 class="title">{title}</h1>
 		<p class="lede">{lede}</p>
+		{#if children}<div class="lead">{@render children()}</div>{/if}
 	</div>
 
 	<div class="body" aria-busy={!form && !failed} data-testid="section-editor">
@@ -324,6 +338,10 @@
 
 	.lede {
 		color: var(--color-text-secondary);
+	}
+
+	.lead {
+		margin-top: var(--space-4);
 	}
 
 	.body {
