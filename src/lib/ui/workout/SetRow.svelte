@@ -5,33 +5,49 @@
   - to do: the target, quiet; current: the target, ringed in the accent, marked aria-current
   - done: what was done, with a tick; missed: what was done and how many reps were missed
   - skipped, extra and not saved: said in words ('Not saved on this device' in the danger tone)
-  Display only: set-actions makes a row a control.
+  A logged or skipped set given `onedit` is a button that opens its editor, named 'Edit set 2 …';
+  its first hover or touch (a touch enters it first) calls `onintent`; a key press loads it as it opens, so the editor's code is on its way before the
+  tap lands. From a desktop pointer it strengthens its border on hover; the keyboard gets a ring.
 -->
 <script lang="ts">
 	import type { SetRowWords } from './set-words.ts';
 
 	interface Props {
 		row: SetRowWords;
+		/** Opens the set's editor; a row without it is display only. */
+		onedit?: (event: MouseEvent) => void;
+		/** The first sign the owner may tap: load the editor. */
+		onintent?: () => void;
 	}
 
-	let { row }: Props = $props();
+	let { row, onedit, onintent }: Props = $props();
 </script>
 
 <li
-	class="set"
 	data-state={row.state}
 	aria-current={row.state === 'current' ? 'step' : undefined}
 	data-testid="set"
 >
-	<span class="index tabular">{row.setIndex}</span>
-	<span class="text">{row.text}</span>
-	<span class="state">
-		<span>{row.word}</span>
-	</span>
+	<!-- One element either way (Surface's way): a button to edit, else a plain row. The
+	     handlers go through a spread: a row without them is not interactive. No form encloses it,
+	     so the button needs no type. -->
+	<svelte:element
+		this={onedit ? 'button' : 'div'}
+		class="set"
+		{...{ onclick: onedit, onpointerenter: onintent }}
+	>
+		{#if onedit}<span class="visually-hidden">Edit set</span>{/if}
+		<span class="index tabular">{row.setIndex}</span>
+		<span class="text">{row.text}</span>
+		<span class="state">
+			<span>{row.word}</span>
+		</span>
+	</svelte:element>
 </li>
 
 <style>
 	.set {
+		position: relative;
 		display: grid;
 		grid-template-columns: 1.75rem minmax(0, 1fr) auto;
 		align-items: center;
@@ -41,6 +57,24 @@
 		border-radius: var(--radius-md);
 		border: 1px solid transparent;
 		font-size: var(--text-base);
+	}
+
+	button.set {
+		width: 100%;
+		margin: 0;
+		border-color: var(--color-hairline);
+		background: none;
+		color: inherit;
+		font: inherit;
+		text-align: start;
+		cursor: pointer;
+		transition: border-color var(--duration-fast) var(--ease-standard);
+	}
+
+	@media (hover: hover) and (pointer: fine) {
+		button.set:hover {
+			border-color: var(--color-border-strong);
+		}
 	}
 
 	.index {
@@ -62,7 +96,7 @@
 		text-align: right;
 	}
 
-	[data-state='current'] {
+	[data-state='current'] .set {
 		border-color: var(--color-accent);
 		background: var(--color-surface-2);
 	}

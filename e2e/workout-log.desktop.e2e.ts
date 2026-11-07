@@ -118,6 +118,11 @@ test.describe('logging a set on a desktop', () => {
 		const eight = logger(page).getByRole('radio', { name: '8', exact: true });
 		await expect(eight).toBeFocused();
 		await expect(eight).toBeChecked();
+		// Then Missed reps and Skip set, then Complete set.
+		await page.keyboard.press('Tab');
+		await expect(logger(page).getByTestId('missed-toggle')).toBeFocused();
+		await page.keyboard.press('Tab');
+		await expect(logger(page).getByTestId('logger-secondary')).toBeFocused();
 		await page.keyboard.press('Tab');
 		await expect(logger(page).getByTestId('complete-set')).toBeFocused();
 		await page.keyboard.press('Enter');

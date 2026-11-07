@@ -11,6 +11,11 @@
   - Below 1024 px it sits in the thumb zone, stuck to the bottom of the screen above the home
     indicator (--safe-bottom); from 1024 px it sits in the main column under the set rows, the
     two steppers side by side from 640 px (each one row below it, so the logger stays short).
+  - Missed reps (a reps set only) is a disclosure, closed for every set: opened, it records the
+    misses, prefilled from the target (`missedFor`, prefill.ts's defaultMissedReps) until the
+    owner sets them; closed, the set records none.
+  - Beside it, the secondary action the strength view gives: Skip set for a planned set, Cancel
+    for an extra one.
   Its fields keep their place from set to set, so nothing shifts as sets are logged.
 -->
 <script lang="ts">
@@ -18,9 +23,18 @@
 	import type { LoggedSet } from '#lib/domain/workout/index.ts';
 	import type { Snippet } from 'svelte';
 	import { formatDuration } from '#lib/domain/units.ts';
+	import type { IconName } from '../icons/icons.ts';
 	import Button from '../components/Button.svelte';
 	import NumberStepper from '../components/NumberStepper.svelte';
 	import RpeChips from './RpeChips.svelte';
+	import {
+		AMOUNT_STEPS,
+		MISSED_REPS_MAX,
+		missingInput,
+		NEEDS_AMOUNT,
+		NEEDS_WEIGHT,
+		parseTime
+	} from './set-input.ts';
 
 	interface Props {
 		/** Which set this is: a change starts again from `values`. */
@@ -36,6 +50,10 @@
 		loadHint: string | null;
 		rpeChips: readonly number[];
 		oncomplete: (set: LoggedSet, event: MouseEvent) => void;
+		/** A reps set's missed reps by default, from its target and the reps done. */
+		missedFor: (reps: number | null) => number;
+		/** Beside Missed reps: Skip set, or Cancel for an extra set. */
+		secondary: { label: string; icon: IconName; onclick: () => void } | null;
 		/** Above the set, in the thumb zone: what could not be saved, with Retry. */
 		children?: Snippet;
 	}
@@ -49,58 +67,53 @@
 		loadHint,
 		rpeChips,
 		oncomplete,
+		missedFor,
+		secondary,
 		children
 	}: Props = $props();
 
-	/** Asked when a weighted set has none. */
-	const NEEDS_WEIGHT = 'Enter the weight you used';
-	/** Asked when a timed or distance set has none. */
-	const NEEDS_AMOUNT = { seconds: 'Enter the time', metres: 'Enter the distance' } as const;
-
+	const id = $props.id();
 	type Missing = 'load' | 'amount' | null;
-	let edits = $state.raw<{ key: string; set: Partial<LoggedSet>; error: Missing }>({
-		key: '',
+	interface Edits {
+		key: string;
+		set: Partial<LoggedSet>;
+		error: Missing;
+		/** Missed reps opened; `missed` is what the owner set them to, null to follow the reps. */
+		missedOpen: boolean;
+		missed: number | null;
+	}
+	const fresh = (key: string): Edits => ({
+		key,
 		set: {},
-		error: null
+		error: null,
+		missedOpen: false,
+		missed: null
 	});
-	const mine = $derived(edits.key === setKey ? edits : { key: setKey, set: {}, error: null });
+	let edits = $state.raw<Edits>(fresh(''));
+	const mine = $derived(edits.key === setKey ? edits : fresh(setKey));
 	const set = $derived<LoggedSet>({ ...values, ...mine.set });
+	const missed = $derived(mine.missed ?? missedFor(set.reps));
 
-	const edit = (change: Partial<LoggedSet>) =>
-		(edits = { key: setKey, set: { ...mine.set, ...change }, error: null });
+	const edit = (change: Partial<Edits>) => (edits = { ...mine, error: null, ...change });
+	const editSet = (change: Partial<LoggedSet>) => edit({ set: { ...mine.set, ...change } });
 
 	const column = $derived(fields.load === 'assistance' ? 'assistance' : 'weight');
 	const amount = $derived(fields.amount);
-	const AMOUNT_STEPS = {
-		reps: { min: 0, step: 1, bigStep: 5, max: 100, unit: 'reps' },
-		seconds: { min: 1, step: 5, bigStep: 30, max: 3600, unit: undefined },
-		metres: { min: 1, step: 10, bigStep: 100, max: 100_000, unit: 'm' }
-	} as const;
-
-	/** '1:30' or '90' as seconds; null for anything else. */
-	function parseTime(text: string): number | null {
-		const match = /^(\d+)(?::(\d{1,2}))?$/.exec(text.trim());
-		if (!match) return null;
-		return match[2] === undefined ? Number(match[1]) : Number(match[1]) * 60 + Number(match[2]);
-	}
 
 	function complete(event: MouseEvent) {
-		if (fields.load === 'weight' && !((set.weight ?? 0) > 0)) {
-			edits = { ...mine, error: 'load' };
+		const error = missingInput(fields, set);
+		if (error) {
+			edits = { ...mine, error };
 			return;
 		}
-		const done = set[amount] ?? 0;
-		if (done < AMOUNT_STEPS[amount].min) {
-			edits = { ...mine, error: 'amount' };
-			return;
-		}
-		oncomplete({ ...set, [amount]: done }, event);
+		const missedReps = amount === 'reps' && mine.missedOpen ? missed : 0;
+		oncomplete({ ...set, [amount]: set[amount] ?? 0, missedReps }, event);
 	}
 </script>
 
 <section class="logger" aria-labelledby="logger-heading" data-testid="set-logger">
 	{@render children?.()}
-	<h3 id="logger-heading" class="heading">{heading}</h3>
+	<h3 id="logger-heading" class="heading" tabindex="-1">{heading}</h3>
 	<div class="steppers">
 		{#if fields.load}
 			<NumberStepper
@@ -113,7 +126,7 @@
 				decimals={String(increment).split('.')[1]?.length ?? 0}
 				hint={loadHint ?? undefined}
 				error={mine.error === 'load' ? NEEDS_WEIGHT : null}
-				onchange={(v) => edit({ [column]: fields.load === 'weight' || v > 0 ? v : null })}
+				onchange={(v) => editSet({ [column]: fields.load === 'weight' || v > 0 ? v : null })}
 				data-testid="logger-load"
 			/>
 		{/if}
@@ -128,11 +141,47 @@
 			format={amount === 'seconds' ? formatDuration : undefined}
 			parse={amount === 'seconds' ? parseTime : undefined}
 			error={mine.error === 'amount' && amount !== 'reps' ? NEEDS_AMOUNT[amount] : null}
-			onchange={(v) => edit({ [amount]: v })}
+			onchange={(v) => editSet({ [amount]: v })}
 			data-testid="logger-amount"
 		/>
+		{#if amount === 'reps' && mine.missedOpen}
+			<div id="{id}-missed">
+				<NumberStepper
+					label="Missed reps"
+					value={missed}
+					max={MISSED_REPS_MAX}
+					hint="Reps you attempted and failed"
+					onchange={(v) => edit({ missed: v })}
+					data-testid="logger-missed"
+				/>
+			</div>
+		{/if}
 	</div>
-	<RpeChips chips={rpeChips} value={set.rpe} onchange={(rpe) => edit({ rpe })} />
+	<RpeChips chips={rpeChips} value={set.rpe} onchange={(rpe) => editSet({ rpe })} />
+	<div class="more">
+		{#if amount === 'reps'}
+			<Button
+				variant="ghost"
+				iconEnd="chevron-down"
+				aria-expanded={mine.missedOpen}
+				aria-controls={mine.missedOpen ? `${id}-missed` : undefined}
+				onclick={() => edit({ missedOpen: !mine.missedOpen })}
+				data-testid="missed-toggle"
+			>
+				Missed reps
+			</Button>
+		{/if}
+		{#if secondary}
+			<Button
+				variant="ghost"
+				icon={secondary.icon}
+				onclick={secondary.onclick}
+				data-testid="logger-secondary"
+			>
+				{secondary.label}
+			</Button>
+		{/if}
+	</div>
 	<Button size="lg" block icon="check" onclick={complete} data-testid="complete-set">
 		Complete set
 	</Button>
@@ -156,11 +205,33 @@
 		box-shadow: var(--elevation-2);
 	}
 
+	/* Focused from Add a set, so a screen reader hears which set this is; not a control. */
+	.heading:focus {
+		outline: none;
+	}
+
 	.heading {
 		font-size: var(--text-sm);
 		font-weight: var(--weight-semibold);
 		color: var(--color-text-secondary);
 		overflow-wrap: anywhere;
+	}
+
+	.more {
+		display: flex;
+		flex-wrap: wrap;
+		justify-content: space-between;
+		gap: var(--space-2);
+		margin: calc(-1 * var(--space-1)) 0;
+	}
+
+	/* The last action keeps the right edge, Missed reps or not. */
+	.more > :global(:last-child) {
+		margin-left: auto;
+	}
+
+	.more :global([aria-expanded='true'] svg) {
+		transform: rotate(180deg);
 	}
 
 	.steppers {
@@ -177,19 +248,19 @@
 	 */
 	@media (width < 40rem) {
 		@container (width >= 22rem) {
-			.steppers > :global(.stepper) {
+			.steppers :global(.stepper) {
 				grid-template-columns: minmax(0, 1fr) auto;
 				align-items: center;
 				column-gap: var(--space-3);
 				row-gap: var(--space-1);
 			}
 
-			.steppers > :global(.stepper > .label),
-			.steppers > :global(.stepper > .hint) {
+			.steppers :global(.stepper > .label),
+			.steppers :global(.stepper > .hint) {
 				text-align: start;
 			}
 
-			.steppers > :global(.stepper > .hint) {
+			.steppers :global(.stepper > .hint) {
 				grid-column: 1 / -1;
 			}
 
