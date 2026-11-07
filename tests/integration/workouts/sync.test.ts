@@ -917,3 +917,31 @@ describe('discarded changes (finding F1 of the workout sync model)', () => {
 		});
 	});
 });
+
+describe('a start whose planned session does not exist', () => {
+	it('is refused at payload.plannedSessionId, and the same id applies once kept unplanned', async () => {
+		await withRollback(async (db) => {
+			const { owner, squat } = await setup(db);
+			const workout = deviceId();
+			const start = startOf(workout);
+			const planned = { ...start, payload: { ...start.payload, plannedSessionId: deviceId() } };
+			const log = logOf(workout, squat);
+
+			const refused = await sync(db, owner, [planned, log]);
+			expect(refused.results).toEqual([
+				{
+					id: start.id,
+					status: 'rejected',
+					code: 'invalid',
+					errors: { 'payload.plannedSessionId': 'No such planned session' }
+				},
+				{ id: log.id, status: 'deferred', code: 'blocked' }
+			]);
+			expect(await ledgerHas(db, start.id)).toBe(false);
+
+			const kept = await sync(db, owner, [start, log]);
+			expect(statuses(kept.results)).toEqual(['applied', 'applied']);
+			expect(kept.results[1]!.canonical!.workout).toMatchObject({ plannedSessionId: null });
+		});
+	});
+});
