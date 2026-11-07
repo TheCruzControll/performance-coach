@@ -187,16 +187,17 @@ describe('exercise preferences', () => {
 		});
 	});
 
-	it("read 'profile', unlinked, when saved by M2's Profile, which names no source", async () => {
+	it("read 'profile', linked to the exercise its words name, when saved by Profile", async () => {
 		await withRollback(async (db) => {
 			const owner = await makeOwner(db);
+			const { burpee } = await library(db, ['burpee']);
 			await saveExercisePreferences(
 				owner,
 				{ items: [{ exercise: 'Burpees', sentiment: 'dislike', reason: 'Wrists' }] },
 				{ db }
 			);
 			expect(await preferenceRow(db, 'Burpees')).toEqual([
-				{ exercise: 'Burpees', exerciseId: null, source: 'profile' }
+				{ exercise: 'Burpees', exerciseId: burpee, source: 'profile' }
 			]);
 		});
 	});
