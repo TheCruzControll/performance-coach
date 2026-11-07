@@ -2,17 +2,22 @@
  * Today until onboarding is complete: a setup card with how many of the steps that apply are
  * done and Continue to the step to resume at, which is how the owner gets into onboarding after
  * first sign-in and back into it after a reload. The card streams in and fails soft: a read that
- * fails is a designed error with Retry, never a 500. Serial (one test at a time, after the
+ * fails is a designed error with Retry, never a 500. Once it is complete, Today summarises the
+ * open goals by rank (weeks to go counted from the device's date) and the shape of the week, with
+ * the commitments marked on the week strip. Serial (one test at a time, after the
  * functional suites): every test starts from a blank training profile, which every browser and
  * worker shares, and the last one leaves it blank again.
  */
-import { expect, test, type Page } from '@playwright/test';
+import AxeBuilder from '@axe-core/playwright';
+import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 import { DESKTOP, expectMainCentred, expectNoSideScroll, tokenPx } from './desktop';
 import {
 	captureScreen,
 	gotoHydrated,
+	profileAction,
 	query,
 	resetTrainingProfile,
+	SAME_ORIGIN,
 	trackConsoleErrors
 } from './support';
 
@@ -30,6 +35,77 @@ async function continueTo(page: Page, step: string) {
 	await page.getByTestId('step-continue').click();
 	await expect(page).toHaveURL(`/onboarding/${step}`);
 	await stepReady(page, step);
+}
+
+/** The device's date `days` from now, as a stored calendar date (the browser shares its zone). */
+function inDays(days: number): string {
+	const d = new Date();
+	d.setDate(d.getDate() + days);
+	const pad = (n: number) => String(n).padStart(2, '0');
+	return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+/** A fight ten weeks out (ranked first), a marathon three weeks out, and a strength goal. */
+const FIGHT = {
+	kind: 'event',
+	title: 'First Muay Thai fight',
+	disciplines: ['muay_thai'],
+	eventType: 'Muay Thai fight',
+	eventDate: inDays(70)
+};
+const MARATHON = {
+	kind: 'event',
+	title: 'Valencia marathon',
+	disciplines: ['distance_running', 'custom'],
+	customDiscipline: 'Hill repeats',
+	eventType: 'Marathon',
+	eventDate: inDays(24)
+};
+const STRENGTH = {
+	kind: 'general',
+	title: 'Keep my strength',
+	disciplines: ['strength'],
+	focus: 'Hold squat and deadlift',
+	measure: 'Top sets at RPE 8 stay within 5%'
+};
+
+/** Onboarding finished through the app's own actions: goals, schedule, then Finish on review. */
+async function setUp(request: APIRequestContext) {
+	for (const goal of [FIGHT, MARATHON, STRENGTH]) {
+		await profileAction(request, '/profile/goals?/saveGoal', goal);
+	}
+	await profileAction(request, '/profile/schedule?/save', {
+		daysPerWeek: 4,
+		availableDays: ['mon', 'tue', 'thu', 'sat'],
+		preferredTimes: [],
+		sessionMinutes: 60,
+		commitments: [
+			{
+				discipline: 'muay_thai',
+				label: 'Muay Thai class',
+				days: ['tue', 'thu'],
+				timeOfDay: 'evening',
+				durationMinutes: 90,
+				intensity: 'hard'
+			}
+		]
+	});
+	const finish = await request.post('/onboarding/review?/complete', {
+		headers: { ...SAME_ORIGIN, accept: 'application/json', 'x-sveltekit-action': 'true' },
+		multipart: { payload: '{}' }
+	});
+	expect(await finish.json()).toMatchObject({ type: 'redirect', location: '/today' });
+}
+
+const goals = (page: Page) => page.getByTestId('today-goal');
+
+async function audit(page: Page) {
+	await page.waitForFunction(() => document.fonts.status === 'loaded');
+	await page.waitForTimeout(400);
+	const { violations } = await new AxeBuilder({ page })
+		.withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
+		.analyze();
+	return violations.flatMap((v) => v.nodes.map((n) => `${v.id}: ${n.target.join(' ')}`));
 }
 
 test.beforeEach(async () => {
@@ -130,6 +206,139 @@ test('once onboarding is complete, Today has no setup card', async ({ page }) =>
 	await expect(card(page)).toHaveCount(0);
 });
 
+test('once set up, Today lists the goals by rank with weeks to go, and the shape of the week', async ({
+	page,
+	request
+}, testInfo) => {
+	const errors = trackConsoleErrors(page);
+	await setUp(request);
+	await gotoHydrated(page, '/today');
+	await expect(card(page)).toHaveCount(0);
+
+	await expect(goals(page)).toHaveCount(3);
+	await expect(goals(page).getByRole('heading', { level: 3 })).toHaveText([
+		'First Muay Thai fight',
+		'Valencia marathon',
+		'Keep my strength'
+	]);
+	await expect(goals(page).nth(0)).toContainText('Top priority');
+	await expect(page.getByText('Top priority')).toHaveCount(1);
+	await expect(goals(page).nth(0).getByRole('listitem')).toHaveText(['Muay Thai']);
+	await expect(goals(page).nth(1).getByRole('listitem')).toHaveText([
+		'Half / marathon',
+		'Hill repeats'
+	]);
+	// Counted from the device's date once hydrated; a goal with no date has no countdown.
+	await expect(goals(page).nth(0).getByTestId('today-goal-countdown')).toHaveText('10 weeks to go');
+	await expect(goals(page).nth(1).getByTestId('today-goal-countdown')).toHaveText('3 weeks to go');
+	await expect(goals(page).nth(2).getByTestId('today-goal-countdown')).toHaveCount(0);
+
+	const schedule = page.getByTestId('today-schedule');
+	await expect(page.getByTestId('today-schedule-summary')).toHaveText(
+		'4 days a week · 60 min sessions'
+	);
+	await expect(schedule).toContainText('Free to train Mon, Tue, Thu, Sat');
+	await expect(page.getByTestId('today-commitment')).toHaveText(
+		/Muay Thai class\s*Tue, Thu · evening · 90 min · hard/
+	);
+	// The class is marked on Tuesday and Thursday of the week strip, and named for screen readers.
+	const days = page.getByRole('list', { name: 'This week' }).locator('> li');
+	await expect(days).toHaveCount(7);
+	for (const [i, booked] of [false, true, false, true, false, false, false].entries()) {
+		await expect(days.nth(i).getByTestId('today-day-booked')).toHaveCount(booked ? 1 : 0);
+		if (booked) await expect(days.nth(i)).toContainText('Muay Thai class');
+		else await expect(days.nth(i)).not.toContainText('Muay Thai class');
+	}
+
+	expect(await audit(page), 'dark').toEqual([]);
+	await captureScreen(page, testInfo, 'today-ready');
+	await page.evaluate(() =>
+		localStorage.setItem('pc:prefs:v1', JSON.stringify({ theme: 'light' }))
+	);
+	await gotoHydrated(page, '/today');
+	await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+	await expect(goals(page)).toHaveCount(3);
+	expect(await audit(page), 'light').toEqual([]);
+	expect(errors).toEqual([]);
+});
+
+test('once set up, the goals and schedule stream in below what is already painted', async ({
+	page,
+	request
+}) => {
+	await setUp(request);
+	// What lies between the first card and the plate row: in the server-rendered page, before the
+	// stream resolves, and again once it has. Streamed sections may only add below them.
+	await page.addInitScript(() => {
+		const gap = () => {
+			const first = document.querySelector('main .stack > *')!.getBoundingClientRect();
+			const plate = document.querySelector('a[href*="tool=plates"]')!.getBoundingClientRect();
+			return plate.top - first.bottom;
+		};
+		document.addEventListener('DOMContentLoaded', () =>
+			Object.assign(window, {
+				__painted: {
+					gap: gap(),
+					streaming: !!document.querySelector('[data-testid="today-setup-loading"]')
+				}
+			})
+		);
+		Object.assign(window, { __gap: gap });
+	});
+	await gotoHydrated(page, '/today');
+	await expect(goals(page)).toHaveCount(3);
+	type Measured = { __painted: { gap: number; streaming: boolean }; __gap: () => number };
+	const painted = await page.evaluate(() => (window as unknown as Measured).__painted);
+	expect(painted.streaming, 'measured before the stream resolved').toBe(true);
+	const now = await page.evaluate(() => (window as unknown as Measured).__gap());
+	expect(Math.abs(now - painted.gap), 'nothing streams in above the plate row').toBeLessThanOrEqual(
+		1
+	);
+	const plate = (await page.getByRole('link', { name: /Plate calculator/ }).boundingBox())!;
+	const goalsTop = (await page.getByTestId('today-goals').boundingBox())!.y;
+	expect(goalsTop).toBeGreaterThan(plate.y + plate.height);
+});
+
+test('reordering goals in Profile changes the order on Today', async ({ page, request }) => {
+	await setUp(request);
+	await gotoHydrated(page, '/profile/goals');
+	await expect(page.getByTestId('section-editor')).toHaveAttribute('aria-busy', 'false');
+	await page.getByRole('button', { name: 'Move Valencia marathon up', exact: true }).click();
+	await expect(page.getByTestId('goal-order-status')).toHaveText(
+		'Valencia marathon is now priority 1 of 3'
+	);
+	await expect
+		.poll(() => query<{ title: string }>('select title from training_goals order by priority'))
+		.toEqual([
+			{ title: 'Valencia marathon' },
+			{ title: 'First Muay Thai fight' },
+			{ title: 'Keep my strength' }
+		]);
+
+	await page.getByRole('link', { name: 'Today' }).first().click();
+	await expect(page).toHaveURL('/today');
+	await expect(goals(page).getByRole('heading', { level: 3 })).toHaveText([
+		'Valencia marathon',
+		'First Muay Thai fight',
+		'Keep my strength'
+	]);
+	await expect(goals(page).nth(0)).toContainText('Top priority');
+	await expect(goals(page).nth(1)).not.toContainText('Top priority');
+});
+
+test('with no open goal left, Today says so and links to Goals', async ({ page, request }) => {
+	await setUp(request);
+	await query(`update training_goals set status = 'achieved', priority = null, closed_at = now()`);
+	await gotoHydrated(page, '/today');
+	const empty = page.getByTestId('today-goals-empty');
+	await expect(empty).toContainText('No open goals');
+	await expect(goals(page)).toHaveCount(0);
+	await expect(empty.getByRole('link', { name: 'Add a goal' })).toHaveAttribute(
+		'href',
+		'/profile/goals'
+	);
+});
+
 test('a setup read that fails is a designed error with Retry inside the shell, and Retry recovers', async ({
 	page
 }, testInfo) => {
@@ -184,5 +393,30 @@ test.describe('in a desktop window', () => {
 		await cta(page).hover();
 		await expect.poll(background).not.toBe(resting);
 		await captureScreen(page, testInfo, 'today-setup-desktop');
+	});
+
+	test('once set up, goals and schedule sit in the readable column, and Edit has a hover state', async ({
+		page,
+		request
+	}, testInfo) => {
+		await setUp(request);
+		await gotoHydrated(page, '/today');
+		await expect(goals(page)).toHaveCount(3);
+		await expectMainCentred(page, await tokenPx(page, '--content-readable'));
+		await expectNoSideScroll(page);
+		const main = (await page.locator('main#main').boundingBox())!;
+		for (const id of ['today-goals', 'today-schedule']) {
+			const box = (await page.getByTestId(id).boundingBox())!;
+			expect(box.x).toBeGreaterThanOrEqual(main.x - 1);
+			expect(box.x + box.width).toBeLessThanOrEqual(main.x + main.width + 1);
+		}
+		const edit = page
+			.getByTestId('today-goals')
+			.getByRole('link', { name: 'Edit goals', exact: true });
+		const background = () => edit.evaluate((el) => getComputedStyle(el).backgroundColor);
+		const resting = await background();
+		await edit.hover();
+		await expect.poll(background).not.toBe(resting);
+		await captureScreen(page, testInfo, 'today-ready-desktop');
 	});
 });
