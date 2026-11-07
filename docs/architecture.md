@@ -122,10 +122,9 @@ gives each of their queries its own connection.
   `path` + `route_id`). M2 auth tables: `owners` (exactly one row), `passkey_credentials`,
   `auth_sessions` (token hashes), `email_sign_in_links` (hashes), `recovery_codes` (hashes), `webauthn_challenges` (single-use),
   `used_setup_tokens` (hashes of spent setup tokens), `auth_events` (audit log) and `auth_rate_limits` (DB-backed counters); see docs/security.md. CI's `pnpm db:drift` fails when the schema changes without a committed
-  migration. M2 training-profile tables: see "Training profile (M2)" below. Programs, their
-  versions and prescriptions, the exercise library, the training log and coaching memory came
-  later, each in its own file under `schema/`, with history-preserving, timestamped records
-  (PRD §9).
+  migration. M2 training-profile tables: see "Training profile (M2)" below. M3's programs,
+  prescriptions, exercise library, training log and coaching memory: see "Training model (M3)"
+  below.
 
 ## Training profile (M2)
 
@@ -216,6 +215,228 @@ route each for Profile editing and onboarding, with no matcher (an unknown key i
 the load and from every action). Editors load through the registry after the screen renders,
 never statically, and the screen never reaches an editor on the server (`import.meta.env.SSR`), so
 SvelteKit links none of the editors' CSS into the page.
+
+## Training model (M3)
+
+What the plan is, why it is that, and what the owner did (PRD §4, §5, §7, §9). Planned history
+is never overwritten: every edit is a new program version ([ADR 0010](adr/0010-program-versioning.md)).
+
+### Modules
+
+| Module                                 | Holds                                                                                  |
+| -------------------------------------- | -------------------------------------------------------------------------------------- |
+| `src/lib/domain/training/`             | The vocabulary, the program-plan contract (`types.ts`, `schemas.ts`), words, metrics   |
+| `src/lib/domain/exercises/`            | The exercise catalogue as pipe tables (`catalogue/{lower,upper}.ts`) and the matcher   |
+| `src/lib/domain/programming/`          | The generator: input, stages, rules per area, decision templates, interference, hashes |
+| `src/lib/server/services/exercises/`   | The library: list, look up, create and retire the owner's own, resolve free text       |
+| `src/lib/server/services/programs/`    | Store a plan, read the program, revise it, the owner's edits, alternatives             |
+| `src/lib/server/services/programming/` | Preview the generated program, then build it as version 1                              |
+| `src/lib/server/services/training/`    | The training log (`log.ts`), history reads (`history.ts`), preferences, shared errors  |
+| `src/lib/server/db/queries/`           | The history and program query builders, run by repositories and by `pnpm db:explain`   |
+
+The services modules are imported by path; `services/index.ts` re-exports none of them. The
+catalogue and the generator are server-only at runtime (see "Module boundaries").
+
+### Data model
+
+Twenty-four tables from `drizzle/0008_program_versions.sql` to
+`drizzle/0016_history_plan_indexes.sql`, plus the library link on M2's `exercise_preferences`.
+Every row reaches `owners` through a foreign key (`owner_id`, or a parent that has one), except
+`exercises` (below).
+
+```mermaid
+erDiagram
+  owners ||--o{ programs : owns
+  programs ||--|{ program_versions : "versions"
+  programs |o--o| program_versions : "current_version_id"
+  program_versions ||--o{ program_version_blocks : "member blocks"
+  program_blocks ||--o{ program_version_blocks : "shared by"
+  program_versions ||--o{ program_version_weeks : "member weeks"
+  program_weeks ||--o{ program_version_weeks : "shared by"
+  programs ||--o{ program_blocks : has
+  program_blocks ||--o{ program_weeks : has
+  program_weeks ||--o{ planned_sessions : has
+  program_versions ||--o{ programming_decisions : "produced by"
+  planned_sessions ||--o{ planned_exercises : strength
+  planned_exercises ||--o{ set_prescriptions : sets
+  planned_sessions ||--o{ planned_run_segments : running
+  planned_sessions ||--o| planned_session_details : other
+  exercises ||--o{ planned_exercises : "exercise_id (RESTRICT)"
+  owners ||--o{ workouts : logs
+  planned_sessions |o--o{ workouts : "logged from"
+  workouts ||--o{ set_records : strength
+  workouts ||--o| run_records : running
+  run_records ||--o{ run_record_segments : segments
+  workouts ||--o| other_session_records : other
+  workouts ||--o{ workout_substitutions : swaps
+  exercises ||--o{ set_records : "exercise_id (RESTRICT)"
+  owners ||--o{ recovery_notes : notes
+  owners ||--o{ training_audit : "edits of logged rows"
+  owners ||--o{ coach_proposals : proposals
+  owners ||--o{ weekly_reviews : "one per week"
+  programs ||--o{ cycle_reviews : "one per block lineage"
+  exercises |o--o{ exercise_preferences : "exercise_id (SET NULL)"
+```
+
+- **Programs** (`schema/programs.ts`): `programs` is the head row, one active per owner
+  (`programs_owner_active_uq`). A version's tree is its rows in `program_version_blocks` and
+  `program_version_weeks`; blocks, weeks and sessions carry a `lineage_id` that every copy keeps,
+  so screens address a session by lineage (`/train/session/<lineage>`, `?v=n` for an older
+  version). `programming_decisions` records each choice: kind, rule key, summary, a non-empty
+  why, who decided (owner, coach or rules), the version it produced and the lineages it touched.
+  Status is planned, skipped or moved on each version's rows; 'completed' is derived from a
+  completed workout with the session's `planned_lineage_id`, so logging never makes a version.
+  Goals and commitments are referenced by uuid with no foreign key.
+- **Prescriptions** (`schema/prescriptions.ts`): `planned_exercises` (ordered, with superset
+  numbers and a swap's `substituted_from_exercise_id`) → `set_prescriptions`;
+  `planned_run_segments` (ordered, with repeat groups); `planned_session_details` (1:1, a jsonb
+  metrics array). An exercise a plan prescribes cannot be deleted (ON DELETE RESTRICT).
+- **Exercise library** (`schema/exercises.ts`): one table, two kinds of row, told apart by
+  `exercises_kind_ck`. Catalogue rows have a `key` and no owner; every `pnpm db:migrate` seeds
+  them from `CATALOGUE` (`src/lib/server/db/seed/exercises.ts`, one upsert by key under the
+  migration lock): a changed entry is updated in place, a removed key is retired (`retired_at`),
+  never deleted, so ids stay stable and stored programs keep resolving. Custom rows have an
+  `owner_id` and no key, unique per owner by lower-cased name. That `owner_id` has **no foreign
+  key**: the integration cleanup truncates `owners` with CASCADE, and a foreign key would empty
+  the library mid-suite. Every query scopes custom rows to their owner, and the owner row is
+  never deleted.
+- **Training log** (`schema/training-log.ts`): `workouts` (kind strength, run or other) →
+  `set_records`, `run_records` (1:1) → `run_record_segments`, `other_session_records` (1:1), and
+  `workout_substitutions`; beside them `recovery_notes` and `training_audit`. Device ids
+  (`client_id`, `client_mutation_id`) are unique. `weight_kg` and each pace are generated columns
+  through M1's exact factors; distances are stored in metres (5 mi is 8046.72 m). Workouts, sets
+  and substitutions are deleted softly (`deleted_at`).
+- **Coaching memory** (`schema/coaching.ts`): `exercise_preferences` links each like or dislike
+  to the library (`exercise_id`, one per owner and exercise) with its `source`.
+  `coach_proposals` have a closed lifecycle (M5 adds its guards and columns); `weekly_reviews`
+  hold one per owner and Monday and `cycle_reviews` one per block lineage, for M6.
+
+### Immutability and the audit
+
+Postgres enforces it, with triggers from custom migrations (ADR 0010):
+
+- Program and prescription tables (`drizzle/0009_program_history_guards.sql`,
+  `drizzle/0012_prescription_history_guards.sql`) refuse every UPDATE and DELETE. A program head
+  may change only `status`, `archived_at` and a forward `current_version_id` to one of its own
+  versions. An edit therefore copies the affected week's subtree into version _n + 1_ (new ids,
+  same lineages) and shares every other week through the membership rows; the head moves by
+  compare-and-set, so a stale base is a `ProgramConflictError`, never a lost update.
+- Logged tables (`drizzle/0014_training_log_guards.sql`) accept owner edits. An UPDATE that
+  changes the content stamps `updated_at` and writes one `training_audit` row (before, after,
+  owner, and the actor from `app.actor`, 'owner' when unset); one that changes nothing leaves
+  no trace. DELETE is refused, and `training_audit` refuses UPDATE and DELETE.
+- Each refusal is a `restrict_violation` (23001). TRUNCATE fires no row triggers and is the one
+  bypass, for test and reset code only (docs/security.md).
+
+### CHECK policy
+
+CHECKs cover the closed lists (program, plan, workout and proposal status; deciders; load kind
+and basis; measure; skill level; load type; workout kind; audit action; preference source),
+the scales (RPE 1–10 in half steps, heart rate, recovery 1–5) and coherence (both rep bounds
+or neither, a moved session has `moved_from`, one measure per set). The prescription CHECKs are
+built from `PRESCRIPTION_LIMITS` and `LOAD_NEEDS`, so they and the contract's zod schemas agree.
+Open lists (decision kind, rule key, phase, week kind, session type, set role, segment and
+other-session kinds, substitution reason, pattern, muscles, tags) are validated by the services
+and the catalogue's `parseTable`, so a new key needs no migration.
+
+### The training log's replay contract (for M4)
+
+`src/lib/server/services/training/log.ts` freezes it; M4's outbox and the coach write through it:
+
+- **Creates** (a workout, set, substitution, run, run segment, other session, recovery note) are
+  keyed by the device id: a workout by its `client_id`, its run or other session by the same,
+  the rest by `client_mutation_id`. A replay writes nothing and returns the stored row with
+  `duplicate: true`; the stored row always wins, and `matches` says whether the replay carried
+  the same values.
+- **Edits** carry absolute values, never differences, and M4 applies one row's mutations in
+  order, so an edit needs no id of its own. An edit that changes nothing returns
+  `changed: false`, with no `updated_at` bump and no audit row.
+- **Deletes** are soft and idempotent: deleting a deleted set returns it unchanged and writes
+  nothing.
+- A substitution stays on the workout; only 'Never prescribe this again' writes a dislike.
+
+### History queries and their indexes
+
+Each read is one builder in `src/lib/server/db/queries/{history,programs}.ts`, explained by
+`pnpm db:explain` on a two-year dataset, which fails a plan that skips its index on a large
+relation. `HISTORY_INDEXES` names each history builder's index.
+
+| Query                                             | Index                                                                     |
+| ------------------------------------------------- | ------------------------------------------------------------------------- |
+| An exercise's sets, newest first; last N          | `set_records_exercise_history_idx` (keyset on `performed_at`, `id`)       |
+| Best e1RM, one exercise or all                    | `set_records_exercise_e1rm_idx`                                           |
+| Rep maxes (heaviest set per rep count)            | `set_records_exercise_rep_max_idx`                                        |
+| Sets in a range (weekly hard sets)                | `set_records_owner_performed_idx`                                         |
+| Runs in a range (weekly mileage)                  | `workouts_owner_kind_started_idx`                                         |
+| Workouts in a range; active workouts              | `workouts_owner_started_idx`                                              |
+| A workout's sets in order                         | `set_records_workout_order_idx`                                           |
+| A run's segments in order                         | `run_record_segments_run_order_idx`                                       |
+| 'Completed' by lineage                            | `workouts_planned_lineage_idx`                                            |
+| A version's weeks and a week's sessions by day    | `program_version_weeks_pk`, `planned_sessions_week_day_idx`               |
+| A session, or an edit's touched nodes, by lineage | `planned_sessions_lineage_idx`, `planned_exercises_lineage_idx`           |
+| Version history, 20 a page, with decisions        | `program_versions_program_number_uq`, `programming_decisions_version_idx` |
+| A row's audit trail                               | `training_audit_row_idx`                                                  |
+
+A read across all exercises drives a LATERAL from the small `exercises` table, so each
+exercise probes its own index range.
+A query repeats its partial index's predicate, and descending columns are `DESC NULLS FIRST`.
+
+### The generator
+
+`src/lib/domain/programming/` is pure: no clock, randomness or I/O. `buildProgrammingInput`
+normalises the M2 profile; `generateProgram(input, { startsOn, firstPlannedDay })` runs the
+stages in `STAGES` (`generate.ts`) on one draft, each recording its choices through a
+`DecisionLog`:
+
+demand → blocks → commitments → strength → running → other → placement → volume → loads →
+progression → timefit
+
+- Numbers live in one file per area, `rules/{days,blocks,strength,running,volume,loads,defaults}.ts`,
+  and the interference thresholds in `interference.ts` (`INTERFERENCE`, `INTERFERENCE_RULES`,
+  and `BLOCKS_EDIT`, which blocks nothing, so a broken rule only warns). Words live in one
+  template file per area, `decisions/templates/*.ts`, with a template for every
+  `DECISION_KINDS` entry, so a 'why' is never empty.
+- 'Not told yet' defaults (`rules/defaults.ts`, `DEFAULTS`), each recorded as a
+  `default_assumed` decision naming its Profile section: any day; no time of day; 60-minute
+  sessions; the commercial-gym preset; a commitment at moderate intensity for 60 minutes (90
+  for Muay Thai); new to each discipline; time-based runs with no running specifics; technical
+  Muay Thai sessions; maintenance when every goal is paused.
+- Session length: `timefit` runs last, so the sets volume and progression add are checked in
+  every week. Every generated session fits `sessionMinutes` except the long run
+  (`BEYOND_SESSION_LENGTH`; `LONG_RUN_EXCEEDS_SESSION` caps it too when false), which says so in
+  a decision, and commitments, which keep their own length. Trimming drops accessories, then
+  back-off sets, never a top set.
+- The plan is parsed with `programPlanSchema` before it is returned, so a broken plan is a
+  `GeneratedPlanError`, never a stored version.
+- **Fingerprint and reproduction** (`random.ts`): `fingerprint` hashes (FNV-1a 64) the canonical
+  input, `catalogueDigest` (the library's content) and `GENERATOR_ID`; it ignores timestamps,
+  row ids, the start dates and the time zone. Each version stores the generator id, fingerprint,
+  digest, input snapshot, `starts_on` and `first_planned_day`, and the same snapshot, digest and
+  generator id give the same plan, byte for byte. Bump `GENERATOR_ID` whenever a rule, stage or
+  template could change a plan.
+- **Preview and build** (`services/programming`): `previewProgram` stores nothing; `buildProgram`
+  regenerates and stores version 1 only when it matches what the owner saw, otherwise a
+  `ProgrammingConflictError` (`profile`, `library` or `start_date`) writes nothing. Week 1 starts
+  next Monday by default (`DEFAULT_PROGRAM_START`); 'This week' plans from today. A repeated
+  build returns the stored program; another build is refused while one is active.
+
+### Services the coach (M5) calls
+
+The coach's tools are thin adapters over these services, with the same validation as the
+screens ("Why services sit between routes and the database"):
+
+- `services/programs`: `getCurrentProgram`, `getTrainingWeek`, `getTodayPlan`,
+  `getPlannedSession`, `getVersionHistory`, `getVersionWeek`, `alternativesFor`, and
+  `reviseProgram` with the edits built on it (`moveSession`, `skipSession`, `swapExercise`, the
+  adjustments).
+- `services/programming`: `previewProgram` and `buildProgram`.
+- `services/training/history`: `getExerciseHistory`, `getLastPerformances`,
+  `getPersonalRecords`, `getWeeklyMuscleVolume`, `getWeeklyMileage`, `getSessionsInRange`.
+- `services/training/log` and `services/training/preferences` (`recordExercisePreference`).
+- `services/exercises`: `listExercises`, `resolveExerciseName`, `createCustomExercise`.
+
+Each takes `deps.source` ('owner' unless told otherwise; the coach's tools pass 'coach'), which a
+revision records as its decider and an edit of the log as its audit actor. docs/agent-architecture.md maps the tools onto them.
 
 ## Frontend
 

@@ -39,9 +39,14 @@
   session flag. `program_head_guard()` lets a program change only `status`, `archived_at` and a
   forward `current_version_id` to one of its own versions, and a new program starts with none.
   Each refusal is a `restrict_violation` (23001) naming its table and guard, never a value.
-  Later M3 tables attach the same two functions.
+  The prescription tables attach the same two functions.
+- Logged tables (`drizzle/0014_training_log_guards.sql`) allow audited owner edits:
+  `training_log_touch()` and `training_log_audit()` act only when the content (`updated_at` and
+  generated columns aside) changed. DELETE is refused by `history_refuse_delete()`, and
+  `training_audit` refuses UPDATE and DELETE.
 - **TRUNCATE is the only bypass.** It fires no row triggers. Only test and reset code uses it:
-  the integration suite's `withCommitted`, the e2e program reset and the explain database reset.
+  the integration suite's `withCommitted` and the e2e program reset. The explain database is
+  reset by dropping its schema.
   There is no BEFORE TRUNCATE trigger, because `withCommitted` relies on it. There is no delete
   flag either. `scripts/history-guards.test.ts` fails if server code (`src/lib/server/**`, server
   route files, hooks) contains `truncate`, `session_replication_role` or `disable trigger`.
