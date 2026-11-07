@@ -6,3 +6,4 @@ export * from './exercises';
 export * from './prescriptions';
 export * from './training-log';
 export * from './coaching';
+export * from './sync';

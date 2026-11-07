@@ -127,6 +127,20 @@
       "when": 1793997024952,
       "tag": "0017_log_gaps",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1794011315654,
+      "tag": "0018_sync_ledger",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1794011318053,
+      "tag": "0019_sync_ledger_guards",
+      "breakpoints": true
     }
   ]
 }

@@ -77,14 +77,15 @@ export const RESET_ROOTS = [
 	'training_audit',
 	'coach_proposals',
 	'weekly_reviews',
-	'cycle_reviews'
+	'cycle_reviews',
+	'sync_mutations'
 ] as const;
 
 /**
- * Remove every program, logged session, note, audit row, proposal and review, and the owner's
- * custom exercises; the catalogue stays. TRUNCATE fires no row triggers, so the history guards
- * that refuse DELETE are not involved, and CASCADE reaches every table below these roots. Only
- * test code does this (scripts/history-guards.test.ts keeps TRUNCATE out of src/).
+ * Remove every program, logged session, note, audit row, proposal and review, the sync ledger,
+ * and the owner's custom exercises; the catalogue stays. TRUNCATE fires no row triggers, so the
+ * history guards that refuse DELETE are not involved, and CASCADE reaches every table below these
+ * roots. Only test code does this (scripts/history-guards.test.ts keeps TRUNCATE out of src/).
  */
 export async function resetPrograms(): Promise<void> {
 	await query(

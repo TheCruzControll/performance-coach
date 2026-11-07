@@ -145,7 +145,7 @@ test('the route refuses a second program and bad input, and changes no program',
 	expect(await storedSessions(first.programId)).toHaveLength(25);
 });
 
-/** One row in each M3 root table that no fixture writes yet, so the reset has them to remove. */
+/** One row in each root table that no fixture writes yet, so the reset has them to remove. */
 async function fillRootTables(programId: string) {
 	await query(
 		`insert into workouts (owner_id, client_id, kind, discipline, session_type, title, started_at)
@@ -160,6 +160,8 @@ async function fillRootTables(programId: string) {
 			select id, date_trunc('week', current_date)::date, '{}', 'A good week' from owners;
 		insert into cycle_reviews (owner_id, program_id, block_lineage_id, snapshot, summary)
 			select id, '${programId}', gen_random_uuid(), '{}', 'A good block' from owners;
+		insert into sync_mutations (mutation_id, owner_id, type, entity_id, client_at)
+			select gen_random_uuid(), id, 'set.log', gen_random_uuid(), now() from owners;
 		insert into exercises (owner_id, name, pattern, primary_muscles, skill_level, measure, load_type)
 			select id, 'Sled push', 'carry', '{quads}', 'beginner', 'reps', 'external' from owners`
 	);
