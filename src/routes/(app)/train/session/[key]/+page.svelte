@@ -17,6 +17,8 @@
 	import RunSegments from '#lib/ui/program/RunSegments.svelte';
 	import SessionDetails from '#lib/ui/program/SessionDetails.svelte';
 	import type EditSheetHost from '#lib/ui/program/EditSheetHost.svelte';
+	import type { EditKind } from '#lib/ui/program/EditSheetHost.svelte';
+	import type { SwapOptions, SwapTarget } from '#lib/ui/program/session-words.ts';
 	import { toast } from '#lib/ui/toast.svelte.ts';
 	import type { PageProps } from './$types';
 
@@ -63,13 +65,36 @@
 	// edit's own sheet. A failed fetch is a toast with Retry, which fetches again in place (WebKit
 	// fetches anew); failing again online, the screen reloads asking for the sheet (?edit=move),
 	// which opens once its code arrives: Chromium keeps a failed module fetch for the document's
-	// lifetime (Train's plate calculator does the same).
+	// lifetime (Train's plate calculator does the same). Swap names its exercise in that URL.
 	const edits = $derived(session?.edits);
 	let Host = $state.raw<typeof EditSheetHost>();
 	let hosting: Promise<{ default: typeof EditSheetHost }> | undefined;
 	let editing = $state(false);
 	let retried = false;
 	let moveButton = $state<HTMLButtonElement>();
+	/** The edit the host opens, and for Swap, the exercise's lineage. */
+	let kind = $state<EditKind>('move');
+	let swapping = $state<string | null>(null);
+	const swapButtons: Record<string, HTMLButtonElement> = $state({});
+
+	/** What Swap offers, once streamed: undefined while it streams, null if it failed. */
+	let swaps = $state.raw<SwapOptions | null | undefined>();
+	$effect(() => {
+		const streamed = session?.swaps;
+		swaps = undefined;
+		if (!streamed) return;
+		let current = true;
+		streamed.then((options) => current && (swaps = options));
+		return () => (current = false);
+	});
+
+	const swapTarget = $derived.by((): SwapTarget | undefined => {
+		const exercise = session?.exercises.find((e) => e.lineage === swapping);
+		if (kind !== 'swap' || !exercise) return undefined;
+		const choices =
+			swaps === undefined || swaps === null ? swaps : (swaps[exercise.lineage] ?? null);
+		return { lineage: exercise.lineage, name: exercise.name, choices };
+	});
 
 	function loadHost() {
 		if (hosting) return;
@@ -85,26 +110,42 @@
 		hosting = undefined;
 		if (!editing) return; // a prefetch on hover says nothing
 		editing = false;
-		if (retried && navigator.onLine) return location.replace('?edit=move');
+		if (retried && navigator.onLine) {
+			return location.replace(kind === 'swap' ? `?edit=swap&exercise=${swapping}` : '?edit=move');
+		}
 		toast.show('Couldn’t open the editor. Check your connection.', {
 			tone: 'danger',
 			action: {
 				label: 'Retry',
 				onclick: () => {
 					retried = true;
-					move();
+					if (kind === 'swap' && swapping) swap(swapping);
+					else move();
 				}
 			}
 		});
 	}
 
 	function move() {
+		kind = 'move';
+		swapping = null;
+		editing = true;
+		loadHost();
+	}
+
+	function swap(lineage: string) {
+		kind = 'swap';
+		swapping = lineage;
 		editing = true;
 		loadHost();
 	}
 
 	onMount(() => {
-		if (page.url.searchParams.get('edit') === 'move' && edits?.locked === null) move();
+		const asked = page.url.searchParams.get('edit');
+		if (edits?.locked !== null) return;
+		if (asked === 'move') move();
+		const exercise = page.url.searchParams.get('exercise');
+		if (asked === 'swap' && session?.swaps && exercise && exercise in swapButtons) swap(exercise);
 	});
 </script>
 
@@ -181,8 +222,26 @@
 
 		{#if session.exercises.length}
 			<Section title="Exercises" gap="md" data-testid="exercises">
-				{#each session.exercises as exercise, i (i)}
-					<ExerciseBlock {exercise} data-testid="exercise" />
+				{#each session.exercises as exercise (exercise.lineage)}
+					<ExerciseBlock {exercise} data-testid="exercise">
+						{#snippet action()}
+							{#if session.swaps && edits && !edits.locked}
+								<button
+									bind:this={swapButtons[exercise.lineage]}
+									type="button"
+									class="edit swap"
+									aria-label={`Swap ${exercise.name}`}
+									aria-busy={editing && !Host && swapping === exercise.lineage}
+									onpointerdown={loadHost}
+									onpointerenter={loadHost}
+									onclick={() => swap(exercise.lineage)}
+									data-testid="swap-exercise"
+								>
+									<Icon name="refresh" size={18} /> Swap
+								</button>
+							{/if}
+						{/snippet}
+					</ExerciseBlock>
 				{/each}
 			</Section>
 		{/if}
@@ -196,7 +255,18 @@
 		{/if}
 	</div>
 
-	{#if Host}<Host bind:open={editing} kind="move" {session} trigger={moveButton} />{/if}
+	<!-- One host per kind, each opening on its own sheet; a sheet's content mounts on each open. -->
+	{#if Host && kind === 'swap'}
+		<Host
+			bind:open={editing}
+			kind="swap"
+			{session}
+			trigger={swapping ? swapButtons[swapping] : undefined}
+			exercise={swapTarget}
+		/>
+	{:else if Host}
+		<Host bind:open={editing} kind="move" {session} trigger={moveButton} />
+	{/if}
 {:else if data.state === 'error'}
 	<PageHeader title="Session" eyebrow="Train" />
 	<Surface padding="none" radius="xl">
@@ -345,6 +415,13 @@
 		.edit:hover:not(:disabled) {
 			background: var(--color-surface-3);
 		}
+	}
+
+	/* Beside an exercise's name: the same quiet pill, a step smaller. */
+	.swap {
+		flex: none;
+		gap: var(--space-1-5);
+		padding: 0 var(--space-4) 0 var(--space-3);
 	}
 
 	.locked {

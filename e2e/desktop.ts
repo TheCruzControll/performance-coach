@@ -101,7 +101,7 @@ interface Box {
 	height: number;
 }
 
-async function boxOf(locator: Locator): Promise<Box> {
+export async function boxOf(locator: Locator): Promise<Box> {
 	const box = await locator.boundingBox();
 	expect(box, `${locator} is on the page`).not.toBeNull();
 	return box!;
@@ -317,13 +317,15 @@ export const layoutWidth = (page: Page) =>
 /**
  * In the shell from 1024 px, `<main>` is centred in the area right of the rail (both gaps within
  * 1 px), not in the window, and `width` wide: the column the screen declares, read from its
- * token, e.g. `await tokenPx(page, '--content-readable')` for a readable screen.
+ * token, e.g. `await tokenPx(page, '--content-readable')` for a readable screen. Without `width`,
+ * only the centring is checked.
  */
-export async function expectMainCentred(page: Page, width: number): Promise<void> {
+export async function expectMainCentred(page: Page, width?: number): Promise<void> {
 	const rail = await boxOf(page.getByRole('navigation', { name: 'Primary' }));
 	const main = await boxOf(page.locator('main#main'));
 	const left = main.x - (rail.x + rail.width);
 	const right = (await layoutWidth(page)) - (main.x + main.width);
 	expect(Math.abs(left - right), `gaps beside main: ${left} and ${right}`).toBeLessThanOrEqual(1);
+	if (width === undefined) return;
 	expect(Math.abs(main.width - width), `main is ${main.width}px wide`).toBeLessThanOrEqual(1);
 }

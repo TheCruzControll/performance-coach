@@ -1,6 +1,6 @@
 /**
- * The session screen's edits as form actions: Move, and the interference check its sheet runs
- * before saving. Each posts its JSON payload through programAction (forms/program.ts), which maps
+ * The session screen's edits as form actions: Move, the interference check its sheet runs
+ * before saving, and Swap. Each posts its JSON payload through programAction (forms/program.ts), which maps
  * the services' refusals to what the sheet shows; the program services stay the authority.
  *
  * - A payload names the version the screen showed (`version`): the service writes only while it
@@ -16,7 +16,12 @@ import type { IsoDate } from '#lib/domain/calendar.ts';
 import type { Severity } from '#lib/domain/programming/interference.ts';
 import { programAction } from '#lib/server/forms/program.ts';
 import { ownerToday } from '#lib/server/local-date.ts';
-import { checkMove, moveSession, type EditAt } from '#lib/server/services/programs/index.ts';
+import {
+	checkMove,
+	moveSession,
+	swapExercise,
+	type EditAt
+} from '#lib/server/services/programs/index.ts';
 import type { TrainingDeps } from '#lib/server/services/training/shared.ts';
 
 export type EditDeps = Pick<TrainingDeps, 'db' | 'now'>;
@@ -49,6 +54,11 @@ export function editActions(deps: EditDeps = {}) {
 			return {
 				warnings: warnings.map(({ severity, message }): MoveWarningView => ({ severity, message }))
 			};
+		}),
+		/** Swap an exercise for this session only, or never again: the new version's number. */
+		swap: programAction(async (owner, payload) => {
+			const swapped = await swapExercise(owner, payload, await editAt(owner, payload, deps), deps);
+			return { version: swapped.number };
 		})
 	};
 }
