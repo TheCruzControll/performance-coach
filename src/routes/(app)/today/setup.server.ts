@@ -5,8 +5,8 @@
  *
  * - `done` counts the finished (completed or skipped) steps among those that apply now, and
  *   `total` is every step that applies, review included, as onboarding's own progress counts.
- * - It fails soft: Today streams it, so a read that fails is recorded as a server error (kind
- *   'streamed', since the response has already started) and the card shows its designed error.
+ * - It fails soft: a read that fails is recorded as a server error (kind 'load') and the card
+ *   shows its designed error with Retry, inside the shell, instead of the 500 page.
  */
 import type { OnboardingStep } from '#lib/domain/profile/onboarding.ts';
 import { recordServerError, type ServerErrorInput } from '#lib/server/services/errors.ts';
@@ -42,7 +42,7 @@ export async function loadTodaySetup(
 		};
 	} catch (error) {
 		await recordServerError(
-			{ error, kind: 'streamed', status: 500, ...origin, context: { load: 'todaySetup' } },
+			{ error, kind: 'load', status: 500, ...origin, context: { load: 'todaySetup' } },
 			{ db: errorsDb }
 		);
 		return null;

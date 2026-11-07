@@ -1,8 +1,8 @@
 /**
  * Today until onboarding is complete: a setup card with how many of the steps that apply are
  * done and Continue to the step to resume at, which is how the owner gets into onboarding after
- * first sign-in and back into it after a reload. The card streams in and fails soft: a read that
- * fails is a designed error with Retry, never a 500. Serial (one test at a time, after the
+ * first sign-in and back into it after a reload. The card is server-rendered and fails soft: a
+ * read that fails is a designed error with Retry, never a 500. Serial (one test at a time, after the
  * functional suites): every test starts from a blank training profile, which every browser and
  * worker shares, and the last one leaves it blank again.
  */
