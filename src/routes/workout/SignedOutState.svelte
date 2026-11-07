@@ -13,11 +13,11 @@
 	interface Props {
 		/** Changes in the outbox. */
 		waiting: number;
-		/** This page's path: where signing in returns. */
-		path: string;
 	}
 
-	let { waiting, path }: Props = $props();
+	let { waiting }: Props = $props();
+	// Signing in returns to this page. Shown only in the browser, once loaded on idle.
+	const next = encodeURIComponent(location.pathname);
 	const changes = $derived(waiting === 1 ? '1 change' : `${waiting} changes`);
 </script>
 
@@ -29,7 +29,6 @@
 	data-testid="workout-signed-out"
 >
 	{#snippet actions()}
-		<Button icon="passkey" href={`${resolve('/')}?next=${encodeURIComponent(path)}`}>Sign in</Button
-		>
+		<Button icon="passkey" href={`${resolve('/')}?next=${next}`}>Sign in</Button>
 	{/snippet}
 </EmptyState>

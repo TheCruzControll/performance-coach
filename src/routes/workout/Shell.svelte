@@ -112,8 +112,8 @@
 	</WorkoutHeader>
 
 	<div class="body">
-		{#if ui && signedOut !== null && !waiting}
-			<ui.SignedOutState waiting={signedOut} path={workoutPath(table.kind)} />
+		{#if ui && signedOut !== null}
+			<ui.SignedOutState waiting={signedOut} />
 		{:else if restore.phase === 'active' && !hidden}
 			<div class="columns">{@render children(restore.snapshot, load, active)}</div>
 		{:else if waiting || hidden}
