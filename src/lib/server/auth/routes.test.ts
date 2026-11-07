@@ -104,6 +104,13 @@ describe('route access policy', () => {
 		}
 	});
 
+	it('keeps the coach endpoints owner-only, classified rather than unknown', () => {
+		const access = ROUTE_ACCESS as Record<string, string>;
+		for (const id of ['/api/coach/turns', '/api/coach/runs/[run]/cancel']) {
+			expect(access[id], id).toBe('owner');
+		}
+	});
+
 	it('treats unknown or unmatched routes as owner-only', () => {
 		expect(routeAccess(null)).toBe('owner');
 		expect(routeAccess('/api/something-new')).toBe('owner');

@@ -65,7 +65,14 @@ export const RATE_LIMITS = {
 	/** Email sign-in links sent per day, all clients (inside Resend's free 100 a day, 3,000 a month). */
 	'email.daily': { limit: 20, windowMs: DAY },
 	/** Email sign-in link redemptions, per client (tokens are unguessable: this limits noise). */
-	'email.verify': { limit: 10, windowMs: 15 * MINUTE }
+	'email.verify': { limit: 10, windowMs: 15 * MINUTE },
+	/**
+	 * Coach turns, all the owner's devices together (`global`: one owner). Owner decision (open
+	 * question): 30 per 10 minutes, beside the daily cost cap (domain/coach/budgets.ts).
+	 */
+	'coach.turn': { limit: 30, windowMs: 10 * MINUTE },
+	/** Coach actions (Stop, and later accepting or rejecting a proposal), all devices together. */
+	'coach.action': { limit: 60, windowMs: MINUTE }
 } as const satisfies Record<string, RateLimitPolicy>;
 
 export type RateLimitBucket = keyof typeof RATE_LIMITS;

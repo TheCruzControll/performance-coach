@@ -63,6 +63,20 @@ export const ROUTE_ACCESS = {
 	'/api/vitals': 'owner',
 	'/api/client-errors': 'owner',
 
+	// Coach (M5): owner-only, Origin-checked and rate-limited; one anchor per area, each slice adds
+	// its line under its own.
+	// turns
+	'/api/coach/turns': 'owner',
+
+	// runs
+	'/api/coach/runs/[run]/cancel': 'owner',
+
+	// threads
+
+	// proposals
+
+	// memory
+
 	// Workouts (M4): owner-only JSON, one anchor per area; each slice adds its line under its own.
 	// sync
 	'/api/workouts/sync': 'owner',

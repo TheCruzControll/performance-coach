@@ -6,6 +6,7 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { expect, test } from '@playwright/test';
+import { createSseDecoder } from '../src/lib/domain/coach/events';
 import { ROUTE_ACCESS, routeAccess } from '../src/lib/server/auth/routes';
 import { signInUrl } from '../src/lib/server/auth/return-path';
 import { appRoutes, ORIGIN, query, SAME_ORIGIN, signedOut } from './support';
@@ -134,6 +135,26 @@ test.describe('signed out: deny by default', () => {
 		expect(await query('select id from programs')).toEqual([]);
 	});
 
+	test('the coach endpoints need an owner session and store nothing without one', async ({
+		request
+	}) => {
+		expect(ROUTE_ACCESS).toHaveProperty(['/api/coach/turns'], 'owner');
+		expect(ROUTE_ACCESS).toHaveProperty(['/api/coach/runs/[run]/cancel'], 'owner');
+		const clientMessageId = crypto.randomUUID();
+		const turn = await request.post('/api/coach/turns', {
+			headers: SAME_ORIGIN,
+			data: { clientMessageId, text: 'Hello' }
+		});
+		expect(turn.status()).toBe(401);
+		const stop = await request.post(`/api/coach/runs/${crypto.randomUUID()}/cancel`, {
+			headers: SAME_ORIGIN
+		});
+		expect(stop.status()).toBe(401);
+		expect(
+			await query('select id from coach_messages where client_message_id = $1', [clientMessageId])
+		).toEqual([]);
+	});
+
 	test('/api/vitals and /api/client-errors refuse telemetry without a session', async ({
 		request
 	}) => {
@@ -200,6 +221,38 @@ test.describe('signed in: cross-site requests are refused', () => {
 		expect(
 			(await request.post('/api/vitals', { headers: SAME_ORIGIN, data: metric })).status()
 		).toBe(204);
+	});
+
+	test('a coach turn streams from the app itself, and a cross-site turn or Stop is refused', async ({
+		request
+	}) => {
+		const clientMessageId = crypto.randomUUID();
+		const data = { clientMessageId, text: 'Hello' };
+		const attempts: Record<string, string>[] = [
+			{ origin: 'https://evil.example' },
+			{ origin: 'null' },
+			{}
+		];
+		for (const headers of attempts) {
+			const turn = await request.post('/api/coach/turns', { headers, data });
+			expect(turn.status(), JSON.stringify(headers)).toBe(403);
+			const stop = await request.post(`/api/coach/runs/${clientMessageId}/cancel`, { headers });
+			expect(stop.status(), JSON.stringify(headers)).toBe(403);
+		}
+		const stored = () =>
+			query('select id from coach_messages where client_message_id = $1', [clientMessageId]);
+		expect(await stored()).toEqual([]);
+
+		// From the app itself the turn runs (the mock coach outside production) and streams SSE.
+		const own = await request.post('/api/coach/turns', { headers: SAME_ORIGIN, data });
+		expect(own.status()).toBe(200);
+		expect(own.headers()['content-type']).toBe('text/event-stream; charset=utf-8');
+		expect(own.headers()['cache-control']).toBe('no-store');
+		const decoder = createSseDecoder();
+		const events = [...decoder.push(await own.text()), ...decoder.end()];
+		expect(events[0]).toMatchObject({ type: 'run_started' });
+		expect(events.at(-1)).toEqual({ type: 'done', status: 'completed' });
+		expect(await stored()).toHaveLength(1);
 	});
 
 	test('a cross-site sign-out or form action changes nothing', async ({ request }) => {
