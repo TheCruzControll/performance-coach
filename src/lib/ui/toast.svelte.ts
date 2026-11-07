@@ -12,6 +12,9 @@ export interface ToastItem {
 	duration: number;
 }
 
+/** How long a timed toast may wait to appear (its code failed to load, say) before it is dropped. */
+const PENDING_LIMIT = 60_000;
+
 class ToastQueue {
 	items = $state<ToastItem[]>([]);
 	#seq = 0;
@@ -31,6 +34,7 @@ class ToastQueue {
 		};
 		// Keep at most three; the oldest leaves first.
 		this.items = [...this.items.slice(-2), item];
+		if (item.duration > 0) this.#schedule(id, PENDING_LIMIT);
 		return id;
 	}
 
@@ -42,9 +46,14 @@ class ToastQueue {
 	appeared(id: number): void {
 		const item = this.items.find((t) => t.id === id);
 		if (!item || item.duration <= 0) return;
+		this.#schedule(id, item.duration);
+	}
+
+	#schedule(id: number, ms: number): void {
+		clearTimeout(this.#timers.get(id));
 		this.#timers.set(
 			id,
-			setTimeout(() => this.dismiss(id), item.duration)
+			setTimeout(() => this.dismiss(id), ms)
 		);
 	}
 

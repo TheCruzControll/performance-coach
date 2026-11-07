@@ -24,4 +24,12 @@ describe('toast', () => {
 		vi.advanceTimersByTime(1);
 		expect(ids()).toEqual([]);
 	});
+
+	it('drops a timed toast that never appears', () => {
+		const id = toast.show('Set logged');
+		vi.advanceTimersByTime(59_999);
+		expect(ids()).toEqual([id]);
+		vi.advanceTimersByTime(1);
+		expect(ids()).toEqual([]);
+	});
 });
