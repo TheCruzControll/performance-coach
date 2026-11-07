@@ -241,6 +241,9 @@ catalogue and the generator are server-only at runtime (see "Module boundaries")
 
 Twenty-four tables from `drizzle/0008_program_versions.sql` to
 `drizzle/0016_history_plan_indexes.sql`, plus the library link on M2's `exercise_preferences`.
+Later milestones alter some of them (M4's `0017_log_gaps.sql`: assisted sets, bounded time sets
+and a substitution's slot and soft delete; M5's `0025`/`0026`: the coach proposals' columns and
+guards); this section describes them as they are now.
 Every row reaches `owners` through a foreign key (`owner_id`, or a parent that has one), except
 `exercises` (below).
 
@@ -308,8 +311,9 @@ erDiagram
   and substitutions are deleted softly (`deleted_at`).
 - **Coaching memory** (`schema/coaching.ts`): `exercise_preferences` links each like or dislike
   to the library (`exercise_id`, one per owner and exercise) with its `source`.
-  `coach_proposals` have a closed lifecycle (M5 adds its guards and columns); `weekly_reviews`
-  hold one per owner and Monday and `cycle_reviews` one per block lineage, for M6.
+  `coach_proposals` have a closed lifecycle; M5 ties each to its conversation and guards it
+  (`drizzle/0026_coach_proposals_guards.sql`). `weekly_reviews` hold one per owner and Monday
+  and `cycle_reviews` one per block lineage, for M6.
 
 ### Immutability and the audit
 
@@ -333,7 +337,8 @@ Postgres enforces it, with triggers from custom migrations (ADR 0010):
 CHECKs cover the closed lists (program, plan, workout and proposal status; deciders; load kind
 and basis; measure; skill level; load type; workout kind; audit action; preference source),
 the scales (RPE 1–10 in half steps, heart rate, recovery 1–5) and coherence (both rep bounds
-or neither, a moved session has `moved_from`, one measure per set). The prescription CHECKs are
+or neither, a moved session has `moved_from`, one measure per prescribed set, at least one per
+performed set). The prescription CHECKs are
 built from `PRESCRIPTION_LIMITS` and `LOAD_NEEDS`, so they and the contract's zod schemas agree.
 Open lists (decision kind, rule key, phase, week kind, session type, set role, segment and
 other-session kinds, substitution reason, pattern, muscles, tags) are validated by the services
@@ -352,7 +357,7 @@ and the catalogue's `parseTable`, so a new key needs no migration.
   order, so an edit needs no id of its own. An edit that changes nothing returns
   `changed: false`, with no `updated_at` bump and no audit row.
 - **Deletes** are soft and idempotent: deleting a deleted set returns it unchanged and writes
-  nothing.
+  nothing; editing a deleted set is refused (`TrainingLogConflictError` 'deleted').
 - A substitution stays on the workout; only 'Never prescribe this again' writes a dislike.
 
 ### History queries and their indexes
@@ -427,8 +432,8 @@ screens ("Why services sit between routes and the database"):
 
 - `services/programs`: `getCurrentProgram`, `getTrainingWeek`, `getTodayPlan`,
   `getPlannedSession`, `getVersionHistory`, `getVersionWeek`, `alternativesFor`, and
-  `reviseProgram` with the edits built on it (`moveSession`, `skipSession`, `swapExercise`, the
-  adjustments).
+  `reviseProgram` with the edits built on it (`moveSession`, `skipSession`, `swapExercise`,
+  `adjustPrescription`, `adjustRunSegment`, `adjustSessionDetails`).
 - `services/programming`: `previewProgram` and `buildProgram`.
 - `services/training/history`: `getExerciseHistory`, `getLastPerformances`,
   `getPersonalRecords`, `getWeeklyMuscleVolume`, `getWeeklyMileage`, `getSessionsInRange`.
