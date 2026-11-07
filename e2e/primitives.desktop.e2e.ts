@@ -12,12 +12,7 @@ import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { DESKTOP } from './desktop';
 import { captureScreen, gotoHydrated, query, toastWith, trackConsoleErrors } from './support';
-import {
-	addVirtualAuthenticator,
-	signInAsOwner,
-	skipUnlessChromium,
-	toBase64Url
-} from './webauthn';
+import { addVirtualAuthenticator, signInAsOwner, toBase64Url } from './webauthn';
 
 test.use(DESKTOP);
 
@@ -400,11 +395,8 @@ const RING_MODES = [
 test.describe('keyboard', () => {
 	for (const mode of RING_MODES) {
 		test(`Tab reaches every control on /design → Buttons and Inputs in reading order, each with a ring (${mode.name})`, async ({
-			page,
-			browserName
+			page
 		}, testInfo) => {
-			// macOS WebKit tabs only between text fields unless Full Keyboard Access is on.
-			test.skip(browserName !== 'chromium', 'Tab order is asserted on Chromium');
 			const theme = mode.theme;
 			await page.emulateMedia({ forcedColors: mode.forcedColors });
 			await openInTheme(page, '/design', theme);
@@ -535,10 +527,8 @@ async function eachHovered(
 
 test.describe('pointer', () => {
 	test('a mouse over a Button, ListRow, Tab, choice, day, Toggle or stepper changes its paint', async ({
-		page,
-		browserName
+		page
 	}) => {
-		test.skip(browserName !== 'chromium', 'hover is asserted on Chromium');
 		const unchanged: string[] = [];
 		const noPointer: string[] = [];
 		await eachHovered(page, async (hovered, control) => {
@@ -598,25 +588,20 @@ test.describe('a touch screen at 1180 × 820', () => {
 	test.use(TOUCH_WIDE);
 
 	test('gets no hover styles, and every control on /design keeps a target of at least 44 px', async ({
-		page,
-		browserName
+		page
 	}) => {
-		if (browserName === 'chromium') {
-			expect(
-				await page.evaluate(() => matchMedia('(hover: hover) and (pointer: fine)').matches)
-			).toBe(false);
-			const changed: string[] = [];
-			await eachHovered(page, async (hovered, control) => {
-				const target = hovered.painted?.(control) ?? control;
-				const rest = await resting(page, target);
-				await control.hover();
-				await page.waitForTimeout(300); // longer than a hover transition
-				if ((await paintOf(target)) !== rest) changed.push(hovered.name);
-			});
-			expect(changed, 'hover styles on a touch screen').toEqual([]);
-		} else {
-			await gotoHydrated(page, '/design');
-		}
+		expect(
+			await page.evaluate(() => matchMedia('(hover: hover) and (pointer: fine)').matches)
+		).toBe(false);
+		const changed: string[] = [];
+		await eachHovered(page, async (hovered, control) => {
+			const target = hovered.painted?.(control) ?? control;
+			const rest = await resting(page, target);
+			await control.hover();
+			await page.waitForTimeout(300); // longer than a hover transition
+			if ((await paintOf(target)) !== rest) changed.push(hovered.name);
+		});
+		expect(changed, 'hover styles on a touch screen').toEqual([]);
 
 		const small: string[] = [];
 		for (const tab of ['Buttons', 'Inputs']) {
@@ -638,8 +623,7 @@ test.describe('a touch screen at 1180 × 820', () => {
 		expect(small, 'targets under 44 × 44 px').toEqual([]);
 	});
 
-	test('a touch swipe down the centred dialog closes it', async ({ page, browserName }) => {
-		skipUnlessChromium(test.info(), browserName);
+	test('a touch swipe down the centred dialog closes it', async ({ page }) => {
 		const { dialog } = await openFeedback(page);
 		await expectCentred(dialog);
 		await touchSwipe(page, dialog, 320);
@@ -658,8 +642,7 @@ test.describe('on a phone', () => {
 	});
 
 	test('a sheet still rises from the bottom with its handle, and a touch swipe closes it', async ({
-		page,
-		browserName
+		page
 	}, testInfo) => {
 		const { opener, dialog } = await openPlates(page);
 		const panel = await boxOf(panelOf(dialog));
@@ -671,8 +654,6 @@ test.describe('on a phone', () => {
 		expect(radii.slice(2), 'square bottom corners').toEqual([0, 0]);
 		await expect(dialog.locator('.handle')).toBeVisible();
 		await captureScreen(page, testInfo, 'plate-calculator-phone');
-		// The swipe goes through Chromium's DevTools protocol.
-		if (browserName !== 'chromium') return;
 		await touchSwipe(page, dialog, 320);
 		await expect(dialog).toBeHidden();
 		await expect(opener).toBeFocused();
@@ -686,10 +667,8 @@ const passkeyStored = async (id: string) =>
 test.describe('stacked dialogs', () => {
 	test('the step-up dialog opens over Remove passkey, and each Escape closes the top one only', async ({
 		page,
-		context,
-		browserName
+		context
 	}, testInfo) => {
-		skipUnlessChromium(testInfo, browserName);
 		const errors = trackConsoleErrors(page);
 		// Like reauth.e2e.ts: a session of its own, and a passkey of its own to remove.
 		const sessionId = await signInAsOwner(context, testInfo);

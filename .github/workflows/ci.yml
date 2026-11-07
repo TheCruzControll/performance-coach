@@ -134,7 +134,7 @@ jobs:
       matrix:
         include:
           - { group: main, engine: chromium, shard: 1, of: 1, minutes: 19 }
-          - { group: main, engine: webkit, shard: 1, of: 1, minutes: 19 }
+          - { group: main, engine: webkit, shard: 1, of: 1, minutes: 13 }
           - { group: serial, engine: chromium, shard: 1, of: 1, minutes: 11 }
           - { group: serial, engine: webkit, shard: 1, of: 1, minutes: 15 }
           - { group: alone, engine: chromium, shard: 1, of: 1, minutes: 5 }

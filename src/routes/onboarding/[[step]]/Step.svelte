@@ -154,10 +154,14 @@
 <div class="step" data-step={step}>
 	<header class="top">
 		{#if previous}
+			<!-- Data preloads on tap, not hover: the step before has its Back in the same place, under
+			     the pointer this click leaves, and a hover preload there would fetch the data of the step
+			     before that for nobody (WebKit reports it as a page error when a page load cancels it). -->
 			<a
 				class="nav back"
 				href={stepHref(previous)}
 				onclick={(event) => leave(event, 'back', stepHref(previous))}
+				data-sveltekit-preload-data="tap"
 				data-testid="step-back"
 			>
 				<Icon name="chevron-left" size={20} /> Back
