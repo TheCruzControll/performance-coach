@@ -94,3 +94,18 @@ export function goalSummary(goal: Goal): string {
 			: [goal.focus, goal.measure, goal.targetDate && `by ${shortIsoDate(goal.targetDate)}`];
 	return parts.filter(Boolean).join(' · ');
 }
+
+/**
+ * Whole weeks from `today` (the device's date) to a stored calendar date, rounded down: 0 in the
+ * last week and on the day itself, null once it has passed or when there is no date. Both are
+ * compared as calendar days, so neither the time on the clock nor a daylight-saving change in
+ * between moves the count. Callers pass the device's date after hydration, as Today's eyebrow.
+ */
+export function weeksUntil(iso: string | null, today: Date): number | null {
+	if (!iso) return null;
+	const [year, month, day] = iso.split('-').map(Number);
+	const target = Date.UTC(year!, month! - 1, day!);
+	const now = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+	const days = Math.round((target - now) / 86_400_000);
+	return days < 0 ? null : Math.floor(days / 7);
+}
