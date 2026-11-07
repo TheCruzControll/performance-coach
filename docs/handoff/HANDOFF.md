@@ -1,10 +1,100 @@
-# Performance Coach: handoff (cloud session wound down on 2026-11-06; the final state is the first section)
+# Performance Coach: handoff (cloud session wound down on 2026-11-07; the final state is the first section)
 
 This is everything a new Claude Code session needs to resume the build on another machine. The
 product spec is `docs/product-requirements.md` on `main`; milestone criteria are in
 `docs/milestones.md`. Read this file from `origin/handoff` (it is not on `main`).
 
-## Final state, 2026-11-06 23:41 UTC (read this first)
+## Final state, 2026-11-07 08:35 UTC (read this first)
+
+The owner asked to finish the work in progress, start nothing new, and update this file. That is
+nearly done. Every slice that was being built when they asked now has a PR, and all are merged except #184
+and #185, which are approved and waiting on their last CI job (E2E). No new wave was started.
+
+|                                   |                                                                                                                                                                                             |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| On `main`                         | **132 of 405 slices** (91 at the previous hand-off)                                                                                                                                         |
+| Merged since 2026-11-06 23:41 UTC | **41 PRs**, #142 → #183                                                                                                                                                                     |
+| Open PRs                          | #185 (m6/12-progression-rules, Sol approved, CI running), #184 (m4/26-run-other-handlers, Sol approved, CI running); only #13 (this branch, never merged) and #157 (owner's call) otherwise |
+| Closed                            | #14, the old paused onboarding WIP, now that every onboarding slice has landed                                                                                                              |
+| Running                           | only the merge watcher (`tools/wait-ready.sh`) for #184 and #185; no workflow or wave                                                                                                       |
+
+### Slices on main, by milestone (`tools/slice-counts.py`)
+
+| Milestone |          On main | Not started | Plan                                  |
+| --------- | ---------------: | ----------: | ------------------------------------- |
+| M2        |               27 |           1 | `briefs/m2-onboarding-plan.json` (28) |
+| M2X       |               11 |          10 | `plans/m2x-plan.json` (21)            |
+| M3        |               42 |           8 | `plans/m3-plan.json` (50)             |
+| M4        | 23 (+ #184 open) |          37 | `plans/m4-plan.json` (61)             |
+| M5        |               10 |          51 | `plans/m5-plan.json` (61)             |
+| M6        | 10 (+ #185 open) |          52 | `plans/m6-plan.json` (63)             |
+| M7        |                0 |          59 | `plans/m7-plan.json` (59)             |
+| M9        |                9 |          53 | `plans/m9-plan.json` (62)             |
+| **Total** |          **132** |     **271** | 405 slices                            |
+
+M1 is done. M8 has no slice plan: it runs `workflows/councils.js` after M4 and again at the end.
+
+### What merged (#142 → #183; #184 and #185 still open)
+
+| Milestone                  | PRs                                                                                                                                                                                                                      |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| M2 Onboarding              | #155 guided setup, #167 save on leave, #172 review every answer, #173 Today "finish setting up", #178 pick up where you left off, #181 Today goals and week shape. **M2 is 27 of 28 done**; only `docs-profile` is left. |
+| M2X Desktop and email link | #161 email-link schema, #166 desktop main screens, #179 desktop Chromium + WebKit projects, #180 email-link service                                                                                                      |
+| M3 Programs                | #144 preferences link, #156 programming service, #159 swap/adjust edits, #169 program history, #177 swap an exercise                                                                                                     |
+| M4 Workouts                | #143 log-gaps service, #151 sync ledger, #154 reconcile and tabs, #158 mutation schemas, #165 pain reports, #175 `POST /api/workouts/sync`, #182 canonical reads                                                         |
+| M5 Coach                   | #153 safety rules, #162 prompt layout, #171 agent orchestrator, #183 proposal payloads                                                                                                                                   |
+| M6 Analytics               | #142 running, #147 strength, #150 workload, #152 chart tokens, #164 metric catalogue, #168 test support                                                                                                                  |
+| M9 Hardening               | #145 docs guards, #146 restore order, #148 report skeletons, #149 backup format, #160 envelope, #163 journey matrix, #170 Blob store, #174 backup config, #176 export                                                    |
+
+### What stopped, and what it left
+
+- **The container restarted at about 05:10 UTC** and killed all seven waves, the two fix workflows and every watcher. Nothing was lost: each slice's worktree survived with its commits and uncommitted work. `workflows/build-finish.py` built one workflow (`wave-finish.js`) from the dead waves' items. It held only the 9 slices that were in flight, plus the #172 and #173 fixes, and resumed each from its worktree through the implementer's RESUME CHECK. All 9 were approved by Sol (1–2 rounds each) and published as #177–#185.
+- **Started after the owner's request, then stopped before any push:** `restore-schema-step` and `backup-run-service` (M9 wave). Their worktrees were not kept; start them fresh.
+- **Not started, ready now** (all dependencies merged; `slice-counts.py` prints the full lists):
+  - **M2** (1): `docs-profile`
+  - **M2X** (10): `desk-profile`, `desk-onboarding`, `email-link-endpoints`, `email-link-signin`, `docs-email-security`, `desk-train-week`, …
+  - **M3** (8): `today-lazy-panels`, `build-my-program`, `adjust-skip`, `today-sessions`, `perf-program-screens`, `docs-data-model`, …
+  - **M4** (37): `workout-shell`, `workout-sync-wiring`, `start-kit`, `strength-view`, `log-set`, `perf-set-logging`, …
+  - **M5** (51): `proposal-diff`, `provider-selection`, `coach-bundle-guards`, `anthropic-provider`, `coach-conversations-db`, `coach-proposals-db`, …
+  - **M6** (52): `chart-kit-core`, `analytics-facts`, `line-chart`, `analytics-plans`, `strength-dashboard-service`, `running-dashboard-service`, …
+  - **M7** (59): `m7-contract`, `periodisation-scenarios`, `week-evaluation`, `train-week-findings`, `m7-stage-list`, `load-systems`, …
+  - **M9** (53): `e2e-ci-capacity`, `lighthouse-ci-capacity`, `restore-schema-step`, `backup-run-service`, `restore-rows`, `backup-cron-endpoint`, …
+
+### How a new session resumes
+
+The steps in the 2026-11-06 section below still hold. These are the additions:
+
+1. **Tools added to `tools/`:**
+   - `wait-ready.sh`: the watcher. It runs `steward-plan` every 3 minutes and exits only on an `ACTION`, a red check or a conflict. List the PR numbers of PRs being fixed in `<scratch>/wait-ignore.txt` so it doesn't stop on them.
+   - `docs-guard-check.sh <branch>`: run it before every merge. It merges the branch onto main in a scratch worktree and runs the 81 docs-guard tests (ADR index, citations, environment rows, milestones, layout rules, reports).
+   - `drain-monitor.py`: the wind-down monitor. It reports when every allowed slice of a wave has published, so the wave can be stopped.
+   - `steward-plan` now merges a PR whose only staleness is markdown that main changed, provided it still merges cleanly. The docs guard checks the result first.
+2. **To finish slices after a crash,** use `workflows/build-finish.py`. It builds one script from `wave-M5b.js`'s body, with `A.items` = the in-flight slices and their unmerged dependencies as `external`. Then run it with `limit` 5. Don't `resumeFromRunId` the old waves: they would go on to start new slices.
+3. **Waves to build next:** use `build-plan-wave.py`. Its "ready now" lists are above. M2's `docs-profile` and M2X's email-link endpoints and sign-in are short, so do them first. Then build M4's `workout-shell` chain, M5's `anthropic-provider` → `coach-turn` chain, and M9's `e2e-ci-capacity`, which the E2E job's 40-minute timeout depends on.
+
+### Waiting on the owner
+
+- **Vercel Blob for backups (new):** create a private Blob store and put `BLOB_READ_WRITE_TOKEN` in Production, next to `BACKUP_ENCRYPTION_KEY`. #170 and #174 are merged and the code never reads the environment itself. Backups stay switched off (never the app) until both variables are set. Creating the store may need the paid plan; the session must ask before spending.
+- **Email sign-in link:** add `RESEND_API_KEY` (Production, Sensitive). #180 is merged; without the key the link is switched off.
+- **#157:** a test-only fix from another Claude session (lock-race refusals in the auth tests). It's green and needs a Sol review or the owner's call before it merges. The steward never merges it alone.
+- **Lighthouse TBT (#122), the M8 council bar and the plan defaults:** see the 2026-11-06 list below; nothing there changed.
+- **Never merge #13** (this branch).
+
+### Lessons from this wind-down
+
+- **A container restart kills every background task but keeps the disk.** Worktrees, the scratchpad, Postgres data and journals all survive. Restart Postgres (`service postgresql start` and `tools/pg18`), then rebuild one finish workflow from the worktrees. Slices resume cleanly because the implementer brief starts with a RESUME CHECK.
+- **Parallel onboarding slices conflicted for real, three times.** #172 conflicted with #167, and #178 with #172, in `Step.svelte`, `+page.svelte` and `onboarding.serial.e2e.ts`. Each fix was a merge agent followed by an independent verify agent, with the push only after the verifier approved. Each combination also needed one real change that neither PR had:
+  - Back from a review edit has to return to the review (`target()` appends `&then=review`).
+  - The welcome step opened from the review must not show the resume card.
+
+  Order onboarding-like chains with limit 1, or stack them.
+
+- **A late paint is an LCP regression even when FCP is fine.** On #173, `/today` had FCP 906 ms but LCP 2785 ms: the setup card's copy paragraph painted after hydration. The fix renders it in the first paint. Lighthouse (median of 5) caught it; the local e2e budget did not.
+- **Main moving only under markdown no longer forces a CI rerun.** The steward used to refresh such PRs one at a time, about 25 minutes each. Now it merges them once `docs-guard-check.sh` passes on the merged tree. That rule cut most refreshes in this wind-down.
+- **Migration numbers collide when two PRs add a migration.** #165 collided with #161. To fix: take main's `drizzle/meta`, delete the PR's migration files, run `drizzle-kit generate --name X` then `--custom --name X_guards`, restore the guard SQL and run `db:drift`.
+- **A watcher's regex matched a PR title.** Its pattern for a failing check also matched "error" in #166's title "…and error states…". The watcher now matches `ci (failure|failed|error|…)` only.
+
+## Wind-down, 2026-11-06 23:41 UTC (superseded by the 2026-11-07 final state above)
 
 The owner asked to finish only the work already in progress and then hand off. That is done: every
 run that was building a slice has finished or been stopped, every PR it produced is merged, and no
