@@ -497,7 +497,14 @@ function goalRows(ops: readonly GoalOp[], context: DiffContext): DiffRow[] {
 		return found;
 	};
 	const row = (label: string, before: string | null, after: string, id?: string) =>
-		diffRow('goal', label, before, after, null, id ? { type: 'goal', id, label: goal(id).title } : null);
+		diffRow(
+			'goal',
+			label,
+			before,
+			after,
+			null,
+			id ? { type: 'goal', id, label: goal(id).title } : null
+		);
 	const ranked = (ids: readonly string[]) =>
 		ids.map((id, i) => `${i + 1}. ${goal(id).title}`).join(' · ');
 	return ops.flatMap((op) => {
