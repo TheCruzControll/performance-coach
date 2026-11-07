@@ -21,6 +21,10 @@ const SCREENS = [
 	'/profile/injuries',
 	'/profile/exercises',
 	'/profile/schedule',
+	// Every onboarding step an empty profile has (specifics is audited in onboarding.serial).
+	'/onboarding',
+	...['goals', 'experience', 'strength', 'equipment', 'injuries'].map((s) => `/onboarding/${s}`),
+	...['exercises', 'schedule', 'body', 'review'].map((s) => `/onboarding/${s}`),
 	'/offline',
 	'/design'
 ];
