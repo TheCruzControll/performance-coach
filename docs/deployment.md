@@ -118,6 +118,7 @@ from outside, signed out, with no secrets:
 | `GET /today`                                                            | 303 to `/?next=%2Ftoday`                                                                                                                                                                                                   |
 | `POST /api/vitals`, `POST /api/client-errors` (with the app's `Origin`) | 401 `unauthenticated` (without the `Origin` the CSRF check would answer 403 first)                                                                                                                                         |
 | `POST /api/test-support/session`                                        | 404: the test-only session route does not exist in production                                                                                                                                                              |
+| `GET /api/test-support/mail`                                            | 404: the test mail outbox does not exist in production (the check never asks for a sign-in link: it would mail the owner)                                                                                                  |
 
 Every check runs and is listed in the run's summary; any failure fails the run (Actions →
 **Post-deploy smoke**; the trigger is Vercel's bot, so check there after a merge rather than
