@@ -82,6 +82,8 @@
 			key={data.key}
 			saved={data.saved}
 			context={data.context}
+			profile={data.profile}
+			fromReview={data.fromReview}
 			title={COPY[step].title}
 			lede={COPY[step].lede}
 			continueLabel={COPY[step].next ?? 'Continue'}
