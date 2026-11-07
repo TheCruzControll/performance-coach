@@ -8,10 +8,11 @@ log every set and talk to the coach.
 > Status: **Milestone 2 — Authentication & profile, in progress** (see
 > [docs/milestones.md](docs/milestones.md)). Milestone 1 is done (PR #1). Passkey authentication
 > (first-run setup, sign-in, recovery codes, passkey and session management, deny by default) and
-> the training-profile services are merged to `main`, and **production is on**: every merge to
-> `main` deploys coach.nikocruz.com, checked from outside after each deploy
-> ([docs/deployment.md](docs/deployment.md)). The onboarding and Profile editing screens come
-> next.
+> the training profile are merged to `main`: onboarding, every Profile section editable later,
+> and Today's setup card and summary. **Production is on**: every merge to `main` deploys
+> coach.nikocruz.com, checked from outside after each deploy
+> ([docs/deployment.md](docs/deployment.md)). The owner set the app up on their iPhone on
+> 2026-11-06. The emailed sign-in link comes next.
 
 ## Stack
 

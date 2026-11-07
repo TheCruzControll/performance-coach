@@ -4,17 +4,17 @@ Source of scope: [`product-requirements.md`](product-requirements.md) (section n
 brackets). Each milestone ships as its own PR to `main` with evidence (PRD §20). "Done" means the
 acceptance criteria were verified by running them — compiling is not done.
 
-| #   | Milestone                       | Status                                                                                                                           |
-| --- | ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| M1  | Foundation & infrastructure     | **Done** (PR #1, merged 2026-11-05); deferred items carried below                                                                |
-| M2  | Auth & profile                  | **In progress** (slices merged to `main`): auth, profile services, production live (#50); screens, desktop view, email link next |
-| M3  | Training data model & programs  | Planned                                                                                                                          |
-| M4  | Workout application             | Planned                                                                                                                          |
-| M5  | AI performance coach            | Planned                                                                                                                          |
-| M6  | Analytics & reviews             | Planned                                                                                                                          |
-| M7  | Advanced coaching               | Planned                                                                                                                          |
-| M8  | Performance & design refinement | Planned                                                                                                                          |
-| M9  | Final QA & production release   | Planned                                                                                                                          |
+| #   | Milestone                       | Status                                                                                                                                     |
+| --- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| M1  | Foundation & infrastructure     | **Done** (PR #1, merged 2026-11-05); deferred items carried below                                                                          |
+| M2  | Auth & profile                  | **In progress**: auth, production (#50), onboarding, Profile and Today (#60–#181), owner's iPhone setup (2026-11-06) done; email link next |
+| M3  | Training data model & programs  | Planned                                                                                                                                    |
+| M4  | Workout application             | Planned                                                                                                                                    |
+| M5  | AI performance coach            | Planned                                                                                                                                    |
+| M6  | Analytics & reviews             | Planned                                                                                                                                    |
+| M7  | Advanced coaching               | Planned                                                                                                                                    |
+| M8  | Performance & design refinement | Planned                                                                                                                                    |
+| M9  | Final QA & production release   | Planned                                                                                                                                    |
 
 ---
 
@@ -124,9 +124,32 @@ Progress (merged to `main` as slice PRs #2–#12 plus follow-up fixes, each gree
   `/api/client-errors` answer 401 without a session (route map unit test, `access.e2e.ts`, and
   the smoke check against production). It also records the ASVS level 2 review of the auth and
   session code (docs/security.md, "Production cutover review") and its fixes.
-- Open in M2: the onboarding and Profile editing screens (no route calls the profile services
-  yet); the email sign-in link (criterion 7); the desktop view (criterion 8); the owner's one-time
-  setup on the iPhone, with the real-device check (docs/deployment.md, "Owner setup").
+- Done: onboarding, Profile editing and Today (criteria 2, 3 and 5), merged as slice PRs #60
+  to #181 (the last, onboarding resume in #178, on 2026-11-07). Every training-profile section is
+  editable from Profile at `/profile/[section]`: goals (event and general, ranked by arrows or a
+  drag, paused, achieved, dropped or deleted), experience, strength baselines (measured or
+  estimated, or "I don't know my 1RMs"), running and Muay Thai, equipment, injuries, exercise
+  preferences, schedule, body and nutrition, name and units. Onboarding (`/onboarding`) walks
+  the same sections with progress, Skip on optional steps only, Back and Finish later that save,
+  resume at the furthest step and a review before Start coaching. Today shows a "finish setting
+  up" card until then, and the goals by priority and the shape of the week after. Evidence:
+  `e2e/onboarding.serial.e2e.ts` completes onboarding with every 1RM blank and finds the profile
+  in Postgres and after a reload; one serial spec per Profile section and
+  `e2e/today.serial.e2e.ts`; integration round trips in `tests/integration/profile/`; axe in both
+  themes on every Profile and onboarding screen (`e2e/a11y.e2e.ts`). The data model and the save
+  path are in docs/architecture.md ("Training profile (M2)").
+- Desktop view (criterion 8), the owner's 2026-11-06 request, has its own slices: the layout
+  rules, the navigation rail, desktop layouts for the auth screens, sheets and main screens, and
+  desktop Chromium and WebKit projects at 1440 × 900 (#96, #113, #132, #138, #166, #179). The
+  onboarding and Today specs, and the goal arrows and drag, are checked in a desktop window too.
+- Done: the owner's one-time setup (docs/deployment.md, "Owner setup") and the real-device
+  check, on 2026-11-06 at 10:43 UTC on the owner's iPhone 16 Pro Max, iOS 27.0.1, in Chrome for
+  iOS (the browser they use; WebKit engine). The passkey and recovery codes are stored,
+  `OWNER_SETUP_TOKEN_HASH` is emptied in Vercel, and the real-device checklist in
+  docs/testing.md passed in Chrome.
+- Open in M2: the email sign-in link (criterion 7): its configuration, mailer, link storage and
+  service are merged (#108, #124, #161, #180), the sign-in screen's option and its routes are
+  not.
 
 ## M3 — Training data model & program management [§2, §5, §9, §11]
 
