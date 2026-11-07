@@ -17,6 +17,7 @@ import { edits } from './decisions/templates/edits.ts';
 import { loads } from './decisions/templates/loads.ts';
 import { placement } from './decisions/templates/placement.ts';
 import { program } from './decisions/templates/program.ts';
+import { results } from './decisions/templates/results.ts';
 import { running } from './decisions/templates/running.ts';
 import { strength } from './decisions/templates/strength.ts';
 import { volume } from './decisions/templates/volume.ts';
@@ -42,7 +43,8 @@ export const TEMPLATES = {
 	...placement,
 	...volume,
 	...loads,
-	...edits
+	...edits,
+	...results
 } satisfies Record<DecisionKind, Template>;
 
 type Placeholders<S extends string> = S extends `${string}{${infer Name}}${infer Rest}`

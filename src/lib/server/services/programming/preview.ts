@@ -81,7 +81,15 @@ export const DECISION_GROUP: Readonly<Record<DecisionKind, DecisionGroup | null>
 	session_skipped: null,
 	exercise_swapped: null,
 	prescription_adjusted: null,
-	preference_recorded: null
+	preference_recorded: null,
+	// M6's reviews and next block; the week-1 baseline never makes them.
+	review_applied: null,
+	results_progression: null,
+	fatigue_managed: null,
+	deload_scheduled: null,
+	next_block_planned: null,
+	exercise_kept: null,
+	exercise_rotated: null
 };
 
 const GROUPS: readonly DecisionGroup[] = [
