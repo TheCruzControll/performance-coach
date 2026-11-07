@@ -29,6 +29,10 @@ export const ROUTE_ACCESS = {
 	'/api/auth/setup/verify': 'public',
 	'/api/auth/signout': 'public', // clears whatever the device holds, signed in or not
 	'/api/health': 'public',
+	// Email sign-in link (ADR 0011): 404 while switched off
+	'/api/auth/email-link/request': 'public', // answers 202 at once, whatever happens next
+	'/api/auth/email-link/verify': 'public',
+	'/api/test-support/mail': 'public', // and 404 unless test routes are enabled
 	// Prerendered offline fallback (served statically; holds no personal data)
 	'/(app)/offline': 'public',
 	// Test-only: 404 unless ENABLE_TEST_ROUTES (never allowed on a hosted deployment)

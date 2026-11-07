@@ -1,5 +1,14 @@
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import path from 'node:path';
 import { expect, test, type Page, type Route } from '@playwright/test';
-import { eventually, gotoHydrated, query, SAME_ORIGIN, trackConsoleErrors } from './support';
+import {
+	eventually,
+	gotoHydrated,
+	query,
+	SAME_ORIGIN,
+	signedOut,
+	trackConsoleErrors
+} from './support';
 
 /**
  * Leaving a page cancels the loads it still had in flight, and WebKit reports each one as a
@@ -492,5 +501,65 @@ test.describe('platform: health, PWA, observability', () => {
 		expect(rows).toEqual([
 			{ kind: 'unknown', status: 500, message: 'Intentional test error (observability check)' }
 		]);
+	});
+});
+
+test.describe('platform: the email sign-in link’s secrets stay on the server', () => {
+	test.use({ storageState: signedOut });
+	// Set by e2e/global-setup.ts for the build and the server.
+	const ownerEmail = process.env.OWNER_EMAIL!;
+	const apiKey = process.env.RESEND_API_KEY!;
+
+	/** Every file under `dir`, recursively. */
+	const filesUnder = (dir: string): string[] =>
+		readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+			const full = path.join(dir, entry.name);
+			return entry.isDirectory() ? filesUnder(full) : [full];
+		});
+
+	test('no file the browser can load holds the key, the address, the provider or the variables', () => {
+		test.skip(Boolean(process.env.E2E_BASE_URL), 'an external server: no local build to scan');
+		expect(apiKey).toMatch(/^re_e2e_canary_\w+$/);
+		expect(ownerEmail).toBe('owner@example.test');
+		// The JS, CSS and HTML, the service worker (with its precache list) and prerendered pages.
+		const files = ['build/client', 'build/prerendered']
+			.filter((dir) => existsSync(dir))
+			.flatMap(filesUnder);
+		expect(files).toEqual(expect.arrayContaining([path.join('build/client', 'service-worker.js')]));
+		expect(files.filter((file) => file.endsWith('.js')).length).toBeGreaterThan(10);
+		const secrets = [
+			apiKey,
+			ownerEmail,
+			'api.resend.com',
+			'RESEND_API_KEY',
+			'OWNER_EMAIL',
+			'EMAIL_FROM'
+		];
+		const leaks = files.flatMap((file) => {
+			const text = readFileSync(file, 'latin1');
+			return secrets.filter((secret) => text.includes(secret)).map((s) => `${file}: ${s}`);
+		});
+		expect(leaks).toEqual([]);
+	});
+
+	test('the sign-in page and its data never hold the address or the key', async ({ request }) => {
+		for (const url of ['/', '/?link', '/__data.json', '/__data.json?link']) {
+			const res = await request.get(url, { maxRedirects: 0 });
+			expect(res.status(), url).toBe(200);
+			const body = await res.text();
+			expect(body, url).not.toContain(ownerEmail);
+			expect(body, url).not.toContain(apiKey);
+		}
+	});
+
+	test('asking for a link signed out does no database work before the answer', async ({
+		request
+	}) => {
+		// Once, ever: each request mails the outbox and replaces any earlier link.
+		const res = await request.post('/api/auth/email-link/request', { headers: SAME_ORIGIN });
+		expect(res.status()).toBe(202);
+		expect(await res.json()).toEqual({ ok: true });
+		expect(res.headers()['cache-control']).toBe('no-store');
+		expect(res.headers()['server-timing']).toMatch(/^total;dur=[\d.]+$/);
 	});
 });

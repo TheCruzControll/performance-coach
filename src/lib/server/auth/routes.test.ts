@@ -74,12 +74,15 @@ describe('route access policy', () => {
 			[
 				'/',
 				'/(app)/offline',
+				'/api/auth/email-link/request',
+				'/api/auth/email-link/verify',
 				'/api/auth/setup/options',
 				'/api/auth/setup/verify',
 				'/api/auth/signin/options',
 				'/api/auth/signin/verify',
 				'/api/auth/signout',
 				'/api/health',
+				'/api/test-support/mail',
 				'/api/test-support/session',
 				'/recover',
 				'/setup'

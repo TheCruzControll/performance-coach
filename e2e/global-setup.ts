@@ -2,7 +2,10 @@
  * Playwright global setup:
  *   1. recreate the disposable e2e database and apply all committed migrations,
  *   2. mint this run's one-time owner setup token (the server gets only its hash, as in
- *      production; the `setup` project opens /setup?token=… with it),
+ *      production; the `setup` project opens /setup?token=… with it), and switch the email
+ *      sign-in link on: a fixed OWNER_EMAIL and a canary RESEND_API_KEY, in the environment of
+ *      the build and of the server (the test provider wins, because test routes are on), so
+ *      platform.e2e.ts can prove neither reaches the browser,
  *   3. build the app with the Node adapter (skip with E2E_SKIP_BUILD=1 when CI already built),
  *   4. start the production server (`node build/index.js`) and wait until /api/health is up.
  * Returns a teardown that stops the server. Server output goes to .e2e-server.log.
@@ -15,6 +18,8 @@ import type { FullConfig } from '@playwright/test';
 import { LOCAL_DATABASE_URLS, redactUrl, resetDatabase } from '../src/lib/server/db/migrate';
 
 export const E2E_DATABASE_URL = process.env.E2E_DATABASE_URL || LOCAL_DATABASE_URLS.e2e;
+/** The only address the e2e server's sign-in links go to (its recording test outbox). */
+export const E2E_OWNER_EMAIL = 'owner@example.test';
 /** Signed-in browser states written by the setup projects (git-ignored). */
 export const AUTH_DIR = 'e2e/.auth';
 
@@ -40,6 +45,8 @@ export default async function globalSetup(config: FullConfig) {
 	const setupToken = randomBytes(32).toString('base64url');
 	process.env.E2E_SETUP_TOKEN = setupToken;
 	const setupTokenHash = createHash('sha256').update(setupToken).digest('hex');
+	process.env.OWNER_EMAIL = E2E_OWNER_EMAIL;
+	process.env.RESEND_API_KEY = `re_e2e_canary_${randomBytes(16).toString('hex')}`;
 
 	if (process.env.E2E_BASE_URL) return; // testing an externally managed server
 

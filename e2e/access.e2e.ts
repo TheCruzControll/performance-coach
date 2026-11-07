@@ -14,12 +14,15 @@ const ROUTES = appRoutes();
 /** A request the program fixture route would answer by storing a program. */
 const SEED_PROGRAM = { fixture: 'hybrid', start: 'next_week', timeZone: 'Europe/London' };
 const PUBLIC_ENDPOINTS = [
+	'/api/auth/email-link/request',
+	'/api/auth/email-link/verify',
 	'/api/auth/setup/options',
 	'/api/auth/setup/verify',
 	'/api/auth/signin/options',
 	'/api/auth/signin/verify',
 	'/api/auth/signout',
 	'/api/health',
+	'/api/test-support/mail',
 	'/api/test-support/session'
 ];
 
@@ -161,6 +164,15 @@ test.describe('signed out: deny by default', () => {
 		expect(await options.json()).toMatchObject({ rpId: 'localhost', userVerification: 'required' });
 		// Setup is closed after the owner's setup: the route does not exist any more.
 		expect((await request.get('/setup?token=anything-at-all-123')).status()).toBe(404);
+		// The email link is on here (e2e/global-setup.ts). Never a request: that would mail.
+		const link = await request.post('/api/auth/email-link/verify', {
+			headers: SAME_ORIGIN,
+			data: { token: 'A'.repeat(43) }
+		});
+		expect(link.status()).toBe(401);
+		expect(await link.json()).toMatchObject({ error: 'link_invalid' });
+		// A mail scanner's prefetch: no GET handler, so nothing is spent.
+		expect((await request.get('/api/auth/email-link/verify')).status()).toBe(405);
 	});
 
 	test('a forged or stale session cookie is refused and cleared', async ({ request }) => {
@@ -221,6 +233,35 @@ test.describe('signed in: cross-site requests are refused', () => {
 		const profile = await request.get('/profile', { maxRedirects: 0 });
 		expect(profile.status()).toBe(200);
 		expect(new URL(ORIGIN).hostname).toBe('localhost');
+	});
+
+	test('a cross-site request for or with an email sign-in link is refused and does nothing', async ({
+		request
+	}) => {
+		const ids: string[] = [];
+		const attempts: Record<string, string>[] = [
+			{ origin: 'https://evil.example' },
+			{ origin: 'null' },
+			{}
+		];
+		for (const path of ['/api/auth/email-link/request', '/api/auth/email-link/verify']) {
+			for (const headers of attempts) {
+				const id = `csrf-email-link-${crypto.randomUUID()}`;
+				ids.push(id);
+				const res = await request.post(path, {
+					headers: { ...headers, 'x-request-id': id },
+					data: { token: 'A'.repeat(43) }
+				});
+				expect(res.status(), `${path} ${JSON.stringify(headers)}`).toBe(403);
+				expect(await res.json()).toMatchObject({ error: 'forbidden' });
+			}
+		}
+		// Had one reached its handler, it would have been audited under its request id (a request's
+		// work runs just after its answer).
+		await new Promise((resolve) => setTimeout(resolve, 1_000));
+		expect(await query('select type from auth_events where request_id = any($1)', [ids])).toEqual(
+			[]
+		);
 	});
 
 	test('a cross-site request cannot seed a program through the test-only route', async ({
