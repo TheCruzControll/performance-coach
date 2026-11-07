@@ -134,6 +134,12 @@
 		text-align: center;
 	}
 
+	/* Outside the shell: centred in the window at the readable width, never a stretched line. */
+	.error-view:not(.in-shell) {
+		width: min(100%, var(--content-readable));
+		margin-inline: auto;
+	}
+
 	/* Inside the shell: centred in the space between the header and the tab bar. */
 	.error-view.in-shell {
 		min-height: auto;
@@ -144,7 +150,8 @@
 		font-size: var(--text-6xl);
 		font-weight: var(--weight-black);
 		line-height: 1;
-		color: var(--color-text-disabled);
+		/* Quiet, but still 4.5:1 on the canvas: axe audits it, aria-hidden or not. */
+		color: var(--color-text-tertiary);
 	}
 
 	.ref {

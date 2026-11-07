@@ -1,7 +1,7 @@
 import { sql } from 'drizzle-orm';
 import type { PoolClient } from 'pg';
 import { describe, expect, it } from 'vitest';
-import { createAuthRepository } from '../../../src/lib/server/db';
+import { createAuthRepository, emailSignInLinks } from '../../../src/lib/server/db';
 import {
 	beginSetup,
 	checkSetupAccess,
@@ -12,6 +12,7 @@ import {
 import { hashRecoveryCode } from '../../../src/lib/server/auth/recovery-codes';
 import { generateToken, hashToken } from '../../../src/lib/server/auth/tokens';
 import { resetOwnerAuth } from '../../../scripts/auth-reset-owner';
+import { createEmailLinksRepository } from '../../../src/lib/server/db/repositories/email-links';
 import { validateSessionToken } from '../../../src/lib/server/auth/sessions';
 import type { Executor } from '../../../src/lib/server/db';
 import { withRollback } from '../helpers';
@@ -154,6 +155,9 @@ describe('first-run setup', () => {
 	it('reopens after `pnpm auth:reset-owner`, keeping the owner (and their data)', async () => {
 		await withRollback(async (tx) => {
 			const first = await setUpOwner(tx);
+			const links = createEmailLinksRepository(tx);
+			await links.issueLink(first.ownerId, hashToken(generateToken()), new Date(), 60_000);
+			await links.issueLink(first.ownerId, hashToken(generateToken()), new Date(), 60_000);
 			// The transaction's own connection: the script's statements join this rolled-back test.
 			const client = (tx as Executor & { session: { client: PoolClient } }).session.client;
 			const summary = await resetOwnerAuth(client, { transaction: false });
@@ -161,13 +165,16 @@ describe('first-run setup', () => {
 				ownerName: 'Niko Cruz',
 				passkeys: 1,
 				sessions: 1,
-				recoveryCodes: 10
+				recoveryCodes: 10,
+				emailLinks: 2
 			});
+			expect(await tx.select().from(emailSignInLinks)).toEqual([]);
 
 			expect(await validateSessionToken(first.token, { db: tx })).toBeNull();
 			expect(await setupOpen({ db: tx })).toBe(true);
 			const [reset] = await createAuthRepository(tx).recentEvents(1);
 			expect(reset).toMatchObject({ type: 'owner.reset', ownerId: first.ownerId });
+			expect(reset!.detail).toMatchObject({ emailLinks: 2 });
 
 			// Setup runs again (with a new token) and re-attaches the same owner with a new passkey
 			// and new codes.

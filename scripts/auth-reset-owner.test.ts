@@ -7,7 +7,7 @@
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { resetTarget } from './auth-reset-owner';
+import { resetOwnerAuth, resetTarget } from './auth-reset-owner';
 
 const root = new URL('../', import.meta.url);
 
@@ -42,5 +42,45 @@ describe('owner reset target', () => {
 		expect(result.stderr).toContain('Refusing to run: set DATABASE_URL_UNPOOLED');
 		expect(result.stdout).not.toContain('Database:');
 		expect(result.stderr).not.toMatch(/ECONNREFUSED/);
+	});
+});
+
+describe('owner reset', () => {
+	it('deletes every email sign-in link and counts them in the summary and the audit event', async () => {
+		const statements: { text: string; values?: unknown[] }[] = [];
+		const rowCounts: [RegExp, number][] = [
+			[/^update auth_sessions/, 2],
+			[/^delete from passkey_credentials$/, 3],
+			[/^delete from recovery_codes$/, 10],
+			[/^delete from email_sign_in_links$/, 4]
+		];
+		const client = {
+			query: async (text: string, values?: unknown[]) => {
+				statements.push({ text, values });
+				const rows = /^select id, display_name/.test(text)
+					? [{ id: 'owner-1', display_name: 'Niko Cruz' }]
+					: [];
+				const rowCount = rowCounts.find(([pattern]) => pattern.test(text.trim()))?.[1] ?? 0;
+				return { rows, rowCount };
+			}
+		} as unknown as Parameters<typeof resetOwnerAuth>[0];
+
+		expect(await resetOwnerAuth(client)).toEqual({
+			ownerName: 'Niko Cruz',
+			passkeys: 3,
+			sessions: 2,
+			recoveryCodes: 10,
+			emailLinks: 4
+		});
+		const texts = statements.map((s) => s.text.trim());
+		expect(texts).toContain('delete from email_sign_in_links');
+		// Inside the one transaction, before the audit event that reports it.
+		expect(texts[0]).toBe('begin');
+		expect(texts.at(-1)).toBe('commit');
+		const audit = statements.find((s) => s.text.includes("'owner.reset'"))!;
+		expect(texts.indexOf('delete from email_sign_in_links')).toBeLessThan(
+			texts.indexOf(audit.text.trim())
+		);
+		expect(JSON.parse(audit.values![1] as string)).toMatchObject({ emailLinks: 4 });
 	});
 });

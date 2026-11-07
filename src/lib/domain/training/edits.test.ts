@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { validate } from '../validation';
-import { moveSessionSchema, REASON_MAX, skipSessionSchema } from './edits';
+import {
+	adjustDetailsSchema,
+	adjustRunSegmentSchema,
+	adjustSetSchema,
+	moveSessionSchema,
+	REASON_MAX,
+	skipSessionSchema,
+	swapSchema
+} from './edits';
 
 const LINEAGE = 'a1b2c3d4-0000-4000-8000-000000000001';
 
@@ -58,6 +66,54 @@ describe('skipSessionSchema', () => {
 		expect(validate(skipSessionSchema, { sessionLineage: LINEAGE, reason: 3 })).toEqual({
 			ok: false,
 			errors: { reason: 'Write a reason, or leave it blank' }
+		});
+	});
+});
+
+const EXERCISE = 'a1b2c3d4-0000-4000-8000-000000000002';
+
+describe('swapSchema', () => {
+	it('takes a planned exercise, its alternative and the scope', () => {
+		const swap = {
+			sessionLineage: LINEAGE,
+			plannedExerciseLineage: EXERCISE,
+			toExerciseId: EXERCISE,
+			scope: 'never_again'
+		};
+		expect(validate(swapSchema, swap)).toEqual({ ok: true, data: swap });
+		expect(
+			validate(swapSchema, { ...swap, toExerciseId: 'goblet_squat', scope: 'always' })
+		).toEqual({
+			ok: false,
+			errors: {
+				toExerciseId: 'Pick an alternative',
+				scope: 'This session only, or never again?'
+			}
+		});
+	});
+});
+
+describe('the adjust schemas', () => {
+	it('keep only the fields given, each with its prescription field’s rule', () => {
+		const at = { sessionLineage: LINEAGE, plannedExerciseLineage: EXERCISE, position: 1 };
+		expect(validate(adjustSetSchema, { ...at, targetRpe: 8.5, restSeconds: null })).toEqual({
+			ok: true,
+			data: { ...at, targetRpe: 8.5, restSeconds: null }
+		});
+		expect(validate(adjustSetSchema, { ...at, position: 0, targetRpe: 11, sets: 21 })).toEqual({
+			ok: false,
+			errors: {
+				position: 'Unknown set',
+				targetRpe: 'RPE 5 to 10, in half steps',
+				sets: 'Between 1 and 20 sets'
+			}
+		});
+		expect(
+			validate(adjustRunSegmentSchema, { sessionLineage: LINEAGE, position: 2, hrZone: 6 })
+		).toEqual({ ok: false, errors: { hrZone: 'Heart-rate zone 1 to 5' } });
+		expect(validate(adjustDetailsSchema, { sessionLineage: LINEAGE, durationMinutes: 5 })).toEqual({
+			ok: false,
+			errors: { durationMinutes: 'Between 10 and 300 minutes' }
 		});
 	});
 });
