@@ -480,7 +480,48 @@ runtime, like all of `programming/`.
 
 ### Progression from results (`programming/results.ts`, `rules/results.ts`)
 
-Not built yet (m6/12, progression-rules).
+PRD §5 as one rule table (`rules/results.ts`) for next week and the next block: a lift moves by
+what its last sessions showed, every outcome with its `why`, `ruleKey`, `evidence`, `confidence`
+and whether it is `significant`. 'Consistently' below or above target is `prescribed.ts`'s
+`consistency`; a real decline is `trend.ts`'s verdict. No M1 formula is redefined: loads round
+with `roundToIncrement`, a share of a 1RM never passes `percentOfOneRepMax` for its reps at its
+RPE, and an RPE-based line's suggested load is `loadForTarget`.
+
+- `decideFromResults(exposures, target, trend, ctx)` → the line's `action` (`add_load`,
+  `reduce_load`, `reduce_volume`, `add_reps`, `add_sets`, `hold` or `planned`), the `field` it
+  moves `from` and `to`, the load's `pct`, the new `line`, and `fatigue` and `accessorySets` for a
+  decline. It reads the lift's last 3 exposures (`RESULT_RULES.window`); the first match wins:
+  - fewer than 2 → hold (`results.single`): nothing changes on one session
+  - a real e1RM decline with the RPE rising ≥ 0.5 → hold, `fatigue`, `accessorySets: -1` and a
+    deload to consider (`results.decline`)
+  - missed reps in 2 of them → −5 % (`results.missed_repeat`)
+  - above target → a set fewer when every rep was done (`results.above_sets`), else −2.5 %, −5 %
+    when all 3 are above
+  - missed reps once → hold (`results.missed_once`)
+  - below target → +2.5 %, +5 % for a lower-body lift (`LOWER_BODY_PATTERNS`) when all 3 agree
+  - within ±0.5 in each → the planned progression (`planned`); otherwise noise → hold
+  - too few RPEs → every set on target in 2 of them → +2.5 % (`results.reps_hit`), else hold
+  - Every move stays within +5 % and −10 % a week, except a light lift's single smallest
+    increment, which may go up to 12.5 % (`smallestStepPct`: 30 → 32.5 kg, 20 → 17.5 kg); a
+    significant one (≥ 5 %; a sets move is always one set) needs 3 exposures, and an increase no
+    real decline, else it shrinks to 2.5 %. A move past a limit holds
+    (`….at_limit`). Bodyweight lines move reps, then a set at the exercise's `repCeiling`; seconds
+    lines 5 s; RPE-based lines ±0.5 RPE within `PRESCRIPTION_LIMITS` and the week's cap.
+- `rpeCreep(exposures)` → how much harder the latest session felt than the earliest at the same
+  top-set load, in RPE.
+- `adaptRunning(week, longRun)` → the week's distance at most +10 % over the last completed week
+  (`results.run.weekly_cap`), held at the reviewed week's plan when adherence is under 70 %; the
+  long run steps up only after a completed long run at or under its target RPE (one with no RPE
+  holds, `results.long_run.no_rpe`), and a missed one is repeated. No distance last week is no
+  base to cap against: the plan decides.
+- `fatigueLevel(signals)` → `none`, `watch` (one signal) or `high` (2 or more, `deload: true`),
+  each signal met with its reason: ACWR > 1.5, monotony > 2.0, soreness ≥ 4, sleep < 6.5 h, RPE
+  creep ≥ 0.5, missed reps on 2 or more lifts, a declining lift.
+
+`RESULT_RULES`, `RUN_RESULT_RULES` and `FATIGUE_RULES` are coaching judgements the owner can change
+in one place (an open question in the M6 plan). The decision kinds M6 writes (`results_progression`,
+`fatigue_managed`, `deload_scheduled`, `review_applied`, `next_block_planned`, `exercise_kept`,
+`exercise_rotated`) have their words in `decisions/templates/results.ts`.
 
 ### Review contract (`programming/review/snapshot.ts`, `brief.ts`, `digest.ts`)
 
