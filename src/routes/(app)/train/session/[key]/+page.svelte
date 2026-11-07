@@ -65,17 +65,18 @@
 	// edit's own sheet. A failed fetch is a toast with Retry, which fetches again in place (WebKit
 	// fetches anew); failing again online, the screen reloads asking for the sheet (?edit=move),
 	// which opens once its code arrives: Chromium keeps a failed module fetch for the document's
-	// lifetime (Train's plate calculator does the same). Swap names its exercise in that URL.
+	// lifetime (Train's plate calculator does the same). An edit of one exercise names it there.
 	const edits = $derived(session?.edits);
 	let Host = $state.raw<typeof EditSheetHost>();
 	let hosting: Promise<{ default: typeof EditSheetHost }> | undefined;
 	let editing = $state(false);
 	let retried = false;
-	let moveButton = $state<HTMLButtonElement>();
-	/** The edit the host opens, and for Swap, the exercise's lineage. */
+	/** The edit the host opens, and the exercise an edit of one (Swap, Adjust) is about. */
 	let kind = $state<EditKind>('move');
-	let swapping = $state<string | null>(null);
-	const swapButtons: Record<string, HTMLButtonElement> = $state({});
+	let about = $state<string | null>(null);
+	/** Each edit's button, by its kind, or its kind and exercise: focus returns to it. */
+	const triggers: Record<string, HTMLButtonElement> = $state({});
+	const keyOf = (edit: EditKind, lineage: string | null) => (lineage ? `${edit}:${lineage}` : edit);
 
 	/** What Swap offers, once streamed: undefined while it streams, null if it failed. */
 	let swaps = $state.raw<SwapOptions | null | undefined>();
@@ -88,11 +89,12 @@
 		return () => (current = false);
 	});
 
-	const swapTarget = $derived.by((): SwapTarget | undefined => {
-		const exercise = session?.exercises.find((e) => e.lineage === swapping);
-		if (kind !== 'swap' || !exercise) return undefined;
-		const choices =
-			swaps === undefined || swaps === null ? swaps : (swaps[exercise.lineage] ?? null);
+	const exerciseTarget = $derived.by((): SwapTarget | undefined => {
+		const exercise = session?.exercises.find((e) => e.lineage === about);
+		if (!exercise) return undefined;
+		// Swap's alternatives, as they stream; Adjust needs none.
+		let choices: SwapTarget['choices'] = undefined;
+		if (kind === 'swap') choices = swaps ? (swaps[exercise.lineage] ?? null) : swaps;
 		return { lineage: exercise.lineage, name: exercise.name, choices };
 	});
 
@@ -111,7 +113,7 @@
 		if (!editing) return; // a prefetch on hover says nothing
 		editing = false;
 		if (retried && navigator.onLine) {
-			return location.replace(kind === 'swap' ? `?edit=swap&exercise=${swapping}` : '?edit=move');
+			return location.replace(about ? `?edit=${kind}&exercise=${about}` : `?edit=${kind}`);
 		}
 		toast.show('Couldn’t open the editor. Check your connection.', {
 			tone: 'danger',
@@ -119,33 +121,31 @@
 				label: 'Retry',
 				onclick: () => {
 					retried = true;
-					if (kind === 'swap' && swapping) swap(swapping);
-					else move();
+					edit(kind, about);
 				}
 			}
 		});
 	}
 
-	function move() {
-		kind = 'move';
-		swapping = null;
+	function edit(next: EditKind, lineage: string | null = null) {
+		kind = next;
+		about = lineage;
 		editing = true;
 		loadHost();
 	}
 
-	function swap(lineage: string) {
-		kind = 'swap';
-		swapping = lineage;
-		editing = true;
-		loadHost();
+	/** Move's 'Skip this session', when no day is left: its sheet gives way to Skip's. */
+	function skipInstead() {
+		editing = false;
+		edit('skip');
 	}
 
 	onMount(() => {
-		const asked = page.url.searchParams.get('edit');
-		if (edits?.locked !== null) return;
-		if (asked === 'move') move();
+		const asked = page.url.searchParams.get('edit') as EditKind | null;
+		if (edits?.locked !== null || !asked) return;
 		const exercise = page.url.searchParams.get('exercise');
-		if (asked === 'swap' && session?.swaps && exercise && exercise in swapButtons) swap(exercise);
+		// Only an edit the screen offers: its button is there.
+		if (keyOf(asked, exercise) in triggers) edit(asked, exercise);
 	});
 </script>
 
@@ -187,22 +187,21 @@
 			</Notice>
 		{/if}
 
-		{#if edits}
-			<div class="edits" role="group" aria-label="Change this session">
-				<button
-					bind:this={moveButton}
-					type="button"
-					class="edit"
-					disabled={!!edits.locked}
-					aria-busy={editing && !Host}
-					aria-describedby={edits.locked ? 'edits-locked' : undefined}
-					onpointerdown={loadHost}
-					onpointerenter={loadHost}
-					onclick={move}
-					data-testid="move-session"
+		{#if session.status === 'skipped'}
+			<Notice icon="close" title="Skipped" data-testid="session-skipped">
+				It’s off your week and stays as it was planned: a skipped session can’t be moved or changed.
+				The reason, if you gave one, is kept with the change.
+				<a class="current" href={resolve('/(app)/train/history/[[version]]', {})}
+					>See why in History</a
 				>
-					<Icon name="today" size={20} /> Move
-				</button>
+			</Notice>
+		{:else if edits}
+			<div class="edits" role="group" aria-label="Change this session">
+				{@render editButton('move', 'today', 'Move', 'move-session')}
+				{#if session.adjust && session.adjust.kind !== 'strength'}
+					{@render editButton('adjust', 'pencil', 'Adjust', 'adjust-session')}
+				{/if}
+				{@render editButton('skip', 'close', 'Skip', 'skip-session')}
 				{#if edits.locked}<p class="locked" id="edits-locked">{edits.locked}</p>{/if}
 			</div>
 		{/if}
@@ -225,20 +224,15 @@
 				{#each session.exercises as exercise (exercise.lineage)}
 					<ExerciseBlock {exercise} data-testid="exercise">
 						{#snippet action()}
-							{#if session.swaps && edits && !edits.locked}
-								<button
-									bind:this={swapButtons[exercise.lineage]}
-									type="button"
-									class="edit swap"
-									aria-label={`Swap ${exercise.name}`}
-									aria-busy={editing && !Host && swapping === exercise.lineage}
-									onpointerdown={loadHost}
-									onpointerenter={loadHost}
-									onclick={() => swap(exercise.lineage)}
-									data-testid="swap-exercise"
-								>
-									<Icon name="refresh" size={18} /> Swap
-								</button>
+							{#if session.adjust?.kind === 'strength' || session.swaps}
+								<div class="exercise-edits">
+									{#if session.adjust?.kind === 'strength'}
+										{@render editButton('adjust', 'pencil', 'Adjust', 'adjust-exercise', exercise)}
+									{/if}
+									{#if session.swaps}
+										{@render editButton('swap', 'refresh', 'Swap', 'swap-exercise', exercise)}
+									{/if}
+								</div>
 							{/if}
 						{/snippet}
 					</ExerciseBlock>
@@ -256,17 +250,45 @@
 	</div>
 
 	<!-- One host per kind, each opening on its own sheet; a sheet's content mounts on each open. -->
-	{#if Host && kind === 'swap'}
-		<Host
-			bind:open={editing}
-			kind="swap"
-			{session}
-			trigger={swapping ? swapButtons[swapping] : undefined}
-			exercise={swapTarget}
-		/>
-	{:else if Host}
-		<Host bind:open={editing} kind="move" {session} trigger={moveButton} />
+	{#if Host}
+		{#key kind}
+			<Host
+				bind:open={editing}
+				{kind}
+				{session}
+				trigger={triggers[keyOf(kind, about)]}
+				exercise={exerciseTarget}
+				onskip={skipInstead}
+			/>
+		{/key}
 	{/if}
+
+	<!-- An edit's button: a quiet pill, beside an exercise's name a step smaller. -->
+	{#snippet editButton(
+		next: EditKind,
+		icon: IconName,
+		label: string,
+		testId: string,
+		exercise?: { lineage: string; name: string }
+	)}
+		{@const lineage = exercise?.lineage ?? null}
+		<button
+			bind:this={triggers[keyOf(next, lineage)]}
+			type="button"
+			class={['edit', exercise && 'small']}
+			disabled={!!edits?.locked}
+			aria-label={exercise ? `${label} ${exercise.name}` : undefined}
+			aria-busy={editing && !Host && kind === next && about === lineage}
+			aria-describedby={edits?.locked ? 'edits-locked' : undefined}
+			onpointerdown={loadHost}
+			onpointerenter={loadHost}
+			onclick={() => edit(next, lineage)}
+			data-testid={testId}
+		>
+			<Icon name={icon} size={exercise ? 18 : 20} />
+			{label}
+		</button>
+	{/snippet}
 {:else if data.state === 'error'}
 	<PageHeader title="Session" eyebrow="Train" />
 	<Surface padding="none" radius="xl">
@@ -417,8 +439,14 @@
 		}
 	}
 
-	/* Beside an exercise's name: the same quiet pill, a step smaller. */
-	.swap {
+	/* Beside an exercise's name: the same quiet pills, a step smaller. */
+	.exercise-edits {
+		display: flex;
+		flex: none;
+		gap: var(--space-2);
+	}
+
+	.small {
 		flex: none;
 		gap: var(--space-1-5);
 		padding: 0 var(--space-4) 0 var(--space-3);

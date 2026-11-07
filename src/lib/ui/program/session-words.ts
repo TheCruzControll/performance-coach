@@ -7,9 +7,11 @@
  */
 import { weekdayOf, type IsoDate } from '#lib/domain/calendar.ts';
 import { TIME_OF_DAY_LABEL, WEEKDAY_INFO, type TimeOfDay } from '#lib/domain/profile/catalog.ts';
+import type { ProfileDistanceUnit } from '#lib/domain/profile/types.ts';
 import {
 	BASELINE_INSTRUCTION,
 	describePrescription,
+	describeSegment,
 	type PrescriptionOptions,
 	type PrescriptionWords
 } from '#lib/domain/training/describe.ts';
@@ -17,10 +19,13 @@ import type {
 	CustomMetric,
 	OtherDetails,
 	PlannedExercisePlan,
-	SessionKind
+	RunSegment,
+	SessionKind,
+	SetPrescription
 } from '#lib/domain/training/types.ts';
 import {
 	OTHER_SESSION_KIND_LABEL,
+	SET_ROLE_LABEL,
 	SESSION_INTENSITY_LABEL,
 	SESSION_TYPE_LABEL,
 	type SessionIntensity,
@@ -242,6 +247,8 @@ export interface EditTarget {
 	when: string;
 	/** None on an older version, which is read-only. */
 	edits: SessionEdits | null;
+	/** What Adjust steps; null once the session can no longer change. */
+	adjust: AdjustValues | null;
 }
 
 /** Why a session's edits are off, as the line under its disabled edit row says. */
@@ -250,3 +257,100 @@ export const EDITS_LOCKED = {
 	skipped: 'It’s skipped, so it stays off your week.',
 	passed: 'Its day has passed, so it stays as it was planned.'
 } as const;
+
+// ---- Adjust ---------------------------------------------------------------------------------
+
+/**
+ * A strength set prescription as the Adjust sheet steps it. A value it does not have is null and
+ * gets no stepper: Adjust changes values, never what the set is measured in or how its load is set.
+ */
+export interface AdjustSet {
+	/** Its place among the exercise's prescriptions, from 1: what an adjustment names. */
+	position: number;
+	/** 'Top set · 1 × 5 @ RPE 7': which of the exercise's prescriptions it is. */
+	label: string;
+	sets: number;
+	/** Null for a set held for seconds or metres. */
+	repsMin: number | null;
+	repsMax: number | null;
+	targetRpe: number | null;
+	/** An absolute load in its unit, or a fraction of a 1RM ('%'); null when RPE sets it. */
+	load: { value: number; unit: 'kg' | 'lb' | '%' } | null;
+	restSeconds: number | null;
+}
+
+/** A run segment as the Adjust sheet steps it; a value it does not have is null. */
+export interface AdjustSegment {
+	position: number;
+	/** '6 × Interval 400 m': the segment in describe.ts's words. */
+	label: string;
+	distanceMetres: number | null;
+	durationSeconds: number | null;
+	paceMinSecondsPerKm: number | null;
+	paceMaxSecondsPerKm: number | null;
+	targetRpe: number | null;
+	/** Its repeat group's repeats, which every segment of the group shares. */
+	repeats: number | null;
+}
+
+/** What Adjust offers on a session that can still change, by its kind. */
+export type AdjustValues =
+	| { kind: 'strength'; exercises: Record<string, AdjustSet[]> }
+	| { kind: 'run'; paceUnit: ProfileDistanceUnit; segments: AdjustSegment[] }
+	| { kind: 'other'; durationMinutes: number; targetRpe: number | null };
+
+/** What adjustValues reads: a planned session's prescriptions. */
+export type AdjustSource =
+	| { kind: 'strength'; exercises: readonly { lineage: string; sets: SetPrescription[] }[] }
+	| { kind: 'run'; segments: readonly RunSegment[] }
+	| { kind: 'other'; details: OtherDetails };
+
+function adjustSet(set: SetPrescription, k: number): AdjustSet {
+	const unit = set.loadUnit ?? set.reference1rmUnit ?? 'kg';
+	const words = describePrescription(set, { unit, oneRepMaxKg: null });
+	const relative = set.loadKind === 'percent_1rm' || set.loadKind === 'from_e1rm';
+	return {
+		position: k + 1,
+		label: `${SET_ROLE_LABEL[set.role]} · ${words.headline}`,
+		sets: set.sets,
+		repsMin: set.repsMin,
+		repsMax: set.repsMax,
+		targetRpe: set.targetRpe,
+		load:
+			set.loadValue === null || set.loadKind === 'rpe_based'
+				? null
+				: { value: set.loadValue, unit: relative ? '%' : (set.loadUnit ?? 'kg') },
+		restSeconds: set.restSeconds
+	};
+}
+
+/** The values Adjust steps, in the order the session lists them; paces in the owner's unit. */
+export function adjustValues(
+	session: AdjustSource,
+	{ distanceUnit }: { distanceUnit: ProfileDistanceUnit }
+): AdjustValues {
+	if (session.kind === 'strength') {
+		const exercises = Object.fromEntries(
+			session.exercises.map((e) => [e.lineage, e.sets.map(adjustSet)])
+		);
+		return { kind: 'strength', exercises };
+	}
+	if (session.kind === 'other') {
+		const { durationMinutes, targetRpe } = session.details;
+		return { kind: 'other', durationMinutes, targetRpe };
+	}
+	const segments = session.segments.map((s, k): AdjustSegment => {
+		const { headline } = describeSegment(s, { distanceUnit });
+		return {
+			position: k + 1,
+			label: s.repeats === null ? headline : `${s.repeats} × ${headline}`,
+			distanceMetres: s.distanceMetres,
+			durationSeconds: s.durationSeconds,
+			paceMinSecondsPerKm: s.paceMinSecondsPerKm,
+			paceMaxSecondsPerKm: s.paceMaxSecondsPerKm,
+			targetRpe: s.targetRpe,
+			repeats: s.repeats
+		};
+	});
+	return { kind: 'run', paceUnit: distanceUnit, segments };
+}
