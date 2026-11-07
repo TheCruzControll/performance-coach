@@ -417,6 +417,17 @@ describe('reconcile', () => {
 		expect(setIds(store.snapshot(W)!.view)).toEqual(['s1', 's2']);
 	});
 
+	it('lets go of a refusal it does not read, so the request ends (the page goes network-idle)', async () => {
+		const store = await open();
+		await synced(store);
+		let cancelled = false;
+		const body = new ReadableStream({ cancel: () => void (cancelled = true) });
+		api.fetch.mockResolvedValueOnce(new Response(body, { status: 404 }));
+
+		expect(await reconcilerOf(store).reconcile(W)).toBe('lost');
+		await vi.waitFor(() => expect(cancelled).toBe(true));
+	});
+
 	it('leaves a workout this device does not hold to adoption', async () => {
 		const store = await open();
 		api.workouts.set(W, serverRows([start()]));

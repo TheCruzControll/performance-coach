@@ -28,7 +28,9 @@
  *   because the page is being left (leaving.ts) is not a failure either, and no round starts
  *   while it is being left: the keepalive send is that moment's.
  * - 401 (signed out elsewhere, revoked from Security, expired): store.purgeServerCopies, the status
- *   'Sign in to sync · N waiting', and this engine sends nothing more. 403 passkey_required (a
+ *   'Sign in to sync · N waiting', and this engine sends nothing more; reconcile's 401 likewise
+ *   (signedOut). The store keeps the device signed out, so a later engine shows that status while
+ *   anything waits, until the server answers as the owner (signedIn). 403 passkey_required (a
  *   recovery session): 'Finish adding your passkey to sync', everything kept, and likewise nothing
  *   more sent. Any other 403 backs off like a 5xx. A new session needs a new engine, and sign-in and
  *   recovery navigate on the client (goto), so whoever starts one stops it when it unmounts and
@@ -59,6 +61,8 @@ export type SyncStore = Pick<
 	| 'purgeServerCopies'
 	| 'discarded'
 	| 'forget'
+	| 'signedOut'
+	| 'signedIn'
 >;
 
 /** navigator.locks, as far as the engine uses it. */
@@ -104,6 +108,15 @@ export interface SyncEngine {
 	 * component that started the engine unmounts: after a lost session an engine never sends again.
 	 */
 	stop(): void;
+	/** Another of the owner's requests (reconcile's GET) answered 401: as one of the engine's. */
+	signedOut(): Promise<void>;
+	/**
+	 * Another of the owner's requests answered as the owner: the session is back. Not after a 401 on
+	 * this engine, which is final: that answer is to a request sent before it.
+	 */
+	signedIn(): Promise<void>;
+	/** A 401 on this engine: what it purged is never restored on this page. */
+	signedOutHere(): boolean;
 }
 
 /** How a request ended. */
@@ -182,6 +195,8 @@ export function startSync({
 	let discarded: readonly string[] = [];
 	let reads = 0;
 	let session: SyncSession = 'active';
+	/** A 401 purged the device, on this page or before it (store.signedOut): the pages hide it. */
+	let suspended = false;
 	let inFlight = false;
 	let stopped = false;
 	/** The engine's own backoff after a failed batch: failures in a row, and when it sends again. */
@@ -198,9 +213,11 @@ export function startSync({
 		const n = ++reads;
 		const outbox = await store.outbox();
 		const ids = await store.discarded();
+		const purged = await store.signedOut();
 		if (n === reads) {
 			entries = outbox;
 			discarded = ids;
+			suspended = purged;
 			changed();
 		}
 		return { outbox, ids };
@@ -245,6 +262,21 @@ export function startSync({
 		}
 	}
 
+	/** A 401: what the server holds is deleted, and this engine sends nothing more. */
+	async function signedOut(): Promise<void> {
+		session = 'signed-out';
+		suspended = true;
+		await store.purgeServerCopies();
+		changed();
+	}
+
+	async function signedIn(): Promise<void> {
+		if (session === 'signed-out') return;
+		suspended = false;
+		await store.signedIn();
+		changed();
+	}
+
 	/** Under the lock: batch after batch, until nothing is sendable, a failure, or a lost session. */
 	async function drain(): Promise<void> {
 		while (!stopped && session === 'active' && online() && !leaving()) {
@@ -261,6 +293,9 @@ export function startSync({
 			switch (outcome.kind) {
 				case 'answered': {
 					attempt = 0;
+					if (suspended) await signedIn();
+					// A 401 (a reconcile's) came first: this answer restores nothing the purge deleted.
+					if (session !== 'active') return;
 					await store.acknowledge(outcome.results);
 					if (voids.ids.length > 0) await store.forget(voids.ids);
 					// The server stopped the batch (a 'retry'): the waits it set wake the next round.
@@ -273,8 +308,8 @@ export function startSync({
 					retryAt = now() + nextDelay(attempt++, random);
 					return;
 				case 'session':
+					if (outcome.session === 'signed-out') return signedOut();
 					session = outcome.session;
-					if (session === 'signed-out') await store.purgeServerCopies();
 					return;
 				case 'left':
 					return;
@@ -398,12 +433,19 @@ export function startSync({
 
 	return {
 		flush,
-		status: (at = now()) =>
-			entries && syncStatus(entries, { online: online(), inFlight, session, now: at, retryAt }),
+		status(at = now()) {
+			if (!entries) return null;
+			// Signed out on an earlier page: shown so until the server answers, if anything is kept.
+			const lost = session === 'active' && suspended && entries.length > 0 ? 'signed-out' : session;
+			return syncStatus(entries, { online: online(), inFlight, session: lost, now: at, retryAt });
+		},
 		onChange(listener) {
 			listeners.add(listener);
 			return () => listeners.delete(listener);
 		},
-		stop
+		stop,
+		signedOut,
+		signedIn,
+		signedOutHere: () => session === 'signed-out'
 	};
 }

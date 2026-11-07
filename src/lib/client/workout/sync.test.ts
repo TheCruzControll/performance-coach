@@ -873,7 +873,7 @@ describe('a lost session', () => {
 		const workouts = (await after.getAll(STORES.workouts)) as StoredWorkout[];
 		expect(await after.getAll(STORES.kits)).toEqual([]);
 		expect(await after.getAll(STORES.library)).toEqual([]);
-		expect(await after.getAll(STORES.meta)).toEqual([]);
+		expect(await after.getAll(STORES.meta)).toEqual([{ key: 'signedOut', value: true }]);
 		after.close();
 		expect(workouts.map((w) => w.id)).toEqual([W2]);
 		const [kept] = workouts;
@@ -896,6 +896,17 @@ describe('a lost session', () => {
 		expect(server.received).toHaveLength(requests);
 		expect(clock.pending).toBe(0);
 		expect(await outboxIds()).toEqual(['s3', 's4']);
+
+		// A later page still shows it signed out, offline too, until the server answers as the owner.
+		sync.stop();
+		online = false;
+		const later = engine(store);
+		await later.flush();
+		expect(later.status()).toEqual({ state: 'signed-out', waiting: 2 });
+		online = true;
+		page.window.dispatchEvent(new Event('online'));
+		await eventually(() => expect(later.status()?.state).not.toBe('signed-out'));
+		expect(await store.signedOut()).toBe(false);
 	});
 
 	it('403 passkey_required keeps everything and stops', async () => {

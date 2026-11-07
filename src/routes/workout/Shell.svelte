@@ -13,6 +13,10 @@
     view or sheet; unmounting stops it. RUM loads on idle too, so INP is attributed to the
     workout route. data-store marks the store open; the view gets the active workout, to write
     through it.
+  - The sync status loads on idle after the engine (sync-ui.ts): the header's pill, which opens the
+    sync sheet. After a 401 the page shows the signed-out state instead of the workout: no workout
+    details, only the changes waiting. A page restored after a 401 (active.signedOut) shows none
+    of it before the engine has said otherwise.
   - Nothing reads the URL while prerendering: the HTML is the same, data-free, for everyone.
   - Layout: one column below 1024 px; from there the header spans the page, and the view's side
     and main columns sit side by side, centred, at --content-list beside --content-readable.
@@ -33,6 +37,7 @@
 	import Skeleton from '#lib/ui/components/Skeleton.svelte';
 	import EmptyWorkout from './EmptyWorkout.svelte';
 	import { chunkLoader } from './lazy.ts';
+	import type * as SyncUi from './sync-ui.ts';
 	import WorkoutHeader from './WorkoutHeader.svelte';
 
 	interface Props {
@@ -50,6 +55,12 @@
 	const restore = $derived(active.current);
 	const view = $derived(restore.phase === 'active' ? restore.snapshot.view : null);
 	const waiting = $derived(restore.phase === 'loading' || restore.phase === 'elsewhere');
+	let ui = $state.raw<typeof SyncUi | null>(null);
+	const sync = $derived(ui?.outboxStatus.current);
+	const signedOut = $derived(sync?.state === 'signed-out' ? sync.waiting : null);
+	const hidden = $derived(signedOut !== null || (active.signedOut && !sync));
+	/** What the page may show of the workout: nothing once signed out. */
+	const shown = $derived(hidden ? null : view);
 
 	const idle = (run: () => void) => {
 		if ('requestIdleCallback' in window) requestIdleCallback(run, { timeout: 2000 });
@@ -57,7 +68,12 @@
 	};
 
 	onMount(() => {
-		void active.restore().then(() => idle(() => void active.connect(load)));
+		void active.restore().then(() =>
+			idle(async () => {
+				await active.connect(load);
+				ui = await load(() => import('./sync-ui.ts'));
+			})
+		);
 		idle(() => void startVitalsReporting().catch(() => {}));
 		return () => active.close();
 	});
@@ -82,17 +98,25 @@
 	data-store={active.store ? '' : undefined}
 >
 	<WorkoutHeader
-		title={waiting ? null : (view?.workout.title ?? 'Workout')}
-		stopwatch={view &&
-			(view.device.stopwatch.startedAt === null
-				? startStopwatch(Date.parse(view.workout.startedAt))
-				: view.device.stopwatch)}
-	/>
+		title={waiting ? null : (shown?.workout.title ?? 'Workout')}
+		stopwatch={shown &&
+			(shown.device.stopwatch.startedAt === null
+				? startStopwatch(Date.parse(shown.workout.startedAt))
+				: shown.device.stopwatch)}
+	>
+		{#snippet status()}
+			{#if ui && active.store}
+				<ui.SyncStatus store={active.store} view={shown} {load} />
+			{/if}
+		{/snippet}
+	</WorkoutHeader>
 
 	<div class="body">
-		{#if restore.phase === 'active'}
+		{#if ui && signedOut !== null && !waiting}
+			<ui.SignedOutState waiting={signedOut} path={workoutPath(table.kind)} />
+		{:else if restore.phase === 'active' && !hidden}
 			<div class="columns">{@render children(restore.snapshot, load, active)}</div>
-		{:else if waiting}
+		{:else if waiting || hidden}
 			<div class="restoring" role="status" aria-busy="true" data-testid="workout-restoring">
 				<span class="visually-hidden">Restoring your workout</span>
 				{#each [0, 1, 2] as card (card)}

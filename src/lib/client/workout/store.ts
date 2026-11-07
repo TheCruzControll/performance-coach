@@ -170,9 +170,13 @@ export interface WorkoutStore {
 	 * The session is gone (a 401): deletes everything the server already holds, which are the saved
 	 * kits, the cached library, the owner's units, every canonical row and kit, and every finished
 	 * workout. It keeps only the outbox and an unfinished workout's device state, less the previous
-	 * sets attached from the server.
+	 * sets attached from the server. It marks the device signed out (signedOut) until signedIn.
 	 */
 	purgeServerCopies(): Promise<void>;
+	/** A 401 purged this device, and the server has not answered as the owner since. */
+	signedOut(): Promise<boolean>;
+	/** The server answered as the owner again: the pages may show the workout. */
+	signedIn(): Promise<void>;
 	/**
 	 * The server's rows for a workout this device holds, stored as they are; the pending changes
 	 * replay on top, and the device state is untouched. A pending edit of a set the rows hold as
@@ -696,6 +700,7 @@ export async function createStore({
 				// What the server sent; the discarded ids are the device's, still to send.
 				await tx.objectStore(STORES.meta).delete('units');
 				await tx.objectStore(STORES.meta).delete('lastSync');
+				await tx.objectStore(STORES.meta).put({ key: 'signedOut', value: true });
 				const workouts = tx.objectStore(STORES.workouts);
 				const kept = new Map<string, { record?: StoredWorkout; entries: OutboxEntry[] }>();
 				for (const workout of await workouts.getAll()) {
@@ -845,6 +850,14 @@ export async function createStore({
 		discarded,
 		forget,
 		purgeServerCopies,
+		async signedOut() {
+			assertOpen();
+			return (await db.get(STORES.meta, 'signedOut')) !== undefined;
+		},
+		async signedIn() {
+			assertOpen();
+			await db.delete(STORES.meta, 'signedOut');
+		},
 		reconciled,
 		adopt,
 		async saveKit(lineage, kit) {
