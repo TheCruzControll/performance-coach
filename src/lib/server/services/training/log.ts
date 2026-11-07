@@ -11,51 +11,68 @@
  *   sync ADR): a workout by its client id, a set, a substitution, a run segment and a recovery
  *   note by their client mutation ids, and a workout's run or other session by the workout's
  *   client id. A device can name a row before its create has synced.
- * - Creates (startWorkout, logSet, recordSubstitution, logRun, logOtherSession,
+ * - Creates (startWorkout, logSet, recordSubstitution, logRun, addRunSegment, logOtherSession,
  *   recordRecoveryNote) are idempotent on that id. The first call writes the row; a replay writes
  *   nothing and returns the stored row with duplicate: true. The stored row always wins: matches
  *   says whether the replay carried the same values, so M4 can tell the owner when it did not. A
  *   replayed create of a deleted set returns its tombstone. A run is created with its segments:
- *   a replay matches only when the run and every segment do, and adds no segment.
- * - Edits (editSet, finishWorkout, editRun, editRecoveryNote) carry absolute values, never
+ *   a replay matches only when the run and every segment do, and adds no segment. M4 logs a run by
+ *   piece instead: logRun with any of its own values and no segments, and each segment through
+ *   addRunSegment, which creates the run's record, its totals empty, when there is none yet.
+ * - Edits (editSet, finishWorkout, editRun, editRunSegment, editOtherSession, editRecoveryNote)
+ *   carry absolute values, never
  *   differences, so they are idempotent by value: one that changes nothing is skipped
  *   (changed: false), with no updated_at bump and no audit row. M4 applies one row's mutations
  *   in order, so an edit needs no id of its own. Editing a deleted set is refused
  *   (TrainingLogConflictError 'deleted').
  * - Deletes are soft (deleted_at). Deleting a deleted set returns it unchanged and writes nothing.
- * - Each set stores its e1RM in kg when logged (the metrics' setE1rm). An edit that changes the
- *   weight, unit, reps, RPE or the warm-up or skipped flag stores it again, so the PR and history
- *   reads never see a stale one.
+ * - A set records what its exercise is measured and loaded in, as logging-rules' checkSet says
+ *   (a performed set; a skipped one records nothing): reps, seconds or metres, and a weight, an
+ *   added weight or an assistance by the load type. Its refusals are field errors at the input's
+ *   own paths ('weight'), as every error here is; the sync endpoint puts them under 'payload.'.
+ * - Each set stores its e1RM in kg when logged: logging-rules' e1rmOf, M3's setE1rm where the
+ *   load type estimates one (LOAD_RULES: an external-load reps set only). An edit that changes
+ *   the weight, unit, reps, RPE or the warm-up or skipped flag stores it again, so the PR and
+ *   history reads never see a stale one.
  * - Distances arrive in the unit entered and are stored in metres through M1's toMetres, so 5 mi
  *   is 8046.72 m; an edit in another unit that comes to the same metres changes nothing. Each
  *   pace is a generated column.
- * - Each call is one transaction, a savepoint inside the caller's when deps.db is one; an edit
- *   sets app.actor to deps.source for the audit trigger.
+ * - Every write runs in the caller's transaction when deps.db is one: its own db.transaction is
+ *   then a savepoint, which takes no connection of its own, so a sync handler's ledger row and
+ *   the write commit or roll back together. Given the pool, each call is its own transaction. An
+ *   edit sets app.actor to deps.source for the audit trigger, inside that transaction.
+ * - startWorkout takes the planned session pinned to its row; a lineage or program the device
+ *   names beside it must be that row's.
  * - A substitution stays on the workout: it never writes an exercise preference, whatever its
  *   reason (only an explicit 'never prescribe this again' does, m3/39).
  */
 import { isDeepStrictEqual } from 'node:util';
-import { setE1rm, type E1rmSet } from '../../../domain/training/metrics';
 import {
+	editOtherSessionSchema,
 	editRecoveryNoteSchema,
 	editRunSchema,
+	editRunSegmentSchema,
 	editSetSchema,
 	finishWorkoutSchema,
 	logOtherSessionSchema,
 	logRunSchema,
 	logSetSchema,
 	recoveryNoteSchema,
+	runSegmentLogSchema,
 	startWorkoutSchema,
 	substitutionSchema
 } from '../../../domain/training/schemas';
+import { checkSet, e1rmOf, type RuledSet } from '../../../domain/workout/logging';
 import { cleanFloat, toMetres, type DistanceUnit } from '../../../domain/units';
 import {
 	createTrainingLogRepository,
 	type NewRunSegment,
 	type OtherSessionRow,
 	type RecoveryNoteRow,
+	type OtherSessionEdit,
 	type RunEdit,
 	type RunRow,
+	type RunSegmentEdit,
 	type RunSegmentRow,
 	type SetRow,
 	type Stored,
@@ -66,7 +83,7 @@ import {
 import type { WorkoutKind } from '../../db/schema';
 import type { Executor } from '../../db/types';
 import { measure } from '../../observability/timing';
-import { getExercisesByIds } from '../exercises/index';
+import { getExercisesByIds, type ExerciseDef } from '../exercises/index';
 import { isUuid } from '../ids';
 import {
 	ConflictError,
@@ -123,7 +140,40 @@ function answer<Row extends object>(stored: Stored<Row> | null, values: Partial<
 const given = <T extends object>(values: T) =>
 	Object.fromEntries(Object.entries(values).filter(([, v]) => v !== undefined)) as Partial<T>;
 
-const e1rmOf = (set: E1rmSet) => setE1rm(set)?.value ?? null;
+/** The e1RM a set stores, in kg: none where its exercise's load type estimates none. */
+const storedE1rm = (set: RuledSet, exercise: ExerciseDef) => e1rmOf(set, exercise)?.value ?? null;
+
+/**
+ * Refuse a performed set its exercise cannot record, in checkSet's words at the input's paths
+ * (checkSet names them under 'payload.', the mutation's). A skipped set records nothing.
+ */
+function checkMeasure(set: RuledSet, exercise: ExerciseDef) {
+	if (set.isSkipped) return;
+	const errors = Object.entries(checkSet(set, exercise));
+	if (errors.length === 0) return;
+	throw new TrainingInputError(
+		Object.fromEntries(errors.map(([path, message]) => [path.replace(/^payload\./, ''), message]))
+	);
+}
+
+/** What a start may name beside its planned session, and the refusal when it is not that row's. */
+const PINNED = {
+	plannedLineageId: 'Not this session’s lineage',
+	programId: 'Not the program this session is in'
+} as const;
+
+/** The lineage and program a start names, when it names them, are its planned session's. */
+function checkPin(
+	start: Partial<Record<keyof typeof PINNED, string | null>>,
+	link: Record<keyof typeof PINNED, string | null>
+) {
+	const fields = (Object.keys(PINNED) as (keyof typeof PINNED)[]).filter(
+		(field) => start[field] !== undefined && start[field] !== link[field]
+	);
+	if (fields.length > 0) {
+		throw new TrainingInputError(Object.fromEntries(fields.map((f) => [f, PINNED[f]])));
+	}
+}
 
 /** The owner's workout by its client id; deleted ones are not found. */
 async function liveWorkout(repo: Repo, ownerId: string, clientId: string, lock = false) {
@@ -141,6 +191,7 @@ async function checkExercises(db: Executor, ownerId: string, fields: Record<stri
 			Object.fromEntries(missing.map((f) => [f, 'Not in your library']))
 		);
 	}
+	return found;
 }
 
 /**
@@ -163,6 +214,7 @@ export async function startWorkout(
 				? await repo.plannedSessionLink(ownerId, start.plannedSessionId)
 				: { plannedLineageId: null, programId: null };
 			if (!link) throw new TrainingNotFoundError('planned session');
+			checkPin(start, link);
 			const values = { ...start, ...link, ownerId };
 			const { row, ...created } = answer(await repo.insertWorkout(values), values, 'clientId');
 			return { workout: row, ...created };
@@ -182,8 +234,10 @@ export async function logSet(
 		db.transaction(async (tx) => {
 			const repo = createTrainingLogRepository(tx);
 			const workout = await liveWorkout(repo, ownerId, workoutClientId);
-			await checkExercises(tx, ownerId, { exerciseId: set.exerciseId });
-			const values = { ...set, ownerId, workoutId: workout.id, e1rmKg: e1rmOf(set) };
+			const found = await checkExercises(tx, ownerId, { exerciseId: set.exerciseId });
+			const exercise = found.get(set.exerciseId)!;
+			checkMeasure(set, exercise);
+			const values = { ...set, ownerId, workoutId: workout.id, e1rmKg: storedE1rm(set, exercise) };
 			const { row, ...created } = answer(await repo.insertSet(values), values, 'clientMutationId');
 			return { set: row, ...created };
 		})
@@ -207,7 +261,10 @@ export async function editSet(
 				: null;
 			if (!stored) throw new TrainingNotFoundError('set');
 			if (stored.deletedAt) throw new TrainingLogConflictError();
-			const values = { ...edit, e1rmKg: e1rmOf(edit) };
+			const found = await getExercisesByIds(ownerId, [stored.exerciseId], { db: tx });
+			const exercise = found.get(stored.exerciseId)!;
+			checkMeasure(edit, exercise);
+			const values = { ...edit, e1rmKg: storedE1rm(edit, exercise) };
 			if (holds(stored, values)) return { set: stored, changed: false };
 			return { set: await repo.updateSet(stored.id, values, source), changed: true };
 		})
@@ -398,6 +455,59 @@ export async function editRun(
 	);
 }
 
+/**
+ * Add one segment to a run workout's run, under the device's id, creating the run's record (its
+ * totals empty) when there is none yet. A replay returns the stored segment.
+ */
+export async function addRunSegment(
+	ownerId: string,
+	workoutClientId: string,
+	input: unknown,
+	deps: TrainingDeps = {}
+): Promise<Created & { segment: RunSegmentRow }> {
+	const { clientMutationId, position, kind, ...measured } = parseWith(runSegmentLogSchema, input);
+	const { db } = resolveDeps(deps);
+	return measure('db', () =>
+		db.transaction(async (tx) => {
+			const repo = createTrainingLogRepository(tx);
+			const { id: workoutId } = await workoutOf(repo, ownerId, workoutClientId, 'run');
+			await repo.ensureRun(ownerId, workoutId);
+			const values = { ...storedRunValues(measured), clientMutationId, position, kind };
+			const row = { ...values, ownerId, workoutId };
+			const [written] = await repo.insertRunSegments([row]);
+			if (written) return { segment: written, duplicate: false, matches: true };
+			const stored = await repo.runSegment(ownerId, clientMutationId);
+			if (!stored || stored.workoutId !== workoutId) {
+				throw new TrainingInputError({ clientMutationId: 'Already used' });
+			}
+			return { segment: stored, duplicate: true, matches: holds(stored, values) };
+		})
+	);
+}
+
+/** Replace a run segment's values with `input`'s, all of them. */
+export async function editRunSegment(
+	ownerId: string,
+	clientMutationId: string,
+	input: unknown,
+	deps: TrainingDeps = {}
+): Promise<{ segment: RunSegmentRow; changed: boolean }> {
+	const { position, kind, ...measured } = parseWith(editRunSegmentSchema, input);
+	const { db, source } = resolveDeps(deps);
+	return measure('db', () =>
+		db.transaction(async (tx) => {
+			const repo = createTrainingLogRepository(tx);
+			const stored = isUuid(clientMutationId)
+				? await repo.runSegment(ownerId, clientMutationId, { lock: true })
+				: null;
+			if (!stored) throw new TrainingNotFoundError('run segment');
+			const values: RunSegmentEdit = { ...storedRunValues(measured), position, kind };
+			if (holds(stored, values)) return { segment: stored, changed: false };
+			return { segment: await repo.updateRunSegment(stored.id, values, source), changed: true };
+		})
+	);
+}
+
 /** Log an other session (Muay Thai, mobility, S&C, custom) in its workout, with its metrics. */
 export async function logOtherSession(
 	ownerId: string,
@@ -414,6 +524,27 @@ export async function logOtherSession(
 			const stored = await repo.insertOtherSession(values);
 			const { row, ...created } = answer(stored, values, 'workoutClientId');
 			return { session: row, ...created };
+		})
+	);
+}
+
+/** Replace an other session's values with `input`'s, all of them. */
+export async function editOtherSession(
+	ownerId: string,
+	workoutClientId: string,
+	input: unknown,
+	deps: TrainingDeps = {}
+): Promise<{ session: OtherSessionRow; changed: boolean }> {
+	const edit: OtherSessionEdit = parseWith(editOtherSessionSchema, input);
+	const { db, source } = resolveDeps(deps);
+	return measure('db', () =>
+		db.transaction(async (tx) => {
+			const repo = createTrainingLogRepository(tx);
+			const workout = await liveWorkout(repo, ownerId, workoutClientId);
+			const stored = await repo.otherSession(workout.id, { lock: true });
+			if (!stored) throw new TrainingNotFoundError('other session');
+			if (holds(stored, edit)) return { session: stored, changed: false };
+			return { session: await repo.updateOtherSession(workout.id, edit, source), changed: true };
 		})
 	);
 }
