@@ -263,7 +263,55 @@ change that is consistent in direction, unlikely to be chance, and big enough to
 
 ### Strength (`analytics/strength.ts`)
 
-Not built yet (m6/03, strength-analytics).
+Every strength figure, defined once on M4's logging rules and M3's metrics, with no formula of
+its own. Inputs are `StrengthFact`s: M3's `LoggedSet` (the weight in the unit entered) with the
+fields M4's rules read (`seconds`, `metres`, `assistance`, `missedReps`, `isExtra`), the set and
+workout ids, the planned lineage, the set index and `deletedAt` (a set still carrying a deletion
+is dropped). Exercises are `StrengthExercise`s: measure, load type, muscles and the profile lift
+they stand for (a catalogue entry fits). Loads are kg through M1's exact factor; a session is one
+workout's sets of an exercise, on the owner's day it started.
+
+- `e1rmSeries(facts, exercise, timeZone)` → one point per session: M3's `bestE1rm` of the sets
+  M4's `e1rmApplies` allows, always `kind: 'estimated'` with M1's method and confidence, and the
+  set it came from. A bodyweight or timed exercise has none.
+- `measuredMaxes(baselines)` → the profile's 1RMs (M2's baselines) in kg, labelled by the kind M2
+  derived (`BASELINE_LABEL`): 'Measured' for a tested or competition max, 'Estimated · from your
+  profile' otherwise. Never merged into a series.
+- `topSets(facts, exercise, timeZone)` → each session's top set by M4's `topSetOf` (the most load,
+  then reps) and its `workingLoad`: the load used for the most working sets (ties to the heavier)
+  with the most reps done at it.
+- `prTimeline(facts, exercise, timeZone)` → every record broken, oldest first, with the record it
+  beat (`previous`: value, day, workout): the e1RM, rep maxes at 1–10 reps and most reps as M4's
+  `prKinds` and `prCandidates` allow, and the session's volume load (`volumeOf`, above 0). A PR is
+  strictly above the record beyond floating-point noise, so a tie, or the same load in lb, is no
+  PR; a record's first value (the first session, a rep count first lifted) is its baseline. The
+  e1RM, rep-max and most-reps PRs are exactly M4's `summarizeWorkout` PRs given the bests before
+  each workout. So 5 × 100, 5 × 100, 5 × 102.5, 6 × 100 gives no PR, no PR, then the e1RM, the
+  5-rep max and the volume, then the e1RM (118.06 kg over 117.45) and the volume, the 6-rep max
+  starting there.
+- `weeklyTonnage(facts, exercises, timeZone, window)` → kg per M3 week through M4's `volumeOf`
+  (M1's `volumeLoad`): each complete week of the window, 0 with nothing lifted, then the week in
+  progress flagged `inProgress`, which `totalOf` leaves out.
+- `weeklyHardSets(facts, exercises, timeZone, window)` → per week the count of M3 hard sets
+  (`isHardSet`) and M3's `hardSets` credit per muscle and group, the week in progress last.
+- `muscleGroupWeeks(weeks, targets)` → each week's groups, in M3's order, with hard sets or a
+  target: `below`, `within` (both ends included), `above` or `no_target`, against the week's
+  `[lo, hi]` range (targets come from `services/analytics/targets.ts`).
+- `rpeSummary(facts)` → the mean RPE of working sets that have one, how many sets and how many
+  rated, and the share; `weeklyRpe(facts, timeZone, window)` → that mean per week, a gap (null)
+  for a week with no rated set.
+- `keyLifts(facts, exercises)` → at most `KEY_LIFTS_MAX` (6) exercises with an e1RM: those that
+  stand for a profile lift first, then by sessions trained, the most recent, then id.
+
+Hard sets per muscle group are weighted 1.0 for each primary muscle and 0.5 for each secondary
+one (M3's `HARD_SET_CREDIT`), and each group is credited once per set, at its best credit. Worked
+example: three hard barbell rows (primary upper back and lats; secondary rear delts, biceps,
+lower back and forearms) and one hard back squat (primary quads and glutes; secondary adductors
+and lower back) in a week give upper back 3, lats 3, rear delts 1.5, biceps 1.5, forearms 1.5,
+lower back 2 (1.5 + 0.5), quads 1, glutes 1 and adductors 0.5; by group, back 3.5 (3 from the
+rows, once each though two back muscles are primary and one secondary, and 0.5 from the squat),
+shoulders 1.5, biceps 1.5, forearms 1.5, quads 1 and hips 1. Against a back range of 3.5–10 that
+week is `within`, at the low edge.
 
 ### Prescribed against actual (`analytics/prescribed.ts`)
 
@@ -375,7 +423,47 @@ undeleted workout (M3's `completedLineages`), and the completed workouts with th
 
 ### Workload (`analytics/workload.ts`)
 
-Not built yet (m6/07, workload-analytics).
+Session-RPE load across disciplines, the acute:chronic ratio, monotony and strain, Muay Thai load
+and recovery. Inputs: completed, undeleted workouts with their run or other-session record
+(`LoggedSession`) and M3's recovery notes (`RecoveryEntry`).
+
+- `sessionLoads(sessions, timeZone)` → each session's load through M3's `sessionLoadOf` (minutes ×
+  RPE, AU), on the owner's calendar day (`localDay`, so a clock change never moves it), in its
+  chart group (`sessionTone`). The RPE is the workout's own, else the run record's, else the other
+  record's (`rpeFrom`); the duration falls back the same way.
+  - A session with no RPE or no duration is **load unknown**: `load` null and `missing` (`rpe`,
+    `duration` or `both`). It is counted and named, never taken as 0. Totals add the known loads
+    only; a day or week of only unknown loads has no total (null), one with no sessions has 0.
+- `dailyLoads(loads, from, through)` → one entry per calendar day, rest days 0.
+- `weeklyLoad(loads, window)` → each complete week, the week in progress apart (flagged, never in
+  the total), and the total. `byGroup` lists every group in the charts' stack order (`LOAD_STACK`:
+  strength · hypertrophy · conditioning · combat · running) and adds up to `load`.
+  - `monotony` = the mean of a complete week's 7 daily loads ÷ their sample SD, null when the SD
+    is 0 (every day the same, an empty week too); `strain` = the week's load × its monotony. The
+    week in progress has neither.
+- `acwr(days)` → M1's `acuteChronicRatio` (7-day acute and 28-day chronic EWMA) over daily loads
+  that start on the first activity, unchanged; null before 28 days (`CHRONIC_DAYS`). It carries
+  `ACWR_CAVEAT` as data and a `zone` by its bands, and counts the unknown loads it left out:
+
+  > A rough guide to how fast your load is rising, not an injury predictor. About 0.8–1.3 is
+  > typical and above 1.5 is a sharp rise: both are rules of thumb.
+
+  The link between this ratio and injury is debated: never present it as a risk score, and never
+  without the caveat. `ACWR_PLACEMENT` (`shown`) is where Progress shows it, an open question
+  for the owner (shown, behind 'More', or dropped).
+
+- `muayThaiLoad(sessions, timeZone, window)` → per week: sessions, known minutes, known sRPE load,
+  the unknown loads, hard sessions (RPE ≥ `HARD_RPE`, 7) and rounds. Rounds add the whole-number
+  metrics keyed by `ROUND_KEYS` (`rounds`, `sparring_rounds`), split by session kind; a round
+  metric with any other value is listed in `malformed`, and every other key is ignored and named
+  in `ignoredKeys`. With no round metric recorded, the rounds total is null.
+- `recoverySummary(notes, window)` → weekly means of sleep, soreness, energy and stress, blanks
+  left out, each with its count; a weekly series per measure (gaps null, the week in progress
+  flagged); and the `LATEST_NOTES` (3) latest notes as M5's untrusted text: data, never
+  instructions.
+
+`HARD_RPE`, `ROUND_KEYS`, `LATEST_NOTES` and the caveat's bands are judgements the owner can
+change in one place.
 
 ### Metric catalogue (`analytics/metrics.ts`)
 
@@ -442,3 +530,18 @@ under plain Node. Server-only by use: nothing in a page needs it.
   `keep`, `delete` and `unparseable`: the newest of each of the last 30 UTC days and the earliest
   of each of the last 12 UTC months (`RETENTION.monthlyKeeps`), never a future-dated, must-keep
   or unparseable name, the same answer for any input order.
+
+## M9: restore order (`backup/plan.ts`)
+
+By path; no imports, so scripts load it under plain Node.
+
+- `planRestore(catalog, excluded)` → `{ order, late }`: the tables a backup holds, in the order
+  restore loads them, and the keys whose columns restore inserts as NULL and fills in afterwards.
+  - Only a NOT DEFERRABLE key into another table constrains the order. A self-reference loads in
+    one statement; a DEFERRABLE key is checked at COMMIT.
+  - A cycle (Tarjan's components) is broken on a key whose columns are all nullable, the fewest
+    columns first, then by table and key name: programs ↔ program_versions makes
+    `programs.current_version_id` late. Ties in the order go by name, so input order never matters.
+  - Throws `RestorePlanError` naming tables and keys (never values): `unbreakable_cycle`, or
+    `references_excluded_table` for a key into a table in `excluded`. A malformed catalog (a
+    repeated table, a key into an unknown table or column) is a `RangeError`.

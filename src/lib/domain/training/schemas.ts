@@ -504,10 +504,12 @@ const setValues = {
 	isSkipped: z.boolean()
 };
 type SetValues = z.output<z.ZodMiniObject<typeof setValues>>;
+/** What the set rules read: a performed set (M4's set.log and set.edit) is never skipped. */
+type RuledValues = Omit<SetValues, 'isSkipped'> & { isSkipped?: boolean };
 
 const AMOUNTS = ['reps', 'seconds', 'metres'] as const;
 
-function checkSetValues(s: SetValues, fail: Fail) {
+function checkSetValues(s: RuledValues, fail: Fail) {
 	const amounts = AMOUNTS.filter((amount) => s[amount] !== null);
 	if (!s.isSkipped && amounts.length === 0) fail(['reps'], 'Record reps, a time or a distance');
 	if (amounts.length > 1) fail([amounts[1]!], 'Reps, a time or a distance: one of them');
@@ -560,6 +562,9 @@ export const logSetSchema = z
 
 /** An edit of a set: every value after the edit, never a difference. */
 export const editSetSchema = z.object(setValues).check(rules(checkSetValues));
+
+/** The set rules, for a schema that composes editSetSchema's fields (M4's set payloads). */
+export const setValueRules = () => rules(checkSetValues);
 
 /** Finishing (or abandoning) a workout; a summary field left out keeps its value, null clears it. */
 export const finishWorkoutSchema = z.object({

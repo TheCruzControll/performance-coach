@@ -54,6 +54,7 @@ export const ROUTE_ACCESS = {
 	'/(app)/profile': 'owner',
 	'/(app)/profile/security': 'owner',
 	'/(app)/profile/[section]': 'owner',
+	'/onboarding/[[step]]': 'owner',
 	'/design': 'owner',
 	'/api/vitals': 'owner',
 	'/api/client-errors': 'owner'
