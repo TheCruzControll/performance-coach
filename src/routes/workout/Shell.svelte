@@ -1,0 +1,183 @@
+<!--
+  @component
+  The workout pages' shell, shared by the three prerendered workout routes (/workout,
+  /workout/run, /workout/session). Outside (app): no tab bar or rail, so the thumb zone belongs to
+  logging, and no shell applies the safe areas, so it does (header: --safe-top; content:
+  --safe-left and --safe-right; foot: --safe-bottom).
+  - It renders <main id='main'>, the root layout's skip-link target (prerendering needs it).
+  - It restores the workout from IndexedDB alone (active.svelte.ts): a skeleton that reserves the
+    header, then the view, 'No workout in progress', 'This browser can't keep a workout' or 'App
+    updated — reload to continue'. A workout of another kind is sent to its own route first.
+  - On idle after that, the store loads (its write path stays out of the first render), and so
+    does RUM, so INP is attributed to the workout route.
+  - Nothing reads the URL while prerendering: the HTML is the same, data-free, for everyone.
+  - Layout: one column below 1024 px; from there the header spans the page, and the view's side
+    and main columns sit side by side, centred, at --content-list beside --content-readable.
+-->
+<script lang="ts">
+	import { onMount, untrack, type Snippet } from 'svelte';
+	import { goto } from '$app/navigation';
+	import {
+		ActiveWorkout,
+		type ActiveSnapshot,
+		type ChunkLoad
+	} from '#lib/client/workout/active.svelte.ts';
+	import { workoutPath } from '#lib/client/workout/kinds.ts';
+	import { startVitalsReporting } from '#lib/client/vitals.ts';
+	import type { AnyTable } from '#lib/domain/workout/project.ts';
+	import { startStopwatch } from '#lib/domain/workout/timers.ts';
+	import Button from '#lib/ui/components/Button.svelte';
+	import EmptyState from '#lib/ui/components/EmptyState.svelte';
+	import Skeleton from '#lib/ui/components/Skeleton.svelte';
+	import EmptyWorkout from './EmptyWorkout.svelte';
+	import { chunkLoader } from './lazy.ts';
+	import WorkoutHeader from './WorkoutHeader.svelte';
+
+	interface Props {
+		/** The route's reducer table (reducers/tables.ts): it decides the kind this page shows. */
+		table: AnyTable;
+		/** The view: its side column (if any), then its main column, as siblings. */
+		children: Snippet<[ActiveSnapshot, ChunkLoad]>;
+	}
+
+	let { table, children }: Props = $props();
+
+	// A route's table never changes: read once.
+	const active = new ActiveWorkout(untrack(() => table));
+	const load = chunkLoader(() => active.stale());
+	const restore = $derived(active.current);
+	const view = $derived(restore.phase === 'active' ? restore.snapshot.view : null);
+	const waiting = $derived(restore.phase === 'loading' || restore.phase === 'elsewhere');
+
+	const idle = (run: () => void) => {
+		if ('requestIdleCallback' in window) requestIdleCallback(run, { timeout: 2000 });
+		else setTimeout(run, 500);
+	};
+
+	onMount(() => {
+		void active.restore().then(() => idle(() => void active.connect(load)));
+		idle(() => void startVitalsReporting().catch(() => {}));
+		return () => active.close();
+	});
+
+	// Another kind's workout: its own route, before any view renders, keeping this page's query.
+	$effect(() => {
+		if (restore.phase !== 'elsewhere') return;
+		// eslint-disable-next-line svelte/no-navigation-without-resolve -- kinds.ts's literal paths
+		void goto(`${workoutPath(restore.kind)}${location.search}`, { replaceState: true });
+	});
+
+	const reload = () => location.reload();
+</script>
+
+<main
+	id="main"
+	class="workout"
+	tabindex="-1"
+	data-phase={restore.phase}
+	data-ready={waiting ? undefined : ''}
+>
+	<WorkoutHeader
+		title={waiting ? null : (view?.workout.title ?? 'Workout')}
+		stopwatch={view &&
+			(view.device.stopwatch.startedAt === null
+				? startStopwatch(Date.parse(view.workout.startedAt))
+				: view.device.stopwatch)}
+	/>
+
+	<div class="body">
+		{#if restore.phase === 'active'}
+			<div class="columns">{@render children(restore.snapshot, load)}</div>
+		{:else if waiting}
+			<div class="restoring" role="status" aria-busy="true" data-testid="workout-restoring">
+				<span class="visually-hidden">Restoring your workout</span>
+				{#each [0, 1, 2] as card (card)}
+					<Skeleton height="10rem" radius="var(--radius-lg)" />
+				{/each}
+			</div>
+		{:else if restore.phase === 'empty'}
+			<EmptyWorkout />
+		{:else if restore.phase === 'no-storage'}
+			<EmptyState
+				icon="database"
+				tone="neutral"
+				title="This browser can't keep a workout"
+				description="A workout is saved on this device as you log it, and this browser won't let the app save anything. Private browsing is the usual cause: open the app in a normal window, or from your Home Screen, then try again."
+				data-testid="workout-no-storage"
+			>
+				{#snippet actions()}
+					<Button variant="secondary" icon="refresh" onclick={reload}>Try again</Button>
+				{/snippet}
+			</EmptyState>
+		{:else}
+			<EmptyState
+				icon="refresh"
+				title="App updated — reload to continue"
+				description="A newer version of the app is running on this device. Everything you logged is saved here, so reloading picks up exactly where you left off."
+				data-testid="workout-app-updated"
+			>
+				{#snippet actions()}
+					<Button icon="refresh" onclick={reload}>Reload</Button>
+				{/snippet}
+			</EmptyState>
+		{/if}
+	</div>
+
+	<div class="foot" data-testid="workout-foot"></div>
+</main>
+
+<style>
+	.workout {
+		/* The two columns from 1024 px: the side list beside a readable column. */
+		--workout-width: calc(var(--content-list) + var(--space-8) + var(--content-readable));
+		display: grid;
+		grid-template-rows: auto 1fr auto;
+		min-height: 100dvh;
+		outline: none;
+	}
+
+	.body {
+		width: 100%;
+		max-width: var(--content-column);
+		margin: 0 auto;
+		padding: var(--space-2) max(var(--gutter), var(--safe-right)) var(--space-8)
+			max(var(--gutter), var(--safe-left));
+	}
+
+	.restoring {
+		display: grid;
+		gap: var(--space-4);
+	}
+
+	/* Reserved for the fixed bottom controls (the logger, the rest pill) and the home indicator. */
+	.foot {
+		padding-bottom: var(--safe-bottom);
+	}
+
+	@media (width >= 64rem) {
+		.body {
+			max-width: calc(var(--workout-width) + 2 * var(--gutter));
+			padding-top: var(--space-6);
+		}
+
+		.columns {
+			display: grid;
+			grid-template-columns: var(--content-list) minmax(0, var(--content-readable));
+			justify-content: center;
+			align-items: start;
+			gap: var(--space-8);
+		}
+
+		/* A view without a side column keeps the readable column, centred. */
+		.columns > :global(:only-child) {
+			grid-column: 1 / -1;
+			justify-self: center;
+			width: min(100%, var(--content-readable));
+		}
+
+		.restoring {
+			max-width: var(--content-readable);
+			margin: 0 auto;
+		}
+	}
+</style>
