@@ -1,7 +1,7 @@
 /**
- * Today's state panels are code-split (src/routes/(app)/today/+page.ts): the server renders the
- * state's panel and the browser hydrates it as sent, while a client navigation shows Today at once
- * with the panel's skeleton. These specs prove that the panel's code arriving late moves nothing,
+ * Today's state panels are code-split (src/routes/(app)/today/panels): the server sends the
+ * state's panel as markup, which the browser keeps as sent while Today hydrates without its code,
+ * and a client navigation shows Today at once with the panel's skeleton. These specs prove that the panel's code arriving late moves nothing,
  * on either path, and that a panel whose code fails to
  * load is a designed notice with Retry, in place of the panel only, which recovers once the
  * code can be fetched: in place where the browser fetches a failed module again (WebKit), or
@@ -173,7 +173,7 @@ test.afterAll(async () => {
 test.describe('with the service worker blocked, so page.route sees every chunk', () => {
 	test.use({ serviceWorkers: 'block' });
 
-	test('the panel’s code arriving late moves nothing: the server-rendered panel holds its place', async ({
+	test('the panel’s code arriving late holds nothing up and moves nothing: the server’s markup holds its place', async ({
 		page
 	}) => {
 		let release = () => {};
@@ -197,6 +197,12 @@ test.describe('with the service worker blocked, so page.route sees every chunk',
 		const countdown = page.getByTestId('today-goal-countdown');
 		await expect(countdown).toBeVisible();
 		await expect(countdown).not.toContainText('to go');
+		// Today hydrates without the panel's code (its initial JS holds only what every state
+		// shares): today's date is marked on the week strip while the chunk is still held.
+		await expect(
+			page.getByRole('list', { name: 'This week' }).locator('[aria-current="date"]')
+		).toHaveCount(1);
+		await expect(goals(page)).toHaveCount(1);
 
 		await expectNoShift(page, {
 			boxes: [
@@ -287,14 +293,17 @@ test.describe('with the service worker blocked, so page.route sees every chunk',
 		expect(await audit(page), 'dark').toEqual([]);
 		await captureScreen(page, testInfo, 'today-panel-error');
 
-		const plateTop = (await plates(page).boundingBox())!.y;
+		// Where the plate row sits in the document: Retry may scroll the page (Chromium reloads it).
+		const documentTop = async () =>
+			(await plates(page).boundingBox())!.y + (await page.evaluate(() => window.scrollY));
+		const plateTop = await documentTop();
 		letThrough();
 		await retry.click();
 		await expect(goals(page)).toHaveCount(1);
 		await expect(page.getByTestId('today-goal-countdown')).toHaveText('10 weeks to go');
 		await expect(notice(page)).toHaveCount(0);
 		await expect(page.getByTestId('today-panel')).toHaveCount(0);
-		expect(Math.abs((await plates(page).boundingBox())!.y - plateTop)).toBeLessThanOrEqual(1);
+		expect(Math.abs((await documentTop()) - plateTop)).toBeLessThanOrEqual(1);
 	});
 
 	test('the notice is designed in the light theme too', async ({ page }) => {

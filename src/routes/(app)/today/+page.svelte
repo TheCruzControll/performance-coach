@@ -12,7 +12,7 @@
 	import PageHeader from '#lib/ui/components/PageHeader.svelte';
 	import Section from '#lib/ui/components/Section.svelte';
 	import Stat from '#lib/ui/components/Stat.svelte';
-	import { _PANELS as PANELS } from './+page';
+	import { PANELS } from './panels';
 	import PanelLoader from './panels/PanelLoader.svelte';
 	import type { PageProps } from './$types';
 
@@ -114,11 +114,16 @@
 </ol>
 
 <div class="stack">
-	<!-- The state's panel is code-split (+page.ts): the server renders it with the screen, and a
-	     client navigation shows its skeleton until the code arrives. -->
+	<!-- The state's panel is code-split (panels/index.ts): the server sends it as markup, kept as
+	     sent until its code arrives, and a client navigation shows its skeleton until then. -->
 	{#if setup && !setup.complete}
 		<div class="setup-room" style:min-height={SETUP_HEIGHT}>
-			<PanelLoader load={PANELS.setup} height={SETUP_HEIGHT} props={{ setup }} />
+			<PanelLoader
+				load={PANELS.setup}
+				height={SETUP_HEIGHT}
+				props={{ setup }}
+				served={data.served}
+			/>
 		</div>
 	{:else if setup}
 		<Card tone="accent" padding="lg" data-testid="today-session">
@@ -172,7 +177,12 @@
 
 	<!-- Once set up: the goals by rank and the shape of the week. -->
 	{#if setup?.complete}
-		<PanelLoader load={PANELS.summary} height={SUMMARY_HEIGHT} props={{ setup }} />
+		<PanelLoader
+			load={PANELS.summary}
+			height={SUMMARY_HEIGHT}
+			props={{ setup }}
+			served={data.served}
+		/>
 	{/if}
 </div>
 

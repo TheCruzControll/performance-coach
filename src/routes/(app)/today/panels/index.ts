@@ -1,8 +1,9 @@
 /**
- * What Today's code-split panels (+page.ts `_PANELS`) need at run time. +page.ts imports the
- * state's panel (`preloadPanel`) and, while hydrating, waits for it, so the browser hydrates the
- * markup the server rendered. PanelLoader then renders what the import came to: the panel, its
- * skeleton while it loads, or 'Couldn’t load this part of Today' with Retry.
+ * Today's code-split panels and what they need at run time. +page.ts imports the state's panel
+ * (`preloadPanel`) in parallel with the page's own code and never waits for it in the browser:
+ * the server renders it as static markup (`servedPanel`), which the page keeps as sent until the
+ * code arrives. PanelLoader then renders what the import came to: the panel, its skeleton while
+ * it loads, or 'Couldn’t load this part of Today' with Retry.
  */
 import type { Component } from 'svelte';
 
@@ -10,6 +11,36 @@ import type { Component } from 'svelte';
 export type PanelImport<P extends Record<string, any> = any> = () => Promise<{
 	default: Component<P>;
 }>;
+
+/**
+ * Today's state panels, one per state that has one: M3's states add theirs here. Not in +page.ts:
+ * scripts/check-budgets.ts counts an import written in a universal load's own source as initial
+ * JS, and the load only starts these (docs/performance.md).
+ */
+export const PANELS = {
+	/** Onboarding is incomplete: the setup card. */
+	setup: () => import('./Setup.svelte'),
+	/** Onboarding is complete: the goals by rank and the shape of the week. */
+	summary: () => import('./Summary.svelte')
+} satisfies Record<string, PanelImport>;
+
+/**
+ * What the page holds in place of a panel the server rendered, while its code is on its way: the
+ * markup itself on the server, and this while the browser hydrates it (Svelte keeps the server's
+ * markup of an `{@html}` block as sent, whatever the browser's value).
+ */
+export const SERVED_IN_PLACE = '<!-- served -->';
+
+/**
+ * A panel's markup as static HTML for the server to send in its place. Comments go: they are
+ * Svelte's hydration markers, which this markup never needs, and an empty one would end the
+ * `{@html}` block early when the browser hydrates it. Text from data is escaped by `render`, so
+ * no comment comes from the owner's data.
+ */
+export async function servedPanel(Panel: Component, props: Record<string, unknown>) {
+	const { render } = await import('svelte/server');
+	return render(Panel, { props }).body.replace(/<!--[\s\S]*?-->/g, '');
+}
 
 /** What each panel's latest import came to: its component, or the error it failed with. */
 const settled = new Map<PanelImport, Component | Error>();

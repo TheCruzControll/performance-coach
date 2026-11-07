@@ -1,8 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import type { Component } from 'svelte';
-import { preloadPanel, settledPanel } from './index.ts';
+import { preloadPanel, servedPanel, settledPanel } from './index.ts';
+import Setup from './Setup.svelte';
 
 const Panel = (() => {}) as unknown as Component;
+
+describe('servedPanel', () => {
+	it('renders the panel as static markup, without the comments that would end an {@html} block', async () => {
+		const setup = { complete: false, done: 2, total: 10, next: 'experience' };
+		const html = await servedPanel(Setup as Component, { setup });
+		expect(html).toContain('data-testid="today-setup-count"');
+		expect(html).toContain('2 of 10 steps done');
+		expect(html).not.toContain('<!--');
+	});
+});
 
 describe('preloadPanel', () => {
 	it('records the imported component for PanelLoader to render as the server sent it', async () => {
