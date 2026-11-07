@@ -81,7 +81,7 @@
 					<span class="badge" aria-hidden="true">{exercise.label ?? exercise.position}</span>
 					<span class="row-name">{exercise.name}</span>
 					<span class="count">
-						{exercise.done}/{exercise.rows.length}<span class="visually-hidden"> sets</span>
+						{exercise.done}/{exercise.rows.length}<span class="visually-hidden">&nbsp;sets</span>
 					</span>
 				</a>
 			</li>

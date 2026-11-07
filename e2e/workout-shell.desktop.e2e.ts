@@ -89,8 +89,12 @@ test.describe('the workout screen on a desktop', () => {
 		}
 		expect(order[0]).toBe('Skip to content');
 		expect(order[1]).toBe('Minimise');
-		expect(order.slice(2).map((text) => text.replace(/^\S+ (.*) \d+\/\d+ sets$/, '$1'))).toEqual(
-			EXERCISES
-		);
+		expect(order.slice(2)).toEqual([
+			'1 Back squat 0/4 sets',
+			'2 Leg press 0/3 sets',
+			'3 Romanian deadlift 0/3 sets',
+			'A1 Pull-up 0/3 sets',
+			'A2 Plank 0/3 sets'
+		]);
 	});
 });

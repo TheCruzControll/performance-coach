@@ -16,7 +16,6 @@
 -->
 <script lang="ts">
 	import { onMount, untrack, type Snippet } from 'svelte';
-	import { goto } from '$app/navigation';
 	import {
 		ActiveWorkout,
 		type ActiveSnapshot,
@@ -61,10 +60,11 @@
 	});
 
 	// Another kind's workout: its own route, before any view renders, keeping this page's query.
+	// A full navigation to a prerendered page (from the precache offline); goto() would reject a
+	// route this build does not have yet (/workout/run and /workout/session land later).
 	$effect(() => {
 		if (restore.phase !== 'elsewhere') return;
-		// eslint-disable-next-line svelte/no-navigation-without-resolve -- kinds.ts's literal paths
-		void goto(`${workoutPath(restore.kind)}${location.search}`, { replaceState: true });
+		location.replace(`${workoutPath(restore.kind)}${location.search}`);
 	});
 
 	const reload = () => location.reload();
