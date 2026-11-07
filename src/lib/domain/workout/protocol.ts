@@ -27,10 +27,15 @@ import type { ExerciseSummary, Instant, LoggedSet, WorkoutStatus } from './types
  */
 export const SYNC_LIMITS = { maxMutations: 25, maxBytes: 64 * 1024, keepaliveBytes: 48 * 1024 };
 
-/** 1 to SYNC_LIMITS.maxMutations mutations, in outbox order. */
+/** Up to SYNC_LIMITS.maxMutations mutations, in outbox order, and as many discarded ids. */
 export interface SyncRequest {
 	v: 1;
 	mutations: Mutation[];
+	/**
+	 * Ids the owner discarded after a request carrying them may have reached the server: claimed
+	 * before any mutation, so that request answers 'duplicate' and never lands them late.
+	 */
+	discarded?: string[];
 }
 
 /**

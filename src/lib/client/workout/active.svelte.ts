@@ -42,6 +42,8 @@ export class ActiveWorkout {
 	 * and when it could not. Reactive: the page marks it.
 	 */
 	store = $state.raw<WorkoutStore | null>(null);
+	/** A 401 purged this device as the restore found it (restore.ts): the page hides the workout. */
+	signedOut = $state.raw(false);
 	readonly #table: AnyTable;
 	/** Lets go of the store and stops the engine; null once closed. */
 	#stop: (() => void) | null = () => {};
@@ -62,6 +64,7 @@ export class ActiveWorkout {
 		if (read.status !== 'found') {
 			return read.status === 'upgraded' ? this.#closed('upgraded') : this.#show(null);
 		}
+		this.signedOut = read.signedOut;
 		const view = project(this.#table, read.inputs);
 		this.#show({ workoutId: read.inputs.workoutId, view, notSaved: [] });
 	}

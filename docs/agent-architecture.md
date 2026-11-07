@@ -65,6 +65,21 @@ session), a call into `src/lib/server/services/*`, and an output with `kind: 'fa
 and source ids. Read tools are side-effect free; write tools create proposals or append
 structured memory.
 
+### Services behind the programming and history tools (M3)
+
+The M3 services these tools adapt (docs/architecture.md, "Training model (M3)"):
+
+| Tool                                               | Service                                                                                                                                                                      |
+| -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `get_current_program`, `get_current_training_week` | `src/lib/server/services/programs/read.ts`: `getCurrentProgram`, `getTrainingWeek` (and `getTodayPlan`, `getPlannedSession`)                                                 |
+| `get_exercise_history`, `get_personal_records`     | `src/lib/server/services/training/history.ts`: `getExerciseHistory`, `getLastPerformances`, `getPersonalRecords`                                                             |
+| `create_training_program`                          | `src/lib/server/services/programming/`: `previewProgram` drafts it; accepting the proposal builds it with `buildProgram`, the same path as Today's Build card                |
+| `propose_program_adjustment`                       | A `coach_proposals` row against the current version (`base_version_id`); accepting it revises the program with `reviseProgram`, so it becomes a version decided by the coach |
+
+The services take `deps.source: 'coach'`, which a revision records as its decider and an edit of
+the training log as its audit actor. Until their M5 slices land, these tool files and the program
+appliers (`src/lib/server/services/coach/apply/program.ts`) are stubs.
+
 ## Memory (structured, persistent)
 
 Stored in Postgres (M3/M5 tables), never inferred from chat logs:
