@@ -28,24 +28,22 @@ Where they disagree about this Mac, PLAN.md and the pi README win. For the produ
 - One Postgres 18 on 5432 (role coach). Node 22 via nvm.
 - Workflow args reach the scripts as a JSON string. The scripts parse it.
 
-## Start with
-1. main CI for #183, #184 and #185 (runs 42355809914, 42356551780, 42356562301). If any E2E job is red, fix it first with the Bug fix playbook.
-2. The smoke wave: run `wf/dag-cloud.js` with `waves/m2-docs-profile.json` as args. Read its PR diff and body before going on. Then run one code slice (M2X `email-link-endpoints`) to prove the Sol loop.
-3. The PR from branch `chore/verify-workout-sync` (a TLA+ check of workout sync), if it is open: give it a Sol review, and merge it like any other PR once it is green.
-
-Then follow the order in HANDOFF and PLAN:
-1. M2 `docs-profile`.
-2. M2X `email-link-endpoints`, then `email-link-signin`.
-3. M9 `e2e-ci-capacity`.
-4. The M4 `workout-shell` chain.
-5. The M5 `anthropic-provider` → `coach-turn` chain.
-6. The rest of M3, M6, M7 and M9 in plan order.
-
-M8 councils run after M4 and again at the end.
+## Start with (resume of the 2026-11-07 19:15 UTC pause)
+The top section of HANDOFF.md on origin/handoff ("Mac + pi session, paused") lists the in-flight work. Read it first.
+1. Check `pgrep caffeinate` and `status/run.sh` are running; start them if not (`nohup caffeinate -ims -t 259200 &`, `status/run.sh`).
+2. #212 (`m3/45-adjust-skip`): a fresh fixer for its red E2E serial test (`e2e/adjust-skip.serial.e2e.ts:250`), then a Sol round on the fix, then CI, then merge.
+3. Start four waves at once from the prepared args (they resume the pushed in-flight branches from their worktrees):
+   - `waves/m4-r2.json` (limit 1): sync-status (squash its `fixup!` commits first and rerun `verification/workout-sync/check.sh`), exercise-navigation, run-logging, other-logging.
+   - `waves/m3-r2.json` (limit 1): build-my-program, today-sessions, perf-program-screens, docs-data-model, program-journey, docs-m3-status.
+   - `waves/m9-r2.json` (limit 2): the backup/restore chain (backups stay off) and recovery-codes-120-bit.
+   - `waves/m5-r2.json` (limit 2): the next coach slices.
+   Rebuild an args file with `wf/build-plan-wave.py` if a branch merged or a PR opened since it was written.
+4. After sync-status merges: one click-through agent over the whole /workout screen (owed for #192, #197, #198, #204, #209), headed Chromium at iPhone size and 1440x900, findings fixed as their own PRs.
+5. Keep four waves going: as a wave ends, start the next in plan order (rest of M4, M2X desktop screens, M6, M7, rest of M5 and M9). M8 councils after M4 and at the end.
 
 ## How
 - **Waves.** Build waves with `build-plan-wave.py --only` listing exactly the wanted slices, so each wave ends by itself.
-  - Run at most 3 waves at once (owner, 2026-11-07): screen chains at limit 1, a backend wave at limit 2.
+  - Run up to 4 waves at once (owner, 2026-11-08: push the parallelism): screen chains at limit 1, backend waves at limit 2, about 6 agents. Drop a wave if free disk < 8 GB, memory pressure is red, or PRs queue for CI more than 30 minutes.
   - Use limit 1 for chains that edit the same screens: onboarding, Today, Train session, workout shell. Use limit 2 otherwise.
 - **Budget.** 5-6 agents in total, and 2 heavy-command slots (`SLOT_COUNT=2`). Drop to 3 agents if free disk falls under 8 GB or memory pressure turns red.
 - **Models.** Opus implements and Sol (`openai/gpt-6.1-sol`) reviews. Never use the same model family for both. Every PR body ends "Created with Claude Opus 5.5 in pi."
