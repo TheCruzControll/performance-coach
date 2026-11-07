@@ -4,108 +4,120 @@ This is everything a new Claude Code session needs to resume the build on anothe
 product spec is `docs/product-requirements.md` on `main`; milestone criteria are in
 `docs/milestones.md`. Read this file from `origin/handoff` (it is not on `main`).
 
-## Mac + pi session, 2026-11-07 (read this first)
+## Mac + pi session, paused 2026-11-07 19:15 UTC (read this first)
 
-The build moved from the Linux cloud session to the owner's Mac on 2026-11-07. It runs under the
-pi harness as a standing program. This section is the current state. The sections below it are
-history.
+The owner paused the Mac + pi build at 19:15 UTC. It continues in a Claude cloud session, driven
+from the owner's phone. This section is the current state. The sections below it are history.
+The goal file is `docs/handoff/pi/GOAL.md`. The decision trail is `docs/handoff/pi/notes.md`.
+Both are copies of the Mac scratch files at the pause.
 
-### Where things run
+### Status at the pause
 
-- pi on the owner's Mac (8 CPU, 8 GB RAM). Budget is 5 to 6 agents and `SLOT_COUNT=2`.
-- Scratch is `~/playground/pc-scratch`. It holds `bin/`, `plans/`, `waves/`, `wf/` and the
-  decision trail `notes.md`.
-- Worktrees go in `~/playground/pc-wt`.
-- The ported harness lives in `docs/handoff/pi/` on this branch. Its README is the setup guide.
-- The status page runs with `~/playground/pc-scratch/status/run.sh` and serves
-  http://127.0.0.1:8765. Its counts match `slice-counts.py`.
-
-### Slices by milestone
-
-From `python3 ~/playground/pc-scratch/bin/slice-counts.py` at the end of this session.
+From `slice-counts.py` at 19:15 UTC. Dropped slices are left out of every total.
 
 | Milestone | Merged / total | Dropped |
 | --- | --- | --- |
 | M2 | 28 / 28 | 1 |
 | M2X | 11 / 18 | 3 |
-| M3 | 42 / 50 | 0 |
-| M4 | 26 / 61 | 0 |
-| M5 | 14 / 61 | 0 |
+| M3 | 43 / 50 | 0 |
+| M4 | 29 / 61 | 0 |
+| M5 | 23 / 61 | 0 |
 | M6 | 11 / 63 | 0 |
 | M7 | 0 / 59 | 0 |
-| M9 | 10 / 62 | 0 |
-| All | 142 / 402 | 4 |
+| M9 | 10 / 61 | 1 |
+| All | 155 of 401 | 5 |
 
-`plans/dropped.json` lists the dropped slices. They are left out of every total.
+Open PRs are #212 (`m3/45-adjust-skip`) and #13 (this branch, never merge it). The session merged
+26 PRs. They are #157 and #186 through #211, except the closed #188. No wave or agent is running.
 
-### PRs merged this session
+In-flight branches. All are pushed to origin. Only adjust-skip has a PR.
 
-- #189 runs E2E as parallel, shardable legs. PR E2E went from about 39 to about 14 minutes.
-- #157 observes lock-race refusals before awaiting the lock holder's commit. Merged on the owner's say.
-- #186 documents the training profile and records M2's progress.
-- #187 model-checks with TLA+ that workout sync applies each change once and in order.
-- #190 drops the desktop WebKit E2E project.
-- #191 fixes an onboarding WebKit flake. A resting pointer preloaded data after Back.
-- #193 chooses the coach's provider from the environment. Production stays off until launch.
-- #192 adds a prerendered workout screen that restores the active workout offline.
-- #194 takes 2.0 to 2.8 KB off every route's initial JS.
-- #195 adds the coach conversation tables: threads, transcript, agent runs, model and tool calls.
-- #196 adds the threads and transcript service.
-- #197 adds the workout strength view.
-- #199 records each coach run's cost, honours Stop and counts the daily spend.
+| Branch (head) | Stage | Next step |
+| --- | --- | --- |
+| `m3/45-adjust-skip` (9a07998), PR #212 | Sol approved. Click-through passed on iPhone 15 Pro and 1440x900. CI red. Both E2E serial legs fail `e2e/adjust-skip.serial.e2e.ts:250`, "Adjust left open while another tab skips the session: Reload closes it onto the skipped state" (deep equality). The wave's fix loop was stopped before it pushed. | Fresh fixer with `gh run view 42401737652 --log-failed`. New commit, no rebase. Sol round on the fix diff, then CI green, then merge. |
+| `m3/42-build-my-program` (62f2410) | Implemented in 2 commits. Local gates and mutation check pass. Sol approved round 1 at 62f2410. Not published. | Open the PR against main. Wait for CI. Click-through (UI slice). Merge. |
+| `m3/48-docs-data-model` (5687595) | Docs only. Local gates pass. Claims checked against merged code. No Sol review yet. | Sol review of the claims (as #186 had), `docs-guard-check.sh`, open the PR, CI, merge. |
+| `m4/32-sync-status` (ee7bff9) | Implemented with the F1 fix. Sol approved round 4 (xhigh) at ee7bff9, all 7 findings resolved. Carries 9 `fixup!` commits because the publish rebase was aborted at the pause. Not published. | `git rebase -i --autosquash origin/main` (or merge main). Confirm the tree matches what Sol approved. Rerun the light gates and `verification/workout-sync/check.sh`. Push, open the PR, CI, click-through, merge. |
+| `m4/33-exercise-navigation` (c339ba5) | Implemented. Local gates, integration and mutation checks pass. No Sol review yet. It moves `upNext` out of `flow.ts`. | Sol loop, then publish, CI, click-through, merge. |
+| `m9/12-restore-schema-step` (6156747) | One `wip` commit, paused mid-implementation. Ungated. The M9 wave `wf_9c9c3e4e2fe0` left no journal. | Resume it through the implementer's RESUME CHECK in a fresh M9 wave. Backups stay off. |
 
-### Open PRs and running waves
-
-- #198 `m4/25-workout-sync-wiring`. Its spec fix passed Sol. CI was rerunning.
-- #200 `m5/18-coach-turn`. Ready from the first M5 wave.
-- #13 is this branch. Never merge it.
-- The M4 shell chain wave `wf_34260c6139f0` runs on the old script, limit 1. Its slices had no
-  click-through. Batch a click-through pass over them when the chain ends.
-- M5 wave b `wf_bac2eb1c49cd` runs on harness v2, limit 2, 8 slices. It includes
-  `coach-bundle-guards` and then `anthropic-provider`.
+The M4 slices #192 workout-shell, #197 strength-view, #198 sync wiring, #204 log-set and #209
+set-actions merged on the old script without a click-through. `/workout` is dark-launched and
+nothing links to it. One click-through pass over the workout screen is owed.
 
 ### The owner's decisions, 2026-11-07
 
-- The email sign-in link is dropped. #188 is closed. Its three slices are in `dropped.json`.
-  The merged email pieces stay on main, switched off.
-- Desktop WebKit tests are dropped (#190). Chrome for iOS is WebKit, so the iPhone WebKit
-  project stays. Desktop Chrome is Chromium.
-- Heavy tests run in CI. Agents run lint, check and unit tests locally, plus integration for db
-  slices. After Sol and green CI, a click-through verifier drives the real production build in
-  headed Chromium for UI slices.
+- The email sign-in link is dropped. #188 is closed. The merged email pieces stay on main,
+  switched off.
+- The security-change emails (`auth-change-email`) are dropped.
+- Backups are built but stay off until the owner adds `BLOB_READ_WRITE_TOKEN`.
+- Desktop WebKit tests are dropped (#190). Chrome for iOS is WebKit, so the iPhone WebKit tests
+  stay. Desktop Chrome is Chromium.
+- The owner does not want an offline mode. Keep what is built. Add no offline scope.
 - #157 was merged on the owner's say.
 - The Lighthouse TBT limit stays as it is.
-- Backups stay off until the owner decides.
+- Heavy tests (e2e, Lighthouse, builds, budgets) run in CI only. Locally, agents run lint,
+  check and unit tests, plus integration for db or migration slices.
+- Sol review must pass. Then CI must be green. Then, for UI slices, a separate agent clicks
+  through the real production build in headed Chromium at iPhone size and at 1440x900. It
+  records pass or fail per acceptance item in the PR body, with screenshots. On the Mac, `gh`
+  could not upload images, so the bodies list screenshot paths.
+- Up to 3 waves run at once. Screen chains run at limit 1, backend waves at limit 2.
+- The never list and the ask-first list in `GOAL.md` still hold.
+
+### How to resume in a Claude cloud session
+
+1. Read this file from `origin/handoff`, then `docs/handoff/pi/GOAL.md` and `docs/handoff/pi/notes.md`.
+2. Set up the container as in "How a new session resumes" in the 08:41 UTC section below.
+   Start Postgres 16 with `max_connections` 300 and `docs/handoff/tools/pg18` (Postgres 18, as
+   CI and Neon run), or adjust if the container differs. Copy `docs/handoff/pi/tools/*` and
+   `docs/handoff/tools/pg18` to `<scratch>/bin/`, and `docs/handoff/plans/*` to `<scratch>/plans/`.
+3. Port the workflow. `docs/handoff/workflows/dag-cloud.js` is the original cloud script and runs
+   under Claude's Workflow tool. `docs/handoff/pi/wf/dag-cloud.js` is the pi version with the v2
+   gating: light local gates, a CI wait and fix loop, and the click-through verifier. Its
+   prompts are the best spec of the current process. Port them into the cloud script. Change the
+   paths, `gh` versus the GitHub MCP, and the model names. Sol reviews through the sol-review
+   skill's route available in the cloud. The Workflow tool only loads a `scriptPath` inside the
+   working directory or the scratchpad.
+4. Fix the CI wait before relying on it. `wait-ci.sh` polls `gh pr checks --required`. The
+   required check "E2E (iPhone viewport · Chromium + WebKit)" only appears after the E2E legs
+   finish. On #212 the watcher saw 4 required checks pass at 18:38 and reported green. The E2E
+   legs failed at 18:40 and 18:42 and the aggregate check went red at 18:46. Wait for that check
+   by name.
+5. Build each wave with `build-plan-wave.py` and `plans/dropped.json`. Pass `--only` to bound it.
+   `plans/m4-plan.json` on this branch already carries the dependency fix (M2X names, 646ca01).
+6. Merge one PR at a time through `steward-plan` (from `docs/handoff/pi/tools`). Run
+   `docs-guard-check.sh <branch>` before each merge. Merge with the head SHA and the title "Merge <PR title> (#N)".
+
+### Next work, in order
+
+1. Finish the five in-flight branches and #212, per the table above.
+2. The owed click-through over the workout screen (#192, #197, #198, #204, #209).
+3. The rest of the M4 chain. `sync-status` and `exercise-navigation` are in flight. Then
+   `run-logging`, `other-logging`, then `start-kit` and the rest in plan order.
+4. M3's remaining Today and Train slices.
+5. The M9 backup and restore chain. Build it, switched off.
+6. Then M5, M6, M7 and M9 in plan order.
+7. M8 councils (`wf/councils.js`) after M4 and again at the end. The owner gives the bar.
 
 ### Lessons from this session
 
-- Starting or replacing a `/goal` reloads pi. The reload kills every background agent, watcher
-  and wave. Never do it while background work runs.
-- pi passes workflow args as a JSON string. The scripts parse it.
-- BSD `paste` needs `-` to read stdin. `bin/wait-ready.sh` printed usage on every pass until fixed.
-- The parallel E2E legs (#189) took PR E2E from about 39 to about 14 minutes. Before that, runs
-  were cancelled at the 40-minute timeout with nothing failed.
-- Stacked workout slices can conflict semantically. #197's strength spec asserted no
-  `/api/workouts` requests, and #198 syncs on every workout page. A fixer rewrote the spec with
-  an immutable outbox snapshot and a settle wait. Sol approved it after two more rounds. No test
-  was weakened.
-- `/workout` reached 58.7 KB against the plan's 53.8 KB runway. The 60 KB gate still passed.
-  Instead of raising allowances, #194 cut shared entry JS from 47.7 to 44.5 KB. That put `/workout`
-  at 56.6 KB. A 4 KB cut was not reachable without framework changes (measured).
-- The TLA+ check (#187) found F1. Discard does not stop an in-flight POST, so a discarded edit can
-  land after a newer one. It is latent because nothing calls discard yet. M4 `sync-status` owns
-  it. That slice carries F1 as `extra` and must rerun `verification/workout-sync/check.sh`.
-
-### How to resume
-
-1. `~/playground/pc-scratch/GOAL.md` is the goal file. Its done-when list and its never list hold.
-2. Build a wave with `wf/build-plan-wave.py --only <slices>`. Run `SubagentWorkflow` with
-   `wf/dag-cloud.js` and that output as args. Run at most 2 waves at once.
-3. Merge one PR at a time from the main session through `bin/steward-plan`. Run
-   `bin/docs-guard-check.sh <branch>` before each merge.
-4. Merge with `gh api -X PUT repos/TheCruzControll/performance-coach/pulls/N/merge`, passing
-   `sha` and `commit_title` "Merge <PR title> (#N)".
-5. Read `notes.md` for the full trail of this session.
+- Starting or replacing a `/goal` reloads pi and kills every background agent, watcher and wave.
+- pi passes workflow args as a JSON string. The scripts parse either form.
+- BSD `paste` needs `-` to read stdin. `wait-ready.sh` printed usage on every pass until fixed.
+- The parallel E2E legs (#189) took PR E2E from about 39 to about 14 minutes.
+- Stacked workout slices kept hitting semantic conflicts (#197 with #198, #204 with #209). A test
+  that compares text across a reload must wait for the lazily loaded logger first.
+- The WebKit onboarding flake was a hover preload cancelled by the next navigation. Fixed in #191.
+- `/workout` reached 58.7 KB against the plan's 53.8 KB allocation. The 60 KB gate is the guard
+  and the plan figure is runway. #194 cut shared entry JS from 47.7 to 44.5 KB rather than raise
+  allowances. A 4 KB cut was not reachable without framework changes (measured).
+- The TLA+ check (#187) runs with `verification/workout-sync/check.sh`, skill
+  `.pi/skills/verify-workout-sync`. It found F1, a discarded change landing after a newer one.
+  `m4/32-sync-status` fixes it and updates `verification/workout-sync`.
+- GitHub "dirty" on a stacked branch often merges cleanly locally. Check `git merge-tree` before
+  sending a conflict agent.
+- A CI watcher on required checks alone can report green before the E2E aggregate exists (#212).
 
 ## Final state, 2026-11-07 08:41 UTC (superseded by the Mac + pi session above)
 
