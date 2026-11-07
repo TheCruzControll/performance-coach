@@ -141,24 +141,48 @@ is what is budgeted now: 14 KB is ~2 KB above the heaviest route when the change
 The same script also guards the CSS output: every built rule that ships a `-webkit-` property must
 ship the standard one too (see the glass note in `docs/design-system.md`).
 
-### Measured (`pnpm build:node && pnpm budgets`)
+### Measured (`pnpm build && pnpm budgets`)
 
-| Route             | Initial JS (gzip) | Route CSS (gzip) | Preloaded fonts |
-| ----------------- | ----------------: | ---------------: | --------------: |
-| `/(app)/train`    |           55.5 KB |          10.4 KB |               2 |
-| `/(app)/profile`  |           54.5 KB |           7.8 KB |               2 |
-| `/(app)/today`    |           53.6 KB |           7.4 KB |               2 |
-| `/design`         |           53.5 KB |          11.6 KB |               2 |
-| `/(app)/progress` |           52.6 KB |           6.7 KB |               2 |
-| `/(app)/offline`  |           51.8 KB |           6.1 KB |               2 |
-| `/(app)/coach`    |           50.6 KB |           6.0 KB |               2 |
-| `/`               |           49.0 KB |           4.7 KB |               2 |
+Before and after the slimmer shared entry (2026-11-07). Before is main at that date.
 
-Total CSS: **16.6 KB gzip** (30 files). Service worker: 1.8 KB gzip. Of the initial JS, the
-Svelte runtime (~19.7 KB) and the SvelteKit client (~15.9 KB) are shared by every route.
-Review round 2 added ~0.7 KB per route (browser error reporting, in every page) and ~0.8–1.4 KB
-on the app screens (the shared `Stat`/`Badge`/`Chip`/`ListRow`/`Section` primitives). `/design`
-went down from 57.2 KB: its Inputs, Data and Feedback groups now load when their tab opens.
+| Route                              | Initial JS before | Initial JS after | Route CSS after | Preloaded fonts |
+| ---------------------------------- | ----------------: | ---------------: | --------------: | --------------: |
+| `/(app)/today`                     |           59.6 KB |          57.6 KB |         10.1 KB |               2 |
+| `/(app)/train`                     |           59.2 KB |          57.2 KB |         13.5 KB |               2 |
+| `/(app)/train/session/[key]`       |           58.8 KB |          56.1 KB |          9.6 KB |               2 |
+| `/workout`                         |           58.7 KB |          56.6 KB |          6.5 KB |               2 |
+| `/(app)/profile/security`          |           58.5 KB |          55.7 KB |         11.0 KB |               2 |
+| `/(app)/profile`                   |           57.6 KB |          55.5 KB |          8.6 KB |               2 |
+| `/(app)/train/history/[[version]]` |           57.1 KB |          54.4 KB |          9.7 KB |               2 |
+| `/setup`                           |           55.7 KB |          52.9 KB |          7.3 KB |               2 |
+| `/onboarding/[[step]]`             |           55.4 KB |          52.6 KB |          6.1 KB |               2 |
+| `/(app)/profile/[section]`         |           55.3 KB |          52.5 KB |          6.9 KB |               2 |
+| `/design`                          |           55.0 KB |          52.2 KB |          7.3 KB |               2 |
+| `/`                                |           54.0 KB |          51.3 KB |          6.1 KB |               2 |
+| `/(app)/progress`                  |           53.9 KB |          51.9 KB |          7.4 KB |               2 |
+| `/(app)/offline`                   |           53.9 KB |          51.1 KB |          6.7 KB |               2 |
+| `/recover/passkey`                 |           53.6 KB |          50.8 KB |          5.8 KB |               2 |
+| `/recover`                         |           52.6 KB |          49.8 KB |          6.1 KB |               2 |
+| `/(app)/coach`                     |           51.9 KB |          49.2 KB |          6.6 KB |               2 |
+
+The JS every route loads (the app entry, the root layout and what they import) went from
+47.7 KB to 44.5 KB. Of what is left, the Svelte runtime (18.9 KB), the SvelteKit client
+(16.9 KB) and its router (entry, route table and routing, 4.3 KB) are framework. The app's own
+share is error reporting (0.7 KB, needed before anything else runs), the toast queue and live
+region, and the record of screens shown for RUM. These moved out of the initial JS:
+
+- **The toasts** (`ToastList`, loaded on idle or at the first toast). They slide with CSS
+  animations, not `svelte/transition`: its runtime sat in the Svelte chunk of every route for
+  this one component (1.1 KB). The empty live region stays in the root layout.
+- **RUM** (`vitals.ts`), now imported when it starts on idle. The root layout keeps only
+  `visits.ts`, which records each screen for attribution.
+- **Preferences** (`preferences.svelte.ts`). The theme is applied by `src/app.html` before
+  paint, so the root layout loads the module after mount (`preferences-start.ts`) and only the
+  screens that show a unit have it up front: this step costs those four routes nothing.
+
+Deleting all of the root layout's and the client hooks' own code takes 5.5 KB off the shared JS
+and 3.6 KB off `/(app)/today` (measured, not shipped): that is the ceiling for the app's code.
+The rest is framework, and the router's modulepreload hints (vite.config.ts) stay.
 Fonts: Mona Sans latin 39.8 KB + Hubot Sans latin 48.3 KB (woff2, preloaded, cached immutably).
 
 Service-worker install download (precache, measured in Chromium in review round 1): **74 files,
@@ -166,8 +190,9 @@ Service-worker install download (precache, measured in Chromium in review round 
 
 ### Headroom and the M4 workout-screen plan
 
-The tightest route is `/train` at 55.5 KB of 60 KB (4.5 KB headroom); the M4 workout screen will
-be the heaviest screen in the app. Plan, agreed before any M4 code lands:
+The tightest route was `/train` at 55.5 KB of 60 KB (4.5 KB headroom) when this plan was made;
+it is now `/(app)/today` at 57.6 KB (table above). The M4 workout screen will be the heaviest
+screen in the app. Plan, agreed before any M4 code lands:
 
 - The workout route gets the same **60 KB** initial-JS budget. Only the logging path (current
   exercise, set rows, the stepper, the optimistic log action) ships up front.
@@ -179,6 +204,9 @@ be the heaviest screen in the app. Plan, agreed before any M4 code lands:
   ≤ 200 ms at 4× CPU), M4 criterion 3 (< 100 ms to visual confirmation of a logged set) and INP
   p75 ≤ 200 ms on that `route_id` from RUM.
 - If the shell itself must grow, raise the budget only with a measured reason in this file.
+- `/workout` measured 58.7 KB after the workout shell, against 53.8 KB planned. The slimmer
+  shared entry (table above) took it to 56.6 KB, so the later workout slices have 3.4 KB, not
+  1.3 KB, under the 60 KB gate.
 
 ### Main-thread budget (`e2e/perf.e2e.ts`, runs in CI with the e2e suite)
 

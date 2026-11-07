@@ -2,18 +2,19 @@
  * Real-user monitoring: report Core Web Vitals (LCP, INP, CLS) plus TTFB and FCP to
  * POST /api/vitals. 100% sampled (single user).
  *
- * - `web-vitals` is loaded lazily after hydration, so it never sits on the critical path;
- *   its observers use buffered performance entries, so nothing is missed.
+ * - This module and `web-vitals` are loaded lazily after hydration, so neither sits on the
+ *   critical path; the observers use buffered performance entries, so nothing is missed.
  * - Metrics are batched and flushed with `navigator.sendBeacon` when the page is hidden
  *   (the only reliable moment on iOS Safari), falling back to `fetch(..., { keepalive })`.
  * - The Blob is typed application/json: same-origin, no CORS preflight, and not a "form"
  *   content type, so SvelteKit's CSRF origin check does not apply.
  * - Each metric is attributed to the screen where it happened, not to the landing page: the
- *   root layout records every client-side navigation (`noteNavigation`), INP is attributed to
- *   the screen at the time of its interaction and CLS to the screen of its largest shift.
- *   Load metrics (TTFB, FCP, LCP) belong to the landing page.
+ *   root layout records every client-side navigation (`noteNavigation` in visits.ts), INP is
+ *   attributed to the screen at the time of its interaction and CLS to the screen of its
+ *   largest shift. Load metrics (TTFB, FCP, LCP) belong to the landing page.
  */
 import type { Metric } from 'web-vitals';
+import { visitAt, type Visit } from './visits.ts';
 
 const ENDPOINT = '/api/vitals';
 const MAX_BATCH = 20;
@@ -30,36 +31,8 @@ interface VitalPayload {
 	effectiveConnectionType?: string;
 }
 
-interface Visit {
-	/** performance.now() when the screen was shown (0 for the landing page). */
-	at: number;
-	path: string;
-	route: string | null;
-}
-
-const MAX_VISITS = 100;
 let started = false;
 const queue: VitalPayload[] = [];
-const visits: Visit[] = [];
-
-/**
- * Record the screen now shown. Called by the root layout's `afterNavigate` (with `at = 0` for
- * the landing page, so load metrics resolve to it).
- */
-export function noteNavigation(path: string, route: string | null, at = performance.now()): void {
-	visits.push({ at, path, route });
-	// Keep the landing visit plus the most recent ones; a long session must not grow unbounded.
-	if (visits.length > MAX_VISITS) visits.splice(1, visits.length - MAX_VISITS);
-}
-
-/** The screen that was showing at `time` (a performance.now() timestamp). */
-function visitAt(time: number): Visit {
-	for (let i = visits.length - 1; i >= 0; i--) {
-		const visit = visits[i]!;
-		if (visit.at <= time) return visit;
-	}
-	return visits[0] ?? { at: 0, path: location.pathname, route: null };
-}
 
 /** When the metric happened: the interaction (INP), the largest shift (CLS), else page load. */
 function metricTime(metric: Pick<Metric, 'name' | 'entries'>): number {
