@@ -30,6 +30,7 @@ agent/
   launch.ts          COACH_LAUNCHED: false until coach-launch flips it
   turn.ts            one turn: owner message in, CoachEvents out, every step persisted
   orchestrator.ts    the manual loop: stop reasons, budgets, deadlines, cancellation
+  hooks.ts           TurnHooks: what the loop tells the turn (text, chips, calls, steps), no-op defaults
   policy.ts          the output gate: unsafe pain advice and ungrounded facts never reach the wire
   direct.ts          unambiguous lookups answered without a model call
   rollover.ts        a segment becomes a summary note; the next opens with a new snapshot

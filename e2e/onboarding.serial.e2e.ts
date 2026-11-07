@@ -1,7 +1,8 @@
 /**
  * Onboarding (/onboarding/[[step]]): a guided setup through the Profile editors, saved as it
  * goes, with a progress bar that marks only completed or skipped steps done, Skip on optional
- * steps only, and Start coaching on review, which needs a goal and a schedule. Serial (one test
+ * steps only, Back and Finish later that keep a changed step without marking it done, and Start
+ * coaching on review, which needs a goal and a schedule. Serial (one test
  * at a time, after the functional suites): every test starts from a blank training profile,
  * which every browser and worker shares, and the last one leaves it blank again, so later
  * suites find onboarding open.
@@ -287,6 +288,87 @@ test('strength goals only: no specifics step, and its URL goes on to the next st
 	await page.goto('/onboarding/specifics');
 	await expect(page).toHaveURL('/onboarding/equipment');
 	expect((await page.goto('/onboarding/nowhere'))?.status()).toBe(404);
+});
+
+/**
+ * Record whether any error shows on the page from now on, even for a frame: a field marked
+ * invalid, an alert or the step's error notice. Read it back with `flashed`.
+ */
+async function watchForErrors(page: Page) {
+	await page.evaluate(() => {
+		const w = window as unknown as { flashed: boolean };
+		w.flashed = false;
+		const seen = () =>
+			document.querySelector('[aria-invalid="true"], [role="alert"], [data-testid="step-error"]');
+		new MutationObserver(() => {
+			if (seen()) w.flashed = true;
+		}).observe(document.body, { subtree: true, childList: true, attributes: true });
+	});
+}
+const flashed = (page: Page) =>
+	page.evaluate(() => (window as unknown as { flashed: boolean }).flashed);
+
+const experienceRows = () => query('select discipline, level, years from discipline_experience');
+const completedSteps = () => query('select onboarding_completed from athlete_profiles');
+
+test.describe('leaving a step: Back and Finish later', () => {
+	test.beforeEach(async ({ request }) => {
+		await profileAction(request, '/onboarding/goals?/saveGoal', strengthGoal);
+	});
+
+	test('Back keeps a changed level without marking the step done', async ({ page }) => {
+		const errors = trackConsoleErrors(page);
+		await gotoHydrated(page, '/onboarding/experience');
+		await stepReady(page, 'experience');
+		const entry = page.getByTestId('experience-entry');
+		await entry.getByRole('radio', { name: 'Novice', exact: true }).check();
+		await page.getByTestId('step-back').click();
+		await expect(page).toHaveURL('/onboarding/goals');
+		await stepReady(page, 'goals');
+		expect(await experienceRows()).toEqual([
+			{ discipline: 'strength', level: 'novice', years: null }
+		]);
+		expect(await completedSteps()).toEqual([{ onboarding_completed: [] }]);
+		expect(await doneSteps(page)).toEqual([]);
+
+		await gotoHydrated(page, '/onboarding/experience');
+		await stepReady(page, 'experience');
+		await expect(entry.getByRole('radio', { name: 'Novice', exact: true })).toBeChecked();
+		expect(errors).toEqual([]);
+	});
+
+	test('a half-filled step that cannot save: Back still goes back, saves nothing and shows no error', async ({
+		page
+	}) => {
+		await gotoHydrated(page, '/onboarding/experience');
+		await stepReady(page, 'experience');
+		// Years without a level: the level is required, so this entry cannot save yet.
+		await page
+			.getByTestId('experience-entry')
+			.getByRole('textbox', { name: /^Years/ })
+			.fill('3');
+		await watchForErrors(page);
+		await page.getByTestId('step-back').click();
+		await expect(page).toHaveURL('/onboarding/goals');
+		await stepReady(page, 'goals');
+		expect(await flashed(page)).toBe(false);
+		expect(await experienceRows()).toEqual([]);
+		expect(await completedSteps()).toEqual([{ onboarding_completed: [] }]);
+	});
+
+	test('Finish later on a changed step goes to Today, and the change is saved', async ({
+		page
+	}) => {
+		await gotoHydrated(page, '/onboarding/equipment');
+		await stepReady(page, 'equipment');
+		await page.getByRole('radio', { name: 'Commercial gym' }).check();
+		await page.getByTestId('finish-later').click();
+		await expect(page).toHaveURL('/today');
+		expect(await query('select gym_type from equipment_profiles')).toEqual([
+			{ gym_type: 'commercial' }
+		]);
+		expect(await completedSteps()).toEqual([{ onboarding_completed: [] }]);
+	});
 });
 
 test.describe('with the service worker blocked (page.route must see every request)', () => {

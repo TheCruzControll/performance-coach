@@ -5,10 +5,13 @@
   and the actions in the thumb zone. The editor, its form state and validation load on demand,
   from the same registry as Profile (no editor is in the route's initial JavaScript), in place of
   a skeleton. Continue saves the step and moves on (save as you go); Skip, on optional steps
-  only, moves on without saving. Review edits nothing: Start coaching finishes the setup.
+  only, moves on without saving. Back and Finish later save a changed step first, without
+  marking it done, and leave even when it cannot save yet. Review edits nothing: Start coaching
+  finishes the setup.
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { goto } from '$app/navigation';
 	import type { SectionForm } from '#lib/client/section-form.svelte.ts';
 	import { previousStep, STEP_INFO, type OnboardingStep } from '#lib/domain/profile/onboarding.ts';
 	import Button from '#lib/ui/components/Button.svelte';
@@ -85,19 +88,48 @@
 		// The redirect to the next step has been followed: the device's units follow a welcome.
 		if (outcome.ok && action === '?/save') afterSave?.(sent);
 	}
+
+	/**
+	 * Back and Finish later: a changed step saves first, as an edit (the step is not marked
+	 * done). A half-filled step that cannot save yet leaves all the same, quietly: its errors
+	 * neither show nor take focus on the way out. Unchanged, the link simply goes.
+	 */
+	async function leave(event: MouseEvent, then: 'back' | 'later', href: string) {
+		const newTab = event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey;
+		if (!form || !savesSection || !form.dirty || newTab) return;
+		event.preventDefault();
+		if (form.busy) return;
+		const sent = JSON.parse(JSON.stringify(form.value)) as unknown;
+		const outcome = await form.submit('?/save', { then }, { quiet: true });
+		if (outcome.ok) afterSave?.(sent);
+		// Saved on the way back: the redirect to the step before has been followed.
+		if (outcome.ok && then === 'back') return;
+		// eslint-disable-next-line svelte/no-navigation-without-resolve -- stepHref/todayHref resolve()
+		await goto(href);
+	}
 </script>
 
 <div class="step" data-step={step}>
 	<header class="top">
 		{#if previous}
-			<a class="nav back" href={stepHref(previous)} data-testid="step-back">
+			<a
+				class="nav back"
+				href={stepHref(previous)}
+				onclick={(event) => leave(event, 'back', stepHref(previous))}
+				data-testid="step-back"
+			>
 				<Icon name="chevron-left" size={20} /> Back
 			</a>
 		{:else}
 			<span></span>
 		{/if}
 		<span class="count numeric" aria-hidden="true">{index + 1} / {steps.length}</span>
-		<a class="nav later" href={todayHref()} data-testid="finish-later">Finish later</a>
+		<a
+			class="nav later"
+			href={todayHref()}
+			onclick={(event) => leave(event, 'later', todayHref())}
+			data-testid="finish-later">Finish later</a
+		>
 	</header>
 
 	<div

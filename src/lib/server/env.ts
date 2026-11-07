@@ -94,7 +94,19 @@ export const envSchema = z
 		 */
 		OWNER_EMAIL: lenientText,
 		RESEND_API_KEY: lenientText,
-		EMAIL_FROM: lenientText
+		EMAIL_FROM: lenientText,
+
+		// Backups (M9)
+		/**
+		 * Backups and their cron, read leniently like the email link's variables: a missing or
+		 * malformed value switches backups off (`backup/config.ts` decides, and the startup log
+		 * names the variable, never its value), and never stops the server. BACKUP_DIR is for
+		 * development and tests only.
+		 */
+		CRON_SECRET: lenientText,
+		BACKUP_ENCRYPTION_KEY: lenientText,
+		BLOB_READ_WRITE_TOKEN: lenientText,
+		BACKUP_DIR: lenientText
 	})
 	.transform((env) => {
 		const appEnv: AppEnv =

@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { backupConfig } from './backup/config.ts';
 import { EnvValidationError, parseEnv, testRoutesEnabled } from './env';
 
 const DB = 'postgres://coach:coach@localhost:5432/coach_dev';
@@ -248,6 +249,62 @@ describe('parseEnv', () => {
 			const { OWNER_EMAIL, RESEND_API_KEY, EMAIL_FROM, ...rest } = withEmail;
 			expect([OWNER_EMAIL, RESEND_API_KEY, EMAIL_FROM].every(Boolean)).toBe(true);
 			expect(rest).toEqual(parseEnv(source));
+		});
+	});
+
+	describe('backup variables (M9)', () => {
+		const KEY = Buffer.alloc(32, 7).toString('base64');
+		const BACKUP_VARIABLES = [
+			'CRON_SECRET',
+			'BACKUP_ENCRYPTION_KEY',
+			'BLOB_READ_WRITE_TOKEN',
+			'BACKUP_DIR'
+		] as const;
+
+		it('are optional, trimmed, and a blank value means unset', () => {
+			const env = parseEnv({ DATABASE_URL: DB });
+			for (const name of BACKUP_VARIABLES) expect(env[name], name).toBeUndefined();
+
+			const set = parseEnv({
+				DATABASE_URL: DB,
+				...Object.fromEntries(BACKUP_VARIABLES.map((name) => [name, `  ${name}-value\n`]))
+			});
+			for (const name of BACKUP_VARIABLES) expect(set[name], name).toBe(`${name}-value`);
+
+			for (const blank of ['', '   ', '\n\t ']) {
+				const unset = parseEnv({
+					DATABASE_URL: DB,
+					...Object.fromEntries(BACKUP_VARIABLES.map((name) => [name, blank]))
+				});
+				for (const name of BACKUP_VARIABLES)
+					expect(unset[name], JSON.stringify(blank)).toBe(undefined);
+			}
+		});
+
+		it('never make env validation fail, however malformed (backups switch off instead)', () => {
+			for (const bad of ['short', 'not base64 at all!', '\u0000', 'a\r\nb', 'x'.repeat(10_000)]) {
+				for (const extra of [{}, { VERCEL: '1', VERCEL_ENV: 'production' as const }]) {
+					expect(
+						issuesOf({
+							DATABASE_URL: DB,
+							APP_ENV: 'production',
+							...extra,
+							...Object.fromEntries(BACKUP_VARIABLES.map((name) => [name, bad]))
+						}),
+						JSON.stringify(bad.slice(0, 40))
+					).toEqual([]);
+				}
+			}
+		});
+
+		it('reach backup/config.ts as parsed: VERCEL=1 refuses BACKUP_DIR', () => {
+			const local = { DATABASE_URL: DB, BACKUP_ENCRYPTION_KEY: ` ${KEY} `, BACKUP_DIR: 'backups' };
+			expect(backupConfig(parseEnv(local))).toMatchObject({ state: 'on', store: { kind: 'file' } });
+			expect(backupConfig(parseEnv({ ...local, VERCEL: '1' }))).toEqual({
+				state: 'off',
+				missing: [],
+				invalid: ['BACKUP_DIR']
+			});
 		});
 	});
 });

@@ -13,7 +13,7 @@
     'Couldn’t load this editor' and Retry, which loads it again in place (WebKit fetches anew);
     if that fails too while online, the screen reloads asking for the sheet (`?edit=<kind>`),
     because Chromium keeps a failed module fetch for the document's lifetime.
-  The toast links to History once History exists (m3/44).
+  The toast links to History, where the new version and its why are listed.
 -->
 <script module lang="ts">
 	import type { Component } from 'svelte';
@@ -56,7 +56,7 @@
 
 <script lang="ts">
 	import { tick } from 'svelte';
-	import { invalidateAll, replaceState } from '$app/navigation';
+	import { goto, invalidateAll, replaceState } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import BottomSheet from '../components/BottomSheet.svelte';
@@ -146,7 +146,13 @@
 			return;
 		}
 		close();
-		toast.show(saved, { tone: 'positive' });
+		toast.show(saved, {
+			tone: 'positive',
+			action: {
+				label: 'History',
+				onclick: () => goto(resolve('/(app)/train/history/[[version]]', {}))
+			}
+		});
 		await invalidateAll();
 	}
 
