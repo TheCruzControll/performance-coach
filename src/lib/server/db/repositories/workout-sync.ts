@@ -12,11 +12,13 @@
  *   edits do, so the audit trigger records who changed the row.
  */
 import { and, asc, eq, sql } from 'drizzle-orm';
+import type { CustomMetric } from '../../../domain/training/types';
 import type { Decider } from '../../../domain/training/vocabulary';
 import {
 	AUDIT_ACTOR_SETTING,
 	otherSessionRecords,
 	painReports,
+	plannedSessionDetails,
 	runRecords,
 	runRecordSegments,
 	setRecords,
@@ -49,6 +51,22 @@ export function createWorkoutSyncRepository(db: Executor) {
 				.from(setRecords)
 				.where(eq(setRecords.clientMutationId, clientMutationId));
 			return row?.ownerId ?? null;
+		},
+
+		/**
+		 * The metrics the plan prescribes for the owner's workout with this client id, or null
+		 * when it has no planned session's details (an ad-hoc workout, or none by that id).
+		 */
+		async plannedMetrics(ownerId: string, clientId: string): Promise<CustomMetric[] | null> {
+			const [row] = await db
+				.select({ metrics: plannedSessionDetails.metrics })
+				.from(workouts)
+				.innerJoin(
+					plannedSessionDetails,
+					eq(plannedSessionDetails.sessionId, workouts.plannedSessionId)
+				)
+				.where(and(eq(workouts.ownerId, ownerId), eq(workouts.clientId, clientId)));
+			return row?.metrics ?? null;
 		},
 
 		/** The owner's live workout by client id, locked for the rest of the transaction. */

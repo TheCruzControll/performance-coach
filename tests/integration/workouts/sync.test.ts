@@ -581,14 +581,10 @@ describe('refusals and failures', () => {
 					reason: 'equipment_unavailable'
 				}
 			});
-			const run = createMutation('run.log', { workoutId: workout, at: at(10), payload: {} });
 
-			const { results } = await sync(db, owner, [swap, run]);
+			const { results } = await sync(db, owner, [swap]);
 
-			expect(results.map((r) => [r.status, r.code])).toEqual([
-				['rejected', 'unsupported'],
-				['rejected', 'unsupported']
-			]);
+			expect(results.map((r) => [r.status, r.code])).toEqual([['rejected', 'unsupported']]);
 			expect(await ledgerHas(db, swap.id)).toBe(false);
 		});
 	});
