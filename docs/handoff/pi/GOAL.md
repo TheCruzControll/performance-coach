@@ -41,6 +41,13 @@ The top section of HANDOFF.md on origin/handoff ("Mac + pi session, paused") lis
 4. After sync-status merges: one click-through agent over the whole /workout screen (owed for #192, #197, #198, #204, #209), headed Chromium at iPhone size and 1440x900, findings fixed as their own PRs.
 5. Keep four waves going: as a wave ends, start the next in plan order (rest of M4, M2X desktop screens, M6, M7, rest of M5 and M9). M8 councils after M4 and at the end.
 
+## Todo list (owner, 2026-11-08: always in sync, or none)
+The session's `todo` list mirrors the real state. On every goal turn, before any other work, reconcile it against the evidence (`gh pr list`, `slice-counts.py`, running waves and agents, `notes.md`):
+- One task per item in "Start with" plus one per running wave and one per open PR being fixed.
+- Mark a task `in_progress` when its work starts and `completed` only when the evidence shows it done (merged, green, pushed). Add tasks for new waves or fixes when they start; delete tasks for work that was dropped.
+- If the list was wiped (a pi reload), rebuild it from this file and the live state before continuing.
+- Never leave a stale task: if a task cannot be kept accurate, delete it.
+
 ## How
 - **Waves.** Build waves with `build-plan-wave.py --only` listing exactly the wanted slices, so each wave ends by itself.
   - Run up to 4 waves at once (owner, 2026-11-08: push the parallelism): screen chains at limit 1, backend waves at limit 2, about 6 agents. Drop a wave if free disk < 8 GB, memory pressure is red, or PRs queue for CI more than 30 minutes.
