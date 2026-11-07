@@ -5,6 +5,8 @@
  *   says where it was recorded (a closed list). M2's rows, and every save that names no source,
  *   read 'profile'. An owner likes or dislikes one exercise once, however it is spelled.
  * - A coach proposal's status is closed, and only an applied proposal names the version it made.
+ *   M5's guards (coach-proposals-db) store it as proposed and move it forward by updates, so each
+ *   refusal below names the CHECK or guard that refuses it (tests/integration/coach covers them).
  * - One weekly review per owner and week (its Monday); one cycle review per block.
  * - Every coaching table is the owner's, so the test cleanup's truncate clears it.
  * Refusals are pinned to their SQLSTATE, table and constraint.
@@ -69,6 +71,7 @@ async function attempt(db: Executor, write: (tx: Executor) => Promise<unknown>) 
 
 const CHECK = '23514';
 const UNIQUE = '23505';
+const GUARD = '23001';
 const refused = (code: string, table: string, constraint: string) => ({ code, table, constraint });
 
 /** The catalogue's ids by key (every key must be in the catalogue). */
@@ -321,11 +324,28 @@ describe('coach proposals', () => {
 				payload: { swap: { from: 'back_squat', to: 'bulgarian_split_squat' } }
 			});
 
-			// A proposal about no program (a preference, a goal) and a rejected one.
-			for (const status of PROPOSAL_STATUSES.filter((s) => s !== 'applied')) {
-				const write = (tx: Executor) =>
-					tx.insert(coachProposals).values(proposal(owner, { status }));
-				expect(await attempt(db, write), status).toBeNull();
+			// A proposal about no program (a preference, a goal) is stored as proposed, and reaches
+			// every other status but applied by an update, never by an insert.
+			const stored = (tx: Executor) =>
+				tx
+					.insert(coachProposals)
+					.values(proposal(owner, { status: 'proposed' }))
+					.returning();
+			expect(await attempt(db, stored)).toBeNull();
+			for (const status of PROPOSAL_STATUSES.filter((s) => s !== 'proposed' && s !== 'applied')) {
+				const decided = {
+					status,
+					...(status === 'superseded' ? { supersededReason: 'program_changed' as const } : {})
+				};
+				const insert = (tx: Executor) => tx.insert(coachProposals).values(proposal(owner, decided));
+				expect(await attempt(db, insert), status).toEqual(
+					refused(GUARD, 'coach_proposals', 'coach_proposals_insert_guard')
+				);
+				const update = async (tx: Executor) => {
+					const [row] = await stored(tx);
+					await tx.update(coachProposals).set(decided).where(eq(coachProposals.id, row!.id));
+				};
+				expect(await attempt(db, update), status).toBeNull();
 			}
 		});
 	});
@@ -338,17 +358,31 @@ describe('coach proposals', () => {
 			const insert = (values: Partial<typeof coachProposals.$inferInsert>) => (tx: Executor) =>
 				tx.insert(coachProposals).values(proposal(owner, { ...onPlan, ...values }));
 			const ck = (name: string) => refused(CHECK, 'coach_proposals', `coach_proposals_${name}_ck`);
+			const guard = (name: string) =>
+				refused(GUARD, 'coach_proposals', `coach_proposals_${name}_guard`);
+			/** Store a proposal, move it through `path`, then update it with `values`. */
+			const moved =
+				(path: ProposalStatus[], values: Partial<typeof coachProposals.$inferInsert>) =>
+				async (tx: Executor) => {
+					const [row] = await tx.insert(coachProposals).values(proposal(owner, onPlan)).returning();
+					const set = (next: Partial<typeof coachProposals.$inferInsert>) =>
+						tx.update(coachProposals).set(next).where(eq(coachProposals.id, row!.id));
+					for (const status of path) await set({ status });
+					await set(values);
+				};
 
 			expect(await attempt(db, insert({ status: 'pending' as ProposalStatus }))).toEqual(
 				ck('status')
 			);
-			expect(await attempt(db, insert({ status: 'applied' }))).toEqual(ck('applied'));
-			for (const status of ['proposed', 'accepted', 'rejected'] as const) {
-				expect(
-					await attempt(db, insert({ status, appliedVersionId: plan.second })),
-					status
-				).toEqual(ck('applied'));
-			}
+			expect(await attempt(db, insert({ status: 'applied' }))).toEqual(guard('insert'));
+			expect(await attempt(db, moved([], { status: 'applied' }))).toEqual(ck('applied'));
+			expect(await attempt(db, insert({ appliedVersionId: plan.second }))).toEqual(ck('applied'));
+			expect(await attempt(db, moved(['accepted'], { appliedVersionId: plan.second }))).toEqual(
+				ck('applied')
+			);
+			expect(await attempt(db, moved(['rejected'], { appliedVersionId: plan.second }))).toEqual(
+				guard('frozen')
+			);
 			// A version is a program's: none without the program.
 			expect(await attempt(db, insert({ programId: null }))).toEqual(ck('program'));
 			expect(await attempt(db, insert({ rationale: '' }))).toEqual(ck('rationale'));

@@ -429,12 +429,16 @@ export const PREFERENCE_SOURCE_LABEL = {
 export type PreferenceSource = keyof typeof PREFERENCE_SOURCE_LABEL;
 export const PREFERENCE_SOURCES = keysOf(PREFERENCE_SOURCE_LABEL);
 
-/** Closed. The lifecycle of a coach proposal (M5). */
+/**
+ * Closed. The lifecycle of a coach proposal (M5), forward only: proposed → accepted, rejected,
+ * applied or superseded; accepted → applied or superseded (coach-proposals-db's guards).
+ */
 export const PROPOSAL_STATUS_LABEL = {
 	proposed: 'Proposed',
 	accepted: 'Accepted',
 	rejected: 'Rejected',
-	applied: 'Applied'
+	applied: 'Applied',
+	superseded: 'Superseded'
 };
 export type ProposalStatus = keyof typeof PROPOSAL_STATUS_LABEL;
 export const PROPOSAL_STATUSES = keysOf(PROPOSAL_STATUS_LABEL);

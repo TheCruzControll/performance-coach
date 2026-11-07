@@ -260,6 +260,12 @@ describe('training vocabulary', () => {
 		expect(LOAD_BASES).toEqual(['measured', 'estimated']);
 		expect(DECIDERS).toEqual(['owner', 'coach', 'rules']);
 		expect(PREFERENCE_SOURCES).toEqual(['onboarding', 'profile', 'swap', 'workout', 'coach']);
-		expect(PROPOSAL_STATUSES).toEqual(['proposed', 'accepted', 'rejected', 'applied']);
+		expect(PROPOSAL_STATUSES).toEqual([
+			'proposed',
+			'accepted',
+			'rejected',
+			'applied',
+			'superseded'
+		]);
 	});
 });
