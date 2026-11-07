@@ -180,7 +180,7 @@ describe('sessions', () => {
 		await withRollback(async (tx) => {
 			const owner = await setUpOwner(tx);
 			const current = (await validateSessionToken(owner.token, { db: tx }))!.session;
-			const issue = async (method: 'passkey' | 'recovery' | 'test') =>
+			const issue = async (method: 'passkey' | 'recovery' | 'test' | 'email_link') =>
 				(
 					await issueSession(
 						{
@@ -195,13 +195,15 @@ describe('sessions', () => {
 			const passkey = await issue('passkey');
 			const recovery = await issue('recovery');
 			const test = await issue('test');
+			const emailLink = await issue('email_link');
 
 			const listed = await listSessions(current, { db: tx });
 			expect(Object.fromEntries(listed.map((s) => [s.id, [s.method, s.signedInWith]]))).toEqual({
 				[current.id]: ['setup', 'set up'],
 				[passkey]: ['passkey', 'passkey'],
 				[recovery]: ['recovery', 'recovery code'],
-				[test]: ['test', 'test session']
+				[test]: ['test', 'test session'],
+				[emailLink]: ['email_link', 'email link']
 			});
 		});
 	});
