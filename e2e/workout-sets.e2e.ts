@@ -386,8 +386,11 @@ test.describe('set actions (IndexedDB only)', () => {
 			// A deploy removed this build's chunk: the page says so, never a broken sheet.
 			await page.reload();
 			await expect(page.locator('main#main[data-store]')).toBeAttached();
+			await expect(logger(page)).toBeVisible();
 			await page.route(`**/${editorChunk()}`, (route) => route.abort());
-			await editButton(page, 0).click();
+			// The tap alone: a pointer moved onto the row first asks for the chunk too, and its failure
+			// can replace the row before the click lands (WebKit).
+			await editButton(page, 0).dispatchEvent('click');
 			const updated = page.getByTestId('workout-app-updated');
 			await expect(updated).toContainText('App updated — reload to continue');
 			await expect(editor(page)).toHaveCount(0);
