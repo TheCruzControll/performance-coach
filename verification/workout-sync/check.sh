@@ -30,6 +30,11 @@ CHECKS=(
 	"fixKeepsParked|MUTANT = \"fixKeepsParked\"|EventuallySynced"
 )
 
+names=" ${CHECKS[*]%%|*} "
+for arg in "$@"; do
+	[[ $names == *" $arg "* ]] || { echo "unknown check '$arg'; one of:$names" >&2; exit 1; }
+done
+
 sha256() { if command -v sha256sum >/dev/null; then sha256sum "$1"; else shasum -a 256 "$1"; fi | cut -d' ' -f1; }
 
 fetch() { # url sha file

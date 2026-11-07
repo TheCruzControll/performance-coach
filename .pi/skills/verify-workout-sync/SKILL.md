@@ -1,6 +1,6 @@
 ---
 name: verify-workout-sync
-description: Model-check the offline workout sync's promise that a logged change reaches the server exactly once and in order. Use when changing src/lib/client/workout/sync.ts, outbox-rules.ts, store.ts or reconcile.ts, src/lib/server/services/workouts/sync.ts, src/lib/server/db/repositories/sync.ts, src/lib/server/db/schema/sync.ts, dependsOn in src/lib/domain/workout/mutations.ts, or the offline workout sync ADR (docs/adr/0012-offline-workout-sync.md).
+description: Model-check the offline workout sync's promise that a logged change reaches the server exactly once and in order. Use when changing src/lib/client/workout/sync.ts, outbox-rules.ts, store.ts or reconcile.ts, src/lib/server/services/workouts/sync.ts or apply/sets.ts, logSet or editSet in src/lib/server/services/training/log.ts, insertSet in src/lib/server/db/repositories/training-log.ts, src/lib/server/db/repositories/sync.ts, src/lib/server/db/schema/sync.ts, dependsOn in src/lib/domain/workout/mutations.ts, or the offline workout sync ADR (docs/adr/0012-offline-workout-sync.md).
 ---
 
 # Verify the offline workout sync
@@ -33,7 +33,7 @@ The scenario (`MC.tla`, `MC.cfg`): the owner logs set S (`set.log`, mutation 1),
 
 | Property            | In one sentence                                                                                                                                            | Harm if broken                                       |
 | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
-| `AppliedAtMostOnce` | No change's effect is committed on the server twice.                                                                                                       | A set is logged twice.                               |
+| `AppliedAtMostOnce` | No change's write is committed on the server twice.                                                                                                        | An old edit overwrites newer values.                 |
 | `AppliedInOrder`    | No change is applied before a change it depends on: an edit never lands before its row's create, nor before an earlier edit of that row that lands at all. | An edit fails on a missing row, or older values win. |
 | `NothingLost`       | Until a change is applied it stays in the outbox, unless the owner discarded it.                                                                           | A set the owner logged never reaches the server.     |
 | `EventuallySynced`  | Every logged change is eventually applied and leaves the outbox, or the owner discarded it.                                                                | A change waits forever, and the status never clears. |
@@ -48,6 +48,7 @@ Bounds: `Tabs` = 2, `N` = 3 changes, `BatchCap` = 2, `MaxFaults` = 2, `MaxKeepal
 - Every counted failure may park its entry as `stuck`. The code parks at `STUCK_AFTER` (50 failures, or 24 hours). The model allows more orders than the code, so its safety results still hold.
 - A backoff wait (`nextAt`) ends eventually (`WaitEnds`). Once something can be sent, a round eventually starts (the backoff timer, `online`, becoming visible, or the flush after every saved dispatch). The owner eventually fixes a refused change and presses Try again on a stuck one. `EventuallySynced` rests on these fairness conditions. Discard is never forced.
 - A round reads the outbox, runs `nextBatch` and posts in one step. The code awaits between the read and the post, but a stale batch is the same as one posted earlier and delivered late, and the model allows that. The keepalive send uses the engine's last read, by the same argument.
+- Running a handler is not the same as committing a write. A replayed `set.log` writes nothing, because `insertSet` is ON CONFLICT DO NOTHING on the client id. A replayed `set.edit` writes nothing when the row already holds its values (`holds` in `editSet`), and overwrites the row when a newer edit landed since. The model records a write in `history` only when it changes the row (`Holds`, `Run`). Each change's values differ from every other's.
 - Each server mutation is one atomic step, because each is one Postgres transaction with `claimMutation` first. Two requests' mutations interleave one at a time. The unique key on `sync_mutations.mutation_id` makes concurrent claims of one id act in some order.
 - Discard is modeled as `outbox-rules.ts` `discard` would act when wired. Nothing calls it yet.
 
@@ -83,11 +84,13 @@ Each is a `MUTANT` value in `MC.cfg`, and stands for one edit to the real code.
 | `retryContinues`  | `applySyncBatch`'s catch answers 'retry' for that mutation and goes on with the batch, instead of the 503 or the break. | `AppliedInOrder`    |
 | `fixKeepsParked`  | `replaceInPlace` keeps `parked` on the corrected entry.                                                                 | `EventuallySynced`  |
 
+`claimAfterApply`'s path breaks `AppliedInOrder` at the same step. `check.sh` takes the first rule TLC names, and TLC checks them in `MC.cfg`'s order.
+
 Their shortest paths:
 
 - `ackOnSend`. The owner logs S, and a tab posts it. The outbox is already empty, so a timeout or a lost request loses the set.
 - `claimOwnTx`. S is posted twice: the tab's flush and the keepalive send. A database error stops the first after its claim committed. The second is answered 'duplicate', and `acknowledge` removes S, which was never applied.
-- `claimAfterApply`. S is posted twice: a flush and the keepalive send. The server applies it in both.
+- `claimAfterApply`. A flush posts S and the first edit. The server applies S and rejects the edit. The owner fixes it. The keepalive send and the next flush each post both edits. The server applies the flush's two edits. Then it runs the keepalive's first edit: `editSet` writes its older values over the second edit's, and the late claim answers 'duplicate'. The set shows the older values, with an audit row, until the keepalive's second edit is written again. A batch holding only the old edit leaves them for good. This path was replayed on Postgres with the scratch change to `applyOne`: after step 13 the set held the first edit's reps, with one more audit row. A replayed `set.log` under the same change still gave one row, so the mutant needs an edit to show its harm.
 - `skipWaitingHead`. The first edit is refused. The second edit is posted by keepalive and again by the next flush with the fixed first edit. The server applies the second edit, then the first.
 - `blockedApplied`. A flush posts both edits. The server rejects the first and applies the second. After the fix, the first edit lands last.
 - `retryContinues`. After the fix, both edits are posted together. A database error on the first answers 'retry', and the batch goes on to apply the second. The first lands later.
@@ -99,30 +102,33 @@ Sync commit: `d325f6c40887e0f471ccac5d7de3510dd7996c45`
 
 At this commit the model was confirmed to describe every function below. `check.sh` exits 2 when a file listed here differs from it. Move it forward only after you have confirmed that the model describes every covered function at the new commit, and say so in the PR.
 
-| File                                       | Function                                                                | Model (`WorkoutSync.tla`)                                         |
-| ------------------------------------------ | ----------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| `src/lib/client/workout/store.ts`          | `dispatch`, `write` (outbox `add` in one transaction)                   | `Log`                                                             |
-| `src/lib/client/workout/store.ts`          | `acknowledge` (one transaction over the results)                        | `Receive`                                                         |
-| `src/lib/client/workout/store.ts`          | `countFailure`, `backOnline` through `revise`                           | `CountFailure` in `ReceiveFailed`, `Timeout`; `WaitEnds`          |
-| `src/lib/client/workout/store.ts`          | `outbox`                                                                | `NextBatch` reads `box`                                           |
-| `src/lib/client/workout/outbox-rules.ts`   | `nextBatch`                                                             | `Scan`, `NextBatch`                                               |
-| `src/lib/client/workout/outbox-rules.ts`   | `applyResults`, `fail`, `STUCK_AFTER`                                   | `Receive`, `Stuck`                                                |
-| `src/lib/client/workout/outbox-rules.ts`   | `countFailure`                                                          | `CountFailure`                                                    |
-| `src/lib/client/workout/outbox-rules.ts`   | `backOnline`, `nextDelay`                                               | `WaitEnds`                                                        |
-| `src/lib/client/workout/outbox-rules.ts`   | `discard`, `dependantsOf`                                               | `Discard`, `Gone`                                                 |
-| `src/lib/client/workout/outbox-rules.ts`   | `tryAgain`                                                              | `TryAgain`                                                        |
-| `src/lib/client/workout/outbox-rules.ts`   | `replaceInPlace`                                                        | `Fix`                                                             |
-| `src/lib/client/workout/sync.ts`           | `round`, `drain` under `SYNC_LOCK`, `post`                              | `StartRound`, `EndRound`, `lock`, `pc`                            |
-| `src/lib/client/workout/sync.ts`           | `drain`'s `answered` case (halted or short answer ends the drain)       | `Receive`                                                         |
-| `src/lib/client/workout/sync.ts`           | `drain`'s `failed` case, `REQUEST_TIMEOUT_MS`                           | `ReceiveFailed`, `Timeout`                                        |
-| `src/lib/client/workout/sync.ts`           | `keepalive` (pagehide)                                                  | `Keepalive`                                                       |
-| `src/lib/client/workout/sync.ts`           | `schedule`, `kick`, `flush`                                             | fairness on `StartRound`, `WaitEnds`                              |
-| `src/lib/client/workout/reconcile.ts`      | none (left out)                                                         | none                                                              |
-| `src/lib/server/services/workouts/sync.ts` | `applySyncBatch` (order, `held`, `waitsFor`, 'retry' and 503)           | `ServerStepAt`, `ServerErrorAt`, `ServerDiesAt`                   |
-| `src/lib/server/services/workouts/sync.ts` | `applyOne` (claim first, then handler, in one transaction), `refusalOf` | `ServerStepAt` (`outcome`, `Missing`), `ServerErrorAt` (`landed`) |
-| `src/lib/server/db/repositories/sync.ts`   | `claimMutation`                                                         | `ledger`                                                          |
-| `src/lib/server/db/schema/sync.ts`         | `syncMutations` (unique `mutation_id`)                                  | `ledger`                                                          |
-| `src/lib/domain/workout/mutations.ts`      | `dependsOn`                                                             | `Dep` (`MCDep` in `MC.tla`), `Creates`                            |
+| File                                             | Function                                                                     | Model (`WorkoutSync.tla`)                                         |
+| ------------------------------------------------ | ---------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| `src/lib/client/workout/store.ts`                | `dispatch`, `write` (outbox `add` in one transaction)                        | `Log`                                                             |
+| `src/lib/client/workout/store.ts`                | `acknowledge` (one transaction over the results)                             | `Receive`                                                         |
+| `src/lib/client/workout/store.ts`                | `countFailure`, `backOnline` through `revise`                                | `CountFailure` in `ReceiveFailed`, `Timeout`; `WaitEnds`          |
+| `src/lib/client/workout/store.ts`                | `outbox`                                                                     | `NextBatch` reads `box`                                           |
+| `src/lib/client/workout/outbox-rules.ts`         | `nextBatch`                                                                  | `Scan`, `NextBatch`                                               |
+| `src/lib/client/workout/outbox-rules.ts`         | `applyResults`, `fail`, `STUCK_AFTER`                                        | `Receive`, `Stuck`                                                |
+| `src/lib/client/workout/outbox-rules.ts`         | `countFailure`                                                               | `CountFailure`                                                    |
+| `src/lib/client/workout/outbox-rules.ts`         | `backOnline`, `nextDelay`                                                    | `WaitEnds`                                                        |
+| `src/lib/client/workout/outbox-rules.ts`         | `discard`, `dependantsOf`                                                    | `Discard`, `Gone`                                                 |
+| `src/lib/client/workout/outbox-rules.ts`         | `tryAgain`                                                                   | `TryAgain`                                                        |
+| `src/lib/client/workout/outbox-rules.ts`         | `replaceInPlace`                                                             | `Fix`                                                             |
+| `src/lib/client/workout/sync.ts`                 | `round`, `drain` under `SYNC_LOCK`, `post`                                   | `StartRound`, `EndRound`, `lock`, `pc`                            |
+| `src/lib/client/workout/sync.ts`                 | `drain`'s `answered` case (halted or short answer ends the drain)            | `Receive`                                                         |
+| `src/lib/client/workout/sync.ts`                 | `drain`'s `failed` case, `REQUEST_TIMEOUT_MS`                                | `ReceiveFailed`, `Timeout`                                        |
+| `src/lib/client/workout/sync.ts`                 | `keepalive` (pagehide)                                                       | `Keepalive`                                                       |
+| `src/lib/client/workout/sync.ts`                 | `schedule`, `kick`, `flush`                                                  | fairness on `StartRound`, `WaitEnds`                              |
+| `src/lib/client/workout/reconcile.ts`            | none (left out)                                                              | none                                                              |
+| `src/lib/server/services/workouts/sync.ts`       | `applySyncBatch` (order, `held`, `waitsFor`, 'retry' and 503)                | `ServerStepAt`, `ServerErrorAt`, `ServerDiesAt`                   |
+| `src/lib/server/services/workouts/sync.ts`       | `applyOne` (claim first, then handler, in one transaction), `refusalOf`      | `ServerStepAt` (`outcome`, `Missing`), `ServerErrorAt` (`landed`) |
+| `src/lib/server/services/workouts/apply/sets.ts` | `set.log` through `logSet`, `set.edit` through `editSet`                     | `RowOf`, `Holds`, `Run`                                           |
+| `src/lib/server/services/training/log.ts`        | `logSet`, `editSet` (`holds`: an edit with the stored values writes nothing) | `Holds`, `Run`                                                    |
+| `src/lib/server/db/repositories/training-log.ts` | `insertSet` (ON CONFLICT DO NOTHING on `clientMutationId`)                   | `Holds` (a create already in `history`)                           |
+| `src/lib/server/db/repositories/sync.ts`         | `claimMutation`                                                              | `ledger`                                                          |
+| `src/lib/server/db/schema/sync.ts`               | `syncMutations` (unique `mutation_id`)                                       | `ledger`                                                          |
+| `src/lib/domain/workout/mutations.ts`            | `dependsOn`                                                                  | `Dep` (`MCDep` in `MC.tla`), `Creates`                            |
 
 The design is in `docs/adr/0012-offline-workout-sync.md`, sections 'Exactly once', 'Bounded flushing' and 'Tabs'.
 

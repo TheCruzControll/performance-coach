@@ -35,7 +35,7 @@ VARIABLES
     valid,     \* the mutations whose payload on the device the server accepts
     discarded, \* removed by the owner's Discard (with their dependants)
     ledger,    \* sync_mutations: ids committed as applied
-    history,   \* every application of a mutation's effect, in commit order
+    history,   \* every committed write of a mutation's effect, in commit order
     reqs,      \* POST /api/workouts/sync requests the server may still run
     pc,        \* each tab's engine: idle, posting, or draining under the lock
     lock,      \* the Web Lock 'pc-workout-sync': its holder, or NoTab
@@ -218,8 +218,24 @@ Keepalive ==
 
 Missing(m) == \E c \in Creates : <<m, c>> \in Dep /\ c \notin ledger
 
+(* The row a mutation writes: a create's own, an edit's create's. *)
+RowOf(m) == IF m \in Creates THEN m ELSE CHOOSE c \in Creates : <<m, c>> \in Dep
+
+(* Running m's handler writes nothing when the row already holds it: the  *)
+(* create's insertSet is ON CONFLICT DO NOTHING on its client id, and      *)
+(* editSet stores nothing when the row holds the edit's values (holds).   *)
+(* An edit run after a newer edit overwrites the newer values.             *)
+Holds(m) ==
+    LET js == {j \in 1..Len(history) : RowOf(history[j]) = RowOf(m)}
+    IN /\ js # {}
+       /\ m \in Creates \/ history[CHOOSE j \in js : \A i \in js : i <= j] = m
+
+Run(m) == IF Holds(m) THEN history ELSE Append(history, m)
+
 (* One mutation, one Postgres transaction (applyOne): claimMutation first,  *)
-(* then the handler; a refusal rolls the claim back.                       *)
+(* then the handler; a refusal rolls the claim back. The claimAfterApply   *)
+(* mutant runs the handler first and commits it even when the claim says  *)
+(* 'seen'.                                                                  *)
 ServerStepAt(k) ==
     LET r == reqs[k]
         m == r.batch[r.i]
@@ -233,11 +249,11 @@ ServerStepAt(k) ==
             ELSE IF m \in ledger THEN "duplicate"
             ELSE IF Missing(m) THEN "deferred"
             ELSE "applied"
-        effect == outcome = "applied" \/ (claimLast /\ outcome = "duplicate")
+        runs == outcome = "applied" \/ (claimLast /\ outcome = "duplicate")
         last == r.i = Len(r.batch)
     IN /\ r.st = "open"
        /\ ledger' = IF outcome = "applied" THEN ledger \cup {m} ELSE ledger
-       /\ history' = IF effect THEN Append(history, m) ELSE history
+       /\ history' = IF runs THEN Run(m) ELSE history
        /\ Put(k, [r EXCEPT !.i = r.i + 1,
                            !.res = Append(r.res, <<m, outcome>>),
                            !.held = IF outcome \in {"rejected", "deferred"} THEN r.held \cup {m} ELSE r.held,
