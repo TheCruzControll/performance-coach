@@ -272,6 +272,26 @@ describe('requesting an email sign-in link', () => {
 		});
 	});
 
+	it('sends each link with its own id as the Idempotency-Key, so a retried send mails once', async () => {
+		await withRollback(async (tx) => {
+			const sent: Parameters<Mailer['send']>[0][] = [];
+			const recording: Mailer = {
+				provider: 'resend',
+				send: async (message) => {
+					sent.push(message);
+					return { id: `msg_${sent.length}` };
+				}
+			};
+			const { deps, time } = await linkOwner(tx, { mailer: recording });
+			await requestSignInLink(request(), deps);
+			time.advance(MINUTE);
+			await requestSignInLink(request(), deps);
+			const links = await tx.select().from(emailSignInLinks).orderBy(emailSignInLinks.createdAt);
+			expect(links).toHaveLength(2);
+			expect(sent.map((m) => m.idempotencyKey)).toEqual(links.map((l) => l.id));
+		});
+	});
+
 	it('audits a rejecting or hanging mailer as send_failed and never throws', async () => {
 		await withRollback(async (tx) => {
 			const rejecting: Mailer = {
