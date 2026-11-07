@@ -367,16 +367,19 @@ export const decisionPlanSchema = z.object({
 	evidence: keyed(z.union([z.number(), z.string().check(z.maxLength(200)), z.boolean()]), 20)
 });
 
+/** A week's targets: its RPE cap and its strength volume, load step and run volume factors. */
+export const weekTargetsSchema = z.object({
+	rpeCap: halves(5, 10, 'RPE cap 5 to 10, in half steps'),
+	volumeFactor: between(0, 2, 'Between 0 and 2'),
+	loadStep: between(-0.5, 0.5, 'Between −50 % and +50 %'),
+	runVolumeFactor: between(0, 2, 'Between 0 and 2')
+});
+
 const weekPlanSchema = z.object({
 	kind: z.enum(v.WEEK_KINDS, 'Pick a week type'),
 	startsOn: isoDate,
 	endsOn: isoDate,
-	targets: z.object({
-		rpeCap: halves(5, 10, 'RPE cap 5 to 10, in half steps'),
-		volumeFactor: between(0, 2, 'Between 0 and 2'),
-		loadStep: between(-0.5, 0.5, 'Between −50 % and +50 %'),
-		runVolumeFactor: between(0, 2, 'Between 0 and 2')
-	}),
+	targets: weekTargetsSchema,
 	sessions: list(sessionPlanSchema, 21)
 });
 
