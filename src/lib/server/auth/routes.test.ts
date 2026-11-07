@@ -75,6 +75,7 @@ describe('route access policy', () => {
 				'/',
 				'/(app)/offline',
 				'/workout',
+				'/workout/run',
 				'/api/auth/setup/options',
 				'/api/auth/setup/verify',
 				'/api/auth/signin/options',
