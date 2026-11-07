@@ -91,7 +91,8 @@ export interface LlmProvider {
  * - connection: the network failed or timed out
  * - aborted: the caller's signal fired
  * - invalid_tool_json: a streamed tool input that is not JSON (the SDK's JSON error only)
- * - invalid_output: a structured call's output that is not valid for its schema
+ * - invalid_output: a structured call's output that is not valid for its schema; `result` holds
+ *   the completed response, so its billed usage is still recorded
  */
 export const PROVIDER_ERROR_KINDS = [
 	'bad_request',
@@ -109,15 +110,17 @@ export type ProviderErrorKind = (typeof PROVIDER_ERROR_KINDS)[number];
 export class CoachProviderError extends Error {
 	readonly kind: ProviderErrorKind;
 	readonly retryAfterMs: number | null;
+	readonly result: ModelResult | null;
 
 	constructor(
 		kind: ProviderErrorKind,
 		message: string,
-		options: { retryAfterMs?: number; cause?: unknown } = {}
+		options: { retryAfterMs?: number; cause?: unknown; result?: ModelResult } = {}
 	) {
 		super(message, { cause: options.cause });
 		this.name = 'CoachProviderError';
 		this.kind = kind;
 		this.retryAfterMs = options.retryAfterMs ?? null;
+		this.result = options.result ?? null;
 	}
 }

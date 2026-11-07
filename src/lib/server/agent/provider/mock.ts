@@ -141,13 +141,15 @@ export class MockProvider implements LlmProvider {
 			json = JSON.parse(text.join(''));
 		} catch (cause) {
 			throw new CoachProviderError('invalid_output', 'The structured output is not JSON', {
-				cause
+				cause,
+				result
 			});
 		}
 		const parsed = z.safeParse(schema, json);
 		if (!parsed.success)
 			throw new CoachProviderError('invalid_output', 'The structured output fails its schema', {
-				cause: parsed.error
+				cause: parsed.error,
+				result
 			});
 		return { ...result, value: parsed.data };
 	}

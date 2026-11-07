@@ -757,7 +757,7 @@ export async function adjustPrescription(
  * About how long a run takes, in whole minutes: each segment's time, or its distance at the
  * middle of its pace range (ASSUMED_EASY_PACE without one), every repeat counted.
  */
-function runMinutes(segments: readonly RunSegment[]): number {
+export function runMinutes(segments: readonly RunSegment[]): number {
 	let seconds = 0;
 	for (const s of segments) {
 		const pace =

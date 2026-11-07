@@ -35,7 +35,8 @@ agent/
   direct.ts          unambiguous lookups answered without a model call
   rollover.ts        a segment becomes a summary note; the next opens with a new snapshot
   memory/load.ts     the memory snapshot that opens each segment
-  prompt/            system.ts (frozen), context.ts (turn facts), layout.ts (cache-stable order)
+  prompt/            system.ts (frozen), context.ts (turn facts), layout.ts (cache-stable order),
+                     drafter.ts (the drafter's frozen prompt)
   provider/          types.ts (LlmProvider), validate.ts (the API's rules), mock.ts and
                      mock-scripts/, faults.ts, select.ts, anthropic.ts (the only SDK import)
   tools/             schema.ts, define.ts, context.ts, output.ts, execute.ts, registry.ts and
