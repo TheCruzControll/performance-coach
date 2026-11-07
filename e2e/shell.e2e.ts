@@ -1,31 +1,35 @@
 import { expect, test, type Page } from '@playwright/test';
+import { isDesktopPage } from './desktop';
 import { captureScreen, gotoHydrated, signedOut, TABS, trackConsoleErrors } from './support';
 
 /**
- * Share of the bottom nav's colour channels that two full-viewport screenshots of a screen paint
- * more than an eighth of the range apart: 0 when the tab bar looks the same in both.
+ * Share of the primary nav's colour channels that two full-viewport screenshots of a screen
+ * paint more than an eighth of the range apart: 0 when the nav looks the same in both. Both shots
+ * are cropped to the nav's bounding box, so this compares the tab bar on a phone and the rail in a
+ * desktop window, never the page beside it.
  */
 async function navDifference(page: Page, a: Buffer, b: Buffer): Promise<number> {
 	const nav = await page.getByRole('navigation', { name: 'Primary' }).boundingBox();
+	expect(nav, 'the primary nav is on the page').not.toBeNull();
 	return page.evaluate(
-		async ({ first, second, top }) => {
+		async ({ first, second, box }) => {
 			const pixels = async (base64: string) => {
 				const png = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
 				const image = await createImageBitmap(new Blob([png], { type: 'image/png' }));
-				const offset = Math.round((top * image.width) / innerWidth);
+				const scale = image.width / innerWidth;
 				const canvas = Object.assign(document.createElement('canvas'), {
-					width: image.width,
-					height: image.height - offset
+					width: Math.max(1, Math.round(box.width * scale)),
+					height: Math.max(1, Math.round(box.height * scale))
 				});
 				const context = canvas.getContext('2d')!;
-				context.drawImage(image, 0, -offset);
+				context.drawImage(image, -Math.round(box.x * scale), -Math.round(box.y * scale));
 				return context.getImageData(0, 0, canvas.width, canvas.height).data;
 			};
 			const [x, y] = await Promise.all([pixels(first), pixels(second)]);
 			const differing = x.filter((value, i) => i % 4 < 3 && Math.abs(value - y[i]!) > 32);
 			return differing.length / ((x.length * 3) / 4);
 		},
-		{ first: a.toString('base64'), second: b.toString('base64'), top: nav!.y }
+		{ first: a.toString('base64'), second: b.toString('base64'), box: nav! }
 	);
 }
 
@@ -113,6 +117,10 @@ test.describe('app shell on an iPhone viewport', () => {
 	test('shell renders with the bottom navigation inside the safe viewport', async ({
 		page
 	}, testInfo) => {
+		test.skip(
+			isDesktopPage(page),
+			'the bar is a phone layout: shell.desktop.e2e.ts checks the rail at desktop width'
+		);
 		await page.goto('/today');
 		const viewport = page.viewportSize();
 		expect(viewport?.width).toBeLessThanOrEqual(430);

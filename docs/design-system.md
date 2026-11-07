@@ -406,8 +406,8 @@ later-pass screen).
 - A screen in the shell checks `<main>` against the rail, never the window, at the width its
   `data-layout` declares, read from the token rather than written as a number:
   `expectMainCentred(page, await tokenPx(page, '--content-readable'))` (or `--content-wide`).
-- `*.desktop.e2e.ts` specs run in the iPhone projects at desktop size, on Chromium and WebKit,
-  until desktop projects exist.
+- `*.desktop.e2e.ts` specs run in the `desktop-chromium` and `desktop-webkit` projects (1440 × 900),
+  not in the iPhone projects.
 
 ## Components (`src/lib/ui/components`)
 
