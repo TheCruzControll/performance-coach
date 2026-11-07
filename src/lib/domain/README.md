@@ -442,3 +442,18 @@ under plain Node. Server-only by use: nothing in a page needs it.
   `keep`, `delete` and `unparseable`: the newest of each of the last 30 UTC days and the earliest
   of each of the last 12 UTC months (`RETENTION.monthlyKeeps`), never a future-dated, must-keep
   or unparseable name, the same answer for any input order.
+
+## M9: restore order (`backup/plan.ts`)
+
+By path; no imports, so scripts load it under plain Node.
+
+- `planRestore(catalog, excluded)` → `{ order, late }`: the tables a backup holds, in the order
+  restore loads them, and the keys whose columns restore inserts as NULL and fills in afterwards.
+  - Only a NOT DEFERRABLE key into another table constrains the order. A self-reference loads in
+    one statement; a DEFERRABLE key is checked at COMMIT.
+  - A cycle (Tarjan's components) is broken on a key whose columns are all nullable, the fewest
+    columns first, then by table and key name: programs ↔ program_versions makes
+    `programs.current_version_id` late. Ties in the order go by name, so input order never matters.
+  - Throws `RestorePlanError` naming tables and keys (never values): `unbreakable_cycle`, or
+    `references_excluded_table` for a key into a table in `excluded`. A malformed catalog (a
+    repeated table, a key into an unknown table or column) is a `RangeError`.
