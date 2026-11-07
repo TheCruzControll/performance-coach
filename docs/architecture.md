@@ -329,8 +329,9 @@ Postgres enforces it, with triggers from custom migrations (ADR 0010):
   changes the content stamps `updated_at` and writes one `training_audit` row (before, after,
   owner, and the actor from `app.actor`, 'owner' when unset); one that changes nothing leaves
   no trace. DELETE is refused, and `training_audit` refuses UPDATE and DELETE.
-- Each refusal is a `restrict_violation` (23001). TRUNCATE fires no row triggers and is the one
-  bypass, for test and reset code only (docs/security.md).
+- Each refusal is a `restrict_violation` (23001). TRUNCATE (which fires no row triggers), a disabled
+  trigger and `session_replication_role` bypass the guards; server code may use none of them,
+  only test and reset code (docs/security.md).
 
 ### CHECK policy
 
@@ -409,15 +410,16 @@ progression → timefit
 - Session length: `timefit` runs last, so the sets volume and progression add are checked in
   every week. Every generated session fits `sessionMinutes` except the long run
   (`BEYOND_SESSION_LENGTH`; `LONG_RUN_EXCEEDS_SESSION` caps it too when false), which says so in
-  a decision, and commitments, which keep their own length. Trimming drops accessories, then
-  back-off sets, never a top set.
+  a decision, commitments, which keep their own length, and a strength session whose top sets
+  alone run over. Trimming drops accessories, then back-off sets, never a top set.
 - The plan is parsed with `programPlanSchema` before it is returned, so a broken plan is a
   `GeneratedPlanError`, never a stored version.
 - **Fingerprint and reproduction** (`random.ts`): `fingerprint` hashes (FNV-1a 64) the canonical
   input, `catalogueDigest` (the library's content) and `GENERATOR_ID`; it ignores timestamps,
-  row ids, the start dates and the time zone. Each version stores the generator id, fingerprint,
-  digest, input snapshot, `starts_on` and `first_planned_day`, and the same snapshot, digest and
-  generator id give the same plan, byte for byte. Bump `GENERATOR_ID` whenever a rule, stage or
+  row ids, the start dates and the time zone. Every version stores `starts_on` and
+  `first_planned_day`; only the version a generator built also stores the generator id,
+  fingerprint, digest and input snapshot (a revised version omits them). The same snapshot,
+  digest, generator id, `startsOn` and `firstPlannedDay` give the same plan, byte for byte. Bump `GENERATOR_ID` whenever a rule, stage or
   template could change a plan.
 - **Preview and build** (`services/programming`): `previewProgram` stores nothing; `buildProgram`
   regenerates and stores version 1 only when it matches what the owner saw, otherwise a

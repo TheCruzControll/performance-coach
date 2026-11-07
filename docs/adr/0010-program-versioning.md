@@ -44,7 +44,8 @@
   `training_log_touch()` and `training_log_audit()` act only when the content (`updated_at` and
   generated columns aside) changed. DELETE is refused by `history_refuse_delete()`, and
   `training_audit` refuses UPDATE and DELETE.
-- **TRUNCATE is the only bypass.** It fires no row triggers. Only test and reset code uses it:
+- **TRUNCATE, a disabled trigger and `session_replication_role` bypass the guards.** Each skips
+  row triggers. Server code may use none of them; only test and reset code uses TRUNCATE:
   the integration suite's `withCommitted` and the e2e program reset. The explain database is
   reset by dropping its schema.
   There is no BEFORE TRUNCATE trigger, because `withCommitted` relies on it. There is no delete

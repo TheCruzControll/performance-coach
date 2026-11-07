@@ -259,10 +259,12 @@ docs/architecture.md "Training model (M3)"):
 - **DELETE is always refused** on program, prescription and training-log tables, with no session
   flag to turn it off (`drizzle/0009_program_history_guards.sql`,
   `drizzle/0012_prescription_history_guards.sql`, `drizzle/0014_training_log_guards.sql`).
-  Program rows also refuse UPDATE; logged rows accept the owner's edits, each audited, and are
+  Program rows also refuse UPDATE, except the `programs` head, whose `program_head_guard` allows
+  `status`, `archived_at` and a forward `current_version_id`; logged rows accept the owner's edits, each audited, and are
   deleted softly.
-- **TRUNCATE is the only bypass**, because it fires no row triggers. Only test and reset code uses
-  it: the integration cleanup (`tests/integration/helpers.ts`) and the e2e program reset
+- **TRUNCATE, a disabled trigger and `session_replication_role` bypass the guards**, because
+  they skip row triggers. Server code may use none of them; only test and reset code uses
+  TRUNCATE: the integration cleanup (`tests/integration/helpers.ts`) and the e2e program reset
   (`e2e/program-support.ts`). `scripts/history-guards.test.ts` fails if server code contains
   `truncate`, `session_replication_role` or `disable trigger`.
 - **`training_audit` is owner-scoped and immutable**: each row carries its `owner_id` (a foreign
