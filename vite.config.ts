@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import adapterNode from '@sveltejs/adapter-node';
 import adapterVercel from '@sveltejs/adapter-vercel';
 import { sveltekit } from '@sveltejs/kit/vite';
-import { loadEnv } from 'vite';
+import { loadEnv, type Plugin } from 'vite';
 import { defineConfig } from 'vitest/config';
 
 /**
@@ -41,6 +41,36 @@ function templateScriptHashes(): `sha256-${string}`[] {
 	);
 }
 
+/**
+ * Writes .vite/chunk-modules.json into the client build: each chunk's file and the src/ modules
+ * bundled into it, which Vite's manifest does not list. scripts/check-budgets.ts reads it to
+ * prove no coach module reaches a /workout route (scripts/client-secret-scan.ts). Adapters skip
+ * `.vite`, so it is never served.
+ */
+function chunkModules(): Plugin {
+	return {
+		name: 'chunk-modules',
+		apply: 'build',
+		applyToEnvironment: (environment) => environment.name === 'client',
+		generateBundle(_, bundle) {
+			const src = `${this.environment.config.root}/src/`;
+			const modules: Record<string, string[]> = {};
+			for (const chunk of Object.values(bundle)) {
+				if (chunk.type !== 'chunk') continue;
+				modules[chunk.fileName] = chunk.moduleIds
+					.map((id) => id.split('?')[0]!)
+					.filter((id) => id.startsWith(src))
+					.map((id) => id.slice(src.length - 'src/'.length));
+			}
+			this.emitFile({
+				type: 'asset',
+				fileName: '.vite/chunk-modules.json',
+				source: JSON.stringify(modules)
+			});
+		}
+	};
+}
+
 export default defineConfig(({ command, mode }) => {
 	// Make `.env` values visible to server code that reads `process.env` during `vite dev`.
 	// Production servers receive real environment variables from the platform instead.
@@ -52,6 +82,7 @@ export default defineConfig(({ command, mode }) => {
 
 	return {
 		plugins: [
+			chunkModules(),
 			sveltekit({
 				compilerOptions: {
 					// Runes everywhere in our own code; libraries decide for themselves.
