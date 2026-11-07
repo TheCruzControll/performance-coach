@@ -125,7 +125,7 @@ Projects (all `devices['iPhone 15 Pro']`):
 - **WebKit has no virtual authenticator**: `setup-webkit` mints a session through
   `POST /api/test-support/session` (exists only with `ENABLE_TEST_ROUTES`, which env validation
   refuses on any hosted deployment). Passkey specs skip on WebKit with that reason; passkeys on iOS
-  Safari are part of the real-device checklist below.
+  (Chrome for iOS, WebKit engine) are part of the real-device checklist below.
 - Signed-out specs use `test.use({ storageState: signedOut })`.
 - Conditional UI: Chromium's virtual authenticator answers a conditional (autofill) request at
   once, so `/` signs in without a tap when the authenticator holds the owner's passkey. One test
@@ -372,7 +372,8 @@ test-only routes; docs/deployment.md). It needs no secrets and runs by hand too.
 
 **Not yet verified:** the workflows have not run on GitHub (nothing has been pushed), and the
 WebKit project has never run locally (WebKit is not installed in the build environment), so iOS
-Safari behaviour (glass, PWA install, status bar) is unverified. The first CI run, including its
+Safari behaviour (glass, PWA install, status bar) is unverified. (Since then: the real-device
+checklist below passed in Chrome for iOS on 2026-11-06.) The first CI run, including its
 WebKit screenshots, must be attached to the M1 PR as evidence.
 
 Do not judge the glass from e2e screenshots, where text behind the 92% glass can show through:
@@ -382,12 +383,14 @@ the nav left them untouched; unchecked on CI's Linux WebKit). Judge glass on a d
 
 ### Real-device checklist (merge gate for UI milestones)
 
-On an iPhone with current iOS, against a preview deployment (Vercel Authentication on):
+On an iPhone with current iOS, in Chrome for iOS (the owner's browser; WebKit engine), against
+a preview deployment (Vercel Authentication on):
 
-1. Safari: every tab renders; the bottom nav sits above the home indicator; glass blurs the
+1. Chrome: every tab renders; the bottom nav sits above the home indicator; glass blurs the
    content behind it; nothing scrolls sideways.
-2. Share → Add to Home Screen; launch the installed app: standalone (no Safari chrome), status
-   bar text readable in dark and light (Profile → Appearance), splash/icon correct.
+2. Optional (Add to Home Screen is a Safari share-sheet feature): in Safari, Share → Add to Home
+   Screen; launch the installed app: standalone (no Safari chrome), status bar text readable in
+   dark and light (Profile → Appearance), splash/icon correct.
 3. Settings → Display → Automatic appearance, or Control Centre dark-mode toggle while the app is
    open with Appearance = Auto: the theme and status bar follow.
 4. Airplane mode: tabs keep the shell, Profile shows the offline state; back online it loads.
@@ -396,6 +399,9 @@ On an iPhone with current iOS, against a preview deployment (Vercel Authenticati
 6. Step-up (Profile → Security, more than 5 minutes after signing in): removing a passkey and
    signing out a device each ask "Confirm it's you" once; Face ID passes and the action
    completes; cancelling Face ID says nothing was changed. Add passkey after the check opens the
-   passkey prompt (if Safari wants a fresh tap for that second prompt, the next tap works).
+   passkey prompt (if the browser wants a fresh tap for that second prompt, the next tap works).
 
 Record device, iOS version, date and screenshots in the PR.
+
+Last pass: 2026-11-06, the owner's iPhone 16 Pro Max, iOS 27.0.1, Chrome for iOS, right
+after the owner setup (docs/deployment.md, "Owner setup"); recorded in M2's docs PR.

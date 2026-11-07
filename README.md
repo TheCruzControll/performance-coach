@@ -11,8 +11,8 @@ log every set and talk to the coach.
 > the training profile are merged to `main`: onboarding, every Profile section editable later,
 > and Today's setup card and summary. **Production is on**: every merge to `main` deploys
 > coach.nikocruz.com, checked from outside after each deploy
-> ([docs/deployment.md](docs/deployment.md)). The emailed sign-in link and the owner's setup on
-> the iPhone come next.
+> ([docs/deployment.md](docs/deployment.md)). The owner set the app up on their iPhone on
+> 2026-11-06. The emailed sign-in link comes next.
 
 ## Stack
 
