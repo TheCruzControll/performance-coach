@@ -1,6 +1,6 @@
 <!--
   @component
-  The sheet every session edit opens in (Move now; Swap, Adjust and Skip add theirs to SHEETS),
+  The sheet every session edit opens in (Move and Swap now; Adjust and Skip add theirs to SHEETS),
   code-split with the BottomSheet it holds: the session screen loads it on intent and names the
   edit (`kind`). It loads that edit's sheet when it opens, and owns what every edit shares:
   - Save in the footer, disabled and aria-busy while the edit is posted, so a second tap posts
@@ -12,12 +12,13 @@
   - Loading: a skeleton until the sheet's code arrives. If it fails, the sheet stays open with
     'Couldn’t load this editor' and Retry, which loads it again in place (WebKit fetches anew);
     if that fails too while online, the screen reloads asking for the sheet (`?edit=<kind>`),
-    because Chromium keeps a failed module fetch for the document's lifetime.
+    because Chromium keeps a failed module fetch for the document's lifetime. An edit of one
+    exercise (Swap) names it too (`&exercise=<lineage>`).
   The toast links to History once History exists (m3/44).
 -->
 <script module lang="ts">
 	import type { Component } from 'svelte';
-	import type { EditTarget, SessionEdits } from './session-words';
+	import type { EditTarget, SessionEdits, SwapTarget } from './session-words';
 
 	/** What the host asks of the sheet it holds. */
 	export interface EditSheetExports {
@@ -31,11 +32,14 @@
 	/** An edit, as the host opens it on a session. */
 	interface SheetEntry<P extends object> {
 		title: string;
-		/** Save's label for these edits; null hides Save, when there is nothing to save. */
-		action: (edits: SessionEdits) => string | null;
+		/**
+		 * Save's label for these edits (and the exercise, for an edit of one); null hides Save,
+		 * when there is nothing to save.
+		 */
+		action: (edits: SessionEdits, exercise: SwapTarget | undefined) => string | null;
 		/** The sheet, code-split: fetched when the host first opens it. */
 		load: () => Promise<{ default: Component<P, EditSheetExports> }>;
-		props: (session: EditTarget, edits: SessionEdits) => P;
+		props: (session: EditTarget, edits: SessionEdits, exercise: SwapTarget | undefined) => P;
 	}
 
 	/** An entry checked against its sheet's props, then stored without their type. */
@@ -48,6 +52,16 @@
 			action: (edits) => (edits.moveTo.length ? 'Move' : null),
 			load: () => import('./MoveSheet.svelte'),
 			props: ({ lineage }, { version, moveTo }) => ({ lineage, version, targets: moveTo })
+		}),
+		swap: entry({
+			title: 'Swap exercise',
+			action: (_edits, exercise) => (exercise?.choices?.alternatives.length ? 'Swap' : null),
+			load: () => import('./SwapSheet.svelte'),
+			props: ({ lineage }, { version }, exercise) => ({
+				sessionLineage: lineage,
+				version,
+				exercise: exercise!
+			})
 		})
 	};
 
@@ -72,9 +86,16 @@
 		session: EditTarget;
 		/** What opened the sheet: focus returns to it. */
 		trigger: HTMLElement | undefined;
+		/** The exercise an edit of one exercise (Swap) is about. */
+		exercise?: SwapTarget;
 	}
 
-	let { open = $bindable(), kind, session, trigger }: Props = $props();
+	let { open = $bindable(), kind, session, trigger, exercise }: Props = $props();
+
+	/** What reopens this sheet after a reload. */
+	const reopen = $derived(
+		exercise ? `?edit=${kind}&exercise=${exercise.lineage}` : `?edit=${kind}`
+	);
 
 	const spec = $derived(SHEETS[kind]);
 
@@ -96,7 +117,7 @@
 			},
 			() => {
 				fetching = false;
-				if (retrying && navigator.onLine) return location.replace(`?edit=${kind}`);
+				if (retrying && navigator.onLine) return location.replace(reopen);
 				failed = true;
 			}
 		);
@@ -150,19 +171,19 @@
 		await invalidateAll();
 	}
 
-	const action = $derived(session.edits && spec.action(session.edits));
+	const action = $derived(session.edits && spec.action(session.edits, exercise));
 </script>
 
 <BottomSheet
 	bind:open={shown}
 	title={spec.title}
-	description={`${session.title} · ${session.when}`}
+	description={`${exercise?.name ?? session.title} · ${session.when}`}
 	footer={Sheet && action ? saveBar : undefined}
 	onclose={close}
 	data-testid="edit-sheet"
 >
 	{#if Sheet && session.edits}
-		<Sheet bind:this={sheet} {...spec.props(session, session.edits)} />
+		<Sheet bind:this={sheet} {...spec.props(session, session.edits, exercise)} />
 	{:else if failed}
 		<EmptyState
 			compact
