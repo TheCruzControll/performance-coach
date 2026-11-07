@@ -114,16 +114,32 @@ jobs:
       - name: Performance budgets
         run: pnpm budgets
 
-  e2e:
-    name: E2E (iPhone viewport · Chromium + WebKit)
+  # The browser suite in parallel legs, one per group and engine (e2e/projects.ts LEGS: main, the
+  # functional specs; serial, the one-at-a-time specs; alone, perf and exclusive on Chromium;
+  # sweeps, the *.sweep.e2e.ts specs), each with its own Postgres, database and production server.
+  # Ceiling: 15 Playwright minutes per leg or shard (scripts/e2e-timing.ts warns above it). A leg
+  # nearing it gains a shard (`of` up by one, plus an entry per new shard), never less coverage.
+  # `minutes` is the Playwright step's timeout: 1.5 × the leg's slowest of three measured runs,
+  # at least 5 (the projects' minutes in main's runs 42355809914, 42356551780 and 42356562301).
+  e2e-legs:
+    name: E2E ${{ matrix.group }} · ${{ matrix.engine }} · ${{ matrix.shard }}/${{ matrix.of }}
     # Pinned to the newest Ubuntu release Playwright builds WebKit for (its browser builds are
     # "ubuntu-24.04"). On ubuntu-latest (26.04) WebKit's ~140 MB of system packages came
     # through a cold mirror at ~50 KB/s and the install timed out before any test ran.
     runs-on: ubuntu-24.04
-    # Both engines run on one worker. With the Profile and desktop specs the suite takes 22–25
-    # minutes (611 tests on #104), so 25 cut a passing run off mid-suite. 40 leaves room until
-    # M9's e2e-ci-capacity splits the suite into parallel legs with their own measured ceilings.
-    timeout-minutes: 40
+    # The longest Playwright step (1.5 × the 15-minute ceiling, 23), the installs (12 + 8) and 2.
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { group: main, engine: chromium, shard: 1, of: 1, minutes: 19 }
+          - { group: main, engine: webkit, shard: 1, of: 1, minutes: 19 }
+          - { group: serial, engine: chromium, shard: 1, of: 1, minutes: 11 }
+          - { group: serial, engine: webkit, shard: 1, of: 1, minutes: 15 }
+          - { group: alone, engine: chromium, shard: 1, of: 1, minutes: 5 }
+          - { group: sweeps, engine: chromium, shard: 1, of: 1, minutes: 5 }
+          - { group: sweeps, engine: webkit, shard: 1, of: 1, minutes: 5 }
     services:
       postgres:
         image: postgres:18
@@ -192,12 +208,19 @@ jobs:
       - name: Create roles and databases
         run: pnpm db:setup
       - name: Playwright (global setup builds and starts the production Node server)
-        run: pnpm test:e2e
+        timeout-minutes: ${{ matrix.minutes }}
+        env:
+          E2E_ENGINE: ${{ matrix.engine }}
+          E2E_GROUP: ${{ matrix.group }}
+        run: pnpm test:e2e --shard ${{ matrix.shard }}/${{ matrix.of }}
+      - name: Where the minutes went
+        if: ${{ !cancelled() }}
+        run: node scripts/e2e-timing.ts test-results/report.json "${{ matrix.group }} · ${{ matrix.engine }}"
       - name: Upload screenshots and report
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v7
         with:
-          name: playwright-${{ github.run_id }}
+          name: playwright-${{ github.run_id }}-${{ matrix.group }}-${{ matrix.engine }}-${{ matrix.shard }}
           path: |
             test-results/
             playwright-report/
@@ -206,6 +229,24 @@ jobs:
           include-hidden-files: true
           retention-days: 14
           if-no-files-found: ignore
+
+  # The check branch protection requires: green only when every leg is. It runs even when a leg
+  # fails, since a skipped required check would count as passing.
+  e2e:
+    name: E2E (iPhone viewport · Chromium + WebKit)
+    if: ${{ always() }}
+    needs: [e2e-legs]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Every leg passed
+        env:
+          LEGS: ${{ needs.e2e-legs.result }}
+        run: |
+          if [ "$LEGS" != success ]; then
+            echo "::error::E2E legs: $LEGS"
+            exit 1
+          fi
 
   lighthouse:
     name: Lighthouse (mobile)

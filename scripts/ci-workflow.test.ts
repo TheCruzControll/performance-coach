@@ -6,6 +6,8 @@
  */
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { ENGINES, GROUPS, LEGS } from '../e2e/projects.ts';
+import { CEILING_MINUTES } from './e2e-timing.ts';
 
 /** A line of the workflow and the more-indented lines under it. */
 interface Line {
@@ -186,7 +188,7 @@ describe('CI artifacts', () => {
 	it('uploads the e2e production server log, a dot-file, with hidden files included', () => {
 		// e2e/global-setup.ts writes the server's output there.
 		const upload = uploads().find((step) => step.paths.includes('.e2e-server.log'));
-		expect(upload?.job, 'the job that uploads .e2e-server.log').toBe('e2e');
+		expect(upload?.job, 'the job that uploads .e2e-server.log').toBe('e2e-legs');
 		expect(upload?.includesHiddenFiles, 'include-hidden-files').toBe(true);
 	});
 
@@ -195,5 +197,116 @@ describe('CI artifacts', () => {
 			(step) => step.paths.some(isHidden) && !step.includesHiddenFiles
 		);
 		expect(skipping).toEqual([]);
+	});
+});
+
+const legsJob = () => under(under(ci, 'jobs'), 'e2e-legs');
+
+/** The e2e matrix's entries: each `- { key: value, … }` line under `include`. */
+function entries(): Record<string, string>[] {
+	const include = under(under(under(legsJob(), 'strategy'), 'matrix'), 'include');
+	return include.map((line) => {
+		const flow = /^- \{(.*)\}$/.exec(line.text)?.[1];
+		if (flow === undefined) throw new Error(`not a one-line entry: ${line.text}`);
+		return Object.fromEntries(flow.split(',').map((pair) => pair.split(':').map((s) => s.trim())));
+	});
+}
+
+/** A legs step's fields, found by its name. */
+function legStep(name: string): Line[] {
+	const step = under(legsJob(), 'steps').find((s) => value([s, ...s.children], 'name') === name);
+	if (!step) throw new Error(`no step "${name}"`);
+	return [step, ...step.children];
+}
+
+/** `${{ matrix.x }}` and `${{ github.run_id }}` filled in for one entry. */
+const fill = (template: string, entry: Record<string, string>) =>
+	template.replace(/\$\{\{\s*([\w.-]+)\s*\}\}/g, (_, name: string) => {
+		if (name === 'github.run_id') return '42';
+		const key = name.replace(/^matrix\./, '');
+		if (!name.startsWith('matrix.') || !(key in entry)) throw new Error(`unknown ${name}`);
+		return entry[key]!;
+	});
+
+const PLAYWRIGHT = 'Playwright (global setup builds and starts the production Node server)';
+
+describe('CI e2e legs', () => {
+	it('cover every leg of e2e/projects.ts, with contiguous, well-formed shards', () => {
+		const legs = new Map<string, Record<string, string>[]>();
+		for (const entry of entries()) {
+			expect(GROUPS, JSON.stringify(entry)).toContain(entry.group);
+			expect(ENGINES, JSON.stringify(entry)).toContain(entry.engine);
+			for (const key of ['shard', 'of', 'minutes']) {
+				expect(entry[key], `${key} in ${JSON.stringify(entry)}`).toMatch(/^[1-9]\d*$/);
+			}
+			const leg = `${entry.group}/${entry.engine}`;
+			legs.set(leg, [...(legs.get(leg) ?? []), entry]);
+		}
+		expect([...legs.keys()].sort()).toEqual(LEGS.map((l) => `${l.group}/${l.engine}`).sort());
+		for (const [leg, shards] of legs) {
+			const of = Number(shards[0]!.of);
+			expect(
+				shards.map((s) => s.of),
+				leg
+			).toEqual(shards.map(() => String(of)));
+			expect(
+				shards.map((s) => Number(s.shard)).sort((a, b) => a - b),
+				leg
+			).toEqual(Array.from({ length: of }, (_, i) => i + 1));
+		}
+	});
+
+	it('run every entry to the end and each leg’s projects and shard', () => {
+		expect(value(under(legsJob(), 'strategy'), 'fail-fast')).toBe('false');
+		const step = legStep(PLAYWRIGHT);
+		const env = under(step, 'env');
+		expect(value(env, 'E2E_ENGINE')).toBe('${{ matrix.engine }}');
+		expect(value(env, 'E2E_GROUP')).toBe('${{ matrix.group }}');
+		expect(value(step, 'run')).toBe('pnpm test:e2e --shard ${{ matrix.shard }}/${{ matrix.of }}');
+		const timing = legStep('Where the minutes went');
+		expect(value(timing, 'if')).toBe('${{ !cancelled() }}');
+		expect(value(timing, 'run')).toMatch(
+			/^node scripts\/e2e-timing\.ts test-results\/report\.json /
+		);
+	});
+
+	it('bound each entry by its measured minutes, inside the job with room for the installs', () => {
+		const step = legStep(PLAYWRIGHT);
+		expect(value(step, 'timeout-minutes')).toBe('${{ matrix.minutes }}');
+		const minutes = entries().map((entry) => Number(entry.minutes));
+		for (const m of minutes) expect(m).toBeLessThanOrEqual(Math.ceil(1.5 * CEILING_MINUTES));
+		const installs = ['Install Playwright system dependencies', 'Install Playwright browsers'].map(
+			(name) => Number(value(legStep(name), 'timeout-minutes'))
+		);
+		expect(installs).toEqual([12, 8]);
+		const job = Number(value(legsJob(), 'timeout-minutes'));
+		expect(job).toBeGreaterThanOrEqual(Math.ceil(1.5 * CEILING_MINUTES) + 12 + 8);
+	});
+
+	it('upload each entry’s files under a name of its own, hidden files included', () => {
+		const inputs = under(legStep('Upload screenshots and report'), 'with');
+		expect(value(inputs, 'include-hidden-files')).toBe('true');
+		const template = value(inputs, 'name')!;
+		const names = entries().map((entry) => fill(template, entry));
+		expect(new Set(names).size, names.join(', ')).toBe(names.length);
+		expect(fill(template, { group: 'main', engine: 'webkit', shard: '2' })).toBe(
+			'playwright-42-main-webkit-2'
+		);
+	});
+
+	it('report through one check, under its old name, that passes only when every leg did', () => {
+		const jobs = under(ci, 'jobs');
+		const checks = jobs.filter(
+			(job) => value(job.children, 'name') === 'E2E (iPhone viewport · Chromium + WebKit)'
+		);
+		expect(checks.map((job) => job.text)).toEqual(['e2e:']);
+		const aggregate = checks[0]!.children;
+		expect(value(aggregate, 'needs')).toBe('[e2e-legs]');
+		// A required check that is skipped counts as passed, so it must run after a failed leg too.
+		expect(value(aggregate, 'if')).toBe('${{ always() }}');
+		const step = under(aggregate, 'steps')[0]!;
+		const fields = [step, ...step.children];
+		expect(value(under(fields, 'env'), 'LEGS')).toBe('${{ needs.e2e-legs.result }}');
+		expect(value(fields, 'run')).toMatch(/^if \[ "\$LEGS" != success \]; then\n.*\n\s*exit 1\n/);
 	});
 });
