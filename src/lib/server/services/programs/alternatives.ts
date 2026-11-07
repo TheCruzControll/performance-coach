@@ -15,11 +15,13 @@ import { alternativesFor as rank } from '../../../domain/programming/alternative
 import { libraryOf, whyNothingFits, type Excluded } from '../../../domain/programming/eligibility';
 import {
 	buildProgrammingInput,
+	toExerciseKey,
 	type ExerciseKey,
 	type LinkedPreference,
 	type ProgrammingInput
 } from '../../../domain/programming/input';
 import { MOVEMENT_PATTERN_LABEL } from '../../../domain/training/vocabulary';
+import type { ExerciseRef } from '../../../domain/training/types';
 import { createProgramsRepository } from '../../db/repositories/programs';
 import { measure } from '../../observability/timing';
 import { getExercisesByIds, listCustomExercises, resolveKeys } from '../exercises/index';
@@ -88,13 +90,17 @@ export async function programmingInputFor(
 
 const CUSTOM = 'custom:';
 
-/** The alternatives of the library exercise `key` for the owner, ids resolved. */
+/**
+ * The alternatives of the library exercise `key` for the owner, ids resolved; `input` is the
+ * owner's programmingInputFor, read here unless given.
+ */
 export async function rankAlternatives(
 	ownerId: string,
 	key: ExerciseKey,
-	deps: TrainingDeps = {}
+	deps: TrainingDeps = {},
+	input?: ProgrammingInput
 ): Promise<RankedAlternatives> {
-	const input = await programmingInputFor(ownerId, deps);
+	input ??= await programmingInputFor(ownerId, deps);
 	const library = new Map(libraryOf(input).map((e) => [e.key, e]));
 	const original = library.get(key);
 	// A retired catalogue exercise a stored program still names is no longer in the library.
@@ -144,4 +150,24 @@ export async function alternativesFor(
 	const key = planned.exerciseKey ?? `${CUSTOM}${planned.exerciseId}`;
 	const { alternatives, blocked } = await rankAlternatives(ownerId, key, deps);
 	return { alternatives, blocked };
+}
+
+/**
+ * What each of a session's planned exercises (as read: their lineage and exercise) can be
+ * swapped for, by lineage, with one read of the owner's profile for them all. The session
+ * screen streams it; the caller has already read the session.
+ */
+export async function alternativesForExercises(
+	ownerId: string,
+	exercises: readonly { lineage: string; exercise: ExerciseRef }[],
+	deps: TrainingDeps = {}
+): Promise<Map<string, ExerciseAlternatives>> {
+	const input = await programmingInputFor(ownerId, deps);
+	const found = new Map<string, ExerciseAlternatives>();
+	// One at a time: the queries share one executor (docs/architecture.md).
+	for (const { lineage, exercise } of exercises) {
+		const ranked = await rankAlternatives(ownerId, toExerciseKey(exercise), deps, input);
+		found.set(lineage, { alternatives: ranked.alternatives, blocked: ranked.blocked });
+	}
+	return found;
 }

@@ -57,7 +57,15 @@ export const RATE_LIMITS = {
 	/** Rename/remove passkeys, revoke sessions, regenerate codes, per session. */
 	manage: { limit: 60, windowMs: MINUTE },
 	/** Sign-out requests, per client. */
-	signout: { limit: 30, windowMs: MINUTE }
+	signout: { limit: 30, windowMs: MINUTE },
+	/** Email sign-in link requests, per client (ADR 0011). */
+	'email.request': { limit: 5, windowMs: 15 * MINUTE },
+	/** Email sign-in link requests, all clients together. */
+	'email.hourly': { limit: 10, windowMs: HOUR },
+	/** Email sign-in links sent per day, all clients (inside Resend's free 100 a day, 3,000 a month). */
+	'email.daily': { limit: 20, windowMs: DAY },
+	/** Email sign-in link redemptions, per client (tokens are unguessable: this limits noise). */
+	'email.verify': { limit: 10, windowMs: 15 * MINUTE }
 } as const satisfies Record<string, RateLimitPolicy>;
 
 export type RateLimitBucket = keyof typeof RATE_LIMITS;
@@ -67,4 +75,17 @@ export type RateLimitBucket = keyof typeof RATE_LIMITS;
  * on writes: each new window retires up to `batch` of them, so one-off clients cannot grow
  * `auth_rate_limits` without bound and no request pays for more than one small delete.
  */
-export const RATE_LIMIT_PRUNE = { staleAfterMs: DAY, batch: 100 } as const;
+export const RATE_LIMIT_PRUNE = { staleAfterMs: 2 * DAY, batch: 100 } as const;
+
+/** Email sign-in links (ADR 0011, auth/email-link.ts). */
+export const EMAIL_LINK = {
+	/** A link works once, within this long of being sent (the table's CHECK caps it at 15 minutes). */
+	ttlMs: 15 * MINUTE,
+	/**
+	 * Hard cap of the session a link creates. Owner decision (open question): the same 90 days as
+	 * a passkey session by default; a shorter value (e.g. 14 days) applies only to link sessions.
+	 */
+	sessionAbsoluteMs: SESSION.absoluteMs,
+	/** The send gives up after this long (above Resend's own 10 s timeout), so nothing hangs. */
+	sendTimeoutMs: 15_000
+} as const;

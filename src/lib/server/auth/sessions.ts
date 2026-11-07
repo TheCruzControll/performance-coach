@@ -9,6 +9,7 @@
  * - Signing devices out needs a recent passkey assertion on this session (reauth.ts).
  */
 import { createAuthRepository, type SessionKind, type SessionMethod, type SessionRow } from '../db';
+import { createEmailLinksRepository } from '../db/repositories/email-links';
 import { isUuid } from '../services/ids';
 import { recordAuthEvent } from './audit';
 import { resolveDeps, type AuthDeps, type AuthRequest } from './context';
@@ -51,6 +52,8 @@ export async function issueSession(
 		userAgent: string | null;
 		/** A user-verified passkey ceremony just established it: it starts out fresh. */
 		reauthenticated?: boolean;
+		/** Hard cap from now for an owner session (default `SESSION.absoluteMs`). */
+		absoluteMs?: number;
 	},
 	deps: AuthDeps = {}
 ): Promise<IssuedSession> {
@@ -58,7 +61,8 @@ export async function issueSession(
 	const at = now();
 	const kind = input.kind ?? 'owner';
 	const absolute = new Date(
-		at.getTime() + (kind === 'recovery' ? SESSION.recoveryMs : SESSION.absoluteMs)
+		at.getTime() +
+			(kind === 'recovery' ? SESSION.recoveryMs : (input.absoluteMs ?? SESSION.absoluteMs))
 	);
 	const idle = new Date(at.getTime() + SESSION.idleMs);
 	const token = generateToken();
@@ -218,7 +222,11 @@ export async function revokeSession(
 	});
 }
 
-/** "Sign out everywhere else": every session but this one. Returns how many ended. */
+/**
+ * "Sign out everywhere else": every session but this one, and every pending email sign-in link
+ * (a link already in someone's inbox would otherwise sign another device straight back in).
+ * Returns how many sessions ended.
+ */
 export async function revokeOtherSessions(
 	session: AuthSession,
 	request: AuthRequest,
@@ -233,7 +241,14 @@ export async function revokeOtherSessions(
 		// session with a new one (a recovery upgrade). Lock first, which waits for it, then revoke
 		// in a new statement, whose snapshot includes any session it created.
 		await repo.lockOtherSessions(session.ownerId, session.id);
-		return repo.revokeOtherSessions(session.ownerId, session.id, 'signed_out_elsewhere', now());
+		const ended = await repo.revokeOtherSessions(
+			session.ownerId,
+			session.id,
+			'signed_out_elsewhere',
+			now()
+		);
+		await createEmailLinksRepository(tx).revokeLiveLinks(session.ownerId, now());
+		return ended;
 	});
 	await recordAuthEvent(db, request, {
 		type: 'session.revoked_others',

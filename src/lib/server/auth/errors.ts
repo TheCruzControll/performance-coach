@@ -15,7 +15,8 @@ export type AuthErrorCode =
 	| 'not_found'
 	| 'reauth_required'
 	| 'rate_limited'
-	| 'wrong_origin';
+	| 'wrong_origin'
+	| 'link_invalid';
 
 const STATUS: Record<AuthErrorCode, number> = {
 	setup_unavailable: 404,
@@ -29,7 +30,8 @@ const STATUS: Record<AuthErrorCode, number> = {
 	not_found: 404,
 	reauth_required: 403,
 	rate_limited: 429,
-	wrong_origin: 400
+	wrong_origin: 400,
+	link_invalid: 401
 };
 
 export class AuthError extends Error {

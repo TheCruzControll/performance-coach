@@ -12,6 +12,9 @@
  * - The current version's session carries its edits: the days Move offers (getMoveTargets),
  *   from the owner's today (ownerToday), or why it can no longer change. An older version has
  *   none, being read-only.
+ * - A strength session that can still change also streams what Swap offers for each exercise
+ *   (`swaps`, alternativesForExercises): the screen renders without waiting for it. A failure
+ *   there is recorded and streams null, which the Swap sheet shows with Retry.
  */
 import { error } from '@sveltejs/kit';
 import type { DisciplineTone } from '#lib/domain/profile/catalog.ts';
@@ -23,9 +26,11 @@ import { ownerToday } from '#lib/server/local-date.ts';
 import { recordServerError, type ServerErrorInput } from '#lib/server/services/errors.ts';
 import { getAthleteProfile } from '#lib/server/services/profile/index.ts';
 import {
+	alternativesForExercises,
 	getMoveTargets,
 	getPlannedSession,
-	type PlannedSession
+	type PlannedSession,
+	type SessionExercise
 } from '#lib/server/services/programs/index.ts';
 import { TrainingNotFoundError, type TrainingDeps } from '#lib/server/services/training/shared.ts';
 import {
@@ -35,11 +40,13 @@ import {
 	EDITS_LOCKED,
 	exerciseViews,
 	moveOption,
+	SWAPPED_ONCE,
 	whenWords,
 	type BaselineCallout,
 	type DetailsView,
-	type ExerciseView,
-	type SessionEdits
+	type SessionEdits,
+	type SessionExerciseView,
+	type SwapOptions
 } from '#lib/ui/program/session-words.ts';
 import { statusWords } from '#lib/ui/program/words.ts';
 
@@ -72,13 +79,18 @@ export interface SessionScreen {
 	older: { number: number; inCurrent: boolean } | null;
 	details: DetailsView;
 	/** A strength session's exercises; none for the other kinds. */
-	exercises: ExerciseView[];
+	exercises: SessionExerciseView[];
 	/** A run's steps; none for the other kinds. */
 	steps: RunStep[];
 	instructions: string | null;
 	notes: string | null;
 	/** Its edits; none on an older version, which is read-only. */
 	edits: SessionEdits | null;
+	/**
+	 * Streamed: what Swap offers for each exercise, or null if it could not be read. Null in
+	 * place of the promise when nothing can be swapped: not a strength session, or no edits.
+	 */
+	swaps: Promise<SwapOptions | null> | null;
 }
 
 export type SessionDetailData =
@@ -104,7 +116,7 @@ export interface SessionLoadDeps extends Pick<TrainingDeps, 'db'> {
 function screenOf(
 	session: PlannedSession,
 	{ weightUnit, distanceUnit }: Pick<AthleteProfile, 'weightUnit' | 'distanceUnit'>
-): Omit<SessionScreen, 'edits'> {
+): Omit<SessionScreen, 'edits' | 'swaps'> {
 	const { version, week } = session;
 	return {
 		lineage: session.lineage,
@@ -122,7 +134,13 @@ function screenOf(
 		// estimate is passed, so describe never invents one (describe.ts).
 		exercises:
 			session.kind === 'strength'
-				? exerciseViews(session.exercises, { unit: weightUnit, oneRepMaxKg: null })
+				? exerciseViews(session.exercises, { unit: weightUnit, oneRepMaxKg: null }).map(
+						(view, i): SessionExerciseView => {
+							const planned = session.exercises[i]!;
+							const once = planned.substitutionReason === 'situational';
+							return { ...view, lineage: planned.lineage, swapped: once ? SWAPPED_ONCE : null };
+						}
+					)
 				: [],
 		steps: session.kind === 'run' ? describeSegments(session.segments, { distanceUnit }) : [],
 		instructions: session.instructions,
@@ -153,6 +171,35 @@ async function editsOf(
 	return { version: session.version.number, locked, moveTo: moveTo.map(moveOption) };
 }
 
+/**
+ * What Swap offers for each of `exercises`, as the sheet needs it (no catalogue row), or null,
+ * with the failure recorded, when it cannot be read.
+ */
+async function swapOptions(
+	ownerId: string,
+	exercises: readonly SessionExercise[],
+	origin: SessionRequest['origin'],
+	{ db, errorsDb }: SessionLoadDeps
+): Promise<SwapOptions | null> {
+	try {
+		const found = await alternativesForExercises(ownerId, exercises, { db });
+		const options: SwapOptions = {};
+		for (const [lineage, { alternatives, blocked }] of found) {
+			options[lineage] = {
+				alternatives: alternatives.map(({ id, name, reason }) => ({ id, name, reason })),
+				blocked
+			};
+		}
+		return options;
+	} catch (err) {
+		await recordServerError(
+			{ error: err, kind: 'load', status: 500, ...origin, context: { load: 'session-swaps' } },
+			{ db: errorsDb }
+		);
+		return null;
+	}
+}
+
 export async function loadSessionDetail(
 	ownerId: string,
 	{ key, version, now, origin }: SessionRequest,
@@ -164,7 +211,12 @@ export async function loadSessionDetail(
 		const session = await getPlannedSession(ownerId, key, { version: asked }, { db });
 		const profile = await getAthleteProfile(ownerId, { db });
 		const edits = session.version.current ? await editsOf(ownerId, session, now, db) : null;
-		return { state: 'session', ...screenOf(session, profile), edits };
+		// Started last, once the load's own reads are done: it runs while the screen streams.
+		const swaps =
+			edits && !edits.locked && session.kind === 'strength'
+				? swapOptions(ownerId, session.exercises, origin, { db, errorsDb })
+				: null;
+		return { state: 'session', ...screenOf(session, profile), edits, swaps };
 	} catch (err) {
 		if (err instanceof TrainingNotFoundError) error(404, 'Not found');
 		await recordServerError(
