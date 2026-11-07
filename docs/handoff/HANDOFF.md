@@ -4,46 +4,47 @@ This is everything a new Claude Code session needs to resume the build on anothe
 product spec is `docs/product-requirements.md` on `main`; milestone criteria are in
 `docs/milestones.md`. Read this file from `origin/handoff` (it is not on `main`).
 
-## Final state, 2026-11-07 08:35 UTC (read this first)
+## Final state, 2026-11-07 08:41 UTC (read this first)
 
 The owner asked to finish the work in progress, start nothing new, and update this file. That is
-nearly done. Every slice that was being built when they asked now has a PR, and all are merged except #184
-and #185, which are approved and waiting on their last CI job (E2E). No new wave was started.
+done. Every slice that was being built when they asked now has a PR, and every PR is merged. #184 and #185 were merged at the owner's request
+while their E2E job was still running (every other check was green and Sol had approved): check
+that job and `main`'s first CI run below. No new wave was started.
 
-|                                   |                                                                                                                                                                                             |
-| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| On `main`                         | **132 of 405 slices** (91 at the previous hand-off)                                                                                                                                         |
-| Merged since 2026-11-06 23:41 UTC | **41 PRs**, #142 → #183                                                                                                                                                                     |
-| Open PRs                          | #185 (m6/12-progression-rules, Sol approved, CI running), #184 (m4/26-run-other-handlers, Sol approved, CI running); only #13 (this branch, never merged) and #157 (owner's call) otherwise |
-| Closed                            | #14, the old paused onboarding WIP, now that every onboarding slice has landed                                                                                                              |
-| Running                           | only the merge watcher (`tools/wait-ready.sh`) for #184 and #185; no workflow or wave                                                                                                       |
+|                                   |                                                                                |
+| --------------------------------- | ------------------------------------------------------------------------------ |
+| On `main`                         | **134 of 405 slices** (91 at the previous hand-off)                            |
+| Merged since 2026-11-06 23:41 UTC | **43 PRs**, #142 → #185                                                        |
+| Open PRs                          | only #13 (this branch, never merged) and #157 (the owner's call)               |
+| Closed                            | #14, the old paused onboarding WIP, now that every onboarding slice has landed |
+| Running                           | nothing: no workflow, watcher or wave                                          |
 
 ### Slices on main, by milestone (`tools/slice-counts.py`)
 
-| Milestone |          On main | Not started | Plan                                  |
-| --------- | ---------------: | ----------: | ------------------------------------- |
-| M2        |               27 |           1 | `briefs/m2-onboarding-plan.json` (28) |
-| M2X       |               11 |          10 | `plans/m2x-plan.json` (21)            |
-| M3        |               42 |           8 | `plans/m3-plan.json` (50)             |
-| M4        | 23 (+ #184 open) |          37 | `plans/m4-plan.json` (61)             |
-| M5        |               10 |          51 | `plans/m5-plan.json` (61)             |
-| M6        | 10 (+ #185 open) |          52 | `plans/m6-plan.json` (63)             |
-| M7        |                0 |          59 | `plans/m7-plan.json` (59)             |
-| M9        |                9 |          53 | `plans/m9-plan.json` (62)             |
-| **Total** |          **132** |     **271** | 405 slices                            |
+| Milestone | On main | Not started | Plan                                  |
+| --------- | ------: | ----------: | ------------------------------------- |
+| M2        |      27 |           1 | `briefs/m2-onboarding-plan.json` (28) |
+| M2X       |      11 |          10 | `plans/m2x-plan.json` (21)            |
+| M3        |      42 |           8 | `plans/m3-plan.json` (50)             |
+| M4        |      24 |          37 | `plans/m4-plan.json` (61)             |
+| M5        |      10 |          51 | `plans/m5-plan.json` (61)             |
+| M6        |      11 |          52 | `plans/m6-plan.json` (63)             |
+| M7        |       0 |          59 | `plans/m7-plan.json` (59)             |
+| M9        |       9 |          53 | `plans/m9-plan.json` (62)             |
+| **Total** | **134** |     **271** | 405 slices                            |
 
 M1 is done. M8 has no slice plan: it runs `workflows/councils.js` after M4 and again at the end.
 
-### What merged (#142 → #183; #184 and #185 still open)
+### What merged (#142 → #185)
 
 | Milestone                  | PRs                                                                                                                                                                                                                      |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | M2 Onboarding              | #155 guided setup, #167 save on leave, #172 review every answer, #173 Today "finish setting up", #178 pick up where you left off, #181 Today goals and week shape. **M2 is 27 of 28 done**; only `docs-profile` is left. |
 | M2X Desktop and email link | #161 email-link schema, #166 desktop main screens, #179 desktop Chromium + WebKit projects, #180 email-link service                                                                                                      |
 | M3 Programs                | #144 preferences link, #156 programming service, #159 swap/adjust edits, #169 program history, #177 swap an exercise                                                                                                     |
-| M4 Workouts                | #143 log-gaps service, #151 sync ledger, #154 reconcile and tabs, #158 mutation schemas, #165 pain reports, #175 `POST /api/workouts/sync`, #182 canonical reads                                                         |
+| M4 Workouts                | #143 log-gaps service, #151 sync ledger, #154 reconcile and tabs, #158 mutation schemas, #165 pain reports, #175 `POST /api/workouts/sync`, #182 canonical reads, #184 run and other-session handlers                    |
 | M5 Coach                   | #153 safety rules, #162 prompt layout, #171 agent orchestrator, #183 proposal payloads                                                                                                                                   |
-| M6 Analytics               | #142 running, #147 strength, #150 workload, #152 chart tokens, #164 metric catalogue, #168 test support                                                                                                                  |
+| M6 Analytics               | #142 running, #147 strength, #150 workload, #152 chart tokens, #164 metric catalogue, #168 test support, #185 progression rules                                                                                          |
 | M9 Hardening               | #145 docs guards, #146 restore order, #148 report skeletons, #149 backup format, #160 envelope, #163 journey matrix, #170 Blob store, #174 backup config, #176 export                                                    |
 
 ### What stopped, and what it left
