@@ -220,7 +220,7 @@ Missing(m) == \E c \in Creates : <<m, c>> \in Dep /\ c \notin ledger
 
 (* One mutation, one Postgres transaction (applyOne): claimMutation first,  *)
 (* then the handler; a refusal rolls the claim back.                       *)
-ServerStep(k) ==
+ServerStepAt(k) ==
     LET r == reqs[k]
         m == r.batch[r.i]
         blocked == MUTANT # "blockedApplied" /\ \E h \in r.held : <<m, h>> \in Dep
@@ -249,7 +249,7 @@ ServerStep(k) ==
 (* fails (503) when nothing was answered yet. The transaction rolls back,  *)
 (* or its COMMIT landed before the connection failed (`landed`): claim and *)
 (* effect together, never one without the other.                           *)
-ServerError(k) ==
+ServerErrorAt(k) ==
     LET r == reqs[k]
         m == r.batch[r.i]
         rest == [j \in 1..(Len(r.batch) - r.i + 1) |-> <<r.batch[r.i + j - 1], "retry">>]
@@ -271,7 +271,7 @@ ServerError(k) ==
        /\ UNCHANGED <<logged, box, valid, discarded, pc, lock, kas>>
 
 (* The function is killed mid-batch: what committed stays committed. *)
-ServerDies(k) ==
+ServerDiesAt(k) ==
     /\ faults < MaxFaults
     /\ reqs[k].st = "open"
     /\ faults' = faults + 1
@@ -279,10 +279,16 @@ ServerDies(k) ==
     /\ UNCHANGED <<logged, box, valid, discarded, ledger, history, pc, lock, kas>>
 
 (* A request nobody awaits is lost on the way. *)
-Dropped(k) ==
+DroppedAt(k) ==
     /\ reqs[k].st = "open" /\ reqs[k].from = NoTab
     /\ reqs' = Remove(reqs, k)
     /\ UNCHANGED <<logged, box, valid, discarded, ledger, history, pc, lock, faults, kas>>
+
+(* A step of any request the server may still run. *)
+ServerStep == \E k \in 1..Len(reqs) : ServerStepAt(k)
+ServerError == \E k \in 1..Len(reqs) : ServerErrorAt(k)
+ServerDies == \E k \in 1..Len(reqs) : ServerDiesAt(k)
+Dropped == \E k \in 1..Len(reqs) : DroppedAt(k)
 
 -----------------------------------------------------------------------------
 
@@ -304,17 +310,29 @@ Init ==
     /\ kas = 0
 
 Next ==
-    \/ Log \/ Keepalive \/ Done
-    \/ \E m \in Muts : WaitEnds(m) \/ Fix(m) \/ TryAgain(m) \/ Discard(m)
-    \/ \E t \in Tabs : StartRound(t) \/ EndRound(t) \/ Receive(t) \/ ReceiveFailed(t) \/ Timeout(t)
-    \/ \E k \in 1..Len(reqs) : ServerStep(k) \/ ServerError(k) \/ ServerDies(k) \/ Dropped(k)
+    \/ Log
+    \/ Keepalive
+    \/ Done
+    \/ \E m \in Muts : WaitEnds(m)
+    \/ \E m \in Muts : Fix(m)
+    \/ \E m \in Muts : TryAgain(m)
+    \/ \E m \in Muts : Discard(m)
+    \/ \E t \in Tabs : StartRound(t)
+    \/ \E t \in Tabs : EndRound(t)
+    \/ \E t \in Tabs : Receive(t)
+    \/ \E t \in Tabs : ReceiveFailed(t)
+    \/ \E t \in Tabs : Timeout(t)
+    \/ ServerStep
+    \/ ServerError
+    \/ ServerDies
+    \/ Dropped
 
 Fairness ==
     /\ WF_vars(Log)
     /\ \A m \in Muts : WF_vars(WaitEnds(m)) /\ WF_vars(Fix(m)) /\ WF_vars(TryAgain(m))
     /\ \A t \in Tabs : WF_vars(StartRound(t)) /\ WF_vars(EndRound(t))
                        /\ WF_vars(Receive(t)) /\ WF_vars(ReceiveFailed(t))
-    /\ WF_vars(\E k \in 1..Len(reqs) : ServerStep(k))
+    /\ WF_vars(ServerStep)
 
 Spec == Init /\ [][Next]_vars /\ Fairness
 
