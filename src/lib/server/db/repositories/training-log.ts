@@ -54,6 +54,7 @@ export interface Stored<Row> {
 export type SetEdit = Pick<
 	NewSet,
 	| 'weight'
+	| 'assistance'
 	| 'unit'
 	| 'reps'
 	| 'missedReps'
@@ -72,6 +73,14 @@ export type WorkoutEdit = Pick<
 export type RunEdit = Pick<
 	NewRun,
 	'distanceMetres' | 'durationSeconds' | 'avgHr' | 'rpe' | 'notes'
+>;
+export type RunSegmentEdit = Pick<
+	NewRunSegment,
+	'position' | 'kind' | 'distanceMetres' | 'durationSeconds' | 'avgHr' | 'rpe'
+>;
+export type OtherSessionEdit = Pick<
+	NewOtherSession,
+	'kind' | 'durationMinutes' | 'rpe' | 'metrics' | 'notes'
 >;
 export type RecoveryNoteEdit = Pick<
 	NewRecoveryNote,
@@ -204,11 +213,27 @@ export function createTrainingLogRepository(db: Executor) {
 				.orderBy(asc(runRecordSegments.position));
 		},
 
-		async otherSession(workoutId: string) {
-			const [row] = await db
+		/** One of the owner's run segments by its device id. */
+		async runSegment(ownerId: string, clientMutationId: string, { lock }: Lookup = {}) {
+			const query = db
+				.select()
+				.from(runRecordSegments)
+				.where(
+					and(
+						eq(runRecordSegments.ownerId, ownerId),
+						eq(runRecordSegments.clientMutationId, clientMutationId)
+					)
+				);
+			const [row] = await (lock ? query.for('update') : query);
+			return row ?? null;
+		},
+
+		async otherSession(workoutId: string, { lock }: Lookup = {}) {
+			const query = db
 				.select()
 				.from(otherSessionRecords)
 				.where(eq(otherSessionRecords.workoutId, workoutId));
+			const [row] = await (lock ? query.for('update') : query);
 			return row ?? null;
 		},
 
@@ -234,6 +259,14 @@ export function createTrainingLogRepository(db: Executor) {
 				.returning();
 			if (row) return { row, created: true };
 			return { row: (await repo.run(values.workoutId))!, created: false };
+		},
+
+		/** Create a run workout's record, its totals empty, unless it has one already. */
+		async ensureRun(ownerId: string, workoutId: string): Promise<void> {
+			await db
+				.insert(runRecords)
+				.values({ ownerId, workoutId })
+				.onConflictDoNothing({ target: runRecords.workoutId });
 		},
 
 		/** The segments it wrote: one whose device id is already stored is left out. */
@@ -274,6 +307,36 @@ export function createTrainingLogRepository(db: Executor) {
 					.update(runRecords)
 					.set(values)
 					.where(eq(runRecords.workoutId, workoutId))
+					.returning();
+				return row!;
+			});
+		},
+
+		async updateRunSegment(
+			id: string,
+			values: RunSegmentEdit,
+			actor: Decider
+		): Promise<RunSegmentRow> {
+			return asActor(actor, async (tx) => {
+				const [row] = await tx
+					.update(runRecordSegments)
+					.set(values)
+					.where(eq(runRecordSegments.id, id))
+					.returning();
+				return row!;
+			});
+		},
+
+		async updateOtherSession(
+			workoutId: string,
+			values: OtherSessionEdit,
+			actor: Decider
+		): Promise<OtherSessionRow> {
+			return asActor(actor, async (tx) => {
+				const [row] = await tx
+					.update(otherSessionRecords)
+					.set(values)
+					.where(eq(otherSessionRecords.workoutId, workoutId))
 					.returning();
 				return row!;
 			});
