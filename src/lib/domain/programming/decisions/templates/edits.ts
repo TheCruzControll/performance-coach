@@ -25,6 +25,6 @@ export const edits = {
 	},
 	preference_recorded: {
 		summary: '{exercise} is never prescribed again',
-		why: '{who} asked for {exercise} never to be prescribed again, so it is saved as a dislike and replaced in every session from today. {reason}'
+		why: '{who} asked for {exercise} never to be prescribed again, so it is saved as a dislike and swapped for {to} in {sessions} from today. {reason}'
 	}
 } as const satisfies Templates;

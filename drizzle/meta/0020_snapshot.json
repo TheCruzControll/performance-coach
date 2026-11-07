@@ -1,5 +1,5 @@
 {
-  "id": "849f20ee-8025-4320-ac56-0b03efac38af",
+  "id": "64c1c7de-ee1c-4bdf-9b69-e11c09b3b158",
   "prevId": "b8e48a7f-574e-4ba4-a9ff-b1dd086706c1",
   "version": "7",
   "dialect": "postgresql",
@@ -454,7 +454,7 @@
       "checkConstraints": {
         "auth_events_type_ck": {
           "name": "auth_events_type_ck",
-          "value": "type in ('setup.completed', 'setup.failed', 'signin.succeeded', 'signin.failed', 'passkey.added', 'passkey.renamed', 'passkey.removed', 'recovery.used', 'recovery.failed', 'recovery.regenerated', 'session.revoked', 'session.revoked_others', 'reauth.succeeded', 'reauth.failed', 'signout', 'rate_limited', 'owner.reset')"
+          "value": "type in ('setup.completed', 'setup.failed', 'signin.succeeded', 'signin.failed', 'passkey.added', 'passkey.renamed', 'passkey.removed', 'recovery.used', 'recovery.failed', 'recovery.regenerated', 'session.revoked', 'session.revoked_others', 'reauth.succeeded', 'reauth.failed', 'signout', 'rate_limited', 'owner.reset', 'email_link.requested', 'email_link.sent', 'email_link.send_failed', 'email_link.used', 'email_link.expired', 'email_link.refused')"
         }
       },
       "isRLSEnabled": false
@@ -676,7 +676,7 @@
         },
         "auth_sessions_method_ck": {
           "name": "auth_sessions_method_ck",
-          "value": "method in ('setup', 'passkey', 'recovery', 'test')"
+          "value": "method in ('setup', 'passkey', 'recovery', 'test', 'email_link')"
         },
         "auth_sessions_token_hash_ck": {
           "name": "auth_sessions_token_hash_ck",
@@ -685,6 +685,160 @@
         "auth_sessions_expiry_ck": {
           "name": "auth_sessions_expiry_ck",
           "value": "\"auth_sessions\".\"expires_at\" <= \"auth_sessions\".\"absolute_expires_at\""
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.email_sign_in_links": {
+      "name": "email_sign_in_links",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "owner_id": {
+          "name": "owner_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "token_hash": {
+          "name": "token_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "used_at": {
+          "name": "used_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "revoked_at": {
+          "name": "revoked_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "session_id": {
+          "name": "session_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "email_sign_in_links_token_hash_uq": {
+          "name": "email_sign_in_links_token_hash_uq",
+          "columns": [
+            {
+              "expression": "token_hash",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "email_sign_in_links_owner_live_idx": {
+          "name": "email_sign_in_links_owner_live_idx",
+          "columns": [
+            {
+              "expression": "owner_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"email_sign_in_links\".\"used_at\" is null and \"email_sign_in_links\".\"revoked_at\" is null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "email_sign_in_links_expires_idx": {
+          "name": "email_sign_in_links_expires_idx",
+          "columns": [
+            {
+              "expression": "expires_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "email_sign_in_links_owner_id_owners_id_fk": {
+          "name": "email_sign_in_links_owner_id_owners_id_fk",
+          "tableFrom": "email_sign_in_links",
+          "tableTo": "owners",
+          "columnsFrom": [
+            "owner_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "email_sign_in_links_session_id_auth_sessions_id_fk": {
+          "name": "email_sign_in_links_session_id_auth_sessions_id_fk",
+          "tableFrom": "email_sign_in_links",
+          "tableTo": "auth_sessions",
+          "columnsFrom": [
+            "session_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "email_sign_in_links_token_hash_ck": {
+          "name": "email_sign_in_links_token_hash_ck",
+          "value": "\"email_sign_in_links\".\"token_hash\" ~ '^[0-9a-f]{64}$'"
+        },
+        "email_sign_in_links_lifetime_ck": {
+          "name": "email_sign_in_links_lifetime_ck",
+          "value": "\"email_sign_in_links\".\"expires_at\" > \"email_sign_in_links\".\"created_at\" and \"email_sign_in_links\".\"expires_at\" <= \"email_sign_in_links\".\"created_at\" + interval '15 minutes'"
+        },
+        "email_sign_in_links_state_ck": {
+          "name": "email_sign_in_links_state_ck",
+          "value": "\"email_sign_in_links\".\"used_at\" is null or \"email_sign_in_links\".\"revoked_at\" is null"
+        },
+        "email_sign_in_links_session_ck": {
+          "name": "email_sign_in_links_session_ck",
+          "value": "\"email_sign_in_links\".\"session_id\" is null or \"email_sign_in_links\".\"used_at\" is not null"
         }
       },
       "isRLSEnabled": false
@@ -7088,209 +7242,6 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.pain_reports": {
-      "name": "pain_reports",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "owner_id": {
-          "name": "owner_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "workout_id": {
-          "name": "workout_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "exercise_id": {
-          "name": "exercise_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "planned_exercise_lineage_id": {
-          "name": "planned_exercise_lineage_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "exercise_position": {
-          "name": "exercise_position",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "body_area": {
-          "name": "body_area",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "severity": {
-          "name": "severity",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "action": {
-          "name": "action",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "substitution_client_id": {
-          "name": "substitution_client_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "note": {
-          "name": "note",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "reported_at": {
-          "name": "reported_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "deleted_at": {
-          "name": "deleted_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {
-        "pain_reports_owner_reported_idx": {
-          "name": "pain_reports_owner_reported_idx",
-          "columns": [
-            {
-              "expression": "owner_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "reported_at",
-              "isExpression": false,
-              "asc": false,
-              "nulls": "first"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "pain_reports_workout_idx": {
-          "name": "pain_reports_workout_idx",
-          "columns": [
-            {
-              "expression": "workout_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "pain_reports_owner_id_owners_id_fk": {
-          "name": "pain_reports_owner_id_owners_id_fk",
-          "tableFrom": "pain_reports",
-          "tableTo": "owners",
-          "columnsFrom": [
-            "owner_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "pain_reports_workout_id_workouts_id_fk": {
-          "name": "pain_reports_workout_id_workouts_id_fk",
-          "tableFrom": "pain_reports",
-          "tableTo": "workouts",
-          "columnsFrom": [
-            "workout_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "pain_reports_exercise_id_exercises_id_fk": {
-          "name": "pain_reports_exercise_id_exercises_id_fk",
-          "tableFrom": "pain_reports",
-          "tableTo": "exercises",
-          "columnsFrom": [
-            "exercise_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "pain_reports_exercise_position_ck": {
-          "name": "pain_reports_exercise_position_ck",
-          "value": "\"pain_reports\".\"exercise_position\" >= 1"
-        },
-        "pain_reports_severity_ck": {
-          "name": "pain_reports_severity_ck",
-          "value": "severity in ('mild', 'moderate', 'severe')"
-        },
-        "pain_reports_action_ck": {
-          "name": "pain_reports_action_ck",
-          "value": "action in ('stopped', 'substituted', 'ended_workout')"
-        },
-        "pain_reports_substitution_ck": {
-          "name": "pain_reports_substitution_ck",
-          "value": "\"pain_reports\".\"substitution_client_id\" is null or \"pain_reports\".\"action\" = 'substituted'"
-        },
-        "pain_reports_note_ck": {
-          "name": "pain_reports_note_ck",
-          "value": "char_length(\"pain_reports\".\"note\") between 1 and 500"
-        }
-      },
       "isRLSEnabled": false
     }
   },

@@ -120,7 +120,7 @@ gives each of their queries its own connection.
   (direct) for migrations and backups.
 - M1 tables: `app_errors` (server incidents) and `web_vitals` (RUM, attributed per screen via
   `path` + `route_id`). M2 auth tables: `owners` (exactly one row), `passkey_credentials`,
-  `auth_sessions` (token hashes), `recovery_codes` (hashes), `webauthn_challenges` (single-use),
+  `auth_sessions` (token hashes), `email_sign_in_links` (hashes), `recovery_codes` (hashes), `webauthn_challenges` (single-use),
   `used_setup_tokens` (hashes of spent setup tokens), `auth_events` (audit log) and `auth_rate_limits` (DB-backed counters); see docs/security.md. CI's `pnpm db:drift` fails when the schema changes without a committed
   migration. M2 training-profile tables (`drizzle/0004_training_profile.sql`, `schema/profile.ts`):
   the athlete profile, ranked goals with a `training_goal_events` history, strength baselines
