@@ -127,6 +127,13 @@
       "when": 1793997024952,
       "tag": "0017_log_gaps",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1794013529830,
+      "tag": "0018_email_sign_in_links",
+      "breakpoints": true
     }
   ]
 }

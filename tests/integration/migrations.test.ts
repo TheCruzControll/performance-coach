@@ -81,6 +81,42 @@ describe('committed migrations', () => {
 		);
 	});
 
+	it('create the email sign-in links table with its indexes and constraints', async () => {
+		const indexes = await getDb().execute<{ indexname: string; indexdef: string }>(
+			sql`select indexname, indexdef from pg_indexes where tablename = 'email_sign_in_links'`
+		);
+		const index = Object.fromEntries(indexes.rows.map((r) => [r.indexname, r.indexdef]));
+		expect(Object.keys(index).sort()).toEqual([
+			'email_sign_in_links_expires_idx',
+			'email_sign_in_links_owner_live_idx',
+			'email_sign_in_links_pkey',
+			'email_sign_in_links_token_hash_uq'
+		]);
+		expect(index.email_sign_in_links_token_hash_uq).toMatch(/^CREATE UNIQUE INDEX/);
+		expect(index.email_sign_in_links_owner_live_idx).toMatch(
+			/\(owner_id\) WHERE \(\(used_at IS NULL\) AND \(revoked_at IS NULL\)\)$/
+		);
+
+		// PostgreSQL 18 also lists NOT NULL constraints (contype 'n'); 16 does not.
+		const constraints = await getDb().execute<{ conname: string; contype: string; def: string }>(
+			sql`select conname, contype, pg_get_constraintdef(oid) as def from pg_constraint
+				where conrelid = 'email_sign_in_links'::regclass and contype <> 'n' order by conname`
+		);
+		expect(constraints.rows.map((r) => [r.conname, r.contype])).toEqual([
+			['email_sign_in_links_lifetime_ck', 'c'],
+			['email_sign_in_links_owner_id_owners_id_fk', 'f'],
+			['email_sign_in_links_pkey', 'p'],
+			['email_sign_in_links_session_ck', 'c'],
+			['email_sign_in_links_session_id_auth_sessions_id_fk', 'f'],
+			['email_sign_in_links_state_ck', 'c'],
+			['email_sign_in_links_token_hash_ck', 'c']
+		]);
+		const def = Object.fromEntries(constraints.rows.map((r) => [r.conname, r.def]));
+		expect(def.email_sign_in_links_lifetime_ck).toContain("'00:15:00'::interval");
+		expect(def.email_sign_in_links_owner_id_owners_id_fk).toContain('ON DELETE CASCADE');
+		expect(def.email_sign_in_links_session_id_auth_sessions_id_fk).toContain('ON DELETE SET NULL');
+	});
+
 	it('enforce check constraints at the database level', async () => {
 		const error = await withRollback((tx) =>
 			tx.execute(
