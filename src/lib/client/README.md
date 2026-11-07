@@ -8,7 +8,9 @@ Code in this folder runs only in the browser. It must never import from `src/lib
 | Module                   | Purpose                                                                                                                         |
 | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
 | `vitals.ts`              | Real-user monitoring: lazy-loads `web-vitals`, beacons to `/api/vitals`; attributes each metric to the screen where it happened |
+| `visits.ts`              | The screens shown in this page, recorded by the root layout for `vitals.ts` (the only RUM code in initial JS)                   |
 | `preferences.svelte.ts`  | Per-device theme and unit preferences (localStorage)                                                                            |
+| `preferences-start.ts`   | The root layout's start for preferences, loaded after mount so only screens that show a unit have them in initial JS            |
 | `connectivity.svelte.ts` | `online` state from `navigator.onLine` + events (a hint: failed requests are still handled, see `src/hooks.client.ts`)          |
 | `leaving.ts`             | Is the page being left? Loads it cancels on the way out (WebKit reports each) are then not logged or reported as errors         |
 | `profile-form.ts`        | Saves profile sections: validates with the services' zod schemas (loaded on idle, never initial JS), posts JSON to the action   |

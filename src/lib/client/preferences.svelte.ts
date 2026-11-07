@@ -47,21 +47,25 @@ class Preferences {
 	}
 
 	setTheme(theme: ThemePreference): void {
+		this.load();
 		this.theme = theme;
 		this.#save();
 		applyTheme(theme);
 	}
 
 	setUnits(units: WeightUnit): void {
+		this.load();
 		this.units = units;
 		this.#save();
 	}
 
 	setDistance(distance: DistancePreference): void {
+		this.load();
 		this.distance = distance;
 		this.#save();
 	}
 
+	/** Writes all three, so each setter loads the saved ones first. */
 	#save(): void {
 		try {
 			localStorage.setItem(
