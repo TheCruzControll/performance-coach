@@ -58,6 +58,11 @@ export interface MetaValues {
 	units: KitUnits;
 	/** Epoch ms of the last sync response. */
 	lastSync: number;
+	/**
+	 * Mutation ids the owner discarded that the server has not yet claimed as discarded: every sync
+	 * request carries them first (store.ts discard). A sign-out's purge keeps them.
+	 */
+	discarded: string[];
 }
 export type MetaRecord = {
 	[K in keyof MetaValues]: { key: K; value: MetaValues[K] };

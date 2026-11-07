@@ -17,6 +17,9 @@
  *   tab says sign-out is about to delete it.
  * - Tabs (channel.ts): after each write it tells the other tabs, which re-read what changed.
  * - reconciled and adopt store the server's rows from GET /api/workouts/[id] (reconcile.ts).
+ * - discard, tryAgain and fix are the owner's answers to a change that needs attention. Discard
+ *   also keeps the ids it removed until the server has claimed them (discarded, forget), so a
+ *   request still on its way with one of them can never land it after a newer change.
  * Plain .ts with no runes, so Vitest's unit project runs it against fake-indexeddb.
  */
 import { entityKey, SYNC_CODE_LABEL } from '#lib/domain/workout/index.ts';
@@ -39,7 +42,15 @@ import type { TabChannel, TabMessage } from './channel.ts';
 import { openWorkoutDb, StoreClosedError } from './db.ts';
 import type { CloseReason, StoredWorkout, WorkoutDb, WorkoutSchema } from './db.ts';
 import { OUTBOX_INDEXES, STORES } from './names.ts';
-import { applyResults, backOnline, countFailure, queued } from './outbox-rules.ts';
+import {
+	applyResults,
+	backOnline,
+	countFailure,
+	discard,
+	queued,
+	replaceInPlace,
+	tryAgain
+} from './outbox-rules.ts';
 import type { OutboxEntry } from './outbox-rules.ts';
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -142,6 +153,19 @@ export interface WorkoutStore {
 	countFailure(seq: number, error: string): Promise<void>;
 	/** Back online after being offline since `offlineSince`: every entry's wait ends. */
 	backOnline(offlineSince: number): Promise<void>;
+	/**
+	 * Discard: the entry and every change that depends on it leave the outbox, and their ids wait in
+	 * `discarded` until the server has claimed them.
+	 */
+	discard(seq: number): Promise<void>;
+	/** Try again: a stuck entry is queued again in its place, its count cleared. */
+	tryAgain(seq: number): Promise<void>;
+	/** Fix: the corrected change replaces the refused entry in its place, under the same id. */
+	fix(seq: number, envelope: Mutation): Promise<void>;
+	/** Discarded ids the server has not claimed yet: every sync request carries them first. */
+	discarded(): Promise<string[]>;
+	/** The server claimed these discarded ids: they are not sent again. */
+	forget(ids: readonly string[]): Promise<void>;
 	/**
 	 * The session is gone (a 401): deletes everything the server already holds, which are the saved
 	 * kits, the cached library, the owner's units, every canonical row and kit, and every finished
@@ -589,6 +613,79 @@ export async function createStore({
 		);
 	}
 
+	/**
+	 * An owner's answer (Discard, Try again, Fix) in one transaction: the outbox as `rule` leaves it,
+	 * each workout it touched re-recorded and shown, and with `remember` the removed ids kept to
+	 * send as discarded. A discarded workout.start takes its workout off the device.
+	 */
+	async function rearrange(rule: (entries: OutboxEntry[]) => OutboxEntry[], remember = false) {
+		assertOpen();
+		const names = [STORES.workouts, STORES.outbox, STORES.meta];
+		const written = await serial(() =>
+			transact(db, names, async (tx) => {
+				const outbox = tx.objectStore(STORES.outbox);
+				const before = await outbox.getAll();
+				const after = new Map(rule(before).map((e) => [e.seq, e]));
+				const touched = new Set<string>();
+				const gone: string[] = [];
+				const ended = new Set<string>();
+				for (const entry of before) {
+					const next = after.get(entry.seq);
+					if (next === entry) continue;
+					touched.add(entry.envelope.workoutId);
+					if (next) {
+						await outbox.put(next);
+					} else {
+						await outbox.delete(entry.seq);
+						gone.push(entry.envelope.id);
+						if (entry.envelope.type === 'workout.start') ended.add(entry.envelope.workoutId);
+					}
+				}
+				if (remember && gone.length > 0) {
+					const meta = tx.objectStore(STORES.meta);
+					const held = ((await meta.get('discarded'))?.value as string[] | undefined) ?? [];
+					await meta.put({ key: 'discarded', value: [...held, ...gone] });
+				}
+				const read = new Map<string, { record: StoredWorkout; entries: OutboxEntry[] }>();
+				for (const workoutId of touched) {
+					if (ended.has(workoutId)) {
+						await tx.objectStore(STORES.workouts).delete(workoutId);
+						continue;
+					}
+					const previous = await tx.objectStore(STORES.workouts).get(workoutId);
+					if (!previous) continue;
+					const entries = await outbox.index(BY_WORKOUT).getAll(workoutId);
+					const { kit, canonical, device } = previous;
+					const record = recordOf(table, workoutId, { kit, canonical, device, entries }, previous);
+					await tx.objectStore(STORES.workouts).put(record);
+					read.set(workoutId, { record, entries });
+				}
+				return { read, ended };
+			})
+		);
+		for (const { record, entries } of written.read.values()) stored(record, entries);
+		for (const workoutId of written.ended) {
+			if (memory.delete(workoutId)) emit({ type: 'view', workoutId });
+			channel?.post({ type: 'closed', workoutId });
+		}
+	}
+
+	async function discarded(): Promise<string[]> {
+		assertOpen();
+		return ((await db.get(STORES.meta, 'discarded'))?.value as string[] | undefined) ?? [];
+	}
+
+	async function forget(ids: readonly string[]): Promise<void> {
+		assertOpen();
+		await serial(() =>
+			transact(db, [STORES.meta], async (tx) => {
+				const meta = tx.objectStore(STORES.meta);
+				const held = ((await meta.get('discarded'))?.value as string[] | undefined) ?? [];
+				await meta.put({ key: 'discarded', value: held.filter((id) => !ids.includes(id)) });
+			})
+		);
+	}
+
 	async function purgeServerCopies(): Promise<void> {
 		assertOpen();
 		const names = [STORES.workouts, STORES.outbox, STORES.kits, STORES.library, STORES.meta];
@@ -596,7 +693,9 @@ export async function createStore({
 			transact(db, names, async (tx) => {
 				await tx.objectStore(STORES.kits).clear();
 				await tx.objectStore(STORES.library).clear();
-				await tx.objectStore(STORES.meta).clear();
+				// What the server sent; the discarded ids are the device's, still to send.
+				await tx.objectStore(STORES.meta).delete('units');
+				await tx.objectStore(STORES.meta).delete('lastSync');
 				const workouts = tx.objectStore(STORES.workouts);
 				const kept = new Map<string, { record?: StoredWorkout; entries: OutboxEntry[] }>();
 				for (const workout of await workouts.getAll()) {
@@ -740,6 +839,11 @@ export async function createStore({
 		outbox,
 		countFailure: (seq, error) => revise((entries) => countFailure(entries, seq, error, now())),
 		backOnline: (offlineSince) => revise((entries) => backOnline(entries, offlineSince, now())),
+		discard: (seq) => rearrange((entries) => discard(entries, seq), true),
+		tryAgain: (seq) => rearrange((entries) => tryAgain(entries, seq)),
+		fix: (seq, envelope) => rearrange((entries) => replaceInPlace(entries, seq, envelope)),
+		discarded,
+		forget,
 		purgeServerCopies,
 		reconciled,
 		adopt,

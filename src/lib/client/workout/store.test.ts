@@ -20,7 +20,7 @@ import type { WorkoutView } from '#lib/domain/workout/types.ts';
 import { StoreClosedError } from './db';
 import type { StoredWorkout } from './db';
 import { DB_NAME, STORES } from './names';
-import type { OutboxEntry } from './outbox-rules';
+import { STUCK_AFTER, type OutboxEntry } from './outbox-rules';
 import { activeSummary, pendingCount } from './probe';
 import { ActiveWorkoutError, createStore, PRUNE_AFTER, requestPersistence } from './store';
 import type { WorkoutStore } from './store';
@@ -606,5 +606,86 @@ describe('the probe', () => {
 		expect([...db.objectStoreNames].sort()).toEqual(Object.values(STORES).sort());
 		db.close();
 		expect(await pendingCount()).toBe(1);
+	});
+});
+
+describe("the owner's answers to a change that needs attention", () => {
+	const edit = (id: string, reps: number) =>
+		make('set.edit', { entityId: id, payload: { ...done, reps } });
+
+	it('Discard removes the change and its dependants in one write, shows it, and keeps their ids to send', async () => {
+		const store = await open();
+		await started(store);
+		const refused = log('s1', 1);
+		const later = edit('s1', 4);
+		store.dispatch(refused);
+		store.dispatch(log('s2', 2));
+		expect(await store.dispatch(later).saved).toBe('saved');
+		await store.acknowledge([{ id: 's1', status: 'rejected', code: 'invalid' }]);
+		const changes: unknown[] = [];
+		store.onChange((change) => changes.push(change));
+
+		const seq = (await store.outbox()).find((e) => e.envelope.id === 's1')!.seq;
+		await store.discard(seq);
+
+		expect((await stored()).ids).toEqual([W, 's2']);
+		expect(setIds(store.snapshot(W)!.view)).toEqual(['s2']);
+		expect(changes).toEqual([{ type: 'view', workoutId: W }]);
+		expect(await store.discarded()).toEqual(['s1', later.id]);
+		expect((await (await open()).getActive())!.view).toStrictEqual(store.snapshot(W)!.view);
+
+		// A lost session keeps them: they are the device's to send.
+		await store.purgeServerCopies();
+		expect(await store.discarded()).toEqual(['s1', later.id]);
+		await store.forget(['s1']);
+		expect(await store.discarded()).toEqual([later.id]);
+	});
+
+	it('Discard of a refused start takes its workout off the device, so another can start', async () => {
+		const store = await open();
+		await started(store);
+		expect(await store.dispatch(log('s1', 1)).saved).toBe('saved');
+		await store.acknowledge([{ id: W, status: 'rejected', code: 'invalid' }]);
+
+		await store.discard((await store.outbox())[0]!.seq);
+
+		expect(await stored()).toMatchObject({ workouts: [], outbox: [] });
+		expect(await store.discarded()).toEqual([W, 's1']);
+		expect(await store.getActive()).toBeNull();
+		await started(store, W2);
+		expect((await store.getActive())!.workoutId).toBe(W2);
+	});
+
+	it('Fix re-queues the corrected change in its place under its id; Try again unparks a stuck one', async () => {
+		const store = await open();
+		await started(store);
+		store.dispatch(log('s1', 1));
+		expect(await store.dispatch(log('s2', 2)).saved).toBe('saved');
+		await store.acknowledge([{ id: 's1', status: 'rejected', code: 'invalid' }]);
+		const [, first, second] = await store.outbox();
+		for (let i = 0; i < STUCK_AFTER.failures; i++) {
+			await store.countFailure(second!.seq, 'The server answered 500');
+		}
+		expect((await store.outbox())[2]!.parked?.reason).toBe('stuck');
+
+		const fixed = {
+			...first!.envelope,
+			payload: { ...first!.envelope.payload, reps: 3 }
+		} as Mutation;
+		await store.fix(first!.seq, fixed);
+		await store.tryAgain(second!.seq);
+
+		const outbox = await store.outbox();
+		expect(outbox.map((e) => [e.seq, e.envelope.id])).toEqual([
+			[outbox[0]!.seq, W],
+			[first!.seq, 's1'],
+			[second!.seq, 's2']
+		]);
+		expect(outbox[1]).toEqual({ ...first, envelope: fixed, parked: undefined, attempts: 0 });
+		expect(outbox[1]!.parked).toBeUndefined();
+		expect(outbox[2]).toEqual({ ...second, attempts: 0 });
+		expect(store.snapshot(W)!.view!.slots[0]!.sets[0]!.reps).toBe(3);
+		await expect(store.fix(first!.seq, { ...fixed, id: 's9' })).rejects.toThrow(RangeError);
+		expect(await store.discarded()).toEqual([]);
 	});
 });

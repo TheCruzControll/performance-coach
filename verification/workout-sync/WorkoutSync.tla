@@ -20,8 +20,8 @@ CONSTANTS
     MaxFaults,    \* timeouts, lost answers, dead requests and database errors
     MaxKeepalive, \* pagehide keepalive sends
     WebLocks,     \* navigator.locks exists: one flusher per device
-    DiscardInFlight, \* FALSE leaves out finding F1 (see the skill): no Discard
-                     \* of a change a request still running on the server carries
+    DiscardInFlight, \* FALSE forbids discarding a change that a request still
+                     \* running on the server carries (finding F1, fixed: see the skill)
     MUTANT        \* "none", or the name of a broken variant (see the skill)
 
 Muts == 1..N
@@ -40,9 +40,12 @@ VARIABLES
     pc,        \* each tab's engine: idle, posting, or draining under the lock
     lock,      \* the Web Lock 'pc-workout-sync': its holder, or NoTab
     faults,
-    kas
+    kas,
+    voided,    \* store.ts discarded: ids discarded, not yet claimed by the server
+    dropped    \* sync_mutations rows of type 'discarded' (claimDiscarded)
 
-vars == <<logged, box, valid, discarded, ledger, history, reqs, pc, lock, faults, kas>>
+vars == <<logged, box, valid, discarded, ledger, history, reqs, pc, lock, faults, kas,
+          voided, dropped>>
 
 Range(s) == {s[j] : j \in 1..Len(s)}
 Remove(s, k) == SubSeq(s, 1, k - 1) \o SubSeq(s, k + 1, Len(s))
@@ -59,9 +62,17 @@ Scan(k, held, acc) ==
         ELSE Scan(k + 1, held, Append(acc, k))
 NextBatch == Scan(1, {}, <<>>)
 
-Request(from, batch) ==
-    [from |-> from, batch |-> batch, ok |-> valid \cap Range(batch), i |-> 1,
-     res |-> <<>>, held |-> {}, st |-> "open"]
+(* Every request carries discarded ids first (sync.ts bodyOf); the server *)
+(* claims them before any mutation (vd). A request holds at most 25 ids    *)
+(* (sync.ts gone): here any of them, vs. Changes go only with all of them. *)
+Carried(vs) == IF vs = voided \/ MUTANT = "capSendsNewer" THEN NextBatch ELSE <<>>
+Sends(vs) == Carried(vs) # <<>> \/ vs # {}
+Request(from, vs) ==
+    [from |-> from, batch |-> Carried(vs), ok |-> valid \cap Range(Carried(vs)), i |-> 1,
+     res |-> <<>>, held |-> {}, st |-> "open", voids |-> vs, vd |-> FALSE]
+
+(* Something to send: a change, or a discarded id the server lacks. *)
+Sendable == NextBatch # <<>> \/ voided # {}
 
 (* A request whose answer nobody awaits is gone once it ends. *)
 Put(k, r) == reqs' = IF r.st # "open" /\ r.from = NoTab THEN Remove(reqs, k)
@@ -85,29 +96,30 @@ Log ==
     /\ IF \E d \in discarded \cap Creates : <<m, d>> \in Dep
         THEN discarded' = discarded \cup {m} /\ box' = box
         ELSE box' = [box EXCEPT ![m] = Queued] /\ discarded' = discarded
-    /\ UNCHANGED <<valid, ledger, history, reqs, pc, lock, faults, kas>>
+    /\ UNCHANGED <<valid, ledger, history, reqs, pc, lock, faults, kas, voided, dropped>>
 
 (* A backoff wait (nextAt) passes, or 'online' ends every wait (backOnline). *)
 WaitEnds(m) ==
     /\ box[m].wait
     /\ box' = [box EXCEPT ![m].wait = FALSE]
-    /\ UNCHANGED <<logged, valid, discarded, ledger, history, reqs, pc, lock, faults, kas>>
+    /\ UNCHANGED <<logged, valid, discarded, ledger, history, reqs, pc, lock, faults, kas, voided, dropped>>
 
 (* outbox-rules.ts replaceInPlace: a refused change corrected under its id. *)
 Fix(m) ==
     /\ box[m].in /\ box[m].park = "refused"
     /\ valid' = valid \cup {m}
     /\ box' = IF MUTANT = "fixKeepsParked" THEN box ELSE [box EXCEPT ![m] = Queued]
-    /\ UNCHANGED <<logged, discarded, ledger, history, reqs, pc, lock, faults, kas>>
+    /\ UNCHANGED <<logged, discarded, ledger, history, reqs, pc, lock, faults, kas, voided, dropped>>
 
 (* outbox-rules.ts tryAgain *)
 TryAgain(m) ==
     /\ box[m].in /\ box[m].park = "stuck"
     /\ box' = [box EXCEPT ![m] = Queued]
-    /\ UNCHANGED <<logged, valid, discarded, ledger, history, reqs, pc, lock, faults, kas>>
+    /\ UNCHANGED <<logged, valid, discarded, ledger, history, reqs, pc, lock, faults, kas, voided, dropped>>
 
-(* outbox-rules.ts discard and dependantsOf. Nothing calls it yet: the     *)
-(* 'Needs attention' screen (ADR 0012) will.                              *)
+(* store.ts discard (outbox-rules.ts discard and dependantsOf), from the  *)
+(* sync sheet: the entries leave the outbox and their ids are kept to send *)
+(* as discarded, in one IndexedDB transaction.                             *)
 RECURSIVE Gone(_, _)
 Gone(k, g) ==
     IF k > N THEN g
@@ -119,7 +131,8 @@ Discard(m) ==
         /\ DiscardInFlight \/ \A k \in 1..Len(reqs) : reqs[k].st # "open" \/ g \cap Range(reqs[k].batch) = {}
         /\ box' = [x \in Muts |-> IF x \in g THEN Empty ELSE box[x]]
         /\ discarded' = discarded \cup g
-    /\ UNCHANGED <<logged, valid, ledger, history, reqs, pc, lock, faults, kas>>
+        /\ voided' = IF MUTANT = "discardForgets" THEN voided ELSE voided \cup g
+    /\ UNCHANGED <<logged, valid, ledger, history, reqs, pc, lock, faults, kas, dropped>>
 
 -----------------------------------------------------------------------------
 (* The sync engine, client sync.ts *)
@@ -128,22 +141,23 @@ Discard(m) ==
 StartRound(t) ==
     /\ \/ pc[t] = "idle" /\ (~WebLocks \/ lock = NoTab)
        \/ pc[t] = "draining"
-    /\ NextBatch # <<>>
-    /\ reqs' = Append(reqs, Request(t, NextBatch))
+    /\ \E vs \in SUBSET voided :
+        /\ Sends(vs)
+        /\ reqs' = Append(reqs, Request(t, vs))
+        /\ box' = IF MUTANT = "ackOnSend"
+                    THEN [m \in Muts |-> IF m \in Range(Carried(vs)) THEN Empty ELSE box[m]]
+                    ELSE box
     /\ pc' = [pc EXCEPT ![t] = "posting"]
     /\ lock' = IF WebLocks THEN t ELSE lock
-    /\ box' = IF MUTANT = "ackOnSend"
-                THEN [m \in Muts |-> IF m \in Range(NextBatch) THEN Empty ELSE box[m]]
-                ELSE box
-    /\ UNCHANGED <<logged, valid, discarded, ledger, history, faults, kas>>
+    /\ UNCHANGED <<logged, valid, discarded, ledger, history, faults, kas, voided, dropped>>
 
 (* drain returns once nothing is sendable, and the lock is released. *)
 EndRound(t) ==
     /\ pc[t] = "draining"
-    /\ NextBatch = <<>>
+    /\ ~Sendable
     /\ pc' = [pc EXCEPT ![t] = "idle"]
     /\ lock' = Release(t)
-    /\ UNCHANGED <<logged, box, valid, discarded, ledger, history, reqs, faults, kas>>
+    /\ UNCHANGED <<logged, box, valid, discarded, ledger, history, reqs, faults, kas, voided, dropped>>
 
 Status(r, m) ==
     LET js == {j \in 1..Len(r.res) : r.res[j][1] = m}
@@ -151,6 +165,7 @@ Status(r, m) ==
 
 (* An answer: store.ts acknowledge applies every result in one IndexedDB    *)
 (* transaction (applyResults); a 'retry' or a short answer ends the drain. *)
+(* The ids it carried as discarded are claimed: store.ts forget.          *)
 Receive(t) ==
     /\ pc[t] = "posting"
     /\ \E k \in 1..Len(reqs) :
@@ -168,13 +183,14 @@ Receive(t) ==
            /\ reqs' = Remove(reqs, k)
            /\ pc' = [pc EXCEPT ![t] = IF halted THEN "idle" ELSE "draining"]
            /\ lock' = IF halted THEN Release(t) ELSE lock
-    /\ UNCHANGED <<logged, valid, discarded, ledger, history, faults, kas>>
+           /\ voided' = voided \ r.voids
+    /\ UNCHANGED <<logged, valid, discarded, ledger, history, faults, kas, dropped>>
 
 (* store.ts countFailure on the batch's head; it never touches a parked entry. *)
 CountFailure(r) ==
-    LET h == r.batch[1] IN
     \/ box' = box
-    \/ box[h].in /\ box[h].park = "none" /\ box' = [box EXCEPT ![h] = Stuck(box[h])]
+    \/ r.batch # <<>> /\ box[r.batch[1]].in /\ box[r.batch[1]].park = "none"
+       /\ box' = [box EXCEPT ![r.batch[1]] = Stuck(box[r.batch[1]])]
 
 (* A 5xx or 503 answer, or a request that died on the way. *)
 ReceiveFailed(t) ==
@@ -185,7 +201,7 @@ ReceiveFailed(t) ==
         /\ reqs' = Remove(reqs, k)
     /\ pc' = [pc EXCEPT ![t] = "idle"]
     /\ lock' = Release(t)
-    /\ UNCHANGED <<logged, valid, discarded, ledger, history, faults, kas>>
+    /\ UNCHANGED <<logged, valid, discarded, ledger, history, faults, kas, voided, dropped>>
 
 (* REQUEST_TIMEOUT_MS aborts the POST, or its answer is lost: counted as a  *)
 (* failure and the lock released, while the server may still run it, or     *)
@@ -201,22 +217,33 @@ Timeout(t) ==
     /\ pc' = [pc EXCEPT ![t] = "idle"]
     /\ lock' = Release(t)
     /\ faults' = faults + 1
-    /\ UNCHANGED <<logged, valid, discarded, ledger, history, kas>>
+    /\ UNCHANGED <<logged, valid, discarded, ledger, history, kas, voided, dropped>>
 
 (* pagehide: fetch keepalive with nextBatch of the outbox; nobody reads the *)
 (* answer. The engine sends its last-read outbox; a stale read is the same *)
 (* as this send made earlier and delivered late, which the model allows.   *)
 Keepalive ==
     /\ kas < MaxKeepalive
-    /\ NextBatch # <<>>
-    /\ reqs' = Append(reqs, Request(NoTab, NextBatch))
+    /\ \E vs \in SUBSET voided : Sends(vs) /\ reqs' = Append(reqs, Request(NoTab, vs))
     /\ kas' = kas + 1
-    /\ UNCHANGED <<logged, box, valid, discarded, ledger, history, pc, lock, faults>>
+    /\ UNCHANGED <<logged, box, valid, discarded, ledger, history, pc, lock, faults, voided, dropped>>
 
 -----------------------------------------------------------------------------
 (* The server, services/workouts/sync.ts applySyncBatch *)
 
 Missing(m) == \E c \in Creates : <<m, c>> \in Dep /\ c \notin ledger
+
+(* claimMutation answers 'seen' for an applied id and for a discarded one. *)
+Seen(m) == m \in ledger \/ m \in dropped
+
+(* claimDiscarded: one statement before the batch, ON CONFLICT DO NOTHING. *)
+(* A request with no mutations is answered once it has run.                *)
+ServerVoidAt(k) ==
+    LET r == reqs[k] IN
+    /\ r.st = "open" /\ ~r.vd
+    /\ dropped' = dropped \cup r.voids
+    /\ Put(k, [r EXCEPT !.vd = TRUE, !.st = IF r.batch = <<>> THEN "answered" ELSE "open"])
+    /\ UNCHANGED <<logged, box, valid, discarded, ledger, history, pc, lock, faults, kas, voided>>
 
 (* The row a mutation writes: a create's own, an edit's create's. *)
 RowOf(m) == IF m \in Creates THEN m ELSE CHOOSE c \in Creates : <<m, c>> \in Dep
@@ -245,20 +272,20 @@ ServerStepAt(k) ==
             IF m \notin r.ok THEN "rejected"
             ELSE IF blocked THEN "deferred"
             ELSE IF claimLast /\ Missing(m) THEN "deferred"
-            ELSE IF claimLast THEN IF m \in ledger THEN "duplicate" ELSE "applied"
-            ELSE IF m \in ledger THEN "duplicate"
+            ELSE IF claimLast THEN IF Seen(m) THEN "duplicate" ELSE "applied"
+            ELSE IF Seen(m) THEN "duplicate"
             ELSE IF Missing(m) THEN "deferred"
             ELSE "applied"
         runs == outcome = "applied" \/ (claimLast /\ outcome = "duplicate")
         last == r.i = Len(r.batch)
-    IN /\ r.st = "open"
+    IN /\ r.st = "open" /\ r.vd
        /\ ledger' = IF outcome = "applied" THEN ledger \cup {m} ELSE ledger
        /\ history' = IF runs THEN Run(m) ELSE history
        /\ Put(k, [r EXCEPT !.i = r.i + 1,
                            !.res = Append(r.res, <<m, outcome>>),
                            !.held = IF outcome \in {"rejected", "deferred"} THEN r.held \cup {m} ELSE r.held,
                            !.st = IF last THEN "answered" ELSE "open"])
-       /\ UNCHANGED <<logged, box, valid, discarded, pc, lock, faults, kas>>
+       /\ UNCHANGED <<logged, box, valid, discarded, pc, lock, faults, kas, voided, dropped>>
 
 (* Any other error in a mutation's transaction (only a valid, unblocked     *)
 (* one opens one) stops the batch: the rest answer 'retry', or the request *)
@@ -271,9 +298,9 @@ ServerErrorAt(k) ==
         rest == [j \in 1..(Len(r.batch) - r.i + 1) |-> <<r.batch[r.i + j - 1], "retry">>]
         last == r.i = Len(r.batch)
         reaches == m \in r.ok /\ ~\E h \in r.held : <<m, h>> \in Dep
-        fresh == m \notin ledger /\ ~Missing(m)
+        fresh == ~Seen(m) /\ ~Missing(m)
     IN /\ faults < MaxFaults
-       /\ r.st = "open"
+       /\ r.st = "open" /\ r.vd
        /\ reaches
        /\ faults' = faults + 1
        /\ \E landed \in IF fresh THEN BOOLEAN ELSE {FALSE} :
@@ -284,7 +311,7 @@ ServerErrorAt(k) ==
                                   !.st = IF last THEN "answered" ELSE "open"])
           ELSE IF r.res = <<>> THEN Put(k, [r EXCEPT !.st = "failed"])
           ELSE Put(k, [r EXCEPT !.res = r.res \o rest, !.st = "answered"])
-       /\ UNCHANGED <<logged, box, valid, discarded, pc, lock, kas>>
+       /\ UNCHANGED <<logged, box, valid, discarded, pc, lock, kas, voided, dropped>>
 
 (* The function is killed mid-batch: what committed stays committed. *)
 ServerDiesAt(k) ==
@@ -292,16 +319,16 @@ ServerDiesAt(k) ==
     /\ reqs[k].st = "open"
     /\ faults' = faults + 1
     /\ Put(k, [reqs[k] EXCEPT !.st = "failed"])
-    /\ UNCHANGED <<logged, box, valid, discarded, ledger, history, pc, lock, kas>>
+    /\ UNCHANGED <<logged, box, valid, discarded, ledger, history, pc, lock, kas, voided, dropped>>
 
 (* A request nobody awaits is lost on the way. *)
 DroppedAt(k) ==
     /\ reqs[k].st = "open" /\ reqs[k].from = NoTab
     /\ reqs' = Remove(reqs, k)
-    /\ UNCHANGED <<logged, box, valid, discarded, ledger, history, pc, lock, faults, kas>>
+    /\ UNCHANGED <<logged, box, valid, discarded, ledger, history, pc, lock, faults, kas, voided, dropped>>
 
 (* A step of any request the server may still run. *)
-ServerStep == \E k \in 1..Len(reqs) : ServerStepAt(k)
+ServerStep == \E k \in 1..Len(reqs) : ServerVoidAt(k) \/ ServerStepAt(k)
 ServerError == \E k \in 1..Len(reqs) : ServerErrorAt(k)
 ServerDies == \E k \in 1..Len(reqs) : ServerDiesAt(k)
 Dropped == \E k \in 1..Len(reqs) : DroppedAt(k)
@@ -324,6 +351,8 @@ Init ==
     /\ lock = NoTab
     /\ faults = 0
     /\ kas = 0
+    /\ voided = {}
+    /\ dropped = {}
 
 Next ==
     \/ Log
@@ -361,6 +390,7 @@ TypeOK ==
     /\ ledger \subseteq Muts /\ discarded \subseteq Muts
     /\ pc \in [Tabs -> {"idle", "posting", "draining"}]
     /\ lock \in Tabs \cup {NoTab}
+    /\ voided \subseteq Muts /\ dropped \subseteq Muts
 
 (* No set is applied twice: each mutation's effect commits at most once. *)
 AppliedAtMostOnce ==
