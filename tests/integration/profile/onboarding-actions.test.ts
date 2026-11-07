@@ -2,7 +2,8 @@
  * The onboarding steps' form actions (src/lib/server/forms/profile.ts: stepActions and
  * completeAction) on real Postgres, through the real services: Continue saves the step's section
  * as an onboarding change and moves on, Skip moves on only from an optional step, goals need
- * one open goal, and Start coaching needs a goal and a schedule.
+ * one open goal, Back and Finish later save without marking the step done, and Start coaching
+ * needs a goal and a schedule.
  */
 import { isActionFailure, isRedirect } from '@sveltejs/kit';
 import { describe, expect, it } from 'vitest';
@@ -17,9 +18,11 @@ import {
 import {
 	getEquipment,
 	getOnboarding,
+	getSpecifics,
 	goalHistory,
 	saveEquipment,
-	saveSchedule
+	saveSchedule,
+	saveSpecifics
 } from '../../../src/lib/server/services/profile';
 import { withRollback } from '../helpers';
 import { eventGoal, makeOwner } from './fixtures';
@@ -41,9 +44,10 @@ function session(ownerId: string): App.Locals {
 	};
 }
 
-function post(payload?: unknown): Request {
+function post(payload?: unknown, then?: 'back' | 'later'): Request {
 	const body = new FormData();
 	if (payload !== undefined) body.set('payload', JSON.stringify(payload));
+	if (then) body.set('then', then);
 	return new Request('http://localhost/onboarding/equipment?/save', { method: 'POST', body });
 }
 
@@ -158,6 +162,75 @@ describe('an onboarding step’s Skip', () => {
 					data: { errors: { step: 'This step can’t be skipped' } }
 				});
 			}
+			expect(await progress(owner, db)).toEqual({ current: null, completed: [], skipped: [] });
+		});
+	});
+});
+
+describe('leaving a step: Back and Finish later', () => {
+	it('Back saves the section without marking the step done, and goes to the step before', async () => {
+		await withRollback(async (db) => {
+			const owner = await makeOwner(db);
+			const { save } = stepActions('equipment', within(db, saveEquipment), href, { db });
+			const to = await redirectedTo(
+				save({ locals: session(owner), request: post(equipment, 'back') })
+			);
+			// No running or Muay Thai: no specifics step, so strength comes before equipment.
+			expect(to).toBe('/onboarding/strength');
+			expect(await getEquipment(owner, { db })).toMatchObject(equipment);
+			expect(await progress(owner, db)).toEqual({ current: null, completed: [], skipped: [] });
+		});
+	});
+
+	it('Back from a step that no longer applies goes to the one before it in the full order', async () => {
+		await withRollback(async (db) => {
+			const owner = await makeOwner(db);
+			// The specifics step, open in a tab, after the last running or Muay Thai goal went.
+			expect((await getOnboarding(owner, { db })).steps).not.toContain('specifics');
+			const { save } = stepActions('specifics', within(db, saveSpecifics), href, { db });
+			const specifics = { running: null, muayThai: { sessionsPerWeek: 3 } };
+			const to = await redirectedTo(
+				save({ locals: session(owner), request: post(specifics, 'back') })
+			);
+			expect(to).toBe('/onboarding/strength');
+			expect((await getSpecifics(owner, { db })).muayThai).toMatchObject({ sessionsPerWeek: 3 });
+			expect(await progress(owner, db)).toEqual({ current: null, completed: [], skipped: [] });
+		});
+	});
+
+	it('Back from goals goes back without asking for a goal', async () => {
+		await withRollback(async (db) => {
+			const owner = await makeOwner(db);
+			const { save } = stepActions('goals', undefined, href, { db });
+			const to = await redirectedTo(save({ locals: session(owner), request: post({}, 'back') }));
+			expect(to).toBe('/onboarding/welcome');
+			expect(await progress(owner, db)).toEqual({ current: null, completed: [], skipped: [] });
+		});
+	});
+
+	it('Back with a section that does not validate saves nothing and stays', async () => {
+		await withRollback(async (db) => {
+			const owner = await makeOwner(db);
+			const { save } = stepActions('equipment', within(db, saveEquipment), href, { db });
+			const result = await save({
+				locals: session(owner),
+				request: post({ ...equipment, gymType: 'castle' }, 'back')
+			});
+			expect(result).toMatchObject({
+				status: 400,
+				data: { errors: { gymType: expect.any(String) } }
+			});
+			expect(await getEquipment(owner, { db })).toBeNull();
+		});
+	});
+
+	it('Finish later saves the section without marking the step done, and does not redirect', async () => {
+		await withRollback(async (db) => {
+			const owner = await makeOwner(db);
+			const { save } = stepActions('equipment', within(db, saveEquipment), href, { db });
+			const result = await save({ locals: session(owner), request: post(equipment, 'later') });
+			expect(result).toEqual({ saved: true });
+			expect(await getEquipment(owner, { db })).toMatchObject(equipment);
 			expect(await progress(owner, db)).toEqual({ current: null, completed: [], skipped: [] });
 		});
 	});
