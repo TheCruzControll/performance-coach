@@ -16,9 +16,10 @@ TLA_SHA=936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88
 JRE_TAG=jdk-21.0.13+9
 JRE_VER=21.0.13_9
 
-# Each check: name, then the config lines it changes, then the result it must end with.
+# Each check: name, then the MC.cfg lines it changes (split by ';'), then the result it must end with.
 CHECKS=(
 	"baseline||pass"
+	"nolock|WebLocks = FALSE;MaxFaults = 1;MaxKeepalive = 0|pass"
 	"finding|DiscardInFlight = TRUE|AppliedInOrder"
 	"ackOnSend|MUTANT = \"ackOnSend\"|NothingLost"
 	"claimOwnTx|MUTANT = \"claimOwnTx\"|NothingLost"
@@ -79,17 +80,18 @@ failed=0
 for check in "${CHECKS[@]}"; do
 	IFS='|' read -r name change expect <<<"$check"
 	kind=$name
-	[[ $name == baseline || $name == finding ]] || kind=mutant
+	[[ $name == baseline || $name == nolock || $name == finding ]] || kind=mutant
 	[[ $only == "  " || $only == *" $name "* ]] || continue
 	dir="$cache/run/$name"
 	rm -rf "$dir" && mkdir -p "$dir"
 	cp "$here"/{WorkoutSync.tla,MC.tla} "$dir/"
 	cp "$here/MC.cfg" "$dir/MC.cfg"
-	if [[ -n $change ]]; then
-		key=${change%% =*}
+	IFS=';' read -ra lines <<<"$change"
+	for line in ${lines[@]+"${lines[@]}"}; do
+		key=${line%% =*}
 		grep -q "^    $key = " "$dir/MC.cfg" || { echo "MC.cfg has no '$key ='" >&2; exit 1; }
-		sed -i.bak "s|^    $key = .*|    $change|" "$dir/MC.cfg"
-	fi
+		sed -i.bak "s|^    $key = .*|    $line|" "$dir/MC.cfg"
+	done
 	start=$SECONDS
 	(cd "$dir" && "$java" -XX:+UseParallelGC -cp "$cache/tla2tools.jar" tlc2.TLC \
 		-workers auto -cleanup -metadir "$dir/states" -config MC.cfg MC.tla >tlc.out 2>&1) || true
