@@ -10,6 +10,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
+import { missingSignatures } from './client-secret-scan.ts';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const SDK = /^@anthropic-ai\//;
@@ -69,6 +70,22 @@ describe('@anthropic-ai/sdk', () => {
 		// The check sees the type imports the provider seam really has.
 		const seam = readFileSync(path.join(root, 'src/lib/server/agent/provider/types.ts'), 'utf8');
 		expect(seam).toMatch(/import type \{[^}]+\} from '@anthropic-ai\/sdk\/resources\/beta/);
+	});
+
+	// The positive control at provider level: until the coach root (agent/coach.ts) puts the
+	// provider in the server build, pnpm budgets cannot see it, so this follows the provider's own
+	// runtime import to the installed dist and requires every signature there.
+	it('ships every client-scan signature in the dist the provider imports', () => {
+		const provider = RUNTIME_IMPORT_ALLOWED[0]!;
+		const imports = runtimeImports(provider, readFileSync(path.join(root, provider), 'utf8'));
+		expect(imports).toEqual(['@anthropic-ai/sdk']);
+		const dist = path.join(root, 'node_modules/@anthropic-ai/sdk');
+		const mjs = readdirSync(dist, { recursive: true, encoding: 'utf8' })
+			.filter((file) => file.endsWith('.mjs'))
+			.map((file) => readFileSync(path.join(dist, file), 'utf8'))
+			.join('\n');
+		const server = imports.map((spec) => `await import("${spec}");`).join('\n');
+		expect(missingSignatures(server, mjs)).toEqual([]);
 	});
 
 	it.each([

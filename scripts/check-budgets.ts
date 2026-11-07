@@ -469,8 +469,10 @@ if (!readdirSync(`${CLIENT}/_app/immutable/assets`).some((f) => /^sprite\.[\w-]+
  * Client secrets: no Anthropic SDK code, sk-ant- key or build-time ANTHROPIC_API_KEY (CI builds
  * with a canary) in any file of either build the browser can fetch: `pnpm build` leaves the
  * Vercel output and `pnpm build:node` the Node one, and .svelte-kit/output holds the last.
- * Positive control: once the provider exists, the server build carries every signature, so a
- * signature the SDK no longer ships fails here instead of letting the scan go blind.
+ * Positive control: once the coach's composition root (agent/coach.ts) loads the provider, the
+ * server build carries every signature, so a signature the SDK no longer ships fails here instead
+ * of letting the scan go blind. Before then no route reaches the provider, and SvelteKit leaves an
+ * unreachable module out of the server build.
  */
 const CLIENT_OUTPUTS = [
 	CLIENT,
@@ -495,10 +497,10 @@ for (const file of CLIENT_OUTPUTS.flatMap(filesIn).filter((f) => !UNSCANNED_FILE
 		secretProblems.push(`${file}: ${what}`);
 	}
 }
-const PROVIDER = 'src/lib/server/agent/provider/anthropic.ts';
+const PROVIDER_ROOT = 'src/lib/server/agent/coach.ts';
 const SDK_DIST = 'node_modules/@anthropic-ai/sdk';
-let control = 'not built yet';
-if (existsSync(PROVIDER)) {
+let control = 'not reachable yet';
+if (existsSync(PROVIDER_ROOT)) {
 	const text = (dir: string, keep: RegExp) =>
 		existsSync(dir)
 			? filesIn(dir)
