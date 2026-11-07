@@ -88,6 +88,13 @@ const SERVER_ONLY_PACKAGES = {
 		'domain/exercises and domain/programming are server-only: use them in server code (src/lib/server, +page.server.ts) and send the page the result. `import type` is fine.'
 };
 
+/** The agent and the LLM SDKs, which core workout logging never imports (M4). */
+const CORE_LOGGING = {
+	regex: `${layer('server/agent')}|^(@anthropic-ai/[\\w.-]+|openai)($|/)`,
+	message:
+		'Core workout logging never reaches the agent or an LLM: the coach reads logged workouts through services, never the other way round.'
+};
+
 export default defineConfig(
 	includeIgnoreFile(gitignorePath),
 	{ ignores: ['.claude/**', 'drizzle/meta/**', 'static/**'] },
@@ -210,6 +217,20 @@ export default defineConfig(
 		}
 	},
 
+	// ---- Core workout logging (M4) -----------------------------------------------------
+	// The sync endpoint and the workout reads are core logging: they never reach the agent or an
+	// LLM SDK, so logging works whatever the coach is doing (scripts/workout-boundaries.test.ts).
+	// A later block's no-restricted-imports replaces an earlier one's patterns for the same files,
+	// so each block repeats its folder's layer patterns before adding CORE_LOGGING.
+	{
+		files: ['src/routes/api/workouts/**', 'src/routes/api/exercises/**'],
+		rules: restrict([LAYER.db, LAYER.driver, CORE_LOGGING])
+	},
+	{
+		files: ['src/lib/server/services/workouts/**'],
+		rules: restrict([LAYER.agent, LAYER.ui, LAYER.client, LAYER.framework, CORE_LOGGING])
+	},
+
 	// ---- Backups (M9) ------------------------------------------------------------------
 	// src/lib/server/backup seals and reads backup files from explicit inputs (the caller passes
 	// the key text and the bytes). Operator scripts import it under plain Node, so it reads no
@@ -239,6 +260,31 @@ export default defineConfig(
 					property: 'env',
 					message: 'server/backup reads no configuration: the caller passes the key text.'
 				}
+			]
+		}
+	},
+
+	// ---- Vercel Blob (M9) --------------------------------------------------------------
+	// The private backup store is the only importer of @vercel/blob, so nothing else can upload
+	// a backup publicly or with a token from the environment. It uses no-restricted-syntax, which
+	// no other block sets, so it composes with every layer block above. Tests may import the SDK
+	// for its error classes.
+	{
+		files: ['src/**', 'scripts/**'],
+		ignores: ['src/lib/server/backup/blob-store.ts', '**/*.test.ts'],
+		rules: {
+			'no-restricted-syntax': [
+				'error',
+				...[
+					'ImportDeclaration',
+					'ImportExpression',
+					'ExportAllDeclaration',
+					'ExportNamedDeclaration'
+				].map((node) => ({
+					selector: `${node}[source.value=/^@vercel\\u002Fblob($|\\u002F)/]`,
+					message:
+						'Only src/lib/server/backup/blob-store.ts imports @vercel/blob: use vercelBlobStore.'
+				}))
 			]
 		}
 	}

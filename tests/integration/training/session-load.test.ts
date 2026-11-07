@@ -52,8 +52,11 @@ function lineageOf(stored: ProgramVersion, week: number, title: string) {
 	return weeks[week]!.sessions.find((s) => s.title === title)!.lineage;
 }
 
-function load(db: Executor, owner: string, key: string, version: string | null = null) {
-	return loadSessionDetail(owner, { key, version, now: NOW, origin: origin() }, { db });
+async function load(db: Executor, owner: string, key: string, version: string | null = null) {
+	const data = await loadSessionDetail(owner, { key, version, now: NOW, origin: origin() }, { db });
+	// Swap's stream shares the test's transaction: settled before the test's next query.
+	if (data.state === 'session') await data.swaps;
+	return data;
 }
 
 /** The session view (fails the test for the error state). */

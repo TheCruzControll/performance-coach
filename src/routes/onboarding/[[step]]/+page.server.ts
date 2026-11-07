@@ -14,7 +14,7 @@ import {
 	stepActions
 } from '#lib/server/forms/profile.ts';
 import { profileSection, sectionContext } from '#lib/server/forms/sections.ts';
-import { getOnboarding } from '#lib/server/services/profile/index.ts';
+import { getOnboarding, getTrainingProfile } from '#lib/server/services/profile/index.ts';
 import type { SectionKey } from '#lib/ui/profile/sections.ts';
 import { stepHref, todayHref } from '../paths';
 import type { Actions, PageServerLoad } from './$types';
@@ -32,13 +32,20 @@ function stepOf(param: string | undefined): OnboardingStep {
 	return param;
 }
 
+/**
+ * A step opened from the review's Edit (`?then=review`, fromReviewHref): Continue and Skip go
+ * back to the review instead of walking every later step again.
+ */
+const fromReview = (url: URL) => url.searchParams.get('then') === 'review';
+const onward = (url: URL) => (fromReview(url) ? () => stepHref('review') : stepHref);
+
 /** The Profile section a step edits: welcome edits name and units, review edits none. */
 function sectionOf(step: OnboardingStep): SectionKey | null {
 	if (step === 'review') return null;
 	return step === 'welcome' ? 'basics' : step;
 }
 
-export const load: PageServerLoad = async ({ locals, params }) => {
+export const load: PageServerLoad = async ({ locals, params, url }) => {
 	const step = stepOf(params.step);
 	const owner = ownerId(locals);
 	const { complete, steps, progress } = await getOnboarding(owner);
@@ -55,6 +62,9 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 		key,
 		saved,
 		context,
+		// The review shows every answer: the whole training profile, one block per step.
+		profile: step === 'review' ? await getTrainingProfile(owner) : null,
+		fromReview: step !== 'review' && fromReview(url),
 		steps,
 		completed: progress.completed.filter((s) => steps.includes(s)),
 		skipped: progress.skipped.filter((s) => steps.includes(s))
@@ -76,10 +86,10 @@ const onboardingGoals = { source: 'onboarding' } as const;
 
 export const actions: Actions = {
 	save: on(EDITING, (event, step) =>
-		stepActions(step, profileSection(sectionOf(step)!).save, stepHref).save(event)
+		stepActions(step, profileSection(sectionOf(step)!).save, onward(event.url)).save(event)
 	),
 	// Refused on a required step by the services (a field error): only optional steps move on.
-	skip: (event) => stepActions(stepOf(event.params.step), undefined, stepHref).skip(event),
+	skip: (event) => stepActions(stepOf(event.params.step), undefined, onward(event.url)).skip(event),
 	complete: on(['review'], (event) => completeAction(event, todayHref())),
 	saveGoal: on(['goals'], (event) => saveGoalAction(event, onboardingGoals)),
 	deleteGoal: on(['goals'], (event) => deleteGoalAction(event, onboardingGoals)),
