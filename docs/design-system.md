@@ -377,6 +377,17 @@ later-pass screen).
   the watermark fading out before the frame's edge. CSS only: no route gains initial JS.
 - **Session** (`/train/session/[key]`): readable, one column centred beside the rail; its stats,
   exercise cards and run timeline keep the phone's order, and Back has hover and focus states.
+- **Progress** (`/progress`): wide (`data-layout="wide"` on its root). From 1024 px the three
+  `Stat` tiles keep one row across the full width, with wider gaps, over a taller empty plot.
+- **Coach** (`/coach`): readable, as a conversation should be. From 1024 px the suggestions sit in
+  two columns; the composer is screen chrome, centred over the column.
+- **Security** (`/profile/security`): readable, a settings screen, and left as it is (its route
+  has the least initial-JS headroom). Its four sections and Sign out read, and Tab, in order.
+- **Design gallery** (`/design`, outside the shell): from 1024 px up to `--content-wide`, its
+  groups in pairs (Color beside Type, Components beside Cards & tones), each about a phone column
+  wide so no specimen stretches; the header and the icon grid span both, with larger cells.
+- **Error and offline states** (`ErrorView`): inside the shell they stay in the readable column;
+  outside it they are centred in the window at `--content-readable`.
 - **Onboarding** (`/onboarding/[[step]]`): outside the shell, one readable column centred in the
   window; Continue and Skip stay sticky at the column's foot, and Back and Finish later have hover
   and focus states.

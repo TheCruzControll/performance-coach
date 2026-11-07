@@ -116,4 +116,12 @@
 	.composer-input::placeholder {
 		color: var(--color-text-tertiary);
 	}
+
+	/* The column stays readable, as a conversation should; the suggestions pair up in it. */
+	@media (width >= 64rem) {
+		.prompts {
+			grid-template-columns: repeat(2, minmax(0, 1fr));
+			gap: var(--space-2);
+		}
+	}
 </style>
