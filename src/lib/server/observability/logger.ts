@@ -4,7 +4,7 @@
  * Vercel (and any log drain) ingests stdout line-by-line, so JSON lines are searchable without
  * a logging SDK. The request context (request id) is attached automatically when available.
  */
-import { currentContext } from './context';
+import { currentContext } from './context.ts';
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 type Threshold = LogLevel | 'silent';
