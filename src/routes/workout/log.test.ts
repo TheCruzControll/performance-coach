@@ -5,7 +5,7 @@ import { createMutation } from '#lib/domain/workout/mutations.ts';
 import { applyLocal, applyMutation, replay, viewOf } from '#lib/domain/workout/project.ts';
 import type { WorkoutState } from '#lib/domain/workout/project.ts';
 import { strengthTable } from '#lib/domain/workout/reducers/tables.ts';
-import { logSet } from './log.ts';
+import { logSet, skipSet } from './log.ts';
 
 const KIT = workoutDayKits({ date: '2026-11-06' }).strength;
 const W = '00000000-0000-4000-8000-0000000000f1';
@@ -93,5 +93,38 @@ describe('logSet', () => {
 
 	it('refuses a position with no exercise', () => {
 		expect(() => logSet(viewOf(strengthTable, started())!, 9, 1, reps(5), AT)).toThrow(RangeError);
+	});
+});
+
+describe('skipSet', () => {
+	/** Skips through skipSet and applies what it dispatches, as the store does. */
+	function skip(state: WorkoutState, position: number, setIndex: number) {
+		const done = skipSet(viewOf(strengthTable, state)!, position, setIndex, 'kg', AT);
+		let next = applyMutation(strengthTable, state, done.mutation);
+		for (const action of done.followUps) next = applyLocal(strengthTable, next, action);
+		return { done, state: next, view: viewOf(strengthTable, next) as WorkoutView };
+	}
+
+	it('sends a set.skip under its own client id, where the set sits, in the unit', () => {
+		const { done, view } = skip(started(), 2, 1);
+		const m = done.mutation as Extract<Mutation, { type: 'set.skip' }>;
+		expect(m.type).toBe('set.skip');
+		expect(m.id).toBe(m.entityId);
+		expect(m.payload).toEqual({
+			position: 2,
+			plannedLineage: KIT.exercises[1]!.plannedLineage,
+			setIndex: 1,
+			exerciseId: KIT.exercises[1]!.exercise.id,
+			unit: 'kg'
+		});
+		expect(done.followUps).toEqual([]);
+		expect(view.slots[1]!.sets).toMatchObject([{ setIndex: 1, isSkipped: true, reps: null }]);
+	});
+
+	it('advances a superset like a logged set: A1 set 1 skipped → A2', () => {
+		const state = applyLocal(strengthTable, started(), { type: 'goTo', workoutId: W, position: 4 });
+		const a1 = skip(state, 4, 1);
+		expect(a1.done.followUps).toEqual([goTo(5)]);
+		expect(a1.view.device.position).toBe(5);
 	});
 });

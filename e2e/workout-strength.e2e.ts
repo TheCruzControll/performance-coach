@@ -245,12 +245,13 @@ test.describe('the strength view (IndexedDB only)', () => {
 		await injectMutation(page, log(5, { weight: 60, reps: 8, rpe: 6, isExtra: true }));
 		await gotoWorkout(page);
 
+		// A logged or skipped row is a button named 'Edit set n'; the set at hand is not.
 		await expect(card(page).getByTestId('set')).toHaveText([
-			/^1\s*100 kg × 5 reps · RPE 8\s*Done$/,
-			/^2\s*100 kg × 3 reps · RPE 10\s*2 missed$/,
-			/^3\s*5 reps · ≈ 100 kg\s*Skipped$/,
+			/^Edit set\s1\s*100 kg × 5 reps · RPE 8\s*Done$/,
+			/^Edit set\s2\s*100 kg × 3 reps · RPE 10\s*2 missed$/,
+			/^Edit set\s3\s*5 reps · ≈ 100 kg\s*Skipped$/,
 			/^4\s*5 reps · ≈ 100 kg\s*Now$/,
-			/^5\s*60 kg × 8 reps · RPE 6\s*Extra set$/
+			/^Edit set\s5\s*60 kg × 8 reps · RPE 6\s*Extra set$/
 		]);
 		// The set at hand is a back-off now: its prescribed weight, not the baseline instruction.
 		await expect(target(page)).toContainText('≈ 100 kg');

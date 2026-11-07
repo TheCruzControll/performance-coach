@@ -2,8 +2,10 @@
   @component
   The strength view's logger, loaded right after the first render, as the store is: the set at
   hand prefilled for the exercise the slot performs (prefill.ts's nextSet), in the SetLogger, or
-  'All sets logged' once its planned sets are done. Complete set dispatches the set.log and its
-  follow-up (log.ts) at once, and records performance.measure('pc:set-confirmed') from the tap
+  'All sets logged' once its planned sets are done, with Add a set (an extra set beyond the plan,
+  one at a time, with Cancel). Skip set skips the planned set at hand, and Missed reps records
+  the misses, prefilled from its target. Complete set dispatches the set.log and its
+  follow-up (log.ts) at once, as Skip set does the set.skip, and records performance.measure('pc:set-confirmed') from the tap
   to the frame after the row changed. At its top, what this device could not save, with
   Retry: the sets stay on screen meanwhile, marked 'Not saved on this device'.
   The prefill's rules (logging, M3's e1RM and load arithmetic, the vocabulary's labels) and the
@@ -14,12 +16,13 @@
 	import type { NotSaved, WorkoutStore } from '#lib/client/workout/store.ts';
 	import { DEFAULT_LOAD_INCREMENT } from '#lib/domain/units.ts';
 	import type { LoggedSet, SlotView, WorkoutView } from '#lib/domain/workout/index.ts';
-	import { nextSet, RPE_CHIPS } from '#lib/domain/workout/prefill.ts';
+	import { defaultMissedReps, nextSet, RPE_CHIPS } from '#lib/domain/workout/prefill.ts';
 	import Button from '#lib/ui/components/Button.svelte';
 	import SetLogger from '#lib/ui/workout/SetLogger.svelte';
 	import { loadHint } from '#lib/ui/workout/logger-words.ts';
 	import { targetText } from '#lib/ui/workout/set-words.ts';
-	import { logSet } from './log.ts';
+	import { tick } from 'svelte';
+	import { logSet, skipSet } from './log.ts';
 
 	interface Props {
 		view: WorkoutView;
@@ -49,6 +52,37 @@
 		requestAnimationFrame(() =>
 			performance.measure('pc:set-confirmed', { start, end: performance.now() })
 		);
+		// An extra set closes its logger: focus goes to Add a set, for another.
+		if (logger.extra) void tick().then(() => focusOn('[data-testid="add-set"]'));
+	}
+
+	const focusOn = (selector: string) => document.querySelector<HTMLElement>(selector)?.focus();
+
+	/** Skip set: the set.skip and its follow-up, at once. */
+	function skip(setIndex: number, unit: LoggedSet['unit']) {
+		const { mutation, followUps } = skipSet(
+			view,
+			slot.position,
+			setIndex,
+			unit,
+			new Date().toISOString()
+		);
+		store.dispatch(mutation, ...followUps);
+	}
+
+	/** The extra set asked for with Add a set, by its key; it closes once logged or cancelled. */
+	let adding = $state<string | null>(null);
+
+	async function add(key: string) {
+		adding = key;
+		await tick();
+		focusOn('#logger-heading');
+	}
+
+	async function cancel() {
+		adding = null;
+		await tick();
+		focusOn('[data-testid="add-set"]');
 	}
 
 	const retry = async () => {
@@ -56,7 +90,6 @@
 	};
 
 	const logger = $derived.by(() => {
-		if (!open && slot.kit) return null;
 		const exercise = view.exercises[slot.exerciseId];
 		// The owner's decision on units (the M4 plan's open question 15), with the plan's default: a
 		// set logs in the training profile's weight unit, as the kit carries it, never the device's.
@@ -70,10 +103,18 @@
 		const prefill = nextSet(performed, slot.sets, slot.kit, unit);
 		const total = slot.kit?.sets.length;
 		const target = prefill.planned && targetText(prefill.planned);
+		const key = `${slot.position}:${prefill.setIndex}`;
+		// Every planned set done: an extra set only when asked for.
+		const extra = !open && slot.kit !== null;
+		if (extra && adding !== key) return { key, extra, prefill: null };
 		return {
 			prefill,
-			key: `${slot.position}:${prefill.setIndex}`,
-			heading: [`Set ${prefill.setIndex}${total ? ` of ${total}` : ''}`, target]
+			key,
+			extra,
+			heading: [
+				`Set ${prefill.setIndex}${extra ? ' · Extra' : total ? ` of ${total}` : ''}`,
+				target
+			]
 				.filter(Boolean)
 				.join(' · '),
 			hint: loadHint(prefill),
@@ -99,22 +140,38 @@
 	{/if}
 {/snippet}
 
-{#if logger}
+{#if logger.prefill}
+	{@const { prefill } = logger}
 	<SetLogger
 		setKey={logger.key}
 		heading={logger.heading}
-		fields={logger.prefill.fields}
-		values={logger.prefill.values}
+		fields={prefill.fields}
+		values={prefill.values}
 		increment={logger.increment}
 		loadHint={logger.hint}
 		rpeChips={RPE_CHIPS}
-		oncomplete={(set, event) => complete(logger.prefill.setIndex, set, event)}
+		oncomplete={(set, event) => complete(prefill.setIndex, set, event)}
+		missedFor={(reps) => defaultMissedReps(prefill.planned, reps)}
+		secondary={logger.extra
+			? { label: 'Cancel', icon: 'close', onclick: cancel }
+			: prefill.planned
+				? {
+						label: 'Skip set',
+						icon: 'arrow-right',
+						onclick: () => skip(prefill.setIndex, prefill.values.unit)
+					}
+				: null}
 	>
 		{@render unsaved()}
 	</SetLogger>
 {:else}
 	{@render unsaved()}
-	<p class="all-done" role="status" data-testid="exercise-done">All sets logged</p>
+	<div class="all-done">
+		<p role="status" data-testid="exercise-done">All sets logged</p>
+		<Button variant="secondary" icon="plus" onclick={() => add(logger.key)} data-testid="add-set">
+			Add a set
+		</Button>
+	</div>
 {/if}
 
 <style>
@@ -143,6 +200,9 @@
 	}
 
 	.all-done {
+		display: grid;
+		justify-items: center;
+		gap: var(--space-3);
 		padding: var(--space-4);
 		border-radius: var(--radius-lg);
 		border: 1px solid var(--color-border);
