@@ -1,6 +1,8 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { afterNavigate, invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import { page } from '$app/state';
 	import Badge from '#lib/ui/components/Badge.svelte';
 	import Chip from '#lib/ui/components/Chip.svelte';
 	import EmptyState from '#lib/ui/components/EmptyState.svelte';
@@ -14,6 +16,8 @@
 	import ExerciseBlock from '#lib/ui/program/ExerciseBlock.svelte';
 	import RunSegments from '#lib/ui/program/RunSegments.svelte';
 	import SessionDetails from '#lib/ui/program/SessionDetails.svelte';
+	import type EditSheetHost from '#lib/ui/program/EditSheetHost.svelte';
+	import { toast } from '#lib/ui/toast.svelte.ts';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -51,6 +55,57 @@
 		await invalidateAll();
 		reloading = false;
 	}
+
+	// ---- Edits ------------------------------------------------------------------------------
+
+	// The edit sheets open in EditSheetHost, code-split with its BottomSheet and fetched on first
+	// intent (pointerdown, hover) or on tap, so the screen ships neither; the host fetches the
+	// edit's own sheet. A failed fetch is a toast with Retry, which fetches again in place (WebKit
+	// fetches anew); failing again online, the screen reloads asking for the sheet (?edit=move),
+	// which opens once its code arrives: Chromium keeps a failed module fetch for the document's
+	// lifetime (Train's plate calculator does the same).
+	const edits = $derived(session?.edits);
+	let Host = $state.raw<typeof EditSheetHost>();
+	let hosting: Promise<{ default: typeof EditSheetHost }> | undefined;
+	let editing = $state(false);
+	let retried = false;
+	let moveButton = $state<HTMLButtonElement>();
+
+	function loadHost() {
+		if (hosting) return;
+		// Never in the server build: SvelteKit would link the sheets' CSS into this page.
+		hosting = import.meta.env.SSR
+			? Promise.reject(new Error('client only'))
+			: import('#lib/ui/program/EditSheetHost.svelte');
+		// Kept apart from the import() expression, which Vite would move into its preloader.
+		hosting.then((module) => (Host = module.default), unloaded);
+	}
+
+	function unloaded() {
+		hosting = undefined;
+		if (!editing) return; // a prefetch on hover says nothing
+		editing = false;
+		if (retried && navigator.onLine) return location.replace('?edit=move');
+		toast.show('Couldn’t open the editor. Check your connection.', {
+			tone: 'danger',
+			action: {
+				label: 'Retry',
+				onclick: () => {
+					retried = true;
+					move();
+				}
+			}
+		});
+	}
+
+	function move() {
+		editing = true;
+		loadHost();
+	}
+
+	onMount(() => {
+		if (page.url.searchParams.get('edit') === 'move' && edits?.locked === null) move();
+	});
 </script>
 
 <svelte:head>
@@ -91,6 +146,26 @@
 			</Notice>
 		{/if}
 
+		{#if edits}
+			<div class="edits" role="group" aria-label="Change this session">
+				<button
+					bind:this={moveButton}
+					type="button"
+					class="edit"
+					disabled={!!edits.locked}
+					aria-busy={editing && !Host}
+					aria-describedby={edits.locked ? 'edits-locked' : undefined}
+					onpointerdown={loadHost}
+					onpointerenter={loadHost}
+					onclick={move}
+					data-testid="move-session"
+				>
+					<Icon name="today" size={20} /> Move
+				</button>
+				{#if edits.locked}<p class="locked" id="edits-locked">{edits.locked}</p>{/if}
+			</div>
+		{/if}
+
 		<SessionDetails details={session.details} data-testid="session-facts" />
 
 		{#if session.baseline}
@@ -120,6 +195,8 @@
 			</Section>
 		{/if}
 	</div>
+
+	{#if Host}<Host bind:open={editing} kind="move" {session} trigger={moveButton} />{/if}
 {:else if data.state === 'error'}
 	<PageHeader title="Session" eyebrow="Train" />
 	<Surface padding="none" radius="xl">
@@ -210,6 +287,69 @@
 			text-decoration: underline;
 			text-underline-offset: 3px;
 		}
+	}
+
+	/* The edit row: quiet pill actions with a 44 px target, as Button's secondary variant looks,
+	   drawn here so the screen ships no Button. */
+	.edits {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: var(--space-2) var(--space-3);
+	}
+
+	.edit {
+		display: inline-flex;
+		align-items: center;
+		gap: var(--space-2);
+		min-height: var(--touch-target);
+		padding: 0 var(--space-5) 0 var(--space-4);
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-full);
+		background: var(--color-surface-2);
+		font-size: var(--text-sm);
+		font-weight: var(--weight-semibold);
+		color: var(--color-text);
+		transition:
+			background-color var(--duration-fast) var(--ease-standard),
+			transform var(--duration-fast) var(--ease-out);
+	}
+
+	.edit:focus-visible {
+		outline: 2px solid var(--color-accent-ring);
+		outline-offset: 2px;
+	}
+
+	.edit:active:not(:disabled) {
+		transform: scale(0.97);
+	}
+
+	.edit:disabled {
+		cursor: not-allowed;
+		opacity: 0.5;
+	}
+
+	/* Its sheet's code on the way: a beat later, so a fast fetch shows nothing. */
+	.edit[aria-busy='true'] {
+		cursor: progress;
+		animation: busy var(--duration-base) var(--ease-standard) 150ms forwards;
+	}
+
+	@keyframes busy {
+		to {
+			opacity: 0.6;
+		}
+	}
+
+	@media (hover: hover) and (pointer: fine) {
+		.edit:hover:not(:disabled) {
+			background: var(--color-surface-3);
+		}
+	}
+
+	.locked {
+		font-size: var(--text-sm);
+		color: var(--color-text-secondary);
 	}
 
 	/* The notice styles its links (accent, underlined): on a line of its own, a 44 px target. */
