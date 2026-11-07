@@ -380,10 +380,13 @@ test.describe('with the service worker blocked, so page.route sees every request
 		failing = false;
 		await chunkError.getByRole('button', { name: 'Retry' }).click();
 		// WebKit fetches the module again in place; Chromium keeps the failed fetch and reloads
-		// Today, where the Build card opens the preview again.
-		await expect(ready(page).or(card(page))).toBeVisible({ timeout: 15_000 });
+		// Today, where the Build card opens the preview again. The card stays mounted, hidden, while
+		// the preview takes Today's place, so only one of the two is ever visible.
+		const shown = ready(page).or(card(page)).filter({ visible: true });
+		await expect(shown).toBeVisible({ timeout: 15_000 });
 		if (await card(page).isVisible()) await cta(page).click();
 		await expect(ready(page)).toBeVisible({ timeout: 15_000 });
+		await expect(card(page)).toBeHidden();
 	});
 
 	test('Start is busy while it is sent; offline, it is a designed error with Retry, and nothing is stored', async ({
