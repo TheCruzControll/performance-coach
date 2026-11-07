@@ -217,6 +217,21 @@ describe('training vocabulary', () => {
 		for (const kind of m3) expect(DECISION_KIND_LABEL[kind as never], kind).toBeTruthy();
 	});
 
+	it("adds M6's decision kinds, the 'Between blocks' phase and the unplanned week", () => {
+		const m6 = [
+			'review_applied',
+			'results_progression',
+			'fatigue_managed',
+			'deload_scheduled',
+			'next_block_planned',
+			'exercise_kept',
+			'exercise_rotated'
+		];
+		expect(DECISION_KINDS.slice(-m6.length)).toEqual(m6);
+		expect(PHASE_LABEL.transition).toBe('Between blocks');
+		expect(WEEK_KIND_LABEL.unplanned).toBe('Unplanned week');
+	});
+
 	it("includes M4's substitution reasons, each with a label", () => {
 		const reasons = [
 			'situational',

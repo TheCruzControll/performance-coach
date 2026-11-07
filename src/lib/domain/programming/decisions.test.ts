@@ -17,13 +17,25 @@ import { edits, NO_REASON } from './decisions/templates/edits';
 import { loads } from './decisions/templates/loads';
 import { placement } from './decisions/templates/placement';
 import { program } from './decisions/templates/program';
+import { results } from './decisions/templates/results';
 import { running } from './decisions/templates/running';
 import { strength } from './decisions/templates/strength';
 import { volume } from './decisions/templates/volume';
 import { buildProgrammingInput } from './input';
 import { assumptionFacts, DEFAULTS } from './rules/defaults';
 
-const AREAS = { program, defaults, blocks, strength, running, placement, volume, loads, edits };
+const AREAS = {
+	program,
+	defaults,
+	blocks,
+	strength,
+	running,
+	placement,
+	volume,
+	loads,
+	edits,
+	results
+};
 const placeholders = (text: string) => [...text.matchAll(/\{(\w+)\}/g)].map(([, name]) => name!);
 const accepted = (decision: unknown) => validate(decisionPlanSchema, decision);
 

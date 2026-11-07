@@ -189,7 +189,8 @@ export const PHASE_LABEL = {
 	marathon_base: 'Marathon base',
 	marathon_build: 'Marathon build',
 	marathon_peak: 'Marathon peak',
-	marathon_taper: 'Marathon taper'
+	marathon_taper: 'Marathon taper',
+	transition: 'Between blocks'
 };
 export type Phase = keyof typeof PHASE_LABEL;
 export const PHASES = keysOf(PHASE_LABEL);
@@ -203,7 +204,8 @@ export const WEEK_KIND_LABEL = {
 	peak: 'Peak',
 	deload: 'Deload',
 	taper: 'Taper',
-	event: 'Event week'
+	event: 'Event week',
+	unplanned: 'Unplanned week'
 };
 export type WeekKind = keyof typeof WEEK_KIND_LABEL;
 export const WEEK_KINDS = keysOf(WEEK_KIND_LABEL);
@@ -388,7 +390,14 @@ export const DECISION_KIND_LABEL = {
 	session_skipped: 'Session skipped',
 	exercise_swapped: 'Exercise swapped',
 	prescription_adjusted: 'Prescription adjusted',
-	preference_recorded: 'Preference recorded'
+	preference_recorded: 'Preference recorded',
+	review_applied: 'Review applied',
+	results_progression: 'Progression from results',
+	fatigue_managed: 'Fatigue managed',
+	deload_scheduled: 'Deload scheduled',
+	next_block_planned: 'Next block planned',
+	exercise_kept: 'Exercise kept',
+	exercise_rotated: 'Exercise rotated'
 };
 export type DecisionKind = keyof typeof DECISION_KIND_LABEL;
 export const DECISION_KINDS = keysOf(DECISION_KIND_LABEL);
