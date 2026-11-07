@@ -97,7 +97,7 @@ WaitEnds(m) ==
 Fix(m) ==
     /\ box[m].in /\ box[m].park = "refused"
     /\ valid' = valid \cup {m}
-    /\ box' = [box EXCEPT ![m] = Queued]
+    /\ box' = IF MUTANT = "fixKeepsParked" THEN box ELSE [box EXCEPT ![m] = Queued]
     /\ UNCHANGED <<logged, discarded, ledger, history, reqs, pc, lock, faults, kas>>
 
 (* outbox-rules.ts tryAgain *)
@@ -245,26 +245,30 @@ ServerStep(k) ==
        /\ UNCHANGED <<logged, box, valid, discarded, pc, lock, faults, kas>>
 
 (* Any other error in a mutation's transaction (only a valid, unblocked     *)
-(* one opens one) rolls it back and stops the                              *)
-(* batch: the rest answer 'retry', or the request fails (503) when nothing *)
-(* was answered yet.                                                        *)
+(* one opens one) stops the batch: the rest answer 'retry', or the request *)
+(* fails (503) when nothing was answered yet. The transaction rolls back,  *)
+(* or its COMMIT landed before the connection failed (`landed`): claim and *)
+(* effect together, never one without the other.                           *)
 ServerError(k) ==
     LET r == reqs[k]
         m == r.batch[r.i]
         rest == [j \in 1..(Len(r.batch) - r.i + 1) |-> <<r.batch[r.i + j - 1], "retry">>]
         last == r.i = Len(r.batch)
         reaches == m \in r.ok /\ ~\E h \in r.held : <<m, h>> \in Dep
+        fresh == m \notin ledger /\ ~Missing(m)
     IN /\ faults < MaxFaults
        /\ r.st = "open"
        /\ reaches
        /\ faults' = faults + 1
-       /\ ledger' = IF MUTANT = "claimOwnTx" THEN ledger \cup {m} ELSE ledger
-       /\ IF MUTANT = "retryContinues" /\ r.res # <<>>
+       /\ \E landed \in IF fresh THEN BOOLEAN ELSE {FALSE} :
+            /\ ledger' = IF landed \/ MUTANT = "claimOwnTx" THEN ledger \cup {m} ELSE ledger
+            /\ history' = IF landed THEN Append(history, m) ELSE history
+       /\ IF MUTANT = "retryContinues"
             THEN Put(k, [r EXCEPT !.i = r.i + 1, !.res = Append(r.res, <<m, "retry">>),
                                   !.st = IF last THEN "answered" ELSE "open"])
           ELSE IF r.res = <<>> THEN Put(k, [r EXCEPT !.st = "failed"])
           ELSE Put(k, [r EXCEPT !.res = r.res \o rest, !.st = "answered"])
-       /\ UNCHANGED <<logged, box, valid, discarded, history, pc, lock, kas>>
+       /\ UNCHANGED <<logged, box, valid, discarded, pc, lock, kas>>
 
 (* The function is killed mid-batch: what committed stays committed. *)
 ServerDies(k) ==
