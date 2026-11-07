@@ -84,12 +84,13 @@ export const RESET_ROOTS = [
 	'coach_messages',
 	'agent_runs',
 	'agent_model_calls',
-	'agent_tool_calls'
+	'agent_tool_calls',
+	'coach_notes'
 ] as const;
 
 /**
  * Remove every program, logged session, note, audit row, proposal and review, the sync ledger,
- * every coach conversation and run, and the owner's custom exercises; the catalogue stays. TRUNCATE fires no row triggers, so the
+ * every coach conversation, run and note, and the owner's custom exercises; the catalogue stays. TRUNCATE fires no row triggers, so the
  * history guards that refuse DELETE are not involved, and CASCADE reaches every table below these
  * roots. Only test code does this (scripts/history-guards.test.ts keeps TRUNCATE out of src/).
  */

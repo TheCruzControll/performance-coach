@@ -172,6 +172,8 @@ async function fillRootTables(programId: string) {
 			select owner_id, id, 0, 0, 1 from agent_runs;
 		insert into agent_tool_calls (owner_id, run_id, call_index, tool_use_id, name, status, input, started_at, duration_ms)
 			select owner_id, id, 0, 'toolu_1', 'get_current_program', 'succeeded', '{}', now(), 1 from agent_runs;
+		insert into coach_notes (owner_id, kind, subjects, body, summary)
+			select id, 'thread_summary', '[]', '{}', 'Bench is moving well' from owners;
 		insert into exercises (owner_id, name, pattern, primary_muscles, skill_level, measure, load_type)
 			select id, 'Sled push', 'carry', '{quads}', 'beginner', 'reps', 'external' from owners`
 	);

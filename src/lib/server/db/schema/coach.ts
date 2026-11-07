@@ -4,6 +4,7 @@
  *
  *   coach_threads   one conversation; renamed, archived and moved to a new segment, nothing else
  *   coach_messages  its transcript, insert-only: what the model was sent and answered, verbatim
+ *   coach_notes     what the coach wrote down (a thread summary, a workout analysis), insert-only
  *
  * - content is Postgres `json`, not jsonb: json keeps the exact text it was given (key order,
  *   spacing, escapes), and jsonb reorders keys. It holds the Messages API content as the SDK
@@ -22,6 +23,10 @@
  * - coach_messages.run_id names the run that wrote the row without a foreign key: a run names
  *   the message that triggered it (agent-runs.ts), and the two keys would form a cycle that a
  *   backup restore can only load by updating an insert-only row.
+ * - coach_notes (coach-proposals-db) are insert-only and never deleted
+ *   (drizzle/<n>_coach_proposals_guards.sql). A note names the run that wrote it by foreign key
+ *   (no run names a note), so this module and agent-runs.ts import each other; every
+ *   cross-table reference is a lazy callback, so either loads first.
  */
 import { sql } from 'drizzle-orm';
 import {
@@ -48,11 +53,15 @@ import {
 	type MessageStatus,
 	type ThreadTitleSource
 } from '../../../domain/coach/vocabulary';
+import { agentRuns } from './agent-runs';
 import { createdAt, inList, ownerRef, updatedAt } from './columns';
 import { programVersions } from './programs';
 
 /** A thread title's longest, in characters. */
 export const THREAD_TITLE_MAX = 120;
+
+/** A coach note's summary's longest, in characters. */
+export const NOTE_SUMMARY_MAX = 1000;
 
 /** The Messages API role each kind of transcript row is replayed (or shown) with. */
 export const MESSAGE_KIND_ROLE: Readonly<Record<MessageKind, MessageRole>> = Object.freeze({
@@ -158,6 +167,39 @@ export const coachMessages = pgTable(
 		check(
 			'coach_messages_client_message_ck',
 			sql`${t.clientMessageId} is null or ${t.kind} = 'owner_message'`
+		)
+	]
+);
+
+/** Something the coach wrote down to remember: memory reads it, never a replayed chat. */
+export const coachNotes = pgTable(
+	'coach_notes',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		ownerId: ownerRef(),
+		/** What it is (a thread summary, a workout analysis, a decision). Open; services name it. */
+		kind: text('kind').notNull(),
+		/** The records it is about. */
+		subjects: jsonb('subjects').$type<SourceRef[]>().notNull(),
+		/** The note itself, structured as its kind defines. */
+		body: jsonb('body').$type<Record<string, unknown>>().notNull(),
+		/** The note in a few sentences, as memory shows it. */
+		summary: text('summary').notNull(),
+		/** What the coach read to write it. */
+		evidence: jsonb('evidence').$type<Record<string, unknown>>(),
+		/** The run that wrote it; null for a note written outside a conversation. */
+		runId: uuid('run_id').references(() => agentRuns.id),
+		createdAt: createdAt()
+	},
+	(t) => [
+		// The owner's notes of one kind, newest first (memory's summaries and analyses).
+		index('coach_notes_owner_kind_idx').on(t.ownerId, t.kind, t.createdAt.desc().nullsFirst()),
+		index('coach_notes_run_idx').on(t.runId),
+		check('coach_notes_kind_ck', sql`char_length(${t.kind}) > 0`),
+		check('coach_notes_subjects_ck', sql`jsonb_typeof(${t.subjects}) = 'array'`),
+		check(
+			'coach_notes_summary_ck',
+			sql`char_length(${t.summary}) between 1 and ${sql.raw(String(NOTE_SUMMARY_MAX))}`
 		)
 	]
 );
