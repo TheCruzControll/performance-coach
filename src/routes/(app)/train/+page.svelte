@@ -31,6 +31,7 @@
 	const SETUP_HREF = resolve('/(app)/profile');
 
 	const weekHref = (n: number) => `${resolve('/(app)/train')}?week=${n}`;
+	const HISTORY_HREF = resolve('/(app)/train/history/[[version]]', {});
 
 	// ---- The week shown ----------------------------------------------------------------------
 
@@ -165,6 +166,14 @@
 				>
 					<Icon name="progress" size={18} />Plan
 				</button>
+				<a
+					class="action"
+					href={HISTORY_HREF}
+					aria-busy={navigating.to?.url.pathname === HISTORY_HREF}
+					data-testid="open-history"
+				>
+					<Icon name="clock" size={18} />History
+				</a>
 				{#if plan.failed}
 					<div class="plan-failed">
 						<Notice tone="danger" title="Couldn’t open your plan">
