@@ -12,10 +12,11 @@ export const meta = {
 
 // Private stopping criterion. It lives only in this orchestration code: never interpolate it into
 // any prompt, file, report or commit.
-const BAR = Number(args.bar); // the owner's private stopping criterion: pass it as args.bar; never commit its value
+const ARGS = typeof args === 'string' ? JSON.parse(args) : args;
+const BAR = Number(ARGS.bar); // the owner's private stopping criterion: pass it as ARGS.bar; never commit its value
 
-const A = args; // { branch, label, scope, maxRounds, bar, scratch, repo }
-if (!A.scratch || !A.repo) throw new Error('args.scratch and args.repo (absolute paths) are required');
+const A = ARGS; // { branch, label, scope, maxRounds, bar, scratch, repo }
+if (!A.scratch || !A.repo) throw new Error('ARGS.scratch and ARGS.repo (absolute paths) are required');
 const REPO = A.repo;
 const SCRATCH = A.scratch;
 const DIR = `${SCRATCH}/council/${A.label}`;

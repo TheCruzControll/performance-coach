@@ -34,13 +34,14 @@ function makeLimiter(n) {
 			next();
 		});
 }
-const limit = makeLimiter(args.limit || 2);
+const ARGS = typeof args === 'string' ? JSON.parse(args) : args;
+const limit = makeLimiter(ARGS.limit || 2);
 
-if (!args.scratch || !args.repo) throw new Error('args.scratch and args.repo (absolute paths) are required');
-const S = args.scratch;
+if (!ARGS.scratch || !ARGS.repo) throw new Error('ARGS.scratch and ARGS.repo (absolute paths) are required');
+const S = ARGS.scratch;
 const BIN = `${S}/bin`;
-const MAIN = args.repo; // the main checkout (never modified by agents)
-const WT = args.worktrees || `${S}/wt`;
+const MAIN = ARGS.repo; // the main checkout (never modified by agents)
+const WT = ARGS.worktrees || `${S}/wt`;
 const R = 'repos/TheCruzControll/performance-coach';
 // Author and reviewer stay different model families. Every commit is written by AUTHOR.
 const AUTHOR = { model: 'anthropic/claude-opus-5-5', name: 'Claude Opus 5.5' };
@@ -52,8 +53,8 @@ const M3PLAN = `${S}/plans/m3-plan.json`;
 const M2PLAN = `git -C ${MAIN} show origin/handoff:docs/handoff/briefs/m2-onboarding-plan.json`;
 const envf = (slug) => `${S}/env/${slug}.sh`;
 
-const EXTERNAL = args.external; // id -> {merged:true} | {branch, pr}
-const ITEMS = args.items; // [{id, kind: m2|m3|task, branch, ui, migration, deps, slug, port, effort, docsOnly?, task?, boost?}]
+const EXTERNAL = ARGS.external; // id -> {merged:true} | {branch, pr}
+const ITEMS = ARGS.items; // [{id, kind: m2|m3|task, branch, ui, migration, deps, slug, port, effort, docsOnly?, task?, boost?}]
 const byId = Object.fromEntries(ITEMS.map((x) => [x.id, x]));
 
 const dependents = {};
@@ -266,7 +267,7 @@ async function doItem(it, deps) {
 		: `\`git -C ${MAIN} worktree add ${WT}/${it.slug} -b ${it.branch} origin/main\`.`;
 	const prep = `\`git -C ${MAIN} fetch -q origin\`. RESUME CHECK FIRST: an earlier session may have started this slice. If ${WT}/${it.slug} exists, or branch ${it.branch} exists locally (\`git -C ${MAIN} branch --list ${it.branch}\`) or on origin, reuse it: if the worktree is gone, \`git -C ${MAIN} worktree add ${WT}/${it.slug} ${it.branch}\` (or \`-b ${it.branch} origin/${it.branch}\`); look at its commits and uncommitted changes and keep what is right; merge origin/main${open.length ? ' and the open dependency branches (' + open.map((d) => 'origin/' + d.branch).join(', ') + ')' : ''} into it (message "Merge main into ${it.branch}"); a last commit titled \`wip(handoff): …\` is unfinished, ungated and unreviewed: finish it and fold it into real Conventional Commits (e.g. \`git reset --soft\` to the commit before it and recommit) before reporting. If a PR already exists for ${it.branch} (\`gh api "${R}/pulls?head=TheCruzControll:${it.branch}&state=all"\`), report its number and stop. Otherwise start fresh: ${fresh}
 BASE: record a commit whose tree has everything the slice builds on (origin/main${open.length ? ' and every open dependency branch' : ''}) and none of the slice's own changes, so \`git diff BASE HEAD\` shows exactly the slice. Fresh branch: \`git rev-parse HEAD\` right after the worktree is created and the dependencies are merged, before any change of yours. Resumed branch (after merging as above): build it with \`git commit-tree $(git merge-tree --write-tree origin/main <dependency tip>) -p origin/main -p <dependency tip> -m base\` (chain for more dependencies; with none, BASE = \`git merge-base HEAD origin/main\`), and check \`git diff --stat BASE HEAD\` lists only the slice's files.`;
-	const resumed = (args.resume || {})[it.id];
+	const resumed = (ARGS.resume || {})[it.id];
 	const impl = resumed ? resumed.impl : await limit(p, () =>
 		agent(
 			`${PROJECT}
