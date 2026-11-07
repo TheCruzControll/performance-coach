@@ -77,16 +77,20 @@ afterAll(async () => {
 beforeEach(blank);
 
 describe('journalMigrations', () => {
-	it('hashes each migration as Drizzle records it once applied', async () => {
-		const run = await runMigrations(url, { seed: false });
-		expect(run.total).toBe(journal.length);
-		const target = await inspectTarget(client);
-		expect(target.state === 'migrated' && target.migrations).toEqual(applied(journal));
-		const raw = JSON.parse(await readFile('drizzle/meta/_journal.json', 'utf8')) as {
-			entries: { tag: string }[];
-		};
-		expect(journal.map((m) => m.tag)).toEqual(raw.entries.map((e) => e.tag));
-	}, SLOW);
+	it(
+		'hashes each migration as Drizzle records it once applied',
+		async () => {
+			const run = await runMigrations(url, { seed: false });
+			expect(run.total).toBe(journal.length);
+			const target = await inspectTarget(client);
+			expect(target.state === 'migrated' && target.migrations).toEqual(applied(journal));
+			const raw = JSON.parse(await readFile('drizzle/meta/_journal.json', 'utf8')) as {
+				entries: { tag: string }[];
+			};
+			expect(journal.map((m) => m.tag)).toEqual(raw.entries.map((e) => e.tag));
+		},
+		SLOW
+	);
 });
 
 describe('migrationsFolderUpTo', () => {
@@ -160,83 +164,115 @@ describe('inspectTarget', () => {
 		expect(await inspectTarget(client)).toMatchObject({ state: 'migrated', migrations: [] });
 	});
 
-	it('names the tables that hold rows in a seeded database', async () => {
-		await runMigrations(url);
-		const target = await inspectTarget(client);
-		expect(target).toMatchObject({ state: 'migrated', empty: false, tables: ['exercises'] });
-	}, SLOW);
+	it(
+		'names the tables that hold rows in a seeded database',
+		async () => {
+			await runMigrations(url);
+			const target = await inspectTarget(client);
+			expect(target).toMatchObject({ state: 'migrated', empty: false, tables: ['exercises'] });
+		},
+		SLOW
+	);
 
-	it('reports a committed restore with its marker', async () => {
-		await runMigrations(url, { seed: false });
-		await client.query('BEGIN');
-		await markRestored(client, { sha256: SHA, schemaTag: '27-0123abcd' });
-		await client.query('COMMIT');
-		const target = await inspectTarget(client);
-		expect(target).toMatchObject({
-			state: 'restored',
-			migrations: applied(journal),
-			empty: true,
-			restores: [{ sha256: SHA, schemaTag: '27-0123abcd', restoredAt: expect.any(Date) }]
-		});
-	}, SLOW);
+	it(
+		'reports a committed restore with its marker',
+		async () => {
+			await runMigrations(url, { seed: false });
+			await client.query('BEGIN');
+			await markRestored(client, { sha256: SHA, schemaTag: '27-0123abcd' });
+			await client.query('COMMIT');
+			const target = await inspectTarget(client);
+			expect(target).toMatchObject({
+				state: 'restored',
+				migrations: applied(journal),
+				empty: true,
+				restores: [{ sha256: SHA, schemaTag: '27-0123abcd', restoredAt: expect.any(Date) }]
+			});
+		},
+		SLOW
+	);
 });
 
 describe('prepareTarget', () => {
-	it('migrates a blank target to exactly the backup’s migrations, without the seed', async () => {
-		expect(await prepare(k)).toEqual({ ok: true, count: k, from: 'blank' });
-		expect(await inspectTarget(client)).toEqual({
-			state: 'migrated',
-			migrations: applied(journal.slice(0, k)),
-			tables: [],
-			empty: true
-		});
-		expect(await hasTable('exercises')).toBe(true);
-		expect(await hasTable(LATER_TABLE)).toBe(false);
+	it(
+		'migrates a blank target to exactly the backup’s migrations, without the seed',
+		async () => {
+			expect(await prepare(k)).toEqual({ ok: true, count: k, from: 'blank' });
+			expect(await inspectTarget(client)).toEqual({
+				state: 'migrated',
+				migrations: applied(journal.slice(0, k)),
+				tables: [],
+				empty: true
+			});
+			expect(await hasTable('exercises')).toBe(true);
+			expect(await hasTable(LATER_TABLE)).toBe(false);
 
-		// Then the checkout's later migrations complete it to HEAD.
-		const forward = await runMigrations(url, { seed: false });
-		expect(forward).toEqual({ applied: journal.length - k, total: journal.length, library: null });
-		expect(await hasTable(LATER_TABLE)).toBe(true);
-		const head = await inspectTarget(client);
-		expect(head.state === 'migrated' && head.migrations).toEqual(applied(journal));
-	}, SLOW);
+			// Then the checkout's later migrations complete it to HEAD.
+			const forward = await runMigrations(url, { seed: false });
+			expect(forward).toEqual({
+				applied: journal.length - k,
+				total: journal.length,
+				library: null
+			});
+			expect(await hasTable(LATER_TABLE)).toBe(true);
+			const head = await inspectTarget(client);
+			expect(head.state === 'migrated' && head.migrations).toEqual(applied(journal));
+		},
+		SLOW
+	);
 
-	it('accepts an empty target already at the backup’s migrations', async () => {
-		await prepare(k);
-		expect(await prepare(k)).toEqual({ ok: true, count: k, from: 'migrated' });
-	}, SLOW);
+	it(
+		'accepts an empty target already at the backup’s migrations',
+		async () => {
+			await prepare(k);
+			expect(await prepare(k)).toEqual({ ok: true, count: k, from: 'migrated' });
+		},
+		SLOW
+	);
 
-	it('refuses an empty target at other migrations', async () => {
-		await prepare(k);
-		expect(await prepare(k - 1)).toEqual({
-			ok: false,
-			code: 'target_schema_mismatch',
-			target: k,
-			backup: k - 1
-		});
-		expect(await prepare(journal.length)).toMatchObject({ code: 'target_schema_mismatch' });
-	}, SLOW);
+	it(
+		'refuses an empty target at other migrations',
+		async () => {
+			await prepare(k);
+			expect(await prepare(k - 1)).toEqual({
+				ok: false,
+				code: 'target_schema_mismatch',
+				target: k,
+				backup: k - 1
+			});
+			expect(await prepare(journal.length)).toMatchObject({ code: 'target_schema_mismatch' });
+		},
+		SLOW
+	);
 
-	it('refuses a target that holds rows, naming its tables', async () => {
-		await runMigrations(url);
-		expect(await prepare(journal.length)).toEqual({
-			ok: false,
-			code: 'target_not_empty',
-			tables: ['exercises']
-		});
-	}, SLOW);
+	it(
+		'refuses a target that holds rows, naming its tables',
+		async () => {
+			await runMigrations(url);
+			expect(await prepare(journal.length)).toEqual({
+				ok: false,
+				code: 'target_not_empty',
+				tables: ['exercises']
+			});
+		},
+		SLOW
+	);
 
-	it('answers already_restored for the same archive, and refuses any other', async () => {
-		await prepare(k);
-		await markRestored(client, { sha256: SHA, schemaTag: 'k' });
-		await runMigrations(url, { seed: false });
-		expect(await prepare(k)).toEqual({
-			ok: false,
-			code: 'already_restored',
-			restoredAt: expect.any(Date)
-		});
-		expect(await prepare(k, 'b'.repeat(64))).toMatchObject({ code: 'target_not_empty' });
-	}, SLOW);
+	it(
+		'answers already_restored for the same archive, and refuses any other',
+		async () => {
+			await prepare(k);
+			await markRestored(client, { sha256: SHA, schemaTag: 'k' });
+			await runMigrations(url, { seed: false });
+			expect(await prepare(k)).toEqual({
+				ok: false,
+				code: 'already_restored',
+				restoredAt: expect.any(Date)
+			});
+			expect(await prepare(k, 'b'.repeat(64))).toMatchObject({ code: 'target_not_empty' });
+		},
+		SLOW
+	);
 
 	it('refuses a backup this checkout cannot rebuild before writing anything', async () => {
 		const diverged = schemaAt(k);
