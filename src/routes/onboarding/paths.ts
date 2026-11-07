@@ -10,3 +10,6 @@ export const stepHref = (step: OnboardingStep) =>
 
 /** Where onboarding ends, and where "Finish later" goes. */
 export const todayHref = () => resolve('/(app)/today');
+
+/** A step opened from the review's Edit: Continue (or Skip) comes back to the review. */
+export const fromReviewHref = (step: OnboardingStep) => `${stepHref(step)}?then=review`;

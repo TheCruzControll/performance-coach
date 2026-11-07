@@ -1,10 +1,10 @@
 /**
  * Today until onboarding is complete: a setup card with how many of the steps that apply are
  * done and Continue to the step to resume at, which is how the owner gets into onboarding after
- * first sign-in and back into it after a reload. The card streams in and fails soft: a read that
- * fails is a designed error with Retry, never a 500. Once it is complete, Today summarises the
- * open goals by rank (weeks to go counted from the device's date) and the shape of the week, with
- * the commitments marked on the week strip. Serial (one test at a time, after the
+ * first sign-in and back into it after a reload. The card is server-rendered and fails soft: a
+ * read that fails is a designed error with Retry, never a 500. Once it is complete, Today
+ * summarises the open goals by rank (weeks to go counted from the device's date) and the shape of
+ * the week, with the commitments marked on the week strip. Serial (one test at a time, after the
  * functional suites): every test starts from a blank training profile, which every browser and
  * worker shares, and the last one leaves it blank again.
  */
@@ -262,36 +262,38 @@ test('once set up, Today lists the goals by rank with weeks to go, and the shape
 	expect(errors).toEqual([]);
 });
 
-test('once set up, the goals and schedule stream in below what is already painted', async ({
+test('once set up, the goals and schedule are server-rendered, so nothing moves after hydration', async ({
 	page,
 	request
 }) => {
 	await setUp(request);
-	// What lies between the first card and the plate row: in the server-rendered page, before the
-	// stream resolves, and again once it has. Streamed sections may only add below them.
+	// What the server-rendered page holds before any script runs, and where the plate row sits:
+	// once hydrated, the same goals are there and nothing above the plate row has moved.
 	await page.addInitScript(() => {
-		const gap = () => {
-			const first = document.querySelector('main .stack > *')!.getBoundingClientRect();
-			const plate = document.querySelector('a[href*="tool=plates"]')!.getBoundingClientRect();
-			return plate.top - first.bottom;
-		};
+		const plateTop = () =>
+			document.querySelector('a[href*="tool=plates"]')!.getBoundingClientRect().top;
 		document.addEventListener('DOMContentLoaded', () =>
 			Object.assign(window, {
 				__painted: {
-					gap: gap(),
-					streaming: !!document.querySelector('[data-testid="today-setup-loading"]')
+					plateTop: plateTop(),
+					goals: document.querySelectorAll('[data-testid="today-goal"]').length,
+					schedule: !!document.querySelector('[data-testid="today-schedule"]')
 				}
 			})
 		);
-		Object.assign(window, { __gap: gap });
+		Object.assign(window, { __plateTop: plateTop });
 	});
 	await gotoHydrated(page, '/today');
 	await expect(goals(page)).toHaveCount(3);
-	type Measured = { __painted: { gap: number; streaming: boolean }; __gap: () => number };
+	type Measured = {
+		__painted: { plateTop: number; goals: number; schedule: boolean };
+		__plateTop: () => number;
+	};
 	const painted = await page.evaluate(() => (window as unknown as Measured).__painted);
-	expect(painted.streaming, 'measured before the stream resolved').toBe(true);
-	const now = await page.evaluate(() => (window as unknown as Measured).__gap());
-	expect(Math.abs(now - painted.gap), 'nothing streams in above the plate row').toBeLessThanOrEqual(
+	expect(painted.goals, 'goals in the server-rendered page').toBe(3);
+	expect(painted.schedule, 'schedule in the server-rendered page').toBe(true);
+	const now = await page.evaluate(() => (window as unknown as Measured).__plateTop());
+	expect(Math.abs(now - painted.plateTop), 'nothing moves above the plate row').toBeLessThanOrEqual(
 		1
 	);
 	const plate = (await page.getByRole('link', { name: /Plate calculator/ }).boundingBox())!;

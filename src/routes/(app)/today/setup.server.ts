@@ -9,8 +9,8 @@
  *   the week (how many days and how long, which days, the commitments already in it). Words are
  *   built here so the page ships none of the catalogue; only the countdown to each goal's date is
  *   left to the page, which counts from the device's date after hydration.
- * - It fails soft: Today streams it, so a read that fails is recorded as a server error (kind
- *   'streamed', since the response has already started) and the card shows its designed error.
+ * - It fails soft: a read that fails is recorded as a server error (kind 'load') and the card
+ *   shows its designed error with Retry, inside the shell, instead of the 500 page.
  */
 import { DISCIPLINE_INFO, WEEKDAYS, type DisciplineTone } from '#lib/domain/profile/catalog.ts';
 import type { OnboardingStep } from '#lib/domain/profile/onboarding.ts';
@@ -80,7 +80,7 @@ export async function loadTodaySetup(
 		};
 	} catch (error) {
 		await recordServerError(
-			{ error, kind: 'streamed', status: 500, ...origin, context: { load: 'todaySetup' } },
+			{ error, kind: 'load', status: 500, ...origin, context: { load: 'todaySetup' } },
 			{ db: errorsDb }
 		);
 		return null;

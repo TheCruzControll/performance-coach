@@ -232,7 +232,7 @@ describe('Today’s setup card', () => {
 				const recorded = await findErrorsByRequestId(request.requestId, { db: tx });
 				expect(recorded).toHaveLength(1);
 				expect(recorded[0]).toMatchObject({
-					kind: 'streamed',
+					kind: 'load',
 					status: 500,
 					method: 'GET',
 					path: '/today',
