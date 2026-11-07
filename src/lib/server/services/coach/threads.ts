@@ -120,6 +120,11 @@ export interface OwnerTurnInput {
 	entry?: ThreadEntry | null;
 	/** What a new conversation's first segment starts on (PROMPT_VERSION, the active version). */
 	segment: { promptVersion: string; programVersionId: string | null };
+	/**
+	 * The segment's memory preamble (segmentPreamble), stored ahead of the message when the message
+	 * opens its segment, and ignored otherwise: a segment has one, frozen once stored.
+	 */
+	preamble?: ApiContent;
 }
 
 export interface OwnerTurn {
@@ -182,6 +187,13 @@ export async function startOwnerTurn(
 				thread = await lockOwn(r, ownerId, continuing, at);
 				if (thread.archivedAt) throw new CoachArchivedError();
 			}
+			if (
+				input.preamble !== undefined &&
+				(await r.lastReplayedKind(ownerId, thread.id, thread.segment)) === null
+			) {
+				const preamble = { role: 'user', kind: 'segment_preamble', apiVisible: true } as const;
+				await insertAfter(r, ownerId, thread, [{ ...preamble, content: input.preamble }]);
+			}
 			const [message] = await insertAfter(
 				r,
 				ownerId,
@@ -206,6 +218,17 @@ export async function startOwnerTurn(
 		if (err !== DUPLICATE) throw err;
 		return replay(await repo.messageByClientId(ownerId, input.clientMessageId));
 	}
+}
+
+/** The owner's message stored under a client message id, or null: is a send a retry? */
+export async function findOwnerMessage(
+	ownerId: string,
+	clientMessageId: string,
+	deps: CoachDeps = {}
+): Promise<{ id: string; threadId: string; seq: number } | null> {
+	if (!isUuid(clientMessageId)) return null;
+	const { db } = resolveDeps(deps);
+	return createCoachRepository(db).messageByClientId(ownerId, clientMessageId);
 }
 
 function programVersion(id: string | null): string | null {
@@ -268,7 +291,7 @@ export async function appendTurnStep(
 	id: string,
 	step: TurnStep,
 	deps: CoachDeps = {}
-): Promise<{ seqs: number[] }> {
+): Promise<{ seqs: number[]; ids: string[] }> {
 	const { db, now } = resolveDeps(deps);
 	threadId(id);
 	if (step.assistant.content.length === 0) {
@@ -317,7 +340,7 @@ export async function appendTurnStep(
 			});
 		}
 		const stored = await insertAfter(r, ownerId, thread, rows);
-		return { seqs: stored.map((m) => m.seq) };
+		return { seqs: stored.map((m) => m.seq), ids: stored.map((m) => m.id) };
 	});
 }
 

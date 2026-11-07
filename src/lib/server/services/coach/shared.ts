@@ -24,6 +24,18 @@ export function resolveDeps(deps: CoachDeps = {}): ResolvedCoachDeps {
 }
 
 /**
+ * Run `work` on one transaction (a savepoint inside one): a throw undoes every write it made, so
+ * the agent can make several service calls all or nothing without seeing the Executor.
+ */
+export function inTransaction<T>(
+	deps: CoachDeps,
+	work: (deps: ResolvedCoachDeps) => Promise<T>
+): Promise<T> {
+	const { db, now } = resolveDeps(deps);
+	return db.transaction((tx) => work({ db: tx, now }));
+}
+
+/**
  * The deps the agent hands every tool, and whether the tools must run one at a time. A transaction
  * is one connection, which runs one query at a time (docs/architecture.md), so tools sharing one
  * run serially; on the pool they may run together. The agent may not see the Executor (lint
