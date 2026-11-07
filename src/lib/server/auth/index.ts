@@ -4,6 +4,14 @@
 export type { AuthDeps, AuthRequest } from './context';
 export { AuthError, isAuthError, type AuthErrorCode } from './errors';
 export {
+	completeEmailSignIn,
+	emailLinkUrl,
+	requestSignInLink,
+	type EmailLinkDeps,
+	type EmailLinkRequestOutcome,
+	type EnabledEmailLinkConfig
+} from './email-link';
+export {
 	authErrorResponse,
 	authRequest,
 	clearSessionCookie,
