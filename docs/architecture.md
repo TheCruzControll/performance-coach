@@ -122,12 +122,100 @@ gives each of their queries its own connection.
   `path` + `route_id`). M2 auth tables: `owners` (exactly one row), `passkey_credentials`,
   `auth_sessions` (token hashes), `email_sign_in_links` (hashes), `recovery_codes` (hashes), `webauthn_challenges` (single-use),
   `used_setup_tokens` (hashes of spent setup tokens), `auth_events` (audit log) and `auth_rate_limits` (DB-backed counters); see docs/security.md. CI's `pnpm db:drift` fails when the schema changes without a committed
-  migration. M2 training-profile tables (`drizzle/0004_training_profile.sql`, `schema/profile.ts`):
-  the athlete profile, ranked goals with a `training_goal_events` history, strength baselines
-  that are superseded rather than overwritten, dated body-weight entries, experience, running and
-  Muay Thai specifics, equipment, injuries, exercise preferences and schedule. The training data
-  model (programs, cycles, workouts, sets, sessions, decisions) lands in M3 with
-  history-preserving, timestamped records (PRD §9).
+  migration. M2 training-profile tables: see "Training profile (M2)" below. Programs, their
+  versions and prescriptions, the exercise library, the training log and coaching memory came
+  later, each in its own file under `schema/`, with history-preserving, timestamped records
+  (PRD §9).
+
+## Training profile (M2)
+
+What the coach knows about the athlete (PRD §2, §3). The same services serve the Profile edit
+screens, onboarding and, from M5, the coach, so a change is validated and recorded the same way
+whoever makes it.
+
+### Data model
+
+Fourteen tables, created by `drizzle/0004_training_profile.sql` (`schema/profile.ts`); every
+row is keyed by `owner_id`. Catalogue keys (disciplines, lifts, equipment) are validated by the
+services, not CHECKed, so a new key needs no migration.
+
+- `athlete_profiles`: one row with the name, units, time zone (added by
+  `drizzle/0006_profile_time_zone.sql`: the owner's calendar day), birth year, nutrition phase,
+  weight target, "I don't know my 1RMs" (`baselines_unknown`) and onboarding progress (the steps
+  completed and skipped, and when it finished).
+- `body_weight_entries`: a dated series; the latest entry is the current weight, and a save on
+  the same calendar day replaces that day's entry.
+- `training_goals`: event or general goals with their disciplines. `priority` ranks the open
+  (active or paused) goals, unique and contiguous from 1, and is null once a goal is achieved or
+  dropped.
+- `training_goal_events`: the append-only history of every goal change, status change,
+  re-ranking and deletion, as a JSON snapshot with its source. `goal_id` has no foreign
+  key (only `owner_id` does), so it outlives a deleted goal.
+- `discipline_experience`: level, years and sessions a week, one row per discipline.
+- `strength_baselines`: optional 1RMs, either `measured` (tested, competition) or `estimated`
+  (from a set, an estimate); the database refuses a measured row from an estimating source. A
+  change supersedes the current row (`superseded_at`) instead of overwriting it.
+- `running_profiles` and `race_results`: weekly volume, runs a week, longest run, easy pace and
+  recent races, times in seconds. `muay_thai_profiles`: sessions and sparring a week, fights.
+- `equipment_profiles`: gym type, available and home equipment.
+- `injuries`: body area, side, severity, movements to avoid, notes, active or resolved.
+- `exercise_preferences`: likes and dislikes in the owner's words; since
+  `drizzle/0015_coaching_memory.sql` linked to the exercise library, with their source.
+- `schedules` and `schedule_commitments`: days a week, which days, time of day, session length,
+  and fixed commitments such as Muay Thai classes.
+
+### Services and shared schemas
+
+- `src/lib/domain/profile/` is pure: the catalogue, the types, the zod/mini schemas
+  (`schemas.ts`, one per section, `SCHEMAS` by name) and the onboarding rules (`onboarding.ts`:
+  the steps, which apply, which are optional, where to resume).
+- `src/lib/server/services/profile/` holds the use-cases: `get…`/`save…` per section, the goal
+  operations (create, update, set status, delete, reorder, history) and onboarding (advance,
+  complete). Each validates its input with the same schema the browser uses and throws
+  `ProfileInputError` (field errors by dotted path) or `ProfileNotFoundError`. Every write names
+  its source (`onboarding`, `profile`, `coach`). A save that replaces a set of rows runs in one
+  transaction and takes its section's advisory lock first, so two saves of one section queue
+  instead of interleaving. Experience, injuries and exercise preferences keep the ids of rows
+  that match; race results are deleted and reinserted.
+- `src/lib/server/db/repositories/profile.ts` is plain data access over an `Executor`.
+
+### The save path
+
+1. A screen edits a draft in a `SectionForm` (`src/lib/client/section-form.svelte.ts`).
+2. On save, `src/lib/client/profile-form.ts` validates it with the shared schema, loaded on
+   demand (warmed on idle once the screen is interactive), and shows field errors without a
+   round trip.
+3. It posts the section as JSON in a `payload` field to a form action of the current page
+   (same origin, so the CSRF Origin check passes).
+4. The action (`src/lib/server/forms/profile.ts`) calls the service, which validates again and
+   stays the authority: an input error becomes `fail(400, { errors })` keyed by field path, a
+   record that no longer exists `fail(404)`. Profile's `save` answers with the section as
+   stored; onboarding's redirects to the next step.
+
+Goals save one at a time from a sheet (`saveGoal`, `deleteGoal`, `reorderGoals`), so the Goals
+section has no whole-section `save`.
+
+### Routes
+
+- `/(app)/profile/[section]` edits one section. `src/lib/server/forms/sections.ts` maps each key
+  to its load and save, `src/lib/ui/profile/sections.ts` lists them for Profile, and
+  `src/lib/ui/profile/editors.ts` is the lazy registry of editors;
+  `tests/integration/profile/edit-route.test.ts` keeps the three in step.
+- `/onboarding/[[step]]` is one URL per step (`/onboarding` is the welcome). Each step edits
+  the Profile section of the same name (the welcome edits name and units) through the same
+  services, recorded as `onboarding` changes. Continue saves and marks the step done, Skip is
+  refused by the services on a required step, Back and Finish later save without marking it
+  done, and the review's Start coaching needs an open goal and a schedule. Loads have no side
+  effects: resuming means the furthest step advanced.
+- Today (`/(app)/today`) shows a "finish setting up" card until onboarding is complete, then
+  the open goals by rank and the shape of the week.
+
+Why it is built this way (docs/performance.md, measured): every route node and param matcher
+costs every route initial JS, because the app entry lists every node, so there is one dynamic
+route each for Profile editing and onboarding, with no matcher (an unknown key is a 404 from
+the load and from every action). Editors load through the registry after the screen renders,
+never statically, and the screen never reaches an editor on the server (`import.meta.env.SSR`), so
+SvelteKit links none of the editors' CSS into the page.
 
 ## Frontend
 

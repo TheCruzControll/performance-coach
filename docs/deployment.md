@@ -141,6 +141,11 @@ workflow (it then skips the commit wait), for example after a rollback.
 
 ## Owner setup (one time, on the iPhone)
 
+Done for production on 2026-11-06 (10:43 UTC) on the owner's iPhone 16 Pro Max, iOS 27.0.1, in
+Chrome for iOS: passkey and recovery codes stored, `OWNER_SETUP_TOKEN_HASH` emptied in Vercel,
+real-device checklist passed. Still to do: the owner deletes the emptied
+`OWNER_SETUP_TOKEN_HASH` variable at a desk (step 5). The steps below stay for an owner reset.
+
 The app has exactly one account, created by first-run setup (docs/security.md). Production starts
 with an empty database and no owner, so after the cutover deploy (or an owner reset):
 
@@ -153,7 +158,7 @@ with an empty database and no owner, so after the cutover deploy (or an owner re
    ever set the hash of a token you alone hold. Redeploy production
    (Deployments → the current production deployment → ⋯ → Redeploy): the variable is read when
    the server starts. Run the smoke check afterwards if it does not start by itself.
-3. On the iPhone, in Safari (the link travels to it through a private channel): open
+3. On the iPhone, in the browser you use (Chrome for iOS or Safari; the link travels to it through a private channel): open
    `https://coach.nikocruz.com/setup?token=<token>`, enter the name and create the passkey
    (Face ID).
 4. Store the 10 recovery codes shown next (copy them into the password manager, or download them)
