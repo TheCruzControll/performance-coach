@@ -210,6 +210,39 @@ export default defineConfig(
 		}
 	},
 
+	// ---- Backups (M9) ------------------------------------------------------------------
+	// src/lib/server/backup seals and reads backup files from explicit inputs (the caller passes
+	// the key text and the bytes). Operator scripts import it under plain Node, so it reads no
+	// configuration and reaches no state (scripts/backup-layer.test.ts).
+	{
+		files: ['src/lib/server/backup/**'],
+		rules: {
+			...restrict([
+				{
+					regex: [
+						...['db', 'services', 'agent', 'auth', 'forms'].map((name) => layer(`server/${name}`)),
+						'(^#lib/server/env|lib/server/env|^(\\.\\./)+env)(\\.ts)?$',
+						'^\\$env/',
+						'^(pg|drizzle-orm)($|/)'
+					].join('|'),
+					message:
+						'server/backup is a leaf: it may use the domain and Node built-ins, never db, services, agent, auth, forms, the env or a driver.'
+				},
+				LAYER.ui,
+				LAYER.client,
+				LAYER.framework
+			]),
+			'no-restricted-properties': [
+				'error',
+				{
+					object: 'process',
+					property: 'env',
+					message: 'server/backup reads no configuration: the caller passes the key text.'
+				}
+			]
+		}
+	},
+
 	// ---- Vercel Blob (M9) --------------------------------------------------------------
 	// The private backup store is the only importer of @vercel/blob, so nothing else can upload
 	// a backup publicly or with a token from the environment. It uses no-restricted-syntax, which

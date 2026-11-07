@@ -35,6 +35,7 @@ describe('pnpm auth:reset-owner', () => {
 		expect(result.status, result.stderr).toBe(2);
 		expect(result.stdout).toMatch(/Database: postgres:\/\/[^@]*\*\*\*@/); // password redacted
 		expect(result.stdout).toContain('reopen first-run setup');
+		expect(result.stdout).toMatch(/Will delete \d+ passkey\(s\), \d+ email sign-in link\(s\)/);
 		expect(result.stderr).toContain('Refusing to run without --confirm.');
 		expect(await resets()).toBe(before);
 	});

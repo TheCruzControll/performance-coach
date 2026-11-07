@@ -237,4 +237,43 @@
 		border: 1px solid var(--color-border);
 		color: var(--color-text-secondary);
 	}
+
+	/*
+	 * A desktop window: the gallery widens to --content-wide and its groups pair up, each at about
+	 * the phone column's width, so no specimen is stretched: Color beside Type, Components beside
+	 * Cards & tones. The header and the icon grid span both columns, and the grids get larger cells.
+	 */
+	@media (width >= 64rem) {
+		.design {
+			display: grid;
+			grid-template-columns: repeat(2, minmax(0, 1fr));
+			column-gap: var(--space-10);
+			align-items: start;
+			max-width: var(--content-wide);
+		}
+
+		.design > :global(*) {
+			grid-column: 1 / -1;
+		}
+
+		.section:not(:last-child) {
+			grid-column: auto;
+		}
+
+		.swatches {
+			grid-template-columns: repeat(auto-fill, minmax(5rem, 1fr));
+		}
+
+		.chip {
+			height: 3.5rem;
+		}
+
+		.icons {
+			grid-template-columns: repeat(auto-fill, minmax(3.5rem, 1fr));
+		}
+
+		.icon-cell {
+			height: 3.5rem;
+		}
+	}
 </style>
