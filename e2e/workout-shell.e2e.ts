@@ -74,7 +74,7 @@ test.describe('the workout screen (IndexedDB only)', () => {
 	}) => {
 		const api: string[] = [];
 		await page.route('**/api/**', (route) => {
-			api.push(route.request().url());
+			api.push(`${route.request().method()} ${route.request().url()}`);
 			return route.abort();
 		});
 		await seedWorkout(page, kits.strength);
@@ -102,7 +102,8 @@ test.describe('the workout screen (IndexedDB only)', () => {
 		await expect(ready(page)).toBeAttached();
 		await expect(page.getByRole('heading', { level: 1 })).toHaveText('Lower body & pull');
 		expect(await main.innerText()).toBe(restored);
-		expect(api.filter((url) => url.includes('/api/workouts'))).toEqual([]);
+		// Nothing is read from the server; the sync engine's POSTs are workout-sync-wiring's.
+		expect(api.filter((r) => r.includes('/api/workouts') && !r.startsWith('POST '))).toEqual([]);
 	});
 
 	test('a workout of another kind is sent to its own route before any view renders', async ({

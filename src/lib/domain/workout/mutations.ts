@@ -1,7 +1,7 @@
 /**
  * What the outbox carries (wire format v1; the offline workout sync ADR): 16 mutation types in one
- * envelope, the identity rule, entity keys and the dependencies the outbox and the server order
- * by. Device actions (LocalAction) go through the same dispatch but are never sent.
+ * envelope, the identity rule and entity keys; the dependencies the outbox and the server order
+ * by are order.ts's. Device actions (LocalAction) go through the same dispatch but are never sent.
  *
  * After merge, only new types and optional payload fields are added.
  */
@@ -266,48 +266,6 @@ export function entityKey(m: Mutation): EntityKey {
 		default:
 			return `${entity}:${m.entityId}`;
 	}
-}
-
-/** Every entity a mutation touches, and whether it creates that row. */
-function touches(m: Mutation): { key: EntityKey; creates: boolean }[] {
-	const key = entityKey(m);
-	const own = { key, creates: m.id === m.entityId && !key.startsWith('slot:') };
-	if (m.type !== 'exercise.skip') return [own];
-	return [own, ...m.payload.sets.map((s) => ({ key: `set:${s.id}` as const, creates: true }))];
-}
-
-/** The exercises a mutation names, any of which may be a custom one still in the outbox. */
-function exercisesOf(m: Mutation): string[] {
-	switch (m.type) {
-		case 'set.log':
-		case 'set.skip':
-		case 'exercise.skip':
-		case 'pain.report':
-			return [m.payload.exerciseId];
-		case 'exercise.substitute':
-		case 'exercise.dislike':
-			return [m.payload.fromExerciseId, m.payload.toExerciseId];
-		default:
-			return [];
-	}
-}
-
-/**
- * Whether `a` must wait for `b`, queued before it: b starts a's workout; b is an earlier change to
- * a row, record or slot a touches (a row's create waits for nothing of its own); b creates a
- * custom exercise a names; or b is the substitution a's pain report names.
- */
-export function dependsOn(a: Mutation, b: Mutation): boolean {
-	if (a.id === b.id || a.type === 'workout.start') return false;
-	if (b.type === 'workout.start') return b.workoutId === a.workoutId;
-	const touched = new Set(touches(b).map((t) => t.key));
-	if (touches(a).some((t) => !t.creates && touched.has(t.key))) return true;
-	if (b.type === 'exercise.create') return exercisesOf(a).includes(b.entityId);
-	return (
-		a.type === 'pain.report' &&
-		a.payload.substitutionId === b.entityId &&
-		(b.type === 'exercise.substitute' || b.type === 'exercise.dislike')
-	);
 }
 
 /** A switch's default for a mutation type it does not handle: pnpm check fails until it does. */

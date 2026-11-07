@@ -2,7 +2,8 @@
  * The active workout for the workout pages (the offline workout sync ADR, 'Restore'), with the
  * route's reducer table. Restore reads IndexedDB alone (restore.ts), so it never waits for the
  * network; the store (store.ts, with idb and every write) loads after the first render, through
- * the page's chunk loader, and from then on every change it reports is shown.
+ * the page's chunk loader, and from then on every change it reports is shown. It loads with the
+ * page's one sync engine (online.ts), which close() stops.
  *
  * - loading: restoring (the page shows its skeleton)
  * - empty: no workout is in progress on this device
@@ -39,7 +40,8 @@ export class ActiveWorkout {
 	/** Null until connect() has opened it, and when it could not. */
 	store: WorkoutStore | null = null;
 	readonly #table: AnyTable;
-	#unsubscribe = () => {};
+	/** Lets go of the store and stops the engine; null once closed. */
+	#stop: (() => void) | null = () => {};
 
 	constructor(table: AnyTable) {
 		this.#table = table;
@@ -61,15 +63,21 @@ export class ActiveWorkout {
 		this.#show({ workoutId: read.inputs.workoutId, view, notSaved: [] });
 	}
 
-	/** Opens the store once restored (for writes, and the other tabs' changes); null if it can't. */
+	/**
+	 * Opens the store once restored (for writes, and the other tabs' changes) and starts its sync
+	 * engine; null if it can't, or if the page closed meanwhile.
+	 */
 	async connect(load: ChunkLoad): Promise<WorkoutStore | null> {
 		if (this.current.phase !== 'active' && this.current.phase !== 'empty') return null;
-		const module = await load(() => import('./store.ts'));
+		const module = await load(() => import('./online.ts'));
 		if (!module) return null;
 		try {
-			const store = await module.createStore({ table: this.#table });
+			const { store, stop } = await module.goOnline({ table: this.#table });
+			const unsubscribe = store.onChange((change) => this.#hear(change));
+			const end = () => (unsubscribe(), stop());
+			if (!this.#stop) return (end(), null);
+			this.#stop = end;
 			this.store = store;
-			this.#unsubscribe = store.onChange((change) => this.#hear(change));
 			this.#show(await store.getActive());
 			return store;
 		} catch (error) {
@@ -84,7 +92,8 @@ export class ActiveWorkout {
 	}
 
 	close(): void {
-		this.#unsubscribe();
+		this.#stop?.();
+		this.#stop = null;
 	}
 
 	#fail(error: unknown) {
