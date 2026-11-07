@@ -18,6 +18,8 @@ import {
 	RUN_STATUSES,
 	SUPERSEDED_REASON_LABEL,
 	SUPERSEDED_REASONS,
+	THREAD_TITLE_SOURCE_LABEL,
+	THREAD_TITLE_SOURCES,
 	TOOL_CALL_STATUS_LABEL,
 	TOOL_CALL_STATUSES
 } from './vocabulary';
@@ -25,6 +27,7 @@ import {
 /** Every list with its label table. A new list must be added here (the first test fails if not). */
 const LISTS: Record<string, [readonly string[], Readonly<Record<string, string>>]> = {
 	ANSWER_BLOCK_KINDS: [ANSWER_BLOCK_KINDS, ANSWER_BLOCK_KIND_LABEL],
+	THREAD_TITLE_SOURCES: [THREAD_TITLE_SOURCES, THREAD_TITLE_SOURCE_LABEL],
 	MESSAGE_ROLES: [MESSAGE_ROLES, MESSAGE_ROLE_LABEL],
 	MESSAGE_KINDS: [MESSAGE_KINDS, MESSAGE_KIND_LABEL],
 	MESSAGE_STATUSES: [MESSAGE_STATUSES, MESSAGE_STATUS_LABEL],
@@ -59,6 +62,7 @@ describe('coach vocabulary', () => {
 
 	it('keeps the planned keys that later slices store, CHECK and branch on', () => {
 		expect(ANSWER_BLOCK_KINDS).toEqual(['fact', 'metric', 'recommendation', 'safety', 'note']);
+		expect(THREAD_TITLE_SOURCES).toEqual(['first_message', 'owner']);
 		expect(MESSAGE_ROLES).toEqual(['user', 'assistant', 'system']);
 		expect(MESSAGE_KINDS).toEqual([
 			'owner_message',

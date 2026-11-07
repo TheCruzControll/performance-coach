@@ -162,6 +162,16 @@ async function fillRootTables(programId: string) {
 			select id, '${programId}', gen_random_uuid(), '{}', 'A good block' from owners;
 		insert into sync_mutations (mutation_id, owner_id, type, entity_id, client_at)
 			select gen_random_uuid(), id, 'set.log', gen_random_uuid(), now() from owners;
+		insert into coach_threads (owner_id, title, title_source, segment_prompt_version)
+			select id, 'Bench', 'first_message', 'p1' from owners;
+		insert into coach_messages (owner_id, thread_id, seq, segment, role, kind, api_visible, content)
+			select owner_id, id, 1, 1, 'user', 'owner_message', true, '"How is my bench?"' from coach_threads;
+		insert into agent_runs (owner_id, thread_id, trigger_message_id, kind, provider, model, effort, prompt_version)
+			select owner_id, thread_id, id, 'turn', 'mock', 'claude-opus-5-5', 'medium', 'p1' from coach_messages;
+		insert into agent_model_calls (owner_id, run_id, call_index, cap_cost_micros, latency_ms)
+			select owner_id, id, 0, 0, 1 from agent_runs;
+		insert into agent_tool_calls (owner_id, run_id, call_index, tool_use_id, name, status, input, started_at, duration_ms)
+			select owner_id, id, 0, 'toolu_1', 'get_current_program', 'succeeded', '{}', now(), 1 from agent_runs;
 		insert into exercises (owner_id, name, pattern, primary_muscles, skill_level, measure, load_type)
 			select id, 'Sled push', 'carry', '{quads}', 'beginner', 'reps', 'external' from owners`
 	);
