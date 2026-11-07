@@ -73,6 +73,8 @@ for (const theme of THEMES) {
 				expect((await page.goto(path))?.status(), path).toBe(200);
 				await page.waitForLoadState('networkidle');
 				if (path === '/profile') await expect(page.getByTestId('db-status')).toBeVisible();
+				// Today on a blank profile: its setup card, streamed in place of its skeleton.
+				if (path === '/today') await expect(page.getByTestId('today-setup')).toBeVisible();
 				// A Profile section's editor loads after the screen, in place of its skeleton.
 				const editor = page.getByTestId('section-editor');
 				if (await editor.count()) await expect(editor).toHaveAttribute('aria-busy', 'false');
