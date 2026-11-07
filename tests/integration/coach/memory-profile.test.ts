@@ -307,10 +307,10 @@ describe('getCoachingMemory: the profile half', () => {
 					.filter((session) => session.date === date)
 					.map((session) => ({
 						title: session.title,
-						source: { type: 'session', id: session.lineage, date }
+						source: { type: 'session' as const, id: session.lineage, date }
 					}));
 			const done = (date: string, title = `Class ${date}`) => [
-				{ title, source: { type: 'workout', id: s.workouts.get(date)!, date } }
+				{ title, source: { type: 'workout' as const, id: s.workouts.get(date)!, date } }
 			];
 			const day = (date: string, d: MemorySnapshot['profile']['recentDays'][number]['done']) => ({
 				date,
