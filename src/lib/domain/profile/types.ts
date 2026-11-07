@@ -3,6 +3,7 @@
  * schemas (./schemas.ts) wherever they overlap, so a screen can edit what it loaded and send it
  * straight back. Dates are ISO `YYYY-MM-DD` strings; timestamps are `Date`s.
  */
+import type { PreferenceSource } from '../training/vocabulary';
 import type { DistanceUnit, WeightUnit } from '../units';
 import type {
 	BaselineKind,
@@ -156,11 +157,19 @@ export interface Injury {
 	updatedAt: Date;
 }
 
+/**
+ * Profile → Exercises reads the owner's words, sentiment and reason only; the training services
+ * (services/training/preferences.ts) also give the library exercise they name and where the
+ * preference was recorded.
+ */
 export interface ExercisePreference {
 	id: string;
 	exercise: string;
 	sentiment: Sentiment;
 	reason: string | null;
+	/** The library exercise the words name; null when nothing matched. */
+	exerciseId?: string | null;
+	source?: PreferenceSource;
 }
 
 export interface Commitment {

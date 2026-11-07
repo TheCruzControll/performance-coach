@@ -2,7 +2,8 @@
  * Training-profile persistence (schema/profile.ts). Plain data access: validation, history and
  * transaction boundaries belong to the services (src/lib/server/services/profile).
  */
-import { and, asc, desc, eq, inArray, isNotNull, isNull, notInArray, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNotNull, isNull, notInArray, or, sql } from 'drizzle-orm';
+import type { PreferenceSource } from '../../../domain/training/vocabulary';
 import {
 	athleteProfiles,
 	bodyWeightEntries,
@@ -41,6 +42,10 @@ export type InjuryRow = typeof injuries.$inferSelect;
 export type NewInjury = typeof injuries.$inferInsert;
 export type ExercisePreferenceRow = typeof exercisePreferences.$inferSelect;
 export type NewExercisePreference = typeof exercisePreferences.$inferInsert;
+/** A preference as a save writes it: always with its source. */
+export type NewPreference = Omit<NewExercisePreference, 'ownerId' | 'source'> & {
+	source: PreferenceSource;
+};
 export type ScheduleRow = typeof schedules.$inferSelect;
 export type CommitmentRow = typeof scheduleCommitments.$inferSelect;
 export type NewCommitment = typeof scheduleCommitments.$inferInsert;
@@ -420,37 +425,23 @@ export function createProfileRepository(db: Executor) {
 				.orderBy(asc(exercisePreferences.sentiment), asc(exercisePreferences.createdAt));
 		},
 
-		/** Match by exercise name (case-insensitive) so ids and created_at survive; drop the rest. */
+		/**
+		 * Replace the owner's preferences with `rows`, matched to the stored ones by name (in any
+		 * case) so what Profile does not show survives its save: a match keeps its id, created_at
+		 * and link, and while its sentiment is unchanged its source and, when the row brings none,
+		 * its reason. A match moved to the other sentiment is a new statement, recorded as the row
+		 * says. Rows left out are deleted first, so a new name may take over their exercise.
+		 */
 		async replaceExercisePreferences(
 			ownerId: string,
-			rows: Omit<NewExercisePreference, 'ownerId'>[],
+			rows: NewPreference[],
 			now: Date
 		): Promise<void> {
 			const existing = new Map(
 				(await this.listExercisePreferences(ownerId)).map((r) => [r.exercise.toLowerCase(), r])
 			);
-			const kept: string[] = [];
-			for (const row of rows) {
-				const match = existing.get(row.exercise.toLowerCase());
-				if (match) {
-					kept.push(match.id);
-					await db
-						.update(exercisePreferences)
-						.set({
-							exercise: row.exercise,
-							sentiment: row.sentiment,
-							reason: row.reason ?? null,
-							updatedAt: now
-						})
-						.where(eq(exercisePreferences.id, match.id));
-				} else {
-					const [saved] = await db
-						.insert(exercisePreferences)
-						.values({ ...row, ownerId, createdAt: now, updatedAt: now })
-						.returning({ id: exercisePreferences.id });
-					kept.push(saved!.id);
-				}
-			}
+			const matches = rows.map((row) => existing.get(row.exercise.toLowerCase()));
+			const kept = matches.flatMap((match) => (match ? [match.id] : []));
 			await db
 				.delete(exercisePreferences)
 				.where(
@@ -459,6 +450,70 @@ export function createProfileRepository(db: Executor) {
 						kept.length ? notInArray(exercisePreferences.id, kept) : undefined
 					)
 				);
+			for (const [i, row] of rows.entries()) {
+				const match = matches[i];
+				if (!match) {
+					await db
+						.insert(exercisePreferences)
+						.values({ ...row, ownerId, createdAt: now, updatedAt: now });
+					continue;
+				}
+				const same = match.sentiment === row.sentiment;
+				await db
+					.update(exercisePreferences)
+					.set({
+						exercise: row.exercise,
+						exerciseId: match.exerciseId ?? row.exerciseId ?? null,
+						sentiment: row.sentiment,
+						reason: row.reason ?? (same ? match.reason : null),
+						source: same ? match.source : row.source,
+						updatedAt: now
+					})
+					.where(eq(exercisePreferences.id, match.id));
+			}
+		},
+
+		/**
+		 * Record one preference for a library exercise: update the row that names it (by link,
+		 * else by the exercise's name in any case, which links it) and keep the owner's words, or
+		 * insert one. The caller holds the preferences lock (lockSection 'exercisePreferences').
+		 */
+		async upsertExercisePreference(
+			ownerId: string,
+			row: NewPreference & { exerciseId: string },
+			now: Date
+		): Promise<ExercisePreferenceRow> {
+			const named = await db
+				.select()
+				.from(exercisePreferences)
+				.where(
+					and(
+						eq(exercisePreferences.ownerId, ownerId),
+						or(
+							eq(exercisePreferences.exerciseId, row.exerciseId),
+							sql`lower(${exercisePreferences.exercise}) = lower(${row.exercise})`
+						)
+					)
+				);
+			const match = named.find((r) => r.exerciseId === row.exerciseId) ?? named[0];
+			const values = {
+				exerciseId: row.exerciseId,
+				sentiment: row.sentiment,
+				reason: row.reason ?? null,
+				source: row.source,
+				updatedAt: now
+			};
+			const [saved] = match
+				? await db
+						.update(exercisePreferences)
+						.set(values)
+						.where(eq(exercisePreferences.id, match.id))
+						.returning()
+				: await db
+						.insert(exercisePreferences)
+						.values({ ...values, ownerId, exercise: row.exercise, createdAt: now })
+						.returning();
+			return saved!;
 		},
 
 		// ---- schedule ------------------------------------------------------------------------
