@@ -108,6 +108,21 @@ export default defineConfig(({ command, mode }) => {
 		define: command === 'build' ? { __VERCEL_BUILD__: JSON.stringify(target === 'vercel') } : {},
 		build: {
 			target: 'es2022',
+			rolldownOptions: {
+				output: {
+					codeSplitting: {
+						groups: [
+							/**
+							 * The client's error reporting and its leaving state, which every page loads first
+							 * (hooks.client.ts), stay one chunk when lazy code imports only one of them: the
+							 * workout sync engine imports leaving.ts. Apart, every route would pay for another
+							 * chunk (about 0.1 KB gzip).
+							 */
+							{ name: 'errors', test: /src[\\/]lib[\\/]client[\\/](errors|leaving)\.ts$/ }
+						]
+					}
+				}
+			},
 			// Report gzip sizes in build output; budgets are enforced by scripts/check-budgets.ts.
 			reportCompressedSize: true,
 			/**
