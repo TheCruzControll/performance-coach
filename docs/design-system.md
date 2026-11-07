@@ -62,6 +62,86 @@ values were darkened in M1 review round 2: positive `#0f7a40`, warning `#955a09`
 further 18%.
 Plate colours in the plate calculator follow the physical IWF convention on purpose.
 
+## Data visualisation
+
+Charts take their colours from the `--chart-*` tokens, never from the discipline signals above.
+Colour is checked by computation, not by eye: `src/lib/ui/charts/palette.test.ts` reads
+`tokens.css` and recomputes every check below in both themes on the chart surface
+(`palette-check.ts`, ported from the dataviz palette validator: OKLab/OKLCH, Machado 2009
+protan/deutan simulation, ΔE as OKLab ×100, WCAG contrast). A palette change that fails it does
+not ship. The order and roles live in `src/lib/ui/charts/palette.ts`.
+
+**Series**, in one fixed order for stacks, legends and table twins (`STACK_ORDER`):
+
+| Token                  | Dark      | Light     |
+| ---------------------- | --------- | --------- |
+| `--chart-strength`     | `#c08600` | `#b37515` |
+| `--chart-hypertrophy`  | `#9e79e9` | `#7a4bd6` |
+| `--chart-conditioning` | `#00ac8d` | `#0e9b7c` |
+| `--chart-combat`       | `#ef5b3f` | `#d2452a` |
+| `--chart-running`      | `#0da0cd` | `#0b80b3` |
+
+- Light uses the discipline values. Dark is stepped into the dark lightness band (OKLCH L
+  0.48–0.67): the dark signals sit at L 0.71–0.81, too light to read as marks of equal weight.
+- Each series: inside the band, chroma ≥ 0.10, ≥ 3:1 on the surface. Each neighbour in the
+  order: CVD ΔE ≥ 8 and normal-vision ΔE ≥ 15. Measured: worst neighbour CVD 11.1 dark and 10.3
+  light; normal-vision floor 25.6 dark and 28.3 light.
+- Colour follows the discipline, never its rank: a chart without some disciplines keeps the
+  order and leaves them out. Strength and combat collapse under deuteranopia (ΔE 2.3), so they
+  are never neighbours in the order, and every series is labelled in words.
+- A series colour is never a status colour (each pair at least ΔE 2 apart; status always carries
+  an icon and a word). M1's dark strength sits ΔE 0.7 from warning, one more reason charts use
+  their own steps.
+
+**Diverging pair**, for a signed difference from a target (actual minus target RPE): cool below,
+warm above, a grey with no hue at zero, so on target reads as nothing to see.
+
+| Token                  | Dark      | Light     |
+| ---------------------- | --------- | --------- |
+| `--chart-diverge-cool` | `#4f78e8` | `#3f74e6` |
+| `--chart-diverge-warm` | `#d9507a` | `#c63d6b` |
+| `--chart-diverge-mid`  | `#74747a` | `#86867f` |
+
+- The poles: ≥ 3:1, normal-vision ΔE 27.7 light and 26.6 dark, CVD 19.9 and 17.3 (floors 15 and
+  8). The midpoint: chroma < 0.02, 3.66:1 light and 4.03:1 dark.
+- Each pole is at least ΔE 8 from every status and series colour (closest: light warm against
+  danger, 8.6; dark warm against combat, 9.6). The pair never shares a chart with discipline
+  series, and a status shown beside it is labelled in words.
+
+**Furniture** (everything that is not data):
+
+| Token              | Dark      | Light     | Use                                                    |
+| ------------------ | --------- | --------- | ------------------------------------------------------ |
+| `--chart-surface`  | surface-1 | surface-1 | what every chart sits on                               |
+| `--chart-muted`    | `#6b6b71` | `#8b8b85` | a context series beside the one in colour (≥ 3:1)      |
+| `--chart-grid`     | `#1f1f23` | `#ebebe6` | hairline gridlines                                     |
+| `--chart-axis`     | `#2e2e33` | `#d4d4ce` | axis rules and ticks                                   |
+| `--chart-baseline` | `#55555c` | `#a3a39d` | the zero line marks stand on                           |
+| `--chart-band`     | `#19191c` | `#f4f4f0` | the fill behind a target range or a highlighted period |
+
+All greys. Grid, axis and baseline stand out in that order and stay below 3:1, so they never read
+as data.
+
+**Rules for every chart:**
+
+- **Emphasis before colour.** One series in colour, the rest in `--chart-muted`; past that,
+  **small multiples** (one small chart per discipline on a shared scale) before more hues.
+- **One axis.** Never a dual axis; two measures of different scale are two charts.
+- **Estimated against measured.** Hollow rings for estimated values (e1RM from a set), square
+  diamonds for measured ones (a tested max), so the kind never rests on colour.
+- **The week in progress** is marked 'so far': a dashed ring on lines, an outlined column on bars,
+  labelled in words.
+- **Table twins.** Every chart ships its title, a one-sentence summary and a `<details>` table of
+  the same numbers, rendered on the server; without JavaScript the plot says 'Chart needs
+  JavaScript' and the table still reads.
+- **Text never wears a series colour.** Values, labels, legends and tick labels use the text
+  tokens; a coloured mark beside them carries identity.
+- **Surfaces.** Charts sit on surface-1 (`--chart-surface`), never surface-2: light conditioning
+  is 2.95:1 there.
+- **Motion.** Marks do not animate in. Hover and scrub feedback uses `--duration-fast`, a
+  refetch keeps the previous frame at reduced opacity with `aria-busy`, and under
+  `prefers-reduced-motion` nothing moves.
+
 ## Typography
 
 | Role               | Family                    | Notes                                                                                                         |

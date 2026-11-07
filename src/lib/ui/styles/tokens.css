@@ -55,6 +55,27 @@
 	--color-hypertrophy: light-dark(#7a4bd6, #b28dff);
 	--color-conditioning: light-dark(#0e9b7c, #3fd6b5);
 
+	/* ---- Color: charts (docs/design-system.md#data-visualisation) --------------------
+	   Checked by computation in both themes on the chart surface (ui/charts/palette.test.ts).
+	   Series: light keeps the discipline values; dark steps them into the OKLCH L 0.48–0.67
+	   band, where the signals above are too light to read as marks of equal weight. */
+	--chart-strength: light-dark(#b37515, #c08600);
+	--chart-hypertrophy: light-dark(#7a4bd6, #9e79e9);
+	--chart-conditioning: light-dark(#0e9b7c, #00ac8d);
+	--chart-combat: light-dark(#d2452a, #ef5b3f);
+	--chart-running: light-dark(#0b80b3, #0da0cd);
+	/* Diverging (actual minus target): cool below, warm above, a hueless grey at zero. */
+	--chart-diverge-cool: light-dark(#3f74e6, #4f78e8);
+	--chart-diverge-warm: light-dark(#c63d6b, #d9507a);
+	--chart-diverge-mid: light-dark(#86867f, #74747a);
+	/* Furniture: a context series (≥ 3:1), then greys that recede and never reach 3:1. */
+	--chart-surface: var(--color-surface-1);
+	--chart-muted: light-dark(#8b8b85, #6b6b71);
+	--chart-grid: light-dark(#ebebe6, #1f1f23);
+	--chart-axis: light-dark(#d4d4ce, #2e2e33);
+	--chart-baseline: light-dark(#a3a39d, #55555c);
+	--chart-band: light-dark(#f4f4f0, #19191c);
+
 	/* ---- Typography ---------------------------------------------------------------- */
 	--font-sans:
 		'Mona Sans', 'Mona Sans Fallback', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
