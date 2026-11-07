@@ -7,8 +7,8 @@
  *
  *   DATABASE_URL_UNPOOLED='postgres://…neon…/neondb' pnpm auth:reset-owner --confirm
  *
- * What it does (one transaction): deletes every passkey, recovery code and pending challenge,
- * revokes every session, reopens setup (owners.setup_completed_at = null) and writes an
+ * What it does (one transaction): deletes every passkey, recovery code, email sign-in link and
+ * pending challenge, revokes every session, reopens setup (owners.setup_completed_at = null) and writes an
  * `owner.reset` audit event. The owner row and all training data are kept: the next setup
  * re-attaches to the same owner. Then issue a new setup link (`pnpm auth:setup-token`): used setup
  * tokens stay recorded, so the previous link keeps answering 404.
@@ -26,6 +26,7 @@ export interface ResetSummary {
 	passkeys: number;
 	sessions: number;
 	recoveryCodes: number;
+	emailLinks: number;
 }
 
 /**
@@ -50,6 +51,7 @@ export async function resetOwnerAuth(
 		);
 		const passkeys = await client.query('delete from passkey_credentials');
 		const codes = await client.query('delete from recovery_codes');
+		const links = await client.query('delete from email_sign_in_links');
 		await client.query('delete from webauthn_challenges');
 		await client.query('update owners set setup_completed_at = null');
 		await client.query(
@@ -59,7 +61,8 @@ export async function resetOwnerAuth(
 				JSON.stringify({
 					passkeys: passkeys.rowCount,
 					sessions: sessions.rowCount,
-					recoveryCodes: codes.rowCount
+					recoveryCodes: codes.rowCount,
+					emailLinks: links.rowCount
 				})
 			]
 		);
@@ -68,7 +71,8 @@ export async function resetOwnerAuth(
 			ownerName: owner.rows[0]?.display_name ?? null,
 			passkeys: passkeys.rowCount ?? 0,
 			sessions: sessions.rowCount ?? 0,
-			recoveryCodes: codes.rowCount ?? 0
+			recoveryCodes: codes.rowCount ?? 0,
+			emailLinks: links.rowCount ?? 0
 		};
 	} catch (err) {
 		if (own) await client.query('rollback');
@@ -103,18 +107,25 @@ async function main() {
 	const client = new pg.Client({ ...connectionConfig(url), application_name: 'auth-reset-owner' });
 	await client.connect();
 	try {
-		const state = await client.query<{ owner: string | null; passkeys: number; sessions: number }>(
+		const state = await client.query<{
+			owner: string | null;
+			passkeys: number;
+			sessions: number;
+			links: number;
+		}>(
 			`select (select display_name from owners limit 1) as owner,
 			        (select count(*)::int from passkey_credentials) as passkeys,
-			        (select count(*)::int from auth_sessions where revoked_at is null) as sessions`
+			        (select count(*)::int from auth_sessions where revoked_at is null) as sessions,
+			        (select count(*)::int from email_sign_in_links) as links`
 		);
-		const { owner, passkeys, sessions } = state.rows[0]!;
+		const { owner, passkeys, sessions, links } = state.rows[0]!;
 		console.log(
 			[
 				'',
 				`Database: ${redactUrl(url)}`,
 				`Owner:    ${owner ?? '(none yet)'}`,
-				`Will delete ${passkeys} passkey(s) and every recovery code, revoke ${sessions} session(s)`,
+				`Will delete ${passkeys} passkey(s), ${links} email sign-in link(s) and every recovery code,`,
+				`revoke ${sessions} session(s)`,
 				'and reopen first-run setup. Training data is kept.',
 				''
 			].join('\n')
@@ -143,7 +154,7 @@ async function main() {
 		console.log(
 			[
 				'',
-				`Reset done: ${summary.passkeys} passkey(s) and ${summary.recoveryCodes} recovery code(s) deleted, ${summary.sessions} session(s) revoked.`,
+				`Reset done: ${summary.passkeys} passkey(s), ${summary.recoveryCodes} recovery code(s) and ${summary.emailLinks} email sign-in link(s) deleted, ${summary.sessions} session(s) revoked.`,
 				'Next: `pnpm auth:setup-token` (a new token: the previous link stays refused), set',
 				'OWNER_SETUP_TOKEN_HASH on Vercel, redeploy, send the link.',
 				''
