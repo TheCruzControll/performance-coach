@@ -149,8 +149,8 @@ services, not CHECKed, so a new key needs no migration.
   (active or paused) goals, unique and contiguous from 1, and is null once a goal is achieved or
   dropped.
 - `training_goal_events`: the append-only history of every goal change, status change,
-  re-ranking and deletion, as a JSON snapshot with its source. It has no foreign key, so it
-  outlives a deleted goal.
+  re-ranking and deletion, as a JSON snapshot with its source. `goal_id` has no foreign
+  key (only `owner_id` does), so it outlives a deleted goal.
 - `discipline_experience`: level, years and sessions a week, one row per discipline.
 - `strength_baselines`: optional 1RMs, either `measured` (tested, competition) or `estimated`
   (from a set, an estimate); the database refuses a measured row from an estimating source. A
@@ -174,8 +174,9 @@ services, not CHECKed, so a new key needs no migration.
   complete). Each validates its input with the same schema the browser uses and throws
   `ProfileInputError` (field errors by dotted path) or `ProfileNotFoundError`. Every write names
   its source (`onboarding`, `profile`, `coach`). A save that replaces a set of rows runs in one
-  transaction, takes its section's advisory lock first and keeps the ids of rows that did not
-  change, so two saves of one section queue instead of interleaving.
+  transaction and takes its section's advisory lock first, so two saves of one section queue
+  instead of interleaving. Experience, injuries and exercise preferences keep the ids of rows
+  that match; race results are deleted and reinserted.
 - `src/lib/server/db/repositories/profile.ts` is plain data access over an `Executor`.
 
 ### The save path
