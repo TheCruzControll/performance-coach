@@ -54,31 +54,48 @@ async function setPosition(page: Page, workoutId: string, position: number) {
 }
 
 /**
- * Records /api/workouts traffic. `unexpected` returns every request other than the sync engine
- * sending what the outbox already held: the view reads nothing from the server and queues nothing.
+ * Snapshots the seeded outbox (call after seeding, before the page opens), then records
+ * /api/workouts traffic. `expectNothingNew` waits for this page's sync engine to send, lets the
+ * page settle, and asserts the view read nothing from the server and queued nothing: every request
+ * is the engine posting mutations from the snapshot, and the outbox is still exactly the snapshot.
  */
-function watchWorkouts(page: Page) {
-	const requests: { method: string; path: string; ids: string[] }[] = [];
+async function watchWorkouts(page: Page) {
+	const seeded = (await readOutbox(page)).map(({ envelope }) => envelope.id);
+	const known = new Set(seeded);
+	let loads = 0;
+	page.on('framenavigated', (frame) => {
+		if (frame === page.mainFrame()) loads++;
+	});
+	const requests: { load: number; method: string; path: string; ids: string[] }[] = [];
 	page.on('request', (request) => {
 		const url = new URL(request.url());
 		if (!url.pathname.startsWith('/api/workouts')) return;
 		const body = request.method() === 'POST' ? (request.postDataJSON() as SyncRequest) : null;
 		requests.push({
+			load: loads,
 			method: request.method(),
 			path: url.pathname,
 			ids: body?.mutations.map(({ id }) => id) ?? []
 		});
 	});
+	const isSync = ({ method, path }: { method: string; path: string }) =>
+		method === 'POST' && path === '/api/workouts/sync';
 	return {
-		async unexpected() {
-			const queued = new Set((await readOutbox(page)).map(({ envelope }) => envelope.id));
-			return requests.filter(
-				({ method, path, ids }) =>
-					method !== 'POST' ||
-					path !== '/api/workouts/sync' ||
-					ids.length === 0 ||
-					!ids.every((id) => queued.has(id))
-			);
+		async expectNothingNew() {
+			// The engine starts on idle after first render; anything the view sends comes before.
+			await expect
+				.poll(() => requests.some((r) => r.load === loads && isSync(r)), {
+					message: 'the sync engine sent the seeded outbox'
+				})
+				.toBe(true);
+			await page.waitForTimeout(500);
+			expect(
+				requests.filter(
+					(r) => !isSync(r) || r.ids.length === 0 || !r.ids.every((id) => known.has(id))
+				)
+			).toEqual([]);
+			// A write queued behind the held first batch never reaches the wire: the outbox shows it.
+			expect((await readOutbox(page)).map(({ envelope }) => envelope.id)).toEqual(seeded);
 		}
 	};
 }
@@ -104,8 +121,8 @@ test.describe('the strength view (IndexedDB only)', () => {
 	test('the back squat asks to work up to a set of 5 @ RPE 7, with no weight, and shows last time', async ({
 		page
 	}, testInfo) => {
-		const workouts = watchWorkouts(page);
 		await seedWorkout(page, kit);
+		const workouts = await watchWorkouts(page);
 		await gotoWorkout(page);
 
 		await expect(card(page).getByRole('heading', { level: 2 })).toHaveText('Back squat');
@@ -131,7 +148,7 @@ test.describe('the strength view (IndexedDB only)', () => {
 		]);
 		await expect(card(page).getByTestId('set').first()).toHaveAttribute('aria-current', 'step');
 		await captureScreen(page, testInfo, 'workout-baseline');
-		expect(await workouts.unexpected()).toEqual([]);
+		await workouts.expectNothingNew();
 	});
 
 	test('the leg press shows 3 × 10 @ RPE 7 and its rest, and says it has no previous sets', async ({
@@ -174,16 +191,17 @@ test.describe('the strength view (IndexedDB only)', () => {
 	test('a reload restores the same exercise, and nothing is read from /api/workouts', async ({
 		page
 	}) => {
-		const workouts = watchWorkouts(page);
 		await seedAt(page, kit, 3);
+		const workouts = await watchWorkouts(page);
 		await gotoWorkout(page);
 		await expect(card(page).getByRole('heading', { level: 2 })).toHaveText('Romanian deadlift');
+		await workouts.expectNothingNew();
 		const shown = await page.getByTestId('workout-main').innerText();
 		await page.reload();
 		await expect(page.locator('main#main[data-ready]')).toBeAttached();
 		await expect(card(page).getByRole('heading', { level: 2 })).toHaveText('Romanian deadlift');
 		expect(await page.getByTestId('workout-main').innerText()).toBe(shown);
-		expect(await workouts.unexpected()).toEqual([]);
+		await workouts.expectNothingNew();
 	});
 
 	test('set rows say done, missed, skipped, extra and now in words', async ({ page }) => {
