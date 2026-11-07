@@ -1,0 +1,37 @@
+[
+	{
+		"test": "docs-env",
+		"doc": "docs/environment.md",
+		"item": "NODE_ENV: no row"
+	},
+	{
+		"test": "docs-env",
+		"doc": "docs/environment.md",
+		"item": "VERCEL_ENV: no row"
+	},
+	{
+		"test": "docs-env",
+		"doc": "docs/environment.md",
+		"item": "VERCEL: no row"
+	},
+	{
+		"test": "docs-env",
+		"doc": "docs/environment.md",
+		"item": "VERCEL_URL: no row"
+	},
+	{
+		"test": "docs-env",
+		"doc": "docs/environment.md",
+		"item": "VERCEL_BRANCH_URL: no row"
+	},
+	{
+		"test": "docs-env",
+		"doc": "docs/environment.md",
+		"item": "ORIGIN: not a key of envSchema"
+	},
+	{
+		"test": "docs-env",
+		"doc": "docs/environment.md",
+		"item": "PORT: not a key of envSchema"
+	}
+]
