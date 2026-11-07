@@ -4,6 +4,7 @@
   (accelerating), tap the value to type (Enter commits, Escape cancels the edit without closing
   an enclosing sheet), ArrowUp/ArrowDown/PageUp/PageDown/Home/End on the keyboard. Exposed to
   assistive tech as a spinbutton; an error marks it invalid and is announced in place of the hint.
+  `format` and `parse` show and read the value another way (seconds as m:ss).
 -->
 <script lang="ts">
 	import IconButton from './IconButton.svelte';
@@ -22,6 +23,10 @@
 		hint?: string;
 		/** Replaces the hint while shown. */
 		error?: string | null;
+		/** The value as shown and typed, instead of the number: seconds as '1:30'. */
+		format?: (value: number) => string;
+		/** Reads what was typed back; NaN or null keeps the value. Number() by default. */
+		parse?: (text: string) => number | null;
 		onchange?: (value: number) => void;
 		'data-testid'?: string;
 	}
@@ -37,6 +42,8 @@
 		decimals,
 		hint,
 		error = null,
+		format,
+		parse,
 		onchange,
 		'data-testid': testId
 	}: Props = $props();
@@ -47,7 +54,7 @@
 	const places = $derived(decimals ?? String(step).split('.')[1]?.length ?? 0);
 	// Plain string formatting on purpose: creating an Intl formatter during hydration costs
 	// ~15–20 ms on a phone-class CPU (measured), which shows up as Total Blocking Time.
-	const display = $derived(String(Number(value.toFixed(places))));
+	const display = $derived(format ? format(value) : String(Number(value.toFixed(places))));
 
 	let editing = $state(false);
 	let draft = $state('');
@@ -147,8 +154,8 @@
 	function commit() {
 		if (!editing) return;
 		editing = false;
-		const parsed = Number(draft.replace(',', '.'));
-		if (draft.trim() !== '' && Number.isFinite(parsed)) set(parsed);
+		const parsed = parse ? parse(draft) : Number(draft.replace(',', '.'));
+		if (draft.trim() !== '' && parsed !== null && Number.isFinite(parsed)) set(parsed);
 	}
 </script>
 

@@ -37,8 +37,11 @@ export type ChunkLoad = <T>(load: () => Promise<T>) => Promise<T | null>;
 
 export class ActiveWorkout {
 	current = $state.raw<Restore>({ phase: 'loading' });
-	/** Null until connect() has opened it, and when it could not. */
-	store: WorkoutStore | null = null;
+	/**
+	 * Null until connect() has opened it and read its workout (so a write through it is synchronous),
+	 * and when it could not. Reactive: the page marks it.
+	 */
+	store = $state.raw<WorkoutStore | null>(null);
 	readonly #table: AnyTable;
 	/** Lets go of the store and stops the engine; null once closed. */
 	#stop: (() => void) | null = () => {};
@@ -73,12 +76,12 @@ export class ActiveWorkout {
 		if (!module) return null;
 		try {
 			const { store, stop } = await module.goOnline({ table: this.#table });
-			const unsubscribe = store.onChange((change) => this.#hear(change));
+			const unsubscribe = store.onChange((change) => this.#hear(store, change));
 			const end = () => (unsubscribe(), stop());
 			if (!this.#stop) return (end(), null);
 			this.#stop = end;
-			this.store = store;
 			this.#show(await store.getActive());
+			this.store = store;
 			return store;
 		} catch (error) {
 			this.#fail(error);
@@ -122,9 +125,7 @@ export class ActiveWorkout {
 		}
 	}
 
-	#hear(change: StoreChange) {
-		const store = this.store;
-		if (!store) return;
+	#hear(store: WorkoutStore, change: StoreChange) {
 		if (change.type === 'closed') return this.#closed(change.reason);
 		const shown = this.current.phase === 'active' ? this.current.snapshot.workoutId : null;
 		if (change.type !== 'purged' && change.workoutId === shown) {

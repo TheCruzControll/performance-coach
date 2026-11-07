@@ -9,7 +9,7 @@
 </svelte:head>
 
 <Shell table={strengthTable}>
-	{#snippet children({ view })}
-		<StrengthView {view} />
+	{#snippet children(snapshot, load, active)}
+		<StrengthView {snapshot} {load} {active} />
 	{/snippet}
 </Shell>
