@@ -24,15 +24,15 @@ export const PANELS = {
 	summary: () => import('./Summary.svelte'),
 	/** Onboarding is complete and there is no program: the Build card, over the summary. */
 	build: () => import('./Build.svelte'),
+	/** A program exists: the week, today's sessions and what's next, over the summary. */
+	program: () => import('./Program.svelte'),
 	/**
 	 * Build my program, once the Build card is tapped: week 1 previewed, then started. Browser
 	 * only (the server never renders it): while the server can reach it, SvelteKit links its CSS
 	 * into every Today page.
 	 */
 	preview: () =>
-		import.meta.env.SSR
-			? Promise.reject(new Error('client only'))
-			: import('./BuildPreview.svelte')
+		import.meta.env.SSR ? Promise.reject(new Error('client only')) : import('./BuildPreview.svelte')
 } satisfies Record<string, PanelImport>;
 
 export type PanelName = keyof typeof PANELS;

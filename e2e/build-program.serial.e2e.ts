@@ -189,7 +189,7 @@ test('Build previews week 1 with its rationale, and Start week 1 stores version 
 
 	// Today now shows the program state.
 	await gotoHydrated(page, '/today');
-	await expect(page.getByTestId('today-session')).toBeVisible();
+	await expect(page.getByTestId('today-plan')).toBeVisible();
 	await expect(card(page)).toHaveCount(0);
 	expect(errors).toEqual([]);
 });

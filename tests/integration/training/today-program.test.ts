@@ -1,6 +1,6 @@
 /**
  * Which state Today shows once onboarding is complete (src/routes/(app)/today/program.server.ts),
- * on real Postgres: 'none' until a program is built, then 'active'. When the database cannot be
+ * on real Postgres: 'none' until a program is built, then 'active', with the owner's today. When the database cannot be
  * reached it fails soft: null, and the failure recorded as a server error.
  */
 import { describe, expect, it } from 'vitest';
@@ -24,10 +24,16 @@ describe('Today’s program state', () => {
 	it("is 'none' until a program exists, then 'active'", async () => {
 		await withRollback(async (db) => {
 			const owner = await makeOwner(db);
-			expect(await loadTodayProgram(owner, { now, origin: origin() }, { db })).toBe('none');
+			expect(await loadTodayProgram(owner, { now, origin: origin() }, { db })).toEqual({
+				state: 'none',
+				today: '2026-11-05'
+			});
 			const plan = programFixture('hybrid', { monday: '2026-11-09', today: '2026-11-05' });
 			await createProgramFromPlan(owner, plan, { source: 'rules' }, { db });
-			expect(await loadTodayProgram(owner, { now, origin: origin() }, { db })).toBe('active');
+			expect(await loadTodayProgram(owner, { now, origin: origin() }, { db })).toEqual({
+				state: 'active',
+				today: '2026-11-05'
+			});
 		});
 	});
 
