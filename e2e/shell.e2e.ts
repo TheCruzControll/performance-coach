@@ -99,12 +99,16 @@ test.describe('app shell on an iPhone viewport', () => {
 	test('signed in, Today and Train name the training profile as the next step', async ({
 		page
 	}) => {
+		// The functional suites run on a blank training profile: Today starts its setup.
 		await page.goto('/today');
-		const next = page.getByTestId('today-next-step');
-		await expect(next).toContainText('Training profile');
-		await expect(next).toContainText('Coming next');
+		const setup = page.getByTestId('today-setup');
+		await expect(setup).toContainText('Set up your training profile');
+		await expect(setup.getByRole('link', { name: 'Start setup' })).toHaveAttribute(
+			'href',
+			'/onboarding'
+		);
 		// The owner is already signed in with a passkey: never point them back at it.
-		await expect(next).not.toContainText(/passkey|sign.in/i);
+		await expect(setup).not.toContainText(/passkey|sign.in/i);
 
 		// With no program and the profile not yet complete, Train sends the owner to it.
 		await page.goto('/train');
