@@ -1,6 +1,7 @@
 import type { Metric } from 'web-vitals';
 import { describe, expect, it } from 'vitest';
-import { attributeMetric, noteNavigation } from './vitals';
+import { attributeMetric } from './vitals';
+import { noteNavigation } from './visits';
 
 const entry = (startTime: number, value?: number) =>
 	({ startTime, value }) as unknown as PerformanceEntry;

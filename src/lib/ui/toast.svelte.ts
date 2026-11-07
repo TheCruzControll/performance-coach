@@ -12,6 +12,9 @@ export interface ToastItem {
 	duration: number;
 }
 
+/** How long a timed toast may wait to appear (its code failed to load, say) before it is dropped. */
+const PENDING_LIMIT = 60_000;
+
 class ToastQueue {
 	items = $state<ToastItem[]>([]);
 	#seq = 0;
@@ -31,12 +34,27 @@ class ToastQueue {
 		};
 		// Keep at most three; the oldest leaves first.
 		this.items = [...this.items.slice(-2), item];
-		if (item.duration > 0)
-			this.#timers.set(
-				id,
-				setTimeout(() => this.dismiss(id), item.duration)
-			);
+		if (item.duration > 0) this.#schedule(id, PENDING_LIMIT);
 		return id;
+	}
+
+	/**
+	 * Starts a toast's time on screen. The toasts' code loads on demand (Toaster), so it calls this
+	 * when the toast appears, not `show`: a toast shown before that code arrives still gets its
+	 * full duration.
+	 */
+	appeared(id: number): void {
+		const item = this.items.find((t) => t.id === id);
+		if (!item || item.duration <= 0) return;
+		this.#schedule(id, item.duration);
+	}
+
+	#schedule(id: number, ms: number): void {
+		clearTimeout(this.#timers.get(id));
+		this.#timers.set(
+			id,
+			setTimeout(() => this.dismiss(id), ms)
+		);
 	}
 
 	dismiss(id: number): void {

@@ -2,7 +2,6 @@
 	import { onMount } from 'svelte';
 	import { onNavigate } from '$app/navigation';
 	import { page } from '$app/state';
-	import { startVitalsReporting } from '#lib/client/vitals.ts';
 	import AppShell from './AppShell.svelte';
 	import type { LayoutProps } from './$types';
 
@@ -12,7 +11,8 @@
 	// signed-in shell, after the page is interactive; it never competes with hydration. Metrics of
 	// a sign-in screen visited first in the same page are still attributed to it (root layout).
 	onMount(() => {
-		const start = () => void startVitalsReporting();
+		const start = () =>
+			void import('#lib/client/vitals.ts').then((rum) => rum.startVitalsReporting());
 		if ('requestIdleCallback' in window) requestIdleCallback(start, { timeout: 3000 });
 		else setTimeout(start, 1500);
 	});
