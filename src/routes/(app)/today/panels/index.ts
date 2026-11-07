@@ -21,8 +21,21 @@ export const PANELS = {
 	/** Onboarding is incomplete: the setup card. */
 	setup: () => import('./Setup.svelte'),
 	/** Onboarding is complete: the goals by rank and the shape of the week. */
-	summary: () => import('./Summary.svelte')
+	summary: () => import('./Summary.svelte'),
+	/** Onboarding is complete and there is no program: the Build card, over the summary. */
+	build: () => import('./Build.svelte'),
+	/**
+	 * Build my program, once the Build card is tapped: week 1 previewed, then started. Browser
+	 * only (the server never renders it): while the server can reach it, SvelteKit links its CSS
+	 * into every Today page.
+	 */
+	preview: () =>
+		import.meta.env.SSR
+			? Promise.reject(new Error('client only'))
+			: import('./BuildPreview.svelte')
 } satisfies Record<string, PanelImport>;
+
+export type PanelName = keyof typeof PANELS;
 
 /**
  * What the browser's load passes for a panel the server rendered, while Today hydrates: any
