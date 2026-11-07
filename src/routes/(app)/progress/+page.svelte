@@ -66,50 +66,53 @@
 	<title>Progress · Performance Coach</title>
 </svelte:head>
 
-<PageHeader title="Progress" eyebrow="Trends" />
+<!-- A dashboard: wide from 1024 px (docs/design-system.md, Responsive layout → Content width). -->
+<div data-layout="wide">
+	<PageHeader title="Progress" eyebrow="Trends" />
 
-<Tabs
-	label="Discipline"
-	bind:value={tab}
-	tabs={[
-		{ id: 'strength', label: 'Strength' },
-		{ id: 'running', label: 'Running' },
-		{ id: 'general', label: 'General' }
-	]}
->
-	{#snippet panel(id)}
-		{@const p = panels[id]}
-		<div class="panel">
-			<div class="metrics">
-				{#each p.metrics as m (m.label)}
-					<Stat label={m.label} caption={m.unit} />
-				{/each}
-			</div>
-
-			<Surface padding="none" radius="xl" tone={p.tone}>
-				<svg
-					class="ghost-chart"
-					viewBox="0 0 320 120"
-					preserveAspectRatio="none"
-					aria-hidden="true"
-				>
-					<!-- An empty plot: gridlines and a flat, neutral baseline. Never a made-up trend. -->
-					{#each [24, 52, 80, 108] as y (y)}
-						<line x1="0" x2="320" y1={y} y2={y} class="grid" />
+	<Tabs
+		label="Discipline"
+		bind:value={tab}
+		tabs={[
+			{ id: 'strength', label: 'Strength' },
+			{ id: 'running', label: 'Running' },
+			{ id: 'general', label: 'General' }
+		]}
+	>
+		{#snippet panel(id)}
+			{@const p = panels[id]}
+			<div class="panel">
+				<div class="metrics">
+					{#each p.metrics as m (m.label)}
+						<Stat label={m.label} caption={m.unit} />
 					{/each}
-					<line x1="0" x2="320" y1="66" y2="66" class="baseline" />
-				</svg>
-				<EmptyState
-					icon={p.icon}
-					tone={p.tone}
-					title={p.title}
-					description={p.description}
-					compact
-				/>
-			</Surface>
-		</div>
-	{/snippet}
-</Tabs>
+				</div>
+
+				<Surface padding="none" radius="xl" tone={p.tone}>
+					<svg
+						class="ghost-chart"
+						viewBox="0 0 320 120"
+						preserveAspectRatio="none"
+						aria-hidden="true"
+					>
+						<!-- An empty plot: gridlines and a flat, neutral baseline. Never a made-up trend. -->
+						{#each [24, 52, 80, 108] as y (y)}
+							<line x1="0" x2="320" y1={y} y2={y} class="grid" />
+						{/each}
+						<line x1="0" x2="320" y1="66" y2="66" class="baseline" />
+					</svg>
+					<EmptyState
+						icon={p.icon}
+						tone={p.tone}
+						title={p.title}
+						description={p.description}
+						compact
+					/>
+				</Surface>
+			</div>
+		{/snippet}
+	</Tabs>
+</div>
 
 <style>
 	.panel {
@@ -139,5 +142,17 @@
 		stroke-width: 2;
 		stroke-dasharray: 4 6;
 		stroke-linecap: round;
+	}
+
+	/* A wider panel: roomier tiles over a taller plot, the three tiles still in one row. */
+	@media (width >= 64rem) {
+		.panel,
+		.metrics {
+			gap: var(--space-4);
+		}
+
+		.ghost-chart {
+			height: 12rem;
+		}
 	}
 </style>
