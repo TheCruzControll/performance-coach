@@ -1,0 +1,383 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Performance Coach build status</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="vendor/cytoscape.min.js"></script>
+<script src="vendor/dagre.min.js"></script>
+<script src="vendor/cytoscape-dagre.js"></script>
+<style>
+:root {
+  --bg: #0d1117; --panel: #151b23; --line: #2a313c; --text: #e6edf3; --dim: #8b949e; --faint: #5c6570;
+  --merged: #2ea043; --review: #a371f7; --progress: #e3b341; --ready: #4c9aff; --blocked: #59636e; --fail: #f85149;
+  --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+a { color: #79b8ff; text-decoration: none; }
+a:hover { text-decoration: underline; }
+a:focus-visible, button:focus-visible { outline: 2px solid #79b8ff; outline-offset: 2px; }
+.wrap { max-width: 1680px; margin: 0 auto; padding: 20px 24px 40px; }
+h1 { font-size: 20px; margin: 0; font-weight: 600; }
+h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--dim); margin: 0 0 10px; font-weight: 600; }
+.mono { font-family: var(--mono); font-size: 12.5px; }
+.dim { color: var(--dim); }
+.top { display: grid; grid-template-columns: auto 1fr auto; gap: 32px; align-items: start; padding-bottom: 16px; border-bottom: 1px solid var(--line); }
+.big { font-size: 34px; font-weight: 650; line-height: 1; font-variant-numeric: tabular-nums; }
+.big small { font-size: 16px; color: var(--dim); font-weight: 500; }
+.sys { text-align: right; color: var(--dim); font-size: 13px; }
+.sys b { color: var(--text); font-weight: 600; }
+.ci { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 6px; }
+.job { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; white-space: nowrap; }
+.dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; flex: none; }
+.ok { background: var(--merged); } .bad { background: var(--fail); } .run { background: var(--progress); } .none { background: var(--blocked); }
+.strip { display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); gap: 8px; margin: 16px 0; }
+.ms { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; color: var(--text); text-align: left; cursor: pointer; font: inherit; }
+.ms[aria-pressed="true"] { border-color: #79b8ff; box-shadow: inset 0 0 0 1px #79b8ff; }
+.ms .n { font-weight: 650; }
+.ms .c { float: right; font-variant-numeric: tabular-nums; color: var(--dim); font-size: 13px; }
+.bar { display: flex; height: 6px; border-radius: 3px; overflow: hidden; margin-top: 7px; background: #0b0f14; }
+.bar span { display: block; height: 100%; }
+.main { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 16px; }
+#graph { height: max(560px, 70vh); background: #0a0e13; border: 1px solid var(--line); border-radius: 8px; position: relative; }
+.tools { display: flex; gap: 12px; align-items: center; margin-bottom: 8px; font-size: 13px; color: var(--dim); }
+.tools button { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 4px 12px; font: inherit; cursor: pointer; }
+.tools label { display: inline-flex; gap: 6px; align-items: center; cursor: pointer; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12.5px; color: var(--dim); margin-top: 8px; }
+.side { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; height: calc(max(560px, 70vh) + 42px); overflow: auto; }
+.side h3 { margin: 4px 0 6px; font-size: 15px; line-height: 1.35; font-weight: 600; }
+.pill { display: inline-block; border-radius: 10px; padding: 1px 9px; font-size: 12px; font-weight: 600; color: #0d1117; }
+.side ul { list-style: none; padding: 0; margin: 4px 0 12px; }
+.side li { padding: 2px 0; display: flex; gap: 7px; align-items: center; }
+.side li button { background: none; border: 0; color: #79b8ff; font: 12.5px var(--mono); cursor: pointer; padding: 0; text-align: left; }
+.kv { display: grid; grid-template-columns: 84px 1fr; gap: 3px 10px; font-size: 13px; margin: 10px 0; }
+.kv dt { color: var(--dim); }
+.kv dd { margin: 0; overflow-wrap: anywhere; }
+.lower { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 16px; margin-top: 20px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; margin-bottom: 16px; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th { text-align: left; color: var(--dim); font-weight: 500; font-size: 12px; padding: 0 8px 6px 0; border-bottom: 1px solid var(--line); }
+td { padding: 8px 8px 8px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+tr.hold td { opacity: .62; }
+.tag { display: inline-block; font-size: 11.5px; border: 1px solid var(--line); border-radius: 4px; padding: 0 6px; color: var(--dim); white-space: nowrap; }
+.tag.warn { color: var(--progress); border-color: #5a4a1c; }
+.tag.good { color: #56d364; border-color: #1f4d2b; }
+.notes { font: 12px/1.5 var(--mono); white-space: pre-wrap; color: #c9d1d9; max-height: 380px; overflow: auto; margin: 0; }
+.list { margin: 0; padding-left: 18px; }
+.list li { margin: 2px 0; }
+.err { color: var(--fail); }
+@media (max-width: 1100px) { .main, .lower, .top { grid-template-columns: 1fr; } .sys { text-align: left; } .strip { grid-template-columns: repeat(5, 1fr); } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>Performance Coach</h1>
+      <div class="big" id="total" style="margin-top:8px"></div>
+    </div>
+    <div>
+      <h2 id="ci-title">Main CI</h2>
+      <div class="ci" id="ci"></div>
+    </div>
+    <div class="sys" id="sys"></div>
+  </header>
+
+  <nav class="strip" id="strip" aria-label="Milestones"></nav>
+
+  <section class="main">
+    <div>
+      <div class="tools"><button id="fit">Fit all</button><label><input type="checkbox" id="hide-merged"> Hide merged slices</label><span>Scroll to zoom, drag to pan, click a node for details.</span></div>
+      <div id="graph" role="img" aria-label="Slice dependency graph"></div>
+      <div class="legend" id="legend"></div>
+    </div>
+    <aside class="side" id="side"></aside>
+  </section>
+
+  <section class="lower">
+    <div>
+      <div class="card"><h2>PRs in review</h2><div id="prs"></div></div>
+      <div class="card"><h2>Activity</h2><div id="activity"></div></div>
+    </div>
+    <div>
+      <div class="card"><h2>Waiting on the owner</h2><ul class="list" id="owner"></ul></div>
+      <div class="card"><h2>Recent decisions (notes.md)</h2><pre class="notes" id="notes"></pre></div>
+    </div>
+  </section>
+</div>
+
+<script>
+cytoscape.use(cytoscapeDagre);
+const STATES = {
+  merged: { label: 'merged', color: '#2ea043', text: '#ffffff' },
+  review: { label: 'in review', color: '#a371f7', text: '#ffffff' },
+  progress: { label: 'in progress', color: '#e3b341', text: '#0d1117' },
+  ready: { label: 'ready', color: '#4c9aff', text: '#0d1117' },
+  blocked: { label: 'blocked', color: '#3a414b', text: '#c9d1d9' },
+  dropped: { label: 'dropped', color: '#8b949e', text: '#0d1117' },
+  unknown: { label: 'unresolved dep', color: '#0a0e13', text: '#8b949e' },
+};
+const ORDER = ['merged', 'review', 'progress', 'ready', 'blocked'];
+let data = null, view = localStorage.getItem('view') || 'overview', selected = localStorage.getItem('sel') || null;
+let cy = null, graphKey = '', hideMerged = localStorage.getItem('hideMerged') === '1';
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const ago = t => {
+  const s = (Date.now() - (typeof t === 'number' ? t * 1000 : Date.parse(t))) / 1000;
+  return s < 90 ? `${Math.round(s)}s ago` : s < 5400 ? `${Math.round(s / 60)}m ago` : s < 172800 ? `${Math.round(s / 3600)}h ago` : `${Math.round(s / 86400)}d ago`;
+};
+const jobClass = j => j.status === 'missing' ? 'none' : j.status !== 'completed' ? 'run' : ['success', 'skipped', 'neutral'].includes(j.conclusion) ? 'ok' : 'bad';
+const jobText = j => j.status === 'missing' ? 'not run' : j.status !== 'completed' ? j.status.replace('_', ' ') : j.conclusion;
+const SHORT = { 'Lint & type-check': 'Lint', 'Unit & integration tests': 'Unit', 'Build (Vercel + Node) & budgets': 'Build', 'Lighthouse (mobile)': 'Lighthouse' };
+const short = n => SHORT[n] || (n.startsWith('E2E') ? 'E2E' : n);
+const jobChips = jobs => jobs.map(j => `<a class="job" href="${esc(j.url || '#')}" title="${esc(j.name)}: ${esc(jobText(j))}"><span class="dot ${jobClass(j)}"></span>${esc(short(j.name))}</a>`).join('');
+const pill = st => `<span class="pill" style="background:${STATES[st].color};color:${STATES[st].text}">${STATES[st].label}</span>`;
+
+function renderHeader() {
+  const t = data.totals;
+  $('total').innerHTML = `${t.merged}<small> / ${t.total} slices merged</small>`;
+  const ci = data.mainCi;
+  if (ci) {
+    $('ci-title').innerHTML = `Main CI <a href="${esc(ci.runUrl)}" class="mono">${esc(ci.sha.slice(0, 7))}</a> <span class="dim" style="text-transform:none;letter-spacing:0">${ago(ci.createdAt)}</span>`;
+    $('ci').innerHTML = ci.jobs.map(j => `<a class="job" href="${esc(j.url || ci.runUrl)}"><span class="dot ${jobClass(j)}"></span>${esc(short(j.name))} <span class="dim">${esc(jobText(j))}</span></a>`).join('');
+  }
+  const s = data.system;
+  $('sys').innerHTML = `Updated <b>${ago(data.generatedAt)}</b> <span class="dim">(${new Date(data.generatedAt).toLocaleTimeString()})</span><br>
+    Disk free <b>${s.diskFreeGB} GB</b> · memory free <b>${s.memFreePct ?? '?'}%</b>
+    ${data.errors.length ? `<br><span class="err">${esc(data.errors.join('; '))}</span>` : ''}`;
+}
+
+function renderStrip() {
+  const tab = (key, name, c) => {
+    const bar = c ? `<div class="bar">${ORDER.map(st => c[st] ? `<span style="width:${100 * c[st] / c.total}%;background:${STATES[st].color}" title="${c[st]} ${STATES[st].label}"></span>` : '').join('')}</div>` : '<div class="bar"></div>';
+    return `<button class="ms" data-view="${key}" aria-pressed="${view === key}"><span class="n">${name}</span><span class="c">${c ? `${c.merged}/${c.total}` : ''}</span>${bar}</button>`;
+  };
+  const all = { total: data.totals.total };
+  ORDER.forEach(st => all[st] = data.slices.filter(n => n.state === st).length);
+  $('strip').innerHTML = tab('overview', 'Overview', null) + data.milestones.map(m => tab(m, m, data.counts[m])).join('') + tab('all', 'All slices', all);
+  $('strip').querySelectorAll('.ms').forEach(b => b.onclick = () => setView(b.dataset.view));
+}
+
+function setView(v, sel = null) {
+  view = v; selected = sel; localStorage.setItem('view', v); localStorage.setItem('sel', sel || '');
+  renderStrip(); renderGraph(true); renderSide();
+}
+
+const byId = () => Object.fromEntries(data.slices.map(n => [n.id, n]));
+
+function elementsFor(v) {
+  const ids = byId(), els = [];
+  if (v === 'overview') {
+    const cross = {};
+    for (const n of data.slices) for (const d of n.deps) {
+      const m = ids[d]?.milestone;
+      if (m && m !== n.milestone) cross[`${m}>${n.milestone}`] = (cross[`${m}>${n.milestone}`] || 0) + 1;
+    }
+    for (const m of data.milestones) {
+      const c = data.counts[m];
+      els.push({ data: { id: m, label: `${m}\n${c.merged}/${c.total} merged\n${c.ready} ready · ${c.review + c.progress} active`, kind: 'ms', pct: c.merged / c.total } });
+    }
+    for (const [k, w] of Object.entries(cross)) {
+      const [a, b] = k.split('>');
+      els.push({ data: { id: k, source: a, target: b, w, label: String(w) } });
+    }
+    return reduce(els);
+  }
+  const nodes = (v === 'all' ? data.slices : data.slices.filter(n => n.milestone === v)).filter(n => !hideMerged || n.state !== 'merged');
+  const inView = new Set(nodes.map(n => n.id)), ghosts = new Set();
+  for (const n of nodes) {
+    els.push({ data: { id: n.id, label: n.id, state: n.state }, classes: n.state + (v === 'all' ? ' tiny' : '') });
+    for (const d of n.deps) {
+      const dep = ids[d], st = dep ? dep.state : (data.external.find(e => e.id === d) || {}).state || 'unknown';
+      if (!inView.has(d)) {
+        if (st === 'merged' || st === 'dropped') continue;
+        if (!ghosts.has(d)) { ghosts.add(d); els.push({ data: { id: d, label: dep ? `${dep.milestone} · ${d}` : d, state: st }, classes: `${st} ghost` }); }
+      }
+      els.push({ data: { id: `${d}>${n.id}`, source: d, target: n.id } });
+    }
+  }
+  return reduce(els);
+}
+
+function reduce(els) {
+  const edges = els.filter(e => e.data.source), out = {};
+  for (const e of edges) (out[e.data.source] ||= []).push(e.data.target);
+  const reach = (from, to, skip) => {
+    const seen = new Set(), stack = (out[from] || []).filter(t => t !== skip);
+    while (stack.length) {
+      const x = stack.pop();
+      if (x === to) return true;
+      if (!seen.has(x)) { seen.add(x); stack.push(...(out[x] || [])); }
+    }
+    return false;
+  };
+  const drop = new Set(edges.filter(e => reach(e.data.source, e.data.target, e.data.target)).map(e => e.data.id));
+  return els.filter(e => !drop.has(e.data.id));
+}
+
+const STYLE = [
+  { selector: 'node', style: { shape: 'round-rectangle', label: 'data(label)', 'font-family': 'ui-monospace, Menlo, monospace', 'font-size': 12, color: '#e6edf3', 'text-valign': 'center', 'text-halign': 'center', width: 'label', height: 24, padding: '7px', 'background-color': '#3a414b', 'border-width': 1, 'border-color': '#0d1117', 'min-zoomed-font-size': 5 } },
+  ...Object.entries(STATES).map(([k, s]) => ({ selector: `node.${k}`, style: { 'background-color': s.color, color: s.text } })),
+  { selector: 'node.merged', style: { 'background-opacity': 0.55, color: '#d2f5d9' } },
+  { selector: 'node.ready', style: { 'border-width': 2, 'border-color': '#a8cbff' } },
+  { selector: 'node.dropped', style: { 'background-opacity': 0.45, 'border-style': 'dashed', 'border-color': '#8b949e' } },
+  { selector: 'node.unknown', style: { 'border-width': 1, 'border-style': 'dashed', 'border-color': '#8b949e' } },
+  { selector: 'node.ghost', style: { 'background-opacity': 0.25, color: '#8b949e', 'border-style': 'dashed', 'border-color': '#5c6570', 'border-width': 1 } },
+  { selector: 'node[kind="ms"]', style: { 'text-wrap': 'wrap', 'font-size': 19, 'line-height': 1.35, width: 210, height: 96, 'background-color': '#151b23', 'border-color': '#2a313c', 'border-width': 1, color: '#e6edf3' } },
+  { selector: 'edge', style: { width: 1.2, 'line-color': '#3d4652', 'target-arrow-color': '#3d4652', 'target-arrow-shape': 'triangle', 'arrow-scale': 0.8, 'curve-style': 'bezier' } },
+  { selector: 'edge[w]', style: { width: e => 1 + Math.log2(e.data('w')), label: 'data(label)', 'font-size': 11, color: '#8b949e', 'text-background-color': '#0a0e13', 'text-background-opacity': 1, 'text-background-padding': 2 } },
+  { selector: 'node.tiny', style: { 'min-zoomed-font-size': 8 } },
+  { selector: 'node:selected', style: { 'border-width': 3, 'border-color': '#ffffff' } },
+  { selector: 'edge.hl', style: { 'line-color': '#79b8ff', 'target-arrow-color': '#79b8ff', width: 2.2, 'z-index': 9 } },
+  { selector: '.faded', style: { opacity: 0.25 } },
+];
+
+function focus() {
+  const sel = selected && cy.getElementById(selected);
+  if (sel && sel.length) { cy.zoom(Math.max(cy.zoom(), 0.9)); cy.center(sel); return; }
+  if (cy.zoom() >= 0.6) return;
+  const front = cy.nodes('.review, .progress, .ready');
+  if (!front.length) return;
+  cy.fit(front, 60);
+  const z = Math.min(Math.max(cy.zoom(), 0.7), 1.1);
+  const bb = front.boundingBox();
+  cy.zoom(z); cy.center(front.length > 1 && bb.w * z < $('graph').clientWidth ? front : front.first());
+}
+
+function highlight() {
+  if (!cy) return;
+  cy.elements().removeClass('hl faded');
+  const n = selected && cy.getElementById(selected);
+  if (!n || !n.length) return;
+  n.select();
+  const hood = n.closedNeighborhood();
+  cy.elements().not(hood).addClass('faded');
+  n.connectedEdges().addClass('hl');
+}
+
+function renderGraph(fresh) {
+  const els = elementsFor(view);
+  const key = view + '|' + els.map(e => e.data.id).sort().join(',');
+  if (cy && key === graphKey && !fresh) {
+    for (const e of els) {
+      const el = cy.getElementById(e.data.id);
+      el.data(e.data);
+      if (e.classes !== undefined) el.classes(e.classes);
+      if (e.data.id === selected) el.select();
+    }
+    highlight();
+    return;
+  }
+  const saved = cy && key.split('|')[0] === graphKey.split('|')[0] && !fresh ? { zoom: cy.zoom(), pan: cy.pan() } : null;
+  if (cy) cy.destroy();
+  graphKey = key;
+  const all = view === 'all', ov = view === 'overview';
+  cy = cytoscape({ container: $('graph'), elements: els, style: STYLE, wheelSensitivity: 0.25, minZoom: 0.05, maxZoom: 3, boxSelectionEnabled: false, autoungrabify: true });
+  const lay = rankDir => { cy.layout({ name: 'dagre', rankDir, nodeSep: ov ? 40 : all ? 4 : 12, rankSep: ov ? 70 : all ? 40 : 50, edgeSep: 6, padding: 20, animate: false }).run(); return cy.zoom(); };
+  if (!ov && !all && lay('TB') < lay('LR')) lay('TB');
+  else if (ov || all) lay('LR');
+  if (!ov) focus();
+  if (saved) { cy.zoom(saved.zoom); cy.pan(saved.pan); }
+  cy.on('tap', 'node', ev => {
+    const id = ev.target.id();
+    if (view === 'overview') return setView(id);
+    selected = id; localStorage.setItem('sel', id); highlight(); renderSide();
+  });
+  cy.on('tap', ev => { if (ev.target === cy) { selected = null; localStorage.setItem('sel', ''); cy.elements().unselect(); highlight(); renderSide(); } });
+  highlight();
+}
+
+function sliceRow(id, ids) {
+  const n = ids[id];
+  const st = n ? n.state : (data.external.find(e => e.id === id) || {}).state || 'unknown';
+  return `<li><span class="dot" style="background:${STATES[st].color};outline:1px solid #5c6570"></span><button data-go="${esc(id)}">${esc(id)}</button><span class="dim" style="font-size:12px">${n && n.milestone !== view ? n.milestone : ''}${n ? '' : ' (not in any plan)'}</span></li>`;
+}
+
+function renderSide() {
+  const ids = byId(), n = selected && ids[selected];
+  let h;
+  if (!n) {
+    const scope = view === 'overview' || view === 'all' ? 'all milestones' : view;
+    const list = view === 'overview' || view === 'all' ? data.slices : data.slices.filter(s => s.milestone === view);
+    const ready = list.filter(s => s.state === 'ready'), active = list.filter(s => s.state === 'review' || s.state === 'progress');
+    h = `<h2>${view === 'overview' ? 'Overview' : esc(scope)}</h2>
+      <p class="dim" style="margin-top:0">${view === 'overview' ? 'Milestones and how many slice dependencies cross between them (links implied by a longer path are hidden). Click a milestone to open its slices.' : 'Click a slice to see its dependencies, dependants and PR. Scroll to zoom, drag to pan. Unmerged dependencies from other milestones show as faded nodes. Arrows implied by a longer path are hidden; the panel lists every dependency.'}</p>
+      <h2>Active (${active.length})</h2><ul>${active.map(s => sliceRow(s.id, ids)).join('') || '<li class="dim">none</li>'}</ul>
+      <h2>Ready to start (${ready.length})</h2><ul>${ready.map(s => sliceRow(s.id, ids)).join('') || '<li class="dim">none</li>'}</ul>`;
+  } else {
+    const dependants = data.slices.filter(s => s.deps.includes(n.id));
+    let why = '';
+    if (n.state === 'blocked') why = `waiting on ${n.why.map(esc).join(', ')}`;
+    else if (n.state === 'progress' || n.state === 'dropped') why = esc(n.why);
+    const pr = n.pr;
+    h = `<div>${pill(n.state)} <span class="dim mono">${esc(n.milestone)}</span></div>
+      <h3>${esc(n.title)}</h3>
+      <dl class="kv">
+        <dt>Slice</dt><dd class="mono">${esc(n.id)}</dd>
+        <dt>Branch</dt><dd class="mono">${esc(n.branch)}</dd>
+        ${why ? `<dt>Why</dt><dd>${why}</dd>` : ''}
+        ${pr ? `<dt>PR</dt><dd><a href="${esc(pr.url)}">#${pr.number}</a>${pr.mergedAt ? ` <span class="dim">merged ${ago(pr.mergedAt)}</span>` : ''}${pr.hold ? ` <span class="tag warn">${esc(pr.hold)}</span>` : ''}</dd>` : ''}
+        ${pr && pr.jobs ? `<dt>CI</dt><dd class="ci" style="margin:0">${jobChips(pr.jobs)}</dd><dt>Sol</dt><dd>${pr.sol ? '<span class="tag good">approved line present</span>' : '<span class="tag warn">no Sol line</span>'}</dd><dt>Mergeable</dt><dd>${esc(pr.mergeableState)}</dd>` : ''}
+      </dl>
+      <h2>Depends on (${n.deps.length})</h2><ul>${n.deps.map(d => sliceRow(d, ids)).join('') || '<li class="dim">nothing</li>'}</ul>
+      <h2>Needed by (${dependants.length})</h2><ul>${dependants.map(d => sliceRow(d.id, ids)).join('') || '<li class="dim">nothing</li>'}</ul>`;
+  }
+  $('side').innerHTML = h;
+  $('side').querySelectorAll('[data-go]').forEach(b => b.onclick = () => {
+    const t = ids[b.dataset.go];
+    if (!t) return;
+    if (view !== 'all' && t.milestone !== view) return setView(t.milestone, t.id);
+    selected = t.id; localStorage.setItem('sel', t.id); cy.elements().unselect(); highlight(); renderSide();
+    const el = cy.getElementById(t.id); if (el.length) cy.animate({ center: { eles: el } }, { duration: 200 });
+  });
+}
+
+function renderLegend() {
+  const desc = { merged: 'PR merged on main', review: 'open PR', progress: 'worktree, branch or running agent, no PR yet', ready: 'not started, every dependency merged', blocked: 'not started, a dependency is not merged', dropped: 'dropped from the plan (plans/dropped.json): never built, counts as done for its dependants, left out of the totals', unknown: 'dependency name matches no slice or PR' };
+  $('legend').innerHTML = Object.entries(STATES).map(([k, s]) => `<span class="job"><span class="dot" style="background:${s.color};outline:1px solid #5c6570"></span><b style="color:var(--text);font-weight:500">${s.label}</b> ${desc[k]}</span>`).join('');
+}
+
+function renderPrs() {
+  const rows = data.openPrs.map(p => `<tr class="${p.hold ? 'hold' : ''}">
+    <td><a href="${esc(p.url)}">#${p.number}</a></td>
+    <td>${esc(p.title)}<div class="dim mono">${esc(p.headRef)} → ${esc(p.baseRef)}${p.slice ? ` · slice ${esc(p.slice)}` : ''}</div>
+      ${p.hold ? `<span class="tag warn">${esc(p.hold)}</span> ` : ''}${p.dependsOn.length ? p.dependsOn.map(d => `<span class="tag">depends on #${d}</span>`).join(' ') : ''}</td>
+    <td class="dim" style="white-space:nowrap">${ago(p.headAt)}<div class="mono">${esc(p.headSha)}</div></td>
+    <td><div class="ci" style="margin:0;gap:2px 10px;max-width:260px">${jobChips(p.jobs)}</div></td>
+    <td>${esc(p.mergeableState || '?')}</td>
+    <td>${p.sol ? '<span class="tag good">Sol approved</span>' : '<span class="tag">no Sol line</span>'}</td></tr>`).join('');
+  $('prs').innerHTML = data.openPrs.length ? `<table><thead><tr><th>PR</th><th>Title</th><th>Head</th><th>CI (required)</th><th>Mergeable</th><th>Sol</th></tr></thead><tbody>${rows}</tbody></table>` : '<p class="dim">No open PRs.</p>';
+}
+
+function renderActivity() {
+  const wt = data.worktrees.map(w => `<li class="mono">${esc(w.branch || '(detached)')} <span class="dim">${esc(w.path)} ${esc(w.sha)}</span></li>`).join('');
+  const wf = data.workflows.slice(0, 5).map(w => `<li><span class="mono">${esc(w.id)}</span> <span class="dim">${esc(w.name)} · touched ${ago(w.updatedAt)} · ${w.results.length} item result(s)${w.results.length ? ': ' + w.results.map(r => esc(r.id || '?') + (r.ok ? '' : ' (failed)')).join(', ') : ''}</span></li>`).join('');
+  const ag = data.agents.filter(a => a.active).map(a => `<li><span class="mono">${esc(a.id)}</span> <span class="dim">${ago(a.updatedAt)}</span><div class="dim" style="font-size:12px">${esc(a.prompt.slice(0, 160))}</div></li>`).join('');
+  $('activity').innerHTML = `<h2 style="margin-top:4px">Agents writing in the last 10 min</h2><ul class="list">${ag || '<li class="dim">none detected</li>'}</ul>
+    <h2 style="margin-top:12px">Worktrees</h2><ul class="list">${wt}</ul>
+    <h2 style="margin-top:12px">Recent workflows</h2><ul class="list">${wf || '<li class="dim">none found</li>'}</ul>`;
+}
+
+function render() {
+  renderHeader(); renderStrip(); renderGraph(false); renderSide(); renderPrs(); renderActivity();
+  $('owner').innerHTML = data.ownerWaiting.map(o => `<li>${esc(o)}</li>`).join('');
+  $('notes').textContent = data.notes.join('\n');
+  const n = $('notes'); n.scrollTop = n.scrollHeight;
+}
+
+async function poll() {
+  try {
+    const r = await fetch('status.json', { cache: 'no-store' });
+    data = await r.json();
+    render();
+  } catch (e) { $('sys').insertAdjacentHTML('beforeend', `<br><span class="err">fetch failed: ${esc(e.message)}</span>`); }
+}
+renderLegend();
+$('fit').onclick = () => cy && cy.fit(undefined, 20);
+$('hide-merged').checked = hideMerged;
+$('hide-merged').onchange = e => { hideMerged = e.target.checked; localStorage.setItem('hideMerged', hideMerged ? '1' : ''); renderGraph(true); };
+poll();
+setInterval(poll, 30000);
+</script>
+</body>

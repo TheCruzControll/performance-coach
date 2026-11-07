@@ -5,6 +5,43 @@ is the same harness ported to the owner's Mac and pi's `SubagentWorkflow` tool. 
 dependency graph, the mutation check, the Sol fix loop, the gates and the schemas are unchanged.
 What changed is the machine, the GitHub write path, the models and the branding.
 
+## Owner decisions, 2026-11-07
+
+**A. Skip the email sign-in link.** `email-link-endpoints`, `email-link-signin` and
+`docs-email-security` are dropped. The merged email config, mailer, schema and service stay on
+main, switched off, and PR #188 is closed. `docs/handoff/plans/dropped.json` is the one list of
+dropped slices (with `required-steps-not-skippable`), read by `build-plan-wave.py`,
+`slice-counts.py` and the status collector. A dropped slice satisfies a dependency like a merged
+one, is left out of every total (402 slices, not 405), and shows grey as "dropped" on the status
+page. `build-plan-wave.py` gives every slice that names a dropped dependency an `extra` line,
+derived from the plans and `dropped.json`. The line tells the implementer to skip the email
+link's screen, routes and docs and to say so under "## Owner decisions" in the PR body.
+
+**B. Test on the real app, heavy tests in CI.** The owner's laptop is spared heavy runs.
+
+- Local gates for the implementer and every fixer are `pnpm lint`, `slot pnpm check` and
+  `pnpm test:unit`. `pnpm test:integration` (and `db:drift`) runs locally only for
+  `migration: true` slices or diffs that touch `src/lib/server/db`. No local Playwright,
+  Lighthouse, builds or budgets. The mutation check and the rule that a regression test must
+  fail without its fix stay.
+- After Sol approves and the PR is pushed, a watcher runs `tools/wait-ci.sh <pr> <head>`. It
+  polls the required checks every 3 minutes for up to 60 minutes. A red check goes to a fresh
+  fixer with the failing job's log (`gh run view --log-failed`). The fixer pushes a new commit
+  (never a rebase: other slices stack on the branch) and fresh Sol rounds review the fix diff,
+  then CI runs again. A third red CI round hands the PR to the main thread.
+- Then, for `ui` slices and slices whose acceptance names on-screen behaviour (the wave's
+  `clickThrough` flag), a fresh Opus verifier builds the Node server (`slot pnpm build:node`),
+  starts it on the slice's e2e port and database the way `e2e/global-setup.ts` does, with a
+  throwaway setup token, and drives headed Chromium through Playwright's library at the iPhone
+  viewport and at 1440 x 900. Screenshots go to `<scratch>/shots/<slug>/`, and their paths and
+  one line per acceptance item go into the PR body under "## Click-through". `gh` cannot upload
+  images, so they are not posted. A failed item goes back through a fixer and Sol like a red CI
+  run, at most 3 times.
+- Each wave result now carries `ci`, `clickThrough` (`pass`, `fail`, `n/a`, or `not run` when CI
+  or Sol stopped first), `ready` and `needs`. A PR is ready only when CI is green and the
+  click-through passed or is `n/a`. Dependants still stack as soon as the PR exists. They do not
+  wait for its CI.
+
 ## Layout
 
 - `wf/dag-cloud.js` builds slices. It is `dag-cloud-resume.js` with paths taken from `args`, so
@@ -13,7 +50,11 @@ What changed is the machine, the GitHub write path, the models and the branding.
 - `wf/build-plan-wave.py` writes a wave's args from a plan and GitHub's PR state.
 - `wf/test/stub-harness.mjs` runs both scripts against stub hooks. It spawns no agents.
 - `tools/` is the scratch `bin/` with real paths and a `slot` that fails instead of running
-  unlimited.
+  unlimited. `tools/wait-ci.sh` is the CI watcher's poll loop.
+- `status/` is the local status page (`run.sh` serves it on 127.0.0.1:8765 and refreshes every
+  60 s). Its `vendor/` scripts (cytoscape, dagre, cytoscape-dagre) are not committed. Copy them
+  from npm into `<scratch>/status/vendor/`.
+- `../plans/dropped.json` lists the dropped slices.
 
 ## Setup (once)
 
@@ -23,6 +64,7 @@ mkdir -p $S/bin $S/plans $S/wf $S/waves ~/playground/pc-wt
 cp docs/handoff/pi/tools/* $S/bin/
 cp docs/handoff/plans/*.json docs/handoff/briefs/m2-onboarding-plan.json $S/plans/
 cp -R docs/handoff/pi/wf/* $S/wf/
+mkdir -p $S/status && cp docs/handoff/pi/status/* $S/status/
 node $S/wf/test/stub-harness.mjs
 ```
 
@@ -59,7 +101,8 @@ the command after `SLOT_MAX_WAIT_MS` (12 minutes by default). Agents are told to
 ## Models
 
 Opus writes every commit: `anthropic/claude-opus-5-5`, effort `high` for auth, security, data
-loss and concurrency slices and `medium` otherwise. Sol reviews: `openai/gpt-6.1-sol`, effort
+loss and concurrency slices and `medium` otherwise. The CI watcher is Opus on `low`, and the
+click-through verifier is a separate Opus agent on `medium`. Sol reviews: `openai/gpt-6.1-sol`, effort
 `xhigh` for that class and `high` otherwise. The item's `effort` field is the Sol effort, and
 `build-plan-wave.py` sets it to `xhigh` for migrations and for tracks named for auth, security,
 backup, restore, sync or platform. Councils alternate Opus and Sol judges, with a Sol chair and

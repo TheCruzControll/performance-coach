@@ -1,0 +1,6 @@
+{
+ "required-steps-not-skippable": {"why": "Dropped from the M2 onboarding plan."},
+ "email-link-endpoints": {"why": "Owner, 2026-11-07: skip the email sign-in link. PR #188 is closed.", "feature": "the email sign-in link", "decided": "2026-11-07", "note": "The merged email config, mailer, schema and service stay on main, switched off: leave them as they are."},
+ "email-link-signin": {"why": "Owner, 2026-11-07: skip the email sign-in link.", "feature": "the email sign-in link", "decided": "2026-11-07", "note": "The merged email config, mailer, schema and service stay on main, switched off: leave them as they are."},
+ "docs-email-security": {"why": "Owner, 2026-11-07: skip the email sign-in link.", "feature": "the email sign-in link", "decided": "2026-11-07", "note": "The merged email config, mailer, schema and service stay on main, switched off: leave them as they are."}
+}

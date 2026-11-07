@@ -3,13 +3,14 @@
 
     python3 build-plan-wave.py m4-plan.json M4 m4.json m4s 4900 [--limit 2] [--only id,id] [--max N]
 
-A slice joins the wave when every dependency is merged, has an open PR (stacked), or is an
-earlier slice of the same wave. Slices that already have a PR are skipped. --only is an
+A slice joins the wave when every dependency is merged, dropped (plans/dropped.json), has an open
+PR (stacked), or is an earlier slice of the same wave. A slice that names a dropped dependency
+gets an `extra` line telling its implementer to skip the dropped feature's part. Slices that already have a PR are skipped. --only is an
 allow-list: the wave holds exactly those slices (a listed slice that cannot join is reported).
 Output: JSON args for pi's SubagentWorkflow, including scratch, repo and worktrees.
 Paths come from $SCRATCH, $REPO and $WORKTREES (defaults below).
 """
-import json, os, subprocess, sys
+import json, os, re, subprocess, sys
 
 HOME = os.path.expanduser('~')
 S = os.environ.get('SCRATCH', f'{HOME}/playground/pc-scratch')
@@ -22,8 +23,10 @@ opt = lambda name, default=None: sys.argv[sys.argv.index(name) + 1] if name in s
 limit = int(opt('--limit', 2))
 only = set(opt('--only', '').split(',')) - {''}
 max_items = int(opt('--max', 999))
-# Dropped from the M2 plan (slice-counts.py leaves it out too).
-DROPPED = {'required-steps-not-skippable'}
+# Shared with bin/slice-counts.py and the status collector.
+DROPPED = json.load(open(f'{S}/plans/dropped.json'))
+# Acceptance wording that names on-screen behaviour: such slices get a click-through even when not ui.
+ON_SCREEN = re.compile(r'\b(on[- ]screen|screens?|visible|buttons?|taps?|clicks?|banners?|toasts?|dialogs?|sheets?|editor|(?:owner|user) sees)\b', re.I)
 # Sol effort xhigh: auth, security, data loss and concurrency slices (migrations count as data loss).
 XHIGH_TRACK_WORDS = ('auth', 'security', 'backup', 'restore', 'sync')
 
@@ -50,7 +53,11 @@ for f in sorted(os.listdir(f'{S}/plans')):
         for s in json.load(open(f'{S}/plans/{f}'))['slices']:
             branch_of.setdefault(s['id'], s['branch'])
 
+id_of = {b: i for i, b in branch_of.items()}
+
 def ext_state(dep):
+    if id_of.get(dep, dep) in DROPPED:
+        return {'merged': True, 'dropped': True}
     b = branch_of.get(dep, dep)
     p = by_branch.get(b)
     if not p:
@@ -65,6 +72,8 @@ if m2_shape:
 external, items, chosen, dropped = {}, [], set(), {}
 for idx, s in enumerate(plan['slices']):
     if s['id'] in DROPPED:
+        if s['id'] in only:
+            dropped[s['id']] = 'dropped by the owner (plans/dropped.json)'
         continue
     if s['branch'] in by_branch:
         external[s['id']] = ext_state(s['id'])
@@ -93,11 +102,27 @@ for idx, s in enumerate(plan['slices']):
     ui = bool(s['ui']) if 'ui' in s else not docs
     migration = bool(s.get('migration'))
     xhigh = migration or track == 'platform' or any(w in track for w in XHIGH_TRACK_WORDS)
-    items.append({'id': s['id'], 'kind': 'm2' if m2_shape else 'plan', 'plan': plan_file, 'milestone': milestone, 'brief': brief,
-                  'branch': s['branch'], 'ui': ui, 'migration': migration,
-                  'deps': deps, 'slug': f'{slug_prefix}{nn:02d}', 'port': port_base + nn,
-                  'effort': 'xhigh' if xhigh else 'high',
-                  'docsOnly': docs and not ui})
+    on_screen = sorted({w.lower() for w in ON_SCREEN.findall(' '.join(s.get('acceptance') or []))})
+    item = {'id': s['id'], 'kind': 'm2' if m2_shape else 'plan', 'plan': plan_file, 'milestone': milestone, 'brief': brief,
+            'branch': s['branch'], 'ui': ui, 'migration': migration,
+            'deps': deps, 'slug': f'{slug_prefix}{nn:02d}', 'port': port_base + nn,
+            'effort': 'xhigh' if xhigh else 'high',
+            'docsOnly': docs and not ui,
+            'clickThrough': not (docs and not ui) and (ui or bool(on_screen))}
+    if item['clickThrough'] and not ui:
+        print(f"# {s['id']}: click-through because its acceptance names {', '.join(on_screen)}", file=sys.stderr)
+    gone = {}
+    for d in deps:
+        drop = DROPPED.get(id_of.get(d, d))
+        if drop and drop.get('feature'):
+            gone.setdefault((drop['feature'], drop['decided'], drop.get('note', '')), []).append(d)
+    if gone:
+        item['extra'] = '\n'.join(
+            f"OWNER DECISION ({decided}): the owner dropped {feature}, so this slice's {'dependency' if len(ids) == 1 else 'dependencies'} {', '.join(ids)} will never be built. {note} "
+            f"Skip any part of this slice's goal or acceptance that is about {feature}'s screen, routes or docs, build the rest, "
+            'and say what you skipped in the PR body under "## Owner decisions".'
+            for (feature, decided, note), ids in gone.items())
+    items.append(item)
 
 for i in sorted(only - {s['id'] for s in plan['slices']}):
     dropped[i] = f'not in {plan_file}'

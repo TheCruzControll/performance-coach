@@ -6,7 +6,7 @@ N=/Users/franciscruz/playground/pc-scratch
 cd $S
 while true; do
   out=$(REPO_DIR=/Users/franciscruz/playground/performance-coach timeout 150 $S/bin/steward-plan 2>&1)
-  ign=$(sed 's/^/^(ACTION [a-z]+ |#)/; s/$/ /' $N/wait-ignore.txt 2>/dev/null | paste -sd'|')
+  ign=$(sed 's/^/^(ACTION [a-z]+ |#)/; s/$/ /' $N/wait-ignore.txt 2>/dev/null | paste -sd'|' -)
   f=$out; [ -n "$ign" ] && f=$(grep -vE "$ign" <<<"$out")
   if grep -qE '^ACTION|READY|ci (failure|failed|error|cancelled|timed_out)|CONFLICT' <<<"$f"; then
     echo "$out"; exit 0
