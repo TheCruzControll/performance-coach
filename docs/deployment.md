@@ -198,10 +198,10 @@ work there (and vice versa).
   (`scripts/auth-reset-owner.test.ts`, `tests/integration/auth/reset-owner-cli.test.ts`). It
   prints the target database (password redacted), the owner and what will be deleted, then asks
   for `<database>@<host>` to be typed back. In one transaction it deletes
-  every passkey, recovery code and pending challenge, revokes every session, reopens first-run
-  setup and writes an `owner.reset` audit event. **The owner row and all training data are
-  kept.** Then follow "Owner setup" above with a **new** token (the previous link stays refused:
-  each token works for one setup); setup re-attaches to the same owner.
+  every passkey, recovery code, email sign-in link and pending challenge, revokes every session,
+  reopens first-run setup and writes an `owner.reset` audit event. **The owner row and all
+  training data are kept.** Then follow "Owner setup" above with a **new** token (the previous
+  link stays refused: each token works for one setup); setup re-attaches to the same owner.
 
 ## Backups (`backup.yml`)
 

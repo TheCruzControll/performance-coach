@@ -141,6 +141,13 @@
       "when": 1794011318053,
       "tag": "0019_sync_ledger_guards",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1794018951001,
+      "tag": "0020_email_sign_in_links",
+      "breakpoints": true
     }
   ]
 }
