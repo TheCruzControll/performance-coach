@@ -2,12 +2,12 @@ import { describe, expect, expectTypeOf, it } from 'vitest';
 import { workoutDayKits } from '../../../../tests/fixtures/workout-day';
 import {
 	createMutation,
-	dependsOn,
 	entityKey,
 	MUTATION_RULES,
 	MUTATION_TYPES,
 	unhandledMutation
 } from './mutations';
+import { dependsOn } from './order';
 import type {
 	LocalAction,
 	Mutation,

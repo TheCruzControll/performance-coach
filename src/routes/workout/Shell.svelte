@@ -8,8 +8,10 @@
   - It restores the workout from IndexedDB alone (active.svelte.ts): a skeleton that reserves the
     header, then the view, 'No workout in progress', 'This browser can't keep a workout' or 'App
     updated — reload to continue'. A workout of another kind is sent to its own route first.
-  - On idle after that, the store loads (its write path stays out of the first render), and so
-    does RUM, so INP is attributed to the workout route.
+  - On idle after that, the store loads (its write path stays out of the first render) with the
+    page's one sync engine (online.ts), which every change the store reports flushes, from any
+    view or sheet; unmounting stops it. RUM loads on idle too, so INP is attributed to the
+    workout route.
   - Nothing reads the URL while prerendering: the HTML is the same, data-free, for everyone.
   - Layout: one column below 1024 px; from there the header spans the page, and the view's side
     and main columns sit side by side, centred, at --content-list beside --content-readable.
