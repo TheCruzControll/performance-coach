@@ -251,8 +251,18 @@ test.describe('a program that starts next week', () => {
 		page,
 		request
 	}) => {
-		const errors = trackConsoleErrors(page);
 		const full = titled('Full body');
+		// The refused save answers 409, which the browser logs against the action it posted to.
+		const refused: string[] = [];
+		const errors = trackConsoleErrors(page, (msg) => {
+			const at = new URL(msg.location().url || 'about:blank');
+			const ours =
+				msg.text().startsWith('Failed to load resource') &&
+				msg.text().includes('409') &&
+				`${at.pathname}${at.search}` === `${open(full)}?/adjust`;
+			if (ours) refused.push(msg.text());
+			return ours;
+		});
 		await gotoHydrated(page, open(full));
 		await openAdjust(page, 'Barbell row');
 		await skipThroughAction(request, full.lineage);
@@ -266,6 +276,7 @@ test.describe('a program that starts next week', () => {
 		await expect(adjustSheet(page)).toBeHidden();
 		await expect(page.getByTestId('session-skipped')).toBeVisible();
 		expect(await versionCount()).toBe(2);
+		expect(refused).toHaveLength(1);
 		expect(errors).toEqual([]);
 	});
 
