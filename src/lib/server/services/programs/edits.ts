@@ -1,6 +1,7 @@
 /**
- * The owner's first program edits (PRD §5, ADR 0010): move a planned session to another day of
- * its week, or skip it. Each is a revision (reviseProgram): a new version that copies the
+ * The owner's program edits (PRD §5, ADR 0010): move a planned session to another day of its
+ * week or skip it; swap an exercise for one of its alternatives, once or never again; adjust a
+ * strength set, a run segment or another session's details. Each is a revision (reviseProgram): a new version that copies the
  * session's week, with one decision whose 'why' is never empty, while every older version stays
  * as it was.
  *
@@ -12,6 +13,9 @@
  *   and written into the decision's 'why'; checkMove gives the same warnings before saving.
  * - getMoveTargets lists the days a move can reach, each with what is planned there, so the Move
  *   sheet offers only those, and none when no day is left.
+ * - A swap offers only the exercise's alternatives (./alternatives.ts); 'never again' also saves
+ *   a dislike in the same transaction. An adjustment is checked whole with its prescription's
+ *   schema, and the session's estimate and load are worked out again.
  *
  * The checks read the version the edit was made on. Its rows never change, so what they find is
  * what reviseProgram copies; it then writes only if that version is still the current one.
@@ -27,16 +31,46 @@ import {
 	type Severity,
 	type Violation
 } from '../../../domain/programming/interference';
+import { toExerciseKey } from '../../../domain/programming/input';
+import { ASSUMED_EASY_PACE } from '../../../domain/programming/rules/running';
+import { estimateMinutes } from '../../../domain/programming/timefit';
+import { describePrescription, describeSegment } from '../../../domain/training/describe';
 import {
+	adjustDetailsSchema,
+	adjustRunSegmentSchema,
+	adjustSetSchema,
 	moveSessionSchema,
 	skipSessionSchema,
+	swapSchema,
 	type MoveSessionInput
 } from '../../../domain/training/edits';
-import type { Decider } from '../../../domain/training/vocabulary';
-import { createProgramsRepository, type SessionChange } from '../../db/repositories/programs';
+import { sessionLoadOf } from '../../../domain/training/metrics';
+import {
+	otherDetailsSchema,
+	PRESCRIPTION_LIMITS,
+	runSegmentSchema,
+	setPrescriptionSchema
+} from '../../../domain/training/schemas';
+import type { OtherDetails, RunSegment, SetPrescription } from '../../../domain/training/types';
+import {
+	SET_ROLE_LABEL,
+	type DecisionKind,
+	type Decider,
+	type SubstitutionReason
+} from '../../../domain/training/vocabulary';
+import {
+	createProgramsRepository,
+	type ExerciseChange,
+	type LineChildRows,
+	type SegmentChange,
+	type SessionChange,
+	type SetChange
+} from '../../db/repositories/programs';
 import type { Executor } from '../../db/types';
 import { measure } from '../../observability/timing';
+import { getExercisesByIds, type ExerciseDef } from '../exercises/index';
 import { isUuid } from '../ids';
+import { recordExercisePreference } from '../training/preferences';
 import {
 	parseWith,
 	ProgramConflictError,
@@ -45,8 +79,14 @@ import {
 	TrainingNotFoundError,
 	type TrainingDeps
 } from '../training/shared';
-import { toStoredSessions, type StoredSession } from './mapping';
-import { reviseProgram, type RevisedVersion, type RevisionDecision } from './revise';
+import { programmingInputFor, rankAlternatives } from './alternatives';
+import { toStoredSessions, type StoredExercise, type StoredSession } from './mapping';
+import {
+	reviseProgram,
+	type CopyChanges,
+	type RevisedVersion,
+	type RevisionDecision
+} from './revise';
 import { MAX_VERSION } from './store';
 
 /** sessionPlanSchema's bound on one day's sessions: a move never makes a fifth. */
@@ -94,13 +134,18 @@ export interface MovedSession extends RevisedVersion {
 	warnings: MoveWarning[];
 }
 
+type ExerciseRow = LineChildRows['exercises'][number];
+
 /** A session to edit, in its week of the version read. */
 interface Target {
+	versionId: string;
 	week: { id: string; lineageId: string; startsOn: IsoDate; endsOn: IsoDate };
 	/** Its week's sessions, by day and order in the day; `session` is one of them. */
 	sessions: StoredSession[];
 	session: StoredSession;
 	completed: boolean;
+	/** The week's planned exercise rows by lineage, with their library ids and names. */
+	exerciseRows: Map<string, ExerciseRow>;
 }
 
 function checkToday(today: unknown): IsoDate {
@@ -130,9 +175,12 @@ async function locate(
 		if (found.version.id !== found.program.currentVersionId) throw new ProgramConflictError();
 		const hit = await repo.sessionByLineage(found.version.id, lineage);
 		if (!hit) throw new TrainingNotFoundError('planned session');
-		const sessions = [...toStoredSessions(await repo.weekSessions([hit.week.id])).values()];
+		const rows = await repo.weekSessions([hit.week.id]);
+		const sessions = [...toStoredSessions(rows).values()];
 		const completed = await repo.completedLineages(ownerId, [lineage]);
 		return {
+			versionId: found.version.id,
+			exerciseRows: new Map(rows.exercises.map((row) => [row.lineageId, row])),
 			week: hit.week,
 			sessions,
 			session: sessions.find((s) => s.lineage === lineage)!,
@@ -390,5 +438,444 @@ export async function skipSession(
 			}
 		},
 		deps
+	);
+}
+
+// ---- swap -----------------------------------------------------------------------------------
+
+/**
+ * Decision (m3-plan open question on 'Never prescribe this again'): the swap replaces the
+ * exercise in every session of the current program from today. false swaps this session only,
+ * and the dislike it saves then applies from the next program generated.
+ */
+export const NEVER_AGAIN_REPLACES_UPCOMING = true;
+
+/** What an adjustment that changes nothing is refused with, at `sessionLineage`. */
+export const NOTHING_CHANGED = 'Nothing has changed';
+
+/** The 'why' of an edit: its template filled, the owner's reason or NO_REASON last. */
+function edited(kind: DecisionKind, facts: Record<string, string>, affected: string[]) {
+	const template = TEMPLATES[kind];
+	return {
+		kind,
+		summary: render(template.summary, facts, kind),
+		why: render(template.why, facts, kind),
+		affected
+	};
+}
+
+/** The planned exercise `lineage` of the target session, and its row. */
+function plannedIn({ session, exerciseRows }: Target, lineage: string) {
+	const planned =
+		session.kind === 'strength' ? session.exercises.find((e) => e.lineage === lineage) : undefined;
+	const row = exerciseRows.get(lineage);
+	if (!planned || !row) throw new TrainingNotFoundError('planned exercise');
+	return { planned, row };
+}
+
+/** A planned exercise and its row, in a session of the version edited. */
+interface Occurrence {
+	weekLineage: string;
+	session: StoredSession;
+	planned: StoredExercise;
+	row: ExerciseRow;
+}
+
+/**
+ * The planned exercise as `to`, with what it replaced and why. Back to the exercise first
+ * prescribed, it is no longer a substitute. Its loads move only within the same baseline lift:
+ * otherwise every set is RPE-based at its own target RPE (the session's, within set bounds, when
+ * it has none), as M4's prefill expects of a swap, and the old lift's instructions go with it.
+ */
+function swapped({ session, planned, row }: Occurrence, to: ExerciseDef, why: SubstitutionReason) {
+	const first = row.substitutedFromExerciseId ?? row.exerciseId;
+	const back = first === to.id;
+	const keepsLoad = planned.baselineLift !== null && planned.baselineLift === to.baselineLift;
+	const exercise: ExerciseChange = {
+		exerciseId: to.id,
+		substitutedFromExerciseId: back ? null : first,
+		substitutionReason: back ? null : why,
+		...(keepsLoad ? {} : { baselineLift: to.baselineLift, instructions: null })
+	};
+	const [low, high] = PRESCRIPTION_LIMITS.rpe;
+	const sessionRpe = Math.min(high, Math.max(low, Math.round(session.targetRpe * 2) / 2));
+	const sets: Record<number, SetChange> = {};
+	planned.sets.forEach((set, k) => {
+		if (keepsLoad || set.loadKind === 'rpe_based') return;
+		sets[k + 1] = {
+			loadKind: 'rpe_based',
+			loadValue: null,
+			loadUnit: null,
+			loadBasis: null,
+			reference1rm: null,
+			reference1rmUnit: null,
+			targetRpe: set.targetRpe ?? sessionRpe
+		};
+	});
+	return { exercise, sets };
+}
+
+/** Every planned exercise of the version that is `exerciseId`, from `today` on, not yet done. */
+async function occurrencesFrom(
+	db: Executor,
+	ownerId: string,
+	versionId: string,
+	exerciseId: string,
+	today: IsoDate
+): Promise<Occurrence[]> {
+	return measure('db', async () => {
+		const repo = createProgramsRepository(db);
+		const weeks = (await repo.versionWeeks(versionId)).filter((w) => w.endsOn >= today);
+		if (!weeks.length) return [];
+		const rows = await repo.weekSessions(weeks.map((w) => w.id));
+		const sessions = toStoredSessions(rows);
+		const weekOf = new Map(weeks.map((w) => [w.id, w.lineageId]));
+		const sessionRows = new Map(rows.sessions.map((s) => [s.id, s]));
+		const found = rows.exercises.flatMap((row): Occurrence[] => {
+			const at = sessionRows.get(row.sessionId)!;
+			const session = sessions.get(row.sessionId)!;
+			if (row.exerciseId !== exerciseId || at.scheduledOn < today) return [];
+			const planned = session.kind === 'strength' && session.exercises;
+			const exercise = planned && planned.find((e) => e.lineage === row.lineageId);
+			if (!exercise) return [];
+			return [{ weekLineage: weekOf.get(at.weekId)!, session, planned: exercise, row }];
+		});
+		const done = await repo.completedLineages(
+			ownerId,
+			found.map((o) => o.session.lineage)
+		);
+		return found.filter((o) => !done.has(o.session.lineage));
+	});
+}
+
+/**
+ * Swap a planned exercise for one of its alternatives as the next version, with its reason.
+ * 'once' changes that session only and records no preference. 'never_again' saves a dislike
+ * (source 'swap') in the same transaction, under the preferences lock, and swaps the exercise in
+ * every session from today; each week it touches is copied. A target that is not one of the
+ * exercise's alternatives is a field error at `toExerciseId`.
+ */
+export async function swapExercise(
+	ownerId: string,
+	input: unknown,
+	at: EditAt,
+	deps: TrainingDeps = {}
+): Promise<RevisedVersion> {
+	const swap = parseWith(swapSchema, input);
+	const today = checkToday(at.today);
+	const { db, source } = resolveDeps(deps);
+	const target = await locate(db, ownerId, swap.sessionLineage, at.version);
+	const refused = sessionRefusal(target, today);
+	if (refused) throw new TrainingInputError({ sessionLineage: refused });
+	const { planned, row } = plannedIn(target, swap.plannedExerciseLineage);
+	const key = toExerciseKey(planned.exercise);
+	const options = await rankAlternatives(ownerId, key, { db });
+	const to = (await getExercisesByIds(ownerId, [swap.toExerciseId], { db })).get(swap.toExerciseId);
+	if (!to || !options.alternatives.some((a) => a.id === to.id)) {
+		// One it would offer but may not have says why; any other is not an alternative at all.
+		const toKey = to && (to.key ?? `custom:${to.id}`);
+		const excluded = options.excluded.find((e) => e.key === toKey);
+		const why = excluded?.reasons.map((r) => r.text).join('. ');
+		throw new TrainingInputError({
+			toExerciseId: why ?? `Not an alternative to ${row.exerciseName.toLowerCase()}`
+		});
+	}
+	const here = { weekLineage: target.week.lineageId, session: target.session, planned, row };
+	const never = swap.scope === 'never_again';
+	const occurrences =
+		never && NEVER_AGAIN_REPLACES_UPCOMING
+			? await occurrencesFrom(db, ownerId, target.versionId, row.exerciseId, today)
+			: [here];
+	const changes: Required<Pick<CopyChanges, 'exercises' | 'sets'>> = { exercises: {}, sets: {} };
+	for (const occurrence of occurrences) {
+		const { exercise, sets } = swapped(occurrence, to, never ? 'dislike' : 'situational');
+		changes.exercises[occurrence.planned.lineage] = exercise;
+		if (Object.keys(sets).length) changes.sets[occurrence.planned.lineage] = sets;
+	}
+	const sessions = [...new Set(occurrences.map((o) => o.session.lineage))];
+	const facts = { who: WHO[source], from: row.exerciseName, to: to.name };
+	const reason = reasonText(swap.reason);
+	const decision = never
+		? edited(
+				'preference_recorded',
+				{
+					...facts,
+					exercise: row.exerciseName,
+					sessions: `${sessions.length} ${sessions.length === 1 ? 'session' : 'sessions'}`,
+					reason
+				},
+				sessions.slice(0, 50)
+			)
+		: edited(
+				'exercise_swapped',
+				{
+					...facts,
+					scope: `in ${target.session.title} on ${dayLabel(target.session.date)}, this session only`,
+					reason
+				},
+				[target.session.lineage, planned.lineage]
+			);
+	return reviseProgram(
+		ownerId,
+		{
+			baseVersionNumber: at.version,
+			weekLineages: occurrences.map((o) => o.weekLineage),
+			apply: async (_copies, tx) => {
+				if (never) {
+					const dislike = { sentiment: 'dislike' as const, source: 'swap' as const };
+					const record = { ...dislike, exerciseId: row.exerciseId, reason: swap.reason };
+					await recordExercisePreference(ownerId, record, { ...deps, db: tx });
+				}
+				return changes;
+			},
+			decision: { ...decision, evidence: { to: to.id, scope: swap.scope } }
+		},
+		deps
+	);
+}
+
+// ---- adjust ---------------------------------------------------------------------------------
+
+/** The fields an adjustment gives, without the ones left out. */
+function given<T extends object>(values: T): Partial<T> {
+	return Object.fromEntries(
+		Object.entries(values).filter(([, value]) => value !== undefined)
+	) as Partial<T>;
+}
+
+/** The fields of `after` that differ from `before`. */
+function differences<T extends object>(before: T, after: T): Partial<T> {
+	const keys = Object.keys(after) as (keyof T)[];
+	return Object.fromEntries(
+		keys.filter((k) => after[k] !== before[k]).map((k) => [k, after[k]])
+	) as Partial<T>;
+}
+
+const clampMinutes = (minutes: number) => Math.min(600, Math.max(5, minutes));
+
+/** A session's estimate and load for `minutes` at its target RPE, through M1's sessionLoad. */
+const timed = (estMinutes: number, targetRpe: number): SessionChange => ({
+	estMinutes: clampMinutes(estMinutes),
+	estLoad: sessionLoadOf({ estMinutes: clampMinutes(estMinutes), targetRpe }),
+	targetRpe
+});
+
+/** Refuse an edit to a session that has passed, is skipped or is done. */
+function editable(target: Target, today: IsoDate) {
+	const refused = sessionRefusal(target, today);
+	if (refused) throw new TrainingInputError({ sessionLineage: refused });
+}
+
+/** Save an adjustment as the next version, with a prescription_adjusted decision. */
+function saveAdjustment(
+	ownerId: string,
+	target: Target,
+	at: EditAt,
+	deps: TrainingDeps,
+	adjustment: { what: string; before: string; after: string; reason?: string },
+	changes: CopyChanges,
+	affected: string[]
+): Promise<RevisedVersion> {
+	const facts = {
+		who: WHO[resolveDeps(deps).source],
+		what: adjustment.what,
+		before: adjustment.before,
+		after: adjustment.after,
+		reason: reasonText(adjustment.reason)
+	};
+	return reviseProgram(
+		ownerId,
+		{
+			baseVersionNumber: at.version,
+			weekLineages: [target.week.lineageId],
+			apply: async () => changes,
+			decision: edited('prescription_adjusted', facts, affected)
+		},
+		deps
+	);
+}
+
+/** A set prescription as one line: '3 × 5 @ RPE 8, 100 kg, rest 2:00'. */
+function setWords(set: SetPrescription): string {
+	const unit = set.loadUnit ?? set.reference1rmUnit ?? 'kg';
+	const words = describePrescription(set, { unit });
+	return [words.headline, words.load, words.rest?.toLowerCase()].filter(Boolean).join(', ');
+}
+
+/**
+ * Adjust a strength set prescription (sets, reps, RPE, load value, rest) as the next version.
+ * The set it gives is checked whole with setPrescriptionSchema, and the session's estimate and
+ * load are worked out again.
+ */
+export async function adjustPrescription(
+	ownerId: string,
+	input: unknown,
+	at: EditAt,
+	deps: TrainingDeps = {}
+): Promise<RevisedVersion> {
+	const { sessionLineage, plannedExerciseLineage, position, reason, ...values } = parseWith(
+		adjustSetSchema,
+		input
+	);
+	const today = checkToday(at.today);
+	const { db } = resolveDeps(deps);
+	const target = await locate(db, ownerId, sessionLineage, at.version);
+	editable(target, today);
+	const { planned, row } = plannedIn(target, plannedExerciseLineage);
+	const before = planned.sets[position - 1];
+	if (!before) throw new TrainingNotFoundError('set prescription');
+	const after = parseWith(setPrescriptionSchema, { ...before, ...given(values) });
+	const change = differences(before, after);
+	if (!Object.keys(change).length)
+		throw new TrainingInputError({ sessionLineage: NOTHING_CHANGED });
+
+	const session = target.session as Extract<StoredSession, { kind: 'strength' }>;
+	const exercises = session.exercises.map((e) =>
+		e === planned ? { ...e, sets: e.sets.with(position - 1, after) } : e
+	);
+	const minutes = estimateMinutes({ exercises }, await programmingInputFor(ownerId, { db }));
+	return saveAdjustment(
+		ownerId,
+		target,
+		at,
+		deps,
+		{
+			what: `${row.exerciseName}, ${SET_ROLE_LABEL[before.role].toLowerCase()}`,
+			before: setWords(before),
+			after: setWords(after),
+			reason
+		},
+		{
+			sessions: { [session.lineage]: timed(minutes, session.targetRpe) },
+			sets: { [planned.lineage]: { [position]: change } }
+		},
+		[session.lineage, planned.lineage]
+	);
+}
+
+/**
+ * About how long a run takes, in whole minutes: each segment's time, or its distance at the
+ * middle of its pace range (ASSUMED_EASY_PACE without one), every repeat counted.
+ */
+function runMinutes(segments: readonly RunSegment[]): number {
+	let seconds = 0;
+	for (const s of segments) {
+		const pace =
+			s.paceMinSecondsPerKm !== null && s.paceMaxSecondsPerKm !== null
+				? (s.paceMinSecondsPerKm + s.paceMaxSecondsPerKm) / 2
+				: ASSUMED_EASY_PACE;
+		const one = s.durationSeconds ?? ((s.distanceMetres ?? 0) / 1000) * pace;
+		seconds += one * (s.repeats ?? 1);
+	}
+	return Math.ceil(seconds / 60);
+}
+
+/** A run segment as one line: '5 × Interval 400 m, 4:00–4:10 /km'. */
+function segmentWords(s: RunSegment): string {
+	const words = describeSegment(s, { distanceUnit: 'km' });
+	const line = [words.headline, words.pace, words.target].filter(Boolean).join(', ');
+	return s.repeats === null ? line : `${s.repeats} × ${line}`;
+}
+
+/**
+ * Adjust a run segment (distance, duration, pace range, RPE, heart-rate zone, repeats) as the
+ * next version. Repeats belong to its repeat group, so every segment of the group takes them. The
+ * segment it gives is checked whole with runSegmentSchema, and the run's estimate and load are
+ * worked out again.
+ */
+export async function adjustRunSegment(
+	ownerId: string,
+	input: unknown,
+	at: EditAt,
+	deps: TrainingDeps = {}
+): Promise<RevisedVersion> {
+	const { sessionLineage, position, reason, ...values } = parseWith(adjustRunSegmentSchema, input);
+	const today = checkToday(at.today);
+	const { db } = resolveDeps(deps);
+	const target = await locate(db, ownerId, sessionLineage, at.version);
+	editable(target, today);
+	const { session } = target;
+	const before = session.kind === 'run' ? session.segments[position - 1] : undefined;
+	if (session.kind !== 'run' || !before) throw new TrainingNotFoundError('run segment');
+	const after = parseWith(runSegmentSchema, { ...before, ...given(values) });
+	const group = before.repeatGroup;
+	const segments = session.segments.map((s, k) =>
+		k === position - 1
+			? after
+			: group !== null && s.repeatGroup === group
+				? { ...s, repeats: after.repeats }
+				: s
+	);
+	const changed: Record<number, SegmentChange> = {};
+	segments.forEach((s, k) => {
+		const change = differences(session.segments[k]!, s);
+		if (Object.keys(change).length) changed[k + 1] = change;
+	});
+	if (!Object.keys(changed).length)
+		throw new TrainingInputError({ sessionLineage: NOTHING_CHANGED });
+	return saveAdjustment(
+		ownerId,
+		target,
+		at,
+		deps,
+		{
+			what: `${session.title}, segment ${position}`,
+			before: segmentWords(before),
+			after: segmentWords(after),
+			reason
+		},
+		{
+			sessions: { [session.lineage]: timed(runMinutes(segments), session.targetRpe) },
+			segments: { [session.lineage]: changed }
+		},
+		[session.lineage]
+	);
+}
+
+const detailWords = (d: OtherDetails) =>
+	d.targetRpe === null
+		? `${d.durationMinutes} min`
+		: `${d.durationMinutes} min @ RPE ${d.targetRpe}`;
+
+/**
+ * Adjust another session's length and RPE as the next version. The details it gives are checked
+ * whole with otherDetailsSchema; the session's estimate is its length, its RPE the details' RPE,
+ * and its load is worked out again through M1's sessionLoad.
+ */
+export async function adjustSessionDetails(
+	ownerId: string,
+	input: unknown,
+	at: EditAt,
+	deps: TrainingDeps = {}
+): Promise<RevisedVersion> {
+	const { sessionLineage, reason, ...values } = parseWith(adjustDetailsSchema, input);
+	const today = checkToday(at.today);
+	const { db } = resolveDeps(deps);
+	const target = await locate(db, ownerId, sessionLineage, at.version);
+	editable(target, today);
+	const { session } = target;
+	if (session.kind !== 'other') throw new TrainingNotFoundError('session details');
+	const after = parseWith(otherDetailsSchema, { ...session.details, ...given(values) });
+	const change = differences(session.details, after);
+	if (!Object.keys(change).length)
+		throw new TrainingInputError({ sessionLineage: NOTHING_CHANGED });
+	return saveAdjustment(
+		ownerId,
+		target,
+		at,
+		deps,
+		{
+			what: session.title,
+			before: detailWords(session.details),
+			after: detailWords(after),
+			reason
+		},
+		{
+			sessions: {
+				[session.lineage]: timed(after.durationMinutes, after.targetRpe ?? session.targetRpe)
+			},
+			details: { [session.lineage]: change }
+		},
+		[session.lineage]
 	);
 }

@@ -6,7 +6,12 @@
  * a passkey added scrolled out of it. Instead each unbroken run of failed attempts is one row,
  * and the latest security changes always keep their place.
  */
-import { createAuthRepository, type AuthEventRow, type AuthEventType } from '../db';
+import {
+	AUTH_EVENT_TYPES,
+	createAuthRepository,
+	type AuthEventRow,
+	type AuthEventType
+} from '../db';
 import { resolveDeps, type AuthDeps } from './context';
 import type { AuthSession } from './sessions';
 
@@ -20,7 +25,8 @@ export interface AuthActivity {
 	device: string | null;
 }
 
-const LABELS: Record<AuthEventType, { label: string; tone: ActivityTone }> = {
+/** Every event's row in the feed; null keeps it in the audit log only. */
+const LABELS: Record<AuthEventType, { label: string; tone: ActivityTone } | null> = {
 	'setup.completed': { label: 'Account set up', tone: 'positive' },
 	'setup.failed': { label: 'Setup attempt refused', tone: 'warning' },
 	'signin.succeeded': { label: 'Signed in with a passkey', tone: 'neutral' },
@@ -37,15 +43,27 @@ const LABELS: Record<AuthEventType, { label: string; tone: ActivityTone }> = {
 	'reauth.failed': { label: 'Passkey confirmation failed', tone: 'warning' },
 	signout: { label: 'Signed out', tone: 'neutral' },
 	rate_limited: { label: 'Too many attempts blocked', tone: 'warning' },
-	'owner.reset': { label: 'Passkeys reset by the administrator', tone: 'warning' }
+	'owner.reset': { label: 'Passkeys reset by the administrator', tone: 'warning' },
+	// Asking for a link and its delivery say nothing about who got in.
+	'email_link.requested': null,
+	'email_link.sent': null,
+	'email_link.send_failed': { label: 'Sign-in email couldn’t be sent', tone: 'warning' },
+	'email_link.used': { label: 'Signed in with an email link', tone: 'neutral' },
+	'email_link.expired': { label: 'Expired email link refused', tone: 'warning' },
+	'email_link.refused': { label: 'Email link refused', tone: 'warning' }
 };
+
+/** The events the feed shows: hidden ones are not even read, so they cannot crowd it. */
+const SHOWN = AUTH_EVENT_TYPES.filter((type) => LABELS[type] !== null);
 
 /** Refused attempts to get in: the events anyone can cause. */
 const ATTEMPTS = new Set<AuthEventType>([
 	'signin.failed',
 	'setup.failed',
 	'recovery.failed',
-	'rate_limited'
+	'rate_limited',
+	'email_link.expired',
+	'email_link.refused'
 ]);
 
 /** Changes to who can get in, or who is in. */
@@ -57,7 +75,8 @@ const SIGNIFICANT: readonly AuthEventType[] = [
 	'recovery.regenerated',
 	'session.revoked',
 	'session.revoked_others',
-	'owner.reset'
+	'owner.reset',
+	'email_link.used'
 ];
 
 /** Events read to build the feed: a run of attempts reaching back this far shows as "50+". */
@@ -73,7 +92,7 @@ export async function recentAuthActivity(
 ): Promise<AuthActivity[]> {
 	const { db } = resolveDeps(deps);
 	const repo = createAuthRepository(db);
-	const recent = await repo.recentEvents(WINDOW);
+	const recent = await repo.recentEvents(WINDOW, SHOWN);
 	// Half the feed is kept for the latest security changes, however much happened since.
 	const significant = await repo.recentEvents(Math.floor(limit / 2), SIGNIFICANT);
 	// Older events were not read: a run of attempts that reaches the oldest one may go on.
@@ -93,7 +112,7 @@ export async function recentAuthActivity(
 			items.push({
 				id: row.id,
 				at: row.occurredAt,
-				...LABELS[row.type],
+				...LABELS[row.type]!,
 				device: row.userAgent,
 				attempts: attempt ? 1 : 0,
 				more
