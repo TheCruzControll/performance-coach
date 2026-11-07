@@ -62,9 +62,11 @@ export const ROUTE_ACCESS = {
 
 	// Workouts (M4): owner-only JSON, one anchor per area; each slice adds its line under its own.
 	// sync
-	'/api/workouts/sync': 'owner'
+	'/api/workouts/sync': 'owner',
 
 	// reads
+	'/api/workouts/[id]': 'owner',
+	'/api/workouts/active': 'owner'
 
 	// kit
 

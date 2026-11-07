@@ -718,6 +718,7 @@ describe('indexes', () => {
 			);
 			const existing = new Set(rows.map((r) => r.indexname));
 			expect(Object.keys(HISTORY_INDEXES).sort()).toEqual([
+				'activeWorkouts',
 				'bestE1rms',
 				'exerciseHistory',
 				'lastPerformances',
