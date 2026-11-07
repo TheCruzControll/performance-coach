@@ -29,6 +29,9 @@
 		onpointerdown?: (event: PointerEvent) => void;
 		'aria-label'?: string;
 		'aria-describedby'?: string;
+		/** A disclosure's: whether what it shows is shown, and its id. */
+		'aria-expanded'?: boolean;
+		'aria-controls'?: string;
 		'data-testid'?: string;
 		children: Snippet;
 	}
