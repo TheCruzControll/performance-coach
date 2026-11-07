@@ -5,6 +5,8 @@
  * Service worker: precache the app shell and static assets per build version, clean up old
  * versions on activate (and take control of already-open pages), and serve:
  *   - build assets + static files  → cache-first (immutable, versioned)
+ *   - prerendered pages            → cache-first, whatever the query string, so a workout page
+ *                                    (/workout?start=…) reloads offline from the precache
  *   - page navigations             → network only; on failure the prerendered /offline screen
  *   - /api/*, __data.json          → network only (never cached: live, private data)
  *
@@ -57,7 +59,9 @@ self.addEventListener('activate', (event) => {
 });
 
 async function cacheFirst(request: Request): Promise<Response> {
-	const cached = await caches.match(request, { cacheName: SHELL_CACHE });
+	// A navigation here is to a prerendered page: the same data-free HTML for every query.
+	const ignoreSearch = request.mode === 'navigate';
+	const cached = await caches.match(request, { cacheName: SHELL_CACHE, ignoreSearch });
 	return cached ?? fetch(request);
 }
 

@@ -114,7 +114,7 @@ from outside, signed out, with no secrets:
 | `GET /api/health`                                                       | 200 with `ok: true` and `db: "up"` (a real query)                                                                                                                                                                          |
 | `GET /`                                                                 | 200: the sign-in screen with passkey sign-in, not the "passkeys aren't available on this address" notice                                                                                                                   |
 | Security headers on `/`                                                 | CSP with `frame-ancestors 'none'`, `object-src 'none'` and no inline scripts; `Strict-Transport-Security`; `nosniff`; `X-Frame-Options: DENY`; referrer and permissions policies; COOP; `X-Robots-Tag: noindex`; `private` |
-| Security headers on the prerendered pages (`/offline`)                  | Exactly `STATIC_PAGE_HEADERS`, sent from `vercel.json`: the hooks' security headers (not `private`: these pages hold no personal data) and a CSP of `frame-ancestors 'none'`                                               |
+| Security headers on the prerendered pages (`/offline`, `/workout`)      | Exactly `STATIC_PAGE_HEADERS`, sent from `vercel.json`: the hooks' security headers (not `private`: these pages hold no personal data) and a CSP of `frame-ancestors 'none'`                                               |
 | `GET /today`                                                            | 303 to `/?next=%2Ftoday`                                                                                                                                                                                                   |
 | `POST /api/vitals`, `POST /api/client-errors` (with the app's `Origin`) | 401 `unauthenticated` (without the `Origin` the CSRF check would answer 403 first)                                                                                                                                         |
 | `POST /api/test-support/session`                                        | 404: the test-only session route does not exist in production                                                                                                                                                              |
@@ -316,7 +316,7 @@ ID under "What exists".
   `'unsafe-inline'` because Svelte renders `style` attributes. e2e asserts the header and that an
   injected inline script is refused.
 - **Static and prerendered files** (`/_app/immutable/*`, icons, `manifest.webmanifest`,
-  `robots.txt`, `/offline`) are served by the CDN (Vercel) or `sirv` (adapter-node) without
+  `robots.txt`, `/offline`, `/workout`) are served by the CDN (Vercel) or `sirv` (adapter-node) without
   running hooks. They contain no personal data. On Vercel the prerendered pages get the same
   headers from `vercel.json`, plus a CSP header of `frame-ancestors 'none'`: their own CSP is a
   `<meta>` tag, which cannot express it. Other static files, and every static file under `sirv`,

@@ -65,13 +65,17 @@ export interface ReducerTable<K extends SessionKind> {
 export type AnyTable = { [K in SessionKind]: ReducerTable<K> }[SessionKind];
 type AnyReducers = Partial<Record<MutationType, MutationReducer<MutationType>>>;
 
-/** A reducer for a workout the rows already hold; with no rows, the mutation waits. */
+/**
+ * A reducer for a workout the rows already hold; with no rows, the mutation waits. Free of side
+ * effects, so a route's bundle drops the families of the tables it does not use (tables.ts).
+ */
 export const onRows =
+	/* #__NO_SIDE_EFFECTS__ */
 	<T extends MutationType>(
-		reduce: (rows: CanonicalWorkout, m: MutationOf<T>) => CanonicalWorkout
-	): MutationReducer<T> =>
-	(rows, m) =>
-		rows && reduce(rows, m);
+			reduce: (rows: CanonicalWorkout, m: MutationOf<T>) => CanonicalWorkout
+		): MutationReducer<T> =>
+		(rows, m) =>
+			rows && reduce(rows, m);
 
 // ---- The projection -------------------------------------------------------------------------
 

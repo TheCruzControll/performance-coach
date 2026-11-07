@@ -2,7 +2,8 @@
  * Deny by default: the access policy of every route, keyed by SvelteKit route id.
  *
  * - `public`      no session needed: the sign-in screen, first-run setup, recovery sign-in, the
- *                 public auth endpoints, the health check and the prerendered offline screen.
+ *                 public auth endpoints, the health check, and the prerendered offline and
+ *                 workout pages.
  * - `any-session` an owner session *or* the restricted session a recovery code grants (which
  *                 can do nothing but register a new passkey or sign out).
  * - `owner`       a full owner session. Everything else.
@@ -31,6 +32,8 @@ export const ROUTE_ACCESS = {
 	'/api/health': 'public',
 	// Prerendered offline fallback (served statically; holds no personal data)
 	'/(app)/offline': 'public',
+	// Prerendered workout pages (data-free HTML; the workout lives in IndexedDB on the device)
+	'/workout': 'public',
 	// Test-only: 404 unless ENABLE_TEST_ROUTES (never allowed on a hosted deployment)
 	'/api/test-support/session': 'public',
 	'/api/test-support/error': 'owner',
