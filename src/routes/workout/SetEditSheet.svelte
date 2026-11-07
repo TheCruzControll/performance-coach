@@ -6,8 +6,9 @@
   asks first, because there is no undo (an undelete would be a new mutation type). A skipped set
   has no values to edit: it offers Delete, after which the set can be logged.
   Code-split: the strength view loads it on intent (a row's hover, focus or touch), so neither it
-  nor logging-rules weigh on /workout's initial JavaScript. sync-status reuses it as the Fix
-  editor for set mutations.
+  nor logging-rules weigh on /workout's initial JavaScript. The sync sheet reuses it as the Fix
+  editor for set mutations (`fix`: why the server refused the change, shown first; Discard is the
+  sync sheet's, so the editor offers Delete only for a skip).
 -->
 <script lang="ts">
 	import type { LoggedSet } from '#lib/domain/workout/index.ts';
@@ -46,6 +47,8 @@
 		/** Confirmed: the set goes. */
 		ondelete: () => void;
 		onclose?: () => void;
+		/** Fixing a refused change: why it was refused. */
+		fix?: string;
 	}
 
 	let {
@@ -58,7 +61,8 @@
 		increment,
 		onsave,
 		ondelete,
-		onclose
+		onclose,
+		fix
 	}: Props = $props();
 
 	const fields = $derived(setFields(exercise.measure, exercise.loadType));
@@ -115,6 +119,9 @@
 	{onclose}
 	data-testid="set-editor"
 >
+	{#if fix}
+		<p class="fix" data-testid="fix-reason">Not synced · {fix}</p>
+	{/if}
 	{#if skipped}
 		<p class="note">You skipped this set. Delete the skip to log the set instead.</p>
 	{:else}
@@ -184,14 +191,16 @@
 				</div>
 			{:else}
 				<div class="row">
-					<Button
-						variant="ghost"
-						icon="trash"
-						onclick={() => confirmDelete(true)}
-						data-testid="delete-set"
-					>
-						{skipped ? 'Delete skip' : 'Delete set'}
-					</Button>
+					{#if !fix || skipped}
+						<Button
+							variant="ghost"
+							icon="trash"
+							onclick={() => confirmDelete(true)}
+							data-testid="delete-set"
+						>
+							{skipped ? 'Delete skip' : 'Delete set'}
+						</Button>
+					{/if}
 					{#if !skipped}
 						<Button icon="check" onclick={save} data-testid="save-set">Save</Button>
 					{/if}
@@ -204,6 +213,12 @@
 <style>
 	.note {
 		color: var(--color-text-secondary);
+	}
+
+	.fix {
+		margin-bottom: var(--space-4);
+		color: light-dark(color-mix(in srgb, var(--color-warning) 82%, #000), var(--color-warning));
+		font-weight: var(--weight-medium);
 	}
 
 	.fields {

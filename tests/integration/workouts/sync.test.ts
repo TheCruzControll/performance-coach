@@ -856,3 +856,92 @@ describe('the request body', () => {
 		expect(parsed.ok && parsed.mutations).toHaveLength(25);
 	});
 });
+
+describe('discarded changes (finding F1 of the workout sync model)', () => {
+	const syncWith = (db: Executor, owner: string, mutations: unknown[], discarded: string[]) =>
+		applySyncBatch(owner, JSON.parse(JSON.stringify(mutations)) as Record<string, unknown>[], {
+			db,
+			discarded
+		});
+
+	it('a request the device stopped waiting for never lands a discarded edit after a newer one', async () => {
+		await withRollback(async (db) => {
+			const { owner, squat } = await setup(db);
+			const workout = await started(db, owner);
+			const log = logOf(workout, squat);
+			await sync(db, owner, [log]);
+			// Timed out on the device while the server still runs it, then discarded.
+			const stuck = editOf(workout, log.id, { reps: 6 });
+			const newer = editOf(workout, log.id, { reps: 4 });
+
+			const next = await syncWith(db, owner, [newer], [stuck.id]);
+			const late = await sync(db, owner, [stuck]);
+
+			expect(statuses(next.results)).toEqual(['applied']);
+			expect(late.results[0]).toMatchObject({ id: stuck.id, status: 'duplicate' });
+			expect(await setRow(db, owner, log.id)).toMatchObject({ reps: 4 });
+			const [row] = await db
+				.select({ type: syncMutations.type })
+				.from(syncMutations)
+				.where(eq(syncMutations.mutationId, stuck.id));
+			expect(row).toEqual({ type: 'discarded' });
+		});
+	});
+
+	it('an id applied before keeps its ledger row, and the discard alone is a request', async () => {
+		await withRollback(async (db) => {
+			const { owner, squat } = await setup(db);
+			const workout = await started(db, owner);
+			const log = logOf(workout, squat);
+			await sync(db, owner, [log]);
+
+			expect(await syncWith(db, owner, [], [log.id])).toEqual({ v: 1, results: [] });
+			const [row] = await db
+				.select({ type: syncMutations.type })
+				.from(syncMutations)
+				.where(eq(syncMutations.mutationId, log.id));
+			expect(row).toEqual({ type: 'set.log' });
+		});
+	});
+
+	it('takes discarded ids alone, up to 25, and refuses an empty request', () => {
+		const ids = (n: number) => Array.from({ length: n }, deviceId);
+		const body = (discarded: string[]) => JSON.stringify({ v: 1, mutations: [], discarded });
+		expect(parseSyncBody(body(ids(25)))).toMatchObject({ ok: true, mutations: [] });
+		for (const discarded of [[], ids(26), ['not-a-uuid']]) {
+			expect(parseSyncBody(body(discarded))).toMatchObject({ ok: false, status: 400 });
+		}
+		expect(parseSyncBody(JSON.stringify({ v: 1, mutations: [] }))).toMatchObject({
+			ok: false,
+			errors: { mutations: 'Nothing to sync' }
+		});
+	});
+});
+
+describe('a start whose planned session does not exist', () => {
+	it('is refused at payload.plannedSessionId, and the same id applies once kept unplanned', async () => {
+		await withRollback(async (db) => {
+			const { owner, squat } = await setup(db);
+			const workout = deviceId();
+			const start = startOf(workout);
+			const planned = { ...start, payload: { ...start.payload, plannedSessionId: deviceId() } };
+			const log = logOf(workout, squat);
+
+			const refused = await sync(db, owner, [planned, log]);
+			expect(refused.results).toEqual([
+				{
+					id: start.id,
+					status: 'rejected',
+					code: 'invalid',
+					errors: { 'payload.plannedSessionId': 'No such planned session' }
+				},
+				{ id: log.id, status: 'deferred', code: 'blocked' }
+			]);
+			expect(await ledgerHas(db, start.id)).toBe(false);
+
+			const kept = await sync(db, owner, [start, log]);
+			expect(statuses(kept.results)).toEqual(['applied', 'applied']);
+			expect(kept.results[1]!.canonical!.workout).toMatchObject({ plannedSessionId: null });
+		});
+	});
+});
