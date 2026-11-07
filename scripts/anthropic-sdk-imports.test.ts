@@ -13,7 +13,11 @@ import { describe, expect, it } from 'vitest';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const SDK = /^@anthropic-ai\//;
-const RUNTIME_IMPORT_ALLOWED = ['src/lib/server/agent/provider/anthropic.ts'];
+const RUNTIME_IMPORT_ALLOWED = [
+	'src/lib/server/agent/provider/anthropic.ts',
+	// Its unit test builds SDK errors to prove the mapping; a test never reaches a bundle.
+	'src/lib/server/agent/provider/anthropic.test.ts'
+];
 
 const sources = (dir: string): string[] =>
 	readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
