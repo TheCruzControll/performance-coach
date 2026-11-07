@@ -620,6 +620,38 @@ test.describe('leaving a step: Back and Finish later', () => {
 		]);
 		expect(await completedSteps()).toEqual([{ onboarding_completed: [] }]);
 	});
+
+	test.describe('with the service worker blocked (page.route must see every request)', () => {
+		test.use({ serviceWorkers: 'block' });
+
+		// The step before has its own Back where this one was, under the pointer the click left
+		// there. Resting on it must not fetch the welcome's data: leaving the page next would
+		// cancel that request, which WebKit reports as a page error.
+		test('the pointer resting where Back was starts no request a page load then cancels', async ({
+			page
+		}) => {
+			const errors = trackConsoleErrors(page);
+			const welcomeData: string[] = [];
+			await page.route('**/onboarding/__data.json?*', (route) => {
+				welcomeData.push(route.request().url());
+			});
+			await gotoHydrated(page, '/onboarding/experience');
+			await stepReady(page, 'experience');
+			await page
+				.getByTestId('experience-entry')
+				.getByRole('radio', { name: 'Novice', exact: true })
+				.check();
+			await page.getByTestId('step-back').click();
+			await stepReady(page, 'goals');
+			const box = (await page.getByTestId('step-back').boundingBox())!;
+			await page.mouse.move(box.x + box.width / 2 + 1, box.y + box.height / 2);
+			await page.waitForTimeout(200); // past SvelteKit's 20 ms hover delay
+			await gotoHydrated(page, '/onboarding/experience');
+			await stepReady(page, 'experience');
+			expect(welcomeData).toEqual([]);
+			expect(errors).toEqual([]);
+		});
+	});
 });
 
 test.describe('with the service worker blocked (page.route must see every request)', () => {
