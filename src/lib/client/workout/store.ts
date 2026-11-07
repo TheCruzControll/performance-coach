@@ -13,10 +13,13 @@
  * - Writes are serial within a page. Each one reads what other tabs wrote in its transaction, so
  *   none is lost; the device state is the last tab's to write.
  * - One workout is in progress at a time; a second workout.start is refused.
- * - It closes for good when the database is deleted or upgraded under it (db.ts).
+ * - It closes for good when the database is deleted or upgraded under it (db.ts), or when another
+ *   tab says sign-out is about to delete it.
+ * - Tabs (channel.ts): after each write it tells the other tabs, which re-read what changed.
+ * - reconciled and adopt store the server's rows from GET /api/workouts/[id] (reconcile.ts).
  * Plain .ts with no runes, so Vitest's unit project runs it against fake-indexeddb.
  */
-import { entityKey } from '#lib/domain/workout/index.ts';
+import { entityKey, SYNC_CODE_LABEL } from '#lib/domain/workout/index.ts';
 import type {
 	CanonicalWorkout,
 	DeviceState,
@@ -31,6 +34,8 @@ import { applyLocal, applyMutation, replay, viewOf } from '#lib/domain/workout/p
 import type { AnyTable, WorkoutState } from '#lib/domain/workout/project.ts';
 import { initialDevice } from '#lib/domain/workout/reducers/device.ts';
 import type { IDBPTransaction, StoreNames } from 'idb';
+import { openTabChannel } from './channel.ts';
+import type { TabChannel, TabMessage } from './channel.ts';
 import { openWorkoutDb, StoreClosedError } from './db.ts';
 import type { CloseReason, StoredWorkout, WorkoutDb, WorkoutSchema } from './db.ts';
 import { OUTBOX_INDEXES, STORES } from './names.ts';
@@ -90,9 +95,14 @@ export interface UnsyncedWorkout {
 	workout: WorkoutHeader | null;
 }
 
+/** purged: another tab lost the session and deleted the server's copies (the signed-out state). */
 export type StoreChange =
 	| { type: 'view' | 'saved' | 'not-saved'; workoutId: string }
+	| { type: 'purged' }
 	| { type: 'closed'; reason: CloseReason };
+
+/** adopted: stored or refilled; held: its rows and kit are here; refused: another in progress. */
+export type AdoptOutcome = 'adopted' | 'held' | 'refused';
 
 export class ActiveWorkoutError extends Error {
 	override name = 'ActiveWorkoutError';
@@ -108,6 +118,8 @@ export interface StoreOptions {
 	/** Epoch ms on this device: backoff after a sync response, kit and prune ages. */
 	now?: () => number;
 	random?: () => number;
+	/** The other tabs (channel.ts): 'pc-workout' in a browser, none elsewhere. */
+	channel?: TabChannel | null;
 }
 
 export interface WorkoutStore {
@@ -137,6 +149,14 @@ export interface WorkoutStore {
 	 * sets attached from the server.
 	 */
 	purgeServerCopies(): Promise<void>;
+	/**
+	 * The server's rows for a workout this device holds, stored as they are; the pending changes
+	 * replay on top, and the device state is untouched. A pending edit of a set the rows hold as
+	 * deleted is parked as 'Deleted on another device'. False when the device does not hold it.
+	 */
+	reconciled(canonical: CanonicalWorkout): Promise<boolean>;
+	/** A workout from another device, built from its rows and kit; refills one a purge emptied. */
+	adopt(canonical: CanonicalWorkout, kit: StartKit | null): Promise<AdoptOutcome>;
 	saveKit(lineage: string, kit: StartKit): Promise<void>;
 	getKit(lineage: string): Promise<StartKit | null>;
 	prune(): Promise<{ workouts: string[]; kits: string[] }>;
@@ -221,6 +241,15 @@ function entryOf(m: Mutation): OutboxEntry {
 	return entry as OutboxEntry;
 }
 
+/** A pending set.edit of a set the server holds as deleted: parked for Discard, as the server would. */
+function parkDeleted(entry: OutboxEntry, canonical: CanonicalWorkout): OutboxEntry {
+	const m = entry.envelope;
+	if (entry.parked || m.type !== 'set.edit') return entry;
+	if (!canonical.sets.some((s) => s.id === m.entityId && s.deletedAt !== null)) return entry;
+	const parked = { reason: 'refused', errors: {}, message: SYNC_CODE_LABEL.deleted } as const;
+	return { ...entry, nextAt: null, parked };
+}
+
 const fold = (table: AnyTable, state: WorkoutState, actions: readonly Action[]) =>
 	actions.reduce(
 		(s, a) => (isMutation(a) ? applyMutation(table, s, a) : applyLocal(table, s, a)),
@@ -254,15 +283,27 @@ function recordOf(
 export async function createStore({
 	table,
 	now = Date.now,
-	random = Math.random
+	random = Math.random,
+	channel = typeof window === 'undefined' ? null : openTabChannel()
 }: StoreOptions): Promise<WorkoutStore> {
 	const listeners = new Set<(change: StoreChange) => void>();
 	const emit = (change: StoreChange) => listeners.forEach((listener) => listener(change));
 	let closed: CloseReason | null = null;
-	const db = await openWorkoutDb((reason) => {
+	let unlisten = () => {};
+	const shut = (reason: CloseReason) => {
+		if (closed) return;
 		closed = reason;
+		unlisten();
+		channel?.close();
 		emit({ type: 'closed', reason });
-	});
+	};
+	let db: WorkoutDb;
+	try {
+		db = await openWorkoutDb(shut);
+	} catch (error) {
+		channel?.close();
+		throw error;
+	}
 
 	const memory = new Map<string, Loaded>();
 	let chain: Promise<unknown> = Promise.resolve();
@@ -337,6 +378,48 @@ export async function createStore({
 			return loaded && snapshotOf(loaded);
 		});
 
+	/** Tells the other tabs a workout was written: 'closed' once it is no longer in progress. */
+	const tell = ({ id, status }: StoredWorkout) =>
+		channel?.post({ type: status === 'in_progress' ? 'changed' : 'closed', workoutId: id });
+
+	/** Memory's new base after a write here, shown, and told to the other tabs. */
+	function stored(record: StoredWorkout, entries: OutboxEntry[], always = false) {
+		if (always || memory.has(record.id)) {
+			remember(record.id, record, entries);
+			emit({ type: 'view', workoutId: record.id });
+		}
+		tell(record);
+	}
+
+	/** Another tab wrote these workouts: the ones in memory are read again. */
+	async function reread(workoutIds: Iterable<string>) {
+		for (const workoutId of [...workoutIds]) {
+			try {
+				if (memory.has(workoutId)) await load(workoutId);
+			} catch {
+				return; // closed meanwhile: nothing left to show
+			}
+			emit({ type: 'view', workoutId });
+		}
+	}
+
+	function hear(message: TabMessage) {
+		if (closed) return;
+		switch (message.type) {
+			case 'changed':
+			case 'closed':
+				return void reread([message.workoutId]);
+			case 'purged':
+				return void reread(memory.keys()).then(() => emit({ type: 'purged' }));
+			case 'signed-out':
+				// Sign-out deletes the database next: this page lets go of it, for good.
+				memory.clear();
+				db.close();
+				return shut('deleted');
+		}
+	}
+	unlisten = channel?.listen(hear) ?? unlisten;
+
 	/** Writes every queued action of a workout, in order, with the device state after the last. */
 	async function write(workoutId: string): Promise<void> {
 		const loaded = memory.get(workoutId);
@@ -396,6 +479,7 @@ export async function createStore({
 		for (const item of items) item.settle('saved');
 		finish('saved');
 		emit({ type: 'saved', workoutId });
+		tell(written.record);
 	}
 
 	function dispatch(action: Action, ...followUps: Action[]): Dispatched {
@@ -451,7 +535,7 @@ export async function createStore({
 
 	async function acknowledge(results: readonly SyncResult[]): Promise<void> {
 		assertOpen();
-		const stored = await serial(() =>
+		const written = await serial(() =>
 			transact(db, [STORES.workouts, STORES.outbox], async (tx) => {
 				const workouts = tx.objectStore(STORES.workouts);
 				const outbox = tx.objectStore(STORES.outbox);
@@ -484,11 +568,7 @@ export async function createStore({
 				return read;
 			})
 		);
-		for (const [workoutId, { record, entries }] of stored) {
-			if (!memory.has(workoutId)) continue;
-			remember(workoutId, record, entries);
-			emit({ type: 'view', workoutId });
-		}
+		for (const { record, entries } of written.values()) stored(record, entries);
 	}
 
 	async function outbox(): Promise<OutboxEntry[]> {
@@ -541,6 +621,55 @@ export async function createStore({
 			remember(workoutId, record, entries);
 			emit({ type: 'view', workoutId });
 		}
+		channel?.post({ type: 'purged' });
+	}
+
+	async function reconciled(canonical: CanonicalWorkout): Promise<boolean> {
+		assertOpen();
+		const workoutId = canonical.workout.id;
+		const written = await serial(() =>
+			transact(db, [STORES.workouts, STORES.outbox], async (tx) => {
+				const previous = await tx.objectStore(STORES.workouts).get(workoutId);
+				if (!previous) return null;
+				const outbox = tx.objectStore(STORES.outbox);
+				const entries: OutboxEntry[] = [];
+				for (const entry of await outbox.index(BY_WORKOUT).getAll(workoutId)) {
+					const next = parkDeleted(entry, canonical);
+					if (next !== entry) await outbox.put(next);
+					entries.push(next);
+				}
+				const { kit, device } = previous;
+				const record = recordOf(table, workoutId, { kit, canonical, device, entries }, previous);
+				await tx.objectStore(STORES.workouts).put(record);
+				return { record, entries };
+			})
+		);
+		if (written) stored(written.record, written.entries);
+		return written !== null;
+	}
+
+	async function adopt(canonical: CanonicalWorkout, kit: StartKit | null): Promise<AdoptOutcome> {
+		assertOpen();
+		const workoutId = canonical.workout.id;
+		const written = await serial(() =>
+			transact(db, [STORES.workouts, STORES.outbox], async (tx) => {
+				const workouts = tx.objectStore(STORES.workouts);
+				// Held without rows or a kit (as a purge leaves it): filled in, keeping its device state.
+				const held = await workouts.get(workoutId);
+				if (held?.canonical && (held.kit || !kit)) return 'held';
+				const others = await workouts.getAll();
+				if (others.some((w) => w.id !== workoutId && w.status === 'in_progress')) return 'refused';
+				const entries = await tx.objectStore(STORES.outbox).index(BY_WORKOUT).getAll(workoutId);
+				const device = held?.device ?? initialDevice();
+				const inputs = { kit: held?.kit ?? kit, canonical, device, entries };
+				const record = recordOf(table, workoutId, inputs, held);
+				await workouts.put(record);
+				return { record, entries };
+			})
+		);
+		if (typeof written === 'string') return written;
+		stored(written.record, written.entries, true);
+		return 'adopted';
 	}
 
 	async function listUnsynced(): Promise<UnsyncedWorkout[]> {
@@ -583,6 +712,7 @@ export async function createStore({
 		);
 		for (const workoutId of gone.workouts) {
 			if (memory.delete(workoutId)) emit({ type: 'view', workoutId });
+			channel?.post({ type: 'closed', workoutId });
 		}
 		return gone;
 	}
@@ -611,6 +741,8 @@ export async function createStore({
 		countFailure: (seq, error) => revise((entries) => countFailure(entries, seq, error, now())),
 		backOnline: (offlineSince) => revise((entries) => backOnline(entries, offlineSince, now())),
 		purgeServerCopies,
+		reconciled,
+		adopt,
 		async saveKit(lineage, kit) {
 			assertOpen();
 			await db.put(STORES.kits, { lineage, kit, savedAt: now() });
