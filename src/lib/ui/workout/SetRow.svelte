@@ -30,14 +30,16 @@
 >
 	<!-- One element either way (Surface's way): a button to edit, else a plain row. The
 	     handlers go through a spread: a row without them is not interactive. No form encloses it,
-	     so the button needs no type. -->
+	     so the button needs no type. The space after 'Edit set' sits inside its span, so a
+	     display-only row starts with its number, not a space. -->
 	<svelte:element
 		this={onedit ? 'button' : 'div'}
 		class="set"
 		{...{ onclick: onedit, onpointerenter: onintent }}
 	>
-		{#if onedit}<span class="visually-hidden">Edit set</span>{/if}
-		<span class="index tabular">{row.setIndex}</span>
+		{#if onedit}<span class="visually-hidden">Edit set&nbsp;</span>{/if}<span class="index tabular"
+			>{row.setIndex}</span
+		>
 		<span class="text">{row.text}</span>
 		<span class="state">
 			<span>{row.word}</span>
