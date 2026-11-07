@@ -13,6 +13,7 @@ import {
 	equipmentSchema,
 	exercisePreferencesSchema,
 	experienceSchema,
+	type ExercisePreferencesData,
 	injuriesSchema,
 	scheduleSchema,
 	specificsSchema
@@ -27,9 +28,17 @@ import type {
 	Schedule,
 	StrengthBaseline
 } from '../../../domain/profile/types';
+import type { PreferenceSource } from '../../../domain/training/vocabulary';
 import { toMetres } from '../../../domain/units';
-import { createProfileRepository, type BaselineRow, type NewBaseline } from '../../db';
+import {
+	createProfileRepository,
+	type BaselineRow,
+	type ExercisePreferenceRow,
+	type NewBaseline,
+	type NewPreference
+} from '../../db';
 import { measure } from '../../observability/timing';
+import { resolveExerciseNames, type ExerciseDef } from '../exercises/index';
 import {
 	parseWith,
 	ProfileInputError,
@@ -370,22 +379,68 @@ export async function getExercisePreferences(
 	return rows.map(toExercisePreference);
 }
 
+/**
+ * Save the owner's likes and dislikes, each linked to the library exercise its words name. Two
+ * entries for one exercise ('RDL' and 'Romanian deadlift') are a field error at `items`, before
+ * anything is written. Takes the same lock as every preference writer (recordExercisePreference
+ * in services/training/preferences.ts), so a swap dislike recorded meanwhile waits or is kept.
+ */
 export async function saveExercisePreferences(
 	ownerId: string,
 	input: unknown,
 	deps: ProfileDeps = {}
 ): Promise<ExercisePreference[]> {
 	const { items } = parseWith(exercisePreferencesSchema, input);
-	const { db, now } = resolveDeps(deps);
+	const { db, now, source } = resolveDeps(deps);
+	const named = await resolveExerciseNames(
+		ownerId,
+		items.map((item) => item.exercise),
+		{ db }
+	);
 	return measure('db', () =>
 		db.transaction(async (tx) => {
 			const repo = createProfileRepository(tx);
 			await repo.lockSection(ownerId, 'exercisePreferences');
+			const stored = await repo.listExercisePreferences(ownerId);
+			const rows = linkedPreferences(items, named, stored, source);
 			await repo.ensureProfile(ownerId);
-			await repo.replaceExercisePreferences(ownerId, items, now());
+			await repo.replaceExercisePreferences(ownerId, rows, now());
 			return (await repo.listExercisePreferences(ownerId)).map(toExercisePreference);
 		})
 	);
+}
+
+/**
+ * The rows a Profile save writes: each item linked to the exercise it names, a kept preference
+ * by its stored link first (an exercise of the owner's retired since stays linked), and recorded
+ * with the save's source. Throws when two items name one exercise.
+ */
+function linkedPreferences(
+	items: ExercisePreferencesData['items'],
+	named: readonly (ExerciseDef | null)[],
+	stored: readonly ExercisePreferenceRow[],
+	source: PreferenceSource
+): NewPreference[] {
+	const links = new Map(stored.map((row) => [row.exercise.toLowerCase(), row.exerciseId]));
+	const rows = items.map((item, i) => ({
+		...item,
+		exerciseId: links.get(item.exercise.toLowerCase()) ?? named[i]?.id ?? null,
+		source
+	}));
+	const first = new Map<string, number>();
+	for (const [i, { exerciseId, exercise }] of rows.entries()) {
+		if (!exerciseId) continue;
+		const j = first.get(exerciseId);
+		if (j === undefined) {
+			first.set(exerciseId, i);
+			continue;
+		}
+		const name = [named[j], named[i]].find((e) => e?.id === exerciseId)?.name ?? exercise;
+		throw new ProfileInputError({
+			items: `You’ve listed ${name} twice (as “${rows[j]!.exercise}” and “${exercise}”)`
+		});
+	}
+	return rows;
 }
 
 // ---- schedule & availability -------------------------------------------------------------------

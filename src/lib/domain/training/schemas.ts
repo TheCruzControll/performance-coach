@@ -479,11 +479,20 @@ const instant = z.pipe(
 );
 const hundredths = (n: number) => Math.abs(n * 100 - Math.round(n * 100)) < 1e-6;
 
-/** A set's values, all of them: what a logged set records and an edit replaces. */
+/** A load in the set's unit, with the weight column's two decimals. */
+const load = (message: string) =>
+	z.number(message).check(z.positive('Above 0'), z.refine(hundredths, 'Two decimals'));
+
+/**
+ * A set's values, all of them: what a logged set records and an edit replaces. One amount, by the
+ * exercise's measure (reps, seconds or metres); the load a weight (external, or a bodyweight
+ * exercise's added weight) or an assisted exercise's assistance, either optional here: which one
+ * the exercise takes is checkSet's to say, once the service has the exercise. Assistance may be
+ * left out (null), for callers that never log an assisted set.
+ */
 const setValues = {
-	weight: z.nullable(
-		z.number('Enter the weight').check(z.positive('Above 0'), z.refine(hundredths, 'Two decimals'))
-	),
+	weight: z.nullable(load('Enter the weight')),
+	assistance: z._default(z.nullable(load('Enter the assistance')), null),
 	unit,
 	reps: z.nullable(whole(...G.reps, `Reps between ${G.reps[0]} and ${G.reps[1]}`)),
 	missedReps: whole(...G.missedReps, `Up to ${G.missedReps[1]} missed reps`),
@@ -496,20 +505,33 @@ const setValues = {
 };
 type SetValues = z.output<z.ZodMiniObject<typeof setValues>>;
 
+const AMOUNTS = ['reps', 'seconds', 'metres'] as const;
+
 function checkSetValues(s: SetValues, fail: Fail) {
-	if (!s.isSkipped && s.reps === null && s.seconds === null && s.metres === null) {
-		fail(['reps'], 'Record reps, a time or a distance');
-	}
+	const amounts = AMOUNTS.filter((amount) => s[amount] !== null);
+	if (!s.isSkipped && amounts.length === 0) fail(['reps'], 'Record reps, a time or a distance');
+	if (amounts.length > 1) fail([amounts[1]!], 'Reps, a time or a distance: one of them');
 	// As set_records_missed_reps_ck: missed reps only where reps are counted.
 	if (s.missedReps > 0 && s.reps === null) {
 		fail(['missedReps'], 'Missed reps go with the reps done');
 	}
-	if (s.weight !== null && s.weight > G.weight[s.unit]) {
-		fail(['weight'], `Up to ${G.weight[s.unit]} ${s.unit}`);
+	for (const field of ['weight', 'assistance'] as const) {
+		const value = s[field];
+		if (value !== null && value > G.weight[s.unit]) {
+			fail([field], `Up to ${G.weight[s.unit]} ${s.unit}`);
+		}
+	}
+	// As set_records_load_ck: help is never beside a weight.
+	if (s.weight !== null && s.assistance !== null) {
+		fail(['assistance'], 'A weight or the assistance, not both');
 	}
 }
 
-/** A workout as it starts, under the device's id; a planned one names its session's row. */
+/**
+ * A workout as it starts, under the device's id; a planned one names its session's row, pinned
+ * as the device's kit had it. It may also name the lineage and program the kit took from that
+ * row, which the service checks against it; left out, they are taken from the row.
+ */
 export const startWorkoutSchema = z.object({
 	clientId: uuid,
 	kind: z.enum(SESSION_KINDS, 'Strength, run or other?'),
@@ -517,6 +539,8 @@ export const startWorkoutSchema = z.object({
 	sessionType: z.enum(v.SESSION_TYPES, 'Pick a session type'),
 	title: text(60),
 	plannedSessionId: z.nullable(uuid),
+	plannedLineageId: z.optional(z.nullable(uuid)),
+	programId: z.optional(z.nullable(uuid)),
 	startedAt: instant
 });
 
@@ -546,12 +570,16 @@ export const finishWorkoutSchema = z.object({
 	notes: z.optional(optText(500))
 });
 
-/** An exercise swapped in a workout, under the device's id: it stays on the workout. */
+/**
+ * An exercise swapped in a workout, under the device's id, in its slot (the exercise's 1-based
+ * place, as its sets' exercisePosition; null when the caller names none): it stays on the workout.
+ */
 export const substitutionSchema = z
 	.object({
 		clientMutationId: uuid,
 		workoutClientId: uuid,
 		plannedExerciseLineageId: z.nullable(uuid),
+		exercisePosition: z._default(z.nullable(whole(...G.position, 'Exercise 1 to 50')), null),
 		fromExerciseId: uuid,
 		toExerciseId: uuid,
 		reason: z.enum(v.SUBSTITUTION_REASONS, 'Pick a reason')
@@ -605,56 +633,77 @@ const runValues = {
 	rpe: z.nullable(sessionRpe)
 };
 
+/** A segment's values, all of them: what it records and an edit replaces. */
+const segmentValues = {
+	position: whole(1, R.segments, `Segment 1 to ${R.segments}`),
+	kind: z.enum(v.RUN_SEGMENT_KINDS, 'Pick a segment type'),
+	...runValues
+};
+
+// As run_record_segments_measure_ck.
+const measuredSegment = rules<{ distance: unknown; durationSeconds: unknown }>((s, fail) => {
+	if (s.distance === null && s.durationSeconds === null) {
+		fail(['distance'], 'Give a distance or a duration');
+	}
+});
+
 /** One segment as run, under the device's id, at its 1-based place in the run. */
 export const runSegmentLogSchema = z
-	.object({
-		clientMutationId: uuid,
-		position: whole(1, R.segments, `Segment 1 to ${R.segments}`),
-		kind: z.enum(v.RUN_SEGMENT_KINDS, 'Pick a segment type'),
-		...runValues
-	})
-	.check(
-		rules((s, fail) => {
-			// As run_record_segments_measure_ck.
-			if (s.distance === null && s.durationSeconds === null) {
-				fail(['distance'], 'Give a distance or a duration');
-			}
-		})
-	);
+	.object({ clientMutationId: uuid, ...segmentValues })
+	.check(measuredSegment);
+
+/** An edit of a segment: every value after the edit, never a difference. */
+export const editRunSegmentSchema = z.object(segmentValues).check(measuredSegment);
 
 /** A run's own values, all of them: what logRun records and editRun replaces. */
 const runFields = { ...runValues, notes: optText(500) };
 
-/** A run as logged in its run workout (by the workout's client id): its totals and segments. */
+/**
+ * A run as logged in its run workout (by the workout's client id): its own values, any of them
+ * left out (null) until the run ends. Its segments may come with it (M3's form) or one at a time
+ * through addRunSegment (M4's run.segment), so they may be left out too.
+ */
 export const logRunSchema = z.object({
 	workoutClientId: uuid,
-	...runFields,
-	segments: list(runSegmentLogSchema, R.segments).check(
-		rules((segments, fail) =>
-			segments.forEach((s, k) => {
-				if (segments.findIndex((o) => o.position === s.position) < k) {
-					fail([k, 'position'], 'Each position once');
-				}
-				if (segments.findIndex((o) => o.clientMutationId === s.clientMutationId) < k) {
-					fail([k, 'clientMutationId'], 'Each segment once');
-				}
-			})
-		)
+	distance: z._default(runFields.distance, null),
+	durationSeconds: z._default(runFields.durationSeconds, null),
+	avgHr: z._default(runFields.avgHr, null),
+	rpe: z._default(runFields.rpe, null),
+	notes: z._default(runFields.notes, null),
+	segments: z._default(
+		list(runSegmentLogSchema, R.segments).check(
+			rules((segments, fail) =>
+				segments.forEach((s, k) => {
+					if (segments.findIndex((o) => o.position === s.position) < k) {
+						fail([k, 'position'], 'Each position once');
+					}
+					if (segments.findIndex((o) => o.clientMutationId === s.clientMutationId) < k) {
+						fail([k, 'clientMutationId'], 'Each segment once');
+					}
+				})
+			)
+		),
+		[]
 	)
 });
 
 /** An edit of a run's own values: every value after the edit, never a difference. */
 export const editRunSchema = z.object(runFields);
 
-/** An other session as logged in its workout: what it was, how long and hard, what was tracked. */
-export const logOtherSessionSchema = z.object({
-	workoutClientId: uuid,
+/** An other session's values, all of them: what it records and an edit replaces. */
+const otherValues = {
 	kind: z.enum(v.OTHER_SESSION_KINDS, 'Pick a session type'),
 	durationMinutes: whole(...R.otherMinutes, `Between ${R.otherMinutes.join(' and ')} minutes`),
 	rpe: z.nullable(sessionRpe),
 	metrics: customMetricsSchema,
 	notes: optText(500)
-});
+};
+
+/** An other session as logged in its workout: what it was, how long and hard, what was tracked. */
+export const logOtherSessionSchema = z.object({ workoutClientId: uuid, ...otherValues });
+
+/** An edit of an other session: every value after the edit, never a difference. */
+export const editOtherSessionSchema = z.object(otherValues);
 
 const scale = z.nullable(whole(...R.scale, `From ${R.scale.join(' to ')}`));
 
