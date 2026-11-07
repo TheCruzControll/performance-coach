@@ -290,4 +290,26 @@ test.describe('signed in: cross-site requests are refused', () => {
 		expect((await move('https://evil.example', '2026-11-11')).status()).toBe(403);
 		expect(await versions()).toEqual(before);
 	});
+
+	test('a cross-site Continue in onboarding is refused and stores nothing', async ({ request }) => {
+		const stored = () => query('select name, onboarding_completed from athlete_profiles');
+		const before = await stored();
+		const save = (origin: string, payload: unknown) =>
+			request.post('/onboarding?/save', {
+				headers: { origin, accept: 'application/json', 'x-sveltekit-action': 'true' },
+				multipart: { payload: JSON.stringify(payload) }
+			});
+		// From the app itself the action runs: a blank name comes back with its error.
+		const own = await save(ORIGIN, { name: '', weightUnit: 'kg', distanceUnit: 'km' });
+		expect(own.status()).toBe(400);
+		expect(await own.json()).toMatchObject({ type: 'failure', status: 400 });
+		// From another site it is refused before it runs.
+		const cross = await save('https://evil.example', {
+			name: 'Cross-site',
+			weightUnit: 'lb',
+			distanceUnit: 'mi'
+		});
+		expect(cross.status()).toBe(403);
+		expect(await stored()).toEqual(before);
+	});
 });
