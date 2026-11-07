@@ -9,6 +9,10 @@
     in one tap: the row is done in the same frame, before anything is written, and in a superset
     the move to the partner is written with it. It never waits for the network.
   - A set this device could not save reads 'Not saved on this device'; the logger offers Retry.
+  - A logged or skipped set is a button: it opens its editor (SetEditor.svelte), loaded on intent
+    (the row's hover, focus or touch), whose Save sends a set.edit and whose Delete, confirmed, a
+    set.delete. A chunk that cannot load (gone
+    after a deploy) turns the page to 'App updated — reload to continue', never a broken sheet.
   exercise-navigation adds the ways to change the current exercise.
 -->
 <script lang="ts">
@@ -18,6 +22,7 @@
 		ChunkLoad
 	} from '#lib/client/workout/active.svelte.ts';
 	import { groups } from '#lib/domain/workout/flow.ts';
+	import type { CanonicalSet } from '#lib/domain/workout/protocol.ts';
 	import { currentExercise, plannedVsLogged, previousFor } from '#lib/domain/workout/selectors.ts';
 	import ExerciseCard from '#lib/ui/workout/ExerciseCard.svelte';
 	import SetRow from '#lib/ui/workout/SetRow.svelte';
@@ -32,6 +37,7 @@
 	import { onMount } from 'svelte';
 	import ExerciseList from './ExerciseList.svelte';
 	import type LoggerView from './Logger.svelte';
+	import type SetEditor from './SetEditor.svelte';
 
 	interface Props {
 		snapshot: ActiveSnapshot;
@@ -80,11 +86,14 @@
 		const slot = currentExercise(view);
 		if (!slot) return null;
 		const paired = plannedVsLogged(view, slot.position);
+		// Each row with the set it shows, to edit: none for a set not logged, or not saved here.
 		const rows = setRows(paired, slot.state === 'skipped' || slot.state === 'stopped').map(
-			(row, i) =>
-				notSaved.has(paired[i]!.logged?.id ?? '')
+			(row, i) => {
+				const set = paired[i]!.logged;
+				return set && notSaved.has(set.id)
 					? { ...row, state: 'not-saved' as const, word: SET_STATE_WORDS['not-saved'] }
-					: row
+					: { ...row, set };
+			}
 		);
 		const sets = slot.kit?.sets ?? [];
 		// The set at hand: the current row's, else (all done) the first.
@@ -117,6 +126,26 @@
 			if (module) Logger = module.default;
 		});
 	});
+
+	// The set editor: fetched on a row's first intent; a chunk that is gone shows 'App updated'.
+	let Editor = $state.raw<typeof SetEditor | null>(null);
+	// Asked on each intent: the browser fetches and runs a module once.
+	function prefetch() {
+		void load(() => import('./SetEditor.svelte')).then((module) => {
+			if (module) Editor = module.default;
+		});
+	}
+
+	/** The set being edited, as it was when its row was tapped (it may go while the sheet closes). */
+	// A new object per tap, so tapping the same set again opens it again.
+	let editing = $state.raw<{ set: CanonicalSet } | null>(null);
+
+	function edit(set: CanonicalSet, event: MouseEvent) {
+		// Safari never focuses a tapped button: the sheet returns focus to what has it.
+		(event.currentTarget as HTMLElement).focus();
+		prefetch();
+		editing = { set };
+	}
 </script>
 
 <ExerciseList {items} current={current?.position} />
@@ -125,7 +154,8 @@
 	{#if current}
 		<ExerciseCard exercise={current}>
 			{#each current.rows as row, i (i)}
-				<SetRow {row} />
+				{@const set = 'set' in row && row.set}
+				<SetRow {row} onedit={set ? (event) => edit(set, event) : undefined} onintent={prefetch} />
 			{/each}
 		</ExerciseCard>
 	{/if}
@@ -137,6 +167,9 @@
 			notSaved={snapshot.notSaved}
 			store={active.store}
 		/>
+	{/if}
+	{#if Editor && editing && active.store}
+		<Editor {view} {editing} store={active.store} />
 	{/if}
 </div>
 

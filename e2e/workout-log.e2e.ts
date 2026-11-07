@@ -421,7 +421,8 @@ test.describe('logging a set (IndexedDB only)', () => {
 		await open(page, PULL_UP);
 		const targets = logger(page).locator('button, .chip');
 		const count = await targets.count();
-		expect(count).toBe(4 + 10 + 1);
+		// The steppers' − and +, the RPE chips, Missed reps and Skip set, and Complete set.
+		expect(count).toBe(4 + 10 + 2 + 1);
 		for (let i = 0; i < count; i += 1) {
 			const box = await targets.nth(i).boundingBox();
 			expect(box!.width, `target ${i}`).toBeGreaterThanOrEqual(44);
