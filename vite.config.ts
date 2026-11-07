@@ -170,6 +170,8 @@ export default defineConfig(({ command, mode }) => {
 						name: 'explain',
 						environment: 'node',
 						include: ['scripts/explain/**/*.explain.ts'],
+						// Each file resets and loads the one explain database: one file at a time.
+						fileParallelism: false,
 						testTimeout: 15_000,
 						hookTimeout: 120_000
 					}

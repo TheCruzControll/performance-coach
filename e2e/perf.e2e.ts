@@ -23,11 +23,14 @@ const GUARD_MS = 250;
 const LOADS = 5;
 /** The hybrid fixture's week-1 strength session, whose lineage is known once it is seeded. */
 const STRENGTH_SESSION = '/train/session/<strength>';
+/** History with the hybrid fixture's version 1 and its decisions. */
+const HISTORY = '/train/history';
 const SCREENS = [
 	'/',
 	'/today',
 	'/train',
 	STRENGTH_SESSION,
+	HISTORY,
 	'/progress',
 	'/coach',
 	'/profile',
@@ -47,9 +50,9 @@ test.describe('main-thread budget (4× CPU)', () => {
 			request
 		}, testInfo) => {
 			// Train is measured in its program state: a hybrid week, strength, runs and Muay Thai;
-			// the session screen on that week's strength session, its longest.
+			// the session screen on that week's strength session, its longest; History on its versions.
 			let url = path;
-			if (path === '/train' || path === STRENGTH_SESSION) {
+			if (path === '/train' || path === STRENGTH_SESSION || path === HISTORY) {
 				const seeded = await seedProgram(request, { fixture: 'hybrid', start: 'this_week' });
 				const strength = seeded.sessions.find((s) => s.title === 'Full body');
 				if (path === STRENGTH_SESSION) url = `/train/session/${strength!.lineage}`;
