@@ -1,7 +1,8 @@
 /**
  * Today's setup card (src/routes/(app)/today/setup.server.ts) on real Postgres: until onboarding
  * is complete it says how many of the steps that apply are finished and where Continue resumes;
- * once it is complete there is no card. When the database cannot be reached it fails soft: null,
+ * once it is complete there is no card, and the open goals by rank and the week's shape take its
+ * place. When the database cannot be reached it fails soft: null,
  * and the failure recorded as a server error.
  */
 import { describe, expect, it } from 'vitest';
@@ -11,6 +12,8 @@ import {
 	completeOnboarding,
 	createGoal,
 	deleteGoal,
+	getSchedule,
+	reorderGoals,
 	saveSchedule
 } from '../../../src/lib/server/services/profile/index';
 import { loadTodaySetup } from '../../../src/routes/(app)/today/setup.server';
@@ -82,14 +85,137 @@ describe('Today’s setup card', () => {
 		});
 	});
 
-	it('is gone once onboarding is complete', async () => {
+	it('is gone once onboarding is complete: the summary takes its place', async () => {
 		await withRollback(async (db) => {
 			const owner = await makeOwner(db);
-			await createGoal(owner, generalGoal(), { db });
+			const goal = await createGoal(owner, generalGoal(), { db });
 			const schedule = { daysPerWeek: 4, availableDays: [], preferredTimes: [], commitments: [] };
 			await saveSchedule(owner, schedule, { db });
 			await completeOnboarding(owner, { db });
-			expect(await loadTodaySetup(owner, origin(), { db })).toEqual({ complete: true });
+			expect(await loadTodaySetup(owner, origin(), { db })).toEqual({
+				complete: true,
+				goals: [
+					{
+						id: goal.id,
+						title: 'Keep my strength',
+						date: null,
+						paused: false,
+						disciplines: [{ name: 'Strength', tone: 'strength' }]
+					}
+				],
+				week: {
+					summary: '4 days a week',
+					available: null,
+					commitments: [],
+					days: Array.from({ length: 7 }, () => ({ available: false, booked: [] }))
+				}
+			});
+		});
+	});
+
+	it('summarises the open goals by rank and the shape of the week', async () => {
+		await withRollback(async (db) => {
+			const owner = await makeOwner(db);
+			const fight = await createGoal(owner, eventGoal(), { db });
+			const climb = await createGoal(
+				owner,
+				generalGoal({
+					title: 'Climb V5',
+					disciplines: ['custom', 'strength'],
+					customDiscipline: 'Bouldering',
+					targetDate: '2027-06-30',
+					// Paused goals keep their rank, and Today marks them.
+					status: 'paused'
+				}),
+				{ db }
+			);
+			const marathon = await createGoal(
+				owner,
+				eventGoal({
+					title: 'Valencia marathon',
+					disciplines: ['distance_running'],
+					eventType: 'Marathon',
+					eventDate: '2027-12-05',
+					weightClass: null
+				}),
+				{ db }
+			);
+			// Achieved goals hold no rank, so Today leaves them out.
+			await createGoal(owner, generalGoal({ title: 'Old squat goal', status: 'achieved' }), { db });
+			await reorderGoals(owner, { ids: [marathon.id, fight.id, climb.id] }, { db });
+			await saveSchedule(
+				owner,
+				{
+					daysPerWeek: 4,
+					availableDays: ['sat', 'mon', 'tue', 'thu'],
+					preferredTimes: ['evening'],
+					sessionMinutes: 60,
+					commitments: [
+						{
+							discipline: 'muay_thai',
+							label: 'Muay Thai class',
+							days: ['thu', 'tue'],
+							timeOfDay: 'evening',
+							durationMinutes: 90,
+							intensity: 'hard'
+						}
+					]
+				},
+				{ db }
+			);
+			await completeOnboarding(owner, { db });
+
+			const setup = await loadTodaySetup(owner, origin(), { db });
+			if (!setup?.complete) throw new Error('expected the summary');
+			expect(setup.goals).toEqual([
+				{
+					id: marathon.id,
+					title: 'Valencia marathon',
+					date: '2027-12-05',
+					paused: false,
+					disciplines: [{ name: 'Half / marathon', tone: 'running' }]
+				},
+				{
+					id: fight.id,
+					title: 'First Muay Thai fight',
+					date: '2027-03-14',
+					paused: false,
+					disciplines: [{ name: 'Muay Thai', tone: 'combat' }]
+				},
+				{
+					id: climb.id,
+					title: 'Climb V5',
+					date: '2027-06-30',
+					paused: true,
+					disciplines: [
+						{ name: 'Bouldering', tone: 'conditioning' },
+						{ name: 'Strength', tone: 'strength' }
+					]
+				}
+			]);
+			const [klass] = (await getSchedule(owner, { db })).commitments;
+			const booked = [{ label: 'Muay Thai class', tone: 'combat' }];
+			expect(setup.week).toEqual({
+				summary: '4 days a week · 60 min sessions · evening',
+				available: 'Mon, Tue, Thu, Sat',
+				commitments: [
+					{
+						id: klass!.id,
+						label: 'Muay Thai class',
+						when: 'Tue, Thu · evening · 90 min · hard',
+						tone: 'combat'
+					}
+				],
+				days: [
+					{ available: true, booked: [] },
+					{ available: true, booked },
+					{ available: false, booked: [] },
+					{ available: true, booked },
+					{ available: false, booked: [] },
+					{ available: true, booked: [] },
+					{ available: false, booked: [] }
+				]
+			});
 		});
 	});
 

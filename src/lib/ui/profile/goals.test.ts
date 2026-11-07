@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { SCHEMAS, validate } from '#lib/domain/profile/schemas.ts';
 import type { Goal } from '#lib/domain/profile/types.ts';
-import { goalDraft, goalSummary, newGoal, shortIsoDate, type GoalDraft } from './goals';
+import { goalDraft, goalSummary, newGoal, shortIsoDate, weeksUntil, type GoalDraft } from './goals';
 
 /** A goal as the services return it. */
 const stored = (fields: Partial<Goal> = {}): Goal => ({
@@ -205,5 +205,39 @@ describe('shortIsoDate', () => {
 	it('is blank for no date', () => {
 		expect(shortIsoDate(null)).toBe('');
 		expect(shortIsoDate('')).toBe('');
+	});
+});
+
+describe('weeksUntil', () => {
+	/** A device's local date: midday, so no time zone moves it to another day. */
+	const on = (y: number, m: number, d: number) => new Date(y, m - 1, d, 12, 0);
+
+	it('counts whole weeks to the date, rounding down', () => {
+		expect(weeksUntil('2026-11-21', on(2026, 11, 7))).toBe(2);
+		expect(weeksUntil('2026-11-20', on(2026, 11, 7))).toBe(1);
+		expect(weeksUntil('2026-11-14', on(2026, 11, 7))).toBe(1);
+		expect(weeksUntil('2026-11-13', on(2026, 11, 7))).toBe(0);
+	});
+
+	it('is 0 on the day itself, and null once the date has passed or there is none', () => {
+		expect(weeksUntil('2026-11-07', on(2026, 11, 7))).toBe(0);
+		expect(weeksUntil('2026-11-06', on(2026, 11, 7))).toBeNull();
+		expect(weeksUntil(null, on(2026, 11, 7))).toBeNull();
+	});
+
+	it('reads the device’s calendar day, whatever the time on its clock', () => {
+		expect(weeksUntil('2026-11-14', new Date(2026, 10, 7, 0, 1))).toBe(1);
+		expect(weeksUntil('2026-11-14', new Date(2026, 10, 7, 23, 59))).toBe(1);
+		expect(weeksUntil('2026-11-07', new Date(2026, 10, 7, 23, 59))).toBe(0);
+	});
+
+	it('counts across month and year ends, and over a daylight-saving change', () => {
+		// 31 Jan → 28 Feb is 28 days; 28 Dec → 4 Jan is 7 days across the new year.
+		expect(weeksUntil('2027-02-28', on(2027, 1, 31))).toBe(4);
+		expect(weeksUntil('2027-01-04', on(2026, 12, 28))).toBe(1);
+		expect(weeksUntil('2027-01-03', on(2026, 12, 28))).toBe(0);
+		// 14 March 2027 is three weeks after 21 February, with a clock change in between in the US.
+		expect(weeksUntil('2027-03-14', on(2027, 2, 21))).toBe(3);
+		expect(weeksUntil('2027-03-14', on(2026, 3, 14))).toBe(52);
 	});
 });
