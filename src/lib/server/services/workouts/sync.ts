@@ -22,6 +22,9 @@
  *   their results and the rest are answered 'retry'. When nothing was answered yet, the whole
  *   request fails with SyncUnavailableError (503), and nothing is half-applied because each
  *   mutation is its own transaction.
+ * - Ids the owner discarded on the device (the body's `discarded`) are claimed first, before any
+ *   mutation, so a request the device stopped waiting for can never land a discarded change after
+ *   the newer ones this request carries: it answers 'duplicate' instead.
  * - Strictly sequential: one transaction at a time, each query awaited in turn (#62).
  * - Core logging never reaches the agent or an LLM (eslint.config.js, 'Core workout logging').
  */
@@ -37,7 +40,7 @@ import {
 } from '../../../domain/workout/index';
 import { envelopeSchema } from '../../../domain/workout/schemas';
 import { validate, type FieldErrors } from '../../../domain/validation';
-import { claimMutation, createSyncRepository } from '../../db/repositories/sync';
+import { claimDiscarded, claimMutation, createSyncRepository } from '../../db/repositories/sync';
 import { createWorkoutSyncRepository } from '../../db/repositories/workout-sync';
 import type { Executor } from '../../db/types';
 import { logger } from '../../observability/logger';
@@ -74,6 +77,8 @@ export interface SyncDeps {
 	now?: () => Date;
 	/** The request that applies the batch, recorded in the ledger to match the server's logs. */
 	requestId?: string | null;
+	/** Ids the owner discarded on the device: claimed before any mutation is applied. */
+	discarded?: readonly string[];
 }
 
 /** The database could not be reached, or failed, before any mutation was answered: 503. */
@@ -86,23 +91,31 @@ export class SyncUnavailableError extends Error {
 
 // ---- The request ----------------------------------------------------------------------------
 
+const upTo = z.maxLength(
+	SYNC_LIMITS.maxMutations,
+	`Up to ${SYNC_LIMITS.maxMutations} changes at once`
+);
+
 /**
- * The protocol, checked before any mutation: v1 and 1 to 25 mutations, each with a UUID id so its
- * result can name it. Each mutation's own shape is validated on its own, so one bad change is one
- * rejected result, not a refused batch.
+ * The protocol, checked before any mutation: v1, up to 25 mutations, each with a UUID id so its
+ * result can name it, and up to 25 discarded ids; something to sync. Each mutation's own shape is
+ * validated on its own, so one bad change is one rejected result, not a refused batch.
  */
-const protocolSchema = z.object({
-	v: z.literal(1, 'Wire format v1'),
-	mutations: z
-		.array(z.looseObject({ id: z.uuid('Unknown id') }))
-		.check(
-			z.minLength(1, 'Nothing to sync'),
-			z.maxLength(SYNC_LIMITS.maxMutations, `Up to ${SYNC_LIMITS.maxMutations} changes at once`)
-		)
-});
+const protocolSchema = z
+	.object({
+		v: z.literal(1, 'Wire format v1'),
+		mutations: z.array(z.looseObject({ id: z.uuid('Unknown id') })).check(upTo),
+		discarded: z.optional(z.array(z.uuid('Unknown id')).check(upTo))
+	})
+	.check(
+		z.refine((body) => body.mutations.length + (body.discarded?.length ?? 0) > 0, {
+			message: 'Nothing to sync',
+			path: ['mutations']
+		})
+	);
 
 export type ParsedSyncBody =
-	| { ok: true; mutations: Record<string, unknown>[] }
+	| { ok: true; mutations: Record<string, unknown>[]; discarded: string[] }
 	| {
 			ok: false;
 			status: 400 | 413;
@@ -124,7 +137,8 @@ export function parseSyncBody(text: string): ParsedSyncBody {
 	const parsed = validate(protocolSchema, body);
 	if (!parsed.ok)
 		return { ok: false, status: 400, error: 'invalid_request', errors: parsed.errors };
-	return { ok: true, mutations: parsed.data.mutations };
+	const { mutations, discarded = [] } = parsed.data;
+	return { ok: true, mutations, discarded };
 }
 
 // ---- One mutation ---------------------------------------------------------------------------
@@ -243,6 +257,12 @@ export async function applySyncBatch(
 	/** Workout client ids by result, for the canonical rows. */
 	const workoutOf: string[] = [];
 	const held: unknown[] = [];
+
+	try {
+		await claimDiscarded(resolved.db, ownerId, deps.discarded ?? [], requestId, resolved.now());
+	} catch (err) {
+		throw new SyncUnavailableError(err);
+	}
 
 	for (const [i, raw] of mutations.entries()) {
 		const id = raw.id as string;

@@ -30,7 +30,8 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	try {
 		// The guard answers 401 without a session and 403 for a recovery one: this is the owner's.
 		const response = await applySyncBatch(locals.session!.ownerId, body.mutations, {
-			requestId: locals.requestId
+			requestId: locals.requestId,
+			discarded: body.discarded
 		});
 		return json(response, { headers: NO_STORE });
 	} catch (err) {

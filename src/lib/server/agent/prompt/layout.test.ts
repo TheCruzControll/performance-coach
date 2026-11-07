@@ -6,6 +6,7 @@ import type {
 } from '@anthropic-ai/sdk/resources/beta/messages';
 import { describe, expect, it } from 'vitest';
 import type { MemorySnapshot } from '../../../domain/coach/memory.ts';
+import { serializeMemory } from '../../../domain/coach/memory-format.ts';
 import { MockProvider, type MockStep } from '../provider/mock.ts';
 import type { ModelRequest, ModelResult } from '../provider/types.ts';
 import { MAX_BREAKPOINTS, validateRequest } from '../provider/validate.ts';
@@ -369,6 +370,19 @@ describe('segmentPreamble', () => {
 
 	it('is the same bytes for the same snapshot', () => {
 		expect(bytes(segmentPreamble(snapshot()))).toBe(bytes(segmentPreamble(snapshot())));
+	});
+
+	it('carries the memory as memory-format serialises it, capped', () => {
+		const many = snapshot({
+			analyses: Array.from({ length: 60 }, (_, i) => ({
+				date: '2026-11-01',
+				text: `Analysis ${i} `.repeat(10),
+				source: { type: 'note' as const, id: `note-${i}` }
+			}))
+		});
+		const { memory } = dataOf(segmentPreamble(many)) as { memory: unknown };
+		expect(JSON.stringify(memory)).toBe(serializeMemory(many));
+		expect((memory as { omitted: Record<string, number> }).omitted.analyses).toBeGreaterThan(0);
 	});
 });
 
