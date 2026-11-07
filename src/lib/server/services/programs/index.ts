@@ -40,10 +40,21 @@ export {
 	type WeekCopies
 } from './revise';
 export {
+	alternativesFor,
+	type ExerciseAlternative,
+	type ExerciseAlternatives,
+	type PlannedExerciseAt
+} from './alternatives';
+export {
+	adjustPrescription,
+	adjustRunSegment,
+	adjustSessionDetails,
 	checkMove,
 	getMoveTargets,
 	moveSession,
+	NOTHING_CHANGED,
 	skipSession,
+	swapExercise,
 	type EditAt,
 	type MovedSession,
 	type MoveTarget,
