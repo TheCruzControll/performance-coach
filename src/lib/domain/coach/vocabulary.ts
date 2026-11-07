@@ -32,6 +32,18 @@ export const ANSWER_BLOCK_KINDS = keysOf(ANSWER_BLOCK_KIND_LABEL);
 
 // ---- Transcript -----------------------------------------------------------------------------
 
+/**
+ * Stored. Where a conversation's title came from: its first message, until the owner renames it.
+ * Owner decision (M5 plan, 'Thread titles'): the model writes no titles; a 'model' key would be
+ * one entry here and a migration of coach_threads_title_source_ck.
+ */
+export const THREAD_TITLE_SOURCE_LABEL = {
+	first_message: 'From your first message',
+	owner: 'Named by you'
+};
+export type ThreadTitleSource = keyof typeof THREAD_TITLE_SOURCE_LABEL;
+export const THREAD_TITLE_SOURCES = keysOf(THREAD_TITLE_SOURCE_LABEL);
+
 /** Stored. The Messages API role a stored message is replayed with. */
 export const MESSAGE_ROLE_LABEL = { user: 'You', assistant: 'Coach', system: 'Context' };
 export type MessageRole = keyof typeof MESSAGE_ROLE_LABEL;
