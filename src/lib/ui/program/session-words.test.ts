@@ -7,6 +7,7 @@ import {
 	disciplineWords,
 	exerciseViews,
 	metricValue,
+	moveOption,
 	whenWords,
 	type ExerciseSource
 } from './session-words';
@@ -234,5 +235,25 @@ describe('exerciseViews', () => {
 describe('BASELINE_CALLOUT', () => {
 	it('asks the owner to record what they reach, in the words a baseline set uses', () => {
 		expect(BASELINE_CALLOUT.points).toContain(BASELINE_INSTRUCTION);
+	});
+});
+
+describe('moveOption', () => {
+	it('names a day as its card and its toast say it, with what is planned there', () => {
+		expect(moveOption({ date: '2026-11-11', planned: 'Intervals' })).toEqual({
+			date: '2026-11-11',
+			label: 'Wed 11 Nov',
+			day: 'Wednesday',
+			planned: 'Intervals'
+		});
+		// Across a month end, and on a Sunday.
+		expect(moveOption({ date: '2026-11-29', planned: 'Rest day' })).toMatchObject({
+			label: 'Sun 29 Nov',
+			day: 'Sunday'
+		});
+		expect(moveOption({ date: '2026-12-01', planned: 'Rest day' })).toMatchObject({
+			label: 'Tue 1 Dec',
+			day: 'Tuesday'
+		});
 	});
 });
