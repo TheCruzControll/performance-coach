@@ -241,5 +241,30 @@ export default defineConfig(
 				}
 			]
 		}
+	},
+
+	// ---- Vercel Blob (M9) --------------------------------------------------------------
+	// The private backup store is the only importer of @vercel/blob, so nothing else can upload
+	// a backup publicly or with a token from the environment. It uses no-restricted-syntax, which
+	// no other block sets, so it composes with every layer block above. Tests may import the SDK
+	// for its error classes.
+	{
+		files: ['src/**', 'scripts/**'],
+		ignores: ['src/lib/server/backup/blob-store.ts', '**/*.test.ts'],
+		rules: {
+			'no-restricted-syntax': [
+				'error',
+				...[
+					'ImportDeclaration',
+					'ImportExpression',
+					'ExportAllDeclaration',
+					'ExportNamedDeclaration'
+				].map((node) => ({
+					selector: `${node}[source.value=/^@vercel\\u002Fblob($|\\u002F)/]`,
+					message:
+						'Only src/lib/server/backup/blob-store.ts imports @vercel/blob: use vercelBlobStore.'
+				}))
+			]
+		}
 	}
 );
