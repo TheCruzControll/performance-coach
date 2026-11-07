@@ -12,6 +12,8 @@
  * - The current version's session carries its edits: the days Move offers (getMoveTargets),
  *   from the owner's today (ownerToday), or why it can no longer change. An older version has
  *   none, being read-only.
+ * - A session that can still change carries what Adjust steps (adjustValues): its set
+ *   prescriptions, run segments or length and RPE, as stored, paces in the owner's unit.
  * - A strength session that can still change also streams what Swap offers for each exercise
  *   (`swaps`, alternativesForExercises): the screen renders without waiting for it. A failure
  *   there is recorded and streams null, which the Swap sheet shows with Retry.
@@ -34,6 +36,7 @@ import {
 } from '#lib/server/services/programs/index.ts';
 import { TrainingNotFoundError, type TrainingDeps } from '#lib/server/services/training/shared.ts';
 import {
+	adjustValues,
 	BASELINE_CALLOUT,
 	detailsView,
 	disciplineWords,
@@ -42,6 +45,7 @@ import {
 	moveOption,
 	SWAPPED_ONCE,
 	whenWords,
+	type AdjustValues,
 	type BaselineCallout,
 	type DetailsView,
 	type SessionEdits,
@@ -86,6 +90,8 @@ export interface SessionScreen {
 	notes: string | null;
 	/** Its edits; none on an older version, which is read-only. */
 	edits: SessionEdits | null;
+	/** What Adjust steps while the session can still change; otherwise null. */
+	adjust: AdjustValues | null;
 	/**
 	 * Streamed: what Swap offers for each exercise, or null if it could not be read. Null in
 	 * place of the promise when nothing can be swapped: not a strength session, or no edits.
@@ -116,7 +122,7 @@ export interface SessionLoadDeps extends Pick<TrainingDeps, 'db'> {
 function screenOf(
 	session: PlannedSession,
 	{ weightUnit, distanceUnit }: Pick<AthleteProfile, 'weightUnit' | 'distanceUnit'>
-): Omit<SessionScreen, 'edits' | 'swaps'> {
+): Omit<SessionScreen, 'edits' | 'adjust' | 'swaps'> {
 	const { version, week } = session;
 	return {
 		lineage: session.lineage,
@@ -216,7 +222,8 @@ export async function loadSessionDetail(
 			edits && !edits.locked && session.kind === 'strength'
 				? swapOptions(ownerId, session.exercises, origin, { db, errorsDb })
 				: null;
-		return { state: 'session', ...screenOf(session, profile), edits, swaps };
+		const adjust = edits && !edits.locked ? adjustValues(session, profile) : null;
+		return { state: 'session', ...screenOf(session, profile), edits, adjust, swaps };
 	} catch (err) {
 		if (err instanceof TrainingNotFoundError) error(404, 'Not found');
 		await recordServerError(
