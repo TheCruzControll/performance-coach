@@ -25,7 +25,7 @@ import {
 	signedOut,
 	trackConsoleErrors
 } from './support';
-import { chromiumOnly, ownerPasskey, withoutPasskeyAutofill } from './webauthn';
+import { ownerPasskey, withoutPasskeyAutofill } from './webauthn';
 
 test.use({ ...DESKTOP, storageState: signedOut });
 
@@ -117,15 +117,13 @@ const focused = (page: Page) =>
 	});
 
 /**
- * The skip link moves focus to <main>, and (Chromium, where Tab reaches every control) the next
- * Tab stops go through the panel's controls in the order they read.
+ * The skip link moves focus to <main>, and the next Tab stops go through the panel's controls in
+ * the order they read.
  */
-async function expectSkipIntoPanel(page: Page, browserName: string, controls: string[]) {
+async function expectSkipIntoPanel(page: Page, controls: string[]) {
 	await page.getByRole('link', { name: 'Skip to content' }).focus();
 	await page.keyboard.press('Enter');
 	await expect(page.locator('main#main')).toBeFocused();
-	// macOS WebKit tabs only between text fields unless Full Keyboard Access is on.
-	if (browserName !== 'chromium') return;
 	const stops: string[] = [];
 	for (let i = 0; i < controls.length; i++) {
 		await page.keyboard.press('Tab');
@@ -143,8 +141,7 @@ async function expectSkipIntoPanel(page: Page, browserName: string, controls: st
 
 test.describe('sign-in and recovery at 1440 × 900', () => {
 	test('sign-in: headline left, card right, centred, every way in above the fold', async ({
-		page,
-		browserName
+		page
 	}, testInfo) => {
 		const errors = trackConsoleErrors(page);
 		await gotoHydrated(page, '/');
@@ -155,34 +152,25 @@ test.describe('sign-in and recovery at 1440 × 900', () => {
 		await captureScreen(page, testInfo, 'landing-desktop');
 		await auditBothThemes(page, 'sign-in');
 
-		if (browserName === 'chromium') {
-			// Tab from the top of the page: the skip link, then the card's controls as they read.
+		// Tab from the top of the page: the skip link, then the card's controls as they read.
+		await page.keyboard.press('Tab');
+		const stops = [await focused(page)];
+		for (let i = 0; i < 3; i++) {
 			await page.keyboard.press('Tab');
-			const stops = [await focused(page)];
-			for (let i = 0; i < 3; i++) {
-				await page.keyboard.press('Tab');
-				stops.push(await focused(page));
-			}
-			expect(stops).toEqual(['skip', 'passkey-field', 'passkey-signin', 'use-recovery-code']);
+			stops.push(await focused(page));
 		}
-		await expectSkipIntoPanel(page, browserName, [
-			'passkey-field',
-			'passkey-signin',
-			'use-recovery-code'
-		]);
+		expect(stops).toEqual(['skip', 'passkey-field', 'passkey-signin', 'use-recovery-code']);
+		await expectSkipIntoPanel(page, ['passkey-field', 'passkey-signin', 'use-recovery-code']);
 		expect(errors).toEqual([]);
 	});
 
-	test('recovery: the code form in the card, beside the headline', async ({
-		page,
-		browserName
-	}, testInfo) => {
+	test('recovery: the code form in the card, beside the headline', async ({ page }, testInfo) => {
 		await gotoHydrated(page, '/recover');
 		await expect(headlineOf(page)).toHaveText('Lost your passkey?');
 		await expectDesktopFrame(page);
 		await captureScreen(page, testInfo, 'recover-desktop');
 		await auditBothThemes(page, 'recover');
-		await expectSkipIntoPanel(page, browserName, ['recovery-code-input', 'recovery-submit']);
+		await expectSkipIntoPanel(page, ['recovery-code-input', 'recovery-submit']);
 	});
 
 	test('no sideways scroll from 1024 to 1920 px, and one column again at 1023 px', async ({
@@ -236,10 +224,8 @@ test.describe('every state of the frame, in the card', () => {
 	});
 
 	test('a refused passkey: the error in the card, and Sign in works again', async ({
-		page,
-		browserName
+		page
 	}, testInfo) => {
-		test.skip(browserName !== 'chromium', chromiumOnly[1]);
 		// Every spec signs in from the same address: start from a fresh sign-in budget.
 		await query(`delete from auth_rate_limits where key like 'signin.%'`);
 		const authenticator = await ownerPasskey(page, testInfo);
@@ -328,11 +314,8 @@ test.describe('every state of the frame, in the card', () => {
 	});
 
 	test('a wrong recovery code: the error under the field, in the card', async ({
-		page,
-		browserName
+		page
 	}, testInfo) => {
-		// Wrong codes count against limits every spec shares (policy.ts): one engine is enough.
-		test.skip(browserName !== 'chromium', 'checked on Chromium only, to spare the shared limit');
 		try {
 			await gotoHydrated(page, '/recover');
 			await page.getByTestId('recovery-code-input').fill('AAAA-BBBB-CCCC-DDDD');
@@ -350,8 +333,7 @@ test.describe('every state of the frame, in the card', () => {
 
 	test('after a recovery code: a new passkey, its controls first after the skip link', async ({
 		page,
-		context,
-		browserName
+		context
 	}, testInfo) => {
 		// A recovery session without burning a code: a test session given the columns
 		// redeemRecoveryCode sets (kind and method recovery, 15 minutes to live).
@@ -376,7 +358,7 @@ test.describe('every state of the frame, in the card', () => {
 			await expectDesktopFrame(page, [codesLeft]);
 			await captureScreen(page, testInfo, 'recover-passkey-desktop');
 			await auditBothThemes(page, 'recover passkey');
-			await expectSkipIntoPanel(page, browserName, ['create-recovery-passkey', 'recover-cancel']);
+			await expectSkipIntoPanel(page, ['create-recovery-passkey', 'recover-cancel']);
 		} finally {
 			await query(
 				`update auth_sessions set revoked_at = now(), revoked_reason = 'signout' where id = $1`,

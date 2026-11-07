@@ -135,8 +135,7 @@ test.describe('the rail from 1024 px', () => {
 		expect(errors).toEqual([]);
 	});
 
-	test('a mouse hover tints a destination that is not current', async ({ page, browserName }) => {
-		test.skip(browserName !== 'chromium', 'hover is asserted on Chromium');
+	test('a mouse hover tints a destination that is not current', async ({ page }) => {
 		await page.goto('/today');
 		await page.waitForLoadState('networkidle');
 		const train = railOf(page).getByRole('link', { name: 'Train' });
@@ -173,12 +172,8 @@ test.describe('keyboard', () => {
 	});
 
 	test('Tab goes from the skip link through the rail to the content, each with a ring', async ({
-		page,
-		browserName
+		page
 	}) => {
-		// macOS WebKit tabs only between text fields unless Full Keyboard Access is on; the
-		// document order above holds there too.
-		test.skip(browserName !== 'chromium', 'Tab order is asserted on Chromium');
 		await page.goto('/today');
 		await page.waitForLoadState('networkidle');
 		const focused = () =>
@@ -206,14 +201,13 @@ test.describe('keyboard', () => {
 		expect(stops).toEqual(['skip', ...TABS.map((tab) => tab.label), 'main']);
 	});
 
-	test('the skip link lands in the content, past the rail', async ({ page, browserName }) => {
+	test('the skip link lands in the content, past the rail', async ({ page }) => {
 		await page.goto('/today');
 		await page.waitForLoadState('networkidle');
 		const skip = page.getByRole('link', { name: 'Skip to content' });
 		await skip.focus();
 		await page.keyboard.press('Enter');
 		await expect(mainOf(page)).toBeFocused();
-		if (browserName !== 'chromium') return; // Tab order: Chromium, as above
 		await page.keyboard.press('Tab');
 		const first = await page.evaluate(
 			(selector) =>
@@ -458,10 +452,8 @@ test.describe('every width and state', () => {
 
 	test('offline, Coach reloads from the precache with its notice in the column and the rail working', async ({
 		page,
-		context,
-		browserName
+		context
 	}) => {
-		test.skip(browserName !== 'chromium', 'offline emulation is Chromium-only');
 		await page.goto('/coach');
 		await workerActivated(page);
 		await context.setOffline(true);

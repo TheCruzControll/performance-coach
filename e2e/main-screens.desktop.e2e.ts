@@ -171,13 +171,7 @@ test.describe('Security', () => {
 		expect(signOut.y, 'Sign out comes last').toBeGreaterThanOrEqual(bottom);
 	});
 
-	test('Tab runs through passkeys, then devices, then codes, then Sign out', async ({
-		page,
-		browserName
-	}) => {
-		// macOS WebKit tabs only between text fields unless Full Keyboard Access is on; the
-		// reading order above holds there too.
-		test.skip(browserName !== 'chromium', 'Tab order is asserted on Chromium');
+	test('Tab runs through passkeys, then devices, then codes, then Sign out', async ({ page }) => {
 		await gotoHydrated(page, '/profile/security');
 		// Where each control is: the section it belongs to, or Sign out.
 		const where = (selector: string) =>

@@ -39,7 +39,7 @@ function fixture(): Project[] {
 		use: { browserName: browserName as Engine },
 		...(dependencies ? { dependencies } : {})
 	});
-	const functional = ['iphone-chromium', 'desktop-chromium', 'iphone-webkit', 'desktop-webkit'];
+	const functional = ['iphone-chromium', 'desktop-chromium', 'iphone-webkit'];
 	const beforeSweeps = [...functional, 'perf', 'serial-chromium', 'serial-webkit'];
 	return [
 		project('setup', 'chromium'),
@@ -48,7 +48,6 @@ function fixture(): Project[] {
 		project('perf', 'chromium', ['serial-webkit']),
 		project('setup-webkit', 'webkit', ['setup']),
 		project('iphone-webkit', 'webkit', ['setup-webkit']),
-		project('desktop-webkit', 'webkit', ['setup-webkit']),
 		project('serial-chromium', 'chromium', functional),
 		project('serial-webkit', 'webkit', ['serial-chromium']),
 		project('sweep-chromium', 'chromium', beforeSweeps),
@@ -78,7 +77,7 @@ function after(projects: Project[], name: string): string[] {
 
 const EXPECTED: Record<string, string[]> = {
 	'main/chromium': ['setup', 'iphone-chromium', 'desktop-chromium'],
-	'main/webkit': ['setup', 'setup-webkit', 'iphone-webkit', 'desktop-webkit'],
+	'main/webkit': ['setup', 'setup-webkit', 'iphone-webkit'],
 	'serial/chromium': ['setup', 'serial-chromium'],
 	'serial/webkit': ['setup', 'setup-webkit', 'serial-webkit'],
 	'alone/chromium': ['setup', 'perf', 'exclusive'],
@@ -168,7 +167,6 @@ describe.each([
 			'setup',
 			'setup-webkit',
 			'iphone-webkit',
-			'desktop-webkit',
 			'serial-webkit',
 			'sweep-webkit'
 		]);
