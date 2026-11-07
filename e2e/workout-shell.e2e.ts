@@ -81,21 +81,19 @@ test.describe('the workout screen (IndexedDB only)', () => {
 		await gotoWorkout(page);
 
 		await expect(page.getByRole('heading', { level: 1 })).toHaveText('Lower body & pull');
-		await expect(page.getByRole('heading', { level: 2 })).toHaveText(EXERCISES);
+		// The current exercise (the strength view's details: workout-strength.e2e.ts).
+		await expect(page.getByRole('heading', { level: 2 })).toHaveText('Back squat');
 		const main = page.getByTestId('workout-main');
-		const squat = main.getByTestId('exercise').filter({ hasText: 'Back squat' });
-		await expect(squat).toContainText('Work up to a set of 5 @ RPE 7 · 3 × 5');
+		const squat = main.getByTestId('exercise');
+		await expect(squat.getByTestId('exercise-target')).toContainText(
+			'Work up to a set of 5 @ RPE 7'
+		);
 		await expect(squat.getByTestId('set')).toHaveText([
-			/^1\s*5 reps · RPE 7\s*To do$/,
+			/^1\s*5 reps · RPE 7\s*Now$/,
 			/^2\s*5 reps · ≈ 100 kg\s*To do$/,
 			/^3\s*5 reps · ≈ 100 kg\s*To do$/,
 			/^4\s*5 reps · ≈ 100 kg\s*To do$/
 		]);
-		await expect(main.getByTestId('set')).toHaveCount(16);
-		// The superset's members are labelled; straight exercises are not.
-		await expect(main.getByTestId('exercise').filter({ hasText: 'Pull-up' })).toContainText('A1');
-		await expect(main.getByTestId('exercise').filter({ hasText: 'Plank' })).toContainText('A2');
-		await expect(main.getByTestId('exercise').filter({ hasText: 'Plank' })).toContainText('0:45');
 		// The stopwatch runs from the start, 12 minutes ago.
 		await expect(page.getByRole('timer', { name: 'Workout time' })).toHaveText(/^\s*12:\d\d\s*$/);
 		const restored = await main.innerText();
@@ -291,7 +289,9 @@ test.describe('the workout screen offline (service worker)', () => {
 			await page.goto(path);
 			await expect(ready(page)).toBeAttached();
 			await expect(page.getByRole('heading', { level: 1 })).toHaveText('Lower body & pull');
-			await expect(page.getByRole('heading', { level: 2 })).toHaveText(EXERCISES);
+			await expect(page.getByTestId('exercise').getByRole('heading', { level: 2 })).toHaveText(
+				'Back squat'
+			);
 		}
 		await context.setOffline(false);
 	});
