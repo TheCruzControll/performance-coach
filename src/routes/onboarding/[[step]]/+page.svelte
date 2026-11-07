@@ -92,11 +92,15 @@
 			key={data.key}
 			saved={data.saved}
 			context={data.context}
+			profile={data.profile}
+			fromReview={data.fromReview}
 			title={data.resume ? 'Welcome back' : COPY[step].title}
 			lede={COPY[step].lede}
 			continueLabel={data.resume ? 'Continue' : (COPY[step].next ?? 'Continue')}
 		>
-			{#if step === 'welcome'}
+			<!-- Opened from the review's Edit, the welcome is only its name and units: neither the
+			     first visit's outline nor the return visit's card. -->
+			{#if step === 'welcome' && !data.fromReview}
 				{#if data.resume}
 					<!-- A return visit: the furthest step advanced, with everything before it saved. -->
 					<div class="resume" data-testid="resume-card">

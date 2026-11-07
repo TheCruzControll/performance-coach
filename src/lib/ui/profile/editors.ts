@@ -56,6 +56,9 @@ function section<T>(
 	};
 }
 
+/** Onboarding's review: the whole profile at a glance, loaded on demand like the editors. */
+export const loadSummary = () => import('./ProfileSummary.svelte');
+
 export const EDITORS: Record<SectionKey, () => Promise<SectionEditor>> = {
 	// The goals as loaded: each goal is drafted in its own sheet, and saves on its own.
 	goals: () =>
