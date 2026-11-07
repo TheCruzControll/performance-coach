@@ -13,8 +13,6 @@ import {
 import { captureScreen } from './support';
 import { gotoWorkout, seedWorkout, workoutDay } from './workout-support';
 
-const EXERCISES = ['Back squat', 'Leg press', 'Romanian deadlift', 'Pull-up', 'Plank'];
-
 async function openWorkout(page: Page) {
 	const kits = await workoutDay();
 	await seedWorkout(page, kits.strength);
@@ -56,13 +54,11 @@ test.describe('the workout screen on a desktop', () => {
 		await expect(page.getByTestId('workout-side')).toBeHidden();
 	});
 
-	test('Minimise and the exercise rows have hover and focus-visible states', async ({ page }) => {
+	test('Minimise has hover and focus-visible states', async ({ page }) => {
 		await openWorkout(page);
 		await page.mouse.move(0, 0);
-		const targets = [
-			page.getByRole('link', { name: 'Minimise' }),
-			page.getByTestId('workout-side').getByRole('link').first()
-		];
+		// The exercise list is a progress list until exercise-navigation makes its rows controls.
+		const targets = [page.getByRole('link', { name: 'Minimise' })];
 		for (const target of targets) {
 			const rest = await background(target);
 			await target.hover();
@@ -79,7 +75,7 @@ test.describe('the workout screen on a desktop', () => {
 		await openWorkout(page);
 		await page.locator('body').focus();
 		const order: string[] = [];
-		for (let i = 0; i < 2 + EXERCISES.length; i++) {
+		for (let i = 0; i < 2; i++) {
 			await page.keyboard.press('Tab');
 			order.push(
 				await page.evaluate(() =>
@@ -89,12 +85,7 @@ test.describe('the workout screen on a desktop', () => {
 		}
 		expect(order[0]).toBe('Skip to content');
 		expect(order[1]).toBe('Minimise');
-		expect(order.slice(2)).toEqual([
-			'1 Back squat 0/4 sets',
-			'2 Leg press 0/3 sets',
-			'3 Romanian deadlift 0/3 sets',
-			'A1 Pull-up 0/3 sets',
-			'A2 Plank 0/3 sets'
-		]);
+		// Nothing on the strength view takes focus yet (exercise-navigation adds its controls).
+		await expect(page.getByTestId('workout-side').locator('a, button, [tabindex]')).toHaveCount(0);
 	});
 });
