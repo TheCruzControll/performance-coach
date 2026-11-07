@@ -10,6 +10,9 @@ import { checkSetupAccess } from '../../../src/lib/server/auth/setup';
 import { withRollback } from '../helpers';
 import { clock, request, SETUP_CONFIG, SETUP_TOKEN, setUpOwner } from './fixtures';
 
+const HOUR = 3_600_000;
+const DAY = 24 * HOUR;
+
 describe('DB-backed rate limits', () => {
 	it('allow the limit, refuse the next hit with Retry-After, and reset with the window', async () => {
 		await withRollback(async (tx) => {
@@ -90,6 +93,30 @@ describe('DB-backed rate limits', () => {
 				'signin.verify:ip:192.0.2.2',
 				'signin.verify:ip:192.0.2.3'
 			]);
+		});
+	});
+
+	it('keep a counter for two days, longer than the daily email window', async () => {
+		await withRollback(async (tx) => {
+			const time = clock();
+			const deps = { db: tx, now: time.now };
+			const keys = async () =>
+				(await tx.execute<{ key: string }>(sql`select key from auth_rate_limits`)).rows
+					.map((row) => row.key)
+					.sort();
+			await enforceRateLimit('email.daily', 'global', request(), deps);
+			// A day and an hour later, a new counter's prune leaves it alone...
+			time.advance(DAY + HOUR);
+			await enforceRateLimit('signin.verify', { ip: '192.0.2.10' }, request(), deps);
+			expect(await keys()).toEqual(['email.daily:global', 'signin.verify:ip:192.0.2.10']);
+			// ...and once its window started over two days ago, the next one deletes it.
+			time.advance(DAY - HOUR + 1);
+			await enforceRateLimit('signin.verify', { ip: '192.0.2.11' }, request(), deps);
+			expect(await keys()).toEqual(['signin.verify:ip:192.0.2.10', 'signin.verify:ip:192.0.2.11']);
+			expect(RATE_LIMIT_PRUNE.staleAfterMs).toBe(2 * DAY);
+			for (const { windowMs } of Object.values(RATE_LIMITS)) {
+				expect(windowMs).toBeLessThan(RATE_LIMIT_PRUNE.staleAfterMs);
+			}
 		});
 	});
 

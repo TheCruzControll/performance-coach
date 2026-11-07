@@ -19,6 +19,7 @@ Single-owner passkey (WebAuthn) authentication on SimpleWebAuthn. How it works a
 | `audit.ts`, `activity.ts`                            | `auth_events` audit log and the Security screen's recent activity              |
 | `tokens.ts`                                          | Random tokens, SHA-256, constant-time digest comparison (`node:crypto` only)   |
 | `email-link-config.ts`                               | Whether the email sign-in link is on, and its provider (ADR 0011; pure)        |
+| `email-link.ts`, `email-link-message.ts`             | Request and redeem a one-time email sign-in link; the email text (pure)        |
 | `test-support.ts`                                    | Test-only session minting (refused unless test routes are enabled and allowed) |
 
 Pure modules have unit tests next to them; the use-cases are covered by
