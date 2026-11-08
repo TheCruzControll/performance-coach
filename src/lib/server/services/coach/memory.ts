@@ -13,7 +13,8 @@
  * - exercise preferences with their source and reason (only explicit ones are stored: a machine
  *   being taken is a substitution, never a preference); equipment; active injuries and the
  *   movements they say to avoid
- * The record sections are empty until coach-memory-records adds its loader.
+ * The record half (pain reports, recovery notes, decisions, proposals, reviews and notes) is
+ * memory-records.ts's loadMemoryRecords, in at most MEMORY_RECORDS_QUERIES more queries.
  *
  * Equipment and injuries have no source type of their own: they cite a 'preference' ref with an
  * `equipment.` or `injury.` id (the owner's training preferences, as get_training_preferences
@@ -37,22 +38,15 @@ import {
 import { TREND_WEEKS, trendsOf, type Trend } from '../analytics/index';
 import { getCurrentProgram } from '../programs';
 import { getSessionsInRange, type SessionsInRange } from '../training/history';
+import { loadMemoryRecords, MEMORY_RECORDS_QUERIES } from './memory-records';
 import { resolveDeps, type CoachDeps } from './shared';
 
-/** The most queries the profile half sends; coach-memory-records' half adds its own. */
+/** The most queries the profile half sends; the record half adds its own. */
 export const MEMORY_PROFILE_QUERIES = 9;
+/** The most queries getCoachingMemory sends, both halves. */
+export const MEMORY_QUERIES = MEMORY_PROFILE_QUERIES + MEMORY_RECORDS_QUERIES;
 /** The days, today included, the snapshot sets planned against done. An owner's choice. */
 export const RECENT_DAYS = 14;
-
-const emptyRecords = (): MemorySnapshot['records'] => ({
-	painReports: [],
-	recoveryNotes: [],
-	decisions: [],
-	proposals: [],
-	reviews: [],
-	threadSummaries: [],
-	analyses: []
-});
 
 const round = (value: number) => Math.round(value * 10) / 10;
 
@@ -109,7 +103,7 @@ function equipmentOf(row: MemoryEquipmentRow | null) {
 		}));
 }
 
-/** The profile half of the coaching memory as of `today`, the owner's local day. */
+/** The coaching memory as of `today`, the owner's local day. */
 export async function getCoachingMemory(
 	ownerId: string,
 	{ today }: { today: IsoDate },
@@ -184,6 +178,6 @@ export async function getCoachingMemory(
 				}))
 			)
 		},
-		records: emptyRecords()
+		records: await loadMemoryRecords(ownerId, today, db)
 	};
 }
