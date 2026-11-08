@@ -26,6 +26,7 @@ import {
 	programs,
 	recoveryNotes,
 	weeklyReviews,
+	workouts,
 	type Executor
 } from '../../../src/lib/server/db';
 import { getCoachingMemory, MEMORY_QUERIES } from '../../../src/lib/server/services/coach/memory';
@@ -426,10 +427,16 @@ describe('getCoachingMemory: notes from other threads', () => {
 	it('opens a new thread with another thread’s summary and a workout analysis', async () => {
 		await withRollback(async (db) => {
 			const owner = await makeOwner(db);
-			const workoutId = await logOther(db, owner, {
+			const id = await logOther(db, owner, {
 				startedAt: utc(MONDAY, '18:00'),
 				title: 'Muay Thai'
 			});
+			// A note names a workout by its client id, as History does.
+			const [row] = await db
+				.select({ clientId: workouts.clientId })
+				.from(workouts)
+				.where(eq(workouts.id, id));
+			const workoutId = row!.clientId;
 			const first = await runScripted(answering, { db, owner, text: 'How did Monday go?' });
 			await saveWorkoutAnalysis(
 				owner,

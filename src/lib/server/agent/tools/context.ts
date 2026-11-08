@@ -10,6 +10,16 @@
  * untouched.
  */
 import type { SourceRef } from '../../../domain/coach/sources.ts';
+import type { DraftContext } from '../proposals/draft.ts';
+
+/**
+ * How a drafting tool reaches the drafter (proposals/draft.ts): the turn's provider, where its
+ * calls are recorded, and admit(), which takes one of the turn's drafts (TURN_LIMITS.drafts) and
+ * is false once they are spent. Null where no turn runs (a tool called on its own).
+ */
+export interface ToolDrafter extends Pick<DraftContext, 'provider' | 'onCall'> {
+	admit(): boolean;
+}
 
 /** What services/coach/shared.ts's toolRuntime(deps) returns (coach-threads-service). */
 export interface ToolRuntime<Deps> {
@@ -41,6 +51,9 @@ export interface ToolContext<Deps = unknown> {
 	readonly serialTools: boolean;
 	/** M3's matchExercise over the owner's library: an exercise key, or null. */
 	readonly matchExercise: (text: string) => string | null;
+	readonly drafter: ToolDrafter | null;
+	/** Inside a call: the tool_use it answers, which a proposal records as its origin. */
+	readonly toolUseId?: string;
 }
 
 /** The one way a ToolContext is made. */
@@ -52,6 +65,7 @@ export function toolContext<Deps>(source: {
 	signal: AbortSignal;
 	deadlineAt: number;
 	matchExercise: (text: string) => string | null;
+	drafter?: ToolDrafter | null;
 }): ToolContext<Deps> {
 	const { session, message, day, runtime } = source;
 	return Object.freeze({
@@ -66,6 +80,7 @@ export function toolContext<Deps>(source: {
 		deadlineAt: source.deadlineAt,
 		deps: runtime.deps,
 		serialTools: runtime.serialTools,
-		matchExercise: source.matchExercise
+		matchExercise: source.matchExercise,
+		drafter: source.drafter ?? null
 	});
 }
