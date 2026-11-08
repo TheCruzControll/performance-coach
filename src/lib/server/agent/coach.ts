@@ -11,12 +11,15 @@
  * - runCoachTurn() runs one turn (turn.ts) with that provider. The turn hands the tools M3's
  *   matchExercise over the owner's library (services/coach/turn-facts.ts) in their ToolContext.
  * - coachEventStream() frames a turn's events as server-sent events, with a heartbeat.
+ * - Where test routes are enabled, the test route's overrides (provider/faults.ts) can make the
+ *   coach unavailable for a reason and shorten a turn; nowhere else can anything set them.
  */
 import { encodeSse, SSE_HEARTBEAT, type CoachEvent } from '../../domain/coach/events.ts';
 import type { CoachUnavailableReason } from '../../domain/coach/vocabulary.ts';
 import { getEnv, type Env } from '../env.ts';
 import { logger } from '../observability/logger.ts';
 import type { CoachDeps } from '../services/coach/shared.ts';
+import { mockOverrides } from './provider/faults.ts';
 import { MockProvider } from './provider/mock.ts';
 import { MOCK_SCRIPTS } from './provider/mock-scripts/index.ts';
 import { resolveCoachProvider, type CoachProviderChoice } from './provider/select.ts';
@@ -42,7 +45,8 @@ let resolved: Resolved | undefined;
 function current(): Resolved {
 	const env = getEnv();
 	if (resolved?.env !== env) resolved = { env, choice: resolveCoachProvider(env) };
-	return resolved;
+	const { unavailable } = mockOverrides();
+	return unavailable ? { env, choice: { status: 'unavailable', reason: unavailable } } : resolved;
 }
 
 async function load(env: Env, name: 'mock' | 'anthropic'): Promise<LlmProvider> {
@@ -90,7 +94,12 @@ export async function* runCoachTurn(
 		yield { type: 'done', status: null };
 		return;
 	}
-	yield* runTurn(input, { ...options, provider });
+	const { turnMs } = mockOverrides();
+	const deadlineAt =
+		turnMs === undefined
+			? options.deadlineAt
+			: Math.min(options.deadlineAt ?? Infinity, Date.now() + turnMs);
+	yield* runTurn(input, { ...options, provider, deadlineAt });
 }
 
 /**

@@ -34,6 +34,13 @@
 	};
 	const status = $derived(session && STATUS[session.status]);
 
+	/**
+	 * Decision (desk-train-detail): on a desktop window the session details sit in the side column,
+	 * except a class's: its metrics (rounds, sparring, focus) are what it asks of the owner, so they
+	 * take the main column, where a lift's exercises and a run's steps go.
+	 */
+	const detailsInMain = $derived(!!session?.details.metrics.length);
+
 	// ---- Back -------------------------------------------------------------------------------
 
 	/**
@@ -160,7 +167,10 @@
 {#if session}
 	<PageHeader title={session.title} eyebrow={session.when} />
 
-	<div class="stack" data-testid="session-detail">
+	<!-- Wide from 1024 px (docs/design-system.md, Responsive layout → Screens): the side column
+	     (what it is and what can change) beside the main one (what to do). Below that the columns
+	     are no boxes, so the phone's one column reads in the same order. -->
+	<div class="stack" data-layout="wide" data-testid="session-detail">
 		<div class="meta">
 			<Chip tone={session.tone}>{session.discipline}</Chip>
 			{#if session.baseline}<Badge icon="target">Baseline</Badge>{/if}
@@ -173,80 +183,98 @@
 
 		{#if session.older}
 			{@const older = session.older}
-			<Notice icon="clock" title="Older version · read-only" data-testid="older-version">
-				Version {older.number} of your plan, as it was then.
-				{#if older.inCurrent}
-					<a
-						class="current"
-						href={resolve('/(app)/train/session/[key]', { key: session.lineage })}
-						data-testid="current-version">See the current version</a
+			<div class="banner">
+				<Notice icon="clock" title="Older version · read-only" data-testid="older-version">
+					Version {older.number} of your plan, as it was then.
+					{#if older.inCurrent}
+						<a
+							class="current"
+							href={resolve('/(app)/train/session/[key]', { key: session.lineage })}
+							data-testid="current-version">See the current version</a
+						>
+					{:else}
+						Your current plan no longer has this session.
+					{/if}
+				</Notice>
+			</div>
+		{/if}
+
+		<div class="side" data-testid="session-side">
+			{#if session.status === 'skipped'}
+				<Notice icon="close" title="Skipped" data-testid="session-skipped">
+					It’s off your week and stays as it was planned: a skipped session can’t be moved or
+					changed. The reason, if you gave one, is kept with the change.
+					<a class="current" href={resolve('/(app)/train/history/[[version]]', {})}
+						>See why in History</a
 					>
-				{:else}
-					Your current plan no longer has this session.
-				{/if}
-			</Notice>
-		{/if}
+				</Notice>
+			{:else if edits}
+				<div class="edits" role="group" aria-label="Change this session">
+					{@render editButton('move', 'today', 'Move', 'move-session')}
+					{#if session.adjust && session.adjust.kind !== 'strength'}
+						{@render editButton('adjust', 'pencil', 'Adjust', 'adjust-session')}
+					{/if}
+					{@render editButton('skip', 'close', 'Skip', 'skip-session')}
+					{#if edits.locked}<p class="locked" id="edits-locked">{edits.locked}</p>{/if}
+				</div>
+			{/if}
 
-		{#if session.status === 'skipped'}
-			<Notice icon="close" title="Skipped" data-testid="session-skipped">
-				It’s off your week and stays as it was planned: a skipped session can’t be moved or changed.
-				The reason, if you gave one, is kept with the change.
-				<a class="current" href={resolve('/(app)/train/history/[[version]]', {})}
-					>See why in History</a
-				>
-			</Notice>
-		{:else if edits}
-			<div class="edits" role="group" aria-label="Change this session">
-				{@render editButton('move', 'today', 'Move', 'move-session')}
-				{#if session.adjust && session.adjust.kind !== 'strength'}
-					{@render editButton('adjust', 'pencil', 'Adjust', 'adjust-session')}
-				{/if}
-				{@render editButton('skip', 'close', 'Skip', 'skip-session')}
-				{#if edits.locked}<p class="locked" id="edits-locked">{edits.locked}</p>{/if}
-			</div>
-		{/if}
+			{#if !detailsInMain}
+				<SessionDetails details={session.details} data-testid="session-facts" />
+			{/if}
 
-		<SessionDetails details={session.details} data-testid="session-facts" />
+			{#if session.baseline}
+				<BaselineCallout {...session.baseline} data-testid="baseline-callout" />
+			{/if}
+		</div>
 
-		{#if session.baseline}
-			<BaselineCallout {...session.baseline} data-testid="baseline-callout" />
-		{/if}
+		<div class="main" data-testid="session-main">
+			{#if detailsInMain}
+				<SessionDetails details={session.details} data-testid="session-facts" />
+			{/if}
 
-		{#if session.instructions || session.notes}
-			<div class="notes">
-				{#if session.instructions}<p>{session.instructions}</p>{/if}
-				{#if session.notes}<p>{session.notes}</p>{/if}
-			</div>
-		{/if}
+			{#if session.instructions || session.notes}
+				<div class="notes">
+					{#if session.instructions}<p>{session.instructions}</p>{/if}
+					{#if session.notes}<p>{session.notes}</p>{/if}
+				</div>
+			{/if}
 
-		{#if session.exercises.length}
-			<Section title="Exercises" gap="md" data-testid="exercises">
-				{#each session.exercises as exercise (exercise.lineage)}
-					<ExerciseBlock {exercise} data-testid="exercise">
-						{#snippet action()}
-							{#if session.adjust?.kind === 'strength' || session.swaps}
-								<div class="exercise-edits">
-									{#if session.adjust?.kind === 'strength'}
-										{@render editButton('adjust', 'pencil', 'Adjust', 'adjust-exercise', exercise)}
-									{/if}
-									{#if session.swaps}
-										{@render editButton('swap', 'refresh', 'Swap', 'swap-exercise', exercise)}
-									{/if}
-								</div>
-							{/if}
-						{/snippet}
-					</ExerciseBlock>
-				{/each}
-			</Section>
-		{/if}
+			{#if session.exercises.length}
+				<Section title="Exercises" gap="md" data-testid="exercises">
+					{#each session.exercises as exercise (exercise.lineage)}
+						<ExerciseBlock {exercise} data-testid="exercise">
+							{#snippet action()}
+								{#if session.adjust?.kind === 'strength' || session.swaps}
+									<div class="exercise-edits">
+										{#if session.adjust?.kind === 'strength'}
+											{@render editButton(
+												'adjust',
+												'pencil',
+												'Adjust',
+												'adjust-exercise',
+												exercise
+											)}
+										{/if}
+										{#if session.swaps}
+											{@render editButton('swap', 'refresh', 'Swap', 'swap-exercise', exercise)}
+										{/if}
+									</div>
+								{/if}
+							{/snippet}
+						</ExerciseBlock>
+					{/each}
+				</Section>
+			{/if}
 
-		{#if session.steps.length}
-			<Section title="The run" data-testid="run">
-				<Surface>
-					<RunSegments label={session.title} steps={session.steps} />
-				</Surface>
-			</Section>
-		{/if}
+			{#if session.steps.length}
+				<Section title="The run" data-testid="run">
+					<Surface>
+						<RunSegments label={session.title} steps={session.steps} />
+					</Surface>
+				</Section>
+			{/if}
+		</div>
 	</div>
 
 	<!-- One host per kind, each opening on its own sheet; a sheet's content mounts on each open. -->
@@ -337,6 +365,54 @@
 	.stack {
 		display: grid;
 		gap: var(--space-6);
+	}
+
+	/* On a phone or a tablet the columns are no boxes: their parts are the stack's, in order. */
+	.side,
+	.main {
+		display: contents;
+	}
+
+	/*
+	 * Desktop (wide): the chips span the content; the side column (the edits, the details, the
+	 * baseline callout), at least --content-list, sits left of the main column (the exercises, the
+	 * run, a class's metrics), at most the readable width. Side first, as in the markup, so Tab and
+	 * the eye go the same way. An older version's banner tops the main column.
+	 */
+	@media (width >= 64rem) {
+		.stack {
+			grid-template-columns: minmax(var(--content-list), 1fr) minmax(0, var(--content-readable));
+			grid-template-areas: 'meta meta' 'side main';
+			column-gap: var(--space-8);
+			align-items: start;
+		}
+
+		.stack:has(> .banner) {
+			grid-template-areas: 'meta meta' 'side banner' 'side main';
+		}
+
+		.meta {
+			grid-area: meta;
+		}
+
+		.banner {
+			grid-area: banner;
+		}
+
+		.side,
+		.main {
+			display: grid;
+			gap: var(--space-6);
+			min-width: 0;
+		}
+
+		.side {
+			grid-area: side;
+		}
+
+		.main {
+			grid-area: main;
+		}
 	}
 
 	/* Under the title, the eyebrow and the title already spaced by PageHeader. */

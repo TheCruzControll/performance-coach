@@ -3,7 +3,8 @@
   One planned exercise: its name, its place in a superset ('A1'), what the coach says about it,
   and each set prescription as PrescriptionLines lays it out. It lays out session-words.ts's
   exerciseViews, whose lines are describe.ts's words in the owner's unit. The session screen adds
-  an action beside the name (Swap) and, for an exercise swapped this session only, says so.
+  an action beside the name (Swap) and, for an exercise swapped this session only, says so. In a
+  wide column (WIDE_EXERCISE below) the coach's words sit beside the sets instead of around them.
 -->
 <script lang="ts">
 	import type { Snippet } from 'svelte';
@@ -24,7 +25,7 @@
 	const id = $props.id();
 </script>
 
-<Surface as="article" aria-labelledby={id} data-testid={testId}>
+<Surface as="article" class="exercise-card" aria-labelledby={id} data-testid={testId}>
 	<div class="exercise">
 		<div class="head">
 			<h3 {id} class="name">
@@ -84,5 +85,41 @@
 		font-size: var(--text-sm);
 		line-height: var(--leading-normal);
 		color: var(--color-text-secondary);
+	}
+
+	/* Its content adapts to the card's own width (the column it is in), never the window's. */
+	:global(.exercise-card) {
+		container-type: inline-size;
+	}
+
+	/*
+	 * WIDE_EXERCISE: a card whose content is at least 35rem wide (the session's main column on a
+	 * desktop, a readable column from 640 px) puts the coach's words in a column beside the sets,
+	 * on a hairline, level with the first set. Above the phone column (34rem), so an iPhone never
+	 * sees it; the type stays the same at every width.
+	 */
+	@container (min-width: 35rem) {
+		.exercise:has(> .note) {
+			grid-template-columns: minmax(0, 1fr) minmax(0, 15rem);
+			grid-auto-flow: row dense;
+			column-gap: var(--space-6);
+		}
+
+		.exercise > :global(*) {
+			grid-column: 1 / -1;
+		}
+
+		.exercise:has(> .note) > :global(ol) {
+			grid-column: 1;
+			grid-row: span 2;
+		}
+
+		.exercise > .note {
+			grid-column: 2;
+			align-self: start;
+			margin-top: var(--space-3);
+			padding-left: var(--space-4);
+			border-left: 1px solid var(--color-hairline);
+		}
 	}
 </style>
