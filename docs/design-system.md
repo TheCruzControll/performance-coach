@@ -425,6 +425,12 @@ later-pass screen).
   outlined from 56 rem), `SessionCard` (badges at the end from 35 rem) and `ProgramHeader`
   (actions beside the titles from 48 rem) adapt with container queries above the phone column,
   so the iPhone is unchanged. CSS only: one selected day, as on a phone.
+- **Today** (`/today`): wide. From 1024 px the week runs across the top (M2's week, or the plan's
+  `WeekStrip`, a subgrid row that holds its room while the plan loads); the state's panel (setup,
+  Build, the plan, or its skeleton or Retry) takes a main column at most `--content-readable`
+  wide, beside This week, the tools and the goals (at least `--content-list`). Build my program
+  spans both: week 1 in the main column with Start week 1 as its column chrome, the block
+  timeline beside it. A failed read and offline keep the readable column. CSS only.
 
 ### Verification
 
@@ -494,6 +500,7 @@ later-pass screen).
 | `ChartFrame`        | `ui/charts`. A chart's `<figure>`: title, context and summary server-rendered; the plot box reserved with a hairline grid; the body from a `CHART_BODIES` loader after hydration; a failed chunk: `Notice` and Retry; no JS: 'Chart needs JavaScript'; an `availability` slot.     |
 | `ChartTable`        | `ui/charts`. The table twin: `<details>` 'Show as table' (≥ 44 px), a keyboard-scrollable table with scoped headers, units, every value ('No data' when missing), the week in progress marked 'so far'.                                                                            |
 | `LineChart`         | `ui/charts/bodies`, `CHART_BODIES.line`. Up to 4 series: 2 px lines with gaps, legend from 2, end labels with leaders (numbers < 18rem); 8 px end dot, hollow ring (estimated), diamond (measured), dashed ring 'so far'; crosshair and tooltip by pointer, touch or ←/→/Home/End. |
+| `BarChart`          | `ui/charts/bodies`, `CHART_BODIES.bar`. Columns ≤ 24 px, rounded data end; stacks in `STACK_ORDER`, 2 px gaps, rect keys, totals that fit; dashed plan outline, target band, outlined 'so far' week; each mark a button, tooltip by hover, tap or arrows; forced colours: hatches. |
 
 A `ChoiceGroup` records a choice; it is never an "add" action (arrow keys check every radio they
 pass, so a radio that adds a row adds one per keypress). An optional single choice offers an

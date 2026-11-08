@@ -2,12 +2,14 @@
   @component
   /design → Charts: ChartFrame on the fixture chart, whose body is a chunk of its own loaded after
   hydration as every chart body is, and a frame with nothing to draw yet showing its availability;
-  then the line chart (CHART_BODIES.line) on each of its fixtures and an empty one.
+  then the line chart (CHART_BODIES.line) on each of its fixtures and an empty one, and the bar
+  chart (CHART_BODIES.bar) on each of its fixtures.
   Loaded only in the browser, like the component groups, so none of its CSS blocks /design.
 -->
 <script lang="ts">
 	import { CHART_BODIES } from '#lib/ui/charts/bodies.ts';
 	import ChartFrame from '#lib/ui/charts/ChartFrame.svelte';
+	import { BAR_FIXTURES, barFrame } from './bar-fixture.ts';
 	import { CHART_FIXTURE, FIXTURE_FRAME, UNAVAILABLE_FRAME } from './chart-fixture.ts';
 	import { EMPTY_LINE, LINE_FIXTURES, lineFrame } from './line-fixture.ts';
 
@@ -46,6 +48,15 @@
 			<p class="availability">Shows once you log a bench press: your estimated best a week.</p>
 		{/snippet}
 	</ChartFrame>
+	{#each BAR_FIXTURES as fixture (fixture.id)}
+		<ChartFrame
+			{...barFrame(fixture)}
+			body={CHART_BODIES.bar}
+			props={{ data: fixture.data }}
+			height={fixture.height}
+			data-testid={fixture.id}
+		/>
+	{/each}
 </div>
 
 <style>
