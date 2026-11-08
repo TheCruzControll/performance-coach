@@ -8,10 +8,11 @@
  *   p95 < 100 ms, with the median and every sample annotated;
  * - INP ≤ 200 ms, from Event Timing over the steppers, the chips and Complete set, and the
  *   web-vitals INP the app beaconed for route_id '/workout' (read from Postgres once the page is
- *   hidden);
- * - layout shift 0 while logging, counting the shifts no input explains (CLS's hadRecentInput
- *   rule, as session-detail and program-history gate). The shifts right after a tap are annotated:
- *   starting the next exercise swaps the screen's content by design;
+ *   hidden, idle first, so the beacon the page sends first carries it);
+ * - layout shift 0 while logging: every shift from the steppers, the chips, Complete set and what
+ *   they change (the rows, the logger's next set, Up next after an exercise's last set), input or
+ *   not, each one's sources in the message. Starting the next exercise, which swaps the screen's
+ *   content by design, is measured apart and annotated;
  * - /workout's main-thread blocking on a reload the service worker controls, with the workout
  *   active: median of 5 ≤ 250 ms (target 200), measured as perf.e2e.ts measures every screen.
  * Its own file in the perf project (playwright.config.ts), so perf.e2e.ts stays M3's. Never raise
@@ -45,6 +46,19 @@ interface Interaction {
 	id: number;
 	duration: number;
 	kind: (typeof LOGGING_KINDS)[number] | 'start' | 'other';
+}
+
+interface LayoutShift {
+	value: number;
+	startTime: number;
+	sources: { node: Node | null; previousRect: DOMRectReadOnly; currentRect: DOMRectReadOnly }[];
+}
+
+/** A layout shift, when it happened and what moved. */
+interface Shift {
+	value: number;
+	at: number;
+	sources: string[];
 }
 
 let kit: StrengthKit;
@@ -84,7 +98,7 @@ const decrease = (page: Page, field: 'logger-amount') =>
 /** Records Event Timing interactions (by what was tapped) and layout shifts, from the start. */
 function observe() {
 	const interactions: Interaction[] = [];
-	const shifts: { value: number; input: boolean }[] = [];
+	const shifts: Shift[] = [];
 	const kindOf = (target: Node | null): Interaction['kind'] => {
 		const el = target instanceof Element ? target : null;
 		if (el?.closest('[data-testid="complete-set"]')) return 'complete-set';
@@ -104,16 +118,29 @@ function observe() {
 		}
 	}).observe({ type: 'event', durationThreshold: 16, buffered: true } as PerformanceObserverInit);
 	new PerformanceObserver((list) => {
-		for (const entry of list.getEntries() as unknown as {
-			value: number;
-			hadRecentInput: boolean;
-		}[])
-			shifts.push({ value: entry.value, input: entry.hadRecentInput });
+		for (const entry of list.getEntries() as unknown as LayoutShift[])
+			shifts.push({
+				value: entry.value,
+				at: entry.startTime,
+				sources: entry.sources.map(({ node, previousRect: a, currentRect: b }) => {
+					const el = node instanceof Element ? node : node?.parentElement;
+					const at = (r: DOMRectReadOnly) => `${Math.round(r.x)},${Math.round(r.y)}`;
+					return `${el?.closest('[data-testid]')?.getAttribute('data-testid')} .${el?.getAttribute('class')} ${at(a)} → ${at(b)}`;
+				})
+			});
 	}).observe({ type: 'layout-shift', buffered: true });
 	Object.assign(window, { __interactions: interactions, __shifts: shifts });
 }
 
 const round = (ms: number) => Math.round(ms * 10) / 10;
+
+const now = (page: Page) => page.evaluate(() => performance.now());
+
+/** Two frames: whatever the last change laid out has been painted and observed. */
+const painted = (page: Page) =>
+	page.evaluate(
+		() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)))
+	);
 
 /** Waits until `count` sets have been confirmed on screen (Logger's pc:set-confirmed). */
 const confirmed = (page: Page, count: number) =>
@@ -157,16 +184,23 @@ test.describe('workout screen at 4× CPU', () => {
 		let done = 0;
 		// Every logging tap: the INP denominator, since the observer omits the fast ones.
 		let taps = 0;
+		// Starting the next exercise swaps the card and the logger by design: navigation, not logging.
+		const moves: [number, number][] = [];
 		for (const [position, slot] of kit.exercises.entries()) {
 			const name = slot.exercise.name;
 			// The superset's A2 is logged in turn with A1, which moves to it after each of its sets.
 			if (slot.superset !== null && position > 0 && kit.exercises[position - 1]!.superset) continue;
 			if (position > 0) {
+				await painted(page);
+				const from = await now(page);
 				await page
 					.getByTestId('up-next')
 					.getByRole('button', { name: `Start ${name}` })
 					.click();
 				await expect(heading(page)).toHaveText(name);
+				await expect(logger(page).getByTestId('complete-set')).toBeVisible();
+				await painted(page);
+				moves.push([from, await now(page)]);
 			}
 			const rounds = slot.superset === null ? 1 : 2;
 			for (let set = 0; set < SETS_EACH * rounds; set += 1) {
@@ -199,7 +233,7 @@ test.describe('workout screen at 4× CPU', () => {
 		);
 		const { interactions, shifts } = await page.evaluate(() => ({
 			interactions: (window as unknown as { __interactions: Interaction[] }).__interactions,
-			shifts: (window as unknown as { __shifts: { value: number; input: boolean }[] }).__shifts
+			shifts: (window as unknown as { __shifts: Shift[] }).__shifts
 		}));
 		await expect(page.locator('html')).toHaveAttribute('data-rum', 'ready');
 
@@ -224,13 +258,23 @@ test.describe('workout screen at 4× CPU', () => {
 			type: 'Event Timing INP (ms)',
 			description: `${round(eventInp)} over ${taps} interactions (${new Set(logging.map((i) => i.id)).size} over 16 ms) · ${byKind.join(' · ')}`
 		});
-		const shifted = shifts.filter((s) => !s.input).reduce((sum, s) => sum + s.value, 0);
-		const caused = shifts.filter((s) => s.input).reduce((sum, s) => sum + s.value, 0);
+		const moving = (s: Shift) => moves.some(([from, to]) => s.at >= from && s.at <= to);
+		const whileLogging = shifts.filter((s) => !moving(s));
+		const shifted = whileLogging.reduce((sum, s) => sum + s.value, 0);
+		const moved = shifts.filter(moving).reduce((sum, s) => sum + s.value, 0);
+		const what = whileLogging.flatMap((s) => s.sources).join(' · ');
 		testInfo.annotations.push({
 			type: 'layout shift',
-			description: `${shifted} no input explains · ${caused} right after a tap`
+			description: `${shifted} while logging${what && ` (${what})`} · ${moved} starting the next exercise`
 		});
 
+		// web-vitals reads the interactions an observer delivers in an idle callback, and the app
+		// queues INP as it changes: two idle periods on, the first beacon at hide carries it.
+		await painted(page);
+		await page.evaluate(async () => {
+			for (let i = 0; i < 2; i++)
+				await new Promise((done) => requestIdleCallback(done, { timeout: 2_000 }));
+		});
 		// Hidden: the app beacons its web-vitals INP for /workout.
 		await page.goto('/robots.txt');
 		const beaconed = async () =>
@@ -263,7 +307,7 @@ test.describe('workout screen at 4× CPU', () => {
 		expect(p95, `set confirmed: ${samples.map(round).join(', ')} ms`).toBeLessThan(CONFIRM_P95_MS);
 		expect(eventInp, byKind.join(' · ')).toBeLessThanOrEqual(INP_MS);
 		if (rum !== undefined) expect(rum).toBeLessThanOrEqual(INP_MS);
-		expect(shifted, `layout shift no input explains (${caused} more right after a tap)`).toBe(0);
+		expect(shifted, `layout shift while logging: ${what}`).toBe(0);
 	});
 
 	test(`/workout blocks the main thread ≤ ${BLOCKING_GUARD_MS} ms on a service-worker reload with a workout active`, async ({
