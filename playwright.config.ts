@@ -20,7 +20,7 @@ import { ENGINES, GROUPS, parseChoice, selectProjects } from './e2e/projects';
  * plus the shell, offline and axe specs. There is no desktop WebKit project: the one user's
  * desktop browser is Chrome. It reuses the setup session, so they run only specs that leave shared state as
  * they found it; desktop cases that change the training profile live in serial specs with
- * `test.use(DESKTOP)`. The CPU-sensitive main-thread budget (perf.e2e.ts) is its own
+ * `test.use(DESKTOP)`. The CPU-sensitive budgets (perf.e2e.ts, perf-*.e2e.ts) are their own
  * single-worker project that starts only after the functional suites, so nothing contends with
  * it. `exclusive` specs change state every other session depends on ("sign out everywhere
  * else"), so they run last, alone. `serial` specs change the one owner's training profile, so
@@ -38,7 +38,9 @@ const iphone = devices['iPhone 15 Pro'];
 const CHROMIUM_STATE = 'e2e/.auth/chromium.json';
 const WEBKIT_STATE = 'e2e/.auth/webkit.json';
 const SWEEP = '**/*.sweep.e2e.ts';
-const FUNCTIONAL_IGNORE = ['**/perf.e2e.ts', '**/*.exclusive.e2e.ts', '**/*.serial.e2e.ts', SWEEP];
+/** The perf project's specs: M3's screens (perf.e2e.ts) and one file per later concern. */
+const PERF = ['**/perf.e2e.ts', '**/perf-*.e2e.ts'];
+const FUNCTIONAL_IGNORE = [...PERF, '**/*.exclusive.e2e.ts', '**/*.serial.e2e.ts', SWEEP];
 const DESKTOP_ONLY = '**/*.desktop.e2e.ts';
 /** What the desktop project runs: desktop specs, the width-agnostic shell and offline specs, and axe. */
 const DESKTOP_SPECS = [DESKTOP_ONLY, '**/shell.e2e.ts', '**/offline.e2e.ts', '**/a11y.e2e.ts'];
@@ -75,7 +77,7 @@ const projects: Project[] = [
 	// other specs: it runs alone (one worker) after the functional suite has finished.
 	{
 		name: 'perf',
-		testMatch: '**/perf.e2e.ts',
+		testMatch: PERF,
 		// E2E_PERF_ALONE=1 pnpm test:e2e --project=perf: just the owner setup, then the budget.
 		dependencies:
 			process.env.E2E_PERF_ALONE === '1'

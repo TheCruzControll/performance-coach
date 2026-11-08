@@ -127,6 +127,20 @@ describe('playwright.config.ts desktop project', () => {
 		);
 	});
 
+	it('give perf.e2e.ts and every perf-*.e2e.ts file to the perf project only', async () => {
+		const projects = await ciProjects();
+		const globs = (value: Project['testMatch']) => [value ?? []].flat() as string[];
+		const runs = (project: Project, file: string) =>
+			globs(project.testMatch ?? '**/*.e2e.ts').some((g) => path.matchesGlob(file, g)) &&
+			!globs(project.testIgnore).some((g) => path.matchesGlob(file, g));
+		for (const file of ['e2e/perf.e2e.ts', 'e2e/perf-workout.e2e.ts']) {
+			expect(
+				projects.filter((p) => runs(p, file)).map((p) => p.name),
+				file
+			).toEqual(['perf']);
+		}
+	});
+
 	it('select whole files: desktop specs move off the iPhone projects, nothing else does', () => {
 		const listing = listSuite(root);
 		expect(DESKTOP_FILES.length, 'desktop specs exist').toBeGreaterThan(0);
@@ -141,7 +155,8 @@ describe('playwright.config.ts desktop project', () => {
 				!f.endsWith('.serial.e2e.ts') &&
 				!f.endsWith('.exclusive.e2e.ts') &&
 				!f.endsWith('.sweep.e2e.ts') &&
-				f !== 'perf.e2e.ts'
+				f !== 'perf.e2e.ts' &&
+				!f.startsWith('perf-')
 		).sort();
 		for (const project of ['iphone-chromium', 'iphone-webkit']) {
 			expect(filesOf(listing, project), project).toEqual(iphone);
