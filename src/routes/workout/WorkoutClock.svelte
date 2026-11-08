@@ -1,20 +1,37 @@
 <!--
   @component
   The header's stopwatch for the workout shown: this device's, or, before this device has started
-  one, the time since the workout started. Loaded with the view, never in the first render.
+  one, the time since the workout started. Loaded with the view, never in the first render. It
+  can be paused, resumed and reset once the store is open (on idle; a tap before then does
+  nothing): device actions, stored with the workout, so a reload keeps them. One this device never
+  started starts from the workout's start first.
 -->
 <script lang="ts">
-	import type { WorkoutView } from '#lib/domain/workout/index.ts';
+	import type { WorkoutStore } from '#lib/client/workout/store.ts';
+	import type { LocalAction, WorkoutView } from '#lib/domain/workout/index.ts';
 	import { startStopwatch } from '#lib/domain/workout/timers.ts';
 	import Stopwatch from '#lib/ui/workout/Stopwatch.svelte';
 
-	let { view }: { view: WorkoutView } = $props();
+	let { view, store = null }: { view: WorkoutView; store?: WorkoutStore | null } = $props();
 
+	const started = $derived(Date.parse(view.workout.startedAt));
 	const stopwatch = $derived(
-		view.device.stopwatch.startedAt === null
-			? startStopwatch(Date.parse(view.workout.startedAt))
-			: view.device.stopwatch
+		view.device.stopwatch.startedAt === null ? startStopwatch(started) : view.device.stopwatch
 	);
+
+	function act(type: 'stopwatch.pause' | 'stopwatch.resume' | 'stopwatch.reset') {
+		if (!store) return;
+		const workoutId = view.workout.id;
+		const action: LocalAction = { type, workoutId, at: Date.now() };
+		if (view.device.stopwatch.startedAt !== null) store.dispatch(action);
+		else store.dispatch({ type: 'stopwatch.start', workoutId, at: started }, action);
+	}
 </script>
 
-<Stopwatch {stopwatch} />
+<!-- Its controls show from the first render, so the header never shifts when the store opens. -->
+<Stopwatch
+	{stopwatch}
+	onpause={() => act('stopwatch.pause')}
+	onresume={() => act('stopwatch.resume')}
+	onreset={() => act('stopwatch.reset')}
+/>
