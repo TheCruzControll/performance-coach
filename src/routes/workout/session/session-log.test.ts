@@ -7,7 +7,7 @@ import type { LocalAction, Mutation, OtherKit } from '#lib/domain/workout/index.
 import { createMutation } from '#lib/domain/workout/mutations.ts';
 import { applyLocal, applyMutation, replay, viewOf } from '#lib/domain/workout/project.ts';
 import type { WorkoutState } from '#lib/domain/workout/project.ts';
-import { otherTable } from '#lib/domain/workout/reducers/tables.ts';
+import { otherTable } from '#lib/domain/workout/reducers/other.ts';
 import {
 	addMetric,
 	checkValues,

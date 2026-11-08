@@ -13,7 +13,8 @@ import type { WorkoutInputs } from './project';
 import type { CanonicalWorkout } from './protocol';
 import { initialDevice } from './reducers/device';
 import { runTable } from './reducers/run';
-import { otherTable, strengthTable } from './reducers/tables';
+import { strengthTable } from './reducers/tables';
+import { otherTable } from './reducers/other';
 import { previousFor } from './selectors';
 import type { DeviceState, KitExerciseMeta, LoggedSet, WorkoutView } from './types';
 
