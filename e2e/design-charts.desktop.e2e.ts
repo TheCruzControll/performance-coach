@@ -9,10 +9,18 @@ import { expect, test, type Page } from '@playwright/test';
 import {
 	auditCharts,
 	chartsSection,
+	expectLineMarkSizes,
 	expectMarkSizes,
+	expectReadout,
+	expectTipInside,
 	fixtureBody,
 	fixtureFrame,
-	openCharts
+	lineBody,
+	lineFixture,
+	lineFrameOf,
+	lineTip,
+	openCharts,
+	slotPoint
 } from './charts';
 import { boxOf, DESKTOP, expectNoSideScroll, tokenPx } from './desktop';
 import { captureScreen, gotoHydrated, trackConsoleErrors } from './support';
@@ -40,6 +48,7 @@ test.describe('/design → Charts on a desktop', () => {
 			if (theme === 'light')
 				await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
 			await expectMarkSizes(page);
+			await expectLineMarkSizes(page);
 			const section = await boxOf(chartsSection(page));
 			const color = await boxOf(page.getByRole('heading', { level: 2, name: 'Color' }));
 			expect(Math.abs(section.x - color.x), 'in the left column').toBeLessThanOrEqual(1);
@@ -53,6 +62,8 @@ test.describe('/design → Charts on a desktop', () => {
 			await fixtureFrame(page).scrollIntoViewIfNeeded();
 			await expectNoSideScroll(page);
 			await captureScreen(page, testInfo, `design-charts-${theme}-desktop`);
+			await lineFrameOf(page, 'line-converging').scrollIntoViewIfNeeded();
+			await captureScreen(page, testInfo, `design-charts-line-${theme}-desktop`);
 			expect(errors).toEqual([]);
 		});
 	}
@@ -102,5 +113,90 @@ test.describe('/design → Charts on a desktop', () => {
 		const rest = await background(page, hit);
 		await page.locator(hit).first().hover();
 		await expect.poll(() => background(page, hit)).not.toBe(rest);
+	});
+});
+
+test.describe('/design → Charts: the line chart on a desktop', () => {
+	test('a mouse scrubs it: the crosshair and tooltip follow the nearest week and leave with the mouse', async ({
+		page
+	}, testInfo) => {
+		const id = 'line-converging';
+		await gotoHydrated(page, '/design');
+		await openCharts(page);
+		await expectLineMarkSizes(page);
+		await lineFrameOf(page, id).scrollIntoViewIfNeeded();
+		const last = lineFixture(id).data.slots.length - 1;
+		for (const index of [last, 0, 4]) {
+			await page.mouse.move(...(await slotPoint(page, id, index)), { steps: 4 });
+			await expectReadout(page, id, index);
+			await expectTipInside(page, id);
+		}
+		const crosshair = lineBody(page, id).locator('.crosshair');
+		await expect(crosshair).toHaveAttribute('data-shown', '');
+		expect(
+			await lineBody(page, id)
+				.locator('.pc-area')
+				.evaluate((el) => getComputedStyle(el).cursor)
+		).toBe('crosshair');
+		await captureScreen(page, testInfo, 'design-charts-line-scrub-desktop');
+		await page.mouse.move(5, 5);
+		await expect(lineTip(page, id)).not.toHaveAttribute('data-shown', '');
+		await expect(crosshair).not.toHaveAttribute('data-shown', '');
+	});
+
+	test('the series are labelled at their ends, colliding labels moved apart with leaders', async ({
+		page
+	}) => {
+		const id = 'line-converging';
+		await gotoHydrated(page, '/design');
+		await openCharts(page);
+		await expectLineMarkSizes(page);
+		const labels = lineBody(page, id).getByTestId('line-end-label');
+		await expect(labels).toHaveText(['Strength', 'Hypertrophy', 'Conditioning', 'Combat'], {
+			useInnerText: true
+		});
+		const boxes = (
+			await labels.evaluateAll((els) =>
+				els.map((el) => {
+					const r = el.getBoundingClientRect();
+					return { top: r.top, bottom: r.bottom };
+				})
+			)
+		).sort((a, b) => a.top - b.top);
+		boxes
+			.slice(1)
+			.forEach((box, i) =>
+				expect(box.top, 'end labels never overlap').toBeGreaterThanOrEqual(boxes[i]!.bottom - 0.5)
+			);
+		// 8, 8, 7 and 7 sets end within a label's height of each other: leaders join them.
+		await expect(lineBody(page, id).locator('path.leader')).not.toHaveCount(0);
+		await expect(lineBody(page, id).locator('path.leader').first()).toBeVisible();
+		await expect(lineBody(page, id).getByTestId('line-legend')).toContainText('Strength');
+	});
+
+	test('the chart takes one tab stop with a visible ring, and the arrow keys move it', async ({
+		page
+	}) => {
+		const id = 'line-single';
+		await gotoHydrated(page, '/design');
+		await openCharts(page);
+		await expectLineMarkSizes(page);
+		const body = lineBody(page, id);
+		await lineFrameOf(page, id).locator('h3').click();
+		await page.keyboard.press('Tab');
+		await expect(body).toBeFocused();
+		const ring = await body.evaluate((el) => {
+			const style = getComputedStyle(el);
+			return { style: style.outlineStyle, width: parseFloat(style.outlineWidth) };
+		});
+		expect(ring.style).not.toBe('none');
+		expect(ring.width).toBeGreaterThanOrEqual(2);
+		const last = lineFixture(id).data.slots.length - 1;
+		await expectReadout(page, id, last);
+		await page.keyboard.press('ArrowLeft');
+		await expectReadout(page, id, last - 1);
+		await page.keyboard.press('Tab');
+		await expect(body).not.toBeFocused();
+		await expect(lineTip(page, id)).not.toHaveAttribute('data-shown', '');
 	});
 });
