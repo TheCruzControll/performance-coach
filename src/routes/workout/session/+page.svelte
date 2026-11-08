@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { otherTable } from '#lib/domain/workout/reducers/other.ts';
 	import Shell from '../Shell.svelte';
 	import type OtherViewComponent from './OtherView.svelte';
 
@@ -9,6 +8,8 @@
 	const view = import.meta.env.SSR ? null : import('./OtherView.svelte');
 	// Handled when the Shell mounts; until then a failure is not unhandled.
 	view?.catch(() => {});
+	// The route's reducer table: loaded while the Shell restores, with the projection.
+	const table = () => import('#lib/domain/workout/reducers/other.ts').then((m) => m.otherTable);
 	let OtherView = $state.raw<typeof OtherViewComponent | null>(null);
 	const ready = () => view!.then((module) => (OtherView = module.default));
 </script>
@@ -17,7 +18,7 @@
 	<title>Session · Performance Coach</title>
 </svelte:head>
 
-<Shell table={otherTable} {ready}>
+<Shell {table} {ready}>
 	{#snippet children(snapshot, _load, active)}
 		{#if OtherView}
 			<OtherView {snapshot} {active} />

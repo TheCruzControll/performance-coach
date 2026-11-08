@@ -3,7 +3,9 @@
   the week of Monday 2 November 2026: every block kind with dated sources, a metric's method, a
   block the policy could not check, a long answer behind 'Show all', untrusted text that must stay
   literal, activity chips in their three states, and an answer streaming block by block into the
-  live region.
+  live region. Then what every coach screen reuses around an answer: the composer (ready, running
+  with Stop, near its limit and disabled), 'Thinking…', loading rows, every notice with its Retry,
+  the empty state and the practice coach's badge.
 -->
 <script lang="ts">
 	import {
@@ -19,6 +21,13 @@
 	import ActivityChip from '#lib/ui/coach/ActivityChip.svelte';
 	import AnswerBlocks from '#lib/ui/coach/AnswerBlocks.svelte';
 	import LiveAnnouncer from '#lib/ui/coach/LiveAnnouncer.svelte';
+	import CoachNotice from '#lib/ui/coach/CoachNotice.svelte';
+	import Composer from '#lib/ui/coach/Composer.svelte';
+	import LoadingRows from '#lib/ui/coach/LoadingRows.svelte';
+	import MockBadge from '#lib/ui/coach/MockBadge.svelte';
+	import ThinkingIndicator from '#lib/ui/coach/ThinkingIndicator.svelte';
+	import { COACH_ERROR_KINDS, COACH_UNAVAILABLE_REASONS } from '#lib/domain/coach/index.ts';
+	import { SCREEN_FAILURE_LABEL, type ScreenFailure } from '#lib/ui/coach/coach-notices.ts';
 
 	const text = (t: string): RichInline => ({ type: 'text', text: t });
 	const strong = (t: string): RichInline => ({ type: 'strong', children: [text(t)] });
@@ -160,6 +169,18 @@
 	let streamed = $state(0);
 	const done = $derived(streamed === ANSWER.length);
 	const next = () => (streamed = done ? 0 : streamed + 1);
+
+	// The composer: what was sent or stopped, so a spec can tell a send from a newline.
+	let draft = $state('');
+	let composed = $state('none');
+	const sent = (text: string) => {
+		composed = `sent: ${text}`;
+		draft = '';
+	};
+	const NEAR_LIMIT = 'Here is everything about my week, in detail. '.repeat(86);
+
+	const SCREEN_FAILURES = Object.keys(SCREEN_FAILURE_LABEL) as ScreenFailure[];
+	let retried = $state('none');
 </script>
 
 <div class="grid">
@@ -201,6 +222,59 @@
 		<Button variant="secondary" size="sm" onclick={next} data-testid="stream-next"
 			>{done ? 'Start again' : 'Complete the next block'}</Button
 		>
+	</Section>
+
+	<Section title="Composer" gap="md">
+		<Composer chrome={false} bind:value={draft} onsend={sent} data-testid="composer-ready" />
+		<Composer
+			chrome={false}
+			running
+			value="How did my squat go this week?"
+			onstop={() => (composed = 'stopped')}
+			data-testid="composer-running"
+		/>
+		<Composer chrome={false} value={NEAR_LIMIT} data-testid="composer-long" />
+		<Composer
+			chrome={false}
+			disabled
+			placeholder="Ask your coach · coming soon"
+			data-testid="composer-disabled"
+		/>
+		<p class="readout" data-testid="composer-readout">composer: {composed}</p>
+	</Section>
+
+	<Section title="Waiting" gap="md">
+		<ThinkingIndicator data-testid="thinking" />
+		<LoadingRows label="Loading your conversations…" data-testid="loading-rows" />
+	</Section>
+
+	<Section title="Coach unavailable" gap="md">
+		{#each COACH_UNAVAILABLE_REASONS as reason (reason)}
+			<CoachNotice kind={reason} data-testid="notice-{reason}" />
+		{/each}
+	</Section>
+
+	<Section title="Turn outcomes" gap="md">
+		{#each COACH_ERROR_KINDS as kind (kind)}
+			<CoachNotice {kind} onretry={() => (retried = kind)} data-testid="notice-{kind}" />
+		{/each}
+	</Section>
+
+	<Section title="Screen failures" gap="md">
+		{#each SCREEN_FAILURES as kind (kind)}
+			<CoachNotice
+				{kind}
+				onretry={() => (retried = kind)}
+				retrying={kind === 'action_failed'}
+				data-testid="notice-{kind}"
+			/>
+		{/each}
+		<p class="readout" data-testid="notice-readout">retry: {retried}</p>
+	</Section>
+
+	<Section title="Empty and practice" gap="md">
+		<CoachNotice kind="empty" data-testid="notice-empty" />
+		<MockBadge data-testid="mock-badge" />
 	</Section>
 </div>
 

@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { runTable } from '#lib/domain/workout/reducers/run.ts';
 	import Shell from '../Shell.svelte';
 	import type RunViewComponent from './RunView.svelte';
 
@@ -9,6 +8,8 @@
 	const view = import.meta.env.SSR ? null : import('./RunView.svelte');
 	// Handled when the Shell mounts; until then a failure is not unhandled.
 	view?.catch(() => {});
+	// The route's reducer table: loaded while the Shell restores, with the projection.
+	const table = () => import('#lib/domain/workout/reducers/run.ts').then((m) => m.runTable);
 	let RunView = $state.raw<typeof RunViewComponent | null>(null);
 	const ready = () => view!.then((module) => (RunView = module.default));
 </script>
@@ -17,7 +18,7 @@
 	<title>Run · Performance Coach</title>
 </svelte:head>
 
-<Shell table={runTable} {ready}>
+<Shell {table} {ready}>
 	{#snippet children(snapshot, _load, active)}
 		{#if RunView}
 			<RunView {snapshot} {active} />

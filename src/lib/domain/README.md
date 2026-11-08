@@ -594,7 +594,34 @@ What a stored review is, defined once before anything composes or stores one.
 
 ### Weekly review (`programming/review/weekly.ts`)
 
-Not built yet (m6/25, weekly-review-compose).
+`composeWeeklyReview(input)` → `{ snapshot, summary, findings, exposures, inputsDigest }`: one
+week of facts as the stored snapshot and brief above, from code alone, the same bytes for the same
+input in any order. The input is the week, today and the time zone; the week's planned sessions
+with their statuses and kind; next week's state and kind; the facts of the week and the
+`TRAILING_WEEKS` (8) complete weeks before it (every set before it too, for the PRs); and the week's muscle-group targets
+(`VolumeTargets`, which `services/analytics/targets.ts` fills). Findings, by section:
+
+- `adherence`: `weekAdherence`'s planned, completed, skipped and missed, judged by `goodness`;
+  'Nothing logged this week' when nothing was.
+- `verdicts`: `classifyTrend` per key lift's weekly best e1RM, tonnage, mileage and load over the
+  9 weeks; a `baseline` week has only 'Baseline established'.
+- `rpe`: the average, and each lift's deviation with `consistency` over its last 3 sessions.
+- `volume`: tonnage, the mean % of each lift's best e1RM, and hard sets per group against the
+  block's band × the week's volume factor (`scaledTargets`: a deload at 0.6 makes 10–20 into
+  6–12), with the planned line.
+- `running`: distance against the plan (`MILEAGE_ON_PLAN`) and the week before, pace by type, and
+  the long run. `muay_thai`: sessions, load and rounds. `recovery`: the notes' means.
+- `fatigue`: the ACWR with its caveat, and `fatigueLevel`'s level and reasons.
+- `conflicts`: `checkWeek` over the week as performed. `performedSessions` reads a logged workout
+  as a session: a run with its segments, an other session with its kind, a strength session
+  with a line per set done (its RPE as the target), the intensity from the session RPE
+  (`PERFORMED_INTENSITY`) and the source from the planned session it completed.
+- `prs`, then `next`: next week's kind, or the boundary the cycle review takes over.
+
+The summary (at most `SUMMARY_MAX`) leads with adherence, then fatigue, conflicts, PRs and the
+boundary. `noProposal` is `boundary` when next week is not planned
+in this block, `no_program` with no plan at all, and `late` once next week has ended. An early
+review counts the week's remaining days as rest. `exposures` are what next week's rules read.
 
 ### Next week (`programming/review/next-week.ts`)
 
