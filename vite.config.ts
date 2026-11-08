@@ -152,16 +152,17 @@ export default defineConfig(({ command, mode }) => {
 							{ name: 'errors', test: /src[\\/]lib[\\/]client[\\/](errors|leaving)\.ts$/ },
 							/**
 							 * The workout pages' shared modules (the M4 plan's runway lever 2): the projection,
-							 * its reducers, the flow, the mutations, the timers and the set words, which the
-							 * page, its lazy logger and its store share. Left to itself, Rolldown splits them by
+							 * its reducers, the exercise groups, the mutations, the timers and the set words,
+							 * which the page, its lazy logger and its store share. Left to itself, Rolldown splits them by
 							 * importer set into three chunks the page waits for (about 0.7 KB more gzip). Only
 							 * modules already in /workout's initial JavaScript belong here: a module another
-							 * route imports would bring the whole chunk with it. The run family (reducers/run.ts,
-							 * with /workout/run's table) stays out: in the group, /workout would ship it.
+							 * route imports would bring the whole chunk with it. The flow (flow.ts) is not:
+							 * only the lazy logger and navigation use it. Nor is the run family (reducers/run.ts,
+							 * with /workout/run's table): in the group, /workout would ship it.
 							 */
 							{
 								name: 'workout',
-								test: /src[\\/]lib[\\/](domain[\\/]workout[\\/](flow|mutations|timers|selectors|project|reducers[\\/](?!run\.)\w+)|ui[\\/]workout[\\/]set-words)\.ts$/
+								test: /src[\\/]lib[\\/](domain[\\/]workout[\\/](groups|mutations|timers|selectors|project|reducers[\\/](?!run\.)\w+)|ui[\\/]workout[\\/]set-words)\.ts$/
 							}
 						]
 					}

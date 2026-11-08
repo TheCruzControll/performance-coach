@@ -56,9 +56,14 @@
 <div class="codes-card" data-testid={testId}>
 	<ol class="codes" aria-label="Recovery codes">
 		{#each codes as code, i (code)}
+			<!-- Three groups to a line: a 24-character code never fits a phone row on one. -->
+			{@const cut = Math.ceil(code.length / 2)}
 			<li class="code" data-testid="recovery-code">
 				<span class="index numeric" aria-hidden="true">{String(i + 1).padStart(2, '0')}</span>
-				<span class="value">{code}</span>
+				<span class="value"
+					><span class="line">{code.slice(0, cut)}</span><span class="line">{code.slice(cut)}</span
+					></span
+				>
 			</li>
 		{/each}
 	</ol>
@@ -92,7 +97,7 @@
 		container-type: inline-size;
 	}
 
-	/* One code per row on a phone (a code never wraps or clips); two columns when there is room. */
+	/* One code per row on a phone, two columns when there is room; a code never clips. */
 	.codes {
 		display: grid;
 		grid-template-columns: minmax(0, 1fr);
@@ -106,18 +111,21 @@
 		background: var(--color-hairline);
 	}
 
-	@container (min-width: 34rem) {
+	/* From 40rem a column holds three groups of even the widest letters. */
+	@container (min-width: 40rem) {
 		.codes {
 			grid-template-columns: repeat(2, minmax(0, 1fr));
 		}
 	}
 
+	/* Two snug lines and a slim padding keep ten codes short enough that the desktop setup card's
+	   controls stay inside a 900 px window. */
 	.code {
 		display: flex;
 		align-items: baseline;
 		gap: var(--space-3);
 		min-height: 2.75rem;
-		padding: var(--space-2) var(--space-4);
+		padding: var(--space-1-5) var(--space-4);
 		background: var(--color-surface-1);
 	}
 
@@ -134,8 +142,14 @@
 		font-weight: var(--weight-semibold);
 		font-variant-numeric: tabular-nums;
 		letter-spacing: 0.06em;
-		white-space: nowrap;
+		line-height: var(--leading-snug);
 		user-select: all;
+	}
+
+	/* Each half of a code on its own line, broken only between groups. */
+	.line {
+		display: block;
+		white-space: nowrap;
 	}
 
 	.tools {

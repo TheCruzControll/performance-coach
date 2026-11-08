@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Component } from 'svelte';
-import { preloadPanel, servedPanel, settledPanel } from './index.ts';
+import { PANELS, preloadPanel, servedPanel, settledPanel } from './index.ts';
 import Setup from './Setup.svelte';
 
 const Panel = (() => {}) as unknown as Component;
@@ -11,6 +11,12 @@ describe('servedPanel', () => {
 		const html = await servedPanel(Setup as Component, { setup });
 		expect(html).toContain('data-testid="today-setup-count"');
 		expect(html).toContain('2 of 10 steps done');
+	});
+});
+
+describe('PANELS', () => {
+	it('keeps the preview out of the server, so its CSS stays off every Today page', async () => {
+		await expect(PANELS.preview()).rejects.toThrow('client only');
 	});
 });
 
