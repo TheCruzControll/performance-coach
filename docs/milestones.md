@@ -8,7 +8,7 @@ acceptance criteria were verified by running them — compiling is not done.
 | --- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
 | M1  | Foundation & infrastructure     | **Done** (PR #1, merged 2026-11-05); deferred items carried below                                                                          |
 | M2  | Auth & profile                  | **In progress**: auth, production (#50), onboarding, Profile and Today (#60–#181), owner's iPhone setup (2026-11-06) done; email link next |
-| M3  | Training data model & programs  | Planned                                                                                                                                    |
+| M3  | Training data model & programs  | **Done**: 49 slice PRs, #41 to #233; evidence per criterion below                                                                          |
 | M4  | Workout application             | Planned                                                                                                                                    |
 | M5  | AI performance coach            | Planned                                                                                                                                    |
 | M6  | Analytics & reviews             | Planned                                                                                                                                    |
@@ -165,6 +165,57 @@ Acceptance criteria:
 2. Integration: create profile → program → planned week → retrieve; exercise history queries.
 3. Concurrent disciplines represented in one week (strength + running + Muay Thai).
 4. Query plans checked for the main history queries (`EXPLAIN` evidence in PR).
+
+Status: **done**. The M3 plan's 49 slices merged to `main` as numbered PRs, #41 (m3/01) to #233
+(m3/49), each green in CI; like M2, they went to `main` rather than to one
+`feat/m3-training-model` branch, the plan's default for the brief's branch question. The model is
+in docs/architecture.md ("Training model (M3)") and ADR 0010, the tests in docs/testing.md
+("Training (M3)"), and the numbers, measured by CI on the M3 head, in docs/performance.md ("M3
+screens", "M3 query plans"). Evidence per criterion:
+
+- Criterion 1: migrations `drizzle/0008_program_versions.sql` to
+  `drizzle/0016_history_plan_indexes.sql` add programs with immutable versions (#43), the
+  exercise library of 191 exercises seeded by every migrate run (#45, #54, #58), prescriptions
+  (#64), the append-only, audited training log with its history indexes (#72) and coaching memory
+  (#79). Postgres refuses UPDATE on planned rows and DELETE on every history and logged table;
+  an edit copies the affected week into a new version (#95) and never touches the old one. Proven
+  on real Postgres by `program-schema`, `prescriptions-schema`, `log-schema` and
+  `program-versioning` in `tests/integration/training/`.
+- Criterion 2: profile → program → planned week → retrieve, through the M2 services (#78, and
+  with the real generator #156), read back by date, week and lineage (#82); exercise history,
+  last performances, PRs, weekly volume and mileage (#94); an idempotent set-record insert under
+  a two-connection race (#106).
+- Criterion 3: strength, an interval run and a Muay Thai class in one stored week (#78); the
+  hybrid scenario places them by the interference rules (#71, #88, #100, #109), and the journey
+  sees all three in week 1 on Train (#233).
+- Criterion 4: `pnpm db:explain` (#111) explains every history and program query on a two-year
+  dataset; CI fails a Seq Scan of a large relation or an unused declared index. 38 plans pass,
+  with timings in docs/performance.md ("M3 query plans"); the index fixes it found are there too.
+
+The brief's further criteria:
+
+- Deterministic, rule-based week-1 generation, no LLM: inputs and defaults (#65), eligibility
+  (#70), the first block and day rule (#69), strength (#80), commitments and running (#88),
+  loads (#92), volume (#97), placement (#100), and the seven scenarios, beginner with blank
+  1RMs, powerlifter with measured ones, hybrid, injured shoulder and dumbbells only among them
+  (#109); previewed and built from the profile (#156). Every significant choice writes a
+  decision with its why.
+- Playwright: `e2e/program-journey.serial.e2e.ts` (#233) onboards with every 1RM blank, builds
+  from Today, finds strength, running and Muay Thai in week 1, opens an RPE-based baseline
+  session, moves a session and swaps an exercise, sees both in History with their why, and
+  reloads; a second journey checks measured-1RM percentages.
+- A one-off swap stores no preference and 'never prescribe this again' stores a dislike: in the
+  service (#159) and in the UI (#177).
+- Screens: Build my program (#216), the Train week (#117), plan overview (#128), session detail
+  (#125), move (#140), swap (#177), adjust and skip (#212), History (#169) and Today's panels
+  and sessions (#211, #224), each with designed empty, rest-day, loading and error states, axe
+  clean in dark and light, and laid out for a 1440 × 900 desktop window. Every route is within
+  60 KB of initial JS and the main-thread guard covers the program screens (#231).
+- Domain functions for e1RM, best e1RM, weekly hard sets per muscle group, session load and
+  weekly distance reuse M1's maths (#57) and are documented in `src/lib/domain/README.md`.
+- Gates: CI runs check, lint, unit, integration, `db:explain`, both builds, budgets, every e2e
+  project (perf included) and Lighthouse on every PR; by the owner's rule the heavy suites run
+  there rather than on a laptop.
 
 ## M4 — Workout application [§7, §8, §9, §15, §16, §18]
 
