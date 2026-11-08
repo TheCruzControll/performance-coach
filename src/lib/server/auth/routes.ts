@@ -93,9 +93,10 @@ export const ROUTE_ACCESS = {
 	'/api/workouts/active': 'owner',
 
 	// kit
-	'/api/workouts/kit': 'owner'
+	'/api/workouts/kit': 'owner',
 
 	// history
+	'/api/exercises/[id]/history': 'owner'
 
 	// exercises
 } as const satisfies Record<RouteId, RouteAccess>;
