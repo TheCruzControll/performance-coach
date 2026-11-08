@@ -15,6 +15,11 @@ import { blocks } from './decisions/templates/blocks';
 import { defaults } from './decisions/templates/defaults';
 import { edits, NO_REASON } from './decisions/templates/edits';
 import { loads } from './decisions/templates/loads';
+import { periodisationBlocks } from './decisions/templates/periodisation-blocks';
+import { periodisationGoals } from './decisions/templates/periodisation-goals';
+import { periodisationReplan } from './decisions/templates/periodisation-replan';
+import { periodisationRunning } from './decisions/templates/periodisation-running';
+import { periodisationSchedule } from './decisions/templates/periodisation-schedule';
 import { placement } from './decisions/templates/placement';
 import { program } from './decisions/templates/program';
 import { results } from './decisions/templates/results';
@@ -34,8 +39,131 @@ const AREAS = {
 	volume,
 	loads,
 	edits,
-	results
+	results,
+	periodisationGoals,
+	periodisationSchedule,
+	periodisationBlocks,
+	periodisationRunning,
+	periodisationReplan
 };
+const BECAUSE = 'Your fight is the nearest event.';
+/** Each M7 kind's facts, exactly the ones its template names, and the words they give. */
+const M7_FACTS = {
+	priority_resolved: {
+		facts: {
+			leader: 'Fight night',
+			from: 'Mon 5 Apr',
+			until: 'Sat 29 May',
+			reason: BECAUSE,
+			modes: 'Build muscle is at maintenance.'
+		},
+		summary: 'Fight night leads from Mon 5 Apr',
+		why: `Fight night leads from Mon 5 Apr to Sat 29 May. ${BECAUSE} Build muscle is at maintenance.`
+	},
+	maintenance_dose: {
+		facts: {
+			goal: 'Build muscle',
+			leader: 'Fight night',
+			dose: '2 Keep sessions, 4–10 hard sets a group',
+			reason: BECAUSE
+		},
+		summary: 'Build muscle held at maintenance',
+		why: `Build muscle is held at its maintenance dose while Fight night leads: 2 Keep sessions, 4–10 hard sets a group. ${BECAUSE}`
+	},
+	schedule_repaired: {
+		facts: {
+			session: 'Lower A',
+			from: 'Thu',
+			to: 'Tue',
+			conflict: 'Heavy squats the day before sparring',
+			reason: BECAUSE
+		},
+		summary: 'Moved Lower A from Thu to Tue',
+		why: `Heavy squats the day before sparring, so Lower A moves from Thu to Tue. ${BECAUSE}`
+	},
+	load_eased: {
+		facts: {
+			session: 'Lower A',
+			rpe: 6,
+			conflict: 'Heavy squats the day before sparring',
+			reason: BECAUSE
+		},
+		summary: 'Lower A eased to RPE 6',
+		why: `Heavy squats the day before sparring, and no day of the week avoids it, so Lower A is eased to RPE 6. ${BECAUSE}`
+	},
+	block_type_chosen: {
+		facts: {
+			block: 'Camp for Fight night',
+			type: 'fight camp',
+			weeks: 8,
+			startsOn: 'Mon 5 Apr',
+			reason: BECAUSE
+		},
+		summary: 'Camp for Fight night: fight camp',
+		why: `Camp for Fight night is a fight camp block of 8 weeks, from Mon 5 Apr. ${BECAUSE}`
+	},
+	deload_triggered: {
+		facts: { week: 6, signals: 'Your fatigue is high.', reason: BECAUSE },
+		summary: 'Deload in week 6',
+		why: `Your fatigue is high. So week 6 becomes a deload: lighter targets, no sparring and easy runs. ${BECAUSE}`
+	},
+	taper_planned: {
+		facts: {
+			length: '3 weeks',
+			event: 'Berlin',
+			date: 'Sun 26 Sep',
+			steps: '80, 60 and 40 %',
+			reason: BECAUSE
+		},
+		summary: 'Taper before Berlin: 3 weeks',
+		why: `Berlin is on Sun 26 Sep, so the 3 weeks before it taper: the volume drops (80, 60 and 40 %) and the intensity stays, so you arrive fresh. ${BECAUSE}`
+	},
+	volume_progressed: {
+		facts: {
+			stream: 'chest sets',
+			from: 10,
+			to: 16,
+			block: 'Hypertrophy',
+			step: '2 sets',
+			reason: BECAUSE
+		},
+		summary: 'Hypertrophy: chest sets 10 to 16',
+		why: `Hypertrophy builds chest sets from 10 to 16, 2 sets a week. ${BECAUSE}`
+	},
+	sparring_load: {
+		facts: { count: 2, last: 'Sat 22 May', days: 7, event: 'Fight night', reason: BECAUSE },
+		summary: 'Hard sparring: 2 a week',
+		why: `Fight camp holds hard sparring to 2 a week, the last on Sat 22 May, 7 days before Fight night. ${BECAUSE}`
+	},
+	long_run_progressed: {
+		facts: {
+			from: '16 km',
+			to: '30 km',
+			block: 'Marathon build',
+			step: '1.5 km',
+			cap: '32 km',
+			reason: BECAUSE
+		},
+		summary: 'Long run: 16 km to 30 km',
+		why: `The long run grows from 16 km to 30 km across Marathon build, 1.5 km a week, never past 32 km. ${BECAUSE}`
+	},
+	hr_zones_set: {
+		facts: { source: 'threshold heart rate', value: '172 bpm', reason: BECAUSE },
+		summary: 'Heart-rate zones from your threshold heart rate',
+		why: `Run segments’ heart-rate zones come from your threshold heart rate of 172 bpm. ${BECAUSE}`
+	},
+	replanned: {
+		facts: {
+			who: 'You',
+			from: 'Mon 12 Apr',
+			change: 'fight camp for Fight night',
+			reason: BECAUSE
+		},
+		summary: 'Re-planned from Mon 12 Apr: fight camp for Fight night',
+		why: `You re-planned from Mon 12 Apr: fight camp for Fight night. The weeks before it stay as they were. ${BECAUSE}`
+	}
+} as const;
+
 const placeholders = (text: string) => [...text.matchAll(/\{(\w+)\}/g)].map(([, name]) => name!);
 const accepted = (decision: unknown) => validate(decisionPlanSchema, decision);
 
@@ -72,6 +200,38 @@ describe('the templates', () => {
 		expect(incomplete).toThrow("A 'default_assumed' decision needs the fact 'missing'");
 		expect(log.list()).toEqual([]);
 	});
+
+	it("gives each of M7's kinds exactly the facts its template names", () => {
+		const m7 = {
+			...periodisationGoals,
+			...periodisationSchedule,
+			...periodisationBlocks,
+			...periodisationRunning,
+			...periodisationReplan
+		};
+		expect(Object.keys(M7_FACTS).sort()).toEqual(Object.keys(m7).sort());
+		for (const [kind, { summary, why }] of Object.entries(m7)) {
+			const names = new Set([...placeholders(summary), ...placeholders(why)]);
+			const given = Object.keys(M7_FACTS[kind as keyof typeof M7_FACTS].facts);
+			expect(given.sort(), kind).toEqual([...names].sort());
+		}
+	});
+
+	it.each(Object.entries(M7_FACTS))(
+		"renders M7's %s from its facts, as the plan accepts, and throws without one",
+		(kind, { facts, summary, why }) => {
+			const k = kind as keyof typeof M7_FACTS;
+			const decision = new DecisionLog().add(k, 'test.rule', ['blocks.0'], facts as never);
+			expect([decision.summary, decision.why]).toEqual([summary, why]);
+			expect(accepted(decision)).toEqual({ ok: true, data: decision });
+			for (const name of Object.keys(facts)) {
+				const { [name]: _, ...missing } = facts as Record<string, string>;
+				expect(() => new DecisionLog().add(k, 'test.rule', [], missing as never)).toThrow(
+					`A '${kind}' decision needs the fact '${name}'`
+				);
+			}
+		}
+	);
 
 	it('fills facts in once: a fact’s own braces are left alone, booleans read yes or no', () => {
 		expect(render('{a} {b} {c}', { a: '{b}', b: true, c: 2.5 }, 'progression')).toBe('{b} yes 2.5');

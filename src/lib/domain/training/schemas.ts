@@ -375,11 +375,66 @@ export const weekTargetsSchema = z.object({
 	runVolumeFactor: between(0, 2, 'Between 0 and 2')
 });
 
+/**
+ * A stored week's targets: M3's, and M7's optional block-type targets (m7-contract), listed so a
+ * parse never strips them. The coach's next_cycle brief closes M3's keys alone.
+ */
+export const periodisedWeekTargetsSchema = z.extend(weekTargetsSchema, {
+	mainLifts: z.optional(
+		z
+			.object({
+				repsMin: reps,
+				repsMax: reps,
+				topRpe: halves(5, 10, 'RPE 5 to 10, in half steps'),
+				setsFactor: between(0, 2, 'Between 0 and 2')
+			})
+			.check(rules((t, fail) => checkRange(t.repsMin, t.repsMax, ['repsMin', 'repsMax'], fail)))
+	),
+	setsPerGroup: z.optional(
+		z
+			.object({
+				min: whole(0, 40, 'Hard sets 0 to 40'),
+				max: whole(0, 40, 'Hard sets 0 to 40'),
+				step: whole(-10, 10, 'A step of up to 10 sets')
+			})
+			.check(rules((t, fail) => checkRange(t.min, t.max, ['min', 'max'], fail)))
+	),
+	running: z.optional(
+		z.object({
+			longRunMetres: z.nullable(whole(1, 60_000, 'A long run of up to 60 km')),
+			raceSpecific: z.nullable(
+				z.enum(['marathon_pace', 'threshold', 'intervals'], 'Pick race-specific work')
+			),
+			cutback: z.boolean()
+		})
+	),
+	combat: z.optional(
+		z
+			.object({
+				sessions: whole(0, 14, 'Up to 14 sessions'),
+				hardSparring: whole(0, 14, 'Up to 14 sessions'),
+				sparringRounds: whole(0, 60, 'Up to 60 rounds'),
+				conditioningRounds: whole(0, 60, 'Up to 60 rounds')
+			})
+			.check(
+				rules((t, fail) => {
+					if (t.hardSparring > t.sessions) fail(['hardSparring'], 'No more than the sessions');
+				})
+			)
+	),
+	maintenance: z.optional(
+		uniqueList(
+			z.enum(['strength', 'hypertrophy', 'runs', 'muay_thai', 'custom'], 'Unknown stream'),
+			5
+		)
+	)
+});
+
 const weekPlanSchema = z.object({
 	kind: z.enum(v.WEEK_KINDS, 'Pick a week type'),
 	startsOn: isoDate,
 	endsOn: isoDate,
-	targets: weekTargetsSchema,
+	targets: periodisedWeekTargetsSchema,
 	sessions: list(sessionPlanSchema, 21)
 });
 
