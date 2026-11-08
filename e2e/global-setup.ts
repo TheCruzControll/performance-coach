@@ -4,19 +4,24 @@
  *   2. mint this run's one-time owner setup token (the server gets only its hash, as in
  *      production; the `setup` project opens /setup?token=… with it),
  *   3. build the app with the Node adapter (skip with E2E_SKIP_BUILD=1 when CI already built),
- *   4. start the production server (`node build/index.js`) and wait until /api/health is up.
+ *   4. start the production server (`node build/index.js`) and wait until /api/health is up,
+ *      with this run's random CRON_SECRET and BACKUP_ENCRYPTION_KEY (workers read them as
+ *      E2E_CRON_SECRET and E2E_BACKUP_KEY) and backups going to E2E_BACKUP_DIR.
  * Returns a teardown that stops the server. Server output goes to .e2e-server.log.
  */
 import { execSync, spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { createHash, randomBytes } from 'node:crypto';
 import { mkdirSync, openSync, rmSync } from 'node:fs';
+import path from 'node:path';
 import type { FullConfig } from '@playwright/test';
 import { LOCAL_DATABASE_URLS, redactUrl, resetDatabase } from '../src/lib/server/db/migrate';
 
 export const E2E_DATABASE_URL = process.env.E2E_DATABASE_URL || LOCAL_DATABASE_URLS.e2e;
 /** Signed-in browser states written by the setup projects (git-ignored). */
 export const AUTH_DIR = 'e2e/.auth';
+/** Where the server under test writes its backups (BACKUP_DIR): a local folder store. */
+export const E2E_BACKUP_DIR = path.resolve(import.meta.dirname, '../test-results/backups');
 
 async function isUp(url: string): Promise<boolean> {
 	try {
@@ -56,6 +61,11 @@ export default async function globalSetup(config: FullConfig) {
 		});
 	}
 
+	// The backup cron's secret and key, for this run only; workers inherit them from here.
+	process.env.E2E_CRON_SECRET = randomBytes(32).toString('base64url');
+	process.env.E2E_BACKUP_KEY = randomBytes(32).toString('base64');
+	rmSync(E2E_BACKUP_DIR, { recursive: true, force: true });
+
 	const port = new URL(baseURL).port || '80';
 	const log = openSync('.e2e-server.log', 'w');
 	const server = spawn(process.execPath, ['build/index.js'], {
@@ -70,6 +80,9 @@ export default async function globalSetup(config: FullConfig) {
 			DATABASE_URL_UNPOOLED: E2E_DATABASE_URL,
 			ENABLE_TEST_ROUTES: 'true',
 			OWNER_SETUP_TOKEN_HASH: setupTokenHash,
+			CRON_SECRET: process.env.E2E_CRON_SECRET,
+			BACKUP_ENCRYPTION_KEY: process.env.E2E_BACKUP_KEY,
+			BACKUP_DIR: E2E_BACKUP_DIR,
 			LOG_LEVEL: process.env.LOG_LEVEL ?? 'info'
 		}
 	});

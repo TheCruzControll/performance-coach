@@ -30,4 +30,18 @@ describe('syncWords', () => {
 			'passkey: Finish adding your passkey'
 		]);
 	});
+
+	it('says no count past 999, so the longest words stay the reserved ones', () => {
+		expect(
+			[999, 1000, 25_000].map((n) => [
+				syncWords({ state: 'signed-out', waiting: n }).text,
+				syncWords({ state: 'offline', pending: n }).text,
+				syncWords({ state: 'attention', count: n }).text
+			])
+		).toEqual([
+			['Sign in to sync · 999 waiting', 'Offline · 999 pending', '999 need attention'],
+			['Sign in to sync · 999+ waiting', 'Offline · 999+ pending', '999+ need attention'],
+			['Sign in to sync · 999+ waiting', 'Offline · 999+ pending', '999+ need attention']
+		]);
+	});
 });
