@@ -24,6 +24,7 @@ import {
 	coachIsolation,
 	missingSignatures,
 	scanForSecrets,
+	scanForServerOnly,
 	UNSCANNED_FILE
 } from './client-secret-scan.ts';
 import { PRELOADED_FONT_PATTERN } from '../src/lib/ui/fonts.ts';
@@ -466,8 +467,10 @@ if (!readdirSync(`${CLIENT}/_app/immutable/assets`).some((f) => /^sprite\.[\w-]+
 }
 
 /**
- * Client secrets: no Anthropic SDK code, sk-ant- key or build-time ANTHROPIC_API_KEY (CI builds
- * with a canary) in any file of either build the browser can fetch: `pnpm build` leaves the
+ * Client secrets: no Anthropic SDK code, provider-format credential (scripts/secrets-patterns.ts),
+ * build-time ANTHROPIC_API_KEY (CI builds with a canary) or server-only code (the Blob SDK, a
+ * src/lib/server/ path, a server-only variable name), each reported per file, in any file of
+ * either build the browser can fetch: `pnpm build` leaves the
  * Vercel output and `pnpm build:node` the Node one, and .svelte-kit/output holds the last.
  * Positive control: once the coach's composition root (agent/coach.ts) loads the provider, the
  * server build carries every signature, so a signature the SDK no longer ships fails here instead
@@ -493,7 +496,8 @@ if (process.env.GITHUB_ACTIONS === 'true' && !BUILD_KEY) {
 let scannedFiles = 0;
 for (const file of CLIENT_OUTPUTS.flatMap(filesIn).filter((f) => !UNSCANNED_FILE.test(f))) {
 	scannedFiles++;
-	for (const what of scanForSecrets(readFileSync(file, 'utf8'), BUILD_KEY)) {
+	const text = readFileSync(file, 'utf8');
+	for (const what of [...scanForSecrets(text, BUILD_KEY), ...scanForServerOnly(text)]) {
 		secretProblems.push(`${file}: ${what}`);
 	}
 }
@@ -560,7 +564,7 @@ const lines = [
 	`Profile sections: no editor's CSS on a section page (${sectionRoutes.map((r) => `\`${r}\``).join(', ')}; ${editorKeys.length} editors, ${keptOut.size} of their stylesheets left to load with them): ${sectionProblems.length ? 'FAIL' : 'pass'}`,
 	`Exercise catalogue (server-only): in no client chunk: ${catalogueChunks.length ? 'FAIL' : 'pass'}`,
 	`Icon paths in JS (every icon draws from the SVG sprite): ${iconProblems.length ? 'FAIL' : 'pass'}`,
-	`Client secrets (Anthropic SDK, sk-ant- keys, the build-time key) in ${scannedFiles} files of ${CLIENT_OUTPUTS.map((d) => `\`${d}\``).join(', ')}: ${secretProblems.length ? 'FAIL' : 'pass'}; positive control (every SDK signature in the server build): ${control}`,
+	`Client secrets (Anthropic SDK, provider-format keys, the build-time key, server-only code) in ${scannedFiles} files of ${CLIENT_OUTPUTS.map((d) => `\`${d}\``).join(', ')}: ${secretProblems.length ? 'FAIL' : 'pass'}; positive control (every SDK signature in the server build): ${control}`,
 	`Coach isolation (no coach module loadable from ${isolation.checked.map((r) => `\`${r}\``).join(', ')}): ${isolation.problems.length ? 'FAIL' : 'pass'}`
 ];
 console.log(lines.join('\n'));
