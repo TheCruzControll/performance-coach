@@ -4,27 +4,27 @@
   status (small, quiet beside logging, once it has loaded on idle), the workout's title and the
   stopwatch. Two rows on a phone (Minimise and the status; the title and the stopwatch), one row
   from 1024 px,
-  where it spans the page over the columns. It applies --safe-top itself: no shell does here.
+  where it spans the page over the columns. At a large text size the status takes a row of its own
+  under Minimise rather than overflow; its width is the same in every state, so which line it
+  takes never depends on what it says. It applies --safe-top itself: no shell does here.
   With no title yet (restoring) the title's line is reserved, so nothing moves when it arrives.
 -->
 <script lang="ts">
 	import { resolve } from '$app/paths';
-	import type { StopwatchState } from '#lib/domain/workout/index.ts';
 	import Button from '#lib/ui/components/Button.svelte';
 	import Skeleton from '#lib/ui/components/Skeleton.svelte';
-	import Stopwatch from '#lib/ui/workout/Stopwatch.svelte';
 	import type { Snippet } from 'svelte';
 
 	interface Props {
 		/** null while restoring. */
 		title: string | null;
-		/** null when there is no workout to time. */
-		stopwatch: StopwatchState | null;
+		/** The stopwatch, when there is a workout to time and it has loaded. */
+		time?: Snippet;
 		/** The sync status, once it has loaded. */
 		status?: Snippet;
 	}
 
-	let { title, stopwatch, status }: Props = $props();
+	let { title, time, status }: Props = $props();
 </script>
 
 <header class="header" data-testid="workout-header">
@@ -34,7 +34,7 @@
 			{@render status?.()}
 		</div>
 		<div class="time">
-			{#if stopwatch}<Stopwatch {stopwatch} />{/if}
+			{@render time?.()}
 		</div>
 		<div class="title">
 			{#if title === null}
@@ -69,6 +69,7 @@
 		grid-area: minimise;
 		display: flex;
 		align-items: center;
+		flex-wrap: wrap;
 		justify-content: space-between;
 		gap: var(--space-3);
 		min-width: 0;

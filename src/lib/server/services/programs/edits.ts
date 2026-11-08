@@ -56,6 +56,7 @@ import {
 	SET_ROLE_LABEL,
 	type DecisionKind,
 	type Decider,
+	type PreferenceSource,
 	type SubstitutionReason
 } from '../../../domain/training/vocabulary';
 import {
@@ -139,6 +140,7 @@ type ExerciseRow = LineChildRows['exercises'][number];
 /** A session to edit, in its week of the version read. */
 interface Target {
 	versionId: string;
+	versionNumber: number;
 	week: { id: string; lineageId: string; startsOn: IsoDate; endsOn: IsoDate };
 	/** Its week's sessions, by day and order in the day; `session` is one of them. */
 	sessions: StoredSession[];
@@ -180,6 +182,7 @@ async function locate(
 		const completed = await repo.completedLineages(ownerId, [lineage]);
 		return {
 			versionId: found.version.id,
+			versionNumber: found.version.number,
 			exerciseRows: new Map(rows.exercises.map((row) => [row.lineageId, row])),
 			week: hit.week,
 			sessions,
@@ -548,25 +551,85 @@ async function occurrencesFrom(
 	});
 }
 
+/** What a caller other than Train's swap sheet gives a swap (M4's amendment A6). */
+export interface SwapOptions {
+	/** Where the dislike a 'never_again' swap saves was said: 'swap' (Train) by default. */
+	preferenceSource?: Extract<PreferenceSource, 'swap' | 'workout'>;
+	/**
+	 * The session may have passed or be done (a workout's dislike synced late): a never-again swap
+	 * then changes only the occurrences from today, never that session.
+	 */
+	anchorMayHavePassed?: boolean;
+}
+
+/** A planned exercise as a workout performs it: its session, its lineage and its exercise. */
+export interface PlannedSlot {
+	sessionLineage: string;
+	plannedExerciseLineage: string;
+	exerciseId: string;
+}
+
+/**
+ * Base 'current' for a swap made in the caller's transaction (M4's amendment A6; deps.db must be
+ * that transaction): lock the owner's active program until the transaction ends, then answer the
+ * number of its current version when that version still performs the slot's exercise. A swap on
+ * that number cannot meet a conflict, whatever version the caller saw. Null when the slot is gone:
+ * no active program, the session or the planned exercise no longer in it, the session skipped or
+ * the exercise swapped. A session that has passed or is done (a dislike synced the next day)
+ * still answers while a session from `today` performs the exercise, for a swap of those only
+ * (SwapOptions.anchorMayHavePassed).
+ */
+export async function lockCurrentSlot(
+	ownerId: string,
+	slot: PlannedSlot,
+	today: IsoDate,
+	deps: TrainingDeps = {}
+): Promise<number | null> {
+	const { db } = resolveDeps(deps);
+	if (!(await createProgramsRepository(db).lockProgram(ownerId))) return null;
+	const target = await locate(db, ownerId, slot.sessionLineage).catch((err: unknown) => {
+		if (err instanceof TrainingNotFoundError) return null;
+		throw err;
+	});
+	if (!target || target.session.status === 'skipped') return null;
+	const planned =
+		target.session.kind === 'strength' &&
+		target.session.exercises.some((e) => e.lineage === slot.plannedExerciseLineage);
+	const row = target.exerciseRows.get(slot.plannedExerciseLineage);
+	if (!planned || row?.exerciseId !== slot.exerciseId) return null;
+	const day = checkToday(today);
+	if (!sessionRefusal(target, day)) return target.versionNumber;
+	if (!NEVER_AGAIN_REPLACES_UPCOMING) return null;
+	const upcoming = await occurrencesFrom(db, ownerId, target.versionId, slot.exerciseId, day);
+	return upcoming.length ? target.versionNumber : null;
+}
+
 /**
  * Swap a planned exercise for one of its alternatives as the next version, with its reason.
  * 'once' changes that session only and records no preference. 'never_again' saves a dislike
- * (source 'swap') in the same transaction, under the preferences lock, and swaps the exercise in
- * every session from today; each week it touches is copied. A target that is not one of the
- * exercise's alternatives is a field error at `toExerciseId`.
+ * (source 'swap', or how.preferenceSource) in the same transaction, under the preferences
+ * lock, and swaps the exercise in every session from today; each week it touches is copied. A
+ * target that is not one of the exercise's alternatives is a field error at `toExerciseId`.
  */
 export async function swapExercise(
 	ownerId: string,
 	input: unknown,
 	at: EditAt,
-	deps: TrainingDeps = {}
+	deps: TrainingDeps = {},
+	how: SwapOptions = {}
 ): Promise<RevisedVersion> {
 	const swap = parseWith(swapSchema, input);
 	const today = checkToday(at.today);
 	const { db, source } = resolveDeps(deps);
 	const target = await locate(db, ownerId, swap.sessionLineage, at.version);
+	const never = swap.scope === 'never_again';
 	const refused = sessionRefusal(target, today);
-	if (refused) throw new TrainingInputError({ sessionLineage: refused });
+	const late =
+		how.anchorMayHavePassed &&
+		never &&
+		NEVER_AGAIN_REPLACES_UPCOMING &&
+		target.session.status !== 'skipped';
+	if (refused && !late) throw new TrainingInputError({ sessionLineage: refused });
 	const { planned, row } = plannedIn(target, swap.plannedExerciseLineage);
 	const key = toExerciseKey(planned.exercise);
 	const options = await rankAlternatives(ownerId, key, { db });
@@ -581,11 +644,11 @@ export async function swapExercise(
 		});
 	}
 	const here = { weekLineage: target.week.lineageId, session: target.session, planned, row };
-	const never = swap.scope === 'never_again';
 	const occurrences =
 		never && NEVER_AGAIN_REPLACES_UPCOMING
 			? await occurrencesFrom(db, ownerId, target.versionId, row.exerciseId, today)
 			: [here];
+	if (!occurrences.length) throw new TrainingInputError({ sessionLineage: refused! });
 	const changes: Required<Pick<CopyChanges, 'exercises' | 'sets'>> = { exercises: {}, sets: {} };
 	for (const occurrence of occurrences) {
 		const { exercise, sets } = swapped(occurrence, to, never ? 'dislike' : 'situational');
@@ -622,7 +685,8 @@ export async function swapExercise(
 			weekLineages: occurrences.map((o) => o.weekLineage),
 			apply: async (_copies, tx) => {
 				if (never) {
-					const dislike = { sentiment: 'dislike' as const, source: 'swap' as const };
+					const source = how.preferenceSource ?? 'swap';
+					const dislike = { sentiment: 'dislike' as const, source };
 					const record = { ...dislike, exerciseId: row.exerciseId, reason: swap.reason };
 					await recordExercisePreference(ownerId, record, { ...deps, db: tx });
 				}

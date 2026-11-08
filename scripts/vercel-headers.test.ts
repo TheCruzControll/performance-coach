@@ -105,6 +105,8 @@ describe('security headers on prerendered pages', () => {
 
 	it('are sent from vercel.json on every prerendered page', () => {
 		expect(pages).toContain('/offline');
+		expect(pages).toContain('/workout/run');
+		expect(pages).toContain('/workout/session');
 		expect(headerProblems(pages, vercelRules, STATIC_PAGE_HEADERS)).toEqual([]);
 	});
 

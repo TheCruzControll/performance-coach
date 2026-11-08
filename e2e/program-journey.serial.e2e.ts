@@ -94,9 +94,9 @@ async function addGoal(
 ) {
 	const sheet = page.getByTestId('goal-sheet');
 	await expect(sheet.getByRole('heading', { name: 'New goal' })).toBeVisible();
-	if ('focus' in goal) await sheet.getByRole('radio', { name: 'General' }).click();
+	if ('focus' in goal) await sheet.getByRole('radio', { name: 'General', exact: true }).click();
 	await sheet.getByRole('textbox', { name: 'Goal', exact: true }).fill(goal.title);
-	await sheet.getByRole('checkbox', { name: goal.discipline }).check();
+	await sheet.getByRole('checkbox', { name: goal.discipline, exact: true }).check();
 	if ('event' in goal) {
 		await sheet.getByRole('button', { name: goal.event, exact: true }).click();
 		await sheet.getByLabel('Event date').fill(goal.date);
@@ -118,7 +118,10 @@ async function onboardBlank(page: Page, testInfo: TestInfo) {
 		['Weights in', 'kg'],
 		['Distances in', 'km']
 	]) {
-		await page.getByRole('radiogroup', { name: group }).getByRole('radio', { name: unit }).check();
+		await page
+			.getByRole('radiogroup', { name: group })
+			.getByRole('radio', { name: unit, exact: true })
+			.check();
 	}
 	await moveOn(page, 'continue', 'goals');
 
@@ -175,11 +178,11 @@ async function onboardBlank(page: Page, testInfo: TestInfo) {
 	// Monday to Saturday, mornings or evenings, 5 days, Muay Thai on Tuesday and Thursday evenings.
 	const available = page.getByRole('group', { name: 'Days you can train' });
 	for (const day of ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']) {
-		await available.getByRole('checkbox', { name: day }).check();
+		await available.getByRole('checkbox', { name: day, exact: true }).check();
 	}
 	const times = page.getByRole('group', { name: 'Best times to train' });
 	for (const time of ['Morning', 'Evening'])
-		await times.getByRole('checkbox', { name: time }).check();
+		await times.getByRole('checkbox', { name: time, exact: true }).check();
 	const days = page.getByRole('spinbutton', { name: 'Training days a week' });
 	await expect(days).toHaveAttribute('aria-valuenow', '4');
 	await page.getByRole('button', { name: 'Increase Training days a week' }).click();
@@ -193,8 +196,11 @@ async function onboardBlank(page: Page, testInfo: TestInfo) {
 		.check();
 	const picker = card.getByRole('group', { name: 'Days', exact: true });
 	for (const day of ['Tuesday', 'Thursday'])
-		await picker.getByRole('checkbox', { name: day }).check();
-	await card.getByRole('group', { name: 'Time' }).getByRole('radio', { name: 'Evening' }).check();
+		await picker.getByRole('checkbox', { name: day, exact: true }).check();
+	await card
+		.getByRole('group', { name: 'Time' })
+		.getByRole('radio', { name: 'Evening', exact: true })
+		.check();
 	await captureScreen(page, testInfo, 'journey-onboarding-schedule');
 	await moveOn(page, 'continue', 'body');
 	await moveOn(page, 'skip', 'review');
@@ -510,6 +516,7 @@ test('blank 1RMs: onboarding, a week-1 baseline program built from Today, a move
 				  where d.decided_by = 'owner' order by d.id`
 			)
 		).toEqual([
+			{ number: 1, kind: 'owner_confirmed' },
 			{ number: 2, kind: 'session_moved' },
 			{ number: 3, kind: 'exercise_swapped' }
 		]);

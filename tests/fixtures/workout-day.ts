@@ -182,12 +182,13 @@ export function workoutDayKits({
 							line: 'Work up to a set of 5 @ RPE 7',
 							instruction: BASELINE_INSTRUCTION
 						}),
-						// 80 % of the estimated 1RM: 0.8 × 125 kg.
+						// 80 % of the latest estimated 1RM, last week's 100 kg × 5 @ RPE 8 (123.3 kg): 98.6
+						// kg, to 97.5. Never of the older, higher best (125 kg, three weeks ago).
 						...sets(3, {
 							...reps(5),
 							role: 'back_off',
 							targetRpe: null,
-							prescribedWeight: { value: 100, unit: 'kg', basis: 'estimated' },
+							prescribedWeight: { value: 97.5, unit: 'kg', basis: 'estimated' },
 							load: { kind: 'from_e1rm', fraction: 0.8 },
 							restSeconds: 180,
 							line: '3 × 5'
@@ -241,9 +242,10 @@ export function workoutDayKits({
 						...working,
 						...NO_AMOUNT,
 						seconds: 45,
-						targetRpe: null,
+						// M3 prescribes every unloaded line by RPE (LOAD_NEEDS: rpe_based needs one).
+						targetRpe: 7,
 						restSeconds: 90,
-						line: '3 × 0:45'
+						line: '3 × 0:45 @ RPE 7'
 					}),
 					{ superset: 1 }
 				)

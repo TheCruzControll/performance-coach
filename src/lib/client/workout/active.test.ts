@@ -61,8 +61,8 @@ afterEach(() => {
 
 describe('the active workout', () => {
 	it('shows a workout another tab starts while this page shows none', async () => {
-		const page = new ActiveWorkout(strengthTable);
-		await page.restore();
+		const page = new ActiveWorkout(async () => strengthTable);
+		await page.restore((code) => code());
 		expect(page.current.phase).toBe('empty');
 		await page.connect(load);
 		expect(page.current.phase).toBe('empty');
@@ -121,8 +121,8 @@ describe('the active workout', () => {
 
 		it('starts with the store and flushes its changes, until the page closes', async () => {
 			applying = true;
-			const page = new ActiveWorkout(strengthTable);
-			await page.restore();
+			const page = new ActiveWorkout(async () => strengthTable);
+			await page.restore((code) => code());
 			expect(await page.connect(load)).not.toBeNull();
 
 			const other = await tab({ table: strengthTable });
@@ -152,8 +152,8 @@ describe('the active workout', () => {
 		});
 
 		it('never starts flushing for a page closed while its store opens', async () => {
-			const page = new ActiveWorkout(strengthTable);
-			await page.restore();
+			const page = new ActiveWorkout(async () => strengthTable);
+			await page.restore((code) => code());
 			const connecting = page.connect(load);
 			page.close();
 			expect(await connecting).toBeNull();

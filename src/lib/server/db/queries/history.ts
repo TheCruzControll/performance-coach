@@ -10,11 +10,11 @@
  *   builder's plan uses it on a large relation, and the integration test that it exists.
  * Nothing runs until a builder is awaited; await them in turn on one connection.
  */
-import { and, asc, desc, eq, gte, isNotNull, isNull, lt, not, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lt, not, or, sql } from 'drizzle-orm';
 import { alias, type AnyPgColumn } from 'drizzle-orm/pg-core';
 import type { IsoDate } from '../../../domain/calendar';
 import { PR_MAX_REPS } from '../../../domain/training/metrics';
-import { exercises, runRecords, setRecords, workouts } from '../schema';
+import { exercises, otherSessionRecords, runRecords, setRecords, workouts } from '../schema';
 import type { Executor } from '../types';
 import { plannedSessionsInRange } from './programs';
 
@@ -26,12 +26,18 @@ import { plannedSessionsInRange } from './programs';
 export const HISTORY_INDEXES = {
 	exerciseHistory: 'set_records_exercise_history_idx',
 	lastPerformances: 'set_records_exercise_history_idx',
+	lastSessionSets: 'set_records_exercise_history_idx',
+	mostReps: 'set_records_exercise_history_idx',
 	bestE1rms: 'set_records_exercise_e1rm_idx',
 	repMaxes: 'set_records_exercise_rep_max_idx',
 	setsInRange: 'set_records_owner_performed_idx',
 	runsInRange: 'workouts_owner_kind_started_idx',
 	workoutsInRange: 'workouts_owner_started_idx',
 	activeWorkouts: 'workouts_owner_started_idx',
+	completedWorkoutsPage: {
+		workouts: 'workouts_owner_started_idx',
+		sets: 'set_records_workout_order_idx'
+	},
 	sessionsInRange: {
 		planned: 'planned_sessions_week_day_idx',
 		logged: 'workouts_owner_started_idx'
@@ -44,7 +50,10 @@ export interface InstantRange {
 	end: Date;
 }
 
-/** A set as history reads it: the weight as entered, with its exact kg and its stored e1RM. */
+/**
+ * A set as history reads it: the weight as entered, with its exact kg, its assistance and its
+ * stored e1RM.
+ */
 const setColumns = {
 	id: setRecords.id,
 	workoutId: setRecords.workoutId,
@@ -54,6 +63,7 @@ const setColumns = {
 	weight: setRecords.weight,
 	unit: setRecords.unit,
 	weightKg: setRecords.weightKg,
+	assistance: setRecords.assistance,
 	reps: setRecords.reps,
 	missedReps: setRecords.missedReps,
 	seconds: setRecords.seconds,
@@ -87,12 +97,25 @@ const exerciseSets = (ownerId: string, exerciseId: string | typeof exercises.id)
 /** Neither a warm-up nor skipped: a set the metrics count as performed work. */
 const working = and(not(setRecords.isWarmup), not(setRecords.isSkipped));
 
-/** One exercise, or all: the catalogue's rows, retired ones included, and the owner's own. */
-const exercisesOf = (ownerId: string, exerciseId: string | undefined) =>
+/** One exercise by id, or a list of them (a start kit's, batched in one query). */
+export type ExerciseIds = string | readonly string[];
+
+/**
+ * One exercise, a list of them, or all: the catalogue's rows, retired ones included, and the
+ * owner's own.
+ */
+const exercisesOf = (ownerId: string, exerciseId: ExerciseIds | undefined) =>
 	and(
 		or(isNull(exercises.ownerId), eq(exercises.ownerId, ownerId)),
-		exerciseId === undefined ? undefined : eq(exercises.id, exerciseId)
+		exerciseId === undefined
+			? undefined
+			: typeof exerciseId === 'string'
+				? eq(exercises.id, exerciseId)
+				: inArray(exercises.id, [...exerciseId])
 	);
+
+/** Performed before `before`, when given (a start kit's bests, from before its workout). */
+const performedBefore = (before: Date | undefined) => before && lt(setRecords.performedAt, before);
 
 /** Started or performed from `start`, included, to `end`, left out. */
 const during = (column: AnyPgColumn, { start, end }: InstantRange) =>
@@ -168,17 +191,80 @@ export function lastPerformances(db: Executor, ownerId: string, exerciseId: stri
 		);
 }
 
+const lastSet = alias(setRecords, 'last_set');
+const lastWorkout = alias(workouts, 'last_workout');
+
 /**
- * Each exercise's set with the highest stored e1RM (ties to the latest), for one exercise or for
- * all. 'All' drives a LATERAL from the small exercises table (the catalogue, retired rows
+ * Each of these exercises' previous session (a start kit's 'last time'): the sets of the owner's
+ * last completed, undeleted workout with a set of it performed before `before`, in workout order.
+ * Skipped and deleted sets are left out; warm-ups stay, flagged. A LATERAL
+ * from the exercises table probes the history index once per id, newest first, and stops at the
+ * first set of a completed workout, so an in-progress or abandoned one is never 'last time'.
+ * Exercises never done drop out.
+ */
+export function lastSessionSetsFor(
+	db: Executor,
+	ownerId: string,
+	exerciseIds: readonly string[],
+	before: Date
+) {
+	const last = db
+		.select({ workoutId: lastSet.workoutId, startedAt: lastWorkout.startedAt })
+		.from(lastSet)
+		.innerJoin(lastWorkout, eq(lastWorkout.id, lastSet.workoutId))
+		.where(
+			and(
+				eq(lastSet.ownerId, ownerId),
+				eq(lastSet.exerciseId, exercises.id),
+				isNull(lastSet.deletedAt),
+				not(lastSet.isSkipped),
+				lt(lastSet.performedAt, before),
+				eq(lastWorkout.status, 'completed'),
+				isNull(lastWorkout.deletedAt)
+			)
+		)
+		.orderBy(desc(lastSet.performedAt), desc(lastSet.id))
+		.limit(1)
+		.as('last');
+	return db
+		.select({
+			exerciseId: exercises.id,
+			startedAt: last.startedAt,
+			set: setColumns
+		})
+		.from(exercises)
+		.innerJoinLateral(last, sql`true`)
+		.innerJoin(
+			setRecords,
+			and(
+				eq(setRecords.workoutId, last.workoutId),
+				eq(setRecords.exerciseId, exercises.id),
+				isNull(setRecords.deletedAt),
+				not(setRecords.isSkipped)
+			)
+		)
+		.where(exercisesOf(ownerId, exerciseIds))
+		.orderBy(asc(exercises.id), asc(setRecords.exercisePosition), asc(setRecords.setIndex));
+}
+
+/**
+ * Each exercise's set with the highest stored e1RM (ties to the latest), for one exercise, a list
+ * of them, or all. 'All' drives a LATERAL from the small exercises table (the catalogue, retired rows
  * included, and the owner's own) that probes the e1RM index once per exercise, so it never
  * scans set_records; exercises with no estimate drop out. Only working sets store an e1RM.
+ * `before` leaves out sets performed from then on.
  */
-export function bestE1rms(db: Executor, ownerId: string, exerciseId?: string) {
+export function bestE1rms(db: Executor, ownerId: string, exerciseId?: ExerciseIds, before?: Date) {
 	const best = db
 		.select(setColumns)
 		.from(setRecords)
-		.where(and(exerciseSets(ownerId, exercises.id), isNotNull(setRecords.e1rmKg)))
+		.where(
+			and(
+				exerciseSets(ownerId, exercises.id),
+				isNotNull(setRecords.e1rmKg),
+				performedBefore(before)
+			)
+		)
 		.orderBy(desc(setRecords.e1rmKg), desc(setRecords.performedAt), desc(setRecords.id))
 		.limit(1)
 		.as('best');
@@ -195,10 +281,11 @@ const repCount = sql<number>`rep_counts.reps`;
 
 /**
  * Each exercise's heaviest working set at each rep count from 1 to PR_MAX_REPS (ties to the
- * latest), for one exercise or for all: a LATERAL from the exercises table and the rep counts,
- * probing the rep-max index once per pair. Rep counts never lifted with a load drop out.
+ * latest), for one exercise, a list of them, or all: a LATERAL from the exercises table and the
+ * rep counts, probing the rep-max index once per pair. Rep counts never lifted with a load drop
+ * out. `before` leaves out sets performed from then on.
  */
-export function repMaxes(db: Executor, ownerId: string, exerciseId?: string) {
+export function repMaxes(db: Executor, ownerId: string, exerciseId?: ExerciseIds, before?: Date) {
 	const top = db
 		.select(setColumns)
 		.from(setRecords)
@@ -207,7 +294,8 @@ export function repMaxes(db: Executor, ownerId: string, exerciseId?: string) {
 				exerciseSets(ownerId, exercises.id),
 				eq(setRecords.reps, repCount),
 				working,
-				isNotNull(setRecords.weightKg)
+				isNotNull(setRecords.weightKg),
+				performedBefore(before)
 			)
 		)
 		.orderBy(desc(setRecords.weightKg), desc(setRecords.performedAt), desc(setRecords.id))
@@ -220,6 +308,41 @@ export function repMaxes(db: Executor, ownerId: string, exerciseId?: string) {
 		.innerJoinLateral(top, sql`true`)
 		.where(exercisesOf(ownerId, exerciseId))
 		.orderBy(asc(exercises.id), asc(repCount));
+}
+
+/**
+ * Each of these exercises' most reps in one working set with no weight added (the workout
+ * summary's 'Most reps', which only bodyweight exercises compete for): a LATERAL from the
+ * exercises table over the history index, performed before `before`. Exercises with no such set
+ * drop out.
+ */
+export function mostReps(
+	db: Executor,
+	ownerId: string,
+	exerciseIds: readonly string[],
+	before: Date
+) {
+	const most = db
+		.select({ reps: setRecords.reps })
+		.from(setRecords)
+		.where(
+			and(
+				exerciseSets(ownerId, exercises.id),
+				working,
+				sql`coalesce(${setRecords.weight}, 0) <= 0`,
+				gte(setRecords.reps, 1),
+				performedBefore(before)
+			)
+		)
+		.orderBy(desc(setRecords.reps), desc(setRecords.performedAt), desc(setRecords.id))
+		.limit(1)
+		.as('most');
+	return db
+		.select({ exerciseId: exercises.id, reps: most.reps })
+		.from(exercises)
+		.innerJoinLateral(most, sql`true`)
+		.where(exercisesOf(ownerId, exerciseIds))
+		.orderBy(asc(exercises.id));
 }
 
 /**
@@ -331,6 +454,84 @@ export function activeWorkouts(db: Executor, ownerId: string, limit: number) {
 		.limit(limit);
 }
 
+const pageCursor = alias(workouts, 'page_cursor');
+const counted = alias(setRecords, 'counted');
+
+/**
+ * The owner's completed, undeleted workouts of every kind, newest first, `limit` at a time, keyed
+ * by client id, each with its key numbers: a run's totals, an other session's kind and minutes,
+ * and a strength workout's working sets and the slots they were done in (warm-ups, skipped and
+ * deleted sets left out). Keyset pagination on (started_at, id), down the owner's started_at
+ * index: `before` is the client id of the previous page's last workout, whose own row gives the
+ * exact place to continue from, so workouts started in the same instant are neither repeated nor
+ * skipped. A cursor that is not one of the owner's workouts gives an empty page. The counts probe
+ * each workout's sets through their workout-order index.
+ */
+export function completedWorkoutsPage(
+	db: Executor,
+	ownerId: string,
+	{ before, limit }: { before?: string; limit: number }
+) {
+	const cursorOf = (column: AnyPgColumn) =>
+		db
+			.select({ value: column })
+			.from(pageCursor)
+			.where(and(eq(pageCursor.clientId, before!), eq(pageCursor.ownerId, ownerId)));
+	const after =
+		before === undefined
+			? undefined
+			: sql`(${workouts.startedAt}, ${workouts.id}) < ((${cursorOf(pageCursor.startedAt)}), (${cursorOf(pageCursor.id)}))`;
+	const workingSet = sql`not ${counted.isWarmup} and not ${counted.isSkipped}`;
+	const sets = db
+		.select({
+			count: sql<number>`(count(*) filter (where ${workingSet}))::int`.as('set_count'),
+			slots:
+				sql<number>`(count(distinct ${counted.exercisePosition}) filter (where ${workingSet}))::int`.as(
+					'slot_count'
+				)
+		})
+		.from(counted)
+		.where(and(eq(counted.workoutId, workouts.id), isNull(counted.deletedAt)))
+		.as('sets');
+	return db
+		.select({
+			id: workouts.clientId,
+			kind: workouts.kind,
+			discipline: workouts.discipline,
+			sessionType: workouts.sessionType,
+			title: workouts.title,
+			plannedLineage: workouts.plannedLineageId,
+			startedAt: workouts.startedAt,
+			finishedAt: workouts.finishedAt,
+			durationSeconds: workouts.durationSeconds,
+			sessionRpe: workouts.sessionRpe,
+			run: {
+				distanceMetres: runRecords.distanceMetres,
+				durationSeconds: runRecords.durationSeconds,
+				paceSecondsPerKm: runRecords.paceSecondsPerKm
+			},
+			other: {
+				kind: otherSessionRecords.kind,
+				durationMinutes: otherSessionRecords.durationMinutes
+			},
+			sets: { count: sets.count, slots: sets.slots }
+		})
+		.from(workouts)
+		.leftJoin(runRecords, eq(runRecords.workoutId, workouts.id))
+		.leftJoin(otherSessionRecords, eq(otherSessionRecords.workoutId, workouts.id))
+		.innerJoinLateral(sets, sql`true`)
+		.where(
+			and(
+				eq(workouts.ownerId, ownerId),
+				isNull(workouts.deletedAt),
+				eq(workouts.status, 'completed'),
+				after
+			)
+		)
+		.orderBy(desc(workouts.startedAt), desc(workouts.id))
+		.limit(limit);
+}
+
 /**
  * A date range's sessions, planned and logged: the version's sessions dated `from` to `to`
  * (plannedSessionsInRange, composed and never redefined) and the owner's workouts started within
@@ -354,5 +555,7 @@ export function sessionsInRange(
 export type HistorySetRow = Awaited<ReturnType<typeof exerciseHistory>>[number];
 export type PerformanceRow = Awaited<ReturnType<typeof lastPerformances>>[number];
 export type RecordRow = Awaited<ReturnType<typeof bestE1rms>>[number];
+export type LastSessionSetRow = Awaited<ReturnType<typeof lastSessionSetsFor>>[number];
 export type WorkoutRow = Awaited<ReturnType<typeof workoutsInRange>>[number];
 export type ActiveWorkoutRow = Awaited<ReturnType<typeof activeWorkouts>>[number];
+export type CompletedWorkoutRow = Awaited<ReturnType<typeof completedWorkoutsPage>>[number];

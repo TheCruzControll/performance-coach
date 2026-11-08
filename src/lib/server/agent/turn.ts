@@ -12,8 +12,9 @@
  * 4. The run starts; a live run on the thread makes the turn busy. Steps 3 and 4 are one
  *    transaction, so a busy send stores nothing. The proposals decided since the thread's last
  *    message join the turn context by id, kind and status.
- * 5. A direct answer (direct.ts) needs no model; otherwise a misconfigured coach is unavailable,
- *    and a day already at DAILY_LIMITS is out of budget, both before any model call.
+ * 5. A lookup (domain/coach/intents.ts) is answered by direct.ts with no model call, in a run
+ *    recorded as DIRECT_RUN; otherwise a misconfigured coach is unavailable, and a day already at
+ *    DAILY_LIMITS is out of budget, both before any model call.
  * 6. The loop (orchestrator.ts) runs over the stored segment. Each model call and each step is
  *    stored as it ends; the turn's context message only with its first stored step. Tools get
  *    toolRuntime(deps), so they run one at a time when the services hold a transaction.
@@ -32,6 +33,7 @@ import type {
 import { createAnswerParser } from '../../domain/coach/answer.ts';
 import { DAILY_LIMITS, TURN_LIMITS } from '../../domain/coach/budgets.ts';
 import type { CoachEvent, CompletedBlock } from '../../domain/coach/events.ts';
+import { directIntent } from '../../domain/coach/intents.ts';
 import { detectPain } from '../../domain/coach/safety.ts';
 import type {
 	CoachErrorKind,
@@ -72,7 +74,7 @@ import {
 } from '../services/coach/threads.ts';
 import { listDecidedSince } from '../services/coach/proposals.ts';
 import { loadTurnFacts } from '../services/coach/turn-facts.ts';
-import { directAnswer } from './direct.ts';
+import { directAnswer, DIRECT_RUN } from './direct.ts';
 import type { TurnHooks } from './hooks.ts';
 import { loadMemory } from './memory/load.ts';
 import { rollover } from './rollover.ts';
@@ -225,8 +227,26 @@ function answerStream(input: PolicyInput, emit: (event: CoachEvent) => void) {
 			feed(policy.push(parser.end()), send);
 			feed(policy.end(), send);
 		},
-		interventions: () => policy.interventions
+		interventions: () => policy.interventions,
+		/** The blocks as the owner saw them, in the answer grammar. */
+		textOf: (blocks: readonly CompletedBlock[]) =>
+			policy.answerText(blocks.map((block) => block.block))
 	};
+}
+
+/**
+ * The answer's content as stored for replay: when the policy changed what the owner saw, its text
+ * blocks become what they were shown, so no stored row keeps what the policy took out.
+ */
+function policedContent<T extends Readonly<Record<string, unknown>>>(
+	content: readonly T[],
+	text: string
+): T[] {
+	const at = content.findIndex((block) => block.type === 'text');
+	if (at < 0 || text === '') return [...content];
+	return content.flatMap((block, index) =>
+		index === at ? [{ ...block, text }] : block.type === 'text' ? [] : [block]
+	);
 }
 
 function serviceError(error: unknown): CoachErrorKind | null {
@@ -356,30 +376,34 @@ async function turn(
 		const [first, ...transcript] = rows;
 		if (first?.kind !== 'segment_preamble' || after === null)
 			throw new CoachTranscriptError('a segment opens with its memory preamble');
+		// A retry runs on the stored message, never on what the retry sent.
+		const ownerText = rows[at]!.content as string;
+		const lookup = directIntent(ownerText);
+		const model = {
+			provider: provider.status === 'ready' ? provider.provider.name : 'none',
+			model: COACH_MODEL,
+			effort: CHAT_EFFORT
+		};
 		const started = await startRun(
 			ownerId,
 			{
 				threadId,
 				triggerMessageId: owner.message.id,
 				kind: 'turn',
-				provider: provider.status === 'ready' ? provider.provider.name : 'none',
-				model: COACH_MODEL,
-				effort: CHAT_EFFORT,
+				...(lookup ? DIRECT_RUN : model),
 				promptVersion: version
 			},
 			deps
 		);
-		// A retry runs on the stored message, never on what the retry sent.
-		const ownerText = rows[at]!.content as string;
 		const decided = since ? await listDecidedSince(ownerId, since, deps) : [];
-		return { owner, thread, first, transcript, after, ownerText, started, decided };
+		return { owner, thread, first, transcript, after, ownerText, lookup, started, decided };
 	});
 	if (begun.answer !== undefined) {
 		// Answered already: the client shows the stored answer.
 		emit({ type: 'answer_completed', messageId: begun.answer });
 		return 'completed';
 	}
-	const { owner, thread, first, transcript, after, ownerText, started, decided } = begun;
+	const { owner, thread, first, transcript, after, ownerText, lookup, started, decided } = begun;
 	const threadId = owner.thread.id;
 	let contextPending = !after.some((row) => row.kind === 'context');
 	const runId = (run.id = started.id);
@@ -392,6 +416,7 @@ async function turn(
 	};
 
 	const entry = input.entry ?? null;
+	const pain = detectPain(ownerText);
 	const facts: TurnFacts = {
 		date: day.today,
 		localTime: day.localTime,
@@ -410,13 +435,18 @@ async function turn(
 					)
 				: null,
 		entry,
-		painMode: detectPain(ownerText).reported,
+		painMode: pain.reported,
 		decidedProposals: decided
 	};
 	const context = turnContext(facts);
 	const opening = first.content as BetaUserMessageParam['content'];
 	const answer = answerStream(
-		{ painMode: facts.painMode, preamble: { role: 'user', content: opening } },
+		{
+			painMode: facts.painMode,
+			area: pain.area ?? null,
+			preamble: { role: 'user', content: opening },
+			serverWritten: lookup !== null
+		},
 		(event) => {
 			if (event.type === 'text_delta') ttftMs ??= Date.now() - startedAt;
 			emit(event);
@@ -427,35 +457,44 @@ async function turn(
 		contextPending = false;
 		return once;
 	};
+	/** Each change the output policy made, as a '_policy' row: every terminal path stores them. */
+	const recordPolicy = (callIndex: number) =>
+		recordToolCalls(
+			ownerId,
+			runId,
+			answer.interventions().map((each, n): ToolCallInput => ({
+				callIndex,
+				toolUseId: `_policy_${n}`,
+				name: '_policy',
+				status: 'intervened',
+				input: { block: each.block, reason: each.reason },
+				output: each.detail,
+				errorCode: null,
+				truncated: false,
+				startedAt: new Date(),
+				durationMs: 0
+			})),
+			deps
+		);
 	/** Store the completed answer and say where it is. */
 	const answered = async (content: TurnStep['assistant']['content'], callIndex: number) => {
 		answer.finish(true);
 		const blocks = answer.take();
+		const stored =
+			answer.interventions().length > 0 ? policedContent(content, answer.textOf(blocks)) : content;
 		const { ids } = await appendTurnStep(
 			ownerId,
 			threadId,
-			{ runId, ...contextOnce(), assistant: { content, display: { blocks } } },
+			{ runId, ...contextOnce(), assistant: { content: stored, display: { blocks } } },
 			deps
 		);
-		const policed = answer.interventions().map((each, n): ToolCallInput => ({
-			callIndex,
-			toolUseId: `_policy_${n}`,
-			name: '_policy',
-			status: 'intervened',
-			input: { block: each.block, reason: each.reason },
-			output: each.detail,
-			errorCode: null,
-			truncated: false,
-			startedAt: new Date(),
-			durationMs: 0
-		}));
-		await recordToolCalls(ownerId, runId, policed, deps);
+		await recordPolicy(callIndex);
 		emit({ type: 'answer_completed', messageId: ids.at(-1)! });
 		return end('completed');
 	};
 
-	const direct = await directAnswer({ ownerId, text: ownerText, facts, deps });
-	if (direct !== null) {
+	if (lookup) {
+		const direct = await directAnswer({ ownerId, intent: lookup, facts, deps });
 		answer.text(direct);
 		return answered([{ type: 'text', text: direct }], 0);
 	}
@@ -568,15 +607,17 @@ async function turn(
 	if (outcome === 'completed') outcome = 'failed';
 
 	// Not answered: what was shown is kept for the screen only, never replayed.
-	const text = answer.pending();
+	const pending = answer.pending();
 	answer.finish(false);
 	const blocks = answer.take();
+	const text = answer.interventions().length > 0 ? answer.textOf(blocks) : pending;
 	const status: MessageStatus =
 		outcome === 'cancelled' ? 'stopped' : outcome === 'interrupted' ? 'interrupted' : 'failed';
 	if (text.trim() !== '' || blocks.length > 0) {
 		const partial = { runId, content: [{ type: 'text', text }], display: { blocks }, status };
 		await appendDisplayOnly(ownerId, threadId, partial, deps);
 	}
+	await recordPolicy(Math.max(0, result.usage.calls - 1));
 	emit({ type: 'error', kind: TURN_ERROR[outcome] });
 	return end(outcome, result.error?.kind ?? (outcome === 'failed' ? 'empty_answer' : null));
 }
