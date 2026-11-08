@@ -7,6 +7,7 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
 import { COACH_A11Y } from './coach-a11y';
+import { isDesktopPage } from './desktop';
 import { gotoHydrated, signedOut, TABS } from './support';
 
 const SCREENS = [
@@ -104,7 +105,11 @@ for (const theme of THEMES) {
 			await expect(page.getByTestId('section-editor')).toHaveAttribute('aria-busy', 'false');
 			// A change that is never saved: nothing reaches the database.
 			await page.getByRole('radio', { name: 'Strength club' }).check();
-			await page.getByTestId('back-to-profile').click();
+			// Leaving: Back on a phone; from 1024 px, where Back is hidden, another section.
+			const leave = isDesktopPage(page)
+				? page.getByRole('navigation', { name: 'Training profile' }).getByTestId('section-goals')
+				: page.getByTestId('back-to-profile');
+			await leave.click();
 			await expect(page.getByTestId('discard-sheet')).toBeVisible();
 			await page.waitForTimeout(500);
 			expect(await audit(page)).toEqual([]);
