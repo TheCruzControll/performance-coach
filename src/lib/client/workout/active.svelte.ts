@@ -1,7 +1,8 @@
 /**
  * The active workout for the workout pages (the offline workout sync ADR, 'Restore'), with the
  * route's reducer table. Restore reads IndexedDB alone (restore.ts), so it never waits for the
- * network; the store (store.ts, with idb and every write) loads after the first render, through
+ * network; the projection and the route's reducers load through the page's chunk loader while it
+ * reads, so neither is in the first render. The store (store.ts, with idb and every write) loads after the first render, through
  * the page's chunk loader, and from then on every change it reports is shown. It loads with the
  * page's one sync engine (online.ts), which close() stops.
  *
@@ -19,7 +20,6 @@
  */
 import type { SessionKind } from '#lib/domain/training/types.ts';
 import type { WorkoutView } from '#lib/domain/workout/index.ts';
-import { project } from '#lib/domain/workout/project.ts';
 import type { AnyTable } from '#lib/domain/workout/project.ts';
 import type { CloseReason } from './db.ts';
 import { readActive } from './restore.ts';
@@ -44,20 +44,27 @@ export class ActiveWorkout {
 	store = $state.raw<WorkoutStore | null>(null);
 	/** A 401 purged this device as the restore found it (restore.ts): the page hides the workout. */
 	signedOut = $state.raw(false);
-	readonly #table: AnyTable;
+	readonly #loadTable: () => Promise<AnyTable>;
+	/** The route's reducer table, once restore() has loaded it. */
+	#table: AnyTable | null = null;
 	/** Lets go of the store and stops the engine; null once closed. */
 	#stop: (() => void) | null = () => {};
 
-	constructor(table: AnyTable) {
-		this.#table = table;
+	constructor(table: () => Promise<AnyTable>) {
+		this.#loadTable = table;
 	}
 
-	/** The workout in progress, from IndexedDB alone. */
-	async restore(): Promise<void> {
-		let read: Awaited<ReturnType<typeof readActive>>;
-		try {
-			read = await readActive();
-		} catch {
+	/** The workout in progress, from IndexedDB alone; a chunk that is gone shows 'App updated'. */
+	async restore(load: ChunkLoad): Promise<void> {
+		const code = load(() =>
+			Promise.all([this.#loadTable(), import('#lib/domain/workout/project.ts')])
+		);
+		const read = await readActive().catch(() => null);
+		const loaded = await code;
+		if (!loaded) return;
+		const [table, { project }] = loaded;
+		this.#table = table;
+		if (!read) {
 			this.current = { phase: 'no-storage' };
 			return;
 		}
@@ -65,7 +72,7 @@ export class ActiveWorkout {
 			return read.status === 'upgraded' ? this.#closed('upgraded') : this.#show(null);
 		}
 		this.signedOut = read.signedOut;
-		const view = project(this.#table, read.inputs);
+		const view = project(table, read.inputs);
 		this.#show({ workoutId: read.inputs.workoutId, view, notSaved: [] });
 	}
 
@@ -74,11 +81,12 @@ export class ActiveWorkout {
 	 * engine; null if it can't, or if the page closed meanwhile.
 	 */
 	async connect(load: ChunkLoad): Promise<WorkoutStore | null> {
-		if (this.current.phase !== 'active' && this.current.phase !== 'empty') return null;
+		const table = this.#table;
+		if (!table || (this.current.phase !== 'active' && this.current.phase !== 'empty')) return null;
 		const module = await load(() => import('./online.ts'));
 		if (!module) return null;
 		try {
-			const { store, stop } = await module.goOnline({ table: this.#table });
+			const { store, stop } = await module.goOnline({ table });
 			const unsubscribe = store.onChange((change) => this.#hear(store, change));
 			const end = () => (unsubscribe(), stop());
 			if (!this.#stop) return (end(), null);
@@ -121,7 +129,7 @@ export class ActiveWorkout {
 		const view = snapshot?.view;
 		if (!snapshot || !view || view.workout.status !== 'in_progress') {
 			this.current = { phase: 'empty' };
-		} else if (view.workout.kind !== this.#table.kind) {
+		} else if (view.workout.kind !== this.#table?.kind) {
 			this.current = { phase: 'elsewhere', kind: view.workout.kind };
 		} else {
 			this.current = { phase: 'active', snapshot: { ...snapshot, view } };
