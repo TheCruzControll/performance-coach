@@ -13,6 +13,11 @@ log every set and talk to the coach.
 > coach.nikocruz.com, checked from outside after each deploy
 > ([docs/deployment.md](docs/deployment.md)). The owner set the app up on their iPhone on
 > 2026-11-06. The emailed sign-in link comes next.
+>
+> **Milestone 3 — Training data model & programs is done**: the training schema with immutable
+> program versions and an append-only training log, a 191-exercise library, a deterministic
+> week-1 program generator, and the screens to build a program from Today, follow it on Train,
+> open a session, move, swap, adjust or skip it, and read every change with its why in History.
 
 ## Stack
 
