@@ -141,7 +141,7 @@
 			</svg>
 			<span
 				class="crosshair"
-				data-shown={shown || undefined}
+				data-shown={shown ? '' : undefined}
 				style:--x={pct(model.xs[active ?? last] ?? 0)}
 			></span>
 			{#each model.marks as mark (`${mark.series}:${mark.index}`)}
@@ -180,7 +180,7 @@
 			{#if last >= 0}
 				<div
 					class="tip"
-					data-shown={shown || undefined}
+					data-shown={shown ? '' : undefined}
 					style:--x={pct(model.xs[active ?? last]!)}
 					data-testid="line-tooltip"
 				>

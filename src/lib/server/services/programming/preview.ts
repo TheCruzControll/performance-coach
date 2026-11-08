@@ -89,7 +89,21 @@ export const DECISION_GROUP: Readonly<Record<DecisionKind, DecisionGroup | null>
 	deload_scheduled: null,
 	next_block_planned: null,
 	exercise_kept: null,
-	exercise_rotated: null
+	exercise_rotated: null,
+	// M7's periodisation: what a generation decides goes under its heading; a reactive deload and a
+	// re-plan are never part of one.
+	priority_resolved: 'purpose',
+	maintenance_dose: 'purpose',
+	block_type_chosen: 'purpose',
+	taper_planned: 'purpose',
+	schedule_repaired: 'placement',
+	load_eased: 'conflicts',
+	volume_progressed: 'loads',
+	long_run_progressed: 'loads',
+	sparring_load: 'loads',
+	hr_zones_set: 'loads',
+	deload_triggered: null,
+	replanned: null
 };
 
 const GROUPS: readonly DecisionGroup[] = [
