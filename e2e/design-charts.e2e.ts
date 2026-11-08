@@ -535,7 +535,7 @@ test.describe('/design → Charts: the bar chart on a phone', () => {
 		// yet the keyboard kept the tooltip above; only a real move hands it back to the mouse.
 		const under = 1;
 		const box = await boxOf(barMarks(page, id).nth(under));
-		await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+		await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 2 });
 		await expectBarReadout(page, id, under);
 		await expect(barMarks(page, id).nth(under)).toHaveAttribute('tabindex', '0');
 		await barMarks(page, id).nth(at).focus();

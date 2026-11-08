@@ -37,7 +37,9 @@
 	let shown = $state(false);
 	/**
 	 * The keyboard keeps the tooltip until the mouse really moves: a mark scrolled under a resting
-	 * pointer gets a pointerenter at the same coordinates the pointer last moved to.
+	 * pointer gets a pointerenter, and in WebKit a pointermove, at the same coordinates the pointer
+	 * last moved to. With no earlier move seen (the chart mounted under the pointer), the first event
+	 * only sets that baseline.
 	 */
 	let keyboard = false;
 	let pointer: string | null = null;
@@ -74,7 +76,10 @@
 	function hover(event: PointerEvent, index: number) {
 		if (event.pointerType !== 'mouse') return;
 		const at = `${event.clientX},${event.clientY}`;
-		if (keyboard && (pointer === null ? event.type === 'pointerenter' : at === pointer)) return;
+		if (keyboard && (pointer ?? at) === at) {
+			pointer = at;
+			return;
+		}
 		keyboard = false;
 		if (active !== index || !shown) show(index);
 	}
