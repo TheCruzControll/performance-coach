@@ -308,11 +308,11 @@
 		<div class="body" data-testid="build-preview-ready">
 			<p class="lead" data-testid="build-preview-lead">{view.lead}</p>
 
-			<Section title="Your plan">
+			<Section title="Your plan" data-testid="build-plan">
 				<BlockTimeline blocks={view.timeline} data-testid="build-timeline" />
 			</Section>
 
-			<Section title="Week 1">
+			<Section title="Week 1" data-testid="build-week">
 				<WeekStrip
 					days={view.strip}
 					today={view.stripToday}
@@ -399,13 +399,14 @@
 		outline: none;
 	}
 
+	/* Row gaps only: on desktop the body is a subgrid, and its own column gap would shift the side column. */
 	.body {
 		display: grid;
-		gap: var(--space-6);
+		row-gap: var(--space-6);
 	}
 
 	.body[aria-busy='true'] {
-		gap: var(--space-4);
+		row-gap: var(--space-4);
 		min-height: 36rem;
 		align-content: start;
 	}
@@ -493,6 +494,44 @@
 		display: grid;
 		justify-items: start;
 		gap: var(--space-2);
+	}
+
+	/*
+	 * Desktop: the preview in Today's two columns (+page.svelte). The title and Close span them;
+	 * week 1, what it is for, the reasons and Start take the main column, and the block timeline
+	 * sits beside week 1 in the side column. The skeleton reserves the same: the timeline's room
+	 * (its second block) beside the rest. Start stays column chrome: sticky at the foot of the
+	 * preview, in the main column only (no left offset, no ancestor with overflow).
+	 */
+	@media (width >= 64rem) {
+		.preview {
+			grid-template-columns: minmax(0, var(--content-readable)) minmax(var(--content-list), 1fr);
+			column-gap: var(--space-8);
+		}
+
+		.preview > :global(*) {
+			grid-column: 1;
+		}
+
+		.preview > .head {
+			grid-column: 1 / -1;
+		}
+
+		.preview > .body {
+			grid-column: 1 / -1;
+			grid-template-columns: subgrid;
+			align-items: start;
+		}
+
+		.body > :global(*) {
+			grid-column: 1;
+		}
+
+		.body > :global([data-testid='build-plan']),
+		.body[aria-busy='true'] > :global(.visually-hidden + * + *) {
+			grid-column: 2;
+			grid-row: 2 / span 3;
+		}
 	}
 
 	/* Column chrome: Start sits at the foot of the preview, above the bar or the window's edge. */

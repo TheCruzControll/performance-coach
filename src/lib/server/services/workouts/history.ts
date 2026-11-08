@@ -185,10 +185,17 @@ function listItem(row: CompletedWorkoutRow): WorkoutListItem {
 	};
 }
 
-/** The owner's completed workouts, newest first; a page's `next`, as `before`, gives the next. */
+/**
+ * The owner's completed workouts, newest first, those started before `startedBefore` when given;
+ * a page's `next`, as `before`, gives the next.
+ */
 export async function listWorkouts(
 	ownerId: string,
-	{ before, limit = WORKOUT_PAGE_SIZE }: { before?: string; limit?: number } = {},
+	{
+		before,
+		startedBefore,
+		limit = WORKOUT_PAGE_SIZE
+	}: { before?: string; startedBefore?: Date; limit?: number } = {},
 	deps: TrainingDeps = {}
 ): Promise<WorkoutPage> {
 	if (!Number.isInteger(limit) || limit < 1 || limit > MAX_WORKOUT_PAGE) {
@@ -202,6 +209,7 @@ export async function listWorkouts(
 		// One more than the page shows, so the last page knows it is the last.
 		const rows = await createHistoryRepository(db).completedWorkoutsPage(ownerId, {
 			before,
+			startedBefore,
 			limit: limit + 1
 		});
 		const workouts = rows.slice(0, limit).map(listItem);
