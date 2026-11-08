@@ -96,6 +96,7 @@ function snapshot(n = 1, text = 'x'): MemorySnapshot {
 				date,
 				kind: 'deload_scheduled',
 				decider: 'coach',
+				what: `Deload in week 4 ${text}`,
 				why: `Fatigue ${text}`,
 				source: { type: 'decision', id: `d-${i}` }
 			})),
