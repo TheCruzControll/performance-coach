@@ -51,7 +51,9 @@
 
 	// Recovery belongs to the screen at this URL: a navigation the user starts stops it, so its
 	// reload cannot pull them back here, and the view (reused across error URLs) starts it again.
+	// The same holds for a pending "Try again".
 	let stopRecovery: (() => void) | undefined;
+	let cancelTryAgain: (() => void) | undefined;
 	afterNavigate(() => {
 		stopRecovery?.();
 		stopRecovery =
@@ -60,14 +62,22 @@
 				: undefined;
 	});
 	beforeNavigate(({ willUnload }) => {
-		if (!willUnload) stopRecovery?.();
+		if (willUnload) return;
+		stopRecovery?.();
+		cancelTryAgain?.();
 	});
-	onDestroy(() => stopRecovery?.());
+	onDestroy(() => {
+		stopRecovery?.();
+		cancelTryAgain?.();
+	});
 
 	function tryAgain() {
 		// The /offline document at its own URL is always this screen: go into the app instead.
 		if (location.pathname === OFFLINE_PATH) location.assign(resolve('/(app)/today'));
-		else void reloadFresh();
+		else {
+			cancelTryAgain?.();
+			cancelTryAgain = reloadFresh();
+		}
 	}
 </script>
 

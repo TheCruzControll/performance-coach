@@ -52,17 +52,37 @@ function failedModules(): string[] {
 		});
 }
 
-/** Fetch the module scripts that failed again (see above), then reload. */
-export async function reloadFresh(): Promise<void> {
-	await refetchFailedModules();
-	location.reload();
+/**
+ * Fetch the module scripts that failed again (see above), then reload. Returns a cancel function:
+ * a navigation the user starts meanwhile must not be replaced by this reload.
+ */
+export function reloadFresh(): () => void {
+	let cancelled = false;
+	void refetchFailedModules().then(() => {
+		if (!cancelled) location.reload();
+	});
+	return () => (cancelled = true);
 }
 
-async function refetchFailedModules(): Promise<void> {
+/**
+ * Whether every failed script arrived again. The body is read in full: `fetch` resolves on the
+ * headers, before the script is in the HTTP cache, so a reload could still find it missing.
+ */
+async function refetchFailedModules(): Promise<boolean> {
 	const signal = AbortSignal.timeout(PROBE_TIMEOUT_MS);
-	await Promise.all(
-		failedModules().map((url) => fetch(url, { cache: 'reload', signal }).catch(() => {}))
+	const arrived = await Promise.all(
+		failedModules().map(async (url) => {
+			try {
+				const res = await fetch(url, { cache: 'reload', signal });
+				if (!res.ok) return false;
+				await res.arrayBuffer();
+				return true;
+			} catch {
+				return false;
+			}
+		})
 	);
+	return arrived.every(Boolean);
 }
 
 async function probeHealth(): Promise<boolean> {
@@ -127,9 +147,8 @@ export function startOfflineRecovery(options: RecoveryOptions): () => void {
 		options.onDeviceStatus(navigator.onLine);
 		if (!navigator.onLine) return schedule();
 		probing = true;
-		const ok = await probe();
-		// Even when the user has navigated meanwhile: their next screens need the scripts too.
-		if (ok) await refetchFailedModules();
+		// Refetch even when the user has navigated meanwhile: their next screens need the scripts too.
+		const ok = (await probe()) && (await refetchFailedModules());
 		probing = false;
 		if (stopped) return;
 		if (ok) {
