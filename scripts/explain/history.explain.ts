@@ -190,6 +190,11 @@ const CASES: Case[] = (() => {
 			['planned_sessions_lineage_idx'],
 			() => p.sessionByLineage(db, version, session.lineageId!)
 		],
+		[
+			'sessionById (start kit adoption)',
+			['planned_sessions_pkey', 'program_version_weeks_week_idx'],
+			() => p.sessionById(db, owner, session.id!)
+		],
 		...prefixed(
 			'sessionChildren',
 			children('planned_sessions_pkey', p.sessionChildren(db, [session.id!]))
