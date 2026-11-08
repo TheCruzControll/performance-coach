@@ -223,8 +223,26 @@ function answerStream(input: PolicyInput, emit: (event: CoachEvent) => void) {
 			feed(policy.push(parser.end()), send);
 			feed(policy.end(), send);
 		},
-		interventions: () => policy.interventions
+		interventions: () => policy.interventions,
+		/** The blocks as the owner saw them, in the answer grammar. */
+		textOf: (blocks: readonly CompletedBlock[]) =>
+			policy.answerText(blocks.map((block) => block.block))
 	};
+}
+
+/**
+ * The answer's content as stored for replay: when the policy changed what the owner saw, its text
+ * blocks become what they were shown, so no stored row keeps what the policy took out.
+ */
+function policedContent<T extends Readonly<Record<string, unknown>>>(
+	content: readonly T[],
+	text: string
+): T[] {
+	const at = content.findIndex((block) => block.type === 'text');
+	if (at < 0 || text === '') return [...content];
+	return content.flatMap((block, index) =>
+		index === at ? [{ ...block, text }] : block.type === 'text' ? [] : [block]
+	);
 }
 
 function serviceError(error: unknown): CoachErrorKind | null {
@@ -386,6 +404,7 @@ async function turn(
 	};
 
 	const entry = input.entry ?? null;
+	const pain = detectPain(ownerText);
 	const facts: TurnFacts = {
 		date: day.today,
 		localTime: day.localTime,
@@ -404,13 +423,17 @@ async function turn(
 					)
 				: null,
 		entry,
-		painMode: detectPain(ownerText).reported,
+		painMode: pain.reported,
 		decidedProposals: []
 	};
 	const context = turnContext(facts);
 	const opening = first.content as BetaUserMessageParam['content'];
 	const answer = answerStream(
-		{ painMode: facts.painMode, preamble: { role: 'user', content: opening } },
+		{
+			painMode: facts.painMode,
+			area: pain.area ?? null,
+			preamble: { role: 'user', content: opening }
+		},
 		(event) => {
 			if (event.type === 'text_delta') ttftMs ??= Date.now() - startedAt;
 			emit(event);
@@ -421,29 +444,38 @@ async function turn(
 		contextPending = false;
 		return once;
 	};
+	/** Each change the output policy made, as a '_policy' row: every terminal path stores them. */
+	const recordPolicy = (callIndex: number) =>
+		recordToolCalls(
+			ownerId,
+			runId,
+			answer.interventions().map((each, n): ToolCallInput => ({
+				callIndex,
+				toolUseId: `_policy_${n}`,
+				name: '_policy',
+				status: 'intervened',
+				input: { block: each.block, reason: each.reason },
+				output: each.detail,
+				errorCode: null,
+				truncated: false,
+				startedAt: new Date(),
+				durationMs: 0
+			})),
+			deps
+		);
 	/** Store the completed answer and say where it is. */
 	const answered = async (content: TurnStep['assistant']['content'], callIndex: number) => {
 		answer.finish(true);
 		const blocks = answer.take();
+		const stored =
+			answer.interventions().length > 0 ? policedContent(content, answer.textOf(blocks)) : content;
 		const { ids } = await appendTurnStep(
 			ownerId,
 			threadId,
-			{ runId, ...contextOnce(), assistant: { content, display: { blocks } } },
+			{ runId, ...contextOnce(), assistant: { content: stored, display: { blocks } } },
 			deps
 		);
-		const policed = answer.interventions().map((each, n): ToolCallInput => ({
-			callIndex,
-			toolUseId: `_policy_${n}`,
-			name: '_policy',
-			status: 'intervened',
-			input: { block: each.block, reason: each.reason },
-			output: each.detail,
-			errorCode: null,
-			truncated: false,
-			startedAt: new Date(),
-			durationMs: 0
-		}));
-		await recordToolCalls(ownerId, runId, policed, deps);
+		await recordPolicy(callIndex);
 		emit({ type: 'answer_completed', messageId: ids.at(-1)! });
 		return end('completed');
 	};
@@ -562,15 +594,17 @@ async function turn(
 	if (outcome === 'completed') outcome = 'failed';
 
 	// Not answered: what was shown is kept for the screen only, never replayed.
-	const text = answer.pending();
+	const pending = answer.pending();
 	answer.finish(false);
 	const blocks = answer.take();
+	const text = answer.interventions().length > 0 ? answer.textOf(blocks) : pending;
 	const status: MessageStatus =
 		outcome === 'cancelled' ? 'stopped' : outcome === 'interrupted' ? 'interrupted' : 'failed';
 	if (text.trim() !== '' || blocks.length > 0) {
 		const partial = { runId, content: [{ type: 'text', text }], display: { blocks }, status };
 		await appendDisplayOnly(ownerId, threadId, partial, deps);
 	}
+	await recordPolicy(Math.max(0, result.usage.calls - 1));
 	emit({ type: 'error', kind: TURN_ERROR[outcome] });
 	return end(outcome, result.error?.kind ?? (outcome === 'failed' ? 'empty_answer' : null));
 }
