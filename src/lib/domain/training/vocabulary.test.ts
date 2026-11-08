@@ -227,9 +227,67 @@ describe('training vocabulary', () => {
 			'exercise_kept',
 			'exercise_rotated'
 		];
-		expect(DECISION_KINDS.slice(-m6.length)).toEqual(m6);
+		const at = DECISION_KINDS.indexOf('review_applied');
+		expect(DECISION_KINDS.slice(at, at + m6.length)).toEqual(m6);
 		expect(PHASE_LABEL.transition).toBe('Between blocks');
 		expect(WEEK_KIND_LABEL.unplanned).toBe('Unplanned week');
+	});
+
+	it("adds M7's decision kinds, phases and week kinds after M6's, each with its label", () => {
+		const m7 = {
+			priority_resolved: 'Goal priority',
+			maintenance_dose: 'Maintenance dose',
+			block_type_chosen: 'Block type',
+			schedule_repaired: 'Schedule adjusted',
+			load_eased: 'Session eased',
+			deload_triggered: 'Deload triggered',
+			taper_planned: 'Taper planned',
+			volume_progressed: 'Volume progressed',
+			long_run_progressed: 'Long-run progression',
+			sparring_load: 'Sparring load',
+			hr_zones_set: 'Heart-rate zones',
+			replanned: 'Re-planned'
+		};
+		const after = <K extends string>(list: readonly K[], last: K) =>
+			list.slice(list.indexOf(last) + 1);
+		expect(after(DECISION_KINDS, 'exercise_rotated')).toEqual(Object.keys(m7));
+		for (const [kind, label] of Object.entries(m7)) {
+			expect(DECISION_KIND_LABEL[kind as never], kind).toBe(label);
+		}
+		expect(Object.fromEntries(after(PHASES, 'transition').map((p) => [p, PHASE_LABEL[p]]))).toEqual(
+			{
+				fight_camp: 'Fight camp',
+				recovery: 'Recovery',
+				half_base: 'Half marathon base',
+				half_build: 'Half marathon build',
+				half_peak: 'Half marathon peak',
+				half_taper: 'Half marathon taper'
+			}
+		);
+		expect(
+			Object.fromEntries(after(WEEK_KINDS, 'unplanned').map((k) => [k, WEEK_KIND_LABEL[k]]))
+		).toEqual({
+			base: 'Base',
+			cutback: 'Cutback week',
+			recovery: 'Recovery week',
+			maintenance: 'Maintenance'
+		});
+		// M3's maintenance phase, M6's deload and M3's taper are reused, not added again.
+		expect(PHASES).toContain('maintenance');
+		expect(DECISION_KINDS).toEqual(expect.arrayContaining(['deload_scheduled', 'event_taper']));
+	});
+
+	it('keeps the run segment kinds as M3 made them: marathon pace runs on steady', () => {
+		expect(RUN_SEGMENT_KINDS).toEqual([
+			'warm_up',
+			'easy',
+			'steady',
+			'tempo',
+			'interval',
+			'recovery',
+			'long',
+			'cool_down'
+		]);
 	});
 
 	it("includes M4's substitution reasons, each with a label", () => {
