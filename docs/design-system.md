@@ -388,9 +388,14 @@ later-pass screen).
   wide so no specimen stretches; the header and the icon grid span both, with larger cells.
 - **Error and offline states** (`ErrorView`): inside the shell they stay in the readable column;
   outside it they are centred in the window at `--content-readable`.
-- **Onboarding** (`/onboarding/[[step]]`): outside the shell, one readable column centred in the
-  window; Continue and Skip stay sticky at the column's foot, and Back and Finish later have hover
-  and focus states.
+- **Onboarding** (`/onboarding/[[step]]`): outside the shell. From 1024 px each step is a
+  `--color-surface-1` card centred in the window, `--content-readable` wide and as tall as the
+  window allows (capped at 52 rem), so moving on moves neither the card nor its actions. The
+  progress bar runs across its top edge, with Finish later above the form; the form scrolls
+  inside the card when it is taller than the room; Back, Skip and Continue close the card in a
+  row under the form (after it in the focus order too), never pinned to the window, and the offline or no-goal notice sits in that row above them, taking focus. The
+  review declares `wide` and `ProfileSummary` pairs its blocks (a container query). Phones and
+  tablets keep one column with the actions sticky at its foot.
 
 ### Verification
 
