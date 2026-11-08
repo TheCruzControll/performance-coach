@@ -1,6 +1,6 @@
 <!--
   @component
-  The toasts inside Toaster's live region. Toaster loads it on demand.
+  The toasts inside Toaster's live region. Toaster loads it on demand and holds its styles.
 -->
 <script lang="ts">
 	import { untrack } from 'svelte';
@@ -56,71 +56,3 @@
 		</button>
 	</div>
 {/each}
-
-<style>
-	.toast {
-		pointer-events: auto;
-		display: flex;
-		align-items: center;
-		gap: var(--space-3);
-		padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4);
-		min-height: 3.25rem;
-		border-radius: var(--radius-lg);
-		background: var(--color-surface-inverse);
-		color: var(--color-text-inverse);
-		box-shadow: var(--elevation-3);
-		/* Ease-out-cubic in; the same curve reversed (ease-in-cubic) out. */
-		animation: toast-in 260ms cubic-bezier(0.33, 1, 0.68, 1);
-	}
-	.toast[data-leaving] {
-		animation: toast-out 260ms cubic-bezier(0.32, 0, 0.67, 0) forwards;
-	}
-	@keyframes toast-in {
-		from {
-			opacity: 0;
-			transform: translateY(-16px);
-		}
-	}
-	@keyframes toast-out {
-		to {
-			opacity: 0;
-			transform: translateY(-16px);
-		}
-	}
-
-	.toast[data-tone='positive'] :global(.icon) {
-		color: var(--color-positive);
-	}
-	.toast[data-tone='danger'] :global(.icon:first-child) {
-		color: var(--color-danger);
-	}
-
-	.message {
-		flex: 1;
-		font-size: var(--text-sm);
-		font-weight: var(--weight-medium);
-		line-height: var(--leading-snug);
-	}
-
-	.action {
-		min-height: var(--touch-target);
-		padding: 0 var(--space-2);
-		font-size: var(--text-sm);
-		font-weight: var(--weight-bold);
-		color: inherit;
-		text-decoration: underline;
-		text-underline-offset: 3px;
-	}
-
-	.dismiss {
-		display: grid;
-		place-items: center;
-		width: var(--touch-target);
-		height: var(--touch-target);
-		border-radius: var(--radius-full);
-		opacity: 0.6;
-	}
-	.dismiss:active {
-		opacity: 1;
-	}
-</style>
