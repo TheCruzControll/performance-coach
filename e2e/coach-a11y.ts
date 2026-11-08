@@ -31,5 +31,16 @@ export const COACH_A11Y: readonly CoachA11yCase[] = [
 			while ((await next.textContent())?.trim() !== 'Start again') await next.click();
 			await expect(page.getByTestId('answer-streaming').getByTestId('answer-block')).toHaveCount(6);
 		}
+	},
+	{
+		name: '/design → Coach with a message typed in the focused composer, Thinking held still',
+		open: async (page) => {
+			await page.emulateMedia({ reducedMotion: 'reduce' });
+			await openCoachPanel(page);
+			const ready = page.getByTestId('composer-ready');
+			await ready.getByRole('textbox', { name: 'Message' }).fill('How is my bench going?');
+			await expect(ready.getByRole('button', { name: 'Send' })).toBeEnabled();
+			await expect(page.getByTestId('notice-provider')).toBeVisible();
+		}
 	}
 ];
