@@ -99,6 +99,8 @@ export interface MockStep {
 	chunkChars?: number;
 	/** A wait before every delta. */
 	delayMs?: number;
+	/** A wait before the first delta instead: a silent start, then the rest at once. */
+	firstDelayMs?: number;
 }
 
 export interface MockScript {
@@ -191,8 +193,11 @@ export class MockProvider implements LlmProvider {
 		const usage = this.#usage(request, step, content);
 		const message = messageOf(`msg_mock_${seed.slice(0, 24)}`, step, content, usage);
 		const delayMs = overrides.chunkDelayMs ?? step.delayMs ?? 0;
+		let first = true;
 		const wait = async () => {
-			if (delayMs > 0) await sleep(delayMs, signal);
+			const ms = first && step.firstDelayMs !== undefined ? step.firstDelayMs : delayMs;
+			first = false;
+			if (ms > 0) await sleep(ms, signal);
 			if (signal.aborted) throw aborted();
 		};
 		yield* events(message, step.chunkChars ?? CHUNK_CHARS, wait);

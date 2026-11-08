@@ -304,7 +304,7 @@ Two kinds, and neither is offset by `--nav-height` **(guard)**: only `tokens.css
 itself read it.
 
 - **Screen chrome** belongs to a whole readable screen (Coach's composer; a section's Save bar
-  until Profile is laid out in columns) or to the app (toasts). It is `position: fixed` at
+  below 1024 px) or to the app (toasts). It is `position: fixed` at
   `bottom: var(--nav-inset-bottom)` (toasts keep their top inset), centred with
   `left: calc(50% + var(--nav-inset-left) / 2)` and `translateX(-50%)`, and at most
   `var(--content-column)` wide. Only readable screens have it at the bottom.
@@ -375,8 +375,21 @@ later-pass screen).
   and error inside it. The frame is at most `--content-wide`, and the watermark is larger and stays
   inside it. Tablets keep the phone's column, pinned to the thumb zone, at `--content-readable`,
   the watermark fading out before the frame's edge. CSS only: no route gains initial JS.
-- **Session** (`/train/session/[key]`): readable, one column centred beside the rail; its stats,
-  exercise cards and run timeline keep the phone's order, and Back has hover and focus states.
+- **Session** (`/train/session/[key]`): wide. From 1024 px the title and chips span the content;
+  a side column (the edits, the details, the baseline callout; at least `--content-list`) sits
+  left of the main column (the exercises, the run, a class's metrics; at most
+  `--content-readable`), side first as in the markup, so Tab and the eye agree. An older
+  version's banner tops the main column, and the edit sheets open as centred dialogs. Below
+  1024 px the columns are `display: contents`, so the phone's order is unchanged.
+- **History** (`/train/history/[[version]]`): split. From 1024 px the versions, with 'Show older
+  versions' and its Retry at their foot, sit beside the version picked (`aria-current`), which
+  stays in the URL; with none picked, a 'Pick a version' card (or 'No changes yet') takes its
+  place. A version's load carries the list's first page, and pages loaded in place are kept
+  while versions are picked. Below 1024 px a version stands alone, as on a phone.
+- **Program detail components**: `ExerciseBlock` (the coach's words beside the sets),
+  `RunSegments` (each segment on one line), `SessionDetails` (a class's stats beside its metrics)
+  and `BaselineCallout` (the steps beside the why) adapt from 35 rem with container queries,
+  above the phone column, so the iPhone is unchanged.
 - **Progress** (`/progress`): wide (`data-layout="wide"` on its root). From 1024 px the three
   `Stat` tiles keep one row across the full width, with wider gaps, over a taller empty plot.
 - **Coach** (`/coach`): readable, as a conversation should be. From 1024 px the suggestions sit in
@@ -388,6 +401,14 @@ later-pass screen).
   wide so no specimen stretches; the header and the icon grid span both, with larger cells.
 - **Error and offline states** (`ErrorView`): inside the shell they stay in the readable column;
   outside it they are centred in the window at `--content-readable`.
+- **Profile** (`/profile`): wide. From 1024 px two columns, read row by row as on a phone: the
+  account (identity, Security, preferences) beside the training profile's sections, the system's
+  status under the account.
+- **Profile sections** (`/profile/[section]`): split. From 1024 px `SectionList` (the sections,
+  the open one `aria-current`) beside the editor in the readable column; Back is hidden. The
+  skeleton reserves the window's height below the title, so Save starts at the window's foot and
+  stays put when the editor arrives. Save is column chrome at the editor column's foot. Below
+  1024 px: list → editor → Back, the 28 rem skeleton and the fixed Save bar.
 - **Onboarding** (`/onboarding/[[step]]`): outside the shell. From 1024 px each step is a
   `--color-surface-1` card centred in the window, `--content-readable` wide and as tall as the
   window allows (capped at 52 rem), so moving on moves neither the card nor its actions. The

@@ -14,7 +14,7 @@ import { LOCAL_DATABASE_URLS } from '../src/lib/server/db/migrate';
 import { createDatabase, createPool } from '../src/lib/server/db/client';
 import { skipSession } from '../src/lib/server/services/programs/edits';
 import { longDate } from '../src/lib/ui/program/words';
-import { DESKTOP, expectNoSideScroll } from './desktop';
+import { DESKTOP, expectMainCentred, expectNoSideScroll, tokenPx } from './desktop';
 import { PROGRAM_TZ, seedProgram, type SeededProgram, type SeededSession } from './program-support';
 import {
 	captureScreen,
@@ -333,21 +333,13 @@ test.describe('a program that starts next week', () => {
 	test.describe('on a desktop window', () => {
 		test.use(DESKTOP);
 
-		test('the session sits centred at a readable width, with hover and focus states', async ({
+		// The session is a wide screen (data-layout="wide"): up to --content-wide, centred beside the
+		// rail. train-detail-desktop.serial.e2e.ts lays out its columns.
+		test('the session sits centred in the wide column, with hover and focus states', async ({
 			page
 		}, testInfo) => {
 			await gotoHydrated(page, open(titled('Full body')));
-			// The readable column, centred in the space beside the rail.
-			const main = (await page.locator('main#main').boundingBox())!;
-			const rail = (await page.getByRole('navigation', { name: 'Primary' }).boundingBox())!;
-			expect(main.width).toBeLessThanOrEqual(40 * 16);
-			const width = await page.evaluate(
-				() => document.documentElement.getBoundingClientRect().width
-			);
-			const [left, right] = [main.x - (rail.x + rail.width), width - (main.x + main.width)];
-			expect(Math.abs(left - right), `gaps beside main: ${left} and ${right}`).toBeLessThanOrEqual(
-				1
-			);
+			await expectMainCentred(page, await tokenPx(page, '--content-wide'));
 			await expectNoSideScroll(page);
 
 			// Back has a hover state for the mouse, and a focus ring from the keyboard, where Tab
