@@ -255,6 +255,11 @@ export interface DeviceState {
 	added: AddedExercise[];
 	/** A substitute's or an added exercise's previous sets, by exercise id (kit.attach). */
 	attached: Record<string, PreviousPerformance | null>;
+	/**
+	 * An other session's fields changed but not saved yet (session.draft), until Save sends them.
+	 * Absent on a workout stored before it existed: read it as none.
+	 */
+	session?: Partial<CanonicalOther> | null;
 }
 
 // ---- What the screens render ----------------------------------------------------------------
