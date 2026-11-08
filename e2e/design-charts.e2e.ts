@@ -10,15 +10,26 @@ import { expect, test, type Route } from '@playwright/test';
 import {
 	auditCharts,
 	chartsSection,
+	expectLineCharts,
+	expectLineMarkSizes,
+	expectLineTable,
 	expectMarkSizes,
+	expectReadout,
+	expectTipInside,
 	FIXTURE_BODY_MARK,
 	fixtureBody,
 	fixtureFrame,
 	fixturePlot,
+	lineBody,
+	lineFixture,
+	lineFrameOf,
+	lineTip,
 	linkedStylesheets,
 	openCharts,
-	PANEL_MARK
+	PANEL_MARK,
+	slotPoint
 } from './charts';
+import { announce } from '../src/lib/ui/charts/line-model';
 import { boxOf, expectNoShift, expectNoSideScroll } from './desktop';
 import { captureScreen, gotoHydrated, trackConsoleErrors } from './support';
 
@@ -148,6 +159,7 @@ for (const { width, height } of [
 		await gotoHydrated(page, '/design');
 		await openCharts(page);
 		await expectMarkSizes(page);
+		await expectLineMarkSizes(page);
 		await expect(fixturePlot(page)).toHaveAttribute('aria-busy', 'false');
 		await fixtureFrame(page).scrollIntoViewIfNeeded();
 		await expectNoSideScroll(page);
@@ -158,6 +170,10 @@ for (const { width, height } of [
 		await expectNoSideScroll(page);
 		await fixtureFrame(page).getByRole('table').scrollIntoViewIfNeeded();
 		await captureScreen(page, testInfo, `design-charts-table-${width}`);
+		for (const id of ['line-kinds', 'line-converging', 'line-so-far']) {
+			await lineFrameOf(page, id).scrollIntoViewIfNeeded();
+			await captureScreen(page, testInfo, `design-charts-${id}-${width}`);
+		}
 		expect(errors).toEqual([]);
 	});
 }
@@ -184,6 +200,7 @@ for (const theme of ['dark', 'light'] as const) {
 		await openCharts(page);
 		await expect(fixtureBody(page)).toBeVisible();
 		await expect(chartsSection(page).getByText('Shows once you log a run')).toBeVisible();
+		await expectLineCharts(page);
 		await fixtureFrame(page).getByText('Show as table').click();
 		await expect(fixtureFrame(page).getByRole('table')).toBeVisible();
 		await page.waitForTimeout(300);
@@ -192,3 +209,218 @@ for (const theme of ['dark', 'light'] as const) {
 		await captureScreen(page, testInfo, `design-charts-${theme}`);
 	});
 }
+
+test.describe('/design → Charts: the line chart on a phone', () => {
+	test('a finger scrubs it: a tap shows the nearest week, the tooltip stays inside the plot', async ({
+		page
+	}, testInfo) => {
+		await page.setViewportSize({ width: 320, height: 640 });
+		await gotoHydrated(page, '/design');
+		await openCharts(page);
+		await expectLineCharts(page);
+		const id = 'line-converging';
+		await lineFrameOf(page, id).scrollIntoViewIfNeeded();
+		const last = lineFixture(id).data.slots.length - 1;
+		for (const index of [0, 3, last]) {
+			await page.touchscreen.tap(...(await slotPoint(page, id, index)));
+			await expectReadout(page, id, index);
+			await expectTipInside(page, id);
+		}
+		await captureScreen(page, testInfo, 'design-charts-line-scrub-320');
+		// The week in progress reads 'so far' in the tooltip.
+		const soFar = 'line-so-far';
+		await lineFrameOf(page, soFar).scrollIntoViewIfNeeded();
+		const now = lineFixture(soFar).data.slots.length - 1;
+		await page.touchscreen.tap(...(await slotPoint(page, soFar, now)));
+		await expectReadout(page, soFar, now);
+		await expect(lineTip(page, soFar).locator('.tip-heading')).toContainText('so far');
+	});
+
+	test('at 320 px the lines are told apart without colour: numbered end labels the legend repeats', async ({
+		page
+	}) => {
+		await page.setViewportSize({ width: 320, height: 640 });
+		const id = 'line-converging';
+		await gotoHydrated(page, '/design');
+		await openCharts(page);
+		await expectLineCharts(page);
+		const body = lineBody(page, id);
+		await body.scrollIntoViewIfNeeded();
+		const names = lineFixture(id).data.series.map((s) => s.label);
+		const numbers = names.map((_, i) => String(i + 1));
+		const items = body.getByTestId('line-legend').locator('li');
+		for (const [i, name] of names.entries()) {
+			await expect(items.nth(i).locator('.ordinal')).toBeVisible();
+			await expect(items.nth(i)).toHaveText(`${i + 1}${name}`);
+		}
+		const labels = body.getByTestId('line-end-label');
+		await expect(labels).toHaveCount(names.length);
+		for (const label of await labels.all()) await expect(label).toBeVisible();
+		expect((await labels.locator('.ordinal').allInnerTexts()).sort()).toEqual(numbers);
+		// The 8, 8, 7 and 7 ends collide: leaders join the moved numbers to their lines.
+		await expect(body.locator('path.leader').first()).toBeVisible();
+		const inside = await body.evaluate((root) => {
+			const edge = root.getBoundingClientRect().right;
+			return [...root.querySelectorAll('[data-testid="line-end-label"]')].every(
+				(el) => el.getBoundingClientRect().right <= edge + 0.5
+			);
+		});
+		expect(inside, 'the numbers stay inside the chart').toBe(true);
+	});
+
+	test('a sideways drag scrubs it and a vertical swipe still scrolls the page', async ({
+		page,
+		browserName
+	}) => {
+		const id = 'line-kinds';
+		await gotoHydrated(page, '/design');
+		await openCharts(page);
+		await expectLineCharts(page);
+		await lineFrameOf(page, id).scrollIntoViewIfNeeded();
+		// What lets the page scroll under a finger: the plot claims only sideways movement.
+		expect(
+			await lineBody(page, id)
+				.locator('.pc-area')
+				.evaluate((el) => getComputedStyle(el).touchAction)
+		).toBe('pan-y');
+		// Touch moves are dispatched through Chromium's DevTools protocol.
+		test.skip(browserName !== 'chromium', 'touch drags are dispatched on Chromium only');
+		const cdp = await page.context().newCDPSession(page);
+		const drag = async (from: [number, number], to: [number, number]) => {
+			await cdp.send('Input.dispatchTouchEvent', {
+				type: 'touchStart',
+				touchPoints: [{ x: from[0], y: from[1] }]
+			});
+			for (let step = 1; step <= 10; step++) {
+				const x = from[0] + ((to[0] - from[0]) * step) / 10;
+				const y = from[1] + ((to[1] - from[1]) * step) / 10;
+				await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y }] });
+			}
+			await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+		};
+		const [x1, y] = await slotPoint(page, id, 1);
+		const [x6] = await slotPoint(page, id, 6);
+		await drag([x1, y], [x6, y]);
+		await expectReadout(page, id, 6);
+
+		const before = await page.evaluate(() => scrollY);
+		await drag([x6, y], [x6, y - 150]);
+		await expect.poll(() => page.evaluate(() => scrollY)).toBeGreaterThan(before);
+		await cdp.detach();
+	});
+
+	test('the keyboard reads it: one tab stop; ←, →, Home and End move, and the live region says the week', async ({
+		page
+	}) => {
+		const id = 'line-gaps';
+		const { data } = lineFixture(id);
+		const last = data.slots.length - 1;
+		await gotoHydrated(page, '/design');
+		await openCharts(page);
+		await expectLineCharts(page);
+		const body = lineBody(page, id);
+		await expect(body).toHaveAttribute('role', 'group');
+		await expect(body).toHaveAttribute('tabindex', '0');
+		await expect(body).toHaveAccessibleName(/^Bodyweight: use the arrow keys/);
+		expect(
+			await body.evaluate(
+				(root) => root.querySelectorAll('a, button, input, select, textarea, [tabindex]').length
+			),
+			'nothing inside takes a tab stop of its own'
+		).toBe(0);
+		const live = body.getByTestId('line-live');
+		await expect(live).toHaveAttribute('role', 'status');
+		await body.focus();
+		for (const [key, index] of [
+			['Home', 0],
+			['ArrowRight', 1],
+			['ArrowRight', 2],
+			['End', last],
+			['ArrowRight', last],
+			['ArrowLeft', last - 1]
+		] as const) {
+			await page.keyboard.press(key);
+			await expectReadout(page, id, index);
+			await expect(live).toHaveText(announce(data, index));
+		}
+		// The gap at week 3 is said in words, never skipped.
+		await page.keyboard.press('Home');
+		await page.keyboard.press('ArrowRight');
+		await page.keyboard.press('ArrowRight');
+		await expect(live).toContainText('Bodyweight no data');
+		await page.keyboard.press('Escape');
+		await expect(lineTip(page, id)).not.toHaveAttribute('data-shown', '');
+	});
+
+	test('estimated, measured and so-far points differ by shape and by legend text', async ({
+		page
+	}) => {
+		await gotoHydrated(page, '/design');
+		await openCharts(page);
+		await expectLineCharts(page);
+		const shape = (id: string, kind: string) =>
+			lineBody(page, id)
+				.locator(`[data-testid="line-mark"][data-kind="${kind}"]`)
+				.evaluateAll((els) =>
+					els.map((el) => {
+						const style = getComputedStyle(el);
+						return {
+							radius: style.borderRadius,
+							rotate: style.rotate,
+							outline: style.outlineStyle
+						};
+					})
+				);
+		const estimated = await shape('line-kinds', 'estimated');
+		const measured = await shape('line-kinds', 'measured');
+		const soFar = await shape('line-so-far', 'so-far');
+		expect(estimated).toHaveLength(6);
+		expect(measured).toHaveLength(2);
+		expect(soFar).toHaveLength(1);
+		for (const ring of estimated)
+			expect(ring).toMatchObject({ radius: '50%', rotate: 'none', outline: 'none' });
+		for (const diamond of measured)
+			expect(diamond).toMatchObject({ rotate: '45deg', outline: 'none' });
+		for (const ring of soFar) expect(ring).toMatchObject({ radius: '50%', outline: 'dashed' });
+		// A ring is hollow (the surface inside), a diamond is filled with the series colour.
+		const fill = (id: string, kind: string) =>
+			lineBody(page, id)
+				.locator(`[data-testid="line-mark"][data-kind="${kind}"]`)
+				.first()
+				.evaluate((el) => getComputedStyle(el).backgroundColor);
+		expect(await fill('line-kinds', 'estimated')).not.toBe(await fill('line-kinds', 'measured'));
+
+		await expect(lineBody(page, 'line-kinds').getByTestId('line-legend')).toHaveText(
+			/Estimated\s*Measured/
+		);
+		await expect(lineBody(page, 'line-so-far').getByTestId('line-legend')).toHaveText('So far');
+		await expect(lineBody(page, 'line-so-far').locator('.so-far')).toHaveText('so far');
+		// A plain series has no shape to name: no legend.
+		await expect(lineBody(page, 'line-single').getByTestId('line-legend')).toHaveCount(0);
+	});
+
+	test('each table twin holds exactly its series', async ({ page }) => {
+		await gotoHydrated(page, '/design');
+		await openCharts(page);
+		for (const id of ['line-kinds', 'line-converging', 'line-gaps', 'line-so-far'])
+			await expectLineTable(page, id);
+	});
+
+	test('nothing animates under reduced motion', async ({ page }) => {
+		await page.emulateMedia({ reducedMotion: 'reduce' });
+		const id = 'line-single';
+		await gotoHydrated(page, '/design');
+		await openCharts(page);
+		await expectLineCharts(page);
+		await lineFrameOf(page, id).scrollIntoViewIfNeeded();
+		await page.touchscreen.tap(...(await slotPoint(page, id, 2)));
+		await expectReadout(page, id, 2);
+		const tip = lineTip(page, id);
+		expect(await tip.evaluate((el) => getComputedStyle(el).transitionProperty)).toBe('none');
+		expect(
+			await lineBody(page, id).evaluate(
+				(el) => el.closest('figure')!.getAnimations({ subtree: true }).length
+			)
+		).toBe(0);
+	});
+});

@@ -4,7 +4,8 @@
   skeleton where the editor goes; the editor, its form state and the discard sheet load on demand
   (no editor is in the route's initial JavaScript) and replace the skeleton in place. Save sits in
   the thumb zone above the tab bar, and leaving with unsaved changes asks first. A section whose
-  every change saves itself (Goals) has neither.
+  every change saves itself (Goals) has neither. From 1024 px this is the editor column beside
+  the section list: no back link, and Save is column chrome, sticky at the column's foot.
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
@@ -111,81 +112,83 @@
 	}
 </script>
 
-<a class="back" href={resolve('/(app)/profile')} data-testid="back-to-profile">
-	<Icon name="chevron-left" size={18} /> Profile
-</a>
-<PageHeader {title} eyebrow="Training profile" />
+<div class="column" data-testid="section-column">
+	<a class="back" href={resolve('/(app)/profile')} data-testid="back-to-profile">
+		<Icon name="chevron-left" size={18} /> Profile
+	</a>
+	<PageHeader {title} eyebrow="Training profile" />
 
-<div
-	class="editor"
-	class:bar={saveBar}
-	class:with-message={form?.failed}
-	aria-busy={!Editor && !failed}
-	data-testid="section-editor"
->
-	{#if Editor && form}
-		<!-- A new editor for a new form (after Discard or Save): its own state starts from the draft. -->
-		{#each [form] as current (current)}
-			<Editor bind:value={current.value} errors={current.errors} {context} manage />
-		{/each}
-	{:else if failed}
-		<div class="failed">
-			<Notice tone="danger" title="This section didn’t load" data-testid="editor-error">
-				Check your connection, then try again.
-			</Notice>
-			<!-- A reload: the browser keeps a failed module fetch for the life of the page, so
+	<div
+		class="editor"
+		class:bar={saveBar}
+		class:with-message={form?.failed}
+		aria-busy={!Editor && !failed}
+		data-testid="section-editor"
+	>
+		{#if Editor && form}
+			<!-- A new editor for a new form (after Discard or Save): its own state starts from the draft. -->
+			{#each [form] as current (current)}
+				<Editor bind:value={current.value} errors={current.errors} {context} manage />
+			{/each}
+		{:else if failed}
+			<div class="failed">
+				<Notice tone="danger" title="This section didn’t load" data-testid="editor-error">
+					Check your connection, then try again.
+				</Notice>
+				<!-- A reload: the browser keeps a failed module fetch for the life of the page, so
 			     importing it again fails at once (and a deploy may have replaced the chunk). The
 			     editor's code is never a modulepreload, whose failure WebKit would carry over the
 			     reload (vite.config.ts, build.modulePreload). -->
-			<Button variant="secondary" icon="refresh" onclick={() => location.reload()}>Retry</Button>
-		</div>
-	{:else}
-		<!-- Shaped like a form: labels over fields, a row of choices, a notes box. -->
-		<div class="placeholder">
-			<span class="visually-hidden">Loading {title}…</span>
-			<div class="group">
-				<Skeleton width="55%" height="0.875rem" />
-				<Skeleton height="3.5rem" radius="var(--radius-md)" />
-				<Skeleton height="3.5rem" radius="var(--radius-md)" />
-				<Skeleton height="3.5rem" radius="var(--radius-md)" />
+				<Button variant="secondary" icon="refresh" onclick={() => location.reload()}>Retry</Button>
 			</div>
-			<div class="group">
-				<Skeleton width="35%" height="0.875rem" />
-				<div class="pills">
-					{#each ['6.5rem', '5rem', '7.5rem', '4.5rem', '6rem', '8rem', '5.5rem'] as width, i (i)}
-						<Skeleton {width} height="2.75rem" radius="var(--radius-full)" />
-					{/each}
+		{:else}
+			<!-- Shaped like a form: labels over fields, a row of choices, a notes box. -->
+			<div class="placeholder">
+				<span class="visually-hidden">Loading {title}…</span>
+				<div class="group">
+					<Skeleton width="55%" height="0.875rem" />
+					<Skeleton height="3.5rem" radius="var(--radius-md)" />
+					<Skeleton height="3.5rem" radius="var(--radius-md)" />
+					<Skeleton height="3.5rem" radius="var(--radius-md)" />
+				</div>
+				<div class="group">
+					<Skeleton width="35%" height="0.875rem" />
+					<div class="pills">
+						{#each ['6.5rem', '5rem', '7.5rem', '4.5rem', '6rem', '8rem', '5.5rem'] as width, i (i)}
+							<Skeleton {width} height="2.75rem" radius="var(--radius-full)" />
+						{/each}
+					</div>
+				</div>
+				<div class="group">
+					<Skeleton width="40%" height="0.875rem" />
+					<Skeleton height="5.5rem" radius="var(--radius-md)" />
 				</div>
 			</div>
-			<div class="group">
-				<Skeleton width="40%" height="0.875rem" />
-				<Skeleton height="5.5rem" radius="var(--radius-md)" />
-			</div>
+		{/if}
+	</div>
+
+	{#if saveBar}
+		<div class="actions" data-testid="save-bar">
+			{#if form?.failed}
+				<Notice tone="danger" data-testid="save-error">{form.failed}</Notice>
+			{/if}
+			<Button
+				size="lg"
+				block
+				loading={form?.busy}
+				disabled={!form}
+				onclick={save}
+				data-testid="save-section"
+			>
+				Save
+			</Button>
 		</div>
 	{/if}
+
+	{#if Sheet}
+		<Sheet bind:open={asking} section={title} ondiscard={discard} />
+	{/if}
 </div>
-
-{#if saveBar}
-	<div class="actions">
-		{#if form?.failed}
-			<Notice tone="danger" data-testid="save-error">{form.failed}</Notice>
-		{/if}
-		<Button
-			size="lg"
-			block
-			loading={form?.busy}
-			disabled={!form}
-			onclick={save}
-			data-testid="save-section"
-		>
-			Save
-		</Button>
-	</div>
-{/if}
-
-{#if Sheet}
-	<Sheet bind:open={asking} section={title} ondiscard={discard} />
-{/if}
 
 <style>
 	.back {
@@ -199,6 +202,7 @@
 		color: var(--color-text-secondary);
 	}
 
+	/* The room the skeleton reserves, so the editor that replaces it moves nothing below. */
 	.editor {
 		min-height: 28rem;
 	}
@@ -256,5 +260,42 @@
 		inset: calc(var(--space-6) * -1) calc(var(--gutter) * -1) 0;
 		background: linear-gradient(to bottom, transparent, var(--color-canvas) var(--space-6));
 		pointer-events: none;
+	}
+
+	/*
+	 * Desktop: the editor column of a split screen. The list beside it says where you are.
+	 * - The skeleton reserves the window's height below the title, so Save starts at the window's
+	 *   foot and stays there when the editor arrives, however long the section is.
+	 * - Save is column chrome: sticky at the foot of this column, its width, never over the list,
+	 *   and under the last field once scrolled to the end, so the editor needs no room kept for it.
+	 *   Its fade reaches a gutter either side, inside the grid's gap.
+	 */
+	@media (width >= 64rem) {
+		.column {
+			/* What the window shows besides the editor: the title above it (about 6.6rem) and
+			   the Save bar below (5rem), a little less, so the column always reaches past the
+			   window's foot and Save is pinned there from the first paint. */
+			--editor-reserve-offset: 11rem;
+		}
+
+		.back {
+			display: none;
+		}
+
+		.editor {
+			min-height: max(28rem, calc(100dvh - var(--editor-reserve-offset)));
+		}
+
+		.editor.bar,
+		.editor.with-message {
+			padding-bottom: 0;
+		}
+
+		.actions {
+			position: sticky;
+			left: auto;
+			transform: none;
+			width: auto;
+		}
 	}
 </style>
