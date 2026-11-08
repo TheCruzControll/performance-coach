@@ -10,7 +10,8 @@
  *    A retried send (the same client message id) stores nothing: an answered one points at its
  *    stored answer; one whose run never finished runs again on the stored message and its text.
  * 4. The run starts; a live run on the thread makes the turn busy. Steps 3 and 4 are one
- *    transaction, so a busy send stores nothing.
+ *    transaction, so a busy send stores nothing. The proposals decided since the thread's last
+ *    message join the turn context by id, kind and status.
  * 5. A direct answer (direct.ts) needs no model; otherwise a misconfigured coach is unavailable,
  *    and a day already at DAILY_LIMITS is out of budget, both before any model call.
  * 6. The loop (orchestrator.ts) runs over the stored segment. Each model call and each step is
@@ -69,6 +70,7 @@ import {
 	startOwnerTurn,
 	type TurnStep
 } from '../services/coach/threads.ts';
+import { listDecidedSince } from '../services/coach/proposals.ts';
 import { loadTurnFacts } from '../services/coach/turn-facts.ts';
 import { directAnswer } from './direct.ts';
 import type { TurnHooks } from './hooks.ts';
@@ -303,12 +305,15 @@ async function turn(
 	// All or nothing with the run's start: a busy send leaves the conversation as it was.
 	const begun = await inTransaction(deps, async (deps) => {
 		let preamble: BetaUserMessageParam['content'] | undefined;
+		/** When the previous turn ended: decisions after it are this turn's news. */
+		let since: Date | null = null;
 		if (!(await findOwnerMessage(ownerId, input.clientMessageId, deps))) {
 			let summary: string | null = null;
 			let opens = true;
 			if (input.threadId) {
 				const { thread, rows } = await getTranscript(ownerId, input.threadId, deps);
 				if (thread.archived) throw new CoachArchivedError();
+				since = thread.lastMessageAt;
 				const rolled = await rollover({
 					ownerId,
 					thread,
@@ -366,14 +371,15 @@ async function turn(
 		);
 		// A retry runs on the stored message, never on what the retry sent.
 		const ownerText = rows[at]!.content as string;
-		return { owner, thread, first, transcript, after, ownerText, started };
+		const decided = since ? await listDecidedSince(ownerId, since, deps) : [];
+		return { owner, thread, first, transcript, after, ownerText, started, decided };
 	});
 	if (begun.answer !== undefined) {
 		// Answered already: the client shows the stored answer.
 		emit({ type: 'answer_completed', messageId: begun.answer });
 		return 'completed';
 	}
-	const { owner, thread, first, transcript, after, ownerText, started } = begun;
+	const { owner, thread, first, transcript, after, ownerText, started, decided } = begun;
 	const threadId = owner.thread.id;
 	let contextPending = !after.some((row) => row.kind === 'context');
 	const runId = (run.id = started.id);
@@ -405,7 +411,7 @@ async function turn(
 				: null,
 		entry,
 		painMode: detectPain(ownerText).reported,
-		decidedProposals: []
+		decidedProposals: decided
 	};
 	const context = turnContext(facts);
 	const opening = first.content as BetaUserMessageParam['content'];
