@@ -68,6 +68,33 @@ export function activeSummary(): Promise<ActiveSummary | null> {
 	});
 }
 
+/** A finished workout this device holds whose changes have not all synced yet. */
+export interface WaitingSummary {
+	workoutId: string;
+	kind: SessionKind;
+	title: string;
+	startedAt: Instant;
+	pending: number;
+}
+
+/**
+ * The finished workouts with changes still waiting, newest first, as History lists them above
+ * the synced ones; none on a device without the database.
+ */
+export function waitingToSync(): Promise<WaitingSummary[]> {
+	return read([], async (tx) => {
+		const workouts = await result<StoredWorkout[]>(tx.objectStore(STORES.workouts).getAll());
+		const outbox = tx.objectStore(STORES.outbox).index(OUTBOX_INDEXES.byWorkout);
+		const waiting: WaitingSummary[] = [];
+		for (const { id: workoutId, kind, title, startedAt, status } of workouts) {
+			if (status !== 'completed') continue;
+			const pending = await result(outbox.count(workoutId));
+			if (pending > 0) waiting.push({ workoutId, kind, title, startedAt, pending });
+		}
+		return waiting.sort((a, b) => b.startedAt.localeCompare(a.startedAt));
+	});
+}
+
 /** Every change on this device not synced yet, of any workout. */
 export function pendingCount(): Promise<number> {
 	return read(0, (tx) => result(tx.objectStore(STORES.outbox).count()));

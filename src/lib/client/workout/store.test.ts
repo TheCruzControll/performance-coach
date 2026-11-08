@@ -21,7 +21,7 @@ import { StoreClosedError } from './db';
 import type { StoredWorkout } from './db';
 import { DB_NAME, STORES } from './names';
 import { STUCK_AFTER, type OutboxEntry } from './outbox-rules';
-import { activeSummary, pendingCount } from './probe';
+import { activeSummary, pendingCount, waitingToSync } from './probe';
 import { ActiveWorkoutError, createStore, PRUNE_AFTER, requestPersistence } from './store';
 import type { WorkoutStore } from './store';
 
@@ -579,6 +579,38 @@ describe('the probe', () => {
 		let blocked = false;
 		await deleteDB(DB_NAME, { blocked: () => (blocked = true) });
 		expect(blocked).toBe(false);
+	});
+
+	it('lists the finished workouts with changes waiting, newest first, until they sync', async () => {
+		const store = await open();
+		const first = [start(W), log('s1', 1, { workoutId: W }), finish(W)];
+		store.dispatch(first[0]!, attach(W));
+		store.dispatch(first[1]!);
+		expect(await store.dispatch(first[2]!).saved).toBe('saved');
+		clock = T0 + 60_000;
+		const second = [start(W2), finish(W2)];
+		store.dispatch(second[0]!, attach(W2));
+		expect(await store.dispatch(second[1]!).saved).toBe('saved');
+		await started(store, W3); // in progress: the resume bar's, not History's
+
+		const row = (workoutId: string, startedAt: string, pending: number) => ({
+			workoutId,
+			kind: 'strength',
+			title: KIT.title,
+			startedAt,
+			pending
+		});
+		expect(await waitingToSync()).toEqual([row(W2, iso(T0 + 60_000), 2), row(W, iso(T0), 3)]);
+
+		await store.acknowledge(appliedAll(W2, second));
+		expect(await waitingToSync()).toEqual([row(W, iso(T0), 3)]);
+		await store.acknowledge(appliedAll(W, first));
+		expect(await waitingToSync()).toEqual([]);
+	});
+
+	it('lists nothing, and creates nothing, on a device without the database', async () => {
+		expect(await waitingToSync()).toEqual([]);
+		expect(await indexedDB.databases()).toEqual([]);
 	});
 
 	it('closes at once when sign-out deletes the database during a read', async () => {
