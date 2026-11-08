@@ -12,7 +12,7 @@ export interface ToastItem {
 	duration: number;
 }
 
-/** How long a timed toast may wait to appear (its code failed to load, say) before it is dropped. */
+/** How long a timed toast may wait to appear before it is dropped. */
 const PENDING_LIMIT = 60_000;
 
 class ToastQueue {
@@ -39,9 +39,8 @@ class ToastQueue {
 	}
 
 	/**
-	 * Starts a toast's time on screen. The toasts' code loads on demand (Toaster), so it calls this
-	 * when the toast appears, not `show`: a toast shown before that code arrives still gets its
-	 * full duration.
+	 * Starts a toast's time on screen. Toaster calls this when the toast appears, not `show`: a
+	 * toast shown before it renders still gets its full duration.
 	 */
 	appeared(id: number): void {
 		const item = this.items.find((t) => t.id === id);

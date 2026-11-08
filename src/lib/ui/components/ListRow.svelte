@@ -24,6 +24,8 @@
 		trailing?: Snippet;
 		onpointerdown?: (event: PointerEvent) => void;
 		onpointerenter?: (event: PointerEvent) => void;
+		/** The destination open beside a list of rows (a section beside its editor). */
+		'aria-current'?: 'page';
 		'data-testid'?: string;
 	}
 
@@ -102,6 +104,12 @@
 		.interactive:hover {
 			border-color: var(--color-border-strong);
 		}
+	}
+
+	/* The open destination: an accent edge and a lifted surface, and aria-current says it too. */
+	.row[aria-current='page'] {
+		border-color: var(--color-accent-text);
+		background: var(--color-surface-2);
 	}
 
 	.tile {
