@@ -28,6 +28,8 @@
 		/** Reads what was typed back; NaN or null keeps the value. Number() by default. */
 		parse?: (text: string) => number | null;
 		onchange?: (value: number) => void;
+		/** What is being typed, read as it would commit, before Enter or blur; null when unreadable. */
+		ondraft?: (value: number | null) => void;
 		'data-testid'?: string;
 	}
 
@@ -45,6 +47,7 @@
 		format,
 		parse,
 		onchange,
+		ondraft,
 		'data-testid': testId
 	}: Props = $props();
 
@@ -151,11 +154,24 @@
 		});
 	}
 
+	/** The draft as a number to commit; null when it keeps the value. */
+	function read(text: string): number | null {
+		const parsed = parse ? parse(text) : Number(text.replace(',', '.'));
+		return text.trim() !== '' && parsed !== null && Number.isFinite(parsed) ? parsed : null;
+	}
+
 	function commit() {
 		if (!editing) return;
 		editing = false;
-		const parsed = parse ? parse(draft) : Number(draft.replace(',', '.'));
-		if (draft.trim() !== '' && parsed !== null && Number.isFinite(parsed)) set(parsed);
+		const parsed = read(draft);
+		if (parsed !== null) set(parsed);
+	}
+
+	function oninput(event: Event & { currentTarget: HTMLInputElement }) {
+		draft = event.currentTarget.value;
+		if (!ondraft) return;
+		const parsed = read(draft);
+		ondraft(parsed === null ? null : clampRound(parsed));
 	}
 </script>
 
@@ -191,7 +207,7 @@
 				aria-describedby={describedBy}
 				value={editing ? draft : display}
 				style:width={`calc(${Math.max(2, (editing ? draft : display).length)}ch + 0.25em)`}
-				oninput={(e) => (draft = e.currentTarget.value)}
+				{oninput}
 				{onfocus}
 				onblur={commit}
 				{onkeydown}

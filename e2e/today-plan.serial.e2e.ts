@@ -85,7 +85,9 @@ async function auditThemes(page: Page) {
 			theme
 		);
 		await gotoHydrated(page, '/today');
-		await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+		const html = page.locator('html');
+		if (theme === 'light') await expect(html).toHaveAttribute('data-theme', 'light');
+		else await expect(html).not.toHaveAttribute('data-theme', /.*/);
 		expect(await audit(page), `axe, ${theme}`).toEqual([]);
 	}
 }

@@ -7,6 +7,7 @@
 			"**": false
 		}
 	},
+	"crons": [{ "path": "/api/cron/backup", "schedule": "41 10 * * *" }],
 	"headers": [
 		{
 			"source": "/offline",
@@ -26,6 +27,22 @@
 		},
 		{
 			"source": "/workout",
+			"headers": [
+				{ "key": "x-content-type-options", "value": "nosniff" },
+				{ "key": "x-frame-options", "value": "DENY" },
+				{ "key": "referrer-policy", "value": "strict-origin-when-cross-origin" },
+				{
+					"key": "permissions-policy",
+					"value": "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+				},
+				{ "key": "cross-origin-opener-policy", "value": "same-origin" },
+				{ "key": "strict-transport-security", "value": "max-age=63072000; includeSubDomains" },
+				{ "key": "x-robots-tag", "value": "noindex, nofollow" },
+				{ "key": "content-security-policy", "value": "frame-ancestors 'none'" }
+			]
+		},
+		{
+			"source": "/workout/run",
 			"headers": [
 				{ "key": "x-content-type-options", "value": "nosniff" },
 				{ "key": "x-frame-options", "value": "DENY" },

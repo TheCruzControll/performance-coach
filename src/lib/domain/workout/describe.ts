@@ -82,6 +82,9 @@ const FIELD_WORDS: Readonly<Record<string, string>> = {
 	missedReps: 'Missed reps',
 	seconds: 'Time',
 	metres: 'Distance',
+	durationSeconds: 'Time',
+	distanceMetres: 'Distance',
+	avgHr: 'Heart rate',
 	plannedSessionId: 'Planned session'
 };
 

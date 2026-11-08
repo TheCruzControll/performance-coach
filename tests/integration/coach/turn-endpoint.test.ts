@@ -33,10 +33,7 @@ import { config, POST as postTurn } from '../../../src/routes/api/coach/turns/+s
 import { withCommitted } from '../helpers';
 import { makeOwner } from '../profile/fixtures';
 
-const forced = vi.hoisted(() => ({
-	choice: null as CoachProviderChoice | null,
-	direct: null as string | null
-}));
+const forced = vi.hoisted(() => ({ choice: null as CoachProviderChoice | null }));
 
 vi.mock('../../../src/lib/server/agent/provider/select', async (importOriginal) => {
 	const actual = await importOriginal<typeof SelectModule>();
@@ -47,12 +44,9 @@ vi.mock('../../../src/lib/server/agent/provider/select', async (importOriginal) 
 	};
 });
 
-// direct-answers replaces the stub; here a lookup answers whatever `forced.direct` says.
-vi.mock('../../../src/lib/server/agent/direct', () => ({
-	directAnswer: async () => forced.direct
-}));
-
 const SLOW = 'Slowly, please: how is my week?';
+/** A lookup direct.ts answers with no model call (domain/coach/intents.ts). */
+const LOOKUP = "What's on this week?";
 vi.mock('../../../src/lib/server/agent/provider/mock-scripts/index', async (importOriginal) => {
 	const actual = await importOriginal<typeof ScriptsModule>();
 	const slow: MockScript = {
@@ -71,7 +65,6 @@ function force(choice: CoachProviderChoice | null) {
 
 afterEach(() => {
 	force(null);
-	forced.direct = null;
 });
 
 const URL_BASE = 'http://localhost:5173';
@@ -273,9 +266,8 @@ describe('POST /api/coach/turns', () => {
 			await withCommitted(async (db) => {
 				const owner = await makeOwner(db);
 				force({ status: 'unavailable', reason });
-				forced.direct = '[note] You have 3 sessions left this week.';
 				expect(coachStatus()).toEqual({ status: 'unavailable', reason, mockBadge: false });
-				const { events } = await streamed(await turn(owner, send('How many sessions are left?')));
+				const { events } = await streamed(await turn(owner, send(LOOKUP)));
 				expect(events).toEqual([
 					{ type: 'error', kind: 'unavailable', reason },
 					{ type: 'done', status: null }
@@ -289,13 +281,11 @@ describe('POST /api/coach/turns', () => {
 		await withCommitted(async (db) => {
 			const owner = await makeOwner(db);
 			force({ status: 'unavailable', reason: 'no_key' });
-			forced.direct = '[note] You have 3 sessions left this week.';
-			const direct = await streamed(await turn(owner, send('How many sessions are left?')));
+			const direct = await streamed(await turn(owner, send(LOOKUP)));
 			expect(direct.events.map((each) => each.type)).toContain('answer_completed');
 			expect(direct.events.at(-1)).toEqual({ type: 'done', status: 'completed' });
-			expect(direct.raw).toContain('You have 3 sessions left this week.');
+			expect(direct.raw).toContain('You have no active program yet');
 
-			forced.direct = null;
 			const other = await streamed(await turn(owner, send('Plan my month')));
 			expect(other.events.filter((each) => each.type === 'error')).toEqual([
 				{ type: 'error', kind: 'unavailable', reason: 'no_key' }
