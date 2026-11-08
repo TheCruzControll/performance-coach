@@ -722,6 +722,8 @@ describe('indexes', () => {
 				'bestE1rms',
 				'exerciseHistory',
 				'lastPerformances',
+				'lastSessionSets',
+				'mostReps',
 				'repMaxes',
 				'runsInRange',
 				'sessionsInRange',

@@ -90,9 +90,10 @@ export const ROUTE_ACCESS = {
 
 	// reads
 	'/api/workouts/[id]': 'owner',
-	'/api/workouts/active': 'owner'
+	'/api/workouts/active': 'owner',
 
 	// kit
+	'/api/workouts/kit': 'owner'
 
 	// history
 
