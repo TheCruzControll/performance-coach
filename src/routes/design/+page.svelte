@@ -26,6 +26,10 @@
 		program: () => (import.meta.env.SSR ? never() : import('./ProgramPanel.svelte')),
 		coach: () => (import.meta.env.SSR ? never() : import('./CoachPanel.svelte'))
 	};
+	// Charts are a section of their own: a seventh tab would not fit the phone's tab row (the six
+	// already sit 4 px apart at 393 px, e2e/design-coach.e2e.ts). Like a tab, it loads on demand.
+	const charts = () => (import.meta.env.SSR ? never() : import('./ChartsPanel.svelte'));
+	let showCharts = $state(false);
 
 	const colors = [
 		['canvas', 'surface-1', 'surface-2', 'surface-3'],
@@ -128,6 +132,32 @@
 					<p class="muted">Tones tint a surface; they never shout.</p>
 				</Card>
 			{/each}
+		</div>
+	</section>
+
+	<section class="section">
+		<h2 class="h">Charts</h2>
+		<div class="inline">
+			<Button
+				variant="secondary"
+				iconEnd="chevron-down"
+				aria-expanded={showCharts}
+				aria-controls="design-charts"
+				onclick={() => (showCharts = !showCharts)}
+			>
+				{showCharts ? 'Hide charts' : 'Show charts'}
+			</Button>
+		</div>
+		<div id="design-charts">
+			{#if showCharts}
+				{#await charts()}
+					<div class="grid" aria-busy="true">
+						<Skeleton height="40rem" radius="var(--radius-lg)" />
+					</div>
+				{:then { default: Charts }}
+					<Charts />
+				{/await}
+			{/if}
 		</div>
 	</section>
 
