@@ -19,6 +19,11 @@
  *
  * The checks read the version the edit was made on. Its rows never change, so what they find is
  * what reviseProgram copies; it then writes only if that version is still the current one.
+ *
+ * Each edit's body is an applier (moveApplier, skipApplier, swapApplier, setApplier,
+ * runSegmentApplier, detailsApplier): it checks the edit and works it out as a PlannedEdit
+ * without writing anything. Each exported edit revises with its one applier;
+ * applyProgramEdits (./batch.ts) revises with several as one version.
  */
 import { addDays, parseIsoDate, weekdayOf, type IsoDate } from '../../../domain/calendar';
 import { TIMES_OF_DAY, WEEKDAY_INFO, type TimeOfDay } from '../../../domain/profile/catalog';
@@ -133,6 +138,65 @@ export interface MoveWarning {
 
 export interface MovedSession extends RevisedVersion {
 	warnings: MoveWarning[];
+}
+
+/**
+ * An edit worked out on the version it was made on, before anything is written: the weeks it
+ * copies, how the copies differ, its decision, and a write of its own outside the program (a
+ * never-again swap's dislike), which runs in the revising transaction.
+ */
+export interface PlannedEdit {
+	weekLineages: string[];
+	changes: CopyChanges;
+	decision: RevisionDecision;
+	write?: (tx: Executor) => Promise<void>;
+	/**
+	 * An adjustment's session and its estimate: from every change `changes` makes to the session's
+	 * prescription, each composed row checked whole with M3's schema (a TrainingInputError), the
+	 * session's estimate and load worked out again. Several adjustments of one session compose.
+	 */
+	settle?: { session: string; estimate: (changes: CopyChanges) => SessionChange };
+}
+
+/** `changes` with `edit`'s session estimate worked out on them, when it is an adjustment. */
+export function settled(changes: CopyChanges, edit: PlannedEdit): CopyChanges {
+	if (!edit.settle) return changes;
+	const { session, estimate } = edit.settle;
+	const sessions = changes.sessions ?? {};
+	return {
+		...changes,
+		sessions: { ...sessions, [session]: { ...sessions[session], ...estimate(changes) } }
+	};
+}
+
+/** An edit's body: checks `input` on version `at.version` and plans it, writing nothing. */
+export type EditApplier = (
+	ownerId: string,
+	input: unknown,
+	at: EditAt,
+	deps?: TrainingDeps
+) => Promise<PlannedEdit>;
+
+/** Write one planned edit as the next version. */
+function revise(
+	ownerId: string,
+	edit: PlannedEdit,
+	at: EditAt,
+	deps: TrainingDeps
+): Promise<RevisedVersion> {
+	return reviseProgram(
+		ownerId,
+		{
+			baseVersionNumber: at.version,
+			weekLineages: edit.weekLineages,
+			apply: async (_copies, tx) => {
+				await edit.write?.(tx);
+				return settled(edit.changes, edit);
+			},
+			decision: edit.decision
+		},
+		deps
+	);
 }
 
 type ExerciseRow = LineChildRows['exercises'][number];
@@ -375,6 +439,28 @@ export async function checkMove(
 	return planMove(target, move, today).warnings;
 }
 
+/** moveSession's applier: the move, its decision and the warnings it brings. */
+export async function moveApplier(
+	ownerId: string,
+	input: unknown,
+	at: EditAt,
+	deps: TrainingDeps = {}
+): Promise<PlannedEdit & { warnings: MoveWarning[] }> {
+	const move = parseWith(moveSessionSchema, input);
+	const today = checkToday(at.today);
+	const { db, source } = resolveDeps(deps);
+	const target = await locate(db, ownerId, move.sessionLineage, at.version);
+	const { changes, warnings } = planMove(target, move, today);
+	const blocking = warnings.find((w) => BLOCKS_EDIT[w.severity]);
+	if (blocking) throw new TrainingInputError({ toDate: blocking.message });
+	return {
+		weekLineages: [target.week.lineageId],
+		changes: { sessions: changes },
+		decision: moveDecision(target.session, move.toDate, move.reason, warnings, source),
+		warnings
+	};
+}
+
 /**
  * Move a session to another day of its week as the next version, with its reason and the
  * interference rules it newly breaks; those warnings are returned too.
@@ -385,24 +471,8 @@ export async function moveSession(
 	at: EditAt,
 	deps: TrainingDeps = {}
 ): Promise<MovedSession> {
-	const move = parseWith(moveSessionSchema, input);
-	const today = checkToday(at.today);
-	const { db, source } = resolveDeps(deps);
-	const target = await locate(db, ownerId, move.sessionLineage, at.version);
-	const { changes, warnings } = planMove(target, move, today);
-	const blocking = warnings.find((w) => BLOCKS_EDIT[w.severity]);
-	if (blocking) throw new TrainingInputError({ toDate: blocking.message });
-	const revised = await reviseProgram(
-		ownerId,
-		{
-			baseVersionNumber: at.version,
-			weekLineages: [target.week.lineageId],
-			apply: async () => ({ sessions: changes }),
-			decision: moveDecision(target.session, move.toDate, move.reason, warnings, source)
-		},
-		deps
-	);
-	return { ...revised, warnings };
+	const { warnings, ...edit } = await moveApplier(ownerId, input, at, deps);
+	return { ...(await revise(ownerId, edit, at, deps)), warnings };
 }
 
 /** Skip a session as the next version, with its reason. */
@@ -412,6 +482,16 @@ export async function skipSession(
 	at: EditAt,
 	deps: TrainingDeps = {}
 ): Promise<RevisedVersion> {
+	return revise(ownerId, await skipApplier(ownerId, input, at, deps), at, deps);
+}
+
+/** skipSession's applier. */
+export async function skipApplier(
+	ownerId: string,
+	input: unknown,
+	at: EditAt,
+	deps: TrainingDeps = {}
+): Promise<PlannedEdit> {
 	const skip = parseWith(skipSessionSchema, input);
 	const today = checkToday(at.today);
 	const { db, source } = resolveDeps(deps);
@@ -426,22 +506,17 @@ export async function skipSession(
 		day: dayLabel(session.date),
 		reason: reasonText(skip.reason)
 	};
-	return reviseProgram(
-		ownerId,
-		{
-			baseVersionNumber: at.version,
-			weekLineages: [target.week.lineageId],
-			apply: async () => ({ sessions: { [session.lineage]: { status: 'skipped' } } }),
-			decision: {
-				kind: 'session_skipped',
-				summary: render(template.summary, facts, 'session_skipped'),
-				why: render(template.why, facts, 'session_skipped'),
-				affected: [session.lineage],
-				evidence: { date: session.date }
-			}
-		},
-		deps
-	);
+	return {
+		weekLineages: [target.week.lineageId],
+		changes: { sessions: { [session.lineage]: { status: 'skipped' } } },
+		decision: {
+			kind: 'session_skipped',
+			summary: render(template.summary, facts, 'session_skipped'),
+			why: render(template.why, facts, 'session_skipped'),
+			affected: [session.lineage],
+			evidence: { date: session.date }
+		}
+	};
 }
 
 // ---- swap -----------------------------------------------------------------------------------
@@ -553,8 +628,11 @@ async function occurrencesFrom(
 
 /** What a caller other than Train's swap sheet gives a swap (M4's amendment A6). */
 export interface SwapOptions {
-	/** Where the dislike a 'never_again' swap saves was said: 'swap' (Train) by default. */
-	preferenceSource?: Extract<PreferenceSource, 'swap' | 'workout'>;
+	/**
+	 * Where the dislike a 'never_again' swap saves was said: 'swap' (Train) by default, 'coach'
+	 * for an accepted proposal (./batch.ts).
+	 */
+	preferenceSource?: Extract<PreferenceSource, 'swap' | 'workout' | 'coach'>;
 	/**
 	 * The session may have passed or be done (a workout's dislike synced late): a never-again swap
 	 * then changes only the occurrences from today, never that session.
@@ -618,6 +696,17 @@ export async function swapExercise(
 	deps: TrainingDeps = {},
 	how: SwapOptions = {}
 ): Promise<RevisedVersion> {
+	return revise(ownerId, await swapApplier(ownerId, input, at, deps, how), at, deps);
+}
+
+/** swapExercise's applier: a never-again swap's dislike is its write. */
+export async function swapApplier(
+	ownerId: string,
+	input: unknown,
+	at: EditAt,
+	deps: TrainingDeps = {},
+	how: SwapOptions = {}
+): Promise<PlannedEdit> {
 	const swap = parseWith(swapSchema, input);
 	const today = checkToday(at.today);
 	const { db, source } = resolveDeps(deps);
@@ -678,24 +767,21 @@ export async function swapExercise(
 				},
 				[target.session.lineage, planned.lineage]
 			);
-	return reviseProgram(
-		ownerId,
-		{
-			baseVersionNumber: at.version,
-			weekLineages: occurrences.map((o) => o.weekLineage),
-			apply: async (_copies, tx) => {
-				if (never) {
-					const source = how.preferenceSource ?? 'swap';
-					const dislike = { sentiment: 'dislike' as const, source };
-					const record = { ...dislike, exerciseId: row.exerciseId, reason: swap.reason };
-					await recordExercisePreference(ownerId, record, { ...deps, db: tx });
-				}
-				return changes;
-			},
-			decision: { ...decision, evidence: { to: to.id, scope: swap.scope } }
-		},
-		deps
-	);
+	const dislike = async (tx: Executor) => {
+		const source = how.preferenceSource ?? 'swap';
+		const record = { sentiment: 'dislike' as const, source, exerciseId: row.exerciseId };
+		await recordExercisePreference(
+			ownerId,
+			{ ...record, reason: swap.reason },
+			{ ...deps, db: tx }
+		);
+	};
+	return {
+		weekLineages: occurrences.map((o) => o.weekLineage),
+		changes,
+		decision: { ...decision, evidence: { to: to.id, scope: swap.scope } },
+		...(never ? { write: dislike } : {})
+	};
 }
 
 // ---- adjust ---------------------------------------------------------------------------------
@@ -730,16 +816,15 @@ function editable(target: Target, today: IsoDate) {
 	if (refused) throw new TrainingInputError({ sessionLineage: refused });
 }
 
-/** Save an adjustment as the next version, with a prescription_adjusted decision. */
-function saveAdjustment(
-	ownerId: string,
+/** An adjustment as a planned edit, with a prescription_adjusted decision. */
+function adjusted(
 	target: Target,
-	at: EditAt,
 	deps: TrainingDeps,
 	adjustment: { what: string; before: string; after: string; reason?: string },
 	changes: CopyChanges,
-	affected: string[]
-): Promise<RevisedVersion> {
+	affected: string[],
+	estimate: (changes: CopyChanges) => SessionChange
+): PlannedEdit {
 	const facts = {
 		who: WHO[resolveDeps(deps).source],
 		what: adjustment.what,
@@ -747,16 +832,12 @@ function saveAdjustment(
 		after: adjustment.after,
 		reason: reasonText(adjustment.reason)
 	};
-	return reviseProgram(
-		ownerId,
-		{
-			baseVersionNumber: at.version,
-			weekLineages: [target.week.lineageId],
-			apply: async () => changes,
-			decision: edited('prescription_adjusted', facts, affected)
-		},
-		deps
-	);
+	return {
+		weekLineages: [target.week.lineageId],
+		changes,
+		decision: edited('prescription_adjusted', facts, affected),
+		settle: { session: target.session.lineage, estimate }
+	};
 }
 
 /** A set prescription as one line: '3 × 5 @ RPE 8, 100 kg, rest 2:00'. */
@@ -777,6 +858,16 @@ export async function adjustPrescription(
 	at: EditAt,
 	deps: TrainingDeps = {}
 ): Promise<RevisedVersion> {
+	return revise(ownerId, await setApplier(ownerId, input, at, deps), at, deps);
+}
+
+/** adjustPrescription's applier. */
+export async function setApplier(
+	ownerId: string,
+	input: unknown,
+	at: EditAt,
+	deps: TrainingDeps = {}
+): Promise<PlannedEdit> {
 	const { sessionLineage, plannedExerciseLineage, position, reason, ...values } = parseWith(
 		adjustSetSchema,
 		input
@@ -794,14 +885,20 @@ export async function adjustPrescription(
 		throw new TrainingInputError({ sessionLineage: NOTHING_CHANGED });
 
 	const session = target.session as Extract<StoredSession, { kind: 'strength' }>;
-	const exercises = session.exercises.map((e) =>
-		e === planned ? { ...e, sets: e.sets.with(position - 1, after) } : e
-	);
-	const minutes = estimateMinutes({ exercises }, await programmingInputFor(ownerId, { db }));
-	return saveAdjustment(
-		ownerId,
+	const programming = await programmingInputFor(ownerId, { db });
+	const estimate = ({ sets }: CopyChanges) => {
+		const exercises = session.exercises.map((e) => {
+			const change = sets?.[e.lineage];
+			if (!change) return e;
+			const composed = e.sets.map((s, k) =>
+				parseWith(setPrescriptionSchema, { ...s, ...change[k + 1] })
+			);
+			return { ...e, sets: composed };
+		});
+		return timed(estimateMinutes({ exercises }, programming), session.targetRpe);
+	};
+	return adjusted(
 		target,
-		at,
 		deps,
 		{
 			what: `${row.exerciseName}, ${SET_ROLE_LABEL[before.role].toLowerCase()}`,
@@ -809,11 +906,9 @@ export async function adjustPrescription(
 			after: setWords(after),
 			reason
 		},
-		{
-			sessions: { [session.lineage]: timed(minutes, session.targetRpe) },
-			sets: { [planned.lineage]: { [position]: change } }
-		},
-		[session.lineage, planned.lineage]
+		{ sets: { [planned.lineage]: { [position]: change } } },
+		[session.lineage, planned.lineage],
+		estimate
 	);
 }
 
@@ -853,6 +948,16 @@ export async function adjustRunSegment(
 	at: EditAt,
 	deps: TrainingDeps = {}
 ): Promise<RevisedVersion> {
+	return revise(ownerId, await runSegmentApplier(ownerId, input, at, deps), at, deps);
+}
+
+/** adjustRunSegment's applier. */
+export async function runSegmentApplier(
+	ownerId: string,
+	input: unknown,
+	at: EditAt,
+	deps: TrainingDeps = {}
+): Promise<PlannedEdit> {
 	const { sessionLineage, position, reason, ...values } = parseWith(adjustRunSegmentSchema, input);
 	const today = checkToday(at.today);
 	const { db } = resolveDeps(deps);
@@ -877,10 +982,15 @@ export async function adjustRunSegment(
 	});
 	if (!Object.keys(changed).length)
 		throw new TrainingInputError({ sessionLineage: NOTHING_CHANGED });
-	return saveAdjustment(
-		ownerId,
+	const estimate = (changes: CopyChanges) => {
+		const change = changes.segments?.[session.lineage] ?? {};
+		const composed = session.segments.map((s, k) =>
+			parseWith(runSegmentSchema, { ...s, ...change[k + 1] })
+		);
+		return timed(runMinutes(composed), session.targetRpe);
+	};
+	return adjusted(
 		target,
-		at,
 		deps,
 		{
 			what: `${session.title}, segment ${position}`,
@@ -888,11 +998,9 @@ export async function adjustRunSegment(
 			after: segmentWords(after),
 			reason
 		},
-		{
-			sessions: { [session.lineage]: timed(runMinutes(segments), session.targetRpe) },
-			segments: { [session.lineage]: changed }
-		},
-		[session.lineage]
+		{ segments: { [session.lineage]: changed } },
+		[session.lineage],
+		estimate
 	);
 }
 
@@ -912,6 +1020,16 @@ export async function adjustSessionDetails(
 	at: EditAt,
 	deps: TrainingDeps = {}
 ): Promise<RevisedVersion> {
+	return revise(ownerId, await detailsApplier(ownerId, input, at, deps), at, deps);
+}
+
+/** adjustSessionDetails's applier. */
+export async function detailsApplier(
+	ownerId: string,
+	input: unknown,
+	at: EditAt,
+	deps: TrainingDeps = {}
+): Promise<PlannedEdit> {
 	const { sessionLineage, reason, ...values } = parseWith(adjustDetailsSchema, input);
 	const today = checkToday(at.today);
 	const { db } = resolveDeps(deps);
@@ -923,10 +1041,8 @@ export async function adjustSessionDetails(
 	const change = differences(session.details, after);
 	if (!Object.keys(change).length)
 		throw new TrainingInputError({ sessionLineage: NOTHING_CHANGED });
-	return saveAdjustment(
-		ownerId,
+	return adjusted(
 		target,
-		at,
 		deps,
 		{
 			what: session.title,
@@ -934,12 +1050,12 @@ export async function adjustSessionDetails(
 			after: detailWords(after),
 			reason
 		},
-		{
-			sessions: {
-				[session.lineage]: timed(after.durationMinutes, after.targetRpe ?? session.targetRpe)
-			},
-			details: { [session.lineage]: change }
-		},
-		[session.lineage]
+		{ details: { [session.lineage]: change } },
+		[session.lineage],
+		({ details }) => {
+			const composed = { ...session.details, ...details?.[session.lineage] };
+			const d = parseWith(otherDetailsSchema, composed);
+			return timed(d.durationMinutes, d.targetRpe ?? session.targetRpe);
+		}
 	);
 }
