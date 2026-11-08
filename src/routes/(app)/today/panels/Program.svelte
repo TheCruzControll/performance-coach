@@ -63,7 +63,8 @@
 	{#await plan}
 		<div class="pending" aria-busy="true">
 			<span class="visually-hidden">Loading today’s plan…</span>
-			<Skeleton height="4.5rem" radius="var(--radius-md)" />
+			<!-- The strip's room: Today's STRIP_ROOM on a desktop screen, where it spans the columns. -->
+			<Skeleton height="var(--today-strip-room, 4.5rem)" radius="var(--radius-md)" />
 			<Skeleton height="12rem" radius="var(--radius-lg)" />
 			<Skeleton height="16rem" radius="var(--radius-lg)" />
 		</div>
@@ -218,5 +219,33 @@
 		letter-spacing: var(--tracking-caps);
 		text-transform: uppercase;
 		color: var(--color-text-secondary);
+	}
+
+	/*
+	 * Desktop: the plan lies on Today's tracks (+page.svelte) as a subgrid, so its week strip spans
+	 * both columns in the first row while the day and Up next take the main column beside Today's
+	 * side column. Its skeleton does the same: the strip's room across, the rest in the column.
+	 */
+	@media (width >= 64rem) {
+		.plan,
+		.pending {
+			grid-column: 1 / -1;
+			grid-row: 1 / -1;
+			grid-template-columns: subgrid;
+			grid-template-rows: subgrid;
+			gap: normal;
+			align-items: start;
+		}
+
+		.plan > :global(*:not(.pending)),
+		.pending > :global(*) {
+			grid-column: 1;
+		}
+
+		.plan > :global([role='radiogroup']),
+		.pending > :global(.visually-hidden + *) {
+			grid-column: 1 / -1;
+			grid-row: 1;
+		}
 	}
 </style>
