@@ -8,6 +8,11 @@
  *   server's today is the one the screens show, on any weekday and in any machine zone.
  */
 import { expect, type APIRequestContext } from '@playwright/test';
+import { checkWeek, type Violation } from '../src/lib/domain/programming/interference';
+import { createDatabase, createPool } from '../src/lib/server/db/client';
+import { LOCAL_DATABASE_URLS } from '../src/lib/server/db/migrate';
+import { createProgramsRepository } from '../src/lib/server/db/repositories/programs';
+import { toStoredSessions } from '../src/lib/server/services/programs/mapping';
 import type { ProgramFixture } from '../src/lib/server/test-support/program-fixtures';
 import { query, SAME_ORIGIN } from './support';
 
@@ -118,4 +123,26 @@ export async function seedProgram(
 	});
 	expect(response.status(), `seeding '${fixture}' (${start})`).toBe(201);
 	return (await response.json()) as SeededProgram;
+}
+
+/**
+ * The interference rules the active program's current version breaks in the week that starts on
+ * `weekStart`: domain checkWeek over that week as the store reads it back (the repository and
+ * the services' row mapping), skipped sessions left out, as the move edit judges a week.
+ */
+export async function weekViolations(weekStart: string): Promise<Violation[]> {
+	const pool = createPool(process.env.E2E_DATABASE_URL || LOCAL_DATABASE_URLS.e2e, { max: 1 });
+	try {
+		const repo = createProgramsRepository(createDatabase(pool));
+		const [owner] = await query<{ id: string }>('select id from owners');
+		const current = await repo.currentProgram(owner!.id);
+		if (!current) throw new Error('weekViolations: there is no active program');
+		const { weeks } = await repo.versionOutline(current.version.id);
+		const week = weeks.find((w) => w.startsOn === weekStart);
+		if (!week) throw new Error(`weekViolations: no planned week starts on ${weekStart}`);
+		const sessions = toStoredSessions(await repo.weekSessions([week.id]));
+		return checkWeek([...sessions.values()].filter((s) => s.status !== 'skipped'));
+	} finally {
+		await pool.end();
+	}
 }
