@@ -4,8 +4,8 @@
 # on demand (e.g. after a rollback). It checks https://coach.nikocruz.com from outside, signed
 # out, with no secrets: the app is up and reaches its database, the sign-in page renders, deny
 # by default holds (an app page redirects to sign-in, the telemetry endpoints answer 401, the
-# test-only session route does not exist) and the security headers are sent, on the prerendered
-# pages too.
+# test-only session route does not exist, the backup cron refuses a caller without its bearer)
+# and the security headers are sent, on the prerendered pages too.
 name: Post-deploy smoke
 
 on:
@@ -131,6 +131,16 @@ jobs:
             -H "origin: $APP_ORIGIN")
           message="POST /api/test-support/session → 404 (got $status)"
           if [ "$status" = 404 ]; then pass "$message"; else fail "$message"; fi
+
+          # 6b. The backup cron (vercel.json) opens only for Vercel Cron's bearer: without one it
+          #     answers 401 (404 until CRON_SECRET is set) with an error and no backup's fields.
+          #     No authenticated backup is ever run from here.
+          status=$(fetch cron "$APP_ORIGIN/api/cron/backup")
+          body=$(head -c 300 "$dir/cron.body")
+          { [ "$status" = 401 ] || [ "$status" = 404 ]; } \
+            && jq -e '(keys - ["error", "message"]) == [] and (.error == "unauthorized" or .error == "not_found")' \
+              "$dir/cron.body" > /dev/null
+          check "GET /api/cron/backup without a bearer → 401 (404 before CRON_SECRET), no backup fields (got $status: $body)" $?
 
           # 7. Security headers on the prerendered pages. Static files never reach hooks.server.ts,
           #    so vercel.json sends them STATIC_PAGE_HEADERS (src/lib/server/security-headers.ts),

@@ -113,6 +113,16 @@ describe('route access policy', () => {
 		}
 	});
 
+	it('keeps the cron class to the scheduled jobs under /api/cron, which only a bearer opens', () => {
+		const cron = Object.entries(ROUTE_ACCESS)
+			.filter(([, access]) => access === 'cron')
+			.map(([id]) => id);
+		expect(cron).toEqual(['/api/cron/backup']);
+		expect(cron.every((id) => id.startsWith('/api/cron/'))).toBe(true);
+		// A new cron route is classified, never left to the owner fallback (a session would open it).
+		expect(ids.filter((id) => id.startsWith('/api/cron/'))).toEqual(cron);
+	});
+
 	it('treats unknown or unmatched routes as owner-only', () => {
 		expect(routeAccess(null)).toBe('owner');
 		expect(routeAccess('/api/something-new')).toBe('owner');

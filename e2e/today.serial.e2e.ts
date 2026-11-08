@@ -194,15 +194,17 @@ test('from a blank profile Today starts setup, and after two steps resumes where
 	expect(errors).toEqual([]);
 });
 
-test('once onboarding is complete, Today has no setup card', async ({ page }) => {
+test('once onboarding is complete, Today has no setup card: it offers to build the program', async ({
+	page
+}) => {
 	await gotoHydrated(page, '/today');
 	await expect(card(page)).toBeVisible();
 	await query('update athlete_profiles set onboarding_completed_at = now()');
 	await gotoHydrated(page, '/today');
-	const session = page.getByTestId('today-session');
-	await expect(session.getByRole('heading', { level: 2 })).toHaveText('Nothing scheduled yet');
-	await expect(page.getByTestId('today-next-step')).toContainText('Training profile');
-	await expect(page.getByTestId('today-next-step')).toContainText('Ready');
+	const build = page.getByTestId('today-build');
+	await expect(build.getByRole('heading', { level: 2 })).toHaveText('Build my program');
+	await expect(build).toContainText('Profile ready');
+	await expect(page.getByTestId('today-build-cta')).toHaveText('Build my program');
 	await expect(card(page)).toHaveCount(0);
 });
 
@@ -215,6 +217,11 @@ test('once set up, Today lists the goals by rank with weeks to go, and the shape
 	await gotoHydrated(page, '/today');
 	await expect(card(page)).toHaveCount(0);
 
+	// The Build card sits above the summary, which is unchanged below it.
+	const build = (await page.getByTestId('today-build').boundingBox())!;
+	expect(build.y + build.height).toBeLessThanOrEqual(
+		(await page.getByTestId('today-goals').boundingBox())!.y
+	);
 	await expect(goals(page)).toHaveCount(3);
 	await expect(goals(page).getByRole('heading', { level: 3 })).toHaveText([
 		'First Muay Thai fight',

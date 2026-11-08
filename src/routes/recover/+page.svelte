@@ -38,15 +38,15 @@
 			name="code"
 			bind:value={code}
 			mono
-			placeholder="XXXX-XXXX-XXXX-XXXX"
+			placeholder="XXXX-XXXX-XXXX-XXXX-XXXX-XXXX"
 			autocomplete="one-time-code"
 			autocapitalize="characters"
 			spellcheck={false}
 			enterkeyhint="go"
-			maxlength={32}
+			maxlength={40}
 			required
 			error={form?.error ?? null}
-			hint="Letters and numbers; dashes and spaces are optional."
+			hint="24 letters and numbers (16 in an older code); dashes and spaces are optional."
 			data-testid="recovery-code-input"
 		/>
 		<Button
