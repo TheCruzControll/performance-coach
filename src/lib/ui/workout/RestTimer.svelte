@@ -67,13 +67,12 @@
 				icon={paused ? 'play' : 'pause'}
 				label={paused ? 'Resume rest' : 'Pause rest'}
 				variant={paused ? 'accent' : 'filled'}
-				size="sm"
 				onclick={paused ? onresume : onpause}
 			/>
-			<IconButton icon="refresh" label="Reset rest" variant="filled" size="sm" onclick={onreset} />
+			<IconButton icon="refresh" label="Reset rest" variant="filled" onclick={onreset} />
 		{/if}
-		<Button size="sm" variant="secondary" onclick={onadd}>+30 s</Button>
-		<Button size="sm" variant="ghost" onclick={onclear}>{over ? 'Dismiss' : 'Skip'}</Button>
+		<Button variant="secondary" onclick={onadd}>+30 s</Button>
+		<Button variant="ghost" onclick={onclear}>{over ? 'Dismiss' : 'Skip'}</Button>
 	</div>
 	<div class="track" aria-hidden="true">
 		<div class="fill" style:transform="scaleX({reading.progress})"></div>
@@ -87,8 +86,8 @@
 		flex-wrap: wrap;
 		align-items: center;
 		justify-content: space-between;
-		gap: var(--space-2) var(--space-3);
-		padding: var(--space-3) var(--space-3) var(--space-3) var(--space-4);
+		gap: var(--space-2);
+		padding: var(--space-3);
 		border-radius: var(--radius-lg);
 		border: 1px solid var(--color-border);
 		background: var(--color-surface-2);
@@ -122,11 +121,16 @@
 		color: var(--color-accent-text);
 	}
 
+	/* Tight, so the time and its 44 px controls share one row at 393 px: a short pill. */
 	.controls {
 		display: flex;
 		align-items: center;
-		gap: var(--space-2);
+		gap: var(--space-1);
 		margin-left: auto;
+	}
+
+	.controls > :global(.btn) {
+		--btn-pad: var(--space-3);
 	}
 
 	.track {

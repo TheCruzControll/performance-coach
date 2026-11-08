@@ -247,6 +247,7 @@
 	/** The main column, and the sticky logger's height there, which the pill sits above. */
 	let main = $state<HTMLElement>();
 	let loggerHeight = $state(0);
+	let pillHeight = $state(0);
 	/** Start rest shows with no rest once the exercise has a set done to rest from. */
 	const startable = $derived(
 		active.store !== null && !!current?.slot.sets.some((set) => !set.isSkipped)
@@ -301,26 +302,33 @@
 
 <div class="main" data-testid="workout-main" bind:this={main}>
 	{#if rest}
-		<div class="rest" style:--logger-height="{loggerHeight}px">
-			<RestTimer
-				{rest}
-				onpause={() => restAction('rest.pause')}
-				onresume={() => restAction('rest.resume')}
-				onreset={() => restAction('rest.reset')}
-				onadd={() => restAction('rest.add')}
-				onclear={() => restAction('rest.clear')}
-			/>
+		<div class="rest" style:--logger-height="{loggerHeight}px" style:--pill-height="{pillHeight}px">
+			<div class="pill" bind:offsetHeight={pillHeight}>
+				<RestTimer
+					{rest}
+					onpause={() => restAction('rest.pause')}
+					onresume={() => restAction('rest.resume')}
+					onreset={() => restAction('rest.reset')}
+					onadd={() => restAction('rest.add')}
+					onclear={() => restAction('rest.clear')}
+				/>
+			</div>
 		</div>
 	{:else if current && startable}
 		{@const position = current.position}
-		<div class="rest start" style:--logger-height="{loggerHeight}px">
-			<Button
-				size="sm"
-				variant="secondary"
-				icon="play"
-				data-testid="start-rest"
-				onclick={() => void startRest(position)}>Start rest</Button
-			>
+		<div
+			class="rest start"
+			style:--logger-height="{loggerHeight}px"
+			style:--pill-height="{pillHeight}px"
+		>
+			<div class="pill" bind:offsetHeight={pillHeight}>
+				<Button
+					variant="secondary"
+					icon="play"
+					data-testid="start-rest"
+					onclick={() => void startRest(position)}>Start rest</Button
+				>
+			</div>
 		</div>
 	{/if}
 	{#if current}
@@ -364,8 +372,9 @@
 	}
 
 	/* Start rest, with no rest: a quiet control at the timer's place, at the end of the row. */
-	.start {
-		align-self: flex-end;
+	.start .pill {
+		display: flex;
+		justify-content: flex-end;
 	}
 
 	/* Vertical drags scroll the page; sideways ones are the swipe's, so it never scrolls sideways. */
@@ -386,8 +395,10 @@
 
 	/*
 	 * Below 1024 px the rest pill follows the card and its navigation (it is first in the DOM for
-	 * the desktop's order), at the foot with the logger, and sticks just above it (or above the
-	 * home indicator when no logger shows), so it stays in view while the page scrolls.
+	 * the desktop's order), at the foot, and stays in view while the page scrolls: stuck above the
+	 * home indicator, or, with a logger, fixed just above it. Not sticky there: a sticky pill
+	 * cannot rise above the column's top, so a tall logger on a short screen pushed it under
+	 * itself. Its place in the flow keeps its height, so it never covers the end of the page.
 	 */
 	@media (width < 64rem) {
 		.swipe,
@@ -397,9 +408,32 @@
 
 		.rest {
 			position: sticky;
-			bottom: calc(max(var(--logger-height), var(--safe-bottom)) + var(--space-4));
+			bottom: calc(var(--safe-bottom) + var(--space-4));
 			z-index: var(--z-sticky);
 			margin-top: auto;
+		}
+
+		.main:has(> :global([data-testid='set-logger'])) > .rest {
+			position: static;
+			height: var(--pill-height);
+		}
+
+		.main:has(> :global([data-testid='set-logger'])) > .rest > .pill {
+			position: fixed;
+			inset-inline: max(var(--gutter), var(--safe-left)) max(var(--gutter), var(--safe-right));
+			bottom: calc(max(var(--logger-height), var(--safe-bottom)) + var(--space-4));
+			z-index: var(--z-sticky);
+			max-width: calc(var(--content-column) - 2 * var(--gutter));
+			margin-inline: auto;
+		}
+
+		/* Start rest's row lets taps beside the button through. */
+		.start {
+			pointer-events: none;
+		}
+
+		.start .pill > :global(*) {
+			pointer-events: auto;
 		}
 
 		/* The pill takes the logger's place at the foot, so the logger follows it directly. */

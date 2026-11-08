@@ -1,9 +1,10 @@
 <!--
   @component
   The workout's running time, pauses left out (timers.ts), ticking once a second while it runs. A
-  timer role, which is not announced every second. With its handlers, its controls beside it:
-  Pause while it runs; Resume and Reset once paused, the time dimmed and called paused. Each is
-  36 px with a 44 px hit area, so the header's row keeps its height.
+  timer role, which is not announced every second. With its handlers, the time itself is the
+  Pause button while it runs and Resume once paused (the time dimmed and called paused), with
+  Reset beside it. The button lies over the time, 44 px tall, so the time keeps its width and
+  the header's row its height.
 -->
 <script lang="ts">
 	import { formatDuration } from '#lib/domain/units.ts';
@@ -36,27 +37,31 @@
 </script>
 
 <span class="clock">
-	<span
-		class="stopwatch"
-		role="timer"
-		aria-label={paused ? `${label}, paused` : label}
-		data-paused={paused ? '' : undefined}
-		data-testid="stopwatch"
-	>
-		<Icon name="clock" size={16} />
-		<span class="time">{elapsed}</span>
+	<span class="face">
+		<span
+			class="stopwatch"
+			role="timer"
+			aria-label={paused ? `${label}, paused` : label}
+			data-paused={paused ? '' : undefined}
+			data-testid="stopwatch"
+		>
+			<Icon name={!onpause ? 'clock' : paused ? 'play' : 'pause'} size={16} />
+			<span class="time">{elapsed}</span>
+		</span>
+		{#if onpause && onresume}
+			<!-- One button that changes, so the focus stays on it. -->
+			<button
+				type="button"
+				class="toggle"
+				aria-label={paused ? 'Resume workout time' : 'Pause workout time'}
+				onclick={paused ? onresume : onpause}
+			></button>
+		{/if}
 	</span>
-	{#if onpause && onresume}
-		<!-- One button that changes, so the focus stays on it. -->
-		<IconButton
-			icon={paused ? 'play' : 'pause'}
-			label={paused ? 'Resume workout time' : 'Pause workout time'}
-			size="sm"
-			onclick={paused ? onresume : onpause}
-		/>
-	{/if}
 	{#if paused && onreset}
-		<IconButton icon="refresh" label="Reset workout time" size="sm" onclick={onreset} />
+		<span class="reset">
+			<IconButton icon="refresh" label="Reset workout time" onclick={onreset} />
+		</span>
 	{/if}
 </span>
 
@@ -65,6 +70,34 @@
 		display: inline-flex;
 		align-items: center;
 		gap: var(--space-2);
+	}
+
+	/* 44 px, overhanging the time's 2rem row, which keeps its height. */
+	.reset {
+		display: inline-flex;
+		margin-block: calc((2rem - var(--touch-target)) / 2);
+	}
+
+	.face {
+		position: relative;
+		display: inline-flex;
+	}
+
+	.toggle {
+		position: absolute;
+		inset: 50% 0 auto;
+		height: var(--touch-target);
+		translate: 0 -50%;
+		/* Its hover paints the time's pill only, not the whole 44 px. */
+		padding-block: calc((var(--touch-target) - 2rem) / 2);
+		background-clip: content-box;
+		border-radius: var(--radius-full);
+	}
+
+	@media (hover: hover) and (pointer: fine) {
+		.toggle:hover {
+			background-color: color-mix(in srgb, var(--color-text) 8%, transparent);
+		}
 	}
 
 	.stopwatch {
