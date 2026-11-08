@@ -221,12 +221,12 @@ test.describe('a program with sessions today', () => {
 	test.describe('in a desktop window', () => {
 		test.use(DESKTOP);
 
-		test('the plan sits in the readable column, and a session card has hover and focus states', async ({
+		test('the plan sits in the wide column, and a session card has hover and focus states', async ({
 			page
 		}, testInfo) => {
 			await gotoHydrated(page, '/today');
 			await expect(cards(page)).toHaveCount(2);
-			await expectMainCentred(page, await tokenPx(page, '--content-readable'));
+			await expectMainCentred(page, await tokenPx(page, '--content-wide'));
 			await expectNoSideScroll(page);
 			const main = (await page.locator('main#main').boundingBox())!;
 			const box = (await plan(page).boundingBox())!;
