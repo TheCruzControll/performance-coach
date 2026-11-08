@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { resolve } from '$app/paths';
 	import { preferences } from '#lib/client/preferences.svelte.ts';
 	import EmptyState from '#lib/ui/components/EmptyState.svelte';
+	import ListRow from '#lib/ui/components/ListRow.svelte';
 	import PageHeader from '#lib/ui/components/PageHeader.svelte';
 	import Stat from '#lib/ui/components/Stat.svelte';
 	import Surface from '#lib/ui/components/Surface.svelte';
@@ -72,6 +74,16 @@
 <div data-layout="wide">
 	<PageHeader title="Progress" eyebrow="Trends" />
 
+	<div class="history">
+		<ListRow
+			title="Workout history"
+			subtitle="Every finished workout, with its sets and notes"
+			icon="clock"
+			href={resolve('/(app)/progress/workouts/[[id]]', {})}
+			data-testid="workout-history-row"
+		/>
+	</div>
+
 	<Tabs
 		label="Discipline"
 		bind:value={tab}
@@ -117,6 +129,10 @@
 </div>
 
 <style>
+	.history {
+		margin-bottom: var(--space-5);
+	}
+
 	.panel {
 		display: grid;
 		gap: var(--space-4);

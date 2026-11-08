@@ -339,9 +339,9 @@ function settled(v: WorkoutView | null): WorkoutView | null {
 }
 
 /**
- * The sequence without what the server cannot apply yet: the owner's own exercises
- * (exercise.create answers 'unsupported' until custom-exercise-sync) and every mutation that
- * depends on one, however indirectly.
+ * The sequence without the owner's own exercises and every mutation that depends on one, however
+ * indirectly: the sequences reuse CUSTOM's names, which one owner's library holds once
+ * (custom-exercises.test.ts covers exercise.create).
  */
 function serverSupported(mutations: readonly Mutation[]): Mutation[] {
 	const dropped: Mutation[] = [];

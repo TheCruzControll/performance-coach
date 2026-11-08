@@ -116,12 +116,20 @@ async function expectBelow(below: Locator, above: Locator) {
 }
 
 /**
- * The session's two columns: centred at --content-wide beside the rail, the side column (at
- * least --content-list) left of the main one (at most --content-readable), nothing sideways.
+ * The session's two columns: centred beside the rail at --content-wide, or the whole area right
+ * of the rail where that is narrower (a 1024 px window), the side column (at least
+ * --content-list) left of the main one (at most --content-readable), level with its top (an
+ * older version's banner, when there is one), nothing sideways.
  */
 async function expectSessionColumns(page: Page) {
-	await expectMainCentred(page, await tokenPx(page, '--content-wide'));
-	await expectBeside(side(page), main(page));
+	const rail = await boxOf(page.getByRole('navigation', { name: 'Primary' }));
+	const area = (await layoutWidth(page)) - (rail.x + rail.width);
+	await expectMainCentred(page, Math.min(await tokenPx(page, '--content-wide'), area));
+	const banner = page.getByTestId('older-version');
+	if (await banner.count()) {
+		await expectBeside(side(page), banner);
+		await expectBelow(main(page), banner);
+	} else await expectBeside(side(page), main(page));
 	expect((await boxOf(side(page))).width).toBeGreaterThanOrEqual(
 		(await tokenPx(page, '--content-list')) - 1
 	);
@@ -242,9 +250,10 @@ test.describe('a program that starts next week', () => {
 			await page.setViewportSize({ width, height: 900 });
 			await expectSessionColumns(page);
 		}
-		// At 1024 px the main column is narrower than WIDE_EXERCISE: the note goes under the sets.
+		// At 1024 px the main column is narrower than WIDE_EXERCISE: the coach's words go back above
+		// the sets, as on a phone.
 		await page.setViewportSize({ width: DESKTOP_WIDTHS[0], height: 900 });
-		await expectBelow(note, sets);
+		await expectBelow(sets, note);
 		await page.setViewportSize({ width: BELOW_DESKTOP_WIDTH, height: 900 });
 		await expectNoSideScroll(page);
 		await expectRightOf(callout.locator('ol'), callout.locator('p').first());

@@ -23,7 +23,10 @@ import {
 	type Executor
 } from '../../../src/lib/server/db';
 import { createTrainingLogRepository } from '../../../src/lib/server/db/repositories/training-log';
-import { resolveKeys } from '../../../src/lib/server/services/exercises/index';
+import {
+	createCustomExercise,
+	resolveKeys
+} from '../../../src/lib/server/services/exercises/index';
 import {
 	createProgramFromPlan,
 	getProgramVersion,
@@ -384,7 +387,19 @@ describe('pain.report', () => {
 	it('a report naming an exercise outside the library is refused at payload.exerciseId', async () => {
 		await withRollback(async (db) => {
 			const s = await seed(db);
-			const report = reportOf(s, { exerciseId: crypto.randomUUID() });
+			// Another owner's own exercise (an id no row holds would wait for its exercise.create).
+			const theirs = await createCustomExercise(
+				crypto.randomUUID(),
+				{
+					name: 'Sandbag shouldering',
+					pattern: 'hinge',
+					primaryMuscles: ['glutes'],
+					measure: 'reps',
+					loadType: 'external'
+				},
+				{ db }
+			);
+			const report = reportOf(s, { exerciseId: theirs.id });
 
 			const { results } = await sync(db, s.owner, [report]);
 
