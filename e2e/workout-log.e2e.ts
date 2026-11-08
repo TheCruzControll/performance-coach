@@ -231,7 +231,7 @@ test.describe('logging a set (IndexedDB only)', () => {
 		// The plank logs a time, in m:ss.
 		await expect(logger(page).getByTestId('logger-amount')).toContainText('Time');
 		await expect(amountField(page)).toHaveValue('0:45');
-		await expect(rpe(page, 'No RPE')).toBeChecked();
+		await expect(rpe(page, '7')).toBeChecked();
 		expect(await completeInFrame(page)).toEqual({
 			states: ['done', 'current', 'todo'],
 			exercise: 'Pull-up'
@@ -260,7 +260,7 @@ test.describe('logging a set (IndexedDB only)', () => {
 			reps: null,
 			seconds: 45,
 			weight: null,
-			rpe: null
+			rpe: 7
 		});
 		expect(second!.payload).toMatchObject({
 			position: PULL_UP,

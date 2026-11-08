@@ -12,9 +12,14 @@
   save a changed step first). Start coaching finishes the setup. The page can put more between
   the title and the editor: the welcome's intro, or on a return visit its card to pick up at the
   furthest step advanced.
+
+  From 1024 px the step is a card centred in the window, the progress bar across its top and
+  Back, Skip and Continue in a row under the form (Back is in both places, one shown per
+  width, so the focus order follows the layout). The review declares wide, so its
+  blocks sit in two columns.
 -->
 <script lang="ts">
-	import { onMount, type Component, type ComponentProps, type Snippet } from 'svelte';
+	import { onMount, tick, type Component, type ComponentProps, type Snippet } from 'svelte';
 	import { goto } from '$app/navigation';
 	import type { SectionForm } from '#lib/client/section-form.svelte.ts';
 	import { previousStep, STEP_INFO, type OnboardingStep } from '#lib/domain/profile/onboarding.ts';
@@ -81,6 +86,7 @@
 	let Summary = $state<Component<ComponentProps<typeof ProfileSummary>> | null>(null);
 	let form = $state<SectionForm<unknown> | null>(null);
 	let failed = $state(false);
+	let alert = $state<HTMLElement>();
 	let afterSave: SectionEditor['afterSave'];
 
 	onMount(async () => {
@@ -128,6 +134,10 @@
 		});
 		// The redirect to the next step has been followed: the device's units follow a welcome.
 		if (outcome.ok && action === '?/save') afterSave?.(sent);
+		// A message about the step as a whole (no goal yet, no connection) takes focus, as a field
+		// error does: the button pressed was disabled while it posted, which dropped focus.
+		await tick();
+		if (!outcome.ok && !document.querySelector('[aria-invalid="true"]')) alert?.focus();
 	}
 
 	/**
@@ -151,21 +161,25 @@
 	}
 </script>
 
-<div class="step" data-step={step}>
+<!-- Data preloads on tap, not hover: the step before has its Back in the same place, under the
+     pointer this click leaves, and a hover preload there would fetch the data of the step before
+     that for nobody (WebKit reports it as a page error when a page load cancels it). -->
+{#snippet back(to: OnboardingStep, where: 'head' | 'row')}
+	<a
+		class="nav back {where}"
+		href={stepHref(to)}
+		onclick={(event) => leave(event, 'back', stepHref(to))}
+		data-sveltekit-preload-data="tap"
+		data-testid={where === 'head' ? 'step-back' : 'step-back-row'}
+	>
+		<Icon name="chevron-left" size={20} /> Back
+	</a>
+{/snippet}
+
+<div class="step" data-step={step} data-layout={key === null ? 'wide' : undefined}>
 	<header class="top">
 		{#if previous}
-			<!-- Data preloads on tap, not hover: the step before has its Back in the same place, under
-			     the pointer this click leaves, and a hover preload there would fetch the data of the step
-			     before that for nobody (WebKit reports it as a page error when a page load cancels it). -->
-			<a
-				class="nav back"
-				href={stepHref(previous)}
-				onclick={(event) => leave(event, 'back', stepHref(previous))}
-				data-sveltekit-preload-data="tap"
-				data-testid="step-back"
-			>
-				<Icon name="chevron-left" size={20} /> Back
-			</a>
+			{@render back(previous, 'head')}
 		{:else}
 			<span></span>
 		{/if}
@@ -234,11 +248,14 @@
 
 	<div class="actions">
 		{#if messages.length}
-			<Notice tone="danger" data-testid="step-error">
-				{#each messages as message (message)}<p>{message}</p>{/each}
-			</Notice>
+			<div class="alert" tabindex="-1" bind:this={alert} data-testid="step-error">
+				<Notice tone="danger">
+					{#each messages as message (message)}<p>{message}</p>{/each}
+				</Notice>
+			</div>
 		{/if}
 		<div class="buttons">
+			{#if previous}{@render back(previous, 'row')}{/if}
 			{#if optional}
 				<Button
 					variant="ghost"
@@ -295,6 +312,11 @@
 
 	.later {
 		justify-self: end;
+	}
+
+	/* Back's place in the action row, a desktop window's (below). */
+	.back.row {
+		display: none;
 	}
 
 	@media (hover: hover) and (pointer: fine) {
@@ -367,7 +389,9 @@
 		margin-top: var(--space-4);
 	}
 
+	/* A container, so the review's summary lays out by the room it has (two columns when wide). */
 	.body {
+		container-type: inline-size;
 		padding-bottom: var(--space-8);
 	}
 
@@ -394,8 +418,88 @@
 		background: linear-gradient(to bottom, transparent, var(--color-canvas) var(--space-6));
 	}
 
+	.alert {
+		border-radius: var(--radius-md);
+	}
+
 	.buttons {
 		display: flex;
 		gap: var(--space-2);
+	}
+
+	/*
+	 * A desktop window: the step is a card as tall as the window allows (capped), the same size on
+	 * every step, so moving on moves neither the card nor its action row. The progress bar runs
+	 * across its top edge; the form scrolls inside it when it is taller than the room; the actions
+	 * close the card in a row under the form, Continue at the right, never pinned to the window.
+	 */
+	@media (width >= 64rem) {
+		.step {
+			--card-padding: var(--space-8);
+			grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+			height: min(calc(100dvh - 2 * var(--space-10)), 52rem);
+			min-height: 0;
+			padding: 0 var(--card-padding);
+			border: 1px solid var(--color-border);
+			border-radius: var(--radius-xl);
+			background: var(--color-surface-1);
+			box-shadow: var(--elevation-2);
+			overflow: clip;
+		}
+
+		.progress {
+			order: -1;
+			margin: 0 calc(-1 * var(--card-padding));
+		}
+
+		.segment {
+			border-radius: 0;
+		}
+
+		.top {
+			padding-top: var(--space-3);
+		}
+
+		/* Back moves to the action row; hidden, the header's keeps its grid cell and leaves the
+		   focus order. */
+		.back.head {
+			visibility: hidden;
+		}
+
+		.back.row {
+			display: inline-flex;
+			margin-right: auto;
+			padding: 0 var(--space-2);
+		}
+
+		/* The title and its lede stay a readable measure on the wide review. */
+		.intro {
+			max-width: var(--content-readable);
+			margin-bottom: var(--space-4);
+		}
+
+		/* Room inside the scroll edge for the fields' focus rings. */
+		.body {
+			margin: 0 calc(-1 * var(--space-2));
+			padding: var(--space-2) var(--space-2) var(--space-6);
+			overflow-y: auto;
+		}
+
+		.actions {
+			position: static;
+			margin: 0 calc(-1 * var(--card-padding));
+			padding: var(--space-4) var(--card-padding) var(--space-6);
+			border-top: 1px solid var(--color-border);
+			background: none;
+		}
+
+		.buttons {
+			justify-content: flex-end;
+		}
+
+		.buttons :global(.block) {
+			width: auto;
+			min-width: 12rem;
+		}
 	}
 </style>

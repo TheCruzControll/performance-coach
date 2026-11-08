@@ -720,8 +720,11 @@ describe('indexes', () => {
 			expect(Object.keys(HISTORY_INDEXES).sort()).toEqual([
 				'activeWorkouts',
 				'bestE1rms',
+				'completedWorkoutsPage',
 				'exerciseHistory',
 				'lastPerformances',
+				'lastSessionSets',
+				'mostReps',
 				'repMaxes',
 				'runsInRange',
 				'sessionsInRange',

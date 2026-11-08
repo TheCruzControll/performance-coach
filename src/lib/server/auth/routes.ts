@@ -37,6 +37,7 @@ export const ROUTE_ACCESS = {
 	// Prerendered workout pages (data-free HTML; the workout lives in IndexedDB on the device)
 	'/workout': 'public',
 	'/workout/run': 'public',
+	'/workout/session': 'public',
 	// Test-only: 404 unless ENABLE_TEST_ROUTES (never allowed on a hosted deployment)
 	'/api/test-support/session': 'public',
 	'/api/test-support/error': 'owner',
@@ -89,11 +90,13 @@ export const ROUTE_ACCESS = {
 
 	// reads
 	'/api/workouts/[id]': 'owner',
-	'/api/workouts/active': 'owner'
+	'/api/workouts/active': 'owner',
 
 	// kit
+	'/api/workouts/kit': 'owner',
 
 	// history
+	'/api/exercises/[id]/history': 'owner'
 
 	// exercises
 } as const satisfies Record<RouteId, RouteAccess>;

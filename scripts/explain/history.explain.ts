@@ -66,8 +66,13 @@ const page = data.programVersions
 const decisions = data.programmingDecisions.filter((d) => page.some((v) => v.id === d.versionId));
 const four = lastWeeks(4);
 
-/** Read from the loaded database: a catalogue row's id and a set id deep in its history. */
-const loaded = { squat: '', cursor: 0 };
+/**
+ * Read from the loaded database: a catalogue row's id, a set id deep in its history, and six
+ * exercises with history (a start kit's batch).
+ */
+const loaded = { squat: '', cursor: 0, six: [] as string[], workout: '' };
+/** A start kit's 'before': the kit is built now, after every set in the dataset. */
+const KIT_BUILT = new Date(`${addDays(TODAY, 1)}T00:00:00Z`);
 
 type Query = { toSQL(): { sql: string; params: unknown[] } };
 type Case = [name: string, expected: readonly string[], query: () => Query];
@@ -114,6 +119,26 @@ const CASES: Case[] = (() => {
 		['repMaxes, one exercise', [H.repMaxes], () => h.repMaxes(db, owner, loaded.squat)],
 		['repMaxes, every exercise', [H.repMaxes], () => h.repMaxes(db, owner)],
 		[
+			'lastSessionSetsFor, six exercises (start kit)',
+			[H.lastSessionSets],
+			() => h.lastSessionSetsFor(db, owner, loaded.six, KIT_BUILT)
+		],
+		[
+			'bestE1rms, six exercises (start kit)',
+			[H.bestE1rms],
+			() => h.bestE1rms(db, owner, loaded.six, KIT_BUILT)
+		],
+		[
+			'repMaxes, six exercises (start kit)',
+			[H.repMaxes],
+			() => h.repMaxes(db, owner, loaded.six, KIT_BUILT)
+		],
+		[
+			'mostReps, six exercises (start kit)',
+			[H.mostReps],
+			() => h.mostReps(db, owner, loaded.six, KIT_BUILT)
+		],
+		[
 			'setsInRange, 12 weeks (muscle volume)',
 			[H.setsInRange],
 			() => h.setsInRange(db, owner, instants(lastWeeks(12)))
@@ -122,6 +147,16 @@ const CASES: Case[] = (() => {
 			'runsInRange, 12 weeks (mileage)',
 			[H.runsInRange],
 			() => h.runsInRange(db, owner, instants(lastWeeks(12)))
+		],
+		[
+			'completedWorkoutsPage, first page (History)',
+			Object.values(H.completedWorkoutsPage),
+			() => h.completedWorkoutsPage(db, owner, { limit: 21 })
+		],
+		[
+			'completedWorkoutsPage, page 6 (History)',
+			Object.values(H.completedWorkoutsPage),
+			() => h.completedWorkoutsPage(db, owner, { before: loaded.workout, limit: 21 })
 		],
 		[
 			'activeWorkouts (continue on another device)',
@@ -164,6 +199,11 @@ const CASES: Case[] = (() => {
 			'sessionByLineage',
 			['planned_sessions_lineage_idx'],
 			() => p.sessionByLineage(db, version, session.lineageId!)
+		],
+		[
+			'sessionById (start kit adoption)',
+			['planned_sessions_pkey', 'program_version_weeks_week_idx'],
+			() => p.sessionById(db, owner, session.id!)
 		],
 		...prefixed(
 			'sessionChildren',
@@ -250,6 +290,14 @@ beforeAll(async () => {
 	loaded.squat = squat!.id;
 	const pages = await h.exerciseHistory(db, owner, loaded.squat, { limit: 100 });
 	loaded.cursor = pages.at(-1)!.id;
+	const workouts = await h.completedWorkoutsPage(db, owner, { limit: 100 });
+	loaded.workout = workouts.at(-1)!.id;
+	const used = await db
+		.selectDistinct({ id: schema.setRecords.exerciseId })
+		.from(schema.setRecords)
+		.orderBy(schema.setRecords.exerciseId)
+		.limit(6);
+	loaded.six = used.map((row) => row.id);
 }, 120_000);
 
 afterAll(async () => {
