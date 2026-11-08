@@ -8,7 +8,7 @@
  *   p95 < 100 ms, with the median and every sample annotated;
  * - INP ≤ 200 ms, from Event Timing over the steppers, the chips and Complete set, and the
  *   web-vitals INP the app beaconed for route_id '/workout' (read from Postgres once the page is
- *   hidden, idle first, so the beacon the page sends first carries it);
+ *   hidden, idle first, so web-vitals has every interaction when it reports);
  * - layout shift 0 while logging: every shift from the steppers, the chips, Complete set and what
  *   they change (the rows, the logger's next set, Up next after an exercise's last set), input or
  *   not, each one's sources in the message. Starting the next exercise, which swaps the screen's
@@ -268,15 +268,19 @@ test.describe('workout screen at 4× CPU', () => {
 			description: `${shifted} while logging${what && ` (${what})`} · ${moved} starting the next exercise`
 		});
 
-		// web-vitals reads the interactions an observer delivers in an idle callback, and the app
-		// queues INP as it changes: two idle periods on, the first beacon at hide carries it.
+		// web-vitals reads the interactions an observer delivers in an idle callback: two idle
+		// periods on, the INP it reports at hide counts every one of them.
 		await painted(page);
 		await page.evaluate(async () => {
 			for (let i = 0; i < 2; i++)
 				await new Promise((done) => requestIdleCallback(done, { timeout: 2_000 }));
 		});
-		// Hidden: the app beacons its web-vitals INP for /workout.
-		await page.goto('/robots.txt');
+		// Hidden, with the page kept alive (as platform.e2e.ts hides it), so no navigation races the
+		// beacon: the app beacons its web-vitals INP for /workout.
+		await page.evaluate(() => {
+			Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
+			document.dispatchEvent(new Event('visibilitychange', { bubbles: true }));
+		});
 		const beaconed = async () =>
 			(
 				await query<{ value: number }>(
