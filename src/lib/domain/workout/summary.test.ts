@@ -11,7 +11,9 @@ import { project, replay } from './project';
 import type { AnyTable } from './project';
 import type { CanonicalOther, CanonicalRun, CanonicalWorkout } from './protocol';
 import { initialDevice } from './reducers/device';
-import { otherTable, runTable, strengthTable } from './reducers/tables';
+import { runTable } from './reducers/run';
+import { strengthTable } from './reducers/tables';
+import { otherTable } from './reducers/other';
 import { bestsOf, kitBests, summarizeWorkout } from './summary';
 import type { ExerciseBests, PriorBests } from './summary';
 import type {

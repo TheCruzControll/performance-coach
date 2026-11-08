@@ -5,9 +5,9 @@
   - Needs attention: a change the server refused, or one that kept failing past the cap
     (outbox-rules' STUCK_AFTER), each with why ('Weight: Up to 1000 kg', 'Couldn't sync for a day:
     the server answered 500') and its actions:
-    - Fix, from the registry by type (fix/registry.ts): the set editor with the refused values, or
-      a one-tap rewrite. The corrected change is checked with the schemas (loaded on demand), then
-      re-queued under its id, in its place. 'Deleted on another device' offers Discard only.
+    - Fix, from the registry by type (fix/registry.ts): the set editor with the refused values, a
+      family's own editor (loaded then), or a one-tap rewrite. The corrected change is checked
+      with the schemas (loaded on demand), then re-queued under its id, in its place. 'Deleted on another device' offers Discard only.
     - Try again, for a change parked after the cap: queued again, its count cleared.
     - Discard, after a confirmation that says how many changes go: the change and every later one
       that depends on it.
@@ -24,6 +24,7 @@
 	import { DEFAULT_LOAD_INCREMENT } from '#lib/domain/units.ts';
 	import { describeMutation, problemText } from '#lib/domain/workout/describe.ts';
 	import type { DescribeContext } from '#lib/domain/workout/describe.ts';
+	import type { FieldErrors } from '#lib/domain/validation.ts';
 	import { SYNC_CODE_LABEL } from '#lib/domain/workout/index.ts';
 	import type { LoggedSet, Mutation, WorkoutView } from '#lib/domain/workout/index.ts';
 	import BottomSheet from '#lib/ui/components/BottomSheet.svelte';
@@ -63,6 +64,14 @@
 	}
 	let editing = $state.raw<Editing | null>(null);
 	let editorOpen = $state(false);
+	/** A family's own editor, open on a refused change. */
+	let custom = $state.raw<{
+		seq: number;
+		m: Mutation;
+		problem: string;
+		errors: FieldErrors;
+		Editor: Awaited<ReturnType<Extract<FixEntry, { kind: 'editor' }>['editor']>>['default'];
+	} | null>(null);
 
 	async function read() {
 		try {
@@ -133,8 +142,23 @@
 	function fix(entry: OutboxEntry, how: FixEntry) {
 		const m = entry.envelope;
 		if (how.kind === 'rewrite') return act(() => store.fix(entry.seq, how.rewrite(m)));
+		if (how.kind === 'editor') {
+			const { seq } = entry;
+			const problem = problemOf(entry);
+			const errors = entry.parked?.errors ?? {};
+			// A chunk gone after a deploy leaves Discard, which always works.
+			return how.editor().then(
+				({ default: Editor }) => {
+					editing = null;
+					custom = { seq, m, problem, errors, Editor };
+					editorOpen = true;
+				},
+				() => {}
+			);
+		}
 		if (m.type !== 'set.log' && m.type !== 'set.skip' && m.type !== 'set.edit') return;
 		const set = m.type === 'set.edit' ? setById(m.entityId) : m.payload;
+		custom = null;
 		editing = {
 			seq: entry.seq,
 			m,
@@ -157,6 +181,14 @@
 				? { ...m, payload: { ...m.payload, ...values } }
 				: { ...m, payload: values }
 		) as Mutation;
+		await requeue(seq, next);
+	}
+
+	/**
+	 * A corrected change, checked here first (the schemas load now, never before), re-queued; then
+	 * `then`, a change it brings (a segment's new totals), queued after every older one.
+	 */
+	async function requeue(seq: number, next: Mutation, then?: Mutation) {
 		try {
 			const [{ validate }, { envelopeSchema }] = await Promise.all([
 				import('#lib/domain/validation.ts'),
@@ -172,7 +204,10 @@
 			// The schemas' chunk is gone after a deploy: the server checks it anyway.
 		}
 		notes = { ...notes, [seq]: undefined };
-		await act(() => store.fix(seq, next));
+		await act(async () => {
+			await store.fix(seq, next);
+			if (then) await store.dispatch(then).saved;
+		});
 	}
 
 	const exerciseOf = (id: string) => view?.exercises[id];
@@ -284,6 +319,20 @@
 		{/if}
 	</div>
 </BottomSheet>
+
+{#if custom}
+	{@const { Editor, seq, m, problem, errors } = custom}
+	{#key seq}
+		<Editor
+			bind:open={editorOpen}
+			{m}
+			{problem}
+			{errors}
+			{view}
+			onsave={(next, then) => requeue(seq, next, then)}
+		/>
+	{/key}
+{/if}
 
 {#if editing}
 	{@const exercise = exerciseOf(editing.exerciseId)}

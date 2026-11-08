@@ -6,7 +6,7 @@ import type { Mutation, MutationInput, MutationOf, MutationType, OtherFields } f
 import { checkMetrics, metricInput, metricTemplate, metricType } from './other';
 import { project, replay } from './project';
 import type { CanonicalWorkout } from './protocol';
-import { otherTable } from './reducers/tables';
+import { otherTable } from './reducers/other';
 import type { OtherKit } from './types';
 
 const KIT = workoutDayKits({ date: '2026-11-06' }).other;
