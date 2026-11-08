@@ -3,7 +3,9 @@
  * keeps the Components column, about a phone column wide and never wider than the readable
  * column, so no answer stretches; Tab walks its sources and disclosures in reading order with a
  * visible ring; Enter works the exercise button and the method; sources and the method take a
- * hover tint for the mouse. Screenshots in both themes.
+ * hover tint for the mouse. The composer, Thinking, loading rows and every notice keep the same
+ * column; the keyboard sends with Enter, adds a line with Shift+Enter and shows a ring on the
+ * composer; the composer, Stop and Retry answer the mouse. Screenshots in both themes.
  */
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { openCoachPanel } from './coach-a11y';
@@ -146,5 +148,101 @@ test.describe('/design → Coach on a desktop', () => {
 		await plain.hover();
 		await page.waitForTimeout(250);
 		expect(await background(plain)).toBe(before);
+	});
+
+	for (const theme of ['dark', 'light'] as const) {
+		test(`the composer, Thinking and every notice stay in the panel's column (${theme})`, async ({
+			page
+		}, testInfo) => {
+			const errors = trackConsoleErrors(page);
+			await page.addInitScript(
+				(t) => localStorage.setItem('pc:prefs:v1', JSON.stringify({ theme: t })),
+				theme
+			);
+			await openCoachPanel(page);
+			const panel = await boxOf(page.getByRole('tabpanel'));
+			const parts = [
+				...(await page.getByRole('form', { name: 'Message your coach' }).all()),
+				page.getByTestId('thinking'),
+				page.getByTestId('loading-rows'),
+				...(await page
+					.locator('[data-testid^="notice-"]:not([data-testid="notice-readout"])')
+					.all())
+			];
+			expect(parts.length).toBe(4 + 2 + 20);
+			for (const part of parts) {
+				const box = await boxOf(part);
+				expect(box.x, `${part} starts in the panel`).toBeGreaterThanOrEqual(panel.x - 1);
+				expect(box.x + box.width, `${part} ends in the panel`).toBeLessThanOrEqual(
+					panel.x + panel.width + 1
+				);
+			}
+			await expectNoSideScroll(page);
+			for (const area of ['composer-running', 'thinking', 'notice-unavailable', 'notice-empty']) {
+				await page.getByTestId(area).scrollIntoViewIfNeeded();
+				await captureScreen(page, testInfo, `design-coach-${area}-${theme}-desktop`);
+			}
+			expect(errors).toEqual([]);
+		});
+	}
+
+	test('the keyboard sends with Enter, adds a line with Shift+Enter, and rings the composer', async ({
+		page
+	}, testInfo) => {
+		await openCoachPanel(page);
+		const ready = page.getByTestId('composer-ready');
+		const input = ready.getByRole('textbox', { name: 'Message' });
+		const shadow = () => ready.evaluate((el) => getComputedStyle(el).boxShadow);
+		const resting = await shadow();
+		await input.focus();
+		await expect.poll(shadow, { message: 'the composer takes the focus ring' }).not.toBe(resting);
+		await page.keyboard.type('Bench');
+		await page.keyboard.press('Shift+Enter');
+		await page.keyboard.type('and squat');
+		await expect(input).toHaveValue('Bench\nand squat');
+		await captureScreen(page, testInfo, 'design-coach-composer-focus-desktop');
+		await page.keyboard.press('Enter');
+		await expect(page.getByTestId('composer-readout')).toContainText('composer: sent: Bench');
+		await expect(input).toHaveValue('');
+
+		// Tab leaves the message for Send, then the running composer's message and Stop: each rings.
+		await page.keyboard.type('Next');
+		await page.keyboard.press('Tab');
+		await expect(ready.getByRole('button', { name: 'Send' })).toBeFocused();
+		const stop = page.getByTestId('composer-running').getByRole('button', { name: 'Stop' });
+		await page.keyboard.press('Tab');
+		await page.keyboard.press('Tab');
+		await expect(stop).toBeFocused();
+		const ring = await stop.evaluate((el) => getComputedStyle(el).outlineStyle);
+		expect(ring).not.toBe('none');
+		await page.keyboard.press('Enter');
+		await expect(page.getByTestId('composer-readout')).toHaveText('composer: stopped');
+	});
+
+	test('the composer, Stop and Retry answer the mouse', async ({ page }) => {
+		await openCoachPanel(page);
+		const ready = page.getByTestId('composer-ready');
+		const border = () => ready.evaluate((el) => getComputedStyle(el).borderColor);
+		const before = await border();
+		await ready.hover();
+		await expect.poll(border).not.toBe(before);
+
+		const targets = [
+			page.getByTestId('composer-running').getByRole('button', { name: 'Stop' }),
+			page.getByTestId('notice-provider').getByRole('button', { name: 'Retry' })
+		];
+		for (const target of targets) {
+			await target.scrollIntoViewIfNeeded();
+			const tint = await background(target);
+			await target.hover();
+			await expect.poll(() => background(target)).not.toBe(tint);
+			expect(await target.evaluate((el) => getComputedStyle(el).cursor)).toBe('pointer');
+		}
+		// The disabled composer takes none: nothing there can be sent.
+		const disabled = page.getByTestId('composer-disabled');
+		const still = await disabled.evaluate((el) => getComputedStyle(el).borderColor);
+		await disabled.hover();
+		await page.waitForTimeout(250);
+		expect(await disabled.evaluate((el) => getComputedStyle(el).borderColor)).toBe(still);
 	});
 });

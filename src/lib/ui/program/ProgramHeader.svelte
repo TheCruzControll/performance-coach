@@ -12,6 +12,9 @@
   `actions`, a row under the titles, holds the program's own screens and sheets ('Plan', then
   'History'): each a `.action` the caller renders (a button or a link), styled here alike, and
   busy (`aria-busy`) while what it opens is on its way.
+
+  In a wide column (WIDE_HEADER below, a desktop screen's width) the actions sit at the end of the
+  titles' row and the weeks run from the start under them, instead of three stacked rows.
 -->
 <script lang="ts">
 	import type { Snippet } from 'svelte';
@@ -96,9 +99,18 @@
 </header>
 
 <style>
+	/* Two columns, the second empty (0 px) until the header is wide: every row spans both. */
 	.program {
+		container-type: inline-size;
 		display: grid;
+		grid-template-columns: minmax(0, 1fr) auto;
 		gap: var(--space-3);
+	}
+
+	.titles,
+	.actions,
+	.weeks {
+		grid-column: 1 / -1;
 	}
 
 	.titles {
@@ -276,6 +288,30 @@
 		border-top-color: var(--color-accent-text);
 		border-radius: inherit;
 		animation: spin 0.8s linear infinite;
+	}
+
+	/*
+	 * WIDE_HEADER: from 48rem, well above the phone (34rem) and readable (40rem) columns, so only a
+	 * desktop screen's full width sees it. The actions take the end of the titles' row (a failure
+	 * notice wraps under them, at most 24rem wide), and the weeks run from the start.
+	 */
+	@container (min-width: 48rem) {
+		.titles {
+			grid-column: 1;
+		}
+
+		.actions {
+			grid-column: 2;
+			justify-content: flex-end;
+			align-self: start;
+			max-width: 24rem;
+		}
+
+		.weeks {
+			grid-template-columns: auto minmax(0, max-content) auto;
+			justify-content: start;
+			margin-top: var(--space-2);
+		}
 	}
 
 	@keyframes spin {
