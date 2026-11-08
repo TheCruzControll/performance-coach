@@ -304,7 +304,7 @@ Two kinds, and neither is offset by `--nav-height` **(guard)**: only `tokens.css
 itself read it.
 
 - **Screen chrome** belongs to a whole readable screen (Coach's composer; a section's Save bar
-  until Profile is laid out in columns) or to the app (toasts). It is `position: fixed` at
+  below 1024 px) or to the app (toasts). It is `position: fixed` at
   `bottom: var(--nav-inset-bottom)` (toasts keep their top inset), centred with
   `left: calc(50% + var(--nav-inset-left) / 2)` and `translateX(-50%)`, and at most
   `var(--content-column)` wide. Only readable screens have it at the bottom.
@@ -388,6 +388,14 @@ later-pass screen).
   wide so no specimen stretches; the header and the icon grid span both, with larger cells.
 - **Error and offline states** (`ErrorView`): inside the shell they stay in the readable column;
   outside it they are centred in the window at `--content-readable`.
+- **Profile** (`/profile`): wide. From 1024 px two columns, read row by row as on a phone: the
+  account (identity, Security, preferences) beside the training profile's sections, the system's
+  status under the account.
+- **Profile sections** (`/profile/[section]`): split. From 1024 px `SectionList` (the sections,
+  the open one `aria-current`) beside the editor in the readable column; Back is hidden. The
+  skeleton reserves the window's height below the title, so Save starts at the window's foot and
+  stays put when the editor arrives. Save is column chrome at the editor column's foot. Below
+  1024 px: list → editor → Back, the 28 rem skeleton and the fixed Save bar.
 - **Onboarding** (`/onboarding/[[step]]`): outside the shell, one readable column centred in the
   window; Continue and Skip stay sticky at the column's foot, and Back and Finish later have hover
   and focus states.

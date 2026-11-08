@@ -80,3 +80,35 @@ test('Progress and Today show the saved units when the preference start fails to
 	await gotoHydrated(page, '/today');
 	await expect(page.getByText('mi', { exact: true })).toBeVisible();
 });
+
+test('a toast shown offline before its code has loaded appears, and the next one online has it all', async ({
+	page,
+	context
+}) => {
+	// The page never idles: the toasts' code is left to load at the first toast.
+	await page.addInitScript(() => Object.assign(window, { requestIdleCallback: () => 0 }));
+	let fetched = 0;
+	await onChunk(page, /Dismiss notification/, async (_, pass) => {
+		fetched++;
+		await pass();
+	});
+
+	await gotoHydrated(page, '/design');
+	await page.getByRole('tab', { name: 'Feedback' }).click();
+	const show = page.getByRole('button', { name: 'Toast', exact: true });
+	await expect(show).toBeVisible();
+	await context.setOffline(true);
+	await show.click();
+	const offline = toastWith(page, 'Set logged');
+	await expect(offline).toBeVisible();
+	await expect(offline).toHaveCSS('animation-name', /toast-in/);
+	await expect(offline).toHaveCount(0, { timeout: 10_000 });
+	expect(fetched).toBe(0);
+
+	await context.setOffline(false);
+	await page.getByRole('button', { name: 'Error toast', exact: true }).click();
+	const next = toastWith(page, 'Sync failed');
+	await expect(next.getByRole('button', { name: 'Dismiss notification' })).toBeVisible();
+	await expect(next.getByRole('button', { name: 'Retry' })).toBeVisible();
+	expect(fetched).toBe(1);
+});

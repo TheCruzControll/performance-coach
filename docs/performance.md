@@ -175,6 +175,8 @@ region, and the record of screens shown for RUM. These moved out of the initial 
   animations, not `svelte/transition`: its runtime sat in the Svelte chunk of every route for
   this one component (1.1 KB). The empty live region stays in the root layout. Each toast's
   time on screen starts when it appears, so one shown before `ToastList` arrives is not cut short.
+  Offline, `Toaster` shows the toasts as plain text (their styles are in the root CSS) and loads
+  `ToastList` back online: a module fetch that failed offline stays failed for the page's life.
 - **RUM** (`vitals.ts`), now imported when it starts on idle. The root layout keeps only
   `visits.ts`, which records each screen for attribution.
 - **Preferences** (`preferences.svelte.ts`). The theme is applied by `src/app.html` before
