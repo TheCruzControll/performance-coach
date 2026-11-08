@@ -267,9 +267,10 @@ export interface CheckOptions {
 // ---- demandOf -------------------------------------------------------------------------------
 
 const T = INTERFERENCE;
-type Region = 'lower' | 'upper';
+export type Region = 'lower' | 'upper';
 
-function regionOf({ pattern, primaryMuscles }: ExerciseTraits): Region | null {
+/** The region an exercise works; null for mobility or a mix. load/systems.ts reads it too. */
+export function regionOf({ pattern, primaryMuscles }: ExerciseTraits): Region | null {
 	if (T.restfulPatterns.includes(pattern)) return null;
 	if (T.lowerPatterns.includes(pattern)) return 'lower';
 	if (T.upperPatterns.includes(pattern)) return 'upper';
@@ -280,13 +281,13 @@ function regionOf({ pattern, primaryMuscles }: ExerciseTraits): Region | null {
 }
 
 /** RPE 8 or more, or 80 % or more of a 1RM: a ramp's climb to that included. */
-const isHeavySet = (line: SetLine) =>
+export const isHeavySet = (line: SetLine) =>
 	(line.targetRpe ?? 0) >= T.heavySetRpe ||
 	((line.loadKind === 'percent_1rm' || line.loadKind === 'from_e1rm') &&
 		(line.loadValue ?? 0) >= T.heavySetFraction);
 
 /** A prescription line's hard sets, by training/metrics.ts's single hard-set definition. */
-const hardSetsIn = (line: SetLine) =>
+export const hardSetsIn = (line: SetLine) =>
 	isHardSet(!NON_WORKING_ROLES.includes(line.role), line.targetRpe) ? line.sets : 0;
 
 /**
