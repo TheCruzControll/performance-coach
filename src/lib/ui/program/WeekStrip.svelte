@@ -5,7 +5,8 @@
   a ring, hidden from assistive tech: each day's name says it instead ('Wednesday 4 November,
   today, 2 sessions, 1 done'). Today comes from the server (the owner's local date), never from
   the device clock, and is ringed. Every day fills its column, so at 393 px each stays ≥ 44 px
-  wide even inside a padded card, and nothing scrolls sideways; a wide column shows 'Mon'. Sits
+  wide even inside a padded card, and nothing scrolls sideways; a wide column shows 'Mon', and a
+  wider one (a readable column, or the width of a desktop screen) gives each day a taller tile. Sits
   on the canvas: the selected day is a raised surface. It lays out the words stripDay composed
   where the week was read (words.ts), so it ships no vocabulary.
 -->
@@ -195,6 +196,38 @@
 	.day[aria-current='date'] .date {
 		box-shadow: inset 0 0 0 1.5px var(--color-accent-text);
 		color: var(--color-text);
+	}
+
+	/*
+	 * WIDE_STRIP: from 35rem (a readable column from 640 px, a desktop screen's full width), above
+	 * the phone column (34rem), so an iPhone never sees it. Each day is a taller tile with room
+	 * between the tiles; from 56rem (a desktop screen's width) every tile is outlined, so the whole
+	 * week reads at a glance. The type stays the same at every width.
+	 */
+	@container (min-width: 35rem) {
+		.day {
+			gap: var(--space-1-5);
+			padding: var(--space-3) 0;
+		}
+
+		.day::before {
+			inset: 0 var(--space-1);
+		}
+
+		.date {
+			width: 2.25rem;
+		}
+	}
+
+	@container (min-width: 56rem) {
+		.day {
+			padding: var(--space-4) 0;
+		}
+
+		.day::before {
+			inset: 0 var(--space-1-5);
+			border-color: var(--color-border);
+		}
 	}
 
 	.dots {

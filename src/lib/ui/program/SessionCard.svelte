@@ -6,7 +6,8 @@
   Baseline. With `href` the whole card is one link, named by everything it shows (label in name),
   ≥ 44 px, with hover, pressed and focus states; `pending` marks it aria-busy, with a progress
   line along its edge, while that link navigates. Words carry every state; colour only reinforces.
-  It lays out the words cardView composed where the week was read (words.ts).
+  It lays out the words cardView composed where the week was read (words.ts). In a wide column
+  (WIDE_CARD below) the badges move beside the words, so each card reads as one line.
 -->
 <script lang="ts">
 	import type { IconName } from '../icons/icons';
@@ -86,6 +87,8 @@
 		background: var(--color-surface-1);
 		box-shadow: var(--elevation-1);
 		color: var(--color-text);
+		/* Its content adapts to the card's own width (the column it is in), never the window's. */
+		container-type: inline-size;
 	}
 
 	a.card {
@@ -152,6 +155,26 @@
 		flex-wrap: wrap;
 		gap: var(--space-1-5);
 		margin-top: var(--space-1);
+	}
+
+	/*
+	 * WIDE_CARD: a card whose content is at least 35rem wide (Train's session column on a desktop,
+	 * a readable column from 640 px) puts its badges at the end of the words. Above the phone
+	 * column (34rem), so an iPhone never sees it; the type stays the same at every width.
+	 */
+	@container (min-width: 35rem) {
+		.text {
+			grid-template-columns: minmax(0, 1fr) auto;
+			column-gap: var(--space-4);
+		}
+
+		.badges {
+			grid-column: 2;
+			grid-row: 1 / span 2;
+			align-self: center;
+			justify-content: flex-end;
+			margin-top: 0;
+		}
 	}
 
 	.card :global(.chevron) {

@@ -42,11 +42,13 @@
 		"backup:run": "node scripts/backup-run.ts",
 		"backup:list": "node scripts/backup-list.ts",
 		"backup:keygen": "node scripts/backup-keygen.ts",
+		"backup:restore": "node scripts/backup-restore.ts",
 		"budgets": "node scripts/check-budgets.ts",
 		"docs:prs": "node scripts/docs-prs.ts",
 		"lighthouse": "node scripts/lighthouse.ts",
 		"icons": "node scripts/generate-icons.ts",
-		"icons:sprite": "node scripts/generate-icon-sprite.ts"
+		"icons:sprite": "node scripts/generate-icon-sprite.ts",
+		"security:scan": "node scripts/secrets-scan.ts"
 	},
 	"dependencies": {
 		"@anthropic-ai/sdk": "1.6.0",

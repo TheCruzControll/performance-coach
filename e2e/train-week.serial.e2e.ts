@@ -327,13 +327,14 @@ test.describe('a program this week', () => {
 	test.describe('on a desktop window', () => {
 		test.use(DESKTOP);
 
-		// Train is a readable screen (it declares no data-layout): the shell's readable column,
-		// centred beside the rail, with the week inside it and nothing scrolling sideways.
-		test('the week sits in the readable column, centred beside the rail', async ({
+		// Train is a wide screen (data-layout="wide"): up to --content-wide, centred beside the rail,
+		// with the week inside it and nothing scrolling sideways. train-desktop.serial.e2e.ts lays
+		// out its columns.
+		test('the week sits in the wide column, centred beside the rail', async ({
 			page
 		}, testInfo) => {
 			await gotoHydrated(page, '/train');
-			const readable = await tokenPx(page, '--content-readable');
+			const wide = await tokenPx(page, '--content-wide');
 			const parts = [
 				page.getByTestId('program-header'),
 				strip(page),
@@ -342,7 +343,7 @@ test.describe('a program this week', () => {
 			];
 			for (const width of DESKTOP_WIDTHS) {
 				await page.setViewportSize({ width, height: 900 });
-				await expectMainCentred(page, readable);
+				await expectMainCentred(page);
 				const main = (await page.locator('main#main').boundingBox())!;
 				for (const part of parts) {
 					const box = (await part.boundingBox())!;
@@ -356,6 +357,7 @@ test.describe('a program this week', () => {
 			await page.setViewportSize({ width: BELOW_DESKTOP_WIDTH, height: 900 });
 			await expectNoSideScroll(page);
 			await page.setViewportSize(DESKTOP.viewport);
+			await expectMainCentred(page, wide);
 			await captureScreen(page, testInfo, 'train-week-desktop');
 		});
 	});
