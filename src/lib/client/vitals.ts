@@ -100,10 +100,13 @@ export async function startVitalsReporting(): Promise<void> {
 	onFCP(report);
 	onTTFB(report);
 
+	// One flush per hide, carrying every metric: web-vitals reports final INP and CLS from its own
+	// capture-phase listener, which runs before this one. No `pagehide` flush: browsers fire it
+	// before `visibilitychange` on navigation, so it sent the load metrics early and left INP and
+	// CLS to a second beacon during unload, which could be lost.
 	addEventListener('visibilitychange', () => {
 		if (document.visibilityState === 'hidden') flushVitals();
 	});
-	addEventListener('pagehide', flushVitals);
 	// Observable marker for tests and debugging: RUM observers are registered.
 	document.documentElement.dataset.rum = 'ready';
 }

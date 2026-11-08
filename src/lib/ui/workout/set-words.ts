@@ -108,6 +108,9 @@ export interface ExerciseWords {
 	lines: string[];
 	load: LoadLine | null;
 	rest: string | null;
+	/** Every planned set's load and rest: the card keeps the tallest's room, so nothing moves. */
+	loads: (LoadLine | null)[];
+	rests: (string | null)[];
 	/** 'Last time · 7 days ago' and its sets in words; null when nothing was logged before. */
 	previous: { heading: string; sets: string[] } | null;
 }

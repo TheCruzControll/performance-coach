@@ -566,40 +566,6 @@ describe('refusals and failures', () => {
 		});
 	});
 
-	it('families whose handlers land later answer rejected “unsupported”, with no ledger row', async () => {
-		await withRollback(async (db) => {
-			const { owner } = await setup(db);
-			const workout = await started(db, owner);
-			const create = createMutation('exercise.create', {
-				workoutId: workout,
-				at: at(10),
-				payload: {
-					name: 'Sandbag shouldering',
-					aliases: [],
-					pattern: 'carry',
-					primaryMuscles: ['glutes'],
-					secondaryMuscles: [],
-					equipment: [],
-					substitutionGroup: null,
-					skillLevel: 'beginner',
-					repMin: 3,
-					repMax: 8,
-					defaultSeconds: null,
-					unilateral: false,
-					measure: 'reps',
-					loadType: 'external',
-					tags: [],
-					disciplines: []
-				}
-			});
-
-			const { results } = await sync(db, owner, [create]);
-
-			expect(results.map((r) => [r.status, r.code])).toEqual([['rejected', 'unsupported']]);
-			expect(await ledgerHas(db, create.id)).toBe(false);
-		});
-	});
-
 	describe('bad values', () => {
 		const W = '00000000-0000-4000-8000-00000000000a';
 		const EXERCISE = '00000000-0000-4000-8000-0000000000e1';

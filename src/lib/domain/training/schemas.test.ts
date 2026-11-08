@@ -26,9 +26,12 @@ import {
 	sessionPlanSchema,
 	setPrescriptionSchema,
 	startWorkoutSchema,
-	substitutionSchema
+	periodisedWeekTargetsSchema,
+	substitutionSchema,
+	weekTargetsSchema
 } from './schemas';
 import type {
+	BlockPlan,
 	CustomExercise,
 	CustomMetric,
 	DecisionPlan,
@@ -42,7 +45,8 @@ import type {
 	SessionPlan,
 	SetPrescription,
 	StrengthSessionPlan,
-	WeekPlan
+	WeekPlan,
+	WeekTargets
 } from './types';
 
 const MONDAY = '2026-11-09';
@@ -760,6 +764,110 @@ describe('programPlanSchema', () => {
 			[`${EX}.1.sets.0.loadBasis`]: 'Is the 1RM measured or estimated?',
 			[`${EX}.0.sets.1.loadValue`]: 'Between 30 % and 100 % of a 1RM'
 		});
+	});
+});
+
+describe("programPlanSchema with M7's block types", () => {
+	const targets: WeekTargets = {
+		rpeCap: 8,
+		volumeFactor: 1,
+		loadStep: 0.025,
+		runVolumeFactor: 1.1,
+		mainLifts: { repsMin: 3, repsMax: 5, topRpe: 8.5, setsFactor: 0.8 },
+		setsPerGroup: { min: 10, max: 12, step: 2 },
+		running: { longRunMetres: 18_000, raceSpecific: 'marathon_pace', cutback: false },
+		combat: { sessions: 3, hardSparring: 2, sparringRounds: 8, conditioningRounds: 12 },
+		maintenance: ['hypertrophy', 'runs']
+	};
+	/** The hybrid plan as a half base block of four weeks, every new week kind, then fight camp. */
+	function m7Plan(): ProgramPlan {
+		const plan = hybridPlan();
+		const [first, outline] = plan.blocks as [BlockPlan, BlockPlan];
+		const week = (n: number, kind: WeekPlan['kind']): WeekPlan => ({
+			kind,
+			startsOn: addDays(MONDAY, 7 * n),
+			endsOn: addDays(MONDAY, 7 * n + 6),
+			targets: { rpeCap: 6, volumeFactor: 0.6, loadStep: 0, runVolumeFactor: 0.8 },
+			sessions: []
+		});
+		first.phase = 'half_base';
+		first.endsOn = addDays(MONDAY, 27);
+		first.weeks[0]!.kind = 'base';
+		first.weeks[0]!.targets = structuredClone(targets);
+		first.weeks.push(week(1, 'cutback'), week(2, 'recovery'), week(3, 'maintenance'));
+		outline.phase = 'fight_camp';
+		outline.startsOn = addDays(MONDAY, 28);
+		outline.endsOn = addDays(MONDAY, 69);
+		for (const phase of ['half_build', 'half_peak', 'half_taper'] as const) {
+			const last = plan.blocks.at(-1)!;
+			const startsOn = addDays(last.endsOn, 1);
+			plan.blocks.push({ ...last, phase, startsOn, endsOn: addDays(startsOn, 13), weeks: [] });
+		}
+		return plan;
+	}
+
+	it('passes every optional target, the half and fight-camp phases and the new weeks unchanged', () => {
+		const plan = m7Plan();
+		expect(validate(programPlanSchema, plan)).toEqual({ ok: true, data: plan });
+		const parsed = validate(programPlanSchema, plan);
+		expect(parsed.ok && parsed.data.blocks[0]!.weeks[0]!.targets).toEqual(targets);
+		expect(validate(periodisedWeekTargetsSchema, targets)).toEqual({ ok: true, data: targets });
+		// The coach's next_cycle brief closes M3's four keys alone (domain/coach/proposals.ts).
+		expect(Object.keys(weekTargetsSchema.shape)).toEqual([
+			'rpeCap',
+			'volumeFactor',
+			'loadStep',
+			'runVolumeFactor'
+		]);
+	});
+
+	it('reads a week stored before M7, with none of the new targets, as it was', () => {
+		const old = { rpeCap: 7, volumeFactor: 1, loadStep: 0, runVolumeFactor: 1 };
+		expect(validate(periodisedWeekTargetsSchema, old)).toEqual({ ok: true, data: old });
+		expect(validate(periodisedWeekTargetsSchema, { ...old, running: null }).ok).toBe(false);
+	});
+
+	const T = `${W}.targets`;
+	const m7Cases: Case[] = [
+		[
+			'main-lift reps running high to low',
+			(p) => void (at(p).mainLifts!.repsMin = 6),
+			[`${T}.mainLifts.repsMax`]
+		],
+		[
+			'a top-set RPE off a half step',
+			(p) => void (at(p).mainLifts!.topRpe = 8.3),
+			[`${T}.mainLifts.topRpe`]
+		],
+		[
+			'a set range running high to low',
+			(p) => void (at(p).setsPerGroup!.min = 13),
+			[`${T}.setsPerGroup.max`]
+		],
+		[
+			'a negative long run',
+			(p) => void (at(p).running!.longRunMetres = -1),
+			[`${T}.running.longRunMetres`]
+		],
+		[
+			'more hard sparring than sessions',
+			(p) => void (at(p).combat!.hardSparring = 4),
+			[`${T}.combat.hardSparring`]
+		],
+		[
+			'an unknown maintenance stream',
+			(p) => void ((at(p).maintenance as string[])[0] = 'yoga'),
+			[`${T}.maintenance.0`]
+		]
+	];
+	function at(plan: ProgramPlan) {
+		return plan.blocks[0]!.weeks[0]!.targets;
+	}
+
+	it.each(m7Cases)('refuses %s at its dotted path', (_, change, paths) => {
+		const plan = m7Plan();
+		change(plan);
+		expect(Object.keys(errorsOf(programPlanSchema, plan)).sort()).toEqual([...paths].sort());
 	});
 });
 
