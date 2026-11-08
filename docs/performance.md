@@ -168,15 +168,14 @@ Before and after the slimmer shared entry (2026-11-07). Before is main at that d
 The JS every route loads (the app entry, the root layout and what they import) went from
 47.7 KB to 44.5 KB. Of what is left, the Svelte runtime (18.9 KB), the SvelteKit client
 (16.9 KB) and its router (entry, route table and routing, 4.3 KB) are framework. The app's own
-share is error reporting (0.7 KB, needed before anything else runs), the toast queue and live
-region, and the record of screens shown for RUM. These moved out of the initial JS:
+share is error reporting (0.7 KB, needed before anything else runs), the toasts (`Toaster`)
+and the record of screens shown for RUM. The toasts stay in the initial JS so that none waits on
+the network: loaded on demand (0.8 KB), a toast shown offline had no code, and a module fetch
+that fails stays failed for the page's life. Keeping a plain-text stand-in and retrying online
+cost every route 0.1 KB more than the toasts themselves. They slide with CSS animations, not
+`svelte/transition`: its runtime sat in the Svelte chunk of every route for this one component
+(1.1 KB). These moved out of the initial JS:
 
-- **The toasts** (`ToastList`, loaded on idle or at the first toast). They slide with CSS
-  animations, not `svelte/transition`: its runtime sat in the Svelte chunk of every route for
-  this one component (1.1 KB). The empty live region stays in the root layout. Each toast's
-  time on screen starts when it appears, so one shown before `ToastList` arrives is not cut short.
-  Offline, `Toaster` shows the toasts as plain text (their styles are in the root CSS) and loads
-  `ToastList` back online: a module fetch that failed offline stays failed for the page's life.
 - **RUM** (`vitals.ts`), now imported when it starts on idle. The root layout keeps only
   `visits.ts`, which records each screen for attribution.
 - **Preferences** (`preferences.svelte.ts`). The theme is applied by `src/app.html` before

@@ -5,72 +5,62 @@
   once in the root layout.
 -->
 <script lang="ts">
-	import { onMount, untrack, type Component } from 'svelte';
-	import { toast } from '../toast.svelte';
+	import { untrack } from 'svelte';
+	import { toast, type ToastItem } from '../toast.svelte';
+	import Icon from './Icon.svelte';
 
-	// The toasts themselves (ToastList) are no route's initial JS: they load once the page is
-	// idle, or at the first toast if that is sooner. The live region is in the page from the
-	// start, so the first toast is announced like any other, and its time on screen starts when it
-	// appears (toast.appeared). Left out of the server build, which renders no toast: while the
-	// server can reach ToastList, SvelteKit links its CSS into every page.
-	let List = $state<Component>();
-	// Offline, or once ToastList has failed to load, the toasts show as plain text.
-	let plain = $state(false);
-	let loading = false;
-	async function load() {
-		if (List || loading || import.meta.env.SSR) return;
-		// Not fetched offline: Chromium keeps a failed module fetch's error for the page's life.
-		if (!navigator.onLine) return waitOnline();
-		loading = true;
-		try {
-			// Awaited, not `.then`: Vite moves a `.then` into its preload wrapper, which rejects
-			// before the import runs when a stylesheet fails, so that `.then` never heard of it.
-			List = (await import('./ToastList.svelte')).default;
-		} catch {
-			waitOnline();
-		} finally {
-			loading = false;
-		}
-	}
-	function waitOnline() {
-		plain = true;
-		addEventListener('online', load, { once: true });
-	}
-
-	onMount(() => {
-		if ('requestIdleCallback' in window) requestIdleCallback(load, { timeout: 3000 });
-		else setTimeout(load, 1500);
+	// Part of every route's initial JS, not loaded on demand: a toast must never wait on the
+	// network (docs/performance.md). A dismissed toast stays, inert, until it has slid out. CSS
+	// animations, not svelte/transition: its runtime would sit in the framework chunk every route
+	// loads, for this one component.
+	let shown = $state<(ToastItem & { leaving?: boolean })[]>([]);
+	$effect.pre(() => {
+		const live = new Map(toast.items.map((item) => [item.id, item]));
+		const kept = untrack(() => shown).map(
+			(item) => live.get(item.id) ?? { ...item, leaving: true }
+		);
+		const known = new Set(kept.map((item) => item.id));
+		const added = toast.items.filter((item) => !known.has(item.id));
+		shown = [...kept, ...added];
+		for (const item of added) toast.appeared(item.id);
 	});
-
-	$effect(() => {
-		if (toast.items.length) void load();
-	});
+	const remove = (id: number) => (shown = shown.filter((item) => item.id !== id));
 </script>
 
 <div class="toaster" role="status" aria-live="polite" aria-atomic="false">
-	{#if List}
-		<List />
-	{:else if plain}
-		{#each toast.items as item (item.id)}
-			<div
-				class="toast"
-				data-tone={item.tone}
-				{@attach () => untrack(() => toast.appeared(item.id))}
+	{#each shown as item (item.id)}
+		<div
+			class="toast"
+			data-tone={item.tone}
+			data-leaving={item.leaving}
+			inert={item.leaving}
+			onanimationend={() => item.leaving && remove(item.id)}
+		>
+			<Icon
+				name={item.tone === 'danger' ? 'alert' : item.tone === 'positive' ? 'check' : 'info'}
+				size={20}
+			/>
+			<p class="message">{item.message}</p>
+			{#if item.action}
+				<button
+					type="button"
+					class="action"
+					onclick={() => {
+						item.action?.onclick();
+						toast.dismiss(item.id);
+					}}>{item.action.label}</button
+				>
+			{/if}
+			<button
+				type="button"
+				class="dismiss"
+				aria-label="Dismiss notification"
+				onclick={() => toast.dismiss(item.id)}
 			>
-				<p class="message">{item.message}</p>
-				{#if item.action}
-					<button
-						type="button"
-						class="action"
-						onclick={() => {
-							item.action?.onclick();
-							toast.dismiss(item.id);
-						}}>{item.action.label}</button
-					>
-				{/if}
-			</div>
-		{/each}
-	{/if}
+				<Icon name="close" size={18} />
+			</button>
+		</div>
+	{/each}
 </div>
 
 <style>
@@ -87,9 +77,7 @@
 		pointer-events: none;
 	}
 
-	/* ToastList's styles live here, in every page's CSS: the plain-text toasts above need them,
-	   and a stylesheet that failed to load offline is never asked for again. */
-	.toaster :global(.toast) {
+	.toast {
 		pointer-events: auto;
 		display: flex;
 		align-items: center;
@@ -103,7 +91,7 @@
 		/* Ease-out-cubic in; the same curve reversed (ease-in-cubic) out. */
 		animation: toast-in 260ms cubic-bezier(0.33, 1, 0.68, 1);
 	}
-	.toaster :global(.toast[data-leaving]) {
+	.toast[data-leaving] {
 		animation: toast-out 260ms cubic-bezier(0.32, 0, 0.67, 0) forwards;
 	}
 	@keyframes toast-in {
@@ -119,21 +107,21 @@
 		}
 	}
 
-	.toaster :global(.toast[data-tone='positive'] .icon) {
+	.toast[data-tone='positive'] :global(.icon) {
 		color: var(--color-positive);
 	}
-	.toaster :global(.toast[data-tone='danger'] .icon:first-child) {
+	.toast[data-tone='danger'] :global(.icon:first-child) {
 		color: var(--color-danger);
 	}
 
-	.toaster :global(.message) {
+	.message {
 		flex: 1;
 		font-size: var(--text-sm);
 		font-weight: var(--weight-medium);
 		line-height: var(--leading-snug);
 	}
 
-	.toaster :global(.action) {
+	.action {
 		min-height: var(--touch-target);
 		padding: 0 var(--space-2);
 		font-size: var(--text-sm);
@@ -143,7 +131,7 @@
 		text-underline-offset: 3px;
 	}
 
-	.toaster :global(.dismiss) {
+	.dismiss {
 		display: grid;
 		place-items: center;
 		width: var(--touch-target);
@@ -151,7 +139,7 @@
 		border-radius: var(--radius-full);
 		opacity: 0.6;
 	}
-	.toaster :global(.dismiss:active) {
+	.dismiss:active {
 		opacity: 1;
 	}
 </style>
