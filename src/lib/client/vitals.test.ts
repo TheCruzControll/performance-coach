@@ -1,6 +1,6 @@
 import type { Metric } from 'web-vitals';
 import { describe, expect, it } from 'vitest';
-import { attributeMetric } from './vitals';
+import { attributeMetric, enqueue, type VitalPayload } from './vitals';
 import { noteNavigation } from './visits';
 
 const entry = (startTime: number, value?: number) =>
@@ -32,5 +32,18 @@ describe('RUM attribution', () => {
 	it('attributes CLS to the screen of its largest shift', () => {
 		const cls = metric('CLS', [entry(300, 0.01), entry(5_500, 0.2), entry(1_200, 0.05)]);
 		expect(attributeMetric(cls).route).toBe('/(app)/profile');
+	});
+});
+
+describe('RUM queue', () => {
+	const vital = (id: string, value: number, path: string) =>
+		({ id, name: 'INP', value, path }) as VitalPayload;
+
+	it('keeps only the latest report of a metric, where it happened', () => {
+		const queue: VitalPayload[] = [];
+		enqueue(queue, vital('ttfb', 80, '/today'));
+		enqueue(queue, vital('inp', 40, '/today'));
+		enqueue(queue, vital('inp', 600, '/train'));
+		expect(queue).toEqual([vital('ttfb', 80, '/today'), vital('inp', 600, '/train')]);
 	});
 });

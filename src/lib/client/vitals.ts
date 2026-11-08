@@ -19,7 +19,7 @@ import { visitAt, type Visit } from './visits.ts';
 const ENDPOINT = '/api/vitals';
 const MAX_BATCH = 20;
 
-interface VitalPayload {
+export interface VitalPayload {
 	id: string;
 	name: Metric['name'];
 	value: number;
@@ -66,6 +66,16 @@ function send(batch: VitalPayload[]): void {
 	}
 }
 
+/**
+ * Queue a report, replacing any still-queued one of the same metric: INP and CLS re-report as they
+ * grow, and only the latest value (and the screen it belongs to) should leave the page.
+ */
+export function enqueue(queue: VitalPayload[], vital: VitalPayload): void {
+	const queued = queue.findIndex((q) => q.id === vital.id);
+	if (queued >= 0) queue[queued] = vital;
+	else queue.push(vital);
+}
+
 export function flushVitals(): void {
 	while (queue.length > 0) send(queue.splice(0, MAX_BATCH));
 }
@@ -80,7 +90,7 @@ export async function startVitalsReporting(): Promise<void> {
 
 	const report = (metric: Metric) => {
 		const { path, route } = attributeMetric(metric);
-		queue.push({
+		enqueue(queue, {
 			id: metric.id,
 			name: metric.name,
 			value: metric.value,
