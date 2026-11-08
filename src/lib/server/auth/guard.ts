@@ -2,18 +2,23 @@
  * The request guard run by `hooks.server.ts` for every dynamic request (deny by default):
  *
  * 1. CSRF: state-changing requests must come from the app's own origin (csrf.ts).
- * 2. Session: the cookie token is resolved to a live session (`locals.session`); a stale cookie
+ * 2. Cron: a `cron` route (routes.ts) is decided by its bearer secret alone, before any session
+ *    logic, so a session never grants it (cron.ts): 404 while the secret is unset, 405 for any
+ *    method but GET, 401 without the exact bearer. A refusal logs its reason, never the header.
+ * 3. Session: the cookie token is resolved to a live session (`locals.session`); a stale cookie
  *    is cleared; the sliding expiry is re-sent when it moves.
- * 3. Access: the route's policy (routes.ts). Without a session, pages redirect to sign-in with a
+ * 4. Access: the route's policy (routes.ts). Without a session, pages redirect to sign-in with a
  *    safe return path and `/api/*` answers 401 JSON. A recovery session reaches only the
  *    new-passkey screen, its endpoints and sign-out.
  *
  * Returns a response to send instead of resolving the route, or null to continue.
  */
 import { json, type RequestEvent } from '@sveltejs/kit';
+import { getEnv } from '../env';
 import { logger } from '../observability/logger';
 import { measure } from '../observability/timing';
 import { expiredSessionCookie } from './cookies';
+import { CRON_METHOD, cronRefusal, verifyCronRequest } from './cron';
 import { checkOrigin } from './csrf';
 import { readSessionToken, refreshSessionCookie } from './http';
 import { signInUrl } from './return-path';
@@ -79,6 +84,9 @@ export async function guardRequest(event: GuardEvent): Promise<Response | null> 
 				});
 	}
 
+	const access = routeAccess(event.route.id);
+	if (access === 'cron') return guardCron(event);
+
 	const token = readSessionToken(event.cookies, event.url);
 	let staleCookie = false;
 	if (token) {
@@ -93,7 +101,6 @@ export async function guardRequest(event: GuardEvent): Promise<Response | null> 
 		}
 	}
 
-	const access = routeAccess(event.route.id);
 	const session = event.locals.session;
 
 	if (access === 'public') {
@@ -117,4 +124,21 @@ export async function guardRequest(event: GuardEvent): Promise<Response | null> 
 	}
 
 	return null;
+}
+
+/** A `cron` route: the bearer secret decides, and a session is never read. */
+function guardCron(event: GuardEvent): Response | null {
+	const check = verifyCronRequest(event.request, getEnv());
+	const refused = (status: 401 | 404 | 405, reason: string) => {
+		logger.warn('cron: request refused', {
+			method: event.request.method,
+			path: event.url.pathname,
+			status,
+			reason
+		});
+		return cronRefusal(status);
+	};
+	if (!check.ok && check.status === 404) return refused(404, check.reason);
+	if (event.request.method !== CRON_METHOD) return refused(405, 'method_not_allowed');
+	return check.ok ? null : refused(check.status, check.reason);
 }
