@@ -4,7 +4,7 @@
  * never reaches the body; while the server can reach a component, SvelteKit links its CSS into the
  * page as render-blocking:
  *
- *   line: () => (import.meta.env.SSR ? never() : import('./bodies/LineBody.svelte')),
+ *   line: () => (import.meta.env.SSR ? never() : import('./bodies/LineChart.svelte')),
  *
  * Files under ./bodies/ are imported only from here, only through import(), and only behind that
  * guard (scripts/chart-body-imports.test.ts). The frame, its title, summary and table are
@@ -21,6 +21,8 @@ export type ChartBodyLoader<P extends Record<string, any> = any> = () => Promise
 /** What the server gets instead of a body: a promise that never settles, so nothing loads. */
 export const never = () => new Promise<never>(() => {});
 
-export const CHART_BODIES = {} as const satisfies Record<string, ChartBodyLoader>;
+export const CHART_BODIES = {
+	line: () => (import.meta.env.SSR ? never() : import('./bodies/LineChart.svelte'))
+} as const satisfies Record<string, ChartBodyLoader>;
 
 export type ChartBodyName = keyof typeof CHART_BODIES;

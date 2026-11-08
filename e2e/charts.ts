@@ -5,6 +5,8 @@
  */
 import AxeBuilder from '@axe-core/playwright';
 import { expect, type Page } from '@playwright/test';
+import { lineModel, lineTable, readout } from '../src/lib/ui/charts/line-model';
+import { LINE_FIXTURES } from '../src/routes/design/line-fixture';
 
 export const chartsSection = (page: Page) => page.getByTestId('design-charts');
 export const fixtureFrame = (page: Page) => page.getByTestId('chart-fixture');
@@ -101,4 +103,98 @@ export async function linkedStylesheets(page: Page): Promise<{ html: string; css
 		css.push(await sheet.text());
 	}
 	return { html, css };
+}
+
+/** The line chart's fixtures on /design → Charts (src/routes/design/line-fixture.ts). */
+export const lineFixture = (id: string) => LINE_FIXTURES.find((fixture) => fixture.id === id)!;
+export const lineFrameOf = (page: Page, id: string) => page.getByTestId(id);
+export const lineBody = (page: Page, id: string) => lineFrameOf(page, id).getByTestId('line-chart');
+export const lineArea = (page: Page, id: string) => lineBody(page, id).locator('.pc-area');
+export const lineTip = (page: Page, id: string) => lineBody(page, id).getByTestId('line-tooltip');
+
+/** Every line fixture's body has loaded. */
+export async function expectLineCharts(page: Page): Promise<void> {
+	await expect(chartsSection(page).getByTestId('line-chart')).toHaveCount(LINE_FIXTURES.length);
+}
+
+/** Where slot `index` of a fixture sits in the window: its x, at mid-height of the plot. */
+export async function slotPoint(page: Page, id: string, index: number): Promise<[number, number]> {
+	const box = (await lineArea(page, id).boundingBox())!;
+	const x = lineModel(lineFixture(id).data).xs[index]!;
+	return [box.x + (box.width * x) / 100, box.y + box.height / 2];
+}
+
+/** The tooltip is shown on slot `index`, listing every series' value and kind in words. */
+export async function expectReadout(page: Page, id: string, index: number): Promise<void> {
+	const tip = lineTip(page, id);
+	const { heading, rows } = readout(lineFixture(id).data, index);
+	await expect(tip).toHaveAttribute('data-shown', '');
+	await expect(tip.locator('.tip-heading')).toHaveText(heading);
+	await expect(tip.locator('.tip-label')).toHaveText(rows.map((row) => row.label));
+	await expect(tip.locator('.tip-value')).toHaveText(rows.map((row) => row.value ?? 'No data'));
+	await expect(tip.locator('.tip-kind')).toHaveText(
+		rows.flatMap((row) => (row.kind ? [row.kind === 'estimated' ? 'Estimated' : 'Measured'] : []))
+	);
+}
+
+/** The tooltip lies inside the plot's data area, whichever slot it is on. */
+export async function expectTipInside(page: Page, id: string): Promise<void> {
+	const area = (await lineArea(page, id).boundingBox())!;
+	const tip = (await lineTip(page, id).boundingBox())!;
+	expect(tip.x).toBeGreaterThanOrEqual(area.x - 0.5);
+	expect(tip.x + tip.width).toBeLessThanOrEqual(area.x + area.width + 0.5);
+}
+
+/**
+ * Every line chart's marks keep their pixel sizes: an 8 × 8 px box for every marker, a measured
+ * diamond as square on screen as its box (8√2 px across, turned 45°), and the lines 2 px
+ * non-scaling strokes.
+ */
+export async function expectLineMarkSizes(page: Page): Promise<void> {
+	await expectLineCharts(page);
+	const marks = await chartsSection(page)
+		.getByTestId('line-mark')
+		.evaluateAll((els) =>
+			els.map((el) => {
+				const r = el.getBoundingClientRect();
+				const box = el as HTMLElement;
+				return {
+					kind: el.getAttribute('data-kind'),
+					box: [box.offsetWidth, box.offsetHeight],
+					screen: [r.width, r.height]
+				};
+			})
+		);
+	const expected = LINE_FIXTURES.reduce((sum, f) => sum + lineModel(f.data).marks.length, 0);
+	expect(marks).toHaveLength(expected);
+	expect(marks.some((mark) => mark.kind === 'measured')).toBe(true);
+	for (const mark of marks) {
+		expect(mark.box, `a ${mark.kind} marker`).toEqual([8, 8]);
+		const [w, h] = mark.screen as [number, number];
+		expect(Math.abs(w - h), `a ${mark.kind} marker stays square`).toBeLessThanOrEqual(0.1);
+		expect(w).toBeCloseTo(mark.kind === 'measured' ? 8 * Math.SQRT2 : 8, 1);
+	}
+	const strokes = await chartsSection(page)
+		.getByTestId('line-path')
+		.evaluateAll((els) =>
+			els.map((el) => [getComputedStyle(el).strokeWidth, getComputedStyle(el).vectorEffect])
+		);
+	for (const stroke of strokes) expect(stroke).toEqual(['2px', 'non-scaling-stroke']);
+}
+
+/** The table twin of fixture `id` holds exactly its series: one row a week, a cell a series. */
+export async function expectLineTable(page: Page, id: string): Promise<void> {
+	const frame = lineFrameOf(page, id);
+	await frame.getByText('Show as table').click();
+	const table = lineTable(lineFixture(id).data);
+	const rows = frame.getByRole('table').locator('tbody tr');
+	await expect(rows).toHaveCount(table.rows.length);
+	for (const [i, row] of table.rows.entries()) {
+		await expect(rows.nth(i).locator('th')).toHaveText(
+			`${row.label}${row.inProgress ? ' so far' : ''}`
+		);
+		await expect(rows.nth(i).locator('td')).toHaveText(
+			row.values.map((value) => value ?? '—No data')
+		);
+	}
 }

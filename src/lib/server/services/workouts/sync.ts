@@ -15,7 +15,9 @@
  * - Rejected, deferred and retried mutations roll their transaction back, so they leave no ledger
  *   row: a corrected payload re-sent under the same id applies.
  * - A mutation whose row is missing is deferred ('missing'); one whose row is another owner's is
- *   rejected ('forbidden'). Once a mutation is refused or deferred, every later one in the batch
+ *   rejected ('forbidden'). One naming an exercise no row holds yet (a custom exercise whose
+ *   exercise.create has not arrived) is deferred ('missing'); one naming an exercise outside the
+ *   owner's library is rejected at its field. Once a mutation is refused or deferred, every later one in the batch
  *   that depends on it (its row's, its workout's, the contract's dependsOn) is deferred
  *   ('blocked'), so one row's changes never apply out of order.
  * - Any other error (the database, a bug) stops the batch: the mutations already answered keep
@@ -40,6 +42,7 @@ import {
 } from '../../../domain/workout/index';
 import { envelopeSchema } from '../../../domain/workout/schemas';
 import { validate, type FieldErrors } from '../../../domain/validation';
+import { createExercisesRepository } from '../../db/repositories/exercises';
 import { claimDiscarded, claimMutation, createSyncRepository } from '../../db/repositories/sync';
 import { createWorkoutSyncRepository } from '../../db/repositories/workout-sync';
 import type { Executor } from '../../db/types';
@@ -51,6 +54,7 @@ import {
 	TrainingNotFoundError,
 	type ResolvedTrainingDeps
 } from '../training/shared';
+import { isUuid } from '../ids';
 import { getCanonicalWorkout } from './canonical';
 import { exerciseHandlers } from './apply/exercises';
 import { UnsupportedMutationError, type Handler, type Handlers } from './apply/handler';
@@ -171,6 +175,24 @@ const rejected = (m: { id: string }, code: SyncResult['code'], errors?: FieldErr
 /** Edits and deletes of a set name the set; everything else names its workout. */
 const namesSet = (m: Mutation) => m.type === 'set.edit' || m.type === 'set.delete';
 
+/** The payload fields that name a library exercise, as M3's services name them too. */
+const EXERCISE_FIELDS = ['exerciseId', 'fromExerciseId', 'toExerciseId'] as const;
+
+/**
+ * Whether a refusal names an exercise no row holds yet: a custom exercise whose exercise.create
+ * has not arrived (sent later, or refused and waiting for Fix), so the mutation is deferred until
+ * it does. An exercise that exists but is not in the owner's library stays refused.
+ */
+async function awaitsExercise(m: Mutation, errors: FieldErrors, db: Executor) {
+	const payload = m.payload as Record<string, unknown>;
+	const named = EXERCISE_FIELDS.filter((field) => field in errors)
+		.map((field) => payload[field])
+		.filter((id): id is string => typeof id === 'string' && isUuid(id));
+	if (named.length === 0) return false;
+	const held = await createExercisesRepository(db).heldIds(named);
+	return named.some((id) => !held.has(id));
+}
+
 /**
  * A domain refusal as its result, or the error again when it is not one. A missing row is
  * deferred until it arrives, unless another owner holds that client id.
@@ -184,7 +206,11 @@ async function refusalOf(m: Mutation, err: unknown, ownerId: string, db: Executo
 			Object.entries(err.errors).map(([path, message]) => [wirePath(path), message])
 		);
 		// An id another owner's row already holds: create refusals name it 'Already used'.
-		return 'id' in errors ? rejected(m, 'forbidden') : rejected(m, 'invalid', errors);
+		if ('id' in errors) return rejected(m, 'forbidden');
+		if (await awaitsExercise(m, err.errors, db)) {
+			return { id: m.id, status: 'deferred', code: 'missing' } satisfies SyncResult;
+		}
+		return rejected(m, 'invalid', errors);
 	}
 	if (err instanceof TrainingNotFoundError) {
 		const repo = createWorkoutSyncRepository(db);

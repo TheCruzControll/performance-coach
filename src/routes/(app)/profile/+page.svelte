@@ -16,7 +16,7 @@
 	import Skeleton from '#lib/ui/components/Skeleton.svelte';
 	import Stat from '#lib/ui/components/Stat.svelte';
 	import Surface from '#lib/ui/components/Surface.svelte';
-	import { SECTIONS } from '#lib/ui/profile/sections.ts';
+	import SectionList from '#lib/ui/profile/SectionList.svelte';
 	import { stepHref } from '../../onboarding/paths';
 	import type { PageProps } from './$types';
 
@@ -67,70 +67,74 @@
 
 <PageHeader title="Profile" eyebrow="Account" />
 
-<div class="stack">
-	<Surface padding="md" radius="xl">
-		<div class="identity">
-			<span class="avatar" aria-hidden="true">{initials}</span>
-			<div>
-				<p class="name" data-testid="owner-name">{data.owner.name}</p>
-				<p class="meta"><Icon name="lock" size={14} /> Signed in with a passkey</p>
+<!-- Wide: from 1024 px the training profile sits beside who is signed in and this device's
+     preferences, with the system's status below them. Each group keeps the phone's order. -->
+<div class="stack profile" data-layout="wide">
+	<div class="stack account">
+		<Surface padding="md" radius="xl">
+			<div class="identity">
+				<span class="avatar" aria-hidden="true">{initials}</span>
+				<div>
+					<p class="name" data-testid="owner-name">{data.owner.name}</p>
+					<p class="meta"><Icon name="lock" size={14} /> Signed in with a passkey</p>
+				</div>
 			</div>
-		</div>
-	</Surface>
+		</Surface>
 
-	<ListRow
-		title="Security"
-		subtitle="Passkeys, signed-in devices, recovery codes"
-		icon="shield"
-		href={resolve('/(app)/profile/security')}
-		data-testid="security-link"
-	/>
+		<ListRow
+			title="Security"
+			subtitle="Passkeys, signed-in devices, recovery codes"
+			icon="shield"
+			href={resolve('/(app)/profile/security')}
+			data-testid="security-link"
+		/>
 
-	<Card title="Preferences" eyebrow="This device">
-		<div class="prefs">
-			<div class="pref">
-				<span class="pref-label">Units</span>
-				<SegmentedControl
-					label="Units"
-					size="sm"
-					value={preferences.units}
-					options={[
-						{ value: 'kg', label: 'kg' },
-						{ value: 'lb', label: 'lb' }
-					]}
-					onchange={(u: WeightUnit) => preferences.setUnits(u)}
-				/>
+		<Card title="Preferences" eyebrow="This device">
+			<div class="prefs">
+				<div class="pref">
+					<span class="pref-label">Units</span>
+					<SegmentedControl
+						label="Units"
+						size="sm"
+						value={preferences.units}
+						options={[
+							{ value: 'kg', label: 'kg' },
+							{ value: 'lb', label: 'lb' }
+						]}
+						onchange={(u: WeightUnit) => preferences.setUnits(u)}
+					/>
+				</div>
+				<div class="pref">
+					<span class="pref-label">Distance</span>
+					<SegmentedControl
+						label="Distance"
+						size="sm"
+						value={preferences.distance}
+						options={[
+							{ value: 'km', label: 'km' },
+							{ value: 'mi', label: 'mi' }
+						]}
+						onchange={(d: DistancePreference) => preferences.setDistance(d)}
+					/>
+				</div>
+				<div class="pref">
+					<span class="pref-label">Appearance</span>
+					<SegmentedControl
+						label="Appearance"
+						size="sm"
+						value={preferences.theme}
+						options={[
+							{ value: 'dark', label: 'Dark', icon: 'moon' },
+							{ value: 'light', label: 'Light', icon: 'sun' },
+							{ value: 'system', label: 'Auto', icon: 'device' }
+						]}
+						onchange={(t: ThemePreference) => preferences.setTheme(t)}
+						data-testid="theme-control"
+					/>
+				</div>
 			</div>
-			<div class="pref">
-				<span class="pref-label">Distance</span>
-				<SegmentedControl
-					label="Distance"
-					size="sm"
-					value={preferences.distance}
-					options={[
-						{ value: 'km', label: 'km' },
-						{ value: 'mi', label: 'mi' }
-					]}
-					onchange={(d: DistancePreference) => preferences.setDistance(d)}
-				/>
-			</div>
-			<div class="pref">
-				<span class="pref-label">Appearance</span>
-				<SegmentedControl
-					label="Appearance"
-					size="sm"
-					value={preferences.theme}
-					options={[
-						{ value: 'dark', label: 'Dark', icon: 'moon' },
-						{ value: 'light', label: 'Light', icon: 'sun' },
-						{ value: 'system', label: 'Auto', icon: 'device' }
-					]}
-					onchange={(t: ThemePreference) => preferences.setTheme(t)}
-					data-testid="theme-control"
-				/>
-			</div>
-		</div>
-	</Card>
+		</Card>
+	</div>
 
 	<Section title="Training profile" data-testid="training-profile">
 		<!-- Streamed: nothing until it settles, and nothing if setup is done or the read failed. -->
@@ -147,88 +151,109 @@
 				/>
 			{/if}
 		{/await}
-		{#each SECTIONS as section (section.key)}
-			<ListRow
-				title={section.title}
-				subtitle={section.subtitle}
-				icon={section.icon}
-				href={resolve('/(app)/profile/[section]', { section: section.key })}
-				data-testid="section-{section.key}"
-			/>
-		{/each}
+		<SectionList />
 	</Section>
 
-	<Card title="System" eyebrow="Status" data-testid="system-card">
-		<dl class="rows">
-			<div class="row">
-				<dt><Icon name="database" size={18} /> Database</dt>
-				<dd>
-					{#await data.health}
-						<span class="loading" aria-busy="true"
-							><Skeleton width="6rem" height="0.875rem" /><span class="visually-hidden"
-								>Checking…</span
-							></span
-						>
-					{:then health}
-						{#if health.db === 'up'}
-							<span class="status" data-status="up" data-testid="db-status">
-								<span class="led"></span>Connected · {health.dbLatencyMs?.toFixed(0)} ms
-							</span>
-						{:else}
-							<span class="status" data-status="down" data-testid="db-status">
-								<span class="led"></span>Unavailable
-							</span>
-						{/if}
-					{/await}
-				</dd>
-			</div>
-			<div class="row">
-				<dt><Icon name="bolt" size={18} /> Version</dt>
-				<dd class="mono">{data.version}</dd>
-			</div>
-			<div class="row">
-				<dt><Icon name="device" size={18} /> Environment</dt>
-				<dd>{data.appEnv}</dd>
-			</div>
-		</dl>
-	</Card>
+	<div class="stack system">
+		<Card title="System" eyebrow="Status" data-testid="system-card">
+			<dl class="rows">
+				<div class="row">
+					<dt><Icon name="database" size={18} /> Database</dt>
+					<dd>
+						{#await data.health}
+							<span class="loading" aria-busy="true"
+								><Skeleton width="6rem" height="0.875rem" /><span class="visually-hidden"
+									>Checking…</span
+								></span
+							>
+						{:then health}
+							{#if health.db === 'up'}
+								<span class="status" data-status="up" data-testid="db-status">
+									<span class="led"></span>Connected · {health.dbLatencyMs?.toFixed(0)} ms
+								</span>
+							{:else}
+								<span class="status" data-status="down" data-testid="db-status">
+									<span class="led"></span>Unavailable
+								</span>
+							{/if}
+						{/await}
+					</dd>
+				</div>
+				<div class="row">
+					<dt><Icon name="bolt" size={18} /> Version</dt>
+					<dd class="mono">{data.version}</dd>
+				</div>
+				<div class="row">
+					<dt><Icon name="device" size={18} /> Environment</dt>
+					<dd>{data.appEnv}</dd>
+				</div>
+			</dl>
+		</Card>
 
-	<Card title="Real-user performance" eyebrow="p75 · last 7 days">
-		{#await data.vitals}
-			<div class="vitals" aria-busy="true">
-				{#each [0, 1, 2] as i (i)}<Skeleton height="3.5rem" radius="var(--radius-md)" />{/each}
-			</div>
-		{:then vitals}
-			{#if vitals && vitals.length}
-				<ul class="vitals">
-					{#each vitals as v (v.name)}
-						<Stat
-							as="li"
-							level={2}
-							label={v.name}
-							value={formatVital(v.name, v.p75)}
-							unit={VITALS[v.name]?.unit || undefined}
-							rating={rating(v.name, v.p75)}
-							caption={`${v.samples} ${v.samples === 1 ? 'sample' : 'samples'}`}
-							data-testid={`vital-${v.name}`}
-						/>
-					{/each}
-				</ul>
-			{:else}
-				<p class="note">No samples yet — metrics are collected as you use the app.</p>
-			{/if}
-		{/await}
-	</Card>
+		<Card title="Real-user performance" eyebrow="p75 · last 7 days">
+			{#await data.vitals}
+				<div class="vitals" aria-busy="true">
+					{#each [0, 1, 2] as i (i)}<Skeleton height="3.5rem" radius="var(--radius-md)" />{/each}
+				</div>
+			{:then vitals}
+				{#if vitals && vitals.length}
+					<ul class="vitals">
+						{#each vitals as v (v.name)}
+							<Stat
+								as="li"
+								level={2}
+								label={v.name}
+								value={formatVital(v.name, v.p75)}
+								unit={VITALS[v.name]?.unit || undefined}
+								rating={rating(v.name, v.p75)}
+								caption={`${v.samples} ${v.samples === 1 ? 'sample' : 'samples'}`}
+								data-testid={`vital-${v.name}`}
+							/>
+						{/each}
+					</ul>
+				{:else}
+					<p class="note">No samples yet — metrics are collected as you use the app.</p>
+				{/if}
+			{/await}
+		</Card>
 
-	<a class="design-link" href={resolve('/design')}>
-		<Icon name="sparkle" size={18} /> Design system <Icon name="chevron-right" size={18} />
-	</a>
+		<a class="design-link" href={resolve('/design')}>
+			<Icon name="sparkle" size={18} /> Design system <Icon name="chevron-right" size={18} />
+		</a>
+	</div>
 </div>
 
 <style>
 	.stack {
 		display: grid;
 		gap: var(--space-4);
+	}
+
+	/* Two columns, read row by row as on a phone: the account beside the training profile, then
+	   the system's status under the account. */
+	@media (width >= 64rem) {
+		.profile {
+			grid-template-columns: repeat(2, minmax(0, 1fr));
+			grid-template-areas:
+				'account training'
+				'system training';
+			/* The taller list grows the second row, never the gap under the account. */
+			grid-template-rows: auto 1fr;
+			column-gap: var(--space-8);
+			align-items: start;
+		}
+
+		.account {
+			grid-area: account;
+		}
+
+		.profile > :global([data-testid='training-profile']) {
+			grid-area: training;
+		}
+
+		.system {
+			grid-area: system;
+		}
 	}
 
 	.identity {
