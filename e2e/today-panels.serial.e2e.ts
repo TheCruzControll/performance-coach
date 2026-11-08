@@ -327,11 +327,11 @@ test.describe('with the service worker blocked, so page.route sees every chunk',
 			await setupArrivesInPlace(page);
 		});
 
-		test('the notice sits in the readable column, and Retry has a hover state', async ({
+		test('the notice sits in the wide column, and Retry has a hover state', async ({
 			page
 		}, testInfo) => {
 			await arriveWithSummaryFailing(page);
-			await expectMainCentred(page, await tokenPx(page, '--content-readable'));
+			await expectMainCentred(page, await tokenPx(page, '--content-wide'));
 			await expectNoSideScroll(page);
 			const main = (await page.locator('main#main').boundingBox())!;
 			const box = (await notice(page).boundingBox())!;
