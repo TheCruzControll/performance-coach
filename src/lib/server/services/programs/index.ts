@@ -52,6 +52,7 @@ export {
 	adjustSessionDetails,
 	checkMove,
 	getMoveTargets,
+	lockCurrentSlot,
 	moveSession,
 	NOTHING_CHANGED,
 	skipSession,
@@ -59,7 +60,9 @@ export {
 	type EditAt,
 	type MovedSession,
 	type MoveTarget,
-	type MoveWarning
+	type MoveWarning,
+	type PlannedSlot,
+	type SwapOptions
 } from './edits';
 export type {
 	ProgramVersion,

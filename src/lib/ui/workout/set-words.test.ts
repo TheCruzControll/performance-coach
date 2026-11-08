@@ -40,9 +40,9 @@ const row = (setIndex: number, planned: KitSet | null, done: Logged | null = nul
 describe('targetText', () => {
 	it('names the amount, a computed load (≈ when estimated) and the RPE', () => {
 		expect(targetText(TOP!)).toBe('5 reps · RPE 7');
-		expect(targetText(BACK_OFF!)).toBe('5 reps · ≈ 100 kg');
+		expect(targetText(BACK_OFF!)).toBe('5 reps · ≈ 97.5 kg');
 		expect(targetText(PULL_UP![0]!)).toBe('6–10 reps · RPE 8');
-		expect(targetText(PLANK![0]!)).toBe('0:45');
+		expect(targetText(PLANK![0]!)).toBe('0:45 · RPE 7');
 		expect(
 			targetText({ ...BACK_OFF!, prescribedWeight: { value: 225, unit: 'lb', basis: 'absolute' } })
 		).toBe('5 reps · 225 lb');
@@ -82,7 +82,7 @@ describe('lastTimeText', () => {
 
 describe('loadLine', () => {
 	it('gives the prescribed weight, never inventing one', () => {
-		expect(loadLine(BACK_OFF!, 'external')).toEqual({ kind: 'weight', text: '≈ 100 kg' });
+		expect(loadLine(BACK_OFF!, 'external')).toEqual({ kind: 'weight', text: '≈ 97.5 kg' });
 	});
 
 	it('gives the baseline instruction when the weight is to be found', () => {
@@ -110,8 +110,8 @@ describe('setRows', () => {
 		const rows = setRows([row(1, TOP!, logged()), row(2, BACK_OFF!), row(3, BACK_OFF!)]);
 		expect(rows.map((r) => [r.setIndex, r.state, r.text])).toEqual([
 			[1, 'done', '100 kg × 5 reps · RPE 8'],
-			[2, 'current', '5 reps · ≈ 100 kg'],
-			[3, 'todo', '5 reps · ≈ 100 kg']
+			[2, 'current', '5 reps · ≈ 97.5 kg'],
+			[3, 'todo', '5 reps · ≈ 97.5 kg']
 		]);
 	});
 

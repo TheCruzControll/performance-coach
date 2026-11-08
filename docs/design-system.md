@@ -391,6 +391,14 @@ later-pass screen).
 - **Onboarding** (`/onboarding/[[step]]`): outside the shell, one readable column centred in the
   window; Continue and Skip stay sticky at the column's foot, and Back and Finish later have hover
   and focus states.
+- **Train** (`/train`): wide. From 1024 px the program header and the week strip span the
+  content; the selected day's sessions sit in a main column at most `--content-readable` wide,
+  beside the week's brief and then the tools (at least `--content-list`), and a state card sits
+  where the sessions would. The week is a subgrid of the screen, so it keeps its own busy state;
+  the error and offline states keep the readable column. `WeekStrip` (taller tiles from 35 rem,
+  outlined from 56 rem), `SessionCard` (badges at the end from 35 rem) and `ProgramHeader`
+  (actions beside the titles from 48 rem) adapt with container queries above the phone column,
+  so the iPhone is unchanged. CSS only: one selected day, as on a phone.
 
 ### Verification
 
