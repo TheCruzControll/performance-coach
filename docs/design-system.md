@@ -507,3 +507,25 @@ behind a confirming `BottomSheet`, and toasts for outcomes.
   cost no JavaScript: after adding or changing one, run `pnpm icons:sprite` and commit
   `sprite.svg` and `names.ts` (a unit test fails while they are stale; `pnpm budgets` fails if path
   data reaches a client chunk).
+
+## Advanced coaching (M7)
+
+One line per M7 UI slice, each replaced by its own slice only; docs-m7 turns them into rows.
+
+m7/04 train-week-findings: not built yet.
+
+m7/14 placement-why: not built yet.
+
+m7/23 move-evaluation: not built yet.
+
+m7/38 week-kind-indicators: not built yet.
+
+m7/39 periodisation-timeline: not built yet.
+
+m7/49 replan-notice-ui: not built yet.
+
+m7/50 replan-proposal-card: not built yet.
+
+m7/51 deload-review-ui: not built yet.
+
+m7/52 hr-fields-ui: not built yet.

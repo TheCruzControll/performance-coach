@@ -22,3 +22,4 @@ Status values: Proposed · Accepted · Superseded.
 | [NNNN](NNNN-trend-classification.md)     | Trend vs noise: Theil–Sen, Mann–Kendall p, a minimal change   | Proposed |
 | [NNNN](NNNN-encrypted-backups.md)        | App-level encrypted backups: a daily cron to a private Blob   | Proposed |
 | [NNNN](NNNN-hand-built-charts.md)        | Hand-built charts: lazy SVG lines, HTML marks, one registry   | Proposed |
+| [NNNN](NNNN-periodisation-engine.md)     | Periodisation: rules as data, one evaluator, one load model   | Proposed |
