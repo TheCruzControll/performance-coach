@@ -95,7 +95,9 @@ export async function startVitalsReporting(): Promise<void> {
 	};
 
 	onCLS(report);
-	onINP(report);
+	// Queued as it changes, so the first beacon at hide carries it: the one sent after web-vitals'
+	// own work at hide sometimes never left a page being navigated away (perf-workout.e2e.ts).
+	onINP(report, { reportAllChanges: true });
 	onLCP(report);
 	onFCP(report);
 	onTTFB(report);
