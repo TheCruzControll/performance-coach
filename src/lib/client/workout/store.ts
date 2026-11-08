@@ -27,6 +27,7 @@ import type {
 	CanonicalWorkout,
 	DeviceState,
 	EntityKey,
+	KitUnits,
 	LocalAction,
 	Mutation,
 	StartKit,
@@ -187,6 +188,9 @@ export interface WorkoutStore {
 	adopt(canonical: CanonicalWorkout, kit: StartKit | null): Promise<AdoptOutcome>;
 	saveKit(lineage: string, kit: StartKit): Promise<void>;
 	getKit(lineage: string): Promise<StartKit | null>;
+	/** The owner's training-profile units, as the server last gave them (a purge deletes them). */
+	saveUnits(units: KitUnits): Promise<void>;
+	getUnits(): Promise<KitUnits | null>;
 	prune(): Promise<{ workouts: string[]; kits: string[] }>;
 	onChange(listener: (change: StoreChange) => void): () => void;
 }
@@ -867,6 +871,15 @@ export async function createStore({
 		async getKit(lineage) {
 			assertOpen();
 			return (await db.get(STORES.kits, lineage))?.kit ?? null;
+		},
+		async saveUnits(units) {
+			assertOpen();
+			await db.put(STORES.meta, { key: 'units', value: units });
+		},
+		async getUnits() {
+			assertOpen();
+			const record = await db.get(STORES.meta, 'units');
+			return record?.key === 'units' ? record.value : null;
 		},
 		prune,
 		onChange(listener) {
