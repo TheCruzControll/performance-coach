@@ -49,6 +49,9 @@ export function createCoachProposalsRepository(db: Executor) {
 		proposalPage: async (ownerId: string, page: q.ProposalPage) =>
 			q.proposalPage(db, ownerId, page),
 
+		decidedSince: async (ownerId: string, since: Date, limit: number) =>
+			q.decidedSince(db, ownerId, since, limit),
+
 		insertProposal: async (values: NewProposalRow) =>
 			(await first(db.insert(coachProposals).values(values).returning({ id: coachProposals.id })))!
 				.id,

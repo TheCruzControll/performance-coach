@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
 import { createAuthRepository } from '../../../src/lib/server/db';
@@ -255,6 +256,71 @@ describe('recovery codes', () => {
 			await expect(
 				redeemRecoveryCode(fresh[9], undefined, request(), { db: tx })
 			).resolves.toMatchObject({ remaining: 9 });
+		});
+	});
+});
+
+const SIX_GROUPS = /^[0-9A-HJKMNP-TV-Z]{4}(-[0-9A-HJKMNP-TV-Z]{4}){5}$/;
+
+describe('120-bit recovery codes (ASVS 2.6.2)', () => {
+	it('setup and regeneration issue 24-character codes, and a used one is refused in any spelling', async () => {
+		await withRollback(async (tx) => {
+			const owner = await setUpOwner(tx);
+			for (const code of owner.recoveryCodes) expect(code).toMatch(SIX_GROUPS);
+			const session = (await validateSessionToken(owner.token, { db: tx }))!.session;
+
+			const fresh = await regenerateRecoveryCodes(session, request(), { db: tx });
+			expect(fresh).toHaveLength(10);
+			for (const code of fresh) {
+				expect(code).toMatch(SIX_GROUPS);
+				expect(code.replace(/-/g, '')).toHaveLength(24);
+			}
+
+			// Typed the forgiving way: lower case, spaces for dashes.
+			const code = fresh[2]!;
+			await expect(
+				redeemRecoveryCode(code.toLowerCase().replace(/-/g, ' '), undefined, request(), {
+					db: tx
+				})
+			).resolves.toMatchObject({ remaining: 9 });
+			for (const again of [code, code.toLowerCase(), code.replace(/-/g, ''), ` ${code} `]) {
+				await expect(
+					redeemRecoveryCode(again, undefined, request(), { db: tx }),
+					again
+				).rejects.toMatchObject({ code: 'invalid_code', status: 401 });
+			}
+		});
+	});
+
+	it('a legacy 16-character code saved before the change signs in exactly once', async () => {
+		await withRollback(async (tx) => {
+			const owner = await setUpOwner(tx);
+			// The owner's set as it was stored before: SHA-256 of the prefixed, normalised 80-bit code.
+			const legacy = ['7KQ2-M9XD-4TPA-HC3R', 'W8NB-5FJE-0123-4567'];
+			const stored = legacy.map((code) =>
+				createHash('sha256')
+					.update(`recovery:${code.replace(/-/g, '')}`, 'utf8')
+					.digest('hex')
+			);
+			await createAuthRepository(tx).replaceRecoveryCodes(owner.ownerId, stored, new Date());
+
+			const recovered = await redeemRecoveryCode('7kq2 m9xd 4tpa hc3r', undefined, request(), {
+				db: tx
+			});
+			expect(recovered).toMatchObject({
+				remaining: 1,
+				session: { kind: 'recovery', method: 'recovery' }
+			});
+			for (const again of [legacy[0]!, '7KQ2M9XD4TPAHC3R']) {
+				await expect(
+					redeemRecoveryCode(again, undefined, request(), { db: tx }),
+					again
+				).rejects.toMatchObject({ code: 'invalid_code' });
+			}
+			const burned = await tx.execute<{ used: number }>(
+				sql`select count(*)::int as used from recovery_codes where used_at is not null`
+			);
+			expect(burned.rows[0]!.used).toBe(1);
 		});
 	});
 });

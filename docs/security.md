@@ -251,6 +251,28 @@ those) into one row such as "25 failed sign-in attempts", and always keeps the l
 changes (setup, passkeys added or removed, recovery codes used or replaced, sessions ended, owner
 resets) in view, so a flood of failures cannot push them out.
 
+## Training history
+
+Postgres keeps the training history, not the app ([ADR 0010](adr/0010-program-versioning.md),
+docs/architecture.md "Training model (M3)"):
+
+- **DELETE is always refused** on program, prescription and training-log tables, with no session
+  flag to turn it off (`drizzle/0009_program_history_guards.sql`,
+  `drizzle/0012_prescription_history_guards.sql`, `drizzle/0014_training_log_guards.sql`).
+  Program rows also refuse UPDATE, except the `programs` head, whose `program_head_guard` allows
+  `status`, `archived_at` and a forward `current_version_id`; logged rows accept the owner's edits, each audited, and are
+  deleted softly.
+- **TRUNCATE, a disabled trigger and `session_replication_role` bypass the guards**, because
+  they skip row triggers. Server code may use none of them; only test and reset code uses
+  TRUNCATE: the integration cleanup (`tests/integration/helpers.ts`) and the e2e program reset
+  (`e2e/program-support.ts`). `scripts/history-guards.test.ts` fails if server code contains
+  `truncate`, `session_replication_role` or `disable trigger`.
+- **`training_audit` is owner-scoped and immutable**: each row carries its `owner_id` (a foreign
+  key to `owners`), the row before and after, and the actor; it refuses UPDATE and DELETE.
+- **Deleting the owner is refused**: its cascade reaches guarded tables. `pnpm auth:reset-owner`
+  keeps the owner row and all training data, so a reset never needs a delete. Erasing training
+  history is a deliberate maintenance step outside the app.
+
 ## Test-only routes
 
 `ENABLE_TEST_ROUTES` enables `/api/test-support/*`, including a route that mints an owner session
