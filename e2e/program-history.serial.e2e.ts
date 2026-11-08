@@ -293,11 +293,13 @@ test.describe('a program that starts next week', () => {
 		test.describe('on a desktop window', () => {
 			test.use(DESKTOP);
 
-			test('History sits in the readable column, with hover and focus states on each version', async ({
+			// History is a split screen (data-layout="split"): up to --content-wide, centred beside
+			// the rail. train-detail-desktop.serial.e2e.ts lays out its columns.
+			test('History sits in the split column, with hover and focus states on each version', async ({
 				page
 			}, testInfo) => {
 				await gotoHydrated(page, '/train/history');
-				await expectMainCentred(page, await tokenPx(page, '--content-readable'));
+				await expectMainCentred(page, await tokenPx(page, '--content-wide'));
 				await expectNoSideScroll(page);
 
 				const card = versions(page).first();
@@ -321,7 +323,7 @@ test.describe('a program that starts next week', () => {
 				await captureScreen(page, testInfo, 'train-history-desktop');
 
 				await gotoHydrated(page, '/train/history/1');
-				await expectMainCentred(page, await tokenPx(page, '--content-readable'));
+				await expectMainCentred(page, await tokenPx(page, '--content-wide'));
 				await expectNoSideScroll(page);
 				await captureScreen(page, testInfo, 'train-history-v1-desktop');
 			});
