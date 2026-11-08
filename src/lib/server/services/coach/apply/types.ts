@@ -5,7 +5,7 @@
  * use, with source 'coach', on `deps.db` (the accept transaction), so a throw undoes it all.
  */
 import type { IsoDate } from '../../../../domain/calendar';
-import type { Proposal, ProposalKind } from '../../../../domain/coach/proposals';
+import type { NEXT_CYCLE_AWAITS, Proposal, ProposalKind } from '../../../../domain/coach/proposals';
 import type { SupersededReason } from '../../../../domain/coach/vocabulary';
 import type { AppliedRef } from '../../../db/schema/coaching';
 import type { ResolvedCoachDeps } from '../shared';
@@ -34,7 +34,7 @@ export type ApplyOutcome =
 			programId?: string;
 	  }
 	/** Accepted, and applied later by something else (next_cycle, by M6's cycle review). */
-	| { status: 'accepted' }
+	| { status: 'accepted'; awaits: typeof NEXT_CYCLE_AWAITS }
 	/** It can no longer apply as proposed. */
 	| { status: 'superseded'; reason: SupersededReason };
 

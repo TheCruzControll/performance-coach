@@ -13,10 +13,13 @@
  *   gets one too, standing in its planned outline, so a missed week is never unreachable.
  * - Every string a tooltip shows comes from barReadout, whose values are the table twin's
  *   (barTable) cells with the unit, so a tooltip never holds a value the table lacks.
+ *
+ * Below it, the horizontal layouts: muscle-group volume against its target range (rangeModel)
+ * and actual minus target RPE either side of zero (divergingModel).
  */
 import { areaPath, column, stack, type Column } from './geometry.ts';
 import { STACK_ORDER } from './palette.ts';
-import { linearScale, timeTicks, type LinearScale } from './scale.ts';
+import { formatTick, linearScale, timeTicks, type LinearScale } from './scale.ts';
 import type { ChartTableData } from './table.ts';
 
 /**
@@ -324,6 +327,310 @@ export function barTable(data: BarChartData, rowHeader = 'Week'): ChartTableData
 					...(data.planned ? [data.planned[i]?.text ?? null] : [])
 				],
 				inProgress: slot.inProgress
+			};
+		})
+	};
+}
+
+/*
+ * Horizontal bars, one row each, read top to bottom (bodies/RangeBars.svelte and
+ * bodies/DivergingBars.svelte, drawn by RowList.svelte): positions are percent of a row's width.
+ * Every status is a word in the row, its tooltip and the table twin, never a colour alone.
+ */
+
+/** A row's room in rem, its 44 px target and head line included; the frame reserves rows × this. */
+export const ROW_REM = 3;
+/** The legend line over the rows and the value axis band under them (--chart-axis-band), in rem. */
+const LEGEND_REM = 1.5;
+const AXIS_REM = 1.75;
+
+/** The plot height a frame reserves for `rows` rows, their legend and their axis. */
+export const rowsHeight = (rows: number) => `${rows * ROW_REM + LEGEND_REM + AXIS_REM}rem`;
+
+/** A row's tooltip and accessible name, from the table twin's own cells. */
+export interface RowReadout {
+	heading: string;
+	rows: { label: string; value: string }[];
+}
+
+/** A row's accessible name: 'Chest. Done 14 sets, Target 10–20 sets, Status Within range'. */
+export const rowName = ({ heading, rows }: RowReadout) =>
+	`${heading}. ${rows.map((row) => `${row.label} ${row.value}`).join(', ')}`;
+
+/** The row the keyboard moves to: ↑ or ← the one above, ↓ or → the one below, Home and End. */
+export function stepRow(count: number, from: number, key: string): number | null {
+	const to: Record<string, number> = {
+		ArrowUp: from - 1,
+		ArrowLeft: from - 1,
+		ArrowDown: from + 1,
+		ArrowRight: from + 1,
+		Home: 0,
+		End: count - 1
+	};
+	return key in to ? Math.min(count - 1, Math.max(0, to[key]!)) : null;
+}
+
+/** An axis tick under the rows: where it sits and what it says. */
+export interface RowTick {
+	at: number;
+	text: string;
+	zero: boolean;
+}
+
+const rowTicks = (scale: LinearScale): RowTick[] =>
+	scale.ticks.map((tick) => ({
+		at: scale.at(tick),
+		text: formatTick(tick, scale.step),
+		zero: tick === 0
+	}));
+
+// Muscle-group volume against its target range.
+
+/**
+ * How far past the largest value, plan or range low the axis reaches to show a range's high. A
+ * high beyond it is clipped at the axis end and drawn open (its number stays in words), so one
+ * wide range never squeezes every bar.
+ */
+export const BRACKET_REACH = 1.5;
+
+export type RangeStatus = 'below' | 'within' | 'above';
+
+/** Each status in words; the icon beside it repeats it, the colour never carries it. */
+export const RANGE_STATUS: Readonly<Record<RangeStatus, string>> = {
+	below: 'Below range',
+	within: 'Within range',
+	above: 'Above range'
+};
+
+export interface RangeRow {
+	key: string;
+	/** 'Chest'. */
+	label: string;
+	/** What was done; null when there is no value. */
+	value: BarValue | null;
+	/** The target range, low and high, inclusive. */
+	range: readonly [number, number];
+	/** What was planned: a tick across the bar. */
+	planned?: BarValue | null;
+}
+
+export interface RangeBarsData {
+	title: string;
+	/** 'sets'. */
+	unit?: string;
+	/** The one hue every bar wears: a --chart-* series token. */
+	token: `--chart-${string}`;
+	rows: readonly RangeRow[];
+}
+
+export interface RangeMark {
+	row: RangeRow;
+	status: RangeStatus | null;
+	/** The bar's length from zero. */
+	width: number;
+	/** The target range's bracket; `open` when its high lies past the axis end. */
+	bracket: { left: number; width: number; open: boolean };
+	/** Where the planned tick crosses the bar; null without a plan. */
+	tick: number | null;
+}
+
+export interface RangeModel {
+	/** Largest first; equal values by name. */
+	marks: RangeMark[];
+	ticks: RowTick[];
+}
+
+export const rangeStatus = (value: number, [low, high]: readonly [number, number]): RangeStatus =>
+	value < low ? 'below' : value > high ? 'above' : 'within';
+
+/** The rows largest first, equal values (and missing ones, last) by name. */
+const rankRows = (rows: readonly RangeRow[]) =>
+	[...rows].sort(
+		(a, b) =>
+			(b.value?.value ?? -Infinity) - (a.value?.value ?? -Infinity) ||
+			a.label.localeCompare(b.label, 'en-GB')
+	);
+
+export function rangeModel(data: RangeBarsData): RangeModel {
+	const rows = rankRows(data.rows);
+	const near = rows.flatMap((r) => [r.value?.value ?? 0, r.planned?.value ?? 0, r.range[0]]);
+	const reach = Math.max(0, ...near) * BRACKET_REACH;
+	const scale = linearScale([...near, ...rows.map((r) => Math.min(r.range[1], reach))], 'bar');
+	return {
+		marks: rows.map((row) => {
+			const [low, high] = row.range;
+			const left = scale.at(low);
+			return {
+				row,
+				status: row.value ? rangeStatus(row.value.value, row.range) : null,
+				width: row.value ? scale.at(row.value.value) : 0,
+				bracket: { left, width: scale.at(high) - left, open: high > scale.max },
+				tick: row.planned ? scale.at(row.planned.value) : null
+			};
+		}),
+		ticks: rowTicks(scale)
+	};
+}
+
+const unitOf = (unit: string | undefined, text: string | null | undefined) =>
+	text == null ? 'No data' : `${text}${unit ? ` ${unit}` : ''}`;
+
+/** The table twin: a row a group, largest first; Done, Target, Planned (when any) and Status. */
+export function rangeTable(data: RangeBarsData): ChartTableData {
+	const planned = data.rows.some((row) => row.planned);
+	const unit = data.unit;
+	return {
+		rowHeader: 'Muscle group',
+		columns: [
+			{ label: 'Done', unit },
+			{ label: 'Target', unit },
+			...(planned ? [{ label: 'Planned', unit }] : []),
+			{ label: 'Status' }
+		],
+		rows: rangeModel(data).marks.map(({ row, status }) => ({
+			label: row.label,
+			values: [
+				row.value?.text ?? null,
+				`${formatTotal(row.range[0])}–${formatTotal(row.range[1])}`,
+				...(planned ? [row.planned?.text ?? null] : []),
+				status && RANGE_STATUS[status]
+			]
+		}))
+	};
+}
+
+/** Row `index`'s tooltip: the table twin's cells with the unit. */
+export function rangeReadout(data: RangeBarsData, index: number): RowReadout {
+	const { columns, rows } = rangeTable(data);
+	const row = rows[index];
+	if (!row) return { heading: '', rows: [] };
+	return {
+		heading: row.label,
+		rows: columns.map((column, i) => ({
+			label: column.label,
+			value: column.unit ? unitOf(column.unit, row.values[i]) : (row.values[i] ?? 'No data')
+		}))
+	};
+}
+
+// RPE against its target, either side of zero.
+
+/** Within this much of the target either way, RPE is on target: the hueless midpoint. */
+export const ON_TARGET_RPE = 0.5;
+/** The axis reaches at least this far either side of zero, so a small miss never fills the row. */
+export const DIVERGE_MIN_EXTENT = 2;
+
+export type DivergeTone = 'below' | 'zero' | 'above';
+
+/** Each side in words, beside the signed value; the colour only repeats them. */
+export const DIVERGE_WORDS: Readonly<Record<DivergeTone, string>> = {
+	below: 'Easier',
+	zero: 'On target',
+	above: 'Harder'
+};
+
+export interface DivergingRow {
+	key: string;
+	/** 'Back squat'. */
+	label: string;
+	actual: number | null;
+	target: number | null;
+}
+
+export interface DivergingBarsData {
+	title: string;
+	rows: readonly DivergingRow[];
+}
+
+export interface DivergingMark {
+	row: DivergingRow;
+	/** Actual minus target, to one decimal; null when either is missing. */
+	diff: number | null;
+	tone: DivergeTone | null;
+	/** The bar's start and length, from zero to the difference. */
+	left: number;
+	width: number;
+	/** '+1.5', '−0.5', '0'. */
+	text: string | null;
+}
+
+export interface DivergingModel {
+	/** Where zero sits: the line every bar starts from. */
+	zero: number;
+	marks: DivergingMark[];
+	ticks: RowTick[];
+}
+
+export const divergeTone = (diff: number): DivergeTone =>
+	diff < -ON_TARGET_RPE ? 'below' : diff > ON_TARGET_RPE ? 'above' : 'zero';
+
+/** A signed difference with a true minus sign and at most one decimal: '+1.5', '−0.5', '0'. */
+export const formatSigned = (value: number) =>
+	value === 0
+		? '0'
+		: `${value < 0 ? '−' : '+'}${Math.abs(value).toLocaleString('en-GB', { maximumFractionDigits: 1 })}`;
+
+export function divergingModel(data: DivergingBarsData): DivergingModel {
+	// The tone reads the unrounded difference (only float noise trimmed, so 2.2 − 1.7 is
+	// exactly 0.5); rounding to one decimal first would call 8.54 against 8 'On target'.
+	const raws = data.rows.map(({ actual, target }) =>
+		actual === null || target === null ? null : Math.round((actual - target) * 1e6) / 1e6
+	);
+	const diffs = raws.map((raw) => (raw === null ? null : Math.round(raw * 10) / 10));
+	const extent = Math.max(DIVERGE_MIN_EXTENT, ...diffs.map((d) => Math.abs(d ?? 0)));
+	const scale = linearScale([-extent, extent], 'line');
+	const zero = scale.at(0);
+	return {
+		zero,
+		marks: data.rows.map((row, i) => {
+			const diff = diffs[i]!;
+			const raw = raws[i]!;
+			const end = diff === null ? zero : scale.at(diff);
+			return {
+				row,
+				diff,
+				tone: raw === null ? null : divergeTone(raw),
+				left: Math.min(zero, end),
+				width: Math.abs(end - zero),
+				text: diff === null ? null : formatSigned(diff)
+			};
+		}),
+		ticks: rowTicks(scale)
+	};
+}
+
+const rpe = (value: number | null) =>
+	value === null ? null : value.toLocaleString('en-GB', { maximumFractionDigits: 1 });
+
+/** The table twin: a row an exercise, as given; Actual, Target, Difference and Status. */
+export function divergingTable(data: DivergingBarsData): ChartTableData {
+	return {
+		rowHeader: 'Exercise',
+		columns: [
+			{ label: 'Actual', unit: 'RPE' },
+			{ label: 'Target', unit: 'RPE' },
+			{ label: 'Difference', unit: 'RPE' },
+			{ label: 'Status' }
+		],
+		rows: divergingModel(data).marks.map(({ row, tone, text }) => ({
+			label: row.label,
+			values: [rpe(row.actual), rpe(row.target), text, tone && DIVERGE_WORDS[tone]]
+		}))
+	};
+}
+
+/** Row `index`'s tooltip: the table twin's cells, 'RPE' before each number. */
+export function divergingReadout(data: DivergingBarsData, index: number): RowReadout {
+	const { columns, rows } = divergingTable(data);
+	const row = rows[index];
+	if (!row) return { heading: '', rows: [] };
+	return {
+		heading: row.label,
+		rows: columns.map((column, i) => {
+			const value = row.values[i] ?? null;
+			return {
+				label: column.label,
+				value: value === null ? 'No data' : column.unit ? `${column.unit} ${value}` : value
 			};
 		})
 	};

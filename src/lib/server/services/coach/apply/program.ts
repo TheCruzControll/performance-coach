@@ -12,7 +12,7 @@
  *   ProposalRefusedError at payload.ops.n: nothing is written and the proposal stays proposed.
  * - A workout_update is refused once its workout has started (WORKOUT_STARTED): a workout in
  *   progress or completed against its session, which a session substitution changes instead.
- * - new_program and next_cycle stay stubs until apply-session-program-cycle replaces them.
+ * - new_program and next_cycle are ./program-create.ts's.
  */
 import type { Proposal } from '../../../../domain/coach/proposals';
 import { createProgramsRepository } from '../../../db/repositories/programs';
@@ -20,7 +20,7 @@ import { applyProgramEdits } from '../../programs/batch';
 import { ProgramConflictError, TrainingInputError } from '../../training/shared';
 import { listActiveWorkouts } from '../../workouts/canonical';
 import { ProposalRefusedError } from '../proposals';
-import { unavailable, type ApplyInput, type ApplyOutcome, type Appliers } from './types';
+import type { ApplyInput, ApplyOutcome, Appliers } from './types';
 
 /** Why a workout_update is refused at accept once its session's workout has begun. */
 export const WORKOUT_STARTED = 'This workout has already started';
@@ -72,10 +72,7 @@ async function applyOps(
 	}
 }
 
-export const PROGRAM_APPLIERS: Pick<
-	Appliers,
-	'program_adjustment' | 'workout_update' | 'new_program' | 'next_cycle'
-> = {
+export const PROGRAM_APPLIERS: Pick<Appliers, 'program_adjustment' | 'workout_update'> = {
 	program_adjustment: (input) => applyOps(input, input.proposal),
 
 	async workout_update(input) {
@@ -85,8 +82,5 @@ export const PROGRAM_APPLIERS: Pick<
 			throw new ProposalRefusedError({ 'payload.ops.0.sessionLineage': WORKOUT_STARTED });
 		}
 		return applyOps(input, input.proposal);
-	},
-
-	new_program: unavailable('new_program'),
-	next_cycle: unavailable('next_cycle')
+	}
 };

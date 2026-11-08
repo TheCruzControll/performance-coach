@@ -428,13 +428,13 @@ test.describe('with the service worker blocked, so page.route sees every request
 test.describe('in a desktop window', () => {
 	test.use(DESKTOP);
 
-	test('the card and the preview sit in the readable column, Start at its foot, with hover states', async ({
+	test('the card and the preview sit in the wide column, Start at its foot, with hover states', async ({
 		page,
 		request
 	}, testInfo) => {
 		await hybridProfile(request);
 		await gotoHydrated(page, '/today');
-		await expectMainCentred(page, await tokenPx(page, '--content-readable'));
+		await expectMainCentred(page, await tokenPx(page, '--content-wide'));
 		const main = page.locator('main#main');
 		const background = (el: ReturnType<typeof cta>) =>
 			el.evaluate((node) => getComputedStyle(node).backgroundColor);
@@ -445,7 +445,7 @@ test.describe('in a desktop window', () => {
 
 		await cta(page).click();
 		await expect(ready(page)).toBeVisible({ timeout: 15_000 });
-		await expectMainCentred(page, await tokenPx(page, '--content-readable'));
+		await expectMainCentred(page, await tokenPx(page, '--content-wide'));
 		await expectNoSideScroll(page);
 		await expectInColumn(page, start(page), main, []);
 		const idle = await background(start(page));
