@@ -29,7 +29,6 @@
 		type ChunkLoad
 	} from '#lib/client/workout/active.svelte.ts';
 	import { workoutPath } from '#lib/client/workout/kinds.ts';
-	import { startVitalsReporting } from '#lib/client/vitals.ts';
 	import type { AnyTable } from '#lib/domain/workout/project.ts';
 	import { startStopwatch } from '#lib/domain/workout/timers.ts';
 	import Button from '#lib/ui/components/Button.svelte';
@@ -74,7 +73,12 @@
 				ui = await load(() => import('./sync-ui.ts'));
 			})
 		);
-		idle(() => void startVitalsReporting().catch(() => {}));
+		idle(
+			() =>
+				void import('#lib/client/vitals.ts')
+					.then((rum) => rum.startVitalsReporting())
+					.catch(() => {})
+		);
 		return () => active.close();
 	});
 

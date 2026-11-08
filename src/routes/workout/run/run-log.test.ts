@@ -6,7 +6,7 @@ import type { LocalAction, Mutation, RunKit } from '#lib/domain/workout/index.ts
 import { createMutation } from '#lib/domain/workout/mutations.ts';
 import { applyLocal, applyMutation, replay, viewOf } from '#lib/domain/workout/project.ts';
 import type { WorkoutState } from '#lib/domain/workout/project.ts';
-import { runTable } from '#lib/domain/workout/reducers/tables.ts';
+import { runTable } from '#lib/domain/workout/reducers/run.ts';
 import {
 	actualText,
 	entryError,
