@@ -45,7 +45,7 @@
 			<Button block icon="play" onclick={() => choose('stopwatch.resume')}
 				>Resume workout time</Button
 			>
-			<Button block variant="secondary" icon="refresh" onclick={() => choose('stopwatch.reset')}
+			<Button block variant="danger" icon="refresh" onclick={() => choose('stopwatch.reset')}
 				>Reset workout time</Button
 			>
 		</div>
