@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, tick } from 'svelte';
 	import { invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { preferences } from '#lib/client/preferences.svelte.ts';
@@ -37,6 +37,19 @@
 	 */
 	const SETUP_HEIGHT = '24rem';
 	const SUMMARY_HEIGHT = '24rem';
+	const BUILD_HEIGHT = '17rem';
+	/** Build my program's room while its code or its preview loads: a phone screen of preview. */
+	const PREVIEW_HEIGHT = '40rem';
+
+	/** Build my program is open (the Build card was tapped): it takes Today's place. */
+	let building = $state(false);
+
+	/** Back to Today from Build my program, focus on the Build card's button again. */
+	async function closeBuild() {
+		building = false;
+		await tick();
+		document.querySelector<HTMLElement>('[data-testid="today-build-cta"]')?.focus();
+	}
 
 	// Dates depend on the device's time zone, so they render after hydration.
 	let today = $state<Date | null>(null);
@@ -113,7 +126,12 @@
 	{/each}
 </ol>
 
-<div class="stack">
+{#if building}
+	<!-- Build my program takes Today's place until the owner starts week 1 or closes it. -->
+	<PanelLoader load={PANELS.preview} height={PREVIEW_HEIGHT} props={{ onclose: closeBuild }} />
+{/if}
+
+<div class="stack" hidden={building}>
 	<!-- The state's panel is code-split (panels/index.ts): the server sends it as markup, kept as
 	     sent until its code arrives, and a client navigation shows its skeleton until then. -->
 	{#if setup && !setup.complete}
@@ -122,23 +140,32 @@
 				load={PANELS.setup}
 				height={SETUP_HEIGHT}
 				props={{ setup }}
-				served={data.served}
+				served={data.served.setup}
 			/>
 		</div>
-	{:else if setup}
+	{:else if setup && data.program === 'none'}
+		<div class="setup-room" style:min-height={BUILD_HEIGHT}>
+			<PanelLoader
+				load={PANELS.build}
+				height={BUILD_HEIGHT}
+				props={{ onbuild: () => (building = true) }}
+				served={data.served.build}
+			/>
+		</div>
+	{:else if setup && data.program === 'active'}
+		<!-- m3/46 shows today's sessions here. -->
 		<Card tone="accent" padding="lg" data-testid="today-session">
 			<div class="session">
-				<Badge tone="accent" icon="target">First week</Badge>
-				<h2 class="session-title">Nothing scheduled yet</h2>
+				<Badge tone="accent" icon="target">Your program</Badge>
+				<h2 class="session-title">Week 1 is planned</h2>
 				<p class="session-copy">
-					Your coach plans each week around your goals, schedule and recent training. Week one
-					establishes your baseline, so 1RMs are optional.
+					Every session is on Train, with the why behind it. Week one establishes your baseline.
 				</p>
-				<p class="session-next" data-testid="today-next-step">
-					<Icon name="check" size={16} />
-					<span class="next-text">Training profile</span>
-					<Badge tone="positive">Ready</Badge>
-				</p>
+				<a class="session-next" href={resolve('/(app)/train')} data-testid="today-next-step">
+					<Icon name="train" size={16} />
+					<span class="next-text">Open Train</span>
+					<Icon name="chevron-right" size={16} />
+				</a>
 			</div>
 		</Card>
 	{:else}
@@ -181,7 +208,7 @@
 			load={PANELS.summary}
 			height={SUMMARY_HEIGHT}
 			props={{ setup }}
-			served={data.served}
+			served={data.served.summary}
 		/>
 	{/if}
 </div>
@@ -246,6 +273,10 @@
 		gap: var(--space-6);
 	}
 
+	.stack[hidden] {
+		display: none;
+	}
+
 	.setup-room {
 		display: grid;
 	}
@@ -276,7 +307,21 @@
 		border-top: 1px solid var(--color-hairline);
 		font-size: var(--text-sm);
 		font-weight: var(--weight-medium);
-		color: var(--color-text-secondary);
+		color: var(--color-text);
+		min-height: 2.75rem;
+		text-decoration: none;
+		border-radius: var(--radius-sm);
+	}
+
+	.session-next:focus-visible {
+		outline: 2px solid var(--color-accent-ring);
+		outline-offset: 2px;
+	}
+
+	@media (hover: hover) and (pointer: fine) {
+		.session-next:hover .next-text {
+			text-decoration: underline;
+		}
 	}
 
 	.next-text {
