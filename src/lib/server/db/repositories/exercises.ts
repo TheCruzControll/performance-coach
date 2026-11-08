@@ -103,6 +103,19 @@ export function createExercisesRepository(db: Executor) {
 			return row ?? null;
 		},
 
+		/**
+		 * Which of `ids` (well-formed uuids) any exercise row holds, whoever's. Ids only, never a row:
+		 * the sync dispatcher tells an exercise that has not arrived from one outside the library.
+		 */
+		async heldIds(ids: readonly string[]): Promise<Set<string>> {
+			if (ids.length === 0) return new Set();
+			const rows = await db
+				.select({ id: exercises.id })
+				.from(exercises)
+				.where(inArray(exercises.id, [...ids]));
+			return new Set(rows.map((row) => row.id));
+		},
+
 		/** Serialise changes to this owner's custom exercises within the current transaction. */
 		async lockCustom(ownerId: string): Promise<void> {
 			await db.execute(
@@ -110,16 +123,22 @@ export function createExercisesRepository(db: Executor) {
 			);
 		},
 
+		/**
+		 * Insert a custom exercise, under `id` when the device gave one: null when a row already
+		 * holds that id (another owner's, or the catalogue's).
+		 */
 		async insertCustom(
 			ownerId: string,
 			values: CustomExerciseValues,
-			now: Date
-		): Promise<ExerciseRow> {
+			now: Date,
+			id?: string
+		): Promise<ExerciseRow | null> {
 			const [row] = await db
 				.insert(exercises)
-				.values({ ...values, ownerId, createdAt: now, updatedAt: now })
+				.values({ ...values, ...(id && { id }), ownerId, createdAt: now, updatedAt: now })
+				.onConflictDoNothing({ target: exercises.id })
 				.returning();
-			return row!;
+			return row ?? null;
 		},
 
 		/** Give a retired custom exercise a new definition and bring it back, keeping its id. */

@@ -304,7 +304,7 @@ Two kinds, and neither is offset by `--nav-height` **(guard)**: only `tokens.css
 itself read it.
 
 - **Screen chrome** belongs to a whole readable screen (Coach's composer; a section's Save bar
-  until Profile is laid out in columns) or to the app (toasts). It is `position: fixed` at
+  below 1024 px) or to the app (toasts). It is `position: fixed` at
   `bottom: var(--nav-inset-bottom)` (toasts keep their top inset), centred with
   `left: calc(50% + var(--nav-inset-left) / 2)` and `translateX(-50%)`, and at most
   `var(--content-column)` wide. Only readable screens have it at the bottom.
@@ -388,6 +388,14 @@ later-pass screen).
   wide so no specimen stretches; the header and the icon grid span both, with larger cells.
 - **Error and offline states** (`ErrorView`): inside the shell they stay in the readable column;
   outside it they are centred in the window at `--content-readable`.
+- **Profile** (`/profile`): wide. From 1024 px two columns, read row by row as on a phone: the
+  account (identity, Security, preferences) beside the training profile's sections, the system's
+  status under the account.
+- **Profile sections** (`/profile/[section]`): split. From 1024 px `SectionList` (the sections,
+  the open one `aria-current`) beside the editor in the readable column; Back is hidden. The
+  skeleton reserves the window's height below the title, so Save starts at the window's foot and
+  stays put when the editor arrives. Save is column chrome at the editor column's foot. Below
+  1024 px: list → editor → Back, the 28 rem skeleton and the fixed Save bar.
 - **Onboarding** (`/onboarding/[[step]]`): outside the shell. From 1024 px each step is a
   `--color-surface-1` card centred in the window, `--content-readable` wide and as tall as the
   window allows (capped at 52 rem), so moving on moves neither the card nor its actions. The
@@ -472,6 +480,7 @@ later-pass screen).
 | `RecoveryCodes`     | One-time display of recovery codes: numbered monospace list (one per row on a phone, two columns when the container allows), copy and download, required acknowledgement checkbox.                                                                                                 |
 | `ChartFrame`        | `ui/charts`. A chart's `<figure>`: title, context and summary server-rendered; the plot box reserved with a hairline grid; the body from a `CHART_BODIES` loader after hydration; a failed chunk: `Notice` and Retry; no JS: 'Chart needs JavaScript'; an `availability` slot.     |
 | `ChartTable`        | `ui/charts`. The table twin: `<details>` 'Show as table' (≥ 44 px), a keyboard-scrollable table with scoped headers, units, every value ('No data' when missing), the week in progress marked 'so far'.                                                                            |
+| `LineChart`         | `ui/charts/bodies`, `CHART_BODIES.line`. Up to 4 series: 2 px lines with gaps, legend from 2, end labels with leaders (numbers < 18rem); 8 px end dot, hollow ring (estimated), diamond (measured), dashed ring 'so far'; crosshair and tooltip by pointer, touch or ←/→/Home/End. |
 
 A `ChoiceGroup` records a choice; it is never an "add" action (arrow keys check every radio they
 pass, so a radio that adds a row adds one per keypress). An optional single choice offers an

@@ -156,7 +156,10 @@ Specs:
   endpoint answers 401 JSON for every method it exports, the public endpoints are exactly the
   allow-list, telemetry needs a session, unknown URLs are denied, forged cookies are refused and
   cleared; signed in, cross-site JSON, form-action and `text/plain` requests are refused (403)
-  and change nothing.
+  and change nothing. Every `/api/test-support/*` handler starts with the `testRoutesEnabled()`
+  404 guard; the program fixture route needs an owner session and refuses a cross-site POST. A
+  cross-site POST to a session's `?/move` is a 403 and changes nothing, while the same request
+  from the app runs and returns its field error (400).
 - `reauth.e2e.ts` — step-up: a session whose last passkey use is over 5 minutes old cannot
   remove a passkey (the form action answers 403); on the screen a **Confirm it's you** sheet
   opens over the remove sheet (axe in both themes), a failed Face ID check says nothing was
@@ -196,8 +199,8 @@ Specs:
   and an unhandled rejection in the browser are reported and stored as `client` rows with their
   route; a server error returns a safe message and is recorded with its request id.
 - `offline.e2e.ts` (Chromium) — the first visit is controlled by the service worker without a
-  reload; offline, every tab keeps the shell (screens without server data render, Profile shows
-  the designed offline state, never a 500), a full reload offline gets the offline screen in the
+  reload; offline, every tab keeps the shell (screens without server data render; Train and
+  Profile need server data, so each shows the designed offline state, never a 500), a full reload offline gets the offline screen in the
   shell, and back online the screen loads live data; no dynamic page is ever cached.
 - `design-inputs.e2e.ts` — the input primitives on `/design` → Inputs. NumberField opens
   the decimal (or, for whole numbers, numeric) keypad with an `enterkeyhint`, keeps digits and
@@ -240,7 +243,11 @@ Specs:
 - `perf.e2e.ts` (Chromium, `perf` project) — main-thread budget: real long tasks at 4× CPU while
   each screen loads, median of 5 cold loads; target ≤ 200 ms, fails above 250 ms (docs/performance.md). It runs
   alone, with one worker, after the functional suite, so parallel specs cannot skew it. App
-  screens load signed in, `/` signed out. Run it by itself with
+  screens load signed in, `/` signed out. The program screens are seeded through the fixture
+  route: Train, the week's longest strength session and History on the hybrid program this week,
+  Today in its Build-card state (onboarding complete, no program) and its program state (the
+  `'today'` fixture). Each of those is also held to an unexplained layout-shift sum ≤ 0.01 on
+  every load (`MAX_SHIFT`). Run it by itself with
   `E2E_PERF_ALONE=1 pnpm test:e2e --project=perf` (owner setup, then the budget).
 
 Artifacts: failure screenshots + traces in `test-results/`, key-screen screenshots in
@@ -312,6 +319,15 @@ Unit tests (`src/lib/domain/training/`, `src/lib/domain/exercises/`, `src/lib/do
   repeat groups as one step); session lines for strength, timed and distance runs and every
   other-session kind, with M2's time of day but never 'varies'. `describe.ts` imports only
   domain modules and no package (`scripts/training-index-imports.test.ts`).
+- **Training metrics** (`training/metrics.test.ts`): a set's e1RM is M1's `estimateOneRepMax` in kg
+  (with and without an RPE, pounds converted exactly) and none for warm-ups, skipped sets and RPE
+  under 6; the best e1RM is always an estimate; best e1RM and rep records give a tie to the latest
+  set in any order, and rep records ignore warm-ups; bench is 1 hard set for chest and 0.5 for
+  triceps and front delts, RPE-6 and warm-up sets never count, a group is credited once per set and
+  weeks split on the owner's Monday; planned and logged hard sets agree on the same sets, and runs
+  and classes (a strength class included) credit none; session load is M1's `sessionLoad` for logged
+  and planned sessions; weekly distance mixes km and mi exactly, free of floating-point noise, and
+  keeps a Sunday-evening run in its week.
 
 ### Schema
 
@@ -325,34 +341,596 @@ Migrations, the CHECKs on closed vocabularies and the history guards on real Pos
   intact; `truncate programs cascade` and `withCommitted` purge a whole program. The unit test
   `scripts/history-guards.test.ts` keeps `truncate`, `session_replication_role` and
   `disable trigger` out of server code.
+- **Exercise library** (`tests/integration/training/exercise-seed.test.ts`): after the global
+  setup's migrate run every catalogue entry is stored exactly as defined (unilateral and default
+  seconds included); a rerun reports no change and leaves `updated_at` alone; a new key is inserted
+  and a changed entry updated in place, keeping its id; a removed key is retired, readable by id,
+  and restored with the same id; custom rows are never touched, cannot take a key and are unique per
+  owner by lower-cased name; measure, skill level, load type, reps, seconds and primary muscles are
+  CHECKed while pattern stays open; the catalogue survives `withCommitted` (custom rows have no
+  owner FK, so they survive it too and the test removes its own). `scripts/catalogue-node.test.ts`
+  also loads `migrate.ts` under plain Node, as `db:migrate` does, and checks that the seed and both
+  catalogue parts load with it.
+- **Prescriptions** (`tests/integration/training/prescriptions-schema.test.ts`, ADR 0010): a planned
+  week's strength exercises and set prescriptions (every measure and load kind, a superset, a swap,
+  a custom exercise), an interval run (warm-up, 6 × (400 m + 90 s), cool-down) and a Muay Thai class
+  with metrics round-trip in order, and a computed fraction (0.863 × 0.9) is stored exactly. One
+  shared table of values, grouped by CHECK, is refused alike by the CHECKs and the contract's zod
+  schemas, and its edge values (every `PRESCRIPTION_LIMITS` bound, and the caps only zod holds) are
+  accepted by both. Every CHECK on the four tables is in that table, positions aside. Positions are
+  unique from 1, with one details row per session. UPDATE and DELETE are refused on every
+  prescription table. `truncate programs cascade` purges them and keeps the exercises. An exercise a
+  plan prescribes or swapped out cannot be deleted.
+- **Training log** (`tests/integration/training/log-schema.test.ts`, ADR 0010): a device id
+  (`client_id`, `client_mutation_id`) is stored once in every table that takes one, and a run or
+  other-session record once per workout, so a replay is a conflict (`ON CONFLICT DO NOTHING` keeps
+  the stored row). 225 lb keeps its value and unit beside an exact `weight_kg` of 102.05828325, and
+  runs and segments get their pace. An UPDATE that changes a row writes one audit row (before,
+  after, owner, actor from `app.actor`, 'owner' by default) and moves `updated_at` to the
+  statement's time, whatever the statement sets. An UPDATE that changes nothing (a value written
+  again, a generated column worked out again, `updated_at` alone) writes no audit row and keeps
+  `updated_at`. An unknown actor is refused. A soft delete and a restore are audited once, and a
+  replayed delete writes nothing. DELETE is refused on every logged table, so deleting the owner is
+  refused too. `training_audit` refuses UPDATE and DELETE. One shared table of values per CHECK is
+  refused, its edge and open-list values are accepted, and it covers every CHECK on the log. Logged
+  sets and substitutions keep their exercises (ON DELETE RESTRICT). Every history index has its
+  exact definition. Every logged table has its touch, audit and refuse-delete triggers, and none
+  fires on TRUNCATE. `withCommitted` clears committed workouts, sets and audit rows.
+- **Coaching memory** (`tests/integration/training/coaching-schema.test.ts`): preference links and
+  sources (including replaying the committed migration on an M2 row), the
+  one-preference-per-exercise index, the proposal lifecycle CHECKs, weekly and cycle review
+  uniqueness, and owner FKs on every coaching table.
 
 ### Programs
 
-The program store, program reads, versioning and owner edits, on real Postgres. No tests yet.
+The program store, program reads, versioning and owner edits, on real Postgres.
+
+- **Exercise library service** (`tests/integration/training/exercises.test.ts`):
+  - Lists hold every live catalogue row exactly as defined, plus the owner's own exercises and never
+    another owner's (who may reuse a name). They come by name whatever plan Postgres picks, and
+    filter by pattern or substitution group; a custom exercise joins its group.
+  - A retired row (a catalogue key another preview's seed retired, or a custom exercise the owner
+    retired) leaves the lists but stays readable by id. `resolveKeys` still resolves a retired key.
+  - Retiring twice keeps the first retirement. Creating a retired exercise's name again brings it
+    back with the new definition and the same id.
+  - Creation writes nothing and gives field errors for bad input (a timed exercise without seconds
+    included), for a name or alias the catalogue or the owner already uses (any case, any plural),
+    and for a substitution group that does not exist or whose pattern or measure differs. Input
+    never sets a key, an owner, a lift or a retirement.
+  - A malformed, catalogue or stranger's id is not found, never a database error. A double-tapped
+    create waits on the owner's lock and gets field errors, never a unique violation.
+  - Free text resolves by name or alias, the owner's own included, and gives null for unknown text,
+    part of a name, another owner's exercise or a retired one.
+  - `src/lib/server/services/training/shared.test.ts` (unit): `parseWith` throws a
+    `TrainingInputError` keyed by dotted path; every conflict is a `ConflictError` with its reason;
+    deps act for the owner unless told otherwise.
+- **Program store** (`tests/integration/training/program-store.test.ts`, the fixtures in
+  `src/lib/server/test-support/program-fixtures.ts`): the brief chain (owner, goal and Muay Thai
+  commitment through the M2 services → `createProgramFromPlan` → program, version 1, blocks and
+  weeks) reads back deep-equal to the plan, ids and lineages aside. Strength (ordered exercises and
+  set prescriptions), an interval run (repeat groups) and a Muay Thai class (metrics, evening,
+  second in its day) coexist in one week, each in its own table. Decisions store the lineages their
+  plan paths name. An invalid plan (RPE 11; a session outside its week) is a `TrainingInputError` at
+  its dotted path and writes nothing; so is an unknown key, another owner's exercise or a catalogue
+  row's id sent as a customId. A retired key and the owner's own exercises, swaps included, resolve.
+  Another owner, a malformed id or an unknown version number is not found. A second active program
+  is refused, except a repeat of the same fingerprint before any revision; a plan without a
+  fingerprint never repeats; an archived program no longer counts. Two builds racing on separate
+  connections give one program. A 5-week plan (126 rows) and a 1-week plan (36 rows) each take the
+  same 18 statements, at most 20. Every fixture passes `programPlanSchema` unchanged and stores as
+  it is.
+- **Program reads** (`tests/integration/training/program-reads.test.ts`): the current program's
+  blocks, planned weeks (outline blocks count none), last planned day, and where an explicit today
+  falls (week n of N, baseline, not started, block complete); a week by date and by block and week
+  (weeks counting on from the block's start), Monday to Sunday, each session's line equal to
+  describe.ts in the owner's distance unit; a date before the start gives week 1 with the first
+  planned day; a week past the planned weeks is `planned: false` with the outline phase there, or
+  none; malformed dates and indexes are input errors, and an unknown block, version or lineage is
+  not found; a session by lineage with its exercise names and sets, segments or details; today's
+  plan on a training day, a rest day, a Sunday (up next from next week), before the start, and after
+  the one-week fixture's week (block complete, nothing up next), the same whatever the system clock
+  says; 'completed' only from a completed, undeleted workout, with the planned row unchanged and the
+  status carried into a hand-made version 2; version 1 still readable after version 2, saying
+  whether the current version keeps each session; another owner, and an archived program, read
+  nothing.
+- **The owner's today** (`tests/integration/training/local-date.test.ts`): `ownerToday` is the day
+  in the profile's time zone, not the server's or UTC's. It turns over at midnight in London in GMT
+  (2026-03-28T23:30Z → 2026-03-28) and BST (2026-06-30T23:30Z → 2026-07-01), in Auckland in NZDT
+  (2026-11-05T10:59Z → 2026-11-05, 11:00Z → 2026-11-06), in UTC for a profile that never recorded a
+  zone, and follows a zone the profile changes.
+- **Versioning** (`tests/integration/training/program-versioning.test.ts`, ADR 0010): every row
+  version 1 reaches is snapshotted as JSON and is identical after three revisions, and
+  `getVersionWeek(1)` still reads the original week; a revision adds exactly one week's subtree (one
+  count per table) and shares every other week by id, with lineages carried; its changes land in
+  every child table of the copy; a stale base is a `ProgramConflictError` before the edit runs, and
+  a failing edit or a change outside the copied weeks writes nothing; a completed session stays
+  completed in the new version; each revision writes one decision with its version and lineages;
+  History lists v3, v2, v1 with their decisions resolved to titles and dates, and 25 versions page
+  as 20 + 5 with no gaps; two concurrent revisions on separate connections (`withCommitted`,
+  `holdTransaction` + `lockWaiters`) leave exactly one version 2; a `pg_constraint` check fails when
+  a table added under a week, session or planned exercise is not part of the copy.
+- **Move and skip** (`tests/integration/training/edit-move-skip.test.ts`, through `reviseProgram`):
+  Mon → Wed as version 2 (moved, `moved_from` Monday, version 1 unchanged row for row, week 2
+  shared, decision 'Moved Lower A from Mon to Wed' with the reason); the no-reason why naming who
+  decided (owner and coach); `moved_from` kept from the first move, order on the new day by time of
+  day, and planned again back on its day; heavy lower body moved to the day before sparring, with
+  `heavy_lower_before_hard` and `hard_days_apart` returned, recorded in the why and given first by
+  `checkMove` (a pair already in the base version is not reported); `BLOCKS_EDIT` turning 'avoid'
+  into a refusal; field errors for a destination outside the week or before today, a session before
+  today, a completed or skipped session, and a full day; a stale version as a conflict, for
+  `checkMove` too; `getMoveTargets` for a Sunday session (empty on Sunday, Wed–Sat on Wednesday);
+  and a long why fitted to 1000 characters. The edit schemas are unit-tested in
+  `src/lib/domain/training/edits.test.ts`.
+- **Exercise preferences** (`tests/integration/training/preferences.test.ts`): a Profile save links
+  the owner's words to the library (catalogue names and aliases; unknown text stays unlinked) with
+  its source; two names for one exercise ('RDL', 'Romanian deadlift') are a field error at `items`
+  and write nothing, counting a kept row's stored link; a swap dislike keeps its source, link and
+  reason through Profile saves that keep it and is deleted when removed; `recordExercisePreference`
+  upserts by link or name; a swap dislike and a Profile save on two connections serialise on the
+  preferences lock (`withCommitted` + `holdTransaction` + `lockWaiters`), in both orders.
+  `e2e/preferences-link.serial.e2e.ts`: liking RDL and Romanian deadlift in Profile → Exercises
+  shows the duplicate notice, and a reload shows nothing saved.
+- **Swap and adjust** (`tests/integration/training/edit-swap-adjust.test.ts`): alternatives by
+  equipment and dislikes, with an explained empty list; a one-off swap saves no preference, while
+  'never again' saves one dislike and swaps from today; strength, run and other-session adjustments
+  are validated, versioned and get their minutes and load worked out again.
 
 ### History
 
-Logged training, the history queries and `pnpm db:explain`. No tests yet.
+Logged training, the history queries and `pnpm db:explain`.
+
+- **History queries** (`tests/integration/training/history.test.ts`, fixtures in
+  `tests/integration/training/fixtures/history.ts`):
+  - An exercise's history pages newest first with no duplicate or gap at any page size, including
+    two sets in the same millisecond and two at the same instant. Warm-ups and skipped sets are
+    flagged; deleted sets are left out.
+  - The last N performances are the last N workouts with a working set, each with all its working
+    sets in order.
+  - PRs and best e1RM, for one exercise and for all, ignore warm-up, skipped and deleted sets and
+    equal the domain's `bestE1rm` and `personalRecords` on the same rows. Retired catalogue and
+    custom exercises are included; exercises with no qualifying set drop out.
+  - Weekly hard sets equal `hardSets`. Weekly mileage mixes km and mi runs and equals
+    `weeklyDistance`. Both split Monday to Sunday on the owner's local dates, so a Los Angeles
+    Sunday evening stays in its week.
+  - Sessions in a range list the current version's strength, run and Muay Thai sessions (completed
+    from logged workouts) and the workouts logged on those days, dated by the owner's calendar.
+  - Another owner sees nothing, even given the owner's ids. Bad input is a field error, and a
+    malformed exercise id is not found.
+  - Every index that `HISTORY_INDEXES` names exists.
+- **Logging workouts and sets** (`tests/integration/training/log-sets.test.ts`): the training log's
+  write path and replay contract: creates are idempotent on device ids (duplicate and matches, the
+  stored row wins, one row under a two-connection race in `withCommitted`), absolute edits leave no
+  trace on replay, deletes are soft and idempotent, the e1RM is recomputed on edit, audit rows are
+  checked by row_id, and a substitution writes no exercise preference.
+- **Runs, other sessions and recovery notes** (`tests/integration/training/log-runs-other.test.ts`),
+  under the same replay contract: a run with a warm-up, 6 × interval/recovery and a cool-down stored
+  in position order with generated paces; 5 mi stored as exactly 8046.72 m; a replayed run gives one
+  run and one set of segments (also under a two-connection race in `withCommitted`), and a differing
+  run or segment returns `matches: false` and changes nothing; Muay Thai sparring with its rounds
+  metric round-trips, and a bad metrics shape is a field error before the database's CHECK; one
+  recovery note per mutation id; edits to runs and notes are audited once by row_id, and replayed
+  identical edits write nothing.
+- **Query plans** (`pnpm db:explain`, `scripts/explain/history.explain.ts`; CI runs it after the
+  integration tests): every builder of `db/queries/{history,programs}.ts` is explained (ANALYZE,
+  BUFFERS) on the two-year dataset; on a large relation (≥ 5,000 rows or ≥ 50 pages) the builder's
+  declared index must be used and no Seq Scan appear, and small relations are recorded only
+  (docs/performance.md, "M3 query plans"). Unit tests: `scripts/explain/plan-check.test.ts` on
+  canned EXPLAIN JSON (a Seq Scan of a large relation nested under joins or in an InitPlan fails,
+  the same plan on a small relation passes, an unused or nonexistent declared index fails, a Bitmap
+  Index Scan counts as using its index) and `scripts/explain/dataset.test.ts` (the same seed gives
+  the same counts and first rows; ≥ 600 workouts with ≥ 15k sets over about 40 exercises, ≥ 400 runs
+  with ≥ 6k segments, ≥ 730 days, about 100 planned weeks in versioned programs, copy-on-write
+  weeks).
 
 ### Generator
 
-The deterministic week-1 generator: its rules, stages and scenarios. No tests yet.
+The deterministic week-1 generator: its rules, stages and scenarios. Unit tests in
+`src/lib/domain/programming/`, on the seven profiles in `scenarios.ts` (beginner, powerlifter,
+hybrid, injured shoulder, dumbbells only, the journey, the minimal onboarding profile), dated from
+`SCENARIO_START`:
+
+- **Input** (`input.test.ts`): a minimal profile (one goal and daysPerWeek) normalises and lists
+  every default it applied (any day, no time of day, 60-minute sessions, the commercial-gym preset,
+  and new to each discipline trained); a full profile lists only its commitments' missing duration
+  and intensity (60 min, 90 for Muay Thai, and moderate); 'varies' is never a distinct time;
+  achieved and dropped goals and inactive injuries drop out, paused goals are kept apart, all-paused
+  gives maintenance, and disciplines follow goal priority; equipment is the gym-type preset ∪ ticked
+  ∪ home kit; a linked preference and the same text unlinked give one key, and a key both liked and
+  disliked is only disliked; 1RMs are in kg, estimated stays estimated and blank stays blank; empty
+  specifics count as none; the profile with its rows and keys reversed gives the same input.
+- **Fingerprint** (`input.test.ts`): unchanged by key order, timestamps, row ids, start dates and
+  the time zone ('UTC' vs 'Pacific/Auckland'); changed by each of 17 meaningful edits, by one
+  catalogue entry, by one custom exercise, and by a new `GENERATOR_ID`.
+- **Hashes and tie-breaks** (`random.test.ts`): FNV-1a 64 gives the published vectors and matches a
+  BigInt reference on UTF-8 text; canonical JSON sorts keys and refuses non-plain data; the
+  catalogue digest ignores list order and row-only fields; `seededRandom` matches the published
+  mulberry32, with outputs, picks and shuffles pinned.
+- **Decisions** (`decisions.test.ts`): every `DECISION_KINDS` entry has a template in exactly one
+  area file; every rendered decision has no placeholder left and passes `decisionPlanSchema`; a
+  missing fact fails at compile time (`@ts-expect-error`) and at run time; the log lists decisions
+  by kind, then in the order made; every default renders as a `default_assumed` decision that names
+  its Profile section. `DecisionLog.retarget` is covered there too.
+- **Eligibility and alternatives** (`avoidance.test.ts`, `eligibility.test.ts`,
+  `alternatives.test.ts`):
+  - Tables: every injury row and avoid phrase leaves out some of the catalogue but never half of it.
+    Rows run mildest first, and no phrase is worded twice.
+  - Injuries: an injury rules out its area's rows up to its severity, with one reason per injury,
+    except for the catalogue's friendly tags. A resolved injury rules out nothing.
+  - Avoid text: 'overhead pressing' leaves out the strict press, push press, jerks and handstand
+    push-ups, and keeps pullovers, carries, the landmine press and horizontal pressing. A whole
+    phrase reads as a kind of movement before it reads as a name ('Squats' vs 'Front squats').
+    Phrases and exercise names inside longer text are read left to right ('Burpees and box jumps').
+    The owner's own exercises match by name. Words that cannot be read come back unmatched, once
+    each.
+  - Eligibility: with dumbbells only, exactly the dumbbell and bodyweight work is eligible, and
+    barbell, machine and cable work says 'Needs …'. A knee injury plus 'jumping' leaves out every
+    plyometric. A disliked exercise is never eligible, even when liked or the only option, and the
+    empty slot says why.
+  - Ranking: likes come first and skill within experience next, for every seed tried. One seed
+    always gives one order.
+  - Alternatives: the group comes first, then exercises of the same or a related pattern with the
+    same measure and a shared primary muscle, ranked by unilateral flag, load type and skill. The
+    original is never offered. The back squat with dumbbells only gives the dumbbell squats, then
+    split squats. The power clean with bodyweight only gives none, and blocked explains the
+    equipment.
+- **Day rule** (`demand.test.ts`): training days are `daysPerWeek` capped by the available days ∪
+  commitment days; free days never go below 0, and commitments on 4 days with 3 a week give a
+  `days.commitments_fill` decision; a running club counts toward runs and a strength class toward
+  strength days; free days fill each goal's fewest by priority, then spare days go by turns up to
+  each goal's most, then to mobility; a second session sits on a commitment day only with two
+  distinct preferred times (not 'it varies') and sessions ≤ 90 min, otherwise the lowest-priority
+  session is dropped (`session_dropped`) and a goal ranked between others gets a
+  `priority_tradeoff`; empty availability means any day.
+- **First block** (`blocks.test.ts`): no event gives baseline + 3 accumulation + deload, week 1 at
+  RPE ≤ 7 and a deload with less volume; a fight in 5 weeks gives baseline, build and a taper; a
+  marathon in 20 weeks gives a marathon base and an outline (build, peak, taper) ending on race day,
+  two weeks each for a half; a meet in 16 weeks gives build, peak and a week's taper. Two events:
+  the fight first shapes the block and the marathon's outline follows; the marathon first gives a
+  marathon base whose last week tapers for the fight. A taper is the week holding most of the seven
+  days before the event, never week 1; an event beyond the block is noted on its outline block; a
+  past event shapes nothing; assumptions become `default_assumed` and paused goals `goal_excluded`
+  (none when all are paused, which plans maintenance).
+- **Strength splits** (`splits.test.ts`): general strength takes full body for 1–3 days, upper/lower
+  for 4, push/pull/legs and upper/lower for 5 and push/pull/legs for 6, lettered when a day repeats.
+  Powerlifting gets SBD at every count, weightlifting its two lifts, and athletic a power slot.
+  Hypertrophy opens its main slots to the best fit. It is maintenance when a goal of another kind
+  ranks first or every goal is paused. From two days, every layout trains squat, hinge, push and
+  pull, and pulls at least as often as it pushes.
+- **Exercise selection** (`selection.test.ts`): an injured shoulder gets no overhead work, and its
+  overhead press gives way to a landmine press with an `exercise_substituted` decision naming the
+  injury. A lift the equipment rules out gets a stand-in from its substitution group every day it
+  comes up. Lift slots take compound work and accessory slots accessories whenever one is eligible.
+  A like wins among equals, and a liked custom exercise fills its slot by key. A dislike never
+  appears and gets `exercise_excluded`. An unfillable slot gets `slot_empty` with the reason, and an
+  unread movement to avoid gets `unmapped_avoidance`. Each exercise appears once a day, and the same
+  input gives the same week. Sets: the top set at the week's cap, back-offs a point under, other
+  work at RPE 7 or the cap; reps clamped into the exercise's range; holds in seconds, carries in
+  metres.
+- **Time fit** (`timefit.test.ts`): `estimateMinutes` is the warm-up plus each set's work and rest,
+  with a one-sided set done per side. A 59-minute session fits 45 by losing its accessories and one
+  back-off set, never a top set. Shorter limits take every back-off before any other exercise, and a
+  session too short for its top sets keeps them. Long runs and commitments are untouched; other
+  sessions and runs are shortened. Sessions trimmed alike share one `time_trimmed` decision, split
+  at 50 references, and its account stays short enough for the plan contract.
+- **Strength stage** (`stages/strength.test.ts`): the brief's dumbbells-only, injured-shoulder and
+  powerlifter scenarios. As many strength sessions as the day rule gives, and fewer when strength
+  classes take days. Naive spacing over free days, then commitment days, and none before the first
+  planned day. The same exercises every week at each week's RPE cap. Every scenario's strength
+  sessions fit sessionMinutes after timefit.
+- **Loads and progression** (`loads.test.ts`, `progression.test.ts`): blank 1RMs work up to 5 @ RPE
+  7 with the recording instruction and from_e1rm back-offs at 90 % of the top set; a measured 1RM
+  starts at 72.5 % × 5, under M1's `percentOfOneRepMax(5, 7)`; an estimated one starts a 2.5 % step
+  lower and is never called measured; nothing in week 1 is above RPE 7.5; known-1RM loads rise +2.5
+  % a building week under M1's table, and blank ones resolve through `loadForTarget`; the third
+  accumulation week's extra back-off set still fits 60 minutes after timefit; the deload keeps 60 %
+  of the sets at RPE ≤ 6; the rules stored as `BlockPlan.progression` round-trip as JSON and rebuild
+  the same weeks; the beginner and powerlifter scenarios (deterministic, percentages ≤ 75 % in week
+  1, decisions citing the maxes).
+- **Volume** (`volume.test.ts`): every case runs through `generateProgram` and is compared with the
+  same plan made without the volume stage (`STAGES` minus `volume`), so it checks only what the
+  stage changed: weekly hard sets per major group in full-volume weeks (counted with
+  `plannedHardSets`, a week above full volume against its ceiling × volume factor), pull ≥ push by
+  movement pattern, the cut and bulk adjustments with their decisions, the `priority_tradeoff` when
+  the session length keeps the range out, and the dumbbells-only and injured-shoulder rules for the
+  work it adds.
+- **Scenarios** (`scenarios.test.ts`, through `programming/index.ts`): the brief's five scenarios,
+  the journey and the minimal profile, with assertions pinned to rules, never to exercise names.
+  Beginner: 3 full-body sessions on non-consecutive days, RPE-based main lifts with the recording
+  instruction. Powerlifter: squat, bench and deadlift at ≤ 72.5 % of the measured 1RM in week 1.
+  Hybrid: classes on Tue/Thu, a weekend long run, no heavy lower body the day before hard Muay Thai
+  or the long run, and the priority decisions. Injured shoulder: no `overhead` tag, with its
+  decision. Dumbbells only: only the profile's equipment. Journey: rule-clean, both events named.
+  Minimal profile: a 3-day plan on any days, the commercial-gym preset, 60-minute sessions and one
+  `default_assumed` per assumption. For every scenario: each generated session except the long run
+  fits `sessionMinutes` in every week after volume and progression; a longer long run carries its
+  `running.long_run_length` decision; commitments keep their duration; nothing in week 1 goes above
+  the RPE its purpose names except a commitment the purpose sets aside. Also: deep-equal plans for
+  the same input and for reordered profile rows, with no clock or randomness; a Thursday start plans
+  Thursday to Sunday only; no `checkWeek` 'avoid' without a `priority_tradeoff` citing it; every
+  decision's kind is in `DECISION_KINDS` and has a rationale; the `program_purpose` words.
+- **Composition** (`generate.test.ts`, `index.test.ts`): the stages run once each in the documented
+  order; every scenario composes into a plan `programPlanSchema` accepts, parsed before it is
+  returned, and the same input gives byte-identical JSON; week 1 starts on a Monday and the first
+  planned day falls in it; a stage that plans before a 'This week' start's first day or outside its
+  week throws `GeneratedPlanError` with every dotted path. The public entry point exports exactly
+  the generator, its input, the fingerprint and the checks.
+- **Preview and build** (`tests/integration/training/programming.test.ts`): the brief chain through
+  the M2 services (hybrid and minimal profiles), preview determinism, reproduction from the stored
+  snapshot, dislikes and dumbbells-only equipment, the profile, library and start_date conflicts
+  writing nothing, an idempotent double build across a time-zone change, and the refusal before
+  onboarding is complete.
 
 ### Concurrent training
 
-Commitments, running, interference rules and placement across disciplines. No tests yet.
+Commitments, running, interference rules and placement across disciplines. Unit tests in
+`src/lib/domain/programming/`:
+
+- **Interference rules** (`interference.test.ts`, on sessions the contract's schema accepts):
+  `demandOf` reads heavy squats in a hard session, a compound lift at RPE 8 or 80 % of a 1RM at any
+  session intensity, and 10 of `isHardSet`'s hard sets of leg work at any load as heavy lower body,
+  but never mobility, an exercise without traits, warm-up or ramp sets, sets below RPE 7, or a leg
+  accessory on a hard upper day; Muay Thai as hard combat when hard and sparring at any intensity, a
+  light technical class as easy; a long run by type or from 90 minutes; intervals by type, an
+  interval segment or a hard running club; and a hard commitment of every discipline by its
+  discipline (a hard strength, athletic or custom class is very demanding). `checkWeek`: heavy
+  squats on Monday before Tuesday sparring is 'avoid' and before a light technical class is not;
+  heavy lower body the day before a long run is 'avoid'; intervals the day after a long run, a hard
+  strength class or a day of two hard sessions are 'avoid', two days after or the day before are
+  not, across a week boundary too; back-to-back hard days are 'prefer' only when the movable hard
+  days could sit apart (five hard days, or days outside the open dates, leave them alone), and two
+  fixed hard days in a row are taken as given while the others are still kept apart; on a shared day
+  the time of day orders sessions when both have one ('varies' is none), an easy run before heavy
+  lower body is fine, and heavy lower body before hard Muay Thai or a long run, or a very demanding
+  session before intervals, is 'prefer'; messages name the days and sessions; the caller's own
+  session objects come back; all 5,040 orders of a hybrid week give the same result, and so do
+  sessions sharing a date, slot and title; every rule has a severity and a reason; and no rule
+  blocks an owner's edit by default.
+- **Commitments** (`commitments.test.ts`): Tue/Thu Muay Thai classes become evening sessions of
+  their own discipline on those dates in every planned week, with the class's RPE, load and
+  commitment ref, and one `commitment_placed` decision citing every session; nothing is placed
+  before the first planned day, and a day's commitments go in time order; a 60-minute Wednesday
+  running club is a run of one timed segment, with one generated run fewer; a strength class is a
+  `strength_class` session counted as a strength day with no hard sets credited; a commitment no
+  goal trains adds to the week; a null duration and intensity get 90 min (Muay Thai) and moderate,
+  with `default_assumed` decisions and a `commitment_placed` why that says so.
+- **Running** (`running.test.ts`): no runs without a running discipline (a running commitment stays
+  the only run); a new runner gets easy runs only, timed, each at RPE 4.5 and HR zone 2; no running
+  specifics gives the time-based week 1 (30-minute easy runs and a 45-minute long run) with a
+  `run_volume` decision; an intermediate runner with a half marathon gets one tempo run a week, none
+  in the deload, ordered easy, tempo, easy, long; 25 km a week plans about 25 km in week 1, each
+  week held to 10 % over the most a week before it ran (a quality session included), and the deload
+  drops; a three-run week and the hybrid scenario's running, long run too, grow every building week;
+  a week too small for each run to reach 2 km plans fewer runs and says so; the long run stays
+  within 30 % of the week and 10 % over the longest run before it, and may outrun the session length
+  with a `priority_tradeoff` decision while every other run keeps to it; interval paces come from a
+  10K, or by Riegel a 5K, time as ranges, else RPE and HR zone, with a `run_pace_source` decision;
+  with both told, easy paces come from the easy pace and quality paces from the race; there is no
+  quality session when a hard club run is one already, the week has fewer than 3 runs, or no week
+  has room for one; a run stays off a running-club day while another day has none; a partial week 1
+  drops easy runs first and says so, counting club runs before the first planned day; a marathon 20
+  weeks out leads through build, peak and taper outline phases ending on race day, each block
+  carrying its `MARATHON_HOOKS`.
+- **Other sessions** (`other.test.ts`): a custom-discipline goal gets sessions titled with its name
+  at RPE 6 for the session length, with a `default_assumed` decision citing them; Muay Thai is
+  technique at RPE 6 with no class or profile, alternates technique and pad work when the profile is
+  told, and spars only in building weeks, under each week's RPE cap; free days no goal asks for get
+  30-minute mobility sessions within the session length; every scenario's run segments and metrics
+  pass `runSegmentsSchema`, `customMetricsSchema` and `otherDetailsSchema`, and the mixed scenarios
+  are required to have some.
+- **Placement** (`placement.test.ts`): the hybrid scenario places Muay Thai Tue/Thu evenings first
+  and breaks no 'avoid' rule within or across weeks; the long run is on Saturday with no heavy lower
+  body on Friday, and strength is on the class mornings before the class in every week, the light
+  ones included; it gives the "Marathon over Stay strong" priority decision and the "kept clear of"
+  decisions; a morning easy run and an evening class share a day in that order; each scenario keeps
+  its days per week and available days; no intervals the day after a hard strength class; an
+  over-constrained week drops the lower-priority session, or keeps it with a priority decision when
+  its goal ranks first; a part week 1 drops what it has no room for; decision refs follow the
+  re-sorted sessions; every scenario re-runs byte-identical, valid and free of 'avoid' violations.
 
 ### Train screens
 
-The Train week, the plan overview, session detail and the edit sheets. No tests yet.
+The Train week, the plan overview, session detail and the edit sheets.
+
+- **Seeding programs** (`e2e/program-support.ts`): program specs are serial (`*.serial.e2e.ts`) and
+  pin the browser to the owner's zone with `test.use({ timezoneId: PROGRAM_TZ })` (`Europe/London`,
+  a zone with daylight saving). `seedProgram(request, { fixture, start })` resets programs, then
+  POSTs `/api/test-support/program` (404 unless test routes are enabled; owner only; cross-site
+  refused), which records `PROGRAM_TZ` on the profile, takes today from it with `ownerToday`, stores
+  the fixture through `createProgramFromPlan` with week 1 on last, this or next week's Monday, and
+  returns `{ programId, version, today, weekStart, sessions: [{ ref, lineage, date, title }] }`. It
+  refuses with 409 while a program is active and never deletes anything.
+  - Seeding rules: specs that edit seed `next_week` (every session is ahead, on any weekday); Today
+    specs use the `'today'` and `'today-rest'` fixtures on `this_week`; the block-complete states
+    use `'one-week'` on `last_week`. Use the dates `seedProgram` returns: never compute a date in
+    the browser or the spec.
+  - Reset: `resetPrograms()` truncates `RESET_ROOTS` (the list in `e2e/program-support.ts` is
+    the source of truth) with CASCADE and deletes the
+    owner's custom exercises; the catalogue and every M1 and M2 row stay. TRUNCATE stays in e2e code
+    (`scripts/history-guards.test.ts` keeps it out of `src/`). `resetTrainingProfile()` also calls
+    it, so every serial spec starts with no program.
+  - `e2e/program-support.serial.e2e.ts`: each fixture's dates against the server's today
+    (`next_week`: version 1, 25 sessions all after today; `'today'`: two sessions on today;
+    `'today-rest'`: none today; `'one-week'` on `last_week`: every session before today), seeding
+    takes under a second, the route's refusals (a second program, bad fixture, start or zone, a
+    fixture that does not fit `start`) change no program, every table after M2 (outside
+    `M1_M2_TABLES`, except `exercises`) is empty after a reset and reachable by foreign key from a
+    root in `RESET_ROOTS` (so a later table the reset misses fails even with no rows), and the
+    exercise catalogue is intact.
+- **Server-only code** (`scripts/server-only-imports.test.ts`, ESLint's lintText on the real
+  config): a runtime import of domain/exercises or domain/programming is an error in UI components
+  and modules, client code, route components (#lib, $lib and relative paths), universal page and
+  layout loads and the rest of the domain, and the domain index cannot re-export them. `import type`
+  is clean there; `import { type X }` is an error, because verbatimModuleSyntax keeps it. Server
+  services, server loads, endpoints, hooks, scripts, integration tests, e2e and the packages' own
+  files may import them. The layer rules on the same files (UI → server, domain → node:fs, client →
+  UI, universal load → db) still fire. `pnpm budgets` also fails if the catalogue's header
+  (`CATALOGUE_HEADER`) is in any client chunk.
+- **Program components** (`src/lib/ui/program/words.test.ts`, unit): day names from the calendar
+  string (today only from the server's date; session, done and skipped counts); the card line (type
+  · minutes · intensity · time of day, with 'varies' and unknown left out, and a custom session's
+  own discipline); status words ("Moved from Mon" from the date). `e2e/design-program.e2e.ts`
+  (/design → Plan): seven days named Monday first, with the server's today marked and dots hidden,
+  coloured by discipline (a skipped one is a ring); selection by tap and by arrow keys, Home and
+  End, wrapping, with one tab stop; cards named by their words and the pending one aria-busy;
+  prescription lines in describe.ts's words, with no load that cannot be computed; every target ≥ 44
+  × 44 px; nothing scrolls sideways at 393 px; at 1440 × 900: a readable width, three-letter day
+  names, hover and focus states. The Move fixtures list the days left with what is planned; the
+  no-day-left fixture says 'No other day left this week' and offers Skip (coming soon,
+  aria-disabled); both pass axe in dark and light. `e2e/a11y.e2e.ts` audits the Plan tab in both
+  themes.
+- **Train week** (`e2e/train-week.serial.e2e.ts`, Chromium + WebKit, `PROGRAM_TZ`, hybrid and
+  one-week fixtures): sessions on their days, rest day, baseline brief, week navigation with ?week
+  and focus kept (pills, arrows and the state card's link), the pending week (aria-busy, no layout
+  shift), the shell's error view when a week's data answers 500, offline, ?week=99 and ?week=abc,
+  not started, first block complete, no program, 1440 × 900, axe dark and light.
+  `tests/integration/training/train-load.test.ts`: `loadTrainWeek`'s current and asked weeks,
+  malformed ?week, not planned, block complete, no program with an incomplete and a complete
+  profile, the week's words composed on the server, the fail-soft error payload recorded as a server
+  error, and the whole plan for the plan overview (each block's weeks, this week whatever `?week`
+  shows, the outline weeks, and only the served goal's event).
+  `tests/integration/training/form-actions.test.ts`: forms/program.ts answers 400 with dotted paths,
+  409 with its reason, 404, 400 for malformed JSON and 401 without a session.
+- **Plan overview** (`e2e/train-plan.serial.e2e.ts`, Chromium + WebKit, `PROGRAM_TZ`, hybrid and
+  one-week fixtures): Plan, in ProgramHeader's actions row, opens a sheet that lists every block
+  with its phase, dates and weeks, with this week marked (`aria-current="date"`, 'This week'). With
+  the one-week fixture, the outline's phases reach the event date: each outline week says 'Not
+  planned yet' and none is a link, and the dated goal sits in its week as an Event. A tapped week
+  closes the sheet and shows on Train through the week change's pending state. Close and Escape give
+  the focus back to Plan. The sheet's chunk is not in Train's load, and a tap made before it arrives
+  opens it. With the chunk aborted, 'Couldn't open your plan' offers Retry (≥ 44 px) beside Plan;
+  back online, Retry opens the sheet, in place or by reloading Train with `?tool=plan` (Chromium).
+  At 1440 × 900: Plan's hover and focus states, and the timeline at a readable width with no
+  sideways scroll. axe in dark and light with the sheet open. `src/lib/ui/program/timeline.test.ts`
+  (unit): `timelineView` lists every block with its dates and length, and its weeks numbered from
+  week 1 (Train's `?week`); it names the phase only where the block's name does not already say it,
+  and marks the week and the block that hold today, in planned and outline weeks; a goal the plan
+  serves has its event in the week it falls in, and another goal's, a dropped goal's
+  (`EVENTS_LEFT_OUT`) and one outside the plan are left out.
+- **Session detail** (`e2e/session-detail.serial.e2e.ts`, hybrid fixture seeded `next_week`,
+  `PROGRAM_TZ`): a week-1 strength session's 'Work up to a set of 5 @ RPE 7', its back-offs and the
+  recording instruction, and accessories with sets × reps @ RPE, rest and tempo; a run's warm-up,
+  grouped repeats and cool-down in miles (`distance_unit` set by SQL); the Muay Thai class's
+  evening, duration, target RPE and metrics; the tapped Train card held busy while its `__data.json`
+  is delayed, the others not, and Back (the browser's and the screen's) returning to the same week
+  and day; 404 for a random uuid, `sample`, `?v=abc` and `?v=9`; `?v=1` read-only after a skip; a
+  500 from `__data.json` showing the shell's error view with Try again, and offline showing the
+  designed offline state; axe in dark and light per discipline, no layout shift, and the desktop
+  column centred beside the rail. The load's words, 404s and fail-soft error are covered on real
+  Postgres in `tests/integration/training/session-load.test.ts`;
+  `src/lib/ui/program/session-words.test.ts` covers the composed words.
+- **Move** (`e2e/move-session.serial.e2e.ts`, the hybrid fixture seeded `next_week`, so every day is
+  ahead):
+  - Move opens a code-split sheet that lists the days left in the week as radio cards, each with
+    what is planned that day, never the session's own day.
+  - Moving Monday's session to Wednesday with a reason saves version 2 ('Moved to Wednesday ·
+    version 2'). Focus returns to Move, Train shows the session there with a Moved badge, and a
+    reload keeps it. In Postgres, version 1's rows are unchanged and one owner decision keeps the
+    reason.
+  - Moving heavy lower body to the day before hard Muay Thai warns before saving, and the decision
+    keeps the warning.
+  - A page left on an older version says 'Your plan changed' and moves nothing; Reload lets the
+    owner move again. Close and Escape return focus to Move. axe passes in dark and light with a
+    warning showing.
+  - With the service worker blocked (page.route): Save is busy while the move posts, and a second
+    tap posts nothing; offline, the sheet stays open with the error; two warnings in the same words
+    are both listed; an aborted MoveSheet chunk (never a modulepreload) shows Retry, which loads it;
+    an aborted EditSheetHost chunk is a toast with Retry, which opens the sheet.
+  - On a desktop window, Move has hover and focus states, and the sheet scrolls nothing sideways.
+  - `tests/integration/training/session-edits.test.ts`: the load offers Move on the current version
+    (every later day of the week, with what is planned there) and says why a session stays as it is
+    (passed, skipped or logged); an older version has no edits; today comes from the owner's time
+    zone; move saves the next version with the reason, and `checkMove` writes nothing and gives the
+    warning that move then records; refused: an edit on an older version (409), an unreachable day
+    at its field (400), a page with no version (404), and a session whose day has passed by the
+    owner's clock.
+- **Swap** (`e2e/swap-exercise.serial.e2e.ts`): this-session-only and never-again swaps with
+  database checks, the empty state, the busy state while the swap posts, focus return to Swap, axe
+  in dark and light, and a desktop window. `tests/integration/training/session-swap.test.ts` covers
+  the session's swap load and actions on real Postgres.
+- **Adjust and skip** (`e2e/adjust-skip.serial.e2e.ts`, serial, Chromium + WebKit + a desktop
+  describe, `PROGRAM_TZ`, hybrid seeded `next_week`): adjust a strength set (sets and RPE), an
+  interval's repeats and a Muay Thai class's length, and skip with a reason. Each is a new version
+  with its decision in the database and survives a reload. RPE 11 is shown on its stepper,
+  announced, and nothing is posted (service worker blocked). Save is busy and posts once; Close and
+  Escape return focus to the trigger. Adjust left open while another tab skips the session closes
+  onto the skipped state. axe in dark and light on every sheet variant and on the skipped state.
+  `tests/integration/training/session-adjust.test.ts`: the session load's `adjust` values (none when
+  locked or on an older version), and the `adjust`, `adjustSegment`, `adjustDetails` and `skip`
+  actions on real Postgres; each saves the next version with its decision; a 400 is a field error,
+  and a 409 is a page on an older version.
 
 ### Program history
 
-Versions and their decisions with the why; older versions stay viewable. No tests yet.
+Versions and their decisions with the why; older versions stay viewable.
+
+- `tests/integration/training/history-load.test.ts` covers the History load on real Postgres:
+  newest-first order, dates in the owner's zone, who made each version and each decision's why,
+  `HISTORY_PAGE_SIZE` paging with `?before`, 'no changes yet' only for version 1, the no-program,
+  404 and recorded soft-error states, and a version's read-only week opening on the week its change
+  touched.
+- `e2e/program-history.serial.e2e.ts` (hybrid fixture, versions made through the session's move
+  action) covers Train's History action, the list and paging, the inline Retry after a soft failure,
+  older versions read-only with their sessions as they were then, busy states while `__data.json` is
+  held, the move toast's History link, 404s, the shell error and offline cards, axe dark and light,
+  no layout shift, and the desktop column with hover and focus.
 
 ### Today screens
 
-Build my program, today's sessions and what is next this week. No tests yet.
+Build my program, today's sessions and what is next this week. Seed programs as **Train screens**
+says (`e2e/program-support.ts`): the `'today'` and `'today-rest'` fixtures on `this_week`, at the
+dates the route returns.
+
+- **Lazy panels** (`e2e/today-panels.serial.e2e.ts`): a Today panel's late code moves nothing (first
+  load and client navigation, phone and desktop); a failed panel chunk shows a Retry notice that
+  recovers (WebKit in place, Chromium by reload).
+- **Build my program** (`e2e/build-program.serial.e2e.ts`): builds a program from Today's Build card
+  on phone and desktop. `tests/integration/training/build-actions.test.ts` and
+  `tests/integration/training/today-program.test.ts` cover the build actions' time-zone handling and
+  Today's program state.
+- **Today's plan** (`e2e/today-plan.serial.e2e.ts`): today's sessions, each opening its detail, and
+  Up next in date order across weeks; a session skipped from its detail comes back Skipped, Up next
+  unchanged; a client navigation whose data fails shows the designed error, whose Try again
+  recovers, and offline shows the designed offline state; a desktop window (the readable column,
+  hover and focus on a session card); a rest day naming the next session; a program that starts next
+  week, with week 1's first session; a finished first block ('Nothing planned yet', an empty Up next
+  and the way to Train). `tests/integration/training/today-load.test.ts` covers the same states on
+  real Postgres and fails soft, recording the failure, when the database cannot be reached.
+- **Demo profiles** (`tests/integration/training/demo-profiles.test.ts`):
+  `scripts/lib/demo-profiles.ts` commits through its own pg client, so it runs inside
+  `withCommitted`; the demo profiles read back complete and `previewProgram` accepts them.
+- **The M3 journeys** (`e2e/program-journey.serial.e2e.ts`), end to end with no fixture: blank-1RM
+  onboarding → Build from Today (Next Monday) → Train week 1 (strength, running, Muay Thai Tue/Thu;
+  `weekViolations()` finds no 'avoid') → baseline session → move + one-off swap → History, then
+  reloads and SQL. A second journey checks measured-1RM percentage loads in kg. A desktop case
+  checks the built screens beside the rail. `weekViolations(weekStart)` in `e2e/program-support.ts`
+  runs domain `checkWeek` over the stored week through the repository and the row mapping.
+
+### Screenshots
+
+Every M3 screen is captured (`captureScreen`) into `test-results/screens/<project>/` on each project
+it runs in, and CI uploads them:
+
+- `/design` → Plan: `design-program-week`, `design-program-cards`, `design-program-lines`,
+  `design-program-move`, `design-program-desktop`.
+- Train: `train-week`, `train-pending`, `train-rest-day`, `train-empty`, `train-block-complete`,
+  `train-week-desktop`; the plan overview: `train-plan`, `train-plan-outline`, `train-plan-pending`,
+  `train-plan-retry`, `train-plan-desktop`.
+- Session: `session-strength`, `session-run`, `session-muay-thai`, `session-error`,
+  `session-strength-desktop`; edits: `session-move`, `session-move-warning`, `session-move-desktop`,
+  `session-swap`, `session-swap-empty`, `session-swap-desktop`, `session-adjust`,
+  `session-adjust-run`, `session-adjust-desktop`, `session-skipped`.
+- History: `train-history`, `train-history-empty`, `train-history-v1`, `train-history-desktop`,
+  `train-history-v1-desktop`.
+- Today: `today-build`, `today-build-preview`, `today-build-conflict`, `today-build-desktop`,
+  `today-build-preview-desktop`, `today-session`, `today-rest`, `today-starts`,
+  `today-block-complete`, `today-session-desktop`, `today-panel-error`, `today-panel-error-desktop`.
+- The journeys: `journey-onboarding-goals`, `journey-onboarding-strength`,
+  `journey-onboarding-schedule`, `journey-onboarding-review`, `journey-today-build`,
+  `journey-build-preview`, `journey-train-week-1`, `journey-session-baseline`, `journey-move`,
+  `journey-swap`, `journey-history`; the measured-1RM journey's `journey-today-build-measured`,
+  `journey-build-preview-measured` and `journey-session-measured`; and the desktop ones
+  (`journey-today-build-desktop`, `journey-build-preview-desktop`, `journey-train-week-1-desktop`,
+  `journey-session-measured-desktop`, `journey-history-desktop`).
 
 ## The LLM in tests
 
