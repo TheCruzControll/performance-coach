@@ -149,6 +149,33 @@ export function sessionByLineage(db: Executor, versionId: string, lineage: strin
 		.where(eq(plannedSessions.lineageId, lineage));
 }
 
+/**
+ * A planned session row by id, when it is in one of the owner's programs (any status), with its
+ * program and the newest version that holds it: the immutable row a workout pinned. Through the
+ * primary keys, then program_version_weeks_week_idx for the versions that hold its week.
+ */
+export function sessionById(db: Executor, ownerId: string, sessionId: string) {
+	const newest = db
+		.select({ number: sql`max(${programVersions.number})` })
+		.from(programVersionWeeks)
+		.innerJoin(programVersions, eq(programVersions.id, programVersionWeeks.versionId))
+		.where(eq(programVersionWeeks.weekId, plannedSessions.weekId));
+	return db
+		.select({
+			session: plannedSessions,
+			programId: programs.id,
+			versionNumber: sql<number>`(${newest})`.mapWith(Number)
+		})
+		.from(plannedSessions)
+		.innerJoin(programWeeks, eq(programWeeks.id, plannedSessions.weekId))
+		.innerJoin(programBlocks, eq(programBlocks.id, programWeeks.blockId))
+		.innerJoin(
+			programs,
+			and(eq(programs.id, programBlocks.programId), eq(programs.ownerId, ownerId))
+		)
+		.where(eq(plannedSessions.id, sessionId));
+}
+
 /** `column` is one of the ids `parents` selects, gathered once: a probe of the column's index. */
 const oneOf = (column: AnyPgColumn, parents: SQLWrapper) => sql`${column} = any(array(${parents}))`;
 
@@ -301,6 +328,7 @@ export function affectedNodes(db: Executor, versionIds: string[], lineages: stri
 /** What the read builders return. */
 export type SessionRow = Awaited<ReturnType<typeof plannedSessionsInRange>>[number];
 export type SessionLineageRow = Awaited<ReturnType<typeof sessionByLineage>>[number];
+export type SessionByIdRow = Awaited<ReturnType<typeof sessionById>>[number];
 export type SessionChildRows = {
 	[K in keyof ReturnType<typeof sessionChildren>]: Awaited<ReturnType<typeof sessionChildren>[K]>;
 };
