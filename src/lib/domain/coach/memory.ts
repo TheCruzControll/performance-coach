@@ -89,7 +89,14 @@ export type MemoryPainReport = Sourced<{
 	note: string | null;
 }>;
 export type MemoryNote = Sourced<{ date: string; text: string }>;
-export type MemoryDecision = Sourced<{ date: string; kind: string; decider: Decider; why: string }>;
+/** What was decided, in a few words, and why. */
+export type MemoryDecision = Sourced<{
+	date: string;
+	kind: string;
+	decider: Decider;
+	what: string;
+	why: string;
+}>;
 export type MemoryProposal = Sourced<{
 	kind: string;
 	title: string;
