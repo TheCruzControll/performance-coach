@@ -290,6 +290,8 @@ export type LocalAction = { workoutId: string } & (
 	| { type: 'rest.start'; at: number; durationMs: number }
 	| { type: 'rest.add'; at: number; ms: number }
 	| { type: 'rest.pause' | 'rest.resume' | 'rest.reset' | 'rest.skip'; at: number }
+	/** No rest on screen: one skipped or dismissed in the rest timer. */
+	| { type: 'rest.clear' }
 	| {
 			type: 'stopwatch.start' | 'stopwatch.pause' | 'stopwatch.resume' | 'stopwatch.reset';
 			at: number;
