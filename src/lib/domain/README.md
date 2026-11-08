@@ -571,7 +571,26 @@ in one place (an open question in the M6 plan). The decision kinds M6 writes (`r
 
 ### Review contract (`programming/review/snapshot.ts`, `brief.ts`, `digest.ts`)
 
-Not built yet (m6/24, review-snapshot).
+What a stored review is, defined once before anything composes or stores one.
+
+- `brief.ts`: `ReviewBrief` (`kind` weekly or cycle, `from`, `to`, a `summary` of at most
+  `SUMMARY_MAX` (200) characters, `findings`) and `Finding` (`id`, `section`, `label`,
+  `figures`, `verdict` {`level`, `words`}, `window`, `metricId`, `sources`), with
+  `reviewBriefSchema`. The weekly and cycle reviews, their screens and the coach's tools read
+  this one shape. A figure is in canonical units with its words; a finding with a `metricId`
+  takes the catalogue's method and caveat.
+- `snapshot.ts`: `WeeklyReviewSnapshot` at `SNAPSHOT_VERSION` (1) and its zod/mini schema for
+  `weekly_reviews.snapshot`: the week, the day and time zone it was computed in, its
+  `analyticsVersion` and `inputsDigest`, adherence, fatigue, next week's state, why no proposal
+  (`late`, `boundary`, `no_program`, `no_changes`) and the brief. `readSnapshot(row)` reads a
+  row: version 0 (written before M6) or any unknown version → `{ legacy: true, summary }`; a
+  current-version snapshot that breaks the schema throws `SnapshotError` with its dotted `path`.
+  `readVersioned(schema, version, row)` is the same read for the cycle snapshot. Any change to
+  either shape bumps `SNAPSHOT_VERSION`, and older rows then read as legacy.
+- `digest.ts`: `inputsDigest({ facts, workouts }, analyticsVersion = ANALYTICS_VERSION)` →
+  16 hex digits, M3's `fnv1a64` over `canonicalJson` of the sorted facts (kind, id, updated_at)
+  and each workout's status. Load order never changes it; an edited fact, a workout completed or
+  abandoned, or new analytics definitions do, so a review can say it is out of date.
 
 ### Weekly review (`programming/review/weekly.ts`)
 

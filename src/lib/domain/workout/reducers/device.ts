@@ -2,6 +2,7 @@
  * The device family, in every kind's table: what only this device knows (DeviceState) and the
  * kit it holds. None of it is ever sent, so none of it touches a row.
  * - goTo and draft: the exercise on screen, and values typed but not confirmed
+ * - session.draft: an other session's fields changed but not saved, replaced whole each time
  * - exercise.add: an exercise added here, at a position no slot holds yet
  * - kit.attach: the whole kit (a workout from another device), or one exercise's previous sets
  * - rest.* and stopwatch.*: through timers.ts, on this device's clock
@@ -60,6 +61,8 @@ export const device: LocalReducers = {
 		const { [key]: _cleared, ...drafts } = local.device.drafts;
 		return withDevice(local, { drafts: draft === null ? drafts : { ...drafts, [key]: draft } });
 	},
+	'session.draft': (local, { draft }) =>
+		draft === null && !local.device.session ? local : withDevice(local, { session: draft }),
 	'exercise.add': (local, { exercise }) =>
 		taken(local).includes(exercise.position)
 			? local
