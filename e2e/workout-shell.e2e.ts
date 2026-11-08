@@ -115,8 +115,9 @@ test.describe('the workout screen (IndexedDB only)', () => {
 		page
 	}) => {
 		await seedWorkout(page, kits.run);
-		await page.goto('/workout?start=x');
-		await expect(page).toHaveURL(/\/workout\/run\?start=x$/);
+		// Any query but ?start and ?new, which start a workout (workout-start.serial.e2e.ts).
+		await page.goto('/workout?from=x');
+		await expect(page).toHaveURL(/\/workout\/run\?from=x$/);
 		await expect(page.getByTestId('workout-main')).toHaveCount(0);
 	});
 
@@ -291,7 +292,9 @@ test.describe('the workout screen offline (service worker)', () => {
 		await seedWorkout(page, kits.strength);
 
 		await context.setOffline(true);
-		for (const path of ['/workout', '/workout?start=x']) {
+		// The start link of the workout in progress resumes it (StartFlow.svelte).
+		const link = `/workout?start=${kits.strength.plannedLineage}`;
+		for (const path of ['/workout', link]) {
 			await page.goto(path);
 			await expect(ready(page)).toBeAttached();
 			await expect(page.getByRole('heading', { level: 1 })).toHaveText('Lower body & pull');

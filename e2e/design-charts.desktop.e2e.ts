@@ -8,7 +8,12 @@
 import { expect, test, type Page } from '@playwright/test';
 import {
 	auditCharts,
+	barFixture,
+	barFrameOf,
+	barMarks,
 	chartsSection,
+	expectBarMarkSizes,
+	expectBarReadout,
 	expectLineMarkSizes,
 	expectMarkSizes,
 	expectReadout,
@@ -22,6 +27,7 @@ import {
 	openCharts,
 	slotPoint
 } from './charts';
+import { barModel } from '../src/lib/ui/charts/bar-model';
 import { boxOf, DESKTOP, expectNoSideScroll, tokenPx } from './desktop';
 import { captureScreen, gotoHydrated, trackConsoleErrors } from './support';
 
@@ -49,6 +55,7 @@ test.describe('/design → Charts on a desktop', () => {
 				await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
 			await expectMarkSizes(page);
 			await expectLineMarkSizes(page);
+			await expectBarMarkSizes(page);
 			const section = await boxOf(chartsSection(page));
 			const color = await boxOf(page.getByRole('heading', { level: 2, name: 'Color' }));
 			expect(Math.abs(section.x - color.x), 'in the left column').toBeLessThanOrEqual(1);
@@ -64,6 +71,8 @@ test.describe('/design → Charts on a desktop', () => {
 			await captureScreen(page, testInfo, `design-charts-${theme}-desktop`);
 			await lineFrameOf(page, 'line-converging').scrollIntoViewIfNeeded();
 			await captureScreen(page, testInfo, `design-charts-line-${theme}-desktop`);
+			await barFrameOf(page, 'bar-stacked').scrollIntoViewIfNeeded();
+			await captureScreen(page, testInfo, `design-charts-bar-${theme}-desktop`);
 			expect(errors).toEqual([]);
 		});
 	}
@@ -198,5 +207,70 @@ test.describe('/design → Charts: the line chart on a desktop', () => {
 		await page.keyboard.press('Tab');
 		await expect(body).not.toBeFocused();
 		await expect(lineTip(page, id)).not.toHaveAttribute('data-shown', '');
+	});
+});
+
+test.describe('/design → Charts: the bar chart on a desktop', () => {
+	test('a mouse over a mark outlines it and shows its tooltip, which leaves with the mouse', async ({
+		page
+	}, testInfo) => {
+		const id = 'bar-stacked';
+		await gotoHydrated(page, '/design');
+		await openCharts(page);
+		await expectBarMarkSizes(page);
+		await barFrameOf(page, id).scrollIntoViewIfNeeded();
+		const mark = barMarks(page, id).nth(3);
+		const outline = () => mark.evaluate((el) => getComputedStyle(el).outlineStyle);
+		expect(await outline()).toBe('none');
+		await mark.hover();
+		await expectBarReadout(page, id, 3);
+		await expect.poll(outline).toBe('solid');
+		await captureScreen(page, testInfo, 'design-charts-bar-hover-desktop');
+		// 12 Oct's short conditioning and combat each keep their hover from the other's hit area.
+		const model = barModel(barFixture(id).data);
+		for (const key of ['conditioning', 'combat']) {
+			const index = model.marks.findIndex(
+				(m) => m.slot === 3 && model.series[m.series]?.key === key
+			);
+			const box = await boxOf(barMarks(page, id).nth(index));
+			await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+			await expectBarReadout(page, id, index);
+		}
+		await page.mouse.move(5, 5);
+		await expect(barFrameOf(page, id).getByTestId('bar-tooltip')).not.toHaveAttribute(
+			'data-shown',
+			''
+		);
+		await expect.poll(outline).toBe('none');
+	});
+
+	test('Tab reaches the newest mark with a visible ring, and the arrow keys move it', async ({
+		page
+	}) => {
+		const id = 'bar-target';
+		await gotoHydrated(page, '/design');
+		await openCharts(page);
+		await expectBarMarkSizes(page);
+		await barFrameOf(page, id).locator('h3').click();
+		await page.keyboard.press('Tab');
+		const marks = barMarks(page, id);
+		const last = (await marks.count()) - 1;
+		await expect(marks.nth(last)).toBeFocused();
+		const ring = await marks.nth(last).evaluate((el) => {
+			const style = getComputedStyle(el);
+			return { style: style.outlineStyle, width: parseFloat(style.outlineWidth) };
+		});
+		expect(ring.style).toBe('solid');
+		expect(ring.width).toBeGreaterThanOrEqual(2);
+		await expectBarReadout(page, id, last);
+		await page.keyboard.press('ArrowLeft');
+		await expect(marks.nth(last - 1)).toBeFocused();
+		await expectBarReadout(page, id, last - 1);
+		await page.keyboard.press('Tab');
+		await expect(marks.nth(last - 1)).not.toBeFocused();
+		await expect(barFrameOf(page, id).getByTestId('bar-tooltip')).not.toHaveAttribute(
+			'data-shown',
+			''
+		);
 	});
 });

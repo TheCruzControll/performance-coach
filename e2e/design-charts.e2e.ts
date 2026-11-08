@@ -2,14 +2,25 @@
  * The chart kit on /design → Charts, on a phone (Chromium and WebKit): no chart code loads until
  * Show charts is pressed; the frame reserves the plot box, so nothing moves while the body's
  * chunk loads; a body that fails to load is a Notice with Retry, which loads it; the marks keep their pixel sizes at 320 and 393 px; /design links no
- * chart CSS as render-blocking; axe in both themes. The desktop window is in
+ * chart CSS as render-blocking; axe in both themes. The bar chart: per-mark tooltips by tap and
+ * by keyboard, the stack order, totals that fit, its table twins and forced colours. The desktop
+ * window is in
  * design-charts.desktop.e2e.ts; without JavaScript, the server render is checked by
  * src/routes/design/charts-no-js.test.ts (/design renders its panels in the browser only).
  */
 import { expect, test, type Route } from '@playwright/test';
 import {
 	auditCharts,
+	barBody,
+	barFixture,
+	barFrameOf,
+	barMarks,
+	barTip,
 	chartsSection,
+	expectBarCharts,
+	expectBarMarkSizes,
+	expectBarReadout,
+	expectBarTable,
 	expectLineCharts,
 	expectLineMarkSizes,
 	expectLineTable,
@@ -29,7 +40,9 @@ import {
 	PANEL_MARK,
 	slotPoint
 } from './charts';
+import { barModel, stepMark } from '../src/lib/ui/charts/bar-model';
 import { announce } from '../src/lib/ui/charts/line-model';
+import { STACK_ORDER } from '../src/lib/ui/charts/palette';
 import { boxOf, expectNoShift, expectNoSideScroll } from './desktop';
 import { captureScreen, gotoHydrated, trackConsoleErrors } from './support';
 
@@ -160,6 +173,7 @@ for (const { width, height } of [
 		await openCharts(page);
 		await expectMarkSizes(page);
 		await expectLineMarkSizes(page);
+		await expectBarMarkSizes(page);
 		await expect(fixturePlot(page)).toHaveAttribute('aria-busy', 'false');
 		await fixtureFrame(page).scrollIntoViewIfNeeded();
 		await expectNoSideScroll(page);
@@ -170,7 +184,14 @@ for (const { width, height } of [
 		await expectNoSideScroll(page);
 		await fixtureFrame(page).getByRole('table').scrollIntoViewIfNeeded();
 		await captureScreen(page, testInfo, `design-charts-table-${width}`);
-		for (const id of ['line-kinds', 'line-converging', 'line-so-far']) {
+		for (const id of [
+			'line-kinds',
+			'line-converging',
+			'line-so-far',
+			'bar-adherence',
+			'bar-stacked',
+			'bar-target'
+		]) {
 			await lineFrameOf(page, id).scrollIntoViewIfNeeded();
 			await captureScreen(page, testInfo, `design-charts-${id}-${width}`);
 		}
@@ -201,6 +222,7 @@ for (const theme of ['dark', 'light'] as const) {
 		await expect(fixtureBody(page)).toBeVisible();
 		await expect(chartsSection(page).getByText('Shows once you log a run')).toBeVisible();
 		await expectLineCharts(page);
+		await expectBarCharts(page);
 		await fixtureFrame(page).getByText('Show as table').click();
 		await expect(fixtureFrame(page).getByRole('table')).toBeVisible();
 		await page.waitForTimeout(300);
@@ -422,5 +444,212 @@ test.describe('/design → Charts: the line chart on a phone', () => {
 				(el) => el.closest('figure')!.getAnimations({ subtree: true }).length
 			)
 		).toBe(0);
+	});
+});
+
+test.describe('/design → Charts: the bar chart on a phone', () => {
+	test('a tap shows a mark’s tooltip: its week, its part, the total and the plan', async ({
+		page
+	}, testInfo) => {
+		await page.setViewportSize({ width: 320, height: 640 });
+		await gotoHydrated(page, '/design');
+		await openCharts(page);
+		await expectBarCharts(page);
+		const id = 'bar-stacked';
+		const model = barModel(barFixture(id).data);
+		await barFrameOf(page, id).scrollIntoViewIfNeeded();
+		const area = await boxOf(barBody(page, id).locator('.pc-area'));
+		// The first week's strength, the top of a middle week's stack, the week in progress, and
+		// 12 Oct's short conditioning and combat: each keeps its taps from its neighbour's hit area.
+		const part = (slot: number, key: string) =>
+			model.marks.findIndex((m) => m.slot === slot && model.series[m.series]?.key === key);
+		const picks = [
+			0,
+			model.marks.findIndex((m) => m.slot === 4 && m.last),
+			model.marks.length - 1,
+			part(3, 'conditioning'),
+			part(3, 'combat')
+		];
+		expect(picks).not.toContain(-1);
+		for (const index of picks) {
+			const mark = barMarks(page, id).nth(index);
+			const box = await boxOf(mark);
+			await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
+			await expectBarReadout(page, id, index);
+			await expect(mark).toBeFocused();
+			const tip = await boxOf(barTip(page, id));
+			expect(tip.x).toBeGreaterThanOrEqual(area.x - 0.5);
+			expect(tip.x + tip.width).toBeLessThanOrEqual(area.x + area.width + 0.5);
+		}
+		await captureScreen(page, testInfo, 'design-charts-bar-tap-320');
+		// Every mark answers a finger over at least 24 × 24 px, however thin it is drawn.
+		const hits = await barMarks(page, id).evaluateAll((els) =>
+			els.map((el) => {
+				const after = getComputedStyle(el, '::after');
+				return [parseFloat(after.width), parseFloat(after.height)];
+			})
+		);
+		for (const [w, h] of hits) {
+			expect(w).toBeGreaterThanOrEqual(24);
+			expect(h).toBeGreaterThanOrEqual(24);
+		}
+		// A missed week has nothing drawn, yet its plan is a mark a tap reaches.
+		const missed = 'bar-adherence';
+		const plan = barMarks(page, missed).and(page.locator('[data-plan]'));
+		await expect(plan).toHaveCount(1);
+		await plan.scrollIntoViewIfNeeded();
+		const planBox = await boxOf(plan);
+		await page.touchscreen.tap(planBox.x + planBox.width / 2, planBox.y + planBox.height / 2);
+		const planIndex = barModel(barFixture(missed).data).marks.findIndex((m) => m.series < 0);
+		await expectBarReadout(page, missed, planIndex);
+		await expect(barTip(page, missed).locator('.tip-value').first()).toHaveText('0 runs');
+	});
+
+	test('the keyboard moves one tab stop between the marks; Escape hides the tooltip', async ({
+		page
+	}) => {
+		await gotoHydrated(page, '/design');
+		await openCharts(page);
+		await expectBarCharts(page);
+		const id = 'bar-stacked';
+		const model = barModel(barFixture(id).data);
+		const body = barBody(page, id);
+		await expect(body).toHaveAttribute('role', 'group');
+		await expect(body).toHaveAccessibleName(/^Training time by discipline: use the arrow keys/);
+		const last = model.marks.length - 1;
+		// Roving: only the newest mark is in the tab order until the keyboard moves.
+		await expect(body.locator('[tabindex="0"]')).toHaveCount(1);
+		await expect(barMarks(page, id).nth(last)).toHaveAttribute('tabindex', '0');
+		await barMarks(page, id).nth(last).focus();
+		await expectBarReadout(page, id, last);
+		let at = last;
+		for (const key of ['ArrowLeft', 'ArrowDown', 'ArrowUp', 'ArrowLeft', 'Home', 'End']) {
+			await page.keyboard.press(key);
+			at = stepMark(model, at, key)!;
+			await expect(barMarks(page, id).nth(at)).toBeFocused();
+			await expect(barMarks(page, id).nth(at)).toHaveAttribute('tabindex', '0');
+			await expectBarReadout(page, id, at);
+		}
+		await expect(body.locator('[tabindex="0"]')).toHaveCount(1);
+		// The pointer left by the toggle's click rests over the chart once focus scrolls it into view,
+		// yet the keyboard kept the tooltip above; only a real move hands it back to the mouse.
+		const under = 1;
+		const box = await boxOf(barMarks(page, id).nth(under));
+		await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 2 });
+		await expectBarReadout(page, id, under);
+		await expect(barMarks(page, id).nth(under)).toHaveAttribute('tabindex', '0');
+		await barMarks(page, id).nth(at).focus();
+		await page.keyboard.press('Escape');
+		await expect(barTip(page, id)).not.toHaveAttribute('data-shown', '');
+	});
+
+	test('the parts stack in the one order, and strength is never next to combat', async ({
+		page
+	}) => {
+		await gotoHydrated(page, '/design');
+		await openCharts(page);
+		await expectBarCharts(page);
+		const id = 'bar-stacked';
+		await expect(barBody(page, id).getByTestId('bar-legend').locator('li')).toHaveText([
+			'Strength',
+			'Hypertrophy',
+			'Conditioning',
+			'Combat',
+			'Running',
+			'Planned',
+			'So far'
+		]);
+		const stacks = await barMarks(page, id).evaluateAll((els) => {
+			const bySlot = new Map<string, { key: string; bottom: number }[]>();
+			for (const el of els) {
+				const slot = el.getAttribute('data-slot')!;
+				const key = el.getAttribute('data-series')!;
+				bySlot.set(slot, [
+					...(bySlot.get(slot) ?? []),
+					{ key, bottom: el.getBoundingClientRect().bottom }
+				]);
+			}
+			// From the baseline up: the lowest part has the largest bottom on screen.
+			return [...bySlot.values()].map((parts) =>
+				parts.sort((a, b) => b.bottom - a.bottom).map((part) => part.key)
+			);
+		});
+		expect(stacks).toHaveLength(barFixture(id).data.slots.length);
+		for (const stack of stacks) {
+			expect(stack).toEqual(STACK_ORDER.filter((key) => stack.includes(key)));
+			stack.slice(1).forEach((key, i) => {
+				expect([stack[i], key].sort(), 'strength next to combat').not.toEqual([
+					'combat',
+					'strength'
+				]);
+			});
+		}
+	});
+
+	test('each bar chart’s table twin holds exactly what it draws', async ({ page }) => {
+		await gotoHydrated(page, '/design');
+		await openCharts(page);
+		await expectBarCharts(page);
+		for (const id of ['bar-adherence', 'bar-stacked', 'bar-target']) await expectBarTable(page, id);
+	});
+
+	test('a total sits on each complete stack only where it fits its week', async ({ page }) => {
+		await page.setViewportSize({ width: 320, height: 640 });
+		await gotoHydrated(page, '/design');
+		await openCharts(page);
+		await expectBarCharts(page);
+		const caps = await barBody(page, 'bar-stacked')
+			.locator('.cap')
+			.evaluateAll((els) =>
+				els.map((el) => {
+					const text = el.querySelector('.cap-text') as HTMLElement;
+					return {
+						shown: getComputedStyle(text).display !== 'none',
+						text: text.textContent,
+						fits: text.scrollWidth <= el.clientWidth + 0.5
+					};
+				})
+			);
+		const model = barModel(barFixture('bar-stacked').data);
+		expect(caps.map((cap) => cap.text)).toEqual(model.caps.map((cap) => cap.text));
+		expect(caps.some((cap) => cap.shown)).toBe(true);
+		for (const cap of caps) if (cap.shown) expect(cap.fits, `${cap.text} fits`).toBe(true);
+		await expect(barBody(page, 'bar-stacked').getByTestId('bar-so-far')).toHaveText('so far');
+	});
+
+	test('under forced colours the parts are outlined and hatched, never told apart by hue', async ({
+		page,
+		browserName
+	}, testInfo) => {
+		test.skip(browserName !== 'chromium', 'forced colours are emulated on Chromium only');
+		await page.emulateMedia({ forcedColors: 'active' });
+		await gotoHydrated(page, '/design');
+		await openCharts(page);
+		await expectBarCharts(page);
+		const id = 'bar-stacked';
+		const styles = await barMarks(page, id).evaluateAll((els) =>
+			els.map((el) => {
+				const style = getComputedStyle(el);
+				return {
+					slot: el.getAttribute('data-slot'),
+					soFar: el.hasAttribute('data-so-far'),
+					image: style.backgroundImage,
+					border: style.borderTopStyle
+				};
+			})
+		);
+		for (const style of styles) {
+			expect(style.image).toContain('repeating-linear-gradient');
+			expect(style.border).toBe(style.soFar ? 'dashed' : 'solid');
+		}
+		// Neighbours in a stack alternate their hatch: 45° then 135°.
+		const first = styles.filter((style) => style.slot === '0');
+		expect(first.length).toBeGreaterThan(1);
+		first.slice(1).forEach((style, i) => {
+			const angles = [first[i]!.image, style.image].map((image) => /\d+deg/.exec(image)?.[0]);
+			expect(new Set(angles)).toEqual(new Set(['45deg', '135deg']));
+		});
+		await barFrameOf(page, id).scrollIntoViewIfNeeded();
+		await captureScreen(page, testInfo, 'design-charts-bar-forced-colors');
 	});
 });
