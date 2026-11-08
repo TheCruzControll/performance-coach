@@ -8,9 +8,11 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page, type Route } from '@playwright/test';
 import { DB_NAME, STORES } from '../src/lib/client/workout/names';
+import type { OutboxStatus } from '../src/lib/client/workout/outbox-rules';
 import { SYNC_URL } from '../src/lib/client/workout/sync';
 import type { MutationPayloads, StrengthKit, SyncRequest } from '../src/lib/domain/workout';
 import { createMutation } from '../src/lib/domain/workout/mutations';
+import { syncWords } from '../src/lib/ui/workout/sync-words';
 import { DESKTOP } from './desktop';
 import { captureScreen, query, SAME_ORIGIN, signedOut } from './support';
 import {
@@ -121,20 +123,58 @@ async function audit(page: Page, what: string) {
 const recordPill = (page: Page) =>
 	page.addInitScript(() => {
 		const seen: string[] = [];
-		const lefts = new Set<number>();
-		Object.assign(window, { __pill: seen, __pillLefts: lefts });
+		const boxes = new Set<string>();
+		Object.assign(window, { __pill: seen, __pillBoxes: boxes });
 		new MutationObserver(() => {
 			const text = document.querySelector('[data-testid="sync-pill"]')?.textContent?.trim();
 			if (!text || seen.at(-1) === text) return;
 			seen.push(text);
 			const pill = document.querySelector('[data-testid="sync-status"] .pill');
-			if (pill) lefts.add(Math.round(pill.getBoundingClientRect().left));
+			if (!pill) return;
+			const { left, top, width, height } = pill.getBoundingClientRect();
+			boxes.add(JSON.stringify([left, top, width, height]));
 		}).observe(document, { subtree: true, childList: true, characterData: true });
 	});
 const pillTexts = (page: Page) =>
 	page.evaluate(() => (window as unknown as { __pill: string[] }).__pill);
-const pillLefts = (page: Page) =>
-	page.evaluate(() => [...(window as unknown as { __pillLefts: Set<number> }).__pillLefts]);
+const pillBoxes = (page: Page) =>
+	page.evaluate(() => [...(window as unknown as { __pillBoxes: Set<string> }).__pillBoxes]);
+
+/** Every message the pill can show (sync-words.ts), with one- and three-digit counts. */
+const MESSAGES = [1, 999].flatMap((n) =>
+	(
+		[
+			{ state: 'synced' },
+			{ state: 'saving', pending: n },
+			{ state: 'offline', pending: n },
+			{ state: 'retrying', seconds: n === 1 ? 1 : 60, pending: n },
+			{ state: 'attention', count: n },
+			{ state: 'signed-out', waiting: n },
+			{ state: 'passkey', waiting: n }
+		] satisfies OutboxStatus[]
+	).map((status) => syncWords(status).text)
+);
+
+/**
+ * The pill's box with each message in its words, as the component writes them (one text node),
+ * and whether the header then scrolls sideways; its own words are put back after.
+ */
+const boxesThrough = (page: Page) =>
+	page
+		.getByTestId('sync-status')
+		.locator('.words')
+		.evaluate((words, messages) => {
+			const text = words.lastChild!;
+			const own = text.nodeValue;
+			const header = document.querySelector('[data-testid="workout-header"]')!;
+			const boxes = messages.map((message) => {
+				text.nodeValue = message;
+				const { left, top, width, height } = words.parentElement!.getBoundingClientRect();
+				return { left, top, width, height, overflow: header.scrollWidth > header.clientWidth };
+			});
+			text.nodeValue = own;
+			return boxes;
+		}, MESSAGES);
 
 const idsOf = (route: Route) =>
 	(route.request().postDataJSON() as SyncRequest).mutations.map((m) => m.id);
@@ -168,8 +208,33 @@ test.describe('the workout sync status', () => {
 		await expect(pill(page)).toHaveText('Saved');
 		expect(sent).toBe(3);
 		expect(await pillTexts(page)).toContainEqual(expect.stringMatching(/^Retrying in \d+ s$/));
-		expect(await pillLefts(page), 'the pill keeps its left edge').toHaveLength(1);
+		expect(await pillBoxes(page), 'the pill keeps its box').toHaveLength(1);
 		expect(await rowsOf([set.id])).toHaveLength(1);
+	});
+
+	test('every message, quiet or opening the sheet, at the default and 150 % text: one pill box, no sideways scroll', async ({
+		page
+	}) => {
+		const workoutId = await syncedWorkout(page);
+		const sizes = ['', '150%'];
+		const measure = async () => {
+			const boxes = [];
+			for (const size of sizes) {
+				await page.evaluate((s) => (document.documentElement.style.fontSize = s), size);
+				const through = await boxesThrough(page);
+				expect(through, `every message at ${size || 'the default'} text`).toEqual(
+					through.map(() => ({ ...through[0], overflow: false }))
+				);
+				boxes.push(through[0]);
+			}
+			return boxes;
+		};
+		await expect(pill(page)).toHaveText('Saved');
+		const quiet = await measure();
+		await page.evaluate(() => (document.documentElement.style.fontSize = ''));
+		await injectMutation(page, logOf(workoutId, 1, { weight: 1001 }));
+		await expect(pill(page)).toHaveText('1 needs attention');
+		expect(await measure(), 'the sheet button keeps the quiet box').toEqual(quiet);
 	});
 
 	test('an answer lost after the server committed: resent, answered duplicate, one row', async ({
