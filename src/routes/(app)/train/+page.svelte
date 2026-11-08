@@ -137,7 +137,9 @@
 
 <PageHeader title="Train" eyebrow="Program" />
 
-<div class="stack">
+<!-- Wide from 1024 px (docs/design-system.md, Responsive layout → Screens): the header and the
+     strip span the content, the day's sessions sit beside the week's brief and the tools. -->
+<div class="stack" data-layout="wide">
 	{#if view}
 		<ProgramHeader
 			title={view.program.title}
@@ -260,6 +262,7 @@
 					as="section"
 					tone="accent"
 					aria-labelledby="brief-title"
+					class="aside"
 					data-testid="baseline-brief"
 				>
 					<div class="brief">
@@ -328,6 +331,81 @@
 	.week[aria-busy='true'] {
 		opacity: 0.55;
 		transition-delay: 150ms;
+	}
+
+	/*
+	 * Desktop (wide): two columns under the full-width header and strip. The day's sessions take
+	 * the main column, at most the readable width (cards, never a stretched phone column); the
+	 * week's brief and the tools take the side column, at least --content-list. CSS only: the one
+	 * selected day renders as on a phone, in the same order, so Tab reads left column then right.
+	 *
+	 * Rows: the header, the strip, the side column's first item, then a row that takes the rest of
+	 * the session column, so the tools sit right under the brief however long the day is. The week
+	 * is a subgrid over rows 2 to the end, so its strip, sessions and brief share the screen's
+	 * columns while it keeps its own box (busy, dimmed and inert as on a phone); its box lets
+	 * clicks through to the tools it overlaps.
+	 */
+	@media (width >= 64rem) {
+		.stack {
+			grid-template-columns: minmax(0, var(--content-readable)) minmax(var(--content-list), 1fr);
+			grid-template-rows: auto auto auto 1fr;
+			column-gap: var(--space-8);
+			align-items: start;
+		}
+
+		.stack > :global(*) {
+			grid-column: 1 / -1;
+		}
+
+		.week {
+			grid-row: 2 / -1;
+			grid-template-columns: subgrid;
+			grid-template-rows: subgrid;
+			gap: normal;
+			align-items: start;
+			pointer-events: none;
+		}
+
+		/* No program: no header, so the week starts at the top. */
+		.week:first-child {
+			grid-row: 1 / -1;
+		}
+
+		.week > :global(*) {
+			grid-column: 1;
+			pointer-events: auto;
+		}
+
+		.week > :global([role='radiogroup']) {
+			grid-column: 1 / -1;
+		}
+
+		.week > :global([role='radiogroup'] + *) {
+			grid-row: span 2;
+		}
+
+		.week > :global(.aside) {
+			grid-column: 2;
+		}
+
+		/* The tools (the stack's last section): under the brief (.aside), else right under the
+		   strip; beside a state card (no strip), level with it. */
+		.stack > :global(section:last-child) {
+			grid-column: 2;
+			grid-row: 3 / -1;
+		}
+
+		.stack:has(:global(.aside)) > :global(section:last-child) {
+			grid-row: 4;
+		}
+
+		.stack:not(:has(:global([role='radiogroup']))) > :global(section:last-child) {
+			grid-row: 2 / -1;
+		}
+
+		.stack > .week:first-child ~ :global(section:last-child) {
+			grid-row: 1 / -1;
+		}
 	}
 
 	.brief {

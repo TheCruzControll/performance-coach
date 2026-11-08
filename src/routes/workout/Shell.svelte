@@ -5,8 +5,9 @@
   logging, and no shell applies the safe areas, so it does (header: --safe-top; content:
   --safe-left and --safe-right; foot: --safe-bottom).
   - It renders <main id='main'>, the root layout's skip-link target (prerendering needs it).
-  - It restores the workout from IndexedDB alone (active.svelte.ts): a skeleton that reserves the
-    header, then the view, 'No workout in progress', 'This browser can't keep a workout' or 'App
+  - It restores the workout from IndexedDB alone (active.svelte.ts), loading the projection, the
+    route's reducer table and the header's stopwatch (WorkoutClock.svelte) meanwhile: a skeleton
+    that reserves the header, then the view, 'No workout in progress', 'This browser can't keep a workout' or 'App
     updated — reload to continue'. A workout of another kind is sent to its own route first.
   - On idle after that, the store loads (its write path stays out of the first render) with the
     page's one sync engine (online.ts), which every change the store reports flushes, from any
@@ -30,18 +31,18 @@
 	} from '#lib/client/workout/active.svelte.ts';
 	import { workoutPath } from '#lib/client/workout/kinds.ts';
 	import type { AnyTable } from '#lib/domain/workout/project.ts';
-	import { startStopwatch } from '#lib/domain/workout/timers.ts';
 	import Button from '#lib/ui/components/Button.svelte';
 	import EmptyState from '#lib/ui/components/EmptyState.svelte';
 	import Skeleton from '#lib/ui/components/Skeleton.svelte';
 	import EmptyWorkout from './EmptyWorkout.svelte';
 	import { chunkLoader } from './lazy.ts';
 	import type * as SyncUi from './sync-ui.ts';
+	import type WorkoutClock from './WorkoutClock.svelte';
 	import WorkoutHeader from './WorkoutHeader.svelte';
 
 	interface Props {
-		/** The route's reducer table (reducers/tables.ts): it decides the kind this page shows. */
-		table: AnyTable;
+		/** Loads the route's reducer table (reducers/tables.ts): it decides the kind this page shows. */
+		table: () => Promise<AnyTable>;
 		/** The view: its side column (if any), then its main column, as siblings. */
 		children: Snippet<[ActiveSnapshot, ChunkLoad, ActiveWorkout]>;
 		/** A lazy view's chunk: the restoring skeleton stays until it has loaded. */
@@ -56,10 +57,12 @@
 	const restore = $derived(active.current);
 	const view = $derived(restore.phase === 'active' ? restore.snapshot.view : null);
 	let viewLoaded = $state(!untrack(() => ready));
+	let Clock = $state.raw<typeof WorkoutClock | null>(null);
+	const viewReady = $derived(viewLoaded && Clock !== null);
 	const waiting = $derived(
 		restore.phase === 'loading' ||
 			restore.phase === 'elsewhere' ||
-			(restore.phase === 'active' && !viewLoaded)
+			(restore.phase === 'active' && !viewReady)
 	);
 	let ui = $state.raw<typeof SyncUi | null>(null);
 	const sync = $derived(ui?.outboxStatus.current);
@@ -75,7 +78,10 @@
 
 	onMount(() => {
 		if (ready) void load(ready).then((module) => (viewLoaded = module !== null));
-		void active.restore().then(() =>
+		void load(() => import('./WorkoutClock.svelte')).then((module) => {
+			if (module) Clock = module.default;
+		});
+		void active.restore(load).then(() =>
 			idle(async () => {
 				await active.connect(load);
 				ui = await load(() => import('./sync-ui.ts'));
@@ -109,13 +115,10 @@
 	data-ready={waiting ? undefined : ''}
 	data-store={active.store ? '' : undefined}
 >
-	<WorkoutHeader
-		title={waiting ? null : (shown?.workout.title ?? 'Workout')}
-		stopwatch={shown &&
-			(shown.device.stopwatch.startedAt === null
-				? startStopwatch(Date.parse(shown.workout.startedAt))
-				: shown.device.stopwatch)}
-	>
+	<WorkoutHeader title={waiting ? null : (shown?.workout.title ?? 'Workout')}>
+		{#snippet time()}
+			{#if shown && Clock}<Clock view={shown} />{/if}
+		{/snippet}
 		{#snippet status()}
 			{#if ui && active.store}
 				<ui.SyncStatus store={active.store} view={shown} {load} />
@@ -126,7 +129,7 @@
 	<div class="body">
 		{#if ui && signedOut !== null}
 			<ui.SignedOutState waiting={signedOut} />
-		{:else if restore.phase === 'active' && viewLoaded && !hidden}
+		{:else if restore.phase === 'active' && viewReady && !hidden}
 			<div class="columns">{@render children(restore.snapshot, load, active)}</div>
 		{:else if waiting || hidden}
 			<div class="restoring" role="status" aria-busy="true" data-testid="workout-restoring">

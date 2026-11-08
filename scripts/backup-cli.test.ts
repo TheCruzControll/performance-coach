@@ -64,13 +64,13 @@ function command(
 }
 
 describe('package.json', () => {
-	it('runs the three commands with plain Node, after auth:*, without loading .env', async () => {
+	it('runs the backup commands with plain Node, after auth:*, without loading .env', async () => {
 		const pkg = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8')) as {
 			scripts: Record<string, string>;
 		};
 		const names = Object.keys(pkg.scripts);
 		const backups = names.filter((name) => name.startsWith('backup:'));
-		expect(backups).toEqual(['backup:run', 'backup:list', 'backup:keygen']);
+		expect(backups).toEqual(['backup:run', 'backup:list', 'backup:keygen', 'backup:restore']);
 		expect(names.indexOf('backup:run')).toBe(names.indexOf('auth:reset-owner') + 1);
 		for (const name of backups) {
 			expect(pkg.scripts[name]).toBe(`node scripts/${name.replace(':', '-')}.ts`);

@@ -70,7 +70,7 @@ const four = lastWeeks(4);
  * Read from the loaded database: a catalogue row's id, a set id deep in its history, and six
  * exercises with history (a start kit's batch).
  */
-const loaded = { squat: '', cursor: 0, six: [] as string[] };
+const loaded = { squat: '', cursor: 0, six: [] as string[], workout: '' };
 /** A start kit's 'before': the kit is built now, after every set in the dataset. */
 const KIT_BUILT = new Date(`${addDays(TODAY, 1)}T00:00:00Z`);
 
@@ -147,6 +147,16 @@ const CASES: Case[] = (() => {
 			'runsInRange, 12 weeks (mileage)',
 			[H.runsInRange],
 			() => h.runsInRange(db, owner, instants(lastWeeks(12)))
+		],
+		[
+			'completedWorkoutsPage, first page (History)',
+			Object.values(H.completedWorkoutsPage),
+			() => h.completedWorkoutsPage(db, owner, { limit: 21 })
+		],
+		[
+			'completedWorkoutsPage, page 6 (History)',
+			Object.values(H.completedWorkoutsPage),
+			() => h.completedWorkoutsPage(db, owner, { before: loaded.workout, limit: 21 })
 		],
 		[
 			'activeWorkouts (continue on another device)',
@@ -280,6 +290,8 @@ beforeAll(async () => {
 	loaded.squat = squat!.id;
 	const pages = await h.exerciseHistory(db, owner, loaded.squat, { limit: 100 });
 	loaded.cursor = pages.at(-1)!.id;
+	const workouts = await h.completedWorkoutsPage(db, owner, { limit: 100 });
+	loaded.workout = workouts.at(-1)!.id;
 	const used = await db
 		.selectDistinct({ id: schema.setRecords.exerciseId })
 		.from(schema.setRecords)

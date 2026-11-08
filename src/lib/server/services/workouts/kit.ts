@@ -252,7 +252,7 @@ function kitSets(p: SetPrescription, unit: WeightUnit, oneRepMaxKg: number | nul
 }
 
 /** The previous session's sets as the device records a set, on the day it started there. */
-function previousOf(rows: LastSessionSetRow[] | undefined, timeZone: string) {
+export function previousOf(rows: LastSessionSetRow[] | undefined, timeZone: string) {
 	if (!rows?.length) return null;
 	return {
 		date: localDay(rows[0]!.startedAt, timeZone),
