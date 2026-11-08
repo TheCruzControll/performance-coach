@@ -11,10 +11,11 @@
  */
 import { execSync, spawn } from 'node:child_process';
 import { once } from 'node:events';
-import { createHash, randomBytes } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 import { mkdirSync, openSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import type { FullConfig } from '@playwright/test';
+import { mintSetupToken } from '../scripts/auth-setup-token';
 import { LOCAL_DATABASE_URLS, redactUrl, resetDatabase } from '../src/lib/server/db/migrate';
 
 export const E2E_DATABASE_URL = process.env.E2E_DATABASE_URL || LOCAL_DATABASE_URLS.e2e;
@@ -41,10 +42,10 @@ export default async function globalSetup(config: FullConfig) {
 
 	rmSync(AUTH_DIR, { recursive: true, force: true });
 	mkdirSync(AUTH_DIR, { recursive: true });
-	// Workers inherit process.env from here: the setup project reads the token.
-	const setupToken = randomBytes(32).toString('base64url');
+	// Workers inherit process.env from here: the setup project reads the token. Minted exactly as
+	// `pnpm auth:setup-token` mints it, so it carries the default 24-hour expiry.
+	const { token: setupToken, hash: setupTokenHash } = mintSetupToken();
 	process.env.E2E_SETUP_TOKEN = setupToken;
-	const setupTokenHash = createHash('sha256').update(setupToken).digest('hex');
 
 	if (process.env.E2E_BASE_URL) return; // testing an externally managed server
 
