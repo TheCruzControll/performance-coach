@@ -22,6 +22,8 @@ node_modules
 *.dump.gpg
 *.sql.gz
 backups/
+# ...but not the backup run's source folder
+!/src/lib/server/services/backups/
 
 # OS
 .DS_Store

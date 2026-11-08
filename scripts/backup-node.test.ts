@@ -114,4 +114,42 @@ describe('src/lib/server/backup under plain Node', () => {
 			])
 		);
 	});
+
+	it('runs the backup service (src/lib/server/services/backups) up to its first refusal', () => {
+		const entry = JSON.stringify(path.join(root, 'src/lib/server/services/backups/index.ts'));
+		const result = plainNode(`
+			const { runBackup, isBackupRunError } = await import(${entry});
+			const recorded = [];
+			let code = null;
+			try {
+				await runBackup(
+					{ now: new Date(), trigger: 'manual', appVersion: 'node', env: { DATABASE_URL: 'postgres://x@127.0.0.1:1/x' } },
+					{ record: async (failure) => void recorded.push(failure.context.code) }
+				);
+			} catch (error) {
+				code = isBackupRunError(error) ? error.code : String(error);
+			}
+			console.log(JSON.stringify({ code, recorded, loaded: loadedFiles() }));
+		`);
+		expect(result.stderr).not.toMatch(/Error/);
+		expect(result.status).toBe(0);
+		const output = JSON.parse(result.stdout) as {
+			code: unknown;
+			recorded: unknown;
+			loaded: string[];
+		};
+		expect(output).toMatchObject({
+			code: 'backup_not_configured',
+			recorded: ['backup_not_configured']
+		});
+		expect(output.loaded).toEqual(
+			expect.arrayContaining([
+				'src/lib/server/services/backups/run.ts',
+				'src/lib/server/observability/logger.ts',
+				'src/lib/server/db/backup/export.ts'
+			])
+		);
+		// The app's database module (env, drizzle schema) stays out of an operator's process.
+		expect(output.loaded).not.toContain('src/lib/server/db/index.ts');
+	});
 });
