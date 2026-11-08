@@ -394,3 +394,10 @@ export async function expectRowSizes(page: Page): Promise<void> {
 		}
 	}
 }
+
+/** The trend tiles on /design → Charts (src/routes/design/tile-fixture.ts), under their period links. */
+export const tilesSection = (page: Page) => page.getByTestId('design-tiles');
+export const tileOf = (page: Page, id: string) => page.getByTestId(id);
+/** A period link by its name ('Last 4 weeks'), in the tiles' own picker (not the loading example). */
+export const periodLink = (page: Page, name: string) =>
+	page.getByRole('navigation', { name: 'Period', exact: true }).getByRole('link', { name });
