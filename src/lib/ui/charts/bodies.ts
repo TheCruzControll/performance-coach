@@ -22,7 +22,8 @@ export type ChartBodyLoader<P extends Record<string, any> = any> = () => Promise
 export const never = () => new Promise<never>(() => {});
 
 export const CHART_BODIES = {
-	line: () => (import.meta.env.SSR ? never() : import('./bodies/LineChart.svelte'))
+	line: () => (import.meta.env.SSR ? never() : import('./bodies/LineChart.svelte')),
+	bar: () => (import.meta.env.SSR ? never() : import('./bodies/BarChart.svelte'))
 } as const satisfies Record<string, ChartBodyLoader>;
 
 export type ChartBodyName = keyof typeof CHART_BODIES;

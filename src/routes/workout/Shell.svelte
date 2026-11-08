@@ -19,11 +19,14 @@
     details, only the changes waiting. A page restored after a 401 (active.signedOut) shows none
     of it before the engine has said otherwise.
   - Nothing reads the URL while prerendering: the HTML is the same, data-free, for everyone.
+  - start: /workout?start= or ?new=, which the page reads once mounted. The start flow's chunk
+    (StartFlow.svelte) is shown instead of any workout, through the page's chunk loader; the
+    page neither connects its own store nor sends a workout of another kind to its route.
   - Layout: one column below 1024 px; from there the header spans the page, and the view's side
     and main columns sit side by side, centred, at --content-list beside --content-readable.
 -->
 <script lang="ts">
-	import { onMount, untrack, type Snippet } from 'svelte';
+	import { onMount, untrack, type Component, type Snippet } from 'svelte';
 	import {
 		ActiveWorkout,
 		type ActiveSnapshot,
@@ -47,9 +50,11 @@
 		children: Snippet<[ActiveSnapshot, ChunkLoad, ActiveWorkout]>;
 		/** A lazy view's chunk: the restoring skeleton stays until it has loaded. */
 		ready?: () => Promise<unknown>;
+		/** The start flow's chunk, once the page has read ?start or ?new. */
+		start?: () => Promise<{ default: Component<{ load: ChunkLoad }> }>;
 	}
 
-	let { table, children, ready }: Props = $props();
+	let { table, children, ready, start }: Props = $props();
 
 	// A route's table never changes: read once.
 	const active = new ActiveWorkout(untrack(() => table));
@@ -68,8 +73,10 @@
 	const sync = $derived(ui?.outboxStatus.current);
 	const signedOut = $derived(sync?.state === 'signed-out' ? sync.waiting : null);
 	const hidden = $derived(signedOut !== null || (active.signedOut && !sync));
-	/** What the page may show of the workout: nothing once signed out. */
-	const shown = $derived(hidden ? null : view);
+	let Start = $state.raw<Component<{ load: ChunkLoad }> | null>(null);
+	const starting = $derived(!!start && restore.phase !== 'app-updated');
+	/** What the page may show of the workout: nothing once signed out, or while starting one. */
+	const shown = $derived(hidden || start ? null : view);
 
 	const idle = (run: () => void) => {
 		if ('requestIdleCallback' in window) requestIdleCallback(run, { timeout: 2000 });
@@ -83,6 +90,7 @@
 		});
 		void active.restore(load).then(() =>
 			idle(async () => {
+				if (start) return;
 				await active.connect(load);
 				ui = await load(() => import('./sync-ui.ts'));
 			})
@@ -96,11 +104,17 @@
 		return () => active.close();
 	});
 
+	// The start flow, once the page asks for it; a chunk that is gone shows 'App updated'.
+	$effect(() => {
+		if (start) void load(start).then((module) => module && (Start = module.default));
+	});
+
 	// Another kind's workout: its own route, before any view renders, keeping this page's query.
 	// A full navigation to a prerendered page (from the precache offline); goto() would reject a
-	// route this build does not have yet (/workout/run and /workout/session land later).
+	// route this build does not have yet (/workout/run and /workout/session land later). Never
+	// while starting: the start flow answers a workout in progress itself.
 	$effect(() => {
-		if (restore.phase !== 'elsewhere') return;
+		if (start || restore.phase !== 'elsewhere') return;
 		location.replace(`${workoutPath(restore.kind)}${location.search}`);
 	});
 
@@ -127,11 +141,13 @@
 	</WorkoutHeader>
 
 	<div class="body">
-		{#if ui && signedOut !== null}
+		{#if starting && Start}
+			<Start {load} />
+		{:else if ui && signedOut !== null}
 			<ui.SignedOutState waiting={signedOut} />
-		{:else if restore.phase === 'active' && viewReady && !hidden}
+		{:else if restore.phase === 'active' && viewReady && !hidden && !starting}
 			<div class="columns">{@render children(restore.snapshot, load, active)}</div>
-		{:else if waiting || hidden}
+		{:else if waiting || hidden || starting}
 			<div class="restoring" role="status" aria-busy="true" data-testid="workout-restoring">
 				<span class="visually-hidden">Restoring your workout</span>
 				{#each [0, 1, 2] as card (card)}
