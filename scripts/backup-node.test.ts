@@ -115,6 +115,34 @@ describe('src/lib/server/backup under plain Node', () => {
 		);
 	});
 
+	it('loads the restore tool (scripts/backup/restore.ts) the same way', () => {
+		const restore = JSON.stringify(path.join(root, 'scripts/backup/restore.ts'));
+		const result = plainNode(`
+			const { restoreArchive, restoreBackup, manifestMismatches } = await import(${restore});
+			const header = { tables: [{ name: 'owners', columns: [{ name: 'id', type: 'uuid' }] }] };
+			const catalog = { tables: [{ name: 'owners', columns: [{ name: 'id', type: 'text' }] }], sequences: [] };
+			console.log(JSON.stringify({
+				functions: [restoreArchive, restoreBackup].map((f) => typeof f),
+				mismatched: manifestMismatches({ header, sequences: [{ name: 'owners_id_seq' }] }, catalog),
+				loaded: loadedFiles()
+			}));
+		`);
+		expect(result.stderr).not.toMatch(/Error/);
+		expect(result.status).toBe(0);
+		const output = JSON.parse(result.stdout) as Record<string, unknown>;
+		expect(output).toMatchObject({
+			functions: ['function', 'function'],
+			mismatched: ['owners', 'owners_id_seq']
+		});
+		expect(output.loaded).toEqual(
+			expect.arrayContaining([
+				'src/lib/server/db/backup/digest.ts',
+				'src/lib/server/db/migrate.ts',
+				'src/lib/server/backup/envelope.ts'
+			])
+		);
+	});
+
 	it('runs the backup service (src/lib/server/services/backups) up to its first refusal', () => {
 		const entry = JSON.stringify(path.join(root, 'src/lib/server/services/backups/index.ts'));
 		const result = plainNode(`

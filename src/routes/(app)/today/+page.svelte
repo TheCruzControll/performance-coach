@@ -3,11 +3,9 @@
 	import { invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { preferences } from '#lib/client/preferences.svelte.ts';
-	import Badge from '#lib/ui/components/Badge.svelte';
 	import Button from '#lib/ui/components/Button.svelte';
 	import Card from '#lib/ui/components/Card.svelte';
 	import EmptyState from '#lib/ui/components/EmptyState.svelte';
-	import Icon from '#lib/ui/components/Icon.svelte';
 	import ListRow from '#lib/ui/components/ListRow.svelte';
 	import PageHeader from '#lib/ui/components/PageHeader.svelte';
 	import Section from '#lib/ui/components/Section.svelte';
@@ -18,6 +16,8 @@
 
 	let { data }: PageProps = $props();
 	const setup = $derived(data.setup);
+	/** A program exists: its plan (Program) has the week strip, so M2's week shape steps aside. */
+	const active = $derived(!!setup?.complete && data.program === 'active');
 
 	/** The setup card failed to load: Retry runs the load again. */
 	let retrying = $state(false);
@@ -38,6 +38,8 @@
 	const SETUP_HEIGHT = '24rem';
 	const SUMMARY_HEIGHT = '24rem';
 	const BUILD_HEIGHT = '17rem';
+	/** The plan's room: the week strip, a day of two sessions and three up next. */
+	const PROGRAM_HEIGHT = '34rem';
 	/** Build my program's room while its code or its preview loads: a phone screen of preview. */
 	const PREVIEW_HEIGHT = '40rem';
 
@@ -104,27 +106,29 @@
 
 <PageHeader title="Today" {eyebrow} />
 
-<ol class="week" aria-label="This week">
-	{#each week as day, i (i)}
-		{@const mark = setup?.complete ? setup.week.days[i] : undefined}
-		{@const booked = mark?.booked[0]}
-		<li class="day" class:today={day.isToday} aria-current={day.isToday ? 'date' : undefined}>
-			<span class="letter">{day.letter}</span>
-			<span class="date numeric">{day.date ?? '·'}</span>
-			<!-- Once set up: a ring on the days free to train, a discipline dot on booked ones. -->
-			<span
-				class="dot"
-				class:free={mark?.available}
-				style:background={booked ? `var(--color-${booked.tone})` : undefined}
-				aria-hidden="true"
-				data-testid={booked ? 'today-day-booked' : undefined}
-			></span>
-			{#if mark?.booked.length}
-				<span class="visually-hidden">{mark.booked.map((b) => b.label).join(', ')}</span>
-			{/if}
-		</li>
-	{/each}
-</ol>
+{#if !active}
+	<ol class="week" aria-label="This week">
+		{#each week as day, i (i)}
+			{@const mark = setup?.complete ? setup.week.days[i] : undefined}
+			{@const booked = mark?.booked[0]}
+			<li class="day" class:today={day.isToday} aria-current={day.isToday ? 'date' : undefined}>
+				<span class="letter">{day.letter}</span>
+				<span class="date numeric">{day.date ?? '·'}</span>
+				<!-- Once set up: a ring on the days free to train, a discipline dot on booked ones. -->
+				<span
+					class="dot"
+					class:free={mark?.available}
+					style:background={booked ? `var(--color-${booked.tone})` : undefined}
+					aria-hidden="true"
+					data-testid={booked ? 'today-day-booked' : undefined}
+				></span>
+				{#if mark?.booked.length}
+					<span class="visually-hidden">{mark.booked.map((b) => b.label).join(', ')}</span>
+				{/if}
+			</li>
+		{/each}
+	</ol>
+{/if}
 
 {#if building}
 	<!-- Build my program takes Today's place until the owner starts week 1 or closes it. -->
@@ -152,22 +156,13 @@
 				served={data.served.build}
 			/>
 		</div>
-	{:else if setup && data.program === 'active'}
-		<!-- m3/46 shows today's sessions here. -->
-		<Card tone="accent" padding="lg" data-testid="today-session">
-			<div class="session">
-				<Badge tone="accent" icon="target">Your program</Badge>
-				<h2 class="session-title">Week 1 is planned</h2>
-				<p class="session-copy">
-					Every session is on Train, with the why behind it. Week one establishes your baseline.
-				</p>
-				<a class="session-next" href={resolve('/(app)/train')} data-testid="today-next-step">
-					<Icon name="train" size={16} />
-					<span class="next-text">Open Train</span>
-					<Icon name="chevron-right" size={16} />
-				</a>
-			</div>
-		</Card>
+	{:else if active}
+		<PanelLoader
+			load={PANELS.program}
+			height={PROGRAM_HEIGHT}
+			props={{ plan: data.plan! }}
+			served={data.served.program}
+		/>
 	{:else}
 		<Card padding="lg" data-testid="today-setup-error">
 			<EmptyState
@@ -207,7 +202,7 @@
 		<PanelLoader
 			load={PANELS.summary}
 			height={SUMMARY_HEIGHT}
-			props={{ setup }}
+			props={{ setup, showWeek: !active }}
 			served={data.served.summary}
 		/>
 	{/if}
@@ -279,53 +274,6 @@
 
 	.setup-room {
 		display: grid;
-	}
-
-	.session {
-		display: grid;
-		gap: var(--space-3);
-	}
-
-	.session-title {
-		font-size: var(--text-2xl);
-		font-weight: var(--weight-bold);
-		letter-spacing: var(--tracking-display);
-		line-height: var(--leading-tight);
-	}
-
-	.session-copy {
-		font-size: var(--text-sm);
-		color: var(--color-text-secondary);
-	}
-
-	.session-next {
-		display: flex;
-		align-items: center;
-		gap: var(--space-2);
-		margin-top: var(--space-1);
-		padding-top: var(--space-4);
-		border-top: 1px solid var(--color-hairline);
-		font-size: var(--text-sm);
-		font-weight: var(--weight-medium);
-		color: var(--color-text);
-		min-height: 2.75rem;
-		text-decoration: none;
-		border-radius: var(--radius-sm);
-	}
-
-	.session-next:focus-visible {
-		outline: 2px solid var(--color-accent-ring);
-		outline-offset: 2px;
-	}
-
-	@media (hover: hover) and (pointer: fine) {
-		.session-next:hover .next-text {
-			text-decoration: underline;
-		}
-	}
-
-	.next-text {
-		flex: 1;
 	}
 
 	.day:not(.today) .dot.free {

@@ -3,6 +3,7 @@ import { createMutation, MUTATION_TYPES } from '#lib/domain/workout/index.ts';
 import { fixFor } from './registry';
 
 const SET_TYPES = ['set.log', 'set.skip', 'set.edit'];
+const EDITOR_TYPES = ['run.log', 'run.segment', 'other.log'];
 
 describe('the Fix registry', () => {
 	it.each(MUTATION_TYPES)(
@@ -13,9 +14,11 @@ describe('the Fix registry', () => {
 			expect(entry.kind).toBe(
 				SET_TYPES.includes(type)
 					? 'set-editor'
-					: type === 'workout.start'
-						? 'rewrite'
-						: 'discard-only'
+					: EDITOR_TYPES.includes(type)
+						? 'editor'
+						: type === 'workout.start'
+							? 'rewrite'
+							: 'discard-only'
 			);
 		}
 	);
