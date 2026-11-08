@@ -125,6 +125,11 @@ jobs:
   # nearing it gains a shard (`of` up by one, plus an entry per new shard), never less coverage.
   # `minutes` is the Playwright step's timeout: 1.5 × the leg's slowest of three measured runs,
   # at least 5 (the projects' minutes in main's runs 42355809914, 42356551780 and 42356562301).
+  # main split in two after runs 42415186404 to 42431687521 peaked at 14.9 (Chromium) and 11.5
+  # (WebKit) minutes: each shard is estimated at half plus a minute of server setup (8.4, 6.8).
+  # serial·webkit split the same way after peaking at 15.2 (timed out in 42431006875): 8.6 a shard.
+  # serial·chromium peaked at 9.3 in 42414341167 to 42431687521, so its timeout is 14 unsharded.
+  # serial shards hold whole files: its projects are not fullyParallel, so --shard splits by file.
   e2e-legs:
     name: E2E ${{ matrix.group }} · ${{ matrix.engine }} · ${{ matrix.shard }}/${{ matrix.of }}
     # Pinned to the newest Ubuntu release Playwright builds WebKit for (its browser builds are
@@ -137,10 +142,13 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { group: main, engine: chromium, shard: 1, of: 1, minutes: 19 }
-          - { group: main, engine: webkit, shard: 1, of: 1, minutes: 13 }
-          - { group: serial, engine: chromium, shard: 1, of: 1, minutes: 11 }
-          - { group: serial, engine: webkit, shard: 1, of: 1, minutes: 15 }
+          - { group: main, engine: chromium, shard: 1, of: 2, minutes: 13 }
+          - { group: main, engine: chromium, shard: 2, of: 2, minutes: 13 }
+          - { group: main, engine: webkit, shard: 1, of: 2, minutes: 11 }
+          - { group: main, engine: webkit, shard: 2, of: 2, minutes: 11 }
+          - { group: serial, engine: chromium, shard: 1, of: 1, minutes: 14 }
+          - { group: serial, engine: webkit, shard: 1, of: 2, minutes: 13 }
+          - { group: serial, engine: webkit, shard: 2, of: 2, minutes: 13 }
           - { group: alone, engine: chromium, shard: 1, of: 1, minutes: 5 }
           - { group: sweeps, engine: chromium, shard: 1, of: 1, minutes: 5 }
           - { group: sweeps, engine: webkit, shard: 1, of: 1, minutes: 5 }
