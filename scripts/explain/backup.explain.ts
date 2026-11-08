@@ -4,12 +4,18 @@
  * - export → gzip → seal into a counting sink (no buffer, so only the export's own memory
  *   shows) in BACKUP_EXPORT_BUDGET.ms or less, growing the process by BACKUP_EXPORT_BUDGET.bytes
  *   or less at its peak
+ * - the run's read-back (get, open, read and compare) plus its prune in
+ *   BACKUP_READ_BACK_BUDGET_MS or less on the dataset's sealed size, through runBackup and a
+ *   folder store
  * - every exported table's cursor query: on a large relation (plan-check.ts), its primary-key
  *   index and no Seq Scan, planned as a cursor is (EXPLAIN DECLARE)
  * Resets the explain database (EXPLAIN_DATABASE_URL, default local coach_explain) and loads
  * dataset.ts first, as history.explain.ts does; the project runs the files one at a time.
  */
 import { randomBytes } from 'node:crypto';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { finished } from 'node:stream/promises';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -23,11 +29,15 @@ import { rowsQuery } from '../../src/lib/server/db/backup/sql';
 import { exportPlan } from '../../src/lib/server/db/backup/tables';
 import { connectionConfig } from '../../src/lib/server/db/connection';
 import { LOCAL_DATABASE_URLS, redactUrl, resetDatabase } from '../../src/lib/server/db/migrate';
+import { runBackup } from '../../src/lib/server/services/backups';
+import { recordServerError } from '../../src/lib/server/services/errors';
 import { generateDataset, loadDataset } from './dataset';
 import { checkPlan, scansOf, type Catalog, type PlanNode } from './plan-check';
 
 /** Decision (M9 plan): half of the cron function's 60 s, and 256 MB of the export's own memory. */
 const BACKUP_EXPORT_BUDGET = { ms: 30_000, bytes: 256 * 1024 * 1024 } as const;
+/** Decision (M9 plan): the read-back and the prune share 10 s of the cron function's 60 s. */
+const BACKUP_READ_BACK_BUDGET_MS = 10_000;
 
 const url = process.env.EXPLAIN_DATABASE_URL || LOCAL_DATABASE_URLS.explain;
 const loader = new pg.Client({ ...connectionConfig(url), application_name: 'db-explain' });
@@ -91,6 +101,34 @@ describe(`backup export on ${redactUrl(url)}`, () => {
 			expect(growth).toBeLessThanOrEqual(BACKUP_EXPORT_BUDGET.bytes);
 		} finally {
 			await client.end();
+		}
+	}, 60_000);
+
+	it('reads the sealed dataset back and prunes inside its budget', async () => {
+		const dir = await mkdtemp(path.join(tmpdir(), 'coach-backup-explain-'));
+		try {
+			const result = await runBackup(
+				{
+					now: new Date(),
+					trigger: 'manual',
+					appVersion: 'db-explain',
+					env: {
+						DATABASE_URL: url,
+						BACKUP_ENCRYPTION_KEY: randomBytes(32).toString('base64'),
+						BACKUP_DIR: dir
+					}
+				},
+				{ record: recordServerError }
+			);
+			const ms = result.phases.readBack + result.phases.prune;
+			console.log(
+				`\nbackup read-back and prune: ${(result.bytes / MB).toFixed(2)} MB sealed, ` +
+					`read back in ${result.phases.readBack} ms, pruned in ${result.phases.prune} ms`
+			);
+			expect(result.rows).toBeGreaterThan(10_000);
+			expect(ms).toBeLessThanOrEqual(BACKUP_READ_BACK_BUDGET_MS);
+		} finally {
+			await rm(dir, { recursive: true, force: true });
 		}
 	}, 60_000);
 

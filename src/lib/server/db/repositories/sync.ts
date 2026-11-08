@@ -34,6 +34,36 @@ export async function claimMutation(tx: Executor, row: NewSyncMutation): Promise
 	return claimed ? 'claimed' : 'seen';
 }
 
+/** The ledger's type for an id the owner discarded on the device (claimDiscarded). */
+export const DISCARDED_TYPE = 'discarded';
+
+/**
+ * Ids the owner discarded on the device, recorded so a request still carrying one (a POST the
+ * device stopped waiting for) answers 'duplicate' and applies nothing. An id already applied keeps
+ * its row. One statement; the device sends only ids, so the row names the id as its own entity.
+ */
+export async function claimDiscarded(
+	db: Executor,
+	ownerId: string,
+	ids: readonly string[],
+	requestId: string | null,
+	at: Date
+): Promise<void> {
+	if (ids.length === 0) return;
+	const rows = ids.map((mutationId) => ({
+		mutationId,
+		ownerId,
+		type: DISCARDED_TYPE,
+		entityId: mutationId,
+		clientAt: at,
+		requestId
+	}));
+	await db
+		.insert(syncMutations)
+		.values(rows)
+		.onConflictDoNothing({ target: syncMutations.mutationId });
+}
+
 export function createSyncRepository(db: Executor) {
 	return {
 		/** The ids among `ids` that the owner's ledger holds: those applied. */

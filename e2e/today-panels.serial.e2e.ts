@@ -235,10 +235,13 @@ test.describe('with the service worker blocked, so page.route sees every chunk',
 		// The held chunk does not hold the navigation: Today is there, its panel a skeleton.
 		await expect(page).toHaveURL(/\/today$/);
 		await expect(page.getByRole('heading', { level: 1, name: 'Today' })).toBeVisible();
-		const skeleton = page.getByTestId('today-panel');
+		// The summary's, the last panel: the Build card's skeleton above it may still show.
+		const skeleton = page.getByTestId('today-panel').last();
 		await expect(skeleton).toHaveAttribute('aria-busy', 'true');
 		await expect(goals(page)).toHaveCount(0);
 		await expect.poll(() => requested, { message: 'the panel’s code is on its way' }).toBe(true);
+		// The Build card above it is not held.
+		await expect(page.getByTestId('today-build')).toBeVisible();
 		const reserved = (await skeleton.boundingBox())!;
 		expect(reserved.height, 'the skeleton holds the panel’s room').toBeGreaterThanOrEqual(
 			24 * 16 - 1
@@ -248,7 +251,7 @@ test.describe('with the service worker blocked, so page.route sees every chunk',
 		await expectNoShift(page, {
 			boxes: [
 				page.getByRole('heading', { level: 1, name: 'Today' }),
-				page.getByTestId('today-session'),
+				page.getByTestId('today-build'),
 				plates(page)
 			],
 			action: async () => {
@@ -279,7 +282,7 @@ test.describe('with the service worker blocked, so page.route sees every chunk',
 		await expect(goals(page)).toHaveCount(0);
 		// Only the panel failed: the rest of Today is there and works.
 		await expect(page.getByRole('heading', { level: 1, name: 'Today' })).toBeVisible();
-		await expect(page.getByTestId('today-session')).toBeVisible();
+		await expect(page.getByTestId('today-build')).toBeVisible();
 		await expect(plates(page)).toBeVisible();
 		await expect(page.locator('body')).not.toContainText(/500|internal error/i);
 		// It holds the panel's room: what is above it stays put once the panel arrives.
