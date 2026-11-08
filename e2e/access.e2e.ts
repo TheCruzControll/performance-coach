@@ -344,6 +344,31 @@ test.describe('signed in: cross-site requests are refused', () => {
 		expect(await versions()).toEqual(before);
 	});
 
+	test('a cross-site Start week 1 is refused and creates nothing', async ({ request }) => {
+		const programs = () => query('select id from programs order by id');
+		const before = await programs();
+		const build = (origin: string, payload: unknown) =>
+			request.post('/today?/build', {
+				headers: { origin, accept: 'application/json', 'x-sveltekit-action': 'true' },
+				multipart: { payload: JSON.stringify(payload) }
+			});
+		// From the app itself the action runs: a request no preview sent comes back with its errors.
+		const own = await build(ORIGIN, { start: 'next_monday', fingerprint: 'not a fingerprint' });
+		expect(own.status()).toBe(400);
+		expect(await own.json()).toMatchObject({ type: 'failure', status: 400 });
+		// From another site it is refused before it runs.
+		const cross = await build('https://evil.example', {
+			timeZone: 'Pacific/Auckland',
+			start: 'next_monday',
+			startsOn: '2026-11-09',
+			firstPlannedDay: '2026-11-09',
+			fingerprint: '0123456789abcdef',
+			digest: '0123456789abcdef'
+		});
+		expect(cross.status()).toBe(403);
+		expect(await programs()).toEqual(before);
+	});
+
 	test('a cross-site Continue in onboarding is refused and stores nothing', async ({ request }) => {
 		const stored = () => query('select name, onboarding_completed from athlete_profiles');
 		const before = await stored();

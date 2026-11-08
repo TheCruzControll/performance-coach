@@ -108,7 +108,12 @@
 		border-bottom: 1px solid var(--color-hairline);
 	}
 
+	/* Flex centres a label wider than its tab, so it overflows both sides evenly instead of
+	   running into the next tab's label (Feedback, six tabs at 393 px). */
 	.tab {
+		display: flex;
+		align-items: center;
+		justify-content: center;
 		min-height: var(--touch-target);
 		padding: 0 var(--space-2);
 		font-size: var(--text-sm);
