@@ -66,7 +66,7 @@ export const MAX_LAST_PERFORMANCES = 10;
 export const MAX_RANGE_DAYS = 731;
 
 /** UTC offsets run from −12:00 to +14:00, so a local day starts within 14 hours of UTC midnight. */
-const ZONE_SLACK_MS = 14 * 3_600_000;
+export const ZONE_SLACK_MS = 14 * 3_600_000;
 /** athlete_profiles' own defaults, for an owner with no profile row yet. */
 const DEFAULT_TIME_ZONE = 'UTC';
 const DEFAULT_DISTANCE_UNIT: ProfileDistanceUnit = 'km';

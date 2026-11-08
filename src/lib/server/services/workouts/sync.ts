@@ -255,6 +255,23 @@ async function applyOne(
 	}
 }
 
+/**
+ * One mutation on its own, exactly as a batch applies it: validated, claimed in the ledger under
+ * its id and applied in its own transaction (a savepoint when `deps.db` is one), or refused with
+ * nothing written. The coach's accepted session substitution goes through it
+ * (services/coach/apply/session.ts), so a replay of the same id writes nothing new.
+ */
+export async function applyMutation(
+	ownerId: string,
+	raw: Record<string, unknown>,
+	deps: SyncDeps = {}
+): Promise<SyncResult> {
+	const parsed = validate(envelopeSchema, raw);
+	if (!parsed.ok) return rejected({ id: String(raw.id) }, 'invalid', parsed.errors);
+	const resolved = resolveDeps({ db: deps.db, now: deps.now, source: 'owner' });
+	return applyOne(parsed.data as Mutation, ownerId, resolved, deps.requestId ?? null);
+}
+
 // ---- The batch ------------------------------------------------------------------------------
 
 /** Whether `m` must wait for `held`, refused or deferred earlier in the batch. */
