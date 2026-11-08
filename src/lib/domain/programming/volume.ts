@@ -24,6 +24,7 @@
  *
  * Pure and deterministic.
  */
+import type { NutritionPhase } from '../profile/catalog.ts';
 import {
 	isHardSet,
 	NON_WORKING_ROLES,
@@ -181,6 +182,29 @@ const moved = ({ added, sets }: Edit, { at, add, by }: Move): Edit => {
 		sets: key ? new Map(sets).set(key, (sets.get(key) ?? 0) + by) : sets
 	};
 };
+
+/**
+ * The weekly hard-set range a split's style gives each major group, as the nutrition phase moves
+ * it: `sets` is the style's [lo, hi]; a cut keeps `keep` of it and a bulk aims `toward` of the way
+ * up. `band` names it as the volume_adjusted decision does ('the 10–20 that suits building
+ * muscle'). M6's muscle-group targets read it from the input that built each block.
+ */
+export function hardSetBand(split: Split, phaseKey: NutritionPhase | null) {
+	const style = split.maintenance
+		? 'maintenance'
+		: (STYLE_OF[split.discipline] ?? GENERAL_STYLE).style;
+	const {
+		sets: [lo, hi],
+		suits
+	} = HARD_SET_RANGES[style];
+	const { keep, toward } = (phaseKey && PHASES[phaseKey]) || { keep: 1, toward: 0 };
+	const half = (n: number) => Math.round(n * 2) / 2;
+	const band =
+		keep < 1
+			? `the ${half(keep * lo)}–${half(keep * hi)} that suits ${suits} on a cut`
+			: `the ${toward > 0 ? 'top of the ' : ''}${lo}–${hi} that suits ${suits}`;
+	return { style, sets: [lo, hi] as const, keep, toward, band };
+}
 
 /** Block `b`'s strength sessions balanced; the block as it is when no week is at full volume. */
 export function balanceBlock(
@@ -353,16 +377,15 @@ export function balanceBlock(
 		}
 	}
 
-	const style = split.maintenance
-		? 'maintenance'
-		: (STYLE_OF[split.discipline] ?? GENERAL_STYLE).style;
-	const {
-		sets: [lo, hi],
-		suits
-	} = HARD_SET_RANGES[style];
 	const phaseKey = input.nutritionPhase;
 	const phase = phaseKey ? PHASES[phaseKey] : undefined;
-	const { keep, toward } = phase ?? { keep: 1, toward: 0 };
+	const {
+		style,
+		sets: [lo, hi],
+		keep,
+		toward,
+		band
+	} = hardSetBand(split, phaseKey);
 	const targetsBy = (target: (g: MajorGroup) => Targets[MajorGroup]) =>
 		Object.fromEntries(GROUPS.map((g) => [g, target(g)])) as Targets;
 	// A bulk raises the floor only as far as the heaviest week stays in the range.
@@ -390,11 +413,6 @@ export function balanceBlock(
 		if (!tallies.some(pullsBehind)) short.delete('pulling');
 	}
 
-	const half = (n: number) => Math.round(n * 2) / 2;
-	const band =
-		keep < 1
-			? `the ${half(keep * lo)}–${half(keep * hi)} that suits ${suits} on a cut`
-			: `the ${toward > 0 ? 'top of the ' : ''}${lo}–${hi} that suits ${suits}`;
 	const refs = [`blocks.${b}`];
 	/**
 	 * What changed for the count `credited` reads, after the phase's reason: each exercise's net
