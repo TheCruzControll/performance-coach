@@ -16,7 +16,7 @@ import type {
 import { project, replay } from './project';
 import type { WorkoutInputs } from './project';
 import type { CanonicalWorkout } from './protocol';
-import { runTable } from './reducers/tables';
+import { runTable } from './reducers/run';
 import { expandSegments, runTotals, segmentPace } from './run';
 import type { SegmentAmounts } from './run';
 import type { RunKit, WorkoutView } from './types';
