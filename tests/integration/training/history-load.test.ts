@@ -276,6 +276,27 @@ describe('a version’s page', () => {
 		});
 	});
 
+	it(`carries the list's first page, ${HISTORY_PAGE_SIZE} newest first, for an older version too`, async () => {
+		await withRollback(async (db) => {
+			const { owner, full } = await withProgram(db);
+			for (let n = 1; n <= 21; n++) await move(db, owner, full, n % 2 ? WED : MON, n);
+			const newest = Array.from({ length: HISTORY_PAGE_SIZE }, (_, i) => 22 - i);
+
+			// One on the first page, and version 1, below it: a desktop window lists the same page.
+			for (const n of ['21', '1']) {
+				const data = await version(db, owner, n);
+				expect(data.version.number, n).toBe(Number(n));
+				expect(
+					data.page.versions.map((v) => v.number),
+					n
+				).toEqual(newest);
+				expect(data.page.next, n).toBe(3);
+				expect(data.page, n).toEqual((await list(db, owner)).page);
+			}
+			expect(await status(load(db, owner, '23'))).toBe(404);
+		});
+	});
+
 	it('a malformed or unknown version is the 404 page', async () => {
 		await withRollback(async (db) => {
 			const { owner } = await withProgram(db);
