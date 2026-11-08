@@ -45,13 +45,6 @@ shared component costs every route, Security included.
   ceremony load on demand with the other sheets and passkey helpers; `/` and
   `/recover/passkey` gain 0.1 KB (one error mapping in those helpers).
 
-- **Train renders without the plate calculator's CSS** (`/(app)/train` route CSS 14.3 → 11.0 KB).
-  The toasts' styles moved into every route's CSS (0.3 KB) when the toasts joined the initial JS,
-  which put Train over its 14 KB. Its `PlateSheet` loaded on intent, but the server build could
-  reach that import, so SvelteKit linked its stylesheets (sheet, stepper, segmented control) into
-  Train. The server build now leaves it out (`import.meta.env.SSR`), as it does the plan sheet,
-  and those stylesheets arrive with the sheet.
-
 - **`/design` renders with the CSS of its Buttons group only** (13.8 → 6.7 KB). Its Inputs, Data
   and Feedback groups loaded their JS with their tab, but SvelteKit still linked their CSS into
   the page as render-blocking stylesheets, because the server build could reach their imports.
@@ -111,6 +104,231 @@ shared component costs every route, Security included.
   LCP 1.07 s, TBT 103–153 ms. A single run is not a median: the 5-run CI assertion is the gate.
 - **Server:** every dynamic request now does one indexed session lookup, reported as
   `Server-Timing: auth;dur=…`.
+
+## M3 screens — measured 2026-11-08
+
+M3 baseline, measured at `94e3cff`: CI run
+[42443924197](https://github.com/TheCruzControll/performance-coach/actions/runs/42443924197)
+built PR #231's merge commit `94e3cff` (main `1927b89` with m3/46 and m3/47). These numbers
+describe that commit only; later changes to the build configuration, budget script and app code
+are not covered by them. GitHub's 4-vCPU Linux runners ran
+`pnpm build:node && pnpm budgets`, the `perf` project and the Lighthouse command, each as its
+section below describes.
+
+**Initial JS and route CSS (gzip), every route.** All pass: initial JS ≤ 60 KB, route CSS ≤ 14 KB,
+two preloaded fonts each.
+
+| Route                              | Initial JS | Route CSS |
+| ---------------------------------- | ---------: | --------: |
+| `/workout` (M4)                    |    59.4 KB |    7.6 KB |
+| `/(app)/train`                     |    57.3 KB |   13.5 KB |
+| `/(app)/train/session/[key]`       |    56.9 KB |    9.8 KB |
+| `/(app)/today`                     |    56.9 KB |   12.5 KB |
+| `/(app)/profile/security`          |    55.9 KB |   11.0 KB |
+| `/(app)/profile`                   |    55.7 KB |    8.6 KB |
+| `/(app)/train/history/[[version]]` |    54.6 KB |    9.7 KB |
+| `/setup`                           |    53.1 KB |    7.3 KB |
+| `/onboarding/[[step]]`             |    52.8 KB |    6.1 KB |
+| `/(app)/profile/[section]`         |    52.7 KB |    6.9 KB |
+| `/design`                          |    52.4 KB |    7.4 KB |
+| `/(app)/progress`                  |    52.1 KB |    7.4 KB |
+| `/`                                |    51.4 KB |    6.1 KB |
+| `/(app)/offline`                   |    51.3 KB |    6.7 KB |
+| `/recover/passkey`                 |    51.0 KB |    5.8 KB |
+| `/recover`                         |    50.0 KB |    6.1 KB |
+| `/(app)/coach`                     |    49.3 KB |    6.6 KB |
+
+The whole build's CSS is 47.1 KB in 86 files (tracked, not a budget); the service worker is
+3.5 KB.
+
+**Against the M3 plan's ceilings** (initial JS; the plan's cumulative ceilings, each slice held to
+its own):
+
+| Route                                    | Ceiling                                         | Measured | Headroom under 60 KB |
+| ---------------------------------------- | ----------------------------------------------- | -------: | -------------------: |
+| `/(app)/train`                           | 59.3 KB after m3/45, the last of its ceilings   |  57.3 KB |               2.7 KB |
+| `/(app)/today`                           | 59.0 KB after m3/46                             |  56.9 KB |               3.1 KB |
+| `/(app)/train/session/[key]` (new)       | 57 KB, raised to 58.0 KB for Move (m3/41, #140) |  56.9 KB |               3.1 KB |
+| `/(app)/train/history/[[version]]` (new) | 57 KB                                           |  54.6 KB |               5.4 KB |
+| `/(app)/profile/security`                | 59.8 KB throughout                              |  55.9 KB |               4.1 KB |
+
+- `/(app)/train` ends M3 2.0 KB under its last ceiling, more than the 0.6 KB margin the plan asked
+  for. `/(app)/profile/security`, the route the plan feared for, has 4.1 KB left: the icon sprite
+  (#90, about 1.8 KB off every route) and the slimmer shared entry ("Measured" under "Budgets
+  (enforced)", 2.0–2.7 KB) took far more off every route than M3's two route nodes added, so the
+  plan's contingency (icons as per-icon exports) is not needed.
+- The tightest budget M3 leaves is CSS, not JS: Train's route CSS is 13.5 KB of 14 KB (0.5 KB
+  left) and Today's 12.5 KB. The heaviest initial JS is M4's `/workout` (59.4 KB).
+- What keeps the screens inside: every word on Train, the session screen and Today is composed
+  in the server load, so no training vocabulary or describe code ships; the plan overview, every
+  edit sheet (through one lazy `EditSheetHost`), the plate sheet and each Today state's panel
+  load on intent or on demand (`PANELS`), each with a failed-chunk Retry; zod and the edit schemas
+  load with their sheet; the catalogue and the generator are server-only (`pnpm budgets` fails
+  on `CATALOGUE_HEADER` in a client chunk). SvelteKit's modulepreload list misses seven small
+  chunks (0.3–1.0 KB) of Today's initial JS, so they are fetched after the chunk that imports
+  them; the budget report lists them and counts them.
+
+**Main-thread budget** (`e2e/perf.e2e.ts`, median of 5 cold loads at 4× CPU, ms; target ≤ 200,
+fails above 250). The program screens are seeded through the fixture route (docs/testing.md) and
+none shifted (worst unexplained layout-shift sum 0.0000 on every load, `MAX_SHIFT` 0.01):
+
+| Screen                      | Median | Loads                   |
+| --------------------------- | -----: | ----------------------- |
+| `/today` (Build card)       |    123 | 99, 104, 123, 143, 150  |
+| `/today` (program)          |    100 | 59, 76, 100, 145, 177   |
+| `/train` (hybrid week)      |     94 | 76, 92, 94, 101, 120    |
+| `/train/session/<strength>` |     94 | 77, 88, 94, 96, 108     |
+| `/train/history`            |     48 | 38, 48, 48, 50, 58      |
+| `/`                         |     35 | 21, 25, 35, 56, 74      |
+| `/today`                    |     88 | 71, 85, 88, 95, 133     |
+| `/progress`                 |     56 | 24, 52, 56, 57, 73      |
+| `/coach`                    |     44 | 35, 43, 44, 44, 45      |
+| `/profile`                  |    143 | 126, 135, 143, 181, 181 |
+| `/profile/security`         |    107 | 84, 85, 107, 122, 131   |
+| `/profile/equipment`        |     94 | 69, 91, 94, 97, 118     |
+| `/profile/schedule`         |    112 | 89, 104, 112, 123, 124  |
+| `/onboarding`               |     66 | 57, 57, 66, 86, 129     |
+
+**Lighthouse** (mobile, simulated throttling, median of 5 runs, Lighthouse 13.6.0, Chrome
+153.0.8010.12; `lighthouse: all thresholds met`). With `--seed` (on in CI) the runner seeds a
+demo profile, audits Today's Build card, then builds through `?/preview` and `?/build` and audits
+Today's program state, Train, the longest session and History:
+
+| Route                  | Perf | A11y | Best practices |     LCP |     FCP |   TBT |   CLS | Speed Index |
+| ---------------------- | ---: | ---: | -------------: | ------: | ------: | ----: | ----: | ----------: |
+| `/today` · Build card  |  100 |  100 |            100 | 1204 ms | 1204 ms |  7 ms | 0.000 |     1204 ms |
+| `/today` · program     |  100 |  100 |            100 | 1204 ms | 1204 ms | 13 ms | 0.000 |     1204 ms |
+| `/train` · program     |  100 |  100 |            100 | 1205 ms | 1205 ms | 39 ms | 0.000 |     1205 ms |
+| `/train/session/[key]` |  100 |  100 |            100 | 1205 ms | 1205 ms | 51 ms | 0.000 |     1205 ms |
+| `/train/history`       |  100 |  100 |            100 | 1055 ms | 1055 ms | 17 ms | 0.000 |     1055 ms |
+| `/train` (no program)  |  100 |  100 |            100 | 1055 ms | 1055 ms | 17 ms | 0.000 |     1055 ms |
+| `/`                    |  100 |  100 |            100 |  907 ms |  907 ms | 10 ms | 0.000 |      907 ms |
+| `/progress`            |  100 |  100 |            100 |  905 ms |  905 ms | 21 ms | 0.000 |      905 ms |
+| `/coach`               |  100 |  100 |            100 |  906 ms |  906 ms |  0 ms | 0.000 |      906 ms |
+| `/profile`             |  100 |  100 |            100 | 1054 ms | 1054 ms |  2 ms | 0.000 |     1054 ms |
+| `/profile/security`    |  100 |  100 |            100 |  904 ms |  904 ms | 11 ms | 0.000 |      904 ms |
+
+The history queries behind these screens are in
+[M3 query plans](#m3-query-plans--measured-2026-11-08) below.
+
+## M3 query plans — measured 2026-11-08
+
+`pnpm db:explain` (docs/development.md, "Query plans") in the same CI run, on merge commit
+`94e3cff`, with **Postgres 18.6** (CI's `postgres:18` service, the major version of the Neon
+production branch) on an AMD EPYC 9V74 × 4 runner. It loads one owner's deterministic two-year
+dataset (`scripts/explain/dataset.ts`: 742 days, the rows below), runs `ANALYZE`, then
+`EXPLAIN (ANALYZE, BUFFERS)` on every builder in `db/queries/{history,programs}.ts` with the
+parameters its service passes. All 38 plans pass the gate (37 of them M3's; `activeWorkouts` is
+M4's), and `scripts/explain/history.explain.ts` runs in 1.8 s. Times are one warm run's execution
+times: they are recorded, never asserted. The report is `test-results/explain.md`, kept by CI as
+the `explain-<run id>` artifact with every plan node by node; to reproduce,
+`pnpm db:setup && pnpm db:explain`.
+
+### Relation sizes
+
+After `ANALYZE`. A relation is large from 5,000 rows or 50 pages (`LARGE_TUPLES`, `LARGE_PAGES` in
+`scripts/explain/plan-check.ts`): there a plan must use each index its builder declares and never
+Seq Scan. `training_audit` is large by pages (wide audit rows), but no builder reads it.
+
+| Relation                |  Rows | Pages | Size  |
+| ----------------------- | ----: | ----: | ----- |
+| exercises               |   191 |    11 | small |
+| other_session_records   |   150 |     3 | small |
+| owners                  |     1 |     1 | small |
+| planned_exercises       |  5868 |    79 | large |
+| planned_run_segments    |   652 |     8 | small |
+| planned_session_details |   247 |     3 | small |
+| planned_sessions        |  1877 |    37 | small |
+| program_blocks          |    24 |     1 | small |
+| program_version_blocks  |   201 |     2 | small |
+| program_version_weeks   |   871 |     7 | small |
+| program_versions        |    67 |     2 | small |
+| program_weeks           |   163 |     3 | small |
+| programming_decisions   |   139 |     5 | small |
+| programs                |     8 |     1 | small |
+| recovery_notes          |   440 |     7 | small |
+| run_record_segments     |  6324 |   118 | large |
+| run_records             |   402 |     6 | small |
+| set_prescriptions       |  5868 |    79 | large |
+| set_records             | 16226 |   422 | large |
+| training_audit          |   552 |   137 | large |
+| workouts                |  1163 |    33 | small |
+
+### Each query
+
+Buffers are the plan's shared blocks, hit/read.
+
+| Query                                       | Declared index                                                              | Scans of large relations                                                                                                                                                                  | Rows | Execution | Buffers hit/read |
+| ------------------------------------------- | --------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---: | --------: | ---------------: |
+| exerciseHistory, first page                 | `set_records_exercise_history_idx`                                          | Index Scan set_records_exercise_history_idx                                                                                                                                               |   20 |  0.039 ms |              7/0 |
+| exerciseHistory, page 6                     | `set_records_exercise_history_idx`                                          | Index Scan set_records_pkey, Index Scan set_records_exercise_history_idx                                                                                                                  |   20 |  0.081 ms |             12/0 |
+| lastPerformances, last 3                    | `set_records_exercise_history_idx`                                          | Bitmap Heap Scan set_records, Bitmap Index Scan set_records_exercise_history_idx, Index Scan set_records_workout_order_idx                                                                |   12 |  0.486 ms |            126/0 |
+| bestE1rms, one exercise                     | `set_records_exercise_e1rm_idx`                                             | Index Scan set_records_exercise_e1rm_idx                                                                                                                                                  |    1 |  0.057 ms |              7/0 |
+| bestE1rms, every exercise                   | `set_records_exercise_e1rm_idx`                                             | Index Scan set_records_exercise_e1rm_idx                                                                                                                                                  |   40 |  1.421 ms |            707/0 |
+| repMaxes, one exercise                      | `set_records_exercise_rep_max_idx`                                          | Index Scan set_records_exercise_rep_max_idx                                                                                                                                               |    3 |  0.178 ms |             53/0 |
+| repMaxes, every exercise                    | `set_records_exercise_rep_max_idx`                                          | Index Scan set_records_exercise_rep_max_idx                                                                                                                                               |  150 |  8.481 ms |           6958/0 |
+| setsInRange, 12 weeks (muscle volume)       | `set_records_owner_performed_idx`                                           | Bitmap Heap Scan set_records, Bitmap Index Scan set_records_owner_performed_idx                                                                                                           | 1800 |  2.307 ms |             77/0 |
+| runsInRange, 12 weeks (mileage)             | `workouts_owner_kind_started_idx`                                           | — (small relations only)                                                                                                                                                                  |   46 |  0.237 ms |             13/0 |
+| activeWorkouts (continue on another device) | `workouts_owner_started_idx`                                                | — (small relations only)                                                                                                                                                                  |    0 |  0.262 ms |             33/0 |
+| sessionsInRange, 4 weeks: planned           | `program_version_weeks_pk`, `planned_sessions_week_day_idx`                 | — (small relations only)                                                                                                                                                                  |   46 |  0.284 ms |             40/0 |
+| sessionsInRange, 4 weeks: logged            | `workouts_owner_started_idx`                                                | — (small relations only)                                                                                                                                                                  |   42 |  0.069 ms |              4/0 |
+| currentProgram                              | `programs_owner_active_uq`, `program_versions_pkey`                         | — (small relations only)                                                                                                                                                                  |    1 |  0.050 ms |              3/0 |
+| currentProgram, version 5                   | `programs_owner_active_uq`, `program_versions_program_number_uq`            | — (small relations only)                                                                                                                                                                  |    1 |  0.040 ms |              3/0 |
+| versionTree: blocks                         | `program_version_blocks_pk`, `program_blocks_pkey`                          | — (small relations only)                                                                                                                                                                  |    3 |  0.060 ms |              3/0 |
+| versionTree: weeks                          | `program_version_weeks_pk`, `program_weeks_pkey`                            | — (small relations only)                                                                                                                                                                  |   13 |  0.081 ms |              6/0 |
+| versionTree: sessions                       | `program_version_weeks_pk`, `planned_sessions_week_day_idx`                 | — (small relations only)                                                                                                                                                                  |  149 |  0.585 ms |             40/0 |
+| versionTree: exercises                      | `planned_sessions_week_day_idx`, `planned_exercises_session_position_uq`    | Bitmap Heap Scan planned_exercises, Bitmap Index Scan planned_exercises_session_position_uq                                                                                               |  468 |  1.572 ms |            147/0 |
+| versionTree: sets                           | `planned_sessions_week_day_idx`, `set_prescriptions_exercise_position_uq`   | Bitmap Heap Scan planned_exercises, Bitmap Index Scan planned_exercises_session_position_uq, Bitmap Heap Scan set_prescriptions, Bitmap Index Scan set_prescriptions_exercise_position_uq |  468 |  1.469 ms |            214/0 |
+| versionTree: segments                       | `planned_sessions_week_day_idx`, `planned_run_segments_session_position_uq` | — (small relations only)                                                                                                                                                                  |   52 |  0.589 ms |             53/0 |
+| versionTree: details                        | `planned_sessions_week_day_idx`, `planned_session_details_pkey`             | — (small relations only)                                                                                                                                                                  |   19 |  0.528 ms |             43/0 |
+| sessionsWithChildren, this week: sessions   | `planned_sessions_week_day_idx`                                             | — (small relations only)                                                                                                                                                                  |   11 |  0.035 ms |              4/0 |
+| sessionsWithChildren, this week: exercises  | `planned_sessions_week_day_idx`, `planned_exercises_session_position_uq`    | Bitmap Heap Scan planned_exercises, Bitmap Index Scan planned_exercises_session_position_uq                                                                                               |   36 |  0.274 ms |             46/0 |
+| sessionsWithChildren, this week: sets       | `planned_sessions_week_day_idx`, `set_prescriptions_exercise_position_uq`   | Bitmap Heap Scan planned_exercises, Bitmap Index Scan planned_exercises_session_position_uq, Bitmap Heap Scan set_prescriptions, Bitmap Index Scan set_prescriptions_exercise_position_uq |   36 |  0.119 ms |             74/0 |
+| sessionsWithChildren, this week: segments   | `planned_sessions_week_day_idx`, `planned_run_segments_session_position_uq` | — (small relations only)                                                                                                                                                                  |    4 |  0.048 ms |             15/0 |
+| sessionsWithChildren, this week: details    | `planned_sessions_week_day_idx`, `planned_session_details_pkey`             | — (small relations only)                                                                                                                                                                  |    1 |  0.048 ms |              6/0 |
+| plannedSessionsInRange, today               | `program_version_weeks_pk`, `planned_sessions_week_day_idx`                 | — (small relations only)                                                                                                                                                                  |    1 |  0.155 ms |             40/0 |
+| upcomingSessions, next 3                    | `program_version_weeks_pk`, `planned_sessions_week_day_idx`                 | — (small relations only)                                                                                                                                                                  |    3 |  0.212 ms |             40/0 |
+| sessionByLineage                            | `planned_sessions_lineage_idx`                                              | — (small relations only)                                                                                                                                                                  |    1 |  0.109 ms |             17/0 |
+| sessionChildren: exercises                  | `planned_sessions_pkey`, `planned_exercises_session_position_uq`            | Bitmap Heap Scan planned_exercises, Bitmap Index Scan planned_exercises_session_position_uq                                                                                               |    6 |  0.148 ms |             28/0 |
+| sessionChildren: sets                       | `planned_sessions_pkey`, `set_prescriptions_exercise_position_uq`           | Bitmap Heap Scan planned_exercises, Bitmap Index Scan planned_exercises_session_position_uq, Bitmap Heap Scan set_prescriptions, Bitmap Index Scan set_prescriptions_exercise_position_uq |    6 |  0.053 ms |             19/0 |
+| sessionChildren: segments                   | `planned_sessions_pkey`, `planned_run_segments_session_position_uq`         | — (small relations only)                                                                                                                                                                  |    0 |  0.028 ms |              5/0 |
+| sessionChildren: details                    | `planned_sessions_pkey`, `planned_session_details_pkey`                     | — (small relations only)                                                                                                                                                                  |    0 |  0.028 ms |              4/0 |
+| completedLineages, this week                | `workouts_planned_lineage_idx`                                              | — (small relations only)                                                                                                                                                                  |   10 |  0.076 ms |              9/0 |
+| versionHistory, newest page                 | `program_versions_program_number_uq`, `programming_decisions_version_idx`   | — (small relations only)                                                                                                                                                                  |   20 |  0.122 ms |              9/0 |
+| versionHistory, older page                  | `program_versions_program_number_uq`, `programming_decisions_version_idx`   | — (small relations only)                                                                                                                                                                  |   15 |  0.097 ms |              9/0 |
+| affectedNodes: sessions                     | `planned_sessions_lineage_idx`                                              | — (small relations only)                                                                                                                                                                  |  360 |  0.279 ms |             33/0 |
+| affectedNodes: exercises                    | `planned_exercises_lineage_idx`                                             | Bitmap Heap Scan planned_exercises, Bitmap Index Scan planned_exercises_lineage_idx                                                                                                       |  600 |  0.828 ms |            475/0 |
+
+**Small tables are read whole by design.** At one owner's scale `exercises` (191 rows, 11 pages),
+`planned_sessions` (1,877 rows, 37 pages), `workouts` (1,163 rows, 33 pages), `run_records` and
+the program tables fit in a few pages, so the planner scans or hashes them rather than probe an
+index, and the Seq Scans of `exercises`, `planned_sessions` and `workouts` in these plans are the
+right plan; the size rule is why the gate accepts them.
+
+### Index fixes in m3/33 (#111): before and after
+
+When `db:explain` first ran (m3/33, measured on 2026-11-06 at commit `0ef33bd` with Postgres 18.6
+on a local 4-vCPU VM) three plans failed the gate, all on `planned_exercises` (5,868 rows, 79
+pages). "Before" is that run with m3/33's query and index commit reverted.
+
+1. **One week's exercises and sets** (`childrenOf` in `queries/programs.ts`, behind
+   `sessionsWithChildren`, `versionTree` and `sessionChildren`). Joined to the picked sessions,
+   the planner hashed them and read `planned_exercises` whole: the random uuids hide that a
+   session's rows sit together. Fixed in the query, with no migration: each child table is probed
+   through its parent's index with the parents' ids gathered once (`= any(array(...))`).
+2. **History's affected exercises** (`affectedNodes`): no index led with `lineage_id`, so every
+   copy of the decisions' exercises was found by a Seq Scan. Migration
+   `0016_history_plan_indexes` adds `planned_exercises_lineage_idx`, probed the same way.
+
+| Query                                      | Before (m3/33's base)                                                                                           | After (m3/33)                                                                                                              |
+| ------------------------------------------ | --------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| sessionsWithChildren, this week: exercises | Seq Scan `planned_exercises` (5,868 rows read for 36), 1.859 ms, 155 buffers                                    | Bitmap Index Scan `planned_exercises_session_position_uq` (36 rows), 0.223 ms, 46 buffers                                  |
+| sessionsWithChildren, this week: sets      | Seq Scan `planned_exercises`, then 36 probes of `set_prescriptions_exercise_position_uq`, 1.510 ms, 191 buffers | Bitmap Index Scans `planned_exercises_session_position_uq`, `set_prescriptions_exercise_position_uq`, 0.152 ms, 74 buffers |
+| affectedNodes: exercises                   | Seq Scan `planned_exercises` hashed against 48 lineages (5,868 rows read for 96), 2.399 ms, 414 buffers         | Bitmap Index Scan `planned_exercises_lineage_idx` (96 rows), 0.908 ms, 475 buffers                                         |
+
+`affectedNodes: exercises` reads more buffers after (475, of which 372 are 96 probes of the small
+`program_version_weeks`) but ran 2.6 times faster, and it reads only the named lineages' copies
+rather than the whole table. PR #111 has both plans of each query node by node.
 
 ## Budgets (enforced)
 
@@ -175,14 +393,13 @@ Before and after the slimmer shared entry (2026-11-07). Before is main at that d
 The JS every route loads (the app entry, the root layout and what they import) went from
 47.7 KB to 44.5 KB. Of what is left, the Svelte runtime (18.9 KB), the SvelteKit client
 (16.9 KB) and its router (entry, route table and routing, 4.3 KB) are framework. The app's own
-share is error reporting (0.7 KB, needed before anything else runs), the toasts (`Toaster`)
-and the record of screens shown for RUM. The toasts stay in the initial JS so that none waits on
-the network: loaded on demand (0.8 KB), a toast shown offline had no code, and a module fetch
-that fails stays failed for the page's life. Keeping a plain-text stand-in and retrying online
-cost every route 0.1 KB more than the toasts themselves. They slide with CSS animations, not
-`svelte/transition`: its runtime sat in the Svelte chunk of every route for this one component
-(1.1 KB). These moved out of the initial JS:
+share is error reporting (0.7 KB, needed before anything else runs), the toast queue and live
+region, and the record of screens shown for RUM. These moved out of the initial JS:
 
+- **The toasts** (`ToastList`, loaded on idle or at the first toast). They slide with CSS
+  animations, not `svelte/transition`: its runtime sat in the Svelte chunk of every route for
+  this one component (1.1 KB). The empty live region stays in the root layout. Each toast's
+  time on screen starts when it appears, so one shown before `ToastList` arrives is not cut short.
 - **RUM** (`vitals.ts`), now imported when it starts on idle. The root layout keeps only
   `visits.ts`, which records each screen for attribution.
 - **Preferences** (`preferences.svelte.ts`). The theme is applied by `src/app.html` before
