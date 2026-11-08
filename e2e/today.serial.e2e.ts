@@ -386,12 +386,12 @@ test('a setup read that fails is a designed error with Retry inside the shell, a
 test.describe('in a desktop window', () => {
 	test.use(DESKTOP);
 
-	test('the setup card sits in the readable column, and its Continue has a hover state', async ({
+	test('the setup card sits in the wide column, and its Continue has a hover state', async ({
 		page
 	}, testInfo) => {
 		await gotoHydrated(page, '/today');
 		await expect(card(page)).toBeVisible();
-		await expectMainCentred(page, await tokenPx(page, '--content-readable'));
+		await expectMainCentred(page, await tokenPx(page, '--content-wide'));
 		await expectNoSideScroll(page);
 		const main = (await page.locator('main#main').boundingBox())!;
 		const box = (await card(page).boundingBox())!;
@@ -404,14 +404,14 @@ test.describe('in a desktop window', () => {
 		await captureScreen(page, testInfo, 'today-setup-desktop');
 	});
 
-	test('once set up, goals and schedule sit in the readable column, and Edit has a hover state', async ({
+	test('once set up, goals and schedule sit in the wide column, and Edit has a hover state', async ({
 		page,
 		request
 	}, testInfo) => {
 		await setUp(request);
 		await gotoHydrated(page, '/today');
 		await expect(goals(page)).toHaveCount(3);
-		await expectMainCentred(page, await tokenPx(page, '--content-readable'));
+		await expectMainCentred(page, await tokenPx(page, '--content-wide'));
 		await expectNoSideScroll(page);
 		const main = (await page.locator('main#main').boundingBox())!;
 		for (const id of ['today-goals', 'today-schedule']) {

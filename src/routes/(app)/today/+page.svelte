@@ -135,7 +135,9 @@
 	<PanelLoader load={PANELS.preview} height={PREVIEW_HEIGHT} props={{ onclose: closeBuild }} />
 {/if}
 
-<div class="stack" hidden={building}>
+<!-- Wide from 1024 px (docs/design-system.md, Responsive layout → Screens): the state's panel in
+     the main column, This week, the tools and the summary in the side column. -->
+<div class="stack" class:active data-layout="wide" hidden={building}>
 	<!-- The state's panel is code-split (panels/index.ts): the server sends it as markup, kept as
 	     sent until its code arrives, and a client navigation shows its skeleton until then. -->
 	{#if setup && !setup.complete}
@@ -181,31 +183,34 @@
 		</Card>
 	{/if}
 
-	<Section title="This week">
-		<div class="stats">
-			{#each stats as stat (stat.label)}
-				<Stat label={stat.label} caption={stat.caption} />
-			{/each}
-		</div>
-	</Section>
+	<!-- The side column from 1024 px; below it, its items are the stack's own (display: contents). -->
+	<div class="side" data-testid="today-side">
+		<Section title="This week">
+			<div class="stats">
+				{#each stats as stat (stat.label)}
+					<Stat label={stat.label} caption={stat.caption} />
+				{/each}
+			</div>
+		</Section>
 
-	<ListRow
-		href={resolve('/(app)/train?tool=plates')}
-		icon="plate"
-		tone="strength"
-		title="Plate calculator"
-		subtitle="Load the bar in kg or lb"
-	/>
-
-	<!-- Once set up: the goals by rank and the shape of the week. -->
-	{#if setup?.complete}
-		<PanelLoader
-			load={PANELS.summary}
-			height={SUMMARY_HEIGHT}
-			props={{ setup, showWeek: !active }}
-			served={data.served.summary}
+		<ListRow
+			href={resolve('/(app)/train?tool=plates')}
+			icon="plate"
+			tone="strength"
+			title="Plate calculator"
+			subtitle="Load the bar in kg or lb"
 		/>
-	{/if}
+
+		<!-- Once set up: the goals by rank and the shape of the week. -->
+		{#if setup?.complete}
+			<PanelLoader
+				load={PANELS.summary}
+				height={SUMMARY_HEIGHT}
+				props={{ setup, showWeek: !active }}
+				served={data.served.summary}
+			/>
+		{/if}
+	</div>
 </div>
 
 <style>
@@ -272,6 +277,10 @@
 		display: none;
 	}
 
+	.side {
+		display: contents;
+	}
+
 	.setup-room {
 		display: grid;
 	}
@@ -285,5 +294,71 @@
 		display: grid;
 		grid-template-columns: repeat(3, minmax(0, 1fr));
 		gap: var(--space-2);
+	}
+
+	/*
+	 * Desktop (wide): the week across the top, then two columns. The state's panel (the setup card,
+	 * the Build card, the plan, or their skeleton or Retry) takes the main column, at most the
+	 * readable width, as Train's sessions do; This week, the tools and the summary take the side
+	 * column, at least --content-list. DOM order is reading order: main column, then side column.
+	 *
+	 * With a program, the plan's week strip spans both columns in the first row (Program.svelte
+	 * lays the plan out on these tracks with subgrid) and the side column starts under it. The row
+	 * holds STRIP_ROOM from the start, so the side column sits where it will stay while the plan's
+	 * code or data loads. A plan with no strip (its first block complete, or a failed read) gives
+	 * the side column the top row back.
+	 */
+	@media (width >= 64rem) {
+		.stack {
+			/* STRIP_ROOM: WeekStrip's tile from 56rem is 6.03rem + 6 px; a little more holds any zoom. */
+			--today-strip-room: 6.5rem;
+			grid-template-columns: minmax(0, var(--content-readable)) minmax(var(--content-list), 1fr);
+			column-gap: var(--space-8);
+			align-items: start;
+		}
+
+		.side {
+			display: grid;
+			gap: var(--space-6);
+			grid-column: 2;
+			grid-row: 1;
+		}
+
+		.stack.active {
+			grid-template-rows: minmax(var(--today-strip-room), auto) repeat(3, auto) 1fr;
+		}
+
+		.stack.active > .side {
+			grid-row: 2 / -1;
+		}
+
+		.stack.active:has(
+				:global([data-testid='today-block-complete'], [data-testid='today-plan-error'])
+			)
+			> .side {
+			grid-row: 1 / -1;
+		}
+
+		/* The plan's code loading, or its Retry: in the main column, from the top. */
+		.stack.active > :global([data-testid='today-panel']) {
+			grid-column: 1;
+			grid-row: 1 / -1;
+		}
+
+		/* Build my program's code loading, or its Retry: in the main column, where the preview's
+		   week 1 will be (BuildPreview.svelte), not stretched across both. */
+		:global(#main > [data-testid='today-panel']) {
+			max-width: var(--content-readable);
+		}
+
+		/* The week's days as outlined tiles across the content, so the week reads at a glance. */
+		.week {
+			gap: var(--space-3);
+		}
+
+		.day {
+			padding-block: var(--space-3);
+			border-color: var(--color-border);
+		}
 	}
 </style>

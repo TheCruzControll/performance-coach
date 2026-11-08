@@ -399,6 +399,12 @@ later-pass screen).
   outlined from 56 rem), `SessionCard` (badges at the end from 35 rem) and `ProgramHeader`
   (actions beside the titles from 48 rem) adapt with container queries above the phone column,
   so the iPhone is unchanged. CSS only: one selected day, as on a phone.
+- **Today** (`/today`): wide. From 1024 px the week runs across the top (M2's week, or the plan's
+  `WeekStrip`, a subgrid row that holds its room while the plan loads); the state's panel (setup,
+  Build, the plan, or its skeleton or Retry) takes a main column at most `--content-readable`
+  wide, beside This week, the tools and the goals (at least `--content-list`). Build my program
+  spans both: week 1 in the main column with Start week 1 as its column chrome, the block
+  timeline beside it. A failed read and offline keep the readable column. CSS only.
 
 ### Verification
 
