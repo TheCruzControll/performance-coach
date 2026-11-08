@@ -4,7 +4,9 @@
   status (small, quiet beside logging, once it has loaded on idle), the workout's title and the
   stopwatch. Two rows on a phone (Minimise and the status; the title and the stopwatch), one row
   from 1024 px,
-  where it spans the page over the columns. It applies --safe-top itself: no shell does here.
+  where it spans the page over the columns. At a large text size the status takes a row of its own
+  under Minimise rather than overflow; its width is the same in every state, so which line it
+  takes never depends on what it says. It applies --safe-top itself: no shell does here.
   With no title yet (restoring) the title's line is reserved, so nothing moves when it arrives.
 -->
 <script lang="ts">
@@ -69,6 +71,7 @@
 		grid-area: minimise;
 		display: flex;
 		align-items: center;
+		flex-wrap: wrap;
 		justify-content: space-between;
 		gap: var(--space-3);
 		min-width: 0;

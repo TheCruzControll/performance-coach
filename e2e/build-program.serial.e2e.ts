@@ -92,6 +92,8 @@ async function hybridProfile(request: APIRequestContext) {
 
 const card = (page: Page) => page.getByTestId('today-build');
 const cta = (page: Page) => page.getByTestId('today-build-cta');
+const liveCta = (page: Page) =>
+	page.locator('[data-testid="today-build-cta"]:not([data-served] *)');
 const preview = (page: Page) => page.getByTestId('build-preview');
 const ready = (page: Page) => page.getByTestId('build-preview-ready');
 const start = (page: Page) => page.getByTestId('build-start');
@@ -189,7 +191,7 @@ test('Build previews week 1 with its rationale, and Start week 1 stores version 
 
 	// Today now shows the program state.
 	await gotoHydrated(page, '/today');
-	await expect(page.getByTestId('today-session')).toBeVisible();
+	await expect(page.getByTestId('today-plan')).toBeVisible();
 	await expect(card(page)).toHaveCount(0);
 	expect(errors).toEqual([]);
 });
@@ -384,7 +386,10 @@ test.describe('with the service worker blocked, so page.route sees every request
 		// the preview takes Today's place, so only one of the two is ever visible.
 		const shown = ready(page).or(card(page)).filter({ visible: true });
 		await expect(shown).toBeVisible({ timeout: 15_000 });
-		if (await card(page).isVisible()) await cta(page).click();
+		// The reloaded card's served copy is inert, so click the live one.
+		if (await card(page).isVisible()) {
+			await liveCta(page).click();
+		}
 		await expect(ready(page)).toBeVisible({ timeout: 15_000 });
 		await expect(card(page)).toBeHidden();
 	});
