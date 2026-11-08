@@ -6,7 +6,7 @@
  * - A straight exercise stays current until its planned sets are done; then it is done, and Up
  *   next names what follows. An extra set never moves on by itself.
  * - Consecutive exercises with one superset number are a superset, labelled A1, A2, B1… in
- *   workout order. Its members alternate, A1 → A2 → A1, with no rest inside a round; the round's
+ *   workout order (groups.ts). Its members alternate, A1 → A2 → A1, with no rest inside a round; the round's
  *   rest follows its last member: the rest that member prescribes, else (none, or 0) the longest
  *   in the round. A member with more sets than its partners continues as straight sets, with
  *   their own rest.
@@ -14,10 +14,11 @@
  *   stored, so going to an exercise by hand never breaks the alternation that follows.
  * - A rest of 0 starts none, and none starts once nothing is left to do.
  */
+import { runsOf } from './groups.ts';
 import { slotAt } from './selectors.ts';
 import { DEFAULT_REST_SECONDS, restFor } from './timers.ts';
 import type { RestDefaults } from './timers.ts';
-import type { KitExercise, KitExerciseMeta, SlotView, WorkoutView } from './types.ts';
+import type { KitExerciseMeta, SlotView, WorkoutView } from './types.ts';
 
 /**
  * How a superset runs, an owner decision (the M4 plan's open question 22): 'alternate' moves
@@ -27,14 +28,6 @@ import type { KitExercise, KitExerciseMeta, SlotView, WorkoutView } from './type
  */
 export type SupersetFlow = 'alternate' | 'straight';
 export const SUPERSET_FLOW: SupersetFlow = 'alternate';
-
-/** One straight exercise, or a superset. */
-export interface ExerciseGroup {
-	/** 'A', 'B'… 'Z', 'AA' for a superset, in workout order; null for a straight exercise. */
-	letter: string | null;
-	/** Its exercises in order, labelled 'A1', 'A2'… in a superset; null when straight. */
-	members: { position: number; label: string | null }[];
-}
 
 /** A set to do: its slot's position and its 1-based index there. */
 export interface SetStep {
@@ -56,37 +49,6 @@ export interface FlowOptions {
 	defaults?: Partial<RestDefaults>;
 	/** SUPERSET_FLOW unless given. */
 	supersets?: SupersetFlow;
-}
-
-// ---- Groups ---------------------------------------------------------------------------------
-
-type Grouped = Pick<KitExercise, 'position' | 'superset'>;
-
-/** 0 → 'A', 25 → 'Z', 26 → 'AA'. */
-const letterOf = (n: number): string =>
-	(n < 26 ? '' : letterOf(Math.floor(n / 26) - 1)) + String.fromCharCode(65 + (n % 26));
-
-/** Runs of consecutive exercises with one superset number, by position; a run of one is straight. */
-export function runsOf<T extends Grouped>(items: readonly T[]): T[][] {
-	const runs: T[][] = [];
-	for (const item of [...items].sort((a, b) => a.position - b.position)) {
-		const run = runs.at(-1);
-		if (run && item.superset !== null && item.superset === run[0]!.superset) run.push(item);
-		else runs.push([item]);
-	}
-	return runs;
-}
-
-/** A strength kit's straight exercises and supersets, in order, with their labels. */
-export function groups(kit: { exercises: readonly Grouped[] }): ExerciseGroup[] {
-	let supersets = 0;
-	return runsOf(kit.exercises).map((run) => {
-		const letter = run.length > 1 ? letterOf(supersets++) : null;
-		return {
-			letter,
-			members: run.map(({ position }, i) => ({ position, label: letter && `${letter}${i + 1}` }))
-		};
-	});
 }
 
 // ---- Sets done and to do --------------------------------------------------------------------

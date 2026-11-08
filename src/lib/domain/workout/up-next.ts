@@ -4,7 +4,8 @@
  * navigation, after the first render, and stays out of /workout's initial JavaScript.
  */
 import { currentExercise } from './selectors.ts';
-import { firstToDo, filledOf, groups, runsOf, SUPERSET_FLOW, toDo, turn } from './flow.ts';
+import { firstToDo, filledOf, SUPERSET_FLOW, toDo, turn } from './flow.ts';
+import { groups, runsOf } from './groups.ts';
 import type { Filled, FlowOptions } from './flow.ts';
 import type { KitSet, SlotView, WorkoutView } from './types.ts';
 

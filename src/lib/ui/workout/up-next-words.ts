@@ -5,7 +5,8 @@
  * - Inside a superset round the partner's one set: '45 s', '6–10 reps at RPE 8'.
  */
 import { formatDuration } from '#lib/domain/units.ts';
-import { groups, toDo } from '#lib/domain/workout/flow.ts';
+import { toDo } from '#lib/domain/workout/flow.ts';
+import { groups } from '#lib/domain/workout/groups.ts';
 import { upNext } from '#lib/domain/workout/up-next.ts';
 import { currentExercise } from '#lib/domain/workout/selectors.ts';
 import type { KitSet, SlotView, WorkoutView } from '#lib/domain/workout/index.ts';

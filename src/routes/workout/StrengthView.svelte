@@ -23,7 +23,7 @@
 		ActiveWorkout,
 		ChunkLoad
 	} from '#lib/client/workout/active.svelte.ts';
-	import { groups } from '#lib/domain/workout/flow.ts';
+	import { groups } from '#lib/domain/workout/groups.ts';
 	import type { CanonicalSet } from '#lib/domain/workout/protocol.ts';
 	import { currentExercise, plannedVsLogged, previousFor } from '#lib/domain/workout/selectors.ts';
 	import ExerciseCard from '#lib/ui/workout/ExerciseCard.svelte';

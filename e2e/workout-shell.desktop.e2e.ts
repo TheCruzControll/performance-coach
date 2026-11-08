@@ -74,18 +74,21 @@ test.describe('the workout screen on a desktop', () => {
 		await openWorkout(page);
 		await page.locator('body').focus();
 		const order: string[] = [];
-		for (let i = 0; i < 3; i++) {
+		for (let i = 0; i < 4; i++) {
 			await page.keyboard.press('Tab');
-			order.push(
-				await page.evaluate(() =>
-					(document.activeElement?.textContent ?? '').replace(/\s+/g, ' ').trim()
-				)
-			);
+			const stop = await page.evaluate(() => {
+				const el = document.activeElement;
+				if (el?.getAttribute('data-testid') === 'sync-pill') return 'sync-pill';
+				return (el?.textContent ?? '').replace(/\s+/g, ' ').trim();
+			});
+			order.push(stop);
 		}
 		expect(order[0]).toBe('Skip to content');
 		expect(order[1]).toBe('Minimise');
+		// The header's sync pill is a stop only while it has something to show (Saving…, say).
+		const rest = order.slice(2).filter((stop) => stop !== 'sync-pill');
 		// The side list is one stop, at the current exercise, before the main column.
-		expect(order[2]).toBe('1 Back squat 0/4 sets');
+		expect(rest[0]).toBe('1 Back squat 0/4 sets');
 		await expect(page.getByTestId('workout-side').locator('[tabindex="0"]')).toHaveCount(1);
 	});
 });
