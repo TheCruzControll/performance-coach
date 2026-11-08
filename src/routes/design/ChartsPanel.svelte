@@ -1,12 +1,15 @@
 <!--
   @component
   /design → Charts: ChartFrame on the fixture chart, whose body is a chunk of its own loaded after
-  hydration as every chart body is, and a frame with nothing to draw yet showing its availability.
+  hydration as every chart body is, and a frame with nothing to draw yet showing its availability;
+  then the line chart (CHART_BODIES.line) on each of its fixtures and an empty one.
   Loaded only in the browser, like the component groups, so none of its CSS blocks /design.
 -->
 <script lang="ts">
+	import { CHART_BODIES } from '#lib/ui/charts/bodies.ts';
 	import ChartFrame from '#lib/ui/charts/ChartFrame.svelte';
 	import { CHART_FIXTURE, FIXTURE_FRAME, UNAVAILABLE_FRAME } from './chart-fixture.ts';
+	import { EMPTY_LINE, LINE_FIXTURES, lineFrame } from './line-fixture.ts';
 
 	const body = () => import('./ChartsFixtureBody.svelte');
 </script>
@@ -21,6 +24,26 @@
 	<ChartFrame {...UNAVAILABLE_FRAME} {body} props={{ data: CHART_FIXTURE }} height="8rem">
 		{#snippet availability()}
 			<p class="availability">Shows once you log a run: distance a week, against your plan.</p>
+		{/snippet}
+	</ChartFrame>
+	{#each LINE_FIXTURES as fixture (fixture.id)}
+		<ChartFrame
+			{...lineFrame(fixture)}
+			body={CHART_BODIES.line}
+			props={{ data: fixture.data }}
+			height={fixture.height}
+			data-testid={fixture.id}
+		/>
+	{/each}
+	<ChartFrame
+		{...EMPTY_LINE}
+		body={CHART_BODIES.line}
+		props={{ data: LINE_FIXTURES[0]!.data }}
+		height="8rem"
+		data-testid="line-empty"
+	>
+		{#snippet availability()}
+			<p class="availability">Shows once you log a bench press: your estimated best a week.</p>
 		{/snippet}
 	</ChartFrame>
 </div>
