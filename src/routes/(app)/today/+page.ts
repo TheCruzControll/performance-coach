@@ -22,17 +22,23 @@ let hydrating = browser && location.pathname === resolve('/(app)/today');
 
 /**
  * The state's panels: the setup card until onboarding is complete; then the Build card over the
- * summary while there is no program, else the summary alone.
+ * summary while there is no program, today's plan over it once there is one, else (the program
+ * read failed) the summary alone.
  */
 function statePanels({ setup, program }: Parameters<PageLoad>[0]['data']): PanelName[] {
 	if (!setup) return [];
 	if (!setup.complete) return ['setup'];
-	return program === 'none' ? ['build', 'summary'] : ['summary'];
+	if (program === 'none') return ['build', 'summary'];
+	return program === 'active' ? ['program', 'summary'] : ['summary'];
 }
 
 /**
  * Starts the state's panel imports, in parallel with the page's own code. A failed import never
  * fails the screen: the panel shows its Retry notice, the rest works.
+ *
+ * Today's plan is streamed (+page.server.ts). A client navigation passes it on as a promise, so
+ * Today shows at once with the plan's skeleton; the server's render waits for it, so the plan is
+ * in the markup it sends, and the hydrating load takes it as already settled.
  */
 export const load: PageLoad = async ({ data }) => {
 	const kept = hydrating;
@@ -41,15 +47,18 @@ export const load: PageLoad = async ({ data }) => {
 	const imported = Promise.all(panels.map((name) => preloadPanel(PANELS[name])));
 	const served: Partial<Record<PanelName, string>> = {};
 	if (browser) {
-		if (kept) for (const name of panels) served[name] = SERVED_IN_PLACE;
-		return { ...data, served };
+		if (!kept) return { ...data, served };
+		for (const name of panels) served[name] = SERVED_IN_PLACE;
+		return { ...data, plan: await data.plan, served };
 	}
+	const plan = await data.plan;
 	await imported;
 	for (const name of panels) {
 		const Panel = settledPanel(PANELS[name]);
 		if (Panel && !(Panel instanceof Error)) {
-			served[name] = await servedPanel(Panel, { setup: data.setup });
+			const props = { setup: data.setup, plan, showWeek: data.program !== 'active' };
+			served[name] = await servedPanel(Panel, props);
 		}
 	}
-	return { ...data, served };
+	return { ...data, plan, served };
 };

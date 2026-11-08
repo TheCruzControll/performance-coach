@@ -155,6 +155,17 @@ describe('problemText', () => {
 		);
 	});
 
+	it('words a refused session’s duration, and a metric’s error at that metric', () => {
+		const refused = { reason: 'refused', message: 'A value is not valid' } as const;
+		const errors = {
+			'payload.durationMinutes': 'Between 1 and 600 minutes',
+			'payload.metrics.1.key': 'Kicks is not one of this session’s metrics'
+		};
+		expect(problemText({ ...refused, errors }, 0)).toBe(
+			'Duration: Between 1 and 600 minutes · Metric: Kicks is not one of this session’s metrics'
+		);
+	});
+
 	it('says how long a stuck change kept failing, and its last error', () => {
 		const stuck = { reason: 'stuck', errors: {}, message: 'The server answered 500' } as const;
 		expect(problemText(stuck, null)).toBe("Couldn't sync for a day: the server answered 500");
