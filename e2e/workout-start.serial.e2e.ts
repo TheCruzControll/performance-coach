@@ -13,8 +13,15 @@ import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page, type Route } from '@playwright/test';
 import { DB_NAME, STORES } from '../src/lib/client/workout/names';
 import type { StartKit } from '../src/lib/domain/workout';
-import { BELOW_DESKTOP_WIDTH, boxOf, DESKTOP, DESKTOP_WIDTHS, expectNoSideScroll } from './desktop';
-import { layoutWidth, tokenPx } from './desktop';
+import {
+	BELOW_DESKTOP_WIDTH,
+	boxOf,
+	DESKTOP,
+	DESKTOP_WIDTHS,
+	expectNoSideScroll,
+	layoutWidth,
+	tokenPx
+} from './desktop';
 import { PROGRAM_TZ, seedProgram, type SeededProgram, type SeededSession } from './program-support';
 import { captureScreen, query, SAME_ORIGIN, signedOut } from './support';
 import { readOutbox } from './workout-support';
@@ -451,10 +458,10 @@ test.describe('on a desktop window', () => {
 		await page.goto(startUrl(run()));
 		const dialog = page.getByRole('dialog', { name: 'Lower body & pull is in progress' });
 		await expect(dialog).toBeVisible();
-		// A dialog centred in the window, not a bottom sheet.
+		// A dialog centred in the layout area (the window less the scrollbar gutter), not a bottom sheet.
 		const box = await boxOf(sheet(page).locator('.sheet'));
 		const window = page.viewportSize()!;
-		expect(Math.abs(box.x + box.width / 2 - window.width / 2)).toBeLessThanOrEqual(2);
+		expect(Math.abs(box.x + box.width / 2 - (await layoutWidth(page)) / 2)).toBeLessThanOrEqual(2);
 		expect(box.y + box.height).toBeLessThan(window.height);
 
 		const resume = page.getByTestId('start-resume');
