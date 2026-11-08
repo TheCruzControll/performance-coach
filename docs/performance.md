@@ -107,11 +107,11 @@ shared component costs every route, Security included.
 
 ## M3 screens — measured 2026-11-08
 
-Measured by CI on the M3 head: run
+M3 baseline, measured at `94e3cff`: CI run
 [42443924197](https://github.com/TheCruzControll/performance-coach/actions/runs/42443924197)
-built PR #231's merge commit `94e3cff` (main `1927b89` with m3/46 and m3/47), whose application
-code, build configuration, budget script, perf spec and Lighthouse runner are byte for byte those
-of the M3 head (m3/49 adds only e2e code). GitHub's 4-vCPU Linux runners ran
+built PR #231's merge commit `94e3cff` (main `1927b89` with m3/46 and m3/47). These numbers
+describe that commit only; later changes to the build configuration, budget script and app code
+are not covered by them. GitHub's 4-vCPU Linux runners ran
 `pnpm build:node && pnpm budgets`, the `perf` project and the Lighthouse command, each as its
 section below describes.
 

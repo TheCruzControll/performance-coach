@@ -743,8 +743,8 @@ The Train week, the plan overview, session detail and the edit sheets.
     specs use the `'today'` and `'today-rest'` fixtures on `this_week`; the block-complete states
     use `'one-week'` on `last_week`. Use the dates `seedProgram` returns: never compute a date in
     the browser or the spec.
-  - Reset: `resetPrograms()` truncates `RESET_ROOTS` (`programs, workouts, recovery_notes,
-training_audit, coach_proposals, weekly_reviews, cycle_reviews`) with CASCADE and deletes the
+  - Reset: `resetPrograms()` truncates `RESET_ROOTS` (the list in `e2e/program-support.ts` is
+    the source of truth) with CASCADE and deletes the
     owner's custom exercises; the catalogue and every M1 and M2 row stay. TRUNCATE stays in e2e code
     (`scripts/history-guards.test.ts` keeps it out of `src/`). `resetTrainingProfile()` also calls
     it, so every serial spec starts with no program.
