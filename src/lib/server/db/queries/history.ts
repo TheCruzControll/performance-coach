@@ -14,7 +14,7 @@ import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lt, not, or, sql }
 import { alias, type AnyPgColumn } from 'drizzle-orm/pg-core';
 import type { IsoDate } from '../../../domain/calendar';
 import { PR_MAX_REPS } from '../../../domain/training/metrics';
-import { exercises, runRecords, setRecords, workouts } from '../schema';
+import { exercises, otherSessionRecords, runRecords, setRecords, workouts } from '../schema';
 import type { Executor } from '../types';
 import { plannedSessionsInRange } from './programs';
 
@@ -34,6 +34,10 @@ export const HISTORY_INDEXES = {
 	runsInRange: 'workouts_owner_kind_started_idx',
 	workoutsInRange: 'workouts_owner_started_idx',
 	activeWorkouts: 'workouts_owner_started_idx',
+	completedWorkoutsPage: {
+		workouts: 'workouts_owner_started_idx',
+		sets: 'set_records_workout_order_idx'
+	},
 	sessionsInRange: {
 		planned: 'planned_sessions_week_day_idx',
 		logged: 'workouts_owner_started_idx'
@@ -46,7 +50,10 @@ export interface InstantRange {
 	end: Date;
 }
 
-/** A set as history reads it: the weight as entered, with its exact kg and its stored e1RM. */
+/**
+ * A set as history reads it: the weight as entered, with its exact kg, its assistance and its
+ * stored e1RM.
+ */
 const setColumns = {
 	id: setRecords.id,
 	workoutId: setRecords.workoutId,
@@ -56,6 +63,7 @@ const setColumns = {
 	weight: setRecords.weight,
 	unit: setRecords.unit,
 	weightKg: setRecords.weightKg,
+	assistance: setRecords.assistance,
 	reps: setRecords.reps,
 	missedReps: setRecords.missedReps,
 	seconds: setRecords.seconds,
@@ -188,8 +196,8 @@ const lastWorkout = alias(workouts, 'last_workout');
 
 /**
  * Each of these exercises' previous session (a start kit's 'last time'): the sets of the owner's
- * last completed, undeleted workout with a set of it performed before `before`, in workout order,
- * with their assistance. Skipped and deleted sets are left out; warm-ups stay, flagged. A LATERAL
+ * last completed, undeleted workout with a set of it performed before `before`, in workout order.
+ * Skipped and deleted sets are left out; warm-ups stay, flagged. A LATERAL
  * from the exercises table probes the history index once per id, newest first, and stops at the
  * first set of a completed workout, so an in-progress or abandoned one is never 'last time'.
  * Exercises never done drop out.
@@ -222,7 +230,7 @@ export function lastSessionSetsFor(
 		.select({
 			exerciseId: exercises.id,
 			startedAt: last.startedAt,
-			set: { ...setColumns, assistance: setRecords.assistance }
+			set: setColumns
 		})
 		.from(exercises)
 		.innerJoinLateral(last, sql`true`)
@@ -446,6 +454,84 @@ export function activeWorkouts(db: Executor, ownerId: string, limit: number) {
 		.limit(limit);
 }
 
+const pageCursor = alias(workouts, 'page_cursor');
+const counted = alias(setRecords, 'counted');
+
+/**
+ * The owner's completed, undeleted workouts of every kind, newest first, `limit` at a time, keyed
+ * by client id, each with its key numbers: a run's totals, an other session's kind and minutes,
+ * and a strength workout's working sets and the slots they were done in (warm-ups, skipped and
+ * deleted sets left out). Keyset pagination on (started_at, id), down the owner's started_at
+ * index: `before` is the client id of the previous page's last workout, whose own row gives the
+ * exact place to continue from, so workouts started in the same instant are neither repeated nor
+ * skipped. A cursor that is not one of the owner's workouts gives an empty page. The counts probe
+ * each workout's sets through their workout-order index.
+ */
+export function completedWorkoutsPage(
+	db: Executor,
+	ownerId: string,
+	{ before, limit }: { before?: string; limit: number }
+) {
+	const cursorOf = (column: AnyPgColumn) =>
+		db
+			.select({ value: column })
+			.from(pageCursor)
+			.where(and(eq(pageCursor.clientId, before!), eq(pageCursor.ownerId, ownerId)));
+	const after =
+		before === undefined
+			? undefined
+			: sql`(${workouts.startedAt}, ${workouts.id}) < ((${cursorOf(pageCursor.startedAt)}), (${cursorOf(pageCursor.id)}))`;
+	const workingSet = sql`not ${counted.isWarmup} and not ${counted.isSkipped}`;
+	const sets = db
+		.select({
+			count: sql<number>`(count(*) filter (where ${workingSet}))::int`.as('set_count'),
+			slots:
+				sql<number>`(count(distinct ${counted.exercisePosition}) filter (where ${workingSet}))::int`.as(
+					'slot_count'
+				)
+		})
+		.from(counted)
+		.where(and(eq(counted.workoutId, workouts.id), isNull(counted.deletedAt)))
+		.as('sets');
+	return db
+		.select({
+			id: workouts.clientId,
+			kind: workouts.kind,
+			discipline: workouts.discipline,
+			sessionType: workouts.sessionType,
+			title: workouts.title,
+			plannedLineage: workouts.plannedLineageId,
+			startedAt: workouts.startedAt,
+			finishedAt: workouts.finishedAt,
+			durationSeconds: workouts.durationSeconds,
+			sessionRpe: workouts.sessionRpe,
+			run: {
+				distanceMetres: runRecords.distanceMetres,
+				durationSeconds: runRecords.durationSeconds,
+				paceSecondsPerKm: runRecords.paceSecondsPerKm
+			},
+			other: {
+				kind: otherSessionRecords.kind,
+				durationMinutes: otherSessionRecords.durationMinutes
+			},
+			sets: { count: sets.count, slots: sets.slots }
+		})
+		.from(workouts)
+		.leftJoin(runRecords, eq(runRecords.workoutId, workouts.id))
+		.leftJoin(otherSessionRecords, eq(otherSessionRecords.workoutId, workouts.id))
+		.innerJoinLateral(sets, sql`true`)
+		.where(
+			and(
+				eq(workouts.ownerId, ownerId),
+				isNull(workouts.deletedAt),
+				eq(workouts.status, 'completed'),
+				after
+			)
+		)
+		.orderBy(desc(workouts.startedAt), desc(workouts.id))
+		.limit(limit);
+}
+
 /**
  * A date range's sessions, planned and logged: the version's sessions dated `from` to `to`
  * (plannedSessionsInRange, composed and never redefined) and the owner's workouts started within
@@ -472,3 +558,4 @@ export type RecordRow = Awaited<ReturnType<typeof bestE1rms>>[number];
 export type LastSessionSetRow = Awaited<ReturnType<typeof lastSessionSetsFor>>[number];
 export type WorkoutRow = Awaited<ReturnType<typeof workoutsInRange>>[number];
 export type ActiveWorkoutRow = Awaited<ReturnType<typeof activeWorkouts>>[number];
+export type CompletedWorkoutRow = Awaited<ReturnType<typeof completedWorkoutsPage>>[number];

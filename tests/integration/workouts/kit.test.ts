@@ -332,9 +332,10 @@ describe('a strength kit', () => {
 				);
 			});
 		}
-		// The program session and its children, the profile, the exercises, then one batched
-		// history query each for last time, best e1RMs, rep maxes and most reps.
-		expect(counts).toEqual([12, 12]);
+		// The program session and its children, the profile, the owner's programming input (18,
+		// kit-alternatives.test.ts), the exercises, then one batched history query each for last
+		// time, best e1RMs, rep maxes and most reps.
+		expect(counts).toEqual([30, 30]);
 	});
 });
 
@@ -483,10 +484,13 @@ describe('the shared fixture', () => {
 				return named.kind === 'strength'
 					? {
 							...named,
-							exercises: named.exercises.map((e, i) => ({
-								...e,
-								plannedLineage: WORKOUT_DAY_IDS.exercises[i]
-							}))
+							// kit-alternatives' fields, which the fixture leaves out (kit-alternatives.test.ts).
+							exercises: named.exercises.map(
+								({ alternatives: _a, blocked: _b, gentler: _g, ...e }, i) => {
+									const { equipment: _e, ...exercise } = e.exercise;
+									return { ...e, exercise, plannedLineage: WORKOUT_DAY_IDS.exercises[i] };
+								}
+							)
 						}
 					: named;
 			};
