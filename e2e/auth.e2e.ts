@@ -21,11 +21,13 @@ import {
 } from '@playwright/test';
 import {
 	captureScreen,
+	expectRecoveryCodesFit,
 	gotoHydrated,
 	ORIGIN,
 	query,
 	SAME_ORIGIN,
 	signedOut,
+	SIX_GROUP_CODE,
 	toastWith,
 	trackConsoleErrors
 } from './support';
@@ -223,8 +225,11 @@ test.describe('passkey authentication (real WebAuthn ceremonies)', () => {
 		await expect(sheet).toBeVisible();
 		const codes = await sheet.getByTestId('recovery-code').locator('.value').allTextContents();
 		expect(codes).toHaveLength(10);
+		for (const code of codes) expect(code).toMatch(SIX_GROUP_CODE);
 		await expect(sheet.getByTestId('codes-done')).toBeDisabled();
 		await captureScreen(page, testInfo, 'security-new-codes');
+		await expectRecoveryCodesFit(page);
+		await audit(page, 'new recovery codes');
 		await sheet.getByTestId('ack-codes').check();
 		await sheet.getByTestId('codes-done').click();
 		await expect(page.getByTestId('codes-remaining')).toContainText('10');
