@@ -511,6 +511,7 @@ test.describe('/design → Charts: the bar chart on a phone', () => {
 		await gotoHydrated(page, '/design');
 		await openCharts(page);
 		await expectBarCharts(page);
+		await page.mouse.move(0, 0);
 		const id = 'bar-stacked';
 		const model = barModel(barFixture(id).data);
 		const body = barBody(page, id);
