@@ -124,6 +124,7 @@
 				max={1000}
 				unit={set.unit}
 				decimals={String(increment).split('.')[1]?.length ?? 0}
+				chars={5}
 				hint={loadHint ?? undefined}
 				error={mine.error === 'load' ? NEEDS_WEIGHT : null}
 				onchange={(v) => editSet({ [column]: fields.load === 'weight' || v > 0 ? v : null })}
@@ -139,6 +140,7 @@
 			max={AMOUNT_STEPS[amount].max}
 			unit={AMOUNT_STEPS[amount].unit}
 			format={amount === 'seconds' ? formatDuration : undefined}
+			chars={AMOUNT_STEPS[amount].chars}
 			parse={amount === 'seconds' ? parseTime : undefined}
 			error={mine.error === 'amount' && amount !== 'reps' ? NEEDS_AMOUNT[amount] : null}
 			onchange={(v) => editSet({ [amount]: v })}

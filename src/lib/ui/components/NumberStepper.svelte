@@ -25,6 +25,8 @@
 		error?: string | null;
 		/** The value as shown and typed, instead of the number: seconds as '1:30'. */
 		format?: (value: number) => string;
+		/** Room kept for the value, in characters, so it and its unit stay put as it changes. */
+		chars?: number;
 		/** Reads what was typed back; NaN or null keeps the value. Number() by default. */
 		parse?: (text: string) => number | null;
 		onchange?: (value: number) => void;
@@ -43,6 +45,7 @@
 		hint,
 		error = null,
 		format,
+		chars = 2,
 		parse,
 		onchange,
 		'data-testid': testId
@@ -190,7 +193,8 @@
 				aria-invalid={error ? 'true' : undefined}
 				aria-describedby={describedBy}
 				value={editing ? draft : display}
-				style:width={`calc(${Math.max(2, (editing ? draft : display).length)}ch + 0.25em)`}
+				style:width={`calc(${Math.max(chars, (editing ? draft : display).length)}ch + 0.25em)`}
+				style:text-align={chars > 2 && unit ? 'end' : undefined}
 				oninput={(e) => (draft = e.currentTarget.value)}
 				{onfocus}
 				onblur={commit}
