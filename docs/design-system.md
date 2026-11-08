@@ -469,6 +469,8 @@ later-pass screen).
 | `ChartTable`        | `ui/charts`. The table twin: `<details>` 'Show as table' (≥ 44 px), a keyboard-scrollable table with scoped headers, units, every value ('No data' when missing), the week in progress marked 'so far'.                                                                            |
 | `LineChart`         | `ui/charts/bodies`, `CHART_BODIES.line`. Up to 4 series: 2 px lines with gaps, legend from 2, end labels with leaders (numbers < 18rem); 8 px end dot, hollow ring (estimated), diamond (measured), dashed ring 'so far'; crosshair and tooltip by pointer, touch or ←/→/Home/End. |
 | `BarChart`          | `ui/charts/bodies`, `CHART_BODIES.bar`. Columns ≤ 24 px, rounded data end; stacks in `STACK_ORDER`, 2 px gaps, rect keys, totals that fit; dashed plan outline, target band, outlined 'so far' week; each mark a button, tooltip by hover, tap or arrows; forced colours: hatches. |
+| `RangeBars`         | `ui/charts/bodies`, `CHART_BODIES.range`. A horizontal bar a group in one hue, largest first (ties by name); range bracket (open past the axis), plan tick; status as icon and words (Below, Within, Above range); each row a ≥ 44 px button, tooltip by tap, hover or arrows.     |
+| `DivergingBars`     | `ui/charts/bodies`, `CHART_BODIES.diverging`. Actual − target RPE a row, bars from a centred zero: `--chart-diverge-cool` below, `-warm` above, `-mid` within ±0.5; signed value and Easier, On target or Harder in words; rows and tooltips as `RangeBars`.                       |
 
 A `ChoiceGroup` records a choice; it is never an "add" action (arrow keys check every radio they
 pass, so a radio that adds a row adds one per keypress). An optional single choice offers an

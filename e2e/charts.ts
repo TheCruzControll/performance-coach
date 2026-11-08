@@ -5,9 +5,19 @@
  */
 import AxeBuilder from '@axe-core/playwright';
 import { expect, type Page } from '@playwright/test';
-import { barModel, barReadout, barTable, markName } from '../src/lib/ui/charts/bar-model';
+import {
+	barModel,
+	barReadout,
+	barTable,
+	divergingReadout,
+	divergingTable,
+	markName,
+	rangeReadout,
+	rangeTable,
+	rowName
+} from '../src/lib/ui/charts/bar-model';
 import { lineModel, lineTable, readout } from '../src/lib/ui/charts/line-model';
-import { BAR_FIXTURES } from '../src/routes/design/bar-fixture';
+import { BAR_FIXTURES, DIVERGING_FIXTURE, RANGE_FIXTURE } from '../src/routes/design/bar-fixture';
 import { LINE_FIXTURES } from '../src/routes/design/line-fixture';
 
 export const chartsSection = (page: Page) => page.getByTestId('design-charts');
@@ -291,5 +301,96 @@ export async function expectBarTable(page: Page, id: string): Promise<void> {
 		await expect(rows.nth(i).locator('td')).toHaveText(
 			row.values.map((value) => value ?? '—No data')
 		);
+	}
+}
+
+/** The horizontal bar fixtures on /design → Charts: range bars and diverging bars. */
+export const ROW_FIXTURES = {
+	'range-bars': {
+		fixture: RANGE_FIXTURE,
+		body: 'range-chart',
+		readout: (i: number) => rangeReadout(RANGE_FIXTURE.data, i),
+		table: () => rangeTable(RANGE_FIXTURE.data)
+	},
+	'diverging-bars': {
+		fixture: DIVERGING_FIXTURE,
+		body: 'diverging-chart',
+		readout: (i: number) => divergingReadout(DIVERGING_FIXTURE.data, i),
+		table: () => divergingTable(DIVERGING_FIXTURE.data)
+	}
+} as const;
+export type RowFixtureId = keyof typeof ROW_FIXTURES;
+export const ROW_FIXTURE_IDS = Object.keys(ROW_FIXTURES) as RowFixtureId[];
+
+export const rowBody = (page: Page, id: RowFixtureId) =>
+	page.getByTestId(id).getByTestId(ROW_FIXTURES[id].body);
+export const rowMarks = (page: Page, id: RowFixtureId) => rowBody(page, id).getByTestId('row-mark');
+export const rowTip = (page: Page, id: RowFixtureId) =>
+	rowBody(page, id).getByTestId('row-tooltip');
+
+/** Both horizontal bar bodies have loaded, a row each for every group or exercise. */
+export async function expectRowCharts(page: Page): Promise<void> {
+	for (const id of ROW_FIXTURE_IDS)
+		await expect(rowMarks(page, id)).toHaveCount(ROW_FIXTURES[id].fixture.data.rows.length);
+}
+
+/** Row `index`'s tooltip is shown with the table's words, inside the plot, and names the row. */
+export async function expectRowReadout(page: Page, id: RowFixtureId, index: number): Promise<void> {
+	const { heading, rows } = ROW_FIXTURES[id].readout(index);
+	const tip = rowTip(page, id);
+	await expect(tip).toHaveAttribute('data-shown', '');
+	await expect(tip.locator('.tip-heading')).toHaveText(heading);
+	await expect(tip.locator('.tip-label')).toHaveText(rows.map((row) => row.label));
+	await expect(tip.locator('.tip-value')).toHaveText(rows.map((row) => row.value));
+	await expect(rowMarks(page, id).nth(index)).toHaveAccessibleName(
+		rowName(ROW_FIXTURES[id].readout(index))
+	);
+	const plot = (await page.getByTestId(id).getByTestId('chart-plot').boundingBox())!;
+	const box = (await tip.boundingBox())!;
+	expect(box.x).toBeGreaterThanOrEqual(plot.x - 0.5);
+	expect(box.x + box.width).toBeLessThanOrEqual(plot.x + plot.width + 0.5);
+	expect(box.y).toBeGreaterThanOrEqual(plot.y - 0.5);
+	expect(box.y + box.height).toBeLessThanOrEqual(plot.y + plot.height + 0.5);
+}
+
+/** The table twin of row fixture `id` holds exactly its rows, in the chart's order. */
+export async function expectRowTable(page: Page, id: RowFixtureId): Promise<void> {
+	const frame = page.getByTestId(id);
+	await frame.getByText('Show as table').click();
+	const table = ROW_FIXTURES[id].table();
+	await expect(frame.getByRole('table').locator('thead th')).toHaveText([
+		table.rowHeader,
+		...table.columns.map((column) => new RegExp(`^\\s*${column.label}\\b`))
+	]);
+	const rows = frame.getByRole('table').locator('tbody tr');
+	await expect(rows).toHaveCount(table.rows.length);
+	for (const [i, row] of table.rows.entries()) {
+		await expect(rows.nth(i).locator('th')).toHaveText(row.label);
+		await expect(rows.nth(i).locator('td')).toHaveText(
+			row.values.map((value) => value ?? '—No data')
+		);
+	}
+	// The chart reads in the table's order.
+	const names = await rowMarks(page, id).evaluateAll((els) =>
+		els.map((el) => el.getAttribute('aria-label')!.split('. ')[0])
+	);
+	expect(names).toEqual(table.rows.map((row) => row.label));
+}
+
+/** Every row is a target at least 44 px tall, none overflowing the plot box the frame reserved. */
+export async function expectRowSizes(page: Page): Promise<void> {
+	await expectRowCharts(page);
+	for (const id of ROW_FIXTURE_IDS) {
+		const plot = (await page.getByTestId(id).getByTestId('chart-plot').boundingBox())!;
+		const rows = await rowMarks(page, id).evaluateAll((els) =>
+			els.map((el) => {
+				const r = el.getBoundingClientRect();
+				return { bottom: r.bottom, height: r.height };
+			})
+		);
+		for (const row of rows) {
+			expect(row.height, `${id}: a 44 px row`).toBeGreaterThanOrEqual(44);
+			expect(row.bottom).toBeLessThanOrEqual(plot.y + plot.height + 0.5);
+		}
 	}
 }
