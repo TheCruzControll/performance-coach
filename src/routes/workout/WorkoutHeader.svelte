@@ -11,22 +11,20 @@
 -->
 <script lang="ts">
 	import { resolve } from '$app/paths';
-	import type { StopwatchState } from '#lib/domain/workout/index.ts';
 	import Button from '#lib/ui/components/Button.svelte';
 	import Skeleton from '#lib/ui/components/Skeleton.svelte';
-	import Stopwatch from '#lib/ui/workout/Stopwatch.svelte';
 	import type { Snippet } from 'svelte';
 
 	interface Props {
 		/** null while restoring. */
 		title: string | null;
-		/** null when there is no workout to time. */
-		stopwatch: StopwatchState | null;
+		/** The stopwatch, when there is a workout to time and it has loaded. */
+		time?: Snippet;
 		/** The sync status, once it has loaded. */
 		status?: Snippet;
 	}
 
-	let { title, stopwatch, status }: Props = $props();
+	let { title, time, status }: Props = $props();
 </script>
 
 <header class="header" data-testid="workout-header">
@@ -36,7 +34,7 @@
 			{@render status?.()}
 		</div>
 		<div class="time">
-			{#if stopwatch}<Stopwatch {stopwatch} />{/if}
+			{@render time?.()}
 		</div>
 		<div class="title">
 			{#if title === null}

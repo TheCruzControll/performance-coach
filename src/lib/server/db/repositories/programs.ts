@@ -16,6 +16,7 @@ import {
 	completedLineages,
 	currentProgram,
 	plannedSessionsInRange,
+	sessionById,
 	sessionByLineage,
 	sessionChildren,
 	sessionsWithChildren,
@@ -23,6 +24,7 @@ import {
 	versionHistory,
 	versionTree,
 	versionWeeks,
+	type SessionByIdRow,
 	type SessionChildRows,
 	type SessionLineageRow,
 	type SessionRow,
@@ -45,6 +47,7 @@ import {
 import type { Executor } from '../types';
 
 export type {
+	SessionByIdRow,
 	SessionChildRows,
 	SessionLineageRow,
 	SessionRow,
@@ -453,6 +456,12 @@ export function createProgramsRepository(db: Executor) {
 
 		async sessionByLineage(versionId: string, lineage: string): Promise<SessionLineageRow | null> {
 			const [row] = await sessionByLineage(db, versionId, lineage);
+			return row ?? null;
+		},
+
+		/** A session row by id in one of the owner's programs, with the newest version holding it. */
+		async sessionById(ownerId: string, sessionId: string): Promise<SessionByIdRow | null> {
+			const [row] = await sessionById(db, ownerId, sessionId);
 			return row ?? null;
 		},
 

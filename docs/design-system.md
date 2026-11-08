@@ -471,6 +471,8 @@ later-pass screen).
 | `TagInput`          | Short free-text list: Add or Return adds the trimmed text, a repeat in any case is refused, `maxlength` and `max` hold; removable pills (44 px remove buttons), one-tap suggestions, every change and refusal announced politely.                                                  |
 | `Notice`            | Inline state message: `danger` (role `alert`) · `positive` · `warning` · `neutral` (role `status`); tinted, icon + words.                                                                                                                                                          |
 | `RecoveryCodes`     | One-time display of recovery codes: numbered monospace list (one per row on a phone, two columns when the container allows), copy and download, required acknowledgement checkbox.                                                                                                 |
+| `ChartFrame`        | `ui/charts`. A chart's `<figure>`: title, context and summary server-rendered; the plot box reserved with a hairline grid; the body from a `CHART_BODIES` loader after hydration; a failed chunk: `Notice` and Retry; no JS: 'Chart needs JavaScript'; an `availability` slot.     |
+| `ChartTable`        | `ui/charts`. The table twin: `<details>` 'Show as table' (≥ 44 px), a keyboard-scrollable table with scoped headers, units, every value ('No data' when missing), the week in progress marked 'so far'.                                                                            |
 
 A `ChoiceGroup` records a choice; it is never an "add" action (arrow keys check every radio they
 pass, so a radio that adds a row adds one per keypress). An optional single choice offers an

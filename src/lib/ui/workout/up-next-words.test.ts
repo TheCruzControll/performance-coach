@@ -81,21 +81,21 @@ describe('targetWords', () => {
 		expect(targetWords(RDL!, 1)).toBe('3 × 8 at RPE 7');
 		expect(targetWords(LEG_PRESS!, 2)).toBe('2 × 10 at RPE 7');
 		expect(targetWords(PULL_UP!, 1)).toBe('3 × 6–10 at RPE 8');
-		expect(targetWords(PLANK!, 1)).toBe('3 × 45 s');
+		expect(targetWords(PLANK!, 1)).toBe('3 × 45 s at RPE 7');
 	});
 
 	it('a top set before its back-offs is one set; the back-offs carry their weight', () => {
 		expect(targetWords(SQUAT!, 1)).toBe('5 reps at RPE 7');
-		expect(targetWords(SQUAT!, 2)).toBe('3 × 5 at ≈ 100 kg');
+		expect(targetWords(SQUAT!, 2)).toBe('3 × 5 at ≈ 97.5 kg');
 	});
 
 	it('one set alone, as a superset’s partner is named', () => {
-		expect(targetWords(PLANK!, 1, true)).toBe('45 s');
+		expect(targetWords(PLANK!, 1, true)).toBe('45 s at RPE 7');
 		expect(targetWords(PULL_UP!, 2, true)).toBe('6–10 reps at RPE 8');
 	});
 
 	it('a long hold reads as minutes; no set is null', () => {
-		expect(targetWords([{ ...PLANK![0]!, seconds: 90 }], 1)).toBe('1:30');
+		expect(targetWords([{ ...PLANK![0]!, seconds: 90 }], 1)).toBe('1:30 at RPE 7');
 		expect(targetWords(PLANK!, 4)).toBeNull();
 	});
 });
@@ -117,7 +117,11 @@ describe('upNextWords', () => {
 			name: 'Romanian deadlift',
 			target: '3 × 8 at RPE 7'
 		});
-		expect(upNextWords(view([], 4))).toMatchObject({ label: 'A2', name: 'Plank', target: '45 s' });
+		expect(upNextWords(view([], 4))).toMatchObject({
+			label: 'A2',
+			name: 'Plank',
+			target: '45 s at RPE 7'
+		});
 	});
 
 	it('is null once every exercise is done', () => {
@@ -132,7 +136,7 @@ describe('announcement', () => {
 	});
 
 	it('after a set the flow moved on from, the partner’s one set', () => {
-		expect(announcement(view([4], 5), true)).toBe('Next: A2 Plank, 45 s');
+		expect(announcement(view([4], 5), true)).toBe('Next: A2 Plank, 45 s at RPE 7');
 	});
 
 	it('nothing mid-exercise; every exercise done says so', () => {

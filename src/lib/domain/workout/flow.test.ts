@@ -464,7 +464,7 @@ describe('upNext', () => {
 	it('names the partner inside a round', () => {
 		const onA1 = upNext(view([], { type: 'goTo', position: A1 }));
 		expect(onA1).toMatchObject({ position: A2, setIndex: 1, label: 'A2', partner: true });
-		expect(onA1!.target).toMatchObject({ seconds: 45, line: '3 × 0:45' });
+		expect(onA1!.target).toMatchObject({ seconds: 45, line: '3 × 0:45 @ RPE 7' });
 		const onA2 = upNext(view([A1], { type: 'goTo', position: A2 }));
 		expect(onA2).toMatchObject({ position: A1, setIndex: 2, label: 'A1', partner: true });
 	});
