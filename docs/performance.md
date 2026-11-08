@@ -45,6 +45,13 @@ shared component costs every route, Security included.
   ceremony load on demand with the other sheets and passkey helpers; `/` and
   `/recover/passkey` gain 0.1 KB (one error mapping in those helpers).
 
+- **Train renders without the plate calculator's CSS** (`/(app)/train` route CSS 14.3 → 11.0 KB).
+  The toasts' styles moved into every route's CSS (0.3 KB) when the toasts joined the initial JS,
+  which put Train over its 14 KB. Its `PlateSheet` loaded on intent, but the server build could
+  reach that import, so SvelteKit linked its stylesheets (sheet, stepper, segmented control) into
+  Train. The server build now leaves it out (`import.meta.env.SSR`), as it does the plan sheet,
+  and those stylesheets arrive with the sheet.
+
 - **`/design` renders with the CSS of its Buttons group only** (13.8 → 6.7 KB). Its Inputs, Data
   and Feedback groups loaded their JS with their tab, but SvelteKit still linked their CSS into
   the page as render-blocking stylesheets, because the server build could reach their imports.
