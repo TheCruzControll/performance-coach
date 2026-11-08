@@ -20,15 +20,33 @@
  *   has already synced is never its own prior best (summary.ts).
  * - Loads, paces and distances read in the training profile's units (M2's canonical preference;
  *   the plan's open question on device units keeps this default).
+ * - So every substitution works offline, a strength exercise also carries M3's ranked
+ *   alternatives (domain/programming/alternatives.ts) with their reasons, what each needs and its
+ *   own last top set; why nothing fits when none does; and, per body area, the gentler options
+ *   'This hurts' offers (domain/programming/pain.ts). The catalogue and the rules stay here: the
+ *   kit carries only the exercises and words.
  * - Its query count does not grow with the session: the session and its children, the profile,
- *   the exercises, then queries/history.ts's batched builders, one query each, awaited in turn.
+ *   the owner's programming input (built once per kit; the alternatives are ranked in memory), the
+ *   exercises, the alternatives' rows by key, then queries/history.ts's batched builders, one
+ *   query each, awaited in turn.
  */
 import { localDay } from '../../../domain/dates';
+import { BODY_AREAS, type BodyArea } from '../../../domain/profile/catalog';
+import { alternativesFor, type Alternative } from '../../../domain/programming/alternatives';
+import { libraryOf, whyNothingFits } from '../../../domain/programming/eligibility';
+import {
+	toExerciseKey,
+	type ExerciseKey,
+	type ProgrammingInput
+} from '../../../domain/programming/input';
+import { gentlerFor } from '../../../domain/programming/pain';
+import { GENTLER_WORDS } from '../../../domain/programming/rules/pain';
 import { describePrescription, prescribedLoad } from '../../../domain/training/describe';
 import { bestE1rm, personalRecords } from '../../../domain/training/metrics';
 import type { SetPrescription } from '../../../domain/training/types';
 import { DEFAULT_LOAD_INCREMENT, type WeightUnit } from '../../../domain/units';
 import type {
+	KitAlternative,
 	KitExercise,
 	KitExerciseMeta,
 	KitSet,
@@ -38,6 +56,7 @@ import type {
 	StartKit
 } from '../../../domain/workout/index';
 import { prKinds } from '../../../domain/workout/logging';
+import { topSetOf } from '../../../domain/workout/prefill';
 import { restClassOf } from '../../../domain/workout/timers';
 import {
 	createHistoryRepository,
@@ -49,13 +68,14 @@ import { createProgramsRepository, type SessionRow } from '../../db/repositories
 import type { Executor } from '../../db/types';
 import { measure } from '../../observability/timing';
 import { ACTIVE_WORKOUTS_LIMIT } from './canonical';
-import { getExercisesByIds, type ExerciseDef } from '../exercises/index';
+import { getExercisesByIds, resolveKeys, type ExerciseDef } from '../exercises/index';
 import { isUuid } from '../ids';
+import { alternativeWhy, programmingInputFor } from '../programs/alternatives';
 import { toStoredSessions, type StoredExercise } from '../programs/mapping';
 import { resolveDeps, type TrainingDeps } from '../training/shared';
 
 /** athlete_profiles' own defaults, for an owner with no profile row yet. */
-const DEFAULT_UNITS: KitUnits = { weight: 'kg', distance: 'km' };
+export const DEFAULT_UNITS: KitUnits = { weight: 'kg', distance: 'km' };
 const DEFAULT_TIME_ZONE = 'UTC';
 
 /** A planned session row, with the program and version the kit names. */
@@ -164,7 +184,11 @@ interface KitContext {
 	before: Date;
 }
 
-/** The kit's exercises, in order: the exercises in one query, then each batched history read. */
+/**
+ * The kit's exercises, in order: the owner's programming input once, every exercise's choices in
+ * memory, the exercises (planned and the owner's own offered ones) in one query, the offered
+ * catalogue exercises by key in another, then each batched history read.
+ */
 async function strengthExercises(
 	db: Executor,
 	ownerId: string,
@@ -172,12 +196,27 @@ async function strengthExercises(
 	{ units, timeZone, before }: KitContext
 ): Promise<KitExercise[]> {
 	const ids = [...new Set(planned.map((e) => e.exerciseId))];
-	const library = await getExercisesByIds(ownerId, ids, { db });
+	const input = await programmingInputFor(ownerId, { db });
+	const keys = [...new Set(planned.map((e) => toExerciseKey(e.exercise)))];
+	const choices = new Map(keys.map((key) => [key, choicesFor(key, input)]));
+	const offered = [...new Set([...choices.values()].flatMap(offeredKeys))];
+	const ownIds = offered.flatMap((key) =>
+		key.startsWith(CUSTOM) ? [key.slice(CUSTOM.length)] : []
+	);
+	const library = await getExercisesByIds(ownerId, [...ids, ...ownIds], { db });
+	const rows = await resolveKeys(
+		offered.filter((key) => !key.startsWith(CUSTOM)),
+		{ db }
+	);
+	const defOf = (key: ExerciseKey) =>
+		key.startsWith(CUSTOM) ? library.get(key.slice(CUSTOM.length)) : rows.get(key);
+	const offeredIds = offered.flatMap((key) => defOf(key)?.id ?? []);
 	const metas = new Map(ids.map((id) => [id, metaOf(library.get(id)!, units.weight)]));
 	const competing = ids.filter((id) => prKinds(metas.get(id)!).includes('most_reps'));
 	const history = createHistoryRepository(db);
 	const { last, records, most } = await measure('db', async () => ({
-		last: await history.lastSessionSets(ownerId, ids, before),
+		// The offered exercises' last sessions give their last top sets.
+		last: await history.lastSessionSets(ownerId, [...new Set([...ids, ...offeredIds])], before),
 		records: await history.personalRecords(ownerId, ids, before),
 		most: await history.mostReps(ownerId, competing, before)
 	}));
@@ -187,7 +226,24 @@ async function strengthExercises(
 	const mostOf = new Map(most.map((row) => [row.exerciseId, row.reps]));
 	const setsOf = (rows: { set: HistorySetRow }[] | undefined) => (rows ?? []).map((r) => r.set);
 
+	/** An offered exercise as the kit carries it; none for a key with no library row. */
+	const toKit = ({ key, reasons }: Offered): KitAlternative[] => {
+		const def = defOf(key);
+		if (!def) return [];
+		const previous = previousOf(lastOf.get(def.id), timeZone);
+		const top = previous && topSetOf(previous.sets, def.loadType);
+		return [
+			{
+				exercise: metaOf(def, units.weight),
+				reasons,
+				equipment: [...def.equipment],
+				lastTopSet: top && { ...top, date: previous.date }
+			}
+		];
+	};
+
 	return planned.map((e, i) => {
+		const choice = choices.get(toExerciseKey(e.exercise))!;
 		const best = bestE1rm(setsOf(bestOf.get(e.exerciseId)));
 		const lastTime = lastOf.get(e.exerciseId);
 		const latest = bestE1rm(setsOf(lastTime))?.value ?? null;
@@ -205,9 +261,59 @@ async function strengthExercises(
 				weightKg: record.weightKg,
 				date: localDay(record.set.performedAt, timeZone)
 			})),
-			mostReps: mostOf.get(e.exerciseId) ?? null
+			mostReps: mostOf.get(e.exerciseId) ?? null,
+			alternatives: choice.alternatives.flatMap(toKit),
+			blocked: choice.blocked,
+			gentler: Object.fromEntries(
+				Object.entries(choice.gentler).map(([area, options]) => [area, options.flatMap(toKit)])
+			)
 		};
 	});
+}
+
+const CUSTOM = 'custom:';
+const LIKED = 'One you like';
+
+/** An exercise offered in a planned one's place, with its reasons. */
+interface Offered {
+	key: ExerciseKey;
+	reasons: string[];
+}
+
+/** What a planned exercise can become, by key: M3's alternatives and each area's gentler ones. */
+interface Choices {
+	alternatives: Offered[];
+	/** Why nothing fits, when no alternative does; otherwise empty. */
+	blocked: string[];
+	gentler: Partial<Record<BodyArea, Offered[]>>;
+}
+
+const offeredKeys = (choice: Choices) =>
+	[...choice.alternatives, ...Object.values(choice.gentler).flat()].map((o) => o.key);
+
+/** The choices of the library exercise `key`, ranked in memory from the built input. */
+function choicesFor(key: ExerciseKey, input: ProgrammingInput): Choices {
+	const original = libraryOf(input).find((e) => e.key === key);
+	// A retired catalogue exercise a stored program still names is no longer in the library.
+	if (!original) return { alternatives: [], blocked: [whyNothingFits([], input)], gentler: {} };
+	const why = ({ key: k, via }: Alternative) => {
+		const exercise = libraryOf(input).find((e) => e.key === k)!;
+		return [alternativeWhy(original, exercise, via), ...(input.likes.includes(k) ? [LIKED] : [])];
+	};
+	const ranked = alternativesFor(key, input);
+	return {
+		alternatives: ranked.alternatives.map((a) => ({ key: a.key, reasons: why(a) })),
+		blocked: ranked.alternatives.length ? [] : [whyNothingFits(ranked.blocked, input)],
+		gentler: Object.fromEntries(
+			BODY_AREAS.map((area) => [
+				area,
+				gentlerFor(key, input, area).options.map((o) => ({
+					key: o.key,
+					reasons: [...o.gentler.map((by) => GENTLER_WORDS[by]), ...why(o)]
+				}))
+			])
+		)
+	};
 }
 
 function metaOf(e: ExerciseDef, unit: WeightUnit): KitExerciseMeta {
@@ -220,6 +326,7 @@ function metaOf(e: ExerciseDef, unit: WeightUnit): KitExerciseMeta {
 		unilateral: e.unilateral,
 		pattern: e.pattern,
 		tags: [...e.tags],
+		equipment: [...e.equipment],
 		restClass: restClassOf(e),
 		increment: DEFAULT_LOAD_INCREMENT[unit]
 	};
