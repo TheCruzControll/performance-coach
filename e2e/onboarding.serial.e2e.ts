@@ -7,11 +7,11 @@
  * that is missing one. A return visit picks up at the furthest step advanced, from /onboarding
  * and from Profile. Serial (one test at a time, after the functional suites): every test starts
  * from a blank training profile, which every browser and worker shares, and the last one leaves
- * it blank again, so later suites find onboarding open.
+ * it blank again, so later suites find onboarding open. The desktop window's layout is
+ * onboarding-desktop.serial.e2e.ts.
  */
 import AxeBuilder from '@axe-core/playwright';
 import { devices, expect, test, type Page } from '@playwright/test';
-import { DESKTOP, expectCentredOver, expectNoSideScroll, layoutWidth, tokenPx } from './desktop';
 import {
 	captureScreen,
 	gotoHydrated,
@@ -672,73 +672,5 @@ test.describe('with the service worker blocked (page.route must see every reques
 		expect(await query('select onboarding_completed from athlete_profiles')).toEqual([
 			{ onboarding_completed: [] }
 		]);
-	});
-});
-
-test.describe('in a desktop window', () => {
-	test.use(DESKTOP);
-
-	test('one readable column centred in the window, with Continue at its foot', async ({
-		page
-	}, testInfo) => {
-		await gotoHydrated(page, '/onboarding/equipment');
-		await stepReady(page, 'equipment');
-		const main = page.locator('main#main');
-		const box = (await main.boundingBox())!;
-		expect(Math.abs(box.width - (await tokenPx(page, '--content-readable')))).toBeLessThanOrEqual(
-			1
-		);
-		const right = (await layoutWidth(page)) - box.x - box.width;
-		expect(Math.abs(box.x - right), `gaps beside main: ${box.x} and ${right}`).toBeLessThanOrEqual(
-			1
-		);
-		await expectCentredOver(page, page.locator('.actions .buttons'), main);
-		await expectNoSideScroll(page);
-		// A mouse gets a hover state on the step's links, which keyboard focus also shows.
-		const later = page.getByTestId('finish-later');
-		const colour = () => later.evaluate((el) => getComputedStyle(el).color);
-		const resting = await colour();
-		await later.hover();
-		await expect.poll(colour).not.toBe(resting);
-		await captureScreen(page, testInfo, 'onboarding-desktop');
-	});
-
-	test('a return visit: the resume card sits in the same column, its link with a hover state', async ({
-		page
-	}, testInfo) => {
-		await gotoHydrated(page, '/onboarding');
-		await stepReady(page, 'welcome');
-		await moveOn(page, 'continue', 'goals');
-		await gotoHydrated(page, '/onboarding');
-		await stepReady(page, 'welcome');
-		const card = page.getByTestId('resume-card');
-		await expect(card).toContainText('You stopped at Your goals');
-		const main = page.locator('main#main');
-		const [cardBox, mainBox] = [(await card.boundingBox())!, (await main.boundingBox())!];
-		expect(cardBox.x).toBeGreaterThanOrEqual(mainBox.x);
-		expect(cardBox.x + cardBox.width).toBeLessThanOrEqual(mainBox.x + mainBox.width);
-		await expectNoSideScroll(page);
-		const link = card.getByRole('link', { name: 'Pick up there' });
-		const background = () => link.evaluate((el) => getComputedStyle(el).backgroundColor);
-		const resting = await background();
-		await link.hover();
-		await expect.poll(background).not.toBe(resting);
-		await captureScreen(page, testInfo, 'onboarding-resume-desktop');
-	});
-
-	test('the review: blocks centred in the column, and Edit has a hover state', async ({
-		page
-	}, testInfo) => {
-		await gotoHydrated(page, '/onboarding/review');
-		await stepReady(page, 'review');
-		const main = page.locator('main#main');
-		await expectCentredOver(page, block(page, 'goals'), main);
-		await expectNoSideScroll(page);
-		const edit = block(page, 'goals').getByRole('link', { name: 'Edit Your goals' });
-		const tint = () => edit.evaluate((el) => getComputedStyle(el).backgroundColor);
-		const resting = await tint();
-		await edit.hover();
-		await expect.poll(tint).not.toBe(resting);
-		await captureScreen(page, testInfo, 'onboarding-review-desktop');
 	});
 });

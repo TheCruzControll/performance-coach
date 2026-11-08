@@ -70,6 +70,13 @@ export const COACH_PRD = 'M9 brief: coach questions and proposals';
 /** The iPhone projects every journey runs in (CI adds WebKit; desktop projects come with desk-e2e). */
 const IPHONE = ['iphone-chromium', 'iphone-webkit'] as const;
 
+/** The iPhone projects serial specs (`*.serial.e2e.ts`, one owner's data) run in. */
+const SERIAL = ['serial-chromium', 'serial-webkit'] as const;
+
+/** program-journey's first journey: onboarding with blank 1RMs to an edited week-1 program. */
+const BLANK_1RM_JOURNEY =
+	'blank 1RMs: onboarding, a week-1 baseline program built from Today, a move and a one-off swap, all in History and persisted';
+
 export const JOURNEYS: readonly JourneyEntry[] = [
 	{
 		id: 'login',
@@ -101,11 +108,24 @@ export const JOURNEYS: readonly JourneyEntry[] = [
 		]
 	},
 	{ id: 'onboarding', prd: '§19: onboarding', pending: 'onboarding-review' },
-	{ id: 'blank-1rms', prd: '§19: leaving 1RMs blank', pending: 'program-journey' },
+	{
+		id: 'blank-1rms',
+		prd: '§19: leaving 1RMs blank',
+		projects: SERIAL,
+		tests: [{ file: 'program-journey.serial.e2e.ts', title: BLANK_1RM_JOURNEY }]
+	},
 	{
 		id: 'week-1-baseline',
 		prd: '§19: generate week-1 baseline program',
-		pending: 'program-journey'
+		projects: SERIAL,
+		tests: [
+			{ file: 'program-journey.serial.e2e.ts', title: BLANK_1RM_JOURNEY },
+			{
+				file: 'program-journey.serial.e2e.ts',
+				title:
+					'measured 1RMs: every main lift is a percentage of the measured 1RM with a load in kg, never RPE alone'
+			}
+		]
 	},
 	{ id: 'start-workout', prd: '§19: start workout', pending: 'journey-strength' },
 	{ id: 'log-sets', prd: '§19: log sets/reps/RPE', pending: 'journey-strength' },

@@ -104,6 +104,15 @@ const takenBy = ({ name, custom }: NameUse) =>
 	custom ? `You already have ${name}` : `Already in the library as ${name}`;
 
 /**
+ * Owner decision (M4 open question on custom exercises from a workout): a create under the
+ * device's id refuses a name the owner retired, in these words, rather than restoring the retired
+ * row under its old id, which would leave every set the device logged on the new id deferred for
+ * ever. Profile's create, with no id, still restores it.
+ */
+export const removedEarlier = (name: string) =>
+	`You removed ${name} from your exercises earlier: pick another name`;
+
+/**
  * What each substitution group's members share. A catalogue group keeps one pattern and one
  * measure, so a swap within it keeps the training intent and the prescription still reads; a
  * custom exercise joins a group only on both.
@@ -211,32 +220,50 @@ export async function listCustomExercises(
 
 // ---- the owner's own exercises ------------------------------------------------------------
 
+/** Where a create under an id another row holds is refused (the sync dispatcher: 'forbidden'). */
+const ID_USED = { clientId: 'Already used' };
+
 /**
  * Add an exercise to the owner's library. Creating one with the name of an exercise the owner
  * retired brings that one back with the new definition, keeping its id, as the catalogue seed
  * restores a key that returns.
+ *
+ * With `id` (the device's client id, from a workout's exercise.create) the row is created under
+ * it, exactly once: a repeat returns the owner's row with that id as it is, retired or not, and a
+ * retired name is refused (removedEarlier) instead of restored. An id another owner's row or the
+ * catalogue holds is refused at clientId.
  */
 export async function createCustomExercise(
 	ownerId: string,
 	input: unknown,
-	deps: TrainingDeps = {}
+	deps: TrainingDeps = {},
+	{ id }: { id?: string } = {}
 ): Promise<ExerciseDef> {
 	const exercise = parseWith(customExerciseSchema, input);
+	if (id !== undefined && !isUuid(id)) throw new TrainingInputError({ clientId: 'Unknown id' });
 	const { db, now } = resolveDeps(deps);
 	return measure('db', () =>
 		db.transaction(async (tx) => {
 			const repo = createExercisesRepository(tx);
 			await repo.lockCustom(ownerId);
+			if (id !== undefined) {
+				const [held] = await repo.byIds(ownerId, [id]);
+				if (held?.ownerId === ownerId) return toExerciseDef(held);
+			}
 			const errors = libraryProblems(exercise, await repo.listCustom(ownerId));
 			const sameName = await repo.findCustomByName(ownerId, exercise.name);
 			if (sameName && !sameName.retiredAt) {
 				errors.name ??= takenBy({ name: sameName.name, custom: true });
+			} else if (sameName && id !== undefined) {
+				errors.name ??= removedEarlier(sameName.name);
 			}
 			if (Object.keys(errors).length > 0) throw new TrainingInputError(errors);
 			const at = now();
 			const row = sameName
 				? await repo.restoreCustom(ownerId, sameName.id, exercise, at)
-				: await repo.insertCustom(ownerId, exercise, at);
+				: await repo.insertCustom(ownerId, exercise, at, id);
+			// Another owner's row, or a catalogue row, holds the id.
+			if (!row) throw new TrainingInputError(ID_USED);
 			return toExerciseDef(row);
 		})
 	);

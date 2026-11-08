@@ -28,7 +28,7 @@ import type { WorkoutStore } from './store';
 import { REQUEST_TIMEOUT_MS, startSync, SYNC_LOCK, SYNC_URL } from './sync';
 import type { SyncEngine, SyncLocks, SyncOptions } from './sync';
 
-/** RUM's web-vitals, replaced so a test can queue metrics for vitals.ts's pagehide flush. */
+/** RUM's web-vitals, replaced so a test can queue metrics for vitals.ts's flush at hide. */
 const vitals = vi.hoisted(() => ({ report: [] as ((metric: unknown) => void)[] }));
 vi.mock('web-vitals', () => {
 	const on = (report: (metric: unknown) => void) => void vitals.report.push(report);
@@ -984,7 +984,11 @@ describe('pagehide', () => {
 			} satisfies Omit<Metric, 'entries'> & { entries: unknown[] });
 		}
 
+		// Leaving the page: `pagehide`, then `visibilitychange`, which bubbles to the window.
 		page.window.dispatchEvent(new Event('pagehide'));
+		page.document.visibilityState = 'hidden';
+		for (const target of [page.document, page.window])
+			target.dispatchEvent(new Event('visibilitychange'));
 
 		const keepalive = server.received.filter((r) => r.keepalive);
 		expect(keepalive).toHaveLength(1);

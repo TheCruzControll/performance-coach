@@ -625,7 +625,26 @@ review counts the week's remaining days as rest. `exposures` are what next week'
 
 ### Next week (`programming/review/next-week.ts`)
 
-Not built yet (m6/26, next-week-adjustments).
+`proposeNextWeek(nextWeek, snapshot, exposures, ctx)` → `{ adjustments, notProposed, boundary?,
+late?, reason?, cycleFlag? }`: the review's changes to the week after the reviewed one, as M3 edit
+ops (`adjust_set`, `adjust_run_segment`, `move`) that M5's `programOpSchema` accepts. Each
+adjustment has its `id`, `kind`, `lineage`, `sessionDate`, `op`, changed fields `before` and
+`after`, `options` (`proposed` and `half_step`, halfway on the field's grain, or null), `why`
+(clipped into the op's `reason`, the version decision's why), `evidence`, `significant` and
+`priority`.
+
+- Lines: `decideFromResults` per working line, the op in the line's own load kind. Fatigue `high`
+  deloads the main lifts (`DELOAD`: sets × 0.6, RPE ≤ 6) with no progression; in a week already
+  light (`LIGHT_WEEK_KINDS`: deload, taper, event) it only caps RPE and sets `cycleFlag`.
+- Running: `adaptRunning`. A missed long run is repeated on its longest segment; the week is held
+  to +10 % by shortening easy, steady and long segments (`CAPPED_SEGMENTS`) in proportion.
+- Conflicts: an `avoid` rule of `checkWeek` resolved by moving a generated session to the nearest
+  day of the week that breaks no rule the week did not already break.
+- Not proposed, with `reason` and `words`: what M3's edits cannot express (a hold's seconds), an
+  added set past `sessionMinutes`, and past `MAX_NEXT_WEEK_OPS` (12) by `PRIORITY`.
+- Only a generated session dated today or later with no workout is touched. `stillAhead(items,
+today, workouts)` is that filter for decide time. Next week outside the block → `boundary:
+'cycle'`; next week ended → `late`.
 
 ### Cycle review (`programming/review/cycle.ts`, `cycle-snapshot.ts`)
 
