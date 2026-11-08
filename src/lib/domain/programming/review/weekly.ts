@@ -154,9 +154,9 @@ export interface WeeklyReview {
 // ---- Helpers ---------------------------------------------------------------------------------
 
 /** `text` cut to `max` characters with an ellipsis: a title the owner typed can be long. */
-const clip = (text: string, max: number) =>
+export const clip = (text: string, max: number) =>
 	text.length <= max ? text : `${text.slice(0, max - 1).trimEnd()}…`;
-const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+export const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 const byText = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 
 /** The block's band scaled by the week's volume factor: a deload at 0.6 makes 10–20 into 6–12. */
@@ -225,9 +225,11 @@ export function performedSessions(
 	});
 }
 
-type Call = readonly [FindingLevel, string];
+/** A finding's verdict: its level and words. */
+export type Call = readonly [FindingLevel, string];
 
-function trendCall(result: TrendResult): Call {
+/** A trend verdict as a finding's level and words. */
+export function trendCall(result: TrendResult): Call {
 	if (result.verdict === 'insufficient_data')
 		return ['not_enough_data', `Not enough data yet: ${plural(result.needs.points, 'more week')}`];
 	if (result.verdict === 'normal_variation') return ['neutral', 'Within normal variation'];
