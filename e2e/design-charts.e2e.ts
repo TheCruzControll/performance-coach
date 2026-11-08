@@ -511,7 +511,6 @@ test.describe('/design → Charts: the bar chart on a phone', () => {
 		await gotoHydrated(page, '/design');
 		await openCharts(page);
 		await expectBarCharts(page);
-		await page.mouse.move(0, 0);
 		const id = 'bar-stacked';
 		const model = barModel(barFixture(id).data);
 		const body = barBody(page, id);
@@ -532,6 +531,14 @@ test.describe('/design → Charts: the bar chart on a phone', () => {
 			await expectBarReadout(page, id, at);
 		}
 		await expect(body.locator('[tabindex="0"]')).toHaveCount(1);
+		// The pointer left by the toggle's click rests over the chart once focus scrolls it into view,
+		// yet the keyboard kept the tooltip above; only a real move hands it back to the mouse.
+		const under = 1;
+		const box = await boxOf(barMarks(page, id).nth(under));
+		await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+		await expectBarReadout(page, id, under);
+		await expect(barMarks(page, id).nth(under)).toHaveAttribute('tabindex', '0');
+		await barMarks(page, id).nth(at).focus();
 		await page.keyboard.press('Escape');
 		await expect(barTip(page, id)).not.toHaveAttribute('data-shown', '');
 	});

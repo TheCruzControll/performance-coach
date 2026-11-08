@@ -35,6 +35,12 @@
 	let active = $state<number | null>(null);
 	let focused: number | null = null;
 	let shown = $state(false);
+	/**
+	 * The keyboard keeps the tooltip until the mouse really moves: a mark scrolled under a resting
+	 * pointer gets a pointerenter at the same coordinates the pointer last moved to.
+	 */
+	let keyboard = false;
+	let pointer: string | null = null;
 	const stop = $derived(Math.min(active ?? Infinity, model.marks.length - 1));
 	const current = $derived(barReadout(data, model, stop));
 	const pct = (value: number) => `${value}%`;
@@ -65,6 +71,14 @@
 		show(to);
 	}
 
+	function hover(event: PointerEvent, index: number) {
+		if (event.pointerType !== 'mouse') return;
+		const at = `${event.clientX},${event.clientY}`;
+		if (keyboard && (pointer === null ? event.type === 'pointerenter' : at === pointer)) return;
+		keyboard = false;
+		if (active !== index || !shown) show(index);
+	}
+
 	function leave(event: PointerEvent) {
 		if (event.pointerType !== 'mouse') return;
 		if (focused === null) shown = false;
@@ -77,6 +91,12 @@
 		shown = false;
 	}
 </script>
+
+<svelte:window
+	onpointermove={(event) => {
+		if (event.pointerType === 'mouse') pointer = `${event.clientX},${event.clientY}`;
+	}}
+/>
 
 <!-- The marks are the controls; the group only routes their arrow keys. -->
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
@@ -178,13 +198,15 @@
 					style:--series={color(mark.series)}
 					onfocus={() => {
 						focused = i;
+						keyboard = true;
 						show(i);
 					}}
 					onclick={() => {
 						buttons[i]?.focus();
 						show(i);
 					}}
-					onpointerenter={(event) => event.pointerType === 'mouse' && show(i)}
+					onpointerenter={(event) => hover(event, i)}
+					onpointermove={(event) => hover(event, i)}
 					onpointerleave={leave}
 				></button>
 			{/each}
