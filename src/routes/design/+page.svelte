@@ -11,7 +11,7 @@
 	import Tabs from '#lib/ui/components/Tabs.svelte';
 	import { ICON_NAMES as iconNames } from '#lib/ui/icons/names.ts';
 
-	type Group = 'buttons' | 'inputs' | 'data' | 'feedback' | 'program';
+	type Group = 'buttons' | 'inputs' | 'data' | 'feedback' | 'program' | 'coach';
 	let tab = $state<Group>('buttons');
 
 	// Only the first group ships with the page; the others load when their tab opens, so the
@@ -23,7 +23,8 @@
 		inputs: () => (import.meta.env.SSR ? never() : import('./InputsPanel.svelte')),
 		data: () => (import.meta.env.SSR ? never() : import('./DataPanel.svelte')),
 		feedback: () => (import.meta.env.SSR ? never() : import('./FeedbackPanel.svelte')),
-		program: () => (import.meta.env.SSR ? never() : import('./ProgramPanel.svelte'))
+		program: () => (import.meta.env.SSR ? never() : import('./ProgramPanel.svelte')),
+		coach: () => (import.meta.env.SSR ? never() : import('./CoachPanel.svelte'))
 	};
 
 	const colors = [
@@ -81,7 +82,8 @@
 				{ id: 'data', label: 'Data' },
 				{ id: 'feedback', label: 'Feedback' },
 				// 'Program' is too wide for a fifth of the row at 393 px; it ran into 'Feedback'.
-				{ id: 'program', label: 'Plan' }
+				{ id: 'program', label: 'Plan' },
+				{ id: 'coach', label: 'Coach' }
 			]}
 		>
 			{#snippet panel(id)}

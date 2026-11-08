@@ -6,6 +6,7 @@
  */
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
+import { COACH_A11Y } from './coach-a11y';
 import { gotoHydrated, signedOut, TABS } from './support';
 
 const SCREENS = [
@@ -206,5 +207,13 @@ for (const theme of THEMES) {
 				expect(await audit(page), tab).toEqual([]);
 			}
 		});
+
+		for (const coach of COACH_A11Y) {
+			test(`${coach.name} has no violations`, async ({ page }) => {
+				await coach.open(page);
+				await page.waitForTimeout(300);
+				expect(await audit(page)).toEqual([]);
+			});
+		}
 	});
 }
