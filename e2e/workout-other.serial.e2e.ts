@@ -220,13 +220,11 @@ test.describe('logging an other session', () => {
 		await entry(page).getByTestId('session-notes').fill('Clinch work');
 		// Typed and still focused: no Enter, no blur, yet each number is kept as it is typed.
 		await stepper(entry(page), 'metric-rounds').fill('5');
-		await expect
-			.poll(drafted)
-			.toMatchObject({
-				session: {
-					metrics: expect.arrayContaining([expect.objectContaining({ key: 'rounds', value: 5 })])
-				}
-			});
+		await expect.poll(drafted).toMatchObject({
+			session: {
+				metrics: expect.arrayContaining([expect.objectContaining({ key: 'rounds', value: 5 })])
+			}
+		});
 		await page.reload();
 		await expect(page.locator('main#main[data-ready]')).toBeAttached();
 		await expect(page.locator('main#main[data-store]')).toBeAttached();
