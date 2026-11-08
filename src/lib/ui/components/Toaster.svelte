@@ -25,9 +25,16 @@
 		);
 	}
 
+	// The idle load waits out an offline spell: WebKit keeps a failed import's error for the page's
+	// life, so a load tried offline would leave every later toast unshown.
+	function loadOnline() {
+		if (navigator.onLine) load();
+		else addEventListener('online', load, { once: true });
+	}
+
 	onMount(() => {
-		if ('requestIdleCallback' in window) requestIdleCallback(load, { timeout: 3000 });
-		else setTimeout(load, 1500);
+		if ('requestIdleCallback' in window) requestIdleCallback(loadOnline, { timeout: 3000 });
+		else setTimeout(loadOnline, 1500);
 	});
 
 	$effect(() => {

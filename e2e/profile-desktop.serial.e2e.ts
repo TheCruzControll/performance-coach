@@ -209,7 +209,8 @@ test.describe('in a desktop window', () => {
 			.click();
 		await expect(page).toHaveURL('/profile/schedule');
 		await editorReady(page);
-		await expect(page.getByTestId('discard-sheet')).toHaveCount(0);
+		// The sheet loads with the section's editor, so it is in the page, closed.
+		await expect(page.getByTestId('discard-sheet')).toBeHidden();
 		await expect(list(page).getByRole('link', { name: /Schedule/ })).toHaveAttribute(
 			'aria-current',
 			'page'
