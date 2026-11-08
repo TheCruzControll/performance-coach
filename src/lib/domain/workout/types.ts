@@ -65,6 +65,28 @@ export interface KitExerciseMeta extends ExerciseSummary {
 	equipment?: Equipment[];
 }
 
+/**
+ * A library exercise as GET /api/exercises lists it: what the picker searches by name and alias,
+ * and what an exercise added to a session logs from.
+ */
+export interface LibraryExercise extends KitExerciseMeta {
+	aliases: string[];
+	equipment: Equipment[];
+	/** A time-measured exercise's default hold, in seconds; null for the others. */
+	defaultSeconds: number | null;
+}
+
+/**
+ * The live library: the catalogue and the owner's own exercises, by name, in the owner's units.
+ * `digest` is its ETag, so the device revalidates its cached copy (If-None-Match → 304).
+ */
+export interface ExerciseLibrary {
+	v: 1;
+	digest: string;
+	units: KitUnits;
+	exercises: LibraryExercise[];
+}
+
 // ---- Sets -----------------------------------------------------------------------------------
 
 /**

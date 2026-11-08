@@ -8,9 +8,9 @@ import type { LoggedSet } from '#lib/domain/workout/index.ts';
 
 /** Each amount's stepper: a time or a distance is at least 1 (LOG_LIMITS); 0 reps is a set. */
 export const AMOUNT_STEPS = {
-	reps: { min: 0, step: 1, bigStep: 5, max: 100, unit: 'reps' },
-	seconds: { min: 1, step: 5, bigStep: 30, max: 3600, unit: undefined },
-	metres: { min: 1, step: 10, bigStep: 100, max: 100_000, unit: 'm' }
+	reps: { min: 0, step: 1, bigStep: 5, max: 100, unit: 'reps', chars: 3 },
+	seconds: { min: 1, step: 5, bigStep: 30, max: 3600, unit: undefined, chars: 5 },
+	metres: { min: 1, step: 10, bigStep: 100, max: 100_000, unit: 'm', chars: 5 }
 } as const;
 
 /** The most missed reps a set records (the payload schemas' range). */

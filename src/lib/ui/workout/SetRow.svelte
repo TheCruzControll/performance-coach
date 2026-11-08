@@ -89,13 +89,14 @@
 		color: var(--color-text-secondary);
 	}
 
+	/* As wide as 'To do', so a row turning Now or Done keeps its words in place. */
 	.state {
 		display: inline-flex;
 		align-items: center;
 		gap: var(--space-1);
+		min-width: 2.75rem;
 		font-size: var(--text-sm);
 		color: var(--color-text-tertiary);
-		text-align: right;
 	}
 
 	[data-state='current'] .set {
