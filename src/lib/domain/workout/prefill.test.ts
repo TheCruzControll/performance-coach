@@ -213,8 +213,8 @@ describe('nextSet: the weight, by load kind', () => {
 	});
 
 	it.each([
-		['kg', 100],
-		['lb', 220]
+		['kg', 97.5],
+		['lb', 215]
 	] as const)(
 		'from_e1rm: the kit’s latest estimate until today’s top set is logged (%s)',
 		(unit, weight) => {
@@ -265,7 +265,7 @@ describe('nextSet: the weight, by load kind', () => {
 		]) {
 			expect(nextSet(planned(kit), [top], kit, 'kg')).toMatchObject({
 				loadFrom: 'prescribed',
-				values: { weight: 100 }
+				values: { weight: 97.5 }
 			});
 		}
 	});

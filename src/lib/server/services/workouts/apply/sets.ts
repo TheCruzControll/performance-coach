@@ -14,7 +14,8 @@ import type { Handlers } from './handler';
 
 type SetType = 'set.log' | 'set.skip' | 'set.edit' | 'set.delete';
 
-const NOTHING_DONE = {
+/** A skipped set's values: nothing done. */
+export const NOTHING_DONE = {
 	weight: null,
 	assistance: null,
 	reps: null,

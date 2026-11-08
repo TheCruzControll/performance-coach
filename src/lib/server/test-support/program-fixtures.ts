@@ -11,11 +11,16 @@
  *   session and a Muay Thai class, or nothing; week 2 is planned, so 'up next' crosses a week
  *   boundary on any weekday.
  * - one-week: one planned week, then an outline block whose weeks have no sessions.
+ * - workout-day: the shared kit fixture's program (tests/fixtures/workout-day.ts). Today, which
+ *   must fall in week 1: a baseline strength session (back squat top set and back-offs, leg
+ *   press, Romanian deadlift, then an A1 pull-up / A2 plank superset), an interval run and a
+ *   Muay Thai class. Week 2 repeats the strength session a week later.
  */
 import { addDays, daysBetween, mondayOf, type IsoDate } from '../../domain/calendar';
 import type {
 	BlockPlan,
 	DecisionPlan,
+	OtherSessionPlan,
 	PlannedExercisePlan,
 	ProgramPlan,
 	RunSegment,
@@ -26,7 +31,13 @@ import type {
 } from '../../domain/training/types';
 import type { Phase, WeekKind } from '../../domain/training/vocabulary';
 
-export const PROGRAM_FIXTURES = ['hybrid', 'today', 'today-rest', 'one-week'] as const;
+export const PROGRAM_FIXTURES = [
+	'hybrid',
+	'today',
+	'today-rest',
+	'one-week',
+	'workout-day'
+] as const;
 export type ProgramFixture = (typeof PROGRAM_FIXTURES)[number];
 
 /** Stand-ins for the M2 rows a plan refers to by uuid (no foreign key) when a test has none. */
@@ -211,6 +222,84 @@ function muayThai(date: IsoDate, orderInDay: number, commitmentRef: string): Ses
 	};
 }
 
+/** workout-day's strength session: what the shared kit fixture's strength kit runs. */
+function lowerBodyAndPull(date: IsoDate): SessionPlan {
+	const none = { repsMin: null, repsMax: null };
+	return {
+		...base(date, 60, 7),
+		kind: 'strength',
+		type: 'strength',
+		title: 'Lower body & pull',
+		discipline: 'strength',
+		intensity: 'moderate',
+		exercises: [
+			lift(
+				'back_squat',
+				[
+					set({ role: 'top', sets: 1, restSeconds: 180 }),
+					set({
+						role: 'back_off',
+						targetRpe: null,
+						loadKind: 'from_e1rm',
+						loadValue: 0.8,
+						restSeconds: 180
+					})
+				],
+				{ baselineLift: 'back_squat' }
+			),
+			lift('leg_press', [set({ repsMin: 10, repsMax: 10 })]),
+			lift('romanian_deadlift', [set({ repsMin: 8, repsMax: 8 })]),
+			// A1/A2: no rest inside a round, 90 s after each.
+			lift('pull_up', [set({ repsMin: 6, repsMax: 10, targetRpe: 8, restSeconds: 0 })], {
+				superset: 1
+			}),
+			lift('plank', [set({ ...none, seconds: 45, restSeconds: 90 })], { superset: 1 })
+		]
+	};
+}
+
+/** workout-day's run: 10 min warm-up, 6 × (400 m + 90 s), 10 min cool-down. */
+function workoutDayRun(date: IsoDate): SessionPlan {
+	const repeat = { repeatGroup: 1, repeats: 6 };
+	return {
+		...base(date, 45, 7),
+		kind: 'run',
+		orderInDay: 2,
+		type: 'interval_run',
+		title: 'Intervals',
+		discipline: 'running',
+		intensity: 'hard',
+		segments: [
+			segment('warm_up', { durationSeconds: 600, hrZone: 2 }),
+			segment('interval', {
+				...repeat,
+				distanceMetres: 400,
+				paceMinSecondsPerKm: 225,
+				paceMaxSecondsPerKm: 240
+			}),
+			segment('recovery', { ...repeat, durationSeconds: 90 }),
+			segment('cool_down', { durationSeconds: 600, hrZone: 2 })
+		]
+	};
+}
+
+/** workout-day's class: 90 minutes at RPE 7, logging rounds and whether you sparred. */
+function workoutDayClass(date: IsoDate, commitmentRef: string): SessionPlan {
+	return {
+		...(muayThai(date, 3, commitmentRef) as OtherSessionPlan),
+		details: {
+			kind: 'class',
+			durationMinutes: 90,
+			targetRpe: 7,
+			metrics: [
+				{ key: 'rounds', label: 'Rounds', unit: null, value: 6 },
+				{ key: 'sparred', label: 'Sparred', unit: null, value: false }
+			],
+			notes: null
+		}
+	};
+}
+
 const TARGETS: Record<'baseline' | 'accumulation' | 'deload', (n: number) => WeekTargets> = {
 	baseline: () => ({ rpeCap: 7, volumeFactor: 1, loadStep: 0, runVolumeFactor: 1 }),
 	accumulation: (n) => ({
@@ -360,6 +449,34 @@ export function programFixture(name: ProgramFixture, options: FixtureOptions): P
 					'accumulation',
 					'Accumulation',
 					[hybridWeek(next, 1, 'accumulation', commitmentRef)],
+					goalRefs
+				)
+			]);
+		}
+		case 'workout-day': {
+			const offset = daysBetween(monday, today);
+			if (offset < 0 || offset > 6)
+				throw new RangeError(`${today} is not in the week of ${monday}`);
+			const sessions = [
+				lowerBodyAndPull(today),
+				workoutDayRun(today),
+				workoutDayClass(today, commitmentRef)
+			];
+			return plan('Fixture: workout day', [
+				block(
+					'baseline',
+					'Baseline week',
+					[week(monday, 'baseline', TARGETS.baseline(0), sessions)],
+					goalRefs
+				),
+				block(
+					'accumulation',
+					'Accumulation',
+					[
+						week(next, 'accumulation', TARGETS.accumulation(1), [
+							lowerBodyAndPull(addDays(today, 7))
+						])
+					],
 					goalRefs
 				)
 			]);
