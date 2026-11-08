@@ -7,6 +7,7 @@ import { otherTable, runTable, strengthTable } from './tables';
 const LOCAL_TYPES: LocalAction['type'][] = [
 	'goTo',
 	'draft',
+	'session.draft',
 	'exercise.add',
 	'kit.attach',
 	'rest.start',

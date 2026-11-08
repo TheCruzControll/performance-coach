@@ -639,6 +639,21 @@ describe('device actions', () => {
 		);
 	});
 
+	it("keeps an other session's unsaved fields, each draft replacing the last, until cleared", () => {
+		const state = apply(
+			{ workoutId: W, type: 'session.draft', draft: { durationMinutes: 90 } },
+			{ workoutId: W, type: 'session.draft', draft: { durationMinutes: 85, rpe: 8 } }
+		);
+		expect(state.device.session).toStrictEqual({ durationMinutes: 85, rpe: 8 });
+		const cleared = applyLocal(strengthTable, state, {
+			workoutId: W,
+			type: 'session.draft',
+			draft: null
+		});
+		expect(cleared.device.session).toBeNull();
+		expect(apply({ workoutId: W, type: 'session.draft', draft: null })).toBe(state0);
+	});
+
 	it('runs the rest timer and the stopwatch through timers.ts', () => {
 		const state = apply(
 			{ workoutId: W, type: 'rest.start', at: 10_000, durationMs: 90_000 },
