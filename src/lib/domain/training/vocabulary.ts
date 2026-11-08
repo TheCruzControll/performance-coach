@@ -190,7 +190,14 @@ export const PHASE_LABEL = {
 	marathon_build: 'Marathon build',
 	marathon_peak: 'Marathon peak',
 	marathon_taper: 'Marathon taper',
-	transition: 'Between blocks'
+	transition: 'Between blocks',
+	// M7's block types (m7-contract): a half never reads 'Marathon build'.
+	fight_camp: 'Fight camp',
+	recovery: 'Recovery',
+	half_base: 'Half marathon base',
+	half_build: 'Half marathon build',
+	half_peak: 'Half marathon peak',
+	half_taper: 'Half marathon taper'
 };
 export type Phase = keyof typeof PHASE_LABEL;
 export const PHASES = keysOf(PHASE_LABEL);
@@ -205,7 +212,12 @@ export const WEEK_KIND_LABEL = {
 	deload: 'Deload',
 	taper: 'Taper',
 	event: 'Event week',
-	unplanned: 'Unplanned week'
+	unplanned: 'Unplanned week',
+	// M7's block types (m7-contract, periodisation/kinds.ts).
+	base: 'Base',
+	cutback: 'Cutback week',
+	recovery: 'Recovery week',
+	maintenance: 'Maintenance'
 };
 export type WeekKind = keyof typeof WEEK_KIND_LABEL;
 export const WEEK_KINDS = keysOf(WEEK_KIND_LABEL);
@@ -282,6 +294,11 @@ export const SET_ROLES = keysOf(SET_ROLE_LABEL);
 export const RUN_SEGMENT_KIND_LABEL = {
 	warm_up: 'Warm-up',
 	easy: 'Easy',
+	/**
+	 * Also marathon-pace work: M7 generates it as a steady segment at Daniels' M pace, labelled
+	 * 'at marathon pace' in its notes, so run logging and Progress need no new kind (m7-plan open
+	 * question 'Marathon pace'; a separate kind would be a new key here).
+	 */
 	steady: 'Steady',
 	tempo: 'Tempo',
 	interval: 'Interval',
@@ -397,7 +414,20 @@ export const DECISION_KIND_LABEL = {
 	deload_scheduled: 'Deload scheduled',
 	next_block_planned: 'Next block planned',
 	exercise_kept: 'Exercise kept',
-	exercise_rotated: 'Exercise rotated'
+	exercise_rotated: 'Exercise rotated',
+	// M7's periodisation (m7-contract). It reuses M6's deload_scheduled and M3's event_taper.
+	priority_resolved: 'Goal priority',
+	maintenance_dose: 'Maintenance dose',
+	block_type_chosen: 'Block type',
+	schedule_repaired: 'Schedule adjusted',
+	load_eased: 'Session eased',
+	deload_triggered: 'Deload triggered',
+	taper_planned: 'Taper planned',
+	volume_progressed: 'Volume progressed',
+	long_run_progressed: 'Long-run progression',
+	sparring_load: 'Sparring load',
+	hr_zones_set: 'Heart-rate zones',
+	replanned: 'Re-planned'
 };
 export type DecisionKind = keyof typeof DECISION_KIND_LABEL;
 export const DECISION_KINDS = keysOf(DECISION_KIND_LABEL);

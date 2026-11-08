@@ -12,7 +12,13 @@
  */
 import { CATALOGUE } from '../../../domain/exercises/index';
 import { alternativesFor as rank } from '../../../domain/programming/alternatives';
-import { libraryOf, whyNothingFits, type Excluded } from '../../../domain/programming/eligibility';
+import type { Alternative } from '../../../domain/programming/alternatives';
+import {
+	libraryOf,
+	whyNothingFits,
+	type Excluded,
+	type LibraryExercise
+} from '../../../domain/programming/eligibility';
 import {
 	buildProgrammingInput,
 	toExerciseKey,
@@ -90,6 +96,16 @@ export async function programmingInputFor(
 
 const CUSTOM = 'custom:';
 
+/** Why `exercise` keeps `original`'s purpose, in a few words (the start kit's reasons too). */
+export const alternativeWhy = (
+	original: LibraryExercise,
+	exercise: LibraryExercise,
+	via: Alternative['via']
+): string =>
+	via === 'group'
+		? `Does the same job as ${original.name.toLowerCase()}`
+		: `${MOVEMENT_PATTERN_LABEL[exercise.pattern]}, for the same muscles`;
+
 /**
  * The alternatives of the library exercise `key` for the owner, ids resolved; `input` is the
  * owner's programmingInputFor, read here unless given.
@@ -112,10 +128,7 @@ export async function rankAlternatives(
 		const id = k.startsWith(CUSTOM) ? k.slice(CUSTOM.length) : rows.get(k)?.id;
 		const exercise = library.get(k)!;
 		if (!id) return [];
-		const why =
-			via === 'group'
-				? `Does the same job as ${original.name.toLowerCase()}`
-				: `${MOVEMENT_PATTERN_LABEL[exercise.pattern]}, for the same muscles`;
+		const why = alternativeWhy(original, exercise, via);
 		const reason = input.likes.includes(k) ? `${why} · one you like` : why;
 		return [{ id, key: k, name: exercise.name, reason }];
 	});

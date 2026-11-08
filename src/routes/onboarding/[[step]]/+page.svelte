@@ -79,7 +79,8 @@
 	<title>{STEP_INFO[data.step].title} · Set up · Performance Coach</title>
 </svelte:head>
 
-<!-- Outside the app shell: no navigation, one readable column centred in the window. -->
+<!-- Outside the app shell: no navigation, one readable column centred in the window (from
+     1024 px a card, and wide on the review: Step.svelte). -->
 <main id="main" class="onboarding" tabindex="-1" data-layout="readable">
 	<!-- Another step is another screen, with its own editor and form state: a keyed block of one
 	     mounts it afresh. -->
@@ -197,6 +198,16 @@
 			max(var(--gutter), var(--safe-left));
 		outline: none;
 		isolation: isolate;
+	}
+
+	/* A desktop window: the step's card centred in it, both ways (the review widens it to wide). */
+	@media (width >= 64rem) {
+		.onboarding {
+			display: grid;
+			align-content: center;
+			min-height: 100dvh;
+			padding: var(--space-10) 0;
+		}
 	}
 
 	/* The app shell's quiet volt glow: one product, not a separate wizard. */

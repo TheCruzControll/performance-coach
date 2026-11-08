@@ -3,9 +3,9 @@
   How the strength view moves between exercises (PRD §7), loaded after the first render, so none
   of it weighs on /workout's first paint. Each move is a goTo: device state, stored with the
   workout, so a reload returns to it.
-  - Up next (UpNext.svelte), which between exercises offers Start.
   - Previous and Next, in workout order, disabled at either end (focus then moves to the other,
     never to the page).
+  - Under them, Up next (UpNext.svelte), which between exercises offers Start.
   - A swipe across the card (`area`): left for the next exercise, right for the previous, by
     swipe.ts's thresholds. Any pointer swipes, a mouse too; the card has touch-action: pan-y, so a
     vertical drag scrolls and a sideways one never scrolls the page. A swipe that ends on a set row
@@ -132,8 +132,6 @@
 	});
 </script>
 
-<UpNext {view} onstart={goTo} />
-
 <nav class="pager" aria-label="Previous and next exercise">
 	<Button
 		variant="secondary"
@@ -150,6 +148,9 @@
 		data-testid="exercise-next">Next</Button
 	>
 </nav>
+
+<!-- Last: Start, after an exercise's last set, grows the card where nothing follows it. -->
+<UpNext {view} onstart={goTo} />
 
 <style>
 	.pager {

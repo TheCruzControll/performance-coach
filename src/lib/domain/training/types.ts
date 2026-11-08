@@ -173,6 +173,24 @@ export interface WeekTargets {
 	loadStep: number;
 	/** Running volume against week 1. */
 	runVolumeFactor: number;
+	// M7's block types (m7-contract). Optional, so weeks stored before M7 read unchanged.
+	/** The main lifts' rep range, top-set RPE and sets against the block's base. */
+	mainLifts?: { repsMin: number; repsMax: number; topRpe: number; setsFactor: number };
+	/** This week's hard-set range per major muscle group, and the planned weekly step. */
+	setsPerGroup?: { min: number; max: number; step: number };
+	running?: {
+		longRunMetres: number | null;
+		raceSpecific: 'marathon_pace' | 'threshold' | 'intervals' | null;
+		cutback: boolean;
+	};
+	combat?: {
+		sessions: number;
+		hardSparring: number;
+		sparringRounds: number;
+		conditioningRounds: number;
+	};
+	/** The streams held at their maintenance dose this week. */
+	maintenance?: ('strength' | 'hypertrophy' | 'runs' | 'muay_thai' | 'custom')[];
 }
 
 /** Monday to Sunday. */
