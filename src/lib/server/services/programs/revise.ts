@@ -6,8 +6,8 @@
  * - the affected weeks' subtrees are copied (new ids, the same lineages) with the edit's changes
  *   written into the copies; history rows are never updated, so a copy is born edited
  * - every other block and week is shared through the membership rows
- * - one decision records what changed, why and who decided, and the head moves forward by
- *   compare-and-set.
+ * - one decision records what changed, why and who decided (or several, one per change, for an
+ *   accepted coach proposal: ./batch.ts), and the head moves forward by compare-and-set.
  * The edits (m3/34, m3/39) and the coach's proposals (M5) all revise through it. History pages
  * newest first, HISTORY_PAGE_SIZE versions at a time, each with its decisions; any version stays
  * readable, a week at a time.
@@ -100,7 +100,15 @@ export interface Revision {
 	 * returns how the copies differ.
 	 */
 	apply: (copies: WeekCopies, tx: Executor) => Promise<CopyChanges | void>;
+	/** The edit's decision: its author is the version's, and so is its summary by default. */
 	decision: RevisionDecision;
+	/**
+	 * The decisions after `decision`, in order, when the revision makes several changes: one per
+	 * change of an accepted coach proposal (./batch.ts).
+	 */
+	moreDecisions?: RevisionDecision[];
+	/** The version's summary in History; `decision`'s when left out. */
+	summary?: string;
 }
 
 export interface RevisedVersion {
@@ -133,6 +141,17 @@ const decisionSchema = z.extend(
 		affected: z.array(z.uuid('Not a lineage')).check(z.maxLength(50))
 	}
 );
+
+/** The most decisions one version records. */
+const DECISIONS_MAX = 50;
+
+const moreDecisionsSchema = z.object({
+	moreDecisions: z
+		.array(decisionSchema)
+		.check(z.maxLength(DECISIONS_MAX - 1, `Up to ${DECISIONS_MAX} decisions`))
+});
+
+const summarySchema = z.pick(decisionPlanSchema, { summary: true });
 
 const isVersionNumber = (n: unknown): n is number =>
 	Number.isInteger(n) && (n as number) >= 1 && (n as number) <= MAX_VERSION;
@@ -184,11 +203,19 @@ export async function reviseProgram(
 	deps: TrainingDeps = {}
 ): Promise<RevisedVersion> {
 	const { db, now, source } = resolveDeps(deps);
-	const decision = parseWith(decisionSchema, {
+	const defaults = (d: RevisionDecision) => ({
 		ruleKey: null,
 		evidence: {},
 		decidedBy: source,
-		...revision.decision
+		...d
+	});
+	const decision = parseWith(decisionSchema, defaults(revision.decision));
+	const { moreDecisions } = parseWith(moreDecisionsSchema, {
+		moreDecisions: (revision.moreDecisions ?? []).map(defaults)
+	});
+	const decisions = [decision, ...moreDecisions];
+	const { summary } = parseWith(summarySchema, {
+		summary: revision.summary ?? decision.summary
 	});
 	const weekLineages = [...new Set(revision.weekLineages)];
 	if (!weekLineages.length) {
@@ -234,7 +261,7 @@ export async function reviseProgram(
 					number,
 					parentVersionId: base.version.id,
 					createdBy: decision.decidedBy,
-					summary: decision.summary,
+					summary,
 					startsOn: base.version.startsOn,
 					firstPlannedDay: base.version.firstPlannedDay,
 					createdAt: at
@@ -250,7 +277,9 @@ export async function reviseProgram(
 				},
 				changes
 			);
-			await repo.insertDecisions([{ ...decision, programId: head.id, versionId, createdAt: at }]);
+			await repo.insertDecisions(
+				decisions.map((d) => ({ ...d, programId: head.id, versionId, createdAt: at }))
+			);
 			if (!(await repo.setCurrentVersion(head.id, base.version.id, versionId))) {
 				throw new ProgramConflictError();
 			}
