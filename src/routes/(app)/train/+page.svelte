@@ -91,14 +91,17 @@
 	// ---- The sheets: the plate calculator and the plan -------------------------------------
 
 	// Each is code-split with the BottomSheet it opens in and loads on intent (lazy-sheet.svelte.ts).
+	// Each is left out of the server build, which never renders it: SvelteKit links into a page the
+	// CSS of every dynamic import its server build can reach (check-budgets.ts), and a sheet's own
+	// stylesheets arrive with it.
 	const plates = new LazySheet<ComponentProps<typeof PlateSheetType>>(
-		() => import('./PlateSheet.svelte'),
+		() =>
+			import.meta.env.SSR
+				? Promise.reject(new Error('client only'))
+				: import('./PlateSheet.svelte'),
 		'plates'
 	);
 	const plan = new LazySheet<ComponentProps<typeof PlanSheetType>>(
-		// Left out of the server build, which never renders it: SvelteKit links into a page the
-		// CSS of every dynamic import its server build can reach (check-budgets.ts), and its own
-		// stylesheet arrives with it.
 		() =>
 			import.meta.env.SSR
 				? Promise.reject(new Error('client only'))
