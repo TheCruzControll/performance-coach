@@ -13,6 +13,8 @@ want="${2:-}"
 interval="${WAIT_CI_INTERVAL:-180}"
 max="${WAIT_CI_MAX:-3600}"
 waited=0
+# The E2E aggregate check only appears after its legs finish, so wait for every required name.
+REQUIRED='["Lint & type-check","Unit & integration tests","Build (Vercel + Node) & budgets","E2E (iPhone viewport · Chromium + WebKit)","Lighthouse (mobile)"]'
 while :; do
   json=$(gh pr checks "$pr" -R TheCruzControll/performance-coach --required --json name,bucket,link 2>/dev/null)
   [ -n "$json" ] || json='[]'
@@ -20,9 +22,10 @@ while :; do
     head=$(gh pr view "$pr" -R TheCruzControll/performance-coach --json headRefOid -q .headRefOid 2>/dev/null)
     [[ "$head" == "$want"* ]] || json='[]'
   fi
-  state=$(jq -r 'if length == 0 then "pending"
+  state=$(jq -r --argjson req "$REQUIRED" 'if length == 0 then "pending"
     elif any(.[]; .bucket == "fail" or .bucket == "cancel") then "red"
     elif any(.[]; .bucket == "pending") then "pending"
+    elif ($req - map(.name) | length) > 0 then "pending"
     else "green" end' <<<"$json" 2>/dev/null || echo pending)
   echo "$(date -u +%H:%M:%S) PR #$pr: $state ($(jq -r 'map(.bucket) | group_by(.) | map("\(.[0]) \(length)") | join(", ")' <<<"$json" 2>/dev/null))"
   case $state in

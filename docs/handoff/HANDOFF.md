@@ -4,7 +4,61 @@ This is everything a new Claude Code session needs to resume the build on anothe
 product spec is `docs/product-requirements.md` on `main`; milestone criteria are in
 `docs/milestones.md`. Read this file from `origin/handoff` (it is not on `main`).
 
-## Mac + pi session, paused 2026-11-07 19:15 UTC (read this first)
+## Mac + pi session, running (resumed 2026-11-07 19:35 UTC; read this first)
+
+The Mac + pi build resumed from the 19:15 UTC pause and is running. This section is the current
+state. The "paused" section below it is history. Decision trail: `docs/handoff/pi/notes.md`.
+
+### Status (slice-counts.py, 2026-11-08 ~04:40 UTC)
+
+| Milestone | Merged / total | Open PRs |
+| --- | --- | --- |
+| M2 | 28 / 28 | |
+| M2X | 11 / 18 | |
+| M3 | 46 / 50 | #224 today-sessions, #231 perf-program-screens, #233 program-journey, #238 docs-m3-status |
+| M4 | 31 / 61 | #223 run-logging, #230 other-logging, #235 perf-set-logging |
+| M5 | 28 / 61 | #226 output-policy, #237 coach-composer-kit |
+| M6 | 11 / 63 | |
+| M7 | 0 / 59 | |
+| M9 | 15 / 61 | |
+| All | 170 of 401 | also #236 (flaky Today Retry test fix) |
+
+Merged this run: #212-#222, #225, #227-#229, #232, #234.
+
+### Running
+
+Waves (pi workflow `dag-cloud.js`): m4-r3 (M4 backend: start-kit chain, substitution and pain
+handlers, custom-exercise-sync), m9-r3 (restore-rows, restore-cli, docs-backups-restore,
+setup-token-expiry, secrets-scan), m2x-r1 (desktop screens, limit 1), m6-r1 (chart kit, weekly
+review). The rest of M5 waits on M4's backend slices.
+
+### Owner decisions this run
+
+- CI on GitHub is the gate. Waves end each slice at "PR opened": no per-PR CI-wait agent and no
+  per-PR click-through. The main thread watches CI with `wait-ready.sh` and starts a fixer on red.
+  UI slices get one click-through per screen chain when the chain merges (owed: /workout after
+  the M4 logging chain; Today/Train after M3's last PRs).
+- Token budget: publish agents on Opus low, PR lookups on Terra, verifiers on Sol.
+- M8 council bar: set by the owner and kept private (not in any file on GitHub). No round cap.
+
+### Changes to the harness this run
+
+- `wait-ci.sh` waits until all five required checks exist (the E2E aggregate appears late).
+- Lint and full unit runs go through `slot` (load averages reached 100+ with 4 waves).
+- `update-branch.sh`: GitHub's update-branch now fails (main changed `.github/workflows`, the gh
+  token lacks `workflow` scope), so branches are refreshed by a local merge and push.
+- `merge-pr.sh` (docs guard + merge + note) and `sol-line.sh` (record a Sol approval in a body).
+- CI: #228 split E2E main (both engines) and serial-webkit into two shards; legs had hit their
+  Playwright timeouts.
+
+### Known issues
+
+- `/workout` initial JS is at ~59.3 KB of the 60 KB gate. A runway PR (like #194) is needed before
+  the remaining M4 UI slices.
+- #224, #231, #233 wait on #236 (flaky build-program Retry test). #235's new perf gate found a
+  0.49 layout shift on /workout; a fixer is on it.
+
+## Mac + pi session, paused 2026-11-07 19:15 UTC (superseded by the running section above)
 
 The owner paused the Mac + pi build at 19:15 UTC. It continues in a Claude cloud session, driven
 from the owner's phone. This section is the current state. The sections below it are history.

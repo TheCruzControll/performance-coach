@@ -73,7 +73,7 @@ const prio = (it) => depth(it.id) * 10 + (it.kind === 'm2' ? 5 : 0) + (it.boost 
 
 const MACHINE = (slug, port) => `MACHINE RULES (an 8-CPU, 8 GB macOS laptop shared by several agents; memory is the tight resource):
 - Work only in your worktree ${WT}/${slug} (never in ${MAIN} or another worktree). Run \`bash ${BIN}/agent-env ${slug} ${port}\` once inside it (safe to re-run), then prefix every node/pnpm command with \`source ${envf(slug)} && \`. Your e2e port is ${port}. Postgres 18 (Homebrew) runs on localhost:5432 (role coach/coach), the same major version CI and production run.
-- Heavy commands (svelte-check, vite build, Playwright) go through \`slot\` (at most two machine-wide; expect to wait). If slot gives up waiting it exits non-zero without running the command: run it again through slot later, never without it. Give heavy Bash calls timeout 600000. A git command that fails on a lock (another agent fetching) is retried after a moment.
+- Heavy commands (svelte-check, eslint and \`pnpm lint\`, full \`pnpm test:unit\` runs, vite build, Playwright) go through \`slot\` (at most two machine-wide; expect to wait). If slot gives up waiting it exits non-zero without running the command: run it again through slot later, never without it. Give heavy Bash calls timeout 600000. A git command that fails on a lock (another agent fetching) is retried after a moment.
 - WebKit-only traps (CI runs Linux WebKit; this Mac's Playwright WebKit is macOS WebKit and behaves differently, so CI is the WebKit gate): (a) an e2e test that holds, fails or fulfils a request with page.route must run with the service worker blocked (\`test.use({ serviceWorkers: 'block' })\` in a describe, as profile-goals and train-week do), because on WebKit page.route does not see requests from a page the service worker controls; (b) wait on \`document.fonts.status === 'loaded'\`, never \`document.fonts.ready\`, while a request is held (WebKit resolves it only after the load event).
 - Heavy tests run in CI, not here (the owner's rule: CI's machines are better). Never run Playwright e2e specs, Lighthouse, \`pnpm build\`, \`pnpm build:node\` or \`pnpm budgets\` locally: CI runs them on every PR (Chromium, Linux WebKit, desktop, Lighthouse, budgets) and a later step waits for it. Write and update the e2e specs the slice needs; CI proves them. Never \`playwright install\`. Kill any server or browser you start.
 - GitHub: \`gh\` is authenticated as TheCruzControll; read with \`gh api ${R}/...\`. The only GitHub writes you ever make are the ones your brief names: pushing your slice's branch, creating its PR with \`gh pr create\`, and editing its body with \`gh pr edit --body-file\`. You are a child agent: never subscribe to or watch PRs, never merge, never post PR comments, never rerun CI, never edit other PRs, never touch Vercel, Neon or GitHub settings.
@@ -354,7 +354,7 @@ Sol ledger: ${ledgerLines(sol.ledger)}
 Check the title and body for secrets and private details. Create a NON-draft PR: \`gh pr create --repo TheCruzControll/performance-coach --base main --head ${it.branch} --title "<title>" --body-file ${S}/pr-bodies/${it.slug}.md\` (it prints the PR URL; the number is its last path segment).
 6. Keep the worktree (CI and the click-through check use it next); kill any server or browser you started.
 Report id="${it.id}", branch, head (the pushed \`git rev-parse HEAD\`), PR number and URL, gates, summary, problems.`,
-			{ label: `publish:${it.id}`, phase: 'Publish', schema: OUT, model: AUTHOR.model, effort: 'medium' }
+			{ label: `publish:${it.id}`, phase: 'Publish', schema: OUT, model: AUTHOR.model, effort: 'low' }
 		)
 	);
 	if (!pub || !pub.prNumber) {
@@ -366,7 +366,7 @@ Report id="${it.id}", branch, head (the pushed \`git rev-parse HEAD\`), PR numbe
 				{
 					label: `lookup:${it.id}`,
 					phase: 'Publish',
-					model: AUTHOR.model,
+					model: 'openai/gpt-6.1-terra',
 					effort: 'low',
 					schema: { type: 'object', properties: { prNumber: { type: 'number' }, prUrl: { type: 'string' } } }
 				}
@@ -467,6 +467,8 @@ async function checkLoop(it, impl, p, pub, sol) {
 	let red = 0;
 	let clicks = 0;
 	const end = (ci, clickThrough, needs) => ({ ci, clickThrough, ready: !needs, needs: needs || '', rounds: st.rounds, solApproved: st.solApproved !== false, head: st.head });
+	// Owner, 2026-11-07: the main thread's wait-ready.sh watches CI and starts fixers on red; UI slices get one click-through per screen chain.
+	if (!ARGS.waitCi) return end('watched by the main thread', click ? 'batched per chain' : 'n/a', 'CI watched by the main thread');
 	for (;;) {
 		runs++;
 		// Outside the limiter: the watcher only sleeps on gh, and holding a slot for an hour would stall the wave.

@@ -100,3 +100,70 @@
 - 19:00 UTC owner: drop auth-change-email (dropped.json); backups stay off; offline mode not needed but keep what's built, no extra offline scope. 401 total.
 - 19:10 UTC owner: 3 waves allowed (GOAL.md updated). Started M9 backend wave wf_9c9c3e4e2fe0 (limit 2, 8 slices: restore/backup chain + recovery-codes-120-bit), backups built but switched off.
 - 19:25 UTC PAUSED for cloud resume. Waves stopped by owner; in-flight branches pushed (m3/42, m3/48, m4/32, m4/33, m9/12 wip); HANDOFF 5e4c2b2. caffeinate and status server stopped.
+## 2026-11-07 19:40 UTC resumed on Mac + pi (goal b8ded777)
+- caffeinate 15275 and status server 15281 running. 155/401 merged, open #212 #13.
+- Fixed bin/wait-ci.sh: waits until all 5 required check names exist (the E2E aggregate appears late; #212 false green).
+- m4-r2 sync-status got an `extra` line: squash fixups, confirm tree == ee7bff9, rerun verification/workout-sync/check.sh.
+- fix-212 (Opus high) on e2e/adjust-skip.serial.e2e.ts:250.
+- Waves: m4-r2 wf_8d931c64d717 (l1), m3-r2 wf_b118fd78c818 (l1), m9-r2 wf_dcf407e574ca (l2), m5-r2 wf_73b351c9a09d (l2). wf_87a3abc6e96d was a bad-args start, failed at once.
+- 19:50 UTC owner: CI is the gate on GitHub; no per-PR CI-wait agent and no per-PR click-through. dag-cloud.js returns after publish unless args.waitCi; main thread's wait-ready.sh watches CI and starts fixers on red. UI slices get one click-through per screen chain when the chain ends (findings as own PRs). The 4 running waves still use the old script.
+- 20:00 UTC owner: Claude quota at 50%. Cuts: publish agent Opus low (was medium), PR lookup on Terra, batched click-throughs on Sol (no Claude). Keep 4 waves. Owner stopping the 4 old-script waves; restart on new script.
+- restarted on new script: m4-r2 wf_2f5a06410582, m3-r2 wf_97c220864eb7 (old wf_8d93, wf_b118 stopped). m9/m5 old waves pending owner stop.
+- m9-r2 restarted: Task ID: wf_701232a9cf49
+- m5-r2 restarted: Task ID: wf_6659437f3a2f
+- 20:20 UTC #212 fix 0cfd18b (exempt the one expected 409 on ?/adjust, asserted once) Sol approved. CI running; un-ignored in watcher.
+- 20:25 UTC owner set the M8 council bar (private: council-bar.private.json, never copy into prompts, notes, handoff or commits) and no round cap.
+- 20:30 UTC MERGED #212 adjust-skip (0cfd18b, CI 5/5, docs-guard 81/81).
+- 21:05 UTC MERGED #213 restore-schema-step (Sol xhigh r1, CI 5/5).
+- 21:00 UTC #214 #215 #217 CI pending; #216 build-my-program lint red -> fix-216 (Opus medium).
+- 21:15 UTC #216 prettier-only fix cbde6e1 (whitespace diff, no Sol round needed); un-ignored.
+- 21:20 UTC MERGED #214 sync-status (Sol approved, workout-sync check 12/12, CI 5/5).
+- 21:25 UTC MERGED #215 backup-run-service (Sol xhigh r2, off by config).
+- 21:45 UTC #217 docs: Sol claim check found 5 wrong claims; fix-217 corrected them (4221430), diff read by me. Un-ignored.
+- 21:50 UTC MERGED #218 coach-memory-profile (Sol r1).
+- 21:55 UTC #216 E2E serial·webkit red: build-program.serial.e2e.ts:360 strict-mode violation (.or() resolves to 2). fix-216b (Opus medium).
+- 22:00 UTC MERGED #217 docs-data-model.
+- 22:15 UTC #216 test fix 53333d4 (match only the visible state; card hidden by design) Sol approved. Un-ignored; CI on new head.
+- 22:20 UTC #216 CI red again: e2e/workout-log.e2e.ts:400 CLS 0.00209 != 0 on iphone-chromium (both tries); main green on same test, so #216's change causes it. fix-216c (Opus medium).
+- 22:40 UTC MERGED #219 tools-programming-reads (Sol r2).
+- 23:50 UTC m3-r2 wave done: #216 (CI fix in flight), #217 merged; today-sessions unpublished (gates timed out, load avg 53) so its 3 dependants did not start. dag-cloud: lint and full unit runs now go through slot. Started m3-r3 Task ID: wf_3e917bcbe258 (today-sessions resume, perf-program-screens, program-journey, docs-m3-status).
+- m3-r3 restarted after a quoting fix: Task ID: wf_700d891d4c56
+- 00:00 UTC #220 exercise-navigation CI: Performance budgets red. fix-220 (Opus medium).
+- 00:10 UTC #220 also E2E desktop tab order (steered fix-220). #221 coach-answer-kit E2E: chips overlap, Show all 36px tap target -> fix-221 (Opus medium).
+- 00:25 UTC fix-216c: #216 not the cause; SyncPill (from #214) text width change shifts header -> flaky CLS test. Reran #216 failed jobs. fix-syncpill (Opus medium) opens a PR on main. Load avg 54-109, memory pressure normal, disk 13 GB: keeping 4 waves.
+- 00:45 UTC #222 sync-pill fix: Sol r1 changes requested (min-width overflows at 150% text; other messages still grow). fix-222b (Opus high) redesigns the slot.
+- 00:55 UTC #223 run-logging GitHub DIRTY but merge-tree clean (criss-cross); pushed a clean main merge f356546.
+- 01:00 UTC #221 component fix d2a144f Sol approved (Tabs shared change checked on /progress). Un-ignored.
+- 01:05 UTC MERGED #216 build-my-program (rerun green; SyncPill flake fix in #222).
+- 01:15 UTC MERGED #221 coach-answer-kit.
+- 01:25 UTC #224 today-sessions DIRTY/criss-cross: pushed clean main merge 913439f. #223 run-logging budgets FAIL: /workout 61.1 KB, /workout/run 70.8 KB (gate 60). fix-223 (Opus high).
+- 01:35 UTC #224 today-sessions E2E: every today-plan.serial spec fails at hydration (html data-theme '' not 'dark') on chromium+webkit. fix-224 (Opus medium).
+- 02:10 UTC fix-220 pushed 186e350 (/workout 60.0->59.4 KB; main alone 59.8 KB, no runway left; tab-order spec skips sync pill). Sol review sol-220. Todo: /workout runway perf PR after #220/#223.
+- 02:15 UTC #220 fix 186e350 Sol approved; un-ignored.
+- 02:30 UTC #220 E2E main·webkit hit its 13-min Playwright timeout (capacity, tests passing). Reran failed jobs. ci-shards (Opus low) splits E2E main into 2 shards per engine per ci.yml's rule.
+- 02:45 UTC main f6f207f red: serial·webkit 15-min timeout (steered ci-shards to cover serial legs). #225 red on flaky build-program.serial.e2e.ts:360 chromium (Retry path) -> reran; fix-preview-retry (Opus medium) PR on main. #223 Sol r1: lazy RunView blank pending state -> fix-223b.
+- 02:55 UTC MERGED #220 exercise-navigation.
+- 03:00 UTC MERGED #227 recovery-codes-120-bit.
+- #226 output-policy red on the same build-program:360 chromium test; waiting on fix-preview-retry, then rerun.
+- 03:05 UTC MERGED #225 backup-cli.
+- 03:10 UTC #228 ci shards opened (main x2 both engines, serial·webkit x2). Sol review running.
+- 03:40 UTC #228 Sol approved r2 (provisional shard minutes = old leg values). Body updated; un-ignored.
+- 03:45 UTC MERGED #228 CI shards.
+- 04:00 UTC m4-r2 wave done (#214 #220 merged, #223 fixing, #230 other-logging open). Started m4-r3 Task ID: wf_a447dbcd0a35 (limit 2, backend: start-kit chain, substitution/pain handlers, custom-exercise-sync, perf-set-logging). M4 UI slices wait for the /workout runway PR.
+- #230 other-logging budgets red; stacked on #223, handle after #223 merges.
+- 04:10 UTC m9-r2 wave done: #213 #215 #225 #227 merged, #229 open; restore-rows publish failed (gates timed out, load avg up to 139), restore-cli/docs-backups-restore not started. Holding the 4th wave until the 4 fixers finish (overload causes gate timeouts and rework).
+- 04:30 UTC #223 Shell ready-prop fix 3d2cc46 Sol approved; un-ignored.
+- 04:50 UTC #223 vite.config conflict with #220 -> merge-223 (Opus medium) then verifier. #229 E2E serial·webkit timeout (pre-#228) -> update-branch. #224 spec fix 5b3212f (dark = no data-theme) -> Sol confirm.
+- #224 spec fix Sol approved; un-ignored.
+- 05:05 UTC #222 Sol approved r3 (rendered 100-250%, 999+). Body updated, branch updated with main (for #228 shards), un-ignored.
+- 05:20 UTC #223 main merge f5ec9a4 verified by Sol (both chunk-rule intents kept; /workout 59.3, /workout/run 57.9). Un-ignored.
+- 05:40 UTC fix-preview-retry opened #236 (wait before clicking the SSR card; click before hydration was lost). Sol review.
+- 06:15 UTC m5-r2 wave done (7 PRs). M5 next slices all wait on M4 backend (m4-r3). Started m9-r3 Task ID: wf_694e24791fae: restore-rows, restore-cli, docs-backups-restore, setup-token-expiry, secrets-scan.
+- 06:10 UTC MERGED #229 backup-cron-endpoint (404 while CRON_SECRET unset: backups stay off).
+- 06:20 UTC started m2x-r1 Task ID: wf_073fadf03e7a (limit 1): desk-profile, desk-onboarding, desk-train-week, desk-today, desk-train-detail, desk-lighthouse.
+- 06:25 UTC gh update-branch now 403s (main changed .github/workflows; token lacks workflow scope). New bin/update-branch.sh merges main locally and pushes. #223 updated to c0142ac.
+- 06:35 UTC MERGED #222 sync-pill fix.
+- 04:27 UTC MERGED #232 m5/34-tools-analytics.
+- #236 Sol approved r2 (live CTA selector); body updated.
+- 04:29 UTC MERGED #234 m5/39-direct-answers.
+- 04:35 UTC m3-r3 wave done (#224 #231 #233 #238 open). Started m6-r1 Task ID: wf_6f203bba918e (limit 2): chart-kit-core, line-chart, bar-charts, range-diverging-bars, metric-tiles, review-snapshot, weekly-review-compose, next-week-adjustments.
