@@ -90,9 +90,9 @@ test.describe('the workout screen (IndexedDB only)', () => {
 		);
 		await expect(squat.getByTestId('set')).toHaveText([
 			/^1\s*5 reps · RPE 7\s*Now$/,
-			/^2\s*5 reps · ≈ 100 kg\s*To do$/,
-			/^3\s*5 reps · ≈ 100 kg\s*To do$/,
-			/^4\s*5 reps · ≈ 100 kg\s*To do$/
+			/^2\s*5 reps · ≈ 97\.5 kg\s*To do$/,
+			/^3\s*5 reps · ≈ 97\.5 kg\s*To do$/,
+			/^4\s*5 reps · ≈ 97\.5 kg\s*To do$/
 		]);
 		// The stopwatch runs from the start, 12 minutes ago.
 		await expect(page.getByRole('timer', { name: 'Workout time' })).toHaveText(/^\s*12:\d\d\s*$/);

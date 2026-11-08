@@ -41,7 +41,8 @@ const invalid = (message: string, errors?: Record<string, string>) =>
  * POST {fixture, start: 'last_week' | 'this_week' | 'next_week', timeZone}:
  * - records `timeZone` on the profile (Profile → Body & units' service), then takes today from
  *   it with ownerToday, so dates are the server's and never depend on the machine's zone
- * - week 1 starts on the Monday of last, this or next week; the 'today' fixtures need this_week
+ * - week 1 starts on the Monday of last, this or next week; the 'today' fixtures and
+ *   'workout-day' (the shared kit fixture's program) need this_week
  * - answers 201 {programId, version, today, weekStart, sessions: [{ref, lineage, date, title}]},
  *   where `ref` is the session's path in version 1 (`blocks.0.weeks.1.sessions.2`, by day and
  *   then order in the day, as the store reads a week back)

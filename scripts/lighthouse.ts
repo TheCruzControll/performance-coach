@@ -14,6 +14,15 @@
  * cookie with every request; `/` (the sign-in screen) is audited signed out. Against an external
  * server (--url) pass a session cookie value in LIGHTHOUSE_SESSION, or only `/` is meaningful.
  * Build the Node server with ORIGIN=http://localhost:<port> so it knows it is served over HTTP.
+ *
+ * --seed (on by default in CI; --no-seed turns it off) audits the program screens against a real
+ * generated program. It needs the local server's database, so it cannot be used with --url:
+ * - it removes every program and writes the SEED_PROFILE demo profile (scripts/lib/demo-profiles.ts)
+ *   for the owner, so the routes are audited with /today in its Build-card state
+ * - it POSTs /today?/preview as the screen does (the minted session, the Origin header and
+ *   SEED_TIME_ZONE), then /today?/build with the preview's dates and fingerprints
+ * - it audits /today in its program state, /train, week 1's longest strength session and
+ *   /train/history, with ids read from the database
  */
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
@@ -24,8 +33,11 @@ import * as chromeLauncher from 'chrome-launcher';
 import lighthouse, { type RunnerResult } from 'lighthouse';
 import pg from 'pg';
 import { LOCAL_DATABASE_URLS, runMigrations } from '../src/lib/server/db/migrate.ts';
+import { readActionAnswer } from './lib/action-result.ts';
+import { seedDemoProfile, type DemoProfile } from './lib/demo-profiles.ts';
 
 const { values } = parseArgs({
+	allowNegative: true,
 	options: {
 		url: { type: 'string' },
 		// Every app screen: the sign-in screen, the five tabs (incl. the streamed, DB-backed
@@ -41,9 +53,20 @@ const { values } = parseArgs({
 		'min-perf': { type: 'string', default: '0.9' },
 		'max-lcp': { type: 'string', default: '2500' },
 		'max-cls': { type: 'string', default: '0.1' },
-		'max-tbt': { type: 'string', default: '200' }
+		'max-tbt': { type: 'string', default: '200' },
+		seed: { type: 'boolean', default: Boolean(process.env.CI) }
 	}
 });
+if (values.seed && values.url) {
+	throw new Error("--seed writes to the local server's database: pass --no-seed with --url.");
+}
+
+/** The profile the seeded run builds from: strength, runs and Muay Thai, so every session kind. */
+const SEED_PROFILE: DemoProfile = 'hybrid-blank';
+/** The device zone the seeded preview and build send: fixed, so the run never depends on the VM's. */
+const SEED_TIME_ZONE = 'Europe/London';
+/** 'This week', so week 1 is the current week and Today shows the program on any weekday. */
+const SEED_START = 'this_week';
 
 /**
  * Thresholds checked with --assert (Lighthouse mobile, simulated throttling). Defaults are the
@@ -81,7 +104,7 @@ async function waitForHealth(base: string, server: ChildProcess) {
  * A session for the owner in the disposable database (test tooling only — the app itself only
  * ever issues sessions after a passkey or recovery-code sign-in).
  */
-async function mintSession(db: string): Promise<string> {
+async function mintSession(db: string): Promise<{ token: string; ownerId: string }> {
 	const client = new pg.Client({ connectionString: db });
 	await client.connect();
 	try {
@@ -100,7 +123,7 @@ async function mintSession(db: string): Promise<string> {
 			 values ($1, $2, 'test', now() + interval '1 day', now() + interval '1 day')`,
 			[owner.rows[0]!.id, createHash('sha256').update(token).digest('hex')]
 		);
-		return token;
+		return { token, ownerId: owner.rows[0]!.id };
 	} finally {
 		await client.end();
 	}
@@ -122,7 +145,13 @@ function builtOrigin(): URL {
 	return new URL(origin);
 }
 
-async function startServer(): Promise<{ base: string; stop: () => void; session: string }> {
+async function startServer(): Promise<{
+	base: string;
+	stop: () => void;
+	session: string;
+	db: string;
+	ownerId: string;
+}> {
 	if (!existsSync('build/index.js')) {
 		throw new Error(
 			'No Node build found. Run `ORIGIN=http://localhost:4174 pnpm build:node` first.'
@@ -152,7 +181,19 @@ async function startServer(): Promise<{ base: string; stop: () => void; session:
 		}
 	});
 	await waitForHealth(base, server);
-	return { base, stop: () => server.kill('SIGTERM'), session: await mintSession(db) };
+	const { token, ownerId } = await mintSession(db);
+	return { base, stop: () => server.kill('SIGTERM'), session: token, db, ownerId };
+}
+
+/** Run `fn` with a client on the server's database. */
+async function withClient<T>(db: string, fn: (client: pg.Client) => Promise<T>): Promise<T> {
+	const client = new pg.Client({ connectionString: db });
+	await client.connect();
+	try {
+		return await fn(client);
+	} finally {
+		await client.end();
+	}
 }
 
 const median = (xs: number[]) => {
@@ -165,7 +206,9 @@ const server = values.url
 	? {
 			base: values.url.replace(/\/$/, ''),
 			stop: () => {},
-			session: process.env.LIGHTHOUSE_SESSION ?? ''
+			session: process.env.LIGHTHOUSE_SESSION ?? '',
+			db: '',
+			ownerId: ''
 		}
 	: await startServer();
 /** The cookie name depends on the origin's scheme (src/lib/server/auth/cookies.ts): send both. */
@@ -234,42 +277,118 @@ interface Summary {
 }
 const summaries: Summary[] = [];
 
-try {
-	for (const route of routes) {
-		const results: Summary[] = [];
-		for (let i = 0; i < runs; i++) {
-			const result = await auditOnce(`${server.base}${route}`);
-			const { lhr } = result;
-			lighthouseVersion = lhr.lighthouseVersion;
-			const audit = (id: string) => lhr.audits[id]?.numericValue ?? Number.NaN;
-			results.push({
-				route,
-				performance: lhr.categories.performance?.score ?? 0,
-				accessibility: lhr.categories.accessibility?.score ?? 0,
-				bestPractices: lhr.categories['best-practices']?.score ?? 0,
-				lcp: audit('largest-contentful-paint'),
-				fcp: audit('first-contentful-paint'),
-				tbt: audit('total-blocking-time'),
-				cls: audit('cumulative-layout-shift'),
-				si: audit('speed-index')
-			});
-			const name = `${route === '/' ? 'sign-in' : route.replace(/^\//, '').replace(/\//g, '-')}-run${i + 1}`;
-			const [json, html] = result.report as string[];
-			writeFileSync(`${OUT_DIR}/${name}.report.json`, json!);
-			writeFileSync(`${OUT_DIR}/${name}.report.html`, html!);
+/** No program, and the demo profile with onboarding complete: Today shows the Build card. */
+async function seedProfile() {
+	await withClient(server.db, async (client) => {
+		await client.query('truncate programs cascade');
+		await seedDemoProfile(client, server.ownerId, SEED_PROFILE);
+	});
+}
+
+/** One of Today's actions, posted as the Build preview posts it: its decoded data. */
+async function todayAction(name: 'preview' | 'build', payload: unknown): Promise<unknown> {
+	const body = new FormData();
+	body.set('payload', JSON.stringify(payload));
+	const response = await fetch(`${server.base}/today?/${name}`, {
+		method: 'POST',
+		body,
+		headers: {
+			...sessionHeaders,
+			origin: server.base,
+			accept: 'application/json',
+			'x-sveltekit-action': 'true'
 		}
-		const pick = (k: keyof Omit<Summary, 'route'>) => median(results.map((r) => r[k]));
-		summaries.push({
+	});
+	const text = await response.text();
+	const answer = readActionAnswer(text);
+	if (answer.type !== 'success') {
+		throw new Error(`/today?/${name} answered ${response.status}: ${text.slice(0, 500)}`);
+	}
+	return answer.data;
+}
+
+/**
+ * Preview and build the seeded profile's program, as Start week 1 does: the program screens to
+ * audit, with the session's lineage read from the database.
+ */
+async function buildSeededProgram(): Promise<[label: string, path: string][]> {
+	const request = { timeZone: SEED_TIME_ZONE, start: SEED_START };
+	const { preview } = (await todayAction('preview', request)) as {
+		preview: { startsOn: string; firstPlannedDay: string; fingerprint: string; digest: string };
+	};
+	const { startsOn, firstPlannedDay, fingerprint, digest } = preview;
+	await todayAction('build', { ...request, startsOn, firstPlannedDay, fingerprint, digest });
+	// The session with the most exercises: the session screen's longest page.
+	const session = await withClient(server.db, (client) =>
+		client.query<{ lineage: string }>(
+			`select s.lineage_id as lineage
+			 from programs p
+			 join program_version_weeks vw on vw.version_id = p.current_version_id
+			 join program_weeks w on w.id = vw.week_id
+			 join planned_sessions s on s.week_id = w.id
+			 where p.owner_id = $1 and p.status = 'active'
+			 order by (select count(*) from planned_exercises e where e.session_id = s.id) desc,
+			   s.scheduled_on, s.order_in_day
+			 limit 1`,
+			[server.ownerId]
+		)
+	);
+	const lineage = session.rows[0]?.lineage;
+	if (!lineage) throw new Error('The seeded program has no session');
+	return [
+		['/today · program', '/today'],
+		['/train · program', '/train'],
+		['/train/session/[key]', `/train/session/${lineage}`],
+		['/train/history', '/train/history']
+	];
+}
+
+/** Lighthouse `runs` times on `path`, summarised under `route`, its label. */
+async function auditRoute(route: string, path: string) {
+	const results: Summary[] = [];
+	for (let i = 0; i < runs; i++) {
+		const result = await auditOnce(`${server.base}${path}`);
+		const { lhr } = result;
+		lighthouseVersion = lhr.lighthouseVersion;
+		const audit = (id: string) => lhr.audits[id]?.numericValue ?? Number.NaN;
+		results.push({
 			route,
-			performance: pick('performance'),
-			accessibility: pick('accessibility'),
-			bestPractices: pick('bestPractices'),
-			lcp: pick('lcp'),
-			fcp: pick('fcp'),
-			tbt: pick('tbt'),
-			cls: pick('cls'),
-			si: pick('si')
+			performance: lhr.categories.performance?.score ?? 0,
+			accessibility: lhr.categories.accessibility?.score ?? 0,
+			bestPractices: lhr.categories['best-practices']?.score ?? 0,
+			lcp: audit('largest-contentful-paint'),
+			fcp: audit('first-contentful-paint'),
+			tbt: audit('total-blocking-time'),
+			cls: audit('cumulative-layout-shift'),
+			si: audit('speed-index')
 		});
+		const slug = route.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '');
+		const name = `${route === '/' ? 'sign-in' : slug}-run${i + 1}`;
+		const [json, html] = result.report as string[];
+		writeFileSync(`${OUT_DIR}/${name}.report.json`, json!);
+		writeFileSync(`${OUT_DIR}/${name}.report.html`, html!);
+	}
+	const pick = (k: keyof Omit<Summary, 'route'>) => median(results.map((r) => r[k]));
+	summaries.push({
+		route,
+		performance: pick('performance'),
+		accessibility: pick('accessibility'),
+		bestPractices: pick('bestPractices'),
+		lcp: pick('lcp'),
+		fcp: pick('fcp'),
+		tbt: pick('tbt'),
+		cls: pick('cls'),
+		si: pick('si')
+	});
+}
+
+try {
+	if (values.seed) await seedProfile();
+	for (const route of routes) {
+		await auditRoute(values.seed && route === '/today' ? '/today · build card' : route, route);
+	}
+	if (values.seed) {
+		for (const [label, path] of await buildSeededProgram()) await auditRoute(label, path);
 	}
 } finally {
 	await chrome.kill();

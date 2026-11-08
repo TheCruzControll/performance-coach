@@ -222,7 +222,7 @@ test.describe('moving between exercises (IndexedDB only)', () => {
 		await expect(upNext(page)).toContainText('45 s');
 		await logger(page).getByTestId('complete-set').click();
 		await expect(heading(page)).toHaveText('Plank');
-		await expect(said(page)).toHaveText('Next: A2 Plank, 45 s');
+		await expect(said(page)).toHaveText('Next: A2 Plank, 45 s at RPE 7');
 		// From A2, Up next is A1 again.
 		await expect(upNext(page)).toContainText(/A1\s*Pull-up/);
 		await expect(upNext(page)).toContainText('6–10 reps at RPE 8');
