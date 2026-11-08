@@ -3,6 +3,7 @@
  * week's range comes from the input that generated its block, scaled by its volume factor, beside
  * the week's planned hard sets; today's profile never rewrites a past week.
  */
+import { and, eq, sql } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
 import { addDays } from '../../../src/lib/domain/calendar';
 import { CATALOGUE } from '../../../src/lib/domain/exercises/index';
@@ -19,6 +20,7 @@ import {
 	STORED_TARGET,
 	type WeekTarget
 } from '../../../src/lib/server/services/analytics/targets';
+import { programVersions } from '../../../src/lib/server/db/schema/programs';
 import { listGoals, saveBody, updateGoal } from '../../../src/lib/server/services/profile/index';
 import {
 	createProgramFromPlan,
@@ -148,6 +150,30 @@ describe('muscle-group targets', () => {
 				expect(week).toMatchObject({ source: 'block', programId: data.programs.b });
 				expect(week.targets.hamstrings).toEqual([10, 20]);
 			}
+		});
+	});
+
+	it('read a block from the lowest generated version that plans it, not a later one', async () => {
+		await withRollback(async (db) => {
+			const data = await seedDataset(db);
+			const v1 = await getProgramVersion(data.owner, data.programs.b, 1, { db });
+			const snapshot = v1.version.inputSnapshot as Record<string, unknown>;
+			expect(snapshot).toMatchObject({ nutritionPhase: null });
+			// Version 2 as if a later generator had rebuilt it on a cut: B's blocks keep version 1's.
+			// Versions are immutable; the guard is lifted inside this rolled-back transaction only.
+			await db.execute(
+				sql`alter table program_versions disable trigger program_versions_refuse_update`
+			);
+			await db
+				.update(programVersions)
+				.set({
+					generator: v1.version.generator,
+					inputSnapshot: { ...snapshot, nutritionPhase: 'cut' }
+				})
+				.where(and(eq(programVersions.programId, data.programs.b), eq(programVersions.number, 2)));
+			const weeks = await getMuscleTargets(data.owner, { from: weekOf(12), to: LAST_DAY }, { db });
+			expect(weeks).toHaveLength(5);
+			for (const week of weeks) expect(week.targets.chest).toEqual([10, 20]);
 		});
 	});
 
