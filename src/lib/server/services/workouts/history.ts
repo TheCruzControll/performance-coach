@@ -21,7 +21,8 @@ import type { CustomMetric, OtherDetails, RunSegment } from '../../../domain/tra
 import { isWorking, prKinds } from '../../../domain/workout/logging';
 import { project, type AnyTable } from '../../../domain/workout/project';
 import { runTable } from '../../../domain/workout/reducers/run';
-import { otherTable, strengthTable } from '../../../domain/workout/reducers/tables';
+import { otherTable } from '../../../domain/workout/reducers/other';
+import { strengthTable } from '../../../domain/workout/reducers/tables';
 import { STOPPING_PAIN_ACTIONS } from '../../../domain/workout/substitution';
 import { summarizeWorkout } from '../../../domain/workout/summary';
 import type { PriorBests, WorkoutSummary } from '../../../domain/workout/summary';
