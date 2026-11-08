@@ -36,6 +36,8 @@ export const ROUTE_ACCESS = {
 	'/(app)/offline': 'public',
 	// Prerendered workout pages (data-free HTML; the workout lives in IndexedDB on the device)
 	'/workout': 'public',
+	'/workout/run': 'public',
+	'/workout/session': 'public',
 	// Test-only: 404 unless ENABLE_TEST_ROUTES (never allowed on a hosted deployment)
 	'/api/test-support/session': 'public',
 	'/api/test-support/error': 'owner',

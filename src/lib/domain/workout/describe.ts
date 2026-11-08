@@ -82,10 +82,16 @@ const FIELD_WORDS: Readonly<Record<string, string>> = {
 	missedReps: 'Missed reps',
 	seconds: 'Time',
 	metres: 'Distance',
+	durationSeconds: 'Time',
+	distanceMetres: 'Distance',
+	avgHr: 'Heart rate',
+	durationMinutes: 'Duration',
 	plannedSessionId: 'Planned session'
 };
 
 const fieldOf = (path: string) => {
+	// An other session's metric: its message names it ('Kicks is not one of this session's metrics').
+	if (/(^|\.)metrics\.\d+\./.test(path)) return 'Metric';
 	const last = path.split('.').at(-1) ?? path;
 	return FIELD_WORDS[last] ?? `${last.charAt(0).toUpperCase()}${last.slice(1)}`;
 };

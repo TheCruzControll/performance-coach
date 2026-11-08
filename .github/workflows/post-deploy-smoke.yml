@@ -146,7 +146,7 @@ jobs:
           #    so vercel.json sends them STATIC_PAGE_HEADERS (src/lib/server/security-headers.ts),
           #    expected here value for value. scripts/vercel-headers.test.ts keeps this page list
           #    and this header list equal to the prerendered pages and to that constant.
-          prerendered_pages="/offline /workout"
+          prerendered_pages="/offline /workout /workout/run /workout/session"
           read -r -d '' static_page_headers <<'STATIC_PAGE_HEADERS'
           x-content-type-options: nosniff
           x-frame-options: DENY
