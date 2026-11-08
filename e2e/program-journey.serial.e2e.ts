@@ -516,6 +516,7 @@ test('blank 1RMs: onboarding, a week-1 baseline program built from Today, a move
 				  where d.decided_by = 'owner' order by d.id`
 			)
 		).toEqual([
+			{ number: 1, kind: 'owner_confirmed' },
 			{ number: 2, kind: 'session_moved' },
 			{ number: 3, kind: 'exercise_swapped' }
 		]);
