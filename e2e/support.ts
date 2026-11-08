@@ -12,6 +12,7 @@ import { PgTable } from 'drizzle-orm/pg-core';
 import pg from 'pg';
 import { LOCAL_DATABASE_URLS } from '../src/lib/server/db/migrate';
 import * as profileSchema from '../src/lib/server/db/schema/profile';
+import { DESKTOP } from './desktop';
 import { resetPrograms } from './program-support';
 
 /** The app's origin: state-changing requests must send it (`Origin`), as browsers do. */
@@ -194,4 +195,51 @@ export function appRoutes(dir = ROUTES_DIR): AppRoute[] {
 /** A toast notification with this text (not the same words elsewhere on the screen). */
 export function toastWith(page: Page, text: string | RegExp) {
 	return page.locator('.toaster .toast').filter({ hasText: text });
+}
+
+/** A new recovery code as RecoveryCodes shows it: six groups of four Crockford symbols. */
+export const SIX_GROUP_CODE = /^[0-9A-HJKMNP-TV-Z]{4}(-[0-9A-HJKMNP-TV-Z]{4}){5}$/;
+
+/**
+ * The recovery codes on screen fit at the narrowest phone (320 px) and in a 1440 × 900 window:
+ * every code on two lines of three groups, each inside its row and the row inside the window.
+ * `wholePage` also requires that the page itself never scrolls sideways. The viewport is restored
+ * afterwards.
+ */
+export async function expectRecoveryCodesFit(page: Page, { wholePage = false } = {}) {
+	const phone = page.viewportSize()!;
+	try {
+		for (const viewport of [{ width: 320, height: 640 }, DESKTOP.viewport]) {
+			await page.setViewportSize(viewport);
+			await page.evaluate(() => document.fonts.ready);
+			const misfits = await page.evaluate((wholePage) => {
+				const found: string[] = [];
+				const { scrollWidth } = document.documentElement;
+				if (wholePage && scrollWidth > innerWidth) found.push(`the page is ${scrollWidth}px wide`);
+				const rows = [...document.querySelectorAll('[data-testid="recovery-code"]')];
+				if (rows.length !== 10) found.push(`${rows.length} codes`);
+				for (const row of rows) {
+					const box = row.getBoundingClientRect();
+					if (box.left < 0 || box.right > innerWidth)
+						found.push(`${row.textContent} leaves the window`);
+					const lines = [...row.querySelectorAll<HTMLElement>('.value > .line')];
+					const text = lines.map((line) => line.textContent).join(' / ');
+					if (lines.length !== 2 || !/^([0-9A-Z]{4}-){3}$/.test(lines[0]!.textContent ?? '')) {
+						found.push(`${text}: not two lines of three groups`);
+					}
+					for (const line of lines) {
+						const rect = line.getBoundingClientRect();
+						const clipped = line.scrollWidth > line.clientWidth;
+						if (clipped || rect.left < box.left || rect.right > box.right) {
+							found.push(`${line.textContent} overflows its row`);
+						}
+					}
+				}
+				return found;
+			}, wholePage);
+			expect(misfits, `recovery codes at ${viewport.width} px`).toEqual([]);
+		}
+	} finally {
+		await page.setViewportSize(phone);
+	}
 }
