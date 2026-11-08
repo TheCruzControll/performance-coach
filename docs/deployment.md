@@ -218,11 +218,11 @@ Neon's scheduled snapshots are not available on this project's plan (the API ret
 schedule creation is not enabled for this project"), and its point-in-time window is 6 hours.
 Backups therefore come in three layers:
 
-| Layer                                   | Runs                                       | Kept                          | State                                            |
-| --------------------------------------- | ------------------------------------------ | ----------------------------- | ------------------------------------------------ |
-| 1. Daily app-level backup (Vercel Cron) | every day, 10:00–10:59 UTC                 | 30 daily + 12 monthly         | on once "Set up backups" below is done           |
-| 2. `pg_dump` workflow (`backup.yml`)    | nightly at 03:23 UTC, if its secrets exist | 30 days, as Actions artifacts | **optional, off** while the repository is public |
-| 3. Neon point-in-time restore           | continuous                                 | the last 6 hours              | always on                                        |
+| Layer                                   | Runs                                       | Kept                          | State                                                                                                                            |
+| --------------------------------------- | ------------------------------------------ | ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| 1. Daily app-level backup (Vercel Cron) | every day, 10:00–10:59 UTC                 | 30 daily + 12 monthly         | built, **off** until `BLOB_READ_WRITE_TOKEN`, `CRON_SECRET` and a valid `BACKUP_ENCRYPTION_KEY` are set ("Set up backups" below) |
+| 2. `pg_dump` workflow (`backup.yml`)    | nightly at 03:23 UTC, if its secrets exist | 30 days, as Actions artifacts | **optional, off** while the repository is public                                                                                 |
+| 3. Neon point-in-time restore           | continuous                                 | the last 6 hours              | always on                                                                                                                        |
 
 Every backup holds the owner's data: treat a backup file, a decrypted copy and anything pasted
 from one as private ("Evidence stays private" under "Restore drill" below).
@@ -238,19 +238,22 @@ route allows itself 60 s (`maxDuration`), valid with or without Fluid compute.
 One run (`src/lib/server/services/backups/run.ts`):
 
 1. **Export:** every table in one `REPEATABLE READ READ ONLY` transaction on its own connection
-   to `DATABASE_URL`, under a lock that lets only one run go at a time, gzipped and sealed in
-   memory. The transaction commits before anything is uploaded, so a slow upload never holds a
-   snapshot or a pooled connection open.
+   to `DATABASE_URL`, under a transaction-scoped lock that lets only one export go at a time,
+   gzipped and sealed in memory. The transaction commits, releasing the lock, before anything is
+   uploaded, so a slow upload never holds a snapshot or a pooled connection open; upload, read-back
+   and prune are not serialized.
 2. **Upload** to the private Vercel Blob store `performance-coach-backups`.
 3. **Read back:** the object is downloaded and fully verified (same bytes, GCM tag, every
-   section, counts and digests). A file that fails is deleted, so an unverified file never counts.
+   section, counts and digests). A file that fails is deleted on a best-effort basis: if the
+   delete fails too (logged as `backup discard failed`), the unverified object stays in the store
+   and `pnpm backup:list` shows it.
 4. **Prune** by retention, only after 1–3 succeeded and only after a complete listing.
 
 | Property  | Value                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Format    | `.pcbk`: a `PCBK` header with the key id, then AES-256-GCM (`BACKUP_ENCRYPTION_KEY`) over gzipped JSON lines: a header (format version, time, app version, schema tag, pinned settings, columns, excluded tables), each table's rows as Postgres's own row text in primary-key order, the sequences, and a trailer with per-table counts and SHA-256 digests and a digest of the whole file. The encrypted-backups ADR in `docs/adr/` explains the choice. |
 | Path      | `backups/YYYY/MM/DD/coach-YYYYMMDDTHHMMSSZ.pcbk` (UTC, to the second; `src/lib/domain/backup/pathnames.ts`)                                                                                                                                                                                                                                                                                                                                                |
-| Retention | The newest backup of each of the last **30** UTC days and the **earliest** of each of the last **12** UTC months: at most 42 files (`RETENTION` in `src/lib/domain/backup/retention.ts`). The new file and any name that is not a backup's are never deleted.                                                                                                                                                                                              |
+| Retention | The newest backup of each of the last **30** UTC days and the **earliest** of each of the last **12** UTC months: normally at most 42 files (`RETENTION` in `src/lib/domain/backup/retention.ts`), not a hard ceiling. The new file, any file dated after the run's clock and any name that is not a backup's are never deleted, and a failed prune is recorded and leaves the extras until the next run.                                                  |
 | Contents  | Every table in `public` except `auth_sessions`, `webauthn_challenges`, `auth_rate_limits`, `email_sign_in_links` and `backup_runs`, each with its reason in `EXCLUDED_TABLES` (`src/lib/server/db/backup/tables.ts`). The owner, passkeys, recovery-code hashes, the audit trail and telemetry are included; sessions are not, so after a restore every device signs in again.                                                                             |
 | Size      | 2.48 MB sealed for the two-year `db:explain` dataset (41,434 rows in 53 tables; CI run [42447028500](https://github.com/TheCruzControll/performance-coach/actions/runs/42447028500)), exported in 1.1 s and read back in 0.1 s, against budgets of 30 s and 10 s (`scripts/explain/backup.explain.ts`).                                                                                                                                                    |
 
@@ -335,7 +338,8 @@ BACKUP_PASSPHRASE='…' scripts/restore-backup.sh coach-20261105T032300Z.dump.gp
   'postgres://user:pass@ep-xxx.region.aws.neon.tech/neondb?sslmode=require'
 ```
 
-The script verifies the checksum, decrypts into a private temp dir, validates the archive and runs
+The script verifies the checksum when the `.sha256` file sits beside the backup (without it, it
+continues unchecked), decrypts into a private temp dir, validates the archive and runs
 `pg_restore --clean --if-exists --single-transaction` after a typed confirmation. Verified locally
 in M1: dump → encrypt → restore into a fresh database reproduced rows and the migrations table; a
 wrong passphrase fails without touching the target.
@@ -422,12 +426,14 @@ table below as you go.
    that holds rows. It migrates the target to the backup's schema; then, in one transaction, it
    inserts every row with its original id, sets the sequences, recomputes every table's digest and
    rolls back on any difference; finally it migrates forward to this checkout. It ends with a table
-   of each phase's UTC start and end, for the record. A rerun of the same backup writes nothing
-   (`Already restored`) and exits 0.
+   of each phase's UTC start and end, for the record. A rerun of the same backup writes no row
+   (`Already restored`), still migrates forward and seeds the exercise catalogue, and exits 0.
 
 5. **Verify** with counts, digests, ids and timestamps only. The restore has already compared
-   every table's digest; confirm on the branch that the per-table counts add up to the `Rows:` line
-   it printed and that the newest timestamps are not later than its `Taken:` line:
+   every table's digest. The forward migration and catalogue seeding can then add or change rows
+   and timestamps (the exercise catalogue, and any table a newer migration touches); outside those,
+   confirm on the branch that the per-table counts add up to the `Rows:` line it printed and that
+   the newest timestamps are not later than its `Taken:` line:
 
    ```sh
    psql "$TARGET" -X -A -F ' | ' <<'SQL'
@@ -446,9 +452,11 @@ table below as you go.
    SQL
    ```
 
-   Run the same query on `production` (read-only) right after: the counts may differ only in
-   tables whose newest timestamp there is later than the backup, which is the data a restore from
-   this backup would lose. The excluded tables are empty on the branch.
+   Run the same query on `production` (read-only) right after: outside the excluded tables and
+   rows changed by migrations or seeding, a count may differ only where production gained rows
+   after the backup (newest timestamp later than `Taken:`, the data a restore would lose) or lost
+   rows to deletions since it, which timestamps do not show. The excluded tables (sessions among
+   them) are empty on the branch and are not compared.
 
 6. **Record RPO and RTO, then delete the branch.** RPO is the backup's age when the drill started
    (`Taken:` to step 1's start; at most about 25 hours with a daily cron). RTO is step 2's start to
