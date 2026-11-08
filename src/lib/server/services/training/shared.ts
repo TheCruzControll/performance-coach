@@ -45,9 +45,13 @@ export class TrainingInputError extends Error {
 }
 
 export class TrainingNotFoundError extends Error {
+	/** What was not found: 'program', 'planned session'… */
+	readonly what: string;
+
 	constructor(what: string) {
 		super(`${what} not found`);
 		this.name = 'TrainingNotFoundError';
+		this.what = what;
 	}
 }
 
