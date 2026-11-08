@@ -333,7 +333,7 @@ test.describe('/design → Coach', () => {
 		await expect(page.getByTestId('notice-rate_limited')).toHaveAttribute('role', 'status');
 		await expect(page.getByTestId('notice-not_launched')).toHaveAttribute('role', 'status');
 		// Each notice has its own mark beside its words.
-		await expect(page.getByTestId('notice-offline').locator('use')).toHaveAttribute(
+		await expect(page.getByTestId('notice-offline').locator('.glyph use')).toHaveAttribute(
 			'href',
 			/#wifi-off$/
 		);
