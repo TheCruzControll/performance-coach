@@ -164,3 +164,9 @@
 		transition: none;
 	}
 }
+
+/* A square diamond for a measured value: the 8 px square turned 45°, so it stays square. */
+.pc-chart-body .pc-marker[data-kind='measured'] {
+	border-radius: 1px;
+	rotate: 45deg;
+}
