@@ -384,7 +384,11 @@ test.describe('with the service worker blocked, so page.route sees every request
 		// the preview takes Today's place, so only one of the two is ever visible.
 		const shown = ready(page).or(card(page)).filter({ visible: true });
 		await expect(shown).toBeVisible({ timeout: 15_000 });
-		if (await card(page).isVisible()) await cta(page).click();
+		// The reloaded card shows in the server's HTML before Today hydrates, and a click then is lost.
+		if (await card(page).isVisible()) {
+			await page.waitForLoadState('networkidle');
+			await cta(page).click();
+		}
 		await expect(ready(page)).toBeVisible({ timeout: 15_000 });
 		await expect(card(page)).toBeHidden();
 	});
