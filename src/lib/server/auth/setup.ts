@@ -7,10 +7,11 @@
  * existing one after `pnpm auth:reset-owner`), closes setup for good (the route answers 404 from
  * then on) and returns 10 recovery codes, shown exactly once. Each token works for one setup:
  * its hash is recorded when setup completes, so after a reset a new token is needed (the old
- * link sits in Vercel's request logs).
+ * link sits in Vercel's request logs). Each token also carries its own expiry, covered by the
+ * configured hash (tokens.ts), so a hash left configured stops working on its own (ASVS 2.3.1).
  */
 import type { PublicKeyCredentialCreationOptionsJSON } from '@simplewebauthn/server';
-import { createAuthRepository } from '../db';
+import { createAuthRepository, type Executor } from '../db';
 import { getEnv } from '../env';
 import { recordAuthEvent } from './audit';
 import { consumeChallenge, storeChallenge } from './challenges';
@@ -20,7 +21,13 @@ import { AuthError, failureReason, isAuthError } from './errors';
 import { enforceRateLimit } from './rate-limit';
 import { generateRecoveryCodes, hashRecoveryCode } from './recovery-codes';
 import { issueSession, revokeToken, type IssuedSession } from './sessions';
-import { generateUserHandle, hashToken, tokenMatchesHash } from './tokens';
+import {
+	generateUserHandle,
+	hashToken,
+	parseSetupToken,
+	setupTokenExpired,
+	tokenMatchesHash
+} from './tokens';
 import { parseRegistrationResponse, registrationOptions, verifyRegistration } from './webauthn';
 
 const UNAVAILABLE = 'Setup is not available.';
@@ -32,17 +39,39 @@ export interface SetupConfig {
 
 const configFromEnv = (): SetupConfig => ({ tokenHash: getEnv().OWNER_SETUP_TOKEN_HASH });
 
-/** Constant-time check of a presented setup token against the configured hash. */
+/**
+ * Constant-time check of a presented setup token against the configured hash. Only a token of
+ * the current shape (with its expiry) can match; whether it has expired is checked apart.
+ */
 export function setupTokenValid(token: unknown, config: SetupConfig = configFromEnv()): boolean {
-	if (!config.tokenHash || typeof token !== 'string' || token.length < 16 || token.length > 256) {
-		return false;
-	}
+	if (!config.tokenHash || typeof token !== 'string' || !parseSetupToken(token)) return false;
 	return tokenMatchesHash(token, config.tokenHash);
 }
 
-/** The presented token's hash if it is the configured token, else null. */
-const validTokenHash = (token: unknown, config?: SetupConfig): string | null =>
-	typeof token === 'string' && setupTokenValid(token, config) ? hashToken(token) : null;
+type SetupTokenCheck =
+	| { ok: true; hash: string }
+	| { ok: false; code: 'invalid_token' | 'token_used' | 'token_expired' };
+
+/**
+ * Is the presented token the configured one, never used for a setup, and not past its expiry?
+ * The expiry is trusted only once the hash matches (the hash covers it). An expired token gets
+ * the same 404 as any other refusal; only the audit log tells them apart.
+ */
+async function checkSetupToken(
+	token: unknown,
+	db: Executor,
+	now: Date,
+	config?: SetupConfig
+): Promise<SetupTokenCheck> {
+	if (typeof token !== 'string') return { ok: false, code: 'invalid_token' };
+	const parsed = parseSetupToken(token);
+	if (!parsed || !setupTokenValid(token, config)) return { ok: false, code: 'invalid_token' };
+	const hash = hashToken(token);
+	// The configured token, but already spent: an old link after an owner reset.
+	if (await createAuthRepository(db).setupTokenUsed(hash)) return { ok: false, code: 'token_used' };
+	if (setupTokenExpired(parsed.expiresAt, now)) return { ok: false, code: 'token_expired' };
+	return { ok: true, hash };
+}
 
 /**
  * True while no passkey exists and setup has never completed — on a fresh database, or after
@@ -68,16 +97,11 @@ export async function checkSetupAccess(
 	const { db, now } = resolveDeps(deps);
 	if (!(await setupOpen({ db }))) return false;
 	await enforceRateLimit('setup', { ip: request.ip }, request, { db, now });
-	const tokenHash = validTokenHash(token, deps.config);
-	// The configured token, but already spent: an old link after an owner reset. Audited apart.
-	const used = tokenHash !== null && (await createAuthRepository(db).setupTokenUsed(tokenHash));
-	if (!tokenHash || used) {
-		await recordAuthEvent(db, request, {
-			type: 'setup.failed',
-			detail: { code: used ? 'token_used' : 'invalid_token' }
-		});
+	const check = await checkSetupToken(token, db, now(), deps.config);
+	if (!check.ok) {
+		await recordAuthEvent(db, request, { type: 'setup.failed', detail: { code: check.code } });
 	}
-	return tokenHash !== null && !used;
+	return check.ok;
 }
 
 export function parseOwnerName(input: unknown): string {
@@ -96,19 +120,16 @@ async function assertSetupAllowed(
 ): Promise<string> {
 	const { db, now } = resolveDeps(deps);
 	await enforceRateLimit('setup', { ip: request.ip }, request, { db, now });
-	const tokenHash = validTokenHash(token, deps.config);
-	if (
-		!tokenHash ||
-		(await createAuthRepository(db).setupTokenUsed(tokenHash)) ||
-		!(await setupOpen({ db }))
-	) {
+	const check = await checkSetupToken(token, db, now(), deps.config);
+	if (!check.ok || !(await setupOpen({ db }))) {
+		const expired = !check.ok && check.code === 'token_expired';
 		await recordAuthEvent(db, request, {
 			type: 'setup.failed',
-			detail: { code: 'setup_unavailable' }
+			detail: { code: expired ? 'token_expired' : 'setup_unavailable' }
 		});
 		throw new AuthError('setup_unavailable', UNAVAILABLE);
 	}
-	return tokenHash;
+	return check.hash;
 }
 
 export async function beginSetup(

@@ -157,12 +157,13 @@ export default defineConfig(({ command, mode }) => {
 							 * importer set into three chunks the page waits for (about 0.7 KB more gzip). Only
 							 * modules already in /workout's initial JavaScript belong here: a module another
 							 * route imports would bring the whole chunk with it. The flow (flow.ts) is not:
-							 * only the lazy logger and navigation use it. Nor is the run family (reducers/run.ts,
-							 * with /workout/run's table): in the group, /workout would ship it.
+							 * only the lazy logger and navigation use it. Nor are the run and other families
+							 * (reducers/run.ts and reducers/other.ts, with their routes' tables): in the group,
+							 * /workout would ship them.
 							 */
 							{
 								name: 'workout',
-								test: /src[\\/]lib[\\/](domain[\\/]workout[\\/](groups|mutations|timers|selectors|project|reducers[\\/](?!run\.)\w+)|ui[\\/]workout[\\/]set-words)\.ts$/
+								test: /src[\\/]lib[\\/](domain[\\/]workout[\\/](groups|mutations|timers|selectors|project|reducers[\\/](?!(run|other)\.)\w+)|ui[\\/]workout[\\/]set-words)\.ts$/
 							}
 						]
 					}
