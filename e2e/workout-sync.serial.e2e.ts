@@ -114,18 +114,27 @@ async function audit(page: Page, what: string) {
 	await page.evaluate(() => delete document.documentElement.dataset.theme);
 }
 
-/** Every text the pill showed, in order: a state that lasts a moment is still seen. */
+/**
+ * Every text the pill showed, in order: a state that lasts a moment is still seen. With each, the
+ * pill's left edge, which must not move as its words change (no layout shift without input).
+ */
 const recordPill = (page: Page) =>
 	page.addInitScript(() => {
 		const seen: string[] = [];
-		Object.assign(window, { __pill: seen });
+		const lefts = new Set<number>();
+		Object.assign(window, { __pill: seen, __pillLefts: lefts });
 		new MutationObserver(() => {
 			const text = document.querySelector('[data-testid="sync-pill"]')?.textContent?.trim();
-			if (text && seen.at(-1) !== text) seen.push(text);
+			if (!text || seen.at(-1) === text) return;
+			seen.push(text);
+			const pill = document.querySelector('[data-testid="sync-status"] .pill');
+			if (pill) lefts.add(Math.round(pill.getBoundingClientRect().left));
 		}).observe(document, { subtree: true, childList: true, characterData: true });
 	});
 const pillTexts = (page: Page) =>
 	page.evaluate(() => (window as unknown as { __pill: string[] }).__pill);
+const pillLefts = (page: Page) =>
+	page.evaluate(() => [...(window as unknown as { __pillLefts: Set<number> }).__pillLefts]);
 
 const idsOf = (route: Route) =>
 	(route.request().postDataJSON() as SyncRequest).mutations.map((m) => m.id);
@@ -159,6 +168,7 @@ test.describe('the workout sync status', () => {
 		await expect(pill(page)).toHaveText('Saved');
 		expect(sent).toBe(3);
 		expect(await pillTexts(page)).toContainEqual(expect.stringMatching(/^Retrying in \d+ s$/));
+		expect(await pillLefts(page), 'the pill keeps its left edge').toHaveLength(1);
 		expect(await rowsOf([set.id])).toHaveLength(1);
 	});
 

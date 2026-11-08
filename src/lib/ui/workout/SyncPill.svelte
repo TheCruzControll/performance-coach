@@ -7,7 +7,9 @@
   needed. With `onopen` (whenever there is something to show) it is a 44 px button that opens the
   sync sheet, the pill inside it taking the hover (fine pointers) and the focus ring; `onintent` (pointer down,
   hover, focus) lets the page fetch the sheet first. The workout header shows it, and the resume
-  bar reuses it.
+  bar reuses it. It sits flush right, so it reserves the width of its timed states (Saved, Saving…,
+  Retrying in 60 s) in tabular figures: their changes, which come without input, never move its
+  left edge.
 -->
 <script lang="ts">
 	import type { OutboxStatus } from '#lib/client/workout/outbox-rules.ts';
@@ -60,7 +62,7 @@
 		display: inline-flex;
 		align-items: center;
 		gap: var(--space-1-5);
-		min-width: 0;
+		min-width: calc(16ch + 14px + var(--space-1-5) + 2 * var(--space-2) + 2px);
 		min-height: 1.75rem;
 		padding: 0 var(--space-2);
 		border: 1px solid var(--color-border);
@@ -70,6 +72,7 @@
 		font: inherit;
 		font-size: var(--text-xs);
 		font-weight: var(--weight-medium);
+		font-variant-numeric: tabular-nums;
 		white-space: nowrap;
 		/* At a large text size on a phone the words end in an ellipsis rather than overflow. */
 		max-width: 100%;
