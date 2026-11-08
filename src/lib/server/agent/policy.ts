@@ -22,7 +22,8 @@
  * method reaches the wire only with its completion, once the block has passed.
  * A block that fails is replaced (block_replaced) before any more of it is sent: the first by the
  * safe guidance, any later one by SAFETY_REMOVED. A fact or metric that is not grounded becomes a
- * note marked UNCHECKED, without its links. Each change is an intervention, stored by the turn as
+ * note marked UNCHECKED, without its links; a direct answer (serverWritten) is not checked, as the
+ * server wrote it from the records it read. Each change is an intervention, stored by the turn as
  * a '_policy' row with codes and counts only.
  */
 import type { BetaUserMessageParam } from '@anthropic-ai/sdk/resources/beta/messages';
@@ -67,6 +68,8 @@ export interface PolicyInput {
 	area?: BodyArea | null;
 	/** The segment's memory preamble, as stored: the snapshot's ids are citable too. */
 	preamble: BetaUserMessageParam;
+	/** The server wrote the answer from the records it read (direct.ts): grounding checks a model's claims, not these. */
+	serverWritten?: boolean;
 }
 
 /** A change the policy made, stored as a '_policy' tool-call row. */
@@ -203,6 +206,7 @@ export function createOutputPolicy(input: PolicyInput): OutputPolicy {
 		const rest = open.text.slice(open.released);
 		if (rest) out.push({ type: 'text_delta', block: open.block, text: rest });
 		open.released = open.text.length;
+		if (input.serverWritten) return complete(out, open, done, true, null);
 		const grounding = checkGrounding(done, evidence);
 		if (grounding.grounded) return complete(out, open, done, true, null);
 		interventions.push({

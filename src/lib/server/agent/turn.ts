@@ -444,7 +444,8 @@ async function turn(
 		{
 			painMode: facts.painMode,
 			area: pain.area ?? null,
-			preamble: { role: 'user', content: opening }
+			preamble: { role: 'user', content: opening },
+			serverWritten: lookup !== null
 		},
 		(event) => {
 			if (event.type === 'text_delta') ttftMs ??= Date.now() - startedAt;
