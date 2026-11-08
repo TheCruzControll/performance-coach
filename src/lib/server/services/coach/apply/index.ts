@@ -5,6 +5,7 @@
  */
 import { PROFILE_APPLIERS } from './profile';
 import { PROGRAM_APPLIERS } from './program';
+import { PROGRAM_CREATE_APPLIERS } from './program-create';
 import { SESSION_APPLIERS } from './session';
 import type { Appliers } from './types';
 
@@ -13,6 +14,7 @@ export type { Applier, Appliers, ApplyInput, ApplyOutcome } from './types';
 
 export const APPLIERS: Appliers = {
 	...PROGRAM_APPLIERS,
+	...PROGRAM_CREATE_APPLIERS,
 	...PROFILE_APPLIERS,
 	...SESSION_APPLIERS
 };

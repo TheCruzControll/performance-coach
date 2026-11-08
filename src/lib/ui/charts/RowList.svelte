@@ -1,8 +1,8 @@
 <!--
   @component
   The rows a horizontal bar body draws (bodies/RangeBars.svelte, bodies/DivergingBars.svelte),
-  loaded only with them: a legend in words, then one row a group or exercise, each a button at least 44 px tall whose name
-  says every value and status in words, over vertical gridlines and a value axis under the rows.
+  loaded only with them: a legend in words, then one row a group or exercise, each a button at least 44 px tall named by the
+  words it shows (WCAG 2.5.3) and described by every value and status in words, over vertical gridlines and a value axis under the rows.
   The body draws each row's head and track through `row`. Hover, a tap or focus shows the row's
   words in a tooltip, beside the row and inside the plot. One row holds the tab stop (roving): the
   arrow keys move up and down, Home and End to the ends, Escape hides the tooltip.
@@ -23,6 +23,7 @@
 	}
 
 	let { title, count, readout, ticks, legend, row }: Props = $props();
+	const id = $props.id();
 
 	let root = $state<HTMLElement>();
 	let buttons = $state<HTMLButtonElement[]>([]);
@@ -87,7 +88,7 @@
 					type="button"
 					class="row"
 					tabindex={i === stop ? 0 : -1}
-					aria-label={rowName(readout(i))}
+					aria-describedby={`${id}-${i}`}
 					data-testid="row-mark"
 					onfocus={() => {
 						focused = i;
@@ -109,7 +110,7 @@
 			<div
 				class="tip"
 				aria-hidden="true"
-				data-shown={shown || undefined}
+				data-shown={shown ? '' : undefined}
 				data-above={stop >= count / 2 || undefined}
 				style:--i={stop}
 				style:--rows={count}
@@ -124,6 +125,11 @@
 				{/each}
 			</div>
 		{/if}
+		<div hidden>
+			{#each { length: count }, i (i)}
+				<span id={`${id}-${i}`}>{rowName(readout(i))}</span>
+			{/each}
+		</div>
 	</div>
 </div>
 
