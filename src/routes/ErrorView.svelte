@@ -14,7 +14,8 @@
 </script>
 
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onDestroy } from 'svelte';
+	import { afterNavigate, beforeNavigate } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { OFFLINE_PATH, startOfflineRecovery } from '#lib/client/recovery.ts';
 	import Button from '#lib/ui/components/Button.svelte';
@@ -48,10 +49,20 @@
 			: "This screen needs a connection. It loads by itself as soon as you're back online."
 	);
 
-	onMount(() => {
-		if (kind !== 'offline') return;
-		return startOfflineRecovery({ onDeviceStatus: (online) => (deviceOnline = online) });
+	// Recovery belongs to the screen at this URL: a navigation the user starts stops it, so its
+	// reload cannot pull them back here, and the view (reused across error URLs) starts it again.
+	let stopRecovery: (() => void) | undefined;
+	afterNavigate(() => {
+		stopRecovery?.();
+		stopRecovery =
+			kind === 'offline'
+				? startOfflineRecovery({ onDeviceStatus: (online) => (deviceOnline = online) })
+				: undefined;
 	});
+	beforeNavigate(({ willUnload }) => {
+		if (!willUnload) stopRecovery?.();
+	});
+	onDestroy(() => stopRecovery?.());
 
 	function tryAgain() {
 		// The /offline document at its own URL is always this screen: go into the app instead.
