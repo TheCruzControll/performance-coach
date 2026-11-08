@@ -14,8 +14,8 @@
     set.delete. A chunk that cannot load (gone
     after a deploy) turns the page to 'App updated — reload to continue', never a broken sheet.
   - Under the card, its navigation (Navigation.svelte, loaded after the first render and shown
-    once the store can write, as the logger is, its space reserved meanwhile): Up next, Previous and Next, the swipe across the card and, from 1024 px, the side
-    list. Each is a goTo, stored with the workout, so a reload returns to it.
+    once the store can write, as the logger is, its space reserved meanwhile): Previous and Next,
+    Up next, the swipe across the card and, from 1024 px, the side list. Each is a goTo, stored with the workout, so a reload returns to it.
 -->
 <script lang="ts">
 	import type {
@@ -102,14 +102,17 @@
 		// The set at hand: the current row's, else (all done) the first.
 		const at = sets[(rows.find((row) => row.state === 'current')?.setIndex ?? 1) - 1];
 		const previous = previousFor(view, slot.position);
+		const loadType = view.exercises[slot.exerciseId]?.loadType;
 		return {
 			position: slot.position,
 			name: nameOf(slot.exerciseId),
 			label: labels.get(slot.position),
 			place: `Exercise ${view.slots.indexOf(slot) + 1} of ${view.slots.length}`,
 			lines: [...new Set(sets.map((set) => set.line))],
-			load: loadLine(at, view.exercises[slot.exerciseId]?.loadType),
+			load: loadLine(at, loadType),
 			rest: restText(at?.restSeconds),
+			loads: sets.map((set) => loadLine(set, loadType)),
+			rests: sets.map((set) => restText(set.restSeconds)),
 			previous: previous && {
 				heading: lastTimeText(previous.date, view.kit?.date),
 				sets: previous.sets.map(doneText)
@@ -208,9 +211,11 @@
 		user-select: none;
 	}
 
-	/* Up next, then Previous and Next: their height is kept while they load. */
+	/* Previous and Next, then Up next: their height is kept while they load. Packed at the top, so
+	   a shorter Up next never moves Previous and Next. */
 	.navigation {
 		display: grid;
+		align-content: start;
 		gap: var(--space-4);
 		min-height: 9.5rem;
 	}

@@ -275,6 +275,15 @@
 		gap: var(--space-3);
 	}
 
+	/* Given the room (the review's wide card on a desktop window), the blocks pair up, in reading
+	   order across each row. */
+	@container (width >= 48rem) {
+		.summary {
+			grid-template-columns: repeat(2, minmax(0, 1fr));
+			align-items: start;
+		}
+	}
+
 	.block {
 		display: grid;
 		gap: var(--space-2);

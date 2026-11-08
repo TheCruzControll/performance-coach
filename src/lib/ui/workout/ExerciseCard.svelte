@@ -7,6 +7,7 @@
     instruction, or what the load type means ('Bodyweight · add weight if you like'); never an
     invented number
   - the rest, then the previous session's sets inline for comparison
+  The load and the rest keep the room of the exercise's tallest, so logging a set moves nothing.
   - its set rows (the children: SetRows)
   Long names wrap; nothing scrolls sideways at 393 px or at 150 % text. One per page: its heading's
   id is fixed ('exercise-name').
@@ -35,10 +36,22 @@
 
 	<div class="target" data-testid="exercise-target">
 		<p class="lines">{exercise.lines.join(' · ')}</p>
-		{#if exercise.load}
-			<p class="load" data-kind={exercise.load.kind}>{exercise.load.text}</p>
-		{/if}
-		{#if exercise.rest}<p class="rest">{exercise.rest}</p>{/if}
+		<!-- The set at hand's load and rest, each over a ghost of every set's, so logging a set never
+		     moves what follows. A ghost's words are generated content, outside the text. -->
+		<div class="stack">
+			{#if exercise.load}
+				<p class="load" data-kind={exercise.load.kind}>{exercise.load.text}</p>
+			{/if}
+			{#each exercise.loads as load, i (i)}
+				{#if load}<p class="load ghost" data-kind={load.kind} data-text={load.text}></p>{/if}
+			{/each}
+		</div>
+		<div class="stack">
+			{#if exercise.rest}<p class="rest">{exercise.rest}</p>{/if}
+			{#each exercise.rests as rest, i (i)}
+				{#if rest}<p class="rest ghost" data-text={rest}></p>{/if}
+			{/each}
+		</div>
 	</div>
 
 	<div class="previous" data-testid="exercise-previous">
@@ -109,6 +122,27 @@
 	.target {
 		display: grid;
 		gap: var(--space-1-5);
+	}
+
+	.stack {
+		display: grid;
+		align-items: start;
+	}
+
+	.stack:not(:has(p)) {
+		display: none;
+	}
+
+	.stack > * {
+		grid-area: 1 / 1;
+	}
+
+	.ghost {
+		visibility: hidden;
+	}
+
+	.ghost::before {
+		content: attr(data-text);
 	}
 
 	.lines {

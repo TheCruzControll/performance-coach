@@ -15,6 +15,11 @@ import { blocks } from './decisions/templates/blocks.ts';
 import { defaults } from './decisions/templates/defaults.ts';
 import { edits } from './decisions/templates/edits.ts';
 import { loads } from './decisions/templates/loads.ts';
+import { periodisationBlocks } from './decisions/templates/periodisation-blocks.ts';
+import { periodisationGoals } from './decisions/templates/periodisation-goals.ts';
+import { periodisationReplan } from './decisions/templates/periodisation-replan.ts';
+import { periodisationRunning } from './decisions/templates/periodisation-running.ts';
+import { periodisationSchedule } from './decisions/templates/periodisation-schedule.ts';
 import { placement } from './decisions/templates/placement.ts';
 import { program } from './decisions/templates/program.ts';
 import { results } from './decisions/templates/results.ts';
@@ -44,7 +49,12 @@ export const TEMPLATES = {
 	...volume,
 	...loads,
 	...edits,
-	...results
+	...results,
+	...periodisationGoals,
+	...periodisationSchedule,
+	...periodisationBlocks,
+	...periodisationRunning,
+	...periodisationReplan
 } satisfies Record<DecisionKind, Template>;
 
 type Placeholders<S extends string> = S extends `${string}{${infer Name}}${infer Rest}`

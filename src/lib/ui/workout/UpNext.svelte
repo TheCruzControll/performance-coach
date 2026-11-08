@@ -3,7 +3,9 @@
   Up next on the strength view (PRD §7): the exercise the flow names next and its first target
   (up-next-words.ts), so what follows is clear at a glance; inside a superset round, the partner.
   - Between exercises (the current one has no planned set left) it is the screen's next step: a
-    raised card whose Start makes Up next current, its first set ready in the logger.
+    raised card whose Start makes Up next current, its first set ready in the logger. Only Start
+    is added, under what was there, so logging the last set moves nothing (Navigation puts the
+    card last).
   - Once a set is logged, a polite live region says where the workout went: 'Next: A2 Plank,
     45 s' when the flow moved to the partner, 'Next: Romanian deadlift, 3 × 8 at RPE 7' once the
     exercise is done. Nothing is said on restore or while sets are left.
@@ -51,21 +53,22 @@
 	data-between={between ? '' : undefined}
 >
 	<h3 id="up-next-title" class="eyebrow">Up next</h3>
-	{#if next}
-		<p class="name">
+	<p class="name">
+		{#if next}
 			{#if next.label}<span class="badge">{next.label}</span>{/if}
 			<span>{next.name}</span>
-		</p>
-		{#if next.target}<p class="target">{next.target}</p>{/if}
-		{#if between}
-			<div class="start">
-				<Button block iconEnd="arrow-right" onclick={() => onstart(next.position)}>
-					Start {next.name}
-				</Button>
-			</div>
+		{:else}
+			{between ? ALL_DONE : 'Last exercise'}
 		{/if}
-	{:else}
-		<p class="name">{between ? ALL_DONE : 'Last exercise'}</p>
+	</p>
+	<!-- Its line kept with or without a target, so the card's height holds as sets are logged. -->
+	<p class="target">{next?.target}</p>
+	{#if next && between}
+		<div class="start">
+			<Button block iconEnd="arrow-right" onclick={() => onstart(next.position)}>
+				Start {next.name}
+			</Button>
+		</div>
 	{/if}
 </section>
 <p class="visually-hidden" role="status" data-testid="up-next-said">{said}</p>
@@ -79,12 +82,10 @@
 		border: 1px solid var(--color-hairline);
 	}
 
+	/* Raised by colour only: what logging the last set shows above Start keeps its place. */
 	.up-next[data-between] {
-		gap: var(--space-2);
-		padding: var(--space-4);
 		border-color: var(--color-border);
 		background: var(--color-surface-2);
-		box-shadow: var(--elevation-1);
 	}
 
 	.eyebrow {
@@ -103,11 +104,6 @@
 		overflow-wrap: anywhere;
 	}
 
-	[data-between] .name {
-		font-family: var(--font-display);
-		font-size: var(--text-xl);
-	}
-
 	.badge {
 		display: inline-grid;
 		place-items: center;
@@ -119,6 +115,7 @@
 	}
 
 	.target {
+		min-height: 1lh;
 		color: var(--color-text-secondary);
 		font-size: var(--text-sm);
 	}
