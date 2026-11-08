@@ -50,7 +50,8 @@ export const EDGE = {
 	mood: 'fierce'
 } as const;
 
-const EDGE_DDL = `
+/** The scratch-only tables, which a restore target needs too before the rows load. */
+export const EDGE_DDL = `
 	CREATE TYPE backup_edge_mood AS ENUM ('calm', 'fierce');
 	CREATE TABLE backup_edge (
 		id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,

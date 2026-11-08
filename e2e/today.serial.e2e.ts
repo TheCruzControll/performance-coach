@@ -129,7 +129,7 @@ test('from a blank profile Today starts setup, and after two steps resumes where
 	// No goal yet, so no running or Muay Thai specifics: 10 steps, review included.
 	await expect(count(page)).toHaveText('0 of 10 steps done');
 	await expect(cta(page)).toHaveText('Start setup');
-	await expect(page.getByTestId('today-session')).toHaveCount(0);
+	await expect(page.getByTestId('today-plan')).toHaveCount(0);
 	await captureScreen(page, testInfo, 'today-setup');
 
 	await cta(page).click();
