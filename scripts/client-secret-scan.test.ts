@@ -8,7 +8,9 @@ import {
 	type ManifestChunk,
 	missingSignatures,
 	scanForSecrets,
-	SDK_SIGNATURES
+	scanForServerOnly,
+	SDK_SIGNATURES,
+	SERVER_ONLY_VARIABLES
 } from './client-secret-scan.ts';
 import { chains, filesUnder, ROOT } from './import-graph.ts';
 
@@ -59,6 +61,42 @@ describe('scanForSecrets', () => {
 		expect(flagged).toEqual([]);
 		expect(Object.keys(PRICING)).toContain('claude-opus-5-5');
 		expect(scanForSecrets(JSON.stringify(PRICING), CANARY)).toEqual([]);
+	});
+});
+
+describe('scanForSecrets with the shared provider formats', () => {
+	it('flags every provider format in a chunk, placeholders included', () => {
+		const resend = ['re_', 'Ab12Cd34', '_', 'Xy98Wv76Ut54Sr32Qp10Mn'].join('');
+		const blob = ['vercel_blob_', 'rw_', 'St0re1d', '_', 'S3cr3tV4lu3xyz'].join('');
+		const chunk = `const a="${resend}",b="${blob}",c="postgres://coach:coach@db/x";`;
+		expect(scanForSecrets(chunk)).toEqual([
+			'a Resend re_ API key',
+			'a Vercel Blob read-write token',
+			'a Postgres URL with a password'
+		]);
+		expect(scanForSecrets(chunk).join()).not.toContain(resend);
+	});
+});
+
+describe('scanForServerOnly', () => {
+	it('fails a chunk naming the Blob SDK, a src/lib/server/ path or a server-only variable', () => {
+		expect(scanForServerOnly('import{put}from"@vercel/blob";')).toEqual([
+			'server-only code ("@vercel/blob")'
+		]);
+		expect(scanForServerOnly('new Error("at src/lib/server/backup/run.ts")')).toEqual([
+			'server-only code ("src/lib/server/")'
+		]);
+		expect(scanForServerOnly('const k=env.BACKUP_ENCRYPTION_KEY;')).toEqual([
+			'server-only code ("BACKUP_ENCRYPTION_KEY")'
+		]);
+		for (const name of SERVER_ONLY_VARIABLES) {
+			expect(scanForServerOnly(`x.${name}`)).toEqual([`server-only code ("${name}")`]);
+		}
+	});
+
+	it('passes a chunk of ordinary client code', () => {
+		expect(scanForServerOnly('import{goto}from"$app/navigation";fetch("/api/sync")')).toEqual([]);
+		expect(scanForServerOnly(SDK_CLIENT.slice(0, 2000))).toEqual([]);
 	});
 });
 

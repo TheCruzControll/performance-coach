@@ -16,7 +16,16 @@ import { createEmailLinksRepository } from '../../../src/lib/server/db/repositor
 import { validateSessionToken } from '../../../src/lib/server/auth/sessions';
 import type { Executor } from '../../../src/lib/server/db';
 import { withRollback } from '../helpers';
-import { ORIGIN, request, RP, SETUP_CONFIG, SETUP_TOKEN, setUpOwner } from './fixtures';
+import {
+	clock,
+	newSetupToken,
+	ORIGIN,
+	request,
+	RP,
+	SETUP_CONFIG,
+	SETUP_TOKEN,
+	setUpOwner
+} from './fixtures';
 import { SoftAuthenticator } from './soft-authenticator';
 
 const deps = (db: Parameters<typeof setUpOwner>[0]) => ({ db, config: SETUP_CONFIG });
@@ -28,6 +37,75 @@ describe('first-run setup', () => {
 		expect(setupTokenValid(SETUP_CONFIG.tokenHash, SETUP_CONFIG)).toBe(false);
 		expect(setupTokenValid(SETUP_TOKEN, {})).toBe(false); // not configured: setup closed
 		expect(setupTokenValid(undefined, SETUP_CONFIG)).toBe(false);
+	});
+
+	it('refuses an expired token with the right hash like a wrong one, audited as expired', async () => {
+		await withRollback(async (tx) => {
+			const time = clock();
+			const token = newSetupToken(time.now());
+			const config = { tokenHash: hashToken(token) };
+			const expired = { db: tx, config, now: () => new Date(time.now().getTime() + 60_001) };
+			expect(setupTokenValid(token, config)).toBe(true); // the hash matches
+
+			expect(await checkSetupAccess(token, request(), expired)).toBe(false);
+			await expect(
+				beginSetup({ token, name: 'Mallory' }, request(), expired)
+			).rejects.toMatchObject({ code: 'setup_unavailable', status: 404 });
+			const repo = createAuthRepository(tx);
+			expect((await repo.recentEvents(2)).map((e) => [e.type, e.detail])).toEqual([
+				['setup.failed', { code: 'token_expired' }],
+				['setup.failed', { code: 'token_expired' }]
+			]);
+			expect(await setupOpen({ db: tx })).toBe(true);
+			expect(await repo.getOwner()).toBeNull();
+
+			// A wrong token is still audited as wrong, whatever expiry it claims.
+			expect(await checkSetupAccess(newSetupToken(time.now()), request(), expired)).toBe(false);
+			const [wrong] = await repo.recentEvents(1);
+			expect(wrong!.detail).toEqual({ code: 'invalid_token' });
+		});
+	});
+
+	it('accepts an unexpired token up to the clock-skew allowance', async () => {
+		await withRollback(async (tx) => {
+			const time = clock();
+			const token = newSetupToken(time.now());
+			const config = { tokenHash: hashToken(token) };
+			const at = (ms: number) => ({
+				db: tx,
+				config,
+				now: () => new Date(time.now().getTime() + ms)
+			});
+			expect(await checkSetupAccess(token, request(), at(-86_400_000))).toBe(true);
+			expect(await checkSetupAccess(token, request(), at(60_000))).toBe(true);
+			expect(await checkSetupAccess(token, request(), at(60_001))).toBe(false);
+
+			const owner = await setUpOwner(tx, { token, now: at(59_000).now });
+			expect((await createAuthRepository(tx).getOwner())!.id).toBe(owner.ownerId);
+			expect(await setupOpen({ db: tx })).toBe(false);
+
+			// Used, it stays refused within its lifetime too, after an owner reset reopens setup.
+			const client = (tx as Executor & { session: { client: PoolClient } }).session.client;
+			await resetOwnerAuth(client, { transaction: false });
+			expect(await checkSetupAccess(token, request(), at(0))).toBe(false);
+			const [event] = await createAuthRepository(tx).recentEvents(1);
+			expect(event!.detail).toEqual({ code: 'token_used' });
+		});
+	});
+
+	it('refuses the legacy form (no expiry) even when its hash is configured', async () => {
+		await withRollback(async (tx) => {
+			const legacy = generateToken();
+			const config = { tokenHash: hashToken(legacy) };
+			expect(setupTokenValid(legacy, config)).toBe(false);
+			expect(await checkSetupAccess(legacy, request(), { db: tx, config })).toBe(false);
+			await expect(
+				beginSetup({ token: legacy, name: 'Niko' }, request(), { db: tx, config })
+			).rejects.toMatchObject({ code: 'setup_unavailable', status: 404 });
+			const [event] = await createAuthRepository(tx).recentEvents(1);
+			expect(event!.detail).toEqual({ code: 'setup_unavailable' });
+			expect(await setupOpen({ db: tx })).toBe(true);
+		});
 	});
 
 	it('creates the owner, the first passkey, 10 hashed recovery codes and a session', async () => {
@@ -178,7 +256,7 @@ describe('first-run setup', () => {
 
 			// Setup runs again (with a new token) and re-attaches the same owner with a new passkey
 			// and new codes.
-			const second = await setUpOwner(tx, { name: 'Niko', token: generateToken() });
+			const second = await setUpOwner(tx, { name: 'Niko', token: newSetupToken() });
 			expect(second.ownerId).toBe(first.ownerId);
 			expect(await createAuthRepository(tx).listPasskeys(first.ownerId)).toHaveLength(1);
 			expect(second.recoveryCodes.some((c) => first.recoveryCodes.includes(c))).toBe(false);
@@ -213,7 +291,7 @@ describe('first-run setup', () => {
 			expect(used.rows).toEqual([{ token_hash: SETUP_CONFIG.tokenHash }]);
 
 			// A new token works, re-attaches the same owner, and is then spent in turn.
-			const token = generateToken();
+			const token = newSetupToken();
 			const second = await setUpOwner(tx, { token });
 			expect(second.ownerId).toBe(first.ownerId);
 			await resetOwnerAuth(client, { transaction: false });
