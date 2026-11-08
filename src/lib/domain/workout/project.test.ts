@@ -12,7 +12,8 @@ import { applyLocal, applyMutation, project, replay, viewOf } from './project';
 import type { WorkoutInputs } from './project';
 import type { CanonicalWorkout } from './protocol';
 import { initialDevice } from './reducers/device';
-import { otherTable, runTable, strengthTable } from './reducers/tables';
+import { runTable } from './reducers/run';
+import { otherTable, strengthTable } from './reducers/tables';
 import { previousFor } from './selectors';
 import type { DeviceState, KitExerciseMeta, LoggedSet, WorkoutView } from './types';
 
