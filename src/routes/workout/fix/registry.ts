@@ -10,6 +10,7 @@
  * workout route's initial JavaScript grows.
  */
 import type { Component } from 'svelte';
+import type { FieldErrors } from '#lib/domain/validation.ts';
 import type { Mutation, MutationType, WorkoutView } from '#lib/domain/workout/index.ts';
 
 /** What a family's own editor is opened with; its Save hands back the corrected change. */
@@ -18,6 +19,8 @@ export interface FixEditorProps {
 	m: Mutation;
 	/** Why the server refused it, in words. */
 	problem: string;
+	/** The server's errors by path ('payload.metrics.1.key'), for an editor that marks its fields. */
+	errors?: FieldErrors;
 	view: WorkoutView | null;
 	/** `then` is queued after every older change: a corrected segment's new totals. */
 	onsave: (next: Mutation, then?: Mutation) => void;

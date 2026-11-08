@@ -13,7 +13,8 @@ import type { WorkoutInputs } from './project';
 import type { CanonicalWorkout } from './protocol';
 import { initialDevice } from './reducers/device';
 import { runTable } from './reducers/run';
-import { otherTable, strengthTable } from './reducers/tables';
+import { strengthTable } from './reducers/tables';
+import { otherTable } from './reducers/other';
 import { previousFor } from './selectors';
 import type { DeviceState, KitExerciseMeta, LoggedSet, WorkoutView } from './types';
 
@@ -638,6 +639,21 @@ describe('device actions', () => {
 		expect(applyLocal(strengthTable, state, { workoutId: W, type: 'goTo', position: 4 })).toBe(
 			state
 		);
+	});
+
+	it("keeps an other session's unsaved fields, each draft replacing the last, until cleared", () => {
+		const state = apply(
+			{ workoutId: W, type: 'session.draft', draft: { durationMinutes: 90 } },
+			{ workoutId: W, type: 'session.draft', draft: { durationMinutes: 85, rpe: 8 } }
+		);
+		expect(state.device.session).toStrictEqual({ durationMinutes: 85, rpe: 8 });
+		const cleared = applyLocal(strengthTable, state, {
+			workoutId: W,
+			type: 'session.draft',
+			draft: null
+		});
+		expect(cleared.device.session).toBeNull();
+		expect(apply({ workoutId: W, type: 'session.draft', draft: null })).toBe(state0);
 	});
 
 	it('runs the rest timer and the stopwatch through timers.ts', () => {

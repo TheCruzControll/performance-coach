@@ -568,24 +568,35 @@ describe('refusals and failures', () => {
 
 	it('families whose handlers land later answer rejected “unsupported”, with no ledger row', async () => {
 		await withRollback(async (db) => {
-			const { owner, squat, rdl } = await setup(db);
+			const { owner } = await setup(db);
 			const workout = await started(db, owner);
-			const swap = createMutation('exercise.substitute', {
+			const create = createMutation('exercise.create', {
 				workoutId: workout,
 				at: at(10),
 				payload: {
-					position: 1,
-					plannedLineage: null,
-					fromExerciseId: squat,
-					toExerciseId: rdl,
-					reason: 'equipment_unavailable'
+					name: 'Sandbag shouldering',
+					aliases: [],
+					pattern: 'carry',
+					primaryMuscles: ['glutes'],
+					secondaryMuscles: [],
+					equipment: [],
+					substitutionGroup: null,
+					skillLevel: 'beginner',
+					repMin: 3,
+					repMax: 8,
+					defaultSeconds: null,
+					unilateral: false,
+					measure: 'reps',
+					loadType: 'external',
+					tags: [],
+					disciplines: []
 				}
 			});
 
-			const { results } = await sync(db, owner, [swap]);
+			const { results } = await sync(db, owner, [create]);
 
 			expect(results.map((r) => [r.status, r.code])).toEqual([['rejected', 'unsupported']]);
-			expect(await ledgerHas(db, swap.id)).toBe(false);
+			expect(await ledgerHas(db, create.id)).toBe(false);
 		});
 	});
 

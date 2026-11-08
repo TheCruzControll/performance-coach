@@ -24,6 +24,7 @@
 	import { DEFAULT_LOAD_INCREMENT } from '#lib/domain/units.ts';
 	import { describeMutation, problemText } from '#lib/domain/workout/describe.ts';
 	import type { DescribeContext } from '#lib/domain/workout/describe.ts';
+	import type { FieldErrors } from '#lib/domain/validation.ts';
 	import { SYNC_CODE_LABEL } from '#lib/domain/workout/index.ts';
 	import type { LoggedSet, Mutation, WorkoutView } from '#lib/domain/workout/index.ts';
 	import BottomSheet from '#lib/ui/components/BottomSheet.svelte';
@@ -68,6 +69,7 @@
 		seq: number;
 		m: Mutation;
 		problem: string;
+		errors: FieldErrors;
 		Editor: Awaited<ReturnType<Extract<FixEntry, { kind: 'editor' }>['editor']>>['default'];
 	} | null>(null);
 
@@ -143,11 +145,12 @@
 		if (how.kind === 'editor') {
 			const { seq } = entry;
 			const problem = problemOf(entry);
+			const errors = entry.parked?.errors ?? {};
 			// A chunk gone after a deploy leaves Discard, which always works.
 			return how.editor().then(
 				({ default: Editor }) => {
 					editing = null;
-					custom = { seq, m, problem, Editor };
+					custom = { seq, m, problem, errors, Editor };
 					editorOpen = true;
 				},
 				() => {}
@@ -318,12 +321,13 @@
 </BottomSheet>
 
 {#if custom}
-	{@const { Editor, seq, m, problem } = custom}
+	{@const { Editor, seq, m, problem, errors } = custom}
 	{#key seq}
 		<Editor
 			bind:open={editorOpen}
 			{m}
 			{problem}
+			{errors}
 			{view}
 			onsave={(next, then) => requeue(seq, next, then)}
 		/>

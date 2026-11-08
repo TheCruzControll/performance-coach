@@ -1,7 +1,7 @@
 import type { Executor } from '../../../src/lib/server/db';
 import type { AuthRequest } from '../../../src/lib/server/auth/context';
 import { beginSetup, completeSetup } from '../../../src/lib/server/auth/setup';
-import { generateToken, hashToken } from '../../../src/lib/server/auth/tokens';
+import { generateSetupToken, hashToken } from '../../../src/lib/server/auth/tokens';
 import { SoftAuthenticator } from './soft-authenticator';
 
 export const ORIGIN = 'http://localhost:4173';
@@ -22,7 +22,14 @@ export function request(overrides: Partial<AuthRequest> = {}): AuthRequest {
 	};
 }
 
-export const SETUP_TOKEN = generateToken();
+/**
+ * A setup token as `pnpm auth:setup-token` mints it. By default it expires far beyond any test
+ * clock, so only the tests about expiry depend on it.
+ */
+export const newSetupToken = (expiresAt = new Date('2100-01-01T00:00:00Z')) =>
+	generateSetupToken(expiresAt);
+
+export const SETUP_TOKEN = newSetupToken();
 export const SETUP_CONFIG = { tokenHash: hashToken(SETUP_TOKEN) };
 
 /** A controllable clock. */

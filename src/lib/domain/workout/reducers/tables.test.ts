@@ -3,11 +3,13 @@ import { MUTATION_RULES, MUTATION_TYPES } from '../mutations';
 import type { LocalAction, MutationTypeFor } from '../mutations';
 import type { SessionKind } from '../../training/types';
 import { runTable } from './run';
-import { otherTable, strengthTable } from './tables';
+import { strengthTable } from './tables';
+import { otherTable } from './other';
 
 const LOCAL_TYPES: LocalAction['type'][] = [
 	'goTo',
 	'draft',
+	'session.draft',
 	'exercise.add',
 	'kit.attach',
 	'rest.start',

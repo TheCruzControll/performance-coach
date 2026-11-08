@@ -7,13 +7,17 @@ import type { IsoDate } from '../../../domain/calendar';
 import {
 	activeWorkouts,
 	bestE1rms,
+	completedWorkoutsPage,
 	exerciseHistory,
 	lastPerformances,
+	lastSessionSetsFor,
+	mostReps,
 	repMaxes,
 	runsInRange,
 	sessionsInRange,
 	setsInRange,
 	workoutsInRange,
+	type ExerciseIds,
 	type InstantRange
 } from '../queries/history';
 import type { SessionRow } from '../queries/programs';
@@ -35,12 +39,28 @@ export function createHistoryRepository(db: Executor) {
 			return lastPerformances(db, ownerId, exerciseId, count);
 		},
 
-		/** For one exercise, or for every exercise the owner can see. */
-		async personalRecords(ownerId: string, exerciseId?: string) {
+		/** Each exercise's last completed session before `before`, its sets in workout order. */
+		async lastSessionSets(ownerId: string, exerciseIds: readonly string[], before: Date) {
+			if (!exerciseIds.length) return [];
+			return lastSessionSetsFor(db, ownerId, exerciseIds, before);
+		},
+
+		/**
+		 * For one exercise, a list of them, or every exercise the owner can see; from sets performed
+		 * before `before`, when given.
+		 */
+		async personalRecords(ownerId: string, exerciseId?: ExerciseIds, before?: Date) {
+			if (Array.isArray(exerciseId) && !exerciseId.length) return { bestE1rms: [], repMaxes: [] };
 			return {
-				bestE1rms: await bestE1rms(db, ownerId, exerciseId),
-				repMaxes: await repMaxes(db, ownerId, exerciseId)
+				bestE1rms: await bestE1rms(db, ownerId, exerciseId, before),
+				repMaxes: await repMaxes(db, ownerId, exerciseId, before)
 			};
+		},
+
+		/** These exercises' most reps in one set with no weight added, performed before `before`. */
+		async mostReps(ownerId: string, exerciseIds: readonly string[], before: Date) {
+			if (!exerciseIds.length) return [];
+			return mostReps(db, ownerId, exerciseIds, before);
 		},
 
 		async setsInRange(ownerId: string, range: InstantRange) {
@@ -54,6 +74,11 @@ export function createHistoryRepository(db: Executor) {
 		/** The owner's workouts in progress, newest first, at most `limit`. */
 		async activeWorkouts(ownerId: string, limit: number) {
 			return activeWorkouts(db, ownerId, limit);
+		},
+
+		/** The owner's completed workouts, newest first, `limit` at a time after `before`. */
+		async completedWorkoutsPage(ownerId: string, page: { before?: string; limit: number }) {
+			return completedWorkoutsPage(db, ownerId, page);
 		},
 
 		/** A date range's planned sessions (none without a version) and logged workouts. */

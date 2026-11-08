@@ -571,15 +571,80 @@ in one place (an open question in the M6 plan). The decision kinds M6 writes (`r
 
 ### Review contract (`programming/review/snapshot.ts`, `brief.ts`, `digest.ts`)
 
-Not built yet (m6/24, review-snapshot).
+What a stored review is, defined once before anything composes or stores one.
+
+- `brief.ts`: `ReviewBrief` (`kind` weekly or cycle, `from`, `to`, a `summary` of at most
+  `SUMMARY_MAX` (200) characters, `findings`) and `Finding` (`id`, `section`, `label`,
+  `figures`, `verdict` {`level`, `words`}, `window`, `metricId`, `sources`), with
+  `reviewBriefSchema`. The weekly and cycle reviews, their screens and the coach's tools read
+  this one shape. A figure is in canonical units with its words; a finding with a `metricId`
+  takes the catalogue's method and caveat.
+- `snapshot.ts`: `WeeklyReviewSnapshot` at `SNAPSHOT_VERSION` (1) and its zod/mini schema for
+  `weekly_reviews.snapshot`: the week, the day and time zone it was computed in, its
+  `analyticsVersion` and `inputsDigest`, adherence, fatigue, next week's state, why no proposal
+  (`late`, `boundary`, `no_program`, `no_changes`) and the brief. `readSnapshot(row)` reads a
+  row: version 0 (written before M6) or any unknown version → `{ legacy: true, summary }`; a
+  current-version snapshot that breaks the schema throws `SnapshotError` with its dotted `path`.
+  `readVersioned(schema, version, row)` is the same read for the cycle snapshot. Any change to
+  either shape bumps `SNAPSHOT_VERSION`, and older rows then read as legacy.
+- `digest.ts`: `inputsDigest({ facts, workouts }, analyticsVersion = ANALYTICS_VERSION)` →
+  16 hex digits, M3's `fnv1a64` over `canonicalJson` of the sorted facts (kind, id, updated_at)
+  and each workout's status. Load order never changes it; an edited fact, a workout completed or
+  abandoned, or new analytics definitions do, so a review can say it is out of date.
 
 ### Weekly review (`programming/review/weekly.ts`)
 
-Not built yet (m6/25, weekly-review-compose).
+`composeWeeklyReview(input)` → `{ snapshot, summary, findings, exposures, inputsDigest }`: one
+week of facts as the stored snapshot and brief above, from code alone, the same bytes for the same
+input in any order. The input is the week, today and the time zone; the week's planned sessions
+with their statuses and kind; next week's state and kind; the facts of the week and the
+`TRAILING_WEEKS` (8) complete weeks before it (every set before it too, for the PRs); and the week's muscle-group targets
+(`VolumeTargets`, which `services/analytics/targets.ts` fills). Findings, by section:
+
+- `adherence`: `weekAdherence`'s planned, completed, skipped and missed, judged by `goodness`;
+  'Nothing logged this week' when nothing was.
+- `verdicts`: `classifyTrend` per key lift's weekly best e1RM, tonnage, mileage and load over the
+  9 weeks; a `baseline` week has only 'Baseline established'.
+- `rpe`: the average, and each lift's deviation with `consistency` over its last 3 sessions.
+- `volume`: tonnage, the mean % of each lift's best e1RM, and hard sets per group against the
+  block's band × the week's volume factor (`scaledTargets`: a deload at 0.6 makes 10–20 into
+  6–12), with the planned line.
+- `running`: distance against the plan (`MILEAGE_ON_PLAN`) and the week before, pace by type, and
+  the long run. `muay_thai`: sessions, load and rounds. `recovery`: the notes' means.
+- `fatigue`: the ACWR with its caveat, and `fatigueLevel`'s level and reasons.
+- `conflicts`: `checkWeek` over the week as performed. `performedSessions` reads a logged workout
+  as a session: a run with its segments, an other session with its kind, a strength session
+  with a line per set done (its RPE as the target), the intensity from the session RPE
+  (`PERFORMED_INTENSITY`) and the source from the planned session it completed.
+- `prs`, then `next`: next week's kind, or the boundary the cycle review takes over.
+
+The summary (at most `SUMMARY_MAX`) leads with adherence, then fatigue, conflicts, PRs and the
+boundary. `noProposal` is `boundary` when next week is not planned
+in this block, `no_program` with no plan at all, and `late` once next week has ended. An early
+review counts the week's remaining days as rest. `exposures` are what next week's rules read.
 
 ### Next week (`programming/review/next-week.ts`)
 
-Not built yet (m6/26, next-week-adjustments).
+`proposeNextWeek(nextWeek, snapshot, exposures, ctx)` → `{ adjustments, notProposed, boundary?,
+late?, reason?, cycleFlag? }`: the review's changes to the week after the reviewed one, as M3 edit
+ops (`adjust_set`, `adjust_run_segment`, `move`) that M5's `programOpSchema` accepts. Each
+adjustment has its `id`, `kind`, `lineage`, `sessionDate`, `op`, changed fields `before` and
+`after`, `options` (`proposed` and `half_step`, halfway on the field's grain, or null), `why`
+(clipped into the op's `reason`, the version decision's why), `evidence`, `significant` and
+`priority`.
+
+- Lines: `decideFromResults` per working line, the op in the line's own load kind. Fatigue `high`
+  deloads the main lifts (`DELOAD`: sets × 0.6, RPE ≤ 6) with no progression; in a week already
+  light (`LIGHT_WEEK_KINDS`: deload, taper, event) it only caps RPE and sets `cycleFlag`.
+- Running: `adaptRunning`. A missed long run is repeated on its longest segment; the week is held
+  to +10 % by shortening easy, steady and long segments (`CAPPED_SEGMENTS`) in proportion.
+- Conflicts: an `avoid` rule of `checkWeek` resolved by moving a generated session to the nearest
+  day of the week that breaks no rule the week did not already break.
+- Not proposed, with `reason` and `words`: what M3's edits cannot express (a hold's seconds), an
+  added set past `sessionMinutes`, and past `MAX_NEXT_WEEK_OPS` (12) by `PRIORITY`.
+- Only a generated session dated today or later with no workout is touched. `stillAhead(items,
+today, workouts)` is that filter for decide time. Next week outside the block → `boundary:
+'cycle'`; next week ended → `late`.
 
 ### Cycle review (`programming/review/cycle.ts`, `cycle-snapshot.ts`)
 

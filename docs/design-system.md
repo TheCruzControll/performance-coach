@@ -396,9 +396,22 @@ later-pass screen).
   skeleton reserves the window's height below the title, so Save starts at the window's foot and
   stays put when the editor arrives. Save is column chrome at the editor column's foot. Below
   1024 px: list → editor → Back, the 28 rem skeleton and the fixed Save bar.
-- **Onboarding** (`/onboarding/[[step]]`): outside the shell, one readable column centred in the
-  window; Continue and Skip stay sticky at the column's foot, and Back and Finish later have hover
-  and focus states.
+- **Onboarding** (`/onboarding/[[step]]`): outside the shell. From 1024 px each step is a
+  `--color-surface-1` card centred in the window, `--content-readable` wide and as tall as the
+  window allows (capped at 52 rem), so moving on moves neither the card nor its actions. The
+  progress bar runs across its top edge, with Finish later above the form; the form scrolls
+  inside the card when it is taller than the room; Back, Skip and Continue close the card in a
+  row under the form (after it in the focus order too), never pinned to the window, and the offline or no-goal notice sits in that row above them, taking focus. The
+  review declares `wide` and `ProfileSummary` pairs its blocks (a container query). Phones and
+  tablets keep one column with the actions sticky at its foot.
+- **Train** (`/train`): wide. From 1024 px the program header and the week strip span the
+  content; the selected day's sessions sit in a main column at most `--content-readable` wide,
+  beside the week's brief and then the tools (at least `--content-list`), and a state card sits
+  where the sessions would. The week is a subgrid of the screen, so it keeps its own busy state;
+  the error and offline states keep the readable column. `WeekStrip` (taller tiles from 35 rem,
+  outlined from 56 rem), `SessionCard` (badges at the end from 35 rem) and `ProgramHeader`
+  (actions beside the titles from 48 rem) adapt with container queries above the phone column,
+  so the iPhone is unchanged. CSS only: one selected day, as on a phone.
 
 ### Verification
 
@@ -465,6 +478,8 @@ later-pass screen).
 | `TagInput`          | Short free-text list: Add or Return adds the trimmed text, a repeat in any case is refused, `maxlength` and `max` hold; removable pills (44 px remove buttons), one-tap suggestions, every change and refusal announced politely.                                                  |
 | `Notice`            | Inline state message: `danger` (role `alert`) · `positive` · `warning` · `neutral` (role `status`); tinted, icon + words.                                                                                                                                                          |
 | `RecoveryCodes`     | One-time display of recovery codes: numbered monospace list (one per row on a phone, two columns when the container allows), copy and download, required acknowledgement checkbox.                                                                                                 |
+| `ChartFrame`        | `ui/charts`. A chart's `<figure>`: title, context and summary server-rendered; the plot box reserved with a hairline grid; the body from a `CHART_BODIES` loader after hydration; a failed chunk: `Notice` and Retry; no JS: 'Chart needs JavaScript'; an `availability` slot.     |
+| `ChartTable`        | `ui/charts`. The table twin: `<details>` 'Show as table' (≥ 44 px), a keyboard-scrollable table with scoped headers, units, every value ('No data' when missing), the week in progress marked 'so far'.                                                                            |
 
 A `ChoiceGroup` records a choice; it is never an "add" action (arrow keys check every radio they
 pass, so a radio that adds a row adds one per keypress). An optional single choice offers an
@@ -505,3 +520,25 @@ behind a confirming `BottomSheet`, and toasts for outcomes.
   cost no JavaScript: after adding or changing one, run `pnpm icons:sprite` and commit
   `sprite.svg` and `names.ts` (a unit test fails while they are stale; `pnpm budgets` fails if path
   data reaches a client chunk).
+
+## Advanced coaching (M7)
+
+One line per M7 UI slice, each replaced by its own slice only; docs-m7 turns them into rows.
+
+m7/04 train-week-findings: not built yet.
+
+m7/14 placement-why: not built yet.
+
+m7/23 move-evaluation: not built yet.
+
+m7/38 week-kind-indicators: not built yet.
+
+m7/39 periodisation-timeline: not built yet.
+
+m7/49 replan-notice-ui: not built yet.
+
+m7/50 replan-proposal-card: not built yet.
+
+m7/51 deload-review-ui: not built yet.
+
+m7/52 hr-fields-ui: not built yet.

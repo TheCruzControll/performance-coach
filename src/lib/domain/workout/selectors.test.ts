@@ -3,7 +3,8 @@ import { workoutDayKits } from '../../../../tests/fixtures/workout-day';
 import { createMutation } from './mutations';
 import type { LocalAction, Mutation, MutationInput, MutationOf, MutationType } from './mutations';
 import { applyLocal, project, replay, viewOf } from './project';
-import { otherTable, strengthTable } from './reducers/tables';
+import { strengthTable } from './reducers/tables';
+import { otherTable } from './reducers/other';
 import {
 	currentExercise,
 	nextExercise,
