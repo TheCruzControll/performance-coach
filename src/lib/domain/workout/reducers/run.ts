@@ -10,12 +10,17 @@
  *   rows, so neither depends on the order the other arrives in.
  * - Each pace is the one Postgres generates from the row's own distance and time (run.ts's
  *   segmentPace, per km), so a row this device changed reads as it will once stored.
+ *
+ * runTable (/workout/run's) lives here, not in tables.ts, which /workout loads: that route ships
+ * none of the run family.
  */
 import type { MutationOf, RunFields } from '../mutations.ts';
 import { onRows } from '../project.ts';
-import type { MutationReducers } from '../project.ts';
+import type { MutationReducers, ReducerTable } from '../project.ts';
 import type { CanonicalRun, CanonicalSegment, CanonicalWorkout } from '../protocol.ts';
 import { segmentPace } from '../run.ts';
+import { core } from './core.ts';
+import { device } from './device.ts';
 
 const RUN_FIELDS = [
 	'distanceMetres',
@@ -75,4 +80,10 @@ export const run: MutationReducers<'run.log' | 'run.segment'> = {
 		return withRun(rows, { ...own, paceSecondsPerKm: segmentPace(own, 'km') });
 	}),
 	'run.segment': onRows((rows, m) => (m.id === m.entityId ? added(rows, m) : edited(rows, m)))
+};
+
+export const runTable: ReducerTable<'run'> = {
+	kind: 'run',
+	mutations: { ...core, ...run },
+	local: device
 };

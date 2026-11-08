@@ -9,11 +9,28 @@
  * Route-local and lazy: the sync sheet loads this, and each family module loads on demand, so no
  * workout route's initial JavaScript grows.
  */
-import type { Mutation, MutationType } from '#lib/domain/workout/index.ts';
+import type { Component } from 'svelte';
+import type { Mutation, MutationType, WorkoutView } from '#lib/domain/workout/index.ts';
+
+/** What a family's own editor is opened with; its Save hands back the corrected change. */
+export interface FixEditorProps {
+	open: boolean;
+	m: Mutation;
+	/** Why the server refused it, in words. */
+	problem: string;
+	view: WorkoutView | null;
+	/** `then` is queued after every older change: a corrected segment's new totals. */
+	onsave: (next: Mutation, then?: Mutation) => void;
+}
 
 export type Fix =
 	/** The set editor (SetEditSheet), opened with the refused values. */
 	| { kind: 'set-editor' }
+	/** The family's own editor, loaded on demand, opened with the refused values. */
+	| {
+			kind: 'editor';
+			editor: () => Promise<{ default: Component<FixEditorProps, object, 'open'> }>;
+	  }
 	/** One tap: the change rewritten, under its id. */
 	| { kind: 'rewrite'; label: string; rewrite: (m: Mutation) => Mutation }
 	/** Discard is the only way out. */
