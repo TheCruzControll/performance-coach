@@ -126,7 +126,7 @@
 		{/each}
 	</ol>
 	{#if hidden > 0}
-		<Button variant="secondary" size="sm" onclick={showAll} data-testid="show-all-blocks"
+		<Button variant="secondary" onclick={showAll} data-testid="show-all-blocks"
 			>Show all {blocks.length} parts</Button
 		>
 	{/if}

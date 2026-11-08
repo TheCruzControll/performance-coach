@@ -19,14 +19,13 @@
 </script>
 
 <span class="activity" data-state={state} {...rest}>
-	<span class="mark" aria-hidden="true">
-		{#if state === 'running'}
-			<Spinner size={14} />
-		{:else}
-			<Icon name={state === 'done' ? 'check' : 'alert'} size={14} strokeWidth={2} />
-		{/if}
-	</span>
-	<span class="label">{label}</span>
+	<span class="mark" aria-hidden="true"
+		>{#if state === 'running'}<Spinner size={14} />{:else}<Icon
+				name={state === 'done' ? 'check' : 'alert'}
+				size={14}
+				strokeWidth={2}
+			/>{/if}</span
+	><span class="label">{label}</span>
 </span>
 
 <style>
