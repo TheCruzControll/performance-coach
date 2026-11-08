@@ -44,16 +44,23 @@
 		table: AnyTable;
 		/** The view: its side column (if any), then its main column, as siblings. */
 		children: Snippet<[ActiveSnapshot, ChunkLoad, ActiveWorkout]>;
+		/** A lazy view's chunk: the restoring skeleton stays until it has loaded. */
+		ready?: () => Promise<unknown>;
 	}
 
-	let { table, children }: Props = $props();
+	let { table, children, ready }: Props = $props();
 
 	// A route's table never changes: read once.
 	const active = new ActiveWorkout(untrack(() => table));
 	const load = chunkLoader(() => active.stale());
 	const restore = $derived(active.current);
 	const view = $derived(restore.phase === 'active' ? restore.snapshot.view : null);
-	const waiting = $derived(restore.phase === 'loading' || restore.phase === 'elsewhere');
+	let viewLoaded = $state(!untrack(() => ready));
+	const waiting = $derived(
+		restore.phase === 'loading' ||
+			restore.phase === 'elsewhere' ||
+			(restore.phase === 'active' && !viewLoaded)
+	);
 	let ui = $state.raw<typeof SyncUi | null>(null);
 	const sync = $derived(ui?.outboxStatus.current);
 	const signedOut = $derived(sync?.state === 'signed-out' ? sync.waiting : null);
@@ -67,6 +74,7 @@
 	};
 
 	onMount(() => {
+		if (ready) void load(ready).then((module) => (viewLoaded = module !== null));
 		void active.restore().then(() =>
 			idle(async () => {
 				await active.connect(load);
@@ -118,7 +126,7 @@
 	<div class="body">
 		{#if ui && signedOut !== null}
 			<ui.SignedOutState waiting={signedOut} />
-		{:else if restore.phase === 'active' && !hidden}
+		{:else if restore.phase === 'active' && viewLoaded && !hidden}
 			<div class="columns">{@render children(restore.snapshot, load, active)}</div>
 		{:else if waiting || hidden}
 			<div class="restoring" role="status" aria-busy="true" data-testid="workout-restoring">
