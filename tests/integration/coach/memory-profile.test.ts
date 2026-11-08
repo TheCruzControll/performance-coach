@@ -21,6 +21,7 @@ import {
 	MEMORY_PROFILE_QUERIES,
 	RECENT_DAYS
 } from '../../../src/lib/server/services/coach/memory';
+import { loadMemoryRecords } from '../../../src/lib/server/services/coach/memory-records';
 import {
 	createGoal,
 	saveBaselines,
@@ -284,7 +285,10 @@ describe('getCoachingMemory: the profile half', () => {
 				{ movement: 'Deep lunges', reason: `${BODY_AREA_LABEL.knee} injury`, source: kneeRef },
 				{ movement: 'Box jumps', reason: `${BODY_AREA_LABEL.knee} injury`, source: kneeRef }
 			]);
-			expect(Object.values(memory.records).every((section) => section.length === 0)).toBe(true);
+			// Records are memory-records.test.ts's: only the program's own decisions exist yet.
+			const { decisions, ...records } = memory.records;
+			expect(Object.values(records).every((section) => section.length === 0)).toBe(true);
+			expect(decisions.every((d) => d.source.type === 'decision')).toBe(true);
 		});
 	});
 
@@ -383,8 +387,10 @@ describe('getCoachingMemory: the profile half', () => {
 		await withRollback(async (db) => {
 			const s = await seed(db);
 			const sent = await statementsOf(() => getCoachingMemory(s.owner, { today: TODAY }, { db }));
+			// The record half's own (memory-records.test.ts bounds it) leave the profile half's.
+			const records = await statementsOf(() => loadMemoryRecords(s.owner, TODAY, db));
 			expect(MEMORY_PROFILE_QUERIES).toBe(9);
-			expect(sent.length).toBeLessThanOrEqual(MEMORY_PROFILE_QUERIES);
+			expect(sent.length - records.length).toBeLessThanOrEqual(MEMORY_PROFILE_QUERIES);
 		});
 	});
 });
