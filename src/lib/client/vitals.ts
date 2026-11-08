@@ -19,7 +19,7 @@ import { visitAt, type Visit } from './visits.ts';
 const ENDPOINT = '/api/vitals';
 const MAX_BATCH = 20;
 
-export interface VitalPayload {
+interface VitalPayload {
 	id: string;
 	name: Metric['name'];
 	value: number;
@@ -66,16 +66,6 @@ function send(batch: VitalPayload[]): void {
 	}
 }
 
-/**
- * Queue a report, replacing any still-queued one of the same metric: INP and CLS re-report as they
- * grow, and only the latest value (and the screen it belongs to) should leave the page.
- */
-export function enqueue(queue: VitalPayload[], vital: VitalPayload): void {
-	const queued = queue.findIndex((q) => q.id === vital.id);
-	if (queued >= 0) queue[queued] = vital;
-	else queue.push(vital);
-}
-
 export function flushVitals(): void {
 	while (queue.length > 0) send(queue.splice(0, MAX_BATCH));
 }
@@ -90,7 +80,7 @@ export async function startVitalsReporting(): Promise<void> {
 
 	const report = (metric: Metric) => {
 		const { path, route } = attributeMetric(metric);
-		enqueue(queue, {
+		queue.push({
 			id: metric.id,
 			name: metric.name,
 			value: metric.value,
@@ -105,17 +95,18 @@ export async function startVitalsReporting(): Promise<void> {
 	};
 
 	onCLS(report);
-	// Queued as it changes, so the first beacon at hide carries it: the one sent after web-vitals'
-	// own work at hide sometimes never left a page being navigated away (perf-workout.e2e.ts).
-	onINP(report, { reportAllChanges: true });
+	onINP(report);
 	onLCP(report);
 	onFCP(report);
 	onTTFB(report);
 
+	// One flush per hide, carrying every metric: web-vitals reports final INP and CLS from its own
+	// capture-phase listener, which runs before this one. No `pagehide` flush: browsers fire it
+	// before `visibilitychange` on navigation, so it sent the load metrics early and left INP and
+	// CLS to a second beacon during unload, which could be lost.
 	addEventListener('visibilitychange', () => {
 		if (document.visibilityState === 'hidden') flushVitals();
 	});
-	addEventListener('pagehide', flushVitals);
 	// Observable marker for tests and debugging: RUM observers are registered.
 	document.documentElement.dataset.rum = 'ready';
 }
