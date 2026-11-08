@@ -4,7 +4,8 @@
   by its number, a 'Current' badge on the current one, what changed, and when and by whom
   ('Mon 2 Nov · 09:17 · You'); then every decision it made with its why (DecisionItem). The link
   is ≥ 44 px with hover, pressed and focus states, and aria-busy while it navigates (`navigating`),
-  with a progress line along its edge, as a SessionCard does.
+  with a progress line along its edge, as a SessionCard does. Beside a version (a desktop
+  window), the `selected` one is the current page (aria-current), outlined in the accent.
 -->
 <script lang="ts">
 	import { resolve } from '$app/paths';
@@ -14,7 +15,10 @@
 	import DecisionItem from './DecisionItem.svelte';
 	import type { VersionRowView } from './history.server';
 
-	let { versions }: { versions: readonly VersionRowView[] } = $props();
+	let {
+		versions,
+		selected = null
+	}: { versions: readonly VersionRowView[]; selected?: number | null } = $props();
 </script>
 
 <ol class="versions" aria-label="Versions">
@@ -22,7 +26,13 @@
 		{@const href = resolve('/(app)/train/history/[[version]]', { version: String(version.number) })}
 		{@const pending = navigating.to?.url.pathname === href}
 		<li class="version" data-testid="version">
-			<a class="head" {href} aria-busy={pending ? 'true' : undefined} data-testid="version-link">
+			<a
+				class="head"
+				{href}
+				aria-busy={pending ? 'true' : undefined}
+				aria-current={version.number === selected ? 'page' : undefined}
+				data-testid="version-link"
+			>
 				<span class="text">
 					<span class="title">
 						<span class="number numeric">Version {version.number}</span>
@@ -73,6 +83,12 @@
 		padding: var(--space-4);
 		color: var(--color-text);
 		transition: background-color var(--duration-fast) var(--ease-standard);
+	}
+
+	/* The version shown beside the list: an accent outline, and the page it names (aria-current). */
+	.version:has(.head[aria-current='page']) {
+		border-color: var(--color-accent);
+		box-shadow: 0 0 0 1px var(--color-accent);
 	}
 
 	.head:active {
