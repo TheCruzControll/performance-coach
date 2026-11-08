@@ -55,7 +55,7 @@ import { toStoredSessions, type StoredExercise } from '../programs/mapping';
 import { resolveDeps, type TrainingDeps } from '../training/shared';
 
 /** athlete_profiles' own defaults, for an owner with no profile row yet. */
-const DEFAULT_UNITS: KitUnits = { weight: 'kg', distance: 'km' };
+export const DEFAULT_UNITS: KitUnits = { weight: 'kg', distance: 'km' };
 const DEFAULT_TIME_ZONE = 'UTC';
 
 /** A planned session row, with the program and version the kit names. */
@@ -252,7 +252,7 @@ function kitSets(p: SetPrescription, unit: WeightUnit, oneRepMaxKg: number | nul
 }
 
 /** The previous session's sets as the device records a set, on the day it started there. */
-function previousOf(rows: LastSessionSetRow[] | undefined, timeZone: string) {
+export function previousOf(rows: LastSessionSetRow[] | undefined, timeZone: string) {
 	if (!rows?.length) return null;
 	return {
 		date: localDay(rows[0]!.startedAt, timeZone),
