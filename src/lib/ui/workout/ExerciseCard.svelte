@@ -6,7 +6,11 @@
   - the load for the set at hand (set-words.ts's loadLine): the prescribed weight, the baseline
     instruction, or what the load type means ('Bodyweight · add weight if you like'); never an
     invented number
-  - the rest, then the previous session's sets inline for comparison
+  - the rest, then the previous session's sets inline for comparison; without any, `noPrevious`
+    says why ('Last time · none yet', or 'No previous sets on this device' for a substitute whose
+    last session could not be fetched)
+  - its slot's state once it changed ('Swapped for this session', 'Skipped'), with the exercise
+    it replaced, and its quick actions (the `actions` snippet) beside the name
   The load and the rest keep the room of the exercise's tallest, so logging a set moves nothing.
   - its set rows (the children: SetRows)
   Long names wrap; nothing scrolls sideways at 393 px or at 150 % text. One per page: its heading's
@@ -18,11 +22,23 @@
 
 	interface Props {
 		exercise: ExerciseWords;
+		/** The slot's state in words, and the exercise it replaced; none as planned. */
+		status?: { text: string; instead: string | null } | null;
+		/** What Last time says without previous sets. */
+		noPrevious?: string;
+		/** Its quick actions' button. */
+		actions?: Snippet;
 		/** Its set rows (SetRows). */
 		children: Snippet;
 	}
 
-	let { exercise, children }: Props = $props();
+	let {
+		exercise,
+		status = null,
+		noPrevious = 'Last time · none yet',
+		actions,
+		children
+	}: Props = $props();
 </script>
 
 <section class="card" aria-labelledby="exercise-name" data-testid="exercise">
@@ -31,7 +47,16 @@
 			{#if exercise.label}<span class="badge">{exercise.label}</span>{/if}
 			<span>{exercise.place}</span>
 		</p>
-		<h2 id="exercise-name">{exercise.name}</h2>
+		<div class="title">
+			<h2 id="exercise-name">{exercise.name}</h2>
+			{@render actions?.()}
+		</div>
+		{#if status}
+			<p class="state" data-testid="slot-state">
+				<strong>{status.text}</strong>{#if status.instead}<span>Instead of {status.instead}</span
+					>{/if}
+			</p>
+		{/if}
 	</header>
 
 	<div class="target" data-testid="exercise-target">
@@ -55,7 +80,7 @@
 	</div>
 
 	<div class="previous" data-testid="exercise-previous">
-		<h3>{exercise.previous?.heading ?? 'Last time · none yet'}</h3>
+		<h3>{exercise.previous?.heading ?? noPrevious}</h3>
 		{#if exercise.previous}
 			<ol class="chips">
 				{#each exercise.previous.sets as set, i (i)}<li>{set}</li>{/each}
@@ -110,7 +135,29 @@
 		font-weight: var(--weight-semibold);
 	}
 
+	.title {
+		display: flex;
+		align-items: flex-start;
+		justify-content: space-between;
+		gap: var(--space-2);
+	}
+
+	.state {
+		display: flex;
+		flex-wrap: wrap;
+		gap: var(--space-1) var(--space-2);
+		font-size: var(--text-sm);
+		color: var(--color-text-secondary);
+	}
+
+	.state strong {
+		color: var(--color-accent-text);
+		font-weight: var(--weight-semibold);
+	}
+
 	h2 {
+		flex: 1;
+		min-width: 0;
 		font-family: var(--font-display);
 		font-size: var(--text-2xl);
 		font-weight: var(--weight-bold);
