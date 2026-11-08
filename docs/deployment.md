@@ -432,8 +432,11 @@ table below as you go.
 5. **Verify** with counts, digests, ids and timestamps only. The restore has already compared
    every table's digest. The forward migration and catalogue seeding can then add or change rows
    and timestamps (the exercise catalogue, and any table a newer migration touches); outside those,
-   confirm on the branch that the per-table counts add up to the `Rows:` line it printed and that
-   the newest timestamps are not later than its `Taken:` line:
+   confirm on the branch that each table's count matches that table's own count in the archive
+   (the `Rows:` line totals every archived table, the catalogue included, so it is not a sum to
+   reproduce) and that the newest timestamps are not meaningfully later than its `Taken:` line
+   (`Taken:` is read just before the export snapshot, so a row committed in that brief window can
+   be a moment later):
 
    ```sh
    psql "$TARGET" -X -A -F ' | ' <<'SQL'
