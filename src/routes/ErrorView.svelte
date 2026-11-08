@@ -17,7 +17,7 @@
 	import { onDestroy } from 'svelte';
 	import { afterNavigate, beforeNavigate } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import { OFFLINE_PATH, startOfflineRecovery } from '#lib/client/recovery.ts';
+	import { OFFLINE_PATH, reloadFresh, startOfflineRecovery } from '#lib/client/recovery.ts';
 	import Button from '#lib/ui/components/Button.svelte';
 	import EmptyState from '#lib/ui/components/EmptyState.svelte';
 	import PageHeader from '#lib/ui/components/PageHeader.svelte';
@@ -67,7 +67,7 @@
 	function tryAgain() {
 		// The /offline document at its own URL is always this screen: go into the app instead.
 		if (location.pathname === OFFLINE_PATH) location.assign(resolve('/(app)/today'));
-		else location.reload();
+		else void reloadFresh();
 	}
 </script>
 

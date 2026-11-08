@@ -11,19 +11,58 @@
  *   enough to answer the probe but not the page is treated as unreachable.
  * - The prerendered `/offline` document visited at its own URL never self-reloads: it is the
  *   offline screen by definition, so reloading it would loop forever on a healthy server.
+ *
+ * The screen loads again in place first (a client-side navigation to its URL), so a tap made
+ * meanwhile wins instead of being dropped by a page load. If that lands back here (Chromium keeps
+ * a failed dynamic import failed for the document), the next recovery for the path reloads.
+ *
+ * WebKit keeps a module script that failed to load (offline) as failed for the tab: a reload, or any
+ * later navigation in it, gets the failure back without asking the network, so the screen's code
+ * never arrives. Once the server answers, each such script is fetched again, which replaces the
+ * entry, before the screen loads again.
  */
+import { goto } from '$app/navigation';
+
 export const RETRY_DELAYS_MS = [2_000, 5_000, 10_000, 30_000] as const;
 export const PROBE_TIMEOUT_MS = 5_000;
 export const OFFLINE_PATH = '/offline';
 const MEMORY_KEY = 'pc:offline-recovery';
 const MEMORY_MS = 120_000;
+/** Paths this document has already loaded again in place. */
+const triedInPlace = new Set<string>();
 
 export interface RecoveryOptions {
 	/** Called with navigator.onLine whenever it is (re)checked. */
 	onDeviceStatus: (online: boolean) => void;
-	/** Defaults: GET /api/health with a timeout; location.reload(). */
+	/** Default: GET /api/health with a timeout. */
 	probe?: () => Promise<boolean>;
-	reload?: () => void;
+}
+
+/**
+ * The page's module scripts that failed to load: a failed load leaves no resource timing entry
+ * (WebKit) or one with status 0. Every script the page asked for has a modulepreload link (the
+ * server's, or Vite's for code loaded later).
+ */
+function failedModules(): string[] {
+	return [...document.querySelectorAll<HTMLLinkElement>('link[rel="modulepreload"]')]
+		.map((link) => link.href)
+		.filter((url) => {
+			const entry = performance.getEntriesByName(url)[0] as PerformanceResourceTiming | undefined;
+			return !entry || entry.responseStatus === 0;
+		});
+}
+
+/** Fetch the module scripts that failed again (see above), then reload. */
+export async function reloadFresh(): Promise<void> {
+	await refetchFailedModules();
+	location.reload();
+}
+
+async function refetchFailedModules(): Promise<void> {
+	const signal = AbortSignal.timeout(PROBE_TIMEOUT_MS);
+	await Promise.all(
+		failedModules().map((url) => fetch(url, { cache: 'reload', signal }).catch(() => {}))
+	);
 }
 
 async function probeHealth(): Promise<boolean> {
@@ -70,7 +109,6 @@ export function startOfflineRecovery(options: RecoveryOptions): () => void {
 	options.onDeviceStatus(navigator.onLine);
 
 	const probe = options.probe ?? probeHealth;
-	const reload = options.reload ?? (() => location.reload());
 	let attempt = recall(path);
 	let timer: ReturnType<typeof setTimeout> | undefined;
 	let probing = false;
@@ -90,12 +128,20 @@ export function startOfflineRecovery(options: RecoveryOptions): () => void {
 		if (!navigator.onLine) return schedule();
 		probing = true;
 		const ok = await probe();
+		// Even when the user has navigated meanwhile: their next screens need the scripts too.
+		if (ok) await refetchFailedModules();
 		probing = false;
 		if (stopped) return;
 		if (ok) {
 			stopped = true;
+			if (!triedInPlace.has(path)) {
+				triedInPlace.add(path);
+				// eslint-disable-next-line svelte/no-navigation-without-resolve -- this screen's own URL
+				void goto(location.href, { replace: true, reset: false, refreshAll: true });
+				return;
+			}
 			remember(path, attempt);
-			reload();
+			location.reload();
 			return;
 		}
 		schedule();
