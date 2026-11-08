@@ -126,11 +126,18 @@ test.describe('the rest timer on a desktop', () => {
 		const stopwatch = page.getByRole('button', { name: 'Pause workout time' });
 		await stopwatch.focus();
 		await page.keyboard.press('Enter');
-		const resumeTime = page.getByRole('button', { name: 'Resume workout time' });
-		await expect(resumeTime).toBeFocused();
-		await page.keyboard.press('Tab');
-		const reset = page.getByRole('button', { name: 'Reset workout time' });
-		await expect(reset).toBeFocused();
-		await expect.poll(() => style(reset, 'outline-style')).toBe('solid');
+		const paused = page.getByRole('button', { name: 'Workout time paused: resume or reset' });
+		await expect(paused).toBeFocused();
+		await page.keyboard.press('Enter');
+		const sheet = page.getByTestId('stopwatch-sheet');
+		for (const name of ['Close', 'Resume workout time', 'Reset workout time']) {
+			await page.keyboard.press('Tab');
+			const target = sheet.getByRole('button', { name });
+			await expect(target).toBeFocused();
+			await expect.poll(() => style(target, 'outline-style')).toBe('solid');
+		}
+		await page.keyboard.press('Escape');
+		await expect(sheet).toBeHidden();
+		await expect(paused).toBeFocused();
 	});
 });

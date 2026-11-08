@@ -35,6 +35,7 @@ const pill = (page: Page) => page.getByTestId('rest-timer');
 const time = (page: Page) => pill(page).getByTestId('rest-time');
 const control = (page: Page, name: string) => pill(page).getByRole('button', { name });
 const stopwatch = (page: Page) => page.getByTestId('stopwatch');
+const sheet = (page: Page) => page.getByTestId('stopwatch-sheet');
 const stopwatchText = async (page: Page) => (await stopwatch(page).textContent())!.trim();
 
 /** Seeds the workout, opens /workout with the clock installed, and goes to exercise `name`. */
@@ -259,7 +260,9 @@ test.describe('the rest timer (IndexedDB only)', () => {
 		await expect(stopwatch(page)).toHaveText(paused);
 
 		await connect(page);
-		await page.getByRole('button', { name: 'Resume workout time' }).click();
+		await page.getByRole('button', { name: 'Workout time paused: resume or reset' }).click();
+		await sheet(page).getByRole('button', { name: 'Resume workout time' }).click();
+		await expect(sheet(page)).toBeHidden();
 		await expect(stopwatch(page)).not.toHaveAttribute('data-paused');
 		await page.clock.fastForward(5_000);
 		await expect(stopwatch(page)).not.toHaveText(paused);
@@ -271,7 +274,9 @@ test.describe('the rest timer (IndexedDB only)', () => {
 
 		await connect(page);
 		await page.getByRole('button', { name: 'Pause workout time' }).click();
-		await page.getByRole('button', { name: 'Reset workout time' }).click();
+		await page.getByRole('button', { name: 'Workout time paused: resume or reset' }).click();
+		await sheet(page).getByRole('button', { name: 'Reset workout time' }).click();
+		await expect(sheet(page)).toBeHidden();
 		await expect(stopwatch(page)).toHaveText('0:00');
 		expect(await outboxTypes(page)).toEqual(['workout.start']);
 	});

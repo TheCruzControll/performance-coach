@@ -4,12 +4,15 @@
   one, the time since the workout started. Loaded with the view, never in the first render. It
   can be paused, resumed and reset once the store is open (on idle; a tap before then does
   nothing): device actions, stored with the workout, so a reload keeps them. One this device never
-  started starts from the workout's start first.
+  started starts from the workout's start first. Paused, the time opens a sheet with Resume and
+  Reset, so the header holds one control and keeps its geometry in both states.
 -->
 <script lang="ts">
 	import type { WorkoutStore } from '#lib/client/workout/store.ts';
 	import type { LocalAction, WorkoutView } from '#lib/domain/workout/index.ts';
 	import { startStopwatch } from '#lib/domain/workout/timers.ts';
+	import BottomSheet from '#lib/ui/components/BottomSheet.svelte';
+	import Button from '#lib/ui/components/Button.svelte';
 	import Stopwatch from '#lib/ui/workout/Stopwatch.svelte';
 
 	let { view, store = null }: { view: WorkoutView; store?: WorkoutStore | null } = $props();
@@ -26,12 +29,38 @@
 		if (view.device.stopwatch.startedAt !== null) store.dispatch(action);
 		else store.dispatch({ type: 'stopwatch.start', workoutId, at: started }, action);
 	}
+
+	let options = $state(false);
+	function choose(type: 'stopwatch.resume' | 'stopwatch.reset') {
+		act(type);
+		options = false;
+	}
 </script>
 
 <!-- Its controls show from the first render, so the header never shifts when the store opens. -->
-<Stopwatch
-	{stopwatch}
-	onpause={() => act('stopwatch.pause')}
-	onresume={() => act('stopwatch.resume')}
-	onreset={() => act('stopwatch.reset')}
-/>
+<Stopwatch {stopwatch} onpause={() => act('stopwatch.pause')} onoptions={() => (options = true)} />
+<BottomSheet bind:open={options} title="Workout time paused" data-testid="stopwatch-sheet">
+	{#snippet footer()}
+		<div class="actions">
+			<Button block icon="play" onclick={() => choose('stopwatch.resume')}
+				>Resume workout time</Button
+			>
+			<Button block variant="secondary" icon="refresh" onclick={() => choose('stopwatch.reset')}
+				>Reset workout time</Button
+			>
+		</div>
+	{/snippet}
+	<p class="note">Reset sets the time back to 0:00.</p>
+</BottomSheet>
+
+<style>
+	.note {
+		font-size: var(--text-sm);
+		color: var(--color-text-secondary);
+	}
+
+	.actions {
+		display: grid;
+		gap: var(--space-2);
+	}
+</style>
