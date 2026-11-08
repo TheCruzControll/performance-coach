@@ -2,8 +2,10 @@
  * Two build-output guards for the coach, as pure helpers (scripts/check-budgets.ts runs them on
  * the build; client-secret-scan.test.ts proves them on planted input):
  *
- * - Client secrets: no Anthropic SDK code, no API key and not the build-time key reach a file the
- *   browser can fetch, in either build. The SDK is recognised by literals only its pinned 1.x
+ * - Client secrets: no Anthropic SDK code, no credential in a provider format of
+ *   scripts/secrets-patterns.ts and not the build-time key reach a file the browser can fetch,
+ *   in either build; nor server-only code, which a client file names by the Blob SDK, a
+ *   src/lib/server/ path or a server-only variable (scanForServerOnly). The SDK is recognised by literals only its pinned 1.x
  *   release ships (each found in its dist: the test reads node_modules/@anthropic-ai/sdk). Never
  *   a word the app's own copy or pricing table uses: not `x-api-key`, a model id, 'Anthropic' or
  *   'Claude'. When the SDK updates and a literal goes, the positive control fails, and the
@@ -15,6 +17,8 @@
  *   cannot pass by matching nothing.
  */
 
+import { findSecrets, PROVIDER_FORMATS } from './secrets-patterns.ts';
+
 /** Literals only the Anthropic SDK ships: its API version, its host and two of its errors. */
 export const SDK_SIGNATURES = [
 	'2026-10-21',
@@ -23,8 +27,10 @@ export const SDK_SIGNATURES = [
 	'Could not resolve authentication method'
 ] as const;
 
-/** An Anthropic API key, whatever its value. */
-export const KEY_PATTERN = /sk-ant-[A-Za-z0-9_-]{16,}/;
+/** An Anthropic API key in its anchored format (scripts/secrets-patterns.ts). */
+export const KEY_PATTERN = new RegExp(
+	PROVIDER_FORMATS.find((f) => f.id === 'anthropic')!.pattern.source
+);
 
 /**
  * The build-time ANTHROPIC_API_KEY is looked for verbatim when it is at least this long; a
@@ -37,12 +43,39 @@ export function scanForSecrets(text: string, buildKey?: string): string[] {
 	const found = SDK_SIGNATURES.filter((sig) => text.includes(sig)).map(
 		(sig) => `Anthropic SDK code ("${sig}")`
 	);
-	if (KEY_PATTERN.test(text)) found.push('an sk-ant- API key');
+	for (const label of new Set(
+		findSecrets(text, PROVIDER_FORMATS, { placeholders: false }).map((hit) => hit.format.label)
+	)) {
+		found.push(label);
+	}
 	const key = buildKey?.trim() ?? '';
 	if (key.length >= MIN_SCANNED_KEY_LENGTH && text.includes(key)) {
 		found.push('the build-time ANTHROPIC_API_KEY');
 	}
 	return found;
+}
+
+/** Variables only the server reads: a client file that names one carries server code. */
+export const SERVER_ONLY_VARIABLES = [
+	'BACKUP_ENCRYPTION_KEY',
+	'CRON_SECRET',
+	'BLOB_READ_WRITE_TOKEN',
+	'DATABASE_URL_UNPOOLED',
+	'OWNER_SETUP_TOKEN_HASH',
+	'RESEND_API_KEY'
+] as const;
+
+/** Literals of server-only code: the Blob SDK, a server module's path, a server variable. */
+export const SERVER_ONLY_SIGNATURES = ['@vercel/blob', 'src/lib/server/', ...SERVER_ONLY_VARIABLES];
+
+/**
+ * The server-only signatures a client file holds. Build output only: the client source's
+ * comments may cite a server path, and minification drops them.
+ */
+export function scanForServerOnly(text: string): string[] {
+	return SERVER_ONLY_SIGNATURES.filter((sig) => text.includes(sig)).map(
+		(sig) => `server-only code ("${sig}")`
+	);
 }
 
 /** Files a client scan skips: compressed twins of files it reads, images and fonts. */

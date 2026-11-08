@@ -36,6 +36,9 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
+        with:
+          # The whole history, so the secrets scan sees every commit main and this PR hold.
+          fetch-depth: 0
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
@@ -44,6 +47,12 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Lint (Prettier + ESLint incl. import boundaries)
         run: pnpm lint
+      # Provider-format secrets in the tracked tree, then in every commit reachable from HEAD
+      # (scripts/secrets-scan.ts; fixtures are allowlisted by fingerprint in .secrets-allowlist.json).
+      - name: Secrets in the tracked tree
+        run: pnpm security:scan
+      - name: Secrets in the history
+        run: pnpm security:scan --history
       - name: Type-check (svelte-check + service worker tsc)
         run: pnpm check
       - name: Migrations match the schema (no drift)
