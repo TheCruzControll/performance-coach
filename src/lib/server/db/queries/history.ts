@@ -347,7 +347,9 @@ export function mostReps(
 
 /**
  * The owner's undeleted sets performed in the range, as the metrics read a logged set, with their
- * exercise's muscles.
+ * exercise's muscles: of completed, undeleted workouts only, as M6's analytics count them (an
+ * abandoned or unfinished workout is no training done). bestE1rms and repMaxes keep every
+ * undeleted set: the start kit's 'prior bests' and the history sheet show what was lifted.
  */
 export function setsInRange(db: Executor, ownerId: string, range: InstantRange) {
 	return db
@@ -365,11 +367,14 @@ export function setsInRange(db: Executor, ownerId: string, range: InstantRange) 
 		})
 		.from(setRecords)
 		.innerJoin(exercises, eq(exercises.id, setRecords.exerciseId))
+		.innerJoin(workouts, eq(workouts.id, setRecords.workoutId))
 		.where(
 			and(
 				eq(setRecords.ownerId, ownerId),
 				during(setRecords.performedAt, range),
-				isNull(setRecords.deletedAt)
+				isNull(setRecords.deletedAt),
+				eq(workouts.status, 'completed'),
+				isNull(workouts.deletedAt)
 			)
 		)
 		.orderBy(asc(setRecords.performedAt), asc(setRecords.id));
