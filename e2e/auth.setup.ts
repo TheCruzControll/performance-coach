@@ -9,7 +9,14 @@ import AxeBuilder from '@axe-core/playwright';
 import { expect, test as setup, type Page, type TestInfo } from '@playwright/test';
 import { RATE_LIMITS } from '../src/lib/server/auth/policy';
 import { DESKTOP, expectCardBeside } from './desktop';
-import { captureScreen, query, toastWith, trackConsoleErrors } from './support';
+import {
+	captureScreen,
+	expectRecoveryCodesFit,
+	query,
+	SIX_GROUP_CODE,
+	toastWith,
+	trackConsoleErrors
+} from './support';
 import { addVirtualAuthenticator, saveOwnerPasskeys, type StoredPasskey } from './webauthn';
 
 const STATE = 'e2e/.auth/chromium.json';
@@ -123,12 +130,12 @@ setup(
 		await expect(page.getByTestId('setup-codes')).toBeVisible();
 		const codes = await page.getByTestId('recovery-code').locator('.value').allTextContents();
 		expect(codes).toHaveLength(10);
-		for (const code of codes)
-			expect(code).toMatch(/^[0-9A-HJKMNP-TV-Z]{4}(-[0-9A-HJKMNP-TV-Z]{4}){3}$/);
+		for (const code of codes) expect(code).toMatch(SIX_GROUP_CODE);
 		await expect(page.getByTestId('setup-done')).toBeDisabled();
 		await captureScreen(page, testInfo, 'setup-recovery-codes');
 		await auditBothThemes(page, 'recovery codes');
 		await atDesktopWidth(page, testInfo, 'recovery-codes-desktop', 'recovery codes');
+		await expectRecoveryCodesFit(page, { wholePage: true });
 
 		const [download] = await Promise.all([
 			page.waitForEvent('download'),

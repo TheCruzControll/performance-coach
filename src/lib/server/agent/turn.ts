@@ -12,8 +12,9 @@
  * 4. The run starts; a live run on the thread makes the turn busy. Steps 3 and 4 are one
  *    transaction, so a busy send stores nothing. The proposals decided since the thread's last
  *    message join the turn context by id, kind and status.
- * 5. A direct answer (direct.ts) needs no model; otherwise a misconfigured coach is unavailable,
- *    and a day already at DAILY_LIMITS is out of budget, both before any model call.
+ * 5. A lookup (domain/coach/intents.ts) is answered by direct.ts with no model call, in a run
+ *    recorded as DIRECT_RUN; otherwise a misconfigured coach is unavailable, and a day already at
+ *    DAILY_LIMITS is out of budget, both before any model call.
  * 6. The loop (orchestrator.ts) runs over the stored segment. Each model call and each step is
  *    stored as it ends; the turn's context message only with its first stored step. Tools get
  *    toolRuntime(deps), so they run one at a time when the services hold a transaction.
@@ -32,6 +33,7 @@ import type {
 import { createAnswerParser } from '../../domain/coach/answer.ts';
 import { DAILY_LIMITS, TURN_LIMITS } from '../../domain/coach/budgets.ts';
 import type { CoachEvent, CompletedBlock } from '../../domain/coach/events.ts';
+import { directIntent } from '../../domain/coach/intents.ts';
 import { detectPain } from '../../domain/coach/safety.ts';
 import type {
 	CoachErrorKind,
@@ -72,7 +74,7 @@ import {
 } from '../services/coach/threads.ts';
 import { listDecidedSince } from '../services/coach/proposals.ts';
 import { loadTurnFacts } from '../services/coach/turn-facts.ts';
-import { directAnswer } from './direct.ts';
+import { directAnswer, DIRECT_RUN } from './direct.ts';
 import type { TurnHooks } from './hooks.ts';
 import { loadMemory } from './memory/load.ts';
 import { rollover } from './rollover.ts';
@@ -374,30 +376,34 @@ async function turn(
 		const [first, ...transcript] = rows;
 		if (first?.kind !== 'segment_preamble' || after === null)
 			throw new CoachTranscriptError('a segment opens with its memory preamble');
+		// A retry runs on the stored message, never on what the retry sent.
+		const ownerText = rows[at]!.content as string;
+		const lookup = directIntent(ownerText);
+		const model = {
+			provider: provider.status === 'ready' ? provider.provider.name : 'none',
+			model: COACH_MODEL,
+			effort: CHAT_EFFORT
+		};
 		const started = await startRun(
 			ownerId,
 			{
 				threadId,
 				triggerMessageId: owner.message.id,
 				kind: 'turn',
-				provider: provider.status === 'ready' ? provider.provider.name : 'none',
-				model: COACH_MODEL,
-				effort: CHAT_EFFORT,
+				...(lookup ? DIRECT_RUN : model),
 				promptVersion: version
 			},
 			deps
 		);
-		// A retry runs on the stored message, never on what the retry sent.
-		const ownerText = rows[at]!.content as string;
 		const decided = since ? await listDecidedSince(ownerId, since, deps) : [];
-		return { owner, thread, first, transcript, after, ownerText, started, decided };
+		return { owner, thread, first, transcript, after, ownerText, lookup, started, decided };
 	});
 	if (begun.answer !== undefined) {
 		// Answered already: the client shows the stored answer.
 		emit({ type: 'answer_completed', messageId: begun.answer });
 		return 'completed';
 	}
-	const { owner, thread, first, transcript, after, ownerText, started, decided } = begun;
+	const { owner, thread, first, transcript, after, ownerText, lookup, started, decided } = begun;
 	const threadId = owner.thread.id;
 	let contextPending = !after.some((row) => row.kind === 'context');
 	const runId = (run.id = started.id);
@@ -486,8 +492,8 @@ async function turn(
 		return end('completed');
 	};
 
-	const direct = await directAnswer({ ownerId, text: ownerText, facts, deps });
-	if (direct !== null) {
+	if (lookup) {
+		const direct = await directAnswer({ ownerId, intent: lookup, facts, deps });
 		answer.text(direct);
 		return answered([{ type: 'text', text: direct }], 0);
 	}

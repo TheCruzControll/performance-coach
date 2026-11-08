@@ -7,6 +7,8 @@
  * - `any-session` an owner session *or* the restricted session a recovery code grants (which
  *                 can do nothing but register a new passkey or sign out).
  * - `owner`       a full owner session. Everything else.
+ * - `cron`        a scheduled job: only `Authorization: Bearer <CRON_SECRET>` opens it, GET only,
+ *                 and 404 while the secret is unset (cron.ts). A session never grants it.
  *
  * The record is typed against SvelteKit's generated `RouteId` union, so adding a route without
  * classifying it fails `pnpm check`; `routes.test.ts` (unit) and `e2e/access.e2e.ts` also walk
@@ -15,7 +17,7 @@
  */
 import type { RouteId } from '$app/types';
 
-export type RouteAccess = 'public' | 'any-session' | 'owner';
+export type RouteAccess = 'public' | 'any-session' | 'owner' | 'cron';
 
 export const ROUTE_ACCESS = {
 	// Sign-in, setup and recovery screens
@@ -34,11 +36,15 @@ export const ROUTE_ACCESS = {
 	'/(app)/offline': 'public',
 	// Prerendered workout pages (data-free HTML; the workout lives in IndexedDB on the device)
 	'/workout': 'public',
+	'/workout/run': 'public',
 	// Test-only: 404 unless ENABLE_TEST_ROUTES (never allowed on a hosted deployment)
 	'/api/test-support/session': 'public',
 	'/api/test-support/error': 'owner',
 	'/api/test-support/program': 'owner',
 	'/api/test-support/analytics': 'owner',
+
+	// Scheduled jobs (Vercel Cron): the bearer secret only, never a session (cron.ts)
+	'/api/cron/backup': 'cron',
 
 	// Adding a passkey: a signed-in owner, or a recovery session replacing a lost passkey
 	'/api/auth/passkeys/options': 'any-session',
