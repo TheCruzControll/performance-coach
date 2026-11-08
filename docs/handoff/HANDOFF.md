@@ -9,28 +9,31 @@ product spec is `docs/product-requirements.md` on `main`; milestone criteria are
 The Mac + pi build resumed from the 19:15 UTC pause and is running. This section is the current
 state. The "paused" section below it is history. Decision trail: `docs/handoff/pi/notes.md`.
 
-### Status (slice-counts.py, 2026-11-08 ~04:40 UTC)
+### Status (slice-counts.py, 2026-11-08 ~11:00 UTC)
 
 | Milestone | Merged / total | Open PRs |
 | --- | --- | --- |
 | M2 | 28 / 28 | |
-| M2X | 11 / 18 | |
-| M3 | 46 / 50 | #224 today-sessions, #231 perf-program-screens, #233 program-journey, #238 docs-m3-status |
-| M4 | 31 / 61 | #223 run-logging, #230 other-logging, #235 perf-set-logging |
-| M5 | 28 / 61 | #226 output-policy, #237 coach-composer-kit |
-| M6 | 11 / 63 | |
-| M7 | 0 / 59 | |
-| M9 | 15 / 61 | |
-| All | 170 of 401 | also #236 (flaky Today Retry test fix) |
-
-Merged this run: #212-#222, #225, #227-#229, #232, #234.
+| M2X | 14 / 18 | #261 desk-today, #263 desk-train-detail, #265 desk-lighthouse |
+| M3 | 50 / 50 | done |
+| M4 | 41 / 61 | #268 workout-history |
+| M5 | 30 / 61 | |
+| M6 | 16 / 63 | #262 bar-charts, #269 range-diverging-bars, #272 metric-tiles |
+| M7 | 5 / 59 | |
+| M9 | 20 / 61 | |
+| All | 204 of 401 | |
 
 ### Running
 
-Waves (pi workflow `dag-cloud.js`): m4-r3 (M4 backend: start-kit chain, substitution and pain
-handlers, custom-exercise-sync), m9-r3 (restore-rows, restore-cli, docs-backups-restore,
-setup-token-expiry, secrets-scan), m2x-r1 (desktop screens, limit 1), m6-r1 (chart kit, weekly
-review). The rest of M5 waits on M4's backend slices.
+Waves (pi workflow `dag-cloud.js`): m4-r4 (M4 workout UI chain, limit 1), m7-r1 (M7 periodisation),
+m5-r3 (coach proposals and tools), m6-r2 (analytics services). The merge watcher
+(`wait-ready.sh`) merges one ready PR per pass through steward-plan and the docs guard, refreshes
+criss-cross "dirty" PRs with a local main merge, and exits on red CI or a real conflict; a fresh
+fixer then takes the PR and a GPT-6.1 Sol round reviews the fix.
+
+Click-throughs done this run (GPT-6.1 Sol, headed Chromium, iPhone 15 Pro and 1440x900): the
+/workout chain (9 slices) and Today/Train (5 slices), all on-screen items passed, no defects.
+Owed: desktop screens (M2X) once #261, #263, #265 merge.
 
 ### Owner decisions this run
 
@@ -51,12 +54,12 @@ review). The rest of M5 waits on M4's backend slices.
 - CI: #228 split E2E main (both engines) and serial-webkit into two shards; legs had hit their
   Playwright timeouts.
 
-### Known issues
+### Fixed along the way
 
-- `/workout` initial JS is at ~59.3 KB of the 60 KB gate. A runway PR (like #194) is needed before
-  the remaining M4 UI slices.
-- #224, #231, #233 wait on #236 (flaky build-program Retry test). #235's new perf gate found a
-  0.49 layout shift on /workout; a fixer is on it.
+- /workout initial JS 59.3 → 51.4 KB (#249), so the rest of M4 fits the 60 KB gate.
+- Sync pill no longer shifts the workout header (#222); flaky Today Retry test (#236).
+- Vitals: one beacon on hide instead of two, so INP/CLS stop getting lost (#235).
+- Toasts render eagerly, so they work offline (#245). CI E2E legs sharded further (#228, #270).
 
 ## Mac + pi session, paused 2026-11-07 19:15 UTC (superseded by the running section above)
 

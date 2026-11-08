@@ -167,3 +167,87 @@
 - #236 Sol approved r2 (live CTA selector); body updated.
 - 04:29 UTC MERGED #234 m5/39-direct-answers.
 - 04:35 UTC m3-r3 wave done (#224 #231 #233 #238 open). Started m6-r1 Task ID: wf_6f203bba918e (limit 2): chart-kit-core, line-chart, bar-charts, range-diverging-bars, metric-tiles, review-snapshot, weekly-review-compose, next-week-adjustments.
+- 04:37 UTC #238 docs-m3-status: Sol's only findings are claims about #224/#231/#233 that become true once they merge; hold #238 until then, then recheck. #237 E2E: notice-offline has 2 <use> icons (strict mode) -> fix-237.
+- 04:41 UTC MERGED #223 m4/34-run-logging.
+- 04:41 UTC #223 merged. #230 updated with main (9ebb636), un-ignored to see budgets. #237 spec selector fix (.glyph use), Sol confirm.
+- #237 spec fix Sol approved; un-ignored.
+- 04:43 UTC #235 r1 fix (count only non-input shift) rejected by Sol: plan says zero total shift while logging. fix-235b (Opus high): scope window to logging, zero total there, fix stepper 3px nudge and up-next shift if logging-driven, deterministic INP beacon.
+- 04:47 UTC MERGED #236 fix/build-preview-retry.
+- 04:48 UTC #236 merged; updated #224 and #226 with main to rerun CI; un-ignored. fix-230 (budgets) started.
+- 04:56 UTC #230 lazy OtherView fix 0a61325 (/workout/session 68.4->57.2 KB) Sol approved; un-ignored.
+- 05:36 UTC MERGED #224 m3/46-today-sessions.
+- 05:38 UTC #224 merged; #231 #233 updated with main. #226 policy fix (serverWritten for direct answers) Sol approved; un-ignored.
+- 05:42 UTC MERGED #230 m4/35-other-logging.
+- 05:44 UTC #230 merged (M4 logging chain done). click-workout (Sol verifier) and perf-workout-runway (Opus high) started. #235 r2 5ae8b9e (zero total shift while logging; product fixes; INP beacon) -> Sol review.
+- 05:45 UTC MERGED #239 m9/14-restore-rows.
+- 05:45 UTC #239 restore-rows merged. #237 updated with main (12281ee). #235 r2 Sol approved; un-ignored.
+- 05:48 UTC MERGED #241 m9/20-setup-token-expiry.
+- 05:48 UTC MERGED #241 setup-token-expiry. #240 start-kit updated with main. #235 NumberStepper conflict -> merge-235.
+- 05:51 UTC MERGED #242 m6/24-review-snapshot.
+- 05:54 UTC MERGED #243 m9/22-secrets-scan.
+- 05:55 UTC MERGED #242 #243. #235 main merge bc6816e verified (Sol); un-ignored.
+- 06:00 UTC click-through /workout chain (Sol, headed Chromium iPhone 15 Pro + 1440x900, main c79f96d): 9/9 on-screen items pass across 9 slices, 0 defects; 21 non-screen items are CI/budget gates already green. Swipe gesture not exercised (Next/Previous used). Shots in pc-scratch/shots/click-workout.
+- 06:17 UTC #249 /workout runway PR (59.3->51.4 KB). Sol review.
+- 06:18 UTC MERGED #226 m5/33-output-policy.
+- 06:18 UTC MERGED #226. #249 Sol approved r1; body updated.
+- 06:25 UTC MERGED #231 m3/47-perf-program-screens.
+- 06:25 UTC MERGED #231. #233 spec exact-match fix Sol approved; un-ignored.
+- 06:36 UTC m9-r3 wave done (#239 #241 #243 merged; #247 restore-cli, #252 docs-backups-restore open). Rest of M9 depends on M5/M6/M7/M4 slices. Started m7-r1 Task ID: wf_9559c0a4cb19 (limit 2): m7-contract, periodisation-scenarios, week-evaluation, load-systems, goal-priorities, training-paces, strength-phases, replan-diff.
+- 06:37 UTC MERGED #240 m4/27-start-kit.
+- 06:37 UTC MERGED #240 start-kit. #252 docs: Sol found 7 imprecise claims (backups OFF statement, lock scope, best-effort delete, retention ceiling, checksum, rerun writes, count check) -> fix-252; merge after #247.
+- #252 doc fixes f685e9b pushed; hold until #247 merges, then Sol recheck and merge.
+- 06:46 UTC MERGED #237 m5/41-coach-composer-kit.
+- 06:49 UTC MERGED #244 m2x/17-desk-train-week.
+- 06:52 UTC MERGED #246 m4/39-substitution-handlers.
+- 06:54 UTC MERGED #247 m9/17-restore-cli.
+- 06:54 UTC MERGED #237 #244 #246 #247. #235 vitals reportAllChanges broke platform.e2e:207 attribution -> fix-235c. #252 updated with main after #247; Sol recheck.
+- 06:55 UTC #252 r2 doc fixes 9441c50 match Sol's two findings exactly (read by me); un-ignored.
+- 06:57 UTC MERGED #249 perf/workout-runway.
+- 07:03 UTC MERGED #248 m6/25-weekly-review-compose.
+- 07:09 UTC MERGED #248 #249. wait-ready now runs bin/refresh-dirty.sh each pass (auto-merges main into DIRTY PRs whose merge is clean; real conflicts exit the watcher).
+- 07:14 UTC MERGED #250 m6/10-chart-kit-core.
+- 07:14 UTC MERGED #250. wait-ready now merges one ready PR per pass itself (steward-plan gate + docs guard via merge-pr.sh, log in merge.log) and runs update-branch.sh on ACTION update; it exits only on CI failure, real conflict or a failed merge. PRs awaiting a re-review must be in wait-ignore.txt.
+- 07:20 UTC #245 fixes 9786c1b (spec hidden-not-absent; Toaster defers preload to online) -> Sol review. #233 deep-equality +4 after main merge -> fix-233b.
+- 07:23 UTC #245 Toaster fix r1 rejected by Sol (offline toast still unrecoverable; root cause unproven, CSS preload failed in trace) -> fix-245b (Opus high).
+- 07:31 UTC MERGED #251 m4/36-workout-history-data.
+- 07:33 UTC #235: 2nd vitals-client fix rejected by Sol. Premise attacked: perf gate need not use the production beacon. fix-235d reverts vitals.ts to main and measures INP in-page in the test.
+- 07:34 UTC #235: plan requires the beaconed INP. fix-235e: merge main, restore vitals.ts to main, fix the double-beacon root cause (single flush on hide), deterministic hide in test.
+- 07:35 UTC #233 expected list + owner_confirmed (10a355f) Sol approved; un-ignored.
+- 07:52 UTC MERGED #252 m9/18-docs-backups-restore.
+- 07:58 UTC MERGED #253 m4/40-pain-handler.
+- 07:59 UTC m4-r3 wave done (8 PRs; #240 #246 #251 merged; #235 #253 #254 #257 #258 open). Started m4-r4 Task ID: wf_e4d77ed8a652 (limit 1, UI chain): workout-history, rest-timer, workout-start, plates-from-set, substitutions, finish-workout, pain-flow, exercise-history-sheet, add-exercise.
+- 08:11 UTC #235 single visibilitychange flush (104095e) Sol approved; un-ignored.
+- 08:25 UTC #245 Toaster r2 rejected (rejected dynamic import can't be retried; fallback DOM swap duplicates announcements). Premise attacked: make ToastList eager if budgets allow. fix-245c (Opus high); next failure escalates to Fable.
+- 08:33 UTC MERGED #233 m3/49-program-journey.
+- 08:36 UTC MERGED #255 m6/26-next-week-adjustments.
+- 08:44 UTC MERGED (watcher) #233 #252 #253 #255 and more. #256 line-chart: all interaction specs fail (chromium phone + desktop) -> fix-256. #238 recheck now that #233 merged.
+- 08:47 UTC #238 docs: Sol's 2 recheck findings fixed exactly (4355f94, read by me); un-ignored.
+- 08:48 UTC MERGED #254 m4/37-exercise-library-json.
+- 08:51 UTC MERGED #257 m4/38-kit-alternatives.
+- 08:59 UTC #256 data-shown presence attribute fix (CSS uses presence selectors; verified by me); un-ignored.
+- 09:00 UTC MERGED #259 m7/01-m7-contract.
+- 09:03 UTC MERGED #260 m2x/11-desk-onboarding.
+- 09:16 UTC #245 eager ToastList (premise attacked; deletes loader/fallback) Sol approved; updated with main; un-ignored.
+- 09:20 UTC #245 main merge (design-system.md) verified: diff vs main is only #245's Profile entries; un-ignored.
+- 09:23 UTC MERGED #235 m4/30-perf-set-logging.
+- 09:24 UTC m2x-r1 wave done (#244 merged; #245 #260 #261 #263 #265 open). Desktop click-through owed when they merge. Started m5-r3 Task ID: wf_b1657118d8b2 (limit 2): coach-test-support, program-edit-batch, apply-program-proposals, apply-session-program-cycle, proposal-actions, coach-memory-records, tools-history, tools-workout.
+- 09:35 UTC MERGED (watcher) #235 #260 and others. #262 bar-charts inherited #256's line-chart bug: merged m6/13 fix into it (b92baf0). #261 desktop Today E2E -> fix-261.
+- 09:43 UTC click-through Today/Train (Sol, main ff1ed62): 5/5 on-screen items pass, 0 defects; 11 CI/budget items not on screen. #245 budgets red after main merge -> fix-245d.
+- #265 desk-lighthouse budgets red, stacked on #245/#261/#263 (likely inherited); held until they merge.
+- 09:53 UTC MERGED #238 m3/50-docs-m3-status.
+- 09:55 UTC MERGED #258 m4/41-custom-exercise-sync.
+- 10:02 UTC MERGED #256 m6/13-line-chart.
+- 10:16 UTC MERGED #264 m7/03-week-evaluation.
+- 10:30 UTC MERGED #256 #258 #264 (watcher). #262 BarChart same data-shown bug -> small fix. #245 /train CSS over by 329 B (eager toast CSS; main 14 B under) -> plate sheet out of SSR, /train CSS 11.0 KB; Sol review.
+- 10:31 UTC #245 perf note moved to PR body (52c5840); Sol r1 approved functionally; un-ignored.
+- 10:35 UTC MERGED #266 m7/02-periodisation-scenarios.
+- 10:40 UTC MERGED #267 m7/08-training-paces.
+- 10:44 UTC MERGED #267. #268 desktop history focus -> fix-268. serial·chromium leg hit its timeout (15-min job) -> ci agent shards it.
+- 10:46 UTC #270 serial-chromium shards Sol approved; body updated.
+- #269 range/diverging bars stacked on #262 (inherits chart bug); held until #262 merges, then refresh.
+- 10:55 UTC MERGED #245 m2x/10-desk-profile.
+- 10:59 UTC #263 spec fix a657bbd Sol approved (exact widths kept); un-ignored.
+- 11:08 UTC #268 focus fix: data-sveltekit-reset="false" (SvelteKit 3 dropped keepfocus/noscroll; same attribute already used on main in ProgramHeader and Train). Verified by me; un-ignored.
+- 11:16 UTC MERGED #270 ci/shard-serial-chromium.
+- 11:19 UTC MERGED #271 m7/11-replan-diff.
+- 11:19 UTC m6-r1 wave done (8 PRs; #262 #269 #272 open). Started m6-r2 Task ID: wf_897d914547d0 (limit 2): analytics-facts, analytics-plans, strength/running/general dashboard services, overview-service, exercise-analytics-service, cycle-review-compose.
