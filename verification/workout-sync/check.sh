@@ -20,7 +20,7 @@ JRE_VER=21.0.13_9
 CHECKS=(
 	"baseline||pass"
 	"nolock|WebLocks = FALSE;MaxFaults = 1;MaxKeepalive = 0|pass"
-	"finding|DiscardInFlight = TRUE|AppliedInOrder"
+	"finding|DiscardInFlight = TRUE|pass"
 	"ackOnSend|MUTANT = \"ackOnSend\"|NothingLost"
 	"claimOwnTx|MUTANT = \"claimOwnTx\"|NothingLost"
 	"claimAfterApply|MUTANT = \"claimAfterApply\"|AppliedAtMostOnce"
@@ -28,6 +28,8 @@ CHECKS=(
 	"blockedApplied|MUTANT = \"blockedApplied\"|AppliedInOrder"
 	"retryContinues|MUTANT = \"retryContinues\"|AppliedInOrder"
 	"fixKeepsParked|MUTANT = \"fixKeepsParked\"|EventuallySynced"
+	"discardForgets|DiscardInFlight = TRUE;MUTANT = \"discardForgets\"|AppliedInOrder"
+	"capSendsNewer|DiscardInFlight = TRUE;MUTANT = \"capSendsNewer\"|AppliedInOrder"
 )
 
 names=" ${CHECKS[*]%%|*} "

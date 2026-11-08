@@ -36,9 +36,10 @@ export type ReconcileStore = Pick<WorkoutStore, 'outbox' | 'reconciled' | 'adopt
  * - reconciled: the server's rows are stored; not-held: this device does not hold the workout
  * - start-pending: a 404 before its workout.start was sent; lost: a 404 after it was acknowledged
  * - offline, failed (a timeout, the network, any other answer): nothing changed
+ * - signed-out: a 401, which nothing here acts on (online.ts does)
  */
 export type ReconcileOutcome =
-	'reconciled' | 'not-held' | 'start-pending' | 'lost' | 'offline' | 'failed';
+	'reconciled' | 'not-held' | 'start-pending' | 'lost' | 'offline' | 'failed' | 'signed-out';
 
 /** Besides the store's outcomes: missing (a 404), ended (not in progress), offline, failed. */
 export type AdoptRemoteOutcome = AdoptOutcome | 'missing' | 'ended' | 'offline' | 'failed';
@@ -82,7 +83,11 @@ export function createReconciler({
 				headers: { accept: 'application/json' },
 				signal: controller.signal
 			});
-			if (!response.ok) return { ok: false, status: response.status };
+			if (!response.ok) {
+				// Its body unread would keep the request open (and the page never network-idle).
+				void response.body?.cancel().catch(() => {});
+				return { ok: false, status: response.status };
+			}
 			return { ok: true, body: (await response.json()) as T };
 		} catch {
 			return { ok: false, status: null };
@@ -101,6 +106,7 @@ export function createReconciler({
 		if (!online()) return 'offline';
 		const answer = await rows(workoutId);
 		if (answer.ok) return (await store.reconciled(answer.body)) ? 'reconciled' : 'not-held';
+		if (answer.status === 401) return 'signed-out';
 		if (answer.status !== 404) return 'failed';
 		const outbox = await store.outbox();
 		const starting = outbox.some(

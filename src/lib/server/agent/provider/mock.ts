@@ -65,6 +65,11 @@ export interface MockContext {
 	ownerText: string;
 	/** The turn's tool results so far, oldest first. */
 	results: readonly MockToolResult[];
+	/**
+	 * The turn context's facts (the system message after the owner's), parsed as the model reads
+	 * them: decided proposal ids, the week, the entry. Null when the turn has none.
+	 */
+	turnContext: Readonly<Record<string, unknown>> | null;
 	/** The latest result of a tool; it throws if the tool has not run this turn. */
 	result(name: string): unknown;
 }
@@ -313,9 +318,11 @@ function readTurn(messages: readonly BetaMessageParam[]) {
 				});
 		}
 	}
+	const system = messages.slice(owner + 1).find((message) => (message.role as string) === 'system');
 	const context: MockContext = {
 		ownerText: owner < 0 ? '' : textOf(messages[owner]!.content),
 		results,
+		turnContext: system ? factsOf(textOf(system.content)) : null,
 		result(name) {
 			const found = results.findLast((each) => each.name === name);
 			if (!found) throw new Error(`The mock script needs a ${name} result first`);
@@ -328,6 +335,14 @@ function readTurn(messages: readonly BetaMessageParam[]) {
 function textOf(content: string | readonly { type: string; text?: string }[] = []): string {
 	if (typeof content === 'string') return content;
 	return content.map((block) => (block.type === 'text' ? block.text : '')).join('');
+}
+
+/** The JSON after a turn context's header line, or null. */
+function factsOf(text: string): Record<string, unknown> | null {
+	const facts = parsed(text.slice(text.indexOf('\n') + 1));
+	return facts && typeof facts === 'object' && !Array.isArray(facts)
+		? (facts as Record<string, unknown>)
+		: null;
 }
 
 function parsed(text: string): unknown {
