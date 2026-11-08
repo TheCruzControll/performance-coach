@@ -3,11 +3,15 @@
  * kind labelled in words, sources with dated accessible names, a metric in tabular figures with
  * its method behind a disclosure, the 'Not checked' badge, 'Show all' over 12 blocks, untrusted
  * text that stays literal, an exercise source that is a button for the page, activity chips in
- * their three states, and the live region reading each block and 'Answer complete'. Runs on
+ * their three states, and the live region reading each block and 'Answer complete'. Then the
+ * composer (Enter on a mouse, Return on a finger, Send, Stop, the count near its limit and the
+ * disabled state), 'Thinking…' and reduced motion, loading rows, and every notice with its words
+ * and Retry. Runs on
  * Chromium and WebKit; axe for both themes lives in a11y.e2e.ts (e2e/coach-a11y.ts), the desktop
  * window in design-coach.desktop.e2e.ts.
  */
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { COACH_NOTICES, type CoachNoticeKind } from '../src/lib/ui/coach/coach-notices';
 import { openCoachPanel } from './coach-a11y';
 import { boxOf, expectNoSideScroll } from './desktop';
 import { captureScreen, trackConsoleErrors } from './support';
@@ -22,6 +26,35 @@ async function expectTargets(targets: Locator) {
 		const name = (await target.getAttribute('aria-label')) ?? (await target.textContent());
 		expect(box.height, `${name} is tall enough`).toBeGreaterThanOrEqual(44);
 		expect(box.width, `${name} is wide enough`).toBeGreaterThanOrEqual(44);
+	}
+}
+
+/**
+ * Every control's hit area at least 44 × 44 px: how far around its middle a tap still lands on it,
+ * so a compact button's ::after extension counts (as in primitives.desktop.e2e.ts).
+ */
+async function expectHitAreas(targets: Locator) {
+	for (const target of await targets.all()) {
+		const name = await target.textContent();
+		const area = await target.evaluate((el) => {
+			el.scrollIntoView({ block: 'center', inline: 'center' });
+			const r = el.getBoundingClientRect();
+			const [cx, cy] = [r.x + r.width / 2, r.y + r.height / 2];
+			const on = (x: number, y: number) => {
+				const hit = document.elementFromPoint(x, y);
+				return Boolean(hit) && (hit === el || el.contains(hit));
+			};
+			const reach = (dx: number, dy: number) => {
+				let n = 0;
+				while (n < 40 && on(cx + dx * (n + 1), cy + dy * (n + 1))) n++;
+				return n;
+			};
+			return on(cx, cy)
+				? { width: reach(-1, 0) + reach(1, 0) + 1, height: reach(0, -1) + reach(0, 1) + 1 }
+				: { width: 0, height: 0 };
+		});
+		expect(area.height, `${name} is tall enough to tap`).toBeGreaterThanOrEqual(44);
+		expect(area.width, `${name} is wide enough to tap`).toBeGreaterThanOrEqual(44);
 	}
 }
 
@@ -274,5 +307,159 @@ test.describe('/design → Coach', () => {
 			expect(tab.width).toBeGreaterThanOrEqual(44);
 		}
 		await expectNoSideScroll(page);
+	});
+
+	test('every notice says its state in words, with Retry only where trying again can work', async ({
+		page
+	}, testInfo) => {
+		const errors = trackConsoleErrors(page);
+		await openCoachPanel(page);
+		for (const kind of Object.keys(COACH_NOTICES) as CoachNoticeKind[]) {
+			const copy = COACH_NOTICES[kind];
+			const notice = page.getByTestId(`notice-${kind}`);
+			await expect(notice, kind).toContainText(copy.title);
+			await expect(notice, kind).toContainText(copy.body);
+			await expect(notice.getByRole('button', { name: 'Retry' }), kind).toHaveCount(
+				copy.retry ? 1 : 0
+			);
+		}
+		await expect(page.getByTestId('notice-not_launched')).toContainText(
+			'Your coach is getting ready'
+		);
+		await expect(page.getByTestId('notice-disabled')).toContainText('The coach is switched off');
+		// A failure to act on is announced at once; an outage or a limit is read politely.
+		await expect(page.getByTestId('notice-provider')).toHaveAttribute('role', 'alert');
+		await expect(page.getByTestId('notice-chunk_failed')).toHaveAttribute('role', 'alert');
+		await expect(page.getByTestId('notice-rate_limited')).toHaveAttribute('role', 'status');
+		await expect(page.getByTestId('notice-not_launched')).toHaveAttribute('role', 'status');
+		// Each notice has its own mark beside its words.
+		await expect(page.getByTestId('notice-offline').locator('.glyph use')).toHaveAttribute(
+			'href',
+			/#wifi-off$/
+		);
+		await expect(page.getByTestId('notice-empty').getByRole('heading')).toHaveText(
+			'No conversations yet'
+		);
+
+		const readout = page.getByTestId('notice-readout');
+		await expect(readout).toHaveText('retry: none');
+		for (const kind of ['offline', 'provider', 'chunk_failed', 'load_failed'] as const) {
+			await page.getByTestId(`notice-${kind}`).getByRole('button', { name: 'Retry' }).click();
+			await expect(readout).toHaveText(`retry: ${kind}`);
+		}
+		// A Retry under way is busy and takes no second press.
+		const busy = page.getByTestId('notice-action_failed').getByRole('button', { name: 'Retry' });
+		await expect(busy).toHaveAttribute('aria-busy', 'true');
+		await expect(busy).toBeDisabled();
+		// Retry is a compact button: its 44 px is the hit area, not the 36 px border box.
+		await expectHitAreas(page.getByRole('button', { name: 'Retry' }));
+
+		await expect(page.getByTestId('mock-badge')).toContainText('Practice coach');
+		await expectNoSideScroll(page);
+		for (const area of ['notice-no_key', 'notice-unavailable', 'notice-chunk_failed']) {
+			await page.getByTestId(area).scrollIntoViewIfNeeded();
+			await captureScreen(page, testInfo, `design-coach-${area}`);
+		}
+		await page.getByTestId('notice-empty').scrollIntoViewIfNeeded();
+		await captureScreen(page, testInfo, 'design-coach-empty');
+		expect(errors).toEqual([]);
+	});
+
+	test('the composer: Enter sends on a mouse, Return adds a newline on a finger', async ({
+		page
+	}) => {
+		await openCoachPanel(page);
+		await expect(page.getByRole('form', { name: 'Message your coach' })).toHaveCount(4);
+		const ready = page.getByTestId('composer-ready');
+		const input = ready.getByRole('textbox', { name: 'Message' });
+		const send = ready.getByRole('button', { name: 'Send' });
+		const readout = page.getByTestId('composer-readout');
+		await expect(input).toHaveAttribute('maxlength', '4000');
+		await expect(send).toBeDisabled();
+
+		// A mouse: Shift+Enter adds a line, Enter sends, and the composer empties.
+		await input.click();
+		await input.press('Enter');
+		await expect(readout).toHaveText('composer: none');
+		await input.fill('First line');
+		await input.press('Shift+Enter');
+		await input.pressSequentially('second line');
+		await expect(input).toHaveValue('First line\nsecond line');
+		await expect(send).toBeEnabled();
+		await input.press('Enter');
+		await expect(readout).toContainText('composer: sent: First line');
+		await expect(readout).toContainText('second line');
+		await expect(input).toHaveValue('');
+		await expect(send).toBeDisabled();
+
+		// A finger: the phone's Return adds a line, and only Send sends.
+		await input.tap();
+		await input.fill('Tapped');
+		await input.press('Enter');
+		await expect(input).toHaveValue('Tapped\n');
+		await expect(readout).toContainText('First line');
+		await send.tap();
+		await expect(readout).toHaveText('composer: sent: Tapped');
+		await expect(input).toHaveValue('');
+	});
+
+	test('the composer keeps 44 px targets, turns Send into Stop, counts near its limit and can be disabled', async ({
+		page
+	}, testInfo) => {
+		await openCoachPanel(page);
+		const ready = page.getByTestId('composer-ready');
+		await expectTargets(ready.getByRole('button', { name: 'Send' }));
+		expect((await boxOf(ready.getByRole('textbox'))).height).toBeGreaterThanOrEqual(44);
+
+		const running = page.getByTestId('composer-running');
+		await expect(running.getByRole('button', { name: 'Send' })).toHaveCount(0);
+		const stop = running.getByRole('button', { name: 'Stop' });
+		await expectTargets(stop);
+		await stop.click();
+		await expect(page.getByTestId('composer-readout')).toHaveText('composer: stopped');
+
+		// Near the limit the count shows, tied to the message; the message scrolls past 8 lines.
+		const long = page.getByTestId('composer-long');
+		const count = long.getByTestId('composer-count');
+		await expect(count).toHaveText(/3,870 \/ 4,000$/);
+		const countId = await count.getAttribute('id');
+		await expect(long.getByRole('textbox')).toHaveAttribute('aria-describedby', countId!);
+		await expect(page.getByTestId('composer-ready').getByTestId('composer-count')).toHaveCount(0);
+		const tall = await boxOf(long);
+		expect(tall.height, 'eight lines at most').toBeLessThanOrEqual(220);
+
+		const disabled = page.getByTestId('composer-disabled');
+		const field = disabled.getByRole('textbox', { name: 'Message' });
+		await expect(field).toBeDisabled();
+		await expect(field).toHaveAttribute('placeholder', 'Ask your coach · coming soon');
+		await expect(disabled.getByRole('button', { name: 'Send' })).toBeDisabled();
+		await expectNoSideScroll(page);
+		await running.scrollIntoViewIfNeeded();
+		await captureScreen(page, testInfo, 'design-coach-composer');
+		await disabled.scrollIntoViewIfNeeded();
+		await captureScreen(page, testInfo, 'design-coach-composer-disabled');
+	});
+
+	test('Thinking pulses beside its words, and holds still under reduced motion', async ({
+		page
+	}, testInfo) => {
+		await openCoachPanel(page);
+		const thinking = page.getByTestId('thinking');
+		await expect(thinking).toHaveText('Thinking…');
+		await expect(thinking).toHaveAttribute('role', 'status');
+		const dots = thinking.locator('.dots span');
+		await expect(dots).toHaveCount(3);
+		const animation = () => dots.first().evaluate((el) => getComputedStyle(el).animationName);
+		expect(await animation()).not.toBe('none');
+		await page.emulateMedia({ reducedMotion: 'reduce' });
+		await expect.poll(animation).toBe('none');
+
+		const loading = page.getByTestId('loading-rows');
+		await expect(loading).toHaveAttribute('aria-busy', 'true');
+		await expect(loading).toHaveAttribute('role', 'status');
+		await expect(loading).toContainText('Loading your conversations…');
+		await expect(loading.locator('.row')).toHaveCount(3);
+		await thinking.scrollIntoViewIfNeeded();
+		await captureScreen(page, testInfo, 'design-coach-waiting');
 	});
 });
