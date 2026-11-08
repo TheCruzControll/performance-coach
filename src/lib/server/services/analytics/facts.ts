@@ -14,7 +14,7 @@
  */
 import type { AdherenceFacts } from '../../../domain/analytics/adherence';
 import type { PlannedLines } from '../../../domain/analytics/prescribed';
-import type { RunFact } from '../../../domain/analytics/running';
+import type { PlannedRun, RunFact } from '../../../domain/analytics/running';
 import type { RecoveryEntry } from '../../../domain/analytics/workload';
 import { addDays, type IsoDate } from '../../../domain/calendar';
 import { localDay } from '../../../domain/dates';
@@ -101,6 +101,11 @@ export function createFactsLoader(
 	}
 	const flat = async <T>(parts: Promise<T[][]>) => (await parts).flat();
 
+	const plannedParts = () =>
+		windowed('planned', async (w) => [
+			await serial(() => repository.planned(ownerId, w.from, w.to))
+		]);
+
 	const setParts = () =>
 		windowed('sets', async (w) =>
 			(await serial(() => repository.sets(ownerId, instantsOf(w)))).filter((set) =>
@@ -158,9 +163,7 @@ export function createFactsLoader(
 		/** Planned sessions of every program in the range, completion by lineage, and the workouts. */
 		planned: (): Promise<AdherenceFacts> =>
 			once('plannedAll', async () => {
-				const parts = await windowed('planned', async (w) => [
-					await serial(() => repository.planned(ownerId, w.from, w.to))
-				]);
+				const parts = await plannedParts();
 				const workouts = await flat(sessionParts());
 				return {
 					planned: parts.flatMap(([part]) => part!.planned),
@@ -168,6 +171,10 @@ export function createFactsLoader(
 					workouts
 				};
 			}),
+
+		/** The runs every program in the range plans, with their segments (read with `planned`). */
+		plannedRuns: async (): Promise<PlannedRun[]> =>
+			(await plannedParts()).flatMap(([part]) => part!.runs),
 
 		/** Recovery notes by date. */
 		recovery: (): Promise<RecoveryEntry[]> =>

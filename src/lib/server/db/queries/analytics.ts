@@ -48,7 +48,8 @@ export const ANALYTICS_INDEXES = {
 	},
 	plannedFacts: {
 		planned: 'planned_sessions_week_day_idx',
-		completed: 'workouts_planned_lineage_idx'
+		completed: 'workouts_planned_lineage_idx',
+		runSegments: 'planned_run_segments_session_position_uq'
 	}
 } as const;
 
@@ -209,12 +210,14 @@ export function programsInRange(db: Executor, ownerId: string, from: IsoDate, to
 
 /**
  * A planned-session read for the adherence: a version's sessions dated `from`–`to`
- * (plannedSessionsInRange, composed), and which of `lineages` a counted workout completed.
+ * (plannedSessionsInRange, composed), which of `lineages` a counted workout completed, and the
+ * segments of the planned runs among them (sessionChildren, composed) for the planned mileage.
  */
 export function plannedFacts(db: Executor, ownerId: string) {
 	return {
 		planned: (versionId: string, from: IsoDate, to: IsoDate) =>
 			plannedSessionsInRange(db, versionId, from, to),
+		runSegments: (sessionIds: string[]) => sessionChildren(db, sessionIds).segments,
 		completed: (lineages: string[]) => completedLineages(db, ownerId, lineages)
 	};
 }
