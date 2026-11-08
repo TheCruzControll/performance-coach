@@ -192,7 +192,7 @@
 				<div
 					class="tip"
 					aria-hidden="true"
-					data-shown={shown || undefined}
+					data-shown={shown ? '' : undefined}
 					style:--x={pct(model.marks[stop]!.left)}
 					data-testid="bar-tooltip"
 				>
