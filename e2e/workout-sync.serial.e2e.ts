@@ -140,8 +140,8 @@ const pillTexts = (page: Page) =>
 const pillBoxes = (page: Page) =>
 	page.evaluate(() => [...(window as unknown as { __pillBoxes: Set<string> }).__pillBoxes]);
 
-/** Every message the pill can show (sync-words.ts), with one- and three-digit counts. */
-const MESSAGES = [1, 999].flatMap((n) =>
+/** Every message the pill can show (sync-words.ts), with one- and three-digit counts and "999+". */
+const MESSAGES = [1, 999, 1000].flatMap((n) =>
 	(
 		[
 			{ state: 'synced' },

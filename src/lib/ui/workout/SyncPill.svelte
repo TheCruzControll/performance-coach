@@ -9,7 +9,8 @@
   hover, focus) lets the page fetch the sheet first. The workout header shows it, and the resume
   bar reuses it. It sits flush right, so its box never depends on the words: the two longest any
   state can show sit hidden in the same grid cell, in tabular figures, and size it at every text
-  size. A change of words, which comes without input, never moves or resizes it.
+  size (counts stop at "999+"), and the 44 px height is held whether or not it is a button. A change
+  of words, which comes without input, never moves or resizes it.
 -->
 <script lang="ts">
 	import type { OutboxStatus } from '#lib/client/workout/outbox-rules.ts';
@@ -25,9 +26,8 @@
 
 	let { status, onopen, onintent }: Props = $props();
 	const words = $derived(status && syncWords(status));
-	// shortcut: counts are reserved to three digits; a thousand pending changes widen the pill.
 	const widest = [
-		syncWords({ state: 'signed-out', waiting: 888 }).text,
+		syncWords({ state: 'signed-out', waiting: 1000 }).text,
 		syncWords({ state: 'passkey', waiting: 0 }).text
 	];
 </script>
@@ -68,7 +68,9 @@
 <style>
 	.sync {
 		display: flex;
+		align-items: center;
 		min-width: 0;
+		min-height: 2.75rem;
 		margin-left: auto;
 	}
 
