@@ -7,6 +7,7 @@ import type { IsoDate } from '../../../domain/calendar';
 import {
 	activeWorkouts,
 	bestE1rms,
+	completedWorkoutsPage,
 	exerciseHistory,
 	lastPerformances,
 	lastSessionSetsFor,
@@ -73,6 +74,11 @@ export function createHistoryRepository(db: Executor) {
 		/** The owner's workouts in progress, newest first, at most `limit`. */
 		async activeWorkouts(ownerId: string, limit: number) {
 			return activeWorkouts(db, ownerId, limit);
+		},
+
+		/** The owner's completed workouts, newest first, `limit` at a time after `before`. */
+		async completedWorkoutsPage(ownerId: string, page: { before?: string; limit: number }) {
+			return completedWorkoutsPage(db, ownerId, page);
 		},
 
 		/** A date range's planned sessions (none without a version) and logged workouts. */
