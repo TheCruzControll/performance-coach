@@ -32,23 +32,27 @@
 	const list = $derived(data.state === 'list' ? data : null);
 	/** The state shown as a card: no changes yet (above the list), no program, or the error. */
 	const card = $derived(data.state === 'list' ? data.empty : 'card' in data ? data.card : null);
+	/** The list's first page: the list's, or a version's, which a desktop window lists beside it. */
+	const first = $derived(data.state === 'list' || data.state === 'version' ? data.page : null);
 
 	/**
-	 * The older pages loaded below the server's first page, kept with the page they follow, so a
-	 * new first page (a reload, a version made meanwhile) starts the list again.
+	 * The older pages loaded below the server's first page, kept with the page they follow (its
+	 * newest version and its cursor), so picking a version keeps them, and a new first page (a
+	 * version made meanwhile) starts the list again.
 	 */
-	let older = $state.raw<{ after: HistoryPageView; pages: HistoryPageView[] } | null>(null);
-	const pages = $derived(list && older?.after === list.page ? older.pages : []);
-	const versions = $derived(list ? [list.page, ...pages].flatMap((p) => p.versions) : []);
-	const cursor = $derived(list ? (pages.at(-1) ?? list.page).next : null);
+	const keyOf = (page: HistoryPageView) => `${page.versions[0]?.number}:${page.next}`;
+	let older = $state.raw<{ after: string; pages: HistoryPageView[] } | null>(null);
+	const pages = $derived(first && older?.after === keyOf(first) ? older.pages : []);
+	const versions = $derived(first ? [first, ...pages].flatMap((p) => p.versions) : []);
+	const cursor = $derived(first ? (pages.at(-1) ?? first).next : null);
 	let loadingOlder = $state(false);
 	let olderFailed = $state(false);
 	/** preloadData keeps its last result per URL, a soft failure too: each attempt is its own. */
 	let attempt = 0;
 
 	async function showOlder() {
-		if (!list || cursor === null || loadingOlder) return;
-		const after = list.page;
+		if (!first || cursor === null || loadingOlder) return;
+		const after = keyOf(first);
 		loadingOlder = true;
 		olderFailed = false;
 		// The next page through the route's own load, without navigating: an older page is
@@ -57,7 +61,7 @@
 			() => null
 		);
 		loadingOlder = false;
-		if (list?.page !== after) return; // the list was loaded again meanwhile
+		if (!first || keyOf(first) !== after) return; // the list was loaded again meanwhile
 		const next = result?.type === 'loaded' ? (result.data as PageData) : null;
 		if (next?.state === 'list') older = { after, pages: [...pages, next.page] };
 		else olderFailed = true; // offline, a failed request or the load's own error
@@ -94,67 +98,72 @@
 	</a>
 	<PageHeader title={`Version ${version.number}`} eyebrow={`${version.when} · ${version.by}`} />
 
-	<div class="stack" data-testid="version-detail">
-		{#if version.current}
-			<Notice icon="check" title="Your current plan" data-testid="current-version">
-				Read-only here. <a class="inline" href={TRAIN}>Change it on Train</a>
-			</Notice>
-		{:else}
-			<Notice icon="clock" title="Older version · read-only" data-testid="older-version">
-				Your plan as it was after this change: its sessions open as they were then.
-				<a class="inline" href={TRAIN}>See your current plan</a>
-			</Notice>
-		{/if}
+	<!-- Split from 1024 px (docs/design-system.md, Responsive layout → Screens): the list beside
+	     the version, which stays in the URL. A phone shows the version alone. -->
+	<div data-layout="split">
+		{@render listColumn(version.number)}
+		<div class="stack" data-testid="version-detail">
+			{#if version.current}
+				<Notice icon="check" title="Your current plan" data-testid="current-version">
+					Read-only here. <a class="inline" href={TRAIN}>Change it on Train</a>
+				</Notice>
+			{:else}
+				<Notice icon="clock" title="Older version · read-only" data-testid="older-version">
+					Your plan as it was after this change: its sessions open as they were then.
+					<a class="inline" href={TRAIN}>See your current plan</a>
+				</Notice>
+			{/if}
 
-		<Section title={shown.week.label} data-testid="version-week">
-			<WeekStrip
-				days={shown.week.strip}
-				today={shown.today}
-				selected={day ? shown.week.strip[selectedIndex]!.date : null}
-				label={shown.week.label}
-				onselect={(date) =>
-					(chosen = {
-						version: version.number,
-						day: shown.week.strip.findIndex((d) => d.date === date)
-					})}
-				data-testid="week-strip"
-			/>
-			{#if day}
-				<h3 class="day">{day.heading}</h3>
-				{#each day.cards as card (card.lineage)}
-					{@const href = sessionHref(card.lineage)}
-					<SessionCard
-						session={card}
-						{href}
-						baseline={card.baseline}
-						pending={navigatingTo(href)}
-						data-testid="session-card"
-					/>
-				{:else}
-					<Surface padding="none" radius="lg">
-						<EmptyState
-							compact
-							icon="moon"
-							tone="neutral"
-							title="Rest day"
-							description={day.rest ?? undefined}
-							data-testid="rest-day"
+			<Section title={shown.week.label} data-testid="version-week">
+				<WeekStrip
+					days={shown.week.strip}
+					today={shown.today}
+					selected={day ? shown.week.strip[selectedIndex]!.date : null}
+					label={shown.week.label}
+					onselect={(date) =>
+						(chosen = {
+							version: version.number,
+							day: shown.week.strip.findIndex((d) => d.date === date)
+						})}
+					data-testid="week-strip"
+				/>
+				{#if day}
+					<h3 class="day">{day.heading}</h3>
+					{#each day.cards as card (card.lineage)}
+						{@const href = sessionHref(card.lineage)}
+						<SessionCard
+							session={card}
+							{href}
+							baseline={card.baseline}
+							pending={navigatingTo(href)}
+							data-testid="session-card"
 						/>
-					</Surface>
-				{/each}
-			{/if}
-		</Section>
-
-		<Section title="What changed" data-testid="version-changes">
-			<p class="summary">{version.summary}</p>
-			{#if version.decisions.length}
-				<ul class="decisions">
-					{#each version.decisions as decision (decision.id)}
-						<DecisionItem {decision} />
+					{:else}
+						<Surface padding="none" radius="lg">
+							<EmptyState
+								compact
+								icon="moon"
+								tone="neutral"
+								title="Rest day"
+								description={day.rest ?? undefined}
+								data-testid="rest-day"
+							/>
+						</Surface>
 					{/each}
-				</ul>
-			{/if}
-		</Section>
+				{/if}
+			</Section>
+
+			<Section title="What changed" data-testid="version-changes">
+				<p class="summary">{version.summary}</p>
+				{#if version.decisions.length}
+					<ul class="decisions">
+						{#each version.decisions as decision (decision.id)}
+							<DecisionItem {decision} />
+						{/each}
+					</ul>
+				{/if}
+			</Section>
+		</div>
 	</div>
 {:else}
 	<a class="back" href={TRAIN} data-testid="back-to-train">
@@ -162,9 +171,11 @@
 	</a>
 	<PageHeader title="History" eyebrow="Program" />
 
-	<div class="stack">
+	<!-- Split from 1024 px with a list: no version picked yet, the detail's place says how to
+	     pick one, or holds 'no changes yet'. Without one (no program, the error), readable. -->
+	<div class="stack" data-layout={list ? 'split' : undefined}>
 		{#if card}
-			<Surface padding="none" radius="xl">
+			<Surface padding="none" radius="xl" class="detail">
 				<EmptyState
 					icon={card.icon}
 					tone={card.tone}
@@ -176,30 +187,49 @@
 			</Surface>
 		{/if}
 		{#if list}
-			<VersionList {versions} />
-			<p class="visually-hidden" role="status">
-				{loadingOlder ? 'Loading older versions…' : ''}
-			</p>
-			{#if cursor !== null}
-				<button
-					type="button"
-					class="older"
-					disabled={loadingOlder}
-					aria-busy={loadingOlder}
-					onclick={showOlder}
-					data-testid="show-older"
-				>
-					<span class="glyph"><Icon name="clock" size={18} /></span> Show older versions
-				</button>
-			{/if}
-			{#if olderFailed}
-				<Notice tone="danger" title="Couldn’t load older versions" data-testid="older-failed">
-					<button type="button" class="retry" onclick={showOlder}>Retry</button>
-				</Notice>
+			{@render listColumn(null)}
+			{#if !card}
+				<Surface padding="none" radius="xl" class="detail pick">
+					<EmptyState
+						icon="clock"
+						tone="neutral"
+						title="Pick a version"
+						description="Its week, as it was then, and why it changed open here."
+						data-testid="history-pick"
+					/>
+				</Surface>
 			{/if}
 		{/if}
 	</div>
 {/if}
+
+<!-- The versions, then 'Show older versions' and its failure at the foot: the list's own column,
+     shown beside a version from 1024 px (a phone shows the version alone). -->
+{#snippet listColumn(selected: number | null)}
+	<div class={['versions', selected !== null && 'beside']} data-testid="history-list">
+		<VersionList {versions} {selected} />
+		<p class="visually-hidden" role="status">
+			{loadingOlder ? 'Loading older versions…' : ''}
+		</p>
+		{#if cursor !== null}
+			<button
+				type="button"
+				class="older"
+				disabled={loadingOlder}
+				aria-busy={loadingOlder}
+				onclick={showOlder}
+				data-testid="show-older"
+			>
+				<span class="glyph"><Icon name="clock" size={18} /></span> Show older versions
+			</button>
+		{/if}
+		{#if olderFailed}
+			<Notice tone="danger" title="Couldn’t load older versions" data-testid="older-failed">
+				<button type="button" class="retry" onclick={showOlder}>Retry</button>
+			</Notice>
+		{/if}
+	</div>
+{/snippet}
 
 <!-- The state card's next step: Retry for the error (Train's inline Retry, not a Button, to stay
      in budget), Train for no program. -->
@@ -238,9 +268,38 @@
 		}
 	}
 
-	.stack {
+	.stack,
+	.versions {
 		display: grid;
 		gap: var(--space-6);
+	}
+
+	/* A phone or a tablet shows a version alone, and has no detail to point to. */
+	@media (width < 64rem) {
+		.beside,
+		.stack > :global(.pick) {
+			display: none;
+		}
+	}
+
+	/*
+	 * Desktop (split, layout.css): the list in the first column, from the top, and the version (or
+	 * the card in its place) in the second, so the list stays put while a version is picked.
+	 */
+	@media (width >= 64rem) {
+		[data-layout='split'] {
+			column-gap: var(--space-8);
+		}
+
+		[data-layout='split'] > .versions {
+			grid-column: 1;
+			grid-row: 1;
+		}
+
+		[data-layout='split'] > :global(.detail) {
+			grid-column: 2;
+			grid-row: 1;
+		}
 	}
 
 	.summary {

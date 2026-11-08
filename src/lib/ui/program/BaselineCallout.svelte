@@ -2,7 +2,8 @@
   @component
   Week 1's baseline instructions on a strength session: why this session sets the loads ahead,
   how to work up to the target effort and what to record. The copy is session-words.ts's
-  BASELINE_CALLOUT, composed on the server, so it ships in no screen's JavaScript.
+  BASELINE_CALLOUT, composed on the server, so it ships in no screen's JavaScript. In a wide
+  column (WIDE_CALLOUT below) the steps sit beside the why.
 -->
 <script lang="ts">
 	import Icon from '../components/Icon.svelte';
@@ -20,7 +21,7 @@
 	const id = $props.id();
 </script>
 
-<Surface as="section" tone="accent" aria-labelledby={id} data-testid={testId}>
+<Surface as="section" tone="accent" class="callout-card" aria-labelledby={id} data-testid={testId}>
 	<div class="callout">
 		<span class="eyebrow"><Icon name="target" size={14} />{eyebrow}</span>
 		<h2 {id} class="title">{title}</h2>
@@ -61,5 +62,29 @@
 		gap: var(--space-1-5);
 		margin: 0;
 		padding-left: var(--space-5);
+	}
+
+	/* Its parts adapt to the card's own width (the column it is in), never the window's. */
+	:global(.callout-card) {
+		container-type: inline-size;
+	}
+
+	/*
+	 * WIDE_CALLOUT: a card whose content is at least 35rem wide (a readable column from 640 px)
+	 * puts the numbered steps in a column beside the eyebrow, the title and the why. Above the
+	 * phone column (34rem), so an iPhone never sees it; in the session's side column on a desktop,
+	 * narrower, it stays as on a phone.
+	 */
+	@container (min-width: 35rem) {
+		.callout {
+			grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+			column-gap: var(--space-6);
+			align-items: start;
+		}
+
+		.points {
+			grid-column: 2;
+			grid-row: 1 / span 3;
+		}
 	}
 </style>

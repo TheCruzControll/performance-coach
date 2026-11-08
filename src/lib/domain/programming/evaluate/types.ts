@@ -22,8 +22,8 @@ export interface DayLoad {
 	date: IsoDate;
 	/** Known load, planned at its target RPE or logged, by system. */
 	bySystem: Readonly<Record<LoadSystem, number>>;
-	/** The day's known load: M6's dailyLoads for the same logged sessions. */
-	total: number;
+	/** The day's known load: M6's dailyLoads for the same logged sessions; null when all unknown. */
+	total: number | null;
 	/** Load from a planned session with no target RPE, at the default RPE: a separate series. */
 	estimated: number;
 	/** Logged sessions with no RPE or no duration: counted and named, never 0 (M6's rule). */
