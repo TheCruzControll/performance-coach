@@ -282,6 +282,8 @@ export function unhandledMutation(m: never): never {
 export type LocalAction = { workoutId: string } & (
 	| { type: 'goTo'; position: number }
 	| { type: 'draft'; position: number; setIndex: number; draft: Partial<LoggedSet> | null }
+	/** An other session's unsaved fields, all of them so far; null when they are saved or dropped. */
+	| { type: 'session.draft'; draft: Partial<OtherFields> | null }
 	| { type: 'exercise.add'; exercise: AddedExercise }
 	| { type: 'kit.attach'; kit: StartKit }
 	| { type: 'kit.attach'; exerciseId: string; previous: PreviousPerformance | null }
