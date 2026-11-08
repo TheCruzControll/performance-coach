@@ -342,9 +342,11 @@ export async function expectRowReadout(page: Page, id: RowFixtureId, index: numb
 	await expect(tip.locator('.tip-heading')).toHaveText(heading);
 	await expect(tip.locator('.tip-label')).toHaveText(rows.map((row) => row.label));
 	await expect(tip.locator('.tip-value')).toHaveText(rows.map((row) => row.value));
-	await expect(rowMarks(page, id).nth(index)).toHaveAccessibleName(
-		rowName(ROW_FIXTURES[id].readout(index))
-	);
+	const mark = rowMarks(page, id).nth(index);
+	const shownWords = (await mark.innerText()).replace(/\s+/g, ' ').trim();
+	expect(shownWords.startsWith(`${heading} `)).toBe(true);
+	await expect(mark).toHaveAccessibleName(shownWords);
+	await expect(mark).toHaveAccessibleDescription(rowName(ROW_FIXTURES[id].readout(index)));
 	const plot = (await page.getByTestId(id).getByTestId('chart-plot').boundingBox())!;
 	const box = (await tip.boundingBox())!;
 	expect(box.x).toBeGreaterThanOrEqual(plot.x - 0.5);
@@ -371,10 +373,7 @@ export async function expectRowTable(page: Page, id: RowFixtureId): Promise<void
 		);
 	}
 	// The chart reads in the table's order.
-	const names = await rowMarks(page, id).evaluateAll((els) =>
-		els.map((el) => el.getAttribute('aria-label')!.split('. ')[0])
-	);
-	expect(names).toEqual(table.rows.map((row) => row.label));
+	await expect(rowMarks(page, id).locator('.name')).toHaveText(table.rows.map((row) => row.label));
 }
 
 /** Every row is a target at least 44 px tall, none overflowing the plot box the frame reserved. */
