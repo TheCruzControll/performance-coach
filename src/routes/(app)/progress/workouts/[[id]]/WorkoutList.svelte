@@ -56,8 +56,7 @@
 				{href}
 				aria-current={row.id === selected ? 'page' : undefined}
 				aria-busy={pending ? 'true' : undefined}
-				data-sveltekit-keepfocus
-				data-sveltekit-noscroll
+				data-sveltekit-reset="false"
 				data-testid="workout-row"
 			>
 				<span class="dot" style:--tone={`var(--color-${row.tone})`}></span>
