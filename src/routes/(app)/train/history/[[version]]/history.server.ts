@@ -8,9 +8,10 @@
  *   below version n, the cursor a page gives: 'Show older versions' reads it without navigating
  *   (preloadData), so the route ships no form-action client. A malformed cursor is the first page.
  * - /train/history/<n> is version n: its decisions and one week of it, read-only, whose sessions
- *   open at that version (/train/session/<lineage>?v=n). A malformed or unknown version is the
- *   404 page in the shell. The route has no param matcher, which would cost every route
- *   JavaScript (docs/performance.md).
+ *   open at that version (/train/session/<lineage>?v=n), with the list's first page, which a
+ *   desktop window shows beside it (split), so picking a version keeps the list. A malformed or
+ *   unknown version is the 404 page in the shell. The route has no param matcher, which would
+ *   cost every route JavaScript (docs/performance.md).
  * - It fails soft: a read that fails is recorded as a server error (kind 'load') and History
  *   shows its designed error with Retry, inside the shell, instead of the 500 page.
  */
@@ -122,7 +123,14 @@ export interface VersionWeekView {
 
 export type HistoryData =
 	| { state: 'list'; page: HistoryPageView; empty: HistoryCard | null }
-	| { state: 'version'; version: VersionRowView; today: IsoDate; week: VersionWeekView }
+	| {
+			state: 'version';
+			version: VersionRowView;
+			today: IsoDate;
+			week: VersionWeekView;
+			/** The list's first page: a desktop window lists the versions beside this one. */
+			page: HistoryPageView;
+	  }
 	| { state: 'none' | 'error'; card: HistoryCard };
 
 export interface HistoryRequest {
@@ -226,10 +234,16 @@ export async function loadHistory(
 			return { state: 'list', page, empty: unchanged ? NO_CHANGES : null };
 		}
 		const number = Number(version);
-		// The page from just below `number + 1` starts with version `number`, when there is one.
-		const history = await getVersionHistory(ownerId, { before: number + 1 }, { db });
-		const entry = history?.versions[0];
-		if (entry?.number !== number) throw new TrainingNotFoundError('program version');
+		// The list's first page, which a desktop window shows beside the version, and the version
+		// itself from it; an older one is the page from just below `number + 1`, which starts with
+		// version `number` when there is one.
+		const first = await getVersionHistory(ownerId, {}, { db });
+		let entry = first?.versions.find((v) => v.number === number);
+		if (first && !entry) {
+			const history = await getVersionHistory(ownerId, { before: number + 1 }, { db });
+			entry = history?.versions[0];
+		}
+		if (!first || entry?.number !== number) throw new TrainingNotFoundError('program version');
 		const { timeZone } = await getAthleteProfile(ownerId, { db });
 		// The owner's today, as ownerToday gives it, from the profile already read.
 		const today = localDay(now, timeZone);
@@ -237,7 +251,8 @@ export async function loadHistory(
 			state: 'version',
 			version: rowView(entry, timeZone),
 			today,
-			week: await versionWeek(ownerId, entry, today, db)
+			week: await versionWeek(ownerId, entry, today, db),
+			page: pageView(first, timeZone)
 		};
 	} catch (err) {
 		if (isHttpError(err)) throw err;

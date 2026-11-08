@@ -3,7 +3,8 @@
   A structured run, step by step, in describe.ts's words (describeSegments): the warm-up, each
   repeat group as one bracketed block ('6×', then its interval and recovery), the cool-down, and
   each segment's pace and effort under it. The caller describes in the owner's distance unit, so
-  nothing here converts, computes or invents a number.
+  nothing here converts, computes or invents a number. In a wide column (WIDE_RUN below) each
+  segment's pace and effort sit at the end of its line.
 -->
 <script lang="ts">
 	import type { RunStep, SegmentWords } from '#lib/domain/training/describe.ts';
@@ -45,6 +46,8 @@
 <style>
 	/* A timeline: a dot per step in the running colour, on a rail that joins them. */
 	.steps {
+		/* Its segments adapt to the list's own width (the column it is in), never the window's. */
+		container-type: inline-size;
 		display: grid;
 		margin: 0;
 		padding: 0;
@@ -142,5 +145,22 @@
 		margin: 0;
 		padding: 0;
 		list-style: none;
+	}
+
+	/*
+	 * WIDE_RUN: a run whose list is at least 35rem wide (the session's main column on a desktop, a
+	 * readable column from 640 px) reads each segment as one line, its pace and effort at the end.
+	 * Above the phone column (34rem), so an iPhone never sees it; the type stays the same.
+	 */
+	@container (min-width: 35rem) {
+		.segment {
+			grid-template-columns: minmax(0, 1fr) auto;
+			align-items: baseline;
+			column-gap: var(--space-4);
+		}
+
+		.effort {
+			text-align: end;
+		}
 	}
 </style>
