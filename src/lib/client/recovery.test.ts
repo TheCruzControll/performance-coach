@@ -69,6 +69,20 @@ describe('reloadFresh (Try again)', () => {
 		await vi.advanceTimersByTimeAsync(0);
 		expect(reload).not.toHaveBeenCalled();
 	});
+
+	it.each([
+		['an error status', () => slowScript(503).response],
+		[
+			'a body that fails to arrive',
+			() => ({ ok: true, status: 200, arrayBuffer: () => Promise.reject(new TypeError('network')) })
+		]
+	])('does not reload when the script comes back with %s', async (_, response) => {
+		fetchMock.mockResolvedValue(response());
+		reloadFresh();
+		await vi.advanceTimersByTimeAsync(0);
+		expect(fetchMock).toHaveBeenCalled();
+		expect(reload).not.toHaveBeenCalled();
+	});
 });
 
 describe('startOfflineRecovery', () => {

@@ -53,13 +53,14 @@ function failedModules(): string[] {
 }
 
 /**
- * Fetch the module scripts that failed again (see above), then reload. Returns a cancel function:
- * a navigation the user starts meanwhile must not be replaced by this reload.
+ * Fetch the module scripts that failed again (see above), then reload once they all arrived; if
+ * any did not, stay on this screen so the user can try again. Returns a cancel function: a
+ * navigation the user starts meanwhile must not be replaced by this reload.
  */
 export function reloadFresh(): () => void {
 	let cancelled = false;
-	void refetchFailedModules().then(() => {
-		if (!cancelled) location.reload();
+	void refetchFailedModules().then((arrived) => {
+		if (arrived && !cancelled) location.reload();
 	});
 	return () => (cancelled = true);
 }
