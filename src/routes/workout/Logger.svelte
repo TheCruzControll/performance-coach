@@ -5,7 +5,7 @@
   'All sets logged' once its planned sets are done, with Add a set (an extra set beyond the plan,
   one at a time, with Cancel). Skip set skips the planned set at hand, and Missed reps records
   the misses, prefilled from its target. Complete set dispatches the set.log and its
-  follow-up (log.ts) at once, as Skip set does the set.skip, and records performance.measure('pc:set-confirmed') from the tap
+  follow-ups (log.ts: the move, and the rest the device's settings start) at once, as Skip set does the set.skip, and records performance.measure('pc:set-confirmed') from the tap
   to the frame after the row changed. At its top, what this device could not save, with
   Retry: the sets stay on screen meanwhile, marked 'Not saved on this device'.
   The prefill's rules (logging, M3's e1RM and load arithmetic, the vocabulary's labels) and the
@@ -13,6 +13,7 @@
   has loaded its workout, so a write is synchronous from the first tap.
 -->
 <script lang="ts">
+	import { readWorkoutSettings } from '#lib/client/workout/settings.ts';
 	import type { NotSaved, WorkoutStore } from '#lib/client/workout/store.ts';
 	import { DEFAULT_LOAD_INCREMENT } from '#lib/domain/units.ts';
 	import type { LoggedSet, SlotView, WorkoutView } from '#lib/domain/workout/index.ts';
@@ -40,12 +41,15 @@
 	/** Complete set: the set.log and its follow-up (log.ts), dispatched at once. */
 	function complete(setIndex: number, set: LoggedSet, event: MouseEvent) {
 		const start = event.timeStamp;
+		// Read at each set, so a change in the settings applies to the next rest.
+		const settings = readWorkoutSettings();
 		const { mutation, followUps } = logSet(
 			view,
 			slot.position,
 			setIndex,
 			set,
-			new Date().toISOString()
+			new Date().toISOString(),
+			{ autoStart: settings.autoStartRest, defaults: settings.rest }
 		);
 		store.dispatch(mutation, ...followUps);
 		// The row changes in this task; the frame that shows it comes next.

@@ -327,6 +327,14 @@ jobs:
       # budget in the e2e job (e2e/perf.e2e.ts). See docs/performance.md.
       - name: Lighthouse (median of 5 runs, asserted)
         run: pnpm lighthouse --runs 5 --assert --min-perf 0.9 --max-tbt 300
+      # Desktop (1440 × 900) numbers on every PR head, in the step summary and the reports
+      # artifact (lighthouse-reports/desktop). Measured, never gating: whether CI should assert
+      # desktop (about 5 minutes per run) is an open owner decision (m2x plan), so a miss here
+      # marks the step and leaves the job green. Same build and server setup as the mobile run.
+      - name: Lighthouse desktop (median of 3 runs, measured, not gating)
+        continue-on-error: true
+        timeout-minutes: 8
+        run: pnpm lighthouse --desktop --seed --runs 3 --assert
       - name: Upload Lighthouse reports
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v7

@@ -16,6 +16,15 @@
   - Under the card, its navigation (Navigation.svelte, loaded after the first render and shown
     once the store can write, as the logger is, its space reserved meanwhile): Previous and Next,
     Up next, the swipe across the card and, from 1024 px, the side list. Each is a goTo, stored with the workout, so a reload returns to it.
+  - The rest timer (RestTimer.svelte), while the workout holds a rest: a completed set starts it
+    (log.ts, through workout-flow). Below 1024 px it is a pill in the thumb zone just above the
+    logger, stuck there on every exercise, so it stays in view while browsing; from 1024 px it
+    docks at the top of the main column, under the header, over nothing. It is first in the DOM,
+    so the keyboard reaches it first on a desktop. Its controls are device actions; Skip and
+    Dismiss clear it. With no rest, once the exercise has a set done, Start rest in its place
+    starts the exercise's (flow.ts restAt): for a device that leaves the rest to the owner, or
+    another after Skip. At zero (feedback.ts, loaded after the first render): a vibration and a tone
+    as the device's settings allow; the screen is kept awake during rest when they ask for it.
   - The card's Options button opens the exercise's quick actions (ExerciseActionsSheet.svelte,
     loaded on intent): Machine unavailable, Suggest an alternative, I don't like this exercise
     and Skip exercise. The card then says what became of the slot, and a substitute never shows
@@ -30,12 +39,17 @@
 		ActiveWorkout,
 		ChunkLoad
 	} from '#lib/client/workout/active.svelte.ts';
+	import type * as Feedback from '#lib/client/workout/feedback.ts';
+	import { readWorkoutSettings } from '#lib/client/workout/settings.ts';
 	import { SLOT_STATE_COPY } from '#lib/domain/workout/copy.ts';
 	import { groups } from '#lib/domain/workout/groups.ts';
 	import type { SlotView } from '#lib/domain/workout/index.ts';
+	import { REST_STEP_MS, restDone, restRemaining } from '#lib/domain/workout/timers.ts';
 	import type { CanonicalSet } from '#lib/domain/workout/protocol.ts';
 	import { currentExercise, plannedVsLogged, previousFor } from '#lib/domain/workout/selectors.ts';
+	import Button from '#lib/ui/components/Button.svelte';
 	import ExerciseCard from '#lib/ui/workout/ExerciseCard.svelte';
+	import RestTimer from '#lib/ui/workout/RestTimer.svelte';
 	import SetRow from '#lib/ui/workout/SetRow.svelte';
 	import {
 		doneText,
@@ -45,8 +59,7 @@
 		SET_STATE_WORDS,
 		setRows
 	} from '#lib/ui/workout/set-words.ts';
-	import Button from '#lib/ui/components/Button.svelte';
-	import { onMount, untrack } from 'svelte';
+	import { onMount, tick, untrack } from 'svelte';
 	import type ExerciseActionsSheet from './ExerciseActionsSheet.svelte';
 	import ExerciseList from './ExerciseList.svelte';
 	import type LoggerView from './Logger.svelte';
@@ -209,6 +222,135 @@
 	/** The card's area, which a swipe crosses. */
 	let area = $state<HTMLElement>();
 
+	// ---- The rest timer ---------------------------------------------------------------------
+
+	const rest = $derived(view.device.rest);
+
+	/**
+	 * Start rest: the exercise's rest, with the device's defaults read now. The flow comes with
+	 * the logger's chunk, already loaded by then, so the first render does not carry it; one that
+	 * is gone after a deploy turns the page to 'App updated' (load).
+	 */
+	async function startRest(position: number) {
+		const at = Date.now();
+		const flow = await load(() => import('#lib/domain/workout/flow.ts'));
+		if (!flow) return;
+		const durationMs = flow.restAt(view, position, readWorkoutSettings().rest);
+		active.store?.dispatch({ type: 'rest.start', workoutId: view.workout.id, at, durationMs });
+	}
+
+	/** A rest action, now; nothing before the store is open (on idle after the first render). */
+	function restAction(
+		type: 'rest.pause' | 'rest.resume' | 'rest.reset' | 'rest.add' | 'rest.clear'
+	) {
+		const workoutId = view.workout.id;
+		const at = Date.now();
+		if (!active.store) return;
+		if (type !== 'rest.clear') {
+			active.store.dispatch(
+				type === 'rest.add' ? { type, workoutId, at, ms: REST_STEP_MS } : { type, workoutId, at }
+			);
+			return;
+		}
+		// The timer goes with the button a keyboard focused: the focus moves on to logging, or the page.
+		const focused = document.activeElement;
+		const keyboard =
+			focused?.closest('[data-testid="rest-timer"]') && focused.matches(':focus-visible');
+		active.store.dispatch({ type, workoutId });
+		if (!keyboard) return;
+		void tick().then(() => {
+			const next = document.querySelector<HTMLElement>('[data-testid="complete-set"]');
+			(next ?? document.getElementById('main'))?.focus();
+		});
+	}
+
+	let feedback = $state.raw<{
+		vibrate: typeof Feedback.vibrate;
+		tone: Feedback.Tone;
+		wakeLock: Feedback.ScreenWakeLock;
+	} | null>(null);
+
+	onMount(() => {
+		if (import.meta.env.SSR) return;
+		let gone = false;
+		// The tone listens for the page's first tap, which browsers ask before it may sound.
+		void import('#lib/client/workout/feedback.ts')
+			.then((module) => {
+				if (gone) return;
+				const { vibrate, createTone, createWakeLock } = module;
+				feedback = { vibrate, tone: createTone(), wakeLock: createWakeLock() };
+			})
+			// Feedback is a nicety: the timer on screen is what tells the rest is over.
+			.catch(() => {});
+		return () => {
+			gone = true;
+			feedback?.tone.dispose();
+			void feedback?.wakeLock.release();
+		};
+	});
+
+	// Awake during rest when the settings ask; at zero, the vibration and the tone they allow. Only
+	// a rest that ends while the page is open: one that ended while it was closed says so on screen.
+	$effect(() => {
+		const current = rest;
+		const fx = feedback;
+		if (!fx) return;
+		const now = Date.now();
+		const resting = current !== null && !restDone(current, now);
+		if (resting && readWorkoutSettings().keepAwake) void fx.wakeLock.acquire();
+		else void fx.wakeLock.release();
+		if (!resting || current.pausedAt !== null) return;
+		const timer = setTimeout(
+			() => {
+				const settings = readWorkoutSettings();
+				if (settings.vibration) fx.vibrate();
+				if (settings.sound) fx.tone.play();
+				void fx.wakeLock.release();
+			},
+			restRemaining(current, now)
+		);
+		return () => clearTimeout(timer);
+	});
+
+	/** The main column, and the sticky logger's height there, which the pill sits above. */
+	let main = $state<HTMLElement>();
+	let loggerHeight = $state(0);
+	let pillHeight = $state(0);
+	/** Start rest shows with no rest once the exercise has a set done to rest from. */
+	const startable = $derived(
+		active.store !== null && !!current?.slot.sets.some((set) => !set.isSkipped)
+	);
+	const shown = $derived(rest !== null || startable);
+
+	// The logger comes and goes (all sets logged, Add a set) and grows (Missed reps): followed.
+	$effect(() => {
+		if (!main || !shown) return;
+		const column = main;
+		let logger: HTMLElement | null = null;
+		const sizes = new ResizeObserver(() => (loggerHeight = logger?.offsetHeight ?? 0));
+		const find = () => {
+			const found = column.querySelector<HTMLElement>(':scope > [data-testid="set-logger"]');
+			if (found === logger) return;
+			if (logger) sizes.unobserve(logger);
+			logger = found;
+			if (!found) {
+				loggerHeight = 0;
+				return;
+			}
+			sizes.observe(found);
+			// Measured now, not at the observer's first report a frame later: the pill that appears
+			// with the first rest, or a new logger, never shows at the foot before it moves above it.
+			loggerHeight = found.offsetHeight;
+		};
+		const children = new MutationObserver(find);
+		children.observe(column, { childList: true });
+		find();
+		return () => {
+			children.disconnect();
+			sizes.disconnect();
+		};
+	});
+
 	// The set editor: fetched on a row's first intent; a chunk that is gone shows 'App updated'.
 	let Editor = $state.raw<typeof SetEditor | null>(null);
 	// Asked on each intent: the browser fetches and runs a module once.
@@ -232,7 +374,37 @@
 
 <ExerciseList {items} current={current?.position} />
 
-<div class="main" data-testid="workout-main">
+<div class="main" data-testid="workout-main" bind:this={main}>
+	{#if rest}
+		<div class="rest" style:--logger-height="{loggerHeight}px" style:--pill-height="{pillHeight}px">
+			<div class="pill" bind:offsetHeight={pillHeight}>
+				<RestTimer
+					{rest}
+					onpause={() => restAction('rest.pause')}
+					onresume={() => restAction('rest.resume')}
+					onreset={() => restAction('rest.reset')}
+					onadd={() => restAction('rest.add')}
+					onclear={() => restAction('rest.clear')}
+				/>
+			</div>
+		</div>
+	{:else if current && startable}
+		{@const position = current.position}
+		<div
+			class="rest start"
+			style:--logger-height="{loggerHeight}px"
+			style:--pill-height="{pillHeight}px"
+		>
+			<div class="pill" bind:offsetHeight={pillHeight}>
+				<Button
+					variant="secondary"
+					icon="play"
+					data-testid="start-rest"
+					onclick={() => void startRest(position)}>Start rest</Button
+				>
+			</div>
+		</div>
+	{/if}
 	{#if current}
 		<div class="swipe" bind:this={area}>
 			<ExerciseCard exercise={current} status={current.status} noPrevious={current.noPrevious}>
@@ -288,6 +460,12 @@
 		min-width: 0;
 	}
 
+	/* Start rest, with no rest: a quiet control at the timer's place, at the end of the row. */
+	.start .pill {
+		display: flex;
+		justify-content: flex-end;
+	}
+
 	/* Vertical drags scroll the page; sideways ones are the swipe's, so it never scrolls sideways. */
 	.swipe {
 		touch-action: pan-y;
@@ -302,5 +480,54 @@
 		align-content: start;
 		gap: var(--space-4);
 		min-height: 9.5rem;
+	}
+
+	/*
+	 * Below 1024 px the rest pill follows the card and its navigation (it is first in the DOM for
+	 * the desktop's order), at the foot, and stays in view while the page scrolls: stuck above the
+	 * home indicator, or, with a logger, fixed just above it. Not sticky there: a sticky pill
+	 * cannot rise above the column's top, so a tall logger on a short screen pushed it under
+	 * itself. Its place in the flow keeps its height, so it never covers the end of the page.
+	 */
+	@media (width < 64rem) {
+		.swipe,
+		.navigation {
+			order: -1;
+		}
+
+		.rest {
+			position: sticky;
+			bottom: calc(var(--safe-bottom) + var(--space-4));
+			z-index: var(--z-sticky);
+			margin-top: auto;
+		}
+
+		.main:has(> :global([data-testid='set-logger'])) > .rest {
+			position: static;
+			height: var(--pill-height);
+		}
+
+		.main:has(> :global([data-testid='set-logger'])) > .rest > .pill {
+			position: fixed;
+			inset-inline: max(var(--gutter), var(--safe-left)) max(var(--gutter), var(--safe-right));
+			bottom: calc(max(var(--logger-height), var(--safe-bottom)) + var(--space-4));
+			z-index: var(--z-sticky);
+			max-width: calc(var(--content-column) - 2 * var(--gutter));
+			margin-inline: auto;
+		}
+
+		/* Start rest's row lets taps beside the button through. */
+		.start {
+			pointer-events: none;
+		}
+
+		.start .pill > :global(*) {
+			pointer-events: auto;
+		}
+
+		/* The pill takes the logger's place at the foot, so the logger follows it directly. */
+		.main:has(> .rest) > :global([data-testid='set-logger']) {
+			margin-top: 0;
+		}
 	}
 </style>
