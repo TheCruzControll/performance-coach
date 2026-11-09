@@ -18,6 +18,7 @@ const LOCAL_TYPES: LocalAction['type'][] = [
 	'rest.resume',
 	'rest.reset',
 	'rest.skip',
+	'rest.clear',
 	'stopwatch.start',
 	'stopwatch.pause',
 	'stopwatch.resume',
