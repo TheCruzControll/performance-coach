@@ -240,7 +240,6 @@
 					{#if !current.ended}
 						<Button
 							variant="secondary"
-							size="sm"
 							icon="refresh"
 							onpointerdown={prefetchActions}
 							onclick={(event) => openActions(current.position, event)}

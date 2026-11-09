@@ -283,7 +283,8 @@ test.describe('machine unavailable', () => {
 		page,
 		request
 	}) => {
-		await startFromKit(page, request);
+		// Last session's 100 kg × 5 at RPE 8 is the estimate the back-offs' ≈ 97.5 kg comes from.
+		await startFromKit(page, request, { before: () => history(page, 'back_squat', 100, 5) });
 		await expect(heading(page)).toHaveText('Back squat');
 		await loadField(page).getByRole('spinbutton').fill('100');
 		await loadField(page).getByRole('spinbutton').press('Enter');
@@ -426,6 +427,8 @@ test.describe('other cases', () => {
 		await act(page, 'suggest_alternative');
 		await expect(sheet(page).getByRole('heading', { name: 'Alternatives' })).toBeVisible();
 		await option(page, 'Assisted pull-up').click();
+		// The page behind the sheet stays inert until it has closed.
+		await expect(sheet(page)).toBeHidden();
 		await expect(heading(page)).toHaveText('Assisted pull-up');
 
 		const assistance = logger(page).getByRole('spinbutton', { name: /Assistance/ });
