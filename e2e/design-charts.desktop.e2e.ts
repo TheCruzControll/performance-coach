@@ -4,7 +4,8 @@
  * pixel sizes; 'Show as table' and the table take a visible focus ring from the keyboard and Enter
  * opens the table; the table toggle and each week's hit area take a hover tint for the mouse; a
  * range or diverging row takes a hover tint and its tooltip from the mouse, and a ring from Tab.
- * Screenshots in both themes.
+ * The trend tiles pair up in the column; a period link takes a hover tint, and a ring and a switch
+ * from the keyboard. Screenshots in both themes.
  */
 import { expect, test, type Page } from '@playwright/test';
 import {
@@ -28,10 +29,13 @@ import {
 	lineFrameOf,
 	lineTip,
 	openCharts,
+	periodLink,
 	ROW_FIXTURE_IDS,
 	rowMarks,
 	rowTip,
-	slotPoint
+	slotPoint,
+	tileOf,
+	tilesSection
 } from './charts';
 import { barModel } from '../src/lib/ui/charts/bar-model';
 import { boxOf, DESKTOP, expectNoSideScroll, tokenPx } from './desktop';
@@ -333,5 +337,69 @@ test.describe('/design → Charts: range and diverging bars on a desktop', () =>
 			await expect(rows.nth(1)).not.toBeFocused();
 			await expect(rowTip(page, id)).not.toHaveAttribute('data-shown', '');
 		}
+	});
+});
+
+test.describe('/design → Charts: trend tiles on a desktop', () => {
+	for (const theme of ['dark', 'light'] as const) {
+		test(`the tiles pair up in the column, never stretched (${theme})`, async ({
+			page
+		}, testInfo) => {
+			await page.addInitScript(
+				(t) => localStorage.setItem('pc:prefs:v1', JSON.stringify({ theme: t })),
+				theme
+			);
+			await gotoHydrated(page, '/design');
+			await openCharts(page);
+			if (theme === 'light')
+				await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+			const section = await boxOf(chartsSection(page));
+			const squat = await boxOf(tileOf(page, 'tile-squat'));
+			const pace = await boxOf(tileOf(page, 'tile-pace'));
+			expect(Math.abs(squat.y - pace.y), 'two tiles a row').toBeLessThanOrEqual(1);
+			expect(pace.x).toBeGreaterThan(squat.x + squat.width);
+			expect(squat.width, 'about half the column').toBeLessThan(section.width / 2);
+			expect(pace.x + pace.width).toBeLessThanOrEqual(section.x + section.width + 0.5);
+			await tilesSection(page).scrollIntoViewIfNeeded();
+			await expectNoSideScroll(page);
+			expect(await auditCharts(page)).toEqual([]);
+			await captureScreen(page, testInfo, `design-tiles-${theme}-desktop`);
+		});
+	}
+
+	test('a period link takes a hover tint and a ring from the keyboard, and Enter switches', async ({
+		page
+	}) => {
+		await gotoHydrated(page, '/design');
+		await openCharts(page);
+		const link = periodLink(page, 'Last 26 weeks');
+		await link.scrollIntoViewIfNeeded();
+		const tint = () => link.evaluate((el) => getComputedStyle(el).backgroundColor);
+		const rest = await tint();
+		await link.hover();
+		await expect.poll(tint).not.toBe(rest);
+		await page.mouse.move(5, 5);
+		await expect.poll(tint).toBe(rest);
+
+		await periodLink(page, 'Last 12 weeks').focus();
+		await page.keyboard.press('Tab');
+		await expect(link).toBeFocused();
+		const ring = await link.evaluate((el) => {
+			const style = getComputedStyle(el);
+			return { style: style.outlineStyle, width: parseFloat(style.outlineWidth) };
+		});
+		expect(ring.style).toBe('solid');
+		expect(ring.width).toBeGreaterThanOrEqual(2);
+		await page.keyboard.press('Enter');
+		await expect(page).toHaveURL(/\?period=26w$/);
+		await expect(link).toHaveAttribute('aria-current', 'page');
+		await expect(link).toBeFocused();
+
+		const summary = page.getByTestId('tiles-context').locator('summary');
+		const before = await summary.evaluate((el) => getComputedStyle(el).backgroundColor);
+		await summary.hover();
+		await expect
+			.poll(() => summary.evaluate((el) => getComputedStyle(el).backgroundColor))
+			.not.toBe(before);
 	});
 });
