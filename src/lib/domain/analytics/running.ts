@@ -22,16 +22,18 @@
  * no runtime import of domain/programming or domain/exercises. Server-only at runtime: this is not
  * in scripts/analytics-client-imports.test.ts's CLIENT_SAFE.
  */
+import { addDays } from '../calendar.ts';
 import type { IsoDate } from '../calendar.ts';
 import { RACE_DISTANCE_INFO } from '../profile/catalog.ts';
 import type { RaceDistance } from '../profile/catalog.ts';
 import type { RaceResult } from '../profile/types.ts';
 import { weekStartOf, weeklyDistance } from '../training/metrics.ts';
+import type { RunSegment } from '../training/types.ts';
 import { SESSION_TYPES } from '../training/vocabulary.ts';
-import type { RunSegmentKind, SessionType } from '../training/vocabulary.ts';
+import type { PlanStatus, RunSegmentKind, SessionType } from '../training/vocabulary.ts';
 import { cleanFloat } from '../units.ts';
 import type { DistanceUnit } from '../units.ts';
-import { runTotals, segmentPace } from '../workout/run.ts';
+import { expandSegments, runTotals, segmentPace } from '../workout/run.ts';
 import type { RunTotals, SegmentAmounts } from '../workout/run.ts';
 import { weekStarts } from './periods.ts';
 import type { PeriodWindow } from './periods.ts';
@@ -187,6 +189,59 @@ export function weeklyRunning(
 	const inProgress = all.at(-1)!;
 	const buckets = new Map(all.map((w) => [w.weekStart, w.metres]));
 	return { weeks, inProgress, points: fillWeeks(buckets, window.weeks, 'zero', window.inProgress) };
+}
+
+// ---- Planned mileage ------------------------------------------------------------------------
+
+/** A run a program's current version plans: its day now, its status and its segments as planned. */
+export interface PlannedRun {
+	lineage: string;
+	date: IsoDate;
+	status: PlanStatus;
+	segments: readonly RunSegment[];
+}
+
+/**
+ * A planned run's metres: its segments as run (M4's expandSegments, each repeat counted) added up;
+ * null when any of them is planned by time, so a planned distance is never a guess.
+ */
+export function plannedMetres(segments: readonly RunSegment[]): number | null {
+	const expanded = expandSegments(segments);
+	if (expanded.length === 0 || expanded.some((s) => s.target.distanceMetres === null)) return null;
+	return cleanFloat(expanded.reduce((sum, s) => sum + s.target.distanceMetres!, 0));
+}
+
+export interface WeekPlanned {
+	weekStart: IsoDate;
+	inProgress: boolean;
+	/** The metres of the week's runs planned by distance; null when it plans none. */
+	metres: number | null;
+	/** Runs planned by time, which no planned distance counts. */
+	byTime: number;
+}
+
+/**
+ * The planned metres of each week of `window`, complete weeks oldest first, then the week in
+ * progress, by the day each run is planned on now. A skipped session plans nothing.
+ */
+export function plannedMileage(planned: readonly PlannedRun[], window: Weeks): WeekPlanned[] {
+	const all = [
+		...weekStarts(window.weeks).map((weekStart) => ({ weekStart, inProgress: false })),
+		{ weekStart: window.inProgress.weekStart, inProgress: true }
+	];
+	return all.map(({ weekStart, inProgress }) => {
+		const end = addDays(weekStart, 6);
+		const theirs = planned.filter(
+			(run) => run.status !== 'skipped' && run.date >= weekStart && run.date <= end
+		);
+		const metres = theirs.flatMap((run) => plannedMetres(run.segments) ?? []);
+		return {
+			weekStart,
+			inProgress,
+			metres: metres.length === 0 ? null : cleanFloat(metres.reduce((a, b) => a + b, 0)),
+			byTime: theirs.length - metres.length
+		};
+	});
 }
 
 export interface RunFrequency {

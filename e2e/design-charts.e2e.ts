@@ -3,7 +3,10 @@
  * Show charts is pressed; the frame reserves the plot box, so nothing moves while the body's
  * chunk loads; a body that fails to load is a Notice with Retry, which loads it; the marks keep their pixel sizes at 320 and 393 px; /design links no
  * chart CSS as render-blocking; axe in both themes. The bar chart: per-mark tooltips by tap and
- * by keyboard, the stack order, totals that fit, its table twins and forced colours. The desktop
+ * by keyboard, the stack order, totals that fit, its table twins and forced colours. The range and
+ * diverging bars: statuses in words, the diverging tokens, tooltips by tap and keyboard, their
+ * table twins and 44 px rows. The trend tiles: one sentence each, delta words, the so-far line, the
+ * 4w verdict window, real period links with history, the busy frame and 44 px targets. The desktop
  * window is in
  * design-charts.desktop.e2e.ts; without JavaScript, the server render is checked by
  * src/routes/design/charts-no-js.test.ts (/design renders its panels in the browser only).
@@ -26,6 +29,10 @@ import {
 	expectLineTable,
 	expectMarkSizes,
 	expectReadout,
+	expectRowCharts,
+	expectRowReadout,
+	expectRowSizes,
+	expectRowTable,
 	expectTipInside,
 	FIXTURE_BODY_MARK,
 	fixtureBody,
@@ -38,11 +45,31 @@ import {
 	linkedStylesheets,
 	openCharts,
 	PANEL_MARK,
-	slotPoint
+	ROW_FIXTURE_IDS,
+	rowBody,
+	rowMarks,
+	rowTip,
+	periodLink,
+	slotPoint,
+	tileOf,
+	tilesSection
 } from './charts';
-import { barModel, stepMark } from '../src/lib/ui/charts/bar-model';
+import {
+	barModel,
+	DIVERGE_WORDS,
+	divergingModel,
+	RANGE_STATUS,
+	rangeModel,
+	stepMark,
+	stepRow
+} from '../src/lib/ui/charts/bar-model';
+import { DIVERGING } from '../src/lib/ui/charts/palette';
+import { DIVERGING_FIXTURE, RANGE_FIXTURE } from '../src/routes/design/bar-fixture';
 import { announce } from '../src/lib/ui/charts/line-model';
 import { STACK_ORDER } from '../src/lib/ui/charts/palette';
+import { PERIODS, type Period } from '../src/lib/domain/analytics/periods';
+import { tileSentence } from '../src/lib/ui/analytics/words';
+import { tileFixtures } from '../src/routes/design/tile-fixture';
 import { boxOf, expectNoShift, expectNoSideScroll } from './desktop';
 import { captureScreen, gotoHydrated, trackConsoleErrors } from './support';
 
@@ -174,6 +201,7 @@ for (const { width, height } of [
 		await expectMarkSizes(page);
 		await expectLineMarkSizes(page);
 		await expectBarMarkSizes(page);
+		await expectRowSizes(page);
 		await expect(fixturePlot(page)).toHaveAttribute('aria-busy', 'false');
 		await fixtureFrame(page).scrollIntoViewIfNeeded();
 		await expectNoSideScroll(page);
@@ -190,7 +218,10 @@ for (const { width, height } of [
 			'line-so-far',
 			'bar-adherence',
 			'bar-stacked',
-			'bar-target'
+			'bar-target',
+			'range-bars',
+			'diverging-bars',
+			'design-tiles'
 		]) {
 			await lineFrameOf(page, id).scrollIntoViewIfNeeded();
 			await captureScreen(page, testInfo, `design-charts-${id}-${width}`);
@@ -223,6 +254,13 @@ for (const theme of ['dark', 'light'] as const) {
 		await expect(chartsSection(page).getByText('Shows once you log a run')).toBeVisible();
 		await expectLineCharts(page);
 		await expectBarCharts(page);
+		await expectRowCharts(page);
+		// The trend tiles, every tone among them, with the method open.
+		await expect(page.getByTestId('tile-squat')).toBeVisible();
+		await page.getByTestId('tiles-context').locator('summary').click();
+		// A row's tooltip shown, so axe reads it in this theme too.
+		await rowMarks(page, 'range-bars').first().focus();
+		await expect(rowTip(page, 'range-bars')).toHaveAttribute('data-shown', '');
 		await fixtureFrame(page).getByText('Show as table').click();
 		await expect(fixtureFrame(page).getByRole('table')).toBeVisible();
 		await page.waitForTimeout(300);
@@ -651,5 +689,307 @@ test.describe('/design → Charts: the bar chart on a phone', () => {
 		});
 		await barFrameOf(page, id).scrollIntoViewIfNeeded();
 		await captureScreen(page, testInfo, 'design-charts-bar-forced-colors');
+	});
+});
+
+test.describe('/design → Charts: range and diverging bars on a phone', () => {
+	test('every status reads as words: the range beside an icon, the RPE side beside its value', async ({
+		page
+	}) => {
+		await page.setViewportSize({ width: 320, height: 640 });
+		await gotoHydrated(page, '/design');
+		await openCharts(page);
+		await expectRowCharts(page);
+		const range = rangeModel(RANGE_FIXTURE.data);
+		const statuses = rowBody(page, 'range-bars').getByTestId('range-status');
+		await expect(statuses).toHaveText(range.marks.map((m) => RANGE_STATUS[m.status!]));
+		// Every status the chart can show is in the fixture, and each carries an icon.
+		expect(new Set(range.marks.map((m) => m.status))).toEqual(
+			new Set(['below', 'within', 'above'])
+		);
+		await expect(statuses.locator('svg')).toHaveCount(range.marks.length);
+		await expect(rowBody(page, 'range-bars').getByTestId('row-legend')).toHaveText(
+			/Done.*Target range.*Planned/
+		);
+		const diverging = divergingModel(DIVERGING_FIXTURE.data).marks.filter((m) => m.tone);
+		await expect(rowBody(page, 'diverging-bars').getByTestId('diverging-value')).toHaveText(
+			diverging.map((m) => m.text!)
+		);
+		await expect(rowBody(page, 'diverging-bars').getByTestId('diverging-side')).toHaveText(
+			diverging.map((m) => DIVERGE_WORDS[m.tone!])
+		);
+		// A row with no RPE says so in words, and draws nothing.
+		await expect(rowMarks(page, 'diverging-bars').last()).toContainText('No data');
+		await expect(rowMarks(page, 'diverging-bars').last().getByTestId('diverging-fill')).toHaveCount(
+			0
+		);
+	});
+
+	test('the diverging bars wear the three diverging tokens: cool below, warm above, mid within ±0.5', async ({
+		page
+	}) => {
+		await gotoHydrated(page, '/design');
+		await openCharts(page);
+		await expectRowCharts(page);
+		const fills = rowBody(page, 'diverging-bars').getByTestId('diverging-fill');
+		const drawn = await fills.evaluateAll((els, tokens) => {
+			// Each token resolved the way the browser paints it, on a probe in the same chart.
+			const resolve = (token: string) => {
+				const probe = document.createElement('span');
+				probe.style.backgroundColor = `var(${token})`;
+				els[0]!.parentElement!.append(probe);
+				const color = getComputedStyle(probe).backgroundColor;
+				probe.remove();
+				return color;
+			};
+			const colors = Object.fromEntries(
+				Object.entries(tokens).map(([tone, token]) => [tone, resolve(token)])
+			);
+			return {
+				colors,
+				fills: els.map((el) => ({
+					tone: el.getAttribute('data-tone')!,
+					color: getComputedStyle(el).backgroundColor
+				}))
+			};
+		}, DIVERGING);
+		expect(new Set(Object.values(drawn.colors)).size, 'three distinct tokens').toBe(3);
+		const tones = divergingModel(DIVERGING_FIXTURE.data).marks.flatMap((m) =>
+			m.tone ? [m.tone] : []
+		);
+		expect(drawn.fills.map((fill) => fill.tone)).toEqual(tones);
+		expect(new Set(tones)).toEqual(new Set(['below', 'zero', 'above']));
+		for (const fill of drawn.fills) expect(fill.color, fill.tone).toBe(drawn.colors[fill.tone]);
+	});
+
+	test('a tap shows a row’s tooltip inside the plot, in the table’s words', async ({
+		page
+	}, testInfo) => {
+		await page.setViewportSize({ width: 320, height: 640 });
+		await gotoHydrated(page, '/design');
+		await openCharts(page);
+		await expectRowSizes(page);
+		for (const id of ROW_FIXTURE_IDS) {
+			await page.getByTestId(id).scrollIntoViewIfNeeded();
+			const count = await rowMarks(page, id).count();
+			// The first row's tooltip opens under it, the last one's over it.
+			for (const index of [0, count - 1, 1]) {
+				const row = rowMarks(page, id).nth(index);
+				const box = await boxOf(row);
+				await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
+				await expect(row).toBeFocused();
+				await expectRowReadout(page, id, index);
+			}
+			await captureScreen(page, testInfo, `design-charts-${id}-tap-320`);
+		}
+	});
+
+	test('the keyboard moves one tab stop between the rows; Escape hides the tooltip', async ({
+		page
+	}) => {
+		await gotoHydrated(page, '/design');
+		await openCharts(page);
+		await expectRowCharts(page);
+		for (const id of ROW_FIXTURE_IDS) {
+			const body = rowBody(page, id);
+			const rows = rowMarks(page, id);
+			const count = await rows.count();
+			await expect(body.getByRole('group')).toHaveAccessibleName(
+				/: use the arrow keys to move between rows$/
+			);
+			await expect(body.locator('[tabindex="0"]')).toHaveCount(1);
+			await expect(rows.first()).toHaveAttribute('tabindex', '0');
+			await rows.first().focus();
+			await expectRowReadout(page, id, 0);
+			let at = 0;
+			for (const key of ['ArrowDown', 'ArrowDown', 'ArrowUp', 'End', 'ArrowRight', 'Home']) {
+				await page.keyboard.press(key);
+				at = stepRow(count, at, key)!;
+				await expect(rows.nth(at)).toBeFocused();
+				await expect(rows.nth(at)).toHaveAttribute('tabindex', '0');
+				await expectRowReadout(page, id, at);
+			}
+			await expect(body.locator('[tabindex="0"]')).toHaveCount(1);
+			await page.keyboard.press('Escape');
+			await expect(rowTip(page, id)).not.toHaveAttribute('data-shown', '');
+		}
+	});
+
+	test('each table twin holds exactly its rows, in the chart’s order', async ({ page }) => {
+		await gotoHydrated(page, '/design');
+		await openCharts(page);
+		await expectRowCharts(page);
+		for (const id of ROW_FIXTURE_IDS) await expectRowTable(page, id);
+	});
+});
+
+test.describe('/design → Charts: trend tiles on a phone', () => {
+	const squat = (period: Period) => tileFixtures(period).tiles.find((t) => t.id === 'tile-squat')!;
+
+	test('a tile reads as one sentence; its parts are drawn for the eye only', async ({ page }) => {
+		await gotoHydrated(page, '/design');
+		await openCharts(page);
+		const tile = tileOf(page, 'tile-squat');
+		await expect(tile).toHaveAttribute('data-value', '142.5');
+		await expect(tile.getByTestId('tile-sentence')).toHaveText(tileSentence(squat('12w').tile));
+		await expect(tile.getByTestId('tile-sentence')).toHaveText(
+			'Squat · Estimated 1RM: 142.5 kg, estimated. +5 kg better than the 12 weeks before. ' +
+				'This week so far: 140 kg · 137.5 kg by Wednesday last week. Real improvement.'
+		);
+		// The visible face is hidden from screen readers, so nothing is read twice.
+		const tree = (await tile.ariaSnapshot()).trim().split('\n');
+		expect(tree.join('\n')).toContain(tileSentence(squat('12w').tile));
+		expect(tree.length, 'the list item and its one sentence').toBeLessThanOrEqual(2);
+		await expect(tile.getByText('Estimated', { exact: true })).toBeVisible();
+		// The sparkline: one polyline with a non-scaling 2 px stroke, and an 8 px hollow end ring.
+		const spark = await tile.getByTestId('sparkline').evaluate((el) => {
+			const line = el.querySelectorAll('polyline');
+			const end = el.querySelector('.end')!.getBoundingClientRect();
+			const style = getComputedStyle(line[0]!);
+			return {
+				lines: line.length,
+				effect: style.getPropertyValue('vector-effect'),
+				stroke: style.strokeWidth,
+				end: { width: end.width, height: end.height }
+			};
+		});
+		expect(spark).toEqual({
+			lines: 1,
+			effect: 'non-scaling-stroke',
+			stroke: '2px',
+			end: { width: 8, height: 8 }
+		});
+		// No value: Stat's quiet dash and 'No data yet', no number, no sparkline.
+		const empty = tileOf(page, 'tile-empty');
+		await expect(empty).not.toHaveAttribute('data-value');
+		await expect(empty.getByText('No data yet', { exact: true })).toBeVisible();
+		await expect(empty.getByTestId('sparkline')).toHaveCount(0);
+	});
+
+	test('a lower-is-better metric that fell says better, with a falling icon in the positive tone', async ({
+		page
+	}) => {
+		await gotoHydrated(page, '/design');
+		await openCharts(page);
+		const delta = tileOf(page, 'tile-pace').getByTestId('delta');
+		await expect(delta).toHaveText('−0:08 /km better than the 12 weeks before');
+		await expect(delta).toHaveAttribute('data-tone', 'positive');
+		await expect(delta.locator('use')).toHaveAttribute('href', /#trend-down$/);
+		// A fall the trend calls normal variation is neutral, however it moved.
+		const noise = tileOf(page, 'tile-sets').getByTestId('delta');
+		await expect(noise).toHaveText('−3 sets worse than the 12 weeks before');
+		await expect(noise).toHaveAttribute('data-tone', 'neutral');
+		await expect(tileOf(page, 'tile-sets').getByTestId('verdict')).toHaveText('Normal variation');
+	});
+
+	test('the so-far line names the days it compares', async ({ page }) => {
+		await gotoHydrated(page, '/design');
+		await openCharts(page);
+		await expect(tileOf(page, 'tile-squat').getByTestId('so-far')).toHaveText(
+			'This week so far: 140 kg · 137.5 kg by Wednesday last week'
+		);
+	});
+
+	test('at 4 weeks a 12-week trend says Real improvement over the last 12 weeks', async ({
+		page
+	}) => {
+		await gotoHydrated(page, '/design');
+		await openCharts(page);
+		await periodLink(page, 'Last 4 weeks').click();
+		await expect(page).toHaveURL(/\/design\?period=4w$/);
+		await expect(periodLink(page, 'Last 4 weeks')).toHaveAttribute('aria-current', 'page');
+		const tile = tileOf(page, 'tile-squat');
+		await expect(tile.getByTestId('verdict')).toHaveText('Real improvement over the last 12 weeks');
+		await expect(tile.getByTestId('delta')).toHaveText('+5 kg better than the 4 weeks before');
+		await expect(tile).not.toContainText('Not enough data');
+		await expect(tile.getByTestId('tile-sentence')).toHaveText(tileSentence(squat('4w').tile));
+		await expect(page.getByTestId('tiles-context').getByTestId('context-line')).toHaveText(
+			'Last 4 weeks · Compared with the 4 weeks before · Trend over the last 12 weeks · ' +
+				'Good is a real rise over the trend window'
+		);
+		// All time has no earlier period, and still a verdict.
+		await periodLink(page, 'All time').click();
+		await expect(tile.getByTestId('delta')).toHaveText('No earlier period to compare with');
+		await expect(tile.getByTestId('verdict')).toHaveText('Real improvement');
+	});
+
+	test('period links are real links: each switch is a history entry, keeping scroll and focus', async ({
+		page
+	}) => {
+		await gotoHydrated(page, '/design');
+		await openCharts(page);
+		const links = page.getByRole('navigation', { name: 'Period', exact: true }).getByRole('link');
+		await expect(links).toHaveCount(5);
+		expect(await links.evaluateAll((els) => els.map((el) => el.getAttribute('href')))).toEqual(
+			PERIODS.map((period) => `?period=${period}`)
+		);
+		await expect(periodLink(page, 'Last 12 weeks')).toHaveAttribute('aria-current', 'page');
+		const four = periodLink(page, 'Last 4 weeks');
+		await four.scrollIntoViewIfNeeded();
+		const scrolled = await page.evaluate(() => scrollY);
+		expect(scrolled).toBeGreaterThan(0);
+		await four.focus();
+		await page.keyboard.press('Enter');
+		await expect(page).toHaveURL(/\?period=4w$/);
+		await expect(four).toHaveAttribute('aria-current', 'page');
+		await expect(four).toBeFocused();
+		expect(Math.abs((await page.evaluate(() => scrollY)) - scrolled)).toBeLessThanOrEqual(1);
+		await periodLink(page, 'Last 26 weeks').click();
+		await expect(page).toHaveURL(/\?period=26w$/);
+		await page.goBack();
+		await expect(page).toHaveURL(/\?period=4w$/);
+		await expect(four).toHaveAttribute('aria-current', 'page');
+		await page.goBack();
+		await expect(page).toHaveURL(/\/design$/);
+		await expect(periodLink(page, 'Last 12 weeks')).toHaveAttribute('aria-current', 'page');
+	});
+
+	test('a period on its way holds the frame, dimmed and busy, with no skeleton', async ({
+		page
+	}, testInfo) => {
+		await gotoHydrated(page, '/design');
+		await openCharts(page);
+		const busy = page.getByTestId('tiles-busy');
+		const content = busy.getByTestId('period-content');
+		await expect(content).toHaveAttribute('aria-busy', 'true');
+		await expect(content).toHaveAttribute('inert', '');
+		await expect
+			.poll(() => content.evaluate((el) => Number(getComputedStyle(el).opacity)))
+			.toBeCloseTo(0.55, 2);
+		// The figures stay in place: the tile and its number, never placeholders.
+		await expect(content.getByText('142.5kg')).toBeVisible();
+		await expect(content.locator('.skeleton, [class*="skeleton"]')).toHaveCount(0);
+		await expect(busy.getByRole('status')).toHaveText('Loading the period…');
+		// The tiles the links switch are not busy.
+		await expect(page.getByTestId('tiles-period').getByTestId('period-content')).toHaveAttribute(
+			'aria-busy',
+			'false'
+		);
+		await expect(
+			page.getByTestId('tiles-period').getByTestId('period-content')
+		).not.toHaveAttribute('inert');
+		await busy.scrollIntoViewIfNeeded();
+		await captureScreen(page, testInfo, 'design-tiles-busy');
+	});
+
+	test('at 320 px each period link and How it’s worked out is a 44 px target', async ({
+		page
+	}, testInfo) => {
+		await page.setViewportSize({ width: 320, height: 640 });
+		await gotoHydrated(page, '/design');
+		await openCharts(page);
+		const links = page.getByRole('navigation', { name: 'Period', exact: true }).getByRole('link');
+		for (const link of await links.all()) {
+			const box = await boxOf(link);
+			expect(box.width, 'a 44 px wide link').toBeGreaterThanOrEqual(44);
+			expect(box.height, 'a 44 px tall link').toBeGreaterThanOrEqual(44);
+		}
+		const summary = page.getByTestId('tiles-context').locator('summary');
+		expect((await boxOf(summary)).height).toBeGreaterThanOrEqual(44);
+		await summary.click();
+		await expect(page.getByTestId('tiles-context').getByText(/Epley–Brzycki/)).toBeVisible();
+		await tilesSection(page).scrollIntoViewIfNeeded();
+		await expectNoSideScroll(page);
+		await captureScreen(page, testInfo, 'design-tiles-320');
 	});
 });

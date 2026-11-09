@@ -135,6 +135,7 @@ async function runCall<Deps>(
 	);
 	const callCtx = Object.freeze({
 		...ctx,
+		toolUseId: call.id,
 		signal: controller.signal,
 		deadlineAt: startedAt + allowedMs
 	});

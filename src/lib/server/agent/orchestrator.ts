@@ -61,7 +61,7 @@ import {
 	type ModelRequest,
 	type ModelResult
 } from './provider/types.ts';
-import type { ToolContext } from './tools/context.ts';
+import type { ToolContext, ToolDrafter } from './tools/context.ts';
 import type { CoachTool } from './tools/define.ts';
 import { executeToolCalls } from './tools/execute.ts';
 
@@ -211,14 +211,26 @@ export async function runLoop<Deps>(input: LoopInput<Deps>): Promise<LoopResult>
 	if (input.signal.aborted) onDisconnect();
 	else input.signal.addEventListener('abort', onDisconnect, { once: true });
 
+	let budget = TURN_BUDGET_START;
+	// Drafts share the turn's budget: one is admitted only while the budget allows a draft, and its
+	// call's tokens are charged as it returns, so a spent budget stops every later call.
+	const { drafter } = input.context;
+	const shared: ToolDrafter | null = drafter && {
+		provider: drafter.provider,
+		admit: () => !blockingLimit(budget, 'draft', limits) && drafter.admit(),
+		onCall: async (draft) => {
+			budget = turnBudget(budget, { kind: 'draft', usage: draft.usage }, limits);
+			await drafter.onCall?.(draft);
+		}
+	};
 	const ctx: ToolContext<Deps> = Object.freeze({
 		...input.context,
 		signal: controller.signal,
-		deadlineAt
+		deadlineAt,
+		drafter: shared
 	});
 	const messages: BetaMessageParam[] = [...request.messages];
 	const steps: LoopStep[] = [];
-	let budget = TURN_BUDGET_START;
 	let totals: TokenUsage = { ...ZERO_USAGE };
 	let cost: number | null = 0;
 	let capCost = 0;

@@ -412,7 +412,9 @@ describe('the PRD histories', () => {
 		for (const s of SYSTEMS) expect(overloadedDays(days, s, base), s).toEqual([]);
 	});
 
-	it('steady stays fresh: never overloaded, and ready for every day', () => {
+	// "Fresh" is readiness: a steady week's hard days end elevated (lower 1.53 ×, above RESIDUAL's
+	// 1.2 ×, which hardCampWeek's 1.22 × Tuesday needs), but every day starts fresh.
+	it('steady stays fresh: never overloaded, and fresh at the start of every day', () => {
 		const h = HISTORIES.steady();
 		const days = historyModel(h, [], addDays(sunday(h), 1));
 		for (const s of SYSTEMS) {

@@ -83,6 +83,7 @@ export const ROUTE_ACCESS = {
 	// threads
 
 	// proposals
+	'/api/coach/proposals/[id]': 'owner',
 
 	// memory
 
