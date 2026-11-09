@@ -3,8 +3,8 @@
  * shaped for the indexes in schema/coach.ts.
  * - Every predicate repeats the owner, so a note, a run or a workout is found only through its
  *   owner: someone else's id reads as no row at all.
- * - COACH_NOTE_INDEXES names the index each builder is shaped for; coach-explain (m5/54) adds
- *   them to `pnpm db:explain`.
+ * - COACH_NOTE_INDEXES names the index each builder is shaped for; `pnpm db:explain` gates them
+ *   (scripts/explain/history.explain.ts).
  * Nothing runs until a builder is awaited; await them in turn on one connection.
  */
 import { and, desc, eq, exists, isNull, sql, type SQLWrapper } from 'drizzle-orm';
