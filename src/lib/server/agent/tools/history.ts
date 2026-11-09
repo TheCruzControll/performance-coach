@@ -101,7 +101,7 @@ const setRef = (set: HistorySet, timeZone: string): SourceRef => ({
 const exerciseInput = z.string().check(z.minLength(1), z.maxLength(NAME_MAX));
 
 /** The one exercise `text` names (an id, or a name M3's resolver matches), or a tool error. */
-async function resolveExercise(ctx: Ctx, text: string): Promise<ExerciseDef> {
+export async function resolveExercise(ctx: Ctx, text: string): Promise<ExerciseDef> {
 	if (isUuid(text)) {
 		const found = (await getExercisesByIds(ctx.ownerId, [text], training(ctx))).get(text);
 		if (!found) throw toolError('NOT_FOUND', 'You have no exercise with that id');
