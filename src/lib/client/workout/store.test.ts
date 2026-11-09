@@ -460,14 +460,45 @@ describe('sync responses', () => {
 });
 
 describe('prune', () => {
-	it('removes finished, synced workouts after a day and kits after a week, never an unsynced workout', async () => {
+	it('lets a workout finished here go once its last change is acknowledged, and only then', async () => {
+		const store = await open();
+		const sent = [start(W), log('s1', 1), finish(W)];
+		store.dispatch(sent[0]!, attach(W));
+		store.dispatch(sent[1]!);
+		expect(await store.dispatch(sent[2]!).saved).toBe('saved');
+		const abandoned = [start(W2), make('workout.abandon', { workoutId: W2, payload: {} })];
+		store.dispatch(abandoned[0]!, attach(W2));
+		expect(await store.dispatch(abandoned[1]!).saved).toBe('saved');
+		const changes: unknown[] = [];
+		store.onChange((change) => changes.push(change));
+
+		await store.acknowledge(appliedAll(W, sent.slice(0, 2)));
+		expect((await stored()).workouts.map((w) => w.id).sort()).toEqual([W, W2]);
+		expect(store.snapshot(W)?.view?.workout.status).toBe('completed');
+
+		const finished: SyncResult = {
+			id: sent[2]!.id,
+			status: 'applied',
+			canonical: serverRows(W, sent)
+		};
+		await store.acknowledge([finished, ...appliedAll(W2, abandoned)]);
+		const db = await stored();
+		expect(db.workouts).toEqual([]);
+		expect(db.outbox).toEqual([]);
+		expect(store.snapshot(W)).toBeNull();
+		expect(store.snapshot(W2)).toBeNull();
+		expect(changes).toContainEqual({ type: 'view', workoutId: W });
+		expect(changes).toContainEqual({ type: 'view', workoutId: W2 });
+	});
+
+	it('removes a workout finished on another device after a day and kits after a week, never an unsynced workout', async () => {
 		const store = await open();
 		await store.saveKit(KIT.plannedLineage!, KIT);
-		const synced = [start(W), log('s1', 1, { workoutId: W }), finish(W)];
-		store.dispatch(synced[0]!, attach(W));
-		store.dispatch(synced[1]!);
-		expect(await store.dispatch(synced[2]!).saved).toBe('saved');
-		await store.acknowledge(appliedAll(W, synced));
+		const begun = start(W);
+		expect(await store.dispatch(begun, attach(W)).saved).toBe('saved');
+		await store.acknowledge(appliedAll(W, [begun]));
+		// Another device finished it: reconcile stores the server's rows, and nothing here waits.
+		expect(await store.reconciled(serverRows(W, [begun, finish(W)]))).toBe(true);
 		await started(store, W2);
 		expect(await store.dispatch(finish(W2)).saved).toBe('saved'); // finished, never synced
 		const active = start(W3);
