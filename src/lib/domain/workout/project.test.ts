@@ -283,6 +283,7 @@ describe('project', () => {
 			{ workoutId: W, type: 'rest.resume', at: 4_000 },
 			{ workoutId: W, type: 'rest.reset', at: 5_000 },
 			{ workoutId: W, type: 'rest.skip', at: 6_000 },
+			{ workoutId: W, type: 'rest.clear' },
 			{ workoutId: W, type: 'stopwatch.start', at: 1_000 },
 			{ workoutId: W, type: 'stopwatch.pause', at: 2_000 },
 			{ workoutId: W, type: 'stopwatch.resume', at: 3_000 },
@@ -673,6 +674,17 @@ describe('device actions', () => {
 		});
 		expect(restRemaining(skipped.device.rest!, 50_000)).toBe(0);
 		expect(apply({ workoutId: W, type: 'rest.pause', at: 1 })).toBe(state0);
+	});
+
+	it('clears the rest, keeping the stopwatch; with no rest it changes nothing', () => {
+		const state = apply(
+			{ workoutId: W, type: 'rest.start', at: 10_000, durationMs: 90_000 },
+			{ workoutId: W, type: 'stopwatch.start', at: 5_000 }
+		);
+		const cleared = applyLocal(strengthTable, state, { workoutId: W, type: 'rest.clear' });
+		expect(cleared.device.rest).toBeNull();
+		expect(cleared.device.stopwatch).toBe(state.device.stopwatch);
+		expect(applyLocal(strengthTable, cleared, { workoutId: W, type: 'rest.clear' })).toBe(cleared);
 	});
 
 	it('adds an exercise at a free position only', () => {
