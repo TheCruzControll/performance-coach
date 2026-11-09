@@ -57,6 +57,37 @@ describe('addDays', () => {
 		expect(() => addDays('2027-02-29', 1)).toThrow(/Not a calendar date.*2027-02-29/);
 		expect(() => addDays('2026-11-05', 0.5)).toThrow(/whole number/);
 	});
+
+	it('refuses, in every operation, what parseIsoDate refuses: other digits included', () => {
+		for (const text of [
+			'2100-02-29',
+			'2026-04-31',
+			'2026-1a-05',
+			'２０２６-11-05',
+			'2026-11-05\n'
+		]) {
+			expect(parseIsoDate(text), text).toBeNull();
+			for (const op of [
+				() => addDays(text, 1),
+				() => daysBetween(text, '2026-11-05'),
+				() => weekdayOf(text),
+				() => mondayOf(text)
+			]) {
+				expect(op, text).toThrow(/Not a calendar date/);
+			}
+		}
+	});
+
+	it('keeps the years before 1970 and before 100 as written', () => {
+		expect(addDays('1969-12-31', 1)).toBe('1970-01-01');
+		expect(mondayOf('1969-12-31')).toBe('1969-12-29');
+		expect(weekdayOf('1970-01-01')).toBe('thu');
+		// Date.UTC would read the year 99 as 1999.
+		expect(addDays('0099-12-31', 1)).toBe('0100-01-01');
+		expect(addDays('0004-02-28', 1)).toBe('0004-02-29');
+		expect(daysBetween('0001-01-01', '0001-03-01')).toBe(59);
+		expect(daysBetween('1999-01-01', '0099-01-01')).toBe(-693960);
+	});
 });
 
 describe('daysBetween', () => {

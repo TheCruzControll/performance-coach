@@ -80,9 +80,7 @@ const EXPECTED: Record<string, string[]> = {
 	'main/webkit': ['setup', 'setup-webkit', 'iphone-webkit'],
 	'serial/chromium': ['setup', 'serial-chromium'],
 	'serial/webkit': ['setup', 'setup-webkit', 'serial-webkit'],
-	'alone/chromium': ['setup', 'perf', 'exclusive'],
-	'sweeps/chromium': ['setup', 'sweep-chromium'],
-	'sweeps/webkit': ['setup', 'setup-webkit', 'sweep-webkit']
+	'alone/chromium': ['setup', 'perf', 'exclusive']
 };
 
 describe.each([
@@ -146,19 +144,6 @@ describe.each([
 				[...depended].filter((n) => !n.startsWith('setup')),
 				`${leg.group}/${leg.engine}`
 			).toEqual([]);
-		}
-	});
-
-	it('leaves no project to a group and engine CI runs no leg for', () => {
-		const run = new Set(LEGS.map((l) => `${l.group}/${l.engine}`));
-		for (const group of GROUPS) {
-			for (const engine of ENGINES.filter((e) => !run.has(`${group}/${e}`))) {
-				const selected = names(selectProjects(projects, { engine, group }));
-				expect(
-					selected.filter((n) => !n!.startsWith('setup')),
-					`${group}/${engine}`
-				).toEqual([]);
-			}
 		}
 	});
 
@@ -229,12 +214,31 @@ function list(leg: { engine?: Engine; group?: Group; shard?: string } = {}): Lis
 const runs = (listing: Listing) =>
 	[...listing.tests].flatMap(([test, projects]) => [...projects].map((p) => `${p} › ${test}`));
 
+/** The runs outside the setup projects. */
+const beyondSetup = (tests: string[]) => tests.filter((t) => !t.startsWith('setup'));
+
+/** The group and engine pairs CI runs no leg for. */
+const unrun = () => {
+	const run = new Set(LEGS.map((l) => `${l.group}/${l.engine}`));
+	return GROUPS.flatMap((group) =>
+		ENGINES.filter((e) => !run.has(`${group}/${e}`)).map((engine) => ({ group, engine }))
+	);
+};
+
 describe('the legs, listed by Playwright', () => {
+	const listings = new Map<string, Listing>();
+	/** list(), once per leg for the whole describe: each listing spawns Playwright. */
+	const listed = (leg: { engine?: Engine; group?: Group } = {}) => {
+		const key = `${leg.group}/${leg.engine}`;
+		if (!listings.has(key)) listings.set(key, list(leg));
+		return listings.get(key)!;
+	};
+
 	it('run exactly today\u2019s tests between them', () => {
-		const today = new Set(runs(list()));
+		const today = new Set(runs(listed()));
 		const legs = new Set(
 			LEGS.flatMap((leg) => {
-				const listing = list(leg);
+				const listing = listed(leg);
 				const name = `${leg.group}/${leg.engine}`;
 				expect([...listing.projects], name).toEqual(EXPECTED[name]);
 				return runs(listing);
@@ -242,6 +246,22 @@ describe('the legs, listed by Playwright', () => {
 		);
 		expect(today.size).toBeGreaterThan(0);
 		expect([...legs].sort()).toEqual([...today].sort());
+	}, 120_000);
+
+	it('each run a test beyond the setup, so no leg is spent on setup alone', () => {
+		for (const leg of LEGS) {
+			expect(beyondSetup(runs(listed(leg))).length, `${leg.group}/${leg.engine}`).toBeGreaterThan(
+				0
+			);
+		}
+	}, 120_000);
+
+	// A group may keep projects with no specs yet (sweep-*, until the first *.sweep.e2e.ts): CI
+	// runs no leg for them, and they must list no test, or that test would go unrun.
+	it('leave no test to a group and engine CI runs no leg for', () => {
+		for (const leg of unrun()) {
+			expect(beyondSetup(runs(listed(leg))), `${leg.group}/${leg.engine}`).toEqual([]);
+		}
 	}, 120_000);
 
 	it.each([

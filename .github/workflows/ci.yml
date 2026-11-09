@@ -128,8 +128,8 @@ jobs:
         run: pnpm budgets
 
   # The browser suite in parallel legs, one per group and engine (e2e/projects.ts LEGS: main, the
-  # functional specs; serial, the one-at-a-time specs; alone, perf and exclusive on Chromium;
-  # sweeps, the *.sweep.e2e.ts specs), each with its own Postgres, database and production server.
+  # functional specs; serial, the one-at-a-time specs; alone, perf and exclusive on Chromium),
+  # each with its own Postgres, database and production server.
   # Ceiling: 15 Playwright minutes per leg or shard (scripts/e2e-timing.ts warns above it). A leg
   # nearing it gains a shard (`of` up by one, plus an entry per new shard), never less coverage.
   # `minutes` is the Playwright step's timeout: 1.5 × the leg's slowest of three measured runs,
@@ -162,8 +162,6 @@ jobs:
           - { group: serial, engine: webkit, shard: 1, of: 2, minutes: 15 }
           - { group: serial, engine: webkit, shard: 2, of: 2, minutes: 15 }
           - { group: alone, engine: chromium, shard: 1, of: 1, minutes: 5 }
-          - { group: sweeps, engine: chromium, shard: 1, of: 1, minutes: 5 }
-          - { group: sweeps, engine: webkit, shard: 1, of: 1, minutes: 5 }
     services:
       postgres:
         image: postgres:18
@@ -327,6 +325,14 @@ jobs:
       # budget in the e2e job (e2e/perf.e2e.ts). See docs/performance.md.
       - name: Lighthouse (median of 5 runs, asserted)
         run: pnpm lighthouse --runs 5 --assert --min-perf 0.9 --max-tbt 300
+      # Desktop (1440 × 900) numbers on every PR head, in the step summary and the reports
+      # artifact (lighthouse-reports/desktop). Measured, never gating: whether CI should assert
+      # desktop (about 5 minutes per run) is an open owner decision (m2x plan), so a miss here
+      # marks the step and leaves the job green. Same build and server setup as the mobile run.
+      - name: Lighthouse desktop (median of 3 runs, measured, not gating)
+        continue-on-error: true
+        timeout-minutes: 8
+        run: pnpm lighthouse --desktop --seed --runs 3 --assert
       - name: Upload Lighthouse reports
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v7

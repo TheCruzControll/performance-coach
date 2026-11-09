@@ -585,16 +585,23 @@ export function generateDataset(seed: string | number = DATASET_SEED): Dataset {
 }
 
 /**
- * One INSERT … SELECT FROM unnest(…) for all of a table's rows, each column cast to its type. A
- * column some rows leave out is null in them, not its default: give every row the same columns.
+ * One INSERT … SELECT FROM unnest(…) for all of a table's rows, each column cast to its type (json
+ * and jsonb values as their JSON text). A column some rows leave out is null in them, not its
+ * default: give every row the same columns.
  */
-async function insertAll(client: pg.ClientBase, table: PgTable, rows: Record<string, unknown>[]) {
+export async function insertAll(
+	client: pg.ClientBase,
+	table: PgTable,
+	rows: Record<string, unknown>[]
+) {
 	const given = new Set(rows.flatMap((row) => Object.keys(row)));
 	const columns = Object.entries(getTableColumns(table)).filter(([key]) => given.has(key));
 	const names = columns.map(([, column]) => `"${column.name}"`).join(', ');
 	const casts = columns.map(([, column], i) => `$${i + 1}::${column.getSQLType()}[]`).join(', ');
 	const json = (value: unknown, type: string) =>
-		type === 'jsonb' && value != null ? JSON.stringify(value) : (value ?? null);
+		(type === 'jsonb' || type === 'json') && value != null
+			? JSON.stringify(value)
+			: (value ?? null);
 	await client.query(
 		`insert into "${getTableName(table)}" (${names}) select * from unnest(${casts})`,
 		columns.map(([key, column]) => rows.map((row) => json(row[key], column.getSQLType())))
