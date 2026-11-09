@@ -347,7 +347,9 @@ export function mostReps(
 
 /**
  * The owner's undeleted sets performed in the range, as the metrics read a logged set, with their
- * exercise's muscles.
+ * exercise's muscles: of completed, undeleted workouts only, as M6's analytics count them (an
+ * abandoned or unfinished workout is no training done). bestE1rms and repMaxes keep every
+ * undeleted set: the start kit's 'prior bests' and the history sheet show what was lifted.
  */
 export function setsInRange(db: Executor, ownerId: string, range: InstantRange) {
 	return db
@@ -365,11 +367,14 @@ export function setsInRange(db: Executor, ownerId: string, range: InstantRange) 
 		})
 		.from(setRecords)
 		.innerJoin(exercises, eq(exercises.id, setRecords.exerciseId))
+		.innerJoin(workouts, eq(workouts.id, setRecords.workoutId))
 		.where(
 			and(
 				eq(setRecords.ownerId, ownerId),
 				during(setRecords.performedAt, range),
-				isNull(setRecords.deletedAt)
+				isNull(setRecords.deletedAt),
+				eq(workouts.status, 'completed'),
+				isNull(workouts.deletedAt)
 			)
 		)
 		.orderBy(asc(setRecords.performedAt), asc(setRecords.id));
@@ -465,12 +470,13 @@ const counted = alias(setRecords, 'counted');
  * index: `before` is the client id of the previous page's last workout, whose own row gives the
  * exact place to continue from, so workouts started in the same instant are neither repeated nor
  * skipped. A cursor that is not one of the owner's workouts gives an empty page. The counts probe
- * each workout's sets through their workout-order index.
+ * each workout's sets through their workout-order index. `startedBefore` leaves out workouts
+ * started at or after it, so a date range's page starts at the range, not at today.
  */
 export function completedWorkoutsPage(
 	db: Executor,
 	ownerId: string,
-	{ before, limit }: { before?: string; limit: number }
+	{ before, startedBefore, limit }: { before?: string; startedBefore?: Date; limit: number }
 ) {
 	const cursorOf = (column: AnyPgColumn) =>
 		db
@@ -525,6 +531,7 @@ export function completedWorkoutsPage(
 				eq(workouts.ownerId, ownerId),
 				isNull(workouts.deletedAt),
 				eq(workouts.status, 'completed'),
+				startedBefore === undefined ? undefined : lt(workouts.startedAt, startedBefore),
 				after
 			)
 		)

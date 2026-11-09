@@ -9,7 +9,8 @@
     route's reducer table and the header's stopwatch (WorkoutClock.svelte) meanwhile: a skeleton
     that reserves the header, then the view, 'No workout in progress', 'This browser can't keep a workout' or 'App
     updated — reload to continue'. A workout of another kind is sent to its own route first.
-  - On idle after that, the store loads (its write path stays out of the first render) with the
+  - On idle after the first render (data-ready, which waits for the view and stopwatch chunks
+    too, not only the restore), the store loads (its write path stays out of the first render) with the
     page's one sync engine (online.ts), which every change the store reports flushes, from any
     view or sheet; unmounting stops it. RUM loads on idle too, so INP is attributed to the
     workout route. data-store marks the store open; the view gets the active workout, to write
@@ -88,13 +89,7 @@
 		void load(() => import('./WorkoutClock.svelte')).then((module) => {
 			if (module) Clock = module.default;
 		});
-		void active.restore(load).then(() =>
-			idle(async () => {
-				if (start) return;
-				await active.connect(load);
-				ui = await load(() => import('./sync-ui.ts'));
-			})
-		);
+		void active.restore(load);
 		idle(
 			() =>
 				void import('#lib/client/vitals.ts')
@@ -102,6 +97,17 @@
 					.catch(() => {})
 		);
 		return () => active.close();
+	});
+
+	let connecting = false;
+	$effect(() => {
+		if (waiting || connecting) return;
+		connecting = true;
+		idle(async () => {
+			if (start) return;
+			await active.connect(load);
+			ui = await load(() => import('./sync-ui.ts'));
+		});
 	});
 
 	// The start flow, once the page asks for it; a chunk that is gone shows 'App updated'.

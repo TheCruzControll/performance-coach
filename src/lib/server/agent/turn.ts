@@ -85,7 +85,7 @@ import { buildModelRequest, CHAT_EFFORT } from './prompt/layout.ts';
 import { promptVersion, SYSTEM_PROMPT } from './prompt/system.ts';
 import { DIRECT_ANSWER_REASONS } from './provider/select.ts';
 import { COACH_MODEL, type LlmProvider } from './provider/types.ts';
-import { toolContext, type TurnEntry } from './tools/context.ts';
+import { toolContext, type ToolDrafter, type TurnEntry } from './tools/context.ts';
 import type { CoachTool } from './tools/define.ts';
 import type { ToolCallOutcome } from './tools/execute.ts';
 import { COACH_TOOLS } from './tools/registry.ts';
@@ -123,6 +123,13 @@ export const TURN_ERROR: Record<Exclude<LoopOutcome, 'completed'>, CoachErrorKin
 	timed_out: 'timeout',
 	failed: 'provider'
 };
+
+/**
+ * Where a turn's draft calls (proposals/draft.ts) are numbered among its model-call rows: from
+ * here, past any index the loop's chat calls and re-issues reach, so the two never collide in
+ * agent_model_calls_run_call_uq.
+ */
+export const DRAFT_CALL_INDEX_BASE = 1000;
 
 /** The convention for propose tools: their output names the proposal they stored. */
 function proposalOf(outcome: ToolCallOutcome): CoachEvent | null {
@@ -577,6 +584,17 @@ async function turn(
 		},
 		cancelRequested: () => isCancelRequested(ownerId, runId, deps)
 	};
+	let drafts = 0;
+	let draftCalls = 0;
+	const drafter: ToolDrafter = {
+		provider: provider.provider,
+		admit: () => drafts < TURN_LIMITS.drafts && (drafts += 1) > 0,
+		onCall: async ({ purpose: _purpose, kind: _kind, refusalCategory, ...call }) => {
+			const index = DRAFT_CALL_INDEX_BASE + draftCalls++;
+			const stopDetails = { category: refusalCategory };
+			await recordModelCall(ownerId, runId, { ...call, index, stopDetails }, deps);
+		}
+	};
 	const result = await runLoop({
 		provider: provider.provider,
 		request,
@@ -587,7 +605,8 @@ async function turn(
 			runtime: toolRuntime(deps),
 			signal: input.signal,
 			deadlineAt,
-			matchExercise: day.matchExercise
+			matchExercise: day.matchExercise,
+			drafter
 		}),
 		signal: input.signal,
 		hooks,

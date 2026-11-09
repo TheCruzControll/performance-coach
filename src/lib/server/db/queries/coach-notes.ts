@@ -40,7 +40,8 @@ export function latestNotes(db: Executor, ownerId: string, kind: string, limit: 
 
 /**
  * In one query: the owner's row (none when there is no such owner), with whether the run and the
- * workout a note names (when it names them) are the owner's; a deleted workout is not.
+ * workout a note names (when it names them) are the owner's; a deleted workout is not. A workout
+ * is named by its client id, as History and the coach's tools name it.
  */
 export function ownership(
 	db: Executor,
@@ -69,7 +70,7 @@ export function ownership(
 								.from(workouts)
 								.where(
 									and(
-										eq(workouts.id, workoutId),
+										eq(workouts.clientId, workoutId),
 										eq(workouts.ownerId, ownerId),
 										isNull(workouts.deletedAt)
 									)

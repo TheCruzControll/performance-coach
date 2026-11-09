@@ -11,7 +11,7 @@ import type { MockOverrides } from './provider/faults.ts';
 import { MockProvider, type MockScript, type MockStep } from './provider/mock.ts';
 import type { LlmProvider, ModelRequest, ModelStream } from './provider/types.ts';
 import { validateRequest } from './provider/validate.ts';
-import { toolContext, type ToolContext } from './tools/context.ts';
+import { toolContext, type ToolContext, type ToolDrafter } from './tools/context.ts';
 import { defineTool, type CoachTool } from './tools/define.ts';
 
 const SECOND = 1000;
@@ -42,7 +42,7 @@ const taking = (name: ToolName, ms: number, log: string[] = []) =>
 
 const T0 = Date.parse('2026-11-06T09:00:00Z');
 
-function context(serial = false): ToolContext<Deps> {
+function context(serial = false, drafter: ToolDrafter | null = null): ToolContext<Deps> {
 	return toolContext({
 		session: { ownerId: OWNER },
 		message: { threadId: 'thread-1', runId: 'run-1', text: QUESTION, entry: null },
@@ -51,7 +51,8 @@ function context(serial = false): ToolContext<Deps> {
 		// The loop replaces both with the turn's own.
 		signal: new AbortController().signal,
 		deadlineAt: 0,
-		matchExercise: () => null
+		matchExercise: () => null,
+		drafter
 	});
 }
 
@@ -118,6 +119,7 @@ interface PlayOptions {
 	scripts?: MockScript[];
 	tools?: CoachTool<Deps>[];
 	serial?: boolean;
+	drafter?: ToolDrafter;
 	limits?: TurnLimits;
 	overrides?: () => MockOverrides;
 	cancelRequested?: () => boolean;
@@ -157,7 +159,7 @@ async function play(options: PlayOptions & { steps?: MockStep[] }): Promise<Play
 	runLoop({
 		provider,
 		request: firstRequest(tools),
-		context: context(options.serial),
+		context: context(options.serial, options.drafter),
 		signal: caller.signal,
 		tools,
 		limits: options.limits,
@@ -581,6 +583,53 @@ describe('runLoop: limits', () => {
 		expect(played.result).toMatchObject({ outcome: 'budget_exhausted', limit: 'input_tokens' });
 		expect(run).toHaveBeenCalledTimes(1);
 		expect(played.result.steps).toHaveLength(1);
+	});
+
+	it('charges a draft’s tokens to the turn: no later draft or chat call', async () => {
+		const drafted: unknown[] = [];
+		const admitted: boolean[] = [];
+		const run = vi.fn(async (_input: unknown, ctx: ToolContext<Deps>) => {
+			for (let i = 0; i < 2; i++) {
+				const admit = ctx.drafter!.admit();
+				admitted.push(admit);
+				if (!admit) continue;
+				await ctx.drafter!.onCall!({
+					purpose: 'draft',
+					kind: 'workout_update',
+					requestId: null,
+					model: null,
+					stopReason: 'end_turn',
+					refusalCategory: null,
+					usage: { inputTokens: 1, outputTokens: 32_000, cacheReadTokens: 0, cacheWriteTokens: 0 },
+					costMicros: 0,
+					capCostMicros: 0,
+					ttftMs: null,
+					latencyMs: 0,
+					error: null
+				});
+			}
+			return { value: 1 };
+		});
+		const played = await play({
+			limits: { ...TURN_LIMITS, outputTokens: 32_000 },
+			drafter: {
+				provider: new MockProvider([], { overrides: () => ({}) }),
+				admit: () => true,
+				onCall: (call) => void drafted.push(call)
+			},
+			tools: [tool('update_workout', run)],
+			steps: [
+				{ tools: [toolCall('update_workout')] },
+				{ tools: [toolCall('update_workout')] },
+				{ text: 'Done.' }
+			]
+		});
+		expect(admitted).toEqual([true, false]);
+		expect(drafted).toHaveLength(1);
+		expect(played.requests).toHaveLength(1);
+		expect(played.result).toMatchObject({ outcome: 'budget_exhausted', limit: 'output_tokens' });
+		expect(played.result.usage.budget.drafts).toBe(1);
+		expect(run).toHaveBeenCalledOnce();
 	});
 
 	it.each([180, 60])('stops a %i s turn at its deadline, mid-stream', async (seconds) => {

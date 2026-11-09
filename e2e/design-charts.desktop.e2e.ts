@@ -2,7 +2,8 @@
  * The chart kit on /design → Charts in a desktop window (1440 × 900): the section keeps the left
  * column of the gallery, about a phone column wide, so no chart stretches; the marks keep their
  * pixel sizes; 'Show as table' and the table take a visible focus ring from the keyboard and Enter
- * opens the table; the table toggle and each week's hit area take a hover tint for the mouse.
+ * opens the table; the table toggle and each week's hit area take a hover tint for the mouse; a
+ * range or diverging row takes a hover tint and its tooltip from the mouse, and a ring from Tab.
  * Screenshots in both themes.
  */
 import { expect, test, type Page } from '@playwright/test';
@@ -17,6 +18,8 @@ import {
 	expectLineMarkSizes,
 	expectMarkSizes,
 	expectReadout,
+	expectRowReadout,
+	expectRowSizes,
 	expectTipInside,
 	fixtureBody,
 	fixtureFrame,
@@ -25,6 +28,9 @@ import {
 	lineFrameOf,
 	lineTip,
 	openCharts,
+	ROW_FIXTURE_IDS,
+	rowMarks,
+	rowTip,
 	slotPoint
 } from './charts';
 import { barModel } from '../src/lib/ui/charts/bar-model';
@@ -56,6 +62,7 @@ test.describe('/design → Charts on a desktop', () => {
 			await expectMarkSizes(page);
 			await expectLineMarkSizes(page);
 			await expectBarMarkSizes(page);
+			await expectRowSizes(page);
 			const section = await boxOf(chartsSection(page));
 			const color = await boxOf(page.getByRole('heading', { level: 2, name: 'Color' }));
 			expect(Math.abs(section.x - color.x), 'in the left column').toBeLessThanOrEqual(1);
@@ -73,6 +80,10 @@ test.describe('/design → Charts on a desktop', () => {
 			await captureScreen(page, testInfo, `design-charts-line-${theme}-desktop`);
 			await barFrameOf(page, 'bar-stacked').scrollIntoViewIfNeeded();
 			await captureScreen(page, testInfo, `design-charts-bar-${theme}-desktop`);
+			for (const id of ROW_FIXTURE_IDS) {
+				await page.getByTestId(id).scrollIntoViewIfNeeded();
+				await captureScreen(page, testInfo, `design-charts-${id}-${theme}-desktop`);
+			}
 			expect(errors).toEqual([]);
 		});
 	}
@@ -272,5 +283,55 @@ test.describe('/design → Charts: the bar chart on a desktop', () => {
 			'data-shown',
 			''
 		);
+	});
+});
+
+test.describe('/design → Charts: range and diverging bars on a desktop', () => {
+	test('a mouse over a row tints it and shows its tooltip, which leaves with the mouse', async ({
+		page
+	}, testInfo) => {
+		await gotoHydrated(page, '/design');
+		await openCharts(page);
+		await expectRowSizes(page);
+		for (const id of ROW_FIXTURE_IDS) {
+			await page.getByTestId(id).scrollIntoViewIfNeeded();
+			const row = rowMarks(page, id).nth(1);
+			const tint = () => row.evaluate((el) => getComputedStyle(el).backgroundColor);
+			const rest = await tint();
+			await row.hover();
+			await expectRowReadout(page, id, 1);
+			await expect.poll(tint).not.toBe(rest);
+			await captureScreen(page, testInfo, `design-charts-${id}-hover-desktop`);
+			await page.mouse.move(5, 5);
+			await expect(rowTip(page, id)).not.toHaveAttribute('data-shown', '');
+			await expect.poll(tint).toBe(rest);
+		}
+	});
+
+	test('Tab reaches the first row with a visible ring, and the arrow keys move it', async ({
+		page
+	}) => {
+		await gotoHydrated(page, '/design');
+		await openCharts(page);
+		await expectRowSizes(page);
+		for (const id of ROW_FIXTURE_IDS) {
+			await page.getByTestId(id).locator('h3').click();
+			await page.keyboard.press('Tab');
+			const rows = rowMarks(page, id);
+			await expect(rows.first()).toBeFocused();
+			const ring = await rows.first().evaluate((el) => {
+				const style = getComputedStyle(el);
+				return { style: style.outlineStyle, width: parseFloat(style.outlineWidth) };
+			});
+			expect(ring.style).toBe('solid');
+			expect(ring.width).toBeGreaterThanOrEqual(2);
+			await expectRowReadout(page, id, 0);
+			await page.keyboard.press('ArrowDown');
+			await expect(rows.nth(1)).toBeFocused();
+			await expectRowReadout(page, id, 1);
+			await page.keyboard.press('Tab');
+			await expect(rows.nth(1)).not.toBeFocused();
+			await expect(rowTip(page, id)).not.toHaveAttribute('data-shown', '');
+		}
 	});
 });

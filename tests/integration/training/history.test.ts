@@ -439,6 +439,40 @@ describe('weekly muscle volume', () => {
 			expect(firstWeek).toEqual([weeks[0]]);
 		});
 	});
+
+	it("leaves out an abandoned, an unfinished and a deleted workout's live sets, which PRs still count", async () => {
+		await withRollback(async (db) => {
+			const owner = await makeOwner(db);
+			await setProfile(db, owner, { timeZone: LA });
+			const ex = await exerciseIds(db, KEYS);
+			const squat = (weight: number): SetSpec => ({ exercise: ex.back_squat, weight, rpe: 8 });
+			await logStrength(db, owner, { startedAt: pst('2026-11-02', '07:00') }, [squat(100)]);
+			const abandoned = await logStrength(
+				db,
+				owner,
+				{ startedAt: pst('2026-11-03', '07:00'), status: 'abandoned' },
+				[squat(180), squat(180)]
+			);
+			const week = { from: '2026-11-02', to: '2026-11-08' };
+			const counted = async () =>
+				(await getWeeklyMuscleVolume(owner, week, { db }))[0]!.muscles.quads;
+			expect(await counted()).toBe(1);
+			await logStrength(
+				db,
+				owner,
+				{ startedAt: pst('2026-11-04', '07:00'), status: 'in_progress' },
+				[squat(170)]
+			);
+			await logStrength(db, owner, { startedAt: pst('2026-11-05', '07:00'), deleted: true }, [
+				squat(175)
+			]);
+			expect(await counted()).toBe(1);
+
+			// The pinned difference: M4's prior bests and history show what was lifted.
+			const [records] = await getPersonalRecords(owner, { exerciseId: ex.back_squat }, { db });
+			expect(records!.bestE1rm!.set.id).toBe(abandoned.setIds[1]);
+		});
+	});
 });
 
 describe('weekly mileage', () => {

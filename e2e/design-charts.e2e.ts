@@ -3,7 +3,9 @@
  * Show charts is pressed; the frame reserves the plot box, so nothing moves while the body's
  * chunk loads; a body that fails to load is a Notice with Retry, which loads it; the marks keep their pixel sizes at 320 and 393 px; /design links no
  * chart CSS as render-blocking; axe in both themes. The bar chart: per-mark tooltips by tap and
- * by keyboard, the stack order, totals that fit, its table twins and forced colours. The desktop
+ * by keyboard, the stack order, totals that fit, its table twins and forced colours. The range and
+ * diverging bars: statuses in words, the diverging tokens, tooltips by tap and keyboard, their
+ * table twins and 44 px rows. The desktop
  * window is in
  * design-charts.desktop.e2e.ts; without JavaScript, the server render is checked by
  * src/routes/design/charts-no-js.test.ts (/design renders its panels in the browser only).
@@ -26,6 +28,10 @@ import {
 	expectLineTable,
 	expectMarkSizes,
 	expectReadout,
+	expectRowCharts,
+	expectRowReadout,
+	expectRowSizes,
+	expectRowTable,
 	expectTipInside,
 	FIXTURE_BODY_MARK,
 	fixtureBody,
@@ -38,9 +44,23 @@ import {
 	linkedStylesheets,
 	openCharts,
 	PANEL_MARK,
+	ROW_FIXTURE_IDS,
+	rowBody,
+	rowMarks,
+	rowTip,
 	slotPoint
 } from './charts';
-import { barModel, stepMark } from '../src/lib/ui/charts/bar-model';
+import {
+	barModel,
+	DIVERGE_WORDS,
+	divergingModel,
+	RANGE_STATUS,
+	rangeModel,
+	stepMark,
+	stepRow
+} from '../src/lib/ui/charts/bar-model';
+import { DIVERGING } from '../src/lib/ui/charts/palette';
+import { DIVERGING_FIXTURE, RANGE_FIXTURE } from '../src/routes/design/bar-fixture';
 import { announce } from '../src/lib/ui/charts/line-model';
 import { STACK_ORDER } from '../src/lib/ui/charts/palette';
 import { boxOf, expectNoShift, expectNoSideScroll } from './desktop';
@@ -174,6 +194,7 @@ for (const { width, height } of [
 		await expectMarkSizes(page);
 		await expectLineMarkSizes(page);
 		await expectBarMarkSizes(page);
+		await expectRowSizes(page);
 		await expect(fixturePlot(page)).toHaveAttribute('aria-busy', 'false');
 		await fixtureFrame(page).scrollIntoViewIfNeeded();
 		await expectNoSideScroll(page);
@@ -190,7 +211,9 @@ for (const { width, height } of [
 			'line-so-far',
 			'bar-adherence',
 			'bar-stacked',
-			'bar-target'
+			'bar-target',
+			'range-bars',
+			'diverging-bars'
 		]) {
 			await lineFrameOf(page, id).scrollIntoViewIfNeeded();
 			await captureScreen(page, testInfo, `design-charts-${id}-${width}`);
@@ -223,6 +246,10 @@ for (const theme of ['dark', 'light'] as const) {
 		await expect(chartsSection(page).getByText('Shows once you log a run')).toBeVisible();
 		await expectLineCharts(page);
 		await expectBarCharts(page);
+		await expectRowCharts(page);
+		// A row's tooltip shown, so axe reads it in this theme too.
+		await rowMarks(page, 'range-bars').first().focus();
+		await expect(rowTip(page, 'range-bars')).toHaveAttribute('data-shown', '');
 		await fixtureFrame(page).getByText('Show as table').click();
 		await expect(fixtureFrame(page).getByRole('table')).toBeVisible();
 		await page.waitForTimeout(300);
@@ -651,5 +678,136 @@ test.describe('/design → Charts: the bar chart on a phone', () => {
 		});
 		await barFrameOf(page, id).scrollIntoViewIfNeeded();
 		await captureScreen(page, testInfo, 'design-charts-bar-forced-colors');
+	});
+});
+
+test.describe('/design → Charts: range and diverging bars on a phone', () => {
+	test('every status reads as words: the range beside an icon, the RPE side beside its value', async ({
+		page
+	}) => {
+		await page.setViewportSize({ width: 320, height: 640 });
+		await gotoHydrated(page, '/design');
+		await openCharts(page);
+		await expectRowCharts(page);
+		const range = rangeModel(RANGE_FIXTURE.data);
+		const statuses = rowBody(page, 'range-bars').getByTestId('range-status');
+		await expect(statuses).toHaveText(range.marks.map((m) => RANGE_STATUS[m.status!]));
+		// Every status the chart can show is in the fixture, and each carries an icon.
+		expect(new Set(range.marks.map((m) => m.status))).toEqual(
+			new Set(['below', 'within', 'above'])
+		);
+		await expect(statuses.locator('svg')).toHaveCount(range.marks.length);
+		await expect(rowBody(page, 'range-bars').getByTestId('row-legend')).toHaveText(
+			/Done.*Target range.*Planned/
+		);
+		const diverging = divergingModel(DIVERGING_FIXTURE.data).marks.filter((m) => m.tone);
+		await expect(rowBody(page, 'diverging-bars').getByTestId('diverging-value')).toHaveText(
+			diverging.map((m) => m.text!)
+		);
+		await expect(rowBody(page, 'diverging-bars').getByTestId('diverging-side')).toHaveText(
+			diverging.map((m) => DIVERGE_WORDS[m.tone!])
+		);
+		// A row with no RPE says so in words, and draws nothing.
+		await expect(rowMarks(page, 'diverging-bars').last()).toContainText('No data');
+		await expect(rowMarks(page, 'diverging-bars').last().getByTestId('diverging-fill')).toHaveCount(
+			0
+		);
+	});
+
+	test('the diverging bars wear the three diverging tokens: cool below, warm above, mid within ±0.5', async ({
+		page
+	}) => {
+		await gotoHydrated(page, '/design');
+		await openCharts(page);
+		await expectRowCharts(page);
+		const fills = rowBody(page, 'diverging-bars').getByTestId('diverging-fill');
+		const drawn = await fills.evaluateAll((els, tokens) => {
+			// Each token resolved the way the browser paints it, on a probe in the same chart.
+			const resolve = (token: string) => {
+				const probe = document.createElement('span');
+				probe.style.backgroundColor = `var(${token})`;
+				els[0]!.parentElement!.append(probe);
+				const color = getComputedStyle(probe).backgroundColor;
+				probe.remove();
+				return color;
+			};
+			const colors = Object.fromEntries(
+				Object.entries(tokens).map(([tone, token]) => [tone, resolve(token)])
+			);
+			return {
+				colors,
+				fills: els.map((el) => ({
+					tone: el.getAttribute('data-tone')!,
+					color: getComputedStyle(el).backgroundColor
+				}))
+			};
+		}, DIVERGING);
+		expect(new Set(Object.values(drawn.colors)).size, 'three distinct tokens').toBe(3);
+		const tones = divergingModel(DIVERGING_FIXTURE.data).marks.flatMap((m) =>
+			m.tone ? [m.tone] : []
+		);
+		expect(drawn.fills.map((fill) => fill.tone)).toEqual(tones);
+		expect(new Set(tones)).toEqual(new Set(['below', 'zero', 'above']));
+		for (const fill of drawn.fills) expect(fill.color, fill.tone).toBe(drawn.colors[fill.tone]);
+	});
+
+	test('a tap shows a row’s tooltip inside the plot, in the table’s words', async ({
+		page
+	}, testInfo) => {
+		await page.setViewportSize({ width: 320, height: 640 });
+		await gotoHydrated(page, '/design');
+		await openCharts(page);
+		await expectRowSizes(page);
+		for (const id of ROW_FIXTURE_IDS) {
+			await page.getByTestId(id).scrollIntoViewIfNeeded();
+			const count = await rowMarks(page, id).count();
+			// The first row's tooltip opens under it, the last one's over it.
+			for (const index of [0, count - 1, 1]) {
+				const row = rowMarks(page, id).nth(index);
+				const box = await boxOf(row);
+				await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
+				await expect(row).toBeFocused();
+				await expectRowReadout(page, id, index);
+			}
+			await captureScreen(page, testInfo, `design-charts-${id}-tap-320`);
+		}
+	});
+
+	test('the keyboard moves one tab stop between the rows; Escape hides the tooltip', async ({
+		page
+	}) => {
+		await gotoHydrated(page, '/design');
+		await openCharts(page);
+		await expectRowCharts(page);
+		for (const id of ROW_FIXTURE_IDS) {
+			const body = rowBody(page, id);
+			const rows = rowMarks(page, id);
+			const count = await rows.count();
+			await expect(body.getByRole('group')).toHaveAccessibleName(
+				/: use the arrow keys to move between rows$/
+			);
+			await expect(body.locator('[tabindex="0"]')).toHaveCount(1);
+			await expect(rows.first()).toHaveAttribute('tabindex', '0');
+			await rows.first().focus();
+			await expectRowReadout(page, id, 0);
+			let at = 0;
+			for (const key of ['ArrowDown', 'ArrowDown', 'ArrowUp', 'End', 'ArrowRight', 'Home']) {
+				await page.keyboard.press(key);
+				at = stepRow(count, at, key)!;
+				await expect(rows.nth(at)).toBeFocused();
+				await expect(rows.nth(at)).toHaveAttribute('tabindex', '0');
+				await expectRowReadout(page, id, at);
+			}
+			await expect(body.locator('[tabindex="0"]')).toHaveCount(1);
+			await page.keyboard.press('Escape');
+			await expect(rowTip(page, id)).not.toHaveAttribute('data-shown', '');
+		}
+	});
+
+	test('each table twin holds exactly its rows, in the chart’s order', async ({ page }) => {
+		await gotoHydrated(page, '/design');
+		await openCharts(page);
+		await expectRowCharts(page);
+		for (const id of ROW_FIXTURE_IDS) await expectRowTable(page, id);
 	});
 });
