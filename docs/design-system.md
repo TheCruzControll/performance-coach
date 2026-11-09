@@ -390,8 +390,9 @@ later-pass screen).
   `RunSegments` (each segment on one line), `SessionDetails` (a class's stats beside its metrics)
   and `BaselineCallout` (the steps beside the why) adapt from 35 rem with container queries,
   above the phone column, so the iPhone is unchanged.
-- **Progress** (`/progress`): wide (`data-layout="wide"` on its root). From 1024 px the three
-  `Stat` tiles keep one row across the full width, with wider gaps, over a taller empty plot.
+- **Progress** (`/progress`): wide (`data-layout="wide"` on its root). From 1024 px the view nav
+  and the period picker share one row over the view; the overview's five trend tiles keep one row,
+  and its discipline cards and chart frames pair up from a 44 rem column (a container query).
 - **Coach** (`/coach`): readable, as a conversation should be. From 1024 px the suggestions sit in
   two columns; the composer is screen chrome, centred over the column.
 - **Security** (`/profile/security`): readable, a settings screen, and left as it is (its route
