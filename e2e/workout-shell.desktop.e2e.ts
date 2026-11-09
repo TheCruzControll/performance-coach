@@ -74,12 +74,13 @@ test.describe('the workout screen on a desktop', () => {
 		await openWorkout(page);
 		await page.locator('body').focus();
 		const order: string[] = [];
-		for (let i = 0; i < 4; i++) {
+		for (let i = 0; i < 5; i++) {
 			await page.keyboard.press('Tab');
 			const stop = await page.evaluate(() => {
 				const el = document.activeElement;
 				if (el?.getAttribute('data-testid') === 'sync-pill') return 'sync-pill';
-				return (el?.textContent ?? '').replace(/\s+/g, ' ').trim();
+				const text = (el?.textContent ?? '').replace(/\s+/g, ' ').trim();
+				return text || (el?.getAttribute('aria-label') ?? '');
 			});
 			order.push(stop);
 		}
@@ -87,8 +88,9 @@ test.describe('the workout screen on a desktop', () => {
 		expect(order[1]).toBe('Minimise');
 		// The header's sync pill is a stop only while it has something to show (Saving…, say).
 		const rest = order.slice(2).filter((stop) => stop !== 'sync-pill');
-		// The side list is one stop, at the current exercise, before the main column.
-		expect(rest[0]).toBe('1 Back squat 0/4 sets');
+		// The header's stopwatch, then the side list: one stop, at the current exercise, before the
+		// main column.
+		expect(rest.slice(0, 2)).toEqual(['Pause workout time', '1 Back squat 0/4 sets']);
 		await expect(page.getByTestId('workout-side').locator('[tabindex="0"]')).toHaveCount(1);
 	});
 });

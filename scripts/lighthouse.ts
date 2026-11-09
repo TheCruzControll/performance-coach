@@ -3,6 +3,7 @@
  * server, using the preinstalled Playwright Chromium. Reports go to ./lighthouse-reports.
  *
  *   ORIGIN=http://localhost:4174 pnpm build:node && pnpm lighthouse   # every screen, 3 runs
+ *   pnpm lighthouse --desktop --seed   # desktop preset at 1440 × 900 → lighthouse-reports/desktop
  *   pnpm lighthouse --runs 5 --routes /,/today
  *   pnpm lighthouse --url https://preview.example.com   # audit an already-running server
  *   pnpm lighthouse --assert                            # exit 1 when a threshold is missed
@@ -35,6 +36,7 @@ import pg from 'pg';
 import { LOCAL_DATABASE_URLS, runMigrations } from '../src/lib/server/db/migrate.ts';
 import { readActionAnswer } from './lib/action-result.ts';
 import { seedDemoProfile, type DemoProfile } from './lib/demo-profiles.ts';
+import { lighthouseConfig, reportDir, type FormFactor } from './lib/lighthouse-config.ts';
 
 const { values } = parseArgs({
 	allowNegative: true,
@@ -49,6 +51,8 @@ const { values } = parseArgs({
 		runs: { type: 'string', default: '3' },
 		// Default: the port of the origin baked into the Node build (ORIGIN at build time).
 		port: { type: 'string' },
+		// Desktop form factor (scripts/lib/lighthouse-config.ts); the thresholds stay the same.
+		desktop: { type: 'boolean', default: false },
 		assert: { type: 'boolean', default: false },
 		'min-perf': { type: 'string', default: '0.9' },
 		'max-lcp': { type: 'string', default: '2500' },
@@ -69,7 +73,7 @@ const SEED_TIME_ZONE = 'Europe/London';
 const SEED_START = 'this_week';
 
 /**
- * Thresholds checked with --assert (Lighthouse mobile, simulated throttling). Defaults are the
+ * Thresholds checked with --assert (simulated throttling, both form factors). Defaults are the
  * documented targets (docs/performance.md); CI may pass slightly looser values as a
  * regression guard because shared runners add CPU noise to TBT.
  */
@@ -79,7 +83,9 @@ const THRESHOLDS = {
 	cls: Number(values['max-cls']),
 	tbtMs: Number(values['max-tbt'])
 };
-const OUT_DIR = 'lighthouse-reports';
+const FORM_FACTOR: FormFactor = values.desktop ? 'desktop' : 'mobile';
+const CONFIG = lighthouseConfig(FORM_FACTOR);
+const OUT_DIR = reportDir(FORM_FACTOR);
 const runs = Math.max(1, Number(values.runs));
 const routes = values.routes
 	.split(',')
@@ -246,15 +252,19 @@ async function auditOnce(url: string, attempt = 1): Promise<NonNullable<RunnerRe
 	await chrome.kill();
 	chrome = await launchChrome();
 	const signedIn = new URL(url).pathname !== '/';
-	const result = await lighthouse(url, {
-		port: chrome.port,
-		...(signedIn && sessionHeaders ? { extraHeaders: sessionHeaders } : {}),
-		output: ['json', 'html'],
-		logLevel: 'error',
-		onlyCategories: (process.env.LH_CATEGORIES ?? 'performance,accessibility,best-practices').split(
-			','
-		)
-	});
+	const result = await lighthouse(
+		url,
+		{
+			port: chrome.port,
+			...(signedIn && sessionHeaders ? { extraHeaders: sessionHeaders } : {}),
+			output: ['json', 'html'],
+			logLevel: 'error',
+			onlyCategories: (
+				process.env.LH_CATEGORIES ?? 'performance,accessibility,best-practices'
+			).split(',')
+		},
+		CONFIG
+	);
 	if (!result) throw new Error(`Lighthouse returned no result for ${url}`);
 	const error = result.lhr.runtimeError;
 	if (error) {
@@ -396,7 +406,7 @@ try {
 }
 
 const lines = [
-	`Lighthouse ${lighthouseVersion} (mobile, simulated throttling) — median of ${runs} run(s) per route, ${chromeVersion}`,
+	`Lighthouse ${lighthouseVersion} (${FORM_FACTOR}, simulated throttling) — median of ${runs} run(s) per route, ${chromeVersion}`,
 	'',
 	'| Route | Perf | A11y | Best pr. | LCP | FCP | TBT | CLS | Speed Index |',
 	'| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |',
@@ -408,10 +418,13 @@ const lines = [
 console.log(lines.join('\n'));
 writeFileSync(
 	`${OUT_DIR}/summary.json`,
-	JSON.stringify({ runs, thresholds: THRESHOLDS, summaries }, null, 2)
+	JSON.stringify({ formFactor: FORM_FACTOR, runs, thresholds: THRESHOLDS, summaries }, null, 2)
 );
 if (process.env.GITHUB_STEP_SUMMARY) {
-	appendFileSync(process.env.GITHUB_STEP_SUMMARY, `## Lighthouse\n\n${lines.join('\n')}\n`);
+	appendFileSync(
+		process.env.GITHUB_STEP_SUMMARY,
+		`## Lighthouse (${FORM_FACTOR})\n\n${lines.join('\n')}\n`
+	);
 }
 
 if (values.assert) {

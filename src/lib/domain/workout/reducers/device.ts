@@ -5,7 +5,7 @@
  * - session.draft: an other session's fields changed but not saved, replaced whole each time
  * - exercise.add: an exercise added here, at a position no slot holds yet
  * - kit.attach: the whole kit (a workout from another device), or one exercise's previous sets
- * - rest.* and stopwatch.*: through timers.ts, on this device's clock
+ * - rest.* and stopwatch.*: through timers.ts, on this device's clock; rest.clear leaves no rest
  * An action that changes nothing returns the state it was given.
  */
 import * as timers from '../timers.ts';
@@ -80,6 +80,7 @@ export const device: LocalReducers = {
 	'rest.resume': onRest((rest, { at }) => timers.resumeRest(rest, at)),
 	'rest.reset': onRest((rest, { at }) => timers.resetRest(rest, at)),
 	'rest.skip': onRest((rest, { at }) => timers.skipRest(rest, at)),
+	'rest.clear': (local) => (local.device.rest === null ? local : withDevice(local, { rest: null })),
 	/** Starts a stopwatch that never ran; one already started keeps its time. */
 	'stopwatch.start': onStopwatch((stopwatch, now) =>
 		stopwatch.startedAt === null ? timers.startStopwatch(now) : stopwatch
