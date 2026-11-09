@@ -303,8 +303,12 @@ describe('CI e2e legs', () => {
 		expect(checks.map((job) => job.text)).toEqual(['e2e:']);
 		const aggregate = checks[0]!.children;
 		expect(value(aggregate, 'needs')).toBe('[e2e-legs]');
-		// A required check that is skipped counts as passed, so it must run after a failed leg too.
-		expect(value(aggregate, 'if')).toBe('${{ always() }}');
+		// A required check that is skipped counts as passed, so on a pull request it must run after a
+		// failed leg too. Required checks gate only pull requests, so pushes and manual runs skip it
+		// rather than queue a 3-second job behind every pull request's jobs.
+		expect(value(aggregate, 'if')).toBe("${{ always() && github.event_name == 'pull_request' }}");
+		// The legs themselves still run on every event, so a merge to main still fails on a failed leg.
+		expect(value(legsJob(), 'if')).toBeUndefined();
 		const step = under(aggregate, 'steps')[0]!;
 		const fields = [step, ...step.children];
 		expect(value(under(fields, 'env'), 'LEGS')).toBe('${{ needs.e2e-legs.result }}');
