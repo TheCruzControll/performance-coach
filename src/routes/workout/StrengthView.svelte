@@ -32,6 +32,8 @@
   - A substitute's or an added exercise's last session is not in the kit: when such a slot is
     current, its previous sets are fetched and attached to the workout (previous.ts, loaded
     then); offline, the card says 'No previous sets on this device'.
+  - The card's exercise name opens its history (ExerciseHistorySheet.svelte, loaded on intent);
+    offline, it shows the previous session this device holds and says so.
 -->
 <script lang="ts">
 	import type {
@@ -60,6 +62,8 @@
 		setRows
 	} from '#lib/ui/workout/set-words.ts';
 	import { onMount, tick, untrack } from 'svelte';
+	import type { HistoryRequest } from '#lib/client/workout/exercise-history.ts';
+	import type ExerciseHistorySheet from '#lib/ui/workout/ExerciseHistorySheet.svelte';
 	import type ExerciseActionsSheet from './ExerciseActionsSheet.svelte';
 	import ExerciseList from './ExerciseList.svelte';
 	import type LoggerView from './Logger.svelte';
@@ -217,6 +221,21 @@
 		(event.currentTarget as HTMLElement).focus();
 		prefetchActions();
 		acting = { position };
+	}
+
+	// The exercise's history: fetched on the name's first intent, opened on each tap.
+	let History = $state.raw<typeof ExerciseHistorySheet | null>(null);
+	let viewing = $state.raw<HistoryRequest | null>(null);
+	function prefetchHistory() {
+		void load(() => import('#lib/ui/workout/ExerciseHistorySheet.svelte')).then((module) => {
+			if (module) History = module.default;
+		});
+	}
+	function openHistory(slot: SlotView, event: MouseEvent) {
+		(event.currentTarget as HTMLElement).focus();
+		prefetchHistory();
+		const fallback = previousFor(view, slot.position);
+		viewing = { exerciseId: slot.exerciseId, name: nameOf(slot.exerciseId), fallback };
 	}
 
 	/** The card's area, which a swipe crosses. */
@@ -407,7 +426,13 @@
 	{/if}
 	{#if current}
 		<div class="swipe" bind:this={area}>
-			<ExerciseCard exercise={current} status={current.status} noPrevious={current.noPrevious}>
+			<ExerciseCard
+				exercise={current}
+				status={current.status}
+				noPrevious={current.noPrevious}
+				onhistory={(event) => openHistory(current.slot, event)}
+				onhistoryintent={prefetchHistory}
+			>
 				{#snippet actions()}
 					{#if !current.ended}
 						<Button
@@ -449,6 +474,7 @@
 	{#if Actions && acting && active.store}
 		<Actions {view} request={acting} store={active.store} />
 	{/if}
+	{#if History && viewing}<History request={viewing} />{/if}
 </div>
 
 <style>
