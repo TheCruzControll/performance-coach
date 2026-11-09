@@ -3,8 +3,8 @@
  * repositories/coach-proposals.ts runs, shaped for the indexes in schema/coaching.ts.
  * - Every predicate repeats the owner, so a proposal is found only through its owner: someone
  *   else's id reads as no row at all.
- * - COACH_PROPOSAL_INDEXES names the index each builder is shaped for; coach-explain (m5/54) adds
- *   them to `pnpm db:explain`.
+ * - COACH_PROPOSAL_INDEXES names the index each builder is shaped for; `pnpm db:explain` gates
+ *   them (scripts/explain/history.explain.ts).
  * Nothing runs until a builder is awaited; await them in turn on one connection.
  */
 import { and, desc, eq, gt, inArray, isNull, sql } from 'drizzle-orm';
@@ -18,8 +18,11 @@ export const COACH_PROPOSAL_INDEXES = {
 	proposal: 'coach_proposals_pkey',
 	lockProposal: 'coach_proposals_pkey',
 	openDuplicate: 'coach_proposals_owner_status_idx',
-	proposalPage: 'coach_proposals_owner_status_idx',
-	decidedSince: 'coach_proposals_owner_status_idx'
+	proposalPage: {
+		status: 'coach_proposals_owner_status_idx',
+		all: 'coach_proposals_owner_created_idx'
+	},
+	decidedSince: 'coach_proposals_owner_closed_idx'
 } as const;
 
 /** A proposal as its card, the inbox and get_coach_proposals read it (no payload). */

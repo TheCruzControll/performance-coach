@@ -115,6 +115,16 @@ export const coachProposals = pgTable(
 			t.status,
 			t.createdAt.desc().nullsFirst()
 		),
+		// Every proposal of the owner's, newest first (the inbox with no status filter).
+		index('coach_proposals_owner_created_idx').on(
+			t.ownerId,
+			t.createdAt.desc().nullsFirst(),
+			t.id.desc().nullsFirst()
+		),
+		// The owner's decided proposals, most recently decided first (the turn context, memory).
+		index('coach_proposals_owner_closed_idx')
+			.on(t.ownerId, t.closedAt.desc().nullsFirst(), t.id.desc().nullsFirst())
+			.where(sql`${t.closedAt} is not null`),
 		// A conversation's proposals, in order.
 		index('coach_proposals_thread_idx').on(t.threadId, t.createdAt),
 		check('coach_proposals_status_ck', inList('status', PROPOSAL_STATUSES)),
