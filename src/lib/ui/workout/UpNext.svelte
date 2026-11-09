@@ -6,6 +6,8 @@
     raised card whose Start makes Up next current, its first set ready in the logger. Only Start
     is added, under what was there, so logging the last set moves nothing (Navigation puts the
     card last).
+  - With `onadd`, Add exercise at its foot: any exercise from the library, after the last one
+    (`onintent` on its first press, to fetch the picker).
   - Once a set is logged, a polite live region says where the workout went: 'Next: A2 Plank,
     45 s' when the flow moved to the partner, 'Next: Romanian deadlift, 3 × 8 at RPE 7' once the
     exercise is done. Nothing is said on restore or while sets are left.
@@ -22,9 +24,12 @@
 		view: WorkoutView;
 		/** Start: makes the exercise at this position current. */
 		onstart: (position: number) => void;
+		/** Add exercise: opens the picker. */
+		onadd?: (event: MouseEvent) => void;
+		onintent?: () => void;
 	}
 
-	let { view, onstart }: Props = $props();
+	let { view, onstart, onadd, onintent }: Props = $props();
 
 	const next = $derived(upNextWords(view));
 	const between = $derived.by(() => {
@@ -68,6 +73,18 @@
 			<Button block iconEnd="arrow-right" onclick={() => onstart(next.position)}>
 				Start {next.name}
 			</Button>
+		</div>
+	{/if}
+	{#if onadd}
+		<div class="add">
+			<Button
+				variant="ghost"
+				size="sm"
+				icon="plus"
+				onpointerdown={onintent}
+				onclick={onadd}
+				data-testid="add-exercise">Add exercise</Button
+			>
 		</div>
 	{/if}
 </section>
@@ -122,5 +139,10 @@
 
 	.start {
 		margin-top: var(--space-2);
+	}
+
+	.add {
+		justify-self: start;
+		margin-top: var(--space-1);
 	}
 </style>
