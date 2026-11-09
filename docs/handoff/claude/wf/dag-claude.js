@@ -16,8 +16,9 @@ export const meta = {
 function makeLimiter(n) {
 	let active = 0;
 	const q = [];
+	let open = false; // dispatch waits until every ready item has queued, so priority decides the first slots
 	const next = () => {
-		while (active < n && q.length) {
+		while (open && active < n && q.length) {
 			q.sort((a, b) => b.prio - a.prio || a.seq - b.seq);
 			const { fn, res, rej } = q.shift();
 			active++;
@@ -30,11 +31,16 @@ function makeLimiter(n) {
 		}
 	};
 	let seq = 0;
-	return (prio, fn) =>
+	const run = (prio, fn) =>
 		new Promise((res, rej) => {
 			q.push({ fn, res, rej, prio, seq: seq++ });
 			next();
 		});
+	run.start = () => {
+		open = true;
+		next();
+	};
+	return run;
 }
 const ARGS = typeof args === 'string' ? JSON.parse(args) : args;
 const limit = makeLimiter(ARGS.limit || 2);
@@ -75,11 +81,11 @@ const MACHINE = (slug, port) => `MACHINE RULES (a 10-CPU, 32 GB macOS laptop sha
 - Work only in your worktree ${WT}/${slug} (never in ${MAIN} or another worktree). Run \`bash ${BIN}/agent-env ${slug} ${port}\` once inside it (safe to re-run), then prefix every node/pnpm command with \`source ${envf(slug)} && \`. Your e2e port is ${port}. Postgres 18 (Homebrew) runs on localhost:5432 (role coach/coach), the same major version CI and production run. If a Bash command that talks to Postgres or the network fails with a sandbox or permission error (not an app error), rerun that same command with the Bash tool's sandbox disabled.
 - Heavy commands (svelte-check, eslint and \`pnpm lint\`, full \`pnpm test:unit\` runs, vite build, Playwright) go through \`slot\` (at most three machine-wide; expect to wait). If slot gives up waiting it exits non-zero without running the command: run it again through slot later, never without it. Give heavy Bash calls timeout 600000. A git command that fails on a lock (another agent fetching) is retried after a moment.
 - WebKit-only traps (CI runs Linux WebKit; this Mac's Playwright WebKit is macOS WebKit and behaves differently, so CI is the WebKit gate): (a) an e2e test that holds, fails or fulfils a request with page.route must run with the service worker blocked (\`test.use({ serviceWorkers: 'block' })\` in a describe, as profile-goals and train-week do), because on WebKit page.route does not see requests from a page the service worker controls; (b) wait on \`document.fonts.status === 'loaded'\`, never \`document.fonts.ready\`, while a request is held (WebKit resolves it only after the load event).
-- Heavy tests run in CI, not here (the owner's rule: CI's machines are better). Never run Playwright e2e specs, Lighthouse, \`pnpm build\`, \`pnpm build:node\` or \`pnpm budgets\` locally: CI runs them on every PR (Chromium, Linux WebKit, desktop, Lighthouse, budgets) and a later step waits for it. Write and update the e2e specs the slice needs; CI proves them. Never \`playwright install\`. Kill any server or browser you start.
+- Heavy tests run in CI, not here (the owner's rule: CI's machines are better). Never run Playwright e2e specs, Lighthouse, \`pnpm build\`, \`pnpm build:node\` or \`pnpm budgets\` locally: CI runs them on every PR (Chromium, Linux WebKit, desktop, Lighthouse, budgets) and a later step waits for it. Write and update the e2e specs the slice needs; CI proves them. Never \`playwright install\`. Browsers cannot launch inside this session's sandbox; the one agent that may drive a browser (the click-through verifier) connects to the owner's Playwright browser server at ws://127.0.0.1:3333/ (\`chromium.connect\`, or PW_TEST_CONNECT_WS_ENDPOINT for playwright test). Kill any server or browser you start.
 - GitHub: \`gh\` is authenticated as TheCruzControll; read with \`gh api ${R}/...\`. The only GitHub writes you ever make are the ones your brief names: pushing your slice's branch, creating its PR with \`gh pr create\`, and editing its body with \`gh pr edit --body-file\`. You are a child agent: never subscribe to or watch PRs, never merge, never post PR comments, never rerun CI, never edit other PRs, never touch Vercel, Neon or GitHub settings.
 - Shared docs belong to the milestone's docs slice: a code slice does NOT edit docs/testing.md, docs/security.md, docs/performance.md or docs/milestones.md at all (one edit there makes every other open PR stale and forces another CI run for each). Put the exact lines that belong there in a "## Docs to add" section of the PR body (target file and section for each); the milestone's docs slice adds them. If your branch already edits those files (an earlier session's work), move those edits into that section and restore the files to the base. Docs-only slices are the exception: they own those files and collect the "## Docs to add" sections from the milestone's merged PRs (\`gh api "${R}/pulls?state=closed&per_page=100"\` bodies). Registries and lists other parallel slices also extend (section registries, route-access tables, design-system rows): add your entry as its own line, never reformat neighbours.`;
 
-const PROJECT = `Project: "Performance Coach" (GitHub TheCruzControll/performance-coach), a private single-user AI training PWA: SvelteKit 3 / Svelte 5 runes, TypeScript strict, Postgres + Drizzle, passkeys, Vercel. Spec: docs/product-requirements.md. Read what you need: docs/architecture.md (layers and import boundaries), docs/testing.md, docs/design-system.md, docs/performance.md (budgets), docs/agent-architecture.md. The owner's rules: each PR is ONE small atomic concern (ideally ≤ 600 non-test lines), green on its own, no drive-by refactors, real tests that prove behaviour (a regression test must fail without its fix), premium UI per docs/design-system.md (dark-first + light, existing primitives, 44 px targets, designed empty/loading/error states, axe-clean). DESKTOP TOO (owner request, PRD §7 and §16): every screen is iPhone-first but must also be laid out for a desktop browser (1440 × 900: navigation rail, content centred at a readable width, no stretched phone layout, hover and keyboard focus states); follow docs/design-system.md's breakpoint rules where they exist, and when a \`desktop-chromium\` Playwright project exists, make sure CI runs your UI specs on it too. Drizzle migrations: \`pnpm db:generate\` only; the journal order is enforced by a unit test. One query at a time per Executor (main since #62, docs/architecture.md): never \`Promise.all\` over one \`db\` handle or one transaction; await each query in turn (separate pool calls may run together). The integration setup fails any test that sends a query to a busy pg client, so merge origin/main before your gates.`;
+const PROJECT = `Project: "Performance Coach" (GitHub TheCruzControll/performance-coach), a private single-user AI training PWA: SvelteKit 3 / Svelte 5 runes, TypeScript strict, Postgres + Drizzle, passkeys, Vercel. Spec: docs/product-requirements.md. Read what you need: docs/architecture.md (layers and import boundaries), docs/testing.md, docs/design-system.md, docs/performance.md (budgets), docs/agent-architecture.md. The owner's rules: each PR is ONE small atomic concern (ideally ≤ 600 non-test lines), green on its own, no drive-by refactors, real tests that prove behaviour (a regression test must fail without its fix), premium UI per docs/design-system.md (dark-first + light, existing primitives, 44 px targets, designed empty/loading/error states, axe-clean). DESKTOP TOO (owner request, PRD §7 and §16): every screen is iPhone-first but must also be laid out for a desktop browser (1440 × 900: navigation rail, content centred at a readable width, no stretched phone layout, hover and keyboard focus states); follow docs/design-system.md's breakpoint rules where they exist, and when a \`desktop-chromium\` Playwright project exists, make sure CI runs your UI specs on it too. Drizzle migrations: \`pnpm db:generate\` only; the journal order is enforced by a unit test. One query at a time per Executor (main since #62, docs/architecture.md): never \`Promise.all\` over one \`db\` handle or one transaction; await each query in turn (separate pool calls may run together). The integration setup fails any test that sends a query to a busy pg client, so merge origin/main before your gates. Wall-clock budgets asserted in unit or integration tests run on CI's 4-vCPU runners alongside other test files, which are 2-3x slower than this laptop: make the measured work fit in well under half its budget locally (the week scheduler's 100 ms test sat at 85-101 ms on CI and turned main red).`;
 
 const specFor = (it) => {
 	if (it.kind === 'm3')
@@ -422,7 +428,7 @@ You are the CLICK-THROUGH VERIFIER for PR #${pr} (branch ${it.branch}, worktree 
 1. In ${wt}, \`git status --short\` is empty${head ? ` and \`git rev-parse HEAD\` is ${head}` : ''}. Prefix every command below with \`source ${envf(it.slug)} && \`. \`mkdir -p ${shots}\`; files from an earlier round may be there, overwrite them.
 2. Build the production Node server as e2e/global-setup.ts does: \`ORIGIN=${origin} slot pnpm build:node\`.
 3. Database and server exactly as e2e/global-setup.ts prepares them (read it first, and e2e/auth.setup.ts for how the owner is created and signed in). \`pnpm db:reset:e2e\` resets this slice's own e2e database (E2E_DATABASE_URL). Mint a throwaway setup token yourself (32 random bytes, base64url) and give the server only its sha256 hex as OWNER_SETUP_TOKEN_HASH. Start \`node build/index.js\` in the background from ${wt} with NODE_ENV=production APP_ENV=test PORT=${it.port} ORIGIN=${origin}, DATABASE_URL and DATABASE_URL_UNPOOLED set to $E2E_DATABASE_URL, and ENABLE_TEST_ROUTES=true, output to ${shots}/server.log; record its PID and wait until ${origin}/api/health answers 200. Never read, print or use the real owner setup token or any OWNER_SETUP_TOKEN value from an env file or the shell.
-4. Drive a real Chromium with Playwright's library, not the test runner: write ${shots}/drive.mjs importing \`{ chromium, devices }\` from '${wt}/node_modules/@playwright/test/index.mjs', launch with \`chromium.launch({ headless: false })\`, and run it with \`slot node ${shots}/drive.mjs\`. Become the owner the way e2e/auth.setup.ts does: open /setup?token=<your throwaway token> and register a passkey through a CDP WebAuthn virtual authenticator. Create the data the acceptance needs through the app's own screens, or through the test-only routes the e2e specs use.
+4. Drive a real Chromium with Playwright's library, not the test runner: write ${shots}/drive.mjs importing \`{ chromium, devices }\` from '${wt}/node_modules/@playwright/test/index.mjs', connect with \`chromium.connect('ws://127.0.0.1:3333/', { headers: { 'x-playwright-launch-options': JSON.stringify({ headless: false }) } })\` (browsers cannot launch inside this sandbox; the owner runs that server), and run it with \`slot node ${shots}/drive.mjs\`. Become the owner the way e2e/auth.setup.ts does: open /setup?token=<your throwaway token> and register a passkey through a CDP WebAuthn virtual authenticator. Create the data the acceptance needs through the app's own screens, or through the test-only routes the e2e specs use.
 5. For every acceptance item of the slice (read them from the plan as shown above), in an iPhone context (\`devices['iPhone 15 Pro']\`) and in a 1440 × 900 desktop window: do what a person would do (tap, type, navigate, reload, go offline when the item says so), wait for the result and look at it. Save a screenshot of each outcome to ${shots}/<nn>-<short item>-<iphone|desktop>.png and look at it yourself. An item about something no screen shows (gates green, a database invariant, a budget) is "not on screen": name the CI job or test that covers it; it neither passes nor fails. An item passes only when what you saw matches it on both viewports.
 6. PR body (gh cannot upload images, so list the local screenshot paths): \`gh pr view ${pr} -R TheCruzControll/performance-coach --json body -q .body > ${body}\`; replace its "## Click-through" section, or add one just before the sol-review line, with one line per acceptance item: \`- <pass|fail|not on screen>: <item>. Did: <what you did>. Saw: <what you saw>. Screenshots: <paths>\`; then \`gh pr edit ${pr} -R TheCruzControll/performance-coach --body-file ${body}\`.
 7. Always, also after a failure or an error: close the browser, kill the server PID, then make sure nothing you started is left (\`lsof -ti tcp:${it.port}\` prints nothing; kill what remains and any other process you started). If no item failed, remove the worktree with \`git -C ${MAIN} worktree remove --force ${wt}\`; otherwise keep it, a fixer works there next.
@@ -525,7 +531,7 @@ function start(it) {
 	})();
 	return promises[it.id];
 }
-return await Promise.all(
+const all = Promise.all(
 	ITEMS.map(async (it) => {
 		const { checks, ...r } = await start(it);
 		if (!checks) return r;
@@ -535,3 +541,7 @@ return await Promise.all(
 		return { ...r, sol, ci: c.ci, clickThrough: c.clickThrough, ready: c.ready, needs: c.needs };
 	})
 );
+// Let every item with external dependencies reach the limiter before any starts.
+for (let i = 0; i < 200; i++) await null;
+limit.start();
+return await all;

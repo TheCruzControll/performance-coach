@@ -36,7 +36,7 @@ function pump() {
 }
 
 const ENV = (it) => `Work only in the worktree ${WT}/${it.slug}. Set it up first: if it does not exist, \`git -C ${MAIN} fetch -q origin && git -C ${MAIN} worktree add ${WT}/${it.slug} -B ${it.branch} origin/${it.branch}\`; if it exists, make sure it is on ${it.branch} at origin/${it.branch} or ahead. Then inside it run \`bash ${BIN}/agent-env ${it.slug} ${it.port}\` once, and prefix every node/pnpm command with \`source ${S}/env/${it.slug}.sh && \`. Postgres 18 runs on localhost:5432 (role coach/coach). Heavy commands (pnpm check, pnpm lint, full pnpm test:unit, vite builds, Playwright) go through \`slot\` (3 machine-wide; if slot exits 75, retry later through slot). Bash timeouts 600000 for heavy calls. If a command talking to Postgres or the network fails with a sandbox/permission error, rerun it with the sandbox disabled.
-Never run Lighthouse, pnpm build, pnpm budgets locally. You MAY run the one or two failing Playwright specs locally to reproduce (Chromium only: \`slot pnpm exec playwright test <spec> --project=<project>\`; read playwright.config.ts for project names; it builds and serves the app itself, which is allowed for this). Kill any server or browser you start. Local macOS WebKit differs from CI's Linux WebKit, so CI is the WebKit gate.
+Never run Lighthouse, pnpm build, pnpm budgets locally. You MAY run the one or two failing Playwright specs locally to reproduce (Chromium only: \`slot pnpm exec playwright test <spec> --project=<project>\`; read playwright.config.ts for project names; it builds and serves the app itself, which is allowed for this). Browsers cannot launch inside this session's sandbox (Mach-port denial); the owner runs a Playwright browser server outside it: set PW_TEST_CONNECT_WS_ENDPOINT=ws://127.0.0.1:3333/ for \`playwright test\`, or \`chromium.connect('ws://127.0.0.1:3333/')\` in a script (pass headers {'x-playwright-launch-options': JSON.stringify({headless:false})} for headed). Kill any server you start. Local macOS WebKit differs from CI's Linux WebKit, so CI is the WebKit gate.
 Known traps: an e2e test that holds/fails/fulfils requests with page.route must run with \`test.use({ serviceWorkers: 'block' })\` (WebKit's page.route misses service-worker-controlled requests); wait on \`document.fonts.status === 'loaded'\`, never \`document.fonts.ready\`, while a request is held; a test comparing text across a reload must wait for lazily loaded components first. One query at a time per db Executor (never Promise.all over one db handle).
 Shared docs (docs/testing.md, security.md, performance.md, milestones.md) are not edited by code fixes.
 GitHub: gh is authenticated. The only writes allowed: pushing ${it.branch} (fast-forward, new commits only: no amend, rebase or force-push; other branches may stack on it) and editing PR #${it.pr}'s body when told to. Never merge, comment, rerun CI or touch other PRs.
@@ -154,6 +154,32 @@ async function bodyLine(it, line) {
 
 async function doItem(it) {
 	let base, head;
+	if (it.mode === 'conflict') {
+		const MERGE_OUT = { type: 'object', properties: { mergeCommit: { type: 'string' }, resolution: { type: 'string' }, checks: { type: 'string' } }, required: ['mergeCommit', 'resolution', 'checks'] };
+		const VERIFY_OUT = { type: 'object', properties: { verdict: { type: 'string', enum: ['APPROVE', 'CHANGES'] }, problems: { type: 'string' } }, required: ['verdict', 'problems'] };
+		let feedback = '';
+		for (let r = 1; r <= 3; r++) {
+			const m = await limit(() =>
+				agent(
+					`${ENV(it)}\nPR #${it.pr} (${it.branch}) conflicts with main${it.why ? ` (${it.why})` : ''}. ${r === 1 ? `\`git fetch -q origin && git merge origin/main\` (message "Merge main into ${it.branch}") and resolve every conflict keeping BOTH sides' intent: registries and lists keep every entry from both sides; for code, understand what main's change (read the merged PR that brought it: \`git log origin/main --merges -5\`) and this PR each wanted, and combine them.` : `A verifier rejected your resolution (merge commit is HEAD, not pushed):\n${feedback}\nFix it with a new commit on top (do not rewrite the merge).`} Then run ${LIGHT_GATES(it)} DO NOT PUSH. Report mergeCommit (the merge commit sha), resolution (file by file, what each side wanted and what you kept), checks.`,
+					{ label: `merge-r${r}:#${it.pr}`, phase: 'Fix', effort: 'high', schema: MERGE_OUT }
+				)
+			);
+			if (!m) return { pr: it.pr, ok: false, why: 'merge agent failed' };
+			const v = await limit(() =>
+				agent(
+					`Verify a conflict resolution. Read only: change nothing, push nothing. Worktree ${WT}/${it.slug} (branch ${it.branch}, PR #${it.pr}); the merge of origin/main is ${m.mergeCommit}${r > 1 ? ' with fix commits after it up to HEAD' : ''}. The resolver says:\n${m.resolution}\nInspect \`git -C ${WT}/${it.slug} show --remerge-diff ${m.mergeCommit}\` (how the conflicts were resolved)${r > 1 ? ` and \`git -C ${WT}/${it.slug} diff ${m.mergeCommit} HEAD\`` : ''}; read both parents' versions of each conflicted file. APPROVE only if both sides' intent survives (no entry, behaviour or test from either side lost, nothing duplicated, the result coherent) and the resolver's checks are real (rerun \`source ${S}/env/${it.slug}.sh && cd ${WT}/${it.slug} && slot pnpm check\` if in doubt). Report verdict and problems.`,
+					{ label: `verify-r${r}:#${it.pr}`, phase: 'Review', model: 'opus', effort: 'high', schema: VERIFY_OUT }
+				)
+			);
+			if (v && v.verdict === 'APPROVE') {
+				const pushed = await limit(() => agent(`In ${WT}/${it.slug}: \`git push origin ${it.branch}\` (fast-forward; retry network errors up to 4 times). Report the pushed \`git rev-parse HEAD\` or the error.`, { label: `push:#${it.pr}`, phase: 'Body', model: 'haiku', effort: 'low' }));
+				return { pr: it.pr, ok: true, merged: m.mergeCommit, pushed, rounds: r };
+			}
+			feedback = v ? v.problems : 'the verifier gave no reply';
+		}
+		return { pr: it.pr, ok: false, why: `resolution not verified: ${feedback}` };
+	}
 	if (it.mode === 'ci') {
 		const fix = await limit(() =>
 			agent(
@@ -173,7 +199,7 @@ async function doItem(it) {
 	const rv = await reviewLoop(it, base, head, it.effort);
 	log(`#${it.pr}: review ${rv.approved ? `approved in ${rv.rounds}` : `NOT approved (${rv.why})`}`);
 	if (!rv.approved) return { pr: it.pr, ok: false, why: rv.why, head: rv.head, ledger: rv.ledger };
-	const line = it.mode === 'ci' ? `Fix for the failed E2E run (${it.cause}) reviewed with sol-review: ${rv.rounds} rounds with Claude Opus 5.5 on ${it.effort}. Sol verdict: approved` : `Reviewed with sol-review: ${rv.rounds} rounds with Claude Opus 5.5 on ${it.effort}. Sol verdict: approved`;
+	const line = it.mode === 'ci' ? `Fix for the failed E2E run reviewed with sol-review: ${rv.rounds} rounds with Claude Opus 5.5 on ${it.effort}. Sol verdict: approved` : `Reviewed with sol-review: ${rv.rounds} rounds with Claude Opus 5.5 on ${it.effort}. Sol verdict: approved`;
 	await bodyLine(it, line);
 	return { pr: it.pr, ok: true, head: rv.head, rounds: rv.rounds, cause: it.cause };
 }
