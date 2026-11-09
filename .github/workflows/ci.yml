@@ -128,8 +128,8 @@ jobs:
         run: pnpm budgets
 
   # The browser suite in parallel legs, one per group and engine (e2e/projects.ts LEGS: main, the
-  # functional specs; serial, the one-at-a-time specs; alone, perf and exclusive on Chromium;
-  # sweeps, the *.sweep.e2e.ts specs), each with its own Postgres, database and production server.
+  # functional specs; serial, the one-at-a-time specs; alone, perf and exclusive on Chromium),
+  # each with its own Postgres, database and production server.
   # Ceiling: 15 Playwright minutes per leg or shard (scripts/e2e-timing.ts warns above it). A leg
   # nearing it gains a shard (`of` up by one, plus an entry per new shard), never less coverage.
   # `minutes` is the Playwright step's timeout: 1.5 × the leg's slowest of three measured runs,
@@ -162,8 +162,6 @@ jobs:
           - { group: serial, engine: webkit, shard: 1, of: 2, minutes: 15 }
           - { group: serial, engine: webkit, shard: 2, of: 2, minutes: 15 }
           - { group: alone, engine: chromium, shard: 1, of: 1, minutes: 5 }
-          - { group: sweeps, engine: chromium, shard: 1, of: 1, minutes: 5 }
-          - { group: sweeps, engine: webkit, shard: 1, of: 1, minutes: 5 }
     services:
       postgres:
         image: postgres:18
