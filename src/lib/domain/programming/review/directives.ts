@@ -20,6 +20,7 @@ import type { Weekday } from '../../profile/catalog.ts';
 import { PHASE_LABEL } from '../../training/vocabulary.ts';
 import type { MuscleGroup, Phase } from '../../training/vocabulary.ts';
 import { cleanFloat, roundToIncrement } from '../../units.ts';
+import { MAX_NEXT_BLOCK_WEEKS } from '../next-block/dates.ts';
 import { FIRST_BLOCK } from '../rules/blocks.ts';
 import { RESULT_RULES, RUN_RESULT_RULES } from '../rules/results.ts';
 import { DELOAD_AFTER_WEEKS, racePaceTarget } from './cycle.ts';
@@ -51,9 +52,9 @@ export const DIRECTIVE_RULES = {
 	loadStepMin: -0.1,
 	/** The lightest volume factor an override may ask for: a deload's. */
 	volumeFactorMin: 0.6,
-	/** The fewest weeks an appended block may have, and M5's NEXT_CYCLE_MAX_WEEKS. */
+	/** The fewest weeks an appended block may have, and the most any block may (next_cycle's). */
 	minWeeks: 3,
-	maxWeeks: 16
+	maxWeeks: MAX_NEXT_BLOCK_WEEKS
 } as const;
 
 /** The phases a review repeats when it appends; any other phase is followed by accumulation. */
@@ -141,7 +142,8 @@ export function directivesFrom(
 	const high = s.fatigue.level === 'high';
 	const phase =
 		outline?.phase ?? (REPEATABLE.includes(s.block.phase) ? s.block.phase : 'accumulation');
-	const weeks = outline?.weeks ?? R.appendWeeks;
+	// A longer outline block is planned for its first maxWeeks (next-block/dates.ts).
+	const weeks = Math.min(outline?.weeks ?? R.appendWeeks, R.maxWeeks);
 
 	const keep: Reasoned[] = [];
 	const rotate: Reasoned[] = [];

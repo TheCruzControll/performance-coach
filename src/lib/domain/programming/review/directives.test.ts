@@ -204,7 +204,9 @@ describe('the modifiable subset', () => {
 			]),
 			directivesFrom(evaluation({ adherence: withheld() }), null, []),
 			// Under one rounding step of running: no start, never 0 m.
-			directivesFrom(evaluation({}, { weeklyMetres: [0, 0, 250], longestRunMetres: 80 }), null, [])
+			directivesFrom(evaluation({}, { weeklyMetres: [0, 0, 250], longestRunMetres: 80 }), null, []),
+			// A marathon about 30 weeks out: M3 gives the build every week left.
+			directivesFrom(evaluation({}, running), { phase: 'marathon_build', weeks: 19 }, [])
 		];
 		for (const d of cases) {
 			const parsed = PAYLOAD_SCHEMAS.next_cycle.safeParse(modifiableSubset(d));
@@ -213,6 +215,7 @@ describe('the modifiable subset', () => {
 		expect(modifiableSubset(cases[1]!).ending).toBe('taper');
 		expect(modifiableSubset(cases[2]!).ending).toBe('deload');
 		expect(cases[3]!.running).toMatchObject({ weeklyMetres: null, longRunMetres: null });
+		expect(cases[4]!.weeks).toBe(DIRECTIVE_RULES.maxWeeks);
 	});
 
 	it('clamps an override outside the bounds and records it', () => {
