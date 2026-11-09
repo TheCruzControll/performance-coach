@@ -521,13 +521,13 @@
 		user-select: none;
 	}
 
-	/* Previous and Next, then Up next: their height is kept while they load. Packed at the top, so
-	   a shorter Up next never moves Previous and Next. */
+	/* Previous and Next, then Up next with its Add exercise: their height is kept while they load.
+	   Packed at the top, so a shorter Up next never moves Previous and Next. */
 	.navigation {
 		display: grid;
 		align-content: start;
 		gap: var(--space-4);
-		min-height: 9.5rem;
+		min-height: 12.25rem;
 	}
 
 	/*

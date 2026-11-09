@@ -18,7 +18,9 @@ async function open(page: Page) {
 }
 
 const side = (page: Page) => page.getByTestId('workout-side');
-const rows = (page: Page) => side(page).getByRole('button');
+/** The list's exercise rows; Add exercise sits under them. */
+const rows = (page: Page) => side(page).getByRole('listitem').getByRole('button');
+const addExercise = (page: Page) => side(page).getByTestId('side-add-exercise');
 const heading = (page: Page) =>
 	page.getByTestId('workout-main').getByTestId('exercise').getByRole('heading', { level: 2 });
 const prev = (page: Page) => page.getByTestId('exercise-prev');
@@ -73,7 +75,10 @@ test.describe('moving between exercises on a desktop', () => {
 		await expect(heading(page)).toHaveText('Back squat');
 		await expect(rows(page).first()).toBeFocused();
 
-		// Tab leaves the list from its one stop, for the main column: the card's Options, then Next.
+		// Tab leaves the list from its one stop, for Add exercise under it, then the main column: the
+		// card's Options, then Next.
+		await page.keyboard.press('Tab');
+		await expect(addExercise(page)).toBeFocused();
 		await page.keyboard.press('Tab');
 		await expect(options(page)).toBeFocused();
 		await page.keyboard.press('Tab');
@@ -105,7 +110,7 @@ test.describe('moving between exercises on a desktop', () => {
 		await open(page);
 		await next(page).click();
 		await expect(heading(page)).toHaveText('Leg press');
-		const targets = [...(await rows(page).all()), prev(page), next(page)];
+		const targets = [...(await rows(page).all()), addExercise(page), prev(page), next(page)];
 		await page.mouse.move(0, 0);
 		for (const [i, target] of targets.entries()) {
 			// Once its transitions have run (the row that was current is still fading).
@@ -126,6 +131,9 @@ test.describe('moving between exercises on a desktop', () => {
 			await expect(row).toBeFocused();
 			await expect.poll(() => style(row, 'outline-style')).toBe('solid');
 		}
+		await page.keyboard.press('Tab');
+		await expect(addExercise(page)).toBeFocused();
+		await expect.poll(() => style(addExercise(page), 'outline-style')).toBe('solid');
 		await page.keyboard.press('Tab');
 		await expect(options(page)).toBeFocused();
 		await page.keyboard.press('Tab');
