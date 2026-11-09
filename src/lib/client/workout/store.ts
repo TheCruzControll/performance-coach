@@ -27,6 +27,7 @@ import type {
 	CanonicalWorkout,
 	DeviceState,
 	EntityKey,
+	ExerciseLibrary,
 	KitUnits,
 	LocalAction,
 	Mutation,
@@ -41,8 +42,8 @@ import type { IDBPTransaction, StoreNames } from 'idb';
 import { openTabChannel } from './channel.ts';
 import type { TabChannel, TabMessage } from './channel.ts';
 import { openWorkoutDb, StoreClosedError } from './db.ts';
-import type { CloseReason, StoredWorkout, WorkoutDb, WorkoutSchema } from './db.ts';
-import { OUTBOX_INDEXES, STORES } from './names.ts';
+import type { CachedLibrary, CloseReason, StoredWorkout, WorkoutDb, WorkoutSchema } from './db.ts';
+import { LIBRARY_KEY, OUTBOX_INDEXES, STORES } from './names.ts';
 import {
 	applyResults,
 	backOnline,
@@ -191,6 +192,9 @@ export interface WorkoutStore {
 	/** The owner's training-profile units, as the server last gave them (a purge deletes them). */
 	saveUnits(units: KitUnits): Promise<void>;
 	getUnits(): Promise<KitUnits | null>;
+	/** The exercise library, kept under its digest for the picker offline (a purge deletes it). */
+	saveLibrary(library: ExerciseLibrary): Promise<void>;
+	getLibrary(): Promise<CachedLibrary | null>;
 	prune(): Promise<{ workouts: string[]; kits: string[] }>;
 	onChange(listener: (change: StoreChange) => void): () => void;
 }
@@ -880,6 +884,14 @@ export async function createStore({
 			assertOpen();
 			const record = await db.get(STORES.meta, 'units');
 			return record?.key === 'units' ? record.value : null;
+		},
+		async saveLibrary({ digest, units, exercises }) {
+			assertOpen();
+			await db.put(STORES.library, { id: LIBRARY_KEY, digest, units, exercises, savedAt: now() });
+		},
+		async getLibrary() {
+			assertOpen();
+			return (await db.get(STORES.library, LIBRARY_KEY)) ?? null;
 		},
 		prune,
 		onChange(listener) {
