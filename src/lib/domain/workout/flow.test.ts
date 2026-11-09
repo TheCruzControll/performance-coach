@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { workoutDayKits } from '../../../../tests/fixtures/workout-day';
-import { afterSet, SUPERSET_FLOW } from './flow';
+import { afterSet, restAt, SUPERSET_FLOW } from './flow';
 import { groups } from './groups';
 import { upNext } from './up-next';
 import type { AfterSet } from './flow';
@@ -446,6 +446,25 @@ describe('afterSet: supersets', () => {
 				.at(-1)!
 				.members.map((m) => m.label)
 		).toEqual(['A1', 'A2']);
+	});
+});
+
+describe('restAt: the rest Start rest starts', () => {
+	it("is the exercise's prescribed rest, before its first set and after one", () => {
+		expect(restAt(view([]), LEG_PRESS)).toBe(120_000);
+		expect(restAt(view([LEG_PRESS]), LEG_PRESS)).toBe(120_000);
+		expect(restAt(view([]), SQUAT)).toBe(180_000);
+	});
+
+	it("is a superset member's round rest, A1's 0 s left to A2's 1:30", () => {
+		expect(restAt(view([A1]), A1)).toBe(90_000);
+		expect(restAt(view([A1, A2]), A2)).toBe(90_000);
+	});
+
+	it("takes the device's default when the prescription names none, 2:00 with no exercise", () => {
+		const v = workout(withExercise(KIT, LEG_PRESS, resting(null)), []);
+		expect(restAt(v, LEG_PRESS, { compound: 150 })).toBe(150_000);
+		expect(restAt(view([]), 9)).toBe(120_000);
 	});
 });
 
