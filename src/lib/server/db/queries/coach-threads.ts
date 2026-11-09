@@ -5,7 +5,7 @@
  *   a row is found only through its owner. A partial index's predicate is repeated so the plan
  *   can use it.
  * - COACH_THREAD_INDEXES names the index each builder is shaped for. The integration test checks
- *   that each exists; coach-explain (m5/54) adds them to `pnpm db:explain`.
+ *   that each exists; `pnpm db:explain` gates them (scripts/explain/history.explain.ts).
  * Nothing runs until a builder is awaited; await them in turn on one connection.
  */
 import { and, asc, desc, eq, isNotNull, isNull, lt, sql } from 'drizzle-orm';

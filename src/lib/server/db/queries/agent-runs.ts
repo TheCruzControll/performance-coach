@@ -95,6 +95,14 @@ export function runPage(
 }
 
 /**
+ * The owner's midnight is never further than this before `now` (a local day lasts at most 25
+ * hours, 26 in a rare zone change). The planner can estimate a bound from `now` alone, which it
+ * cannot the midnight read from the profile, so dayCapCost repeats it as a redundant filter and
+ * the plan reads only the owner's newest runs and their calls (pnpm db:explain gates it).
+ */
+const DAY_CAP_HORIZON_S = 2 * 86_400;
+
+/**
  * The cap cost of the owner's model calls made since the start of the owner's day at `now`, in
  * the time zone on their profile (UTC without one). Only runs started up to `lookbackMs` before
  * that midnight can hold such calls, which keeps the scan on the owner's newest runs.
@@ -102,6 +110,8 @@ export function runPage(
 export function dayCapCost(db: Executor, ownerId: string, now: Date, lookbackMs: number) {
 	const zone = sql`coalesce((select ${athleteProfiles.timeZone} from ${athleteProfiles} where ${athleteProfiles.ownerId} = ${ownerId}), 'UTC')`;
 	const midnight = sql`(date_trunc('day', ${now.toISOString()}::timestamptz at time zone ${zone}) at time zone ${zone})`;
+	const horizon = sql`${now.toISOString()}::timestamptz - make_interval(secs => ${DAY_CAP_HORIZON_S})`;
+	const lookback = sql`make_interval(secs => ${lookbackMs / 1000})`;
 	return db
 		.select({ micros: total(agentModelCalls.capCostMicros) })
 		.from(agentRuns)
@@ -109,9 +119,11 @@ export function dayCapCost(db: Executor, ownerId: string, now: Date, lookbackMs:
 		.where(
 			and(
 				eq(agentRuns.ownerId, ownerId),
-				sql`${agentRuns.startedAt} >= ${midnight} - make_interval(secs => ${lookbackMs / 1000})`,
+				sql`${agentRuns.startedAt} >= ${midnight} - ${lookback}`,
+				sql`${agentRuns.startedAt} >= ${horizon} - ${lookback}`,
 				eq(agentModelCalls.ownerId, ownerId),
-				sql`${agentModelCalls.createdAt} >= ${midnight}`
+				sql`${agentModelCalls.createdAt} >= ${midnight}`,
+				sql`${agentModelCalls.createdAt} >= ${horizon}`
 			)
 		);
 }
