@@ -337,7 +337,7 @@ describe('CI Lighthouse', () => {
 		const steps = under(under(under(ci, 'jobs'), 'lighthouse'), 'steps');
 		const commands = steps
 			.map((step) => value([step, ...step.children], 'run'))
-			.filter((run) => run?.startsWith('pnpm lighthouse'));
+			.filter((run): run is string => run?.startsWith('pnpm lighthouse') ?? false);
 		// Every asserted audit takes the median of an odd run count, so a strict majority decides it.
 		expect(commands.length).toBeGreaterThan(0);
 		for (const command of commands) {
