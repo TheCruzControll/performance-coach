@@ -10,8 +10,8 @@
  *   the owner's local day (their profile's time zone, UTC without one), worked out in SQL so the
  *   snapshot needs no extra query for it.
  * - COACH_MEMORY_INDEXES names the index each builder is shaped for (null: a relation too small
- *   to want one, as recovery notes are, one a day); coach-explain (m5/54) adds them to
- *   `pnpm db:explain`.
+ *   to want one, as recovery notes are, one a day); `pnpm db:explain` gates them
+ *   (scripts/explain/history.explain.ts).
  * Nothing runs until a builder is awaited; await them in turn on one connection.
  */
 import { and, desc, eq, gte, isNotNull, isNull, sql, type SQL, type SQLWrapper } from 'drizzle-orm';
@@ -52,7 +52,7 @@ import type { Executor } from '../types';
  * The index each builder is shaped for; each JSON list probes its table's owner index. Null: no
  * index, as the relation stays small.
  */
-export const COACH_MEMORY_INDEXES: Readonly<Record<string, string | null>> = {
+export const COACH_MEMORY_INDEXES: Readonly<Record<string, string | readonly string[] | null>> = {
 	profileSections: 'owners_pkey',
 	painReportsSince: 'pain_reports_owner_reported_idx',
 	// At most one a day: a year is a few hundred rows.
@@ -61,7 +61,8 @@ export const COACH_MEMORY_INDEXES: Readonly<Record<string, string | null>> = {
 	// Through the owner's programs (programs_owner_active_uq covers only the active one).
 	latestCycleReview: 'cycle_reviews_block_uq',
 	recentDecisions: 'programming_decisions_program_idx',
-	recentProposals: 'coach_proposals_owner_status_idx',
+	// Open ones by status, decided ones by when they were decided.
+	recentProposals: ['coach_proposals_owner_status_idx', 'coach_proposals_owner_closed_idx'],
 	recentNotes: 'coach_notes_owner_kind_idx'
 };
 
