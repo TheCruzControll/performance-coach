@@ -5,6 +5,7 @@
  * splits only projects nothing depends on, so each leg's own functional projects must be those.
  */
 import { spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import type { Project } from '@playwright/test';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -247,6 +248,21 @@ const unrun = () => {
 	);
 };
 
+/** Each sharded leg in ci.yml's e2e matrix and its shard count (`of`). */
+function shardedLegs(): { group: Group; engine: Engine; of: number }[] {
+	const workflow = readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8');
+	const legs = new Map<string, { group: Group; engine: Engine; of: number }>();
+	for (const [, flow] of workflow.matchAll(/^\s*- \{(.*group:.*)\}\s*$/gm)) {
+		const entry = Object.fromEntries(
+			flow!.split(',').map((pair) => pair.split(':').map((s) => s.trim()))
+		);
+		const of = Number(entry.of);
+		const leg = { group: entry.group as Group, engine: entry.engine as Engine, of };
+		if (of > 1) legs.set(`${leg.group}/${leg.engine}`, leg);
+	}
+	return [...legs.values()];
+}
+
 describe('the legs, listed by Playwright', () => {
 	const listings = new Map<string, Listing>();
 	/** list(), once per leg for the whole describe: each listing spawns Playwright. */
@@ -286,21 +302,25 @@ describe('the legs, listed by Playwright', () => {
 		}
 	}, 120_000);
 
-	it.each([
-		{ engine: 'chromium', group: 'main' },
-		{ engine: 'chromium', group: 'serial' }
-	] as const)(
-		'shard $group/$engine: its shards split its tests and each runs the setup',
-		(leg) => {
+	it('find the sharded legs in ci.yml', () => {
+		expect(shardedLegs().length).toBeGreaterThan(0);
+	});
+
+	it.each(shardedLegs())(
+		'shard $group/$engine $of ways: its shards split its tests and each runs the setup',
+		({ group, engine, of }) => {
+			const leg = { group, engine };
 			const whole = runs(list(leg));
-			const shards = ['1/2', '2/2'].map((shard) => runs(list({ ...leg, shard })));
-			const functional = (tests: string[]) => tests.filter((t) => !t.startsWith('setup › '));
+			const shards = Array.from({ length: of }, (_, i) =>
+				runs(list({ ...leg, shard: `${i + 1}/${of}` }))
+			);
+			const isSetup = (test: string) => /^setup(-\w+)? › /.test(test);
+			const setup = (tests: string[]) => tests.filter(isSetup);
+			const functional = (tests: string[]) => tests.filter((t) => !isSetup(t));
 			for (const shard of shards) {
 				expect(functional(shard).length, 'each shard runs functional tests').toBeGreaterThan(0);
 				expect(functional(shard).length).toBeLessThan(functional(whole).length);
-				expect(shard.filter((t) => t.startsWith('setup › ')).sort()).toEqual(
-					whole.filter((t) => t.startsWith('setup › ')).sort()
-				);
+				expect(setup(shard).sort()).toEqual(setup(whole).sort());
 			}
 			expect(shards.flatMap(functional).sort()).toEqual(functional(whole).sort());
 		},
