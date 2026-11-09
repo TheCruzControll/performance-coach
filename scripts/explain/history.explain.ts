@@ -26,6 +26,7 @@ import * as h from '../../src/lib/server/db/queries/history';
 import * as p from '../../src/lib/server/db/queries/programs';
 import * as schema from '../../src/lib/server/db/schema';
 import { ACTIVE_WORKOUTS_LIMIT } from '../../src/lib/server/services/workouts/canonical';
+import { analyticsExplain } from './analytics.cases';
 import { FIRST_MONDAY, generateDataset, loadDataset, WEEKS } from './dataset';
 import { checkPlan, scansOf, sizeClass, type Catalog, type PlanNode } from './plan-check';
 
@@ -324,7 +325,8 @@ afterAll(async () => {
 		'| --- | --- | --- | ---: | ---: | ---: | ---: | --- |',
 		...results,
 		'',
-		...plans
+		...plans,
+		...m6.report()
 	];
 	mkdirSync('test-results', { recursive: true });
 	writeFileSync('test-results/explain.md', `${report.join('\n')}\n`);
@@ -356,3 +358,6 @@ describe(`db:explain on ${redactUrl(url)}`, () => {
 		expect(problems, `${name}\n${lines.join('\n')}`).toEqual([]);
 	});
 });
+
+// M6's fact queries on their own owner, loaded once M3's cases have run.
+const m6 = analyticsExplain({ client, db, owner, readCatalog, render });
