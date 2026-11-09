@@ -331,3 +331,20 @@ describe('CI client-secret canary', () => {
 		);
 	});
 });
+
+describe('CI Lighthouse', () => {
+	it('asserts the median of 5 runs, which scripts/lighthouse.ts may decide in 3', () => {
+		const steps = under(under(under(ci, 'jobs'), 'lighthouse'), 'steps');
+		const commands = steps
+			.map((step) => value([step, ...step.children], 'run'))
+			.filter((run) => run?.startsWith('pnpm lighthouse'));
+		expect(commands).toEqual([expect.stringMatching(/ --assert(?: |$)/)]);
+		const runs = Number(/ --runs (\d+)/.exec(commands[0]!)?.[1]);
+		expect(runs).toBe(5);
+	});
+
+	it('skips the full-page screenshot, which only the HTML report thumbnails use', () => {
+		const script = readFileSync(new URL('./lighthouse.ts', import.meta.url), 'utf8');
+		expect(script).toMatch(/^\s*disableFullPageScreenshot: true,$/m);
+	});
+});

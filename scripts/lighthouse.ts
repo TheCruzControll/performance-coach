@@ -7,6 +7,10 @@
  *   pnpm lighthouse --url https://preview.example.com   # audit an already-running server
  *   pnpm lighthouse --assert                            # exit 1 when a threshold is missed
  *
+ * With --assert a route stops early once its runs so far decide every threshold's median
+ * (3 of 5 runs passing or missing it: scripts/lib/lighthouse-verdict.ts); summary.json and the
+ * table record the runs each route took.
+ *
  * The local server uses E2E_DATABASE_URL (default: local coach_e2e) after applying migrations.
  *
  * Every app screen needs a session (deny by default), so the script mints one for the owner
@@ -35,6 +39,7 @@ import pg from 'pg';
 import { LOCAL_DATABASE_URLS, runMigrations } from '../src/lib/server/db/migrate.ts';
 import { readActionAnswer } from './lib/action-result.ts';
 import { seedDemoProfile, type DemoProfile } from './lib/demo-profiles.ts';
+import { verdictDecided } from './lib/lighthouse-verdict.ts';
 
 const { values } = parseArgs({
 	allowNegative: true,
@@ -251,6 +256,8 @@ async function auditOnce(url: string, attempt = 1): Promise<NonNullable<RunnerRe
 		...(signedIn && sessionHeaders ? { extraHeaders: sessionHeaders } : {}),
 		output: ['json', 'html'],
 		logLevel: 'error',
+		// Only the HTML report's element thumbnails use it (about 1 s a run); no score or audit does.
+		disableFullPageScreenshot: true,
 		onlyCategories: (process.env.LH_CATEGORIES ?? 'performance,accessibility,best-practices').split(
 			','
 		)
@@ -266,6 +273,8 @@ async function auditOnce(url: string, attempt = 1): Promise<NonNullable<RunnerRe
 }
 interface Summary {
 	route: string;
+	/** The runs the median is over: fewer than `runs` when --assert stopped early. */
+	runs: number;
 	performance: number;
 	accessibility: number;
 	bestPractices: number;
@@ -353,6 +362,7 @@ async function auditRoute(route: string, path: string) {
 		const audit = (id: string) => lhr.audits[id]?.numericValue ?? Number.NaN;
 		results.push({
 			route,
+			runs: 1,
 			performance: lhr.categories.performance?.score ?? 0,
 			accessibility: lhr.categories.accessibility?.score ?? 0,
 			bestPractices: lhr.categories['best-practices']?.score ?? 0,
@@ -367,10 +377,12 @@ async function auditRoute(route: string, path: string) {
 		const [json, html] = result.report as string[];
 		writeFileSync(`${OUT_DIR}/${name}.report.json`, json!);
 		writeFileSync(`${OUT_DIR}/${name}.report.html`, html!);
+		if (values.assert && i + 1 < runs && verdictDecided(results, runs, THRESHOLDS)) break;
 	}
-	const pick = (k: keyof Omit<Summary, 'route'>) => median(results.map((r) => r[k]));
+	const pick = (k: keyof Omit<Summary, 'route' | 'runs'>) => median(results.map((r) => r[k]));
 	summaries.push({
 		route,
+		runs: results.length,
 		performance: pick('performance'),
 		accessibility: pick('accessibility'),
 		bestPractices: pick('bestPractices'),
@@ -396,13 +408,13 @@ try {
 }
 
 const lines = [
-	`Lighthouse ${lighthouseVersion} (mobile, simulated throttling) — median of ${runs} run(s) per route, ${chromeVersion}`,
+	`Lighthouse ${lighthouseVersion} (mobile, simulated throttling) — median of ${runs} run(s) per route${values.assert ? ', stopping early once the runs so far decide every asserted threshold' : ''}, ${chromeVersion}`,
 	'',
-	'| Route | Perf | A11y | Best pr. | LCP | FCP | TBT | CLS | Speed Index |',
-	'| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |',
+	'| Route | Runs | Perf | A11y | Best pr. | LCP | FCP | TBT | CLS | Speed Index |',
+	'| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |',
 	...summaries.map(
 		(s) =>
-			`| \`${s.route}\` | ${Math.round(s.performance * 100)} | ${Math.round(s.accessibility * 100)} | ${Math.round(s.bestPractices * 100)} | ${Math.round(s.lcp)} ms | ${Math.round(s.fcp)} ms | ${Math.round(s.tbt)} ms | ${s.cls.toFixed(3)} | ${Math.round(s.si)} ms |`
+			`| \`${s.route}\` | ${s.runs} | ${Math.round(s.performance * 100)} | ${Math.round(s.accessibility * 100)} | ${Math.round(s.bestPractices * 100)} | ${Math.round(s.lcp)} ms | ${Math.round(s.fcp)} ms | ${Math.round(s.tbt)} ms | ${s.cls.toFixed(3)} | ${Math.round(s.si)} ms |`
 	)
 ];
 console.log(lines.join('\n'));
