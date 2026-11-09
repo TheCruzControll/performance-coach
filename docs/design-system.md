@@ -506,7 +506,7 @@ later-pass screen).
 | `TrendTile`         | `ui/analytics`. A metric at a glance: label, value + unit, kind `Badge`, delta in words + icon toned by direction × good (normal variation neutral), the so-far line, a server-computed sparkline (one 2 px polyline), verdict; read as one sentence; `Stat`’s no-data contract.   |
 | `VerdictBadge`      | `ui/analytics`. Real improvement, Real decline, Normal variation or Not enough data yet · 2 of 6 weeks, in words + icon, with ‘over the last 12 weeks’ when the window is not the period’s; sentence case, wraps.                                                                  |
 | `MetricContext`     | `ui/analytics`. One line: the period, its comparison, the trend window when it differs, what counts as good; then a `<details>` (≥ 44 px) with the method and any caveat.                                                                                                          |
-| `PeriodPicker`      | `ui/analytics`. Five real links to `?period=` (4w … All, named in full), `aria-current`, each a history entry, noscroll + keepfocus, ≥ 44 px at 320 px; another period loading dims the content with `aria-busy`, no skeleton.                                                     |
+| `PeriodPicker`      | `ui/analytics`. Five real links to `?period=` (4w … All, named in full), `aria-current`, each a history entry, `data-sveltekit-reset="false"`, ≥ 44 px at 320 px; another period loading dims the content, `aria-busy` and inert, no skeleton.                                     |
 
 A `ChoiceGroup` records a choice; it is never an "add" action (arrow keys check every radio they
 pass, so a radio that adds a row adds one per keypress). An optional single choice offers an

@@ -125,8 +125,7 @@ describe('the trend tiles without JavaScript', () => {
 	it('switch period with real links, one history entry each, the current one marked', () => {
 		const picker = all(section(renderAt('?period=26w'), 'tiles-period'), 'nav')[0]!;
 		expect(picker.whole).toMatch(/^<nav[^>]*aria-label="Period"/);
-		expect(picker.whole).toMatch(/^<nav[^>]*data-sveltekit-noscroll/);
-		expect(picker.whole).toMatch(/^<nav[^>]*data-sveltekit-keepfocus/);
+		expect(picker.whole).toMatch(/^<nav[^>]*data-sveltekit-reset="false"/);
 		expect(picker.whole).not.toContain('replacestate');
 		const links = [...picker.inner.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a>/g)].map(
 			([, attributes, inner]) => ({

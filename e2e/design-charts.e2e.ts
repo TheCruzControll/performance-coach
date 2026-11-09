@@ -952,11 +952,12 @@ test.describe('/design → Charts: trend tiles on a phone', () => {
 		const busy = page.getByTestId('tiles-busy');
 		const content = busy.getByTestId('period-content');
 		await expect(content).toHaveAttribute('aria-busy', 'true');
+		await expect(content).toHaveAttribute('inert', '');
 		await expect
 			.poll(() => content.evaluate((el) => Number(getComputedStyle(el).opacity)))
 			.toBeCloseTo(0.55, 2);
 		// The figures stay in place: the tile and its number, never placeholders.
-		await expect(content.getByText('142.5')).toBeVisible();
+		await expect(content.getByText('142.5kg')).toBeVisible();
 		await expect(content.locator('.skeleton, [class*="skeleton"]')).toHaveCount(0);
 		await expect(busy.getByRole('status')).toHaveText('Loading the period…');
 		// The tiles the links switch are not busy.
@@ -964,6 +965,9 @@ test.describe('/design → Charts: trend tiles on a phone', () => {
 			'aria-busy',
 			'false'
 		);
+		await expect(
+			page.getByTestId('tiles-period').getByTestId('period-content')
+		).not.toHaveAttribute('inert');
 		await busy.scrollIntoViewIfNeeded();
 		await captureScreen(page, testInfo, 'design-tiles-busy');
 	});

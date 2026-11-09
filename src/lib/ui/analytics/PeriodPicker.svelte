@@ -5,10 +5,12 @@
 
   - Links, not buttons: a switch works without JavaScript, and each one is a history entry, so
     Back returns to the previous period. With JavaScript, SvelteKit keeps the scroll position and
-    the focus on the link (data-sveltekit-noscroll, data-sveltekit-keepfocus).
+    the focus on the link (data-sveltekit-reset="false").
   - Each link is at least 44 px tall and wide at 320 px.
   - While another period loads, the content holds its frame at reduced opacity with aria-busy and
     no skeleton, so the numbers never jump to placeholders and back; a fast switch shows nothing.
+    The dimmed figures are inert until the new ones arrive: inactive, so stale numbers are not
+    acted on (and, as inactive content, exempt from the text contrast minimum).
     Busy is read from SvelteKit's navigation (this page, another ?period), or given as `busy`.
 -->
 <script lang="ts">
@@ -50,7 +52,7 @@
 </script>
 
 <div class="period-view" {...rest}>
-	<nav class="picker" aria-label={label} data-sveltekit-noscroll data-sveltekit-keepfocus>
+	<nav class="picker" aria-label={label} data-sveltekit-reset="false">
 		<ul>
 			{#each PERIODS as period (period)}
 				<li>
@@ -67,7 +69,7 @@
 		</ul>
 	</nav>
 	<p class="visually-hidden" role="status">{loading ? 'Loading the period…' : ''}</p>
-	<div class="content" aria-busy={loading} data-testid="period-content">
+	<div class="content" inert={loading} aria-busy={loading} data-testid="period-content">
 		{@render children()}
 	</div>
 </div>
