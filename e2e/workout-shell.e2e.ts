@@ -250,6 +250,27 @@ test.describe('the workout screen (IndexedDB only)', () => {
 		await expectTargets(page);
 	});
 
+	test('pausing the stopwatch moves nothing in the header at 393 px and 150 % text', async ({
+		page
+	}) => {
+		await seedWorkout(page, kits.strength);
+		await gotoWorkout(page);
+		await page.evaluate(() => (document.documentElement.style.fontSize = '150%'));
+		await page.waitForFunction(() => document.fonts.status === 'loaded');
+		// The sync status loads on idle after the store, and at 150 % takes a row of its own under
+		// Minimise: the header is measured once it is there, so only the pause can move it.
+		await expect(page.getByTestId('sync-status')).toBeVisible();
+		const header = page.getByTestId('workout-header');
+		const title = page.getByRole('heading', { level: 1 });
+		const boxes = async () => [await header.boundingBox(), await title.boundingBox()];
+		const running = await boxes();
+		await page.getByRole('button', { name: 'Pause workout time' }).click();
+		await expect(page.getByRole('button', { name: /Workout time paused/ })).toBeVisible();
+		expect(await boxes()).toEqual(running);
+		await expectNoSideScroll(page);
+		await expectTargets(page);
+	});
+
 	for (const theme of ['dark', 'light'] as const) {
 		test(`every state has no WCAG A/AA violations (${theme} theme)`, async ({ page }) => {
 			await page.addInitScript(

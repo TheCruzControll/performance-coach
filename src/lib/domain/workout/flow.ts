@@ -150,6 +150,21 @@ function roundRest(
 	return Math.max(...inRound.map((m) => setRest(view, m, round, defaults)));
 }
 
+/**
+ * The rest Start rest starts at `position`, in ms: the one its last planned set done gives (its
+ * first's before any), a superset's round rest for a member; 2:00 at a position with no exercise.
+ */
+export function restAt(
+	view: WorkoutView,
+	position: number,
+	defaults: Defaults = DEFAULT_REST_SECONDS
+): number {
+	const slot = slotAt(view, position);
+	if (!slot) return restFor(null, { restClass: 'compound' }, defaults);
+	const round = Math.max(1, filledOf(slot).size);
+	return roundRest(view, runOf(view, slot), slot, round, defaults);
+}
+
 // ---- After a set ----------------------------------------------------------------------------
 
 /** Nothing left in the workout, or only in this exercise. */

@@ -5,7 +5,8 @@ import { createMutation } from '#lib/domain/workout/mutations.ts';
 import { applyLocal, applyMutation, replay, viewOf } from '#lib/domain/workout/project.ts';
 import type { WorkoutState } from '#lib/domain/workout/project.ts';
 import { strengthTable } from '#lib/domain/workout/reducers/tables.ts';
-import { logSet, skipSet } from './log.ts';
+import { DEFAULT_REST_SECONDS } from '#lib/domain/workout/timers.ts';
+import { logSet, skipSet, type RestOptions } from './log.ts';
 
 const KIT = workoutDayKits({ date: '2026-11-06' }).strength;
 const W = '00000000-0000-4000-8000-0000000000f1';
@@ -44,9 +45,15 @@ function started(): WorkoutState {
 }
 
 /** Logs through logSet and applies what it dispatches, as the store does. */
-function log(state: WorkoutState, position: number, setIndex: number, values: LoggedSet) {
+function log(
+	state: WorkoutState,
+	position: number,
+	setIndex: number,
+	values: LoggedSet,
+	rest: RestOptions | null = null
+) {
 	const view = viewOf(strengthTable, state)!;
-	const done = logSet(view, position, setIndex, values, AT);
+	const done = logSet(view, position, setIndex, values, AT, rest);
 	let next = applyMutation(strengthTable, state, done.mutation);
 	for (const action of done.followUps) next = applyLocal(strengthTable, next, action);
 	return { done, state: next, view: viewOf(strengthTable, next) as WorkoutView };
@@ -89,6 +96,61 @@ describe('logSet', () => {
 		expect(a2.done.followUps).toEqual([goTo(4)]);
 		expect(a2.view.device.position).toBe(4);
 		expect(a2.view.slots[3]!.sets.map((s) => s.setIndex)).toEqual([1]);
+	});
+
+	describe('the rest a completed set starts', () => {
+		const AUTO: RestOptions = { autoStart: true, defaults: DEFAULT_REST_SECONDS };
+		const restStart = (ms: number) => ({
+			workoutId: W,
+			type: 'rest.start',
+			at: Date.parse(AT),
+			durationMs: ms
+		});
+
+		it('starts the prescribed rest after a straight set, at the set’s instant', () => {
+			// The leg press prescribes 2:00 a set.
+			const { done, view } = log(started(), 2, 1, reps(10, 120), AUTO);
+			expect(done.followUps).toEqual([restStart(120_000)]);
+			expect(view.device.rest).toEqual({
+				startedAt: Date.parse(AT),
+				durationMs: 120_000,
+				pausedAt: null,
+				addedMs: 0
+			});
+		});
+
+		it('in a superset, none inside a round; the round’s 1:30 after its last member', () => {
+			const state = applyLocal(strengthTable, started(), {
+				type: 'goTo',
+				workoutId: W,
+				position: 4
+			});
+			const a1 = log(state, 4, 1, reps(8), AUTO);
+			expect(a1.done.followUps).toEqual([goTo(5)]);
+			expect(a1.view.device.rest).toBeNull();
+			const a2 = log(a1.state, 5, 1, seconds(45), AUTO);
+			expect(a2.done.followUps).toEqual([goTo(4), restStart(90_000)]);
+			expect(a2.view.device.position).toBe(4);
+			expect(a2.view.device.rest?.durationMs).toBe(90_000);
+		});
+
+		it('starts none when the device’s settings leave the rest to the owner, or without them', () => {
+			const off = log(started(), 2, 1, reps(10, 120), { ...AUTO, autoStart: false });
+			expect(off.done.followUps).toEqual([]);
+			expect(off.view.device.rest).toBeNull();
+			expect(log(started(), 2, 1, reps(10, 120)).done.followUps).toEqual([]);
+		});
+
+		it('falls back to the device’s rest for the class when the prescription names none', () => {
+			const kit = structuredClone(KIT);
+			for (const set of kit.exercises[1]!.sets) set.restSeconds = null;
+			const state = { ...started(), kit };
+			const { done } = log(state, 2, 1, reps(10, 120), {
+				autoStart: true,
+				defaults: { ...DEFAULT_REST_SECONDS, [kit.exercises[1]!.exercise.restClass]: 75 }
+			});
+			expect(done.followUps).toEqual([restStart(75_000)]);
+		});
 	});
 
 	it('refuses a position with no exercise', () => {
