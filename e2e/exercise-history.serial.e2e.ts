@@ -163,12 +163,12 @@ test.describe('with two synced workouts of back squat', () => {
 		await expect(sheet(page).getByRole('heading', { name: latest.name })).toBeVisible();
 		await expect(sessions(page)).toHaveCount(2);
 		await expect(sessions(page).nth(0).getByTestId('history-set')).toHaveText([
-			/Set 1\s*105 kg × 5 reps · RPE 8$/,
-			/Set 2\s*105 kg × 5 reps · RPE 9$/
+			/Set 1\s*105 kg × 5 reps · RPE 8\s*$/,
+			/Set 2\s*105 kg × 5 reps · RPE 9\s*$/
 		]);
 		await expect(sessions(page).nth(1).getByTestId('history-set')).toHaveText([
-			/Set 1\s*100 kg × 5 reps · RPE 8$/,
-			/Set 2\s*100 kg × 5 reps · RPE 8.5$/
+			/Set 1\s*100 kg × 5 reps · RPE 8\s*$/,
+			/Set 2\s*100 kg × 5 reps · RPE 8.5\s*$/
 		]);
 		await expect(sheet(page).getByTestId('history-best')).toContainText(
 			/^Estimated 1RM · [\d.]+ kg/
@@ -241,10 +241,10 @@ test.describe('with two synced workouts of back squat', () => {
 		// The kit's previous session (tests/fixtures/workout-day.ts), not the server's.
 		await expect(sessions(page)).toHaveCount(1);
 		await expect(sessions(page).getByTestId('history-set')).toHaveText([
-			/Set 1\s*100 kg × 5 reps · RPE 8$/,
-			/Set 2\s*85 kg × 5 reps · RPE 7$/,
-			/Set 3\s*85 kg × 5 reps · RPE 7$/,
-			/Set 4\s*85 kg × 5 reps · RPE 7.5$/
+			/Set 1\s*100 kg × 5 reps · RPE 8\s*$/,
+			/Set 2\s*85 kg × 5 reps · RPE 7\s*$/,
+			/Set 3\s*85 kg × 5 reps · RPE 7\s*$/,
+			/Set 4\s*85 kg × 5 reps · RPE 7.5\s*$/
 		]);
 		await auditThemes(page, 'offline');
 		await context.setOffline(false);
