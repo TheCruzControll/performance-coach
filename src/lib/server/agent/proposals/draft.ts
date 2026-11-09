@@ -63,18 +63,26 @@ export interface DraftIntent {
 
 /**
  * Why a draft failed:
- * - draft_unavailable: less than draftMs was left, so no call was made
+ * - draft_unavailable: less than draftMs was left, or no drafter is at hand, so no call was made
+ * - drafts_spent: the turn has made its TURN_LIMITS.drafts drafts, so no call was made
  * - refused: the model declined (stop_reason refusal)
  * - max_tokens: the draft was cut off
  * - invalid_output: the output is not JSON, or fails the kind's schema
  * - provider_error: the call failed (overloaded, rate limited, aborted…)
  */
 export type DraftFailure =
-	'draft_unavailable' | 'refused' | 'max_tokens' | 'invalid_output' | 'provider_error';
+	| 'draft_unavailable'
+	| 'drafts_spent'
+	| 'refused'
+	| 'max_tokens'
+	| 'invalid_output'
+	| 'provider_error';
 
 const FAILURE_MESSAGE: Record<DraftFailure, string> = {
 	draft_unavailable:
 		'Not enough time is left in this turn to draft the change; tell the owner and offer to try again',
+	drafts_spent:
+		'This turn has drafted all the changes it may; tell the owner what you would change and offer to draft it next',
 	refused: 'The change could not be drafted; describe a different change or answer without one',
 	max_tokens: 'The draft was too long; propose fewer changes at once',
 	invalid_output:
@@ -122,6 +130,28 @@ export function draftRequest(
 		messages: [{ role: 'user', content: [{ type: 'text', text }] }],
 		output_config: { effort: DRAFT_EFFORT }
 	};
+}
+
+/**
+ * A drafting tool's draft: the turn's drafter (ctx.drafter) within the call's own signal and
+ * deadline, once the turn admits another draft. With no drafter, nothing is drafted.
+ */
+export function draftInTool<K extends DraftKind>(
+	kind: K,
+	intent: DraftIntent,
+	ctx: Pick<ToolContext, 'runId' | 'signal' | 'deadlineAt' | 'drafter'>
+): Promise<ProposalDraft<K>> {
+	const { drafter } = ctx;
+	if (!drafter) return Promise.reject(new DraftError('draft_unavailable'));
+	if (!drafter.admit()) return Promise.reject(new DraftError('drafts_spent'));
+	const { runId, signal, deadlineAt } = ctx;
+	return draftProposal(kind, intent, {
+		runId,
+		signal,
+		deadlineAt,
+		provider: drafter.provider,
+		onCall: drafter.onCall
+	});
 }
 
 export async function draftProposal<K extends DraftKind>(

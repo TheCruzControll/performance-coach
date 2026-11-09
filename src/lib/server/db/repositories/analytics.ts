@@ -6,7 +6,7 @@
 import type { IsoDate } from '../../../domain/calendar';
 import type { PlannedSession } from '../../../domain/analytics/adherence';
 import type { ActualSet, PlannedLines } from '../../../domain/analytics/prescribed';
-import type { RunFactSegment } from '../../../domain/analytics/running';
+import type { PlannedRun, RunFactSegment } from '../../../domain/analytics/running';
 import type { StrengthFact } from '../../../domain/analytics/strength';
 import type { LoggedSession, RecoveryEntry } from '../../../domain/analytics/workload';
 import type { ExerciseMuscles } from '../../../domain/training/metrics';
@@ -37,10 +37,14 @@ export type SessionFact = Omit<SessionFactRow, 'run' | 'other'> &
 		run: Omit<NonNullable<SessionFactRow['run']>, 'workoutId'> | null;
 	};
 
-/** Planned sessions of every program in the range, and the lineages a counted workout completed. */
+/**
+ * Planned sessions of every program in the range, the lineages a counted workout completed, and
+ * the planned runs among them with their segments.
+ */
 export interface PlannedFacts {
 	planned: PlannedSession[];
 	completed: Set<string>;
+	runs: PlannedRun[];
 }
 
 /** A program's generated versions' inputs, by the block lineages they first planned. */
@@ -102,19 +106,35 @@ export function createAnalyticsRepository(db: Executor) {
 			return by;
 		},
 
-		/** The programs in the range, then each one's sessions in it, then which were completed. */
+		/**
+		 * The programs in the range, then each one's sessions in it, then which were completed, then
+		 * the planned runs' segments.
+		 */
 		async planned(ownerId: string, from: IsoDate, to: IsoDate): Promise<PlannedFacts> {
 			const q = plannedFacts(db, ownerId);
 			const planned: PlannedSession[] = [];
+			const runs = new Map<string, Omit<PlannedRun, 'segments'>>();
 			for (const program of await programsInRange(db, ownerId, from, to)) {
 				for (const row of await q.planned(program.versionId, from, to)) {
 					const { lineageId: lineage, scheduledOn: date, status, movedFrom, discipline } = row;
 					planned.push({ lineage, date, status, movedFrom, discipline });
+					if (discipline === 'running') runs.set(row.id, { lineage, date, status });
 				}
 			}
 			const lineages = [...new Set(planned.map((s) => s.lineage))];
 			const completed = lineages.length ? await q.completed(lineages) : [];
-			return { planned, completed: new Set(completed.map((row) => row.lineage!)) };
+			const segments = runs.size ? await q.runSegments([...runs.keys()]) : [];
+			const bySession = Map.groupBy(segments, (row) => row.sessionId);
+			return {
+				planned,
+				completed: new Set(completed.map((row) => row.lineage!)),
+				runs: [...runs].map(([id, run]) => ({
+					...run,
+					segments: (bySession.get(id) ?? []).map(
+						({ id: _id, sessionId: _s, position: _p, ...segment }) => segment
+					)
+				}))
+			};
 		},
 
 		async recovery(ownerId: string, from: IsoDate, to: IsoDate): Promise<RecoveryEntry[]> {
