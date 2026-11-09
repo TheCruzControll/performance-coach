@@ -43,6 +43,7 @@ export const ROUTE_ACCESS = {
 	'/api/test-support/error': 'owner',
 	'/api/test-support/program': 'owner',
 	'/api/test-support/analytics': 'owner',
+	'/api/test-support/coach': 'owner',
 
 	// Scheduled jobs (Vercel Cron): the bearer secret only, never a session (cron.ts)
 	'/api/cron/backup': 'cron',
@@ -82,6 +83,7 @@ export const ROUTE_ACCESS = {
 	// threads
 
 	// proposals
+	'/api/coach/proposals/[id]': 'owner',
 
 	// memory
 

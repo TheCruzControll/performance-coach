@@ -648,7 +648,45 @@ today, workouts)` is that filter for decide time. Next week outside the block â†
 
 ### Cycle review (`programming/review/cycle.ts`, `cycle-snapshot.ts`)
 
-Not built yet (m6/27, cycle-review-compose).
+`evaluateCycle(input)` â†’ `{ snapshot, summary, findings, effectiveness, fatigue, deloadNeed,
+inputsDigest }`: one finished block judged against the owner's goals and its plan, as the stored
+`CycleReviewSnapshot` (`cycle-snapshot.ts`, `CYCLE_SNAPSHOT_VERSION` 1, read back with
+`readCycleSnapshot` on `snapshot.ts`'s `readVersioned`) and the weekly review's brief (`kind:
+'cycle'`). Code alone, the same bytes for the same input in any order. The input is the block
+(its weeks, each with its kind and `VolumeTargets` from `services/analytics/targets.ts`), its
+planned sessions, the facts through its end, M2's goals, the previous block's summary and the next
+outline block (or null). Sections:
+
+- `adherence`: `periodAdherence` over the block and each week, and `adherenceByWeekday`'s
+  `oftenMissed` days ('Fridays often missed'). Under `VERDICT_MIN_ADHERENCE` (70 %) every
+  progression and effectiveness verdict is withheld, and says so (`verdictsWithheld`).
+- `effectiveness`: each prescribed exercise with an e1RM (`e1rmSeries` over the block):
+  `too_few` under `EFFECTIVENESS.minExposures` (3) sessions; else the best of the later half of
+  its sessions against the earlier half's, `progressed` or `regressed` by the catalogue's e1RM
+  MPC (2.5 %), otherwise `held`. Held or regressed over `stallExposures` (4) is `stalled`. A main
+  lift is one with a baseline lift and a top-set line (as `loads.ts` defines it).
+- `verdicts`: strength progression (each main lift, and how many progressed) and endurance
+  progression (weekly distance, `classifyTrend` over the block's weeks).
+- `volume`: per week and group, `planned` (M3's `plannedHardSets`, through the targets),
+  `achieved` (M3's `hardSets`) and the range (`scaledTargets`); the block's average RPE.
+- `fatigue` and `recovery`: the load trend, the ACWR with its caveat, the last week's monotony,
+  the largest `rpeCreep`, soreness and sleep over the last `FATIGUE_WEEKS` (2) weeks, and
+  `fatigueLevel`'s level; `deloadPlanned` when the next block opens with a light week
+  (`LIGHT_WEEK_KINDS`).
+- `fatigue:deload`: `needed` (fatigue high, or watch with a main lift regressed), `consider`
+  (any fatigue signal, a regressed main lift, or `DELOAD_AFTER_WEEKS` (5) weeks with no light
+  week) or `not_needed`, with its reasons.
+- `goals`: per M2 goal and area (`GOAL_AREAS`, by its disciplines): strength is the lift's e1RM
+  against a target read by `strengthTarget` ('Bench press 140 kg': one profile lift and one
+  load); running is weekly distance and the `GOAL_PACE_TYPE` (tempo) pace against
+  `racePaceTarget` (a race distance and one finish time), with weeks to the event; hypertrophy is
+  the group-weeks within range (`HARD_SETS_ON_TARGET`, 75 %); Muay Thai is sessions and load. A
+  target it cannot read, or a goal with no measured discipline, shows its sessions and says 'No
+  measure': progress is never guessed.
+- `next`: the next outline block, or that the rules plan one.
+
+The summary (at most `SUMMARY_MAX`) leads with adherence, then progression (or 'Verdicts
+withheld'), fatigue and the deload need.
 
 ### Directives (`programming/review/directives.ts`)
 

@@ -399,13 +399,14 @@
 		outline: none;
 	}
 
+	/* Row gaps only: on desktop the body is a subgrid, and its own column gap would shift the side column. */
 	.body {
 		display: grid;
-		gap: var(--space-6);
+		row-gap: var(--space-6);
 	}
 
 	.body[aria-busy='true'] {
-		gap: var(--space-4);
+		row-gap: var(--space-4);
 		min-height: 36rem;
 		align-content: start;
 	}

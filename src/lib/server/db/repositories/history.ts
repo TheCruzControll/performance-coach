@@ -77,7 +77,10 @@ export function createHistoryRepository(db: Executor) {
 		},
 
 		/** The owner's completed workouts, newest first, `limit` at a time after `before`. */
-		async completedWorkoutsPage(ownerId: string, page: { before?: string; limit: number }) {
+		async completedWorkoutsPage(
+			ownerId: string,
+			page: { before?: string; startedBefore?: Date; limit: number }
+		) {
 			return completedWorkoutsPage(db, ownerId, page);
 		},
 

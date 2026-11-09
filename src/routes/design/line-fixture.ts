@@ -16,7 +16,7 @@ import { SERIES_TOKEN } from '#lib/ui/charts/palette.ts';
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 /** `count` weeks back from the week of 9 Nov 2026, the last one in progress when asked. */
-function weeks(count: number, inProgress = false): LineSlot[] {
+export function weeks(count: number, inProgress = false): LineSlot[] {
 	return Array.from({ length: count }, (_, i) => {
 		const day = new Date(Date.UTC(2026, 10, 9 - 7 * (count - 1 - i)));
 		const tick = `${day.getUTCDate()} ${MONTHS[day.getUTCMonth()]}`;
