@@ -1,4 +1,39 @@
-# Performance Coach: handoff (cloud session wound down on 2026-11-07; the final state is the first section)
+# Performance Coach: handoff (Claude Code on the owner's Meta Mac, resumed 2026-11-09; read the first section first)
+
+## Claude Code on the owner's Mac, running (resumed 2026-11-09 18:00 UTC)
+
+This section is the current state. The pi sections below are history; their rules and lessons still hold.
+The standing goal is `docs/handoff/claude/wf/GOAL.md`. The harness for this machine is `docs/handoff/claude/`.
+
+### Status at resume (2026-11-09)
+
+227 of 401 non-dropped slices merged (M2, M3 done; M2X 16/18, M4 43/61, M5 38/61, M6 23/63, M7 9/59, M9 20/61).
+Open PRs: #265 desk-lighthouse, #272 metric-tiles, #285 rest-timer, #291 substitutions (red E2E, a fixer workflow
+is on them), #284 load-fatigue (green, under review), #290 and #296 (green, approved, wait on #284).
+
+### Running
+
+- `open-prs` workflow: fixes the four red E2E runs and reviews #284.
+- Round 1 of `dag-claude.js`: 90 slices (M4 16, M5 21, M6 34, M7 18, M2X 1), limit 4, critical path first.
+- `ci-speed` workflow: measures CI wall time (a PR run is ~26 min: ~10 queued under the 20-job cap,
+  ~16 running) and proposes small PRs to cut it, each checked by two skeptics.
+- `wait-ready.sh` in the background merges one ready PR per pass.
+
+### This machine (differences from the pi Mac)
+
+- Scratch `/tmp/pc-scratch` (bin/, plans/, env/, pr-bodies/), worktrees `/tmp/pc-wt`. Writes under `~/dev`
+  outside the repo are blocked by the session sandbox. Workflow scripts must sit under the working directory,
+  so they live in `.git/pc-wf/` of the checkout (untracked); a round's script embeds its args.
+- Postgres 18 is the owner's Homebrew service on localhost:5432 (role coach/coach, superuser). It cannot be
+  started from inside Claude (the managed sandbox denies SysV shared memory).
+- `agent-env` pins fnm's Node 22, sets `PGADMIN_URL` and `SLOT_COUNT=3`, and creates the explain and the backup
+  scratch databases too (without `coach_<slug>_backup_{src,dst}_test` six backup integration files fail).
+- The owner chose 6 agents at once and 3 heavy-command slots. The reviewer is Claude Opus 5.5 (the sol-review
+  skill's Claude Code path), effort xhigh for auth, security, data loss, concurrency and migrations.
+- PR bodies end "Created with Claude Opus 5.5 in Claude Code."
+- `build-all.py` builds one round across every plan (cross-milestone dependencies resolve inside one DAG) and
+  gives UI slices that edit the same screens a shared `group`, which `dag-claude.js` runs one at a time.
+
 
 This is everything a new Claude Code session needs to resume the build on another machine. The
 product spec is `docs/product-requirements.md` on `main`; milestone criteria are in

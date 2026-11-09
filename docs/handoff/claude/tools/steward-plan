@@ -1,0 +1,147 @@
+#!/usr/bin/env bash
+# Merge steward (babysit-pr merge gate): merge every open PR into main that is ready, oldest
+# first, with a merge commit titled "Merge <PR title> (#N)" (the repo's convention).
+# A PR is ready only when ALL hold, checked right before the merge:
+#   - base main, not skipped (WIP, the handoff PR), every "Depends on #N" already merged;
+#   - the latest run of each required CI job on its head succeeded;
+#   - its description records the Sol review: "Sol verdict: approved", or
+#     "sol-review: not applicable" for a docs-only PR;
+#   - GitHub's merge state is clean (never DIRTY, BEHIND or BLOCKED);
+#   - no main commit that landed after its last green CI run touches its files. If one does,
+#     the steward updates the branch from main (GitHub's update-branch) so CI runs again.
+#   - its description has no "Merge hold: <reason>" line.
+# `steward --dry-run` changes nothing.
+set -uo pipefail
+R=repos/TheCruzControll/performance-coach
+REPO_DIR="${REPO_DIR:-/Users/nikocruz/dev/performance-coach}"
+DRY=0; [[ "${1:-}" == "--dry-run" ]] && DRY=1
+SKIP=" 13 14 "
+REQUIRED=("Lint & type-check" "Unit & integration tests" "Build (Vercel + Node) & budgets" "E2E (iPhone viewport · Chromium + WebKit)" "Lighthouse (mobile)")
+
+checks_state() { # sha -> "success" | "pending" | "failure:<names>"
+	local sha=$1 runs fail="" pend=0
+	runs=$(gh api "$R/commits/$sha/check-runs?per_page=100" --jq '.check_runs | map({name, status, conclusion, id})')
+	for name in "${REQUIRED[@]}"; do
+		local latest
+		latest=$(jq -r --arg n "$name" '[.[] | select(.name == $n)] | sort_by(.id) | last | if . == null then "missing" elif .status != "completed" then "pending" else .conclusion end' <<<"$runs")
+		case "$latest" in
+		success) ;;
+		pending | missing) pend=1 ;;
+		*) fail="$fail${fail:+, }$name=$latest" ;;
+		esac
+	done
+	if [[ -n "$fail" ]]; then echo "failure:$fail"; elif ((pend)); then echo pending; else echo success; fi
+}
+
+# PR files whose content would differ from what CI tested. CI tested head merged with main as
+# it was at <iso time>; compare that merge's tree with the merge of head and main now, so main
+# commits the PR already contains (a stacked PR) do not count.
+overlap_since() { # n iso sha -> overlapping files (space separated)
+	local n=$1 since=$2 sha=$3 pr_files base_ci t_ci t_now changed
+	git -C "$REPO_DIR" cat-file -e "$sha^{commit}" 2>/dev/null || git -C "$REPO_DIR" fetch -q origin "pull/$n/head"
+	pr_files=$(gh api "$R/pulls/$n/files?per_page=100" --paginate --jq '.[].filename' | sort -u)
+	base_ci=$(git -C "$REPO_DIR" rev-list -1 --first-parent --before="$since" origin/main)
+	t_ci=$(git -C "$REPO_DIR" merge-tree --write-tree "$base_ci" "$sha" 2>/dev/null | head -1)
+	t_now=$(git -C "$REPO_DIR" merge-tree --write-tree origin/main "$sha" 2>/dev/null | head -1)
+	[[ -n "$t_ci" && "$t_ci" == "$t_now" ]] && return 0
+	changed=$(git -C "$REPO_DIR" diff --name-only "$t_ci" "$t_now" 2>/dev/null | sort -u)
+	comm -12 <(echo "$pr_files") <(echo "$changed") | tr '\n' ' '
+}
+
+git -C "$REPO_DIR" fetch -q origin main
+# Strict merge queue: while the PR refreshed last is still open with CI running, refresh no other.
+QUEUE_FILE="$(dirname "$0")/../steward-queue"
+UPDATED=0
+if [[ -s "$QUEUE_FILE" ]]; then
+	q=$(cat "$QUEUE_FILE")
+	qpr=$(gh api "$R/pulls/$q" 2>/dev/null)
+	if [[ "$(jq -r .state <<<"$qpr")" == "open" && "$(checks_state "$(jq -r .head.sha <<<"$qpr")")" == "pending" ]]; then
+		UPDATED=1
+		echo "queue: #$q refreshed and still running CI; other stale PRs wait"
+	else
+		: >"$QUEUE_FILE"
+	fi
+fi
+# Critical-path PRs listed in steward-priority (one number per line) are handled first.
+PRIORITY_FILE="$(dirname "$0")/../steward-priority"
+OPEN=$(gh api "$R/pulls?state=open&base=main&per_page=100" --jq 'sort_by(.number) | .[].number')
+FIRST=$( [[ -s "$PRIORITY_FILE" ]] && grep -xF -f <(echo "$OPEN") "$PRIORITY_FILE" || true)
+ORDERED=$(printf '%s\n%s\n' "$FIRST" "$OPEN" | awk 'NF && !seen[$0]++')
+for n in $ORDERED; do
+	[[ "$SKIP" == *" $n "* ]] && continue
+	pr=$(gh api "$R/pulls/$n")
+	title=$(jq -r .title <<<"$pr")
+	[[ "$title" == *"[WIP"* ]] && continue
+	sha=$(jq -r .head.sha <<<"$pr")
+	body=$(jq -r '.body // ""' <<<"$pr")
+	mstate=$(jq -r .mergeable_state <<<"$pr")
+	if [[ "$mstate" == "unknown" ]]; then
+		node -e 'setTimeout(()=>{}, 3000)'
+		pr=$(gh api "$R/pulls/$n"); mstate=$(jq -r .mergeable_state <<<"$pr")
+	fi
+	deps_open=""
+	for d in $(grep -oiE 'depends on #[0-9]+' <<<"$body" | grep -oE '[0-9]+' | sort -u); do
+		[[ "$(gh api "$R/pulls/$d" --jq .merged)" == "true" ]] || deps_open="$deps_open #$d"
+	done
+	sol="pending"
+	grep -qE 'Sol verdict: approved' <<<"$body" && sol=approved
+	grep -qiE 'sol-review: not applicable' <<<"$body" && sol=n/a
+	state=$(checks_state "$sha")
+	if [[ "$mstate" == "dirty" ]]; then echo "#$n CONFLICT (dirty)  $title"; continue; fi
+	# A PR can hold itself: a "Merge hold: <reason>" line keeps the steward off it until removed.
+	hold=$(grep -m1 -oE 'Merge hold:.*' <<<"$body")
+	if [[ -n "$hold" ]]; then echo "#$n HOLD (ci $state, sol $sol): ${hold#Merge hold: }  $title"; continue; fi
+	# Local holds (scratchpad/steward-hold: "<number> <reason>" per line), e.g. a stack order.
+	lhold=$(awk -v n="$n" '$1==n {$1=""; print substr($0,2); exit}' "$(dirname "$0")/../steward-hold" 2>/dev/null)
+	if [[ -n "$lhold" ]]; then echo "#$n HOLD (local; ci $state, sol $sol): $lhold  $title"; continue; fi
+	if [[ -n "$deps_open" ]]; then echo "#$n waits on$deps_open (ci $state, sol $sol)  $title"; continue; fi
+	if [[ "$state" != success ]]; then echo "#$n ci $state (sol $sol, $mstate)  $title"; continue; fi
+	if [[ "$sol" == pending ]]; then echo "#$n green, waiting for Sol review  $title"; continue; fi
+	if [[ "$mstate" == "behind" ]]; then
+		echo "#$n BEHIND main  $title"
+		((DRY)) || { echo "ACTION update $n $sha"; echo "$n" >"$QUEUE_FILE"; }
+		UPDATED=1
+		continue
+	fi
+	# When did the last green CI run start? Main commits after that were not tested with this PR.
+	since=$(gh api "$R/actions/runs?head_sha=$sha&event=pull_request&per_page=20" --jq '[.workflow_runs[] | select(.name=="CI")] | sort_by(.created_at) | last | .created_at')
+	# A head that already holds everything main has (merging main into it changes no file) was
+	# tested as the post-merge state, e.g. a sibling stacked on the PR that merged just before it.
+	ov=""
+	if git -C "$REPO_DIR" fetch -q origin main "+refs/pull/$n/head:refs/steward/pr$n" 2>/dev/null &&
+		mt=$(git -C "$REPO_DIR" merge-tree --write-tree origin/main "refs/steward/pr$n" 2>/dev/null) &&
+		[[ "$(head -1 <<<"$mt")" == "$(git -C "$REPO_DIR" rev-parse "$sha^{tree}")" ]]; then
+		echo "#$n holds all of main (merging main changes nothing)"
+	else
+		ov=$(overlap_since "$n" "$since" "$sha")
+		# Markdown only, merging cleanly: nothing CI builds or runs changed except the docs, and the
+		# docs guard (docs-guard-check.sh, run before every merge) checks the merged result.
+		if [[ -n "${ov// /}" ]] && ! grep -qvE '\.md$' <<<"$(tr ' ' '\n' <<<"$ov" | grep -v '^$')" &&
+			git -C "$REPO_DIR" merge-tree --write-tree origin/main "refs/steward/pr$n" >/dev/null 2>&1; then
+			echo "#$n main moved only markdown under it (${ov% }), merging cleanly: docs guard before merge"
+			ov=""
+		fi
+	fi
+	if [[ -n "${ov// /}" ]]; then
+		# Merge-queue behaviour: refresh one stale PR per pass. Refreshing the rest now would waste
+		# CI, because merging this one makes them stale again.
+		if ((UPDATED)); then
+			echo "#$n STALE (queued): main moved under ${ov}  $title"
+		else
+			echo "#$n STALE: main moved under ${ov}since its CI ($since)  $title"
+			((DRY)) || { echo "ACTION update $n $sha"; echo "$n" >"$QUEUE_FILE"; }
+			UPDATED=1
+		fi
+		continue
+	fi
+	if [[ "$mstate" != "clean" && "$mstate" != "unstable" ]]; then echo "#$n not mergeable yet ($mstate)  $title"; continue; fi
+	[[ "$mstate" == "unstable" ]] && echo "#$n note: a non-required check is failing (unstable)"
+	if ((DRY)); then
+		echo "#$n READY (dry run)  $title"
+	else
+		echo "ACTION merge $n $sha Merge $title (#$n)"
+		# One merge per pass: the next pass re-checks every other PR against the new main.
+		break
+	fi
+done
+echo "main: $(checks_state "$(gh api "$R/commits/main" --jq .sha)")"
