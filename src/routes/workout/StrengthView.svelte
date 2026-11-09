@@ -15,7 +15,8 @@
     after a deploy) turns the page to 'App updated — reload to continue', never a broken sheet.
   - Under the card, its navigation (Navigation.svelte, loaded after the first render and shown
     once the store can write, as the logger is, its space reserved meanwhile): Previous and Next,
-    Up next, the swipe across the card and, from 1024 px, the side list. Each is a goTo, stored with the workout, so a reload returns to it.
+    Up next (and Finish workout once every exercise is done), the swipe across the card and, from
+    1024 px, the side list. Each is a goTo, stored with the workout, so a reload returns to it.
   - The card's Options button opens the exercise's quick actions (ExerciseActionsSheet.svelte,
     loaded on intent): Machine unavailable, Suggest an alternative, I don't like this exercise
     and Skip exercise. The card then says what became of the slot, and a substitute never shows
@@ -259,7 +260,9 @@
 			</ExerciseCard>
 		</div>
 		<div class="navigation">
-			{#if Navigation && area && active.store}<Navigation {view} {area} store={active.store} />{/if}
+			{#if Navigation && area && active.store}
+				<Navigation {view} {area} store={active.store} onfinish={() => (active.finishing = true)} />
+			{/if}
 		</div>
 	{/if}
 	{#if current && Logger && active.store}

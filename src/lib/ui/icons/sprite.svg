@@ -42,4 +42,5 @@
 <symbol id="trend-up" viewBox="0 0 24 24"><path d="M4 16.5 9.5 11l3.5 3.5L20 7.5"/><path d="M14.5 7.5H20V13"/></symbol>
 <symbol id="trend-down" viewBox="0 0 24 24"><path d="M4 7.5 9.5 13l3.5-3.5 7 7"/><path d="M14.5 16.5H20V11"/></symbol>
 <symbol id="trend-flat" viewBox="0 0 24 24"><path d="M4 12h16"/><path d="M16.5 8.5 20 12l-3.5 3.5"/></symbol>
+<symbol id="more" viewBox="0 0 24 24"><path d="M5.5 13.75a1.75 1.75 0 1 0 0-3.5 1.75 1.75 0 0 0 0 3.5Z" fill="currentColor" stroke="none"/><path d="M12 13.75a1.75 1.75 0 1 0 0-3.5 1.75 1.75 0 0 0 0 3.5Z" fill="currentColor" stroke="none"/><path d="M18.5 13.75a1.75 1.75 0 1 0 0-3.5 1.75 1.75 0 0 0 0 3.5Z" fill="currentColor" stroke="none"/></symbol>
 </svg>
