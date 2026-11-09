@@ -15,7 +15,7 @@ import type {
 } from '#lib/domain/workout/index.ts';
 import { replay } from '#lib/domain/workout/project.ts';
 import { strengthTable } from '#lib/domain/workout/reducers/tables.ts';
-import { restRemaining, stopwatchElapsed } from '#lib/domain/workout/timers.ts';
+import { restRemaining, STOPWATCH_IDLE, stopwatchElapsed } from '#lib/domain/workout/timers.ts';
 import type { WorkoutView } from '#lib/domain/workout/types.ts';
 import { StoreClosedError } from './db';
 import type { StoredWorkout } from './db';
@@ -568,7 +568,8 @@ describe('the probe', () => {
 			kind: 'strength',
 			title: KIT.title,
 			startedAt: iso(T0),
-			pending: 2
+			pending: 2,
+			stopwatch: STOPWATCH_IDLE
 		});
 		expect(await pendingCount()).toBe(2);
 		expect(await store.dispatch(finish()).saved).toBe('saved');

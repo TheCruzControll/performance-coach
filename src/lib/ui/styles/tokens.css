@@ -208,6 +208,9 @@
 	   uses these, never --nav-height. */
 	--nav-inset-bottom: 0px;
 	--nav-inset-left: 0px;
+	/* The resume bar's room while it shows ((app)/ResumeBar.svelte sets it): in the shell,
+	   --nav-inset-bottom includes it, so the content and every bottom chrome clear the bar. */
+	--resume-inset: 0px;
 }
 
 @media (width >= 40rem) {
@@ -219,12 +222,12 @@
 /* In the shell: the bottom bar and the home indicator below 1024 px; from there the rail and
    the left safe area at the left, and the home indicator alone at the bottom. */
 :root:has(.app-nav) {
-	--nav-inset-bottom: calc(var(--nav-height) + var(--safe-bottom));
+	--nav-inset-bottom: calc(var(--nav-height) + var(--safe-bottom) + var(--resume-inset));
 }
 
 @media (width >= 64rem) {
 	:root:has(.app-nav) {
-		--nav-inset-bottom: var(--safe-bottom);
+		--nav-inset-bottom: calc(var(--safe-bottom) + var(--resume-inset));
 		--nav-inset-left: calc(var(--rail-width) + var(--safe-left));
 	}
 }
