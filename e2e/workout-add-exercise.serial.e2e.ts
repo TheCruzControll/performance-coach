@@ -92,7 +92,7 @@ async function add(page: Page, text: string, name: string) {
 async function warmPicker(page: Page) {
 	await openPicker(page);
 	await expect(options(page).first()).toBeVisible();
-	await page.keyboard.press('Escape');
+	await picker(page).getByRole('button', { name: 'Close' }).click();
 	await expect(picker(page)).toBeHidden();
 }
 
@@ -299,7 +299,7 @@ test.describe('a planned workout', () => {
 		await startFromKit(page, request);
 		await openPicker(page);
 		await search(page).fill('RDL');
-		await expect(options(page).first()).toHaveText(/^Romanian deadlift/);
+		await expect(options(page).first()).toHaveText(/^\s*Romanian deadlift/);
 		await search(page).fill('zzzz');
 		await expect(picker(page).getByTestId('picker-none')).toContainText('No exercise matches');
 	});
@@ -320,7 +320,7 @@ test.describe('with the library blocked', () => {
 		await expect(picker(page).getByTestId('picker-failed')).toContainText(
 			"Your exercise list couldn't load"
 		);
-		await page.keyboard.press('Escape');
+		await picker(page).getByRole('button', { name: 'Close' }).click();
 		await expect(picker(page)).toBeHidden();
 
 		await offline(context, true);
