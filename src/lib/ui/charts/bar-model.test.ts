@@ -3,11 +3,25 @@ import {
 	barModel,
 	barReadout,
 	barTable,
+	BRACKET_REACH,
 	CAP_HEADROOM,
+	DIVERGE_MIN_EXTENT,
+	divergingModel,
+	divergingReadout,
+	divergingTable,
 	markName,
+	ON_TARGET_RPE,
+	rangeModel,
+	rangeReadout,
+	rangeTable,
+	rowName,
+	rowsHeight,
 	stepMark,
+	stepRow,
 	type BarChartData,
-	type BarSeries
+	type BarSeries,
+	type DivergingRow,
+	type RangeRow
 } from './bar-model.ts';
 import { STACK_ORDER } from './palette.ts';
 
@@ -273,5 +287,263 @@ describe('barReadout and the table twin', () => {
 		const data = chart([series('strength', [null, 2]), series('combat', [null, 1])]);
 		expect(barTable(data).rows[0]!.values).toEqual([null, null, null]);
 		expect(barModel(data).caps.map((cap) => cap.slot)).toEqual([1]);
+	});
+});
+
+const group = (
+	label: string,
+	value: number | null,
+	range: [number, number] = [10, 20],
+	planned?: number
+): RangeRow => ({
+	key: label.toLowerCase(),
+	label,
+	value: v(value),
+	range,
+	...(planned === undefined ? {} : { planned: v(planned) })
+});
+const ranges = (rows: RangeRow[]) => ({
+	title: 'Hard sets by muscle group',
+	unit: 'sets',
+	token: '--chart-hypertrophy' as const,
+	rows
+});
+
+describe('rangeModel: order', () => {
+	it('ranks the groups largest first, equal values by name and missing ones last', () => {
+		const data = ranges([
+			group('Quads', 12),
+			group('Back', 18),
+			group('Calves', null),
+			group('Chest', 12),
+			group('Abs', null),
+			group('Biceps', 12)
+		]);
+		const order = ['Back', 'Biceps', 'Chest', 'Quads', 'Abs', 'Calves'];
+		expect(rangeModel(data).marks.map((m) => m.row.label)).toEqual(order);
+		// The table twin reads in the chart's order.
+		expect(rangeTable(data).rows.map((row) => row.label)).toEqual(order);
+	});
+
+	it('names each status in words: below, within (both ends included) and above', () => {
+		const data = ranges([
+			group('A', 9),
+			group('B', 10),
+			group('C', 20),
+			group('D', 21),
+			group('E', null)
+		]);
+		expect(rangeModel(data).marks.map((m) => [m.row.label, m.status])).toEqual([
+			['D', 'above'],
+			['C', 'within'],
+			['B', 'within'],
+			['A', 'below'],
+			['E', null]
+		]);
+		expect(rangeTable(data).rows.map((row) => row.values.at(-1))).toEqual([
+			'Above range',
+			'Within range',
+			'Within range',
+			'Below range',
+			null
+		]);
+	});
+});
+
+describe('rangeModel: bars, brackets and the planned tick', () => {
+	it('draws each bar from zero and its range as a bracket on one shared axis', () => {
+		const { marks, ticks } = rangeModel(ranges([group('Chest', 15), group('Back', 5)]));
+		// 0–20 on a step of 5.
+		expect(ticks.map((t) => t.text)).toEqual(['0', '5', '10', '15', '20']);
+		expect(ticks.map((t) => t.at)).toEqual([0, 25, 50, 75, 100]);
+		expect(marks.map((m) => m.width)).toEqual([75, 25]);
+		for (const m of marks) expect(m.bracket).toEqual({ left: 50, width: 50, open: false });
+	});
+
+	it('clips a range reaching far past every value at the axis end, and draws it open', () => {
+		// Largest value, plan or low: 6; the axis reaches for highs up to 6 × BRACKET_REACH.
+		const { marks, ticks } = rangeModel(
+			ranges([group('Calves', 6, [4, 30]), group('Abs', 2, [4, 8])])
+		);
+		expect(BRACKET_REACH).toBe(1.5);
+		expect(ticks.at(-1)!.text).toBe('10');
+		const calves = marks.find((m) => m.row.label === 'Calves')!;
+		expect(calves.bracket).toEqual({ left: 40, width: 60, open: true });
+		expect(calves.width).toBe(60);
+		// A range that ends inside the axis stays closed.
+		expect(marks.find((m) => m.row.label === 'Abs')!.bracket).toEqual({
+			left: 40,
+			width: 40,
+			open: false
+		});
+	});
+
+	it('stretches the axis to a high within reach, so its bracket closes', () => {
+		const { marks } = rangeModel(ranges([group('Chest', 14, [10, 20])]));
+		expect(marks[0]!.bracket.open).toBe(false);
+		expect(marks[0]!.bracket.left + marks[0]!.bracket.width).toBe(100);
+	});
+
+	it('puts the planned tick at the plan on the same axis, and the plan counts in the axis', () => {
+		const { marks, ticks } = rangeModel(
+			ranges([group('Chest', 12, [10, 20], 16), group('Back', 8, [10, 20], 30), group('Arms', 4)])
+		);
+		expect(ticks.at(-1)!.text).toBe('30');
+		const tick = (label: string) => marks.find((m) => m.row.label === label)!.tick;
+		expect(tick('Chest')).toBeCloseTo((16 / 30) * 100);
+		expect(tick('Back')).toBe(100);
+		expect(tick('Arms')).toBeNull();
+	});
+
+	it('draws nothing for a missing value but keeps its bracket, and says No data', () => {
+		const data = ranges([group('Chest', 14), group('Back', null, [10, 20], 12)]);
+		const back = rangeModel(data).marks[1]!;
+		expect(back.width).toBe(0);
+		expect(back.bracket.width).toBeGreaterThan(0);
+		expect(rangeReadout(data, 1)).toEqual({
+			heading: 'Back',
+			rows: [
+				{ label: 'Done', value: 'No data' },
+				{ label: 'Target', value: '10–20 sets' },
+				{ label: 'Planned', value: '12 sets' },
+				{ label: 'Status', value: 'No data' }
+			]
+		});
+	});
+});
+
+describe('rangeReadout and the table twin', () => {
+	it('says what was done, the range, the plan and the status in the table’s words', () => {
+		const data = ranges([group('Chest', 22, [10, 20], 18)]);
+		expect(rangeTable(data)).toEqual({
+			rowHeader: 'Muscle group',
+			columns: [
+				{ label: 'Done', unit: 'sets' },
+				{ label: 'Target', unit: 'sets' },
+				{ label: 'Planned', unit: 'sets' },
+				{ label: 'Status' }
+			],
+			rows: [{ label: 'Chest', values: ['22', '10–20', '18', 'Above range'] }]
+		});
+		expect(rowName(rangeReadout(data, 0))).toBe(
+			'Chest. Done 22 sets, Target 10–20 sets, Planned 18 sets, Status Above range'
+		);
+	});
+
+	it('has no Planned column when nothing was planned', () => {
+		const columns = rangeTable(ranges([group('Chest', 12)])).columns.map((c) => c.label);
+		expect(columns).toEqual(['Done', 'Target', 'Status']);
+	});
+});
+
+const lift = (label: string, actual: number | null, target: number | null = 8): DivergingRow => ({
+	key: label.toLowerCase(),
+	label,
+	actual,
+	target
+});
+const diverging = (rows: DivergingRow[]) => ({ title: 'RPE against target', rows });
+
+describe('divergingModel: around zero', () => {
+	it('starts every bar at zero in the middle, below it to the left and above it to the right', () => {
+		const { zero, marks, ticks } = divergingModel(
+			diverging([lift('Squat', 9), lift('Bench', 7), lift('Row', 8)])
+		);
+		expect(zero).toBe(50);
+		expect(ticks.map((t) => t.text)).toEqual(['−2', '−1', '0', '1', '2']);
+		expect(ticks.filter((t) => t.zero).map((t) => t.at)).toEqual([50]);
+		const [squat, bench, row] = marks;
+		expect([squat!.left, squat!.width]).toEqual([50, 25]);
+		expect([bench!.left, bench!.width]).toEqual([25, 25]);
+		expect([row!.left, row!.width]).toEqual([50, 0]);
+	});
+
+	it('keeps the axis symmetric and at least ±DIVERGE_MIN_EXTENT, widening for a bigger miss', () => {
+		expect(DIVERGE_MIN_EXTENT).toBe(2);
+		const small = divergingModel(diverging([lift('Squat', 8.5)]));
+		expect([small.ticks[0]!.text, small.ticks.at(-1)!.text]).toEqual(['−2', '2']);
+		const big = divergingModel(diverging([lift('Squat', 5)]));
+		expect([big.ticks[0]!.text, big.ticks.at(-1)!.text]).toEqual(['−4', '4']);
+		expect(big.zero).toBe(50);
+		expect(big.marks[0]!.left).toBeCloseTo(12.5);
+	});
+
+	it('maps a difference within ±0.5 to the midpoint, and past it to a pole', () => {
+		expect(ON_TARGET_RPE).toBe(0.5);
+		const { marks } = divergingModel(
+			diverging([
+				lift('A', 7.4),
+				lift('B', 7.5),
+				lift('C', 8),
+				lift('D', 8.5),
+				lift('E', 8.6),
+				lift('F', null),
+				lift('G', 8, null)
+			])
+		);
+		expect(marks.map((m) => [m.tone, m.text])).toEqual([
+			['below', '−0.6'],
+			['zero', '−0.5'],
+			['zero', '0'],
+			['zero', '+0.5'],
+			['above', '+0.6'],
+			[null, null],
+			[null, null]
+		]);
+	});
+
+	it('classifies the unrounded difference, so ±0.54 is past the band though it reads ±0.5', () => {
+		const { marks } = divergingModel(
+			diverging([lift('A', 7.46), lift('B', 8.54), lift('C', 2.2, 1.7), lift('D', 1.7, 2.2)])
+		);
+		expect(marks.map((m) => [m.tone, m.text])).toEqual([
+			['below', '−0.5'],
+			['above', '+0.5'],
+			['zero', '+0.5'],
+			['zero', '−0.5']
+		]);
+	});
+
+	it('keeps the rows in the order given', () => {
+		const { marks } = divergingModel(diverging([lift('Squat', 9), lift('Bench', 6)]));
+		expect(marks.map((m) => m.row.label)).toEqual(['Squat', 'Bench']);
+	});
+});
+
+describe('divergingReadout and the table twin', () => {
+	it('says actual, target, the signed difference and its side in words', () => {
+		const data = diverging([lift('Squat', 9.5), lift('Bench', null)]);
+		expect(divergingTable(data).rows).toEqual([
+			{ label: 'Squat', values: ['9.5', '8', '+1.5', 'Harder'] },
+			{ label: 'Bench', values: [null, '8', null, null] }
+		]);
+		expect(rowName(divergingReadout(data, 0))).toBe(
+			'Squat. Actual RPE 9.5, Target RPE 8, Difference RPE +1.5, Status Harder'
+		);
+		expect(divergingReadout(data, 1).rows.map((row) => row.value)).toEqual([
+			'No data',
+			'RPE 8',
+			'No data',
+			'No data'
+		]);
+		expect(divergingTable(diverging([lift('Row', 6.5)])).rows[0]!.values.at(-1)).toBe('Easier');
+	});
+});
+
+describe('stepRow and rowsHeight', () => {
+	it('moves up and down the rows, stops at the ends, and Home and End jump there', () => {
+		expect(stepRow(4, 1, 'ArrowDown')).toBe(2);
+		expect(stepRow(4, 1, 'ArrowRight')).toBe(2);
+		expect(stepRow(4, 1, 'ArrowUp')).toBe(0);
+		expect(stepRow(4, 1, 'ArrowLeft')).toBe(0);
+		expect(stepRow(4, 0, 'ArrowUp')).toBe(0);
+		expect(stepRow(4, 3, 'ArrowDown')).toBe(3);
+		expect(stepRow(4, 2, 'Home')).toBe(0);
+		expect(stepRow(4, 0, 'End')).toBe(3);
+		expect(stepRow(4, 0, 'Enter')).toBeNull();
+	});
+
+	it('reserves a row’s room for each row plus the legend and the axis band', () => {
+		expect(rowsHeight(5)).toBe('18.25rem');
 	});
 });

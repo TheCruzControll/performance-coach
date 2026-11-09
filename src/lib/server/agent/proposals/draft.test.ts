@@ -13,6 +13,7 @@ import { executeToolCalls } from '../tools/execute.ts';
 import { toStrictJsonSchema } from '../tools/schema.ts';
 import {
 	DRAFT_KINDS,
+	draftInTool,
 	draftProposal,
 	DraftError,
 	type DraftCallRecord,
@@ -242,5 +243,27 @@ describe('draftProposal', () => {
 			draftOf('workout_update')
 		);
 		expect(structured).toHaveBeenCalledOnce();
+	});
+});
+
+describe('draftInTool', () => {
+	it('drafts through the turn’s drafter while it admits, then refuses with no call', async () => {
+		const provider = playing({ json: draftOf('workout_update') });
+		const structured = vi.spyOn(provider, 'structured');
+		const { ctx, calls } = context(provider);
+		let left = 1;
+		const drafter = { provider, onCall: ctx.onCall, admit: () => left-- > 0 };
+		const tool = { ...ctx, drafter };
+		await expect(draftInTool('workout_update', INTENT, tool)).resolves.toEqual(
+			draftOf('workout_update')
+		);
+		expect(calls).toMatchObject([{ purpose: 'draft', kind: 'workout_update' }]);
+
+		const spent = await failure(draftInTool('workout_update', INTENT, tool));
+		expect(spent).toMatchObject({ reason: 'drafts_spent', code: 'DRAFT_FAILED' });
+		const none = await failure(draftInTool('workout_update', INTENT, { ...ctx, drafter: null }));
+		expect(none).toMatchObject({ reason: 'draft_unavailable' });
+		expect(structured).toHaveBeenCalledOnce();
+		expect(calls).toHaveLength(1);
 	});
 });

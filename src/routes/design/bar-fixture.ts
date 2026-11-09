@@ -1,10 +1,20 @@
 /**
  * /design → Charts: the bar chart's fixtures, each the data a server would send and its frame
  * (title, context, summary and table twin, from barTable so the table holds every value the
- * chart shows). e2e/design-charts.e2e.ts reads the same numbers.
+ * chart shows). Then the horizontal ones: a week's hard sets by muscle group against their target
+ * ranges, and a session's RPE against target. e2e/design-charts.e2e.ts reads the same numbers.
  */
 import type { DisciplineTone } from '#lib/domain/profile/catalog.ts';
-import { barTable, type BarChartData, type BarSeries } from '#lib/ui/charts/bar-model.ts';
+import {
+	barTable,
+	divergingTable,
+	rangeTable,
+	rowsHeight,
+	type BarChartData,
+	type BarSeries,
+	type DivergingBarsData,
+	type RangeBarsData
+} from '#lib/ui/charts/bar-model.ts';
 import { SERIES_TOKEN } from '#lib/ui/charts/palette.ts';
 import { weeks } from './line-fixture.ts';
 
@@ -83,3 +93,75 @@ export const barFrame = (fixture: BarFixture) => ({
 	summary: fixture.summary,
 	table: barTable(fixture.data)
 });
+
+const sets = (
+	label: string,
+	value: number,
+	planned: number,
+	range: [number, number] = [10, 20]
+) => ({
+	key: label.toLowerCase(),
+	label,
+	value: { value, text: String(value) },
+	range,
+	planned: { value: planned, text: String(planned) }
+});
+
+/** Given unranked: the chart and its table put the largest first, Glutes before Hamstrings. */
+const RANGE_DATA: RangeBarsData = {
+	title: 'Hard sets by muscle group',
+	unit: 'sets',
+	token: SERIES_TOKEN.hypertrophy,
+	rows: [
+		sets('Shoulders', 9, 12),
+		sets('Hamstrings', 12, 12),
+		sets('Back', 18, 18),
+		sets('Quads', 22, 16),
+		sets('Glutes', 12, 12),
+		sets('Chest', 14, 16)
+	]
+};
+
+export const RANGE_FIXTURE = {
+	id: 'range-bars',
+	data: RANGE_DATA,
+	height: rowsHeight(RANGE_DATA.rows.length),
+	frame: {
+		title: RANGE_DATA.title,
+		context: ['Week of 9 Nov', 'Against your target ranges', 'Measured'],
+		summary:
+			'Four of six groups were within 10–20 hard sets; quads were above at 22 and shoulders below at 9.',
+		table: rangeTable(RANGE_DATA)
+	}
+};
+
+const rpe = (label: string, actual: number | null, target = 8) => ({
+	key: label.toLowerCase(),
+	label,
+	actual,
+	target
+});
+
+const DIVERGING_DATA: DivergingBarsData = {
+	title: 'RPE against target',
+	rows: [
+		rpe('Back squat', 8.5),
+		rpe('Bench press', 9.5),
+		rpe('Romanian deadlift', 7),
+		rpe('Pull-up', 8),
+		rpe('Leg press', null)
+	]
+};
+
+export const DIVERGING_FIXTURE = {
+	id: 'diverging-bars',
+	data: DIVERGING_DATA,
+	height: rowsHeight(DIVERGING_DATA.rows.length),
+	frame: {
+		title: DIVERGING_DATA.title,
+		context: ['Upper and lower, 12 Nov', 'Against target RPE', 'Measured'],
+		summary:
+			'Bench press felt 1.5 harder than planned and the Romanian deadlift 1 easier; squat and pull-ups were on target.',
+		table: divergingTable(DIVERGING_DATA)
+	}
+};
