@@ -42,6 +42,8 @@ export const ICON_NAMES: readonly IconName[] = [
 	'pencil',
 	'sign-out',
 	'clock',
+	'play',
+	'pause',
 	'trend-up',
 	'trend-down',
 	'trend-flat',

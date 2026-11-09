@@ -162,7 +162,10 @@
 >
 	<WorkoutHeader title={waiting ? null : (shown?.workout.title ?? 'Workout')}>
 		{#snippet time()}
-			{#if shown && Clock && restore.phase === 'active'}<Clock view={shown} />{/if}
+			{#if shown && Clock && restore.phase === 'active'}<Clock
+					view={shown}
+					store={active.store}
+				/>{/if}
 		{/snippet}
 		{#snippet status()}
 			{#if ui && active.store}
