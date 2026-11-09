@@ -102,7 +102,8 @@ describe('shownMessages', () => {
 				row({ display: { blocks: [] } }),
 				row({ kind: 'display_only', status: 'interrupted', display: { blocks: 'oops' } }),
 				row({ kind: 'owner_message', display: { text: 42 } }),
-				row({ kind: 'context', display: { text: 'never shown' } })
+				row({ kind: 'context', display: { text: 'never shown', blocks: [block(0)] } }),
+				row({ kind: 'tool_results', display: { blocks: [block(1)] } })
 			])
 		).toEqual([]);
 	});
