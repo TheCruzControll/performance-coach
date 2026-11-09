@@ -102,8 +102,13 @@
 		};
 		const prefill = nextSet(performed, slot.sets, slot.kit, unit);
 		const total = slot.kit?.sets.length;
-		const target = prefill.planned && targetText(prefill.planned);
-		const key = `${slot.position}:${prefill.setIndex}`;
+		// A substitute never shows the planned exercise's load (prefill.ts).
+		const substitute = slot.kit !== null && slot.kit.exercise.id !== slot.exerciseId;
+		const target =
+			prefill.planned &&
+			targetText(substitute ? { ...prefill.planned, prescribedWeight: null } : prefill.planned);
+		// Per exercise performed: a swap never carries the original's edits into the substitute.
+		const key = `${slot.position}:${slot.exerciseId}:${prefill.setIndex}`;
 		// Every planned set done: an extra set only when asked for.
 		const extra = !open && slot.kit !== null;
 		if (extra && adding !== key) return { key, extra, prefill: null };

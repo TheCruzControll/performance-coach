@@ -12,12 +12,15 @@ import {
 	HR_MIN_RUNS,
 	longRuns,
 	paceByType,
+	plannedMetres,
+	plannedMileage,
 	runFrequency,
 	runPace,
 	weeklyRunning,
 	wholeRun
 } from './running';
-import type { RunFact, RunFactSegment } from './running';
+import type { PlannedRun, RunFact, RunFactSegment } from './running';
+import type { RunSegment } from '../training/types';
 
 // Today is a Wednesday. The four complete weeks before it, Monday first:
 const TODAY = '2026-11-04';
@@ -499,5 +502,65 @@ describe('heartRateByType', () => {
 		expect(heartRateByType(runs, WINDOW, UTC)).toMatchObject([
 			{ sessionType: 'tempo_run', tracked: 4, avgHr: 150 }
 		]);
+	});
+});
+
+describe('planned mileage', () => {
+	const planSeg = (kind: RunSegmentKind, over: Partial<RunSegment> = {}): RunSegment => ({
+		...{ kind, repeatGroup: null, repeats: null, distanceMetres: null, durationSeconds: null },
+		...{ paceMinSecondsPerKm: null, paceMaxSecondsPerKm: null, hrZone: null, targetRpe: null },
+		...over
+	});
+	const reps = { repeatGroup: 1, repeats: 4 };
+	const intervals = [
+		planSeg('warm_up', { distanceMetres: 2000 }),
+		planSeg('interval', { ...reps, distanceMetres: 800 }),
+		planSeg('recovery', { ...reps, distanceMetres: 200 }),
+		planSeg('cool_down', { distanceMetres: 1500 })
+	];
+	const planned = (
+		lineage: string,
+		date: string,
+		segments: RunSegment[],
+		more = {}
+	): PlannedRun => ({
+		...{ lineage, date, status: 'planned', segments },
+		...more
+	});
+
+	it('counts each repeat of a group and gives none for a run planned by time', () => {
+		expect(plannedMetres(intervals)).toBe(2000 + 4 * (800 + 200) + 1500);
+		expect(plannedMetres([planSeg('long', { distanceMetres: 18000 })])).toBe(18000);
+		const timedRecoveries = intervals.map((s) =>
+			s.kind === 'recovery' ? { ...s, distanceMetres: null, durationSeconds: 90 } : s
+		);
+		expect(plannedMetres(timedRecoveries)).toBeNull();
+		expect(plannedMetres([])).toBeNull();
+	});
+
+	it('adds each week by the day a run is planned on, skipped sessions and timed runs left out', () => {
+		const long = [planSeg('long', { distanceMetres: 16000 })];
+		const timed = [planSeg('easy', { durationSeconds: 1800 })];
+		const weeks = plannedMileage(
+			[
+				planned('a', WEEKS[2], intervals),
+				planned('b', addDays(WEEKS[2], 6), long),
+				planned('c', addDays(WEEKS[2], 3), long, { status: 'skipped' }),
+				planned('d', LAST_MONDAY, timed),
+				planned('e', TODAY, long, { status: 'moved' }),
+				planned('f', addDays(TODAY, 7), long)
+			],
+			WINDOW
+		);
+		expect(weeks.map((w) => w.weekStart)).toEqual([...WEEKS, THIS_MONDAY]);
+		expect(week(weeks, WEEKS[0])).toEqual({
+			weekStart: WEEKS[0],
+			inProgress: false,
+			metres: null,
+			byTime: 0
+		});
+		expect(week(weeks, WEEKS[2])).toMatchObject({ metres: 7500 + 16000, byTime: 0 });
+		expect(week(weeks, LAST_MONDAY)).toMatchObject({ metres: null, byTime: 1 });
+		expect(week(weeks, THIS_MONDAY)).toMatchObject({ inProgress: true, metres: 16000 });
 	});
 });

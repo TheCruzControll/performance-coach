@@ -23,7 +23,9 @@ export const never = () => new Promise<never>(() => {});
 
 export const CHART_BODIES = {
 	line: () => (import.meta.env.SSR ? never() : import('./bodies/LineChart.svelte')),
-	bar: () => (import.meta.env.SSR ? never() : import('./bodies/BarChart.svelte'))
+	bar: () => (import.meta.env.SSR ? never() : import('./bodies/BarChart.svelte')),
+	range: () => (import.meta.env.SSR ? never() : import('./bodies/RangeBars.svelte')),
+	diverging: () => (import.meta.env.SSR ? never() : import('./bodies/DivergingBars.svelte'))
 } as const satisfies Record<string, ChartBodyLoader>;
 
 export type ChartBodyName = keyof typeof CHART_BODIES;

@@ -68,6 +68,10 @@ export interface SystemDay {
 	typical: number | null;
 	/** M1's acuteChronicRatio over the system's series to this day; null under 28 days. */
 	ratio: number | null;
+	/**
+	 * The level at the end of the day, its own sessions included: a steady week's hardest days end
+	 * elevated (the legs at about 1.5 ×). Whether a system is fresh for a day is readinessOn's.
+	 */
 	level: FatigueLevel;
 }
 

@@ -102,20 +102,19 @@ async function benchId(db: Executor) {
 	return (await resolveKeys(['bench_press'], { db })).get('bench_press')!.id;
 }
 
+/** A workout of the owner's, by its client id (the id notes name it by). */
 async function workoutOf(db: Executor, ownerId: string) {
-	const [row] = await db
-		.insert(workouts)
-		.values({
-			ownerId,
-			clientId: crypto.randomUUID(),
-			kind: 'strength',
-			discipline: 'strength',
-			sessionType: 'strength',
-			title: 'Full body A',
-			startedAt: new Date(`${MONDAY}T07:00:00Z`)
-		})
-		.returning({ id: workouts.id });
-	return row!.id;
+	const clientId = crypto.randomUUID();
+	await db.insert(workouts).values({
+		ownerId,
+		clientId,
+		kind: 'strength',
+		discipline: 'strength',
+		sessionType: 'strength',
+		title: 'Full body A',
+		startedAt: new Date(`${MONDAY}T07:00:00Z`)
+	});
+	return clientId;
 }
 
 describe('accepting a goal_update', () => {
@@ -528,7 +527,10 @@ describe('coach notes', () => {
 					deps
 				)
 			).rejects.toThrow('workout not found');
-			await db.update(workouts).set({ deletedAt: new Date() }).where(eq(workouts.id, workoutId));
+			await db
+				.update(workouts)
+				.set({ deletedAt: new Date() })
+				.where(eq(workouts.clientId, workoutId));
 			await expect(
 				saveWorkoutAnalysis(
 					ownerId,

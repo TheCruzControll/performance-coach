@@ -137,7 +137,11 @@ export const icons = {
 		'M10.5 12H20',
 		'M16 8l4 4-4 4'
 	],
-	clock: ['M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z', 'M12 7.5V12l3 2']
+	clock: ['M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z', 'M12 7.5V12l3 2'],
+	// A metric's direction (M6 trend tiles): the same line rising, falling or level, head at the end.
+	'trend-up': ['M4 16.5 9.5 11l3.5 3.5L20 7.5', 'M14.5 7.5H20V13'],
+	'trend-down': ['M4 7.5 9.5 13l3.5-3.5 7 7', 'M14.5 16.5H20V11'],
+	'trend-flat': ['M4 12h16', 'M16.5 8.5 20 12l-3.5 3.5']
 } as const satisfies Record<string, readonly string[]>;
 
 export type IconName = keyof typeof icons;

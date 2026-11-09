@@ -68,6 +68,7 @@ import { runMinutes } from '../programs/edits';
 import { listExercisePreferences } from '../training/preferences';
 import { TrainingInputError } from '../training/shared';
 import { APPLIERS, type Applier, type ApplyOutcome } from './apply';
+import { SESSION_ENDED, substitutionEnded } from './apply/session';
 import {
 	CoachInputError,
 	CoachNotFoundError,
@@ -583,7 +584,19 @@ export async function acceptProposal(
 			rationale: row.rationale,
 			payload: row.payload
 		};
-		const { proposal, today } = await checkAgainstToday(ownerId, stored, resolved);
+		const checked = await checkAgainstToday(ownerId, stored, resolved).catch(async (error) => {
+			// A refused substitution whose workout or session is over is superseded instead.
+			const parsed = validate(proposalSchema, stored);
+			if (!(error instanceof ProposalRefusedError) || !parsed.ok) throw error;
+			if (!(await substitutionEnded(ownerId, parsed.data, resolved.db))) throw error;
+			return null;
+		});
+		if (!checked) {
+			const superseded = { supersededReason: SESSION_ENDED, closedAt: at };
+			await repo.decide(ownerId, row.id, { status: 'superseded', ...superseded, updatedAt: at });
+			return { proposal: await view(repo, ownerId, row.id), changed: true };
+		}
+		const { proposal, today } = checked;
 		const apply = APPLIERS[proposal.kind] as Applier<ProposalKind>;
 		const outcome = await apply({
 			ownerId,
