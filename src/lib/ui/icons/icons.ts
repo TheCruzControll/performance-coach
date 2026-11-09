@@ -142,7 +142,11 @@ export const icons = {
 	pause: [
 		'M7.5 5h2a.75.75 0 0 1 .75.75v12.5a.75.75 0 0 1-.75.75h-2a.75.75 0 0 1-.75-.75V5.75A.75.75 0 0 1 7.5 5Z',
 		'M14.5 5h2a.75.75 0 0 1 .75.75v12.5a.75.75 0 0 1-.75.75h-2a.75.75 0 0 1-.75-.75V5.75A.75.75 0 0 1 14.5 5Z'
-	]
+	],
+	// A metric's direction (M6 trend tiles): the same line rising, falling or level, head at the end.
+	'trend-up': ['M4 16.5 9.5 11l3.5 3.5L20 7.5', 'M14.5 7.5H20V13'],
+	'trend-down': ['M4 7.5 9.5 13l3.5-3.5 7 7', 'M14.5 16.5H20V11'],
+	'trend-flat': ['M4 12h16', 'M16.5 8.5 20 12l-3.5 3.5']
 } as const satisfies Record<string, readonly string[]>;
 
 export type IconName = keyof typeof icons;

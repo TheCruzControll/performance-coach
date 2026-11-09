@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { createMutation, MUTATION_TYPES } from '#lib/domain/workout/index.ts';
+import { JUST_SWAP_REASON } from '#lib/domain/workout/substitution.ts';
 import { fixFor } from './registry';
 
 const SET_TYPES = ['set.log', 'set.skip', 'set.edit'];
-const EDITOR_TYPES = ['run.log', 'run.segment', 'other.log'];
+const EDITOR_TYPES = ['run.log', 'run.segment', 'other.log', 'exercise.substitute'];
+const REWRITE_TYPES = ['workout.start', 'exercise.dislike'];
 
 describe('the Fix registry', () => {
 	it.each(MUTATION_TYPES)(
@@ -16,7 +18,7 @@ describe('the Fix registry', () => {
 					? 'set-editor'
 					: EDITOR_TYPES.includes(type)
 						? 'editor'
-						: type === 'workout.start'
+						: REWRITE_TYPES.includes(type)
 							? 'rewrite'
 							: 'discard-only'
 			);
@@ -44,5 +46,44 @@ describe('the Fix registry', () => {
 			...start,
 			payload: { ...start.payload, plannedSessionId: null, plannedLineage: null, programId: null }
 		});
+	});
+
+	it('re-sends a refused dislike as just today’s swap, under its id, with no preference', async () => {
+		const entry = await fixFor('exercise.dislike');
+		const dislike = createMutation('exercise.dislike', {
+			workoutId: '00000000-0000-4000-8000-0000000000d1',
+			at: '2026-11-07T08:10:00.000Z',
+			payload: {
+				position: 2,
+				plannedLineage: '00000000-0000-4000-8000-0000000000d5',
+				fromExerciseId: '00000000-0000-4000-8000-0000000000e1',
+				toExerciseId: '00000000-0000-4000-8000-0000000000e2',
+				note: 'Hurts my knees'
+			}
+		});
+		if (entry.kind !== 'rewrite') throw new Error('exercise.dislike has a rewrite');
+		expect(entry.label).toBe('Just swap it today');
+		expect(entry.rewrite(dislike)).toEqual({
+			v: 1,
+			id: dislike.id,
+			type: 'exercise.substitute',
+			workoutId: dislike.workoutId,
+			entityId: dislike.entityId,
+			at: dislike.at,
+			payload: {
+				position: 2,
+				plannedLineage: '00000000-0000-4000-8000-0000000000d5',
+				fromExerciseId: '00000000-0000-4000-8000-0000000000e1',
+				toExerciseId: '00000000-0000-4000-8000-0000000000e2',
+				reason: JUST_SWAP_REASON
+			}
+		});
+	});
+
+	it('reopens a refused swap’s alternatives, and keeps the exercise when a skip is discarded', async () => {
+		const swap = await fixFor('exercise.substitute');
+		if (swap.kind !== 'editor') throw new Error('exercise.substitute has an editor');
+		expect((await swap.editor()).default).toBeTypeOf('function');
+		expect((await fixFor('exercise.skip')).discard).toBe('Discard keeps the exercise.');
 	});
 });
