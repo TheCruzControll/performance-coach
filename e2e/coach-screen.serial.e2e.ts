@@ -50,6 +50,8 @@ async function auditThemes(page: Page, path: string) {
 			theme
 		);
 		await gotoHydrated(page, path);
+		// A conversation's code loads on demand: audit the conversation, not its loading rows.
+		await expect(page.getByTestId('thread-loading')).toHaveCount(0);
 		await page.evaluate(() => document.fonts.ready);
 		await page.waitForTimeout(400); // entrance transitions settle: contrast on final colours
 		const { violations } = await new AxeBuilder({ page })

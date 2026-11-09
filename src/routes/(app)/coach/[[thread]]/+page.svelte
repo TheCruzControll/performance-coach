@@ -10,7 +10,6 @@
 	import CoachHeader from './CoachHeader.svelte';
 	import ContextChip from './ContextChip.svelte';
 	import Suggestions from './Suggestions.svelte';
-	import Thread from './Thread.svelte';
 	import ThreadList from './ThreadList.svelte';
 	import type { ThreadRowView } from './words';
 	import type { PageData, PageProps } from './$types';
@@ -76,6 +75,23 @@
 	const switching = $derived(
 		navigating.to?.route.id === ROUTE && navigating.to.url.pathname !== page.url.pathname
 	);
+
+	// ---- The conversation's code -------------------------------------------------------------
+
+	/**
+	 * A conversation's code (its answer blocks, their words and dates) loads on demand, in the
+	 * browser only, so the list's initial JavaScript stays within budget (docs/performance.md). It
+	 * starts with the navigation that opens one, alongside its data; until it arrives the
+	 * conversation shows loading rows, and a failed import offers Retry, which imports again.
+	 */
+	const never = () => new Promise<never>(() => {});
+	const wantsThread = $derived(Boolean(page.params.thread) || switching);
+	let threadAttempt = $state(0);
+	const threadCode = $derived.by(() => {
+		void threadAttempt;
+		if (!wantsThread) return null;
+		return import.meta.env.SSR ? never() : import('./Thread.svelte');
+	});
 </script>
 
 <svelte:head>
@@ -92,7 +108,17 @@
 			<Icon name="chevron-left" size={18} /> All conversations
 		</a>
 		{#if ready?.thread}
-			<Thread thread={ready.thread} />
+			{#await threadCode}
+				<LoadingRows label="Loading the conversation…" data-testid="thread-loading" />
+			{:then code}
+				{#if code}<code.default thread={ready.thread} />{/if}
+			{:catch}
+				<CoachNotice
+					kind="chunk_failed"
+					onretry={() => threadAttempt++}
+					data-testid="thread-failed"
+				/>
+			{/await}
 		{:else}
 			<CoachNotice kind="load_failed" onretry={retry} {retrying} data-testid="load-failed" />
 		{/if}
