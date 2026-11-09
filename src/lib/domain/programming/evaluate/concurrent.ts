@@ -498,15 +498,20 @@ export function checkConcurrent(
 	context: WeekContext,
 	traitsOf?: TraitsOf
 ): ConcurrentFinding[] {
+	// A session's canonical JSON breaks a tie of date and order only: written when a tie needs it.
+	const keys = new Map<EvaluatedSession, string>();
+	const keyOf = (session: EvaluatedSession) => {
+		if (!keys.has(session)) keys.set(session, canonicalJson(session));
+		return keys.get(session)!;
+	};
 	const rows = sessions
-		.map((session) => ({ session, key: canonicalJson(session) }))
-		.sort(
+		.toSorted(
 			(a, b) =>
-				compareText(a.session.date, b.session.date) ||
-				a.session.orderInDay - b.session.orderInDay ||
-				compareText(a.key, b.key)
+				compareText(a.date, b.date) ||
+				a.orderInDay - b.orderInDay ||
+				compareText(keyOf(a), keyOf(b))
 		)
-		.map(({ session }) => ({
+		.map((session) => ({
 			session,
 			demand: demandOf(session, traitsOf),
 			load: fromPlanned(session, traitsOf)
