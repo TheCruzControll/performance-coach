@@ -265,8 +265,14 @@
 			if (found === logger) return;
 			if (logger) sizes.unobserve(logger);
 			logger = found;
-			if (found) sizes.observe(found);
-			else loggerHeight = 0;
+			if (!found) {
+				loggerHeight = 0;
+				return;
+			}
+			sizes.observe(found);
+			// Measured now, not at the observer's first report a frame later: the pill that appears
+			// with the first rest, or a new logger, never shows at the foot before it moves above it.
+			loggerHeight = found.offsetHeight;
 		};
 		const children = new MutationObserver(find);
 		children.observe(column, { childList: true });

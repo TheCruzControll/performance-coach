@@ -257,6 +257,9 @@ test.describe('the workout screen (IndexedDB only)', () => {
 		await gotoWorkout(page);
 		await page.evaluate(() => (document.documentElement.style.fontSize = '150%'));
 		await page.waitForFunction(() => document.fonts.status === 'loaded');
+		// The sync status loads on idle after the store, and at 150 % takes a row of its own under
+		// Minimise: the header is measured once it is there, so only the pause can move it.
+		await expect(page.getByTestId('sync-status')).toBeVisible();
 		const header = page.getByTestId('workout-header');
 		const title = page.getByRole('heading', { level: 1 });
 		const boxes = async () => [await header.boundingBox(), await title.boundingBox()];
