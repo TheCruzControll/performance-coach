@@ -26,8 +26,15 @@ export const GROUPS = ['main', 'serial', 'alone', 'sweeps'] as const;
 export type Engine = (typeof ENGINES)[number];
 export type Group = (typeof GROUPS)[number];
 
-/** The legs CI runs (.github/workflows/ci.yml): every group on both engines, `alone` on Chromium. */
-export const LEGS: readonly { group: Group; engine: Engine }[] = GROUPS.flatMap((group) =>
+/**
+ * The legs CI runs (.github/workflows/ci.yml): every group on both engines, `alone` on Chromium.
+ * `sweeps` has no leg until a *.sweep.e2e.ts spec exists: its legs would run only the setup the
+ * other legs already run. The legs' --list union test (scripts/e2e-projects.test.ts) fails the
+ * day a sweep spec lands without them.
+ */
+export const LEGS: readonly { group: Group; engine: Engine }[] = GROUPS.filter(
+	(group) => group !== 'sweeps'
+).flatMap((group) =>
 	(group === 'alone' ? (['chromium'] as const) : ENGINES).map((engine) => ({ group, engine }))
 );
 
