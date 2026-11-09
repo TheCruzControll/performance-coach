@@ -4,8 +4,12 @@
  * that workout-flow names next, so the store writes both in one IndexedDB transaction or neither.
  * A skipped set advances like a logged one. Pure: the view is the one on screen, and the flow
  * reads it with the new set already in place.
+ * A completed set also starts the rest the flow names (after a straight set, and after a
+ * superset round's last member), when the device's settings start it by itself; a skipped set
+ * starts none, since nothing was done to rest from.
  */
 import { afterSet } from '#lib/domain/workout/flow.ts';
+import type { RestDefaults } from '#lib/domain/workout/timers.ts';
 import type {
 	LocalAction,
 	LoggedSet,
@@ -20,8 +24,17 @@ import type { WeightUnit } from '#lib/domain/units.ts';
 
 export interface LoggedAction {
 	mutation: Mutation;
-	/** The goTo that moves to another exercise (a superset's partner); none otherwise. */
+	/**
+	 * The goTo that moves to another exercise (a superset's partner), then the rest.start of the
+	 * rest that starts now; neither when there is none.
+	 */
 	followUps: LocalAction[];
+}
+
+/** Whether a completed set starts the rest timer, and the device's rest per class (settings.ts). */
+export interface RestOptions {
+	autoStart: boolean;
+	defaults: Partial<RestDefaults>;
 }
 
 function placeOf(view: WorkoutView, position: number, setIndex: number) {
@@ -38,7 +51,8 @@ function withFollowUp(
 	slot: WorkoutView['slots'][number],
 	mutation: Mutation,
 	place: SetPlace,
-	set: LoggedSet & { isSkipped: boolean }
+	set: LoggedSet & { isSkipped: boolean },
+	rest: RestOptions | null = null
 ): LoggedAction {
 	const { position } = place;
 	const row = {
@@ -55,21 +69,30 @@ function withFollowUp(
 		...view,
 		slots: view.slots.map((s) => (s === slot ? { ...s, sets: [...s.sets, row] } : s))
 	};
-	const { next } = afterSet(after, position);
-	const moves = typeof next === 'object' && next.position !== position;
-	return {
-		mutation,
-		followUps: moves ? [{ type: 'goTo', workoutId: view.workout.id, position: next.position }] : []
-	};
+	const { next, rest: starts } = afterSet(after, position, { defaults: rest?.defaults });
+	const { id: workoutId } = view.workout;
+	const followUps: LocalAction[] = [];
+	if (typeof next === 'object' && next.position !== position) {
+		followUps.push({ type: 'goTo', workoutId, position: next.position });
+	}
+	if (rest?.autoStart && starts) {
+		const at = Date.parse(mutation.at);
+		followUps.push({ type: 'rest.start', workoutId, at, durationMs: starts.seconds * 1000 });
+	}
+	return { mutation, followUps };
 }
 
-/** The set.log of set `setIndex` at `position`, done `at`, with its follow-up. */
+/**
+ * The set.log of set `setIndex` at `position`, done `at`, with its follow-ups: the move, and the
+ * rest `rest` starts (none without it).
+ */
 export function logSet(
 	view: WorkoutView,
 	position: number,
 	setIndex: number,
 	values: LoggedSet,
-	at: string
+	at: string,
+	rest: RestOptions | null = null
 ): LoggedAction {
 	const { slot, place } = placeOf(view, position, setIndex);
 	const mutation = createMutation('set.log', {
@@ -77,7 +100,7 @@ export function logSet(
 		at,
 		payload: { ...place, ...values }
 	});
-	return withFollowUp(view, slot, mutation, place, { ...values, isSkipped: false });
+	return withFollowUp(view, slot, mutation, place, { ...values, isSkipped: false }, rest);
 }
 
 /** The set.skip of set `setIndex` at `position`, `at`, with its follow-up. */
