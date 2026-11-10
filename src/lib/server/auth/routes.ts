@@ -83,6 +83,8 @@ export const ROUTE_ACCESS = {
 	'/api/coach/runs': 'owner',
 
 	// threads
+	'/api/coach/threads': 'owner',
+	'/api/coach/threads/[id]': 'owner',
 
 	// proposals
 	'/api/coach/proposals/[id]': 'owner',
