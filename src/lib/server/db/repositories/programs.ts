@@ -8,7 +8,7 @@
  * INSERT (chunked only past ROWS_PER_INSERT) and nothing needs RETURNING. A revision copies a
  * week's subtree with one INSERT … SELECT per table instead, its changes written in as it goes.
  */
-import { and, asc, eq, getTableColumns, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, getTableColumns, lte, sql, type SQL } from 'drizzle-orm';
 import { alias, type PgColumn, type PgTable } from 'drizzle-orm/pg-core';
 import type { IsoDate } from '../../../domain/calendar';
 import {
@@ -470,6 +470,42 @@ export function createProgramsRepository(db: Executor) {
 			if (!lineages.length) return new Set();
 			const rows = await completedLineages(db, ownerId, lineages);
 			return new Set(rows.flatMap((row) => (row.lineage ? [row.lineage] : [])));
+		},
+
+		/**
+		 * The newest of the owner's versions of `programId`, up to version `number`, with a `kind`
+		 * decision that touched a session of week `weekLineage` as that version holds it, and the
+		 * decision's evidence; null when none did. A program's versions form one chain (each revises
+		 * the current one), so every number up to `number` is in its history.
+		 */
+		async latestDecisionOnWeek(
+			ownerId: string,
+			at: { programId: string; number: number; weekLineage: string; kind: DecisionRow['kind'] }
+		) {
+			const d = programmingDecisions;
+			const v = programVersions;
+			const [row] = await db
+				.select({ id: v.id, number: v.number, createdBy: v.createdBy, evidence: d.evidence })
+				.from(d)
+				.innerJoin(v, eq(v.id, d.versionId))
+				.innerJoin(programs, eq(programs.id, d.programId))
+				.where(
+					and(
+						eq(programs.ownerId, ownerId),
+						eq(d.programId, at.programId),
+						lte(v.number, at.number),
+						eq(d.kind, at.kind),
+						sql`exists (select 1 from ${programVersionWeeks}
+							join ${programWeeks} on ${programWeeks.id} = ${programVersionWeeks.weekId}
+							join ${plannedSessions} on ${plannedSessions.weekId} = ${programWeeks.id}
+							where ${programVersionWeeks.versionId} = ${v.id}
+								and ${programWeeks.lineageId} = ${at.weekLineage}
+								and ${d.affected} @> jsonb_build_array(${plannedSessions.lineageId}::text))`
+					)
+				)
+				.orderBy(desc(v.number), desc(d.id))
+				.limit(1);
+			return row ?? null;
 		},
 
 		/** The decisions that produced a version, in the order they were written. */
