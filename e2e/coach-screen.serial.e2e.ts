@@ -96,6 +96,8 @@ test('with no conversation, the suggestions sit under the header over the empty 
 		'How has my bench progressed this month?'
 	);
 	await expect(page.getByTestId('coach-empty')).toContainText('No conversations yet');
+	// The screen's largest text comes with the page, never after a chunk: it is the page's LCP.
+	expect(await (await page.request.get('/coach')).text()).toContain('data-testid="coach-empty"');
 	await expect(page.getByTestId('mock-badge')).toContainText('Practice coach');
 	await expect(page.getByTestId('coach-unavailable')).toHaveCount(0);
 	await expect(page.getByTestId('context-chip')).toHaveCount(0);
