@@ -14,7 +14,14 @@ import { applyLocal, applyMutation, replay, viewOf } from '#lib/domain/workout/p
 import type { WorkoutState } from '#lib/domain/workout/project.ts';
 import { strengthTable } from '#lib/domain/workout/reducers/tables.ts';
 import { slotAt } from '#lib/domain/workout/selectors.ts';
-import { alternativesFor, dislike, skipExercise, substitute } from './actions.ts';
+import {
+	alternativesFor,
+	correctedReport,
+	dislike,
+	reportPain,
+	skipExercise,
+	substitute
+} from './actions.ts';
 import { logSet } from './log.ts';
 
 const W = '00000000-0000-4000-8000-0000000000f1';
@@ -45,7 +52,8 @@ const KIT: StrengthKit = {
 			? {
 					...e,
 					exercise: { ...e.exercise, equipment: ['machines'] },
-					alternatives: [HACK, GOBLET]
+					alternatives: [HACK, GOBLET],
+					gentler: { knee: [GOBLET] }
 				}
 			: e
 	)
@@ -228,5 +236,123 @@ describe('skipExercise', () => {
 			state = apply(state, skipExercise(viewOfState(state), slot.position, AT).mutation);
 		}
 		expect(skipExercise(viewOfState(state), LEG_PRESS, AT).followUps).toEqual([]);
+	});
+});
+
+describe('reportPain', () => {
+	const ids = () => {
+		let n = 0;
+		return () => `00000000-0000-4000-8000-00000000b${String(++n).padStart(3, '0')}`;
+	};
+	const DETAILS = { area: 'knee', severity: 'moderate', note: '  Sore at the bottom  ' } as const;
+	const NONE = { area: null, severity: null, note: '   ' };
+
+	/** Every mutation and follow-up of a report, applied as the store does. */
+	function applied(state: WorkoutState, sent: ReturnType<typeof reportPain>) {
+		let next = state;
+		for (const m of sent.mutations) next = applyMutation(strengthTable, next, m);
+		for (const action of sent.followUps) next = applyLocal(strengthTable, next, action);
+		return viewOfState(next);
+	}
+
+	it('Stop: skips what is left, then reports it stopped with the details; the slot reads Stopped', () => {
+		const state = started();
+		const sent = reportPain(
+			viewOfState(state),
+			LEG_PRESS,
+			{ action: 'stopped' },
+			DETAILS,
+			AT,
+			ids()
+		);
+		expect(sent.mutations.map((m) => m.type)).toEqual(['exercise.skip', 'pain.report']);
+		const report = sent.mutations[1] as MutationOf<'pain.report'>;
+		expect(report.id).toBe(report.entityId);
+		expect(report).toMatchObject({ workoutId: W, at: AT });
+		expect(report.payload).toEqual({
+			position: LEG_PRESS,
+			plannedLineage: KIT.exercises[LEG_PRESS - 1]!.plannedLineage,
+			exerciseId: 'leg_press',
+			area: 'knee',
+			severity: 'moderate',
+			note: 'Sore at the bottom',
+			action: 'stopped',
+			substitutionId: null
+		});
+		expect(sent.followUps).toEqual([{ type: 'goTo', workoutId: W, position: LEG_PRESS + 1 }]);
+		const view = applied(state, sent);
+		expect(slotAt(view, LEG_PRESS)!.state).toBe('stopped');
+		expect(slotAt(view, LEG_PRESS)!.sets.every((s) => s.isSkipped)).toBe(true);
+		expect(view.device.position).toBe(LEG_PRESS + 1);
+	});
+
+	it('a gentler option: today’s swap with reason pain, and the report names it', () => {
+		const state = started();
+		const sent = reportPain(
+			viewOfState(state),
+			LEG_PRESS,
+			{ action: 'substituted', option: GOBLET },
+			NONE,
+			AT
+		);
+		const [swap, report] = sent.mutations as [
+			MutationOf<'exercise.substitute'>,
+			MutationOf<'pain.report'>
+		];
+		expect(swap.type).toBe('exercise.substitute');
+		expect(swap.payload).toMatchObject({
+			fromExerciseId: 'leg_press',
+			toExerciseId: 'goblet_squat',
+			reason: 'pain'
+		});
+		expect(report.payload).toMatchObject({
+			action: 'substituted',
+			substitutionId: swap.entityId,
+			area: null,
+			severity: null,
+			note: null
+		});
+		expect(sent.followUps).toEqual([]);
+		expect(slotAt(applied(state, sent), LEG_PRESS)).toMatchObject({
+			exerciseId: 'goblet_squat',
+			state: 'swapped'
+		});
+	});
+
+	it('End the workout here: the report alone, and the slot reads Stopped', () => {
+		const state = started();
+		const sent = reportPain(
+			viewOfState(state),
+			LEG_PRESS,
+			{ action: 'ended_workout' },
+			{ ...DETAILS, severity: 'severe' },
+			AT
+		);
+		expect(sent.mutations.map((m) => m.type)).toEqual(['pain.report']);
+		expect(sent.mutations[0]!.payload).toMatchObject({
+			action: 'ended_workout',
+			severity: 'severe'
+		});
+		expect(sent.followUps).toEqual([]);
+		expect(slotAt(applied(state, sent), LEG_PRESS)!.state).toBe('stopped');
+	});
+});
+
+describe('correctedReport', () => {
+	it('keeps the id and what was done, and takes the corrected details', () => {
+		const state = started();
+		const { mutations } = reportPain(
+			viewOfState(state),
+			LEG_PRESS,
+			{ action: 'stopped' },
+			{ area: null, severity: null, note: 'x'.repeat(600) },
+			AT
+		);
+		const refused = mutations[1] as MutationOf<'pain.report'>;
+		const next = correctedReport(refused, { area: 'knee', severity: 'mild', note: ' Better ' });
+		expect(next).toEqual({
+			...refused,
+			payload: { ...refused.payload, area: 'knee', severity: 'mild', note: 'Better' }
+		});
 	});
 });
