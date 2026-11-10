@@ -7,7 +7,7 @@
  *   them (scripts/explain/history.explain.ts).
  * Nothing runs until a builder is awaited; await them in turn on one connection.
  */
-import { and, desc, eq, gt, inArray, isNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, isNull, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import type { ProposalStatus } from '../../../domain/training/vocabulary';
 import { coachProposals, programVersions } from '../schema';
@@ -22,7 +22,8 @@ export const COACH_PROPOSAL_INDEXES = {
 		status: 'coach_proposals_owner_status_idx',
 		all: 'coach_proposals_owner_created_idx'
 	},
-	decidedSince: 'coach_proposals_owner_closed_idx'
+	decidedSince: 'coach_proposals_owner_closed_idx',
+	threadProposals: 'coach_proposals_thread_idx'
 } as const;
 
 /** A proposal as its card, the inbox and get_coach_proposals read it (no payload). */
@@ -142,5 +143,30 @@ export function decidedSince(db: Executor, ownerId: string, since: Date, limit: 
 		.from(coachProposals)
 		.where(and(eq(coachProposals.ownerId, ownerId), gt(coachProposals.closedAt, since)))
 		.orderBy(desc(coachProposals.closedAt), desc(coachProposals.id))
+		.limit(limit);
+}
+
+/**
+ * The proposals runs `runIds` of conversation `threadId` made, oldest first, at most `limit`, each
+ * with its run: what the conversation's cards show beside the answers those runs gave.
+ */
+export function threadProposals(
+	db: Executor,
+	ownerId: string,
+	threadId: string,
+	{ runIds, limit }: { runIds: readonly string[]; limit: number }
+) {
+	return db
+		.select({ ...proposalViewColumns, runId: coachProposals.runId })
+		.from(coachProposals)
+		.leftJoin(programVersions, eq(programVersions.id, coachProposals.appliedVersionId))
+		.where(
+			and(
+				eq(coachProposals.threadId, threadId),
+				eq(coachProposals.ownerId, ownerId),
+				inArray(coachProposals.runId, [...runIds])
+			)
+		)
+		.orderBy(asc(coachProposals.createdAt), asc(coachProposals.id))
 		.limit(limit);
 }

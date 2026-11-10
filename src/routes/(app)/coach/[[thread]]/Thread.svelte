@@ -16,19 +16,27 @@
   nothing was stored. An interrupted or failed last answer offers Retry, which asks the same
   question again under its own id. While an answer streams the page follows it down, unless the
   owner has scrolled up.
+  A proposal shows as a card after the answer of the run that made it (a turn's, once the stored
+  proposal is read). The card's code loads with the first card; a failed fetch is the chunk-failed
+  notice with Retry, and failing again while online reloads the conversation. Accept goes by id;
+  the card then shows the proposal as the server answered (applied as version N, or superseded).
 -->
 <script lang="ts">
 	import { onMount, type Component } from 'svelte';
 	import { pushState, replaceState } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
+	import { acceptProposal } from '#lib/client/coach/proposals.ts';
 	import type { CoachTurn, CoachTurns, StoredQuestion } from '#lib/client/coach/turn.svelte.ts';
 	import type { HistoryRequest } from '#lib/client/workout/exercise-history.ts';
+	import type { ProposalCardView } from '#lib/domain/coach/cards.ts';
 	import { ANSWER_BLOCK_KIND_LABEL, COACH_ERROR_KIND_LABEL } from '#lib/domain/coach/index.ts';
 	import Badge from '#lib/ui/components/Badge.svelte';
 	import Button from '#lib/ui/components/Button.svelte';
 	import ActivityChip from '#lib/ui/coach/ActivityChip.svelte';
 	import AnswerBlocks from '#lib/ui/coach/AnswerBlocks.svelte';
+	import CoachNotice from '#lib/ui/coach/CoachNotice.svelte';
+	import LoadingRows from '#lib/ui/coach/LoadingRows.svelte';
 	import LiveAnnouncer from '#lib/ui/coach/LiveAnnouncer.svelte';
 	import ThinkingIndicator from '#lib/ui/coach/ThinkingIndicator.svelte';
 	import { SCREEN_FAILURE_LABEL } from '#lib/ui/coach/coach-notices.ts';
@@ -61,16 +69,23 @@
 		return thread.messages[at + 1]?.from === 'coach' ? null : 'ended';
 	}
 
-	/** Stored messages a whole turn already shows. */
+	/** Stored messages a whole turn already shows: its question, its answer and its cards. */
 	const hidden = $derived(
 		new Set(
 			turns.flatMap((turn) => {
 				if (modeOf(turn) !== 'whole') return [];
 				const owner = turn.retry ? undefined : thread.messages[ownerOf(turn)]?.id;
-				return [owner, turn.answered ? turn.answerMessageId : null].filter((id) => id != null);
+				return [
+					owner,
+					turn.answered ? turn.answerMessageId : null,
+					...turn.proposals.map((p) => p.id)
+				].filter((id) => id != null);
 			})
 		)
 	);
+
+	/** The last owner message or answer: the cards after it do not count. */
+	const lastShown = $derived(thread.messages.findLast((m) => m.from !== 'proposal'));
 
 	/**
 	 * The question behind an interrupted or failed last answer, when it can be asked again: the
@@ -78,7 +93,7 @@
 	 * turn here still shows.
 	 */
 	const retryable = $derived.by((): StoredQuestion | null => {
-		const last = thread.messages.at(-1);
+		const last = lastShown;
 		const owner = thread.messages.findLast((m) => m.from === 'owner');
 		const showing = turns.some((turn) => modeOf(turn));
 		if (showing || last?.from !== 'coach' || !last.retryable || owner?.from !== 'owner')
@@ -101,6 +116,65 @@
 		const { scrollTop, clientHeight, scrollHeight } = document.documentElement;
 		pinned = scrollTop + clientHeight >= scrollHeight - 96;
 	}
+
+	// ---- Proposal cards ------------------------------------------------------------------------
+
+	type CardComponent = Component<{
+		card: ProposalCardView;
+		onaccept?: () => void;
+		accepting?: boolean;
+	}>;
+
+	/** Each stored card by proposal id, and what an Accept here answered since. */
+	const stored = $derived(
+		new Map(thread.messages.flatMap((m) => (m.from === 'proposal' ? [[m.id, m.card]] : [])))
+	);
+	let decided = $state.raw<Record<string, ProposalCardView>>({});
+	let accepting = $state.raw<ReadonlySet<string>>(new Set());
+	const cardFor = (id: string): ProposalCardView | undefined => decided[id] ?? stored.get(id);
+
+	async function accept(id: string) {
+		if (accepting.has(id)) return; // a second tap while the first is on its way
+		accepting = new Set([...accepting, id]);
+		const card = await acceptProposal(id);
+		accepting = new Set([...accepting].filter((each) => each !== id));
+		if (card) decided = { ...decided, [id]: card };
+		else toast.show(SCREEN_FAILURE_LABEL.action_failed, { tone: 'danger' });
+	}
+
+	let Card = $state.raw<CardComponent | null>(null);
+	let cardFailed = $state(false);
+	let cardLoading = false;
+	let cardFailures = 0;
+	const loadCard = (): Promise<{ default: CardComponent }> =>
+		import.meta.env.SSR
+			? Promise.reject(new Error('client only'))
+			: import('#lib/ui/coach/ProposalCard.svelte');
+
+	function fetchCard() {
+		if (Card || cardLoading) return;
+		cardLoading = true;
+		cardFailed = false;
+		loadCard().then(
+			(module) => {
+				cardLoading = false;
+				Card = module.default;
+			},
+			() => {
+				cardLoading = false;
+				// Chromium keeps a failed module fetch for the document's lifetime: start again.
+				if (++cardFailures >= 2 && navigator.onLine) return location.reload();
+				cardFailed = true;
+			}
+		);
+	}
+
+	const wantsCards = $derived(
+		stored.size > 0 || turns.some((turn) => modeOf(turn) === 'whole' && turn.proposals.length)
+	);
+	$effect(() => {
+		if (wantsCards) fetchCard();
+	});
 
 	type HistorySheet = Component<{ request: HistoryRequest | null; onclose?: () => void }>;
 
@@ -158,6 +232,17 @@
 
 <svelte:window {onscroll} />
 
+{#snippet proposal(id: string, title: string)}
+	{@const card = cardFor(id)}
+	{#if Card && card}
+		<Card {card} accepting={accepting.has(id)} onaccept={() => accept(id)} />
+	{:else if cardFailed}
+		<CoachNotice kind="chunk_failed" onretry={fetchCard} data-testid="proposal-failed" />
+	{:else}
+		<LoadingRows label="Loading the proposal “{title}”…" rows={2} data-testid="proposal-loading" />
+	{/if}
+{/snippet}
+
 {#snippet ended(label: string, question: StoredQuestion | null, threadId = thread.id)}
 	<p class="ended">
 		<Badge tone="warning" icon="alert" data-testid="answer-ended">{label}</Badge>
@@ -181,6 +266,10 @@
 		{#each thread.messages as message (message.id)}
 			{#if hidden.has(message.id)}
 				<!-- shown by its turn below -->
+			{:else if message.from === 'proposal'}
+				<li class="coach" data-testid="proposal">
+					{@render proposal(message.id, message.card.title)}
+				</li>
 			{:else if message.from === 'owner'}
 				<li class="owner" data-testid="owner-message">
 					<span class="visually-hidden">You:</span>
@@ -191,7 +280,7 @@
 					<span class="visually-hidden">Coach:</span>
 					<AnswerBlocks blocks={message.blocks} onopenexercise={openExercise} />
 					{#if message.ended}
-						{@render ended(message.ended, message === thread.messages.at(-1) ? retryable : null)}
+						{@render ended(message.ended, message === lastShown ? retryable : null)}
 					{/if}
 				</li>
 			{/if}
@@ -233,6 +322,9 @@
 							</div>
 						{/each}
 						<LiveAnnouncer blocks={turn.blocks} complete={turn.answered} />
+						{#each turn.proposals as each (each.id)}
+							<div data-testid="proposal">{@render proposal(each.id, each.title)}</div>
+						{/each}
 					{/if}
 					{#if end}
 						{@render ended(

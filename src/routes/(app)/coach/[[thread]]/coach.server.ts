@@ -4,7 +4,8 @@
  *   question an entry point prefilled (?ask=…&from=…). `?before=<id>` is the page after that
  *   conversation, the cursor a page gives: 'Show older' reads it without navigating
  *   (preloadData). A malformed cursor is the first page.
- * - /coach/<id>: that conversation's newest shown messages (getThreadView).
+ * - /coach/<id>: that conversation's newest shown messages (getThreadView), each proposal its
+ *   runs made as a card after the run's answer (listThreadProposals), as it stands now.
  * - A malformed or unknown id, or someone else's conversation, is the 404 page in the shell. The
  *   route has no param matcher, which would cost every route JavaScript (docs/performance.md).
  * - It fails soft: a read that fails is recorded as a server error (kind 'load') and the screen
@@ -12,9 +13,11 @@
  * Kept out of +page.server.ts so integration tests can run it with an unreachable database.
  */
 import { error, isHttpError } from '@sveltejs/kit';
+import { cardOf } from '#lib/domain/coach/cards.ts';
 import { recordServerError, type ServerErrorInput } from '#lib/server/services/errors.ts';
 import { isUuid } from '#lib/server/services/ids.ts';
 import { getAthleteProfile } from '#lib/server/services/profile/index.ts';
+import { listThreadProposals } from '#lib/server/services/coach/proposals.ts';
 import { CoachNotFoundError, type CoachDeps } from '#lib/server/services/coach/shared.ts';
 import { getThreadView, listThreads } from '#lib/server/services/coach/threads.ts';
 import {
@@ -69,6 +72,9 @@ export async function loadCoachScreen(
 	try {
 		if (thread !== undefined) {
 			const view = await getThreadView(ownerId, thread, {}, { db });
+			const runIds = view.messages.flatMap((row) => (row.runId ? [row.runId] : []));
+			const proposals = await listThreadProposals(ownerId, view.thread.id, runIds, { db });
+			const cards = proposals.map(({ runId, proposal }) => ({ runId, card: cardOf(proposal) }));
 			return {
 				prefill,
 				failed: false,
@@ -77,7 +83,7 @@ export async function loadCoachScreen(
 				thread: {
 					id: view.thread.id,
 					title: view.thread.title,
-					messages: shownMessages(view.messages)
+					messages: shownMessages(view.messages, cards)
 				}
 			};
 		}
