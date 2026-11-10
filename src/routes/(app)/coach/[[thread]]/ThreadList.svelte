@@ -3,8 +3,9 @@
   Recent conversations, newest first: each a row that opens it, with its title and when it was
   last active, and an options button that opens its sheet (ManageSheet: rename, archive with
   Undo). 'Show older' under them is busy while the next page loads, and its failure says so
-  inline with Retry. With none, the coach's empty state. 'Archived conversations' opens the
-  Archived list (ArchivedSheet), so nothing archived is out of reach.
+  inline with Retry. With none, the coach's empty state: the page renders the same one on the
+  server until this code arrives, so it paints with the page. 'Archived conversations' opens the
+  Archived list (ArchivedSheet), so nothing archived is out of reach, with none in Recent too.
   Both sheets' code is fetched on the first press; the sheet opens when it arrives. A failed fetch
   says so in a toast whose Retry fetches again; failing again while online reloads the page, as
   KnowsButton does.
