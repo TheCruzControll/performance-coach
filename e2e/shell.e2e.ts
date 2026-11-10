@@ -464,8 +464,8 @@ test.describe('app shell on an iPhone viewport', () => {
 
 /**
  * The root error page is imported before every page hydrates, so its content loads on demand
- * (src/routes/error-page.ts): with the page on the server and on a server-rendered error, once
- * the app has gone idle, or when an error needs it.
+ * (src/routes/error-page.ts): with the page on the server and on a server-rendered error, as
+ * soon as the app has hydrated, or when an error needs it.
  */
 test.describe('the root error page, loaded on demand', () => {
 	// Every request reaches page.route: none is answered from the service worker's precache.
@@ -526,7 +526,13 @@ test.describe('the root error page, loaded on demand', () => {
 			}).observe(document, { childList: true, subtree: true });
 			Object.assign(window, { removed });
 		});
-		const errors = trackConsoleErrors(page);
+		// Chromium logs a document that answers 404 as a failed resource: only that line is expected.
+		const errors = trackConsoleErrors(
+			page,
+			(msg) =>
+				msg.text().includes('status of 404') &&
+				new URL(msg.location().url).pathname === '/nothing-here'
+		);
 		const response = await page.goto('/nothing-here');
 		expect(response?.status()).toBe(404);
 		expect(await response?.text()).toContain('data-root-error');
@@ -543,13 +549,14 @@ test.describe('the root error page, loaded on demand', () => {
 		expect(errors).toEqual([]);
 	});
 
-	test('once the app has gone idle, an offline error renders without the network', async ({
+	test('once the app has hydrated, an offline error renders without the network', async ({
 		page,
 		context
 	}) => {
 		const chunk = await onErrorPageChunk(page, (pass) => pass());
 		await gotoHydrated(page, '/today');
-		await expect.poll(chunk.served, { message: 'the idle load fetched the page' }).toBe(true);
+		// No idle wait (WebKit has none): the page loaded with the requests that follow hydration.
+		expect(chunk.served(), 'the page loaded after hydration').toBe(true);
 
 		await context.setOffline(true);
 		await page
@@ -569,10 +576,10 @@ test.describe('the root error page, loaded on demand', () => {
 			await held;
 			await pass();
 		});
-		// Not gotoHydrated: the held request keeps the network busy. The idle load asks for the
-		// page after hydration, so the request also says the app has started.
+		// Not gotoHydrated: the held request keeps the network busy. The page is asked for once the
+		// app has hydrated, so the request also says the app has started.
 		await page.goto('/today');
-		await expect.poll(() => requested, { message: 'the idle load asked for the page' }).toBe(true);
+		await expect.poll(() => requested, { message: 'hydration asked for the page' }).toBe(true);
 		await failProfileData(page);
 		// The error page has replaced Today, its content still on its way.
 		await expect(page.getByRole('heading', { level: 1, name: 'Today' })).toHaveCount(0);

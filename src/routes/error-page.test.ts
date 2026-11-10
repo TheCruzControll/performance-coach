@@ -1,18 +1,11 @@
 /**
  * The root error page loads on demand (src/routes/error-page.ts): +error.svelte renders it
- * synchronously once it has loaded (the server, hydration, any error after the idle load) and
- * waits for it otherwise.
+ * synchronously once it has loaded (the server, hydration, any error after the load that
+ * follows hydration) and waits for it otherwise.
  */
 import { describe, expect, it, vi } from 'vitest';
-import { FALLBACK_DELAY_MS, IDLE_TIMEOUT_MS } from '#lib/client/service-worker.ts';
 import type { Component } from 'svelte';
-import {
-	errorPage,
-	lazy,
-	loadErrorPageWhenIdle,
-	provideErrorPage,
-	type IdleHost
-} from './error-page.ts';
+import { errorPage, lazy, loadErrorPage, provideErrorPage } from './error-page.ts';
 
 describe('lazy', () => {
 	it('loads nothing until asked', () => {
@@ -61,43 +54,13 @@ describe('errorPage', () => {
 	});
 });
 
-describe('loadErrorPageWhenIdle', () => {
-	function fakeHost(idle: boolean) {
-		const idles: { callback: () => void; timeout: number }[] = [];
-		const timers: { callback: () => void; ms: number }[] = [];
-		const host: IdleHost = {
-			setTimeout: (callback, ms) => timers.push({ callback, ms }),
-			...(idle
-				? {
-						requestIdleCallback: (callback: () => void, { timeout }: { timeout: number }) =>
-							idles.push({ callback, timeout })
-					}
-				: {})
-		};
-		return { host, idles, timers };
-	}
-
-	it('loads the page in the next idle period, not before', async () => {
+describe('loadErrorPage', () => {
+	it('starts the load at once, with no idle wait (WebKit has no requestIdleCallback)', async () => {
 		const importer = vi.fn(() => Promise.resolve('page'));
 		const page = lazy(importer);
-		const { host, idles, timers } = fakeHost(true);
-		loadErrorPageWhenIdle(page, host);
-		expect(importer).not.toHaveBeenCalled();
-		expect(idles.map((i) => i.timeout)).toEqual([IDLE_TIMEOUT_MS]);
-		expect(timers).toEqual([]);
-
-		idles[0]!.callback();
+		loadErrorPage(page);
 		expect(importer).toHaveBeenCalledOnce();
 		await vi.waitFor(() => expect(page.current()).toBe('page'));
-	});
-
-	it('waits a fixed delay where requestIdleCallback is missing (WebKit)', () => {
-		const importer = vi.fn(() => Promise.resolve('page'));
-		const { host, timers } = fakeHost(false);
-		loadErrorPageWhenIdle(lazy(importer), host);
-		expect(timers.map((t) => t.ms)).toEqual([FALLBACK_DELAY_MS]);
-		timers[0]!.callback();
-		expect(importer).toHaveBeenCalledOnce();
 	});
 
 	it('swallows a failed load: no unhandled rejection, and the page loads again on demand', async () => {
@@ -109,9 +72,7 @@ describe('loadErrorPageWhenIdle', () => {
 				.mockRejectedValueOnce(new TypeError('Failed to fetch dynamically imported module'))
 				.mockResolvedValueOnce('page');
 			const page = lazy(importer);
-			const { host, idles } = fakeHost(true);
-			loadErrorPageWhenIdle(page, host);
-			idles[0]!.callback();
+			loadErrorPage(page);
 			await new Promise((resolve) => setTimeout(resolve, 0));
 			expect(unhandled).not.toHaveBeenCalled();
 			expect(await page.current()).toBe('page');

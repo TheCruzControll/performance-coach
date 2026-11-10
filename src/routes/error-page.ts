@@ -8,8 +8,10 @@
  * now imports only this module, and the page itself (ErrorPage.svelte) loads:
  * - on the server, and in the browser on an error page the server rendered, before the page
  *   renders or hydrates (a top-level await in +error.svelte, which SvelteKit awaits);
- * - otherwise once the page has started and gone idle (the root layout), so an error after that,
- *   offline included, renders at once without the network, as SvelteKit's eager import did.
+ * - otherwise as soon as the page has hydrated (the root layout), so an error after that, offline
+ *   included, renders at once without the network, as SvelteKit's eager import did. Not in an
+ *   idle period: WebKit has no requestIdleCallback, and in its 1.5 s fallback delay a screen
+ *   opened offline (no service worker yet, or one blocked) lost its designed offline state.
  * An error before then shows once the import arrives ({#await} in +error.svelte).
  *
  * The `import()` itself stays in +error.svelte, a node no route's build walks: SvelteKit lists a
@@ -19,7 +21,6 @@
  * their stylesheets from every route.
  */
 import type { Component } from 'svelte';
-import { FALLBACK_DELAY_MS, IDLE_TIMEOUT_MS } from '#lib/client/service-worker.ts';
 
 export interface Lazy<T> {
 	/** The value once it has loaded (synchronously, for {#await} and hydration), else its load. */
@@ -57,19 +58,10 @@ export const errorPage: Lazy<Component> = lazy(async () => {
 	return (await importPage()).default;
 });
 
-/** The parts of `window` the idle load uses. */
-export interface IdleHost {
-	requestIdleCallback?: (callback: () => void, options: { timeout: number }) => unknown;
-	setTimeout(callback: () => void, ms: number): unknown;
-}
-
 /**
- * Load the error page in the next idle period (after a delay where requestIdleCallback is
- * missing: WebKit), with the service worker's timings. A failure is no error: the page loads
- * again when an error needs it.
+ * Load the error page now: the root layout calls this once the page has hydrated, off the
+ * start-up path. A failure is no error: the page loads again when an error needs it.
  */
-export function loadErrorPageWhenIdle(page: Lazy<unknown> = errorPage, host: IdleHost = window) {
-	const load = () => void page.load().catch(() => {});
-	if (host.requestIdleCallback) host.requestIdleCallback(load, { timeout: IDLE_TIMEOUT_MS });
-	else host.setTimeout(load, FALLBACK_DELAY_MS);
+export function loadErrorPage(page: Lazy<unknown> = errorPage): void {
+	void page.load().catch(() => {});
 }
