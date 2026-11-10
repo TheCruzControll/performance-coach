@@ -50,6 +50,7 @@
 		"lighthouse": "node scripts/lighthouse.ts",
 		"icons": "node scripts/generate-icons.ts",
 		"icons:sprite": "node scripts/generate-icon-sprite.ts",
+		"lifecycles": "node scripts/lifecycles.ts",
 		"security:scan": "node scripts/secrets-scan.ts"
 	},
 	"dependencies": {
