@@ -105,7 +105,8 @@ export interface MockStep {
 
 export interface MockScript {
 	name: string;
-	matches?: (ownerText: string) => boolean;
+	/** Whether it answers this turn: the owner's words, and the turn's context (its entry). */
+	matches?: (ownerText: string, context?: MockContext) => boolean;
 	steps: readonly MockStep[];
 }
 
@@ -183,7 +184,7 @@ export class MockProvider implements LlmProvider {
 	async *#answer(request: ModelRequest, signal: AbortSignal): AsyncGenerator<Event, ModelResult> {
 		const overrides = this.#admit(request, signal);
 		const turn = readTurn(request.messages);
-		const script = this.#script(overrides.script, turn.ownerText);
+		const script = this.#script(overrides.script, turn);
 		const step = script.steps[turn.step];
 		if (!step) throw new Error(`Mock script '${script.name}' has no step ${turn.step + 1}`);
 		const seed = createHash('sha256').update(JSON.stringify(request)).digest('hex');
@@ -206,10 +207,10 @@ export class MockProvider implements LlmProvider {
 		return { message, requestId: `req_mock_${seed.slice(0, 24)}` };
 	}
 
-	#script(forced: string | undefined, ownerText: string): MockScript {
+	#script(forced: string | undefined, turn: MockContext): MockScript {
 		const script =
 			forced === undefined
-				? this.#scripts.find((each) => each.matches?.(ownerText) ?? false)
+				? this.#scripts.find((each) => each.matches?.(turn.ownerText, turn) ?? false)
 				: this.#scripts.find((each) => each.name === forced);
 		if (!script) throw new Error(forced ? `No mock script '${forced}'` : 'No mock script answers');
 		return script;
