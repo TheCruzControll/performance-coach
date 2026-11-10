@@ -275,6 +275,20 @@ describe('CoachTurns', () => {
 		expect(body).toMatchObject({ threadId: THREAD, entry: null });
 	});
 
+	it('‘Ask for changes’ in an open conversation sends the proposal it revises as the entry', async () => {
+		nav.page.params = { thread: THREAD };
+		const { fetch } = server(ANSWERED);
+		const turns = new CoachTurns({ fetch, frame: () => {} });
+		const ref = { type: 'proposal', id: 'p1', label: 'Replace split squats' };
+		await turns.send('Only this week', 'ask_for_changes', ref);
+		const body = JSON.parse(fetch.mock.calls[0]![1]!.body as string);
+		expect(body).toMatchObject({
+			threadId: THREAD,
+			text: 'Only this week',
+			entry: { from: 'ask_for_changes', ref }
+		});
+	});
+
 	it('keeps a new conversation’s turn on /coach until its page has opened', async () => {
 		let open!: () => void;
 		nav.goto.mockImplementationOnce(() => new Promise<void>((done) => (open = done)));

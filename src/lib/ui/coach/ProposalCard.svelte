@@ -4,32 +4,57 @@
   rows), why, and the impact on each week it touches, or that the week's totals stay as they
   were. Nothing changes until Accept; then it says where it went: 'Applied as version N' with a
   link to that version in Train, 'Waits for your cycle review' for an accepted next cycle, or why
-  it was superseded. Loaded on demand with the first card a conversation shows. Accept is the
-  screen's (`onaccept`); while it is on its way the button is busy and a second press does
-  nothing. The outcome is announced.
+  it was superseded. Loaded on demand with the first card a conversation shows. Accept, Reject
+  and 'Ask for changes' are the screen's (`onaccept`, `onreject`, `onrevise`); while a decision is
+  on its way its button is busy and nothing else can be pressed. A decision that did not go
+  through (`failed`) says so in place with Retry (`onretry`), which sends the same decision again:
+  the server never applies it twice. Offline, nothing can be decided, and the card says why. The
+  outcome is announced.
 -->
 <script lang="ts">
 	import { cardState, type ProposalCardView } from '#lib/domain/coach/cards.ts';
 	import Badge from '../components/Badge.svelte';
 	import Button from '../components/Button.svelte';
 	import Icon from '../components/Icon.svelte';
+	import Notice from '../components/Notice.svelte';
 	import DiffRows from './DiffRows.svelte';
 
 	interface Props {
 		card: ProposalCardView;
 		/** Accept, by id only; absent while the card cannot be decided here. */
 		onaccept?: () => void;
+		/** Opens the rejection's sheet (a reason is optional). */
+		onreject?: () => void;
+		/** Opens 'Ask for changes': the coach drafts a revision that replaces this proposal. */
+		onrevise?: () => void;
 		/** An Accept is on its way. */
 		accepting?: boolean;
+		/** A rejection is on its way. */
+		rejecting?: boolean;
+		/** The last decision did not go through, and sending it again may: Retry offers that. */
+		failed?: boolean;
+		onretry?: () => void;
+		/** No connection: nothing can be decided until it is back. */
+		offline?: boolean;
 		'data-testid'?: string;
 	}
 
 	let {
 		card,
 		onaccept,
+		onreject,
+		onrevise,
 		accepting = false,
+		rejecting = false,
+		failed = false,
+		onretry,
+		offline = false,
 		'data-testid': testId = 'proposal-card'
 	}: Props = $props();
+
+	const busy = $derived(accepting || rejecting);
+	/** A decision can be sent from here now. */
+	const open = $derived(!busy && !offline);
 
 	const id = $props.id();
 	const state = $derived(cardState(card));
@@ -84,15 +109,55 @@
 
 	<footer class="foot" data-testid="proposal-state">
 		{#if state.kind === 'proposed'}
-			<Button
-				icon="check"
-				loading={accepting}
-				disabled={!onaccept}
-				onclick={() => !accepting && onaccept?.()}
-				aria-describedby="{id}-hint"
-				data-testid="proposal-accept">Accept</Button
-			>
-			<p id="{id}-hint" class="quiet">Nothing changes until you accept.</p>
+			<div class="actions">
+				<Button
+					icon="check"
+					loading={accepting}
+					disabled={!onaccept || (!accepting && !open)}
+					onclick={() => open && onaccept?.()}
+					aria-describedby="{id}-hint"
+					data-testid="proposal-accept">Accept</Button
+				>
+				<Button
+					variant="secondary"
+					loading={rejecting}
+					disabled={!onreject || (!rejecting && !open)}
+					onclick={() => open && onreject?.()}
+					data-testid="proposal-reject">Reject</Button
+				>
+				<Button
+					variant="ghost"
+					icon="pencil"
+					disabled={!onrevise || !open}
+					onclick={() => open && onrevise?.()}
+					data-testid="proposal-revise">Ask for changes</Button
+				>
+			</div>
+			{#if failed && !busy}
+				<div class="failure">
+					<Notice tone="danger" title="Couldn’t save" data-testid="proposal-failure">
+						<span id="{id}-hint"
+							>Check your connection and try again. It’s never applied twice.</span
+						>
+						<span class="retry">
+							<Button
+								variant="secondary"
+								size="sm"
+								icon="refresh"
+								disabled={offline}
+								onclick={() => !offline && onretry?.()}
+								data-testid="proposal-retry">Retry</Button
+							>
+						</span>
+					</Notice>
+				</div>
+			{:else if offline}
+				<p id="{id}-hint" class="quiet offline" data-testid="proposal-offline">
+					<Icon name="wifi-off" size={14} /> You’re offline. Decide once you’re back online.
+				</p>
+			{:else}
+				<p id="{id}-hint" class="quiet">Nothing changes until you accept.</p>
+			{/if}
 		{:else if state.kind === 'applied'}
 			<p class="outcome">
 				<Badge tone="positive" icon="check">{state.words}</Badge>
@@ -113,7 +178,13 @@
 		{/if}
 	</footer>
 	<p class="visually-hidden" role="status">
-		{state.kind === 'proposed' ? (accepting ? 'Accepting…' : '') : `${card.title}: ${state.words}`}
+		{state.kind !== 'proposed'
+			? `${card.title}: ${state.words}`
+			: accepting
+				? 'Accepting…'
+				: rejecting
+					? 'Rejecting…'
+					: ''}
 	</p>
 </article>
 
@@ -201,6 +272,27 @@
 		gap: var(--space-2) var(--space-3);
 		padding-top: var(--space-3);
 		border-top: 1px solid var(--color-border);
+	}
+
+	.actions {
+		display: flex;
+		flex-wrap: wrap;
+		gap: var(--space-2);
+	}
+
+	.failure {
+		width: 100%;
+	}
+
+	.retry {
+		display: block;
+		margin-top: var(--space-2);
+	}
+
+	.offline {
+		display: inline-flex;
+		align-items: center;
+		gap: var(--space-1-5);
 	}
 
 	.outcome {
