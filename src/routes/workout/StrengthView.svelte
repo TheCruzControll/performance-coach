@@ -27,12 +27,18 @@
     another after Skip. At zero (feedback.ts, loaded after the first render): a vibration and a tone
     as the device's settings allow; the screen is kept awake during rest when they ask for it.
   - The card's Options button opens the exercise's quick actions (ExerciseActionsSheet.svelte,
-    loaded on intent): Machine unavailable, Suggest an alternative, I don't like this exercise
-    and Skip exercise. The card then says what became of the slot, and a substitute never shows
+    loaded on intent): Machine unavailable, Suggest an alternative, I don't like this exercise,
+    This hurts and Skip exercise. The card then says what became of the slot, and a substitute never shows
     the planned exercise's load.
+  - A set of an exercise loaded with a bar or plates has a plate button: it opens the plate
+    calculator (PlateSheet.svelte, loaded on the button's first touch) at the set's weight, done
+    or planned, in its unit, with this device's bar and plates.
   - A substitute's or an added exercise's last session is not in the kit: when such a slot is
     current, its previous sets are fetched and attached to the workout (previous.ts, loaded
-    then); offline, the card says 'No previous sets on this device'.
+    then, or with the picker); offline, the card says 'No previous sets on this device'.
+  - Add exercise, in Up next and after the side list's last exercise, opens the picker
+    (ExercisePicker.svelte, loaded on intent) over the library cached on this device. A session
+    with no exercise yet (an ad-hoc strength one) says so, with Add exercise in the card's place.
   - The card's exercise name opens its history (ExerciseHistorySheet.svelte, loaded on intent);
     offline, it shows the previous session this device holds and says so.
 -->
@@ -51,6 +57,7 @@
 	import type { CanonicalSet } from '#lib/domain/workout/protocol.ts';
 	import { currentExercise, plannedVsLogged, previousFor } from '#lib/domain/workout/selectors.ts';
 	import Button from '#lib/ui/components/Button.svelte';
+	import EmptyState from '#lib/ui/components/EmptyState.svelte';
 	import ExerciseCard from '#lib/ui/workout/ExerciseCard.svelte';
 	import RestTimer from '#lib/ui/workout/RestTimer.svelte';
 	import SetRow from '#lib/ui/workout/SetRow.svelte';
@@ -62,13 +69,15 @@
 		SET_STATE_WORDS,
 		setRows
 	} from '#lib/ui/workout/set-words.ts';
-	import { onMount, tick, untrack } from 'svelte';
+	import { onMount, tick, untrack, type ComponentProps } from 'svelte';
 	import type { HistoryRequest } from '#lib/client/workout/exercise-history.ts';
 	import type ExerciseHistorySheet from '#lib/ui/workout/ExerciseHistorySheet.svelte';
 	import type ExerciseActionsSheet from './ExerciseActionsSheet.svelte';
+	import type ExercisePicker from './ExercisePicker.svelte';
 	import ExerciseList from './ExerciseList.svelte';
 	import type LoggerView from './Logger.svelte';
 	import type NavigationView from './Navigation.svelte';
+	import type PlateSheet from './PlateSheet.svelte';
 	import type SetEditor from './SetEditor.svelte';
 
 	interface Props {
@@ -127,20 +136,29 @@
 				? pair
 				: { ...pair, planned: { ...pair.planned, prescribedWeight: null } }
 		);
+		const loadType = view.exercises[slot.exerciseId]?.loadType;
+		const name = nameOf(slot.exerciseId);
 		// Each row with the set it shows, to edit: none for a set not logged, or not saved here.
+		// A barbell or plate-loaded exercise's rows open the plate calculator at their weight.
 		const rows = setRows(paired, slot.state === 'skipped' || slot.state === 'stopped').map(
 			(row, i) => {
-				const set = paired[i]!.logged;
+				const { logged: set, planned } = paired[i]!;
+				const prescribed = planned?.prescribedWeight;
+				const plates = loadType === 'external' && {
+					target: set?.weight ?? prescribed?.value,
+					unit:
+						(set?.weight == null ? prescribed?.unit : set.unit) ?? view.kit?.units.weight ?? 'kg',
+					label: `Set ${row.setIndex} · ${name}`
+				};
 				return set && notSaved.has(set.id)
-					? { ...row, state: 'not-saved' as const, word: SET_STATE_WORDS['not-saved'] }
-					: { ...row, set };
+					? { ...row, plates, state: 'not-saved' as const, word: SET_STATE_WORDS['not-saved'] }
+					: { ...row, plates, set };
 			}
 		);
 		const sets = slot.kit?.sets ?? [];
 		// The set at hand: the current row's, else (all done) the first.
 		const at = sets[(rows.find((row) => row.state === 'current')?.setIndex ?? 1) - 1];
 		const previous = previousFor(view, slot.position);
-		const loadType = view.exercises[slot.exerciseId]?.loadType;
 		const loadOf = (set: (typeof sets)[number] | undefined) =>
 			loadLine(set && (planned ? set : { ...set, prescribedWeight: null }), loadType);
 		const stateText = SLOT_STATE_COPY[slot.state];
@@ -148,7 +166,7 @@
 			view.device.attached[slot.exerciseId] === undefined ? lookups[slot.exerciseId] : undefined;
 		return {
 			position: slot.position,
-			name: nameOf(slot.exerciseId),
+			name,
 			label: labels.get(slot.position),
 			place: `Exercise ${view.slots.indexOf(slot) + 1} of ${view.slots.length}`,
 			lines: [...new Set(sets.map((set) => set.line))],
@@ -222,6 +240,23 @@
 		(event.currentTarget as HTMLElement).focus();
 		prefetchActions();
 		acting = { position };
+	}
+
+	// Add exercise: the picker, fetched on a button's first intent, opened afresh on each tap. The
+	// exercise picked is current at once and asks for its last session (lookUp), so previous.ts
+	// comes with the picker: a session with no lookup yet (an empty one) adds offline too.
+	let Picker = $state.raw<typeof ExercisePicker | null>(null);
+	let picking = $state.raw<object | null>(null);
+	function prefetchPicker() {
+		void load(() => import('./ExercisePicker.svelte')).then((module) => {
+			if (module) Picker = module.default;
+		});
+		void load(() => import('#lib/client/workout/previous.ts'));
+	}
+	function openPicker(event: MouseEvent) {
+		(event.currentTarget as HTMLElement).focus();
+		prefetchPicker();
+		picking = {};
 	}
 
 	// The exercise's history: fetched on the name's first intent, opened on each tap.
@@ -384,6 +419,21 @@
 	// A new object per tap, so tapping the same set again opens it again.
 	let editing = $state.raw<{ set: CanonicalSet } | null>(null);
 
+	// The plate calculator: fetched on a plate button's first touch, opened afresh on each tap.
+	let Plates = $state.raw<typeof PlateSheet | null>(null);
+	let weighing = $state.raw<ComponentProps<typeof PlateSheet>['request'] | null>(null);
+	function prefetchPlates() {
+		void load(() => import('./PlateSheet.svelte')).then((module) => {
+			if (module) Plates = module.default;
+		});
+	}
+
+	function weigh(request: NonNullable<typeof weighing>, event: MouseEvent) {
+		(event.currentTarget as HTMLElement).focus();
+		prefetchPlates();
+		weighing = { ...request };
+	}
+
 	function edit(set: CanonicalSet, event: MouseEvent) {
 		// Safari never focuses a tapped button: the sheet returns focus to what has it.
 		(event.currentTarget as HTMLElement).focus();
@@ -392,7 +442,7 @@
 	}
 </script>
 
-<ExerciseList {items} current={current?.position} />
+<ExerciseList {items} current={current?.position} onadd={openPicker} onintent={prefetchPicker} />
 
 <div class="main" data-testid="workout-main" bind:this={main}>
 	{#if rest}
@@ -425,6 +475,24 @@
 			</div>
 		</div>
 	{/if}
+	{#if view.slots.length === 0}
+		<EmptyState
+			icon="plate"
+			tone="strength"
+			title="No exercises yet"
+			description="Add one from your exercise list. It's saved on this device as you log, even offline."
+			data-testid="workout-no-exercises"
+		>
+			{#snippet actions()}
+				<Button
+					icon="plus"
+					onpointerdown={prefetchPicker}
+					onclick={openPicker}
+					data-testid="add-first-exercise">Add exercise</Button
+				>
+			{/snippet}
+		</EmptyState>
+	{/if}
 	{#if current}
 		<div class="swipe" bind:this={area}>
 			<ExerciseCard
@@ -448,17 +516,27 @@
 				{/snippet}
 				{#each current.rows as row, i (i)}
 					{@const set = 'set' in row && row.set}
+					{@const plates = row.plates}
 					<SetRow
 						{row}
 						onedit={set ? (event) => edit(set, event) : undefined}
 						onintent={prefetch}
+						onplates={plates ? (event) => weigh(plates, event) : undefined}
+						onplatesintent={prefetchPlates}
 					/>
 				{/each}
 			</ExerciseCard>
 		</div>
 		<div class="navigation">
 			{#if Navigation && area && active.store}
-				<Navigation {view} {area} store={active.store} onfinish={() => (active.finishing = true)} />
+				<Navigation
+					{view}
+					{area}
+					store={active.store}
+					onfinish={() => (active.finishing = true)}
+					onadd={openPicker}
+					onintent={prefetchPicker}
+				/>
 			{/if}
 		</div>
 	{/if}
@@ -474,8 +552,20 @@
 	{#if Editor && editing && active.store}
 		<Editor {view} {editing} store={active.store} />
 	{/if}
+	{#if Plates && weighing}
+		<Plates request={weighing} />
+	{/if}
 	{#if Actions && acting && active.store}
-		<Actions {view} request={acting} store={active.store} />
+		<Actions
+			{view}
+			request={acting}
+			store={active.store}
+			{load}
+			onfinish={() => (active.finishing = true)}
+		/>
+	{/if}
+	{#if Picker && picking && active.store}
+		<Picker {view} request={picking} store={active.store} {load} />
 	{/if}
 	{#if History && viewing}<History request={viewing} />{/if}
 </div>
@@ -502,13 +592,13 @@
 		user-select: none;
 	}
 
-	/* Previous and Next, then Up next: their height is kept while they load. Packed at the top, so
-	   a shorter Up next never moves Previous and Next. */
+	/* Previous and Next, then Up next with its Add exercise: their height is kept while they load.
+	   Packed at the top, so a shorter Up next never moves Previous and Next. */
 	.navigation {
 		display: grid;
 		align-content: start;
 		gap: var(--space-4);
-		min-height: 9.5rem;
+		min-height: 13rem;
 	}
 
 	/*

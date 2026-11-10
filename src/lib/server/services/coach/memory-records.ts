@@ -10,8 +10,11 @@
  * - decisions with their why: the programming decisions of the owner's programs and the coach's
  *   decisions on their goals and preferences (coach_decision notes)
  * - proposals still waiting, then those decided over the same days, with the owner's note on the
- *   decision (a rejection's reason)
- * - the newest weekly reviews and the newest cycle review
+ *   decision (a rejection's reason) and who proposed it: the coach, or a review's rules (origin,
+ *   with the review as a source), so the coach never presents a review's proposal as its own
+ * - the newest live weekly reviews and the newest live cycle review (a superseded revision never):
+ *   the summary, the verdicts, and the decision on its proposal read from the revision chain's
+ *   head, each with a source that opens the review's page
  * - the newest thread summaries and workout analyses the coach wrote down. The snapshot opens a
  *   segment, so the summaries it lists are of other conversations (or of this one's earlier
  *   segments, which a summary closes).
@@ -25,16 +28,22 @@ import type {
 	MemoryReview,
 	MemorySnapshot
 } from '../../../domain/coach/memory';
+import { reviewKey } from '../../../domain/coach/sources';
+import type { Finding } from '../../../domain/programming/review/brief';
+import { readCycleSnapshot } from '../../../domain/programming/review/cycle-snapshot';
+import { readSnapshot, SnapshotError } from '../../../domain/programming/review/snapshot';
 import {
 	createCoachMemoryRepository,
 	type MemoryRecoveryRow,
 	type MemoryReviewRow
 } from '../../db/repositories/coach-memory';
 import type { Executor } from '../../db/types';
+import { decisionStates, type DecisionState } from '../reviews/store';
+import { originOf } from './proposals';
 import { resolveDeps, type CoachDeps } from './shared';
 
-/** The most queries the record half sends. */
-export const MEMORY_RECORDS_QUERIES = 8;
+/** The most queries the record half sends: the reviews' decisions are one of them. */
+export const MEMORY_RECORDS_QUERIES = 9;
 
 /**
  * The days, today included, that pain reports, recovery notes and decided proposals are listed
@@ -54,7 +63,7 @@ export const MEMORY_RECORD_LIMITS = Object.freeze({
 	analyses: 3
 });
 
-/** The coach_notes kinds memory reads (thread-summaries adds thread_summary's schema). */
+/** The coach_notes kinds memory reads. */
 export const MEMORY_NOTE_KINDS = Object.freeze({
 	threadSummary: 'thread_summary',
 	analysis: 'workout_analysis'
@@ -93,11 +102,41 @@ const noteOf = (row: { id: string; date: string; summary: string }): MemoryNote 
 	source: { type: 'note', id: row.id, date: row.date }
 });
 
-const reviewOf = (scope: MemoryReview['scope'], row: MemoryReviewRow): MemoryReview => ({
+/**
+ * The review's verdict findings as 'label: verdict'. A review written before M6 has none, and a
+ * snapshot that breaks its contract lists none rather than costing the coach its memory.
+ */
+function verdictsOf(scope: MemoryReview['scope'], row: MemoryReviewRow): string[] {
+	let findings: Finding[];
+	try {
+		const read = scope === 'week' ? readSnapshot(row) : readCycleSnapshot(row);
+		findings = read.legacy ? [] : read.snapshot.brief.findings;
+	} catch (error) {
+		if (error instanceof SnapshotError) return [];
+		throw error;
+	}
+	return findings
+		.filter((f) => f.section === 'verdicts')
+		.map((f) => `${f.label}: ${f.verdict.words}`);
+}
+
+const reviewOf = (
+	scope: MemoryReview['scope'],
+	row: MemoryReviewRow,
+	decisions: Map<string, DecisionState>
+): MemoryReview => ({
 	scope,
 	date: row.date,
 	summary: row.summary,
-	source: { type: 'review', id: row.id, date: row.date }
+	verdicts: verdictsOf(scope, row),
+	decisionState: (row.proposalId && decisions.get(row.proposalId)?.state) || 'none',
+	source: {
+		type: 'review',
+		id: reviewKey(
+			scope === 'week' ? { kind: 'weekly', weekStartsOn: row.date } : { kind: 'cycle', id: row.id }
+		),
+		date: row.date
+	}
 });
 
 /** The record sections of the coaching memory as of `today`, the owner's local day. */
@@ -119,6 +158,10 @@ export async function loadMemoryRecords(
 	});
 	const weekly = await repo.latestWeeklyReviews(ownerId, limits.weeklyReviews);
 	const cycle = await repo.latestCycleReview(ownerId);
+	const reviewed = cycle ? [...weekly, cycle] : weekly;
+	const reviewDecisions = reviewed.some((r) => r.proposalId !== null)
+		? await decisionStates(ownerId, reviewed, { db })
+		: new Map<string, DecisionState>();
 	const summaries = await repo.recentNotes(
 		ownerId,
 		MEMORY_NOTE_KINDS.threadSummary,
@@ -141,18 +184,23 @@ export async function loadMemoryRecords(
 			why: d.why,
 			source: { type: d.source, id: d.id, date: d.date }
 		})),
-		proposals: proposals.map((p) => ({
-			kind: p.kind,
-			title: p.title,
-			status: p.status,
-			decidedOn: p.decidedOn,
-			decisionNote: p.decisionNote,
-			source: { type: 'proposal', id: p.id }
-		})),
+		proposals: proposals.map((p) => {
+			const origin = originOf(p.source);
+			return {
+				kind: p.kind,
+				title: p.title,
+				status: p.status,
+				decidedOn: p.decidedOn,
+				decisionNote: p.decisionNote,
+				origin: origin?.kind ?? 'coach',
+				review: origin && { type: 'review', id: origin.source.id },
+				source: { type: 'proposal', id: p.id }
+			};
+		}),
 		// Newest first, whatever their scope.
 		reviews: [
-			...weekly.map((row) => reviewOf('week', row)),
-			...(cycle ? [reviewOf('cycle', cycle)] : [])
+			...weekly.map((row) => reviewOf('week', row, reviewDecisions)),
+			...(cycle ? [reviewOf('cycle', cycle, reviewDecisions)] : [])
 		].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0)),
 		threadSummaries: summaries.map(noteOf),
 		analyses: analyses.map(noteOf)

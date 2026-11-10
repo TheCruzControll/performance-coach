@@ -78,7 +78,14 @@ describe('coach vocabulary', () => {
 			'not_launched',
 			'disabled'
 		]);
-		expect(SUPERSEDED_REASONS).toEqual(['program_changed', 'revised']);
+		expect(SUPERSEDED_REASONS).toEqual([
+			'program_changed',
+			'revised',
+			'review_refreshed',
+			'folded_into_review',
+			'sessions_passed',
+			'cycle_planned'
+		]);
 		expect(RUN_STATUSES[0]).toBe('running');
 	});
 

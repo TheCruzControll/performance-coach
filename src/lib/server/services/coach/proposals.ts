@@ -8,7 +8,8 @@
  *   first summary line (≤ 200 characters), and program_id is set whenever base_version_id is.
  *   An identical open proposal on the same base is returned instead of a second row (creates
  *   are serialised per owner, so two at once cannot both store it), and a
- *   revision supersedes the open proposal it revises ('revised').
+ *   revision supersedes the open proposal it revises ('revised'). A review's proposal superseded
+ *   as SESSIONS_PASSED may also be revised, and stays as it is.
  * - acceptProposal takes only the id: it locks the row, re-parses the stored payload, supersedes
  *   it if its program has moved on ('program_changed'), checks it again against today and runs
  *   its kind's applier (./apply) in the same transaction. A proposal already decided returns as
@@ -39,9 +40,10 @@ import {
 	type Proposal,
 	type ProposalKind
 } from '../../../domain/coach/proposals';
-import type { SourceRef } from '../../../domain/coach/sources';
+import { reviewKey, type SourceRef } from '../../../domain/coach/sources';
 import type { SupersededReason } from '../../../domain/coach/vocabulary';
 import { localDay } from '../../../domain/dates';
+import { stillAhead } from '../../../domain/programming/review/next-week';
 import { isEligible, libraryOf } from '../../../domain/programming/eligibility';
 import { toExerciseKey, type ProgrammingInput } from '../../../domain/programming/input';
 import { estimateMinutes } from '../../../domain/programming/timefit';
@@ -67,7 +69,9 @@ import { programmingInputFor } from '../programs/alternatives';
 import { runMinutes } from '../programs/edits';
 import { listExercisePreferences } from '../training/preferences';
 import { TrainingInputError } from '../training/shared';
+import { listActiveWorkouts } from '../workouts/canonical';
 import { APPLIERS, type Applier, type ApplyOutcome } from './apply';
+import { refuseReviewNextCycle } from './apply/next-cycle';
 import { SESSION_ENDED, substitutionEnded } from './apply/session';
 import {
 	CoachInputError,
@@ -89,6 +93,9 @@ export const PROPOSAL_IDS_MAX = 10;
  */
 export const NEW_PROGRAM_NEEDS_NO_PROGRAM = true;
 export const PROGRAM_ACTIVE = 'You already have a program';
+
+/** Why a review's proposal is superseded when some of its sessions passed before it was accepted. */
+export const SESSIONS_PASSED = 'sessions_passed' satisfies SupersededReason;
 
 /** The kinds proposed against the active program's current version (base_version_id). */
 const ON_PROGRAM: ReadonlySet<ProposalKind> = new Set([
@@ -142,10 +149,61 @@ export interface ProposalView {
 	supersededReason: SupersededReason | null;
 	threadId: string | null;
 	revisionOf: string | null;
+	/** The review that proposed it by the rules (evidence.source); null for the coach's own. */
+	origin: ProposalOrigin | null;
 	createdAt: Date;
 	closedAt: Date | null;
 	/** What it touches, each once: its rows' records, the version it made, what it revises. */
 	links: SourceRef[];
+}
+
+/**
+ * A proposal the rules made for one of M6's reviews, not the coach: stored as evidence.source,
+ * which M5's content guard then freezes. modifiedBy and trimmed mark an owner's revision of it.
+ */
+export interface RulesProvenance {
+	kind: 'weekly_review' | 'cycle_review';
+	reviewId: string;
+	revision: number;
+	/** A weekly review's Monday: its page is keyed by it. */
+	weekStartsOn?: IsoDate;
+	modifiedBy?: 'owner';
+	/** How many of the review's changes were dropped because their sessions had passed. */
+	trimmed?: number;
+}
+
+/** Where a review's proposal came from, and the review page that shows it. */
+export interface ProposalOrigin {
+	kind: RulesProvenance['kind'];
+	reviewId: string;
+	href: string;
+	/** The review as a coach source, whose action opens that page (sourceAction). */
+	source: SourceRef;
+}
+
+/** What a review's source is called wherever the coach reads it. */
+export const REVIEW_SOURCE_LABEL: Record<RulesProvenance['kind'], string> = {
+	weekly_review: 'Weekly review',
+	cycle_review: 'Cycle review'
+};
+
+const origin = (kind: RulesProvenance['kind'], reviewId: string, key: string): ProposalOrigin => ({
+	kind,
+	reviewId,
+	href: `/progress/reviews/${key}`,
+	source: { type: 'review', id: key, label: REVIEW_SOURCE_LABEL[kind] }
+});
+
+/** The origin a stored evidence.source names; null for anything else (the coach's own). */
+export function originOf(source: unknown): ProposalOrigin | null {
+	if (typeof source !== 'object' || source === null) return null;
+	const { kind, reviewId, weekStartsOn } = source as Partial<RulesProvenance>;
+	if (typeof reviewId !== 'string') return null;
+	if (kind === 'weekly_review' && typeof weekStartsOn === 'string')
+		return origin(kind, reviewId, reviewKey({ kind: 'weekly', weekStartsOn }));
+	if (kind === 'cycle_review')
+		return origin(kind, reviewId, reviewKey({ kind: 'cycle', id: reviewId }));
+	return null;
 }
 
 /** coach_proposals.diff and .impact as createProposal stores them. */
@@ -197,6 +255,7 @@ function toView(row: ProposalViewRow): ProposalView {
 		supersededReason: row.supersededReason,
 		threadId: row.threadId,
 		revisionOf: row.revisionOf,
+		origin: originOf(row.source),
 		createdAt: row.createdAt,
 		closedAt: row.closedAt,
 		links: [...links.values()]
@@ -457,6 +516,8 @@ export interface NewProposal {
 	origin?: { threadId: string; runId: string; toolUseId: string } | null;
 	/** What the coach read to propose it. */
 	evidence?: Record<string, unknown> | null;
+	/** A review's rules proposed it, with no conversation: stored as evidence.source. */
+	provenance?: RulesProvenance | null;
 }
 
 export interface CreatedProposal {
@@ -474,6 +535,13 @@ export async function createProposal(
 	input: NewProposal,
 	deps: CoachDeps = {}
 ): Promise<CreatedProposal> {
+	const { provenance } = input;
+	if (provenance && input.origin) {
+		throw new CoachInputError('provenance', 'A review proposal has no conversation');
+	}
+	const evidence = provenance
+		? { ...input.evidence, source: provenance }
+		: (input.evidence ?? null);
 	return inTransaction(deps, async (resolved) => {
 		const repo = createCoachProposalsRepository(resolved.db);
 		const { proposal, program, diffContext, warnings } = await checkAgainstToday(
@@ -489,10 +557,17 @@ export async function createProposal(
 		if (duplicate) return { proposal: await view(repo, ownerId, duplicate), duplicate: true };
 
 		let revises: string | null = null;
+		let open = false;
 		if (input.revises != null) {
 			const predecessor = await lockOwn(repo, ownerId, input.revises);
-			if (predecessor.status !== 'proposed') throw new ProposalClosedError(predecessor.status);
+			// A review's proposal superseded as sessions_passed is the base of the owner's revision
+			// that finishes it in the review; it is already closed, so it stays as it is.
+			const passed = predecessor.supersededReason === SESSIONS_PASSED;
+			if (predecessor.status !== 'proposed' && !passed) {
+				throw new ProposalClosedError(predecessor.status);
+			}
 			revises = predecessor.id;
+			open = predecessor.status === 'proposed';
 		}
 		const { rows, impact } = describeProposal(proposal, diffContext);
 		const lines = summaryLines(proposal, diffContext);
@@ -504,7 +579,7 @@ export async function createProposal(
 			summary: lines[0]!,
 			rationale: proposal.rationale,
 			payload: proposal.payload as Record<string, unknown>,
-			evidence: input.evidence ?? null,
+			evidence,
 			programId: base?.id ?? null,
 			baseVersionId: base?.versionId ?? null,
 			threadId: input.origin?.threadId ?? null,
@@ -518,7 +593,7 @@ export async function createProposal(
 			createdAt: at,
 			updatedAt: at
 		});
-		if (revises) {
+		if (revises && open) {
 			const superseded = { supersededReason: 'revised', closedAt: at, updatedAt: at } as const;
 			await repo.decide(ownerId, revises, { status: 'superseded', ...superseded });
 		}
@@ -532,6 +607,47 @@ export interface DecidedProposal {
 	proposal: ProposalView;
 	/** False when it had already been decided: it is returned as stored and nothing was written. */
 	changed: boolean;
+	/** A review's proposal some of whose sessions had passed: finish it in the review at `href`. */
+	superseded?: { reason: typeof SESSIONS_PASSED; href: string };
+	/** Where a next_cycle went when a cycle review took it in (the outcome's href). */
+	href?: string;
+}
+
+/** A session the version does not hold: kept, so today's check refuses it as it would. */
+const NOT_IN_VERSION: IsoDate = '9999-12-31';
+
+/**
+ * The items whose op's session is still ahead today (the domain's stillAhead): dated today or
+ * later in the current version, not skipped, and with no workout begun or completed on it. The
+ * review's decision and acceptProposal both split a review's ops with it, so they agree.
+ */
+export async function opsStillAhead<T extends { op: ProgramOp }>(
+	ownerId: string,
+	items: readonly T[],
+	today: IsoDate,
+	db: ResolvedCoachDeps['db']
+): Promise<T[]> {
+	const programs = createProgramsRepository(db);
+	const found = await programs.currentProgram(ownerId);
+	if (!found) return [...items];
+	const version = await getProgramVersion(ownerId, found.program.id, found.version.number, { db });
+	const sessions = new Map(
+		version.blocks.flatMap((b) => b.weeks.flatMap((w) => w.sessions)).map((s) => [s.lineage, s])
+	);
+	const lineages = [...new Set(items.map((i) => i.op.sessionLineage))];
+	const done = await programs.completedLineages(ownerId, lineages);
+	const { workouts } = await listActiveWorkouts(ownerId, { db });
+	const begun = [
+		...done,
+		...workouts.map((w) => w.plannedLineage),
+		...lineages.filter((l) => sessions.get(l)?.status === 'skipped')
+	].map((plannedLineage) => ({ plannedLineage }));
+	const dated = items.map((item) => ({
+		item,
+		op: item.op,
+		sessionDate: sessions.get(item.op.sessionLineage)?.date ?? NOT_IN_VERSION
+	}));
+	return stillAhead(dated, today, begun).map((d) => d.item);
 }
 
 function decisionOf(outcome: ApplyOutcome, at: Date): ProposalDecision {
@@ -555,8 +671,9 @@ function decisionOf(outcome: ApplyOutcome, at: Date): ProposalDecision {
 /**
  * Accept one of the owner's proposals by id: the stored payload, re-parsed and checked again
  * against today, is applied by its kind's applier in this transaction. A proposal whose program
- * has a newer version is superseded ('program_changed') instead; one that no longer passes
- * today's rules is refused (ProposalRefusedError) and stays proposed.
+ * has a newer version is superseded ('program_changed') instead, and a review's proposal with a
+ * session now past or started as SESSIONS_PASSED, with the review's href to finish it there; one
+ * that no longer passes today's rules is refused (ProposalRefusedError) and stays proposed.
  */
 export async function acceptProposal(
 	ownerId: string,
@@ -569,6 +686,8 @@ export async function acceptProposal(
 		if (row.status !== 'proposed') {
 			return { proposal: await view(repo, ownerId, row.id), changed: false };
 		}
+		// The review's own next_cycle stays proposed whatever its base: the review plans it.
+		if (row.kind === 'next_cycle') refuseReviewNextCycle(row.evidence);
 		const at = resolved.now();
 		if (row.baseVersionId) {
 			const current = await createProgramsRepository(resolved.db).currentProgram(ownerId);
@@ -576,6 +695,28 @@ export async function acceptProposal(
 				const superseded = { supersededReason: 'program_changed' as const, closedAt: at };
 				await repo.decide(ownerId, row.id, { status: 'superseded', ...superseded, updatedAt: at });
 				return { proposal: await view(repo, ownerId, row.id), changed: true };
+			}
+		}
+		// A review's proposal with a session now past or started is finished in the review instead.
+		const origin = originOf((row.evidence as { source?: unknown } | null)?.source);
+		const ops = (row.payload as { ops?: ProgramOp[] }).ops;
+		if (origin && Array.isArray(ops)) {
+			const { timeZone } = await getAthleteProfile(ownerId, { db: resolved.db });
+			const items = ops.map((op) => ({ op }));
+			const ahead = await opsStillAhead(ownerId, items, localDay(at, timeZone), resolved.db);
+			if (ahead.length < items.length) {
+				const superseded = {
+					supersededReason: SESSIONS_PASSED,
+					closedAt: at,
+					updatedAt: at
+				} as const;
+				await repo.decide(ownerId, row.id, { status: 'superseded', ...superseded });
+				const proposal = await view(repo, ownerId, row.id);
+				return {
+					proposal,
+					changed: true,
+					superseded: { reason: SESSIONS_PASSED, href: origin.href }
+				};
 			}
 		}
 		const stored = {
@@ -608,7 +749,8 @@ export async function acceptProposal(
 			deps: resolved
 		});
 		await repo.decide(ownerId, row.id, decisionOf(outcome, at));
-		return { proposal: await view(repo, ownerId, row.id), changed: true };
+		const href = outcome.status === 'superseded' ? outcome.href : undefined;
+		return { proposal: await view(repo, ownerId, row.id), changed: true, ...(href && { href }) };
 	});
 }
 

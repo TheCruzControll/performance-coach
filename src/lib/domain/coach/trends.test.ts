@@ -7,6 +7,7 @@ import {
 	CHANGE_MIN_POINTS,
 	type SeriesChange
 } from './trends';
+import { classifyTrend } from '../analytics/trend';
 import type { SeriesPoint } from '../analytics/types';
 
 /** Complete weekly points from `values`, Mondays from 5 October 2026. */
@@ -29,6 +30,7 @@ describe('seriesChange', () => {
 		// Earlier half 100, 110, 120 (mean 110); later half 130, 140, 150 (mean 140).
 		expect(seriesChange(weekly([100, 110, 120, 130, 140, 150]))).toEqual({
 			enoughData: true,
+			verdict: 'real_trend',
 			points: 6,
 			from: '2026-10-05',
 			to: '2026-11-09',
@@ -110,9 +112,10 @@ describe('seriesChange', () => {
 	});
 
 	it(`needs ${CHANGE_MIN_POINTS} counted points, and says how many it has`, () => {
-		expect(seriesChange([])).toEqual({ enoughData: false, points: 0, need: CHANGE_MIN_POINTS });
+		const none = { enoughData: false, verdict: 'insufficient_data' } as const;
+		expect(seriesChange([])).toEqual({ ...none, points: 0, need: CHANGE_MIN_POINTS });
 		expect(seriesChange(weekly([100, null, 110, 120]))).toEqual({
-			enoughData: false,
+			...none,
 			points: 3,
 			need: CHANGE_MIN_POINTS
 		});
@@ -132,9 +135,38 @@ describe('seriesChange', () => {
 		});
 		expect(seriesChange(weekly([100]), { minPoints: 1 })).toEqual({
 			enoughData: false,
+			verdict: 'insufficient_data',
 			points: 1,
 			need: 2
 		});
+	});
+
+	it("carries classifyTrend's verdict, judged by the metric's direction and minimal change", () => {
+		const rising = weekly([100, 110, 120, 130, 140, 150]);
+		expect(seriesChange(rising).verdict).toBe(classifyTrend(rising, { direction: 'none' }).verdict);
+		// A steady rise is real; the same rise held under a 60 % minimal change is normal variation.
+		expect(seriesChange(rising, { direction: 'up' }).verdict).toBe('real_trend');
+		expect(seriesChange(rising, { direction: 'up', mpc: { rel: 0.6 } }).verdict).toBe(
+			'normal_variation'
+		);
+		// A rise of 6 % in a noisy series is still described, and called normal variation.
+		const noisy = weekly([100, 115, 95, 110, 108, 118, 100, 120]);
+		expect(changeOf(noisy)).toMatchObject({ direction: 'up', verdict: 'normal_variation' });
+		// Four points describe a change but are too few for a verdict.
+		expect(changeOf(weekly([100, 110, 120, 130])).verdict).toBe('insufficient_data');
+	});
+
+	it('carries a verdict reached elsewhere as it is, so one figure never gets two', () => {
+		const points = weekly([100, 110, 120, 130]);
+		const dashboard = classifyTrend(weekly([100, 101, 99, 100, 101, 100, 99, 100]), {
+			direction: 'up'
+		});
+		expect(dashboard.verdict).toBe('normal_variation');
+		expect(seriesChange(points, { trend: dashboard })).toMatchObject({
+			direction: 'up',
+			verdict: 'normal_variation'
+		});
+		expect(seriesChange([], { trend: dashboard }).verdict).toBe('normal_variation');
 	});
 
 	it('refuses a value that is not a finite number', () => {

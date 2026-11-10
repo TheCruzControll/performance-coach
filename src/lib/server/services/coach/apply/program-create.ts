@@ -8,17 +8,15 @@
  *   check, NEW_PROGRAM_NEEDS_NO_PROGRAM, and the store's own refusal). A profile or library
  *   changed since the preview supersedes it ('program_changed': the program a build would make is
  *   not the one shown), and nothing is written.
- * - next_cycle changes no program: it is accepted, and waits for M6's cycle review
- *   (NEXT_CYCLE_AWAITS), which reads accepted next_cycle proposals.
+ * - next_cycle is ./next-cycle.ts's (M6's cycle review plans it).
  */
-import { NEXT_CYCLE_AWAITS } from '../../../../domain/coach/proposals';
 import { buildProgram, ProgrammingConflictError } from '../../programming/index';
 import { ProgramExistsError } from '../../programs/store';
 import { TrainingInputError } from '../../training/shared';
 import { PROGRAM_ACTIVE, ProposalRefusedError } from '../proposals';
 import type { Appliers, ApplyOutcome } from './types';
 
-export const PROGRAM_CREATE_APPLIERS: Pick<Appliers, 'new_program' | 'next_cycle'> = {
+export const PROGRAM_CREATE_APPLIERS: Pick<Appliers, 'new_program'> = {
 	async new_program({ ownerId, proposal, today, deps }): Promise<ApplyOutcome> {
 		const { start, startsOn, firstPlannedDay, fingerprint, digest } = proposal.payload;
 		const request = { today, start, startsOn, firstPlannedDay, fingerprint, digest };
@@ -43,9 +41,5 @@ export const PROGRAM_CREATE_APPLIERS: Pick<Appliers, 'new_program' | 'next_cycle
 			}
 			throw error;
 		}
-	},
-
-	async next_cycle() {
-		return { status: 'accepted', awaits: NEXT_CYCLE_AWAITS };
 	}
 };

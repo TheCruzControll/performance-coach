@@ -61,6 +61,21 @@ function filesOf(listing: Listing, project: string): string[] {
 	return [...files].sort();
 }
 
+let listed: Listing | undefined;
+/** The real listing, read once for the whole file (a listing takes seconds). */
+const suite = () => (listed ??= listSuite(root));
+
+/** The titles (`describe › … › test`) of `file`'s tests that `project` runs. */
+function titlesOf(listing: Listing, project: string, file: string): string[] {
+	const titles: string[] = [];
+	for (const [key, projects] of listing.tests) {
+		if (projects.has(project) && key.startsWith(`${file} › `)) {
+			titles.push(key.slice(file.length + 3));
+		}
+	}
+	return titles.sort();
+}
+
 const E2E_FILES = readdirSync(new URL('../e2e/', import.meta.url)).filter((f) =>
 	f.endsWith('.e2e.ts')
 );
@@ -142,10 +157,10 @@ describe('playwright.config.ts desktop project', () => {
 	});
 
 	it('select whole files: desktop specs move off the iPhone projects, nothing else does', () => {
-		const listing = listSuite(root);
+		const listing = suite();
 		expect(DESKTOP_FILES.length, 'desktop specs exist').toBeGreaterThan(0);
 		expect(filesOf(listing, 'desktop-chromium')).toEqual(
-			[...DESKTOP_FILES, ...SHARED, 'a11y.e2e.ts'].sort()
+			[...DESKTOP_FILES, ...SHARED, 'a11y-dark.e2e.ts', 'a11y-light.e2e.ts'].sort()
 		);
 
 		// The iPhone projects run every functional spec but the desktop ones.
@@ -160,6 +175,27 @@ describe('playwright.config.ts desktop project', () => {
 		).sort();
 		for (const project of ['iphone-chromium', 'iphone-webkit']) {
 			expect(filesOf(listing, project), project).toEqual(iphone);
+		}
+	}, 120_000);
+
+	it('split the axe audit by theme: each half lists the other’s tests, in every browser project', () => {
+		const listing = suite();
+		const halves = (project: string) => ({
+			dark: titlesOf(listing, project, 'a11y-dark.e2e.ts'),
+			light: titlesOf(listing, project, 'a11y-light.e2e.ts')
+		});
+		const expected = halves('iphone-chromium');
+		expect(expected.dark.length, 'the dark half has tests').toBeGreaterThan(0);
+		for (const theme of ['dark', 'light'] as const) {
+			for (const title of expected[theme]) {
+				expect(title.startsWith(`accessibility (axe, ${theme} theme) › `), title).toBe(true);
+			}
+		}
+		// Derived, not frozen: a screen or coach state added to the suite lands in both halves.
+		const swapped = expected.dark.map((t) => t.replace('(axe, dark theme)', '(axe, light theme)'));
+		expect(expected.light).toEqual(swapped.sort());
+		for (const project of ['desktop-chromium', 'iphone-webkit']) {
+			expect(halves(project), project).toEqual(expected);
 		}
 	}, 120_000);
 });

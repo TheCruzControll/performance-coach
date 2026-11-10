@@ -20,8 +20,8 @@ permissions:
   contents: read
 
 env:
-  # Local-style databases inside the postgres:18 service container, created by db:setup
-  # (postgres:18 matches the Neon production branch).
+  # Local-style databases inside the postgres:18 container each database job starts, created by
+  # db:setup (postgres:18 matches the Neon production branch).
   DATABASE_URL: postgres://coach:coach@localhost:5432/coach_dev
   DATABASE_URL_UNPOOLED: postgres://coach:coach@localhost:5432/coach_dev
   TEST_DATABASE_URL: postgres://coach:coach@localhost:5432/coach_test
@@ -58,23 +58,12 @@ jobs:
       - name: Migrations match the schema (no drift)
         run: pnpm db:drift
 
-  test:
-    name: Unit & integration tests
+  # Unit tests never reach a database, so they run apart from the integration tests and
+  # finish while the integration job is still starting its Postgres.
+  unit:
+    name: Unit tests
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    services:
-      postgres:
-        image: postgres:18
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: postgres
-        ports: ['5432:5432']
-        options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 12
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -83,12 +72,45 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Unit tests
+        run: pnpm test:unit
+
+  integration:
+    name: Integration tests & query plans
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      # Pulled and started in the background (docker run -d would block on the pull), so the
+      # server boots while the job installs; "Wait for Postgres" holds db:setup until it answers.
+      - name: Start Postgres 18 (in the background)
+        run: nohup sh -c 'docker run -d --name postgres -p 5432:5432 -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=postgres postgres:18' > "$RUNNER_TEMP/postgres-start.log" 2>&1 &
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Over TCP: the image's init server listens on its socket only, so ready means the real
+      # server. 90 s covers a cold pull plus initdb; a server that never answers fails the job.
+      - name: Wait for Postgres
+        env:
+          WAIT_SECONDS: 90
+        run: |
+          for _ in $(seq "$WAIT_SECONDS"); do
+            if pg_isready -h localhost -p 5432 -U postgres; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::Postgres did not accept TCP connections within ${WAIT_SECONDS} s"
+          cat "$RUNNER_TEMP/postgres-start.log"
+          docker logs postgres
+          exit 1
       - name: Create roles and databases
         run: pnpm db:setup
       - name: Apply migrations (dev database)
         run: pnpm db:migrate
-      - name: Unit tests
-        run: pnpm test:unit
       - name: Integration tests (real Postgres, committed migrations)
         run: pnpm test:integration
       # The history and program queries' plans on a two-year dataset: on a large table, each
@@ -103,6 +125,26 @@ jobs:
           path: test-results/explain.md
           retention-days: 14
           if-no-files-found: ignore
+
+  # The check branch protection requires, under the combined job's old name: green only when both
+  # jobs are. always(), not !cancelled(): a required check skipped in a cancelled run would count
+  # as passing. Pull requests only, as the E2E check below.
+  test:
+    name: Unit & integration tests
+    if: ${{ always() && github.event_name == 'pull_request' }}
+    needs: [unit, integration]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Unit and integration tests passed
+        env:
+          UNIT: ${{ needs.unit.result }}
+          INTEGRATION: ${{ needs.integration.result }}
+        run: |
+          if [ "$UNIT" != success ] || [ "$INTEGRATION" != success ]; then
+            echo "::error::Unit tests: $UNIT; integration tests: $INTEGRATION"
+            exit 1
+          fi
 
   build:
     name: Build (Vercel + Node) & budgets
@@ -142,7 +184,7 @@ jobs:
   # serial·chromium peaked at 9.3 in 42414341167 to 42431687521 (14 unsharded), then timed out
   # at 14 in 42469172500 with tests still passing, so it split in two the same way. Its shards
   # took 7.3-8.8 Playwright minutes in 42695476716 to 42698046025, no more than main's: two stay.
-  # serial shards hold whole files: its projects are not fullyParallel, so --shard splits by file.
+  # Every shard holds whole files, planned by measured seconds (scripts/e2e-shards.ts).
   # Shard timeouts stay at the unsharded leg's value until three runs per shard are measured.
   # main legs run 2 Playwright workers (playwright.config.ts), the other legs 1; main's `minutes`
   # stay at their 1-worker values until three 2-worker runs are measured.
@@ -169,21 +211,12 @@ jobs:
           - { group: serial, engine: webkit, shard: 3, of: 4, minutes: 15 }
           - { group: serial, engine: webkit, shard: 4, of: 4, minutes: 15 }
           - { group: alone, engine: chromium, shard: 1, of: 1, minutes: 5 }
-    services:
-      postgres:
-        image: postgres:18
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: postgres
-        ports: ['5432:5432']
-        options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 12
     steps:
       - uses: actions/checkout@v7
+      # Pulled and started in the background (docker run -d would block on the pull), so the
+      # server boots while the job installs; "Wait for Postgres" holds db:setup until it answers.
+      - name: Start Postgres 18 (in the background)
+        run: nohup sh -c 'docker run -d --name postgres -p 5432:5432 -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=postgres postgres:18' > "$RUNNER_TEMP/postgres-start.log" 2>&1 &
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
@@ -200,27 +233,26 @@ jobs:
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ steps.image.outputs.os }}-${{ hashFiles('pnpm-lock.yaml') }}
-      - name: Playwright version
-        id: playwright
-        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
-      # WebKit's system packages are ~140 MB, and the runner's Ubuntu mirror sometimes trickles
-      # at ~50 KB/s (a 12-minute timeout on #5 before any test ran). Keep the downloaded
-      # packages between runs so a slow mirror costs one run, not every run.
+      # Measured on 40+ runs: install-deps took about 20 s, but on bad days its unconditional
+      # `apt-get update` stalled on the Ubuntu mirror for the whole 12 minutes (6 legs in two
+      # hours), with every package already in the cache. The cache now carries apt's lists too,
+      # keyed by the exact package set, so a full cache installs with no network at all; see
+      # scripts/ci-playwright-deps.sh. A new runner image saves a fresh copy. Chromium legs
+      # launch only Chromium; WebKit legs also need it for the owner setup. The set differs, so
+      # does the key: a WebKit leg never restores a Chromium leg's smaller cache.
+      - name: Playwright system packages
+        id: apt
+        run: ./scripts/ci-playwright-deps.sh key ${{ matrix.engine == 'webkit' && 'chromium webkit' || 'chromium' }} >> "$GITHUB_OUTPUT"
       - name: Cache Playwright system packages
         uses: actions/cache@v6
         with:
-          path: ~/.cache/apt-archives
-          key: apt-playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-v1
-          restore-keys: apt-playwright-${{ runner.os }}-
-      - name: Configure apt for slow mirrors (and keep packages for the cache)
-        run: ./scripts/ci-apt-resilience.sh ~/.cache/apt-archives
+          path: ~/.cache/apt-playwright
+          key: apt-playwright-v2-${{ steps.image.outputs.os }}-${{ steps.apt.outputs.packages }}-${{ steps.apt.outputs.image }}
+          restore-keys: apt-playwright-v2-${{ steps.image.outputs.os }}-${{ steps.apt.outputs.packages }}-
       - name: Install Playwright system dependencies
-        # Never killed midway: an interrupted apt-get keeps the dpkg lock and fails every later
-        # install. Slow or stalled mirror downloads time out and retry inside apt instead.
+        # Bounded update and download attempts inside; dpkg runs once, never killed midway.
         timeout-minutes: 12
-        run: pnpm exec playwright install-deps chromium webkit
-      - name: Make the kept packages readable for the cache
-        run: ./scripts/ci-apt-resilience.sh --release ~/.cache/apt-archives
+        run: ./scripts/ci-playwright-deps.sh install ~/.cache/apt-playwright ${{ matrix.engine == 'webkit' && 'chromium webkit' || 'chromium' }}
       - name: Install Playwright browsers
         # Usually restored from the cache above. A stuck download is safe to kill: bound and retry.
         timeout-minutes: 8
@@ -234,16 +266,43 @@ jobs:
           done
           echo "::error::browser download failed 3 times"
           exit 1
+      # Over TCP: the image's init server listens on its socket only, so ready means the real
+      # server. 90 s covers a cold pull plus initdb; a server that never answers fails the job.
+      - name: Wait for Postgres
+        env:
+          WAIT_SECONDS: 90
+        run: |
+          for _ in $(seq "$WAIT_SECONDS"); do
+            if pg_isready -h localhost -p 5432 -U postgres; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::Postgres did not accept TCP connections within ${WAIT_SECONDS} s"
+          cat "$RUNNER_TEMP/postgres-start.log"
+          docker logs postgres
+          exit 1
       - name: Create roles and databases
         run: pnpm db:setup
+      # Each shard runs the spec files scripts/e2e-shards.ts plans for it from e2e/timings.json
+      # (--test-list; shard 1 inverts the others' union, so an untimed file runs there). The
+      # arguments are read first, so a planner failure fails the step rather than run the whole leg.
       - name: Playwright (global setup builds and starts the production Node server)
         timeout-minutes: ${{ matrix.minutes }}
         env:
           E2E_ENGINE: ${{ matrix.engine }}
           E2E_GROUP: ${{ matrix.group }}
-        run: pnpm test:e2e --shard ${{ matrix.shard }}/${{ matrix.of }}
+          E2E_SHARD: ${{ matrix.shard }}/${{ matrix.of }}
+        run: |
+          shard_args=$(node scripts/e2e-shards.ts "$RUNNER_TEMP/e2e-shard-tests.txt")
+          pnpm test:e2e $shard_args
+      # Also planned vs measured seconds per file against e2e/timings.json for this leg.
       - name: Where the minutes went
         if: ${{ !cancelled() }}
+        env:
+          E2E_ENGINE: ${{ matrix.engine }}
+          E2E_GROUP: ${{ matrix.group }}
+          E2E_SHARD: ${{ matrix.shard }}/${{ matrix.of }}
         run: node scripts/e2e-timing.ts test-results/report.json "${{ matrix.group }} · ${{ matrix.engine }}"
       - name: Upload screenshots and report
         if: ${{ !cancelled() }}
@@ -260,10 +319,12 @@ jobs:
           if-no-files-found: ignore
 
   # The check branch protection requires: green only when every leg is. It runs even when a leg
-  # fails, since a skipped required check would count as passing.
+  # fails, since a skipped required check would count as passing. Required checks gate only pull
+  # requests, so pushes and manual runs skip it: there the run's own result already fails on a
+  # failed leg, and this job would only queue behind every pull request's jobs (an hour at peak).
   e2e:
     name: E2E (iPhone viewport · Chromium + WebKit)
-    if: ${{ always() }}
+    if: ${{ always() && github.event_name == 'pull_request' }}
     needs: [e2e-legs]
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -282,35 +343,27 @@ jobs:
   # a route changes nothing here. Each shard builds, seeds and serves on its own Postgres.
   # Ceiling: 15 Lighthouse minutes per shard. A shard nearing it gains a sibling (`of` up by one,
   # plus an entry per new shard), never fewer routes or runs.
-  # Step timeouts: 1.5 × the slowest of the unsharded job's measured runs (mobile 7.0 minutes and
-  # desktop 4.4 in main's runs 42735820629, 42736181926 and 42737223258: 11 and 7, desktop kept at
-  # 8), until three runs per shard are measured; each shard does about half of that work.
+  # Step timeout: 1.5 × the slowest of the unsharded job's measured mobile runs (7.0 minutes in
+  # main's runs 42735820629, 42736181926 and 42737223258: 11), until three runs per shard are
+  # measured; each shard does about half of that work. Desktop is measured in a job of its own,
+  # unsharded and never gating (lighthouse-desktop, below).
   lighthouse-shards:
     name: Lighthouse (mobile) · ${{ matrix.shard }}/${{ matrix.of }}
     runs-on: ubuntu-latest
-    # Both Lighthouse steps (11 + 8), the installs (12 + 8), and 2 for checkout, install and build.
-    timeout-minutes: 41
+    # The Lighthouse step (11), the installs (12 + 8), and 2 for checkout, install and build.
+    timeout-minutes: 33
     strategy:
       fail-fast: false
       matrix:
         include:
           - { shard: 1, of: 2 }
           - { shard: 2, of: 2 }
-    services:
-      postgres:
-        image: postgres:18
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: postgres
-        ports: ['5432:5432']
-        options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 12
     steps:
       - uses: actions/checkout@v7
+      # Pulled and started in the background (docker run -d would block on the pull), so the
+      # server boots while the job installs; "Wait for Postgres" holds db:setup until it answers.
+      - name: Start Postgres 18 (in the background)
+        run: nohup sh -c 'docker run -d --name postgres -p 5432:5432 -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=postgres postgres:18' > "$RUNNER_TEMP/postgres-start.log" 2>&1 &
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
@@ -335,6 +388,22 @@ jobs:
       - name: Install Chromium
         timeout-minutes: 8
         run: pnpm exec playwright install chromium
+      # Over TCP: the image's init server listens on its socket only, so ready means the real
+      # server. 90 s covers a cold pull plus initdb; a server that never answers fails the job.
+      - name: Wait for Postgres
+        env:
+          WAIT_SECONDS: 90
+        run: |
+          for _ in $(seq "$WAIT_SECONDS"); do
+            if pg_isready -h localhost -p 5432 -U postgres; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::Postgres did not accept TCP connections within ${WAIT_SECONDS} s"
+          cat "$RUNNER_TEMP/postgres-start.log"
+          docker logs postgres
+          exit 1
       - name: Create roles and databases
         run: pnpm db:setup
       - name: Build for Node (served on http://localhost:4174 by the Lighthouse script)
@@ -348,14 +417,6 @@ jobs:
       - name: Lighthouse (median of 5 runs, asserted)
         timeout-minutes: 11
         run: pnpm lighthouse --runs 5 --assert --min-perf 0.9 --max-tbt 300 --shard ${{ matrix.shard }}/${{ matrix.of }}
-      # Desktop (1440 × 900) numbers on every PR head, in the step summary and the reports
-      # artifact (lighthouse-reports/desktop). Measured, never gating: whether CI should assert
-      # desktop (about 5 minutes per run) is an open owner decision (m2x plan), so a miss here
-      # marks the step and leaves the job green. Same build and server setup as the mobile run.
-      - name: Lighthouse desktop (median of 3 runs, measured, not gating)
-        continue-on-error: true
-        timeout-minutes: 8
-        run: pnpm lighthouse --desktop --seed --runs 3 --assert --shard ${{ matrix.shard }}/${{ matrix.of }}
       - name: Upload Lighthouse reports
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v7
@@ -382,3 +443,79 @@ jobs:
             echo "::error::Lighthouse shards: $SHARDS"
             exit 1
           fi
+
+  # Desktop runs on a runner of its own, so the required mobile check (above) ends when its one
+  # audit does instead of waiting about 2 minutes more for this one. Not a required check, and no
+  # job needs it: it reports, it never blocks a merge.
+  lighthouse-desktop:
+    name: Lighthouse desktop (measured, not gating)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      # Pulled and started in the background (docker run -d would block on the pull), so the
+      # server boots while the job installs; "Wait for Postgres" holds db:setup until it answers.
+      - name: Start Postgres 18 (in the background)
+        run: nohup sh -c 'docker run -d --name postgres -p 5432:5432 -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=postgres postgres:18' > "$RUNNER_TEMP/postgres-start.log" 2>&1 &
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Browser builds are per OS release (WebKit links that release's ICU), so the cache is
+      # keyed by the runner image: a WebKit downloaded on ubuntu-26.04 fails to launch on 24.04.
+      - name: Runner image
+        id: image
+        run: echo "os=${ImageOS:-unknown}" >> "$GITHUB_OUTPUT"
+      - name: Cache Playwright browsers
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ steps.image.outputs.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+      - name: Configure apt for slow mirrors
+        run: ./scripts/ci-apt-resilience.sh
+      - name: Install Chromium system dependencies
+        timeout-minutes: 12
+        run: pnpm exec playwright install-deps chromium
+      - name: Install Chromium
+        timeout-minutes: 8
+        run: pnpm exec playwright install chromium
+      # Over TCP: the image's init server listens on its socket only, so ready means the real
+      # server. 90 s covers a cold pull plus initdb; a server that never answers fails the job.
+      - name: Wait for Postgres
+        env:
+          WAIT_SECONDS: 90
+        run: |
+          for _ in $(seq "$WAIT_SECONDS"); do
+            if pg_isready -h localhost -p 5432 -U postgres; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::Postgres did not accept TCP connections within ${WAIT_SECONDS} s"
+          cat "$RUNNER_TEMP/postgres-start.log"
+          docker logs postgres
+          exit 1
+      - name: Create roles and databases
+        run: pnpm db:setup
+      - name: Build for Node (served on http://localhost:4174 by the Lighthouse script)
+        run: pnpm build:node
+        env:
+          ORIGIN: http://localhost:4174
+      # Desktop (1440 × 900) numbers on every PR head, in the step summary and the reports
+      # artifact (lighthouse-reports/desktop). Measured, never gating: whether CI should assert
+      # desktop (about 5 minutes per run) is an open owner decision (m2x plan), so a miss here
+      # marks the step and leaves the job green. Same build and server setup as the mobile run.
+      - name: Lighthouse desktop (median of 3 runs, measured, not gating)
+        continue-on-error: true
+        timeout-minutes: 8
+        run: pnpm lighthouse --desktop --seed --runs 3 --assert
+      - name: Upload Lighthouse desktop reports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: lighthouse-desktop-${{ github.run_id }}
+          path: lighthouse-reports/desktop/
+          retention-days: 14
+          if-no-files-found: ignore

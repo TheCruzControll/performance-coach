@@ -81,6 +81,8 @@ export const PAIN_COPY = {
 	intro: 'Stopping is always OK. Where it hurts and how bad are optional.',
 	area: { label: 'Where does it hurt?', hint: 'Optional' },
 	severity: { label: 'How bad is it?', hint: 'Optional' },
+	/** The explicit 'none' of the area and the severity (radios cannot be cleared). */
+	unsure: 'Not sure',
 	choices: 'What would you like to do?',
 	stop: { label: 'Stop this exercise', detail: 'Its remaining sets are marked as skipped' },
 	end: { label: 'End the workout here', detail: 'Save what you did and finish' },
@@ -90,7 +92,8 @@ export const PAIN_COPY = {
 		link: 'Add it to Profile → Injuries'
 	},
 	professional: 'If the pain is sharp or persists, see a doctor or physiotherapist.',
-	save: 'Save'
+	save: 'Save',
+	fixTitle: 'Fix the pain report'
 };
 
 export const SEVERITY_COPY: Record<Severity, ChoiceWords> = {

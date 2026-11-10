@@ -18,12 +18,16 @@ import { HARD_SET_RANGES } from '../volume';
 import { RULE_BY_ID } from './index';
 import { rules } from './m3';
 
-/** M3's code: the programming domain but M6's review, next block and results, and the edits. */
+/**
+ * M3's code: the programming domain but M6's review, next block, results and next-block stages,
+ * and the edits.
+ */
 const M3_SOURCES = [
 	'src/lib/domain/programming/**/*.ts',
 	'!src/lib/domain/programming/review/**',
 	'!src/lib/domain/programming/next-block/**',
 	'!src/lib/domain/programming/results.ts',
+	'!src/lib/domain/programming/stages/{carryover,next-shape,results}.ts',
 	'src/lib/server/services/programs/**/*.ts'
 ];
 

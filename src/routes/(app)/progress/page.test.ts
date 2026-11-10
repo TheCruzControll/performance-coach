@@ -3,10 +3,14 @@ import type * as Trends from './trends.ts';
 
 const preloadTrends = vi.hoisted(() => vi.fn(async () => {}));
 const servedTrends = vi.hoisted(() => vi.fn(async () => '<section>the trends</section>'));
+const preloadStrengthTrends = vi.hoisted(() => vi.fn(async () => {}));
+const servedStrengthTrends = vi.hoisted(() => vi.fn(async () => '<section>the strength</section>'));
 vi.mock('./trends', async (original) => ({
 	...(await original<typeof Trends>()),
 	preloadTrends,
-	servedTrends
+	servedTrends,
+	preloadStrengthTrends,
+	servedStrengthTrends
 }));
 
 /** +page.ts as a fresh module: in the browser (on a document opened at `pathname`) or the server. */
@@ -22,10 +26,13 @@ const overview = (stage: string) => ({ stage });
 const run = async (load: Load, data: object) =>
 	(await load({ data } as unknown as Parameters<Load>[0])) as Record<string, unknown>;
 const history = { failed: false, view: 'overview', period: '12w', overview: overview('history') };
+const strength = { failed: false, view: 'strength', period: '12w', strength: { stage: 'history' } };
 
 beforeEach(() => {
 	preloadTrends.mockClear();
 	servedTrends.mockClear();
+	preloadStrengthTrends.mockClear();
+	servedStrengthTrends.mockClear();
 });
 afterEach(() => {
 	vi.unstubAllGlobals();
@@ -70,6 +77,36 @@ describe("Progress's universal load", () => {
 		expect(servedTrends).toHaveBeenCalledExactlyOnceWith({ overview: fresh.overview });
 	});
 
+	it('on the server, sends Strength’s trends as markup, and never Overview’s', async () => {
+		const load = await loadModule({ browser: false });
+		const loaded = await run(load, strength);
+		expect(loaded).toMatchObject({ served: '<section>the strength</section>' });
+		expect(loaded['View']).toBeTypeOf('function');
+		expect(servedStrengthTrends).toHaveBeenCalledExactlyOnceWith({ strength: strength.strength });
+		expect(servedTrends).not.toHaveBeenCalled();
+	});
+
+	it('in the browser, keeps the server’s Strength markup while hydrating, and waits for it after', async () => {
+		const load = await loadModule({ browser: true, pathname: '/progress' });
+		// The hydrating load finishes while the trends' import is held.
+		let release = () => {};
+		const held = new Promise<void>((resolve) => (release = resolve));
+		preloadStrengthTrends.mockImplementation(() => held);
+		const settles = (loaded: Promise<unknown>) =>
+			Promise.race([loaded, new Promise((resolve) => setTimeout(() => resolve('held'), 500))]);
+		await expect(settles(run(load, strength))).resolves.toMatchObject({ served: 'served' });
+		expect(preloadTrends).not.toHaveBeenCalled();
+		expect(servedStrengthTrends).not.toHaveBeenCalled();
+		// Any later load in that document (a period link, Retry) waits for the trends' code.
+		const later = run(load, strength);
+		await expect(settles(later)).resolves.toBe('held');
+		release();
+		await expect(later).resolves.toMatchObject({ served: undefined });
+		expect(preloadStrengthTrends).toHaveBeenCalledTimes(2);
+		preloadStrengthTrends.mockReset();
+		preloadStrengthTrends.mockImplementation(async () => {});
+	});
+
 	it('imports no trends for a failed load', async () => {
 		const load = await loadModule({ browser: false });
 		await expect(run(load, { failed: true, view: 'overview', period: '12w' })).resolves.toEqual({
@@ -81,5 +118,7 @@ describe("Progress's universal load", () => {
 		});
 		expect(preloadTrends).not.toHaveBeenCalled();
 		expect(servedTrends).not.toHaveBeenCalled();
+		expect(preloadStrengthTrends).not.toHaveBeenCalled();
+		expect(servedStrengthTrends).not.toHaveBeenCalled();
 	});
 });

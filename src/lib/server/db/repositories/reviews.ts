@@ -29,6 +29,9 @@ export interface Narrative {
 	at: Date;
 }
 
+/** Advisory-lock key for creating and refreshing one owner's reviews (727201–727203 are taken). */
+const REVIEWS_LOCK = 727204;
+
 const first = async <T>(rows: Promise<T[]>): Promise<T | null> => (await rows)[0] ?? null;
 const tables = { weekly: weeklyReviews, cycle: cycleReviews } as const;
 
@@ -56,6 +59,10 @@ export function createReviewsRepository(db: Executor) {
 	};
 
 	return {
+		/** Serialise this owner's review creates and refreshes within the transaction. */
+		async lock(ownerId: string): Promise<void> {
+			await db.execute(sql`select pg_advisory_xact_lock(${REVIEWS_LOCK}, hashtext(${ownerId}))`);
+		},
 		weeklyReview: (ownerId: string, id: string) => first(q.weeklyReview(db, ownerId, id)),
 		cycleReview: (ownerId: string, id: string) => first(q.cycleReview(db, ownerId, id)),
 		liveWeeklyReview: (ownerId: string, weekStartsOn: string) =>
@@ -66,6 +73,9 @@ export function createReviewsRepository(db: Executor) {
 			q.reviewsPage(db, ownerId, page),
 		proposalHead: async (ownerId: string, proposalId: string) =>
 			(await q.proposalChain(db, ownerId, proposalId))[0] ?? null,
+		/** Each proposal's chain head, keyed by the proposal; none for an empty list. */
+		proposalHeads: async (ownerId: string, proposalIds: readonly string[]) =>
+			proposalIds.length === 0 ? [] : q.proposalHeads(db, ownerId, proposalIds),
 		narrativeMessages: async (ownerId: string, threadId: string, runId: string) =>
 			q.narrativeMessages(db, ownerId, threadId, runId),
 

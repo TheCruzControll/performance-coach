@@ -4,12 +4,13 @@
  * - Every predicate repeats the owner, so a review is found only through its owner: someone
  *   else's id reads as no row at all. A partial index's predicate (superseded_at is null) is
  *   repeated so the plan can use it.
- * - REVIEW_INDEXES names the index each builder is shaped for. proposalChain walks
- *   coach_proposals.revision_of, which has no index: the chain is short and the owner's proposals
- *   few, so its plan is recorded, never gated (null).
+ * - REVIEW_INDEXES names the index each builder is shaped for. proposalChain and proposalHeads
+ *   walk coach_proposals.revision_of, which has no index: the chain is short and the owner's
+ *   proposals few, so their plans are recorded, never gated (null).
  * Nothing runs until a builder is awaited; await them in turn on one connection.
  */
 import { and, asc, eq, isNotNull, isNull, sql, type SQL } from 'drizzle-orm';
+import type { SupersededReason } from '../../../domain/coach/vocabulary';
 import type { ProposalStatus } from '../../../domain/training/vocabulary';
 import { coachMessages, coachThreads, cycleReviews, weeklyReviews } from '../schema';
 import type { Executor } from '../types';
@@ -22,6 +23,7 @@ export const REVIEW_INDEXES = {
 	cycleReview: 'cycle_reviews_pkey',
 	reviewsPage: { weekly: 'weekly_reviews_owner_week_uq', cycle: 'cycle_reviews_owner_ends_idx' },
 	proposalChain: null,
+	proposalHeads: null,
 	narrativeMessages: 'coach_messages_thread_segment_seq_idx'
 } as const;
 
@@ -147,8 +149,7 @@ export function reviewsPage(
 export type ProposalHeadRow = {
 	id: string;
 	status: ProposalStatus;
-	/** Open until weekly-review-service adds M6's reasons to M5's vocabulary. */
-	supersededReason: string | null;
+	supersededReason: SupersededReason | null;
 	appliedVersionId: string | null;
 	appliedVersionNumber: number | null;
 	depth: number;
@@ -180,6 +181,41 @@ export async function proposalChain(
 		left join program_versions v on v.id = p.applied_version_id
 		order by chain.depth desc, p.created_at desc, p.id desc
 		limit 1`);
+	return result.rows;
+}
+
+/** A chain's head, keyed by the proposal its walk started from. */
+export type ProposalHeadOfRow = ProposalHeadRow & { rootId: string };
+
+/**
+ * proposalChain for several of the owner's proposals in one query: each one's head, keyed by the
+ * proposal its walk started from. A proposal that is not the owner's has no row.
+ */
+export async function proposalHeads(
+	db: Executor,
+	ownerId: string,
+	proposalIds: readonly string[]
+): Promise<ProposalHeadOfRow[]> {
+	const ids = sql.join(
+		proposalIds.map((id) => sql`${id}::uuid`),
+		sql`, `
+	);
+	const result = await db.execute<ProposalHeadOfRow>(sql`
+		with recursive chain (root, id, depth) as (
+			select p.id, p.id, 0 from coach_proposals p where p.id in (${ids}) and p.owner_id = ${ownerId}::uuid
+			union all
+			select chain.root, p.id, chain.depth + 1 from coach_proposals p
+			join chain on p.revision_of = chain.id
+			where p.owner_id = ${ownerId}::uuid and chain.depth < ${PROPOSAL_CHAIN_MAX}
+		)
+		select distinct on (chain.root) chain.root::text as "rootId", p.id::text as "id",
+			p.status as "status", p.superseded_reason as "supersededReason",
+			p.applied_version_id::text as "appliedVersionId", v.number as "appliedVersionNumber",
+			chain.depth as "depth"
+		from chain
+		join coach_proposals p on p.id = chain.id
+		left join program_versions v on v.id = p.applied_version_id
+		order by chain.root, chain.depth desc, p.created_at desc, p.id desc`);
 	return result.rows;
 }
 
