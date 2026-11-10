@@ -14,10 +14,15 @@
 </script>
 
 <script lang="ts">
-	import { onDestroy } from 'svelte';
-	import { afterNavigate, beforeNavigate } from '$app/navigation';
+	import { onDestroy, onMount } from 'svelte';
+	import { afterNavigate, beforeNavigate, onNavigate } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import { OFFLINE_PATH, reloadFresh, startOfflineRecovery } from '#lib/client/recovery.ts';
+	import {
+		OFFLINE_PATH,
+		reloadFresh,
+		startOfflineRecovery,
+		trackPress
+	} from '#lib/client/recovery.ts';
 	import Button from '#lib/ui/components/Button.svelte';
 	import EmptyState from '#lib/ui/components/EmptyState.svelte';
 	import PageHeader from '#lib/ui/components/PageHeader.svelte';
@@ -70,6 +75,15 @@
 		stopRecovery?.();
 		cancelTryAgain?.();
 	});
+
+	// The screen that replaces this one (the recovery's, mostly) renders once a press under way
+	// ends, so a tap begun here lands here: swapped out mid-press, it would fire no click.
+	let press: ReturnType<typeof trackPress> | undefined;
+	onMount(() => {
+		press = trackPress();
+		return () => press?.stop();
+	});
+	onNavigate(() => press?.released());
 
 	function tryAgain() {
 		// The /offline document at its own URL is always this screen: go into the app instead.
