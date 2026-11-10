@@ -1,74 +1,59 @@
+<!--
+  Progress (M6): the view nav and the period picker over the view the server rendered (+page.ts,
+  load.ts). Switching a view or a period is a link, so it works without JavaScript and Back
+  restores it; with JavaScript the frame holds, dimmed and aria-busy, until the new numbers
+  arrive (PeriodPicker). Offline, a switch is cancelled and the numbers stay, with a notice. A
+  failed load is a notice with Retry inside the screen, never the error page.
+-->
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { beforeNavigate, invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import { preferences } from '#lib/client/preferences.svelte.ts';
-	import EmptyState from '#lib/ui/components/EmptyState.svelte';
+	import { page } from '$app/state';
+	import type { Period } from '#lib/domain/analytics/periods.ts';
+	import PeriodPicker from '#lib/ui/analytics/PeriodPicker.svelte';
+	import Button from '#lib/ui/components/Button.svelte';
 	import ListRow from '#lib/ui/components/ListRow.svelte';
+	import Notice from '#lib/ui/components/Notice.svelte';
 	import PageHeader from '#lib/ui/components/PageHeader.svelte';
-	import Stat from '#lib/ui/components/Stat.svelte';
-	import Surface from '#lib/ui/components/Surface.svelte';
-	import Tabs from '#lib/ui/components/Tabs.svelte';
+	import type { PageProps } from './$types';
+	import { progressQuery, PROGRESS_VIEWS, VIEW_LABEL } from './params';
 
-	type TabId = 'strength' | 'running' | 'general';
-	let tab = $state<TabId>('strength');
+	let { data }: PageProps = $props();
 
-	// Units follow the device preferences (Profile → Preferences).
-	onMount(() => preferences.load());
-	const weight = $derived(preferences.units);
-	const distance = $derived(preferences.distance);
+	/** What the offline notice says is still shown. */
+	const SHOWING: Readonly<Record<Period, string>> = {
+		'4w': '4 weeks',
+		'12w': '12 weeks',
+		'26w': '26 weeks',
+		'52w': '52 weeks',
+		all: 'all time'
+	};
 
-	const panels: Record<
-		TabId,
-		{
-			tone: 'strength' | 'running' | 'conditioning';
-			icon: 'train' | 'pulse' | 'flame';
-			title: string;
-			description: string;
-			metrics: { label: string; unit: string }[];
-		}
-	> = $derived({
-		strength: {
-			tone: 'strength',
-			icon: 'train',
-			title: 'Strength trends start with your first sessions',
-			description:
-				'Estimated 1RMs, PRs and weekly volume per muscle group appear after two logged sessions — always labelled as estimated until you test a max.',
-			metrics: [
-				{ label: 'Est. 1RM', unit: weight },
-				{ label: 'Volume', unit: `${weight} / wk` },
-				{ label: 'Avg RPE', unit: 'last 7 d' }
-			]
-		},
-		running: {
-			tone: 'running',
-			icon: 'pulse',
-			title: 'No runs logged yet',
-			description:
-				'Weekly mileage, pace trends and long-run progression build from your logged runs.',
-			metrics: [
-				{ label: 'Distance', unit: `${distance} / wk` },
-				{ label: 'Avg pace', unit: `min / ${distance}` },
-				{ label: 'Long run', unit: distance }
-			]
-		},
-		general: {
-			tone: 'conditioning',
-			icon: 'flame',
-			title: 'Total load across disciplines',
-			description:
-				'Sessions, adherence and session-RPE load across lifting, running and Muay Thai show whether you are improving — and recovering.',
-			metrics: [
-				{ label: 'Sessions', unit: 'per week' },
-				{ label: 'Load', unit: 'AU / wk' },
-				{ label: 'Adherence', unit: '%' }
-			]
-		}
+	let offline = $state(false);
+	let retrying = $state(false);
+
+	// A view or period switch made offline would fail to load: keep the frame and the numbers.
+	beforeNavigate(({ to, cancel }) => {
+		if (to?.url.pathname !== page.url.pathname || navigator.onLine) return;
+		cancel();
+		offline = true;
 	});
+
+	async function retry() {
+		retrying = true;
+		try {
+			await invalidateAll();
+		} finally {
+			retrying = false;
+		}
+	}
 </script>
 
 <svelte:head>
 	<title>Progress · Performance Coach</title>
 </svelte:head>
+
+<svelte:window ononline={() => (offline = false)} />
 
 <!-- A dashboard: wide from 1024 px (docs/design-system.md, Responsive layout → Content width). -->
 <div data-layout="wide">
@@ -84,93 +69,107 @@
 		/>
 	</div>
 
-	<Tabs
-		label="Discipline"
-		bind:value={tab}
-		tabs={[
-			{ id: 'strength', label: 'Strength' },
-			{ id: 'running', label: 'Running' },
-			{ id: 'general', label: 'General' }
-		]}
-	>
-		{#snippet panel(id)}
-			{@const p = panels[id]}
-			<div class="panel">
-				<div class="metrics">
-					{#each p.metrics as m (m.label)}
-						<Stat label={m.label} caption={m.unit} />
-					{/each}
-				</div>
+	{#if offline}
+		<div class="notice">
+			<Notice tone="warning" icon="wifi-off" data-testid="progress-offline">
+				You’re offline — showing {SHOWING[data.period]}
+			</Notice>
+		</div>
+	{/if}
 
-				<Surface padding="none" radius="xl" tone={p.tone}>
-					<svg
-						class="ghost-chart"
-						viewBox="0 0 320 120"
-						preserveAspectRatio="none"
-						aria-hidden="true"
-					>
-						<!-- An empty plot: gridlines and a flat, neutral baseline. Never a made-up trend. -->
-						{#each [24, 52, 80, 108] as y (y)}
-							<line x1="0" x2="320" y1={y} y2={y} class="grid" />
-						{/each}
-						<line x1="0" x2="320" y1="66" y2="66" class="baseline" />
-					</svg>
-					<EmptyState
-						icon={p.icon}
-						tone={p.tone}
-						title={p.title}
-						description={p.description}
-						compact
-					/>
-				</Surface>
-			</div>
-		{/snippet}
-	</Tabs>
+	<div class="frame">
+		<nav class="views" aria-label="Progress views" data-sveltekit-reset="false">
+			{#each PROGRESS_VIEWS as view (view)}
+				<a
+					class="view"
+					href="{resolve('/(app)/progress')}{progressQuery({ view, period: data.period })}"
+					aria-current={view === data.view ? 'page' : undefined}>{VIEW_LABEL[view]}</a
+				>
+			{/each}
+		</nav>
+		<PeriodPicker current={data.period} data-testid="progress-period">
+			{#if data.failed}
+				<div class="failed" data-testid="progress-failed">
+					<Notice tone="danger" title="Couldn’t load your progress">
+						Your training is safe. Try again in a moment.
+					</Notice>
+					<Button variant="secondary" icon="refresh" loading={retrying} onclick={retry}>
+						Retry
+					</Button>
+				</div>
+			{:else if data.View}
+				<data.View overview={data.overview} />
+			{/if}
+		</PeriodPicker>
+	</div>
 </div>
 
 <style>
-	.history {
+	.history,
+	.notice {
 		margin-bottom: var(--space-5);
 	}
 
-	.panel {
+	.frame {
 		display: grid;
-		gap: var(--space-4);
+		gap: var(--space-3);
 	}
 
-	.metrics {
+	.views {
+		display: flex;
+		gap: var(--space-1);
+	}
+
+	.view {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		min-height: var(--touch-target);
+		min-width: var(--touch-target);
+		padding: 0 var(--space-3);
+		border-radius: var(--radius-full);
+		color: var(--color-text-secondary);
+		font-size: var(--text-sm);
+		font-weight: var(--weight-semibold);
+		text-decoration: none;
+	}
+
+	.view[aria-current='page'] {
+		background: var(--color-surface-2);
+		color: var(--color-text);
+	}
+
+	.view:not([aria-current='page']):active {
+		background: var(--color-surface-3);
+	}
+
+	@media (hover: hover) and (pointer: fine) {
+		.view:not([aria-current='page']):hover {
+			background: var(--color-surface-2);
+			color: var(--color-text);
+		}
+	}
+
+	.failed {
 		display: grid;
-		grid-template-columns: repeat(3, minmax(0, 1fr));
-		gap: var(--space-2);
+		justify-items: start;
+		gap: var(--space-3);
 	}
 
-	.ghost-chart {
-		width: 100%;
-		height: 7.5rem;
-		margin-top: var(--space-4);
-	}
-
-	.grid {
-		stroke: var(--color-hairline);
-		stroke-width: 1;
-	}
-
-	.baseline {
-		stroke: var(--color-border-strong);
-		stroke-width: 2;
-		stroke-dasharray: 4 6;
-		stroke-linecap: round;
-	}
-
-	/* A wider panel: roomier tiles over a taller plot, the three tiles still in one row. */
+	/* A desktop window: the view nav and the period picker share one row over the view. */
 	@media (width >= 64rem) {
-		.panel,
-		.metrics {
-			gap: var(--space-4);
+		.frame {
+			grid-template-columns: minmax(0, 1fr) 24rem;
+			align-items: center;
+			row-gap: var(--space-4);
 		}
 
-		.ghost-chart {
-			height: 12rem;
+		.frame :global(.period-view) {
+			display: contents;
+		}
+
+		.frame :global(.period-view > .content) {
+			grid-column: 1 / -1;
 		}
 	}
 </style>

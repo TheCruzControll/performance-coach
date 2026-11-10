@@ -2,7 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { TABS } from './support';
 
 /** Tabs whose screen loads server data, so offline they show the designed offline state. */
-const DATA_SCREENS: string[] = ['/today', '/train', '/profile'];
+const DATA_SCREENS: string[] = ['/today', '/train', '/progress', '/profile'];
 
 /** Resolves once the service worker controls the page (no reload: it claims clients). */
 async function waitForController(page: Page) {
@@ -54,6 +54,17 @@ test.describe('offline behaviour (service worker)', () => {
 		await expect(page.getByRole('heading', { level: 1, name: 'Train' })).toBeVisible();
 		await expect(page.locator('body')).not.toContainText(/500|internal error/i);
 
+		// Progress needs server data (the overview): the designed offline state in the shell.
+		await nav.getByRole('link', { name: 'Progress' }).click();
+		await expect(page).toHaveURL(/\/progress$/);
+		await expect(page.getByTestId('offline-state')).toBeVisible();
+		await expect(page.getByRole('heading', { level: 1, name: 'Progress' })).toBeVisible();
+		await expect(nav.getByRole('link', { name: 'Progress' })).toHaveAttribute(
+			'aria-current',
+			'page'
+		);
+		await expect(page.locator('body')).not.toContainText(/500|internal error/i);
+
 		// Profile needs server data: a designed offline state inside the shell, never a 500.
 		await nav.getByRole('link', { name: 'Profile' }).click();
 		await expect(page).toHaveURL(/\/profile$/);
@@ -80,11 +91,27 @@ test.describe('offline behaviour (service worker)', () => {
 		);
 
 		// …from which the tabs that need no server data still work.
-		await nav.getByRole('link', { name: 'Progress' }).click();
-		await expect(page.getByRole('heading', { level: 1, name: 'Progress' })).toBeVisible();
+		await nav.getByRole('link', { name: 'Coach' }).click();
+		await expect(page.getByRole('heading', { level: 1, name: 'Coach' })).toBeVisible();
 		await expect(page.getByTestId('offline-state')).toHaveCount(0);
 
-		// Back online, the screen loads live data again.
+		// A full page load of Progress offline: the precached offline screen, in the shell.
+		await nav.getByRole('link', { name: 'Progress' }).click();
+		await expect(page.getByTestId('offline-state')).toBeVisible();
+		await page.reload();
+		await expect(page).toHaveURL(/\/progress$/);
+		await expect(page.getByTestId('offline-state')).toContainText("You're offline");
+		await expect(nav.getByRole('link', { name: 'Progress' })).toHaveAttribute(
+			'aria-current',
+			'page'
+		);
+
+		// Back online, the screens load live data again: Progress, then Profile.
+		await context.setOffline(false);
+		await expect(page.getByRole('heading', { level: 1, name: 'Progress' })).toBeVisible();
+		await expect(page.getByTestId('offline-state')).toHaveCount(0, { timeout: 15_000 });
+		await expect(page.getByTestId('progress-period')).toBeVisible();
+		await context.setOffline(true);
 		await nav.getByRole('link', { name: 'Profile' }).click();
 		await expect(page.getByTestId('offline-state')).toBeVisible();
 		await context.setOffline(false);
