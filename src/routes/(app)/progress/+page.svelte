@@ -103,8 +103,8 @@
 				</div>
 			{:else if data.view === 'strength'}
 				<data.View strength={data.strength} />
-			{:else}
-				<data.View overview={data.overview} />
+			{:else if data.View}
+				<data.View overview={data.overview} served={data.served} />
 			{/if}
 		</PeriodPicker>
 	</div>
