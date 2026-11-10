@@ -104,7 +104,7 @@
 			{:else if data.view === 'overview'}
 				<data.View overview={data.overview} served={data.served} />
 			{:else}
-				<!-- Every other view takes its data by its own id (strength, running): one branch for all. -->
+				<!-- Every other view takes its data by its own id (strength, running, general): one branch for all. -->
 				<data.View {...data} />
 			{/if}
 		</PeriodPicker>
@@ -124,6 +124,7 @@
 
 	.views {
 		display: flex;
+		flex-wrap: wrap;
 		gap: var(--space-1);
 	}
 

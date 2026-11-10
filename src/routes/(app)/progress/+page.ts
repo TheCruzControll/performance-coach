@@ -13,12 +13,13 @@ import { preloadTrends, servedTrends, SERVED_IN_PLACE } from './trends';
 const VIEWS = {
 	overview: () => import('./OverviewView.svelte'),
 	strength: () => import('./StrengthView.svelte'),
-	running: () => import('./RunningView.svelte')
+	running: () => import('./RunningView.svelte'),
+	general: () => import('./GeneralView.svelte')
 } as const satisfies Record<ProgressView, () => Promise<unknown>>;
 
 /**
  * Each loaded view's data with its component. The overview takes its props by name; every other
- * view takes the whole of its data and reads its own id from it (strength, running), so the page
+ * view takes the whole of its data and reads its own id from it (strength, running, general), so the page
  * renders them all in one branch.
  */
 type WithView<D, All = D> = D extends { failed: false; view: 'overview' }
