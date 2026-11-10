@@ -10,7 +10,7 @@ import {
 	COACH_UNAVAILABLE_REASON_LABEL,
 	type CoachErrorKind,
 	type CoachUnavailableReason
-} from '#lib/domain/coach/index.ts';
+} from '#lib/domain/coach/vocabulary.ts';
 import type { IconName } from '../icons/icons';
 
 /** Failures of the screen itself, rather than of a turn. */
