@@ -106,6 +106,7 @@ beforeEach(() => {
 afterEach(() => {
 	vi.unstubAllGlobals();
 	vi.doUnmock('$app/env');
+	vi.doUnmock('./workout/shutdown.ts');
 	replace.mockReset();
 });
 
@@ -159,6 +160,92 @@ describe('signOut', () => {
 		expect(await pendingCount()).toBe(2);
 		expect(storage.getItem(SIGNED_OUT_MARKER)).toBeNull();
 		expect(await cacheStorage.keys()).toContain('pc-account-data');
+		expect(replace).not.toHaveBeenCalled();
+	});
+});
+
+/** A server that signs out, and what it was asked. */
+function serverSignsOut() {
+	const fetch = vi.fn(async () => Response.json({ ok: true }));
+	vi.stubGlobal('fetch', fetch);
+	return fetch;
+}
+
+describe('signOutIfSynced', () => {
+	it('signOutIfSynced signs out when the flush leaves nothing', async () => {
+		const flush = vi.fn(async () => 0);
+		vi.doMock('./workout/shutdown.ts', () => ({ unsyncedAfterFlush: flush }));
+		const { signOutIfSynced } = await load();
+		const fetch = serverSignsOut();
+
+		expect(await signOutIfSynced()).toBe(0);
+
+		expect(flush).toHaveBeenCalledOnce();
+		expect(fetch).toHaveBeenCalledWith(
+			'/api/auth/signout',
+			expect.objectContaining({ method: 'POST' })
+		);
+		expect(replace).toHaveBeenCalledWith('/?signedOut=1');
+	});
+
+	it('signOutIfSynced answers what the flush left and signs nothing out', async () => {
+		vi.doMock('./workout/shutdown.ts', () => ({ unsyncedAfterFlush: async () => 2 }));
+		const { signOutIfSynced } = await load();
+		await seedWorkout();
+		const fetch = serverSignsOut();
+
+		expect(await signOutIfSynced()).toBe(2);
+
+		expect(fetch).not.toHaveBeenCalled();
+		expect(await pendingCount()).toBe(2);
+		expect(replace).not.toHaveBeenCalled();
+	});
+});
+
+describe('signOutDeleting', () => {
+	it('signOutDeleting signs out and deletes what it asked about', async () => {
+		const { signOutDeleting } = await load();
+		await seedWorkout();
+		const order: string[] = [];
+		const fetch = vi.fn(async () => {
+			order.push('server');
+			return Response.json({ ok: true });
+		});
+		vi.stubGlobal('fetch', fetch);
+
+		expect(await signOutDeleting(2, () => order.push('leaving'))).toBe(0);
+
+		// The screen closes its sheet before the server is asked.
+		expect(order).toEqual(['leaving', 'server']);
+		expect(await databases()).toEqual([]);
+		expect(replace).toHaveBeenCalledWith('/?signedOut=1');
+	});
+
+	it('signOutDeleting answers the new count when more changes arrived since it asked', async () => {
+		const { signOutDeleting } = await load();
+		await seedWorkout();
+		const fetch = serverSignsOut();
+		const leaving = vi.fn();
+
+		expect(await signOutDeleting(1, leaving)).toBe(2);
+
+		expect(leaving).not.toHaveBeenCalled();
+		expect(fetch).not.toHaveBeenCalled();
+		expect(await pendingCount()).toBe(2);
+		expect(replace).not.toHaveBeenCalled();
+	});
+
+	it('signOutDeleting changes nothing when the server refuses', async () => {
+		const { signOutDeleting } = await load();
+		await seedWorkout();
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(async () => new Response(null, { status: 503 }))
+		);
+
+		await expect(signOutDeleting(2)).rejects.toThrow('sign-out failed (503)');
+
+		expect(await pendingCount()).toBe(2);
 		expect(replace).not.toHaveBeenCalled();
 	});
 });

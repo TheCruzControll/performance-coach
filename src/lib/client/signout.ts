@@ -11,8 +11,9 @@
  * data and the next sign-in should look the same. See docs/security.md.
  *
  * Unsynced workout changes are never deleted without the owner's choice (the offline workout sync
- * ADR, 'Losing the session'). The sign-out screens flush first, for at most 5 s, and ask before
- * calling signOut while changes are left (workout/shutdown.ts). signOut tells the other tabs
+ * ADR, 'Losing the session'). The sign-out screens go through signOutIfSynced, which flushes first,
+ * for at most 5 s (workout/shutdown.ts), and ask before signOutDeleting deletes what is left. Both
+ * screens share this flow; they only hold the sheet that asks. signOut tells the other tabs
  * ('signed-out'), clears the device, and leaves a one-shot marker in session storage for the
  * sign-in page. A signed-out URL without the marker (typed, from history, or the no-JavaScript
  * sign-out) keeps only unsynced workout changes until the owner deletes them or signs in.
@@ -97,6 +98,36 @@ export async function signOut(): Promise<void> {
 		// storage disabled: the sign-in page then keeps what is unsynced, which is nothing now
 	}
 	location.replace('/?signedOut=1');
+}
+
+/**
+ * The screens' sign-out: flushes the unsynced workout changes first, then signs out when none are
+ * left. Answers how many are left, for the screen to ask about; 0 means it signed out. Throws, as
+ * signOut does, when the server cannot be reached.
+ */
+export async function signOutIfSynced(): Promise<number> {
+	const { unsyncedAfterFlush } = await import('./workout/shutdown.ts');
+	const left = await unsyncedAfterFlush();
+	if (left === 0) await signOut();
+	return left;
+}
+
+/**
+ * "Sign out and delete", after the screen asked about `asked` unsynced changes. When more are
+ * pending now (one arrived while it asked), it signs nothing out and answers the new count, for the
+ * screen to ask again. Otherwise it calls `leaving` (the screen closes its sheet), signs out, and
+ * answers 0. Throws, as signOut does, when the server cannot be reached.
+ */
+export async function signOutDeleting(
+	asked: number,
+	leaving: () => void = () => {}
+): Promise<number> {
+	const { pendingCount } = await import('./workout/probe.ts');
+	const pending = await pendingCount();
+	if (pending > asked) return pending;
+	leaving();
+	await signOut();
+	return 0;
 }
 
 /** Whether signOut left its marker in this tab; it is removed either way. */

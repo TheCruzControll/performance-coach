@@ -48,20 +48,14 @@
 		return sheet;
 	}
 
+	// The flow itself (flush, recount, sign out) is signout.ts's; this screen holds the sheet.
 	async function cancel() {
 		if (leaving) return;
 		leaving = true;
 		try {
-			const { unsyncedAfterFlush } = await import('#lib/client/workout/shutdown.ts');
-			const left = await unsyncedAfterFlush();
-			if (left > 0) {
-				await loadSheet();
-				unsynced = left;
-				asking = true;
-				leaving = false;
-				return;
-			}
-			await signOutNow();
+			const { signOutIfSynced } = await import('#lib/client/signout.ts');
+			const left = await signOutIfSynced();
+			if (left > 0) await ask(left);
 		} catch {
 			failed();
 		}
@@ -72,23 +66,19 @@
 		if (leaving) return;
 		leaving = true;
 		try {
-			const { pendingCount } = await import('#lib/client/workout/probe.ts');
-			const pending = await pendingCount();
-			if (pending > unsynced) {
-				unsynced = pending;
-				leaving = false;
-				return;
-			}
-			asking = false;
-			await signOutNow();
+			const { signOutDeleting } = await import('#lib/client/signout.ts');
+			const more = await signOutDeleting(unsynced, () => (asking = false));
+			if (more > 0) await ask(more);
 		} catch {
 			failed();
 		}
 	}
 
-	async function signOutNow() {
-		const { signOut } = await import('#lib/client/signout.ts');
-		await signOut();
+	async function ask(count: number) {
+		await loadSheet();
+		unsynced = count;
+		asking = true;
+		leaving = false;
 	}
 
 	function failed() {
