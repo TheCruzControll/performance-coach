@@ -1,13 +1,13 @@
 /**
  * What /progress shows, read from its search parameters: the view (?view) and the period
- * (?period, periods.ts). Client-safe and pure: it imports only periods.ts, so +page.ts and the
- * page can read the same values the server loaded.
+ * (?period, periods.ts). Client-safe and pure: it imports only period-names.ts, so +page.ts and
+ * the page can read the same values the server loaded.
  *
  * Anything unknown (missing, misspelt, another case, an inherited key such as 'toString') is
  * refused and gives the default: the overview over DEFAULT_PERIOD (12 weeks). Each later view
  * (Strength, Running, General) adds one id here.
  */
-import { DEFAULT_PERIOD, parsePeriod, type Period } from '#lib/domain/analytics/periods.ts';
+import { DEFAULT_PERIOD, parsePeriod, type Period } from '#lib/domain/analytics/period-names.ts';
 
 export const PROGRESS_VIEWS = ['overview', 'strength', 'running', 'general'] as const;
 export type ProgressView = (typeof PROGRESS_VIEWS)[number];
