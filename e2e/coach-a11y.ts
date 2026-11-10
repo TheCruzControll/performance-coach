@@ -46,6 +46,16 @@ export const COACH_A11Y: readonly CoachA11yCase[] = [
 		}
 	},
 	{
+		name: '/design → Coach, a proposal card accepted, beside its other states',
+		open: async (page) => {
+			await openCoachPanel(page);
+			const card = page.getByTestId('proposal-live');
+			await card.getByRole('button', { name: 'Accept' }).click();
+			await expect(card.getByTestId('proposal-version')).toBeVisible();
+			await expect(page.getByTestId('proposal-superseded')).toContainText('Superseded');
+		}
+	},
+	{
 		name: '/design → Workout, the exercise history sheet by exercise id alone, offline',
 		open: async (page) => {
 			const panel = await openWorkoutPanel(page);
