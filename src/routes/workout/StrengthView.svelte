@@ -15,7 +15,8 @@
     after a deploy) turns the page to 'App updated — reload to continue', never a broken sheet.
   - Under the card, its navigation (Navigation.svelte, loaded after the first render and shown
     once the store can write, as the logger is, its space reserved meanwhile): Previous and Next,
-    Up next, the swipe across the card and, from 1024 px, the side list. Each is a goTo, stored with the workout, so a reload returns to it.
+    Up next (and Finish workout once every exercise is done), the swipe across the card and, from
+    1024 px, the side list. Each is a goTo, stored with the workout, so a reload returns to it.
   - The rest timer (RestTimer.svelte), while the workout holds a rest: a completed set starts it
     (log.ts, through workout-flow). Below 1024 px it is a pill in the thumb zone just above the
     logger, stuck there on every exercise, so it stays in view while browsing; from 1024 px it
@@ -473,6 +474,7 @@
 					{view}
 					{area}
 					store={active.store}
+					onfinish={() => (active.finishing = true)}
 					onadd={openPicker}
 					onintent={prefetchPicker}
 				/>

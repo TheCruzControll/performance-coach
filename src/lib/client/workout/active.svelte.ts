@@ -9,6 +9,9 @@
  * - loading: restoring (the page shows its skeleton)
  * - empty: no workout is in progress on this device
  * - active: the workout in progress
+ * - completed: the workout this page shows was finished (here, or on another device), or the restore
+ *   found one finished here and still waiting to sync. It stays when its rows leave the device
+ *   once synced (store.ts), until the page is left.
  * - elsewhere: the workout in progress is another kind; the page sends it to that kind's route
  *   before any view renders
  * - no-storage: this browser cannot keep a workout (IndexedDB is missing or refuses to open)
@@ -29,7 +32,7 @@ export type ActiveSnapshot = WorkoutSnapshot & { view: WorkoutView };
 
 export type Restore =
 	| { phase: 'loading' | 'empty' | 'no-storage' | 'app-updated' }
-	| { phase: 'active'; snapshot: ActiveSnapshot }
+	| { phase: 'active' | 'completed'; snapshot: ActiveSnapshot }
 	| { phase: 'elsewhere'; kind: SessionKind };
 
 /** Loads a code-split chunk, or answers null when it is gone (the page's loader says so). */
@@ -44,6 +47,8 @@ export class ActiveWorkout {
 	store = $state.raw<WorkoutStore | null>(null);
 	/** A 401 purged this device as the restore found it (restore.ts): the page hides the workout. */
 	signedOut = $state.raw(false);
+	/** Finish was asked for (the menu, or the strength view's after the last exercise): it opens. */
+	finishing = $state.raw(false);
 	readonly #loadTable: () => Promise<AnyTable>;
 	/** The route's reducer table, once restore() has loaded it. */
 	#table: AnyTable | null = null;
@@ -82,7 +87,8 @@ export class ActiveWorkout {
 	 */
 	async connect(load: ChunkLoad): Promise<WorkoutStore | null> {
 		const table = this.#table;
-		if (!table || (this.current.phase !== 'active' && this.current.phase !== 'empty')) return null;
+		const { phase } = this.current;
+		if (!table || (phase !== 'active' && phase !== 'empty' && phase !== 'completed')) return null;
 		const module = await load(() => import('./online.ts'));
 		if (!module) return null;
 		try {
@@ -91,7 +97,9 @@ export class ActiveWorkout {
 			const end = () => (unsubscribe(), stop());
 			if (!this.#stop) return (end(), null);
 			this.#stop = end;
-			this.#show(await store.getActive());
+			// A finished workout shown stays: read into memory, so its changes show.
+			const done = this.current.phase === 'completed' && this.current.snapshot.workoutId;
+			this.#show(await (done ? store.load(done) : store.getActive()));
 			this.store = store;
 			return store;
 		} catch (error) {
@@ -127,18 +135,20 @@ export class ActiveWorkout {
 	#show(snapshot: WorkoutSnapshot | null) {
 		if (this.current.phase === 'app-updated') return;
 		const view = snapshot?.view;
-		if (!snapshot || !view || view.workout.status !== 'in_progress') {
-			this.current = { phase: 'empty' };
+		const status = view?.workout.status;
+		if (!snapshot || !view || status === 'abandoned') {
+			if (this.current.phase !== 'completed') this.current = { phase: 'empty' };
 		} else if (view.workout.kind !== this.#table?.kind) {
 			this.current = { phase: 'elsewhere', kind: view.workout.kind };
 		} else {
-			this.current = { phase: 'active', snapshot: { ...snapshot, view } };
+			const phase = status === 'in_progress' ? 'active' : 'completed';
+			this.current = { phase, snapshot: { ...snapshot, view } };
 		}
 	}
 
 	#hear(store: WorkoutStore, change: StoreChange) {
 		if (change.type === 'closed') return this.#closed(change.reason);
-		const shown = this.current.phase === 'active' ? this.current.snapshot.workoutId : null;
+		const shown = 'snapshot' in this.current ? this.current.snapshot.workoutId : null;
 		if (change.type !== 'purged' && change.workoutId === shown) {
 			return this.#show(store.snapshot(change.workoutId));
 		}

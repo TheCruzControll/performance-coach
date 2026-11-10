@@ -6,6 +6,7 @@
     raised card whose Start makes Up next current, its first set ready in the logger. Only Start
     is added, under what was there, so logging the last set moves nothing (Navigation puts the
     card last).
+  - Once every exercise is done, Finish workout (`onfinish`) takes Start's place.
   - With `onadd`, Add exercise at its foot: any exercise from the library, after the last one
     (`onintent` on its first press, to fetch the picker).
   - Once a set is logged, a polite live region says where the workout went: 'Next: A2 Plank,
@@ -24,12 +25,14 @@
 		view: WorkoutView;
 		/** Start: makes the exercise at this position current. */
 		onstart: (position: number) => void;
+		/** Finish workout, once nothing is left to do. */
+		onfinish?: () => void;
 		/** Add exercise: opens the picker. */
 		onadd?: (event: MouseEvent) => void;
 		onintent?: () => void;
 	}
 
-	let { view, onstart, onadd, onintent }: Props = $props();
+	let { view, onstart, onfinish, onadd, onintent }: Props = $props();
 
 	const next = $derived(upNextWords(view));
 	const between = $derived.by(() => {
@@ -72,6 +75,12 @@
 		<div class="start">
 			<Button block iconEnd="arrow-right" onclick={() => onstart(next.position)}>
 				Start {next.name}
+			</Button>
+		</div>
+	{:else if between && onfinish}
+		<div class="start">
+			<Button block icon="check" onclick={onfinish} data-testid="up-next-finish">
+				Finish workout
 			</Button>
 		</div>
 	{/if}
