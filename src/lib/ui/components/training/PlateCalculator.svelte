@@ -1,11 +1,17 @@
 <!--
   @component
   Plate calculator body: target weight stepper, bar choice and the loaded-sleeve picture.
-  Opens in `defaultUnit` (the app-wide preference); switching units here is local to the
-  calculator and never changes the preference. Loaded on demand (dynamic import) so the Train
-  screen hydrates without it.
+  Opens in `initialUnit` (the app-wide preference, or a set's unit) at `initialTarget` (a set's
+  weight) when given; switching units here is local to the calculator and never changes the
+  preference. Loaded on demand (dynamic import) so the screens that open it hydrate without it.
+  - Without `inventory` it uses M1's standard bars and plates, as it always has.
+  - With this device's `inventory` (client/plates.ts, one per unit), the solver loads only what
+    the gym has: a bar picked here is the device's, and 'Bar and plates' opens the inventory
+    editor (PlateInventory.svelte, its own chunk, fetched on that tap), whose every change
+    `onInventoryChange` keeps.
 -->
 <script lang="ts">
+	import type { PlateInventory as Inventory } from '#lib/client/plates.ts';
 	import { calculatePlates, STANDARD_BARS, STANDARD_PLATES } from '#lib/domain/plates.ts';
 	import {
 		cleanFloat,
@@ -14,34 +20,49 @@
 		roundToIncrement,
 		type WeightUnit
 	} from '#lib/domain/units.ts';
+	import Button from '../Button.svelte';
 	import Icon from '../Icon.svelte';
 	import NumberStepper from '../NumberStepper.svelte';
 	import SegmentedControl from '../SegmentedControl.svelte';
 	import PlateDiagram from './PlateDiagram.svelte';
+	import type PlateInventoryView from './PlateInventory.svelte';
+	import { barOptions } from './plate-choices.ts';
 
 	interface Props {
 		/** Unit the calculator opens in. */
-		defaultUnit: WeightUnit;
+		initialUnit: WeightUnit;
+		/** Weight it opens at (a set's); the unit's usual target otherwise. */
+		initialTarget?: number;
+		/** This device's bar and plates, per unit; M1's standard ones when absent. */
+		inventory?: Record<WeightUnit, Inventory>;
+		/** Keeps a change to `unit`'s inventory; the parent passes the result back as `inventory`. */
+		onInventoryChange?: (unit: WeightUnit, change: Partial<Inventory>) => void;
 	}
 
-	let { defaultUnit }: Props = $props();
+	let { initialUnit, initialTarget, inventory, onInventoryChange }: Props = $props();
 
 	const DEFAULTS: Record<WeightUnit, { target: number; bar: string }> = {
 		kg: { target: 100, bar: '20' },
 		lb: { target: 225, bar: '45' }
 	};
 
-	// The calculator's own state, seeded from the preference it opens with.
+	// The calculator's own state, seeded from what it opens with.
 	// svelte-ignore state_referenced_locally
-	let unit = $state(defaultUnit);
+	let unit = $state(initialUnit);
 	// svelte-ignore state_referenced_locally
-	let target = $state(DEFAULTS[defaultUnit].target);
+	let target = $state(initialTarget ?? DEFAULTS[initialUnit].target);
 	// svelte-ignore state_referenced_locally
-	let barWeight = $state(DEFAULTS[defaultUnit].bar);
+	let barWeight = $state(DEFAULTS[initialUnit].bar);
 
-	const bars = $derived(STANDARD_BARS[unit]);
-	const bar = $derived(Number(barWeight));
-	const result = $derived(calculatePlates(target, bar, STANDARD_PLATES[unit]));
+	const stock = $derived(inventory?.[unit]);
+	const bar = $derived(stock ? stock.bar : Number(barWeight));
+	const bars = $derived(barOptions(unit, bar));
+	const result = $derived(calculatePlates(target, bar, stock?.plates ?? STANDARD_PLATES[unit]));
+
+	function pickBar(value: string) {
+		if (stock) onInventoryChange?.(unit, { bar: Number(value) });
+		else barWeight = value;
+	}
 
 	function changeUnit(next: WeightUnit) {
 		if (next === unit) return;
@@ -49,6 +70,22 @@
 		const index = STANDARD_BARS[unit].findIndex((b) => String(b.weight) === barWeight);
 		barWeight = String((STANDARD_BARS[next][Math.max(0, index)] ?? STANDARD_BARS[next][0]!).weight);
 		unit = next;
+	}
+
+	// The inventory editor: its chunk is fetched on the first tap; a failed fetch says so, and the
+	// next tap fetches again.
+	let Editor = $state.raw<typeof PlateInventoryView | null>(null);
+	let editing = $state(false);
+	let failed = $state(false);
+	const editorId = $props.id();
+
+	function toggleEditor() {
+		editing = !editing;
+		failed = false;
+		if (!editing || Editor) return;
+		import('./PlateInventory.svelte')
+			.then((module) => (Editor = module.default))
+			.catch(() => (failed = true));
 	}
 </script>
 
@@ -74,12 +111,7 @@
 		data-testid="plates-target"
 	/>
 
-	<SegmentedControl
-		label="Bar"
-		size="sm"
-		bind:value={barWeight}
-		options={bars.map((b) => ({ value: String(b.weight), label: `${b.weight} ${unit} bar` }))}
-	/>
+	<SegmentedControl label="Bar" size="sm" value={String(bar)} options={bars} onchange={pickBar} />
 
 	<div class="result" aria-live="polite">
 		<PlateDiagram plates={result.perSide} {unit} />
@@ -107,6 +139,30 @@
 			</p>
 		{/if}
 	</div>
+
+	{#if stock && onInventoryChange}
+		<div class="inventory">
+			<Button
+				variant="secondary"
+				block
+				iconEnd="chevron-down"
+				aria-expanded={editing}
+				aria-controls={editorId}
+				onclick={toggleEditor}
+				data-testid="plates-inventory-toggle">Bar and plates</Button
+			>
+			<div id={editorId} hidden={!editing}>
+				{#if failed}
+					<p class="warning" role="alert">
+						<Icon name="alert" size={16} />
+						<span>Couldn’t open bar and plates. Check your connection, then try again.</span>
+					</p>
+				{:else if Editor && editing}
+					<Editor {unit} inventory={stock} onchange={(change) => onInventoryChange(unit, change)} />
+				{/if}
+			</div>
+		</div>
+	{/if}
 </div>
 
 <style>
@@ -137,6 +193,15 @@
 		font-weight: var(--weight-medium);
 		color: var(--color-text-tertiary);
 		letter-spacing: var(--tracking-normal);
+	}
+
+	.inventory {
+		display: grid;
+		gap: var(--space-4);
+	}
+
+	.inventory :global([aria-expanded='true'] svg:last-child) {
+		transform: rotate(180deg);
 	}
 
 	.muted {

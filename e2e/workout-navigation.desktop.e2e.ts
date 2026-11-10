@@ -29,6 +29,15 @@ const options = (page: Page) => page.getByTestId('exercise-actions');
 const style = (target: Locator, property: string) =>
 	target.evaluate((el, property) => getComputedStyle(el).getPropertyValue(property), property);
 
+/** Tabs through the card's plate buttons, one per set of a loaded exercise, each in turn. */
+async function tabPastPlates(page: Page) {
+	const plates = page.getByTestId('workout-main').getByTestId('set-plates');
+	for (const button of await plates.all()) {
+		await page.keyboard.press('Tab');
+		await expect(button).toBeFocused();
+	}
+}
+
 /** Tabs from the page's start until `target` has focus, as a keyboard user gets there. */
 async function tabTo(page: Page, target: Locator) {
 	await page.locator('main#main').focus();
@@ -73,9 +82,11 @@ test.describe('moving between exercises on a desktop', () => {
 		await expect(heading(page)).toHaveText('Back squat');
 		await expect(rows(page).first()).toBeFocused();
 
-		// Tab leaves the list from its one stop, for the main column: the card's Options, then Next.
+		// Tab leaves the list from its one stop, for the main column: the card's Options, its set
+		// rows' plate buttons, then Next.
 		await page.keyboard.press('Tab');
 		await expect(options(page)).toBeFocused();
+		await tabPastPlates(page);
 		await page.keyboard.press('Tab');
 		await expect(next(page)).toBeFocused();
 		expect((await readOutbox(page)).map((entry) => entry.envelope.type)).toEqual(['workout.start']);
@@ -128,6 +139,7 @@ test.describe('moving between exercises on a desktop', () => {
 		}
 		await page.keyboard.press('Tab');
 		await expect(options(page)).toBeFocused();
+		await tabPastPlates(page);
 		await page.keyboard.press('Tab');
 		await expect(prev(page)).toBeFocused();
 		await expect.poll(() => style(prev(page), 'outline-style')).toBe('solid');
