@@ -2,7 +2,7 @@
   @component
   Recent conversations, newest first: each a row that opens it, with its title and when it was
   last active. 'Show older' under them is busy while the next page loads, and its failure says so
-  inline with Retry. With none, the coach's empty state.
+  inline with Retry. With none, the page shows the coach's empty state in its place.
 -->
 <script lang="ts">
 	import { resolve } from '$app/paths';
@@ -25,23 +25,19 @@
 
 <section class="recent" aria-labelledby="recent-heading">
 	<h2 id="recent-heading" class="eyebrow">Recent conversations</h2>
-	{#if rows.length === 0}
-		<CoachNotice kind="empty" data-testid="coach-empty" />
-	{:else}
-		<ul class="rows">
-			{#each rows as row (row.id)}
-				<li>
-					<ListRow
-						href={resolve('/(app)/coach/[[thread]]', { thread: row.id })}
-						icon="coach"
-						title={row.title}
-						subtitle={row.when}
-						data-testid="thread-row"
-					/>
-				</li>
-			{/each}
-		</ul>
-	{/if}
+	<ul class="rows">
+		{#each rows as row (row.id)}
+			<li>
+				<ListRow
+					href={resolve('/(app)/coach/[[thread]]', { thread: row.id })}
+					icon="coach"
+					title={row.title}
+					subtitle={row.when}
+					data-testid="thread-row"
+				/>
+			</li>
+		{/each}
+	</ul>
 	<p class="visually-hidden" role="status">{loadingOlder ? 'Loading older conversations…' : ''}</p>
 	{#if more}
 		<Button
