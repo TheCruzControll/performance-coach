@@ -212,7 +212,9 @@ test('a tap that fails again reloads Train asking for the sheet, unless offline'
 	await markDocument();
 	await context.setOffline(true);
 	const offline = await failedImports();
-	await notice.getByRole('button', { name: 'Retry' }).click();
+	// Tapped, as on the phone: a click leaves the mouse where Retry was, and as the notice goes the
+	// rest timer's row slides under it, whose hover prefetch fails offline too and is counted.
+	await notice.getByRole('button', { name: 'Retry' }).tap();
 	await expect.poll(failedImports, { message: 'the retry ran and failed' }).toBe(offline + 1);
 	await expect(notice).toBeVisible();
 	await page.waitForTimeout(500);

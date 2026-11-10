@@ -444,6 +444,26 @@ test.describe('a program with sessions today', () => {
 			await expect(cards(page)).toHaveCount(2);
 			await expectWideFrame(page);
 		});
+
+		test('back online, the offline screen loads Today again by itself, with its styles', async ({
+			page,
+			context
+		}) => {
+			// Today's code and stylesheets are first asked for offline, so they fail to load.
+			await gotoHydrated(page, '/train');
+			await context.setOffline(true);
+			await railLink(page, 'Today').click();
+			await expect(page.getByTestId('offline-state')).toBeVisible();
+
+			// No tap: the screen's own recovery brings Today back, styled. Vite never links a
+			// stylesheet URL the page already has a (failed) link for, so only the recovery's
+			// reload of those links can style it.
+			await context.setOffline(false);
+			await expect(cards(page)).toHaveCount(2, { timeout: 20_000 });
+			await expect(page.locator('[data-layout="wide"]')).toHaveCSS('display', 'grid');
+			await expectBeside(day(page), side(page));
+			await expectWideFrame(page);
+		});
 	});
 });
 
