@@ -9,7 +9,7 @@
   - RPE, volume and intensity, running, Muay Thai, recovery and fatigue, conflicts and PRs
     (ReviewSections), each collapsing to its verdict line on a phone
   - next week's changes to take, change or skip, or what was decided (NextWeekCard)
-  - the write-up's slot, empty until the coach writes it (review-narrative-ui)
+  - the coach's write-up, or why there is none, and 'Discuss with your coach' (CoachWriteUp)
   - out of date (training logged since): 'Computed before N later changes', with Refresh while
     its decision is open. Refresh writes the next revision and keeps this one; like Create it is
     busy while it posts (a second tap posts nothing), says why on a failure and resends as
@@ -27,6 +27,7 @@
 	import Notice from '#lib/ui/components/Notice.svelte';
 	import type { WeeklyReviewData } from './load';
 	import NextWeekCard from './NextWeekCard.svelte';
+	import CoachWriteUp from './CoachWriteUp.svelte';
 	import ReviewHero from './ReviewHero.svelte';
 	import ReviewSections from './ReviewSections.svelte';
 
@@ -154,9 +155,9 @@
 
 	{#if review.nextWeek}<NextWeekCard next={review.nextWeek} reviewId={review.id} {online} />{/if}
 
-	<div class="write-up" data-testid="review-write-up">
-		{#if review.writeUp}<p>{review.writeUp}</p>{/if}
-	</div>
+	{#if review.narration}
+		<CoachWriteUp narration={review.narration} />
+	{/if}
 </article>
 
 <style>
@@ -240,8 +241,7 @@
 		justify-items: start;
 	}
 
-	.sections:empty,
-	.write-up:empty {
+	.sections:empty {
 		display: none;
 	}
 

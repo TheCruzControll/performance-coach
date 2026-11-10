@@ -15,7 +15,7 @@
     JavaScript, its title and words)
   - earlier cycles, each linking to its review (the page's ReviewList), and the version this one
     planned, in History
-  - the write-up's slot, empty until the coach writes it (review-narrative-ui)
+  - the coach's write-up, or why there is none, and 'Discuss with your coach' (CoachWriteUp)
 
   A review written before M6 shows its summary alone.
 -->
@@ -26,6 +26,7 @@
 	import Notice from '#lib/ui/components/Notice.svelte';
 	import type { CycleReviewData } from './cycle-data';
 	import type { ReviewRow } from './load';
+	import CoachWriteUp from './CoachWriteUp.svelte';
 	import ReviewHero from './ReviewHero.svelte';
 	import ReviewSections from './ReviewSections.svelte';
 	import type { SectionView } from './sections';
@@ -129,9 +130,9 @@
 		</section>
 	{/if}
 
-	<div class="write-up" data-testid="review-write-up">
-		{#if review.writeUp}<p>{review.writeUp}</p>{/if}
-	</div>
+	{#if review.narration}
+		<CoachWriteUp narration={review.narration} />
+	{/if}
 </article>
 
 <style>
@@ -161,8 +162,7 @@
 		vertical-align: top;
 	}
 
-	.sections:empty,
-	.write-up:empty {
+	.sections:empty {
 		display: none;
 	}
 </style>
