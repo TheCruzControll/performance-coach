@@ -16,7 +16,7 @@
 	import Notice from '#lib/ui/components/Notice.svelte';
 	import PageHeader from '#lib/ui/components/PageHeader.svelte';
 	import type { PageProps } from './$types';
-	import { progressQuery, PROGRESS_VIEWS, VIEW_LABEL } from './params';
+	import { DEFAULT_VIEW, progressQuery, PROGRESS_VIEWS, VIEW_LABEL } from './params';
 
 	let { data }: PageProps = $props();
 
@@ -87,7 +87,12 @@
 				>
 			{/each}
 		</nav>
-		<PeriodPicker current={data.period} data-testid="progress-period">
+		<PeriodPicker
+			current={data.period}
+			href={(period) =>
+				`?${data.view === DEFAULT_VIEW ? '' : `view=${data.view}&`}period=${period}`}
+			data-testid="progress-period"
+		>
 			{#if data.failed}
 				<div class="failed" data-testid="progress-failed">
 					<Notice tone="danger" title="Couldn’t load your progress">
@@ -97,7 +102,9 @@
 						Retry
 					</Button>
 				</div>
-			{:else if data.View}
+			{:else if data.view === 'strength'}
+				<data.View strength={data.strength} />
+			{:else}
 				<data.View overview={data.overview} />
 			{/if}
 		</PeriodPicker>

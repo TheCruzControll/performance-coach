@@ -220,6 +220,8 @@ export interface Exposure {
 	missedReps: number;
 	/** Each working set's deviation, where both RPEs exist, by set index. */
 	rpeDeviations: number[];
+	/** The target RPE of each of those sets, in the same order. */
+	rpeTargets: number[];
 	meanRpeDeviation: number | null;
 	/** The first top-set line's set, whatever became of it; else the heaviest working set done. */
 	topSet: SetMatch | null;
@@ -234,7 +236,8 @@ export function exposure(match: PrescriptionMatch, day: IsoDate): Exposure {
 	const slots = match.sets.filter(isWorkingSlot);
 	const done = slots.filter(isDone);
 	const own = done.filter((m) => !m.substitute);
-	const deviations = own.flatMap((m) => (m.rpeDeviation === null ? [] : [m.rpeDeviation]));
+	const rated = own.filter((m) => m.rpeDeviation !== null);
+	const deviations = rated.map((m) => m.rpeDeviation!);
 	const hits = own.flatMap((m) => (m.hit === null ? [] : [m.hit]));
 	const substituted = done.length > 0 && own.length === 0;
 	// The server stores no assistance, so every load reads as weight: M4's rule for 'external'.
@@ -257,6 +260,7 @@ export function exposure(match: PrescriptionMatch, day: IsoDate): Exposure {
 		sets: { prescribed: slots.length, completed: done.length, extra },
 		missedReps: own.reduce((sum, m) => sum + Math.max(m.actual.missedReps, m.repsShort ?? 0), 0),
 		rpeDeviations: deviations,
+		rpeTargets: rated.map((m) => m.target.rpe!),
 		meanRpeDeviation: mean(deviations),
 		topSet,
 		kg: topSet?.status === 'done' && topSet.actual ? kgOf(topSet.actual) : null,
