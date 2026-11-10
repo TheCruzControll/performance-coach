@@ -59,6 +59,7 @@ import { chromium } from '@playwright/test';
 import * as chromeLauncher from 'chrome-launcher';
 import lighthouse, { type RunnerResult } from 'lighthouse';
 import pg from 'pg';
+import { PREPAINT_KEY } from '../src/lib/client/workout/prepaint.ts';
 import { LOCAL_DATABASE_URLS, runMigrations } from '../src/lib/server/db/migrate.ts';
 import type { StartKit, StrengthKit, SyncResponse } from '../src/lib/domain/workout/index.ts';
 import { createSseDecoder } from '../src/lib/domain/coach/events.ts';
@@ -467,13 +468,24 @@ async function seedWorkouts(
 	return { paths, device: activeWorkoutSeed(kit, Date.now()) };
 }
 
-/** Writes the device's workout into the current browser's IndexedDB, on the app's origin. */
+/**
+ * Writes the device's workout into the current browser's IndexedDB, on the app's origin, then
+ * shows it once on /workout, signed in as the audit is, until the strength view has kept the card
+ * the next load paints before the app starts (prepaint.ts). Every real device has shown its
+ * workout once, since starting one lands on /workout, so the audited load is that device's.
+ */
 async function seedDevice(device: ActiveSeed) {
 	const browser = await chromium.connectOverCDP(`http://127.0.0.1:${chrome.port}`);
 	try {
 		const page = await browser.contexts()[0]!.newPage();
 		await page.goto(`${server.base}/robots.txt`);
 		await writeActiveWorkout(page, device);
+		if (sessionHeaders) await page.setExtraHTTPHeaders(sessionHeaders);
+		await page.goto(`${server.base}/workout`);
+		const kept = await page.waitForFunction((key) => localStorage.getItem(key), PREPAINT_KEY);
+		if (JSON.parse(String(await kept.jsonValue())).blocked) {
+			throw new Error('/workout lost the session: the device keeps no card to prepaint');
+		}
 		await page.close();
 	} finally {
 		// Connected over CDP, this disconnects: the browser and its profile stay for the run.
