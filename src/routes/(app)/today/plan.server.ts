@@ -2,10 +2,11 @@
  * Today's plan once a program exists: the week on the WeekStrip with each day's sessions (today
  * selected), 'Up next' (the next UP_NEXT_LIMIT sessions after today, across weeks), and the
  * states a day can be in: a rest day naming the next session, a program that starts later
- * ('Starts Monday', week 1 shown), or a finished first block with nothing planned yet, until M6
- * plans the next one. Words are composed here, with the data they describe, so the panel ships
- * none of the vocabulary. Kept out of +page.server.ts so integration tests can run it with an
- * unreachable database.
+ * ('Starts Monday', week 1 shown), a finished first block with nothing planned yet, until M6
+ * plans the next one, or a bridge week between blocks (M6's late start), which names the day the
+ * next block starts instead of seven rest days. Words are composed here, with the data they
+ * describe, so the panel ships none of the vocabulary. Kept out of +page.server.ts so integration
+ * tests can run it with an unreachable database.
  *
  * It is streamed, and it fails soft: a read that fails is recorded as a server error (kind
  * 'streamed', as Profile's are) and resolves to {failed: true}, which the panel shows as a
@@ -63,7 +64,7 @@ export interface PlanWeek {
 	days: PlanDay[];
 }
 
-/** A state's card: 'Starts Monday', or 'Nothing planned yet'. */
+/** A state's card: 'Starts Monday', 'Nothing planned yet' or 'Between blocks'. */
 export interface PlanNote {
 	title: string;
 	description: string;
@@ -73,10 +74,12 @@ export type TodayPlanView =
 	| { failed: true }
 	| {
 			failed: false;
-			/** Null once the first block is complete: no week is planned. */
+			/** Null once the first block is complete or in a bridge week: no session is planned. */
 			week: PlanWeek | null;
 			starts: PlanNote | null;
 			complete: PlanNote | null;
+			/** In a bridge week between blocks, in place of the week: when the next block starts. */
+			bridge?: PlanNote;
 			/** 'Tomorrow', 'Wednesday' or 'Mon 16 Nov' says when each is. */
 			upNext: (PlanCard & { when: string })[];
 	  };
@@ -126,6 +129,11 @@ async function readPlan(
 	const selected = plan.startsOn ?? today;
 	const week = await getTrainingWeek(ownerId, { date: selected }, {}, { db });
 	if (!week?.planned) throw new Error(`no planned week holds ${selected}`);
+	if (week.nextBlockStartsOn) {
+		const description = `Your next block starts ${shortDate(week.nextBlockStartsOn)}. Nothing is planned until then: what you log counts as off-plan.`;
+		const bridge = { title: 'Between blocks', description };
+		return { failed: false, week: null, starts: null, complete: null, bridge, upNext };
+	}
 	const baseline = week.kind === 'baseline';
 	const later = [...week.days.flatMap((d) => d.sessions), ...plan.upNext];
 	const inWeek = week.startsOn <= today && today <= week.endsOn ? today : null;
