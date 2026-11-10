@@ -149,7 +149,10 @@
 	/**
 	 * Budget lever (M5 plan, Budgets: 'the recent-conversations list on idle'): the list's code
 	 * loads on demand too, in the browser as soon as /coach shows, so the stream client fits in the
-	 * route's 60 KB. Loading rows hold its place meanwhile; Retry imports again.
+	 * route's 60 KB. Loading rows hold its place meanwhile; Retry imports again. With no
+	 * conversation the server renders the empty state, the screen's largest text, so it paints
+	 * with the page instead of after a chunk; the list's code still loads, and stays, for its
+	 * 'Archived conversations' (archived ones stay in reach) and the Undo after archiving the last.
 	 */
 	const wantsList = $derived(!page.params.thread);
 	const listCode = $derived.by(() => {
@@ -165,6 +168,12 @@
 
 {#snippet failed()}
 	<CoachNotice kind="load_failed" onretry={retry} {retrying} data-testid="load-failed" />
+{/snippet}
+{#snippet empty()}
+	<section class="recent" aria-labelledby="recent-heading">
+		<h2 id="recent-heading" class="eyebrow">Recent conversations</h2>
+		<CoachNotice kind="empty" data-testid="coach-empty" />
+	</section>
 {/snippet}
 {#snippet cannot()}
 	{#if unavailable}<CoachNotice kind={unavailable} data-testid="coach-unavailable" />{/if}
@@ -205,7 +214,11 @@
 		{@render cannot()}
 		{#if ready}
 			{#await listCode}
-				<LoadingRows label="Loading your conversations…" data-testid="list-loading" />
+				{#if rows.length === 0}
+					{@render empty()}
+				{:else}
+					<LoadingRows label="Loading your conversations…" data-testid="list-loading" />
+				{/if}
 			{:then code}
 				{#if code}<code.default
 						{rows}
@@ -216,6 +229,7 @@
 						onchanged={() => (older = null)}
 					/>{/if}
 			{:catch}
+				{#if rows.length === 0}{@render empty()}{/if}
 				<CoachNotice
 					kind="chunk_failed"
 					onretry={() => threadAttempt++}
@@ -243,6 +257,11 @@
 		display: grid;
 		gap: var(--space-5);
 		padding-bottom: calc(var(--space-20) + var(--space-2));
+	}
+
+	.recent {
+		display: grid;
+		gap: var(--space-2);
 	}
 
 	.back {
