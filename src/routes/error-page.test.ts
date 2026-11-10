@@ -5,7 +5,14 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 import { FALLBACK_DELAY_MS, IDLE_TIMEOUT_MS } from '#lib/client/service-worker.ts';
-import { lazy, loadErrorPageWhenIdle, type IdleHost } from './error-page.ts';
+import type { Component } from 'svelte';
+import {
+	errorPage,
+	lazy,
+	loadErrorPageWhenIdle,
+	provideErrorPage,
+	type IdleHost
+} from './error-page.ts';
 
 describe('lazy', () => {
 	it('loads nothing until asked', () => {
@@ -39,6 +46,18 @@ describe('lazy', () => {
 		expect(await retry).toBe('page');
 		expect(page.current()).toBe('page');
 		expect(importer).toHaveBeenCalledTimes(2);
+	});
+});
+
+describe('errorPage', () => {
+	it('loads with the import +error.svelte provides, and fails until it has', async () => {
+		await expect(errorPage.load()).rejects.toThrow(/not been provided/);
+		const ErrorPage = (() => {}) as unknown as Component;
+		const importer = vi.fn(() => Promise.resolve({ default: ErrorPage }));
+		provideErrorPage(importer);
+		expect(await errorPage.load()).toBe(ErrorPage);
+		expect(errorPage.current()).toBe(ErrorPage);
+		expect(importer).toHaveBeenCalledOnce();
 	});
 });
 
