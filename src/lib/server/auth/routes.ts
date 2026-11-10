@@ -88,6 +88,7 @@ export const ROUTE_ACCESS = {
 	'/api/coach/proposals/[id]': 'owner',
 
 	// memory
+	'/api/coach/memory': 'owner',
 
 	// Workouts (M4): owner-only JSON, one anchor per area; each slice adds its line under its own.
 	// sync
