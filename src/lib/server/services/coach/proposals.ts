@@ -39,7 +39,7 @@ import {
 	type Proposal,
 	type ProposalKind
 } from '../../../domain/coach/proposals';
-import type { SourceRef } from '../../../domain/coach/sources';
+import { reviewKey, type SourceRef } from '../../../domain/coach/sources';
 import type { SupersededReason } from '../../../domain/coach/vocabulary';
 import { localDay } from '../../../domain/dates';
 import { isEligible, libraryOf } from '../../../domain/programming/eligibility';
@@ -68,6 +68,7 @@ import { runMinutes } from '../programs/edits';
 import { listExercisePreferences } from '../training/preferences';
 import { TrainingInputError } from '../training/shared';
 import { APPLIERS, type Applier, type ApplyOutcome } from './apply';
+import { refuseReviewNextCycle } from './apply/next-cycle';
 import { SESSION_ENDED, substitutionEnded } from './apply/session';
 import {
 	CoachInputError,
@@ -170,16 +171,32 @@ export interface ProposalOrigin {
 	kind: RulesProvenance['kind'];
 	reviewId: string;
 	href: string;
+	/** The review as a coach source, whose action opens that page (sourceAction). */
+	source: SourceRef;
 }
 
-/** The origin a stored evidence.source names; null for anything else. */
-function originOf(source: unknown): ProposalOrigin | null {
+/** What a review's source is called wherever the coach reads it. */
+export const REVIEW_SOURCE_LABEL: Record<RulesProvenance['kind'], string> = {
+	weekly_review: 'Weekly review',
+	cycle_review: 'Cycle review'
+};
+
+const origin = (kind: RulesProvenance['kind'], reviewId: string, key: string): ProposalOrigin => ({
+	kind,
+	reviewId,
+	href: `/progress/reviews/${key}`,
+	source: { type: 'review', id: key, label: REVIEW_SOURCE_LABEL[kind] }
+});
+
+/** The origin a stored evidence.source names; null for anything else (the coach's own). */
+export function originOf(source: unknown): ProposalOrigin | null {
 	if (typeof source !== 'object' || source === null) return null;
 	const { kind, reviewId, weekStartsOn } = source as Partial<RulesProvenance>;
 	if (typeof reviewId !== 'string') return null;
 	if (kind === 'weekly_review' && typeof weekStartsOn === 'string')
-		return { kind, reviewId, href: `/progress/reviews/w-${weekStartsOn}` };
-	if (kind === 'cycle_review') return { kind, reviewId, href: `/progress/reviews/c-${reviewId}` };
+		return origin(kind, reviewId, reviewKey({ kind: 'weekly', weekStartsOn }));
+	if (kind === 'cycle_review')
+		return origin(kind, reviewId, reviewKey({ kind: 'cycle', id: reviewId }));
 	return null;
 }
 
@@ -577,6 +594,8 @@ export interface DecidedProposal {
 	proposal: ProposalView;
 	/** False when it had already been decided: it is returned as stored and nothing was written. */
 	changed: boolean;
+	/** Where a next_cycle went when a cycle review took it in (the outcome's href). */
+	href?: string;
 }
 
 function decisionOf(outcome: ApplyOutcome, at: Date): ProposalDecision {
@@ -614,6 +633,8 @@ export async function acceptProposal(
 		if (row.status !== 'proposed') {
 			return { proposal: await view(repo, ownerId, row.id), changed: false };
 		}
+		// The review's own next_cycle stays proposed whatever its base: the review plans it.
+		if (row.kind === 'next_cycle') refuseReviewNextCycle(row.evidence);
 		const at = resolved.now();
 		if (row.baseVersionId) {
 			const current = await createProgramsRepository(resolved.db).currentProgram(ownerId);
@@ -653,7 +674,8 @@ export async function acceptProposal(
 			deps: resolved
 		});
 		await repo.decide(ownerId, row.id, decisionOf(outcome, at));
-		return { proposal: await view(repo, ownerId, row.id), changed: true };
+		const href = outcome.status === 'superseded' ? outcome.href : undefined;
+		return { proposal: await view(repo, ownerId, row.id), changed: true, ...(href && { href }) };
 	});
 }
 

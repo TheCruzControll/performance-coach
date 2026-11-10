@@ -8,8 +8,11 @@
   A logged or skipped set given `onedit` is a button that opens its editor, named 'Edit set 2 …';
   its first hover or touch (a touch enters it first) calls `onintent`; a key press loads it as it opens, so the editor's code is on its way before the
   tap lands. From a desktop pointer it strengthens its border on hover; the keyboard gets a ring.
+  Given `onplates` (a set of an exercise loaded with a bar or plates), a plate button beside it
+  opens the plate calculator at the set's weight; its first touch calls `onplatesintent`.
 -->
 <script lang="ts">
+	import IconButton from '#lib/ui/components/IconButton.svelte';
 	import type { SetRowWords } from './set-words.ts';
 
 	interface Props {
@@ -18,12 +21,17 @@
 		onedit?: (event: MouseEvent) => void;
 		/** The first sign the owner may tap: load the editor. */
 		onintent?: () => void;
+		/** Opens the plate calculator for this set; a row without it has no plate button. */
+		onplates?: (event: MouseEvent) => void;
+		/** The plate button's first touch: load the calculator. */
+		onplatesintent?: () => void;
 	}
 
-	let { row, onedit, onintent }: Props = $props();
+	let { row, onedit, onintent, onplates, onplatesintent }: Props = $props();
 </script>
 
 <li
+	class:plated={!!onplates}
 	data-state={row.state}
 	aria-current={row.state === 'current' ? 'step' : undefined}
 	data-testid="set"
@@ -44,11 +52,27 @@
 		<span class="state">
 			<span>{row.word}</span>
 		</span>
-	</svelte:element>
+	</svelte:element><!-- No space between: the row's text ends with its state word. -->{#if onplates}
+		<IconButton
+			icon="plate"
+			label="Plates for set {row.setIndex}"
+			onclick={onplates}
+			onpointerdown={onplatesintent}
+			data-testid="set-plates"
+		/>
+	{/if}
 </li>
 
 <style>
+	li {
+		display: flex;
+		align-items: center;
+		gap: var(--space-1);
+	}
+
 	.set {
+		flex: 1;
+		min-width: 0;
 		position: relative;
 		display: grid;
 		grid-template-columns: 1.75rem minmax(0, 1fr) auto;
@@ -59,6 +83,14 @@
 		border-radius: var(--radius-md);
 		border: 1px solid transparent;
 		font-size: var(--text-base);
+	}
+
+	/* Beside a plate button the row gives up spare spacing, not its text's width: a done set
+	   ('100 kg × 5 reps · RPE 9') still fits one line at 393 px, so completing it shifts nothing. */
+	.plated .set {
+		grid-template-columns: 1rem minmax(0, 1fr) auto;
+		column-gap: var(--space-2);
+		padding-inline: var(--space-2);
 	}
 
 	button.set {
