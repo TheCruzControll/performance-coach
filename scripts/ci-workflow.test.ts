@@ -284,6 +284,40 @@ describe('CI e2e legs', () => {
 		expect(job).toBeGreaterThanOrEqual(Math.ceil(1.5 * CEILING_MINUTES) + 12 + 8);
 	});
 
+	it('install the system packages of the engines each entry launches, cached per engine', () => {
+		/** Every `${{ … }}` in `template` evaluated for one engine's entries on one runner. */
+		const expand = (template: string, engine: string) =>
+			template.replace(/\$\{\{(.*?)\}\}/g, (_, inner: string) =>
+				String(
+					evaluate(inner, {
+						'matrix.engine': engine,
+						'runner.os': 'Linux',
+						'steps.playwright.outputs.version': '1.2.3'
+					})
+				)
+			);
+		const install = value(legStep('Install Playwright system dependencies'), 'run')!;
+		const cache = under(legStep('Cache Playwright system packages'), 'with');
+		const key = value(cache, 'key')!;
+		const restore = value(cache, 'restore-keys')!;
+		const engines = [...new Set(entries().map((entry) => entry.engine!))].sort();
+		expect(engines).toEqual([...ENGINES].sort());
+		for (const engine of engines) {
+			// Chromium legs launch only Chromium; WebKit legs also run the Chromium owner setup.
+			expect(expand(install, engine), engine).toBe(
+				engine === 'webkit'
+					? 'pnpm exec playwright install-deps chromium webkit'
+					: 'pnpm exec playwright install-deps chromium'
+			);
+			expect(expand(key, engine), engine).toBe(`apt-playwright-Linux-1.2.3-${engine}-v2`);
+			expect(expand(restore, engine), engine).toBe(`apt-playwright-Linux-1.2.3-${engine}-`);
+			// No engine restores an archive another engine saved (a Chromium one lacks WebKit's).
+			for (const other of engines.filter((e) => e !== engine)) {
+				expect(expand(key, other).startsWith(expand(restore, engine)), other).toBe(false);
+			}
+		}
+	});
+
 	it('upload each entry’s files under a name of its own, hidden files included', () => {
 		const inputs = under(legStep('Upload screenshots and report'), 'with');
 		expect(value(inputs, 'include-hidden-files')).toBe('true');
