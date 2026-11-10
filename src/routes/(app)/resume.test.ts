@@ -126,6 +126,7 @@ describe('findResume', () => {
 					kind: 'strength',
 					title: KIT.title,
 					startedAt: new Date(T0).toISOString(),
+					plannedLineage: KIT.plannedLineage,
 					pending: 1,
 					stopwatch: { startedAt: null, accumulatedMs: 0, runningSince: null }
 				}
@@ -210,6 +211,7 @@ describe('hasPending', () => {
 			kind: 'strength',
 			title: 'A',
 			startedAt: '',
+			plannedLineage: null,
 			pending: 0,
 			stopwatch: { startedAt: null, accumulatedMs: 0, runningSince: null }
 		};

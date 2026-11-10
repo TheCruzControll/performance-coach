@@ -20,13 +20,21 @@ export interface ThreadRowView {
 
 /** A stored message as the conversation shows it. */
 export type ShownMessage =
-	| { id: string; from: 'owner'; text: string }
+	| {
+			id: string;
+			from: 'owner';
+			text: string;
+			/** The device's id it was sent with: Retry sends it again under the same id. */
+			clientId: string | null;
+	  }
 	| {
 			id: string;
 			from: 'coach';
 			blocks: CompletedBlock[];
 			/** How an answer that did not complete ended ('Stopped'); null for a complete one. */
 			ended: string | null;
+			/** Interrupted or failed, not stopped: the question can be asked again (Retry). */
+			retryable: boolean;
 	  };
 
 /** A stored row the screen may show (services/coach/threads.ts getThreadView). */
@@ -35,6 +43,7 @@ export interface DisplayedRow {
 	kind: string;
 	status: MessageStatus;
 	display: Record<string, unknown> | null;
+	clientMessageId?: string | null;
 }
 
 /**
@@ -107,12 +116,13 @@ export function shownMessages(rows: readonly DisplayedRow[]): ShownMessage[] {
 		const display = row.display ?? {};
 		if (row.kind === 'owner_message') {
 			return typeof display.text === 'string'
-				? [{ id: row.id, from: 'owner', text: display.text }]
+				? [{ id: row.id, from: 'owner', text: display.text, clientId: row.clientMessageId ?? null }]
 				: [];
 		}
 		if (row.kind !== 'assistant' && row.kind !== 'display_only') return [];
 		if (!isBlocks(display.blocks) || display.blocks.length === 0) return [];
 		const ended = row.status === 'complete' ? null : MESSAGE_STATUS_LABEL[row.status];
-		return [{ id: row.id, from: 'coach', blocks: display.blocks, ended }];
+		const retryable = row.status === 'interrupted' || row.status === 'failed';
+		return [{ id: row.id, from: 'coach', blocks: display.blocks, ended, retryable }];
 	});
 }

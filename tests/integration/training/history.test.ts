@@ -754,6 +754,7 @@ describe('indexes', () => {
 			expect(Object.keys(HISTORY_INDEXES).sort()).toEqual([
 				'activeWorkouts',
 				'bestE1rms',
+				'completedWorkoutsFor',
 				'completedWorkoutsPage',
 				'exerciseHistory',
 				'lastPerformances',

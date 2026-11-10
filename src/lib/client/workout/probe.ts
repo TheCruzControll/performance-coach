@@ -17,6 +17,8 @@ export interface ActiveSummary {
 	kind: SessionKind;
 	title: string;
 	startedAt: Instant;
+	/** The planned session it was started from (its kit's), or null: Today reads Resume on it. */
+	plannedLineage: string | null;
 	/** Its changes not synced yet. */
 	pending: number;
 	/** The header's stopwatch, so the resume bar reads the time the workout page does. */
@@ -66,7 +68,16 @@ export function activeSummary(): Promise<ActiveSummary | null> {
 		const outbox = tx.objectStore(STORES.outbox).index(OUTBOX_INDEXES.byWorkout);
 		const pending = await result(outbox.count(active.id));
 		const { id: workoutId, kind, title, startedAt, device } = active;
-		return { workoutId, kind, title, startedAt, pending, stopwatch: device.stopwatch };
+		const plannedLineage = active.kit?.plannedLineage ?? null;
+		return {
+			workoutId,
+			kind,
+			title,
+			startedAt,
+			plannedLineage,
+			pending,
+			stopwatch: device.stopwatch
+		};
 	});
 }
 

@@ -5,6 +5,7 @@
  * import (M5 plan).
  */
 import { expect, type Page } from '@playwright/test';
+import { openWorkoutPanel } from './design-workout';
 import { gotoHydrated } from './support';
 
 export interface CoachA11yCase {
@@ -42,6 +43,26 @@ export const COACH_A11Y: readonly CoachA11yCase[] = [
 			await ready.getByRole('textbox', { name: 'Message' }).fill('How is my bench going?');
 			await expect(ready.getByRole('button', { name: 'Send' })).toBeEnabled();
 			await expect(page.getByTestId('notice-provider')).toBeVisible();
+		}
+	},
+	{
+		name: '/design → Workout, the exercise history sheet by exercise id alone, offline',
+		open: async (page) => {
+			const panel = await openWorkoutPanel(page);
+			await page.context().setOffline(true);
+			await panel.getByTestId('open-history-by-id').click();
+			await expect(page.getByTestId('exercise-history-offline')).toContainText(
+				'Exercise history needs a connection'
+			);
+		}
+	},
+	{
+		name: '/coach, What the coach knows open and loaded',
+		open: async (page) => {
+			await gotoHydrated(page, '/coach');
+			await page.getByRole('button', { name: 'What the coach knows' }).click();
+			await expect(page.getByTestId('knows-sheet')).toBeVisible();
+			await expect(page.getByTestId('knows-loading')).toHaveCount(0);
 		}
 	}
 ];

@@ -4,7 +4,8 @@
  * workout pages; it returns to the same exercise, and a run to /workout/run. Today offers
  * 'Continue here' for a workout started on another device, and the two devices then share their
  * sets. A workout finished offline reads 'N changes waiting to sync' until the bar's own engine
- * has synced it. A fresh device creates no 'pc-offline'. The app started offline (the service
+ * has synced it. A fresh device creates no 'pc-offline' on any tab, except Today on a day with
+ * sessions planned (it saves their kits). The app started offline (the service
  * worker's offline screen for /today) shows the bar, and it restores the workout exactly. The bar
  * never shifts the layout, is axe-clean in both themes, and in a desktop window sits in the
  * content column beside the rail, above the last element of every tab.
@@ -20,7 +21,7 @@ import { DB_NAME, STORES } from '../src/lib/client/workout/names';
 import type { RunKit, StartKit, StrengthKit } from '../src/lib/domain/workout';
 import { createMutation } from '../src/lib/domain/workout/mutations';
 import { boxOf, DESKTOP, expectCentredOver, expectNoShift, expectNoSideScroll } from './desktop';
-import { PROGRAM_TZ } from './program-support';
+import { PROGRAM_TZ, seedProgram } from './program-support';
 import { captureScreen, query, resetTrainingProfile, TABS, trackConsoleErrors } from './support';
 import { startFromKit } from './workout-start-support';
 import { injectMutation, readOutbox, seedWorkout, workoutDay } from './workout-support';
@@ -367,9 +368,10 @@ test.describe('another device', () => {
 });
 
 test.describe('a fresh device', () => {
-	test("visiting every tab creates no 'pc-offline' database", async ({ page }) => {
-		await openTab(page, '/today');
-		for (const tab of TABS.slice(1)) {
+	/** Every tab but Today: Train, then the others through the navigation. */
+	async function visitTabsButToday(page: Page) {
+		await openTab(page, '/train');
+		for (const tab of TABS.slice(2)) {
 			await page
 				.getByRole('navigation', { name: 'Primary' })
 				.getByRole('link', { name: tab.label })
@@ -377,7 +379,40 @@ test.describe('a fresh device', () => {
 			await looked(page, tab.path);
 			await expect(bar(page)).toHaveCount(0);
 		}
+	}
+
+	test("on a rest day, visiting every tab creates no 'pc-offline' database", async ({
+		page,
+		request
+	}) => {
+		await seedProgram(request, { fixture: 'today-rest', start: 'this_week' });
+		await query('update athlete_profiles set onboarding_completed_at = now()');
+		await openTab(page, '/today');
+		await expect(page.getByTestId('today-rest')).toBeVisible();
+		// Its idle pass has run, with nothing to save.
+		await expect(page.locator('[data-testid="today-plan"][data-kits="none"]')).toBeAttached({
+			timeout: 10_000
+		});
+		await visitTabsButToday(page);
 		expect(await offlineDatabases(page)).toBe(0);
+	});
+
+	test("on a workout day, only Today creates it, to keep today's sessions ready", async ({
+		page,
+		request
+	}) => {
+		await seedProgram(request, { fixture: 'workout-day', start: 'this_week' });
+		await query('update athlete_profiles set onboarding_completed_at = now()');
+		await visitTabsButToday(page);
+		expect(await offlineDatabases(page)).toBe(0);
+		await page
+			.getByRole('navigation', { name: 'Primary' })
+			.getByRole('link', { name: 'Today' })
+			.click();
+		await expect(page.locator('[data-testid="today-plan"][data-kits="saved"]')).toBeAttached({
+			timeout: 10_000
+		});
+		expect(await offlineDatabases(page)).toBe(1);
 	});
 });
 
