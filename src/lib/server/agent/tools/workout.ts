@@ -96,7 +96,7 @@ const exerciseRef = (id: string, name: string): SourceRef => ({
 });
 
 /** The services' refusals as errors the model can act on; nothing was written. */
-async function service<T>(work: () => Promise<T>): Promise<T> {
+export async function service<T>(work: () => Promise<T>): Promise<T> {
 	try {
 		return await work();
 	} catch (error) {
@@ -291,7 +291,7 @@ const getExerciseAlternativesTool = defineTool({
 
 // ---- proposals: update_workout and substitute_exercise ----------------------------------
 
-const proposalOutput = z.object({
+export const proposalOutput = z.object({
 	id: uuid,
 	kind: z.string(),
 	title: z.string(),
@@ -300,7 +300,7 @@ const proposalOutput = z.object({
 	/** An identical open proposal was returned: nothing new was stored. */
 	duplicate: z.boolean()
 });
-const proposalOut = ({ proposal, duplicate }: CreatedProposal) => ({
+export const proposalOut = ({ proposal, duplicate }: CreatedProposal) => ({
 	id: proposal.id,
 	kind: proposal.kind,
 	title: proposal.title,
@@ -310,7 +310,7 @@ const proposalOut = ({ proposal, duplicate }: CreatedProposal) => ({
 });
 const origin = (ctx: Ctx) =>
 	ctx.toolUseId ? { threadId: ctx.threadId, runId: ctx.runId, toolUseId: ctx.toolUseId } : null;
-const propose = (ctx: Ctx, proposal: object, evidence: Record<string, unknown>) =>
+export const propose = (ctx: Ctx, proposal: object, evidence: Record<string, unknown>) =>
 	service(() => createProposal(ctx.ownerId, { proposal, origin: origin(ctx), evidence }, ctx.deps));
 
 /** What the drafter reads of today's session: its plan, and each exercise's alternatives. */

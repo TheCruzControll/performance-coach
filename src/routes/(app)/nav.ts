@@ -9,7 +9,7 @@ export const APP_NAV: NavItem[] = [
 	{ href: resolve('/(app)/today'), label: 'Today', icon: 'today' },
 	{ href: resolve('/(app)/train'), label: 'Train', icon: 'train' },
 	{ href: resolve('/(app)/progress'), label: 'Progress', icon: 'progress' },
-	{ href: resolve('/(app)/coach'), label: 'Coach', icon: 'coach' },
+	{ href: resolve('/(app)/coach/[[thread]]', {}), label: 'Coach', icon: 'coach' },
 	{ href: resolve('/(app)/profile'), label: 'Profile', icon: 'profile' }
 ];
 
