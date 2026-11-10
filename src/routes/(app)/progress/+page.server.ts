@@ -30,6 +30,8 @@ export const load: PageServerLoad = async ({ cookies, locals, request, route, ur
 		owner,
 		{ ...progressParams(url.searchParams), origin },
 		new Date(),
-		forced ? ({ overview: failing, strength: failing } satisfies ProgressDeps) : {}
+		forced
+			? ({ overview: failing, strength: failing, running: failing } satisfies ProgressDeps)
+			: {}
 	);
 };

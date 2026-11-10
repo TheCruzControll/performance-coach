@@ -103,6 +103,8 @@
 				</div>
 			{:else if data.view === 'strength'}
 				<data.View strength={data.strength} served={data.served} />
+			{:else if data.view === 'running'}
+				<data.View running={data.running} served={data.served} />
 			{:else if data.View}
 				<data.View overview={data.overview} served={data.served} />
 			{/if}
