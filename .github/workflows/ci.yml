@@ -183,7 +183,15 @@ jobs:
   # 42698046025), so it split in four: about 7 a shard. Three would leave it the longest leg.
   # serial·chromium peaked at 9.3 in 42414341167 to 42431687521 (14 unsharded), then timed out
   # at 14 in 42469172500 with tests still passing, so it split in two the same way. Its shards
-  # took 7.3-8.8 Playwright minutes in 42695476716 to 42698046025, no more than main's: two stay.
+  # took 7.3-8.8 Playwright minutes in 42695476716 to 42698046025, no more than main's.
+  # Then the legs took more shards at about the same runner-minutes, so the longest leg, not the
+  # sum, sets a run's wall clock: main·webkit 3, serial·chromium 3, serial·webkit 5 (14 entries,
+  # 22 jobs a pull-request run, 20 starting at once). main·chromium stays in two: its a11y files
+  # alone (484 s over 2 workers) would make shard 1 of three the heaviest, which shard 1 must
+  # never be (it also runs every untimed file; scripts/e2e-shards.test.ts fails at three).
+  # Predicted Playwright steps at runs 42712377736 and 42711097021's speed: main·webkit ~274 s,
+  # serial·chromium ~330 s, serial·webkit ~326 s, alone 204-224 s. main·chromium's two shards
+  # took 392-455 s there, so it stays the longest leg until its a11y files can leave shard 1.
   # Every shard holds whole files, planned by measured seconds (scripts/e2e-shards.ts).
   # Shard timeouts stay at the unsharded leg's value until three runs per shard are measured.
   # main legs run 2 Playwright workers (playwright.config.ts), the other legs 1; main's `minutes`
@@ -202,14 +210,17 @@ jobs:
         include:
           - { group: main, engine: chromium, shard: 1, of: 2, minutes: 19 }
           - { group: main, engine: chromium, shard: 2, of: 2, minutes: 19 }
-          - { group: main, engine: webkit, shard: 1, of: 2, minutes: 13 }
-          - { group: main, engine: webkit, shard: 2, of: 2, minutes: 13 }
-          - { group: serial, engine: chromium, shard: 1, of: 2, minutes: 14 }
-          - { group: serial, engine: chromium, shard: 2, of: 2, minutes: 14 }
-          - { group: serial, engine: webkit, shard: 1, of: 4, minutes: 15 }
-          - { group: serial, engine: webkit, shard: 2, of: 4, minutes: 15 }
-          - { group: serial, engine: webkit, shard: 3, of: 4, minutes: 15 }
-          - { group: serial, engine: webkit, shard: 4, of: 4, minutes: 15 }
+          - { group: main, engine: webkit, shard: 1, of: 3, minutes: 13 }
+          - { group: main, engine: webkit, shard: 2, of: 3, minutes: 13 }
+          - { group: main, engine: webkit, shard: 3, of: 3, minutes: 13 }
+          - { group: serial, engine: chromium, shard: 1, of: 3, minutes: 14 }
+          - { group: serial, engine: chromium, shard: 2, of: 3, minutes: 14 }
+          - { group: serial, engine: chromium, shard: 3, of: 3, minutes: 14 }
+          - { group: serial, engine: webkit, shard: 1, of: 5, minutes: 15 }
+          - { group: serial, engine: webkit, shard: 2, of: 5, minutes: 15 }
+          - { group: serial, engine: webkit, shard: 3, of: 5, minutes: 15 }
+          - { group: serial, engine: webkit, shard: 4, of: 5, minutes: 15 }
+          - { group: serial, engine: webkit, shard: 5, of: 5, minutes: 15 }
           - { group: alone, engine: chromium, shard: 1, of: 1, minutes: 5 }
     steps:
       - uses: actions/checkout@v7

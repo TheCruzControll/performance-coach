@@ -221,22 +221,31 @@ export function a11ySuite(theme: 'dark' | 'light'): void {
 			// The history sheet's answer comes from page.route, which WebKit's service worker hides.
 			test.use({ serviceWorkers: 'block' });
 
-			test('every workout state has no violations', async ({ page }) => {
-				await answerHistory(page);
-				const panel = await openWorkoutPanel(page);
-				const states: [string, string, string, string][] = [
-					['Barbell', 'Baseline', 'Superset partner', 'as it opens'],
-					['Time', 'Swapped', 'Between exercises', 'swapped, between exercises'],
-					['Assisted', 'Stopped', 'All done', 'stopped, all done'],
-					['Distance', 'Checking', 'Superset partner', 'checking last time']
-				];
-				for (const [logger, card, upNext, name] of states) {
+			// One test per state, each on a fresh panel: on WebKit a tap on /design takes about 1.5 s
+			// and an audit over 3 s, so every state in one test ran past its 30 s, and no state's
+			// audit depends on the taps before it.
+			const states: [string, string, string, string][] = [
+				['Barbell', 'Baseline', 'Superset partner', 'as it opens'],
+				['Time', 'Swapped', 'Between exercises', 'swapped, between exercises'],
+				['Assisted', 'Stopped', 'All done', 'stopped, all done'],
+				['Distance', 'Checking', 'Superset partner', 'checking last time']
+			];
+			for (const [logger, card, upNext, name] of states) {
+				test(`the workout panel, ${name}, has no violations`, async ({ page }) => {
+					const panel = await openWorkoutPanel(page);
 					await pick(panel, 'logger-kind', logger);
 					await pick(panel, 'card-kind', card);
 					await pick(panel, 'up-next-kind', upNext);
 					await page.waitForTimeout(300);
 					expect(await audit(page), name).toEqual([]);
-				}
+				});
+			}
+
+			test('missed reps open, the history sheet over it, has no violations', async ({ page }) => {
+				await answerHistory(page);
+				const panel = await openWorkoutPanel(page);
+				// The panel as the last state left it, as when every state shared one test.
+				await pick(panel, 'card-kind', 'Checking');
 				await pick(panel, 'logger-kind', 'Barbell');
 				await panel.getByTestId('missed-toggle').click();
 				await panel.getByTestId('open-history').click();
