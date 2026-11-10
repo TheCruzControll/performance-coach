@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { CompletedBlock } from '#lib/domain/coach/index.ts';
 import { COMPOSER_MAX_CHARS } from '#lib/ui/coach/composer-keys.ts';
+import type { ProposalCardView } from '#lib/domain/coach/cards.ts';
 import { prefillOf, shownMessages, whenWords, type DisplayedRow } from './words';
 
 const search = (query: string) => new URLSearchParams(query);
@@ -79,8 +80,38 @@ describe('shownMessages', () => {
 		const ask = row({ kind: 'owner_message', display: { text: 'How is my bench?' } });
 		const answer = row({ display: { blocks: [block(0), block(1)] } });
 		expect(shownMessages([ask, answer])).toEqual([
-			{ id: ask.id, from: 'owner', text: 'How is my bench?' },
-			{ id: answer.id, from: 'coach', blocks: [block(0), block(1)], ended: null }
+			{ id: ask.id, from: 'owner', text: 'How is my bench?', clientId: null },
+			{
+				id: answer.id,
+				from: 'coach',
+				blocks: [block(0), block(1)],
+				ended: null,
+				retryable: false
+			}
+		]);
+	});
+
+	it('keeps the id the owner’s message was sent with, for Retry', () => {
+		const clientMessageId = crypto.randomUUID();
+		const ask = row({ kind: 'owner_message', display: { text: 'Again?' }, clientMessageId });
+		expect(shownMessages([ask])).toEqual([
+			{ id: ask.id, from: 'owner', text: 'Again?', clientId: clientMessageId }
+		]);
+	});
+
+	it('offers Retry for an interrupted or failed answer, not a stopped or complete one', () => {
+		const partial = (status: DisplayedRow['status']) =>
+			row({ kind: 'display_only', status, display: { blocks: [block(0)] } });
+		const shown = shownMessages(
+			(['interrupted', 'failed', 'stopped'] as const)
+				.map(partial)
+				.concat(row({ display: { blocks: [block(0)] } }))
+		);
+		expect(shown.map((m) => m.from === 'coach' && [m.ended, m.retryable])).toEqual([
+			['Interrupted', true],
+			['Failed', true],
+			['Stopped', false],
+			[null, false]
 		]);
 	});
 
@@ -91,7 +122,7 @@ describe('shownMessages', () => {
 			display: { blocks: [block(0)] }
 		});
 		expect(shownMessages([partial])).toEqual([
-			{ id: partial.id, from: 'coach', blocks: [block(0)], ended: 'Stopped' }
+			{ id: partial.id, from: 'coach', blocks: [block(0)], ended: 'Stopped', retryable: false }
 		]);
 	});
 
@@ -106,5 +137,63 @@ describe('shownMessages', () => {
 				row({ kind: 'tool_results', display: { blocks: [block(1)] } })
 			])
 		).toEqual([]);
+	});
+
+	describe('with proposal cards', () => {
+		const card = (id: string): ProposalCardView => ({
+			id,
+			kind: 'program_adjustment',
+			status: 'proposed',
+			title: `Proposal ${id}`,
+			rationale: 'Why',
+			rows: [],
+			impactLines: [],
+			warnings: [],
+			appliedVersion: null,
+			supersededReason: null
+		});
+		const RUN_1 = '00000000-0000-4000-8000-000000000001';
+		const RUN_2 = '00000000-0000-4000-8000-000000000002';
+
+		it('puts each card after the last row of the run that proposed it', () => {
+			const ask1 = row({ kind: 'owner_message', display: { text: 'Move it' }, runId: null });
+			const tools = row({ kind: 'assistant', display: null, runId: RUN_1 });
+			const answer1 = row({ display: { blocks: [block(0)] }, runId: RUN_1 });
+			const ask2 = row({ kind: 'owner_message', display: { text: 'And this' }, runId: null });
+			const answer2 = row({ display: { blocks: [block(1)] }, runId: RUN_2 });
+			const shown = shownMessages(
+				[ask1, tools, answer1, ask2, answer2],
+				[
+					{ runId: RUN_2, card: card('c') },
+					{ runId: RUN_1, card: card('a') },
+					{ runId: RUN_1, card: card('b') }
+				]
+			);
+			expect(shown.map((m) => (m.from === 'proposal' ? m.card.id : m.id))).toEqual([
+				ask1.id,
+				answer1.id,
+				'a',
+				'b',
+				ask2.id,
+				answer2.id,
+				'c'
+			]);
+			expect(shown[2]).toEqual({ id: 'a', from: 'proposal', card: card('a') });
+		});
+
+		it('keeps a card whose run shows no answer, after that run’s last row', () => {
+			const ask = row({ kind: 'owner_message', display: { text: 'Move it' } });
+			const tools = row({ kind: 'tool_results', display: null, runId: RUN_1 });
+			expect(
+				shownMessages([ask, tools], [{ runId: RUN_1, card: card('a') }]).map((m) => m.id)
+			).toEqual([ask.id, 'a']);
+		});
+
+		it('leaves out a card whose run is not on this page', () => {
+			const answer = row({ display: { blocks: [block(0)] }, runId: RUN_1 });
+			expect(shownMessages([answer], [{ runId: RUN_2, card: card('x') }]).map((m) => m.id)).toEqual(
+				[answer.id]
+			);
+		});
 	});
 });

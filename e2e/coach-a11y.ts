@@ -46,6 +46,16 @@ export const COACH_A11Y: readonly CoachA11yCase[] = [
 		}
 	},
 	{
+		name: '/design → Coach, a proposal card accepted, beside its other states',
+		open: async (page) => {
+			await openCoachPanel(page);
+			const card = page.getByTestId('proposal-live');
+			await card.getByRole('button', { name: 'Accept' }).click();
+			await expect(card.getByTestId('proposal-version')).toBeVisible();
+			await expect(page.getByTestId('proposal-superseded')).toContainText('Superseded');
+		}
+	},
+	{
 		name: '/design → Workout, the exercise history sheet by exercise id alone, offline',
 		open: async (page) => {
 			const panel = await openWorkoutPanel(page);
@@ -54,6 +64,15 @@ export const COACH_A11Y: readonly CoachA11yCase[] = [
 			await expect(page.getByTestId('exercise-history-offline')).toContainText(
 				'Exercise history needs a connection'
 			);
+		}
+	},
+	{
+		name: '/coach, What the coach knows open and loaded',
+		open: async (page) => {
+			await gotoHydrated(page, '/coach');
+			await page.getByRole('button', { name: 'What the coach knows' }).click();
+			await expect(page.getByTestId('knows-sheet')).toBeVisible();
+			await expect(page.getByTestId('knows-loading')).toHaveCount(0);
 		}
 	}
 ];
