@@ -189,6 +189,28 @@ describe('playwright.config.ts legs', () => {
 		const { default: config } = await import('../playwright.config.ts');
 		expect(names(config.projects ?? [])).toEqual(names(projects));
 	});
+
+	// main legs run whole files side by side on 2 workers, as every local run does; every other
+	// leg (and the whole suite in one CI job) keeps 1.
+	it.each([
+		['main', 2],
+		['serial', 1],
+		['alone', 1],
+		['sweeps', 1],
+		['', 1]
+	] as const)('gives E2E_GROUP=%j %i worker(s) in CI', async (group, workers) => {
+		await configProjects({ E2E_GROUP: group });
+		const { default: config } = await import('../playwright.config.ts');
+		expect(config.workers).toBe(workers);
+	});
+
+	it('keeps 2 workers outside CI', async () => {
+		await configProjects({ E2E_GROUP: 'serial' });
+		vi.resetModules();
+		vi.stubEnv('CI', '');
+		const { default: config } = await import('../playwright.config.ts');
+		expect(config.workers).toBe(2);
+	});
 });
 
 /** `playwright test --list` for one leg (or today's whole suite), as CI loads the config. */
