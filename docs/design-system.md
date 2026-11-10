@@ -396,8 +396,9 @@ later-pass screen).
   `RunSegments` (each segment on one line), `SessionDetails` (a class's stats beside its metrics)
   and `BaselineCallout` (the steps beside the why) adapt from 35 rem with container queries,
   above the phone column, so the iPhone is unchanged.
-- **Progress** (`/progress`): wide (`data-layout="wide"` on its root). From 1024 px the three
-  `Stat` tiles keep one row across the full width, with wider gaps, over a taller empty plot.
+- **Progress** (`/progress`): wide (`data-layout="wide"` on its root). From 1024 px the view nav
+  and the period picker share one row over the view; the overview's five trend tiles keep one row,
+  and its discipline cards and chart frames pair up from a 44 rem column (a container query).
 - **Coach** (`/coach`): readable, as a conversation should be. From 1024 px the suggestions sit in
   two columns; the composer is screen chrome, centred over the column.
 - **Security** (`/profile/security`): readable, a settings screen, and left as it is (its route
@@ -533,7 +534,7 @@ behind a confirming `BottomSheet`, and toasts for outcomes.
 ## Accessibility checklist (applies to every new component)
 
 - Touch targets ≥ 44 × 44 px; visible `:focus-visible` ring (`--color-accent-ring`).
-- Text contrast ≥ 4.5:1 in **both** themes. `e2e/a11y.e2e.ts` runs axe-core (WCAG 2.1 A/AA)
+- Text contrast ≥ 4.5:1 in **both** themes. `e2e/a11y-suite.ts` runs axe-core (WCAG 2.1 A/AA)
   on every screen, the plate-calculator sheet and each `/design` group in dark and light; CI
   runs it with the rest of the e2e suite (Lighthouse only audits the default dark theme).
 - Use native elements first (`<dialog>`, `<button>`, links); ARIA patterns for composites.

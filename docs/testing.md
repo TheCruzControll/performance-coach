@@ -106,6 +106,8 @@ Projects (all `devices['iPhone 15 Pro']`):
 | `serial-webkit`   | WebKit   | the same specs after `serial-chromium` (CI or `E2E_WEBKIT=1`)                                   |
 | `exclusive`       | Chromium | `*.exclusive.e2e.ts`, last and alone: account-wide actions                                      |
 
+Workers: 2 locally and in CI's main legs (whole files side by side), 1 in its other legs.
+
 ### Authentication
 
 - **Chromium performs real WebAuthn ceremonies** through the DevTools Protocol's virtual
@@ -233,9 +235,10 @@ Specs:
   replaces its skeleton without moving anything; unsaved changes ask before leaving (link, tab
   bar, Back); Back before the next screen has rendered (every browser made to start its view
   transition 1.5 s late, as WebKit can) comes back to the saved section, never covered by the
-  overtaken screen; an unknown section is a 404. `a11y.e2e.ts` audits the screen and its discard
+  overtaken screen; an unknown section is a 404. `a11y-suite.ts` audits the screen and its discard
   prompt in both themes.
-- `a11y.e2e.ts` — axe-core (`@axe-core/playwright`, WCAG 2.1 A/AA) on every screen (Security
+- `a11y-dark.e2e.ts` and `a11y-light.e2e.ts` (one theme each, the same tests from
+  `a11y-suite.ts`) — axe-core (`@axe-core/playwright`, WCAG 2.1 A/AA) on every screen (Security
   included; the signed-out sign-in and recovery screens too), the plate-calculator sheet and each
   `/design` component group, in the **dark and light** themes (Lighthouse only audits dark). The
   setup, recovery-codes, new-passkey and sign-in-error states are audited in both themes where
@@ -776,7 +779,7 @@ The Train week, the plan overview, session detail and the edit sheets.
   × 44 px; nothing scrolls sideways at 393 px; at 1440 × 900: a readable width, three-letter day
   names, hover and focus states. The Move fixtures list the days left with what is planned; the
   no-day-left fixture says 'No other day left this week' and offers Skip (coming soon,
-  aria-disabled); both pass axe in dark and light. `e2e/a11y.e2e.ts` audits the Plan tab in both
+  aria-disabled); both pass axe in dark and light. `e2e/a11y-suite.ts` audits the Plan tab in both
   themes.
 - **Train week** (`e2e/train-week.serial.e2e.ts`, Chromium + WebKit, `PROGRAM_TZ`, hybrid and
   one-week fixtures): sessions on their days, rest day, baseline brief, week navigation with ?week

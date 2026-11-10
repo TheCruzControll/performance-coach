@@ -5,7 +5,7 @@
  * DayPicker: keyboard, value order, selection marks, errors and hit areas. Toggle: a switch
  * the whole row flips. TagInput: adding, refusing, removing, suggestions, limits and what it
  * announces.
- * Runs on Chromium and WebKit; axe for the same panel lives in a11y.e2e.ts.
+ * Runs on Chromium and WebKit; axe for the same panel lives in a11y-suite.ts.
  */
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { captureScreen, trackConsoleErrors } from './support';

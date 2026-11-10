@@ -69,7 +69,9 @@
 	// Signed in (owner only), so real-user monitoring runs here as in the app shell, once idle.
 	onMount(() => {
 		const start = () =>
-			void import('#lib/client/vitals.ts').then((rum) => rum.startVitalsReporting());
+			void import('#lib/client/vitals.ts')
+				.then((rum) => rum.startVitalsReporting())
+				.catch(() => {}); // best effort, as in the app shell
 		if ('requestIdleCallback' in window) requestIdleCallback(start, { timeout: 3000 });
 		else setTimeout(start, 1500);
 	});

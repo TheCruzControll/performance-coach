@@ -43,7 +43,7 @@ const PERF = ['**/perf.e2e.ts', '**/perf-*.e2e.ts'];
 const FUNCTIONAL_IGNORE = [...PERF, '**/*.exclusive.e2e.ts', '**/*.serial.e2e.ts', SWEEP];
 const DESKTOP_ONLY = '**/*.desktop.e2e.ts';
 /** What the desktop project runs: desktop specs, the width-agnostic shell and offline specs, and axe. */
-const DESKTOP_SPECS = [DESKTOP_ONLY, '**/shell.e2e.ts', '**/offline.e2e.ts', '**/a11y.e2e.ts'];
+const DESKTOP_SPECS = [DESKTOP_ONLY, '**/shell.e2e.ts', '**/offline.e2e.ts', '**/a11y-*.e2e.ts'];
 /** A device descriptor resized to the DESKTOP window (e2e/desktop.ts) that desktop specs use. */
 const desktopWindow = (device: string) => ({ ...devices[device], ...DESKTOP });
 const SERIAL = '**/*.serial.e2e.ts';
@@ -166,7 +166,9 @@ export default defineConfig({
 	outputDir: 'test-results',
 	forbidOnly: Boolean(process.env.CI),
 	retries: process.env.CI ? 1 : 0,
-	workers: process.env.CI ? 1 : 2,
+	// CI main legs run whole files side by side on 2 workers, as local runs do (auth.setup.ts
+	// registers a passkey per worker). serial, alone and sweeps legs keep 1.
+	workers: process.env.CI && group !== 'main' ? 1 : 2,
 	timeout: 30_000,
 	expect: { timeout: 7_500 },
 	reporter: [
