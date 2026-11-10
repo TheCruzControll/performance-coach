@@ -195,6 +195,11 @@ test.describe('week-complete', () => {
 	}) => {
 		test.skip(browserName !== 'chromium', 'offline emulation is Chromium-only');
 		await gotoHydrated(page, LIST);
+		// Going offline while the service worker installs would fail its install, and no worker
+		// would control /progress below: let it take control first.
+		await page.waitForFunction(() => navigator.serviceWorker.controller !== null, null, {
+			timeout: 15_000
+		});
 		const create = page.getByTestId('review-create').first();
 		await expect(create).toBeVisible();
 		await context.setOffline(true);
