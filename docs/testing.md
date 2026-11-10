@@ -106,6 +106,8 @@ Projects (all `devices['iPhone 15 Pro']`):
 | `serial-webkit`   | WebKit   | the same specs after `serial-chromium` (CI or `E2E_WEBKIT=1`)                                   |
 | `exclusive`       | Chromium | `*.exclusive.e2e.ts`, last and alone: account-wide actions                                      |
 
+Workers: 2 locally and in CI's main legs (whole files side by side), 1 in its other legs.
+
 ### Authentication
 
 - **Chromium performs real WebAuthn ceremonies** through the DevTools Protocol's virtual
