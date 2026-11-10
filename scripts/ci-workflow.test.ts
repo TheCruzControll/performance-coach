@@ -303,8 +303,12 @@ describe('CI e2e legs', () => {
 		expect(checks.map((job) => job.text)).toEqual(['e2e:']);
 		const aggregate = checks[0]!.children;
 		expect(value(aggregate, 'needs')).toBe('[e2e-legs]');
-		// A required check that is skipped counts as passed, so it must run after a failed leg too.
-		expect(value(aggregate, 'if')).toBe('${{ always() }}');
+		// A required check that is skipped counts as passed, so on a pull request it must run after a
+		// failed leg too. Required checks gate only pull requests, so pushes and manual runs skip it
+		// rather than queue a 3-second job behind every pull request's jobs.
+		expect(value(aggregate, 'if')).toBe("${{ always() && github.event_name == 'pull_request' }}");
+		// The legs themselves still run on every event, so a merge to main still fails on a failed leg.
+		expect(value(legsJob(), 'if')).toBeUndefined();
 		const step = under(aggregate, 'steps')[0]!;
 		const fields = [step, ...step.children];
 		expect(value(under(fields, 'env'), 'LEGS')).toBe('${{ needs.e2e-legs.result }}');
@@ -351,5 +355,66 @@ describe('CI Lighthouse', () => {
 	it('skips the full-page screenshot, which only the HTML report thumbnails use', () => {
 		const script = readFileSync(new URL('./lighthouse.ts', import.meta.url), 'utf8');
 		expect(script).toMatch(/^\s*disableFullPageScreenshot: true,$/m);
+	});
+});
+
+/** A job's steps, each as its own line and the lines under it. */
+const stepsOf = (job: Line[]) => under(job, 'steps').map((step) => [step, ...step.children]);
+
+/** Every job that runs db:setup, with its steps. */
+function databaseJobs() {
+	return under(ci, 'jobs')
+		.map((job) => ({ id: job.text.replace(/:$/, ''), steps: stepsOf(job.children) }))
+		.filter((job) => job.steps.some((fields) => value(fields, 'run') === 'pnpm db:setup'));
+}
+
+// The image's entrypoint pulls before `docker run -d` detaches, so the whole command goes to the
+// background: the pull and initdb overlap the installs instead of holding the job at its start.
+const START =
+	/^nohup sh -c '(docker run -d --name postgres -p 5432:5432 (?:-e POSTGRES_\w+=\w+ )+postgres:18)' > "\$RUNNER_TEMP\/postgres-start\.log" 2>&1 &$/;
+
+describe('CI Postgres', () => {
+	it('is started by every job that runs db:setup, in the background, right after checkout', () => {
+		const jobs = databaseJobs();
+		expect(jobs.map((job) => job.id).sort()).toEqual(['e2e-legs', 'lighthouse', 'test']);
+		for (const job of jobs) {
+			const checkout = job.steps.findIndex((f) =>
+				value(f, 'uses')?.startsWith('actions/checkout@')
+			);
+			const start = job.steps.findIndex((f) => START.test(value(f, 'run') ?? ''));
+			expect(start, `${job.id}: a backgrounded postgres:18 start`).toBeGreaterThan(-1);
+			expect(start, `${job.id}: right after checkout`).toBe(checkout + 1);
+			const command = START.exec(value(job.steps[start]!, 'run')!)![1]!;
+			// The same server the service container gave: image, superuser, password and database.
+			const env = [...command.matchAll(/-e (POSTGRES_\w+)=(\w+)/g)].map(([, k, v]) => `${k}=${v}`);
+			expect(env.sort(), job.id).toEqual([
+				'POSTGRES_DB=postgres',
+				'POSTGRES_PASSWORD=postgres',
+				'POSTGRES_USER=postgres'
+			]);
+		}
+	});
+
+	it('is waited for over TCP, for at least 90 s, immediately before db:setup', () => {
+		for (const job of databaseJobs()) {
+			const setup = job.steps.findIndex((f) => value(f, 'run') === 'pnpm db:setup');
+			const wait = job.steps[setup - 1]!;
+			expect(value(wait, 'name'), job.id).toBe('Wait for Postgres');
+			const script = value(wait, 'run') ?? '';
+			// Over TCP: the image's init server listens on its socket only, so it never counts.
+			expect(script, job.id).toContain('pg_isready -h localhost -p 5432 -U postgres');
+			// A cold pull plus initdb.
+			expect(Number(value(under(wait, 'env'), 'WAIT_SECONDS')), job.id).toBeGreaterThanOrEqual(90);
+			expect(script, job.id).toContain('$WAIT_SECONDS');
+			// A server that never answers fails the job, with what went wrong in its log.
+			expect(script, job.id).toContain('"$RUNNER_TEMP/postgres-start.log"');
+			expect(script, job.id).toContain('docker logs postgres');
+			expect(script, job.id).toMatch(/\n\s*exit 1$/);
+		}
+	});
+
+	it('runs in no service container, which would hold every job until it is healthy', () => {
+		const withServices = under(ci, 'jobs').filter((job) => find(job.children, 'services'));
+		expect(withServices.map((job) => job.text)).toEqual([]);
 	});
 });

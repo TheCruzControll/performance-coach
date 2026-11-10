@@ -80,6 +80,7 @@ export const ROUTE_ACCESS = {
 
 	// runs
 	'/api/coach/runs/[run]/cancel': 'owner',
+	'/api/coach/runs': 'owner',
 
 	// threads
 
