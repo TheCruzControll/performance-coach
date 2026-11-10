@@ -17,6 +17,7 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import { deviceWorkout } from '#lib/client/workout/device-workout.svelte.ts';
 	import { workoutPath } from '#lib/client/workout/kinds.ts';
 	import type { OutboxStatus } from '#lib/client/workout/outbox-rules.ts';
 	import { outboxStatus } from '#lib/client/workout/status.svelte.ts';
@@ -49,6 +50,13 @@
 		const next = await findResume(path);
 		if (path !== pathname) return;
 		found = next;
+		deviceWorkout.active =
+			next.type === 'active'
+				? {
+						plannedLineage: next.workout.plannedLineage,
+						href: resolve(workoutPath(next.workout.kind))
+					}
+				: null;
 		looked = path;
 	}
 	$effect(() => void look(pathname));
@@ -77,6 +85,9 @@
 	onMount(() => () => {
 		gone = true;
 		engine?.();
+		// It is gone from the shell (the workout screen sits outside it): a session finished or
+		// discarded there must not read Resume when the shell comes back before it looks again.
+		deviceWorkout.active = null;
 	});
 
 	const SAVED: OutboxStatus = { state: 'synced' };

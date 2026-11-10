@@ -7,6 +7,7 @@ import type { IsoDate } from '../../../domain/calendar';
 import {
 	activeWorkouts,
 	bestE1rms,
+	completedWorkoutsFor,
 	completedWorkoutsPage,
 	exerciseHistory,
 	lastPerformances,
@@ -74,6 +75,13 @@ export function createHistoryRepository(db: Executor) {
 		/** The owner's workouts in progress, newest first, at most `limit`. */
 		async activeWorkouts(ownerId: string, limit: number) {
 			return activeWorkouts(db, ownerId, limit);
+		},
+
+		/** Each lineage's newest completed workout, by client id; lineages without one are absent. */
+		async completedWorkoutsFor(ownerId: string, lineages: string[]): Promise<Map<string, string>> {
+			if (!lineages.length) return new Map();
+			const rows = await completedWorkoutsFor(db, ownerId, lineages);
+			return new Map(rows.flatMap((row) => (row.lineage ? [[row.lineage, row.id] as const] : [])));
 		},
 
 		/** The owner's completed workouts, newest first, `limit` at a time after `before`. */
