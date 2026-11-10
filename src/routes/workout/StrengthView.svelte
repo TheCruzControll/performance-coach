@@ -32,7 +32,7 @@
     the planned exercise's load.
   - A substitute's or an added exercise's last session is not in the kit: when such a slot is
     current, its previous sets are fetched and attached to the workout (previous.ts, loaded
-    then); offline, the card says 'No previous sets on this device'.
+    then, or with the picker); offline, the card says 'No previous sets on this device'.
   - Add exercise, in Up next and after the side list's last exercise, opens the picker
     (ExercisePicker.svelte, loaded on intent) over the library cached on this device. A session
     with no exercise yet (an ad-hoc strength one) says so, with Add exercise in the card's place.
@@ -229,13 +229,16 @@
 		acting = { position };
 	}
 
-	// Add exercise: the picker, fetched on a button's first intent, opened afresh on each tap.
+	// Add exercise: the picker, fetched on a button's first intent, opened afresh on each tap. The
+	// exercise picked is current at once and asks for its last session (lookUp), so previous.ts
+	// comes with the picker: a session with no lookup yet (an empty one) adds offline too.
 	let Picker = $state.raw<typeof ExercisePicker | null>(null);
 	let picking = $state.raw<object | null>(null);
 	function prefetchPicker() {
 		void load(() => import('./ExercisePicker.svelte')).then((module) => {
 			if (module) Picker = module.default;
 		});
+		void load(() => import('#lib/client/workout/previous.ts'));
 	}
 	function openPicker(event: MouseEvent) {
 		(event.currentTarget as HTMLElement).focus();
