@@ -336,6 +336,13 @@
 			<!-- A running rest shows here, under its row, with the sheet closed. -->
 			<restTimer.component bind:open={restTimer.open} onclose={closeSheet} />
 		</div>
+		<ListRow
+			icon="plus"
+			title="Log a session"
+			subtitle="A run, a class or anything off the plan"
+			href={resolve('/workout')}
+			data-testid="log-a-session"
+		/>
 	</Section>
 </div>
 
