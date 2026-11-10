@@ -5,14 +5,15 @@ A **private, single-user AI performance coaching platform** for Niko Cruz, serve
 running, Muay Thai, hypertrophy and conditioning — and a fast, premium, iPhone-first web app to
 log every set and talk to the coach.
 
-> Status: **Milestone 2 — Authentication & profile, in progress** (see
+> Status: **Milestone 2 — Authentication & profile is done** (see
 > [docs/milestones.md](docs/milestones.md)). Milestone 1 is done (PR #1). Passkey authentication
 > (first-run setup, sign-in, recovery codes, passkey and session management, deny by default) and
 > the training profile are merged to `main`: onboarding, every Profile section editable later,
-> and Today's setup card and summary. **Production is on**: every merge to `main` deploys
-> coach.nikocruz.com, checked from outside after each deploy
+> and Today's setup card and summary. Every screen is laid out for a desktop window too: a
+> navigation rail and a centred column from 1024 px, in CSS only. **Production is on**: every
+> merge to `main` deploys coach.nikocruz.com, checked from outside after each deploy
 > ([docs/deployment.md](docs/deployment.md)). The owner set the app up on their iPhone on
-> 2026-11-06. The emailed sign-in link comes next.
+> 2026-11-06, and dropped the emailed sign-in link on 2026-11-07.
 >
 > **Milestone 3 — Training data model & programs is done**: the training schema with immutable
 > program versions and an append-only training log, a 191-exercise library, a deterministic
@@ -31,7 +32,7 @@ log every set and talk to the coach.
 | UI            | Hand-built design system (CSS custom properties, dark-first), Mona Sans + Hubot Sans (self-hosted)                       |
 | PWA           | Web manifest, generated icons, SvelteKit service worker (versioned precache, offline fallback)                           |
 | Observability | Server-Timing, JSON logs, `app_errors` (server + browser errors), RUM via web-vitals → `web_vitals`                      |
-| Tests         | Vitest (unit + integration on real Postgres), Playwright 1.63 (iPhone viewport, axe in both themes), budgets, Lighthouse |
+| Tests         | Vitest (unit + integration on real Postgres), Playwright 1.63 (phone + desktop, axe in both themes), budgets, Lighthouse |
 | CI/CD         | GitHub Actions: CI, nightly backups, post-deploy smoke check · Vercel Git integration deploys `main`, migrating first    |
 
 ## Quick start

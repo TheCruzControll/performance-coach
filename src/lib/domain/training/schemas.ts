@@ -501,15 +501,28 @@ function checkPlan(plan: ProgramPlan, fail: Fail) {
 	);
 }
 
-export const programPlanSchema = z
-	.object({
-		title: text(80),
-		startsOn: isoDate,
-		firstPlannedDay: isoDate,
-		blocks: list(blockPlanSchema, 12).check(z.minLength(1, 'Plan a block')),
-		decisions: list(decisionPlanSchema, 500)
-	})
-	.check(rules(checkPlan, whenValid));
+const planSchema = (maxBlocks: number) =>
+	z
+		.object({
+			title: text(80),
+			startsOn: isoDate,
+			firstPlannedDay: isoDate,
+			blocks: list(blockPlanSchema, maxBlocks).check(z.minLength(1, 'Plan a block')),
+			decisions: list(decisionPlanSchema, 500)
+		})
+		.check(rules(checkPlan, whenValid));
+
+/** A first plan: up to 12 blocks. */
+export const programPlanSchema = planSchema(12);
+
+/**
+ * Blocks a whole later version may hold. Planned blocks are shared into every later version, so
+ * the count only grows (one per next block, one per bridge); 260 is five years of weekly blocks.
+ */
+export const VERSION_BLOCK_LIMIT = 260;
+
+/** A whole later version (planning a next block): checkPlan's rules without the first-plan cap. */
+export const programVersionSchema = planSchema(VERSION_BLOCK_LIMIT);
 
 // ---- the training log -----------------------------------------------------------------------
 

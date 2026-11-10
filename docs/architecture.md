@@ -452,6 +452,13 @@ revision records as its decider and an edit of the log as its audit actor. docs/
 - Mobile-first shell (`src/routes/(app)/+layout.svelte`) with a fixed bottom navigation,
   safe-area insets and `viewport-fit=cover`. Dark is the designed default; light and "auto"
   are supported (`docs/design-system.md`).
+- Responsive in CSS only (docs/design-system.md, "Responsive layout"): one `AppNav` is the glass
+  bottom bar below 1024 px and a left rail from there, with `<main>` centred beside it at the
+  width a screen declares with `data-layout` (readable, wide or split). The page-agnostic rules,
+  those widths and the rail's brand mark, live in `src/lib/ui/styles/layout.css`, so the shell's
+  own stylesheet stays inlined into every app page; the mark masks `static/brand/mark-track.svg`
+  and `static/brand/mark-arc.svg`, precached with the other static files. No browser code reads
+  the window's size (`scripts/layout-rules.test.ts`), so SSR paints the final layout.
 - PWA: web manifest, PNG/SVG icons, and a SvelteKit service worker
   (`src/service-worker/index.ts`) that precaches the versioned build + static assets, deletes old
   caches and claims open pages on activate (so the first visit is already controlled), and
@@ -500,7 +507,7 @@ src/
   service-worker/   PWA service worker (own tsconfig)
   lib/{domain,server,client,ui}
   routes/           pages and /api endpoints
-static/             manifest, icons, robots.txt
+static/             manifest, icons, the rail's brand mark (brand/), robots.txt
 tests/integration/  Vitest integration tests (real Postgres)
 neon.ts             Neon config-as-code (Postgres only)
 vercel.json         Vercel project config: build command (migrate, then build), no Git deploys of main until the M2 cutover
