@@ -3,8 +3,8 @@
  * and what each weekly and cycle review found.
  *
  *   coach_proposals   a suggested change, proposed → accepted, rejected, applied or superseded (M5)
- *   weekly_reviews    one per owner and week (M6)
- *   cycle_reviews     one per block, naming the version that plans the next block (M6)
+ *   weekly_reviews    one live review per owner and week, in revisions (M6)
+ *   cycle_reviews     one live review per block, naming the version that plans the next (M6)
  *
  * Exercise likes and dislikes stay in M2's exercise_preferences (profile.ts), now linked to the
  * library. Programming decisions are in programs.ts.
@@ -24,6 +24,15 @@
  *   is frozen; DELETE is refused. The lifecycle columns (applied_*, closed_at, decision_note,
  *   superseded_reason) are left to the CHECKs below. Only test and reset code bypasses the guards
  *   (ADR 0010), and the backup restore loads rows with user triggers disabled.
+ * - M6 (reviews-db) gives each review what it was computed from (snapshot_version,
+ *   analytics_version, inputs_digest), the program version it reviewed and the coach run that
+ *   wrote its write-up. A refresh supersedes the live row: it is marked superseded_at and
+ *   superseded_by first, then the next revision is inserted with that id, in one transaction.
+ *   Guards (drizzle/<n>_reviews_guards.sql): identity and content never change; the narrative,
+ *   its run, thread and time, proposal_id and next_version_id are set once, from null;
+ *   supersession is set once and freezes the row, and never on a cycle review with a next
+ *   version; updated_at is stamped on a change; DELETE is refused. Rows written before M6
+ *   (snapshot_version 0) stay valid: M6's CHECKs apply from version 1.
  * - agent-runs.ts names coach_proposals for agent_tool_calls.proposal_id, so the two modules
  *   import each other; every cross-table reference is a lazy callback, so either loads first.
  */
@@ -115,6 +124,16 @@ export const coachProposals = pgTable(
 			t.status,
 			t.createdAt.desc().nullsFirst()
 		),
+		// Every proposal of the owner's, newest first (the inbox with no status filter).
+		index('coach_proposals_owner_created_idx').on(
+			t.ownerId,
+			t.createdAt.desc().nullsFirst(),
+			t.id.desc().nullsFirst()
+		),
+		// The owner's decided proposals, most recently decided first (the turn context, memory).
+		index('coach_proposals_owner_closed_idx')
+			.on(t.ownerId, t.closedAt.desc().nullsFirst(), t.id.desc().nullsFirst())
+			.where(sql`${t.closedAt} is not null`),
 		// A conversation's proposals, in order.
 		index('coach_proposals_thread_idx').on(t.threadId, t.createdAt),
 		check('coach_proposals_status_ck', inList('status', PROPOSAL_STATUSES)),
@@ -159,6 +178,55 @@ export const coachProposals = pgTable(
 	]
 );
 
+/**
+ * What M6 adds to both review tables (the M6 plan, 'Reviews are completed, not replaced'). Each
+ * column is NULL or has a default that is safe for a row written before M6: snapshot_version 0
+ * reads as legacy, and the CHECKs below ask for M6's provenance only where it is 1 or more.
+ */
+const reviewColumns = () => ({
+	/** The snapshot's shape (SNAPSHOT_VERSION); 0 for a row written before M6. */
+	snapshotVersion: integer('snapshot_version').notNull().default(0),
+	/** The analytics definitions it was computed with (ANALYTICS_VERSION); 0 before M6. */
+	analyticsVersion: integer('analytics_version').notNull().default(0),
+	/** inputsDigest of the facts and workouts it read, so it can say it is out of date. */
+	inputsDigest: text('inputs_digest'),
+	/** From 1; a refresh supersedes this row with the next revision instead of overwriting it. */
+	revision: integer('revision').notNull().default(1),
+	/** When a newer revision replaced it; set with superseded_by, once, and then it is frozen. */
+	supersededAt: timestamp('superseded_at', { withTimezone: true }),
+	/** The coach run and narration thread that wrote the narrative, and when. */
+	narrativeRunId: uuid('narrative_run_id').references(() => agentRuns.id),
+	narrativeThreadId: uuid('narrative_thread_id').references(() => coachThreads.id),
+	narratedAt: timestamp('narrated_at', { withTimezone: true })
+});
+
+type ReviewColumns = ReturnType<typeof reviewColumns>;
+type ReviewTable = { [K in keyof ReviewColumns]: AnyPgColumn } & {
+	supersededBy: AnyPgColumn;
+	narrative: AnyPgColumn;
+};
+
+/** The CHECKs both review tables share, named after `table`. */
+const reviewChecks = (table: string, t: ReviewTable) => {
+	const m6 = sql`${t.snapshotVersion} < 1`;
+	return [
+		check(`${table}_versions_ck`, sql`${t.snapshotVersion} >= 0 and ${t.analyticsVersion} >= 0`),
+		check(`${table}_revision_ck`, sql`${t.revision} >= 1`),
+		check(`${table}_superseded_ck`, sql`(${t.supersededAt} is null) = (${t.supersededBy} is null)`),
+		// From M6 on: the analytics it was computed with, and a digest of what it read.
+		check(`${table}_analytics_ck`, sql`${m6} or ${t.analyticsVersion} >= 1`),
+		check(
+			`${table}_digest_ck`,
+			sql`coalesce(char_length(${t.inputsDigest}) > 0, ${t.snapshotVersion} < 1)`
+		),
+		// From M6 on, a narrative is stamped when it was written; M3's rows may have one without.
+		check(
+			`${table}_narrated_ck`,
+			sql`${m6} or (${t.narrative} is null) = (${t.narratedAt} is null)`
+		)
+	];
+};
+
 /** A Monday-to-Sunday week, reviewed: planned against done, trends and what to adjust. */
 export const weeklyReviews = pgTable(
 	'weekly_reviews',
@@ -175,15 +243,31 @@ export const weeklyReviews = pgTable(
 		narrative: text('narrative'),
 		/** The adjustments it recommended for next week. */
 		proposalId: uuid('proposal_id').references(() => coachProposals.id),
+		/** The program and version the week was planned by; null with no program (or before M6). */
+		programId: uuid('program_id').references(() => programs.id),
+		versionId: uuid('version_id').references(() => programVersions.id),
+		...reviewColumns(),
+		/** The revision that replaced it (a DEFERRABLE INITIALLY DEFERRED key, set in the guards). */
+		supersededBy: uuid('superseded_by').references((): AnyPgColumn => weeklyReviews.id),
 		createdAt: createdAt(),
 		updatedAt: updatedAt()
 	},
 	(t) => [
-		uniqueIndex('weekly_reviews_owner_week_uq').on(t.ownerId, t.weekStartsOn),
+		// One live review per week; superseded revisions stay beside it.
+		uniqueIndex('weekly_reviews_owner_week_uq')
+			.on(t.ownerId, t.weekStartsOn)
+			.where(sql`${t.supersededAt} is null`),
+		uniqueIndex('weekly_reviews_owner_week_revision_uq').on(t.ownerId, t.weekStartsOn, t.revision),
 		// A Monday, so one week has one date to be unique by.
 		check('weekly_reviews_week_ck', sql`extract(isodow from ${t.weekStartsOn}) = 1`),
 		check('weekly_reviews_summary_ck', sql`char_length(${t.summary}) > 0`),
-		check('weekly_reviews_narrative_ck', sql`char_length(${t.narrative}) > 0`)
+		check('weekly_reviews_narrative_ck', sql`char_length(${t.narrative}) > 0`),
+		...reviewChecks('weekly_reviews', t),
+		// From M6 on, a version is its program's: none without the program.
+		check(
+			'weekly_reviews_program_ck',
+			sql`${t.snapshotVersion} < 1 or ${t.versionId} is null or ${t.programId} is not null`
+		)
 	]
 );
 
@@ -204,12 +288,33 @@ export const cycleReviews = pgTable(
 		/** The version that planned the next block, once it is planned. */
 		nextVersionId: uuid('next_version_id').references(() => programVersions.id),
 		proposalId: uuid('proposal_id').references(() => coachProposals.id),
+		/** The version that planned the reviewed block, and the block's dates in it. */
+		versionId: uuid('version_id').references(() => programVersions.id),
+		blockStartsOn: date('block_starts_on', { mode: 'string' }),
+		blockEndsOn: date('block_ends_on', { mode: 'string' }),
+		...reviewColumns(),
+		/** The revision that replaced it (a DEFERRABLE INITIALLY DEFERRED key, set in the guards). */
+		supersededBy: uuid('superseded_by').references((): AnyPgColumn => cycleReviews.id),
 		createdAt: createdAt(),
 		updatedAt: updatedAt()
 	},
 	(t) => [
-		uniqueIndex('cycle_reviews_block_uq').on(t.programId, t.blockLineageId),
+		// One live review per block; superseded revisions stay beside it.
+		uniqueIndex('cycle_reviews_block_uq')
+			.on(t.programId, t.blockLineageId)
+			.where(sql`${t.supersededAt} is null`),
+		uniqueIndex('cycle_reviews_block_revision_uq').on(t.programId, t.blockLineageId, t.revision),
+		// The owner's live cycle reviews, the newest block first.
+		index('cycle_reviews_owner_ends_idx')
+			.on(t.ownerId, t.blockEndsOn.desc().nullsFirst())
+			.where(sql`${t.supersededAt} is null`),
 		check('cycle_reviews_summary_ck', sql`char_length(${t.summary}) > 0`),
-		check('cycle_reviews_narrative_ck', sql`char_length(${t.narrative}) > 0`)
+		check('cycle_reviews_narrative_ck', sql`char_length(${t.narrative}) > 0`),
+		...reviewChecks('cycle_reviews', t),
+		// From M6 on: the version that planned the block, and its dates, the end on or after the start.
+		check(
+			'cycle_reviews_block_ck',
+			sql`${t.snapshotVersion} < 1 or (${t.versionId} is not null and ${t.blockStartsOn} is not null and ${t.blockEndsOn} >= ${t.blockStartsOn}) is true`
+		)
 	]
 );

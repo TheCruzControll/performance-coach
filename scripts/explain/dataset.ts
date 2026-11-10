@@ -585,24 +585,38 @@ export function generateDataset(seed: string | number = DATASET_SEED): Dataset {
 }
 
 /**
- * One INSERT … SELECT FROM unnest(…) for all of a table's rows, each column cast to its type. A
- * column some rows leave out is null in them, not its default: give every row the same columns.
+ * One INSERT … SELECT FROM unnest(…) for all of a table's rows, each column cast to its type (json
+ * and jsonb values as their JSON text). A column some rows leave out is null in them, not its
+ * default: give every row the same columns.
  */
-async function insertAll(client: pg.ClientBase, table: PgTable, rows: Record<string, unknown>[]) {
+export async function insertAll(
+	client: pg.ClientBase,
+	table: PgTable,
+	rows: Record<string, unknown>[]
+) {
 	const given = new Set(rows.flatMap((row) => Object.keys(row)));
 	const columns = Object.entries(getTableColumns(table)).filter(([key]) => given.has(key));
 	const names = columns.map(([, column]) => `"${column.name}"`).join(', ');
 	const casts = columns.map(([, column], i) => `$${i + 1}::${column.getSQLType()}[]`).join(', ');
 	const json = (value: unknown, type: string) =>
-		type === 'jsonb' && value != null ? JSON.stringify(value) : (value ?? null);
+		(type === 'jsonb' || type === 'json') && value != null
+			? JSON.stringify(value)
+			: (value ?? null);
 	await client.query(
 		`insert into "${getTableName(table)}" (${names}) select * from unnest(${casts})`,
 		columns.map(([key, column]) => rows.map((row) => json(row[key], column.getSQLType())))
 	);
 }
 
-/** Loads the dataset into a migrated, seeded database in one transaction, then analyses it. */
-export async function loadDataset(client: pg.ClientBase, d: Dataset): Promise<void> {
+/**
+ * Loads the dataset into a migrated, seeded database in one transaction, then analyses it.
+ * `owner: false` loads it for the owner already there (analytics-dataset.ts).
+ */
+export async function loadDataset(
+	client: pg.ClientBase,
+	d: Dataset,
+	{ owner = true }: { owner?: boolean } = {}
+): Promise<void> {
 	const catalogue = await client.query<{ key: string; id: string }>(
 		'select key, id from exercises where key is not null'
 	);
@@ -616,7 +630,7 @@ export async function loadDataset(client: pg.ClientBase, d: Dataset): Promise<vo
 	const { sets, deletedSets, deletedWorkouts } = d.edits;
 	await client.query('begin');
 	try {
-		await insertAll(client, t.owners, [d.owner]);
+		if (owner) await insertAll(client, t.owners, [d.owner]);
 		for (const [name, table] of Object.entries(TABLES)) {
 			await insertAll(
 				client,

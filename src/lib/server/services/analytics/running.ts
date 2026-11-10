@@ -56,11 +56,9 @@ import { addDays, type IsoDate } from '../../../domain/calendar';
 import { localDay } from '../../../domain/dates';
 import type { SessionType } from '../../../domain/training/vocabulary';
 import { formatDuration } from '../../../domain/units';
-import { createAnalyticsRepository } from '../../db/repositories/analytics';
 import type { Executor } from '../../db/types';
-import { measure } from '../../observability/timing';
 import { getAthleteProfile } from '../profile/index';
-import { createFactsLoader } from './facts';
+import { factsSource, type DashboardDeps } from './facts';
 import { displayUnits, distance, formatIn, pace, type DisplayUnits, type Shown } from './format';
 
 /** The pace metric each run type is judged by; a type without one is shown and never judged. */
@@ -159,20 +157,16 @@ const largest: Reduce = (values) => (values.length ? Math.max(...values) : null)
 export async function getRunningDashboard(
 	db: Executor,
 	ownerId: string,
-	{ period, today }: { period: Period; today: IsoDate }
+	{ period, today }: { period: Period; today: IsoDate },
+	deps: DashboardDeps = {}
 ): Promise<RunningDashboard> {
 	const profile = await getAthleteProfile(ownerId, { db });
 	const { timeZone } = profile;
 	const units = displayUnits(profile);
 	const format = formatIn(units);
+	const facts = factsSource(db, ownerId, timeZone, deps);
 
-	let firstActivity: IsoDate | null = null;
-	if (period === 'all') {
-		const at = await measure('analytics', () =>
-			createAnalyticsRepository(db).firstActivity(ownerId)
-		);
-		firstActivity = at && localDay(at, timeZone);
-	}
+	const firstActivity = period === 'all' ? await facts(today, today).firstActivity() : null;
 	const window = periodWindow(today, period, firstActivity);
 	const trend = trendWindow(window);
 	const { inProgress } = window;
@@ -182,14 +176,10 @@ export async function getRunningDashboard(
 		trend.weeks?.from,
 		sameDaysLastWeek(inProgress).from
 	]);
-	const loader = createFactsLoader(db, ownerId, { from, to: today, timeZone });
+	const loader = facts(from, today);
 	const runs = await loader.runs();
 	// The plan is read through the week in progress's Sunday: its target is the whole week's.
-	const planned = await createFactsLoader(db, ownerId, {
-		from,
-		to: addDays(inProgress.weekStart, 6),
-		timeZone
-	}).plannedRuns();
+	const planned = await facts(from, addDays(inProgress.weekStart, 6)).plannedRuns();
 	const races = await loader.races();
 
 	const periodWeeks: Weeks = window;

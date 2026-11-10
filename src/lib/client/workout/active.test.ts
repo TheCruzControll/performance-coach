@@ -151,6 +151,36 @@ describe('the active workout', () => {
 			expect(sent.flat()).toEqual([start.id]);
 		});
 
+		it('shows a workout finished here as completed, restores it so, and keeps it once it syncs and leaves the device', async () => {
+			const before = await createStore({ table: strengthTable, channel: null });
+			expect(await before.dispatch(startOf(W), kit).saved).toBe('saved');
+			const page = new ActiveWorkout(async () => strengthTable);
+			await page.restore((code) => code());
+			expect(page.current.phase).toBe('active');
+			const store = (await page.connect(load))!;
+			const finish = createMutation(
+				'workout.finish',
+				{ workoutId: W, at: '2026-11-06T19:00:00.000Z', payload: { sessionRpe: 8 } },
+				fresh
+			);
+			expect(await store.dispatch(finish).saved).toBe('saved');
+			expect(page.current.phase).toBe('completed');
+			page.close();
+
+			// Reloaded while it waits to sync (offline): the completed state again.
+			const reload = new ActiveWorkout(async () => strengthTable);
+			await reload.restore((code) => code());
+			expect(reload.current.phase).toBe('completed');
+			applying = true;
+			const again = (await reload.connect(load))!;
+			await vi.waitFor(async () => expect(await again.outbox()).toEqual([]));
+			await vi.waitFor(async () => expect(await again.load(W)).toBeNull());
+			expect(
+				reload.current.phase === 'completed' && reload.current.snapshot.view.workout
+			).toMatchObject({ id: W, status: 'completed', sessionRpe: 8 });
+			reload.close();
+		});
+
 		it('never starts flushing for a page closed while its store opens', async () => {
 			const page = new ActiveWorkout(async () => strengthTable);
 			await page.restore((code) => code());

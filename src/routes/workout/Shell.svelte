@@ -19,6 +19,13 @@
     sync sheet. After a 401 the page shows the signed-out state instead of the workout: no workout
     details, only the changes waiting. A page restored after a 401 (active.signedOut) shows none
     of it before the engine has said otherwise.
+  - Finish and Discard: the header's More button opens the workout menu (WorkoutMenu.svelte, loaded
+    on idle with the store), and Finish (from it, or the strength view's after the last exercise)
+    the finish sheet (FinishSheet.svelte, loaded then). Done sends the finish through the store
+    (finish.ts); online, once the server has it, the sheet opens its History detail. Otherwise
+    the page shows its completed state (Summary.svelte, loaded then): the summary, read-only,
+    from IndexedDB and the precache, so an offline reload keeps it, with 'View in History' once
+    the workout has synced.
   - Nothing reads the URL while prerendering: the HTML is the same, data-free, for everyone.
   - start: /workout?start= or ?new=, which the page reads once mounted. The start flow's chunk
     (StartFlow.svelte) is shown instead of any workout, through the page's chunk loader; the
@@ -39,10 +46,13 @@
 	import EmptyState from '#lib/ui/components/EmptyState.svelte';
 	import Skeleton from '#lib/ui/components/Skeleton.svelte';
 	import EmptyWorkout from './EmptyWorkout.svelte';
+	import type FinishSheet from './FinishSheet.svelte';
+	import type Summary from './Summary.svelte';
 	import { chunkLoader } from './lazy.ts';
 	import type * as SyncUi from './sync-ui.ts';
 	import type WorkoutClock from './WorkoutClock.svelte';
 	import WorkoutHeader from './WorkoutHeader.svelte';
+	import type WorkoutMenu from './WorkoutMenu.svelte';
 
 	interface Props {
 		/** Loads the route's reducer table (reducers/tables.ts): it decides the kind this page shows. */
@@ -61,16 +71,20 @@
 	const active = new ActiveWorkout(untrack(() => table));
 	const load = chunkLoader(() => active.stale());
 	const restore = $derived(active.current);
-	const view = $derived(restore.phase === 'active' ? restore.snapshot.view : null);
+	const view = $derived('snapshot' in restore ? restore.snapshot.view : null);
+	let Completed = $state.raw<typeof Summary | null>(null);
 	let viewLoaded = $state(!untrack(() => ready));
 	let Clock = $state.raw<typeof WorkoutClock | null>(null);
 	const viewReady = $derived(viewLoaded && Clock !== null);
 	const waiting = $derived(
 		restore.phase === 'loading' ||
 			restore.phase === 'elsewhere' ||
-			(restore.phase === 'active' && !viewReady)
+			(restore.phase === 'active' && !viewReady) ||
+			(restore.phase === 'completed' && !Completed)
 	);
 	let ui = $state.raw<typeof SyncUi | null>(null);
+	let Menu = $state.raw<typeof WorkoutMenu | null>(null);
+	let Finish = $state.raw<typeof FinishSheet | null>(null);
 	const sync = $derived(ui?.outboxStatus.current);
 	const signedOut = $derived(sync?.state === 'signed-out' ? sync.waiting : null);
 	const hidden = $derived(signedOut !== null || (active.signedOut && !sync));
@@ -107,7 +121,18 @@
 			if (start) return;
 			await active.connect(load);
 			ui = await load(() => import('./sync-ui.ts'));
+			Menu = (await load(() => import('./WorkoutMenu.svelte')))?.default ?? null;
 		});
+	});
+
+	// The finish sheet once Finish is asked for; the summary once the workout is finished.
+	$effect(() => {
+		if (active.finishing)
+			void load(() => import('./FinishSheet.svelte')).then((m) => m && (Finish = m.default));
+	});
+	$effect(() => {
+		if (restore.phase === 'completed')
+			void load(() => import('./Summary.svelte')).then((m) => m && (Completed = m.default));
 	});
 
 	// The start flow, once the page asks for it; a chunk that is gone shows 'App updated'.
@@ -137,11 +162,23 @@
 >
 	<WorkoutHeader title={waiting ? null : (shown?.workout.title ?? 'Workout')}>
 		{#snippet time()}
-			{#if shown && Clock}<Clock view={shown} store={active.store} />{/if}
+			{#if shown && Clock && restore.phase === 'active'}<Clock
+					view={shown}
+					store={active.store}
+				/>{/if}
 		{/snippet}
 		{#snippet status()}
 			{#if ui && active.store}
 				<ui.SyncStatus store={active.store} view={shown} {load} />
+			{/if}
+		{/snippet}
+		{#snippet menu()}
+			{#if shown && restore.phase === 'active'}
+				<span class="menu">
+					{#if Menu && active.store}
+						<Menu view={shown} store={active.store} onfinish={() => (active.finishing = true)} />
+					{/if}
+				</span>
 			{/if}
 		{/snippet}
 	</WorkoutHeader>
@@ -153,6 +190,11 @@
 			<ui.SignedOutState waiting={signedOut} />
 		{:else if restore.phase === 'active' && viewReady && !hidden && !starting}
 			<div class="columns">{@render children(restore.snapshot, load, active)}</div>
+		{:else if restore.phase === 'completed' && Completed && !hidden && !starting}
+			{@const { view: done, notSaved } = restore.snapshot}
+			<div class="columns">
+				<Completed view={done} completed={{ status: sync, notSaved, store: active.store }} />
+			</div>
 		{:else if waiting || hidden || starting}
 			<div class="restoring" role="status" aria-busy="true" data-testid="workout-restoring">
 				<span class="visually-hidden">Restoring your workout</span>
@@ -189,6 +231,9 @@
 	</div>
 
 	<div class="foot" data-testid="workout-foot"></div>
+	{#if Finish && shown}
+		<Finish bind:open={active.finishing} view={shown} store={active.store} />
+	{/if}
 </main>
 
 <style>
@@ -221,6 +266,17 @@
 	.restoring {
 		display: grid;
 		gap: var(--space-4);
+	}
+
+	/* The More button's place, kept while it loads: the title's line height, so the header never
+	   moves; the 44 px button overhangs it. */
+	.menu {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		min-width: var(--touch-target);
+		height: 2.5rem;
+		margin-right: calc(-1 * var(--space-2));
 	}
 
 	/* Reserved for the fixed bottom controls (the logger, the rest pill) and the home indicator. */

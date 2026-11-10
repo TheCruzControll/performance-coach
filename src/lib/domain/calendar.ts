@@ -7,8 +7,7 @@
  * Which day it is now for the owner is a time-zone question, answered once (from the profile's
  * zone) before any of these run. Weeks start on Monday, as M2's WEEKDAYS do.
  */
-import { WEEKDAYS } from './profile/catalog.ts';
-import type { Weekday } from './profile/catalog.ts';
+import { WEEKDAYS, type Weekday } from './weekdays.ts';
 
 /** A calendar date, written `YYYY-MM-DD`. */
 export type IsoDate = string;
@@ -27,26 +26,56 @@ export function parseIsoDate(text: string): Date | null {
 	return date.getUTCMonth() === month - 1 && date.getUTCDate() === day ? date : null;
 }
 
-function utc(date: IsoDate): Date {
-	const parsed = parseIsoDate(date);
-	if (!parsed) throw new RangeError(`Not a calendar date (YYYY-MM-DD): '${date}'`);
-	return parsed;
+const MONTH_DAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+/** The number `text` writes in ASCII digits from `at`, `length` long; -1 when one is not a digit. */
+function digits(text: string, at: number, length: number): number {
+	let n = 0;
+	for (let i = at; i < at + length; i++) {
+		const digit = text.charCodeAt(i) - 48;
+		if (!(digit >= 0 && digit <= 9)) return -1;
+		n = n * 10 + digit;
+	}
+	return n;
+}
+const isLeap = (year: number) => (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+
+/**
+ * UTC midnight of `date` in milliseconds, by parseIsoDate's rule without building a Date: the
+ * week scheduler (schedule/repair.ts) calls these thousands of times in one repair.
+ */
+function utc(date: IsoDate): number {
+	const year = digits(date, 0, 4);
+	const month = digits(date, 5, 2);
+	const day = digits(date, 8, 2);
+	const days = month === 2 && isLeap(year) ? 29 : MONTH_DAYS[month - 1];
+	const written = date.length === 10 && date[4] === '-' && date[7] === '-';
+	if (!written || year < 0 || days === undefined || day < 1 || day > days) {
+		throw new RangeError(`Not a calendar date (YYYY-MM-DD): '${date}'`);
+	}
+	// Date.UTC reads the years 0 to 99 as 1900 to 1999.
+	return year < 100 ? parseIsoDate(date)!.getTime() : Date.UTC(year, month - 1, day);
 }
 
-const format = (date: Date): IsoDate => date.toISOString().slice(0, 10);
+const pad = (n: number, width: number) => String(n).padStart(width, '0');
+function format(ms: number): IsoDate {
+	const date = new Date(ms);
+	const year = date.getUTCFullYear();
+	if (year < 0 || year > 9999) return date.toISOString().slice(0, 10);
+	return `${pad(year, 4)}-${pad(date.getUTCMonth() + 1, 2)}-${pad(date.getUTCDate(), 2)}`;
+}
 
-/** Days since Monday (Monday 0, Sunday 6). */
-const sinceMonday = (date: Date) => (date.getUTCDay() + 6) % 7;
+/** Days since Monday (Monday 0, Sunday 6): 1 January 1970 was a Thursday. */
+const sinceMonday = (ms: number) => (((Math.floor(ms / DAY_MS) + 3) % 7) + 7) % 7;
 
 /** `date` moved by a whole number of days (negative goes back). */
 export function addDays(date: IsoDate, days: number): IsoDate {
 	if (!Number.isInteger(days)) throw new RangeError(`Not a whole number of days: ${days}`);
-	return format(new Date(utc(date).getTime() + days * DAY_MS));
+	return format(utc(date) + days * DAY_MS);
 }
 
 /** Whole days from `from` to `to`: positive when `to` is later, 0 on the same day. */
 export function daysBetween(from: IsoDate, to: IsoDate): number {
-	return (utc(to).getTime() - utc(from).getTime()) / DAY_MS;
+	return (utc(to) - utc(from)) / DAY_MS;
 }
 
 /** The M2 weekday `date` falls on. */
@@ -56,7 +85,8 @@ export function weekdayOf(date: IsoDate): Weekday {
 
 /** The Monday of the Monday-to-Sunday week `date` falls in (`date` itself on a Monday). */
 export function mondayOf(date: IsoDate): IsoDate {
-	return addDays(date, -sinceMonday(utc(date)));
+	const ms = utc(date);
+	return format(ms - sinceMonday(ms) * DAY_MS);
 }
 
 /**

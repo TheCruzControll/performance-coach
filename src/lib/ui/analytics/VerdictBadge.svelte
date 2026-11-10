@@ -13,7 +13,7 @@
 		verdictWords,
 		type TileVerdict,
 		type VerdictWindow
-	} from './words.ts';
+	} from './verdict-words.ts';
 
 	interface Props {
 		verdict: TileVerdict;

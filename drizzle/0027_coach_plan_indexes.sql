@@ -1,0 +1,2 @@
+CREATE INDEX "coach_proposals_owner_created_idx" ON "coach_proposals" USING btree ("owner_id","created_at" DESC NULLS FIRST,"id" DESC NULLS FIRST);--> statement-breakpoint
+CREATE INDEX "coach_proposals_owner_closed_idx" ON "coach_proposals" USING btree ("owner_id","closed_at" DESC NULLS FIRST,"id" DESC NULLS FIRST) WHERE "coach_proposals"."closed_at" is not null;
