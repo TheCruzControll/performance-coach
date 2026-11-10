@@ -6,13 +6,17 @@
  * - get_training_history: the days from `from` to `to` (the last TRAINING_HISTORY_DAYS by
  *   default): the sessions the active version planned, with their status, and the completed
  *   workouts logged, newest first.
- * - get_exercise_history: one exercise's sets, newest first, a page at a time, with its records
- *   (M4's getExerciseHistory, the exercise-history sheet's read).
+ * - get_exercise_history: one exercise's sets, newest first, a page at a time (M4's
+ *   getExerciseHistory, the exercise-history sheet's read), with its records and its e1RM trend
+ *   as Progress's exercise detail gives them (getExerciseAnalytics).
  * - get_running_history: weekly running distance (M3's getWeeklyMileage) and the runs behind it.
  * - get_recent_workouts: History's list of completed workouts, a page at a time, or with `id` one
  *   workout's summary as History's detail shows it (getWorkoutDetail).
- * - get_personal_records: the best e1RM (always an estimate) and the rep maxes of one exercise, or
- *   of every exercise that has any, PERSONAL_RECORDS_PAGE exercises at a time.
+ * - get_personal_records: the best e1RM (always an estimate), the rep maxes and the PR timeline of
+ *   one exercise, or of every exercise that has any, PERSONAL_RECORDS_PAGE exercises at a time.
+ *
+ * Records and PRs are M6's (services/analytics/records.ts), the strength dashboard's own: only
+ * completed, undeleted workouts count, so a set in an abandoned workout is never a record.
  *
  * An exercise is named by its id or by its name, which M3's resolver matches exactly (aliases,
  * plurals and case aside). A name it cannot match to one exercise is AMBIGUOUS with the library's
@@ -26,8 +30,13 @@ import { addDays, daysBetween, mondayOf, type IsoDate } from '../../../domain/ca
 import type { SourceRef } from '../../../domain/coach/sources.ts';
 import { localDay } from '../../../domain/dates.ts';
 import { normaliseExerciseName } from '../../../domain/exercises/match.ts';
+import { DEFAULT_PERIOD, PERIODS } from '../../../domain/analytics/periods.ts';
+import { STRENGTH_PR_LABEL, type StrengthPr } from '../../../domain/analytics/strength.ts';
 import { PR_KIND_LABEL } from '../../../domain/workout/logging.ts';
 import { OTHER_SESSION_KINDS, SESSION_STATUSES } from '../../../domain/training/vocabulary.ts';
+import { getExerciseAnalytics } from '../../services/analytics/exercise.ts';
+import { metricAbout, trendCall } from '../../services/analytics/index.ts';
+import { getStrengthRecords, type LiftRecords } from '../../services/analytics/records.ts';
 import type { ResolvedCoachDeps } from '../../services/coach/shared.ts';
 import {
 	getExercisesByIds,
@@ -37,11 +46,9 @@ import {
 } from '../../services/exercises/index.ts';
 import { isUuid } from '../../services/ids.ts';
 import {
-	getPersonalRecords,
 	getSessionsInRange,
 	getWeeklyMileage,
 	ZONE_SLACK_MS,
-	type ExerciseRecords,
 	type HistorySet
 } from '../../services/training/history.ts';
 import {
@@ -51,6 +58,7 @@ import {
 	MAX_WORKOUT_PAGE,
 	type WorkoutListItem
 } from '../../services/workouts/history.ts';
+import { aboutSchema, dashboardSchema, trendCallShape } from './analytics.ts';
 import type { ToolContext } from './context.ts';
 import { defineTool, type CoachTool } from './define.ts';
 import {
@@ -72,6 +80,8 @@ export const RECENT_WORKOUTS_LIMIT = Object.freeze({ default: 10, max: PAGE_MAX 
 export const EXERCISE_SETS_LIMIT = Object.freeze({ default: PAGE_MAX, max: PAGE_MAX });
 /** Exercises per get_personal_records page: ten rep maxes each keep a page under the cap. */
 export const PERSONAL_RECORDS_PAGE = 5;
+/** Decision: the newest PRs each get_personal_records item lists; prCount counts them all. */
+export const PRS_PER_EXERCISE = 5;
 /** The most candidates an AMBIGUOUS exercise name lists, shortest name first. */
 export const EXERCISE_CANDIDATES_MAX = 8;
 /**
@@ -90,7 +100,10 @@ const truncated = z.optional(z.literal(true));
 
 const exerciseRef = (e: { id: string }): SourceRef => ({ type: 'exercise', id: e.id });
 const workoutRef = (id: string, date: IsoDate): SourceRef => ({ type: 'workout', id, date });
-const setRef = (set: HistorySet, timeZone: string): SourceRef => ({
+const setRef = (
+	set: Pick<HistorySet, 'performedAt'> & { id: string | number },
+	timeZone: string
+): SourceRef => ({
 	type: 'set',
 	id: String(set.id),
 	date: localDay(set.performedAt, timeZone)
@@ -134,8 +147,11 @@ const recordsSchema = z.object({
 	repMaxes: z.array(z.object({ reps: z.int(), weightKg: z.number(), source: sourceRefSchema }))
 });
 
+/** A lift's records, or none. */
+const NO_RECORDS = { bestE1rm: null, repMaxes: [] };
+
 function recordsOut(
-	r: Pick<ExerciseRecords, 'bestE1rm' | 'repMaxes'>,
+	r: Pick<LiftRecords, 'bestE1rm' | 'repMaxes'>,
 	timeZone: string
 ): z.input<typeof recordsSchema> {
 	const best = r.bestE1rm;
@@ -170,30 +186,79 @@ const setSchema = z.object({
 	skipped: z.boolean()
 });
 
+/** The lift's e1RM over a period, as Progress's exercise detail gives it, with its verdict. */
+const e1rmTrendSchema = z.object({
+	/** The period's best e1RM in kg (an estimate); null until the lift has enough sessions. */
+	value: z.nullable(z.number()),
+	shown: z.nullable(z.string()),
+	unit: z.literal('kg'),
+	comparison: z.string(),
+	about: aboutSchema,
+	...trendCallShape,
+	dashboard: dashboardSchema
+});
+
+const prSummarySchema = z.object({
+	kind: z.enum(Object.keys(STRENGTH_PR_LABEL) as [keyof typeof STRENGTH_PR_LABEL]),
+	label: z.string(),
+	reps: z.nullable(z.int()),
+	/** kg, or reps for most_reps; an e1RM is an estimate. */
+	value: z.number(),
+	estimated: z.boolean(),
+	previous: z.object({ value: z.number(), date: isoDate }),
+	source: sourceRefSchema
+});
+
+const prOut = (pr: StrengthPr): z.input<typeof prSummarySchema> => ({
+	kind: pr.kind,
+	label: pr.label,
+	reps: pr.reps,
+	value: pr.value,
+	estimated: pr.estimated,
+	previous: { value: pr.previous.value, date: pr.previous.on },
+	source:
+		pr.setId === null ? workoutRef(pr.workoutId, pr.on) : { type: 'set', id: pr.setId, date: pr.on }
+});
+
 const getExerciseHistoryTool = defineTool({
 	name: 'get_exercise_history',
-	description: `One exercise's logged sets, newest first, warm-ups and skipped sets flagged, ${EXERCISE_SETS_LIMIT.default} at a time unless limit says otherwise, with its records: the best estimated 1RM (an estimate, never a measured max) and the heaviest load at each rep count. Name the exercise by its id from an earlier result or by its name; a name that matches no single exercise is an AMBIGUOUS error listing candidates to ask again with. Give before (the previous result's next) for older sets.`,
+	description: `One exercise's logged sets, newest first, warm-ups and skipped sets flagged, ${EXERCISE_SETS_LIMIT.default} at a time unless limit says otherwise, with its records from completed workouts (the best estimated 1RM, an estimate and never a measured max, and the heaviest load at each rep count) and e1rmTrend: the period's best e1RM (${DEFAULT_PERIOD} unless period says otherwise) with Progress's verdict, real_trend or normal_variation over window, which is the only basis for calling it either. Name the exercise by its id from an earlier result or by its name; a name that matches no single exercise is an AMBIGUOUS error listing candidates to ask again with. Give before (the previous result's next) for older sets.`,
 	input: z.object({
 		exercise: exerciseInput,
 		before: z.optional(whole(1, Number.MAX_SAFE_INTEGER)),
-		limit: z.optional(whole(1, EXERCISE_SETS_LIMIT.max))
+		limit: z.optional(whole(1, EXERCISE_SETS_LIMIT.max)),
+		period: z.optional(z.enum(PERIODS))
 	}),
 	output: z.object({
 		exercise: z.object({ source: sourceRefSchema, name: untrustedSchema }),
 		records: recordsSchema,
+		e1rmTrend: e1rmTrendSchema,
 		sets: z.array(setSchema).check(z.maxLength(PAGE_MAX)),
 		more: z.boolean(),
 		next: z.nullable(z.int()),
 		truncated
 	}),
-	run: async ({ exercise, before, limit }, ctx: Ctx) => {
+	run: async ({ exercise, before, limit, period = DEFAULT_PERIOD }, ctx: Ctx) => {
 		const found = await resolveExercise(ctx, exercise);
 		const page = { before, limit: limit ?? EXERCISE_SETS_LIMIT.default };
 		const history = await getExerciseHistory(ctx.ownerId, found.id, page, training(ctx));
 		if (!history) throw toolError('NOT_FOUND', 'You have no exercise with that id');
+		const { db } = ctx.deps;
+		const today = ctx.today as IsoDate;
+		const [records] = await getStrengthRecords(db, ctx.ownerId, { today, exerciseId: found.id });
+		const { e1rm } = await getExerciseAnalytics(db, ctx.ownerId, found.id, { period, today });
 		return {
 			exercise: { source: exerciseRef(found), name: untrusted(found.name) },
-			records: recordsOut(history.records, ctx.timeZone),
+			records: recordsOut(records ?? NO_RECORDS, ctx.timeZone),
+			e1rmTrend: {
+				value: e1rm.value?.value ?? null,
+				shown: e1rm.value?.text ?? null,
+				unit: 'kg' as const,
+				comparison: e1rm.comparison.words,
+				about: metricAbout('e1rm'),
+				...trendCall(e1rm.trend),
+				dashboard: `/progress/exercises/${encodeURIComponent(found.id)}?period=${period}`
+			},
 			sets: history.sets.map((s) => ({
 				source: setRef(s, ctx.timeZone),
 				weight: s.weight,
@@ -214,14 +279,21 @@ const getExerciseHistoryTool = defineTool({
 
 const getPersonalRecordsTool = defineTool({
 	name: 'get_personal_records',
-	description: `The owner's records: for each exercise, the best estimated 1RM (an estimate, never a measured max) and the heaviest load lifted at each rep count from 1 to 10, each citing the set it came from. Name one exercise (its id or name), or leave exercise out for every exercise with a record, by name, ${PERSONAL_RECORDS_PAGE} at a time; give from (the previous result's next) for the next ones.`,
+	description: `The owner's records, as Progress shows them, from completed workouts only: for each exercise, the best estimated 1RM (an estimate, never a measured max), the heaviest load lifted at each rep count from 1 to 10, and its newest PRs (e1RM, rep max, most reps and session volume, each with the record it beat; prCount counts them all), each citing the set or workout it came from. Name one exercise (its id or name), or leave exercise out for every exercise with a record, by name, ${PERSONAL_RECORDS_PAGE} at a time; give from (the previous result's next) for the next ones.`,
 	input: z.object({
 		exercise: z.optional(exerciseInput),
 		from: z.optional(whole(0, Number.MAX_SAFE_INTEGER))
 	}),
 	output: z.object({
 		items: z
-			.array(z.extend(recordsSchema, { exercise: sourceRefSchema, name: untrustedSchema }))
+			.array(
+				z.extend(recordsSchema, {
+					exercise: sourceRefSchema,
+					name: untrustedSchema,
+					prs: z.array(prSummarySchema).check(z.maxLength(PRS_PER_EXERCISE)),
+					prCount: z.int()
+				})
+			)
 			.check(z.maxLength(PERSONAL_RECORDS_PAGE)),
 		more: z.boolean(),
 		next: z.nullable(z.int()),
@@ -229,14 +301,19 @@ const getPersonalRecordsTool = defineTool({
 	}),
 	run: async ({ exercise, from = 0 }, ctx: Ctx) => {
 		const one = exercise === undefined ? undefined : await resolveExercise(ctx, exercise);
-		const all = await getPersonalRecords(ctx.ownerId, { exerciseId: one?.id }, training(ctx));
+		const all: LiftRecords[] = await getStrengthRecords(ctx.deps.db, ctx.ownerId, {
+			today: ctx.today as IsoDate,
+			exerciseId: one?.id
+		});
 		const shown = all.slice(from, from + PERSONAL_RECORDS_PAGE);
 		const more = all.length > from + shown.length;
 		return {
 			items: shown.map((r) => ({
 				exercise: exerciseRef({ id: r.exerciseId }),
 				name: untrusted(r.name),
-				...recordsOut(r, ctx.timeZone)
+				...recordsOut(r, ctx.timeZone),
+				prs: r.prs.slice(0, PRS_PER_EXERCISE).map(prOut),
+				prCount: r.prs.length
 			})),
 			more,
 			next: more ? from + shown.length : null
