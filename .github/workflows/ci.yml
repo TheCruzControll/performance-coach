@@ -304,6 +304,7 @@ jobs:
           E2E_ENGINE: ${{ matrix.engine }}
           E2E_GROUP: ${{ matrix.group }}
           E2E_SHARD: ${{ matrix.shard }}/${{ matrix.of }}
+          E2E_TLS: '1'
         run: |
           shard_args=$(node scripts/e2e-shards.ts "$RUNNER_TEMP/e2e-shard-tests.txt")
           pnpm test:e2e $shard_args
