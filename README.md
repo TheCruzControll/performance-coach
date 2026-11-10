@@ -19,6 +19,12 @@ log every set and talk to the coach.
 > program versions and an append-only training log, a 191-exercise library, a deterministic
 > week-1 program generator, and the screens to build a program from Today, follow it on Train,
 > open a session, move, swap, adjust or skip it, and read every change with its why in History.
+>
+> **Milestone 4 — Workout application is in progress**: the workout screen is merged, offline
+> first (IndexedDB, an outbox and a sync ledger, so no set is lost or stored twice), with
+> strength, run and Muay Thai logging, rest timer, plate calculator, substitutions, 'This hurts',
+> finish and History, on the phone and in a desktop window. Open: sign-out's flush of unsynced
+> changes and the owner's screenshot review ([docs/milestones.md](docs/milestones.md)).
 
 ## Stack
 
@@ -57,6 +63,7 @@ pnpm dev                         # http://localhost:5173
 | `pnpm budgets` · `pnpm lighthouse`                                         | performance budgets · Lighthouse mobile                     |
 | `pnpm db:setup` · `db:generate` · `db:migrate` · `db:reset:test`           | database lifecycle                                          |
 | `pnpm icons`                                                               | render PWA icons from SVG                                   |
+| `pnpm icons:sprite`                                                        | regenerate the icon sprite from icons.ts                    |
 | `pnpm auth:setup-token` · `pnpm auth:reset-owner`                          | owner setup link · guarded credential reset (lost passkeys) |
 
 ## Repository map

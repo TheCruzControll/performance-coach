@@ -14,7 +14,7 @@ flowchart LR
   subgraph Device["iPhone (Safari / installed PWA)"]
     UI["Svelte 5 UI<br/>src/routes + src/lib/ui"]
     SW["Service worker<br/>versioned precache"]
-    IDB[("IndexedDB<br/>offline workout store (M4)")]
+    IDB[("IndexedDB pc-offline<br/>workouts · outbox · kits · library")]
     UI --- SW
     UI --- IDB
   end
@@ -132,7 +132,7 @@ first, then `pnpm lifecycles`.
   `used_setup_tokens` (hashes of spent setup tokens), `auth_events` (audit log) and `auth_rate_limits` (DB-backed counters); see docs/security.md. CI's `pnpm db:drift` fails when the schema changes without a committed
   migration. M2 training-profile tables: see "Training profile (M2)" below. M3's programs,
   prescriptions, exercise library, training log and coaching memory: see "Training model (M3)"
-  below.
+  below. M4's sync ledger (`sync_mutations`) and `pain_reports`: see "Offline workouts (M4)".
 
 ## Training profile (M2)
 
@@ -386,6 +386,7 @@ relation. `HISTORY_INDEXES` names each history builder's index.
 | A workout's sets in order                         | `set_records_workout_order_idx`                                           |
 | A run's segments in order                         | `run_record_segments_run_order_idx`                                       |
 | 'Completed' by lineage                            | `workouts_planned_lineage_idx`                                            |
+| Completed workouts, 20 a page (History)           | `workouts_owner_started_idx` (keyset), `set_records_workout_order_idx`    |
 | A version's weeks and a week's sessions by day    | `program_version_weeks_pk`, `planned_sessions_week_day_idx`               |
 | A session, or an edit's touched nodes, by lineage | `planned_sessions_lineage_idx`, `planned_exercises_lineage_idx`           |
 | Version history, 20 a page, with decisions        | `program_versions_program_number_uq`, `programming_decisions_version_idx` |
@@ -453,6 +454,87 @@ screens ("Why services sit between routes and the database"):
 Each takes `deps.source` ('owner' unless told otherwise; the coach's tools pass 'coach'), which a
 revision records as its decider and an edit of the log as its audit actor. docs/agent-architecture.md maps the tools onto them.
 
+## Offline workouts (M4)
+
+A set is confirmed on the device first, a reload offline restores the workout exactly, and
+Postgres never stores a change twice (PRD §9, §15, §18). The design and its alternatives are
+[ADR 0012](adr/0012-offline-workout-sync.md); the wire format is `src/lib/domain/workout/`.
+
+```mermaid
+sequenceDiagram
+  participant Page as Workout page
+  participant IDB as IndexedDB (pc-offline)
+  participant Engine as Sync engine (one per device)
+  participant API as POST /api/workouts/sync
+  participant PG as Postgres
+  Page->>IDB: dispatch: outbox entry + device state, one readwrite transaction
+  IDB-->>Page: project(table, kit, canonical, pending, device)
+  Page->>Engine: 'saved' flushes
+  Engine->>IDB: nextBatch (FIFO, ≤ 25 mutations, ≤ 64 KB)
+  Engine->>API: the batch
+  loop each mutation, in its own transaction
+    API->>PG: claim its id in sync_mutations
+    API->>PG: M3's services write the canonical rows (training_audit)
+  end
+  API-->>Engine: a result per mutation, with the canonical rows
+  Engine->>IDB: acknowledge: store the rows, drop the entries
+  IDB-->>Page: the same projection, now from the server's rows
+```
+
+### Modules
+
+| Module                              | Holds                                                                                        |
+| ----------------------------------- | -------------------------------------------------------------------------------------------- |
+| `src/lib/domain/workout/`           | The contract, timers, the projection and its per-kind reducer tables, logging rules, schemas |
+| `src/lib/client/workout/`           | The store, the restore read, outbox rules, the sync engine, reconcile and tabs, start        |
+| `src/lib/server/services/workouts/` | The sync dispatcher (`sync.ts`), its `apply/*` handlers, canonical reads, kit, history       |
+| `src/lib/ui/workout/`               | The logging components (`ExerciseCard`, `SetRow`, `SetLogger`, `RestTimer`, `SyncPill`…)     |
+| `src/routes/workout/`               | The three pages, their `Shell.svelte`, views, sheets and the Fix registry (`fix/`)           |
+
+The domain and client folders list their modules in their own READMEs.
+
+### Data
+
+- **`sync_mutations`** (`drizzle/0018_sync_ledger.sql`, guards in `0019`): one row per applied
+  mutation id, written in the same transaction as its effect, and one per id the owner discarded,
+  so a late copy of it answers `duplicate`. Rows never change, are never deleted and are not
+  pruned in M4 (about 15k a year).
+- **`pain_reports`** (`drizzle/0021_pain_reports.sql`, guards in `0022`): where it hurt, how
+  badly, what the owner chose (`stopped`, `substituted`, `ended_workout`) and a note, keyed by
+  the device's id. M3's logged-table guards apply: edits are audited, DELETE is refused. A pain
+  report is never an exercise preference; the coach reads the last 28 days of them.
+- `drizzle/0017_log_gaps.sql` added what M4 logs to M3's training log: time, distance and
+  assisted sets, missed reps independent of reps, and the substitution's slot.
+
+Endpoints, all owner-only and never cached: `POST /api/workouts/sync` (≤ 64 KB, 413 above),
+`GET /api/workouts/[id]` (canonical rows), `GET /api/workouts/active` (workouts in progress on
+any device), `GET /api/workouts/kit` (`?lineage=` to start, `?session=` to adopt),
+`GET /api/exercises` (the library, revalidated by its ETag) and `GET /api/exercises/[id]/history`.
+
+### Frontend
+
+- `/workout` (strength, the empty state and the start), `/workout/run` and `/workout/session` are
+  prerendered, public and data-free, outside `(app)`: no tab bar or rail, and they apply the safe
+  areas themselves. Each imports only its own view, so `pnpm budgets` counts each kind's whole
+  path; a page holding another kind's workout replaces itself with that kind's route
+  (`src/lib/client/workout/kinds.ts`).
+- Reducer tables per kind, each with the device actions: strength (core, custom exercises, sets,
+  structure; `reducers/tables.ts`), run (core, run) and session (core, other). Tables are merged
+  through a `/* @__PURE__ */` call, so no route ships another kind's reducers.
+- First render reads IndexedDB raw (`restore.ts`), never creating `pc-offline`. The store's write
+  path and the page's one sync engine load together on idle (`online.ts`); every saved dispatch
+  and every other tab's write flushes it.
+- Refused changes open the Fix registry (`src/routes/workout/fix/registry.ts`): every mutation
+  type has an editor that re-sends under the same id, a one-tap rewrite, or Discard only.
+- The resume bar (`src/routes/(app)/ResumeBar.svelte`) probes IndexedDB on idle on every app
+  screen and never creates the database; Today saves the kits of today's sessions so Start works
+  with no signal, and is the only other screen that may create it.
+- A finished or abandoned workout leaves IndexedDB once its last change is acknowledged; until
+  then the page restores it as completed.
+- Layouts for the phone and for a 1440 × 900 window (two centred columns, the rest timer docked
+  in the main column, History's list beside its detail) are in docs/design-system.md,
+  "Responsive layout → Screens".
+
 ## Frontend
 
 - Svelte 5 (runes) with SSR for every app route; client-side navigation afterwards; view
@@ -473,7 +555,9 @@ revision records as its decider and an edit of the log as its audit actor. docs/
   serves navigations from the network with the prerendered `/offline` screen as the fallback.
   It **never stores dynamic HTML, `__data.json` or `/api/*`**: pages are `private, no-cache`
   because they carry personal data, and a stored copy would outlive sign-out and show stale
-  state as live. Offline workout data (M4) will live in IndexedDB, owned by the app.
+  state as live. Workout data lives in IndexedDB instead ("Offline workouts (M4)"). Prerendered
+  pages, the three workout pages among them, are served from the precache whatever their query
+  string, so `/workout?start=…` reloads offline.
 - Offline UX: the `/offline` screen renders inside the app shell (tabs keep working), and
   `src/hooks.client.ts` marks network failures during client-side navigation (`__data.json`
   fetch errors) as `offline`, so `src/routes/ErrorView.svelte` shows the designed offline state
