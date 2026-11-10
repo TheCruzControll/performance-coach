@@ -460,19 +460,21 @@ async function seedDevice(device: ActiveSeed) {
 	const browser = await chromium.connectOverCDP(`http://127.0.0.1:${chrome.port}`);
 	try {
 		const page = await browser.contexts()[0]!.newPage();
+		// No service worker for the seed: its install would fetch the whole build in the
+		// background, and could refill the HTTP cache or take control after the clear below.
+		await page.addInitScript(() => {
+			if (!('serviceWorker' in navigator)) return;
+			navigator.serviceWorker.register = () => new Promise<ServiceWorkerRegistration>(() => {});
+		});
 		await page.goto(`${server.base}/robots.txt`);
 		await writeActiveWorkout(page, device);
 		if (sessionHeaders) await page.setExtraHTTPHeaders(sessionHeaders);
 		await page.goto(`${server.base}/workout`);
 		await page.waitForFunction((key) => localStorage.getItem(key), PREPAINT_KEY);
 		// Keep only the device's state (localStorage, IndexedDB): the audit, which skips the storage
-		// reset for it, stays a cold network load, with no cached chunk or service worker from here.
+		// reset for it, stays a cold network load, with no cached chunk from here.
 		const cdp = await page.context().newCDPSession(page);
 		await cdp.send('Network.clearBrowserCache');
-		await cdp.send('Storage.clearDataForOrigin', {
-			origin: server.base,
-			storageTypes: 'service_workers,cache_storage'
-		});
 		await cdp.detach();
 		await page.close();
 	} finally {
