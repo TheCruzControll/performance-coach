@@ -1,7 +1,7 @@
 /**
  * The screens on main that M2 and M3 are not rewriting, in a desktop window
- * (docs/design-system.md, Responsive layout → Screens): Progress is wide, its three tiles in one
- * row over a wider panel; Coach and Security keep the readable column, Coach's suggestions in two
+ * (docs/design-system.md, Responsive layout → Screens): Progress is wide, its view nav and period
+ * picker in one row over the view (whose own layout e2e/progress.serial.e2e.ts checks); Coach and Security keep the readable column, Coach's suggestions in two
  * columns; the design gallery widens with its groups side by side; error and offline states stay
  * centred, inside the shell and outside it.
  */
@@ -68,36 +68,24 @@ const gallerySection = (page: Page, title: string) =>
 	});
 
 test.describe('Progress', () => {
-	test('is wide: the three tiles share one row over a panel wider than the readable column', async ({
+	test('is wide: the view nav and the period picker share one row over the view', async ({
 		page
 	}) => {
 		await gotoHydrated(page, '/progress');
 		await expectMainCentred(page, await tokenPx(page, '--content-wide'));
+		const views = await boxOf(page.getByRole('navigation', { name: 'Progress views' }));
+		const periods = await boxOf(page.getByRole('navigation', { name: 'Period' }));
+		const content = await boxOf(page.getByTestId('period-content'));
+		expect(Math.abs(views.y + views.height / 2 - (periods.y + periods.height / 2))).toBeLessThan(4);
+		expect(periods.x, 'the period picker sits right of the view nav').toBeGreaterThan(
+			views.x + views.width
+		);
+		expect(content.y, 'the view starts below them').toBeGreaterThanOrEqual(
+			periods.y + periods.height
+		);
 		const readable = await tokenPx(page, '--content-readable');
-		for (const tab of ['Strength', 'Running', 'General']) {
-			await page.getByRole('tab', { name: tab }).click();
-			const panel = page.getByRole('tabpanel');
-			const tiles = await panel.locator('.metrics > *').all();
-			expect(tiles, tab).toHaveLength(3);
-			const boxes = [];
-			for (const tile of tiles) boxes.push(await boxOf(tile));
-			for (const [i, box] of boxes.entries()) {
-				expect(
-					Math.abs(box.y - boxes[0]!.y),
-					`${tab}: tile ${i + 1} is in the first row`
-				).toBeLessThanOrEqual(1);
-				if (i > 0)
-					expect(box.x, `${tab}: tile ${i + 1} is right of the one before`).toBeGreaterThan(
-						boxes[i - 1]!.x + boxes[i - 1]!.width
-					);
-			}
-			const chart = await boxOf(panel.locator('.metrics + *'));
-			expect(chart.width, `${tab}: the chart panel is wider than 40rem`).toBeGreaterThan(readable);
-			const row = boxes.at(-1)!.x + boxes.at(-1)!.width - boxes[0]!.x;
-			expect(Math.abs(row - chart.width), `${tab}: the tiles span the panel`).toBeLessThanOrEqual(
-				1
-			);
-		}
+		expect(content.width, 'the view is wider than the readable column').toBeGreaterThan(readable);
+		await expectNoSideScroll(page);
 	});
 });
 

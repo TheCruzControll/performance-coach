@@ -7,8 +7,7 @@
  * Which day it is now for the owner is a time-zone question, answered once (from the profile's
  * zone) before any of these run. Weeks start on Monday, as M2's WEEKDAYS do.
  */
-import { WEEKDAYS } from './profile/catalog.ts';
-import type { Weekday } from './profile/catalog.ts';
+import { WEEKDAYS, type Weekday } from './weekdays.ts';
 
 /** A calendar date, written `YYYY-MM-DD`. */
 export type IsoDate = string;
