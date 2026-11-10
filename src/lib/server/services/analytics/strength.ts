@@ -100,6 +100,12 @@ export interface StrengthDashboardOptions {
 	today: IsoDate;
 	/** Only what the overview shows (StrengthHeadline): no muscle groups, RPE or PRs to read. */
 	headline?: boolean;
+	/**
+	 * Muscle groups for the period's last `lastGroupWeeks` complete weeks and the week in progress
+	 * only, so their targets are read for those weeks alone (Progress lists RANGE_WEEKS of them);
+	 * every week of the period unless given.
+	 */
+	lastGroupWeeks?: number;
 }
 
 export type StrengthDashboardDeps = DashboardDeps;
@@ -232,7 +238,7 @@ export async function getStrengthDashboard(
 export async function getStrengthDashboard(
 	db: Executor,
 	ownerId: string,
-	{ period, today, headline = false }: StrengthDashboardOptions,
+	{ period, today, headline = false, lastGroupWeeks }: StrengthDashboardOptions,
 	deps: StrengthDashboardDeps = {}
 ): Promise<StrengthHeadline | StrengthDashboard> {
 	const profile = await getAthleteProfile(ownerId, { db });
@@ -263,13 +269,13 @@ export async function getStrengthDashboard(
 	const ids = [...new Set([...earlier, ...sets].map((set) => set.exercise))];
 	const exercises = await getExercisesByIds(ownerId, ids, { db });
 	const shownFrom = earliest(window.weeks?.from, trend.weeks?.from, inProgress.weekStart);
+	const periodFrom = window.weeks?.from ?? inProgress.weekStart;
+	const lastWeeks =
+		lastGroupWeeks === undefined ? periodFrom : addDays(inProgress.weekStart, -7 * lastGroupWeeks);
+	const groupsFrom = lastWeeks > periodFrom ? lastWeeks : periodFrom;
 	const targets = headline
 		? []
-		: await getMuscleTargets(
-				ownerId,
-				{ from: window.weeks?.from ?? inProgress.weekStart, to: today },
-				{ db }
-			);
+		: await getMuscleTargets(ownerId, { from: groupsFrom, to: today }, { db });
 
 	// ---- the weeks read and the figure builder
 	const lastSunday = addDays(inProgress.weekStart, -1);
@@ -372,7 +378,10 @@ export async function getStrengthDashboard(
 	// ---- muscle groups against their week's range, and every group the week plans
 	const byWeek = new Map(targets.map((t) => [t.weekStart, t]));
 	const groupWeeks = muscleGroupWeeks(
-		hardSets.filter((week) => week.inProgress || within(week.weekStart, window.weeks)),
+		hardSets.filter(
+			(week) =>
+				week.inProgress || (within(week.weekStart, window.weeks) && week.weekStart >= groupsFrom)
+		),
 		new Map(targets.map((t) => [t.weekStart, t.targets]))
 	).map(({ weekStart, inProgress: open, groups }): GroupWeekFigure => {
 		const target = byWeek.get(weekStart);

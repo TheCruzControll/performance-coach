@@ -20,6 +20,15 @@
  * (M1 Pro, CPU ms, wall in brackets), before → after: overview 'all' 821–832 → 441–446
  * (1244–1359 → 485–619), overview 12w 323–326 → 105–112 (418–441 → 163–199), strength 'all'
  * 492–507 → 423–496, strength 12w 251–253 unchanged (120 with RECORDS_FROM 'loaded').
+ * Then, over CI's 300 ms (overview 'all' 497, strength 'all' 652, strength 12w 339): setFacts
+ * sends its rows as one JSON array (its row plan and index unchanged), as decoding 15k rows field
+ * by field cost more than any figure; the Strength view reads muscle-group targets only for the
+ * weeks Progress lists (lastGroupWeeks: one program's version, not every program's of two years);
+ * prescriptionFacts reads each planned exercise without the library names; a set's PR candidates
+ * are worked out once, not once per kind; and a day's Monday and a plan's distinct sessions are
+ * kept once worked out. Local Node CPU medians (M1 Pro, shared and loaded), before → after:
+ * overview 'all' 377–430 → 217–228, strength 'all' 390–433 → 214–227 (109 queries → 24),
+ * strength 12w 216–253 → 124–133.
  */
 import { gzipSync } from 'node:zlib';
 import { stringify } from 'devalue';

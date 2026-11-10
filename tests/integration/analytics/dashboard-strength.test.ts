@@ -398,6 +398,22 @@ describe('muscle groups', () => {
 		});
 	});
 
+	it('with lastGroupWeeks are the last complete weeks and this one, as every week gives them', async () => {
+		await withRollback(async (db) => {
+			const data = await seedDataset(db);
+			const every = await getStrengthDashboard(db, data.owner, { period: 'all', today: TODAY });
+			const last = await getStrengthDashboard(db, data.owner, {
+				period: 'all',
+				today: TODAY,
+				lastGroupWeeks: 3
+			});
+			expect(last.muscleGroups.weeks).toEqual(every.muscleGroups.weeks.slice(-4));
+			expect(last.muscleGroups.weeks.at(-1)!.inProgress).toBe(true);
+			expect({ ...last, muscleGroups: null }).toEqual({ ...every, muscleGroups: null });
+			expect(last.muscleGroups.availability).toEqual(every.muscleGroups.availability);
+		});
+	});
+
 	it('keep every planned group of an unlogged week with no stored target, arms included', async () => {
 		await withRollback(async (db) => {
 			const owner = await makeOwner(db);

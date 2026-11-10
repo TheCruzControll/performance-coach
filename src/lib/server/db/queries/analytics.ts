@@ -17,6 +17,8 @@ import type { IsoDate } from '../../../domain/calendar';
 import {
 	exercises,
 	otherSessionRecords,
+	plannedExercises,
+	plannedSessions,
 	programBlocks,
 	programs,
 	programVersionBlocks,
@@ -67,36 +69,157 @@ const counted = and(eq(workouts.status, COUNTED_STATUS), isNull(workouts.deleted
 const during = (column: AnyPgColumn, { start, end }: InstantRange) =>
 	and(gte(column, start), lt(column, end));
 
-/** The owner's undeleted sets of counted workouts performed in the range, with their muscles. */
+type SetRecord = typeof setRecords.$inferSelect;
+type ExerciseRow = typeof exercises.$inferSelect;
+
+/** A counted set with its exercise's muscles, as setFacts gives it. */
+export interface SetFactRow {
+	/** The row's id, as text: the facts name sets and workouts alike by string ids. */
+	id: string;
+	workoutId: string;
+	exercise: string;
+	exerciseId: string;
+	plannedLineage: string | null;
+	exercisePosition: number;
+	setIndex: number;
+	weight: number | null;
+	unit: SetRecord['unit'];
+	assistance: number | null;
+	reps: number | null;
+	missedReps: number;
+	seconds: number | null;
+	metres: number | null;
+	rpe: number | null;
+	isWarmup: boolean;
+	isExtra: boolean;
+	isSkipped: boolean;
+	performedAt: Date;
+	deletedAt: Date | null;
+	/** When it last changed: a review's inputs digest notices an edited set. */
+	updatedAt: Date;
+	primaryMuscles: ExerciseRow['primaryMuscles'];
+	secondaryMuscles: ExerciseRow['secondaryMuscles'];
+}
+
+/** One set as setFacts' JSON array carries it: SET_FACT_COLUMNS' values, in order. */
+type SetFactJson = [
+	string,
+	string,
+	string,
+	string | null,
+	number,
+	number,
+	number | null,
+	SetRecord['unit'],
+	number | null,
+	number | null,
+	number,
+	number | null,
+	number | null,
+	number | null,
+	boolean,
+	boolean,
+	boolean,
+	string,
+	string | null,
+	string,
+	ExerciseRow['primaryMuscles'],
+	ExerciseRow['secondaryMuscles']
+];
+
+/** The columns of each set, in the order setFactOf reads them (an object's keys keep their order). */
+const SET_FACT_COLUMNS = {
+	id: sql<string>`${setRecords.id}::text`.as('id'),
+	workoutId: setRecords.workoutId,
+	exerciseId: setRecords.exerciseId,
+	plannedLineage: setRecords.plannedExerciseLineageId,
+	exercisePosition: setRecords.exercisePosition,
+	setIndex: setRecords.setIndex,
+	weight: setRecords.weight,
+	unit: setRecords.unit,
+	assistance: setRecords.assistance,
+	reps: setRecords.reps,
+	missedReps: setRecords.missedReps,
+	seconds: setRecords.seconds,
+	metres: setRecords.metres,
+	rpe: setRecords.rpe,
+	isWarmup: setRecords.isWarmup,
+	isExtra: setRecords.isExtra,
+	isSkipped: setRecords.isSkipped,
+	performedAt: setRecords.performedAt,
+	deletedAt: setRecords.deletedAt,
+	updatedAt: setRecords.updatedAt,
+	primaryMuscles: exercises.primaryMuscles,
+	secondaryMuscles: exercises.secondaryMuscles,
+	// The order's tiebreak, as the row is numbered (the text id would sort '10' before '9').
+	key: sql<number>`${setRecords.id}`.as('key')
+};
+
+function setFactOf([
+	id,
+	workoutId,
+	exerciseId,
+	plannedLineage,
+	exercisePosition,
+	setIndex,
+	weight,
+	unit,
+	assistance,
+	reps,
+	missedReps,
+	seconds,
+	metres,
+	rpe,
+	isWarmup,
+	isExtra,
+	isSkipped,
+	performedAt,
+	deletedAt,
+	updatedAt,
+	primaryMuscles,
+	secondaryMuscles
+]: SetFactJson): SetFactRow {
+	// One literal, no spreads: it runs once per set.
+	return {
+		id,
+		workoutId,
+		exercise: exerciseId,
+		exerciseId,
+		plannedLineage,
+		exercisePosition,
+		setIndex,
+		weight,
+		unit,
+		assistance,
+		reps,
+		missedReps,
+		seconds,
+		metres,
+		rpe,
+		isWarmup,
+		isExtra,
+		isSkipped,
+		performedAt: new Date(performedAt),
+		deletedAt: deletedAt === null ? null : new Date(deletedAt),
+		updatedAt: new Date(updatedAt),
+		primaryMuscles,
+		secondaryMuscles
+	};
+}
+
+/**
+ * The owner's undeleted sets of counted workouts performed in the range, with their muscles, in
+ * the order they were performed.
+ * Two years of sets are about 15k rows: Postgres sends them as one JSON array of arrays, which
+ * Node parses natively, instead of 15k rows of 22 columns, each decoded and mapped field by field
+ * (analytics-explain: that decoding cost more than the rest of the Strength view's 'all').
+ */
 export function setFacts(db: Executor, ownerId: string, range: InstantRange) {
-	return db
-		.select({
-			// The row's id, as text: the facts name sets and workouts alike by string ids.
-			id: sql<string>`${setRecords.id}::text`,
-			workoutId: setRecords.workoutId,
-			exercise: setRecords.exerciseId,
-			exerciseId: setRecords.exerciseId,
-			plannedLineage: setRecords.plannedExerciseLineageId,
-			exercisePosition: setRecords.exercisePosition,
-			setIndex: setRecords.setIndex,
-			weight: setRecords.weight,
-			unit: setRecords.unit,
-			assistance: setRecords.assistance,
-			reps: setRecords.reps,
-			missedReps: setRecords.missedReps,
-			seconds: setRecords.seconds,
-			metres: setRecords.metres,
-			rpe: setRecords.rpe,
-			isWarmup: setRecords.isWarmup,
-			isExtra: setRecords.isExtra,
-			isSkipped: setRecords.isSkipped,
-			performedAt: setRecords.performedAt,
-			deletedAt: setRecords.deletedAt,
-			// When it last changed: a review's inputs digest notices an edited set.
-			updatedAt: setRecords.updatedAt,
-			primaryMuscles: exercises.primaryMuscles,
-			secondaryMuscles: exercises.secondaryMuscles
-		})
+	// The rows as the row query reads them, in order (set_records_owner_performed_idx), planned on
+	// their own (offset 0 keeps Postgres from merging them into the aggregate, which would sort the
+	// built rows whole instead), then built into arrays and aggregated in that order.
+	const ordered = db
+		.select(SET_FACT_COLUMNS)
 		.from(setRecords)
 		.innerJoin(workouts, eq(workouts.id, setRecords.workoutId))
 		.innerJoin(exercises, eq(exercises.id, setRecords.exerciseId))
@@ -108,7 +231,17 @@ export function setFacts(db: Executor, ownerId: string, range: InstantRange) {
 				counted
 			)
 		)
-		.orderBy(asc(setRecords.performedAt), asc(setRecords.id));
+		.orderBy(asc(setRecords.performedAt), asc(setRecords.id))
+		.offset(0)
+		.as('ordered');
+	const { key, ...columns } = ordered._.selectedFields;
+	const row = sql.join(Object.values(columns), sql`, `);
+	const sets = sql<
+		SetFactJson[]
+	>`coalesce(json_agg(json_build_array(${row}) order by ${ordered.performedAt}, ${key}), '[]')`;
+	return db
+		.select({ sets: sets.mapWith((value: SetFactJson[]) => value.map(setFactOf)) })
+		.from(ordered);
 }
 
 /** The owner's counted workouts started in the range, with their run or other-session record. */
@@ -178,10 +311,30 @@ export function segmentFacts(db: Executor, ownerId: string, workoutIds: readonly
 
 /**
  * The planned exercises and set prescriptions of these planned sessions: the rows of the version
- * each workout was logged under (workouts.planned_session_id), composed from programs.ts.
+ * each workout was logged under (workouts.planned_session_id). The set prescriptions are
+ * programs.ts's (sessionChildren, composed); of each exercise only what the matching reads (its
+ * session, lineage and exercise), without the library names a program screen joins for, since
+ * two years of strength sessions plan thousands of them.
  */
 export function prescriptionFacts(db: Executor, plannedSessionIds: string[]) {
-	const { exercises, sets } = sessionChildren(db, plannedSessionIds);
+	const { sets } = sessionChildren(db, plannedSessionIds);
+	const exercises = db
+		.select({
+			id: plannedExercises.id,
+			sessionId: plannedExercises.sessionId,
+			lineageId: plannedExercises.lineageId,
+			exerciseId: plannedExercises.exerciseId
+		})
+		.from(plannedExercises)
+		// Probed through the session index with the sessions' ids, as programs.ts's children are:
+		// an IN list of hundreds of sessions would rather scan the table.
+		.where(
+			sql`${plannedExercises.sessionId} = any(array(${db
+				.select({ id: plannedSessions.id })
+				.from(plannedSessions)
+				.where(inArray(plannedSessions.id, plannedSessionIds))}))`
+		)
+		.orderBy(asc(plannedExercises.sessionId), asc(plannedExercises.position));
 	return { exercises, sets };
 }
 
@@ -288,7 +441,6 @@ export function firstActivity(db: Executor, ownerId: string) {
 		.where(and(eq(workouts.ownerId, ownerId), counted));
 }
 
-export type SetFactRow = Awaited<ReturnType<typeof setFacts>>[number];
 export type SessionFactRow = Awaited<ReturnType<typeof sessionFacts>>[number];
 export type SegmentFactRow = Awaited<ReturnType<typeof segmentFacts>>[number];
 export type ProgramInRangeRow = Awaited<ReturnType<typeof programsInRange>>[number];

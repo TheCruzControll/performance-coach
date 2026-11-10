@@ -68,7 +68,8 @@ function toSession({ run, other, ...row }: SessionFactRow): SessionFact {
 export function createAnalyticsRepository(db: Executor) {
 	return {
 		async sets(ownerId: string, range: InstantRange): Promise<SetFact[]> {
-			return setFacts(db, ownerId, range);
+			const [row] = await setFacts(db, ownerId, range);
+			return row?.sets ?? [];
 		},
 
 		async sessions(ownerId: string, range: InstantRange): Promise<SessionFact[]> {

@@ -116,6 +116,10 @@ const instants = ({ from, to }: { from: IsoDate; to: IsoDate }) => ({
 /** segmentFacts at 'all' reads nearly every run's segments: the one case opted in to a whole read. */
 const SEGMENTS_WHOLE_READ = { wholeRead: 'run_record_segments' } as const;
 
+/** The rows a plan reads: an aggregate's input (setFacts' one JSON array), else its own. */
+const rowsRead = (top: PlanNode): PlanNode =>
+	top['Node Type'] === 'Aggregate' && top.Plans?.length === 1 ? rowsRead(top.Plans[0]!) : top;
+
 /** Noon on TODAY: the instant each page load runs at (its day comes from TODAY itself). */
 const NOW = new Date(`${TODAY}T12:00:00Z`);
 const ORIGIN = {
@@ -383,7 +387,8 @@ export function analyticsExplain({ client, db, owner, readCatalog, render }: Har
 			const result = explained.rows[0]!['QUERY PLAN'][0]!;
 			const top = result.Plan;
 			const problems = checkPlan(top, expected, catalog!);
-			if (!Number(top['Actual Rows'])) problems.push('no rows: the plan is not on real data');
+			if (!Number(rowsRead(top)['Actual Rows']))
+				problems.push('no rows: the plan is not on real data');
 			const notes = [
 				...pendingOf(expected, catalog!).map((p) => `pending ${p.index}`),
 				...wholeReadsOf(top, expected, catalog!).map(
@@ -404,7 +409,7 @@ export function analyticsExplain({ client, db, owner, readCatalog, render }: Har
 			const buffers = `${String(top['Shared Hit Blocks'])}/${String(top['Shared Read Blocks'])}`;
 			const gate = problems.length ? problems.join('; ') : ['pass', ...notes].join(', ');
 			results.push(
-				`| ${name} | ${declared || 'small, recorded'} | ${scans} | ${String(top['Actual Rows'])} | ${result['Execution Time'].toFixed(3)} ms | ${result['Planning Time'].toFixed(3)} ms | ${buffers} | ${gate} |`
+				`| ${name} | ${declared || 'small, recorded'} | ${scans} | ${String(rowsRead(top)['Actual Rows'])} | ${result['Execution Time'].toFixed(3)} ms | ${result['Planning Time'].toFixed(3)} ms | ${buffers} | ${gate} |`
 			);
 			plans.push(`### ${name}`, '', '```text', ...lines, '```', '');
 			expect(problems, `${name}\n${lines.join('\n')}`).toEqual([]);
