@@ -203,9 +203,9 @@ describe('CI artifacts', () => {
 
 const legsJob = () => under(under(ci, 'jobs'), 'e2e-legs');
 
-/** The e2e matrix's entries: each `- { key: value, … }` line under `include`. */
-function entries(): Record<string, string>[] {
-	const include = under(under(under(legsJob(), 'strategy'), 'matrix'), 'include');
+/** A matrix's entries (the e2e legs' by default): each `- { key: value, … }` line under `include`. */
+function entries(job = legsJob()): Record<string, string>[] {
+	const include = under(under(under(job, 'strategy'), 'matrix'), 'include');
 	return include.map((line) => {
 		const flow = /^- \{(.*)\}$/.exec(line.text)?.[1];
 		if (flow === undefined) throw new Error(`not a one-line entry: ${line.text}`);
@@ -332,9 +332,79 @@ describe('CI client-secret canary', () => {
 	});
 });
 
+const shardsJob = () => under(under(ci, 'jobs'), 'lighthouse-shards');
+
+/** A Lighthouse shard step's fields, found by its name. */
+function shardStep(name: string): Line[] {
+	const step = under(shardsJob(), 'steps').find((s) => value([s, ...s.children], 'name') === name);
+	if (!step) throw new Error(`no step "${name}"`);
+	return [step, ...step.children];
+}
+
+const MOBILE = 'Lighthouse (median of 5 runs, asserted)';
+const DESKTOP = 'Lighthouse desktop (median of 3 runs, measured, not gating)';
+
 describe('CI Lighthouse', () => {
+	it('runs contiguous, well-formed shards to the end', () => {
+		expect(value(under(shardsJob(), 'strategy'), 'fail-fast')).toBe('false');
+		const shards = entries(shardsJob());
+		for (const entry of shards) {
+			expect(Object.keys(entry).sort(), JSON.stringify(entry)).toEqual(['of', 'shard']);
+			expect(entry.of, JSON.stringify(entry)).toBe(String(shards.length));
+		}
+		expect(shards.map((s) => Number(s.shard)).sort((a, b) => a - b)).toEqual(
+			Array.from({ length: shards.length }, (_, i) => i + 1)
+		);
+		expect(shards.length, 'parallel shards').toBeGreaterThan(1);
+	});
+
+	it('audits each shard’s share of every route, mobile and desktop', () => {
+		for (const name of [MOBILE, DESKTOP]) {
+			expect(value(shardStep(name), 'run'), name).toMatch(
+				/^pnpm lighthouse .* --shard \$\{\{ matrix\.shard \}\}\/\$\{\{ matrix\.of \}\}$/
+			);
+		}
+	});
+
+	it('bounds each shard by measured step timeouts, inside the job with room for the installs', () => {
+		const steps = [MOBILE, DESKTOP].map((name) =>
+			Number(value(shardStep(name), 'timeout-minutes'))
+		);
+		for (const minutes of steps) {
+			expect(minutes).toBeGreaterThan(0);
+			expect(minutes).toBeLessThanOrEqual(Math.ceil(1.5 * CEILING_MINUTES));
+		}
+		const installs = ['Install Chromium system dependencies', 'Install Chromium'].map((name) =>
+			Number(value(shardStep(name), 'timeout-minutes'))
+		);
+		expect(installs).toEqual([12, 8]);
+		const job = Number(value(shardsJob(), 'timeout-minutes'));
+		expect(job).toBeGreaterThanOrEqual(steps[0]! + steps[1]! + 12 + 8);
+	});
+
+	it('uploads each shard’s reports under a name of its own', () => {
+		const template = value(under(shardStep('Upload Lighthouse reports'), 'with'), 'name')!;
+		const names = entries(shardsJob()).map((entry) => fill(template, entry));
+		expect(new Set(names).size, names.join(', ')).toBe(names.length);
+		expect(fill(template, { shard: '2', of: '2' })).toBe('lighthouse-42-shard-2');
+	});
+
+	it('reports through one check, under its old name, that passes only when every shard did', () => {
+		const checks = under(ci, 'jobs').filter(
+			(job) => value(job.children, 'name') === 'Lighthouse (mobile)'
+		);
+		expect(checks.map((job) => job.text)).toEqual(['lighthouse:']);
+		const aggregate = checks[0]!.children;
+		expect(value(aggregate, 'needs')).toBe('[lighthouse-shards]');
+		expect(value(aggregate, 'if')).toBe('${{ always() }}');
+		const step = under(aggregate, 'steps')[0]!;
+		const fields = [step, ...step.children];
+		expect(value(under(fields, 'env'), 'SHARDS')).toBe('${{ needs.lighthouse-shards.result }}');
+		expect(value(fields, 'run')).toMatch(/^if \[ "\$SHARDS" != success \]; then\n.*\n\s*exit 1\n/);
+	});
+
 	it('asserts the median of 5 runs, which scripts/lighthouse.ts may decide in 3', () => {
-		const steps = under(under(under(ci, 'jobs'), 'lighthouse'), 'steps');
+		const steps = under(shardsJob(), 'steps');
 		const commands = steps
 			.map((step) => value([step, ...step.children], 'run'))
 			.filter((run): run is string => run?.startsWith('pnpm lighthouse') ?? false);
