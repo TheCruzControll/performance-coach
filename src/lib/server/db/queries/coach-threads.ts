@@ -137,6 +137,8 @@ export function displayPage(
 			kind: coachMessages.kind,
 			status: coachMessages.status,
 			display: coachMessages.display,
+			// An owner message's device id: Retry sends the message again under it.
+			clientMessageId: coachMessages.clientMessageId,
 			runId: coachMessages.runId,
 			createdAt: coachMessages.createdAt
 		})

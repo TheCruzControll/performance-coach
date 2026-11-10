@@ -79,8 +79,38 @@ describe('shownMessages', () => {
 		const ask = row({ kind: 'owner_message', display: { text: 'How is my bench?' } });
 		const answer = row({ display: { blocks: [block(0), block(1)] } });
 		expect(shownMessages([ask, answer])).toEqual([
-			{ id: ask.id, from: 'owner', text: 'How is my bench?' },
-			{ id: answer.id, from: 'coach', blocks: [block(0), block(1)], ended: null }
+			{ id: ask.id, from: 'owner', text: 'How is my bench?', clientId: null },
+			{
+				id: answer.id,
+				from: 'coach',
+				blocks: [block(0), block(1)],
+				ended: null,
+				retryable: false
+			}
+		]);
+	});
+
+	it('keeps the id the owner’s message was sent with, for Retry', () => {
+		const clientMessageId = crypto.randomUUID();
+		const ask = row({ kind: 'owner_message', display: { text: 'Again?' }, clientMessageId });
+		expect(shownMessages([ask])).toEqual([
+			{ id: ask.id, from: 'owner', text: 'Again?', clientId: clientMessageId }
+		]);
+	});
+
+	it('offers Retry for an interrupted or failed answer, not a stopped or complete one', () => {
+		const partial = (status: DisplayedRow['status']) =>
+			row({ kind: 'display_only', status, display: { blocks: [block(0)] } });
+		const shown = shownMessages(
+			(['interrupted', 'failed', 'stopped'] as const)
+				.map(partial)
+				.concat(row({ display: { blocks: [block(0)] } }))
+		);
+		expect(shown.map((m) => m.from === 'coach' && [m.ended, m.retryable])).toEqual([
+			['Interrupted', true],
+			['Failed', true],
+			['Stopped', false],
+			[null, false]
 		]);
 	});
 
@@ -91,7 +121,7 @@ describe('shownMessages', () => {
 			display: { blocks: [block(0)] }
 		});
 		expect(shownMessages([partial])).toEqual([
-			{ id: partial.id, from: 'coach', blocks: [block(0)], ended: 'Stopped' }
+			{ id: partial.id, from: 'coach', blocks: [block(0)], ended: 'Stopped', retryable: false }
 		]);
 	});
 
