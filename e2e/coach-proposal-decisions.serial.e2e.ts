@@ -255,7 +255,7 @@ test('Ask for changes sends the owner’s words to the coach: the revision’s c
 	await revise.getByTestId('decision-submit').click();
 	await expect(revise).toBeHidden();
 
-	await expect(page.getByTestId('owner-message').last()).toHaveText(ONLY_THIS_WEEK);
+	await expect(page.getByTestId('owner-message').last()).toHaveText(`You: ${ONLY_THIS_WEEK}`);
 	await expect(cards(page)).toHaveCount(2, { timeout: 20_000 });
 	await expect(state(page)).toContainText('Superseded');
 	await expect(state(page)).toContainText('Replaced by a revised proposal');

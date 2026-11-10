@@ -31,6 +31,10 @@ const sources = (dir: string): string[] =>
 function runtimeImports(name: string, text: string): string[] {
 	// A component never mentions the SDK, not even its types.
 	if (name.endsWith('.svelte')) return text.includes('@anthropic-ai/') ? ['(in a component)'] : [];
+	// Only a file that names the SDK can import it: skip parsing the rest, which keeps this scan of
+	// all of src/ well inside the test timeout on a loaded CI runner. (A specifier spelled with
+	// escapes, '@anthropic\x2dai/…', would pass; the scan catches accidents, not evasion.)
+	if (!text.includes('@anthropic-ai/')) return [];
 	const found: string[] = [];
 	const visit = (node: ts.Node) => {
 		const specifier =
