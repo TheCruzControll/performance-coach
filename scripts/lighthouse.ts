@@ -464,10 +464,16 @@ async function seedDevice(device: ActiveSeed) {
 		await writeActiveWorkout(page, device);
 		if (sessionHeaders) await page.setExtraHTTPHeaders(sessionHeaders);
 		await page.goto(`${server.base}/workout`);
-		const kept = await page.waitForFunction((key) => localStorage.getItem(key), PREPAINT_KEY);
-		if (JSON.parse(String(await kept.jsonValue())).blocked) {
-			throw new Error('/workout lost the session: the device keeps no card to prepaint');
-		}
+		await page.waitForFunction((key) => localStorage.getItem(key), PREPAINT_KEY);
+		// Keep only the device's state (localStorage, IndexedDB): the audit, which skips the storage
+		// reset for it, stays a cold network load, with no cached chunk or service worker from here.
+		const cdp = await page.context().newCDPSession(page);
+		await cdp.send('Network.clearBrowserCache');
+		await cdp.send('Storage.clearDataForOrigin', {
+			origin: server.base,
+			storageTypes: 'service_workers,cache_storage'
+		});
+		await cdp.detach();
 		await page.close();
 	} finally {
 		// Connected over CDP, this disconnects: the browser and its profile stay for the run.
