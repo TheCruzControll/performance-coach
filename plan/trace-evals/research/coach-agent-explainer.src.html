@@ -1,0 +1,656 @@
+<!doctype html>
+<html lang="en" data-register="blueprint">
+	<head>
+		<title>How the coach answers a message</title>
+		<link rel="stylesheet" href="kit.css" data-ve-kit />
+		<style>
+			.req text.blk {
+				font-family: var(--mono);
+				font-size: 15px;
+				fill: var(--text);
+			}
+			.req text.src {
+				font-size: 14px;
+				fill: var(--text-dim);
+			}
+			.req rect.b {
+				fill: var(--surface);
+				stroke: var(--border-bright);
+				stroke-width: 1.5;
+			}
+			.req rect.b.ctx {
+				stroke: var(--accent);
+				stroke-width: 2.5;
+			}
+			.two {
+				display: grid;
+				grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+				gap: var(--s-5);
+			}
+			.two > div {
+				max-width: 65ch;
+			}
+		</style>
+	</head>
+	<body>
+		<nav class="ve-toc" aria-label="Sections">
+			<div>
+				<a href="#map">Map</a><a href="#turn">A turn</a><a href="#data">Data</a
+				><a href="#memory">Memory</a><a href="#loop">Loop</a><a href="#why">Why</a
+				><a href="#trace">Tracing</a>
+			</div>
+			<span class="pos"></span>
+		</nav>
+		<main>
+			<header>
+				<p class="eyebrow">src/lib/server/agent</p>
+				<h1>The coach fetches your data with tools, checks its answer, and records every step</h1>
+				<p class="lead">
+					Each message you send starts one <b>turn</b>. The model asks for data through tools, the
+					server runs them, and a gate checks the answer before it reaches your phone.
+				</p>
+				<p class="meta">
+					performance-coach · main at 9719a3f5 · coach built, not launched (<code
+						>COACH_LAUNCHED = false</code
+					>)
+				</p>
+			</header>
+
+			<section id="map">
+				<p class="ve-label caps">Map</p>
+				<h2>Six parts carry a message from the coach screen to Claude and back</h2>
+				<figure class="ve-steps">
+					<ve-flow
+						label="The coach screen posts a message; turn.ts runs the loop, the loop calls Claude and tools, the answer passes the policy gate and streams back."
+					>
+						<ve-node id="runs" at="3 1" shape="db" sub="calls and tools" data-s="6"
+							>agent_runs</ve-node
+						>
+						<ve-node id="phone" at="1 2" sub="/coach" data-s="1">Coach screen</ve-node>
+						<ve-node id="api" at="2 2" sub="coach.ts" data-s="1">POST turns</ve-node>
+						<ve-node id="turn" at="3 2" sub="one turn" key data-s="2">turn.ts</ve-node>
+						<ve-node id="loop" at="4 2" sub="orchestrator.ts" data-s="3">runLoop</ve-node>
+						<ve-node id="model" at="5 2" sub="or MockProvider" data-s="3">Claude Opus 5.5</ve-node>
+						<ve-node id="tools" at="4 3" sub="tools/*.ts" data-s="4">24 tools</ve-node>
+						<ve-node id="pg" at="4 4" shape="db" sub="via services/" data-s="4">Postgres</ve-node>
+						<ve-node id="policy" at="3 3" sub="output gate" data-s="5">policy.ts</ve-node>
+						<ve-edge from="phone" to="api" label="sends" data-s="1" />
+						<ve-edge from="api" to="turn" label="runs" data-s="2" />
+						<ve-edge from="turn" to="loop" label="starts" data-s="3" />
+						<ve-edge from="loop" to="model" label="streams" hot data-s="3" />
+						<ve-edge from="loop" to="tools" label="tool_use" data-s="4" />
+						<ve-edge from="tools" to="pg" label="reads" data-s="4" />
+						<ve-edge from="turn" to="policy" label="answer text" data-s="5" />
+						<ve-edge from="policy" to="phone" label="SSE events" data-s="5" />
+						<ve-edge from="turn" to="runs" label="records" async data-s="6" />
+					</ve-flow>
+					<div class="ve-player">
+						<ol class="ve-cap">
+							<li data-n="1/6">
+								You send a message. <code>POST /api/coach/turns</code> hands it to
+								<code>coach.ts</code>, which picks the provider.
+							</li>
+							<li data-n="2/6">
+								<code>turn.ts</code> owns the whole turn: facts, storage, streaming, the final
+								status.
+							</li>
+							<li data-n="3/6">
+								<code>runLoop</code> calls the model and streams its reply. In development the model
+								is the MockProvider.
+							</li>
+							<li data-n="4/6">
+								When the model asks for data, the loop runs tools. Tools call the same services the
+								screens use.
+							</li>
+							<li data-n="5/6">
+								Answer text goes through <code>policy.ts</code> before any of it reaches your phone
+								as server-sent events.
+							</li>
+							<li data-n="6/6">
+								Every model call and tool call is written to Postgres as it ends.
+							</li>
+						</ol>
+						<button data-go="-1" aria-label="Back">‹</button
+						><button data-play aria-label="Play">Play</button
+						><input type="range" aria-label="Step" /><button data-go="1" aria-label="Next">
+							›
+						</button>
+					</div>
+					<figcaption>
+						<span class="fig-n">Fig. 1</span>The loop never touches the database. It reports through
+						hooks, and <code>turn.ts</code> stores what they carry.
+					</figcaption>
+				</figure>
+			</section>
+
+			<section id="turn">
+				<p class="ve-label caps">A turn</p>
+				<h2>A turn runs eight steps, and simple lookups skip the model</h2>
+				<figure class="ve-steps">
+					<ve-flow
+						label="Turn steps from facts to done, with lookups answered by direct.ts without a model call."
+					>
+						<ve-node id="facts" at="1 1" sub="date and week" data-s="1">Day's facts</ve-node>
+						<ve-node id="roll" at="2 1" sub="rollover.ts" data-s="2">New segment?</ve-node>
+						<ve-node id="run" at="3 1" sub="agent_runs row" data-s="3">Start run</ve-node>
+						<ve-node id="lookup" at="4 1" sub="intents.ts" data-s="4">A lookup?</ve-node>
+						<ve-node id="direct" at="4 2" sub="no model call" data-s="4">direct.ts</ve-node>
+						<ve-node id="loop2" at="3 2" sub="model + tools" key data-s="5">runLoop</ve-node>
+						<ve-node id="gate" at="2 2" sub="pain, grounding" data-s="6">policy.ts</ve-node>
+						<ve-node id="store" at="1 2" sub="coach_messages" data-s="7">Store answer</ve-node>
+						<ve-node id="done" at="1 3" sub="finishRun" data-s="8">done event</ve-node>
+						<ve-edge from="facts" to="roll" label="then" data-s="2" />
+						<ve-edge from="roll" to="run" label="then" data-s="3" />
+						<ve-edge from="run" to="lookup" label="then" data-s="4" />
+						<ve-edge from="lookup" to="direct" label="yes" data-s="4" />
+						<ve-edge from="lookup" to="loop2" label="no" hot data-s="5" />
+						<ve-edge from="direct" to="gate" label="facts" async data-s="6" />
+						<ve-edge from="loop2" to="gate" label="text" hot data-s="6" />
+						<ve-edge from="gate" to="store" label="blocks" data-s="7" />
+						<ve-edge from="store" to="done" label="last" data-s="8" />
+					</ve-flow>
+					<div class="ve-player">
+						<ol class="ve-cap">
+							<li data-n="1/8">The server reads today's date, time zone and program week.</li>
+							<li data-n="2/8">
+								If the conversation got too long (60k input tokens or 40 messages) or the prompt
+								changed, the old part is summarised and a new segment starts.
+							</li>
+							<li data-n="3/8">
+								An <code>agent_runs</code> row starts. A second live run on the same thread makes
+								the turn busy.
+							</li>
+							<li data-n="4/8">
+								"What's today's workout?" and similar lookups are answered from your program by
+								<code>direct.ts</code>. They cost nothing.
+							</li>
+							<li data-n="5/8">
+								Everything else goes to the loop: model calls and tool steps until the model
+								answers.
+							</li>
+							<li data-n="6/8">
+								The gate holds any block with a pain word until it is checked. It turns unsourced
+								facts into notes marked unchecked.
+							</li>
+							<li data-n="7/8">
+								A finished answer is stored with its blocks. A partial one is stored for display
+								only and never replayed to the model.
+							</li>
+							<li data-n="8/8">
+								The run gets its final status. <code>done</code> is always the last event.
+							</li>
+						</ol>
+						<button data-go="-1" aria-label="Back">‹</button
+						><button data-play aria-label="Play">Play</button
+						><input type="range" aria-label="Step" /><button data-go="1" aria-label="Next">
+							›
+						</button>
+					</div>
+					<figcaption>
+						<span class="fig-n">Fig. 2</span>The steps come from the header comment in
+						<code>turn.ts</code>. Lookups still answer when no API key is set.
+					</figcaption>
+				</figure>
+			</section>
+
+			<section id="data">
+				<p class="ve-label caps">Data</p>
+				<h2>The model sees your records only through the request, and stable parts go first</h2>
+				<figure>
+					<div class="frame">
+						<svg
+							class="ve-svg req"
+							viewBox="0 0 900 250"
+							aria-label="The request: tools, system prompt, memory preamble, transcript, turn context, ordered from most stable to newest."
+						>
+							<rect class="b" x="20" y="70" width="150" height="70" rx="4" />
+							<text class="blk" x="95" y="100" text-anchor="middle">tools</text>
+							<text class="src" x="95" y="124" text-anchor="middle">24 definitions</text>
+							<rect class="b" x="185" y="70" width="160" height="70" rx="4" />
+							<text class="blk" x="265" y="100" text-anchor="middle">system</text>
+							<text class="src" x="265" y="124" text-anchor="middle">12 coaching rules</text>
+							<rect class="b" x="360" y="70" width="170" height="70" rx="4" />
+							<text class="blk" x="445" y="100" text-anchor="middle">memory</text>
+							<text class="src" x="445" y="124" text-anchor="middle">goals, program</text>
+							<rect class="b" x="545" y="70" width="190" height="70" rx="4" />
+							<text class="blk" x="640" y="100" text-anchor="middle">transcript</text>
+							<text class="src" x="640" y="124" text-anchor="middle">messages + steps</text>
+							<rect class="b ctx" x="750" y="70" width="130" height="70" rx="4" />
+							<text class="blk" x="815" y="100" text-anchor="middle">context</text>
+							<text class="src" x="815" y="124" text-anchor="middle">today, pain mode</text>
+							<g class="ve-dim">
+								<path class="ext" d="M20 150V182M345 150V182" />
+								<path class="ln" d="M20 176H345M16 180l8-8M341 180l8-8" />
+								<text x="182" y="168">same bytes every turn</text>
+							</g>
+							<g class="ve-dim">
+								<path class="ext" d="M360 150V182M530 150V182" />
+								<path class="ln" d="M360 176H530M356 180l8-8M526 180l8-8" />
+								<text x="445" y="168">fixed per segment</text>
+							</g>
+							<g class="ve-dim">
+								<path class="ext" d="M545 150V182M735 150V182" />
+								<path class="ln" d="M545 176H735M541 180l8-8M731 180l8-8" />
+								<text x="640" y="168">grows</text>
+							</g>
+							<g class="ve-dim is-key">
+								<path class="ext" d="M750 150V182M880 150V182" />
+								<path class="ln" d="M750 176H880M746 180l8-8M876 180l8-8" />
+								<text x="815" y="168">new each turn</text>
+							</g>
+							<text class="ve-tag" x="20" y="45">prompt cache reuses this end</text>
+							<text class="ve-tag key" x="880" y="45" text-anchor="end">
+								tools add data mid-turn
+							</text>
+							<path class="ve-e is-async" d="M715 214V146" />
+							<text class="ve-tag" x="500" y="232">tool results are appended here</text>
+						</svg>
+					</div>
+					<figcaption>
+						<span class="fig-n">Fig. 3</span>Your data enters in three places: the memory snapshot,
+						the turn context, and tool results. Nothing is trained on it.
+					</figcaption>
+				</figure>
+				<div class="two">
+					<div>
+						<p>
+							The model is Claude. Its lifting knowledge comes from Anthropic's pretraining. The
+							repo adds no knowledge base, no retrieval and no fine-tuning.
+						</p>
+					</div>
+					<div>
+						<p>
+							Numbers never come from the model. e1RM, volume, load and trends come from
+							<code>src/lib/domain</code> through analytics tools. The system prompt forbids the
+							model from calculating any metric itself.
+						</p>
+					</div>
+				</div>
+			</section>
+
+			<section id="memory">
+				<p class="ve-label caps">Memory</p>
+				<h2>Memory is built from your records, not from old chats</h2>
+				<figure>
+					<ve-bars
+						unit="d"
+						max="90"
+						label="The memory snapshot covers 14 days of training and 28 days of records. One history tool call covers at most 28 days, and running history at most 12 weeks."
+						><ve-bar value="14">snapshot</ve-bar><ve-bar value="28">records</ve-bar
+						><ve-bar value="28" hot>per read</ve-bar><ve-bar value="84">running</ve-bar></ve-bars
+					>
+					<figcaption>
+						<span class="fig-n">Fig. 4</span>The snapshot looks back weeks. Tools can reach any
+						date, but one read covers a short window.
+					</figcaption>
+				</figure>
+				<div class="two">
+					<div>
+						<p>
+							<b>What the coach always knows.</b> Each segment opens with a snapshot: goals, the
+							active program, the last 14 days planned against done, strength baselines,
+							preferences, equipment and active injuries. It adds the last 28 days of pain reports,
+							recovery notes and decided proposals, the 8 newest decisions with their reasons, and
+							the 3 newest conversation summaries.
+						</p>
+					</div>
+					<div>
+						<p>
+							<b>Old training: yes, by asking.</b> <code>get_training_history</code> takes any start
+							date, 28 days at a time. <code>get_recent_workouts</code> and
+							<code>get_exercise_history</code> page backwards.
+							<code>get_personal_records</code> returns the full PR timeline. With 8 model calls per
+							turn, the coach can sample a period two years ago but cannot scan two years workout by
+							workout.
+						</p>
+						<p>
+							<b>Old chat: no.</b> No tool searches past conversations. A long chat survives only as
+							a summary note, and memory lists only the 3 newest. Something said in chat lasts only
+							if it became a record, such as a stated dislike, a goal, or an accepted proposal.
+						</p>
+					</div>
+				</div>
+			</section>
+
+			<section id="loop">
+				<p class="ve-label caps">Loop</p>
+				<h2>After each model call, the stop reason decides what happens next</h2>
+				<figure>
+					<div class="cases">
+						<div class="case" data-st="ok">
+							<span class="chip ok">loops</span>
+							<h3>tool_use</h3>
+							<svg
+								class="ve-mini"
+								viewBox="0 0 240 128"
+								aria-label="tool_use runs tools and calls the model again"
+							>
+								<g class="ve-n">
+									<rect class="sh" x="8" y="44" width="80" height="40" rx="4" />
+									<text x="48" y="64">call</text>
+								</g>
+								<path class="ve-e is-st" d="M88 64H140" />
+								<g class="ve-n">
+									<rect class="sh" x="140" y="44" width="92" height="40" rx="4" />
+									<text x="186" y="64">run tools</text>
+								</g>
+								<path class="ve-e is-st" d="M186 44V20H48V44" />
+							</svg>
+						</div>
+						<div class="case" data-st="ok">
+							<span class="chip ok">done</span>
+							<h3>end_turn</h3>
+							<svg class="ve-mini" viewBox="0 0 240 128" aria-label="end_turn completes the turn">
+								<g class="ve-n">
+									<rect class="sh" x="8" y="44" width="80" height="40" rx="4" />
+									<text x="48" y="64">call</text>
+								</g>
+								<path class="ve-e is-st" d="M88 64H140" />
+								<g class="ve-n">
+									<rect class="sh" x="140" y="44" width="92" height="40" rx="4" />
+									<text x="186" y="64">answer</text>
+								</g>
+							</svg>
+						</div>
+						<div class="case" data-st="warn">
+							<span class="chip warn">retries once</span>
+							<h3>max_tokens</h3>
+							<svg
+								class="ve-mini"
+								viewBox="0 0 240 128"
+								aria-label="max_tokens mid tool call retries once with twice the room"
+							>
+								<g class="ve-n">
+									<rect class="sh" x="8" y="44" width="80" height="40" rx="4" />
+									<text x="48" y="64">call</text>
+								</g>
+								<path class="ve-e is-st" d="M88 64H140" />
+								<g class="ve-n">
+									<rect class="sh" x="140" y="44" width="92" height="40" rx="4" />
+									<text x="186" y="64">2× room</text>
+								</g>
+							</svg>
+						</div>
+						<div class="case" data-st="warn">
+							<span class="chip warn">resends</span>
+							<h3>pause_turn</h3>
+							<svg
+								class="ve-mini"
+								viewBox="0 0 240 128"
+								aria-label="pause_turn resends the same request"
+							>
+								<g class="ve-n">
+									<rect class="sh" x="8" y="44" width="80" height="40" rx="4" />
+									<text x="48" y="64">call</text>
+								</g>
+								<path class="ve-e is-st" d="M88 64H140" />
+								<g class="ve-n">
+									<rect class="sh" x="140" y="44" width="92" height="40" rx="4" />
+									<text x="186" y="64">same call</text>
+								</g>
+							</svg>
+						</div>
+						<div class="case" data-st="risk">
+							<span class="chip risk">stops</span>
+							<h3>refusal</h3>
+							<svg
+								class="ve-mini"
+								viewBox="0 0 240 128"
+								aria-label="refusal stops the turn and runs no tools"
+							>
+								<g class="ve-n">
+									<rect class="sh" x="8" y="44" width="80" height="40" rx="4" />
+									<text x="48" y="64">call</text>
+								</g>
+								<path class="ve-e is-st" d="M88 64H140" />
+								<g class="ve-n">
+									<rect class="sh" x="140" y="44" width="92" height="40" rx="4" />
+									<text x="186" y="64">no tools</text>
+								</g>
+							</svg>
+						</div>
+						<div class="case" data-st="risk">
+							<span class="chip risk">stops</span>
+							<h3>budget hit</h3>
+							<svg
+								class="ve-mini"
+								viewBox="0 0 240 128"
+								aria-label="a budget or the context window ends the turn"
+							>
+								<g class="ve-n">
+									<rect class="sh" x="8" y="44" width="80" height="40" rx="4" />
+									<text x="48" y="64">call</text>
+								</g>
+								<path class="ve-e is-st" d="M88 64H140" />
+								<g class="ve-n">
+									<rect class="sh" x="140" y="44" width="92" height="40" rx="4" />
+									<text x="186" y="64">exhausted</text>
+								</g>
+							</svg>
+						</div>
+					</div>
+					<figcaption>
+						<span class="fig-n">Fig. 5</span><code>runLoop</code> reads the stop reason before it
+						trusts any content, so a cut-off tool call never runs.
+					</figcaption>
+				</figure>
+				<div class="kpis">
+					<div class="kpi">
+						<span class="ve-label">Turn time</span
+						><span class="val"><span data-count="150">150</span><span class="unit">s</span></span
+						><span class="ve-tag">of the 180 s endpoint</span>
+					</div>
+					<div class="kpi">
+						<span class="ve-label">Model calls</span
+						><span class="val"
+							><span data-count="8">8</span><span class="unit">per turn</span></span
+						>
+					</div>
+					<div class="kpi">
+						<span class="ve-label">Input tokens</span><span class="val">300k</span
+						><span class="ve-tag">cache included</span>
+					</div>
+					<div class="kpi">
+						<span class="ve-label">Tools at once</span
+						><span class="val"><span data-count="3">3</span></span
+						><span class="ve-tag">1 inside a transaction</span>
+					</div>
+					<div class="kpi"><span class="ve-label">Daily cap</span><span class="val">$5</span></div>
+				</div>
+				<p>
+					Tools run three at a time, each with its own deadline. Zod checks the model's input before
+					a tool runs. A failure goes back to the model as an <code>is_error</code> result such as
+					<code>INVALID_INPUT</code> or <code>TIMEOUT</code>. The owner id comes from the server, so
+					the model cannot choose whose data a tool reads.
+				</p>
+			</section>
+
+			<section id="why">
+				<p class="ve-label caps">Why</p>
+				<h2>Testing without an API key shaped most of the design</h2>
+				<div class="ve-table">
+					<table>
+						<thead>
+							<tr>
+								<th>Choice</th>
+								<th>Reason on record</th>
+								<th>Evidence</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td>A hand-written loop</td>
+								<td>
+									The SDK's Tool Runner runs on the SDK client, so the mock could not drive the same
+									loop.
+								</td>
+								<td><span class="chip ok">stated</span> <small>ADR 0013</small></td>
+							</tr>
+							<tr>
+								<td>A mock that rejects bad requests</td>
+								<td>
+									No key in development or CI. A bad request would otherwise fail only in
+									production.
+								</td>
+								<td><span class="chip ok">stated</span> <small>ADR 0009, b841ff52</small></td>
+							</tr>
+							<tr>
+								<td>Tools, not pasted history</td>
+								<td>
+									Replayed history is "costly, drifts from the records, and replays any injected
+									instruction".
+								</td>
+								<td><span class="chip ok">stated</span> <small>ADR 0014</small></td>
+							</tr>
+							<tr>
+								<td>Stable bytes first</td>
+								<td>
+									Keeps the cached part of the prompt identical across turns, and keeps stored text
+									out of the system prompt.
+								</td>
+								<td><span class="chip ok">stated</span> <small>8034793b</small></td>
+							</tr>
+							<tr>
+								<td>Proposals, not writes</td>
+								<td>You accept every change to the program.</td>
+								<td><span class="chip ok">stated</span> <small>ADR 0014</small></td>
+							</tr>
+							<tr>
+								<td>Loop and mock are one decision</td>
+								<td>The loop shape follows from needing the mock to drive it.</td>
+								<td><span class="chip warn">inferred</span></td>
+							</tr>
+							<tr>
+								<td>Retry counts, 8 calls, token caps</td>
+								<td>
+									No written reason found. Code points to an "m5 plan" that is not in the repo.
+								</td>
+								<td><span class="chip risk">unknown</span></td>
+							</tr>
+						</tbody>
+					</table>
+				</div>
+				<p>
+					Every commit and ADR here was written by Claude and merged by you. The reasons above are
+					the agent's framing, approved by the merge.
+				</p>
+			</section>
+
+			<section id="trace">
+				<p class="ve-label caps">Tracing</p>
+				<h2>Every step is already stored, but you can only see a list of runs</h2>
+				<figure>
+					<ve-flow
+						label="The usage sheet reads agent_runs. A planned trace page would read the model calls, tool calls and messages of one run."
+					>
+						<ve-node id="sheet" at="1 1" sub="usage view">Usage sheet</ve-node>
+						<ve-node id="list" at="2 1" sub="list of runs">GET runs</ve-node>
+						<ve-node id="runs" at="3 1" shape="db" sub="one per turn" key>agent_runs</ve-node>
+						<ve-node id="page" at="1 2" sub="planned" new>Trace page</ve-node>
+						<ve-node id="one" at="2 2" sub="planned" new>GET runs/[run]</ve-node>
+						<ve-node id="calls" at="3 2" shape="db" sub="by call_index">model_calls</ve-node>
+						<ve-node id="tcalls" at="4 2" shape="db" sub="input, output">tool_calls</ve-node>
+						<ve-node id="msgs" at="4 1" shape="db" sub="exact messages">coach_messages</ve-node>
+						<ve-edge from="sheet" to="list" label="fetches" />
+						<ve-edge from="list" to="runs" label="reads" />
+						<ve-edge from="page" to="one" label="fetches" new />
+						<ve-edge from="one" to="calls" label="reads" new />
+						<ve-edge from="calls" to="tcalls" label="call_index" />
+						<ve-edge from="runs" to="msgs" label="run_id" />
+					</ve-flow>
+					<figcaption>
+						<span class="fig-n">Fig. 6</span>The data for a full trace exists today. The missing
+						parts are one read endpoint and one page.
+					</figcaption>
+				</figure>
+				<div class="two">
+					<div>
+						<p>
+							<b>What exists.</b> <code>agent_model_calls</code> stores each call's request id, stop
+							reason, tokens, cost, time to first token and latency.
+							<code>agent_tool_calls</code> stores each tool's input, output up to 16 KB, status,
+							duration and any proposal it created. Policy interventions are stored there too, named
+							<code>_policy</code>. Deletes are refused by the database.
+						</p>
+						<p>
+							No outside platform is installed. <code>package.json</code> has no OpenTelemetry,
+							Sentry or Langfuse. ADR 0007 kept observability in Postgres and deferred OpenTelemetry
+							to the coach milestone.
+						</p>
+					</div>
+					<div>
+						<p><b>The plan you picked</b>, own tables plus a page:</p>
+						<ol>
+							<li>
+								<code>getRunTrace(ownerId, runId)</code> in
+								<code>services/coach/runs.ts</code> groups a run's calls, tools and messages by
+								<code>call_index</code>.
+							</li>
+							<li>
+								<code>GET /api/coach/runs/[run]</code> with the same owner-only and rate-limit
+								guards as the list.
+							</li>
+							<li>
+								A page at <code>/coach/runs/[run]</code>, opened from each row of the usage sheet:
+								one card per model call, its tools nested and collapsed.
+							</li>
+							<li>A mock-provider service test and a Playwright test that opens a run.</li>
+						</ol>
+						<p>No migration. Every column already exists.</p>
+					</div>
+				</div>
+				<div class="ve-table">
+					<table>
+						<thead>
+							<tr>
+								<th>Option</th>
+								<th>You get</th>
+								<th>Your text leaves Postgres</th>
+								<th>Fit</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td>Own tables + page</td>
+								<td>Run list that opens into steps</td>
+								<td><span class="chip ok">no</span></td>
+								<td><span class="chip ok">picked</span> <small>matches ADR 0007</small></td>
+							</tr>
+							<tr>
+								<td>OpenTelemetry to Langfuse</td>
+								<td>Trace tree, charts, scoring</td>
+								<td><span class="chip risk">yes</span> <small>pain notes included</small></td>
+								<td><span class="chip warn">later</span></td>
+							</tr>
+							<tr>
+								<td>Both, Langfuse ids only</td>
+								<td>Charts across runs, detail stays local</td>
+								<td><span class="chip ok">no</span></td>
+								<td><span class="chip warn">later</span> <small>if you want charts</small></td>
+							</tr>
+						</tbody>
+					</table>
+				</div>
+			</section>
+
+			<section class="sources" aria-label="Sources">
+				<p class="ve-label caps">Sources</p>
+				<p>
+					<code>src/lib/server/agent/turn.ts</code> header · <code>coach.ts</code> ·
+					<code>orchestrator.ts</code> · <code>policy.ts</code> · <code>direct.ts</code> ·
+					<code>rollover.ts</code> · <code>provider/select.ts</code> ·
+					<code>prompt/system.ts</code> · <code>tools/history.ts</code> ·
+					<code>services/coach/memory.ts</code>, <code>memory-records.ts</code> ·
+					<code>src/lib/domain/coach/budgets.ts</code> ·
+					<code>src/lib/server/db/schema/agent-runs.ts</code> ·
+					<code>src/routes/api/coach/runs/+server.ts</code> · <code>docs/adr/0007</code>,
+					<code>0009</code>, <code>0013</code>, <code>0014</code>
+				</p>
+				<p>
+					Not checked: whether stored thinking blocks hold readable text, and Langfuse's current
+					pricing.
+				</p>
+			</section>
+		</main>
+	</body>
+</html>

@@ -41,7 +41,8 @@ export function listRuns(
 		);
 		let stdout = '';
 		let stderr = '';
-		// Decoded as a stream: a chunk may end inside a multibyte character (’, →).
+		// Decoded as a stream: a chunk can end inside a multi-byte character (the ’ in a title),
+		// which a per-chunk toString() would turn into replacement characters.
 		child.stdout.setEncoding('utf8');
 		child.stderr.setEncoding('utf8');
 		child.stdout.on('data', (chunk: string) => (stdout += chunk));
