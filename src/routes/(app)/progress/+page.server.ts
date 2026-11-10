@@ -31,7 +31,12 @@ export const load: PageServerLoad = async ({ cookies, locals, request, route, ur
 		{ ...progressParams(url.searchParams), origin },
 		new Date(),
 		forced
-			? ({ overview: failing, strength: failing, running: failing } satisfies ProgressDeps)
+			? ({
+					overview: failing,
+					strength: failing,
+					running: failing,
+					general: failing
+				} satisfies ProgressDeps)
 			: {}
 	);
 };

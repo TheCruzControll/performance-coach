@@ -3,9 +3,11 @@ import { resolve } from '$app/paths';
 import type { PageLoad } from './$types';
 import type { ProgressView } from './params';
 import {
+	preloadGeneralTrends,
 	preloadRunningTrends,
 	preloadStrengthTrends,
 	preloadTrends,
+	servedGeneralTrends,
 	servedRunningTrends,
 	servedStrengthTrends,
 	servedTrends,
@@ -20,8 +22,16 @@ import {
 const VIEWS = {
 	overview: () => import('./OverviewView.svelte'),
 	strength: () => import('./StrengthView.svelte'),
-	running: () => import('./RunningView.svelte')
+	running: () => import('./RunningView.svelte'),
+	general: () => import('./GeneralView.svelte')
 } as const satisfies Record<ProgressView, () => Promise<unknown>>;
+
+/** The views whose trends a client load waits for, as for the view's own code (trends.ts). */
+const AWAITED_TRENDS = {
+	strength: preloadStrengthTrends,
+	running: preloadRunningTrends,
+	general: preloadGeneralTrends
+} as const satisfies Record<Exclude<ProgressView, 'overview'>, () => Promise<void>>;
 
 /** Each loaded view's data with its own component, so the page passes it the props it takes. */
 type WithView<D> = D extends { failed: false; view: infer V extends ProgressView }
@@ -32,8 +42,8 @@ type WithView<D> = D extends { failed: false; view: infer V extends ProgressView
  * Whether the next load hydrates the server's HTML: only the first one in a document opened on
  * Progress, which keeps the server's markup of the view's trends as sent until their code
  * arrives, so hydration never waits for it (trends.ts). Any later load (a period link, a preload
- * on hover, Retry) shows Overview's skeleton until its trends' code arrives, and waits for
- * Strength's or Running's.
+ * on hover, Retry) shows Overview's skeleton until its trends' code arrives, and waits for every
+ * other view's.
  */
 let hydrating = browser && location.pathname === resolve('/(app)/progress');
 
@@ -41,28 +51,24 @@ export const load: PageLoad = async ({ data }) => {
 	const kept = hydrating;
 	hydrating = false;
 	if (data.failed) return { ...data, View: null, served: undefined } as WithView<typeof data>;
-	// Strength's and Running's trends start with the view's own import: any load but the
-	// hydrating one waits for both, as it does for the view, so the view arrives whole (trends.ts).
-	const trends = !browser
-		? undefined
-		: data.view === 'strength'
-			? preloadStrengthTrends()
-			: data.view === 'running'
-				? preloadRunningTrends()
-				: undefined;
+	// Strength's, Running's and General's trends start with the view's own import: any load but
+	// the hydrating one waits for both, as it does for the view, so the view arrives whole
+	// (trends.ts).
+	const trends = browser && data.view !== 'overview' ? AWAITED_TRENDS[data.view]() : undefined;
 	const View = (await VIEWS[data.view]()).default;
 	if (browser) {
 		if (trends && !kept) await trends;
 		// Started, never awaited: a failed import shows Retry in place of Overview's trends.
 		if (data.view === 'overview') void preloadTrends();
-		const served = kept ? SERVED_IN_PLACE : undefined;
-		return { ...data, View, served } as WithView<typeof data>;
+		return { ...data, View, served: kept ? SERVED_IN_PLACE : undefined } as WithView<typeof data>;
 	}
 	const served =
 		data.view === 'strength'
 			? await servedStrengthTrends({ strength: data.strength })
 			: data.view === 'running'
 				? await servedRunningTrends({ running: data.running })
-				: await servedTrends({ overview: data.overview });
+				: data.view === 'general'
+					? await servedGeneralTrends({ general: data.general })
+					: await servedTrends({ overview: data.overview });
 	return { ...data, View, served } as WithView<typeof data>;
 };

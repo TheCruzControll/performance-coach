@@ -11,6 +11,8 @@
  *   (SectionLoader).
  * - Running's (RunningTrends): mileage, pace by run type, the long run, best efforts, runs per
  *   week and heart rate under the view's intro, loaded as Strength's are (SectionLoader).
+ * - General's (GeneralTrends): adherence, sessions and time by discipline, load and its ratio,
+ *   Muay Thai and recovery under the view's intro, loaded as Strength's are (SectionLoader).
  *
  * Either way the server renders the section as static markup (`served…`), which the page keeps as
  * sent until the code arrives, so hydration never waits for it.
@@ -19,6 +21,7 @@
  * source as initial JS, and the load only starts these, as Today's do with their panels.
  */
 import type { Component } from 'svelte';
+import type { GeneralData } from './general-data';
 import type { OverviewData } from './load';
 import type { RunningData } from './running-data';
 import type { StrengthData } from './strength-data';
@@ -33,6 +36,10 @@ export interface StrengthTrendsProps {
 
 export interface RunningTrendsProps {
 	running: RunningData;
+}
+
+export interface GeneralTrendsProps {
+	general: GeneralData;
 }
 
 /** A section imported apart from its view: what SectionLoader starts and reads. */
@@ -98,7 +105,11 @@ export const strengthTrends = lazySection<StrengthTrendsProps>(
 export const runningTrends = lazySection<RunningTrendsProps>(
 	() => import('./RunningTrends.svelte')
 );
+export const generalTrends = lazySection<GeneralTrendsProps>(
+	() => import('./GeneralTrends.svelte')
+);
 
 export const { preload: preloadTrends, settled: settledTrends, served: servedTrends } = overview;
 export const { preload: preloadStrengthTrends, served: servedStrengthTrends } = strengthTrends;
 export const { preload: preloadRunningTrends, served: servedRunningTrends } = runningTrends;
+export const { preload: preloadGeneralTrends, served: servedGeneralTrends } = generalTrends;

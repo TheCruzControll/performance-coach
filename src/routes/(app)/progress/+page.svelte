@@ -105,7 +105,9 @@
 				<data.View strength={data.strength} served={data.served} />
 			{:else if data.view === 'running'}
 				<data.View running={data.running} served={data.served} />
-			{:else if data.View}
+			{:else if data.view === 'general'}
+				<data.View general={data.general} served={data.served} />
+			{:else if data.view === 'overview'}
 				<data.View overview={data.overview} served={data.served} />
 			{/if}
 		</PeriodPicker>
@@ -125,6 +127,7 @@
 
 	.views {
 		display: flex;
+		flex-wrap: wrap;
 		gap: var(--space-1);
 	}
 

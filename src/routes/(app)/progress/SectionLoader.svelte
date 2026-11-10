@@ -1,8 +1,8 @@
 <!--
   @component
-  A view's trends loaded apart from the view (trends.ts): Strength's and Running's. On the page the
-  server rendered, they are static markup (`served`), kept as sent while their code loads after
-  hydration, and the live section takes its place once it has. Any other load waited for their
+  A view's trends loaded apart from the view (trends.ts): Strength's, Running's and General's. On
+  the page the server rendered, they are static markup (`served`), kept as sent while their code
+  loads after hydration, and the live section takes its place once it has. Any other load waited for their
   code (+page.ts), so the section is there at once, or, if the import failed, 'Couldn’t load your
   {name} trends' with Retry, which imports it again in place (WebKit fetches anew). If that fails
   too while online, Progress reloads: Chromium keeps a failed module fetch for the document's
@@ -24,7 +24,7 @@
 		section: LazySection<P>;
 		/** What the section is given. */
 		props: P;
-		/** The view, as the failure names it ('strength', 'running'), and its test id. */
+		/** The view, as the failure names it ('strength', 'running', 'general'), and its test id. */
 		name: string;
 		/** The section as the server rendered it (+page.ts), kept as sent until its code arrives. */
 		served?: string;

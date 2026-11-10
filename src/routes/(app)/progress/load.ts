@@ -28,6 +28,7 @@ import {
 	type OverviewSection,
 	type ProgressOverview
 } from '#lib/server/services/analytics/overview.ts';
+import { getGeneralDashboard } from '#lib/server/services/analytics/general.ts';
 import { getRunningDashboard } from '#lib/server/services/analytics/running.ts';
 import { getStrengthDashboard } from '#lib/server/services/analytics/strength.ts';
 import { recordServerError, type ServerErrorInput } from '#lib/server/services/errors.ts';
@@ -39,6 +40,7 @@ import { lineTable, type LineChartData } from '#lib/ui/charts/line-model.ts';
 import { SERIES_TOKEN } from '#lib/ui/charts/palette.ts';
 import type { ChartTableData } from '#lib/ui/charts/table.ts';
 import { shortDate } from '#lib/ui/program/words.ts';
+import { generalData, type GeneralData } from './general-data.ts';
 import type { ProgressParams, ProgressView } from './params.ts';
 import { runningData, type RunningData } from './running-data.ts';
 import { strengthData, type StrengthData } from './strength-data.ts';
@@ -51,7 +53,8 @@ const AREA_TITLE: Readonly<Record<MetricArea, string>> = {
 	recovery: 'Recovery'
 };
 
-const LOAD_LABEL: Readonly<Record<LoadGroup, string>> = {
+/** A discipline group's name in a legend and a table twin. */
+export const LOAD_LABEL: Readonly<Record<LoadGroup, string>> = {
 	strength: 'Strength',
 	hypertrophy: 'Hypertrophy',
 	conditioning: 'Conditioning',
@@ -114,7 +117,8 @@ export type ProgressData =
 	| ({ failed: true } & ProgressParams)
 	| ({ failed: false; view: 'overview'; overview: OverviewData } & Omit<ProgressParams, 'view'>)
 	| ({ failed: false; view: 'strength'; strength: StrengthData } & Omit<ProgressParams, 'view'>)
-	| ({ failed: false; view: 'running'; running: RunningData } & Omit<ProgressParams, 'view'>);
+	| ({ failed: false; view: 'running'; running: RunningData } & Omit<ProgressParams, 'view'>)
+	| ({ failed: false; view: 'general'; general: GeneralData } & Omit<ProgressParams, 'view'>);
 
 export interface ProgressRequest extends ProgressParams {
 	/** What a recorded failure carries: the request's id, method, path, route and app version. */
@@ -130,6 +134,8 @@ export interface ProgressDeps extends Pick<TrainingDeps, 'db'> {
 	strength?: typeof getStrengthDashboard;
 	/** The Running view's read; getRunningDashboard unless given. */
 	running?: typeof getRunningDashboard;
+	/** The General view's read; getGeneralDashboard unless given. */
+	general?: typeof getGeneralDashboard;
 	/** Where a failure goes; recordServerError unless given. */
 	record?: typeof recordServerError;
 	/** The owner's day at `now`; ownerToday unless given. */
@@ -315,6 +321,7 @@ export async function loadProgress(
 		overview = getProgressOverview,
 		strength = getStrengthDashboard,
 		running = getRunningDashboard,
+		general = getGeneralDashboard,
 		record = recordServerError,
 		today: dayOf = ownerToday
 	}: ProgressDeps = {}
@@ -329,6 +336,10 @@ export async function loadProgress(
 		if (view === 'running') {
 			const d = await running(executor, ownerId, { period, today });
 			return { failed: false, view, period, running: runningData(d) };
+		}
+		if (view === 'general') {
+			const d = await general(executor, ownerId, { period, today });
+			return { failed: false, view, period, general: generalData(d) };
 		}
 		const o = await overview(executor, ownerId, { period, today });
 		return { failed: false, view, period, overview: overviewData(o) };
