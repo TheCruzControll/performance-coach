@@ -1,10 +1,13 @@
 /**
  * Fix for the workout's own changes. A refused start (its planned session is gone, say) can be
- * kept as a session not linked to the plan: the same id, no planned session. finish-workout gives
- * update and finish their editor.
+ * kept as a session not linked to the plan: the same id, no planned session. A refused update or
+ * finish opens the summary (FinishSheet.svelte, loaded only then) with the refused duration,
+ * session RPE and notes and the server's errors; Save re-queues it under its id.
  */
 import type { Mutation } from '#lib/domain/workout/index.ts';
 import type { FamilyFixes } from './registry.ts';
+
+const editor = () => import('../FinishSheet.svelte');
 
 /** workout.start, kept with no planned session, program or lineage. */
 function unplanned(m: Mutation): Mutation {
@@ -23,9 +26,14 @@ export const fixes: FamilyFixes<
 		discard: 'Discard removes this workout and everything logged in it.'
 	},
 	'workout.update': {
-		kind: 'discard-only',
+		kind: 'editor',
+		editor,
 		discard: 'Discard keeps the notes and effort the server has.'
 	},
-	'workout.finish': { kind: 'discard-only', discard: 'Discard leaves the workout unfinished.' },
+	'workout.finish': {
+		kind: 'editor',
+		editor,
+		discard: 'Discard leaves the workout unfinished.'
+	},
 	'workout.abandon': { kind: 'discard-only', discard: 'Discard keeps the workout.' }
 };
