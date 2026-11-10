@@ -1,8 +1,8 @@
 /**
  * Helpers for the PRD §18 persistence matrix (persistence-matrix.serial.e2e.ts): a browser with a
  * profile on disk that can be crashed and relaunched, the process killer that crashes it, the
- * route that serves a byte-different service worker (an app update), and the Postgres counts the
- * cases assert.
+ * route that installs a service worker byte-different from the server's (so an update check
+ * finds an app update), and the Postgres counts the cases assert.
  *
  * The killer only ever signals processes whose own command line contains the test's temporary
  * profile directory, so it cannot reach the test runner, the server under test or another
@@ -163,22 +163,27 @@ export async function crash(context: BrowserContext, dir: string): Promise<numbe
 const BODY_HEADERS = new Set(['content-encoding', 'content-length', 'etag']);
 
 /**
- * Serves the built service worker with a comment appended, as a new deployment would (byte
- * different, so the browser installs it). The comment is the same every time, so later update
- * checks find nothing newer. Returns how many times the script was served.
+ * Stands in for the deployment before this one: the first fetch of the built service worker is
+ * served with a comment appended, so the worker that installs differs byte for byte from what
+ * the server serves, and the next update check finds the server's own script new and installs
+ * it, as it would a new deployment. Later fetches go to the server untouched. Route it before
+ * the context's first page loads: Chromium routes the script fetch of a worker's first install
+ * but never an update check's, which its update checker makes in the browser process, outside
+ * DevTools. Returns how many times the older script was served.
  */
-export async function serveUpdatedWorker(context: BrowserContext): Promise<() => number> {
+export async function serveOlderWorker(context: BrowserContext): Promise<() => number> {
 	let served = 0;
 	await context.route('**/service-worker.js', async (route) => {
+		if (served > 0) return route.fallback();
+		served += 1;
 		const response = await route.fetch();
 		const headers = Object.fromEntries(
 			Object.entries(response.headers()).filter(([name]) => !BODY_HEADERS.has(name.toLowerCase()))
 		);
-		served += 1;
 		await route.fulfill({
 			status: response.status(),
 			headers,
-			body: `${await response.text()}\n// persistence-matrix: an app update\n`
+			body: `${await response.text()}\n// persistence-matrix: the deployment before this one\n`
 		});
 	});
 	return () => served;

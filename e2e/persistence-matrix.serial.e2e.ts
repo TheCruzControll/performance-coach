@@ -24,7 +24,7 @@ import {
 	crash,
 	firstExerciseSet,
 	profile,
-	serveUpdatedWorker,
+	serveOlderWorker,
 	setsOf,
 	workoutCount
 } from './persistence-support';
@@ -334,15 +334,22 @@ test.describe('an app update mid-workout', () => {
 		browserName
 	}, testInfo) => {
 		test.slow();
+		// The worker that installs first is the deployment before this one; the server's own
+		// script, byte-different, is the update.
+		const served = await serveOlderWorker(context);
 		const workoutId = await syncedWorkout(page);
 		await expect
 			.poll(async () => (await workers(page)).active, { timeout: 15_000 })
 			.toBe('activated');
+		if (served() === 0) {
+			const reason = `${browserName}'s service worker script fetch never reached context.route, so no byte-different worker could be installed first`;
+			expect(browserName, reason).toBe('webkit');
+			gap(testInfo, reason);
+		}
 		await logSets(page, 2);
 		await synced(page);
 		const exercise = (await heading(page).textContent())!.trim();
 
-		const served = await serveUpdatedWorker(context);
 		const failed = await page.evaluate(async () => {
 			const registration = await navigator.serviceWorker.ready;
 			return registration.update().then(
@@ -350,11 +357,6 @@ test.describe('an app update mid-workout', () => {
 				(error: unknown) => String(error)
 			);
 		});
-		if (served() === 0) {
-			const reason = `${browserName}'s service worker script fetch never reached context.route, so no byte-different worker could be served (update: ${failed ?? 'resolved'})`;
-			expect(browserName, reason).toBe('webkit');
-			gap(testInfo, reason);
-		}
 		expect(failed).toBeNull();
 		await expect
 			.poll(async () => (await workers(page)).waiting, { timeout: 15_000 })
@@ -390,7 +392,7 @@ test.describe('an app update mid-workout', () => {
 		report(
 			testInfo,
 			'app update',
-			`context.route served the script ${served()} time(s) with a comment appended; the new worker installed mid-workout and was active after ${opens} reopen(s); ${sets.length} rows`
+			`context.route served the first install's script ${served()} time(s) with a comment appended, the update check the server's own; the new worker installed mid-workout and was active after ${opens} reopen(s); ${sets.length} rows`
 		);
 	});
 });
