@@ -36,6 +36,8 @@
   - Add exercise, in Up next and after the side list's last exercise, opens the picker
     (ExercisePicker.svelte, loaded on intent) over the library cached on this device. A session
     with no exercise yet (an ad-hoc strength one) says so, with Add exercise in the card's place.
+  - The card's exercise name opens its history (ExerciseHistorySheet.svelte, loaded on intent);
+    offline, it shows the previous session this device holds and says so.
 -->
 <script lang="ts">
 	import type {
@@ -65,6 +67,8 @@
 		setRows
 	} from '#lib/ui/workout/set-words.ts';
 	import { onMount, tick, untrack } from 'svelte';
+	import type { HistoryRequest } from '#lib/client/workout/exercise-history.ts';
+	import type ExerciseHistorySheet from '#lib/ui/workout/ExerciseHistorySheet.svelte';
 	import type ExerciseActionsSheet from './ExerciseActionsSheet.svelte';
 	import type ExercisePicker from './ExercisePicker.svelte';
 	import ExerciseList from './ExerciseList.svelte';
@@ -237,6 +241,21 @@
 		(event.currentTarget as HTMLElement).focus();
 		prefetchPicker();
 		picking = {};
+	}
+
+	// The exercise's history: fetched on the name's first intent, opened on each tap.
+	let History = $state.raw<typeof ExerciseHistorySheet | null>(null);
+	let viewing = $state.raw<HistoryRequest | null>(null);
+	function prefetchHistory() {
+		void load(() => import('#lib/ui/workout/ExerciseHistorySheet.svelte')).then((module) => {
+			if (module) History = module.default;
+		});
+	}
+	function openHistory(slot: SlotView, event: MouseEvent) {
+		(event.currentTarget as HTMLElement).focus();
+		prefetchHistory();
+		const fallback = previousFor(view, slot.position);
+		viewing = { exerciseId: slot.exerciseId, name: nameOf(slot.exerciseId), fallback };
 	}
 
 	/** The card's area, which a swipe crosses. */
@@ -445,7 +464,13 @@
 	{/if}
 	{#if current}
 		<div class="swipe" bind:this={area}>
-			<ExerciseCard exercise={current} status={current.status} noPrevious={current.noPrevious}>
+			<ExerciseCard
+				exercise={current}
+				status={current.status}
+				noPrevious={current.noPrevious}
+				onhistory={(event) => openHistory(current.slot, event)}
+				onhistoryintent={prefetchHistory}
+			>
 				{#snippet actions()}
 					{#if !current.ended}
 						<Button
@@ -499,6 +524,7 @@
 	{#if Picker && picking && active.store}
 		<Picker {view} request={picking} store={active.store} />
 	{/if}
+	{#if History && viewing}<History request={viewing} />{/if}
 </div>
 
 <style>
