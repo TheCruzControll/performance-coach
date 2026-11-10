@@ -20,6 +20,8 @@ import {
 	getTodayPlan,
 	getTrainingWeek
 } from '#lib/server/services/programs/index.ts';
+import { completedWorkoutIds } from '#lib/server/services/workouts/history.ts';
+import { startLink, type StartLink } from '#lib/ui/program/start-link.ts';
 import {
 	cardView,
 	longDate,
@@ -30,8 +32,16 @@ import {
 } from '#lib/ui/program/words.ts';
 import type { SetupDeps, SetupOrigin } from './setup.server';
 
-/** A session as a card, by lineage; `baseline` on a strength session of a baseline week. */
-export type PlanCard = CardView & { lineage: string; baseline: boolean };
+/**
+ * A session as a card, by lineage; `baseline` on a strength session of a baseline week. Today's
+ * sessions carry their way into the workout (start-link.ts): Start workout, or Done · View to
+ * the History detail of the workout done; every other day's, none.
+ */
+export type PlanCard = CardView & {
+	lineage: string;
+	baseline: boolean;
+	start: StartLink | null;
+};
 
 export interface PlanDay {
 	date: IsoDate;
@@ -81,7 +91,8 @@ function dayWords(date: IsoDate, from: IsoDate): string {
 const card = (session: SessionView, baselineWeek: boolean): PlanCard => ({
 	...cardView(session),
 	lineage: session.lineage,
-	baseline: baselineWeek && session.kind === 'strength'
+	baseline: baselineWeek && session.kind === 'strength',
+	start: null
 });
 
 async function readPlan(
@@ -118,6 +129,12 @@ async function readPlan(
 	const baseline = week.kind === 'baseline';
 	const later = [...week.days.flatMap((d) => d.sessions), ...plan.upNext];
 	const inWeek = week.startsOn <= today && today <= week.endsOn ? today : null;
+	const todays = week.days.find((d) => d.date === inWeek)?.sessions ?? [];
+	const done = await completedWorkoutIds(
+		ownerId,
+		todays.filter((s) => s.status === 'completed').map((s) => s.lineage),
+		{ db }
+	);
 	return {
 		failed: false,
 		week: {
@@ -130,7 +147,10 @@ async function readPlan(
 				return {
 					date: day.date,
 					heading: longDate(day.date),
-					cards: day.sessions.map((s) => card(s, baseline)),
+					cards: day.sessions.map((s) => ({
+						...card(s, baseline),
+						start: day.date === inWeek ? startLink(s, done[s.lineage]) : null
+					})),
 					rest: day.sessions.length
 						? null
 						: next

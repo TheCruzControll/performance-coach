@@ -349,10 +349,26 @@ jobs:
             exit 1
           fi
 
-  lighthouse:
-    name: Lighthouse (mobile)
+  # Lighthouse in parallel shards (scripts/lighthouse.ts --shard i/N): shard i audits every N-th
+  # screen of the full list, the routes and then the seeded program screens, so a slice that adds
+  # a route changes nothing here. Each shard builds, seeds and serves on its own Postgres.
+  # Ceiling: 15 Lighthouse minutes per shard. A shard nearing it gains a sibling (`of` up by one,
+  # plus an entry per new shard), never fewer routes or runs.
+  # Step timeout: 1.5 × the slowest of the unsharded job's measured mobile runs (7.0 minutes in
+  # main's runs 42735820629, 42736181926 and 42737223258: 11), until three runs per shard are
+  # measured; each shard does about half of that work. Desktop is measured in a job of its own,
+  # unsharded and never gating (lighthouse-desktop, below).
+  lighthouse-shards:
+    name: Lighthouse (mobile) · ${{ matrix.shard }}/${{ matrix.of }}
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # The Lighthouse step (11), the installs (12 + 8), and 2 for checkout, install and build.
+    timeout-minutes: 33
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { shard: 1, of: 2 }
+          - { shard: 2, of: 2 }
     steps:
       - uses: actions/checkout@v7
       # Pulled and started in the background (docker run -d would block on the pull), so the
@@ -410,15 +426,34 @@ jobs:
       # 200 ms target for shared-runner noise. The tight hydration guard is the main-thread
       # budget in the e2e job (e2e/perf.e2e.ts). See docs/performance.md.
       - name: Lighthouse (median of 5 runs, asserted)
-        run: pnpm lighthouse --runs 5 --assert --min-perf 0.9 --max-tbt 300
+        timeout-minutes: 11
+        run: pnpm lighthouse --runs 5 --assert --min-perf 0.9 --max-tbt 300 --shard ${{ matrix.shard }}/${{ matrix.of }}
       - name: Upload Lighthouse reports
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v7
         with:
-          name: lighthouse-${{ github.run_id }}
+          name: lighthouse-${{ github.run_id }}-shard-${{ matrix.shard }}
           path: lighthouse-reports/
           retention-days: 14
           if-no-files-found: ignore
+
+  # The check branch protection requires: green only when every shard is. It runs even when a
+  # shard fails, since a skipped required check would count as passing.
+  lighthouse:
+    name: Lighthouse (mobile)
+    if: ${{ always() }}
+    needs: [lighthouse-shards]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Every shard passed
+        env:
+          SHARDS: ${{ needs.lighthouse-shards.result }}
+        run: |
+          if [ "$SHARDS" != success ]; then
+            echo "::error::Lighthouse shards: $SHARDS"
+            exit 1
+          fi
 
   # Desktop runs on a runner of its own, so the required mobile check (above) ends when its one
   # audit does instead of waiting about 2 minutes more for this one. Not a required check, and no
