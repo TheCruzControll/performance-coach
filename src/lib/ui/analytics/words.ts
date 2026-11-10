@@ -1,7 +1,7 @@
 /**
  * The words of a metric at a glance (M6 trend tiles), shared by TrendTile, VerdictBadge and the
  * specs, so a tile's visible parts and the one sentence a screen reader hears never disagree.
- * Pure and client-safe: it imports only types and the calendar.
+ * Pure and client-safe: it imports only types, the calendar and the weekday names.
  *
  * The server sends every number already formatted in the owner's units (`value`, `delta.text`,
  * the so-far values); this module only arranges them into words, picks each part's tone and
@@ -9,7 +9,7 @@
  */
 import { weekdayOf, type IsoDate } from '#lib/domain/calendar.ts';
 import type { Change, MetricKind } from '#lib/domain/analytics/types.ts';
-import { WEEKDAY_INFO } from '#lib/domain/profile/catalog.ts';
+import { WEEKDAY_INFO } from '#lib/domain/weekdays.ts';
 import type { IconName } from '../icons/icons.ts';
 import type { Sparkline } from './sparkline.ts';
 
