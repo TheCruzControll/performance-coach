@@ -264,7 +264,14 @@ describe('CI e2e legs', () => {
 		const env = under(step, 'env');
 		expect(value(env, 'E2E_ENGINE')).toBe('${{ matrix.engine }}');
 		expect(value(env, 'E2E_GROUP')).toBe('${{ matrix.group }}');
-		expect(value(step, 'run')).toBe('pnpm test:e2e --shard ${{ matrix.shard }}/${{ matrix.of }}');
+		expect(value(env, 'E2E_SHARD')).toBe('${{ matrix.shard }}/${{ matrix.of }}');
+		// the shard's spec files from scripts/e2e-shards.ts, read before Playwright starts so a
+		// planner failure fails the step (bash -e) instead of running the whole leg
+		expect(value(step, 'run')).toBe(
+			'shard_args=$(node scripts/e2e-shards.ts "$RUNNER_TEMP/e2e-shard-tests.txt")\n' +
+				'pnpm test:e2e $shard_args'
+		);
+		expect(value(step, 'run')).not.toMatch(/--shard/);
 		const timing = legStep('Where the minutes went');
 		expect(value(timing, 'if')).toBe('${{ !cancelled() }}');
 		const timingEnv = under(timing, 'env');
