@@ -13,6 +13,7 @@ import { createSseDecoder, type CoachEvent } from '../../../src/lib/domain/coach
 import { clearMockOverrides } from '../../../src/lib/server/agent/provider/faults';
 import {
 	LONG_ANSWER,
+	MANY_BLOCKS,
 	SLOW_ANSWER,
 	THINKING_PAUSE_MS
 } from '../../../src/lib/server/agent/provider/mock-scripts/test';
@@ -423,6 +424,34 @@ describe('POST /api/test-support/coach', () => {
 			answered(long);
 			const blocks = long.events.filter((each) => each.type === 'block_completed');
 			expect(blocks).toHaveLength(LONG_ANSWER.split('\n\n').length);
+
+			await support(owner, { script: 'many-blocks' });
+			const many = await turn(owner);
+			answered(many);
+			expect(many.events.filter((each) => each.type === 'block_completed')).toHaveLength(
+				MANY_BLOCKS
+			);
+		});
+	});
+
+	it('exercise-source streams a checked answer citing the exercise its tool returned', async () => {
+		await withCommitted(async (db) => {
+			const owner = await makeOwner(db);
+			await support(owner, { script: 'exercise-source' });
+			const cited = await turn(owner);
+			answered(cited);
+			const chips = cited.events.filter((each) => each.type === 'activity');
+			expect(chips.map((each) => each.state)).toEqual(['running', 'done']);
+			const [bench] = await rows<{ id: string }>(
+				db,
+				sql`select id::text from exercises where key = 'bench_press'`
+			);
+			const done = cited.events.filter((each) => each.type === 'block_completed');
+			expect(done).toHaveLength(1);
+			expect(done[0]).toMatchObject({
+				grounded: true,
+				sources: [{ type: 'exercise', id: bench!.id, label: 'Bench press' }]
+			});
 		});
 	});
 });

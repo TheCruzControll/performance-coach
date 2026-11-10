@@ -7,6 +7,7 @@
  * - A malformed or unknown id, or someone else's conversation, is the 404 page.
  * - A read that fails is the screen's load-failed state, recorded.
  */
+import { sql } from 'drizzle-orm';
 import { isHttpError } from '@sveltejs/kit';
 import { describe, expect, it } from 'vitest';
 import type { Executor } from '../../../src/lib/server/db';
@@ -166,13 +167,31 @@ describe('the Coach screen', () => {
 			);
 
 			const data = await ready(load(db, me, thread));
+			// The owner's message carries the id it was sent with, for Retry.
+			const [sent] = (
+				await db.execute(
+					sql`select client_message_id::text as "sentWith" from coach_messages
+					where thread_id = ${thread} and kind = 'owner_message'`
+				)
+			).rows as { sentWith: string }[];
 			expect(data.threads).toEqual([]);
 			expect(data.thread).toEqual({
 				id: thread,
 				title: 'How is my bench?',
 				messages: [
-					{ id: expect.any(String), from: 'owner', text: 'How is my bench?' },
-					{ id: expect.any(String), from: 'coach', blocks: [block('Up 5 kg.')], ended: null }
+					{
+						id: expect.any(String),
+						from: 'owner',
+						text: 'How is my bench?',
+						clientId: sent!.sentWith
+					},
+					{
+						id: expect.any(String),
+						from: 'coach',
+						blocks: [block('Up 5 kg.')],
+						ended: null,
+						retryable: false
+					}
 				]
 			});
 		});
