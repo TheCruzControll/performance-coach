@@ -1,7 +1,7 @@
 /**
  * playwright.config.ts's desktop project (docs/testing.md, Desktop): `desktop-chromium` opens a
- * 1440 × 900 desktop window and selects whole files (every *.desktop.e2e.ts, the shell, offline
- * and axe specs); there is no desktop WebKit project, even where WebKit runs. The
+ * 1440 × 900 desktop window and selects whole files (every *.desktop.e2e.ts, the shell, offline,
+ * smoke and axe specs); there is no desktop WebKit project, even where WebKit runs. The
  * iPhone projects stop running *.desktop.e2e.ts and nothing else; the serial projects start after
  * every functional one, and perf and exclusive after those, so perf still runs alone.
  */
@@ -81,6 +81,10 @@ const E2E_FILES = readdirSync(new URL('../e2e/', import.meta.url)).filter((f) =>
 );
 const DESKTOP_FILES = E2E_FILES.filter((f) => f.endsWith('.desktop.e2e.ts'));
 const SHARED = ['offline.e2e.ts', 'shell.e2e.ts'];
+/** The read-only smoke specs (e2e/smoke/): every local browser project runs them too. */
+const SMOKE_FILES = readdirSync(new URL('../e2e/smoke/', import.meta.url))
+	.filter((f) => f.endsWith('.smoke.e2e.ts'))
+	.map((f) => `smoke/${f}`);
 
 describe('playwright.config.ts desktop project', () => {
 	afterEach(() => vi.unstubAllEnvs());
@@ -160,19 +164,22 @@ describe('playwright.config.ts desktop project', () => {
 		const listing = suite();
 		expect(DESKTOP_FILES.length, 'desktop specs exist').toBeGreaterThan(0);
 		expect(filesOf(listing, 'desktop-chromium')).toEqual(
-			[...DESKTOP_FILES, ...SHARED, 'a11y-dark.e2e.ts', 'a11y-light.e2e.ts'].sort()
+			[...DESKTOP_FILES, ...SHARED, ...SMOKE_FILES, 'a11y-dark.e2e.ts', 'a11y-light.e2e.ts'].sort()
 		);
 
 		// The iPhone projects run every functional spec but the desktop ones.
-		const iphone = E2E_FILES.filter(
-			(f) =>
-				!f.endsWith('.desktop.e2e.ts') &&
-				!f.endsWith('.serial.e2e.ts') &&
-				!f.endsWith('.exclusive.e2e.ts') &&
-				!f.endsWith('.sweep.e2e.ts') &&
-				f !== 'perf.e2e.ts' &&
-				!f.startsWith('perf-')
-		).sort();
+		expect(SMOKE_FILES.length, 'smoke specs exist').toBeGreaterThan(0);
+		const iphone = [...E2E_FILES, ...SMOKE_FILES]
+			.filter(
+				(f) =>
+					!f.endsWith('.desktop.e2e.ts') &&
+					!f.endsWith('.serial.e2e.ts') &&
+					!f.endsWith('.exclusive.e2e.ts') &&
+					!f.endsWith('.sweep.e2e.ts') &&
+					f !== 'perf.e2e.ts' &&
+					!f.startsWith('perf-')
+			)
+			.sort();
 		for (const project of ['iphone-chromium', 'iphone-webkit']) {
 			expect(filesOf(listing, project), project).toEqual(iphone);
 		}
