@@ -1,5 +1,5 @@
 /**
- * Running's and General's layout as style attributes, not stylesheets: every view's CSS is linked
+ * General's layout as style attributes, not stylesheets: every view's CSS is linked
  * render-blocking on /progress, whose CSS budget has no room left, and these cost no CSS file.
  * Columns go by the room there is, with no container query: two a row from about 38 rem, three
  * from about 57 rem (desktop).

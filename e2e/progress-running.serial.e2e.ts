@@ -149,7 +149,7 @@ test.describe('twelve weeks', () => {
 			await expect(item, `${e.distance} ${label}`).toHaveCount(1);
 			if (e.eventName) await expect(item).toContainText(e.eventName);
 		}
-		await expect(items.filter({ hasText: 'Riverside 10K' })).toContainText('10 km · Reported');
+		await expect(items.filter({ hasText: 'Riverside 10K' })).toContainText('10K · Reported');
 	});
 
 	test('a period link keeps the view and the figures follow', async ({ page }) => {

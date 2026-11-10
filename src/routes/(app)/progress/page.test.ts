@@ -121,40 +121,68 @@ describe("Progress's universal load", () => {
 		preloadStrengthTrends.mockImplementation(async () => {});
 	});
 
-	it('on the server, sends Running’s and General’s trends as markup, each its own', async () => {
+	it('on the server, sends Running’s trends as markup, and never another view’s', async () => {
 		const load = await loadModule({ browser: false });
-		await expect(run(load, running)).resolves.toMatchObject({
-			served: '<section>the running</section>'
-		});
+		const loaded = await run(load, running);
+		expect(loaded).toMatchObject({ served: '<section>the running</section>' });
+		expect(loaded['View']).toBeTypeOf('function');
 		expect(servedRunningTrends).toHaveBeenCalledExactlyOnceWith({ running: running.running });
-		await expect(run(load, general)).resolves.toMatchObject({
-			served: '<section>the general</section>'
-		});
+		expect(servedTrends).not.toHaveBeenCalled();
+		expect(servedStrengthTrends).not.toHaveBeenCalled();
+		expect(servedGeneralTrends).not.toHaveBeenCalled();
+	});
+
+	it('on the server, sends General’s trends as markup, and never another view’s', async () => {
+		const load = await loadModule({ browser: false });
+		const loaded = await run(load, general);
+		expect(loaded).toMatchObject({ served: '<section>the general</section>' });
+		expect(loaded['View']).toBeTypeOf('function');
 		expect(servedGeneralTrends).toHaveBeenCalledExactlyOnceWith({ general: general.general });
+		expect(servedRunningTrends).not.toHaveBeenCalled();
 		expect(servedTrends).not.toHaveBeenCalled();
 		expect(servedStrengthTrends).not.toHaveBeenCalled();
 	});
 
-	it('in the browser, a later Running or General load waits for its trends’ code', async () => {
-		const load = await loadModule({ browser: true, pathname: '/today' });
-		for (const [data, preload] of [
-			[running, preloadRunningTrends],
-			[general, preloadGeneralTrends]
-		] as const) {
-			let release = () => {};
-			preload.mockImplementationOnce(() => new Promise<void>((resolve) => (release = resolve)));
-			const later = run(load, data);
-			const settled = await Promise.race([
-				later,
-				new Promise((resolve) => setTimeout(() => resolve('held'), 500))
-			]);
-			expect(settled).toBe('held');
-			release();
-			await expect(later).resolves.toMatchObject({ served: undefined });
-			expect(preload).toHaveBeenCalledOnce();
-		}
+	it('in the browser, keeps the server’s Running markup while hydrating, and waits for it after', async () => {
+		const load = await loadModule({ browser: true, pathname: '/progress' });
+		let release = () => {};
+		const held = new Promise<void>((resolve) => (release = resolve));
+		preloadRunningTrends.mockImplementation(() => held);
+		const settles = (loaded: Promise<unknown>) =>
+			Promise.race([loaded, new Promise((resolve) => setTimeout(() => resolve('held'), 500))]);
+		await expect(settles(run(load, running))).resolves.toMatchObject({ served: 'served' });
 		expect(preloadTrends).not.toHaveBeenCalled();
 		expect(preloadStrengthTrends).not.toHaveBeenCalled();
+		expect(servedRunningTrends).not.toHaveBeenCalled();
+		// Any later load in that document (a period link, Retry) waits for the trends' code.
+		const later = run(load, running);
+		await expect(settles(later)).resolves.toBe('held');
+		release();
+		await expect(later).resolves.toMatchObject({ served: undefined });
+		expect(preloadRunningTrends).toHaveBeenCalledTimes(2);
+		preloadRunningTrends.mockReset();
+		preloadRunningTrends.mockImplementation(async () => {});
+	});
+
+	it('in the browser, keeps the server’s General markup while hydrating, and waits for it after', async () => {
+		const load = await loadModule({ browser: true, pathname: '/progress' });
+		let release = () => {};
+		const held = new Promise<void>((resolve) => (release = resolve));
+		preloadGeneralTrends.mockImplementation(() => held);
+		const settles = (loaded: Promise<unknown>) =>
+			Promise.race([loaded, new Promise((resolve) => setTimeout(() => resolve('held'), 500))]);
+		await expect(settles(run(load, general))).resolves.toMatchObject({ served: 'served' });
+		expect(preloadTrends).not.toHaveBeenCalled();
+		expect(preloadRunningTrends).not.toHaveBeenCalled();
+		expect(servedGeneralTrends).not.toHaveBeenCalled();
+		// Any later load in that document (a period link, Retry) waits for the trends' code.
+		const later = run(load, general);
+		await expect(settles(later)).resolves.toBe('held');
+		release();
+		await expect(later).resolves.toMatchObject({ served: undefined });
+		expect(preloadGeneralTrends).toHaveBeenCalledTimes(2);
+		preloadGeneralTrends.mockReset();
+		preloadGeneralTrends.mockImplementation(async () => {});
 	});
 
 	it('imports no trends for a failed load', async () => {
@@ -171,6 +199,8 @@ describe("Progress's universal load", () => {
 		expect(preloadStrengthTrends).not.toHaveBeenCalled();
 		expect(servedStrengthTrends).not.toHaveBeenCalled();
 		expect(preloadRunningTrends).not.toHaveBeenCalled();
+		expect(servedRunningTrends).not.toHaveBeenCalled();
 		expect(preloadGeneralTrends).not.toHaveBeenCalled();
+		expect(servedGeneralTrends).not.toHaveBeenCalled();
 	});
 });

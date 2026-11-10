@@ -5,16 +5,19 @@
   Server-rendered from running-data.ts.
 
   - A new owner, or one in the first week, is told what appears and when, never a ghost chart.
-  - Under that the trends (RunningTrends), in a chunk of their own that loads after hydration,
-    served as static markup until it has (trends.ts, ViewTrendsLoader), so only this intro's code
-    counts towards initial JS. A new owner's reported race shows there too.
+  - Under that the trends (RunningTrends): mileage, pace by run type, the long run, best efforts
+    and races, runs per week and heart rate, in a chunk of their own that loads after hydration,
+    served as static markup until it has (trends.ts, SectionLoader), so only this intro's code
+    counts towards initial JS. A reported race shows even before a first run.
+
+  No stylesheet of its own: each CSS file counts towards Progress's render-blocking CSS, so the
+  layout is inline.
 -->
 <script lang="ts">
 	import EmptyState from '#lib/ui/components/EmptyState.svelte';
 	import type { RunningData } from './running-data';
-	import { preloadRunningTrends, settledRunningTrends } from './trends';
-	import { WIDE } from './view-layout';
-	import ViewTrendsLoader from './ViewTrendsLoader.svelte';
+	import SectionLoader from './SectionLoader.svelte';
+	import { runningTrends } from './trends';
 
 	interface Props {
 		running: RunningData;
@@ -23,11 +26,13 @@
 	}
 
 	let { running: r, served }: Props = $props();
-
-	const section = { preload: preloadRunningTrends, settled: settledRunningTrends };
 </script>
 
-<div class="pc-running-view" style={WIDE} data-stage={r.stage} data-testid="running">
+<div
+	style="display: grid; gap: var(--space-6); min-width: 0"
+	data-stage={r.stage}
+	data-testid="running"
+>
 	{#if r.stage !== 'history'}
 		<EmptyState
 			icon={r.stage === 'first_week' ? 'sparkle' : 'progress'}
@@ -42,12 +47,6 @@
 		/>
 	{/if}
 	{#if r.stage !== 'new' || r.efforts.length}
-		<ViewTrendsLoader
-			{section}
-			props={{ running: r }}
-			{served}
-			name="running"
-			data-testid="running-trends-error"
-		/>
+		<SectionLoader section={runningTrends} props={{ running: r }} name="running" {served} />
 	{/if}
 </div>

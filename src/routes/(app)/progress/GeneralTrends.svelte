@@ -1,7 +1,7 @@
 <!--
   @component
   General's trends (trends.ts), loaded after hydration under GeneralView's intro
-  (ViewTrendsLoader): the server sends them as static markup, so first paint and no-JS never wait
+  (SectionLoader): the server sends them as static markup, so first paint and no-JS never wait
   for this chunk, and only the view's own code counts towards initial JS. From general-data.ts.
 
   - Adherence as a tile, the period's counts, each week's rate against the good band, and this
