@@ -24,7 +24,7 @@
  * never arrives. Once the server answers, each such script is fetched again, which replaces the
  * entry, before the screen loads again.
  *
- * A screen's stylesheet that failed to load stays in the page as a <link> without a sheet, and
+ * A screen's stylesheet that failed to load stays in the page as a <link> without its rules, and
  * Vite's preload never adds a second link for a URL one already has: the screen's code would
  * arrive but it would render unstyled. In the same step, each such link is loaded again from a
  * fresh copy of it, and the screen loads again once every one applies.
@@ -61,14 +61,28 @@ function failedModules(): string[] {
 }
 
 /**
- * The page's stylesheets that failed to load: a link whose load has ended has a sheet. A disabled
- * link never loads: SvelteKit marks each stylesheet it inlined into the HTML with one, so that Vite
- * never links it, and a copy of it would never load either.
+ * The page's stylesheets that failed to load. A disabled link never loads: SvelteKit marks each
+ * stylesheet it inlined into the HTML with one, so that Vite never links it, and a copy of it
+ * would never load either.
  */
 function failedStylesheets(): HTMLLinkElement[] {
 	return [...document.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"]')].filter(
-		(link) => !link.sheet && !link.disabled
+		(link) => !link.disabled && !applies(link)
 	);
+}
+
+/**
+ * Whether a stylesheet link holds its rules. Chromium leaves a link whose load failed without a
+ * sheet, but WebKit gives it an empty one, so a sheet without rules failed too: Vite emits no
+ * empty stylesheet.
+ */
+function applies(link: HTMLLinkElement): boolean {
+	try {
+		return (link.sheet?.cssRules.length ?? 0) > 0;
+	} catch {
+		// A cross-origin sheet hides its rules: it loaded.
+		return true;
+	}
 }
 
 /**

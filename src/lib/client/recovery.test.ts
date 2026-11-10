@@ -17,10 +17,11 @@ function slowScript(status = 200) {
 }
 
 /**
- * A <link rel="stylesheet"> as the page holds it: `sheet` is null when its load failed. Its copy
- * (the reload of it) loads or fails when the test says so.
+ * A <link rel="stylesheet"> as the page holds it: when its load failed, `sheet` is null
+ * (Chromium) or `empty` (WebKit, no rules). Its copy (the reload of it) loads or fails when the
+ * test says so.
  */
-function styleLink(href: string, applied = false, disabled = false) {
+function styleLink(href: string, applied = false, disabled = false, empty = false) {
 	const page = { links: [] as unknown[] };
 	const copy = {
 		href,
@@ -31,7 +32,7 @@ function styleLink(href: string, applied = false, disabled = false) {
 	};
 	const link = {
 		href,
-		sheet: applied ? {} : null,
+		sheet: applied ? { cssRules: [{}] } : empty ? { cssRules: [] } : null,
 		disabled,
 		cloneNode: vi.fn(() => copy),
 		after: vi.fn((node: unknown) => page.links.splice(page.links.indexOf(link) + 1, 0, node)),
@@ -144,6 +145,20 @@ describe('a stylesheet that failed to load (Vite never links its URL again)', ()
 		css.load();
 		await vi.advanceTimersByTimeAsync(0);
 		expect(css.links(), 'the failed link is gone').toEqual([css.copy]);
+		expect(reload).toHaveBeenCalledOnce();
+	});
+
+	it('loads it again when its load left WebKit’s empty sheet', async () => {
+		const css = styleLink(CSS, false, false, true);
+		stylesheets = css.links();
+		reloadFresh();
+		await vi.advanceTimersByTimeAsync(0);
+		expect(css.links()).toEqual([css.link, css.copy]);
+		expect(reload).not.toHaveBeenCalled();
+
+		css.load();
+		await vi.advanceTimersByTimeAsync(0);
+		expect(css.links()).toEqual([css.copy]);
 		expect(reload).toHaveBeenCalledOnce();
 	});
 
