@@ -37,6 +37,7 @@ import type { ProgramPlan } from '../../domain/training/types';
 import { createMutation, type Mutation } from '../../domain/workout/index';
 import { clearMockOverrides, setMockOverrides, type MockOverrides } from '../agent/provider/faults';
 import { MockProvider, type MockScript } from '../agent/provider/mock';
+import { summaryScripts } from '../agent/provider/mock-scripts/summaries';
 import { COACH_MODEL } from '../agent/provider/types';
 import { runTurn } from '../agent/turn';
 import { RATE_LIMITS } from '../auth/policy';
@@ -129,7 +130,8 @@ async function converse(ctx: Ctx, exchanges: readonly Exchange[], endsMinutesAgo
 		matches: (text) => text === each.ask,
 		steps: [{ text: each.answer, ...(each.servedBy && { fallback: { model: each.servedBy } }) }]
 	}));
-	const provider = new MockProvider(scripts, { overrides: () => ({}) });
+	// A thread long enough to roll over is summarised as the mock coach would.
+	const provider = new MockProvider([...summaryScripts, ...scripts], { overrides: () => ({}) });
 	let threadId: string | null = null;
 	for (const [index, each] of exchanges.entries()) {
 		const at = new Date(

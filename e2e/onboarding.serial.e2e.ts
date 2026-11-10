@@ -164,7 +164,7 @@ test('a fight and a marathon, every 1RM blank: set up step by step, stored, and 
 	const muayThai = page.getByRole('region', { name: 'Muay Thai', exact: true });
 	await muayThai.getByRole('textbox', { name: 'Sessions', exact: true }).fill('3');
 	await captureScreen(page, testInfo, 'onboarding-specifics');
-	// No empty profile has this step, so a11y.e2e.ts cannot reach it: audited here, both themes.
+	// No empty profile has this step, so a11y-suite.ts cannot reach it: audited here, both themes.
 	expect(await audit(page)).toEqual([]);
 	await page.evaluate(() => document.documentElement.setAttribute('data-theme', 'light'));
 	await page.waitForTimeout(400);

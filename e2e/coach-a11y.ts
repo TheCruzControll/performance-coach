@@ -1,7 +1,8 @@
 /**
- * The coach's states for the axe audit (e2e/a11y.e2e.ts, both themes, every browser project):
- * each case opens one designed state and leaves it on screen. Coach slices add their states here,
- * one entry each, so a11y.e2e.ts keeps a single import (M5 plan).
+ * The coach's states for the axe audit (e2e/a11y-suite.ts, run by a11y-dark.e2e.ts and
+ * a11y-light.e2e.ts, every browser project): each case opens one designed state and leaves it on
+ * screen. Coach slices add their states here, one entry each, so a11y-suite.ts keeps a single
+ * import (M5 plan).
  */
 import { expect, type Page } from '@playwright/test';
 import { gotoHydrated } from './support';

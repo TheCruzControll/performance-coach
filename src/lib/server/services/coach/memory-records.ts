@@ -54,7 +54,7 @@ export const MEMORY_RECORD_LIMITS = Object.freeze({
 	analyses: 3
 });
 
-/** The coach_notes kinds memory reads (thread-summaries adds thread_summary's schema). */
+/** The coach_notes kinds memory reads. */
 export const MEMORY_NOTE_KINDS = Object.freeze({
 	threadSummary: 'thread_summary',
 	analysis: 'workout_analysis'
