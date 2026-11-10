@@ -3,6 +3,7 @@
  * the screen no JavaScript: a conversation row's title and when it was last active, a stored
  * message as the screen draws it, and the question an entry point prefilled.
  */
+import type { ProposalCardView } from '#lib/domain/coach/cards.ts';
 import type { CompletedBlock } from '#lib/domain/coach/index.ts';
 import { MESSAGE_STATUS_LABEL, type MessageStatus } from '#lib/domain/coach/vocabulary.ts';
 import { addDays } from '#lib/domain/calendar.ts';
@@ -35,6 +36,12 @@ export type ShownMessage =
 			ended: string | null;
 			/** Interrupted or failed, not stopped: the question can be asked again (Retry). */
 			retryable: boolean;
+	  }
+	| {
+			/** The proposal's id. */
+			id: string;
+			from: 'proposal';
+			card: ProposalCardView;
 	  };
 
 /** A stored row the screen may show (services/coach/threads.ts getThreadView). */
@@ -44,6 +51,14 @@ export interface DisplayedRow {
 	status: MessageStatus;
 	display: Record<string, unknown> | null;
 	clientMessageId?: string | null;
+	/** The run that wrote it; null for none. */
+	runId?: string | null;
+}
+
+/** A card for a proposal run `runId` made. */
+export interface RunCard {
+	runId: string;
+	card: ProposalCardView;
 }
 
 /**
@@ -109,20 +124,37 @@ const isBlocks = (value: unknown): value is CompletedBlock[] =>
 
 /**
  * The rows a conversation shows, in order: the owner's messages and the coach's answers, a
- * partial answer (display_only) with how it ended. A row with nothing to show is left out.
+ * partial answer (display_only) with how it ended. A row with nothing to show is left out. Each
+ * proposal card follows the last row of the run that proposed it; a card whose run has no row
+ * here is left out (it belongs to another page).
  */
-export function shownMessages(rows: readonly DisplayedRow[]): ShownMessage[] {
-	return rows.flatMap((row): ShownMessage[] => {
-		const display = row.display ?? {};
-		if (row.kind === 'owner_message') {
-			return typeof display.text === 'string'
-				? [{ id: row.id, from: 'owner', text: display.text, clientId: row.clientMessageId ?? null }]
-				: [];
-		}
-		if (row.kind !== 'assistant' && row.kind !== 'display_only') return [];
-		if (!isBlocks(display.blocks) || display.blocks.length === 0) return [];
-		const ended = row.status === 'complete' ? null : MESSAGE_STATUS_LABEL[row.status];
-		const retryable = row.status === 'interrupted' || row.status === 'failed';
-		return [{ id: row.id, from: 'coach', blocks: display.blocks, ended, retryable }];
+export function shownMessages(
+	rows: readonly DisplayedRow[],
+	cards: readonly RunCard[] = []
+): ShownMessage[] {
+	const lastOfRun = new Map<string, number>();
+	rows.forEach((row, at) => row.runId && lastOfRun.set(row.runId, at));
+	return rows.flatMap((row, at): ShownMessage[] => {
+		const shown = shownMessage(row);
+		if (!row.runId || lastOfRun.get(row.runId) !== at) return shown;
+		const own = cards.filter((each) => each.runId === row.runId);
+		return [
+			...shown,
+			...own.map(({ card }): ShownMessage => ({ id: card.id, from: 'proposal', card }))
+		];
 	});
+}
+
+function shownMessage(row: DisplayedRow): ShownMessage[] {
+	const display = row.display ?? {};
+	if (row.kind === 'owner_message') {
+		return typeof display.text === 'string'
+			? [{ id: row.id, from: 'owner', text: display.text, clientId: row.clientMessageId ?? null }]
+			: [];
+	}
+	if (row.kind !== 'assistant' && row.kind !== 'display_only') return [];
+	if (!isBlocks(display.blocks) || display.blocks.length === 0) return [];
+	const ended = row.status === 'complete' ? null : MESSAGE_STATUS_LABEL[row.status];
+	const retryable = row.status === 'interrupted' || row.status === 'failed';
+	return [{ id: row.id, from: 'coach', blocks: display.blocks, ended, retryable }];
 }

@@ -3,7 +3,9 @@
   the week of Monday 2 November 2026: every block kind with dated sources, a metric's method, a
   block the policy could not check, a long answer behind 'Show all', untrusted text that must stay
   literal, activity chips in their three states, and an answer streaming block by block into the
-  live region. Then what every coach screen reuses around an answer: the composer (ready, running
+  live region; a proposal card in each of its states, whose Accept applies it here, and each way
+  a decision can go: rejected, revised, 'Couldn’t save' with Retry, and offline. Then what
+  every coach screen reuses around an answer: the composer (ready, running
   with Stop, near its limit and disabled), 'Thinking…', loading rows, every notice with its Retry,
   the empty state and the practice coach's badge.
 -->
@@ -20,6 +22,8 @@
 	import Section from '#lib/ui/components/Section.svelte';
 	import ActivityChip from '#lib/ui/coach/ActivityChip.svelte';
 	import AnswerBlocks from '#lib/ui/coach/AnswerBlocks.svelte';
+	import ProposalCard from '#lib/ui/coach/ProposalCard.svelte';
+	import type { ProposalCardView } from '#lib/domain/coach/cards.ts';
 	import LiveAnnouncer from '#lib/ui/coach/LiveAnnouncer.svelte';
 	import CoachNotice from '#lib/ui/coach/CoachNotice.svelte';
 	import Composer from '#lib/ui/coach/Composer.svelte';
@@ -162,6 +166,83 @@
 	);
 	const RUNS = activityLabel('get_running_history', { weeks: 4 });
 
+	const PROPOSED: ProposalCardView = {
+		id: 'p-split-squat',
+		kind: 'program_adjustment',
+		status: 'proposed',
+		title: 'Replace Bulgarian split squats with reverse lunges',
+		rationale:
+			'You said you dislike Bulgarian split squats. Reverse lunges train the same single-leg strength and fit the same slot.',
+		rows: [
+			{
+				label: 'Lower body strength, every session from Wed 11 Nov',
+				before: 'Bulgarian split squat · 3 × 8',
+				after: 'Reverse lunge · 3 × 8 · loads set by RPE',
+				date: '2026-11-11'
+			},
+			{
+				label: 'Intervals',
+				before: 'Wed 11 Nov, Morning',
+				after: 'Fri 13 Nov, Morning',
+				date: '2026-11-13'
+			},
+			{ label: 'Accessory', before: null, after: 'Copenhagen plank · 2 × 20 s', date: null }
+		],
+		impactLines: ['Week of Mon 9 Nov: Glutes +2 hard sets, +6 min, load +40'],
+		warnings: ['Hard legs the day before intervals'],
+		appliedVersion: null,
+		supersededReason: null
+	};
+	const CARDS: ProposalCardView[] = [
+		{ ...PROPOSED, id: 'p-applied', status: 'applied', appliedVersion: 3 },
+		{
+			...PROPOSED,
+			id: 'p-next-cycle',
+			kind: 'next_cycle',
+			status: 'accepted',
+			title: 'Plan the next block: strength focus',
+			rows: [{ label: 'Next block', before: null, after: '4 weeks · strength focus', date: null }],
+			impactLines: [],
+			warnings: []
+		},
+		{ ...PROPOSED, id: 'p-rejected', status: 'rejected', impactLines: [], warnings: [] },
+		{
+			...PROPOSED,
+			id: 'p-revised',
+			status: 'superseded',
+			supersededReason: 'revised',
+			impactLines: [],
+			warnings: []
+		},
+		{
+			...PROPOSED,
+			id: 'p-superseded',
+			status: 'superseded',
+			supersededReason: 'program_changed',
+			impactLines: [],
+			warnings: []
+		}
+	];
+	let card = $state(PROPOSED);
+	let accepting = $state(false);
+	/** Accept here: busy for a moment, then applied as version 4. */
+	function acceptCard() {
+		accepting = true;
+		setTimeout(() => {
+			accepting = false;
+			card = { ...card, status: 'applied', appliedVersion: 4 };
+		}, 600);
+	}
+	let rejecting = $state(false);
+	/** Reject here (with no reason): busy for a moment, then declined. */
+	function rejectCard() {
+		rejecting = true;
+		setTimeout(() => {
+			rejecting = false;
+			card = { ...card, status: 'rejected' };
+		}, 600);
+	}
+
 	let opened = $state<string | null>(null);
 	const openExercise = (id: string) => (opened = id);
 
@@ -222,6 +303,37 @@
 		<Button variant="secondary" size="sm" onclick={next} data-testid="stream-next"
 			>{done ? 'Start again' : 'Complete the next block'}</Button
 		>
+	</Section>
+
+	<Section title="Proposal cards" gap="md">
+		<ProposalCard
+			{card}
+			{accepting}
+			{rejecting}
+			onaccept={acceptCard}
+			onreject={rejectCard}
+			data-testid="proposal-live"
+		/>
+		{#each CARDS as each (each.id)}
+			<ProposalCard card={each} data-testid={each.id.replace('p-', 'proposal-')} />
+		{/each}
+		<ProposalCard
+			card={{ ...PROPOSED, id: 'p-failed' }}
+			onaccept={() => {}}
+			onreject={() => {}}
+			onrevise={() => {}}
+			failed
+			onretry={() => {}}
+			data-testid="proposal-failed-save"
+		/>
+		<ProposalCard
+			card={{ ...PROPOSED, id: 'p-offline' }}
+			onaccept={() => {}}
+			onreject={() => {}}
+			onrevise={() => {}}
+			offline
+			data-testid="proposal-offline-card"
+		/>
 	</Section>
 
 	<Section title="Composer" gap="md">

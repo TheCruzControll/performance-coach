@@ -21,7 +21,7 @@
 		PERIODS,
 		parsePeriod,
 		type Period
-	} from '#lib/domain/analytics/periods.ts';
+	} from '#lib/domain/analytics/period-names.ts';
 
 	interface Props {
 		current: Period;
