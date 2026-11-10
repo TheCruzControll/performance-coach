@@ -77,6 +77,20 @@ const SERIAL = ['serial-chromium', 'serial-webkit'] as const;
 const BLANK_1RM_JOURNEY =
 	'blank 1RMs: onboarding, a week-1 baseline program built from Today, a move and a one-off swap, all in History and persisted';
 
+/** journey-strength's journey 1: Today to History on the 'workout-day' program. */
+const STRENGTH_JOURNEY = {
+	file: 'journey-strength.serial.e2e.ts',
+	title:
+		'journey 1: Today → log with weight, reps and RPE → rest → plates → a machine swap → a refresh restores exactly → finish → History, exercise history and Done'
+};
+
+/** journey-strength's start from a week 1 the real generator built. */
+const GENERATED_START = {
+	file: 'journey-strength.serial.e2e.ts',
+	title:
+		'a week 1 the generator built: its first strength session asks for a load by RPE, invents none, and a logged set reaches Postgres'
+};
+
 export const JOURNEYS: readonly JourneyEntry[] = [
 	{
 		id: 'login',
@@ -127,9 +141,14 @@ export const JOURNEYS: readonly JourneyEntry[] = [
 			}
 		]
 	},
-	{ id: 'start-workout', prd: '§19: start workout', pending: 'journey-strength' },
-	{ id: 'log-sets', prd: '§19: log sets/reps/RPE', pending: 'journey-strength' },
-	{ id: 'rest-timer', prd: '§19: rest timer', pending: 'journey-strength' },
+	{
+		id: 'start-workout',
+		prd: '§19: start workout',
+		projects: SERIAL,
+		tests: [STRENGTH_JOURNEY, GENERATED_START]
+	},
+	{ id: 'log-sets', prd: '§19: log sets/reps/RPE', projects: SERIAL, tests: [STRENGTH_JOURNEY] },
+	{ id: 'rest-timer', prd: '§19: rest timer', projects: SERIAL, tests: [STRENGTH_JOURNEY] },
 	{
 		id: 'plate-calculator',
 		prd: '§19: plate calculator',
@@ -146,14 +165,25 @@ export const JOURNEYS: readonly JourneyEntry[] = [
 			}
 		]
 	},
-	{ id: 'substitute', prd: '§19: substitute an unavailable exercise', pending: 'journey-strength' },
+	{
+		id: 'substitute',
+		prd: '§19: substitute an unavailable exercise',
+		projects: SERIAL,
+		tests: [STRENGTH_JOURNEY]
+	},
 	{
 		id: 'refresh-restore',
 		prd: '§19: refresh and restore active workout',
-		pending: 'journey-strength'
+		projects: SERIAL,
+		tests: [STRENGTH_JOURNEY]
 	},
-	{ id: 'complete-workout', prd: '§19: complete workout', pending: 'journey-strength' },
-	{ id: 'view-history', prd: '§19: view history', pending: 'journey-strength' },
+	{
+		id: 'complete-workout',
+		prd: '§19: complete workout',
+		projects: SERIAL,
+		tests: [STRENGTH_JOURNEY]
+	},
+	{ id: 'view-history', prd: '§19: view history', projects: SERIAL, tests: [STRENGTH_JOURNEY] },
 	{ id: 'weekly-review', prd: '§19: weekly review', pending: 'journey-weekly-review' },
 	{ id: 'next-week', prd: '§19: generate next week', pending: 'journey-weekly-review' },
 	{
@@ -164,18 +194,71 @@ export const JOURNEYS: readonly JourneyEntry[] = [
 	{ id: 'coach', prd: COACH_PRD, pending: 'coach-journeys' }
 ];
 
+/**
+ * persistence-gaps' matrix (PRD §18). Where an engine cannot do what a case needs (WebKit's
+ * processes not carrying the profile path, its service worker script fetch not reaching
+ * context.route, its offline emulation not reaching the worker), the test records the gap and its
+ * reason as an annotation at run time, so every title is still required in both serial projects.
+ */
+const PERSISTENCE_MATRIX = 'persistence-matrix.serial.e2e.ts';
+const CRASH_AND_REOPEN =
+	'a browser crash and reopen › the browser is killed with SIGKILL after 3 sets online and 3 offline: relaunched on its profile, the workout resumes with its exercise, 6 sets and rest timer, and syncs exactly 6 rows';
+const CLOSED_MID_SYNC =
+	'the network during a sync › a page closed while its sync request is held: reopened, the sets replay, one row per set';
+const NETWORK_FLAPS =
+	'the network during a sync › the network drops at 10 counted steps of a 20-set flush, before and after the server commits: 20 rows in order, none duplicated';
+const APP_UPDATE =
+	'an app update mid-workout › a byte-different service worker installs mid-workout: the workout stays intact, and once the app is reopened the new worker is active and the workout carries on';
+const OFFLINE_RELOAD =
+	'an offline reload › a reload of /workout offline restores the workout from IndexedDB, and reconnecting syncs it once';
+
 export const PERSISTENCE: readonly JourneyEntry[] = [
-	{ id: 'refresh-mid-workout', prd: '§18: refresh mid-workout', pending: 'journey-strength' },
-	{ id: 'close-reopen', prd: '§18: close/reopen', pending: 'persistence-gaps' },
+	{
+		id: 'refresh-mid-workout',
+		prd: '§18: refresh mid-workout',
+		projects: SERIAL,
+		tests: [STRENGTH_JOURNEY]
+	},
+	{
+		id: 'close-reopen',
+		prd: '§18: close/reopen',
+		projects: SERIAL,
+		tests: [
+			{ file: PERSISTENCE_MATRIX, title: CRASH_AND_REOPEN },
+			{ file: PERSISTENCE_MATRIX, title: CLOSED_MID_SYNC },
+			{ file: PERSISTENCE_MATRIX, title: APP_UPDATE }
+		]
+	},
 	{ id: 'network-loss', prd: '§18: temporary network loss', pending: 'journey-offline-sync' },
-	{ id: 'restore-active', prd: '§18: restoring an active workout', pending: 'journey-strength' },
+	{
+		id: 'restore-active',
+		prd: '§18: restoring an active workout',
+		projects: SERIAL,
+		tests: [STRENGTH_JOURNEY]
+	},
 	{ id: 'sync-sets', prd: '§18: syncing completed sets', pending: 'journey-offline-sync' },
 	{ id: 'no-duplicates', prd: '§18: no duplicates', pending: 'journey-offline-sync' },
 	// Journey 3 of journey-offline-sync: a 500 then a 200, a lost response, an invalid mutation.
-	{ id: 'failed-sync', prd: '§18: recovery from failed sync', pending: 'journey-offline-sync' },
+	{
+		id: 'failed-sync',
+		prd: '§18: recovery from failed sync',
+		projects: SERIAL,
+		tests: [
+			'the sync answers 500, then 200: retried, and the sets land once',
+			'an answer lost after the server committed: answered duplicate on the resend, one row',
+			'a permanently invalid change is shown with its reason, then discarded: nothing in Postgres'
+		].map((title) => ({
+			file: 'journey-offline.serial.e2e.ts',
+			title: `journey 3: a failed sync recovers › ${title}`
+		}))
+	},
 	{
 		id: 'offline-online',
 		prd: '§18: safe offline↔online transitions',
-		pending: 'persistence-gaps'
+		projects: SERIAL,
+		tests: [
+			{ file: PERSISTENCE_MATRIX, title: NETWORK_FLAPS },
+			{ file: PERSISTENCE_MATRIX, title: OFFLINE_RELOAD }
+		]
 	}
 ];
