@@ -66,14 +66,17 @@ const outboxTypes = async (page: Page) =>
 
 /**
  * A mouse drag across the card (dy down), in steps, as a hand would. It starts on the card's
- * name: on a phone the logger, stuck to the foot of the screen, covers the rest of it.
+ * name: on a phone the logger, stuck to the foot of the screen, covers the rest of it. `holdMs`
+ * waits after the press, for a slow drag: WebKit runs the steps in a few ms, and a quick short
+ * drag is a flick (swipe.ts).
  */
-async function drag(page: Page, dx: number, dy = 0) {
+async function drag(page: Page, dx: number, dy = 0, holdMs = 0) {
 	const box = (await heading(page).boundingBox())!;
 	const x = box.x + box.width / 2;
 	const y = box.y + box.height / 2;
 	await page.mouse.move(x, y);
 	await page.mouse.down();
+	if (holdMs) await page.waitForTimeout(holdMs);
 	await page.mouse.move(x + dx, y + dy, { steps: 8 });
 	await page.mouse.up();
 }
@@ -142,7 +145,8 @@ test.describe('moving between exercises (IndexedDB only)', () => {
 
 		await drag(page, 30, 260);
 		await drag(page, 0, -260);
-		await drag(page, -40);
+		// 40 px over 200 ms: under SWIPE_MIN_DISTANCE, and too slow for a flick.
+		await drag(page, -40, 0, 200);
 		await expect(heading(page)).toHaveText('Back squat');
 		await noSideScroll(page);
 		expect(await outboxTypes(page)).toEqual(['workout.start']);
