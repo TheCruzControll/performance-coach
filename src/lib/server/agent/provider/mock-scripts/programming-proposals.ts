@@ -11,7 +11,13 @@
  * - 'I hate Bulgarian split squats, replace them' records the dislike, then proposes swapping the
  *   exercise for its best alternative never again (a never_again swap replaces every upcoming
  *   occurrence when accepted).
+ * - 'Ask for changes' (a turn whose entry is ASK_FOR_CHANGES, naming the proposal) drafts the
+ *   owner's words as a revision of that proposal, which supersedes it ('revised'). The draft finds
+ *   the exercise the words name, and swaps it for this session only when they say so ('only this
+ *   week'). It comes first: the words may also read as another script's request.
  */
+import { ASK_FOR_CHANGES } from '../../../../domain/coach/cards.ts';
+import { RATIONALE_MAX } from '../../../../domain/coach/proposals.ts';
 import type { MockContext, MockScript } from '../mock.ts';
 
 const WEEKDAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
@@ -21,6 +27,10 @@ const NEXT_CYCLE = /\bnext\s+(?:cycle|block)\b/i;
 const REPLACE =
 	/\bi\s+(?:really\s+)?(?:hate|dislike|can['’]?t stand)\s+(.+?)[,;.]?\s+(?:so\s+|please\s+)?replace\b/i;
 const NONE = '00000000-0000-4000-8000-000000000000';
+/** How a revision's request starts: its draft may then find the exercise by name. */
+const REVISE = 'Revise the proposal as the owner asked: ';
+/** A change asked for this occurrence only: the revision swaps once rather than never again. */
+const ONCE = /\b(?:only|just)\b.*\b(?:this week|once|this time)\b|\bnot for good\b/i;
 const ISO_DATE = /\d{4}-\d{2}-\d{2}/g;
 
 interface Wrapped {
@@ -87,7 +97,36 @@ const named = (context: MockContext) =>
 const PROPOSED =
 	'[recommendation] I’ve drafted that change. Accept it on the card if it suits you; nothing changes until you do.';
 
+/** The proposal an 'Ask for changes' turn revises: its entry's ref. */
+function revisedOf(context: MockContext | undefined): string | null {
+	const entry = context?.turnContext?.entry as { from?: string; ref?: { id?: string } } | null;
+	return entry?.from === ASK_FOR_CHANGES ? (entry.ref?.id ?? null) : null;
+}
+
 export const programmingProposalScripts: readonly MockScript[] = [
+	{
+		name: 'ask-for-changes',
+		matches: (_text, context) => revisedOf(context) !== null,
+		steps: [
+			{
+				tools: [
+					{
+						name: 'propose_program_adjustment',
+						input: (context) => ({
+							request: `${REVISE}${context.ownerText}`.slice(0, RATIONALE_MAX),
+							revises: revisedOf(context) ?? NONE
+						})
+					}
+				]
+			},
+			{
+				text: (context) =>
+					answered(context, 'propose_program_adjustment')
+						? '[recommendation] I’ve revised it as you asked; the new card replaces the old one. Nothing changes until you accept.'
+						: '[note] I couldn’t revise that proposal, so it stays as it was.'
+			}
+		]
+	},
 	{
 		name: 'move-session',
 		matches: (text) => MOVE.test(text),
@@ -164,7 +203,13 @@ export const programmingProposalScripts: readonly MockScript[] = [
 				json: (context: MockContext) => {
 					const { request, data } = draftOf(context);
 					const sessions = data.sessions ?? [];
-					const exercise = data.exercises.find((e) => request.includes(e.exerciseId));
+					const said = request.toLowerCase();
+					const exercise =
+						data.exercises.find((e) => request.includes(e.exerciseId)) ??
+						(request.startsWith(REVISE)
+							? data.exercises.find((e) => said.includes(e.name.toLowerCase()))
+							: undefined);
+					const once = ONCE.test(request);
 					if (exercise) {
 						const session = sessions.find((s) =>
 							s.exercises?.some((e) => e.exerciseId === exercise.exerciseId)
@@ -175,12 +220,15 @@ export const programmingProposalScripts: readonly MockScript[] = [
 							sessionLineage: session?.sessionLineage ?? NONE,
 							plannedExerciseLineage: planned?.plannedExerciseLineage ?? NONE,
 							toExerciseId: exercise.alternatives[0]?.exerciseId ?? NONE,
-							scope: 'never_again',
-							reason: 'The owner dislikes it'
+							scope: once ? 'once' : 'never_again',
+							reason: once ? 'The owner asked for this session only' : 'The owner dislikes it'
 						};
+						const alternative = exercise.alternatives[0]?.name ?? 'an alternative';
 						return {
-							title: `Replace ${exercise.name}`.slice(0, 80),
-							rationale: `You said you dislike ${exercise.name}; ${exercise.alternatives[0]?.name ?? 'an alternative'} trains the same thing.`,
+							title: `Replace ${exercise.name}${once ? ' once' : ''}`.slice(0, 80),
+							rationale: once
+								? `You asked to swap ${exercise.name} for this session only; ${alternative} trains the same thing.`
+								: `You said you dislike ${exercise.name}; ${alternative} trains the same thing.`,
 							payload: { ops: [swap] }
 						};
 					}

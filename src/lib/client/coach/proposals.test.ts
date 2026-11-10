@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { acceptProposal } from './proposals.ts';
+import { decideProposal } from './proposals.ts';
 
 const ID = '9b2f4d4e-5f0a-4d47-9a43-0c1d2b3a4e5f';
 
@@ -19,11 +19,12 @@ const view = (over: Record<string, unknown> = {}) => ({
 
 const answering = (status: number, body: unknown) =>
 	vi.fn<typeof fetch>(async () => new Response(JSON.stringify(body), { status }));
+const ACCEPT = { action: 'accept' } as const;
 
-describe('acceptProposal', () => {
+describe('decideProposal', () => {
 	it('posts only the action, to the proposal’s own path', async () => {
 		const fetch = answering(200, { proposal: view(), changed: true });
-		await acceptProposal(ID, fetch);
+		await decideProposal(ID, ACCEPT, fetch);
 		expect(fetch).toHaveBeenCalledOnce();
 		const [url, init] = fetch.mock.calls[0]!;
 		expect(url).toBe(`/api/coach/proposals/${ID}`);
@@ -31,9 +32,37 @@ describe('acceptProposal', () => {
 		expect(JSON.parse(String(init?.body))).toEqual({ action: 'accept' });
 	});
 
+	it('posts a rejection with its reason, or with none', async () => {
+		const rejected = view({ status: 'rejected', appliedVersion: null });
+		const fetch = answering(200, { proposal: rejected, changed: true });
+		await decideProposal(ID, { action: 'reject', reason: 'Too much on Friday' }, fetch);
+		await decideProposal(ID, { action: 'reject', reason: null }, fetch);
+		const bodies = fetch.mock.calls.map(([, init]) => JSON.parse(String(init?.body)) as unknown);
+		expect(bodies).toEqual([
+			{ action: 'reject', reason: 'Too much on Friday' },
+			{ action: 'reject', reason: null }
+		]);
+	});
+
 	it('gives the applied card, with the version it made', async () => {
-		const card = await acceptProposal(ID, answering(200, { proposal: view(), changed: true }));
-		expect(card).toMatchObject({ id: ID, status: 'applied', appliedVersion: 2 });
+		const result = await decideProposal(
+			ID,
+			ACCEPT,
+			answering(200, { proposal: view(), changed: true })
+		);
+		expect(result).toMatchObject({
+			kind: 'decided',
+			card: { id: ID, status: 'applied', appliedVersion: 2 }
+		});
+	});
+
+	it('gives the stored card when it had already been decided, so a Retry shows the outcome', async () => {
+		const result = await decideProposal(
+			ID,
+			ACCEPT,
+			answering(200, { proposal: view(), changed: false })
+		);
+		expect(result).toMatchObject({ kind: 'decided', card: { status: 'applied' } });
 	});
 
 	it('gives the superseded card a conflict answers with', async () => {
@@ -42,27 +71,38 @@ describe('acceptProposal', () => {
 			appliedVersion: null,
 			supersededReason: 'program_changed'
 		});
-		const card = await acceptProposal(
+		const result = await decideProposal(
 			ID,
+			ACCEPT,
 			answering(409, { error: 'conflict', proposal: superseded })
 		);
-		expect(card).toMatchObject({ status: 'superseded', supersededReason: 'program_changed' });
+		expect(result).toMatchObject({
+			kind: 'decided',
+			card: { status: 'superseded', supersededReason: 'program_changed' }
+		});
 	});
 
 	it.each([
-		['a refusal', answering(400, { error: 'refused', errors: {} })],
-		['a missing proposal', answering(404, { error: 'not_found' })],
-		['a server failure', answering(500, { proposal: view() })],
-		['a conflict with no proposal', answering(409, { error: 'conflict', reason: 'choose_start' })],
+		['a server failure', answering(500, { error: 'internal' })],
+		['a gateway failure', answering(502, { proposal: view() })],
+		['an answer cut off', vi.fn<typeof fetch>(async () => new Response('{"propos'))],
 		['another proposal', answering(200, { proposal: view({ id: 'other' }) })],
-		['a body that is not JSON', vi.fn<typeof fetch>(async () => new Response('<html>'))],
 		[
 			'no connection',
 			vi.fn<typeof fetch>(async () => {
 				throw new TypeError('Failed to fetch');
 			})
 		]
-	])('gives nothing for %s', async (_, fetch) => {
-		expect(await acceptProposal(ID, fetch)).toBeNull();
+	])('offers a Retry for %s', async (_, fetch) => {
+		expect(await decideProposal(ID, ACCEPT, fetch)).toEqual({ kind: 'failed', retry: true });
+	});
+
+	it.each([
+		['a refusal', answering(400, { error: 'refused', errors: {} })],
+		['a missing proposal', answering(404, { error: 'not_found' })],
+		['too many decisions', answering(429, { error: 'rate_limited' })],
+		['a conflict with no proposal', answering(409, { error: 'conflict', reason: 'choose_start' })]
+	])('offers no Retry for %s', async (_, fetch) => {
+		expect(await decideProposal(ID, ACCEPT, fetch)).toEqual({ kind: 'failed', retry: false });
 	});
 });
