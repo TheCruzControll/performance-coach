@@ -27,8 +27,8 @@
     another after Skip. At zero (feedback.ts, loaded after the first render): a vibration and a tone
     as the device's settings allow; the screen is kept awake during rest when they ask for it.
   - The card's Options button opens the exercise's quick actions (ExerciseActionsSheet.svelte,
-    loaded on intent): Machine unavailable, Suggest an alternative, I don't like this exercise
-    and Skip exercise. The card then says what became of the slot, and a substitute never shows
+    loaded on intent): Machine unavailable, Suggest an alternative, I don't like this exercise,
+    This hurts and Skip exercise. The card then says what became of the slot, and a substitute never shows
     the planned exercise's load.
   - A set of an exercise loaded with a bar or plates has a plate button: it opens the plate
     calculator (PlateSheet.svelte, loaded on the button's first touch) at the set's weight, done
@@ -556,7 +556,13 @@
 		<Plates request={weighing} />
 	{/if}
 	{#if Actions && acting && active.store}
-		<Actions {view} request={acting} store={active.store} />
+		<Actions
+			{view}
+			request={acting}
+			store={active.store}
+			{load}
+			onfinish={() => (active.finishing = true)}
+		/>
 	{/if}
 	{#if Picker && picking && active.store}
 		<Picker {view} request={picking} store={active.store} />

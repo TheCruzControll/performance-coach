@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import { createAuthRepository, type Executor } from '../../../src/lib/server/db';
 import type { ProfileInputError } from '../../../src/lib/server/services/profile';
 
@@ -8,6 +9,16 @@ export async function makeOwner(db: Executor, displayName = 'Niko Cruz'): Promis
 		webauthnUserId: `user-${crypto.randomUUID()}`
 	});
 	return owner.id;
+}
+
+/**
+ * Another owner, inside the test's transaction only: the app allows one (owners_singleton_uq), so
+ * this lifts that rule, and Postgres rolls the DDL back with the test. Call it once per test.
+ */
+export async function makeSecondOwner(db: Executor, displayName = 'Someone else'): Promise<string> {
+	await db.execute(sql`drop index owners_singleton_uq`);
+	await db.execute(sql`alter table owners drop constraint owners_singleton_ck`);
+	return makeOwner(db, displayName);
 }
 
 /** A controllable clock. */
