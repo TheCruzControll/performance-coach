@@ -5,11 +5,19 @@
  * shown apart; verdicts say their window; period links switch and Back restores; a refetch holds
  * the frame; offline switches and failed loads have designed states; a new owner and a first week
  * are told what appears and when; the profile's units win over the device's; desktop lays the
- * tiles in one row; axe is clean in both themes.
+ * tiles in one row; axe is clean in both themes. The trends (tiles, charts, timeline) load after
+ * the verdicts: a client navigation holds their room, and code that fails to load offers Retry.
  *
  * Serial: the history is the one owner's, which every browser and worker shares.
  */
-import { expect, test, type Locator, type Page } from '@playwright/test';
+import {
+	expect,
+	test,
+	type APIResponse,
+	type Locator,
+	type Page,
+	type Route
+} from '@playwright/test';
 import { addDays, weekdayOf } from '../src/lib/domain/calendar';
 import { WEEKDAY_INFO } from '../src/lib/domain/profile/catalog';
 import {
@@ -34,6 +42,20 @@ const periodLink = (page: Page, name: string) =>
 	page.getByRole('navigation', { name: 'Period', exact: true }).getByRole('link', { name });
 const content = (page: Page) => page.getByTestId('period-content');
 const valueOf = async (locator: Locator) => Number(await locator.getAttribute('data-value'));
+
+/** Serve the app's scripts, handing each request for the trends' chunk (OverviewTrends) to `trends`. */
+async function routeTrendsChunk(
+	page: Page,
+	trends: (route: Route, response: APIResponse) => Promise<void>
+) {
+	await page.route('**/_app/immutable/**/*.js', async (route) => {
+		const response = await route.fetch().catch(() => null);
+		if (!response) return route.abort('internetdisconnected');
+		const body = await response.text();
+		if (!body.includes('overview-kpis')) return route.fulfill({ response, body });
+		await trends(route, response);
+	});
+}
 
 /** The period's complete weeks: `weeks` weeks ending the Sunday before this week. */
 const periodOf = (seeded: SeededAnalytics, weeks: number) => ({
@@ -158,6 +180,63 @@ test.describe('twelve weeks', () => {
 			await expect(page).toHaveURL(/period=26w$/);
 			await expect(content(page)).toHaveAttribute('aria-busy', 'false');
 			await expectKpis(page, seeded, 26);
+		});
+	});
+
+	test.describe('the trends load after the verdicts', () => {
+		// page.route sees requests from a page the service worker controls only when it is blocked.
+		test.use({ serviceWorkers: 'block' });
+
+		test('a client navigation holds their room while their code loads, and they fill it', async ({
+			page
+		}) => {
+			let release = () => {};
+			const held = new Promise<void>((resolve) => (release = resolve));
+			await routeTrendsChunk(page, async (route, response) => {
+				await held;
+				await route.fulfill({ response });
+			});
+			await gotoHydrated(page, '/progress/workouts');
+			await page.getByRole('link', { name: 'Progress' }).first().click();
+			await expect(page).toHaveURL(/\/progress$/);
+			// The verdicts are there at once; the trends hold their room.
+			await expect(page.getByTestId('verdict-card').first()).toBeVisible();
+			const reserve = page.getByTestId('overview-trends');
+			await expect(reserve).toHaveAttribute('aria-busy', 'true');
+			await expect(tile(page, 'tonnage')).toHaveCount(0);
+			const room = await boxOf(reserve);
+			await page.waitForFunction(() => document.fonts.status === 'loaded');
+
+			release();
+			await expectKpis(page, seeded, 12);
+			await expect(reserve).toHaveCount(0);
+			const kpis = await boxOf(page.getByTestId('overview-kpis'));
+			const trends = await boxOf(page.getByRole('region', { name: 'Trends' }));
+			expect(Math.abs(kpis.y - room.y), 'the trends start where their room did').toBeLessThan(1);
+			const filled = trends.y + trends.height - kpis.y;
+			expect(Math.abs(filled - room.height), 'the trends fill their room').toBeLessThan(
+				room.height * 0.05
+			);
+		});
+
+		test('code that fails to load is a notice with Retry under the verdicts, and Retry recovers', async ({
+			page
+		}) => {
+			await routeTrendsChunk(page, (route) => route.abort('internetdisconnected'));
+			await gotoHydrated(page, '/progress/workouts');
+			await page.getByRole('link', { name: 'Progress' }).first().click();
+			const failed = page.getByTestId('overview-trends-error');
+			await expect(failed).toContainText('Couldn’t load your trends');
+			// Only the trends failed: the verdicts and the frame are there.
+			await expect(page.getByTestId('verdict-card').first()).toBeVisible();
+			await expect(periodLink(page, 'Last 12 weeks')).toHaveAttribute('aria-current', 'page');
+			await expect(page.getByTestId('error-view')).toHaveCount(0);
+
+			// Where the browser keeps the failed fetch (Chromium), Retry reloads Progress.
+			await page.unrouteAll({ behavior: 'wait' });
+			await failed.getByRole('button', { name: 'Retry' }).click();
+			await expect(failed).toHaveCount(0);
+			await expectKpis(page, seeded, 12);
 		});
 	});
 
