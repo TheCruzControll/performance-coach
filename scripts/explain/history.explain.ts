@@ -271,6 +271,12 @@ const COACH_CASES: Case[] = [
 		() => ar.runPage(db, owner, { before: cursors.run, limit: RUN_PAGE.default + 1 })
 	],
 	[
+		'coach lastCallInput',
+		[R.lastCallInput],
+		// The chat calls only: agent/turn.ts numbers drafts from DRAFT_CALL_INDEX_BASE (1000).
+		() => ar.lastCallInput(db, owner, busyRun.id!, 1000)
+	],
+	[
 		'coach dayCapCost',
 		[...R.dayCapCost],
 		() => ar.dayCapCost(db, owner, NOW, TURN_LIMITS.staleRunMs)
