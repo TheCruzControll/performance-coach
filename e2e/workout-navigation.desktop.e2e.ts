@@ -23,7 +23,9 @@ const heading = (page: Page) =>
 	page.getByTestId('workout-main').getByTestId('exercise').getByRole('heading', { level: 2 });
 const prev = (page: Page) => page.getByTestId('exercise-prev');
 const next = (page: Page) => page.getByTestId('exercise-next');
-/** The card's quick actions, the main column's first stop. */
+/** The card's name, which opens its history: the main column's first stop. */
+const historyOpen = (page: Page) => page.getByTestId('exercise-history-open');
+/** The card's quick actions, the next. */
 const options = (page: Page) => page.getByTestId('exercise-actions');
 
 const style = (target: Locator, property: string) =>
@@ -73,7 +75,10 @@ test.describe('moving between exercises on a desktop', () => {
 		await expect(heading(page)).toHaveText('Back squat');
 		await expect(rows(page).first()).toBeFocused();
 
-		// Tab leaves the list from its one stop, for the main column: the card's Options, then Next.
+		// Tab leaves the list from its one stop, for the main column: the card's name (its
+		// history), its Options, then Next.
+		await page.keyboard.press('Tab');
+		await expect(historyOpen(page)).toBeFocused();
 		await page.keyboard.press('Tab');
 		await expect(options(page)).toBeFocused();
 		await page.keyboard.press('Tab');
@@ -126,6 +131,9 @@ test.describe('moving between exercises on a desktop', () => {
 			await expect(row).toBeFocused();
 			await expect.poll(() => style(row, 'outline-style')).toBe('solid');
 		}
+		await page.keyboard.press('Tab');
+		await expect(historyOpen(page)).toBeFocused();
+		await expect.poll(() => style(historyOpen(page), 'outline-style')).toBe('solid');
 		await page.keyboard.press('Tab');
 		await expect(options(page)).toBeFocused();
 		await page.keyboard.press('Tab');
