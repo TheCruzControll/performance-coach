@@ -11,8 +11,10 @@
   - A container-query grid: the cards pair up once the column is wide enough.
 -->
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import EmptyState from '#lib/ui/components/EmptyState.svelte';
 	import Icon from '#lib/ui/components/Icon.svelte';
+	import ListRow from '#lib/ui/components/ListRow.svelte';
 	import VerdictBadge from '#lib/ui/analytics/VerdictBadge.svelte';
 	import type { IconName } from '#lib/ui/icons/icons.ts';
 	import type { OverviewData, VerdictCard } from './load';
@@ -104,6 +106,14 @@
 	{/if}
 
 	<TrendsLoader {overview} {served} />
+
+	<ListRow
+		title="Reviews"
+		subtitle="Each week planned against done, and what is really changing"
+		icon="sparkle"
+		href={resolve('/(app)/progress/reviews/[[key]]', {})}
+		data-testid="reviews-row"
+	/>
 </div>
 
 <style>
