@@ -41,6 +41,13 @@ function templateScriptHashes(): `sha256-${string}`[] {
 	);
 }
 
+/** Svelte and SvelteKit's client, with the packages they bundle (rolldown's codeSplitting groups). */
+const FRAMEWORK = /[\\/]node_modules[\\/](svelte|@sveltejs[\\/]kit|devalue|clsx)[\\/]/;
+/** SvelteKit's client entries (start, payload) and $app/forms stay out of the framework chunk. */
+const FRAMEWORK_OUTSIDE = /[\\/]runtime[\\/](client[\\/](entry|payload)\.js$|app[\\/]forms[\\/])/;
+/** SvelteKit's payload module (see the `payload` chunk group). */
+const PAYLOAD = /[\\/]@sveltejs[\\/]kit[\\/]src[\\/]runtime[\\/]client[\\/]payload\.js$/;
+
 /**
  * Writes .vite/chunk-modules.json into the client build: each chunk's file and the src/ modules
  * bundled into it, which Vite's manifest does not list. scripts/check-budgets.ts reads it to
@@ -147,12 +154,46 @@ export default defineConfig(({ command, mode }) => {
 					codeSplitting: {
 						groups: [
 							/**
-							 * The client's error reporting and its leaving state, which every page loads first
-							 * (hooks.client.ts), stay one chunk when lazy code imports only one of them: the
-							 * workout sync engine imports leaving.ts. Apart, every route would pay for another
-							 * chunk (about 0.1 KB gzip).
+							 * Every page's start-up is a chain of requests, each a round trip, and Lighthouse
+							 * models HTTP/1.1 with six connections. Left alone, Rolldown splits the code every
+							 * page runs by importer set: Svelte, SvelteKit's client and a run of tiny chunks
+							 * ($app/state, $app/paths, $app/env, the preload helper; several under 0.1 KB).
+							 * These groups merge code (nearly) every page loads; a helper only some screens use
+							 * rides along, which the budgets bound. Rolldown keeps each group's dependencies with
+							 * it (includeDependenciesRecursively, its default), so no module can run before one
+							 * it imports; the budgets and E2E suites run the result.
+							 *
+							 * What start.js imports: SvelteKit's payload module and the preload helper, alone.
+							 * start.js runs its imports before it sets the payload, then imports the client,
+							 * whose modules read the payload while they initialise ($app/env's version). First,
+							 * so the framework group below cannot pull the payload module in with them (a group
+							 * chosen earlier keeps its modules); check-budgets.ts proves start.js imports only
+							 * this chunk.
 							 */
-							{ name: 'errors', test: /src[\\/]lib[\\/]client[\\/](errors|leaving)\.ts$/ },
+							{
+								name: 'payload',
+								test: (id) => PAYLOAD.test(id) || id === '\0vite/preload-helper.js'
+							},
+							/**
+							 * The framework: Svelte's runtime and SvelteKit's client, without its form helpers
+							 * ($app/forms, only on screens with a form) and its entry modules, which SvelteKit
+							 * looks up by file (FRAMEWORK_OUTSIDE).
+							 */
+							{
+								name: 'framework',
+								test: (id) => FRAMEWORK.test(id) && !FRAMEWORK_OUTSIDE.test(id)
+							},
+							/**
+							 * The app's code every page loads first: error reporting and the leaving state
+							 * (hooks.client.ts, also imported alone by lazy code: the workout sync engine imports
+							 * leaving.ts), the root error page's loader (src/routes/error-page.ts), what the root
+							 * layout starts (RUM visits, toasts, the service worker registration) and Icon, which
+							 * every screen draws.
+							 */
+							{
+								name: 'boot',
+								test: /src[\\/](lib[\\/]client[\\/](errors|leaving|visits|service-worker)\.ts|lib[\\/]ui[\\/](toast\.svelte\.ts|components[\\/]Icon\.svelte)|routes[\\/]error-page\.ts)$/
+							},
 							/**
 							 * The workout pages' projection (the M4 plan's runway lever 2): project.ts, its
 							 * reducers, the mutations and the timers, which every workout page loads while it

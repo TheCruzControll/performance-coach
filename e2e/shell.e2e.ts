@@ -461,3 +461,146 @@ test.describe('app shell on an iPhone viewport', () => {
 		}
 	});
 });
+
+/**
+ * The root error page is imported before every page hydrates, so its content loads on demand
+ * (src/routes/error-page.ts): with the page on the server and on a server-rendered error, as
+ * soon as the app has hydrated, or when an error needs it.
+ */
+test.describe('the root error page, loaded on demand', () => {
+	// Every request reaches page.route: none is answered from the service worker's precache.
+	test.use({ serviceWorkers: 'block' });
+
+	/** The error page's own chunk: the only code that hides the shell's offline notice. */
+	const ERROR_PAGE_CHUNK = /hideOfflineNotice:!0/;
+
+	/**
+	 * Hands the error page's chunk to `handle` (every other script passes) and resolves `served`
+	 * once it has been answered.
+	 */
+	async function onErrorPageChunk(
+		page: Page,
+		handle: (pass: () => Promise<void>, abort: () => Promise<void>) => Promise<void>
+	) {
+		let served = false;
+		await page.route('**/_app/immutable/**/*.js', async (route) => {
+			const response = await route.fetch();
+			const body = await response.text();
+			const pass = () => route.fulfill({ response, body });
+			if (!ERROR_PAGE_CHUNK.test(body)) return pass();
+			await handle(
+				async () => {
+					await pass();
+					served = true;
+				},
+				() => route.abort('connectionrefused')
+			);
+		});
+		return { served: () => served };
+	}
+
+	/** Profile's data request fails as a dropped connection: SvelteKit renders the root error page. */
+	async function failProfileData(page: Page) {
+		await page.route(
+			(url) => url.pathname === '/profile/__data.json',
+			(route) => route.abort('connectionrefused')
+		);
+		await page
+			.getByRole('navigation', { name: 'Primary' })
+			.getByRole('link', { name: 'Profile' })
+			.click();
+	}
+
+	test('a server-rendered error page hydrates the markup the server sent', async ({ page }) => {
+		await page.addInitScript(() => {
+			const removed: string[] = [];
+			new MutationObserver((records) => {
+				for (const record of records)
+					for (const node of record.removedNodes)
+						if (
+							node instanceof Element &&
+							(node.matches('[data-testid="error-view"]') ||
+								node.querySelector('[data-testid="error-view"]'))
+						)
+							removed.push(node.outerHTML.slice(0, 80));
+			}).observe(document, { childList: true, subtree: true });
+			Object.assign(window, { removed });
+		});
+		// Chromium logs a document that answers 404 as a failed resource: only that line is expected.
+		const errors = trackConsoleErrors(
+			page,
+			(msg) =>
+				msg.text().includes('status of 404') &&
+				new URL(msg.location().url).pathname === '/nothing-here'
+		);
+		const response = await page.goto('/nothing-here');
+		expect(response?.status()).toBe(404);
+		expect(await response?.text()).toContain('data-root-error');
+		await page.waitForLoadState('networkidle');
+		await expect(page.getByRole('heading', { name: 'Nothing here' })).toBeVisible();
+		expect(await page.evaluate(() => (window as unknown as { removed: string[] }).removed)).toEqual(
+			[]
+		);
+
+		// Hydrated: its link is a client-side navigation, not a page load.
+		await page.getByRole('link', { name: 'Back to Today' }).click();
+		await expect(page.getByRole('heading', { level: 1, name: 'Today' })).toBeVisible();
+		expect(await page.evaluate(() => performance.getEntriesByType('navigation').length)).toBe(1);
+		expect(errors).toEqual([]);
+	});
+
+	test('once the app has hydrated, an offline error renders without the network', async ({
+		page,
+		context
+	}) => {
+		const chunk = await onErrorPageChunk(page, (pass) => pass());
+		await gotoHydrated(page, '/today');
+		// No idle wait (WebKit has none): the page loaded with the requests that follow hydration.
+		expect(chunk.served(), 'the page loaded after hydration').toBe(true);
+
+		await context.setOffline(true);
+		await page
+			.getByRole('navigation', { name: 'Primary' })
+			.getByRole('link', { name: 'Profile' })
+			.click();
+		await expect(page.getByTestId('offline-state')).toBeVisible();
+		await expect(page.getByRole('heading', { level: 1, name: 'Profile' })).toBeVisible();
+	});
+
+	test('an error before the page has loaded shows once it arrives', async ({ page }) => {
+		let requested = false;
+		let release!: () => void;
+		const held = new Promise<void>((resolve) => (release = resolve));
+		const chunk = await onErrorPageChunk(page, async (pass) => {
+			requested = true;
+			await held;
+			await pass();
+		});
+		// Not gotoHydrated: the held request keeps the network busy. The page is asked for once the
+		// app has hydrated, so the request also says the app has started.
+		await page.goto('/today');
+		await expect.poll(() => requested, { message: 'hydration asked for the page' }).toBe(true);
+		await failProfileData(page);
+		// The error page has replaced Today, its content still on its way.
+		await expect(page.getByRole('heading', { level: 1, name: 'Today' })).toHaveCount(0);
+		await expect(page.getByTestId('error-view')).toHaveCount(0);
+
+		release();
+		await expect(page.getByTestId('error-view')).toBeVisible();
+		await expect(page.getByTestId('offline-state')).toBeVisible();
+		await expect(page.getByRole('heading', { level: 1, name: 'Profile' })).toBeVisible();
+		expect(chunk.served()).toBe(true);
+	});
+
+	test('when the page cannot be fetched, the error still says so, with a way to try again', async ({
+		page
+	}) => {
+		await onErrorPageChunk(page, (_pass, abort) => abort());
+		await gotoHydrated(page, '/today');
+		await failProfileData(page);
+		await expect(page.getByRole('heading', { level: 1, name: "You're offline" })).toBeVisible();
+		const retry = page.getByRole('link', { name: 'Try again' });
+		await expect(retry).toHaveAttribute('href', '/profile');
+		expect((await retry.boundingBox())?.height).toBeGreaterThanOrEqual(44);
+	});
+});
