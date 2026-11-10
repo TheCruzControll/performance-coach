@@ -61,6 +61,8 @@ interface Route {
 }
 interface ViteChunk {
 	file: string;
+	/** The chunk's name: for a chunk group's chunk, the group's name. */
+	name?: string;
 	src?: string;
 	imports?: string[];
 	dynamicImports?: string[];
@@ -567,6 +569,25 @@ if (!rootError || !rootErrorFile) {
 	}
 }
 
+/**
+ * start.js imports SvelteKit's payload module and the preload helper alone (the `payload` chunk
+ * group in vite.config.ts): it runs its imports before it sets the payload, then imports the
+ * client, whose modules read the payload while they initialise ($app/env's version). A chunk
+ * group that pulled the payload module in with them would run them early, with an empty payload.
+ */
+const PAYLOAD_GROUP = 'payload';
+const startEntry = Object.entries(vite).find(([key]) =>
+	key.endsWith('/@sveltejs/kit/src/runtime/client/entry.js')
+)?.[1];
+const startImports = startEntry?.imports ?? [];
+const payloadProblem = !startEntry
+	? 'no SvelteKit start entry in the build: update this guard'
+	: startImports.length !== 1 ||
+		  vite[startImports[0]!]?.name !== PAYLOAD_GROUP ||
+		  vite[startImports[0]!]?.imports?.length
+		? `${path.basename(startEntry.file)} imports ${startImports.map((k) => `${path.basename(vite[k]!.file)} (${vite[k]!.name})`).join(', ')}`
+		: '';
+
 const lines = [
 	'| Route | Initial JS (gzip) | of which awaited by `load` | Route CSS (gzip) | Preloaded fonts | Status |',
 	'| --- | ---: | ---: | ---: | ---: | :---: |',
@@ -588,6 +609,7 @@ const lines = [
 		),
 	`CSS output guard (standard property kept next to every -webkit- prefix): ${prefixProblems.length ? 'FAIL' : 'pass'}`,
 	`Root error page (imported before every hydration): its own ${rootErrorFile ? fmt(gzipBytes(rootErrorFile)) : '?'} chunk, no script or stylesheet a route does not load: ${rootErrorProblems.length ? 'FAIL' : 'pass'}`,
+	`SvelteKit start entry imports only the payload chunk (it runs it before setting the payload): ${payloadProblem ? 'FAIL' : 'pass'}`,
 	`App shell stylesheets inlined into every app page (AppShell ${shellSheet ? count(lengthOf(shellSheet)) : '?'} of ${count(INLINE_STYLE_THRESHOLD)} characters): ${shellProblems.length ? 'FAIL' : 'pass'}`,
 	`@simplewebauthn/browser: on demand only, never in initial JS; loadable from ${webauthnRoutes
 		.sort()
@@ -621,6 +643,10 @@ if (rootErrorProblems.length > 0) {
 	console.error(
 		`\nRoot error page start-up failed (it imports what these routes do not load):\n  - ${rootErrorProblems.join('\n  - ')}`
 	);
+}
+
+if (payloadProblem) {
+	console.error(`\nSvelteKit start entry failed: ${payloadProblem}`);
 }
 
 if (webauthnProblems.length > 0) {
@@ -659,6 +685,7 @@ if (
 	prefixProblems.length > 0 ||
 	shellProblems.length > 0 ||
 	rootErrorProblems.length > 0 ||
+	payloadProblem ||
 	webauthnProblems.length > 0 ||
 	validationProblems.length > 0 ||
 	sectionProblems.length > 0 ||
@@ -672,6 +699,7 @@ if (
 		...(prefixProblems.length ? ['CSS prefixes'] : []),
 		...(shellProblems.length ? ['app shell inlining'] : []),
 		...(rootErrorProblems.length ? ['root error page'] : []),
+		...(payloadProblem ? ['SvelteKit start entry'] : []),
 		...(webauthnProblems.length ? ['WebAuthn library placement'] : []),
 		...(validationProblems.length ? ['validation placement'] : []),
 		...(sectionProblems.length ? ['profile section CSS'] : []),
