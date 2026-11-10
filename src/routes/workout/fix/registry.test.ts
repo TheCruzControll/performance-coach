@@ -11,6 +11,7 @@ const EDITOR_TYPES = [
 	'run.segment',
 	'other.log',
 	'exercise.substitute',
+	'exercise.create',
 	'pain.report'
 ];
 const REWRITE_TYPES = ['workout.start', 'exercise.dislike'];

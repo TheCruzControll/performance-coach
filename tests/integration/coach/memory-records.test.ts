@@ -267,8 +267,8 @@ describe('getCoachingMemory: recovery and reviews', () => {
 						.returning({ id: weeklyReviews.id })
 				)[0]!.id;
 			await review('2026-10-19', 'Oldest week');
-			const middle = await review('2026-10-26', 'A good week');
-			const latest = await review('2026-11-02', 'Missed two sessions');
+			await review('2026-10-26', 'A good week');
+			await review('2026-11-02', 'Missed two sessions');
 			const [cycle] = await db
 				.insert(cycleReviews)
 				.values({
@@ -294,25 +294,30 @@ describe('getCoachingMemory: recovery and reviews', () => {
 					source: { type: 'date', id: addDays(TODAY, -2) }
 				}
 			]);
+			// Each source opens the review's page by its key; rows written before M6 have no verdicts.
 			const ref = (id: string, date: string) => ({ type: 'review', id, date });
+			const before = { verdicts: [], decisionState: 'none' };
 			expect(memory.records.reviews).toEqual([
 				{
 					scope: 'week',
 					date: '2026-11-02',
 					summary: 'Missed two sessions',
-					source: ref(latest, '2026-11-02')
+					...before,
+					source: ref('w-2026-11-02', '2026-11-02')
 				},
 				{
 					scope: 'cycle',
 					date: '2026-10-30',
 					summary: 'Strength rose; fatigue stayed low',
-					source: ref(cycle!.id, '2026-10-30')
+					...before,
+					source: ref(`c-${cycle!.id}`, '2026-10-30')
 				},
 				{
 					scope: 'week',
 					date: '2026-10-26',
 					summary: 'A good week',
-					source: ref(middle, '2026-10-26')
+					...before,
+					source: ref('w-2026-10-26', '2026-10-26')
 				}
 			]);
 		});
@@ -402,6 +407,9 @@ describe('getCoachingMemory: decisions and proposals', () => {
 					status: 'proposed',
 					decidedOn: null,
 					decisionNote: null,
+					// The coach's own: no review proposed it.
+					origin: 'coach',
+					review: null,
 					source: { type: 'proposal', id: waiting.id }
 				},
 				{
@@ -410,6 +418,9 @@ describe('getCoachingMemory: decisions and proposals', () => {
 					status: 'rejected',
 					decidedOn: TODAY,
 					decisionNote: REASON,
+					// The coach's own: no review proposed it.
+					origin: 'coach',
+					review: null,
 					source: { type: 'proposal', id: rejected.id }
 				}
 			]);
@@ -494,7 +505,7 @@ describe('getCoachingMemory: its query budget', () => {
 
 			const all = await statementsOf(() => getCoachingMemory(s.owner, { today: TODAY }, { db }));
 			const records = await statementsOf(() => loadMemoryRecords(s.owner, TODAY, db));
-			expect([MEMORY_QUERIES, MEMORY_RECORDS_QUERIES]).toEqual([17, 8]);
+			expect([MEMORY_QUERIES, MEMORY_RECORDS_QUERIES]).toEqual([18, 9]);
 			expect(records.length).toBeLessThanOrEqual(MEMORY_RECORDS_QUERIES);
 			expect(all.length).toBeLessThanOrEqual(MEMORY_QUERIES);
 		});

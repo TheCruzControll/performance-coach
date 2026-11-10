@@ -701,7 +701,7 @@ describe('the schema', () => {
 			await updateWeekly(old.id, { supersededAt: new Date(), supersededBy: nextId })(db);
 			await insertWeekly(s.weekly({ id: nextId, revision: 2, summary: 'Every session done' }))(db);
 			expect(await latestWeeklyReviews(db, s.ownerId, 5)).toEqual([
-				{ id: nextId, date: MONDAY, summary: 'Every session done' }
+				expect.objectContaining({ id: nextId, date: MONDAY, summary: 'Every session done' })
 			]);
 
 			// The superseded cycle review is the newer row, so only the filter keeps it out.

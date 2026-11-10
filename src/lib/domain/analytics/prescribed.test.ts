@@ -400,6 +400,7 @@ describe('exposure', () => {
 			missedReps: 3,
 			// The warm-up's +2 is left out.
 			rpeDeviations: [1, 0, 1, 1.5],
+			rpeTargets: [8, 7, 7, 7],
 			meanRpeDeviation: 0.875,
 			kg: 110,
 			hit: false
