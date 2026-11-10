@@ -1,12 +1,18 @@
 /**
  * The words of the exercise-history sheet (ExerciseHistorySheet.svelte): each session's date and
  * sets, the best e1RM, always labelled as an estimate, and the rep PRs, each in the unit its set
- * was logged in. Pure, so it is unit-tested without a browser.
+ * was logged in; its title, and what it says offline with no session of its own to show. Pure,
+ * so it is unit-tested without a browser.
  */
 import { localDay } from '#lib/domain/dates.ts';
 import { convertWeight, formatWeight } from '#lib/domain/units.ts';
 import type { Instant, LoggedSet } from '#lib/domain/workout/index.ts';
-import type { HistoryBest, HistoryRepMax } from '#lib/client/workout/exercise-history.ts';
+import type {
+	ExerciseHistory,
+	HistoryBest,
+	HistoryRepMax,
+	HistoryRequest
+} from '#lib/client/workout/exercise-history.ts';
 import { shortDate } from '#lib/ui/program/words.ts';
 import { doneText, SET_STATE_WORDS } from './set-words.ts';
 
@@ -60,4 +66,28 @@ export function repMaxWords({ reps, weightKg, set }: HistoryRepMax, timeZone?: s
 		value: formatWeight(weight, set.unit),
 		date: dayOf(set.performedAt, timeZone)
 	};
+}
+
+/**
+ * The sheet's title: the name it was opened with, else, in the exercise-id-only mode, the name
+ * the history brought, and 'Exercise history' until it has.
+ */
+export const sheetTitle = (request: HistoryRequest | null, history: ExerciseHistory | null) =>
+	request?.name ?? history?.exercise.name ?? 'Exercise history';
+
+/**
+ * Offline with no session to show. Opened with a name (History, the workout) it may hold one
+ * another time; in the exercise-id-only mode it never does, so the history needs a connection.
+ */
+export function offlineWords(request: HistoryRequest | null) {
+	return request && request.name === undefined
+		? {
+				title: 'Exercise history needs a connection',
+				description: 'It isn’t kept on this device. Connect, then try again.'
+			}
+		: {
+				title: 'You’re offline',
+				description:
+					'This device holds no earlier sets of this exercise. Its history loads when you’re back online.'
+			};
 }

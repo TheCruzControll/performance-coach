@@ -9,7 +9,7 @@
  */
 import { DEFAULT_PERIOD, parsePeriod, type Period } from '#lib/domain/analytics/periods.ts';
 
-export const PROGRESS_VIEWS = ['overview', 'strength'] as const;
+export const PROGRESS_VIEWS = ['overview', 'strength', 'running', 'general'] as const;
 export type ProgressView = (typeof PROGRESS_VIEWS)[number];
 
 /** The view /progress opens on, and the one an unknown ?view falls back to. */
@@ -17,7 +17,9 @@ export const DEFAULT_VIEW: ProgressView = 'overview';
 
 export const VIEW_LABEL: Readonly<Record<ProgressView, string>> = {
 	overview: 'Overview',
-	strength: 'Strength'
+	strength: 'Strength',
+	running: 'Running',
+	general: 'General'
 };
 
 export interface ProgressParams {

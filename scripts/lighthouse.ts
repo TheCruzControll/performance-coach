@@ -7,10 +7,18 @@
  *   pnpm lighthouse --runs 5 --routes /,/today
  *   pnpm lighthouse --url https://preview.example.com   # audit an already-running server
  *   pnpm lighthouse --assert                            # exit 1 when a threshold is missed
+ *   pnpm lighthouse --shard 2/3                         # every third route, from the second
  *
  * With --assert a route stops early once its runs so far decide every threshold's median
  * (3 of 5 runs passing or missing it: scripts/lib/lighthouse-verdict.ts); summary.json and the
  * table record the runs each route took.
+ *
+ * --shard i/N (scripts/lib/lighthouse-shard.ts) audits every N-th route of the full list (the
+ * routes, then with --seed the program and workout screens), so CI's N parallel jobs audit each
+ * route once; --seed still seeds in every shard, the program is built only in a shard that audits
+ * a seeded screen, and the workouts are synced only in a shard that audits History or /workout.
+ * A sharded run writes to lighthouse-reports/<form factor>/shard-<i>; every run puts each route's
+ * wall time in the table and $GITHUB_STEP_SUMMARY.
  *
  * The local server uses E2E_DATABASE_URL (default: local coach_e2e) after applying migrations.
  *
@@ -49,6 +57,7 @@ import { readActionAnswer } from './lib/action-result.ts';
 import { seedDemoProfile, type DemoProfile } from './lib/demo-profiles.ts';
 import { verdictDecided } from './lib/lighthouse-verdict.ts';
 import { lighthouseConfig, reportDir, type FormFactor } from './lib/lighthouse-config.ts';
+import { parseShard, shardReportDir, shardUrls } from './lib/lighthouse-shard.ts';
 import {
 	activeWorkoutSeed,
 	finishedWorkout,
@@ -76,7 +85,9 @@ const { values } = parseArgs({
 		'max-lcp': { type: 'string', default: '2500' },
 		'max-cls': { type: 'string', default: '0.1' },
 		'max-tbt': { type: 'string', default: '200' },
-		seed: { type: 'boolean', default: Boolean(process.env.CI) }
+		seed: { type: 'boolean', default: Boolean(process.env.CI) },
+		// i/N: every N-th audit of the full list, from the i-th (scripts/lib/lighthouse-shard.ts).
+		shard: { type: 'string', default: '1/1' }
 	}
 });
 if (values.seed && values.url) {
@@ -108,7 +119,10 @@ const THRESHOLDS = {
 };
 const FORM_FACTOR: FormFactor = values.desktop ? 'desktop' : 'mobile';
 const CONFIG = lighthouseConfig(FORM_FACTOR);
-const OUT_DIR = reportDir(FORM_FACTOR);
+const SHARD = parseShard(values.shard);
+const OUT_DIR = shardReportDir(reportDir(FORM_FACTOR), FORM_FACTOR, SHARD);
+/** The run's name in the table and the step summary: the form factor, and the shard if any. */
+const RUN_NAME = `${FORM_FACTOR}${SHARD.count > 1 ? ` · shard ${SHARD.index}/${SHARD.count}` : ''}`;
 const runs = Math.max(1, Number(values.runs));
 const routes = values.routes
 	.split(',')
@@ -310,6 +324,8 @@ interface Summary {
 	route: string;
 	/** The runs the median is over: fewer than `runs` when --assert stopped early. */
 	runs: number;
+	/** The route's wall time over all its runs, in seconds. */
+	seconds: number;
 	performance: number;
 	accessibility: number;
 	bestPractices: number;
@@ -356,7 +372,7 @@ async function todayAction(name: 'preview' | 'build', payload: unknown): Promise
  * audit, with the session's lineage read from the database.
  */
 async function buildSeededProgram(): Promise<{
-	routes: [label: string, path: string][];
+	paths: Record<ProgramRoute, string>;
 	lineage: string;
 }> {
 	const request = { timeZone: SEED_TIME_ZONE, start: SEED_START };
@@ -382,13 +398,13 @@ async function buildSeededProgram(): Promise<{
 	);
 	const lineage = session.rows[0]?.lineage;
 	if (!lineage) throw new Error('The seeded program has no session');
-	const routes: [string, string][] = [
-		['/today · program', '/today'],
-		['/train · program', '/train'],
-		['/train/session/[key]', `/train/session/${lineage}`],
-		['/train/history', '/train/history']
-	];
-	return { routes, lineage };
+	const paths = {
+		'/today · program': '/today',
+		'/train · program': '/train',
+		'/train/session/[key]': `/train/session/${lineage}`,
+		'/train/history': '/train/history'
+	};
+	return { paths, lineage };
 }
 
 /** The signed-in owner's JSON from `path`, as the app's own requests send it. */
@@ -408,7 +424,7 @@ async function ownerJson(path: string, body?: unknown): Promise<unknown> {
  */
 async function seedWorkouts(
 	lineage: string
-): Promise<{ routes: [label: string, path: string][]; device: ActiveSeed }> {
+): Promise<{ paths: Record<WorkoutRoute, string>; device: ActiveSeed }> {
 	const kit = (await ownerJson(`/api/workouts/kit?lineage=${lineage}`)) as StartKit;
 	if (kit.kind !== 'strength') throw new Error(`The seeded session is ${kit.kind}, not strength`);
 	let newest = '';
@@ -425,11 +441,12 @@ async function seedWorkouts(
 		}
 		newest ||= workoutId;
 	}
-	const routes: [string, string][] = [
-		['/progress/workouts', '/progress/workouts'],
-		['/progress/workouts/[id]', `/progress/workouts/${newest}`]
-	];
-	return { routes, device: activeWorkoutSeed(kit, Date.now()) };
+	const paths = {
+		'/progress/workouts': '/progress/workouts',
+		'/progress/workouts/[id]': `/progress/workouts/${newest}`,
+		'/workout · active': '/workout'
+	};
+	return { paths, device: activeWorkoutSeed(kit, Date.now()) };
 }
 
 /** Writes the device's workout into the current browser's IndexedDB, on the app's origin. */
@@ -446,8 +463,44 @@ async function seedDevice(device: ActiveSeed) {
 	}
 }
 
+/** The program screens --seed audits after the routes, in this order, by label. */
+const PROGRAM_ROUTES = [
+	'/today · program',
+	'/train · program',
+	'/train/session/[key]',
+	'/train/history'
+] as const;
+type ProgramRoute = (typeof PROGRAM_ROUTES)[number];
+
+/**
+ * The workout screens --seed audits after the program's, in this order, by label. History comes
+ * before /workout: the active workout, once synced, would add the resume bar. A shard keeps the
+ * list's order, so this holds in every shard.
+ */
+const WORKOUT_ROUTES = [
+	'/progress/workouts',
+	'/progress/workouts/[id]',
+	'/workout · active'
+] as const;
+type WorkoutRoute = (typeof WORKOUT_ROUTES)[number];
+
+const SEEDED_ROUTES = [...PROGRAM_ROUTES, ...WORKOUT_ROUTES] as const;
+type SeededRoute = (typeof SEEDED_ROUTES)[number];
+const isProgramRoute = (label: SeededRoute): label is ProgramRoute =>
+	(PROGRAM_ROUTES as readonly string[]).includes(label);
+
+/** Every audit of the run, in order: the routes, then with --seed the program and workout screens. */
+const AUDITS: ({ label: string; path: string } | { label: string; seeded: SeededRoute })[] = [
+	...routes.map((path) => ({
+		label: values.seed && path === '/today' ? '/today · build card' : path,
+		path
+	})),
+	...(values.seed ? SEEDED_ROUTES.map((label) => ({ label, seeded: label })) : [])
+];
+
 /** Lighthouse `runs` times on `path`, summarised under `route`, its label; `device` seeded first. */
 async function auditRoute(route: string, path: string, device?: ActiveSeed) {
+	const started = Date.now();
 	const results: Summary[] = [];
 	for (let i = 0; i < runs; i++) {
 		const result = await auditOnce(`${server.base}${path}`, device);
@@ -457,6 +510,7 @@ async function auditRoute(route: string, path: string, device?: ActiveSeed) {
 		results.push({
 			route,
 			runs: 1,
+			seconds: 0,
 			performance: lhr.categories.performance?.score ?? 0,
 			accessibility: lhr.categories.accessibility?.score ?? 0,
 			bestPractices: lhr.categories['best-practices']?.score ?? 0,
@@ -473,10 +527,12 @@ async function auditRoute(route: string, path: string, device?: ActiveSeed) {
 		writeFileSync(`${OUT_DIR}/${name}.report.html`, html!);
 		if (values.assert && i + 1 < runs && verdictDecided(results, runs, THRESHOLDS)) break;
 	}
-	const pick = (k: keyof Omit<Summary, 'route' | 'runs'>) => median(results.map((r) => r[k]));
+	const pick = (k: keyof Omit<Summary, 'route' | 'runs' | 'seconds'>) =>
+		median(results.map((r) => r[k]));
 	summaries.push({
 		route,
 		runs: results.length,
+		seconds: (Date.now() - started) / 1000,
 		performance: pick('performance'),
 		accessibility: pick('accessibility'),
 		bestPractices: pick('bestPractices'),
@@ -490,16 +546,21 @@ async function auditRoute(route: string, path: string, device?: ActiveSeed) {
 
 try {
 	if (values.seed) await seedProfile();
-	for (const route of routes) {
-		await auditRoute(values.seed && route === '/today' ? '/today · build card' : route, route);
-	}
-	if (values.seed) {
-		const { routes: program, lineage } = await buildSeededProgram();
-		for (const [label, path] of program) await auditRoute(label, path);
-		// History before /workout: the active workout, once synced, would add the resume bar.
-		const { routes: history, device } = await seedWorkouts(lineage);
-		for (const [label, path] of history) await auditRoute(label, path);
-		await auditRoute('/workout · active', '/workout', device);
+	let program: Awaited<ReturnType<typeof buildSeededProgram>> | undefined;
+	let workouts: Awaited<ReturnType<typeof seedWorkouts>> | undefined;
+	for (const audit of shardUrls(AUDITS, SHARD.index, SHARD.count)) {
+		if (!('seeded' in audit)) {
+			await auditRoute(audit.label, audit.path);
+			continue;
+		}
+		program ??= await buildSeededProgram();
+		if (isProgramRoute(audit.seeded)) {
+			await auditRoute(audit.label, program.paths[audit.seeded]);
+			continue;
+		}
+		workouts ??= await seedWorkouts(program.lineage);
+		const device = audit.seeded === '/workout · active' ? workouts.device : undefined;
+		await auditRoute(audit.label, workouts.paths[audit.seeded], device);
 	}
 } finally {
 	await chrome.kill();
@@ -507,24 +568,28 @@ try {
 }
 
 const lines = [
-	`Lighthouse ${lighthouseVersion} (${FORM_FACTOR}, simulated throttling) — median of ${runs} run(s) per route${values.assert ? ', stopping early once the runs so far decide every asserted threshold' : ''}, ${chromeVersion}`,
+	`Lighthouse ${lighthouseVersion} (${RUN_NAME}, simulated throttling) — median of ${runs} run(s) per route${values.assert ? ', stopping early once the runs so far decide every asserted threshold' : ''}, ${chromeVersion}`,
 	'',
-	'| Route | Runs | Perf | A11y | Best pr. | LCP | FCP | TBT | CLS | Speed Index |',
-	'| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |',
+	'| Route | Runs | Wall time | Perf | A11y | Best pr. | LCP | FCP | TBT | CLS | Speed Index |',
+	'| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |',
 	...summaries.map(
 		(s) =>
-			`| \`${s.route}\` | ${s.runs} | ${Math.round(s.performance * 100)} | ${Math.round(s.accessibility * 100)} | ${Math.round(s.bestPractices * 100)} | ${Math.round(s.lcp)} ms | ${Math.round(s.fcp)} ms | ${Math.round(s.tbt)} ms | ${s.cls.toFixed(3)} | ${Math.round(s.si)} ms |`
+			`| \`${s.route}\` | ${s.runs} | ${Math.round(s.seconds)} s | ${Math.round(s.performance * 100)} | ${Math.round(s.accessibility * 100)} | ${Math.round(s.bestPractices * 100)} | ${Math.round(s.lcp)} ms | ${Math.round(s.fcp)} ms | ${Math.round(s.tbt)} ms | ${s.cls.toFixed(3)} | ${Math.round(s.si)} ms |`
 	)
 ];
 console.log(lines.join('\n'));
 writeFileSync(
 	`${OUT_DIR}/summary.json`,
-	JSON.stringify({ formFactor: FORM_FACTOR, runs, thresholds: THRESHOLDS, summaries }, null, 2)
+	JSON.stringify(
+		{ formFactor: FORM_FACTOR, shard: SHARD, runs, thresholds: THRESHOLDS, summaries },
+		null,
+		2
+	)
 );
 if (process.env.GITHUB_STEP_SUMMARY) {
 	appendFileSync(
 		process.env.GITHUB_STEP_SUMMARY,
-		`## Lighthouse (${FORM_FACTOR})\n\n${lines.join('\n')}\n`
+		`## Lighthouse (${RUN_NAME})\n\n${lines.join('\n')}\n`
 	);
 }
 

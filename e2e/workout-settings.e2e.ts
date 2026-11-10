@@ -12,7 +12,7 @@
  * dialogs are workout-settings.desktop.e2e.ts.
  */
 import AxeBuilder from '@axe-core/playwright';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 import type { StrengthKit } from '../src/lib/domain/workout';
 import { captureScreen } from './support';
 import { gotoWorkout, seedWorkout, workoutDay } from './workout-support';
@@ -236,11 +236,23 @@ test.describe("Train's rest timer", () => {
 	}
 
 	test('starts, survives a reload and can be skipped, opening no workout', async ({ page }) => {
+		// Every page the tab shows is recorded: the timer must never take it to a workout. Train
+		// itself may link to one ('Log a session'), so it is the timer's own row, sheet and inline
+		// reading that must hold no such link.
+		const visited: string[] = [];
+		page.on('framenavigated', (frame) => {
+			if (frame === page.mainFrame()) visited.push(new URL(frame.url()).pathname);
+		});
+		const workoutLinks = (scope: Locator) => scope.locator('a[href*="/workout"]');
 		await openTrain(page);
 		await expect(row(page)).toBeEnabled();
-		await expect(page.locator('a[href*="/workout"]'), 'no link opens a workout').toHaveCount(0);
+		await expect(row(page), 'the row opens a sheet, not a page').toHaveJSProperty(
+			'tagName',
+			'BUTTON'
+		);
 		await row(page).click();
 		await expect(sheet(page)).toBeVisible();
+		await expect(workoutLinks(sheet(page)), 'no link in the sheet opens a workout').toHaveCount(0);
 		await expect(sheet(page).getByTestId('start-isolation-rest')).toHaveText('Isolation · 1:30');
 		await sheet(page).getByTestId('start-isolation-rest').click();
 		await expect(sheet(page).getByTestId('rest-time')).toHaveText('1:30');
@@ -252,6 +264,9 @@ test.describe("Train's rest timer", () => {
 		await page.keyboard.press('Escape');
 		await expect(sheet(page)).toBeHidden();
 		await expect(inline(page).getByTestId('rest-time')).toHaveText('1:10');
+		await expect(workoutLinks(inline(page)), 'no link under the row opens a workout').toHaveCount(
+			0
+		);
 
 		// After a reload it is back under its row untapped, still running, at the right time.
 		await page.reload();
@@ -282,6 +297,13 @@ test.describe("Train's rest timer", () => {
 		await expect(sheet(page).getByTestId('start-main-rest')).toBeVisible();
 		await expect(sheet(page).getByTestId('rest-timer')).toHaveCount(0);
 		expect(new URL(page.url()).pathname).toBe('/train');
+		expect(visited, 'every page the tab showed').toEqual(
+			expect.arrayContaining(['/train', '/today'])
+		);
+		expect(
+			visited.filter((path) => path.startsWith('/workout')),
+			'no workout opened'
+		).toEqual([]);
 	});
 
 	test('its lengths are the workout settings’', async ({ page }) => {

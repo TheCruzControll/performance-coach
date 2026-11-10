@@ -51,10 +51,16 @@ export interface ExerciseHistory {
 	records: { bestE1rm: HistoryBest | null; repMaxes: HistoryRepMax[] };
 }
 
-/** What opens the sheet: the exercise, and the session this device holds of it, if any. */
+/**
+ * What opens the sheet: the exercise, and the session this device holds of it, if any. With no
+ * `name` it is the exercise-id-only mode (a coach answer's exercise source): the title comes with
+ * the history, and offline it says the history needs a connection, as nothing of it is on the
+ * device.
+ */
 export interface HistoryRequest {
 	exerciseId: string;
-	name: string;
+	/** Absent in the exercise-id-only mode. */
+	name?: string;
 	/** Shown offline: the kit's previous session or the attached one; none from History. */
 	fallback?: PreviousPerformance | null;
 }

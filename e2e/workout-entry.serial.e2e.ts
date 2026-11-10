@@ -20,7 +20,7 @@ import type { StartKit, SyncResponse } from '../src/lib/domain/workout';
 import { createMutation } from '../src/lib/domain/workout/mutations';
 import { DESKTOP, expectNoSideScroll } from './desktop';
 import { PROGRAM_TZ, seedProgram, type SeededProgram } from './program-support';
-import { captureScreen, gotoHydrated, SAME_ORIGIN } from './support';
+import { captureScreen, gotoHydrated, query, resetTrainingProfile, SAME_ORIGIN } from './support';
 import { readOutbox } from './workout-support';
 
 test.use({ timezoneId: PROGRAM_TZ });
@@ -29,8 +29,13 @@ const STRENGTH = 'Lower body & pull';
 const RUN = 'Intervals';
 
 let seeded: SeededProgram;
+// Onboarding complete, so Today shows the plan rather than the setup card.
 test.beforeEach(async ({ request }) => {
 	seeded = await seedProgram(request, { fixture: 'workout-day', start: 'this_week' });
+	await query('update athlete_profiles set onboarding_completed_at = now()');
+});
+test.afterAll(async () => {
+	await resetTrainingProfile();
 });
 
 const lineageOf = (title: string) =>

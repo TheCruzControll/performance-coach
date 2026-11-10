@@ -84,6 +84,8 @@
 			name: 'Back squat',
 			fallback: HISTORY_FALLBACK
 		});
+	/** As a coach answer's exercise source opens it: by exercise id alone. */
+	const openHistoryById = () => (history = { exerciseId: '00000000-0000-4000-8000-0000000d0101' });
 	const logged = () => toast.show('Set logged', { tone: 'positive' });
 </script>
 
@@ -215,6 +217,12 @@
 				icon="chevron-right"
 				onclick={openHistory}
 				data-testid="open-history">Exercise history</Button
+			>
+			<Button
+				variant="secondary"
+				icon="chevron-right"
+				onclick={openHistoryById}
+				data-testid="open-history-by-id">By exercise id</Button
 			>
 		</div>
 		<ExerciseHistorySheet request={history} onclose={() => (history = null)} />
