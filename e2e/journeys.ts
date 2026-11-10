@@ -77,6 +77,20 @@ const SERIAL = ['serial-chromium', 'serial-webkit'] as const;
 const BLANK_1RM_JOURNEY =
 	'blank 1RMs: onboarding, a week-1 baseline program built from Today, a move and a one-off swap, all in History and persisted';
 
+/** journey-strength's journey 1: Today to History on the 'workout-day' program. */
+const STRENGTH_JOURNEY = {
+	file: 'journey-strength.serial.e2e.ts',
+	title:
+		'journey 1: Today → log with weight, reps and RPE → rest → plates → a machine swap → a refresh restores exactly → finish → History, exercise history and Done'
+};
+
+/** journey-strength's start from a week 1 the real generator built. */
+const GENERATED_START = {
+	file: 'journey-strength.serial.e2e.ts',
+	title:
+		'a week 1 the generator built: its first strength session asks for a load by RPE, invents none, and a logged set reaches Postgres'
+};
+
 export const JOURNEYS: readonly JourneyEntry[] = [
 	{
 		id: 'login',
@@ -127,9 +141,14 @@ export const JOURNEYS: readonly JourneyEntry[] = [
 			}
 		]
 	},
-	{ id: 'start-workout', prd: '§19: start workout', pending: 'journey-strength' },
-	{ id: 'log-sets', prd: '§19: log sets/reps/RPE', pending: 'journey-strength' },
-	{ id: 'rest-timer', prd: '§19: rest timer', pending: 'journey-strength' },
+	{
+		id: 'start-workout',
+		prd: '§19: start workout',
+		projects: SERIAL,
+		tests: [STRENGTH_JOURNEY, GENERATED_START]
+	},
+	{ id: 'log-sets', prd: '§19: log sets/reps/RPE', projects: SERIAL, tests: [STRENGTH_JOURNEY] },
+	{ id: 'rest-timer', prd: '§19: rest timer', projects: SERIAL, tests: [STRENGTH_JOURNEY] },
 	{
 		id: 'plate-calculator',
 		prd: '§19: plate calculator',
@@ -146,14 +165,25 @@ export const JOURNEYS: readonly JourneyEntry[] = [
 			}
 		]
 	},
-	{ id: 'substitute', prd: '§19: substitute an unavailable exercise', pending: 'journey-strength' },
+	{
+		id: 'substitute',
+		prd: '§19: substitute an unavailable exercise',
+		projects: SERIAL,
+		tests: [STRENGTH_JOURNEY]
+	},
 	{
 		id: 'refresh-restore',
 		prd: '§19: refresh and restore active workout',
-		pending: 'journey-strength'
+		projects: SERIAL,
+		tests: [STRENGTH_JOURNEY]
 	},
-	{ id: 'complete-workout', prd: '§19: complete workout', pending: 'journey-strength' },
-	{ id: 'view-history', prd: '§19: view history', pending: 'journey-strength' },
+	{
+		id: 'complete-workout',
+		prd: '§19: complete workout',
+		projects: SERIAL,
+		tests: [STRENGTH_JOURNEY]
+	},
+	{ id: 'view-history', prd: '§19: view history', projects: SERIAL, tests: [STRENGTH_JOURNEY] },
 	{ id: 'weekly-review', prd: '§19: weekly review', pending: 'journey-weekly-review' },
 	{ id: 'next-week', prd: '§19: generate next week', pending: 'journey-weekly-review' },
 	{
@@ -165,10 +195,20 @@ export const JOURNEYS: readonly JourneyEntry[] = [
 ];
 
 export const PERSISTENCE: readonly JourneyEntry[] = [
-	{ id: 'refresh-mid-workout', prd: '§18: refresh mid-workout', pending: 'journey-strength' },
+	{
+		id: 'refresh-mid-workout',
+		prd: '§18: refresh mid-workout',
+		projects: SERIAL,
+		tests: [STRENGTH_JOURNEY]
+	},
 	{ id: 'close-reopen', prd: '§18: close/reopen', pending: 'persistence-gaps' },
 	{ id: 'network-loss', prd: '§18: temporary network loss', pending: 'journey-offline-sync' },
-	{ id: 'restore-active', prd: '§18: restoring an active workout', pending: 'journey-strength' },
+	{
+		id: 'restore-active',
+		prd: '§18: restoring an active workout',
+		projects: SERIAL,
+		tests: [STRENGTH_JOURNEY]
+	},
 	{ id: 'sync-sets', prd: '§18: syncing completed sets', pending: 'journey-offline-sync' },
 	{ id: 'no-duplicates', prd: '§18: no duplicates', pending: 'journey-offline-sync' },
 	// Journey 3 of journey-offline-sync: a 500 then a 200, a lost response, an invalid mutation.
