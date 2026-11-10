@@ -4,7 +4,14 @@ import { JUST_SWAP_REASON } from '#lib/domain/workout/substitution.ts';
 import { fixFor } from './registry';
 
 const SET_TYPES = ['set.log', 'set.skip', 'set.edit'];
-const EDITOR_TYPES = ['run.log', 'run.segment', 'other.log', 'exercise.substitute'];
+const EDITOR_TYPES = [
+	'workout.update',
+	'workout.finish',
+	'run.log',
+	'run.segment',
+	'other.log',
+	'exercise.substitute'
+];
 const REWRITE_TYPES = ['workout.start', 'exercise.dislike'];
 
 describe('the Fix registry', () => {
