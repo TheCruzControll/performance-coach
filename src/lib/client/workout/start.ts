@@ -11,7 +11,8 @@
  * - startAdHoc(kind): the same, from a kit built on the device (domain adhoc.ts), in the owner's
  *   training-profile units, as GET /api/exercises gives them (owner decision: the profile wins
  *   over this device's display units, so a planned and an ad-hoc run read alike). Unreachable, the
- *   units the server last gave this device; never given, this device's own (deviceUnits).
+ *   units the server last gave this device; never given, this device's own (deviceUnits). The
+ *   library that answer carries is cached too (library.ts), so Add exercise works offline after.
  * - A kit or library request answering 401 is the sync engine's session loss, which is not running
  *   here: store.purgeServerCopies, then 'Sign in'. While a 401 has marked the device signed out,
  *   the server must answer as the owner before the workout held here shows, even in a conflict.
@@ -27,9 +28,10 @@ import type { IsoDate } from '#lib/domain/calendar.ts';
 import type { SessionKind } from '#lib/domain/training/types.ts';
 import { adhocKindOf, adhocKit, type AdhocKind } from '#lib/domain/workout/adhoc.ts';
 import { createMutation } from '#lib/domain/workout/index.ts';
-import type { KitUnits, StartKit } from '#lib/domain/workout/index.ts';
+import type { ExerciseLibrary, KitUnits, StartKit } from '#lib/domain/workout/index.ts';
 import { strengthTable } from '#lib/domain/workout/reducers/tables.ts';
 import { workoutPath, type WorkoutPath } from './kinds.ts';
+import { isLibrary, isUnits, LIBRARY_URL } from './library.ts';
 import { createStore, requestPersistence, type WorkoutStore, type WriteOutcome } from './store.ts';
 
 /** A kit not answered after this long is given up on: a saved kit, or the offline state. */
@@ -38,8 +40,7 @@ export const KIT_TIMEOUT_MS = 4_000;
 export const startKitUrl = (lineage: string) =>
 	`/api/workouts/kit?lineage=${encodeURIComponent(lineage)}`;
 
-/** The exercise library, which carries the owner's training-profile units. */
-export const LIBRARY_URL = '/api/exercises';
+export { LIBRARY_URL };
 
 /** What /workout's query asks for: ?start=<lineage> wins over ?new=run|other. */
 export type StartRequest = { lineage: string } | { kind: AdhocKind };
@@ -61,16 +62,13 @@ export interface KitOptions {
 type Failure = { ok: false; reason: 'signed-out' | 'missing' | 'unreachable' };
 /** unreachable: offline, a timeout, a 5xx or 403, or a body that is not a kit. */
 export type KitAnswer = { ok: true; kit: StartKit } | Failure;
-export type UnitsAnswer = { ok: true; units: KitUnits } | Failure;
+/** The library comes with the units when the body is one: the picker's copy, cached on start. */
+export type UnitsAnswer = { ok: true; units: KitUnits; library?: ExerciseLibrary } | Failure;
 
 const isKit = (body: unknown): body is StartKit => {
 	const kit = body as Partial<StartKit> | null;
 	return kit?.v === 1 && ['strength', 'run', 'other'].includes(kit.kind as string);
 };
-
-const isUnits = (units: Partial<KitUnits> | undefined): units is KitUnits =>
-	['kg', 'lb'].includes(units?.weight as string) &&
-	['km', 'mi'].includes(units?.distance as string);
 
 /** One bounded GET of a planned session's kit: the abort covers reading the body too. */
 export async function fetchKit(lineage: string, options: KitOptions = {}): Promise<KitAnswer> {
@@ -84,9 +82,9 @@ export async function fetchUnits(options: KitOptions = {}): Promise<UnitsAnswer>
 	const answer = await fetchJson(LIBRARY_URL, options);
 	if (!answer.ok) return answer;
 	const units = (answer.body as { units?: Partial<KitUnits> } | null)?.units;
-	return isUnits(units)
-		? { ok: true, units: { weight: units.weight, distance: units.distance } }
-		: { ok: false, reason: 'unreachable' };
+	if (!isUnits(units)) return { ok: false, reason: 'unreachable' };
+	const library = isLibrary(answer.body) ? { library: answer.body } : {};
+	return { ok: true, units: { weight: units.weight, distance: units.distance }, ...library };
 }
 
 async function fetchJson(
@@ -267,6 +265,7 @@ export async function startAdHoc(
 	const answer = vouched?.answer ?? (await fetchUnits(options));
 	if (!answer.ok && answer.reason === 'signed-out') return sessionLost(store);
 	if (answer.ok) await store.saveUnits(answer.units);
+	if (answer.ok && answer.library) await store.saveLibrary(answer.library);
 	const units = answer.ok ? answer.units : ((await store.getUnits()) ?? deviceUnits);
 	return begin(adhocKit(kind, units, localDay(now())), options);
 }

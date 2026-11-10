@@ -45,6 +45,13 @@ shared component costs every route, Security included.
   ceremony load on demand with the other sheets and passkey helpers; `/` and
   `/recover/passkey` gain 0.1 KB (one error mapping in those helpers).
 
+- **Train renders without the plate calculator's CSS** (`/(app)/train` route CSS 14.3 → 11.0 KB).
+  The toasts' styles moved into every route's CSS (0.3 KB) when the toasts joined the initial JS,
+  which put Train over its 14 KB. Its `PlateSheet` loaded on intent, but the server build could
+  reach that import, so SvelteKit linked its stylesheets (sheet, stepper, segmented control) into
+  Train. The server build now leaves it out (`import.meta.env.SSR`), as it does the plan sheet,
+  and those stylesheets arrive with the sheet (#245).
+
 - **`/design` renders with the CSS of its Buttons group only** (13.8 → 6.7 KB). Its Inputs, Data
   and Feedback groups loaded their JS with their tab, but SvelteKit still linked their CSS into
   the page as render-blocking stylesheets, because the server build could reach their imports.
@@ -330,6 +337,51 @@ pages). "Before" is that run with m3/33's query and index commit reverted.
 `program_version_weeks`) but ran 2.6 times faster, and it reads only the named lineages' copies
 rather than the whole table. PR #111 has both plans of each query node by node.
 
+## M2X (desktop) — measured 2026-11-10
+
+The desktop view (PRD §7, §16), measured by CI on main `e93d417` after the last desktop slice
+(#265): run
+[42737223258](https://github.com/TheCruzControll/performance-coach/actions/runs/42737223258) ran
+`pnpm build:node && pnpm budgets` and both Lighthouse commands on GitHub's 4-vCPU Linux runners. Main also carries M3 and the first M4 and M5 screens by then, so these numbers are the
+whole app's; each desktop PR records its own before and after.
+
+- **The shell is CSS only.** The rail, the brand mark and the centred column add no JavaScript:
+  moving the nav before `<main>` cost +2 B of initial JS on app routes (#113, at most 10 B
+  allowed), and every screen's desktop layout is CSS and container queries.
+- **The shell's stylesheet stays inlined** into every app page: AppShell is 3,660 of SvelteKit's
+  4,096-character `inlineStyleThreshold`, and `pnpm budgets` fails if it is ever linked instead.
+  Page-agnostic shell rules go in `src/lib/ui/styles/layout.css`.
+- **Security's headroom**: the tightest route when the desktop work was planned (61,295 of
+  61,440 B on 2026-11-06) is now 56.8 KB, 3.2 KB under the 60 KB gate, after #85 moved its labels
+  and times to the server and the slimmer shared entry. The tightest route is `/(app)/coach/[[thread]]` at 58.5 KB.
+
+Initial JS and route CSS (gzip), every route; all pass, two preloaded fonts each:
+
+| Route                              | Initial JS | Route CSS |
+| ---------------------------------- | ---------: | --------: |
+| `/(app)/coach/[[thread]]`          |    58.5 KB |   10.4 KB |
+| `/(app)/train`                     |    58.2 KB |   11.0 KB |
+| `/(app)/train/session/[key]`       |    57.9 KB |   10.6 KB |
+| `/(app)/today`                     |    57.9 KB |   13.3 KB |
+| `/(app)/progress/workouts/[[id]]`  |    57.7 KB |   10.5 KB |
+| `/(app)/profile`                   |    57.0 KB |    9.1 KB |
+| `/(app)/profile/security`          |    56.8 KB |   11.3 KB |
+| `/(app)/train/history/[[version]]` |    55.8 KB |   10.2 KB |
+| `/(app)/profile/[section]`         |    55.3 KB |    7.9 KB |
+| `/setup`                           |    54.0 KB |    7.6 KB |
+| `/(app)/progress`                  |    53.9 KB |    8.3 KB |
+| `/onboarding/[[step]]`             |    53.9 KB |    6.7 KB |
+| `/design`                          |    53.6 KB |    7.7 KB |
+| `/workout`                         |    53.4 KB |    8.4 KB |
+| `/workout/session`                 |    53.4 KB |    8.2 KB |
+| `/workout/run`                     |    53.4 KB |    8.2 KB |
+| `/(app)/offline`                   |    52.5 KB |    7.0 KB |
+| `/`                                |    52.3 KB |    6.5 KB |
+| `/recover/passkey`                 |    51.9 KB |    6.1 KB |
+| `/recover`                         |    50.9 KB |    6.4 KB |
+
+Lighthouse on the same run, mobile and desktop: see "Lighthouse (desktop)" below.
+
 ## Budgets (enforced)
 
 `pnpm budgets` (`scripts/check-budgets.ts`) reads the SvelteKit build output and fails CI when a
@@ -363,6 +415,11 @@ components for no gain to any single page load. The render-blocking cost is per 
 is what is budgeted now: 14 KB is ~2 KB above the heaviest route when the change was made
 (`/design`, 11.7 KB). The report still prints the whole-build total for tracking.
 
+The desktop shell (rail, brand mark, centred column) is CSS only: moving the nav before `<main>`
+costs at most 10 B of initial JS on app routes (measured +2 B), and AppShell's stylesheet stays
+inlined into every app page (3,660 of 4,096 characters; `pnpm budgets` fails if it is ever linked
+instead).
+
 The same script also guards the CSS output: every built rule that ships a `-webkit-` property must
 ship the standard one too (see the glass note in `docs/design-system.md`).
 
@@ -393,13 +450,14 @@ Before and after the slimmer shared entry (2026-11-07). Before is main at that d
 The JS every route loads (the app entry, the root layout and what they import) went from
 47.7 KB to 44.5 KB. Of what is left, the Svelte runtime (18.9 KB), the SvelteKit client
 (16.9 KB) and its router (entry, route table and routing, 4.3 KB) are framework. The app's own
-share is error reporting (0.7 KB, needed before anything else runs), the toast queue and live
-region, and the record of screens shown for RUM. These moved out of the initial JS:
+share is error reporting (0.7 KB, needed before anything else runs), the toasts (`Toaster`) and
+the record of screens shown for RUM. The toasts stay in the initial JS so that none waits on the
+network: loaded on demand (0.8 KB), a toast shown offline had no code, and a module fetch that
+fails stays failed for the page's life. Keeping a plain-text stand-in and retrying online cost
+every route 0.1 KB more than the toasts themselves. They slide with CSS animations, not
+`svelte/transition`: its runtime sat in the Svelte chunk of every route for this one component
+(1.1 KB). These moved out of the initial JS:
 
-- **The toasts** (`ToastList`, loaded on idle or at the first toast). They slide with CSS
-  animations, not `svelte/transition`: its runtime sat in the Svelte chunk of every route for
-  this one component (1.1 KB). The empty live region stays in the root layout. Each toast's
-  time on screen starts when it appears, so one shown before `ToastList` arrives is not cut short.
 - **RUM** (`vitals.ts`), now imported when it starts on idle. The root layout keeps only
   `visits.ts`, which records each screen for attribution.
 - **Preferences** (`preferences.svelte.ts`). The theme is applied by `src/app.html` before
@@ -544,6 +602,34 @@ this build reproduced it: per-run TBT up to 635 ms, perf 84–100. Findings:
   iPhone. What counts in the end is RUM p75 from the owner's device (below), which starts when
   the app is deployed.
 
+## Lighthouse (desktop)
+
+Command (what CI runs after the mobile run, as a step that never fails the job):
+`pnpm build:node && pnpm lighthouse --desktop --seed --runs 3 --assert`. It audits the mobile
+run's screens with Lighthouse's desktop preset (desktop throttling, no CPU slowdown) at
+1440 × 900 and 1x (`scripts/lib/lighthouse-config.ts`), applies the same `--assert` thresholds and
+writes to `lighthouse-reports/desktop`. Measured by CI on main `e93d417` (run 42737223258,
+Lighthouse 13.6.0, Chrome 153.0.8010.12), beside that run's mobile numbers (the command under
+"Lighthouse (mobile)"). Both stop a route early once its runs decide every threshold, here after
+2 to 4 runs; every threshold was met. Accessibility and best practices scored 100 on every screen
+in both runs.
+
+| Screen                 | Desktop perf |    LCP |  TBT |   CLS | Mobile perf |     LCP |   TBT |
+| ---------------------- | -----------: | -----: | ---: | ----: | ----------: | ------: | ----: |
+| `/`                    |          100 | 251 ms | 0 ms | 0.000 |         100 |  907 ms | 22 ms |
+| `/today · build card`  |          100 | 325 ms | 0 ms | 0.000 |         100 | 1205 ms |  0 ms |
+| `/train`               |          100 | 286 ms | 0 ms | 0.000 |         100 | 1055 ms |  1 ms |
+| `/progress`            |          100 | 246 ms | 0 ms | 0.000 |         100 |  903 ms |  6 ms |
+| `/coach`               |          100 | 246 ms | 0 ms | 0.000 |         100 |  905 ms |  3 ms |
+| `/profile`             |          100 | 284 ms | 0 ms | 0.000 |         100 | 1055 ms |  5 ms |
+| `/profile/security`    |          100 | 245 ms | 0 ms | 0.000 |         100 |  904 ms |  8 ms |
+| `/today · program`     |          100 | 324 ms | 0 ms | 0.000 |         100 | 1205 ms |  0 ms |
+| `/train · program`     |          100 | 285 ms | 0 ms | 0.000 |         100 | 1054 ms | 28 ms |
+| `/train/session/[key]` |          100 | 324 ms | 0 ms | 0.000 |         100 | 1203 ms | 29 ms |
+| `/train/history`       |          100 | 454 ms | 0 ms | 0.000 |         100 | 1054 ms |  0 ms |
+
+Desktop LCP is 245–454 ms with no blocking time; mobile LCP is 903–1205 ms with TBT at most 29 ms.
+
 ## Targets
 
 | Metric                    | Target (lab)                  | Target (field, RUM p75) | M1 status                                                               |
@@ -604,4 +690,5 @@ ORIGIN=http://localhost:4174 pnpm build:node   # the origin is baked into Node b
 pnpm budgets
 E2E_PERF_ALONE=1 pnpm test:e2e --project=perf  # owner setup, then the main-thread budget alone
 pnpm lighthouse --runs 5 --assert --min-perf 0.9 --max-tbt 300  # every screen (CI command)
+pnpm lighthouse --desktop --seed --runs 3 --assert  # the same screens at 1440 × 900 (CI, not gating)
 ```

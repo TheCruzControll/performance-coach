@@ -4,9 +4,14 @@
  * to refuse test-only routes in a Vercel build whatever its runtime environment says. It must
  * be set for every Vercel build, and only for builds: `vite dev` and Vitest behave like a local
  * run, and Node builds (e2e, Lighthouse) can still enable test routes.
+ *
+ * It also declares the opt-in live coach suite's Vitest project, which CI must never run: it calls
+ * the real model with a key and is billed (tests/live/coach.live.test.ts).
  */
+import { readdirSync, readFileSync } from 'node:fs';
 import type { ConfigEnv, UserConfig } from 'vite';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { liveMode } from '../tests/live/gate.ts';
 
 /** The `__VERCEL_BUILD__` replacement vite.config.ts gives for this adapter and command. */
 async function vercelBuildFlag(adapter: string | undefined, command: ConfigEnv['command']) {
@@ -32,5 +37,62 @@ describe('vite.config.ts build target', () => {
 	it('leaves it undefined outside a build (vite dev, Vitest)', async () => {
 		expect(await vercelBuildFlag(undefined, 'serve')).toBeUndefined();
 		expect(await vercelBuildFlag('node', 'serve')).toBeUndefined();
+	});
+});
+
+/** The Vitest projects vite.config.ts declares, as Vitest reads them. */
+interface Project {
+	name: string;
+	include: string[];
+	globalSetup?: string[];
+}
+async function testProjects(): Promise<Record<string, Project>> {
+	vi.resetModules();
+	const { default: config } = await import('../vite.config.ts');
+	const resolved = await config({ command: 'serve', mode: 'test' });
+	const projects = (resolved.test?.projects ?? []) as unknown as { test: Project }[];
+	return Object.fromEntries(projects.map((p) => [p.test.name, p.test]));
+}
+
+describe('the live coach suite (tests/live)', () => {
+	it('is its own Vitest project, which no other project includes', async () => {
+		const projects = await testProjects();
+		expect(projects.live?.include).toEqual(['tests/live/**/*.live.test.ts']);
+		expect(projects.live?.globalSetup).toEqual(['tests/live/setup.ts']);
+		for (const name of ['unit', 'integration', 'explain'])
+			for (const glob of projects[name]!.include)
+				expect(
+					glob.startsWith('tests/live') || glob.startsWith('tests/**'),
+					`${name}: ${glob}`
+				).toBe(false);
+		expect(projects.integration?.include).toEqual(['tests/integration/**/*.test.ts']);
+	});
+
+	it('never runs in CI: no workflow runs the live project, a bare vitest run, or pnpm test', () => {
+		const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+		expect(pkg.scripts['test:live']).toBe('vitest run --project live');
+		expect(pkg.scripts['test:unit']).toBe('vitest run --project unit');
+		expect(pkg.scripts['test:integration']).toBe('vitest run --project integration');
+		expect(pkg.scripts.test).not.toMatch(/test:live|vitest run(?! --project (unit|integration))/);
+		const dir = new URL('../.github/workflows/', import.meta.url);
+		const workflows = readdirSync(dir).filter((file) => /\.ya?ml$/.test(file));
+		expect(workflows.length).toBeGreaterThan(0);
+		for (const file of workflows) {
+			const text = readFileSync(new URL(file, dir), 'utf8');
+			expect(text, file).not.toMatch(/test:live|--project[ =]live|LIVE_LLM/);
+			expect(text, file).not.toMatch(/vitest run(?! --project (unit|integration|explain)\b)/);
+			expect(text, file).not.toMatch(/pnpm (run )?test(\s|$)/m);
+		}
+	});
+
+	it('runs only with LIVE_LLM=1 and a key, or LIVE_LLM_DRY=1 on the mock', () => {
+		expect(liveMode({})).toBe('off');
+		expect(liveMode({ LIVE_LLM: '1' })).toBe('off');
+		expect(liveMode({ LIVE_LLM: '1', ANTHROPIC_API_KEY: '  ' })).toBe('off');
+		expect(liveMode({ ANTHROPIC_API_KEY: 'sk-ant-example' })).toBe('off');
+		expect(liveMode({ LIVE_LLM: 'true', ANTHROPIC_API_KEY: 'sk-ant-example' })).toBe('off');
+		expect(liveMode({ LIVE_LLM: '1', ANTHROPIC_API_KEY: 'sk-ant-example' })).toBe('live');
+		expect(liveMode({ LIVE_LLM_DRY: '1' })).toBe('dry');
+		expect(liveMode({ LIVE_LLM: '1', LIVE_LLM_DRY: '1', ANTHROPIC_API_KEY: 'k' })).toBe('live');
 	});
 });
