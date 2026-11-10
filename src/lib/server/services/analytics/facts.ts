@@ -17,13 +17,13 @@
 import type { AdherenceFacts } from '../../../domain/analytics/adherence';
 import type { PlannedLines } from '../../../domain/analytics/prescribed';
 import type { PlannedRun, RunFact } from '../../../domain/analytics/running';
-import type { RecoveryEntry } from '../../../domain/analytics/workload';
 import { addDays, type IsoDate } from '../../../domain/calendar';
 import { localDay } from '../../../domain/dates';
 import type { RaceResult, StrengthBaseline } from '../../../domain/profile/types';
 import {
 	createAnalyticsRepository,
 	type AnalyticsRepository,
+	type RecoveryFact,
 	type SessionFact,
 	type SetFact
 } from '../../db/repositories/analytics';
@@ -185,7 +185,7 @@ export function createFactsLoader(
 			(await plannedParts()).flatMap(([part]) => part!.runs),
 
 		/** Recovery notes by date. */
-		recovery: (): Promise<RecoveryEntry[]> =>
+		recovery: (): Promise<RecoveryFact[]> =>
 			flat(windowed('recovery', (w) => serial(() => repository.recovery(ownerId, w.from, w.to)))),
 
 		/** The day of the owner's first counted workout, ever; null before any. */

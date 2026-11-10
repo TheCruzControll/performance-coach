@@ -399,6 +399,10 @@ later-pass screen).
 - **Progress** (`/progress`): wide (`data-layout="wide"` on its root). From 1024 px the view nav
   and the period picker share one row over the view; the overview's five trend tiles keep one row,
   and its discipline cards and chart frames pair up from a 44 rem column (a container query).
+- **Exercise detail** (`/progress/exercises/[id]`): wide. From a 44 rem column (a container
+  query) the e1RM tile sits beside its context, the e1RM chart beside the rep-max table, and the
+  PRs beside the top sets and RPE; the recent sessions fill rows of cards. From 1024 px the period
+  picker keeps 24 rem.
 - **Coach** (`/coach`): readable, as a conversation should be. From 1024 px the suggestions sit in
   two columns; the composer is screen chrome, centred over the column.
 - **Security** (`/profile/security`): readable, a settings screen, and left as it is (its route
@@ -453,8 +457,9 @@ later-pass screen).
 - A screen in the shell checks `<main>` against the rail, never the window, at the width its
   `data-layout` declares, read from the token rather than written as a number:
   `expectMainCentred(page, await tokenPx(page, '--content-readable'))` (or `--content-wide`).
-- `*.desktop.e2e.ts` specs run in the `desktop-chromium` and `desktop-webkit` projects (1440 × 900),
-  not in the iPhone projects.
+- `*.desktop.e2e.ts` specs run in the `desktop-chromium` project (1440 × 900), not in the iPhone
+  projects; a serial spec's desktop cases use `test.use(DESKTOP)` and run on Chromium and WebKit.
+  There is no desktop WebKit project (the owner's desktop browser is Chrome; docs/testing.md).
 
 ## Components (`src/lib/ui/components`)
 
@@ -471,7 +476,7 @@ later-pass screen).
 | `AppNav`            | Primary navigation (real links, preload on tap): the glass bottom bar, a solid left rail from 1024 px under the brand mark; one `<nav>`, so destinations, order and `aria-current` match at every width (Responsive layout → Shell).                                               |
 | `Skeleton`          | Shimmer placeholder (static under reduced motion); pair with `aria-busy` on the region.                                                                                                                                                                                            |
 | `EmptyState`        | Medallion glyph (tone-tinted), title, guidance, optional actions; `compact` variant.                                                                                                                                                                                               |
-| `Toaster` + `toast` | Polite live region; `neutral · positive · danger`; optional action; auto-dismiss.                                                                                                                                                                                                  |
+| `Toaster` + `toast` | Polite live region; `neutral · positive · danger`; optional action; auto-dismiss. Screen chrome at the top, centred over the column (beside the rail from 1024 px), or in the window outside the shell.                                                                            |
 | `PageHeader`        | Eyebrow + large title + trailing slot.                                                                                                                                                                                                                                             |
 | `BrandMark`         | The performance-gauge mark (also the PWA icon).                                                                                                                                                                                                                                    |
 | `Stat`              | The one metric tile: label, big value + inline unit, optional rating (word + dot), caption. `level 1` on the canvas (28 px value), `level 2` nested in a card (22 px). No value → a dash announced as "No data yet", never a made-up number.                                       |
@@ -534,7 +539,7 @@ behind a confirming `BottomSheet`, and toasts for outcomes.
 ## Accessibility checklist (applies to every new component)
 
 - Touch targets ≥ 44 × 44 px; visible `:focus-visible` ring (`--color-accent-ring`).
-- Text contrast ≥ 4.5:1 in **both** themes. `e2e/a11y.e2e.ts` runs axe-core (WCAG 2.1 A/AA)
+- Text contrast ≥ 4.5:1 in **both** themes. `e2e/a11y-suite.ts` runs axe-core (WCAG 2.1 A/AA)
   on every screen, the plate-calculator sheet and each `/design` group in dark and light; CI
   runs it with the rest of the e2e suite (Lighthouse only audits the default dark theme).
 - Use native elements first (`<dialog>`, `<button>`, links); ARIA patterns for composites.
