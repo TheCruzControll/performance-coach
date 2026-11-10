@@ -6,7 +6,7 @@
   list one tab stop, at the current exercise; Navigation.svelte, loaded after the first render,
   handles them (the arrows, Home and End move the focus within it; Enter or a click makes an
   exercise current, focus staying on it), so /workout's first paint carries none of it. Rows have
-  hover and focus states.
+  hover and focus states. After the last exercise, Add exercise (`onadd`) opens the picker.
 -->
 <script lang="ts" module>
 	export interface ExerciseItem {
@@ -24,9 +24,12 @@
 		items: ExerciseItem[];
 		/** The current exercise's position. */
 		current?: number;
+		/** Add exercise, after the last one: opens the picker (`onintent` fetches it). */
+		onadd?: (event: MouseEvent) => void;
+		onintent?: () => void;
 	}
 
-	let { items, current }: Props = $props();
+	let { items, current, onadd, onintent }: Props = $props();
 </script>
 
 <nav class="side" aria-label="Exercises" data-testid="workout-side">
@@ -48,6 +51,18 @@
 			</li>
 		{/each}
 	</ol>
+	{#if onadd}
+		<button
+			type="button"
+			class="row add"
+			onpointerdown={onintent}
+			onclick={onadd}
+			data-testid="side-add-exercise"
+		>
+			<span class="badge" aria-hidden="true">+</span>
+			<span class="name">Add exercise</span>
+		</button>
+	{/if}
 </nav>
 
 <style>
@@ -136,6 +151,10 @@
 		.name {
 			overflow-wrap: anywhere;
 			font-weight: var(--weight-medium);
+		}
+
+		.add {
+			color: var(--color-text-secondary);
 		}
 
 		.count {
