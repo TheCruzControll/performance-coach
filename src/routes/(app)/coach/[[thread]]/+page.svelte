@@ -45,7 +45,8 @@
 	type Older = { rows: ThreadRowView[]; next: string | null };
 	/**
 	 * Older pages loaded below the first, kept with the first page's conversations: a new first
-	 * page (a conversation answered meanwhile) starts the list again.
+	 * page (a conversation answered meanwhile), or a conversation renamed, archived or unarchived
+	 * (onchanged), starts the list again.
 	 */
 	let older = $state.raw<{ after: string; pages: Older[] } | null>(null);
 	const first = $derived(ready ? ready.threads.map((row) => row.id).join() : '');
@@ -93,7 +94,8 @@
 				throw error;
 			}
 		));
-	const canAsk = $derived(data.coach.status === 'ready');
+	// An archived conversation is read-only until unarchived (its banner, ArchivedBanner).
+	const canAsk = $derived(data.coach.status === 'ready' && !ready?.thread?.archived);
 
 	let starting = false;
 	async function send(text: string) {
@@ -211,6 +213,7 @@
 						{loadingOlder}
 						{olderFailed}
 						onolder={showOlder}
+						onchanged={() => (older = null)}
 					/>{/if}
 			{:catch}
 				<CoachNotice
