@@ -529,7 +529,7 @@
 		display: grid;
 		align-content: start;
 		gap: var(--space-4);
-		min-height: 12.25rem;
+		min-height: 13rem;
 	}
 
 	/*

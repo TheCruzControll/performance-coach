@@ -51,6 +51,9 @@
 	let query = $state('');
 	let search = $state<HTMLInputElement>();
 	let list = $state<HTMLUListElement>();
+	/** Each load's number: an earlier one that answers late changes nothing. Declared before the
+	   effect below, which runs load() as the component starts. */
+	let loads = 0;
 
 	$effect.pre(() => {
 		void request;
@@ -58,9 +61,6 @@
 		open = true;
 		untrack(() => void load());
 	});
-
-	/** Each load's number: an earlier one that answers late changes nothing. */
-	let loads = 0;
 
 	/** The cached list at once, then the server's when it answers. */
 	async function load() {
