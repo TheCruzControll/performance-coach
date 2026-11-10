@@ -47,6 +47,29 @@ export const AUTH_DIR = 'e2e/.auth';
 /** Where the server under test writes its backups (BACKUP_DIR): a local folder store. */
 export const E2E_BACKUP_DIR = path.resolve(import.meta.dirname, '../test-results/backups');
 
+/** Whether `host`:`port` accepts a TCP connection within a second. */
+function accepts(port: number, host: string): Promise<boolean> {
+	return new Promise((resolve) => {
+		const socket = connect({ port, host });
+		socket.setTimeout(1_000);
+		const done = (taken: boolean) => {
+			socket.destroy();
+			resolve(taken);
+		};
+		socket.once('connect', () => done(true));
+		socket.once('error', () => done(false));
+		socket.once('timeout', () => done(false));
+	});
+}
+
+/**
+ * Whether something accepts TCP connections on localhost:`port`, over IPv4 or IPv6. The TLS proxy
+ * listens on both, and `localhost` resolves to only one of them, so both loopbacks are probed.
+ */
+export async function portTaken(port: number): Promise<boolean> {
+	return (await accepts(port, '127.0.0.1')) || (await accepts(port, '::1'));
+}
+
 async function isUp(url: string): Promise<boolean> {
 	try {
 		const res = await fetch(url, { signal: AbortSignal.timeout(1_000) });
@@ -109,19 +132,7 @@ const effects: SetupEffects = {
 		rmSync(dir, { recursive: true, force: true });
 		mkdirSync(dir, { recursive: true });
 	},
-	portTaken(port) {
-		return new Promise((resolve) => {
-			const socket = connect({ port, host: 'localhost' });
-			socket.setTimeout(1_000);
-			const done = (taken: boolean) => {
-				socket.destroy();
-				resolve(taken);
-			};
-			socket.once('connect', () => done(true));
-			socket.once('error', () => done(false));
-			socket.once('timeout', () => done(false));
-		});
-	},
+	portTaken,
 	freePort() {
 		return new Promise((resolve, reject) => {
 			const probe = createServer();

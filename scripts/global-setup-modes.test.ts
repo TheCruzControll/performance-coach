@@ -5,13 +5,15 @@
  * reset, refuses a database with no owner, and starts the build with test routes off. With
  * E2E_TLS=1 the server listens on a free internal port behind the TLS proxy, which serves E2E_PORT.
  */
-import { EventEmitter } from 'node:events';
+import { EventEmitter, once } from 'node:events';
+import { createServer, type AddressInfo } from 'node:net';
 import type { ChildProcess } from 'node:child_process';
 import { describe, expect, it, vi } from 'vitest';
 import {
 	AUTH_DIR,
 	E2E_BACKUP_DIR,
 	E2E_DATABASE_URL,
+	portTaken,
 	runGlobalSetup,
 	type SetupEffects
 } from '../e2e/global-setup.ts';
@@ -228,5 +230,22 @@ describe('global setup modes', () => {
 		const { io, server } = fakes({ proxyFails: true });
 		await expect(runGlobalSetup(TLS_URL, { E2E_TLS: '1' }, io)).rejects.toThrow(/port in use/);
 		expect(server.kill).toHaveBeenCalledWith('SIGKILL');
+	});
+});
+
+describe('portTaken', () => {
+	it('sees a server on either loopback, since the proxy listens on both', async () => {
+		for (const host of ['127.0.0.1', '::1']) {
+			const server = createServer().listen(0, host);
+			await once(server, 'listening');
+			const { port } = server.address() as AddressInfo;
+			try {
+				expect(await portTaken(port), host).toBe(true);
+			} finally {
+				server.close();
+				await once(server, 'close');
+			}
+			expect(await portTaken(port), `${host} after close`).toBe(false);
+		}
 	});
 });
