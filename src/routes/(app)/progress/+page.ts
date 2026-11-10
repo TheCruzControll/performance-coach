@@ -1,5 +1,6 @@
 import { browser } from '$app/env';
 import { resolve } from '$app/paths';
+import type { Component } from 'svelte';
 import type { PageLoad } from './$types';
 import type { ProgressView } from './params';
 import { preloadTrends, servedTrends, SERVED_IN_PLACE } from './trends';
@@ -11,13 +12,26 @@ import { preloadTrends, servedTrends, SERVED_IN_PLACE } from './trends';
  */
 const VIEWS = {
 	overview: () => import('./OverviewView.svelte'),
-	strength: () => import('./StrengthView.svelte')
+	strength: () => import('./StrengthView.svelte'),
+	running: () => import('./RunningView.svelte')
 } as const satisfies Record<ProgressView, () => Promise<unknown>>;
 
-/** Each loaded view's data with its own component, so the page passes it the props it takes. */
-type WithView<D> = D extends { failed: false; view: infer V extends ProgressView }
-	? D & { View: Awaited<ReturnType<(typeof VIEWS)[V]>>['default']; served: string | undefined }
-	: D & { View: null; served: undefined };
+/**
+ * Each loaded view's data with its component. The overview takes its props by name; every other
+ * view takes the whole of its data and reads its own id from it (strength, running), so the page
+ * renders them all in one branch.
+ */
+type WithView<D, All = D> = D extends { failed: false; view: 'overview' }
+	? D & {
+			View: Awaited<ReturnType<(typeof VIEWS)['overview']>>['default'];
+			served: string | undefined;
+		}
+	: D extends { failed: false }
+		? D & {
+				View: Component<Exclude<Extract<All, { failed: false }>, { view: 'overview' }>>;
+				served: undefined;
+			}
+		: D & { View: null; served: undefined };
 
 /**
  * Whether the next load hydrates the server's HTML: only the first one in a document opened on

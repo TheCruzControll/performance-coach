@@ -101,10 +101,11 @@
 						Retry
 					</Button>
 				</div>
-			{:else if data.view === 'strength'}
-				<data.View strength={data.strength} />
-			{:else if data.View}
+			{:else if data.view === 'overview'}
 				<data.View overview={data.overview} served={data.served} />
+			{:else}
+				<!-- Every other view takes its data by its own id (strength, running): one branch for all. -->
+				<data.View {...data} />
 			{/if}
 		</PeriodPicker>
 	</div>

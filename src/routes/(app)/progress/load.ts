@@ -28,6 +28,7 @@ import {
 	type OverviewSection,
 	type ProgressOverview
 } from '#lib/server/services/analytics/overview.ts';
+import { getRunningDashboard } from '#lib/server/services/analytics/running.ts';
 import { getStrengthDashboard } from '#lib/server/services/analytics/strength.ts';
 import { recordServerError, type ServerErrorInput } from '#lib/server/services/errors.ts';
 import { resolveDeps, type TrainingDeps } from '#lib/server/services/training/shared.ts';
@@ -39,6 +40,7 @@ import { SERIES_TOKEN } from '#lib/ui/charts/palette.ts';
 import type { ChartTableData } from '#lib/ui/charts/table.ts';
 import { shortDate } from '#lib/ui/program/words.ts';
 import type { ProgressParams, ProgressView } from './params.ts';
+import { runningData, type RunningData } from './running-data.ts';
 import { strengthData, type StrengthData } from './strength-data.ts';
 
 /** A discipline's card title (the services' areas: 'general' is training as a whole). */
@@ -111,7 +113,8 @@ export interface OverviewData {
 export type ProgressData =
 	| ({ failed: true } & ProgressParams)
 	| ({ failed: false; view: 'overview'; overview: OverviewData } & Omit<ProgressParams, 'view'>)
-	| ({ failed: false; view: 'strength'; strength: StrengthData } & Omit<ProgressParams, 'view'>);
+	| ({ failed: false; view: 'strength'; strength: StrengthData } & Omit<ProgressParams, 'view'>)
+	| ({ failed: false; view: 'running'; running: RunningData } & Omit<ProgressParams, 'view'>);
 
 export interface ProgressRequest extends ProgressParams {
 	/** What a recorded failure carries: the request's id, method, path, route and app version. */
@@ -125,6 +128,8 @@ export interface ProgressDeps extends Pick<TrainingDeps, 'db'> {
 	overview?: typeof getProgressOverview;
 	/** The Strength view's read; getStrengthDashboard unless given. */
 	strength?: typeof getStrengthDashboard;
+	/** The Running view's read; getRunningDashboard unless given. */
+	running?: typeof getRunningDashboard;
 	/** Where a failure goes; recordServerError unless given. */
 	record?: typeof recordServerError;
 	/** The owner's day at `now`; ownerToday unless given. */
@@ -309,6 +314,7 @@ export async function loadProgress(
 		errorsDb,
 		overview = getProgressOverview,
 		strength = getStrengthDashboard,
+		running = getRunningDashboard,
 		record = recordServerError,
 		today: dayOf = ownerToday
 	}: ProgressDeps = {}
@@ -319,6 +325,10 @@ export async function loadProgress(
 		if (view === 'strength') {
 			const d = await strength(executor, ownerId, { period, today });
 			return { failed: false, view, period, strength: strengthData(d) };
+		}
+		if (view === 'running') {
+			const d = await running(executor, ownerId, { period, today });
+			return { failed: false, view, period, running: runningData(d) };
 		}
 		const o = await overview(executor, ownerId, { period, today });
 		return { failed: false, view, period, overview: overviewData(o) };
