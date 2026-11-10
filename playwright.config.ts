@@ -43,7 +43,7 @@ const PERF = ['**/perf.e2e.ts', '**/perf-*.e2e.ts'];
 const FUNCTIONAL_IGNORE = [...PERF, '**/*.exclusive.e2e.ts', '**/*.serial.e2e.ts', SWEEP];
 const DESKTOP_ONLY = '**/*.desktop.e2e.ts';
 /** What the desktop project runs: desktop specs, the width-agnostic shell and offline specs, and axe. */
-const DESKTOP_SPECS = [DESKTOP_ONLY, '**/shell.e2e.ts', '**/offline.e2e.ts', '**/a11y.e2e.ts'];
+const DESKTOP_SPECS = [DESKTOP_ONLY, '**/shell.e2e.ts', '**/offline.e2e.ts', '**/a11y-*.e2e.ts'];
 /** A device descriptor resized to the DESKTOP window (e2e/desktop.ts) that desktop specs use. */
 const desktopWindow = (device: string) => ({ ...devices[device], ...DESKTOP });
 const SERIAL = '**/*.serial.e2e.ts';
