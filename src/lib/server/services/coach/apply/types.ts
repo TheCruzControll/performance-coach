@@ -36,7 +36,12 @@ export type ApplyOutcome =
 	/** Accepted, and applied later by something else (next_cycle, by M6's cycle review). */
 	| { status: 'accepted'; awaits: typeof NEXT_CYCLE_AWAITS }
 	/** It can no longer apply as proposed. */
-	| { status: 'superseded'; reason: SupersededReason };
+	| {
+			status: 'superseded';
+			reason: SupersededReason;
+			/** The page that holds it now: a next_cycle folded into its cycle review. */
+			href?: string;
+	  };
 
 export type Applier<K extends ProposalKind> = (input: ApplyInput<K>) => Promise<ApplyOutcome>;
 export type Appliers = { [K in ProposalKind]: Applier<K> };
