@@ -146,7 +146,13 @@ export const icons = {
 	// A metric's direction (M6 trend tiles): the same line rising, falling or level, head at the end.
 	'trend-up': ['M4 16.5 9.5 11l3.5 3.5L20 7.5', 'M14.5 7.5H20V13'],
 	'trend-down': ['M4 7.5 9.5 13l3.5-3.5 7 7', 'M14.5 16.5H20V11'],
-	'trend-flat': ['M4 12h16', 'M16.5 8.5 20 12l-3.5 3.5']
+	'trend-flat': ['M4 12h16', 'M16.5 8.5 20 12l-3.5 3.5'],
+	// More actions (the workout menu): three dots in a row.
+	more: [
+		'fill:M5.5 13.75a1.75 1.75 0 1 0 0-3.5 1.75 1.75 0 0 0 0 3.5Z',
+		'fill:M12 13.75a1.75 1.75 0 1 0 0-3.5 1.75 1.75 0 0 0 0 3.5Z',
+		'fill:M18.5 13.75a1.75 1.75 0 1 0 0-3.5 1.75 1.75 0 0 0 0 3.5Z'
+	]
 } as const satisfies Record<string, readonly string[]>;
 
 export type IconName = keyof typeof icons;

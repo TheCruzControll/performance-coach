@@ -230,25 +230,31 @@ export function recoveryNotesSince(db: Executor, ownerId: string, since: string,
 		.limit(limit);
 }
 
-/** The owner's newest weekly reviews. */
+/**
+ * The owner's newest weekly reviews, live revisions only: superseded_at is null repeats the
+ * predicate of the partial weekly_reviews_owner_week_uq.
+ */
 export function latestWeeklyReviews(db: Executor, ownerId: string, limit: number) {
 	const w = weeklyReviews;
 	return db
 		.select({ id: w.id, date: w.weekStartsOn, summary: w.summary })
 		.from(w)
-		.where(eq(w.ownerId, ownerId))
+		.where(and(eq(w.ownerId, ownerId), isNull(w.supersededAt)))
 		.orderBy(desc(w.weekStartsOn))
 		.limit(limit);
 }
 
-/** The owner's newest cycle review, through their programs. */
+/**
+ * The owner's newest cycle review, through their programs, live revisions only (the predicate of
+ * the partial cycle_reviews_block_uq).
+ */
 export function latestCycleReview(db: Executor, ownerId: string) {
 	const c = cycleReviews;
 	return db
 		.select({ id: c.id, date: dayOf(c.createdAt, ownerId), summary: c.summary })
 		.from(c)
 		.innerJoin(programs, eq(programs.id, c.programId))
-		.where(and(eq(programs.ownerId, ownerId), eq(c.ownerId, ownerId)))
+		.where(and(eq(programs.ownerId, ownerId), eq(c.ownerId, ownerId), isNull(c.supersededAt)))
 		.orderBy(desc(c.createdAt), desc(c.id))
 		.limit(1);
 }

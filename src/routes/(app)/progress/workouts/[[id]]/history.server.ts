@@ -73,6 +73,8 @@ export interface SetView {
 
 export interface ExerciseView {
 	key: string;
+	/** What its history (the exercise-history sheet) is asked for. */
+	exerciseId: string;
 	name: string;
 	/** 'Estimated 1RM · 117.5 kg': the best set's, always an estimate; null where none applies. */
 	best: string | null;
@@ -234,6 +236,7 @@ export function detailView(detail: WorkoutDetail, { timeZone }: Context): Workou
 		const e1rm = summary.exercises.find((e) => e.exerciseId === id)?.best?.e1rm;
 		return {
 			key,
+			exerciseId: id,
 			name: name(id),
 			best: e1rm ? `Estimated 1RM · ${weight(e1rm.value)}` : null,
 			sets: group.map((set) => ({

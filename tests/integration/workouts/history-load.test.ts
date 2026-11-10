@@ -193,6 +193,8 @@ describe('workout History', () => {
 			);
 			const [squat, thrust] = detail!.exercises;
 			expect(squat!.name).toBe('Back squat');
+			// What the exercise-history sheet asks for.
+			expect([squat!.exerciseId, thrust!.exerciseId]).toEqual([ids.back_squat, ids.hip_thrust]);
 			expect(squat!.best).toMatch(/^Estimated 1RM · \d+(\.\d+)? kg$/);
 			expect(squat!.sets.map(({ label, value, rpe, mark }) => [label, value, rpe, mark])).toEqual([
 				['Warm-up', '60 kg × 5', null, null],

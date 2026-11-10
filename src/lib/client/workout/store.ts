@@ -17,6 +17,8 @@
  *   tab says sign-out is about to delete it.
  * - Tabs (channel.ts): after each write it tells the other tabs, which re-read what changed.
  * - reconciled and adopt store the server's rows from GET /api/workouts/[id] (reconcile.ts).
+ * - A finished or abandoned workout leaves the device once every change of it is acknowledged:
+ *   History reads the server from then on.
  * - discard, tryAgain and fix are the owner's answers to a change that needs attention. Discard
  *   also keeps the ids it removed until the server has claimed them (discarded, forget), so a
  *   request still on its way with one of them can never land it after a newer change.
@@ -57,8 +59,9 @@ import type { OutboxEntry } from './outbox-rules.ts';
 const DAY = 24 * 60 * 60 * 1000;
 
 /**
- * prune's ages: a finished workout whose changes have all synced after a day (History reads the
- * server), a saved kit after a week. An unsynced workout is never pruned.
+ * prune's ages: a finished workout that holds no change of this device's after a day (one finished
+ * here leaves as soon as its last change is acknowledged), a saved kit after a week. An unsynced
+ * workout is never pruned.
  */
 export const PRUNE_AFTER = { finishedMs: DAY, kitMs: 7 * DAY };
 
@@ -146,7 +149,10 @@ export interface WorkoutStore {
 	/** Throws StoreClosedError, ActiveWorkoutError, or RangeError for a workout not loaded. */
 	dispatch(action: Action, ...followUps: Action[]): Dispatched;
 	retry(actionId: string): Promise<WriteOutcome>;
-	/** A sync response: entries leave the outbox or are parked, the canonical rows are stored. */
+	/**
+	 * A sync response: entries leave the outbox or are parked, the canonical rows are stored, and a
+	 * finished workout with no change left leaves the device.
+	 */
 	acknowledge(results: readonly SyncResult[]): Promise<void>;
 	/** Every outbox entry in seq order, as IndexedDB holds it: what the sync engine sends from. */
 	outbox(): Promise<OutboxEntry[]>;
@@ -587,6 +593,7 @@ export async function createStore({
 				for (const r of results) if (r.canonical) rows.set(r.canonical.workout.id, r.canonical);
 				const touched = new Set([...entries.map((e) => e.envelope.workoutId), ...rows.keys()]);
 				const read = new Map<string, { record: StoredWorkout; entries: OutboxEntry[] }>();
+				const pruned: string[] = [];
 				for (const workoutId of touched) {
 					const previous = await workouts.get(workoutId);
 					if (!previous) continue; // not on this device: reconcile adopts it
@@ -594,13 +601,27 @@ export async function createStore({
 					const canonical = rows.get(workoutId) ?? previous.canonical;
 					const inputs = { kit: previous.kit, canonical, device: previous.device, entries: left };
 					const record = recordOf(table, workoutId, inputs, previous);
+					// Finished or abandoned, and every change of it acknowledged: History reads the server.
+					if (
+						record.status !== 'in_progress' &&
+						!left.length &&
+						!memory.get(workoutId)?.queue.length
+					) {
+						await workouts.delete(workoutId);
+						pruned.push(workoutId);
+						continue;
+					}
 					await workouts.put(record);
 					read.set(workoutId, { record, entries: left });
 				}
-				return read;
+				return { read, pruned };
 			})
 		);
-		for (const { record, entries } of written.values()) stored(record, entries);
+		for (const { record, entries } of written.read.values()) stored(record, entries);
+		for (const workoutId of written.pruned) {
+			if (memory.delete(workoutId)) emit({ type: 'view', workoutId });
+			channel?.post({ type: 'closed', workoutId });
+		}
 	}
 
 	async function outbox(): Promise<OutboxEntry[]> {

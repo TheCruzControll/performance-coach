@@ -130,6 +130,37 @@ test.describe('platform: health, PWA, observability', () => {
 		await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute('content', /^#/);
 	});
 
+	test('registers the service worker once, after the load event, not while the app starts', async ({
+		page
+	}) => {
+		// Registering during `load` starts the worker's install (the whole build into the cache)
+		// while the app is still evaluating and hydrating, a suspected cause of the stretched
+		// start-up task on CI's runners (src/lib/client/service-worker.ts). Note each
+		// registration and where it ran.
+		await page.addInitScript(() => {
+			const w = window as unknown as { __swRegistrations: { inLoad: boolean }[] };
+			w.__swRegistrations = [];
+			let inLoad = false;
+			// The first `load` listener (init scripts run before the page's own), and the flag is
+			// cleared in the next task, once every `load` listener has run.
+			addEventListener('load', () => {
+				inLoad = true;
+				setTimeout(() => (inLoad = false));
+			});
+			const register = ServiceWorkerContainer.prototype.register;
+			ServiceWorkerContainer.prototype.register = function (...args) {
+				w.__swRegistrations.push({ inLoad });
+				return register.apply(this, args);
+			};
+		});
+		await page.goto('/today');
+		await page.evaluate(() => navigator.serviceWorker.ready);
+		const registrations = await page.evaluate(
+			() => (window as unknown as { __swRegistrations: { inLoad: boolean }[] }).__swRegistrations
+		);
+		expect(registrations).toEqual([{ inLoad: false }]);
+	});
+
 	test('registers and activates the service worker', async ({ page }) => {
 		await page.goto('/today');
 		const registration = await page.evaluate(async () => {
