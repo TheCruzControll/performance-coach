@@ -4,7 +4,6 @@
 	import { resolve } from '$app/paths';
 	import { navigating, page } from '$app/state';
 	import { preferences } from '#lib/client/preferences.svelte.ts';
-	import { holdsStandaloneRest } from '#lib/client/workout/standalone-rest.ts';
 	import Badge from '#lib/ui/components/Badge.svelte';
 	import EmptyState from '#lib/ui/components/EmptyState.svelte';
 	import Icon from '#lib/ui/components/Icon.svelte';
@@ -133,9 +132,7 @@
 		const tool = page.url.searchParams.get('tool');
 		if (tool === 'plates') plates.show();
 		if (tool === 'plan' && view) plan.show();
-		// A rest kept on this device shows under its row, running, as soon as its code arrives.
 		if (tool === 'rest') restTimer.show();
-		else if (holdsStandaloneRest()) restTimer.prefetch();
 		return () => {
 			plates.leave();
 			restTimer.leave();
@@ -317,7 +314,7 @@
 			<ListRow
 				icon="timer"
 				title="Rest timer"
-				subtitle="Between sets, outside a workout"
+				subtitle="Outside a workout"
 				onpointerdown={restTimer.prefetch}
 				onpointerenter={restTimer.prefetch}
 				onclick={restTimer.show}
@@ -328,6 +325,7 @@
 					<button type="button" class="retry" onclick={restTimer.show} use:reveal>Retry</button>
 				</Notice>
 			{/if}
+			<!-- A running rest shows here, under its row, with the sheet closed. -->
 			<restTimer.component bind:open={restTimer.open} onclose={closeSheet} />
 		</div>
 	</Section>

@@ -8,9 +8,10 @@
  * - A rest that ended more than STALE_REST_MS ago reads as none: Train does not greet the owner
  *   with 'Rest over · 26:14:03 ago' the next day.
  * - Storage that is missing, blocked or full is never an error: a read gives none, a write false.
- * Plain .ts with no runes; `storage` is an argument, so Vitest's unit project runs it.
+ * Plain .ts with no runes; `storage` is an argument, so Vitest's unit project runs it. It imports
+ * nothing at runtime: timers.ts would bring the workout pages' shared chunk (vite.config.ts),
+ * about 5 KB, into whatever loads it.
  */
-import { restOverdue } from '#lib/domain/workout/timers.ts';
 import type { RestState } from '#lib/domain/workout/types.ts';
 
 export const STANDALONE_REST_KEY = 'pc:rest:v1';
@@ -48,15 +49,6 @@ function isRest(value: unknown): value is RestState {
 	);
 }
 
-/** Whether the device holds a standalone rest, without reading it: Train's cheap check on load. */
-export function holdsStandaloneRest(storage: RestStorage | null = pageStorage()): boolean {
-	try {
-		return !!storage?.getItem(STANDALONE_REST_KEY);
-	} catch {
-		return false;
-	}
-}
-
 /** The device's standalone rest at `now`; null when there is none, it is not valid, or it is stale. */
 export function readStandaloneRest(
 	now: number,
@@ -69,7 +61,9 @@ export function readStandaloneRest(
 		return null;
 	}
 	if (!isRest(rest)) return null;
-	return restOverdue(rest, now) > STALE_REST_MS ? null : rest;
+	// When it ended, as timers.ts reads it; a paused rest has not ended.
+	const end = rest.startedAt + rest.durationMs + rest.addedMs;
+	return rest.pausedAt === null && now - end > STALE_REST_MS ? null : rest;
 }
 
 /**

@@ -239,11 +239,15 @@ test.describe("Train's rest timer", () => {
 		await expect(sheet(page)).toBeHidden();
 		await expect(inline(page).getByTestId('rest-time')).toHaveText('1:10');
 
-		// A reload shows it again, at the right time, without opening the sheet.
+		// After a reload the row opens it again, still running, at the right time.
 		await page.reload();
 		await page.waitForLoadState('networkidle');
-		await expect(inline(page).getByTestId('rest-time')).toHaveText('1:10');
+		await row(page).click();
+		await expect(sheet(page).getByTestId('rest-time')).toHaveText('1:10');
 		await page.clock.fastForward(10_000);
+		await expect(sheet(page).getByTestId('rest-time')).toHaveText('1:00');
+		await page.keyboard.press('Escape');
+		await expect(sheet(page)).toBeHidden();
 		await expect(inline(page).getByTestId('rest-time')).toHaveText('1:00');
 		expect(new URL(page.url()).pathname).toBe('/train');
 
@@ -253,7 +257,9 @@ test.describe("Train's rest timer", () => {
 		expect(await stored(page, 'pc:rest:v1')).toBeNull();
 		await page.reload();
 		await page.waitForLoadState('networkidle');
-		await expect(inline(page)).toHaveCount(0);
+		await row(page).click();
+		await expect(sheet(page).getByTestId('start-main-rest')).toBeVisible();
+		await expect(sheet(page).getByTestId('rest-timer')).toHaveCount(0);
 		expect(new URL(page.url()).pathname).toBe('/train');
 	});
 

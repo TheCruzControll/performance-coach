@@ -7,7 +7,8 @@
   reload, a closed tab or another tab shows exactly the right time. With the sheet closed, a
   running rest shows under its Tools row with the same controls. At zero it vibrates and sounds
   as the settings allow, and keeps the screen awake during rest when they ask for it
-  (feedback.ts). Train imports this on first intent, or on arrival when the device holds a rest.
+  (feedback.ts), while Train is open. Train imports this on first intent, so after a reload a
+  running rest shows again once the row is tapped (its code is not worth Train's budget earlier).
 -->
 <script lang="ts">
 	import { createTone, createWakeLock, vibrate } from '#lib/client/workout/feedback.ts';
@@ -30,7 +31,6 @@
 	import type { RestState } from '#lib/domain/workout/types.ts';
 	import BottomSheet from '#lib/ui/components/BottomSheet.svelte';
 	import Button from '#lib/ui/components/Button.svelte';
-	import Notice from '#lib/ui/components/Notice.svelte';
 	import RestTimer from '#lib/ui/workout/RestTimer.svelte';
 	import { REST_CLASS_WORDS } from '#lib/ui/workout/rest-words.ts';
 	import { tick } from 'svelte';
@@ -125,19 +125,24 @@
 	<div data-testid="train-rest">{@render timer(rest)}</div>
 {/if}
 
+<!-- No stylesheet of its own, nor Notice's: each CSS file a lazy sheet brings is a path in
+     Train's initial JavaScript (its preload list), so the layout is inline. -->
 <BottomSheet
 	bind:open
 	title="Rest timer"
-	description="Keeps time on this device, even after a reload."
+	description="Pick a rest to start it: your workout settings set each length. It keeps time on this device, even after a reload."
 	{onclose}
 	data-testid="rest-timer-sheet"
 >
-	<div class="body">
+	<div style="display: grid; gap: var(--space-4)">
 		{#if rest}
 			{@render timer(rest)}
 		{:else}
-			<p class="lead">Pick a rest to start it. Your workout settings set each length.</p>
-			<div class="presets" bind:this={presets}>
+			<!-- One per row on a phone; two side by side where the dialog has room (desktop). -->
+			<div
+				style="display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: var(--space-2)"
+				bind:this={presets}
+			>
 				{#each REST_CLASS_WORDS as row (row.restClass)}
 					{@const seconds = lengths[row.restClass]}
 					<Button
@@ -151,29 +156,13 @@
 			</div>
 		{/if}
 		{#if notSaved}
-			<Notice tone="warning" title="Not kept on this device" data-testid="rest-not-saved">
-				The timer runs while Train is open, but a reload loses it.
-			</Notice>
+			<p
+				role="status"
+				style="font-size: var(--text-sm); font-weight: var(--weight-medium); color: var(--color-warning)"
+				data-testid="rest-not-saved"
+			>
+				Not kept on this device: the timer runs while Train is open, but a reload loses it.
+			</p>
 		{/if}
 	</div>
 </BottomSheet>
-
-<style>
-	.body {
-		display: grid;
-		gap: var(--space-4);
-	}
-
-	.lead {
-		font-size: var(--text-sm);
-		line-height: var(--leading-normal);
-		color: var(--color-text-secondary);
-	}
-
-	/* One per row on a phone; two side by side where the dialog has room (desktop). */
-	.presets {
-		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
-		gap: var(--space-2);
-	}
-</style>

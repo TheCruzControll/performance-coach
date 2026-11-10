@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { addRest, pauseRest, startRest } from '#lib/domain/workout/timers.ts';
 import {
-	holdsStandaloneRest,
 	readStandaloneRest,
 	STALE_REST_MS,
 	STANDALONE_REST_KEY,
@@ -44,7 +43,6 @@ describe('the standalone rest: a reload', () => {
 			writeStandaloneRest(rest, storage);
 			const reloaded = memoryStorage(Object.fromEntries(storage.entries));
 			expect(readStandaloneRest(T0 + 30_000, reloaded)).toEqual(rest);
-			expect(holdsStandaloneRest(reloaded)).toBe(true);
 		}
 	});
 
@@ -54,7 +52,6 @@ describe('the standalone rest: a reload', () => {
 		expect(writeStandaloneRest(null, storage)).toBe(true);
 		expect(storage.entries.size).toBe(0);
 		expect(readStandaloneRest(T0, storage)).toBeNull();
-		expect(holdsStandaloneRest(storage)).toBe(false);
 	});
 
 	it('uses the page’s localStorage by default', () => {
@@ -63,7 +60,6 @@ describe('the standalone rest: a reload', () => {
 		writeStandaloneRest(startRest(T0, 60_000));
 		expect(storage.entries.has(STANDALONE_REST_KEY)).toBe(true);
 		expect(readStandaloneRest(T0 + 1_000)).toEqual(startRest(T0, 60_000));
-		expect(holdsStandaloneRest()).toBe(true);
 	});
 });
 
@@ -74,6 +70,13 @@ describe('the standalone rest: what reads as none', () => {
 		expect(readStandaloneRest(T0 + 60_000 + STALE_REST_MS, storage)).toEqual(rest);
 		expect(readStandaloneRest(T0 + 60_000 + STALE_REST_MS + 1, storage)).toBeNull();
 		expect(STALE_REST_MS).toBe(3_600_000);
+	});
+
+	it('counts the time added into when it ended', () => {
+		const added = addRest(startRest(T0, 60_000), T0 + 1_000);
+		const end = T0 + 90_000;
+		expect(readStandaloneRest(end + STALE_REST_MS, holding(added))).toEqual(added);
+		expect(readStandaloneRest(end + STALE_REST_MS + 1, holding(added))).toBeNull();
 	});
 
 	it('keeps a paused rest however long ago it was paused', () => {
@@ -115,8 +118,6 @@ describe('the standalone rest: what reads as none', () => {
 		};
 		expect(readStandaloneRest(T0, null)).toBeNull();
 		expect(readStandaloneRest(T0, blocked)).toBeNull();
-		expect(holdsStandaloneRest(null)).toBe(false);
-		expect(holdsStandaloneRest(blocked)).toBe(false);
 		expect(writeStandaloneRest(startRest(T0, 1_000), null)).toBe(false);
 		expect(writeStandaloneRest(startRest(T0, 1_000), blocked)).toBe(false);
 		expect(writeStandaloneRest(null, blocked)).toBe(false);
