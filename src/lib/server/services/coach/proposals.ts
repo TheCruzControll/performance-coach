@@ -142,10 +142,45 @@ export interface ProposalView {
 	supersededReason: SupersededReason | null;
 	threadId: string | null;
 	revisionOf: string | null;
+	/** The review that proposed it by the rules (evidence.source); null for the coach's own. */
+	origin: ProposalOrigin | null;
 	createdAt: Date;
 	closedAt: Date | null;
 	/** What it touches, each once: its rows' records, the version it made, what it revises. */
 	links: SourceRef[];
+}
+
+/**
+ * A proposal the rules made for one of M6's reviews, not the coach: stored as evidence.source,
+ * which M5's content guard then freezes. modifiedBy and trimmed mark an owner's revision of it.
+ */
+export interface RulesProvenance {
+	kind: 'weekly_review' | 'cycle_review';
+	reviewId: string;
+	revision: number;
+	/** A weekly review's Monday: its page is keyed by it. */
+	weekStartsOn?: IsoDate;
+	modifiedBy?: 'owner';
+	/** How many of the review's changes were dropped because their sessions had passed. */
+	trimmed?: number;
+}
+
+/** Where a review's proposal came from, and the review page that shows it. */
+export interface ProposalOrigin {
+	kind: RulesProvenance['kind'];
+	reviewId: string;
+	href: string;
+}
+
+/** The origin a stored evidence.source names; null for anything else. */
+function originOf(source: unknown): ProposalOrigin | null {
+	if (typeof source !== 'object' || source === null) return null;
+	const { kind, reviewId, weekStartsOn } = source as Partial<RulesProvenance>;
+	if (typeof reviewId !== 'string') return null;
+	if (kind === 'weekly_review' && typeof weekStartsOn === 'string')
+		return { kind, reviewId, href: `/progress/reviews/w-${weekStartsOn}` };
+	if (kind === 'cycle_review') return { kind, reviewId, href: `/progress/reviews/c-${reviewId}` };
+	return null;
 }
 
 /** coach_proposals.diff and .impact as createProposal stores them. */
@@ -197,6 +232,7 @@ function toView(row: ProposalViewRow): ProposalView {
 		supersededReason: row.supersededReason,
 		threadId: row.threadId,
 		revisionOf: row.revisionOf,
+		origin: originOf(row.source),
 		createdAt: row.createdAt,
 		closedAt: row.closedAt,
 		links: [...links.values()]
@@ -457,6 +493,8 @@ export interface NewProposal {
 	origin?: { threadId: string; runId: string; toolUseId: string } | null;
 	/** What the coach read to propose it. */
 	evidence?: Record<string, unknown> | null;
+	/** A review's rules proposed it, with no conversation: stored as evidence.source. */
+	provenance?: RulesProvenance | null;
 }
 
 export interface CreatedProposal {
@@ -474,6 +512,13 @@ export async function createProposal(
 	input: NewProposal,
 	deps: CoachDeps = {}
 ): Promise<CreatedProposal> {
+	const { provenance } = input;
+	if (provenance && input.origin) {
+		throw new CoachInputError('provenance', 'A review proposal has no conversation');
+	}
+	const evidence = provenance
+		? { ...input.evidence, source: provenance }
+		: (input.evidence ?? null);
 	return inTransaction(deps, async (resolved) => {
 		const repo = createCoachProposalsRepository(resolved.db);
 		const { proposal, program, diffContext, warnings } = await checkAgainstToday(
@@ -504,7 +549,7 @@ export async function createProposal(
 			summary: lines[0]!,
 			rationale: proposal.rationale,
 			payload: proposal.payload as Record<string, unknown>,
-			evidence: input.evidence ?? null,
+			evidence,
 			programId: base?.id ?? null,
 			baseVersionId: base?.versionId ?? null,
 			threadId: input.origin?.threadId ?? null,
