@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { addRest, pauseRest, resetRest, skipRest, startRest } from '#lib/domain/workout/timers.ts';
-import { msToNextTick, readRest } from './rest-words';
+import {
+	addRest,
+	DEFAULT_REST_SECONDS,
+	pauseRest,
+	resetRest,
+	skipRest,
+	startRest
+} from '#lib/domain/workout/timers.ts';
+import { msToNextTick, readRest, REST_CLASS_WORDS } from './rest-words';
 
 const T0 = 1_000_000;
 const REST = startRest(T0, 120_000);
@@ -69,5 +76,17 @@ describe('msToNextTick', () => {
 		const at = now + msToNextTick(REST, now);
 		expect(readRest(REST, at - 1).time).toBe('1:20');
 		expect(readRest(REST, at).time).toBe('1:19');
+	});
+});
+
+describe('REST_CLASS_WORDS', () => {
+	it('names every rest class once, in the order of the device defaults', () => {
+		expect(REST_CLASS_WORDS.map((row) => row.restClass)).toEqual(Object.keys(DEFAULT_REST_SECONDS));
+		expect(REST_CLASS_WORDS.map((row) => row.label)).toEqual([
+			'Main lifts',
+			'Other compounds',
+			'Isolation',
+			'Timed'
+		]);
 	});
 });

@@ -82,6 +82,8 @@ function snapshot(overrides: Partial<MemorySnapshot['records']> = {}): MemorySna
 					status: 'rejected',
 					decidedOn: '2026-11-01',
 					decisionNote: PLANTED,
+					origin: 'coach',
+					review: null,
 					source: { type: 'proposal', id: 'prop-9' }
 				}
 			],

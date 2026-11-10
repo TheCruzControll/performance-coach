@@ -13,6 +13,8 @@
  *   at most SOURCES_MAX records, newest first) and the catalogue's context (about: metric id,
  *   kind, definition and caveat, as the tiles show them). Each result names the dashboard it
  *   comes from, and each trend carries the dashboard's verdict and the weeks it read.
+ * - A week's summary names the week's live review (never a superseded revision) as a source that
+ *   opens it, so the coach can point to the review rather than restate it.
  * - Too little data is a result, never a zero: insufficient_data says what is missing.
  * - Only completed, undeleted workouts count, for every figure (the facts loader's rule).
  * - Dates are explicit, on the owner's calendar: callers pass today (ownerToday). Trends read
@@ -49,7 +51,7 @@ import {
 	parseIsoDate,
 	type IsoDate
 } from '../../../domain/calendar';
-import type { SourceRef } from '../../../domain/coach/sources';
+import { reviewKey, type SourceRef } from '../../../domain/coach/sources';
 import {
 	SERIES_CHANGE_METHOD,
 	seriesChange,
@@ -60,6 +62,7 @@ import { HARD_SET_CREDIT, HARD_SET_MIN_RPE } from '../../../domain/training/metr
 import type { MuscleGroup } from '../../../domain/training/vocabulary';
 import { fromMetres, roundToIncrement } from '../../../domain/units';
 import { getAthleteProfile } from '../profile/index';
+import { getLiveWeeklyReview } from '../reviews/store';
 import type { LoggedSession, WeeklyMileage } from '../training/history';
 import { resolveDeps, TrainingInputError, type TrainingDeps } from '../training/shared';
 import { createFactsLoader } from './facts';
@@ -144,7 +147,12 @@ export interface WeeklyTrainingSummary {
 	runningDistance: Figure;
 	hardSets: GroupFigure;
 	dashboard: string;
+	/** The week's live review as a source that opens it; null before the week is reviewed. */
+	review: SourceRef | null;
 }
+
+/** What the week's review is called as a source. */
+export const WEEKLY_REVIEW_LABEL = 'Weekly review';
 
 export interface TrainingLoad {
 	status: 'ok';
@@ -377,6 +385,7 @@ export async function getWeeklyTrainingSummary(
 	const where = (keep: (s: (typeof sessions)[number]) => boolean) =>
 		sessions.filter(keep).map(workoutRef);
 	const weekRef = dateRef(from, `Week of ${from}`);
+	const review = await getLiveWeeklyReview(ownerId, from, { db });
 	const sessionFigure = (value: number, method: string, keep: (outcome: string) => boolean) =>
 		figure('adherence', value, 'sessions', 1, method, weekRef, sessionsWhere(keep));
 	return {
@@ -436,7 +445,13 @@ export async function getWeeklyTrainingSummary(
 			),
 			about: metricAbout('group_sets')
 		},
-		dashboard: dashboardPath('general', period)
+		dashboard: dashboardPath('general', period),
+		review: review && {
+			type: 'review',
+			id: reviewKey({ kind: 'weekly', weekStartsOn: from }),
+			label: WEEKLY_REVIEW_LABEL,
+			date: from
+		}
 	};
 }
 

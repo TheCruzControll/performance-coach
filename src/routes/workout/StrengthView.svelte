@@ -565,7 +565,7 @@
 		/>
 	{/if}
 	{#if Picker && picking && active.store}
-		<Picker {view} request={picking} store={active.store} />
+		<Picker {view} request={picking} store={active.store} {load} />
 	{/if}
 	{#if History && viewing}<History request={viewing} />{/if}
 </div>

@@ -6,11 +6,14 @@
  *   newest decision's why, word for word, citing the decision.
  * - The turn after a rejection ('I rejected that…') reads the rejected proposal by the id the turn
  *   context lists (the newest rejected one when it lists none) and acknowledges the owner's reason.
+ * - 'What did you propose?' reads the newest proposals and says who proposed each: the coach, or a
+ *   review's rules, citing the review, so a review's proposal is never presented as the coach's.
  */
 import type { MockContext, MockScript } from '../mock.ts';
 
 const WHY = /\bwhy (am i|do i|are we|is)\b.*\b(doing|in my|this)\b/i;
 const REJECTED = /\b(i )?(rejected|declined|turned down|said no to)\b/i;
+const PROPOSED = /\bwhat (did|have) you (proposed?|suggested?)\b/i;
 
 interface Wrapped {
 	untrusted_text: string;
@@ -22,8 +25,18 @@ interface HistoryResult {
 	}[];
 }
 interface ProposalsResult {
-	items: { source: { id: string }; title: Wrapped; status: string; decisionNote: Wrapped | null }[];
+	items: {
+		source: { id: string };
+		title: Wrapped;
+		status: string;
+		decisionNote: Wrapped | null;
+		origin: 'coach' | 'weekly_review' | 'cycle_review';
+		review: { id: string; label?: string } | null;
+	}[];
 }
+
+/** Who made a review's proposal, in the answer's words. */
+const PROPOSER = { weekly_review: 'Your weekly review', cycle_review: 'Your cycle review' };
 
 /** The rejected proposals the turn context lists, by id. */
 function rejectedIds(context: MockContext): string[] {
@@ -48,6 +61,20 @@ function rejectionAnswer(context: MockContext): string {
 		? ` because “${proposal.decisionNote.untrusted_text}”`
 		: ', without a reason';
 	return `[note] Understood: you turned down “${proposal.title.untrusted_text}”${reason} [[proposal:${proposal.source.id}]]. I won’t propose that change again unless you ask for it.`;
+}
+
+function proposedAnswer(context: MockContext): string {
+	const { items } = context.result('get_coach_proposals') as ProposalsResult;
+	if (items.length === 0) return '[note] Nothing has been proposed to you yet.';
+	const lines = items.map((p) => {
+		const title = p.title.untrusted_text.replace(/[[\]|\n]/g, ' ');
+		const proposal = `[[proposal:${p.source.id}]]`;
+		if (p.origin === 'coach' || !p.review)
+			return `[fact] I proposed “${title}” (${p.status}) ${proposal}`;
+		const review = `[[review:${p.review.id}|${p.review.label ?? 'Review'}]]`;
+		return `[fact] ${PROPOSER[p.origin]} proposed “${title}” (${p.status}), not me ${proposal} ${review}`;
+	});
+	return ['Here is what has been proposed lately.', ...lines].join('\n\n');
 }
 
 export const programmingReadScripts: readonly MockScript[] = [
@@ -81,5 +108,10 @@ export const programmingReadScripts: readonly MockScript[] = [
 			},
 			{ text: rejectionAnswer }
 		]
+	},
+	{
+		name: 'what-did-you-propose',
+		matches: (text) => PROPOSED.test(text),
+		steps: [{ tools: [{ name: 'get_coach_proposals', input: {} }] }, { text: proposedAnswer }]
 	}
 ];

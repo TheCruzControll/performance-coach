@@ -73,6 +73,9 @@ export function createReviewsRepository(db: Executor) {
 			q.reviewsPage(db, ownerId, page),
 		proposalHead: async (ownerId: string, proposalId: string) =>
 			(await q.proposalChain(db, ownerId, proposalId))[0] ?? null,
+		/** Each proposal's chain head, keyed by the proposal; none for an empty list. */
+		proposalHeads: async (ownerId: string, proposalIds: readonly string[]) =>
+			proposalIds.length === 0 ? [] : q.proposalHeads(db, ownerId, proposalIds),
 		narrativeMessages: async (ownerId: string, threadId: string, runId: string) =>
 			q.narrativeMessages(db, ownerId, threadId, runId),
 
