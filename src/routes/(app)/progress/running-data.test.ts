@@ -141,11 +141,11 @@ function dashboard(parts: Partial<RunningDashboard> = {}, period: Period = '12w'
 		},
 		efforts: [
 			{
-				...{ distance: '5k', label: '5 km', metres: 5000, best: null, efforts: [] },
+				...{ distance: '5k', label: '5K', metres: 5000, best: null, efforts: [] },
 				reported: []
 			},
 			{
-				...{ distance: '10k', label: '10 km', metres: 10_000 },
+				...{ distance: '10k', label: '10K', metres: 10_000 },
 				best: effort({}),
 				efforts: [effort({}), effort({ id: 'w-2', label: 'effort', durationSeconds: 3400 })],
 				reported: [
@@ -251,8 +251,8 @@ describe('runningData', () => {
 	it('lists each distance’s best effort and its reported races, labelled and dated', () => {
 		const r = runningData(dashboard());
 		expect(r.efforts.map((e) => [e.title, e.label, e.subtitle, e.seconds, e.time])).toEqual([
-			['10 km · Best effort', 'Best effort', 'Sun 4 Oct · 8:51 /mi', 3300, '55:00'],
-			['10 km · Reported', 'Reported', 'Undated · 8:51 /mi · Riverside 10K', 2880, '48:00']
+			['10K · Best effort', 'Best effort', 'Sun 4 Oct · 8:51 /mi', 3300, '55:00'],
+			['10K · Reported', 'Reported', 'Undated · 8:51 /mi · Riverside 10K', 2880, '48:00']
 		]);
 	});
 
@@ -299,11 +299,11 @@ describe('runningData', () => {
 		expect(r.stage).toBe('new');
 		const served = render(RunningTrends, { props: { running: r } }).body;
 		expect(served).toContain('data-testid="running-efforts"');
-		expect(served).toContain('10 km · Reported');
+		expect(served).toContain('10K · Reported');
 		// The view keeps the intro in its own chunk, and the trends' markup the server sent.
 		const html = render(RunningView, { props: { running: r, served } }).body;
 		expect(html).toContain('Your running trends start with your first run');
-		expect(html).toContain('10 km · Reported');
+		expect(html).toContain('10K · Reported');
 	});
 });
 
