@@ -7,7 +7,7 @@
  * composer (Enter on a mouse, Return on a finger, Send, Stop, the count near its limit and the
  * disabled state), 'Thinking…' and reduced motion, loading rows, and every notice with its words
  * and Retry. Runs on
- * Chromium and WebKit; axe for both themes lives in a11y.e2e.ts (e2e/coach-a11y.ts), the desktop
+ * Chromium and WebKit; axe for both themes lives in a11y-suite.ts (e2e/coach-a11y.ts), the desktop
  * window in design-coach.desktop.e2e.ts.
  */
 import { expect, test, type Locator, type Page } from '@playwright/test';

@@ -108,7 +108,12 @@ export const TOOL_CALL_STATUSES = keysOf(TOOL_CALL_STATUS_LABEL);
 /** Stored. Why a proposal was superseded (the status coach-proposals-db adds to M3's list). */
 export const SUPERSEDED_REASON_LABEL = {
 	program_changed: 'The program changed since it was proposed',
-	revised: 'Replaced by a revised proposal'
+	revised: 'Replaced by a revised proposal',
+	// M6's reviews: a refresh, a cycle review that took it in, a late accept, a planned block.
+	review_refreshed: 'Replaced by a refreshed review',
+	folded_into_review: 'Folded into your cycle review',
+	sessions_passed: 'Some sessions have passed',
+	cycle_planned: 'Your next block is already planned'
 };
 export type SupersededReason = keyof typeof SUPERSEDED_REASON_LABEL;
 export const SUPERSEDED_REASONS = keysOf(SUPERSEDED_REASON_LABEL);
