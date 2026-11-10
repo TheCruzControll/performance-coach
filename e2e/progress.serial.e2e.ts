@@ -187,6 +187,12 @@ test.describe('twelve weeks', () => {
 		// page.route sees requests from a page the service worker controls only when it is blocked.
 		test.use({ serviceWorkers: 'block' });
 
+		// Chunks may still be in flight when a test ends (WebKit loads more after Retry): unroute
+		// first, so a handler whose response is disposed with the page cannot fail a passed test.
+		test.afterEach(async ({ page }) => {
+			await page.unrouteAll({ behavior: 'ignoreErrors' });
+		});
+
 		test('a client navigation holds their room while their code loads, and they fill it', async ({
 			page
 		}) => {
