@@ -42,9 +42,17 @@
  * - it audits /workout in its active state: before each run it writes a workout in progress of
  *   that kit into the fresh browser's IndexedDB on the origin, over CDP
  *   (scripts/lib/workout-seed.ts), and the run keeps it (Lighthouse's storage reset off)
+ * - last, it audits the coach as M5 finished it, each screen on a fixture of its own seeded through
+ *   the test-only route (/api/test-support/coach, so the seeded server enables test routes) after
+ *   emptying the owner's programs, workouts and conversations, which a fixture requires: a long
+ *   conversation (long-thread, a full page of the thread view and one more exchange) and the
+ *   Proposals inbox with two proposals waiting (split-squat-week, then the composer's real turns
+ *   'I hate Bulgarian split squats, so replace them' and 'Plan my next cycle', as
+ *   e2e/coach-inbox.serial.e2e.ts proposes them). They come after every other seeded screen,
+ *   since the reset removes the program and the workouts those are audited on.
  */
 import { spawn, type ChildProcess } from 'node:child_process';
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 import { chromium } from '@playwright/test';
@@ -53,6 +61,8 @@ import lighthouse, { type RunnerResult } from 'lighthouse';
 import pg from 'pg';
 import { LOCAL_DATABASE_URLS, runMigrations } from '../src/lib/server/db/migrate.ts';
 import type { StartKit, StrengthKit, SyncResponse } from '../src/lib/domain/workout/index.ts';
+import { createSseDecoder } from '../src/lib/domain/coach/events.ts';
+import type { CoachFixture, SeededCoach } from '../src/lib/server/test-support/coach-fixtures.ts';
 import { readActionAnswer } from './lib/action-result.ts';
 import { seedDemoProfile, type DemoProfile } from './lib/demo-profiles.ts';
 import { verdictDecided } from './lib/lighthouse-verdict.ts';
@@ -105,6 +115,11 @@ const HISTORY_WORKOUTS = 20;
 /** Mutations per sync request, under the protocol's 25 (SYNC_LIMITS). */
 const SYNC_BATCH = 20;
 const DAY_MS = 24 * 60 * 60 * 1000;
+/** What the inbox is audited with: the swap and the next cycle, each proposed in its own turn. */
+const COACH_PROPOSALS = [
+	'I hate Bulgarian split squats, so replace them',
+	'Plan my next cycle'
+] as const;
 
 /**
  * Thresholds checked with --assert (simulated throttling, both form factors). Defaults are the
@@ -220,7 +235,10 @@ async function startServer(): Promise<{
 			PORT: port,
 			ORIGIN: base,
 			DATABASE_URL: db,
-			LOG_LEVEL: 'warn'
+			LOG_LEVEL: 'warn',
+			// The coach screens' fixtures are seeded through the test-only route; the screens audited
+			// are the same with or without it.
+			...(values.seed ? { ENABLE_TEST_ROUTES: 'true' } : {})
 		}
 	});
 	await waitForHealth(base, server);
@@ -463,6 +481,56 @@ async function seedDevice(device: ActiveSeed) {
 	}
 }
 
+/**
+ * Empty the owner's programs, workouts and conversations (a coach fixture is refused on top of
+ * any), then seed `fixture` through the test-only route: the ids it stored.
+ */
+async function seedCoach(fixture: CoachFixture): Promise<SeededCoach> {
+	await withClient(server.db, (client) =>
+		client.query('truncate coach_threads, programs, workouts cascade')
+	);
+	return (await ownerJson('/api/test-support/coach', {
+		fixture,
+		timeZone: SEED_TIME_ZONE
+	})) as SeededCoach;
+}
+
+/** One turn in a new conversation, sent as the composer sends it and read to its end. */
+async function coachTurn(text: string): Promise<void> {
+	const response = await fetch(`${server.base}/api/coach/turns`, {
+		method: 'POST',
+		headers: { ...sessionHeaders, origin: server.base, 'content-type': 'application/json' },
+		body: JSON.stringify({ threadId: null, clientMessageId: randomUUID(), text })
+	});
+	if (response.status !== 200) throw new Error(`'${text}' answered ${response.status}`);
+	const decoder = createSseDecoder();
+	const events = [...decoder.push(new Uint8Array(await response.arrayBuffer())), ...decoder.end()];
+	const last = events.at(-1);
+	if (last?.type !== 'done' || last.status !== 'completed') {
+		throw new Error(`'${text}' ended with ${JSON.stringify(last)}`);
+	}
+}
+
+/** The coach screen `label` on its own fixture: the path to audit. */
+async function seedCoachScreen(label: CoachRoute): Promise<string> {
+	if (label === '/coach/[thread] · long') {
+		const { threads } = await seedCoach('long-thread');
+		if (!threads.long) throw new Error('long-thread stored no thread');
+		return `/coach/${threads.long}`;
+	}
+	await seedCoach('split-squat-week');
+	for (const text of COACH_PROPOSALS) await coachTurn(text);
+	const waiting = await withClient(server.db, (client) =>
+		client.query<{ n: number }>(
+			`select count(*)::int as n from coach_proposals where status = 'proposed'`
+		)
+	);
+	if (waiting.rows[0]?.n !== COACH_PROPOSALS.length) {
+		throw new Error(`The inbox has ${waiting.rows[0]?.n} waiting proposals`);
+	}
+	return '/coach/proposals';
+}
+
 /** The program screens --seed audits after the routes, in this order, by label. */
 const PROGRAM_ROUTES = [
 	'/today · program',
@@ -484,10 +552,20 @@ const WORKOUT_ROUTES = [
 ] as const;
 type WorkoutRoute = (typeof WORKOUT_ROUTES)[number];
 
-const SEEDED_ROUTES = [...PROGRAM_ROUTES, ...WORKOUT_ROUTES] as const;
+/**
+ * The coach screens --seed audits last, each on its own fixture (seedCoachScreen). Seeding one
+ * empties the program and the workouts, so they follow every other seeded screen; a shard keeps
+ * the list's order, so this holds in every shard.
+ */
+const COACH_ROUTES = ['/coach/[thread] · long', '/coach/proposals · inbox'] as const;
+type CoachRoute = (typeof COACH_ROUTES)[number];
+
+const SEEDED_ROUTES = [...PROGRAM_ROUTES, ...WORKOUT_ROUTES, ...COACH_ROUTES] as const;
 type SeededRoute = (typeof SEEDED_ROUTES)[number];
 const isProgramRoute = (label: SeededRoute): label is ProgramRoute =>
 	(PROGRAM_ROUTES as readonly string[]).includes(label);
+const isCoachRoute = (label: SeededRoute): label is CoachRoute =>
+	(COACH_ROUTES as readonly string[]).includes(label);
 
 /** Every audit of the run, in order: the routes, then with --seed the program and workout screens. */
 const AUDITS: ({ label: string; path: string } | { label: string; seeded: SeededRoute })[] = [
@@ -551,6 +629,10 @@ try {
 	for (const audit of shardUrls(AUDITS, SHARD.index, SHARD.count)) {
 		if (!('seeded' in audit)) {
 			await auditRoute(audit.label, audit.path);
+			continue;
+		}
+		if (isCoachRoute(audit.seeded)) {
+			await auditRoute(audit.label, await seedCoachScreen(audit.seeded));
 			continue;
 		}
 		program ??= await buildSeededProgram();

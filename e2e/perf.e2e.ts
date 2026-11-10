@@ -1,6 +1,7 @@
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 import type { SyncResponse } from '../src/lib/domain/workout';
 import { adHoc, finishedWorkout } from '../scripts/lib/workout-seed';
+import { COACH_TZ, postTurn, resetCoach, seedCoach } from './coach-support';
 import { resetPrograms, seedProgram } from './program-support';
 import { query, SAME_ORIGIN } from './support';
 import type { WorkoutDayKits } from '../tests/fixtures/workout-day';
@@ -23,13 +24,20 @@ import { seedWorkout, workoutDay } from './workout-support';
  *   on scheduler noise. Lower it as screens get cheaper; never raise it without a measured
  *   reason recorded in docs/performance.md.
  *
- * Program screens (PROGRAM_SCREENS) are also held to MAX_SHIFT: the sum of layout shifts no input
+ * Program screens (PROGRAM_SCREENS) and the coach's (COACH_SCREENS) are also held to MAX_SHIFT: the sum of layout shifts no input
  * explains, on every load, so a streamed or lazy panel never pushes content once it has painted.
  *
  * The workout screens are measured as they are used (M4): the three workout routes with a workout
  * in progress on the device (the shared kit fixture, seeded into each fresh context's IndexedDB
  * before the load; sync runs against the real endpoint), and workout History's list and detail
  * with a full first page of finished workouts, synced through the real API as a device sends them.
+ *
+ * The coach screens as M5 finished them (COACH_SCREENS) are measured last, on coach fixtures
+ * (e2e/coach-support.ts) in the zone they were seeded in: a long conversation (long-thread, a full
+ * page of the thread view and one more exchange) and the Proposals inbox with two proposals
+ * waiting, proposed by the composer's real turns. They are held to MAX_SHIFT too. Seeding a coach
+ * fixture blanks the training profile (resetCoach), so nothing is measured after them.
+ * perf-coach.e2e.ts measures the 60-message conversation and an answer streaming.
  */
 const TARGET_MS = 200;
 const GUARD_MS = 250;
@@ -55,6 +63,13 @@ const WORKOUT_HISTORY = '/progress/workouts';
 const WORKOUT_DETAIL = '/progress/workouts/<newest>';
 const HISTORY_WORKOUTS = 20;
 const DAY_MS = 24 * 60 * 60 * 1000;
+/** The long-thread fixture's conversation, with its newest page of messages on screen. */
+const COACH_THREAD = '/coach/<long thread>';
+/** The Proposals inbox with the swap and the next cycle waiting, each from its own conversation. */
+const COACH_INBOX = '/coach/proposals (inbox)';
+/** The turns that propose the inbox's two changes on the split-squat-week fixture. */
+const COACH_PROPOSALS = ['I hate Bulgarian split squats, so replace them', 'Plan my next cycle'];
+const COACH_SCREENS = [COACH_THREAD, COACH_INBOX];
 const SCREENS = [
 	'/',
 	'/today',
@@ -72,7 +87,9 @@ const SCREENS = [
 	'/profile/security',
 	'/profile/equipment',
 	'/profile/schedule',
-	'/onboarding'
+	'/onboarding',
+	// Last: seeding them blanks the training profile.
+	...COACH_SCREENS
 ];
 
 interface Seeded {
@@ -105,12 +122,33 @@ async function seedHistory(request: APIRequestContext): Promise<string> {
 	return newest;
 }
 
+/** The coach screen `path` on its fixture: the URL to load, and the coach emptied after. */
+async function seedCoachScreen(path: string, request: APIRequestContext): Promise<Seeded> {
+	const restore = () => resetCoach(request);
+	if (path === COACH_THREAD) {
+		const { threads } = await seedCoach(request, 'long-thread');
+		return { url: `/coach/${threads.long}`, restore, shows: 'coach-message' };
+	}
+	await seedCoach(request, 'split-squat-week');
+	for (const text of COACH_PROPOSALS) {
+		const turn = await postTurn(request, text);
+		expect(turn.status, text).toBe(200);
+		expect(turn.events.at(-1), text).toEqual({ type: 'done', status: 'completed' });
+	}
+	const [waiting] = await query<{ n: number }>(
+		`select count(*)::int as n from coach_proposals where status = 'proposed'`
+	);
+	expect(waiting?.n, 'proposals waiting in the inbox').toBe(COACH_PROPOSALS.length);
+	return { url: '/coach/proposals', restore, shows: 'inbox-row' };
+}
+
 /**
  * Seed what `path` is measured on through the fixture route: the URL to load, and how to put the
  * owner's onboarding back afterwards, so the screens measured next see it as they would have.
  */
 async function seedFor(path: string, request: APIRequestContext): Promise<Seeded> {
 	const none = { url: path, restore: async () => {} };
+	if (COACH_SCREENS.includes(path)) return seedCoachScreen(path, request);
 	const active = ACTIVE_WORKOUTS[path];
 	if (active) {
 		// Ad hoc, so each start syncs (the fixture's planned session is not in this database).
@@ -176,7 +214,9 @@ test.describe('main-thread budget (4× CPU)', () => {
 					const context = await browser.newContext(
 						path === '/'
 							? { ...testInfo.project.use, storageState: { cookies: [], origins: [] } }
-							: testInfo.project.use
+							: COACH_SCREENS.includes(path)
+								? { ...testInfo.project.use, timezoneId: COACH_TZ }
+								: testInfo.project.use
 					);
 					const page = await context.newPage();
 					await page.addInitScript(() => {
@@ -223,7 +263,7 @@ test.describe('main-thread budget (4× CPU)', () => {
 			expect(median, `${path}: ${samples.map(Math.round).join(', ')} ms`).toBeLessThanOrEqual(
 				GUARD_MS
 			);
-			if (PROGRAM_SCREENS.includes(path)) {
+			if (PROGRAM_SCREENS.includes(path) || COACH_SCREENS.includes(path)) {
 				const worst = Math.max(...shifts);
 				testInfo.annotations.push({
 					type: 'layout shift',
