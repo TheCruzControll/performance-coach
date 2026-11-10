@@ -19,7 +19,7 @@
  *
  * With neither engine nor group set (a local run), the list comes back unchanged.
  */
-import { devices, type Project } from '@playwright/test';
+import { devices, type LaunchOptions, type Project } from '@playwright/test';
 import { DESKTOP } from './desktop';
 
 export const ENGINES = ['chromium', 'webkit'] as const;
@@ -190,14 +190,17 @@ function smokeProjects(mode: 'deployed' | 'local-deployed', env: E2EEnv): Projec
 /**
  * The projects this run executes (playwright.config.ts): `local` for the local and external-local
  * modes, the smoke projects for the deployed ones, then one CI leg's share of them (E2E_ENGINE,
- * E2E_GROUP; selectProjects).
+ * E2E_GROUP; selectProjects), served through the TLS proxy's certificate with E2E_TLS=1 (withTls).
  */
-export function e2eProjects(env: E2EEnv, local: readonly Project[]): Project[] {
+export function e2eProjects(env: E2EEnv, local: readonly Project[], spki?: string): Project[] {
 	const mode = e2eMode(env);
 	const engine = parseChoice('E2E_ENGINE', env.E2E_ENGINE, ENGINES);
 	const group = parseChoice('E2E_GROUP', env.E2E_GROUP, GROUPS);
 	const projects = mode === 'local' || mode === 'external-local' ? local : smokeProjects(mode, env);
-	return selectProjects(projects, { engine, group });
+	const selected = selectProjects(projects, { engine, group });
+	if (!tlsEnabled(env)) return selected;
+	if (!spki) throw new Error('E2E_TLS=1: the proxy certificate’s SPKI hash is missing');
+	return withTls(selected, spki);
 }
 
 /**
@@ -212,4 +215,51 @@ export function bypassHeaders(env: E2EEnv): Record<string, string> | undefined {
 	const secret = env.E2E_BYPASS_SECRET;
 	if (!secret || !env.E2E_BASE_URL) return undefined;
 	return { 'x-vercel-protection-bypass': secret, 'x-vercel-set-bypass-cookie': 'true' };
+}
+
+/** The port a local run serves on (E2E_PORT), the TLS proxy's when E2E_TLS=1. */
+export const DEFAULT_E2E_PORT = 4173;
+
+/**
+ * Whether the run is served over HTTPS through the local TLS proxy (scripts/e2e-tls): E2E_TLS=1,
+ * in the modes that start their own server. A deployed or external target has its own TLS.
+ */
+export function tlsEnabled(env: E2EEnv): boolean {
+	if (env.E2E_TLS !== '1') return false;
+	const mode = e2eMode(env);
+	if (mode !== 'local' && mode !== 'local-deployed') {
+		throw new Error(`E2E_TLS=1 serves a server this run starts; the ${mode} mode starts none`);
+	}
+	return true;
+}
+
+/** The app's origin under test: E2E_BASE_URL, else localhost on E2E_PORT, over HTTPS with E2E_TLS. */
+export function e2eBaseURL(env: E2EEnv): string {
+	if (env.E2E_BASE_URL) return env.E2E_BASE_URL;
+	const scheme = tlsEnabled(env) ? 'https' : 'http';
+	return `${scheme}://localhost:${env.E2E_PORT || DEFAULT_E2E_PORT}`;
+}
+
+/**
+ * `projects` served through the TLS proxy's self-signed certificate. Chromium trusts its public
+ * key (`spki`, base64 SHA-256) at launch, so the certificate counts as valid and WebAuthn runs;
+ * WebKit has no such switch and ignores the certificate error (its specs use minted sessions).
+ * Both set ignoreHTTPSErrors, which also covers the Node-side `request` contexts; on Chromium it
+ * has nothing to ignore once the key is trusted.
+ */
+export function withTls(projects: readonly Project[], spki: string): Project[] {
+	return projects.map((project) => {
+		const use: { ignoreHTTPSErrors: boolean; launchOptions?: LaunchOptions } = {
+			...project.use,
+			ignoreHTTPSErrors: true
+		};
+		if (engineOf(project) === 'chromium') {
+			const launchOptions = use.launchOptions ?? {};
+			use.launchOptions = {
+				...launchOptions,
+				args: [...(launchOptions.args ?? []), `--ignore-certificate-errors-spki-list=${spki}`]
+			};
+		}
+		return { ...project, use };
+	});
 }

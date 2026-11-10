@@ -15,15 +15,23 @@
  * - `local-deployed` migrates E2E_DATABASE_URL without a reset, refuses a database with no owner
  *   (it runs after the main suite, on the database that left behind), and starts the build with
  *   no test routes and no setup token hash.
+ *
+ * With E2E_TLS=1 (local and local-deployed), the server listens on a free internal port with
+ * ORIGIN=https://localhost:<E2E_PORT>, and a TLS proxy that applies vercel.json's headers
+ * (scripts/e2e-tls) listens on E2E_PORT in front of it.
  */
 import { execSync, spawn, type ChildProcess } from 'node:child_process';
 import { once } from 'node:events';
 import { randomBytes } from 'node:crypto';
-import { mkdirSync, openSync, rmSync } from 'node:fs';
+import { mkdirSync, openSync, readFileSync, rmSync } from 'node:fs';
+import { connect, createServer, type AddressInfo } from 'node:net';
 import path from 'node:path';
 import type { FullConfig } from '@playwright/test';
 import pg from 'pg';
 import { mintSetupToken } from '../scripts/auth-setup-token';
+import { ensureCertificate } from '../scripts/e2e-tls/cert';
+import { startTlsProxy } from '../scripts/e2e-tls/proxy';
+import { compileHeaderRules } from '../scripts/e2e-tls/vercel-headers';
 import { connectionConfig } from '../src/lib/server/db/connection';
 import {
 	LOCAL_DATABASE_URLS,
@@ -31,7 +39,7 @@ import {
 	resetDatabase,
 	runMigrations
 } from '../src/lib/server/db/migrate';
-import { e2eMode, type Mode } from './projects';
+import { e2eMode, tlsEnabled, type Mode } from './projects';
 
 export const E2E_DATABASE_URL = process.env.E2E_DATABASE_URL || LOCAL_DATABASE_URLS.e2e;
 /** Signed-in browser states written by the setup projects (git-ignored). */
@@ -72,6 +80,12 @@ export interface SetupEffects {
 	isUp(url: string): Promise<boolean>;
 	/** Empties (or creates) a folder the run owns. */
 	freshDir(dir: string): void;
+	/** Whether something accepts TCP connections on localhost:`port` (no HTTP, so no TLS). */
+	portTaken(port: number): Promise<boolean>;
+	/** A port nothing listens on now: the server's, behind the TLS proxy. */
+	freePort(): Promise<number>;
+	/** Starts the TLS proxy on `port` in front of `target`; resolves to its close. */
+	startTlsProxy(port: number, target: string): Promise<() => Promise<void>>;
 }
 
 const effects: SetupEffects = {
@@ -94,6 +108,44 @@ const effects: SetupEffects = {
 	freshDir(dir) {
 		rmSync(dir, { recursive: true, force: true });
 		mkdirSync(dir, { recursive: true });
+	},
+	portTaken(port) {
+		return new Promise((resolve) => {
+			const socket = connect({ port, host: 'localhost' });
+			socket.setTimeout(1_000);
+			const done = (taken: boolean) => {
+				socket.destroy();
+				resolve(taken);
+			};
+			socket.once('connect', () => done(true));
+			socket.once('error', () => done(false));
+			socket.once('timeout', () => done(false));
+		});
+	},
+	freePort() {
+		return new Promise((resolve, reject) => {
+			const probe = createServer();
+			probe.once('error', reject);
+			probe.listen(0, '127.0.0.1', () => {
+				const { port } = probe.address() as AddressInfo;
+				probe.close(() => resolve(port));
+			});
+		});
+	},
+	async startTlsProxy(port, target) {
+		// The certificate playwright.config.ts already made (and pinned for Chromium) is reused.
+		const { cert, key } = ensureCertificate();
+		const vercelJson = JSON.parse(
+			readFileSync(path.resolve(import.meta.dirname, '../vercel.json'), 'utf8')
+		);
+		const proxy = await startTlsProxy({
+			target,
+			port,
+			cert,
+			key,
+			rules: compileHeaderRules(vercelJson)
+		});
+		return proxy.close;
 	}
 };
 
@@ -102,12 +154,13 @@ function serverEnv(
 	mode: Mode,
 	env: NodeJS.ProcessEnv,
 	baseURL: string,
-	setupTokenHash: string | undefined
+	setupTokenHash: string | undefined,
+	port: string
 ): NodeJS.ProcessEnv {
 	const base: NodeJS.ProcessEnv = {
 		...env,
 		NODE_ENV: 'production',
-		PORT: new URL(baseURL).port || '80',
+		PORT: port,
 		ORIGIN: baseURL,
 		DATABASE_URL: E2E_DATABASE_URL,
 		DATABASE_URL_UNPOOLED: E2E_DATABASE_URL,
@@ -174,7 +227,13 @@ export async function runGlobalSetup(
 		if (mode === 'external-local') return undefined; // testing an externally managed server
 	}
 
-	if (await io.isUp(`${baseURL}/api/health`)) {
+	// With E2E_TLS=1 the server is reached through the proxy; it listens on a free port of its own.
+	// An https health check would fail on the self-signed certificate, so the proxy's port is probed.
+	const tls = tlsEnabled(env);
+	const busy = tls
+		? await io.portTaken(Number(new URL(baseURL).port))
+		: await io.isUp(`${baseURL}/api/health`);
+	if (busy) {
 		throw new Error(`[e2e] something is already serving ${baseURL}; stop it or set E2E_PORT.`);
 	}
 
@@ -187,10 +246,12 @@ export async function runGlobalSetup(
 		io.freshDir(E2E_BACKUP_DIR);
 	}
 
-	const server = io.spawnServer(serverEnv(mode, env, baseURL, setupTokenHash));
+	const port = tls ? String(await io.freePort()) : new URL(baseURL).port || '80';
+	const serverURL = tls ? `http://127.0.0.1:${port}` : baseURL;
+	const server = io.spawnServer(serverEnv(mode, env, baseURL, setupTokenHash, port));
 
 	const deadline = Date.now() + 30_000;
-	while (!(await io.isUp(`${baseURL}/api/health`))) {
+	while (!(await io.isUp(`${serverURL}/api/health`))) {
 		if (server.exitCode !== null) {
 			throw new Error(`[e2e] server exited with code ${server.exitCode}; see .e2e-server.log`);
 		}
@@ -200,9 +261,19 @@ export async function runGlobalSetup(
 		}
 		await new Promise((r) => setTimeout(r, 200));
 	}
-	console.log(`[e2e] production server ready at ${baseURL} (${mode})`);
+	let closeProxy: (() => Promise<void>) | undefined;
+	if (tls) {
+		try {
+			closeProxy = await io.startTlsProxy(Number(new URL(baseURL).port), serverURL);
+		} catch (error) {
+			server.kill('SIGKILL');
+			throw error;
+		}
+	}
+	console.log(`[e2e] production server ready at ${baseURL} (${mode}${tls ? ', TLS proxy' : ''})`);
 
 	return async () => {
+		await closeProxy?.();
 		if (server.exitCode === null) {
 			server.kill('SIGTERM');
 			await Promise.race([once(server, 'exit'), new Promise((r) => setTimeout(r, 5_000))]);

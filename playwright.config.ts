@@ -1,6 +1,16 @@
 import { defineConfig, devices, type Project } from '@playwright/test';
 import { DESKTOP } from './e2e/desktop';
-import { bypassHeaders, e2eProjects, GROUPS, parseChoice, SMOKE } from './e2e/projects';
+import {
+	bypassHeaders,
+	DEFAULT_E2E_PORT,
+	e2eBaseURL,
+	e2eProjects,
+	GROUPS,
+	parseChoice,
+	SMOKE,
+	tlsEnabled
+} from './e2e/projects';
+import { ensureCertificate } from './scripts/e2e-tls/cert';
 
 /**
  * End-to-end tests run against the real production Node server (adapter-node build) and a
@@ -32,10 +42,22 @@ import { bypassHeaders, e2eProjects, GROUPS, parseChoice, SMOKE } from './e2e/pr
  * read-only `*.smoke.e2e.ts` specs, signed out; E2E_TEST_AUTH=1 with it runs the whole suite
  * against an external server with test routes on; E2E_DEPLOYED_LOCAL=1 runs the smoke specs
  * against the local production build with test routes off. The local projects run the smoke
- * specs too, the desktop one included.
+ * specs too, the desktop one included. E2E_TLS=1 (local and local-deployed) serves the build over
+ * https://localhost:<E2E_PORT> through a proxy that applies vercel.json's headers (scripts/e2e-tls),
+ * so the session cookie is __Host-session, Secure, as deployed.
  */
-export const E2E_PORT = Number(process.env.E2E_PORT ?? 4173);
-const baseURL = process.env.E2E_BASE_URL ?? `http://localhost:${E2E_PORT}`;
+export const E2E_PORT = Number(process.env.E2E_PORT || DEFAULT_E2E_PORT);
+const baseURL = e2eBaseURL(process.env);
+// E2E_TLS=1: the local TLS proxy's certificate, whose public key Chromium trusts (e2e/projects.ts
+// withTls). Made here because the projects need its hash; global setup serves the same files.
+// The runner (no TEST_WORKER_INDEX) always makes or renews it and exports its hash, overwriting
+// any stale E2E_TLS_SPKI left in the shell; workers inherit that hash, so none regenerates the
+// key mid-run and pins a different one from the certificate being served.
+const tlsSpki = tlsEnabled(process.env)
+	? process.env.TEST_WORKER_INDEX
+		? process.env.E2E_TLS_SPKI
+		: (process.env.E2E_TLS_SPKI = ensureCertificate().spki)
+	: undefined;
 const group = parseChoice('E2E_GROUP', process.env.E2E_GROUP, GROUPS);
 const withWebKit =
 	Boolean(process.env.CI) || process.env.E2E_WEBKIT === '1' || process.env.E2E_ENGINE === 'webkit';
@@ -199,5 +221,5 @@ export default defineConfig({
 		colorScheme: 'dark',
 		extraHTTPHeaders: bypassHeaders(process.env)
 	},
-	projects: e2eProjects(process.env, projects)
+	projects: e2eProjects(process.env, projects, tlsSpki)
 });
