@@ -339,6 +339,26 @@ describe('CoachTurns', () => {
 		expect(turns.asking).toBe(false);
 	});
 
+	it('a new conversation’s turn that proposed a change reads the stored messages once its page has opened', async () => {
+		let open!: () => void;
+		nav.goto.mockImplementationOnce(() => new Promise<void>((done) => (open = done)));
+		const proposed: CoachEvent = {
+			type: 'proposal',
+			id: 'p1',
+			kind: 'workout_update',
+			title: 'Rest'
+		};
+		const { fetch } = server([...ANSWERED.slice(0, 4), proposed, ...ANSWERED.slice(4)]);
+		const turns = new CoachTurns({ fetch, frame: () => {} });
+		const sent = turns.send('First');
+		await vi.waitFor(() => expect(turns.list[0]!.settled).toBe(true));
+		expect(nav.invalidateAll).not.toHaveBeenCalled();
+		open();
+		await sent;
+		expect(turns.list[0]!.opened).toBe(true);
+		expect(nav.invalidateAll).toHaveBeenCalledTimes(1);
+	});
+
 	it('forgets every turn when the page is left', async () => {
 		const { fetch } = server([started], { hold: true });
 		const turns = new CoachTurns({ fetch, frame: () => {} });
