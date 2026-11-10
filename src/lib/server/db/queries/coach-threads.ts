@@ -8,8 +8,9 @@
  *   that each exists; `pnpm db:explain` gates them (scripts/explain/history.explain.ts).
  * Nothing runs until a builder is awaited; await them in turn on one connection.
  */
-import { and, asc, desc, eq, isNotNull, isNull, lt, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, isNotNull, isNull, lt, notInArray, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
+import { REVIEW_ENTRIES } from '../../../domain/coach/review-entries';
 import { coachMessages, coachThreads } from '../schema';
 import type { Executor } from '../types';
 
@@ -158,7 +159,7 @@ const cursor = alias(coachThreads, 'cursor');
 
 /**
  * The owner's threads, newest first, `limit` at a time: open ones by last message, archived ones
- * by when they were archived. Keyset pagination on (time, id): `before` is the last thread id of
+ * by when they were archived. A review's write-up thread (REVIEW_ENTRIES) is in neither list. Keyset pagination on (time, id): `before` is the last thread id of
  * the previous page, and its own row gives the time to continue from. A cursor that is not one of
  * the owner's threads in the same list gives an empty page.
  */
@@ -189,6 +190,7 @@ export function threadPage(
 			and(
 				eq(coachThreads.ownerId, ownerId),
 				archived ? isNotNull(coachThreads.archivedAt) : isNull(coachThreads.archivedAt),
+				notInArray(sql`coalesce(${coachThreads.entry}->>'from', '')`, [...REVIEW_ENTRIES]),
 				after
 			)
 		)

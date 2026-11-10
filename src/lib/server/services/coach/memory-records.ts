@@ -28,6 +28,7 @@ import type {
 	MemoryReview,
 	MemorySnapshot
 } from '../../../domain/coach/memory';
+import { REVIEW_ENTRIES } from '../../../domain/coach/review-entries';
 import { reviewKey } from '../../../domain/coach/sources';
 import type { Finding } from '../../../domain/programming/review/brief';
 import { readCycleSnapshot } from '../../../domain/programming/review/cycle-snapshot';
@@ -162,10 +163,12 @@ export async function loadMemoryRecords(
 	const reviewDecisions = reviewed.some((r) => r.proposalId !== null)
 		? await decisionStates(ownerId, reviewed, { db })
 		: new Map<string, DecisionState>();
+	// A review's write-up thread is not a conversation: its review is listed above instead.
 	const summaries = await repo.recentNotes(
 		ownerId,
 		MEMORY_NOTE_KINDS.threadSummary,
-		limits.threadSummaries
+		limits.threadSummaries,
+		REVIEW_ENTRIES
 	);
 	const analyses = await repo.recentNotes(ownerId, MEMORY_NOTE_KINDS.analysis, limits.analyses);
 
