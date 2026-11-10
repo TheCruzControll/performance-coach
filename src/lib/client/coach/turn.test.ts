@@ -249,6 +249,39 @@ describe('CoachTurn.run', () => {
 		const turn = new CoachTurn(request(), { fetch, frame: () => {} });
 		expect(await turn.run()).toBe(false);
 		expect(turn.error).toBe('rate_limited');
+		expect(turn.retryAt).toBeNull();
+	});
+
+	it('a rate-limited turn says when it may be asked again, from Retry-After', async () => {
+		const fetch = vi.fn<typeof globalThis.fetch>(() =>
+			Promise.resolve(new Response('{}', { status: 429, headers: { 'retry-after': '42' } }))
+		);
+		const turn = new CoachTurn(request(), { fetch, frame: () => {} });
+		const before = Date.now();
+		await turn.run();
+		expect(turn.retryAt).toBeGreaterThanOrEqual(before + 42_000);
+		expect(turn.retryAt).toBeLessThanOrEqual(Date.now() + 42_000);
+	});
+
+	it('keeps why the coach was unavailable, from the error event', async () => {
+		const { fetch } = server([
+			started,
+			{ type: 'error', kind: 'unavailable', reason: 'no_key' },
+			{ type: 'done', status: 'failed' }
+		]);
+		const turn = new CoachTurn(request(), { fetch, frame: () => {} });
+		expect(await turn.run()).toBe(true);
+		expect(turn.error).toBe('unavailable');
+		expect(turn.reason).toBe('no_key');
+	});
+
+	it('a stream dropped with no connection ends offline, without asking the server anything', async () => {
+		const { fetch, calls } = server([started], { drop: true });
+		const turn = new CoachTurn(request(), { fetch, frame: () => {}, online: () => false });
+		expect(await turn.run()).toBe(false);
+		expect(turn.error).toBe('offline');
+		expect(turn.running).toBe(false);
+		expect(calls.map((c) => c.url)).toEqual(['/api/coach/turns']);
 	});
 });
 
@@ -329,5 +362,57 @@ describe('CoachTurns', () => {
 		expect(body).toEqual({ threadId: THREAD, clientMessageId: 'stored-id', text: 'First' });
 		expect(turns.visible.map((t) => t.retry)).toEqual([false, true]);
 		expect(turns.running).toBe(false);
+	});
+
+	it('Retry of a turn nothing stored asks again in its place, under the same id, drawing its words', async () => {
+		const refused = vi.fn<typeof globalThis.fetch>(() =>
+			Promise.resolve(new Response('{}', { status: 429 }))
+		);
+		const turns = new CoachTurns({ fetch: refused, frame: () => {} });
+		await turns.send('First');
+		const [first] = turns.list;
+		expect(first!.error).toBe('rate_limited');
+
+		const { fetch } = server(ANSWERED);
+		const again = new CoachTurns({ fetch, frame: () => {} });
+		again.list = [first!];
+		await again.again(first!);
+		expect(again.list).toHaveLength(1);
+		expect(again.list[0]).not.toBe(first);
+		expect(again.list[0]!.retry).toBe(false);
+		const body = JSON.parse(fetch.mock.calls[0]![1]!.body as string);
+		expect(body).toMatchObject({ threadId: null, clientMessageId: first!.request.clientMessageId });
+	});
+
+	it('Retry of a turn that went offline after its question was stored draws the question again', async () => {
+		nav.page.params = { thread: THREAD };
+		const { fetch } = server([started], { drop: true });
+		const turns = new CoachTurns({ fetch, frame: () => {}, online: () => false });
+		await turns.send('First');
+		const [first] = turns.list;
+		expect(first!.error).toBe('offline');
+		expect(nav.invalidateAll).not.toHaveBeenCalled(); // the stored question was never read
+		await turns.again(first!);
+		expect(turns.list[0]!.retry).toBe(false);
+	});
+
+	it('Retry of a turn whose question is stored asks again in its conversation, leaving its words', async () => {
+		nav.page.params = { thread: THREAD };
+		const failed = server([
+			started,
+			{ type: 'error', kind: 'provider' },
+			{ type: 'done', status: 'failed' }
+		]);
+		const turns = new CoachTurns({ fetch: failed.fetch, frame: () => {} });
+		await turns.send('First');
+		const [first] = turns.list;
+		await turns.again(first!);
+		expect(turns.list).toHaveLength(1);
+		expect(turns.list[0]!.retry).toBe(true);
+		const body = JSON.parse(failed.fetch.mock.calls.at(-1)![1]!.body as string);
+		expect(body).toMatchObject({
+			threadId: THREAD,
+			clientMessageId: first!.request.clientMessageId
+		});
 	});
 });

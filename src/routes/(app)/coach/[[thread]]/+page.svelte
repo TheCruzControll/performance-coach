@@ -45,7 +45,8 @@
 	type Older = { rows: ThreadRowView[]; next: string | null };
 	/**
 	 * Older pages loaded below the first, kept with the first page's conversations: a new first
-	 * page (a conversation answered meanwhile) starts the list again.
+	 * page (a conversation answered meanwhile), or a conversation renamed, archived or unarchived
+	 * (onchanged), starts the list again.
 	 */
 	let older = $state.raw<{ after: string; pages: Older[] } | null>(null);
 	const first = $derived(ready ? ready.threads.map((row) => row.id).join() : '');
@@ -84,7 +85,7 @@
 	let draft = $state.raw(data.prefill?.text ?? '');
 	let live = $state.raw<CoachTurns | null>(null);
 	let loading: Promise<CoachTurns> | undefined;
-	// A failed import is forgotten, so the next Send imports again (coach-states adds its Notice).
+	// A failed import is forgotten, so the next Send imports again.
 	const loadLive = () =>
 		(loading ??= (import.meta.env.SSR ? never() : import('#lib/client/coach/turn.svelte.ts')).then(
 			(module) => (live = module.coachTurns),
@@ -93,15 +94,33 @@
 				throw error;
 			}
 		));
-	const canAsk = $derived(data.coach.status === 'ready');
+	// A misconfigured coach still answers lookups (askable); an archived conversation is
+	// read-only until unarchived (its banner, ArchivedBanner).
+	const canAsk = $derived(data.askable && !ready?.thread?.archived);
 
-	let starting = false;
+	/**
+	 * The stream client failing to load on a Send is the chunk-failed notice, whose Retry sends
+	 * again; failing again while online reloads the page with the question kept in the composer
+	 * (sessionStorage, KEPT), as Chromium keeps a failed module fetch for the document's lifetime.
+	 */
+	const KEPT = 'coach.unsent';
+	let liveFailed = $state.raw<string | null>(null);
+	let liveFailures = 0;
+	let starting = $state(false);
 	async function send(text: string) {
 		if (starting) return; // a second press while the client loads
 		starting = true;
 		const turns = await loadLive().catch(() => null);
 		starting = false;
-		if (!turns) return;
+		if (!turns) {
+			if (++liveFailures >= 2 && navigator.onLine) {
+				sessionStorage.setItem(KEPT, text);
+				return location.reload();
+			}
+			liveFailed = text;
+			return;
+		}
+		liveFailed = null;
 		draft = '';
 		void turns.send(text, data.prefill?.from);
 	}
@@ -113,6 +132,9 @@
 	}
 
 	onMount(() => {
+		const kept = sessionStorage.getItem(KEPT);
+		sessionStorage.removeItem(KEPT);
+		if (kept && !draft) draft = kept;
 		if (canAsk) (window.requestIdleCallback ?? setTimeout)(() => loadLive().catch(() => {}));
 		return () => live?.leave();
 	});
@@ -148,10 +170,11 @@
 	 * Budget lever (M5 plan, Budgets: 'the recent-conversations list on idle'): the list's code
 	 * loads on demand too, in the browser as soon as /coach shows, so the stream client fits in the
 	 * route's 60 KB. Loading rows hold its place meanwhile; Retry imports again. With no
-	 * conversation there is no list: the server renders the empty state, the screen's largest
-	 * text, so it paints with the page instead of after a chunk.
+	 * conversation the server renders the empty state, the screen's largest text, so it paints
+	 * with the page instead of after a chunk; the list's code still loads, and stays, for its
+	 * 'Archived conversations' (archived ones stay in reach) and the Undo after archiving the last.
 	 */
-	const wantsList = $derived(!page.params.thread && rows.length > 0);
+	const wantsList = $derived(!page.params.thread);
 	const listCode = $derived.by(() => {
 		void threadAttempt;
 		if (!wantsList) return null;
@@ -165,6 +188,12 @@
 
 {#snippet failed()}
 	<CoachNotice kind="load_failed" onretry={retry} {retrying} data-testid="load-failed" />
+{/snippet}
+{#snippet empty()}
+	<section class="recent" aria-labelledby="recent-heading">
+		<h2 id="recent-heading" class="eyebrow">Recent conversations</h2>
+		<CoachNotice kind="empty" data-testid="coach-empty" />
+	</section>
 {/snippet}
 {#snippet cannot()}
 	{#if unavailable}<CoachNotice kind={unavailable} data-testid="coach-unavailable" />{/if}
@@ -203,14 +232,13 @@
 		{#if data.prefill?.label}<ContextChip label={data.prefill.label} />{/if}
 		<Suggestions onpick={canAsk ? (text) => (draft = text) : undefined} />
 		{@render cannot()}
-		{#if ready && rows.length === 0}
-			<section class="recent" aria-labelledby="recent-heading">
-				<h2 id="recent-heading" class="eyebrow">Recent conversations</h2>
-				<CoachNotice kind="empty" data-testid="coach-empty" />
-			</section>
-		{:else if ready}
+		{#if ready}
 			{#await listCode}
-				<LoadingRows label="Loading your conversations…" data-testid="list-loading" />
+				{#if rows.length === 0}
+					{@render empty()}
+				{:else}
+					<LoadingRows label="Loading your conversations…" data-testid="list-loading" />
+				{/if}
 			{:then code}
 				{#if code}<code.default
 						{rows}
@@ -218,8 +246,10 @@
 						{loadingOlder}
 						{olderFailed}
 						onolder={showOlder}
+						onchanged={() => (older = null)}
 					/>{/if}
 			{:catch}
+				{#if rows.length === 0}{@render empty()}{/if}
 				<CoachNotice
 					kind="chunk_failed"
 					onretry={() => threadAttempt++}
@@ -229,6 +259,14 @@
 		{:else}
 			{@render failed()}
 		{/if}
+	{/if}
+	{#if liveFailed !== null}
+		<CoachNotice
+			kind="chunk_failed"
+			onretry={() => send(liveFailed!)}
+			retrying={starting}
+			data-testid="stream-failed"
+		/>
 	{/if}
 </div>
 

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { CompletedBlock } from '#lib/domain/coach/index.ts';
 import { COMPOSER_MAX_CHARS } from '#lib/ui/coach/composer-keys.ts';
 import type { ProposalCardView } from '#lib/domain/coach/cards.ts';
-import { prefillOf, shownMessages, whenWords, type DisplayedRow } from './words';
+import { archivedWords, prefillOf, shownMessages, whenWords, type DisplayedRow } from './words';
 
 const search = (query: string) => new URLSearchParams(query);
 
@@ -51,6 +51,16 @@ describe('whenWords', () => {
 	it('says today and yesterday with the owner’s local time', () => {
 		expect(whenWords(new Date('2026-11-10T20:05:00Z'), now, zone)).toBe('Today · 07:05');
 		expect(whenWords(new Date('2026-11-10T07:40:00Z'), now, zone)).toBe('Yesterday · 18:40');
+	});
+
+	it('says when a conversation was archived, today and yesterday in lower case', () => {
+		expect(archivedWords(new Date('2026-11-10T20:05:00Z'), now, zone)).toBe(
+			'Archived today · 07:05'
+		);
+		expect(archivedWords(new Date('2026-11-10T07:40:00Z'), now, zone)).toBe(
+			'Archived yesterday · 18:40'
+		);
+		expect(archivedWords(new Date('2026-11-08T23:00:00Z'), now, zone)).toBe('Archived Mon 9 Nov');
 	});
 
 	it('gives an older day its short date, in the owner’s zone rather than UTC', () => {
