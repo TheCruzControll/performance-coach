@@ -237,7 +237,13 @@ describe('portTaken', () => {
 	it('sees a server on either loopback, since the proxy listens on both', async () => {
 		for (const host of ['127.0.0.1', '::1']) {
 			const server = createServer().listen(0, host);
-			await once(server, 'listening');
+			try {
+				await once(server, 'listening');
+			} catch (error) {
+				// Some containers have no IPv6 loopback; there is nothing to probe on it.
+				if ((error as NodeJS.ErrnoException).code === 'EADDRNOTAVAIL') continue;
+				throw error;
+			}
 			const { port } = server.address() as AddressInfo;
 			try {
 				expect(await portTaken(port), host).toBe(true);
