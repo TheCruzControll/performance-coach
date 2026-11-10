@@ -202,22 +202,22 @@ jobs:
       # `apt-get update` stalled on the Ubuntu mirror for the whole 12 minutes (6 legs in two
       # hours), with every package already in the cache. The cache now carries apt's lists too,
       # keyed by the exact package set, so a full cache installs with no network at all; see
-      # scripts/ci-playwright-deps.sh. A new runner image saves a fresh copy.
+      # scripts/ci-playwright-deps.sh. A new runner image saves a fresh copy. Chromium legs
+      # launch only Chromium; WebKit legs also need it for the owner setup. The set differs, so
+      # does the key: a WebKit leg never restores a Chromium leg's smaller cache.
       - name: Playwright system packages
         id: apt
-        run: ./scripts/ci-playwright-deps.sh key chromium webkit >> "$GITHUB_OUTPUT"
+        run: ./scripts/ci-playwright-deps.sh key ${{ matrix.engine == 'webkit' && 'chromium webkit' || 'chromium' }} >> "$GITHUB_OUTPUT"
       - name: Cache Playwright system packages
         uses: actions/cache@v6
         with:
           path: ~/.cache/apt-playwright
           key: apt-playwright-v2-${{ steps.image.outputs.os }}-${{ steps.apt.outputs.packages }}-${{ steps.apt.outputs.image }}
-          restore-keys: |
-            apt-playwright-v2-${{ steps.image.outputs.os }}-${{ steps.apt.outputs.packages }}-
-            apt-playwright-v2-${{ steps.image.outputs.os }}-
+          restore-keys: apt-playwright-v2-${{ steps.image.outputs.os }}-${{ steps.apt.outputs.packages }}-
       - name: Install Playwright system dependencies
         # Bounded update and download attempts inside; dpkg runs once, never killed midway.
         timeout-minutes: 12
-        run: ./scripts/ci-playwright-deps.sh install ~/.cache/apt-playwright chromium webkit
+        run: ./scripts/ci-playwright-deps.sh install ~/.cache/apt-playwright ${{ matrix.engine == 'webkit' && 'chromium webkit' || 'chromium' }}
       - name: Install Playwright browsers
         # Usually restored from the cache above. A stuck download is safe to kill: bound and retry.
         timeout-minutes: 8

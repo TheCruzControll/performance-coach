@@ -284,7 +284,7 @@ describe('CI e2e legs', () => {
 		expect(job).toBeGreaterThanOrEqual(Math.ceil(1.5 * CEILING_MINUTES) + 12 + 8);
 	});
 
-	it('install the system packages from a cache keyed by exactly the packages installed', () => {
+	it('install the engines’ system packages from a cache keyed by exactly those packages', () => {
 		const names = under(legsJob(), 'steps').map((s) => value([s, ...s.children], 'name'));
 		const order = [
 			'Playwright system packages',
@@ -293,26 +293,49 @@ describe('CI e2e legs', () => {
 		].map((name) => names.indexOf(name));
 		expect(order.every((at, i) => at > (order[i - 1] ?? -1))).toBe(true);
 
+		/** Every `${{ … }}` in `template` evaluated for one engine's entries on one runner. */
+		const expand = (template: string, engine: string) =>
+			template.replace(/\$\{\{(.*?)\}\}/g, (_, inner: string) =>
+				String(
+					evaluate(inner, {
+						'matrix.engine': engine,
+						'steps.image.outputs.os': 'ubuntu24',
+						'steps.apt.outputs.packages': `${engine}-packages`,
+						'steps.apt.outputs.image': '20261101.1'
+					})
+				)
+			);
 		const keyStep = legStep('Playwright system packages');
 		expect(value(keyStep, 'id')).toBe('apt');
-		const keyed = /^\.\/scripts\/ci-playwright-deps\.sh key (.+) >> "\$GITHUB_OUTPUT"$/.exec(
-			value(keyStep, 'run')!
-		);
-		const installed = /^\.\/scripts\/ci-playwright-deps\.sh install (\S+) (.+)$/.exec(
-			value(legStep('Install Playwright system dependencies'), 'run')!
-		);
-		expect(installed?.[2], 'the key hashes the very browsers installed').toBe(keyed?.[1]);
-		for (const engine of ENGINES) expect(installed![2]).toContain(engine);
-
+		const keyRun = value(keyStep, 'run')!;
+		const install = value(legStep('Install Playwright system dependencies'), 'run')!;
 		const cache = under(legStep('Cache Playwright system packages'), 'with');
-		expect(value(cache, 'path')).toBe(installed![1]);
+		expect(value(cache, 'path')).toBe('~/.cache/apt-playwright');
 		const key = value(cache, 'key')!;
-		const PREFIX = 'apt-playwright-v2-${{ steps.image.outputs.os }}-';
-		expect(key).toBe(`${PREFIX}\${{ steps.apt.outputs.packages }}-\${{ steps.apt.outputs.image }}`);
-		// Narrowest first; every fallback still matches only this cache's own entries.
-		const restore = value(cache, 'restore-keys')!.split('\n');
-		expect(restore).toEqual([`${PREFIX}\${{ steps.apt.outputs.packages }}-`, PREFIX]);
-		for (const prefix of restore) expect(key.startsWith(prefix)).toBe(true);
+		const restore = value(cache, 'restore-keys')!;
+		const engines = [...new Set(entries().map((entry) => entry.engine!))].sort();
+		expect(engines).toEqual([...ENGINES].sort());
+		for (const engine of engines) {
+			// Chromium legs launch only Chromium; WebKit legs also run the Chromium owner setup.
+			const browsers = engine === 'webkit' ? 'chromium webkit' : 'chromium';
+			// The key hashes the very packages the install installs.
+			expect(expand(keyRun, engine), engine).toBe(
+				`./scripts/ci-playwright-deps.sh key ${browsers} >> "$GITHUB_OUTPUT"`
+			);
+			expect(expand(install, engine), engine).toBe(
+				`./scripts/ci-playwright-deps.sh install ~/.cache/apt-playwright ${browsers}`
+			);
+			expect(expand(key, engine), engine).toBe(
+				`apt-playwright-v2-ubuntu24-${engine}-packages-20261101.1`
+			);
+			expect(expand(restore, engine), engine).toBe(
+				`apt-playwright-v2-ubuntu24-${engine}-packages-`
+			);
+			// No engine restores an archive another engine saved (a Chromium one lacks WebKit's).
+			for (const other of engines.filter((e) => e !== engine)) {
+				expect(expand(key, other).startsWith(expand(restore, engine)), other).toBe(false);
+			}
+		}
 
 		const direct = under(legsJob(), 'steps').filter((s) =>
 			(value([s, ...s.children], 'run') ?? '').includes('playwright install-deps')
