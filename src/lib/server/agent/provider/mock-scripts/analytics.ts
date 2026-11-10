@@ -5,7 +5,8 @@
  * - 'Am I doing enough weekly volume?' reads this week's summary: hard sets per muscle group,
  *   sessions completed against planned, and minutes.
  * - 'How is my running affecting my lifting?' reads the trends and the training load, and states
- *   how running distance and load changed, without claiming a cause.
+ *   how running distance and load changed, each with its verdict as the tool gave it ('a real
+ *   trend' or 'normal variation', over the weeks it names), without claiming a cause.
  * - 'What should I focus on next week?' reads this week's summary and the load, then recommends
  *   from the ratio and the skipped sessions.
  */
@@ -50,10 +51,26 @@ interface Trend {
 	unit: string | null;
 	method: string;
 	sources: Ref[];
-	change: { enoughData: boolean; earlier?: number; later?: number; direction?: string };
+	change: {
+		enoughData: boolean;
+		verdict: 'real_trend' | 'normal_variation' | 'insufficient_data';
+		earlier?: number;
+		later?: number;
+		direction?: string;
+	};
 	changeMethod: string;
+	realTrend: { direction: 'up' | 'down' } | null;
 }
-type Trends = Insufficient | { status: 'ok'; trends: Trend[] };
+type Trends = Insufficient | { status: 'ok'; trends: Trend[]; window: { label: string } | null };
+
+/** A trend's verdict in the words Progress uses, with the weeks it read. */
+function verdictWords(trend: Trend, window: { label: string } | null): string {
+	const over = window ? ` (${window.label.toLowerCase()})` : '';
+	const { verdict } = trend.change;
+	if (verdict === 'real_trend') return `That is a real trend ${trend.realTrend?.direction}${over}.`;
+	if (verdict === 'normal_variation') return `That is within normal variation${over}.`;
+	return `There are not enough weeks yet to tell a real trend from normal variation${over}.`;
+}
 
 /** A ref as the answer grammar writes it, its label free of the grammar's characters. */
 const cite = (ref: Ref) =>
@@ -90,13 +107,13 @@ function volumeAnswer(context: MockContext): string {
 	].join('\n\n');
 }
 
-function trendLine(trend: Trend, name: string): string {
+function trendLine(trend: Trend, name: string, window: { label: string } | null): string {
 	const { change } = trend;
 	if (!change.enoughData)
 		return `[note] There are not enough complete weeks yet to say how your ${name} changed.`;
 	return metric(
 		trend.changeMethod,
-		`Your ${name} went from ${amount(change.earlier!, trend.unit)} to ${amount(change.later!, trend.unit)} a week (${change.direction}).`,
+		`Your ${name} went from ${amount(change.earlier!, trend.unit)} to ${amount(change.later!, trend.unit)} a week (${change.direction}). ${verdictWords(trend, window)}`,
 		trend.sources[0]!
 	);
 }
@@ -124,8 +141,10 @@ function runningAnswer(context: MockContext): string {
 	const sessionLoad = named('session_load');
 	return [
 		'Here is how your running and your overall load have moved.',
-		running ? trendLine(running, 'running distance') : '[note] No runs are logged in these weeks.',
-		...(sessionLoad ? [trendLine(sessionLoad, 'training load')] : []),
+		running
+			? trendLine(running, 'running distance', trends.window)
+			: '[note] No runs are logged in these weeks.',
+		...(sessionLoad ? [trendLine(sessionLoad, 'training load', trends.window)] : []),
 		...ratioLine(load),
 		'[note] These numbers show what changed, not why: they can’t tell whether your running is holding your lifting back.'
 	].join('\n\n');

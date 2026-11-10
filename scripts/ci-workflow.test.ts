@@ -4,6 +4,7 @@
  * list, such as the e2e production server's `.e2e-server.log`: upload-artifact skips dot-files
  * unless `include-hidden-files` is set.
  */
+import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { ENGINES, GROUPS, LEGS } from '../e2e/projects.ts';
@@ -284,6 +285,40 @@ describe('CI e2e legs', () => {
 		expect(job).toBeGreaterThanOrEqual(Math.ceil(1.5 * CEILING_MINUTES) + 12 + 8);
 	});
 
+	it('install the system packages of the engines each entry launches, cached per engine', () => {
+		/** Every `${{ … }}` in `template` evaluated for one engine's entries on one runner. */
+		const expand = (template: string, engine: string) =>
+			template.replace(/\$\{\{(.*?)\}\}/g, (_, inner: string) =>
+				String(
+					evaluate(inner, {
+						'matrix.engine': engine,
+						'runner.os': 'Linux',
+						'steps.playwright.outputs.version': '1.2.3'
+					})
+				)
+			);
+		const install = value(legStep('Install Playwright system dependencies'), 'run')!;
+		const cache = under(legStep('Cache Playwright system packages'), 'with');
+		const key = value(cache, 'key')!;
+		const restore = value(cache, 'restore-keys')!;
+		const engines = [...new Set(entries().map((entry) => entry.engine!))].sort();
+		expect(engines).toEqual([...ENGINES].sort());
+		for (const engine of engines) {
+			// Chromium legs launch only Chromium; WebKit legs also run the Chromium owner setup.
+			expect(expand(install, engine), engine).toBe(
+				engine === 'webkit'
+					? 'pnpm exec playwright install-deps chromium webkit'
+					: 'pnpm exec playwright install-deps chromium'
+			);
+			expect(expand(key, engine), engine).toBe(`apt-playwright-Linux-1.2.3-${engine}-v2`);
+			expect(expand(restore, engine), engine).toBe(`apt-playwright-Linux-1.2.3-${engine}-`);
+			// No engine restores an archive another engine saved (a Chromium one lacks WebKit's).
+			for (const other of engines.filter((e) => e !== engine)) {
+				expect(expand(key, other).startsWith(expand(restore, engine)), other).toBe(false);
+			}
+		}
+	});
+
 	it('upload each entry’s files under a name of its own, hidden files included', () => {
 		const inputs = under(legStep('Upload screenshots and report'), 'with');
 		expect(value(inputs, 'include-hidden-files')).toBe('true');
@@ -376,7 +411,7 @@ const START =
 describe('CI Postgres', () => {
 	it('is started by every job that runs db:setup, in the background, right after checkout', () => {
 		const jobs = databaseJobs();
-		expect(jobs.map((job) => job.id).sort()).toEqual(['e2e-legs', 'lighthouse', 'test']);
+		expect(jobs.map((job) => job.id).sort()).toEqual(['e2e-legs', 'integration', 'lighthouse']);
 		for (const job of jobs) {
 			const checkout = job.steps.findIndex((f) =>
 				value(f, 'uses')?.startsWith('actions/checkout@')
@@ -416,5 +451,84 @@ describe('CI Postgres', () => {
 	it('runs in no service container, which would hold every job until it is healthy', () => {
 		const withServices = under(ci, 'jobs').filter((job) => find(job.children, 'services'));
 		expect(withServices.map((job) => job.text)).toEqual([]);
+	});
+});
+
+/** Every job's id and the commands its steps run. */
+const jobCommands = () =>
+	under(ci, 'jobs').map((job) => ({
+		id: job.text.replace(/:$/, ''),
+		runs: stepsOf(job.children)
+			.map((fields) => value(fields, 'run'))
+			.filter((run): run is string => run !== undefined)
+	}));
+
+/** Runs a gate step's script with `env`, as the runner's shell would, and returns its exit code. */
+function exitCode(script: string, env: Record<string, string>): number | null {
+	return spawnSync('sh', ['-e', '-c', script], { env: { ...process.env, ...env }, stdio: 'ignore' })
+		.status;
+}
+
+describe('CI unit and integration tests', () => {
+	it('run test:unit, test:integration and db:explain once each, unit tests apart', () => {
+		const jobs = jobCommands();
+		const runners = (command: string) =>
+			jobs.flatMap((job) =>
+				job.runs
+					.filter((run) => run.split('\n').some((line) => line.trim() === command))
+					.map(() => job.id)
+			);
+		expect(runners('pnpm test:unit')).toEqual(['unit']);
+		expect(runners('pnpm test:integration')).toEqual(['integration']);
+		expect(runners('pnpm db:explain')).toEqual(['integration']);
+		// The integration job migrates the dev database before its tests, as the combined job did.
+		const integration = jobs.find((job) => job.id === 'integration')!.runs;
+		expect(integration.indexOf('pnpm db:migrate')).toBeGreaterThan(
+			integration.indexOf('pnpm db:setup')
+		);
+		expect(integration.indexOf('pnpm test:integration')).toBeGreaterThan(
+			integration.indexOf('pnpm db:migrate')
+		);
+		// Unit tests never reach a database, so their job starts none.
+		const unit = jobs.find((job) => job.id === 'unit')!.runs;
+		expect(unit.filter((run) => /postgres|db:/.test(run))).toEqual([]);
+		const job = (id: string) => under(under(ci, 'jobs'), id);
+		for (const [id, name] of [
+			['unit', 'Unit tests'],
+			['integration', 'Integration tests & query plans']
+		] as const) {
+			expect(value(job(id), 'name'), id).toBe(name);
+			expect(value(job(id), 'timeout-minutes'), id).toBe('15');
+			// Every event runs them, so a merge to main still fails on a failed test.
+			expect(value(job(id), 'if'), id).toBeUndefined();
+		}
+	});
+
+	it('report through one check, under its old name, that passes only when both jobs did', () => {
+		const checks = under(ci, 'jobs').filter(
+			(job) => value(job.children, 'name') === 'Unit & integration tests'
+		);
+		expect(checks.map((job) => job.text)).toEqual(['test:']);
+		const gate = checks[0]!.children;
+		expect(value(gate, 'needs')).toBe('[unit, integration]');
+		// A skipped required check counts as passed, so on a pull request it runs after a failure
+		// or a cancellation too (always(), not !cancelled()).
+		expect(value(gate, 'if')).toBe("${{ always() && github.event_name == 'pull_request' }}");
+		const steps = stepsOf(gate);
+		expect(steps).toHaveLength(1);
+		const step = steps[0]!;
+		expect(value(under(step, 'env'), 'UNIT')).toBe('${{ needs.unit.result }}');
+		expect(value(under(step, 'env'), 'INTEGRATION')).toBe('${{ needs.integration.result }}');
+		const script = value(step, 'run')!;
+		const results = ['success', 'failure', 'cancelled', 'skipped'];
+		for (const unit of results) {
+			for (const integration of results) {
+				const passed = unit === 'success' && integration === 'success';
+				expect(
+					exitCode(script, { UNIT: unit, INTEGRATION: integration }),
+					`unit ${unit}, integration ${integration}`
+				).toBe(passed ? 0 : 1);
+			}
+		}
 	});
 });

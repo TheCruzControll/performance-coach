@@ -7,7 +7,10 @@
  * - get_weekly_training_summary: one Monday-to-Sunday week, this one unless asked.
  * - get_training_load: acute and chronic sRPE load and their ratio, with the ratio's caveat.
  * - get_performance_trends: weekly sessions, minutes, load and running distance over complete
- *   weeks, each with how it changed.
+ *   weeks, each with how it changed and Progress's verdict: a real trend or normal variation.
+ *
+ * Every figure is the dashboards' own (M6's engine, services/analytics), with the catalogue's
+ * context (about: metric id, kind, definition, caveat) and the Progress view it is on (dashboard).
  *
  * Too little data is a result (status insufficient_data, saying what is missing), never a zero,
  * so someone else's ownerId reads insufficient_data. A week after this one, or a trend window
@@ -21,6 +24,8 @@
  */
 import * as z from 'zod/mini';
 import { mondayOf, type IsoDate } from '../../../domain/calendar.ts';
+import { METRIC_IDS, type MetricId } from '../../../domain/analytics/metrics.ts';
+import { TREND_METHOD } from '../../../domain/analytics/trend.ts';
 import type { AvailabilityUnit } from '../../../domain/analytics/types.ts';
 import { METHOD_MAX } from '../../../domain/coach/answer.ts';
 import { TURN_LIMITS } from '../../../domain/coach/budgets.ts';
@@ -58,7 +63,34 @@ const isoDate = z.iso.date();
 const truncated = z.optional(z.literal(true));
 const method = z.string().check(z.minLength(1), z.maxLength(METHOD_MAX));
 const sources = z.array(sourceRefSchema).check(z.minLength(1), z.maxLength(SOURCES_MAX + 1));
-const figure = z.object({ value: z.number(), unit: z.nullable(z.string()), method, sources });
+/** A figure's catalogue context (services/analytics' About). */
+export const aboutSchema = z.object({
+	metric: z.enum(METRIC_IDS as [MetricId, ...MetricId[]]),
+	kind: z.enum(['measured', 'estimated', 'calculated', 'reported']),
+	definition: z.string(),
+	caveat: z.optional(z.string())
+});
+const about = aboutSchema;
+/** The Progress page a figure is on. */
+export const dashboardSchema = z.string().check(z.startsWith('/progress'));
+const dashboard = dashboardSchema;
+const figure = z.object({
+	value: z.number(),
+	unit: z.nullable(z.string()),
+	method,
+	sources,
+	about
+});
+const verdict = z.enum(['real_trend', 'normal_variation', 'insufficient_data']);
+/** A dashboard's verdict on a trend (services/analytics' TrendCall). */
+export const trendCallShape = {
+	verdict,
+	realTrend: z.nullable(
+		z.object({ direction: z.enum(['up', 'down']), good: z.nullable(z.boolean()) })
+	),
+	window: z.nullable(z.object({ from: isoDate, to: isoDate, label: z.string() })),
+	classifier: z.literal(TREND_METHOD)
+};
 const groupValues = z.object(
 	Object.fromEntries(MUSCLE_GROUPS.map((group) => [group, z.optional(z.number())])) as Record<
 		MuscleGroup,
@@ -130,7 +162,14 @@ const weeklyOutput = z.union([
 		sessionLoad: figure,
 		unrated: figure,
 		runningDistance: figure,
-		hardSets: z.object({ values: groupValues, unit: z.nullable(z.string()), method, sources }),
+		hardSets: z.object({
+			values: groupValues,
+			unit: z.nullable(z.string()),
+			method,
+			sources,
+			about
+		}),
+		dashboard,
 		truncated
 	}),
 	insufficient
@@ -164,9 +203,11 @@ const loadOutput = z.union([
 		acute: figure,
 		chronic: figure,
 		ratio: figure,
+		zone: z.nullable(z.enum(['low', 'typical', 'raised', 'sharp'])),
 		last7Days: figure,
 		unrated: figure,
 		caveat: z.string(),
+		dashboard,
 		truncated
 	}),
 	insufficient
@@ -192,9 +233,10 @@ const pointSchema = z.object({
 	inProgress: z.boolean()
 });
 const changeSchema = z.union([
-	z.object({ enoughData: z.literal(false), points: z.int(), need: z.int() }),
+	z.object({ enoughData: z.literal(false), points: z.int(), need: z.int(), verdict }),
 	z.object({
 		enoughData: z.literal(true),
+		verdict,
 		points: z.int(),
 		from: isoDate,
 		to: isoDate,
@@ -217,9 +259,14 @@ const trendsOutput = z.union([
 				sources,
 				points: z.array(pointSchema).check(z.maxLength(MAX_TREND_WEEKS)),
 				change: changeSchema,
-				changeMethod: method
+				changeMethod: method,
+				about,
+				realTrend: trendCallShape.realTrend
 			})
 		),
+		window: trendCallShape.window,
+		classifier: trendCallShape.classifier,
+		dashboard,
 		truncated
 	}),
 	insufficient
@@ -227,7 +274,7 @@ const trendsOutput = z.union([
 
 const getPerformanceTrendsTool = defineTool({
 	name: 'get_performance_trends',
-	description: `How the owner's training moved over complete weeks (this week is left out until it ends), computed by code: completed workouts, minutes, sRPE load and running distance per week, oldest first, from the first week with anything logged. Each trend has its unit, method, sources, weekly points, and change (the later half's mean against the earlier half's, with changeMethod); change.enoughData false means too few weeks to say. It describes, never judges: do not call a change a real trend or normal variation. ${TREND_WEEKS} weeks unless weeks says otherwise. status insufficient_data means nothing was logged in them.`,
+	description: `How the owner's training moved over complete weeks (this week is left out until it ends), computed by code: completed workouts, minutes, sRPE load and running distance per week, oldest first, from the first week with anything logged. Each trend has its unit, method, sources, weekly points and change: the later half's mean against the earlier half's (changeMethod; enoughData false means too few weeks to say), and change.verdict, the one Progress shows, judged over window (at least 12 weeks, named in window.label): real_trend (realTrend says which way, and good whether that is better), normal_variation, or insufficient_data for too few weeks to tell. Call a change a real trend or normal variation only as change.verdict says. ${TREND_WEEKS} weeks unless weeks says otherwise. status insufficient_data means nothing was logged in them.`,
 	input: z.object({
 		weeks: z.optional(z.int().check(z.minimum(MIN_TREND_WEEKS), z.maximum(MAX_TREND_WEEKS)))
 	}),

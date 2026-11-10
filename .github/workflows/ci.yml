@@ -58,8 +58,25 @@ jobs:
       - name: Migrations match the schema (no drift)
         run: pnpm db:drift
 
-  test:
-    name: Unit & integration tests
+  # Unit tests never reach a database, so they run apart from the integration tests and
+  # finish while the integration job is still starting its Postgres.
+  unit:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Unit tests
+        run: pnpm test:unit
+
+  integration:
+    name: Integration tests & query plans
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -94,8 +111,6 @@ jobs:
         run: pnpm db:setup
       - name: Apply migrations (dev database)
         run: pnpm db:migrate
-      - name: Unit tests
-        run: pnpm test:unit
       - name: Integration tests (real Postgres, committed migrations)
         run: pnpm test:integration
       # The history and program queries' plans on a two-year dataset: on a large table, each
@@ -110,6 +125,26 @@ jobs:
           path: test-results/explain.md
           retention-days: 14
           if-no-files-found: ignore
+
+  # The check branch protection requires, under the combined job's old name: green only when both
+  # jobs are. always(), not !cancelled(): a required check skipped in a cancelled run would count
+  # as passing. Pull requests only, as the E2E check below.
+  test:
+    name: Unit & integration tests
+    if: ${{ always() && github.event_name == 'pull_request' }}
+    needs: [unit, integration]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Unit and integration tests passed
+        env:
+          UNIT: ${{ needs.unit.result }}
+          INTEGRATION: ${{ needs.integration.result }}
+        run: |
+          if [ "$UNIT" != success ] || [ "$INTEGRATION" != success ]; then
+            echo "::error::Unit tests: $UNIT; integration tests: $INTEGRATION"
+            exit 1
+          fi
 
   build:
     name: Build (Vercel + Node) & budgets
@@ -203,20 +238,22 @@ jobs:
         run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
       # WebKit's system packages are ~140 MB, and the runner's Ubuntu mirror sometimes trickles
       # at ~50 KB/s (a 12-minute timeout on #5 before any test ran). Keep the downloaded
-      # packages between runs so a slow mirror costs one run, not every run.
+      # packages between runs so a slow mirror costs one run, not every run. Keyed by engine: a
+      # Chromium leg's archive lacks WebKit's packages, so WebKit legs must never restore it.
       - name: Cache Playwright system packages
         uses: actions/cache@v6
         with:
           path: ~/.cache/apt-archives
-          key: apt-playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-v1
-          restore-keys: apt-playwright-${{ runner.os }}-
+          key: apt-playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-${{ matrix.engine }}-v2
+          restore-keys: apt-playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-${{ matrix.engine }}-
       - name: Configure apt for slow mirrors (and keep packages for the cache)
         run: ./scripts/ci-apt-resilience.sh ~/.cache/apt-archives
       - name: Install Playwright system dependencies
         # Never killed midway: an interrupted apt-get keeps the dpkg lock and fails every later
         # install. Slow or stalled mirror downloads time out and retry inside apt instead.
+        # Chromium legs launch only Chromium; WebKit legs also need it for the owner setup.
         timeout-minutes: 12
-        run: pnpm exec playwright install-deps chromium webkit
+        run: pnpm exec playwright install-deps ${{ matrix.engine == 'webkit' && 'chromium webkit' || 'chromium' }}
       - name: Make the kept packages readable for the cache
         run: ./scripts/ci-apt-resilience.sh --release ~/.cache/apt-archives
       - name: Install Playwright browsers
