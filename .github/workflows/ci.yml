@@ -320,7 +320,7 @@ jobs:
         env:
           ORIGIN: http://localhost:4174
       # Every app screen (incl. the streamed, DB-backed /profile), a fresh browser per run,
-      # median of 5. Asserts the documented score target (>= 90); TBT gets 50% headroom over its
+      # median of 5, stopping a route early once 3 runs decide it. Asserts the documented score target (>= 90); TBT gets 50% headroom over its
       # 200 ms target for shared-runner noise. The tight hydration guard is the main-thread
       # budget in the e2e job (e2e/perf.e2e.ts). See docs/performance.md.
       - name: Lighthouse (median of 5 runs, asserted)

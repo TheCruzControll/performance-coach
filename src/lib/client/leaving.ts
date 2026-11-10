@@ -4,7 +4,7 @@
  * Leaving a page cancels whatever it still had in flight: the stylesheets and code chunks it
  * loads while starting up (SvelteKit imports the root layout and error page on every start, and
  * stylesheets small enough to be inlined into the HTML are fetched again by those imports), the
- * service-worker registration it starts on `load`, data requests. Browsers report those
+ * service-worker registration it starts once idle, data requests. Browsers report those
  * cancellations as failures, WebKit loudly: "Unable to preload CSS for …", "Script
  * …/service-worker.js load failed", and the errors SvelteKit then hits on the way out. They
  * happen on a page nobody can see any more, so they are not errors: the reporters in
