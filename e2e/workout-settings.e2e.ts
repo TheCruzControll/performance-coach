@@ -239,9 +239,16 @@ test.describe("Train's rest timer", () => {
 		await expect(sheet(page)).toBeHidden();
 		await expect(inline(page).getByTestId('rest-time')).toHaveText('1:10');
 
-		// After a reload the row opens it again, still running, at the right time.
+		// After a reload it is back under its row untapped, still running, at the right time.
 		await page.reload();
 		await page.waitForLoadState('networkidle');
+		await expect(inline(page).getByTestId('rest-time')).toHaveText('1:10');
+		// And after a visit to another screen.
+		const nav = page.getByRole('navigation', { name: 'Primary' });
+		await nav.getByRole('link', { name: 'Today' }).click();
+		await expect(page.getByRole('heading', { level: 1 })).toContainText('Today');
+		await nav.getByRole('link', { name: 'Train' }).click();
+		await expect(inline(page).getByTestId('rest-time')).toHaveText('1:10');
 		await row(page).click();
 		await expect(sheet(page).getByTestId('rest-time')).toHaveText('1:10');
 		await page.clock.fastForward(10_000);

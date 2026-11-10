@@ -133,6 +133,14 @@
 		if (tool === 'plates') plates.show();
 		if (tool === 'plan' && view) plan.show();
 		if (tool === 'rest') restTimer.show();
+		// A rest left running (a reload, or back from another screen) shows under its row again,
+		// with its alarm and keep-awake, without a tap. The key literal keeps standalone-rest.ts
+		// out of Train's own chunk; blocked storage throws and means no rest.
+		try {
+			if (localStorage.getItem('pc:rest:v1')) restTimer.prefetch();
+		} catch {
+			// no storage, no rest
+		}
 		return () => {
 			plates.leave();
 			restTimer.leave();

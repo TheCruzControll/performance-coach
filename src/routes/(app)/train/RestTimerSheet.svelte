@@ -7,8 +7,8 @@
   reload, a closed tab or another tab shows exactly the right time. With the sheet closed, a
   running rest shows under its Tools row with the same controls. At zero it vibrates and sounds
   as the settings allow, and keeps the screen awake during rest when they ask for it
-  (feedback.ts), while Train is open. Train imports this on first intent, so after a reload a
-  running rest shows again once the row is tapped (its code is not worth Train's budget earlier).
+  (feedback.ts), while Train is open. Train imports this on first intent, or as it mounts when a
+  rest is stored, so a running rest shows again after a reload or a return to Train.
 -->
 <script lang="ts">
 	import { createTone, createWakeLock, vibrate } from '#lib/client/workout/feedback.ts';
