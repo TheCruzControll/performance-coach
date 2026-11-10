@@ -5,9 +5,12 @@
   planned tick, running, Muay Thai, recovery and fatigue with its reasons, conflicting demands
   with their why, and PRs. Each section is a disclosure whose summary is its title and verdict
   line: on a phone it starts collapsed to that line; from 1024 px every section shows in full.
-  Every figure carries its canonical value in data-value. A chart's room is reserved on the
-  server and its frame loads after hydration; without JavaScript its title, summary and numbers
-  are a table in that room. If the frame fails to load, the room says so, with Retry.
+  The body follows its <details> rather than sitting inside it, so a closed disclosure hides it
+  only below 1024 px, in every engine (WebKit treats what a closed <details> holds as hidden,
+  whatever the CSS). Every figure carries its canonical value in data-value. A chart's room is
+  reserved on the server and its frame loads after hydration; without JavaScript its title,
+  summary and numbers are a table in that room. If the frame fails to load, the room says so,
+  with Retry.
 -->
 <script lang="ts">
 	import Button from '#lib/ui/components/Button.svelte';
@@ -25,16 +28,18 @@
 </script>
 
 {#each sections as section (section.id)}
-	<details class="section" data-testid="review-section" data-section={section.id}>
-		<summary>
-			<span class="head">
-				<h3>{section.title}</h3>
-				<span class="verdict" data-level={section.verdict.level} data-testid="section-verdict"
-					>{section.verdict.words}</span
-				>
-			</span>
-			<Icon name="chevron-down" size={20} class="chevron" />
-		</summary>
+	<div class="section" data-testid="review-section" data-section={section.id}>
+		<details>
+			<summary>
+				<span class="head">
+					<h3>{section.title}</h3>
+					<span class="verdict" data-level={section.verdict.level} data-testid="section-verdict"
+						>{section.verdict.words}</span
+					>
+				</span>
+				<Icon name="chevron-down" size={20} class="chevron" />
+			</summary>
+		</details>
 		<div class="body">
 			{#if section.chart}
 				{#await block}
@@ -92,7 +97,7 @@
 				{/each}
 			</ul>
 		</div>
-	</details>
+	</div>
 {/each}
 
 <style>
@@ -203,12 +208,15 @@
 		color: var(--color-text-secondary);
 	}
 
+	/* Below 1024 px a section's body shows once its disclosure is open. */
+	@media (width < 64rem) {
+		details:not([open]) + .body {
+			display: none;
+		}
+	}
+
 	/* From 1024 px every section shows in full: nothing to open. */
 	@media (width >= 64rem) {
-		.section::details-content {
-			content-visibility: visible;
-		}
-
 		summary {
 			cursor: auto;
 		}

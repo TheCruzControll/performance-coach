@@ -171,9 +171,9 @@ test('on a phone each section collapses to its verdict line, and a tap opens it'
 	await expectNoSideScroll(page);
 	await captureScreen(page, testInfo, 'review-sections-phone');
 
-	await running.locator(':scope > summary').click();
+	await running.locator('summary').click();
 	await expect(item(page, 'running:mileage')).toBeVisible();
-	await section(page, 'volume').locator(':scope > summary').click();
+	await section(page, 'volume').locator('summary').click();
 	await expect(section(page, 'volume').getByTestId('chart-plot')).toBeVisible();
 	await auditBothThemes(page, 'Weekly review sections');
 });
