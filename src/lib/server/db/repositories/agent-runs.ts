@@ -66,6 +66,10 @@ export function createAgentRunsRepository(db: Executor) {
 		unpricedCalls: async (ownerId: string) =>
 			(await first(q.unpricedCalls(db, ownerId)))?.calls ?? 0,
 
+		/** The prompt of the run's last served call below `below`, in tokens; null before any. */
+		lastCallInput: async (ownerId: string, runId: string, below: number) =>
+			(await first(q.lastCallInput(db, ownerId, runId, below)))?.tokens ?? null,
+
 		/** Insert a running run; null when the thread already has one (the partial unique index). */
 		insertRun: (values: NewRunRow) =>
 			first(db.insert(agentRuns).values(values).onConflictDoNothing().returning(q.runColumns)),

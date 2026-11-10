@@ -89,16 +89,20 @@ test.describe('the rest timer on a desktop', () => {
 			await expect.poll(() => style(target, 'background-color'), `control ${i} at rest`).toBe(rest);
 		}
 
-		// By keyboard: the side list's one stop, then the timer's controls, first in the main column.
+		// By keyboard: the side list's one stop and Add exercise under it, then the timer's
+		// controls, first in the main column.
 		await page.locator('main#main').focus();
 		for (let i = 0; i < 20; i += 1) {
 			if (await controls[0]!.evaluate((el) => el === document.activeElement)) break;
 			await page.keyboard.press('Tab');
 		}
 		await page.keyboard.press('Shift+Tab');
+		await expect(page.getByTestId('workout-side').getByTestId('side-add-exercise')).toBeFocused();
+		await page.keyboard.press('Shift+Tab');
 		await expect(
 			page.getByTestId('workout-side').getByRole('button', { name: /Leg press/ })
 		).toBeFocused();
+		await page.keyboard.press('Tab');
 		await page.keyboard.press('Tab');
 		for (const target of controls.slice(0, 4)) {
 			await expect(target).toBeFocused();

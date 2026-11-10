@@ -29,7 +29,12 @@ import type { Executor } from '../types';
 export type { ProgramInRangeRow } from '../queries/analytics';
 
 /** A counted set: what the strength and prescription functions read, with its muscles. */
-export type SetFact = StrengthFact & ActualSet & ExerciseMuscles & { exercisePosition: number };
+export type SetFact = StrengthFact &
+	ActualSet &
+	ExerciseMuscles & { exercisePosition: number; updatedAt: Date };
+
+/** A recovery check-in, with when it last changed. */
+export type RecoveryFact = RecoveryEntry & { updatedAt: Date };
 
 /** A counted workout with its run or other-session record (null for the other kinds). */
 export type SessionFact = Omit<SessionFactRow, 'run' | 'other'> &
@@ -137,7 +142,7 @@ export function createAnalyticsRepository(db: Executor) {
 			};
 		},
 
-		async recovery(ownerId: string, from: IsoDate, to: IsoDate): Promise<RecoveryEntry[]> {
+		async recovery(ownerId: string, from: IsoDate, to: IsoDate): Promise<RecoveryFact[]> {
 			return recoveryFacts(db, ownerId, from, to);
 		},
 

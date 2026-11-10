@@ -67,6 +67,23 @@ describe('summarise', () => {
 			{ name: 'iphone-chromium › shell.e2e.ts', tests: 1, minutes: 0.25 }
 		]);
 	});
+
+	it('counts a test a shared module declares for the spec file that runs it', () => {
+		const half = (file: string, minutes: number) => ({
+			file,
+			specs: [],
+			suites: [{ specs: [{ file: 'a11y-suite.ts', tests: [test('iphone-chromium', minutes)] }] }]
+		});
+		const timing = summarise({
+			config: { shard: null },
+			stats: { duration: 5 * MINUTE },
+			suites: [half('a11y-dark.e2e.ts', 2), half('a11y-light.e2e.ts', 1)]
+		});
+		expect(timing.specs).toEqual([
+			{ name: 'iphone-chromium › a11y-dark.e2e.ts', tests: 1, minutes: 2 },
+			{ name: 'iphone-chromium › a11y-light.e2e.ts', tests: 1, minutes: 1 }
+		]);
+	});
 });
 
 describe('the ceiling', () => {

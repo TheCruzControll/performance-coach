@@ -29,6 +29,9 @@ export interface Narrative {
 	at: Date;
 }
 
+/** Advisory-lock key for creating and refreshing one owner's reviews (727201–727203 are taken). */
+const REVIEWS_LOCK = 727204;
+
 const first = async <T>(rows: Promise<T[]>): Promise<T | null> => (await rows)[0] ?? null;
 const tables = { weekly: weeklyReviews, cycle: cycleReviews } as const;
 
@@ -56,6 +59,10 @@ export function createReviewsRepository(db: Executor) {
 	};
 
 	return {
+		/** Serialise this owner's review creates and refreshes within the transaction. */
+		async lock(ownerId: string): Promise<void> {
+			await db.execute(sql`select pg_advisory_xact_lock(${REVIEWS_LOCK}, hashtext(${ownerId}))`);
+		},
 		weeklyReview: (ownerId: string, id: string) => first(q.weeklyReview(db, ownerId, id)),
 		cycleReview: (ownerId: string, id: string) => first(q.cycleReview(db, ownerId, id)),
 		liveWeeklyReview: (ownerId: string, weekStartsOn: string) =>

@@ -5,8 +5,10 @@
  * 1. A coach that is switched off or not launched refuses the turn before anything is written.
  * 2. The day's facts (services/coach/turn-facts.ts): date, time and zone, the active version and
  *    its week through M3's program reads.
- * 3. A new send rolls the thread to a new segment when its prompt version changed (rollover.ts),
- *    and a message that opens a segment stores the memory preamble ahead of it (memory/load.ts).
+ * 3. A new send rolls the thread to a new segment when its prompt version changed or the segment
+ *    grew past SEGMENT's limits (rollover.ts): the old segment is first summarised into a note, in
+ *    its own run, outside the transaction. A message that opens a segment stores the memory
+ *    preamble ahead of it (memory/load.ts), with that summary.
  *    A retried send (the same client message id) stores nothing: an answered one points at its
  *    stored answer; one whose run never finished runs again on the stored message and its text.
  * 4. The run starts; a live run on the thread makes the turn busy. Steps 3 and 4 are one
@@ -77,7 +79,7 @@ import { loadTurnFacts } from '../services/coach/turn-facts.ts';
 import { directAnswer, DIRECT_RUN } from './direct.ts';
 import type { TurnHooks } from './hooks.ts';
 import { loadMemory } from './memory/load.ts';
-import { rollover } from './rollover.ts';
+import { rollover, rolloverChip, summariseSegment, type RolloverPlan } from './rollover.ts';
 import { runLoop, type LoopOutcome } from './orchestrator.ts';
 import { createOutputPolicy, type PolicyInput } from './policy.ts';
 import { segmentPreamble, turnContext, weekSummary, type TurnFacts } from './prompt/context.ts';
@@ -328,12 +330,26 @@ async function turn(
 	const version = promptVersion({ system: SYSTEM_PROMPT, tools: definitions, model: COACH_MODEL });
 	const day = await loadTurnFacts(ownerId, deps);
 	const activeVersion = day.program?.versionId ?? null;
+	// A summary is a model call: made before the transaction, so none is held open across it.
+	const plan: RolloverPlan | null = input.threadId
+		? await summariseSegment({
+				ownerId,
+				threadId: input.threadId,
+				clientMessageId: input.clientMessageId,
+				promptVersion: version,
+				provider: provider.status === 'ready' ? provider.provider : null,
+				chatCallsBelow: DRAFT_CALL_INDEX_BASE,
+				signal: input.signal,
+				deps
+			})
+		: null;
 
 	// All or nothing with the run's start: a busy send leaves the conversation as it was.
 	const begun = await inTransaction(deps, async (deps) => {
 		let preamble: BetaUserMessageParam['content'] | undefined;
 		/** When the previous turn ended: decisions after it are this turn's news. */
 		let since: Date | null = null;
+		let rolled = false;
 		if (!(await findOwnerMessage(ownerId, input.clientMessageId, deps))) {
 			let summary: string | null = null;
 			let opens = true;
@@ -341,15 +357,17 @@ async function turn(
 				const { thread, rows } = await getTranscript(ownerId, input.threadId, deps);
 				if (thread.archived) throw new CoachArchivedError();
 				since = thread.lastMessageAt;
-				const rolled = await rollover({
+				const next = await rollover({
 					ownerId,
 					thread,
 					promptVersion: version,
 					programVersionId: activeVersion,
+					plan,
 					deps
 				});
-				summary = rolled.summary;
-				opens = rolled.thread.segment !== thread.segment || rows.length === 0;
+				summary = next.summary;
+				rolled = next.thread.segment !== thread.segment;
+				opens = rolled || rows.length === 0;
 			}
 			if (opens)
 				preamble = segmentPreamble(
@@ -403,18 +421,20 @@ async function turn(
 			deps
 		);
 		const decided = since ? await listDecidedSince(ownerId, since, deps) : [];
-		return { owner, thread, first, transcript, after, ownerText, lookup, started, decided };
+		return { owner, thread, first, transcript, after, ownerText, lookup, started, decided, rolled };
 	});
 	if (begun.answer !== undefined) {
 		// Answered already: the client shows the stored answer.
 		emit({ type: 'answer_completed', messageId: begun.answer });
 		return 'completed';
 	}
-	const { owner, thread, first, transcript, after, ownerText, lookup, started, decided } = begun;
+	const { owner, thread, first, transcript, after, ownerText, lookup, started, decided, rolled } =
+		begun;
 	const threadId = owner.thread.id;
 	let contextPending = !after.some((row) => row.kind === 'context');
 	const runId = (run.id = started.id);
 	emit({ type: 'run_started', threadId, runId, messageId: owner.message.id });
+	if (plan && rolled) emit(rolloverChip(plan));
 	const startedAt = Date.now();
 	let ttftMs: number | null = null;
 	const end = async (status: RunEnd, error: string | null = null) => {

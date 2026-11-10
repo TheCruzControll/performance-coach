@@ -92,6 +92,8 @@ export function setFacts(db: Executor, ownerId: string, range: InstantRange) {
 			isSkipped: setRecords.isSkipped,
 			performedAt: setRecords.performedAt,
 			deletedAt: setRecords.deletedAt,
+			// When it last changed: a review's inputs digest notices an edited set.
+			updatedAt: setRecords.updatedAt,
 			primaryMuscles: exercises.primaryMuscles,
 			secondaryMuscles: exercises.secondaryMuscles
 		})
@@ -125,6 +127,11 @@ export function sessionFacts(db: Executor, ownerId: string, range: InstantRange)
 			finishedAt: workouts.finishedAt,
 			durationSeconds: workouts.durationSeconds,
 			sessionRpe: workouts.sessionRpe,
+			// When it or its record last changed: a review's inputs digest notices an edit.
+			updatedAt:
+				sql<Date>`greatest(${workouts.updatedAt}, ${runRecords.updatedAt}, ${otherSessionRecords.updatedAt})`.mapWith(
+					workouts.updatedAt
+				),
 			run: {
 				workoutId: runRecords.workoutId,
 				distanceMetres: runRecords.distanceMetres,
@@ -232,7 +239,9 @@ export function recoveryFacts(db: Executor, ownerId: string, from: IsoDate, to: 
 			soreness: recoveryNotes.soreness,
 			energy: recoveryNotes.energy,
 			stress: recoveryNotes.stress,
-			note: recoveryNotes.note
+			note: recoveryNotes.note,
+			// When it last changed: a review's inputs digest notices an edited check-in.
+			updatedAt: recoveryNotes.updatedAt
 		})
 		.from(recoveryNotes)
 		.where(
