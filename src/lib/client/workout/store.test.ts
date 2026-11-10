@@ -17,6 +17,7 @@ import { replay } from '#lib/domain/workout/project.ts';
 import { strengthTable } from '#lib/domain/workout/reducers/tables.ts';
 import { restRemaining, STOPWATCH_IDLE, stopwatchElapsed } from '#lib/domain/workout/timers.ts';
 import type { WorkoutView } from '#lib/domain/workout/types.ts';
+import { broadcast, openTabChannel } from './channel';
 import { StoreClosedError } from './db';
 import type { StoredWorkout } from './db';
 import { DB_NAME, STORES } from './names';
@@ -369,6 +370,38 @@ describe('closing', () => {
 		}
 		expect(refused).toBeInstanceOf(StoreClosedError);
 		expect((refused as StoreClosedError).reason).toBe('upgraded');
+	});
+
+	it("another tab's sign-out closes this page for good: it never recreates the deleted database", async () => {
+		const name = 'pc-workout-store-signed-out-test';
+		const stale = await createStore({ table: strengthTable, channel: openTabChannel(name) });
+		await started(stale);
+
+		broadcast({ type: 'signed-out' }, name);
+		await vi.waitFor(() => expect(stale.closed).toBe('deleted'));
+		// What signOut does next (clearIndexedDb): never blocked by this page.
+		let blocked = false;
+		await deleteDB(DB_NAME, { blocked: () => (blocked = true) });
+
+		expect(blocked).toBe(false);
+		await expect(open()).rejects.toMatchObject({ name: 'StoreClosedError', reason: 'deleted' });
+		expect(await indexedDB.databases()).toEqual([]);
+	});
+
+	it('close lets go of the store, not the page: a store opened next reads the database', async () => {
+		const store = await open();
+		await started(store);
+		const changes: unknown[] = [];
+		store.onChange((change) => changes.push(change));
+
+		store.close();
+
+		expect(store.closed).toBe('deleted');
+		expect(changes).toContainEqual({ type: 'closed', reason: 'deleted' });
+		expect(() => store.dispatch(log('s1', 1))).toThrow(StoreClosedError);
+		const next = await open();
+		expect((await next.getActive())!.workoutId).toBe(W);
+		expect(await next.dispatch(log('s1', 1)).saved).toBe('saved');
 	});
 
 	it('reads a database a newer app has already upgraded as upgraded', async () => {
