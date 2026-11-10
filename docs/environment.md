@@ -51,6 +51,13 @@ Test tooling (not read by the app):
 | `LIGHTHOUSE_SESSION` | unset                                              | session cookie value for `pnpm lighthouse --url`  |
 | `ADAPTER`            | `vercel`                                           | `node` builds with adapter-node                   |
 | `PGADMIN_URL`        | unset                                              | `pnpm db:setup` admin connection (CI)             |
+| `LIFECYCLE_STRICT`   | unset (production)                                 | `1` in tests and e2e: see below                   |
+
+`LIFECYCLE_STRICT` is the one row above the app reads. `vite.config.ts` (the unit and integration
+projects) and `e2e/global-setup.ts` (the e2e server) set it to `1`, so the lifecycle guard
+(`src/lib/server/services/lifecycle-guard.ts`) throws on an illegal move of an observed lifecycle
+instead of logging it, and a test run catches drift between a table and the code. Leave it unset
+in production.
 
 `EXPLAIN_DATABASE_URL` (default `postgres://coach:coach@localhost:5432/coach_explain`) is the
 scratch database `pnpm db:explain` drops, migrates and fills with a two-year dataset on every run;
