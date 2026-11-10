@@ -11,6 +11,7 @@
 
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import Prepaint from './Prepaint.svelte';
 	import Shell from './Shell.svelte';
 	import type * as StartFlow from './StartFlow.svelte';
 	import type StrengthViewComponent from './StrengthView.svelte';
@@ -19,6 +20,9 @@
 	const table = () => import('#lib/domain/workout/reducers/tables.ts').then((m) => m.strengthTable);
 	let StrengthView = $state.raw<typeof StrengthViewComponent | null>(null);
 	const ready = () => view!.then((module) => (StrengthView = module.default));
+
+	// The Shell's prepaint (Prepaint.svelte): the current exercise this device kept, painted
+	// before the app starts, in the skeleton's place (prepaint.ts).
 
 	// ?start=<lineage> or ?new=run|other starts a workout (StartFlow.svelte, lazy). Read once
 	// mounted, never while prerendering: SvelteKit refuses the query there.
@@ -33,6 +37,7 @@
 </svelte:head>
 
 <Shell {table} {ready} {start}>
+	{#snippet prepaint()}<Prepaint />{/snippet}
 	{#snippet children(snapshot, load, active)}
 		{#if StrengthView}
 			<StrengthView {snapshot} {load} {active} />
