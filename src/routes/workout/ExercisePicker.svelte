@@ -12,10 +12,15 @@
     only until its first set is logged.
   - No library on this device and offline: 'Your exercise list isn't on this device yet', with
     Try again. Online with no answer: the list couldn't load, with Try again.
+  - Add my own exercise, under the list (named after the search when nothing matches), opens
+    CustomExerciseSheet in its place (loaded then); saved, the new exercise is created and added
+    in one dispatch, and joins the cached library (library.ts addCustomExercise).
   Every control is 44 px or more, with hover and :focus-visible states.
 -->
 <script lang="ts">
+	import type { ChunkLoad } from '#lib/client/workout/active.svelte.ts';
 	import {
+		addCustomExercise,
 		addExercise,
 		refreshLibrary,
 		searchLibrary,
@@ -30,15 +35,18 @@
 	import Skeleton from '#lib/ui/components/Skeleton.svelte';
 	import TextField from '#lib/ui/components/TextField.svelte';
 	import { tick, untrack } from 'svelte';
+	import type CustomExerciseSheet from './CustomExerciseSheet.svelte';
 
 	interface Props {
 		view: WorkoutView;
 		/** A new object per tap: each opens the picker afresh. */
 		request: object;
 		store: WorkoutStore;
+		/** The page's chunk loader, for the custom exercise form. */
+		load: ChunkLoad;
 	}
 
-	let { view, request, store }: Props = $props();
+	let { view, request, store, load: loadChunk }: Props = $props();
 
 	type Shown =
 		| { status: 'loading' }
@@ -94,6 +102,16 @@
 		if (!exercise || shown.status !== 'ready') return;
 		addExercise(store, view, exercise, shown.library.units);
 		open = false;
+	}
+
+	// Add my own exercise: the form, loaded on the first tap, in the picker's place.
+	let Custom = $state.raw<typeof CustomExerciseSheet | null>(null);
+	let creating = $state(false);
+	function addOwn() {
+		void loadChunk(() => import('./CustomExerciseSheet.svelte')).then((module) => {
+			if (!module) return;
+			[Custom, open, creating] = [module.default, false, true];
+		});
 	}
 
 	const options = () => [...(list?.querySelectorAll<HTMLElement>('.option') ?? [])];
@@ -174,9 +192,12 @@
 				{/if}
 			{:else}
 				<p class="none" role="status" data-testid="picker-none">
-					No exercise matches “{query.trim()}”. Try another name, or fewer letters.
+					No exercise matches “{query.trim()}”. Try another name, or add it as your own.
 				</p>
 			{/if}
+			<Button variant="secondary" icon="plus" onclick={addOwn} data-testid="picker-add-own">
+				Add my own exercise
+			</Button>
 		</div>
 	{:else if shown.status === 'loading'}
 		<div class="loading" role="status" aria-busy="true" data-testid="picker-loading">
@@ -204,6 +225,16 @@
 		</EmptyState>
 	{/if}
 </BottomSheet>
+
+{#if Custom && shown.status === 'ready'}
+	{@const library = shown.library}
+	<Custom
+		bind:open={creating}
+		exercises={library.exercises}
+		name={found?.results.length === 0 ? query.trim() : ''}
+		oncreate={(exercise) => void addCustomExercise(store, view, exercise, library.units)}
+	/>
+{/if}
 
 <style>
 	ul {

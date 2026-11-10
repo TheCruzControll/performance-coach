@@ -12,16 +12,20 @@
     (`onfinish`).
   - Skip exercise skips its remaining sets and moves on.
   Everything comes from the start kit, so it all works offline. When nothing fits, the list says
-  why and offers Skip exercise. Each change is one dispatch, written on the device first.
+  why and offers Add my own exercise (CustomExerciseSheet, loaded then, in this sheet's place:
+  the new exercise and today's swap to it, actions.ts replaceWithOwn) and Skip exercise. Each
+  change is one dispatch, written on the device first.
 -->
 <script lang="ts">
 	import type { ChunkLoad } from '#lib/client/workout/active.svelte.ts';
+	import { customLibraryExercise, joinLibrary, type Library } from '#lib/client/workout/library.ts';
 	import type { WorkoutStore } from '#lib/client/workout/store.ts';
 	import {
 		ALTERNATIVES_COPY,
 		dislikeConfirmation,
 		QUICK_ACTION_COPY
 	} from '#lib/domain/workout/copy.ts';
+	import type { CustomExercise } from '#lib/domain/training/types.ts';
 	import type { KitAlternative, WorkoutView } from '#lib/domain/workout/index.ts';
 	import { slotAt } from '#lib/domain/workout/selectors.ts';
 	import { effectsOf } from '#lib/domain/workout/substitution.ts';
@@ -29,9 +33,18 @@
 	import BottomSheet from '#lib/ui/components/BottomSheet.svelte';
 	import Button from '#lib/ui/components/Button.svelte';
 	import { tick } from 'svelte';
-	import { alternativesFor, dislike, reportPain, skipExercise, substitute } from './actions.ts';
+	import {
+		alternativesFor,
+		dislike,
+		replaceWithOwn,
+		reportPain,
+		skipExercise,
+		substitute
+	} from './actions.ts';
 	import type { PainDetails, SwapAction } from './actions.ts';
 	import AlternativeList from './AlternativeList.svelte';
+	import type CustomExerciseSheet from './CustomExerciseSheet.svelte';
+	import type { Replaced } from './custom-exercise.ts';
 	import type PainSheet from './PainSheet.svelte';
 
 	interface Props {
@@ -100,6 +113,33 @@
 		send(substitute(view, position, to, action, now()));
 	}
 
+	// Add my own exercise, when nothing fits: the form in this sheet's place, with the cached
+	// library for its name check and the exercise being replaced for its defaults.
+	let Custom = $state.raw<typeof CustomExerciseSheet | null>(null);
+	let creating = $state(false);
+	let library = $state.raw<Library | null>(null);
+	let replaced = $state.raw<(Replaced & { name: string }) | null>(null);
+	async function addOwn() {
+		const module = await load(() => import('./CustomExerciseSheet.svelte'));
+		if (!module || !slot) return;
+		library = await store.getLibrary().catch(() => null);
+		const listed = library?.exercises.find((e) => e.id === slot.exerciseId);
+		const planned = slot.kit?.exercise.id === slot.exerciseId ? slot.kit.exercise : null;
+		const pattern = listed?.pattern ?? planned?.pattern;
+		replaced = pattern ? { name, pattern, defaultSeconds: listed?.defaultSeconds } : null;
+		[Custom, open, creating] = [module.default, false, true];
+	}
+
+	function createOwn(exercise: CustomExercise) {
+		const [created, swap] = replaceWithOwn(view, position, exercise, now());
+		store.dispatch(created, swap);
+		if (library)
+			void joinLibrary(
+				store,
+				customLibraryExercise(created.entityId, exercise, library.units)
+			).catch(() => {});
+	}
+
 	function report(choice: PainChoice, details: PainDetails) {
 		const { mutations, followUps } = reportPain(view, position, choice, details, now());
 		const [first, ...rest] = mutations;
@@ -150,6 +190,7 @@
 				blocked={slot.kit?.blocked ?? []}
 				onchoose={(alternative) => pick(action, alternative)}
 				onskip={() => choose('skip')}
+				onaddown={() => void addOwn()}
 			/>
 			<Button variant="ghost" icon="chevron-left" onclick={() => go({ kind: 'menu' })}>Back</Button>
 		{:else if step.kind === 'confirm' && confirmation}
@@ -172,6 +213,10 @@
 
 {#if Pain}
 	<Pain bind:open={hurting} {view} {position} onreport={report} />
+{/if}
+
+{#if Custom}
+	<Custom bind:open={creating} exercises={library?.exercises} {replaced} oncreate={createOwn} />
 {/if}
 
 <style>

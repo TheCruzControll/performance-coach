@@ -7,8 +7,12 @@
  * - Skip exercise sends a skipped set for each planned set not done yet (unfinishedSets), each
  *   under its own client id, and moves on to the next exercise with something left to do.
  * - This hurts sends the owner's choice with its pain report, the choice first (reportPain).
+ * - Add my own exercise, when nothing fits: the new exercise under the device's client id, then
+ *   today's swap to it (replaceWithOwn), so its sets log at once, offline too.
  */
+import { createExercise } from '#lib/client/workout/library.ts';
 import type { BodyArea, Severity } from '#lib/domain/profile/catalog.ts';
+import type { CustomExercise } from '#lib/domain/training/types.ts';
 import type {
 	KitAlternative,
 	LocalAction,
@@ -63,6 +67,22 @@ export function substitute(
 		reason: QUICK_ACTIONS[action].reason
 	};
 	return createMutation('exercise.substitute', { workoutId: view.workout.id, at, payload });
+}
+
+/**
+ * The owner's new exercise in place of what `position` performs, for this session only: its
+ * exercise.create, then today's swap to it, to send in one dispatch. The swap always counts as
+ * an owner's choice, whichever step offered it: Machine unavailable and Dislike record their own
+ * reasons (and a dislike's preference) only for an alternative the library lists.
+ */
+export function replaceWithOwn(
+	view: WorkoutView,
+	position: number,
+	exercise: CustomExercise,
+	at: string
+): [Mutation, Mutation] {
+	const created = createExercise(view.workout.id, exercise, at);
+	return [created, substitute(view, position, created.entityId, 'suggest_alternative', at)];
 }
 
 /** The confirmed dislike of what `position` performs, replaced by `toExerciseId`. */

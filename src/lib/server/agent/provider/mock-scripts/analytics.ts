@@ -8,7 +8,7 @@
  *   how running distance and load changed, each with its verdict as the tool gave it ('a real
  *   trend' or 'normal variation', over the weeks it names), without claiming a cause.
  * - 'What should I focus on next week?' reads this week's summary and the load, then recommends
- *   from the ratio and the skipped sessions.
+ *   from the ratio and the skipped sessions, and points to the week's review when it has one.
  */
 import type { MockContext, MockScript } from '../mock.ts';
 
@@ -44,6 +44,7 @@ type Summary =
 			skipped: Figure;
 			minutes: Figure;
 			hardSets: Omit<Figure, 'value'> & { values: Record<string, number> };
+			review: Ref | null;
 	  };
 type Load = Insufficient | { status: 'ok'; ratio: Figure; caveat: string };
 interface Trend {
@@ -163,6 +164,10 @@ function focusAnswer(context: MockContext): string {
 				`Skipped this week: ${amount(summary.skipped.value, summary.skipped.unit)}.`,
 				summary.skipped.sources[0]!
 			)
+		);
+	if (summary.status === 'ok' && summary.review)
+		blocks.push(
+			`[note] Your weekly review has the detail behind this week ${cite(summary.review)}.`
 		);
 	const ratio = load.status === 'ok' ? load.ratio.value : null;
 	blocks.push(
