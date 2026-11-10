@@ -284,6 +284,42 @@ describe('CI e2e legs', () => {
 		expect(job).toBeGreaterThanOrEqual(Math.ceil(1.5 * CEILING_MINUTES) + 12 + 8);
 	});
 
+	it('install the system packages from a cache keyed by exactly the packages installed', () => {
+		const names = under(legsJob(), 'steps').map((s) => value([s, ...s.children], 'name'));
+		const order = [
+			'Playwright system packages',
+			'Cache Playwright system packages',
+			'Install Playwright system dependencies'
+		].map((name) => names.indexOf(name));
+		expect(order.every((at, i) => at > (order[i - 1] ?? -1))).toBe(true);
+
+		const keyStep = legStep('Playwright system packages');
+		expect(value(keyStep, 'id')).toBe('apt');
+		const keyed = /^\.\/scripts\/ci-playwright-deps\.sh key (.+) >> "\$GITHUB_OUTPUT"$/.exec(
+			value(keyStep, 'run')!
+		);
+		const installed = /^\.\/scripts\/ci-playwright-deps\.sh install (\S+) (.+)$/.exec(
+			value(legStep('Install Playwright system dependencies'), 'run')!
+		);
+		expect(installed?.[2], 'the key hashes the very browsers installed').toBe(keyed?.[1]);
+		for (const engine of ENGINES) expect(installed![2]).toContain(engine);
+
+		const cache = under(legStep('Cache Playwright system packages'), 'with');
+		expect(value(cache, 'path')).toBe(installed![1]);
+		const key = value(cache, 'key')!;
+		const PREFIX = 'apt-playwright-v2-${{ steps.image.outputs.os }}-';
+		expect(key).toBe(`${PREFIX}\${{ steps.apt.outputs.packages }}-\${{ steps.apt.outputs.image }}`);
+		// Narrowest first; every fallback still matches only this cache's own entries.
+		const restore = value(cache, 'restore-keys')!.split('\n');
+		expect(restore).toEqual([`${PREFIX}\${{ steps.apt.outputs.packages }}-`, PREFIX]);
+		for (const prefix of restore) expect(key.startsWith(prefix)).toBe(true);
+
+		const direct = under(legsJob(), 'steps').filter((s) =>
+			(value([s, ...s.children], 'run') ?? '').includes('playwright install-deps')
+		);
+		expect(direct, 'no install-deps outside the cached install').toEqual([]);
+	});
+
 	it('upload each entry’s files under a name of its own, hidden files included', () => {
 		const inputs = under(legStep('Upload screenshots and report'), 'with');
 		expect(value(inputs, 'include-hidden-files')).toBe('true');

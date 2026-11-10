@@ -198,27 +198,26 @@ jobs:
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ steps.image.outputs.os }}-${{ hashFiles('pnpm-lock.yaml') }}
-      - name: Playwright version
-        id: playwright
-        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
-      # WebKit's system packages are ~140 MB, and the runner's Ubuntu mirror sometimes trickles
-      # at ~50 KB/s (a 12-minute timeout on #5 before any test ran). Keep the downloaded
-      # packages between runs so a slow mirror costs one run, not every run.
+      # Measured on 40+ runs: install-deps took about 20 s, but on bad days its unconditional
+      # `apt-get update` stalled on the Ubuntu mirror for the whole 12 minutes (6 legs in two
+      # hours), with every package already in the cache. The cache now carries apt's lists too,
+      # keyed by the exact package set, so a full cache installs with no network at all; see
+      # scripts/ci-playwright-deps.sh. A new runner image saves a fresh copy.
+      - name: Playwright system packages
+        id: apt
+        run: ./scripts/ci-playwright-deps.sh key chromium webkit >> "$GITHUB_OUTPUT"
       - name: Cache Playwright system packages
         uses: actions/cache@v6
         with:
-          path: ~/.cache/apt-archives
-          key: apt-playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-v1
-          restore-keys: apt-playwright-${{ runner.os }}-
-      - name: Configure apt for slow mirrors (and keep packages for the cache)
-        run: ./scripts/ci-apt-resilience.sh ~/.cache/apt-archives
+          path: ~/.cache/apt-playwright
+          key: apt-playwright-v2-${{ steps.image.outputs.os }}-${{ steps.apt.outputs.packages }}-${{ steps.apt.outputs.image }}
+          restore-keys: |
+            apt-playwright-v2-${{ steps.image.outputs.os }}-${{ steps.apt.outputs.packages }}-
+            apt-playwright-v2-${{ steps.image.outputs.os }}-
       - name: Install Playwright system dependencies
-        # Never killed midway: an interrupted apt-get keeps the dpkg lock and fails every later
-        # install. Slow or stalled mirror downloads time out and retry inside apt instead.
+        # Bounded update and download attempts inside; dpkg runs once, never killed midway.
         timeout-minutes: 12
-        run: pnpm exec playwright install-deps chromium webkit
-      - name: Make the kept packages readable for the cache
-        run: ./scripts/ci-apt-resilience.sh --release ~/.cache/apt-archives
+        run: ./scripts/ci-playwright-deps.sh install ~/.cache/apt-playwright chromium webkit
       - name: Install Playwright browsers
         # Usually restored from the cache above. A stuck download is safe to kill: bound and retry.
         timeout-minutes: 8
