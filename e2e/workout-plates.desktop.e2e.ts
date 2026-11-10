@@ -97,7 +97,7 @@ test.describe('the plate calculator on a desktop', () => {
 		await expectRing(toggle);
 		await page.keyboard.press('Enter');
 		await expect(toggle).toHaveAttribute('aria-expanded', 'true');
-		const twentyFives = dialog(page).getByRole('radiogroup', { name: '25 kg plates' });
+		const twentyFives = dialog(page).getByRole('radiogroup', { name: '25 kg plates', exact: true });
 		await expectHover(page, twentyFives.getByRole('radio', { name: '2', exact: true }), 'color');
 		await tabTo(page, twentyFives.getByRole('radio', { name: 'Any' }));
 		await expectRing(twentyFives.getByRole('radio', { name: 'Any' }));

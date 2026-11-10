@@ -31,6 +31,7 @@
 </script>
 
 <li
+	class:plated={!!onplates}
 	data-state={row.state}
 	aria-current={row.state === 'current' ? 'step' : undefined}
 	data-testid="set"
@@ -51,8 +52,7 @@
 		<span class="state">
 			<span>{row.word}</span>
 		</span>
-	</svelte:element>
-	{#if onplates}
+	</svelte:element><!-- No space between: the row's text ends with its state word. -->{#if onplates}
 		<IconButton
 			icon="plate"
 			label="Plates for set {row.setIndex}"
@@ -83,6 +83,14 @@
 		border-radius: var(--radius-md);
 		border: 1px solid transparent;
 		font-size: var(--text-base);
+	}
+
+	/* Beside a plate button the row gives up spare spacing, not its text's width: a done set
+	   ('100 kg × 5 reps · RPE 9') still fits one line at 393 px, so completing it shifts nothing. */
+	.plated .set {
+		grid-template-columns: 1rem minmax(0, 1fr) auto;
+		column-gap: var(--space-2);
+		padding-inline: var(--space-2);
 	}
 
 	button.set {

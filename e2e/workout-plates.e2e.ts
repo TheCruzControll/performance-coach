@@ -89,7 +89,7 @@ const bar = (page: Page, name: string) =>
 /** The inventory editor's choice for one plate: 'None', '1', '2', '3' or 'Any'. */
 const plate = (page: Page, weight: string, choice: string) =>
 	dialog(page)
-		.getByRole('radiogroup', { name: `${weight} plates` })
+		.getByRole('radiogroup', { name: `${weight} plates`, exact: true })
 		.getByRole('radio', { name: choice, exact: true });
 
 async function openInventory(page: Page) {

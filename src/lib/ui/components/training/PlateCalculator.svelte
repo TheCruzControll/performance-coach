@@ -6,9 +6,9 @@
   preference. Loaded on demand (dynamic import) so the screens that open it hydrate without it.
   - Without `inventory` it uses M1's standard bars and plates, as it always has.
   - With this device's `inventory` (client/plates.ts, one per unit), the solver loads only what
-    the gym has: a bar picked here is the device's, and 'Bar and plates' opens the inventory
-    editor (PlateInventory.svelte, its own chunk, fetched on that tap), whose every change
-    `onInventoryChange` keeps.
+    the gym has: a bar picked here is the device's, and 'Bar and plates' (the pencil beside the
+    bar presets) opens the inventory editor (PlateInventory.svelte, its own chunk, fetched on
+    that tap), whose every change `onInventoryChange` keeps.
 -->
 <script lang="ts">
 	import type { PlateInventory as Inventory } from '#lib/client/plates.ts';
@@ -20,8 +20,8 @@
 		roundToIncrement,
 		type WeightUnit
 	} from '#lib/domain/units.ts';
-	import Button from '../Button.svelte';
 	import Icon from '../Icon.svelte';
+	import IconButton from '../IconButton.svelte';
 	import NumberStepper from '../NumberStepper.svelte';
 	import SegmentedControl from '../SegmentedControl.svelte';
 	import PlateDiagram from './PlateDiagram.svelte';
@@ -111,7 +111,23 @@
 		data-testid="plates-target"
 	/>
 
-	<SegmentedControl label="Bar" size="sm" value={String(bar)} options={bars} onchange={pickBar} />
+	<!-- 'Bar and plates' sits beside the bar presets, not under the result, so the calculator still
+	     fits a 1024 × 700 window whole. -->
+	<div class="bar">
+		<SegmentedControl label="Bar" size="sm" value={String(bar)} options={bars} onchange={pickBar} />
+		{#if stock && onInventoryChange}
+			<IconButton
+				icon="pencil"
+				label="Bar and plates"
+				size="sm"
+				variant="filled"
+				aria-expanded={editing}
+				aria-controls={editorId}
+				onclick={toggleEditor}
+				data-testid="plates-inventory-toggle"
+			/>
+		{/if}
+	</div>
 
 	<div class="result" aria-live="polite">
 		<PlateDiagram plates={result.perSide} {unit} />
@@ -141,26 +157,15 @@
 	</div>
 
 	{#if stock && onInventoryChange}
-		<div class="inventory">
-			<Button
-				variant="secondary"
-				block
-				iconEnd="chevron-down"
-				aria-expanded={editing}
-				aria-controls={editorId}
-				onclick={toggleEditor}
-				data-testid="plates-inventory-toggle">Bar and plates</Button
-			>
-			<div id={editorId} hidden={!editing}>
-				{#if failed}
-					<p class="warning" role="alert">
-						<Icon name="alert" size={16} />
-						<span>Couldn’t open bar and plates. Check your connection, then try again.</span>
-					</p>
-				{:else if Editor && editing}
-					<Editor {unit} inventory={stock} onchange={(change) => onInventoryChange(unit, change)} />
-				{/if}
-			</div>
+		<div id={editorId} hidden={!editing}>
+			{#if failed}
+				<p class="warning" role="alert">
+					<Icon name="alert" size={16} />
+					<span>Couldn’t open bar and plates. Check your connection, then try again.</span>
+				</p>
+			{:else if Editor && editing}
+				<Editor {unit} inventory={stock} onchange={(change) => onInventoryChange(unit, change)} />
+			{/if}
 		</div>
 	{/if}
 </div>
@@ -195,13 +200,15 @@
 		letter-spacing: var(--tracking-normal);
 	}
 
-	.inventory {
-		display: grid;
-		gap: var(--space-4);
+	.bar {
+		display: flex;
+		align-items: center;
+		gap: var(--space-2);
 	}
 
-	.inventory :global([aria-expanded='true'] svg:last-child) {
-		transform: rotate(180deg);
+	.bar > :global(:first-child) {
+		flex: 1;
+		min-width: 0;
 	}
 
 	.muted {
