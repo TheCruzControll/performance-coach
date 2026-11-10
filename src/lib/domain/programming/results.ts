@@ -451,6 +451,16 @@ export interface RunOutcome {
 	evidence: Evidence;
 }
 
+/** The running outcomes' rule keys, past 'results.': literal so scripts/rule-keys.ts can list them. */
+type RunRule =
+	| 'run.planned'
+	| 'run.weekly_cap'
+	| 'run.adherence_hold'
+	| 'long_run.repeat'
+	| 'long_run.no_rpe'
+	| 'long_run.hold'
+	| 'long_run.planned';
+
 const km = (metres: number) => `${cleanFloat(metres / 1000, 1)} km`;
 
 /** Next week's distance and long run from the last completed week's. */
@@ -465,7 +475,7 @@ export function adaptRunning(
 		action: RunOutcome['action'],
 		from: number,
 		to: number,
-		key: string,
+		key: RunRule,
 		why: string,
 		facts: Evidence
 	): RunOutcome => ({ action, from, to, ruleKey: `results.${key}`, why, evidence: facts });
