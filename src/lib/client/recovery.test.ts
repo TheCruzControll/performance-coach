@@ -16,12 +16,24 @@ function slowScript(status = 200) {
 	return { response: { ok: status < 400, status, arrayBuffer }, arrayBuffer, deliver };
 }
 
+/** A sheet whose rules throw, as a failed load leaves it in WebKit and Chromium, or a loaded one from another origin. */
+const hiddenRules = {
+	get cssRules(): never {
+		throw new DOMException('Not allowed to access cssRules', 'SecurityError');
+	}
+};
+
 /**
- * A <link rel="stylesheet"> as the page holds it: when its load failed, `sheet` is null
- * (Chromium) or `empty` (WebKit, no rules). Its copy (the reload of it) loads or fails when the
+ * A <link rel="stylesheet"> as the page holds it: when its load failed, `sheet` is null, `empty`
+ * (no rules) or `hidden` (its rules throw). Its copy (the reload of it) loads or fails when the
  * test says so.
  */
-function styleLink(href: string, applied = false, disabled = false, empty = false) {
+function styleLink(
+	href: string,
+	applied = false,
+	disabled = false,
+	failedSheet: 'none' | 'empty' | 'hidden' = 'none'
+) {
 	const page = { links: [] as unknown[] };
 	const copy = {
 		href,
@@ -32,7 +44,13 @@ function styleLink(href: string, applied = false, disabled = false, empty = fals
 	};
 	const link = {
 		href,
-		sheet: applied ? { cssRules: [{}] } : empty ? { cssRules: [] } : null,
+		sheet: applied
+			? { cssRules: [{}] }
+			: failedSheet === 'empty'
+				? { cssRules: [] }
+				: failedSheet === 'hidden'
+					? hiddenRules
+					: null,
 		disabled,
 		cloneNode: vi.fn(() => copy),
 		after: vi.fn((node: unknown) => page.links.splice(page.links.indexOf(link) + 1, 0, node)),
@@ -59,7 +77,12 @@ beforeEach(() => {
 	reload = vi.fn();
 	fetchMock = vi.fn();
 	vi.stubGlobal('fetch', fetchMock);
-	vi.stubGlobal('location', { pathname: '/today', href: 'https://app.test/today', reload });
+	vi.stubGlobal('location', {
+		origin: 'https://app.test',
+		pathname: '/today',
+		href: 'https://app.test/today',
+		reload
+	});
 	vi.stubGlobal('navigator', { onLine: true });
 	vi.stubGlobal('sessionStorage', { getItem: () => null, setItem: () => {} });
 	// The page's one module script failed: it has a modulepreload link and no timing entry.
@@ -148,22 +171,34 @@ describe('a stylesheet that failed to load (Vite never links its URL again)', ()
 		expect(reload).toHaveBeenCalledOnce();
 	});
 
-	it('loads it again when its load left WebKit’s empty sheet', async () => {
-		const css = styleLink(CSS, false, false, true);
-		stylesheets = css.links();
-		reloadFresh();
-		await vi.advanceTimersByTimeAsync(0);
-		expect(css.links()).toEqual([css.link, css.copy]);
-		expect(reload).not.toHaveBeenCalled();
+	it.each(['empty', 'hidden'] as const)(
+		'loads it again when its load left a sheet %s',
+		async (sheet) => {
+			const css = styleLink(CSS, false, false, sheet);
+			stylesheets = css.links();
+			reloadFresh();
+			await vi.advanceTimersByTimeAsync(0);
+			expect(css.links()).toEqual([css.link, css.copy]);
+			expect(reload).not.toHaveBeenCalled();
 
-		css.load();
-		await vi.advanceTimersByTimeAsync(0);
-		expect(css.links()).toEqual([css.copy]);
-		expect(reload).toHaveBeenCalledOnce();
-	});
+			css.load();
+			await vi.advanceTimersByTimeAsync(0);
+			expect(css.links()).toEqual([css.copy]);
+			expect(reload).toHaveBeenCalledOnce();
+		}
+	);
 
 	it('leaves the stylesheets that applied alone', async () => {
 		const css = styleLink(CSS, true);
+		stylesheets = css.links();
+		reloadFresh();
+		await vi.advanceTimersByTimeAsync(0);
+		expect(css.link.cloneNode).not.toHaveBeenCalled();
+		expect(reload).toHaveBeenCalledOnce();
+	});
+
+	it('leaves a sheet from another origin that hides its rules alone', async () => {
+		const css = styleLink('https://fonts.example/css', false, false, 'hidden');
 		stylesheets = css.links();
 		reloadFresh();
 		await vi.advanceTimersByTimeAsync(0);
@@ -182,7 +217,12 @@ describe('a stylesheet that failed to load (Vite never links its URL again)', ()
 
 	it('the recovery loads the screen again only once its stylesheet applies', async () => {
 		// Another screen: each path loads again in place once per document.
-		vi.stubGlobal('location', { pathname: '/train', href: 'https://app.test/train', reload });
+		vi.stubGlobal('location', {
+			origin: 'https://app.test',
+			pathname: '/train',
+			href: 'https://app.test/train',
+			reload
+		});
 		const css = styleLink(CSS);
 		stylesheets = css.links();
 		const stop = startOfflineRecovery({ onDeviceStatus: () => {}, probe: async () => true });
@@ -197,7 +237,12 @@ describe('a stylesheet that failed to load (Vite never links its URL again)', ()
 	});
 
 	it('when the copy fails too, it goes, the failed link stays, and the recovery tries again', async () => {
-		vi.stubGlobal('location', { pathname: '/progress', href: 'https://app.test/progress', reload });
+		vi.stubGlobal('location', {
+			origin: 'https://app.test',
+			pathname: '/progress',
+			href: 'https://app.test/progress',
+			reload
+		});
 		const css = styleLink(CSS);
 		stylesheets = css.links();
 		const stop = startOfflineRecovery({ onDeviceStatus: () => {}, probe: async () => true });

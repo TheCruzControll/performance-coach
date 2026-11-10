@@ -72,16 +72,16 @@ function failedStylesheets(): HTMLLinkElement[] {
 }
 
 /**
- * Whether a stylesheet link holds its rules. Chromium leaves a link whose load failed without a
- * sheet, but WebKit gives it an empty one, so a sheet without rules failed too: Vite emits no
- * empty stylesheet.
+ * Whether a stylesheet link holds its rules. A link whose load failed has no sheet, an empty one,
+ * or (WebKit and Chromium alike) one that is not origin-clean, whose rules throw a SecurityError
+ * like a cross-origin sheet's. Only a sheet from another origin may hide its rules once loaded,
+ * and Vite emits no empty stylesheet.
  */
 function applies(link: HTMLLinkElement): boolean {
 	try {
 		return (link.sheet?.cssRules.length ?? 0) > 0;
 	} catch {
-		// A cross-origin sheet hides its rules: it loaded.
-		return true;
+		return new URL(link.href).origin !== location.origin;
 	}
 }
 
