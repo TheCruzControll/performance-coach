@@ -11,6 +11,8 @@
     last session could not be fetched)
   - its slot's state once it changed ('Swapped for this session', 'Skipped'), with the exercise
     it replaced, and its quick actions (the `actions` snippet) beside the name
+  - with `onhistory`, its name is a button that opens the exercise's history (a dialog), which
+    `onhistoryintent` (its touch or hover) can start loading
   The load and the rest keep the room of the exercise's tallest, so logging a set moves nothing.
   - its set rows (the children: SetRows)
   Long names wrap; nothing scrolls sideways at 393 px or at 150 % text. One per page: its heading's
@@ -18,6 +20,7 @@
 -->
 <script lang="ts">
 	import type { Snippet } from 'svelte';
+	import Icon from '../components/Icon.svelte';
 	import type { ExerciseWords } from './set-words.ts';
 
 	interface Props {
@@ -28,6 +31,9 @@
 		noPrevious?: string;
 		/** Its quick actions' button. */
 		actions?: Snippet;
+		/** Opens the exercise's history; without it, the name is plain text. */
+		onhistory?: (event: MouseEvent) => void;
+		onhistoryintent?: () => void;
 		/** Its set rows (SetRows). */
 		children: Snippet;
 	}
@@ -37,6 +43,8 @@
 		status = null,
 		noPrevious = 'Last time · none yet',
 		actions,
+		onhistory,
+		onhistoryintent,
 		children
 	}: Props = $props();
 </script>
@@ -48,7 +56,20 @@
 			<span>{exercise.place}</span>
 		</p>
 		<div class="title">
-			<h2 id="exercise-name">{exercise.name}</h2>
+			<h2 id="exercise-name">
+				{#if onhistory}
+					<button
+						type="button"
+						class="history"
+						aria-haspopup="dialog"
+						onclick={onhistory}
+						onpointerenter={onhistoryintent}
+						onpointerdown={onhistoryintent}
+						data-testid="exercise-history-open"
+						>{exercise.name}<Icon name="chevron-right" size={20} /></button
+					>
+				{:else}{exercise.name}{/if}
+			</h2>
 			{@render actions?.()}
 		</div>
 		{#if status}
@@ -164,6 +185,34 @@
 		letter-spacing: var(--tracking-tight);
 		line-height: var(--leading-snug);
 		overflow-wrap: anywhere;
+	}
+
+	/* The name, as a button: a tap target as tall as a row, which says it opens on hover and focus. */
+	.history {
+		display: inline-flex;
+		align-items: center;
+		gap: var(--space-1);
+		min-height: var(--touch-target);
+		padding: 0;
+		border: 0;
+		background: none;
+		color: inherit;
+		font: inherit;
+		letter-spacing: inherit;
+		text-align: start;
+		cursor: pointer;
+	}
+
+	.history:focus-visible {
+		outline: 2px solid var(--color-accent-ring);
+		outline-offset: 2px;
+		border-radius: var(--radius-sm);
+	}
+
+	@media (hover: hover) and (pointer: fine) {
+		.history:hover {
+			color: var(--color-accent-text);
+		}
 	}
 
 	.target {

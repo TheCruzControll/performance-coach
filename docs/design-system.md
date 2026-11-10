@@ -255,6 +255,8 @@ that specs verify the rest with.
     1024 px; `0px` outside the shell (set under `:root:has(.app-nav)`).
   - `--nav-inset-left`: what it clears at the left: `0px`, and in the shell the rail and the left
     safe area from 1024 px.
+  - `--resume-inset`: the resume bar's room while it shows, `0px` otherwise; in the shell
+    `--nav-inset-bottom` includes it, so the content and all bottom chrome clear the bar.
 
 ### Content width
 
@@ -314,6 +316,10 @@ itself read it.
   transform, so it takes the column's width and never covers another column. No ancestor up to the
   column sets `overflow`. Below 1024 px the column is the whole content, so it may stay screen
   chrome.
+- **The resume bar** (`(app)/ResumeBar.svelte`) is the app's own screen chrome: fixed and
+  centred over the column like a composer, above the tab bar below 1024 px and at the bottom of
+  the content column beside the rail from there. It sits under `--resume-inset`, so the shell's
+  bottom padding and every other bottom chrome rise with it and it covers nothing.
 - Specs check chrome against the element it belongs to, never against `<main>` for a column:
   `expectCentredOver(page, chrome, area)` for screen chrome and
   `expectInColumn(page, chrome, column, others)` for column chrome. A screen that later turns

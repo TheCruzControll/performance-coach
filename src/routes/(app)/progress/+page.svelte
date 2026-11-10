@@ -98,7 +98,7 @@
 					</Button>
 				</div>
 			{:else if data.View}
-				<data.View overview={data.overview} />
+				<data.View overview={data.overview} served={data.served} />
 			{/if}
 		</PeriodPicker>
 	</div>
