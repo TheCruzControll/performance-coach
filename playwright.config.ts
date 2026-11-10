@@ -1,6 +1,6 @@
 import { defineConfig, devices, type Project } from '@playwright/test';
 import { DESKTOP } from './e2e/desktop';
-import { ENGINES, GROUPS, parseChoice, selectProjects } from './e2e/projects';
+import { bypassHeaders, e2eProjects, GROUPS, parseChoice, SMOKE } from './e2e/projects';
 
 /**
  * End-to-end tests run against the real production Node server (adapter-node build) and a
@@ -27,12 +27,18 @@ import { ENGINES, GROUPS, parseChoice, selectProjects } from './e2e/projects';
  * they run one at a time after the functional suites (Chromium, then WebKit), before perf.
  * Heavy `*.sweep.e2e.ts` specs run one at a time in `sweep-chromium` and `sweep-webkit`, after
  * perf and before exclusive. E2E_ENGINE and E2E_GROUP run one CI leg (e2e/projects.ts).
+ *
+ * Targets (e2e/projects.ts e2eMode): E2E_BASE_URL alone verifies a deployment with only the
+ * read-only `*.smoke.e2e.ts` specs, signed out; E2E_TEST_AUTH=1 with it runs the whole suite
+ * against an external server with test routes on; E2E_DEPLOYED_LOCAL=1 runs the smoke specs
+ * against the local production build with test routes off. The local projects run the smoke
+ * specs too, the desktop one included.
  */
 export const E2E_PORT = Number(process.env.E2E_PORT ?? 4173);
 const baseURL = process.env.E2E_BASE_URL ?? `http://localhost:${E2E_PORT}`;
-const engine = parseChoice('E2E_ENGINE', process.env.E2E_ENGINE, ENGINES);
 const group = parseChoice('E2E_GROUP', process.env.E2E_GROUP, GROUPS);
-const withWebKit = Boolean(process.env.CI) || process.env.E2E_WEBKIT === '1' || engine === 'webkit';
+const withWebKit =
+	Boolean(process.env.CI) || process.env.E2E_WEBKIT === '1' || process.env.E2E_ENGINE === 'webkit';
 
 const iphone = devices['iPhone 15 Pro'];
 const CHROMIUM_STATE = 'e2e/.auth/chromium.json';
@@ -42,8 +48,17 @@ const SWEEP = '**/*.sweep.e2e.ts';
 const PERF = ['**/perf.e2e.ts', '**/perf-*.e2e.ts'];
 const FUNCTIONAL_IGNORE = [...PERF, '**/*.exclusive.e2e.ts', '**/*.serial.e2e.ts', SWEEP];
 const DESKTOP_ONLY = '**/*.desktop.e2e.ts';
-/** What the desktop project runs: desktop specs, the width-agnostic shell and offline specs, and axe. */
-const DESKTOP_SPECS = [DESKTOP_ONLY, '**/shell.e2e.ts', '**/offline.e2e.ts', '**/a11y-*.e2e.ts'];
+/**
+ * What the desktop project runs: desktop specs, the width-agnostic shell, offline and smoke specs,
+ * and axe.
+ */
+const DESKTOP_SPECS = [
+	DESKTOP_ONLY,
+	'**/shell.e2e.ts',
+	'**/offline.e2e.ts',
+	'**/a11y-*.e2e.ts',
+	SMOKE
+];
 /** A device descriptor resized to the DESKTOP window (e2e/desktop.ts) that desktop specs use. */
 const desktopWindow = (device: string) => ({ ...devices[device], ...DESKTOP });
 const SERIAL = '**/*.serial.e2e.ts';
@@ -181,7 +196,8 @@ export default defineConfig({
 		baseURL,
 		screenshot: 'only-on-failure',
 		trace: 'retain-on-failure',
-		colorScheme: 'dark'
+		colorScheme: 'dark',
+		extraHTTPHeaders: bypassHeaders(process.env)
 	},
-	projects: selectProjects(projects, { engine, group })
+	projects: e2eProjects(process.env, projects)
 });
