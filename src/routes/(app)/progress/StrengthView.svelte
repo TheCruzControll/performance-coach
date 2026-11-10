@@ -7,12 +7,13 @@
   - Under that the trends (StrengthTrends): the key lifts' e1RM small multiples with their
     verdicts, the weekly volume, the muscle groups, effort and the PRs, in a chunk of their own
     that loads after hydration, served as static markup until it has (trends.ts,
-    StrengthTrendsLoader), so only this intro's code counts towards initial JS.
+    SectionLoader), so only this intro's code counts towards initial JS.
 -->
 <script lang="ts">
 	import EmptyState from '#lib/ui/components/EmptyState.svelte';
+	import SectionLoader from './SectionLoader.svelte';
 	import type { StrengthData } from './strength-data';
-	import StrengthTrendsLoader from './StrengthTrendsLoader.svelte';
+	import { strengthTrends } from './trends';
 
 	interface Props {
 		strength: StrengthData;
@@ -38,7 +39,7 @@
 		/>
 	{/if}
 	{#if s.stage !== 'new'}
-		<StrengthTrendsLoader strength={s} {served} />
+		<SectionLoader section={strengthTrends} props={{ strength: s }} name="strength" {served} />
 	{/if}
 </div>
 
