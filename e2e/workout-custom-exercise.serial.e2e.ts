@@ -36,7 +36,8 @@ const heading = (page: Page) => card(page).getByRole('heading', { level: 2 });
 const picker = (page: Page) => page.getByTestId('exercise-picker');
 const search = (page: Page) => picker(page).getByTestId('picker-search');
 const options = (page: Page) => picker(page).getByTestId('picker-option');
-const form = (page: Page) => page.getByTestId('custom-exercise');
+// The open form: the picker's and the sync sheet's Fix each mount one.
+const form = (page: Page) => page.getByTestId('custom-exercise').filter({ visible: true });
 const logger = (page: Page) => page.getByTestId('set-logger');
 const stepper = (page: Page, id: string) => logger(page).getByTestId(id).getByRole('spinbutton');
 const sheet = (page: Page) => page.getByTestId('exercise-actions-sheet');
@@ -73,9 +74,9 @@ async function openForm(page: Page, text = '') {
 	await expect(picker(page)).toBeHidden();
 }
 
-/** Picks a pill in one of the form's choice groups by its label. */
+/** Picks a pill in one of the form's choice groups by its label (the radio covers its text). */
 const choose = (page: Page, group: string, label: string) =>
-	form(page).getByTestId(group).getByText(label, { exact: true }).click();
+	form(page).getByTestId(group).getByRole('radio', { name: label, exact: true }).check();
 
 /** Fills the form: the name, how it is measured and loaded, and its movement. */
 async function fill(
@@ -233,18 +234,18 @@ test.describe('from the picker', () => {
 		await form(page).getByTestId('custom-save').click();
 		await expect(heading(page)).toHaveText('Bulgarian bag spin');
 
-		await enter(page, 'logger-load', '12');
+		// A multiple of the exercise's 2.5 kg increment, which the stepper snaps to.
+		await enter(page, 'logger-load', '12.5');
 		await enter(page, 'logger-amount', '40');
 		await logSets(page, 1);
 		await synced(page);
 		const [row] = await ownExercise('Bulgarian bag spin');
 		expect(row).toMatchObject({ measure: 'time', pattern: 'rotation', default_seconds: 40 });
-		expect(await setsOn(row!.id)).toEqual([{ reps: null, seconds: 40, weight: 12 }]);
+		expect(await setsOn(row!.id)).toEqual([{ reps: null, seconds: 40, weight: 12.5 }]);
 	});
 
 	test('a catalogue name is refused in the form, before anything is sent', async ({ page }) => {
 		await startAdHocStrength(page);
-		const before = (await readOutbox(page)).length;
 		await openForm(page);
 		await fill(page, {
 			name: 'Back squat',
@@ -257,7 +258,10 @@ test.describe('from the picker', () => {
 			'Already in the library as Back squat'
 		);
 		await expect(form(page)).toBeVisible();
-		expect((await readOutbox(page)).length).toBe(before);
+		// The session's own start may sync meanwhile; no exercise is queued or stored.
+		const queued = (await readOutbox(page)).filter((e) => e.envelope.type === 'exercise.create');
+		expect(queued).toEqual([]);
+		expect(await ownExercise('Back squat')).toEqual([]);
 	});
 });
 

@@ -28,6 +28,7 @@ import {
 	type OverviewSection,
 	type ProgressOverview
 } from '#lib/server/services/analytics/overview.ts';
+import { getStrengthDashboard } from '#lib/server/services/analytics/strength.ts';
 import { recordServerError, type ServerErrorInput } from '#lib/server/services/errors.ts';
 import { resolveDeps, type TrainingDeps } from '#lib/server/services/training/shared.ts';
 import { sparkline } from '#lib/ui/analytics/sparkline.ts';
@@ -38,6 +39,7 @@ import { SERIES_TOKEN } from '#lib/ui/charts/palette.ts';
 import type { ChartTableData } from '#lib/ui/charts/table.ts';
 import { shortDate } from '#lib/ui/program/words.ts';
 import type { ProgressParams, ProgressView } from './params.ts';
+import { strengthData, type StrengthData } from './strength-data.ts';
 
 /** A discipline's card title (the services' areas: 'general' is training as a whole). */
 const AREA_TITLE: Readonly<Record<MetricArea, string>> = {
@@ -108,7 +110,8 @@ export interface OverviewData {
 
 export type ProgressData =
 	| ({ failed: true } & ProgressParams)
-	| ({ failed: false; view: 'overview'; overview: OverviewData } & Omit<ProgressParams, 'view'>);
+	| ({ failed: false; view: 'overview'; overview: OverviewData } & Omit<ProgressParams, 'view'>)
+	| ({ failed: false; view: 'strength'; strength: StrengthData } & Omit<ProgressParams, 'view'>);
 
 export interface ProgressRequest extends ProgressParams {
 	/** What a recorded failure carries: the request's id, method, path, route and app version. */
@@ -120,6 +123,8 @@ export interface ProgressDeps extends Pick<TrainingDeps, 'db'> {
 	errorsDb?: TrainingDeps['db'];
 	/** The overview read; getProgressOverview unless given. */
 	overview?: typeof getProgressOverview;
+	/** The Strength view's read; getStrengthDashboard unless given. */
+	strength?: typeof getStrengthDashboard;
 	/** Where a failure goes; recordServerError unless given. */
 	record?: typeof recordServerError;
 	/** The owner's day at `now`; ownerToday unless given. */
@@ -303,13 +308,19 @@ export async function loadProgress(
 		db,
 		errorsDb,
 		overview = getProgressOverview,
+		strength = getStrengthDashboard,
 		record = recordServerError,
 		today: dayOf = ownerToday
 	}: ProgressDeps = {}
 ): Promise<ProgressData> {
 	try {
 		const today = await dayOf(ownerId, now, { db });
-		const o = await overview(resolveDeps({ db }).db, ownerId, { period, today });
+		const executor = resolveDeps({ db }).db;
+		if (view === 'strength') {
+			const d = await strength(executor, ownerId, { period, today });
+			return { failed: false, view, period, strength: strengthData(d) };
+		}
+		const o = await overview(executor, ownerId, { period, today });
 		return { failed: false, view, period, overview: overviewData(o) };
 	} catch (error) {
 		await record(

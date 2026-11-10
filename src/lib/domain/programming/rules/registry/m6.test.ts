@@ -50,6 +50,7 @@ const EASY: Exposure[] = [3, 4, 5].map((week) => ({
 	sets: { prescribed: 4, completed: 4, extra: 0 },
 	missedReps: 0,
 	rpeDeviations: [-1],
+	rpeTargets: [8],
 	meanRpeDeviation: -1,
 	topSet: null,
 	kg: 100,
