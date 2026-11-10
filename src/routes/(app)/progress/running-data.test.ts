@@ -19,6 +19,7 @@ import type {
 import type { TrainingDeps } from '#lib/server/services/training/shared.ts';
 import { loadProgress, type ProgressRequest } from './load.ts';
 import { HR_HINT, runningData } from './running-data.ts';
+import RunningTrends from './RunningTrends.svelte';
 import RunningView from './RunningView.svelte';
 
 /** A Wednesday: Monday to Wednesday are the week in progress. */
@@ -296,9 +297,12 @@ describe('runningData', () => {
 			})
 		);
 		expect(r.stage).toBe('new');
-		const html = render(RunningView, { props: { running: r } }).body;
+		const served = render(RunningTrends, { props: { running: r } }).body;
+		expect(served).toContain('data-testid="running-efforts"');
+		expect(served).toContain('10 km · Reported');
+		// The view keeps the intro in its own chunk, and the trends' markup the server sent.
+		const html = render(RunningView, { props: { running: r, served } }).body;
 		expect(html).toContain('Your running trends start with your first run');
-		expect(html).toContain('data-testid="running-efforts"');
 		expect(html).toContain('10 km · Reported');
 	});
 });
