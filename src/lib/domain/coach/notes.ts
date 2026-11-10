@@ -7,8 +7,9 @@
  *   rests on an accepted proposal, or on the owner's own words in this turn (a direct preference
  *   write), and names at least one of them.
  * - workout_analysis: the coach's own analysis of one of the owner's workouts.
+ * - thread_summary: one closed segment of a conversation, summarised (./summary.ts).
  *
- * Further kinds join NOTE_BODY_SCHEMAS with their schema (thread-summaries adds thread_summary).
+ * Further kinds join NOTE_BODY_SCHEMAS with their schema.
  * Every object is closed: a key the schema does not name is refused, not dropped.
  *
  * Server-only: imported by path, never through ./index.ts (scripts/coach-index-imports.test.ts).
@@ -16,6 +17,7 @@
 import * as z from 'zod/mini';
 import { PROPOSAL_KINDS, RATIONALE_MAX, TITLE_MAX } from './proposals.ts';
 import { REF_ID_MAX, REF_LABEL_MAX, SOURCE_TYPES } from './sources.ts';
+import { threadSummaryNoteSchema } from './summary.ts';
 
 /** The most records one note names. */
 export const NOTE_SUBJECTS_MAX = 20;
@@ -64,7 +66,8 @@ export type WorkoutAnalysis = z.output<typeof workoutAnalysisSchema>;
 
 export const NOTE_BODY_SCHEMAS = {
 	coach_decision: coachDecisionSchema,
-	workout_analysis: workoutAnalysisSchema
+	workout_analysis: workoutAnalysisSchema,
+	thread_summary: threadSummaryNoteSchema
 } as const satisfies Record<string, z.ZodMiniType>;
 export type NoteKind = keyof typeof NOTE_BODY_SCHEMAS;
 export const NOTE_KINDS = Object.keys(NOTE_BODY_SCHEMAS) as readonly NoteKind[];

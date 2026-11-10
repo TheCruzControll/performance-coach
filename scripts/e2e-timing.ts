@@ -24,6 +24,8 @@ interface JsonSpec {
 	tests: { projectName: string; results: JsonResult[] }[];
 }
 interface JsonSuite {
+	/** A top-level suite's spec file. */
+	file?: string;
 	specs?: JsonSpec[];
 	suites?: JsonSuite[];
 }
@@ -61,17 +63,18 @@ export function summarise(report: JsonReport): Timing {
 		entry.minutes += toMinutes(ms);
 		into.set(name, entry);
 	};
-	const walk = (suite: JsonSuite) => {
+	// Per spec file: a test a module declares (e2e/a11y-suite.ts) counts for the file running it.
+	const walk = (suite: JsonSuite, file: string | undefined) => {
 		for (const spec of suite.specs ?? []) {
 			for (const test of spec.tests) {
 				const ms = test.results.reduce((sum, result) => sum + result.duration, 0);
 				add(projects, test.projectName, ms);
-				add(specs, `${test.projectName} › ${spec.file}`, ms);
+				add(specs, `${test.projectName} › ${file ?? spec.file}`, ms);
 			}
 		}
-		for (const child of suite.suites ?? []) walk(child);
+		for (const child of suite.suites ?? []) walk(child, file);
 	};
-	for (const suite of report.suites) walk(suite);
+	for (const suite of report.suites) walk(suite, suite.file);
 	return {
 		minutes: toMinutes(report.stats.duration),
 		shard: report.config.shard ?? { current: 1, total: 1 },

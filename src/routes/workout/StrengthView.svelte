@@ -32,7 +32,10 @@
     the planned exercise's load.
   - A substitute's or an added exercise's last session is not in the kit: when such a slot is
     current, its previous sets are fetched and attached to the workout (previous.ts, loaded
-    then); offline, the card says 'No previous sets on this device'.
+    then, or with the picker); offline, the card says 'No previous sets on this device'.
+  - Add exercise, in Up next and after the side list's last exercise, opens the picker
+    (ExercisePicker.svelte, loaded on intent) over the library cached on this device. A session
+    with no exercise yet (an ad-hoc strength one) says so, with Add exercise in the card's place.
   - The card's exercise name opens its history (ExerciseHistorySheet.svelte, loaded on intent);
     offline, it shows the previous session this device holds and says so.
 -->
@@ -51,6 +54,7 @@
 	import type { CanonicalSet } from '#lib/domain/workout/protocol.ts';
 	import { currentExercise, plannedVsLogged, previousFor } from '#lib/domain/workout/selectors.ts';
 	import Button from '#lib/ui/components/Button.svelte';
+	import EmptyState from '#lib/ui/components/EmptyState.svelte';
 	import ExerciseCard from '#lib/ui/workout/ExerciseCard.svelte';
 	import RestTimer from '#lib/ui/workout/RestTimer.svelte';
 	import SetRow from '#lib/ui/workout/SetRow.svelte';
@@ -66,6 +70,7 @@
 	import type { HistoryRequest } from '#lib/client/workout/exercise-history.ts';
 	import type ExerciseHistorySheet from '#lib/ui/workout/ExerciseHistorySheet.svelte';
 	import type ExerciseActionsSheet from './ExerciseActionsSheet.svelte';
+	import type ExercisePicker from './ExercisePicker.svelte';
 	import ExerciseList from './ExerciseList.svelte';
 	import type LoggerView from './Logger.svelte';
 	import type NavigationView from './Navigation.svelte';
@@ -222,6 +227,23 @@
 		(event.currentTarget as HTMLElement).focus();
 		prefetchActions();
 		acting = { position };
+	}
+
+	// Add exercise: the picker, fetched on a button's first intent, opened afresh on each tap. The
+	// exercise picked is current at once and asks for its last session (lookUp), so previous.ts
+	// comes with the picker: a session with no lookup yet (an empty one) adds offline too.
+	let Picker = $state.raw<typeof ExercisePicker | null>(null);
+	let picking = $state.raw<object | null>(null);
+	function prefetchPicker() {
+		void load(() => import('./ExercisePicker.svelte')).then((module) => {
+			if (module) Picker = module.default;
+		});
+		void load(() => import('#lib/client/workout/previous.ts'));
+	}
+	function openPicker(event: MouseEvent) {
+		(event.currentTarget as HTMLElement).focus();
+		prefetchPicker();
+		picking = {};
 	}
 
 	// The exercise's history: fetched on the name's first intent, opened on each tap.
@@ -392,7 +414,7 @@
 	}
 </script>
 
-<ExerciseList {items} current={current?.position} />
+<ExerciseList {items} current={current?.position} onadd={openPicker} onintent={prefetchPicker} />
 
 <div class="main" data-testid="workout-main" bind:this={main}>
 	{#if rest}
@@ -424,6 +446,24 @@
 				>
 			</div>
 		</div>
+	{/if}
+	{#if view.slots.length === 0}
+		<EmptyState
+			icon="plate"
+			tone="strength"
+			title="No exercises yet"
+			description="Add one from your exercise list. It's saved on this device as you log, even offline."
+			data-testid="workout-no-exercises"
+		>
+			{#snippet actions()}
+				<Button
+					icon="plus"
+					onpointerdown={prefetchPicker}
+					onclick={openPicker}
+					data-testid="add-first-exercise">Add exercise</Button
+				>
+			{/snippet}
+		</EmptyState>
 	{/if}
 	{#if current}
 		<div class="swipe" bind:this={area}>
@@ -458,7 +498,14 @@
 		</div>
 		<div class="navigation">
 			{#if Navigation && area && active.store}
-				<Navigation {view} {area} store={active.store} onfinish={() => (active.finishing = true)} />
+				<Navigation
+					{view}
+					{area}
+					store={active.store}
+					onfinish={() => (active.finishing = true)}
+					onadd={openPicker}
+					onintent={prefetchPicker}
+				/>
 			{/if}
 		</div>
 	{/if}
@@ -476,6 +523,9 @@
 	{/if}
 	{#if Actions && acting && active.store}
 		<Actions {view} request={acting} store={active.store} />
+	{/if}
+	{#if Picker && picking && active.store}
+		<Picker {view} request={picking} store={active.store} />
 	{/if}
 	{#if History && viewing}<History request={viewing} />{/if}
 </div>
@@ -502,13 +552,13 @@
 		user-select: none;
 	}
 
-	/* Previous and Next, then Up next: their height is kept while they load. Packed at the top, so
-	   a shorter Up next never moves Previous and Next. */
+	/* Previous and Next, then Up next with its Add exercise: their height is kept while they load.
+	   Packed at the top, so a shorter Up next never moves Previous and Next. */
 	.navigation {
 		display: grid;
 		align-content: start;
 		gap: var(--space-4);
-		min-height: 9.5rem;
+		min-height: 13rem;
 	}
 
 	/*
