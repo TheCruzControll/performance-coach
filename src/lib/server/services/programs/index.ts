@@ -65,6 +65,7 @@ export {
 	type SwapOptions
 } from './edits';
 export { APPEND, planBlock, type BlockPlanning, type ShiftedBlock } from './next-block';
+export { weekChanges, type WeekAtVersion, type WeekChanges } from './week-changes';
 export type {
 	ProgramVersion,
 	StoredBlock,
