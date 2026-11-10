@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import type { HistorySet } from '#lib/client/workout/exercise-history.ts';
-import { bestWords, dayOf, historySetWords, repMaxWords } from './history-words.ts';
+import type { ExerciseHistory, HistorySet } from '#lib/client/workout/exercise-history.ts';
+import {
+	bestWords,
+	dayOf,
+	historySetWords,
+	offlineWords,
+	repMaxWords,
+	sheetTitle
+} from './history-words.ts';
 
 const SET: HistorySet = {
 	id: 1,
@@ -79,5 +86,47 @@ describe('repMaxWords', () => {
 			label: '1 rep',
 			value: '315 lb'
 		});
+	});
+});
+
+const BENCH = '00000000-0000-4000-8000-0000000000b1';
+const LOADED: ExerciseHistory = {
+	exercise: { id: BENCH, name: 'Bench press' },
+	previous: null,
+	sets: [SET],
+	next: null,
+	records: { bestE1rm: null, repMaxes: [] }
+};
+
+describe('sheetTitle', () => {
+	it('is the name the sheet was opened with', () => {
+		expect(sheetTitle({ exerciseId: BENCH, name: 'Barbell bench' }, LOADED)).toBe('Barbell bench');
+		expect(sheetTitle({ exerciseId: BENCH, name: 'Barbell bench' }, null)).toBe('Barbell bench');
+	});
+
+	it('opened by exercise id alone, is the loaded history’s name, and a plain title until then', () => {
+		expect(sheetTitle({ exerciseId: BENCH }, LOADED)).toBe('Bench press');
+		expect(sheetTitle({ exerciseId: BENCH }, null)).toBe('Exercise history');
+		expect(sheetTitle(null, null)).toBe('Exercise history');
+	});
+});
+
+describe('offlineWords', () => {
+	it('opened by exercise id alone, says the history needs a connection', () => {
+		expect(offlineWords({ exerciseId: BENCH }).title).toBe('Exercise history needs a connection');
+		expect(offlineWords({ exerciseId: BENCH }).description).toMatch(/isn’t kept on this device/);
+	});
+
+	it('opened with a name and no session, keeps History’s and the workout’s offline words', () => {
+		for (const request of [
+			{ exerciseId: BENCH, name: 'Bench press' },
+			{ exerciseId: BENCH, name: 'Bench press', fallback: null }
+		]) {
+			expect(offlineWords(request)).toEqual({
+				title: 'You’re offline',
+				description:
+					'This device holds no earlier sets of this exercise. Its history loads when you’re back online.'
+			});
+		}
 	});
 });

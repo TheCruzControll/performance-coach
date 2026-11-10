@@ -37,6 +37,9 @@
 	const id = $props.id();
 	let dialog: HTMLDialogElement | undefined = $state();
 	let sheet: HTMLDivElement | undefined = $state();
+	let body: HTMLDivElement | undefined = $state();
+	/** The content is taller than the sheet: the body is a tab stop, so a keyboard scrolls it. */
+	let scrolls = $state(false);
 	let visible = $state(false);
 	// Content is mounted only while the sheet is open (or animating out): a closed sheet
 	// costs nothing at hydration.
@@ -49,6 +52,30 @@
 	$effect(() => {
 		if (open) show();
 		else void hide();
+	});
+
+	// Measured as the window or the content resizes, and as the content's elements change.
+	$effect(() => {
+		const el = body;
+		if (!el || !mounted) return;
+		const measure = () => (scrolls = el.scrollHeight > el.clientHeight);
+		const resized = new ResizeObserver(measure);
+		const watch = () => {
+			resized.disconnect();
+			resized.observe(el);
+			for (const child of el.children) resized.observe(child);
+		};
+		const changed = new MutationObserver(() => {
+			watch();
+			measure();
+		});
+		changed.observe(el, { childList: true });
+		watch();
+		return () => {
+			resized.disconnect();
+			changed.disconnect();
+			scrolls = false;
+		};
 	});
 
 	// Teardown while open (e.g. navigating Back with the sheet up): hide() never runs, so
@@ -178,7 +205,14 @@
 				<IconButton icon="close" label="Close" variant="filled" size="sm" onclick={requestClose} />
 			</header>
 		</div>
-		<div class="body">
+		<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+		<div
+			bind:this={body}
+			class="body"
+			role={scrolls ? 'region' : undefined}
+			aria-labelledby={scrolls ? `${id}-title` : undefined}
+			tabindex={scrolls ? 0 : undefined}
+		>
 			{#if mounted}{@render children()}{/if}
 		</div>
 		{#if footer && mounted}
@@ -295,6 +329,11 @@
 		overflow-y: auto;
 		overscroll-behavior: contain;
 		padding: var(--space-2) var(--gutter) var(--space-6);
+	}
+
+	/* Inside the body: the sheet's edges would clip a ring drawn outside it. */
+	.body:focus-visible {
+		outline-offset: -2px;
 	}
 
 	.footer {
