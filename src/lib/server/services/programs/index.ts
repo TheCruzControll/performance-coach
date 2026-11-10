@@ -64,6 +64,7 @@ export {
 	type PlannedSlot,
 	type SwapOptions
 } from './edits';
+export { APPEND, planBlock, type BlockPlanning, type ShiftedBlock } from './next-block';
 export type {
 	ProgramVersion,
 	StoredBlock,
