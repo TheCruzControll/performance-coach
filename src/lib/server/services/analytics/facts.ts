@@ -11,6 +11,8 @@
  *   week whatever its UTC date. Only completed, undeleted workouts count (queries/analytics.ts).
  * - Each read is timed as 'analytics' in Server-Timing.
  * - Baselines and race results come through M2's profile services.
+ * - Services that compose (the overview) share one loader through sharedFacts: each service asks
+ *   for its own days, and the database still sees each kind read once per window.
  */
 import type { AdherenceFacts } from '../../../domain/analytics/adherence';
 import type { PlannedLines } from '../../../domain/analytics/prescribed';
@@ -63,29 +65,35 @@ const instantsOf = ({ from, to }: Window): InstantRange => ({
 	end: new Date(Date.parse(`${addDays(to, 1)}T00:00:00Z`) + ZONE_SLACK_MS)
 });
 
+/** Runs each read after every read before it has settled, timed as 'analytics'. */
+export function createQueue() {
+	let last: Promise<unknown> = Promise.resolve();
+	return function serial<T>(read: () => Promise<T>): Promise<T> {
+		const next = last.then(() => measure('analytics', read));
+		last = next.catch(() => undefined);
+		return next;
+	};
+}
+export type Queue = ReturnType<typeof createQueue>;
+
 export interface FactsDeps {
 	/** The reads, for a test to count; the analytics repository on `db` unless given. */
 	repository?: AnalyticsRepository;
+	/** Loaders given one queue never read at the same time; a queue of its own unless given. */
+	queue?: Queue;
 }
 
 export function createFactsLoader(
 	db: Executor,
 	ownerId: string,
 	{ from, to, timeZone }: FactsRange,
-	{ repository = createAnalyticsRepository(db) }: FactsDeps = {}
+	{ repository = createAnalyticsRepository(db), queue: serial = createQueue() }: FactsDeps = {}
 ) {
 	if (to < from) throw new RangeError(`${to} is before ${from}`);
 	const windows = windowsOf(from, to);
 	const dayOf = (instant: Date) => localDay(instant, timeZone);
 	const inside = (w: Window, day: IsoDate) => w.from <= day && day <= w.to;
 
-	let last: Promise<unknown> = Promise.resolve();
-	/** Run `read` after every read before it has settled, timed as 'analytics'. */
-	function serial<T>(read: () => Promise<T>): Promise<T> {
-		const next = last.then(() => measure('analytics', read));
-		last = next.catch(() => undefined);
-		return next;
-	}
 	const memo = new Map<string, Promise<unknown>>();
 	function once<T>(kind: string, load: () => Promise<T>): Promise<T> {
 		if (!memo.has(kind)) memo.set(kind, load());
@@ -201,3 +209,129 @@ export function createFactsLoader(
 }
 
 export type FactsLoader = ReturnType<typeof createFactsLoader>;
+
+/** The facts of the owner's days `from`–`to`, both included: how a dashboard service reads. */
+export type FactsSource = (from: IsoDate, to: IsoDate) => FactsLoader;
+
+/** What a dashboard service reads its facts through. */
+export interface DashboardDeps {
+	/** The reads, for a test to count; the analytics repository on `db` unless given. */
+	repository?: AnalyticsRepository;
+	/** Shared facts (sharedFacts), as the overview passes them; a new loader per range unless given. */
+	facts?: FactsSource;
+}
+
+/** `deps.facts`, or a new loader for each range asked for. */
+export function factsSource(
+	db: Executor,
+	ownerId: string,
+	timeZone: string,
+	{ repository, facts }: DashboardDeps = {}
+): FactsSource {
+	return (
+		facts ?? ((from, to) => createFactsLoader(db, ownerId, { from, to, timeZone }, { repository }))
+	);
+}
+
+export interface SharedFactsDeps extends FactsDeps {
+	/** Answers firstActivity, baselines and races, which no range changes; one on `range` unless given. */
+	everyDay?: FactsLoader;
+}
+
+/**
+ * One loader over `range` that several services read, each asking for its own days: a range
+ * inside it is a filtered view of its rows, so each kind is read once per window whoever asks.
+ * Days before `range` are read once more, by a loader of their own (memoised by first day), and
+ * days after it are refused (RangeError): `range` must reach the latest day any service reads.
+ * Every loader shares one queue, so no two reads ever run at once.
+ */
+export function sharedFacts(
+	db: Executor,
+	ownerId: string,
+	range: FactsRange,
+	{ everyDay, ...deps }: SharedFactsDeps = {}
+): FactsSource {
+	const options = { ...deps, queue: deps.queue ?? createQueue() };
+	const main = createFactsLoader(db, ownerId, range, options);
+	const global = everyDay ?? main;
+	const before = new Map<IsoDate, FactsLoader>();
+	const earlier = (from: IsoDate) => {
+		if (!before.has(from)) {
+			const to = addDays(range.from, -1);
+			before.set(from, createFactsLoader(db, ownerId, { ...range, from, to }, options));
+		}
+		return before.get(from)!;
+	};
+	return (from, to) => {
+		if (to < from) throw new RangeError(`${to} is before ${from}`);
+		if (to > range.to)
+			throw new RangeError(`${to} is after the shared facts' last day, ${range.to}`);
+		const sources = [
+			...(from < range.from ? [earlier(from)] : []),
+			...(to >= range.from ? [main] : [])
+		];
+		return factsView(sources, global, { from, to, timeZone: range.timeZone });
+	};
+}
+
+/** The rows of `sources` that fall on `range`'s days, as a loader of that range would give them. */
+function factsView(
+	sources: readonly FactsLoader[],
+	global: FactsLoader,
+	range: FactsRange
+): FactsLoader {
+	const on = (day: IsoDate) => range.from <= day && day <= range.to;
+	const at = (instant: Date) => on(localDay(instant, range.timeZone));
+	async function rows<T>(read: (loader: FactsLoader) => Promise<T[]>, keep: (row: T) => boolean) {
+		const kept: T[] = [];
+		for (const source of sources) kept.push(...(await read(source)).filter(keep));
+		return kept;
+	}
+	return {
+		range,
+		sets: () =>
+			rows(
+				(l) => l.sets(),
+				(set) => at(set.performedAt)
+			),
+		sessions: () =>
+			rows(
+				(l) => l.sessions(),
+				(session) => on(session.date)
+			),
+		runs: () =>
+			rows(
+				(l) => l.runs(),
+				(run) => at(run.startedAt)
+			),
+		// Looked up by planned session id, so another day's entries change nothing.
+		prescriptions: async () => {
+			const all = new Map<string, PlannedLines[]>();
+			for (const source of sources)
+				for (const [id, lines] of await source.prescriptions()) all.set(id, lines);
+			return all;
+		},
+		planned: async () => {
+			const parts: AdherenceFacts[] = [];
+			for (const source of sources) parts.push(await source.planned());
+			return {
+				planned: parts.flatMap((part) => part.planned.filter((session) => on(session.date))),
+				completed: new Set(parts.flatMap((part) => [...part.completed])),
+				workouts: parts.flatMap((part) => part.workouts.filter((workout) => on(workout.date)))
+			};
+		},
+		plannedRuns: () =>
+			rows(
+				(l) => l.plannedRuns(),
+				(run) => on(run.date)
+			),
+		recovery: () =>
+			rows(
+				(l) => l.recovery(),
+				(note) => on(note.notedOn)
+			),
+		firstActivity: () => global.firstActivity(),
+		baselines: () => global.baselines(),
+		races: () => global.races()
+	};
+}

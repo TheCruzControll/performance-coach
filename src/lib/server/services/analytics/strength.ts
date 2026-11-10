@@ -65,11 +65,11 @@ import type { Availability, MetricKind, SeriesPoint } from '../../../domain/anal
 import { isHardSet } from '../../../domain/training/metrics';
 import { MUSCLE_GROUPS } from '../../../domain/training/vocabulary';
 import { isWorking, volumeOf } from '../../../domain/workout/logging';
-import type { AnalyticsRepository, SetFact } from '../../db/repositories/analytics';
+import type { SetFact } from '../../db/repositories/analytics';
 import type { Executor } from '../../db/types';
 import { getExercisesByIds, type ExerciseDef } from '../exercises/index';
 import { getAthleteProfile } from '../profile/index';
-import { createFactsLoader } from './facts';
+import { factsSource, type DashboardDeps } from './facts';
 import { displayUnits, formatIn, weight, type DisplayUnits, type Shown } from './format';
 import { getMuscleTargets, type WeekTarget } from './targets';
 
@@ -89,10 +89,7 @@ export interface StrengthDashboardOptions {
 	today: IsoDate;
 }
 
-export interface StrengthDashboardDeps {
-	/** The fact reads, for a test to count; the analytics repository on `db` unless given. */
-	repository?: AnalyticsRepository;
-}
+export type StrengthDashboardDeps = DashboardDeps;
 
 /** A series point with its value as shown; null for a gap. */
 export type ShownPoint = SeriesPoint & { text: string | null };
@@ -193,14 +190,13 @@ export async function getStrengthDashboard(
 	db: Executor,
 	ownerId: string,
 	{ period, today }: StrengthDashboardOptions,
-	{ repository }: StrengthDashboardDeps = {}
+	deps: StrengthDashboardDeps = {}
 ): Promise<StrengthDashboard> {
 	const profile = await getAthleteProfile(ownerId, { db });
 	const { timeZone } = profile;
 	const units = displayUnits(profile);
 	const format = formatIn(units);
-	const loader = (from: IsoDate, to: IsoDate) =>
-		createFactsLoader(db, ownerId, { from, to, timeZone }, { repository });
+	const loader = factsSource(db, ownerId, timeZone, deps);
 
 	const first = await loader(today, today).firstActivity();
 	const window = periodWindow(today, period, first);

@@ -270,7 +270,7 @@ describe("domain/coach's server-only modules (M5)", () => {
 			const cases: [string, string][] = [
 				['src/lib/ui/program/SessionCard.svelte', component],
 				[
-					'src/routes/(app)/coach/+page.svelte',
+					'src/routes/(app)/coach/[[thread]]/+page.svelte',
 					svelte(
 						"import { parseRich } from '$lib/domain/coach/markdown.ts';",
 						'<p>{parseRich.name}</p>'
