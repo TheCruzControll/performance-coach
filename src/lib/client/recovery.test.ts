@@ -3,7 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const goto = vi.hoisted(() => vi.fn(() => Promise.resolve()));
 vi.mock('$app/navigation', () => ({ goto }));
 
-const { reloadFresh, startOfflineRecovery, RETRY_DELAYS_MS } = await import('./recovery');
+const { reloadFresh, startOfflineRecovery, trackPress, RETRY_DELAYS_MS } =
+	await import('./recovery');
 
 const SCRIPT = 'https://app.test/_app/immutable/nodes/2.js';
 
@@ -212,5 +213,74 @@ describe('startOfflineRecovery', () => {
 		await vi.advanceTimersByTimeAsync(RETRY_DELAYS_MS[1]);
 		expect(fetchMock).toHaveBeenCalledTimes(2);
 		stop();
+	});
+});
+
+describe('trackPress (the screen replacing the offline view waits for a press to end)', () => {
+	/** The window's pointer listeners, and a way to fire one. */
+	function pointerWindow() {
+		const listeners = new Map<string, (event: { pointerId: number }) => void>();
+		vi.stubGlobal('addEventListener', (type: string, fn: (event: { pointerId: number }) => void) =>
+			listeners.set(type, fn)
+		);
+		vi.stubGlobal('removeEventListener', (type: string) => listeners.delete(type));
+		return {
+			fire: (type: string, pointerId = 1) => listeners.get(type)?.({ pointerId }),
+			listening: () => [...listeners.keys()]
+		};
+	}
+
+	it('lets a navigation through at once when nothing is pressed', () => {
+		pointerWindow();
+		const press = trackPress();
+		expect(press.released()).toBeUndefined();
+		press.stop();
+	});
+
+	it('holds it while a press is down, until a task after the release (after its click)', async () => {
+		const win = pointerWindow();
+		const press = trackPress();
+		win.fire('pointerdown');
+		let done = false;
+		void press.released()?.then(() => (done = true));
+		await vi.advanceTimersByTimeAsync(1_000);
+		expect(done, 'held while pressed').toBe(false);
+
+		win.fire('pointerup');
+		await Promise.resolve();
+		expect(done, 'not in the task of the release, where its click fires').toBe(false);
+		await vi.advanceTimersByTimeAsync(0);
+		expect(done).toBe(true);
+		expect(press.released(), 'nothing pressed any more').toBeUndefined();
+		press.stop();
+	});
+
+	it('waits for the last of several presses, and a cancelled press ends too', async () => {
+		const win = pointerWindow();
+		const press = trackPress();
+		win.fire('pointerdown', 1);
+		win.fire('pointerdown', 2);
+		let done = false;
+		void press.released()?.then(() => (done = true));
+		win.fire('pointerup', 1);
+		await vi.advanceTimersByTimeAsync(0);
+		expect(done, 'one finger still down').toBe(false);
+
+		win.fire('pointercancel', 2);
+		await vi.advanceTimersByTimeAsync(0);
+		expect(done).toBe(true);
+		press.stop();
+	});
+
+	it('stop lets a held navigation go and stops listening', async () => {
+		const win = pointerWindow();
+		const press = trackPress();
+		win.fire('pointerdown');
+		let done = false;
+		void press.released()?.then(() => (done = true));
+		press.stop();
+		await Promise.resolve();
+		expect(done).toBe(true);
+		expect(win.listening()).toEqual([]);
 	});
 });
