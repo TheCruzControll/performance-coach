@@ -13,13 +13,15 @@
  *   decisions as fit the output cap, with `next` naming the version and decision to go on from
  *   (a generated version alone has more decisions than one result holds).
  * - get_coach_proposals: the coach's proposals, by status or by id, with the owner's reason for
- *   a rejection. Any id that is not one of the owner's proposals is NOT_FOUND.
+ *   a rejection and who proposed each (origin): the coach, or a review's rules, with the review
+ *   as a source. Any id that is not one of the owner's proposals is NOT_FOUND.
  *
  * Stored text (titles, summaries, reasons) travels as untrusted_text; dates as ISO strings.
  */
 import * as z from 'zod/mini';
 import { addDays } from '../../../domain/calendar.ts';
 import { TURN_LIMITS } from '../../../domain/coach/budgets.ts';
+import { PROPOSAL_ORIGINS } from '../../../domain/coach/memory.ts';
 import { canonicalJson } from '../../../domain/programming/random.ts';
 import { SUPERSEDED_REASONS } from '../../../domain/coach/vocabulary.ts';
 import type { SourceRef } from '../../../domain/coach/sources.ts';
@@ -380,12 +382,16 @@ const proposalSchema = z.object({
 	createdAt: z.iso.datetime(),
 	decidedAt: z.nullable(z.iso.datetime()),
 	/** The owner's reason for a rejection, in their words. */
-	decisionNote: z.nullable(untrustedSchema)
+	decisionNote: z.nullable(untrustedSchema),
+	/** Who proposed it: you (coach), or the rules of a weekly or cycle review. */
+	origin: z.enum(PROPOSAL_ORIGINS),
+	/** The review that proposed it, whose source opens it; null for yours. */
+	review: z.nullable(sourceRefSchema)
 });
 
 const getCoachProposalsTool = defineTool({
 	name: 'get_coach_proposals',
-	description: `The changes you proposed and what became of them, newest first: each one's kind, title, status (proposed, accepted, rejected, applied or superseded), summary lines, the program version applying it made, why it was superseded, when it was decided, and the owner's reason for a rejection (decisionNote). Give ids (from the turn context or an earlier result) for those proposals, or a status to filter; up to ${COACH_PROPOSALS_LIMIT.default} unless limit says otherwise.`,
+	description: `The changes proposed to the owner, by you or by a review's rules, and what became of them, newest first: each one's kind, title, status (proposed, accepted, rejected, applied or superseded), summary lines, the program version applying it made, why it was superseded, when it was decided, the owner's reason for a rejection (decisionNote), and origin: coach for a change you proposed, weekly_review or cycle_review for one the rules of that review made, with the review as a source (review). Never present a review's proposal as your own: say the review proposed it and cite the review. Give ids (from the turn context or an earlier result) for those proposals, or a status to filter; up to ${COACH_PROPOSALS_LIMIT.default} unless limit says otherwise.`,
 	input: z.object({
 		status: z.optional(z.enum(PROPOSAL_STATUSES)),
 		ids: z.optional(z.array(z.uuid()).check(z.minLength(1), z.maxLength(PROPOSAL_IDS_MAX))),
@@ -422,7 +428,9 @@ const getCoachProposalsTool = defineTool({
 				supersededReason: p.supersededReason,
 				createdAt: iso(p.createdAt),
 				decidedAt: p.closedAt && iso(p.closedAt),
-				decisionNote: p.decisionNote === null ? null : untrusted(p.decisionNote)
+				decisionNote: p.decisionNote === null ? null : untrusted(p.decisionNote),
+				origin: p.origin?.kind ?? ('coach' as const),
+				review: p.origin?.source ?? null
 			}));
 		return { items, more: next !== null };
 	}

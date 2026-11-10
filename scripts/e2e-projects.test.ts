@@ -1,11 +1,12 @@
 /**
  * e2e/projects.ts selectProjects: the projects one CI leg runs (.github/workflows/ci.yml). Each
  * leg keeps one engine and one group plus the setup projects it needs, its dependencies point
- * only at kept projects, and together the legs run exactly today's tests. Playwright's --shard
- * splits only projects nothing depends on, so each leg's own functional projects must be those.
+ * only at kept projects, and together the legs run exactly today's tests. Playwright's shard
+ * list (--test-list, scripts/e2e-shards.ts) filters only projects nothing depends on, so each
+ * leg's own functional projects must be those. Each shard's listing is in
+ * scripts/e2e-shards.listing.test.ts.
  */
 import { spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import type { Project } from '@playwright/test';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -137,7 +138,7 @@ describe.each([
 		}
 	});
 
-	it('leaves nothing depending on a main or serial leg\u2019s projects, so --shard splits them', () => {
+	it('leaves nothing depending on a main or serial leg\u2019s projects, so a shard list splits them', () => {
 		for (const leg of LEGS.filter((l) => l.group !== 'alone')) {
 			const selected = selectProjects(projects, leg);
 			const depended = new Set(selected.flatMap((p) => p.dependencies ?? []));
@@ -215,7 +216,7 @@ describe('playwright.config.ts legs', () => {
 });
 
 /** `playwright test --list` for one leg (or today's whole suite), as CI loads the config. */
-function list(leg: { engine?: Engine; group?: Group; shard?: string } = {}): Listing {
+function list(leg: { engine?: Engine; group?: Group } = {}): Listing {
 	const env: NodeJS.ProcessEnv = { CI: '1' };
 	for (const [name, value] of Object.entries(process.env)) {
 		if (!/^(E2E_|PLAYWRIGHT_JSON_|CI$)/.test(name)) env[name] = value;
@@ -223,7 +224,7 @@ function list(leg: { engine?: Engine; group?: Group; shard?: string } = {}): Lis
 	if (leg.engine) env.E2E_ENGINE = leg.engine;
 	if (leg.group) env.E2E_GROUP = leg.group;
 	const args = ['exec', 'playwright', 'test', '--list', '--reporter=json'];
-	const run = spawnSync('pnpm', leg.shard ? [...args, '--shard', leg.shard] : args, {
+	const run = spawnSync('pnpm', args, {
 		cwd: root,
 		env,
 		encoding: 'utf8',
@@ -247,21 +248,6 @@ const unrun = () => {
 		ENGINES.filter((e) => !run.has(`${group}/${e}`)).map((engine) => ({ group, engine }))
 	);
 };
-
-/** Each sharded leg in ci.yml's e2e matrix and its shard count (`of`). */
-function shardedLegs(): { group: Group; engine: Engine; of: number }[] {
-	const workflow = readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8');
-	const legs = new Map<string, { group: Group; engine: Engine; of: number }>();
-	for (const [, flow] of workflow.matchAll(/^\s*- \{(.*group:.*)\}\s*$/gm)) {
-		const entry = Object.fromEntries(
-			flow!.split(',').map((pair) => pair.split(':').map((s) => s.trim()))
-		);
-		const of = Number(entry.of);
-		const leg = { group: entry.group as Group, engine: entry.engine as Engine, of };
-		if (of > 1) legs.set(`${leg.group}/${leg.engine}`, leg);
-	}
-	return [...legs.values()];
-}
 
 describe('the legs, listed by Playwright', () => {
 	const listings = new Map<string, Listing>();
@@ -301,29 +287,4 @@ describe('the legs, listed by Playwright', () => {
 			expect(beyondSetup(runs(listed(leg))), `${leg.group}/${leg.engine}`).toEqual([]);
 		}
 	}, 120_000);
-
-	it('find the sharded legs in ci.yml', () => {
-		expect(shardedLegs().length).toBeGreaterThan(0);
-	});
-
-	it.each(shardedLegs())(
-		'shard $group/$engine $of ways: its shards split its tests and each runs the setup',
-		({ group, engine, of }) => {
-			const leg = { group, engine };
-			const whole = runs(list(leg));
-			const shards = Array.from({ length: of }, (_, i) =>
-				runs(list({ ...leg, shard: `${i + 1}/${of}` }))
-			);
-			const isSetup = (test: string) => /^setup(-\w+)? › /.test(test);
-			const setup = (tests: string[]) => tests.filter(isSetup);
-			const functional = (tests: string[]) => tests.filter((t) => !isSetup(t));
-			for (const shard of shards) {
-				expect(functional(shard).length, 'each shard runs functional tests').toBeGreaterThan(0);
-				expect(functional(shard).length).toBeLessThan(functional(whole).length);
-				expect(setup(shard).sort()).toEqual(setup(whole).sort());
-			}
-			expect(shards.flatMap(functional).sort()).toEqual(functional(whole).sort());
-		},
-		120_000
-	);
 });

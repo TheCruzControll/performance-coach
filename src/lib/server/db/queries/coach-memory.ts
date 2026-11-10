@@ -237,7 +237,14 @@ export function recoveryNotesSince(db: Executor, ownerId: string, since: string,
 export function latestWeeklyReviews(db: Executor, ownerId: string, limit: number) {
 	const w = weeklyReviews;
 	return db
-		.select({ id: w.id, date: w.weekStartsOn, summary: w.summary })
+		.select({
+			id: w.id,
+			date: w.weekStartsOn,
+			summary: w.summary,
+			proposalId: w.proposalId,
+			snapshotVersion: w.snapshotVersion,
+			snapshot: w.snapshot
+		})
 		.from(w)
 		.where(and(eq(w.ownerId, ownerId), isNull(w.supersededAt)))
 		.orderBy(desc(w.weekStartsOn))
@@ -251,7 +258,14 @@ export function latestWeeklyReviews(db: Executor, ownerId: string, limit: number
 export function latestCycleReview(db: Executor, ownerId: string) {
 	const c = cycleReviews;
 	return db
-		.select({ id: c.id, date: dayOf(c.createdAt, ownerId), summary: c.summary })
+		.select({
+			id: c.id,
+			date: dayOf(c.createdAt, ownerId),
+			summary: c.summary,
+			proposalId: c.proposalId,
+			snapshotVersion: c.snapshotVersion,
+			snapshot: c.snapshot
+		})
 		.from(c)
 		.innerJoin(programs, eq(programs.id, c.programId))
 		.where(and(eq(programs.ownerId, ownerId), eq(c.ownerId, ownerId), isNull(c.supersededAt)))
@@ -324,7 +338,9 @@ export function recentProposals(
 		decidedOn: sql<string | null>`${open ? sql`null` : dayOf(p.closedAt, ownerId)}`.as(
 			'decided_on'
 		),
-		decisionNote: sql<string | null>`${p.decisionNote}`.as('decision_note')
+		decisionNote: sql<string | null>`${p.decisionNote}`.as('decision_note'),
+		/** The rules provenance a review stored (evidence.source); null for the coach's own. */
+		source: sql<unknown>`${p.evidence} -> 'source'`.as('source')
 	});
 	const pendingRows = db
 		.select(columns(true))
