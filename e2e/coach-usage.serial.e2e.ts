@@ -207,14 +207,18 @@ test.describe('on a desktop window', () => {
 		await expect(page.getByTestId('usage-run-cards')).toBeHidden();
 		await expect(table.getByTestId('usage-row-cost')).toHaveText(['Not priced']);
 
-		// Wider than a plain sheet's 32rem dialog, centred in the window.
+		// Wider than a plain sheet's 32rem dialog, centred in the window: the full-window <dialog>,
+		// which leaves out the page's scrollbar gutter.
 		const box = (await sheet(page).locator('.sheet').boundingBox())!;
-		const width = page.viewportSize()!.width;
+		const window = (await sheet(page).boundingBox())!;
 		expect(box.width).toBeGreaterThan(32 * 16);
-		expect(Math.abs(box.x + box.width / 2 - width / 2)).toBeLessThanOrEqual(1);
+		expect(Math.abs(box.x + box.width / 2 - (window.x + window.width / 2))).toBeLessThanOrEqual(1);
 
+		// Tab from Close reaches the table by keyboard, which is what shows the ring.
 		const region = page.getByRole('region', { name: 'Runs, table' });
-		await region.focus();
+		await sheet(page).getByRole('button', { name: 'Close' }).focus();
+		await page.keyboard.press('Tab');
+		await expect(region).toBeFocused();
 		await expect
 			.poll(() => region.evaluate((el) => getComputedStyle(el).outlineStyle))
 			.not.toBe('none');

@@ -186,7 +186,10 @@
 			</div>
 
 			<Section title="Runs" gap="sm">
-				<ul class="cards" data-testid="usage-run-cards">
+				<!-- A tab stop in the sheet's scrolling body, as the table is on a wide sheet: the arrow
+				     keys scroll the runs on a phone with a keyboard. -->
+				<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+				<ul class="cards" aria-label="Runs" tabindex="0" data-testid="usage-run-cards">
 					{#each runs as run (run.id)}
 						<li class="card" data-testid="usage-run">
 							<div class="line">
@@ -386,6 +389,7 @@
 		font-size: var(--text-xs);
 	}
 
+	.cards:focus-visible,
 	.table:focus-visible {
 		outline: 2px solid var(--color-accent-ring);
 		outline-offset: 2px;
