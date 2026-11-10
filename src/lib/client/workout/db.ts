@@ -102,12 +102,21 @@ export class StoreClosedError extends Error {
 /** The pages (their IndexedDB) that saw the database close: they never open it again. */
 const closedPages = new WeakMap<IDBFactory, CloseReason>();
 
+/**
+ * The page lets go of 'pc-offline' for good, as when it saw it deleted or upgraded: it never opens
+ * it again. `page` is the IndexedDB it was opened from. Every close path writes it, so a stale tab
+ * never recreates the database once another tab has deleted it.
+ */
+export function closeForGood(page: IDBFactory, reason: CloseReason): void {
+	closedPages.set(page, reason);
+}
+
 const STORE_NAMES = Object.values(STORES) as StoreName[];
 
 function open(onClose: (reason: CloseReason) => void): Promise<WorkoutDb> {
 	const page = indexedDB;
 	const close = (reason: CloseReason) => {
-		closedPages.set(page, reason);
+		closeForGood(page, reason);
 		onClose(reason);
 	};
 	return openDB<WorkoutSchema>(DB_NAME, DB_VERSION, {
