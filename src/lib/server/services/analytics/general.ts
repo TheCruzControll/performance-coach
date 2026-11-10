@@ -63,10 +63,9 @@ import {
 	type RecoverySummary
 } from '../../../domain/analytics/workload';
 import { addDays, daysBetween, mondayOf, type IsoDate } from '../../../domain/calendar';
-import { createAnalyticsRepository } from '../../db/repositories/analytics';
 import type { Executor } from '../../db/types';
 import { getAthleteProfile } from '../profile/index';
-import { createFactsLoader, type DatedSession, type FactsDeps } from './facts';
+import { factsSource, type DashboardDeps, type DatedSession } from './facts';
 import { displayUnits, formatIn, type DisplayUnits } from './format';
 
 /**
@@ -170,26 +169,22 @@ const earliest = (...days: IsoDate[]) => days.reduce((a, b) => (b < a ? b : a));
 
 /**
  * The general dashboard for `period` on `today`. `deps.repository` replaces the analytics reads,
- * for a test to count them.
+ * for a test to count them; `deps.facts` shares them with other services.
  */
 export async function getGeneralDashboard(
 	db: Executor,
 	ownerId: string,
 	{ period, today }: GeneralQuery,
-	{ repository = createAnalyticsRepository(db) }: FactsDeps = {}
+	deps: DashboardDeps = {}
 ): Promise<GeneralDashboard> {
 	const profile = await getAthleteProfile(ownerId, { db });
 	const { timeZone } = profile;
 	const units = displayUnits(profile);
 	const format = formatIn(units);
+	const source = factsSource(db, ownerId, timeZone, deps);
 
 	// The first activity sets 'all''s weeks, so it is read before the range is known.
-	const first = await createFactsLoader(
-		db,
-		ownerId,
-		{ from: today, to: today, timeZone },
-		{ repository }
-	).firstActivity();
+	const first = await source(today, today).firstActivity();
 	const window = periodWindow(today, period, first);
 	const trend = trendWindow(window);
 	const { inProgress } = window;
@@ -213,7 +208,7 @@ export async function getGeneralDashboard(
 	// Read through Sunday so this week's later sessions and advance skips count as planned; what
 	// was logged is kept to today.
 	const to = addDays(inProgress.weekStart, 6);
-	const facts = createFactsLoader(db, ownerId, { from, to, timeZone }, { repository });
+	const facts = source(from, to);
 	const sessions = (await facts.sessions()).filter((s) => s.date <= today);
 	const planned = { ...(await facts.planned()), workouts: sessions };
 	const notes = (await facts.recovery()).filter((n) => n.notedOn <= today);

@@ -6,6 +6,7 @@
     raised card whose Start makes Up next current, its first set ready in the logger. Only Start
     is added, under what was there, so logging the last set moves nothing (Navigation puts the
     card last).
+  - Once every exercise is done, Finish workout (`onfinish`) takes Start's place.
   - Once a set is logged, a polite live region says where the workout went: 'Next: A2 Plank,
     45 s' when the flow moved to the partner, 'Next: Romanian deadlift, 3 × 8 at RPE 7' once the
     exercise is done. Nothing is said on restore or while sets are left.
@@ -22,9 +23,11 @@
 		view: WorkoutView;
 		/** Start: makes the exercise at this position current. */
 		onstart: (position: number) => void;
+		/** Finish workout, once nothing is left to do. */
+		onfinish?: () => void;
 	}
 
-	let { view, onstart }: Props = $props();
+	let { view, onstart, onfinish }: Props = $props();
 
 	const next = $derived(upNextWords(view));
 	const between = $derived.by(() => {
@@ -67,6 +70,12 @@
 		<div class="start">
 			<Button block iconEnd="arrow-right" onclick={() => onstart(next.position)}>
 				Start {next.name}
+			</Button>
+		</div>
+	{:else if between && onfinish}
+		<div class="start">
+			<Button block icon="check" onclick={onfinish} data-testid="up-next-finish">
+				Finish workout
 			</Button>
 		</div>
 	{/if}
