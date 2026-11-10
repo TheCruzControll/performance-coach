@@ -60,10 +60,14 @@ function failedModules(): string[] {
 		});
 }
 
-/** The page's stylesheets that failed to load: a link whose load has ended has a sheet. */
+/**
+ * The page's stylesheets that failed to load: a link whose load has ended has a sheet. A disabled
+ * link never loads: SvelteKit marks each stylesheet it inlined into the HTML with one, so that Vite
+ * never links it, and a copy of it would never load either.
+ */
 function failedStylesheets(): HTMLLinkElement[] {
 	return [...document.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"]')].filter(
-		(link) => !link.sheet
+		(link) => !link.sheet && !link.disabled
 	);
 }
 

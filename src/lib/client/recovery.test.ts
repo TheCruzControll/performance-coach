@@ -20,7 +20,7 @@ function slowScript(status = 200) {
  * A <link rel="stylesheet"> as the page holds it: `sheet` is null when its load failed. Its copy
  * (the reload of it) loads or fails when the test says so.
  */
-function styleLink(href: string, applied = false) {
+function styleLink(href: string, applied = false, disabled = false) {
 	const page = { links: [] as unknown[] };
 	const copy = {
 		href,
@@ -32,6 +32,7 @@ function styleLink(href: string, applied = false) {
 	const link = {
 		href,
 		sheet: applied ? {} : null,
+		disabled,
 		cloneNode: vi.fn(() => copy),
 		after: vi.fn((node: unknown) => page.links.splice(page.links.indexOf(link) + 1, 0, node)),
 		remove: vi.fn(() => page.links.splice(page.links.indexOf(link), 1))
@@ -148,6 +149,15 @@ describe('a stylesheet that failed to load (Vite never links its URL again)', ()
 
 	it('leaves the stylesheets that applied alone', async () => {
 		const css = styleLink(CSS, true);
+		stylesheets = css.links();
+		reloadFresh();
+		await vi.advanceTimersByTimeAsync(0);
+		expect(css.link.cloneNode).not.toHaveBeenCalled();
+		expect(reload).toHaveBeenCalledOnce();
+	});
+
+	it('leaves the disabled links SvelteKit puts in for the stylesheets it inlined alone', async () => {
+		const css = styleLink(CSS, false, true);
 		stylesheets = css.links();
 		reloadFresh();
 		await vi.advanceTimersByTimeAsync(0);
