@@ -452,6 +452,16 @@ const CASES: Case[] = (() => {
 				)
 		],
 		[
+			'completedWorkoutsFor, today (Done · View)',
+			[H.completedWorkoutsFor],
+			() =>
+				h.completedWorkoutsFor(
+					db,
+					owner,
+					sessions.map((s) => s.lineageId!)
+				)
+		],
+		[
 			'versionHistory, newest page',
 			['program_versions_program_number_uq', 'programming_decisions_version_idx'],
 			() => p.versionHistory(db, program, { limit: 20 })

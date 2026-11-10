@@ -14,6 +14,9 @@
  *   none, being read-only.
  * - A session that can still change carries what Adjust steps (adjustValues): its set
  *   prescriptions, run segments or length and RPE, as stored, paces in the owner's unit.
+ * - The current version's session carries its way into the workout (start-link.ts): Start
+ *   workout, or Done · View to its newest workout's History detail; none once skipped. The screen
+ *   swaps in Resume when it is the workout in progress on the device.
  * - A strength session that can still change also streams what Swap offers for each exercise
  *   (`swaps`, alternativesForExercises): the screen renders without waiting for it. A failure
  *   there is recorded and streams null, which the Swap sheet shows with Retry.
@@ -27,6 +30,7 @@ import { sessionTone, type SessionStatus } from '#lib/domain/training/vocabulary
 import { ownerToday } from '#lib/server/local-date.ts';
 import { recordServerError, type ServerErrorInput } from '#lib/server/services/errors.ts';
 import { getAthleteProfile } from '#lib/server/services/profile/index.ts';
+import { completedWorkoutIds } from '#lib/server/services/workouts/history.ts';
 import {
 	alternativesForExercises,
 	getMoveTargets,
@@ -52,6 +56,7 @@ import {
 	type SessionExerciseView,
 	type SwapOptions
 } from '#lib/ui/program/session-words.ts';
+import { startLink, type StartLink } from '#lib/ui/program/start-link.ts';
 import { statusWords } from '#lib/ui/program/words.ts';
 
 /**
@@ -77,6 +82,8 @@ export interface SessionScreen {
 	status: SessionStatus;
 	/** 'Skipped', 'Moved from Mon', 'Done'; none while planned. */
 	statusWords: string | null;
+	/** Start workout or Done · View on the current version; null on an older one or once skipped. */
+	start: StartLink | null;
 	/** A strength session in a baseline week: how to find each lift's starting point. */
 	baseline: BaselineCallout | null;
 	/** An older version: its number, and whether the current version still has the session. */
@@ -122,7 +129,7 @@ export interface SessionLoadDeps extends Pick<TrainingDeps, 'db'> {
 function screenOf(
 	session: PlannedSession,
 	{ weightUnit, distanceUnit }: Pick<AthleteProfile, 'weightUnit' | 'distanceUnit'>
-): Omit<SessionScreen, 'edits' | 'adjust' | 'swaps'> {
+): Omit<SessionScreen, 'edits' | 'adjust' | 'swaps' | 'start'> {
 	const { version, week } = session;
 	return {
 		lineage: session.lineage,
@@ -177,6 +184,17 @@ async function editsOf(
 	return { version: session.version.number, locked, moveTo: moveTo.map(moveOption) };
 }
 
+/** Its way into the workout (start-link.ts), with the workout a completed one opens. */
+async function startOf(
+	ownerId: string,
+	session: PlannedSession,
+	db: TrainingDeps['db']
+): Promise<StartLink | null> {
+	if (session.status !== 'completed') return startLink(session);
+	const found = await completedWorkoutIds(ownerId, [session.lineage], { db });
+	return startLink(session, found[session.lineage]);
+}
+
 /**
  * What Swap offers for each of `exercises`, as the sheet needs it (no catalogue row), or null,
  * with the failure recorded, when it cannot be read.
@@ -217,13 +235,14 @@ export async function loadSessionDetail(
 		const session = await getPlannedSession(ownerId, key, { version: asked }, { db });
 		const profile = await getAthleteProfile(ownerId, { db });
 		const edits = session.version.current ? await editsOf(ownerId, session, now, db) : null;
+		const start = edits ? await startOf(ownerId, session, db) : null;
 		// Started last, once the load's own reads are done: it runs while the screen streams.
 		const swaps =
 			edits && !edits.locked && session.kind === 'strength'
 				? swapOptions(ownerId, session.exercises, origin, { db, errorsDb })
 				: null;
 		const adjust = edits && !edits.locked ? adjustValues(session, profile) : null;
-		return { state: 'session', ...screenOf(session, profile), edits, adjust, swaps };
+		return { state: 'session', ...screenOf(session, profile), start, edits, adjust, swaps };
 	} catch (err) {
 		if (err instanceof TrainingNotFoundError) error(404, 'Not found');
 		await recordServerError(

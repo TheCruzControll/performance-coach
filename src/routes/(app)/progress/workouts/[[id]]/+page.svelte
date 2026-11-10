@@ -137,7 +137,17 @@
 						title="No workouts yet"
 						description="Every workout you finish is listed here, newest first, with its sets, runs and notes."
 						data-testid="history-empty"
-					/>
+					>
+						{#snippet actions()}
+							<Button
+								href={resolve('/(app)/today')}
+								iconEnd="arrow-right"
+								data-testid="history-start"
+							>
+								Start today’s workout
+							</Button>
+						{/snippet}
+					</EmptyState>
 				</Surface>
 			{:else}
 				<WorkoutList {rows} waiting={shownWaiting} selected={detail?.id ?? null} />
