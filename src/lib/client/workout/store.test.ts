@@ -599,6 +599,7 @@ describe('the probe', () => {
 			kind: 'strength',
 			title: KIT.title,
 			startedAt: iso(T0),
+			plannedLineage: KIT.plannedLineage,
 			pending: 2,
 			stopwatch: STOPWATCH_IDLE
 		});

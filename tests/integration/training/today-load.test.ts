@@ -4,11 +4,15 @@
  * before week 1, and 'Nothing planned yet' once the first block is over. When the database
  * cannot be reached it never rejects: {failed: true}, and the failure recorded as a server error.
  */
+import { eq } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
+import { workouts } from '../../../src/lib/server/db';
 import { findErrorsByRequestId } from '../../../src/lib/server/services/errors';
 import {
 	createProgramFromPlan,
-	skipSession
+	getProgramVersion,
+	skipSession,
+	type StoredSession
 } from '../../../src/lib/server/services/programs/index';
 import {
 	programFixture,
@@ -18,6 +22,7 @@ import { loadTodayPlan, type TodayPlanView } from '../../../src/routes/(app)/tod
 import type { Executor } from '../../../src/lib/server/db/types';
 import { unreachableDb, withRollback } from '../helpers';
 import { makeOwner } from '../profile/fixtures';
+import { logStrength } from './fixtures/history';
 
 /** A Thursday. */
 const TODAY = '2026-11-05';
@@ -86,6 +91,46 @@ describe('Today’s plan', () => {
 				['Muay Thai class', null]
 			]);
 			expect(after.upNext).toEqual(view.upNext);
+		});
+	});
+
+	it('offers each of today’s sessions Start workout, and Done · View to the workout once done', async () => {
+		await withRollback(async (db) => {
+			const owner = await makeOwner(db);
+			const plan = programFixture('today', { monday: '2026-11-02', today: TODAY });
+			const { programId } = await createProgramFromPlan(owner, plan, { source: 'rules' }, { db });
+			const v1 = await getProgramVersion(owner, programId, 1, { db });
+			const sessions = v1.blocks[0]!.weeks[0]!.sessions as StoredSession[];
+			const fullBody = sessions.find((s) => s.date === TODAY)!;
+			const planned = { sessionId: fullBody.id, lineageId: fullBody.lineage, programId };
+			const startedAt = new Date(`${TODAY}T17:00:00Z`);
+			const { workoutId } = await logStrength(db, owner, { startedAt, planned }, []);
+			const [row] = await db
+				.select({ clientId: workouts.clientId })
+				.from(workouts)
+				.where(eq(workouts.id, workoutId));
+
+			const view = await viewOf(db, owner);
+			const [done, muayThai] = dayOf(view, TODAY).cards;
+			expect(done).toMatchObject({ title: 'Full body', status: 'completed' });
+			expect(done!.start).toEqual({
+				id: 'done-workout',
+				label: 'Done · View',
+				href: `/progress/workouts/${row!.clientId}`,
+				icon: 'check'
+			});
+			expect(muayThai!.start).toEqual({
+				id: 'start-workout',
+				label: 'Start workout',
+				href: `/workout?start=${muayThai!.lineage}`,
+				icon: 'play'
+			});
+			// Only today's sessions: not another day's, nor Up next.
+			const others = view.week!.days.filter((d) => d.date !== TODAY).flatMap((d) => d.cards);
+			expect([...others, ...view.upNext].map((c) => c.start)).toEqual(
+				[...others, ...view.upNext].map(() => null)
+			);
+			expect(view.upNext).toHaveLength(3);
 		});
 	});
 
