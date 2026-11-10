@@ -20,6 +20,7 @@
 		onpointerleave?: (event: PointerEvent) => void;
 		onpointercancel?: (event: PointerEvent) => void;
 		'aria-controls'?: string;
+		'aria-expanded'?: boolean;
 		'data-testid'?: string;
 	}
 

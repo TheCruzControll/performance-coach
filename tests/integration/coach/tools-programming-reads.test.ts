@@ -427,7 +427,9 @@ describe('get_coach_proposals', () => {
 					supersededReason: null,
 					createdAt: sets.createdAt.toISOString(),
 					decidedAt: decidedAt.toISOString(),
-					decisionNote: null
+					decisionNote: null,
+					origin: 'coach',
+					review: null
 				},
 				{
 					source: { type: 'proposal', id: move.id },
@@ -439,7 +441,9 @@ describe('get_coach_proposals', () => {
 					supersededReason: null,
 					createdAt: move.createdAt.toISOString(),
 					decidedAt: decidedAt.toISOString(),
-					decisionNote: { untrusted_text: REASON }
+					decisionNote: { untrusted_text: REASON },
+					origin: 'coach',
+					review: null
 				}
 			]);
 
