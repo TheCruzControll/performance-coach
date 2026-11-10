@@ -6,14 +6,26 @@
   - planned against completed, in words, each count with its canonical value in data-value
   - the trends over the weeks it read, each with its VerdictBadge (a real trend apart from normal
     variation) and its MetricContext (what counts as good, and how it is worked out)
+  - RPE, volume and intensity, running, Muay Thai, recovery and fatigue, conflicts and PRs
+    (ReviewSections), each collapsing to its verdict line on a phone
   - the write-up's slot, empty until the coach writes it (review-narrative-ui)
+  - out of date (training logged since): 'Computed before N later changes', with Refresh while
+    its decision is open. Refresh writes the next revision and keeps this one; like Create it is
+    busy while it posts (a second tap posts nothing), says why on a failure and resends as
+    Retry, and is disabled offline. Without JavaScript the form posts and the page reloads.
 
   A review written before M6 shows its summary alone.
 -->
 <script lang="ts">
+	import { applyAction, enhance, type SubmitFunction } from '$app/forms';
+	import { invalidateAll } from '$app/navigation';
+	import { onMount } from 'svelte';
 	import MetricContext from '#lib/ui/analytics/MetricContext.svelte';
 	import VerdictBadge from '#lib/ui/analytics/VerdictBadge.svelte';
+	import Button from '#lib/ui/components/Button.svelte';
+	import Notice from '#lib/ui/components/Notice.svelte';
 	import type { WeeklyReviewData } from './load';
+	import ReviewSections from './ReviewSections.svelte';
 
 	interface Props {
 		review: WeeklyReviewData;
@@ -21,7 +33,35 @@
 
 	let { review }: Props = $props();
 	const adherence = $derived(review.adherence);
+
+	// navigator.onLine read here, as ReviewList does, to keep client/connectivity off this route.
+	let online = $state(true);
+	onMount(() => (online = navigator.onLine));
+	let refreshing = $state<'pending' | 'failed'>();
+
+	/** What the notice says: offline, a failed Refresh, or the server's words (load.ts). */
+	const note = $derived(
+		!online && review.stale?.refreshable
+			? 'You’re offline.'
+			: refreshing === 'failed'
+				? 'Couldn’t refresh it. Try again.'
+				: review.stale?.detail
+	);
+
+	const refresh: SubmitFunction = ({ cancel }) => {
+		if (refreshing === 'pending' || !online) return cancel();
+		refreshing = 'pending';
+		return async ({ result }) => {
+			// Decided meanwhile (409): reloading shows it as decided, with no Refresh.
+			if (result.type === 'redirect' || result.type === 'failure') {
+				await (result.type === 'redirect' ? applyAction(result) : invalidateAll());
+				refreshing = undefined;
+			} else refreshing = 'failed';
+		};
+	};
 </script>
+
+<svelte:window ononline={() => (online = true)} onoffline={() => (online = false)} />
 
 <article class="pc-weekly-review" aria-labelledby="review-title" data-testid="weekly-review">
 	<header class="hero">
@@ -49,6 +89,34 @@
 			</div>
 		{/if}
 	</header>
+
+	{#if review.stale}
+		<form
+			class="stale"
+			method="POST"
+			action="?/refresh"
+			use:enhance={refresh}
+			data-testid="review-stale"
+		>
+			<input type="hidden" name="reviewId" value={review.id} />
+			<Notice
+				tone={refreshing === 'failed' ? 'danger' : 'warning'}
+				icon="clock"
+				title={review.stale.words}>{note}</Notice
+			>
+			{#if review.stale.refreshable}
+				<Button
+					type="submit"
+					size="sm"
+					variant="secondary"
+					icon="refresh"
+					loading={refreshing === 'pending'}
+					disabled={!online}
+					data-testid="review-refresh">{refreshing === 'failed' ? 'Retry' : 'Refresh'}</Button
+				>
+			{/if}
+		</form>
+	{/if}
 
 	{#if adherence}
 		<section class="section" aria-labelledby="planned-title">
@@ -97,6 +165,8 @@
 			</ul>
 		</section>
 	{/if}
+
+	<div class="sections"><ReviewSections sections={review.sections} /></div>
 
 	<div class="write-up" data-testid="review-write-up">
 		{#if review.writeUp}<p>{review.writeUp}</p>{/if}
@@ -249,6 +319,13 @@
 		font-weight: var(--weight-semibold);
 	}
 
+	.stale {
+		display: grid;
+		gap: var(--space-3);
+		justify-items: start;
+	}
+
+	.sections:empty,
 	.write-up:empty {
 		display: none;
 	}
