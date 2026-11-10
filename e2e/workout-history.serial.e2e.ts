@@ -480,7 +480,12 @@ test.describe('with the network in the test’s hands', () => {
 			{ name: DB_NAME, store: STORES.workouts, workoutId }
 		);
 
-		await gotoHydrated(page, HISTORY);
+		// Hydrated once the resume bar has looked: never networkidle, which the held sync of this
+		// workout's pending changes (the bar's engine runs on every tab) keeps from happening.
+		await page.goto(HISTORY);
+		await expect(
+			page.locator(`[data-testid="resume-slot"][data-looked="${HISTORY}"]`)
+		).toBeAttached();
 		const waiting = page.getByTestId('workout-waiting');
 		await expect(waiting).toHaveCount(1);
 		await expect(waiting).toContainText(kits.other.title);

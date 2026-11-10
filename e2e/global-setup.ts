@@ -84,7 +84,9 @@ export default async function globalSetup(config: FullConfig) {
 			CRON_SECRET: process.env.E2E_CRON_SECRET,
 			BACKUP_ENCRYPTION_KEY: process.env.E2E_BACKUP_KEY,
 			BACKUP_DIR: E2E_BACKUP_DIR,
-			LOG_LEVEL: process.env.LOG_LEVEL ?? 'info'
+			LOG_LEVEL: process.env.LOG_LEVEL ?? 'info',
+			// An observed lifecycle throws on a move its table does not allow (lifecycle-guard.ts).
+			LIFECYCLE_STRICT: '1'
 		}
 	});
 
