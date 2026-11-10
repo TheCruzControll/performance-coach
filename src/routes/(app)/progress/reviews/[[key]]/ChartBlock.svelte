@@ -5,6 +5,10 @@
 -->
 <script lang="ts">
 	import ChartFrame from '#lib/ui/charts/ChartFrame.svelte';
+	// With ChartFrame, as every other screen with charts imports them, so the two stay one chunk
+	// and one stylesheet. Alone here, ChartFrame would split from TrendTile, and /progress would
+	// link both stylesheets: about 0.26 KB gzip more render-blocking CSS, over its budget.
+	import '#lib/ui/analytics/TrendTile.svelte';
 	import { CHART_BODIES } from '#lib/ui/charts/bodies.ts';
 	import type { ChartView } from './sections';
 
