@@ -90,6 +90,8 @@ test('a structured run and a Muay Thai class: logged from Today, synced, and in 
 		fixture: 'workout-day',
 		start: 'this_week'
 	});
+	// Onboarding complete, so Today shows the plan rather than the setup card.
+	await query('update athlete_profiles set onboarding_completed_at = now()');
 	const lineageOf = (title: string) =>
 		seeded.sessions.find((s) => s.title === title && s.date === seeded.today)!.lineage;
 
