@@ -141,6 +141,8 @@ jobs:
   # at 14 in 42469172500 with tests still passing, so it split in two the same way.
   # serial shards hold whole files: its projects are not fullyParallel, so --shard splits by file.
   # Shard timeouts stay at the unsharded leg's value until three runs per shard are measured.
+  # main legs run 2 Playwright workers (playwright.config.ts), the other legs 1; main's `minutes`
+  # stay at their 1-worker values until three 2-worker runs are measured.
   e2e-legs:
     name: E2E ${{ matrix.group }} · ${{ matrix.engine }} · ${{ matrix.shard }}/${{ matrix.of }}
     # Pinned to the newest Ubuntu release Playwright builds WebKit for (its browser builds are

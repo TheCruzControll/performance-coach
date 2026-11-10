@@ -166,7 +166,9 @@ export default defineConfig({
 	outputDir: 'test-results',
 	forbidOnly: Boolean(process.env.CI),
 	retries: process.env.CI ? 1 : 0,
-	workers: process.env.CI ? 1 : 2,
+	// CI main legs run whole files side by side on 2 workers, as local runs do (auth.setup.ts
+	// registers a passkey per worker). serial, alone and sweeps legs keep 1.
+	workers: process.env.CI && group !== 'main' ? 1 : 2,
 	timeout: 30_000,
 	expect: { timeout: 7_500 },
 	reporter: [
