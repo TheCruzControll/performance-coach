@@ -2,7 +2,7 @@
  * The Coach screens (src/routes/(app)/coach/[[thread]]): /coach with PRD §12's suggestions under
  * the header, then Recent conversations newest first ('Show older' busy while it loads, with an
  * inline Retry when it fails), or the empty state; /coach/<id> with the stored conversation and
- * an 'All conversations' link. The composer is rendered disabled until coach-thread-stream; an
+ * an 'All conversations' link. The composer is enabled while the coach can answer (a suggestion fills it); an
  * entry point's question waits in it under a context chip. Not launched, switched off and the
  * other unavailable reasons have their notices while the rest of the app works; an unknown
  * conversation is the 404 page with the Coach tab still active; opening a conversation is busy
@@ -96,6 +96,8 @@ test('with no conversation, the suggestions sit under the header over the empty 
 		'How has my bench progressed this month?'
 	);
 	await expect(page.getByTestId('coach-empty')).toContainText('No conversations yet');
+	// The screen's largest text comes with the page, never after a chunk: it is the page's LCP.
+	expect(await (await page.request.get('/coach')).text()).toContain('data-testid="coach-empty"');
 	await expect(page.getByTestId('mock-badge')).toContainText('Practice coach');
 	await expect(page.getByTestId('coach-unavailable')).toHaveCount(0);
 	await expect(page.getByTestId('context-chip')).toHaveCount(0);
@@ -112,18 +114,19 @@ test('with no conversation, the suggestions sit under the header over the empty 
 	expect(errors).toEqual([]);
 });
 
-test('the composer is disabled until the coach can stream, and the suggestions are words', async ({
+test('the composer is ready while the coach can answer, and a suggestion fills it', async ({
 	page
 }) => {
 	await gotoHydrated(page, '/coach');
-	await expect(composer(page).getByRole('textbox', { name: 'Message' })).toBeDisabled();
-	await expect(composer(page).getByRole('textbox', { name: 'Message' })).toHaveAttribute(
-		'placeholder',
-		'Ask your coach'
-	);
+	const message = composer(page).getByRole('textbox', { name: 'Message' });
+	await expect(message).toBeEnabled();
+	await expect(message).toHaveAttribute('placeholder', 'Ask your coach');
 	await expect(composer(page).getByRole('button', { name: 'Send' })).toBeDisabled();
-	await expect(page.locator('.prompt').getByRole('button')).toHaveCount(0);
 	await expect(page.locator('.prompt').getByRole('link')).toHaveCount(0);
+
+	await page.getByRole('button', { name: 'Should I increase my squat weight?' }).click();
+	await expect(message).toHaveValue('Should I increase my squat weight?');
+	await expect(composer(page).getByRole('button', { name: 'Send' })).toBeEnabled();
 });
 
 test('an entry point’s question waits in the composer under its context chip', async ({
@@ -167,7 +170,7 @@ test('a stored conversation opens from Recent conversations and survives a reloa
 	await expect(page.getByTestId('coach-message').getByTestId('answer-block')).toHaveCount(2);
 	await expect(coachTab(page)).toHaveAttribute('aria-current', 'page');
 	await expect(page.locator('.prompt')).toHaveCount(0);
-	await expect(composer(page).getByRole('textbox', { name: 'Message' })).toBeDisabled();
+	await expect(composer(page).getByRole('textbox', { name: 'Message' })).toBeEnabled();
 	await expectNoSideScroll(page);
 	await captureScreen(page, testInfo, 'coach-thread');
 
@@ -207,6 +210,7 @@ test.describe('when the coach cannot answer', () => {
 		await expect(page.getByTestId('mock-badge')).toHaveCount(0);
 		await expect(composer(page).getByRole('textbox', { name: 'Message' })).toBeDisabled();
 		await expect(page.locator('.prompt')).toHaveCount(4);
+		for (const prompt of await page.locator('.prompt').all()) await expect(prompt).toBeDisabled();
 		await expectNoSideScroll(page);
 		await captureScreen(page, testInfo, 'coach-not-launched');
 

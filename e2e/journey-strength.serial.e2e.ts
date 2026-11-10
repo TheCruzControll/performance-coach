@@ -453,6 +453,8 @@ async function strengthJourney(page: Page, request: APIRequestContext, testInfo:
 		await landed(page, `/progress/workouts/${workoutId}`);
 		const detail = page.getByTestId('workout-detail');
 		await expect(detail).toBeVisible();
+		// Minutes × RPE, whole: a raw fraction would push the page wider than the phone.
+		await expect(detail.getByTestId('workout-stats')).toContainText(/Load\s*\d+ AU/);
 		await shoot(page, testInfo, 'history-detail');
 
 		await detail.getByTestId('exercise-history-open').filter({ hasText: 'Back squat' }).click();
