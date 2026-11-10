@@ -12,6 +12,9 @@
  * - 'many-blocks': MANY_BLOCKS short notes, more than an answer shows before 'Show all'.
  * - 'exercise-source': reads the bench's history, then points to the exercise it returned, so a
  *   streamed answer carries an exercise source (its history sheet).
+ * - 'perf-stream': PERF_STREAM_TOKENS of clean labelled blocks (paragraphs, emphasis and lists),
+ *   streamed a little faster than a real model, for the Coach screen's main-thread budget while an
+ *   answer streams (e2e/perf-coach.e2e.ts).
  * Only 'exercise-source' calls a tool, and it cites only what the tool returned; none states a
  * fact, so the output policy changes none of them, and none names pain or a phrase it holds.
  */
@@ -50,6 +53,48 @@ export const MANY_BLOCKS_ANSWER = Array.from(
 	(_, i) => `[note] Part ${i + 1} of the plan: keep it steady and log every set.`
 ).join('\n\n');
 
+/** At least this many output tokens (MOCK_BYTES_PER_TOKEN) in the 'perf-stream' answer. */
+export const PERF_STREAM_TOKENS = 3_000;
+/** Characters per 'perf-stream' delta: about ten tokens. */
+export const PERF_STREAM_CHUNK_CHARS = 40;
+/**
+ * The wait before each 'perf-stream' delta: about 300 tokens a second, faster than the coach's
+ * model streams, so the screen does at least a real answer's work per second (about 10 s in all).
+ */
+export const PERF_STREAM_DELAY_MS = 33;
+
+const PERF_TOPICS = [
+	'Sleep',
+	'Warming up',
+	'Rest between sets',
+	'Your easy runs',
+	'Technique work',
+	'A planned lighter week',
+	'Eating around sessions',
+	'Your long run',
+	'Mobility',
+	'Tracking your sessions'
+] as const;
+
+/** One block of the 'perf-stream' answer: two paragraphs around a five-item list. */
+const perfBlock = (topic: string, index: number) =>
+	[
+		`[${index % 2 === 0 ? 'note' : 'recommendation'}] **${topic}** matters for the next block. ${paragraph(topic)} Treat it as part of training, not as something extra, and give it the same care.`,
+		[
+			`- Keep *${topic.toLowerCase()}* simple and repeatable.`,
+			'- Write down what you did, while you still remember it.',
+			'- Change one thing at a time, then give it two weeks.',
+			'- Look back across the month, not at a single day.',
+			'- Ask me when something feels off, before it becomes a habit.'
+		].join('\n'),
+		`${paragraph(topic)} When a week goes sideways, pick up where you left off without trying to make up for the missed work. ${paragraph(topic)} Rest days belong to the plan as much as the sessions do, and they count.`
+	].join('\n\n');
+
+export const PERF_STREAM_ANSWER = [
+	'Here is a long look at your training, one part at a time.',
+	...PERF_TOPICS.map(perfBlock)
+].join('\n\n');
+
 /** The exercise the bench's history named, cited as its own source. */
 function exerciseSource(context: MockContext): string {
 	const { exercise } = context.result('get_exercise_history') as {
@@ -73,6 +118,16 @@ export const testScripts: readonly MockScript[] = [
 		steps: [
 			{ tools: [{ name: 'get_exercise_history', input: { exercise: 'bench' } }] },
 			{ text: exerciseSource }
+		]
+	},
+	{
+		name: 'perf-stream',
+		steps: [
+			{
+				text: PERF_STREAM_ANSWER,
+				chunkChars: PERF_STREAM_CHUNK_CHARS,
+				delayMs: PERF_STREAM_DELAY_MS
+			}
 		]
 	},
 	{
