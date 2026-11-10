@@ -78,6 +78,17 @@ describe('DB-backed rate limits', () => {
 					.map((row) => row.key)
 					.sort();
 
+			// Postgres picks the prune's plan from the table's statistics, so pin the plan in which
+			// the batch subquery is rescanned once per row: a prune that is bounded only while the
+			// planner happens to run its subquery once deleted every stale counter on CI.
+			await tx.execute(sql`set local enable_hashjoin = off`);
+			await tx.execute(sql`set local enable_mergejoin = off`);
+			await tx.execute(sql`set local enable_hashagg = off`);
+			await tx.execute(sql`set local enable_material = off`);
+			await tx.execute(sql`set local enable_sort = off`);
+			await tx.execute(sql`set local enable_indexscan = off`);
+			await tx.execute(sql`set local enable_bitmapscan = off`);
+
 			// Yesterday, more one-off client addresses than one prune removes.
 			for (let i = 0; i < batch + 5; i++) await hit(`10.0.${i >> 8}.${i & 255}`);
 			time.advance(staleAfterMs / 2);
