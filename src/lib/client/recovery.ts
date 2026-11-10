@@ -14,7 +14,10 @@
  *
  * The screen loads again in place first (a client-side navigation to its URL), so a tap made
  * meanwhile wins instead of being dropped by a page load. If that lands back here (Chromium keeps
- * a failed dynamic import failed for the document), the next recovery for the path reloads.
+ * a failed dynamic import failed for the document), the next recovery for the path reloads. The
+ * offline view outside the app's layout has a shell of its own, so the screen that loads replaces
+ * the whole shell under the pointer: it waits for a press to end (`trackPress`), since a tap that
+ * begins on one shell and ends on the other fires no click, and its navigation would be lost.
  *
  * WebKit keeps a module script that failed to load (offline) as failed for the tab: a reload, or any
  * later navigation in it, gets the failure back without asking the network, so the screen's code
@@ -84,6 +87,41 @@ async function refetchFailedModules(): Promise<boolean> {
 		})
 	);
 	return arrived.every(Boolean);
+}
+
+/**
+ * Follow the presses (mouse buttons, fingers, pens) that are down. `released()` is undefined when
+ * none is, else it resolves once the last one ends, a task after its release: the browser fires a
+ * tap's click in the same task as the release, so the click (and the navigation it starts) comes
+ * first, on the element that was pressed.
+ */
+export function trackPress(): { released: () => Promise<void> | undefined; stop: () => void } {
+	const down = new Set<number>();
+	let waiting: Array<() => void> = [];
+	const settle = () => {
+		const resolvers = waiting;
+		waiting = [];
+		for (const resolve of resolvers) resolve();
+	};
+	const press = (event: PointerEvent) => void down.add(event.pointerId);
+	const release = (event: PointerEvent) => {
+		down.delete(event.pointerId);
+		if (down.size === 0 && waiting.length > 0) setTimeout(settle, 0);
+	};
+	addEventListener('pointerdown', press, true);
+	addEventListener('pointerup', release, true);
+	addEventListener('pointercancel', release, true);
+	return {
+		released: () =>
+			down.size === 0 ? undefined : new Promise<void>((resolve) => waiting.push(resolve)),
+		stop: () => {
+			removeEventListener('pointerdown', press, true);
+			removeEventListener('pointerup', release, true);
+			removeEventListener('pointercancel', release, true);
+			down.clear();
+			settle();
+		}
+	};
 }
 
 async function probeHealth(): Promise<boolean> {
