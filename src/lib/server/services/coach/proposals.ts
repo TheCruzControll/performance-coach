@@ -71,6 +71,7 @@ import { listExercisePreferences } from '../training/preferences';
 import { TrainingInputError } from '../training/shared';
 import { listActiveWorkouts } from '../workouts/canonical';
 import { APPLIERS, type Applier, type ApplyOutcome } from './apply';
+import { refuseReviewNextCycle } from './apply/next-cycle';
 import { SESSION_ENDED, substitutionEnded } from './apply/session';
 import {
 	CoachInputError,
@@ -592,6 +593,8 @@ export interface DecidedProposal {
 	changed: boolean;
 	/** A review's proposal some of whose sessions had passed: finish it in the review at `href`. */
 	superseded?: { reason: typeof SESSIONS_PASSED; href: string };
+	/** Where a next_cycle went when a cycle review took it in (the outcome's href). */
+	href?: string;
 }
 
 /** A session the version does not hold: kept, so today's check refuses it as it would. */
@@ -667,6 +670,8 @@ export async function acceptProposal(
 		if (row.status !== 'proposed') {
 			return { proposal: await view(repo, ownerId, row.id), changed: false };
 		}
+		// The review's own next_cycle stays proposed whatever its base: the review plans it.
+		if (row.kind === 'next_cycle') refuseReviewNextCycle(row.evidence);
 		const at = resolved.now();
 		if (row.baseVersionId) {
 			const current = await createProgramsRepository(resolved.db).currentProgram(ownerId);
@@ -728,7 +733,8 @@ export async function acceptProposal(
 			deps: resolved
 		});
 		await repo.decide(ownerId, row.id, decisionOf(outcome, at));
-		return { proposal: await view(repo, ownerId, row.id), changed: true };
+		const href = outcome.status === 'superseded' ? outcome.href : undefined;
+		return { proposal: await view(repo, ownerId, row.id), changed: true, ...(href && { href }) };
 	});
 }
 
