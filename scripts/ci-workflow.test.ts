@@ -264,7 +264,14 @@ describe('CI e2e legs', () => {
 		const env = under(step, 'env');
 		expect(value(env, 'E2E_ENGINE')).toBe('${{ matrix.engine }}');
 		expect(value(env, 'E2E_GROUP')).toBe('${{ matrix.group }}');
-		expect(value(step, 'run')).toBe('pnpm test:e2e --shard ${{ matrix.shard }}/${{ matrix.of }}');
+		expect(value(env, 'E2E_SHARD')).toBe('${{ matrix.shard }}/${{ matrix.of }}');
+		// the shard's spec files from scripts/e2e-shards.ts, read before Playwright starts so a
+		// planner failure fails the step (bash -e) instead of running the whole leg
+		expect(value(step, 'run')).toBe(
+			'shard_args=$(node scripts/e2e-shards.ts "$RUNNER_TEMP/e2e-shard-tests.txt")\n' +
+				'pnpm test:e2e $shard_args'
+		);
+		expect(value(step, 'run')).not.toMatch(/--shard/);
 		const timing = legStep('Where the minutes went');
 		expect(value(timing, 'if')).toBe('${{ !cancelled() }}');
 		const timingEnv = under(timing, 'env');
@@ -400,20 +407,69 @@ describe('CI client-secret canary', () => {
 	});
 });
 
+/** The commands a job's steps run that start with `pnpm lighthouse`. */
+const lighthouseCommands = (id: string) =>
+	under(under(under(ci, 'jobs'), id), 'steps')
+		.map((step) => value([step, ...step.children], 'run'))
+		.filter((run): run is string => run?.startsWith('pnpm lighthouse') ?? false);
+
+const MOBILE_CHECK = 'Lighthouse (mobile)';
+
 describe('CI Lighthouse', () => {
-	it('asserts the median of 5 runs, which scripts/lighthouse.ts may decide in 3', () => {
-		const steps = under(under(under(ci, 'jobs'), 'lighthouse'), 'steps');
-		const commands = steps
-			.map((step) => value([step, ...step.children], 'run'))
-			.filter((run): run is string => run?.startsWith('pnpm lighthouse') ?? false);
+	it('asserts the median of an odd run count in every audit, mobile and desktop', () => {
+		const commands = [
+			...lighthouseCommands('lighthouse'),
+			...lighthouseCommands('lighthouse-desktop')
+		];
 		// Every asserted audit takes the median of an odd run count, so a strict majority decides it.
 		expect(commands.length).toBeGreaterThan(0);
 		for (const command of commands) {
 			expect(command).toMatch(/ --assert(?: |$)/);
 			expect(Number(/ --runs (\d+)/.exec(command)?.[1]) % 2).toBe(1);
 		}
-		const mobile = commands.filter((command) => !command.includes('--desktop'));
-		expect(mobile).toEqual([expect.stringMatching(/ --runs 5(?: |$)/)]);
+	});
+
+	it('gives the required mobile check exactly its one audit: 5 runs and the documented thresholds', () => {
+		const job = under(under(ci, 'jobs'), 'lighthouse');
+		expect(value(job, 'name')).toBe(MOBILE_CHECK);
+		// scripts/lighthouse.ts may decide a route in 3 of the 5 planned runs.
+		expect(lighthouseCommands('lighthouse')).toEqual([
+			'pnpm lighthouse --runs 5 --assert --min-perf 0.9 --max-tbt 300'
+		]);
+	});
+
+	it('measures desktop in a job of its own, on every event, without gating', () => {
+		const jobs = under(ci, 'jobs');
+		const job = under(jobs, 'lighthouse-desktop');
+		expect(lighthouseCommands('lighthouse-desktop')).toEqual([
+			'pnpm lighthouse --desktop --seed --runs 3 --assert'
+		]);
+		const step = stepsOf(job).find((fields) =>
+			value(fields, 'run')?.startsWith('pnpm lighthouse')
+		)!;
+		expect(value(step, 'continue-on-error')).toBe('true');
+		expect(value(step, 'timeout-minutes')).toBe('8');
+		// Not the required check, and nothing waits on it: a desktop miss never blocks a merge.
+		expect(value(job, 'name')).toBe('Lighthouse desktop (measured, not gating)');
+		expect(value(job, 'name')).not.toBe(MOBILE_CHECK);
+		expect(
+			jobs.filter((j) => value(j.children, 'name') === MOBILE_CHECK).map((j) => j.text)
+		).toEqual(['lighthouse:']);
+		expect(jobs.flatMap((j) => value(j.children, 'needs') ?? '').join(' ')).not.toMatch(
+			/lighthouse-desktop/
+		);
+		expect(value(job, 'if')).toBeUndefined();
+		// The same production Node build, served where the Lighthouse script looks for it.
+		const build = stepsOf(job).find((fields) => value(fields, 'run') === 'pnpm build:node')!;
+		expect(value(under(build, 'env'), 'ORIGIN')).toBe('http://localhost:4174');
+		// Its reports under a name of its own, beside the mobile job's.
+		const upload = stepsOf(job).find((fields) =>
+			value(fields, 'uses')?.startsWith('actions/upload-artifact@')
+		)!;
+		const inputs = under(upload, 'with');
+		expect(value(inputs, 'name')).toBe('lighthouse-desktop-${{ github.run_id }}');
+		expect(value(inputs, 'path')).toBe('lighthouse-reports/desktop/');
+		expect(value(upload, 'if')).toBe('${{ !cancelled() }}');
 	});
 
 	it('skips the full-page screenshot, which only the HTML report thumbnails use', () => {
@@ -440,7 +496,12 @@ const START =
 describe('CI Postgres', () => {
 	it('is started by every job that runs db:setup, in the background, right after checkout', () => {
 		const jobs = databaseJobs();
-		expect(jobs.map((job) => job.id).sort()).toEqual(['e2e-legs', 'integration', 'lighthouse']);
+		expect(jobs.map((job) => job.id).sort()).toEqual([
+			'e2e-legs',
+			'integration',
+			'lighthouse',
+			'lighthouse-desktop'
+		]);
 		for (const job of jobs) {
 			const checkout = job.steps.findIndex((f) =>
 				value(f, 'uses')?.startsWith('actions/checkout@')

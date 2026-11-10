@@ -348,7 +348,8 @@ describe("next week's proposal", () => {
 			expect(view.origin).toEqual({
 				kind: 'weekly_review',
 				reviewId: stored.id,
-				href: `/progress/reviews/w-${REVIEWED}`
+				href: `/progress/reviews/w-${REVIEWED}`,
+				source: { type: 'review', id: `w-${REVIEWED}`, label: 'Weekly review' }
 			});
 
 			// Friday's sparring follows Thursday's heavy deadlifts: it moves to Saturday. Bench felt an

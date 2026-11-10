@@ -97,14 +97,42 @@ export type MemoryDecision = Sourced<{
 	what: string;
 	why: string;
 }>;
+/** Who proposed a change: the coach, or the rules of one of the owner's reviews. */
+export const PROPOSAL_ORIGINS = ['coach', 'weekly_review', 'cycle_review'] as const;
+export type ProposalOriginKind = (typeof PROPOSAL_ORIGINS)[number];
+
 export type MemoryProposal = Sourced<{
 	kind: string;
 	title: string;
 	status: ProposalStatus | 'superseded';
 	decidedOn: string | null;
 	decisionNote: string | null;
+	/** A review's rules made it, not the coach: the coach never presents it as its own. */
+	origin: ProposalOriginKind;
+	/** The review that made it, whose source opens it; null for the coach's own. */
+	review: SourceRef | null;
 }>;
-export type MemoryReview = Sourced<{ scope: 'week' | 'cycle'; date: string; summary: string }>;
+
+/** What the owner decided on a review's proposal, read from its revision chain's head. */
+export const REVIEW_DECISION_STATES = [
+	'none',
+	'undecided',
+	'accepted_waiting',
+	'applied',
+	'rejected',
+	'partly_past',
+	'superseded'
+] as const;
+export type ReviewDecisionState = (typeof REVIEW_DECISION_STATES)[number];
+
+export type MemoryReview = Sourced<{
+	scope: 'week' | 'cycle';
+	date: string;
+	summary: string;
+	/** Each verdict finding as 'label: verdict'; none for a review written before M6. */
+	verdicts: string[];
+	decisionState: ReviewDecisionState;
+}>;
 
 export interface MemorySnapshot {
 	/** The owner's local day the snapshot was built on. */

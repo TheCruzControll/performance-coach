@@ -388,6 +388,20 @@ export async function decisionState(
 	return decisionOf(await proposalHead(ownerId, review, deps));
 }
 
+/**
+ * decisionState for several reviews in one query: each review's decision keyed by the proposal
+ * it links, read from that proposal's chain head. A review with no proposal reads 'none'.
+ */
+export async function decisionStates(
+	ownerId: string,
+	reviews: readonly Pick<StoredReview, 'proposalId'>[],
+	deps: ReviewDeps = {}
+): Promise<Map<string, DecisionState>> {
+	const ids = [...new Set(reviews.flatMap((r) => (r.proposalId === null ? [] : [r.proposalId])))];
+	const heads = await createReviewsRepository(resolve(deps).db).proposalHeads(ownerId, ids);
+	return new Map(heads.map(({ rootId, ...head }) => [rootId, decisionOf(head)]));
+}
+
 /** The display rows of the run that wrote the review's write-up (none before it is written). */
 export async function narrativeBlocks(
 	ownerId: string,

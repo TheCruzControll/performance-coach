@@ -15,8 +15,15 @@
  * - addExercise adds a picked exercise after the session's last one and makes it current, as
  *   device state (exercise.add): nothing is sent until its first set is logged, whose set.log
  *   carries its exercise id and position.
+ * - Add my own exercise: nameClash checks a new name against the cached library as the server
+ *   does (the catalogue's and the owner's live names and aliases, compared in the search's form,
+ *   with `&` as `and`), so a clash shows before anything is sent; the server's check decides.
+ *   addCustomExercise sends exercise.create under the device's client id and adds it to the session in the same dispatch, so its sets log
+ *   at once, offline too; joinLibrary puts it in the cached library at once, under a digest the
+ *   server never gives, so the next online refresh takes the server's copy (with it, once synced).
  * Plain .ts with no runes: the store and the network are injected.
  */
+import type { CustomExercise } from '#lib/domain/training/types.ts';
 import { DEFAULT_LOAD_INCREMENT } from '#lib/domain/units.ts';
 import type {
 	AddedExercise,
@@ -26,6 +33,8 @@ import type {
 	LibraryExercise,
 	WorkoutView
 } from '#lib/domain/workout/index.ts';
+import { createMutation } from '#lib/domain/workout/mutations.ts';
+import { restClassOf } from '#lib/domain/workout/timers.ts';
 import type { WorkoutStore } from './store.ts';
 
 /** The live library, which also carries the owner's training-profile units. */
@@ -101,17 +110,24 @@ export async function refreshLibrary(
 	return body;
 }
 
-/** -es after a sibilant (presses), -s after anything but s (squats, not press). */
+/**
+ * The server's singular (domain/exercises/match.ts, server-only at runtime, so repeated here and
+ * held to it by a test): -ies to -y (flies), -es after a sibilant (presses), else -s, but not
+ * after s, u or i (press, plus, axis).
+ */
 const plural = (word: string) =>
-	/(?:ch|sh|ss|x|z)es$/.test(word)
-		? word.slice(0, -2)
-		: word.length >= 3 && /[^s]s$/.test(word)
-			? word.slice(0, -1)
-			: word;
+	word.length > 4 && word.endsWith('ies')
+		? `${word.slice(0, -3)}y`
+		: /(?:ch|sh|ss|x|z)es$/.test(word)
+			? word.slice(0, -2)
+			: word.length >= 3 && word.endsWith('s') && !/(?:ss|us|is)$/.test(word)
+				? word.slice(0, -1)
+				: word;
 
 /** The form names are compared in: 'Pull-ups', 'pull ups' and 'Pullup' are one. */
 const normalise = (text: string) =>
 	text
+		.replace(/&/g, ' and ')
 		.normalize('NFKD')
 		.replace(/\p{M}/gu, '')
 		.toLowerCase()
@@ -206,4 +222,94 @@ export function addExercise(
 		{ type: 'exercise.add', workoutId, exercise: added },
 		{ type: 'goTo', workoutId, position: added.position }
 	);
+}
+
+/**
+ * Why `name` cannot be a new exercise of the owner's, as the server words it, or null: a
+ * catalogue exercise or one of the owner's live ones already has it as a name or an alias.
+ * `except` is the exercise being renamed (Fix), which the cached library may already list.
+ */
+export function nameClash(
+	exercises: readonly LibraryExercise[],
+	name: string,
+	except?: string
+): string | null {
+	const wanted = normalise(name);
+	if (!wanted) return null;
+	const taken = exercises.find((e) => e.id !== except && namesOf(e).includes(wanted));
+	if (!taken) return null;
+	return taken.key === null
+		? `You already have ${taken.name}`
+		: `Already in the library as ${taken.name}`;
+}
+
+/** The owner's new exercise as the library lists it, in `units`. */
+export function customLibraryExercise(
+	id: string,
+	exercise: CustomExercise,
+	units: KitUnits
+): LibraryExercise {
+	const { name, measure, loadType, unilateral, pattern, equipment, tags, defaultSeconds } =
+		exercise;
+	return {
+		id,
+		key: null,
+		name,
+		aliases: [...exercise.aliases],
+		measure,
+		loadType,
+		unilateral,
+		pattern,
+		equipment: [...equipment],
+		tags: [...tags],
+		defaultSeconds,
+		restClass: restClassOf(exercise),
+		increment: DEFAULT_LOAD_INCREMENT[units.weight]
+	};
+}
+
+/**
+ * The new exercise in the cached library at once, in its order by name; nothing when this device
+ * holds no library. The digest changes, so the next online refresh is never a 304 that keeps it.
+ */
+export async function joinLibrary(
+	store: Pick<WorkoutStore, 'getLibrary' | 'saveLibrary'>,
+	exercise: LibraryExercise
+): Promise<void> {
+	const cached = await store.getLibrary();
+	if (!cached) return;
+	const others = cached.exercises.filter((e) => e.id !== exercise.id);
+	const at = others.findIndex((e) => e.name.localeCompare(exercise.name) > 0);
+	const exercises =
+		at < 0 ? [...others, exercise] : [...others.slice(0, at), exercise, ...others.slice(at)];
+	const digest = `${cached.digest.split('+')[0]}+${exercise.id}`;
+	await store.saveLibrary({ v: 1, digest, units: cached.units, exercises });
+}
+
+/** exercise.create for the owner's new exercise, under a fresh client id. */
+export const createExercise = (workoutId: string, payload: CustomExercise, at: string) =>
+	createMutation('exercise.create', { workoutId, at, payload });
+
+/**
+ * Add my own exercise from the picker: created under the device's client id and added after the
+ * session's last exercise, current at once, in one dispatch; then in the cached library.
+ */
+export function addCustomExercise(
+	store: Pick<WorkoutStore, 'dispatch' | 'getLibrary' | 'saveLibrary'>,
+	view: WorkoutView,
+	exercise: CustomExercise,
+	units: KitUnits,
+	at = new Date().toISOString()
+) {
+	const created = createExercise(view.workout.id, exercise, at);
+	const listed = customLibraryExercise(created.entityId, exercise, units);
+	const added = addedExercise(view, listed, units, at);
+	const workoutId = view.workout.id;
+	const dispatched = store.dispatch(
+		created,
+		{ type: 'exercise.add', workoutId, exercise: added },
+		{ type: 'goTo', workoutId, position: added.position }
+	);
+	void joinLibrary(store, listed).catch(() => {});
+	return dispatched;
 }
