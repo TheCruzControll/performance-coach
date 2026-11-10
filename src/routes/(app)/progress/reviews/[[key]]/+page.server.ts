@@ -5,7 +5,14 @@ import { testRoutesEnabled } from '#lib/server/env.ts';
 import { ownerId } from '#lib/server/forms/read.ts';
 import { decideReview } from '#lib/server/forms/reviews.ts';
 import type { Actions, PageServerLoad } from './$types';
-import { createReview, loadReviews, parseReviewKey, refreshReview, type ReviewsDeps } from './load';
+import {
+	createCycle,
+	createReview,
+	loadReviews,
+	parseReviewKey,
+	refreshReview,
+	type ReviewsDeps
+} from './load';
 
 /**
  * TEST ONLY: with test routes enabled (never in production), this cookie set to 'reviews' makes
@@ -40,6 +47,15 @@ export const actions = {
 	create: async ({ locals, request }) => {
 		const week = (await request.formData()).get('weekStartsOn');
 		const result = await createReview(ownerId(locals), String(week ?? ''), new Date());
+		if (!result.ok) return fail(result.status, result.data);
+		redirect(303, resolve('/(app)/progress/reviews/[[key]]', { key: result.key }));
+	},
+	/** Create a block's review (or find it), then open it, as create does for a week. */
+	createCycle: async ({ locals, request }) => {
+		const form = await request.formData();
+		const programId = String(form.get('programId') ?? '');
+		const blockLineage = String(form.get('blockLineage') ?? '');
+		const result = await createCycle(ownerId(locals), { programId, blockLineage }, new Date());
 		if (!result.ok) return fail(result.status, result.data);
 		redirect(303, resolve('/(app)/progress/reviews/[[key]]', { key: result.key }));
 	},
