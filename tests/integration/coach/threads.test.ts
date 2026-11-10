@@ -262,24 +262,33 @@ describe('coach threads', () => {
 			expect(first.seqs).toEqual([2, 3, 4]);
 			expect(last.seqs).toEqual([5]);
 			const { rows: transcript } = await getTranscript(ownerId, thread.id, deps);
-			expect(transcript).toEqual([
-				{ seq: 1, role: 'user', kind: 'owner_message', content: 'How is my bench?' },
-				{ seq: 2, role: 'system', kind: 'context', content: CONTEXT },
+			const stored = await messagesOf(tx, thread.id);
+			expect(transcript.map((row) => row.id)).toEqual(stored.map((m) => m.id));
+			expect(transcript.map(({ id: _id, ...row }) => row)).toEqual([
+				{ seq: 1, role: 'user', kind: 'owner_message', content: 'How is my bench?', runId: null },
+				{ seq: 2, role: 'system', kind: 'context', content: CONTEXT, runId: RUN },
 				{
 					seq: 3,
 					role: 'assistant',
 					kind: 'assistant',
-					content: [thinking, toolUse('toolu_1'), toolUse('toolu_2')]
+					content: [thinking, toolUse('toolu_1'), toolUse('toolu_2')],
+					runId: RUN
 				},
 				{
 					seq: 4,
 					role: 'user',
 					kind: 'tool_results',
-					content: [toolResult('toolu_2'), toolResult('toolu_1')]
+					content: [toolResult('toolu_2'), toolResult('toolu_1')],
+					runId: RUN
 				},
-				{ seq: 5, role: 'assistant', kind: 'assistant', content: [answer('Up 5 kg.')] }
+				{
+					seq: 5,
+					role: 'assistant',
+					kind: 'assistant',
+					content: [answer('Up 5 kg.')],
+					runId: RUN
+				}
 			]);
-			const stored = await messagesOf(tx, thread.id);
 			expect(stored.slice(1).every((m) => m.runId === RUN)).toBe(true);
 			expect(stored.map((m) => m.display)).toEqual([
 				{ text: 'How is my bench?' },
@@ -434,8 +443,8 @@ describe('coach threads', () => {
 			expect(next.message.seq).toBe(4);
 			const { thread: current, rows: transcript } = await getTranscript(ownerId, thread.id, deps);
 			expect(current.segment).toBe(2);
-			expect(transcript).toEqual([
-				{ seq: 4, role: 'user', kind: 'owner_message', content: 'Week two?' }
+			expect(transcript.map(({ id: _id, ...row }) => row)).toEqual([
+				{ seq: 4, role: 'user', kind: 'owner_message', content: 'Week two?', runId: null }
 			]);
 			expect((await messagesOf(tx, thread.id)).map((m) => [m.seq, m.segment])).toEqual([
 				[1, 1],

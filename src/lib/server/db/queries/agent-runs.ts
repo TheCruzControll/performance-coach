@@ -6,7 +6,7 @@
  *   that each exists.
  * Nothing runs until a builder is awaited; await them in turn on one connection.
  */
-import { and, desc, eq, getTableColumns, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, getTableColumns, isNull, lt, sql } from 'drizzle-orm';
 import { alias, type AnyPgColumn } from 'drizzle-orm/pg-core';
 import {
 	agentModelCalls,
@@ -24,6 +24,7 @@ export const AGENT_RUN_INDEXES = {
 	ownerMessage: 'coach_messages_pkey',
 	runPage: 'agent_runs_owner_started_idx',
 	dayCapCost: ['agent_runs_owner_started_idx', 'agent_model_calls_run_call_uq'],
+	lastCallInput: 'agent_model_calls_run_call_uq',
 	summary: 'agent_runs_owner_started_idx',
 	toolFrequency: 'agent_tool_calls_run_idx'
 } as const;
@@ -191,4 +192,29 @@ export function unpricedCalls(db: Executor, ownerId: string) {
 				isNull(agentModelCalls.costMicros)
 			)
 		);
+}
+
+/**
+ * The prompt of a run's last served call numbered below `below`, in tokens: input, cache reads and
+ * cache writes together. Failed calls are passed over.
+ */
+export function lastCallInput(db: Executor, ownerId: string, runId: string, below: number) {
+	return db
+		.select({
+			tokens:
+				sql<number>`${agentModelCalls.inputTokens} + ${agentModelCalls.cacheReadTokens} + ${agentModelCalls.cacheWriteTokens}`.mapWith(
+					Number
+				)
+		})
+		.from(agentModelCalls)
+		.where(
+			and(
+				eq(agentModelCalls.runId, runId),
+				eq(agentModelCalls.ownerId, ownerId),
+				lt(agentModelCalls.callIndex, below),
+				isNull(agentModelCalls.error)
+			)
+		)
+		.orderBy(desc(agentModelCalls.callIndex))
+		.limit(1);
 }
