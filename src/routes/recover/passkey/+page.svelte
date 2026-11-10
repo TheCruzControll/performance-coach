@@ -2,7 +2,6 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { addPasskey, PasskeyError } from '#lib/client/passkeys.ts';
-	import { signOut } from '#lib/client/signout.ts';
 	import Button from '#lib/ui/components/Button.svelte';
 	import Notice from '#lib/ui/components/Notice.svelte';
 	import { toast } from '#lib/ui/toast.svelte.ts';
@@ -31,12 +30,70 @@
 		}
 	}
 
+	// Cancel signs out. Workout changes not synced yet are flushed first (this session's sync is
+	// refused at once, as it is not a full session) and the owner is asked before signing out
+	// deletes them (the offline workout sync ADR). Sign-out, the check and its sheet load on intent.
+	let leaving = $state(false);
+	const pendingSheet = () => import('#lib/ui/components/SignOutPendingSheet.svelte');
+	let sheet = $state<ReturnType<typeof pendingSheet> | null>(null);
+	let asking = $state(false);
+	let unsynced = $state(0);
+
+	function loadSheet() {
+		// A chunk that failed to load (offline) is fetched again on the next try.
+		sheet ??= pendingSheet().catch((error: unknown) => {
+			sheet = null;
+			throw error;
+		});
+		return sheet;
+	}
+
 	async function cancel() {
+		if (leaving) return;
+		leaving = true;
 		try {
-			await signOut();
+			const { unsyncedAfterFlush } = await import('#lib/client/workout/shutdown.ts');
+			const left = await unsyncedAfterFlush();
+			if (left > 0) {
+				await loadSheet();
+				unsynced = left;
+				asking = true;
+				leaving = false;
+				return;
+			}
+			await signOutNow();
 		} catch {
-			toast.show('Can’t reach the server to sign out.', { tone: 'danger' });
+			failed();
 		}
+	}
+
+	/** "Sign out and delete", unless more changes arrived since it asked: then it asks again. */
+	async function deleteAndLeave() {
+		if (leaving) return;
+		leaving = true;
+		try {
+			const { pendingCount } = await import('#lib/client/workout/probe.ts');
+			const pending = await pendingCount();
+			if (pending > unsynced) {
+				unsynced = pending;
+				leaving = false;
+				return;
+			}
+			asking = false;
+			await signOutNow();
+		} catch {
+			failed();
+		}
+	}
+
+	async function signOutNow() {
+		const { signOut } = await import('#lib/client/signout.ts');
+		await signOut();
+	}
+
+	function failed() {
+		leaving = false;
+		toast.show('Can’t reach the server to sign out.', { tone: 'danger' });
 	}
 </script>
 
@@ -86,6 +143,7 @@
 		block
 		variant="ghost"
 		icon="sign-out"
+		loading={leaving}
 		onclick={cancel}
 		data-testid="recover-cancel"
 	>
@@ -96,3 +154,9 @@
 		<p>This recovery session ends 15 minutes after the code was used.</p>
 	{/snippet}
 </AuthScreen>
+
+{#if sheet}
+	{#await sheet then { default: SignOutPendingSheet }}
+		<SignOutPendingSheet bind:open={asking} count={unsynced} onconfirm={deleteAndLeave} />
+	{/await}
+{/if}
