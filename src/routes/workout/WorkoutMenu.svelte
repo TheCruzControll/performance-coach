@@ -51,7 +51,8 @@
 		if (held?.workoutId !== view.workout.id) return;
 		discarding = held;
 		await tick();
-		body?.querySelector<HTMLElement>('[data-testid="keep-workout"]')?.focus();
+		// Keep it is in the sheet's footer, beside the body rather than in it.
+		body?.closest('dialog')?.querySelector<HTMLElement>('[data-testid="keep-workout"]')?.focus();
 	}
 
 	async function discard() {

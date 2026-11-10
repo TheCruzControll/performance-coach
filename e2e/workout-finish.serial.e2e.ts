@@ -13,7 +13,7 @@
  * Serial: programs, workouts and the profile are the one owner's (resetTrainingProfile).
  */
 import AxeBuilder from '@axe-core/playwright';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page, type Route } from '@playwright/test';
 import { SYNC_URL } from '../src/lib/client/workout/sync';
 import { estimateOneRepMax } from '../src/lib/domain/e1rm';
 import { formatWeight } from '../src/lib/domain/units';
@@ -278,7 +278,7 @@ test.describe('finishing a workout', () => {
 		await expect(exercise('Leg press')).toContainText('1 set · 1,500 kg');
 
 		await pickRpe(page, 8);
-		await sheet(page).getByTestId('summary-notes').getByRole('textbox').fill('Squats moved well');
+		await sheet(page).getByTestId('summary-notes').fill('Squats moved well');
 		await captureScreen(page, testInfo, 'workout-summary');
 		await audit(page, 'the summary');
 		await sheet(page).getByTestId('finish-done').click();
@@ -298,6 +298,8 @@ test.describe('finishing a workout', () => {
 		await page.goto('/train');
 		await expect(card(page)).toHaveAttribute('data-status', 'completed');
 		await expect(card(page)).toContainText('Done');
+		// Today lists the day's sessions once onboarding is done (the seeded program skips it).
+		await query('update athlete_profiles set onboarding_completed_at = now()');
 		await page.goto('/today');
 		await expect(card(page).first()).toHaveAttribute('data-status', 'completed');
 	});
@@ -351,9 +353,7 @@ test.describe('finishing a workout', () => {
 		await expect(sheet(page).getByRole('heading', { name: 'Fix the summary' })).toBeVisible();
 		await expect(sheet(page).getByTestId('fix-reason')).toBeVisible();
 		await expect(sheet(page)).toContainText('RPE between 1 and 10, in half steps');
-		await expect(sheet(page).getByTestId('summary-notes').getByRole('textbox')).toHaveValue(
-			'Too keen'
-		);
+		await expect(sheet(page).getByTestId('summary-notes')).toHaveValue('Too keen');
 		await pickRpe(page, 8);
 		await sheet(page).getByTestId('save-fix').click();
 
@@ -445,7 +445,11 @@ test.describe('discarding a workout', () => {
 
 		test('an unsynced workout leaves nothing in Postgres', async ({ page }) => {
 			const workoutId = await seedWorkout(page, await adHocKit());
-			await gotoWorkout(page, 'strength', { sync: 'hold' });
+			// Held here, and aborted before the hold lifts: WebKit sends a request still held when
+			// its route goes, which would reach the server after the discard.
+			const held: Route[] = [];
+			await page.route('**/api/workouts/**', (route) => void held.push(route));
+			await gotoWorkout(page, 'strength', { sync: 'real' });
 			await expect(page.locator('main#main[data-store]')).toBeAttached();
 			await menuButton(page).click();
 			await menu(page).getByTestId('menu-discard').click();
@@ -455,6 +459,7 @@ test.describe('discarding a workout', () => {
 			await menu(page).getByTestId('confirm-discard').click();
 			await expect(page.getByTestId('workout-empty')).toBeVisible();
 
+			for (const route of held.splice(0)) await route.abort().catch(() => {});
 			await page.unroute('**/api/workouts/**');
 			await page.reload();
 			await expect(page.locator('main#main[data-store]')).toBeAttached();
@@ -483,11 +488,14 @@ test.describe('on a desktop window', () => {
 		await page.keyboard.press('Enter');
 		await expect(summary(page)).toBeVisible();
 
-		const dialog = await boxOf(page.locator('dialog[open] .sheet'));
+		// The summary's own sheet, once it has risen: the menu's may still be closing under it.
+		const panel = sheet(page).locator('.sheet');
+		await expect.poll(() => panel.evaluate((el) => el.getAnimations().length)).toBe(0);
+		const [dialog, window] = [await boxOf(panel), await boxOf(sheet(page))];
 		expect(dialog.width).toBeLessThanOrEqual(40 * 16);
-		expect(Math.abs(dialog.x + dialog.width / 2 - DESKTOP.viewport.width / 2)).toBeLessThanOrEqual(
-			2
-		);
+		expect(
+			Math.abs(dialog.x + dialog.width / 2 - (window.x + window.width / 2))
+		).toBeLessThanOrEqual(2);
 		await expectNoSideScroll(page);
 
 		// The chips are one radio group: the arrows move the choice.
@@ -495,7 +503,7 @@ test.describe('on a desktop window', () => {
 		await page.keyboard.press('Space');
 		await page.keyboard.press('ArrowRight');
 		await expect(sheet(page).getByRole('radio', { name: '7', exact: true })).toBeChecked();
-		const notes = sheet(page).getByTestId('summary-notes').getByRole('textbox');
+		const notes = sheet(page).getByTestId('summary-notes');
 		await notes.focus();
 		await page.keyboard.type('Typed at the desk');
 		await expect(notes).toHaveValue('Typed at the desk');

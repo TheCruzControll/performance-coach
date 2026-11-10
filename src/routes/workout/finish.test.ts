@@ -208,6 +208,18 @@ describe('the summary in words', () => {
 		const summary = { ...summaryOf(viewOf([]), T0 + 10 * 60_000), durationSeconds: 3900 };
 		expect(summaryWords(summary).stats[0]).toEqual({ label: 'Duration', value: '1 h 05 min' });
 	});
+
+	it('reads no session RPE or duration a refused finish holds out of range, so Fix still opens', () => {
+		const refused = createMutation(
+			'workout.finish',
+			{ workoutId: W, at: at(30), payload: { sessionRpe: 11, durationSeconds: -60 } },
+			fresh
+		);
+		const view = viewOf([refused]);
+		expect(view.workout.sessionRpe).toBe(11);
+		const summary = summaryOf(view, T0 + 30 * 60_000);
+		expect(summary).toMatchObject({ sessionRpe: null, sessionLoad: null, durationSeconds: 1800 });
+	});
 });
 
 describe('Done', () => {

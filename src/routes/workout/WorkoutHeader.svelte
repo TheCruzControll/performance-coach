@@ -95,8 +95,10 @@
 		min-width: 0;
 	}
 
+	/* A step down on a phone, where the stopwatch and the More button share the title's row: a
+	   usual title keeps to one line, so the header is the height the restoring state reserves. */
 	h1 {
-		font-size: var(--text-2xl);
+		font-size: var(--text-xl);
 		font-weight: var(--weight-bold);
 		letter-spacing: var(--tracking-tight);
 		line-height: var(--leading-snug);
@@ -118,6 +120,10 @@
 
 		.minimise {
 			margin-left: 0;
+		}
+
+		h1 {
+			font-size: var(--text-2xl);
 		}
 	}
 </style>

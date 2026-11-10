@@ -41,9 +41,20 @@ const FALLBACK_UNITS: KitUnits = { weight: 'kg', distance: 'km' };
 
 export const unitsOf = (view: WorkoutView): KitUnits => view.kit?.units ?? FALLBACK_UNITS;
 
-/** The summary of `view`, against the bests its kit carried, at `now` on this device's clock. */
-export const summaryOf = (view: WorkoutView, now: number): WorkoutSummary =>
-	summarizeWorkout(view, kitBests(view.kit), unitsOf(view), now);
+/**
+ * The summary of `view`, against the bests its kit carried, at `now` on this device's clock. A
+ * finish the server refused can hold a session RPE outside 0–10 or a negative duration (another
+ * tab's): the summary reads neither, so the page still opens for Fix instead of throwing.
+ */
+export function summaryOf(view: WorkoutView, now: number): WorkoutSummary {
+	const { sessionRpe, durationSeconds } = view.workout;
+	const workout = {
+		...view.workout,
+		sessionRpe: sessionRpe !== null && sessionRpe >= 0 && sessionRpe <= 10 ? sessionRpe : null,
+		durationSeconds: durationSeconds !== null && durationSeconds >= 0 ? durationSeconds : null
+	};
+	return summarizeWorkout({ ...view, workout }, kitBests(view.kit), unitsOf(view), now);
+}
 
 /** The planned sets with no row yet, logged or skipped, across every exercise. */
 export const openSets = (view: WorkoutView): number =>
