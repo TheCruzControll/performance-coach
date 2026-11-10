@@ -63,6 +63,7 @@ export const ROUTE_ACCESS = {
 	'/(app)/train/history/[[version]]': 'owner',
 	'/(app)/progress': 'owner',
 	'/(app)/progress/workouts/[[id]]': 'owner',
+	'/(app)/progress/exercises/[id]': 'owner',
 	'/(app)/coach/[[thread]]': 'owner',
 	'/(app)/profile': 'owner',
 	'/(app)/profile/security': 'owner',
