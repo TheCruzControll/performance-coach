@@ -18,6 +18,8 @@ declare global {
 		interface PageState {
 			/** History's exercise-history sheet, shallow-routed so Back closes it (pushState). */
 			exerciseHistory?: { exerciseId: string; name: string };
+			/** A coach answer's exercise source: its history sheet, by exercise id alone (pushState). */
+			coachExercise?: { exerciseId: string };
 		}
 		// interface Platform {}
 	}
