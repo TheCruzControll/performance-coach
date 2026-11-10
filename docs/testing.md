@@ -324,8 +324,8 @@ The desktop specs (most also run axe and take screenshots in both themes):
   focus return, no mouse drag, 1024 × 700); Tab order and a ring of at least 2 px in dark, light
   and forced colours; hover on every primitive; no hover and 44 px targets on a 1180 × 820 touch
   screen; a phone swipe; and Security's stacked step-up over Remove passkey.
-- `main-screens.desktop.e2e.ts`: Progress wide, its three tiles in one row over a panel wider
-  than 40rem; Coach's suggestions in two columns under a composer centred over the readable
+- `main-screens.desktop.e2e.ts`: Progress wide, its view nav and period picker in one row over
+  the view (whose own layout `progress.serial.e2e.ts` checks); Coach's suggestions in two columns under a composer centred over the readable
   column (one column at 1023 px); Security in the readable column beside the rail, its four
   sections and Sign out read and Tab in order; /design up to `--content-wide` with Color beside
   Type (one column at 1023 px); a 404 inside the shell, a 404 outside it and /offline centred.
