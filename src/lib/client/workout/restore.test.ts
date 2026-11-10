@@ -4,8 +4,13 @@ import { openDB } from 'idb';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { workoutDayKits } from '../../../../tests/fixtures/workout-day';
 import { createMutation } from '#lib/domain/workout/index.ts';
-import type { MutationInput, MutationOf, MutationType } from '#lib/domain/workout/index.ts';
-import { project } from '#lib/domain/workout/project.ts';
+import type {
+	Mutation,
+	MutationInput,
+	MutationOf,
+	MutationType
+} from '#lib/domain/workout/index.ts';
+import { project, replay } from '#lib/domain/workout/project.ts';
 import { strengthTable } from '#lib/domain/workout/reducers/tables.ts';
 import { DB_NAME } from './names';
 import { readActive } from './restore';
@@ -112,6 +117,37 @@ describe('readActive', () => {
 		expect(await store.dispatch(make('workout.abandon', { workoutId: W, payload: {} })).saved).toBe(
 			'saved'
 		);
+		await expect(readActive()).resolves.toEqual({ status: 'none' });
+	});
+
+	it('reads the newest workout finished here while it waits to sync, and none once it has', async () => {
+		const store = await createStore({ table: strengthTable, channel: null });
+		const older: Mutation[] = [start(W2, '2026-11-05T18:00:00.000Z')];
+		older.push(make('workout.finish', { workoutId: W2, payload: {} }));
+		for (const m of older) expect(await store.dispatch(m).saved).toBe('saved');
+		const sent: Mutation[] = [start(W), squat(W, 1)];
+		sent.push(make('workout.finish', { workoutId: W, payload: { sessionRpe: 8 } }));
+		for (const m of sent) expect(await store.dispatch(m).saved).toBe('saved');
+
+		const read = await readActive();
+		expect(read.status === 'found' && read.inputs.workoutId).toBe(W);
+		if (read.status !== 'found') return;
+		const view = project(strengthTable, read.inputs);
+		expect(view?.workout).toMatchObject({ status: 'completed', sessionRpe: 8 });
+
+		// W synced: it leaves the device; the older one still waits.
+		const canonical = replay(strengthTable, {
+			workoutId: W,
+			kit: null,
+			canonical: null,
+			pending: sent
+		}).rows!;
+		await store.acknowledge(
+			sent.map((m, i) => ({ id: m.id, status: 'applied', ...(i === 2 && { canonical }) }))
+		);
+		const next = await readActive();
+		expect(next.status === 'found' && next.inputs.workoutId).toBe(W2);
+		await store.acknowledge(older.map((m) => ({ id: m.id, status: 'applied' })));
 		await expect(readActive()).resolves.toEqual({ status: 'none' });
 	});
 

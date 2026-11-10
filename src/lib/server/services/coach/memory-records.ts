@@ -19,13 +19,19 @@
  * untrusted_text. Queries run one at a time (docs/architecture.md).
  */
 import { addDays, type IsoDate } from '../../../domain/calendar';
-import type { MemoryNote, MemoryReview, MemorySnapshot } from '../../../domain/coach/memory';
+import type {
+	MemoryNote,
+	MemoryPainReport,
+	MemoryReview,
+	MemorySnapshot
+} from '../../../domain/coach/memory';
 import {
 	createCoachMemoryRepository,
 	type MemoryRecoveryRow,
 	type MemoryReviewRow
 } from '../../db/repositories/coach-memory';
 import type { Executor } from '../../db/types';
+import { resolveDeps, type CoachDeps } from './shared';
 
 /** The most queries the record half sends. */
 export const MEMORY_RECORDS_QUERIES = 8;
@@ -67,6 +73,20 @@ function recoveryText(r: MemoryRecoveryRow): string {
 	].join('; ');
 }
 
+type PainRow = Awaited<
+	ReturnType<ReturnType<typeof createCoachMemoryRepository>['painReportsSince']>
+>[number];
+
+const painReportOf = (p: PainRow): MemoryPainReport => ({
+	date: p.date,
+	exercise: p.exercise,
+	area: p.area,
+	severity: p.severity,
+	action: p.action,
+	note: p.note,
+	source: { type: 'pain_report', id: p.id, date: p.date, workoutId: p.workoutId }
+});
+
 const noteOf = (row: { id: string; date: string; summary: string }): MemoryNote => ({
 	date: row.date,
 	text: row.summary,
@@ -107,15 +127,7 @@ export async function loadMemoryRecords(
 	const analyses = await repo.recentNotes(ownerId, MEMORY_NOTE_KINDS.analysis, limits.analyses);
 
 	return {
-		painReports: pain.map((p) => ({
-			date: p.date,
-			exercise: p.exercise,
-			area: p.area,
-			severity: p.severity,
-			action: p.action,
-			note: p.note,
-			source: { type: 'pain_report', id: p.id, date: p.date, workoutId: p.workoutId }
-		})),
+		painReports: pain.map(painReportOf),
 		recoveryNotes: recovery.map((r) => ({
 			date: r.date,
 			text: recoveryText(r),
@@ -145,4 +157,19 @@ export async function loadMemoryRecords(
 		threadSummaries: summaries.map(noteOf),
 		analyses: analyses.map(noteOf)
 	};
+}
+
+/**
+ * The owner's pain reports from the last MEMORY_RECORD_DAYS days as of `today`, newest first, at
+ * most `limit`: what memory lists, for get_training_preferences. One query.
+ */
+export async function listRecentPainReports(
+	ownerId: string,
+	{ today, limit }: { today: IsoDate; limit: number },
+	deps: CoachDeps = {}
+): Promise<MemoryPainReport[]> {
+	const { db } = resolveDeps(deps);
+	const since = addDays(today, 1 - MEMORY_RECORD_DAYS);
+	const rows = await createCoachMemoryRepository(db).painReportsSince(ownerId, since, limit);
+	return rows.map(painReportOf);
 }

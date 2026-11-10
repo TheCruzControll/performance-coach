@@ -12,6 +12,7 @@ Code in this folder runs only in the browser. It must never import from `src/lib
 | `preferences.svelte.ts`  | Per-device theme and unit preferences (localStorage)                                                                            |
 | `preferences-start.ts`   | The root layout's start for preferences, loaded after mount so only screens that show a unit have them in initial JS            |
 | `connectivity.svelte.ts` | `online` state from `navigator.onLine` + events (a hint: failed requests are still handled, see `src/hooks.client.ts`)          |
+| `service-worker.ts`      | Registers the service worker after `load` and hydration, in an idle period (SvelteKit's on-`load` registration is off)          |
 | `leaving.ts`             | Is the page being left? Loads it cancels on the way out (WebKit reports each) are then not logged or reported as errors         |
 | `profile-form.ts`        | Saves profile sections: validates with the services' zod schemas (loaded on idle, never initial JS), posts JSON to the action   |
 | `section-form.svelte.ts` | One profile section's form state (value, field errors, busy, dirty); `submit()` validates, then saves through `profile-form.ts` |

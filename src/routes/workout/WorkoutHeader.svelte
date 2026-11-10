@@ -1,8 +1,8 @@
 <!--
   @component
   The workout pages' header: Minimise (back to Today, where the resume bar waits) with the sync
-  status (small, quiet beside logging, once it has loaded on idle), the workout's title and the
-  stopwatch. Two rows on a phone (Minimise and the status; the title and the stopwatch), one row
+  status (small, quiet beside logging, once it has loaded on idle), the workout's title, the
+  stopwatch and, beside it, the workout menu's More button (Finish, Discard). Two rows on a phone (Minimise and the status; the title and the stopwatch), one row
   from 1024 px,
   where it spans the page over the columns. At a large text size the status takes a row of its own
   under Minimise rather than overflow; its width is the same in every state, so which line it
@@ -22,9 +22,11 @@
 		time?: Snippet;
 		/** The sync status, once it has loaded. */
 		status?: Snippet;
+		/** The workout menu's button, while a workout is in progress. */
+		menu?: Snippet;
 	}
 
-	let { title, time, status }: Props = $props();
+	let { title, time, status, menu }: Props = $props();
 </script>
 
 <header class="header" data-testid="workout-header">
@@ -35,6 +37,7 @@
 		</div>
 		<div class="time">
 			{@render time?.()}
+			{@render menu?.()}
 		</div>
 		<div class="title">
 			{#if title === null}
@@ -78,6 +81,9 @@
 
 	.time {
 		grid-area: time;
+		display: flex;
+		align-items: center;
+		gap: var(--space-2);
 		min-height: 2rem;
 	}
 
@@ -89,8 +95,10 @@
 		min-width: 0;
 	}
 
+	/* A step down on a phone, where the stopwatch and the More button share the title's row: a
+	   usual title keeps to one line, so the header is the height the restoring state reserves. */
 	h1 {
-		font-size: var(--text-2xl);
+		font-size: var(--text-xl);
 		font-weight: var(--weight-bold);
 		letter-spacing: var(--tracking-tight);
 		line-height: var(--leading-snug);
@@ -112,6 +120,10 @@
 
 		.minimise {
 			margin-left: 0;
+		}
+
+		h1 {
+			font-size: var(--text-2xl);
 		}
 	}
 </style>
