@@ -79,6 +79,15 @@ export const COACH_A11Y: readonly CoachA11yCase[] = [
 		}
 	},
 	{
+		name: '/coach/proposals, the Proposals inbox: empty, or the list',
+		open: async (page) => {
+			await gotoHydrated(page, '/coach/proposals');
+			await expect(
+				page.getByTestId('inbox-empty').or(page.getByTestId('filter-all'))
+			).toBeVisible();
+		}
+	},
+	{
 		name: '/coach, What the coach knows open and loaded',
 		open: async (page) => {
 			await gotoHydrated(page, '/coach');
