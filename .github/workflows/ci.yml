@@ -20,8 +20,8 @@ permissions:
   contents: read
 
 env:
-  # Local-style databases inside the postgres:18 service container, created by db:setup
-  # (postgres:18 matches the Neon production branch).
+  # Local-style databases inside the postgres:18 container each database job starts, created by
+  # db:setup (postgres:18 matches the Neon production branch).
   DATABASE_URL: postgres://coach:coach@localhost:5432/coach_dev
   DATABASE_URL_UNPOOLED: postgres://coach:coach@localhost:5432/coach_dev
   TEST_DATABASE_URL: postgres://coach:coach@localhost:5432/coach_test
@@ -62,27 +62,34 @@ jobs:
     name: Unit & integration tests
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    services:
-      postgres:
-        image: postgres:18
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: postgres
-        ports: ['5432:5432']
-        options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 12
     steps:
       - uses: actions/checkout@v7
+      # Pulled and started in the background (docker run -d would block on the pull), so the
+      # server boots while the job installs; "Wait for Postgres" holds db:setup until it answers.
+      - name: Start Postgres 18 (in the background)
+        run: nohup sh -c 'docker run -d --name postgres -p 5432:5432 -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=postgres postgres:18' > "$RUNNER_TEMP/postgres-start.log" 2>&1 &
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # Over TCP: the image's init server listens on its socket only, so ready means the real
+      # server. 90 s covers a cold pull plus initdb; a server that never answers fails the job.
+      - name: Wait for Postgres
+        env:
+          WAIT_SECONDS: 90
+        run: |
+          for _ in $(seq "$WAIT_SECONDS"); do
+            if pg_isready -h localhost -p 5432 -U postgres; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::Postgres did not accept TCP connections within ${WAIT_SECONDS} s"
+          cat "$RUNNER_TEMP/postgres-start.log"
+          docker logs postgres
+          exit 1
       - name: Create roles and databases
         run: pnpm db:setup
       - name: Apply migrations (dev database)
@@ -137,10 +144,15 @@ jobs:
   # main split in two after runs 42415186404 to 42431687521 peaked at 14.9 (Chromium) and 11.5
   # (WebKit) minutes: each shard is estimated at half plus a minute of server setup (8.4, 6.8).
   # serial·webkit split the same way after peaking at 15.2 (timed out in 42431006875): 8.6 a shard.
+  # Its two shards then grew alike to 13.7-14.6 Playwright minutes each (runs 42695476716 to
+  # 42698046025), so it split in four: about 7 a shard. Three would leave it the longest leg.
   # serial·chromium peaked at 9.3 in 42414341167 to 42431687521 (14 unsharded), then timed out
-  # at 14 in 42469172500 with tests still passing, so it split in two the same way.
+  # at 14 in 42469172500 with tests still passing, so it split in two the same way. Its shards
+  # took 7.3-8.8 Playwright minutes in 42695476716 to 42698046025, no more than main's: two stay.
   # serial shards hold whole files: its projects are not fullyParallel, so --shard splits by file.
   # Shard timeouts stay at the unsharded leg's value until three runs per shard are measured.
+  # main legs run 2 Playwright workers (playwright.config.ts), the other legs 1; main's `minutes`
+  # stay at their 1-worker values until three 2-worker runs are measured.
   e2e-legs:
     name: E2E ${{ matrix.group }} · ${{ matrix.engine }} · ${{ matrix.shard }}/${{ matrix.of }}
     # Pinned to the newest Ubuntu release Playwright builds WebKit for (its browser builds are
@@ -159,24 +171,17 @@ jobs:
           - { group: main, engine: webkit, shard: 2, of: 2, minutes: 13 }
           - { group: serial, engine: chromium, shard: 1, of: 2, minutes: 14 }
           - { group: serial, engine: chromium, shard: 2, of: 2, minutes: 14 }
-          - { group: serial, engine: webkit, shard: 1, of: 2, minutes: 15 }
-          - { group: serial, engine: webkit, shard: 2, of: 2, minutes: 15 }
+          - { group: serial, engine: webkit, shard: 1, of: 4, minutes: 15 }
+          - { group: serial, engine: webkit, shard: 2, of: 4, minutes: 15 }
+          - { group: serial, engine: webkit, shard: 3, of: 4, minutes: 15 }
+          - { group: serial, engine: webkit, shard: 4, of: 4, minutes: 15 }
           - { group: alone, engine: chromium, shard: 1, of: 1, minutes: 5 }
-    services:
-      postgres:
-        image: postgres:18
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: postgres
-        ports: ['5432:5432']
-        options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 12
     steps:
       - uses: actions/checkout@v7
+      # Pulled and started in the background (docker run -d would block on the pull), so the
+      # server boots while the job installs; "Wait for Postgres" holds db:setup until it answers.
+      - name: Start Postgres 18 (in the background)
+        run: nohup sh -c 'docker run -d --name postgres -p 5432:5432 -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=postgres postgres:18' > "$RUNNER_TEMP/postgres-start.log" 2>&1 &
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
@@ -227,6 +232,22 @@ jobs:
           done
           echo "::error::browser download failed 3 times"
           exit 1
+      # Over TCP: the image's init server listens on its socket only, so ready means the real
+      # server. 90 s covers a cold pull plus initdb; a server that never answers fails the job.
+      - name: Wait for Postgres
+        env:
+          WAIT_SECONDS: 90
+        run: |
+          for _ in $(seq "$WAIT_SECONDS"); do
+            if pg_isready -h localhost -p 5432 -U postgres; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::Postgres did not accept TCP connections within ${WAIT_SECONDS} s"
+          cat "$RUNNER_TEMP/postgres-start.log"
+          docker logs postgres
+          exit 1
       - name: Create roles and databases
         run: pnpm db:setup
       - name: Playwright (global setup builds and starts the production Node server)
@@ -253,10 +274,12 @@ jobs:
           if-no-files-found: ignore
 
   # The check branch protection requires: green only when every leg is. It runs even when a leg
-  # fails, since a skipped required check would count as passing.
+  # fails, since a skipped required check would count as passing. Required checks gate only pull
+  # requests, so pushes and manual runs skip it: there the run's own result already fails on a
+  # failed leg, and this job would only queue behind every pull request's jobs (an hour at peak).
   e2e:
     name: E2E (iPhone viewport · Chromium + WebKit)
-    if: ${{ always() }}
+    if: ${{ always() && github.event_name == 'pull_request' }}
     needs: [e2e-legs]
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -274,21 +297,12 @@ jobs:
     name: Lighthouse (mobile)
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    services:
-      postgres:
-        image: postgres:18
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: postgres
-        ports: ['5432:5432']
-        options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 12
     steps:
       - uses: actions/checkout@v7
+      # Pulled and started in the background (docker run -d would block on the pull), so the
+      # server boots while the job installs; "Wait for Postgres" holds db:setup until it answers.
+      - name: Start Postgres 18 (in the background)
+        run: nohup sh -c 'docker run -d --name postgres -p 5432:5432 -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=postgres postgres:18' > "$RUNNER_TEMP/postgres-start.log" 2>&1 &
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
@@ -313,6 +327,22 @@ jobs:
       - name: Install Chromium
         timeout-minutes: 8
         run: pnpm exec playwright install chromium
+      # Over TCP: the image's init server listens on its socket only, so ready means the real
+      # server. 90 s covers a cold pull plus initdb; a server that never answers fails the job.
+      - name: Wait for Postgres
+        env:
+          WAIT_SECONDS: 90
+        run: |
+          for _ in $(seq "$WAIT_SECONDS"); do
+            if pg_isready -h localhost -p 5432 -U postgres; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::Postgres did not accept TCP connections within ${WAIT_SECONDS} s"
+          cat "$RUNNER_TEMP/postgres-start.log"
+          docker logs postgres
+          exit 1
       - name: Create roles and databases
         run: pnpm db:setup
       - name: Build for Node (served on http://localhost:4174 by the Lighthouse script)

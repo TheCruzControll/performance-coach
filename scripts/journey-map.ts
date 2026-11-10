@@ -35,17 +35,19 @@ export function parseListing(report: {
 	suites: JsonSuite[];
 }): Listing {
 	const tests = new Map<string, Set<string>>();
-	const walk = (suite: JsonSuite, path: string[]) => {
+	// A test is keyed by its spec file, even when a module that file imports declares it (the
+	// suite's own `file` is then that module, e.g. e2e/a11y-suite.ts for both axe halves).
+	const walk = (suite: JsonSuite, file: string, path: string[]) => {
 		for (const spec of suite.specs ?? []) {
-			const at = key(suite.file, [...path, spec.title].join(' › '));
+			const at = key(file, [...path, spec.title].join(' › '));
 			const projects = tests.get(at) ?? new Set<string>();
 			for (const test of spec.tests) projects.add(test.projectName);
 			tests.set(at, projects);
 		}
-		for (const child of suite.suites ?? []) walk(child, [...path, child.title]);
+		for (const child of suite.suites ?? []) walk(child, file, [...path, child.title]);
 	};
 	// A top-level suite is a file; its title is the file name, not part of a test's title.
-	for (const file of report.suites) walk(file, []);
+	for (const file of report.suites) walk(file, file.file, []);
 	return { projects: new Set(report.config.projects.map((p) => p.name)), tests };
 }
 

@@ -277,6 +277,22 @@ export async function isCancelRequested(
 }
 
 /**
+ * The prompt the run's last served call sent, in tokens (input, cache reads and cache writes):
+ * how long its conversation segment had grown. Calls numbered at or past `below` (a turn's drafts)
+ * are other prompts and passed over. Null when the run has no such call.
+ */
+export async function lastCallInputTokens(
+	ownerId: string,
+	id: string,
+	{ below }: { below: number },
+	deps: CoachDeps = {}
+): Promise<number | null> {
+	const { db } = resolveDeps(deps);
+	if (!isUuid(id)) return null;
+	return createAgentRunsRepository(db).lastCallInput(ownerId, id, below);
+}
+
+/**
  * What the daily cap counts: the cap cost of every model call made since midnight in the owner's
  * time zone (their profile's, UTC without one), in micro-dollars.
  */
