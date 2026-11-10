@@ -5,8 +5,16 @@
   missed in words) and its best estimated 1RM, labelled as an estimate; a run's segments
   (RunDetail) or a session's metrics (OtherDetail); substitutions, pain notes, notes, and the
   planned session against what was done. The title takes focus (tabindex -1) when a phone opens it.
+  An exercise's name opens its history (ExerciseHistorySheet.svelte, loaded on intent), shallow-
+  routed (pushState) so Back closes it; a reload shows the detail without it, and clears the
+  reloaded entry's sheet so a later Back does not reopen it.
 -->
 <script lang="ts">
+	import { afterNavigate, pushState, replaceState } from '$app/navigation';
+	import { page } from '$app/state';
+	import Icon from '#lib/ui/components/Icon.svelte';
+	import { toast } from '#lib/ui/toast.svelte.ts';
+	import type ExerciseHistorySheet from '#lib/ui/workout/ExerciseHistorySheet.svelte';
 	import Section from '#lib/ui/components/Section.svelte';
 	import Stat from '#lib/ui/components/Stat.svelte';
 	import Surface from '#lib/ui/components/Surface.svelte';
@@ -15,6 +23,24 @@
 	import RunDetail from './RunDetail.svelte';
 
 	let { detail }: { detail: WorkoutDetailView } = $props();
+
+	let Sheet = $state.raw<typeof ExerciseHistorySheet | null>(null);
+	const loadSheet = () =>
+		import('#lib/ui/workout/ExerciseHistorySheet.svelte').then((m) => (Sheet = m.default));
+
+	async function openHistory(exerciseId: string, name: string, event: MouseEvent) {
+		// WebKit does not focus a clicked button: focus it, so closing the sheet returns focus here.
+		(event.currentTarget as HTMLElement).focus();
+		if (await loadSheet().catch(() => null))
+			pushState('', { exerciseHistory: { exerciseId, name } });
+		else toast.show('Couldn’t open its history. Try again.', { tone: 'danger' });
+	}
+
+	// A reload keeps an open sheet's state in its history entry, though not in page.state (SvelteKit
+	// restores it only with persistState): Back from the next sheet would bring it back. Clear it.
+	afterNavigate(({ type }) => {
+		if (type === 'enter' && !page.state.exerciseHistory) void replaceState('', {});
+	});
 </script>
 
 <article class="detail" aria-labelledby="workout-title" data-testid="workout-detail">
@@ -43,7 +69,16 @@
 
 	{#each detail.exercises as exercise (exercise.key)}
 		<Surface as="section" padding="md" radius="lg" data-testid="workout-exercise">
-			<h3 class="name">{exercise.name}</h3>
+			<h3 class="name">
+				<button
+					type="button"
+					aria-haspopup="dialog"
+					onclick={(event) => openHistory(exercise.exerciseId, exercise.name, event)}
+					onpointerenter={loadSheet}
+					data-testid="exercise-history-open"
+					>{exercise.name}<Icon name="chevron-right" size={18} /></button
+				>
+			</h3>
 			{#if exercise.best}<p class="best" data-testid="best-e1rm">{exercise.best}</p>{/if}
 			<ol class="sets">
 				{#each exercise.sets as set (set.key)}
@@ -86,6 +121,10 @@
 		<Section title="Notes" data-testid="workout-notes">
 			{#each detail.notes as note (note)}<p class="note">{note}</p>{/each}
 		</Section>
+	{/if}
+
+	{#if Sheet}
+		<Sheet request={page.state.exerciseHistory ?? null} onclose={() => history.back()} />
 	{/if}
 
 	{#if detail.planned}
@@ -149,8 +188,32 @@
 		gap: var(--space-2);
 	}
 
-	.name {
+	.name button {
+		display: inline-flex;
+		align-items: center;
+		gap: var(--space-1);
+		min-height: var(--touch-target);
+		padding: 0;
+		border: 0;
+		background: none;
+		color: inherit;
+		font: inherit;
 		font-weight: var(--weight-semibold);
+		text-align: start;
+		overflow-wrap: anywhere;
+		cursor: pointer;
+	}
+
+	.name button:focus-visible {
+		outline: 2px solid var(--color-accent-ring);
+		outline-offset: 2px;
+		border-radius: var(--radius-sm);
+	}
+
+	@media (hover: hover) and (pointer: fine) {
+		.name button:hover {
+			color: var(--color-accent-text);
+		}
 	}
 
 	.best {
