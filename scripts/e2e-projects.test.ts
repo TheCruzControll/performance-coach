@@ -5,6 +5,7 @@
  * splits only projects nothing depends on, so each leg's own functional projects must be those.
  */
 import { spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import type { Project } from '@playwright/test';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -189,6 +190,28 @@ describe('playwright.config.ts legs', () => {
 		const { default: config } = await import('../playwright.config.ts');
 		expect(names(config.projects ?? [])).toEqual(names(projects));
 	});
+
+	// main legs run whole files side by side on 2 workers, as every local run does; every other
+	// leg (and the whole suite in one CI job) keeps 1.
+	it.each([
+		['main', 2],
+		['serial', 1],
+		['alone', 1],
+		['sweeps', 1],
+		['', 1]
+	] as const)('gives E2E_GROUP=%j %i worker(s) in CI', async (group, workers) => {
+		await configProjects({ E2E_GROUP: group });
+		const { default: config } = await import('../playwright.config.ts');
+		expect(config.workers).toBe(workers);
+	});
+
+	it('keeps 2 workers outside CI', async () => {
+		await configProjects({ E2E_GROUP: 'serial' });
+		vi.resetModules();
+		vi.stubEnv('CI', '');
+		const { default: config } = await import('../playwright.config.ts');
+		expect(config.workers).toBe(2);
+	});
 });
 
 /** `playwright test --list` for one leg (or today's whole suite), as CI loads the config. */
@@ -224,6 +247,21 @@ const unrun = () => {
 		ENGINES.filter((e) => !run.has(`${group}/${e}`)).map((engine) => ({ group, engine }))
 	);
 };
+
+/** Each sharded leg in ci.yml's e2e matrix and its shard count (`of`). */
+function shardedLegs(): { group: Group; engine: Engine; of: number }[] {
+	const workflow = readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8');
+	const legs = new Map<string, { group: Group; engine: Engine; of: number }>();
+	for (const [, flow] of workflow.matchAll(/^\s*- \{(.*group:.*)\}\s*$/gm)) {
+		const entry = Object.fromEntries(
+			flow!.split(',').map((pair) => pair.split(':').map((s) => s.trim()))
+		);
+		const of = Number(entry.of);
+		const leg = { group: entry.group as Group, engine: entry.engine as Engine, of };
+		if (of > 1) legs.set(`${leg.group}/${leg.engine}`, leg);
+	}
+	return [...legs.values()];
+}
 
 describe('the legs, listed by Playwright', () => {
 	const listings = new Map<string, Listing>();
@@ -264,21 +302,25 @@ describe('the legs, listed by Playwright', () => {
 		}
 	}, 120_000);
 
-	it.each([
-		{ engine: 'chromium', group: 'main' },
-		{ engine: 'chromium', group: 'serial' }
-	] as const)(
-		'shard $group/$engine: its shards split its tests and each runs the setup',
-		(leg) => {
+	it('find the sharded legs in ci.yml', () => {
+		expect(shardedLegs().length).toBeGreaterThan(0);
+	});
+
+	it.each(shardedLegs())(
+		'shard $group/$engine $of ways: its shards split its tests and each runs the setup',
+		({ group, engine, of }) => {
+			const leg = { group, engine };
 			const whole = runs(list(leg));
-			const shards = ['1/2', '2/2'].map((shard) => runs(list({ ...leg, shard })));
-			const functional = (tests: string[]) => tests.filter((t) => !t.startsWith('setup › '));
+			const shards = Array.from({ length: of }, (_, i) =>
+				runs(list({ ...leg, shard: `${i + 1}/${of}` }))
+			);
+			const isSetup = (test: string) => /^setup(-\w+)? › /.test(test);
+			const setup = (tests: string[]) => tests.filter(isSetup);
+			const functional = (tests: string[]) => tests.filter((t) => !isSetup(t));
 			for (const shard of shards) {
 				expect(functional(shard).length, 'each shard runs functional tests').toBeGreaterThan(0);
 				expect(functional(shard).length).toBeLessThan(functional(whole).length);
-				expect(shard.filter((t) => t.startsWith('setup › ')).sort()).toEqual(
-					whole.filter((t) => t.startsWith('setup › ')).sort()
-				);
+				expect(setup(shard).sort()).toEqual(setup(whole).sort());
 			}
 			expect(shards.flatMap(functional).sort()).toEqual(functional(whole).sort());
 		},
