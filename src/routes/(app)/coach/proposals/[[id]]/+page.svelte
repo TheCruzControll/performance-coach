@@ -9,19 +9,18 @@
   its own state with Retry; no proposal at all, or none in a filter, has its designed empty state.
 -->
 <script lang="ts">
+	import { tick, type Component } from 'svelte';
 	import { afterNavigate, invalidateAll, preloadData } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { navigating, page } from '$app/state';
 	import Button from '#lib/ui/components/Button.svelte';
 	import EmptyState from '#lib/ui/components/EmptyState.svelte';
 	import Icon from '#lib/ui/components/Icon.svelte';
-	import Notice from '#lib/ui/components/Notice.svelte';
 	import PageHeader from '#lib/ui/components/PageHeader.svelte';
 	import Surface from '#lib/ui/components/Surface.svelte';
-	import LoadingRows from '#lib/ui/coach/LoadingRows.svelte';
-	import Detail from './Detail.svelte';
 	import InboxList from './InboxList.svelte';
-	import type { InboxFilter, InboxRow } from './inbox.server';
+	import Pending from './Pending.svelte';
+	import type { InboxDetail, InboxFilter, InboxRow } from './inbox.server';
 	import type { PageData, PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -81,6 +80,33 @@
 		else moreFailed = true; // offline, a failed request or the load's own failure
 	}
 
+	// ---- The proposal's code ----------------------------------------------------------------
+
+	/**
+	 * Budget lever (M5 plan: ProposalCard, RejectSheet and the decisions load on demand): the
+	 * detail's code (Detail.svelte, with the decision client) loads in the browser once a proposal
+	 * is open, so the list's initial JavaScript stays small and the route node adds few bytes to
+	 * every route's router. Loading rows hold its place meanwhile; a failed import offers Retry,
+	 * and failing again while online reloads the page, as Detail.svelte's sheet does.
+	 */
+	type DetailCode = Component<{ detail: InboxDetail; canAsk: boolean }>;
+	const never = () => new Promise<never>(() => {});
+	// Kept apart from .catch(): Vite moves `import(…).then(…)` whole into its preloader.
+	const loadDetail = (): Promise<{ default: DetailCode }> => import('./Detail.svelte');
+	const wantsDetail = $derived(!!detail);
+	let detailAttempt = $state(0);
+	let detailFailures = 0;
+	const detailCode = $derived.by((): Promise<{ default: DetailCode }> | null => {
+		void detailAttempt;
+		if (!wantsDetail) return null;
+		if (import.meta.env.SSR) return never();
+		return loadDetail().catch((error: unknown) => {
+			// Chromium keeps a failed module fetch for the document's lifetime: start again.
+			if (++detailFailures >= 2 && navigator.onLine) location.reload();
+			throw error;
+		});
+	});
+
 	// ---- Opening a proposal ------------------------------------------------------------------
 
 	const opening = $derived(
@@ -92,12 +118,35 @@
 	// A row keeps focus and scroll on a desktop window. On a phone the list is hidden once a
 	// proposal opens (its column has no box): focus moves to the proposal, at the top.
 	let list = $state<HTMLElement>();
-	afterNavigate(({ type }) => {
+	afterNavigate(async ({ type }) => {
 		if (type !== 'link' || !detail || !list || list.getClientRects().length > 0) return;
 		window.scrollTo(0, 0);
+		await detailCode?.catch(() => {}); // its heading renders once its code has arrived
+		await tick();
 		document.getElementById('proposal-kind')?.focus();
 	});
 </script>
+
+<!-- A part that failed to load, with Retry: EmptyState, already on the page, so no Notice code
+     loads with the list (budget lever, as for Detail.svelte). Announced as an alert. -->
+{#snippet failure(title: string, testId: string, onretry: () => void)}
+	<div role="alert">
+		<Surface padding="none" radius="xl">
+			<EmptyState
+				compact
+				icon="alert"
+				tone="combat"
+				{title}
+				description="Check your connection, then try again."
+				data-testid={testId}
+			>
+				{#snippet actions()}
+					<Button variant="secondary" icon="refresh" onclick={onretry}>Retry</Button>
+				{/snippet}
+			</EmptyState>
+		</Surface>
+	</div>
+{/snippet}
 
 <svelte:head>
 	<title>{detail ? `${detail.card.title} · Proposals` : 'Proposals'} · Performance Coach</title>
@@ -188,17 +237,21 @@
 				>
 			{/if}
 			{#if moreFailed}
-				<Notice tone="danger" title="Couldn’t load more proposals" data-testid="more-failed">
-					<Button variant="ghost" size="sm" onclick={showMore}>Retry</Button>
-				</Notice>
+				{@render failure('Couldn’t load more proposals', 'more-failed', showMore)}
 			{/if}
 		</section>
 
 		<div class="pane" aria-busy={opening ? 'true' : undefined} data-testid="inbox-pane">
 			{#if detail}
-				{#key detail.card.id}<Detail {detail} canAsk={data.canAsk} />{/key}
+				{#await detailCode}
+					<Pending data-testid="detail-loading" />
+				{:then code}
+					{#if code}{#key detail.card.id}<code.default {detail} canAsk={data.canAsk} />{/key}{/if}
+				{:catch}
+					{@render failure('Couldn’t load this proposal', 'detail-failed', () => detailAttempt++)}
+				{/await}
 			{:else if opening}
-				<LoadingRows label="Loading the proposal…" rows={3} data-testid="detail-loading" />
+				<Pending data-testid="detail-loading" />
 			{:else}
 				<Surface padding="none" radius="xl">
 					<EmptyState

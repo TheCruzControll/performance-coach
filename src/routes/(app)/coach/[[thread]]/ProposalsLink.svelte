@@ -9,13 +9,8 @@
 	import Icon from '#lib/ui/components/Icon.svelte';
 </script>
 
-<a
-	class="link"
-	href={resolve('/(app)/coach/proposals/[[id]]', {})}
-	aria-label="Proposals"
-	data-testid="proposals-link"
->
-	<Icon name="sparkle" size={22} strokeWidth={1.75} />
+<a class="link" href={resolve('/(app)/coach/proposals/[[id]]', {})} aria-label="Proposals">
+	<Icon name="sparkle" size={22} />
 </a>
 
 <style>

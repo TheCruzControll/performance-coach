@@ -15,6 +15,7 @@
  * conversation of its own. Serial: the coach and program rows are the one owner's
  * (e2e/coach-support.ts).
  */
+import { readFileSync } from 'node:fs';
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 import { COACH_TZ, postTurn, query, resetCoach, seedCoach } from './coach-support';
@@ -24,6 +25,8 @@ import { captureScreen, gotoHydrated, trackConsoleErrors } from './support';
 const REPLACE = 'I hate Bulgarian split squats, so replace them';
 const NEXT_CYCLE = 'Plan my next cycle';
 const REASON = 'Not before my fight in December';
+const CLIENT = `${import.meta.dirname}/../.svelte-kit/output/client`;
+const DETAIL_SOURCE = 'src/routes/(app)/coach/proposals/[[id]]/Detail.svelte';
 
 test.use({ timezoneId: COACH_TZ });
 // page.route never sees a request from a page the service worker controls on WebKit.
@@ -61,6 +64,17 @@ async function twoProposals(request: APIRequestContext) {
 	const cycle = await propose(request, NEXT_CYCLE);
 	expect(swap.threadId).not.toBe(cycle.threadId);
 	return { swap, cycle };
+}
+
+/** The proposal's code (loaded on demand) in the build under test, from Vite's manifest. */
+function detailChunk(): string {
+	const manifest = JSON.parse(readFileSync(`${CLIENT}/.vite/manifest.json`, 'utf8')) as Record<
+		string,
+		{ file: string } | undefined
+	>;
+	const chunk = manifest[DETAIL_SOURCE];
+	if (!chunk) throw new Error(`${DETAIL_SOURCE} is not in the build under test`);
+	return chunk.file;
 }
 
 const stored = (id: string) =>
@@ -230,6 +244,31 @@ test('an unknown or malformed proposal is the 404 page', async ({ page }) => {
 		expect(response?.status(), path).toBe(404);
 		await expect(page.getByRole('heading', { name: 'Nothing here' })).toBeVisible();
 	}
+});
+
+test('the proposal’s code failing to load says so, and its Retry opens the proposal', async ({
+	page,
+	request
+}, testInfo) => {
+	const { cycle } = await twoProposals(request);
+	await gotoHydrated(page, '/coach/proposals');
+	const chunk = `**/${detailChunk()}`;
+	await page.route(chunk, (route) => route.abort());
+
+	await waiting(page).first().click();
+	const failed = page.getByTestId('detail-failed');
+	await expect(failed).toContainText('Couldn’t load this proposal');
+	await expect(detail(page)).toHaveCount(0);
+	await captureScreen(page, testInfo, 'coach-inbox-detail-failed');
+	await auditThemes(page, 'detail failed');
+
+	// In place on WebKit; on Chromium, which keeps the failed fetch, through a reload of the
+	// proposal's page.
+	await page.unroute(chunk);
+	await failed.getByRole('button', { name: 'Retry' }).click();
+	await expect(detail(page).getByTestId('proposal-card')).toContainText(cycle.title);
+	await expect(page.getByTestId('detail-failed')).toHaveCount(0);
+	await expect(page).toHaveURL(new RegExp(`/coach/proposals/${cycle.id}$`));
 });
 
 test.describe('on a desktop window', () => {

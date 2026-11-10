@@ -12,8 +12,9 @@
     the coach drafts the revision; only while the coach can answer, and never for a review's.
   - A decision that failed on the way shows 'Couldn’t save' on the card, whose Retry sends the
     same decision again; while offline nothing can be decided.
-  The card's and the sheet's code load on demand; a failed fetch is the chunk-failed notice with
-  Retry, and failing again while online reloads the page.
+  This file is the inbox's code on demand (+page.svelte imports it once a proposal is open), so
+  the card comes with it; the sheet's code loads with the first Reject, and a failed fetch is a
+  notice with Retry, failing again while online reloading the page.
 -->
 <script lang="ts">
 	import { onMount, type Component } from 'svelte';
@@ -21,10 +22,10 @@
 	import { resolve } from '$app/paths';
 	import { decideProposal, type Decision } from '#lib/client/coach/proposals.ts';
 	import type { ProposalCardView } from '#lib/domain/coach/cards.ts';
+	import Button from '#lib/ui/components/Button.svelte';
 	import Icon from '#lib/ui/components/Icon.svelte';
-	import CoachNotice from '#lib/ui/coach/CoachNotice.svelte';
-	import LoadingRows from '#lib/ui/coach/LoadingRows.svelte';
-	import { SCREEN_FAILURE_LABEL } from '#lib/ui/coach/coach-notices.ts';
+	import Notice from '#lib/ui/components/Notice.svelte';
+	import ProposalCard from '#lib/ui/coach/ProposalCard.svelte';
 	import { toast } from '#lib/ui/toast.svelte.ts';
 	import type { InboxDetail } from './inbox.server';
 
@@ -36,17 +37,8 @@
 
 	let { detail, canAsk }: Props = $props();
 
-	type CardComponent = Component<{
-		card: ProposalCardView;
-		onaccept?: () => void;
-		onreject?: () => void;
-		onrevise?: () => void;
-		accepting?: boolean;
-		rejecting?: boolean;
-		failed?: boolean;
-		onretry?: () => void;
-		offline?: boolean;
-	}>;
+	/** A refused decision, as the Coach screen words it (coach-notices.ts, not imported: its chunk). */
+	const ACTION_FAILED = 'That didn’t go through';
 	type RejectSheet = Component<{
 		open: boolean;
 		mode: 'reject';
@@ -73,59 +65,40 @@
 			answered = result.card;
 			void invalidateAll(); // the list moves it under Decided
 		} else if (result.retry) failure = decision;
-		else toast.show(SCREEN_FAILURE_LABEL.action_failed, { tone: 'danger' });
+		else toast.show(ACTION_FAILED, { tone: 'danger' });
 	}
 
-	// ---- Code on demand --------------------------------------------------------------------------
+	// ---- Reject's sheet, on demand ----------------------------------------------------------------
 
-	// Left out of the server build, which never renders them, and kept apart from .then(): Vite
-	// moves `import(…).then(…)` whole into its preloader.
-	const loadCard = (): Promise<{ default: CardComponent }> =>
-		import.meta.env.SSR
-			? Promise.reject(new Error('client only'))
-			: import('#lib/ui/coach/ProposalCard.svelte');
+	// Left out of the server build, which never renders it, and kept apart from .then(): Vite moves
+	// `import(…).then(…)` whole into its preloader.
 	const loadSheet = (): Promise<{ default: RejectSheet }> =>
 		import.meta.env.SSR
 			? Promise.reject(new Error('client only'))
 			: import('#lib/ui/coach/RejectSheet.svelte');
 
-	let Card = $state.raw<CardComponent | null>(null);
 	let Sheet = $state.raw<RejectSheet | null>(null);
 	let sheetOpen = $state(false);
-	/** The piece whose code failed to load: Retry fetches it again. */
-	let failed = $state<'card' | 'sheet' | null>(null);
+	let sheetFailed = $state(false);
 	let failures = 0;
 
-	/** Chromium keeps a failed module fetch for the document's lifetime: a second failure reloads. */
-	function fetchFailed(piece: 'card' | 'sheet') {
-		if (++failures >= 2 && navigator.onLine) return location.reload();
-		failed = piece;
-	}
-
-	function fetchCard() {
-		failed = null;
-		loadCard().then(
-			(module) => (Card = module.default),
-			() => fetchFailed('card')
-		);
-	}
-
 	function reject() {
-		failed = null;
+		sheetFailed = false;
 		if (Sheet) return void (sheetOpen = true);
 		loadSheet().then(
 			(module) => {
 				Sheet = module.default;
 				sheetOpen = true;
 			},
-			() => fetchFailed('sheet')
+			() => {
+				// Chromium keeps a failed module fetch for the document's lifetime: start again.
+				if (++failures >= 2 && navigator.onLine) return location.reload();
+				sheetFailed = true;
+			}
 		);
 	}
 
-	onMount(() => {
-		online = navigator.onLine;
-		fetchCard();
-	});
+	onMount(() => (online = navigator.onLine));
 
 	const conversation = $derived(
 		detail.threadId ? resolve('/(app)/coach/[[thread]]', { thread: detail.threadId }) : null
@@ -140,27 +113,24 @@
 		<p class="dates">{detail.dates.join(' · ')}</p>
 	</header>
 
-	{#if Card}
-		<Card
-			{card}
-			accepting={pending === 'accept'}
-			rejecting={pending === 'reject'}
-			failed={failure !== null}
-			offline={!online}
-			onaccept={() => decide({ action: 'accept' })}
-			onreject={reject}
-			onrevise={conversation && canAsk
-				? () => location.assign(`${conversation}?revise=${encodeURIComponent(card.id)}`)
-				: undefined}
-			onretry={() => failure && decide(failure)}
-		/>
-	{:else if failed === 'card'}
-		<CoachNotice kind="chunk_failed" onretry={fetchCard} data-testid="proposal-failed" />
-	{:else}
-		<LoadingRows label="Loading the proposal…" rows={2} data-testid="proposal-loading" />
-	{/if}
-	{#if failed === 'sheet'}
-		<CoachNotice kind="chunk_failed" onretry={reject} data-testid="decision-sheet-failed" />
+	<ProposalCard
+		{card}
+		accepting={pending === 'accept'}
+		rejecting={pending === 'reject'}
+		failed={failure !== null}
+		offline={!online}
+		onaccept={() => decide({ action: 'accept' })}
+		onreject={reject}
+		onrevise={conversation && canAsk
+			? () => location.assign(`${conversation}?revise=${encodeURIComponent(card.id)}`)
+			: undefined}
+		onretry={() => failure && decide(failure)}
+	/>
+	{#if sheetFailed}
+		<Notice tone="danger" title="Couldn’t load this part of the coach" data-testid="sheet-failed">
+			<p>Check your connection, then try again. Nothing was lost.</p>
+			<Button variant="secondary" size="sm" icon="refresh" onclick={reject}>Retry</Button>
+		</Notice>
 	{/if}
 
 	{#if detail.note}
