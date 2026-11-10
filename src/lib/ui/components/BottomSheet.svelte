@@ -3,7 +3,8 @@
   Modal bottom sheet built on the native <dialog> (showModal): focus is trapped and the page
   behind is inert by the platform itself; Escape and backdrop tap close; focus returns to the
   opener. Drag the handle/header down with a finger or a pen to dismiss (distance or velocity
-  threshold). From 1024 px it opens as a dialog centred in the window, with no handle.
+  threshold). From 1024 px it opens as a dialog centred in the window, with no handle; `wide` makes
+  that dialog wide enough for a table.
 -->
 <script lang="ts">
 	import { onDestroy, type Snippet } from 'svelte';
@@ -14,6 +15,8 @@
 		open: boolean;
 		title: string;
 		description?: string;
+		/** From 1024 px, a wider dialog: room for a table. */
+		wide?: boolean;
 		onclose?: () => void;
 		footer?: Snippet;
 		'data-testid'?: string;
@@ -24,6 +27,7 @@
 		open = $bindable(),
 		title,
 		description,
+		wide = false,
 		onclose,
 		footer,
 		'data-testid': testId,
@@ -140,6 +144,7 @@
 	bind:this={dialog}
 	class="sheet-dialog"
 	class:visible
+	class:wide
 	aria-labelledby={`${id}-title`}
 	aria-describedby={description ? `${id}-desc` : undefined}
 	data-testid={testId}
@@ -324,6 +329,10 @@
 		.visible .sheet {
 			opacity: 1;
 			transform: translateY(var(--drag, 0px));
+		}
+
+		.wide .sheet {
+			width: min(100% - 2 * var(--gutter), 56rem);
 		}
 
 		.handle {
