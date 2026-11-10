@@ -6,7 +6,7 @@
  */
 import { formatDuration } from '#lib/domain/units.ts';
 import { restDone, restOverdue, restRemaining } from '#lib/domain/workout/timers.ts';
-import type { RestState } from '#lib/domain/workout/types.ts';
+import type { RestClass, RestState } from '#lib/domain/workout/types.ts';
 
 export type RestPhase = 'running' | 'paused' | 'over';
 
@@ -52,3 +52,15 @@ export function msToNextTick(rest: RestState, now: number): number {
 	const phase = (((now - end) % 1000) + 1000) % 1000;
 	return 1000 - phase;
 }
+
+/**
+ * Each rest class as the settings sheet and Train's rest timer name it, with what it covers
+ * (restClassOf, timers.ts), in the order they show. A plain array, so a screen that does not
+ * use it (the workout) tree-shakes it away.
+ */
+export const REST_CLASS_WORDS: readonly { restClass: RestClass; label: string; hint: string }[] = [
+	{ restClass: 'main', label: 'Main lifts', hint: 'Squat, bench, deadlift and top sets' },
+	{ restClass: 'compound', label: 'Other compounds', hint: 'Rows, presses, lunges' },
+	{ restClass: 'isolation', label: 'Isolation', hint: 'Curls, raises, extensions' },
+	{ restClass: 'timed', label: 'Timed', hint: 'Planks, holds, carries' }
+];
