@@ -39,7 +39,7 @@ import {
 	type Proposal,
 	type ProposalKind
 } from '../../../domain/coach/proposals';
-import type { SourceRef } from '../../../domain/coach/sources';
+import { reviewKey, type SourceRef } from '../../../domain/coach/sources';
 import type { SupersededReason } from '../../../domain/coach/vocabulary';
 import { localDay } from '../../../domain/dates';
 import { isEligible, libraryOf } from '../../../domain/programming/eligibility';
@@ -171,16 +171,32 @@ export interface ProposalOrigin {
 	kind: RulesProvenance['kind'];
 	reviewId: string;
 	href: string;
+	/** The review as a coach source, whose action opens that page (sourceAction). */
+	source: SourceRef;
 }
 
-/** The origin a stored evidence.source names; null for anything else. */
-function originOf(source: unknown): ProposalOrigin | null {
+/** What a review's source is called wherever the coach reads it. */
+export const REVIEW_SOURCE_LABEL: Record<RulesProvenance['kind'], string> = {
+	weekly_review: 'Weekly review',
+	cycle_review: 'Cycle review'
+};
+
+const origin = (kind: RulesProvenance['kind'], reviewId: string, key: string): ProposalOrigin => ({
+	kind,
+	reviewId,
+	href: `/progress/reviews/${key}`,
+	source: { type: 'review', id: key, label: REVIEW_SOURCE_LABEL[kind] }
+});
+
+/** The origin a stored evidence.source names; null for anything else (the coach's own). */
+export function originOf(source: unknown): ProposalOrigin | null {
 	if (typeof source !== 'object' || source === null) return null;
 	const { kind, reviewId, weekStartsOn } = source as Partial<RulesProvenance>;
 	if (typeof reviewId !== 'string') return null;
 	if (kind === 'weekly_review' && typeof weekStartsOn === 'string')
-		return { kind, reviewId, href: `/progress/reviews/w-${weekStartsOn}` };
-	if (kind === 'cycle_review') return { kind, reviewId, href: `/progress/reviews/c-${reviewId}` };
+		return origin(kind, reviewId, reviewKey({ kind: 'weekly', weekStartsOn }));
+	if (kind === 'cycle_review')
+		return origin(kind, reviewId, reviewKey({ kind: 'cycle', id: reviewId }));
 	return null;
 }
 

@@ -170,6 +170,8 @@ const weeklyOutput = z.union([
 			about
 		}),
 		dashboard,
+		/** The week's review, as a source that opens it; null before the week is reviewed. */
+		review: z.nullable(sourceRefSchema),
 		truncated
 	}),
 	insufficient
@@ -178,7 +180,7 @@ const weeklyOutput = z.union([
 const getWeeklyTrainingSummaryTool = defineTool({
 	name: 'get_weekly_training_summary',
 	description:
-		"One Monday-to-Sunday week of the owner's training, computed by code: sessions planned, completed and skipped; workouts done; minutes; sRPE session load; workouts with no load; running distance; and hard sets per muscle group. Each figure has its value, unit, method (put it in the [metric method=…] tag) and sources (the week's date first, then its records, newest first). Leave week out for this week (in progress through today), or give any date in an earlier week. status insufficient_data means nothing was planned or logged that week: say so, never a zero.",
+		"One Monday-to-Sunday week of the owner's training, computed by code: sessions planned, completed and skipped; workouts done; minutes; sRPE session load; workouts with no load; running distance; and hard sets per muscle group; and review, the week's weekly review as a source to cite when you point the owner to it (null before the week is reviewed). Each figure has its value, unit, method (put it in the [metric method=…] tag) and sources (the week's date first, then its records, newest first). Leave week out for this week (in progress through today), or give any date in an earlier week. status insufficient_data means nothing was planned or logged that week: say so, never a zero.",
 	input: z.object({ week: z.optional(isoDate) }),
 	output: weeklyOutput,
 	run: async ({ week }, ctx: Ctx) => {

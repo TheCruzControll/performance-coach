@@ -184,7 +184,7 @@ jobs:
   # serial·chromium peaked at 9.3 in 42414341167 to 42431687521 (14 unsharded), then timed out
   # at 14 in 42469172500 with tests still passing, so it split in two the same way. Its shards
   # took 7.3-8.8 Playwright minutes in 42695476716 to 42698046025, no more than main's: two stay.
-  # serial shards hold whole files: its projects are not fullyParallel, so --shard splits by file.
+  # Every shard holds whole files, planned by measured seconds (scripts/e2e-shards.ts).
   # Shard timeouts stay at the unsharded leg's value until three runs per shard are measured.
   # main legs run 2 Playwright workers (playwright.config.ts), the other legs 1; main's `minutes`
   # stay at their 1-worker values until three 2-worker runs are measured.
@@ -284,14 +284,25 @@ jobs:
           exit 1
       - name: Create roles and databases
         run: pnpm db:setup
+      # Each shard runs the spec files scripts/e2e-shards.ts plans for it from e2e/timings.json
+      # (--test-list; shard 1 inverts the others' union, so an untimed file runs there). The
+      # arguments are read first, so a planner failure fails the step rather than run the whole leg.
       - name: Playwright (global setup builds and starts the production Node server)
         timeout-minutes: ${{ matrix.minutes }}
         env:
           E2E_ENGINE: ${{ matrix.engine }}
           E2E_GROUP: ${{ matrix.group }}
-        run: pnpm test:e2e --shard ${{ matrix.shard }}/${{ matrix.of }}
+          E2E_SHARD: ${{ matrix.shard }}/${{ matrix.of }}
+        run: |
+          shard_args=$(node scripts/e2e-shards.ts "$RUNNER_TEMP/e2e-shard-tests.txt")
+          pnpm test:e2e $shard_args
+      # Also planned vs measured seconds per file against e2e/timings.json for this leg.
       - name: Where the minutes went
         if: ${{ !cancelled() }}
+        env:
+          E2E_ENGINE: ${{ matrix.engine }}
+          E2E_GROUP: ${{ matrix.group }}
+          E2E_SHARD: ${{ matrix.shard }}/${{ matrix.of }}
         run: node scripts/e2e-timing.ts test-results/report.json "${{ matrix.group }} · ${{ matrix.engine }}"
       - name: Upload screenshots and report
         if: ${{ !cancelled() }}

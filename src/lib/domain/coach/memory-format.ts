@@ -57,7 +57,7 @@ void _complete;
 
 /** Fields whose strings the server writes (dates, vocabulary, source ids): never wrapped. */
 const STRUCTURAL = new Set(
-	'asOf date targetDate decidedOn status stance origin kind direction severity scope decider unit type id workoutId phase'.split(
+	'asOf date targetDate decidedOn status stance origin kind direction severity scope decider unit type id workoutId phase decisionState'.split(
 		' '
 	)
 );

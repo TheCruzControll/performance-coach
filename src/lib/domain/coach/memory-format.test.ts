@@ -106,12 +106,16 @@ function snapshot(n = 1, text = 'x'): MemorySnapshot {
 				status: 'rejected',
 				decidedOn: date,
 				decisionNote: `${PLANTED} ${text}`,
+				origin: 'coach',
+				review: null,
 				source: { type: 'proposal', id: `prop-${i}` }
 			})),
 			reviews: list((i) => ({
 				scope: 'week',
 				date,
 				summary: `Good week ${text}`,
+				verdicts: [],
+				decisionState: 'none',
 				source: { type: 'review', id: `r-${i}` }
 			})),
 			threadSummaries: list(note('note')),
@@ -185,6 +189,49 @@ describe('serializeMemory', () => {
 		);
 		expect(bare).not.toContain(PLANTED);
 		expect(bare).not.toMatch(/Sharp|Fatigue|Good week|Deep lunges|Sore|Barbell/);
+	});
+
+	it("keeps a review's decision state and a proposal's origin bare, and wraps its verdicts", () => {
+		const snap = snapshot(1);
+		snap.records.reviews = [
+			{
+				scope: 'week',
+				date: '2026-11-02',
+				summary: 'Good week',
+				verdicts: ['Bench press: Normal variation'],
+				decisionState: 'applied',
+				source: { type: 'review', id: 'w-2026-11-02', date: '2026-11-02' }
+			}
+		];
+		snap.records.proposals = [
+			{
+				kind: 'program_adjustment',
+				title: 'Next week',
+				status: 'proposed',
+				decidedOn: null,
+				decisionNote: null,
+				origin: 'weekly_review',
+				review: { type: 'review', id: 'w-2026-11-02' },
+				source: { type: 'proposal', id: 'prop-1' }
+			}
+		];
+		const data = parse(snap);
+		expect(data.records.reviews).toEqual([
+			{
+				scope: 'week',
+				date: '2026-11-02',
+				summary: { untrusted_text: 'Good week' },
+				verdicts: [{ untrusted_text: 'Bench press: Normal variation' }],
+				decisionState: 'applied',
+				source: { type: 'review', id: 'w-2026-11-02', date: '2026-11-02' }
+			}
+		]);
+		expect(data.records.proposals).toEqual([
+			expect.objectContaining({
+				origin: 'weekly_review',
+				review: { type: 'review', id: 'w-2026-11-02' }
+			})
+		]);
 	});
 
 	it('caps each stored string at MEMORY_TEXT_MAX characters and says so', () => {
