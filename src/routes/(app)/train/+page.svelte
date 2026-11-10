@@ -54,7 +54,8 @@
 		if (to === 'today') return { href: BUILD_HREF };
 		if (to === 'profile') return { href: SETUP_HREF };
 		if (to === 'this-week') return { href: resolve('/(app)/train'), inTrain: true };
-		if (typeof to === 'object') return { href: weekHref(to.week), inTrain: true };
+		if (typeof to === 'object')
+			return 'href' in to ? { href: to.href } : { href: weekHref(to.week), inTrain: true };
 		return { href: undefined };
 	});
 
@@ -287,24 +288,34 @@
 				</Section>
 			{/if}
 
-			{#if view!.brief}
-				{@const brief = view!.brief}
-				<Surface
-					as="section"
-					tone="accent"
-					aria-labelledby="brief-title"
-					class="aside"
-					data-testid="baseline-brief"
-				>
-					<div class="brief">
-						<span class="eyebrow">{brief.eyebrow}</span>
-						<h2 id="brief-title" class="brief-title">{brief.title}</h2>
-						<p>{brief.lead}</p>
-						<ul>
-							{#each brief.points as point (point)}<li>{point}</li>{/each}
-						</ul>
-					</div>
-				</Surface>
+			{#if view!.aside.length}
+				<!-- The side column on desktop: the week's brief and what a review changed in it. -->
+				<div class="aside">
+					{#each view!.aside as panel (panel.id)}
+						<Surface
+							as="section"
+							tone={panel.tone}
+							aria-labelledby="{panel.id}-title"
+							data-testid={panel.id}
+						>
+							<div class="brief">
+								<span class="eyebrow">{panel.eyebrow}</span>
+								<h2 id="{panel.id}-title" class="brief-title">{panel.title}</h2>
+								<p>{panel.lead}</p>
+								<ul>
+									{#each panel.points as point, i (i)}
+										<li><strong>{point.lead}</strong> {point.text}</li>
+									{/each}
+								</ul>
+								<!-- eslint-disable svelte/no-navigation-without-resolve -- paths from cards.server.ts -->
+								{#each panel.links as link (link.id)}
+									<a class="link" href={link.href} data-testid={link.id}>{link.label}</a>
+								{/each}
+								<!-- eslint-enable svelte/no-navigation-without-resolve -->
+							</div>
+						</Surface>
+					{/each}
+				</div>
 			{/if}
 		{/if}
 	</div>
@@ -484,6 +495,24 @@
 		gap: var(--space-1-5);
 		margin: 0;
 		padding-left: var(--space-5);
+	}
+
+	.aside {
+		display: grid;
+		gap: var(--space-6);
+	}
+
+	.brief strong {
+		font-weight: var(--weight-semibold);
+		color: var(--color-text);
+	}
+
+	/* A link in a panel: a full 44 px row, as the session screen's notices set theirs. */
+	.link {
+		display: flex;
+		align-items: center;
+		min-height: var(--touch-target);
+		font-weight: var(--weight-semibold);
 	}
 
 	.logged {
