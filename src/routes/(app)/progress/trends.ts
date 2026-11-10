@@ -9,6 +9,8 @@
  *   view's intro. A client navigation waits for it as it waits for the view's own chunk, both
  *   imports started together, so the frame holds busy and the view arrives whole
  *   (StrengthTrendsLoader).
+ * - Running's (RunningTrends) and General's (GeneralTrends): everything under each view's intro,
+ *   charts and all, loaded as Strength's are (ViewTrendsLoader).
  *
  * Either way the server renders the section as static markup (`served…`), which the page keeps as
  * sent until the code arrives, so hydration never waits for it.
@@ -17,7 +19,9 @@
  * source as initial JS, and the load only starts these, as Today's do with their panels.
  */
 import type { Component } from 'svelte';
+import type { GeneralData } from './general-data';
 import type { OverviewData } from './load';
+import type { RunningData } from './running-data';
 import type { StrengthData } from './strength-data';
 
 export interface TrendsProps {
@@ -26,6 +30,14 @@ export interface TrendsProps {
 
 export interface StrengthTrendsProps {
 	strength: StrengthData;
+}
+
+export interface RunningTrendsProps {
+	running: RunningData;
+}
+
+export interface GeneralTrendsProps {
+	general: GeneralData;
 }
 
 /**
@@ -77,6 +89,8 @@ function lazySection<P extends object>(importer: () => Promise<{ default: Compon
 
 const overview = lazySection<TrendsProps>(() => import('./OverviewTrends.svelte'));
 const strength = lazySection<StrengthTrendsProps>(() => import('./StrengthTrends.svelte'));
+const running = lazySection<RunningTrendsProps>(() => import('./RunningTrends.svelte'));
+const general = lazySection<GeneralTrendsProps>(() => import('./GeneralTrends.svelte'));
 
 export const { preload: preloadTrends, settled: settledTrends, served: servedTrends } = overview;
 export const {
@@ -84,3 +98,13 @@ export const {
 	settled: settledStrengthTrends,
 	served: servedStrengthTrends
 } = strength;
+export const {
+	preload: preloadRunningTrends,
+	settled: settledRunningTrends,
+	served: servedRunningTrends
+} = running;
+export const {
+	preload: preloadGeneralTrends,
+	settled: settledGeneralTrends,
+	served: servedGeneralTrends
+} = general;

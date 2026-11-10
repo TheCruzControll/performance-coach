@@ -5,12 +5,20 @@ const preloadTrends = vi.hoisted(() => vi.fn(async () => {}));
 const servedTrends = vi.hoisted(() => vi.fn(async () => '<section>the trends</section>'));
 const preloadStrengthTrends = vi.hoisted(() => vi.fn(async () => {}));
 const servedStrengthTrends = vi.hoisted(() => vi.fn(async () => '<section>the strength</section>'));
+const preloadRunningTrends = vi.hoisted(() => vi.fn(async () => {}));
+const servedRunningTrends = vi.hoisted(() => vi.fn(async () => '<section>the running</section>'));
+const preloadGeneralTrends = vi.hoisted(() => vi.fn(async () => {}));
+const servedGeneralTrends = vi.hoisted(() => vi.fn(async () => '<section>the general</section>'));
 vi.mock('./trends', async (original) => ({
 	...(await original<typeof Trends>()),
 	preloadTrends,
 	servedTrends,
 	preloadStrengthTrends,
-	servedStrengthTrends
+	servedStrengthTrends,
+	preloadRunningTrends,
+	servedRunningTrends,
+	preloadGeneralTrends,
+	servedGeneralTrends
 }));
 
 /** +page.ts as a fresh module: in the browser (on a document opened at `pathname`) or the server. */
@@ -27,12 +35,18 @@ const run = async (load: Load, data: object) =>
 	(await load({ data } as unknown as Parameters<Load>[0])) as Record<string, unknown>;
 const history = { failed: false, view: 'overview', period: '12w', overview: overview('history') };
 const strength = { failed: false, view: 'strength', period: '12w', strength: { stage: 'history' } };
+const running = { failed: false, view: 'running', period: '12w', running: { stage: 'history' } };
+const general = { failed: false, view: 'general', period: '12w', general: { stage: 'history' } };
 
 beforeEach(() => {
 	preloadTrends.mockClear();
 	servedTrends.mockClear();
 	preloadStrengthTrends.mockClear();
 	servedStrengthTrends.mockClear();
+	preloadRunningTrends.mockClear();
+	servedRunningTrends.mockClear();
+	preloadGeneralTrends.mockClear();
+	servedGeneralTrends.mockClear();
 });
 afterEach(() => {
 	vi.unstubAllGlobals();
@@ -107,6 +121,42 @@ describe("Progress's universal load", () => {
 		preloadStrengthTrends.mockImplementation(async () => {});
 	});
 
+	it('on the server, sends Running’s and General’s trends as markup, each its own', async () => {
+		const load = await loadModule({ browser: false });
+		await expect(run(load, running)).resolves.toMatchObject({
+			served: '<section>the running</section>'
+		});
+		expect(servedRunningTrends).toHaveBeenCalledExactlyOnceWith({ running: running.running });
+		await expect(run(load, general)).resolves.toMatchObject({
+			served: '<section>the general</section>'
+		});
+		expect(servedGeneralTrends).toHaveBeenCalledExactlyOnceWith({ general: general.general });
+		expect(servedTrends).not.toHaveBeenCalled();
+		expect(servedStrengthTrends).not.toHaveBeenCalled();
+	});
+
+	it('in the browser, a later Running or General load waits for its trends’ code', async () => {
+		const load = await loadModule({ browser: true, pathname: '/today' });
+		for (const [data, preload] of [
+			[running, preloadRunningTrends],
+			[general, preloadGeneralTrends]
+		] as const) {
+			let release = () => {};
+			preload.mockImplementationOnce(() => new Promise<void>((resolve) => (release = resolve)));
+			const later = run(load, data);
+			const settled = await Promise.race([
+				later,
+				new Promise((resolve) => setTimeout(() => resolve('held'), 500))
+			]);
+			expect(settled).toBe('held');
+			release();
+			await expect(later).resolves.toMatchObject({ served: undefined });
+			expect(preload).toHaveBeenCalledOnce();
+		}
+		expect(preloadTrends).not.toHaveBeenCalled();
+		expect(preloadStrengthTrends).not.toHaveBeenCalled();
+	});
+
 	it('imports no trends for a failed load', async () => {
 		const load = await loadModule({ browser: false });
 		await expect(run(load, { failed: true, view: 'overview', period: '12w' })).resolves.toEqual({
@@ -120,5 +170,7 @@ describe("Progress's universal load", () => {
 		expect(servedTrends).not.toHaveBeenCalled();
 		expect(preloadStrengthTrends).not.toHaveBeenCalled();
 		expect(servedStrengthTrends).not.toHaveBeenCalled();
+		expect(preloadRunningTrends).not.toHaveBeenCalled();
+		expect(preloadGeneralTrends).not.toHaveBeenCalled();
 	});
 });

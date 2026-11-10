@@ -104,9 +104,9 @@
 			{:else if data.view === 'strength'}
 				<data.View strength={data.strength} served={data.served} />
 			{:else if data.view === 'running'}
-				<data.View running={data.running} />
+				<data.View running={data.running} served={data.served} />
 			{:else if data.view === 'general'}
-				<data.View general={data.general} />
+				<data.View general={data.general} served={data.served} />
 			{:else if data.view === 'overview'}
 				<data.View overview={data.overview} served={data.served} />
 			{/if}
