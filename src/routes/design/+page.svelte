@@ -30,6 +30,9 @@
 	// already sit 4 px apart at 393 px, e2e/design-coach.e2e.ts). Like a tab, it loads on demand.
 	const charts = () => (import.meta.env.SSR ? never() : import('./ChartsPanel.svelte'));
 	let showCharts = $state(false);
+	// The workout components, in every state, are a section of their own for the same reason.
+	const workout = () => (import.meta.env.SSR ? never() : import('./WorkoutPanel.svelte'));
+	let showWorkout = $state(false);
 
 	const colors = [
 		['canvas', 'surface-1', 'surface-2', 'surface-3'],
@@ -162,6 +165,33 @@
 	</section>
 
 	<section class="section">
+		<h2 class="h">Workout</h2>
+		<div class="inline">
+			<Button
+				variant="secondary"
+				iconEnd="chevron-down"
+				aria-expanded={showWorkout}
+				aria-controls="design-workout"
+				onclick={() => (showWorkout = !showWorkout)}
+				data-testid="toggle-workout"
+			>
+				{showWorkout ? 'Hide workout states' : 'Show workout states'}
+			</Button>
+		</div>
+		<div id="design-workout">
+			{#if showWorkout}
+				{#await workout()}
+					<div class="grid" aria-busy="true">
+						<Skeleton height="40rem" radius="var(--radius-lg)" />
+					</div>
+				{:then { default: Workout }}
+					<Workout />
+				{/await}
+			{/if}
+		</div>
+	</section>
+
+	<section class="section">
 		<h2 class="h">Icons</h2>
 		<div class="icons">
 			{#each iconNames as name (name)}
@@ -273,7 +303,8 @@
 	/*
 	 * A desktop window: the gallery widens to --content-wide and its groups pair up, each at about
 	 * the phone column's width, so no specimen is stretched: Color beside Type, Components beside
-	 * Cards & tones. The header and the icon grid span both columns, and the grids get larger cells.
+	 * Cards & tones, Charts beside Workout. The header and the icon grid span both columns, and the
+	 * grids get larger cells.
 	 */
 	@media (width >= 64rem) {
 		.design {
