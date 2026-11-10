@@ -386,6 +386,7 @@ test.describe('a fresh device', () => {
 		request
 	}) => {
 		await seedProgram(request, { fixture: 'today-rest', start: 'this_week' });
+		await query('update athlete_profiles set onboarding_completed_at = now()');
 		await openTab(page, '/today');
 		await expect(page.getByTestId('today-rest')).toBeVisible();
 		// Its idle pass has run, with nothing to save.
@@ -401,6 +402,7 @@ test.describe('a fresh device', () => {
 		request
 	}) => {
 		await seedProgram(request, { fixture: 'workout-day', start: 'this_week' });
+		await query('update athlete_profiles set onboarding_completed_at = now()');
 		await visitTabsButToday(page);
 		expect(await offlineDatabases(page)).toBe(0);
 		await page
