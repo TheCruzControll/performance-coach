@@ -27,6 +27,10 @@ export function returnFocus(
 ): void {
 	target.focus({ preventScroll: true });
 	if (frames > 0 && target.isConnected && nowhere()) {
-		frame(() => returnFocus(target, nowhere, frame, frames - 1));
+		// Checked again before each retry: focus may have moved somewhere real since this frame
+		// was queued, and a retry must never take it back.
+		frame(() => {
+			if (target.isConnected && nowhere()) returnFocus(target, nowhere, frame, frames - 1);
+		});
 	}
 }

@@ -56,7 +56,7 @@ describe('returnFocus', () => {
 		returnFocus(target, () => !elsewhere, f.frame);
 		elsewhere = true;
 		f.next();
-		expect(state.calls).toBe(2);
+		expect(state.calls).toBe(1);
 		expect(f.waiting).toBe(0);
 	});
 
@@ -66,7 +66,7 @@ describe('returnFocus', () => {
 		returnFocus(target, () => true, f.frame);
 		state.isConnected = false;
 		f.next();
-		expect(state.calls).toBe(2);
+		expect(state.calls).toBe(1);
 		expect(f.waiting).toBe(0);
 	});
 
