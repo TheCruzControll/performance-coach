@@ -18,6 +18,7 @@ import {
 	alternativesFor,
 	correctedReport,
 	dislike,
+	replaceWithOwn,
 	reportPain,
 	skipExercise,
 	substitute
@@ -168,6 +169,62 @@ describe('substitute', () => {
 			reason: 'owner_choice'
 		});
 		expect(slotAt(viewOfState(apply(after, second)), LEG_PRESS)!.exerciseId).toBe('goblet_squat');
+	});
+});
+
+describe('replaceWithOwn', () => {
+	const SANDBAG = {
+		name: 'Sandbag shouldering',
+		aliases: [],
+		pattern: 'hinge',
+		primaryMuscles: ['glutes', 'hamstrings'],
+		secondaryMuscles: [],
+		equipment: [],
+		substitutionGroup: null,
+		skillLevel: 'beginner',
+		repMin: null,
+		repMax: null,
+		defaultSeconds: null,
+		unilateral: false,
+		measure: 'reps',
+		loadType: 'external',
+		tags: [],
+		disciplines: []
+	} as const;
+
+	it('creates the exercise under its own client id, then swaps to it as the owner’s choice', () => {
+		const state = started();
+		const [created, swap] = replaceWithOwn(viewOfState(state), LEG_PRESS, SANDBAG, AT);
+		expect(created).toMatchObject({ type: 'exercise.create', workoutId: W, at: AT });
+		expect(created.id).toBe(created.entityId);
+		expect(created.payload).toEqual(SANDBAG);
+		expect(swap.type).toBe('exercise.substitute');
+		expect(swap.payload).toEqual({
+			position: LEG_PRESS,
+			plannedLineage: KIT.exercises[LEG_PRESS - 1]!.plannedLineage,
+			fromExerciseId: 'leg_press',
+			toExerciseId: created.entityId,
+			reason: 'owner_choice'
+		});
+	});
+
+	it('names the new exercise at once, so its sets log on it before anything syncs', () => {
+		let state = started();
+		const [created, swap] = replaceWithOwn(viewOfState(state), LEG_PRESS, SANDBAG, AT);
+		state = apply(apply(state, created), swap);
+		const view = viewOfState(state);
+		expect(slotAt(view, LEG_PRESS)).toMatchObject({
+			exerciseId: created.entityId,
+			state: 'swapped'
+		});
+		expect(view.exercises[created.entityId]).toEqual({
+			name: 'Sandbag shouldering',
+			measure: 'reps',
+			loadType: 'external',
+			unilateral: false
+		});
+		const { mutation } = logSet(view, LEG_PRESS, 1, { ...SET, weight: 40 }, AT);
+		expect(mutation.payload).toMatchObject({ exerciseId: created.entityId, weight: 40 });
 	});
 });
 

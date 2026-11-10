@@ -9,10 +9,15 @@ import type {
 	WorkoutView
 } from '#lib/domain/workout/index.ts';
 import { strengthTable } from '#lib/domain/workout/reducers/tables.ts';
+import type { CustomExercise } from '#lib/domain/training/types.ts';
 import {
+	addCustomExercise,
 	addedExercise,
 	addExercise,
+	customLibraryExercise,
+	joinLibrary,
 	LIBRARY_URL,
+	nameClash,
 	RESULT_LIMIT,
 	refreshLibrary,
 	searchLibrary
@@ -305,5 +310,151 @@ describe('startAdHoc caches the library its units came with', () => {
 		await startAdHoc('run', LB, startOptions(startServer({ v: 1, units: KG, exercises: [] })));
 		expect(await store.getUnits()).toEqual(KG);
 		expect(await store.getLibrary()).toBeNull();
+	});
+});
+
+const BAG: CustomExercise = {
+	name: 'Bulgarian bag spin',
+	aliases: [],
+	pattern: 'rotation',
+	primaryMuscles: ['obliques'],
+	secondaryMuscles: [],
+	equipment: [],
+	substitutionGroup: null,
+	skillLevel: 'beginner',
+	repMin: null,
+	repMax: null,
+	defaultSeconds: 40,
+	unilateral: false,
+	measure: 'time',
+	loadType: 'external',
+	tags: [],
+	disciplines: []
+};
+
+describe('nameClash', () => {
+	const own = exercise('Sandbag shouldering', ['Bag to shoulder'], { key: null, id: 'own-1' });
+	const library = [...EXERCISES, own];
+
+	it('names the catalogue exercise or the owner’s that has the name or an alias, as the server does', () => {
+		expect(nameClash(library, 'Back squat')).toBe('Already in the library as Back squat');
+		expect(nameClash(library, 'barbell back-squats')).toBe('Already in the library as Back squat');
+		expect(nameClash(library, 'rdl')).toBe('Already in the library as Romanian deadlift');
+		expect(nameClash(library, 'Sandbag Shoulderings')).toBe('You already have Sandbag shouldering');
+		expect(nameClash(library, 'bag to shoulder')).toBe('You already have Sandbag shouldering');
+	});
+
+	it('makes words singular as the server does, so -ies, -us and -is names clash', () => {
+		const fly = exercise('Cable fly', [], { id: 'fly' });
+		const carry = exercise("Farmer's carry", [], { id: 'carry' });
+		const plus = exercise('Bench plus', [], { id: 'plus' });
+		expect(nameClash([fly, carry, plus], 'Cable flies')).toBe(
+			'Already in the library as Cable fly'
+		);
+		expect(nameClash([fly, carry, plus], 'Farmers carries')).toBe(
+			"Already in the library as Farmer's carry"
+		);
+		expect(nameClash([fly, carry, plus], 'Bench plu')).toBeNull(); // plus is not a plural
+	});
+
+	it('passes a new name, a blank one, and the exercise being renamed', () => {
+		expect(nameClash(library, 'Bulgarian bag spin')).toBeNull();
+		expect(nameClash(library, '  ')).toBeNull();
+		expect(nameClash(library, 'Sandbag shouldering', 'own-1')).toBeNull();
+	});
+});
+
+describe('customLibraryExercise', () => {
+	it('lists the owner’s exercise as the server would: no key, its rest class, the unit’s step', () => {
+		expect(customLibraryExercise('own-2', BAG, LB)).toEqual({
+			id: 'own-2',
+			key: null,
+			name: 'Bulgarian bag spin',
+			aliases: [],
+			measure: 'time',
+			loadType: 'external',
+			unilateral: false,
+			pattern: 'rotation',
+			equipment: [],
+			tags: [],
+			defaultSeconds: 40,
+			restClass: 'timed',
+			increment: 5
+		});
+	});
+});
+
+describe('joinLibrary', () => {
+	it('puts it in the cached library at once, by name, under a digest the server never gives', async () => {
+		await store.saveLibrary(LIBRARY);
+		const listed = customLibraryExercise('own-2', BAG, KG);
+		await joinLibrary(store, listed);
+		const cached = await store.getLibrary();
+		expect(names(cached!.exercises)).toEqual([
+			'Back squat',
+			'Bulgarian bag spin',
+			'Bulgarian split squat',
+			'Dumbbell Romanian deadlift',
+			'Goblet squat',
+			'Romanian deadlift',
+			'Squat jump'
+		]);
+		expect(searchLibrary(cached!.exercises, 'bag spin').results).toEqual([listed]);
+
+		// Online, the next refresh is never a 304 that keeps it: the server's copy replaces it.
+		const { fetch, requests } = server(Response.json({ ...LIBRARY, digest: 'd2' }));
+		expect(await refreshLibrary(store, { fetch, online: true })).toMatchObject({ digest: 'd2' });
+		expect(requests[0]!.ifNoneMatch).not.toBe('"d1"');
+	});
+
+	it('joins once, and changes nothing on a device with no library', async () => {
+		const listed = customLibraryExercise('own-2', BAG, KG);
+		await joinLibrary(store, listed);
+		expect(await store.getLibrary()).toBeNull();
+		await store.saveLibrary(LIBRARY);
+		await joinLibrary(store, listed);
+		await joinLibrary(store, { ...listed, name: 'Zercher bag spin' });
+		const cached = await store.getLibrary();
+		expect(cached!.exercises.filter((e) => e.id === 'own-2').map((e) => e.name)).toEqual([
+			'Zercher bag spin'
+		]);
+		expect(cached!.exercises.at(-1)!.id).toBe('own-2');
+	});
+});
+
+describe('addCustomExercise', () => {
+	it('creates it under the device’s id and adds it to the session in one dispatch, offline too', async () => {
+		await startAdHoc('strength', KG, startOptions(startServer()));
+		const { saved } = addCustomExercise(
+			store,
+			await activeView(),
+			BAG,
+			KG,
+			'2026-11-06T18:05:00.000Z'
+		);
+		expect(await saved).toBe('saved');
+
+		const outbox = await store.outbox();
+		const created = outbox.at(-1)!.envelope;
+		expect(outbox.map((e) => e.envelope.type)).toEqual(['workout.start', 'exercise.create']);
+		expect(created).toMatchObject({ type: 'exercise.create', payload: BAG });
+		expect(created.id).toBe(created.entityId);
+
+		const view = await activeView();
+		expect(view.slots).toMatchObject([
+			{ position: 1, exerciseId: created.entityId, state: 'added', sets: [] }
+		]);
+		expect(view.device.position).toBe(1);
+		expect(view.exercises[created.entityId]).toEqual({
+			name: 'Bulgarian bag spin',
+			measure: 'time',
+			loadType: 'external',
+			unilateral: false
+		});
+		await vi.waitFor(async () =>
+			expect(searchLibrary((await store.getLibrary())!.exercises, 'bag spin').results).toEqual([
+				customLibraryExercise(created.entityId, BAG, KG)
+			])
+		);
 	});
 });
