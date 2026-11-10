@@ -57,6 +57,28 @@ describe('the journey map rules', () => {
 		}
 	});
 
+	it('keys a test by the spec file running it, even when an imported module declares it', () => {
+		const half = (file: string) => ({
+			title: file,
+			file,
+			suites: [
+				{
+					title: 'axe',
+					file: 'a11y-suite.ts',
+					specs: [{ title: '/today', tests: [{ projectName: 'iphone-chromium' }] }]
+				}
+			]
+		});
+		const { tests } = parseListing({
+			config: { projects: [{ name: 'iphone-chromium' }] },
+			suites: [half('a11y-dark.e2e.ts'), half('a11y-light.e2e.ts')]
+		});
+		expect([...tests.keys()]).toEqual([
+			'a11y-dark.e2e.ts › axe › /today',
+			'a11y-light.e2e.ts › axe › /today'
+		]);
+	});
+
 	it('fails on a pending id that is not a proving slice, even when lenient', () => {
 		const { errors } = checkJourneyMap(
 			[{ id: 'rest-timer', prd: '§19: rest timer', pending: 'journey-strenght' }],

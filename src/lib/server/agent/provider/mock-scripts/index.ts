@@ -1,7 +1,8 @@
 /**
  * Every script the mock coach plays, one file per group. Each later slice replaces only its own
  * group's file, so no two slices edit this one. The first script that matches the owner's message
- * plays, so general.ts, whose last script matches anything, comes last.
+ * plays, so general.ts, whose last script matches anything, comes last, and summaries.ts, whose
+ * request quotes the owner's messages, comes first.
  */
 import type { MockScript } from '../mock.ts';
 import { analyticsScripts } from './analytics.ts';
@@ -11,10 +12,12 @@ import { preferenceScripts } from './preferences.ts';
 import { programmingProposalScripts } from './programming-proposals.ts';
 import { programmingReadScripts } from './programming-reads.ts';
 import { safetyScripts } from './safety.ts';
+import { summaryScripts } from './summaries.ts';
 import { testScripts } from './test.ts';
 import { workoutScripts } from './workout.ts';
 
 export const MOCK_SCRIPTS: readonly MockScript[] = Object.freeze([
+	...summaryScripts,
 	...historyScripts,
 	...programmingReadScripts,
 	...programmingProposalScripts,
