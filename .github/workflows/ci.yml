@@ -293,8 +293,13 @@ jobs:
           E2E_ENGINE: ${{ matrix.engine }}
           E2E_GROUP: ${{ matrix.group }}
         run: pnpm test:e2e --shard ${{ matrix.shard }}/${{ matrix.of }}
+      # Also planned vs measured seconds per file against e2e/timings.json for this leg.
       - name: Where the minutes went
         if: ${{ !cancelled() }}
+        env:
+          E2E_ENGINE: ${{ matrix.engine }}
+          E2E_GROUP: ${{ matrix.group }}
+          E2E_SHARD: ${{ matrix.shard }}/${{ matrix.of }}
         run: node scripts/e2e-timing.ts test-results/report.json "${{ matrix.group }} · ${{ matrix.engine }}"
       - name: Upload screenshots and report
         if: ${{ !cancelled() }}
