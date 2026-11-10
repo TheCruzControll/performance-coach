@@ -78,7 +78,10 @@ async function open(
 
 const logger = (page: Page) => page.getByTestId('set-logger');
 const rows = (page: Page) => page.getByTestId('workout-main').getByTestId('set');
-const editButton = (page: Page, index: number) => rows(page).nth(index).getByRole('button');
+const editButton = (page: Page, index: number) =>
+	rows(page)
+		.nth(index)
+		.getByRole('button', { name: /^Edit set/ });
 const editor = (page: Page) => page.getByTestId('set-editor');
 const stepper = (page: Page, id: string) => page.getByTestId(id).getByRole('spinbutton');
 
