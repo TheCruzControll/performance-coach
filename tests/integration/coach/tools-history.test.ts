@@ -6,7 +6,7 @@
  * - is_error results: an ambiguous exercise name lists candidates; unknown names and ids are
  *   NOT_FOUND; a range too long is INVALID_INPUT
  * - the tools write nothing, and stored free text reaches the model only as untrusted_text
- * - a random ownerId reads none of the seeded owner's exercises or workouts (NOT_FOUND, or empty)
+ * - another owner reads none of the seeded owner's exercises or workouts (NOT_FOUND, or empty)
  * - the scripted answers quote the database's numbers: the bench's top sets and the squat's RPEs
  *
  * The turn is Wednesday 11 November 2026; the owner has no profile, so their days are UTC.
@@ -51,7 +51,7 @@ import {
 } from '../../../src/lib/server/services/workouts/history';
 import { programFixture } from '../../../src/lib/server/test-support/program-fixtures';
 import { withRollback } from '../helpers';
-import { makeOwner } from '../profile/fixtures';
+import { makeOwner, makeSecondOwner } from '../profile/fixtures';
 import { exerciseIds, logOther, logRun, logStrength, utc } from '../training/fixtures/history';
 import { runScripted, segmentIssues, TURN_NOW } from './harness';
 
@@ -599,10 +599,10 @@ describe('the history tools', () => {
 		});
 	});
 
-	it('read nothing of the seeded owner’s for a random ownerId', async () => {
+	it('read nothing of the seeded owner’s for another owner', async () => {
 		await withRollback(async (db) => {
 			const { owner, ids, custom, clientId } = await seed(db);
-			const stranger = crypto.randomUUID();
+			const stranger = await makeSecondOwner(db);
 			// The owner's own exercise and workout ids are not found.
 			const notFound: [string, object][] = [
 				['get_exercise_history', { exercise: custom }],
@@ -623,6 +623,11 @@ describe('the history tools', () => {
 					name: wrapped('Bench press')
 				},
 				records: { bestE1rm: null, repMaxes: [] },
+				e1rmTrend: expect.objectContaining({
+					value: null,
+					verdict: 'insufficient_data',
+					realTrend: null
+				}),
 				sets: [],
 				more: false,
 				next: null
