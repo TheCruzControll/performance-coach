@@ -8,6 +8,7 @@
     variation) and its MetricContext (what counts as good, and how it is worked out)
   - RPE, volume and intensity, running, Muay Thai, recovery and fatigue, conflicts and PRs
     (ReviewSections), each collapsing to its verdict line on a phone
+  - next week's changes to take, change or skip, or what was decided (NextWeekCard)
   - the write-up's slot, empty until the coach writes it (review-narrative-ui)
   - out of date (training logged since): 'Computed before N later changes', with Refresh while
     its decision is open. Refresh writes the next revision and keeps this one; like Create it is
@@ -25,6 +26,7 @@
 	import Button from '#lib/ui/components/Button.svelte';
 	import Notice from '#lib/ui/components/Notice.svelte';
 	import type { WeeklyReviewData } from './load';
+	import NextWeekCard from './NextWeekCard.svelte';
 	import ReviewSections from './ReviewSections.svelte';
 
 	interface Props {
@@ -167,6 +169,8 @@
 	{/if}
 
 	<div class="sections"><ReviewSections sections={review.sections} /></div>
+
+	{#if review.nextWeek}<NextWeekCard next={review.nextWeek} reviewId={review.id} {online} />{/if}
 
 	<div class="write-up" data-testid="review-write-up">
 		{#if review.writeUp}<p>{review.writeUp}</p>{/if}
