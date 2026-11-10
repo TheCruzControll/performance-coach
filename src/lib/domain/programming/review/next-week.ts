@@ -74,9 +74,9 @@ export const PRIORITY = { deload: 0, running: 1, reduce: 2, move: 3, increase: 4
 export const CAPPED_SEGMENTS: readonly RunSegment['kind'][] = ['easy', 'steady', 'long'];
 
 /** Only a rule to keep is resolved by a move; advice ('prefer') is left as planned. */
-const MOVE_SEVERITY = 'avoid';
-/** sessionPlanSchema's bound on one day's sessions. */
-const SESSIONS_A_DAY = 4;
+export const MOVE_SEVERITY = 'avoid';
+/** A move never puts more than this many sessions on one day: sessionPlanSchema's bound. */
+export const SESSIONS_A_DAY = 4;
 
 // ---- Input and output ------------------------------------------------------------------------
 
