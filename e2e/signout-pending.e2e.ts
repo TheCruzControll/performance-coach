@@ -44,8 +44,11 @@ test('asks before deleting unsynced workout changes', async ({ page, context }) 
 	expect(await readOutbox(page)).toHaveLength(1);
 
 	// Another change arrives while the sheet is up: it asks again, with the new count.
+	// The sheet stays in the DOM when closed, so wait for it to show: the flush is over before the
+	// second change is seeded, and the sheet opened with the count of one.
 	await page.getByTestId('sign-out').click();
-	await expect(sheet).toContainText('1 workout change');
+	await expect(sheet).toBeVisible();
+	await expect(sheet).toContainText('1 workout change on this device hasn’t reached the server.');
 	await seedWorkout(page, strength);
 	await page.getByTestId('signout-delete').click();
 	await expect(sheet).toContainText('2 workout changes on this device haven’t reached the server.');
