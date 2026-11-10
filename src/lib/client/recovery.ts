@@ -23,6 +23,11 @@
  * later navigation in it, gets the failure back without asking the network, so the screen's code
  * never arrives. Once the server answers, each such script is fetched again, which replaces the
  * entry, before the screen loads again.
+ *
+ * A screen's stylesheet that failed to load stays in the page as a <link> without its rules, and
+ * Vite's preload never adds a second link for a URL one already has: the screen's code would
+ * arrive but it would render unstyled. In the same step, each such link is loaded again from a
+ * fresh copy of it, and the screen loads again once every one applies.
  */
 import { goto } from '$app/navigation';
 
@@ -56,26 +61,73 @@ function failedModules(): string[] {
 }
 
 /**
- * Fetch the module scripts that failed again (see above), then reload once they all arrived; if
- * any did not, stay on this screen so the user can try again. Returns a cancel function: a
- * navigation the user starts meanwhile must not be replaced by this reload.
+ * The page's stylesheets that failed to load. A disabled link never loads: SvelteKit marks each
+ * stylesheet it inlined into the HTML with one, so that Vite never links it, and a copy of it
+ * would never load either.
+ */
+function failedStylesheets(): HTMLLinkElement[] {
+	return [...document.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"]')].filter(
+		(link) => !link.disabled && !applies(link)
+	);
+}
+
+/**
+ * Whether a stylesheet link holds its rules. A link whose load failed has no sheet, an empty one,
+ * or (WebKit and Chromium alike) one that is not origin-clean, whose rules throw a SecurityError
+ * like a cross-origin sheet's. Only a sheet from another origin may hide its rules once loaded,
+ * and Vite emits no empty stylesheet.
+ */
+function applies(link: HTMLLinkElement): boolean {
+	try {
+		return (link.sheet?.cssRules.length ?? 0) > 0;
+	} catch {
+		return new URL(link.href).origin !== location.origin;
+	}
+}
+
+/**
+ * Load a failed stylesheet again from a fresh copy of its link, next to it so the cascade keeps
+ * its order. Once the copy applies the failed link goes; if it fails too, the copy goes.
+ */
+function restyle(link: HTMLLinkElement, signal: AbortSignal): Promise<boolean> {
+	const fresh = link.cloneNode() as HTMLLinkElement;
+	return new Promise((resolve) => {
+		const settle = (loaded: boolean) => {
+			fresh.onload = fresh.onerror = null;
+			signal.removeEventListener('abort', fail);
+			(loaded ? link : fresh).remove();
+			resolve(loaded);
+		};
+		const fail = () => settle(false);
+		fresh.onload = () => settle(true);
+		fresh.onerror = fail;
+		signal.addEventListener('abort', fail);
+		link.after(fresh);
+	});
+}
+
+/**
+ * Fetch the module scripts and stylesheets that failed again (see above), then reload once they
+ * all arrived; if any did not, stay on this screen so the user can try again. Returns a cancel
+ * function: a navigation the user starts meanwhile must not be replaced by this reload.
  */
 export function reloadFresh(): () => void {
 	let cancelled = false;
-	void refetchFailedModules().then((arrived) => {
+	void refetchFailed().then((arrived) => {
 		if (arrived && !cancelled) location.reload();
 	});
 	return () => (cancelled = true);
 }
 
 /**
- * Whether every failed script arrived again. The body is read in full: `fetch` resolves on the
- * headers, before the script is in the HTTP cache, so a reload could still find it missing.
+ * Whether every failed script arrived again and every failed stylesheet applies. A script's body
+ * is read in full: `fetch` resolves on the headers, before the script is in the HTTP cache, so a
+ * reload could still find it missing.
  */
-async function refetchFailedModules(): Promise<boolean> {
+async function refetchFailed(): Promise<boolean> {
 	const signal = AbortSignal.timeout(PROBE_TIMEOUT_MS);
-	const arrived = await Promise.all(
-		failedModules().map(async (url) => {
+	const arrived = await Promise.all([
+		...failedModules().map(async (url) => {
 			try {
 				const res = await fetch(url, { cache: 'reload', signal });
 				if (!res.ok) return false;
@@ -84,8 +136,9 @@ async function refetchFailedModules(): Promise<boolean> {
 			} catch {
 				return false;
 			}
-		})
-	);
+		}),
+		...failedStylesheets().map((link) => restyle(link, signal))
+	]);
 	return arrived.every(Boolean);
 }
 
@@ -186,8 +239,9 @@ export function startOfflineRecovery(options: RecoveryOptions): () => void {
 		options.onDeviceStatus(navigator.onLine);
 		if (!navigator.onLine) return schedule();
 		probing = true;
-		// Refetch even when the user has navigated meanwhile: their next screens need the scripts too.
-		const ok = (await probe()) && (await refetchFailedModules());
+		// Refetch even when the user has navigated meanwhile: their next screens need the scripts
+		// and styles too.
+		const ok = (await probe()) && (await refetchFailed());
 		probing = false;
 		if (stopped) return;
 		if (ok) {

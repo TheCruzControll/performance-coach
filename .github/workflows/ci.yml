@@ -183,8 +183,16 @@ jobs:
   # 42698046025), so it split in four: about 7 a shard. Three would leave it the longest leg.
   # serial·chromium peaked at 9.3 in 42414341167 to 42431687521 (14 unsharded), then timed out
   # at 14 in 42469172500 with tests still passing, so it split in two the same way. Its shards
-  # took 7.3-8.8 Playwright minutes in 42695476716 to 42698046025, no more than main's: two stay.
-  # serial shards hold whole files: its projects are not fullyParallel, so --shard splits by file.
+  # took 7.3-8.8 Playwright minutes in 42695476716 to 42698046025, no more than main's.
+  # Then the legs took more shards at about the same runner-minutes, so the longest leg, not the
+  # sum, sets a run's wall clock: main·webkit 3, serial·chromium 3, serial·webkit 5 (14 entries,
+  # 22 jobs a pull-request run, 20 starting at once). main·chromium stays in two: its a11y files
+  # alone (484 s over 2 workers) would make shard 1 of three the heaviest, which shard 1 must
+  # never be (it also runs every untimed file; scripts/e2e-shards.test.ts fails at three).
+  # Predicted Playwright steps at runs 42712377736 and 42711097021's speed: main·webkit ~274 s,
+  # serial·chromium ~330 s, serial·webkit ~326 s, alone 204-224 s. main·chromium's two shards
+  # took 392-455 s there, so it stays the longest leg until its a11y files can leave shard 1.
+  # Every shard holds whole files, planned by measured seconds (scripts/e2e-shards.ts).
   # Shard timeouts stay at the unsharded leg's value until three runs per shard are measured.
   # main legs run 2 Playwright workers (playwright.config.ts), the other legs 1; main's `minutes`
   # stay at their 1-worker values until three 2-worker runs are measured.
@@ -202,14 +210,17 @@ jobs:
         include:
           - { group: main, engine: chromium, shard: 1, of: 2, minutes: 19 }
           - { group: main, engine: chromium, shard: 2, of: 2, minutes: 19 }
-          - { group: main, engine: webkit, shard: 1, of: 2, minutes: 13 }
-          - { group: main, engine: webkit, shard: 2, of: 2, minutes: 13 }
-          - { group: serial, engine: chromium, shard: 1, of: 2, minutes: 14 }
-          - { group: serial, engine: chromium, shard: 2, of: 2, minutes: 14 }
-          - { group: serial, engine: webkit, shard: 1, of: 4, minutes: 15 }
-          - { group: serial, engine: webkit, shard: 2, of: 4, minutes: 15 }
-          - { group: serial, engine: webkit, shard: 3, of: 4, minutes: 15 }
-          - { group: serial, engine: webkit, shard: 4, of: 4, minutes: 15 }
+          - { group: main, engine: webkit, shard: 1, of: 3, minutes: 13 }
+          - { group: main, engine: webkit, shard: 2, of: 3, minutes: 13 }
+          - { group: main, engine: webkit, shard: 3, of: 3, minutes: 13 }
+          - { group: serial, engine: chromium, shard: 1, of: 3, minutes: 14 }
+          - { group: serial, engine: chromium, shard: 2, of: 3, minutes: 14 }
+          - { group: serial, engine: chromium, shard: 3, of: 3, minutes: 14 }
+          - { group: serial, engine: webkit, shard: 1, of: 5, minutes: 15 }
+          - { group: serial, engine: webkit, shard: 2, of: 5, minutes: 15 }
+          - { group: serial, engine: webkit, shard: 3, of: 5, minutes: 15 }
+          - { group: serial, engine: webkit, shard: 4, of: 5, minutes: 15 }
+          - { group: serial, engine: webkit, shard: 5, of: 5, minutes: 15 }
           - { group: alone, engine: chromium, shard: 1, of: 1, minutes: 5 }
     steps:
       - uses: actions/checkout@v7
@@ -284,12 +295,18 @@ jobs:
           exit 1
       - name: Create roles and databases
         run: pnpm db:setup
+      # Each shard runs the spec files scripts/e2e-shards.ts plans for it from e2e/timings.json
+      # (--test-list; shard 1 inverts the others' union, so an untimed file runs there). The
+      # arguments are read first, so a planner failure fails the step rather than run the whole leg.
       - name: Playwright (global setup builds and starts the production Node server)
         timeout-minutes: ${{ matrix.minutes }}
         env:
           E2E_ENGINE: ${{ matrix.engine }}
           E2E_GROUP: ${{ matrix.group }}
-        run: pnpm test:e2e --shard ${{ matrix.shard }}/${{ matrix.of }}
+          E2E_SHARD: ${{ matrix.shard }}/${{ matrix.of }}
+        run: |
+          shard_args=$(node scripts/e2e-shards.ts "$RUNNER_TEMP/e2e-shard-tests.txt")
+          pnpm test:e2e $shard_args
       # Also planned vs measured seconds per file against e2e/timings.json for this leg.
       - name: Where the minutes went
         if: ${{ !cancelled() }}
@@ -394,6 +411,74 @@ jobs:
       # budget in the e2e job (e2e/perf.e2e.ts). See docs/performance.md.
       - name: Lighthouse (median of 5 runs, asserted)
         run: pnpm lighthouse --runs 5 --assert --min-perf 0.9 --max-tbt 300
+      - name: Upload Lighthouse reports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: lighthouse-${{ github.run_id }}
+          path: lighthouse-reports/
+          retention-days: 14
+          if-no-files-found: ignore
+
+  # Desktop runs on a runner of its own, so the required mobile check (above) ends when its one
+  # audit does instead of waiting about 2 minutes more for this one. Not a required check, and no
+  # job needs it: it reports, it never blocks a merge.
+  lighthouse-desktop:
+    name: Lighthouse desktop (measured, not gating)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      # Pulled and started in the background (docker run -d would block on the pull), so the
+      # server boots while the job installs; "Wait for Postgres" holds db:setup until it answers.
+      - name: Start Postgres 18 (in the background)
+        run: nohup sh -c 'docker run -d --name postgres -p 5432:5432 -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=postgres postgres:18' > "$RUNNER_TEMP/postgres-start.log" 2>&1 &
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Browser builds are per OS release (WebKit links that release's ICU), so the cache is
+      # keyed by the runner image: a WebKit downloaded on ubuntu-26.04 fails to launch on 24.04.
+      - name: Runner image
+        id: image
+        run: echo "os=${ImageOS:-unknown}" >> "$GITHUB_OUTPUT"
+      - name: Cache Playwright browsers
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ steps.image.outputs.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+      - name: Configure apt for slow mirrors
+        run: ./scripts/ci-apt-resilience.sh
+      - name: Install Chromium system dependencies
+        timeout-minutes: 12
+        run: pnpm exec playwright install-deps chromium
+      - name: Install Chromium
+        timeout-minutes: 8
+        run: pnpm exec playwright install chromium
+      # Over TCP: the image's init server listens on its socket only, so ready means the real
+      # server. 90 s covers a cold pull plus initdb; a server that never answers fails the job.
+      - name: Wait for Postgres
+        env:
+          WAIT_SECONDS: 90
+        run: |
+          for _ in $(seq "$WAIT_SECONDS"); do
+            if pg_isready -h localhost -p 5432 -U postgres; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::Postgres did not accept TCP connections within ${WAIT_SECONDS} s"
+          cat "$RUNNER_TEMP/postgres-start.log"
+          docker logs postgres
+          exit 1
+      - name: Create roles and databases
+        run: pnpm db:setup
+      - name: Build for Node (served on http://localhost:4174 by the Lighthouse script)
+        run: pnpm build:node
+        env:
+          ORIGIN: http://localhost:4174
       # Desktop (1440 × 900) numbers on every PR head, in the step summary and the reports
       # artifact (lighthouse-reports/desktop). Measured, never gating: whether CI should assert
       # desktop (about 5 minutes per run) is an open owner decision (m2x plan), so a miss here
@@ -402,11 +487,11 @@ jobs:
         continue-on-error: true
         timeout-minutes: 8
         run: pnpm lighthouse --desktop --seed --runs 3 --assert
-      - name: Upload Lighthouse reports
+      - name: Upload Lighthouse desktop reports
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v7
         with:
-          name: lighthouse-${{ github.run_id }}
-          path: lighthouse-reports/
+          name: lighthouse-desktop-${{ github.run_id }}
+          path: lighthouse-reports/desktop/
           retention-days: 14
           if-no-files-found: ignore

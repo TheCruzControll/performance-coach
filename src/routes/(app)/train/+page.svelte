@@ -18,6 +18,7 @@
 	import WeekStrip from '#lib/ui/program/WeekStrip.svelte';
 	import { LazySheet } from './lazy-sheet.svelte.ts';
 	import type PlateSheetType from './PlateSheet.svelte';
+	import type RestTimerSheetType from './RestTimerSheet.svelte';
 	import type { PageProps, Snapshot } from './$types';
 
 	let { data }: PageProps = $props();
@@ -88,7 +89,7 @@
 		reloading = false;
 	}
 
-	// ---- The sheets: the plate calculator and the plan -------------------------------------
+	// ---- The sheets: the plate calculator, the rest timer and the plan ----------------------
 
 	// Each is code-split with the BottomSheet it opens in and loads on intent (lazy-sheet.svelte.ts).
 	// Each is left out of the server build, which never renders it: SvelteKit links into a page the
@@ -100,6 +101,14 @@
 				? Promise.reject(new Error('client only'))
 				: import('./PlateSheet.svelte'),
 		'plates'
+	);
+	/** It opens no workout: 'Log a session' arrives with the other ways into one. */
+	const restTimer = new LazySheet<ComponentProps<typeof RestTimerSheetType>>(
+		() =>
+			import.meta.env.SSR
+				? Promise.reject(new Error('client only'))
+				: import('./RestTimerSheet.svelte'),
+		'rest'
 	);
 	const plan = new LazySheet<ComponentProps<typeof PlanSheetType>>(
 		() =>
@@ -123,8 +132,18 @@
 		const tool = page.url.searchParams.get('tool');
 		if (tool === 'plates') plates.show();
 		if (tool === 'plan' && view) plan.show();
+		if (tool === 'rest') restTimer.show();
+		// A rest left running (a reload, or back from another screen) shows under its row again,
+		// with its alarm and keep-awake, without a tap. The key literal keeps standalone-rest.ts
+		// out of Train's own chunk; blocked storage throws and means no rest.
+		try {
+			if (localStorage.getItem('pc:rest:v1')) restTimer.prefetch();
+		} catch {
+			// no storage, no rest
+		}
 		return () => {
 			plates.leave();
+			restTimer.leave();
 			plan.leave();
 		};
 	});
@@ -299,9 +318,24 @@
 				</Notice>
 			{/if}
 		</div>
-		<ListRow icon="timer" title="Rest timer" subtitle="Arrives with workout logging" disabled>
-			{#snippet trailing()}<Badge>Soon</Badge>{/snippet}
-		</ListRow>
+		<div class="tool" aria-busy={restTimer.busy}>
+			<ListRow
+				icon="timer"
+				title="Rest timer"
+				subtitle="Outside a workout"
+				onpointerdown={restTimer.prefetch}
+				onpointerenter={restTimer.prefetch}
+				onclick={restTimer.show}
+				data-testid="open-rest-timer"
+			/>
+			{#if restTimer.failed}
+				<Notice tone="danger" title="Couldn’t open the rest timer">
+					<button type="button" class="retry" onclick={restTimer.show} use:reveal>Retry</button>
+				</Notice>
+			{/if}
+			<!-- A running rest shows here, under its row, with the sheet closed. -->
+			<restTimer.component bind:open={restTimer.open} onclose={closeSheet} />
+		</div>
 	</Section>
 </div>
 
