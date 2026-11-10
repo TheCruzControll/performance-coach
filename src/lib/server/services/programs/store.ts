@@ -93,7 +93,7 @@ function exerciseRefs(plan: ProgramPlan): [path: string, ref: ExerciseRef][] {
 }
 
 /** The library row of every ExerciseRef in the plan, or a TrainingInputError at each unknown one. */
-async function resolveExercises(
+export async function resolveExercises(
 	ownerId: string,
 	plan: ProgramPlan,
 	deps: TrainingDeps

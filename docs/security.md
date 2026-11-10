@@ -226,7 +226,7 @@ full address. Refusals answer `429` with `Retry-After`, except the `/setup` page
 `404` like any other refused setup link.
 
 Stale counters are pruned on writes: the first hit of each window also deletes up to 100 counters
-whose window started over a day ago (longer than any window; `RATE_LIMIT_PRUNE` in `policy.ts`),
+whose window started over two days ago (longer than any window; `RATE_LIMIT_PRUNE` in `policy.ts`),
 skipping rows another request holds. One-off clients cannot grow `auth_rate_limits` without bound,
 and no request pays for more than one small indexed delete.
 

@@ -7,7 +7,7 @@ acceptance criteria were verified by running them — compiling is not done.
 | #   | Milestone                       | Status                                                                                                                                     |
 | --- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
 | M1  | Foundation & infrastructure     | **Done** (PR #1, merged 2026-11-05); deferred items carried below                                                                          |
-| M2  | Auth & profile                  | **In progress**: auth, production (#50), onboarding, Profile and Today (#60–#181), owner's iPhone setup (2026-11-06) done; email link next |
+| M2  | Auth & profile                  | **Done**: auth, production (#50), onboarding, Profile, Today (#60–#181), desktop (#85–#265); email link dropped by the owner on 2026-11-07 |
 | M3  | Training data model & programs  | **Done**: 49 slice PRs, #41 to #233; evidence per criterion below                                                                          |
 | M4  | Workout application             | Planned                                                                                                                                    |
 | M5  | AI performance coach            | Planned                                                                                                                                    |
@@ -138,18 +138,28 @@ Progress (merged to `main` as slice PRs #2–#12 plus follow-up fixes, each gree
   `e2e/today.serial.e2e.ts`; integration round trips in `tests/integration/profile/`; axe in both
   themes on every Profile and onboarding screen (`e2e/a11y.e2e.ts`). The data model and the save
   path are in docs/architecture.md ("Training profile (M2)").
-- Desktop view (criterion 8), the owner's 2026-11-06 request, has its own slices: the layout
-  rules, the navigation rail, desktop layouts for the auth screens, sheets and main screens, and
-  desktop Chromium and WebKit projects at 1440 × 900 (#96, #113, #132, #138, #166, #179). The
-  onboarding and Today specs, and the goal arrows and drag, are checked in a desktop window too.
+- Done: the desktop view (criterion 8), the owner's 2026-11-06 request, merged as #85 to #265
+  (the last, desktop Lighthouse, on 2026-11-09): the layout rules and their guard (#96), the
+  navigation rail and centred column in CSS only (#113), the auth screens (#132), sheets as
+  centred dialogs and hover and focus states (#138), Coach, Progress, Security, /design and the
+  error states (#166), Profile and its sections (#245), onboarding (#260), Train (#244), Today
+  (#261), session detail and History (#263), and Security's headroom (#85). Evidence: the
+  `desktop-chromium` Playwright project (#179) runs every `*.desktop.e2e.ts` spec at 1440 × 900
+  with axe and screenshots of every main screen (`screens.desktop.e2e.ts`), and the serial specs
+  run their desktop cases on Chromium and WebKit; the iPhone projects and their specs are
+  unchanged. Desktop WebKit ran as its own project until the owner dropped it on 2026-11-07
+  (#190), because their desktop browser is Chrome. On main `e93d417` CI run 42737223258 passed
+  every e2e leg, `pnpm budgets` (every route under 60 KB; the shell cost +2 B in #113) and desktop
+  Lighthouse (perf 100 on every screen); docs/performance.md, "M2X (desktop)" and "Lighthouse
+  (desktop)". The desktop real-device pass is item 7 of docs/testing.md's checklist.
 - Done: the owner's one-time setup (docs/deployment.md, "Owner setup") and the real-device
   check, on 2026-11-06 at 10:43 UTC on the owner's iPhone 16 Pro Max, iOS 27.0.1, in Chrome for
   iOS (the browser they use; WebKit engine). The passkey and recovery codes are stored,
   `OWNER_SETUP_TOKEN_HASH` is emptied in Vercel, and the real-device checklist in
   docs/testing.md passed in Chrome.
-- Open in M2: the email sign-in link (criterion 7): its configuration, mailer, link storage and
-  service are merged (#108, #124, #161, #180), the sign-in screen's option and its routes are
-  not.
+- Dropped by the owner on 2026-11-07: the email sign-in link (criterion 7). Its configuration,
+  mailer, link storage and service stay merged and switched off (#108, #124, #161, #180); the
+  sign-in screen's option and its routes will not be built, and ADR 0011 keeps the design.
 
 ## M3 — Training data model & program management [§2, §5, §9, §11]
 
