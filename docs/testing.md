@@ -130,6 +130,8 @@ Every UI slice is verified at the iPhone viewport (393 × 659) and at 1440 × 90
 `test.use(DESKTOP)` from `e2e/desktop.ts` or a `*.desktop.e2e.ts` spec, and its PR attaches both
 screenshots (docs/design-system.md, Responsive layout → Verification).
 
+Workers: 2 locally and in CI's main legs (whole files side by side), 1 in its other legs.
+
 ### Authentication
 
 - **Chromium performs real WebAuthn ceremonies** through the DevTools Protocol's virtual
