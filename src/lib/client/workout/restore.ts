@@ -2,7 +2,9 @@
  * The workout pages' restore read (the offline workout sync ADR, 'Restore'): the active workout's
  * inputs, read from 'pc-offline' with raw IndexedDB, so the first render needs neither idb nor the
  * store's write path, which load after it (active.svelte.ts). Same reads as the store's
- * getActive: the newest workout in progress, and its outbox entries in seq order.
+ * getActive: the newest workout in progress, and its outbox entries in seq order. With none in
+ * progress, the newest workout finished on this device that is still waiting to sync, so an
+ * offline reload keeps its completed state.
  * - It never creates 'pc-offline' (the upgrade of a missing one is aborted), and it closes at once.
  * - A 'pc-offline' without the workout stores reads as none: the store recreates it when it opens.
  * - A database a newer app has upgraded is 'upgraded'.
@@ -47,12 +49,23 @@ export async function readActive(): Promise<RestoreRead> {
 		if (!names.every((name) => db.objectStoreNames.contains(name))) return { status: 'none' };
 		const tx = db.transaction(names, 'readonly');
 		const workouts = await result<StoredWorkout[]>(tx.objectStore(STORES.workouts).getAll());
-		const active = workouts
-			.filter((w) => w.status === 'in_progress')
-			.sort((a, b) => (a.startedAt < b.startedAt ? 1 : -1))[0];
-		if (!active) return { status: 'none' };
 		const byWorkout = tx.objectStore(STORES.outbox).index(OUTBOX_INDEXES.byWorkout);
-		const entries = await result<OutboxEntry[]>(byWorkout.getAll(active.id));
+		const newest = (status: string) =>
+			workouts
+				.filter((w) => w.status === status)
+				.sort((a, b) => (a.startedAt < b.startedAt ? 1 : -1));
+		let active = newest('in_progress')[0];
+		let entries: OutboxEntry[] = [];
+		if (active) entries = await result<OutboxEntry[]>(byWorkout.getAll(active.id));
+		// Else the newest workout finished here that is still waiting to sync: its completed state.
+		for (const w of active ? [] : newest('completed')) {
+			entries = await result<OutboxEntry[]>(byWorkout.getAll(w.id));
+			if (entries.length) {
+				active = w;
+				break;
+			}
+		}
+		if (!active) return { status: 'none' };
 		const flag = await result(tx.objectStore(STORES.meta).count('signedOut'));
 		const { id: workoutId, kit, canonical, device } = active;
 		const pending = entries.map((entry) => entry.envelope);
