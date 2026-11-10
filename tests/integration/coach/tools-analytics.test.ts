@@ -7,7 +7,7 @@
  *   is INVALID_INPUT; any day of an earlier week reads that week
  * - a result that would pass the output cap keeps every figure and cites fewer records
  * - the scripted answers are labelled: each number a [metric] carrying the tool's own method
- * - a random ownerId reads insufficient_data, never the seeded owner's figures
+ * - another owner reads insufficient_data, never the seeded owner's figures
  *
  * The hybrid fixture's week 1 runs Monday 9 to Sunday 15 November 2026; the turn is Wednesday.
  */
@@ -42,7 +42,7 @@ import {
 } from '../../../src/lib/server/services/programs/index';
 import { programFixture } from '../../../src/lib/server/test-support/program-fixtures';
 import { withRollback } from '../helpers';
-import { makeOwner } from '../profile/fixtures';
+import { makeOwner, makeSecondOwner } from '../profile/fixtures';
 import { exerciseIds, logOther, logRun, logStrength, utc } from '../training/fixtures/history';
 import { runScripted, segmentIssues, storedRows, TURN_NOW } from './harness';
 
@@ -452,9 +452,10 @@ describe('scripted turns', () => {
 		});
 	});
 
-	it('read nothing of the seeded owner’s for a random ownerId: insufficient_data, never their figures', async () => {
+	it('read nothing of the seeded owner’s for another owner: insufficient_data, never their figures', async () => {
 		await withRollback(async (db) => {
 			const { owner, workouts } = await seed(db);
+			const stranger = await makeSecondOwner(db);
 			const asked: Record<string, string> = {
 				'weekly-volume': 'Am I doing enough weekly volume?',
 				'running-and-lifting': 'How is my running affecting my lifting?',
@@ -466,7 +467,7 @@ describe('scripted turns', () => {
 				const turn = await runScripted(each, {
 					db,
 					owner,
-					ownerId: crypto.randomUUID(),
+					ownerId: stranger,
 					tools: TOOLS,
 					text: asked[each.name]
 				});

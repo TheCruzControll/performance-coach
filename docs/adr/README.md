@@ -24,3 +24,4 @@ Status values: Proposed · Accepted · Superseded.
 | [NNNN](NNNN-hand-built-charts.md)        | Hand-built charts: lazy SVG lines, HTML marks, one registry   | Proposed |
 | [NNNN](NNNN-periodisation-engine.md)     | Periodisation: rules as data, one evaluator, one load model   | Proposed |
 | [NNNN](NNNN-planning-later-blocks.md)    | Planning later blocks: a new version, a bridge, no past days  | Proposed |
+| [NNNN](NNNN-lifecycles-as-data.md)       | Lifecycles as data: a typed transition table per status list  | Proposed |
