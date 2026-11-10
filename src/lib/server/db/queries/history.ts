@@ -34,6 +34,7 @@ export const HISTORY_INDEXES = {
 	runsInRange: 'workouts_owner_kind_started_idx',
 	workoutsInRange: 'workouts_owner_started_idx',
 	activeWorkouts: 'workouts_owner_started_idx',
+	completedWorkoutsFor: 'workouts_planned_lineage_idx',
 	completedWorkoutsPage: {
 		workouts: 'workouts_owner_started_idx',
 		sets: 'set_records_workout_order_idx'
@@ -457,6 +458,29 @@ export function activeWorkouts(db: Executor, ownerId: string, limit: number) {
 		)
 		.orderBy(desc(workouts.startedAt), desc(workouts.id))
 		.limit(limit);
+}
+
+/**
+ * The newest completed, undeleted workout of the owner's logged against each of `lineages`, by
+ * client id as History links to it: what a session that reads 'Done' opens. One row per lineage,
+ * down the lineage index, the newest start first among a lineage's workouts.
+ */
+export function completedWorkoutsFor(db: Executor, ownerId: string, lineages: string[]) {
+	return db
+		.selectDistinctOn([workouts.plannedLineageId], {
+			lineage: workouts.plannedLineageId,
+			id: workouts.clientId
+		})
+		.from(workouts)
+		.where(
+			and(
+				inArray(workouts.plannedLineageId, lineages),
+				eq(workouts.ownerId, ownerId),
+				eq(workouts.status, 'completed'),
+				isNull(workouts.deletedAt)
+			)
+		)
+		.orderBy(asc(workouts.plannedLineageId), desc(workouts.startedAt), desc(workouts.id));
 }
 
 const pageCursor = alias(workouts, 'page_cursor');

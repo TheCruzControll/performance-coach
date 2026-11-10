@@ -110,7 +110,8 @@ export interface TypePaceFigure {
 	trend: MetricTrend | null;
 }
 
-export type ShownEffort = Effort & { pace: Shown; time: string };
+/** An effort with its pace and time in words, and its day in the owner's zone (null: undated). */
+export type ShownEffort = Effort & { pace: Shown; time: string; day: IsoDate | null };
 export type ShownEfforts = Omit<DistanceEfforts, 'best' | 'efforts' | 'reported'> & {
 	best: ShownEffort | null;
 	efforts: ShownEffort[];
@@ -255,7 +256,8 @@ export async function getRunningDashboard(
 	const shownEffort = (e: Effort): ShownEffort => ({
 		...e,
 		pace: pace(e.paceSecondsPerKm, units),
-		time: formatDuration(e.durationSeconds)
+		time: formatDuration(e.durationSeconds),
+		day: e.on instanceof Date ? localDay(e.on, timeZone) : e.on
 	});
 	const efforts = bestEfforts(effortRuns, periodRaces).map((d) => ({
 		...d,
