@@ -228,6 +228,26 @@ export default defineConfig(({ command, mode }) => {
 					}
 				},
 				{
+					// `pnpm test:live`: the coach against the real model, opt-in (tests/live/gate.ts).
+					// Never in CI: no workflow runs this project (scripts/vite-config.test.ts).
+					extends: './vite.config.ts',
+					test: {
+						name: 'live',
+						environment: 'node',
+						include: ['tests/live/**/*.live.test.ts'],
+						globalSetup: ['tests/live/setup.ts'],
+						setupFiles: [
+							'tests/integration/setup-env.ts',
+							'tests/integration/one-query-per-client.ts'
+						],
+						env: { LOG_LEVEL: process.env.LOG_LEVEL || 'silent' },
+						fileParallelism: false,
+						// A real turn can draft for over a minute; a conversation is up to two turns.
+						testTimeout: 600_000,
+						hookTimeout: 60_000
+					}
+				},
+				{
 					// `pnpm db:explain`: query plans on a scratch database (scripts/explain/).
 					extends: './vite.config.ts',
 					test: {

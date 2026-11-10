@@ -7,6 +7,8 @@
     is added, under what was there, so logging the last set moves nothing (Navigation puts the
     card last).
   - Once every exercise is done, Finish workout (`onfinish`) takes Start's place.
+  - With `onadd`, Add exercise under the target, above where Start appears: any exercise from
+    the library, after the last one (`onintent` on its first press, to fetch the picker).
   - Once a set is logged, a polite live region says where the workout went: 'Next: A2 Plank,
     45 s' when the flow moved to the partner, 'Next: Romanian deadlift, 3 × 8 at RPE 7' once the
     exercise is done. Nothing is said on restore or while sets are left.
@@ -25,9 +27,12 @@
 		onstart: (position: number) => void;
 		/** Finish workout, once nothing is left to do. */
 		onfinish?: () => void;
+		/** Add exercise: opens the picker. */
+		onadd?: (event: MouseEvent) => void;
+		onintent?: () => void;
 	}
 
-	let { view, onstart, onfinish }: Props = $props();
+	let { view, onstart, onfinish, onadd, onintent }: Props = $props();
 
 	const next = $derived(upNextWords(view));
 	const between = $derived.by(() => {
@@ -66,6 +71,18 @@
 	</p>
 	<!-- Its line kept with or without a target, so the card's height holds as sets are logged. -->
 	<p class="target">{next?.target}</p>
+	<!-- Above Start, so Start (or Finish workout) appearing under it moves nothing. -->
+	{#if onadd}
+		<div class="add">
+			<Button
+				variant="ghost"
+				icon="plus"
+				onpointerdown={onintent}
+				onclick={onadd}
+				data-testid="add-exercise">Add exercise</Button
+			>
+		</div>
+	{/if}
 	{#if next && between}
 		<div class="start">
 			<Button block iconEnd="arrow-right" onclick={() => onstart(next.position)}>
@@ -131,5 +148,10 @@
 
 	.start {
 		margin-top: var(--space-2);
+	}
+
+	.add {
+		justify-self: start;
+		margin-top: var(--space-1);
 	}
 </style>

@@ -7,10 +7,10 @@ database, then unit tests for calculations. Never claim a suite passed without r
 | ----------- | ----------------------- | -------------------------- | ------------------------------------------------------------------ |
 | Unit        | `pnpm test:unit`        | Vitest (`unit` project)    | `src/**/*.test.ts` — domain math, env validation, RUM attribution  |
 | Integration | `pnpm test:integration` | Vitest (`integration`)     | `tests/integration/**` — services/repositories on real Postgres    |
-| E2E         | `pnpm test:e2e`         | Playwright 1.63.0          | `e2e/**/*.e2e.ts` — production server, iPhone viewport             |
+| E2E         | `pnpm test:e2e`         | Playwright 1.63.0          | `e2e/**/*.e2e.ts` — production server, iPhone and desktop windows  |
 | Budgets     | `pnpm budgets`          | `scripts/check-budgets.ts` | initial JS / CSS / font preloads + CSS prefix guard from the build |
 | Drift       | `pnpm db:drift`         | drizzle-kit + git          | fails when the schema changed without a committed migration        |
-| Lighthouse  | `pnpm lighthouse`       | `scripts/lighthouse.ts`    | mobile audit of the local production server                        |
+| Lighthouse  | `pnpm lighthouse`       | `scripts/lighthouse.ts`    | mobile and desktop audits of the local production server           |
 
 ## Unit tests
 
@@ -28,6 +28,17 @@ RUM attribution of each metric to the screen where it happened, client error rep
 fields, non-Error values), and `serializeError` (Drizzle
 parameters redacted; Postgres messages withheld for SQLSTATE classes that can quote values, kept
 for identifier-only classes such as 23 and 42; DETAIL/HINT never logged).
+
+Layout rules (`scripts/layout-rules.test.ts`, docs/design-system.md, Responsive layout): every
+`<style>` block and .css file under `src`, parsed with svelte/compiler's `parseCss`, uses only the
+five rem breakpoints, keeps `:hover` inside `(hover: hover) and (pointer: fine)` and reads
+`--nav-height` only in `tokens.css` and `AppNav.svelte`, markup included (a style attribute or a
+`style:` directive). The browser code (`src/lib/ui`, `src/lib/client`, `src/routes`,
+`src/app.html`) never reads the viewport's size or listens for `resize`, and `matchMedia`,
+`matchMedia?.()` and Svelte's `new MediaQuery()` ask only for `prefers-reduced-motion`,
+`prefers-color-scheme` or `display-mode`. Each breach names its file, line, fix and design-system
+subsection. Fixtures show that every rule fires, and that preferences, display mode, forced
+colours, print, `@container`, the CSS `resize` property and comments are allowed.
 
 Auth unit tests (`src/lib/server/auth/*.test.ts`): relying-party derivation per environment
 (production is exactly `https://coach.nikocruz.com`, previews never the production RP, localhost
@@ -93,7 +104,7 @@ the CSRF Origin check, User-Agent and passkey labels, the rate-limit client netw
 3. starts `node build/index.js` on `E2E_PORT` (4173) with `ENABLE_TEST_ROUTES=true`, waits for
    `/api/health`, and stops it in teardown. Server output goes to `.e2e-server.log`.
 
-Projects (all `devices['iPhone 15 Pro']`):
+Projects (all `devices['iPhone 15 Pro']` except `desktop-chromium`):
 
 | Project           | Browser  | Runs                                                                                            |
 | ----------------- | -------- | ----------------------------------------------------------------------------------------------- |
@@ -105,6 +116,19 @@ Projects (all `devices['iPhone 15 Pro']`):
 | `serial-chromium` | Chromium | `*.serial.e2e.ts` one at a time, after the functional specs: they change the training profile   |
 | `serial-webkit`   | WebKit   | the same specs after `serial-chromium` (CI or `E2E_WEBKIT=1`)                                   |
 | `exclusive`       | Chromium | `*.exclusive.e2e.ts`, last and alone: account-wide actions                                      |
+
+`desktop-chromium` opens `devices['Desktop Chrome']` resized to `DESKTOP` (`e2e/desktop.ts`:
+1440 × 900, a mouse and no touch, scale 1) from `setup`'s signed-in state and runs whole files:
+every `*.desktop.e2e.ts`, which the iPhone projects skip, plus `shell.e2e.ts`, `offline.e2e.ts`
+and `a11y.e2e.ts`. It shares the setup session, so a desktop case that changes the training
+profile goes in a `*.serial.e2e.ts` spec with `test.use(DESKTOP)`, which `serial-chromium` and
+`serial-webkit` then run at 1440 × 900. There is no desktop WebKit project: the owner's desktop
+browser is Chrome, and the owner dropped it on 2026-11-07 (#190). Screenshots of every main screen
+land in `test-results/screens/desktop-chromium/`.
+
+Every UI slice is verified at the iPhone viewport (393 × 659) and at 1440 × 900, with
+`test.use(DESKTOP)` from `e2e/desktop.ts` or a `*.desktop.e2e.ts` spec, and its PR attaches both
+screenshots (docs/design-system.md, Responsive layout → Verification).
 
 Workers: 2 locally and in CI's main legs (whole files side by side), 1 in its other legs.
 
@@ -255,6 +279,78 @@ Specs:
 
 Artifacts: failure screenshots + traces in `test-results/`, key-screen screenshots in
 `test-results/screens/<project>/`, HTML report in `playwright-report/` (all uploaded by CI).
+
+### Desktop
+
+The helpers in `e2e/desktop.ts` (docs/design-system.md, Responsive layout → Verification) are
+proven by `desktop-helpers.desktop.e2e.ts` on `page.setContent` fixtures with no server state:
+
+- `DESKTOP` is a 1440 × 900 window with a mouse and no touch, at scale 1.
+- Every width in `DESKTOP_WIDTHS` (1024–1920) is a desktop page that does not scroll sideways;
+  `BELOW_DESKTOP_WIDTH` (1023) is not, and there `expectNoSideScroll` fails on content 1100 px
+  wide.
+- `layoutShiftDuring` measures an inserted block, and throws where no layout-shift entries are
+  reported. WebKit reports none, and the serial specs run their desktop cases on WebKit too, so
+  a swap is checked with `expectNoShift`: it needs the boxes the layout reserves and catches a
+  shift the boxes miss, and without layout-shift entries it checks the boxes alone
+  (`expectStableBoxes` fails on a 10 px move or growth) and adds an annotation saying so.
+- `tokenPx` and `expectMainCentred` check `<main>` against the rail at its token's width;
+  `expectCentredOver` fails a bar that is 20 px off or too wide; `expectInColumn` fails a fixed bar
+  that spans both columns; `pixelAt` reads the colour of the pixel it is given.
+
+The desktop specs (most also run axe and take screenshots in both themes):
+
+- `shell.desktop.e2e.ts`: from 1024 px the Primary navigation is a solid full-height rail
+  (`--rail-width`, no blur, nothing fixed to the bottom edge) with the five destinations in order,
+  one `aria-current`, links at least 44 × 44 px and a hover tint. The document order is skip link
+  → rail → content; Tab follows it with a ring of at least 2 px on every stop, and the skip link
+  lands in `<main>`. The brand mark matches `--color-surface-1`, `--color-accent` and
+  `--color-text` at 18% in both themes and adds only its two precached SVGs. `<main>` is the
+  readable column centred beside the rail, and `data-layout` wide or split widens it to
+  `--content-wide`. Coach's composer and Security's offline sign-out toast are centred over it,
+  and /design's toast in the window. No tab scrolls sideways at 1024–1920 px, the glass bar is
+  back at 1023 px, every tab gets the readable column at 800 px, and Coach reloads offline from
+  the precache with the mark and a working rail.
+- `screens.desktop.e2e.ts`: the sweep that misses no main screen. Each loads without moving,
+  scrolls nothing sideways, sits beside the rail (or centred outside the shell) and logs no
+  console error.
+- `auth-screens.desktop.e2e.ts`: every state of `AuthScreen` in the right-hand card: signed out;
+  a refused passkey and a wrong recovery code (the spec then deletes the `recovery:ip:` counter);
+  no passkey support; an address passkeys cannot use (the refusal `relyingPartyFor` gives
+  127.0.0.1, passed as route data because the e2e server pins ORIGIN, with the service worker
+  blocked); and a recovery session minted through the test route and switched to `recovery` in
+  SQL, so no code is burned. `auth.setup.ts` checks setup and its recovery codes at that size by
+  resizing the same page, then asserts the iPhone viewport is back.
+- `primitives.desktop.e2e.ts`: `BottomSheet` as a centred dialog from 1024 px (Escape, backdrop,
+  focus return, no mouse drag, 1024 × 700); Tab order and a ring of at least 2 px in dark, light
+  and forced colours; hover on every primitive; no hover and 44 px targets on a 1180 × 820 touch
+  screen; a phone swipe; and Security's stacked step-up over Remove passkey.
+- `main-screens.desktop.e2e.ts`: Progress wide, its view nav and period picker in one row over
+  the view (whose own layout `progress.serial.e2e.ts` checks); Coach's suggestions in two columns under a composer centred over the readable
+  column (one column at 1023 px); Security in the readable column beside the rail, its four
+  sections and Sign out read and Tab in order; /design up to `--content-wide` with Color beside
+  Type (one column at 1023 px); a 404 inside the shell, a 404 outside it and /offline centred.
+- `profile-desktop.serial.e2e.ts` (`resetTrainingProfile()` before each test): Profile in two
+  columns; each section's editor beside `SectionList` (the open section `aria-current`), Save as
+  column chrome, the discard prompt from the list, the centred goal sheet, Tab list → editor →
+  Save; the skeleton (`expectNoShift`), a chunk error with Retry, an offline save and the 404; on
+  an iPhone, the 28rem skeleton and the fixed Save bar.
+- `onboarding-desktop.serial.e2e.ts`: every step a card centred in the window, walked welcome →
+  review with the keyboard alone; Back, Skip and Continue in view under the form; no shift between
+  steps (card and action row); the offline and no-goal notices in the card above the actions,
+  taking focus; the review in two columns, its Edit returning to it.
+- `train-desktop.serial.e2e.ts`: Train wide. Header and strip span the content; the day's sessions
+  sit beside the brief and the tools; arrow keys and Tab across the columns; the plan as a
+  centred dialog. Every designed state: a week loading (`expectNoShift`), a failed load and Try
+  again, offline, no program, rest day, not started, beyond the plan, block complete, and both
+  lazy chunks failing with Retry.
+- `train-detail-desktop.serial.e2e.ts`: the session detail (wide: the side column beside the main
+  one, centred edit sheets) and History (split: the list beside the version in the URL), with
+  every designed state.
+- `today-desktop.serial.e2e.ts`: Today in every state (setup, ready, the program's session day,
+  rest day, starts Monday and block complete, a failed read, offline, a panel's chunk failing) and
+  Build my program's pending, generator-failure, profile, library, new-day and offline states;
+  Start week 1 as column chrome; no shift as the plan replaces its skeleton.
 
 ## Training (M3)
 
@@ -945,7 +1041,11 @@ key. No key exists in CI today.
 
 `.github/workflows/ci.yml` runs lint, type-check, the migration drift check, unit + integration
 (postgres:18 service), both builds + budgets, Playwright (Chromium + WebKit) and an asserted
-Lighthouse run on every PR and push to `main`.
+Lighthouse run on every PR and push to `main`. After the mobile run, `pnpm lighthouse --desktop`
+audits the same screens with Lighthouse's desktop preset (desktop throttling, no CPU slowdown) at
+1440 × 900 and 1x (`scripts/lib/lighthouse-config.ts`), writes to `lighthouse-reports/desktop` and
+applies the same `--assert` thresholds, as a step that never fails the job; its table is in the
+step summary (docs/performance.md, "Lighthouse (desktop)").
 
 `.github/workflows/post-deploy-smoke.yml` checks production from outside after every production
 deploy (health with the database up, the sign-in screen, deny by default, security headers, no
@@ -981,6 +1081,10 @@ a preview deployment (Vercel Authentication on):
    signing out a device each ask "Confirm it's you" once; Face ID passes and the action
    completes; cancelling Face ID says nothing was changed. Add passkey after the check opens the
    passkey prompt (if the browser wants a fresh tap for that second prompt, the next tap works).
+7. Desktop, in Chrome on the owner's Mac against the same deployment: every tab beside the rail at
+   full window width and at about 1024 px; hover and Tab focus visible on the rail, rows and
+   buttons; the new-goal sheet (Profile → Goals) opens as a centred dialog and Escape closes it;
+   nothing scrolls sideways.
 
 Record device, iOS version, date and screenshots in the PR.
 

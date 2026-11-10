@@ -1,8 +1,8 @@
 <!--
   @component
-  Starting a workout from /workout?start=<lineage> or ?new=run|other (start.ts), loaded only then,
-  through the Shell's chunk loader (a chunk gone after a deploy shows 'App updated'). In the
-  Shell's body, at the readable width, centred from 1024 px.
+  Starting a workout from /workout?start=<lineage> or ?new=strength|run|other (start.ts), loaded
+  only then, through the Shell's chunk loader (a chunk gone after a deploy shows 'App updated').
+  In the Shell's body, at the readable width, centred from 1024 px.
   - Getting your session ready: a skeleton with aria-busy while the kit is fetched (at most 4 s)
     and the workout is written; then the kind's route replaces this URL.
   - A workout already in progress: the conflict sheet (StartConflictSheet.svelte, lazy) offers
@@ -90,6 +90,12 @@
 </script>
 
 {#snippet adhoc()}
+	<Button
+		variant="secondary"
+		icon="plate"
+		href={`${workoutHome}?new=strength`}
+		data-testid="start-adhoc-strength">Log strength</Button
+	>
 	<Button
 		variant="secondary"
 		icon="pulse"
