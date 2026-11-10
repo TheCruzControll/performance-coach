@@ -399,6 +399,10 @@ later-pass screen).
 - **Progress** (`/progress`): wide (`data-layout="wide"` on its root). From 1024 px the view nav
   and the period picker share one row over the view; the overview's five trend tiles keep one row,
   and its discipline cards and chart frames pair up from a 44 rem column (a container query).
+- **Exercise detail** (`/progress/exercises/[id]`): wide. From a 44 rem column (a container
+  query) the e1RM tile sits beside its context, the e1RM chart beside the rep-max table, and the
+  PRs beside the top sets and RPE; the recent sessions fill rows of cards. From 1024 px the period
+  picker keeps 24 rem.
 - **Coach** (`/coach`): readable, as a conversation should be. From 1024 px the suggestions sit in
   two columns; the composer is screen chrome, centred over the column.
 - **Security** (`/profile/security`): readable, a settings screen, and left as it is (its route

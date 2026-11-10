@@ -137,10 +137,15 @@ jobs:
   # main split in two after runs 42415186404 to 42431687521 peaked at 14.9 (Chromium) and 11.5
   # (WebKit) minutes: each shard is estimated at half plus a minute of server setup (8.4, 6.8).
   # serial·webkit split the same way after peaking at 15.2 (timed out in 42431006875): 8.6 a shard.
+  # Its two shards then grew alike to 13.7-14.6 Playwright minutes each (runs 42695476716 to
+  # 42698046025), so it split in four: about 7 a shard. Three would leave it the longest leg.
   # serial·chromium peaked at 9.3 in 42414341167 to 42431687521 (14 unsharded), then timed out
-  # at 14 in 42469172500 with tests still passing, so it split in two the same way.
+  # at 14 in 42469172500 with tests still passing, so it split in two the same way. Its shards
+  # took 7.3-8.8 Playwright minutes in 42695476716 to 42698046025, no more than main's: two stay.
   # serial shards hold whole files: its projects are not fullyParallel, so --shard splits by file.
   # Shard timeouts stay at the unsharded leg's value until three runs per shard are measured.
+  # main legs run 2 Playwright workers (playwright.config.ts), the other legs 1; main's `minutes`
+  # stay at their 1-worker values until three 2-worker runs are measured.
   e2e-legs:
     name: E2E ${{ matrix.group }} · ${{ matrix.engine }} · ${{ matrix.shard }}/${{ matrix.of }}
     # Pinned to the newest Ubuntu release Playwright builds WebKit for (its browser builds are
@@ -159,8 +164,10 @@ jobs:
           - { group: main, engine: webkit, shard: 2, of: 2, minutes: 13 }
           - { group: serial, engine: chromium, shard: 1, of: 2, minutes: 14 }
           - { group: serial, engine: chromium, shard: 2, of: 2, minutes: 14 }
-          - { group: serial, engine: webkit, shard: 1, of: 2, minutes: 15 }
-          - { group: serial, engine: webkit, shard: 2, of: 2, minutes: 15 }
+          - { group: serial, engine: webkit, shard: 1, of: 4, minutes: 15 }
+          - { group: serial, engine: webkit, shard: 2, of: 4, minutes: 15 }
+          - { group: serial, engine: webkit, shard: 3, of: 4, minutes: 15 }
+          - { group: serial, engine: webkit, shard: 4, of: 4, minutes: 15 }
           - { group: alone, engine: chromium, shard: 1, of: 1, minutes: 5 }
     services:
       postgres:
