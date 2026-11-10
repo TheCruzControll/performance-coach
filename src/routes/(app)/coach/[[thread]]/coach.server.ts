@@ -5,7 +5,8 @@
  *   conversation, the cursor a page gives: 'Show older' reads it without navigating
  *   (preloadData). A malformed cursor is the first page.
  * - /coach/<id>: that conversation's newest shown messages (getThreadView), each proposal its
- *   runs made as a card after the run's answer (listThreadProposals), as it stands now.
+ *   runs made as a card after the run's answer (listThreadProposals), as it stands now, and
+ *   whether it is archived (read-only until unarchived).
  * - A malformed or unknown id, or someone else's conversation, is the 404 page in the shell. The
  *   route has no param matcher, which would cost every route JavaScript (docs/performance.md).
  * - It fails soft: a read that fails is recorded as a server error (kind 'load') and the screen
@@ -33,6 +34,8 @@ import {
 export interface ThreadView {
 	id: string;
 	title: string;
+	/** Archived: read-only, until Unarchive returns it to Recent. */
+	archived: boolean;
 	messages: ShownMessage[];
 }
 
@@ -83,6 +86,7 @@ export async function loadCoachScreen(
 				thread: {
 					id: view.thread.id,
 					title: view.thread.title,
+					archived: view.thread.archived,
 					messages: shownMessages(view.messages, cards)
 				}
 			};

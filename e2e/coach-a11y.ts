@@ -86,5 +86,27 @@ export const COACH_A11Y: readonly CoachA11yCase[] = [
 			await expect(page.getByTestId('knows-sheet')).toBeVisible();
 			await expect(page.getByTestId('knows-loading')).toHaveCount(0);
 		}
+	},
+	{
+		name: '/coach, Archived conversations open and loaded',
+		open: async (page) => {
+			await gotoHydrated(page, '/coach');
+			await page.getByTestId('archived-link').click();
+			await expect(page.getByTestId('archived-sheet')).toBeVisible();
+			await expect(page.getByTestId('archived-loading')).toHaveCount(0);
+		}
+	},
+	{
+		name: '/coach, a question asked offline: the question and its notice with Retry',
+		open: async (page) => {
+			await gotoHydrated(page, '/coach');
+			await page.context().setOffline(true);
+			const form = page.getByRole('form', { name: 'Message your coach' });
+			await form.getByRole('textbox', { name: 'Message' }).fill('How is my bench going?');
+			await form.getByRole('button', { name: 'Send' }).click();
+			// The turn's offline notice, or the stream client's when it had not loaded yet.
+			const notice = page.getByTestId('turn-notice').or(page.getByTestId('stream-failed'));
+			await expect(notice.getByRole('button', { name: 'Retry' })).toBeVisible();
+		}
 	}
 ];
