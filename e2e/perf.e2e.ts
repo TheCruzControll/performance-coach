@@ -1,8 +1,10 @@
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 import type { SyncResponse } from '../src/lib/domain/workout';
 import { adHoc, finishedWorkout } from '../scripts/lib/workout-seed';
+import { ANALYTICS_TZ, seedAnalytics, type SeededAnalytics } from './analytics-support';
 import { COACH_TZ, postTurn, resetCoach, seedCoach } from './coach-support';
 import { resetPrograms, seedProgram } from './program-support';
+import { seedReview, type ReviewScenario, type SeededReview } from './review-support';
 import { query, SAME_ORIGIN } from './support';
 import type { WorkoutDayKits } from '../tests/fixtures/workout-day';
 import { seedWorkout, workoutDay } from './workout-support';
@@ -24,8 +26,9 @@ import { seedWorkout, workoutDay } from './workout-support';
  *   on scheduler noise. Lower it as screens get cheaper; never raise it without a measured
  *   reason recorded in docs/performance.md.
  *
- * Program screens (PROGRAM_SCREENS) and the coach's (COACH_SCREENS) are also held to MAX_SHIFT: the sum of layout shifts no input
- * explains, on every load, so a streamed or lazy panel never pushes content once it has painted.
+ * Program screens (PROGRAM_SCREENS), the coach's (COACH_SCREENS) and M6's (PROGRESS_SCREENS) are
+ * also held to MAX_SHIFT: the sum of layout shifts no input explains, on every load, so a streamed
+ * or lazy panel never pushes content once it has painted.
  *
  * The workout screens are measured as they are used (M4): the three workout routes with a workout
  * in progress on the device (the shared kit fixture, seeded into each fresh context's IndexedDB
@@ -36,8 +39,15 @@ import { seedWorkout, workoutDay } from './workout-support';
  * (e2e/coach-support.ts) in the zone they were seeded in: a long conversation (long-thread, a full
  * page of the thread view and one more exchange) and the Proposals inbox with two proposals
  * waiting, proposed by the composer's real turns. They are held to MAX_SHIFT too. Seeding a coach
- * fixture blanks the training profile (resetCoach), so nothing is measured after them.
+ * fixture blanks the training profile (resetCoach), so only M6's screens are measured after them.
  * perf-coach.e2e.ts measures the 60-message conversation and an answer streaming.
+ *
+ * M6's screens (PROGRESS_SCREENS) come last, in ANALYTICS_TZ, each held to MAX_SHIFT: every
+ * /progress view and one lift's detail on twelve-weeks (seeded once, the first time one is
+ * measured), a weekly review on week-complete and a cycle review on block-end, each created
+ * through the list's form action as a no-JS Create posts it (e2e/analytics-support.ts,
+ * e2e/review-support.ts). A review opened for the first time is written up, so every load after
+ * the first shows the stored write-up, as the owner's later visits do.
  */
 const TARGET_MS = 200;
 const GUARD_MS = 250;
@@ -70,6 +80,22 @@ const COACH_INBOX = '/coach/proposals (inbox)';
 /** The turns that propose the inbox's two changes on the split-squat-week fixture. */
 const COACH_PROPOSALS = ['I hate Bulgarian split squats, so replace them', 'Plan my next cycle'];
 const COACH_SCREENS = [COACH_THREAD, COACH_INBOX];
+/** One lift's detail on twelve-weeks: the squat, rising every week. */
+const EXERCISE_DETAIL = '/progress/exercises/<squat>';
+/** A weekly review of week-complete's week, and a cycle review of block-end's block. */
+const WEEKLY_REVIEW = '/progress/reviews/<weekly>';
+const CYCLE_REVIEW = '/progress/reviews/<cycle>';
+/** Each M6 screen: its fixture or review scenario, and what it shows once loaded. */
+const M6: Record<string, { seed: ReviewScenario | 'twelve-weeks'; shows: string }> = {
+	'/progress (twelve weeks)': { seed: 'twelve-weeks', shows: 'overview' },
+	'/progress?view=strength': { seed: 'twelve-weeks', shows: 'strength' },
+	'/progress?view=running': { seed: 'twelve-weeks', shows: 'running' },
+	'/progress?view=general': { seed: 'twelve-weeks', shows: 'general' },
+	[EXERCISE_DETAIL]: { seed: 'twelve-weeks', shows: 'exercise-detail' },
+	[WEEKLY_REVIEW]: { seed: 'week-complete', shows: 'weekly-review' },
+	[CYCLE_REVIEW]: { seed: 'block-end', shows: 'cycle-review' }
+};
+const PROGRESS_SCREENS = Object.keys(M6);
 const SCREENS = [
 	'/',
 	'/today',
@@ -89,7 +115,9 @@ const SCREENS = [
 	'/profile/schedule',
 	'/onboarding',
 	// Last: seeding them blanks the training profile.
-	...COACH_SCREENS
+	...COACH_SCREENS,
+	// After the coach's: each seed starts from no program, log or review.
+	...PROGRESS_SCREENS
 ];
 
 interface Seeded {
@@ -142,6 +170,49 @@ async function seedCoachScreen(path: string, request: APIRequestContext): Promis
 	return { url: '/coach/proposals', restore, shows: 'inbox-row' };
 }
 
+/** The fixture M6's screens were last seeded on, so the /progress screens share one seed. */
+let analytics: { seed: string; seeded: SeededAnalytics } | undefined;
+
+/** Create the seeded review through the list's form action, as a no-JS Create posts it: its URL. */
+async function createReview(request: APIRequestContext, seeded: SeededReview): Promise<string> {
+	const { review } = seeded;
+	const { action, form } =
+		review.kind === 'weekly'
+			? { action: 'create', form: { weekStartsOn: review.weekStartsOn } }
+			: {
+					action: 'createCycle',
+					form: { programId: seeded.programId!, blockLineage: review.blockLineageId }
+				};
+	const response = await request.post(`/progress/reviews?/${action}`, {
+		headers: SAME_ORIGIN,
+		form,
+		maxRedirects: 0
+	});
+	expect(response.status(), `creating the ${review.kind} review`).toBe(303);
+	return new URL(response.headers().location!, 'https://coach.test').pathname;
+}
+
+/** The URL of the /progress screen `path` on twelve-weeks. */
+function progressUrl(path: string, seeded: SeededAnalytics): string {
+	if (path === EXERCISE_DETAIL) return `/progress/exercises/${seeded.exercises.back_squat}`;
+	return path.replace(' (twelve weeks)', '');
+}
+
+/** M6's screen `path` on its fixture: the URL to load (nothing to restore: afterAll resets). */
+async function seedProgressScreen(path: string, request: APIRequestContext): Promise<Seeded> {
+	const { seed, shows } = M6[path]!;
+	const restore = async () => {};
+	if (seed === 'twelve-weeks') {
+		if (analytics?.seed !== seed) {
+			analytics = { seed, seeded: await seedAnalytics(request, 'twelve-weeks') };
+		}
+		return { url: progressUrl(path, analytics.seeded), restore, shows };
+	}
+	analytics = undefined;
+	const url = await createReview(request, await seedReview(request, seed));
+	return { url, restore, shows };
+}
+
 /**
  * Seed what `path` is measured on through the fixture route: the URL to load, and how to put the
  * owner's onboarding back afterwards, so the screens measured next see it as they would have.
@@ -149,6 +220,7 @@ async function seedCoachScreen(path: string, request: APIRequestContext): Promis
 async function seedFor(path: string, request: APIRequestContext): Promise<Seeded> {
 	const none = { url: path, restore: async () => {} };
 	if (COACH_SCREENS.includes(path)) return seedCoachScreen(path, request);
+	if (PROGRESS_SCREENS.includes(path)) return seedProgressScreen(path, request);
 	const active = ACTIVE_WORKOUTS[path];
 	if (active) {
 		// Ad hoc, so each start syncs (the fixture's planned session is not in this database).
@@ -216,7 +288,9 @@ test.describe('main-thread budget (4× CPU)', () => {
 							? { ...testInfo.project.use, storageState: { cookies: [], origins: [] } }
 							: COACH_SCREENS.includes(path)
 								? { ...testInfo.project.use, timezoneId: COACH_TZ }
-								: testInfo.project.use
+								: PROGRESS_SCREENS.includes(path)
+									? { ...testInfo.project.use, timezoneId: ANALYTICS_TZ }
+									: testInfo.project.use
 					);
 					const page = await context.newPage();
 					await page.addInitScript(() => {
@@ -263,7 +337,7 @@ test.describe('main-thread budget (4× CPU)', () => {
 			expect(median, `${path}: ${samples.map(Math.round).join(', ')} ms`).toBeLessThanOrEqual(
 				GUARD_MS
 			);
-			if (PROGRAM_SCREENS.includes(path) || COACH_SCREENS.includes(path)) {
+			if ([...PROGRAM_SCREENS, ...COACH_SCREENS, ...PROGRESS_SCREENS].includes(path)) {
 				const worst = Math.max(...shifts);
 				testInfo.annotations.push({
 					type: 'layout shift',
