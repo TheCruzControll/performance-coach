@@ -232,7 +232,7 @@ test.describe('stopping', () => {
 		await hurts(page);
 		await area(page, 'Lower back').check();
 		await severity(page, 'Moderate').check();
-		await pain(page).getByTestId('pain-note').getByRole('textbox').fill('Twinge on the way up');
+		await pain(page).getByTestId('pain-note').fill('Twinge on the way up');
 		await pain(page).getByTestId('pain-stop').click();
 		await expect(pain(page)).toBeHidden();
 		await expect(heading(page)).not.toHaveText('Romanian deadlift');
@@ -376,7 +376,7 @@ test.describe('the words and the way out', () => {
 		await expect(pain(page)).toBeVisible();
 		await expect(pain(page).getByTestId('pain-error')).toBeVisible();
 		await expect(area(page, 'Knee')).toBeChecked();
-		const note = pain(page).getByTestId('pain-note').getByRole('textbox');
+		const note = pain(page).getByTestId('pain-note');
 		await expect(note).toHaveValue('x'.repeat(600));
 		await expect(pain(page).getByTestId('pain-stop')).toHaveCount(0);
 		await note.fill('Sharp on the way down');
