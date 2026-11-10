@@ -12,7 +12,7 @@ import { PLATES_KEY } from '../src/lib/client/plates';
 import { DB_NAME, STORES } from '../src/lib/client/workout/names';
 import type { StrengthKit } from '../src/lib/domain/workout';
 import { createMutation } from '../src/lib/domain/workout/mutations';
-import { captureScreen, gotoHydrated } from './support';
+import { captureScreen } from './support';
 import { gotoWorkout, injectMutation, seedWorkout, workoutDay } from './workout-support';
 
 let kit: StrengthKit;
@@ -170,7 +170,10 @@ test.describe('the plate calculator from a set (IndexedDB only)', () => {
 		await expect(platesOf(page, 1)).toBeFocused();
 
 		// Train's calculator uses the same inventory: 100 kg on the 15 kg bar, with one pair of 20s.
-		await gotoHydrated(page, '/train');
+		// Hydrated once the resume bar has looked: never networkidle, which the held sync of this
+		// workout's pending changes (the bar's engine) keeps from happening.
+		await page.goto('/train');
+		await expect(page.locator('[data-testid="resume-slot"][data-looked="/train"]')).toBeAttached();
 		await page.getByTestId('open-plates').click();
 		await expect(bar(page, '15 kg bar')).toHaveAttribute('aria-checked', 'true');
 		await expect(result(page)).toHaveText(/^20 · 15 · 5 · 2\.5\s*kg per side$/);
