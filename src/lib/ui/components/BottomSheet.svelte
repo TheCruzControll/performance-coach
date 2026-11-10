@@ -8,6 +8,7 @@
 -->
 <script lang="ts">
 	import { onDestroy, type Snippet } from 'svelte';
+	import { returnFocus } from '../focus-return.ts';
 	import { lockScroll } from '../scroll-lock.ts';
 	import IconButton from './IconButton.svelte';
 
@@ -113,7 +114,14 @@
 		releaseScroll?.();
 		releaseScroll = null;
 		dragY = 0;
-		if (opener?.isConnected) opener.focus({ preventScroll: true });
+		// Again on the next frames while WebKit refuses it (focus-return.ts), unless this sheet has
+		// opened again or focus is somewhere outside it.
+		if (opener?.isConnected) {
+			returnFocus(opener, () => {
+				const at = document.activeElement;
+				return !dialog?.open && (!at || at === document.body || !!dialog?.contains(at));
+			});
+		}
 	}
 
 	function transitionDone(): Promise<void> {
