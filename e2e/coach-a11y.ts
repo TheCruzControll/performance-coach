@@ -86,5 +86,14 @@ export const COACH_A11Y: readonly CoachA11yCase[] = [
 				page.getByTestId('inbox-empty').or(page.getByTestId('filter-all'))
 			).toBeVisible();
 		}
+	},
+	{
+		name: '/coach, What the coach knows open and loaded',
+		open: async (page) => {
+			await gotoHydrated(page, '/coach');
+			await page.getByRole('button', { name: 'What the coach knows' }).click();
+			await expect(page.getByTestId('knows-sheet')).toBeVisible();
+			await expect(page.getByTestId('knows-loading')).toHaveCount(0);
+		}
 	}
 ];
