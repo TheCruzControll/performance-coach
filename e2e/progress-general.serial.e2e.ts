@@ -243,6 +243,9 @@ test.describe('twelve weeks', () => {
 
 		await page.goBack();
 		await expect(page).toHaveURL(/\/progress\?view=general$/);
+		// Back changes the URL before the 12 weeks load: wait for them to be the period shown.
+		await expect(periodLink(page, 'Last 12 weeks')).toHaveAttribute('aria-current', 'page');
+		await expect(page.getByTestId('period-content')).toHaveAttribute('aria-busy', 'false');
 		await expectAdherence(page, seeded, 12);
 	});
 

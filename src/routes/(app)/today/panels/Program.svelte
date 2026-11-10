@@ -5,12 +5,18 @@
   the next session; before week 1, 'Starts Monday' over week 1; once the first block is over,
   'Nothing planned yet' with its summary, an empty Up next and the way to Train. The plan is
   streamed: its skeleton holds the room until it arrives, and a failed read is a designed error
-  with Retry. Code-split behind PanelLoader.
+  with Retry. Today's sessions each offer Start workout or Done · View (start-link.ts, composed
+  on the server), or Resume for the workout in progress on this device, and the day offers 'Log
+  something else'. Once the plan shows and the browser is idle, Today saves the kits of today's
+  sessions still to do, so they start in a gym with no signal: the one place outside the workout
+  pages that creates the device's database (today-kits.ts). Code-split behind PanelLoader.
 -->
 <script lang="ts">
 	import { invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { navigating } from '$app/state';
+	import { deviceWorkout } from '#lib/client/workout/device-workout.svelte.ts';
+	import { saveTodayKits } from '#lib/client/workout/today-kits.ts';
 	import type { IsoDate } from '#lib/domain/calendar.ts';
 	import Badge from '#lib/ui/components/Badge.svelte';
 	import Button from '#lib/ui/components/Button.svelte';
@@ -21,6 +27,7 @@
 	import Skeleton from '#lib/ui/components/Skeleton.svelte';
 	import Surface from '#lib/ui/components/Surface.svelte';
 	import SessionCard from '#lib/ui/program/SessionCard.svelte';
+	import { resumeLink } from '#lib/ui/program/start-link.ts';
 	import WeekStrip from '#lib/ui/program/WeekStrip.svelte';
 	import type { PageData } from '../$types';
 
@@ -40,6 +47,31 @@
 	const sessionHref = (lineage: string) => resolve('/(app)/train/session/[key]', { key: lineage });
 	const TRAIN_HREF = resolve('/(app)/train');
 
+	/**
+	 * Once the idle pass has run: 'saved' with today's kits on this device (today-kits.ts), 'none'
+	 * with none to save (a rest day: nothing created). What the specs wait for.
+	 */
+	let kits = $state<'saved' | 'none'>();
+
+	/** Once the plan shows and the browser is idle: never on the server, once a plan. */
+	$effect(() => {
+		let live = true;
+		const shown = plan;
+		const save = async () => {
+			const view = await shown;
+			const today = !view.failed && view.week?.days.find((d) => d.date === view.week!.today);
+			const saved = await saveTodayKits(today ? today.cards : [], async (lineages) => {
+				const start = await import('#lib/client/workout/start.ts');
+				return start.saveKits(lineages, { store: await start.openStartStore() });
+			});
+			if (live) kits = saved.length ? 'saved' : 'none';
+		};
+		const go = () => live && void save().catch(() => {});
+		if ('requestIdleCallback' in window) requestIdleCallback(go, { timeout: 2000 });
+		else setTimeout(go, 800);
+		return () => (live = false);
+	});
+
 	let retrying = $state(false);
 	async function retry() {
 		retrying = true;
@@ -47,6 +79,19 @@
 		retrying = false;
 	}
 </script>
+
+{#snippet go(card: PlanCard)}
+	{@const next = resumeLink(card.lineage, card.start, deviceWorkout.active)}
+	{#if next}
+		<Button
+			variant={next.icon === 'check' ? 'secondary' : 'primary'}
+			icon={next.icon}
+			href={next.href}
+			block
+			data-testid={next.id}>{next.label}</Button
+		>
+	{/if}
+{/snippet}
 
 {#snippet cardFor(card: PlanCard, testId: string)}
 	{@const href = sessionHref(card.lineage)}
@@ -59,7 +104,7 @@
 	/>
 {/snippet}
 
-<div class="plan" data-testid="today-plan">
+<div class="plan" data-testid="today-plan" data-kits={kits}>
 	{#await plan}
 		<div class="pending" aria-busy="true">
 			<span class="visually-hidden">Loading today’s plan…</span>
@@ -119,6 +164,7 @@
 				{@const week = view.week}
 				{@const selected = chosen ?? week.selected}
 				{@const day = week.days.find((d) => d.date === selected) ?? week.days[0]!}
+				{@const isToday = day.date === week.today}
 				<WeekStrip
 					days={week.strip}
 					today={week.today}
@@ -127,12 +173,19 @@
 					onselect={(date) => (chosen = date)}
 					data-testid="week-strip"
 				/>
-				<Section title={day.heading} data-testid="today-day">
+				<Section title={day.heading} gap={isToday ? 'md' : 'sm'} data-testid="today-day">
 					{#snippet action()}
-						{#if day.date === week.today}<Badge tone="accent">Today</Badge>{/if}
+						{#if isToday}<Badge tone="accent">Today</Badge>{/if}
 					{/snippet}
 					{#each day.cards as card (card.lineage)}
-						{@render cardFor(card, 'session-card')}
+						{#if isToday}
+							<div class="session" data-testid="today-session">
+								{@render cardFor(card, 'session-card')}
+								{@render go(card)}
+							</div>
+						{:else}
+							{@render cardFor(card, 'session-card')}
+						{/if}
 					{:else}
 						<Surface padding="none" radius="lg">
 							<EmptyState
@@ -145,6 +198,16 @@
 							/>
 						</Surface>
 					{/each}
+					{#if isToday}
+						<Button
+							variant="ghost"
+							icon="plus"
+							href={resolve('/workout')}
+							data-testid="log-something-else"
+						>
+							Log something else
+						</Button>
+					{/if}
 				</Section>
 			{/if}
 
@@ -198,6 +261,11 @@
 	.note-copy {
 		font-size: var(--text-sm);
 		color: var(--color-text-secondary);
+	}
+
+	.session {
+		display: grid;
+		gap: var(--space-2);
 	}
 
 	.up-next {

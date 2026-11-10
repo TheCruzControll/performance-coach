@@ -28,9 +28,16 @@ import type {
 } from '#lib/server/services/analytics/general.ts';
 import { GENERAL_METRICS } from '#lib/server/services/analytics/general.ts';
 import type { TrainingDeps } from '#lib/server/services/training/shared.ts';
-import { generalData, NO_PLAN_HINT, ZONE_WORDS } from './general-data.ts';
+import { generalData, NO_PLAN_HINT, ZONE_WORDS, type GeneralData } from './general-data.ts';
+import GeneralTrends from './GeneralTrends.svelte';
 import GeneralView from './GeneralView.svelte';
 import { loadProgress, type ProgressRequest } from './load.ts';
+
+/** The view as the server sends it: its trends rendered apart and served in place (+page.ts). */
+const sent = (general: GeneralData) =>
+	render(GeneralView, {
+		props: { general, served: render(GeneralTrends, { props: { general } }).body }
+	}).body;
 
 /** A Wednesday: Monday to Wednesday are the week in progress. */
 const TODAY = '2026-11-04';
@@ -305,21 +312,17 @@ describe('generalData', () => {
 		expect(acwr!.chart.data.target).toEqual([0.8, 1.3]);
 		expect(acwr!.chart.data.series[0]!.points.at(-1)).toEqual({ value: 1.12, text: '1.12' });
 		expect(acwr!.chart.summary).toBe('1.12 today, against a typical 0.8–1.3.');
-		const html = render(GeneralView, { props: { general: generalData(dashboard()) } }).body;
+		const html = sent(generalData(dashboard()));
 		expect(html).toContain(ACWR_CAVEAT.text);
 	});
 
 	it('follows the owner’s placement: behind More, or dropped', () => {
 		const more = generalData(dashboard({}, { placement: 'more' }));
 		expect(more.acwr!.more).toBe(true);
-		expect(render(GeneralView, { props: { general: more } }).body).toMatch(
-			/<details><summary[^>]*>Acute:chronic load<\/summary>/
-		);
+		expect(sent(more)).toMatch(/<details><summary[^>]*>Acute:chronic load<\/summary>/);
 		const dropped = generalData(dashboard({}, { placement: 'dropped' }));
 		expect(dropped.acwr).toBeNull();
-		expect(render(GeneralView, { props: { general: dropped } }).body).not.toContain(
-			'data-testid="acwr-caveat"'
-		);
+		expect(sent(dropped)).not.toContain('data-testid="acwr-caveat"');
 	});
 
 	it('says when there are too few days for a ratio', () => {
@@ -357,7 +360,7 @@ describe('generalData', () => {
 			{ id: 'n-2', on: 'Mon 26 Oct', text: MARKUP },
 			{ id: 'n-1', on: 'Mon 19 Oct', text: 'Slept well' }
 		]);
-		const html = render(GeneralView, { props: { general: g } }).body;
+		const html = sent(g);
 		expect(html).not.toContain('<b>Legs</b>');
 		expect(html).not.toContain('<img');
 		expect(html).toContain('&lt;b>Legs&lt;/b> heavy &lt;img src=x onerror=alert(1)>');
@@ -395,7 +398,7 @@ describe('generalData', () => {
 		const g = generalData(dashboard({ figures: zero(0), sessions: now(0), adherence: unplanned }));
 		expect(g.stage).toBe('new');
 		expect(g.noPlan).toBe(NO_PLAN_HINT);
-		const html = render(GeneralView, { props: { general: g } }).body;
+		const html = sent(g);
 		expect(html).toContain('Your training trends start with your first session');
 		expect(html).toContain(NO_PLAN_HINT);
 		expect(html).not.toContain('data-testid="chart-plot"');

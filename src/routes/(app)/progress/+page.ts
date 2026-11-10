@@ -1,11 +1,14 @@
 import { browser } from '$app/env';
 import { resolve } from '$app/paths';
-import type { Component } from 'svelte';
 import type { PageLoad } from './$types';
 import type { ProgressView } from './params';
 import {
+	preloadGeneralTrends,
+	preloadRunningTrends,
 	preloadStrengthTrends,
 	preloadTrends,
+	servedGeneralTrends,
+	servedRunningTrends,
 	servedStrengthTrends,
 	servedTrends,
 	SERVED_IN_PLACE
@@ -23,27 +26,24 @@ const VIEWS = {
 	general: () => import('./GeneralView.svelte')
 } as const satisfies Record<ProgressView, () => Promise<unknown>>;
 
-/**
- * Each loaded view's data with its component. The overview and Strength take their props by name,
- * with the markup their trends were served as; every other view takes the whole of its data and
- * reads its own id from it (running, general), so the page renders them in one branch.
- */
-type Named = 'overview' | 'strength';
-type WithView<D, All = D> = D extends { failed: false; view: infer V extends Named }
+/** The views whose trends a client load waits for, as for the view's own code (trends.ts). */
+const AWAITED_TRENDS = {
+	strength: preloadStrengthTrends,
+	running: preloadRunningTrends,
+	general: preloadGeneralTrends
+} as const satisfies Record<Exclude<ProgressView, 'overview'>, () => Promise<void>>;
+
+/** Each loaded view's data with its own component, so the page passes it the props it takes. */
+type WithView<D> = D extends { failed: false; view: infer V extends ProgressView }
 	? D & { View: Awaited<ReturnType<(typeof VIEWS)[V]>>['default']; served: string | undefined }
-	: D extends { failed: false }
-		? D & {
-				View: Component<Exclude<Extract<All, { failed: false }>, { view: Named }>>;
-				served: undefined;
-			}
-		: D & { View: null; served: undefined };
+	: D & { View: null; served: undefined };
 
 /**
  * Whether the next load hydrates the server's HTML: only the first one in a document opened on
- * Progress, which keeps the server's markup of the view's trends (Overview's or Strength's) as
- * sent until their code arrives, so hydration never waits for it (trends.ts). Any later load (a
- * period link, a preload on hover, Retry) shows Overview's skeleton until its trends' code
- * arrives, and waits for Strength's.
+ * Progress, which keeps the server's markup of the view's trends as sent until their code
+ * arrives, so hydration never waits for it (trends.ts). Any later load (a period link, a preload
+ * on hover, Retry) shows Overview's skeleton until its trends' code arrives, and waits for every
+ * other view's.
  */
 let hydrating = browser && location.pathname === resolve('/(app)/progress');
 
@@ -51,14 +51,13 @@ export const load: PageLoad = async ({ data }) => {
 	const kept = hydrating;
 	hydrating = false;
 	if (data.failed) return { ...data, View: null, served: undefined } as WithView<typeof data>;
-	// Strength's trends start with the view's own import: any load but the hydrating one waits
-	// for both, as it does for the view, so the view arrives whole (trends.ts).
-	const strength = browser && data.view === 'strength' ? preloadStrengthTrends() : undefined;
+	// Strength's, Running's and General's trends start with the view's own import: any load but
+	// the hydrating one waits for both, as it does for the view, so the view arrives whole
+	// (trends.ts).
+	const trends = browser && data.view !== 'overview' ? AWAITED_TRENDS[data.view]() : undefined;
 	const View = (await VIEWS[data.view]()).default;
-	if (data.view !== 'overview' && data.view !== 'strength')
-		return { ...data, View, served: undefined } as WithView<typeof data>;
 	if (browser) {
-		if (strength && !kept) await strength;
+		if (trends && !kept) await trends;
 		// Started, never awaited: a failed import shows Retry in place of Overview's trends.
 		if (data.view === 'overview') void preloadTrends();
 		return { ...data, View, served: kept ? SERVED_IN_PLACE : undefined } as WithView<typeof data>;
@@ -66,6 +65,10 @@ export const load: PageLoad = async ({ data }) => {
 	const served =
 		data.view === 'strength'
 			? await servedStrengthTrends({ strength: data.strength })
-			: await servedTrends({ overview: data.overview });
+			: data.view === 'running'
+				? await servedRunningTrends({ running: data.running })
+				: data.view === 'general'
+					? await servedGeneralTrends({ general: data.general })
+					: await servedTrends({ overview: data.overview });
 	return { ...data, View, served } as WithView<typeof data>;
 };
