@@ -77,5 +77,14 @@ export const COACH_A11Y: readonly CoachA11yCase[] = [
 				'Exercise history needs a connection'
 			);
 		}
+	},
+	{
+		name: '/coach/proposals, the Proposals inbox: empty, or the list',
+		open: async (page) => {
+			await gotoHydrated(page, '/coach/proposals');
+			await expect(
+				page.getByTestId('inbox-empty').or(page.getByTestId('filter-all'))
+			).toBeVisible();
+		}
 	}
 ];
