@@ -26,7 +26,7 @@ import type {
 	CompletedBlock,
 	RunStatus
 } from '#lib/domain/coach/index.ts';
-import { cancelRun, settleRun, streamTurn, type TurnRequest } from './stream.ts';
+import { cancelRun, settleRun, streamTurn, type TurnRef, type TurnRequest } from './stream.ts';
 
 /** A proposal the turn's tools made: its card shows once the stored proposal is read. */
 export interface TurnProposal {
@@ -280,11 +280,12 @@ export class CoachTurns {
 
 	/**
 	 * Ask `text` in the conversation on screen, or start one on /coach (from entry `from`, when
-	 * an entry point opened it).
+	 * an entry point opened it). With `ref`, the turn is about it wherever it is asked: 'Ask for
+	 * changes' sends the proposal it revises.
 	 */
-	send(text: string, from?: string | null): Promise<void> {
+	send(text: string, from?: string | null, ref: TurnRef | null = null): Promise<void> {
 		const threadId = page.params.thread ?? null;
-		const entry = threadId === null && from ? { from, ref: null } : null;
+		const entry = from && (ref || threadId === null) ? { from, ref } : null;
 		return this.#start(
 			new CoachTurn({ threadId, clientMessageId: crypto.randomUUID(), text, entry }, this.#options)
 		);

@@ -3,7 +3,8 @@
   the week of Monday 2 November 2026: every block kind with dated sources, a metric's method, a
   block the policy could not check, a long answer behind 'Show all', untrusted text that must stay
   literal, activity chips in their three states, and an answer streaming block by block into the
-  live region; a proposal card in each of its states, whose Accept applies it here. Then what
+  live region; a proposal card in each of its states, whose Accept applies it here, and each way
+  a decision can go: rejected, revised, 'Couldn’t save' with Retry, and offline. Then what
   every coach screen reuses around an answer: the composer (ready, running
   with Stop, near its limit and disabled), 'Thinking…', loading rows, every notice with its Retry,
   the empty state and the practice coach's badge.
@@ -204,6 +205,15 @@
 			impactLines: [],
 			warnings: []
 		},
+		{ ...PROPOSED, id: 'p-rejected', status: 'rejected', impactLines: [], warnings: [] },
+		{
+			...PROPOSED,
+			id: 'p-revised',
+			status: 'superseded',
+			supersededReason: 'revised',
+			impactLines: [],
+			warnings: []
+		},
 		{
 			...PROPOSED,
 			id: 'p-superseded',
@@ -221,6 +231,15 @@
 		setTimeout(() => {
 			accepting = false;
 			card = { ...card, status: 'applied', appliedVersion: 4 };
+		}, 600);
+	}
+	let rejecting = $state(false);
+	/** Reject here (with no reason): busy for a moment, then declined. */
+	function rejectCard() {
+		rejecting = true;
+		setTimeout(() => {
+			rejecting = false;
+			card = { ...card, status: 'rejected' };
 		}, 600);
 	}
 
@@ -287,10 +306,34 @@
 	</Section>
 
 	<Section title="Proposal cards" gap="md">
-		<ProposalCard {card} {accepting} onaccept={acceptCard} data-testid="proposal-live" />
+		<ProposalCard
+			{card}
+			{accepting}
+			{rejecting}
+			onaccept={acceptCard}
+			onreject={rejectCard}
+			data-testid="proposal-live"
+		/>
 		{#each CARDS as each (each.id)}
-			<ProposalCard card={each} data-testid="proposal-{each.status}" />
+			<ProposalCard card={each} data-testid={each.id.replace('p-', 'proposal-')} />
 		{/each}
+		<ProposalCard
+			card={{ ...PROPOSED, id: 'p-failed' }}
+			onaccept={() => {}}
+			onreject={() => {}}
+			onrevise={() => {}}
+			failed
+			onretry={() => {}}
+			data-testid="proposal-failed-save"
+		/>
+		<ProposalCard
+			card={{ ...PROPOSED, id: 'p-offline' }}
+			onaccept={() => {}}
+			onreject={() => {}}
+			onrevise={() => {}}
+			offline
+			data-testid="proposal-offline-card"
+		/>
 	</Section>
 
 	<Section title="Composer" gap="md">
