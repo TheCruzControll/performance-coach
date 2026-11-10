@@ -2,12 +2,14 @@
   @component
   An exercise's history (the brief's exercise history view), in a BottomSheet (a centred dialog
   from 1024 px), code-split and loaded when an exercise name is tapped: in a History workout's
-  detail, and on the workout screen.
+  detail, and on the workout screen; and by exercise id alone (no name, no session on the device)
+  from an exercise source in a coach answer.
   - Its best e1RM, labelled estimated, with the set it comes from; its rep PRs; then its last
     performances: each session's sets in the order they were done, newest session first, a page
     at a time (Show older).
   - Offline it asks nothing: it shows the session this device already has (`fallback`: the kit's
-    previous session, or the one attached to the workout) and says so, or that it has none.
+    previous session, or the one attached to the workout) and says so, or that it has none. By
+    exercise id alone it says the history needs a connection, with Retry.
   - A request that fails, or gets no answer within HISTORY_TIMEOUT_MS, shows its error with Retry.
   Each new `request` opens it afresh; a null one closes it (History's Back). `onclose` is the
   owner closing it.
@@ -28,7 +30,14 @@
 	import Skeleton from '#lib/ui/components/Skeleton.svelte';
 	import { shortDate } from '#lib/ui/program/words.ts';
 	import { untrack } from 'svelte';
-	import { bestWords, dayOf, historySetWords, repMaxWords } from './history-words.ts';
+	import {
+		bestWords,
+		dayOf,
+		historySetWords,
+		offlineWords,
+		repMaxWords,
+		sheetTitle
+	} from './history-words.ts';
 
 	interface Props {
 		/** A new object per tap opens it afresh; null closes it. */
@@ -55,6 +64,8 @@
 			return;
 		}
 		shown = request;
+		// The last exercise's history goes: its name would title this one's sheet while it loads.
+		history = null;
 		open = true;
 		untrack(() => void load());
 	});
@@ -87,11 +98,12 @@
 	const sessions = $derived(sessionsOf(sets));
 	const best = $derived(history?.records.bestE1rm && bestWords(history.records.bestE1rm));
 	const fallback = $derived(shown?.fallback ?? null);
+	const offline = $derived(offlineWords(shown));
 </script>
 
 <BottomSheet
 	bind:open
-	title={shown?.name ?? 'Exercise'}
+	title={sheetTitle(shown, history)}
 	description="Last performances"
 	{onclose}
 	data-testid="exercise-history-sheet"
@@ -146,8 +158,8 @@
 				compact
 				icon="wifi-off"
 				tone="neutral"
-				title="You’re offline"
-				description="This device holds no earlier sets of this exercise. Its history loads when you’re back online."
+				title={offline.title}
+				description={offline.description}
 				data-testid="exercise-history-offline"
 			>
 				{#snippet actions()}
