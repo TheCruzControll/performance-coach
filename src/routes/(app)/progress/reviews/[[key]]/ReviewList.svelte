@@ -13,7 +13,7 @@
 <script lang="ts">
 	import { applyAction, enhance, type SubmitFunction } from '$app/forms';
 	import { resolve } from '$app/paths';
-	import { connectivity } from '#lib/client/connectivity.svelte.ts';
+	import { onMount } from 'svelte';
 	import Button from '#lib/ui/components/Button.svelte';
 	import Icon from '#lib/ui/components/Icon.svelte';
 	import Notice from '#lib/ui/components/Notice.svelte';
@@ -39,6 +39,13 @@
 
 	let { rows, selected, refused = null }: Props = $props();
 
+	/**
+	 * navigator.onLine and its events, read here rather than through client/connectivity: sharing
+	 * that module with the shell would split it into a chunk of its own on every route.
+	 */
+	let online = $state(true);
+	onMount(() => (online = navigator.onLine));
+
 	let states = $state<Record<string, CreateState>>({});
 	const stateOf = (week: string): CreateState | undefined =>
 		states[week] ?? (refused?.weekStartsOn === week ? { kind: 'refused', ...refused } : undefined);
@@ -46,7 +53,7 @@
 	const create =
 		(week: string): SubmitFunction =>
 		({ cancel }) => {
-			if (states[week]?.kind === 'pending' || !connectivity.online) return cancel();
+			if (states[week]?.kind === 'pending' || !online) return cancel();
 			states[week] = { kind: 'pending' };
 			return async ({ result }) => {
 				if (result.type === 'failure' && result.data?.reason === 'not_reviewable')
@@ -60,6 +67,8 @@
 
 	const TONE = { due: 'due', in_progress: 'quiet', not_reviewed: 'quiet' } as const;
 </script>
+
+<svelte:window ononline={() => (online = true)} onoffline={() => (online = false)} />
 
 <ol class="rows" aria-label="Weekly reviews">
 	{#each rows as row (row.key)}
@@ -100,11 +109,11 @@
 						variant={row.state === 'due' ? 'primary' : 'secondary'}
 						icon={state?.kind === 'failed' ? 'refresh' : undefined}
 						loading={state?.kind === 'pending'}
-						disabled={!connectivity.online}
+						disabled={!online}
 						aria-label="{state?.kind === 'failed' ? 'Retry' : 'Create review'} · {row.title}"
 						>{state?.kind === 'failed' ? 'Retry' : 'Create review'}</Button
 					>
-					{#if !connectivity.online}
+					{#if !online}
 						<p class="note" data-testid="create-offline">
 							<Icon name="wifi-off" size={16} />You’re offline
 						</p>

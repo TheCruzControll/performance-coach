@@ -109,7 +109,6 @@
 
 	<ListRow
 		title="Reviews"
-		subtitle="Each week planned against done, and what is really changing"
 		icon="sparkle"
 		href={resolve('/(app)/progress/reviews/[[key]]', {})}
 		data-testid="reviews-row"
