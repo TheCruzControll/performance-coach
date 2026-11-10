@@ -204,9 +204,9 @@ describe('CI artifacts', () => {
 
 const legsJob = () => under(under(ci, 'jobs'), 'e2e-legs');
 
-/** The e2e matrix's entries: each `- { key: value, … }` line under `include`. */
-function entries(): Record<string, string>[] {
-	const include = under(under(under(legsJob(), 'strategy'), 'matrix'), 'include');
+/** A matrix's entries (the e2e legs' by default): each `- { key: value, … }` line under `include`. */
+function entries(job = legsJob()): Record<string, string>[] {
+	const include = under(under(under(job, 'strategy'), 'matrix'), 'include');
 	return include.map((line) => {
 		const flow = /^- \{(.*)\}$/.exec(line.text)?.[1];
 		if (flow === undefined) throw new Error(`not a one-line entry: ${line.text}`);
@@ -264,7 +264,14 @@ describe('CI e2e legs', () => {
 		const env = under(step, 'env');
 		expect(value(env, 'E2E_ENGINE')).toBe('${{ matrix.engine }}');
 		expect(value(env, 'E2E_GROUP')).toBe('${{ matrix.group }}');
-		expect(value(step, 'run')).toBe('pnpm test:e2e --shard ${{ matrix.shard }}/${{ matrix.of }}');
+		expect(value(env, 'E2E_SHARD')).toBe('${{ matrix.shard }}/${{ matrix.of }}');
+		// the shard's spec files from scripts/e2e-shards.ts, read before Playwright starts so a
+		// planner failure fails the step (bash -e) instead of running the whole leg
+		expect(value(step, 'run')).toBe(
+			'shard_args=$(node scripts/e2e-shards.ts "$RUNNER_TEMP/e2e-shard-tests.txt")\n' +
+				'pnpm test:e2e $shard_args'
+		);
+		expect(value(step, 'run')).not.toMatch(/--shard/);
 		const timing = legStep('Where the minutes went');
 		expect(value(timing, 'if')).toBe('${{ !cancelled() }}');
 		const timingEnv = under(timing, 'env');
@@ -400,20 +407,132 @@ describe('CI client-secret canary', () => {
 	});
 });
 
+const shardsJob = () => under(under(ci, 'jobs'), 'lighthouse-shards');
+
+/** A Lighthouse shard step's fields, found by its name. */
+function shardStep(name: string): Line[] {
+	const step = under(shardsJob(), 'steps').find((s) => value([s, ...s.children], 'name') === name);
+	if (!step) throw new Error(`no step "${name}"`);
+	return [step, ...step.children];
+}
+
+const MOBILE = 'Lighthouse (median of 5 runs, asserted)';
+
+/** The commands a job's steps run that start with `pnpm lighthouse`. */
+const lighthouseCommands = (id: string) =>
+	under(under(under(ci, 'jobs'), id), 'steps')
+		.map((step) => value([step, ...step.children], 'run'))
+		.filter((run): run is string => run?.startsWith('pnpm lighthouse') ?? false);
+
+const MOBILE_CHECK = 'Lighthouse (mobile)';
+
 describe('CI Lighthouse', () => {
-	it('asserts the median of 5 runs, which scripts/lighthouse.ts may decide in 3', () => {
-		const steps = under(under(under(ci, 'jobs'), 'lighthouse'), 'steps');
-		const commands = steps
-			.map((step) => value([step, ...step.children], 'run'))
-			.filter((run): run is string => run?.startsWith('pnpm lighthouse') ?? false);
+	it('runs contiguous, well-formed shards to the end', () => {
+		expect(value(under(shardsJob(), 'strategy'), 'fail-fast')).toBe('false');
+		const shards = entries(shardsJob());
+		for (const entry of shards) {
+			expect(Object.keys(entry).sort(), JSON.stringify(entry)).toEqual(['of', 'shard']);
+			expect(entry.of, JSON.stringify(entry)).toBe(String(shards.length));
+		}
+		expect(shards.map((s) => Number(s.shard)).sort((a, b) => a - b)).toEqual(
+			Array.from({ length: shards.length }, (_, i) => i + 1)
+		);
+		expect(shards.length, 'parallel shards').toBeGreaterThan(1);
+	});
+
+	it('audits each shard’s share of every route', () => {
+		expect(value(shardStep(MOBILE), 'run')).toMatch(
+			/^pnpm lighthouse .* --shard \$\{\{ matrix\.shard \}\}\/\$\{\{ matrix\.of \}\}$/
+		);
+	});
+
+	it('bounds each shard by a measured step timeout, inside the job with room for the installs', () => {
+		const step = Number(value(shardStep(MOBILE), 'timeout-minutes'));
+		expect(step).toBeGreaterThan(0);
+		expect(step).toBeLessThanOrEqual(Math.ceil(1.5 * CEILING_MINUTES));
+		const installs = ['Install Chromium system dependencies', 'Install Chromium'].map((name) =>
+			Number(value(shardStep(name), 'timeout-minutes'))
+		);
+		expect(installs).toEqual([12, 8]);
+		const job = Number(value(shardsJob(), 'timeout-minutes'));
+		expect(job).toBeGreaterThanOrEqual(step + 12 + 8);
+	});
+
+	it('uploads each shard’s reports under a name of its own', () => {
+		const template = value(under(shardStep('Upload Lighthouse reports'), 'with'), 'name')!;
+		const names = entries(shardsJob()).map((entry) => fill(template, entry));
+		expect(new Set(names).size, names.join(', ')).toBe(names.length);
+		expect(fill(template, { shard: '2', of: '2' })).toBe('lighthouse-42-shard-2');
+	});
+
+	it('reports through one check, under its old name, that passes only when every shard did', () => {
+		const checks = under(ci, 'jobs').filter((job) => value(job.children, 'name') === MOBILE_CHECK);
+		expect(checks.map((job) => job.text)).toEqual(['lighthouse:']);
+		const aggregate = checks[0]!.children;
+		expect(value(aggregate, 'needs')).toBe('[lighthouse-shards]');
+		expect(value(aggregate, 'if')).toBe('${{ always() }}');
+		const step = under(aggregate, 'steps')[0]!;
+		const fields = [step, ...step.children];
+		expect(value(under(fields, 'env'), 'SHARDS')).toBe('${{ needs.lighthouse-shards.result }}');
+		expect(value(fields, 'run')).toMatch(/^if \[ "\$SHARDS" != success \]; then\n.*\n\s*exit 1\n/);
+	});
+
+	it('asserts the median of an odd run count in every audit, mobile and desktop', () => {
+		const commands = [
+			...lighthouseCommands('lighthouse-shards'),
+			...lighthouseCommands('lighthouse-desktop')
+		];
 		// Every asserted audit takes the median of an odd run count, so a strict majority decides it.
 		expect(commands.length).toBeGreaterThan(0);
 		for (const command of commands) {
 			expect(command).toMatch(/ --assert(?: |$)/);
 			expect(Number(/ --runs (\d+)/.exec(command)?.[1]) % 2).toBe(1);
 		}
-		const mobile = commands.filter((command) => !command.includes('--desktop'));
-		expect(mobile).toEqual([expect.stringMatching(/ --runs 5(?: |$)/)]);
+	});
+
+	it('gives the required mobile check exactly its one audit: 5 runs and the documented thresholds', () => {
+		const job = under(under(ci, 'jobs'), 'lighthouse');
+		expect(value(job, 'name')).toBe(MOBILE_CHECK);
+		// The check itself only gathers its shards, each of which runs the one mobile audit on its
+		// share of the routes. scripts/lighthouse.ts may decide a route in 3 of the 5 planned runs.
+		expect(lighthouseCommands('lighthouse')).toEqual([]);
+		expect(lighthouseCommands('lighthouse-shards')).toEqual([
+			'pnpm lighthouse --runs 5 --assert --min-perf 0.9 --max-tbt 300 --shard ${{ matrix.shard }}/${{ matrix.of }}'
+		]);
+	});
+
+	it('measures desktop in a job of its own, on every event, without gating', () => {
+		const jobs = under(ci, 'jobs');
+		const job = under(jobs, 'lighthouse-desktop');
+		expect(lighthouseCommands('lighthouse-desktop')).toEqual([
+			'pnpm lighthouse --desktop --seed --runs 3 --assert'
+		]);
+		const step = stepsOf(job).find((fields) =>
+			value(fields, 'run')?.startsWith('pnpm lighthouse')
+		)!;
+		expect(value(step, 'continue-on-error')).toBe('true');
+		expect(value(step, 'timeout-minutes')).toBe('8');
+		// Not the required check, and nothing waits on it: a desktop miss never blocks a merge.
+		expect(value(job, 'name')).toBe('Lighthouse desktop (measured, not gating)');
+		expect(value(job, 'name')).not.toBe(MOBILE_CHECK);
+		expect(
+			jobs.filter((j) => value(j.children, 'name') === MOBILE_CHECK).map((j) => j.text)
+		).toEqual(['lighthouse:']);
+		expect(jobs.flatMap((j) => value(j.children, 'needs') ?? '').join(' ')).not.toMatch(
+			/lighthouse-desktop/
+		);
+		expect(value(job, 'if')).toBeUndefined();
+		// The same production Node build, served where the Lighthouse script looks for it.
+		const build = stepsOf(job).find((fields) => value(fields, 'run') === 'pnpm build:node')!;
+		expect(value(under(build, 'env'), 'ORIGIN')).toBe('http://localhost:4174');
+		// Its reports under a name of its own, beside the mobile job's.
+		const upload = stepsOf(job).find((fields) =>
+			value(fields, 'uses')?.startsWith('actions/upload-artifact@')
+		)!;
+		const inputs = under(upload, 'with');
+		expect(value(inputs, 'name')).toBe('lighthouse-desktop-${{ github.run_id }}');
+		expect(value(inputs, 'path')).toBe('lighthouse-reports/desktop/');
+		expect(value(upload, 'if')).toBe('${{ !cancelled() }}');
 	});
 
 	it('skips the full-page screenshot, which only the HTML report thumbnails use', () => {
@@ -440,7 +559,12 @@ const START =
 describe('CI Postgres', () => {
 	it('is started by every job that runs db:setup, in the background, right after checkout', () => {
 		const jobs = databaseJobs();
-		expect(jobs.map((job) => job.id).sort()).toEqual(['e2e-legs', 'integration', 'lighthouse']);
+		expect(jobs.map((job) => job.id).sort()).toEqual([
+			'e2e-legs',
+			'integration',
+			'lighthouse-desktop',
+			'lighthouse-shards'
+		]);
 		for (const job of jobs) {
 			const checkout = job.steps.findIndex((f) =>
 				value(f, 'uses')?.startsWith('actions/checkout@')

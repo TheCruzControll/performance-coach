@@ -9,7 +9,8 @@
  *   counted from 0 as zod paths are, and nothing is written.
  * - Each affected week is copied once, however many ops change it; every other week is shared.
  * - One decision per op, in order, decided by the coach, each with the proposal's rationale as
- *   its 'why' and the op's evidence beside the batch's.
+ *   its 'why' and the op's evidence beside the batch's (a review's rules or the owner keep each
+ *   edit's own why), then the batch's one extra decision if it has one.
  * - A never-again swap records its dislike (source 'coach') in the revising transaction, under
  *   the preferences lock.
  * - A base that is no longer the current version is a ProgramConflictError.
@@ -28,6 +29,7 @@ import {
 	type ProgramOpKind
 } from '../../../domain/coach/proposals';
 import { decisionPlanSchema } from '../../../domain/training/schemas';
+import type { Decider } from '../../../domain/training/vocabulary';
 import {
 	parseWith,
 	TrainingInputError,
@@ -82,6 +84,13 @@ export interface ProgramEditBatch {
 	rationale: string;
 	/** Added to every decision's evidence, such as the proposal's id. */
 	evidence?: Record<string, number | string | boolean>;
+	/**
+	 * Who decided: the coach (the default), whose decisions all take `rationale` as their why; or
+	 * a review's rules or the owner, whose decisions keep each edit's own why, with its op's reason.
+	 */
+	decidedBy?: Decider;
+	/** One more decision after the ops' own, such as a review's review_applied. */
+	decision?: RevisionDecision;
 }
 
 const batchSchema = z.object({
@@ -157,7 +166,8 @@ export async function applyProgramEdits(
 	deps: TrainingDeps = {}
 ): Promise<RevisedVersion> {
 	const { title, rationale, ops } = parseWith(batchSchema, batch);
-	const coach: TrainingDeps = { ...deps, source: 'coach' };
+	const decidedBy = batch.decidedBy ?? 'coach';
+	const coach: TrainingDeps = { ...deps, source: decidedBy };
 	const at = { version: batch.baseVersion, today: batch.today };
 
 	const edits: PlannedEdit[] = [];
@@ -179,12 +189,23 @@ export async function applyProgramEdits(
 		edits.push(edit);
 	}
 
-	const [first, ...more] = edits.map(({ decision }): RevisionDecision => ({
-		...decision,
-		why: rationale,
-		decidedBy: 'coach',
-		evidence: { ...decision.evidence, ...batch.evidence }
-	}));
+	const [first, ...more] = [
+		...edits.map(({ decision }): RevisionDecision => ({
+			...decision,
+			why: decidedBy === 'coach' ? rationale : decision.why,
+			decidedBy,
+			evidence: { ...decision.evidence, ...batch.evidence }
+		})),
+		...(batch.decision
+			? [
+					{
+						...batch.decision,
+						decidedBy,
+						evidence: { ...batch.decision.evidence, ...batch.evidence }
+					}
+				]
+			: [])
+	];
 	return reviseProgram(
 		ownerId,
 		{
