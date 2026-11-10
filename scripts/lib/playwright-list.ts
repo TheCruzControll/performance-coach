@@ -41,8 +41,12 @@ export function listRuns(
 		);
 		let stdout = '';
 		let stderr = '';
-		child.stdout.on('data', (chunk: Buffer) => (stdout += chunk.toString()));
-		child.stderr.on('data', (chunk: Buffer) => (stderr += chunk.toString()));
+		// Decoded as a stream: a chunk can end inside a multi-byte character (the ’ in a title),
+		// which a per-chunk toString() would turn into replacement characters.
+		child.stdout.setEncoding('utf8');
+		child.stderr.setEncoding('utf8');
+		child.stdout.on('data', (chunk: string) => (stdout += chunk));
+		child.stderr.on('data', (chunk: string) => (stderr += chunk));
 		child.on('error', reject);
 		child.on('close', (status) => {
 			if (status !== 0) {
