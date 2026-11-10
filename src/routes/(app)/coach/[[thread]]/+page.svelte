@@ -85,7 +85,7 @@
 	let draft = $state.raw(data.prefill?.text ?? '');
 	let live = $state.raw<CoachTurns | null>(null);
 	let loading: Promise<CoachTurns> | undefined;
-	// A failed import is forgotten, so the next Send imports again (coach-states adds its Notice).
+	// A failed import is forgotten, so the next Send imports again.
 	const loadLive = () =>
 		(loading ??= (import.meta.env.SSR ? never() : import('#lib/client/coach/turn.svelte.ts')).then(
 			(module) => (live = module.coachTurns),
@@ -94,16 +94,33 @@
 				throw error;
 			}
 		));
-	// An archived conversation is read-only until unarchived (its banner, ArchivedBanner).
-	const canAsk = $derived(data.coach.status === 'ready' && !ready?.thread?.archived);
+	// A misconfigured coach still answers lookups (askable); an archived conversation is
+	// read-only until unarchived (its banner, ArchivedBanner).
+	const canAsk = $derived(data.askable && !ready?.thread?.archived);
 
-	let starting = false;
+	/**
+	 * The stream client failing to load on a Send is the chunk-failed notice, whose Retry sends
+	 * again; failing again while online reloads the page with the question kept in the composer
+	 * (sessionStorage, KEPT), as Chromium keeps a failed module fetch for the document's lifetime.
+	 */
+	const KEPT = 'coach.unsent';
+	let liveFailed = $state.raw<string | null>(null);
+	let liveFailures = 0;
+	let starting = $state(false);
 	async function send(text: string) {
 		if (starting) return; // a second press while the client loads
 		starting = true;
 		const turns = await loadLive().catch(() => null);
 		starting = false;
-		if (!turns) return;
+		if (!turns) {
+			if (++liveFailures >= 2 && navigator.onLine) {
+				sessionStorage.setItem(KEPT, text);
+				return location.reload();
+			}
+			liveFailed = text;
+			return;
+		}
+		liveFailed = null;
 		draft = '';
 		void turns.send(text, data.prefill?.from);
 	}
@@ -115,6 +132,9 @@
 	}
 
 	onMount(() => {
+		const kept = sessionStorage.getItem(KEPT);
+		sessionStorage.removeItem(KEPT);
+		if (kept && !draft) draft = kept;
 		if (canAsk) (window.requestIdleCallback ?? setTimeout)(() => loadLive().catch(() => {}));
 		return () => live?.leave();
 	});
@@ -239,6 +259,14 @@
 		{:else}
 			{@render failed()}
 		{/if}
+	{/if}
+	{#if liveFailed !== null}
+		<CoachNotice
+			kind="chunk_failed"
+			onretry={() => send(liveFailed!)}
+			retrying={starting}
+			data-testid="stream-failed"
+		/>
 	{/if}
 </div>
 

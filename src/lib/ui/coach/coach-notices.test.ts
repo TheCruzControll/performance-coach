@@ -11,6 +11,8 @@ import {
 	COACH_NOTICES,
 	MOCK_BADGE,
 	SCREEN_FAILURE_LABEL,
+	waitUntilWords,
+	waitWords,
 	type CoachNoticeKind
 } from './coach-notices.ts';
 
@@ -101,5 +103,32 @@ describe('COACH_NOTICES', () => {
 			expect(text).not.toMatch(/anthropic|claude|openai|gpt|llm|\bmodel\b|\bAI\b/i);
 			expect(scanAdvice(text, { painContext: true }), text).toEqual([]);
 		}
+	});
+});
+
+describe('waitWords', () => {
+	it('counts down in seconds, rounded up, then says the wait is over', () => {
+		expect(waitWords(42_000)).toBe('You can ask again in 42 seconds.');
+		expect(waitWords(41_001)).toBe('You can ask again in 42 seconds.');
+		expect(waitWords(1_000)).toBe('You can ask again in 1 second.');
+		expect(waitWords(1)).toBe('You can ask again in 1 second.');
+		expect(waitWords(0)).toBe('You can ask again now.');
+		expect(waitWords(-5_000)).toBe('You can ask again now.');
+	});
+
+	it('says whole minutes past a minute and a half', () => {
+		expect(waitWords(90_000)).toBe('You can ask again in 90 seconds.');
+		expect(waitWords(90_001)).toBe('You can ask again in 2 minutes.');
+		expect(waitWords(600_000)).toBe('You can ask again in 10 minutes.');
+	});
+});
+
+describe('waitUntilWords', () => {
+	it('names the clock time the wait ends, rounded up to the minute', () => {
+		const at = new Date(2026, 10, 10, 15, 41, 30).getTime();
+		// ICU versions differ on the space before PM.
+		expect(waitUntilWords(at, 'en-US')).toMatch(/^You can ask again at 3:42\sPM\.$/);
+		const onTheMinute = new Date(2026, 10, 10, 15, 42).getTime();
+		expect(waitUntilWords(onTheMinute, 'en-US')).toMatch(/^You can ask again at 3:42\sPM\.$/);
 	});
 });
