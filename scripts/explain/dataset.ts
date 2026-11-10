@@ -608,8 +608,15 @@ export async function insertAll(
 	);
 }
 
-/** Loads the dataset into a migrated, seeded database in one transaction, then analyses it. */
-export async function loadDataset(client: pg.ClientBase, d: Dataset): Promise<void> {
+/**
+ * Loads the dataset into a migrated, seeded database in one transaction, then analyses it.
+ * `owner: false` loads it for the owner already there (analytics-dataset.ts).
+ */
+export async function loadDataset(
+	client: pg.ClientBase,
+	d: Dataset,
+	{ owner = true }: { owner?: boolean } = {}
+): Promise<void> {
 	const catalogue = await client.query<{ key: string; id: string }>(
 		'select key, id from exercises where key is not null'
 	);
@@ -623,7 +630,7 @@ export async function loadDataset(client: pg.ClientBase, d: Dataset): Promise<vo
 	const { sets, deletedSets, deletedWorkouts } = d.edits;
 	await client.query('begin');
 	try {
-		await insertAll(client, t.owners, [d.owner]);
+		if (owner) await insertAll(client, t.owners, [d.owner]);
 		for (const [name, table] of Object.entries(TABLES)) {
 			await insertAll(
 				client,
