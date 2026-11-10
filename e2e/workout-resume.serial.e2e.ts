@@ -21,14 +21,7 @@ import type { RunKit, StartKit, StrengthKit } from '../src/lib/domain/workout';
 import { createMutation } from '../src/lib/domain/workout/mutations';
 import { boxOf, DESKTOP, expectCentredOver, expectNoShift, expectNoSideScroll } from './desktop';
 import { PROGRAM_TZ } from './program-support';
-import {
-	captureScreen,
-	gotoHydrated,
-	query,
-	resetTrainingProfile,
-	TABS,
-	trackConsoleErrors
-} from './support';
+import { captureScreen, query, resetTrainingProfile, TABS, trackConsoleErrors } from './support';
 import { startFromKit } from './workout-start-support';
 import { injectMutation, readOutbox, seedWorkout, workoutDay } from './workout-support';
 
@@ -69,8 +62,12 @@ const looked = (page: Page, path: string) =>
 		timeout: 10_000
 	});
 
+/**
+ * Opens a screen and waits for the bar to have looked (so hydrated too); never for the network to
+ * idle, which a held request or the bar's engine retrying a refused sync keeps from happening.
+ */
 async function openTab(page: Page, path: string) {
-	await gotoHydrated(page, path);
+	await page.goto(path);
 	await looked(page, path);
 }
 
@@ -289,7 +286,8 @@ test.describe('a workout in progress on this device', () => {
 			await expect(resumeLink(page)).toContainText('2 changes waiting to sync');
 			await resumeLink(page).click();
 			await expect(page).toHaveURL(/\/progress\/workouts$/);
-			await expect(page.getByText('Waiting to sync')).toBeVisible();
+			// History's own badge, not the bar's 'N changes waiting to sync' below <main>.
+			await expect(page.locator('main#main').getByText('Waiting to sync')).toBeVisible();
 			await expect(bar(page)).toBeVisible();
 
 			// The network is back: the bar's engine sends both changes from History.
@@ -405,7 +403,8 @@ test.describe('the app started offline', () => {
 		await expect(page.getByTestId('offline-state')).toBeVisible();
 		await looked(page, '/today');
 		await expect(resumeLink(page)).toContainText('Resume workout');
-		await expect(bar(page).getByTestId('stopwatch')).toHaveText(/^2[3-9]:\d\d$/);
+		// The stopwatch's text starts with the space after its icon.
+		await expect(bar(page).getByTestId('stopwatch')).toHaveText(/^\s*2[3-9]:\d\d$/);
 		await expect(bar(page).getByTestId('sync-pill')).toHaveText('Offline · 2 pending');
 		await captureScreen(page, testInfo, 'offline-resume');
 		await audit(page, 'the offline screen with the resume bar');
@@ -415,7 +414,7 @@ test.describe('the app started offline', () => {
 		await expect(heading(page)).toHaveText(strength.exercises[1]!.exercise.name);
 		await expect(setRows(page).first()).toHaveAttribute('data-state', 'done');
 		await expect(page.getByTestId('workout-header').getByTestId('stopwatch')).toHaveText(
-			/^2[3-9]:\d\d$/
+			/^\s*2[3-9]:\d\d$/
 		);
 		await context.setOffline(false);
 	});

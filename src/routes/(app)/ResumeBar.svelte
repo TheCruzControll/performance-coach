@@ -5,7 +5,7 @@
   content column: above the tab bar below 1024 px, at the bottom of the column beside the rail
   from there. It raises --nav-inset-bottom by its own room (tokens.css, --resume-inset), so the
   shell's bottom padding and every other bottom chrome clear it and it covers nothing.
-  - Resume workout · title · time, with the sync pill: a link to the kind's page.
+  - Resume workout · title, a link to the kind's page, then the time and the sync pill.
   - N changes waiting to sync, with the pill: a link to History. While changes wait (here or in a
     workout in progress), the screen's sync engine runs, so they sync from any tab.
   - Continue here (Today only, online, nothing on this device): builds the other device's workout
@@ -130,8 +130,9 @@
 						<strong>Resume workout</strong>
 						<span class="detail" data-testid="resume-title">{workout.title}</span>
 					</span>
-					<Stopwatch {stopwatch} />
 				</a>
+				<!-- Beside the link, not in it: the link's name holds all of its visible text. -->
+				<Stopwatch {stopwatch} />
 				<SyncPill {status} />
 			{:else if resume.type === 'waiting'}
 				<a
@@ -204,10 +205,11 @@
 		animation: var(--duration-base) var(--ease-out) both rise;
 	}
 
+	/* It rises by less than its gap to the window's edge, so it never touches that edge. */
 	@keyframes rise {
 		from {
 			opacity: 0;
-			transform: translate(-50%, 0.5rem);
+			transform: translate(-50%, var(--space-1));
 		}
 	}
 
@@ -264,7 +266,7 @@
 		color: var(--color-text-secondary);
 	}
 
-	.link :global(.clock) {
+	.resume-bar :global(.clock) {
 		flex: none;
 		font-size: var(--text-sm);
 		color: var(--color-text-secondary);

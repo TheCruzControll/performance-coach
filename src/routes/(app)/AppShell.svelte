@@ -29,8 +29,14 @@
 	onMount(() => {
 		connectivity.start();
 		// A chunk gone after a deploy only means no bar until the next load.
+		// Left out of the server build: while the server can reach the bar, SvelteKit links its
+		// CSS into every app page. On the client its CSS arrives with it, before it mounts.
 		const load = () =>
-			void import('./ResumeBar.svelte').then(
+			void (
+				import.meta.env.SSR
+					? Promise.reject(new Error('client only'))
+					: import('./ResumeBar.svelte')
+			).then(
 				(m) => (ResumeBar = m.default),
 				() => {}
 			);
