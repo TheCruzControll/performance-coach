@@ -25,6 +25,9 @@ export const STORES = {
 
 export type StoreName = (typeof STORES)[keyof typeof STORES];
 
+/** The library store's one record: the whole library, under its digest. */
+export const LIBRARY_KEY = 'exercises';
+
 export const OUTBOX_INDEXES = {
 	/** A mutation's id: unique, so no mutation is ever queued twice. */
 	byMutation: 'byMutation',

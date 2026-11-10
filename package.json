@@ -36,6 +36,7 @@
 		"test": "pnpm test:unit && pnpm test:integration && pnpm test:e2e",
 		"test:unit": "vitest run --project unit",
 		"test:integration": "vitest run --project integration",
+		"test:live": "vitest run --project live",
 		"test:e2e": "playwright test",
 		"auth:setup-token": "node scripts/auth-setup-token.ts",
 		"auth:reset-owner": "node scripts/auth-reset-owner.ts",

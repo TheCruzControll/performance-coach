@@ -66,10 +66,11 @@ describe('startRequestOf', () => {
 		expect(startRequestOf('?start=abc&new=run')).toEqual({ lineage: 'abc' });
 	});
 
-	it('reads ?new=run and ?new=other as ad-hoc kinds, and nothing else', () => {
+	it('reads ?new=strength, ?new=run and ?new=other as ad-hoc kinds, and nothing else', () => {
+		expect(startRequestOf('?new=strength')).toEqual({ kind: 'strength' });
 		expect(startRequestOf('?new=run')).toEqual({ kind: 'run' });
 		expect(startRequestOf('?new=other')).toEqual({ kind: 'other' });
-		expect(startRequestOf('?new=strength')).toBeNull();
+		expect(startRequestOf('?new=planned')).toBeNull();
 		expect(startRequestOf('?start=')).toBeNull();
 		expect(startRequestOf('')).toBeNull();
 	});
