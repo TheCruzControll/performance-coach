@@ -68,6 +68,7 @@ import { runMinutes } from '../programs/edits';
 import { listExercisePreferences } from '../training/preferences';
 import { TrainingInputError } from '../training/shared';
 import { APPLIERS, type Applier, type ApplyOutcome } from './apply';
+import { refuseReviewNextCycle } from './apply/next-cycle';
 import { SESSION_ENDED, substitutionEnded } from './apply/session';
 import {
 	CoachInputError,
@@ -593,6 +594,8 @@ export interface DecidedProposal {
 	proposal: ProposalView;
 	/** False when it had already been decided: it is returned as stored and nothing was written. */
 	changed: boolean;
+	/** Where a next_cycle went when a cycle review took it in (the outcome's href). */
+	href?: string;
 }
 
 function decisionOf(outcome: ApplyOutcome, at: Date): ProposalDecision {
@@ -630,6 +633,8 @@ export async function acceptProposal(
 		if (row.status !== 'proposed') {
 			return { proposal: await view(repo, ownerId, row.id), changed: false };
 		}
+		// The review's own next_cycle stays proposed whatever its base: the review plans it.
+		if (row.kind === 'next_cycle') refuseReviewNextCycle(row.evidence);
 		const at = resolved.now();
 		if (row.baseVersionId) {
 			const current = await createProgramsRepository(resolved.db).currentProgram(ownerId);
@@ -669,7 +674,8 @@ export async function acceptProposal(
 			deps: resolved
 		});
 		await repo.decide(ownerId, row.id, decisionOf(outcome, at));
-		return { proposal: await view(repo, ownerId, row.id), changed: true };
+		const href = outcome.status === 'superseded' ? outcome.href : undefined;
+		return { proposal: await view(repo, ownerId, row.id), changed: true, ...(href && { href }) };
 	});
 }
 

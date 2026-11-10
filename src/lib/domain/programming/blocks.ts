@@ -43,7 +43,7 @@ const named = (e: DatedEvent) => clip(e.goal.title, 60);
 const lower = (kind: WeekKind) => WEEK_KIND_LABEL[kind].toLowerCase().replace(/ week$/, '');
 
 /** Runs of one week kind in words: 'baseline week, 3 accumulation weeks, deload week'. */
-function structureOf(kinds: readonly WeekKind[]): string {
+export function structureOf(kinds: readonly WeekKind[]): string {
 	const runs: [WeekKind, number][] = [];
 	for (const kind of kinds) {
 		const last = runs.at(-1);

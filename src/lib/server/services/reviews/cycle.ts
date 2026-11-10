@@ -21,6 +21,8 @@
  *   current version's blocks, then generateNextBlock over buildProgrammingInput(today's profile)
  *   with the block's results overlaid (nextBlockInput) and the head proposal's subset. The bridge,
  *   lostWeeks, fingerprint and significant changes come with it. Pure on read: nothing is stored.
+ *   plannedNextBlock gives one start's block the same way, for the applier that stores it
+ *   (services/coach/apply/next-cycle.ts), so what is planned is what the preview showed.
  * Every query is awaited in turn, so the whole create or refresh runs on one transaction.
  */
 import { addDays, daysBetween, parseIsoDate, type IsoDate } from '../../../domain/calendar';
@@ -38,7 +40,7 @@ import { e1rmSeries, measuredMaxes } from '../../../domain/analytics/strength';
 import { classifyTrend } from '../../../domain/analytics/trend';
 import { ANALYTICS_VERSION } from '../../../domain/analytics/version';
 import { RATIONALE_MAX } from '../../../domain/coach/proposals';
-import { toExerciseKey } from '../../../domain/programming/input';
+import { toExerciseKey, type ProgrammingInput } from '../../../domain/programming/input';
 import {
 	BRIDGE_PHASE,
 	BRIDGE_WEEK_KIND,
@@ -103,6 +105,9 @@ export const NEXT_CYCLE_TITLE = 'Your next block, from your cycle review';
 
 /** The decisions a cycle refresh may replace: nothing the owner has settled yet. */
 export const CYCLE_REFRESHABLE: readonly DecisionState['state'][] = ['undecided', 'none'];
+
+/** A start the review does not offer today: while the block runs, only the Monday after it. */
+export const START_NOT_OFFERED = 'Choose a start the review offers';
 
 /** The most accepted proposals read when looking for the coach's next_cycle to fold in. */
 export const FOLD_SCAN = 50;
@@ -343,7 +348,7 @@ async function coachNextCycles(db: Executor, ownerId: string, lineage: string) {
 }
 
 /** What a review's proposal keeps beside its payload (evidence). */
-interface CycleEvidence {
+export interface CycleEvidence {
 	directives: CycleDirectives;
 	overrides: Partial<NextCycleSubset>;
 	clamps: Clamp[];
@@ -584,45 +589,111 @@ async function resultsOf(
 		});
 		return [{ exercise: keyOf(def), exposures: seen, trend }];
 	});
-	return { snapshot: { timeZone: tz, e1rms, maxes, running }, lifts };
+	const keys = new Map([...defs.values()].map((def) => [def.id, keyOf(def)]));
+	return { snapshot: { timeZone: tz, e1rms, maxes, running }, lifts, keys };
 }
 
-/** The next block from each start on offer, from the review's directives and its head's subset. */
-async function previewsOf(
+/**
+ * The directives with their kept and rotated exercises named as the generator names them. The
+ * snapshot judges each exercise by its library id; carryover and the input overlay compare plan
+ * keys ('back_squat', 'custom:…'), so an id left as it is would keep or rotate nothing.
+ */
+const byKey = (d: CycleDirectives, keys: ReadonlyMap<string, string>): CycleDirectives => ({
+	...d,
+	keep: d.keep.map((k) => ({ ...k, exercise: keys.get(k.exercise) ?? k.exercise })),
+	rotate: d.rotate.map((r) => ({ ...r, exercise: keys.get(r.exercise) ?? r.exercise }))
+});
+
+/** One start's next block, with what storing it as a version needs beside the preview. */
+export interface PlannedNextBlock {
+	preview: NextBlockPreview;
+	/** The current version it plans onto. */
+	versionNumber: number;
+	/** The outline block it plans, or null when it is appended. */
+	outlineLineage: string | null;
+	/** The lineage of each block in preview.dates.shifted, in its order. */
+	shiftedLineages: string[];
+	/** The generator's input (today's profile with the block's results), which the version keeps. */
+	input: ProgrammingInput;
+}
+
+/**
+ * The next block from each start on offer (or `only` that one), from the review's directives and
+ * its head's subset. An owner revision that kept a rotated exercise carries its own directives.
+ */
+async function plannedOf(
 	db: Executor,
 	ownerId: string,
 	review: StoredCycleReview,
 	headId: string,
 	read: BlockFacts,
-	{ today, profile }: { today: IsoDate; profile: Awaited<ReturnType<typeof getAthleteProfile>> }
-): Promise<NextBlockPreview[]> {
+	{ today, profile }: { today: IsoDate; profile: Awaited<ReturnType<typeof getAthleteProfile>> },
+	only?: NextBlockStart
+): Promise<PlannedNextBlock[]> {
 	const version = await currentVersion(db, ownerId, review.programId);
 	if (!version) return [];
 	const { block, index } = blockOf(version, review.blockLineageId);
 	const repo = createCoachProposalsRepository(db);
 	const own = (await repo.lockProposal(ownerId, review.proposalId!))!;
 	const head = headId === own.id ? own : (await repo.lockProposal(ownerId, headId))!;
-	const { directives } = own.evidence as unknown as CycleEvidence;
+	const evidence = (row: typeof own) => row.evidence as unknown as Partial<CycleEvidence> | null;
 	const results = await resultsOf(db, ownerId, block, read, profile);
+	const directives = byKey(
+		(evidence(head)?.directives ?? evidence(own)!.directives)!,
+		results.keys
+	);
 	const base = await programmingInputFor(ownerId, { db });
 	const overrides = head.payload as unknown as NextCycleSubset;
 	const next = nextBlockInput(base, results.snapshot, directives, overrides);
 	const goals = await listGoals(ownerId, { db });
 	const events = goals.flatMap((g) => (g.status === 'active' && g.eventDate ? [g.eventDate] : []));
-	const blocks: DatedBlock[] = version.blocks.map((b) => ({
-		...{ phase: b.phase, name: b.name, startsOn: b.startsOn, endsOn: b.endsOn, outline: b.outline }
+	// Each dated block carries its lineage through nextBlockDates, which spreads what it lays.
+	const blocks: (DatedBlock & { lineage: string })[] = version.blocks.map((b) => ({
+		...{ phase: b.phase, name: b.name, startsOn: b.startsOn, endsOn: b.endsOn, outline: b.outline },
+		lineage: b.lineage
 	}));
+	const lineageOf = (b: DatedBlock) => (b as DatedBlock & { lineage: string }).lineage;
 	const previous = { block, results: results.lifts, unit: profile.weightUnit };
-	const starts = offeredStarts(blocks[index]!, today).toSorted(
-		(a, b) => Number(b === DEFAULT_NEXT_BLOCK_START) - Number(a === DEFAULT_NEXT_BLOCK_START)
-	);
+	const starts = offeredStarts(blocks[index]!, today)
+		.filter((start) => only === undefined || start === only)
+		.toSorted(
+			(a, b) => Number(b === DEFAULT_NEXT_BLOCK_START) - Number(a === DEFAULT_NEXT_BLOCK_START)
+		);
 	return starts.map((start) => {
 		const weeks = next.subset.weeks;
 		const dates = nextBlockDates({ blocks, reviewedBlock: index, today, start, events, weeks });
-		const from = dates.block.outline?.startsOn;
-		const outline = version.blocks.find((b) => b.outline && b.startsOn === from) ?? null;
-		return { start, dates, ...generateNextBlock(next, { dates, outline, previous, directives }) };
+		const from = dates.block.outline;
+		const outline = from ? version.blocks.find((b) => b.lineage === lineageOf(from))! : null;
+		const generated = generateNextBlock(next, { dates, outline, previous, directives });
+		return {
+			preview: { start, dates, ...generated },
+			versionNumber: version.version.number,
+			outlineLineage: outline?.lineage ?? null,
+			shiftedLineages: dates.shifted.map(lineageOf),
+			input: next.input
+		};
 	});
+}
+
+/**
+ * The next block of the owner's live, unplanned review from `start`, as its preview shows it, on
+ * the head `headId` of its proposal's chain. A start not on offer today is a ReviewInputError.
+ */
+export async function plannedNextBlock(
+	ownerId: string,
+	review: StoredCycleReview,
+	{ headId, start, today }: { headId: string; start: NextBlockStart; today: IsoDate },
+	deps: ReviewDeps = {}
+): Promise<PlannedNextBlock> {
+	const { db } = resolve(deps);
+	const version = await currentVersion(db, ownerId, review.programId);
+	if (!version) throw new ReviewNotFoundError('program');
+	const { block } = blockOf(version, review.blockLineageId);
+	const profile = await getAthleteProfile(ownerId, { db });
+	const read = await blockFacts(db, ownerId, block, profile.timeZone);
+	const [planned] = await plannedOf(db, ownerId, review, headId, read, { today, profile }, start);
+	if (!planned) throw new ReviewInputError('start', START_NOT_OFFERED);
+	return planned;
 }
 
 /** The owner's live review of a program's block, as the review page shows it. */
@@ -668,6 +739,10 @@ export async function getCycleReviewView(
 		laterChanges: isStale ? Math.max(changed.length, 1) : 0,
 		analyticsOutdated: review.analyticsVersion < ANALYTICS_VERSION,
 		writeUp: review.narrative ? { state: 'written', text: review.narrative } : { state: 'none' },
-		previews: open ? await previewsOf(db, ownerId, review, head.id, read, { today, profile }) : []
+		previews: open
+			? (await plannedOf(db, ownerId, review, head.id, read, { today, profile })).map(
+					(p) => p.preview
+				)
+			: []
 	};
 }

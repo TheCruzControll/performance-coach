@@ -68,6 +68,7 @@ const exposure = (day: string, deviation: number, more: Partial<Exposure> = {}):
 	sets: { prescribed: 4, completed: 4, extra: 0 },
 	missedReps: 0,
 	rpeDeviations: [deviation],
+	rpeTargets: [8],
 	meanRpeDeviation: deviation,
 	topSet: null,
 	kg: 100,

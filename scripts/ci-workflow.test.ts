@@ -267,6 +267,10 @@ describe('CI e2e legs', () => {
 		expect(value(step, 'run')).toBe('pnpm test:e2e --shard ${{ matrix.shard }}/${{ matrix.of }}');
 		const timing = legStep('Where the minutes went');
 		expect(value(timing, 'if')).toBe('${{ !cancelled() }}');
+		const timingEnv = under(timing, 'env');
+		expect(value(timingEnv, 'E2E_ENGINE')).toBe('${{ matrix.engine }}');
+		expect(value(timingEnv, 'E2E_GROUP')).toBe('${{ matrix.group }}');
+		expect(value(timingEnv, 'E2E_SHARD')).toBe('${{ matrix.shard }}/${{ matrix.of }}');
 		expect(value(timing, 'run')).toMatch(
 			/^node scripts\/e2e-timing\.ts test-results\/report\.json /
 		);
@@ -285,38 +289,63 @@ describe('CI e2e legs', () => {
 		expect(job).toBeGreaterThanOrEqual(Math.ceil(1.5 * CEILING_MINUTES) + 12 + 8);
 	});
 
-	it('install the system packages of the engines each entry launches, cached per engine', () => {
+	it('install the engines’ system packages from a cache keyed by exactly those packages', () => {
+		const names = under(legsJob(), 'steps').map((s) => value([s, ...s.children], 'name'));
+		const order = [
+			'Playwright system packages',
+			'Cache Playwright system packages',
+			'Install Playwright system dependencies'
+		].map((name) => names.indexOf(name));
+		expect(order.every((at, i) => at > (order[i - 1] ?? -1))).toBe(true);
+
 		/** Every `${{ … }}` in `template` evaluated for one engine's entries on one runner. */
 		const expand = (template: string, engine: string) =>
 			template.replace(/\$\{\{(.*?)\}\}/g, (_, inner: string) =>
 				String(
 					evaluate(inner, {
 						'matrix.engine': engine,
-						'runner.os': 'Linux',
-						'steps.playwright.outputs.version': '1.2.3'
+						'steps.image.outputs.os': 'ubuntu24',
+						'steps.apt.outputs.packages': `${engine}-packages`,
+						'steps.apt.outputs.image': '20261101.1'
 					})
 				)
 			);
+		const keyStep = legStep('Playwright system packages');
+		expect(value(keyStep, 'id')).toBe('apt');
+		const keyRun = value(keyStep, 'run')!;
 		const install = value(legStep('Install Playwright system dependencies'), 'run')!;
 		const cache = under(legStep('Cache Playwright system packages'), 'with');
+		expect(value(cache, 'path')).toBe('~/.cache/apt-playwright');
 		const key = value(cache, 'key')!;
 		const restore = value(cache, 'restore-keys')!;
 		const engines = [...new Set(entries().map((entry) => entry.engine!))].sort();
 		expect(engines).toEqual([...ENGINES].sort());
 		for (const engine of engines) {
 			// Chromium legs launch only Chromium; WebKit legs also run the Chromium owner setup.
-			expect(expand(install, engine), engine).toBe(
-				engine === 'webkit'
-					? 'pnpm exec playwright install-deps chromium webkit'
-					: 'pnpm exec playwright install-deps chromium'
+			const browsers = engine === 'webkit' ? 'chromium webkit' : 'chromium';
+			// The key hashes the very packages the install installs.
+			expect(expand(keyRun, engine), engine).toBe(
+				`./scripts/ci-playwright-deps.sh key ${browsers} >> "$GITHUB_OUTPUT"`
 			);
-			expect(expand(key, engine), engine).toBe(`apt-playwright-Linux-1.2.3-${engine}-v2`);
-			expect(expand(restore, engine), engine).toBe(`apt-playwright-Linux-1.2.3-${engine}-`);
+			expect(expand(install, engine), engine).toBe(
+				`./scripts/ci-playwright-deps.sh install ~/.cache/apt-playwright ${browsers}`
+			);
+			expect(expand(key, engine), engine).toBe(
+				`apt-playwright-v2-ubuntu24-${engine}-packages-20261101.1`
+			);
+			expect(expand(restore, engine), engine).toBe(
+				`apt-playwright-v2-ubuntu24-${engine}-packages-`
+			);
 			// No engine restores an archive another engine saved (a Chromium one lacks WebKit's).
 			for (const other of engines.filter((e) => e !== engine)) {
 				expect(expand(key, other).startsWith(expand(restore, engine)), other).toBe(false);
 			}
 		}
+
+		const direct = under(legsJob(), 'steps').filter((s) =>
+			(value([s, ...s.children], 'run') ?? '').includes('playwright install-deps')
+		);
+		expect(direct, 'no install-deps outside the cached install').toEqual([]);
 	});
 
 	it('upload each entry’s files under a name of its own, hidden files included', () => {
