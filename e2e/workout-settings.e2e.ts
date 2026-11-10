@@ -8,7 +8,8 @@
  *
  * The workout comes from the shared kit fixture seeded in IndexedDB; sync is held ('hold'), so
  * nothing here writes Postgres. Time is Playwright's clock, paused once the page is ready, so
- * every reading is exact. The desktop dialogs are workout-settings.desktop.e2e.ts.
+ * every reading is exact (Train's holds the time of day instead, its timers running). The desktop
+ * dialogs are workout-settings.desktop.e2e.ts.
  */
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
@@ -213,12 +214,25 @@ test.describe("Train's rest timer", () => {
 	const sheet = (page: Page) => page.getByTestId('rest-timer-sheet');
 	const inline = (page: Page) => page.getByTestId('train-rest');
 
-	/** Train, hydrated, with the clock installed and then paused. */
+	let now = 0;
+
+	/**
+	 * Train, hydrated, with the time of day held: every reading is exact while the page's timers
+	 * keep running, so its sheets still animate open and closed (a paused clock would hold a
+	 * closing sheet open, and a navigation, until the test moved time on).
+	 */
 	async function openTrain(page: Page) {
 		await page.clock.install();
 		await page.goto('/train');
 		await page.waitForLoadState('networkidle');
-		await pause(page);
+		now = await page.evaluate(() => Date.now() + 1_000);
+		await page.clock.setFixedTime(now);
+	}
+
+	/** Moves the held time of day on by `ms`. */
+	async function advance(page: Page, ms: number) {
+		now += ms;
+		await page.clock.setFixedTime(now);
 	}
 
 	test('starts, survives a reload and can be skipped, opening no workout', async ({ page }) => {
@@ -230,7 +244,7 @@ test.describe("Train's rest timer", () => {
 		await expect(sheet(page).getByTestId('start-isolation-rest')).toHaveText('Isolation · 1:30');
 		await sheet(page).getByTestId('start-isolation-rest').click();
 		await expect(sheet(page).getByTestId('rest-time')).toHaveText('1:30');
-		await page.clock.fastForward(20_000);
+		await advance(page, 20_000);
 		await expect(sheet(page).getByTestId('rest-time')).toHaveText('1:10');
 		expect(await stored(page, 'pc:rest:v1')).toMatchObject({ durationMs: 90_000, pausedAt: null });
 
@@ -251,7 +265,7 @@ test.describe("Train's rest timer", () => {
 		await expect(inline(page).getByTestId('rest-time')).toHaveText('1:10');
 		await row(page).click();
 		await expect(sheet(page).getByTestId('rest-time')).toHaveText('1:10');
-		await page.clock.fastForward(10_000);
+		await advance(page, 10_000);
 		await expect(sheet(page).getByTestId('rest-time')).toHaveText('1:00');
 		await page.keyboard.press('Escape');
 		await expect(sheet(page)).toBeHidden();

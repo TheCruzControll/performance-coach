@@ -43,13 +43,19 @@
 	let settingsLoading = $state(false);
 	let settingsFailed = $state(false);
 
-	async function settings() {
+	async function settings(event: MouseEvent) {
+		const button = event.currentTarget as HTMLElement;
 		settingsFailed = false;
 		settingsLoading = true;
 		Settings ??= (await import('./SettingsSheet.svelte').catch(() => null))?.default ?? null;
 		settingsLoading = false;
 		settingsFailed = Settings === null;
-		settingsOpen = Settings !== null;
+		if (!Settings) return;
+		// Disabled while it loaded, the button lost focus (Chromium): give it back, so closing the
+		// settings returns there rather than to the menu.
+		await tick();
+		button.focus();
+		settingsOpen = true;
 	}
 
 	$effect(() => {
