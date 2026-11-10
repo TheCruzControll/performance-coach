@@ -141,7 +141,7 @@ export function tileVerdict(result: TrendResult, unit = 'weeks'): TileVerdict {
 }
 
 /** A slot's tick and label: '5 Oct' and 'Week of 5 Oct', or 'Oct' and 'Oct 2026' by month. */
-function slotOf({ at, inProgress }: SeriesPoint, bucket: 'week' | 'month') {
+export function slotOf({ at, inProgress }: SeriesPoint, bucket: 'week' | 'month') {
 	const [year, month, day] = at.split('-').map(Number) as [number, number, number];
 	const name = MONTHS[month - 1]!;
 	const [tick, label] =
