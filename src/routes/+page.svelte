@@ -8,7 +8,6 @@
 		PasskeyError,
 		signInWithPasskey
 	} from '#lib/client/passkeys.ts';
-	import { clearDeviceAccountData } from '#lib/client/signout.ts';
 	import Button from '#lib/ui/components/Button.svelte';
 	import Notice from '#lib/ui/components/Notice.svelte';
 	import AuthScreen from './AuthScreen.svelte';
@@ -19,6 +18,14 @@
 	let busy = $state(false);
 	let error = $state<string | null>(null);
 	let unsupported = $state(false);
+	/** Unsynced workout changes a signed-out URL without sign-out's marker kept on this device. */
+	let kept = $state(0);
+	const keptChanges = $derived(
+		kept === 1
+			? '1 workout change that hasn’t synced'
+			: `${kept} workout changes that haven’t synced`
+	);
+	const them = $derived(kept === 1 ? 'it' : 'them');
 
 	async function finish(redirectTo: string) {
 		// A same-origin path the server already vetted (safeReturnPath), e.g. /today or ?next=.
@@ -44,12 +51,23 @@
 		}
 	}
 
+	async function deleteKept() {
+		const { clearDeviceAccountData } = await import('#lib/client/signout.ts');
+		await clearDeviceAccountData();
+		kept = 0;
+	}
+
 	onMount(() => {
 		let active = true;
 		void (async () => {
 			if (data.signedOut) {
-				// Also covers a sign-out submitted without JavaScript.
-				await clearDeviceAccountData();
+				// Also covers a sign-out submitted without JavaScript, which keeps unsynced changes.
+				try {
+					const { clearAfterSignedOutUrl } = await import('#lib/client/signout.ts');
+					kept = (await clearAfterSignedOutUrl()).kept;
+				} catch {
+					// the chunk did not load: nothing was deleted
+				}
 			}
 			if (data.unavailable) return;
 			const support = await passkeySupport();
@@ -89,7 +107,16 @@
 	data-testid="signin-screen"
 >
 	{#snippet body()}
-		{#if data.signedOut && !error}
+		{#if data.signedOut && kept > 0}
+			<Notice tone="warning" data-testid="signed-out-kept">
+				This device still holds {keptChanges}. Sign in to send {them}, or delete {them}.
+			</Notice>
+			<div>
+				<Button size="sm" variant="danger" onclick={deleteKept} data-testid="delete-kept">
+					Delete {them}
+				</Button>
+			</div>
+		{:else if data.signedOut && !error}
 			<Notice tone="positive" icon="shield" data-testid="signed-out-notice">
 				Signed out. This device no longer holds your account data.
 			</Notice>

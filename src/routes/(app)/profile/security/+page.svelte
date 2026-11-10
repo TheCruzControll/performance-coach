@@ -86,19 +86,61 @@
 	}
 
 	// ---- sign out --------------------------------------------------------------------------
+	// Workout changes not synced yet are flushed first, and the owner is asked before signing out
+	// deletes what is left (the offline workout sync ADR). The check and its sheet load on intent.
 	let signingOut = $state(false);
+	const pendingSheet = () => import('#lib/ui/components/SignOutPendingSheet.svelte');
+	let sheet = $state<ReturnType<typeof pendingSheet> | null>(null);
+	let asking = $state(false);
+	let unsynced = $state(0);
 
+	function loadSheet() {
+		// A chunk that failed to load (offline) is fetched again on the next try.
+		sheet ??= pendingSheet().catch((error: unknown) => {
+			sheet = null;
+			throw error;
+		});
+		return sheet;
+	}
+
+	// The flow itself (flush, recount, sign out) is signout.ts's; this screen holds the sheet.
 	async function leave() {
+		if (signingOut) return;
 		signingOut = true;
 		try {
-			const { signOut } = await import('#lib/client/signout.ts');
-			await signOut();
+			const { signOutIfSynced } = await import('#lib/client/signout.ts');
+			const left = await signOutIfSynced();
+			if (left > 0) await ask(left);
 		} catch {
-			signingOut = false;
-			toast.show('Can’t reach the server to sign out. Try again when you’re online.', {
-				tone: 'danger'
-			});
+			failed();
 		}
+	}
+
+	/** "Sign out and delete", unless more changes arrived since it asked: then it asks again. */
+	async function deleteAndLeave() {
+		if (signingOut) return;
+		signingOut = true;
+		try {
+			const { signOutDeleting } = await import('#lib/client/signout.ts');
+			const more = await signOutDeleting(unsynced, () => (asking = false));
+			if (more > 0) await ask(more);
+		} catch {
+			failed();
+		}
+	}
+
+	async function ask(count: number) {
+		await loadSheet();
+		unsynced = count;
+		asking = true;
+		signingOut = false;
+	}
+
+	function failed() {
+		signingOut = false;
+		toast.show('Can’t reach the server to sign out. Try again when you’re online.', {
+			tone: 'danger'
+		});
 	}
 </script>
 
@@ -335,6 +377,12 @@
 {#if sheets}
 	{#await sheets then { default: SecuritySheets }}
 		<SecuritySheets bind:request />
+	{/await}
+{/if}
+
+{#if sheet}
+	{#await sheet then { default: SignOutPendingSheet }}
+		<SignOutPendingSheet bind:open={asking} count={unsynced} onconfirm={deleteAndLeave} />
 	{/await}
 {/if}
 
