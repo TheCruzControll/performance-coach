@@ -27,6 +27,13 @@ import {
 	scanForServerOnly,
 	UNSCANNED_FILE
 } from './client-secret-scan.ts';
+import {
+	CHART_BODY_CLASS,
+	chartBodyProblems,
+	viewCssProblems,
+	type RouteAssets,
+	type RouteViews
+} from './lib/budget-guards.ts';
 import { PRELOADED_FONT_PATTERN } from '../src/lib/ui/fonts.ts';
 import { icons } from '../src/lib/ui/icons/icons.ts';
 
@@ -469,6 +476,36 @@ if (!readdirSync(`${CLIENT}/_app/immutable/assets`).some((f) => /^sprite\.[\w-]+
 }
 
 /**
+ * Chart bodies and load-imported views (scripts/lib/budget-guards.ts): no route's initial JS,
+ * including every chunk its loads await, nor any stylesheet it renders with, carries the reserved
+ * chart-body class; and the CSS of each view a universal load awaits is in the route's CSS count.
+ */
+const chartAssets: RouteAssets[] = [];
+const routeViews: RouteViews[] = [];
+for (const route of routes) {
+	if (!route.page) continue;
+	const ids = [...route.page.layouts, route.page.leaf].filter((n): n is number => n !== undefined);
+	const views = ids.flatMap((id) => loadImports(nodes[id]!.universal));
+	const css = new Set([...client.stylesheets, ...ids.flatMap((id) => nodes[id]!.stylesheets)]);
+	chartAssets.push({
+		route: route.id,
+		js: staticClosure([...client.imports, ...ids.flatMap((id) => nodes[id]!.imports), ...views]),
+		css
+	});
+	routeViews.push({
+		route: route.id,
+		counted: css,
+		views: views.map((view) => ({ view, css: [...cssOf(keysOf(staticClosure([view])))] }))
+	});
+}
+const chartProblems = chartBodyProblems(
+	chartAssets,
+	[...clientJs, ...allCss.map((f) => `_app/immutable/assets/${f}`)],
+	read
+);
+const viewCss = viewCssProblems(routeViews);
+
+/**
  * Client secrets: no Anthropic SDK code, provider-format credential (scripts/secrets-patterns.ts),
  * build-time ANTHROPIC_API_KEY (CI builds with a canary) or server-only code (the Blob SDK, a
  * src/lib/server/ path, a server-only variable name), each reported per file, in any file of
@@ -619,6 +656,8 @@ const lines = [
 	`Profile sections: no editor's CSS on a section page (${sectionRoutes.map((r) => `\`${r}\``).join(', ')}; ${editorKeys.length} editors, ${keptOut.size} of their stylesheets left to load with them): ${sectionProblems.length ? 'FAIL' : 'pass'}`,
 	`Exercise catalogue (server-only): in no client chunk: ${catalogueChunks.length ? 'FAIL' : 'pass'}`,
 	`Icon paths in JS (every icon draws from the SVG sprite): ${iconProblems.length ? 'FAIL' : 'pass'}`,
+	`Chart bodies (\`${CHART_BODY_CLASS}\` in no route's initial JS, awaited loads included, nor its CSS): ${chartProblems.length ? 'FAIL' : 'pass'}`,
+	`Load-imported views (each view's CSS in its route's CSS count; ${viewCss.counted} view stylesheets counted): ${viewCss.problems.length ? 'FAIL' : 'pass'}`,
 	`Client secrets (Anthropic SDK, provider-format keys, the build-time key, server-only code) in ${scannedFiles} files of ${CLIENT_OUTPUTS.map((d) => `\`${d}\``).join(', ')}: ${secretProblems.length ? 'FAIL' : 'pass'}; positive control (every SDK signature in the server build): ${control}`,
 	`Coach isolation (no coach module loadable from ${isolation.checked.map((r) => `\`${r}\``).join(', ')}): ${isolation.problems.length ? 'FAIL' : 'pass'}`
 ];
@@ -671,6 +710,14 @@ if (iconProblems.length > 0) {
 	console.error(`\nIcon placement failed:\n  - ${iconProblems.join('\n  - ')}`);
 }
 
+if (chartProblems.length > 0) {
+	console.error(`\nChart bodies failed:\n  - ${chartProblems.join('\n  - ')}`);
+}
+
+if (viewCss.problems.length > 0) {
+	console.error(`\nLoad-imported views failed:\n  - ${viewCss.problems.join('\n  - ')}`);
+}
+
 if (secretProblems.length > 0) {
 	console.error(`\nClient secrets failed:\n  - ${secretProblems.join('\n  - ')}`);
 }
@@ -691,6 +738,8 @@ if (
 	sectionProblems.length > 0 ||
 	catalogueChunks.length > 0 ||
 	iconProblems.length > 0 ||
+	chartProblems.length > 0 ||
+	viewCss.problems.length > 0 ||
 	secretProblems.length > 0 ||
 	isolation.problems.length > 0
 ) {
@@ -705,6 +754,8 @@ if (
 		...(sectionProblems.length ? ['profile section CSS'] : []),
 		...(catalogueChunks.length ? ['catalogue placement'] : []),
 		...(iconProblems.length ? ['icon paths in JS'] : []),
+		...(chartProblems.length ? ['chart bodies'] : []),
+		...(viewCss.problems.length ? ['load-imported views'] : []),
 		...(secretProblems.length ? ['client secrets'] : []),
 		...(isolation.problems.length ? ['coach isolation'] : [])
 	];
