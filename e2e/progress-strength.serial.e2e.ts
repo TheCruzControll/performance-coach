@@ -11,6 +11,7 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { addDays } from '../src/lib/domain/calendar';
 import { MUSCLE_GROUP_LABEL } from '../src/lib/domain/training/vocabulary';
+import { shortDate } from '../src/lib/ui/program/words';
 import {
 	ANALYTICS_TZ,
 	auditBothThemes,
@@ -145,7 +146,11 @@ test.describe('twelve weeks', () => {
 	test('the deload week’s range is the full range scaled by its volume', async ({ page }) => {
 		await gotoHydrated(page, STRENGTH);
 		const range = async (week: string) => {
-			const row = page.locator(`[data-testid="range-week"][data-week="${week}"]`);
+			const label = `Week of ${shortDate(week).split(' ').slice(1).join(' ')}`;
+			const row = tableRows(page.getByTestId('range-weeks')).filter({
+				has: page.locator('th', { hasText: new RegExp(`^${label}$`) })
+			});
+			await expect(row).toHaveCount(1);
 			const text = (await row.locator('td').first().textContent())!;
 			const [, low, high] = /([\d.]+)–([\d.]+) sets/.exec(text)!;
 			return { row, low: Number(low), high: Number(high) };

@@ -29,20 +29,13 @@
 		label?: string;
 		/** Forces the loading state; by default it follows SvelteKit's navigation. */
 		busy?: boolean;
-		/** Each link's target; `?period=…` unless given (a page keeping its other parameters). */
-		href?: (period: Period) => string;
+		/** Parameters each link keeps before its period ('view=strength&'); none unless given. */
+		keep?: string;
 		'data-testid'?: string;
 		children: Snippet;
 	}
 
-	let {
-		current,
-		label = 'Period',
-		busy,
-		href = (period) => `?period=${period}`,
-		children,
-		...rest
-	}: Props = $props();
+	let { current, label = 'Period', busy, keep = '', children, ...rest }: Props = $props();
 
 	/** What each link shows; its accessible name is the full PERIOD_LABEL ('Last 4 weeks'). */
 	const SHORT: Readonly<Record<Period, string>> = {
@@ -67,7 +60,7 @@
 				<li>
 					<a
 						class="period numeric"
-						href={href(period)}
+						href="?{keep}period={period}"
 						aria-current={period === current ? 'page' : undefined}
 						><span aria-hidden="true">{SHORT[period]}</span><span class="visually-hidden"
 							>{PERIOD_LABEL[period]}</span

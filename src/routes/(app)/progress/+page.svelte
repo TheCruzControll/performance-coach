@@ -89,8 +89,7 @@
 		</nav>
 		<PeriodPicker
 			current={data.period}
-			href={(period) =>
-				`?${data.view === DEFAULT_VIEW ? '' : `view=${data.view}&`}period=${period}`}
+			keep={data.view === DEFAULT_VIEW ? '' : `view=${data.view}&`}
 			data-testid="progress-period"
 		>
 			{#if data.failed}

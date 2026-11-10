@@ -20,6 +20,7 @@
 	import VerdictBadge from '#lib/ui/analytics/VerdictBadge.svelte';
 	import { CHART_BODIES } from '#lib/ui/charts/bodies.ts';
 	import ChartFrame from '#lib/ui/charts/ChartFrame.svelte';
+	import ChartTable from '#lib/ui/charts/ChartTable.svelte';
 	import EmptyState from '#lib/ui/components/EmptyState.svelte';
 	import ListRow from '#lib/ui/components/ListRow.svelte';
 	import Section from '#lib/ui/components/Section.svelte';
@@ -50,14 +51,20 @@
 			<MetricContext {...s.liftsContext} />
 			<ul class="grid multiples">
 				{#each s.lifts as lift (lift.id)}
-					<li class="lift" data-testid="key-lift" data-exercise={lift.id}>
-						<a class="name" href={exercise(lift.id)}>{lift.name}</a>
-						<p>
-							<span class="best numeric" data-value={lift.best?.value} data-testid="best-e1rm"
-								>{lift.best?.text ?? '—'}</span
-							>
-							<span class="muted">Estimated</span>
-						</p>
+					<li class="grid tight" data-testid="key-lift" data-exercise={lift.id}>
+						<ListRow
+							title={lift.name}
+							subtitle="Estimated 1RM"
+							icon="trend-up"
+							tone="strength"
+							href={exercise(lift.id)}
+						>
+							{#snippet trailing()}<span
+									class="numeric"
+									data-value={lift.best?.value}
+									data-testid="best-e1rm">{lift.best?.text ?? '—'}</span
+								>{/snippet}
+						</ListRow>
 						<VerdictBadge verdict={lift.verdict} window={s.window} />
 						<ChartFrame
 							{...lift.chart}
@@ -70,7 +77,7 @@
 				{/each}
 			</ul>
 			{#if s.others.length}
-				<h3 class="muted">Other lifts</h3>
+				<h3 class="eyebrow">Other lifts</h3>
 				<ul class="grid">
 					{#each s.others as other (other.id)}
 						<li>
@@ -92,7 +99,7 @@
 		<Section title="Weekly volume" gap="md" data-testid="strength-volume">
 			<div class="grid pair">
 				{#each [s.tonnage, s.hardSets] as v (v.chart.id)}
-					<div class="stack">
+					<div class="grid tight">
 						<TrendTile tile={v.tile} data-testid="tile-{v.chart.id}" />
 						{#if s.stage === 'history'}
 							<ChartFrame
@@ -127,22 +134,15 @@
 			{/if}
 			{#if g.shown?.unjudged}<p class="muted">No range: {g.shown.unjudged}</p>{/if}
 			{#if g.weeks.length}
-				<table class="weeks">
-					<caption class="muted">Each week’s range, scaled by its volume</caption>
-					<thead
-						><tr><th scope="col">Week</th><th scope="col">Range</th><th scope="col">Within</th></tr
-						></thead
-					>
-					<tbody>
-						{#each g.weeks as week (week.weekStart)}
-							<tr data-week={week.weekStart} data-testid="range-week">
-								<th scope="row">{week.label}<span class="muted">{week.source}</span></th>
-								<td class="numeric">{week.range ?? '—'}</td>
-								<td>{week.judged ?? '—'}</td>
-							</tr>
-						{/each}
-					</tbody>
-				</table>
+				<div data-testid="range-weeks">
+					<h3 class="eyebrow">Each week’s range, scaled by its volume</h3>
+					<ChartTable
+						title="Each week’s range"
+						rowHeader="Week"
+						columns={[{ label: 'Range' }, { label: 'Within' }, { label: 'Source' }]}
+						rows={g.weeks.map((w) => ({ label: w.label, values: [w.range, w.judged, w.source] }))}
+					/>
+				</div>
 			{/if}
 		</Section>
 
@@ -197,7 +197,6 @@
 
 <style>
 	.pc-strength-view {
-		container-type: inline-size;
 		display: grid;
 		gap: var(--space-6);
 		min-width: 0;
@@ -212,91 +211,32 @@
 		list-style: none;
 	}
 
-	.pair {
-		gap: var(--space-6);
-	}
-
-	.lift,
-	.stack {
-		display: grid;
+	.tight {
 		align-content: start;
 		gap: var(--space-2);
-		min-width: 0;
 	}
 
-	.name {
-		display: inline-flex;
-		align-items: center;
-		justify-self: start;
-		min-height: var(--touch-target);
-		font-weight: var(--weight-semibold);
-		color: var(--color-text);
-		text-underline-offset: 3px;
-	}
-
-	@media (hover: hover) and (pointer: fine) {
-		.name:hover {
-			color: var(--color-accent-text);
-		}
-	}
-
-	.best {
-		font-size: var(--text-xl);
-		font-weight: var(--weight-bold);
-	}
-
-	.muted,
-	.weeks th span {
+	.muted {
 		font-size: var(--text-sm);
-		font-weight: var(--weight-regular);
 		color: var(--color-text-secondary);
 	}
 
+	/*
+	 * Columns by the room there is, with no container query: tiles as many as fit, lifts two a
+	 * row from about 38 rem and three from about 57 rem (desktop; a lone lift keeps one column's
+	 * width), sections in pairs from about 44 rem.
+	 */
 	.tiles {
 		grid-template-columns: repeat(auto-fit, minmax(min(100%, 10.5rem), 1fr));
 	}
 
-	.weeks {
-		inline-size: 100%;
-		border-collapse: collapse;
-		font-size: var(--text-sm);
+	.multiples {
+		grid-template-columns: repeat(auto-fill, minmax(min(100%, 18.5rem), 1fr));
 	}
 
-	.weeks caption {
-		text-align: start;
-		padding-bottom: var(--space-2);
-	}
-
-	.weeks th,
-	.weeks td {
-		padding: var(--space-2) var(--space-2) var(--space-2) 0;
-		border-bottom: 1px solid var(--color-hairline);
-		text-align: start;
-		vertical-align: baseline;
-	}
-
-	.weeks th span {
-		display: block;
-		font-size: var(--text-xs);
-	}
-
-	/* A wide column (a desktop window): lifts three a row, sections in pairs. */
-	@container (width >= 36rem) {
-		.multiples {
-			grid-template-columns: repeat(2, minmax(0, 1fr));
-		}
-	}
-
-	@container (width >= 44rem) {
-		.pair {
-			grid-template-columns: repeat(2, minmax(0, 1fr));
-			align-items: start;
-		}
-	}
-
-	@container (width >= 60rem) {
-		.multiples {
-			grid-template-columns: repeat(3, minmax(0, 1fr));
-		}
+	.pair {
+		gap: var(--space-6);
+		grid-template-columns: repeat(auto-fit, minmax(min(100%, 21rem), 1fr));
+		align-items: start;
 	}
 </style>
