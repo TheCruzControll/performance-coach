@@ -1,7 +1,8 @@
 /**
- * The words of a metric at a glance (M6 trend tiles), shared by TrendTile, VerdictBadge and the
- * specs, so a tile's visible parts and the one sentence a screen reader hears never disagree.
- * Pure and client-safe: it imports only types and the calendar.
+ * The words of a metric at a glance (M6 trend tiles), shared by TrendTile and the specs, so a
+ * tile's visible parts and the one sentence a screen reader hears never disagree. A verdict's own
+ * words (VerdictBadge) are in verdict-words.ts, re-exported here.
+ * Pure and client-safe: it imports only types, the calendar and the weekday names.
  *
  * The server sends every number already formatted in the owner's units (`value`, `delta.text`,
  * the so-far values); this module only arranges them into words, picks each part's tone and
@@ -9,11 +10,19 @@
  */
 import { weekdayOf, type IsoDate } from '#lib/domain/calendar.ts';
 import type { Change, MetricKind } from '#lib/domain/analytics/types.ts';
-import { WEEKDAY_INFO } from '#lib/domain/profile/catalog.ts';
+import { WEEKDAY_INFO } from '#lib/domain/weekdays.ts';
 import type { IconName } from '../icons/icons.ts';
 import type { Sparkline } from './sparkline.ts';
+import { verdictWords, type Tone, type TileVerdict, type VerdictWindow } from './verdict-words.ts';
 
-export type Tone = 'neutral' | 'positive' | 'warning';
+export {
+	verdictIcon,
+	verdictTone,
+	verdictWords,
+	type Tone,
+	type TileVerdict,
+	type VerdictWindow
+} from './verdict-words.ts';
 
 export const KIND_WORD: Readonly<Record<MetricKind, string>> = {
 	measured: 'Measured',
@@ -31,18 +40,6 @@ export interface TileDelta {
 	change: Change;
 	/** The previous period, named: 'the 12 weeks before'. */
 	against: string;
-}
-
-/** A trend verdict as a tile shows it (trend.ts's TrendResult, reduced to what is said). */
-export type TileVerdict =
-	| { verdict: 'real_trend'; direction: 'up' | 'down'; good: boolean | null }
-	| { verdict: 'normal_variation' }
-	| { verdict: 'insufficient_data'; have: number; need: number; unit: string };
-
-/** The weeks a verdict reads (periods.ts's trendWindow): said only when not the period's own. */
-export interface VerdictWindow {
-	sameAsPeriod: boolean;
-	weeks: number | null;
 }
 
 /** The week in progress against the same days of last week, each formatted ('6,200 kg'). */
@@ -106,43 +103,6 @@ export function deltaTone(delta: TileDelta, verdict?: TileVerdict | null): Tone 
 export function soFarWords(soFar: TileSoFar): string {
 	const day = WEEKDAY_INFO[weekdayOf(soFar.through)].label;
 	return `This week so far: ${soFar.value ?? 'nothing yet'} · ${soFar.lastWeek ?? 'nothing'} by ${day} last week`;
-}
-
-/**
- * 'Real improvement', 'Real decline', 'Normal variation' or 'Not enough data yet · 2 of 6 weeks',
- * with 'over the last 12 weeks' when the verdict reads other weeks than the period's. A real
- * trend in a metric with no better way is a 'Real rise' or a 'Real fall'.
- */
-export function verdictWords(verdict: TileVerdict, window?: VerdictWindow): string {
-	const over =
-		window && !window.sameAsPeriod && window.weeks ? ` over the last ${window.weeks} weeks` : '';
-	switch (verdict.verdict) {
-		case 'real_trend': {
-			const words =
-				verdict.good === null
-					? verdict.direction === 'up'
-						? 'Real rise'
-						: 'Real fall'
-					: verdict.good
-						? 'Real improvement'
-						: 'Real decline';
-			return words + over;
-		}
-		case 'normal_variation':
-			return 'Normal variation' + over;
-		case 'insufficient_data':
-			return `Not enough data yet · ${verdict.have} of ${verdict.need} ${verdict.unit}` + over;
-	}
-}
-
-export function verdictIcon(verdict: TileVerdict): IconName {
-	if (verdict.verdict === 'real_trend') return `trend-${verdict.direction}`;
-	return verdict.verdict === 'normal_variation' ? 'trend-flat' : 'clock';
-}
-
-export function verdictTone(verdict: TileVerdict): Tone {
-	if (verdict.verdict !== 'real_trend' || verdict.good === null) return 'neutral';
-	return verdict.good ? 'positive' : 'warning';
 }
 
 /**
