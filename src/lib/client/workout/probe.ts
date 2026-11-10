@@ -8,7 +8,7 @@
  * - It always closes, and closes at once on versionchange, so it never blocks sign-out.
  */
 import type { SessionKind } from '#lib/domain/training/types.ts';
-import type { Instant } from '#lib/domain/workout/index.ts';
+import type { Instant, StopwatchState } from '#lib/domain/workout/index.ts';
 import type { StoredWorkout } from './db.ts';
 import { DB_NAME, OUTBOX_INDEXES, STORES } from './names.ts';
 
@@ -19,6 +19,8 @@ export interface ActiveSummary {
 	startedAt: Instant;
 	/** Its changes not synced yet. */
 	pending: number;
+	/** The header's stopwatch, so the resume bar reads the time the workout page does. */
+	stopwatch: StopwatchState;
 }
 
 /** 'pc-offline' as it is, or null when it does not exist or cannot be opened. */
@@ -63,8 +65,8 @@ export function activeSummary(): Promise<ActiveSummary | null> {
 		if (!active) return null;
 		const outbox = tx.objectStore(STORES.outbox).index(OUTBOX_INDEXES.byWorkout);
 		const pending = await result(outbox.count(active.id));
-		const { id: workoutId, kind, title, startedAt } = active;
-		return { workoutId, kind, title, startedAt, pending };
+		const { id: workoutId, kind, title, startedAt, device } = active;
+		return { workoutId, kind, title, startedAt, pending, stopwatch: device.stopwatch };
 	});
 }
 
