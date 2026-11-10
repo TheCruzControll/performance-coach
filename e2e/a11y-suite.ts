@@ -10,6 +10,7 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
 import { COACH_A11Y } from './coach-a11y';
+import { answerHistory, openWorkoutPanel, pick } from './design-workout';
 import { isDesktopPage } from './desktop';
 import { gotoHydrated, signedOut, TABS } from './support';
 
@@ -214,6 +215,35 @@ export function a11ySuite(theme: 'dark' | 'light'): void {
 				await page.waitForTimeout(300);
 				expect(await audit(page), tab).toEqual([]);
 			}
+		});
+
+		test.describe('/design → Workout', () => {
+			// The history sheet's answer comes from page.route, which WebKit's service worker hides.
+			test.use({ serviceWorkers: 'block' });
+
+			test('every workout state has no violations', async ({ page }) => {
+				await answerHistory(page);
+				const panel = await openWorkoutPanel(page);
+				const states: [string, string, string, string][] = [
+					['Barbell', 'Baseline', 'Superset partner', 'as it opens'],
+					['Time', 'Swapped', 'Between exercises', 'swapped, between exercises'],
+					['Assisted', 'Stopped', 'All done', 'stopped, all done'],
+					['Distance', 'Checking', 'Superset partner', 'checking last time']
+				];
+				for (const [logger, card, upNext, name] of states) {
+					await pick(panel, 'logger-kind', logger);
+					await pick(panel, 'card-kind', card);
+					await pick(panel, 'up-next-kind', upNext);
+					await page.waitForTimeout(300);
+					expect(await audit(page), name).toEqual([]);
+				}
+				await pick(panel, 'logger-kind', 'Barbell');
+				await panel.getByTestId('missed-toggle').click();
+				await panel.getByTestId('open-history').click();
+				await expect(page.getByTestId('history-best')).toBeVisible();
+				await page.waitForTimeout(300);
+				expect(await audit(page), 'missed reps open, the history sheet over it').toEqual([]);
+			});
 		});
 
 		for (const coach of COACH_A11Y) {
