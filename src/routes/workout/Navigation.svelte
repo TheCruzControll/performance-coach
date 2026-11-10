@@ -5,8 +5,9 @@
   workout, so a reload returns to it.
   - Previous and Next, in workout order, disabled at either end (focus then moves to the other,
     never to the page).
-  - Under them, Up next (UpNext.svelte), which between exercises offers Start, and once every
-    exercise is done Finish workout.
+  - Under them, Up next (UpNext.svelte), which between exercises offers Start, once every
+    exercise is done Finish workout, and always Add exercise (`onadd`, the strength view's
+    picker).
   - A swipe across the card (`area`): left for the next exercise, right for the previous, by
     swipe.ts's thresholds. Any pointer swipes, a mouse too; the card has touch-action: pan-y, so a
     vertical drag scrolls and a sideways one never scrolls the page. A swipe that ends on a set row
@@ -32,9 +33,12 @@
 		store: WorkoutStore;
 		/** Finish workout, after the last exercise. */
 		onfinish: () => void;
+		/** Add exercise, in Up next: opens the picker (`onintent` fetches it). */
+		onadd: (event: MouseEvent) => void;
+		onintent: () => void;
 	}
 
-	let { view, area, store, onfinish }: Props = $props();
+	let { view, area, store, onfinish, onadd, onintent }: Props = $props();
 	const index = $derived(view.slots.indexOf(currentExercise(view)!));
 
 	/** Makes the exercise at `position` current. */
@@ -153,7 +157,7 @@
 </nav>
 
 <!-- Last: Start, after an exercise's last set, grows the card where nothing follows it. -->
-<UpNext {view} onstart={goTo} {onfinish} />
+<UpNext {view} onstart={goTo} {onfinish} {onadd} {onintent} />
 
 <style>
 	.pager {
