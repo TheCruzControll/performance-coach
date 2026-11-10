@@ -267,6 +267,10 @@ describe('CI e2e legs', () => {
 		expect(value(step, 'run')).toBe('pnpm test:e2e --shard ${{ matrix.shard }}/${{ matrix.of }}');
 		const timing = legStep('Where the minutes went');
 		expect(value(timing, 'if')).toBe('${{ !cancelled() }}');
+		const timingEnv = under(timing, 'env');
+		expect(value(timingEnv, 'E2E_ENGINE')).toBe('${{ matrix.engine }}');
+		expect(value(timingEnv, 'E2E_GROUP')).toBe('${{ matrix.group }}');
+		expect(value(timingEnv, 'E2E_SHARD')).toBe('${{ matrix.shard }}/${{ matrix.of }}');
 		expect(value(timing, 'run')).toMatch(
 			/^node scripts\/e2e-timing\.ts test-results\/report\.json /
 		);

@@ -50,6 +50,21 @@ describe('calculatePlates', () => {
 		expect(capped).toMatchObject({ perSide: [25, 25, 20, 20], achieved: 200, remainder: 20 });
 	});
 
+	it('loads a configured gym inventory: a 15 kg bar, no 25s and one pair of 20s', () => {
+		// 102.5 kg: 43.75 per side. The full set would load 20 + 20 + 2.5 + 1.25; with one pair of
+		// 20s the next-fewest plates make it exactly.
+		const gym = [
+			{ weight: 20, pairs: 1 },
+			...STANDARD_PLATES.kg.filter((w) => w < 20).map((weight) => ({ weight }))
+		];
+		expect(calculatePlates(102.5, 15, gym)).toEqual({
+			perSide: [20, 15, 5, 2.5, 1.25],
+			achieved: 102.5,
+			remainder: 0,
+			exact: true
+		});
+	});
+
 	it('returns just the bar when the target does not exceed it', () => {
 		expect(calculatePlates(20, 20, STANDARD_PLATES.kg)).toEqual({
 			perSide: [],
