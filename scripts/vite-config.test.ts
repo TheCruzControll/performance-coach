@@ -96,3 +96,108 @@ describe('the live coach suite (tests/live)', () => {
 		expect(liveMode({ LIVE_LLM: '1', LIVE_LLM_DRY: '1', ANTHROPIC_API_KEY: 'k' })).toBe('live');
 	});
 });
+
+/**
+ * The client's chunk groups merge the code every page starts with into a few chunks, so each
+ * page's start-up needs fewer round trips. They hold code (nearly) every page loads: each module
+ * in them ships to every route.
+ */
+describe('the start-up chunk groups', () => {
+	interface Group {
+		name: string;
+		test: RegExp | ((id: string) => boolean);
+	}
+	let loaded: Promise<Record<string, (id: string) => boolean>> | undefined;
+	const groups = () => (loaded ??= readGroups());
+	async function readGroups(): Promise<Record<string, (id: string) => boolean>> {
+		vi.resetModules();
+		const { default: config } = await import('../vite.config.ts');
+		const resolved: UserConfig = await config({ command: 'build', mode: 'production' });
+		const output = resolved.build?.rolldownOptions?.output as {
+			codeSplitting: { groups: Group[] };
+		};
+		return Object.fromEntries(
+			output.codeSplitting.groups.map(({ name, test }) => [
+				name,
+				(id: string) => (typeof test === 'function' ? test(id) : test.test(id))
+			])
+		);
+	}
+	const pkg = (name: string, file: string) =>
+		`/repo/node_modules/.pnpm/${name.replace('/', '+')}@1.0.0/node_modules/${name}/${file}`;
+	const src = (file: string) => `/repo/src/${file}`;
+
+	// start.js runs this chunk before SvelteKit sets the payload: nothing that reads it. First, so
+	// the framework group cannot take the payload module along with the client modules.
+	it("payload: SvelteKit's payload module and the preload helper alone, first", async () => {
+		const { payload } = await groups();
+		expect(Object.keys(await groups()).slice(0, 2)).toEqual(['payload', 'framework']);
+		for (const id of [
+			pkg('@sveltejs/kit', 'src/runtime/client/payload.js'),
+			'\0vite/preload-helper.js'
+		])
+			expect(payload!(id), id).toBe(true);
+		for (const id of [
+			pkg('@sveltejs/kit', 'src/runtime/client/client.js'),
+			pkg('@sveltejs/kit', 'src/runtime/client/entry.js'),
+			pkg('@sveltejs/kit', 'src/runtime/app/env/client.js'),
+			pkg('svelte', 'src/internal/client/runtime.js')
+		])
+			expect(payload!(id), id).toBe(false);
+	});
+
+	it("framework: Svelte and SvelteKit's client", async () => {
+		const { framework } = await groups();
+		for (const id of [
+			pkg('svelte', 'src/internal/client/runtime.js'),
+			pkg('svelte', 'src/index-client.js'),
+			pkg('@sveltejs/kit', 'src/runtime/client/client.js'),
+			pkg('@sveltejs/kit', 'src/runtime/client/client-entry.js'),
+			pkg('@sveltejs/kit', 'src/runtime/app/state/client.svelte.js'),
+			pkg('@sveltejs/kit', 'src/runtime/app/paths/index.js'),
+			pkg('@sveltejs/kit', 'src/runtime/app/env/client.js'),
+			pkg('devalue', 'src/parse.js'),
+			pkg('clsx', 'dist/clsx.mjs')
+		])
+			expect(framework!(id), id).toBe(true);
+	});
+
+	it("framework: not $app/forms (screens with a form), SvelteKit's entries or other packages", async () => {
+		const { framework } = await groups();
+		for (const id of [
+			pkg('@sveltejs/kit', 'src/runtime/app/forms/client.js'),
+			pkg('@sveltejs/kit', 'src/runtime/client/entry.js'),
+			pkg('@sveltejs/kit', 'src/runtime/client/payload.js'),
+			pkg('zod', 'v4/core/schemas.js'),
+			pkg('idb', 'build/index.js'),
+			pkg('web-vitals', 'dist/web-vitals.js'),
+			pkg('@simplewebauthn/browser', 'esm/index.js'),
+			src('lib/ui/components/Button.svelte')
+		])
+			expect(framework!(id), id).toBe(false);
+	});
+
+	it('boot: the app code every page starts with, and nothing else', async () => {
+		const { boot } = await groups();
+		for (const id of [
+			src('lib/client/errors.ts'),
+			src('lib/client/leaving.ts'),
+			src('lib/client/visits.ts'),
+			src('lib/client/service-worker.ts'),
+			src('lib/ui/toast.svelte.ts'),
+			src('lib/ui/components/Icon.svelte'),
+			src('routes/error-page.ts')
+		])
+			expect(boot!(id), id).toBe(true);
+		for (const id of [
+			src('lib/client/vitals.ts'),
+			src('lib/client/recovery.ts'),
+			src('lib/ui/components/IconButton.svelte'),
+			src('lib/ui/components/Button.svelte'),
+			src('routes/ErrorPage.svelte'),
+			src('routes/ErrorView.svelte'),
+			src('routes/(app)/AppShell.svelte')
+		])
+			expect(boot!(id), id).toBe(false);
+	});
+});
