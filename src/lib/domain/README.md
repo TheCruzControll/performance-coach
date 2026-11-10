@@ -739,7 +739,26 @@ block after it, as now dated.
 
 ### Next-block input (`programming/next-block/input.ts`)
 
-Not built yet (m6/29, next-block-input).
+`nextBlockInput(base, snapshot, directives, overrides?)` → `{ input, assumptions, subset }`: M3's
+`ProgrammingInput` for today's profile (`base`, from `buildProgrammingInput`) overlaid with what the
+block actually showed (`ResultsSnapshot`, from M6's strength and running analytics), so the next
+block starts from actual results. The same arguments give the same result, in any list order.
+
+- Baselines: each lift's latest e1RM, kind `estimated`; a measured 1RM achieved after it stays
+  measured (an undated one counts as older); with no e1RM the profile's value or null stays. Only
+  M2's baseline lifts: another kept lift's `from_e1rm` lines resolve from M4's kit estimate.
+- Running, when trained: `weeklyMetres` from the mean of the last `runWeeks` (3) complete weeks,
+  `longestRunMetres` from the last completed long run (each rounded down to 100 m), easy pace from
+  the last `easyRuns` (5) easy runs, and each distance's best logged effort added to the races.
+  What the block did not show keeps the profile's value; a running-volume default it replaced is
+  dropped from `input.assumptions`.
+- Kept exercises join `likes`; rotated ones join `dislikes` for the block. A liked exercise is
+  never rotated, a disliked one never kept.
+- `overrides` go through `clampOverrides`: `subset` is the clamped owner's part, and an overridden
+  running start replaces the actual one.
+
+Each change is an `OverlayAssumption` `{ rule, field, value, why }` (`OVERLAY_RULES`), a clamp as
+`override_clamped`. The numbers are in `NEXT_BLOCK_INPUT_RULES`.
 
 ### Next block (`programming/next-block/generate.ts`)
 
