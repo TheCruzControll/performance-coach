@@ -4,7 +4,7 @@
  * (SPKI) that Chromium is told to trust (--ignore-certificate-errors-spki-list), so WebAuthn,
  * which refuses a page with certificate errors, still runs.
  *
- * The files live in e2e/.tls/ (git-ignored, mode 0600), not test-results/: playwright.config.ts
+ * The files live in e2e/.tls/ (E2E_TLS_DIR overrides it; git-ignored, mode 0600), not test-results/: playwright.config.ts
  * reads the hash when it loads, and Playwright clears its output folder after that, before global
  * setup starts the proxy. A certificate that still has CERT_MIN_REMAINING_MS left is reused, so
  * the runner, its workers and global setup all see the same key.
@@ -15,6 +15,11 @@ import { chmodSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
 export const TLS_DIR = path.resolve(import.meta.dirname, '../../e2e/.tls');
+
+/** Where the certificate lives: E2E_TLS_DIR (the unit tests' temp folder), else TLS_DIR. */
+export function tlsDir(env: NodeJS.ProcessEnv = process.env): string {
+	return env.E2E_TLS_DIR || TLS_DIR;
+}
 /** How long a new certificate is valid: a run, with room to spare, and never longer. */
 export const CERT_DAYS = 2;
 /** A certificate with less than this left is replaced rather than reused. */
@@ -47,7 +52,7 @@ function read(dir: string): TlsCertificate {
 }
 
 /** Generates a new key and certificate in `dir`, replacing any there. */
-export function generateCertificate(dir = TLS_DIR, openssl = 'openssl'): TlsCertificate {
+export function generateCertificate(dir = tlsDir(), openssl = 'openssl'): TlsCertificate {
 	mkdirSync(dir, { recursive: true, mode: 0o700 });
 	const keyPath = path.join(dir, 'key.pem');
 	const certPath = path.join(dir, 'cert.pem');
@@ -88,7 +93,7 @@ export function generateCertificate(dir = TLS_DIR, openssl = 'openssl'): TlsCert
 }
 
 /** The certificate in `dir` while it has CERT_MIN_REMAINING_MS left, else a new one. */
-export function ensureCertificate(dir = TLS_DIR, now = Date.now()): TlsCertificate {
+export function ensureCertificate(dir = tlsDir(), now = Date.now()): TlsCertificate {
 	if (existsSync(path.join(dir, 'cert.pem')) && existsSync(path.join(dir, 'key.pem'))) {
 		try {
 			const current = read(dir);

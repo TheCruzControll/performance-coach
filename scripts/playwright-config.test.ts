@@ -8,9 +8,12 @@
  * certificate's SPKI at launch, and every project ignores certificate errors.
  */
 import { spawnSync } from 'node:child_process';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Project } from '@playwright/test';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
 import {
 	bypassHeaders,
 	e2eBaseURL,
@@ -44,6 +47,9 @@ const TARGET = [
 	'TEST_WORKER_INDEX'
 ];
 const URL_ = 'https://coach.example.com';
+/** The proxy certificate's folder for these tests: never the checkout's e2e/.tls. */
+const TLS_TMP = mkdtempSync(path.join(tmpdir(), 'playwright-config-tls-'));
+afterAll(() => rmSync(TLS_TMP, { recursive: true, force: true }));
 const SMOKES = [
 	'smoke-iphone-chromium',
 	'smoke-iphone-webkit',
@@ -56,6 +62,7 @@ async function loadConfig(env: Record<string, string> = {}) {
 	vi.resetModules(); // the config reads the environment when it loads
 	vi.stubEnv('CI', '1');
 	for (const name of TARGET) vi.stubEnv(name, '');
+	vi.stubEnv('E2E_TLS_DIR', TLS_TMP);
 	for (const [name, value] of Object.entries(env)) vi.stubEnv(name, value);
 	return (await import('../playwright.config.ts')).default;
 }
@@ -392,7 +399,8 @@ describe('E2E_TLS', () => {
 	it('the config loads with the https origin and pins the certificate global setup serves', async () => {
 		const config = await loadConfig({ E2E_TLS: '1', E2E_PORT: '5324' });
 		expect(config.use?.baseURL).toBe('https://localhost:5324');
-		const { spki } = ensureCertificate();
+		expect(existsSync(path.join(TLS_TMP, 'cert.pem'))).toBe(true); // E2E_TLS_DIR, not e2e/.tls
+		const { spki } = ensureCertificate(TLS_TMP);
 		const chromium = config.projects!.find((p) => p.name === 'iphone-chromium')!;
 		expect(launchArgs(chromium)).toContain(`--ignore-certificate-errors-spki-list=${spki}`);
 		const webkit = config.projects!.find((p) => p.name === 'iphone-webkit')!;
@@ -401,7 +409,7 @@ describe('E2E_TLS', () => {
 
 	it('a worker pins the SPKI the runner exported, never a certificate of its own', async () => {
 		await loadConfig({ E2E_TLS: '1' });
-		expect(process.env.E2E_TLS_SPKI).toBe(ensureCertificate().spki);
+		expect(process.env.E2E_TLS_SPKI).toBe(ensureCertificate(TLS_TMP).spki);
 		const config = await loadConfig({ E2E_TLS: '1', E2E_TLS_SPKI: SPKI, TEST_WORKER_INDEX: '0' });
 		const chromium = config.projects!.find((p) => p.name === 'iphone-chromium')!;
 		expect(launchArgs(chromium)).toContain(flag);
@@ -409,7 +417,7 @@ describe('E2E_TLS', () => {
 
 	it('the runner replaces a stale E2E_TLS_SPKI left in the shell with the served certificate', async () => {
 		const config = await loadConfig({ E2E_TLS: '1', E2E_TLS_SPKI: SPKI });
-		const { spki } = ensureCertificate();
+		const { spki } = ensureCertificate(TLS_TMP);
 		expect(process.env.E2E_TLS_SPKI).toBe(spki);
 		const chromium = config.projects!.find((p) => p.name === 'iphone-chromium')!;
 		expect(launchArgs(chromium)).toContain(`--ignore-certificate-errors-spki-list=${spki}`);
