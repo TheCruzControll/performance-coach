@@ -88,6 +88,26 @@ describe('the weekly review on the server', () => {
 		expect(html(review())).not.toContain('review-stale');
 	});
 
+	it('the write-up after the figures, with Discuss; none without one (before M6)', () => {
+		expect(html(review())).not.toContain('data-testid="review-write-up"');
+		const discuss = '/coach?ask=Hi&from=weekly_review&ref=review%3Aw-2026-10-26';
+		const body = html(
+			review({
+				narration: {
+					target: { kind: 'weekly', id: 'review-1' },
+					view: { state: 'written', text: 'Fact: You completed 5 of 6 sessions.', blocks: [] },
+					lines: ['Fact: You completed 5 of 6 sessions.'],
+					discuss
+				}
+			})
+		);
+		const at = body.indexOf('data-testid="review-write-up"');
+		expect(at).toBeGreaterThan(body.indexOf('data-testid="review-adherence-words"'));
+		const section = body.slice(at, body.indexOf('</section>', at));
+		expect(text(`<${section}`)).toContain('Fact: You completed 5 of 6 sessions.');
+		expect(section).toContain(`href="${discuss.replaceAll('&', '&amp;')}"`);
+	});
+
 	it('each section is a disclosure, collapsed until opened, its verdict line in the summary', () => {
 		const body = html(review());
 		const start = body.search(/<details[^>]*data-section="rpe"/);
