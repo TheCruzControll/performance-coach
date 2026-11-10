@@ -690,11 +690,52 @@ withheld'), fatigue and the deload need.
 
 ### Directives (`programming/review/directives.ts`)
 
-Not built yet (m6/28, cycle-directives).
+`directivesFrom({ snapshot, running }, outline, goals)` → the next block's `CycleDirectives`, by
+code from the stored cycle snapshot, the block's actual weekly run distance and longest run, the
+next outline block (`{ phase, weeks }`, or null) and M2's goals. Every number is in
+`DIRECTIVE_RULES`.
+
+- `phase` and `weeks`: the outline's (`fromOutline`); with none left, the reviewed phase when it
+  repeats (accumulation, hypertrophy, a base or build…), else accumulation, for `appendWeeks` (5).
+- `keep` and `rotate`, each with a reason: a stalled accessory rotates; a main lift, a progressed,
+  held or too-few one is kept. With verdicts withheld (low adherence) nothing rotates.
+- `volume`: per ranged group, `volumeStep` (±10 %) when the block's mean hard sets were under or
+  over the range, `fatigueVolumeCut` (−10 %) on every group when fatigue is high, and no increase
+  with verdicts withheld. `rpe`: the range by fatigue level.
+- `deload`: `first` when needed, `last` when worth considering or the block is
+  `DELOAD_AFTER_WEEKS` long, never in a taper.
+- `running` (a running goal, a marathon or half phase, or runs in the block): `weeklyMetres` from
+  the mean of the last `runWeeks` (3) weeks' actual distance, the longest run, each rounded down to
+  100 m, and each running goal's `racePaceTarget`.
+- `avoidDays`: the snapshot's often-missed weekdays. `progression`: `hold` with verdicts withheld or
+  high fatigue, else `progress`.
+
+`modifiableSubset(directives)` is the owner's part as M5's next_cycle payload (`import type`
+only): focus, phase, weeks, emphasis (the groups gaining volume), targets, no rotation (the
+generator picks replacements), running, ending and constraints. `clampOverrides(overrides,
+directives)` → `{ subset, clamps }`: an outline's phase and weeks stay; the RPE cap within the
+range; volume and load no higher than directed (none at all on `hold`), running at most +10 %;
+appended weeks 3 to 16. Each clamp is `{ field, asked, used }`.
 
 ### Next-block dates (`programming/next-block/dates.ts`)
 
-Not built yet (m6/28, cycle-directives).
+`nextBlockDates({ blocks, reviewedBlock, today, start, events, weeks })` → `{ bridge?, block,
+shifted, lostWeeks, firstPlannedDay }`, valid whether the review is early, on time or late:
+
+- next is the day after the reviewed block. S is today's Monday (`this_week`, the default
+  `DEFAULT_NEXT_BLOCK_START`, planning from today) or the next Monday, never before next; while the
+  reviewed block runs, only next is offered (`offeredStarts`).
+- k = (S − next) ÷ 7 ≥ 1 gives a bridge [next, S − 1]: `BRIDGE_PHASE` transition, k
+  `BRIDGE_WEEK_KIND` unplanned weeks, no sessions.
+- An outline leading to no event starts at S, every block shifted k weeks at its length.
+- Before an M2 event, the blocks before the event-aligned one (ending in the event's week) absorb
+  k: the next block down to `MIN_NEXT_BLOCK_WEEKS` (3), then the later ones down to
+  `MIN_OUTLINE_WEEKS` (1), then below. The event-aligned block keeps its dates unless S is past its
+  start, when it starts at S. `lostWeeks` is the weeks past those minimums.
+- With no outline left, the block is appended from S for `weeks`.
+
+`block.outline` is the outline block planned (as it was dated) or null; `shifted` is every outline
+block after it, as now dated.
 
 ### Next-block input (`programming/next-block/input.ts`)
 
