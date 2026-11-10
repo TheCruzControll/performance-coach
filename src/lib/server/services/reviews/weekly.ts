@@ -47,6 +47,7 @@ import {
 	TRAILING_WEEKS,
 	type ReviewExercise,
 	type ReviewPlannedSession,
+	type VolumeTargets,
 	type WeeklyReviewInput
 } from '../../../domain/programming/review/weekly';
 import { estimateMinutes } from '../../../domain/programming/timefit';
@@ -58,7 +59,7 @@ import { createProgramsRepository } from '../../db/repositories/programs';
 import { createReviewsRepository } from '../../db/repositories/reviews';
 import { createFactsLoader, createQueue, type DatedSession } from '../analytics/facts';
 import { displayUnits, formatIn } from '../analytics/format';
-import { getMuscleTargets } from '../analytics/targets';
+import { getMuscleTargets, type WeekTarget } from '../analytics/targets';
 import { createProposal, getProposalView, type ProposalView } from '../coach/proposals';
 import { getExercisesByIds, resolveKeys, type ExerciseDef } from '../exercises/index';
 import { getAthleteProfile } from '../profile/index';
@@ -134,7 +135,7 @@ const keyOf = (def: Pick<ExerciseDef, 'id' | 'key'>) =>
 	toExerciseKey(def.key ? { key: def.key } : { customId: def.id });
 
 /** A run's planned metres; null when any segment is planned by time. */
-function plannedMetres(s: StoredSession): number | null {
+export function plannedMetres(s: StoredSession): number | null {
 	if (s.kind !== 'run') return null;
 	if (s.segments.some((seg) => seg.distanceMetres === null)) return null;
 	return s.segments.reduce((sum, seg) => sum + seg.distanceMetres! * (seg.repeats ?? 1), 0);
@@ -174,7 +175,7 @@ function nextStateOf(
  * changed. The sets before the window, read only to judge PRs, are left out on purpose: reading
  * all of them on every view would cost more than an older set's edit is worth.
  */
-function digestOf(
+export function digestOf(
 	sets: readonly { id: string; updatedAt: Date }[],
 	sessions: readonly DatedSession[],
 	recovery: readonly { id: string; updatedAt: Date }[]
@@ -206,6 +207,25 @@ async function weekFacts(db: Executor, ownerId: string, monday: IsoDate, timeZon
 	const sessions = await facts.sessions();
 	const recovery = await facts.recovery();
 	return { facts, queue, sets, sessions, recovery, digest: digestOf(sets, sessions, recovery) };
+}
+
+/** A week's targets as the reviews read them: the band unscaled by the week's volume factor. */
+export function volumeTargetsOf(target: WeekTarget): VolumeTargets {
+	const factor = target.volumeFactor;
+	const band = Object.keys(target.targets).length
+		? Object.fromEntries(
+				Object.entries(target.targets).map(([g, [lo, hi]]) => [
+					g,
+					[cleanFloat(lo / factor, 2), cleanFloat(hi / factor, 2)]
+				])
+			)
+		: null;
+	return {
+		band: band as VolumeTargets['band'],
+		volumeFactor: factor,
+		planned: target.planned?.groups ?? null,
+		label: target.label
+	};
 }
 
 /** Everything a review of `monday` is computed from, on `today`. */
@@ -243,15 +263,6 @@ async function readWeek(db: Executor, ownerId: string, monday: IsoDate, today: I
 	];
 	const defs = await getExercisesByIds(ownerId, ids, { db });
 	const [target] = await getMuscleTargets(ownerId, { from: monday, to: sunday }, { db });
-	const factor = target!.volumeFactor;
-	const band = Object.keys(target!.targets).length
-		? Object.fromEntries(
-				Object.entries(target!.targets).map(([g, [lo, hi]]) => [
-					g,
-					[cleanFloat(lo / factor, 2), cleanFloat(hi / factor, 2)]
-				])
-			)
-		: null;
 	const reviewed = plan?.weeks.get(monday)?.week ?? null;
 	const weekSessions = (reviewed?.sessions ?? []).map(
 		(s): ReviewPlannedSession & { session: StoredSession } => ({
@@ -282,12 +293,7 @@ async function readWeek(db: Executor, ownerId: string, monday: IsoDate, today: I
 		recovery,
 		prescriptions,
 		exercises: defs as ReadonlyMap<string, ReviewExercise>,
-		targets: {
-			band: band as WeeklyReviewInput['targets']['band'],
-			volumeFactor: factor,
-			planned: target!.planned?.groups ?? null,
-			label: target!.label
-		},
+		targets: volumeTargetsOf(target!),
 		digest: read.digest,
 		format: formatIn(displayUnits(profile))
 	};
@@ -296,7 +302,7 @@ async function readWeek(db: Executor, ownerId: string, monday: IsoDate, today: I
 type Week = Awaited<ReturnType<typeof readWeek>>;
 
 /** Every planned session of the week is completed or skipped (and it plans at least one). */
-function allDone(
+export function allDone(
 	sessions: readonly { lineage: string; status: string }[],
 	completed: ReadonlySet<string>
 ) {

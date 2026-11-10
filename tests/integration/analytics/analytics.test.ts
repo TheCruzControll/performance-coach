@@ -5,6 +5,10 @@
  * - Expected values are worked out by hand from the logged rows (each comment shows the sum);
  *   the ACWR from the closed form of M1's moving averages for a step from 200 to 400 AU a day.
  * - Too little data is insufficient_data, never a zero, and another owner reads nothing.
+ * - Since M6's coach-analytics-repoint the figures are the dashboards' (one engine): each also
+ *   carries its catalogue context (about) and its Progress view (dashboard), every load counts a
+ *   class's own RPE when the session has none (M6's sessionLoads), and the ratio reads from the
+ *   later of the first activity and 56 days ago, as the General view does.
  * - The services run inside the test's transaction, so the integration setup proves they send
  *   one query at a time.
  */
@@ -12,13 +16,16 @@ import { describe, expect, it } from 'vitest';
 import { addDays } from '../../../src/lib/domain/calendar';
 import { METHOD_MAX } from '../../../src/lib/domain/coach/answer';
 import type { SourceRef } from '../../../src/lib/domain/coach/sources';
+import { TREND_METHOD } from '../../../src/lib/domain/analytics/trend';
 import { SERIES_CHANGE_METHOD } from '../../../src/lib/domain/coach/trends';
 import type { Executor } from '../../../src/lib/server/db';
 import {
 	ACWR_CAVEAT,
+	dashboardPath,
 	getPerformanceTrends,
 	getTrainingLoad,
 	getWeeklyTrainingSummary,
+	metricAbout,
 	SOURCES_MAX
 } from '../../../src/lib/server/services/analytics/index';
 import {
@@ -29,7 +36,7 @@ import {
 import { TrainingInputError } from '../../../src/lib/server/services/training/shared';
 import { programFixture } from '../../../src/lib/server/test-support/program-fixtures';
 import { withRollback } from '../helpers';
-import { makeOwner } from '../profile/fixtures';
+import { makeOwner, makeSecondOwner } from '../profile/fixtures';
 import { exerciseIds, logOther, logRun, logStrength, utc } from '../training/fixtures/history';
 
 /** A Wednesday: its week (Monday 9 November) is in progress. */
@@ -139,7 +146,6 @@ describe('getWeeklyTrainingSummary', () => {
 		const session = (s: typeof monday): SourceRef => ({
 			type: 'session',
 			id: s!.lineage,
-			label: s!.title,
 			date: s!.date
 		});
 		return {
@@ -169,6 +175,7 @@ describe('getWeeklyTrainingSummary', () => {
 					value: 4,
 					unit: 'sessions',
 					method: any,
+					about: metricAbout('adherence'),
 					sources: [
 						week,
 						session(s.thursdayRun),
@@ -181,28 +188,47 @@ describe('getWeeklyTrainingSummary', () => {
 					value: 2,
 					unit: 'sessions',
 					method: any,
+					about: metricAbout('adherence'),
 					sources: [week, session(s.tuesday), session(s.monday)]
 				},
 				skipped: {
 					value: 1,
 					unit: 'sessions',
 					method: any,
+					about: metricAbout('adherence'),
 					sources: [week, session(s.thursdayClass)]
 				},
-				workouts: { value: 3, unit: 'sessions', method: any, sources: done },
+				workouts: {
+					...{ value: 3, unit: 'sessions', method: any, sources: done },
+					about: metricAbout('sessions')
+				},
 				// 50 + 60 + 30.
-				minutes: { value: 140, unit: 'min', method: any, sources: done },
+				minutes: {
+					...{ value: 140, unit: 'min', method: any, sources: done },
+					about: metricAbout('training_time')
+				},
 				// 400 + 420; the easy run has no RPE.
-				sessionLoad: { value: 820, unit: 'AU', method: any, sources: [week, muayThai, strength] },
-				unrated: { value: 1, unit: 'sessions', method: any, sources: [week, easyRun] },
-				runningDistance: { value: 5, unit: 'km', method: any, sources: [week, easyRun] },
+				sessionLoad: {
+					...{ value: 820, unit: 'AU', method: any, sources: [week, muayThai, strength] },
+					about: metricAbout('srpe_load')
+				},
+				unrated: {
+					...{ value: 1, unit: 'sessions', method: any, sources: [week, easyRun] },
+					about: metricAbout('srpe_load')
+				},
+				runningDistance: {
+					...{ value: 5, unit: 'km', method: any, sources: [week, easyRun] },
+					about: metricAbout('mileage')
+				},
 				// Back squat: quads and glutes (hips) primary, adductors (hips) and lower back secondary.
 				hardSets: {
 					values: { quads: 3, hips: 3, back: 1.5 },
 					unit: 'hard sets',
 					method: any,
-					sources: [week, strength]
-				}
+					sources: [week, strength],
+					about: metricAbout('group_sets')
+				},
+				dashboard: dashboardPath('general', '4w')
 			});
 			expect(await getWeeklyTrainingSummary(owner, { today: TODAY, week: WEEK }, { db })).toEqual(
 				summary
@@ -243,9 +269,9 @@ describe('getWeeklyTrainingSummary', () => {
 			expect(
 				await getWeeklyTrainingSummary(owner, { today: TODAY, week: '2026-10-26' }, { db })
 			).toEqual({ ...nothing, unit: 'sessions' });
-			expect(await getWeeklyTrainingSummary(crypto.randomUUID(), { today: TODAY }, { db })).toEqual(
-				{ ...nothing, unit: 'sessions' }
-			);
+			expect(
+				await getWeeklyTrainingSummary(await makeSecondOwner(db), { today: TODAY }, { db })
+			).toEqual({ ...nothing, unit: 'sessions' });
 		});
 	});
 
@@ -277,15 +303,15 @@ describe('getTrainingLoad', () => {
 		rpe: (day: number) => number | null = (day) => (day < 21 ? 5 : 10)
 	) {
 		const ids: string[] = [];
+		// Strength sessions: a class's own RPE would rate a session with none (M6's sessionLoads).
 		for (let day = 0; day < 28; day += 1) {
-			ids.push(
-				await logOther(db, owner, {
-					startedAt: utc(addDays(FIRST, day), '18:00'),
-					title: `Session ${day + 1}`,
-					durationSeconds: 2400,
-					sessionRpe: rpe(day)
-				})
-			);
+			const spec = {
+				startedAt: utc(addDays(FIRST, day), '18:00'),
+				title: `Session ${day + 1}`,
+				durationSeconds: 2400,
+				sessionRpe: rpe(day)
+			};
+			ids.push((await logStrength(db, owner, spec, [])).workoutId);
 		}
 		return ids.map((id, day) => workoutRef(id, `Session ${day + 1}`, addDays(FIRST, day)));
 	}
@@ -294,19 +320,18 @@ describe('getTrainingLoad', () => {
 		await withRollback(async (db) => {
 			const owner = await makeOwner(db);
 			const sessions = await seedLoad(db, owner);
-			const unrated = await logOther(db, owner, {
-				startedAt: utc('2026-11-10', '07:00'),
-				title: 'Open mat',
-				sessionRpe: null
-			});
+			const { workoutId: unrated } = await logStrength(
+				db,
+				owner,
+				{ startedAt: utc('2026-11-10', '07:00'), title: 'Open mat', sessionRpe: null },
+				[]
+			);
 			await logOther(db, owner, {
 				startedAt: utc('2026-11-09', '07:00'),
 				title: 'Sparring',
 				status: 'abandoned',
 				sessionRpe: 9
 			});
-			// Outside the 56 days the load reads: it neither counts nor starts the history.
-			await logOther(db, owner, { startedAt: utc('2026-09-01', '18:00'), sessionRpe: 10 });
 
 			// Both averages start at 200 and hold it for 21 days; 7 days at 400 then close a share
 			// of the gap: (1 − 2 / (7 + 1))^7 of it stays for the acute, (1 − 2 / (28 + 1))^7 for the
@@ -326,18 +351,33 @@ describe('getTrainingLoad', () => {
 				from: FIRST,
 				to: TODAY,
 				days: 28,
-				acute: { value: 373.3, unit: 'AU/day', method: any, sources: newest(7) },
-				chronic: { value: 278.7, unit: 'AU/day', method: any, sources: newest(SOURCES_MAX) },
-				ratio: { value: 1.34, unit: null, method: any, sources: newest(SOURCES_MAX) },
+				acute: {
+					...{ value: 373.3, unit: 'AU/day', method: any, sources: newest(7) },
+					about: metricAbout('acwr')
+				},
+				chronic: {
+					...{ value: 278.7, unit: 'AU/day', method: any, sources: newest(SOURCES_MAX) },
+					about: metricAbout('acwr')
+				},
+				ratio: {
+					...{ value: 1.34, unit: null, method: any, sources: newest(SOURCES_MAX) },
+					about: metricAbout('acwr')
+				},
+				zone: 'raised',
 				// 7 × 400.
-				last7Days: { value: 2800, unit: 'AU', method: any, sources: newest(7) },
+				last7Days: {
+					...{ value: 2800, unit: 'AU', method: any, sources: newest(7) },
+					about: metricAbout('srpe_load')
+				},
 				unrated: {
 					value: 1,
 					unit: 'sessions',
 					method: any,
-					sources: [asOf, workoutRef(unrated, 'Open mat', '2026-11-10')]
+					sources: [asOf, workoutRef(unrated, 'Open mat', '2026-11-10')],
+					about: metricAbout('srpe_load')
 				},
-				caveat: ACWR_CAVEAT
+				caveat: ACWR_CAVEAT,
+				dashboard: dashboardPath('general', '4w')
 			});
 		});
 	});
@@ -373,7 +413,9 @@ describe('getTrainingLoad', () => {
 				need: 1,
 				unit: 'sessions'
 			});
-			expect(await getTrainingLoad(crypto.randomUUID(), { today: TODAY }, { db })).toMatchObject({
+			expect(
+				await getTrainingLoad(await makeSecondOwner(db), { today: TODAY }, { db })
+			).toMatchObject({
 				status: 'insufficient_data',
 				reason: 'no_training'
 			});
@@ -444,6 +486,8 @@ describe('getPerformanceTrends', () => {
 			const all = [period, r2, l6, l5, l4, l3, r1, l2, l1];
 			const change = (earlier: number, later: number, delta: number, pct: number) => ({
 				enoughData: true,
+				// The General and Running views' verdicts over their last 12 weeks.
+				verdict: 'normal_variation',
 				points: 5,
 				from: '2026-10-05',
 				to: '2026-11-02',
@@ -454,9 +498,13 @@ describe('getPerformanceTrends', () => {
 				direction: delta > 0 ? 'up' : 'down'
 			});
 			const any = expect.any(String);
+			const judged = { realTrend: null };
 			expect(await getPerformanceTrends(owner, { today: TODAY }, { db })).toEqual({
 				status: 'ok',
 				weeks: { from: '2026-10-05', to: '2026-11-08', count: 5 },
+				window: { from: '2026-08-17', to: '2026-11-08', label: 'Trend over the last 12 weeks' },
+				classifier: TREND_METHOD,
+				dashboard: dashboardPath('general', '12w'),
 				trends: [
 					{
 						metric: 'sessions',
@@ -466,7 +514,9 @@ describe('getPerformanceTrends', () => {
 						// 1, 1 + 1, 0, 2, 2 + 1 → (1 + 2) / 2 against (2 + 3) / 2.
 						points: points([1, 2, 0, 2, 3]),
 						change: change(1.5, 2.5, 1, 66.666667),
-						changeMethod: SERIES_CHANGE_METHOD
+						changeMethod: SERIES_CHANGE_METHOD,
+						about: metricAbout('sessions'),
+						...judged
 					},
 					{
 						metric: 'minutes',
@@ -476,7 +526,9 @@ describe('getPerformanceTrends', () => {
 						// 50, 50 + 30, 0, 100, 100 + 30.
 						points: points([50, 80, 0, 100, 130]),
 						change: change(65, 115, 50, 76.923077),
-						changeMethod: SERIES_CHANGE_METHOD
+						changeMethod: SERIES_CHANGE_METHOD,
+						about: metricAbout('training_time'),
+						...judged
 					},
 					{
 						metric: 'session_load',
@@ -485,7 +537,9 @@ describe('getPerformanceTrends', () => {
 						sources: [period, ...lifts],
 						points: points([300, 300, 0, 600, 600]),
 						change: change(300, 600, 300, 100),
-						changeMethod: SERIES_CHANGE_METHOD
+						changeMethod: SERIES_CHANGE_METHOD,
+						about: metricAbout('srpe_load'),
+						...judged
 					},
 					{
 						metric: 'running_distance',
@@ -494,7 +548,9 @@ describe('getPerformanceTrends', () => {
 						sources: [period, r2, r1],
 						points: points([0, 6, 0, 0, 4]),
 						change: change(3, 2, -1, -33.333333),
-						changeMethod: SERIES_CHANGE_METHOD
+						changeMethod: SERIES_CHANGE_METHOD,
+						about: metricAbout('mileage'),
+						...judged
 					}
 				]
 			});
@@ -526,10 +582,11 @@ describe('getPerformanceTrends', () => {
 				weeks: { from: '2026-10-26', to: '2026-11-08', count: 2 }
 			});
 			if (trends.status !== 'ok') throw new Error('expected trends');
+			const few = { enoughData: false, points: 2, need: 4, verdict: 'insufficient_data' };
 			expect(trends.trends.map((trend) => [trend.metric, trend.change])).toEqual([
-				['sessions', { enoughData: false, points: 2, need: 4 }],
-				['minutes', { enoughData: false, points: 2, need: 4 }],
-				['session_load', { enoughData: false, points: 2, need: 4 }]
+				['sessions', few],
+				['minutes', few],
+				['session_load', few]
 			]);
 		});
 	});
@@ -546,9 +603,9 @@ describe('getPerformanceTrends', () => {
 			};
 			expect(await getPerformanceTrends(owner, { today: TODAY }, { db })).toEqual(nothing);
 			await seedWeeks(db, owner);
-			expect(await getPerformanceTrends(crypto.randomUUID(), { today: TODAY }, { db })).toEqual(
-				nothing
-			);
+			expect(
+				await getPerformanceTrends(await makeSecondOwner(db), { today: TODAY }, { db })
+			).toEqual(nothing);
 			for (const weeks of [3, 27, 4.5]) {
 				expect(
 					await inputErrors(getPerformanceTrends(owner, { today: TODAY, weeks }, { db }))
