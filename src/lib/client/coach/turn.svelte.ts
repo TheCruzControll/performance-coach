@@ -308,16 +308,21 @@ export class CoachTurns {
 	async #start(turn: CoachTurn): Promise<void> {
 		this.list = [...this.list, turn];
 		const fresh = turn.request.threadId === null;
+		let opening: Promise<void> | undefined;
 		const reread = await turn.run((threadId) => {
 			// The conversation exists now: a reload or Back lands on it, not on an empty /coach.
 			if (fresh)
-				void goto(resolve(COACH, { thread: threadId }), { replace: true, reset: false }).then(
-					() => (turn.opened = true)
+				opening = goto(resolve(COACH, { thread: threadId }), { replace: true, reset: false }).then(
+					() => void (turn.opened = true)
 				);
 		});
 		// Settled first: until the stored messages arrive, the turn keeps showing what it has.
 		turn.settled = true;
-		if (reread) await invalidateAll();
+		if (!reread) return;
+		// Its page first: until that navigation renders (WebKit holds it for a second or more while
+		// it captures the view transition), invalidating would read /coach, not the conversation.
+		await opening;
+		await invalidateAll();
 	}
 }
 
