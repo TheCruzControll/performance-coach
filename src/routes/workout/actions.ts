@@ -6,11 +6,18 @@
  *   the slot performs now to the one chosen.
  * - Skip exercise sends a skipped set for each planned set not done yet (unfinishedSets), each
  *   under its own client id, and moves on to the next exercise with something left to do.
+ * - This hurts sends the owner's choice with its pain report, the choice first (reportPain).
+ * - Add my own exercise, when nothing fits: the new exercise under the device's client id, then
+ *   today's swap to it (replaceWithOwn), so its sets log at once, offline too.
  */
+import { createExercise } from '#lib/client/workout/library.ts';
+import type { BodyArea, Severity } from '#lib/domain/profile/catalog.ts';
+import type { CustomExercise } from '#lib/domain/training/types.ts';
 import type {
 	KitAlternative,
 	LocalAction,
 	Mutation,
+	MutationOf,
 	SlotView,
 	WorkoutView
 } from '#lib/domain/workout/index.ts';
@@ -18,7 +25,7 @@ import { toDo } from '#lib/domain/workout/flow.ts';
 import { createMutation } from '#lib/domain/workout/mutations.ts';
 import { slotAt } from '#lib/domain/workout/selectors.ts';
 import { QUICK_ACTIONS, rankFor, unfinishedSets } from '#lib/domain/workout/substitution.ts';
-import type { QuickAction } from '#lib/domain/workout/substitution.ts';
+import type { PainChoice, QuickAction } from '#lib/domain/workout/substitution.ts';
 
 /** The quick actions that pick an alternative first. */
 export type SwapAction = Extract<
@@ -60,6 +67,22 @@ export function substitute(
 		reason: QUICK_ACTIONS[action].reason
 	};
 	return createMutation('exercise.substitute', { workoutId: view.workout.id, at, payload });
+}
+
+/**
+ * The owner's new exercise in place of what `position` performs, for this session only: its
+ * exercise.create, then today's swap to it, to send in one dispatch. The swap always counts as
+ * an owner's choice, whichever step offered it: Machine unavailable and Dislike record their own
+ * reasons (and a dislike's preference) only for an alternative the library lists.
+ */
+export function replaceWithOwn(
+	view: WorkoutView,
+	position: number,
+	exercise: CustomExercise,
+	at: string
+): [Mutation, Mutation] {
+	const created = createExercise(view.workout.id, exercise, at);
+	return [created, substitute(view, position, created.entityId, 'suggest_alternative', at)];
 }
 
 /** The confirmed dislike of what `position` performs, replaced by `toExerciseId`. */
@@ -106,4 +129,64 @@ export function skipExercise(
 		? [{ type: 'goTo', workoutId: view.workout.id, position: next.position }]
 		: [];
 	return { mutation, followUps };
+}
+
+/** What the owner may say about the pain, each optional. */
+export interface PainDetails {
+	area: BodyArea | null;
+	severity: Severity | null;
+	note: string | null;
+}
+
+/** The details as sent: a blank note is none. */
+const sent = (d: PainDetails): PainDetails => ({ ...d, note: d.note?.trim() || null });
+
+/**
+ * This hurts at `position`: the pain report, after what the owner chose (substitution.ts
+ * painChoices), in one dispatch.
+ * - Stop this exercise: Skip exercise's skipped sets and its move on, then the report (stopped).
+ * - A gentler option: today's swap to it, reason pain, then the report naming the swap.
+ * - End the workout here: the report alone (ended_workout); the page then opens the finish.
+ * Never a preference or a program change (QUICK_ACTIONS.pain).
+ */
+export function reportPain(
+	view: WorkoutView,
+	position: number,
+	choice: PainChoice,
+	details: PainDetails,
+	at: string,
+	newId: () => string = () => crypto.randomUUID()
+): { mutations: Mutation[]; followUps: LocalAction[] } {
+	const { plannedLineage, exerciseId } = slotOf(view, position);
+	const stop = choice.action === 'stopped' ? skipExercise(view, position, at, newId) : null;
+	const swap =
+		choice.action === 'substituted'
+			? createMutation('exercise.substitute', {
+					workoutId: view.workout.id,
+					at,
+					payload: {
+						position,
+						plannedLineage,
+						fromExerciseId: exerciseId,
+						toExerciseId: choice.option.exercise.id,
+						reason: QUICK_ACTIONS.pain.reason
+					}
+				})
+			: null;
+	const payload = {
+		position,
+		plannedLineage,
+		exerciseId,
+		...sent(details),
+		action: choice.action,
+		substitutionId: swap?.entityId ?? null
+	};
+	const report = createMutation('pain.report', { workoutId: view.workout.id, at, payload });
+	const first = stop?.mutation ?? swap;
+	return { mutations: first ? [first, report] : [report], followUps: stop?.followUps ?? [] };
+}
+
+/** Fix: the refused report with corrected details, under its id; what was done stays. */
+export function correctedReport(m: MutationOf<'pain.report'>, details: PainDetails): Mutation {
+	return { ...m, payload: { ...m.payload, ...sent(details) } };
 }

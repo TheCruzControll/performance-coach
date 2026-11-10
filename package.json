@@ -38,6 +38,8 @@
 		"test:integration": "vitest run --project integration",
 		"test:live": "vitest run --project live",
 		"test:e2e": "playwright test",
+		"test:e2e:deployed": "E2E_DEPLOYED_LOCAL=1 playwright test",
+		"e2e:timings": "node scripts/e2e-timings.ts",
 		"auth:setup-token": "node scripts/auth-setup-token.ts",
 		"auth:reset-owner": "node scripts/auth-reset-owner.ts",
 		"backup:run": "node scripts/backup-run.ts",
@@ -49,6 +51,7 @@
 		"lighthouse": "node scripts/lighthouse.ts",
 		"icons": "node scripts/generate-icons.ts",
 		"icons:sprite": "node scripts/generate-icon-sprite.ts",
+		"lifecycles": "node scripts/lifecycles.ts",
 		"security:scan": "node scripts/secrets-scan.ts"
 	},
 	"dependencies": {

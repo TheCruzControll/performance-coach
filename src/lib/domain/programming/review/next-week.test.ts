@@ -158,6 +158,7 @@ const exposure = (exerciseId: string, date: IsoDate, deviation: number): Exposur
 	sets: { prescribed: 3, completed: 3, extra: 0 },
 	missedReps: 0,
 	rpeDeviations: [deviation, deviation, deviation],
+	rpeTargets: [8, 8, 8],
 	meanRpeDeviation: deviation,
 	topSet: null,
 	kg: 100,

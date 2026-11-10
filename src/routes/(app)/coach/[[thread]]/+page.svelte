@@ -1,7 +1,9 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { invalidateAll, preloadData } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { navigating, page } from '$app/state';
+	import type { CoachTurns } from '#lib/client/coach/turn.svelte.ts';
 	import Icon from '#lib/ui/components/Icon.svelte';
 	import CoachNotice from '#lib/ui/coach/CoachNotice.svelte';
 	import Composer from '#lib/ui/coach/Composer.svelte';
@@ -10,7 +12,6 @@
 	import CoachHeader from './CoachHeader.svelte';
 	import ContextChip from './ContextChip.svelte';
 	import Suggestions from './Suggestions.svelte';
-	import ThreadList from './ThreadList.svelte';
 	import type { ThreadRowView } from './words';
 	import type { PageData, PageProps } from './$types';
 
@@ -71,9 +72,52 @@
 		} else olderFailed = true; // offline, a failed request or the load's own failure
 	}
 
-	/** Opening a conversation, or going back to the list: the screen is busy until it renders. */
+	// ---- Asking ----------------------------------------------------------------------------
+
+	/**
+	 * The stream client (client/coach/turn.svelte.ts and stream.ts) loads on demand, on idle or
+	 * with the first send, never in the initial JavaScript. An entry point's question waits in the
+	 * composer; the page opens fresh with each.
+	 */
+	// svelte-ignore state_referenced_locally
+	let draft = $state.raw(data.prefill?.text ?? '');
+	let live = $state.raw<CoachTurns | null>(null);
+	let loading: Promise<CoachTurns> | undefined;
+	// A failed import is forgotten, so the next Send imports again (coach-states adds its Notice).
+	const loadLive = () =>
+		(loading ??= (import.meta.env.SSR ? never() : import('#lib/client/coach/turn.svelte.ts')).then(
+			(module) => (live = module.coachTurns),
+			(error: unknown) => {
+				loading = undefined;
+				throw error;
+			}
+		));
+	const canAsk = $derived(data.coach.status === 'ready');
+
+	let starting = false;
+	async function send(text: string) {
+		if (starting) return; // a second press while the client loads
+		starting = true;
+		const turns = await loadLive().catch(() => null);
+		starting = false;
+		if (!turns) return;
+		draft = '';
+		void turns.send(text, data.prefill?.from);
+	}
+
+	onMount(() => {
+		if (canAsk) (window.requestIdleCallback ?? setTimeout)(() => loadLive().catch(() => {}));
+		return () => live?.leave();
+	});
+
+	/**
+	 * Opening a conversation, or going back to the list: the screen is busy until it renders. Not
+	 * while an answer streams: a new conversation's page opens under it.
+	 */
 	const switching = $derived(
-		navigating.to?.route.id === ROUTE && navigating.to.url.pathname !== page.url.pathname
+		!live?.running &&
+			navigating.to?.route.id === ROUTE &&
+			navigating.to.url.pathname !== page.url.pathname
 	);
 
 	// ---- The conversation's code -------------------------------------------------------------
@@ -85,12 +129,26 @@
 	 * conversation shows loading rows, and a failed import offers Retry, which imports again.
 	 */
 	const never = () => new Promise<never>(() => {});
-	const wantsThread = $derived(Boolean(page.params.thread) || switching);
+	const wantsThread = $derived(Boolean(page.params.thread) || switching || live?.asking);
 	let threadAttempt = $state(0);
 	const threadCode = $derived.by(() => {
 		void threadAttempt;
 		if (!wantsThread) return null;
 		return import.meta.env.SSR ? never() : import('./Thread.svelte');
+	});
+
+	/**
+	 * Budget lever (M5 plan, Budgets: 'the recent-conversations list on idle'): the list's code
+	 * loads on demand too, in the browser as soon as /coach shows, so the stream client fits in the
+	 * route's 60 KB. Loading rows hold its place meanwhile; Retry imports again. With no
+	 * conversation there is no list: the server renders the empty state, the screen's largest
+	 * text, so it paints with the page instead of after a chunk.
+	 */
+	const wantsList = $derived(!page.params.thread && rows.length > 0);
+	const listCode = $derived.by(() => {
+		void threadAttempt;
+		if (!wantsList) return null;
+		return import.meta.env.SSR ? never() : import('./ThreadList.svelte');
 	});
 </script>
 
@@ -98,20 +156,27 @@
 	<title>{ready?.thread ? `${ready.thread.title} · Coach` : 'Coach'} · Performance Coach</title>
 </svelte:head>
 
+{#snippet failed()}
+	<CoachNotice kind="load_failed" onretry={retry} {retrying} data-testid="load-failed" />
+{/snippet}
+{#snippet cannot()}
+	{#if unavailable}<CoachNotice kind={unavailable} data-testid="coach-unavailable" />{/if}
+{/snippet}
+
 <CoachHeader mockBadge={data.coach.mockBadge} />
 
 <div class="coach" aria-busy={switching ? 'true' : undefined} data-testid="coach-screen">
 	{#if switching}
 		<LoadingRows label="Loading the conversation…" data-testid="coach-loading" />
-	{:else if page.params.thread}
+	{:else if page.params.thread || live?.asking}
 		<a class="back" href={HOME} data-testid="all-conversations">
 			<Icon name="chevron-left" size={18} /> All conversations
 		</a>
-		{#if ready?.thread}
+		{#if ready?.thread || live?.asking}
 			{#await threadCode}
 				<LoadingRows label="Loading the conversation…" data-testid="thread-loading" />
 			{:then code}
-				{#if code}<code.default thread={ready.thread} />{/if}
+				{#if code}<code.default thread={ready?.thread ?? undefined} {live} />{/if}
 			{:catch}
 				<CoachNotice
 					kind="chunk_failed"
@@ -120,22 +185,50 @@
 				/>
 			{/await}
 		{:else}
-			<CoachNotice kind="load_failed" onretry={retry} {retrying} data-testid="load-failed" />
+			{@render failed()}
 		{/if}
-		{#if unavailable}<CoachNotice kind={unavailable} data-testid="coach-unavailable" />{/if}
+		{@render cannot()}
 	{:else}
 		{#if data.prefill?.label}<ContextChip label={data.prefill.label} />{/if}
-		<Suggestions />
-		{#if unavailable}<CoachNotice kind={unavailable} data-testid="coach-unavailable" />{/if}
-		{#if ready}
-			<ThreadList {rows} more={cursor !== null} {loadingOlder} {olderFailed} onolder={showOlder} />
+		<Suggestions onpick={canAsk ? (text) => (draft = text) : undefined} />
+		{@render cannot()}
+		{#if ready && rows.length === 0}
+			<section class="recent" aria-labelledby="recent-heading">
+				<h2 id="recent-heading" class="eyebrow">Recent conversations</h2>
+				<CoachNotice kind="empty" data-testid="coach-empty" />
+			</section>
+		{:else if ready}
+			{#await listCode}
+				<LoadingRows label="Loading your conversations…" data-testid="list-loading" />
+			{:then code}
+				{#if code}<code.default
+						{rows}
+						more={cursor !== null}
+						{loadingOlder}
+						{olderFailed}
+						onolder={showOlder}
+					/>{/if}
+			{:catch}
+				<CoachNotice
+					kind="chunk_failed"
+					onretry={() => threadAttempt++}
+					data-testid="list-failed"
+				/>
+			{/await}
 		{:else}
-			<CoachNotice kind="load_failed" onretry={retry} {retrying} data-testid="load-failed" />
+			{@render failed()}
 		{/if}
 	{/if}
 </div>
 
-<Composer value={data.prefill?.text ?? ''} disabled data-testid="composer" />
+<Composer
+	bind:value={draft}
+	disabled={!canAsk}
+	running={live?.running}
+	onsend={send}
+	onstop={() => live?.stop()}
+	data-testid="composer"
+/>
 
 <style>
 	/* Reserves the composer's height so nothing ends up under it at the end of the page. */
@@ -143,6 +236,11 @@
 		display: grid;
 		gap: var(--space-5);
 		padding-bottom: calc(var(--space-20) + var(--space-2));
+	}
+
+	.recent {
+		display: grid;
+		gap: var(--space-2);
 	}
 
 	.back {

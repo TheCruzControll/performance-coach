@@ -187,6 +187,12 @@ test.describe('twelve weeks', () => {
 		// page.route sees requests from a page the service worker controls only when it is blocked.
 		test.use({ serviceWorkers: 'block' });
 
+		// Chunks may still be in flight when a test ends (WebKit loads more after Retry): unroute
+		// first, so a handler whose response is disposed with the page cannot fail a passed test.
+		test.afterEach(async ({ page }) => {
+			await page.unrouteAll({ behavior: 'ignoreErrors' });
+		});
+
 		test('a client navigation holds their room while their code loads, and they fill it', async ({
 			page
 		}) => {
@@ -222,7 +228,12 @@ test.describe('twelve weeks', () => {
 		test('code that fails to load is a notice with Retry under the verdicts, and Retry recovers', async ({
 			page
 		}) => {
-			await routeTrendsChunk(page, (route) => route.abort('internetdisconnected'));
+			// One handler for the whole test, so each request is handled once: unrouting here while
+			// other chunks are in flight lets Playwright continue them under a running handler.
+			let failing = true;
+			await routeTrendsChunk(page, (route, response) =>
+				failing ? route.abort('internetdisconnected') : route.fulfill({ response })
+			);
 			await gotoHydrated(page, '/progress/workouts');
 			await page.getByRole('link', { name: 'Progress' }).first().click();
 			const failed = page.getByTestId('overview-trends-error');
@@ -233,7 +244,7 @@ test.describe('twelve weeks', () => {
 			await expect(page.getByTestId('error-view')).toHaveCount(0);
 
 			// Where the browser keeps the failed fetch (Chromium), Retry reloads Progress.
-			await page.unrouteAll({ behavior: 'wait' });
+			failing = false;
 			await failed.getByRole('button', { name: 'Retry' }).click();
 			await expect(failed).toHaveCount(0);
 			await expectKpis(page, seeded, 12);

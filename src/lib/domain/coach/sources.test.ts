@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
 	parseRef,
+	reviewKey,
 	SOURCE_TYPE_LABEL,
 	SOURCE_TYPES,
 	sourceAction,
@@ -27,6 +28,9 @@ const EXPECTED: Record<SourceType, SourceAction | null> = {
 	pain_report: { kind: 'link', href: '/progress/workouts/wk9' },
 	date: null
 };
+
+/** A cycle review's id after the wrong prefix. */
+const cycleIdLike = (prefix: string) => `${prefix}0b5c3a52-9d7e-4f61-8a2b-3c4d5e6f7a8b`;
 
 const HOSTILE = [
 	'//evil.example',
@@ -60,6 +64,43 @@ describe('sourceAction', () => {
 		});
 		for (const id of ['0', '03', '-1', '1.5', '1e3', 'latest'])
 			expect(sourceAction({ type: 'version', id }), id).toBeNull();
+	});
+
+	it('links a review to its page by its key: a weekly review by its Monday, a cycle review by its id', () => {
+		const cycleId = '0b5c3a52-9d7e-4f61-8a2b-3c4d5e6f7a8b';
+		const weekly = reviewKey({ kind: 'weekly', weekStartsOn: '2026-11-02' });
+		const cycle = reviewKey({ kind: 'cycle', id: cycleId });
+		expect([weekly, cycle]).toEqual(['w-2026-11-02', `c-${cycleId}`]);
+		expect(sourceAction({ type: 'review', id: weekly })).toEqual({
+			kind: 'link',
+			href: '/progress/reviews/w-2026-11-02'
+		});
+		expect(sourceAction({ type: 'review', id: cycle })).toEqual({
+			kind: 'link',
+			href: `/progress/reviews/c-${cycleId}`
+		});
+		// An inline citation reads back to the same link.
+		expect(sourceAction(parseRef(`review:${weekly}|Weekly review`)!)).toEqual({
+			kind: 'link',
+			href: '/progress/reviews/w-2026-11-02'
+		});
+	});
+
+	it('never links a review id that is not a page key', () => {
+		for (const id of [
+			cycleIdLike('w-'),
+			'w-2026-11-03', // a Tuesday
+			'w-2026-02-30',
+			'w-2026-11-02/x',
+			'c-not-a-uuid',
+			'c-0B5C3A52-9D7E-4F61-8A2B-3C4D5E6F7A8B',
+			'0b5c3a52-9d7e-4f61-8a2b-3c4d5e6f7a8b',
+			'x-2026-11-02',
+			'w-//evil.example',
+			'c-https://evil.example',
+			...HOSTILE
+		])
+			expect(sourceAction({ type: 'review', id }), id).toBeNull();
 	});
 
 	it('needs the workout a set, a run or a pain report was logged in', () => {

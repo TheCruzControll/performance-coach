@@ -4,22 +4,46 @@
  * The get_weekly_training_summary, get_training_load and get_performance_trends tools return
  * them, and the coaching memory reads the trends.
  *
- * - Every figure comes from tested functions: M3's history services (sessions in a range, weekly
- *   hard sets, weekly mileage) with M3's sessionLoadOf, M1's acuteChronicRatio, and seriesChange
- *   (domain/coach/trends.ts). Nothing here redefines a metric.
+ * - One engine (M6): every figure is read from the dashboards Progress shows (getGeneralDashboard,
+ *   getRunningDashboard, getStrengthDashboard), so the coach and the screens never disagree. This
+ *   file only picks the week, the ratio or the weeks asked for, and cites the records behind them
+ *   from the same counted facts (services/analytics/facts.ts).
  * - Each figure has its value, its unit, how code computed it (method, in words an answer's
- *   `[metric method=…]` repeats) and the records it rests on (sources: its period's date first,
- *   then at most SOURCES_MAX records, newest first).
+ *   `[metric method=…]` repeats), the records it rests on (sources: its period's date first, then
+ *   at most SOURCES_MAX records, newest first) and the catalogue's context (about: metric id,
+ *   kind, definition and caveat, as the tiles show them). Each result names the dashboard it
+ *   comes from, and each trend carries the dashboard's verdict and the weeks it read.
+ * - A week's summary names the week's live review (never a superseded revision) as a source that
+ *   opens it, so the coach can point to the review rather than restate it.
  * - Too little data is a result, never a zero: insufficient_data says what is missing.
- * - Counts, minutes and loads are of completed workouts: an abandoned or unfinished one is no
- *   training done. Distances and hard sets are M3's reads, which count every logged run and set.
+ * - Only completed, undeleted workouts count, for every figure (the facts loader's rule).
  * - Dates are explicit, on the owner's calendar: callers pass today (ownerToday). Trends read
  *   complete weeks only, so a Wednesday never looks like a decline.
- * - No verdicts: 'real trend' and 'normal variation' are M6's. M6's coach-analytics-repoint
- *   moves these functions onto its engine, and their results only gain fields.
  * - The services are awaited one at a time, so a caller may pass a transaction.
  */
-import type { AvailabilityUnit, SeriesPoint } from '../../../domain/analytics/types';
+import { outcomeOf } from '../../../domain/analytics/adherence';
+import { METRICS, type MetricId } from '../../../domain/analytics/metrics';
+import type { MetricTrend } from '../../../domain/analytics/overview';
+import {
+	DEFAULT_PERIOD,
+	periodWindow,
+	type Period,
+	type TrendWindow
+} from '../../../domain/analytics/periods';
+import {
+	classifyTrend,
+	TREND_METHOD,
+	type TrendResult,
+	type TrendVerdict
+} from '../../../domain/analytics/trend';
+import type { AvailabilityUnit, MetricKind, SeriesPoint } from '../../../domain/analytics/types';
+import {
+	ACUTE_DAYS,
+	ACWR_CAVEAT as M6_ACWR_CAVEAT,
+	CHRONIC_DAYS,
+	sessionLoads,
+	type AcwrZone
+} from '../../../domain/analytics/workload';
 import {
 	addDays,
 	daysBetween,
@@ -27,43 +51,67 @@ import {
 	parseIsoDate,
 	type IsoDate
 } from '../../../domain/calendar';
-import type { SourceRef } from '../../../domain/coach/sources';
+import { reviewKey, type SourceRef } from '../../../domain/coach/sources';
 import {
 	SERIES_CHANGE_METHOD,
 	seriesChange,
 	CHANGE_MIN_POINTS,
 	type SeriesChange
 } from '../../../domain/coach/trends';
-import { acuteChronicRatio } from '../../../domain/load';
 import { HARD_SET_CREDIT, HARD_SET_MIN_RPE } from '../../../domain/training/metrics';
 import type { MuscleGroup } from '../../../domain/training/vocabulary';
-import { roundToIncrement } from '../../../domain/units';
-import {
-	getSessionsInRange,
-	getWeeklyMileage,
-	getWeeklyMuscleVolume,
-	type LoggedSession,
-	type WeeklyMileage,
-	type PlannedSessionInRange
-} from '../training/history';
-import { TrainingInputError, type TrainingDeps } from '../training/shared';
+import { fromMetres, roundToIncrement } from '../../../domain/units';
+import { getAthleteProfile } from '../profile/index';
+import { getLiveWeeklyReview } from '../reviews/store';
+import type { LoggedSession, WeeklyMileage } from '../training/history';
+import { resolveDeps, TrainingInputError, type TrainingDeps } from '../training/shared';
+import { createFactsLoader } from './facts';
+import { ACWR_WINDOW_DAYS, getGeneralDashboard } from './general';
+import { getRunningDashboard } from './running';
+import { getStrengthDashboard } from './strength';
+
+export { ACUTE_DAYS, CHRONIC_DAYS };
 
 /** The most records a figure cites after its period's date, newest first. */
 export const SOURCES_MAX = 8;
-/** The days a training load reads, ending today: two chronic windows. An owner's choice. */
-export const LOAD_WINDOW_DAYS = 56;
-/** M1's acute and chronic windows (acuteChronicRatio's own defaults). */
-export const ACUTE_DAYS = 7;
-export const CHRONIC_DAYS = 28;
+/** The days a training load reads, ending today: the General view's ratio window. */
+export const LOAD_WINDOW_DAYS = ACWR_WINDOW_DAYS;
 /** The complete weeks a trend reads unless asked otherwise, and the fewest and most it may. */
 export const TREND_WEEKS = 8;
 export const MIN_TREND_WEEKS = CHANGE_MIN_POINTS;
 export const MAX_TREND_WEEKS = 26;
 
-/** Shown with every ratio (PRD §10): what it can and cannot say. */
-export const ACWR_CAVEAT =
-	'A rough guide to how fast your load is rising, not an injury predictor. About 0.8–1.3 is ' +
-	'typical and above 1.5 is a sharp rise: both are rules of thumb.';
+/**
+ * Decision: the dashboard period a trend of n weeks takes its figures and verdict from, the
+ * shortest that holds the n weeks. Each verdict reads that period's trend window (12 weeks for
+ * 4w and 12w, 26 for 26w) and names it, as Progress's tiles do. An owner's choice: change it here.
+ */
+export const TREND_PERIODS: readonly (readonly [Period, number])[] = [
+	['4w', 4],
+	['12w', 12],
+	['26w', MAX_TREND_WEEKS]
+];
+/** Decision: the period whose General view the load is read from; today's ratio is the same in each. */
+export const LOAD_PERIOD: Period = '4w';
+
+/** Shown with every ratio (PRD §10): what it can and cannot say, in M6's words. */
+export const ACWR_CAVEAT = M6_ACWR_CAVEAT.text;
+
+export type DashboardView = 'general' | 'running' | 'strength';
+
+/** Where the owner sees a figure on Progress: the view and the period it was read for. */
+export const dashboardPath = (view: DashboardView, period: Period) =>
+	`/progress?view=${view}&period=${period}`;
+
+/** A figure's context in the metric catalogue (metrics.ts), as Progress's tiles show it. */
+export interface About {
+	metric: MetricId;
+	kind: MetricKind;
+	/** The catalogue's method sentence. */
+	definition: string;
+	/** Only for a metric that has one (the ratio, an e1RM). */
+	caveat?: string;
+}
 
 /** A number code computed, as a tool returns it and an answer's metric block cites it. */
 export interface Figure {
@@ -71,6 +119,7 @@ export interface Figure {
 	unit: string | null;
 	method: string;
 	sources: SourceRef[];
+	about: About;
 }
 
 /** Hard sets per muscle group: one figure, a value for each group trained. */
@@ -97,49 +146,81 @@ export interface WeeklyTrainingSummary {
 	unrated: Figure;
 	runningDistance: Figure;
 	hardSets: GroupFigure;
+	dashboard: string;
+	/** The week's live review as a source that opens it; null before the week is reviewed. */
+	review: SourceRef | null;
 }
+
+/** What the week's review is called as a source. */
+export const WEEKLY_REVIEW_LABEL = 'Weekly review';
 
 export interface TrainingLoad {
 	status: 'ok';
-	/** The days the moving averages read: from the first completed workout in the window. */
+	/** The days the moving averages read: from the later of the first activity and the window's start. */
 	from: IsoDate;
 	to: IsoDate;
 	days: number;
 	acute: Figure;
 	chronic: Figure;
 	ratio: Figure;
+	/** The ratio against the caveat's rules of thumb. */
+	zone: AcwrZone | null;
 	last7Days: Figure;
 	unrated: Figure;
 	caveat: string;
+	dashboard: string;
 }
 
 export type TrendMetric = 'sessions' | 'minutes' | 'session_load' | 'running_distance';
 
-export type Trend = Omit<Figure, 'value'> & {
-	metric: TrendMetric;
-	/** One per complete week, oldest first; a week with nothing logged is 0. */
-	points: SeriesPoint[];
-	change: SeriesChange;
-	changeMethod: string;
-};
+/** The catalogue metric each trend is. */
+const TREND_METRIC_ID = {
+	sessions: 'sessions',
+	minutes: 'training_time',
+	session_load: 'srpe_load',
+	running_distance: 'mileage'
+} as const satisfies Record<TrendMetric, MetricId>;
 
-export interface PerformanceTrends {
+/** A verdict on a trend (classifyTrend), with the weeks it read. */
+export interface TrendCall {
+	verdict: TrendVerdict;
+	/** A real trend's way, and whether it is the metric's better way (null: neither is); else null. */
+	realTrend: { direction: 'up' | 'down'; good: boolean | null } | null;
+	window: { from: IsoDate; to: IsoDate; label: string } | null;
+	classifier: typeof TREND_METHOD;
+}
+
+/**
+ * A trend: its verdict is change.verdict, over the weeks its result names (window), and every
+ * trend of a result shares that window and classifier, so they are said once, not per trend.
+ */
+export type Trend = Omit<Figure, 'value'> &
+	Pick<TrendCall, 'realTrend'> & {
+		metric: TrendMetric;
+		/** One per complete week, oldest first; a week with nothing logged is 0. */
+		points: SeriesPoint[];
+		change: SeriesChange;
+		changeMethod: string;
+	};
+
+export interface PerformanceTrends extends Pick<TrendCall, 'window' | 'classifier'> {
 	status: 'ok';
 	/** The complete weeks read: from the first with anything logged, to last Sunday. */
 	weeks: { from: IsoDate; to: IsoDate; count: number };
 	/** Only what was trained: a trend no record contributes to is left out. */
 	trends: Trend[];
+	dashboard: string;
 }
 
 const METHOD = {
-	planned: 'sessions the current program version plans this week, skipped ones left out',
+	planned: 'sessions your programs plan this week, skipped ones left out',
 	completed: 'planned sessions with a completed workout logged against them',
 	skipped: 'planned sessions marked skipped',
 	workouts: 'completed workouts, planned or not',
 	minutes: 'sum of the durations of completed workouts',
 	sessionLoad: 'sRPE load: minutes × session RPE of each completed workout (Foster), summed',
 	unrated: 'completed workouts with no session RPE or duration, so no load',
-	runningDistance: 'sum of the distances of logged runs, in your distance unit',
+	runningDistance: 'sum of the distances of completed runs, in your distance unit',
 	hardSets:
 		`working sets at RPE ${HARD_SET_MIN_RPE}+ or with no RPE: ${HARD_SET_CREDIT.primary} per ` +
 		`primary muscle group, ${HARD_SET_CREDIT.secondary} per secondary`,
@@ -151,7 +232,7 @@ const METHOD = {
 		sessions: 'completed workouts per week',
 		minutes: 'minutes of completed workouts per week',
 		session_load: 'sRPE load (minutes × session RPE) of completed workouts per week',
-		running_distance: 'distance of logged runs per week, in your distance unit'
+		running_distance: 'distance of completed runs per week, in your distance unit'
 	} satisfies Record<TrendMetric, string>
 };
 
@@ -181,23 +262,25 @@ const minutesOf = (workouts: readonly LoggedSession[]) =>
 	sum(workouts.map((w) => (w.durationSeconds ?? 0) / 60));
 const loadOf = (workouts: readonly LoggedSession[]) => sum(workouts.map((w) => w.load ?? 0));
 
+/** A catalogue metric's context, as a figure carries it. */
+export const metricAbout = (id: MetricId): About => {
+	const { kind, method, caveat } = METRICS[id];
+	return { metric: id, kind, definition: method, ...(caveat !== null && { caveat }) };
+};
+
+type Recorded = { id: string; title: string; date: IsoDate };
+
 const dateRef = (date: IsoDate, label: string): SourceRef => ({
 	type: 'date',
 	id: date,
 	label,
 	date
 });
-const workoutRef = (w: LoggedSession): SourceRef => ({
+const workoutRef = (w: Recorded): SourceRef => ({
 	type: 'workout',
 	id: w.id,
 	label: w.title,
 	date: w.date
-});
-const sessionRef = (s: PlannedSessionInRange): SourceRef => ({
-	type: 'session',
-	id: s.lineageId,
-	label: s.title,
-	date: s.scheduledOn
 });
 
 /** The period's date, then the newest SOURCES_MAX of `records` (given oldest first). */
@@ -207,6 +290,7 @@ const sourcesOf = (period: SourceRef, records: readonly SourceRef[]) => [
 ];
 
 function figure(
+	id: MetricId,
 	value: number,
 	unit: string | null,
 	step: number,
@@ -214,13 +298,42 @@ function figure(
 	period: SourceRef,
 	records: readonly SourceRef[]
 ): Figure {
-	return { value: round(value, step), unit, method, sources: sourcesOf(period, records) };
+	const sources = sourcesOf(period, records);
+	return { value: round(value, step), unit, method, sources, about: metricAbout(id) };
+}
+
+/** A verdict as a trend carries it: classifyTrend's call and the weeks it read. */
+function callOf(result: TrendResult, window: TrendCall['window']): TrendCall {
+	const real = result.verdict === 'real_trend';
+	return {
+		verdict: result.verdict,
+		realTrend: real ? { direction: result.direction, good: result.good } : null,
+		window,
+		classifier: TREND_METHOD
+	};
+}
+
+/** The weeks a dashboard's verdicts read, with the words its tiles show; null with none. */
+const weeksOf = (window: TrendWindow): TrendCall['window'] =>
+	window.weeks && { from: window.weeks.from, to: window.weeks.to, label: window.label };
+
+/** A dashboard's verdict (MetricTrend) as a figure carries it, naming the weeks it read. */
+export const trendCall = ({ result, window }: MetricTrend): TrendCall =>
+	callOf(result, weeksOf(window));
+
+/** The shortest period whose complete weeks, or week in progress, hold `monday`; else 'all'. */
+function periodHolding(monday: IsoDate, today: IsoDate): Period {
+	for (const period of ['4w', '12w', '26w', '52w'] as const) {
+		const { weeks, inProgress } = periodWindow(today, period, null);
+		if (monday === inProgress.weekStart || (weeks && monday >= weeks.from)) return period;
+	}
+	return 'all';
 }
 
 /**
- * The week from `week` (a Monday; today's week unless given) to its Sunday, as the plan and the
- * log have it. Insufficient data when nothing was planned or logged. Refuses a week that has not
- * begun.
+ * The week from `week` (a Monday; today's week unless given) to its Sunday, as the General,
+ * Running and Strength views give it for the shortest period that holds it. Insufficient data
+ * when nothing was planned or logged. Refuses a week that has not begun.
  */
 export async function getWeeklyTrainingSummary(
 	ownerId: string,
@@ -233,66 +346,120 @@ export async function getWeeklyTrainingSummary(
 		throw new TrainingInputError({ week: 'A Monday: weeks run Monday to Sunday' });
 	}
 	if (from > mondayOf(day)) throw new TrainingInputError({ week: 'Not after this week' });
+	const { db } = resolveDeps(deps);
 	const to = addDays(from, 6);
-	const { planned, logged } = await getSessionsInRange(ownerId, { from, to }, deps);
-	if (planned.length === 0 && logged.length === 0) return noTraining();
-	const mileage = await getWeeklyMileage(ownerId, { from, to }, {}, deps);
-	const [volume] = await getWeeklyMuscleVolume(ownerId, { from, to }, deps);
-
-	const period = dateRef(from, `Week of ${from}`);
-	const sessions = (rows: PlannedSessionInRange[], method: string) =>
-		figure(rows.length, 'sessions', 1, method, period, rows.map(sessionRef));
-	const happening = planned.filter((s) => s.status !== 'skipped');
-	const done = completed(logged);
-	const workouts = done.map(workoutRef);
-	const runs = logged.filter((w) => w.kind === 'run');
-	const unrated = done.filter((w) => w.load === null);
 	const inProgress = from === mondayOf(day);
+	const period = periodHolding(from, day);
+	const query = { period, today: day };
+	type Dated = { weekStart: IsoDate };
+	const pick = <W extends Dated, I extends Dated>(w: { weeks: readonly W[]; inProgress: I }) =>
+		inProgress ? w.inProgress : w.weeks.find((each) => each.weekStart === from);
+
+	const general = await getGeneralDashboard(db, ownerId, query);
+	const adherence = pick(general.adherence);
+	const count = pick(general.sessions);
+	if (!adherence || !count || (adherence.planned === 0 && count.sessions === 0)) {
+		return noTraining();
+	}
+	const time = pick(general.time)!;
+	const load = pick(general.load)!;
+	const mileage = pick((await getRunningDashboard(db, ownerId, query)).mileage)!;
+	const strength = await getStrengthDashboard(db, ownerId, query);
+	const groups = strength.muscleGroups.weeks.find((w) => w.weekStart === from)?.groups ?? [];
+
+	// The records behind the figures, from the same counted facts.
+	const { timeZone, distanceUnit } = await getAthleteProfile(ownerId, { db });
+	const facts = createFactsLoader(db, ownerId, { from, to, timeZone });
+	const sessions = (await facts.sessions()).filter((s) => s.date <= day);
+	const plan = await facts.planned();
+	const outcomes = plan.planned
+		.filter((s) => s.date >= from && s.date <= to)
+		.sort((a, b) => (a.date === b.date ? 0 : a.date < b.date ? -1 : 1))
+		.map((s) => ({ s, outcome: outcomeOf(s, plan.completed, day) }));
+	const sessionsWhere = (keep: (outcome: string) => boolean) =>
+		outcomes.flatMap(({ s, outcome }): SourceRef[] =>
+			keep(outcome) ? [{ type: 'session', id: s.lineage, date: s.date }] : []
+		);
+	const unknown = new Set(load.unknown.map((u) => u.id));
+	const workouts = sessions.map(workoutRef);
+	const where = (keep: (s: (typeof sessions)[number]) => boolean) =>
+		sessions.filter(keep).map(workoutRef);
+	const weekRef = dateRef(from, `Week of ${from}`);
+	const review = await getLiveWeeklyReview(ownerId, from, { db });
+	const sessionFigure = (value: number, method: string, keep: (outcome: string) => boolean) =>
+		figure('adherence', value, 'sessions', 1, method, weekRef, sessionsWhere(keep));
 	return {
 		status: 'ok',
 		week: { from, to, inProgress, through: inProgress ? day : to },
-		planned: sessions(happening, METHOD.planned),
-		completed: sessions(
-			happening.filter((s) => s.status === 'completed'),
-			METHOD.completed
+		planned: sessionFigure(
+			adherence.planned - adherence.skipped,
+			METHOD.planned,
+			(o) => o !== 'skipped'
 		),
-		skipped: sessions(
-			planned.filter((s) => s.status === 'skipped'),
-			METHOD.skipped
+		completed: sessionFigure(adherence.completed, METHOD.completed, (o) => o === 'completed'),
+		skipped: sessionFigure(adherence.skipped, METHOD.skipped, (o) => o === 'skipped'),
+		workouts: figure('sessions', count.sessions, 'sessions', 1, METHOD.workouts, weekRef, workouts),
+		minutes: figure(
+			'training_time',
+			(time.seconds ?? 0) / 60,
+			'min',
+			0.1,
+			METHOD.minutes,
+			weekRef,
+			workouts
 		),
-		workouts: figure(done.length, 'sessions', 1, METHOD.workouts, period, workouts),
-		minutes: figure(minutesOf(done), 'min', 0.1, METHOD.minutes, period, workouts),
 		sessionLoad: figure(
-			loadOf(done),
+			'srpe_load',
+			load.load ?? 0,
 			'AU',
 			0.1,
 			METHOD.sessionLoad,
-			period,
-			rated(done).map(workoutRef)
+			weekRef,
+			where((s) => !unknown.has(s.id))
 		),
-		unrated: figure(unrated.length, 'sessions', 1, METHOD.unrated, period, unrated.map(workoutRef)),
+		unrated: figure(
+			'srpe_load',
+			unknown.size,
+			'sessions',
+			1,
+			METHOD.unrated,
+			weekRef,
+			where((s) => unknown.has(s.id))
+		),
 		runningDistance: figure(
-			mileage.weeks[0]?.distance ?? 0,
-			mileage.unit,
+			'mileage',
+			fromMetres(mileage.distance.value, distanceUnit),
+			distanceUnit,
 			0.01,
 			METHOD.runningDistance,
-			period,
-			runs.map(workoutRef)
+			weekRef,
+			where((s) => s.run !== null)
 		),
 		hardSets: {
-			values: volume?.groups ?? {},
+			values: Object.fromEntries(groups.flatMap((g) => (g.sets > 0 ? [[g.group, g.sets]] : []))),
 			unit: 'hard sets',
 			method: METHOD.hardSets,
-			sources: sourcesOf(period, logged.filter((w) => w.kind === 'strength').map(workoutRef))
+			sources: sourcesOf(
+				weekRef,
+				where((s) => s.kind === 'strength')
+			),
+			about: metricAbout('group_sets')
+		},
+		dashboard: dashboardPath('general', period),
+		review: review && {
+			type: 'review',
+			id: reviewKey({ kind: 'weekly', weekStartsOn: from }),
+			label: WEEKLY_REVIEW_LABEL,
+			date: from
 		}
 	};
 }
 
 /**
- * The acute and chronic loads and their ratio as of today: M1's acuteChronicRatio over the daily
- * sRPE loads of completed workouts, from the first one in the last LOAD_WINDOW_DAYS days (days
- * before it would read as rest the owner never took). A workout with no load counts 0 that day.
- * Insufficient data under CHRONIC_DAYS days of history, and with no load at all.
+ * The acute and chronic loads and their ratio as of today: the General view's ratio (M6's acwr
+ * over the daily sRPE loads of completed workouts, from the later of the first activity and
+ * LOAD_WINDOW_DAYS days ago). Insufficient data with nothing completed in that window, under
+ * CHRONIC_DAYS days of history, and with no known load at all.
  */
 export async function getTrainingLoad(
 	ownerId: string,
@@ -300,42 +467,62 @@ export async function getTrainingLoad(
 	deps: TrainingDeps = {}
 ): Promise<TrainingLoad | InsufficientData> {
 	const to = checkToday(today);
-	const window = { from: addDays(to, 1 - LOAD_WINDOW_DAYS), to };
-	const done = completed((await getSessionsInRange(ownerId, window, deps)).logged);
-	if (done.length === 0) return noTraining();
-	const from = done[0]!.date;
-	const days = daysBetween(from, to) + 1;
+	const { db } = resolveDeps(deps);
+	const { timeZone } = await getAthleteProfile(ownerId, { db });
+	const from = addDays(to, 1 - LOAD_WINDOW_DAYS);
+	const facts = createFactsLoader(db, ownerId, { from, to, timeZone });
+	const sessions = await facts.sessions();
+	if (sessions.length === 0) return noTraining();
+	const first = (await facts.firstActivity()) ?? sessions[0]!.date;
+	const days = daysBetween(first > from ? first : from, to) + 1;
 	if (days < CHRONIC_DAYS) return insufficient('too_little_history', days, CHRONIC_DAYS, 'days');
-	const daily = new Map<IsoDate, number>();
-	for (const w of done) daily.set(w.date, (daily.get(w.date) ?? 0) + (w.load ?? 0));
-	const loads = Array.from({ length: days }, (_, n) => daily.get(addDays(from, n)) ?? 0);
-	const { acute, chronic, ratio } = acuteChronicRatio(loads, ACUTE_DAYS, CHRONIC_DAYS)!;
-	if (ratio === null) return insufficient('no_rated_sessions', 0, 1, 'sessions');
+	const current = (await getGeneralDashboard(db, ownerId, { period: LOAD_PERIOD, today: to })).acwr
+		.current;
+	if (current?.ratio == null) return insufficient('no_rated_sessions', 0, 1, 'sessions');
 
 	const period = dateRef(to, `As of ${to}`);
-	const withLoad = rated(done);
-	const lastWeek = withLoad.filter((w) => daysBetween(w.date, to) < ACUTE_DAYS);
-	const all = withLoad.map(workoutRef);
-	const recent = lastWeek.map(workoutRef);
-	const unrated = done.filter((w) => w.load === null);
+	const loads = sessionLoads(sessions, timeZone);
+	const known = new Set(loads.flatMap((l) => (l.load === null ? [] : [l.id])));
+	const recentLoads = loads.filter((l) => daysBetween(l.date, to) < ACUTE_DAYS);
+	const all = sessions.filter((s) => known.has(s.id));
+	const recent = all.filter((s) => daysBetween(s.date, to) < ACUTE_DAYS).map(workoutRef);
+	const unrated = sessions.filter((s) => !known.has(s.id)).map(workoutRef);
+	const acwr = (
+		value: number,
+		unit: string | null,
+		step: number,
+		method: string,
+		refs: SourceRef[]
+	) => figure('acwr', value, unit, step, method, period, refs);
 	return {
 		status: 'ok',
-		from,
+		from: current.from,
 		to,
-		days,
-		acute: figure(acute, 'AU/day', 0.1, METHOD.acute, period, recent),
-		chronic: figure(chronic, 'AU/day', 0.1, METHOD.chronic, period, all),
-		ratio: figure(ratio, null, 0.01, METHOD.ratio, period, all),
-		last7Days: figure(loadOf(lastWeek), 'AU', 0.1, METHOD.last7Days, period, recent),
-		unrated: figure(unrated.length, 'sessions', 1, METHOD.unrated, period, unrated.map(workoutRef)),
-		caveat: ACWR_CAVEAT
+		days: current.days,
+		acute: acwr(current.acute, 'AU/day', 0.1, METHOD.acute, recent),
+		chronic: acwr(current.chronic, 'AU/day', 0.1, METHOD.chronic, all.map(workoutRef)),
+		ratio: acwr(current.ratio, null, 0.01, METHOD.ratio, all.map(workoutRef)),
+		zone: current.zone,
+		last7Days: figure(
+			'srpe_load',
+			sum(recentLoads.map((l) => l.load ?? 0)),
+			'AU',
+			0.1,
+			METHOD.last7Days,
+			period,
+			recent
+		),
+		unrated: figure('srpe_load', unrated.length, 'sessions', 1, METHOD.unrated, period, unrated),
+		caveat: ACWR_CAVEAT,
+		dashboard: dashboardPath('general', LOAD_PERIOD)
 	};
 }
 
 /**
  * Weekly sessions, minutes, sRPE load and running distance over the last `weeks` complete weeks
- * (TREND_WEEKS by default), from the first week with anything logged, each with seriesChange.
- * Insufficient data when nothing was logged in them.
+ * (TREND_WEEKS by default), from the first week with anything logged, as the General and Running
+ * views give them for the shortest period that holds those weeks (TREND_PERIODS), each with that
+ * view's verdict over its trend window. Insufficient data when nothing was logged in them.
  */
 export async function getPerformanceTrends(
 	ownerId: string,
@@ -346,25 +533,92 @@ export async function getPerformanceTrends(
 	if (!Number.isInteger(weeks) || weeks < MIN_TREND_WEEKS || weeks > MAX_TREND_WEEKS) {
 		throw new TrainingInputError({ weeks: `From ${MIN_TREND_WEEKS} to ${MAX_TREND_WEEKS}` });
 	}
+	const { db } = resolveDeps(deps);
 	const to = addDays(mondayOf(day), -1);
-	const { logged } = await getSessionsInRange(
-		ownerId,
-		{ from: addDays(to, 1 - 7 * weeks), to },
-		deps
-	);
+	const { timeZone, distanceUnit } = await getAthleteProfile(ownerId, { db });
+	const facts = createFactsLoader(db, ownerId, { from: addDays(to, 1 - 7 * weeks), to, timeZone });
+	const logged = await facts.sessions();
 	if (logged.length === 0) return noTraining();
 	const from = mondayOf(logged[0]!.date);
-	// No run, no running trend: the mileage read is left out.
-	const mileage = logged.some((w) => w.kind === 'run')
-		? await getWeeklyMileage(ownerId, { from, to }, {}, deps)
-		: null;
-	return trendsOf(logged, to, mileage);
+	const count = (daysBetween(from, to) + 1) / 7;
+	const period = TREND_PERIODS.find(([, n]) => n >= weeks)![0];
+	const query = { period, today: day };
+	const general = await getGeneralDashboard(db, ownerId, query);
+	const runs = logged.filter((s) => s.run !== null);
+	// No run, no running trend: the Running view is left unread.
+	const running = runs.length ? await getRunningDashboard(db, ownerId, query) : null;
+
+	const label = `${count} week${count === 1 ? '' : 's'} from ${from}`;
+	const periodRef = dateRef(from, label);
+	const known = new Set(
+		sessionLoads(logged, timeZone).flatMap((l) => (l.load === null ? [] : [l.id]))
+	);
+	const trend = (
+		metric: TrendMetric,
+		unit: string,
+		step: number,
+		records: readonly Recorded[],
+		{ series, trend: verdict }: { series: readonly SeriesPoint[]; trend: MetricTrend },
+		scale: (value: number) => number = (value) => value
+	): Trend[] => {
+		if (records.length === 0) return [];
+		const points = series
+			.filter((p) => !p.inProgress && p.at >= from && p.at <= to)
+			.map((p) => ({
+				at: p.at,
+				value: p.value === null ? null : round(scale(p.value), step),
+				inProgress: false
+			}));
+		return [
+			{
+				metric,
+				unit,
+				method: METHOD.trend[metric],
+				sources: sourcesOf(periodRef, records.map(workoutRef)),
+				about: metricAbout(TREND_METRIC_ID[metric]),
+				points,
+				change: seriesChange(points, { trend: verdict.result }),
+				changeMethod: SERIES_CHANGE_METHOD,
+				realTrend: trendCall(verdict).realTrend
+			}
+		];
+	};
+	const { figures } = general;
+	return {
+		status: 'ok',
+		weeks: { from, to, count },
+		window: weeksOf(general.trendWindow),
+		classifier: TREND_METHOD,
+		trends: [
+			...trend('sessions', 'sessions', 1, logged, figures.sessions),
+			...trend('minutes', 'min', 0.1, logged, figures.training_time, (s) => s / 60),
+			...trend(
+				'session_load',
+				'AU',
+				0.1,
+				logged.filter((s) => known.has(s.id)),
+				figures.srpe_load
+			),
+			...(running
+				? trend(
+						'running_distance',
+						distanceUnit,
+						0.01,
+						runs,
+						{ series: running.mileage.points, trend: running.mileage.trend },
+						(metres) => fromMetres(metres, distanceUnit)
+					)
+				: [])
+		],
+		dashboard: dashboardPath('general', period)
+	};
 }
 
 /**
- * getPerformanceTrends' figures from the workouts it read: `logged` (by start, none after `to`,
- * a Sunday) and the weekly mileage of their weeks, or null for no running trend. Pure, so the
- * coaching memory states the same trends from workouts it read already.
+ * Performance trends from workouts already read: `logged` (by start, none after `to`, a Sunday)
+ * and the weekly mileage of their weeks, or null for no running trend. Pure, so the coaching
+ * memory states trends from the workouts it read already; each verdict is classifyTrend's over
+ * the weeks given, with the catalogue metric's direction and minimal practical change.
  */
 export function trendsOf(
 	logged: readonly LoggedSession[],
@@ -392,16 +646,20 @@ export function trendsOf(
 			value: round(valueOf(at), step),
 			inProgress: false
 		}));
-		const sources = sourcesOf(period, records.map(workoutRef));
+		const id = TREND_METRIC_ID[metric];
+		const { direction, mpc } = METRICS[id];
+		const result = classifyTrend(points, { direction, mpc });
 		return [
 			{
 				metric,
 				unit,
 				method: METHOD.trend[metric],
-				sources,
+				sources: sourcesOf(period, records.map(workoutRef)),
+				about: metricAbout(id),
 				points,
-				change: seriesChange(points),
-				changeMethod: SERIES_CHANGE_METHOD
+				change: seriesChange(points, { trend: result }),
+				changeMethod: SERIES_CHANGE_METHOD,
+				realTrend: callOf(result, null).realTrend
 			}
 		];
 	};
@@ -411,6 +669,8 @@ export function trendsOf(
 	return {
 		status: 'ok',
 		weeks: { from, to, count },
+		window: { from, to, label: `Trend over ${label}` },
+		classifier: TREND_METHOD,
 		trends: [
 			...trend('sessions', 'sessions', 1, done, (at) => weekOf(done, at).length),
 			...trend('minutes', 'min', 0.1, done, (at) => minutesOf(weekOf(done, at))),
@@ -424,6 +684,7 @@ export function trendsOf(
 						(at) => mileage.weeks.find((w) => w.weekStart === at)?.distance ?? 0
 					)
 				: [])
-		]
+		],
+		dashboard: dashboardPath('general', DEFAULT_PERIOD)
 	};
 }

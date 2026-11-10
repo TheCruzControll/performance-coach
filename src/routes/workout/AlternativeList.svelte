@@ -3,7 +3,8 @@
   The alternatives a quick action offers for an exercise, best first, each one a button: its name,
   why it fits (M3's reasons), what it needs, and its own last top set when it has one. Choosing
   one hands it back. Tab reaches each option, and the arrow keys move between them (Home and End
-  to the ends). When nothing fits, it says so and why (the kit's reasons), with Skip exercise.
+  to the ends). When nothing fits, it says so and why (the kit's reasons), with Add my own
+  exercise and Skip exercise.
   `error` is why the server refused the last choice (Fix), shown above the list.
   Loaded with the actions sheet and the substitute's Fix, never before.
 -->
@@ -21,9 +22,11 @@
 		onchoose: (alternative: KitAlternative) => void;
 		/** Skip exercise, offered when nothing fits. */
 		onskip?: () => void;
+		/** Add my own exercise, offered when nothing fits. */
+		onaddown?: () => void;
 	}
 
-	let { alternatives, blocked, error = null, onchoose, onskip }: Props = $props();
+	let { alternatives, blocked, error = null, onchoose, onskip, onaddown }: Props = $props();
 
 	const STEPS: Record<string, (i: number, n: number) => number> = {
 		ArrowDown: (i, n) => (i + 1) % n,
@@ -79,6 +82,11 @@
 			<ul class="reasons" data-testid="alternatives-blocked">
 				{#each blocked as reason, i (i)}<li>{reason}</li>{/each}
 			</ul>
+		{/if}
+		{#if onaddown}
+			<Button variant="secondary" icon="plus" onclick={onaddown} data-testid="empty-add-own">
+				Add my own exercise
+			</Button>
 		{/if}
 		{#if onskip}
 			<Button variant="secondary" icon="arrow-right" onclick={onskip} data-testid="empty-skip">
