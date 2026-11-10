@@ -97,6 +97,9 @@ export default defineConfig(({ command, mode }) => {
 				// Small, render-critical CSS is inlined into the HTML to save a blocking round-trip.
 				inlineStyleThreshold: 4096,
 				output: { bundleStrategy: 'split' },
+				// The root layout registers the service worker once the app has started and gone idle
+				// (src/lib/client/service-worker.ts); SvelteKit's registration runs on `load`, before it.
+				serviceWorker: { register: false },
 				// Absolute URLs everywhere (served from the domain root); simpler for the service worker.
 				// adapter-node (SvelteKit 3) takes its public origin from here at build time, not from
 				// an ORIGIN variable at run time; without it every request looks like https://<host>.
