@@ -5,10 +5,20 @@
  * SQL oracles (e2e/oracles/), with and without JavaScript; estimates say so; the deload week's
  * range is its scaled one; period links keep the view and lifts open their page; a first week is
  * told what appears and when; axe is clean in both themes on a phone and in a desktop window.
+ * The trends (everything under the intro) are a chunk of their own: the server's markup stays
+ * until it loads, a client navigation waits for it as for the view's own code, and code that fails to
+ * load offers Retry.
  *
  * Serial: the history is the one owner's, which every browser and worker shares.
  */
-import { expect, test, type Locator, type Page } from '@playwright/test';
+import {
+	expect,
+	test,
+	type APIResponse,
+	type Locator,
+	type Page,
+	type Route
+} from '@playwright/test';
 import { addDays } from '../src/lib/domain/calendar';
 import { MUSCLE_GROUP_LABEL } from '../src/lib/domain/training/vocabulary';
 import { shortDate } from '../src/lib/ui/program/words';
@@ -35,6 +45,30 @@ const numberIn = async (locator: Locator) =>
 	parseFloat((await locator.textContent())!.replace(/,/g, ''));
 const tableRows = (frame: Locator) => frame.getByTestId('chart-table').locator('tbody tr');
 
+/** Serve the app's scripts, handing each request for the trends' chunk (StrengthTrends) to `trends`. */
+async function routeTrendsChunk(
+	page: Page,
+	trends: (route: Route, response: APIResponse) => Promise<void>
+) {
+	await page.route('**/_app/immutable/**/*.js', async (route) => {
+		const response = await route.fetch().catch(() => null);
+		if (!response) return route.abort('internetdisconnected');
+		const body = await response.text();
+		if (!body.includes('strength-lifts')) return route.fulfill({ response, body });
+		await trends(route, response);
+	});
+}
+
+/** Open Progress's overview, then follow its Strength link (a client navigation). */
+async function navigateToStrength(page: Page) {
+	await gotoHydrated(page, '/progress');
+	await page
+		.getByRole('navigation', { name: 'Progress views' })
+		.getByRole('link', { name: 'Strength' })
+		.click();
+	await expect(page).toHaveURL(/\/progress\?view=strength$/);
+}
+
 /** The period's complete weeks: `weeks` weeks ending the Sunday before this week. */
 const periodOf = (seeded: SeededAnalytics, weeks: number) => ({
 	from: addDays(seeded.weekStart, -7 * weeks),
@@ -47,6 +81,8 @@ const keyOf = (seeded: SeededAnalytics, id: string) =>
 /** Each key lift's best estimated 1RM equals the oracle's over the period's complete weeks. */
 async function expectBestE1rms(page: Page, seeded: SeededAnalytics, weeks: number) {
 	const { from, to } = periodOf(seeded, weeks);
+	// After a client navigation the trends arrive with their own chunk.
+	await expect(page.getByTestId('key-lift').first()).toBeVisible();
 	const lifts = await page.getByTestId('key-lift').all();
 	expect(lifts.length, 'key lifts are charted').toBeGreaterThan(0);
 	expect(lifts.length).toBeLessThanOrEqual(6);
@@ -101,12 +137,7 @@ test.describe('twelve weeks', () => {
 	});
 
 	test('lifts, tonnage, muscle groups, RPE and PRs equal the oracles', async ({ page }) => {
-		await gotoHydrated(page, '/progress');
-		await page
-			.getByRole('navigation', { name: 'Progress views' })
-			.getByRole('link', { name: 'Strength' })
-			.click();
-		await expect(page).toHaveURL(/\/progress\?view=strength$/);
+		await navigateToStrength(page);
 		await expect(page.getByTestId('strength')).toHaveAttribute('data-stage', 'history');
 
 		await expectBestE1rms(page, seeded, 12);
@@ -183,6 +214,59 @@ test.describe('twelve weeks', () => {
 		await squat.getByRole('link', { name: 'Back squat' }).click();
 		await expect(page).toHaveURL(new RegExp(`/progress/exercises/${seeded.exercises.back_squat}$`));
 		await expect(page.getByTestId('exercise-detail')).toBeVisible();
+	});
+
+	test.describe('the trends’ own chunk', () => {
+		// page.route sees requests from a page the service worker controls only when it is blocked.
+		test.use({ serviceWorkers: 'block' });
+
+		test('a client navigation waits for their code, then shows the view whole', async ({
+			page
+		}) => {
+			let release = () => {};
+			let asked = () => {};
+			const held = new Promise<void>((resolve) => (release = resolve));
+			const requested = new Promise<void>((resolve) => (asked = resolve));
+			await routeTrendsChunk(page, async (route, response) => {
+				asked();
+				await held;
+				await route.fulfill({ response });
+			});
+			await gotoHydrated(page, '/progress');
+			await page
+				.getByRole('navigation', { name: 'Progress views' })
+				.getByRole('link', { name: 'Strength' })
+				.click();
+			// Overview stays until Strength's trends have arrived, as it does for the view's own
+			// code: no half-drawn view.
+			await requested;
+			await expect(page.getByTestId('verdict-card').first()).toBeVisible();
+			await expect(page).toHaveURL(/\/progress$/);
+			await expect(page.getByTestId('strength')).toHaveCount(0);
+
+			release();
+			await expect(page).toHaveURL(/\/progress\?view=strength$/);
+			await expect(page.getByTestId('strength-trends-error')).toHaveCount(0);
+			await expectBestE1rms(page, seeded, 12);
+			await expectTonnage(page, seeded, 12);
+		});
+
+		test('code that fails to load is a notice with Retry, and Retry recovers', async ({ page }) => {
+			await routeTrendsChunk(page, (route) => route.abort('internetdisconnected'));
+			await navigateToStrength(page);
+			const failed = page.getByTestId('strength-trends-error');
+			await expect(failed).toContainText('Couldn’t load your strength trends');
+			// Only the trends failed: the view and the frame are there.
+			await expect(page.getByTestId('strength')).toHaveAttribute('data-stage', 'history');
+			await expect(periodLink(page, 'Last 12 weeks')).toHaveAttribute('aria-current', 'page');
+			await expect(page.getByTestId('error-view')).toHaveCount(0);
+
+			// Where the browser keeps the failed fetch (Chromium), Retry reloads Progress.
+			await page.unrouteAll({ behavior: 'wait' });
+			await failed.getByRole('button', { name: 'Retry' }).click();
+			await expect(failed).toHaveCount(0);
+			await expectBestE1rms(page, seeded, 12);
+		});
 	});
 
 	test('axe is clean in both themes; the phone screen is captured, and 320 px fits', async ({
