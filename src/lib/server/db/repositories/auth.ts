@@ -430,15 +430,20 @@ export function createAuthRepository(db: Executor) {
 		/**
 		 * Delete up to `limit` counters whose window started before `olderThan`. Rows another
 		 * transaction holds (a concurrent hit or prune) are skipped, never waited on.
+		 *
+		 * The batch is a MATERIALIZED CTE so it is picked exactly once. As a plain `IN (subquery)`
+		 * the planner may rescan the subquery for every row, and each rescan skips the rows this
+		 * statement already deleted and locks the next `limit`, deleting every stale row at once.
 		 */
 		async pruneRateLimits(olderThan: Date, limit: number): Promise<void> {
-			const stale = db
-				.select({ key: authRateLimits.key })
-				.from(authRateLimits)
-				.where(lt(authRateLimits.windowStart, olderThan))
-				.limit(limit)
-				.for('update', { skipLocked: true });
-			await db.delete(authRateLimits).where(inArray(authRateLimits.key, stale));
+			await db.execute(sql`
+				with stale as materialized (
+					select ${authRateLimits.key} from ${authRateLimits}
+					where ${authRateLimits.windowStart} < ${olderThan}
+					limit ${limit}
+					for update skip locked
+				)
+				delete from ${authRateLimits} where ${authRateLimits.key} in (select key from stale)`);
 		}
 	};
 }
