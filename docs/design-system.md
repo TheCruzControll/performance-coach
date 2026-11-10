@@ -165,8 +165,10 @@ Tracking: `--tracking-display -0.032em`, `--tracking-tight -0.016em`, `--trackin
 - Self-hosted from `@fontsource-variable/{mona-sans,hubot-sans}`; only the **latin** `wght`
   woff2 files are declared for the main ranges (39.8 KB + 48.3 KB); Mona latin-ext is declared
   with a `unicode-range` and only fetched when needed.
-- Both latin files are **preloaded** (policy in `src/lib/ui/fonts.ts`, applied in
-  `hooks.server.ts`; budget ≤ 2 files) with `font-display: swap`.
+- Only **Mona Sans latin** is **preloaded** (the text and numbers of every screen; policy in
+  `src/lib/ui/fonts.ts`, applied in `hooks.server.ts`; budget ≤ 2 files). Hubot Sans loads once
+  a heading uses it, so it does not share the connection with the app's start-up. Both use
+  `font-display: swap`.
 - Metric-matched fallbacks (`Mona Sans Fallback`, `Hubot Sans Fallback` → local Arial/Helvetica
   with `size-adjust` / `ascent-override` / `descent-override`) computed from the font files with
   fontTools; measured CLS is 0.000 on audited routes (docs/performance.md).
