@@ -12,6 +12,8 @@
  */
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
+import pg from 'pg';
+import { LOCAL_DATABASE_URLS } from '../src/lib/server/db/migrate';
 import {
 	COACH_TZ,
 	lastRun,
@@ -63,6 +65,8 @@ interface Seen {
 	t: number;
 	thinking: boolean;
 	chips: string;
+	/** The labels of the blocks still arriving. */
+	drafting: string;
 	draft: string;
 	blocks: number;
 }
@@ -93,6 +97,9 @@ async function watch(page: Page) {
 				chips: [...document.querySelectorAll('[data-testid="activity"]')]
 					.map((chip) => chip.getAttribute('data-state'))
 					.join(),
+				drafting: [...document.querySelectorAll('[data-testid="answer-draft"] .kind')]
+					.map((kind) => kind.textContent)
+					.join('|'),
 				draft: [...document.querySelectorAll('[data-testid="answer-draft"] p')]
 					.map((p) => p.textContent)
 					.join('|'),
@@ -111,6 +118,36 @@ async function watch(page: Page) {
 
 const seen = (page: Page) =>
 	page.evaluate(() => (window as unknown as { coachSeen: Seen[] }).coachSeen);
+
+/**
+ * Hold every append to conversation `threadId` until the returned release: each append locks the
+ * thread's row first (services/coach/threads.ts), so the turn's next stored step, and what the
+ * stream sends after it, waits while the screen is read. Fails unless the turn has stored no step
+ * of its own yet.
+ */
+async function holdThread(threadId: string): Promise<() => Promise<void>> {
+	const client = new pg.Client({
+		connectionString: process.env.E2E_DATABASE_URL || LOCAL_DATABASE_URLS.e2e
+	});
+	await client.connect();
+	const release = async () => {
+		await client.query('rollback').catch(() => undefined);
+		await client.end();
+	};
+	try {
+		await client.query('begin');
+		await client.query('select 1 from coach_threads where id = $1 for no key update', [threadId]);
+		const { rows } = await client.query<{ n: number }>(
+			`select count(*)::int as n from coach_messages where thread_id = $1 and kind = 'assistant'`,
+			[threadId]
+		);
+		expect(rows[0]!.n, 'the hold comes before the turn stores a step').toBe(0);
+	} catch (err) {
+		await release();
+		throw err;
+	}
+	return release;
+}
 
 /** Every request the page makes to a host other than the app's. */
 function foreignHosts(page: Page): string[] {
@@ -171,13 +208,19 @@ test('a suggestion starts a conversation whose answer streams: chips, words, the
 	await page.getByRole('button', { name: BENCH }).click();
 	await expect(message(page)).toHaveValue(BENCH);
 	await composer(page).getByRole('button', { name: 'Send' }).click();
-	await expect(page.getByTestId('owner-message')).toHaveText(new RegExp(BENCH));
-	await expect(message(page)).toHaveValue('');
-	await expect(composer(page).getByRole('button', { name: 'Stop' })).toBeVisible();
 	// The conversation exists as soon as the server names it: its own address, replacing /coach.
-	await expect(page).toHaveURL(/\/coach\/[0-9a-f-]{36}$/);
-	await expect(live(page).getByTestId('activity')).toHaveCount(1);
-	await captureScreen(page, testInfo, 'coach-stream-chips');
+	await page.waitForURL(/\/coach\/[0-9a-f-]{36}$/);
+	// The tool finishes in milliseconds: its step is held, so its chip is seen running.
+	const release = await holdThread(new URL(page.url()).pathname.split('/').at(-1)!);
+	try {
+		await expect(page.getByTestId('owner-message')).toHaveText(new RegExp(BENCH));
+		await expect(message(page)).toHaveValue('');
+		await expect(composer(page).getByRole('button', { name: 'Stop' })).toBeVisible();
+		await expect(live(page).getByTestId('activity')).toHaveAttribute('data-state', 'running');
+		await captureScreen(page, testInfo, 'coach-stream-chips');
+	} finally {
+		await release();
+	}
 
 	const answer = live(page);
 	await expect(composer(page).getByRole('button', { name: 'Send' })).toBeVisible({
@@ -205,7 +248,9 @@ test('a suggestion starts a conversation whose answer streams: chips, words, the
 	await expect(facts.first()).toContainText(first);
 	await expect(facts.last()).toContainText(last);
 
-	// Thinking first, then the chip running and done, and the words arriving in steps.
+	// Thinking first, then the chip running and done, and each block opening, labelled, before it
+	// is checked. These blocks are a sentence each, and the output policy sends a block's words a
+	// sentence at a time, so they come with the check: the Stop test sees words arrive in steps.
 	const states = await seen(page);
 	const thinking = states.find((s) => s.thinking);
 	expect(thinking, 'Thinking… showed').toBeDefined();
@@ -213,9 +258,11 @@ test('a suggestion starts a conversation whose answer streams: chips, words, the
 	const chipStates = states.map((s) => s.chips).filter(Boolean);
 	expect(chipStates[0]).toBe('running');
 	expect(chipStates.at(-1)).toBe('done');
-	const drafts = new Set(states.map((s) => s.draft).filter(Boolean));
-	expect(drafts.size, 'at least two intermediate text states').toBeGreaterThanOrEqual(2);
-	expect(states.filter((s) => s.thinking && (s.draft || s.chips))).toEqual([]);
+	expect(
+		states.some((s) => s.drafting === 'Fact' && s.blocks < 3),
+		'a fact opens as a labelled draft before it is checked'
+	).toBe(true);
+	expect(states.filter((s) => s.thinking && (s.draft || s.drafting || s.chips))).toEqual([]);
 
 	// Read out once per block, then 'Answer complete': never the words as they arrive.
 	const announced = answer.getByTestId('answer-announcer').locator('p');
@@ -257,8 +304,15 @@ test('Thinking shows while the coach is silent, then gives way to the answer', a
 test('Stop ends the answer as Stopped and cancels the run', async ({ page, request }, testInfo) => {
 	await setCoachFault(request, 'slow');
 	await openThread(page, seeded.threads.bench!);
+	await watch(page);
 	await ask(page, 'Is my week on track?');
 	await expect(live(page).getByTestId('answer-draft')).not.toBeEmpty();
+	// The words arrive in steps, a sentence at a time.
+	await expect
+		.poll(async () => new Set((await seen(page)).map((s) => s.draft).filter(Boolean)).size, {
+			message: 'at least two intermediate text states'
+		})
+		.toBeGreaterThanOrEqual(2);
 	await captureScreen(page, testInfo, 'coach-streaming');
 
 	await composer(page).getByRole('button', { name: 'Stop' }).click();
