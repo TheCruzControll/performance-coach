@@ -13,41 +13,19 @@
  *   purge marks the device signed out, and only a sync request clears that mark.
  *
  * Neither ever blocks the deletion of 'pc-offline': each closes the store it opened before it
- * returns, and a store closes itself on versionchange anyway (db.ts).
+ * returns, and a store closes itself on versionchange anyway (db.ts). Each closes it with the
+ * store's own close, never a 'signed-out' message, which would close the page for good: after 'Stay
+ * signed in', /workout in this tab opens the store again, and a second sign-out flushes again.
  */
 import { strengthTable } from '#lib/domain/workout/reducers/tables.ts';
 import { openTabChannel } from './channel.ts';
-import type { TabChannel, TabMessage } from './channel.ts';
 import { pendingCount } from './probe.ts';
 import { createStore } from './store.ts';
-import type { WorkoutStore } from './store.ts';
 import { startSync } from './sync.ts';
 import type { SyncOptions } from './sync.ts';
 
 /** How long sign-out waits for the outbox to flush before it asks (ADR: ≤ 5 s). */
 export const FLUSH_LIMIT_MS = 5_000;
-
-/**
- * The store over `tabs`, and a way to let go of it. The store has no close of its own: it closes
- * for good on its channel's 'signed-out', so that message is handed to it here, and to no other tab.
- */
-async function openClosable(tabs: TabChannel | null) {
-	let hear: ((message: TabMessage) => void) | null = null;
-	const channel: TabChannel = {
-		post: (message) => tabs?.post(message),
-		listen(listener) {
-			hear = listener;
-			const unlisten = tabs?.listen(listener);
-			return () => {
-				hear = null;
-				unlisten?.();
-			};
-		},
-		close: () => tabs?.close()
-	};
-	const store: WorkoutStore = await createStore({ table: strengthTable, channel });
-	return { store, close: () => hear?.({ type: 'signed-out' }) };
-}
 
 /**
  * Unsynced workout changes left after one flush bounded to `limitMs`; 0, without creating
@@ -63,7 +41,7 @@ export async function unsyncedAfterFlush(
 		sync.clearTimeout ?? ((timer: unknown) => clearTimeout(timer as ReturnType<typeof setTimeout>));
 	try {
 		// No other tab is told anything: this page only sends.
-		const { store, close } = await openClosable(null);
+		const store = await createStore({ table: strengthTable, channel: null });
 		const engine = startSync({ events: null, ...sync, store });
 		let timer: unknown = null;
 		try {
@@ -73,7 +51,7 @@ export async function unsyncedAfterFlush(
 		} finally {
 			cancel(timer);
 			engine.stop();
-			close();
+			store.close();
 		}
 	} catch {
 		// The store would not open (this page saw it closed): what is pending is still the answer.
@@ -84,10 +62,10 @@ export async function unsyncedAfterFlush(
 /** Deletes what the server already holds (purgeServerCopies), keeping only unsynced changes. */
 export async function keepOnlyUnsynced(): Promise<void> {
 	// The other tabs hear 'purged' and show the signed-out state.
-	const { store, close } = await openClosable(openTabChannel());
+	const store = await createStore({ table: strengthTable, channel: openTabChannel() });
 	try {
 		await store.purgeServerCopies();
 	} finally {
-		close();
+		store.close();
 	}
 }

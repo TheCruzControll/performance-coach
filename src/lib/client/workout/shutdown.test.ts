@@ -164,6 +164,36 @@ describe('unsyncedAfterFlush', () => {
 	});
 });
 
+describe("the signing-out page after 'Stay signed in'", () => {
+	it('opens the store again, and a second sign-out flushes again', async () => {
+		await seed();
+		const clock = manualClock();
+		const silent = vi.fn(() => new Promise<Response>(() => {}));
+		const left = unsyncedAfterFlush({ ...engine, ...clock, fetch: silent });
+		await vi.waitFor(() => expect(silent).toHaveBeenCalled());
+		clock.advance(FLUSH_LIMIT_MS);
+		expect(await left).toBe(2);
+
+		// The owner stays signed in and goes to /workout in this tab.
+		const store = await createStore({ table: strengthTable, channel: null });
+		expect((await store.getActive())!.workoutId).toBe(W);
+		store.close();
+
+		expect(await unsyncedAfterFlush({ ...engine, fetch: applies })).toBe(0);
+		expect(applies).toHaveBeenCalled();
+		expect(await pendingCount()).toBe(0);
+	});
+
+	it('opens the store again after keepOnlyUnsynced', async () => {
+		await seed();
+		await keepOnlyUnsynced();
+
+		const store = await createStore({ table: strengthTable, channel: null });
+		expect((await store.getActive())!.workoutId).toBe(W);
+		store.close();
+	});
+});
+
 describe('keepOnlyUnsynced', () => {
 	it('keepOnlyUnsynced drops server copies and keeps the outbox', async () => {
 		await seed();
