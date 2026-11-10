@@ -109,6 +109,14 @@ tests fail on any query sent to a busy connection (`tests/integration/one-query-
 A route may still await several services together when none is handed a transaction: the pool
 gives each of their queries its own connection.
 
+### Lifecycles
+
+Which states a record can be in, and what may follow what, is declared as a typed transition
+table next to its status list (`src/lib/domain/lifecycle.ts`; the registry is
+`src/lib/domain/lifecycles.ts`). [docs/lifecycles.md](lifecycles.md) is generated from the tables
+and [the lifecycles as data ADR](adr/NNNN-lifecycles-as-data.md) records why. Edit the table
+first, then `pnpm lifecycles`.
+
 ## Data
 
 - **PostgreSQL 16+** everywhere: Neon Lakebase Postgres 18 in production/preview, Postgres 18 in

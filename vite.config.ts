@@ -204,7 +204,10 @@ export default defineConfig(({ command, mode }) => {
 						name: 'unit',
 						environment: 'node',
 						include: ['src/**/*.{test,spec}.ts', 'scripts/**/*.test.ts'],
-						exclude: ['src/**/*.svelte.{test,spec}.ts']
+						exclude: ['src/**/*.svelte.{test,spec}.ts'],
+						// An observed lifecycle throws on a move its table does not allow, so a test
+						// catches drift between a table and the code (services/lifecycle-guard.ts).
+						env: { LIFECYCLE_STRICT: '1' }
 					}
 				},
 				{
@@ -220,7 +223,8 @@ export default defineConfig(({ command, mode }) => {
 						],
 						// Applied before any module loads (the logger reads LOG_LEVEL at import time).
 						// Quiet by default; `LOG_LEVEL=debug pnpm test:integration` to see logs.
-						env: { LOG_LEVEL: process.env.LOG_LEVEL || 'silent' },
+						// LIFECYCLE_STRICT: an observed lifecycle throws on an illegal move, as in `unit`.
+						env: { LOG_LEVEL: process.env.LOG_LEVEL || 'silent', LIFECYCLE_STRICT: '1' },
 						// One shared Postgres test database: run files serially for determinism.
 						fileParallelism: false,
 						testTimeout: 15_000,
