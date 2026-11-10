@@ -104,10 +104,19 @@ export interface AdherenceCounts {
 	noRate: NoRate | null;
 }
 
-/** One session per lineage, the last given winning, so an edit's later row replaces the earlier. */
-const distinct = (sessions: readonly PlannedSession[]) => [
-	...new Map(sessions.map((session) => [session.lineage, session])).values()
-];
+/**
+ * One session per lineage, the last given winning, so an edit's later row replaces the earlier.
+ * Worked out once per list: every week of a long period asks again of the same facts.
+ */
+const distinctOf = new WeakMap<readonly PlannedSession[], readonly PlannedSession[]>();
+function distinct(sessions: readonly PlannedSession[]): readonly PlannedSession[] {
+	let known = distinctOf.get(sessions);
+	if (!known) {
+		known = [...new Map(sessions.map((session) => [session.lineage, session])).values()];
+		distinctOf.set(sessions, known);
+	}
+	return known;
+}
 
 /** Days from `from` to `to`, both included: a WeekRange fits. */
 type Span = Pick<WeekRange, 'from' | 'to'>;

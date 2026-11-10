@@ -15,6 +15,8 @@
  * - PRs: a record is judged against every earlier completed workout (RECORDS_FROM), so the sets
  *   before those weeks are read too; the period's PRs, the week in progress included, are listed
  *   newest first, at most PRS_MAX.
+ * - `headline` (the overview) stops at the key lifts and tonnage, and skips the reads only the
+ *   rest needs: sessions, prescriptions, earlier sets and muscle targets.
  * - Reads run one at a time, so `db` may be a transaction.
  */
 import { addDays, daysBetween, mondayOf, type IsoDate } from '../../../domain/calendar';
@@ -43,7 +45,8 @@ import {
 	exposure,
 	matchPrescription,
 	rpeDeviationSummary,
-	type Exposure
+	type Exposure,
+	type PlannedLines
 } from '../../../domain/analytics/prescribed';
 import {
 	byMonth,
@@ -95,6 +98,14 @@ export interface StrengthDashboardOptions {
 	period: Period;
 	/** The owner's calendar day (ownerToday). */
 	today: IsoDate;
+	/** Only what the overview shows (StrengthHeadline): no muscle groups, RPE or PRs to read. */
+	headline?: boolean;
+	/**
+	 * Muscle groups for the period's last `lastGroupWeeks` complete weeks and the week in progress
+	 * only, so their targets are read for those weeks alone (Progress lists RANGE_WEEKS of them);
+	 * every week of the period unless given.
+	 */
+	lastGroupWeeks?: number;
 }
 
 export type StrengthDashboardDeps = DashboardDeps;
@@ -170,6 +181,12 @@ export interface StrengthDashboard {
 	prs: { items: DashboardPr[]; total: number };
 }
 
+/** What the overview shows of strength: the key lifts and tonnage, worked out as the view does. */
+export type StrengthHeadline = Pick<
+	StrengthDashboard,
+	'window' | 'trendWindow' | 'units' | 'keyLifts' | 'tonnage'
+>;
+
 const within = (day: IsoDate, range: Pick<WeekRange, 'from' | 'to'> | null) =>
 	range !== null && range.from <= day && day <= range.to;
 
@@ -186,6 +203,16 @@ function contextOf(id: MetricId, have: number): FigureContext {
 	return { metric: id, label, kind, method, caveat, availability: availabilityOf(id, have) };
 }
 
+/** `of` for a range, worked out once per range (by its dates) and kept for the call. */
+function byRange<T>(of: (range: WeekRange | null) => T): (range: WeekRange | null) => T {
+	const known = new Map<string, T>();
+	return (range) => {
+		const key = range ? `${range.from}/${range.to}` : '';
+		if (!known.has(key)) known.set(key, of(range));
+		return known.get(key)!;
+	};
+}
+
 /** The highest of dated values in each week, keyed by its Monday. */
 function weeklyBest(values: readonly { on: IsoDate; value: number }[]): Map<IsoDate, number> {
 	const best = new Map<IsoDate, number>();
@@ -199,9 +226,21 @@ function weeklyBest(values: readonly { on: IsoDate; value: number }[]): Map<IsoD
 export async function getStrengthDashboard(
 	db: Executor,
 	ownerId: string,
-	{ period, today }: StrengthDashboardOptions,
+	options: StrengthDashboardOptions & { headline: true },
+	deps?: StrengthDashboardDeps
+): Promise<StrengthHeadline>;
+export async function getStrengthDashboard(
+	db: Executor,
+	ownerId: string,
+	options: StrengthDashboardOptions & { headline?: false },
+	deps?: StrengthDashboardDeps
+): Promise<StrengthDashboard>;
+export async function getStrengthDashboard(
+	db: Executor,
+	ownerId: string,
+	{ period, today, headline = false, lastGroupWeeks }: StrengthDashboardOptions,
 	deps: StrengthDashboardDeps = {}
-): Promise<StrengthDashboard> {
+): Promise<StrengthHeadline | StrengthDashboard> {
 	const profile = await getAthleteProfile(ownerId, { db });
 	const { timeZone } = profile;
 	const units = displayUnits(profile);
@@ -220,30 +259,36 @@ export async function getStrengthDashboard(
 	);
 	const facts = loader(from, today);
 	const sets = await facts.sets();
-	const sessions = await facts.sessions();
-	const prescriptions = await facts.prescriptions();
+	const sessions = headline ? [] : await facts.sessions();
+	const prescriptions = headline ? new Map<string, PlannedLines[]>() : await facts.prescriptions();
 	const baselines = await facts.baselines();
 	const earlier =
-		RECORDS_FROM === 'all' && first !== null && first < from
+		!headline && RECORDS_FROM === 'all' && first !== null && first < from
 			? await loader(first, addDays(from, -1)).sets()
 			: [];
 	const ids = [...new Set([...earlier, ...sets].map((set) => set.exercise))];
 	const exercises = await getExercisesByIds(ownerId, ids, { db });
 	const shownFrom = earliest(window.weeks?.from, trend.weeks?.from, inProgress.weekStart);
-	const targets = await getMuscleTargets(
-		ownerId,
-		{ from: window.weeks?.from ?? inProgress.weekStart, to: today },
-		{ db }
-	);
+	const periodFrom = window.weeks?.from ?? inProgress.weekStart;
+	const lastWeeks =
+		lastGroupWeeks === undefined ? periodFrom : addDays(inProgress.weekStart, -7 * lastGroupWeeks);
+	const groupsFrom = lastWeeks > periodFrom ? lastWeeks : periodFrom;
+	const targets = headline
+		? []
+		: await getMuscleTargets(ownerId, { from: groupsFrom, to: today }, { db });
 
 	// ---- the weeks read and the figure builder
 	const lastSunday = addDays(inProgress.weekStart, -1);
 	const count = daysBetween(from, inProgress.weekStart) / 7;
 	const loaded = { weeks: count > 0 ? { from, to: lastSunday, count } : null, inProgress };
 	const dayOf = (set: SetFact) => localDay(set.performedAt, timeZone);
-	const setsIn = (range: WeekRange | null) => sets.filter((set) => within(dayOf(set), range));
-	const activeWeeksIn = (range: WeekRange | null) =>
-		new Set(setsIn(range).map((set) => mondayOf(dayOf(set)))).size;
+	// Each figure asks for the same few ranges again (its period, the one before, its trend): each
+	// range's sets and active weeks are worked out once.
+	const setsIn = byRange((range) => sets.filter((set) => within(dayOf(set), range)));
+	const activeWeeksIn = byRange(
+		(range) => new Set(setsIn(range).map((set) => mondayOf(dayOf(set)))).size
+	);
+	const setsOf = Map.groupBy(sets, (set) => set.exercise);
 	const activeWeeks = activeWeeksIn(window.weeks);
 	const nameOf = (id: string) => exercises.get(id)?.name ?? 'Unknown exercise';
 	const show = (id: MetricId, value: number) => format(METRICS[id], value, 'value');
@@ -293,11 +338,7 @@ export async function getStrengthDashboard(
 		exercises
 	).map(({ exercise: id, baselineLift }): KeyLiftFigure => {
 		const lift = exercises.get(id)!;
-		const points = e1rmSeries(
-			sets.filter((set) => set.exercise === id),
-			lift,
-			timeZone
-		);
+		const points = e1rmSeries(setsOf.get(id) ?? [], lift, timeZone);
 		const weekly = fillWeeks(weeklyBest(points), loaded.weeks, 'gap', inProgress);
 		const valueOf = (range: WeekRange) =>
 			points
@@ -313,15 +354,23 @@ export async function getStrengthDashboard(
 		};
 	});
 
-	// ---- tonnage and hard sets
+	// ---- tonnage, all the overview needs besides the key lifts
 	const tonnage = weeklyTonnage(sets, exercises, timeZone, loaded);
 	const lifted = sets.flatMap((set): Timed[] => {
 		const kg = volumeOf(set, exercises.get(set.exercise)!);
 		return kg === null ? [] : [{ at: set.performedAt, value: kg }];
 	});
-	const hardWeekly = weeklyHardSets(sets, exercises, timeZone, loaded).map(
-		({ weekStart, inProgress: open, sets: n }) => ({ at: weekStart, value: n, inProgress: open })
-	);
+	const tonnageFigure = weeklyFigure('tonnage', tonnage, lifted);
+	if (headline)
+		return { window, trendWindow: trend, units, keyLifts: lifts, tonnage: tonnageFigure };
+
+	// ---- hard sets: every week read, worked out once; the period's weeks are some of them
+	const hardSets = weeklyHardSets(sets, exercises, timeZone, loaded);
+	const hardWeekly = hardSets.map(({ weekStart, inProgress: open, sets: n }) => ({
+		at: weekStart,
+		value: n,
+		inProgress: open
+	}));
 	const hard = sets.flatMap((set): Timed[] =>
 		isHardSet(isWorking(set), set.rpe) ? [{ at: set.performedAt, value: 1 }] : []
 	);
@@ -329,7 +378,10 @@ export async function getStrengthDashboard(
 	// ---- muscle groups against their week's range, and every group the week plans
 	const byWeek = new Map(targets.map((t) => [t.weekStart, t]));
 	const groupWeeks = muscleGroupWeeks(
-		weeklyHardSets(sets, exercises, timeZone, window),
+		hardSets.filter(
+			(week) =>
+				week.inProgress || (within(week.weekStart, window.weeks) && week.weekStart >= groupsFrom)
+		),
 		new Map(targets.map((t) => [t.weekStart, t.targets]))
 	).map(({ weekStart, inProgress: open, groups }): GroupWeekFigure => {
 		const target = byWeek.get(weekStart);
@@ -376,26 +428,28 @@ export async function getStrengthDashboard(
 			exposure(matchPrescription(lines, logged, context), session.date)
 		);
 	});
-	const exposuresIn = (range: WeekRange | null) => exposures.filter((e) => within(e.day, range));
+	const exposuresIn = byRange((range) => exposures.filter((e) => within(e.day, range)));
+	const deviationIn = byRange((range) => rpeDeviationSummary(exposuresIn(range)).overall);
 	const deviationWeeks = Object.entries(rpeDeviationSummary(exposures).byWeek).flatMap(
 		([week, { mean }]) => (mean === null ? [] : [[week, mean] as const])
 	);
 	const deviation = figure(
 		'rpe_deviation',
 		fillWeeks(new Map(deviationWeeks), loaded.weeks, 'gap', inProgress),
-		(range) => rpeDeviationSummary(exposuresIn(range)).overall.mean,
-		(range) => rpeDeviationSummary(exposuresIn(range)).overall.count,
+		(range) => deviationIn(range).mean,
+		(range) => deviationIn(range).count,
 		signed
 	);
 	const periodSets = setsIn(window.weeks);
 	const periodExposures = exposuresIn(window.weeks);
 	const periodDeviation = rpeDeviationSummary(periodExposures).byExercise;
-	const byLift = [...new Set(periodSets.map((set) => set.exercise))]
-		.map((id): LiftRpe => {
-			const summary = rpeSummary(periodSets.filter((set) => set.exercise === id));
+	const periodExposuresOf = Map.groupBy(periodExposures, (e) => e.exerciseId);
+	const byLift = [...Map.groupBy(periodSets, (set) => set.exercise)]
+		.map(([id, liftSets]): LiftRpe => {
+			const summary = rpeSummary(liftSets);
 			const dev = periodDeviation[id];
 			const target = mean(
-				periodExposures.flatMap((e) => (e.exerciseId === id && !e.substituted ? e.rpeTargets : []))
+				(periodExposuresOf.get(id) ?? []).flatMap((e) => (e.substituted ? [] : e.rpeTargets))
 			);
 			return {
 				...{ exerciseId: id, name: nameOf(id), rated: summary.rated },
@@ -423,23 +477,25 @@ export async function getStrengthDashboard(
 		.flatMap(([id, facts]) =>
 			prTimeline(facts, exercises.get(id)!, timeZone)
 				.filter((pr) => pr.on >= prFrom)
-				.map((pr) => ({
-					...pr,
-					...{ exerciseId: id, name: nameOf(id), text: shownPr(pr, pr.value) },
-					previousText: shownPr(pr, pr.previous.value)
-				}))
+				.map((pr) => ({ ...pr, exerciseId: id, name: nameOf(id) }))
 		)
 		.sort((a, b) => (a.on === b.on ? a.name.localeCompare(b.name) : a.on < b.on ? 1 : -1));
+	// Only the listed PRs are put in words: 'all' holds thousands.
+	const listed = prs.slice(0, PRS_MAX).map((pr): DashboardPr => ({
+		...pr,
+		text: shownPr(pr, pr.value),
+		previousText: shownPr(pr, pr.previous.value)
+	}));
 
 	return {
 		window,
 		trendWindow: trend,
 		units,
 		keyLifts: lifts,
-		tonnage: weeklyFigure('tonnage', tonnage, lifted),
+		tonnage: tonnageFigure,
 		hardSets: weeklyFigure('hard_sets', hardWeekly, hard),
 		muscleGroups: { ...contextOf('group_sets', activeWeeks), weeks: groupWeeks },
 		rpe: { average, deviation, byLift },
-		prs: { items: prs.slice(0, PRS_MAX), total: prs.length }
+		prs: { items: listed, total: prs.length }
 	};
 }

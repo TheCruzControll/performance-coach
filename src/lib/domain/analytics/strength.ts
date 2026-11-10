@@ -284,8 +284,9 @@ interface Best {
  * (volumeOf) when it is above 0.
  */
 function sessionBests(sets: readonly StrengthFact[], exercise: RuledExercise): Best[] {
-	const competing = (kind: PrKind) =>
-		sets.filter((set) => prCandidates(set, exercise).includes(kind));
+	// Each set's candidates are worked out once, then read for each kind.
+	const candidates = sets.map((set) => prCandidates(set, exercise));
+	const competing = (kind: PrKind) => sets.filter((_, i) => candidates[i]!.includes(kind));
 	const bests: Best[] = [];
 	const e1rm = bestE1rm(competing('e1rm'));
 	if (e1rm) bests.push({ kind: 'e1rm', reps: null, value: e1rm.value, setId: e1rm.set.id });
