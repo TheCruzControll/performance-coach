@@ -29,6 +29,7 @@ import {
 	type StoredSession
 } from '../../../src/lib/server/services/programs/index';
 import {
+	completedWorkoutIds,
 	getExerciseHistory,
 	getWorkoutDetail,
 	listWorkouts,
@@ -178,6 +179,42 @@ describe('listWorkouts', () => {
 			await expect(listWorkouts(owner, { limit: 0 }, { db })).rejects.toMatchObject({
 				errors: { limit: expect.any(String) }
 			});
+		});
+	});
+});
+
+describe('completedWorkoutIds', () => {
+	it('names each session’s newest completed workout by client id, and nothing else', async () => {
+		await withRollback(async (db) => {
+			const { owner, strength, run, other, pin } = await seedWorkoutDay(db);
+			const at = (time: string) => ({ startedAt: utc(TODAY, time) });
+			const strengthAt = async (time: string) =>
+				(await logStrength(db, owner, { ...at(time), planned: pin(strength) }, [])).workoutId;
+			// Logged out of order: the newest start wins, not the newest row.
+			const newest = await strengthAt('07:00');
+			await strengthAt('06:00');
+			// None of these is done: in progress, abandoned or deleted.
+			await logRun(db, owner, {
+				...at('08:00'),
+				planned: pin(run),
+				metres: 1,
+				status: 'in_progress'
+			});
+			await logRun(db, owner, {
+				...at('09:00'),
+				planned: pin(run),
+				metres: 1,
+				status: 'abandoned'
+			});
+			await logOther(db, owner, { ...at('10:00'), planned: pin(other), deleted: true });
+			// An ad-hoc workout names no session.
+			await logRun(db, owner, { ...at('12:00'), metres: 5000 });
+
+			const lineages = [strength.lineage, run.lineage, other.lineage, 'not-a-lineage'];
+			expect(await completedWorkoutIds(owner, lineages, { db })).toEqual({
+				[strength.lineage]: await clientIdOf(db, newest)
+			});
+			expect(await completedWorkoutIds(owner, [], { db })).toEqual({});
 		});
 	});
 });

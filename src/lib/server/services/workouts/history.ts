@@ -9,6 +9,8 @@
  *   domain's summarizeWorkout over the same projection the device renders, against the bests from
  *   before it started, and, for a planned session, the plan against what was done. Anything else
  *   (a malformed id, an unknown one, another owner's, one not completed or deleted) reads as null.
+ * - completedWorkoutIds: the History detail a planned session that reads 'Done' opens, by lineage
+ *   (queries/history.ts completedWorkoutsFor): its newest completed workout's client id.
  * - getExerciseHistory: an exercise's sets page by page and its records (services/training/
  *   history.ts, never redefined; the best e1RM is labelled estimated), with its previous session:
  *   the last completed workout that did it, planned or ad-hoc (the plan's open question on
@@ -318,6 +320,25 @@ async function plannedAgainstDone(
 			done: sets.filter(isWorking).length
 		}));
 	return { ...base, ...none, exercises, added };
+}
+
+/**
+ * The client id of the newest completed, undeleted workout logged against each of `lineages`, by
+ * lineage: the History detail Today and the session screen open from 'Done'. Lineages with none,
+ * and malformed ones, are absent.
+ */
+export async function completedWorkoutIds(
+	ownerId: string,
+	lineages: readonly string[],
+	deps: TrainingDeps = {}
+): Promise<Record<string, string>> {
+	const asked = lineages.filter(isUuid);
+	if (!asked.length) return {};
+	const { db } = resolveDeps(deps);
+	const found = await measure('db', () =>
+		createHistoryRepository(db).completedWorkoutsFor(ownerId, asked)
+	);
+	return Object.fromEntries(found);
 }
 
 /** One completed workout as History shows it; null for anything else. */
