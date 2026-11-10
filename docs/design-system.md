@@ -527,7 +527,7 @@ behind a confirming `BottomSheet`, and toasts for outcomes.
 ## Accessibility checklist (applies to every new component)
 
 - Touch targets ≥ 44 × 44 px; visible `:focus-visible` ring (`--color-accent-ring`).
-- Text contrast ≥ 4.5:1 in **both** themes. `e2e/a11y.e2e.ts` runs axe-core (WCAG 2.1 A/AA)
+- Text contrast ≥ 4.5:1 in **both** themes. `e2e/a11y-suite.ts` runs axe-core (WCAG 2.1 A/AA)
   on every screen, the plate-calculator sheet and each `/design` group in dark and light; CI
   runs it with the rest of the e2e suite (Lighthouse only audits the default dark theme).
 - Use native elements first (`<dialog>`, `<button>`, links); ARIA patterns for composites.
