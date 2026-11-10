@@ -255,6 +255,8 @@ that specs verify the rest with.
     1024 px; `0px` outside the shell (set under `:root:has(.app-nav)`).
   - `--nav-inset-left`: what it clears at the left: `0px`, and in the shell the rail and the left
     safe area from 1024 px.
+  - `--resume-inset`: the resume bar's room while it shows, `0px` otherwise; in the shell
+    `--nav-inset-bottom` includes it, so the content and all bottom chrome clear the bar.
 
 ### Content width
 
@@ -314,6 +316,10 @@ itself read it.
   transform, so it takes the column's width and never covers another column. No ancestor up to the
   column sets `overflow`. Below 1024 px the column is the whole content, so it may stay screen
   chrome.
+- **The resume bar** (`(app)/ResumeBar.svelte`) is the app's own screen chrome: fixed and
+  centred over the column like a composer, above the tab bar below 1024 px and at the bottom of
+  the content column beside the rail from there. It sits under `--resume-inset`, so the shell's
+  bottom padding and every other bottom chrome rise with it and it covers nothing.
 - Specs check chrome against the element it belongs to, never against `<main>` for a column:
   `expectCentredOver(page, chrome, area)` for screen chrome and
   `expectInColumn(page, chrome, column, others)` for column chrome. A screen that later turns
@@ -390,8 +396,9 @@ later-pass screen).
   `RunSegments` (each segment on one line), `SessionDetails` (a class's stats beside its metrics)
   and `BaselineCallout` (the steps beside the why) adapt from 35 rem with container queries,
   above the phone column, so the iPhone is unchanged.
-- **Progress** (`/progress`): wide (`data-layout="wide"` on its root). From 1024 px the three
-  `Stat` tiles keep one row across the full width, with wider gaps, over a taller empty plot.
+- **Progress** (`/progress`): wide (`data-layout="wide"` on its root). From 1024 px the view nav
+  and the period picker share one row over the view; the overview's five trend tiles keep one row,
+  and its discipline cards and chart frames pair up from a 44 rem column (a container query).
 - **Coach** (`/coach`): readable, as a conversation should be. From 1024 px the suggestions sit in
   two columns; the composer is screen chrome, centred over the column.
 - **Security** (`/profile/security`): readable, a settings screen, and left as it is (its route

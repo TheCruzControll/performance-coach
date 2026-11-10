@@ -23,16 +23,12 @@ async function onChunk(
 	});
 }
 
-test('Progress and Today show the saved units when the preference start fails to load', async ({
-	page
-}) => {
+// Progress formats on the server in the profile's units (M6), so only Today reads the device's.
+test('Today shows the saved units when the preference start fails to load', async ({ page }) => {
 	await page.addInitScript(() =>
 		localStorage.setItem('pc:prefs:v1', '{"theme":"dark","units":"lb","distance":"mi"}')
 	);
 	await onChunk(page, /as startPreferences\}/, (route) => route.abort());
-
-	await gotoHydrated(page, '/progress');
-	await expect(page.getByText('lb / wk', { exact: true })).toBeVisible();
 
 	await gotoHydrated(page, '/today');
 	await expect(page.getByText('mi', { exact: true })).toBeVisible();
