@@ -10,6 +10,20 @@ const PLANLESS = {
 };
 
 describe('adhocKit', () => {
+	it('strength: a strength session with no exercises yet, in the owner’s units, linked to no plan', () => {
+		expect(adhocKit('strength', UNITS, '2026-11-06')).toEqual({
+			v: 1,
+			kind: 'strength',
+			title: 'Strength',
+			sessionType: 'strength',
+			discipline: 'strength',
+			date: '2026-11-06',
+			...PLANLESS,
+			units: UNITS,
+			exercises: []
+		});
+	});
+
 	it('a run: an easy run with no planned segments, in the owner’s units, linked to no plan', () => {
 		expect(adhocKit('run', UNITS, '2026-11-06')).toEqual({
 			v: 1,
@@ -54,9 +68,10 @@ describe('adhocKit', () => {
 });
 
 describe('adhocKindOf', () => {
-	it('reads run and other, and nothing else (strength arrives with add-exercise)', () => {
+	it('reads strength, run and other, and nothing else', () => {
+		expect(adhocKindOf('strength')).toBe('strength');
 		expect(adhocKindOf('run')).toBe('run');
 		expect(adhocKindOf('other')).toBe('other');
-		for (const value of ['strength', '', 'RUN', null]) expect(adhocKindOf(value)).toBeNull();
+		for (const value of ['planned', '', 'RUN', null]) expect(adhocKindOf(value)).toBeNull();
 	});
 });

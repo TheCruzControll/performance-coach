@@ -1,10 +1,11 @@
 <!--
   @component
   No workout in progress on this device: where to start one. Today starts the planned sessions;
-  a run or a Muay Thai or other session of the owner's own starts here (/workout?new=run|other,
-  StartFlow.svelte). Those links reload the page (data-sveltekit-reload), because the page reads
-  the query once mounted; offline, the service worker serves it from the precache. Strength ad
-  hoc arrives with add-exercise.
+  a strength session, a run or a Muay Thai or other session of the owner's own starts here
+  (/workout?new=strength|run|other, StartFlow.svelte); a strength one starts empty, and each
+  exercise is added from the library. Those links reload the page (data-sveltekit-reload),
+  because the page reads the query once mounted; offline, the service worker serves it from the
+  precache.
 -->
 <script lang="ts">
 	import { resolve } from '$app/paths';
@@ -23,6 +24,12 @@
 	{#snippet actions()}
 		<Button href={resolve('/(app)/today')} iconEnd="arrow-right">Go to Today</Button>
 		<span class="adhoc" data-sveltekit-reload>
+			<Button
+				variant="secondary"
+				icon="plate"
+				href={`${workout}?new=strength`}
+				data-testid="adhoc-strength">Strength</Button
+			>
 			<Button variant="secondary" icon="pulse" href={`${workout}?new=run`} data-testid="adhoc-run"
 				>Run</Button
 			>
@@ -37,7 +44,7 @@
 </EmptyState>
 
 <style>
-	/* The actions' own row: the ad-hoc links wrap beside Go to Today as one group of three. */
+	/* The actions' own row: the ad-hoc links wrap beside Go to Today as one group of four. */
 	.adhoc {
 		display: contents;
 	}

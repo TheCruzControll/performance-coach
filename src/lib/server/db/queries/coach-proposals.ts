@@ -44,6 +44,8 @@ export const proposalViewColumns = {
 	revisionOf: coachProposals.revisionOf,
 	decisionNote: coachProposals.decisionNote,
 	supersededReason: coachProposals.supersededReason,
+	/** The rules provenance a review stored (evidence.source); null for the coach's own. */
+	source: sql<unknown>`${coachProposals.evidence} -> 'source'`,
 	createdAt: coachProposals.createdAt,
 	closedAt: coachProposals.closedAt
 };
