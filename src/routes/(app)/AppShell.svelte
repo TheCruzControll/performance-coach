@@ -5,9 +5,12 @@
   on a desktop window Tab goes from the skip link through the rail to the content, as the eye
   reads it. Used by the (app) layout and by the root error page for app URLs, so a screen that
   fails to load (e.g. offline) never strands the user without navigation.
+  On idle after hydration it loads the resume bar (ResumeBar.svelte), one dynamic import: the bar
+  draws itself only when a workout waits on this device (or, on Today, on another one), so the
+  offline screen, which the service worker serves inside this shell, is a way back into it too.
 -->
 <script lang="ts">
-	import { onMount, type Snippet } from 'svelte';
+	import { onMount, type Component, type Snippet } from 'svelte';
 	import { connectivity } from '#lib/client/connectivity.svelte.ts';
 	import AppNav from '#lib/ui/components/AppNav.svelte';
 	import Icon from '#lib/ui/components/Icon.svelte';
@@ -22,7 +25,24 @@
 
 	let { pathname, hideOfflineNotice = false, children }: Props = $props();
 
-	onMount(() => connectivity.start());
+	let ResumeBar = $state.raw<Component<{ pathname: string }> | null>(null);
+	onMount(() => {
+		connectivity.start();
+		// A chunk gone after a deploy only means no bar until the next load.
+		// Left out of the server build: while the server can reach the bar, SvelteKit links its
+		// CSS into every app page. On the client its CSS arrives with it, before it mounts.
+		const load = () =>
+			void (
+				import.meta.env.SSR
+					? Promise.reject(new Error('client only'))
+					: import('./ResumeBar.svelte')
+			).then(
+				(m) => (ResumeBar = m.default),
+				() => {}
+			);
+		if ('requestIdleCallback' in window) requestIdleCallback(load, { timeout: 3000 });
+		else setTimeout(load, 1500);
+	});
 </script>
 
 <div class="shell">
@@ -38,6 +58,7 @@
 		</div>
 		{@render children()}
 	</main>
+	{#if ResumeBar}<ResumeBar {pathname} />{/if}
 </div>
 
 <style>
