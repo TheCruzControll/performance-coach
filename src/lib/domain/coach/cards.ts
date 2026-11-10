@@ -89,6 +89,19 @@ export function parseCard(value: unknown): ProposalCardView | null {
 }
 
 /**
+ * The longest reason a rejection keeps, in characters: coach_proposals.decision_note's bound
+ * (DECISION_NOTE_MAX, which a unit test holds this to).
+ */
+export const REJECT_REASON_MAX = 500;
+/** The longest change 'Ask for changes' sends the coach, in characters. */
+export const CHANGE_REQUEST_MAX = 500;
+/**
+ * The entry an 'Ask for changes' turn names, with the proposal as its ref: the coach drafts a
+ * revision of it, which supersedes it ('revised').
+ */
+export const ASK_FOR_CHANGES = 'ask_for_changes';
+
+/**
  * Decision (M5 plan, 'next_cycle: accepted now, and applied by M6'): an accepted next cycle waits
  * for the cycle review that plans it, and its card says so.
  */
