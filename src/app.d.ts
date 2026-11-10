@@ -15,7 +15,10 @@ declare global {
 			session: AuthSession | null;
 		}
 		// interface PageData {}
-		// interface PageState {}
+		interface PageState {
+			/** History's exercise-history sheet, shallow-routed so Back closes it (pushState). */
+			exerciseHistory?: { exerciseId: string; name: string };
+		}
 		// interface Platform {}
 	}
 }
