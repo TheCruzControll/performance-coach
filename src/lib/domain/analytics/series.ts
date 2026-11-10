@@ -101,7 +101,9 @@ function group(
 	const groups = new Map<IsoDate, number[]>();
 	for (const { at, value } of values) {
 		const key = keyOf(at);
-		groups.set(key, [...(groups.get(key) ?? []), value]);
+		const bucket = groups.get(key);
+		if (bucket) bucket.push(value);
+		else groups.set(key, [value]);
 	}
 	const reduced = new Map<IsoDate, number>();
 	for (const key of [...groups.keys()].sort()) {
