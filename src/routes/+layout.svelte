@@ -8,6 +8,7 @@
 	import { noteNavigation } from '#lib/client/visits.ts';
 	import Toaster from '#lib/ui/components/Toaster.svelte';
 	import type { LayoutProps } from './$types';
+	import { loadErrorPage } from './error-page.ts';
 
 	let { children }: LayoutProps = $props();
 
@@ -25,6 +26,9 @@
 		document.addEventListener('touchstart', () => {}, { passive: true });
 		// After hydration, not on `load`, which comes before it (src/lib/client/service-worker.ts).
 		registerServiceWorkerWhenIdle();
+		// The root error page loads on demand; have it here before an error needs it, as
+		// SvelteKit's own eager import did, but after hydration (src/routes/error-page.ts).
+		loadErrorPage();
 		// RUM starts in the signed-in app shell ((app)/+layout.svelte): /api/vitals needs a session.
 	});
 </script>
