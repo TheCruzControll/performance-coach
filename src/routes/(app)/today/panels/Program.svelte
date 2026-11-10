@@ -9,7 +9,8 @@
   on the server), or Resume for the workout in progress on this device, and the day offers 'Log
   something else'. Once the plan shows and the browser is idle, Today saves the kits of today's
   sessions still to do, so they start in a gym with no signal: the one place outside the workout
-  pages that creates the device's database (today-kits.ts). Code-split behind PanelLoader.
+  pages that creates the device's database (today-kits.ts). Last, Ask the coach opens Coach with
+  'What should I focus on next week?' (a link: ui/ask-link.ts). Code-split behind PanelLoader.
 -->
 <script lang="ts">
 	import { invalidateAll } from '$app/navigation';
@@ -18,6 +19,7 @@
 	import { deviceWorkout } from '#lib/client/workout/device-workout.svelte.ts';
 	import { saveTodayKits } from '#lib/client/workout/today-kits.ts';
 	import type { IsoDate } from '#lib/domain/calendar.ts';
+	import { ASK_QUESTIONS, askHref } from '#lib/ui/ask-link.ts';
 	import Badge from '#lib/ui/components/Badge.svelte';
 	import Button from '#lib/ui/components/Button.svelte';
 	import Card from '#lib/ui/components/Card.svelte';
@@ -234,6 +236,14 @@
 					</Surface>
 				{/if}
 			</Section>
+
+			<ListRow
+				icon="coach"
+				title="Ask the coach"
+				subtitle={ASK_QUESTIONS.today}
+				href={askHref(ASK_QUESTIONS.today, 'today')}
+				data-testid="ask-coach"
+			/>
 		{/if}
 	{/await}
 </div>
