@@ -2,8 +2,9 @@
  * The weekly review's sections (src/routes/(app)/progress/reviews/[[key]]/ReviewSections.svelte)
  * on week-complete, the hard week: tonnage, hard sets per group, mileage against the week before,
  * average RPE, RPE against target per lift, and Muay Thai sessions, minutes and rounds equal the
- * SQL oracles; the long run after hard sparring shows its why. An edit to a logged set makes the
- * review out of date, and Refresh (busy while it posts) writes its next revision, both rows kept.
+ * SQL oracles; each conflict of the hard sparring's week shows its why. An edit to a logged set
+ * makes the review out of date, and Refresh (busy while it posts) writes its next revision, both
+ * rows kept.
  * On a phone each section collapses to its verdict line and opens on a tap; in a desktop window
  * every section shows in full. A chart whose frame fails to load says so, and Retry loads it.
  * Axe in both themes, and the screens at 393 × 659 and 1440 × 900.
@@ -136,22 +137,27 @@ test('the sections’ figures equal the oracles', async ({ page }) => {
 	expect(await figure(load, 'Rounds')).toBe(thai.rounds + thai.sparringRounds);
 });
 
-test('the long run after hard sparring shows its why', async ({ page }) => {
+test('the hard sparring’s conflict shows its why', async ({ page }) => {
 	await gotoHydrated(page, reviewUrl());
 	const conflicts = section(page, 'conflicts');
-	const pair = conflicts
-		.getByTestId('review-item')
-		.filter({ hasText: /Sparring on \w+, then Long run on \w+/ });
-	await expect(pair.first()).toBeAttached();
-	// Each conflict the pair raised gives its rule's why ('conflicts:<n>:<rule>').
-	for (const conflict of await pair.all()) {
-		const id = (await conflict.getAttribute('data-id'))!;
+	// The week as performed: heavy squats on Monday before Tuesday's hard class, and Thursday's
+	// heavy deadlifts before Friday's hard sparring. Its five hard days have room for three apart
+	// (Tuesday's class is a commitment), so hard_days_apart leaves Saturday's long run alone.
+	await expect(conflicts.getByTestId('review-item')).toHaveCount(2);
+	const rows = [
+		[
+			'conflicts:1:heavy_lower_before_hard',
+			'Strength A on Monday, then Muay Thai class on Tuesday'
+		],
+		['conflicts:2:heavy_lower_before_hard', 'Strength B on Thursday, then Sparring on Friday']
+	] as const;
+	for (const [id, where] of rows) {
 		const rule = id.split(':')[2] as keyof typeof INTERFERENCE_RULES;
-		await expect(conflict.getByTestId('item-words'), id).toContainText(
-			INTERFERENCE_RULES[rule].why
+		await expect(item(page, id).getByTestId('item-words'), id).toHaveText(
+			`${where}. ${INTERFERENCE_RULES[rule].why}`
 		);
 	}
-	await expect(conflicts.getByTestId('section-verdict')).toContainText(/^\d+ conflicts?: /);
+	await expect(conflicts.getByTestId('section-verdict')).toContainText(/^2 conflicts: /);
 });
 
 test('on a phone each section collapses to its verdict line, and a tap opens it', async ({
@@ -165,9 +171,9 @@ test('on a phone each section collapses to its verdict line, and a tap opens it'
 	await expectNoSideScroll(page);
 	await captureScreen(page, testInfo, 'review-sections-phone');
 
-	await running.locator('summary').click();
+	await running.locator(':scope > summary').click();
 	await expect(item(page, 'running:mileage')).toBeVisible();
-	await section(page, 'volume').locator('summary').click();
+	await section(page, 'volume').locator(':scope > summary').click();
 	await expect(section(page, 'volume').getByTestId('chart-plot')).toBeVisible();
 	await auditBothThemes(page, 'Weekly review sections');
 });
