@@ -8,7 +8,11 @@
  * - Strength's (StrengthTrends): the key lifts, volume, muscle groups, effort and PRs under the
  *   view's intro. A client navigation waits for it as it waits for the view's own chunk, both
  *   imports started together, so the frame holds busy and the view arrives whole
- *   (StrengthTrendsLoader).
+ *   (SectionLoader).
+ * - Running's (RunningTrends): mileage, pace by run type, the long run, best efforts, runs per
+ *   week and heart rate under the view's intro, loaded as Strength's are (SectionLoader).
+ * - General's (GeneralTrends): adherence, sessions and time by discipline, load and its ratio,
+ *   Muay Thai and recovery under the view's intro, loaded as Strength's are (SectionLoader).
  *
  * Either way the server renders the section as static markup (`served…`), which the page keeps as
  * sent until the code arrives, so hydration never waits for it.
@@ -17,7 +21,9 @@
  * source as initial JS, and the load only starts these, as Today's do with their panels.
  */
 import type { Component } from 'svelte';
+import type { GeneralData } from './general-data';
 import type { OverviewData } from './load';
+import type { RunningData } from './running-data';
 import type { StrengthData } from './strength-data';
 
 export interface TrendsProps {
@@ -28,6 +34,21 @@ export interface StrengthTrendsProps {
 	strength: StrengthData;
 }
 
+export interface RunningTrendsProps {
+	running: RunningData;
+}
+
+export interface GeneralTrendsProps {
+	general: GeneralData;
+}
+
+/** A section imported apart from its view: what SectionLoader starts and reads. */
+export interface LazySection<P extends object> {
+	preload(): Promise<void>;
+	settled(): Component<P> | Error | undefined;
+	served(props: P): Promise<string | undefined>;
+}
+
 /**
  * What the browser's load passes for the section the server rendered, while Progress hydrates:
  * any markup will do, as the loader keeps the server's (ServedInPlace).
@@ -35,7 +56,9 @@ export interface StrengthTrendsProps {
 export const SERVED_IN_PLACE = 'served';
 
 /** A section imported apart from its view, with what its latest import came to. */
-function lazySection<P extends object>(importer: () => Promise<{ default: Component<P> }>) {
+function lazySection<P extends object>(
+	importer: () => Promise<{ default: Component<P> }>
+): LazySection<P> {
 	/** What the latest import came to: the component, or the error it failed with. */
 	let settled: Component<P> | Error | undefined;
 
@@ -76,11 +99,17 @@ function lazySection<P extends object>(importer: () => Promise<{ default: Compon
 }
 
 const overview = lazySection<TrendsProps>(() => import('./OverviewTrends.svelte'));
-const strength = lazySection<StrengthTrendsProps>(() => import('./StrengthTrends.svelte'));
+export const strengthTrends = lazySection<StrengthTrendsProps>(
+	() => import('./StrengthTrends.svelte')
+);
+export const runningTrends = lazySection<RunningTrendsProps>(
+	() => import('./RunningTrends.svelte')
+);
+export const generalTrends = lazySection<GeneralTrendsProps>(
+	() => import('./GeneralTrends.svelte')
+);
 
 export const { preload: preloadTrends, settled: settledTrends, served: servedTrends } = overview;
-export const {
-	preload: preloadStrengthTrends,
-	settled: settledStrengthTrends,
-	served: servedStrengthTrends
-} = strength;
+export const { preload: preloadStrengthTrends, served: servedStrengthTrends } = strengthTrends;
+export const { preload: preloadRunningTrends, served: servedRunningTrends } = runningTrends;
+export const { preload: preloadGeneralTrends, served: servedGeneralTrends } = generalTrends;

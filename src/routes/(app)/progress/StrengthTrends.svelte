@@ -1,7 +1,7 @@
 <!--
   @component
   Strength's trends (trends.ts), loaded after hydration under StrengthView's intro
-  (StrengthTrendsLoader): the server sends them as static markup, so first paint and no-JS never
+  (SectionLoader): the server sends them as static markup, so first paint and no-JS never
   wait for this chunk, and only the view's own code counts towards initial JS.
 
   - Key lifts as e1RM small multiples, each with its best estimate, its verdict and a link to its

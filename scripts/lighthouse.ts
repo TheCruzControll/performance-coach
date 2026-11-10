@@ -7,10 +7,17 @@
  *   pnpm lighthouse --runs 5 --routes /,/today
  *   pnpm lighthouse --url https://preview.example.com   # audit an already-running server
  *   pnpm lighthouse --assert                            # exit 1 when a threshold is missed
+ *   pnpm lighthouse --shard 2/3                         # every third route, from the second
  *
  * With --assert a route stops early once its runs so far decide every threshold's median
  * (3 of 5 runs passing or missing it: scripts/lib/lighthouse-verdict.ts); summary.json and the
  * table record the runs each route took.
+ *
+ * --shard i/N (scripts/lib/lighthouse-shard.ts) audits every N-th route of the full list (the
+ * routes, then with --seed the program screens), so CI's N parallel jobs audit each route once;
+ * --seed still seeds in every shard, and the program is built only in a shard that audits it.
+ * A sharded run writes to lighthouse-reports/<form factor>/shard-<i>; every run puts each route's
+ * wall time in the table and $GITHUB_STEP_SUMMARY.
  *
  * The local server uses E2E_DATABASE_URL (default: local coach_e2e) after applying migrations.
  *
@@ -42,6 +49,7 @@ import { readActionAnswer } from './lib/action-result.ts';
 import { seedDemoProfile, type DemoProfile } from './lib/demo-profiles.ts';
 import { verdictDecided } from './lib/lighthouse-verdict.ts';
 import { lighthouseConfig, reportDir, type FormFactor } from './lib/lighthouse-config.ts';
+import { parseShard, shardReportDir, shardUrls } from './lib/lighthouse-shard.ts';
 
 const { values } = parseArgs({
 	allowNegative: true,
@@ -63,7 +71,9 @@ const { values } = parseArgs({
 		'max-lcp': { type: 'string', default: '2500' },
 		'max-cls': { type: 'string', default: '0.1' },
 		'max-tbt': { type: 'string', default: '200' },
-		seed: { type: 'boolean', default: Boolean(process.env.CI) }
+		seed: { type: 'boolean', default: Boolean(process.env.CI) },
+		// i/N: every N-th audit of the full list, from the i-th (scripts/lib/lighthouse-shard.ts).
+		shard: { type: 'string', default: '1/1' }
 	}
 });
 if (values.seed && values.url) {
@@ -90,7 +100,10 @@ const THRESHOLDS = {
 };
 const FORM_FACTOR: FormFactor = values.desktop ? 'desktop' : 'mobile';
 const CONFIG = lighthouseConfig(FORM_FACTOR);
-const OUT_DIR = reportDir(FORM_FACTOR);
+const SHARD = parseShard(values.shard);
+const OUT_DIR = shardReportDir(reportDir(FORM_FACTOR), FORM_FACTOR, SHARD);
+/** The run's name in the table and the step summary: the form factor, and the shard if any. */
+const RUN_NAME = `${FORM_FACTOR}${SHARD.count > 1 ? ` · shard ${SHARD.index}/${SHARD.count}` : ''}`;
 const runs = Math.max(1, Number(values.runs));
 const routes = values.routes
 	.split(',')
@@ -285,6 +298,8 @@ interface Summary {
 	route: string;
 	/** The runs the median is over: fewer than `runs` when --assert stopped early. */
 	runs: number;
+	/** The route's wall time over all its runs, in seconds. */
+	seconds: number;
 	performance: number;
 	accessibility: number;
 	bestPractices: number;
@@ -330,7 +345,7 @@ async function todayAction(name: 'preview' | 'build', payload: unknown): Promise
  * Preview and build the seeded profile's program, as Start week 1 does: the program screens to
  * audit, with the session's lineage read from the database.
  */
-async function buildSeededProgram(): Promise<[label: string, path: string][]> {
+async function buildSeededProgram(): Promise<Record<SeededRoute, string>> {
 	const request = { timeZone: SEED_TIME_ZONE, start: SEED_START };
 	const { preview } = (await todayAction('preview', request)) as {
 		preview: { startsOn: string; firstPlannedDay: string; fingerprint: string; digest: string };
@@ -354,16 +369,35 @@ async function buildSeededProgram(): Promise<[label: string, path: string][]> {
 	);
 	const lineage = session.rows[0]?.lineage;
 	if (!lineage) throw new Error('The seeded program has no session');
-	return [
-		['/today · program', '/today'],
-		['/train · program', '/train'],
-		['/train/session/[key]', `/train/session/${lineage}`],
-		['/train/history', '/train/history']
-	];
+	return {
+		'/today · program': '/today',
+		'/train · program': '/train',
+		'/train/session/[key]': `/train/session/${lineage}`,
+		'/train/history': '/train/history'
+	};
 }
+
+/** The program screens --seed audits after the routes, in this order, by label. */
+const SEEDED_ROUTES = [
+	'/today · program',
+	'/train · program',
+	'/train/session/[key]',
+	'/train/history'
+] as const;
+type SeededRoute = (typeof SEEDED_ROUTES)[number];
+
+/** Every audit of the run, in order: the routes, then with --seed the program screens. */
+const AUDITS: ({ label: string; path: string } | { label: string; seeded: SeededRoute })[] = [
+	...routes.map((path) => ({
+		label: values.seed && path === '/today' ? '/today · build card' : path,
+		path
+	})),
+	...(values.seed ? SEEDED_ROUTES.map((label) => ({ label, seeded: label })) : [])
+];
 
 /** Lighthouse `runs` times on `path`, summarised under `route`, its label. */
 async function auditRoute(route: string, path: string) {
+	const started = Date.now();
 	const results: Summary[] = [];
 	for (let i = 0; i < runs; i++) {
 		const result = await auditOnce(`${server.base}${path}`);
@@ -373,6 +407,7 @@ async function auditRoute(route: string, path: string) {
 		results.push({
 			route,
 			runs: 1,
+			seconds: 0,
 			performance: lhr.categories.performance?.score ?? 0,
 			accessibility: lhr.categories.accessibility?.score ?? 0,
 			bestPractices: lhr.categories['best-practices']?.score ?? 0,
@@ -389,10 +424,12 @@ async function auditRoute(route: string, path: string) {
 		writeFileSync(`${OUT_DIR}/${name}.report.html`, html!);
 		if (values.assert && i + 1 < runs && verdictDecided(results, runs, THRESHOLDS)) break;
 	}
-	const pick = (k: keyof Omit<Summary, 'route' | 'runs'>) => median(results.map((r) => r[k]));
+	const pick = (k: keyof Omit<Summary, 'route' | 'runs' | 'seconds'>) =>
+		median(results.map((r) => r[k]));
 	summaries.push({
 		route,
 		runs: results.length,
+		seconds: (Date.now() - started) / 1000,
 		performance: pick('performance'),
 		accessibility: pick('accessibility'),
 		bestPractices: pick('bestPractices'),
@@ -406,11 +443,11 @@ async function auditRoute(route: string, path: string) {
 
 try {
 	if (values.seed) await seedProfile();
-	for (const route of routes) {
-		await auditRoute(values.seed && route === '/today' ? '/today · build card' : route, route);
-	}
-	if (values.seed) {
-		for (const [label, path] of await buildSeededProgram()) await auditRoute(label, path);
+	let program: Record<SeededRoute, string> | undefined;
+	for (const audit of shardUrls(AUDITS, SHARD.index, SHARD.count)) {
+		const path =
+			'seeded' in audit ? (program ??= await buildSeededProgram())[audit.seeded] : audit.path;
+		await auditRoute(audit.label, path);
 	}
 } finally {
 	await chrome.kill();
@@ -418,24 +455,28 @@ try {
 }
 
 const lines = [
-	`Lighthouse ${lighthouseVersion} (${FORM_FACTOR}, simulated throttling) — median of ${runs} run(s) per route${values.assert ? ', stopping early once the runs so far decide every asserted threshold' : ''}, ${chromeVersion}`,
+	`Lighthouse ${lighthouseVersion} (${RUN_NAME}, simulated throttling) — median of ${runs} run(s) per route${values.assert ? ', stopping early once the runs so far decide every asserted threshold' : ''}, ${chromeVersion}`,
 	'',
-	'| Route | Runs | Perf | A11y | Best pr. | LCP | FCP | TBT | CLS | Speed Index |',
-	'| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |',
+	'| Route | Runs | Wall time | Perf | A11y | Best pr. | LCP | FCP | TBT | CLS | Speed Index |',
+	'| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |',
 	...summaries.map(
 		(s) =>
-			`| \`${s.route}\` | ${s.runs} | ${Math.round(s.performance * 100)} | ${Math.round(s.accessibility * 100)} | ${Math.round(s.bestPractices * 100)} | ${Math.round(s.lcp)} ms | ${Math.round(s.fcp)} ms | ${Math.round(s.tbt)} ms | ${s.cls.toFixed(3)} | ${Math.round(s.si)} ms |`
+			`| \`${s.route}\` | ${s.runs} | ${Math.round(s.seconds)} s | ${Math.round(s.performance * 100)} | ${Math.round(s.accessibility * 100)} | ${Math.round(s.bestPractices * 100)} | ${Math.round(s.lcp)} ms | ${Math.round(s.fcp)} ms | ${Math.round(s.tbt)} ms | ${s.cls.toFixed(3)} | ${Math.round(s.si)} ms |`
 	)
 ];
 console.log(lines.join('\n'));
 writeFileSync(
 	`${OUT_DIR}/summary.json`,
-	JSON.stringify({ formFactor: FORM_FACTOR, runs, thresholds: THRESHOLDS, summaries }, null, 2)
+	JSON.stringify(
+		{ formFactor: FORM_FACTOR, shard: SHARD, runs, thresholds: THRESHOLDS, summaries },
+		null,
+		2
+	)
 );
 if (process.env.GITHUB_STEP_SUMMARY) {
 	appendFileSync(
 		process.env.GITHUB_STEP_SUMMARY,
-		`## Lighthouse (${FORM_FACTOR})\n\n${lines.join('\n')}\n`
+		`## Lighthouse (${RUN_NAME})\n\n${lines.join('\n')}\n`
 	);
 }
 
