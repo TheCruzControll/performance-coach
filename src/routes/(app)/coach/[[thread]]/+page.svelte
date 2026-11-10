@@ -140,9 +140,11 @@
 	/**
 	 * Budget lever (M5 plan, Budgets: 'the recent-conversations list on idle'): the list's code
 	 * loads on demand too, in the browser as soon as /coach shows, so the stream client fits in the
-	 * route's 60 KB. Loading rows hold its place meanwhile; Retry imports again.
+	 * route's 60 KB. Loading rows hold its place meanwhile; Retry imports again. With no
+	 * conversation there is no list: the server renders the empty state, the screen's largest
+	 * text, so it paints with the page instead of after a chunk.
 	 */
-	const wantsList = $derived(!page.params.thread);
+	const wantsList = $derived(!page.params.thread && rows.length > 0);
 	const listCode = $derived.by(() => {
 		void threadAttempt;
 		if (!wantsList) return null;
@@ -190,7 +192,12 @@
 		{#if data.prefill?.label}<ContextChip label={data.prefill.label} />{/if}
 		<Suggestions onpick={canAsk ? (text) => (draft = text) : undefined} />
 		{@render cannot()}
-		{#if ready}
+		{#if ready && rows.length === 0}
+			<section class="recent" aria-labelledby="recent-heading">
+				<h2 id="recent-heading" class="eyebrow">Recent conversations</h2>
+				<CoachNotice kind="empty" data-testid="coach-empty" />
+			</section>
+		{:else if ready}
 			{#await listCode}
 				<LoadingRows label="Loading your conversations…" data-testid="list-loading" />
 			{:then code}
@@ -229,6 +236,11 @@
 		display: grid;
 		gap: var(--space-5);
 		padding-bottom: calc(var(--space-20) + var(--space-2));
+	}
+
+	.recent {
+		display: grid;
+		gap: var(--space-2);
 	}
 
 	.back {
