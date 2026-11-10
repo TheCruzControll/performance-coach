@@ -452,8 +452,9 @@ later-pass screen).
 - A screen in the shell checks `<main>` against the rail, never the window, at the width its
   `data-layout` declares, read from the token rather than written as a number:
   `expectMainCentred(page, await tokenPx(page, '--content-readable'))` (or `--content-wide`).
-- `*.desktop.e2e.ts` specs run in the `desktop-chromium` and `desktop-webkit` projects (1440 × 900),
-  not in the iPhone projects.
+- `*.desktop.e2e.ts` specs run in the `desktop-chromium` project (1440 × 900), not in the iPhone
+  projects; a serial spec's desktop cases use `test.use(DESKTOP)` and run on Chromium and WebKit.
+  There is no desktop WebKit project (the owner's desktop browser is Chrome; docs/testing.md).
 
 ## Components (`src/lib/ui/components`)
 
@@ -470,7 +471,7 @@ later-pass screen).
 | `AppNav`            | Primary navigation (real links, preload on tap): the glass bottom bar, a solid left rail from 1024 px under the brand mark; one `<nav>`, so destinations, order and `aria-current` match at every width (Responsive layout → Shell).                                               |
 | `Skeleton`          | Shimmer placeholder (static under reduced motion); pair with `aria-busy` on the region.                                                                                                                                                                                            |
 | `EmptyState`        | Medallion glyph (tone-tinted), title, guidance, optional actions; `compact` variant.                                                                                                                                                                                               |
-| `Toaster` + `toast` | Polite live region; `neutral · positive · danger`; optional action; auto-dismiss.                                                                                                                                                                                                  |
+| `Toaster` + `toast` | Polite live region; `neutral · positive · danger`; optional action; auto-dismiss. Screen chrome at the top, centred over the column (beside the rail from 1024 px), or in the window outside the shell.                                                                            |
 | `PageHeader`        | Eyebrow + large title + trailing slot.                                                                                                                                                                                                                                             |
 | `BrandMark`         | The performance-gauge mark (also the PWA icon).                                                                                                                                                                                                                                    |
 | `Stat`              | The one metric tile: label, big value + inline unit, optional rating (word + dot), caption. `level 1` on the canvas (28 px value), `level 2` nested in a card (22 px). No value → a dash announced as "No data yet", never a made-up number.                                       |
