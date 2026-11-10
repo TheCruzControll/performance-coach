@@ -19,7 +19,7 @@ async function open(page: Page) {
 }
 
 const row = (page: Page) => page.getByTestId('workout-main').getByTestId('set').first();
-const rowButton = (page: Page) => row(page).getByRole('button');
+const rowButton = (page: Page) => row(page).getByRole('button', { name: /^Edit set/ });
 const editor = (page: Page) => page.getByTestId('set-editor');
 const sheet = (page: Page) => editor(page).locator('.sheet');
 const edits = async (page: Page) =>

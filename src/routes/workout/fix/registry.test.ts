@@ -10,7 +10,8 @@ const EDITOR_TYPES = [
 	'run.log',
 	'run.segment',
 	'other.log',
-	'exercise.substitute'
+	'exercise.substitute',
+	'pain.report'
 ];
 const REWRITE_TYPES = ['workout.start', 'exercise.dislike'];
 
