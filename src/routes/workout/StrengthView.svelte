@@ -41,6 +41,8 @@
     with no exercise yet (an ad-hoc strength one) says so, with Add exercise in the card's place.
   - The card's exercise name opens its history (ExerciseHistorySheet.svelte, loaded on intent);
     offline, it shows the previous session this device holds and says so.
+  - Each render keeps the card's words on the device (prepaint.ts), so the next load paints the
+    current exercise before the app starts (Prepaint.svelte).
 -->
 <script lang="ts">
 	import type {
@@ -49,6 +51,7 @@
 		ChunkLoad
 	} from '#lib/client/workout/active.svelte.ts';
 	import type * as Feedback from '#lib/client/workout/feedback.ts';
+	import { clearPrepaint, prepaintCard, writePrepaint } from '#lib/client/workout/prepaint.ts';
 	import { readWorkoutSettings } from '#lib/client/workout/settings.ts';
 	import { SLOT_STATE_COPY } from '#lib/domain/workout/copy.ts';
 	import { groups } from '#lib/domain/workout/groups.ts';
@@ -192,6 +195,19 @@
 			open: rows.some((row) => row.state === 'current'),
 			rows
 		};
+	});
+
+	// The card this device keeps for the next load to paint before the app starts (prepaint.ts),
+	// written again from each render: the store drops it on every change. Only a workout in
+	// progress with every change written here (none pending): any other would not be there after
+	// a reload.
+	$effect(() => {
+		if (current && snapshot.pending === 0 && view.workout.status === 'in_progress') {
+			const rest = view.device.rest !== null;
+			writePrepaint({ workoutId: view.workout.id, rest, card: prepaintCard(current) });
+		} else {
+			clearPrepaint();
+		}
 	});
 
 	// The logger and its prefill rules load after the first render (Logger.svelte says why); it

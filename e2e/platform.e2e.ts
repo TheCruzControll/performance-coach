@@ -75,7 +75,8 @@ test.describe('platform: health, PWA, observability', () => {
 		expect(csp).toContain("default-src 'self'");
 		expect(csp).toContain("frame-ancestors 'none'");
 		expect(csp).toContain("object-src 'none'");
-		expect(csp).toMatch(/script-src 'self' 'sha256-[^']+' 'nonce-[^']+'/);
+		// The template's and /workout's inline scripts by hash (vite.config.ts), then the nonce.
+		expect(csp).toMatch(/script-src 'self'( 'sha256-[^']+'){2} 'nonce-[^']+'/);
 		expect(csp).not.toMatch(/script-src[^;]*unsafe-inline/);
 		await expect(page.getByTestId('db-status')).toBeVisible(); // streamed script ran
 
