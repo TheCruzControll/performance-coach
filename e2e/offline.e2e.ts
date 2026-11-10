@@ -90,13 +90,18 @@ test.describe('offline behaviour (service worker)', () => {
 			'page'
 		);
 
-		// …from which the tabs that need no server data still work.
+		// …from which the other tabs still open. Coach needs server data too (its conversations):
+		// the designed offline state in the shell, never a 500.
 		await nav.getByRole('link', { name: 'Coach' }).click();
+		await expect(page).toHaveURL(/\/coach$/);
+		await expect(page.getByTestId('offline-state')).toBeVisible();
 		await expect(page.getByRole('heading', { level: 1, name: 'Coach' })).toBeVisible();
-		await expect(page.getByTestId('offline-state')).toHaveCount(0);
+		await expect(nav.getByRole('link', { name: 'Coach' })).toHaveAttribute('aria-current', 'page');
+		await expect(page.locator('body')).not.toContainText(/500|internal error/i);
 
 		// A full page load of Progress offline: the precached offline screen, in the shell.
 		await nav.getByRole('link', { name: 'Progress' }).click();
+		await expect(page).toHaveURL(/\/progress$/);
 		await expect(page.getByTestId('offline-state')).toBeVisible();
 		await page.reload();
 		await expect(page).toHaveURL(/\/progress$/);
