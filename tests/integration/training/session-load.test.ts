@@ -6,9 +6,10 @@
  * or version is the 404 page; a read that fails is the designed error, recorded.
  */
 import { isHttpError } from '@sveltejs/kit';
+import { eq } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
 import { BASELINE_INSTRUCTION } from '../../../src/lib/domain/training/describe';
-import type { Executor } from '../../../src/lib/server/db';
+import { workouts, type Executor } from '../../../src/lib/server/db';
 import { findErrorsByRequestId } from '../../../src/lib/server/services/errors';
 import { getAthleteProfile, saveBasics } from '../../../src/lib/server/services/profile/index';
 import {
@@ -25,6 +26,7 @@ import {
 } from '../../../src/routes/(app)/train/session/[key]/detail.server';
 import { unreachableDb, withRollback } from '../helpers';
 import { makeOwner } from '../profile/fixtures';
+import { logStrength } from './fixtures/history';
 
 /** Week 1's Monday: the hybrid fixture's strength day; Tuesday and Thursday hold Muay Thai. */
 const MONDAY = '2026-11-09';
@@ -238,6 +240,47 @@ describe('the session screen’s load', () => {
 					older: null
 				});
 			}
+		});
+	});
+
+	it('offers Start workout, then Done · View to its newest workout once completed, none once skipped or older', async () => {
+		await withRollback(async (db) => {
+			const { owner, stored } = await withProgram(db);
+			const session = stored.blocks[0]!.weeks[0]!.sessions.find((s) => s.title === 'Full body')!;
+			expect(shown(await load(db, owner, session.lineage))).toMatchObject({
+				status: 'planned',
+				start: {
+					id: 'start-workout',
+					label: 'Start workout',
+					href: `/workout?start=${session.lineage}`,
+					icon: 'play'
+				}
+			});
+
+			const planned = {
+				sessionId: session.id,
+				lineageId: session.lineage,
+				programId: stored.programId
+			};
+			const { workoutId } = await logStrength(db, owner, { startedAt: NOW, planned }, []);
+			const [row] = await db
+				.select({ clientId: workouts.clientId })
+				.from(workouts)
+				.where(eq(workouts.id, workoutId));
+			expect(shown(await load(db, owner, session.lineage))).toMatchObject({
+				status: 'completed',
+				start: {
+					id: 'done-workout',
+					label: 'Done · View',
+					href: `/progress/workouts/${row!.clientId}`,
+					icon: 'check'
+				}
+			});
+			// Skipping the class makes version 2: the class offers nothing, nor does version 1.
+			const muayThai = lineageOf(stored, 0, 'Muay Thai class');
+			await skipSession(owner, { sessionLineage: muayThai }, { version: 1, today: MONDAY }, { db });
+			expect(shown(await load(db, owner, muayThai)).start).toBeNull();
+			expect(shown(await load(db, owner, session.lineage, '1')).start).toBeNull();
 		});
 	});
 

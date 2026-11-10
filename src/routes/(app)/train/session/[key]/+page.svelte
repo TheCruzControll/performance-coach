@@ -3,6 +3,7 @@
 	import { afterNavigate, invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
+	import { deviceWorkout } from '#lib/client/workout/device-workout.svelte.ts';
 	import Badge from '#lib/ui/components/Badge.svelte';
 	import Chip from '#lib/ui/components/Chip.svelte';
 	import EmptyState from '#lib/ui/components/EmptyState.svelte';
@@ -40,6 +41,23 @@
 	 * take the main column, where a lift's exercises and a run's steps go.
 	 */
 	const detailsInMain = $derived(!!session?.details.metrics.length);
+
+	/**
+	 * Start workout or Done · View, composed on the server (start-link.ts), or Resume when it is the
+	 * workout in progress on this device, as the resume bar's idle probe read it
+	 * (device-workout.svelte.ts): resumeLink's rule, written out because importing it would cost
+	 * this route a chunk. The screen never opens the database itself.
+	 */
+	const go = $derived(
+		session?.start && deviceWorkout.active?.plannedLineage === session.lineage
+			? {
+					id: 'resume-workout',
+					label: 'Resume',
+					href: deviceWorkout.active.href,
+					icon: 'play' as const
+				}
+			: session?.start
+	);
 
 	// ---- Back -------------------------------------------------------------------------------
 
@@ -200,6 +218,14 @@
 		{/if}
 
 		<div class="side" data-testid="session-side">
+			{#if go}
+				<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- app paths from start-link.ts and the resume bar -->
+				<a class="edit go" class:done={go.icon === 'check'} href={go.href} data-testid={go.id}>
+					<Icon name={go.icon} size={20} />
+					{go.label}
+				</a>
+			{/if}
+
 			{#if session.status === 'skipped'}
 				<Notice icon="close" title="Skipped" data-testid="session-skipped">
 					It’s off your week and stays as it was planned: a skipped session can’t be moved or
@@ -483,6 +509,17 @@
 			transform var(--duration-fast) var(--ease-out);
 	}
 
+	/* Start or Resume: the screen's one primary action, the width of the column. */
+	.go {
+		justify-content: center;
+	}
+
+	.go:not(.done) {
+		border-color: transparent;
+		background: var(--color-accent);
+		color: var(--color-on-accent);
+	}
+
 	.edit:focus-visible {
 		outline: 2px solid var(--color-accent-ring);
 		outline-offset: 2px;
@@ -512,6 +549,10 @@
 	@media (hover: hover) and (pointer: fine) {
 		.edit:hover:not(:disabled) {
 			background: var(--color-surface-3);
+		}
+
+		.go:not(.done):hover {
+			background: var(--color-accent-hover);
 		}
 	}
 
