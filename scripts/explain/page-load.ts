@@ -25,8 +25,8 @@
  * by field cost more than any figure; the Strength view reads muscle-group targets only for the
  * weeks Progress lists (lastGroupWeeks: one program's version, not every program's of two years);
  * prescriptionFacts reads each planned exercise without the library names; a set's PR candidates
- * are worked out once, not once per kind; and a day's Monday and a plan's distinct sessions are
- * kept once worked out. Local Node CPU medians (M1 Pro, shared and loaded), before → after:
+ * are worked out once, not once per kind; and a plan's distinct sessions are kept once worked
+ * out. Local Node CPU medians (M1 Pro, shared and loaded), before → after:
  * overview 'all' 377–430 → 217–228, strength 'all' 390–433 → 214–227 (109 queries → 24),
  * strength 12w 216–253 → 124–133.
  */

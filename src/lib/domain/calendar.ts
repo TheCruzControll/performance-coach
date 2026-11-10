@@ -83,22 +83,10 @@ export function weekdayOf(date: IsoDate): Weekday {
 	return WEEKDAYS[sinceMonday(utc(date))]!;
 }
 
-/**
- * Each day's Monday once worked out: the analytics ask for the week of every fact (tens of
- * thousands on two years), over a few hundred days. Emptied once it holds MONDAY_MEMO_MAX days.
- */
-const MONDAY_MEMO_MAX = 10_000;
-const mondays = new Map<IsoDate, IsoDate>();
-
 /** The Monday of the Monday-to-Sunday week `date` falls in (`date` itself on a Monday). */
 export function mondayOf(date: IsoDate): IsoDate {
-	const known = mondays.get(date);
-	if (known !== undefined) return known;
 	const ms = utc(date);
-	const monday = format(ms - sinceMonday(ms) * DAY_MS);
-	if (mondays.size >= MONDAY_MEMO_MAX) mondays.clear();
-	mondays.set(date, monday);
-	return monday;
+	return format(ms - sinceMonday(ms) * DAY_MS);
 }
 
 /**
