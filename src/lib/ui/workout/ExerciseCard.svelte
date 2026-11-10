@@ -58,16 +58,20 @@
 		<div class="title">
 			<h2 id="exercise-name">
 				{#if onhistory}
-					<button
-						type="button"
-						class="history"
-						aria-haspopup="dialog"
-						onclick={onhistory}
-						onpointerenter={onhistoryintent}
-						onpointerdown={onhistoryintent}
-						data-testid="exercise-history-open"
-						>{exercise.name}<Icon name="chevron-right" size={20} /></button
-					>
+					<!-- Another exercise's name (a superset's partner, a swap) is a new button, not this
+					     one's chevron sliding to where the new name ends: logging a set moves nothing. -->
+					{#key exercise.name}
+						<button
+							type="button"
+							class="history"
+							aria-haspopup="dialog"
+							onclick={onhistory}
+							onpointerenter={onhistoryintent}
+							onpointerdown={onhistoryintent}
+							data-testid="exercise-history-open"
+							>{exercise.name}<Icon name="chevron-right" size={20} /></button
+						>
+					{/key}
 				{:else}{exercise.name}{/if}
 			</h2>
 			{@render actions?.()}

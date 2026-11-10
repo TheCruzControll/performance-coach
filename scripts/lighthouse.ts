@@ -14,8 +14,9 @@
  * table record the runs each route took.
  *
  * --shard i/N (scripts/lib/lighthouse-shard.ts) audits every N-th route of the full list (the
- * routes, then with --seed the program screens), so CI's N parallel jobs audit each route once;
- * --seed still seeds in every shard, and the program is built only in a shard that audits it.
+ * routes, then with --seed the program and workout screens), so CI's N parallel jobs audit each
+ * route once; --seed still seeds in every shard, the program is built only in a shard that audits
+ * a seeded screen, and the workouts are synced only in a shard that audits History or /workout.
  * A sharded run writes to lighthouse-reports/<form factor>/shard-<i>; every run puts each route's
  * wall time in the table and $GITHUB_STEP_SUMMARY.
  *
@@ -35,6 +36,12 @@
  *   SEED_TIME_ZONE), then /today?/build with the preview's dates and fingerprints
  * - it audits /today in its program state, /train, week 1's longest strength session and
  *   /train/history, with ids read from the database
+ * - it fetches that session's start kit (GET /api/workouts/kit) and syncs HISTORY_WORKOUTS
+ *   finished, ad-hoc workouts of it through POST /api/workouts/sync, as a device would, then
+ *   audits workout History's list and the newest workout's detail
+ * - it audits /workout in its active state: before each run it writes a workout in progress of
+ *   that kit into the fresh browser's IndexedDB on the origin, over CDP
+ *   (scripts/lib/workout-seed.ts), and the run keeps it (Lighthouse's storage reset off)
  */
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
@@ -45,11 +52,18 @@ import * as chromeLauncher from 'chrome-launcher';
 import lighthouse, { type RunnerResult } from 'lighthouse';
 import pg from 'pg';
 import { LOCAL_DATABASE_URLS, runMigrations } from '../src/lib/server/db/migrate.ts';
+import type { StartKit, StrengthKit, SyncResponse } from '../src/lib/domain/workout/index.ts';
 import { readActionAnswer } from './lib/action-result.ts';
 import { seedDemoProfile, type DemoProfile } from './lib/demo-profiles.ts';
 import { verdictDecided } from './lib/lighthouse-verdict.ts';
 import { lighthouseConfig, reportDir, type FormFactor } from './lib/lighthouse-config.ts';
 import { parseShard, shardReportDir, shardUrls } from './lib/lighthouse-shard.ts';
+import {
+	activeWorkoutSeed,
+	finishedWorkout,
+	writeActiveWorkout,
+	type ActiveSeed
+} from './lib/workout-seed.ts';
 
 const { values } = parseArgs({
 	allowNegative: true,
@@ -86,6 +100,11 @@ const SEED_PROFILE: DemoProfile = 'hybrid-blank';
 const SEED_TIME_ZONE = 'Europe/London';
 /** 'This week', so week 1 is the current week and Today shows the program on any weekday. */
 const SEED_START = 'this_week';
+/** History's first page (20 a page): the list as full as it gets before 'Show older'. */
+const HISTORY_WORKOUTS = 20;
+/** Mutations per sync request, under the protocol's 25 (SYNC_LIMITS). */
+const SYNC_BATCH = 20;
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
  * Thresholds checked with --assert (simulated throttling, both form factors). Defaults are the
@@ -266,14 +285,21 @@ let lighthouseVersion = '';
  * NO_NAVSTART: the trace missed the navigation, which happens occasionally right after a
  * browser starts) is repeated, up to twice; it is never counted as a score of 0.
  */
-async function auditOnce(url: string, attempt = 1): Promise<NonNullable<RunnerResult>> {
+async function auditOnce(
+	url: string,
+	device?: ActiveSeed,
+	attempt = 1
+): Promise<NonNullable<RunnerResult>> {
 	await chrome.kill();
 	chrome = await launchChrome();
+	if (device) await seedDevice(device);
 	const signedIn = new URL(url).pathname !== '/';
 	const result = await lighthouse(
 		url,
 		{
 			port: chrome.port,
+			// The device's workout, written into this browser's IndexedDB, stays for the run.
+			...(device ? { disableStorageReset: true } : {}),
 			...(signedIn && sessionHeaders ? { extraHeaders: sessionHeaders } : {}),
 			output: ['json', 'html'],
 			logLevel: 'error',
@@ -290,7 +316,7 @@ async function auditOnce(url: string, attempt = 1): Promise<NonNullable<RunnerRe
 	if (error) {
 		if (attempt >= 3) throw new Error(`Lighthouse failed 3 times on ${url}: ${error.code}`);
 		console.warn(`lighthouse: ${url} attempt ${attempt} failed (${error.code}); retrying`);
-		return auditOnce(url, attempt + 1);
+		return auditOnce(url, device, attempt + 1);
 	}
 	return result;
 }
@@ -345,7 +371,10 @@ async function todayAction(name: 'preview' | 'build', payload: unknown): Promise
  * Preview and build the seeded profile's program, as Start week 1 does: the program screens to
  * audit, with the session's lineage read from the database.
  */
-async function buildSeededProgram(): Promise<Record<SeededRoute, string>> {
+async function buildSeededProgram(): Promise<{
+	paths: Record<ProgramRoute, string>;
+	lineage: string;
+}> {
 	const request = { timeZone: SEED_TIME_ZONE, start: SEED_START };
 	const { preview } = (await todayAction('preview', request)) as {
 		preview: { startsOn: string; firstPlannedDay: string; fingerprint: string; digest: string };
@@ -369,24 +398,98 @@ async function buildSeededProgram(): Promise<Record<SeededRoute, string>> {
 	);
 	const lineage = session.rows[0]?.lineage;
 	if (!lineage) throw new Error('The seeded program has no session');
-	return {
+	const paths = {
 		'/today · program': '/today',
 		'/train · program': '/train',
 		'/train/session/[key]': `/train/session/${lineage}`,
 		'/train/history': '/train/history'
 	};
+	return { paths, lineage };
+}
+
+/** The signed-in owner's JSON from `path`, as the app's own requests send it. */
+async function ownerJson(path: string, body?: unknown): Promise<unknown> {
+	const response = await fetch(`${server.base}${path}`, {
+		method: body === undefined ? 'GET' : 'POST',
+		headers: { ...sessionHeaders, origin: server.base, 'content-type': 'application/json' },
+		...(body === undefined ? {} : { body: JSON.stringify(body) })
+	});
+	if (!response.ok) throw new Error(`${path} answered ${response.status}`);
+	return response.json();
+}
+
+/**
+ * The seeded session's kit, HISTORY_WORKOUTS finished workouts of it synced (one a day, the newest
+ * yesterday), and the workout in progress /workout is audited with: History's routes and the seed.
+ */
+async function seedWorkouts(
+	lineage: string
+): Promise<{ paths: Record<WorkoutRoute, string>; device: ActiveSeed }> {
+	const kit = (await ownerJson(`/api/workouts/kit?lineage=${lineage}`)) as StartKit;
+	if (kit.kind !== 'strength') throw new Error(`The seeded session is ${kit.kind}, not strength`);
+	let newest = '';
+	for (let day = 1; day <= HISTORY_WORKOUTS; day++) {
+		const { workoutId, mutations } = finishedWorkout(kit as StrengthKit, Date.now() - day * DAY_MS);
+		for (let i = 0; i < mutations.length; i += SYNC_BATCH) {
+			const batch = mutations.slice(i, i + SYNC_BATCH);
+			const { results } = (await ownerJson('/api/workouts/sync', {
+				v: 1,
+				mutations: batch
+			})) as SyncResponse;
+			const refused = results.filter((r) => r.status !== 'applied');
+			if (refused.length) throw new Error(`sync refused: ${JSON.stringify(refused)}`);
+		}
+		newest ||= workoutId;
+	}
+	const paths = {
+		'/progress/workouts': '/progress/workouts',
+		'/progress/workouts/[id]': `/progress/workouts/${newest}`,
+		'/workout · active': '/workout'
+	};
+	return { paths, device: activeWorkoutSeed(kit, Date.now()) };
+}
+
+/** Writes the device's workout into the current browser's IndexedDB, on the app's origin. */
+async function seedDevice(device: ActiveSeed) {
+	const browser = await chromium.connectOverCDP(`http://127.0.0.1:${chrome.port}`);
+	try {
+		const page = await browser.contexts()[0]!.newPage();
+		await page.goto(`${server.base}/robots.txt`);
+		await writeActiveWorkout(page, device);
+		await page.close();
+	} finally {
+		// Connected over CDP, this disconnects: the browser and its profile stay for the run.
+		await browser.close();
+	}
 }
 
 /** The program screens --seed audits after the routes, in this order, by label. */
-const SEEDED_ROUTES = [
+const PROGRAM_ROUTES = [
 	'/today · program',
 	'/train · program',
 	'/train/session/[key]',
 	'/train/history'
 ] as const;
-type SeededRoute = (typeof SEEDED_ROUTES)[number];
+type ProgramRoute = (typeof PROGRAM_ROUTES)[number];
 
-/** Every audit of the run, in order: the routes, then with --seed the program screens. */
+/**
+ * The workout screens --seed audits after the program's, in this order, by label. History comes
+ * before /workout: the active workout, once synced, would add the resume bar. A shard keeps the
+ * list's order, so this holds in every shard.
+ */
+const WORKOUT_ROUTES = [
+	'/progress/workouts',
+	'/progress/workouts/[id]',
+	'/workout · active'
+] as const;
+type WorkoutRoute = (typeof WORKOUT_ROUTES)[number];
+
+const SEEDED_ROUTES = [...PROGRAM_ROUTES, ...WORKOUT_ROUTES] as const;
+type SeededRoute = (typeof SEEDED_ROUTES)[number];
+const isProgramRoute = (label: SeededRoute): label is ProgramRoute =>
+	(PROGRAM_ROUTES as readonly string[]).includes(label);
+
+/** Every audit of the run, in order: the routes, then with --seed the program and workout screens. */
 const AUDITS: ({ label: string; path: string } | { label: string; seeded: SeededRoute })[] = [
 	...routes.map((path) => ({
 		label: values.seed && path === '/today' ? '/today · build card' : path,
@@ -395,12 +498,12 @@ const AUDITS: ({ label: string; path: string } | { label: string; seeded: Seeded
 	...(values.seed ? SEEDED_ROUTES.map((label) => ({ label, seeded: label })) : [])
 ];
 
-/** Lighthouse `runs` times on `path`, summarised under `route`, its label. */
-async function auditRoute(route: string, path: string) {
+/** Lighthouse `runs` times on `path`, summarised under `route`, its label; `device` seeded first. */
+async function auditRoute(route: string, path: string, device?: ActiveSeed) {
 	const started = Date.now();
 	const results: Summary[] = [];
 	for (let i = 0; i < runs; i++) {
-		const result = await auditOnce(`${server.base}${path}`);
+		const result = await auditOnce(`${server.base}${path}`, device);
 		const { lhr } = result;
 		lighthouseVersion = lhr.lighthouseVersion;
 		const audit = (id: string) => lhr.audits[id]?.numericValue ?? Number.NaN;
@@ -443,11 +546,21 @@ async function auditRoute(route: string, path: string) {
 
 try {
 	if (values.seed) await seedProfile();
-	let program: Record<SeededRoute, string> | undefined;
+	let program: Awaited<ReturnType<typeof buildSeededProgram>> | undefined;
+	let workouts: Awaited<ReturnType<typeof seedWorkouts>> | undefined;
 	for (const audit of shardUrls(AUDITS, SHARD.index, SHARD.count)) {
-		const path =
-			'seeded' in audit ? (program ??= await buildSeededProgram())[audit.seeded] : audit.path;
-		await auditRoute(audit.label, path);
+		if (!('seeded' in audit)) {
+			await auditRoute(audit.label, audit.path);
+			continue;
+		}
+		program ??= await buildSeededProgram();
+		if (isProgramRoute(audit.seeded)) {
+			await auditRoute(audit.label, program.paths[audit.seeded]);
+			continue;
+		}
+		workouts ??= await seedWorkouts(program.lineage);
+		const device = audit.seeded === '/workout · active' ? workouts.device : undefined;
+		await auditRoute(audit.label, workouts.paths[audit.seeded], device);
 	}
 } finally {
 	await chrome.kill();
