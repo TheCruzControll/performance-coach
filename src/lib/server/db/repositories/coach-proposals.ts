@@ -52,6 +52,12 @@ export function createCoachProposalsRepository(db: Executor) {
 		decidedSince: async (ownerId: string, since: Date, limit: number) =>
 			q.decidedSince(db, ownerId, since, limit),
 
+		threadProposals: async (
+			ownerId: string,
+			threadId: string,
+			page: Parameters<typeof q.threadProposals>[3]
+		) => q.threadProposals(db, ownerId, threadId, page),
+
 		insertProposal: async (values: NewProposalRow) =>
 			(await first(db.insert(coachProposals).values(values).returning({ id: coachProposals.id })))!
 				.id,

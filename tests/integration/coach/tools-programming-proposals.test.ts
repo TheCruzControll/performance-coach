@@ -18,6 +18,7 @@
 import { and, count, eq } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
 import * as z from 'zod/mini';
+import { ASK_FOR_CHANGES } from '../../../src/lib/domain/coach/cards';
 import type { ProgramPlan, StrengthSessionPlan } from '../../../src/lib/domain/training/types';
 import {
 	MockProvider,
@@ -27,6 +28,7 @@ import {
 } from '../../../src/lib/server/agent/provider/mock';
 import { programmingProposalScripts } from '../../../src/lib/server/agent/provider/mock-scripts/programming-proposals';
 import type { LlmProvider, ModelRequest } from '../../../src/lib/server/agent/provider/types';
+import type { TurnEntry } from '../../../src/lib/server/agent/tools/context';
 import type { CoachTool } from '../../../src/lib/server/agent/tools/define';
 import { COACH_TOOLS } from '../../../src/lib/server/agent/tools/registry';
 import {
@@ -187,13 +189,20 @@ async function toolResult(db: Executor, threadId: string, toolUseId: string) {
 const proposalsOf = (db: Executor, owner: string) =>
 	db.select().from(coachProposals).where(eq(coachProposals.ownerId, owner));
 
-/** One turn of `text`, playing the proposal scripts (and `extra` first). */
-async function turn(db: Executor, owner: string, text: string, extra: MockScript[] = []) {
+/** One turn of `text`, playing the proposal scripts (and `extra` first), from `entry`. */
+async function turn(
+	db: Executor,
+	owner: string,
+	text: string,
+	extra: MockScript[] = [],
+	entry: TurnEntry | null = null
+) {
 	const { drafts, ready } = drafting([...extra, ...programmingProposalScripts]);
 	const played = await runScripted(script('move-session'), {
 		db,
 		owner,
 		text,
+		entry,
 		provider: ready,
 		tools: TOOLS
 	});
@@ -468,6 +477,44 @@ describe('propose_program_adjustment', () => {
 				.flatMap((x) => (x.kind === 'strength' ? x.exercises : []))
 				.filter((e) => 'key' in e.exercise && e.exercise.key === 'bulgarian_split_squat');
 			expect(left).toEqual([]);
+		});
+	});
+});
+
+describe('‘Ask for changes’', () => {
+	const REPLACE = 'I hate Bulgarian split squats, so replace them';
+	const ONLY_THIS_WEEK = 'Only swap the Bulgarian split squats this week, not for good';
+	const askingAbout = (id: string): TurnEntry => ({
+		from: ASK_FOR_CHANGES,
+		ref: { type: 'proposal', id }
+	});
+
+	it('drafts the owner’s words as a revision of the proposal its entry names, which it supersedes', async () => {
+		await withRollback(async (db) => {
+			const s = await seed(db);
+			await turn(db, s.owner, REPLACE);
+			const [first] = await proposalsOf(db, s.owner);
+			const before = (first!.payload as { ops: Record<string, string>[] }).ops[0]!;
+
+			const t = await turn(db, s.owner, ONLY_THIS_WEEK, [], askingAbout(first!.id));
+			expect(t.calls.map((c) => [c.name, c.status])).toEqual([
+				['propose_program_adjustment', 'succeeded']
+			]);
+			expect(t.calls[0]!.input).toMatchObject({ revises: first!.id });
+			const all = await proposalsOf(db, s.owner);
+			expect(all).toHaveLength(2);
+			const second = all.find((p) => p.id !== first!.id)!;
+			expect(second).toMatchObject({ status: 'proposed', revisionOf: first!.id });
+			const swap = (second.payload as { ops: Record<string, string>[] }).ops[0]!;
+			expect(swap).toMatchObject({
+				op: 'swap',
+				scope: 'once',
+				plannedExerciseLineage: before.plannedExerciseLineage
+			});
+			expect(all.find((p) => p.id === first!.id)).toMatchObject({
+				status: 'superseded',
+				supersededReason: 'revised'
+			});
 		});
 	});
 });
