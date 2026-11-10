@@ -854,6 +854,39 @@ export async function listDecidedSince(
 	return rows.map(({ id, kind, status }) => ({ id, kind: kind as ProposalKind, status }));
 }
 
+/**
+ * The most cards one page of a conversation shows: far more than its runs propose (a turn's
+ * propose tools stop well short of it), so the bound only guards the read.
+ */
+export const THREAD_PROPOSALS_MAX = 50;
+
+/** A conversation's proposal, with the run whose answer its card follows. */
+export interface ThreadProposal {
+	runId: string;
+	proposal: ProposalView;
+}
+
+/**
+ * The proposals runs `runIds` of the owner's conversation `threadId` made, oldest first: the
+ * cards a page of the conversation shows. Someone else's conversation, or runs it does not hold,
+ * give none.
+ */
+export async function listThreadProposals(
+	ownerId: string,
+	threadId: string,
+	runIds: readonly string[],
+	deps: CoachDeps = {}
+): Promise<ThreadProposal[]> {
+	const wanted = [...new Set(runIds.filter(isUuid))];
+	if (!isUuid(threadId) || wanted.length === 0) return [];
+	const rows = await createCoachProposalsRepository(resolveDeps(deps).db).threadProposals(
+		ownerId,
+		threadId,
+		{ runIds: wanted, limit: THREAD_PROPOSALS_MAX }
+	);
+	return rows.map((row) => ({ runId: row.runId!, proposal: toView(row) }));
+}
+
 /** One of the owner's proposals as its card and the inbox's detail show it. */
 export async function getProposalView(
 	ownerId: string,

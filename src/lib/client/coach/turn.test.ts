@@ -158,6 +158,18 @@ describe('CoachTurn.apply', () => {
 		expect(turn.drafts).toEqual([]);
 	});
 
+	it('keeps each proposal its tools made once, in order', () => {
+		const turn = new CoachTurn(request(), { frame: () => {} });
+		const move = { type: 'proposal', id: 'p1', kind: 'program_adjustment', title: 'Move' } as const;
+		turn.apply(move);
+		turn.apply({ type: 'proposal', id: 'p2', kind: 'preference_update', title: 'Note it' });
+		turn.apply(move);
+		expect(turn.proposals).toEqual([
+			{ id: 'p1', kind: 'program_adjustment', title: 'Move' },
+			{ id: 'p2', kind: 'preference_update', title: 'Note it' }
+		]);
+	});
+
 	it('draws a block’s waiting words before the next block starts', () => {
 		const turn = new CoachTurn(request(), { frame: () => {} });
 		turn.apply({ type: 'block_started', block: 0, kind: 'note', method: null });
@@ -178,6 +190,21 @@ describe('CoachTurn.run', () => {
 		expect(turn.answered).toBe(true);
 		expect(turn.status).toBe('completed');
 		expect(turn.error).toBeNull();
+		expect(calls.map((c) => c.url)).toEqual(['/api/coach/turns']);
+	});
+
+	it('an answer that proposed a change asks for the stored proposal its card shows', async () => {
+		const proposed: CoachEvent = {
+			type: 'proposal',
+			id: 'p1',
+			kind: 'workout_update',
+			title: 'Rest'
+		};
+		const { fetch, calls } = server([...ANSWERED.slice(0, 4), proposed, ...ANSWERED.slice(4)]);
+		const turn = new CoachTurn(request(), { fetch, frame: () => {} });
+		expect(await turn.run()).toBe(true);
+		expect(turn.answered).toBe(true);
+		expect(turn.proposals.map((p) => p.id)).toEqual(['p1']);
 		expect(calls.map((c) => c.url)).toEqual(['/api/coach/turns']);
 	});
 
@@ -263,6 +290,26 @@ describe('CoachTurns', () => {
 		nav.page.params = { thread: THREAD };
 		expect(turns.visible).toHaveLength(1);
 		expect(turns.asking).toBe(false);
+	});
+
+	it('a new conversation’s turn that proposed a change reads the stored messages once its page has opened', async () => {
+		let open!: () => void;
+		nav.goto.mockImplementationOnce(() => new Promise<void>((done) => (open = done)));
+		const proposed: CoachEvent = {
+			type: 'proposal',
+			id: 'p1',
+			kind: 'workout_update',
+			title: 'Rest'
+		};
+		const { fetch } = server([...ANSWERED.slice(0, 4), proposed, ...ANSWERED.slice(4)]);
+		const turns = new CoachTurns({ fetch, frame: () => {} });
+		const sent = turns.send('First');
+		await vi.waitFor(() => expect(turns.list[0]!.settled).toBe(true));
+		expect(nav.invalidateAll).not.toHaveBeenCalled();
+		open();
+		await sent;
+		expect(turns.list[0]!.opened).toBe(true);
+		expect(nav.invalidateAll).toHaveBeenCalledTimes(1);
 	});
 
 	it('forgets every turn when the page is left', async () => {
