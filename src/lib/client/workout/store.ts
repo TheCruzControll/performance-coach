@@ -43,7 +43,7 @@ import { initialDevice } from '#lib/domain/workout/reducers/device.ts';
 import type { IDBPTransaction, StoreNames } from 'idb';
 import { openTabChannel } from './channel.ts';
 import type { TabChannel, TabMessage } from './channel.ts';
-import { openWorkoutDb, StoreClosedError } from './db.ts';
+import { closeForGood, openWorkoutDb, StoreClosedError } from './db.ts';
 import type { CachedLibrary, CloseReason, StoredWorkout, WorkoutDb, WorkoutSchema } from './db.ts';
 import { LIBRARY_KEY, OUTBOX_INDEXES, STORES } from './names.ts';
 import {
@@ -203,6 +203,12 @@ export interface WorkoutStore {
 	getLibrary(): Promise<CachedLibrary | null>;
 	prune(): Promise<{ workouts: string[]; kits: string[] }>;
 	onChange(listener: (change: StoreChange) => void): () => void;
+	/**
+	 * Closes this store, for good, and its channel, but not the page: a store created later on this
+	 * page opens 'pc-offline' again. For a short-lived store its opener lets go of (sign-out's,
+	 * workout/shutdown.ts). Its listeners hear 'closed' ('deleted'): nothing is left to show.
+	 */
+	close(): void;
 }
 
 /** Best effort: Safari evicts a site's storage after 7 days unused unless it is installed. */
@@ -332,6 +338,8 @@ export async function createStore({
 	const emit = (change: StoreChange) => listeners.forEach((listener) => listener(change));
 	let closed: CloseReason | null = null;
 	let unlisten = () => {};
+	/** The IndexedDB this store opens 'pc-offline' from: the page it closes for good. */
+	const page = globalThis.indexedDB;
 	const shut = (reason: CloseReason) => {
 		if (closed) return;
 		closed = reason;
@@ -454,9 +462,13 @@ export async function createStore({
 			case 'purged':
 				return void reread(memory.keys()).then(() => emit({ type: 'purged' }));
 			case 'signed-out':
-				// Sign-out deletes the database next: this page lets go of it, for good.
+				// Another tab signs out and deletes the database next: this page lets go of it, for good,
+				// and never opens it again (closeForGood), so a stale tab cannot recreate it after the
+				// deletion. The signing-out page closes its own stores with close() instead, which leaves
+				// it free to open the store again when the owner stays signed in.
 				memory.clear();
 				db.close();
+				closeForGood(page, 'deleted');
 				return shut('deleted');
 		}
 	}
@@ -918,6 +930,12 @@ export async function createStore({
 		onChange(listener) {
 			listeners.add(listener);
 			return () => listeners.delete(listener);
+		},
+		close() {
+			if (closed) return;
+			memory.clear();
+			db.close();
+			shut('deleted');
 		}
 	};
 }
