@@ -23,16 +23,12 @@ async function onChunk(
 	});
 }
 
-test('Progress and Today show the saved units when the preference start fails to load', async ({
-	page
-}) => {
+// Progress formats on the server in the profile's units (M6), so only Today reads the device's.
+test('Today shows the saved units when the preference start fails to load', async ({ page }) => {
 	await page.addInitScript(() =>
 		localStorage.setItem('pc:prefs:v1', '{"theme":"dark","units":"lb","distance":"mi"}')
 	);
 	await onChunk(page, /as startPreferences\}/, (route) => route.abort());
-
-	await gotoHydrated(page, '/progress');
-	await expect(page.getByText('lb / wk', { exact: true })).toBeVisible();
 
 	await gotoHydrated(page, '/today');
 	await expect(page.getByText('mi', { exact: true })).toBeVisible();
@@ -76,4 +72,22 @@ test('toasts need no network: one shown offline appears whole, and reconnecting 
 		() => (window as unknown as { inserted: string[] }).inserted
 	);
 	expect(inserted).toEqual(['Set logged · 140 kg × 5 @ 8', 'Sync failed — will retry']);
+});
+
+test('a real-user monitoring load that fails, as offline or after a deploy, is dropped without a page error', async ({
+	page
+}) => {
+	const pageErrors: string[] = [];
+	page.on('pageerror', (err) => pageErrors.push(err.message));
+	let failed = false;
+	// Only vitals.ts posts to /api/vitals; the shell imports it once the page is idle.
+	await onChunk(page, /["'`]\/api\/vitals["'`]/, (route) => {
+		failed = true;
+		return route.abort('internetdisconnected');
+	});
+
+	await gotoHydrated(page, '/today');
+	await expect.poll(() => failed, { timeout: 10_000 }).toBe(true);
+	await page.waitForTimeout(500); // an unhandled rejection surfaces after the failed fetch
+	expect(pageErrors).toEqual([]);
 });

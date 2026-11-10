@@ -11,8 +11,12 @@
 	// signed-in shell, after the page is interactive; it never competes with hydration. Metrics of
 	// a sign-in screen visited first in the same page are still attributed to it (root layout).
 	onMount(() => {
+		// Best effort: a page that has gone offline by then, or a build replaced by a deploy, loses
+		// its metrics rather than reporting an unhandled rejection.
 		const start = () =>
-			void import('#lib/client/vitals.ts').then((rum) => rum.startVitalsReporting());
+			void import('#lib/client/vitals.ts')
+				.then((rum) => rum.startVitalsReporting())
+				.catch(() => {});
 		if ('requestIdleCallback' in window) requestIdleCallback(start, { timeout: 3000 });
 		else setTimeout(start, 1500);
 	});
