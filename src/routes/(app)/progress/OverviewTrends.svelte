@@ -8,11 +8,15 @@
   - Once there is history, the headline ChartFrames (load by discipline, each key lift's
     estimated 1RM), server-rendered with their table twins; only the plot waits for its body.
   - Until then, what appears and when (the dated timeline), never a ghost chart.
+  - Then the row to the weekly reviews: here rather than in the view, so its code is not initial
+    JS (Progress is at its budget).
 
   Its sections are rows of the view's grid, as if the view rendered them itself.
 -->
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import Icon from '#lib/ui/components/Icon.svelte';
+	import ListRow from '#lib/ui/components/ListRow.svelte';
 	import Section from '#lib/ui/components/Section.svelte';
 	import TrendTile from '#lib/ui/analytics/TrendTile.svelte';
 	import { CHART_BODIES } from '#lib/ui/charts/bodies.ts';
@@ -96,6 +100,13 @@
 		</ol>
 	</Section>
 {/if}
+
+<ListRow
+	title="Reviews"
+	icon="sparkle"
+	href={resolve('/(app)/progress/reviews/[[key]]', {})}
+	data-testid="reviews-row"
+/>
 
 <style>
 	.context {
