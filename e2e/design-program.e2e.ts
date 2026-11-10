@@ -5,7 +5,7 @@
  * words (baseline, pending, done, skipped, moved, read-only). PrescriptionLines: describe.ts's
  * words, with no load it cannot compute. Every target is ≥ 44 px and nothing scrolls sideways at
  * 393 px; at 1440 × 900 the panel keeps a readable width, with hover and focus states.
- * Runs on Chromium and WebKit; axe for the same panel lives in a11y.e2e.ts.
+ * Runs on Chromium and WebKit; axe for the same panel lives in a11y-suite.ts.
  */
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';

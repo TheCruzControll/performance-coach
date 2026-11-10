@@ -73,3 +73,21 @@ test('toasts need no network: one shown offline appears whole, and reconnecting 
 	);
 	expect(inserted).toEqual(['Set logged · 140 kg × 5 @ 8', 'Sync failed — will retry']);
 });
+
+test('a real-user monitoring load that fails, as offline or after a deploy, is dropped without a page error', async ({
+	page
+}) => {
+	const pageErrors: string[] = [];
+	page.on('pageerror', (err) => pageErrors.push(err.message));
+	let failed = false;
+	// Only vitals.ts posts to /api/vitals; the shell imports it once the page is idle.
+	await onChunk(page, /["'`]\/api\/vitals["'`]/, (route) => {
+		failed = true;
+		return route.abort('internetdisconnected');
+	});
+
+	await gotoHydrated(page, '/today');
+	await expect.poll(() => failed, { timeout: 10_000 }).toBe(true);
+	await page.waitForTimeout(500); // an unhandled rejection surfaces after the failed fetch
+	expect(pageErrors).toEqual([]);
+});
