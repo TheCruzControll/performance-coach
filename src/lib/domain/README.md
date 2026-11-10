@@ -762,7 +762,40 @@ Each change is an `OverlayAssumption` `{ rule, field, value, why }` (`OVERLAY_RU
 
 ### Next block (`programming/next-block/generate.ts`)
 
-Not built yet (m6/30, next-block-generator).
+`generateNextBlock(next, { dates, outline, previous, directives, catalogueDigest? })` → `{ block,
+bridge?, decisions, fingerprint, significantChanges }`: M3's generator extended with progression
+from actual results, without editing it. `next` is `nextBlockInput`'s; `previous` is the reviewed
+block as planned, each lift's exposures and e1RM trend (`LiftResults`) and the owner's unit.
+`nextStages` is M3's `STAGES` with three changes (a renamed M3 stage throws):
+
+- `nextShape` (`stages/next-shape.ts`) replaces `blocks`: one planned block on `dates.block`,
+  named and goal-linked as the outline block it plans, its weeks by `nextWeekKinds` (accumulation,
+  build in a marathon or half phase, taper in a taper phase, the directed deload first or last) and
+  `nextWeekTargets` (M3's, the RPE cap held to the review's, the volume and running factors scaled
+  by the owner's part, the review's load step; a held block repeats the first building week).
+  Every stage plans from `dates.firstPlannedDay`. `bridgeBlock` emits the bridge, kept out of the
+  draft: k `unplanned` weeks with `BRIDGE_TARGETS` and no sessions.
+- `carryover` (`stages/carryover.ts`) runs after `CARRYOVER_AFTER` (volume, the last stage that
+  fills strength days): a kept exercise selection left out takes the slots of an accessory of its
+  pattern, measure and a primary muscle; a rotated exercise's slots (day title and position) take
+  `alternativesFor`'s top eligible alternative, never a kept one nor one planned elsewhere, and
+  never over a kept exercise. `exercise_kept` and `exercise_rotated` decisions, the latter naming
+  whatever holds the old slot now.
+- `results` (`stages/results.ts`) runs after `progression`: `decideFromResults` on each
+  share-loaded main lift's first top set, its load change applied as a ratio to its top and
+  back-off shares in every week (on the loads step, under M1's table). A held block applies no
+  increase (`HELD_WHY`); a change the plan does not make holds (`ROUNDED_WHY`); an RPE-based lift
+  keeps its baseline set. `results_progression` per lift judged, its change read from week 1 as
+  applied, `deload_scheduled` for a directed deload (`DELOAD_REASON`).
+
+The block is checked by `programPlanSchema` as a plan of its own (no session before
+`firstPlannedDay`; decision refs name it `blocks.0`), the bridge and block as whole, contiguous
+weeks first. `next_block_planned` states the block, its start, the bridge and any `lostWeeks`.
+`GENERATOR_ID` is `next-block/1`; the fingerprint is M3's over the input, with a digest of the
+directives, the owner's part, the dates, the outline and the previous block with its results.
+`significantChanges` (`SIGNIFICANT`): swaps, loads moved ≥ 5 % by results (as applied), ±2 hard
+sets a week per group (logged as a `results_progression`), run volume ≥ 10 %, a phase change, a
+deload and a bridge, each with the index of the decision that explains it.
 
 ## M9: backups (`backup/`)
 

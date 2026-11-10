@@ -20,8 +20,8 @@ permissions:
   contents: read
 
 env:
-  # Local-style databases inside the postgres:18 service container, created by db:setup
-  # (postgres:18 matches the Neon production branch).
+  # Local-style databases inside the postgres:18 container each database job starts, created by
+  # db:setup (postgres:18 matches the Neon production branch).
   DATABASE_URL: postgres://coach:coach@localhost:5432/coach_dev
   DATABASE_URL_UNPOOLED: postgres://coach:coach@localhost:5432/coach_dev
   TEST_DATABASE_URL: postgres://coach:coach@localhost:5432/coach_test
@@ -62,27 +62,34 @@ jobs:
     name: Unit & integration tests
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    services:
-      postgres:
-        image: postgres:18
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: postgres
-        ports: ['5432:5432']
-        options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 12
     steps:
       - uses: actions/checkout@v7
+      # Pulled and started in the background (docker run -d would block on the pull), so the
+      # server boots while the job installs; "Wait for Postgres" holds db:setup until it answers.
+      - name: Start Postgres 18 (in the background)
+        run: nohup sh -c 'docker run -d --name postgres -p 5432:5432 -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=postgres postgres:18' > "$RUNNER_TEMP/postgres-start.log" 2>&1 &
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # Over TCP: the image's init server listens on its socket only, so ready means the real
+      # server. 90 s covers a cold pull plus initdb; a server that never answers fails the job.
+      - name: Wait for Postgres
+        env:
+          WAIT_SECONDS: 90
+        run: |
+          for _ in $(seq "$WAIT_SECONDS"); do
+            if pg_isready -h localhost -p 5432 -U postgres; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::Postgres did not accept TCP connections within ${WAIT_SECONDS} s"
+          cat "$RUNNER_TEMP/postgres-start.log"
+          docker logs postgres
+          exit 1
       - name: Create roles and databases
         run: pnpm db:setup
       - name: Apply migrations (dev database)
@@ -169,21 +176,12 @@ jobs:
           - { group: serial, engine: webkit, shard: 3, of: 4, minutes: 15 }
           - { group: serial, engine: webkit, shard: 4, of: 4, minutes: 15 }
           - { group: alone, engine: chromium, shard: 1, of: 1, minutes: 5 }
-    services:
-      postgres:
-        image: postgres:18
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: postgres
-        ports: ['5432:5432']
-        options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 12
     steps:
       - uses: actions/checkout@v7
+      # Pulled and started in the background (docker run -d would block on the pull), so the
+      # server boots while the job installs; "Wait for Postgres" holds db:setup until it answers.
+      - name: Start Postgres 18 (in the background)
+        run: nohup sh -c 'docker run -d --name postgres -p 5432:5432 -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=postgres postgres:18' > "$RUNNER_TEMP/postgres-start.log" 2>&1 &
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
@@ -205,20 +203,22 @@ jobs:
         run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
       # WebKit's system packages are ~140 MB, and the runner's Ubuntu mirror sometimes trickles
       # at ~50 KB/s (a 12-minute timeout on #5 before any test ran). Keep the downloaded
-      # packages between runs so a slow mirror costs one run, not every run.
+      # packages between runs so a slow mirror costs one run, not every run. Keyed by engine: a
+      # Chromium leg's archive lacks WebKit's packages, so WebKit legs must never restore it.
       - name: Cache Playwright system packages
         uses: actions/cache@v6
         with:
           path: ~/.cache/apt-archives
-          key: apt-playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-v1
-          restore-keys: apt-playwright-${{ runner.os }}-
+          key: apt-playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-${{ matrix.engine }}-v2
+          restore-keys: apt-playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-${{ matrix.engine }}-
       - name: Configure apt for slow mirrors (and keep packages for the cache)
         run: ./scripts/ci-apt-resilience.sh ~/.cache/apt-archives
       - name: Install Playwright system dependencies
         # Never killed midway: an interrupted apt-get keeps the dpkg lock and fails every later
         # install. Slow or stalled mirror downloads time out and retry inside apt instead.
+        # Chromium legs launch only Chromium; WebKit legs also need it for the owner setup.
         timeout-minutes: 12
-        run: pnpm exec playwright install-deps chromium webkit
+        run: pnpm exec playwright install-deps ${{ matrix.engine == 'webkit' && 'chromium webkit' || 'chromium' }}
       - name: Make the kept packages readable for the cache
         run: ./scripts/ci-apt-resilience.sh --release ~/.cache/apt-archives
       - name: Install Playwright browsers
@@ -233,6 +233,22 @@ jobs:
             sleep 5
           done
           echo "::error::browser download failed 3 times"
+          exit 1
+      # Over TCP: the image's init server listens on its socket only, so ready means the real
+      # server. 90 s covers a cold pull plus initdb; a server that never answers fails the job.
+      - name: Wait for Postgres
+        env:
+          WAIT_SECONDS: 90
+        run: |
+          for _ in $(seq "$WAIT_SECONDS"); do
+            if pg_isready -h localhost -p 5432 -U postgres; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::Postgres did not accept TCP connections within ${WAIT_SECONDS} s"
+          cat "$RUNNER_TEMP/postgres-start.log"
+          docker logs postgres
           exit 1
       - name: Create roles and databases
         run: pnpm db:setup
@@ -260,10 +276,12 @@ jobs:
           if-no-files-found: ignore
 
   # The check branch protection requires: green only when every leg is. It runs even when a leg
-  # fails, since a skipped required check would count as passing.
+  # fails, since a skipped required check would count as passing. Required checks gate only pull
+  # requests, so pushes and manual runs skip it: there the run's own result already fails on a
+  # failed leg, and this job would only queue behind every pull request's jobs (an hour at peak).
   e2e:
     name: E2E (iPhone viewport · Chromium + WebKit)
-    if: ${{ always() }}
+    if: ${{ always() && github.event_name == 'pull_request' }}
     needs: [e2e-legs]
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -281,21 +299,12 @@ jobs:
     name: Lighthouse (mobile)
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    services:
-      postgres:
-        image: postgres:18
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: postgres
-        ports: ['5432:5432']
-        options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 12
     steps:
       - uses: actions/checkout@v7
+      # Pulled and started in the background (docker run -d would block on the pull), so the
+      # server boots while the job installs; "Wait for Postgres" holds db:setup until it answers.
+      - name: Start Postgres 18 (in the background)
+        run: nohup sh -c 'docker run -d --name postgres -p 5432:5432 -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=postgres postgres:18' > "$RUNNER_TEMP/postgres-start.log" 2>&1 &
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
@@ -320,6 +329,22 @@ jobs:
       - name: Install Chromium
         timeout-minutes: 8
         run: pnpm exec playwright install chromium
+      # Over TCP: the image's init server listens on its socket only, so ready means the real
+      # server. 90 s covers a cold pull plus initdb; a server that never answers fails the job.
+      - name: Wait for Postgres
+        env:
+          WAIT_SECONDS: 90
+        run: |
+          for _ in $(seq "$WAIT_SECONDS"); do
+            if pg_isready -h localhost -p 5432 -U postgres; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::Postgres did not accept TCP connections within ${WAIT_SECONDS} s"
+          cat "$RUNNER_TEMP/postgres-start.log"
+          docker logs postgres
+          exit 1
       - name: Create roles and databases
         run: pnpm db:setup
       - name: Build for Node (served on http://localhost:4174 by the Lighthouse script)

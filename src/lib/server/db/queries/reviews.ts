@@ -10,6 +10,7 @@
  * Nothing runs until a builder is awaited; await them in turn on one connection.
  */
 import { and, asc, eq, isNotNull, isNull, sql, type SQL } from 'drizzle-orm';
+import type { SupersededReason } from '../../../domain/coach/vocabulary';
 import type { ProposalStatus } from '../../../domain/training/vocabulary';
 import { coachMessages, coachThreads, cycleReviews, weeklyReviews } from '../schema';
 import type { Executor } from '../types';
@@ -147,8 +148,7 @@ export function reviewsPage(
 export type ProposalHeadRow = {
 	id: string;
 	status: ProposalStatus;
-	/** Open until weekly-review-service adds M6's reasons to M5's vocabulary. */
-	supersededReason: string | null;
+	supersededReason: SupersededReason | null;
 	appliedVersionId: string | null;
 	appliedVersionNumber: number | null;
 	depth: number;

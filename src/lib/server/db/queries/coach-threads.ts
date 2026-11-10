@@ -107,10 +107,12 @@ export function lastReplayed(db: Executor, ownerId: string, threadId: string, se
 export function transcript(db: Executor, ownerId: string, threadId: string, segment: number) {
 	return db
 		.select({
+			id: coachMessages.id,
 			seq: coachMessages.seq,
 			role: coachMessages.role,
 			kind: coachMessages.kind,
-			content: coachMessages.content
+			content: coachMessages.content,
+			runId: coachMessages.runId
 		})
 		.from(coachMessages)
 		.where(replayed(ownerId, threadId, segment))

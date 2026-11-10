@@ -15,12 +15,13 @@ import type { SessionKind } from '#lib/domain/training/types.ts';
 import type { CanonicalWorkout, Instant } from '#lib/domain/workout/index.ts';
 import type {
 	DeviceState,
-	KitExerciseMeta,
 	KitUnits,
+	LibraryExercise,
 	StartKit
 } from '#lib/domain/workout/index.ts';
 import type { WorkoutStatus } from '#lib/domain/workout/index.ts';
 import { DB_NAME, DB_VERSION, LAYOUT, STORES } from './names.ts';
+import type { LIBRARY_KEY } from './names.ts';
 import type { StoreName } from './names.ts';
 import type { OutboxEntry } from './outbox-rules.ts';
 
@@ -47,10 +48,13 @@ export interface SavedKit {
 	savedAt: number;
 }
 
+/** The exercise library as GET /api/exercises last gave it (library.ts), under its digest. */
 export interface CachedLibrary {
-	id: 'exercises';
+	id: typeof LIBRARY_KEY;
 	digest: string;
-	exercises: KitExerciseMeta[];
+	units: KitUnits;
+	exercises: LibraryExercise[];
+	/** Epoch ms on this device. */
 	savedAt: number;
 }
 

@@ -63,6 +63,7 @@ export const ROUTE_ACCESS = {
 	'/(app)/train/history/[[version]]': 'owner',
 	'/(app)/progress': 'owner',
 	'/(app)/progress/workouts/[[id]]': 'owner',
+	'/(app)/progress/exercises/[id]': 'owner',
 	'/(app)/coach/[[thread]]': 'owner',
 	'/(app)/profile': 'owner',
 	'/(app)/profile/security': 'owner',
@@ -79,6 +80,7 @@ export const ROUTE_ACCESS = {
 
 	// runs
 	'/api/coach/runs/[run]/cancel': 'owner',
+	'/api/coach/runs': 'owner',
 
 	// threads
 
