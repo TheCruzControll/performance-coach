@@ -2,6 +2,7 @@ import { json } from '@sveltejs/kit';
 import * as z from 'zod/mini';
 import { authErrorResponse, authRequest } from '#lib/server/auth/index.ts';
 import { enforceRateLimit } from '#lib/server/auth/rate-limit.ts';
+import { NextCycleConflictError } from '#lib/server/services/coach/apply/next-cycle.ts';
 import {
 	acceptProposal,
 	getProposalView,
@@ -31,8 +32,8 @@ const ACCEPTED: ReadonlySet<ProposalView['status']> = new Set(['accepted', 'appl
 
 const invalid = (message: string, field?: string) =>
 	json({ error: 'invalid_request', message, field }, { status: 400, headers: NO_STORE });
-const conflict = (proposal: ProposalView) =>
-	json({ error: 'conflict', proposal }, { status: 409, headers: NO_STORE });
+const conflict = (proposal: ProposalView, href?: string) =>
+	json({ error: 'conflict', proposal, ...(href && { href }) }, { status: 409, headers: NO_STORE });
 
 /**
  * Accept or reject one of the owner's proposals by id (PRD §14; the M5 plan's 'Proposals versus
@@ -41,8 +42,9 @@ const conflict = (proposal: ProposalView) =>
  *
  * - 200 {proposal, changed}: accepted, applied or rejected. Repeating it answers the stored
  *   result with changed: false, and writes nothing.
- * - 409 {error: 'conflict', proposal}: it was superseded (now or before), or already decided the
- *   other way; the proposal says how.
+ * - 409 {error: 'conflict', proposal, href?}: it was superseded (now or before), or already
+ *   decided the other way; the proposal says how, and href is the cycle review it was folded into. 409 {error: 'conflict', reason: 'choose_start', href}: a
+ *   cycle review's next block, which is planned from the review at href; it stays proposed.
  * - 400: a body that is not a decision, a reason too long, or a proposal that no longer passes
  *   today's rules (error 'refused', with its field errors; it stays proposed).
  * - 404 for an id that is not the owner's proposal. Owner-only and Origin-checked by the guard;
@@ -73,7 +75,7 @@ export const POST: RequestHandler = async (event) => {
 	try {
 		if (body.data.action === 'accept') {
 			const decided = await acceptProposal(ownerId, params.id);
-			if (!ACCEPTED.has(decided.proposal.status)) return conflict(decided.proposal);
+			if (!ACCEPTED.has(decided.proposal.status)) return conflict(decided.proposal, decided.href);
 			return json(decided, { headers: NO_STORE });
 		}
 		const decided = await rejectProposal(ownerId, params.id, { reason: body.data.reason });
@@ -84,6 +86,10 @@ export const POST: RequestHandler = async (event) => {
 		}
 		if (err instanceof ProposalClosedError) {
 			return conflict(await getProposalView(ownerId, params.id));
+		}
+		if (err instanceof NextCycleConflictError) {
+			const { reason, href, message } = err;
+			return json({ error: 'conflict', reason, href, message }, { status: 409, headers: NO_STORE });
 		}
 		if (err instanceof ProposalRefusedError) {
 			return json({ error: 'refused', errors: err.errors }, { status: 400, headers: NO_STORE });
