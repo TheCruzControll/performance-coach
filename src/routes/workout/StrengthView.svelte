@@ -647,6 +647,23 @@
 		user-select: none;
 	}
 
+	/* While the card follows a swipe or springs to rest (Navigation.svelte), it moves on the
+	   compositor and never widens the page. */
+	.swipe:global([data-moving]) {
+		overflow-x: clip;
+	}
+
+	.swipe:global([data-moving]) > :global(*) {
+		will-change: transform;
+	}
+
+	/* The card's transform is the finger's, or its spring's: no transition eases it. Reduced
+	   motion gives every element a 0.01 ms transition (base.css), which WebKit held at its start,
+	   so the card stood still under the drag. */
+	.swipe > :global(*) {
+		transition: none;
+	}
+
 	/* Previous and Next, then Up next with its Add exercise: their height is kept while they load.
 	   Packed at the top, so a shorter Up next never moves Previous and Next. */
 	.navigation {
