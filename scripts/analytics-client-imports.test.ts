@@ -17,8 +17,12 @@ import path from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import { chains, filesUnder, ROOT } from './import-graph.ts';
 
-/** The analytics modules a browser may load at runtime. Adding one is a decision: say why here. */
-const CLIENT_SAFE = ['periods.ts', 'types.ts'];
+/**
+ * The analytics modules a browser may load at runtime. Adding one is a decision: say why here.
+ * period-names.ts is periods.ts's names, labels and ?period parsing on their own, for a route's
+ * period switcher without the windows and the calendar.
+ */
+const CLIENT_SAFE = ['periods.ts', 'period-names.ts', 'types.ts'];
 const ANALYTICS = 'src/lib/domain/analytics';
 
 const isCode = (file: string) => /\.(ts|svelte)$/.test(file) && !/\.(test|spec)\.ts$/.test(file);

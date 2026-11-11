@@ -17,10 +17,12 @@ import { replay } from '#lib/domain/workout/project.ts';
 import { strengthTable } from '#lib/domain/workout/reducers/tables.ts';
 import { restRemaining, STOPWATCH_IDLE, stopwatchElapsed } from '#lib/domain/workout/timers.ts';
 import type { WorkoutView } from '#lib/domain/workout/types.ts';
+import { broadcast, openTabChannel } from './channel';
 import { StoreClosedError } from './db';
 import type { StoredWorkout } from './db';
 import { DB_NAME, STORES } from './names';
 import { STUCK_AFTER, type OutboxEntry } from './outbox-rules';
+import { PREPAINT_KEY, writePrepaint, type PrepaintCard } from './prepaint';
 import { activeSummary, pendingCount, waitingToSync } from './probe';
 import { ActiveWorkoutError, createStore, PRUNE_AFTER, requestPersistence } from './store';
 import type { WorkoutStore } from './store';
@@ -369,6 +371,38 @@ describe('closing', () => {
 		}
 		expect(refused).toBeInstanceOf(StoreClosedError);
 		expect((refused as StoreClosedError).reason).toBe('upgraded');
+	});
+
+	it("another tab's sign-out closes this page for good: it never recreates the deleted database", async () => {
+		const name = 'pc-workout-store-signed-out-test';
+		const stale = await createStore({ table: strengthTable, channel: openTabChannel(name) });
+		await started(stale);
+
+		broadcast({ type: 'signed-out' }, name);
+		await vi.waitFor(() => expect(stale.closed).toBe('deleted'));
+		// What signOut does next (clearIndexedDb): never blocked by this page.
+		let blocked = false;
+		await deleteDB(DB_NAME, { blocked: () => (blocked = true) });
+
+		expect(blocked).toBe(false);
+		await expect(open()).rejects.toMatchObject({ name: 'StoreClosedError', reason: 'deleted' });
+		expect(await indexedDB.databases()).toEqual([]);
+	});
+
+	it('close lets go of the store, not the page: a store opened next reads the database', async () => {
+		const store = await open();
+		await started(store);
+		const changes: unknown[] = [];
+		store.onChange((change) => changes.push(change));
+
+		store.close();
+
+		expect(store.closed).toBe('deleted');
+		expect(changes).toContainEqual({ type: 'closed', reason: 'deleted' });
+		expect(() => store.dispatch(log('s1', 1))).toThrow(StoreClosedError);
+		const next = await open();
+		expect((await next.getActive())!.workoutId).toBe(W);
+		expect(await next.dispatch(log('s1', 1)).saved).toBe('saved');
 	});
 
 	it('reads a database a newer app has already upgraded as upgraded', async () => {
@@ -752,5 +786,95 @@ describe("the owner's answers to a change that needs attention", () => {
 		expect(store.snapshot(W)!.view!.slots[0]!.sets[0]!.reps).toBe(3);
 		await expect(store.fix(first!.seq, { ...fixed, id: 's9' })).rejects.toThrow(RangeError);
 		expect(await store.discarded()).toEqual([]);
+	});
+});
+
+describe("/workout's prepainted card", () => {
+	const card = { name: 'Back squat' } as PrepaintCard;
+	/** The page's localStorage, as a Map. */
+	function pageStorage() {
+		const map = new Map<string, string>();
+		vi.stubGlobal('localStorage', {
+			getItem: (key: string) => map.get(key) ?? null,
+			setItem: (key: string, value: string) => void map.set(key, value),
+			removeItem: (key: string) => void map.delete(key)
+		});
+		return map;
+	}
+	const keep = () => writePrepaint({ workoutId: W, rest: false, card });
+
+	it('is dropped by every change the store reports, before its listeners hear it', async () => {
+		const storage = pageStorage();
+		const store = await open();
+		await started(store);
+		const heard: (string | undefined)[] = [];
+		store.onChange(() => heard.push(storage.get(PREPAINT_KEY)));
+
+		keep();
+		const logged = store.dispatch(log('s1', 1));
+		expect(storage.has(PREPAINT_KEY)).toBe(false);
+		keep();
+		expect(await logged.saved).toBe('saved');
+		expect(storage.has(PREPAINT_KEY)).toBe(false);
+		expect(heard).toEqual([undefined, undefined]);
+
+		keep();
+		await store.dispatch(finish()).saved;
+		expect(storage.has(PREPAINT_KEY)).toBe(false);
+	});
+
+	it('is dropped by a write of a workout this page has not loaded, which reports nothing', async () => {
+		const storage = pageStorage();
+		const begun = start(W);
+		expect(await (await open()).dispatch(begun, attach(W)).saved).toBe('saved');
+		const store = await open(); // another page: nothing in memory
+		const changes: unknown[] = [];
+		store.onChange((change) => changes.push(change));
+
+		keep();
+		expect(await store.reconciled(serverRows(W, [begun]))).toBe(true);
+		expect(storage.has(PREPAINT_KEY)).toBe(false);
+		// The server says another device finished it: the ack takes it off this device.
+		keep();
+		const rows = serverRows(W, [begun, finish(W)]);
+		await store.acknowledge([{ id: begun.id, status: 'applied', canonical: rows }]);
+		expect((await stored()).workouts).toEqual([]);
+		expect(storage.has(PREPAINT_KEY)).toBe(false);
+		expect(changes).toEqual([]);
+	});
+
+	it('waits for every change to be written here: its count of those still pending', async () => {
+		const store = await open();
+		await started(store);
+		const logged = store.dispatch(log('s1', 1));
+		expect(logged.snapshot.pending).toBe(1);
+		expect(store.snapshot(W)!.pending).toBe(1);
+		expect(await logged.saved).toBe('saved');
+		expect(store.snapshot(W)!.pending).toBe(0);
+
+		vi.spyOn(IDBObjectStore.prototype, 'add').mockImplementationOnce(() => {
+			throw quota();
+		});
+		expect(await store.dispatch(log('s2', 2)).saved).toBe('not-saved');
+		expect(store.snapshot(W)!.pending).toBe(1);
+	});
+
+	it('is blocked by a lost session until the server answers as the owner again', async () => {
+		const storage = pageStorage();
+		const store = await open();
+		await started(store);
+		keep();
+
+		await store.purgeServerCopies();
+		const blocked = storage.get(PREPAINT_KEY);
+		expect(JSON.parse(blocked!)).toEqual({ v: 1, blocked: true });
+		keep();
+		expect(await store.dispatch(log('s1', 1)).saved).toBe('saved');
+		expect(storage.get(PREPAINT_KEY)).toBe(blocked);
+
+		await store.signedIn();
+		expect(storage.has(PREPAINT_KEY)).toBe(false);
+		keep();
+		expect(JSON.parse(storage.get(PREPAINT_KEY)!)).toMatchObject({ workoutId: W, card });
 	});
 });

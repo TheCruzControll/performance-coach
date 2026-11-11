@@ -9,7 +9,7 @@ acceptance criteria were verified by running them — compiling is not done.
 | M1  | Foundation & infrastructure     | **Done** (PR #1, merged 2026-11-05); deferred items carried below                                                                          |
 | M2  | Auth & profile                  | **Done**: auth, production (#50), onboarding, Profile, Today (#60–#181), desktop (#85–#265); email link dropped by the owner on 2026-11-07 |
 | M3  | Training data model & programs  | **Done**: 49 slice PRs, #41 to #233; evidence per criterion below                                                                          |
-| M4  | Workout application             | Planned                                                                                                                                    |
+| M4  | Workout application             | **In progress**: the workout app merged, #87 to #410; the owner's screenshot review pending                                                |
 | M5  | AI performance coach            | Planned                                                                                                                                    |
 | M6  | Analytics & reviews             | Planned                                                                                                                                    |
 | M7  | Advanced coaching               | Planned                                                                                                                                    |
@@ -243,6 +243,42 @@ Acceptance criteria:
 3. Logging a set is optimistic (< 100 ms to visual confirmation, measured) and never depends on
    the agent.
 4. INP p75 ≤ 200 ms on the workout screen in local measurements.
+
+Status: **in progress**. M4's slices merged to `main` as numbered PRs, like M2's and M3's (the
+plan's default for the brief's branch question), dark-launched until the entry points (#366).
+The design is in docs/architecture.md ("Offline workouts (M4)") and ADR 0012, the tests in
+docs/testing.md ("Workouts (M4)"), and the numbers, measured by CI on the merged code, in
+docs/performance.md ("M4 (workout)"). Evidence per criterion:
+
+- Criterion 1: `e2e/journey-strength.serial.e2e.ts` (#373) starts from Today, logs the top set
+  and back-offs with weight, reps and RPE, runs the rest timer and the plate calculator, swaps an
+  unavailable machine, refreshes mid-workout and finds every set and the rest restored, finishes
+  and opens History, at the iPhone viewport and again at 1440 × 900. Each screen has its own spec
+  as well (docs/testing.md, "Workout screen"), from the shell (#192) to custom exercises (#355).
+- Criterion 2: `e2e/journey-offline.serial.e2e.ts` (#371) logs, edits and deletes offline,
+  reloads, reconnects and counts the rows in Postgres; replays and two tabs add no duplicate; a
+  500, a lost answer and a refused change recover. Underneath: the ledger (#151), the sync
+  endpoint (#175), the store (#120), the engine (#127) and reconcile (#154), on real Postgres and
+  fake IndexedDB.
+- Criterion 3: a logged set shows as done in a median of 36.5 ms, p95 42.4 ms, over 20 sets at
+  4× CPU (`e2e/perf-workout.e2e.ts`, gated at p95 < 100 ms since #235; final form #370). Logging
+  touches only IndexedDB and `/api/workouts/sync`: the strength journey aborts every coach
+  request and still finishes.
+- Criterion 4: INP p75 on `/workout` is 88 ms from Event Timing and from web-vitals (#370).
+- Criteria 3 and 4 come from one green run, #370's 42939723798. #370 asks for two; the second is
+  still to record. An earlier run, 42802588785 (median 22.9 ms, p95 32.5 ms, INP 56 ms), came
+  before #370's fixes and failed.
+- The brief's run and Muay Thai journey: `e2e/journey-run-muay-thai.serial.e2e.ts` (#368).
+- Sign-out with unsynced workout changes flushes first (at most 5 s), then asks before deleting
+  them; "Stay signed in" keeps every change (#367, `e2e/signout-pending.e2e.ts`).
+- Lighthouse mobile on `/workout · active`: LCP 903 ms, Performance 100 in #370's run
+  42933643722, after the shorter boot path (#394) and the prepaint (#410).
+
+Still open:
+
+- The owner's review of journey-strength's screenshot set (`strength-*`, mobile and desktop):
+  not yet recorded.
+- The real-device checklist's workout item (docs/testing.md, item 8) has not been run.
 
 ## M5 — AI performance coach [§4, §6, §12]
 
