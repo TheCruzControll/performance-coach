@@ -267,7 +267,7 @@ test.describe('block-end', () => {
 		await auditBothThemes(page, 'Cycle review');
 		await captureScreen(page, testInfo, 'cycle-review-phone');
 
-		await section(page, 'strength').locator(':scope > summary').click();
+		await section(page, 'strength').locator('summary').click();
 		await expect(section(page, 'strength').getByTestId('line-chart').first()).toBeVisible();
 		await auditBothThemes(page, 'Cycle review, a section open');
 	});

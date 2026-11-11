@@ -80,6 +80,12 @@ const text = (fragment: string) =>
 		.replace(/<[^>]+>/g, ' ')
 		.replace(/\s+/g, ' ')
 		.trim();
+/** One section's markup: from its element to the next section's (its body follows its details). */
+const sectionOf = (body: string, id: string) => {
+	const rest = body.slice(body.search(new RegExp(`<div[^>]*data-section="${id}"`)));
+	const next = rest.slice(1).search(/<div[^>]*data-testid="review-section"/);
+	return next < 0 ? rest : rest.slice(0, next + 1);
+};
 
 describe('the cycle review on the server', () => {
 	it('the hero: the block, its summary, adherence and each count’s value', () => {
@@ -97,7 +103,7 @@ describe('the cycle review on the server', () => {
 
 	it('each section with its verdict line; a chart’s room holds its table twin', () => {
 		const body = html(review());
-		const strength = /<details[^>]*data-section="strength"[\s\S]*?<\/details>/.exec(body)![0];
+		const strength = sectionOf(body, 'strength');
 		expect(text(strength)).toContain('Strength progression: 1 of 1 main lift progressed');
 		const twin = /<noscript>([\s\S]*?)<\/noscript>/.exec(strength)![1]!;
 		expect(text(twin)).toContain('Back squat estimated 1RM: Up 7.5 kg');
@@ -106,7 +112,7 @@ describe('the cycle review on the server', () => {
 
 	it('effectiveness: a table in words, leading to Keep or Rotate', () => {
 		const body = html(review());
-		const section = /<details[^>]*data-section="effectiveness"[\s\S]*?<\/details>/.exec(body)![0];
+		const section = sectionOf(body, 'effectiveness');
 		const found = /<table[^>]*data-testid="section-table"[\s\S]*?<\/table>/.exec(section)![0];
 		expect(text(found)).toBe(
 			'Exercise How it did Next block Curl Held. Stalled Rotate · a fresh stimulus'
