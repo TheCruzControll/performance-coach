@@ -9,16 +9,16 @@
   on the server), or Resume for the workout in progress on this device: only the lead session
   (leadLineage) has the primary button, the others a quiet trailing Start. Today is named by the
   page's eyebrow date, so its day carries no visible date of its own. The day offers 'Log
-  something else'. Once the plan shows and the browser is idle, Today saves the kits of today's
-  sessions still to do, so they start in a gym with no signal: the one place outside the workout
-  pages that creates the device's database (today-kits.ts). Code-split behind PanelLoader.
+  something else'. Once the plan shows and the browser is idle, Today saves the kits of the
+  sessions still to do today and in the next two days, so they start in a gym with no signal, even
+  one looked at the night before: with Train, the only places outside the workout pages that
+  create the device's database (coming-kits.ts). Code-split behind PanelLoader.
 -->
 <script lang="ts">
 	import { invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { navigating } from '$app/state';
 	import { deviceWorkout } from '#lib/client/workout/device-workout.svelte.ts';
-	import { saveTodayKits } from '#lib/client/workout/today-kits.ts';
 	import type { IsoDate } from '#lib/domain/calendar.ts';
 	import Badge from '#lib/ui/components/Badge.svelte';
 	import Button from '#lib/ui/components/Button.svelte';
@@ -34,7 +34,10 @@
 	import type { PageData } from '../$types';
 
 	type TodayPlanView = Awaited<NonNullable<PageData['plan']>>;
-	type PlanCard = Omit<Extract<TodayPlanView, { failed: false }>['upNext'][number], 'when'>;
+	type PlanCard = Omit<
+		Extract<TodayPlanView, { failed: false }>['upNext'][number],
+		'when' | 'date'
+	>;
 
 	interface Props {
 		/** Settled when Today was server-rendered; a promise after a client navigation. */
@@ -50,8 +53,8 @@
 	const TRAIN_HREF = resolve('/(app)/train');
 
 	/**
-	 * Once the idle pass has run: 'saved' with today's kits on this device (today-kits.ts), 'none'
-	 * with none to save (a rest day: nothing created). What the specs wait for.
+	 * Once the idle pass has run: 'saved' with the coming days' kits on this device (coming-kits.ts),
+	 * 'none' with none to save (rest days ahead: nothing created). What the specs wait for.
 	 */
 	let kits = $state<'saved' | 'none'>();
 
@@ -61,11 +64,11 @@
 		const shown = plan;
 		const save = async () => {
 			const view = await shown;
-			const today = !view.failed && view.week?.days.find((d) => d.date === view.week!.today);
-			const saved = await saveTodayKits(today ? today.cards : [], async (lineages) => {
-				const start = await import('#lib/client/workout/start.ts');
-				return start.saveKits(lineages, { store: await start.openStartStore() });
-			});
+			let saved: string[] = [];
+			if (!view.failed) {
+				const coming = await import('#lib/client/workout/coming-kits.ts');
+				saved = await coming.saveComingKits(datedSessions(view), view.today);
+			}
 			if (live) kits = saved.length ? 'saved' : 'none';
 		};
 		const go = () => live && void save().catch(() => {});
@@ -73,6 +76,12 @@
 		else setTimeout(go, 800);
 		return () => (live = false);
 	});
+
+	/** The week's sessions on their days, then Up next's, which may cross into the next week. */
+	const datedSessions = (view: Extract<TodayPlanView, { failed: false }>) => [
+		...(view.week?.days.flatMap((d) => d.cards.map((c) => ({ ...c, date: d.date }))) ?? []),
+		...view.upNext
+	];
 
 	let retrying = $state(false);
 	async function retry() {

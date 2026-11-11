@@ -368,7 +368,10 @@ jobs:
   # unsharded and never gating (lighthouse-desktop, below).
   lighthouse-shards:
     name: Lighthouse (mobile) · ${{ matrix.shard }}/${{ matrix.of }}
-    runs-on: ubuntu-latest
+    # The e2e Chromium legs' image, so their saved system packages and browsers restore here
+    # with no network (keys carry the image). Lighthouse's throttling is simulated, so the image
+    # does not move its scores.
+    runs-on: ubuntu-24.04
     # The Lighthouse step (11), the installs (12 + 8), and 2 for checkout, install and build.
     timeout-minutes: 33
     strategy:
@@ -399,11 +402,22 @@ jobs:
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ steps.image.outputs.os }}-${{ hashFiles('pnpm-lock.yaml') }}
-      - name: Configure apt for slow mirrors
-        run: ./scripts/ci-apt-resilience.sh
+      # The e2e legs' cached install (see the comment there): a full cache installs with no
+      # network, so an Ubuntu mirror outage cannot fail the audit. Same image, same key: the
+      # legs' saved copy restores here.
+      - name: Playwright system packages
+        id: apt
+        run: ./scripts/ci-playwright-deps.sh key chromium >> "$GITHUB_OUTPUT"
+      - name: Cache Playwright system packages
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/apt-playwright
+          key: apt-playwright-v2-${{ steps.image.outputs.os }}-${{ steps.apt.outputs.packages }}-${{ steps.apt.outputs.image }}
+          restore-keys: apt-playwright-v2-${{ steps.image.outputs.os }}-${{ steps.apt.outputs.packages }}-
       - name: Install Chromium system dependencies
+        # Bounded update and download attempts inside; dpkg runs once, never killed midway.
         timeout-minutes: 12
-        run: pnpm exec playwright install-deps chromium
+        run: ./scripts/ci-playwright-deps.sh install ~/.cache/apt-playwright chromium
       - name: Install Chromium
         timeout-minutes: 8
         run: pnpm exec playwright install chromium
@@ -425,10 +439,10 @@ jobs:
           exit 1
       - name: Create roles and databases
         run: pnpm db:setup
-      - name: Build for Node (served on http://localhost:4174 by the Lighthouse script)
+      - name: Build for Node (served on https://localhost:4174 by the Lighthouse script)
         run: pnpm build:node
         env:
-          ORIGIN: http://localhost:4174
+          ORIGIN: https://localhost:4174
       # Every app screen (incl. the streamed, DB-backed /profile), a fresh browser per run,
       # median of 5, stopping a route early once 3 runs decide it. Asserts the documented score target (>= 90); TBT gets 50% headroom over its
       # 200 ms target for shared-runner noise. The tight hydration guard is the main-thread
@@ -468,7 +482,8 @@ jobs:
   # job needs it: it reports, it never blocks a merge.
   lighthouse-desktop:
     name: Lighthouse desktop (measured, not gating)
-    runs-on: ubuntu-latest
+    # The e2e Chromium legs' image, as for the mobile shards above.
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
@@ -492,11 +507,22 @@ jobs:
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ steps.image.outputs.os }}-${{ hashFiles('pnpm-lock.yaml') }}
-      - name: Configure apt for slow mirrors
-        run: ./scripts/ci-apt-resilience.sh
+      # The e2e legs' cached install (see the comment there): a full cache installs with no
+      # network, so an Ubuntu mirror outage cannot fail the audit. Same image, same key: the
+      # legs' saved copy restores here.
+      - name: Playwright system packages
+        id: apt
+        run: ./scripts/ci-playwright-deps.sh key chromium >> "$GITHUB_OUTPUT"
+      - name: Cache Playwright system packages
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/apt-playwright
+          key: apt-playwright-v2-${{ steps.image.outputs.os }}-${{ steps.apt.outputs.packages }}-${{ steps.apt.outputs.image }}
+          restore-keys: apt-playwright-v2-${{ steps.image.outputs.os }}-${{ steps.apt.outputs.packages }}-
       - name: Install Chromium system dependencies
+        # Bounded update and download attempts inside; dpkg runs once, never killed midway.
         timeout-minutes: 12
-        run: pnpm exec playwright install-deps chromium
+        run: ./scripts/ci-playwright-deps.sh install ~/.cache/apt-playwright chromium
       - name: Install Chromium
         timeout-minutes: 8
         run: pnpm exec playwright install chromium
@@ -518,10 +544,10 @@ jobs:
           exit 1
       - name: Create roles and databases
         run: pnpm db:setup
-      - name: Build for Node (served on http://localhost:4174 by the Lighthouse script)
+      - name: Build for Node (served on https://localhost:4174 by the Lighthouse script)
         run: pnpm build:node
         env:
-          ORIGIN: http://localhost:4174
+          ORIGIN: https://localhost:4174
       # Desktop (1440 × 900) numbers on every PR head, in the step summary and the reports
       # artifact (lighthouse-reports/desktop). Measured, never gating: whether CI should assert
       # desktop (about 5 minutes per run) is an open owner decision (m2x plan), so a miss here

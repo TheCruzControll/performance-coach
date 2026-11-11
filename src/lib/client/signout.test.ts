@@ -9,6 +9,7 @@ import { openTabChannel, TAB_CHANNEL } from './workout/channel';
 import type { StoreChange } from './workout/store';
 import { DB_NAME, STORES } from './workout/names';
 import { pendingCount } from './workout/probe';
+import { ACTIVE_WORKOUT_KEY } from './workout/active-flag';
 import { PREPAINT_KEY } from './workout/prepaint';
 import { createStore } from './workout/store';
 
@@ -147,8 +148,22 @@ describe('signOut', () => {
 		}
 	});
 
+	it('signOut forgets the screens this page kept in memory', async () => {
+		const { signOut } = await load();
+		const { screens } = await import('./screen-memory');
+		screens.keep(new URL('https://coach.test/today'), []);
+		serverSignsOut();
+
+		await signOut();
+
+		expect(screens.size).toBe(0);
+		expect(replace).toHaveBeenCalledWith('/?signedOut=1');
+	});
+
 	it('signOut changes nothing when the server refuses', async () => {
 		const { signOut, SIGNED_OUT_MARKER } = await load();
+		const { screens } = await import('./screen-memory');
+		screens.keep(new URL('https://coach.test/today'), []);
 		await seedWorkout();
 		vi.stubGlobal(
 			'fetch',
@@ -161,6 +176,7 @@ describe('signOut', () => {
 		expect(await pendingCount()).toBe(2);
 		expect(storage.getItem(SIGNED_OUT_MARKER)).toBeNull();
 		expect(await cacheStorage.keys()).toContain('pc-account-data');
+		expect(screens.size).toBe(1);
 		expect(replace).not.toHaveBeenCalled();
 	});
 });
@@ -317,6 +333,25 @@ describe('clearDeviceAccountData', () => {
 
 				expect([...map.keys()]).toEqual(['pc:prefs:v1']);
 			}
+		}
+	});
+
+	it('deletes the launch flag, so a launch offline never opens a workout after sign-out', async () => {
+		const { clearDeviceAccountData } = await load();
+		for (const keepWorkouts of [false, true]) {
+			const map = new Map([
+				[ACTIVE_WORKOUT_KEY, '{"v":1,"workoutId":"w","kind":"strength"}'],
+				['pc:prefs:v1', '{"theme":"light"}']
+			]);
+			vi.stubGlobal('localStorage', {
+				getItem: (key: string) => map.get(key) ?? null,
+				setItem: (key: string, value: string) => void map.set(key, value),
+				removeItem: (key: string) => void map.delete(key)
+			});
+
+			await clearDeviceAccountData({ keepWorkouts });
+
+			expect([...map.keys()]).toEqual(['pc:prefs:v1']);
 		}
 	});
 });

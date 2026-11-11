@@ -1140,7 +1140,13 @@ describe('training log structure', () => {
 					`${table}_refuse_delete`
 				]),
 				'training_audit_refuse_update',
-				'training_audit_refuse_delete'
+				'training_audit_refuse_delete',
+				// Beside the guards, a statement trigger per write marks the Strength view's week
+				// rollups stale (drizzle/0033_strength_week_rollups_stale.sql).
+				...['set_records', 'workouts'].flatMap((table) => [
+					`${table}_stale_weeks_insert`,
+					`${table}_stale_weeks_update`
+				])
 			].sort()
 		);
 		expect(rows.filter((row) => row.truncate)).toEqual([]);

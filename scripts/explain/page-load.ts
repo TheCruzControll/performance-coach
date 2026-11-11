@@ -14,8 +14,13 @@
  *    a whole read, below).
  * 2. Route-level concurrency: one executor runs one query at a time, and CPU (overview 'all' about
  *    440 ms of its 485–620 ms) is not hidden by overlapping reads: not applied.
+ *    Today (screens.cases.ts) is the opposite case: 30 short statements and little CPU, so its
+ *    setup, program and plan are read together on the pool. Local medians over 3–4 runs each
+ *    (M1 Pro, heavily loaded), before → after: 16.0–23.7 → 10.4–16.1 ms, and 106–138 → 54–63 ms
+ *    with about 2.3 ms waited before each statement.
  * 3. SQL pre-aggregation of stored outputs: no stored output holds these figures.
- * 4, 5. An index is not missing; a closed-week cache table needs a schema slot (owner decision).
+ * 4, 5. An index is not missing. A closed-week cache table: applied once the owner gave it its
+ *    slot (below).
  * Applied: the overview works out only the strength headline it shows and dates PRs and e1RM lines
  * from SECTIONS_FIRST_DAYS; the Strength view works out weekly hard sets once. Paired local medians
  * (M1 Pro, CPU ms, wall in brackets), before → after: overview 'all' 821–832 → 441–446
@@ -41,6 +46,13 @@
  * shared and heavily loaded), wall then Node CPU, before → after: overview 'all' 277–291 → 201–211
  * and 229–230 → 139–153, strength 'all' 249–302 → 198–229 and 216–225 → 152, strength 12w
  * 136–213 → 106–148 and 109 → 84–91.
+ * Then the closed-week rollups (strength_week_rollups, services/analytics/strength-weeks.ts): each
+ * closed week's strength figures are summed once, when a sync writes them, and a request sums only
+ * last week and this one, so neither the Strength view nor the overview reads two years of sets
+ * (15k rows) and their PRs fold a hundred weeks' records. The other views read sessions only and
+ * are unchanged. Paired local medians (M1 Pro, load average over 60), every week from the facts →
+ * from the rollups: overview 'all' 209–403 → 129–210, strength 'all' 231–313 → 63–95, overview 12w
+ * 98–144 → 75–90, strength 12w 209–238 → 60–74.
  */
 import { gzipSync } from 'node:zlib';
 import { stringify } from 'devalue';
