@@ -538,7 +538,10 @@ describe('CI Lighthouse', () => {
 	it('installs Chromium’s system packages from the e2e legs’ cache, never from a live mirror', () => {
 		const cache = under(legStep('Cache Playwright system packages'), 'with');
 		for (const id of ['lighthouse-shards', 'lighthouse-desktop']) {
-			const steps = stepsOf(under(under(ci, 'jobs'), id));
+			const job = under(under(ci, 'jobs'), id);
+			// The legs' runner image, so the image-keyed caches they saved restore here.
+			expect(value(job, 'runs-on'), id).toBe(value(legsJob(), 'runs-on'));
+			const steps = stepsOf(job);
 			const named = (name: string) => {
 				const at = steps.findIndex((fields) => value(fields, 'name') === name);
 				expect(at, `${id}: no step "${name}"`).toBeGreaterThanOrEqual(0);
@@ -556,7 +559,7 @@ describe('CI Lighthouse', () => {
 			expect(value(key.fields, 'run'), id).toBe(
 				'./scripts/ci-playwright-deps.sh key chromium >> "$GITHUB_OUTPUT"'
 			);
-			// The legs' key, prefix and path: keyed by the runner image, which differs from theirs.
+			// The legs' key, prefix and path, on the legs' image: the very cache they saved.
 			const inputs = under(restore.fields, 'with');
 			for (const field of ['path', 'key', 'restore-keys']) {
 				expect(value(inputs, field), `${id} ${field}`).toBe(value(cache, field));
