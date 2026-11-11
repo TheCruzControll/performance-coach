@@ -2,7 +2,7 @@
  * A conversation that made a proposal says things once (proposal-thread.ts): the answer's plain
  * recommendation is left out, its plain notes go under the last card as footnotes, anything with
  * sources, a calculation or 'Not checked' stays, and the conversation takes its newest
- * proposal's title. Thread.svelte draws it; thread-render.test.ts checks the markup.
+ * proposal's title. Thread.svelte draws it; render.test.ts checks the markup.
  */
 import { describe, expect, it } from 'vitest';
 import type { ProposalCardView } from '#lib/domain/coach/cards.ts';
