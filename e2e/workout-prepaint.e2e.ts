@@ -5,7 +5,7 @@
  * The desktop layout is workout-prepaint.desktop.e2e.ts.
  */
 import { expect, test, type Page } from '@playwright/test';
-import type { CanonicalWorkout } from '../src/lib/domain/workout';
+import type { CanonicalWorkout, SyncRequest, SyncResponse } from '../src/lib/domain/workout';
 import { createMutation } from '../src/lib/domain/workout/mutations';
 import {
 	expectCardBeforeTheApp,
@@ -47,17 +47,7 @@ test.describe('the current exercise before the app starts', () => {
 	}) => {
 		const { strength: kit } = await workoutDay();
 		const workoutId = await seedWorkout(page, kit);
-		// The stub never wrote it to Postgres: held, the server's 404 cannot drop it as lost.
-		await page.route(`**/api/workouts/${workoutId}`, () => {});
-		// Its start acknowledged, so nothing waits to be sent when the page loads again.
-		await gotoWorkout(page, 'strength', { sync: 'stub' });
-		await expect(page.locator('main#main[data-store]')).toBeAttached();
-		await expect.poll(async () => (await readOutbox(page)).length).toBe(0);
-		await expect.poll(() => keptCard(page)).not.toBeNull();
-
-		// The server's rows: the workout was finished on another device.
-		const { startedAt } = (await readWorkout(page, workoutId)) as { startedAt: string };
-		const rows: CanonicalWorkout = {
+		const rowsOf = (status: 'in_progress' | 'completed', startedAt: string): CanonicalWorkout => ({
 			v: 1,
 			workout: {
 				id: workoutId,
@@ -68,9 +58,9 @@ test.describe('the current exercise before the app starts', () => {
 				plannedSessionId: kit.plannedSessionId,
 				plannedLineage: kit.plannedLineage,
 				programId: kit.programId,
-				status: 'completed',
+				status,
 				startedAt,
-				finishedAt: new Date().toISOString(),
+				finishedAt: status === 'completed' ? new Date().toISOString() : null,
 				notes: null,
 				sessionRpe: null,
 				durationSeconds: null,
@@ -82,7 +72,29 @@ test.describe('the current exercise before the app starts', () => {
 			run: null,
 			other: null,
 			exercises: {}
-		};
+		});
+		// Its start applied with the server's rows, in progress: nothing waits to be sent when the
+		// page loads again, and the card stays.
+		await page.route('**/api/workouts/sync', (route) => {
+			const { mutations } = route.request().postDataJSON() as SyncRequest;
+			const body: SyncResponse = {
+				v: 1,
+				results: mutations.map(({ id, at }) => ({
+					id,
+					status: 'applied',
+					canonical: rowsOf('in_progress', at)
+				}))
+			};
+			return route.fulfill({ json: body });
+		});
+		await gotoWorkout(page, 'strength', { sync: 'real' });
+		await expect(page.locator('main#main[data-store]')).toBeAttached();
+		await expect.poll(async () => (await readOutbox(page)).length).toBe(0);
+		await expect.poll(() => keptCard(page)).not.toBeNull();
+
+		// The server's rows: the workout was finished on another device.
+		const { startedAt } = (await readWorkout(page, workoutId)) as { startedAt: string };
+		const rows = rowsOf('completed', startedAt);
 		const gets: string[] = [];
 		await page.route(`**/api/workouts/${workoutId}`, (route) => {
 			gets.push(route.request().method());
