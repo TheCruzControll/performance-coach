@@ -276,6 +276,26 @@ describe('discardInProgress', () => {
 		expect(await store.getActive()).toBeNull();
 	});
 
+	it('queues again a start that got stuck after the conflict was read, before the abandon', async () => {
+		const active = await startStrength();
+		expect(active.startParked).toBeNull();
+		// Another tab's sync engine parks the start while the conflict sheet is open.
+		for (let i = 0; i < STUCK_AFTER.failures; i++) {
+			await store.countFailure(active.startSeq!, 'timeout');
+		}
+
+		expect(await discardInProgress(active, { store, now: () => T0 + 1000 })).toBe(true);
+		const [start, abandon] = await store.outbox();
+		expect(start).toMatchObject({ seq: active.startSeq, attempts: 0 });
+		expect(start!.parked).toBeUndefined();
+		expect(abandon!.envelope).toMatchObject({
+			type: 'workout.abandon',
+			workoutId: active.workoutId
+		});
+		expect(await store.outbox()).toHaveLength(2);
+		expect((await store.load(active.workoutId))!.view!.workout.status).toBe('abandoned');
+	});
+
 	it('abandons a workout the server holds, then the new one starts after it in the outbox', async () => {
 		const started = await startStrength();
 		const [entry] = await store.outbox();

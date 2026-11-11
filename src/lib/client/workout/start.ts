@@ -279,6 +279,8 @@ export async function startAdHoc(
  * Discard, from the conflict: the workout is abandoned, with every change in it, synced or not. A
  * start the server refused never landed, so it leaves the device with them instead; a start parked
  * stuck is queued again first, so the abandon follows it. False when this browser could not save.
+ * Try again runs on any start still in the outbox, since `startParked` was read when the conflict
+ * showed: a start that got stuck since is queued again too, and it does nothing to one that is not.
  */
 export async function discardInProgress(
 	active: InProgress,
@@ -288,9 +290,7 @@ export async function discardInProgress(
 		await store.discard(active.startSeq);
 		return true;
 	}
-	if (active.startSeq !== null && active.startParked === 'stuck') {
-		await store.tryAgain(active.startSeq);
-	}
+	if (active.startSeq !== null) await store.tryAgain(active.startSeq);
 	const abandon = createMutation('workout.abandon', {
 		workoutId: active.workoutId,
 		at: new Date(now()).toISOString(),
