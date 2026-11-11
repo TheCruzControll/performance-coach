@@ -110,7 +110,7 @@ Projects (all `devices['iPhone 15 Pro']` except `desktop-chromium`):
 | ----------------- | -------- | ----------------------------------------------------------------------------------------------- |
 | `setup`           | Chromium | `auth.setup.ts`: the owner's real first-run setup; saves the signed-in state                    |
 | `iphone-chromium` | Chromium | every functional spec, signed in from `setup`'s state                                           |
-| `perf`            | Chromium | `perf.e2e.ts`, alone with one worker, after the functional suite                                |
+| `perf`            | Chromium | `perf.e2e.ts` and `perf-*.e2e.ts`, alone with one worker, after the functional suite            |
 | `setup-webkit`    | WebKit   | `auth-webkit.setup.ts`: a session from the test-only route (CI or `E2E_WEBKIT=1`)               |
 | `iphone-webkit`   | WebKit   | every functional spec on that session (CI or `E2E_WEBKIT=1`; needs `playwright install webkit`) |
 | `serial-chromium` | Chromium | `*.serial.e2e.ts` one at a time, after the functional specs: they change the training profile   |
@@ -131,6 +131,12 @@ Every UI slice is verified at the iPhone viewport (393 × 659) and at 1440 × 90
 screenshots (docs/design-system.md, Responsive layout → Verification).
 
 Workers: 2 locally and in CI's main legs (whole files side by side), 1 in its other legs.
+
+CI runs the suite as separate legs, one per group and engine (`e2e/projects.ts`,
+`.github/workflows/ci.yml`). The `perf` project is the `alone` group: its own leg on Chromium,
+split in 2 shards (alone·chromium 1/2 and 2/2), each on a runner of its own with nothing else
+running. `exclusive` is a leg of its own beside them, also Chromium only. It runs in
+parallel with the other legs in CI; only a local run starts it after `perf`.
 
 ### Authentication
 
@@ -198,6 +204,10 @@ Specs:
   this test alone: sign-out clears the cookie, every cache but the versioned shell, every
   IndexedDB database and session storage, sends `Clear-Site-Data: "cache"` and keeps the theme
   preference.
+- `signout-pending.e2e.ts` (WebKit) — sign-out with unsynced workout changes, from Security and
+  from the recovery screen's Cancel: it flushes first, then asks with the count; "Stay signed in"
+  keeps every change. A signed-out URL without the one-shot marker keeps only unsynced changes
+  and offers to delete them.
 
 - `shell.e2e.ts` — the sign-in screen is the landing page (signed in, `/` goes to Today); bottom nav pinned to the bottom with ≥ 44 px targets and a
   computed `backdrop-filter` blur; navigation across all five tabs with `aria-current`; no console
@@ -207,7 +217,10 @@ Specs:
   first paint and persisted (under the CSP), and Auto following an OS appearance change while
   open (theme-color included); no screen scrolls sideways; nothing
   sits under fixed chrome at rest (landing CTAs, Coach composer); compact segmented controls keep
-  a 44 px hit area.
+  a 44 px hit area. The root error page, loaded on demand: a server-rendered 404 hydrates
+  without the view rendering again, an error offline right after hydration shows the designed
+  offline state, a held chunk shows the error once it arrives, and an aborted chunk shows the
+  fallback with a 44 px "Try again" link.
 - `plate-calculator.e2e.ts` — Train's lazy plate-calculator sheet (no service worker, chunks
   routed): its code is not in Train's load and arrives on the first tap, through the import
   alone (no modulepreload tag, whose failure WebKit would keep: `build.modulePreload` in
@@ -216,8 +229,11 @@ Specs:
   a Retry notice under the row (44 px target, axe in both themes) that a later failed prefetch
   leaves in place; Retry back online opens the sheet, offline the notice stays, a tap that fails
   again online reloads Train with `?tool=plates`, and leaving Train mid-retry stays left (WebKit).
+  Every spec in the file ends by unrouting (`page.unrouteAll({ behavior: 'ignoreErrors' })`), so
+  a script still loading at its end cannot fail it with `Response has been disposed`.
 - `platform.e2e.ts` — `/api/health` reports `db: up` (and the Profile screen shows it);
-  `Server-Timing`, request id and security headers; ≤ 2 preloaded fonts; manifest + icons;
+  `Server-Timing`, request id and security headers; exactly one preloaded font (Mona Sans
+  latin); manifest + icons;
   CSP header contents and enforcement (an injected inline script is refused); service worker
   activates and precaches the shell (not the icons); `POST /api/vitals` stores a row (verified in
   Postgres) and rejects invalid metrics; real browser RUM beacons arrive; vitals are attributed to
@@ -267,9 +283,13 @@ Specs:
   `/design` component group, in the **dark and light** themes (Lighthouse only audits dark). The
   setup, recovery-codes, new-passkey and sign-in-error states are audited in both themes where
   they occur (`auth.setup.ts`, `auth.e2e.ts`). Zero violations required.
-- `perf.e2e.ts` (Chromium, `perf` project) — main-thread budget: real long tasks at 4× CPU while
-  each screen loads, median of 5 cold loads; target ≤ 200 ms, fails above 250 ms (docs/performance.md). It runs
-  alone, with one worker, after the functional suite, so parallel specs cannot skew it. App
+- `perf.e2e.ts` (Chromium, `perf` project) — the page-load budget on the app's screens. The
+  budget lives in `e2e/load-budget.ts`: real long tasks at 4× CPU while each screen loads, median
+  of 5 cold loads; target ≤ 200 ms, fails above 250 ms (docs/performance.md).
+  `perf-workout-load.e2e.ts` holds the workout screens to the same budget (docs/testing.md,
+  "Workouts (M4)" → Performance). The `perf` project runs alone, with one worker, after the
+  functional suite, so parallel specs cannot skew it; in CI that is the alone·chromium leg, in 2
+  shards. App
   screens load signed in, `/` signed out. The program screens are seeded through the fixture
   route: Train, the week's longest strength session and History on the hybrid program this week,
   Today in its Build-card state (onboarding complete, no program) and its program state (the
@@ -1031,6 +1051,189 @@ it runs in, and CI uploads them:
   (`journey-today-build-desktop`, `journey-build-preview-desktop`, `journey-train-week-1-desktop`,
   `journey-session-measured-desktop`, `journey-history-desktop`).
 
+## Workouts (M4)
+
+One subsection per M4 track. A slice adds a line to its own track's subsection only.
+
+### Domain
+
+Unit tests (`src/lib/domain/workout/`) run on the shared kit fixture
+`tests/fixtures/workout-day.ts`: the start kits of M3's 'workout-day' program (back squat with last
+session's sets and bests, leg press, Romanian deadlift, an A1/A2 pull-up and plank superset; an
+interval run of 14 segments; a
+90-minute Muay Thai class), typed as `StartKit`s. `tests/integration/workouts/kit.test.ts` proves
+the server builds exactly those kits, so change both together.
+
+- **Contract** (`mutations.test.ts`): the 16 v1 types with their kinds, entity keys and
+  dependency rules; a create's id is its entity id and an edit's never is; every mutation depends
+  on its workout's start, a set edit on its own set's log, a mutation naming a custom exercise
+  still in the outbox on its `exercise.create`. `pnpm check` proves local actions are never
+  mutation types and the fixture is a valid `StartKit`.
+- **Convergence** (`project.test.ts`): `tests/fixtures/workout-sequences.ts` gives 500 seeded
+  strength sequences (`strengthSequence`, `serverSplit`, `acrossRows`); folding any server/outbox
+  split gives the same view. `acrossRows` reorders only across rows, keeping every mutation after
+  the ones it depends on. `canonical.test.ts` replays the same seeds against Postgres.
+- **Timers** (`timers.test.ts`): remaining, done and overtime on absolute timestamps; a rest that
+  ended while the tab was closed; pause, +30 s and skip; a clock moved backwards; a timer restored
+  through JSON; the rest order (prescription, then the device default, then 2:00).
+- **Logging rules** (`logging.test.ts`): every measure × load type pair, its fields and refusals
+  at their own `payload.` paths; what counts toward e1RM, volume and PRs (assisted: none; weighted
+  bodyweight: volume only; unweighted: 'most reps'; warm-up and skipped sets: nothing).
+- **Flow** (`flow.test.ts`): on the fixture's superset, no rest inside a round and the round's
+  rest after its last member; uneven sets continuing straight; a skipped set advancing like a
+  logged one; going to an exercise by hand never breaking the alternation; labels A1, A2, B1… and
+  AA after Z; Up next naming the partner.
+- **Substitution rules and copy** (`substitution.test.ts`, `copy.test.ts`): only a confirmed
+  dislike writes a preference; machine unavailable ranks alternatives needing none of the slot's
+  equipment first; This hurts offers Stop first and End the workout when severe; every string in
+  `copy.ts` is scanned for push-through phrases and diagnosis words.
+- **Schemas** (`schemas.test.ts`): `DB_CHECKED_BAD_VALUES` (also refused by Postgres CHECKs,
+  replayed through the repositories by `sync.test.ts`) and `SCHEMA_ONLY_BAD_VALUES` (open
+  vocabularies) are each refused at their path.
+- Prefill, run and other rules, the summary, mutation words and ad-hoc kits have their own
+  `*.test.ts` beside them.
+
+### Client
+
+Store logic is plain `.ts` (`src/lib/client/workout/`), tested in Vitest's unit project with
+fake-indexeddb, a fresh `IDBFactory` per test through `vi.stubGlobal('indexedDB', …)`, because the
+unit project excludes `*.svelte.test.ts`. Tab-channel tests open
+`openTabChannel('pc-workout-test-N')` per test and close it in `afterEach`.
+
+- **Outbox rules** (`outbox-rules.test.ts`): FIFO batches within the 25-mutation, 64 KB and 48 KB
+  keepalive caps in UTF-8 bytes; a parked, waiting or oversized change holding only its
+  dependants; Discard with its dependants; full-jitter backoff bounds; 'Needs attention' after 50
+  counted failures or 24 hours, offline time excluded; the sync status for every state.
+- **Store, sync, reconcile** (`store.test.ts`, `sync.test.ts`, `reconcile.test.ts`,
+  `restore.test.ts`): one transaction per action, 'Not saved on this device' on a quota error,
+  one flusher per device, the 401 purge and the 403 that keeps everything, a pending edit of a
+  deleted set parked, the 404 rule.
+- **Device settings** (`settings.test.ts`, `src/lib/client/plates.test.ts`, `feedback.test.ts`):
+  defaults, corrupt storage falling back field by field, inventories per unit, and vibration, the
+  tone and the wake lock as no-ops where the browser lacks them.
+
+### Schema
+
+- `tests/integration/workouts/sync-ledger.test.ts`: an id is applied at most once; a claim rolled
+  back with its transaction leaves nothing; rows refuse UPDATE and DELETE.
+- `tests/integration/workouts/pain-schema.test.ts`: `pain_reports`' CHECKs, M3's logged-table
+  guards, and clearing by `withCommitted` and by `resetPrograms`' cascade.
+- `resetPrograms` (`e2e/program-support.ts`) also clears `sync_mutations` (one of its
+  `RESET_ROOTS`), so a spec that syncs leaves nothing for the completeness check.
+
+### Sync API
+
+`tests/integration/workouts/sync.test.ts` drives `applySyncBatch` with a test transaction (a
+second owner needs the singleton rule lifted inside it: `secondOwner`); `structure.test.ts`,
+`pain.test.ts`, `runs-other.test.ts` and `custom-exercises.test.ts` cover each handler family:
+applied once, duplicate on replay, deferred until its target arrives, refused at its path, and a
+situational swap that writes no preference or version.
+
+### Workout reads
+
+`canonical.test.ts`, `kit.test.ts`, `kit-alternatives.test.ts`, `library.test.ts`, `history.test.ts`
+and `history-load.test.ts` in `tests/integration/workouts/`. 'workout-day'
+(`src/lib/server/test-support/program-fixtures.ts`) is the program behind the shared kit fixture.
+
+### Platform
+
+`scripts/vercel-headers.test.ts` keeps `vercel.json` equal to `STATIC_PAGE_HEADERS` for every
+prerendered page; `scripts/icon-sprite.test.ts` keeps the sprite equal to a fresh
+`pnpm icons:sprite`; `e2e/icons.e2e.ts` checks every icon draws from it, offline too.
+
+### Workout screen
+
+`e2e/workout-support.ts` seeds the shared kit fixture into `pc-offline` as the app stores it and
+reads the outbox back. `gotoWorkout(kind, { sync })` waits for `data-ready`. Sync `'hold'` (the
+default) leaves `/api/workouts/*` unanswered, so no spec writes Postgres; `'stub'` answers every
+mutation 'applied'; `'real'` uses the server. `startFromKit` (`e2e/workout-start-support.ts`)
+starts from the server's own kit for specs that need alternatives, gentler options or a planned
+slot; serial specs only.
+
+- A spec that holds or stubs uses `serviceWorkers: 'block'`; the offline service-worker checks
+  run on Chromium only.
+- A spec that opens `/workout` with a query to test the Shell uses one other than `?start` and
+  `?new`, which start a workout.
+- Logging specs assert the outbox and read rows in the next animation frame; a quota error is
+  faked by stubbing `IDBObjectStore.prototype.put`.
+- `workout-sync-wiring.e2e.ts` records keepalive fetch and `sendBeacon` calls in
+  `sessionStorage`, because Chromium does not show pagehide keepalive traffic to Playwright.
+- A spec whose route handler reads `route.fetch()` responses for requests it does not own ends
+  by unrouting with `{ behavior: 'ignoreErrors' }`: closing the context disposes those responses.
+- Rest specs pause Playwright's clock once the store is open; a paused clock stays paused across
+  a reload, idle callbacks included, so the spec runs 2 s of it to open the store.
+
+Specs, each with a `*.desktop.e2e.ts` twin or a `test.use(DESKTOP)` case at 1440 × 900:
+
+| Spec                                                    | What it proves                                                                          |
+| ------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `workout-shell`                                         | Restored from IndexedDB alone; empty, no-storage and 'App updated' states               |
+| `workout-strength`, `workout-log`                       | The current exercise mid-set; a set prefilled, logged in one tap, done in the frame     |
+| `workout-sets`                                          | Edit, delete, skip, missed reps and extra sets, the outbox in order                     |
+| `workout-navigation`                                    | Swipe, Previous and Next, the side list by keyboard, Up next                            |
+| `workout-rest`, `workout-plates`, `workout-settings`    | The rest timer after a reload, the plate calculator from a set, settings, Train's timer |
+| `workout-sync-wiring`, `workout-sync`                   | One engine to Postgres; Fix, Try again and Discard; a 401 and a recovery session        |
+| `workout-start`, `workout-entry`, `workout-resume`      | Start by URL, offline from a saved kit, from Today and Train; Resume and Continue here  |
+| `workout-run`, `workout-other`                          | A run segment by segment and a Muay Thai class, corrections after sync, audited once    |
+| `workout-substitute`, `workout-pain`                    | Situational swaps, a confirmed dislike, This hurts with Stop first                      |
+| `workout-add-exercise`, `workout-custom-exercise`       | Add from the cached library offline; the owner's own exercise under the device's id     |
+| `workout-finish`, `workout-history`, `exercise-history` | The summary and its PRs; History newest first; an exercise's sheet, offline too         |
+| `workout-prepaint`                                      | Painted before scripts, replaced in place; never if discarded, finished or `?new=`      |
+| `design-workout`                                        | Every `src/lib/ui/workout` component and state on `/design`, 44 px, 200 % text          |
+
+The serial ones (`*.serial.e2e.ts`) write Postgres and assert only their own workout's rows by
+client id.
+
+### Performance
+
+`e2e/perf-workout.e2e.ts` runs in the `perf` project (which also runs `perf-*.e2e.ts`; the
+functional projects ignore them): 20 sets over five fresh loads at 4× CPU, set-done p95 under
+100 ms, INP p75 of 200 ms or less from Event Timing and web-vitals, no layout shift while
+logging, INP on `/workout/run` and `/workout/session`, and the main thread on a service-worker
+reload. `e2e/perf-workout-load.e2e.ts` holds the active workout pages and History to the
+page-load budget in `e2e/load-budget.ts`, as `e2e/perf.e2e.ts` does the other screens. In CI the
+`perf` project is the alone·chromium leg, in 2 shards. `pnpm lighthouse --seed` audits History
+and the active workout. Numbers: docs/performance.md, "M4 (workout)".
+
+### Journeys
+
+- `journey-strength.serial.e2e.ts`: from Today, a whole strength workout (top set, back-offs,
+  rest, plates, a machine-unavailable swap, the superset, a refresh that restores every set and
+  the rest, minimise and resume, finish, History), the pain and dislike journey, and a generated
+  week 1 from a blank-1RM profile, with SQL at each step and no coach request.
+- `journey-offline.serial.e2e.ts`: offline logging, edits and deletes surviving a reload; one
+  sync on reconnect with exact Postgres counts; replays creating no duplicates; two tabs; a 500
+  then a pass, an answer lost after the commit, and a refused change discarded.
+- `journey-run-muay-thai.serial.e2e.ts`: a 14-segment run and a Muay Thai class from Today,
+  synced and in History.
+
+### Screenshots
+
+Captured into `test-results/screens/<project>/`, the desktop ones under `desktop-chromium/`:
+
+- Workout screen: `workout-empty`, `workout-no-storage`, `workout-app-updated`, `workout-active`,
+  `workout-baseline`, `workout-exercise`, `workout-logging` (with `-hover`, `-focus`),
+  `workout-superset`, `workout-not-saved`, `workout-set-edit`, `workout-set-skipped`,
+  `workout-between-exercises`, `workout-rest`, `workout-rest-paused`, `workout-rest-over`,
+  `workout-plates`, `workout-plates-inventory`, `workout-settings`, `train-rest-timer`.
+- Sync and start: `workout-sync-error`, `workout-sync-stuck`, `workout-offline`,
+  `workout-signed-out`, `workout-start-loading`, `workout-start-offline`,
+  `workout-start-signed-out`, `workout-start-conflict`, `today-start`, `session-start`,
+  `today-resume`, `today-continue-here`, `offline-resume`.
+- Actions and finish: `workout-substitute`, `workout-substitute-empty`, `workout-dislike-confirm`,
+  `workout-pain`, `workout-add-exercise`, `workout-add-exercise-no-library`,
+  `workout-custom-exercise`, `workout-custom-exercise-fix`, `workout-finish`, `workout-summary`,
+  `workout-completed-offline`, `workout-discard`, `workout-run`, `workout-muay-thai`.
+- History: `history-list`, `history-detail`, `history-empty`, `exercise-history`,
+  `exercise-history-error`.
+- Desktop: `desktop-today-start`, `desktop-today-resume`, `desktop-workout-start-conflict`,
+  `workout-sync-error-desktop`, `workout-substitute-desktop`, `workout-pain-desktop`,
+  `workout-add-exercise-desktop`, `workout-custom-exercise-desktop`, `desktop-workout-summary`,
+  `desktop-workout-summary-hover`, `desktop-workout-run`, `desktop-workout-muay-thai`,
+  `desktop-history-detail`, `desktop-exercise-history`.
+- The journeys: `strength-*` (top set to History, the pain and dislike journey, the generated
+  week), `journey-run-*`, `journey-thai-*` and `journey-history-*`, with desktop copies.
+
 ## The LLM in tests
 
 Milestone 5 adds the coach behind `LlmProvider`. Tests use the deterministic `mock` provider by
@@ -1048,8 +1251,9 @@ applies the same `--assert` thresholds, as a step that never fails the job; its 
 step summary (docs/performance.md, "Lighthouse (desktop)").
 
 `.github/workflows/post-deploy-smoke.yml` checks production from outside after every production
-deploy (health with the database up, the sign-in screen, deny by default, security headers, no
-test-only routes; docs/deployment.md). It needs no secrets and runs by hand too.
+deploy (health with the database up, the sign-in screen, deny by default, security headers on
+`/` and on the prerendered pages, no test-only routes; docs/deployment.md). It needs no secrets and
+runs by hand too.
 
 **Not yet verified:** the workflows have not run on GitHub (nothing has been pushed), and the
 WebKit project has never run locally (WebKit is not installed in the build environment), so iOS
@@ -1085,6 +1289,12 @@ a preview deployment (Vercel Authentication on):
    full window width and at about 1024 px; hover and Tab focus visible on the rail, rows and
    buttons; the new-goal sheet (Profile → Goals) opens as a centred dialog and Escape closes it;
    nothing scrolls sideways.
+8. Workout (M4), on the iPhone: log a whole session one-handed (steppers, RPE chips, Complete
+   set); lock the phone during a rest and reopen: the timer reads the right time, or 'Rest over'
+   with how long ago; airplane mode in the middle of a session: sets keep logging, a reload
+   restores the workout, and back online the sync pill reads Saved; installed to the home
+   screen (Safari), the workout header sits under the status bar and the logger and the rest
+   pill above the home indicator.
 
 Record device, iOS version, date and screenshots in the PR.
 

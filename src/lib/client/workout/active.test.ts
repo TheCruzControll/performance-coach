@@ -181,6 +181,79 @@ describe('the active workout', () => {
 			reload.close();
 		});
 
+		describe('a write asked for before the store opens', () => {
+			const at = Date.parse('2026-11-06T18:10:00.000Z');
+			const restored = async () => {
+				const before = await createStore({ table: strengthTable, channel: null });
+				expect(await before.dispatch(startOf(W), kit).saved).toBe('saved');
+				const page = new ActiveWorkout(async () => strengthTable);
+				await page.restore((code) => code());
+				expect(page.current.phase).toBe('active');
+				return page;
+			};
+			const restOf = (page: ActiveWorkout) =>
+				page.current.phase === 'active' ? page.current.snapshot.view.device.rest : undefined;
+
+			it('waits for the store, then runs as it opens, in the order asked', async () => {
+				const page = await restored();
+				page.write((store) =>
+					store.dispatch({ type: 'rest.start', workoutId: W, at, durationMs: 120_000 })
+				);
+				page.write((store) => store.dispatch({ type: 'rest.pause', workoutId: W, at: at + 5_000 }));
+				expect(page.store).toBeNull();
+				expect(restOf(page)).toBeNull();
+
+				const store = (await page.connect(load))!;
+				expect(restOf(page)).toMatchObject({ startedAt: at, pausedAt: at + 5_000 });
+				// Kept on the device as a tap after the store opened would be.
+				expect(store.snapshot(W)?.view?.device.rest).toMatchObject({ pausedAt: at + 5_000 });
+				page.close();
+			});
+
+			it('takes the same tap once while it waits, and every tap once the store is open', async () => {
+				const page = await restored();
+				const complete = vi.fn();
+				const skip = vi.fn();
+				page.write(complete, 'set:1:1');
+				page.write(complete, 'set:1:1');
+				page.write(skip, 'set:1:2');
+				page.write(skip);
+				page.write(skip);
+
+				const store = (await page.connect(load))!;
+				expect(complete).toHaveBeenCalledExactlyOnceWith(store);
+				expect(skip).toHaveBeenCalledTimes(3);
+				page.write(complete, 'set:1:1');
+				expect(complete).toHaveBeenCalledTimes(2);
+				page.close();
+			});
+
+			it('runs none into a workout no longer in progress, nor after the page closed', async () => {
+				const before = await createStore({ table: strengthTable, channel: null });
+				const finish = createMutation(
+					'workout.finish',
+					{ workoutId: W, at: '2026-11-06T19:00:00.000Z', payload: { sessionRpe: 8 } },
+					fresh
+				);
+				expect(await before.dispatch(startOf(W), kit, finish).saved).toBe('saved');
+				const done = new ActiveWorkout(async () => strengthTable);
+				await done.restore((code) => code());
+				expect(done.current.phase).toBe('completed');
+				const late = vi.fn();
+				done.write(late);
+				expect(await done.connect(load)).not.toBeNull();
+				expect(late).not.toHaveBeenCalled();
+				done.close();
+
+				const closed = new ActiveWorkout(async () => strengthTable);
+				await closed.restore((code) => code());
+				closed.write(late);
+				closed.close();
+				expect(await closed.connect(load)).toBeNull();
+				expect(late).not.toHaveBeenCalled();
+			});
+		});
+
 		it('never starts flushing for a page closed while its store opens', async () => {
 			const page = new ActiveWorkout(async () => strengthTable);
 			await page.restore((code) => code());

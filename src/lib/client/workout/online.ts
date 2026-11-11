@@ -1,7 +1,7 @@
 /**
- * What a workout page loads on idle, after first render (active.svelte.ts's connect): the store's
- * write path and the page's one sync engine (sync.ts), in one chunk, so sync.ts is never in the
- * hydration path and adds no chunk the route must load first.
+ * What a workout page loads once its first render has painted (active.svelte.ts's connect): the
+ * store's write path and the page's one sync engine (sync.ts), in one chunk, so sync.ts is never in
+ * the hydration path and adds no chunk the route must load first.
  *
  * Every change the store reports that may have added to the outbox flushes the engine: this page's
  * saved dispatches, from any view or sheet ('saved'), and another tab's writes ('view'). No view
