@@ -690,16 +690,18 @@ export function recoveryFacts(db: Executor, ownerId: string, from: IsoDate, to: 
 }
 
 /**
- * The input each of a program's generated versions was built from, with the lineages of the
- * blocks it plans (outlines left out), lowest version first: a block is judged by the first
- * version that planned it.
+ * The input each of a program's generated versions was built from, with the generator that built
+ * it, its week 1 Monday and the lineages of the blocks it plans (outlines left out), lowest version
+ * first: a block is judged by the first version that planned it.
  */
 export function blockInputs(db: Executor, programId: string) {
 	return db
 		.select({
 			number: programVersions.number,
 			blockLineage: programBlocks.lineageId,
-			input: programVersions.inputSnapshot
+			input: programVersions.inputSnapshot,
+			generator: programVersions.generator,
+			startsOn: programVersions.startsOn
 		})
 		.from(programVersions)
 		.innerJoin(programVersionBlocks, eq(programVersionBlocks.versionId, programVersions.id))

@@ -50,8 +50,15 @@ export interface PlannedFacts {
 	runs: PlannedRun[];
 }
 
+/** The generated version that first planned a block: its input, generator and week 1 Monday. */
+export interface BlockInput {
+	input: Record<string, unknown>;
+	generator: string;
+	startsOn: IsoDate;
+}
+
 /** A program's generated versions' inputs, by the block lineages they first planned. */
-export type BlockInputs = Map<string, Record<string, unknown>>;
+export type BlockInputs = Map<string, BlockInput>;
 
 export function createAnalyticsRepository(db: Executor) {
 	/** Each exercise's muscles once read, shared by its sets (a few dozen exercises, 15k sets). */
@@ -167,7 +174,9 @@ export function createAnalyticsRepository(db: Executor) {
 		async blockInputs(programId: string): Promise<BlockInputs> {
 			const inputs: BlockInputs = new Map();
 			for (const row of await blockInputs(db, programId)) {
-				if (!inputs.has(row.blockLineage)) inputs.set(row.blockLineage, row.input!);
+				if (inputs.has(row.blockLineage)) continue;
+				const { input, generator, startsOn } = row;
+				inputs.set(row.blockLineage, { input: input!, generator: generator!, startsOn });
 			}
 			return inputs;
 		},

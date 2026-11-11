@@ -10,6 +10,7 @@
  * - a late set makes the review stale; a refresh supersedes it and its open proposal, keeping
  *   both of each, while an applied decision refuses the refresh
  * - everything is owner-scoped
+ * - an M7 maintenance week is judged against its maintenance dose band (periodised-targets)
  * Today is Tuesday 17 Nov 2026 in Los Angeles: the reviewed week is 9–15 Nov.
  */
 import { sql } from 'drizzle-orm';
@@ -50,6 +51,9 @@ import {
 import { atLocal } from '../../../src/lib/server/test-support/analytics-fixtures/dashboards';
 import { seedAnalyticsFixture } from '../../../src/lib/server/test-support/analytics-fixtures/index';
 import type { ReviewFixtureResult } from '../../../src/lib/server/test-support/analytics-fixtures/reviews';
+import { M7_SCENARIOS } from '../../../src/lib/domain/programming/periodisation/scenarios';
+import { SCENARIO_START } from '../../../src/lib/domain/programming/scenarios';
+import { logAsPlanned, storeM7Program } from '../analytics/fixtures/m7-programs';
 import { withRollback } from '../helpers';
 import { makeOwner } from '../profile/fixtures';
 
@@ -611,6 +615,35 @@ describe('owner scope', () => {
 			await expect(getProposalView(stranger, stored.proposalId!, deps)).rejects.toThrow(
 				/not found/
 			);
+		});
+	});
+});
+
+describe('an M7 maintenance week', () => {
+	it('is judged against the maintenance dose band its plan holds, not the profile style', async () => {
+		await withRollback(async (db) => {
+			const owner = await makeOwner(db);
+			const { version } = await storeM7Program(db, owner, M7_SCENARIOS.offSeason(), SCENARIO_START);
+			const week = version.blocks[0]!.weeks[1]!;
+			expect(week).toMatchObject({ kind: 'maintenance', startsOn: addDays(SCENARIO_START, 7) });
+			await logAsPlanned(db, owner, week.sessions);
+			const today = addDays(week.startsOn, 8);
+			const at = () => new Date(`${today}T20:00:00Z`);
+			await createWeeklyReview(owner, { weekStartsOn: week.startsOn, today }, { db, now: at });
+			const view = await getWeeklyReviewView(owner, week.startsOn, { db, now: at });
+			const sets = view.sections
+				.flatMap((s) => s.findings)
+				.filter((f) => f.id.startsWith('volume:sets:'));
+			const major = ['chest', 'back', 'shoulders', 'quads', 'hamstrings', 'hips'];
+			const judged = sets.filter((f) => major.includes(f.id.slice('volume:sets:'.length)));
+			expect(judged.length).toBeGreaterThan(0);
+			for (const f of judged) {
+				const figure = (label: string) => f.figures.find((x) => x.label === label)?.value;
+				// Keep strength alone would choose the 8–14 strength band; the plan holds 4–10.
+				expect([figure('Target low'), figure('Target high')]).toEqual([4, 10]);
+				expect(f.verdict.words).toContain('4–10');
+				expect(f.verdict.words).not.toContain('×');
+			}
 		});
 	});
 });

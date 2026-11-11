@@ -10,6 +10,7 @@
  *   version (programPlanSchema's checkPlan) and plan nothing before today; they are deterministic
  *   and their fingerprint follows the profile
  * - a late set makes it stale and a refresh supersedes it; everything is owner-scoped
+ * - an M7 hypertrophy block's weeks are judged by their own rising ranges (periodised-targets)
  * Today is Wednesday 18 Nov 2026 in Los Angeles.
  */
 import { sql } from 'drizzle-orm';
@@ -43,6 +44,10 @@ import { finishWorkout, logSet, startWorkout } from '../../../src/lib/server/ser
 import { atLocal } from '../../../src/lib/server/test-support/analytics-fixtures/dashboards';
 import { seedAnalyticsFixture } from '../../../src/lib/server/test-support/analytics-fixtures/index';
 import type { ReviewFixtureResult } from '../../../src/lib/server/test-support/analytics-fixtures/reviews';
+import { addDays } from '../../../src/lib/domain/calendar';
+import { M7_SCENARIOS } from '../../../src/lib/domain/programming/periodisation/scenarios';
+import { SCENARIO_START } from '../../../src/lib/domain/programming/scenarios';
+import { logAsPlanned, storeM7Program } from '../analytics/fixtures/m7-programs';
 import { withRollback } from '../helpers';
 import { makeOwner } from '../profile/fixtures';
 
@@ -537,6 +542,52 @@ describe('refreshing and scope', () => {
 				refreshCycleReview(stranger, stored.id, { today: TODAY }, deps)
 			).rejects.toBeInstanceOf(ReviewNotFoundError);
 			expect(await reviewableBlock(stranger, TODAY, deps)).toBeNull();
+		});
+	});
+});
+
+describe('the cycle review of an M7 hypertrophy block', () => {
+	it('judges each ramp week by its own range, and calls none below target when its planned sets were done', async () => {
+		await withRollback(async (db) => {
+			const owner = await makeOwner(db);
+			const hypertrophy = M7_SCENARIOS.hypertrophyBlock();
+			const { programId, version } = await storeM7Program(db, owner, hypertrophy, SCENARIO_START);
+			const block = version.blocks[0]!;
+			await logAsPlanned(
+				db,
+				owner,
+				block.weeks.flatMap((w) => w.sessions)
+			);
+			const today = addDays(block.endsOn, 3);
+			const target = { programId, blockLineage: block.lineage };
+			const at = () => new Date(`${today}T20:00:00Z`);
+			const { review: stored } = await createCycleReview(
+				owner,
+				{ ...target, today },
+				{ db, now: at }
+			);
+			const snapshot = stored.read.legacy ? null! : stored.read.snapshot;
+			const ramp = block.weeks.filter((w) => w.kind !== 'deload');
+			expect(ramp.map((w) => w.targets.setsPerGroup!.min)).toEqual([10, 12, 14, 16]);
+			for (const week of ramp) {
+				const { min, max } = week.targets.setsPerGroup!;
+				const rows = snapshot.volume.filter(
+					(r) => r.weekStartsOn === week.startsOn && r.target !== null
+				);
+				expect(rows.map((r) => r.group).sort()).toEqual([
+					'back',
+					'chest',
+					'hamstrings',
+					'hips',
+					'quads',
+					'shoulders'
+				]);
+				for (const row of rows) {
+					expect(row.target, `${week.startsOn} ${row.group}`).toEqual([min, max]);
+					expect(row.achieved).toBeCloseTo(row.planned!, 2);
+					expect(row.achieved, `${week.startsOn} ${row.group}`).toBeGreaterThanOrEqual(min);
+				}
+			}
 		});
 	});
 });
