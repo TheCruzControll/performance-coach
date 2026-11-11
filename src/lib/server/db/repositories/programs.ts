@@ -108,6 +108,8 @@ export type ExerciseChange = Change<typeof plannedExercises, 'id' | 'sessionId' 
 export type SetChange = Change<typeof setPrescriptions, 'id' | 'plannedExerciseId'>;
 export type SegmentChange = Change<typeof plannedRunSegments, 'id' | 'sessionId'>;
 export type DetailChange = Change<typeof plannedSessionDetails, 'sessionId'>;
+/** A copied week's kind and targets: a deload marks its week (M7's replan-store). */
+export type WeekChange = Partial<Pick<Insert<typeof programWeeks>, 'kind' | 'targets'>>;
 
 /** The rows a revision copies: each base row's id → its copy's, and the version they join. */
 export interface SubtreeCopy {
@@ -115,10 +117,14 @@ export interface SubtreeCopy {
 	weeks: Map<string, string>;
 	sessions: Map<string, string>;
 	exercises: Map<string, string>;
+	/** Each copied week's new block by its base block's id; without it, a copy keeps its block. */
+	blocks?: Map<string, string>;
 }
 
 /** How copies differ from their base rows, by the base row's id (or its parent's, then position). */
 export interface SubtreeChanges {
+	/** By the week's id. */
+	weeks?: Map<string, WeekChange>;
 	sessions: Map<string, SessionChange>;
 	exercises: Map<string, ExerciseChange>;
 	/** By the session's id. */
@@ -301,12 +307,17 @@ export function createProgramsRepository(db: Executor) {
 		},
 
 		/**
-		 * Copy these weeks into the version, top down: the weeks and their membership, then their
-		 * sessions, the sessions' exercises, segments and details, and the exercises' sets.
+		 * Copy these weeks into the version, top down: the weeks (into `copy.blocks`' new block when
+		 * given) and their membership, then their sessions, the sessions' exercises, segments and details, and the exercises' sets.
 		 */
 		async copyWeekSubtree(copy: SubtreeCopy, changes: SubtreeChanges): Promise<void> {
-			const { versionId, weeks, sessions, exercises } = copy;
-			await copyRows({ table: programWeeks, ids: weeks });
+			const { versionId, weeks, sessions, exercises, blocks } = copy;
+			await copyRows({
+				table: programWeeks,
+				ids: weeks,
+				...(blocks && { parent: { column: programWeeks.blockId, ids: blocks } }),
+				changes: changes.weeks
+			});
 			await db
 				.insert(programVersionWeeks)
 				.values([...weeks.values()].map((weekId) => ({ versionId, weekId })));

@@ -166,10 +166,13 @@ function plannedWeekOn({ planned }: Outline, date: IsoDate): PlannedWeek | null 
 	return planned.find(({ row }) => row.startsOn <= date && date <= row.endsOn) ?? null;
 }
 
-/** The date a WeekAt names: its own, or `week - 1` weeks on from its block's first day. */
+/**
+ * The date a WeekAt names: its own, or `week - 1` weeks on from its block's first day. Block n is
+ * the version's nth block by date: a re-plan's blocks take positions after every earlier row's.
+ */
 function dateOf({ blocks }: Outline, at: WeekAt): IsoDate {
 	if ('date' in at) return at.date;
-	const block = blocks.find((b) => b.position === at.block);
+	const block = blocks[at.block - 1];
 	if (!block) throw new TrainingNotFoundError('program week');
 	return addDays(block.startsOn, 7 * (at.week - 1));
 }

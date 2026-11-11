@@ -72,6 +72,7 @@ import type { BaselineLift } from '../../../domain/training/types';
 import type { WeightUnit } from '../../../domain/units';
 import { getDb, type Executor } from '../../db';
 import { createCoachProposalsRepository } from '../../db/repositories/coach-proposals';
+import { createPeriodiseRepository } from '../../db/repositories/program-periodise';
 import { createProgramsRepository } from '../../db/repositories/programs';
 import { createReviewsRepository } from '../../db/repositories/reviews';
 import { createFactsLoader, createQueue } from '../analytics/facts';
@@ -298,6 +299,20 @@ async function readBlock(
 
 // ---- create ------------------------------------------------------------------------------
 
+/**
+ * Decision (m7-plan open question: a block a re-plan cuts short): it gets no cycle review of its
+ * own; the block replacing it is reviewed at its end. True reviews it like any other block.
+ */
+export const REVIEW_CUT_BLOCKS = false;
+
+/** The version's planned training blocks started by `today`, those a re-plan cut short left out. */
+async function reviewable(db: Executor, version: Version, today: IsoDate) {
+	const started = version.blocks.filter((b) => trained(b) && b.startsOn <= today);
+	if (REVIEW_CUT_BLOCKS || !started.length) return started;
+	const cut = await createPeriodiseRepository(db).cutShortLineages(version.version.id);
+	return started.filter((b) => !cut.has(b.lineage));
+}
+
 /** The latest planned block the owner can review today and has not; null with none. */
 export async function reviewableBlock(
 	ownerId: string,
@@ -308,7 +323,7 @@ export async function reviewableBlock(
 	const version = await currentVersion(db, ownerId);
 	if (!version) return null;
 	const { timeZone } = await getAthleteProfile(ownerId, { db });
-	const started = version.blocks.filter((b) => trained(b) && b.startsOn <= today);
+	const started = await reviewable(db, version, today);
 	for (const block of started.toReversed()) {
 		const ended = block.endsOn < today;
 		if (!ended && !(await lastWeekDone(db, ownerId, block, timeZone))) continue;
@@ -346,7 +361,7 @@ export async function unreviewedBlock(
 	const version = await currentVersion(db, ownerId);
 	if (!version) return null;
 	const { timeZone } = await getAthleteProfile(ownerId, { db });
-	const started = version.blocks.filter((b) => trained(b) && b.startsOn <= today);
+	const started = await reviewable(db, version, today);
 	let running: UnreviewedBlock | null = null;
 	for (const block of started.toReversed()) {
 		if (await getLiveCycleReview(ownerId, version.programId, block.lineage, { db })) break;
