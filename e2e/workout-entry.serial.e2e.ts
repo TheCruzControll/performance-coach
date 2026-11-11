@@ -21,7 +21,7 @@ import { createMutation } from '../src/lib/domain/workout/mutations';
 import { DESKTOP, expectNoSideScroll } from './desktop';
 import { PROGRAM_TZ, seedProgram, type SeededProgram } from './program-support';
 import { captureScreen, gotoHydrated, query, resetTrainingProfile, SAME_ORIGIN } from './support';
-import { readOutbox } from './workout-support';
+import { historyAfterDone, readOutbox } from './workout-support';
 
 test.use({ timezoneId: PROGRAM_TZ });
 
@@ -200,6 +200,7 @@ test('a session finished here reads Done · View on Today reached in the app, be
 	await page.getByTestId('workout-menu').getByTestId('menu-finish').click();
 	await page.getByTestId('finish-sheet').getByTestId('finish-anyway').click();
 	await page.getByTestId('finish-sheet').getByTestId('finish-done').click();
+	await historyAfterDone(page);
 	await expect(page.getByTestId('workout-detail')).toBeVisible();
 	await page
 		.getByRole('navigation', { name: 'Primary' })
