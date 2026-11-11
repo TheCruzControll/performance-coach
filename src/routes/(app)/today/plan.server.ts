@@ -79,14 +79,16 @@ export type TodayPlanView =
 	| { failed: true }
 	| {
 			failed: false;
+			/** The owner's today: what the coming days' kits count from (coming-kits.ts). */
+			today: IsoDate;
 			/** Null once the first block is complete or in a bridge week: no session is planned. */
 			week: PlanWeek | null;
 			starts: PlanNote | null;
 			complete: PlanNote | null;
 			/** In a bridge week between blocks, in place of the week: when the next block starts. */
 			bridge?: PlanNote;
-			/** 'Tomorrow', 'Wednesday' or 'Mon 16 Nov' says when each is. */
-			upNext: (PlanCard & { when: string })[];
+			/** 'Tomorrow', 'Wednesday' or 'Mon 16 Nov' says when each is, on `date`. */
+			upNext: (PlanCard & { when: string; date: IsoDate })[];
 	  };
 
 /** 'tomorrow', a weekday within the coming six days ('Wednesday'), else 'Mon 16 Nov'. */
@@ -112,7 +114,7 @@ async function readPlan(
 	const upNextOf = (plan: TodayPlan) =>
 		plan.upNext.map((s) => {
 			const when = dayWords(s.date, today);
-			return { ...card(s, false), when: when[0]!.toUpperCase() + when.slice(1) };
+			return { ...card(s, false), when: when[0]!.toUpperCase() + when.slice(1), date: s.date };
 		});
 	if (program.blockComplete) {
 		const plan = await getTodayPlan(ownerId, today, { db });
@@ -121,6 +123,7 @@ async function readPlan(
 		const { firstPlannedDay, lastPlannedDay } = program;
 		return {
 			failed: false,
+			today,
 			week: null,
 			starts: null,
 			complete: {
@@ -142,7 +145,7 @@ async function readPlan(
 	if (week.nextBlockStartsOn) {
 		const description = `Your next block starts ${shortDate(week.nextBlockStartsOn)}. Nothing is planned until then: what you log counts as off-plan.`;
 		const bridge = { title: 'Between blocks', description };
-		return { failed: false, week: null, starts: null, complete: null, bridge, upNext };
+		return { failed: false, today, week: null, starts: null, complete: null, bridge, upNext };
 	}
 	const baseline = week.kind === 'baseline';
 	const later = [...week.days.flatMap((d) => d.sessions), ...plan.upNext];
@@ -155,6 +158,7 @@ async function readPlan(
 	);
 	return {
 		failed: false,
+		today,
 		week: {
 			label: `Week ${week.number}`,
 			today: inWeek,

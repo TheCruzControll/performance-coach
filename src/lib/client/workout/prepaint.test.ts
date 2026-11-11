@@ -1,8 +1,10 @@
 import { gzipSync } from 'node:zlib';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
 	blockPrepaint,
 	clearPrepaint,
+	EARLY_ROWS,
+	type EarlyRows,
 	PREPAINT_KEY,
 	PREPAINT_SCRIPT,
 	prepaintCard,
@@ -11,6 +13,7 @@ import {
 	type CardWords,
 	type PrepaintStorage
 } from './prepaint';
+import { workoutUrl } from './reconcile';
 
 /** localStorage, as a Map. */
 function memoryStorage(entries: Record<string, string> = {}): PrepaintStorage & {
@@ -79,8 +82,18 @@ class FakeElement {
 
 const SPRITE = '/_app/immutable/assets/sprite.abc.svg';
 
-/** Runs the inline script as /workout does: its container, this storage, this URL. */
-function paint(storage: PrepaintStorage, { search = '' }: { search?: string } = {}): FakeElement {
+/** The page's network as the inline script sees it: every GET it starts, never answered. */
+function network({ onLine = true }: { onLine?: boolean } = {}) {
+	const window: { [EARLY_ROWS]?: EarlyRows } = {};
+	const fetch = vi.fn((_url: string, _init: RequestInit) => new Promise<Response>(() => {}));
+	return { window, navigator: { onLine }, fetch };
+}
+
+/** Runs the inline script as /workout does: its container, this storage, this URL, this network. */
+function paint(
+	storage: PrepaintStorage,
+	{ search = '', net = network() }: { search?: string; net?: ReturnType<typeof network> } = {}
+): FakeElement {
 	const root = new FakeElement('div');
 	root.setAttribute('data-sprite', SPRITE);
 	const document = {
@@ -88,8 +101,16 @@ function paint(storage: PrepaintStorage, { search = '' }: { search?: string } = 
 		createElement: (tag: string) => new FakeElement(tag),
 		createElementNS: (namespace: string, tag: string) => new FakeElement(tag, namespace)
 	};
-	const run = new Function('document', 'localStorage', 'location', PREPAINT_SCRIPT);
-	run(document, storage, { search });
+	const run = new Function(
+		'document',
+		'localStorage',
+		'location',
+		'window',
+		'navigator',
+		'fetch',
+		PREPAINT_SCRIPT
+	);
+	run(document, storage, { search }, net.window, net.navigator, net.fetch);
 	return root;
 }
 
@@ -334,6 +355,73 @@ describe('the inline script', () => {
 	it('paints nothing where storage refuses to be read', () => {
 		const root = paint(refusing);
 		expectNothing(root);
+	});
+
+	it("starts the reconcile's GET of the kept workout's rows, and leaves it for the app", () => {
+		const storage = memoryStorage();
+		write(storage);
+		const net = network();
+		paint(storage, { net });
+
+		expect(net.fetch).toHaveBeenCalledTimes(1);
+		const [url, init] = net.fetch.mock.calls[0]!;
+		expect(url).toBe(workoutUrl(WORKOUT));
+		expect(init.headers).toEqual({ accept: 'application/json' });
+		const early = net.window[EARLY_ROWS]!;
+		expect(early.workoutId).toBe(WORKOUT);
+		expect(early.response).toBe(net.fetch.mock.results[0]!.value);
+		expect(init.signal).toBe(early.controller.signal);
+		early.controller.abort();
+		expect(init.signal!.aborted).toBe(true);
+	});
+
+	it('asks for the path as reconcile.ts does, whatever the id holds', () => {
+		const storage = memoryStorage();
+		const odd = 'a/b?c#d e';
+		writePrepaint({ workoutId: odd, rest: false, card: prepaintCard(words) }, storage);
+		const net = network();
+		paint(storage, { net });
+		expect(net.fetch.mock.calls[0]![0]).toBe(workoutUrl(odd));
+	});
+
+	it('starts no GET offline, while a workout starts, signed out, or with no card to paint', () => {
+		const kept = memoryStorage();
+		write(kept);
+		const blocked = memoryStorage();
+		write(blocked);
+		blockPrepaint(blocked);
+		const runs: [PrepaintStorage, { search?: string; onLine?: boolean }][] = [
+			[kept, { onLine: false }],
+			[kept, { search: '?start=abc' }],
+			[kept, { search: '?new=run' }],
+			[blocked, {}],
+			[memoryStorage(), {}],
+			[memoryStorage({ [PREPAINT_KEY]: '{"v":1,"workoutId":7}' }), {}],
+			[refusing, {}]
+		];
+		for (const [storage, { search, onLine }] of runs) {
+			const net = network({ onLine });
+			paint(storage, { search, net });
+			expect(net.fetch).not.toHaveBeenCalled();
+			expect(net.window).toEqual({});
+		}
+		// Kept and online: the card and the GET.
+		const net = network();
+		expect(paint(kept, { net }).hidden).toBe(false);
+		expect(net.fetch).toHaveBeenCalledTimes(1);
+	});
+
+	it('paints the card whether the GET fails or cannot start', () => {
+		const storage = memoryStorage();
+		write(storage);
+		const failing = network();
+		failing.fetch.mockImplementation(() => Promise.reject(new TypeError('Failed to fetch')));
+		expect(paint(storage, { net: failing }).hidden).toBe(false);
+		const throwing = network();
+		throwing.fetch.mockImplementation(() => {
+			throw new TypeError('Failed to fetch');
+		});
+		expect(paint(storage, { net: throwing }).hidden).toBe(false);
 	});
 
 	it('stays tiny: under 1.5 KB gzipped, in every page load of /workout', () => {
