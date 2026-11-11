@@ -7,8 +7,8 @@
  * the Build card only after hydration, which is the late largest paint m3/40 measured (~2.8 s)
  * for a streamed card; the check is two short reads.
  *
- * It returns the owner's today with the state, so Today's plan (plan.server.ts) reads at the
- * same day without asking for it again.
+ * It returns the owner's today and the program with the state, so Today's plan (plan.server.ts)
+ * reads at the same day, and from the same program, without asking for either again.
  *
  * It fails soft: a read that fails is recorded as a server error (kind 'load') and Today shows
  * its designed error with Retry, inside the shell, instead of the 500 page.
@@ -16,7 +16,7 @@
 import type { IsoDate } from '#lib/domain/calendar.ts';
 import { ownerToday } from '#lib/server/local-date.ts';
 import { recordServerError } from '#lib/server/services/errors.ts';
-import { getCurrentProgram } from '#lib/server/services/programs/index.ts';
+import { getCurrentProgram, type CurrentProgram } from '#lib/server/services/programs/index.ts';
 import type { SetupDeps, SetupOrigin } from './setup.server';
 
 export type TodayProgram = 'none' | 'active';
@@ -25,11 +25,11 @@ export async function loadTodayProgram(
 	ownerId: string,
 	{ now, origin }: { now: Date; origin: SetupOrigin },
 	{ db, errorsDb }: SetupDeps = {}
-): Promise<{ state: TodayProgram; today: IsoDate } | null> {
+): Promise<{ state: TodayProgram; today: IsoDate; program: CurrentProgram | null } | null> {
 	try {
 		const today = await ownerToday(ownerId, now, { db });
-		const state = (await getCurrentProgram(ownerId, today, { db })) ? 'active' : 'none';
-		return { state, today };
+		const program = await getCurrentProgram(ownerId, today, { db });
+		return { state: program ? 'active' : 'none', today, program };
 	} catch (error) {
 		await recordServerError(
 			{ error, kind: 'load', status: 500, ...origin, context: { load: 'todayProgram' } },

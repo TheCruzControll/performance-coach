@@ -3,6 +3,8 @@
  * today's sessions, Up next across weeks, a rest day naming the next session, 'Starts Monday'
  * before week 1, and 'Nothing planned yet' once the first block is over. When the database
  * cannot be reached it never rejects: {failed: true}, and the failure recorded as a server error.
+ * - It reads the plan and its week together, each on its own connection, so the cases run on the
+ *   shared pool (withCommitted), never in one transaction.
  */
 import { eq } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
@@ -10,8 +12,10 @@ import { workouts } from '../../../src/lib/server/db';
 import { findErrorsByRequestId } from '../../../src/lib/server/services/errors';
 import {
 	createProgramFromPlan,
+	getCurrentProgram,
 	getProgramVersion,
 	skipSession,
+	type CurrentProgram,
 	type StoredSession
 } from '../../../src/lib/server/services/programs/index';
 import {
@@ -20,7 +24,7 @@ import {
 } from '../../../src/lib/server/test-support/program-fixtures';
 import { loadTodayPlan, type TodayPlanView } from '../../../src/routes/(app)/today/plan.server';
 import type { Executor } from '../../../src/lib/server/db/types';
-import { unreachableDb, withRollback } from '../helpers';
+import { unreachableDb, watchPool, withCommitted, withRollback } from '../helpers';
 import { makeOwner } from '../profile/fixtures';
 import { logStrength } from './fixtures/history';
 
@@ -45,19 +49,28 @@ async function seeded(db: Executor, fixture: ProgramFixture, monday: string) {
 	return owner;
 }
 
+/** The plan as Today reads it: from the program loadTodayProgram found. */
 async function viewOf(db: Executor, owner: string) {
-	const view = await loadTodayPlan(owner, { today: TODAY, origin: origin() }, { db });
+	const program = await getCurrentProgram(owner, TODAY, { db });
+	if (!program) throw new Error('no active program');
+	const view = await loadTodayPlan(owner, { today: TODAY, program, origin: origin() }, { db });
 	if (view.failed) throw new Error('the plan failed to load');
 	return view;
 }
 
 type View = Extract<TodayPlanView, { failed: false }>;
+/** A program in its first block, as the plan needs it when no read can reach the database. */
+const ACTIVE = {
+	notStarted: false,
+	blockComplete: false,
+	firstPlannedDay: TODAY
+} as CurrentProgram;
 const titles = (cards: { title: string }[]) => cards.map((c) => c.title);
 const dayOf = (view: View, date: string) => view.week!.days.find((d) => d.date === date)!;
 
 describe('Today’s plan', () => {
 	it('shows the week with today selected, today’s sessions, and Up next from next week', async () => {
-		await withRollback(async (db) => {
+		await withCommitted(async (db) => {
 			const owner = await seeded(db, 'today', '2026-11-02');
 			const view = await viewOf(db, owner);
 			expect(view).toMatchObject({ starts: null, complete: null });
@@ -68,10 +81,12 @@ describe('Today’s plan', () => {
 			expect(titles(today.cards)).toEqual(['Full body', 'Muay Thai class']);
 			expect(today.cards.map((c) => c.baseline)).toEqual([true, false]);
 			// Nothing else this week, so Up next crosses into week 2, in date order.
-			expect(view.upNext.map((c) => [c.title, c.when])).toEqual([
-				['Full body', 'Monday'],
-				['Muay Thai class', 'Tuesday'],
-				['Intervals', 'Wednesday']
+			// Each on its date, from the owner's today, for the coming days' kits (coming-kits.ts).
+			expect(view.today).toBe(TODAY);
+			expect(view.upNext.map((c) => [c.title, c.when, c.date])).toEqual([
+				['Full body', 'Monday', '2026-11-09'],
+				['Muay Thai class', 'Tuesday', '2026-11-10'],
+				['Intervals', 'Wednesday', '2026-11-11']
 			]);
 			// A rest day later this week names the next session, from next week.
 			expect(dayOf(view, '2026-11-07').rest).toBe(
@@ -95,7 +110,7 @@ describe('Today’s plan', () => {
 	});
 
 	it('offers each of today’s sessions Start workout, and Done · View to the workout once done', async () => {
-		await withRollback(async (db) => {
+		await withCommitted(async (db) => {
 			const owner = await makeOwner(db);
 			const plan = programFixture('today', { monday: '2026-11-02', today: TODAY });
 			const { programId } = await createProgramFromPlan(owner, plan, { source: 'rules' }, { db });
@@ -134,19 +149,38 @@ describe('Today’s plan', () => {
 		});
 	});
 
+	it('reads the plan and the week it shows together, each on its own connection', async () => {
+		await withCommitted(async (db) => {
+			const owner = await seeded(db, 'today', '2026-11-02');
+			const program = (await getCurrentProgram(owner, TODAY, { db }))!;
+			const pool = watchPool();
+			const view = await loadTodayPlan(
+				owner,
+				{ today: TODAY, program, origin: origin() },
+				{ db }
+			).finally(pool.stop);
+			expect(view).toMatchObject({ failed: false, week: { label: 'Week 1', today: TODAY } });
+			expect(pool.peak()).toBeGreaterThan(1);
+		});
+	});
+
 	it('on a rest day, names the next session', async () => {
-		await withRollback(async (db) => {
+		await withCommitted(async (db) => {
 			const owner = await seeded(db, 'today-rest', '2026-11-02');
 			const view = await viewOf(db, owner);
 			const today = dayOf(view, TODAY);
 			expect(today.cards).toEqual([]);
 			expect(today.rest).toBe('Recovery is part of the plan. Next: Intervals, tomorrow.');
-			expect(view.upNext[0]).toMatchObject({ title: 'Intervals', when: 'Tomorrow' });
+			expect(view.upNext[0]).toMatchObject({
+				title: 'Intervals',
+				when: 'Tomorrow',
+				date: '2026-11-06'
+			});
 		});
 	});
 
 	it('before week 1, says when it starts and shows week 1 from its first day', async () => {
-		await withRollback(async (db) => {
+		await withCommitted(async (db) => {
 			const owner = await seeded(db, 'hybrid', '2026-11-09');
 			const view = await viewOf(db, owner);
 			expect(view.starts).toEqual({
@@ -160,11 +194,12 @@ describe('Today’s plan', () => {
 	});
 
 	it('once the first block is over, nothing is planned yet and Up next is empty', async () => {
-		await withRollback(async (db) => {
+		await withCommitted(async (db) => {
 			const owner = await seeded(db, 'one-week', '2026-10-26');
 			const view = await viewOf(db, owner);
 			expect(view).toEqual({
 				failed: false,
+				today: TODAY,
 				week: null,
 				starts: null,
 				complete: {
@@ -184,7 +219,7 @@ describe('Today’s plan', () => {
 				const request = origin();
 				const view = await loadTodayPlan(
 					crypto.randomUUID(),
-					{ today: TODAY, origin: request },
+					{ today: TODAY, program: ACTIVE, origin: request },
 					{ db: broken.db, errorsDb: tx }
 				);
 				expect(view).toEqual({ failed: true });

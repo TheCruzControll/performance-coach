@@ -3,6 +3,7 @@ import {
 	createTone,
 	createWakeLock,
 	feedbackSupport,
+	haptic,
 	REST_OVER_TONE,
 	REST_OVER_VIBRATION,
 	vibrate
@@ -334,11 +335,137 @@ describe('feedback: what the platform supports', () => {
 			webkitAudioContext: fakeAudio().AudioContext
 		});
 		expect(feedbackSupport(safari)).toEqual({ vibration: false, tone: true, wakeLock: true });
+		// An iPhone on iOS 18: no Vibration API, but the haptic answers to the vibration setting.
+		const iPhone = platform({
+			navigator: { maxTouchPoints: 5, wakeLock: fakeWakeLock().wakeLock },
+			webkitAudioContext: fakeAudio().AudioContext,
+			HTMLInputElement: { prototype: { switch: false } }
+		});
+		expect(feedbackSupport(iPhone)).toEqual({ vibration: true, tone: true, wakeLock: true });
 		expect(feedbackSupport(platform({}))).toEqual({
 			vibration: false,
 			tone: false,
 			wakeLock: false
 		});
 		expect(feedbackSupport()).toEqual({ vibration: false, tone: false, wakeLock: false });
+	});
+});
+
+// ---- The iPhone's haptic --------------------------------------------------------------------
+
+/** A document that builds fake elements and records what is in its body and what was clicked. */
+function hapticDocument(options: { clickThrows?: boolean } = {}) {
+	const body = new Set<FakeElement>();
+	const toggled: { type: string; switch: boolean; checked: boolean; inBody: boolean }[] = [];
+	class FakeElement {
+		ariaHidden: string | null = null;
+		style = { display: '' };
+		type = '';
+		tabIndex = 0;
+		checked = false;
+		attributes = new Map<string, string>();
+		children: FakeElement[] = [];
+		readonly tagName: string;
+		constructor(tagName: string) {
+			this.tagName = tagName;
+		}
+		setAttribute(name: string, value: string) {
+			this.attributes.set(name, value);
+		}
+		append(child: FakeElement) {
+			this.children.push(child);
+		}
+		remove() {
+			body.delete(this);
+		}
+		/** A label's click toggles its checkbox, as a browser's does. */
+		click() {
+			if (options.clickThrows) throw new Error('No clicks here');
+			const input = this.children.find((child) => child.tagName === 'input');
+			if (this.tagName !== 'label' || !input) return;
+			input.checked = !input.checked;
+			toggled.push({
+				type: input.type,
+				switch: input.attributes.has('switch'),
+				checked: input.checked,
+				inBody: body.has(this)
+			});
+		}
+	}
+	const created: FakeElement[] = [];
+	const document = {
+		createElement: (tag: string) => {
+			const element = new FakeElement(tag);
+			created.push(element);
+			return element;
+		},
+		body: { append: (element: FakeElement) => body.add(element) }
+	};
+	return { document, body, created, toggled };
+}
+
+/** Safari 17.4 and later: inputs know the switch attribute. */
+const withSwitch = { prototype: { switch: false } };
+
+/** A touch screen without the Vibration API: an iPhone's navigator. */
+const touch = { maxTouchPoints: 5 };
+
+describe('feedback: the iPhone haptic', () => {
+	it('toggles a hidden switch through its label, in the page, then takes it out again', () => {
+		const fake = hapticDocument();
+		const iPhone = platform({
+			navigator: touch,
+			document: fake.document,
+			HTMLInputElement: withSwitch
+		});
+		expect(haptic(iPhone)).toBe(true);
+		expect(fake.toggled).toEqual([{ type: 'checkbox', switch: true, checked: true, inBody: true }]);
+		const label = fake.created.find((element) => element.tagName === 'label');
+		expect(label?.ariaHidden).toBe('true');
+		expect(label?.style.display).toBe('none');
+		expect(fake.created.find((element) => element.tagName === 'input')?.tabIndex).toBe(-1);
+		expect(fake.body.size, 'nothing is left in the page').toBe(0);
+		expect(haptic(iPhone)).toBe(true);
+		expect(fake.toggled).toHaveLength(2);
+		expect(fake.body.size).toBe(0);
+	});
+
+	it('never toggles where navigator.vibrate exists, even with a switch control', () => {
+		const fake = hapticDocument();
+		const android = platform({
+			navigator: { ...touch, vibrate: () => true },
+			document: fake.document,
+			HTMLInputElement: withSwitch
+		});
+		expect(haptic(android)).toBe(false);
+		expect(fake.created).toEqual([]);
+	});
+
+	it('does nothing without a touch screen, a switch control or a document, and answers false', () => {
+		const fake = hapticDocument();
+		const noSwitch = { prototype: {} };
+		const document = fake.document;
+		// Desktop Safari has the switch control but no touch screen.
+		expect(haptic(platform({ navigator: {}, document, HTMLInputElement: withSwitch }))).toBe(false);
+		expect(haptic(platform({ navigator: touch, document, HTMLInputElement: noSwitch }))).toBe(
+			false
+		);
+		expect(haptic(platform({ navigator: touch, document }))).toBe(false);
+		expect(haptic(platform({ navigator: touch, HTMLInputElement: withSwitch }))).toBe(false);
+		expect(fake.created).toEqual([]);
+		// Node has none of it.
+		expect(haptic()).toBe(false);
+	});
+
+	it('answers false, leaving nothing in the page, when the click throws', () => {
+		const fake = hapticDocument({ clickThrows: true });
+		const iPhone = platform({
+			navigator: touch,
+			document: fake.document,
+			HTMLInputElement: withSwitch
+		});
+		expect(haptic(iPhone)).toBe(false);
+		expect(fake.created.length, 'the switch was built and clicked').toBe(2);
+		expect(fake.body.size).toBe(0);
 	});
 });

@@ -132,8 +132,24 @@ export function parseDuration(input: string): number | null {
 	return Number(h ?? 0) * 3600 + minutes * 60 + seconds;
 }
 
-/** Format a weight for display: trims trailing zeros, max `decimals` places. */
+/**
+ * Format a weight for display: trims trailing zeros, max `decimals` places, the whole part grouped
+ * in thousands as en-US writes it (`1,250 kg`). Written out, not with toLocaleString, which builds
+ * an ICU number formatter on each call: a page's first one cost its first Complete set about 30 ms
+ * at 4× CPU (perf-journey.e2e.ts), inside the tap's own frame.
+ */
 export function formatWeight(value: number, unit: WeightUnit, decimals = 2): string {
-	const rounded = cleanFloat(value, decimals);
-	return `${rounded.toLocaleString('en-US', { maximumFractionDigits: decimals })} ${unit}`;
+	return `${groupThousands(cleanFloat(value, decimals) + 0, decimals)} ${unit}`;
+}
+
+/** `value` (already rounded to `decimals`) with commas between thousands: `1,234.5`. */
+function groupThousands(value: number, decimals: number): string {
+	const digits = String(Math.abs(value));
+	// Exponent notation (below 1e-6, from 1e21) and NaN or Infinity: left to the platform.
+	if (!Number.isFinite(value) || digits.includes('e')) {
+		return value.toLocaleString('en-US', { maximumFractionDigits: decimals });
+	}
+	const [whole = '', fraction] = digits.split('.');
+	const grouped = whole.replace(/\B(?=(\d{3})+$)/g, ',');
+	return `${value < 0 ? '-' : ''}${grouped}${fraction === undefined ? '' : `.${fraction}`}`;
 }
