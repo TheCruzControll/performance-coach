@@ -1,6 +1,6 @@
 <!--
   @component
-  The strength view's logger, loaded right after the first render, as the store is: the set at
+  The strength view's logger, loaded once the first render has painted, as the store is: the set at
   hand prefilled for the exercise the slot performs (prefill.ts's nextSet), in the SetLogger, or
   'All sets logged' once its planned sets are done, with Add a set (an extra set beyond the plan,
   one at a time, with Cancel). Skip set skips the planned set at hand, and Missed reps records
