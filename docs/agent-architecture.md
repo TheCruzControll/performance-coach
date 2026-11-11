@@ -80,6 +80,25 @@ The services take `deps.source: 'coach'`, which a revision records as its decide
 the training log as its audit actor. Until their M5 slices land, these tool files and the program
 appliers (`src/lib/server/services/coach/apply/program.ts`) are stubs.
 
+### Services behind the workout tools (M4)
+
+The workout tools (`src/lib/server/agent/tools/workout.ts`) read and write through M4's
+services, owner-scoped by the session's owner:
+
+| Tool                        | Service                                                                                                                                                                                              |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `get_current_workout`       | The canonical reads (`services/workouts/canonical.ts`: `listActiveWorkouts`, `getCanonicalWorkout`) for the workout in progress, and `getTodayPlan` for today's sessions                             |
+| `get_exercise_alternatives` | The start kit's alternatives (`services/workouts/kit.ts`, `kitForLineage`), ranked by M4's `rankFor`; with a body area, the gentler options (`gentlerFor`)                                           |
+| `substitute_exercise`       | A `session_substitution` proposal. Accepted, it is M4's `exercise.substitute` through the sync dispatcher (the proposal's id is the mutation id) in a live workout, or M3's one-off swap without one |
+| `update_workout`            | A `workout_update` proposal for today's session before it starts; nothing changes until the owner accepts it                                                                                         |
+| `save_workout_analysis`     | `services/coach/notes.ts`: the coach's note on a workout, which memory reads                                                                                                                         |
+
+A situational statement ('the leg press is taken') keeps a swap in its session with no
+preference; only an explicit dislike this turn makes it a lasting swap, and that too is a
+proposal (`program_adjustment`). Pain reports from the workout screen (`pain_reports`) reach
+coaching memory: the last 28 days of them (`services/coach/memory-records.ts`), each with its
+area, severity, what the owner chose and its workout, and never as a preference.
+
 ## Memory (structured, persistent)
 
 Stored in Postgres (M3/M5 tables), never inferred from chat logs:
