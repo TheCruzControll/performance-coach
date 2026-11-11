@@ -11,15 +11,31 @@
  * - Owner-scoped: the version is read from the owner's active program by number, so another
  *   owner's version is not found and nothing of theirs is read.
  */
-import { addDays, type IsoDate } from '../../../domain/calendar';
-import type { Finding, WeekEvaluation } from '../../../domain/programming/evaluate/types';
+import { addDays, weekdayOf, type IsoDate } from '../../../domain/calendar';
+import {
+	SYSTEMS,
+	type Finding,
+	type LoadSystem,
+	type WeekEvaluation
+} from '../../../domain/programming/evaluate/types';
 import { evaluateWeek, type PriorityHint } from '../../../domain/programming/evaluate/week';
 import { catalogueTraits, type TraitsOf } from '../../../domain/programming/interference';
+import type { FatigueDay } from '../../../domain/programming/load/fatigue';
+import type { FatigueLevel } from '../../../domain/programming/rules/fatigue';
+import { repairWeek } from '../../../domain/programming/schedule/repair';
+import { WEEKDAY_INFO } from '../../../domain/profile/catalog';
 import { createProgramsRepository } from '../../db/repositories/programs';
 import { measure } from '../../observability/timing';
 import { getExercisesByIds } from '../exercises/index';
 import { toStoredSessions, type StoredSession } from '../programs/mapping';
 import { resolveDeps, TrainingNotFoundError, type TrainingDeps } from '../training/shared';
+import {
+	createContextCache,
+	weekContextOf,
+	type ContextCache,
+	type ContextDeps,
+	type EvaluationContext
+} from './context';
 
 /** A finding on one session's card, in words: its kind, what and where, and the rule's reason. */
 export interface FindingNote {
@@ -38,6 +54,28 @@ export interface WeekFindingsView {
 	summary: string | null;
 	/** By session lineage: the note on each card a finding shown names. */
 	notes: Record<string, FindingNote>;
+	/** Each day of the week in the load model, for the coach and the timeline (Train shows none). */
+	days: DayFatigue[];
+}
+
+/** A day's fatigue by system, in words, at the end of the day. */
+export interface DayFatigue {
+	date: IsoDate;
+	/** 'Fresh', 'Elevated' or 'Overloaded', by system. */
+	levels: Record<LoadSystem, string>;
+	source: FatigueDay['source'];
+}
+
+/** A fatigue level in words. */
+export const LEVEL_WORDS: Record<FatigueLevel, string> = {
+	fresh: 'Fresh',
+	elevated: 'Elevated',
+	overloaded: 'Overloaded'
+};
+
+export interface EvaluationDeps extends TrainingDeps, Omit<ContextDeps, 'db'> {
+	/** The request's or batch's contexts (createContextCache): one of its own unless given. */
+	contexts?: ContextCache;
 }
 
 export interface WeekAt {
@@ -134,6 +172,67 @@ function summaryOf(shown: readonly Finding[], current: boolean): string {
 	return current ? 'No clashes ahead this week' : 'No clashes this week';
 }
 
+/** The week's days in the load model, each system's level in words. */
+const daysOf = (days: readonly FatigueDay[], monday: IsoDate): DayFatigue[] =>
+	days
+		.filter((d) => d.date >= monday && d.date <= addDays(monday, 6))
+		.map((d) => ({
+			date: d.date,
+			levels: Object.fromEntries(
+				SYSTEMS.map((s) => [s, LEVEL_WORDS[d.systems[s].level]])
+			) as Record<LoadSystem, string>,
+			source: d.source
+		}));
+
+/**
+ * The scheduler's dry-run fix for each actionable avoid finding, as a sentence by its rule and
+ * sessions: 'Moving Lower A to Monday clears this.' It may move the owner's own moves
+ * (keepOwnerMoves false), only sessions still ahead and not done, and only as an M3 move.
+ */
+function suggestionsOf(
+	sessions: readonly StoredSession[],
+	context: EvaluationContext,
+	options: { open: IsoDate[]; today: IsoDate; done: ReadonlySet<string>; traitsOf: TraitsOf },
+	monday: IsoDate
+): Map<Finding, string> {
+	const repaired = repairWeek(sessions, {
+		open: options.open,
+		priorities: context.priorities,
+		load: {
+			from: context.load.from,
+			planned: context.load.planned.filter((s) => s.date < monday),
+			logged: context.load.logged
+		},
+		...(context.weekKind && { week: { kind: context.weekKind } }),
+		events: context.events,
+		preferredTimes: context.preferredTimes,
+		...(context.level && { level: context.level }),
+		today: options.today,
+		keepOwnerMoves: false,
+		completed: [...options.done],
+		traitsOf: options.traitsOf
+	});
+	const moved = new Set(repaired.ops.map((op) => op.sessionLineage));
+	const out = new Map<Finding, string>();
+	for (const finding of repaired.before.evaluation.findings) {
+		if (finding.severity !== 'avoid' || !finding.actionable) continue;
+		const named = new Set(finding.sessions.map((s) => s.lineage));
+		const action = repaired.actions.find(
+			(a) =>
+				a.rule === finding.rule &&
+				a.to !== null &&
+				a.session.lineage !== undefined &&
+				named.has(a.session.lineage) &&
+				moved.has(a.session.lineage)
+		);
+		if (action) {
+			const day = WEEKDAY_INFO[weekdayOf(action.to!.date)].label;
+			out.set(finding, `Moving ${action.session.title} to ${day} clears this.`);
+		}
+	}
+	return out;
+}
+
 /** The owner's own exercises in `sessions` by id, after the catalogue's. */
 async function traitsFor(ownerId: string, sessions: readonly StoredSession[], deps: TrainingDeps) {
 	const ids = sessions.flatMap((s) =>
@@ -151,9 +250,10 @@ async function traitsFor(ownerId: string, sessions: readonly StoredSession[], de
 export async function getWeekEvaluation(
 	ownerId: string,
 	{ version, weekStartsOn, today, tradeoffs = [] }: WeekAt,
-	deps: TrainingDeps = {}
+	deps: EvaluationDeps = {}
 ): Promise<WeekFindingsView> {
 	const { db } = resolveDeps(deps);
+	const contexts = deps.contexts ?? createContextCache(ownerId, { ...deps, db });
 	return measure('periodisation', async () => {
 		const repo = createProgramsRepository(db);
 		const found = await repo.currentProgram(ownerId, version);
@@ -175,11 +275,15 @@ export async function getWeekEvaluation(
 		const openDates = Array.from({ length: 7 }, (_, i) => addDays(weekStartsOn, i)).filter(
 			(date) => date >= today
 		);
+		// Without a context (its reads failed, recorded), the week is judged by checkWeek alone.
+		const context = await contexts.get({ versionId: found.version.id, weekStartsOn, today });
+		const traitsOf = await traitsFor(ownerId, sessions, { db });
 		const evaluation = evaluateWeek(sessions, {
-			traitsOf: await traitsFor(ownerId, sessions, { db }),
+			traitsOf,
 			openDates,
 			hints: tradeoffHints(tradeoffs),
-			today
+			today,
+			...(context && { context: weekContextOf(context) })
 		});
 
 		// What the owner can still act on: its sessions ahead that are not done, avoid first.
@@ -189,6 +293,16 @@ export async function getWeekEvaluation(
 			.filter((f) => actable(f).length > 0)
 			.sort((a, b) => Number(a.severity !== 'avoid') - Number(b.severity !== 'avoid'))
 			.slice(0, MAX_SHOWN);
+		const suggestions =
+			context && shown.some((f) => f.severity === 'avoid')
+				? suggestionsOf(sessions, context, { open: openDates, today, done, traitsOf }, weekStartsOn)
+				: new Map<Finding, string>();
+		// The scheduler judges the same week: its findings match ours by rule and message. A
+		// trade-off the plan explains is kept on purpose: only a heads-up gets the fix.
+		const suggestionOf = (f: Finding) =>
+			labelOf(f).label === NOTE_LABEL.headsUp
+				? [...suggestions].find(([s]) => s.rule === f.rule && s.message === f.message)?.[1]
+				: undefined;
 		const notes: Record<string, FindingNote> = {};
 		// The week line counts only the findings that put a note on a card (a card keeps one).
 		const placed: Finding[] = [];
@@ -203,14 +317,17 @@ export async function getWeekEvaluation(
 					tone,
 					label,
 					text: `${label} · ${finding.headline} · ${whereOf(finding, lineage!, moved)}`,
-					why: [finding.why, finding.resolution?.text].filter(Boolean).join(' ')
+					why: [finding.why, finding.resolution?.text, suggestionOf(finding)]
+						.filter(Boolean)
+						.join(' ')
 				};
 			}
 		}
 		return {
 			grade: evaluation.grade,
 			summary: weekEnd < today ? null : summaryOf(placed, weekStartsOn <= today),
-			notes
+			notes,
+			days: context ? daysOf(context.load.days, weekStartsOn) : []
 		};
 	});
 }

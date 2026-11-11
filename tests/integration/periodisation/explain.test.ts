@@ -292,7 +292,9 @@ describe('a priority trade-off', () => {
 					/Your strength goal ranks above Muay Thai, so its Full body keeps Monday\.$/
 				)
 			});
-			expect(program(data).weekLine).toMatch(/1 trade-off, explained$/);
+			// With the evaluation context (m7/22), Monday to Wednesday is also three hard days in a
+			// row, which the same trade-off explains.
+			expect(program(data).weekLine).toMatch(/2 trade-offs, explained$/);
 			expect(card.why).toEqual({
 				title: 'Why Monday?',
 				lines: [

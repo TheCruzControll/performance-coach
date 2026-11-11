@@ -87,13 +87,13 @@ describe('getWeekEvaluation', () => {
 					tone: 'caution',
 					label: 'Heads-up',
 					text: 'Heads-up · Heavy lower body the day before hard Muay Thai · You moved this here',
-					why: `${WHY} You moved Lower A here from Friday.`
+					why: `${WHY} You moved Lower A here from Friday. Moving Lower A to Friday clears this.`
 				},
 				[hardMuayThai!]: {
 					tone: 'caution',
 					label: 'Heads-up',
 					text: 'Heads-up · Heavy lower body the day before hard Muay Thai · After Lower A the day before',
-					why: `${WHY} You moved Lower A here from Friday.`
+					why: `${WHY} You moved Lower A here from Friday. Moving Lower A to Friday clears this.`
 				}
 			});
 		});
@@ -105,7 +105,8 @@ describe('getWeekEvaluation', () => {
 			expect(await evaluate(db, owner, version.number, seeded.mondays.clean)).toEqual({
 				grade: 'clear',
 				summary: 'No clashes this week',
-				notes: {}
+				notes: {},
+				days: expect.any(Array)
 			});
 			await skipSession(
 				owner,
@@ -117,7 +118,8 @@ describe('getWeekEvaluation', () => {
 			expect(await evaluate(db, owner, skipped.number, seeded.mondays.moved)).toEqual({
 				grade: 'clear',
 				summary: 'No clashes this week',
-				notes: {}
+				notes: {},
+				days: expect.any(Array)
 			});
 		});
 	});
@@ -130,7 +132,8 @@ describe('getWeekEvaluation', () => {
 			expect(await evaluate(db, owner, version.number, seeded.mondays.current)).toEqual({
 				grade: 'clear',
 				summary: 'No clashes ahead this week',
-				notes: {}
+				notes: {},
+				days: expect.any(Array)
 			});
 			// Last week has ended: no week line.
 			const past = await evaluate(db, owner, version.number, seeded.mondays.past);

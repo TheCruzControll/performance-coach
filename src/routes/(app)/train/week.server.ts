@@ -30,6 +30,7 @@ import type { IsoDate } from '#lib/domain/calendar.ts';
 import { daysBetween } from '#lib/domain/calendar.ts';
 import { ownerToday } from '#lib/server/local-date.ts';
 import { recordServerError, type ServerErrorInput } from '#lib/server/services/errors.ts';
+import type { ContextDeps } from '#lib/server/services/periodisation/context.ts';
 import {
 	getWeekEvaluation,
 	type WeekAt,
@@ -126,7 +127,13 @@ export interface TrainLoadDeps extends Pick<TrainingDeps, 'db'> {
 	 * from `why.db` when given). false skips every M7 read: only the explain harness turns it off,
 	 * to time Train's own path.
 	 */
-	periodisation?: false | (Pick<TrainingDeps, 'db'> & { why?: Pick<TrainingDeps, 'db'> });
+	periodisation?:
+		| false
+		| (Pick<TrainingDeps, 'db'> & {
+				why?: Pick<TrainingDeps, 'db'>;
+				/** The evaluation context's reads (context.ts), for a test to fail or stall. */
+				context?: Pick<ContextDeps, 'repository' | 'reader' | 'statementTimeoutMs'>;
+		  });
 }
 
 /** The week number in `param`, or null for the current week. */
@@ -164,7 +171,10 @@ async function offPlanIn(
 	return logged.filter((w) => w.status === 'completed').map(offPlanCard);
 }
 
-type PartDeps = Pick<TrainLoadDeps, 'db' | 'errorsDb'> & Pick<TrainRequest, 'origin'>;
+type PartDeps = Pick<TrainLoadDeps, 'db' | 'errorsDb'> &
+	Pick<TrainRequest, 'origin'> & {
+		context?: Pick<ContextDeps, 'repository' | 'reader' | 'statementTimeoutMs'>;
+	};
 
 /** `read`'s result, or null when it failed: recorded as Train's `part`, and the week renders. */
 async function softly<T>(part: string, read: () => Promise<T>, { errorsDb, origin }: PartDeps) {
@@ -186,7 +196,14 @@ const findingsOf = (
 	at: WeekAt,
 	deps: PartDeps
 ): Promise<WeekFindingsView | null> =>
-	softly('periodisation', () => getWeekEvaluation(ownerId, at, { db: deps.db }), deps);
+	softly(
+		'periodisation',
+		() => {
+			const { db, errorsDb, origin, context } = deps;
+			return getWeekEvaluation(ownerId, at, { db, errorsDb, origin, ...context });
+		},
+		deps
+	);
 
 /** Why each session is on its day, or null when reading it failed: recorded. */
 const whyOf = (
@@ -247,7 +264,10 @@ export async function loadTrainWeek(
 		const at = shown.planned && !bridge && { programId: program.id, weekLineage: shown.lineage };
 		const changes =
 			at && (await weekChanges(ownerId, { ...at, version: shown.version.number }, { db }));
-		const m7 = periodisation && { db: periodisation.db ?? db, errorsDb, origin };
+		const m7 = periodisation && {
+			...{ db: periodisation.db ?? db, errorsDb, origin },
+			context: periodisation.context
+		};
 		const placed = shown.planned
 			? shown.days.flatMap((d) => d.sessions.map(({ lineage, date }) => ({ lineage, date })))
 			: [];

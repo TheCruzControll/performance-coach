@@ -36,7 +36,12 @@ import type {
 	SessionPlan,
 	SetPrescription
 } from '../../../domain/training/types';
-import { createGoal, getTrainingProfile, saveSchedule } from '../../services/profile/index';
+import {
+	createGoal,
+	getTrainingProfile,
+	saveExperience,
+	saveSchedule
+} from '../../services/profile/index';
 import { moveSession } from '../../services/programs/edits';
 import { createProgramFromPlan, getProgramVersion } from '../../services/programs/index';
 import type { AnalyticsFixture, FixtureResult, SeedContext } from './index';
@@ -207,6 +212,17 @@ async function profile(ctx: SeedContext) {
 			preferredTimes: ['morning', 'evening'],
 			sessionMinutes: 60,
 			commitments: [commitment]
+		},
+		deps
+	);
+	// Intermediate in each: four hard days a week are within the hard-day cap (m7/22's context).
+	await saveExperience(
+		ctx.ownerId,
+		{
+			entries: ['strength', 'running', 'muay_thai'].map((d) => ({
+				discipline: d,
+				level: 'intermediate'
+			}))
 		},
 		deps
 	);
