@@ -5,9 +5,11 @@
   it. Below 1024 px the current exercise has the screen. It renders two siblings, the side list
   and the main column, which the Shell lays out as its columns.
   - Under the rows, the logger (Logger.svelte, loaded once the first render has painted, and shown
-    once the store has loaded too, so Complete set never waits for either) logs the set at hand
-    in one tap: the row is done in the same frame, before anything is written, and in a superset
-    the move to the partner is written with it. It never waits for the network.
+    as soon as it has; a tap before the store is open waits for it) logs the set at hand in one
+    tap: the row is done in the same frame, before anything is written, and in a superset the move
+    to the partner is written with it. It never waits for the network. Below 1024 px its space is
+    reserved from the first render at the height it last had on this device (logger-space.ts), so
+    neither it nor the rest pill above it moves when it arrives.
   - A set this device could not save reads 'Not saved on this device'; the logger offers Retry.
   - A logged or skipped set is a button: it opens its editor (SetEditor.svelte), loaded on intent
     (the row's hover, focus or touch), whose Save sends a set.edit and whose Delete, confirmed, a
@@ -24,7 +26,8 @@
     so the keyboard reaches it first on a desktop. Its controls are device actions; Skip and
     Dismiss clear it. With no rest, once the exercise has a set done, Start rest in its place
     starts the exercise's (flow.ts restAt): for a device that leaves the rest to the owner, or
-    another after Skip. At zero (feedback.ts, loaded after the first paint): a vibration and a tone
+    another after Skip. A tap on its controls before the store is open waits for it, with the time
+    of the tap. At zero (feedback.ts, loaded after the first paint): a vibration and a tone
     as the device's settings allow; the screen is kept awake during rest when they ask for it.
   - The card's Options button opens the exercise's quick actions (ExerciseActionsSheet.svelte,
     loaded on intent): Machine unavailable, Suggest an alternative, I don't like this exercise,
@@ -79,6 +82,7 @@
 	import type ExercisePicker from './ExercisePicker.svelte';
 	import ExerciseList from './ExerciseList.svelte';
 	import { afterPaint } from './lazy.ts';
+	import { keepLoggerSpace, readLoggerSpace } from './logger-space.ts';
 	import type LoggerView from './Logger.svelte';
 	import type NavigationView from './Navigation.svelte';
 	import type PlateSheet from './PlateSheet.svelte';
@@ -212,9 +216,10 @@
 	});
 
 	// The logger and its prefill rules load once the first render has painted (Logger.svelte says
-	// why), so their requests never delay the card's; it shows once the store (the Shell's, on
-	// idle) can write too. The navigation loads with it.
+	// why), so their requests never delay the card's; it shows as soon as it has, its space kept
+	// meanwhile (the height it last had here). The navigation loads with it.
 	let Logger = $state.raw<typeof LoggerView | null>(null);
+	const reserved = import.meta.env.SSR ? null : readLoggerSpace();
 	let Navigation = $state.raw<typeof NavigationView | null>(null);
 	onMount(() => {
 		if (import.meta.env.SSR) return;
@@ -314,16 +319,17 @@
 		active.store?.dispatch({ type: 'rest.start', workoutId: view.workout.id, at, durationMs });
 	}
 
-	/** A rest action, now; nothing before the store is open (on idle after the first render). */
+	/** A rest action at the time of the tap: now, or as the store opens (right after the first paint). */
 	function restAction(
 		type: 'rest.pause' | 'rest.resume' | 'rest.reset' | 'rest.add' | 'rest.clear'
 	) {
 		const workoutId = view.workout.id;
 		const at = Date.now();
-		if (!active.store) return;
 		if (type !== 'rest.clear') {
-			active.store.dispatch(
-				type === 'rest.add' ? { type, workoutId, at, ms: REST_STEP_MS } : { type, workoutId, at }
+			active.write((store) =>
+				store.dispatch(
+					type === 'rest.add' ? { type, workoutId, at, ms: REST_STEP_MS } : { type, workoutId, at }
+				)
 			);
 			return;
 		}
@@ -331,11 +337,13 @@
 		const focused = document.activeElement;
 		const keyboard =
 			focused?.closest('[data-testid="rest-timer"]') && focused.matches(':focus-visible');
-		active.store.dispatch({ type, workoutId });
-		if (!keyboard) return;
-		void tick().then(() => {
-			const next = document.querySelector<HTMLElement>('[data-testid="complete-set"]');
-			(next ?? document.getElementById('main'))?.focus();
+		active.write((store) => {
+			store.dispatch({ type, workoutId });
+			if (!keyboard) return;
+			void tick().then(() => {
+				const next = document.querySelector<HTMLElement>('[data-testid="complete-set"]');
+				(next ?? document.getElementById('main'))?.focus();
+			});
 		});
 	}
 
@@ -399,16 +407,18 @@
 	const startable = $derived(
 		active.store !== null && !!current?.slot.sets.some((set) => !set.isSkipped)
 	);
-	const shown = $derived(rest !== null || startable);
 
-	// The logger comes and goes (all sets logged, Add a set) and grows (Missed reps): followed.
+	// The logger (or its reserved space) comes and goes (all sets logged, Add a set) and grows
+	// (Missed reps): followed, for the pill and for the next load's reserved space.
 	$effect(() => {
-		if (!main || !shown) return;
+		if (!main) return;
 		const column = main;
 		let logger: HTMLElement | null = null;
 		const sizes = new ResizeObserver(() => (loggerHeight = logger?.offsetHeight ?? 0));
 		const find = () => {
-			const found = column.querySelector<HTMLElement>(':scope > [data-testid="set-logger"]');
+			const found = column.querySelector<HTMLElement>(
+				':scope > [data-testid="set-logger"], :scope > .logger-space'
+			);
 			if (found === logger) return;
 			if (logger) sizes.unobserve(logger);
 			logger = found;
@@ -416,7 +426,9 @@
 				loggerHeight = 0;
 				return;
 			}
-			sizes.observe(found);
+			// Its border box, as offsetHeight: the home indicator's inset is padding, and a change in
+			// it alone leaves the content box (the observer's default) as it was.
+			sizes.observe(found, { box: 'border-box' });
 			// Measured now, not at the observer's first report a frame later: the pill that appears
 			// with the first rest, or a new logger, never shows at the foot before it moves above it.
 			loggerHeight = found.offsetHeight;
@@ -428,6 +440,13 @@
 			children.disconnect();
 			sizes.disconnect();
 		};
+	});
+
+	// Only a logger stuck to the foot (below 1024 px, SetLogger's CSS): from there it sits in the
+	// column, under the rows, and none is kept.
+	$effect(() => {
+		const logger = loggerHeight > 0 && main?.querySelector(':scope > [data-testid="set-logger"]');
+		if (logger && getComputedStyle(logger).position === 'sticky') keepLoggerSpace(loggerHeight);
 	});
 
 	// The set editor: fetched on a row's first intent; a chunk that is gone shows 'App updated'.
@@ -564,14 +583,21 @@
 			{/if}
 		</div>
 	{/if}
-	{#if current && Logger && active.store}
+	{#if current && Logger}
 		<Logger
 			{view}
 			slot={current.slot}
 			open={current.open}
 			notSaved={snapshot.notSaved}
-			store={active.store}
+			write={active.write}
 		/>
+	{:else if current && reserved !== null}
+		<div
+			class="logger-space"
+			style:height="{reserved}px"
+			aria-hidden="true"
+			data-testid="logger-space"
+		></div>
 	{/if}
 	{#if Editor && editing && active.store}
 		<Editor {view} {editing} store={active.store} />
@@ -607,6 +633,11 @@
 	.start .pill {
 		display: flex;
 		justify-content: flex-end;
+	}
+
+	/* The logger's place while it loads, below 1024 px: SetLogger's box, stuck to the foot, empty. */
+	.logger-space {
+		display: none;
 	}
 
 	/* Vertical drags scroll the page; sideways ones are the swipe's, so it never scrolls sideways. */
@@ -645,12 +676,25 @@
 			margin-top: auto;
 		}
 
-		.main:has(> :global([data-testid='set-logger'])) > .rest {
+		.logger-space {
+			display: block;
+			position: sticky;
+			bottom: 0;
+			z-index: var(--z-sticky);
+			margin: auto calc(-1 * max(var(--gutter), var(--safe-right)))
+				calc(-1 * (var(--space-8) + var(--safe-bottom)))
+				calc(-1 * max(var(--gutter), var(--safe-left)));
+			border-top: 1px solid var(--color-border);
+			background: var(--color-surface-1);
+			box-shadow: var(--elevation-2);
+		}
+
+		.main:has(> :global([data-testid='set-logger']), > .logger-space) > .rest {
 			position: static;
 			height: var(--pill-height);
 		}
 
-		.main:has(> :global([data-testid='set-logger'])) > .rest > .pill {
+		.main:has(> :global([data-testid='set-logger']), > .logger-space) > .rest > .pill {
 			position: fixed;
 			inset-inline: max(var(--gutter), var(--safe-left)) max(var(--gutter), var(--safe-right));
 			bottom: calc(max(var(--logger-height), var(--safe-bottom)) + var(--space-4));
@@ -669,7 +713,8 @@
 		}
 
 		/* The pill takes the logger's place at the foot, so the logger follows it directly. */
-		.main:has(> .rest) > :global([data-testid='set-logger']) {
+		.main:has(> .rest) > :global([data-testid='set-logger']),
+		.main:has(> .rest) > .logger-space {
 			margin-top: 0;
 		}
 	}
