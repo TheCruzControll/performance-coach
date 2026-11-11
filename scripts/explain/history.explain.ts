@@ -51,6 +51,7 @@ import { ACTIVE_WORKOUTS_LIMIT } from '../../src/lib/server/services/workouts/ca
 import { analyticsExplain } from './analytics.cases';
 import { generateCoachDataset, loadCoachDataset } from './coach-dataset';
 import { FIRST_MONDAY, generateDataset, loadDataset, WEEKS } from './dataset';
+import { periodisationExplain } from './periodisation.cases';
 import { checkPlan, scansOf, sizeClass, type Catalog, type PlanNode } from './plan-check';
 
 const url = process.env.EXPLAIN_DATABASE_URL || LOCAL_DATABASE_URLS.explain;
@@ -640,3 +641,5 @@ describe(`db:explain on ${redactUrl(url)}`, () => {
 
 // M6's fact queries on their own owner, loaded once M3's cases have run.
 const m6 = analyticsExplain({ client, db, owner, readCatalog, render });
+// M7's server time against the same paths without M7, on M3's owner.
+periodisationExplain({ db, owner });
