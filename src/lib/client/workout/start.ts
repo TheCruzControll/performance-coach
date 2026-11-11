@@ -2,12 +2,14 @@
  * Starting a workout (PRD §7, §9; the offline workout sync ADR, 'The start kit'). Loaded only when
  * /workout has ?start or ?new, by the start flow (src/routes/workout/StartFlow.svelte).
  *
- * - startPlanned(lineage): the planned session's start kit from GET /api/workouts/kit?lineage=,
- *   given KIT_TIMEOUT_MS. Unreachable (offline, a timeout, a 5xx), a kit saved on this device
- *   starts it instead. A 401 asks for a sign-in and a 404 says the session is not in the plan,
- *   whatever is saved. Then the workout is created here under a new client id: workout.start,
- *   pinned to the kit's planned session, the kit and the stopwatch, in one write. Then persistent
- *   storage is asked for, and the caller goes to the kind's route (kinds.ts).
+ * - startPlanned(lineage): a kit saved on this device (Today saves them) starts the session at once,
+ *   with no request: the workout page fetches the fresh kit in the background (kit-refresh.ts,
+ *   through the outcome's `refresh`). With none saved, the start kit from GET
+ *   /api/workouts/kit?lineage=, given UNSAVED_KIT_TIMEOUT_MS; unreachable (offline, a timeout, a
+ *   5xx) says so. A 401 asks for a sign-in and a 404 says the session is not in the plan. Then the
+ *   workout is created here under a new client id: workout.start, pinned to the kit's planned
+ *   session, the kit and the stopwatch, in one write. Then persistent storage is asked for, and
+ *   the caller goes to the kind's route (kinds.ts).
  * - startAdHoc(kind): the same, from a kit built on the device (domain adhoc.ts), in the owner's
  *   training-profile units, as GET /api/exercises gives them (owner decision: the profile wins
  *   over this device's display units, so a planned and an ad-hoc run read alike). Unreachable, the
@@ -20,8 +22,8 @@
  *   it, or discardInProgress and start again. Discard drops a workout whose start has not synced
  *   (the store's Discard), and abandons one the server holds (workout.abandon, sent by the next
  *   page's sync engine). Opening the start link of the workout in progress resumes it.
- * - saveKits(lineages): today's kits, saved for a gym with no signal (Today calls it on idle, in
- *   start-entry-points), with the owner's units. A 401 purges and stops it.
+ * - saveKits(lineages): the coming days' kits, saved for a gym with no signal (Today and Train
+ *   call it on idle, coming-kits.ts), with the owner's units. A 401 purges and stops it.
  * Plain .ts with no runes: the store, the network and the clock are injected.
  */
 import type { IsoDate } from '#lib/domain/calendar.ts';
@@ -34,8 +36,10 @@ import { workoutPath, type WorkoutPath } from './kinds.ts';
 import { isLibrary, isUnits, LIBRARY_URL } from './library.ts';
 import { createStore, requestPersistence, type WorkoutStore, type WriteOutcome } from './store.ts';
 
-/** A kit not answered after this long is given up on: a saved kit, or the offline state. */
+/** A kit or the units not answered after this long are given up on (saveKits, startAdHoc). */
 export const KIT_TIMEOUT_MS = 4_000;
+/** Starting with no kit saved, the owner waits on the request: the offline state comes sooner. */
+export const UNSAVED_KIT_TIMEOUT_MS = 1_500;
 
 export const startKitUrl = (lineage: string) =>
 	`/api/workouts/kit?lineage=${encodeURIComponent(lineage)}`;
@@ -57,6 +61,8 @@ export interface KitOptions {
 	fetch?: (url: string, init: RequestInit) => Promise<Response>;
 	setTimeout?: (run: () => void, ms: number) => unknown;
 	clearTimeout?: (timer: unknown) => void;
+	/** KIT_TIMEOUT_MS unless given. */
+	timeoutMs?: number;
 }
 
 type Failure = { ok: false; reason: 'signed-out' | 'missing' | 'unreachable' };
@@ -92,11 +98,12 @@ async function fetchJson(
 	{
 		fetch: request = (url, init) => fetch(url, init),
 		setTimeout: later = (run, ms) => setTimeout(run, ms),
-		clearTimeout: cancel = (timer) => clearTimeout(timer as ReturnType<typeof setTimeout>)
+		clearTimeout: cancel = (timer) => clearTimeout(timer as ReturnType<typeof setTimeout>),
+		timeoutMs = KIT_TIMEOUT_MS
 	}: KitOptions = {}
 ): Promise<{ ok: true; body: unknown } | Failure> {
 	const controller = new AbortController();
-	const timer = later(() => controller.abort(), KIT_TIMEOUT_MS);
+	const timer = later(() => controller.abort(), timeoutMs);
 	try {
 		const response = await request(url, {
 			headers: { accept: 'application/json' },
@@ -133,7 +140,8 @@ export interface InProgress {
 }
 
 export type StartOutcome =
-	| { status: 'started'; path: WorkoutPath }
+	/** refresh: the workout started from a saved kit, whose fresh copy the workout page fetches. */
+	| { status: 'started'; path: WorkoutPath; refresh?: string }
 	| { status: 'conflict'; active: InProgress }
 	/** not-saved: this browser refused the write (quota, private mode). */
 	| { status: 'signed-out' | 'missing' | 'unreachable' | 'not-saved' };
@@ -175,8 +183,15 @@ export async function inProgress(store: WorkoutStore): Promise<InProgress | null
 
 const conflicted = (active: InProgress): StartOutcome => ({ status: 'conflict', active });
 
-/** Creates the workout from its kit in one write, then asks for persistent storage. */
-async function begin(kit: StartKit, options: StartOptions): Promise<StartOutcome> {
+/**
+ * Creates the workout from its kit in one write, then asks for persistent storage. `fromSaved`: the
+ * kit is this device's copy, so the outcome names the workout whose kit the workout page refreshes.
+ */
+async function begin(
+	kit: StartKit,
+	options: StartOptions,
+	fromSaved = false
+): Promise<StartOutcome> {
 	const { store, now = Date.now, persist = () => requestPersistence() } = options;
 	const workoutId = crypto.randomUUID();
 	const at = now();
@@ -208,7 +223,8 @@ async function begin(kit: StartKit, options: StartOptions): Promise<StartOutcome
 	}
 	if (outcome !== 'saved') return { status: 'not-saved' };
 	await persist();
-	return { status: 'started', path: workoutPath(kind) };
+	const path = workoutPath(kind);
+	return fromSaved ? { status: 'started', path, refresh: workoutId } : { status: 'started', path };
 }
 
 /** A 401: the session is gone, so what the server holds leaves the device (sync.ts's rule). */
@@ -238,17 +254,22 @@ async function vouch<A extends KitAnswer | UnitsAnswer>(
 
 export async function startPlanned(lineage: string, options: StartOptions): Promise<StartOutcome> {
 	const { store } = options;
-	const vouched = await vouch(store, () => fetchKit(lineage, options));
+	const saved = await store.getKit(lineage);
+	const ask = () =>
+		fetchKit(lineage, { ...options, timeoutMs: saved ? KIT_TIMEOUT_MS : UNSAVED_KIT_TIMEOUT_MS });
+	const vouched = await vouch(store, ask);
 	if (vouched?.refused) return vouched.refused;
 	const held = await inProgress(store);
 	if (held?.plannedLineage === lineage) return { status: 'started', path: workoutPath(held.kind) };
 	if (held) return conflicted(held);
-	const answer = vouched?.answer ?? (await fetchKit(lineage, options));
+	// Saved: no wait on the network; the workout page refreshes it (kit-refresh.ts).
+	if (saved && !vouched) return begin(saved, options, true);
+	const answer = vouched?.answer ?? (await ask());
 	if (!answer.ok && answer.reason === 'signed-out') return sessionLost(store);
 	if (!answer.ok && answer.reason === 'missing') return { status: 'missing' };
-	if (answer.ok) await store.saveUnits(answer.kit.units);
-	const kit = answer.ok ? answer.kit : await store.getKit(lineage);
-	return kit ? begin(kit, options) : { status: 'unreachable' };
+	if (!answer.ok) return { status: 'unreachable' };
+	await store.saveUnits(answer.kit.units);
+	return begin(answer.kit, options);
 }
 
 /** deviceUnits: this device's display units, only when the server never gave the owner's. */
