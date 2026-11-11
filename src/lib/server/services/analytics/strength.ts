@@ -76,7 +76,6 @@ import { isHardSet } from '../../../domain/training/metrics';
 import { MUSCLE_GROUPS } from '../../../domain/training/vocabulary';
 import { cleanFloat } from '../../../domain/units';
 import { isWorking, volumeOf } from '../../../domain/workout/logging';
-import type { SetFact } from '../../db/repositories/analytics';
 import type { Executor } from '../../db/types';
 import { getExercisesByIds, type ExerciseDef } from '../exercises/index';
 import { getAthleteProfile } from '../profile/index';
@@ -266,7 +265,8 @@ export async function getStrengthDashboard(
 		!headline && RECORDS_FROM === 'all' && first !== null && first < from
 			? await loader(first, addDays(from, -1)).sets()
 			: [];
-	const ids = [...new Set([...earlier, ...sets].map((set) => set.exercise))];
+	const all = earlier.length ? [...earlier, ...sets] : sets;
+	const ids = [...new Set(all.map((set) => set.exercise))];
 	const exercises = await getExercisesByIds(ownerId, ids, { db });
 	const shownFrom = earliest(window.weeks?.from, trend.weeks?.from, inProgress.weekStart);
 	const periodFrom = window.weeks?.from ?? inProgress.weekStart;
@@ -281,13 +281,28 @@ export async function getStrengthDashboard(
 	const lastSunday = addDays(inProgress.weekStart, -1);
 	const count = daysBetween(from, inProgress.weekStart) / 7;
 	const loaded = { weeks: count > 0 ? { from, to: lastSunday, count } : null, inProgress };
-	const dayOf = (set: SetFact) => localDay(set.performedAt, timeZone);
+	// Each set's day, worked out once: every figure filters the same sets by day.
+	const days = sets.map((set) => localDay(set.performedAt, timeZone));
+	const mondays = new Map<IsoDate, IsoDate>();
+	const weekOf = (day: IsoDate) => {
+		let monday = mondays.get(day);
+		if (monday === undefined) mondays.set(day, (monday = mondayOf(day)));
+		return monday;
+	};
+	const indexesIn = (range: WeekRange | null) => {
+		const indexes: number[] = [];
+		for (let i = 0; i < days.length; i++) if (within(days[i]!, range)) indexes.push(i);
+		return indexes;
+	};
 	// Each figure asks for the same few ranges again (its period, the one before, its trend): each
 	// range's sets and active weeks are worked out once.
-	const setsIn = byRange((range) => sets.filter((set) => within(dayOf(set), range)));
+	const setsIn = byRange((range) => indexesIn(range).map((i) => sets[i]!));
 	const activeWeeksIn = byRange(
-		(range) => new Set(setsIn(range).map((set) => mondayOf(dayOf(set)))).size
+		(range) => new Set(indexesIn(range).map((i) => weekOf(days[i]!))).size
 	);
+	// 'This week so far' reads this week's days and the same days of last week only.
+	const soFarFrom = sameDaysLastWeek(inProgress).from;
+	const recent = sets.filter((_, i) => days[i]! >= soFarFrom);
 	const setsOf = Map.groupBy(sets, (set) => set.exercise);
 	const activeWeeks = activeWeeksIn(window.weeks);
 	const nameOf = (id: string) => exercises.get(id)?.name ?? 'Unknown exercise';
@@ -334,7 +349,7 @@ export async function getStrengthDashboard(
 
 	// ---- key lifts
 	const lifts = keyLifts(
-		sets.filter((set) => dayOf(set) >= shownFrom),
+		sets.filter((_, i) => days[i]! >= shownFrom),
 		exercises
 	).map(({ exercise: id, baselineLift }): KeyLiftFigure => {
 		const lift = exercises.get(id)!;
@@ -356,7 +371,7 @@ export async function getStrengthDashboard(
 
 	// ---- tonnage, all the overview needs besides the key lifts
 	const tonnage = weeklyTonnage(sets, exercises, timeZone, loaded);
-	const lifted = sets.flatMap((set): Timed[] => {
+	const lifted = recent.flatMap((set): Timed[] => {
 		const kg = volumeOf(set, exercises.get(set.exercise)!);
 		return kg === null ? [] : [{ at: set.performedAt, value: kg }];
 	});
@@ -371,7 +386,7 @@ export async function getStrengthDashboard(
 		value: n,
 		inProgress: open
 	}));
-	const hard = sets.flatMap((set): Timed[] =>
+	const hard = recent.flatMap((set): Timed[] =>
 		isHardSet(isWorking(set), set.rpe) ? [{ at: set.performedAt, value: 1 }] : []
 	);
 
@@ -429,7 +444,8 @@ export async function getStrengthDashboard(
 		);
 	});
 	const exposuresIn = byRange((range) => exposures.filter((e) => within(e.day, range)));
-	const deviationIn = byRange((range) => rpeDeviationSummary(exposuresIn(range)).overall);
+	const summaryIn = byRange((range) => rpeDeviationSummary(exposuresIn(range)));
+	const deviationIn = (range: WeekRange | null) => summaryIn(range).overall;
 	const deviationWeeks = Object.entries(rpeDeviationSummary(exposures).byWeek).flatMap(
 		([week, { mean }]) => (mean === null ? [] : [[week, mean] as const])
 	);
@@ -442,7 +458,7 @@ export async function getStrengthDashboard(
 	);
 	const periodSets = setsIn(window.weeks);
 	const periodExposures = exposuresIn(window.weeks);
-	const periodDeviation = rpeDeviationSummary(periodExposures).byExercise;
+	const periodDeviation = summaryIn(window.weeks).byExercise;
 	const periodExposuresOf = Map.groupBy(periodExposures, (e) => e.exerciseId);
 	const byLift = [...Map.groupBy(periodSets, (set) => set.exercise)]
 		.map(([id, liftSets]): LiftRpe => {
@@ -470,7 +486,7 @@ export async function getStrengthDashboard(
 
 	// ---- PRs: every record broken in the period or this week, against all earlier training
 	const prFrom = window.weeks?.from ?? inProgress.weekStart;
-	const history = Map.groupBy([...earlier, ...sets], (set) => set.exercise);
+	const history = Map.groupBy(all, (set) => set.exercise);
 	const shownPr = (pr: StrengthPr, value: number) =>
 		pr.kind === 'most_reps' ? `${value} reps` : weight(value, units).text;
 	const prs = [...history]
