@@ -43,6 +43,9 @@
  *   edit sets app.actor to deps.source for the audit trigger, inside that transaction.
  * - startWorkout takes the planned session pinned to its row; a lineage or program the device
  *   names beside it must be that row's.
+ * - finishWorkout ends a workout only as canEnd says (owner decision D1): a completed workout
+ *   stays completed and an abandoned one may still be completed. A late or second end changes
+ *   nothing (changed: false, no audit row), so the sync endpoint still answers it 'applied'.
  * - A substitution stays on the workout: it never writes an exercise preference, whatever its
  *   reason (only an explicit 'never prescribe this again' does, m3/39).
  */
@@ -62,6 +65,7 @@ import {
 	startWorkoutSchema,
 	substitutionSchema
 } from '../../../domain/training/schemas';
+import { canEnd } from '../../../domain/workout/ends';
 import { checkSet, e1rmOf, type RuledSet } from '../../../domain/workout/logging';
 import { cleanFloat, toMetres, type DistanceUnit } from '../../../domain/units';
 import {
@@ -291,7 +295,10 @@ export async function deleteSet(
 	);
 }
 
-/** Finish or abandon a workout, setting the summary fields `input` carries. */
+/**
+ * Finish or abandon a workout, setting the summary fields `input` carries. An end canEnd refuses
+ * (a completed workout, or a second abandon) writes nothing and answers changed: false.
+ */
 export async function finishWorkout(
 	ownerId: string,
 	clientId: string,
@@ -306,6 +313,9 @@ export async function finishWorkout(
 			const workout = await liveWorkout(repo, ownerId, clientId, true);
 			if (finish.finishedAt < workout.startedAt) {
 				throw new TrainingInputError({ finishedAt: 'Not before the workout started' });
+			}
+			if (!canEnd(workout.status, finish.status === 'completed' ? 'finish' : 'abandon')) {
+				return { workout, changed: false };
 			}
 			const values: WorkoutEdit = given(finish);
 			if (holds(workout, values)) return { workout, changed: false };

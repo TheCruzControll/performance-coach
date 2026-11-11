@@ -223,3 +223,75 @@ export function bypassHeaders(env: E2EEnv): Record<string, string> | undefined {
 	if (!secret || !env.E2E_BASE_URL) return undefined;
 	return { 'x-vercel-protection-bypass': secret, 'x-vercel-set-bypass-cookie': 'true' };
 }
+
+/**
+ * The screen gallery (.github/workflows/screen-gallery.yml): E2E_GALLERY=1 runs only the
+ * `*.gallery.ts` specs, which no other run lists (the config's testMatch is `*.e2e.ts`), so the
+ * gallery adds nothing to a CI leg or a shard plan. It is a whole run of its own: it refuses a
+ * leg's selection and the deployed targets.
+ */
+export const GALLERY = '**/*.gallery.ts';
+
+export function galleryMode(env: E2EEnv): boolean {
+	if (env.E2E_GALLERY !== '1') return false;
+	for (const name of ['E2E_ENGINE', 'E2E_GROUP', 'E2E_BASE_URL', 'E2E_DEPLOYED_LOCAL']) {
+		if (env[name]) throw new Error(`E2E_GALLERY=1 is a run of its own: unset ${name}`);
+	}
+	return true;
+}
+
+/** iPhone 15's screen in CSS pixels: the gallery captures the phone at its full height. */
+export const IPHONE_15 = { width: 393, height: 852 } as const;
+
+/**
+ * The gallery's projects: the owner setups, then the gallery specs on an iPhone 15 in WebKit (at
+ * 3x) and a 1440 × 900 desktop window in Chromium, each signed in from its engine's setup. A
+ * screen that fails is recorded by the spec, never retried; `metadata.galleryDevice` names the
+ * device in each file name.
+ */
+export function galleryProjects({
+	setup,
+	setupWebKit,
+	chromiumState,
+	webkitState
+}: {
+	setup: Project;
+	setupWebKit: Project;
+	chromiumState: string;
+	webkitState: string;
+}): Project[] {
+	const gallery = { testMatch: GALLERY, retries: 0, fullyParallel: false } as const;
+	const timeouts = { actionTimeout: 10_000, navigationTimeout: 20_000 } as const;
+	return [
+		setup,
+		setupWebKit,
+		{
+			name: 'gallery-iphone-webkit',
+			...gallery,
+			dependencies: [setupWebKit.name!],
+			metadata: { galleryDevice: 'iphone' },
+			use: {
+				...devices['iPhone 15'],
+				viewport: IPHONE_15,
+				contextOptions: { screen: IPHONE_15 },
+				deviceScaleFactor: 3,
+				browserName: 'webkit',
+				storageState: webkitState,
+				...timeouts
+			}
+		},
+		{
+			name: 'gallery-desktop-chromium',
+			...gallery,
+			dependencies: [setup.name!],
+			metadata: { galleryDevice: 'desktop' },
+			use: {
+				...devices['Desktop Chrome'],
+				...DESKTOP,
+				browserName: 'chromium',
+				storageState: chromiumState,
+				...timeouts
+			}
+		}
+	];
+}
