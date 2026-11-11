@@ -11,9 +11,9 @@
  *
  * The setup and the program are read together, and the plan and the week start as soon as the
  * program is found, each service on its own pool connection (docs/architecture.md), so `db` is
- * the pool, never a transaction. Onboarding, once complete, stays complete, and a program is only built
- * after it, so the program read rarely runs for nothing: its answer is used only once the setup
- * says onboarding is complete.
+ * the pool, never a transaction. Onboarding, once complete, stays complete, and a program is only
+ * built after it, so the program read rarely runs for nothing: its answer is used only once the
+ * setup says onboarding is complete.
  */
 import { loadTodayPlan, type TodayPlanView } from './plan.server';
 import { loadTodayProgram, type TodayProgram } from './program.server';

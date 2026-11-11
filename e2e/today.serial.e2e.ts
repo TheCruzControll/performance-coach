@@ -6,9 +6,9 @@
  * summarises the open goals by rank (weeks to go counted from the device's date) and the shape of
  * the week, with the commitments marked on the week strip, then This week: sessions, training load
  * and distance from Monday to today against the same days last week (no data yet before the first
- * session, 0 for an empty week after it, a designed error with Retry when the read fails). Serial (one test at a time, after the
- * functional suites): every test starts from a blank training profile, which every browser and
- * worker shares, and the last one leaves it blank again.
+ * session, 0 for an empty week after it, a designed error with Retry when the read fails).
+ * Serial (one test at a time, after the functional suites): every test starts from a blank
+ * training profile, which every browser and worker shares, and the last one leaves it blank again.
  */
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';

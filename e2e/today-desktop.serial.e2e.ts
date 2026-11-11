@@ -2,10 +2,10 @@
  * Today in a desktop window (docs/design-system.md, Responsive layout → Screens): a wide screen.
  * The week runs across the top; the state's panel (the setup card, the Build card, Build my
  * program, or today's plan) takes the main column, and the goals, then This week, take the side
- * column (the plate calculator lives in Train and the workout, not on Today). Every designed state keeps that frame: setup, ready, the program (a session
- * day, a rest day, starting Monday, the first block complete), a failed read, offline, a panel
- * whose code fails, and each of Build my program's states (pending, a generator failure, the
- * three conflicts, offline). Start week 1 is column chrome. Serial: each test sets up the one
+ * column (the plate calculator lives in Train and the workout, not on Today). Every designed
+ * state keeps that frame: setup, ready, the program (a session day, a rest day, starting Monday,
+ * the first block complete), a failed read, offline, a panel whose code fails, and each of Build
+ * my program's states (pending, a generator failure, the three conflicts, offline). Start week 1 is column chrome. Serial: each test sets up the one
  * owner's training profile or program (e2e/program-support.ts), and the last leaves it blank.
  */
 import AxeBuilder from '@axe-core/playwright';
