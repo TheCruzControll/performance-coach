@@ -6,6 +6,7 @@ import {
 	ACTIVE_LAUNCH_TIMEOUT_MS,
 	LAUNCH_PATHS,
 	LAUNCH_SCRIPT,
+	listsToday,
 	NAVIGATION_TIMEOUT_MS,
 	navigationTimeout,
 	START_URL
@@ -112,5 +113,15 @@ describe("the service worker's navigation timeout", () => {
 		expect(await navigationTimeout('/progress', active)).toBe(NAVIGATION_TIMEOUT_MS);
 		expect(await navigationTimeout('/workout', active)).toBe(NAVIGATION_TIMEOUT_MS);
 		expect(asked).toBe(false);
+	});
+});
+
+describe('listsToday', () => {
+	it("lists today's saved sessions on the start URL and /offline only", () => {
+		expect(listsToday(START_URL)).toBe(true);
+		expect(listsToday('/offline')).toBe(true);
+		for (const path of ['/progress', '/train', '/today/x', '/', '/workout']) {
+			expect(listsToday(path)).toBe(false);
+		}
 	});
 });

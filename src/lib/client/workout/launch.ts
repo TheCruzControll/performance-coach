@@ -18,6 +18,14 @@ const ACTIVE_WORKOUT_KEY = 'pc:active-workout:v1';
 /** The manifest's start_url (static/manifest.webmanifest): where an installed app launches. */
 export const START_URL = '/today';
 
+/**
+ * Where the offline screen lists today's sessions saved on this device (routes/OfflineToday.svelte,
+ * today-kits.ts), so a launch with no workout in progress can still start one: the start URL and
+ * /offline itself, the pages LAUNCH_SCRIPT also acts on. Any other screen the offline screen is
+ * served at (a reload of Progress) keeps to its own state.
+ */
+export const listsToday = (pathname: string) => pathname === START_URL || pathname === '/offline';
+
 /** Each kind's workout page, as kinds.ts WORKOUT_PATHS has them (launch.test.ts checks). */
 export const LAUNCH_PATHS = {
 	strength: '/workout',
