@@ -519,4 +519,116 @@ describe('finishWorkout', () => {
 			expect(sets).toEqual([]);
 		});
 	});
+
+	it('keeps a completed workout and its planned session done when a late abandon arrives', async () => {
+		await withRollback(async (db) => {
+			const owner = await makeOwner(db);
+			const plan = programFixture('hybrid', { monday: MONDAY, today: MONDAY });
+			const { programId } = await createProgramFromPlan(owner, plan, { source: 'rules' }, { db });
+			const stored = await getProgramVersion(owner, programId, 1, { db });
+			const session = stored.blocks[0]!.weeks[0]!.sessions.find((s) => s.kind === 'strength')!;
+			const statusOf = async () => {
+				const week = await getTrainingWeek(owner, { date: session.date }, {}, { db });
+				const days = week?.planned ? week.days : [];
+				return days.flatMap((d) => d.sessions).find((s) => s.lineage === session.lineage)!.status;
+			};
+			const on = (time: string) => `${session.date}T${time}:00.000Z`;
+			const clientId = deviceId();
+			await startWorkout(
+				owner,
+				startInput({ clientId, plannedSessionId: session.id, startedAt: on('07:00') }),
+				{ db }
+			);
+			const finished = await finishWorkout(
+				owner,
+				clientId,
+				{ status: 'completed', finishedAt: on('08:00') },
+				{ db }
+			);
+
+			const late = await finishWorkout(
+				owner,
+				clientId,
+				{ status: 'abandoned', finishedAt: on('08:30') },
+				{ db }
+			);
+
+			expect(late).toEqual({ workout: finished.workout, changed: false });
+			const { workout: read } = await getWorkout(owner, clientId, { db });
+			expect(read.status).toBe('completed');
+			expect(read.finishedAt!.toISOString()).toBe(on('08:00'));
+			expect(await auditOf(db, 'workouts', read.id)).toHaveLength(1);
+			expect(await statusOf()).toBe('completed');
+		});
+	});
+
+	it('keeps the first finish when a second finish arrives', async () => {
+		await withRollback(async (db) => {
+			const { owner, workout } = await setup(db);
+			const first = await finishWorkout(
+				owner,
+				workout,
+				{ status: 'completed', finishedAt: at('08:00'), durationSeconds: 3300 },
+				{ db }
+			);
+
+			const second = await finishWorkout(
+				owner,
+				workout,
+				{ status: 'completed', finishedAt: at('08:30'), durationSeconds: 999 },
+				{ db }
+			);
+
+			expect(second).toEqual({ workout: first.workout, changed: false });
+			const { workout: read } = await getWorkout(owner, workout, { db });
+			expect(read).toMatchObject({ status: 'completed', durationSeconds: 3300 });
+			expect(read.finishedAt!.toISOString()).toBe(at('08:00'));
+			expect(await auditOf(db, 'workouts', read.id)).toHaveLength(1);
+		});
+	});
+
+	it('lets a finish complete an abandoned workout', async () => {
+		await withRollback(async (db) => {
+			const { owner, workout } = await setup(db);
+			await finishWorkout(owner, workout, { status: 'abandoned', finishedAt: at('08:00') }, { db });
+
+			const finished = await finishWorkout(
+				owner,
+				workout,
+				{ status: 'completed', finishedAt: at('08:30') },
+				{ db }
+			);
+
+			expect(finished).toMatchObject({ changed: true, workout: { status: 'completed' } });
+			const { workout: read } = await getWorkout(owner, workout, { db });
+			expect(read.status).toBe('completed');
+			expect(read.finishedAt!.toISOString()).toBe(at('08:30'));
+			expect(await auditOf(db, 'workouts', read.id)).toHaveLength(2);
+		});
+	});
+
+	it('keeps the first abandon when a second abandon arrives', async () => {
+		await withRollback(async (db) => {
+			const { owner, workout } = await setup(db);
+			const first = await finishWorkout(
+				owner,
+				workout,
+				{ status: 'abandoned', finishedAt: at('08:00') },
+				{ db }
+			);
+
+			const second = await finishWorkout(
+				owner,
+				workout,
+				{ status: 'abandoned', finishedAt: at('08:30') },
+				{ db }
+			);
+
+			expect(second).toEqual({ workout: first.workout, changed: false });
+			const { workout: read } = await getWorkout(owner, workout, { db });
+			expect(read.status).toBe('abandoned');
+			expect(read.finishedAt!.toISOString()).toBe(at('08:00'));
+			expect(await auditOf(db, 'workouts', read.id)).toHaveLength(1);
+		});
+	});
 });

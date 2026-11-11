@@ -329,7 +329,11 @@ describe('loadProgress, the Strength view', () => {
 		const strength = vi.fn(async () => dashboard());
 		const overview = vi.fn();
 		const data = await loadProgress('owner-1', request, NOW, { db, strength, overview, today });
-		expect(strength).toHaveBeenCalledWith(db, 'owner-1', { period: '12w', today: TODAY });
+		expect(strength).toHaveBeenCalledWith(db, 'owner-1', {
+			period: '12w',
+			today: TODAY,
+			lastGroupWeeks: RANGE_WEEKS
+		});
 		expect(overview).not.toHaveBeenCalled();
 		expect(data).toMatchObject({ failed: false, view: 'strength', period: '12w' });
 		expect(data.failed === false && data.view === 'strength' && data.strength.lifts).toHaveLength(

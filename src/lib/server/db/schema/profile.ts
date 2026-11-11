@@ -24,6 +24,7 @@ import {
 	jsonb,
 	numeric,
 	pgTable,
+	smallint,
 	text,
 	timestamp,
 	uniqueIndex,
@@ -34,6 +35,7 @@ import {
 	BASELINE_SOURCES,
 	EXPERIENCE_LEVELS,
 	GOAL_KINDS,
+	HEART_RATE_BOUNDS,
 	GOAL_STATUSES,
 	INTENSITIES,
 	NUTRITION_PHASES,
@@ -295,6 +297,10 @@ export const strengthBaselines = pgTable(
 	]
 );
 
+/** A heart-rate CHECK body: `column` within its HEART_RATE_BOUNDS range, inclusive. */
+const hrBetween = (column: string, kind: keyof typeof HEART_RATE_BOUNDS) =>
+	sql.raw(`${column} between ${HEART_RATE_BOUNDS[kind].min} and ${HEART_RATE_BOUNDS[kind].max}`);
+
 export const runningProfiles = pgTable(
 	'running_profiles',
 	{
@@ -307,11 +313,32 @@ export const runningProfiles = pgTable(
 		longestRun: numeric('longest_run', { precision: 5, scale: 1, mode: 'number' }),
 		/** Seconds per `unit`. */
 		easyPaceSeconds: integer('easy_pace_seconds'),
+		/** Heart rates in whole bpm, each optional (M7 zones read them when they are there). */
+		maxHr: smallint('max_hr'),
+		restingHr: smallint('resting_hr'),
+		thresholdHr: smallint('threshold_hr'),
 		notes: text('notes'),
 		createdAt: createdAt(),
 		updatedAt: updatedAt()
 	},
-	() => [check('running_profiles_unit_ck', inList('unit', DISTANCE_UNIT_VALUES))]
+	() => [
+		check('running_profiles_unit_ck', inList('unit', DISTANCE_UNIT_VALUES)),
+		check('running_profiles_max_hr_ck', hrBetween('max_hr', 'max')),
+		check('running_profiles_resting_hr_ck', hrBetween('resting_hr', 'resting')),
+		check('running_profiles_threshold_hr_ck', hrBetween('threshold_hr', 'threshold')),
+		check(
+			'running_profiles_hr_order_ck',
+			sql.raw(
+				[
+					['resting_hr', 'threshold_hr'],
+					['threshold_hr', 'max_hr'],
+					['resting_hr', 'max_hr']
+				]
+					.map(([low, high]) => `(${low} is null or ${high} is null or ${low} < ${high})`)
+					.join(' and ')
+			)
+		)
+	]
 );
 
 export const raceResults = pgTable(

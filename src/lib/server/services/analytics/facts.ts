@@ -241,8 +241,9 @@ export interface SharedFactsDeps extends FactsDeps {
 /**
  * One loader over `range` that several services read, each asking for its own days: a range
  * inside it is a filtered view of its rows, so each kind is read once per window whoever asks.
- * Days before `range` are read once more, by a loader of their own (memoised by first day), and
- * days after it are refused (RangeError): `range` must reach the latest day any service reads.
+ * Days before `range` are read once more, by a loader of their own (memoised by its first and last
+ * day), and days after it are refused (RangeError): `range` must reach the latest day any service
+ * reads.
  * Every loader shares one queue, so no two reads ever run at once.
  */
 export function sharedFacts(
@@ -254,20 +255,20 @@ export function sharedFacts(
 	const options = { ...deps, queue: deps.queue ?? createQueue() };
 	const main = createFactsLoader(db, ownerId, range, options);
 	const global = everyDay ?? main;
-	const before = new Map<IsoDate, FactsLoader>();
-	const earlier = (from: IsoDate) => {
-		if (!before.has(from)) {
-			const to = addDays(range.from, -1);
-			before.set(from, createFactsLoader(db, ownerId, { ...range, from, to }, options));
-		}
-		return before.get(from)!;
+	const before = new Map<string, FactsLoader>();
+	const earlier = (from: IsoDate, last: IsoDate) => {
+		const to = last < range.from ? last : addDays(range.from, -1);
+		const key = `${from}/${to}`;
+		if (!before.has(key))
+			before.set(key, createFactsLoader(db, ownerId, { ...range, from, to }, options));
+		return before.get(key)!;
 	};
 	return (from, to) => {
 		if (to < from) throw new RangeError(`${to} is before ${from}`);
 		if (to > range.to)
 			throw new RangeError(`${to} is after the shared facts' last day, ${range.to}`);
 		const sources = [
-			...(from < range.from ? [earlier(from)] : []),
+			...(from < range.from ? [earlier(from, to)] : []),
 			...(to >= range.from ? [main] : [])
 		];
 		return factsView(sources, global, { from, to, timeZone: range.timeZone });
@@ -284,7 +285,11 @@ function factsView(
 	const at = (instant: Date) => on(localDay(instant, range.timeZone));
 	async function rows<T>(read: (loader: FactsLoader) => Promise<T[]>, keep: (row: T) => boolean) {
 		const kept: T[] = [];
-		for (const source of sources) kept.push(...(await read(source)).filter(keep));
+		for (const source of sources) {
+			// A source within these days is kept whole: its rows fall on its own days.
+			const whole = range.from <= source.range.from && source.range.to <= range.to;
+			for (const row of await read(source)) if (whole || keep(row)) kept.push(row);
+		}
 		return kept;
 	}
 	return {

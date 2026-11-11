@@ -19,6 +19,7 @@ import {
 	EXPERIENCE_LEVELS,
 	GOAL_STATUSES,
 	GYM_TYPES,
+	HEART_RATE_BOUNDS,
 	INTENSITIES,
 	LIFTS,
 	NUTRITION_PHASES,
@@ -28,7 +29,8 @@ import {
 	SIDES,
 	TIMES_OF_DAY,
 	WEEKDAYS,
-	WEIGHT_UNITS
+	WEIGHT_UNITS,
+	type HeartRateKind
 } from './catalog';
 
 // ---- building blocks -------------------------------------------------------------------------
@@ -334,6 +336,54 @@ export const raceResultSchema = z
 		}, always)
 	);
 
+const HEART_RATE_LABEL: Record<HeartRateKind, string> = {
+	max: 'Max',
+	resting: 'Resting',
+	threshold: 'Threshold'
+};
+
+const heartRateField = (kind: HeartRateKind) => {
+	const { min, max } = HEART_RATE_BOUNDS[kind];
+	return opt(
+		wholeBetween(min, max, `${HEART_RATE_LABEL[kind]} heart rate between ${min} and ${max}`)
+	);
+};
+
+/**
+ * Pairs that must rise, lower first, each reported at the lower field. Under today's ranges a
+ * resting rate is always below a max; the pair stays so the rule holds if a range moves.
+ */
+const HEART_RATE_ORDER: readonly [HeartRateKind, HeartRateKind, string][] = [
+	['resting', 'max', 'Resting heart rate must be below your max'],
+	['resting', 'threshold', 'Resting heart rate must be below your threshold'],
+	['threshold', 'max', 'Threshold heart rate must be below your max']
+];
+
+/** A value worth ordering: a whole bpm within its range (others already have their message). */
+const inRange = (kind: HeartRateKind, value: unknown): value is number =>
+	Number.isInteger(value) &&
+	(value as number) >= HEART_RATE_BOUNDS[kind].min &&
+	(value as number) <= HEART_RATE_BOUNDS[kind].max;
+
+/** Max, resting and threshold heart rate in whole bpm; any of them may be unknown. */
+export const heartRateSchema = z
+	.object({
+		max: heartRateField('max'),
+		resting: heartRateField('resting'),
+		threshold: heartRateField('threshold')
+	})
+	.check(
+		z.superRefine((hr, ctx) => {
+			for (const [low, high, message] of HEART_RATE_ORDER) {
+				const a = hr[low];
+				const b = hr[high];
+				if (inRange(low, a) && inRange(high, b) && a >= b) {
+					ctx.addIssue({ code: 'custom', message, path: [low], input: a });
+				}
+			}
+		}, always)
+	);
+
 export const runningSchema = z.object({
 	unit: z.enum(DISTANCE_UNITS, 'Pick km or mi'),
 	weeklyDistance: opt(between(0, 500, 'Weekly distance between 0 and 500')),
@@ -341,6 +391,11 @@ export const runningSchema = z.object({
 	longestRun: opt(between(0, 400, 'Longest run between 0 and 400')),
 	/** Seconds per distance unit. */
 	easyPaceSeconds: opt(wholeBetween(120, 1500, 'Easy pace between 2:00 and 25:00')),
+	/**
+	 * Left out, the stored heart rates stay as they are (an editor without the fields cannot
+	 * clear them); `null` clears all three, and a null field clears that one.
+	 */
+	heartRate: z.optional(z.nullable(heartRateSchema)),
 	races: z.array(raceResultSchema).check(z.maxLength(20, 'Too many races')),
 	notes: optWords(300)
 });
