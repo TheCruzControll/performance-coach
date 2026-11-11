@@ -11,7 +11,7 @@
  *   commitment day, for the long run and hard Muay Thai a day after one heavy lower body could not
  *   take anyway, a hard session away from other hard days, and then the day the stage before gave
  *   it. Strength is judged as its hardest week makes it (PLACEMENT.planStrengthAs), so a session
- *   keeps its day all block.
+ *   keeps its day all block. In a week with a fight, generated Muay Thai takes a day before it.
  * - Times of day from the preferred times: a commitment keeps its own, and a session added beside
  *   it takes the first preferred time left, the other slot. A day's sessions are ordered by their
  *   times; each week's end in date order.
@@ -41,6 +41,7 @@ import type { WeekDemand } from './demand.ts';
 import type { ProgrammingInput } from './input.ts';
 import { checkWeek, demandOf } from './interference.ts';
 import type { Violation } from './interference.ts';
+import { fightFrom } from './other.ts';
 import { compareText } from './random.ts';
 import { openDates } from './running.ts';
 import type { GenerateOptions } from './stage.ts';
@@ -115,6 +116,8 @@ interface Week {
 	demand: WeekDemand;
 	/** The dates a generated session may go on. */
 	open: IsoDate[];
+	/** The week's first fight: its generated Muay Thai goes on a day before it. */
+	fight: IsoDate | null;
 	path: (index: number) => PlanPath;
 	weekPath: PlanPath;
 	note: Note;
@@ -266,6 +269,7 @@ function candidates(x: Item, placed: readonly Item[], w: Week): Candidate[] {
 	const freeUsed = generated.filter((i) => !i.double).length;
 	const doubles = generated.length - freeUsed;
 	return w.open.flatMap((date) => {
+		if (w.fight !== null && date >= w.fight && x.session.discipline === 'muay_thai') return [];
 		const here = placed.filter((i) => i.session.date === date);
 		const fixed = here.filter((i) => i.fixed).length;
 		if (here.length > fixed) return [];
@@ -363,6 +367,10 @@ function placeWeek(
 
 	for (const x of queue.filter((i) => !dropped.has(i))) {
 		const all = candidates(x, placed, w).sort(byRules);
+		if (!all.length) {
+			drop(x, 'placement.no_room', 'no day before the fight is left this week');
+			continue;
+		}
 		const rivalsOf = (c: Candidate) =>
 			unique(c.clashes.filter((k) => k.violation.severity === 'avoid').flatMap((k) => k.others));
 		const best = all.find((c) => rivalsOf(c).every((r) => r.rank > x.rank));
@@ -437,7 +445,17 @@ export function placeSessions(
 	const done = weeks.map(({ b, n, week }, k) => {
 		const path = (index: number) => sessionPath(b, n, index);
 		const open = openDates(week, demand.budget.days, firstPlannedDay);
-		const w = { input, demand, open, path, weekPath: `blocks.${b}.weeks.${n}`, note };
+		const fight = fightFrom(input, week.startsOn);
+		const inWeek = fight !== null && fight <= week.endsOn ? fight : null;
+		const w = {
+			input,
+			demand,
+			open,
+			fight: inWeek,
+			path,
+			weekPath: `blocks.${b}.weeks.${n}`,
+			note
+		};
 		// After the last planned week, the commitments go on as they are.
 		const after =
 			weeks[k + 1]?.week.sessions ?? week.sessions.map((s) => ({ ...s, date: addDays(s.date, 7) }));

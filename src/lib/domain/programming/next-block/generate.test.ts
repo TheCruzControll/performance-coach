@@ -186,7 +186,7 @@ describe('the stage list', () => {
 
 	it('stores an id that carries M3’s GENERATOR_ID, so an M3 or M7 bump changes the fingerprint', () => {
 		expect(GENERATOR_ID).toBe(`next-block/1+${M3_GENERATOR_ID}`);
-		expect(GENERATOR_ID).toBe('next-block/1+perfo-programming/5');
+		expect(GENERATOR_ID).toBe('next-block/1+perfo-programming/6');
 	});
 });
 
@@ -656,8 +656,8 @@ const GOLDEN_CASES: [string, Case, string][] = [
 	[
 		'the journey two weeks late',
 		{ key: 'journey', today: addDays(ON_TIME, 14) },
-		// generator-running: its paces come from its VDOT.
-		'60c3417cc8d5efcb'
+		// generator-running: its paces come from its VDOT; generator-combat: its fight camp's sessions.
+		'ee0c6d1ed53ace3b'
 	]
 ];
 

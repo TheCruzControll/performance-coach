@@ -258,8 +258,9 @@ const GOLDEN: Record<ScenarioKey, readonly [monday: string, thursday: string]> =
  * (generator-schedule, GENERATOR_ID 'perfo-programming/3', which changed hybrid's), and each
  * week's prescriptions by its block type (generator-phasing, 'perfo-programming/4': hybrid's
  * secondary strength held to the lower half of its band), and runs from current fitness
- * (generator-running, 'perfo-programming/5': hybrid's and journey's paces from their VDOT); a later
- * GENERATOR_ID bump changes them, and its PR lists each.
+ * (generator-running, 'perfo-programming/5': hybrid's and journey's paces from their VDOT), and
+ * Muay Thai from the fight camp (generator-combat, 'perfo-programming/6': journey's camp weeks get
+ * their sparring and conditioning); a later GENERATOR_ID bump changes them, and its PR lists each.
  */
 const GOLDEN_SEASON: Record<ScenarioKey, readonly [monday: string, thursday: string]> = {
 	beginner: ['40ac8a97f8ac8304', 'afbafd92042977bf'],
@@ -267,7 +268,7 @@ const GOLDEN_SEASON: Record<ScenarioKey, readonly [monday: string, thursday: str
 	hybrid: ['4b442a4bbffe9dba', '6e5143cbd95d1af0'],
 	injuredShoulder: ['a4e42532f422ef13', 'e020e654173b406a'],
 	dumbbellsOnly: ['7eb70d064378cab5', '2ebb5a975014b49c'],
-	journey: ['1874e33f106884a6', '9cf7ce24671e00fe'],
+	journey: ['281fd08bbc77905c', '9d3d00aeebff9b16'],
 	minimal: ['69abd4d5ab6fd927', '1cb83a5371a0118c']
 };
 

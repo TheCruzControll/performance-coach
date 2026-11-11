@@ -283,10 +283,16 @@ describe('the schedule stage on its own', () => {
 		}
 		// One decision for the block, citing Strength A in each building week, all on one day.
 		// One decision for the block moves it in the building weeks, citing it on one day in each.
+		// generator-combat: with the camp's sessions in the week, a Tempo run moves off Wednesday too.
 		const decision = log
 			.list()
-			.find((d) => d.kind === 'schedule_repaired' && d.evidence.from === 'Wednesday morning');
-		expect(decision!.evidence.session).toBe('Strength A');
+			.find(
+				(d) =>
+					d.kind === 'schedule_repaired' &&
+					d.evidence.from === 'Wednesday morning' &&
+					d.evidence.session === 'Strength A'
+			);
+		expect(decision).toBeDefined();
 		expect(decision!.refs.length).toBeGreaterThan(1);
 		const cited = decision!.refs.map((ref) =>
 			resolve({ blocks: after.blocks } as ProgramPlan, ref)

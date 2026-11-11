@@ -108,7 +108,7 @@ test.describe('block-end', () => {
 		const versions = await programVersions(seeded.programId!);
 		expect(versions.map((v) => [v.number, v.current, v.generator])).toEqual([
 			[1, false, versions[0]!.generator],
-			[2, true, 'next-block/1+perfo-programming/5']
+			[2, true, 'next-block/1+perfo-programming/6']
 		]);
 		expect((await cycleReviews(lineageOf(seeded)))[0]!.nextVersionNumber).toBe(2);
 
