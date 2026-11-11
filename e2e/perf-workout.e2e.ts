@@ -34,7 +34,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import type { KitExercise, StartKit, StrengthKit } from '../src/lib/domain/workout';
 import { adHoc } from '../scripts/lib/workout-seed';
-import { traced } from './diag-trace';
 import { longFrames } from './frames';
 import { attribute, inp, percentile, type Tag } from './inp';
 import { resetPrograms } from './program-support';
@@ -418,18 +417,16 @@ test.describe('workout screen at 4× CPU', () => {
 			// The card swiped to a neighbour and back: the next one, or the previous at the end.
 			const name = (await heading(current).textContent())!.trim();
 			const last = await current.getByTestId('exercise-next').isDisabled();
-			await traced(current, testInfo, `swipe load ${load + 1}`, () =>
-				apart(
-					current,
-					windows,
-					async () => {
-						await swipe(current, last ? SWIPE_PX : -SWIPE_PX);
-						await expect(heading(current)).not.toHaveText(name);
-						await swipe(current, last ? -SWIPE_PX : SWIPE_PX);
-						await expect(heading(current)).toHaveText(name);
-					},
-					{ kind: 'swipe', frames }
-				)
+			await apart(
+				current,
+				windows,
+				async () => {
+					await swipe(current, last ? SWIPE_PX : -SWIPE_PX);
+					await expect(heading(current)).not.toHaveText(name);
+					await swipe(current, last ? -SWIPE_PX : SWIPE_PX);
+					await expect(heading(current)).toHaveText(name);
+				},
+				{ kind: 'swipe', frames }
 			);
 			taps += 2;
 
@@ -450,18 +447,16 @@ test.describe('workout screen at 4× CPU', () => {
 				}
 				if (i === 0) {
 					// The exercise's options, opened and closed.
-					await traced(current, testInfo, `sheet load ${load + 1}`, () =>
-						apart(
-							current,
-							windows,
-							async () => {
-								await card(current).getByTestId('exercise-actions').click();
-								await expect(sheet(current)).toBeVisible();
-								await sheet(current).getByRole('button', { name: 'Close' }).click();
-								await expect(sheet(current)).toBeHidden();
-							},
-							{ kind: 'sheet', frames }
-						)
+					await apart(
+						current,
+						windows,
+						async () => {
+							await card(current).getByTestId('exercise-actions').click();
+							await expect(sheet(current)).toBeVisible();
+							await sheet(current).getByRole('button', { name: 'Close' }).click();
+							await expect(sheet(current)).toBeHidden();
+						},
+						{ kind: 'sheet', frames }
 					);
 					taps += 2;
 				}
@@ -487,13 +482,6 @@ test.describe('workout screen at 4× CPU', () => {
 				}
 			}
 
-			await testInfo.attach(`frames load ${load + 1}`, {
-				body: JSON.stringify({
-					frames,
-					interactions: (await observed(current)).interactions
-				}),
-				contentType: 'application/json'
-			});
 			const confirmations = await current.evaluate(() =>
 				performance.getEntriesByName('pc:set-confirmed').map((entry) => entry.duration)
 			);

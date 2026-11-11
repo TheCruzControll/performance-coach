@@ -32,7 +32,6 @@ import {
 	type Page,
 	type Route
 } from '@playwright/test';
-import { traced } from './diag-trace';
 import { markAt, ms, usableAt } from './launch';
 import { PROGRAM_TZ, resetPrograms, seedProgram } from './program-support';
 import { query, TABS } from './support';
@@ -239,7 +238,7 @@ test.describe('the gym journey on a poor connection (4× CPU)', () => {
 			const started = usable.epoch - (await lastTap(page));
 			steps.push(`Start to a usable logger ${ms(started)}`);
 
-			const confirmed = await traced(page, testInfo, 'slow first set', () => firstSet(page));
+			const confirmed = await firstSet(page);
 			steps.push(`first set confirmed ${ms(confirmed)}`);
 
 			await page.getByTestId('workout-header').getByRole('link', { name: 'Minimise' }).click();
@@ -283,7 +282,7 @@ test.describe('the gym journey on a poor connection (4× CPU)', () => {
 			const store = await markAt(page, 'pc:store-open');
 			steps.push(`store-open ${ms(store)}`);
 
-			const confirmed = await traced(page, testInfo, 'lie-fi first set', () => firstSet(page));
+			const confirmed = await firstSet(page);
 			steps.push(`first set confirmed ${ms(confirmed)}`);
 
 			await page.getByTestId('workout-header').getByRole('link', { name: 'Minimise' }).click();
