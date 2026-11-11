@@ -321,11 +321,16 @@ export async function getGeneralDashboard(
 	};
 
 	// The ratio on a day: daily loads from the later of the window's start and the first activity.
+	const startOf = (day: IsoDate, since: IsoDate) =>
+		since > addDays(day, 1 - ACWR_WINDOW_DAYS) ? since : addDays(day, 1 - ACWR_WINDOW_DAYS);
+	// Every day a ratio reads, worked out once: each ratio reads its own window of them.
+	const lastRatioDay = ratioDays.at(-1)!;
+	const ratioFrom = first && first <= lastRatioDay ? startOf(ratioDays[0]!, first) : null;
+	const ratioLoads = ratioFrom ? dailyLoads(loads, ratioFrom, lastRatioDay) : [];
 	const ratioOn = (day: IsoDate) => {
-		if (!first || day < first) return null;
-		const start =
-			first > addDays(day, 1 - ACWR_WINDOW_DAYS) ? first : addDays(day, 1 - ACWR_WINDOW_DAYS);
-		return acwr(dailyLoads(loads, start, day));
+		if (!first || !ratioFrom || day < first) return null;
+		const offset = (date: IsoDate) => daysBetween(ratioFrom, date);
+		return acwr(ratioLoads.slice(offset(startOf(day, first)), offset(day) + 1));
 	};
 	const ratios = ratioDays.map((day) => ({ day, ratio: ratioOn(day) }));
 

@@ -386,6 +386,29 @@ describe('duplicates and order', () => {
 			expect(await auditCount(db, 'workouts', row!.id)).toBe(2);
 		});
 	});
+
+	it('a late abandon under a new id is applied without ending a completed workout again', async () => {
+		await withRollback(async (db) => {
+			const { owner } = await setup(db);
+			const workout = await started(db, owner);
+			const finish = change('workout.finish', workout, { sessionRpe: 7 });
+			const abandon = createMutation('workout.abandon', {
+				workoutId: workout,
+				at: at(55),
+				payload: {}
+			});
+
+			const first = await sync(db, owner, [finish]);
+			const second = await sync(db, owner, [abandon]);
+
+			expect(statuses([...first.results, ...second.results])).toEqual(['applied', 'applied']);
+			const [row] = await db.select().from(workouts).where(eq(workouts.clientId, workout));
+			expect(row).toMatchObject({ status: 'completed', sessionRpe: 7 });
+			expect(row!.finishedAt!.toISOString()).toBe(finish.at);
+			expect(second.results[0]!.canonical!.workout.status).toBe('completed');
+			expect(await auditCount(db, 'workouts', row!.id)).toBe(1);
+		});
+	});
 });
 
 describe('the set shapes the screens send', () => {

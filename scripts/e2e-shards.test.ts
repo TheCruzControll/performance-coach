@@ -260,7 +260,9 @@ describe('the leg’s spec files', () => {
 		]);
 		expect(legKeys(LEG_PROJECTS['alone/chromium']!, files)).toEqual([
 			'perf › perf.e2e.ts',
-			'perf › perf-coach.e2e.ts',
+			'perf › perf-coach.e2e.ts'
+		]);
+		expect(legKeys(LEG_PROJECTS['exclusive/chromium']!, files)).toEqual([
 			'exclusive › sessions.exclusive.e2e.ts'
 		]);
 	});
@@ -375,7 +377,7 @@ describe('the CLI', () => {
 
 	it('prints nothing and writes nothing for one shard or a local run', () => {
 		const file = path.join(scratch, 'none.txt');
-		const alone = cli({ E2E_GROUP: 'alone', E2E_ENGINE: 'chromium', E2E_SHARD: '1/1' }, file);
+		const alone = cli({ E2E_GROUP: 'exclusive', E2E_ENGINE: 'chromium', E2E_SHARD: '1/1' }, file);
 		expect([alone.status, alone.stdout]).toEqual([0, '']);
 		const local = cli({}, file);
 		expect([local.status, local.stdout]).toEqual([0, '']);
