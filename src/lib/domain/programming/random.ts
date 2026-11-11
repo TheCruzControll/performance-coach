@@ -20,7 +20,7 @@ import type { OwnedExercise, ProgrammingInput } from './input.ts';
  * The generator's version, part of every fingerprint. Bump it whenever the same input and library
  * could give a different plan: a rule, a stage, a template's words.
  */
-export const GENERATOR_ID = 'perfo-programming/1';
+export const GENERATOR_ID = 'perfo-programming/3';
 
 /** Code-unit order: the same on every machine and in every locale, unlike localeCompare. */
 export const compareText = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);

@@ -29,6 +29,7 @@ import { decideFromResults } from '../results';
 import { SCENARIO_START, SCENARIOS, scenarioDay } from '../scenarios';
 import type { ScenarioKey } from '../scenarios';
 import type { CycleDirectives } from '../review/directives';
+import { fnv1a64, GENERATOR_ID as M3_GENERATOR_ID } from '../random';
 import { exerciseOf } from '../selection';
 import { estimateMinutes } from '../timefit';
 import { nextBlockDates } from './dates';
@@ -164,14 +165,46 @@ describe('the stage list', () => {
 			'running',
 			'other',
 			'placement',
+			'phasing',
 			'volume',
 			'carryover',
 			'loads',
 			'progression',
 			'results',
-			'timefit'
+			'timefit',
+			'schedule'
 		]);
-		expect(GENERATOR_ID).toBe('next-block/1');
+	});
+
+	it('inherits M7’s stages by name: phasing before volume, and schedule last', () => {
+		const { next, options } = scenario({ key: 'hybrid' });
+		const names = nextStages(next, options).map((s) => s.name);
+		expect(names.indexOf('phasing')).toBeGreaterThan(names.indexOf('placement'));
+		expect(names.indexOf('phasing')).toBeLessThan(names.indexOf('volume'));
+		expect(names.at(-1)).toBe('schedule');
+	});
+
+	it('stores an id that carries M3’s GENERATOR_ID, so an M3 or M7 bump changes the fingerprint', () => {
+		expect(GENERATOR_ID).toBe(`next-block/1+${M3_GENERATOR_ID}`);
+		expect(GENERATOR_ID).toBe('next-block/1+perfo-programming/3');
+	});
+});
+
+describe('the season through prepare (generator-season)', () => {
+	it('records a maintenance_dose for each stream the season caps in the block', () => {
+		const { result } = scenario({ key: 'hybrid' });
+		const doses = result.decisions.filter((d) => d.kind === 'maintenance_dose');
+		expect(doses.length).toBeGreaterThan(0);
+		for (const d of doses) expect(d.evidence).toMatchObject({ mode: 'maintenance' });
+	});
+
+	it('resolves the priorities over the block it plans, not a fresh season’s first block', () => {
+		for (const key of ['beginner', 'powerlifter', 'hybrid'] as const) {
+			const { result } = scenario({ key });
+			const resolved = result.decisions.filter((d) => d.kind === 'priority_resolved');
+			expect(resolved.length, key).toBeGreaterThan(0);
+			expect(resolved.at(-1)!.evidence.until, key).toBe(result.block.endsOn);
+		}
 	});
 });
 
@@ -324,9 +357,10 @@ describe('scenarios', () => {
 			exercise: exerciseOf(next.input, best)!.name
 		});
 		expect(result.significantChanges.some((c) => c.kind === 'swap')).toBe(true);
-		// The owner's part scales each building week's volume: M3's 1, 1, 1.1 by 1.1.
+		// The owner's part scales each building week's volume by 1.1: the block fills the season's
+		// two-week accumulation outline, M3's 1, 1 (generator-season; M3's road had no outline here).
 		expect(next.subset.targets.volumeFactor).toBe(1.1);
-		expect(result.block.weeks.map((w) => w.targets.volumeFactor)).toEqual([1.1, 1.1, 1.21, 1.21]);
+		expect(result.block.weeks.map((w) => w.targets.volumeFactor)).toEqual([1.1, 1.1]);
 	});
 
 	it('a fatigued hybrid athlete: week 1 is a deload, scheduled and explained', () => {
@@ -589,5 +623,44 @@ describe('structure', () => {
 		}
 		expect([...seen].sort()).toEqual(Object.keys(kinds).sort());
 		expect(SIGNIFICANT).toEqual({ loadPct: 5, hardSets: 2, runVolume: 0.1 });
+	});
+});
+
+/**
+ * The next block, its bridge, decisions and significant changes as JSON, hashed after
+ * generator-season made prepare plan the season (its priorities, order, modes and doses). Only the
+ * fingerprint may change with a stage list or GENERATOR_ID change; these bytes change only with a
+ * plan change, and the PR that changes them lists each.
+ */
+const GOLDEN_CASES: [string, Case, string][] = [
+	['a beginner on time', { key: 'beginner' }, '8594230b9f4e2914'],
+	[
+		'a powerlifter from next Monday',
+		{ key: 'powerlifter', start: 'next_monday' },
+		'402b6dddf4e0f811'
+	],
+	[
+		'a hybrid with results and a last-week deload',
+		{
+			key: 'hybrid',
+			results: [
+				{ exercise: 'back_squat', exposures: EASY, trend: null },
+				{ exercise: 'bench_press', exposures: EASY, trend: null }
+			],
+			directives: { deload: 'last' }
+		},
+		'e61d20ef82ab7c45'
+	],
+	[
+		'the journey two weeks late',
+		{ key: 'journey', today: addDays(ON_TIME, 14) },
+		'17139ca8c900cf9b'
+	]
+];
+
+describe('byte-identical blocks', () => {
+	it.each(GOLDEN_CASES)('%s: the block is byte for byte the one from before', (_, c, hash) => {
+		const { fingerprint: _fingerprint, ...block } = scenario(c).result;
+		expect(fnv1a64(JSON.stringify(block))).toBe(hash);
 	});
 });

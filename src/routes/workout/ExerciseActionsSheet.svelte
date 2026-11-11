@@ -11,6 +11,8 @@
     is sent with its pain report (actions.ts reportPain); End the workout here then opens Finish
     (`onfinish`).
   - Skip exercise skips its remaining sets and moves on.
+  - Ask the coach opens Coach with 'Can we change today's workout?' about this workout (a link:
+    ui/ask-link.ts, so the workout loads no coach module; the workout stays on the device).
   Everything comes from the start kit, so it all works offline. When nothing fits, the list says
   why and offers Add my own exercise (CustomExerciseSheet, loaded then, in this sheet's place:
   the new exercise and today's swap to it, actions.ts replaceWithOwn) and Skip exercise. Each
@@ -20,6 +22,7 @@
 	import type { ChunkLoad } from '#lib/client/workout/active.svelte.ts';
 	import { customLibraryExercise, joinLibrary, type Library } from '#lib/client/workout/library.ts';
 	import type { WorkoutStore } from '#lib/client/workout/store.ts';
+	import { ASK_QUESTIONS, askHref } from '#lib/ui/ask-link.ts';
 	import {
 		ALTERNATIVES_COPY,
 		dislikeConfirmation,
@@ -32,6 +35,7 @@
 	import type { PainChoice } from '#lib/domain/workout/substitution.ts';
 	import BottomSheet from '#lib/ui/components/BottomSheet.svelte';
 	import Button from '#lib/ui/components/Button.svelte';
+	import ListRow from '#lib/ui/components/ListRow.svelte';
 	import { tick } from 'svelte';
 	import {
 		alternativesFor,
@@ -183,6 +187,13 @@
 					</li>
 				{/each}
 			</ul>
+			<ListRow
+				icon="coach"
+				title="Ask the coach"
+				subtitle={ASK_QUESTIONS.workout}
+				href={askHref(ASK_QUESTIONS.workout, 'workout', { type: 'workout', id: view.workout.id })}
+				data-testid="ask-coach"
+			/>
 		{:else if step.kind === 'alternatives' && slot}
 			{@const action = step.action}
 			<AlternativeList
