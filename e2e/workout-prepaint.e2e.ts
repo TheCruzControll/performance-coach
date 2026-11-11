@@ -5,6 +5,7 @@
  * The desktop layout is workout-prepaint.desktop.e2e.ts.
  */
 import { expect, test, type Page } from '@playwright/test';
+import type { CanonicalWorkout } from '../src/lib/domain/workout';
 import { createMutation } from '../src/lib/domain/workout/mutations';
 import {
 	expectCardBeforeTheApp,
@@ -12,7 +13,14 @@ import {
 	keptCard,
 	reloadBeforeTheApp
 } from './workout-prepaint-support';
-import { gotoWorkout, injectMutation, seedWorkout, workoutDay } from './workout-support';
+import {
+	gotoWorkout,
+	injectMutation,
+	readOutbox,
+	readWorkout,
+	seedWorkout,
+	workoutDay
+} from './workout-support';
 
 /** The page before the app starts paints no card: only the skeleton, and no exercise's name. */
 async function expectNoCardBeforeTheApp(page: Page) {
@@ -32,6 +40,62 @@ test.describe('the current exercise before the app starts', () => {
 		page
 	}) => {
 		await expectCardBeforeTheApp(page);
+	});
+
+	test("a reload asks for the workout's rows before any script, and the app reconciles from that answer", async ({
+		page
+	}) => {
+		const { strength: kit } = await workoutDay();
+		const workoutId = await seedWorkout(page, kit);
+		// Its start acknowledged, so nothing waits to be sent when the page loads again.
+		await gotoWorkout(page, 'strength', { sync: 'stub' });
+		await expect(page.locator('main#main[data-store]')).toBeAttached();
+		await expect.poll(async () => (await readOutbox(page)).length).toBe(0);
+		await expect.poll(() => keptCard(page)).not.toBeNull();
+
+		// The server's rows: the workout was finished on another device.
+		const { startedAt } = (await readWorkout(page, workoutId)) as { startedAt: string };
+		const rows: CanonicalWorkout = {
+			v: 1,
+			workout: {
+				id: workoutId,
+				kind: kit.kind,
+				title: kit.title,
+				sessionType: kit.sessionType,
+				discipline: kit.discipline,
+				plannedSessionId: kit.plannedSessionId,
+				plannedLineage: kit.plannedLineage,
+				programId: kit.programId,
+				status: 'completed',
+				startedAt,
+				finishedAt: new Date().toISOString(),
+				notes: null,
+				sessionRpe: null,
+				durationSeconds: null,
+				deletedAt: null
+			},
+			sets: [],
+			substitutions: [],
+			pain: [],
+			run: null,
+			other: null,
+			exercises: {}
+		};
+		const gets: string[] = [];
+		await page.route(`**/api/workouts/${workoutId}`, (route) => {
+			gets.push(route.request().method());
+			return route.fulfill({ json: rows });
+		});
+
+		// The inline script asks for them with the card: no script of the app has run yet.
+		const release = await reloadBeforeTheApp(page);
+		await expect.poll(() => gets).toEqual(['GET']);
+		await expect(page.locator('main#main')).not.toHaveAttribute('data-ready');
+
+		// The app's reconcile answers from that GET and sends none of its own.
+		await release();
+		await expect(page.locator('main#main[data-phase="completed"]')).toBeAttached();
+		expect(gets).toEqual(['GET']);
 	});
 
 	test('a discarded workout never paints its card', async ({ page }) => {
