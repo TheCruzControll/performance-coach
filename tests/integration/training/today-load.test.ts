@@ -82,10 +82,12 @@ describe('Today’s plan', () => {
 			expect(titles(today.cards)).toEqual(['Full body', 'Muay Thai class']);
 			expect(today.cards.map((c) => c.baseline)).toEqual([true, false]);
 			// Nothing else this week, so Up next crosses into week 2, in date order.
-			expect(view.upNext.map((c) => [c.title, c.when])).toEqual([
-				['Full body', 'Monday'],
-				['Muay Thai class', 'Tuesday'],
-				['Intervals', 'Wednesday']
+			// Each on its date, from the owner's today, for the coming days' kits (coming-kits.ts).
+			expect(view.today).toBe(TODAY);
+			expect(view.upNext.map((c) => [c.title, c.when, c.date])).toEqual([
+				['Full body', 'Monday', '2026-11-09'],
+				['Muay Thai class', 'Tuesday', '2026-11-10'],
+				['Intervals', 'Wednesday', '2026-11-11']
 			]);
 			// A rest day later this week names the next session, from next week.
 			expect(dayOf(view, '2026-11-07').rest).toBe(
@@ -170,7 +172,11 @@ describe('Today’s plan', () => {
 			const today = dayOf(view, TODAY);
 			expect(today.cards).toEqual([]);
 			expect(today.rest).toBe('Recovery is part of the plan. Next: Intervals, tomorrow.');
-			expect(view.upNext[0]).toMatchObject({ title: 'Intervals', when: 'Tomorrow' });
+			expect(view.upNext[0]).toMatchObject({
+				title: 'Intervals',
+				when: 'Tomorrow',
+				date: '2026-11-06'
+			});
 		});
 	});
 
@@ -194,6 +200,7 @@ describe('Today’s plan', () => {
 			const view = await viewOf(db, owner);
 			expect(view).toEqual({
 				failed: false,
+				today: TODAY,
 				week: null,
 				starts: null,
 				complete: {
