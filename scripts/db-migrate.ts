@@ -1,6 +1,7 @@
 /**
  * Apply committed SQL migrations (./drizzle) to the target database, then seed the exercise
- * catalogue (runMigrations does both, under one lock).
+ * catalogue (runMigrations does both, under one lock), then write the closed-week rollups no sync
+ * has written yet (scripts/lib/strength-weeks-backfill.ts).
  *
  *   pnpm db:migrate                  # uses DATABASE_URL_UNPOOLED, else DATABASE_URL
  *   DATABASE_URL_UNPOOLED=... pnpm db:migrate
@@ -30,6 +31,8 @@ try {
 		`db:migrate: exercise catalogue ${library.inserted} inserted, ${library.updated} updated, ` +
 			`${library.retired} retired, ${library.restored} restored`
 	);
+	const { backfillWeeks } = await import('./lib/strength-weeks-backfill.ts');
+	console.log(`db:migrate: ${await backfillWeeks(url)} strength week rollup(s) written`);
 } catch (err) {
 	console.error(`db:migrate: failed on ${redactUrl(url)}`);
 	console.error(err);

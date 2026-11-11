@@ -203,6 +203,19 @@ export const RACE_DISTANCE_INFO: Record<RaceDistance, { label: string; metres: n
 	other: { label: 'Other', metres: null }
 };
 
+/**
+ * Heart rates the running profile can hold, in whole beats per minute, inclusive. Wide enough
+ * for any adult the owner could be, narrow enough to catch a typo (a resting 600). The schema's
+ * CHECKs and the form's messages both read these, so changing one range is one edit here and
+ * a generated migration.
+ */
+export const HEART_RATE_BOUNDS = {
+	max: { min: 120, max: 230 },
+	resting: { min: 30, max: 110 },
+	threshold: { min: 100, max: 225 }
+} as const;
+export type HeartRateKind = keyof typeof HEART_RATE_BOUNDS;
+
 // ---- Equipment ----------------------------------------------------------------------------
 
 export const GYM_TYPES = ['commercial', 'strength', 'home', 'minimal', 'none'] as const;

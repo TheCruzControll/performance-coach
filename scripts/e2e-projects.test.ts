@@ -12,7 +12,10 @@ import type { Project } from '@playwright/test';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import {
 	ENGINES,
+	GALLERY,
+	galleryMode,
 	GROUPS,
+	IPHONE_15,
 	LEGS,
 	parseChoice,
 	selectProjects,
@@ -22,7 +25,14 @@ import {
 import { parseListing, type Listing } from './journey-map.ts';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
-const SELECTION = ['E2E_WEBKIT', 'E2E_SERIAL_ALONE', 'E2E_PERF_ALONE', 'E2E_ENGINE', 'E2E_GROUP'];
+const SELECTION = [
+	'E2E_WEBKIT',
+	'E2E_SERIAL_ALONE',
+	'E2E_PERF_ALONE',
+	'E2E_ENGINE',
+	'E2E_GROUP',
+	'E2E_GALLERY'
+];
 
 /** playwright.config.ts's projects as CI loads them, with `env` on top. */
 async function configProjects(env: Record<string, string> = {}): Promise<Project[]> {
@@ -82,7 +92,8 @@ const EXPECTED: Record<string, string[]> = {
 	'main/webkit': ['setup', 'setup-webkit', 'iphone-webkit'],
 	'serial/chromium': ['setup', 'serial-chromium'],
 	'serial/webkit': ['setup', 'setup-webkit', 'serial-webkit'],
-	'alone/chromium': ['setup', 'perf', 'exclusive']
+	'alone/chromium': ['setup', 'perf'],
+	'exclusive/chromium': ['setup', 'exclusive']
 };
 
 describe.each([
@@ -107,12 +118,13 @@ describe.each([
 		);
 	});
 
-	it('keeps the order: setup first, serial after it, exclusive after perf', () => {
+	it('keeps the order: setup first, serial, perf and exclusive after it', () => {
 		const chromium = selectProjects(projects, { engine: 'chromium', group: 'serial' });
 		expect(after(chromium, 'serial-chromium')).toEqual(['setup']);
 		const alone = selectProjects(projects, { engine: 'chromium', group: 'alone' });
 		expect(after(alone, 'perf')).toEqual(['setup']);
-		expect(after(alone, 'exclusive')).toEqual(['perf', 'setup']);
+		const exclusive = selectProjects(projects, { engine: 'chromium', group: 'exclusive' });
+		expect(after(exclusive, 'exclusive')).toEqual(['setup']);
 
 		const webkit = selectProjects(projects, { engine: 'webkit', group: 'serial' });
 		expect(after(webkit, 'serial-webkit')).toEqual(['setup', 'setup-webkit']);
@@ -138,8 +150,8 @@ describe.each([
 		}
 	});
 
-	it('leaves nothing depending on a main or serial leg\u2019s projects, so a shard list splits them', () => {
-		for (const leg of LEGS.filter((l) => l.group !== 'alone')) {
+	it('leaves nothing depending on a leg\u2019s projects, so a shard list splits them', () => {
+		for (const leg of LEGS) {
 			const selected = selectProjects(projects, leg);
 			const depended = new Set(selected.flatMap((p) => p.dependencies ?? []));
 			expect(
@@ -198,6 +210,7 @@ describe('playwright.config.ts legs', () => {
 		['main', 2],
 		['serial', 1],
 		['alone', 1],
+		['exclusive', 1],
 		['sweeps', 1],
 		['', 1]
 	] as const)('gives E2E_GROUP=%j %i worker(s) in CI', async (group, workers) => {
@@ -215,14 +228,86 @@ describe('playwright.config.ts legs', () => {
 	});
 });
 
+describe('the screen gallery (E2E_GALLERY=1)', () => {
+	afterEach(() => vi.unstubAllEnvs());
+	const galleryNamed = (projects: Project[]) =>
+		projects.filter((p) => p.name!.startsWith('gallery') || [p.testMatch].flat().includes(GALLERY));
+
+	it('is in no other run: no project of today’s suite or of a leg matches a gallery spec', async () => {
+		expect(galleryNamed(await configProjects())).toEqual([]);
+		for (const { engine, group } of LEGS) {
+			expect(galleryNamed(await configProjects({ E2E_ENGINE: engine, E2E_GROUP: group }))).toEqual(
+				[]
+			);
+		}
+	});
+
+	it('runs the owner setups, then the gallery on an iPhone 15 in WebKit and a desktop in Chromium, on one worker', async () => {
+		const projects = await configProjects({ E2E_GALLERY: '1' });
+		expect(names(projects)).toEqual([
+			'setup',
+			'setup-webkit',
+			'gallery-iphone-webkit',
+			'gallery-desktop-chromium'
+		]);
+		const { default: config } = await import('../playwright.config.ts');
+		expect(config.workers).toBe(1);
+		const [iphone, desktop] = projects.slice(2);
+		for (const project of [iphone!, desktop!]) {
+			expect(project.testMatch, project.name).toBe(GALLERY);
+			expect(project.retries, project.name).toBe(0);
+		}
+		expect(iphone!.metadata).toEqual({ galleryDevice: 'iphone' });
+		expect(iphone!.dependencies).toEqual(['setup-webkit']);
+		expect(iphone!.use).toMatchObject({
+			browserName: 'webkit',
+			viewport: IPHONE_15,
+			deviceScaleFactor: 3,
+			isMobile: true,
+			hasTouch: true,
+			storageState: 'e2e/.auth/webkit.json'
+		});
+		expect(desktop!.metadata).toEqual({ galleryDevice: 'desktop' });
+		expect(desktop!.dependencies).toEqual(['setup']);
+		expect(desktop!.use).toMatchObject({
+			browserName: 'chromium',
+			viewport: { width: 1440, height: 900 },
+			deviceScaleFactor: 1,
+			isMobile: false,
+			storageState: 'e2e/.auth/chromium.json'
+		});
+		// Outside CI too: the gallery keeps WebKit and one worker.
+		vi.resetModules();
+		vi.stubEnv('CI', '');
+		const { default: local } = await import('../playwright.config.ts');
+		expect(names(local.projects ?? [])).toEqual(names(projects));
+		expect(local.workers).toBe(1);
+	});
+
+	it('is a run of its own: it refuses a leg’s selection and the deployed targets', () => {
+		expect(galleryMode({})).toBe(false);
+		expect(galleryMode({ E2E_GALLERY: '0' })).toBe(false);
+		expect(galleryMode({ E2E_GALLERY: '1' })).toBe(true);
+		for (const name of ['E2E_ENGINE', 'E2E_GROUP', 'E2E_BASE_URL', 'E2E_DEPLOYED_LOCAL']) {
+			expect(() => galleryMode({ E2E_GALLERY: '1', [name]: 'x' }), name).toThrow(
+				new RegExp(`unset ${name}`)
+			);
+		}
+	});
+});
+
 /** `playwright test --list` for one leg (or today's whole suite), as CI loads the config. */
-function list(leg: { engine?: Engine; group?: Group } = {}): Listing {
+function list(
+	leg: { engine?: Engine; group?: Group } = {},
+	extra: Record<string, string> = {}
+): Listing {
 	const env: NodeJS.ProcessEnv = { CI: '1' };
 	for (const [name, value] of Object.entries(process.env)) {
 		if (!/^(E2E_|PLAYWRIGHT_JSON_|CI$)/.test(name)) env[name] = value;
 	}
 	if (leg.engine) env.E2E_ENGINE = leg.engine;
 	if (leg.group) env.E2E_GROUP = leg.group;
+	Object.assign(env, extra);
 	const args = ['exec', 'playwright', 'test', '--list', '--reporter=json'];
 	const run = spawnSync('pnpm', args, {
 		cwd: root,
@@ -270,6 +355,22 @@ describe('the legs, listed by Playwright', () => {
 		);
 		expect(today.size).toBeGreaterThan(0);
 		expect([...legs].sort()).toEqual([...today].sort());
+	}, 120_000);
+
+	it('never list the gallery spec, which only E2E_GALLERY=1 lists, on both gallery devices', () => {
+		const isGallery = (run: string) => run.includes('.gallery.ts');
+		expect(runs(listed()).filter(isGallery)).toEqual([]);
+		for (const leg of LEGS) expect(runs(listed(leg)).filter(isGallery)).toEqual([]);
+
+		const gallery = beyondSetup(runs(list({}, { E2E_GALLERY: '1' })));
+		expect(gallery.length).toBeGreaterThan(0);
+		expect(gallery.filter((run) => !isGallery(run))).toEqual([]);
+		const perProject = (project: string) =>
+			gallery
+				.filter((run) => run.startsWith(`${project} › `))
+				.map((run) => run.slice(project.length));
+		expect(perProject('gallery-iphone-webkit').length).toBeGreaterThan(0);
+		expect(perProject('gallery-desktop-chromium')).toEqual(perProject('gallery-iphone-webkit'));
 	}, 120_000);
 
 	it('each run a test beyond the setup, so no leg is spent on setup alone', () => {

@@ -1,7 +1,8 @@
 /**
  * What the workout settings sheet (SettingsSheet.svelte) shows: each on/off setting with its
  * words, and only those this browser can act on (feedback.ts's feedbackSupport). iOS Safari has
- * no Vibration API, so its sheet offers no vibration; a browser without Web Audio no tone, and one
+ * no Vibration API, so its sheet offers vibration only where the iPhone's haptic can tap (iOS 18,
+ * on Complete set) and desktop Safari's none; a browser without Web Audio no tone, and one
  * without the Screen Wake Lock no keep-awake. Starting rest by itself works everywhere. Change the
  * words here.
  */
@@ -35,7 +36,7 @@ const ROWS: readonly (ToggleRow & { needs: keyof Support | null })[] = [
 	{
 		key: 'vibration',
 		label: 'Vibration',
-		description: 'Two short pulses when rest is over.',
+		description: 'Two short pulses when rest is over. On iPhone, a tap when you complete a set.',
 		needs: 'vibration'
 	},
 	{

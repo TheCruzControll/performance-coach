@@ -19,7 +19,8 @@ formulas. A slice that adds a reusable domain function adds it here.
 - `src/lib/domain/programming/index.ts`: the generator's public entry point, below. Server-only
   at runtime, like the catalogue.
 - `src/lib/domain/analytics/*` (M6), by path: there is no index file. Server-only at runtime
-  except `periods.ts` and `types.ts` (`scripts/analytics-client-imports.test.ts`).
+  except `periods.ts`, `period-names.ts` and `types.ts`
+  (`scripts/analytics-client-imports.test.ts`).
 
 ## Conventions
 
@@ -184,10 +185,10 @@ so services and the M5 coach's tools call the same functions and get the same pl
 
 Every number on Progress, in the reviews and in the coach's analytics tools comes from these
 modules: pure, with today always an argument, imported by path (no index file), no zod and no
-runtime import of `programming/` or `exercises/`. Only `periods.ts` and `types.ts` may reach the
-browser (`CLIENT_SAFE` in `scripts/analytics-client-imports.test.ts`); screens receive the rest's
-results. Any change to a definition bumps `ANALYTICS_VERSION` (`version.ts`), which stored reviews
-keep.
+runtime import of `programming/` or `exercises/`. Only `periods.ts`, `period-names.ts` and
+`types.ts` may reach the browser (`CLIENT_SAFE` in `scripts/analytics-client-imports.test.ts`);
+screens receive the rest's results. Any change to a definition bumps `ANALYTICS_VERSION`
+(`version.ts`), which stored reviews keep.
 
 ### Periods (`analytics/periods.ts`, client-safe)
 
@@ -195,7 +196,9 @@ A period is whole Monday-to-Sunday weeks that have ended, with today's week kept
 totals, averages, trends and comparisons never set part of a week against whole ones.
 
 - `PERIODS` (`4w`, `12w`, `26w`, `52w`, `all`), `PERIOD_LABEL` and `DEFAULT_PERIOD` (`12w`).
-  `parsePeriod(value)` gives the default for anything unknown.
+  `parsePeriod(value)` gives the default for anything unknown. They live in `period-names.ts`
+  (re-exported here), which a screen's period switcher imports so the windows and the calendar
+  stay out of a route's initial JavaScript.
 - `periodWindow(today, period, firstActivityOn)` → the period, its `weeks`, the week
   `inProgress`, the `previous` window and the `bucket`:
   - `weeks`: `{ from, to, count }`, the complete weeks ending the Sunday before today's week.
@@ -312,6 +315,20 @@ lower back 2 (1.5 + 0.5), quads 1, glutes 1 and adductors 0.5; by group, back 3.
 rows, once each though two back muscles are primary and one secondary, and 0.5 from the squat),
 shoulders 1.5, biceps 1.5, forearms 1.5, quads 1 and hips 1. Against a back range of 3.5–10 that
 week is `within`, at the low edge.
+
+### Strength weeks (`analytics/strength-weeks.ts`)
+
+- `strengthWeeks(facts, exercises, timeZone, mondays, plan)` → what each strength figure reads of
+  each week: `tonnageByWeek`'s, `hardSetsByWeek`'s and `rpeByWeek`'s values, each exercise's
+  `liftStats` and rated RPEs, its sessions (`strengthSessions`: the e1RM point and the bests,
+  by the week of the first set) and the exposures of the workouts started in the week (none
+  without a `plan`). A week keeps only the bests that beat an earlier session's of the same week:
+  `prsOf` over them gives `prTimeline`'s records exactly.
+- `packWeek(week)` / `unpackWeek(weekStart, packed)` → the stored form of a week whose workouts are
+  all its own, and back, key for key.
+- `DIGEST_VERSION` → the version of what a rollup stores. Bump it in the PR that changes any figure
+  `packWeek` gives for the same facts, from functions outside analytics too (e1RM, records, load
+  rules, hard sets, prescription matching); the unit test pins one week's figures per version.
 
 ### Prescribed against actual (`analytics/prescribed.ts`)
 

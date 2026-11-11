@@ -18,9 +18,13 @@
  *   the kit pinned to its planned session (GET /api/workouts/kit?session=…, which answers a
  *   StartKit); an ad-hoc workout has none, and its rows alone render it.
  * Offline, a timeout, a network failure or any other answer changes nothing.
+ * - A reconcile may answer from the GET /workout's inline script started (prepaint.ts, EARLY_ROWS)
+ *   instead of sending its own: `early` hands it over, once, when the page may use it (online.ts).
+ *   The timeout aborts it as it would its own.
  * Plain .ts with no runes: the network, the clock's timers and navigator.onLine are injected.
  */
 import type { CanonicalWorkout, StartKit } from '#lib/domain/workout/index.ts';
+import { EARLY_ROWS, type EarlyRows } from './prepaint.ts';
 import type { AdoptOutcome, WorkoutStore } from './store.ts';
 
 /** A reconcile GET without its answer after this long is aborted, and changes nothing. */
@@ -31,6 +35,22 @@ export const kitUrl = (sessionId: string) =>
 	`/api/workouts/kit?session=${encodeURIComponent(sessionId)}`;
 
 export type ReconcileStore = Pick<WorkoutStore, 'outbox' | 'reconciled' | 'adopt'>;
+
+/**
+ * The GET /workout's inline script left for this page, taken so no later page sees it; null when
+ * there is none (any other page, offline, a start, no workout kept).
+ */
+export function takeEarlyRows(scope: object = globalThis): EarlyRows | null {
+	const held = scope as Record<string, unknown>;
+	const early = held[EARLY_ROWS] as Partial<EarlyRows> | undefined;
+	if (early === undefined) return null;
+	delete held[EARLY_ROWS];
+	const valid =
+		typeof early?.workoutId === 'string' &&
+		early.response instanceof Promise &&
+		early.controller instanceof AbortController;
+	return valid ? (early as EarlyRows) : null;
+}
 
 /**
  * - reconciled: the server's rows are stored; not-held: this device does not hold the workout
@@ -51,6 +71,8 @@ export interface ReconcileOptions {
 	online?: () => boolean;
 	setTimeout?: (run: () => void, ms: number) => unknown;
 	clearTimeout?: (timer: unknown) => void;
+	/** The GET already out for this workout's rows, if the page may answer from it (asked once). */
+	early?: (workoutId: string) => EarlyRows | null;
 }
 
 export interface Reconciler {
@@ -72,17 +94,17 @@ export function createReconciler({
 	fetch: request = (url, init) => fetch(url, init),
 	online = () => globalThis.navigator?.onLine ?? true,
 	setTimeout: later = (run, ms) => setTimeout(run, ms),
-	clearTimeout: cancel = (timer) => clearTimeout(timer as ReturnType<typeof setTimeout>)
+	clearTimeout: cancel = (timer) => clearTimeout(timer as ReturnType<typeof setTimeout>),
+	early: takeEarly = () => null
 }: ReconcileOptions): Reconciler {
-	/** One bounded GET: the abort also covers reading the body. */
-	async function get<T>(url: string): Promise<Answer<T>> {
-		const controller = new AbortController();
+	let asked = false;
+	/** One bounded GET, or the one already out: the abort also covers reading the body. */
+	async function get<T>(url: string, early: EarlyRows | null = null): Promise<Answer<T>> {
+		const controller = early?.controller ?? new AbortController();
 		const timer = later(() => controller.abort(), RECONCILE_TIMEOUT_MS);
 		try {
-			const response = await request(url, {
-				headers: { accept: 'application/json' },
-				signal: controller.signal
-			});
+			const response = await (early?.response ??
+				request(url, { headers: { accept: 'application/json' }, signal: controller.signal }));
 			if (!response.ok) {
 				// Its body unread would keep the request open (and the page never network-idle).
 				void response.body?.cancel().catch(() => {});
@@ -97,7 +119,9 @@ export function createReconciler({
 	}
 
 	async function rows(workoutId: string): Promise<Answer<CanonicalWorkout>> {
-		const answer = await get<unknown>(workoutUrl(workoutId));
+		const early = asked ? null : takeEarly(workoutId);
+		asked = true;
+		const answer = await get<unknown>(workoutUrl(workoutId), early);
 		if (answer.ok && !isCanonical(answer.body, workoutId)) return { ok: false, status: null };
 		return answer as Answer<CanonicalWorkout>;
 	}

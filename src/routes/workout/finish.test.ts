@@ -11,6 +11,7 @@ import { project, replay } from '#lib/domain/workout/project.ts';
 import { initialDevice } from '#lib/domain/workout/reducers/device.ts';
 import { strengthTable } from '#lib/domain/workout/reducers/tables.ts';
 import {
+	FINISH_SYNC_WAIT_MS,
 	finishMutation,
 	finishValues,
 	finishWorkout,
@@ -297,5 +298,33 @@ describe('Done', () => {
 
 		const slow = finishWorkout(store, finish(), { online: () => true, waitMs: 20 });
 		expect(await slow).toBe('stay');
+	});
+
+	it('online, a slow server: stays on the completed state within about 300 ms of Done, and a later answer never opens History', async () => {
+		expect(FINISH_SYNC_WAIT_MS).toBeLessThanOrEqual(300);
+		const tapped = performance.now();
+		const slow = finishWorkout(store, finish(), { online: () => true });
+		expect(await slow).toBe('stay');
+		// Generous for CI's slower runners; the old wait was 8 s.
+		expect(performance.now() - tapped).toBeLessThan(2_000);
+
+		// The server answers afterwards: the workout syncs, and Done has already settled on 'stay'.
+		await answer();
+		expect(await store.outbox()).toEqual([]);
+		expect(await slow).toBe('stay');
+	});
+
+	it('online: the wait counts from Done, so a slow write on this device leaves none for the server', async () => {
+		const tapped = T0 + 50 * 60_000;
+		const clock = [tapped, tapped + FINISH_SYNC_WAIT_MS];
+		const started = performance.now();
+		const done = finishWorkout(store, finish(), {
+			online: () => true,
+			waitMs: FINISH_SYNC_WAIT_MS,
+			now: () => clock.shift() ?? tapped + FINISH_SYNC_WAIT_MS
+		});
+		expect(await done).toBe('stay');
+		expect(performance.now() - started).toBeLessThan(FINISH_SYNC_WAIT_MS);
+		expect(store.snapshot(W)!.view!.device.stopwatch.runningSince).toBeNull();
 	});
 });

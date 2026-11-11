@@ -99,6 +99,9 @@ export type Weeks = Pick<PeriodWindow, 'weeks' | 'inProgress'>;
 
 /** A run's whole-run totals: its record's, each missing one from runTotals of its segments. */
 export function wholeRun(run: RunFact): RunTotals {
+	// Most runs record all three: their segments are summed only for a missing one.
+	if (run.metres !== null && run.seconds !== null && run.avgHr !== null)
+		return { distanceMetres: run.metres, durationSeconds: run.seconds, avgHr: run.avgHr };
 	const fromSegments = runTotals(run.segments);
 	return {
 		distanceMetres: run.metres ?? fromSegments.distanceMetres,
