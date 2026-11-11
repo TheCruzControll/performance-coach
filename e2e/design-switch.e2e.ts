@@ -119,6 +119,8 @@ test('Profile → Appearance → Design switches at once, survives a reload, and
 	await expect(current).toBeChecked();
 
 	// A 44 px target: a tap just above the option's face, inside its hit area, still chooses it.
+	// The control sits below the fold, and a raw tap does not scroll: bring it clear of the tab bar.
+	await graphite.evaluate((option) => option.scrollIntoView({ block: 'center' }));
 	const face = (await graphite.boundingBox())!;
 	expect(face.height).toBeLessThan(44);
 	await page.mouse.click(face.x + face.width / 2, face.y - (44 - face.height) / 2 + 2);

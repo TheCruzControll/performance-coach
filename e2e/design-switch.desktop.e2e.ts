@@ -56,7 +56,8 @@ test.describe('with the network in the test’s hands', () => {
 			await held;
 			await route.continue();
 		});
-		await page.goto('/profile');
+		// The load event waits for the held font: wait for the parsed page instead.
+		await page.goto('/profile', { waitUntil: 'domcontentloaded' });
 		await expect(page.getByRole('radiogroup', { name: 'Design' })).toBeVisible();
 		await expect.poll(() => accent(page)).toBe('#1a6bd6');
 
