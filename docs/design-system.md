@@ -658,7 +658,7 @@ workout pages and is audited on `/design` → Workout, one state at a time.
 
 One line per M7 UI slice, each replaced by its own slice only; docs-m7 turns them into rows.
 
-m7/04 train-week-findings: not built yet.
+m7/04 train-week-findings: a week finding is one line right under its `SessionCard` (outside the card's link): the summary of a native `<details>` whose body is the why, so it opens without JavaScript, with a 44 px summary, the focus ring and a brighter colour on hover. A CSS glyph (a ring, filled in `--color-warning` for `caution`) and the words carry the meaning, label first: 'Heads-up' (an avoid finding nothing explains, or the owner's own move; caution), 'Your move' (advice) or 'Trade-off, explained' (kept for a stated reason); never the danger tone. Its markup and CSS live in Train's page, not in `SessionCard`, so Today and History load none of it (Train's 0.15 KB allowance); /design → Plan shows a copy. `ProgramHeader` shows the week line under the position, in its style, hidden while empty: '1 heads-up this week', 'No clashes ahead this week' (the current week counts only what is ahead) or 'No clashes this week'; Train leaves it empty on past, outline and bridge weeks and on 'First block complete'.
 
 m7/14 placement-why: not built yet.
 

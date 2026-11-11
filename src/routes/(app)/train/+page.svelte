@@ -177,6 +177,7 @@
 			previous={view.shown > 1 ? weekHref(Math.min(view.shown - 1, view.totalWeeks)) : undefined}
 			next={view.shown < view.totalWeeks ? weekHref(view.shown + 1) : undefined}
 			status={view.status}
+			line={view.weekLine}
 		>
 			{#snippet actions()}
 				<button
@@ -273,6 +274,13 @@
 							pending={loading || navigating.to?.url.pathname === href}
 							data-testid="session-card"
 						/>
+						<!-- A week finding (m7/04): one line under its card, its why behind it. -->
+						{#if card.note}
+							<details class="note" data-tone={card.note.tone}>
+								<summary>{card.note.text}</summary>
+								<p>{card.note.why}</p>
+							</details>
+						{/if}
 					{:else}
 						<Surface padding="none" radius="lg">
 							<EmptyState
@@ -505,6 +513,55 @@
 	.brief strong {
 		font-weight: var(--weight-semibold);
 		color: var(--color-text);
+	}
+
+	/*
+	 * A week finding under its card (m7/04): the summary of a native <details>, a 44 px target
+	 * that opens without JavaScript; its body is the why. A CSS glyph and the words carry the
+	 * meaning; caution fills the glyph with the warning colour, never the danger tone. Here, not
+	 * in SessionCard, so Today and History load none of it (docs/performance.md).
+	 */
+	.note {
+		margin-top: calc(var(--space-2) * -1);
+		font-size: var(--text-sm);
+		color: var(--color-text-secondary);
+	}
+
+	.note summary {
+		display: flex;
+		align-items: baseline;
+		gap: var(--space-2);
+		min-height: var(--touch-target);
+		padding: var(--space-3) var(--space-4);
+		list-style: none;
+	}
+
+	.note summary::-webkit-details-marker {
+		display: none;
+	}
+
+	.note summary::before {
+		content: '';
+		flex: none;
+		width: 0.5rem;
+		height: 0.5rem;
+		border-radius: 50%;
+		box-shadow: inset 0 0 0 1.5px;
+	}
+
+	.note[data-tone='caution'] summary::before {
+		background: var(--color-warning);
+	}
+
+	@media (hover: hover) and (pointer: fine) {
+		.note summary:hover {
+			color: var(--color-text);
+			cursor: pointer;
+		}
+	}
+
+	.note p {
+		padding: 0 var(--space-4);
 	}
 
 	/* A link in a panel: a full 44 px row, as the session screen's notices set theirs. */

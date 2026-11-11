@@ -2,13 +2,14 @@
  * The program display components on /design → Plan, on one fixture week (Wednesday 4
  * November 2026 is today). WeekStrip: seven named days Monday first, the server's today, dots
  * hidden behind each day's name, selection by tap and by arrow keys. SessionCard: every state in
- * words (baseline, pending, done, skipped, moved, read-only). PrescriptionLines: describe.ts's
+ * words (baseline, pending, done, skipped, moved, read-only), and a week finding's note under a
+ * card whose why opens from its line (m7/04). PrescriptionLines: describe.ts's
  * words, with no load it cannot compute. Every target is ≥ 44 px and nothing scrolls sideways at
  * 393 px; at 1440 × 900 the panel keeps a readable width, with hover and focus states.
  * Runs on Chromium and WebKit; axe for the same panel lives in a11y-suite.ts.
  */
 import AxeBuilder from '@axe-core/playwright';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 import { captureScreen, trackConsoleErrors } from './support';
 
 async function openProgram(page: Page) {
@@ -19,6 +20,9 @@ async function openProgram(page: Page) {
 	await expect(page.getByRole('heading', { name: 'Session card' })).toBeVisible();
 	return page.getByRole('radiogroup', { name: 'Week 1' });
 }
+
+/** The week finding's note right after a session card (Train's markup, m7/04). */
+const noteAfter = (card: Locator) => card.locator('xpath=following-sibling::*[1][self::details]');
 
 /** A colour token as the browser computes it, to compare with a computed background. */
 function tokenColor(page: Page, token: string) {
@@ -136,7 +140,9 @@ test.describe('/design → Plan', () => {
 			'Easy run Easy run · 30 min · Easy · Morning',
 			'Lower body strength Strength · 60 min · Hard · Morning Done',
 			'Intervals Intervals · 45 min · Hard · Morning Skipped',
-			'Mobility Mobility · 20 min · Easy Moved from Mon'
+			'Mobility Mobility · 20 min · Easy Moved from Mon',
+			// The noted card's link is the card alone: its note sits outside it.
+			'Muay Thai class Muay Thai · 90 min · Hard · Evening'
 		];
 		await expect(panel.getByRole('link')).toHaveCount(cards.length);
 		for (const [i, name] of cards.entries()) {
@@ -165,6 +171,63 @@ test.describe('/design → Plan', () => {
 
 		await card('Upper body strength').evaluate((el) => el.scrollIntoView({ block: 'start' }));
 		await captureScreen(page, testInfo, 'design-program-cards');
+		expect(errors).toEqual([]);
+	});
+
+	test('a week finding is one line under its card, words first, its why behind a native disclosure', async ({
+		page
+	}, testInfo) => {
+		const errors = trackConsoleErrors(page);
+		await openProgram(page);
+		const noted = page.getByTestId('card-note');
+		const note = noteAfter(noted);
+		await expect(note.locator('summary')).toHaveText(
+			'Heads-up · Heavy lower body the day before hard Muay Thai · After Lower body strength the day before'
+		);
+		await expect(note).toHaveAttribute('data-tone', 'caution');
+		// Outside the card's link, so the disclosure is its own control.
+		await expect(noted.locator('details')).toHaveCount(0);
+		const why = note.getByText(/You moved Lower body strength here from Friday\.$/);
+		await expect(why).toBeHidden();
+		await note.locator('summary').click();
+		await expect(why).toBeVisible();
+		await note.locator('summary').press('Enter');
+		await expect(why).toBeHidden();
+
+		const kept = noteAfter(page.getByTestId('card-note-tradeoff'));
+		await expect(kept).toHaveAttribute('data-tone', 'neutral');
+		await expect(kept.locator('summary')).toHaveText(/^Trade-off, explained · /);
+		// Words carry the meaning: never the danger colour.
+		const danger = await tokenColor(page, '--color-danger');
+		for (const n of [note, kept]) {
+			const glyph = await n
+				.locator('summary')
+				.evaluate((el) => getComputedStyle(el, '::before').backgroundColor);
+			expect(glyph).not.toBe(danger);
+		}
+		await note.locator('summary').click();
+		await noted.scrollIntoViewIfNeeded();
+		await captureScreen(page, testInfo, 'design-program-note');
+
+		for (const theme of ['dark', 'light'] as const) {
+			await page.evaluate(
+				(t) => localStorage.setItem('pc:prefs:v1', JSON.stringify({ theme: t })),
+				theme
+			);
+			await openProgram(page);
+			await page.waitForTimeout(400); // the tab's entrance settles: contrast on final colours
+			await page.locator('details.note').first().locator('summary').click();
+			const { violations } = await new AxeBuilder({ page })
+				.include('details.note')
+				.include('[data-testid="card-note"]')
+				.include('[data-testid="card-note-tradeoff"]')
+				.withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
+				.analyze();
+			expect(
+				violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`),
+				`axe, ${theme}`
+			).toEqual([]);
+		}
 		expect(errors).toEqual([]);
 	});
 
@@ -251,8 +314,14 @@ test.describe('/design → Plan', () => {
 	test('every target is at least 44 × 44 px', async ({ page }) => {
 		await openProgram(page);
 		const targets = page.getByRole('tabpanel').locator('a, button');
-		// Seven days and five card links.
-		await expect(targets).toHaveCount(12);
+		// Seven days and six card links, then the two notes' summaries.
+		await expect(targets).toHaveCount(13);
+		const summaries = page.getByRole('tabpanel').locator('summary');
+		await expect(summaries).toHaveCount(2);
+		for (const summary of await summaries.all()) {
+			const box = (await summary.boundingBox())!;
+			expect(box.height).toBeGreaterThanOrEqual(44);
+		}
 		for (const target of await targets.all()) {
 			const box = (await target.boundingBox())!;
 			const name = await target.getAttribute('aria-label');
@@ -286,7 +355,7 @@ test.describe('/design → Plan', () => {
 		// The strip, every card and every list stay inside the panel, within the page's gutters.
 		const panel = (await page.getByRole('tabpanel').boundingBox())!;
 		const parts = page.getByRole('tabpanel').locator('[role="radiogroup"], .card, ol');
-		await expect(parts).toHaveCount(1 + 6 + 3);
+		await expect(parts).toHaveCount(1 + 8 + 3);
 		for (const part of await parts.all()) {
 			const box = (await part.boundingBox())!;
 			expect(box.x).toBeGreaterThanOrEqual(panel.x - 0.5);
@@ -329,6 +398,14 @@ test.describe('/design → Plan at 1440 × 900', () => {
 		await card.focus();
 		expect(await card.evaluate((el) => el.matches(':focus-visible'))).toBe(true);
 		expect(await card.evaluate((el) => getComputedStyle(el).outlineStyle)).toBe('solid');
+		// A note's summary: brighter under the pointer, ringed under the keyboard.
+		const summary = page.locator('details.note').first().locator('summary');
+		const colour = () => summary.evaluate((el) => getComputedStyle(el).color);
+		const quiet = await colour();
+		await summary.hover();
+		await expect.poll(colour).not.toBe(quiet);
+		await summary.focus();
+		expect(await summary.evaluate((el) => getComputedStyle(el).outlineStyle)).toBe('solid');
 
 		await captureScreen(page, testInfo, 'design-program-desktop');
 	});
