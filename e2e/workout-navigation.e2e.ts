@@ -152,6 +152,60 @@ test.describe('moving between exercises (IndexedDB only)', () => {
 		expect(await outboxTypes(page)).toEqual(['workout.start']);
 	});
 
+	test('the card follows the mouse 1:1, resists past the first exercise, and springs back when let go short', async ({
+		page
+	}) => {
+		await open(page);
+		const offset = () =>
+			card(page).evaluate((el) => new DOMMatrix(getComputedStyle(el).transform).m41);
+		const box = (await heading(page).boundingBox())!;
+		const x = box.x + box.width / 2;
+		const y = box.y + box.height / 2;
+		await page.mouse.move(x, y);
+		await page.mouse.down();
+		// Toward Leg press: the card is the pointer, with nothing easing it.
+		await page.mouse.move(x - 120, y, { steps: 6 });
+		expect(await offset()).toBeCloseTo(-120, 0);
+		// Toward nothing (Back squat is first): it gives way, but well short of the pointer.
+		await page.mouse.move(x + 120, y, { steps: 6 });
+		const resisted = await offset();
+		expect(resisted).toBeGreaterThan(0);
+		expect(resisted).toBeLessThan(80);
+		await noSideScroll(page);
+		await page.mouse.up();
+		await expect(heading(page)).toHaveText('Back squat');
+		await expect.poll(offset).toBe(0);
+		expect(await card(page).evaluate((el) => el.style.transform)).toBe('');
+		await expect(page.locator('.swipe[data-moving]')).toHaveCount(0);
+	});
+
+	test('with reduced motion the card still follows the mouse, then lands at once', async ({
+		page
+	}) => {
+		await page.emulateMedia({ reducedMotion: 'reduce' });
+		await open(page);
+		const box = (await heading(page).boundingBox())!;
+		// From the name's right end, so the 200 px drag stays on the screen, as a finger does.
+		// WebKit gives a mouse event whole-pixel coordinates, cut toward 0: from the name's middle
+		// the pointer ended off the left edge, at -72.3 read as -72, and the card was 1 px short.
+		const x = box.x + box.width - 8;
+		const y = box.y + box.height / 2;
+		await page.mouse.move(x, y);
+		await page.mouse.down();
+		await page.mouse.move(x - 200, y, { steps: 8 });
+		expect(
+			await card(page).evaluate((el) => new DOMMatrix(getComputedStyle(el).transform).m41)
+		).toBeCloseTo(-200, 0);
+		await page.mouse.up();
+		await expect(heading(page)).toHaveText('Leg press');
+		expect(
+			await card(page).evaluate((el) => ({
+				animations: el.getAnimations().length,
+				transform: getComputedStyle(el).transform
+			}))
+		).toEqual({ animations: 0, transform: 'none' });
+	});
+
 	test('a swipe that ends on a logged set’s row moves on without opening its editor', async ({
 		page
 	}) => {

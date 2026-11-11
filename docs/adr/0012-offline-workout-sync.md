@@ -53,9 +53,14 @@
   48 KB, so RUM's beacon still fits the page's 64 KB keepalive quota. A POST is aborted after
   15 s and a reconcile GET after 10 s. Backoff is full jitter, `random × min(60 s, 1 s × 2^n)`,
   reset on success and on `online`. After 50 counted failures or 24 hours (an offline device
-  counts none) an entry is parked as 'Needs attention', with Try again and Discard. Every type can
-  be discarded, and a registry keyed by type gives each a Fix path or a Discard-only reason. A
-  dispatch, `online`, becoming visible, app start and the backoff timer flush; one engine per page.
+  counts none) an entry is parked as 'Needs attention', with Try again and Discard. Only the
+  server's own answers count: a timeout, a network error or a page that is not its JSON (a captive
+  portal, dead gym Wi-Fi that iOS still calls online) backs off uncounted, pauses the 24 hours as
+  offline time does, and reads 'Can’t connect · N waiting' until the server answers (shorter than
+  'Can’t reach the server', which would widen the pill's fixed box so far that it leaves
+  Minimise's row on a phone in every state). Every type can be discarded, and a registry keyed by
+  type gives each a Fix path or a Discard-only reason. A dispatch, `online`, becoming visible, app
+  start and the backoff timer flush; one engine per page.
 - **Reconciliation.** The view is always the server's rows with the pending mutations replayed.
   The server applies mutations in arrival order, so the last applied wins and `training_audit`
   records both. A device's own pending edit wins locally until it is acknowledged. A pending edit
