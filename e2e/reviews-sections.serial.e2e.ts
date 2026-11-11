@@ -42,6 +42,9 @@ const reviewUrl = () => `${LIST}/w-${weekOf()}`;
 
 const section = (page: Page, id: string) =>
 	page.locator(`[data-testid="review-section"][data-section="${id}"]`);
+/** A section's own disclosure summary (its title and verdict), not a chart's 'Show as table'. */
+const opener = (page: Page, id: string) =>
+	section(page, id).locator('summary', { has: page.getByTestId('section-verdict') });
 const item = (page: Page, id: string) =>
 	page.locator(`[data-testid="review-item"][data-id="${id}"]`);
 /** A figure's canonical value (data-value), read whether or not its section is open. */
@@ -171,9 +174,9 @@ test('on a phone each section collapses to its verdict line, and a tap opens it'
 	await expectNoSideScroll(page);
 	await captureScreen(page, testInfo, 'review-sections-phone');
 
-	await running.locator(':scope > summary').click();
+	await opener(page, 'running').click();
 	await expect(item(page, 'running:mileage')).toBeVisible();
-	await section(page, 'volume').locator(':scope > summary').click();
+	await opener(page, 'volume').click();
 	await expect(section(page, 'volume').getByTestId('chart-plot')).toBeVisible();
 	await auditBothThemes(page, 'Weekly review sections');
 });

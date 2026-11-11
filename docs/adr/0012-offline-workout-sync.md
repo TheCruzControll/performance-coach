@@ -1,8 +1,9 @@
 # 0012 — Offline workout sync: inputs on the device, one projection, applied exactly once
 
-- **Status:** Proposed (M4). Numbered at merge, like a migration slot (0011 is M2X's email link),
-  so M4's slices refer to it by its title, "the offline workout sync ADR". docs-m4 completes it
-  with the measured numbers and the owner's answers.
+- **Status:** Accepted (M4, 2026-11-10). Built as decided here by M4's slices, #87 to #367.
+  The owner has not answered the plan's open questions, so each runs on the plan's default, kept
+  in a named constant (listed under "Defaults the owner can change"). Sign-out's flush and ask
+  ("Losing the session") merged last, in #367.
 - **Context:** A workout must never lose a set and never wait for the network (PRD §9, §15,
   §18). A set is confirmed in under 100 ms in a gym with no signal; a reload offline restores the
   workout exactly, timers included; Postgres never stores a set twice, however often a device
@@ -52,9 +53,14 @@
   48 KB, so RUM's beacon still fits the page's 64 KB keepalive quota. A POST is aborted after
   15 s and a reconcile GET after 10 s. Backoff is full jitter, `random × min(60 s, 1 s × 2^n)`,
   reset on success and on `online`. After 50 counted failures or 24 hours (an offline device
-  counts none) an entry is parked as 'Needs attention', with Try again and Discard. Every type can
-  be discarded, and a registry keyed by type gives each a Fix path or a Discard-only reason. A
-  dispatch, `online`, becoming visible, app start and the backoff timer flush; one engine per page.
+  counts none) an entry is parked as 'Needs attention', with Try again and Discard. Only the
+  server's own answers count: a timeout, a network error or a page that is not its JSON (a captive
+  portal, dead gym Wi-Fi that iOS still calls online) backs off uncounted, pauses the 24 hours as
+  offline time does, and reads 'Can’t connect · N waiting' until the server answers (shorter than
+  'Can’t reach the server', which would widen the pill's fixed box so far that it leaves
+  Minimise's row on a phone in every state). Every type can be discarded, and a registry keyed by
+  type gives each a Fix path or a Discard-only reason. A dispatch, `online`, becoming visible, app
+  start and the backoff timer flush; one engine per page.
 - **Reconciliation.** The view is always the server's rows with the pending mutations replayed.
   The server applies mutations in arrival order, so the last applied wins and `training_audit`
   records both. A device's own pending edit wins locally until it is acknowledged. A pending edit
@@ -79,8 +85,9 @@
   everyone, precached with every immutable chunk, their data only from IndexedDB and owner-only
   JSON endpoints, their headers from `vercel.json`. Each imports only its own view, so each kind's
   path is budgeted; a page holding another kind's workout replaces itself with that kind's route.
-  The service worker matches them ignoring the query string. Nothing links to them until the
-  whole loop is merged (a dark launch).
+  The service worker matches them ignoring the query string. They were dark-launched: nothing
+  linked to them until Today, the session screen, Train and History gained Start and Resume
+  (start-entry-points, #366).
 - **Version skew.** A newer app's database upgrade, or a missing lazy chunk of an older build,
   shows 'App updated — reload to continue'; reloading is safe because everything is in IndexedDB.
   A `pc-offline` with other stores reads as empty and is recreated by the workout store.
@@ -100,9 +107,9 @@ day's cap on seconds and a 50 cap on missed reps; `workout_substitutions.exercis
 `deleted_at`. The fallback slice log-gaps-service added A3–A4 to the write services: sets by
 measure and load type (checkSet), `addRunSegment`, `editRunSegment` and `editOtherSession` by
 client id, every write in the caller's transaction, and a start's pinned planned session checked
-against the lineage and program it names. Main's log still lacks A6, a swap that re-bases on the
-current version; substitution-handlers adds it if M3 does not. The wire format is the same either
-way. A set's distance is whole metres, as `set_records.metres` keeps it.
+against the lineage and program it names. A6, a never-again swap in the caller's transaction that
+re-bases on the current version, was added by substitution-handlers (#246) in
+`services/programs/edits.ts`. A set's distance is whole metres, as `set_records.metres` keeps it.
 
 ## Alternatives considered
 
@@ -125,3 +132,41 @@ way. A set's distance is whole metres, as `set_records.metres` keeps it.
   engine and every sheet load on demand.
 - A device that stays offline after its session was lost keeps showing its workout until it
   next reaches the server.
+
+## Measured (2026-11-10)
+
+On `main` with M4 merged, including the shorter boot path (#394), the prepaint (#410) and
+sign-out's flush (#367): CI run 42939723798 from #370, on 4-vCPU Linux runners. Its `src/` and
+`vite.config.ts` are the same as `main`. The numbers and how they were taken are in
+docs/performance.md, "M4 (workout)".
+
+- Initial JS: `/workout` 52.7 KB, `/workout/run` and `/workout/session` 52.5 KB, of 60 KB. One
+  route per kind kept every kind's whole path in `pnpm budgets`; the rejected lazy view measured
+  about 1.0 KB more on the strength path in the plan's prototype.
+- A logged set shows as done in a median of 36.5 ms, p95 42.4 ms, over 20 sets at 4× CPU
+  (criterion: under 100 ms). INP p75 on `/workout` is 88 ms from Event Timing and from
+  web-vitals (criterion: 200 ms or less).
+- A service-worker reload of `/workout` with a workout in progress blocks the main thread for a
+  median of 0 ms; loading it blocks for 90 ms (guard 250 ms).
+- Lighthouse mobile on `/workout · active`: LCP 903 ms, Performance 100 (#370's run
+  42933643722, after the prepaint).
+- These come from one green run. #370 asks for two; the second is still to record. The first
+  M4 measurements, runs 42806982845 and 42802588785, came before #394, #410 and #370's fixes:
+  `/workout` 53.8 KB, a median of 22.9 ms and p95 32.5 ms, INP 56 ms and 6 ms of blocking.
+  Run 42802588785 failed.
+
+## Defaults the owner can change
+
+Each open question of the M4 plan that the code answers runs on the plan's default:
+
+| Question                       | Default                                                                                          | Where                                                |
+| ------------------------------ | ------------------------------------------------------------------------------------------------ | ---------------------------------------------------- |
+| Two devices edit one set       | The last mutation the server applies wins; both are audited                                      | `reducers/sets.ts`, `services/workouts/sync.ts`      |
+| A change that keeps failing    | 'Needs attention' after 50 counted failures or 24 hours                                          | `STUCK_AFTER` in `client/workout/outbox-rules.ts`    |
+| A session lost elsewhere       | Keep only unsynced changes and the unfinished workout's device state                             | `purgeServerCopies` in `client/workout/store.ts`     |
+| Ledger retention               | Never pruned in M4                                                                               | `db/schema/sync.ts`                                  |
+| Default rest per exercise type | Main lift 3:00, other compounds 2:00, isolation 1:30, timed 1:00                                 | `DEFAULT_REST_SECONDS` in `domain/workout/timers.ts` |
+| Load types                     | Assisted: no e1RM, volume or PR; unweighted bodyweight: 'most reps' only                         | `LOAD_RULES` in `domain/workout/logging.ts`          |
+| Supersets                      | A1 → A2 alternate, the round's rest after its last member                                        | `SUPERSET_FLOW` in `domain/workout/flow.ts`          |
+| Device settings                | Per device in localStorage; sign-out keeps them                                                  | `WORKOUT_SETTINGS_KEY`, `PLATES_KEY`                 |
+| `/workout`'s prepainted card   | The current exercise's words in localStorage; dropped on every store change, deleted by sign-out | `PREPAINT_KEY` in `client/workout/prepaint.ts`       |

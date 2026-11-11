@@ -193,18 +193,26 @@ test.describe('the strength view (IndexedDB only)', () => {
 	}) => {
 		await seedAt(page, kit, 3);
 		const workouts = await watchWorkouts(page);
-		// The logger shows once its chunk and the store have loaded, after the first render: compare
-		// the view with it on both sides of the reload.
+		// The logger shows once its chunk has loaded, after the first render, and the navigation once
+		// the store is open too (data-store): compare the view with both on each side of the reload.
 		const logger = page.getByTestId('workout-main').getByTestId('set-logger');
+		const pager = page
+			.getByTestId('workout-main')
+			.getByRole('navigation', { name: 'Previous and next exercise' });
+		const open = page.locator('main#main[data-store]');
 		await gotoWorkout(page);
 		await expect(card(page).getByRole('heading', { level: 2 })).toHaveText('Romanian deadlift');
 		await workouts.expectNothingNew();
+		await expect(open).toBeAttached();
 		await expect(logger).toBeVisible();
+		await expect(pager).toBeVisible();
 		const shown = await page.getByTestId('workout-main').innerText();
 		await page.reload();
 		await expect(page.locator('main#main[data-ready]')).toBeAttached();
 		await expect(card(page).getByRole('heading', { level: 2 })).toHaveText('Romanian deadlift');
+		await expect(open).toBeAttached();
 		await expect(logger).toBeVisible();
+		await expect(pager).toBeVisible();
 		expect(await page.getByTestId('workout-main').innerText()).toBe(shown);
 		await workouts.expectNothingNew();
 	});

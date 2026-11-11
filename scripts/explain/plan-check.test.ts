@@ -209,15 +209,12 @@ describe('pending indexes', () => {
 		]);
 	});
 
-	it('finds every ANALYTICS_INDEXES entry a real index name or a pending one for analytics-explain', () => {
+	it('finds every ANALYTICS_INDEXES entry a real index name, none left pending after analytics-explain', () => {
 		const entries = Object.values(ANALYTICS_INDEXES).flatMap((entry): unknown[] =>
 			typeof entry === 'object' && !('pendingIndex' in entry) ? Object.values(entry) : [entry]
 		);
 		expect(entries.length).toBeGreaterThanOrEqual(8);
-		for (const entry of entries) {
-			if (typeof entry === 'string') expect(entry).toMatch(/^[a-z_]+_(idx|uq|pkey|pk)$/);
-			else expect(entry).toMatchObject({ pendingIndex: PENDING_INDEX_SLOT });
-		}
+		for (const entry of entries) expect(entry).toMatch(/^[a-z_]+_(idx|uq|pkey|pk)$/);
 	});
 });
 
