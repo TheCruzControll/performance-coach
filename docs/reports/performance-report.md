@@ -146,7 +146,7 @@ The commands the numbers above come from, as run on the reported head. They are 
 commands; replace any that changed by the time the report is filled.
 
 ```sh
-ORIGIN=http://localhost:4174 pnpm build:node   # the origin is baked into Node builds
+ORIGIN=https://localhost:4174 pnpm build:node  # the origin is baked into Node builds
 pnpm budgets                                   # S1: initial JS, CSS and fonts per route
 pnpm lighthouse --runs 5 --assert --min-perf 0.9 --max-tbt 300   # S3: Lighthouse mobile
 E2E_PERF_ALONE=1 pnpm test:e2e --project=perf  # S5, S6: main thread and workout interactions

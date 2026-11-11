@@ -524,7 +524,7 @@ describe('CI Lighthouse', () => {
 		expect(value(job, 'if')).toBeUndefined();
 		// The same production Node build, served where the Lighthouse script looks for it.
 		const build = stepsOf(job).find((fields) => value(fields, 'run') === 'pnpm build:node')!;
-		expect(value(under(build, 'env'), 'ORIGIN')).toBe('http://localhost:4174');
+		expect(value(under(build, 'env'), 'ORIGIN')).toBe('https://localhost:4174');
 		// Its reports under a name of its own, beside the mobile job's.
 		const upload = stepsOf(job).find((fields) =>
 			value(fields, 'uses')?.startsWith('actions/upload-artifact@')
@@ -533,6 +533,48 @@ describe('CI Lighthouse', () => {
 		expect(value(inputs, 'name')).toBe('lighthouse-desktop-${{ github.run_id }}');
 		expect(value(inputs, 'path')).toBe('lighthouse-reports/desktop/');
 		expect(value(upload, 'if')).toBe('${{ !cancelled() }}');
+	});
+
+	it('installs Chromium’s system packages from the e2e legs’ cache, never from a live mirror', () => {
+		const cache = under(legStep('Cache Playwright system packages'), 'with');
+		for (const id of ['lighthouse-shards', 'lighthouse-desktop']) {
+			const job = under(under(ci, 'jobs'), id);
+			// The legs' runner image, so the image-keyed caches they saved restore here.
+			expect(value(job, 'runs-on'), id).toBe(value(legsJob(), 'runs-on'));
+			const steps = stepsOf(job);
+			const named = (name: string) => {
+				const at = steps.findIndex((fields) => value(fields, 'name') === name);
+				expect(at, `${id}: no step "${name}"`).toBeGreaterThanOrEqual(0);
+				return { at, fields: steps[at]! };
+			};
+			const image = named('Runner image');
+			const key = named('Playwright system packages');
+			const restore = named('Cache Playwright system packages');
+			const install = named('Install Chromium system dependencies');
+			expect([image.at, key.at, restore.at, install.at], id).toEqual(
+				[image.at, key.at, restore.at, install.at].sort((a, b) => a - b)
+			);
+			expect(new Set([image.at, key.at, restore.at, install.at]).size, id).toBe(4);
+			expect(value(key.fields, 'id'), id).toBe('apt');
+			expect(value(key.fields, 'run'), id).toBe(
+				'./scripts/ci-playwright-deps.sh key chromium >> "$GITHUB_OUTPUT"'
+			);
+			// The legs' key, prefix and path, on the legs' image: the very cache they saved.
+			const inputs = under(restore.fields, 'with');
+			for (const field of ['path', 'key', 'restore-keys']) {
+				expect(value(inputs, field), `${id} ${field}`).toBe(value(cache, field));
+			}
+			expect(value(install.fields, 'run'), id).toBe(
+				'./scripts/ci-playwright-deps.sh install ~/.cache/apt-playwright chromium'
+			);
+			expect(value(install.fields, 'timeout-minutes'), id).toBe('12');
+		}
+		// No job anywhere goes to the mirror outside the cached install.
+		const direct = under(ci, 'jobs')
+			.flatMap((job) => stepsOf(job.children))
+			.map((fields) => value(fields, 'run') ?? '')
+			.filter((run) => run.includes('playwright install-deps') || run.includes('apt-get'));
+		expect(direct).toEqual([]);
 	});
 
 	it('skips the full-page screenshot, which only the HTML report thumbnails use', () => {
