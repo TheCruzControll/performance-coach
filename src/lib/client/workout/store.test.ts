@@ -803,7 +803,33 @@ describe("the owner's answers to a change that needs attention", () => {
 		expect(await store.getActive()).toBeNull();
 	});
 
-	it('a second Discard of a stuck start that still fails deletes it', async () => {
+	it('a second Discard of a stuck start keeps the start and its abandon, both waiting', async () => {
+		const store = await open();
+		await started(store);
+		expect(await store.dispatch(log('s1', 1)).saved).toBe('saved');
+		const [entry] = await store.outbox();
+		await stuck(store, entry!.seq);
+		await store.discard(entry!.seq);
+		const abandon = (await store.outbox())[1]!;
+		// Both stuck now: the start may have landed, so neither may go, or the server keeps the
+		// workout in progress for good.
+		await stuck(store, entry!.seq);
+		await stuck(store, abandon.seq);
+
+		await store.discard(entry!.seq);
+
+		const outbox = await store.outbox();
+		expect(outbox).toEqual([
+			{ ...entry, attempts: 0 },
+			{ ...abandon, attempts: 0 }
+		]);
+		expect(outbox.filter((e) => e.parked)).toEqual([]);
+		expect((await stored()).workouts).toMatchObject([{ id: W, status: 'abandoned' }]);
+		expect(await store.discarded()).toEqual(['s1']);
+		expect(await store.getActive()).toBeNull();
+	});
+
+	it('Discard of a start refused after an earlier Discard deletes it with its abandon', async () => {
 		const store = await open();
 		await started(store);
 		expect(await store.dispatch(log('s1', 1)).saved).toBe('saved');
@@ -811,13 +837,16 @@ describe("the owner's answers to a change that needs attention", () => {
 		await stuck(store, entry!.seq);
 		await store.discard(entry!.seq);
 		const abandon = (await store.outbox())[1]!.envelope;
-		await stuck(store, entry!.seq);
+		// The server answered this time and refused it, so it never landed.
+		await store.acknowledge([{ id: W, status: 'rejected', code: 'invalid' }]);
 
 		await store.discard(entry!.seq);
 
 		expect(await stored()).toMatchObject({ workouts: [], outbox: [] });
 		expect(await store.discarded()).toEqual(['s1', W, abandon.id]);
 		expect(await store.getActive()).toBeNull();
+		await started(store, W2);
+		expect((await store.getActive())!.workoutId).toBe(W2);
 	});
 
 	it('Fix re-queues the corrected change in its place under its id; Try again unparks a stuck one', async () => {

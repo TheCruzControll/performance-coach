@@ -27,8 +27,9 @@
  * - discard, tryAgain and fix are the owner's answers to a change that needs attention: Discard
  *   takes only a parked change. It also keeps the ids it removed until the server has claimed them
  *   (discarded, forget), so a request still on its way with one of them can never land it after a
- *   newer change. A stuck workout.start may have landed all the same, so its first Discard sends
- *   it again with a workout.abandon after it: the workout ends abandoned, never left in progress.
+ *   newer change. A stuck workout.start may have landed all the same, so its Discard sends it
+ *   again with a workout.abandon after it, however often it gets stuck: the workout ends
+ *   abandoned, never left in progress. Only a start the server refused is deleted.
  * Plain .ts with no runes, so Vitest's unit project runs it against fake-indexeddb.
  */
 import { createMutation, entityKey, SYNC_CODE_LABEL } from '#lib/domain/workout/index.ts';
@@ -177,9 +178,10 @@ export interface WorkoutStore {
 	/**
 	 * Discard of a parked change: the entry and every change that depends on it leave the outbox,
 	 * and their ids wait in `discarded` until the server has claimed them. A stuck workout.start
-	 * with no abandon queued stays, queued again, and a workout.abandon follows it instead
-	 * (discardAbandons). Rejects, writing nothing, with RangeError for a change that is not parked,
-	 * and with ActiveWorkoutError when it would bring a workout back into progress beside another.
+	 * stays, queued again, with the workout.abandon queued behind it or a new one, and only the
+	 * changes logged in it go (discardAbandons, loggedIn). Rejects, writing nothing, with
+	 * RangeError for a change that is not parked, and with ActiveWorkoutError when it would bring a
+	 * workout back into progress beside another.
 	 */
 	discard(seq: number): Promise<void>;
 	/** Try again: a stuck entry is queued again in its place, its count cleared. */
@@ -238,19 +240,32 @@ export async function requestPersistence(
 	}
 }
 
+/** Whether this entry is a workout.abandon of that workout. */
+function abandons(entry: OutboxEntry, workoutId: string): boolean {
+	return entry.envelope.type === 'workout.abandon' && entry.envelope.workoutId === workoutId;
+}
+
 /**
  * Whether Discard of this entry keeps it and abandons its workout instead: a workout.start parked
  * stuck may have reached the server (a timed-out request, an unread keepalive send), so deleting
- * it could leave the workout in progress there for good. Once an abandon is queued behind it (an
- * earlier Discard), a start stuck again is discarded like any other change.
+ * it, or the abandon queued behind it, could leave the workout in progress there for good. It is
+ * queued again however often it gets stuck, since a timeout or a network error counts nothing
+ * toward the cap. Only a start the server refused (parked 'refused') never landed, and is deleted.
  */
 export function discardAbandons(entries: readonly OutboxEntry[], seq: number): boolean {
 	const entry = entries.find((e) => e.seq === seq);
-	if (entry?.envelope.type !== 'workout.start' || entry.parked?.reason !== 'stuck') return false;
-	const { workoutId } = entry.envelope;
-	return !entries.some(
-		(e) => e.envelope.type === 'workout.abandon' && e.envelope.workoutId === workoutId
-	);
+	return entry?.envelope.type === 'workout.start' && entry.parked?.reason === 'stuck';
+}
+
+/**
+ * What Discard of a stuck start removes (discardAbandons): the changes logged in its workout, in
+ * order, never a workout.abandon queued to end it.
+ */
+export function loggedIn(entries: readonly OutboxEntry[], seq: number): OutboxEntry[] {
+	const start = entries.find((e) => e.seq === seq);
+	if (!start) return [];
+	const { workoutId } = start.envelope;
+	return dependantsOf(entries, seq).filter((e) => !abandons(e, workoutId));
 }
 
 // ---- Internals ------------------------------------------------------------------------------
@@ -802,8 +817,9 @@ export async function createStore({
 	}
 
 	/**
-	 * Discard's rule: only a parked entry goes, with its dependants; a stuck start with no abandon
-	 * queued stays, queued again, and only its dependants go (discardAbandons).
+	 * Discard's rule: only a parked entry goes, with its dependants. A stuck start stays, queued
+	 * again, and so does any abandon of its workout (one parked stuck is queued again too): only
+	 * the changes logged in it go (discardAbandons, loggedIn).
 	 */
 	function discardRule(entries: OutboxEntry[], seq: number): OutboxEntry[] {
 		const entry = entries.find((e) => e.seq === seq);
@@ -811,18 +827,25 @@ export async function createStore({
 			throw new RangeError('Only a change that needs attention can be discarded');
 		}
 		if (!discardAbandons(entries, seq)) return discard(entries, seq);
-		const gone = new Set(dependantsOf(entries, seq).map((e) => e.seq));
-		return entries.flatMap((e) =>
-			e.seq === seq ? [queued(e.seq, e.envelope)] : gone.has(e.seq) ? [] : [e]
-		);
+		const { workoutId } = entry.envelope;
+		const gone = new Set(loggedIn(entries, seq).map((e) => e.seq));
+		return entries.flatMap((e) => {
+			if (gone.has(e.seq)) return [];
+			const stuckAbandon = abandons(e, workoutId) && e.parked?.reason === 'stuck';
+			return e.seq === seq || stuckAbandon ? [queued(e.seq, e.envelope)] : [e];
+		});
 	}
 
-	/** The abandon a stuck start's Discard appends behind it, read from the outbox before it. */
+	/**
+	 * The abandon a stuck start's Discard appends behind it, read from the outbox before it: none
+	 * when one is queued already (an earlier Discard), which stays.
+	 */
 	const abandonOf =
 		(seq: number) =>
 		(before: OutboxEntry[]): Mutation[] => {
 			if (!discardAbandons(before, seq)) return [];
 			const { workoutId } = before.find((e) => e.seq === seq)!.envelope;
+			if (before.some((e) => abandons(e, workoutId))) return [];
 			const at = new Date(now()).toISOString();
 			return [createMutation('workout.abandon', { workoutId, at, payload: {} })];
 		};

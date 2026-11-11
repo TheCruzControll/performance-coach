@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { createMutation, MUTATION_TYPES } from '#lib/domain/workout/index.ts';
 import type { Mutation } from '#lib/domain/workout/index.ts';
 import { JUST_SWAP_REASON } from '#lib/domain/workout/substitution.ts';
-import { dependantsOf, queued } from '#lib/client/workout/outbox-rules.ts';
+import { queued } from '#lib/client/workout/outbox-rules.ts';
 import type { OutboxEntry } from '#lib/client/workout/outbox-rules.ts';
-import { discardAbandons } from '#lib/client/workout/store.ts';
+import { discardAbandons, loggedIn } from '#lib/client/workout/store.ts';
 import { fixFor } from './registry';
 import { abandonWords } from './workout';
 
@@ -126,7 +126,7 @@ describe('the Fix registry', () => {
 		const entries = [stuck(1, start), queued(2, notes('a')), queued(3, notes('b'))];
 
 		expect(discardAbandons(entries, 1)).toBe(true);
-		const n = dependantsOf(entries, 1).length;
+		const n = loggedIn(entries, 1).length;
 		expect(abandonWords(n)).toBe(
 			'Discard ends this workout as abandoned and removes the 2 changes logged in it.'
 		);
@@ -136,14 +136,21 @@ describe('the Fix registry', () => {
 		expect(abandonWords(0)).toBe('Discard ends this workout as abandoned.');
 		for (const count of [0, 1, 2]) expect(abandonWords(count)).toMatch(/^Discard \w.+\.$/);
 
-		// Not for a refused start, a start with an abandon already queued, or any other change.
+		// A start stuck again with its abandon queued (an earlier Discard) still keeps both: the
+		// abandon is not counted among the changes that go.
+		const abandon = createMutation('workout.abandon', { workoutId, at, payload: {} });
+		const again = [stuck(1, start), queued(4, abandon)];
+		expect(discardAbandons(again, 1)).toBe(true);
+		expect(loggedIn(again, 1)).toEqual([]);
+		expect(abandonWords(loggedIn(again, 1).length)).toBe('Discard ends this workout as abandoned.');
+		expect(loggedIn([...entries, queued(4, abandon)], 1).map((e) => e.seq)).toEqual([2, 3]);
+
+		// Not for a refused start, or any other change.
 		const refused: OutboxEntry = {
 			...entries[0]!,
 			parked: { reason: 'refused', errors: {}, message: 'Not valid' }
 		};
 		expect(discardAbandons([refused, ...entries.slice(1)], 1)).toBe(false);
-		const abandon = createMutation('workout.abandon', { workoutId, at, payload: {} });
-		expect(discardAbandons([...entries, queued(4, abandon)], 1)).toBe(false);
 		expect(discardAbandons([entries[0]!, stuck(2, notes('a'))], 2)).toBe(false);
 	});
 });
