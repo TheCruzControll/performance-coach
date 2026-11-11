@@ -47,6 +47,8 @@ test.describe('the current exercise before the app starts', () => {
 	}) => {
 		const { strength: kit } = await workoutDay();
 		const workoutId = await seedWorkout(page, kit);
+		// The stub never wrote it to Postgres: held, the server's 404 cannot drop it as lost.
+		await page.route(`**/api/workouts/${workoutId}`, () => {});
 		// Its start acknowledged, so nothing waits to be sent when the page loads again.
 		await gotoWorkout(page, 'strength', { sync: 'stub' });
 		await expect(page.locator('main#main[data-store]')).toBeAttached();
