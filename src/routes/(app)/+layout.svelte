@@ -6,6 +6,7 @@
 	import { afterPaint } from '../workout/lazy.ts';
 	import AppShell from './AppShell.svelte';
 	import { heldFor, isAppPath, isTabRoot, type Held } from './nav';
+	import { isStale } from './today/freshness';
 	import type { LayoutProps } from './$types';
 
 	let { children }: LayoutProps = $props();
@@ -30,13 +31,19 @@
 	 * tab not shown yet, its skeleton (HeldScreen.svelte), until the screen renders with fresh
 	 * data. Each tab's own screen left is kept for that (screen-memory.ts): a copy of its DOM,
 	 * taken just before the next one renders, without ids or test ids, so nothing can find it
-	 * twice. The memory goes with the app shell, and when any tab signs out (signout.ts here).
+	 * twice. A copy kept on another day or longer ago than Today's TTL (today/freshness.ts) is
+	 * not shown, so a revisit never shows an old day or plan. The memory goes with the app shell,
+	 * and when any tab signs out (signout.ts here).
 	 *
 	 * HeldScreen and the sign-out listener load once the first frame has painted, as the resume
 	 * bar does (AppShell.svelte), so neither is initial JS or CSS; a tap before then is marked
 	 * on the tab bar only.
 	 */
-	const holding = $derived(heldFor(page.url, navigating.to?.url, (url) => screens.recall(url)));
+	const holding = $derived(
+		heldFor(page.url, navigating.to?.url, (url) =>
+			screens.recall(url, (keptAt) => isStale(keptAt, new Date()))
+		)
+	);
 
 	onNavigate(({ from, to }) => {
 		const main = document.getElementById('main');

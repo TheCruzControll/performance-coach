@@ -12,7 +12,7 @@
 export type ScreenUrl = Pick<URL, 'pathname' | 'search'>;
 
 export class ScreenMemory<T> {
-	readonly #kept = new Map<string, { search: string; screen: T }>();
+	readonly #kept = new Map<string, { search: string; screen: T; keptAt: Date }>();
 	readonly #limit: number;
 
 	constructor(limit: number) {
@@ -20,19 +20,24 @@ export class ScreenMemory<T> {
 	}
 
 	/** Keep `screen` as the last one `url`'s pathname showed, replacing any earlier one. */
-	keep(url: ScreenUrl, screen: T): void {
+	keep(url: ScreenUrl, screen: T, keptAt = new Date()): void {
 		this.#kept.delete(url.pathname);
-		this.#kept.set(url.pathname, { search: url.search, screen });
+		this.#kept.set(url.pathname, { search: url.search, screen, keptAt });
 		for (const oldest of this.#kept.keys()) {
 			if (this.#kept.size <= this.#limit) break;
 			this.#kept.delete(oldest);
 		}
 	}
 
-	/** The last screen `url` showed, if it is still kept (the hash only scrolls within it). */
-	recall(url: ScreenUrl): T | undefined {
+	/**
+	 * The last screen `url` showed, if it is still kept (the hash only scrolls within it) and not
+	 * `isStale` by the time it was kept; a stale one is forgotten.
+	 */
+	recall(url: ScreenUrl, isStale: (keptAt: Date) => boolean = () => false): T | undefined {
 		const kept = this.#kept.get(url.pathname);
-		return kept?.search === url.search ? kept.screen : undefined;
+		if (kept && isStale(kept.keptAt)) this.#kept.delete(url.pathname);
+		else if (kept?.search === url.search) return kept.screen;
+		return undefined;
 	}
 
 	forget(): void {

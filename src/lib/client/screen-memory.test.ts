@@ -44,6 +44,16 @@ describe('ScreenMemory', () => {
 		expect(memory.size).toBe(2);
 	});
 
+	it('forgets a screen kept too long ago, so no revisit shows an old day', () => {
+		const memory = new ScreenMemory<string>(5);
+		const evening = new Date(2026, 10, 11, 22, 0);
+		memory.keep(at('/today'), 'yesterday', evening);
+		const keptBefore = (when: Date) => (keptAt: Date) => keptAt < when;
+		expect(memory.recall(at('/today'), keptBefore(evening))).toBe('yesterday');
+		expect(memory.recall(at('/today'), keptBefore(new Date(2026, 10, 12, 7, 0)))).toBeUndefined();
+		expect(memory.size).toBe(0);
+	});
+
 	it('forgets every screen', () => {
 		const memory = new ScreenMemory<string>(5);
 		memory.keep(at('/today'), 'today');

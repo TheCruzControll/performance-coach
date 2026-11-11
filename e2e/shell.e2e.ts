@@ -465,7 +465,8 @@ test.describe('app shell on an iPhone viewport', () => {
 /**
  * A tab answers the touch, not the server: the pressed tab is current at once, and until its data
  * arrives the content shows that screen's skeleton, or the last time it showed in this page
- * ((app)/HeldScreen.svelte).
+ * ((app)/HeldScreen.svelte). Today loads again when the app comes back to the foreground after
+ * its TTL or on another day (today/freshness.ts).
  */
 test.describe('tabs answer before the server does', () => {
 	// Every request reaches page.route: none is answered by the service worker.
@@ -565,6 +566,46 @@ test.describe('tabs answer before the server does', () => {
 		await expect(page.getByRole('heading', { level: 1, name: 'Today' })).toBeVisible();
 		await expect(held).toHaveCount(0);
 		expect(errors).toEqual([]);
+	});
+
+	test('Today loads again when the app returns after its TTL, with the new date', async ({
+		page
+	}) => {
+		await page.clock.install();
+		await gotoHydrated(page, '/today');
+		const loads: string[] = [];
+		page.on('request', (request) => {
+			if (new URL(request.url()).pathname === '/today/__data.json') loads.push(request.url());
+		});
+		const foreground = () =>
+			page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+
+		// Back at once: nothing to load.
+		await foreground();
+
+		// A day later (past the 30-minute TTL), just after midnight.
+		const expected = await page.evaluate(() => {
+			const next = new Date();
+			next.setDate(next.getDate() + 1);
+			next.setHours(0, 5, 0, 0);
+			return {
+				time: next.getTime(),
+				eyebrow: next.toLocaleDateString('en-GB', {
+					weekday: 'long',
+					day: 'numeric',
+					month: 'long'
+				})
+			};
+		});
+		await page.clock.setSystemTime(expected.time);
+		const reload = page.waitForRequest(
+			(request) => new URL(request.url()).pathname === '/today/__data.json'
+		);
+		await foreground();
+		await reload;
+		await expect(page.locator('.page-header .eyebrow')).toHaveText(expected.eyebrow);
+		await expect(page.getByRole('heading', { level: 1, name: 'Today' })).toBeVisible();
+		expect(loads, 'one load: the return right after loading asked for none').toHaveLength(1);
 	});
 });
 
