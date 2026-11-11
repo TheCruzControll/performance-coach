@@ -11,6 +11,9 @@
  *    'owner' as the audit actor.
  * 4. Answer its status; the last applied or duplicate result of each workout carries the
  *    workout's canonical rows, read once the batch is done.
+ * 5. Once anything applied to a workout that counts (completed, or deleted), sum the closed weeks
+ *    the batch marked stale into strength_week_rollups (services/analytics/strength-weeks.ts); a
+ *    failure there is logged and changes no result.
  *
  * - Rejected, deferred and retried mutations roll their transaction back, so they leave no ledger
  *   row: a corrected payload re-sent under the same id applies.
@@ -54,6 +57,7 @@ import {
 	TrainingNotFoundError,
 	type ResolvedTrainingDeps
 } from '../training/shared';
+import { refreshStrengthWeeks } from '../analytics/strength-weeks';
 import { isUuid } from '../ids';
 import { getCanonicalWorkout } from './canonical';
 import { exerciseHandlers } from './apply/exercises';
@@ -338,7 +342,28 @@ export async function applySyncBatch(
 	}
 
 	await attachCanonical(ownerId, results, workoutOf, resolved.db);
+	if (results.some((r) => r.status === 'applied') && results.some(counts))
+		await refreshWeeks(ownerId, resolved);
 	return { v: 1, results };
+}
+
+/** A result whose workout counts in Progress, or has stopped counting: completed, or deleted. */
+const counts = ({ canonical }: SyncResult) =>
+	canonical !== undefined &&
+	(canonical.workout.status === 'completed' || canonical.workout.deletedAt !== null);
+
+/**
+ * Sum again the closed weeks the batch marked stale, and any not summed yet (the deploy's
+ * `pnpm db:migrate` writes the rest), so Progress reads them from strength_week_rollups. A
+ * workout still being logged counts nowhere yet, so a batch of only those skips this.
+ */
+async function refreshWeeks(ownerId: string, { db, now }: ResolvedTrainingDeps) {
+	try {
+		await refreshStrengthWeeks(db, ownerId, now());
+	} catch (err) {
+		// Applied is applied: a stale week is summed from the facts until the next sync.
+		logger.warn('sync: strength weeks not refreshed', { err });
+	}
 }
 
 /** The workout's rows on the last applied or duplicate result of each workout, read in turn. */
