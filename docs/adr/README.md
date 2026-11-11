@@ -16,7 +16,7 @@ Status values: Proposed · Accepted · Superseded.
 | [0009](0009-llm-provider-interface.md)   | LLM behind a provider interface with a deterministic mock     | Accepted |
 | [0010](0010-program-versioning.md)       | Immutable program versions with copy-on-write membership      | Accepted |
 | [0011](0011-email-sign-in-link.md)       | Email sign-in link: one-time links to the owner's address     | Accepted |
-| [0012](0012-offline-workout-sync.md)     | Offline workout sync: device inputs, one projection, a ledger | Proposed |
+| [0012](0012-offline-workout-sync.md)     | Offline workout sync: device inputs, one projection, a ledger | Accepted |
 | [0013](0013-coach-agent-loop.md)         | Coach agent loop: a manual loop, streamed as labelled blocks  | Proposed |
 | [0014](0014-coach-memory-proposals.md)   | Coach memory from records; changes only as proposals          | Proposed |
 | [NNNN](NNNN-trend-classification.md)     | Trend vs noise: Theil–Sen, Mann–Kendall p, a minimal change   | Proposed |

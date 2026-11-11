@@ -11,6 +11,7 @@ import { getEnv } from '#lib/server/env.ts';
 import { createContext, runWithContext } from '#lib/server/observability/context.ts';
 import { logger } from '#lib/server/observability/logger.ts';
 import { serverTimingHeader } from '#lib/server/observability/timing.ts';
+import { stylesFirst } from '#lib/server/head-order.ts';
 import { SECURITY_HEADERS } from '#lib/server/security-headers.ts';
 import { recordServerError } from '#lib/server/services/errors.ts';
 import { shouldPreloadFont } from '#lib/ui/fonts.ts';
@@ -62,7 +63,9 @@ export const handle: Handle = async ({ event, resolve }) => {
 				preload: (input) =>
 					input.type === 'js' ||
 					input.type === 'css' ||
-					(input.type === 'font' && shouldPreloadFont(input.filename))
+					(input.type === 'font' && shouldPreloadFont(input.filename)),
+				// The styles first paint waits for go before the preload hints (head-order.ts).
+				transformPageChunk: ({ html }) => stylesFirst(html)
 			}));
 
 		const durationMs = performance.now() - ctx.startedAt;

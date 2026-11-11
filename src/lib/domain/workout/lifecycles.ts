@@ -24,7 +24,12 @@ export const WORKOUT = /* @__PURE__ */ defineLifecycle<WorkoutStatus, WorkoutEve
 		'src/lib/server/services/training/log.ts finishWorkout',
 		'src/lib/domain/workout/reducers/core.ts'
 	],
-	tests: [],
+	tests: [
+		'tests/integration/training/log-sets.test.ts',
+		'tests/integration/workouts/sync.test.ts',
+		'src/lib/domain/workout/ends.test.ts',
+		'src/lib/domain/lifecycles.test.ts'
+	],
 	states: WORKOUT_STATES,
 	initial: ['in_progress'],
 	terminal: ['completed'],
