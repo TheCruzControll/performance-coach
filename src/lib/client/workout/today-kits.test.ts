@@ -130,7 +130,11 @@ describe('savedToday', () => {
 			now: () => NOON,
 			persist: async () => true
 		});
-		expect(started).toEqual({ status: 'started', path: '/workout/run' });
+		expect(started).toEqual({
+			status: 'started',
+			path: '/workout/run',
+			refresh: expect.any(String)
+		});
 		store.close();
 		expect((await savedToday(NOON)).map((s) => s.action?.id)).toEqual([
 			'start-workout',
