@@ -5,7 +5,9 @@
  * - every Cache Storage entry except the current versioned app shell (`pc-shell-<version>`,
  *   which holds only the public build and the offline screen, never personal data),
  * - every IndexedDB database (the offline workout store from M4 onwards),
- * - session storage (scratch state of the tab).
+ * - session storage (scratch state of the tab),
+ * - /workout's prepainted card in localStorage (workout/prepaint.ts: the current exercise's words),
+ *   and the launch flag (workout/active-flag.ts: the workout in progress, for a launch offline).
  *
  * Device preferences in localStorage (theme, units) are kept on purpose: they are not account
  * data and the next sign-in should look the same. See docs/security.md.
@@ -21,6 +23,13 @@
 import { broadcast } from './workout/channel.ts';
 import { version } from '$app/env';
 
+/**
+ * Account data this device keeps in localStorage: /workout's prepainted card (workout/prepaint.ts's
+ * PREPAINT_KEY) and the launch flag (workout/active-flag.ts's ACTIVE_WORKOUT_KEY), by value so
+ * the sign-in screen loads neither module; signout.test.ts checks.
+ */
+const ACCOUNT_KEYS: readonly string[] = ['pc:workout-prepaint:v1', 'pc:active-workout:v1'];
+
 export const SHELL_CACHE = `pc-shell-${version}`;
 
 /** Session storage's one-shot note that this tab just signed out through signOut. */
@@ -33,6 +42,7 @@ export const SIGNED_OUT_MARKER = 'pc:signed-out';
 export async function clearDeviceAccountData(
 	options: { keepWorkouts?: boolean } = {}
 ): Promise<void> {
+	clearAccountKeys();
 	await Promise.allSettled([
 		clearCaches(),
 		options.keepWorkouts ? Promise.resolve() : clearIndexedDb(),
@@ -65,6 +75,14 @@ async function clearIndexedDb(): Promise<void> {
 				})
 		)
 	);
+}
+
+function clearAccountKeys(): void {
+	try {
+		for (const key of ACCOUNT_KEYS) localStorage.removeItem(key);
+	} catch {
+		// storage disabled
+	}
 }
 
 async function clearSessionStorage(): Promise<void> {
