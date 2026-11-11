@@ -35,8 +35,8 @@ export async function saveTodayKits(
 /**
  * The offline screen at the start URL (a launch with no signal) lists today's sessions from the
  * kits saved here, so a launch without a workout in progress can still start one: each to
- * /workout?start=<lineage>, which starts from the saved kit when the network does not answer
- * (start.ts startPlanned). Resume when it is the workout in progress on this device, Done once a
+ * /workout?start=<lineage>, which starts from the saved kit at once, with no request (start.ts
+ * startPlanned). Resume when it is the workout in progress on this device, Done once a
  * workout of it was completed here, Start otherwise (an abandoned one may start again).
  */
 export interface OfflineSession {
