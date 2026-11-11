@@ -82,7 +82,8 @@ const EXPECTED: Record<string, string[]> = {
 	'main/webkit': ['setup', 'setup-webkit', 'iphone-webkit'],
 	'serial/chromium': ['setup', 'serial-chromium'],
 	'serial/webkit': ['setup', 'setup-webkit', 'serial-webkit'],
-	'alone/chromium': ['setup', 'perf', 'exclusive']
+	'alone/chromium': ['setup', 'perf'],
+	'exclusive/chromium': ['setup', 'exclusive']
 };
 
 describe.each([
@@ -107,12 +108,13 @@ describe.each([
 		);
 	});
 
-	it('keeps the order: setup first, serial after it, exclusive after perf', () => {
+	it('keeps the order: setup first, serial, perf and exclusive after it', () => {
 		const chromium = selectProjects(projects, { engine: 'chromium', group: 'serial' });
 		expect(after(chromium, 'serial-chromium')).toEqual(['setup']);
 		const alone = selectProjects(projects, { engine: 'chromium', group: 'alone' });
 		expect(after(alone, 'perf')).toEqual(['setup']);
-		expect(after(alone, 'exclusive')).toEqual(['perf', 'setup']);
+		const exclusive = selectProjects(projects, { engine: 'chromium', group: 'exclusive' });
+		expect(after(exclusive, 'exclusive')).toEqual(['setup']);
 
 		const webkit = selectProjects(projects, { engine: 'webkit', group: 'serial' });
 		expect(after(webkit, 'serial-webkit')).toEqual(['setup', 'setup-webkit']);
@@ -138,8 +140,8 @@ describe.each([
 		}
 	});
 
-	it('leaves nothing depending on a main or serial leg\u2019s projects, so a shard list splits them', () => {
-		for (const leg of LEGS.filter((l) => l.group !== 'alone')) {
+	it('leaves nothing depending on a leg\u2019s projects, so a shard list splits them', () => {
+		for (const leg of LEGS) {
 			const selected = selectProjects(projects, leg);
 			const depended = new Set(selected.flatMap((p) => p.dependencies ?? []));
 			expect(
@@ -198,6 +200,7 @@ describe('playwright.config.ts legs', () => {
 		['main', 2],
 		['serial', 1],
 		['alone', 1],
+		['exclusive', 1],
 		['sweeps', 1],
 		['', 1]
 	] as const)('gives E2E_GROUP=%j %i worker(s) in CI', async (group, workers) => {
