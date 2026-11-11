@@ -399,11 +399,22 @@ jobs:
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ steps.image.outputs.os }}-${{ hashFiles('pnpm-lock.yaml') }}
-      - name: Configure apt for slow mirrors
-        run: ./scripts/ci-apt-resilience.sh
+      # The e2e legs' cached install (see the comment there): a full cache installs with no
+      # network, so an Ubuntu mirror outage cannot fail the audit. ubuntu-latest is another
+      # image than the legs' ubuntu-24.04, so its key is its own.
+      - name: Playwright system packages
+        id: apt
+        run: ./scripts/ci-playwright-deps.sh key chromium >> "$GITHUB_OUTPUT"
+      - name: Cache Playwright system packages
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/apt-playwright
+          key: apt-playwright-v2-${{ steps.image.outputs.os }}-${{ steps.apt.outputs.packages }}-${{ steps.apt.outputs.image }}
+          restore-keys: apt-playwright-v2-${{ steps.image.outputs.os }}-${{ steps.apt.outputs.packages }}-
       - name: Install Chromium system dependencies
+        # Bounded update and download attempts inside; dpkg runs once, never killed midway.
         timeout-minutes: 12
-        run: pnpm exec playwright install-deps chromium
+        run: ./scripts/ci-playwright-deps.sh install ~/.cache/apt-playwright chromium
       - name: Install Chromium
         timeout-minutes: 8
         run: pnpm exec playwright install chromium
@@ -492,11 +503,22 @@ jobs:
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ steps.image.outputs.os }}-${{ hashFiles('pnpm-lock.yaml') }}
-      - name: Configure apt for slow mirrors
-        run: ./scripts/ci-apt-resilience.sh
+      # The e2e legs' cached install (see the comment there): a full cache installs with no
+      # network, so an Ubuntu mirror outage cannot fail the audit. ubuntu-latest is another
+      # image than the legs' ubuntu-24.04, so its key is its own.
+      - name: Playwright system packages
+        id: apt
+        run: ./scripts/ci-playwright-deps.sh key chromium >> "$GITHUB_OUTPUT"
+      - name: Cache Playwright system packages
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/apt-playwright
+          key: apt-playwright-v2-${{ steps.image.outputs.os }}-${{ steps.apt.outputs.packages }}-${{ steps.apt.outputs.image }}
+          restore-keys: apt-playwright-v2-${{ steps.image.outputs.os }}-${{ steps.apt.outputs.packages }}-
       - name: Install Chromium system dependencies
+        # Bounded update and download attempts inside; dpkg runs once, never killed midway.
         timeout-minutes: 12
-        run: pnpm exec playwright install-deps chromium
+        run: ./scripts/ci-playwright-deps.sh install ~/.cache/apt-playwright chromium
       - name: Install Chromium
         timeout-minutes: 8
         run: pnpm exec playwright install chromium

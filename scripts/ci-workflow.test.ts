@@ -535,6 +535,45 @@ describe('CI Lighthouse', () => {
 		expect(value(upload, 'if')).toBe('${{ !cancelled() }}');
 	});
 
+	it('installs Chromium’s system packages from the e2e legs’ cache, never from a live mirror', () => {
+		const cache = under(legStep('Cache Playwright system packages'), 'with');
+		for (const id of ['lighthouse-shards', 'lighthouse-desktop']) {
+			const steps = stepsOf(under(under(ci, 'jobs'), id));
+			const named = (name: string) => {
+				const at = steps.findIndex((fields) => value(fields, 'name') === name);
+				expect(at, `${id}: no step "${name}"`).toBeGreaterThanOrEqual(0);
+				return { at, fields: steps[at]! };
+			};
+			const image = named('Runner image');
+			const key = named('Playwright system packages');
+			const restore = named('Cache Playwright system packages');
+			const install = named('Install Chromium system dependencies');
+			expect([image.at, key.at, restore.at, install.at], id).toEqual(
+				[image.at, key.at, restore.at, install.at].sort((a, b) => a - b)
+			);
+			expect(new Set([image.at, key.at, restore.at, install.at]).size, id).toBe(4);
+			expect(value(key.fields, 'id'), id).toBe('apt');
+			expect(value(key.fields, 'run'), id).toBe(
+				'./scripts/ci-playwright-deps.sh key chromium >> "$GITHUB_OUTPUT"'
+			);
+			// The legs' key, prefix and path: keyed by the runner image, which differs from theirs.
+			const inputs = under(restore.fields, 'with');
+			for (const field of ['path', 'key', 'restore-keys']) {
+				expect(value(inputs, field), `${id} ${field}`).toBe(value(cache, field));
+			}
+			expect(value(install.fields, 'run'), id).toBe(
+				'./scripts/ci-playwright-deps.sh install ~/.cache/apt-playwright chromium'
+			);
+			expect(value(install.fields, 'timeout-minutes'), id).toBe('12');
+		}
+		// No job anywhere goes to the mirror outside the cached install.
+		const direct = under(ci, 'jobs')
+			.flatMap((job) => stepsOf(job.children))
+			.map((fields) => value(fields, 'run') ?? '')
+			.filter((run) => run.includes('playwright install-deps') || run.includes('apt-get'));
+		expect(direct).toEqual([]);
+	});
+
 	it('skips the full-page screenshot, which only the HTML report thumbnails use', () => {
 		const script = readFileSync(new URL('./lighthouse.ts', import.meta.url), 'utf8');
 		expect(script).toMatch(/^\s*disableFullPageScreenshot: true,$/m);
