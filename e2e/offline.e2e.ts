@@ -1,5 +1,8 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type BrowserContext, type Page } from '@playwright/test';
+import { ACTIVE_WORKOUT_KEY } from '../src/lib/client/workout/active-flag';
+import { ACTIVE_LAUNCH_TIMEOUT_MS, START_URL } from '../src/lib/client/workout/launch';
 import { TABS } from './support';
+import { seedWorkout, workoutDay } from './workout-support';
 
 /** Tabs whose screen loads server data, so offline they show the designed offline state. */
 const DATA_SCREENS: string[] = ['/today', '/train', '/progress', '/profile'];
@@ -167,6 +170,88 @@ test.describe('offline behaviour (service worker)', () => {
 		await page.waitForTimeout(3_000); // longer than the first retry delay (2 s)
 		expect(await page.evaluate(() => '__sameDocument' in window)).toBe(true);
 		expect(probes).toEqual([]);
+	});
+
+	/**
+	 * A strength workout in progress on this device, which the workout page's store has flagged for
+	 * launch (launch.ts), with the page controlled by the worker. Its sync is held unanswered
+	 * (context-level, so it also covers requests that pass through the worker): nothing reaches
+	 * Postgres.
+	 */
+	async function workoutInProgress(page: Page, context: BrowserContext) {
+		await context.route('**/api/workouts/**', () => {});
+		const kits = await workoutDay();
+		const workoutId = await seedWorkout(page, kits.strength);
+		await page.goto('/workout');
+		await waitForController(page);
+		await expect(page.locator('main#main[data-store]')).toBeAttached();
+		await expect
+			.poll(() => page.evaluate((key) => localStorage.getItem(key), ACTIVE_WORKOUT_KEY))
+			.toContain(workoutId);
+	}
+
+	/** The workout page's logger, ready for the next set, and no offline screen. */
+	async function expectLogger(page: Page) {
+		await expect(page).toHaveURL(/\/workout$/);
+		await expect(page.getByTestId('complete-set')).toBeEnabled();
+		await expect(page.getByText('Back squat').first()).toBeVisible();
+		await expect(page.getByTestId('offline-state')).toHaveCount(0);
+	}
+
+	test('launching offline mid-workout opens the logger, not the offline screen', async ({
+		page,
+		context
+	}) => {
+		await workoutInProgress(page, context);
+
+		await context.setOffline(true);
+		// The start URL offline: the worker serves the offline screen, which opens the workout.
+		await page.goto(START_URL).catch(() => {}); // replaced while it loads
+		await expectLogger(page);
+
+		// The offline screen at its own URL does the same.
+		await page.goto('/offline').catch(() => {});
+		await expectLogger(page);
+
+		// Any other screen reloaded offline keeps its designed offline state, in the shell.
+		await page.goto('/progress').catch(() => {});
+		await expect(page).toHaveURL(/\/progress$/);
+		await expect(page.getByTestId('offline-state')).toContainText("You're offline");
+		await expect(page.getByRole('navigation', { name: 'Primary' })).toBeVisible();
+	});
+
+	test('on lie-fi, a launch mid-workout gives the server less time before opening the logger', async ({
+		page,
+		context
+	}) => {
+		await workoutInProgress(page, context);
+
+		// Connected, but the start URL's document never answers (context-level: the worker's fetch).
+		await context.route(`**${START_URL}`, () => {});
+		const asked = Date.now();
+		await page.goto(START_URL, { waitUntil: 'commit' }).catch(() => {});
+		await expect(page).toHaveURL(/\/workout$/);
+		// Under the usual 6 s wait: the shorter launch timeout, plus two pages from the precache.
+		expect(Date.now() - asked).toBeLessThan(ACTIVE_LAUNCH_TIMEOUT_MS + 3_500);
+		await expectLogger(page);
+	});
+
+	test('after the workout finishes, an offline launch shows the offline screen again', async ({
+		page,
+		context
+	}) => {
+		await workoutInProgress(page, context);
+		await page.getByTestId('workout-menu-button').click();
+		const menu = page.getByTestId('workout-menu');
+		await menu.getByTestId('menu-discard').click();
+		await menu.getByTestId('confirm-discard').click();
+		await expect(page.getByTestId('workout-empty')).toBeVisible();
+		expect(await page.evaluate((key) => localStorage.getItem(key), ACTIVE_WORKOUT_KEY)).toBeNull();
+
+		await context.setOffline(true);
+		await page.goto(START_URL).catch(() => {});
+		await expect(page).toHaveURL(/\/today$/);
+		await expect(page.getByTestId('offline-state')).toContainText("You're offline");
 	});
 
 	test('dynamic pages are never stored by the service worker', async ({ page, context }) => {
