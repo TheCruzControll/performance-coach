@@ -8,6 +8,7 @@ describe('syncWords', () => {
 				{ state: 'synced' },
 				{ state: 'saving', pending: 2 },
 				{ state: 'offline', pending: 3 },
+				{ state: 'unreachable', waiting: 2 },
 				{ state: 'retrying', seconds: 4, pending: 1 },
 				{ state: 'retrying', seconds: 0, pending: 1 },
 				{ state: 'attention', count: 1 },
@@ -22,6 +23,7 @@ describe('syncWords', () => {
 			'check: Saved',
 			'refresh: Saving…',
 			'wifi-off: Offline · 3 pending',
+			'wifi-off: Can’t connect · 2 waiting',
 			'clock: Retrying in 4 s',
 			'clock: Retrying in 1 s',
 			'alert: 1 needs attention',
@@ -36,12 +38,28 @@ describe('syncWords', () => {
 			[999, 1000, 25_000].map((n) => [
 				syncWords({ state: 'signed-out', waiting: n }).text,
 				syncWords({ state: 'offline', pending: n }).text,
-				syncWords({ state: 'attention', count: n }).text
+				syncWords({ state: 'attention', count: n }).text,
+				syncWords({ state: 'unreachable', waiting: n }).text
 			])
 		).toEqual([
-			['Sign in to sync · 999 waiting', 'Offline · 999 pending', '999 need attention'],
-			['Sign in to sync · 999+ waiting', 'Offline · 999+ pending', '999+ need attention'],
-			['Sign in to sync · 999+ waiting', 'Offline · 999+ pending', '999+ need attention']
+			[
+				'Sign in to sync · 999 waiting',
+				'Offline · 999 pending',
+				'999 need attention',
+				'Can’t connect · 999 waiting'
+			],
+			[
+				'Sign in to sync · 999+ waiting',
+				'Offline · 999+ pending',
+				'999+ need attention',
+				'Can’t connect · 999+ waiting'
+			],
+			[
+				'Sign in to sync · 999+ waiting',
+				'Offline · 999+ pending',
+				'999+ need attention',
+				'Can’t connect · 999+ waiting'
+			]
 		]);
 	});
 });
