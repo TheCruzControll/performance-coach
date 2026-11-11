@@ -260,10 +260,12 @@ jobs:
           if-no-files-found: ignore
 
   # The check branch protection requires: green only when every leg is. It runs even when a leg
-  # fails, since a skipped required check would count as passing.
+  # fails, since a skipped required check would count as passing. Required checks gate only pull
+  # requests, so pushes and manual runs skip it: there the run's own result already fails on a
+  # failed leg, and this job would only queue behind every pull request's jobs (an hour at peak).
   e2e:
     name: E2E (iPhone viewport · Chromium + WebKit)
-    if: ${{ always() }}
+    if: ${{ always() && github.event_name == 'pull_request' }}
     needs: [e2e-legs]
     runs-on: ubuntu-latest
     timeout-minutes: 5

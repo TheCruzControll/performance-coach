@@ -3,6 +3,9 @@
  * Lighthouse only audits the default (dark) theme, so light mode needs its own run: this is it.
  * Includes interactive states that only exist after a tap (the plate-calculator sheet, the
  * /design component tabs).
+ *
+ * Not a spec: a11y-dark.e2e.ts and a11y-light.e2e.ts each run `a11ySuite` for one theme, so
+ * the two halves can run in parallel; both run the same tests (scripts/playwright-projects.test.ts).
  */
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
@@ -10,7 +13,7 @@ import { COACH_A11Y } from './coach-a11y';
 import { isDesktopPage } from './desktop';
 import { gotoHydrated, signedOut, TABS } from './support';
 
-const SCREENS = [
+export const SCREENS = [
 	...TABS.map((t) => t.path),
 	'/profile/security',
 	'/profile/goals',
@@ -32,10 +35,9 @@ const SCREENS = [
 ];
 /** Screens a signed-out browser sees (setup and recovery-session screens are audited in
  * auth.setup.ts and auth.e2e.ts, the only places they exist). */
-const SIGNED_OUT_SCREENS = ['/', '/recover'];
-const THEMES = ['dark', 'light'] as const;
+export const SIGNED_OUT_SCREENS = ['/', '/recover'];
 
-async function audit(page: Page): Promise<string[]> {
+export async function audit(page: Page): Promise<string[]> {
 	const { violations } = await new AxeBuilder({ page })
 		.withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
 		.analyze();
@@ -44,7 +46,8 @@ async function audit(page: Page): Promise<string[]> {
 	);
 }
 
-for (const theme of THEMES) {
+/** Every axe test, for one theme: the body of each theme's spec file. */
+export function a11ySuite(theme: 'dark' | 'light'): void {
 	test.describe(`accessibility (axe, ${theme} theme)`, () => {
 		test.beforeEach(async ({ page }) => {
 			// The stored preference is applied before first paint by the inline theme script.
