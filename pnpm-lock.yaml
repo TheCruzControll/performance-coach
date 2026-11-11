@@ -75,6 +75,9 @@ importers:
       chrome-launcher:
         specifier: ^1.2.2
         version: 1.2.2
+      devalue:
+        specifier: 5.9.4
+        version: 5.9.4
       drizzle-kit:
         specifier: ^0.31.11
         version: 0.31.11

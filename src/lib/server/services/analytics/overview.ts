@@ -69,6 +69,13 @@ export type OverviewKpiId = (typeof OVERVIEW_KPIS)[number];
 /** A lift draws an e1RM line once this many sessions of it give an estimate. */
 export const E1RM_SESSIONS = 2;
 
+/**
+ * The days from the first activity whose sets date PRs and e1RM lines; the rest of the history is
+ * read for them only when these days do not tell (analytics-explain: reading two years of sets
+ * cost more than the rest of a 12-week overview).
+ */
+export const SECTIONS_FIRST_DAYS = 84;
+
 /** Weeks of the plan read ahead, a week at a time, to date PRs and e1RM lines before any are logged. */
 export const PLAN_HORIZON_WEEKS = 4;
 
@@ -188,7 +195,7 @@ export async function getProgressOverview(
 	const range = { ...sharedRange(window, trend, today), timeZone };
 	const facts = sharedFacts(db, ownerId, range, { repository, queue, everyDay });
 	const query = { period, today };
-	const strength = await getStrengthDashboard(db, ownerId, query, { facts });
+	const strength = await getStrengthDashboard(db, ownerId, { ...query, headline: true }, { facts });
 	const running = await getRunningDashboard(db, ownerId, query, { facts });
 	const general = await getGeneralDashboard(db, ownerId, query, { facts });
 
@@ -296,8 +303,8 @@ export async function getProgressOverview(
 }
 
 /**
- * The day each section appears. Logged history dates PRs and e1RM lines (the sets the strength
- * dashboard already read since the first activity); until then the plan's next strength sessions
+ * The day each section appears. Logged history dates PRs and e1RM lines (the sets of the first
+ * SECTIONS_FIRST_DAYS days from the first activity, or of every day when those do not); until then the plan's next strength sessions
  * (up to PLAN_HORIZON_WEEKS weeks of it) date them, or nothing does. Verdicts and the ratio count from
  * the first activity, or from the plan's first day or today before any, and so does the first
  * weekly review (that week's Sunday); the first cycle review comes at the current program's first
@@ -322,26 +329,38 @@ async function sectionsOf(
 	}
 ): Promise<Record<OverviewSection, SectionAvailability>> {
 	const program = await getCurrentProgram(ownerId, today, { db });
-	const sets = first === null || first > today ? [] : await facts(first, today).sets();
-	const exercises = await getExercisesByIds(ownerId, [...new Set(sets.map((s) => s.exercise))], {
-		db
-	});
-	const days = sets.map((set) => localDay(set.performedAt, timeZone)).sort();
-	const lifts = [...Map.groupBy(sets, (set) => set.exercise)].flatMap(([id, facts]) => {
-		const lift = exercises.get(id);
-		return lift
-			? [
-					e1rmSeries(facts, lift, timeZone)
-						.map((p) => p.on)
-						.sort()
-				]
-			: [];
-	});
-	const most = Math.max(0, ...lifts.map((dates) => dates.length));
-	const logged: Partial<Record<OverviewSection, IsoDate>> = {};
-	if (days[0]) logged.prs = days[0];
-	const e1rmOn = lifts.flatMap((dates) => dates[E1RM_SESSIONS - 1] ?? []).sort()[0];
-	if (e1rmOn) logged.e1rm = e1rmOn;
+	/** The first logged day and the first e1RM line's, from the sets of `first` to `to`. */
+	const loggedTo = async (to: IsoDate) => {
+		const sets = first === null || first > today ? [] : await facts(first, to).sets();
+		const exercises = await getExercisesByIds(ownerId, [...new Set(sets.map((s) => s.exercise))], {
+			db
+		});
+		const days = sets.map((set) => localDay(set.performedAt, timeZone)).sort();
+		const lifts = [...Map.groupBy(sets, (set) => set.exercise)].flatMap(([id, facts]) => {
+			const lift = exercises.get(id);
+			return lift
+				? [
+						e1rmSeries(facts, lift, timeZone)
+							.map((p) => p.on)
+							.sort()
+					]
+				: [];
+		});
+		const most = Math.max(0, ...lifts.map((dates) => dates.length));
+		const logged: Partial<Record<OverviewSection, IsoDate>> = {};
+		if (days[0]) logged.prs = days[0];
+		const e1rmOn = lifts.flatMap((dates) => dates[E1RM_SESSIONS - 1] ?? []).sort()[0];
+		if (e1rmOn) logged.e1rm = e1rmOn;
+		return { logged, most };
+	};
+	// Both are the earliest of something, so the first SECTIONS_FIRST_DAYS days hold them on a long
+	// history. Their last day's sessions may run on past it, so an e1RM date on it is read again.
+	const cut = first && addDays(first, SECTIONS_FIRST_DAYS - 1);
+	const early = cut && cut < today ? await loggedTo(cut) : null;
+	const { logged, most } =
+		early?.logged.prs && early.logged.e1rm && early.logged.e1rm < cut!
+			? early
+			: await loggedTo(today);
 
 	// Logged e1RM lines imply logged PRs; until then the plan's next strength sessions date both.
 	const planned: IsoDate[] = [];
