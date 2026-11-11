@@ -22,6 +22,7 @@ import {
 import { getGeneralDashboard } from '../../../src/lib/server/services/analytics/general';
 import {
 	getProgressOverview,
+	SECTIONS_FIRST_DAYS,
 	type ProgressOverview
 } from '../../../src/lib/server/services/analytics/overview';
 import { getRunningDashboard } from '../../../src/lib/server/services/analytics/running';
@@ -147,9 +148,10 @@ describe('getProgressOverview', () => {
 	it('reads each kind once per window for all three services, one query at a time', async () => {
 		await withRollback(async (db) => {
 			const { owner } = await seedDataset(db);
+			// No prescriptions: the overview shows the strength headline only (key lifts, tonnage).
 			const once = {
 				...{ firstActivity: 1, sets: 1, sessions: 1, segments: 1 },
-				...{ prescriptions: 1, planned: 1, recovery: 1 }
+				...{ planned: 1, recovery: 1 }
 			};
 			for (const period of ['12w', 'all'] as const) {
 				const { repository, calls, seen } = counting(db);
@@ -157,7 +159,8 @@ describe('getProgressOverview', () => {
 				expect(calls, period).toEqual(once);
 				expect(seen.most).toBe(1);
 			}
-			// At 4w the records before the days read are one more window of sets, read once.
+			// At 4w the first SECTIONS_FIRST_DAYS days, which date PRs and e1RM lines, are one more
+			// window of sets, read once.
 			const { repository, calls } = counting(db);
 			await getProgressOverview(db, owner, { period: '4w', today: TODAY }, { repository });
 			expect(calls).toEqual({ ...once, sets: 2 });
@@ -173,7 +176,7 @@ describe('getProgressOverview', () => {
 			// More than two years: two windows (MAX_RANGE_DAYS), each kind read once in each.
 			expect(three.calls).toEqual({
 				...{ firstActivity: 1, sets: 2, sessions: 2, segments: 2 },
-				...{ prescriptions: 2, planned: 2, recovery: 2 }
+				...{ planned: 2, recovery: 2 }
 			});
 			expect(three.seen.most).toBe(1);
 		});
@@ -307,6 +310,22 @@ describe('getProgressOverview', () => {
 			const later = await getProgressOverview(db, owner, lapsed);
 			expect(later.verdicts.every((v) => v.verdict === 'not_enough_data')).toBe(true);
 			expect(later.availability.verdicts).toMatchObject({ on: weekOf(7), ready: false });
+		});
+	});
+
+	it('dates PRs and e1RM lines from every day when the first SECTIONS_FIRST_DAYS hold no set', async () => {
+		await withRollback(async (db) => {
+			const { owner } = await seedDataset(db);
+			// Runs from day 1, lifting only from week 13: the first 84 days date neither.
+			await db.execute(sql`update set_records set deleted_at = now() where owner_id = ${owner}
+				and performed_at < (${weekOf(13)}::timestamp at time zone ${TZ})`);
+			const o = await getProgressOverview(db, owner, { period: '12w', today: TODAY });
+			// Week 13 starts on day 85, past the first SECTIONS_FIRST_DAYS.
+			expect(addDays(WEEK_ONE, SECTIONS_FIRST_DAYS) <= weekOf(13)).toBe(true);
+			expect(o.availability).toMatchObject({
+				prs: { on: weekOf(13), ready: true },
+				e1rm: { on: weekOf(14), ready: true }
+			});
 		});
 	});
 

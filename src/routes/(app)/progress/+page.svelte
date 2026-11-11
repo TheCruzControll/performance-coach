@@ -4,6 +4,10 @@
   restores it; with JavaScript the frame holds, dimmed and aria-busy, until the new numbers
   arrive (PeriodPicker). Offline, a switch is cancelled and the numbers stay, with a notice. A
   failed load is a notice with Retry inside the screen, never the error page.
+
+  Above them, rows to the workout history and the reviews, on every view. The reviews row sits
+  here rather than in OverviewView because a second ListRow in the overview's own chunk would put
+  the route over its 60 KB initial JS budget, and here it costs only a few bytes.
 -->
 <script lang="ts">
 	import { beforeNavigate, invalidateAll } from '$app/navigation';
@@ -67,6 +71,12 @@
 			href={resolve('/(app)/progress/workouts/[[id]]', {})}
 			data-testid="workout-history-row"
 		/>
+		<ListRow
+			title="Reviews"
+			icon="sparkle"
+			href={resolve('/(app)/progress/reviews/[[key]]', {})}
+			data-testid="reviews-row"
+		/>
 	</div>
 
 	{#if offline}
@@ -118,6 +128,11 @@
 	.history,
 	.notice {
 		margin-bottom: var(--space-5);
+	}
+
+	.history {
+		display: grid;
+		gap: var(--space-2);
 	}
 
 	.frame {

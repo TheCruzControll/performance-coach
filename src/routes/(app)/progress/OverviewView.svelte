@@ -15,10 +15,8 @@
 -->
 <script lang="ts">
 	import { onMount, type Component } from 'svelte';
-	import { resolve } from '$app/paths';
 	import EmptyState from '#lib/ui/components/EmptyState.svelte';
 	import Icon from '#lib/ui/components/Icon.svelte';
-	import ListRow from '#lib/ui/components/ListRow.svelte';
 	import VerdictBadge from '#lib/ui/analytics/VerdictBadge.svelte';
 	import type { IconName } from '#lib/ui/icons/icons.ts';
 	import type { OverviewData, VerdictCard } from './load';
@@ -77,20 +75,12 @@
 </script>
 
 <div class="pc-overview-view" data-stage={overview.stage} data-testid="overview">
+	<!-- If its code fails after a client navigation, the page's Reviews row is the way in. -->
 	{#if overview.review}
 		{#if Prompt && !(Prompt instanceof Error)}
 			<Prompt review={overview.review} />
 		{:else if prompt}
 			<Served markup={prompt} />
-		{:else if Prompt}
-			<!-- Its code failed to load after a client navigation: the reviews screen creates it. -->
-			<ListRow
-				title={overview.review.title}
-				subtitle={overview.review.summary}
-				icon="sparkle"
-				href={overview.review.href ?? resolve('/(app)/progress/reviews/[[key]]', {})}
-				data-testid="review-prompt-link"
-			/>
 		{/if}
 	{/if}
 	{#if overview.stage === 'history'}
@@ -147,13 +137,6 @@
 	{/if}
 
 	<TrendsLoader {overview} {served} />
-
-	<ListRow
-		title="Reviews"
-		icon="sparkle"
-		href={resolve('/(app)/progress/reviews/[[key]]', {})}
-		data-testid="reviews-row"
-	/>
 </div>
 
 <style>

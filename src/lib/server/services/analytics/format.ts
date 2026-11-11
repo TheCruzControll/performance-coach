@@ -37,8 +37,16 @@ export interface Shown {
 	value: number;
 }
 
-const number = (value: number, decimals: number) =>
-	(cleanFloat(value, decimals) + 0).toLocaleString('en-US', { maximumFractionDigits: decimals });
+/** One number format per number of decimals, made once: toLocaleString makes one per call. */
+const formats = new Map<number, Intl.NumberFormat>();
+const number = (value: number, decimals: number) => {
+	let format = formats.get(decimals);
+	if (!format) {
+		format = new Intl.NumberFormat('en-US', { maximumFractionDigits: decimals });
+		formats.set(decimals, format);
+	}
+	return format.format(cleanFloat(value, decimals) + 0);
+};
 
 /** A weight in kg, shown in `unit` to 0.1: '220.5 lb'. */
 export const weight = (kg: number, { weight: unit }: DisplayUnits): Shown => ({

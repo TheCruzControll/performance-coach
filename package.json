@@ -79,6 +79,7 @@
 		"@types/node": "^22.20.5",
 		"@types/pg": "^8.23.1",
 		"chrome-launcher": "^1.2.2",
+		"devalue": "5.9.4",
 		"drizzle-kit": "^0.31.11",
 		"eslint": "^10.14.0",
 		"eslint-config-prettier": "^10.1.8",
