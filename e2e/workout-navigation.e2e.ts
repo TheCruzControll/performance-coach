@@ -189,12 +189,10 @@ test.describe('moving between exercises (IndexedDB only)', () => {
 		const y = box.y + box.height / 2;
 		await page.mouse.move(x, y);
 		await page.mouse.down();
-		// Far enough to move on, and still on the screen, as a finger is: dragged past its left
-		// edge, WebKit ended the drag before the mouse was let go, and the card snapped back.
-		await page.mouse.move(x - 120, y, { steps: 8 });
+		await page.mouse.move(x - 200, y, { steps: 8 });
 		expect(
 			await card(page).evaluate((el) => new DOMMatrix(getComputedStyle(el).transform).m41)
-		).toBeCloseTo(-120, 0);
+		).toBeCloseTo(-200, 0);
 		await page.mouse.up();
 		await expect(heading(page)).toHaveText('Leg press');
 		expect(
