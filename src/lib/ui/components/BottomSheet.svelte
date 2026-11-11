@@ -250,11 +250,13 @@
 		background: transparent;
 	}
 
+	/* No backdrop blur: under the fade, a blur of the whole screen behind it is redrawn every frame
+	   (10-16 ms a frame in CI's software compositor, against 3-5 without the sheet), and the
+	   sheet's motion dropped frames (perf-workout.e2e.ts). */
 	.scrim {
 		position: absolute;
 		inset: 0;
 		background: var(--color-overlay);
-		backdrop-filter: blur(2px);
 		opacity: 0;
 		transition: opacity var(--duration-slow) var(--ease-standard);
 	}

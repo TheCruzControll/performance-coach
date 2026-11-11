@@ -148,8 +148,22 @@ describe('signOut', () => {
 		}
 	});
 
+	it('signOut forgets the screens this page kept in memory', async () => {
+		const { signOut } = await load();
+		const { screens } = await import('./screen-memory');
+		screens.keep(new URL('https://coach.test/today'), []);
+		serverSignsOut();
+
+		await signOut();
+
+		expect(screens.size).toBe(0);
+		expect(replace).toHaveBeenCalledWith('/?signedOut=1');
+	});
+
 	it('signOut changes nothing when the server refuses', async () => {
 		const { signOut, SIGNED_OUT_MARKER } = await load();
+		const { screens } = await import('./screen-memory');
+		screens.keep(new URL('https://coach.test/today'), []);
 		await seedWorkout();
 		vi.stubGlobal(
 			'fetch',
@@ -162,6 +176,7 @@ describe('signOut', () => {
 		expect(await pendingCount()).toBe(2);
 		expect(storage.getItem(SIGNED_OUT_MARKER)).toBeNull();
 		expect(await cacheStorage.keys()).toContain('pc-account-data');
+		expect(screens.size).toBe(1);
 		expect(replace).not.toHaveBeenCalled();
 	});
 });
