@@ -1,7 +1,8 @@
 /**
- * generate.ts: the stage list runs in its documented order and each later stage runs its own
- * implementation; every scenario composes into a plan the contract accepts; the minimal profile gets
- * one default_assumed decision per assumption; the same input gives byte-identical JSON.
+ * generate.ts: the stage list runs in its documented order and each stage runs its own
+ * implementation, phasing before volume and schedule last; every scenario composes into a plan the contract accepts; the minimal profile gets
+ * one default_assumed decision per assumption; the same input gives byte-identical JSON, and every
+ * scenario's plan is the one hashed before m7-stage-list.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CATALOGUE } from '../exercises/index';
@@ -13,9 +14,13 @@ import { strength as strengthTemplates } from './decisions/templates/strength';
 import { volume as volumeTemplates } from './decisions/templates/volume';
 import { GeneratedPlanError, generateProgram, STAGES } from './generate';
 import { buildProgrammingInput } from './input';
+import { fnv1a64 } from './random';
 import { SCENARIO_START, SCENARIOS, scenarioDay } from './scenarios';
+import type { ScenarioKey } from './scenarios';
 import { demandIn } from './stage';
 import type { Draft } from './stage';
+import { blocks } from './stages/blocks';
+import { demand } from './stages/demand';
 import { loads } from './stages/loads';
 import { placement } from './stages/placement';
 import { progression } from './stages/progression';
@@ -41,10 +46,12 @@ describe('the stage list', () => {
 		'running',
 		'other',
 		'placement',
+		'phasing',
 		'volume',
 		'loads',
 		'progression',
-		'timefit'
+		'timefit',
+		'schedule'
 	];
 
 	it('runs every stage once, in the documented order, each on the draft the one before returned', () => {
@@ -66,12 +73,18 @@ describe('the stage list', () => {
 		expect(drafts[2]!.blocks).toHaveLength(1);
 	});
 
-	it.each(Object.entries({ strength, volume, loads, progression, placement, timefit }))(
-		'runs the %s stage of its own',
-		(name, run) => {
-			expect(STAGES.find((s) => s.name === name)?.run).toBe(run);
-		}
-	);
+	it.each(
+		Object.entries({ demand, blocks, strength, volume, loads, progression, placement, timefit })
+	)('runs the %s stage of its own', (name, run) => {
+		expect(STAGES.find((s) => s.name === name)?.run).toBe(run);
+	});
+
+	it('runs phasing after placement and before volume, which counts the hard sets it sets, and schedule last', () => {
+		const names = STAGES.map((s) => s.name);
+		expect(names.indexOf('phasing')).toBe(names.indexOf('placement') + 1);
+		expect(names.indexOf('volume')).toBe(names.indexOf('phasing') + 1);
+		expect(names.at(-1)).toBe('schedule');
+	});
 
 	it('gives the demand to the stages after it, and refuses to before the demand stage', () => {
 		expect(() => demandIn({ demand: null, blocks: [] })).toThrow('The demand stage runs first');
@@ -213,4 +226,33 @@ describe('generateProgram', () => {
 			);
 		}
 	});
+});
+
+/**
+ * Every scenario's plan as JSON, the bytes a version stores, hashed on a Monday and a Thursday start
+ * before m7-stage-list moved the demand and blocks stages and added prepare, phasing and schedule.
+ * A change that only moves the stage list leaves each hash as it is; a GENERATOR_ID bump changes
+ * them, and its PR lists each.
+ */
+const GOLDEN: Record<ScenarioKey, readonly [monday: string, thursday: string]> = {
+	beginner: ['d4bfc183ab8ee435', 'e76eed0b701d71ea'],
+	powerlifter: ['7002151f6b51da7b', 'ce338ae4b7af709d'],
+	hybrid: ['7e6b6a765e71d6f2', 'c303e9343e516474'],
+	injuredShoulder: ['1372ab5296078226', '48ee5ba593935dd7'],
+	dumbbellsOnly: ['71015477f3f97476', '92907395e75da37b'],
+	journey: ['06c37810c5afc2b6', 'ccb42ef23966c8c5'],
+	minimal: ['c3e4d72addb45c7a', '57bb88bd394355e1']
+};
+
+describe('byte-identical plans', () => {
+	it.each(Object.keys(GOLDEN) as ScenarioKey[])(
+		'%s: the plan is byte for byte the one from before the stage list moved',
+		(key) => {
+			const input = inputOf(SCENARIOS[key]());
+			const hashes = [OPTIONS, { ...OPTIONS, firstPlannedDay: scenarioDay(1, 3) }].map((start) =>
+				fnv1a64(JSON.stringify(generateProgram(input, start)))
+			);
+			expect(hashes).toEqual(GOLDEN[key]);
+		}
+	);
 });
