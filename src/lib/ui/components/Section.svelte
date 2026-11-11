@@ -11,20 +11,26 @@
 		title: string;
 		/** Gap between the children (the heading always sits 12 px above the first). */
 		gap?: 'sm' | 'md';
+		/** Named for assistive tech only, when the screen already shows what the title would say. */
+		titleHidden?: boolean;
 		action?: Snippet;
 		'data-testid'?: string;
 		children: Snippet;
 	}
 
-	let { title, gap = 'sm', action, children, ...rest }: Props = $props();
+	let { title, gap = 'sm', titleHidden = false, action, children, ...rest }: Props = $props();
 	const id = $props.id();
 </script>
 
 <section class="section" data-gap={gap} aria-labelledby={id} {...rest}>
-	<header class="head">
-		<h2 {id} class="title">{title}</h2>
-		{#if action}{@render action()}{/if}
-	</header>
+	{#if titleHidden}
+		<h2 {id} class="visually-hidden">{title}</h2>
+	{:else}
+		<header class="head">
+			<h2 {id} class="title">{title}</h2>
+			{#if action}{@render action()}{/if}
+		</header>
+	{/if}
 	{@render children()}
 </section>
 

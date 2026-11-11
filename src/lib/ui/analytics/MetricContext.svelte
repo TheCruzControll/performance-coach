@@ -16,8 +16,9 @@
 		comparison: string | null;
 		/** 'Trend over the last 12 weeks', given only when the verdict reads other weeks. */
 		trend?: string | null;
-		/** What counts as good: 'Good is a real rise over the trend window'. */
-		good: string;
+		/** What counts as good: 'Good is a real rise over the trend window'; null for a group of
+		    metrics with no one rule (Today's This week). */
+		good: string | null;
 		method: string;
 		caveat?: string | null;
 		'data-testid'?: string;

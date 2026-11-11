@@ -1,17 +1,17 @@
 <script lang="ts">
 	import { onMount, tick } from 'svelte';
 	import { invalidateAll } from '$app/navigation';
-	import { resolve } from '$app/paths';
 	import { preferences } from '#lib/client/preferences.svelte.ts';
+	import MetricContext from '#lib/ui/analytics/MetricContext.svelte';
 	import Button from '#lib/ui/components/Button.svelte';
 	import Card from '#lib/ui/components/Card.svelte';
 	import EmptyState from '#lib/ui/components/EmptyState.svelte';
-	import ListRow from '#lib/ui/components/ListRow.svelte';
 	import PageHeader from '#lib/ui/components/PageHeader.svelte';
 	import Section from '#lib/ui/components/Section.svelte';
 	import Stat from '#lib/ui/components/Stat.svelte';
 	import { PANELS } from './panels';
 	import PanelLoader from './panels/PanelLoader.svelte';
+	import { EMPTY_TILES, LOAD_METHOD, NOTHING_YET, type WeekTile } from './week-words';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -92,13 +92,15 @@
 			return { letter, date: d.getDate(), isToday: i === mondayOffset };
 		});
 	});
-
-	const stats = $derived([
-		{ label: 'Sessions', caption: 'this week' },
-		{ label: 'Load', caption: 'AU' },
-		{ label: 'Distance', caption: preferences.distance }
-	]);
 </script>
+
+{#snippet weekTiles(tiles: readonly WeekTile[], busy = false)}
+	<div class="stats" aria-busy={busy || undefined}>
+		{#each tiles as tile (tile.id)}
+			<Stat label={tile.label} value={tile.value} unit={tile.unit} data-testid="today-stat" />
+		{/each}
+	</div>
+{/snippet}
 
 <svelte:head>
 	<title>Today · Performance Coach</title>
@@ -136,7 +138,7 @@
 {/if}
 
 <!-- Wide from 1024 px (docs/design-system.md, Responsive layout → Screens): the state's panel in
-     the main column, This week, the tools and the summary in the side column. -->
+     the main column, the summary (goals first) and This week in the side column. -->
 <div class="stack" class:active data-layout="wide" hidden={building}>
 	<!-- The state's panel is code-split (panels/index.ts): the server sends it as markup, kept as
 	     sent until its code arrives, and a client navigation shows its skeleton until then. -->
@@ -185,22 +187,6 @@
 
 	<!-- The side column from 1024 px; below it, its items are the stack's own (display: contents). -->
 	<div class="side" data-testid="today-side">
-		<Section title="This week">
-			<div class="stats">
-				{#each stats as stat (stat.label)}
-					<Stat label={stat.label} caption={stat.caption} />
-				{/each}
-			</div>
-		</Section>
-
-		<ListRow
-			href={resolve('/(app)/train?tool=plates')}
-			icon="plate"
-			tone="strength"
-			title="Plate calculator"
-			subtitle="Load the bar in kg or lb"
-		/>
-
 		<!-- Once set up: the goals by rank and the shape of the week. -->
 		{#if setup?.complete}
 			<PanelLoader
@@ -210,6 +196,34 @@
 				served={data.served.summary}
 			/>
 		{/if}
+
+		<!-- Monday to today against the same days last week (week.server.ts), streamed: the server's
+		     render waits for it, a client navigation shows the tiles empty and busy until it lands. -->
+		<Section title="This week" data-testid="today-week">
+			{#await data.week}
+				{@render weekTiles(EMPTY_TILES, true)}
+				<p class="week-line">Counting this week…</p>
+			{:then view}
+				{#if view?.failed}
+					{@render weekTiles(EMPTY_TILES)}
+					<div class="week-error" data-testid="today-week-error">
+						<p class="week-line" role="status">Couldn’t load this week’s numbers.</p>
+						<Button variant="secondary" size="sm" icon="refresh" loading={retrying} onclick={retry}>
+							Retry
+						</Button>
+					</div>
+				{:else}
+					{@render weekTiles(view?.tiles ?? EMPTY_TILES)}
+					<MetricContext
+						period={view?.against ?? NOTHING_YET}
+						comparison={null}
+						good={null}
+						method={LOAD_METHOD}
+						data-testid="today-week-context"
+					/>
+				{/if}
+			{/await}
+		</Section>
 	</div>
 </div>
 
@@ -293,6 +307,18 @@
 	.stats {
 		display: grid;
 		grid-template-columns: repeat(3, minmax(0, 1fr));
+		gap: var(--space-2);
+	}
+
+	.week-line {
+		font-size: var(--text-xs);
+		line-height: var(--leading-normal);
+		color: var(--color-text-secondary);
+	}
+
+	.week-error {
+		display: grid;
+		justify-items: start;
 		gap: var(--space-2);
 	}
 

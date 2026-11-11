@@ -127,8 +127,13 @@ test('Today starts the strength session, then reads Resume for it', async ({ pag
 	const start = strength.getByTestId('start-workout');
 	await expect(start).toHaveText('Start workout');
 	await expect(start).toHaveAttribute('href', `/workout?start=${lineageOf(STRENGTH)}`);
-	// Each of today's sessions offers it.
-	await expect(page.getByTestId('today-session').getByTestId('start-workout')).toHaveCount(3);
+	// Each of today's sessions offers it: the next as the primary button, the later two as a quiet
+	// trailing Start named for their session.
+	const starts = page.getByTestId('today-session').getByTestId('start-workout');
+	await expect(starts).toHaveText(['Start workout', 'Start', 'Start']);
+	await expect(todaySession(page, RUN).getByTestId('start-workout')).toHaveAccessibleName(
+		`Start ${RUN}`
+	);
 	await captureScreen(page, testInfo, 'today-start');
 	await audit(page, 'Today with Start workout');
 
@@ -141,7 +146,9 @@ test('Today starts the strength session, then reads Resume for it', async ({ pag
 	const resume = todaySession(page, STRENGTH).getByTestId('resume-workout');
 	await expect(resume).toHaveText('Resume');
 	await expect(resume).toHaveAttribute('href', '/workout');
-	await expect(todaySession(page, RUN).getByTestId('start-workout')).toBeVisible();
+	await expect(resume).toHaveAttribute('data-variant', 'primary');
+	// The workout in progress leads; the others keep their quiet Start.
+	await expect(todaySession(page, RUN).getByTestId('start-workout')).toHaveText('Start');
 	await resume.click();
 	await expect(page).toHaveURL(/\/workout$/);
 	await expect(exerciseHeading(page)).toHaveText('Back squat');
@@ -273,6 +280,8 @@ test.describe('in a desktop window', () => {
 		await expectNoSideScroll(page);
 		const start = todaySession(page, STRENGTH).getByTestId('start-workout');
 		await captureScreen(page, testInfo, 'desktop-today-start');
+		// A later session's quiet trailing Start has the same states.
+		await expectHoverAndFocus(page, todaySession(page, RUN).getByTestId('start-workout'));
 		await expectHoverAndFocus(page, start);
 		await page.keyboard.press('Enter');
 		await expect(page).toHaveURL(/\/workout$/);
