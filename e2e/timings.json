@@ -4,6 +4,7 @@
 	"legs": {
 		"alone/chromium": {
 			"perf › perf-coach.e2e.ts": 72.5,
+			"perf › perf-journey.e2e.ts": 80,
 			"perf › perf-launch.e2e.ts": 25,
 			"perf › perf-workout.e2e.ts": 21.3,
 			"perf › perf.e2e.ts": 151
