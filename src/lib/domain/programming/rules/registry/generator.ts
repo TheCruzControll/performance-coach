@@ -8,7 +8,11 @@
  * generator-schedule (m7/29): the schedule stage, which repairs every planned week with the week
  * scheduler: the week kinds repaired on their own, the hardest building week whose days the block
  * shares, an eased session's loads, and a goal's session kept over one no goal trains.
+ *
+ * generator-phasing (m7/30): each week's main lifts by its phase, the accessories peak and taper
+ * weeks shed, the dose's top-set cap, and the hard-set band each week is balanced to.
  */
+import { HALVED_ACCESSORY_PHASES } from '../../stages/phasing.ts';
 import { HARDEST_BY, OWN_WEEKS } from '../../stages/schedule.ts';
 import type { RuleDefinition } from './types.ts';
 
@@ -88,6 +92,43 @@ export const rules: readonly RuleDefinition[] = [
 		rationale:
 			'Each of your goals ranks above training no goal names, and a trade-off the plan makes is yours to know about.',
 		source: `${PROGRAMMING}/stages/schedule.ts#schedule`
+	},
+	{
+		id: 'generator.phase_prescription',
+		kind: 'behaviour',
+		statement:
+			'In a week its strength or hypertrophy block plans, each main lift takes the week’s reps and top-set RPE, its back-off sets a point under, and is loaded from your 1RM at that RPE: a measured one, an estimate a step lower, or a top set by RPE when it is blank.',
+		rationale:
+			'Each phase asks something different of the main lifts, more reps at moderate effort early and heavy singles to triples at the peak, so the prescription has to change with it.',
+		source: `${PROGRAMMING}/stages/phasing.ts#phaseWeek`
+	},
+	{
+		id: 'generator.halved_accessories',
+		kind: 'constant',
+		statement:
+			'Realization and taper weeks keep the main lifts and only the first half of the other exercises, the ones the split fills first.',
+		rationale:
+			'Peak and taper weeks are for practising the competition lifts heavy while fatigue falls; the rest of the work would only add fatigue.',
+		source: `${PROGRAMMING}/stages/phasing.ts#HALVED_ACCESSORY_PHASES`,
+		values: HALVED_ACCESSORY_PHASES
+	},
+	{
+		id: 'generator.dose_top_set',
+		kind: 'behaviour',
+		statement:
+			'A strength goal held at maintenance keeps the maintenance split’s prescription, and no main lift’s top set, or the week’s cap, goes above the dose’s RPE.',
+		rationale:
+			'A dose is the least that keeps strength; a harder top set would cost the goal that leads the recovery it needs.',
+		source: `${PROGRAMMING}/stages/phasing.ts#phaseWeek`
+	},
+	{
+		id: 'generator.week_band',
+		kind: 'behaviour',
+		statement:
+			'A week that plans its own hard sets per muscle group is balanced to that range, a rising range week by week from the week before; any other week to the band its goal’s mode gives: the maintenance band, the lower half of its own band when it trains alongside the leader, or its own band when it leads.',
+		rationale:
+			'The week’s targets are what your reviews judge it by, so the sessions must be built to them, and a goal that does not lead gets only the volume its mode allows.',
+		source: `${PROGRAMMING}/stages/volume.ts#balancePhased`
 	}
 ];
 

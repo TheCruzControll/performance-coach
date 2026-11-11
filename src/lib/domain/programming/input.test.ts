@@ -816,7 +816,7 @@ describe('the canonical input and its fingerprint', () => {
 		expect(catalogueDigest(CATALOGUE, [renamed])).not.toBe(base);
 		const withRenamed = build(hybrid(), { customExercises: [renamed] });
 		expect(fingerprint(withRenamed, base)).not.toBe(fingerprint(input, base));
-		expect(fingerprint(input, base, 'perfo-programming/4')).not.toBe(fingerprint(input, base));
+		expect(fingerprint(input, base, 'perfo-programming/5')).not.toBe(fingerprint(input, base));
 		expect(fingerprint(input, base, GENERATOR_ID)).toBe(fingerprint(input, base));
 	});
 });
