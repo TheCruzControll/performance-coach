@@ -27,3 +27,14 @@ export function longFrames(
 	}
 	return long;
 }
+
+/**
+ * The frames of `times` from the one `start` falls in: a motion that starts with a tap is watched
+ * from that tap, not from the window's opening, before which the harness finds what to tap and the
+ * page may still be loading. All of them when `start` is undefined (a motion watched as it runs).
+ */
+export function framesFrom(times: readonly number[], start: number | undefined): number[] {
+	if (start === undefined) return [...times];
+	const after = times.findIndex((at) => at > start);
+	return after === -1 ? [] : times.slice(Math.max(0, after - 1));
+}

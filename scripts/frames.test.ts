@@ -1,6 +1,6 @@
 /** e2e/frames.ts: perf-workout.e2e.ts's dropped-frame gate, from animation frame timestamps. */
 import { describe, expect, it } from 'vitest';
-import { longFrames } from '../e2e/frames.ts';
+import { framesFrom, longFrames } from '../e2e/frames.ts';
 
 describe('longFrames', () => {
 	it('finds the gaps between frames longer than the limit, each at its end', () => {
@@ -25,5 +25,23 @@ describe('longFrames', () => {
 		expect(longFrames([0, 16.7, 33.3, 50, 66.7], [], 32)).toEqual([]);
 		expect(longFrames([10], [], 32)).toEqual([]);
 		expect(longFrames([], [], 32)).toEqual([]);
+	});
+});
+
+describe('framesFrom', () => {
+	const times = [0, 16.7, 50, 66.7, 83.4];
+
+	it('starts at the frame the tap falls in', () => {
+		expect(framesFrom(times, 20)).toEqual([16.7, 50, 66.7, 83.4]);
+		expect(framesFrom(times, 50)).toEqual([50, 66.7, 83.4]);
+		// The lead-in's long frame (16.7 → 50) is gone once the tap comes after it.
+		expect(longFrames(framesFrom(times, 60), [], 32)).toEqual([]);
+		expect(longFrames(framesFrom(times, 20), [], 32)).toEqual([{ at: 50, ms: 33.3 }]);
+	});
+
+	it('keeps every frame without a start, and none after the last', () => {
+		expect(framesFrom(times, undefined)).toEqual(times);
+		expect(framesFrom(times, -5)).toEqual(times);
+		expect(framesFrom(times, 90)).toEqual([]);
 	});
 });

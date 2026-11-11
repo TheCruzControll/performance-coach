@@ -28,9 +28,10 @@
  * - dropped frames: no frame over 32 ms (two 60 Hz frames: one dropped) while the options sheet
  *   opens and closes, the card is swiped and comes back, and the rest bar runs and is worked,
  *   leaving out the frames a tap was answered in, which the INP gates above hold (e2e/frames.ts).
- *   The Options tap is answered until its sheet starts to move: on a page's first tap the sheet's
- *   chunk loads first, so it mounts after the tap's first paint, where Event Timing has stopped;
- *   that wait is annotated. Only the page's own work is measured: the sheet's motion is awaited by
+ *   A tapped motion is watched from its first tap, the rest bar as it runs. The Options tap is
+ *   answered until its sheet starts to move: on a page's first tap the sheet's chunk loads first,
+ *   so it mounts after the tap's first paint, where Event Timing has stopped; that wait is
+ *   annotated. Only the page's own work is measured: the sheet's motion is awaited by
  *   its transition events, not polled (Playwright's visible and stable checks read the moving
  *   sheet's box every frame, which restyles it on the main thread), and the trace keeps no DOM
  *   snapshots (each is a 15-35 ms task on the page's main thread at 4×, CI run 43023511877).
@@ -40,7 +41,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import type { KitExercise, StartKit, StrengthKit } from '../src/lib/domain/workout';
 import { adHoc } from '../scripts/lib/workout-seed';
-import { longFrames } from './frames';
+import { framesFrom, longFrames } from './frames';
 import { attribute, inp, percentile, type Tag } from './inp';
 import { resetPrograms } from './program-support';
 import { query } from './support';
@@ -298,12 +299,15 @@ function setsInOrder(kit: StrengthKit): PlannedSet[] {
 interface MotionFrames {
 	kind: Motion;
 	times: number[];
+	/** When the motion's tap was asked for; none for one watched as it runs (`watchMs`). */
+	from?: number;
 }
 
 /**
  * Runs `action` and records when, painted before and after, so its shifts are told apart. With
  * `motion`, also records its animation frames into `frames`, for the dropped-frame gate, from
- * `watchMs` before the window opens.
+ * `watchMs` before the window opens, or else with the time the action began (`from`), so the
+ * gate can watch it from its first tap.
  */
 async function apart(
 	page: Page,
@@ -323,7 +327,11 @@ async function apart(
 		const times = await page.evaluate(() =>
 			(window as unknown as { __frames: Frames }).__frames.stop()
 		);
-		motion.frames.push({ kind: motion.kind, times });
+		motion.frames.push({
+			kind: motion.kind,
+			times,
+			...(motion.watchMs ? {} : { from })
+		});
 	}
 	windows.push([from, await now(page)]);
 }
@@ -586,7 +594,10 @@ test.describe('workout screen at 4× CPU', () => {
 				unattributed.push(`load ${load + 1}: interaction ${id}`);
 			// A frame a tap was answered in is the INP gates' (frames.ts longFrames).
 			const busy = interactions.map((i) => [i.startTime, i.startTime + i.duration] as const);
-			for (const { kind, times } of frames) {
+			for (const { kind, times: all, from } of frames) {
+				// A tapped motion from its first tap (frames.ts framesFrom).
+				const first = from === undefined ? undefined : seen.tags.find((t) => t.at >= from)?.at;
+				const times = framesFrom(all, first);
 				const of = motion.get(kind)!;
 				of.frames += Math.max(0, times.length - 1);
 				for (let f = 1; f < times.length; f++)
