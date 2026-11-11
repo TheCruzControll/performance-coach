@@ -5,6 +5,8 @@
 		"alone/chromium": {
 			"perf › perf-coach-load.e2e.ts": 25,
 			"perf › perf-coach.e2e.ts": 72.5,
+			"perf › perf-journey.e2e.ts": 80,
+			"perf › perf-launch.e2e.ts": 25,
 			"perf › perf-progress-load.e2e.ts": 90,
 			"perf › perf-workout.e2e.ts": 21.3,
 			"perf › perf.e2e.ts": 151
@@ -46,6 +48,7 @@
 			"iphone-chromium › design-program.e2e.ts": 18.1,
 			"iphone-chromium › design-workout.e2e.ts": 25,
 			"iphone-chromium › icons.e2e.ts": 9.7,
+			"iphone-chromium › launch-webkit.e2e.ts": 0.2,
 			"iphone-chromium › lazy-startup.e2e.ts": 8.6,
 			"iphone-chromium › offline.e2e.ts": 12.4,
 			"iphone-chromium › plate-calculator.e2e.ts": 11.7,
@@ -77,6 +80,7 @@
 			"iphone-webkit › design-program.e2e.ts": 47,
 			"iphone-webkit › design-workout.e2e.ts": 65.9,
 			"iphone-webkit › icons.e2e.ts": 20.9,
+			"iphone-webkit › launch-webkit.e2e.ts": 10,
 			"iphone-webkit › lazy-startup.e2e.ts": 15.3,
 			"iphone-webkit › offline.e2e.ts": 0,
 			"iphone-webkit › plate-calculator.e2e.ts": 33.4,
