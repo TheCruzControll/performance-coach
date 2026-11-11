@@ -63,6 +63,8 @@ test.describe('platform: health, PWA, observability', () => {
 		const response = await page.goto('/today');
 		const headers = response!.headers();
 		expect(headers['server-timing']).toMatch(/total;dur=[\d.]+/);
+		// The server has handled requests before this one (the sign-in, at least): warm.
+		expect(headers['server-timing']).toMatch(/instance;desc="warm"/);
 		expect(headers['x-request-id']).toMatch(/^[\w.:-]{8,}$/);
 		expect(headers['x-content-type-options']).toBe('nosniff');
 		expect(headers['cache-control']).toBe('private, no-cache');
