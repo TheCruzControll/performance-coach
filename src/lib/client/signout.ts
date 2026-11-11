@@ -7,7 +7,8 @@
  * - every IndexedDB database (the offline workout store from M4 onwards),
  * - session storage (scratch state of the tab),
  * - /workout's prepainted card in localStorage (workout/prepaint.ts: the current exercise's words),
- *   and the launch flag (workout/active-flag.ts: the workout in progress, for a launch offline).
+ *   and the launch flag (workout/active-flag.ts: the workout in progress, for a launch offline),
+ * - the last screens each tab showed, kept in this page's memory (screen-memory.ts).
  *
  * Device preferences in localStorage (theme, units) are kept on purpose: they are not account
  * data and the next sign-in should look the same. See docs/security.md.
@@ -20,6 +21,7 @@
  * sign-in page. A signed-out URL without the marker (typed, from history, or the no-JavaScript
  * sign-out) keeps only unsynced workout changes until the owner deletes them or signs in.
  */
+import { forgetScreens } from './screen-memory.ts';
 import { broadcast } from './workout/channel.ts';
 import { version } from '$app/env';
 
@@ -42,6 +44,7 @@ export const SIGNED_OUT_MARKER = 'pc:signed-out';
 export async function clearDeviceAccountData(
 	options: { keepWorkouts?: boolean } = {}
 ): Promise<void> {
+	forgetScreens();
 	clearAccountKeys();
 	await Promise.allSettled([
 		clearCaches(),

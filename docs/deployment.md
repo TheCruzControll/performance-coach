@@ -61,6 +61,14 @@ with different catalogues retire and restore each other's keys in turn. This is 
 harmless: ids are stable, retired rows stay readable, and the generator reads the catalogue from
 code, never from these rows.
 
+**Strength week rollups.** After the seed, `pnpm db:migrate` (so every deployed build and CI, not
+the resets) writes each closed week whose `strength_week_rollups` row is missing or stale
+(`scripts/lib/strength-weeks-backfill.ts`): the first deploy writes the existing history, and later
+ones the weeks a catalogue change or a `DIGEST_VERSION` or `ANALYTICS_VERSION` bump left stale. It
+logs `db:migrate: N strength week rollup(s) written`; a rerun writes 0. A week not yet written is
+summed from the facts, so a failed run costs speed, never correctness, but it fails the build like
+a failed migration.
+
 ## Production deploys
 
 Every merge to `main` builds a production deployment through the Vercel Git integration:
