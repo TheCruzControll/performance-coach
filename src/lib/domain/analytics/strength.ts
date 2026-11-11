@@ -27,7 +27,13 @@ import type { IsoDate } from '../calendar.ts';
 import { localDay } from '../dates.ts';
 import type { E1rmEstimate } from '../e1rm.ts';
 import type { StrengthBaseline } from '../profile/types.ts';
-import { bestE1rm, hardSets, isHardSet, personalRecords } from '../training/metrics.ts';
+import {
+	bestE1rm,
+	hardSets,
+	isHardSet,
+	personalRecords,
+	weekStartIn
+} from '../training/metrics.ts';
 import type { ExerciseMuscles, LoggedSet as MetricsSet } from '../training/metrics.ts';
 import type { BaselineLift } from '../training/types.ts';
 import { MUSCLE_GROUPS } from '../training/vocabulary.ts';
@@ -47,6 +53,7 @@ import type { LoggedSet as WorkoutSet } from '../workout/types.ts';
 import type { Weeks } from './adherence.ts';
 import { weekStarts } from './periods.ts';
 import { byWeek, fillWeeks, mean } from './series.ts';
+import type { Timed } from './series.ts';
 import type { SeriesPoint } from './types.ts';
 
 // ---- Choices the owner can change here --------------------------------------------------------
@@ -99,7 +106,11 @@ interface Session {
 	sets: StrengthFact[];
 }
 
-const live = (facts: readonly StrengthFact[]) => facts.filter((set) => set.deletedAt === null);
+/** The facts without a deletion: the same list when none has one, as the facts loader's never do. */
+const live = (facts: readonly StrengthFact[]) =>
+	facts.some((set) => set.deletedAt !== null)
+		? facts.filter((set) => set.deletedAt === null)
+		: facts;
 
 function lookup<E>(exercises: ReadonlyMap<string, E>, exercise: string): E {
 	const found = exercises.get(exercise);
@@ -112,11 +123,17 @@ function sessionsOf(facts: readonly StrengthFact[], timeZone: string): Session[]
 	const names = new Set(facts.map((set) => set.exercise));
 	if (names.size > 1) throw new RangeError(`One exercise's sets only: ${[...names].join(', ')}`);
 	const byWorkout = new Map<string, StrengthFact[]>();
-	for (const set of live(facts))
-		byWorkout.set(set.workoutId, [...(byWorkout.get(set.workoutId) ?? []), set]);
+	for (const set of live(facts)) {
+		const sets = byWorkout.get(set.workoutId);
+		if (sets) sets.push(set);
+		else byWorkout.set(set.workoutId, [set]);
+	}
 	return [...byWorkout]
 		.map(([workoutId, sets]) => {
-			const at = new Date(Math.min(...sets.map((set) => set.performedAt.getTime())));
+			let first = sets[0]!.performedAt;
+			for (const set of sets)
+				if (set.performedAt.getTime() < first.getTime()) first = set.performedAt;
+			const at = new Date(first.getTime());
 			return { workoutId, at, on: localDay(at, timeZone), sets };
 		})
 		.sort((a, b) => a.at.getTime() - b.at.getTime() || a.workoutId.localeCompare(b.workoutId));
@@ -284,8 +301,9 @@ interface Best {
  * (volumeOf) when it is above 0.
  */
 function sessionBests(sets: readonly StrengthFact[], exercise: RuledExercise): Best[] {
-	const competing = (kind: PrKind) =>
-		sets.filter((set) => prCandidates(set, exercise).includes(kind));
+	// Each set's candidates are worked out once, then read for each kind.
+	const candidates = sets.map((set) => prCandidates(set, exercise));
+	const competing = (kind: PrKind) => sets.filter((_, i) => candidates[i]!.includes(kind));
 	const bests: Best[] = [];
 	const e1rm = bestE1rm(competing('e1rm'));
 	if (e1rm) bests.push({ kind: 'e1rm', reps: null, value: e1rm.value, setId: e1rm.set.id });
@@ -346,10 +364,11 @@ export function weeklyTonnage(
 	timeZone: string,
 	window: Weeks
 ): SeriesPoint[] {
-	const lifted = live(facts).flatMap((set) => {
+	const lifted: Timed[] = [];
+	for (const set of live(facts)) {
 		const kg = volumeOf(set, lookup(exercises, set.exercise));
-		return kg === null ? [] : [{ at: set.performedAt, value: kg }];
-	});
+		if (kg !== null) lifted.push({ at: set.performedAt, value: kg });
+	}
 	return fillWeeks(byWeek(lifted, timeZone), window.weeks, 'zero', window.inProgress);
 }
 
@@ -375,11 +394,14 @@ export function weeklyHardSets(
 ): HardSetWeek[] {
 	const sets = live(facts);
 	const credited = new Map(hardSets(sets, exercises, timeZone).map((w) => [w.weekStart, w]));
-	const hard = sets.filter((set) => isHardSet(isWorking(set), set.rpe));
-	const counts = byWeek(
-		hard.map((set) => ({ at: set.performedAt, value: 1 })),
-		timeZone
-	);
+	// How many by week, as byWeek would total them, in one pass.
+	const weekOf = weekStartIn(timeZone);
+	const counts = new Map<IsoDate, number>();
+	for (const set of sets) {
+		if (!isHardSet(isWorking(set), set.rpe)) continue;
+		const weekStart = weekOf(set.performedAt);
+		counts.set(weekStart, (counts.get(weekStart) ?? 0) + 1);
+	}
 	const week = (weekStart: IsoDate, inProgress: boolean): HardSetWeek => ({
 		weekStart,
 		inProgress,
@@ -475,9 +497,9 @@ export function weeklyRpe(
 	timeZone: string,
 	window: Weeks
 ): SeriesPoint[] {
-	const rated = live(facts).flatMap((set) =>
-		isWorking(set) && set.rpe !== null ? [{ at: set.performedAt, value: set.rpe }] : []
-	);
+	const rated: Timed[] = [];
+	for (const set of live(facts))
+		if (isWorking(set) && set.rpe !== null) rated.push({ at: set.performedAt, value: set.rpe });
 	return fillWeeks(byWeek(rated, timeZone, mean), window.weeks, 'gap', window.inProgress);
 }
 
