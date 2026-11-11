@@ -16,6 +16,8 @@
  * - It closes for good when the database is deleted or upgraded under it (db.ts), or when another
  *   tab says sign-out is about to delete it.
  * - Tabs (channel.ts): after each write it tells the other tabs, which re-read what changed.
+ * - /workout's prepainted card (prepaint.ts): every change it reports or workout it writes drops
+ *   it, and a purge blocks it until signedIn.
  * - reconciled and adopt store the server's rows from GET /api/workouts/[id] (reconcile.ts).
  * - A finished or abandoned workout leaves the device once every change of it is acknowledged:
  *   History reads the server from then on.
@@ -43,9 +45,10 @@ import { initialDevice } from '#lib/domain/workout/reducers/device.ts';
 import type { IDBPTransaction, StoreNames } from 'idb';
 import { openTabChannel } from './channel.ts';
 import type { TabChannel, TabMessage } from './channel.ts';
-import { openWorkoutDb, StoreClosedError } from './db.ts';
+import { closeForGood, openWorkoutDb, StoreClosedError } from './db.ts';
 import type { CachedLibrary, CloseReason, StoredWorkout, WorkoutDb, WorkoutSchema } from './db.ts';
 import { LIBRARY_KEY, OUTBOX_INDEXES, STORES } from './names.ts';
+import { blockPrepaint, clearPrepaint, unblockPrepaint } from './prepaint.ts';
 import {
 	applyResults,
 	backOnline,
@@ -86,6 +89,8 @@ export interface WorkoutSnapshot {
 	/** null while no rows hold the workout. */
 	view: WorkoutView | null;
 	notSaved: NotSaved[];
+	/** Actions shown but not written here yet, the not-saved ones included. */
+	pending: number;
 }
 
 export interface Dispatched {
@@ -203,6 +208,12 @@ export interface WorkoutStore {
 	getLibrary(): Promise<CachedLibrary | null>;
 	prune(): Promise<{ workouts: string[]; kits: string[] }>;
 	onChange(listener: (change: StoreChange) => void): () => void;
+	/**
+	 * Closes this store, for good, and its channel, but not the page: a store created later on this
+	 * page opens 'pc-offline' again. For a short-lived store its opener lets go of (sign-out's,
+	 * workout/shutdown.ts). Its listeners hear 'closed' ('deleted'): nothing is left to show.
+	 */
+	close(): void;
 }
 
 /** Best effort: Safari evicts a site's storage after 7 days unused unless it is installed. */
@@ -329,9 +340,16 @@ export async function createStore({
 	channel = typeof window === 'undefined' ? null : openTabChannel()
 }: StoreOptions): Promise<WorkoutStore> {
 	const listeners = new Set<(change: StoreChange) => void>();
-	const emit = (change: StoreChange) => listeners.forEach((listener) => listener(change));
+	// Every change drops the prepainted card (prepaint.ts): the view keeps it again from what it
+	// then shows, so the card on the next load is never older than what this store holds.
+	const emit = (change: StoreChange) => {
+		clearPrepaint();
+		listeners.forEach((listener) => listener(change));
+	};
 	let closed: CloseReason | null = null;
 	let unlisten = () => {};
+	/** The IndexedDB this store opens 'pc-offline' from: the page it closes for good. */
+	const page = globalThis.indexedDB;
 	const shut = (reason: CloseReason) => {
 		if (closed) return;
 		closed = reason;
@@ -364,7 +382,8 @@ export async function createStore({
 		view: loaded.view,
 		notSaved: loaded.queue.flatMap((q) =>
 			q.failed ? [{ id: q.id, entities: q.mutations.map(entityKey), reason: q.failed }] : []
-		)
+		),
+		pending: loaded.queue.length
 	});
 
 	/** The stored inputs replayed, then what this page has not written yet, in order. */
@@ -426,6 +445,7 @@ export async function createStore({
 
 	/** Memory's new base after a write here, shown, and told to the other tabs. */
 	function stored(record: StoredWorkout, entries: OutboxEntry[], always = false) {
+		clearPrepaint(); // also for a workout not in memory, which emits nothing
 		if (always || memory.has(record.id)) {
 			remember(record.id, record, entries);
 			emit({ type: 'view', workoutId: record.id });
@@ -454,9 +474,13 @@ export async function createStore({
 			case 'purged':
 				return void reread(memory.keys()).then(() => emit({ type: 'purged' }));
 			case 'signed-out':
-				// Sign-out deletes the database next: this page lets go of it, for good.
+				// Another tab signs out and deletes the database next: this page lets go of it, for good,
+				// and never opens it again (closeForGood), so a stale tab cannot recreate it after the
+				// deletion. The signing-out page closes its own stores with close() instead, which leaves
+				// it free to open the store again when the owner stays signed in.
 				memory.clear();
 				db.close();
+				closeForGood(page, 'deleted');
 				return shut('deleted');
 		}
 	}
@@ -623,6 +647,7 @@ export async function createStore({
 		);
 		for (const { record, entries } of written.read.values()) stored(record, entries);
 		for (const workoutId of written.pruned) {
+			clearPrepaint();
 			if (memory.delete(workoutId)) emit({ type: 'view', workoutId });
 			channel?.post({ type: 'closed', workoutId });
 		}
@@ -698,6 +723,7 @@ export async function createStore({
 		);
 		for (const { record, entries } of written.read.values()) stored(record, entries);
 		for (const workoutId of written.ended) {
+			clearPrepaint();
 			if (memory.delete(workoutId)) emit({ type: 'view', workoutId });
 			channel?.post({ type: 'closed', workoutId });
 		}
@@ -749,6 +775,8 @@ export async function createStore({
 				return kept;
 			})
 		);
+		// Signed out: no card on the next load, and none kept until the server answers as the owner.
+		blockPrepaint();
 		for (const [workoutId, { record, entries }] of left) {
 			if (!memory.has(workoutId)) continue;
 			remember(workoutId, record, entries);
@@ -844,6 +872,7 @@ export async function createStore({
 			})
 		);
 		for (const workoutId of gone.workouts) {
+			clearPrepaint();
 			if (memory.delete(workoutId)) emit({ type: 'view', workoutId });
 			channel?.post({ type: 'closed', workoutId });
 		}
@@ -886,6 +915,7 @@ export async function createStore({
 		async signedIn() {
 			assertOpen();
 			await db.delete(STORES.meta, 'signedOut');
+			unblockPrepaint();
 		},
 		reconciled,
 		adopt,
@@ -918,6 +948,12 @@ export async function createStore({
 		onChange(listener) {
 			listeners.add(listener);
 			return () => listeners.delete(listener);
+		},
+		close() {
+			if (closed) return;
+			memory.clear();
+			db.close();
+			shut('deleted');
 		}
 	};
 }

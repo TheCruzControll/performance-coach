@@ -40,7 +40,11 @@ import {
 	MEMORY_RECORD_LIMITS
 } from '../../src/lib/server/services/coach/memory-records';
 import { NOTES_PAGE } from '../../src/lib/server/services/coach/notes';
-import { PROPOSAL_IDS_MAX, PROPOSAL_PAGE } from '../../src/lib/server/services/coach/proposals';
+import {
+	PROPOSAL_IDS_MAX,
+	PROPOSAL_PAGE,
+	THREAD_PROPOSALS_MAX
+} from '../../src/lib/server/services/coach/proposals';
 import { RUN_PAGE } from '../../src/lib/server/services/coach/runs';
 import { THREAD_PAGE, THREAD_VIEW_MESSAGES } from '../../src/lib/server/services/coach/threads';
 import { ACTIVE_WORKOUTS_LIMIT } from '../../src/lib/server/services/workouts/canonical';
@@ -246,6 +250,19 @@ const COACH_CASES: Case[] = [
 		'coach decidedSince, a week',
 		[P.decidedSince],
 		() => cp.decidedSince(db, owner, new Date(NOW.getTime() - 7 * 86_400_000), PROPOSAL_IDS_MAX)
+	],
+	[
+		'coach threadProposals, the newest page’s runs',
+		[P.threadProposals],
+		() =>
+			cp.threadProposals(db, owner, busy.id!, {
+				runIds: [
+					...new Set(
+						busyMessages.slice(-THREAD_VIEW_MESSAGES).flatMap((m) => (m.runId ? [m.runId] : []))
+					)
+				],
+				limit: THREAD_PROPOSALS_MAX
+			})
 	],
 	[
 		'coach latestNotes',

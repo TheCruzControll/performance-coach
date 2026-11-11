@@ -132,6 +132,11 @@ screenshots (docs/design-system.md, Responsive layout → Verification).
 
 Workers: 2 locally and in CI's main legs (whole files side by side), 1 in its other legs.
 
+CI runs the suite as separate legs, one per group and engine (`e2e/projects.ts`,
+`.github/workflows/ci.yml`). The `perf` project is the `alone` group: its own leg on Chromium,
+split in 2 shards (alone·chromium 1/2 and 2/2), each on a runner of its own with nothing else
+running. `exclusive` is a separate leg after it, also Chromium only.
+
 ### Authentication
 
 - **Chromium performs real WebAuthn ceremonies** through the DevTools Protocol's virtual
@@ -198,6 +203,10 @@ Specs:
   this test alone: sign-out clears the cookie, every cache but the versioned shell, every
   IndexedDB database and session storage, sends `Clear-Site-Data: "cache"` and keeps the theme
   preference.
+- `signout-pending.e2e.ts` (WebKit) — sign-out with unsynced workout changes, from Security and
+  from the recovery screen's Cancel: it flushes first, then asks with the count; "Stay signed in"
+  keeps every change. A signed-out URL without the one-shot marker keeps only unsynced changes
+  and offers to delete them.
 
 - `shell.e2e.ts` — the sign-in screen is the landing page (signed in, `/` goes to Today); bottom nav pinned to the bottom with ≥ 44 px targets and a
   computed `backdrop-filter` blur; navigation across all five tabs with `aria-current`; no console
@@ -207,7 +216,10 @@ Specs:
   first paint and persisted (under the CSP), and Auto following an OS appearance change while
   open (theme-color included); no screen scrolls sideways; nothing
   sits under fixed chrome at rest (landing CTAs, Coach composer); compact segmented controls keep
-  a 44 px hit area.
+  a 44 px hit area. The root error page, loaded on demand: a server-rendered 404 hydrates
+  without the view rendering again, an error offline right after hydration shows the designed
+  offline state, a held chunk shows the error once it arrives, and an aborted chunk shows the
+  fallback with a 44 px "Try again" link.
 - `plate-calculator.e2e.ts` — Train's lazy plate-calculator sheet (no service worker, chunks
   routed): its code is not in Train's load and arrives on the first tap, through the import
   alone (no modulepreload tag, whose failure WebKit would keep: `build.modulePreload` in
@@ -219,7 +231,8 @@ Specs:
   Every spec in the file ends by unrouting (`page.unrouteAll({ behavior: 'ignoreErrors' })`), so
   a script still loading at its end cannot fail it with `Response has been disposed`.
 - `platform.e2e.ts` — `/api/health` reports `db: up` (and the Profile screen shows it);
-  `Server-Timing`, request id and security headers; ≤ 2 preloaded fonts; manifest + icons;
+  `Server-Timing`, request id and security headers; exactly one preloaded font (Mona Sans
+  latin); manifest + icons;
   CSP header contents and enforcement (an injected inline script is refused); service worker
   activates and precaches the shell (not the icons); `POST /api/vitals` stores a row (verified in
   Postgres) and rejects invalid metrics; real browser RUM beacons arrive; vitals are attributed to
@@ -269,9 +282,13 @@ Specs:
   `/design` component group, in the **dark and light** themes (Lighthouse only audits dark). The
   setup, recovery-codes, new-passkey and sign-in-error states are audited in both themes where
   they occur (`auth.setup.ts`, `auth.e2e.ts`). Zero violations required.
-- `perf.e2e.ts` (Chromium, `perf` project) — main-thread budget: real long tasks at 4× CPU while
-  each screen loads, median of 5 cold loads; target ≤ 200 ms, fails above 250 ms (docs/performance.md). It runs
-  alone, with one worker, after the functional suite, so parallel specs cannot skew it. App
+- `perf.e2e.ts` (Chromium, `perf` project) — the page-load budget on the app's screens. The
+  budget lives in `e2e/load-budget.ts`: real long tasks at 4× CPU while each screen loads, median
+  of 5 cold loads; target ≤ 200 ms, fails above 250 ms (docs/performance.md).
+  `perf-workout-load.e2e.ts` holds the workout screens to the same budget (docs/testing.md,
+  "Workouts (M4)" → Performance). The `perf` project runs alone, with one worker, after the
+  functional suite, so parallel specs cannot skew it; in CI that is the alone·chromium leg, in 2
+  shards. App
   screens load signed in, `/` signed out. The program screens are seeded through the fixture
   route: Train, the week's longest strength session and History on the hybrid program this week,
   Today in its Build-card state (onboarding complete, no program) and its program state (the
@@ -1160,6 +1177,7 @@ Specs, each with a `*.desktop.e2e.ts` twin or a `test.use(DESKTOP)` case at 1440
 | `workout-substitute`, `workout-pain`                    | Situational swaps, a confirmed dislike, This hurts with Stop first                      |
 | `workout-add-exercise`, `workout-custom-exercise`       | Add from the cached library offline; the owner's own exercise under the device's id     |
 | `workout-finish`, `workout-history`, `exercise-history` | The summary and its PRs; History newest first; an exercise's sheet, offline too         |
+| `workout-prepaint`                                      | Painted before scripts, replaced in place; never if discarded, finished or `?new=`      |
 | `design-workout`                                        | Every `src/lib/ui/workout` component and state on `/design`, 44 px, 200 % text          |
 
 The serial ones (`*.serial.e2e.ts`) write Postgres and assert only their own workout's rows by
@@ -1171,8 +1189,10 @@ client id.
 functional projects ignore them): 20 sets over five fresh loads at 4× CPU, set-done p95 under
 100 ms, INP p75 of 200 ms or less from Event Timing and web-vitals, no layout shift while
 logging, INP on `/workout/run` and `/workout/session`, and the main thread on a service-worker
-reload. `e2e/perf.e2e.ts` adds the active workout pages and History; `pnpm lighthouse --seed`
-audits History and the active workout. Numbers: docs/performance.md, "M4 (workout)".
+reload. `e2e/perf-workout-load.e2e.ts` holds the active workout pages and History to the
+page-load budget in `e2e/load-budget.ts`, as `e2e/perf.e2e.ts` does the other screens. In CI the
+`perf` project is the alone·chromium leg, in 2 shards. `pnpm lighthouse --seed` audits History
+and the active workout. Numbers: docs/performance.md, "M4 (workout)".
 
 ### Journeys
 

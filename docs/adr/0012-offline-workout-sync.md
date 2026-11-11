@@ -1,10 +1,9 @@
 # 0012 — Offline workout sync: inputs on the device, one projection, applied exactly once
 
-- **Status:** Accepted (M4, 2026-11-10). Built as decided here by M4's slices, #87 to #355.
+- **Status:** Accepted (M4, 2026-11-10). Built as decided here by M4's slices, #87 to #367.
   The owner has not answered the plan's open questions, so each runs on the plan's default, kept
-  in a named constant (listed under "Defaults the owner can change"). One part is not merged
-  yet: sign-out's flush and ask ("Losing the session"); until it is, sign-out deletes
-  `pc-offline` with any unsynced changes in it.
+  in a named constant (listed under "Defaults the owner can change"). Sign-out's flush and ask
+  ("Losing the session") merged last, in #367.
 - **Context:** A workout must never lose a set and never wait for the network (PRD §9, §15,
   §18). A set is confirmed in under 100 ms in a gym with no signal; a reload offline restores the
   workout exactly, timers included; Postgres never stores a set twice, however often a device

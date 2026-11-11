@@ -23,8 +23,9 @@ log every set and talk to the coach.
 > **Milestone 4 — Workout application is in progress**: the workout screen is merged, offline
 > first (IndexedDB, an outbox and a sync ledger, so no set is lost or stored twice), with
 > strength, run and Muay Thai logging, rest timer, plate calculator, substitutions, 'This hurts',
-> finish and History, on the phone and in a desktop window. Open: sign-out's flush of unsynced
-> changes and the owner's screenshot review ([docs/milestones.md](docs/milestones.md)).
+> finish and History, on the phone and in a desktop window. Sign-out flushes unsynced changes
+> and asks before deleting them. Open: the owner's screenshot review
+> ([docs/milestones.md](docs/milestones.md)).
 
 ## Stack
 

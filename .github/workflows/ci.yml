@@ -170,8 +170,8 @@ jobs:
         run: pnpm budgets
 
   # The browser suite in parallel legs, one per group and engine (e2e/projects.ts LEGS: main, the
-  # functional specs; serial, the one-at-a-time specs; alone, perf and exclusive on Chromium),
-  # each with its own Postgres, database and production server.
+  # functional specs; serial, the one-at-a-time specs; alone, perf, and exclusive, both on
+  # Chromium), each with its own Postgres, database and production server.
   # Ceiling: 15 Playwright minutes per leg or shard (scripts/e2e-timing.ts warns above it). A leg
   # nearing it gains a shard (`of` up by one, plus an entry per new shard), never less coverage.
   # `minutes` is the Playwright step's timeout: 1.5 × the leg's slowest of three measured runs,
@@ -188,11 +188,16 @@ jobs:
   # sum, sets a run's wall clock: main·webkit 3, serial·chromium 3, serial·webkit 5 (14 entries,
   # 22 jobs a pull-request run, 20 starting at once). main·chromium stays in two: its a11y files
   # alone (484 s over 2 workers) would make shard 1 of three the heaviest, which shard 1 must
-  # never be (it also runs every untimed file; scripts/e2e-shards.test.ts fails at three).
+  # never be (it also runs any file the plan missed; scripts/e2e-shards.test.ts fails at three).
   # Predicted Playwright steps at runs 42712377736 and 42711097021's speed: main·webkit ~274 s,
   # serial·chromium ~330 s, serial·webkit ~326 s, alone 204-224 s. main·chromium's two shards
   # took 392-455 s there, so it stays the longest leg until its a11y files can leave shard 1.
-  # Every shard holds whole files, planned by measured seconds (scripts/e2e-shards.ts).
+  # alone·chromium ran 4.9 of its 5 minutes on main (42914798868, 42916363395) and timed out once
+  # M4's workout screens joined the budgets (42933643722), so it split in two, each shard a runner
+  # of its own, perf still alone on it: ~150 s of specs a shard at that run's speed. exclusive left
+  # it for a leg of its own first: perf is its dependency, so a shard with it would run all of perf.
+  # Every shard holds whole files, planned by measured seconds, or estimated ones for spec files
+  # the table lacks (scripts/e2e-shards.ts).
   # Shard timeouts stay at the unsharded leg's value until three runs per shard are measured.
   # main legs run 2 Playwright workers (playwright.config.ts), the other legs 1; main's `minutes`
   # stay at their 1-worker values until three 2-worker runs are measured.
@@ -221,7 +226,9 @@ jobs:
           - { group: serial, engine: webkit, shard: 3, of: 5, minutes: 15 }
           - { group: serial, engine: webkit, shard: 4, of: 5, minutes: 15 }
           - { group: serial, engine: webkit, shard: 5, of: 5, minutes: 15 }
-          - { group: alone, engine: chromium, shard: 1, of: 1, minutes: 5 }
+          - { group: alone, engine: chromium, shard: 1, of: 2, minutes: 5 }
+          - { group: alone, engine: chromium, shard: 2, of: 2, minutes: 5 }
+          - { group: exclusive, engine: chromium, shard: 1, of: 1, minutes: 5 }
     steps:
       - uses: actions/checkout@v7
       # Pulled and started in the background (docker run -d would block on the pull), so the
@@ -295,9 +302,10 @@ jobs:
           exit 1
       - name: Create roles and databases
         run: pnpm db:setup
-      # Each shard runs the spec files scripts/e2e-shards.ts plans for it from e2e/timings.json
-      # (--test-list; shard 1 inverts the others' union, so an untimed file runs there). The
-      # arguments are read first, so a planner failure fails the step rather than run the whole leg.
+      # Each shard runs the spec files scripts/e2e-shards.ts plans for it from e2e/ and
+      # e2e/timings.json (--test-list; shard 1 inverts the others' union, so a file the plan missed
+      # runs there). The arguments are read first, so a planner failure fails the step rather than
+      # run the whole leg.
       - name: Playwright (global setup builds and starts the production Node server)
         timeout-minutes: ${{ matrix.minutes }}
         env:

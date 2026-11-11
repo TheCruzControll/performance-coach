@@ -41,8 +41,12 @@ export function listRuns(
 		);
 		let stdout = '';
 		let stderr = '';
-		child.stdout.on('data', (chunk: Buffer) => (stdout += chunk.toString()));
-		child.stderr.on('data', (chunk: Buffer) => (stderr += chunk.toString()));
+		// Decoded as a stream: a chunk can end inside a multi-byte character (the ’ in a title),
+		// which a per-chunk toString() would turn into replacement characters.
+		child.stdout.setEncoding('utf8');
+		child.stderr.setEncoding('utf8');
+		child.stdout.on('data', (chunk: string) => (stdout += chunk));
+		child.stderr.on('data', (chunk: string) => (stderr += chunk));
 		child.on('error', reject);
 		child.on('close', (status) => {
 			if (status !== 0) {
@@ -85,8 +89,8 @@ export const fileKey = (run: string) => run.split(' › ').slice(0, 2).join(' �
 /** Whether a listed run belongs to a setup project. */
 export const isSetupRun = (run: string) => /^setup(-\w+)? › /.test(run);
 
-/** Each sharded leg in ci.yml's e2e matrix and its shard count (`of`). */
-export function ciShardedLegs(): { group: string; engine: string; of: number }[] {
+/** Each leg in ci.yml's e2e matrix and its shard count (`of`). */
+export function ciLegs(): { group: string; engine: string; of: number }[] {
 	const workflow = readFileSync(new URL('../../.github/workflows/ci.yml', import.meta.url), 'utf8');
 	const legs = new Map<string, { group: string; engine: string; of: number }>();
 	for (const [, flow] of workflow.matchAll(/^\s*- \{(.*group:.*)\}\s*$/gm)) {
@@ -94,7 +98,10 @@ export function ciShardedLegs(): { group: string; engine: string; of: number }[]
 			flow!.split(',').map((pair) => pair.split(':').map((s) => s.trim()))
 		) as Record<string, string>;
 		const leg = { group: entry.group!, engine: entry.engine!, of: Number(entry.of) };
-		if (leg.of > 1) legs.set(`${leg.group}/${leg.engine}`, leg);
+		legs.set(`${leg.group}/${leg.engine}`, leg);
 	}
 	return [...legs.values()];
 }
+
+/** Each sharded leg in ci.yml's e2e matrix and its shard count (`of`). */
+export const ciShardedLegs = () => ciLegs().filter((leg) => leg.of > 1);

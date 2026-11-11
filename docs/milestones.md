@@ -266,16 +266,15 @@ docs/performance.md ("M4 (workout)"). Evidence per criterion:
   request and still finishes.
 - Criterion 4: INP p75 on `/workout` is 56 ms from Event Timing and from web-vitals (#370).
 - The brief's run and Muay Thai journey: `e2e/journey-run-muay-thai.serial.e2e.ts` (#368).
+- Sign-out with unsynced workout changes flushes first (at most 5 s), then asks before deleting
+  them; "Stay signed in" keeps every change (#367, `e2e/signout-pending.e2e.ts`).
+- Lighthouse mobile on `/workout · active`: LCP 903 ms, Performance 100 in #370's run
+  42933643722, after the shorter boot path (#394) and the prepaint (#410).
 
 Still open:
 
-- Sign-out with unsynced workout changes: today it deletes `pc-offline`, unsynced changes and
-  all. The signout-workout-data slice (flush first, then ask) is not merged.
 - The owner's review of journey-strength's screenshot set (`strength-*`, mobile and desktop):
   not yet recorded.
-- perf-workout-final's CI run 42802588785 failed on a 0.00045 layout shift while logging, on
-  `/workout/run`'s INP test and on Lighthouse's mobile LCP for the active workout (3,348 ms of
-  2,500); its numbers above are re-measured from its green run.
 - The real-device checklist's workout item (docs/testing.md, item 8) has not been run.
 
 ## M5 — AI performance coach [§4, §6, §12]

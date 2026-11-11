@@ -451,12 +451,13 @@ test.describe('workout screen at 4× CPU', () => {
 			async (page: Page) => {
 				const entry = page.getByTestId('run-entry');
 				const distance = entry.getByTestId('segment-distance');
-				const rows = page.getByTestId('run-segment');
+				// The list shows every planned segment: the ones logged read Done.
+				const logged = page.getByTestId('run-segment').filter({ hasText: 'Done' });
 				for (let segment = 1; segment <= 3; segment++) {
 					await distance.getByRole('button', { name: /^Increase / }).click();
 					await distance.getByRole('button', { name: /^Decrease / }).click();
 					await entry.getByTestId('log-segment').click();
-					await expect(rows).toHaveCount(segment);
+					await expect(logged).toHaveCount(segment);
 				}
 				return 9;
 			}

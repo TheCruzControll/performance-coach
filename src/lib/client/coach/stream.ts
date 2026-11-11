@@ -13,14 +13,24 @@
 import { createSseDecoder, type CoachEvent } from '#lib/domain/coach/events.ts';
 import type { CoachErrorKind, RunStatus } from '#lib/domain/coach/vocabulary.ts';
 
+/** What a turn is about, as a source ref (`proposal:<id>`). */
+export interface TurnRef {
+	type: string;
+	id: string;
+	label?: string;
+}
+
 export interface TurnRequest {
 	/** The conversation to continue; null starts a new one. */
 	threadId: string | null;
 	/** The device's id for the message: sending it again (Retry) stores nothing new. */
 	clientMessageId: string;
 	text: string;
-	/** Where a new conversation was started from (an entry point's `from`). */
-	entry?: { from: string; ref: null } | null;
+	/**
+	 * Where a new conversation was started from (an entry point's `from`), or what a turn is about
+	 * ('Ask for changes' names the proposal).
+	 */
+	entry?: { from: string; ref: TurnRef | null } | null;
 }
 
 /** How a turn's stream ended. */

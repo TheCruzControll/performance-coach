@@ -2,11 +2,13 @@
  * One coach turn as the conversation shows it while it streams (M5 plan, coach-thread-stream):
  * the owner's message at once, 'Thinking…' until the first step or words, activity chips as tools
  * run, each block's words as they arrive (drawn once a frame, however many deltas a frame brings),
- * then the block itself once the server has checked it; and how the turn ended.
+ * then the block itself once the server has checked it; the proposals its tools made, each a card
+ * once the stored proposal is read; and how the turn ended.
  *
  * Loaded on demand with stream.ts. `run()` sends the turn and applies its events; `stop()` flags
  * the run and drops the stream; `leave()` only drops it (the page is going). A turn that did not
- * end with a shown answer asks the screen to read what is stored (run() resolves true).
+ * end with a shown answer, or that proposed a change, asks the screen to read what is stored
+ * (run() resolves true): the stored proposal is what its card shows.
  *
  * CoachTurns is the Coach screen's set of turns: it sends, stops and retries, opens a new
  * conversation's page as soon as the server names it, and reads the stored messages again after a
@@ -24,7 +26,14 @@ import type {
 	CompletedBlock,
 	RunStatus
 } from '#lib/domain/coach/index.ts';
-import { cancelRun, settleRun, streamTurn, type TurnRequest } from './stream.ts';
+import { cancelRun, settleRun, streamTurn, type TurnRef, type TurnRequest } from './stream.ts';
+
+/** A proposal the turn's tools made: its card shows once the stored proposal is read. */
+export interface TurnProposal {
+	id: string;
+	kind: string;
+	title: string;
+}
 
 export interface Chip {
 	id: string;
@@ -67,6 +76,7 @@ export class CoachTurn {
 	chips = $state.raw<Chip[]>([]);
 	drafts = $state.raw<Draft[]>([]);
 	blocks = $state.raw<CompletedBlock[]>([]);
+	proposals = $state.raw<TurnProposal[]>([]);
 	running = $state(true);
 	error = $state<CoachErrorKind | null>(null);
 	status = $state<RunStatus | null>(null);
@@ -152,6 +162,13 @@ export class CoachTurn {
 				this.drafts = [];
 				this.blocks = [];
 				return;
+			case 'proposal':
+				if (this.proposals.some((each) => each.id === event.id)) return;
+				this.proposals = [
+					...this.proposals,
+					{ id: event.id, kind: event.kind, title: event.title }
+				];
+				return;
 			case 'answer_completed':
 				this.answerMessageId = event.messageId;
 				return;
@@ -183,7 +200,8 @@ export class CoachTurn {
 	/**
 	 * Send the turn and apply its stream. Resolves true when the screen should read what is
 	 * stored: the turn ended without showing a completed answer (stopped, dropped, failed) and,
-	 * where it ran, it has finished on the server. `onStarted` gets the conversation's id.
+	 * where it ran, it has finished on the server; or it proposed a change, whose card shows the
+	 * stored proposal. `onStarted` gets the conversation's id.
 	 */
 	async run(onStarted?: (threadId: string) => void): Promise<boolean> {
 		const end = await streamTurn(
@@ -205,7 +223,7 @@ export class CoachTurn {
 			await settleRun(this.runId, { fetch: this.#fetch, ...this.#settle });
 		}
 		this.running = false;
-		return !this.answered && end.kind !== 'refused';
+		return (!this.answered || this.proposals.length > 0) && end.kind !== 'refused';
 	}
 
 	/** Stop: flag the run, then drop the stream. The server stores what was shown as 'Stopped'. */
@@ -262,11 +280,12 @@ export class CoachTurns {
 
 	/**
 	 * Ask `text` in the conversation on screen, or start one on /coach (from entry `from`, when
-	 * an entry point opened it).
+	 * an entry point opened it). With `ref`, the turn is about it wherever it is asked: 'Ask for
+	 * changes' sends the proposal it revises.
 	 */
-	send(text: string, from?: string | null): Promise<void> {
+	send(text: string, from?: string | null, ref: TurnRef | null = null): Promise<void> {
 		const threadId = page.params.thread ?? null;
-		const entry = threadId === null && from ? { from, ref: null } : null;
+		const entry = from && (ref || threadId === null) ? { from, ref } : null;
 		return this.#start(
 			new CoachTurn({ threadId, clientMessageId: crypto.randomUUID(), text, entry }, this.#options)
 		);
@@ -290,16 +309,21 @@ export class CoachTurns {
 	async #start(turn: CoachTurn): Promise<void> {
 		this.list = [...this.list, turn];
 		const fresh = turn.request.threadId === null;
+		let opening: Promise<void> | undefined;
 		const reread = await turn.run((threadId) => {
 			// The conversation exists now: a reload or Back lands on it, not on an empty /coach.
 			if (fresh)
-				void goto(resolve(COACH, { thread: threadId }), { replace: true, reset: false }).then(
-					() => (turn.opened = true)
+				opening = goto(resolve(COACH, { thread: threadId }), { replace: true, reset: false }).then(
+					() => void (turn.opened = true)
 				);
 		});
 		// Settled first: until the stored messages arrive, the turn keeps showing what it has.
 		turn.settled = true;
-		if (reread) await invalidateAll();
+		if (!reread) return;
+		// Its page first: until that navigation renders (WebKit holds it for a second or more while
+		// it captures the view transition), invalidating would read /coach, not the conversation.
+		await opening;
+		await invalidateAll();
 	}
 }
 

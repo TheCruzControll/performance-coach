@@ -3,6 +3,7 @@
 	import { invalidateAll, preloadData } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { navigating, page } from '$app/state';
+	import type { TurnRef } from '#lib/client/coach/stream.ts';
 	import type { CoachTurns } from '#lib/client/coach/turn.svelte.ts';
 	import Icon from '#lib/ui/components/Icon.svelte';
 	import CoachNotice from '#lib/ui/coach/CoachNotice.svelte';
@@ -105,6 +106,12 @@
 		void turns.send(text, data.prefill?.from);
 	}
 
+	/** A turn about something on screen: 'Ask for changes' sends the proposal it revises. */
+	async function ask(text: string, from: string, ref: TurnRef) {
+		const turns = await loadLive().catch(() => null);
+		void turns?.send(text, from, ref);
+	}
+
 	onMount(() => {
 		if (canAsk) (window.requestIdleCallback ?? setTimeout)(() => loadLive().catch(() => {}));
 		return () => live?.leave();
@@ -176,7 +183,11 @@
 			{#await threadCode}
 				<LoadingRows label="Loading the conversation…" data-testid="thread-loading" />
 			{:then code}
-				{#if code}<code.default thread={ready?.thread ?? undefined} {live} />{/if}
+				{#if code}<code.default
+						thread={ready?.thread ?? undefined}
+						{live}
+						onask={canAsk ? ask : undefined}
+					/>{/if}
 			{:catch}
 				<CoachNotice
 					kind="chunk_failed"

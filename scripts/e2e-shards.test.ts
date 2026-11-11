@@ -10,13 +10,20 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
 import {
+	filesUnder,
+	globMatcher,
+	LEG_PROJECTS,
+	legEntries,
+	legKeys,
 	legWorkers,
 	listLine,
+	planLeg,
 	planShards,
 	SHARD_ONE_FILES,
 	SHARD_ONE_SHARE,
 	shardArgs,
 	shardCost,
+	testCalls,
 	type ShardEntry
 } from './e2e-shards.ts';
 import { ciShardedLegs, fileKey, inPool, listRuns } from './lib/playwright-list.ts';
@@ -120,8 +127,7 @@ describe('planShards', () => {
 		const legs = ciShardedLegs();
 		expect(legs.length).toBeGreaterThan(0);
 		for (const { group, engine, of } of legs) {
-			const seconds = table.legs[`${group}/${engine}`]!;
-			const list = Object.entries(seconds).map(([key, s]) => ({ key, seconds: s }));
+			const list = planLeg(`${group}/${engine}`, table.legs[`${group}/${engine}`]!);
 			const workers = legWorkers(group);
 			const [one, ...rest] = planShards(list, of, workers).map((s) => shardCost(s, workers));
 			for (const other of rest) expect(one, `${group}/${engine}`).toBeLessThan(other);
@@ -165,12 +171,12 @@ describe('planShards', () => {
 });
 
 describe('the shard arguments', () => {
-	const leg = {
-		'desktop-chromium › a.e2e.ts': 50,
-		'desktop-chromium › b.e2e.ts': 40,
-		'iphone-chromium › c.e2e.ts': 30,
-		'iphone-chromium › d.e2e.ts': 20
-	};
+	const leg: ShardEntry[] = [
+		{ key: 'desktop-chromium › a.e2e.ts', seconds: 50 },
+		{ key: 'desktop-chromium › b.e2e.ts', seconds: 40 },
+		{ key: 'iphone-chromium › c.e2e.ts', seconds: 30 },
+		{ key: 'iphone-chromium › d.e2e.ts', seconds: 20 }
+	];
 
 	it('writes `[<project>] › <file>` lines', () => {
 		expect(listLine('desktop-chromium › screens.desktop.e2e.ts')).toBe(
@@ -182,11 +188,7 @@ describe('the shard arguments', () => {
 	it('gives shards 2..n their own files and shard 1 the inverse of their union', () => {
 		const at = (current: number) =>
 			shardArgs(leg, { current, total: 3, workers: 1, listFile: 'list.txt' });
-		const plan = planShards(
-			Object.entries(leg).map(([key, seconds]) => ({ key, seconds })),
-			3,
-			1
-		);
+		const plan = planShards(leg, 3, 1);
 		expect(at(2)).toEqual({
 			lines: plan[1]!.keys.map(listLine),
 			args: ['--test-list', 'list.txt']
@@ -215,6 +217,130 @@ describe('the shard arguments', () => {
 	afterEach(() => vi.unstubAllEnvs());
 });
 
+describe('the leg’s spec files', () => {
+	it('matches a `**/<name>` glob against the file name at any depth', () => {
+		const serial = globMatcher('**/*.serial.e2e.ts');
+		expect(serial('plan.serial.e2e.ts')).toBe(true);
+		expect(serial('smoke/plan.serial.e2e.ts')).toBe(true);
+		expect(serial('plan.serial.e2e.ts.bak')).toBe(false);
+		expect(serial('planXserial.e2e.ts')).toBe(false);
+		const perf = globMatcher('**/perf-*.e2e.ts');
+		expect(perf('perf-coach.e2e.ts')).toBe(true);
+		expect(perf('perf.e2e.ts')).toBe(false);
+		expect(globMatcher('**/shell.e2e.ts')('workout-shell.e2e.ts')).toBe(false);
+		expect(() => globMatcher('e2e/*.e2e.ts')).toThrow(/unsupported glob/);
+		expect(() => globMatcher('**/smoke/*.e2e.ts')).toThrow(/unsupported glob/);
+	});
+
+	it('lists each project’s matched, unignored files', () => {
+		const files = [
+			'a11y-dark.e2e.ts',
+			'a11y-suite.ts',
+			'home.e2e.ts',
+			'home.desktop.e2e.ts',
+			'perf.e2e.ts',
+			'perf-coach.e2e.ts',
+			'plan.serial.e2e.ts',
+			'sessions.exclusive.e2e.ts',
+			'shell.e2e.ts',
+			'smoke/health.smoke.e2e.ts'
+		];
+		expect(legKeys(LEG_PROJECTS['main/chromium']!, files)).toEqual([
+			'iphone-chromium › a11y-dark.e2e.ts',
+			'iphone-chromium › home.e2e.ts',
+			'iphone-chromium › shell.e2e.ts',
+			'iphone-chromium › smoke/health.smoke.e2e.ts',
+			'desktop-chromium › a11y-dark.e2e.ts',
+			'desktop-chromium › home.desktop.e2e.ts',
+			'desktop-chromium › shell.e2e.ts',
+			'desktop-chromium › smoke/health.smoke.e2e.ts'
+		]);
+		expect(legKeys(LEG_PROJECTS['serial/webkit']!, files)).toEqual([
+			'serial-webkit › plan.serial.e2e.ts'
+		]);
+		expect(legKeys(LEG_PROJECTS['alone/chromium']!, files)).toEqual([
+			'perf › perf.e2e.ts',
+			'perf › perf-coach.e2e.ts'
+		]);
+		expect(legKeys(LEG_PROJECTS['exclusive/chromium']!, files)).toEqual([
+			'exclusive › sessions.exclusive.e2e.ts'
+		]);
+	});
+
+	it('finds the spec files under a folder, nested ones by their relative path', () => {
+		const dir = path.join(root, 'e2e');
+		const files = filesUnder(dir);
+		expect(files).toContain('smoke/health.smoke.e2e.ts');
+		expect(files).toContain('a11y-dark.e2e.ts');
+		expect(files).toEqual([...files].sort());
+	});
+
+	it('counts a file’s own test( calls, not describe, step or use', () => {
+		const source = [
+			"test.use({ serviceWorkers: 'block' });",
+			"test.describe('a', () => {",
+			"\ttest('one', async () => { await test.step('s', () => {}); });",
+			"\ttest ('two', async () => {});",
+			"\tlatest('not a test');",
+			'});'
+		].join('\n');
+		expect(testCalls(source)).toBe(2);
+		expect(testCalls("runA11ySuite('dark');")).toBe(0);
+	});
+
+	it('estimates an untimed file from its test calls, at the leg’s seconds per call', () => {
+		const calls: Record<string, number> = { 'a.e2e.ts': 2, 'b.e2e.ts': 4, 'c.e2e.ts': 3 };
+		const entries = legEntries(
+			['p › a.e2e.ts', 'p › b.e2e.ts', 'p › c.e2e.ts', 'p › suite.e2e.ts'],
+			{ 'p › a.e2e.ts': 20, 'p › b.e2e.ts': 40, 'p › gone.e2e.ts': 500 },
+			(file) => calls[file] ?? 0
+		);
+		// 60 s over 6 calls: 10 s a call; suite.e2e.ts has none of its own, so the median file
+		expect(entries).toEqual([
+			{ key: 'p › a.e2e.ts', seconds: 20 },
+			{ key: 'p › b.e2e.ts', seconds: 40 },
+			{ key: 'p › c.e2e.ts', seconds: 30 },
+			{ key: 'p › suite.e2e.ts', seconds: 30 }
+		]);
+	});
+
+	it('plans untimed files across the shards, not all into shard 1', () => {
+		const timed = Object.fromEntries(
+			Array.from({ length: 8 }, (_, i) => [`p › t${i}.e2e.ts`, 60] as const)
+		);
+		const untimed = Array.from({ length: 8 }, (_, i) => `p › new${i}.e2e.ts`);
+		const entries = legEntries([...Object.keys(timed), ...untimed], timed, () => 1);
+		const at = (current: number) =>
+			shardArgs(entries, { current, total: 4, workers: 1, listFile: 'list.txt' });
+		const placed = [2, 3, 4].map((current) =>
+			at(current).lines.filter((line) => line.includes('new'))
+		);
+		for (const lines of placed) expect(lines.length).toBeGreaterThan(0);
+		// shard 1 runs by inversion: the untimed files it does not list are its own
+		const elsewhere = new Set(placed.flat());
+		expect(
+			at(1)
+				.lines.filter((line) => line.includes('new'))
+				.sort()
+		).toEqual([...elsewhere].sort());
+		expect(elsewhere.size).toBeLessThan(untimed.length);
+	});
+
+	it('plans every spec file of each CI leg, the ones the table lacks too', () => {
+		for (const { group, engine, of } of ciShardedLegs()) {
+			const leg = `${group}/${engine}`;
+			const keys = legKeys(LEG_PROJECTS[leg]!, filesUnder(path.join(root, 'e2e')));
+			const entries = planLeg(leg, table.legs[leg]!);
+			expect(entries.map((e) => e.key)).toEqual(keys);
+			for (const entry of entries.filter((e) => !(e.key in table.legs[leg]!))) {
+				expect(entry.seconds, `${entry.key}, untimed`).toBeGreaterThan(0);
+			}
+			const planned = planShards(entries, of, legWorkers(group)).flatMap((s) => s.keys);
+			expect(planned.sort()).toEqual([...keys].sort());
+		}
+	});
+});
+
 /** The CLI as CI runs it. */
 function cli(env: Record<string, string>, listFile: string) {
 	const clean: NodeJS.ProcessEnv = {};
@@ -234,7 +360,7 @@ describe('the CLI', () => {
 		const run = cli({ E2E_GROUP: 'serial', E2E_ENGINE: 'webkit', E2E_SHARD: '2/4' }, file);
 		expect(run.stderr).toBe('');
 		expect(run.stdout).toBe(`--test-list ${file}\n`);
-		const expected = shardArgs(table.legs['serial/webkit']!, {
+		const expected = shardArgs(planLeg('serial/webkit', table.legs['serial/webkit']!), {
 			current: 2,
 			total: 4,
 			workers: 1,
@@ -251,7 +377,7 @@ describe('the CLI', () => {
 
 	it('prints nothing and writes nothing for one shard or a local run', () => {
 		const file = path.join(scratch, 'none.txt');
-		const alone = cli({ E2E_GROUP: 'alone', E2E_ENGINE: 'chromium', E2E_SHARD: '1/1' }, file);
+		const alone = cli({ E2E_GROUP: 'exclusive', E2E_ENGINE: 'chromium', E2E_SHARD: '1/1' }, file);
 		expect([alone.status, alone.stdout]).toEqual([0, '']);
 		const local = cli({}, file);
 		expect([local.status, local.stdout]).toEqual([0, '']);

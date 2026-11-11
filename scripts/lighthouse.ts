@@ -16,7 +16,7 @@
  * --shard i/N (scripts/lib/lighthouse-shard.ts) audits every N-th route of the full list (the
  * routes, then with --seed the program and workout screens), so CI's N parallel jobs audit each
  * route once; --seed still seeds in every shard, the program is built only in a shard that audits
- * a program or workout screen, and the workouts are synced only in a shard that audits one.
+ * a seeded screen, and the workouts are synced only in a shard that audits History or /workout.
  * A sharded run writes to lighthouse-reports/<form factor>/shard-<i>; every run puts each route's
  * wall time in the table and $GITHUB_STEP_SUMMARY.
  *
@@ -51,6 +51,7 @@ import { chromium } from '@playwright/test';
 import * as chromeLauncher from 'chrome-launcher';
 import lighthouse, { type RunnerResult } from 'lighthouse';
 import pg from 'pg';
+import { PREPAINT_KEY } from '../src/lib/client/workout/prepaint.ts';
 import { LOCAL_DATABASE_URLS, runMigrations } from '../src/lib/server/db/migrate.ts';
 import type { StartKit, StrengthKit, SyncResponse } from '../src/lib/domain/workout/index.ts';
 import { readActionAnswer } from './lib/action-result.ts';
@@ -407,42 +408,6 @@ async function buildSeededProgram(): Promise<{
 	return { paths, lineage };
 }
 
-/** The program screens --seed audits after the routes, in this order, by label. */
-const PROGRAM_ROUTES = [
-	'/today · program',
-	'/train · program',
-	'/train/session/[key]',
-	'/train/history'
-] as const;
-type ProgramRoute = (typeof PROGRAM_ROUTES)[number];
-
-/**
- * The workout screens --seed audits after the program screens, in this order, by label. History
- * comes before /workout, in every shard too (shardUrls keeps the order): the active workout, once
- * synced, would add the resume bar.
- */
-const WORKOUT_ROUTES = [
-	'/progress/workouts',
-	'/progress/workouts/[id]',
-	'/workout · active'
-] as const;
-type WorkoutRoute = (typeof WORKOUT_ROUTES)[number];
-
-type SeededRoute = ProgramRoute | WorkoutRoute;
-const isProgramRoute = (label: SeededRoute): label is ProgramRoute =>
-	(PROGRAM_ROUTES as readonly string[]).includes(label);
-
-/** Every audit of the run, in order: the routes, then with --seed the program and workout screens. */
-const AUDITS: ({ label: string; path: string } | { label: string; seeded: SeededRoute })[] = [
-	...routes.map((path) => ({
-		label: values.seed && path === '/today' ? '/today · build card' : path,
-		path
-	})),
-	...(values.seed
-		? [...PROGRAM_ROUTES, ...WORKOUT_ROUTES].map((label) => ({ label, seeded: label }))
-		: [])
-];
-
 /** The signed-in owner's JSON from `path`, as the app's own requests send it. */
 async function ownerJson(path: string, body?: unknown): Promise<unknown> {
 	const response = await fetch(`${server.base}${path}`, {
@@ -485,19 +450,73 @@ async function seedWorkouts(
 	return { paths, device: activeWorkoutSeed(kit, Date.now()) };
 }
 
-/** Writes the device's workout into the current browser's IndexedDB, on the app's origin. */
+/**
+ * Writes the device's workout into the current browser's IndexedDB, on the app's origin, then
+ * shows it once on /workout, signed in as the audit is, until the strength view has kept the card
+ * the next load paints before the app starts (prepaint.ts). Every real device has shown its
+ * workout once, since starting one lands on /workout, so the audited load is that device's.
+ */
 async function seedDevice(device: ActiveSeed) {
 	const browser = await chromium.connectOverCDP(`http://127.0.0.1:${chrome.port}`);
 	try {
 		const page = await browser.contexts()[0]!.newPage();
+		// No service worker for the seed: its install would fetch the whole build in the
+		// background, and could refill the HTTP cache or take control after the clear below.
+		await page.addInitScript(() => {
+			if (!('serviceWorker' in navigator)) return;
+			navigator.serviceWorker.register = () => new Promise<ServiceWorkerRegistration>(() => {});
+		});
 		await page.goto(`${server.base}/robots.txt`);
 		await writeActiveWorkout(page, device);
+		if (sessionHeaders) await page.setExtraHTTPHeaders(sessionHeaders);
+		await page.goto(`${server.base}/workout`);
+		await page.waitForFunction((key) => localStorage.getItem(key), PREPAINT_KEY);
+		// Keep only the device's state (localStorage, IndexedDB): the audit, which skips the storage
+		// reset for it, stays a cold network load, with no cached chunk from here.
+		const cdp = await page.context().newCDPSession(page);
+		await cdp.send('Network.clearBrowserCache');
+		await cdp.detach();
 		await page.close();
 	} finally {
 		// Connected over CDP, this disconnects: the browser and its profile stay for the run.
 		await browser.close();
 	}
 }
+
+/** The program screens --seed audits after the routes, in this order, by label. */
+const PROGRAM_ROUTES = [
+	'/today · program',
+	'/train · program',
+	'/train/session/[key]',
+	'/train/history'
+] as const;
+type ProgramRoute = (typeof PROGRAM_ROUTES)[number];
+
+/**
+ * The workout screens --seed audits after the program's, in this order, by label. History comes
+ * before /workout: the active workout, once synced, would add the resume bar. A shard keeps the
+ * list's order, so this holds in every shard.
+ */
+const WORKOUT_ROUTES = [
+	'/progress/workouts',
+	'/progress/workouts/[id]',
+	'/workout · active'
+] as const;
+type WorkoutRoute = (typeof WORKOUT_ROUTES)[number];
+
+const SEEDED_ROUTES = [...PROGRAM_ROUTES, ...WORKOUT_ROUTES] as const;
+type SeededRoute = (typeof SEEDED_ROUTES)[number];
+const isProgramRoute = (label: SeededRoute): label is ProgramRoute =>
+	(PROGRAM_ROUTES as readonly string[]).includes(label);
+
+/** Every audit of the run, in order: the routes, then with --seed the program and workout screens. */
+const AUDITS: ({ label: string; path: string } | { label: string; seeded: SeededRoute })[] = [
+	...routes.map((path) => ({
+		label: values.seed && path === '/today' ? '/today · build card' : path,
+		path
+	})),
+	...(values.seed ? SEEDED_ROUTES.map((label) => ({ label, seeded: label })) : [])
+];
 
 /** Lighthouse `runs` times on `path`, summarised under `route`, its label; `device` seeded first. */
 async function auditRoute(route: string, path: string, device?: ActiveSeed) {
@@ -559,7 +578,6 @@ try {
 			await auditRoute(audit.label, program.paths[audit.seeded]);
 			continue;
 		}
-		// Seeded once the shard's program screens are audited, as the list puts them first.
 		workouts ??= await seedWorkouts(program.lineage);
 		const device = audit.seeded === '/workout · active' ? workouts.device : undefined;
 		await auditRoute(audit.label, workouts.paths[audit.seeded], device);

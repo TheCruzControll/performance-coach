@@ -6,6 +6,7 @@ import adapterVercel from '@sveltejs/adapter-vercel';
 import { sveltekit } from '@sveltejs/kit/vite';
 import { loadEnv, type Plugin } from 'vite';
 import { defineConfig } from 'vitest/config';
+import { PREPAINT_SCRIPT } from './src/lib/client/workout/prepaint.ts';
 
 /**
  * Deployment target. Production runs on Vercel (Node runtime, Fluid compute); local e2e,
@@ -30,16 +31,28 @@ function appVersion(): string {
 	return `${pkg.version}+${sha.slice(0, 7)}`;
 }
 
+const scriptHash = (body: string) =>
+	`sha256-${createHash('sha256').update(body).digest('base64')}` as const;
+
 /**
- * CSP hashes for the inline scripts in src/app.html (the pre-paint theme script). SvelteKit
- * adds nonces/hashes for the scripts it generates, but not for scripts in the template.
+ * CSP hashes for the inline scripts in src/app.html (the pre-paint theme script) and the one
+ * /workout renders (src/routes/workout/Prepaint.svelte: the current exercise, painted before the
+ * app starts). SvelteKit adds nonces/hashes for the scripts it generates, but not for these.
  */
 function templateScriptHashes(): `sha256-${string}`[] {
 	const html = readFileSync(new URL('./src/app.html', import.meta.url), 'utf8');
-	return [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(
-		([, body]) => `sha256-${createHash('sha256').update(body!).digest('base64')}` as const
-	);
+	return [
+		...[...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(([, body]) => scriptHash(body!)),
+		scriptHash(PREPAINT_SCRIPT)
+	];
 }
+
+/** Svelte and SvelteKit's client, with the packages they bundle (rolldown's codeSplitting groups). */
+const FRAMEWORK = /[\\/]node_modules[\\/](svelte|@sveltejs[\\/]kit|devalue|clsx)[\\/]/;
+/** SvelteKit's client entries (start, payload) and $app/forms stay out of the framework chunk. */
+const FRAMEWORK_OUTSIDE = /[\\/]runtime[\\/](client[\\/](entry|payload)\.js$|app[\\/]forms[\\/])/;
+/** SvelteKit's payload module (see the `payload` chunk group). */
+const PAYLOAD = /[\\/]@sveltejs[\\/]kit[\\/]src[\\/]runtime[\\/]client[\\/]payload\.js$/;
 
 /**
  * Writes .vite/chunk-modules.json into the client build: each chunk's file and the src/ modules
@@ -71,6 +84,37 @@ function chunkModules(): Plugin {
 	};
 }
 
+/**
+ * The lazy modules a workout page paints its first frame with: each route's view, the header's
+ * stopwatch, and the projection with the route's reducer table (the Shell keeps its skeleton
+ * until they have loaded). Their chunks keep Vite's preload of their dependencies (build
+ * .modulePreload below), so a view and everything it imports are fetched at once, not one import
+ * level after another (each level a round trip before the active workout's LCP).
+ */
+const FIRST_PAINT =
+	/src[\\/](routes[\\/]workout[\\/](StrengthView|WorkoutClock|run[\\/]RunView|session[\\/]OtherView)\.svelte|lib[\\/]domain[\\/]workout[\\/](project|reducers[\\/](tables|run|other))\.ts)$/;
+
+/** The client chunks holding a FIRST_PAINT module, by file name, filled as the bundle is written. */
+const firstPaintChunks = new Set<string>();
+
+function firstPaint(): Plugin {
+	return {
+		name: 'first-paint-chunks',
+		apply: 'build',
+		applyToEnvironment: (environment) => environment.name === 'client',
+		// Before Vite's own generateBundle, which asks build.modulePreload what each import preloads.
+		generateBundle: {
+			order: 'pre',
+			handler(_, bundle) {
+				for (const chunk of Object.values(bundle)) {
+					if (chunk.type === 'chunk' && chunk.moduleIds.some((id) => FIRST_PAINT.test(id)))
+						firstPaintChunks.add(chunk.fileName);
+				}
+			}
+		}
+	};
+}
+
 export default defineConfig(({ command, mode }) => {
 	// Make `.env` values visible to server code that reads `process.env` during `vite dev`.
 	// Production servers receive real environment variables from the platform instead.
@@ -83,6 +127,7 @@ export default defineConfig(({ command, mode }) => {
 	return {
 		plugins: [
 			chunkModules(),
+			firstPaint(),
 			sveltekit({
 				compilerOptions: {
 					// Runes everywhere in our own code; libraries decide for themselves.
@@ -147,12 +192,46 @@ export default defineConfig(({ command, mode }) => {
 					codeSplitting: {
 						groups: [
 							/**
-							 * The client's error reporting and its leaving state, which every page loads first
-							 * (hooks.client.ts), stay one chunk when lazy code imports only one of them: the
-							 * workout sync engine imports leaving.ts. Apart, every route would pay for another
-							 * chunk (about 0.1 KB gzip).
+							 * Every page's start-up is a chain of requests, each a round trip, and Lighthouse
+							 * models HTTP/1.1 with six connections. Left alone, Rolldown splits the code every
+							 * page runs by importer set: Svelte, SvelteKit's client and a run of tiny chunks
+							 * ($app/state, $app/paths, $app/env, the preload helper; several under 0.1 KB).
+							 * These groups merge code (nearly) every page loads; a helper only some screens use
+							 * rides along, which the budgets bound. Rolldown keeps each group's dependencies with
+							 * it (includeDependenciesRecursively, its default), so no module can run before one
+							 * it imports; the budgets and E2E suites run the result.
+							 *
+							 * What start.js imports: SvelteKit's payload module and the preload helper, alone.
+							 * start.js runs its imports before it sets the payload, then imports the client,
+							 * whose modules read the payload while they initialise ($app/env's version). First,
+							 * so the framework group below cannot pull the payload module in with them (a group
+							 * chosen earlier keeps its modules); check-budgets.ts proves start.js imports only
+							 * this chunk.
 							 */
-							{ name: 'errors', test: /src[\\/]lib[\\/]client[\\/](errors|leaving)\.ts$/ },
+							{
+								name: 'payload',
+								test: (id) => PAYLOAD.test(id) || id === '\0vite/preload-helper.js'
+							},
+							/**
+							 * The framework: Svelte's runtime and SvelteKit's client, without its form helpers
+							 * ($app/forms, only on screens with a form) and its entry modules, which SvelteKit
+							 * looks up by file (FRAMEWORK_OUTSIDE).
+							 */
+							{
+								name: 'framework',
+								test: (id) => FRAMEWORK.test(id) && !FRAMEWORK_OUTSIDE.test(id)
+							},
+							/**
+							 * The app's code every page loads first: error reporting and the leaving state
+							 * (hooks.client.ts, also imported alone by lazy code: the workout sync engine imports
+							 * leaving.ts), the root error page's loader (src/routes/error-page.ts), what the root
+							 * layout starts (RUM visits, toasts, the service worker registration) and Icon, which
+							 * every screen draws.
+							 */
+							{
+								name: 'boot',
+								test: /src[\\/](lib[\\/]client[\\/](errors|leaving|visits|service-worker)\.ts|lib[\\/]ui[\\/](toast\.svelte\.ts|components[\\/]Icon\.svelte)|routes[\\/]error-page\.ts)$/
+							},
 							/**
 							 * The workout pages' projection (the M4 plan's runway lever 2): project.ts, its
 							 * reducers, the mutations and the timers, which every workout page loads while it
@@ -187,12 +266,17 @@ export default defineConfig(({ command, mode }) => {
 			 * hints: SvelteKit's entry chunks, whose imports are the route nodes (and an HTML entry,
 			 * which SvelteKit does not have). The cost is on a fetch from the network (before the
 			 * service worker holds the build): a lazy module's chunks arrive in import order, not
-			 * all at once.
+			 * all at once. Except the workout pages' first paint (FIRST_PAINT): those chunks load as
+			 * the page starts, never on a tap, and one that fails shows 'App updated', answered by
+			 * reloading the page, never by a Retry within it; so their dependencies come at once, as
+			 * the route's own nodes' do.
 			 */
 			modulePreload: {
 				// `deps`: the JavaScript to preload for one dynamic import; Vite adds its stylesheets.
-				resolveDependencies: (_url, deps, { hostId, hostType }) =>
-					hostType === 'html' || hostId.includes('/immutable/entry/') ? deps : []
+				resolveDependencies: (url, deps, { hostId, hostType }) =>
+					hostType === 'html' || hostId.includes('/immutable/entry/') || firstPaintChunks.has(url)
+						? deps
+						: []
 			}
 		},
 		test: {

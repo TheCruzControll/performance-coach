@@ -75,7 +75,8 @@ test.describe('platform: health, PWA, observability', () => {
 		expect(csp).toContain("default-src 'self'");
 		expect(csp).toContain("frame-ancestors 'none'");
 		expect(csp).toContain("object-src 'none'");
-		expect(csp).toMatch(/script-src 'self' 'sha256-[^']+' 'nonce-[^']+'/);
+		// The template's and /workout's inline scripts by hash (vite.config.ts), then the nonce.
+		expect(csp).toMatch(/script-src 'self'( 'sha256-[^']+'){2} 'nonce-[^']+'/);
 		expect(csp).not.toMatch(/script-src[^;]*unsafe-inline/);
 		await expect(page.getByTestId('db-status')).toBeVisible(); // streamed script ran
 
@@ -97,12 +98,17 @@ test.describe('platform: health, PWA, observability', () => {
 		expect(outcome).toMatch(/^blocked:script-src/);
 	});
 
-	test('preloads at most two font files', async ({ page }) => {
-		await page.goto('/today');
-		const fonts = page.locator('link[rel="preload"][as="font"]');
-		const count = await fonts.count();
-		expect(count).toBeGreaterThanOrEqual(1);
-		expect(count).toBeLessThanOrEqual(2);
+	test('preloads one font file, the Mona Sans latin face', async ({ page }) => {
+		// Hubot Sans (headings) loads when a heading uses it (src/lib/ui/fonts.ts).
+		for (const path of ['/', '/today']) {
+			await page.goto(path);
+			const fonts = page.locator('link[rel="preload"][as="font"]');
+			await expect(fonts, path).toHaveCount(1);
+			await expect(fonts, path).toHaveAttribute(
+				'href',
+				/mona-sans-latin-wght-normal\.[\w-]+\.woff2$/
+			);
+		}
 	});
 
 	test('serves a valid web app manifest with installable icons', async ({ page, request }) => {
