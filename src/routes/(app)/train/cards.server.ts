@@ -7,8 +7,13 @@
 import type { IsoDate } from '#lib/domain/calendar.ts';
 import { WEEKDAY_INFO } from '#lib/domain/profile/catalog.ts';
 import type { DayView, WeekView } from '#lib/domain/training/types.ts';
-import { PHASE_LABEL, type Phase } from '#lib/domain/training/vocabulary.ts';
-import type { CurrentProgram } from '#lib/server/services/programs/index.ts';
+import {
+	PHASE_LABEL,
+	sessionTone,
+	type Phase,
+	type SessionType
+} from '#lib/domain/training/vocabulary.ts';
+import type { CurrentProgram, WeekChanges } from '#lib/server/services/programs/index.ts';
 import type { IconName } from '#lib/ui/icons/icons.ts';
 import {
 	cardView,
@@ -19,12 +24,17 @@ import {
 	type StripDayView
 } from '#lib/ui/program/words.ts';
 
-/** Where the next step goes: a screen, a week of the program, or Train again (Retry). */
-export type NextStep = 'today' | 'profile' | 'this-week' | 'retry' | { week: number };
+/** Where the next step goes: a screen, a week of the program, Train again (Retry), or a path. */
+export type NextStep =
+	'today' | 'profile' | 'this-week' | 'retry' | { week: number } | { href: string };
+
+/** The reviews screen: the list, or one review by its key ('w-2026-11-09', 'c-<id>'). */
+const reviewsHref = (key: string | null) =>
+	key ? `/progress/reviews/${key}` : '/progress/reviews';
 
 export interface StateCard {
 	/** Its test id, which names the state. */
-	id: 'train-error' | 'train-empty' | 'train-block-complete' | 'train-not-planned';
+	id: 'train-error' | 'train-empty' | 'train-block-complete' | 'train-not-planned' | 'train-bridge';
 	icon: IconName;
 	tone: 'accent' | 'neutral' | 'combat';
 	title: string;
@@ -62,15 +72,17 @@ export function noProgramCard(profileComplete: boolean): StateCard {
 	};
 }
 
-type BlockSummary = Pick<CurrentProgram, 'firstPlannedDay' | 'lastPlannedDay' | 'plannedWeeks'>;
+type BlockSummary = Pick<CurrentProgram, 'firstPlannedDay' | 'lastPlannedDay'>;
 
 /**
- * The planned weeks are over and only outline weeks are left, until M6 plans the next block:
- * a summary, never a made-up session.
+ * The planned weeks are over and only outline weeks are left, until the cycle review plans the
+ * next block: a summary, never a made-up session, and the way to that review (`review`, its key;
+ * null before it exists).
  */
 export function blockCompleteCard(
-	{ firstPlannedDay, lastPlannedDay, plannedWeeks }: BlockSummary,
-	next: Phase | null
+	{ firstPlannedDay, lastPlannedDay }: BlockSummary,
+	next: Phase | null,
+	review: string | null
 ): StateCard {
 	return {
 		id: 'train-block-complete',
@@ -79,16 +91,34 @@ export function blockCompleteCard(
 		title: 'First block complete',
 		description: `You trained through every planned week, ${shortDate(firstPlannedDay)} – ${shortDate(lastPlannedDay)}. Your next block is planned from how this one went${next ? `, starting with ${PHASE_LABEL[next]}` : ''}.`,
 		next: {
-			title: `Look back at week ${plannedWeeks}`,
-			subtitle: 'Your last planned week',
-			icon: 'clock',
-			to: { week: plannedWeeks }
+			title: review ? 'Open your cycle review' : 'Review this block',
+			subtitle: 'How it went, and your next block',
+			icon: 'progress',
+			to: { href: reviewsHref(review) }
 		}
 	};
 }
 
+/**
+ * A part of the week's side column (beside the day on desktop, under it on a phone), in words:
+ * week 1's brief, or what a weekly review changed. One shape, so Train renders both with one
+ * piece of markup: each point is a sentence, after an optional bold lead ('' for none).
+ */
+export interface AsidePanel {
+	/** Its test id, which also names its heading. */
+	id: 'baseline-brief' | 'review-notice';
+	tone: 'accent' | 'default';
+	eyebrow: string;
+	title: string;
+	lead: string;
+	points: { lead: string; text: string }[];
+	links: { id: string; href: string; label: string }[];
+}
+
 /** Week 1's brief, under its sessions: what a baseline week is for and how to train it. */
-export const BASELINE_BRIEF = {
+export const BASELINE_BRIEF: AsidePanel = {
+	id: 'baseline-brief',
+	tone: 'accent',
 	eyebrow: 'Week 1',
 	title: 'Your baseline week',
 	lead: 'This week finds your starting point: from week 2, every load is worked out from what you log now.',
@@ -96,8 +126,9 @@ export const BASELINE_BRIEF = {
 		'Work up to the target effort (RPE) on each lift, never to failure.',
 		'Record the weight, reps and RPE of every set.',
 		'Runs and classes go at the effort shown: easy means you can still talk.'
-	]
-} as const;
+	].map((text) => ({ lead: '', text })),
+	links: []
+};
 
 /** A day of the week shown, in words: its heading, its sessions' cards, or a rest-day line. */
 export interface TrainDay {
@@ -150,5 +181,85 @@ export function notPlannedCard(week: number, phase: Phase | null): StateCard {
 			icon: 'today',
 			to: 'this-week'
 		}
+	};
+}
+
+/** The next block, as a bridge week names it: its first day, name and first program week. */
+export interface NextBlock {
+	startsOn: IsoDate;
+	name: string;
+	week: number;
+}
+
+/**
+ * A bridge week (a late start's unplanned weeks between blocks, M6): a deliberate gap with the
+ * day the next block starts, never seven rest days. Its next step opens that block's first week.
+ */
+export function bridgeCard({ startsOn, name, week }: NextBlock): StateCard {
+	return {
+		id: 'train-bridge',
+		icon: 'clock',
+		tone: 'neutral',
+		title: 'Unplanned week · between blocks',
+		description: `Your next block starts ${shortDate(startsOn)}. Nothing is planned until then: train as you like, and what you log counts as off-plan.`,
+		next: {
+			title: 'See your next block',
+			subtitle: `${name} · Week ${week}`,
+			icon: 'train',
+			to: { week }
+		}
+	};
+}
+
+/** A workout logged in a bridge week, which no plan holds, as a card: 'Easy run', 'Off-plan'. */
+export type OffPlanWorkout = CardView & { id: string };
+
+/** The card of a workout logged in a bridge week: its day and length, and 'Off-plan'. */
+export function offPlanCard(workout: {
+	id: string;
+	title: string;
+	sessionType: SessionType;
+	date: IsoDate;
+	durationSeconds: number | null;
+}): OffPlanWorkout {
+	const minutes = workout.durationSeconds
+		? ` · ${Math.round(workout.durationSeconds / 60)} min`
+		: '';
+	return {
+		id: workout.id,
+		title: workout.title,
+		status: 'completed',
+		statusWords: 'Off-plan',
+		line: `${shortDate(workout.date)}${minutes}`,
+		tone: sessionTone(workout.sessionType)
+	};
+}
+
+/**
+ * Train's notice for a week a weekly review changed: who applied what, each change with its why,
+ * and its links: the version in History, then the review (the reviews list if it is gone).
+ */
+export function reviewNotice({ applied, changes, version, review }: WeekChanges): AsidePanel {
+	return {
+		id: 'review-notice',
+		tone: 'default',
+		eyebrow: `Version ${version.number}`,
+		title: 'Updated from your weekly review',
+		lead: applied,
+		points: changes.map(({ summary, why }) => ({ lead: `${summary}.`, text: why })),
+		links: [
+			{
+				id: 'review-notice-version',
+				href: `/train/history/${version.number}`,
+				label: 'See it in History'
+			},
+			review
+				? {
+						id: 'review-notice-review',
+						href: reviewsHref(`w-${review.weekStartsOn}`),
+						label: 'Open your weekly review'
+					}
+				: { id: 'review-notice-review', href: reviewsHref(null), label: 'See your reviews' }
+		]
 	};
 }

@@ -1,5 +1,6 @@
 <!--
-  Progress → Reviews (M6): every weekly review, newest first, and the one the key selects
+  Progress → Reviews (M6): the block to review and each cycle review, then every weekly review,
+  newest first, and the one the key selects
   (load.ts), server-rendered so it reads without JavaScript (+page.ts awaits its view).
 
   - A split screen from 1024 px: the list beside the review, or beside 'Pick a review'. Below it
@@ -18,6 +19,7 @@
 	import PageHeader from '#lib/ui/components/PageHeader.svelte';
 	import Surface from '#lib/ui/components/Surface.svelte';
 	import ReviewList from './ReviewList.svelte';
+	import type { ReviewRow } from './load';
 	import type { PageProps } from './$types';
 
 	let { data, form }: PageProps = $props();
@@ -44,6 +46,10 @@
 		document.getElementById('review-title')?.focus();
 	});
 </script>
+
+{#snippet earlierCycles(rows: ReviewRow[])}
+	<ReviewList {rows} selected={null} label="Earlier cycles" />
+{/snippet}
 
 <svelte:head>
 	<title>{selected ? `${selected.title} · Reviews` : 'Reviews'} · Performance Coach</title>
@@ -85,6 +91,14 @@
 					/>
 				</Surface>
 			{/if}
+			{#if ready.cycles.length}
+				<ReviewList
+					rows={ready.cycles}
+					label="Cycle reviews"
+					selected={selected?.key ?? null}
+					refused={form?.reason === 'not_reviewable' ? form : null}
+				/>
+			{/if}
 			<ReviewList
 				rows={ready.rows}
 				selected={selected?.key ?? null}
@@ -94,7 +108,7 @@
 
 		<div class="pane">
 			{#if selected && data.View}
-				{#key selected.key}<data.View review={selected} />{/key}
+				{#key selected.key}<data.View review={selected} {earlierCycles} />{/key}
 			{:else}
 				<Surface padding="none" radius="xl">
 					<EmptyState

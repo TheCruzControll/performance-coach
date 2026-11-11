@@ -4,7 +4,9 @@
  * never a count of its own. rules/strength.ts holds the layouts:
  * - SBD for powerlifting, the two competition lifts for weightlifting, athletic days with a power
  *   slot, and otherwise full body for up to 3 days, upper/lower for 4, push/pull/legs beyond;
- * - maintenance when a goal of another kind ranks first, or every goal is paused.
+ * - maintenance when a goal of another kind ranks first, or every goal is paused, unless M7's
+ *   prepare marks the strength goal secondary (it keeps its own layout and style); and whenever
+ *   prepare holds the strength goal at maintenance, even ranked first.
  *
  * Pure: no clock, no randomness, no I/O.
  */
@@ -57,8 +59,15 @@ function lettered(templates: readonly DayTemplate[]): SplitDay[] {
 export function chooseSplit(input: ProgrammingInput, count: number): Split {
 	const discipline = strengthDiscipline(input);
 	if (!discipline || count < 1) throw new RangeError('A split needs a strength goal and a day');
+	// M7: a secondary goal (prepare's input.modes) keeps its own layout and style even where
+	// another kind leads; a goal held at maintenance gets the maintenance layout even where it
+	// ranks first; no modes at all gives M3's rule.
+	const ref = input.refs.goals[input.goals.findIndex((g) => g.disciplines.includes(discipline))];
+	const mode = input.maintenance || ref === undefined ? undefined : input.modes?.[ref];
 	const maintenance =
-		input.maintenance || SESSIONS_WANTED[input.disciplines[0]!].stream !== 'strength';
+		mode === 'maintenance' ||
+		(mode !== 'secondary' &&
+			(input.maintenance || SESSIONS_WANTED[input.disciplines[0]!].stream !== 'strength'));
 	const layout: LayoutKey = maintenance
 		? 'maintenance'
 		: (OWN_LAYOUT[discipline] ?? LAYOUT_BY_DAYS.find(([most]) => count <= most)![1]);
