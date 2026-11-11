@@ -16,6 +16,7 @@ import { buildProgrammingInput } from '../index';
 import type { ProgrammingInput } from '../input';
 import type { GenerateOptions } from '../stage';
 import { loadModel } from '../load/fatigue';
+import { paceFor, trainingPaces, vdotFromPerformance } from '../paces';
 import type { ModelPlanned } from '../load/fatigue';
 import { fromLogged } from '../load/from-facts';
 import { composeWeeklyReview } from '../review/weekly';
@@ -472,12 +473,14 @@ describe('deloadSessions', () => {
 		const tempo = out.find((s) => s.date === addDays(week.startsOn, 4) && s.kind === 'run')!;
 		expect(tempo).toMatchObject({ type: 'easy_run', title: 'Easy run', intensity: 'easy' });
 		if (tempo.kind !== 'run') throw new Error('a run');
+		// The plan's own easy pace: E from the VDOT of S1's 10K in 45:00 (generator-running).
+		const [easyPace] = paceFor('easy', trainingPaces(vdotFromPerformance(10_000, 45 * 60)));
 		expect(
 			tempo.segments.map((g) => [g.kind, g.durationSeconds, g.hrZone, g.paceMinSecondsPerKm])
 		).toEqual([
-			['warm_up', 420, 2, 324],
-			['easy', 840, 2, 324],
-			['cool_down', 420, 2, 324]
+			['warm_up', 420, 2, easyPace],
+			['easy', 840, 2, easyPace],
+			['cool_down', 420, 2, easyPace]
 		]);
 		const easy = out.find((s) => s.type === 'easy_run' && s.date === week.startsOn)!;
 		if (easy.kind !== 'run') throw new Error('a run');

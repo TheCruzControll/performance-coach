@@ -11,6 +11,9 @@
  *
  * generator-phasing (m7/30): each week's main lifts by its phase, the accessories peak and taper
  * weeks shed, the dose's top-set cap, and the hard-set band each week is balanced to.
+ *
+ * generator-running (m7/32): a marathon or half week's runs from its targets, and a running goal
+ * that does not lead held to its dose.
  */
 import { HALVED_ACCESSORY_PHASES } from '../../stages/phasing.ts';
 import { HARDEST_BY, OWN_WEEKS } from '../../stages/schedule.ts';
@@ -129,6 +132,24 @@ export const rules: readonly RuleDefinition[] = [
 		rationale:
 			'The week’s targets are what your reviews judge it by, so the sessions must be built to them, and a goal that does not lead gets only the volume its mode allows.',
 		source: `${PROGRAMMING}/stages/volume.ts#balancePhased`
+	},
+	{
+		id: 'generator.block_runs',
+		kind: 'behaviour',
+		statement:
+			'In a marathon or half week planned with its running targets, the long run takes its planned length within the 10 % and share caps and grows at most 1.5 km a week, the phase’s race work fills its quality sessions (marathon pace closing the long run, threshold runs, 10K-pace intervals), and a cutback week holds at most 80 % of the biggest week so far.',
+		rationale:
+			'The race plan sets each week’s long run and race-specific work, so the sessions are built to it, and the caps that keep every run safe still apply.',
+		source: `${PROGRAMMING}/running.ts#planRuns`
+	},
+	{
+		id: 'generator.run_dose',
+		kind: 'behaviour',
+		statement:
+			'A running goal that trains alongside the leader or is held at maintenance runs 65 % of your recent weekly volume every week (less only in a light week), at most one quality session, with the long run never longer than your recent longest.',
+		rationale:
+			'Aerobic fitness holds on 60–70 % of your recent mileage, so running more would only take recovery from the goal that leads.',
+		source: `${PROGRAMMING}/running.ts#planRuns`
 	}
 ];
 

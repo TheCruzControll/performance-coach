@@ -239,15 +239,17 @@ describe('generateProgram', () => {
  * Every scenario's plan as JSON, the bytes a version stores, hashed on a Monday and a Thursday start
  * before m7-stage-list moved the demand and blocks stages and added prepare, phasing and schedule.
  * With prepare as the identity (no season), M3's stages still plan these bytes exactly: the M7
- * hunks in demand.ts, splits.ts and input.ts change nothing without a season.
+ * hunks in demand.ts, splits.ts and input.ts change nothing without a season. generator-running
+ * ('perfo-programming/5') changed the plans with runs, hybrid's and journey's: their paces come from
+ * paces.ts's VDOT, so their pinned hashes are its.
  */
 const GOLDEN: Record<ScenarioKey, readonly [monday: string, thursday: string]> = {
 	beginner: ['d4bfc183ab8ee435', 'e76eed0b701d71ea'],
 	powerlifter: ['7002151f6b51da7b', 'ce338ae4b7af709d'],
-	hybrid: ['7e6b6a765e71d6f2', 'c303e9343e516474'],
+	hybrid: ['f8bc80dd615645ed', '3100524562860ed5'],
 	injuredShoulder: ['1372ab5296078226', '48ee5ba593935dd7'],
 	dumbbellsOnly: ['71015477f3f97476', '92907395e75da37b'],
-	journey: ['06c37810c5afc2b6', 'ccb42ef23966c8c5'],
+	journey: ['550aa8d3fa4c7208', 'c323c0f6f372651f'],
 	minimal: ['c3e4d72addb45c7a', '57bb88bd394355e1']
 };
 
@@ -255,16 +257,17 @@ const GOLDEN: Record<ScenarioKey, readonly [monday: string, thursday: string]> =
  * The same plans with the season (generator-season) and every week repaired by the schedule stage
  * (generator-schedule, GENERATOR_ID 'perfo-programming/3', which changed hybrid's), and each
  * week's prescriptions by its block type (generator-phasing, 'perfo-programming/4': hybrid's
- * secondary strength held to the lower half of its band); a later GENERATOR_ID bump changes them,
- * and its PR lists each.
+ * secondary strength held to the lower half of its band), and runs from current fitness
+ * (generator-running, 'perfo-programming/5': hybrid's and journey's paces from their VDOT); a later
+ * GENERATOR_ID bump changes them, and its PR lists each.
  */
 const GOLDEN_SEASON: Record<ScenarioKey, readonly [monday: string, thursday: string]> = {
 	beginner: ['40ac8a97f8ac8304', 'afbafd92042977bf'],
 	powerlifter: ['53368325fc4eeb18', '7cce2ec2cd815ba0'],
-	hybrid: ['78698e1c7ef62489', 'b46d978524e8b917'],
+	hybrid: ['4b442a4bbffe9dba', '6e5143cbd95d1af0'],
 	injuredShoulder: ['a4e42532f422ef13', 'e020e654173b406a'],
 	dumbbellsOnly: ['7eb70d064378cab5', '2ebb5a975014b49c'],
-	journey: ['6dfb9ed84d822de2', '20b093bc6e3734a0'],
+	journey: ['1874e33f106884a6', '9cf7ce24671e00fe'],
 	minimal: ['69abd4d5ab6fd927', '1cb83a5371a0118c']
 };
 
