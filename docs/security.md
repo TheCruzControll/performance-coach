@@ -22,6 +22,13 @@ Out of scope (accepted): compromise of the owner's unlocked device or password m
 (iCloud Keychain), of Vercel/Neon/GitHub accounts, or of the platform's TLS. A malicious browser
 extension on the owner's browser can act as the owner.
 
+- **A session lost elsewhere.** When the device's next sync request gets a 401 (signed out
+  elsewhere, revoked from Security, or expired), it deletes the server's copies it holds (saved
+  kits, canonical rows, the cached library, the owner's units and finished workouts). It keeps
+  only the unsynced outbox entries and the unfinished workout's device state until a sign-in
+  ([ADR 0012](adr/0012-offline-workout-sync.md), "Losing the session"). The workout pages then
+  show no workout details, only how many changes wait.
+
 ## Accounts and credentials
 
 - **One owner.** `owners` has a `singleton` column that is always true and unique: a second owner
@@ -172,11 +179,17 @@ marker in session storage, and lands on the sign-in screen, which consumes the m
 again. A signed-out URL without the marker (typed, from history, or a sign-out without
 JavaScript) keeps only unsynced workout changes until the owner deletes them or signs in: what
 the server already holds is deleted, as after a 401, and the sign-in screen offers to delete the
-rest. **Device preferences (theme, units in localStorage) are kept on purpose**: they are not
-account data. `"storage"` and `"cookies"` are deliberately not sent: `"storage"` would also wipe
-those preferences and unregister the offline app shell, and `"cookies"` applies to the whole
-registrable domain (`nikocruz.com`), not just this app. If the server cannot be reached the
-client says so and changes nothing (the HttpOnly cookie can only be deleted by the server).
+rest. It also deletes /workout's prepainted card from localStorage (`pc:workout-prepaint:v1`:
+the current exercise's name, prescription and sets, the only account data kept there). A lost
+session (a 401's purge) blocks that card until the server answers as the owner again. **Device
+preferences (theme, units in localStorage) are kept on purpose**: they are not account data. The
+workout settings (`pc:workout:v1`: rest per exercise type, auto-start rest, sound, vibration,
+keep-awake), the plate inventory (`pc:plates:v1`, one per unit) and Train's rest timer
+(`pc:rest:v1`) are device preferences too, and sign-out keeps them. `"storage"` and `"cookies"`
+are deliberately not sent: `"storage"` would also wipe those preferences and unregister the
+offline app shell, and `"cookies"` applies to the whole registrable domain (`nikocruz.com`), not
+just this app. If the server cannot be reached the client says so and changes nothing (the
+HttpOnly cookie can only be deleted by the server).
 
 ## Deny by default
 
@@ -184,17 +197,24 @@ client says so and changes nothing (the HttpOnly cookie can only be deleted by t
 access is declared in `routes.ts` (`ROUTE_ACCESS`, typed against SvelteKit's generated `RouteId`
 union, so an unclassified route fails `pnpm check`); an unknown route is `owner`.
 
-| Access        | Routes                                                                                                                                                                                                                                       |
-| ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `public`      | `/` (sign-in), `/setup`, `/recover`, `/api/auth/signin/{options,verify}`, `/api/auth/setup/{options,verify}`, `/api/auth/signout`, `/api/health`, `/offline` (prerendered), `/api/test-support/session` (404 unless test routes are enabled) |
-| `any-session` | `/recover/passkey`, `/api/auth/passkeys/{options,verify}`                                                                                                                                                                                    |
-| `owner`       | everything else, including `/api/auth/reauth/{options,verify}`, `/api/vitals` and `/api/client-errors`                                                                                                                                       |
+| Access        | Routes                                                                                                                                                                                                                                                                                                                |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `public`      | `/` (sign-in), `/setup`, `/recover`, `/api/auth/signin/{options,verify}`, `/api/auth/setup/{options,verify}`, `/api/auth/signout`, `/api/health`, `/offline` (prerendered), `/workout`, `/workout/run`, `/workout/session` (prerendered, data-free), `/api/test-support/session` (404 unless test routes are enabled) |
+| `any-session` | `/recover/passkey`, `/api/auth/passkeys/{options,verify}`                                                                                                                                                                                                                                                             |
+| `owner`       | everything else, including `/api/auth/reauth/{options,verify}`, `/api/vitals` and `/api/client-errors`                                                                                                                                                                                                                |
 
 Without a session, pages answer `303` to `/?next=<path>` (a JSON redirect for client-side data
 requests and enhanced form actions) and `/api/*` answers `401 {"error":"unauthenticated"}`. A
 stale or forged cookie is cleared. Static and prerendered files (immutable build assets, icons,
-manifest, robots.txt, the service worker, `/offline`) never reach the hooks and hold no personal
-data. Proven by `src/lib/server/auth/routes.test.ts` and `e2e/access.e2e.ts`, which walk
+manifest, robots.txt, the service worker, `/offline` and the three workout pages) never reach the
+hooks and hold no personal data. A workout page's data comes only from IndexedDB, from
+`/workout`'s prepainted card in localStorage (`pc:workout-prepaint:v1`, #410) and from owner-only
+endpoints; sign-out deletes the first two. Prerendered pages still get the dynamic responses'
+security headers: `vercel.json` sends them `STATIC_PAGE_HEADERS`
+(`src/lib/server/security-headers.ts`), which adds `frame-ancestors 'none'` because their own CSP
+is a `<meta>` tag that cannot carry it. `scripts/vercel-headers.test.ts` keeps `vercel.json`
+equal to that constant for every prerendered page, and the post-deploy smoke check asserts it in
+production. Proven by `src/lib/server/auth/routes.test.ts` and `e2e/access.e2e.ts`, which walk
 `src/routes` so new routes are covered automatically.
 
 ## CSRF
@@ -207,6 +227,11 @@ Three independent layers:
    Browsers send `Origin` on all such requests; a missing one is refused.
 2. **SvelteKit's form check** (`csrf.checkOrigin`, on by default) for form actions.
 3. **`SameSite=Lax`** on the session cookie: cross-site subrequests and POSTs carry no session.
+
+`POST /api/workouts/sync` is owner-only and Origin-checked by the guard, takes JSON capped at
+64 KB (413 above), and validates every mutation on its own before it touches the database
+(`src/lib/server/services/workouts/sync.ts`). A recovery session's request answers 403 and the
+device keeps everything.
 
 ## Rate limits (Postgres, no Redis)
 
@@ -281,6 +306,12 @@ docs/architecture.md "Training model (M3)"):
 - **Deleting the owner is refused**: its cascade reaches guarded tables. `pnpm auth:reset-owner`
   keeps the owner row and all training data, so a reset never needs a delete. Erasing training
   history is a deliberate maintenance step outside the app.
+- **Pain reports** (`pain_reports`, M4) are health data: where it hurt, severity, what the owner
+  chose and a free-text note (1 to 500 characters). Owner-scoped, audited in `training_audit`,
+  never hard-deleted, and never stored as an exercise preference.
+- **The sync ledger** (`sync_mutations`, M4) holds mutation ids, types, row ids and times, no
+  training values. It is never pruned in M4, so an outbox replayed months later is still applied
+  at most once; its rows refuse UPDATE and DELETE like the history tables.
 
 ## Test-only routes
 

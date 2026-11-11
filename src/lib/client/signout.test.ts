@@ -9,6 +9,7 @@ import { openTabChannel, TAB_CHANNEL } from './workout/channel';
 import type { StoreChange } from './workout/store';
 import { DB_NAME, STORES } from './workout/names';
 import { pendingCount } from './workout/probe';
+import { ACTIVE_WORKOUT_KEY } from './workout/active-flag';
 import { PREPAINT_KEY } from './workout/prepaint';
 import { createStore } from './workout/store';
 
@@ -317,6 +318,25 @@ describe('clearDeviceAccountData', () => {
 
 				expect([...map.keys()]).toEqual(['pc:prefs:v1']);
 			}
+		}
+	});
+
+	it('deletes the launch flag, so a launch offline never opens a workout after sign-out', async () => {
+		const { clearDeviceAccountData } = await load();
+		for (const keepWorkouts of [false, true]) {
+			const map = new Map([
+				[ACTIVE_WORKOUT_KEY, '{"v":1,"workoutId":"w","kind":"strength"}'],
+				['pc:prefs:v1', '{"theme":"light"}']
+			]);
+			vi.stubGlobal('localStorage', {
+				getItem: (key: string) => map.get(key) ?? null,
+				setItem: (key: string, value: string) => void map.set(key, value),
+				removeItem: (key: string) => void map.delete(key)
+			});
+
+			await clearDeviceAccountData({ keepWorkouts });
+
+			expect([...map.keys()]).toEqual(['pc:prefs:v1']);
 		}
 	});
 });

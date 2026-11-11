@@ -10,11 +10,27 @@ import {
 	WEB_VITAL_RATINGS,
 	type Executor,
 	type NewWebVital,
-	type VitalSummaryRow
+	type WebVitalName
 } from '../db';
 import { measure } from '../observability/timing';
 
 export const MAX_VITALS_PER_REQUEST = 20;
+
+/**
+ * The route the installed app opens on: the manifest's `start_url` (/today), as a route id. Its
+ * load metrics are what a launch costs in the field (vitals.test.ts holds the two together).
+ */
+export const START_ROUTE_ID = '/(app)/today';
+/** What the start route is judged by: server response, largest paint, and responsiveness. */
+export const START_METRICS: readonly WebVitalName[] = ['TTFB', 'LCP', 'INP'];
+
+export interface VitalSummary {
+	name: WebVitalName;
+	p75: number;
+	samples: number;
+	/** p75 on the start route alone, for START_METRICS; null otherwise or without samples. */
+	start: { p75: number; samples: number } | null;
+}
 
 export const vitalSchema = z.object({
 	id: z.string().min(1).max(128),
@@ -97,10 +113,15 @@ export async function recordVitals(
 export async function getVitalsSummary(
 	days = 7,
 	deps: { db?: Executor; now?: Date } = {}
-): Promise<VitalSummaryRow[]> {
+): Promise<VitalSummary[]> {
 	const since = new Date((deps.now ?? new Date()).getTime() - days * 86_400_000);
 	const repo = createWebVitalsRepository(deps.db ?? getDb());
-	const rows = await measure('db', () => repo.p75Since(since));
+	const rows = await measure('db', () => repo.p75Since(since, START_ROUTE_ID));
 	const order = new Map(WEB_VITAL_NAMES.map((name, i) => [name, i]));
-	return rows.sort((a, b) => (order.get(a.name) ?? 0) - (order.get(b.name) ?? 0));
+	return rows
+		.map(({ route, ...row }) => ({
+			...row,
+			start: START_METRICS.includes(row.name) ? route : null
+		}))
+		.sort((a, b) => (order.get(a.name) ?? 0) - (order.get(b.name) ?? 0));
 }

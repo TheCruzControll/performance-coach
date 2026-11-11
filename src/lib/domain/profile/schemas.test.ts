@@ -3,8 +3,10 @@ import {
 	baselineEntrySchema,
 	bodySchema,
 	goalSchema,
+	heartRateSchema,
 	injurySchema,
 	raceResultSchema,
+	runningSchema,
 	validate
 } from './schemas';
 
@@ -86,6 +88,57 @@ describe('required dates', () => {
 		expect(validate(goalSchema, { ...event, eventDate: '2027-03-14' })).toMatchObject({
 			ok: true,
 			data: { eventDate: '2027-03-14' }
+		});
+	});
+});
+
+describe('heart rate', () => {
+	it('takes any of max, resting and threshold, and turns the missing ones into null', () => {
+		expect(validate(heartRateSchema, { resting: 48 })).toEqual({
+			ok: true,
+			data: { max: null, resting: 48, threshold: null }
+		});
+		expect(validate(heartRateSchema, { max: 230, resting: 30, threshold: 225 })).toMatchObject({
+			ok: true
+		});
+		expect(validate(heartRateSchema, { max: 120, resting: 110, threshold: 100 })).toEqual({
+			ok: false,
+			errors: { resting: 'Resting heart rate must be below your threshold' }
+		});
+	});
+
+	it('names each range, and only orders values that are in range', () => {
+		expect(validate(heartRateSchema, { max: 119, resting: 111, threshold: 72.5 })).toEqual({
+			ok: false,
+			errors: {
+				max: 'Max heart rate between 120 and 230',
+				resting: 'Resting heart rate between 30 and 110',
+				threshold: 'Threshold heart rate between 100 and 225'
+			}
+		});
+		// Out of range and out of order: one message, the range, and none on the field below it.
+		expect(validate(heartRateSchema, { resting: 105, threshold: 99 })).toEqual({
+			ok: false,
+			errors: { threshold: 'Threshold heart rate between 100 and 225' }
+		});
+		expect(validate(heartRateSchema, { max: 170, threshold: 170 })).toEqual({
+			ok: false,
+			errors: { threshold: 'Threshold heart rate must be below your max' }
+		});
+	});
+
+	it('is optional on the running section: left out it stays out, null stays null', () => {
+		const run = { unit: 'km', races: [] };
+		const without = validate(runningSchema, run);
+		if (!without.ok) throw new Error(JSON.stringify(without.errors));
+		expect(without.data).not.toHaveProperty('heartRate');
+		expect(validate(runningSchema, { ...run, heartRate: null })).toMatchObject({
+			ok: true,
+			data: { heartRate: null }
+		});
+		expect(validate(runningSchema, { ...run, heartRate: { max: 400 } })).toEqual({
+			ok: false,
+			errors: { 'heartRate.max': 'Max heart rate between 120 and 230' }
 		});
 	});
 });
