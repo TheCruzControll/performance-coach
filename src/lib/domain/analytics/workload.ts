@@ -32,7 +32,7 @@ import { cleanFloat } from '../units.ts';
 import type { OtherFields, RunFields } from '../workout/mutations.ts';
 import type { Weekly, Weeks } from './adherence.ts';
 import { weekStarts } from './periods.ts';
-import { mean, sd, total } from './series.ts';
+import { byMonday, mean, sd, total } from './series.ts';
 import type { SeriesPoint } from './types.ts';
 
 // ---- Judgements the owner can change here ----------------------------------------------------
@@ -282,9 +282,12 @@ function weekOf(
 /** Load by week and group: each complete week, the week in progress apart, and the total. */
 export function weeklyLoad(loads: readonly SessionLoad[], window: Weeks): PeriodLoad {
 	const { weeks, inProgress } = window;
+	// Each week reads its own loads, bucketed once: 'all' has a hundred weeks.
+	const byWeek = byMonday(loads, (l) => l.date);
+	const theirs = (monday: IsoDate) => byWeek.get(monday) ?? [];
 	return {
-		weeks: weekStarts(weeks).map((monday) => weekOf(loads, monday, null)),
-		inProgress: weekOf(loads, inProgress.weekStart, inProgress.through),
+		weeks: weekStarts(weeks).map((monday) => weekOf(theirs(monday), monday, null)),
+		inProgress: weekOf(theirs(inProgress.weekStart), inProgress.weekStart, inProgress.through),
 		total: figureOf(weeks ? between(loads, weeks.from, weeks.to) : [])
 	};
 }
@@ -489,16 +492,20 @@ function weekly<T extends { date: IsoDate }, F>(
 	figure: (items: readonly T[]) => F
 ): Weekly<F> {
 	const { weeks, inProgress } = window;
+	// Each week reads its own items, bucketed once: 'all' has a hundred weeks.
+	const byWeek = byMonday(items, (item) => item.date);
+	const week = (weekStart: IsoDate, through: IsoDate) =>
+		figure(between(byWeek.get(weekStart) ?? [], weekStart, through));
 	return {
 		weeks: weekStarts(weeks).map((weekStart) => ({
 			weekStart,
 			inProgress: false as const,
-			...figure(between(items, weekStart, addDays(weekStart, 6)))
+			...week(weekStart, addDays(weekStart, 6))
 		})),
 		inProgress: {
 			weekStart: inProgress.weekStart,
 			inProgress: true as const,
-			...figure(between(items, inProgress.weekStart, inProgress.through))
+			...week(inProgress.weekStart, inProgress.through)
 		},
 		total: figure(weeks ? between(items, weeks.from, weeks.to) : [])
 	};

@@ -1,4 +1,5 @@
 import { currentContext, type RequestContext } from './context';
+import type { InstanceStart } from './instance';
 import { logger } from './logger';
 
 /**
@@ -21,14 +22,22 @@ export async function measure<T>(metric: string, fn: () => Promise<T>): Promise<
 
 const TOKEN = /^[a-z0-9_-]+$/i;
 
-/** Build a `Server-Timing` header value: `db;dur=1.2;desc="2 ops", total;dur=8.4`. */
-export function serverTimingHeader(ctx: RequestContext, totalMs: number): string {
+/**
+ * Build a `Server-Timing` header value: `db;dur=1.2;desc="2 ops", total;dur=8.4`, then
+ * `instance;desc="cold"` (or "warm") when the request's instance start is known (instance.ts).
+ */
+export function serverTimingHeader(
+	ctx: RequestContext,
+	totalMs: number,
+	start?: InstanceStart
+): string {
 	const parts: string[] = [];
 	for (const [name, { dur, count }] of ctx.timings) {
 		if (!TOKEN.test(name)) continue;
 		parts.push(`${name};dur=${dur.toFixed(1)};desc="${count} op${count === 1 ? '' : 's'}"`);
 	}
 	parts.push(`total;dur=${totalMs.toFixed(1)}`);
+	if (start) parts.push(`instance;desc="${start}"`);
 	return parts.join(', ');
 }
 

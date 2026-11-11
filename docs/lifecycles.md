@@ -10,7 +10,7 @@ go. Why the tables exist: the "Lifecycles as data" ADR in `docs/adr/`.
 - **Stored in:** workouts.status (Postgres) and the device record (IndexedDB pc-offline)
 - **States:** `in_progress`, `completed`, `abandoned` (initial: `in_progress`; terminal: `completed`)
 - **Write sites:** `src/lib/server/services/training/log.ts finishWorkout`, `src/lib/domain/workout/reducers/core.ts`
-- **Tests:** none
+- **Tests:** `tests/integration/training/log-sets.test.ts`, `tests/integration/workouts/sync.test.ts`, `src/lib/domain/workout/ends.test.ts`, `src/lib/domain/lifecycles.test.ts`
 
 | From          | Event     | To          | Effects                                                                                                                        | Certainty | Legacy | Why                                                           |
 | ------------- | --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------ | --------- | ------ | ------------------------------------------------------------- |

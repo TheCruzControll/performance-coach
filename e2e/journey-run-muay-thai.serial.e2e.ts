@@ -16,7 +16,7 @@ import type { CustomMetric } from '../src/lib/domain/training/types';
 import { DESKTOP, expectNoSideScroll } from './desktop';
 import { PROGRAM_TZ, seedProgram, type SeededProgram } from './program-support';
 import { captureScreen, gotoHydrated, query } from './support';
-import { readOutbox } from './workout-support';
+import { historyAfterDone, readOutbox } from './workout-support';
 
 test.use({ timezoneId: PROGRAM_TZ });
 // The desktop test reads the workouts the journey left: it runs only after the journey passed.
@@ -62,7 +62,7 @@ async function logSegment(page: Page, heading: string, distance: string, time: s
 	await runEntry(page).getByTestId('log-segment').click();
 }
 
-/** Finishes the workout on screen from the header's menu; Done opens its History detail. */
+/** Finishes the workout on screen from the header's menu, then opens its History detail. */
 async function finish(page: Page, testInfo: Parameters<typeof captureScreen>[1], name: string) {
 	await page.getByTestId('workout-menu-button').click();
 	await page.getByTestId('workout-menu').getByTestId('menu-finish').click();
@@ -70,7 +70,7 @@ async function finish(page: Page, testInfo: Parameters<typeof captureScreen>[1],
 	await expect(sheet.getByTestId('workout-summary')).toBeVisible();
 	await captureScreen(page, testInfo, name);
 	await sheet.getByTestId('finish-done').click();
-	await page.waitForURL(/\/progress\/workouts\/[0-9a-f-]{36}$/);
+	await historyAfterDone(page);
 	await expect(page.getByTestId('workout-detail')).toBeVisible();
 	return new URL(page.url()).pathname.split('/').at(-1)!;
 }

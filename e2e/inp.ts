@@ -15,3 +15,12 @@ export function inp(entries: TimedEntry[], count: number): number {
 	const sorted = [...longest.values()].sort((a, b) => b - a);
 	return sorted[Math.min(Math.floor(Math.max(count, sorted.length) / 50), 9)] ?? 0;
 }
+
+/**
+ * The nearest-rank percentile: the smallest value at least `p` of them are at or under, as CrUX
+ * reads a page's p75 over its loads. NaN for none.
+ */
+export function percentile(values: readonly number[], p: number): number {
+	const sorted = [...values].sort((a, b) => a - b);
+	return sorted[Math.max(0, Math.ceil(p * sorted.length) - 1)] ?? Number.NaN;
+}

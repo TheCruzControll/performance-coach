@@ -9,6 +9,7 @@ import { createRawSnippet } from 'svelte';
 import { render } from 'svelte/server';
 import { describe, expect, it } from 'vitest';
 import type { CycleReviewData } from './cycle-data.ts';
+import type { NextCycleView } from './next-cycle-data.ts';
 import CycleReview from './CycleReview.svelte';
 import type { ReviewRow } from './load.ts';
 
@@ -69,6 +70,7 @@ const review = (parts: Partial<CycleReviewData> = {}): CycleReviewData => ({
 	earlier: [],
 	history: null,
 	writeUp: null,
+	next: null,
 	...parts
 });
 
@@ -142,5 +144,17 @@ describe('the cycle review on the server', () => {
 		expect(body).toMatch(/href="\/train\/history\/3"[^>]*>|data-testid="review-history"/);
 		expect(body).toContain('href="/train/history/3"');
 		expect(body).toContain('<ol data-testid="earlier-list">c-older</ol>');
+	});
+
+	it('the next block: its title and words hold the card’s place until it loads', () => {
+		const next = {
+			...{ state: 'applied', title: 'Next block planned · version 2', words: 'In your plan.' },
+			...{ folded: false, previews: [], rotated: [], deload: null, link: null }
+		} as NextCycleView;
+		const body = html(review({ next }));
+		const slot = /<section[^>]*data-testid="next-cycle-slot"[\s\S]*?<\/section>/.exec(body)![0];
+		expect(slot).toContain('aria-busy="true"');
+		expect(text(slot)).toBe('Next block planned · version 2 In your plan.');
+		expect(html(review())).not.toContain('next-cycle-slot');
 	});
 });
