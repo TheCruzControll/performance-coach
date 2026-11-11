@@ -41,6 +41,8 @@ export interface Scripted {
 	controller?: AbortController;
 	/** Awaited on each event as it arrives; the turn keeps running meanwhile. */
 	onEvent?: (event: CoachEvent) => void | Promise<void>;
+	/** Receives the turn's work after its last event (TurnOptions.after); none without it. */
+	after?: TurnOptions['after'];
 }
 
 export interface ScriptedTurn {
@@ -93,7 +95,8 @@ export async function runScripted(script: MockScript, options: Scripted): Promis
 		{
 			provider,
 			deps: { db: options.db, now: options.now ?? (() => new Date(TURN_NOW)) },
-			...(tools && { tools })
+			...(tools && { tools }),
+			...(options.after && { after: options.after })
 		}
 	);
 	for await (const event of stream) {

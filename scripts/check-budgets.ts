@@ -9,10 +9,13 @@
  *
  * Initial JS is the complete *static* import graph of the app entry and the route's layout and
  * page nodes, read from Vite's manifest — not only the modulepreload list SvelteKit emits, which
- * can miss a chunk that is also reachable through a dynamic import (it is then fetched late, as
- * a waterfall; listed in the report). It also counts what a route's universal `load` imports
+ * could miss a chunk that is also reachable through a dynamic import (it is then fetched late,
+ * as a waterfall; such a chunk fails the run). It also counts what a route's universal `load` imports
  * dynamically (`+page.ts` / `+layout.ts`): the load awaits it before the page hydrates, so it is
  * initial too — the largest such import counts.
+ *
+ * Route CSS counts every stylesheet the page renders with, whether SvelteKit inlines it into the
+ * HTML or links it; the report shows how much of it is still linked (a render-blocking request).
  */
 import { appendFileSync, existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -166,6 +169,8 @@ interface Row {
 	/** Of `js`: the largest import its universal load awaits before hydrating. */
 	loadJs: number;
 	css: number;
+	/** Of `css`: the stylesheets linked rather than inlined (each a request before first paint). */
+	linked: string[];
 	fonts: string[];
 	/** Statically imported chunks SvelteKit does not modulepreload (fetched as a waterfall). */
 	late: string[];
@@ -180,6 +185,7 @@ for (const route of routes) {
 	);
 	const preloaded = new Set(client.imports);
 	const css = new Set(client.stylesheets);
+	const inlined = new Set<string>();
 	const fonts = new Set(
 		client.fonts.filter((f) => PRELOADED_FONT_PATTERN.test(f.filename)).map((f) => f.file)
 	);
@@ -188,6 +194,7 @@ for (const route of routes) {
 		const node = nodes[id]!;
 		node.imports.forEach((f) => preloaded.add(f));
 		node.stylesheets.forEach((f) => css.add(f));
+		node.inlineStyles.forEach((f) => inlined.add(f));
 		node.fonts
 			.filter((f) => PRELOADED_FONT_PATTERN.test(f.filename))
 			.forEach((f) => fonts.add(f.file));
@@ -208,6 +215,7 @@ for (const route of routes) {
 		js: jsBytes,
 		loadJs,
 		css: cssBytes,
+		linked: [...css].filter((f) => !inlined.has(f)),
 		fonts: [...fonts],
 		late: [...js].filter((f) => !preloaded.has(f)),
 		ok:
@@ -216,6 +224,19 @@ for (const route of routes) {
 			fonts.size <= BUDGETS.preloadedFonts
 	});
 }
+
+/**
+ * Every chunk of a route's initial JS is modulepreloaded by its HTML. One that is not is fetched
+ * only once a module importing it runs: a round trip after the rest, before the page hydrates.
+ * SvelteKit dropped a chunk it reached through a dynamic import first (seven on /today);
+ * patches/@sveltejs__kit@*.patch fixes its find_deps.
+ */
+const lateProblems = rows
+	.filter((r) => r.late.length)
+	.map(
+		(r) =>
+			`${r.route}: ${r.late.map((f) => `${path.basename(f)} (${fmt(gzipBytes(f))})`).join(', ')}`
+	);
 
 const allCss = readdirSync(`${CLIENT}/_app/immutable/assets`).filter((f) => f.endsWith('.css'));
 const totalCss = allCss.reduce((sum, f) => sum + gzipBytes(`_app/immutable/assets/${f}`), 0);
@@ -244,16 +265,20 @@ for (const file of allCss) {
 const sw = existsSync(`${CLIENT}/service-worker.js`) ? gzipBytes('service-worker.js') : 0;
 
 /**
- * App shell inlining: the (app) layout's own stylesheets (AppShell with the nav, and the icons)
- * are inlined into every app page while each is shorter than SvelteKit's inlineStyleThreshold
- * (vite.config.ts). One that grows past it becomes a render-blocking request on every app route,
- * phone included, and no gzip budget notices. The server node lists what it inlined
- * (`inline_styles`); page-agnostic shell rules belong in src/lib/ui/styles/layout.css instead.
+ * Layout inlining: the root layout's stylesheets (the global styles: tokens, fonts, layout.css)
+ * and the (app) layout's (AppShell with the nav, and the icons) are inlined into every page
+ * while each is shorter than SvelteKit's inlineStyleThreshold (vite.config.ts). One that grows
+ * past it becomes a render-blocking request on every route (every app route for the shell),
+ * phone included; the gzip budget counts it either way, so it would not notice. The server node
+ * lists what it inlined (`inline_styles`); page-agnostic shell rules belong in
+ * src/lib/ui/styles/layout.css.
  */
 const INLINE_STYLE_THRESHOLD = Number(
 	/inlineStyleThreshold:\s*(\d+)/.exec(readFileSync('vite.config.ts', 'utf8'))?.[1]
 );
+const ROOT_LAYOUT = '_layout';
 const SHELL_LAYOUT = '(app)/_layout';
+const rootNode = nodes.find((node) => node.component === ROOT_LAYOUT);
 const shellNode = nodes.find((node) => node.component === SHELL_LAYOUT);
 const lengthOf = (file: string) => readFileSync(path.join(CLIENT, file), 'utf8').length;
 const count = (n: number) => n.toLocaleString('en');
@@ -261,15 +286,21 @@ const shellProblems: string[] = [];
 if (!Number.isFinite(INLINE_STYLE_THRESHOLD)) {
 	shellProblems.push('no inlineStyleThreshold in vite.config.ts: update this guard');
 }
-if (!shellNode) shellProblems.push(`no ${SHELL_LAYOUT} node in the build: update this guard`);
-for (const file of shellNode?.stylesheets ?? []) {
-	if (!shellNode!.inlineStyles.includes(file)) {
-		shellProblems.push(
-			`${path.basename(file)} is ${count(lengthOf(file))} characters, not under ${count(INLINE_STYLE_THRESHOLD)}, ` +
-				'so it is linked instead of inlined: move page-agnostic rules to src/lib/ui/styles/layout.css'
-		);
+for (const [name, node] of [
+	[ROOT_LAYOUT, rootNode],
+	[SHELL_LAYOUT, shellNode]
+] as const) {
+	if (!node) shellProblems.push(`no ${name} node in the build: update this guard`);
+	for (const file of node?.stylesheets ?? []) {
+		if (!node!.inlineStyles.includes(file)) {
+			shellProblems.push(
+				`${name}: ${path.basename(file)} is ${count(lengthOf(file))} characters, not under ${count(INLINE_STYLE_THRESHOLD)}, ` +
+					'so it is linked instead of inlined: trim it, or move what only some pages need to their components'
+			);
+		}
 	}
 }
+const rootSheetLength = Math.max(0, ...(rootNode?.stylesheets ?? []).map(lengthOf));
 const shellSheet = shellNode?.stylesheets.find((file) =>
 	path.basename(file).startsWith('AppShell.')
 );
@@ -626,28 +657,23 @@ const payloadProblem = !startEntry
 		: '';
 
 const lines = [
-	'| Route | Initial JS (gzip) | of which awaited by `load` | Route CSS (gzip) | Preloaded fonts | Status |',
-	'| --- | ---: | ---: | ---: | ---: | :---: |',
+	'| Route | Initial JS (gzip) | of which awaited by `load` | Route CSS (gzip) | of which linked, not inlined | Preloaded fonts | Status |',
+	'| --- | ---: | ---: | ---: | ---: | ---: | :---: |',
 	...rows
 		.sort((a, b) => b.js - a.js)
 		.map(
 			(r) =>
-				`| \`${r.route}\` | ${fmt(r.js)} | ${r.loadJs ? fmt(r.loadJs) : '–'} | ${fmt(r.css)} | ${r.fonts.length} | ${r.ok ? 'pass' : 'FAIL'} |`
+				`| \`${r.route}\` | ${fmt(r.js)} | ${r.loadJs ? fmt(r.loadJs) : '–'} | ${fmt(r.css)} | ${r.linked.length ? `${fmt(r.linked.reduce((n, f) => n + gzipBytes(f), 0))} (${r.linked.map((f) => path.basename(f)).join(', ')})` : '–'} | ${r.fonts.length} | ${r.ok ? 'pass' : 'FAIL'} |`
 		),
 	'',
 	`Total CSS in the build (gzip, not all of it on any one route): ${fmt(totalCss)} across ${allCss.length} files`,
 	`Service worker (gzip): ${fmt(sw)}`,
 	`Budgets: initial JS ≤ ${BUDGETS.routeJsKb} KB · route CSS ≤ ${BUDGETS.routeCssKb} KB · preloaded fonts ≤ ${BUDGETS.preloadedFonts}`,
-	...rows
-		.filter((r) => r.late.length)
-		.map(
-			(r) =>
-				`Not modulepreloaded (counted above; fetched after its importer): \`${r.route}\` ${r.late.map((f) => `${path.basename(f)} (${fmt(gzipBytes(f))})`).join(', ')}`
-		),
+	`Initial JS modulepreloaded in full (no chunk fetched only once its importer runs): ${lateProblems.length ? 'FAIL' : 'pass'}`,
 	`CSS output guard (standard property kept next to every -webkit- prefix): ${prefixProblems.length ? 'FAIL' : 'pass'}`,
 	`Root error page (imported before every hydration): its own ${rootErrorFile ? fmt(gzipBytes(rootErrorFile)) : '?'} chunk, no script or stylesheet a route does not load: ${rootErrorProblems.length ? 'FAIL' : 'pass'}`,
 	`SvelteKit start entry imports only the payload chunk (it runs it before setting the payload): ${payloadProblem ? 'FAIL' : 'pass'}`,
-	`App shell stylesheets inlined into every app page (AppShell ${shellSheet ? count(lengthOf(shellSheet)) : '?'} of ${count(INLINE_STYLE_THRESHOLD)} characters): ${shellProblems.length ? 'FAIL' : 'pass'}`,
+	`Layout stylesheets inlined into every page (root layout ${count(rootSheetLength)} and AppShell ${shellSheet ? count(lengthOf(shellSheet)) : '?'} of ${count(INLINE_STYLE_THRESHOLD)} characters): ${shellProblems.length ? 'FAIL' : 'pass'}`,
 	`@simplewebauthn/browser: on demand only, never in initial JS; loadable from ${webauthnRoutes
 		.sort()
 		.map((r) => `\`${r}\``)
@@ -670,12 +696,18 @@ if (process.env.GITHUB_STEP_SUMMARY) {
 	);
 }
 
+if (lateProblems.length > 0) {
+	console.error(
+		`\nInitial JS fetched late (not modulepreloaded by the page):\n  - ${lateProblems.join('\n  - ')}`
+	);
+}
+
 if (prefixProblems.length > 0) {
 	console.error(`\nCSS output guard failed:\n  - ${prefixProblems.join('\n  - ')}`);
 }
 
 if (shellProblems.length > 0) {
-	console.error(`\nApp shell inlining failed:\n  - ${shellProblems.join('\n  - ')}`);
+	console.error(`\nLayout inlining failed:\n  - ${shellProblems.join('\n  - ')}`);
 }
 
 if (rootErrorProblems.length > 0) {
@@ -729,6 +761,7 @@ if (isolation.problems.length > 0) {
 const failed = rows.filter((r) => !r.ok);
 if (
 	failed.length > 0 ||
+	lateProblems.length > 0 ||
 	prefixProblems.length > 0 ||
 	shellProblems.length > 0 ||
 	rootErrorProblems.length > 0 ||
@@ -745,8 +778,9 @@ if (
 ) {
 	const what = [
 		...failed.map((r) => r.route),
+		...(lateProblems.length ? ['initial JS fetched late'] : []),
 		...(prefixProblems.length ? ['CSS prefixes'] : []),
-		...(shellProblems.length ? ['app shell inlining'] : []),
+		...(shellProblems.length ? ['layout inlining'] : []),
 		...(rootErrorProblems.length ? ['root error page'] : []),
 		...(payloadProblem ? ['SvelteKit start entry'] : []),
 		...(webauthnProblems.length ? ['WebAuthn library placement'] : []),

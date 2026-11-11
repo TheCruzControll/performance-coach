@@ -4,7 +4,8 @@
  * network; the projection and the route's reducers load through the page's chunk loader while it
  * reads, so neither is in the first render. The store (store.ts, with idb and every write) loads after the first render, through
  * the page's chunk loader, and from then on every change it reports is shown. It loads with the
- * page's one sync engine (online.ts), which close() stops.
+ * page's one sync engine (online.ts), which close() stops. A write asked for before then (a tap on
+ * the rest timer, the stopwatch or the logger) waits for it and runs as it opens (write()).
  *
  * - loading: restoring (the page shows its skeleton)
  * - empty: no workout is in progress on this device
@@ -38,6 +39,9 @@ export type Restore =
 /** Loads a code-split chunk, or answers null when it is gone (the page's loader says so). */
 export type ChunkLoad = <T>(load: () => Promise<T>) => Promise<T | null>;
 
+/** A write through the store, now or once it opens (ActiveWorkout.write). */
+export type StoreWrite = (run: (store: WorkoutStore) => unknown, key?: string) => void;
+
 export class ActiveWorkout {
 	current = $state.raw<Restore>({ phase: 'loading' });
 	/**
@@ -54,6 +58,8 @@ export class ActiveWorkout {
 	#table: AnyTable | null = null;
 	/** Lets go of the store and stops the engine; null once closed. */
 	#stop: (() => void) | null = () => {};
+	/** The writes asked for before the store opened, in the order asked. */
+	#early: { run: (store: WorkoutStore) => unknown; key?: string }[] = [];
 
 	constructor(table: () => Promise<AnyTable>) {
 		this.#loadTable = table;
@@ -101,12 +107,36 @@ export class ActiveWorkout {
 			const done = this.current.phase === 'completed' && this.current.snapshot.workoutId;
 			this.#show(await (done ? store.load(done) : store.getActive()));
 			this.store = store;
+			// The taps that came first, in order, each on the workout as it now is. Only into a
+			// workout still in progress: one finished meanwhile shows as completed instead.
+			for (const { run } of this.#early.splice(0)) {
+				if (this.current.phase !== 'active') continue;
+				try {
+					run(store);
+				} catch (error) {
+					// A failing tap fails as it would have in its own handler, never as this page's store.
+					queueMicrotask(() => {
+						throw error;
+					});
+				}
+			}
 			return store;
 		} catch (error) {
 			this.#fail(error);
 			return null;
 		}
 	}
+
+	/**
+	 * Runs `run` with the store: at once when it is open, else as connect() opens it, so a tap that
+	 * comes first is never lost. A write with the `key` of one still waiting is the same tap again
+	 * (nothing on screen has changed since) and waits no second time.
+	 */
+	write: StoreWrite = (run, key) => {
+		if (this.store) return void run(this.store);
+		if (key !== undefined && this.#early.some((early) => early.key === key)) return;
+		this.#early.push({ run, key });
+	};
 
 	/** A chunk of this build is gone: only a reload continues. */
 	stale(): void {
@@ -116,6 +146,7 @@ export class ActiveWorkout {
 	close(): void {
 		this.#stop?.();
 		this.#stop = null;
+		this.#early = [];
 	}
 
 	#fail(error: unknown) {
