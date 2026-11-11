@@ -13,6 +13,9 @@
  *    workout's canonical rows, read once the batch is done. For a workout the device says it
  *    holds the rows for (the body's `held`), only the rows the batch's applied and duplicate
  *    changes name go, as `changes` (domain/workout/changes.ts): the device folds them into its own.
+ * 5. Once anything applied to a workout that counts (completed, or deleted), sum the closed weeks
+ *    the batch marked stale into strength_week_rollups (services/analytics/strength-weeks.ts); a
+ *    failure there is logged and changes no result.
  *
  * - Rejected, deferred and retried mutations roll their transaction back, so they leave no ledger
  *   row: a corrected payload re-sent under the same id applies.
@@ -57,6 +60,7 @@ import {
 	TrainingNotFoundError,
 	type ResolvedTrainingDeps
 } from '../training/shared';
+import { refreshStrengthWeeks } from '../analytics/strength-weeks';
 import { isUuid } from '../ids';
 import { getCanonicalWorkout } from './canonical';
 import { exerciseHandlers } from './apply/exercises';
@@ -344,7 +348,32 @@ export async function applySyncBatch(
 	}
 
 	await attachCanonical(ownerId, results, mutationOf, new Set(deps.held), resolved.db);
+	if (results.some((r) => r.status === 'applied') && results.some(counts))
+		await refreshWeeks(ownerId, resolved);
 	return { v: 1, results };
+}
+
+/**
+ * A result whose workout counts in Progress, or has stopped counting: completed, or deleted. A
+ * held workout's `changes` carry its workout row whole, so either answer tells.
+ */
+const counts = ({ canonical, changes }: SyncResult) => {
+	const workout = (canonical ?? changes)?.workout;
+	return workout !== undefined && (workout.status === 'completed' || workout.deletedAt !== null);
+};
+
+/**
+ * Sum again the closed weeks the batch marked stale, and any not summed yet (the deploy's
+ * `pnpm db:migrate` writes the rest), so Progress reads them from strength_week_rollups. A
+ * workout still being logged counts nowhere yet, so a batch of only those skips this.
+ */
+async function refreshWeeks(ownerId: string, { db, now }: ResolvedTrainingDeps) {
+	try {
+		await refreshStrengthWeeks(db, ownerId, now());
+	} catch (err) {
+		// Applied is applied: a stale week is summed from the facts until the next sync.
+		logger.warn('sync: strength weeks not refreshed', { err });
+	}
 }
 
 /**

@@ -524,7 +524,7 @@ describe('CI Lighthouse', () => {
 		expect(value(job, 'if')).toBeUndefined();
 		// The same production Node build, served where the Lighthouse script looks for it.
 		const build = stepsOf(job).find((fields) => value(fields, 'run') === 'pnpm build:node')!;
-		expect(value(under(build, 'env'), 'ORIGIN')).toBe('http://localhost:4174');
+		expect(value(under(build, 'env'), 'ORIGIN')).toBe('https://localhost:4174');
 		// Its reports under a name of its own, beside the mobile job's.
 		const upload = stepsOf(job).find((fields) =>
 			value(fields, 'uses')?.startsWith('actions/upload-artifact@')
