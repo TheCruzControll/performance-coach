@@ -121,8 +121,11 @@
 			await run();
 		} catch (error) {
 			// Discard refused: it would bring a workout back into progress beside the one in progress.
+			// The sheet closes first: under its modal the toast is dimmed and never announced.
 			if (error instanceof ActiveWorkoutError) {
+				open = false;
 				toast.show('Finish or end the workout in progress first.', { tone: 'danger' });
+				return;
 			}
 			// Otherwise the store closed: the page shows why.
 		}
