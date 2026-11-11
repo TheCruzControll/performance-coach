@@ -12,7 +12,8 @@
  *   next write, or retry, writes it first, so the outbox keeps the order of the actions.
  * - Writes are serial within a page. Each one reads what other tabs wrote in its transaction, so
  *   none is lost; the device state is the last tab's to write.
- * - One workout is in progress at a time; a second workout.start is refused.
+ * - One workout is in progress at a time; a second workout.start is refused, and so is a Discard
+ *   that would bring a workout back into progress beside another.
  * - It closes for good when the database is deleted or upgraded under it (db.ts), or when another
  *   tab says sign-out is about to delete it.
  * - Tabs (channel.ts): after each write it tells the other tabs, which re-read what changed.
@@ -39,6 +40,7 @@ import type {
 	SyncResult,
 	WorkoutView
 } from '#lib/domain/workout/index.ts';
+import { canEnd } from '#lib/domain/workout/ends.ts';
 import { applyLocal, applyMutation, replay, viewOf } from '#lib/domain/workout/project.ts';
 import type { AnyTable, WorkoutState } from '#lib/domain/workout/project.ts';
 import { initialDevice } from '#lib/domain/workout/reducers/device.ts';
@@ -168,7 +170,8 @@ export interface WorkoutStore {
 	backOnline(offlineSince: number): Promise<void>;
 	/**
 	 * Discard: the entry and every change that depends on it leave the outbox, and their ids wait in
-	 * `discarded` until the server has claimed them.
+	 * `discarded` until the server has claimed them. Rejects with ActiveWorkoutError, writing
+	 * nothing, when it would bring a workout back into progress beside another.
 	 */
 	discard(seq: number): Promise<void>;
 	/** Try again: a stuck entry is queued again in its place, its count cleared. */
@@ -309,6 +312,28 @@ const fold = (table: AnyTable, state: WorkoutState, actions: readonly Action[]) 
 		state
 	);
 
+/**
+ * The status of a workout no rows hold (a purge stripped it): the previous one, moved by its pending
+ * finishes and abandons as WORKOUT's table allows, so a stripped workout still ends.
+ */
+function endedBy(
+	pending: readonly Mutation[],
+	previous: StoredWorkout | undefined
+): Pick<StoredWorkout, 'status' | 'finishedAt'> {
+	let status = previous?.status ?? 'in_progress';
+	let finishedAt = previous?.finishedAt ?? null;
+	for (const m of pending) {
+		if (m.type === 'workout.finish' && canEnd(status, 'finish')) {
+			status = 'completed';
+			finishedAt = m.at;
+		} else if (m.type === 'workout.abandon' && canEnd(status, 'abandon')) {
+			status = 'abandoned';
+			finishedAt = m.at;
+		}
+	}
+	return { status, finishedAt };
+}
+
 /** A workout's record, its header read from the projection of what it holds. */
 function recordOf(
 	table: AnyTable,
@@ -320,13 +345,14 @@ function recordOf(
 	const pending = entries.map((e) => e.envelope);
 	const row = replay(table, { workoutId, kit, canonical, pending, device }).rows?.workout;
 	const header = row ?? previous;
+	const { status, finishedAt } = row ?? endedBy(pending, previous);
 	return {
 		id: workoutId,
 		kind: header?.kind ?? table.kind,
 		title: header?.title ?? '',
 		startedAt: header?.startedAt ?? '',
-		status: header?.status ?? 'in_progress',
-		finishedAt: header?.finishedAt ?? null,
+		status,
+		finishedAt,
 		kit,
 		canonical,
 		device
@@ -675,8 +701,16 @@ export async function createStore({
 	 * An owner's answer (Discard, Try again, Fix) in one transaction: the outbox as `rule` leaves it,
 	 * each workout it touched re-recorded and shown, and with `remember` the removed ids kept to
 	 * send as discarded. A discarded workout.start takes its workout off the device.
+	 *
+	 * With `guard` (Discard) it refuses, writing nothing, to bring a workout back into progress
+	 * while another is in progress here: one in progress at a time. Try again and Fix pass none,
+	 * so they still work on a device that already holds two.
 	 */
-	async function rearrange(rule: (entries: OutboxEntry[]) => OutboxEntry[], remember = false) {
+	async function rearrange(
+		rule: (entries: OutboxEntry[]) => OutboxEntry[],
+		remember = false,
+		guard = false
+	) {
 		assertOpen();
 		const names = [STORES.workouts, STORES.outbox, STORES.meta];
 		const written = await serial(() =>
@@ -715,6 +749,11 @@ export async function createStore({
 					const entries = await outbox.index(BY_WORKOUT).getAll(workoutId);
 					const { kit, canonical, device } = previous;
 					const record = recordOf(table, workoutId, { kit, canonical, device, entries }, previous);
+					if (guard && previous.status !== 'in_progress' && record.status === 'in_progress') {
+						const others = await tx.objectStore(STORES.workouts).getAll();
+						const active = others.find((w) => w.id !== workoutId && w.status === 'in_progress');
+						if (active) throw new ActiveWorkoutError(active.id); // aborts: nothing is written
+					}
 					await tx.objectStore(STORES.workouts).put(record);
 					read.set(workoutId, { record, entries });
 				}
@@ -902,7 +941,7 @@ export async function createStore({
 		outbox,
 		countFailure: (seq, error) => revise((entries) => countFailure(entries, seq, error, now())),
 		backOnline: (offlineSince) => revise((entries) => backOnline(entries, offlineSince, now())),
-		discard: (seq) => rearrange((entries) => discard(entries, seq), true),
+		discard: (seq) => rearrange((entries) => discard(entries, seq), true, true),
 		tryAgain: (seq) => rearrange((entries) => tryAgain(entries, seq)),
 		fix: (seq, envelope) => rearrange((entries) => replaceInPlace(entries, seq, envelope)),
 		discarded,

@@ -787,6 +787,63 @@ describe("the owner's answers to a change that needs attention", () => {
 		await expect(store.fix(first!.seq, { ...fixed, id: 's9' })).rejects.toThrow(RangeError);
 		expect(await store.discarded()).toEqual([]);
 	});
+
+	it('a stripped workout ends when it is abandoned, so another can start', async () => {
+		const store = await open();
+		await started(store);
+		await store.acknowledge(appliedAll(W, [start()])); // a start's id is its workout's
+		await store.purgeServerCopies();
+		const abandon = make('workout.abandon', { payload: {} });
+
+		expect(await store.dispatch(abandon).saved).toBe('saved');
+
+		expect(await store.getActive()).toBeNull();
+		const db = await stored();
+		expect(db.ids).toEqual([abandon.id]);
+		expect(db.workouts[0]).toMatchObject({ id: W, status: 'abandoned', finishedAt: abandon.at });
+		await started(store, W2);
+		expect((await store.getActive())!.workoutId).toBe(W2);
+	});
+
+	it('Discard never brings a workout back into progress beside another', async () => {
+		const store = await open();
+		await started(store);
+		await store.acknowledge(appliedAll(W, [start()]));
+		const abandon = make('workout.abandon', { payload: {} });
+		expect(await store.dispatch(abandon).saved).toBe('saved');
+		await started(store, W2);
+		await store.acknowledge([{ id: abandon.id, status: 'rejected', code: 'invalid' }]);
+		const abandonSeq = (await store.outbox()).find((e) => e.envelope.id === abandon.id)!.seq;
+
+		await expect(store.discard(abandonSeq)).rejects.toBeInstanceOf(ActiveWorkoutError);
+		await expect(store.discard(abandonSeq)).rejects.toMatchObject({ workoutId: W2 });
+
+		const db = await stored();
+		expect(db.ids).toContain(abandon.id);
+		expect(db.workouts.find((w) => w.id === W)!.status).toBe('abandoned');
+		expect(await store.discarded()).toEqual([]);
+		expect((await store.getActive())!.workoutId).toBe(W2);
+	});
+
+	it('Try again still works on a device that already holds two workouts in progress', async () => {
+		const store = await open();
+		await started(store);
+		const raw = await openDB(DB_NAME);
+		const record = (await raw.get(STORES.workouts, W)) as StoredWorkout;
+		await raw.put(STORES.workouts, { ...record, id: W2, startedAt: iso(T0 + 60_000) });
+		raw.close();
+		const [entry] = await store.outbox();
+		for (let i = 0; i < STUCK_AFTER.failures; i++) {
+			await store.countFailure(entry!.seq, 'The server answered 500');
+		}
+		expect((await store.outbox())[0]!.parked?.reason).toBe('stuck');
+
+		await store.tryAgain(entry!.seq);
+
+		expect((await store.outbox())[0]!.parked).toBeUndefined();
+		const workouts = (await stored()).workouts;
+		expect(workouts.map((w) => w.status)).toEqual(['in_progress', 'in_progress']);
+	});
 });
 
 describe("/workout's prepainted card", () => {

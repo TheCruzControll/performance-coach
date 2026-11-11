@@ -10,7 +10,8 @@
       with the schemas (loaded on demand), then re-queued under its id, in its place. 'Deleted on another device' offers Discard only.
     - Try again, for a change parked after the cap: queued again, its count cleared.
     - Discard, after a confirmation that says how many changes go: the change and every later one
-      that depends on it.
+      that depends on it. A toast says so when the store refuses it, because it would bring a
+      workout back into progress beside the one in progress.
   - Waiting to sync: the rest, in order, in words.
   - A recovery session ('Finish adding your passkey') links to adding one; nothing is deleted.
   It re-reads the outbox whenever the store reports a change, so an answer shows at once.
@@ -20,6 +21,7 @@
 	import { onMount, tick } from 'svelte';
 	import { dependantsOf, STUCK_AFTER } from '#lib/client/workout/outbox-rules.ts';
 	import type { OutboxEntry, OutboxStatus } from '#lib/client/workout/outbox-rules.ts';
+	import { ActiveWorkoutError } from '#lib/client/workout/store.ts';
 	import type { WorkoutStore } from '#lib/client/workout/store.ts';
 	import { DEFAULT_LOAD_INCREMENT } from '#lib/domain/units.ts';
 	import { describeMutation, problemText } from '#lib/domain/workout/describe.ts';
@@ -30,6 +32,7 @@
 	import BottomSheet from '#lib/ui/components/BottomSheet.svelte';
 	import Button from '#lib/ui/components/Button.svelte';
 	import Notice from '#lib/ui/components/Notice.svelte';
+	import { toast } from '#lib/ui/toast.svelte.ts';
 	import { syncWords } from '#lib/ui/workout/sync-words.ts';
 	import { fixFor, type FixEntry } from './fix/registry.ts';
 	import SetEditSheet from './SetEditSheet.svelte';
@@ -113,8 +116,12 @@
 		confirming = null;
 		try {
 			await run();
-		} catch {
-			// The store closed: the page shows why.
+		} catch (error) {
+			// Discard refused: it would bring a workout back into progress beside the one in progress.
+			if (error instanceof ActiveWorkoutError) {
+				toast.show('Finish or end the workout in progress first.', { tone: 'danger' });
+			}
+			// Otherwise the store closed: the page shows why.
 		}
 		await tick();
 		list?.querySelector<HTMLElement>('button')?.focus();
