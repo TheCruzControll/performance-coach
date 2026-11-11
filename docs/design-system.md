@@ -165,8 +165,10 @@ Tracking: `--tracking-display -0.032em`, `--tracking-tight -0.016em`, `--trackin
 - Self-hosted from `@fontsource-variable/{mona-sans,hubot-sans}`; only the **latin** `wght`
   woff2 files are declared for the main ranges (39.8 KB + 48.3 KB); Mona latin-ext is declared
   with a `unicode-range` and only fetched when needed.
-- Both latin files are **preloaded** (policy in `src/lib/ui/fonts.ts`, applied in
-  `hooks.server.ts`; budget ≤ 2 files) with `font-display: swap`.
+- Only **Mona Sans latin** is **preloaded** (the text and numbers of every screen; policy in
+  `src/lib/ui/fonts.ts`, applied in `hooks.server.ts`; budget ≤ 2 files). Hubot Sans loads once
+  a heading uses it, so it does not share the connection with the app's start-up. Both use
+  `font-display: swap`.
 - Metric-matched fallbacks (`Mona Sans Fallback`, `Hubot Sans Fallback` → local Arial/Helvetica
   with `size-adjust` / `ascent-override` / `descent-override`) computed from the font files with
   fontTools; measured CLS is 0.000 on audited routes (docs/performance.md).
@@ -408,8 +410,9 @@ later-pass screen).
 - **Security** (`/profile/security`): readable, a settings screen, and left as it is (its route
   has the least initial-JS headroom). Its four sections and Sign out read, and Tab, in order.
 - **Design gallery** (`/design`, outside the shell): from 1024 px up to `--content-wide`, its
-  groups in pairs (Color beside Type, Components beside Cards & tones), each about a phone column
-  wide so no specimen stretches; the header and the icon grid span both, with larger cells.
+  groups in pairs (Color beside Type, Components beside Cards & tones, Charts beside Workout), each
+  about a phone column wide so no specimen stretches; the header and the icon grid span both, with
+  larger cells.
 - **Error and offline states** (`ErrorView`): inside the shell they stay in the readable column;
   outside it they are centred in the window at `--content-readable`.
 - **Profile** (`/profile`): wide. From 1024 px two columns, read row by row as on a phone: the
@@ -442,6 +445,19 @@ later-pass screen).
   wide, beside This week, the tools and the goals (at least `--content-list`). Build my program
   spans both: week 1 in the main column with Start week 1 as its column chrome, the block
   timeline beside it. A failed read and offline keep the readable column. CSS only.
+- **Workout pages** (`/workout`, `/workout/run`, `/workout/session`; outside the shell): from
+  1024 px the header spans the page in one row, and below it the Shell's two columns are centred:
+  the side column (`--content-list`: `ExerciseList` for strength, the segments for a run, sticky)
+  beside the main column (at most `--content-readable`: the current exercise, its sets and the
+  logger as a card under them). The rest timer docks at the top of the main column under the
+  header, over nothing, first in the DOM. A session, the start flow and every state screen keep one
+  readable column, centred. Below 1024 px one column, the logger and the rest pill in the thumb
+  zone (The workout screen).
+- **Workout history** (`/progress/workouts/[[id]]`): split. From 1024 px the list (waiting to sync,
+  then completed) beside the picked workout's detail on the same route (`aria-current`); with
+  none picked, a calm 'Pick a workout' card. Below 1024 px the list and the detail are separate
+  screens, and opening one moves focus to the detail's title. An exercise's name opens its history
+  as a centred dialog.
 
 ### Verification
 
@@ -484,7 +500,7 @@ later-pass screen).
 | `Chip`              | Quiet outlined label (e.g. a discipline) with an optional discipline-colour dot; static, not a control.                                                                                                                                                                            |
 | `ListRow`           | Tool/destination row: tinted icon tile, title, subtitle, chevron or `trailing` snippet; renders a link (`href`), a button (`onclick`) or a dashed, non-interactive row (`disabled`, for "Soon").                                                                                   |
 | `Section`           | Titled group on a screen ("This week", "Tools"): one heading style and spacing everywhere, `aria-labelledby` wired.                                                                                                                                                                |
-| `training/*`        | `PlateDiagram` (sleeve picture), `PlateCalculator` (code-split sheet body; its kg/lb switch is local and never changes the app-wide preference).                                                                                                                                   |
+| `training/*`        | `PlateDiagram` (sleeve picture), `PlateCalculator` (code-split sheet body; its kg/lb switch is local and never changes the app-wide preference; from a set row it opens at that set's weight and unit), `PlateInventory` (this device's bar and plates).                           |
 | `WeekStrip`         | `src/lib/ui/program`, like the next two. Seven days Monday first in a radiogroup (roving tabindex, arrows, Home/End), each ≥ 44 px at 393 px; a dot per session (a ring if skipped), counted in its name; the server's today ringed.                                               |
 | `SessionCard`       | A session: discipline dot, title, 'Strength · 60 min · Hard · Evening'; Skipped, Moved from Mon, Done and Baseline as worded badges; with `href` one link named by its title; `pending` sets `aria-busy` and sweeps a progress line.                                               |
 | `PrescriptionLines` | describe.ts's words as a list: '3 × 5 @ RPE 7', the load only when describe could compute one, its basis, rest and tempo, the baseline instruction; run steps with each segment's pace and effort. It never computes a number.                                                     |
@@ -528,13 +544,90 @@ radios.
 Screens compose these primitives instead of styling their own tiles, pills, rows or section
 headings, so the same pattern cannot drift between screens (PRD §16). `/design` shows every
 primitive (the Inputs, Data and Feedback groups load when their tab opens), and the Plan tab the
-program components on a fixture week, their pending and status states included.
+program components on a fixture week, their pending and status states included. Its Workout section
+shows every `src/lib/ui/workout` component in each state (loaded when it opens).
 
 Auth screens (`/`, `/setup`, `/recover`, `/recover/passkey`) share `src/routes/AuthScreen.svelte`:
 brand row, an editorial display headline, the brand mark as a quiet watermark, and the one action
 panel pinned to the thumb zone (a card beside the headline from 1024 px: Responsive layout →
 Screens). Security (`/profile/security`) uses grouped rows on `Surface`s, destructive actions
 behind a confirming `BottomSheet`, and toasts for outcomes.
+
+## The workout screen (M4)
+
+The screen used mid-set, sweaty and one-handed (PRD §7–§8). Every rule here holds on the three
+workout pages and is audited on `/design` → Workout, one state at a time.
+
+- **Focus mode.** The workout pages live outside the shell: no tab bar and no rail, so the thumb
+  zone belongs to logging. Minimise (top left) returns to Today, where the resume bar waits.
+- **Safe areas.** No shell applies them here, so the workout Shell does: the header
+  `--safe-top`, the content `--safe-left` and `--safe-right`, the foot `--safe-bottom`; the
+  logger pads its own foot above the home indicator.
+- **The thumb zone.** Below 1024 px the logger (`SetLogger`) is stuck to the foot, full-bleed, and
+  the rest pill sits just above it on every exercise; what is read (the card, the set rows) sits
+  above, what is tapped sits within reach. From 1024 px both move into the main column.
+- **Density mid-set.** The card says only what the next set needs: its place, the prescription
+  lines, the load, the rest and last time inline. Big tabular numerals for the steppers and the
+  rest; small quiet type for status. The load and the rest keep the room of the exercise's
+  tallest, and the logger keeps its fields from set to set, so logging a set moves nothing.
+- **One loud accent.** Complete set is the only primary button while a set is at hand; between
+  exercises Up next's Start (or Finish workout) takes its place. Everything else is secondary or
+  ghost; the accent also marks the current set's ring, the chosen RPE and 'Rest over'.
+- **Never colour alone.** Set states are words ('Now', 'Done', '2 missed', 'Not saved on this
+  device'), the sync pill is an icon and words, a chosen chip shows a tick beside its ring, and an
+  exercise's state ('Swapped for this session', 'Stopped') is written on the card.
+- **Targets.** At least 44 × 44 px at every width (the steppers' ± are 56 px); sheets are dialogs
+  that take focus, close on Escape and return it; RPE is one radio group.
+
+### Desktop layout
+
+- **Columns.** From 1024 px the header spans the page; under it the side column
+  (`--content-list`) holds the session's list (exercises with sets done and A1/A2 labels, or a
+  run's segments) beside the main column at the readable width (Responsive layout → Screens).
+- **The docked timer.** The rest timer docks at the top of the main column under the header, never
+  over content; the logger is a card under the set rows, not stuck to the window.
+- **History.** The list beside the picked workout's detail, 'Pick a workout' when none is picked.
+- **The resume bar.** On the rail layout it docks at the bottom of the content column, inset by the
+  rail, and the content's bottom padding grows with it (`--resume-inset`), so it covers nothing.
+- Every control has a hover state for fine pointers and a `:focus-visible` ring; the side list and
+  the steppers answer the arrow keys. No shortcut overrides a browser one (Alt+Arrow is Back).
+
+### Workout components
+
+| Component                        | Highlights                                                                                                                                                                                             |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `SetRow`                         | `src/lib/ui/workout`, like the next eight. One set: number, target or what was done, its state in words (to do, now, done, missed, skipped, extra, not saved); a logged one is a button to its editor. |
+| `SetLogger`                      | The set at hand: big steppers for exactly the fields its exercise records (weight, added weight, assistance; reps, time, distance), `RpeChips`, Missed reps, Skip set, Complete set (the one accent).  |
+| `RpeChips`                       | RPE 6–10 in halves and 'No RPE', two rows of native radios in a fieldset: one Tab stop, arrows move the choice, a tick beside the ring.                                                                |
+| `RestTimer`                      | Time left in big tabular numerals over a bar, exact after a reload; Pause, Reset, +30 s, Skip; paused: Resume; over: 'Rest over · 0:42 ago' in the accent with +30 s and Dismiss.                      |
+| `Stopwatch`                      | The workout's running time (a `timer`, not announced each second); the time is the Pause button; paused, it dims and opens Resume and Reset.                                                           |
+| `SyncPill`                       | Saved, Saving…, Offline · N pending, Retrying in n s, N need attention, Sign in to sync, Finish adding your passkey: icon and words, a fixed box, a 44 px button to the sync sheet.                    |
+| `UpNext`                         | The next exercise and its first target, the superset partner inside a round; between exercises Start, once all is done Finish workout; Add exercise; where the flow went, said politely.               |
+| `ExerciseCard`                   | The current exercise: place, A1/A2, name (a button to its history), prescription lines, load, rest, last time (or why there is none), its slot's state and what it replaced, Options, the set rows.    |
+| `ExerciseHistorySheet`           | An exercise's best e1RM (estimated), rep PRs and last performances a page at a time; offline the session this device holds; failed: Retry. Code-split, a centred dialog from 1024 px.                  |
+| `ExerciseList`                   | `src/routes/workout`, like the rest. The side column from 1024 px: each exercise with its label and sets done, `aria-current`, one Tab stop moved by the arrows, Add exercise after the last.          |
+| `WorkoutHeader`                  | Minimise with the sync pill, the title, the stopwatch and More: two rows on a phone, one row spanning the page from 1024 px; applies `--safe-top`.                                                     |
+| `ExerciseActionsSheet`           | Machine unavailable, Suggest an alternative, I don't like this exercise (confirmed first), This hurts, Skip exercise; alternatives as `AlternativeList` buttons with why each fits.                    |
+| `PainSheet`                      | Where, how bad and a note, all optional; then Stop this exercise, gentler options, or End the workout here; Profile → Injuries and a professional pointed to, never a diagnosis.                       |
+| `ExercisePicker`                 | Add exercise: the cached library searched by name and alias, arrows and Enter; offline with none cached, why and Try again; Add my own exercise under the list.                                        |
+| `CustomExerciseSheet`            | The owner's own exercise: name, measure, load, pattern, then muscles and equipment behind a disclosure; a name clash shows before anything is sent.                                                    |
+| `PlateSheet`                     | The plate calculator from a set row, at that set's weight and unit, with this device's bar and plates; focus returns to the row's plate button.                                                        |
+| `SetEditSheet`                   | A logged set's fields, missed reps, RPE and warm-up; Save sends every value, Delete asks first; reused as the Fix editor for set changes.                                                              |
+| `WorkoutMenu`                    | More: Finish workout, Settings (`SettingsSheet`: rest per exercise type, rest on completion, tone, vibration, screen awake, kept on the device at once) and Discard, which says what it does first.    |
+| `FinishSheet`                    | Open planned sets asked about first; then the `Summary` with the duration, session RPE and notes; Done finishes, and the page shows the completed state, offline too.                                  |
+| `StartConflictSheet`             | Another workout in progress: Resume it, or Discard it (what that does said first) and start the new one.                                                                                               |
+| `SyncIssuesSheet`                | Every change still on the device, in words: Needs attention with why, Fix (the registry's editors and Fix sheets), Try again and Discard (counted first); then Waiting to sync.                        |
+| `RunFixSheet`                    | `src/routes/workout/fix`, like the next two. A refused segment or run log: why first, then its values as `SegmentFields` asks for them (and its RPE and notes); Save re-queues it under the same id.   |
+| `OtherFixSheet`                  | A refused session log: why first, then `SessionFields` with the server's errors at their fields; a metric its plan lacks can be removed; Save re-queues it under the same id.                          |
+| `SubstituteFixSheet`             | A refused swap: the slot's alternatives again, ranked for the swap's reason, under why; choosing one re-queues the swap under the same id.                                                             |
+| `StartFlow`                      | Getting your session ready (a skeleton, aria-busy), the conflict sheet, signed out, or unreachable with no kit and a session of the owner's own instead; at the readable width.                        |
+| `EmptyWorkout`, `SignedOutState` | No workout on this device: Today, or a strength, run or other session of the owner's own. After a 401: no workout details, the changes waiting and Sign in.                                            |
+| `SegmentRow`                     | `src/routes/workout/run`. A run's segment: number, what it is, its target or what was run with the pace, its state in words; a 44 px button, the arrows move between rows.                             |
+| `RunView`, `SegmentFields`       | The run: the current segment's distance, time and heart rate (nudged or typed, the pace worked out as they change), Log segment, the segments, the totals, RPE and notes.                              |
+| `OtherView`, `SessionFields`     | `src/routes/workout/session`. What the plan asked for, then type, duration, RPE chips, each metric's control (`MetricField`) and notes; a draft on the device until Save.                              |
+| `WorkoutList`                    | `src/routes/(app)/progress/workouts`. History, newest first: waiting to sync (not links), then each workout's dot, title, date, duration and key number; one 44 px link, `aria-current`.               |
+| `WorkoutDetail`                  | One workout in words: its numbers, PRs, sets with RPE and states, a run's segments (`RunDetail`) or a session's metrics (`OtherDetail`); a name opens its history sheet.                               |
+| `ResumeBar`                      | `src/routes/(app)`. Resume workout · title with the time and the sync pill, or N changes waiting to sync; screen chrome over the column that raises `--resume-inset`, so it covers nothing.            |
 
 ## Accessibility checklist (applies to every new component)
 

@@ -1,62 +1,115 @@
 /**
- * Overview's code-split trends: the KPI tiles and the headline charts (OverviewTrends), the part
- * of Progress that is not the verdict in words. +page.ts starts the import in parallel with the
- * page's own code and never waits for it in the browser: the server renders the section as static
- * markup (`servedTrends`), which the page keeps as sent until the code arrives (TrendsLoader).
- * The verdicts that answer 'am I improving?' stay in the view's own chunk (docs/performance.md).
+ * Progress's code-split trends, one section per view, each in a chunk of its own:
+ *
+ * - Overview's (OverviewTrends): the KPI tiles and the headline charts, the part of Progress that
+ *   is not the verdict in words. +page.ts starts the import in parallel with the page's own code
+ *   and never waits for it in the browser; TrendsLoader holds the section's room until it arrives.
+ *   The verdicts that answer 'am I improving?' stay in the view's own chunk (docs/performance.md).
+ * - Strength's (StrengthTrends): the key lifts, volume, muscle groups, effort and PRs under the
+ *   view's intro. A client navigation waits for it as it waits for the view's own chunk, both
+ *   imports started together, so the frame holds busy and the view arrives whole
+ *   (SectionLoader).
+ * - Running's (RunningTrends): mileage, pace by run type, the long run, best efforts, runs per
+ *   week and heart rate under the view's intro, loaded as Strength's are (SectionLoader).
+ * - General's (GeneralTrends): adherence, sessions and time by discipline, load and its ratio,
+ *   Muay Thai and recovery under the view's intro, loaded as Strength's are (SectionLoader).
+ *
+ * Either way the server renders the section as static markup (`served…`), which the page keeps as
+ * sent until the code arrives, so hydration never waits for it.
  *
  * Not in +page.ts: scripts/check-budgets.ts counts an import written in a universal load's own
- * source as initial JS, and the load only starts this one, as Today's do with their panels.
+ * source as initial JS, and the load only starts these, as Today's do with their panels.
  */
 import type { Component } from 'svelte';
+import type { GeneralData } from './general-data';
 import type { OverviewData } from './load';
+import type { RunningData } from './running-data';
+import type { StrengthData } from './strength-data';
 
 export interface TrendsProps {
 	overview: OverviewData;
 }
 
-export const importTrends = (): Promise<{ default: Component<TrendsProps> }> =>
-	import('./OverviewTrends.svelte');
+export interface StrengthTrendsProps {
+	strength: StrengthData;
+}
+
+export interface RunningTrendsProps {
+	running: RunningData;
+}
+
+export interface GeneralTrendsProps {
+	general: GeneralData;
+}
+
+/** A section imported apart from its view: what SectionLoader starts and reads. */
+export interface LazySection<P extends object> {
+	preload(): Promise<void>;
+	settled(): Component<P> | Error | undefined;
+	served(props: P): Promise<string | undefined>;
+}
 
 /**
  * What the browser's load passes for the section the server rendered, while Progress hydrates:
- * any markup will do, as TrendsLoader keeps the server's (ServedInPlace).
+ * any markup will do, as the loader keeps the server's (ServedInPlace).
  */
 export const SERVED_IN_PLACE = 'served';
 
-/** What the latest import came to: the component, or the error it failed with. */
-let settled: Component<TrendsProps> | Error | undefined;
+/** A section imported apart from its view, with what its latest import came to. */
+function lazySection<P extends object>(
+	importer: () => Promise<{ default: Component<P> }>
+): LazySection<P> {
+	/** What the latest import came to: the component, or the error it failed with. */
+	let settled: Component<P> | Error | undefined;
 
-/**
- * Import the section and record what that came to. Never rejects: a failed import (offline, or a
- * chunk gone after a deploy) is recorded for TrendsLoader to offer Retry, and the next call
- * imports again.
- */
-export async function preloadTrends(): Promise<void> {
-	try {
-		settled = (await importTrends()).default;
-	} catch (error) {
-		settled = error instanceof Error ? error : new Error(String(error));
+	/**
+	 * Import the section and record what that came to. Never rejects: a failed import (offline,
+	 * or a chunk gone after a deploy) is recorded for the loader to offer Retry, and the next call
+	 * imports again.
+	 */
+	async function preload(): Promise<void> {
+		try {
+			settled = (await importer()).default;
+		} catch (error) {
+			settled = error instanceof Error ? error : new Error(String(error));
+		}
 	}
+
+	/**
+	 * The section's markup as static HTML for the server to send in its place, or undefined if
+	 * its import failed (the browser then imports it again). Its ids ($props.id) are prefixed, as
+	 * this render counts apart from the page's. Server only: `import.meta.env.SSR` keeps the
+	 * renderer out of the browser's build.
+	 */
+	async function served(props: P): Promise<string | undefined> {
+		const server = import.meta.env.SSR ? await import('svelte/server') : undefined;
+		if (!server) throw new Error('The trends are served by the server only');
+		await preload();
+		const Section = settled;
+		return Section instanceof Error || !Section
+			? undefined
+			: server.render(Section as Component<Record<string, unknown>>, {
+					props: props as Record<string, unknown>,
+					idPrefix: 'trends'
+				}).body;
+	}
+
+	/** The section's component once imported, its error if the latest import failed, else undefined. */
+	return { preload, settled: (): Component<P> | Error | undefined => settled, served };
 }
 
-/** The section's component once imported, its error if the latest import failed, else undefined. */
-export function settledTrends(): Component<TrendsProps> | Error | undefined {
-	return settled;
-}
+const overview = lazySection<TrendsProps>(() => import('./OverviewTrends.svelte'));
+export const strengthTrends = lazySection<StrengthTrendsProps>(
+	() => import('./StrengthTrends.svelte')
+);
+export const runningTrends = lazySection<RunningTrendsProps>(
+	() => import('./RunningTrends.svelte')
+);
+export const generalTrends = lazySection<GeneralTrendsProps>(
+	() => import('./GeneralTrends.svelte')
+);
 
-/**
- * The section's markup as static HTML for the server to send in its place, or undefined if its
- * import failed (the browser then imports it again). Its ids ($props.id) are prefixed, as this
- * render counts apart from the page's. Server only: `import.meta.env.SSR` keeps the renderer out
- * of the browser's build.
- */
-export async function servedTrends(props: TrendsProps): Promise<string | undefined> {
-	const server = import.meta.env.SSR ? await import('svelte/server') : undefined;
-	if (!server) throw new Error('The trends are served by the server only');
-	await preloadTrends();
-	const Trends = settledTrends();
-	return Trends instanceof Error || !Trends
-		? undefined
-		: server.render(Trends, { props, idPrefix: 'trends' }).body;
-}
+export const { preload: preloadTrends, settled: settledTrends, served: servedTrends } = overview;
+export const { preload: preloadStrengthTrends, served: servedStrengthTrends } = strengthTrends;
+export const { preload: preloadRunningTrends, served: servedRunningTrends } = runningTrends;
+export const { preload: preloadGeneralTrends, served: servedGeneralTrends } = generalTrends;

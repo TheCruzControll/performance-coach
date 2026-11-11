@@ -165,6 +165,9 @@ describe('getRunningDashboard', () => {
 			const tenK = board.efforts.find((d) => d.distance === '10k')!;
 			// Week 2's 10 km long run; the abandoned 5 km run is no effort.
 			expect(tenK.best).toMatchObject({ distanceMetres: longMetres(2), time: '55:00' });
+			// Each effort's day is the owner's: the Saturday run's start, the race's own date.
+			expect(tenK.best!.day).toBe(addDays(weekOf(2), 5));
+			expect(tenK.reported.map((r) => r.day)).toEqual([addDays(weekOf(8), 6)]);
 			expect(board.efforts.find((d) => d.distance === '5k')!.best).toBeNull();
 			expect(tenK.reported).toMatchObject([
 				{ label: 'reported', eventName: 'Riverside 10K', time: '48:00', pace: { text: '4:48 /km' } }

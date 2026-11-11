@@ -228,7 +228,9 @@ describe('getWeeklyTrainingSummary', () => {
 					sources: [week, strength],
 					about: metricAbout('group_sets')
 				},
-				dashboard: dashboardPath('general', '4w')
+				dashboard: dashboardPath('general', '4w'),
+				// Not reviewed yet.
+				review: null
 			});
 			expect(await getWeeklyTrainingSummary(owner, { today: TODAY, week: WEEK }, { db })).toEqual(
 				summary

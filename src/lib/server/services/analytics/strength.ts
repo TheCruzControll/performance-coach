@@ -45,7 +45,14 @@ import {
 	rpeDeviationSummary,
 	type Exposure
 } from '../../../domain/analytics/prescribed';
-import { byMonth, fillWeeks, soFar, totalOf, type Timed } from '../../../domain/analytics/series';
+import {
+	byMonth,
+	fillWeeks,
+	mean,
+	soFar,
+	totalOf,
+	type Timed
+} from '../../../domain/analytics/series';
 import {
 	keyLifts,
 	measuredMaxes,
@@ -64,6 +71,7 @@ import {
 import type { Availability, MetricKind, SeriesPoint } from '../../../domain/analytics/types';
 import { isHardSet } from '../../../domain/training/metrics';
 import { MUSCLE_GROUPS } from '../../../domain/training/vocabulary';
+import { cleanFloat } from '../../../domain/units';
 import { isWorking, volumeOf } from '../../../domain/workout/logging';
 import type { SetFact } from '../../db/repositories/analytics';
 import type { Executor } from '../../db/types';
@@ -139,6 +147,8 @@ export interface LiftRpe {
 	rated: number;
 	deviation: Shown | null;
 	deviations: number;
+	/** Mean RPE done and planned over the deviation's own sets; null without one. */
+	againstTarget: { actual: number; target: number } | null;
 }
 
 export type DashboardPr = StrengthPr & {
@@ -378,11 +388,15 @@ export async function getStrengthDashboard(
 		signed
 	);
 	const periodSets = setsIn(window.weeks);
-	const periodDeviation = rpeDeviationSummary(exposuresIn(window.weeks)).byExercise;
+	const periodExposures = exposuresIn(window.weeks);
+	const periodDeviation = rpeDeviationSummary(periodExposures).byExercise;
 	const byLift = [...new Set(periodSets.map((set) => set.exercise))]
 		.map((id): LiftRpe => {
 			const summary = rpeSummary(periodSets.filter((set) => set.exercise === id));
 			const dev = periodDeviation[id];
+			const target = mean(
+				periodExposures.flatMap((e) => (e.exerciseId === id && !e.substituted ? e.rpeTargets : []))
+			);
 			return {
 				...{ exerciseId: id, name: nameOf(id), rated: summary.rated },
 				average:
@@ -391,7 +405,11 @@ export async function getStrengthDashboard(
 						: { text: show('avg_rpe', summary.mean), value: summary.mean },
 				deviation:
 					dev?.mean == null ? null : { text: signed('rpe_deviation', dev.mean), value: dev.mean },
-				deviations: dev?.count ?? 0
+				deviations: dev?.count ?? 0,
+				againstTarget:
+					dev?.mean == null || target === null
+						? null
+						: { actual: cleanFloat(target + dev.mean, 2), target: cleanFloat(target, 2) }
 			};
 		})
 		.sort((a, b) => a.name.localeCompare(b.name));

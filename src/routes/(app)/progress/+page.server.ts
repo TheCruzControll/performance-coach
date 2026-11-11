@@ -7,11 +7,11 @@ import { progressParams } from './params';
 
 /**
  * TEST ONLY: with test routes enabled (never in production), this cookie set to 'progress' makes
- * the overview read throw, so e2e can show the load-failed notice and recover with Retry.
+ * the view's read throw, so e2e can show the load-failed notice and recover with Retry.
  */
 const FAIL_COOKIE = 'pc-test-fail';
 
-const failing: ProgressDeps['overview'] = () => {
+const failing = (): never => {
 	throw new Error('Forced failure (test routes)');
 };
 
@@ -30,6 +30,13 @@ export const load: PageServerLoad = async ({ cookies, locals, request, route, ur
 		owner,
 		{ ...progressParams(url.searchParams), origin },
 		new Date(),
-		forced ? { overview: failing } : {}
+		forced
+			? ({
+					overview: failing,
+					strength: failing,
+					running: failing,
+					general: failing
+				} satisfies ProgressDeps)
+			: {}
 	);
 };

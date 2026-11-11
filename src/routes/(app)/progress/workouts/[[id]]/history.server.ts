@@ -267,7 +267,8 @@ export function detailView(detail: WorkoutDetail, { timeZone }: Context): Workou
 		['Pace', known(run?.pace, (s) => `${formatDuration(s)} /${units.distance}`)],
 		['Avg HR', known(run?.avgHr, (hr) => `${hr} bpm`)],
 		['Session RPE', known(summary.sessionRpe ?? other?.rpe ?? canonical.run?.rpe, String)],
-		['Load', known(summary.sessionLoad, (load) => `${load} AU`)]
+		// Minutes × RPE from a duration in seconds: a fraction, shown whole as everywhere else.
+		['Load', known(summary.sessionLoad, (load) => `${Math.round(load)} AU`)]
 	];
 
 	const lines = (planned: NonNullable<WorkoutDetail['planned']>) => {
