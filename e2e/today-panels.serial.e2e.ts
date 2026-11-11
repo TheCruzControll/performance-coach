@@ -244,6 +244,9 @@ test.describe('with the service worker blocked, so page.route sees every chunk',
 		);
 		await page.waitForFunction(() => document.fonts.status === 'loaded');
 
+		// This week, under the summary (goals first), may move as the summary's actual height
+		// replaces its skeleton's: on a client navigation only, below the fold on a phone, and not
+		// worth reserving 24rem under a short summary.
 		await expectNoShift(page, {
 			boxes: [
 				page.getByRole('heading', { level: 1, name: 'Today' }),

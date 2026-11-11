@@ -60,11 +60,11 @@ describe('Today’s This week in words', () => {
 		expect(view.against).toMatch(/, 5 mi\.$/);
 	});
 
-	it('never invents a load for sessions logged without minutes or an RPE', () => {
+	it('never invents a load for sessions logged without minutes or an RPE, and says what it needs', () => {
 		const view = weekView(
 			figures({ sessions: { value: 2, lastWeek: 1 }, load: { value: null, lastWeek: null } })
 		);
-		expect(view.tiles[1]!.value).toBeNull();
+		expect(view.tiles[1]).toMatchObject({ value: null, caption: 'Needs an RPE' });
 		expect(view.against).toBe('By Wednesday last week: 1 session, 5 km.');
 	});
 

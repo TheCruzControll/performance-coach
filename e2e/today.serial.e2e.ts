@@ -451,6 +451,9 @@ test('a setup read that fails is a designed error with Retry inside the shell, a
 		await expect(page.getByRole('navigation', { name: 'Primary' })).toBeVisible();
 		await expect(page.locator('body')).not.toContainText(/500|internal error/i);
 		await expect(card(page)).toHaveCount(0);
+		// This week was not read either: it says so, never that the week is empty.
+		await expect(page.getByTestId('today-week-error')).toBeVisible();
+		await expect(thisWeek(page)).not.toContainText('Your week fills in as you log sessions.');
 		const retry = failed.getByRole('button', { name: 'Retry' });
 		const target = (await retry.boundingBox())!;
 		expect(target.height).toBeGreaterThanOrEqual(44);

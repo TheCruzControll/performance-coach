@@ -5,7 +5,7 @@
  * one statement is in flight at once, each on its own connection (the integration setup fails any
  * statement sent to a busy client).
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { Executor } from '../../../src/lib/server/db/types';
 import {
 	completeOnboarding,
@@ -15,8 +15,20 @@ import {
 import { createProgramFromPlan } from '../../../src/lib/server/services/programs/index';
 import { programFixture } from '../../../src/lib/server/test-support/program-fixtures';
 import { loadToday } from '../../../src/routes/(app)/today/load.server';
+import * as programRead from '../../../src/routes/(app)/today/program.server';
+import * as weekRead from '../../../src/routes/(app)/today/week.server';
 import { watchPool, withCommitted } from '../helpers';
 import { generalGoal, makeOwner } from '../profile/fixtures';
+
+// The reads as they are, watched: which ones loadToday starts.
+vi.mock('../../../src/routes/(app)/today/program.server', async (original) => {
+	const real = await original<typeof programRead>();
+	return { ...real, loadTodayProgram: vi.fn(real.loadTodayProgram) };
+});
+vi.mock('../../../src/routes/(app)/today/week.server', async (original) => {
+	const real = await original<typeof weekRead>();
+	return { ...real, loadTodayWeek: vi.fn(real.loadTodayWeek) };
+});
 
 /** A Thursday, and a morning on it. */
 const TODAY = '2026-11-05';
@@ -77,6 +89,8 @@ describe('Today’s page data', () => {
 	it('shows the setup card alone until onboarding is complete', async () => {
 		await withCommitted(async (db) => {
 			const owner = await makeOwner(db);
+			vi.mocked(programRead.loadTodayProgram).mockClear();
+			vi.mocked(weekRead.loadTodayWeek).mockClear();
 			const data = await loadToday(owner, { now, origin });
 			expect(data).toEqual({
 				setup: { complete: false, done: 0, total: expect.any(Number), next: 'welcome' },
@@ -84,6 +98,10 @@ describe('Today’s page data', () => {
 				plan: undefined,
 				week: undefined
 			});
+			// Once the program read has answered, the week's reads have not started for nothing.
+			await vi.mocked(programRead.loadTodayProgram).mock.results[0]!.value;
+			await new Promise((resolve) => setTimeout(resolve, 0));
+			expect(weekRead.loadTodayWeek).not.toHaveBeenCalled();
 		});
 	});
 

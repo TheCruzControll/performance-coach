@@ -122,7 +122,13 @@
 {#snippet weekTiles(tiles: readonly WeekTile[], busy = false)}
 	<div class="stats" aria-busy={busy || undefined}>
 		{#each tiles as tile (tile.id)}
-			<Stat label={tile.label} value={tile.value} unit={tile.unit} data-testid="today-stat" />
+			<Stat
+				label={tile.label}
+				value={tile.value}
+				unit={tile.unit}
+				caption={tile.caption}
+				data-testid="today-stat"
+			/>
 		{/each}
 	</div>
 {/snippet}
@@ -232,7 +238,8 @@
 				{@render weekTiles(EMPTY_TILES, true)}
 				<p class="line">Counting this week…</p>
 			{:then view}
-				{#if view?.failed}
+				<!-- No figures once set up (or with the setup unread): the week was not read, not empty. -->
+				{#if view?.failed || (!view && setup?.complete !== false)}
 					{@render weekTiles(EMPTY_TILES)}
 					<div class="error" data-testid="today-week-error">
 						<p class="line" role="status">Couldn’t load this week’s numbers.</p>

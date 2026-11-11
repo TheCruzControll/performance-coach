@@ -49,8 +49,9 @@ describe('Program', () => {
 			upNext: [{ ...card('Intervals', 'b0'), when: 'Tomorrow' }]
 		});
 		expect(html).toContain('data-testid="week-strip"');
-		// Today is named by the page's eyebrow date: its day says so to assistive tech only.
-		expect(html).toContain('class="visually-hidden">Today’s sessions</h2>');
+		// Today is named by the page's eyebrow date: its day says so to assistive tech only, and a
+		// rest day promises no sessions.
+		expect(html).toContain('class="visually-hidden">Today</h2>');
 		expect(html).not.toContain('Thursday 5 November');
 		expect(html).toContain('Next: Intervals, tomorrow.');
 		expect(html).toContain('Tomorrow');
@@ -107,6 +108,7 @@ describe('Program', () => {
 			['/workout?start=c0', 'ghost', 'Start Muay Thai class'],
 			['/workout', 'ghost', undefined]
 		]);
+		expect(html).toContain('class="visually-hidden">Today’s sessions</h2>');
 		expect(html.match(/Start workout/g)).toHaveLength(1);
 		expect(html).toMatch(
 			/data-testid="start-workout"><!--\[-1-->.*?<span class="label[^"]*"><!---->Start<!---->/

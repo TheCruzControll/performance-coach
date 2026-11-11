@@ -203,7 +203,7 @@
 					data-testid="week-strip"
 				/>
 				<Section
-					title={isToday ? 'Today’s sessions' : day.heading}
+					title={isToday ? (day.cards.length ? 'Today’s sessions' : 'Today') : day.heading}
 					titleHidden={isToday}
 					gap={isToday ? 'md' : 'sm'}
 					data-testid="today-day"
