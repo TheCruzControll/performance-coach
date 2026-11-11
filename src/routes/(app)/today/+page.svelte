@@ -10,6 +10,7 @@
 	import PageHeader from '#lib/ui/components/PageHeader.svelte';
 	import Section from '#lib/ui/components/Section.svelte';
 	import Stat from '#lib/ui/components/Stat.svelte';
+	import { isStale } from './freshness';
 	import { PANELS } from './panels';
 	import PanelLoader from './panels/PanelLoader.svelte';
 	import type { PageProps } from './$types';
@@ -60,6 +61,30 @@
 		today = new Date();
 	});
 
+	/**
+	 * Back in the foreground on another day, or after the TTL (freshness.ts): the date moves on
+	 * and Today loads again, so it never shows yesterday's plan. Not while Build my program is
+	 * open (its preview is the screen), and offline only the date moves: the load would fail.
+	 */
+	let loadedAt = new Date();
+	$effect.pre(() => {
+		void data;
+		loadedAt = new Date();
+	});
+	let refreshing = false;
+	async function refreshIfStale() {
+		const now = new Date();
+		if (document.visibilityState !== 'visible' || refreshing || !isStale(loadedAt, now)) return;
+		today = now;
+		if (building || !navigator.onLine) return;
+		refreshing = true;
+		try {
+			await invalidateAll();
+		} finally {
+			refreshing = false;
+		}
+	}
+
 	// Formatted without Intl: the first Intl.DateTimeFormat costs ~20 ms of main-thread time
 	// during hydration (measured with a CPU profile); these names never change.
 	const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -103,6 +128,8 @@
 <svelte:head>
 	<title>Today · Performance Coach</title>
 </svelte:head>
+
+<svelte:document onvisibilitychange={refreshIfStale} />
 
 <PageHeader title="Today" {eyebrow} />
 
