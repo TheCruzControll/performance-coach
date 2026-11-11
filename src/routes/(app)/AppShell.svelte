@@ -5,7 +5,8 @@
   on a desktop window Tab goes from the skip link through the rail to the content, as the eye
   reads it. Used by the (app) layout and by the root error page for app URLs, so a screen that
   fails to load (e.g. offline) never strands the user without navigation.
-  On idle after hydration it loads the resume bar (ResumeBar.svelte), one dynamic import: the bar
+  On idle after hydration (or, without an idle callback, as on WebKit, once the first frame has
+  painted) it loads the resume bar (ResumeBar.svelte), one dynamic import: the bar
   draws itself only when a workout waits on this device (or, on Today, on another one), so the
   offline screen, which the service worker serves inside this shell, is a way back into it too.
 -->
@@ -14,6 +15,7 @@
 	import { connectivity } from '#lib/client/connectivity.svelte.ts';
 	import AppNav from '#lib/ui/components/AppNav.svelte';
 	import Icon from '#lib/ui/components/Icon.svelte';
+	import { afterPaint } from '../workout/lazy.ts';
 	import { APP_NAV } from './nav';
 
 	interface Props {
@@ -41,7 +43,7 @@
 				() => {}
 			);
 		if ('requestIdleCallback' in window) requestIdleCallback(load, { timeout: 3000 });
-		else setTimeout(load, 1500);
+		else afterPaint(load);
 	});
 </script>
 
