@@ -143,6 +143,10 @@ type Base = Pick<
 >;
 type Directive<K extends ReplanDirective['kind']> = Extract<ReplanDirective, { kind: K }>;
 
+/** The phases of a block that tapers for an event. */
+const TAPER_PHASES: readonly Phase[] = ['taper', 'marathon_taper', 'half_taper'];
+/** The rule a taper a re-plan spliced into the sessions cites (taperPlanned). */
+const APPLIED = 'replan.splice';
 const sundayOf = (date: IsoDate) => addDays(mondayOf(date), 6);
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 const sessionKey = (s: { date: IsoDate; orderInDay: number }) => `${s.date}#${s.orderInDay}`;
@@ -347,13 +351,15 @@ function regenerate(
 }
 
 /**
- * The spliced taper's taper_planned decision, worded as the season words one: a later taper
- * directive for the same event finds it and is refused, so a taper is never applied twice.
+ * The spliced taper's taper_planned decision, worded as the season words one. It cites the splice
+ * (APPLIED), not the taper rule as the season's does: a re-plan's taper is in the sessions, so a
+ * later taper directive for the same event, mini or full, finds it and is refused, and every later
+ * splice or deload carries it on (generateReplan), so a taper is never applied twice.
  */
 function taperPlanned(title: string, taper: TaperPlan, block: number): DecisionPlan {
 	const { days } = taper;
 	const steps = days ? [days.factor] : taper.weeks.map((t) => t.factor);
-	return new DecisionLog().add('taper_planned', taper.ruleKey, [`blocks.${block}`], {
+	return new DecisionLog().add('taper_planned', APPLIED, [`blocks.${block}`], {
 		event: clip(title, 60),
 		date: taper.raceOn,
 		length: days
@@ -376,12 +382,17 @@ function splice(
 		return refuse('not_applicable', 'Only an event still ahead can be tapered for.');
 	const date = goal.eventDate;
 	const taper = taperWeeks(kind, directive.form === 'full' ? 'primary' : 'secondary', date);
-	const planned = current.decisions.some(
-		(d) =>
-			d.kind === 'taper_planned' &&
-			d.evidence.date === date &&
-			[taper.ruleKey, `taper.${kind}`].includes(d.ruleKey)
-	);
+	// A version records only its own decisions, so a full taper is also found by its block.
+	const planned =
+		current.blocks.some(
+			(b) => TAPER_PHASES.includes(b.phase) && b.startsOn <= date && b.endsOn >= date
+		) ||
+		current.decisions.some(
+			(d) =>
+				d.kind === 'taper_planned' &&
+				d.evidence.date === date &&
+				[APPLIED, taper.ruleKey, `taper.${kind}`].includes(d.ruleKey)
+		);
 	if (planned)
 		return refuse('not_applicable', `${goal.title} on ${date} already has its taper planned.`);
 	const first = taper.days?.from ?? taper.weeks[0]?.startsOn;
@@ -628,7 +639,20 @@ export function generateReplan(
 		];
 		weeks = [deload];
 	}
-	const decisions = [replanned(s, [`blocks.${s.full ? 0 : before.length}`]), ...made];
+	// A version records only its own decisions: a splice or a deload keeps the sessions of every
+	// taper a re-plan applied, so it carries their decisions on (a regenerate plans them afresh).
+	const within = (date: unknown) =>
+		blocks.findIndex((b) => b.startsOn <= String(date) && b.endsOn >= String(date));
+	const applied = current.decisions.flatMap((d) =>
+		s.mechanism !== 'regenerate' &&
+		d.kind === 'taper_planned' &&
+		d.ruleKey === APPLIED &&
+		String(d.evidence.date) >= s.from &&
+		within(d.evidence.date) >= 0
+			? [{ ...d, refs: [`blocks.${within(d.evidence.date)}`] }]
+			: []
+	);
+	const decisions = [replanned(s, [`blocks.${s.full ? 0 : before.length}`]), ...made, ...applied];
 	const checked = validate(programPlanSchema, {
 		title: current.title,
 		startsOn: s.full ? s.from : current.startsOn,

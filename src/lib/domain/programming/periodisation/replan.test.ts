@@ -422,12 +422,21 @@ describe('splice: a taper', () => {
 		expect(r5.decisions).toContainEqual(
 			expect.objectContaining({
 				kind: 'taper_planned',
-				ruleKey: 'taper.marathon',
+				ruleKey: 'replan.splice',
 				refs: ['blocks.0']
 			})
 		);
 		const again = { today: start, from: start, current: r5.plan };
 		expect(refusal(s5, full(marathon), again)).toBe('not_applicable');
+	});
+
+	it('refuses a full taper already planned by an earlier version, found by its block', () => {
+		// A stored version records only its own decisions: a later version may not carry taper_planned.
+		const later = { today: start, from: start, current: { ...r5.plan, decisions: [] } };
+		expect(refusal(s5, full(marathon), later)).toBe('not_applicable');
+		const seasonal = generate(s5);
+		const own = { today: start, from: start, current: { ...seasonal, decisions: [] } };
+		expect(refusal(s5, full(marathon), own)).toBe('not_applicable');
 	});
 
 	it('refuses a taper for an event after the plan ends', () => {
@@ -447,24 +456,26 @@ describe('splice: a taper', () => {
 		expect(r5.plan.blocks.at(-1)).toEqual(before5.blocks.at(-1));
 	});
 
+	const race = '00000000-0000-4000-8007-000000000999';
+	const meet = M7_SCENARIOS.meetPrep();
+	/** meetPrep with a secondary 10K: the season gives it a mini-taper. */
+	const ten: TrainingProfile = {
+		...meet,
+		goals: [
+			...meet.goals.map((g) => (g.priority === 2 ? { ...g, priority: 3 } : g)),
+			{
+				...meet.goals[0]!,
+				id: race,
+				title: '10K race',
+				disciplines: ['running'],
+				eventType: '10K race',
+				eventDate: m7Day(7, 5),
+				priority: 2
+			}
+		]
+	};
+
 	it('plans a mini-taper upgraded to full, and refuses a taper already planned', () => {
-		const race = '00000000-0000-4000-8007-000000000999';
-		const meet = M7_SCENARIOS.meetPrep();
-		const ten: TrainingProfile = {
-			...meet,
-			goals: [
-				...meet.goals.map((g) => (g.priority === 2 ? { ...g, priority: 3 } : g)),
-				{
-					...meet.goals[0]!,
-					id: race,
-					title: '10K race',
-					disciplines: ['running'],
-					eventType: '10K race',
-					eventDate: m7Day(7, 5),
-					priority: 2
-				}
-			]
-		};
 		const current = generate(ten);
 		expect(
 			current.decisions.find((d) => d.kind === 'taper_planned' && d.evidence.length === '3 days')
@@ -479,6 +490,29 @@ describe('splice: a taper', () => {
 			'not_applicable'
 		);
 		expect(refusal(ten, full(goalId(ten, /meet/i)), opts)).toBe('not_applicable');
+	});
+
+	it('never applies a re-plan’s mini-taper twice: not after a later re-plan, nor under a full one', () => {
+		// runnerLifter with a secondary 10K in its detailed block, and no light week near its start.
+		const runner = M7_SCENARIOS.runnerLifter();
+		const soon: TrainingProfile = {
+			...runner,
+			goals: [
+				...runner.goals.map((g) => (g.priority === 2 ? { ...g, priority: 3 } : g)),
+				{ ...ten.goals.at(-1)!, eventDate: m7Day(5, 5) }
+			]
+		};
+		const mini: ReplanDirective = { kind: 'taper', goalRef: race, form: 'mini' };
+		// A later version, without the season's own taper_planned: the mini-taper applies.
+		const v1 = { ...generate(soon), decisions: [] };
+		const v2 = replan(soon, mini, { today: start, from: start, current: v1 }).plan;
+		const deload: ReplanDirective = { kind: 'deload', week: start, trigger: 'owner', reasons: [] };
+		const v3 = replan(soon, deload, { today: start, from: start, current: v2 }).plan;
+		for (const current of [v2, v3]) {
+			const opts = { today: start, from: start, current };
+			expect(refusal(soon, mini, opts)).toBe('not_applicable');
+			expect(refusal(soon, full(race), opts)).toBe('not_applicable');
+		}
 	});
 
 	it('is refused as too_close from the taper’s second week, never a shortened taper', () => {
