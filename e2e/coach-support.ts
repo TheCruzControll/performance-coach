@@ -122,7 +122,7 @@ export async function ownerMessages(threadId: string): Promise<{ id: string; tex
 	);
 }
 
-/** The newest run: how the last turn ended, and with which error. */
+/** The newest turn run (a summary made after an answer is not one): how it ended, and why. */
 export async function lastRun(): Promise<{
 	id: string;
 	threadId: string;
@@ -131,7 +131,7 @@ export async function lastRun(): Promise<{
 } | null> {
 	const [run] = await query<{ id: string; threadId: string; status: string; error: string | null }>(
 		`select id::text, thread_id::text as "threadId", status, error from agent_runs
-		order by started_at desc, id desc limit 1`
+		where kind <> 'summary' order by started_at desc, id desc limit 1`
 	);
 	return run ?? null;
 }

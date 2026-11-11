@@ -9,8 +9,10 @@ import { backupLogFields } from '#lib/server/backup/config.ts';
 import { guardRequest } from '#lib/server/auth/guard.ts';
 import { getEnv } from '#lib/server/env.ts';
 import { createContext, runWithContext } from '#lib/server/observability/context.ts';
+import { instance } from '#lib/server/observability/instance.ts';
 import { logger } from '#lib/server/observability/logger.ts';
 import { serverTimingHeader } from '#lib/server/observability/timing.ts';
+import { stylesFirst } from '#lib/server/head-order.ts';
 import { SECURITY_HEADERS } from '#lib/server/security-headers.ts';
 import { recordServerError } from '#lib/server/services/errors.ts';
 import { shouldPreloadFont } from '#lib/ui/fonts.ts';
@@ -45,6 +47,8 @@ function withHeaders(response: Response, headers: Record<string, string>): Respo
 }
 
 export const handle: Handle = async ({ event, resolve }) => {
+	// Cold (this process's first request) or warm, noted on arrival: in the log and Server-Timing.
+	const { start, instanceAgeMs } = instance.note();
 	const incoming =
 		event.request.headers.get('x-request-id') ?? event.request.headers.get('x-vercel-id');
 	const requestId = incoming && REQUEST_ID.test(incoming) ? incoming : crypto.randomUUID();
@@ -62,13 +66,16 @@ export const handle: Handle = async ({ event, resolve }) => {
 				preload: (input) =>
 					input.type === 'js' ||
 					input.type === 'css' ||
-					(input.type === 'font' && shouldPreloadFont(input.filename))
+					(input.type === 'font' && shouldPreloadFont(input.filename)),
+				// The styles first paint waits for go before the preload hints (head-order.ts).
+				transformPageChunk: ({ html }) => stylesFirst(html)
 			}));
 
 		const durationMs = performance.now() - ctx.startedAt;
+		const serverTiming = serverTimingHeader(ctx, durationMs, start);
 		const headers: Record<string, string> = {
 			...SECURITY_HEADERS,
-			'server-timing': serverTimingHeader(ctx, durationMs),
+			'server-timing': serverTiming,
 			'x-request-id': requestId
 		};
 		const type = response.headers.get('content-type') ?? '';
@@ -84,7 +91,10 @@ export const handle: Handle = async ({ event, resolve }) => {
 				path: event.url.pathname,
 				route: event.route.id,
 				status: response.status,
-				durationMs: Math.round(durationMs * 10) / 10
+				durationMs: Math.round(durationMs * 10) / 10,
+				start,
+				instanceAgeMs,
+				serverTiming
 			});
 		}
 		return withHeaders(response, headers);

@@ -24,22 +24,34 @@
  *   timed with devalue's serialisation after WARM_UPS untimed runs; the median against
  *   PAGE_TARGET_MS is reported, and a median over PAGE_LIMIT_MS or page data over
  *   PAGE_DATA_LIMIT_BYTES gzip fails the run.
+ * - The strength week rollups (services/analytics/strength-weeks.ts): their two reads are
+ *   explained with the rest. The heavy loads are timed first with every week summed from the
+ *   facts (recorded, not gated: the gated loads are the same pages read from the rollups), then
+ *   every closed week is written as a deploy's first sync of a finished workout writes it, and the
+ *   page data of every view at every period, on three days of the last week, must be the same
+ *   devalue'd from the rollups as from the facts, with every week stale, with every third and with
+ *   the later half. Every other load then reads the rollups.
  * - history.explain.ts writes the returned lines as the M6 section of test-results/explain.md.
  */
 import { execSync } from 'node:child_process';
 import os from 'node:os';
+import { stringify } from 'devalue';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import type { SQL } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import type pg from 'pg';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { addDays, mondayOf, type IsoDate } from '../../src/lib/domain/calendar';
+import { addDays, daysBetween, mondayOf, type IsoDate } from '../../src/lib/domain/calendar';
+import { PERIODS } from '../../src/lib/domain/analytics/period-names';
 import type { Period } from '../../src/lib/domain/analytics/periods';
 import * as a from '../../src/lib/server/db/queries/analytics';
 import * as r from '../../src/lib/server/db/queries/reviews';
+import * as sw from '../../src/lib/server/db/queries/strength-weeks';
 import type * as schema from '../../src/lib/server/db/schema';
 import type { Executor } from '../../src/lib/server/db/types';
 import { windowsOf } from '../../src/lib/server/services/analytics/facts';
+import { getStrengthDashboard } from '../../src/lib/server/services/analytics/strength';
+import { refreshStrengthWeeks } from '../../src/lib/server/services/analytics/strength-weeks';
 import {
 	createCycleReview,
 	createWeeklyReview,
@@ -245,6 +257,15 @@ export function analyticsExplain({ client, db, owner, readCatalog, render }: Har
 
 	// The reviews the services write, and what the cases and loads read of them.
 	const week = addDays(mondayOf(TODAY), -7);
+	/** Last week's counted workouts, whose spans a rollup's write reads. */
+	const lastWeekWorkouts = data.workouts.flatMap((w) =>
+		w.status === a.COUNTED_STATUS &&
+		!w.deletedAt &&
+		w.startedAt! >= new Date(`${week}T00:00:00Z`) &&
+		w.startedAt! < new Date(`${mondayOf(TODAY)}T00:00:00Z`)
+			? [w.id!]
+			: []
+	);
 	const loaded = {
 		block: { programId: '', blockLineage: '' },
 		superseded: { weekly: '', cycle: '' },
@@ -278,6 +299,16 @@ export function analyticsExplain({ client, db, owner, readCatalog, render }: Har
 			() => a.exerciseMuscles(db, loaded.exercises)
 		],
 		['blockInputs, the active program', [], () => a.blockInputs(db, program)],
+		[
+			'strengthWeekRows, every week of the strength week rollups',
+			[sw.STRENGTH_WEEKS_INDEXES.weeks],
+			() => sw.strengthWeekRows(db, owner, FIRST_MONDAY, mondayOf(TODAY))
+		],
+		[
+			`workoutSpans, last week's ${lastWeekWorkouts.length} workouts`,
+			[sw.STRENGTH_WEEKS_INDEXES.spans],
+			() => sw.workoutSpans(db, owner, lastWeekWorkouts)
+		],
 		['firstActivity', [], () => a.firstActivity(db, owner)],
 		['reviews liveWeeklyReview', [R.liveWeeklyReview], () => r.liveWeeklyReview(db, owner, week)],
 		[
@@ -344,11 +375,75 @@ export function analyticsExplain({ client, db, owner, readCatalog, render }: Har
 		]
 	];
 
+	/**
+	 * The heavy /progress loads, timed again with every week summed from the facts, as before the
+	 * rollups and until the first write after a deploy: recorded beside the gated loads, which read
+	 * the rollups.
+	 */
+	const FROM_FACTS: Load[] = TIMED_PERIODS.flatMap((period) =>
+		(['overview', 'strength'] as const).map((view): Load => [
+			`/progress ${view}, ${period}, every week summed from the facts`,
+			() => loadProgress(owner, { view, period, origin: ORIGIN }, NOW, deps)
+		])
+	);
+	/** Every closed week marked stale, as a write to each would mark it. */
+	const markStale = (weeks?: readonly IsoDate[]) =>
+		client.query(
+			`update strength_week_rollups set generation = generation + 1, written_at = null,
+				digest = null, split = false
+			 where owner_id = $1 and ($2::date[] is null or week_start = any($2::date[]))`,
+			[owner, weeks ?? null]
+		);
+	/**
+	 * Every view's page data at every period, the Strength view's whole dashboard and the
+	 * overview's, devalue'd, on a Monday, a Wednesday and a Sunday of the dataset's last week.
+	 */
+	async function pages(): Promise<Map<string, string>> {
+		const out = new Map<string, string>();
+		for (const today of [addDays(TODAY, -2), TODAY, addDays(TODAY, 4)]) {
+			const on = { ...deps, today: () => Promise.resolve(today) };
+			const now = new Date(`${today}T12:00:00Z`);
+			for (const period of PERIODS) {
+				for (const view of PROGRESS_VIEWS) {
+					const data = await loadProgress(owner, { view, period, origin: ORIGIN }, now, on);
+					out.set(`${today} ${view} ${period}`, stringify(data));
+				}
+				const strength = await getStrengthDashboard(db, owner, { period, today });
+				out.set(`${today} strength dashboard ${period}`, stringify(strength));
+			}
+		}
+		return out;
+	}
+
 	let catalog: Catalog | undefined;
+	let backfill = '';
 	const results: string[] = [];
 	const plans: string[] = [];
 	const timings: string[] = [];
 	let machineLine = '';
+
+	/**
+	 * A load timed, its line kept for the report; it fails over the page data limit, and over
+	 * PAGE_LIMIT_MS unless its time is only `recorded`.
+	 */
+	async function time(name: string, load: () => Promise<unknown>, recorded = false) {
+		const timing = await timeLoad(load);
+		const slow = loadProblems({ ...timing, size: { raw: 0, gzip: 0 } });
+		const problems = recorded ? loadProblems({ ...timing, median: 0 }) : loadProblems(timing);
+		const verdict = timing.median <= PAGE_TARGET_MS ? 'within' : 'over';
+		const gate = problems.length
+			? problems.join('; ')
+			: recorded
+				? `time recorded${slow.length ? `: ${slow.join('; ')}` : ''}`
+				: 'pass';
+		timings.push(
+			`| ${name} | ${timing.median.toFixed(1)} ms | ${timing.p95.toFixed(1)} ms | ${verdict} ${PAGE_TARGET_MS} ms | ${kb(timing.size.gzip)} (${kb(timing.size.raw)}) | ${gate} |`
+		);
+		console.log(
+			`\n${name} (${machineLine})\nmedian ${timing.median.toFixed(1)} ms, p95 ${timing.p95.toFixed(1)} ms, page data ${kb(timing.size.gzip)} gzip (${kb(timing.size.raw)})`
+		);
+		expect(problems, name).toEqual([]);
+	}
 
 	describe('M6 analytics on the analytics owner', () => {
 		beforeAll(async () => {
@@ -452,21 +547,55 @@ export function analyticsExplain({ client, db, owner, readCatalog, render }: Har
 			expect(pending).toEqual([]);
 		});
 
-		it.each(LOADS)(
+		it.each(FROM_FACTS)(
 			`times %s: ${WARM_UPS} warm-ups, then the median and p95 of ${TIMED_RUNS} runs`,
 			async (name, load) => {
-				const timing = await timeLoad(load);
-				const problems = loadProblems(timing);
-				const verdict = timing.median <= PAGE_TARGET_MS ? 'within' : 'over';
-				const gate = problems.length ? problems.join('; ') : 'pass';
-				timings.push(
-					`| ${name} | ${timing.median.toFixed(1)} ms | ${timing.p95.toFixed(1)} ms | ${verdict} ${PAGE_TARGET_MS} ms | ${kb(timing.size.gzip)} (${kb(timing.size.raw)}) | ${gate} |`
-				);
-				console.log(
-					`\n${name} (${machineLine})\nmedian ${timing.median.toFixed(1)} ms, p95 ${timing.p95.toFixed(1)} ms, page data ${kb(timing.size.gzip)} gzip (${kb(timing.size.raw)})`
-				);
-				expect(problems, name).toEqual([]);
+				await markStale();
+				await time(name, load, true);
 			},
+			120_000
+		);
+
+		it("writes every closed week once, as a deploy's first sync of a finished workout does", async () => {
+			await markStale();
+			const started = performance.now();
+			const written = await refreshStrengthWeeks(db, owner, NOW);
+			const took = performance.now() - started;
+			const { rows } = await client.query<{ split: number; weeks: number }>(
+				`select count(*) filter (where split)::int as split, count(*)::int as weeks
+				 from strength_week_rollups where owner_id = $1 and written_at is not null`,
+				[owner]
+			);
+			backfill = `${written} closed weeks written in ${took.toFixed(0)} ms, ${rows[0]!.split} of them split`;
+			console.log(`\nstrength week rollups: ${backfill}`);
+			expect(written).toBe(rows[0]!.weeks);
+			expect(written).toBe(daysBetween(FIRST_MONDAY, mondayOf(TODAY)) / 7);
+			// A second write finds every week current and writes nothing.
+			expect(await refreshStrengthWeeks(db, owner, NOW)).toBe(0);
+		});
+
+		it('gives the same page data from the rollups as from the facts, for every view and period', async () => {
+			await markStale();
+			const facts = await pages();
+			await refreshStrengthWeeks(db, owner, NOW);
+			expect(await pages()).toEqual(facts);
+			// Some weeks stale, the rest from their rollups: every third week, then the second half.
+			const { rows } = await client.query<{ week: IsoDate }>(
+				`select week_start::text as week from strength_week_rollups
+					 where owner_id = $1 and written_at is not null order by week_start`,
+				[owner]
+			);
+			const weeks = rows.map((row) => row.week);
+			for (const stale of [weeks.filter((_, i) => i % 3 === 0), weeks.slice(weeks.length >> 1)]) {
+				await markStale(stale);
+				expect(await pages()).toEqual(facts);
+				await refreshStrengthWeeks(db, owner, NOW);
+			}
+		}, 300_000);
+
+		it.each(LOADS)(
+			`times %s: ${WARM_UPS} warm-ups, then the median and p95 of ${TIMED_RUNS} runs`,
+			time,
 			120_000
 		);
 	});
@@ -493,7 +622,7 @@ export function analyticsExplain({ client, db, owner, readCatalog, render }: Har
 						'| --- | --- | --- | ---: | ---: | ---: | ---: | --- |',
 						...results,
 						'',
-						`Page loads on two years of data, serialisation included (${machineLine}): ${WARM_UPS} warm-ups, then the median and p95 of ${TIMED_RUNS} runs. The target is reported; a median over ${PAGE_LIMIT_MS} ms or page data over ${kb(PAGE_DATA_LIMIT_BYTES)} gzip fails.`,
+						`Page loads on two years of data, serialisation included (${machineLine}): ${WARM_UPS} warm-ups, then the median and p95 of ${TIMED_RUNS} runs. The target is reported; a median over ${PAGE_LIMIT_MS} ms or page data over ${kb(PAGE_DATA_LIMIT_BYTES)} gzip fails. The loads 'every week summed from the facts' run before the strength week rollups are written (${backfill || 'not written'}) and are recorded; the rest read them.`,
 						'',
 						'| Load | Median | p95 | Target | Page data gzip (raw) | Gate |',
 						'| --- | ---: | ---: | --- | ---: | --- |',

@@ -47,14 +47,14 @@ import { addDays, mondayOf, type IsoDate } from '../../../domain/calendar';
 import { localDay } from '../../../domain/dates';
 import type { AnalyticsRepository } from '../../db/repositories/analytics';
 import type { Executor } from '../../db/types';
-import { getExercisesByIds } from '../exercises/index';
 import { getAthleteProfile } from '../profile/index';
 import { getCurrentProgram, getTrainingWeek } from '../programs/index';
-import { createFactsLoader, createQueue, sharedFacts, type FactsSource } from './facts';
+import { createFactsLoader, createQueue, sharedFacts } from './facts';
 import type { DisplayUnits } from './format';
 import { ACWR_WINDOW_DAYS, GENERAL_METRICS, getGeneralDashboard } from './general';
 import { getRunningDashboard } from './running';
 import { getStrengthDashboard } from './strength';
+import { createStrengthWeeks, type StrengthWeeksSource } from './strength-weeks';
 
 /** The tiles the overview shows, in order: an owner's choice, changed here. */
 export const OVERVIEW_KPIS = [
@@ -181,7 +181,8 @@ export async function getProgressOverview(
 	{ period, today }: { period: Period; today: IsoDate },
 	{ repository }: OverviewDeps = {}
 ): Promise<ProgressOverview> {
-	const { timeZone } = await getAthleteProfile(ownerId, { db });
+	const profile = await getAthleteProfile(ownerId, { db });
+	const { timeZone } = profile;
 	const queue = createQueue();
 	const everyDay = createFactsLoader(
 		db,
@@ -194,8 +195,16 @@ export async function getProgressOverview(
 	const trend = trendWindow(window);
 	const range = { ...sharedRange(window, trend, today), timeZone };
 	const facts = sharedFacts(db, ownerId, range, { repository, queue, everyDay });
+	// The strength weeks read sets on their own, a closed week's from its rollup: the other
+	// dashboards read none, so the shared facts never read every set.
+	const strengthWeeks = createStrengthWeeks(db, ownerId, profile, { repository });
 	const query = { period, today };
-	const strength = await getStrengthDashboard(db, ownerId, { ...query, headline: true }, { facts });
+	const strength = await getStrengthDashboard(
+		db,
+		ownerId,
+		{ ...query, headline: true },
+		{ facts, weeks: strengthWeeks, repository }
+	);
 	const running = await getRunningDashboard(db, ownerId, query, { facts });
 	const general = await getGeneralDashboard(db, ownerId, query, { facts });
 
@@ -277,7 +286,10 @@ export async function getProgressOverview(
 	}).filter(({ points }) => points.some((p) => (p.value ?? 0) > 0));
 
 	const judgedAny = verdicts.some((v) => v.verdict !== 'not_enough_data');
-	const availability = await sectionsOf(db, ownerId, { today, first, timeZone, facts, judgedAny });
+	const availability = await sectionsOf(db, ownerId, {
+		...{ today, first, timeZone, judgedAny },
+		weeks: strengthWeeks
+	});
 	const timeline = SECTIONS.map((section) => availability[section]).sort((a, b) =>
 		a.on === b.on ? 0 : a.on === null ? 1 : b.on === null ? -1 : a.on < b.on ? -1 : 1
 	);
@@ -317,13 +329,13 @@ async function sectionsOf(
 		today,
 		first,
 		timeZone,
-		facts,
+		weeks,
 		judgedAny
 	}: {
 		today: IsoDate;
 		first: IsoDate | null;
 		timeZone: string;
-		facts: FactsSource;
+		weeks: StrengthWeeksSource;
 		/** Whether any verdict in the response has a trend: verdicts are ready only then. */
 		judgedAny: boolean;
 	}
@@ -331,10 +343,8 @@ async function sectionsOf(
 	const program = await getCurrentProgram(ownerId, today, { db });
 	/** The first logged day and the first e1RM line's, from the sets of `first` to `to`. */
 	const loggedTo = async (to: IsoDate) => {
-		const sets = first === null || first > today ? [] : await facts(first, to).sets();
-		const exercises = await getExercisesByIds(ownerId, [...new Set(sets.map((s) => s.exercise))], {
-			db
-		});
+		const sets = first === null || first > today ? [] : await weeks.sets(first, to);
+		const exercises = await weeks.exercises(sets.map((s) => s.exercise));
 		const days = sets.map((set) => localDay(set.performedAt, timeZone)).sort();
 		const lifts = [...Map.groupBy(sets, (set) => set.exercise)].flatMap(([id, facts]) => {
 			const lift = exercises.get(id);

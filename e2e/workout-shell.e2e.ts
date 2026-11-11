@@ -96,16 +96,23 @@ test.describe('the workout screen (IndexedDB only)', () => {
 		]);
 		// The stopwatch runs from the start, 12 minutes ago.
 		await expect(page.getByRole('timer', { name: 'Workout time' })).toHaveText(/^\s*12:\d\d\s*$/);
-		// The set logger shows once its chunk and the store have loaded, after the first render:
-		// compare the view with it on both sides of the reload.
+		// The set logger shows once its chunk has loaded, after the first render, and the navigation
+		// once the store is open too (data-store): compare the view with both on each side of the
+		// reload.
 		const logger = main.getByTestId('set-logger');
+		const pager = main.getByRole('navigation', { name: 'Previous and next exercise' });
+		const open = page.locator('main#main[data-store]');
+		await expect(open).toBeAttached();
 		await expect(logger).toBeVisible();
+		await expect(pager).toBeVisible();
 		const restored = await main.innerText();
 
 		await page.reload();
 		await expect(ready(page)).toBeAttached();
 		await expect(page.getByRole('heading', { level: 1 })).toHaveText('Lower body & pull');
+		await expect(open).toBeAttached();
 		await expect(logger).toBeVisible();
+		await expect(pager).toBeVisible();
 		expect(await main.innerText()).toBe(restored);
 		// Nothing is read from the server; the sync engine's POSTs are workout-sync-wiring's.
 		expect(api.filter((r) => r.includes('/api/workouts') && !r.startsWith('POST '))).toEqual([]);

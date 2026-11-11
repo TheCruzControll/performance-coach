@@ -161,8 +161,14 @@ export function generateCoachDataset(base: Dataset, seed: string | number = COAC
 			toolUseId,
 			payloadVersion: 1,
 			payloadHash: hex() + hex(),
-			diff: { lines: Array.from({ length: between(2, 8) }, () => prose(1, 'before and after')) },
-			impact: { sessions: between(1, 6), minutes: between(-30, 30) },
+			// As services/coach/proposals.ts stores them (StoredDiff, StoredImpact), which its
+			// cards read; the same draws as before, so the rest of the dataset is unchanged.
+			diff: {
+				rows: [],
+				summaryLines: Array.from({ length: between(2, 8) }, () => prose(1, 'before and after')),
+				warnings: []
+			},
+			impact: { weeks: [], lines: [`${between(1, 6)} sessions`, `${between(-30, 30)} min`] },
 			createdAt
 		});
 		if (+createdAt > end - OPEN_DAYS * DAY) return proposalId;

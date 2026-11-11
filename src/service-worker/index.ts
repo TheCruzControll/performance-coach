@@ -7,8 +7,14 @@
  *   - build assets + static files  → cache-first (immutable, versioned)
  *   - prerendered pages            → cache-first, whatever the query string, so a workout page
  *                                    (/workout?start=…) reloads offline from the precache
- *   - page navigations             → network only; on failure the prerendered /offline screen
- *   - /api/*, __data.json          → network only (never cached: live, private data)
+ *   - page navigations             → network only, through the navigation preload (enabled on
+ *                                    activate) when the browser made one; on failure the
+ *                                    prerendered /offline screen, which sends a launch
+ *                                    mid-workout to the workout (lib/client/workout/launch.ts),
+ *                                    sooner for the start URL
+ *   - __data.json                  → network only, with a bounded wait: past it, or on failure,
+ *                                    a 503 carrying the offline error (lib/client/sw-network.ts)
+ *   - /api/*                       → not handled (network only; never cached: live, private data)
  *
  * Dynamic HTML is never stored: pages are sent `private, no-cache` because they carry personal
  * data, and a stored copy would outlive sign-out and show stale state (e.g. a health check) as
@@ -17,12 +23,13 @@
 import { version } from '$app/env';
 import { assets, immutable, prerendered } from '$app/manifest';
 import { self } from '$app/service-worker';
+import { fromNetwork, isDataRequest, loadData } from '#lib/client/sw-network.ts';
+import { navigationTimeout } from '#lib/client/workout/launch.ts';
+import { activeSummary } from '#lib/client/workout/probe.ts';
 
 const PREFIX = 'pc-';
 const SHELL_CACHE = `${PREFIX}shell-${version}`;
 const OFFLINE_URL = '/offline';
-/** A connected-but-dead network ("lie-fi") can hang a request for a minute; give up sooner. */
-const NAVIGATION_TIMEOUT_MS = 6000;
 
 /**
  * Home-screen/manifest icons (~280 KB of PNGs) are fetched by the OS when the app is
@@ -51,6 +58,10 @@ self.addEventListener('activate', (event) => {
 			for (const key of await caches.keys()) {
 				if (key.startsWith(PREFIX) && key !== SHELL_CACHE) await caches.delete(key);
 			}
+			// A server-rendered navigation's request starts while this worker boots, not after it
+			// (preloadResponse in navigate). Where it is unsupported or refused, navigate fetches as
+			// before; it never stands in the way of claiming the open pages below.
+			await self.registration.navigationPreload?.enable().catch(() => {});
 			// Control the page that installed us (the first visit), so offline support starts
 			// now rather than after the next navigation.
 			await self.clients.claim();
@@ -65,13 +76,28 @@ async function cacheFirst(request: Request): Promise<Response> {
 	return cached ?? fetch(request);
 }
 
-async function navigate(request: Request): Promise<Response> {
+/** Whether a workout is in progress on this device (its IndexedDB, read without creating it). */
+const workoutInProgress = async () => (await activeSummary()) !== null;
+
+/**
+ * Rejects once the navigation's time is up (launch.ts navigationTimeout): a lie-fi network can hang
+ * it for a minute. Counted from the request, while IndexedDB answers whether a workout is on.
+ */
+async function timeUp(pathname: string): Promise<never> {
+	const asked = Date.now();
+	const ms = await navigationTimeout(pathname, workoutInProgress);
+	await new Promise((resolve) => setTimeout(resolve, Math.max(0, ms - (Date.now() - asked))));
+	throw new Error('navigation timeout');
+}
+
+async function navigate(
+	request: Request,
+	preload: Promise<Response | undefined> | undefined
+): Promise<Response> {
 	try {
 		return await Promise.race([
-			fetch(request),
-			new Promise<never>((_, reject) =>
-				setTimeout(() => reject(new Error('navigation timeout')), NAVIGATION_TIMEOUT_MS)
-			)
+			fromNetwork(request, preload),
+			timeUp(new URL(request.url).pathname)
 		]);
 	} catch {
 		// The offline screen holds no personal data; it renders in the app shell at the URL
@@ -92,8 +118,11 @@ self.addEventListener('fetch', (event) => {
 	if (url.pathname.startsWith('/api/')) return;
 
 	if (PRECACHED.has(url.pathname)) {
+		// A navigation here leaves its preload unused: the browser cancels it.
 		event.respondWith(cacheFirst(request));
 	} else if (request.mode === 'navigate') {
-		event.respondWith(navigate(request));
+		event.respondWith(navigate(request, event.preloadResponse));
+	} else if (isDataRequest(url)) {
+		event.respondWith(loadData(request));
 	}
 });
