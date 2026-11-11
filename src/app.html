@@ -64,42 +64,44 @@
 			// Apply the chosen design before first paint (see src/lib/client/design.ts): today's
 			// unless this device chose the Graphite 2004 preview, here or with ?design=graphite.
 			// `__pcDesign` also switches it while the page is open.
-			window.__pcDesign = function (d) {
-				var root = document.documentElement;
-				var links = document.querySelectorAll('link[data-design]');
-				if (d !== 'graphite') {
-					delete root.dataset.design;
-					for (var i = 0; i < links.length; i++) links[i].remove();
-					return;
-				}
-				root.dataset.design = d;
-				var meta = document.querySelector('meta[name="pc-graphite"]');
-				if (links.length || !meta || meta.content.charAt(0) === '%') return;
-				var font = document.createElement('link');
-				font.rel = 'preload';
-				font.as = 'font';
-				font.type = 'font/woff2';
-				font.crossOrigin = 'anonymous';
-				font.href = meta.dataset.font;
-				var sheet = document.createElement('link');
-				sheet.rel = 'stylesheet';
-				sheet.href = meta.content;
-				// A stylesheet a script inserts blocks rendering only when asked to: no flash of today's.
-				sheet.setAttribute('blocking', 'render');
-				font.dataset.design = sheet.dataset.design = d;
-				document.head.append(font, sheet);
-			};
-			window.__pcDesign(
-				(function (asked) {
-					try {
-						if (asked !== 'graphite' && asked !== 'current') {
-							return localStorage.getItem('pc:design:v1');
-						}
-						localStorage.setItem('pc:design:v1', asked);
-					} catch (e) {}
-					return asked;
-				})(new URLSearchParams(location.search).get('design'))
-			);
+			try {
+				window.__pcDesign = function (d) {
+					var root = document.documentElement;
+					var links = document.querySelectorAll('link[data-design]');
+					if (d !== 'graphite') {
+						delete root.dataset.design;
+						for (var i = 0; i < links.length; i++) links[i].remove();
+						return;
+					}
+					root.dataset.design = d;
+					var meta = document.querySelector('meta[name="pc-graphite"]');
+					if (links.length || !meta || meta.content.charAt(0) === '%') return;
+					var font = document.createElement('link');
+					font.rel = 'preload';
+					font.as = 'font';
+					font.type = 'font/woff2';
+					font.crossOrigin = 'anonymous';
+					font.href = meta.dataset.font;
+					var sheet = document.createElement('link');
+					sheet.rel = 'stylesheet';
+					sheet.href = meta.content;
+					// A stylesheet a script inserts blocks rendering only when asked to: no flash of today's.
+					sheet.setAttribute('blocking', 'render');
+					font.dataset.design = sheet.dataset.design = d;
+					document.head.append(font, sheet);
+				};
+				window.__pcDesign(
+					(function (asked) {
+						try {
+							if (asked !== 'graphite' && asked !== 'current') {
+								return localStorage.getItem('pc:design:v1');
+							}
+							localStorage.setItem('pc:design:v1', asked);
+						} catch (e) {}
+						return asked;
+					})(new URLSearchParams(location.search).get('design'))
+				);
+			} catch (e) {}
 		</script>
 		%sveltekit.head%
 	</head>
