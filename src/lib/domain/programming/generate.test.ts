@@ -23,6 +23,7 @@ import { blocks } from './stages/blocks';
 import { demand } from './stages/demand';
 import { loads } from './stages/loads';
 import { placement } from './stages/placement';
+import * as stages from './stages/prepare';
 import { progression } from './stages/progression';
 import { strength } from './stages/strength';
 import { timefit } from './stages/timefit';
@@ -68,9 +69,11 @@ describe('the stage list', () => {
 		generate(SCENARIOS.minimal());
 		expect(STAGES.map((s) => s.name)).toEqual(ORDER);
 		expect(ran).toEqual(ORDER);
-		expect(drafts[0]).toEqual({ demand: null, blocks: [] });
+		// The first draft carries prepare's season; the blocks stage plans it, outlines included.
+		expect(drafts[0]).toMatchObject({ demand: null, blocks: [] });
+		expect(drafts[0]!.periodisation?.season.blocks).toHaveLength(4);
 		expect(drafts[1]!.demand?.budget.trainingDays).toBe(3);
-		expect(drafts[2]!.blocks).toHaveLength(1);
+		expect(drafts[2]!.blocks.map((b) => b.weeks.length)).toEqual([5, 0, 0, 0]);
 	});
 
 	it.each(
@@ -101,7 +104,8 @@ describe('generateProgram', () => {
 			startsOn: SCENARIO_START,
 			firstPlannedDay: SCENARIO_START
 		});
-		expect(plan.blocks.map((b) => b.weeks.length)).toEqual([5]);
+		// M3's first block, then the season's outlines: accumulation, intensification, realization.
+		expect(plan.blocks.map((b) => b.weeks.length)).toEqual([5, 0, 0, 0]);
 		expect(
 			plan.decisions.filter((d) => d.kind === 'default_assumed').map((d) => d.ruleKey)
 		).toEqual(input.assumptions.map((a) => a.ruleKey));
@@ -114,7 +118,10 @@ describe('generateProgram', () => {
 			'program_purpose',
 			'block_structure',
 			...input.assumptions.map(() => 'default_assumed'),
-			'day_allocation'
+			'day_allocation',
+			// The season's: who leads the first block, and the block type it chose.
+			'priority_resolved',
+			'block_type_chosen'
 		]);
 		expect(plan.decisions.filter((d) => d.kind === 'split_chosen')).toHaveLength(1);
 	});
@@ -231,8 +238,8 @@ describe('generateProgram', () => {
 /**
  * Every scenario's plan as JSON, the bytes a version stores, hashed on a Monday and a Thursday start
  * before m7-stage-list moved the demand and blocks stages and added prepare, phasing and schedule.
- * A change that only moves the stage list leaves each hash as it is; a GENERATOR_ID bump changes
- * them, and its PR lists each.
+ * With prepare as the identity (no season), M3's stages still plan these bytes exactly: the M7
+ * hunks in demand.ts, splits.ts and input.ts change nothing without a season.
  */
 const GOLDEN: Record<ScenarioKey, readonly [monday: string, thursday: string]> = {
 	beginner: ['d4bfc183ab8ee435', 'e76eed0b701d71ea'],
@@ -244,15 +251,40 @@ const GOLDEN: Record<ScenarioKey, readonly [monday: string, thursday: string]> =
 	minimal: ['c3e4d72addb45c7a', '57bb88bd394355e1']
 };
 
+/**
+ * The same plans with the season (generator-season, GENERATOR_ID 'perfo-programming/2'); a later
+ * GENERATOR_ID bump changes them, and its PR lists each.
+ */
+const GOLDEN_SEASON: Record<ScenarioKey, readonly [monday: string, thursday: string]> = {
+	beginner: ['40ac8a97f8ac8304', 'afbafd92042977bf'],
+	powerlifter: ['53368325fc4eeb18', '7cce2ec2cd815ba0'],
+	hybrid: ['099390e333863200', '142f20746b73f4b1'],
+	injuredShoulder: ['a4e42532f422ef13', 'e020e654173b406a'],
+	dumbbellsOnly: ['7eb70d064378cab5', '2ebb5a975014b49c'],
+	journey: ['6dfb9ed84d822de2', '20b093bc6e3734a0'],
+	minimal: ['69abd4d5ab6fd927', '1cb83a5371a0118c']
+};
+
+const hashesOf = (key: ScenarioKey) => {
+	const input = inputOf(SCENARIOS[key]());
+	return [OPTIONS, { ...OPTIONS, firstPlannedDay: scenarioDay(1, 3) }].map((start) =>
+		fnv1a64(JSON.stringify(generateProgram(input, start)))
+	);
+};
+
 describe('byte-identical plans', () => {
 	it.each(Object.keys(GOLDEN) as ScenarioKey[])(
-		'%s: the plan is byte for byte the one from before the stage list moved',
+		'%s: with no season, the plan is byte for byte the one from before the stage list moved',
 		(key) => {
-			const input = inputOf(SCENARIOS[key]());
-			const hashes = [OPTIONS, { ...OPTIONS, firstPlannedDay: scenarioDay(1, 3) }].map((start) =>
-				fnv1a64(JSON.stringify(generateProgram(input, start)))
-			);
-			expect(hashes).toEqual(GOLDEN[key]);
+			vi.spyOn(stages, 'prepare').mockImplementation((input) => ({ input, periodisation: null }));
+			expect(hashesOf(key)).toEqual(GOLDEN[key]);
+		}
+	);
+
+	it.each(Object.keys(GOLDEN_SEASON) as ScenarioKey[])(
+		'%s: with the season, the plan is byte for byte the one generator-season pinned',
+		(key) => {
+			expect(hashesOf(key)).toEqual(GOLDEN_SEASON[key]);
 		}
 	);
 });

@@ -12,6 +12,8 @@ import { DecisionLog } from './decisions';
 import { allocateWeek, commitmentQuota, generatedFor, weekBudget } from './demand';
 import type { StreamShare } from './demand';
 import { buildProgrammingInput } from './input';
+import type { ProgrammingInput } from './input';
+import type { GoalDose } from './priority/doses';
 import { SCENARIOS } from './scenarios';
 
 const inputOf = (profile: TrainingProfile) =>
@@ -307,5 +309,100 @@ describe('allocateWeek', () => {
 		const { shares, allocation } = allocate(paused);
 		expect(shares.strength).toEqual({ committed: 0, generated: 2 });
 		expect(allocation.mobility).toBe(3);
+	});
+});
+
+describe('allocateWeek with doses (generator-season)', () => {
+	/** The 10K first and Get stronger second, `extra` goals after them, 7 days a week. */
+	const runnerFirst = (extra: Goal[] = []) =>
+		inputOf(
+			variant('minimal', { daysPerWeek: 7 }, (p) => [
+				{
+					...p.goals[0]!,
+					id: '00000000-0000-4000-8000-000000000102',
+					title: '10K',
+					disciplines: ['running'],
+					priority: 1
+				},
+				withPriority(p.goals[0]!, 2),
+				...extra
+			])
+		);
+	/** Goal `title` of `input` held at a dose of at most `max` sessions of `stream`. */
+	const heldAt = (
+		input: ProgrammingInput,
+		title: string,
+		stream: GoalDose['stream'],
+		max: number
+	): GoalDose => {
+		const i = input.goals.findIndex((g) => g.title === title);
+		return {
+			stream,
+			goal: { id: input.refs.goals[i]!, title },
+			leader: null,
+			dose: { stream: 'custom', sessions: { min: 1, max }, words: `${max} sessions` },
+			reason: 'Held while the 10K leads.'
+		};
+	};
+	const run = (input: ProgrammingInput, doses?: GoalDose[]) => {
+		const log = new DecisionLog();
+		const allocation = allocateWeek(input, weekBudget(input), log, doses);
+		return { allocation, decisions: log.list() };
+	};
+	const generated = (a: ReturnType<typeof run>['allocation']) =>
+		Object.fromEntries(a.streams.map((s) => [s.stream, s.generated]));
+
+	it('changes nothing without doses', () => {
+		const input = runnerFirst();
+		expect(run(input, [])).toEqual(run(input));
+		expect(generated(run(input).allocation)).toEqual({ runs: 4, strength: 3 });
+	});
+
+	it('caps a stream only dosed goals train, and gives the days it frees to the leader first', () => {
+		const input = runnerFirst();
+		const { allocation, decisions } = run(input, [heldAt(input, 'Get stronger', 'strength', 2)]);
+		expect(generated(allocation)).toEqual({ runs: 5, strength: 2 });
+		expect(allocation.mobility).toBe(0);
+		expect(decisions[0]!.why).toContain('5 runs for 10K, 2 strength sessions for Get stronger');
+	});
+
+	it('counts a muscle-building dose toward the strength days, and caps the fewest too', () => {
+		const input = runnerFirst();
+		const i = input.goals.findIndex((g) => g.title === 'Get stronger');
+		input.goals[i] = { ...input.goals[i]!, disciplines: ['hypertrophy'] };
+		input.disciplines = ['running', 'hypertrophy'];
+		// Hypertrophy wants 3 at the fewest; its dose of 1 is the most it gets.
+		const held = run(input, [heldAt(input, 'Get stronger', 'hypertrophy', 1)]);
+		expect(generated(held.allocation)).toEqual({ runs: 5, strength: 1 });
+	});
+
+	it('leaves a stream alone while a goal that is not dosed trains it too', () => {
+		const p = SCENARIOS.minimal();
+		const size = {
+			...p.goals[0]!,
+			id: '00000000-0000-4000-8000-000000000103',
+			title: 'Build size',
+			disciplines: ['strength' as const],
+			priority: 3
+		};
+		const input = runnerFirst([size]);
+		const dosed = run(input, [heldAt(input, 'Get stronger', 'strength', 1)]);
+		expect(dosed).toEqual(run(input));
+	});
+
+	it('ignores doses when every goal is paused: M3 already holds each stream at its fewest', () => {
+		const paused = inputOf(
+			variant('minimal', { daysPerWeek: 5 }, (p) =>
+				p.goals.map((g) => ({ ...g, status: 'paused' as const }))
+			)
+		);
+		const dose: GoalDose = {
+			stream: 'strength',
+			goal: { id: paused.refs.paused[0]!, title: paused.paused[0]!.title },
+			leader: null,
+			dose: { stream: 'custom', sessions: { min: 1, max: 1 }, words: '1 session' },
+			reason: 'Paused.'
+		};
+		expect(run(paused, [dose])).toEqual(run(paused));
 	});
 });
