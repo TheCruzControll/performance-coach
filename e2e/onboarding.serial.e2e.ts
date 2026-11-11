@@ -456,10 +456,10 @@ test('review: lifts by name with how each was found, and Edit comes back to the 
 	await stepReady(page, 'review');
 	const lifts = block(page, 'strength').getByRole('listitem');
 	await expect(lifts.filter({ hasText: 'Weighted pull-up' })).toHaveText(
-		/^Weighted pull-up\s*40 kg\s*Measured$/
+		/^Weighted pull-up\s*40\s+kg\s*Measured$/
 	);
 	await expect(lifts.filter({ hasText: 'Back squat' })).toHaveText(
-		/^Back squat\s*≈ [\d.]+ kg\s*Estimated$/
+		/^Back squat\s*≈ \d+(\.5)?\s+kg\s*Estimated$/
 	);
 	await expect(block(page, 'strength')).not.toContainText('Week one');
 	// A strength goal only: no running or Muay Thai, so no specifics block.
