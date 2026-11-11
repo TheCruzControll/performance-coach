@@ -3,6 +3,7 @@ import { IDBFactory } from 'fake-indexeddb';
 import { deleteDB, openDB } from 'idb';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { workoutDayKits } from '../../../../tests/fixtures/workout-day';
+import { changedRows, namedRows } from '#lib/domain/workout/changes.ts';
 import { createMutation } from '#lib/domain/workout/index.ts';
 import type {
 	LocalAction,
@@ -477,6 +478,41 @@ describe('sync responses', () => {
 			['s2', true]
 		]);
 		expect((await (await open()).getActive())!.view).toStrictEqual(store.snapshot(W)!.view);
+	});
+
+	it('folds an answer’s changed rows into the rows it holds, and names the workouts it holds rows for', async () => {
+		const store = await open();
+		await started(store);
+		expect(await store.held([W, W2])).toEqual([]); // nothing from the server yet
+		const first = [start(), log('s1', 1), log('s2', 2)];
+		store.dispatch(first[1]!);
+		expect(await store.dispatch(first[2]!).saved).toBe('saved');
+		await store.acknowledge(appliedAll(W, first));
+		expect(await store.held([W, W2])).toEqual([W]);
+
+		const later = [
+			log('s3', 3),
+			make('set.edit', { entityId: 's1', payload: { ...done, reps: 3 } })
+		];
+		store.dispatch(later[0]!);
+		expect(await store.dispatch(later[1]!).saved).toBe('saved');
+		const server = serverRows(W, [...first, ...later]);
+		const changes = changedRows(server, new Set(later.flatMap(namedRows)));
+		expect(changes.sets.map((s) => s.id)).toEqual(['s1', 's3']);
+		await store.acknowledge([
+			{ id: later[0]!.id, status: 'applied' },
+			{ id: later[1]!.id, status: 'applied', changes }
+		]);
+
+		const db = await stored();
+		expect(db.ids).toEqual([]);
+		expect(db.workouts[0]!.canonical).toStrictEqual(server);
+		const sets = store.snapshot(W)!.view!.slots[0]!.sets;
+		expect(sets.map((s) => [s.id, s.reps, s.pending])).toEqual([
+			['s1', 3, false],
+			['s2', 5, false],
+			['s3', 5, false]
+		]);
 	});
 
 	it('lists the workouts with changes waiting', async () => {

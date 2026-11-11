@@ -65,8 +65,14 @@ const isWaiting = (entry: OutboxEntry, now: number) => entry.nextAt !== null && 
 
 const encoder = new TextEncoder();
 const bytesOf = (value: unknown) => encoder.encode(JSON.stringify(value)).length;
-/** The request body around the mutations: `{"v":1,"mutations":[…]}`, in UTF-8 bytes. */
-const EMPTY_BODY = bytesOf({ v: 1, mutations: [] });
+/**
+ * The request body around the mutations, in UTF-8 bytes: `{"v":1,"mutations":[…]}` with the largest
+ * `discarded` and `held` lists the server takes (25 ids each), so neither can push it over a cap.
+ */
+const MOST_IDS = Array<string>(SYNC_LIMITS.maxMutations).fill(
+	'00000000-0000-0000-0000-000000000000'
+);
+const EMPTY_BODY = bytesOf({ v: 1, mutations: [], discarded: MOST_IDS, held: MOST_IDS });
 
 export interface Batch {
 	entries: OutboxEntry[];

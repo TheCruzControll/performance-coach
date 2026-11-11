@@ -171,6 +171,15 @@ describe('nextBatch', () => {
 		expect(sendable(entries)).toEqual([1, 2]);
 	});
 
+	it('leaves room in its byte cap for the largest discarded and held lists', () => {
+		const ids = Array.from({ length: SYNC_LIMITS.maxMutations }, () => crypto.randomUUID());
+		const fill = BATCH_CAPS.flush.maxBytes - bodyBytes(outbox(update(''))) - 10;
+		const batch = nextBatch(outbox(update('x'.repeat(fill)), log(W2)), T0, BATCH_CAPS.flush);
+		const mutations = batch.entries.map((e) => e.envelope);
+		const body = JSON.stringify({ v: 1, mutations, discarded: ids, held: ids });
+		expect(new TextEncoder().encode(body).length).toBeLessThanOrEqual(BATCH_CAPS.flush.maxBytes);
+	});
+
 	it('leaves 16 KB of the 64 KB keepalive quota for RUM', () => {
 		expect(SYNC_LIMITS.maxBytes - BATCH_CAPS.keepalive.maxBytes).toBe(16 * 1024);
 	});
