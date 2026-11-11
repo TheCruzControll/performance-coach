@@ -9,7 +9,8 @@
  *   every building week whose same sessions and days allow them, each with one schedule_repaired
  *   decision for the block. When those days leave a building week a clash it could avoid, or a
  *   building week they miss moves a session on its own, the next hardest week's are tried, and the
- *   days fewest weeks lapse from are kept. Never pinned into a clash repair without pins would fix.
+ *   days fewest weeks lapse from are kept. Never pinned into a finding repair without pins would
+ *   fix.
  * - Then every week, the OWN_WEEKS kinds included, is repaired on its own, in order, with the load
  *   of the week before as repaired, and the day before and the next Monday's commitments judged
  *   beside it, as placement judges a week. A building week's shared sessions stay pinned to their
@@ -354,13 +355,11 @@ export const schedule: Stage = (draft, { input, options, log }) => {
 				const week = block.weeks[w]!;
 				const own = shared[w];
 				const pinned = own && repairIn(block, w, own.sessions, prev, own.pinned);
-				// Never pinned into an avoid finding that repair without the pins would fix.
+				// Never pinned into a finding that repair without the pins would fix: an avoid, or a
+				// prefer the shared days bring to a week whose own days differ, such as the first week,
+				// which has no week before it.
 				const withShared =
-					pinned &&
-					(avoids(pinned, false) === 0 ||
-						repairIn(block, w, pinned.sessions, prev).actions.length === 0)
-						? pinned
-						: null;
+					pinned && repairIn(block, w, pinned.sessions, prev).actions.length === 0 ? pinned : null;
 				const asPlaced =
 					withShared && avoids(withShared) === 0 ? null : repairIn(block, w, given, prev);
 				const r =
