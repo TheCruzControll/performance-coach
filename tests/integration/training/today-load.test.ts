@@ -1,7 +1,8 @@
 /**
  * Today's streamed plan (src/routes/(app)/today/plan.server.ts) on real Postgres: the week with
  * today's sessions, Up next across weeks, a rest day naming the next session, 'Starts Monday'
- * before week 1, and 'Nothing planned yet' once the first block is over. When the database
+ * before week 1, and 'Nothing planned yet' once the first block is over, offering its review
+ * (none mid-week while sessions remain; a failed prompt read leaves the plan). When the database
  * cannot be reached it never rejects: {failed: true}, and the failure recorded as a server error.
  */
 import { eq } from 'drizzle-orm';
@@ -172,7 +173,47 @@ describe('Today’s plan', () => {
 					description:
 						'You trained through every planned week, Mon 26 Oct – Sun 1 Nov. Your next block is planned from how this one went.'
 				},
-				upNext: []
+				upNext: [],
+				// The block is over and has no review: Today offers it (review-prompt.server.ts).
+				review: expect.objectContaining({
+					kind: 'cycle',
+					state: 'due',
+					title: 'Block complete — review it and plan the next',
+					create: expect.objectContaining({ action: '/progress/reviews?/createCycle' })
+				})
+			});
+		});
+	});
+
+	it('offers no review mid-week while sessions remain, in a program that started this week', async () => {
+		await withRollback(async (db) => {
+			const owner = await seeded(db, 'today', '2026-11-02');
+			expect((await viewOf(db, owner)).review).toBeNull();
+		});
+	});
+
+	it('a failed review prompt read is recorded, and the plan shows without it', async () => {
+		await withRollback(async (db) => {
+			const owner = await seeded(db, 'today', '2026-11-02');
+			const request = origin();
+			const view = await loadTodayPlan(
+				owner,
+				{ today: TODAY, origin: request },
+				{
+					db,
+					errorsDb: db,
+					prompt: async () => {
+						throw new Error('lock timeout');
+					}
+				}
+			);
+			expect(view).toMatchObject({ failed: false, review: null });
+			expect(view.failed || view.week).toBeTruthy();
+			const recorded = await findErrorsByRequestId(request.requestId, { db });
+			expect(recorded).toHaveLength(1);
+			expect(recorded[0]).toMatchObject({
+				kind: 'streamed',
+				context: expect.objectContaining({ load: 'todayReviewPrompt' })
 			});
 		});
 	});
