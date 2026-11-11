@@ -8,6 +8,12 @@
  * today's plan (plan.server.ts) is streamed: a client navigation shows Today at once with the
  * plan's skeleton, and the server's own render waits for it in +page.ts, so a document opened on
  * Today paints the plan first.
+ *
+ * The setup and the program are read together, and the plan starts as soon as the program is
+ * found, each service on its own pool connection (docs/architecture.md), so `db` is the pool,
+ * never a transaction. Onboarding, once complete, stays complete, and a program is only built
+ * after it, so the program read rarely runs for nothing: its answer is used only once the setup
+ * says onboarding is complete.
  */
 import { loadTodayPlan, type TodayPlanView } from './plan.server';
 import { loadTodayProgram, type TodayProgram } from './program.server';
@@ -25,13 +31,16 @@ export async function loadToday(
 	{ now, origin }: { now: Date; origin: SetupOrigin },
 	deps: SetupDeps = {}
 ): Promise<TodayData> {
+	// None of the three rejects: each records its own failure and answers null.
+	let plan: Promise<TodayPlanView> | undefined;
+	const reading = loadTodayProgram(ownerId, { now, origin }, deps).then((found) => {
+		if (found?.program) {
+			plan = loadTodayPlan(ownerId, { today: found.today, program: found.program, origin }, deps);
+		}
+		return found;
+	});
 	const setup = await loadTodaySetup(ownerId, origin, deps);
-	const found = setup?.complete
-		? await loadTodayProgram(ownerId, { now, origin }, deps)
-		: undefined;
-	const plan =
-		found?.state === 'active'
-			? loadTodayPlan(ownerId, { today: found.today, origin }, deps)
-			: undefined;
-	return { setup, program: found === undefined ? undefined : (found?.state ?? null), plan };
+	if (!setup?.complete) return { setup, program: undefined, plan: undefined };
+	const found = await reading;
+	return { setup, program: found?.state ?? null, plan };
 }
