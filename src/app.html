@@ -36,6 +36,17 @@
 				// arrive after a navigation away has already started.
 				if (e.persisted) window.__pcLeftAt = undefined;
 			});
+			// A module the page is still loading as it is left fails (WebKit cancels it: "Importing a
+			// module script failed."), rejecting SvelteKit's start script before the app's reporting
+			// (src/lib/client/errors.ts) has started. Not an error, only while the leave lasts
+			// (LEAVING_RESET_MS in leaving.ts); any other failure is still logged and reported.
+			addEventListener('unhandledrejection', function (e) {
+				var leftAt = window.__pcLeftAt;
+				var leaving = leftAt !== undefined && Date.now() - leftAt < 10000;
+				if (leaving && e.reason instanceof TypeError && /\bmodule\b/i.test(e.reason.message)) {
+					e.preventDefault();
+				}
+			});
 			// Apply the saved theme before first paint (see src/lib/client/preferences.svelte.ts).
 			try {
 				var t = JSON.parse(localStorage.getItem('pc:prefs:v1') || '{}').theme;
