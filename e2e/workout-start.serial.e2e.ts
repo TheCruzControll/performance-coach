@@ -4,7 +4,9 @@
  * a strength session, an interval run and a Muay Thai class today. Each starts by URL and shows
  * its plan on its own route, and Postgres gets the workout pinned to its planned session; the
  * loading, signed-out, conflict, offline and missing states are designed, axe-clean and
- * captured; a kit saved earlier starts offline and syncs later; an ad-hoc run starts from the
+ * captured; with no kit saved, a kit that never comes is given up on within 1.5 s; a kit saved
+ * earlier starts at once, offline too, syncs later, and is replaced by the fresh kit in the
+ * background; an ad-hoc run starts from the
  * empty workout screen. Serial: it stores a program, which empties the workouts. A spec that
  * holds or fails a request with page.route blocks the service worker (WebKit's page.route does
  * not see a controlled page's requests).
@@ -280,11 +282,34 @@ test.describe('starting a planned session', () => {
 test.describe('the kit held or unreachable', () => {
 	test.use({ serviceWorkers: 'block' });
 
-	test('while the kit is on its way: Getting your session ready, aria-busy, and nothing moves', async ({
+	test('while the kit is on its way: Getting your session ready, aria-busy, then the workout', async ({
 		page
-	}, testInfo) => {
+	}) => {
+		// Quick: with no kit saved, the request is given up on after 1.5 s (start.ts), so the kit
+		// is released as soon as it is asked for; the next test holds the state for its checks.
 		const { release, requests } = await holdKits(page);
 		await page.goto(startUrl(strength()));
+		await expect.poll(() => requests.length).toBe(1);
+		release();
+		await expect(page).toHaveURL(/\/workout$/);
+		await expect(page.getByTestId('exercise').first()).toBeVisible();
+	});
+
+	test('while a start is on its way, nothing moves, and the state is axe-clean and captured', async ({
+		page
+	}, testInfo) => {
+		// The same state, held as long as the checks take: an ad-hoc start waits on the owner's
+		// units (GET /api/exercises) for up to 4 s, where a planned one with no kit saved gives up
+		// after 1.5 s.
+		let release!: () => void;
+		const held = new Promise<void>((resolve) => (release = resolve));
+		const requests: string[] = [];
+		await page.route('**/api/exercises', async (route: Route) => {
+			requests.push(route.request().url());
+			await held;
+			await route.continue();
+		});
+		await page.goto('/workout?new=strength');
 		await expect(loading(page)).toBeVisible();
 		await expect(loading(page)).toHaveAttribute('aria-busy', 'true');
 		await expect(loading(page)).toHaveAttribute('role', 'status');
@@ -318,7 +343,56 @@ test.describe('the kit held or unreachable', () => {
 
 		release();
 		await expect(page).toHaveURL(/\/workout$/);
-		await expect(page.getByTestId('exercise').first()).toBeVisible();
+		// An ad-hoc strength workout starts with no exercises (adhoc.ts).
+		await expect(page.getByTestId('workout-no-exercises')).toBeVisible();
+	});
+
+	test('with no kit saved, a kit that never comes is given up on within 1.5 s: the offline state', async ({
+		page
+	}) => {
+		const { requests } = await holdKits(page);
+		await page.goto(startUrl(strength()));
+		await expect.poll(() => requests.length).toBe(1);
+		// A 4 s timeout would still show the skeleton here.
+		await expect(page.getByTestId('workout-start-offline')).toBeVisible({ timeout: 3_000 });
+		expect(await activeWorkout(page)).toBeNull();
+	});
+
+	test('a kit saved earlier starts the session at once, and the fresh kit replaces it in the background', async ({
+		page
+	}) => {
+		await page.goto('/workout');
+		await expect(page.locator('main#main[data-store]')).toBeAttached();
+		const answer = await page.request.get(`/api/workouts/kit?lineage=${strength().lineage}`);
+		const fresh = (await answer.json()) as Extract<StartKit, { kind: 'strength' }>;
+		// The copy saved here is older: the squat had another name when Today saved it.
+		const [first, ...rest] = fresh.exercises;
+		const stale = {
+			...fresh,
+			exercises: [{ ...first!, exercise: { ...first!.exercise, name: 'Stale squat' } }, ...rest]
+		};
+		await saveKit(page, strength().lineage, stale);
+
+		const { release, requests } = await holdKits(page);
+		await page.goto(startUrl(strength()));
+		// No wait on the server: the workout shows the saved kit while the fresh one is held.
+		await expect(page).toHaveURL(/\/workout$/);
+		const heading = page.getByTestId('exercise').getByRole('heading', { level: 2 });
+		await expect(heading).toHaveText('Stale squat');
+		await expect.poll(() => requests.length).toBe(1);
+
+		release();
+		await expect(heading).toHaveText('Back squat');
+		await expect
+			.poll(async () => {
+				const kit = (await activeWorkout(page))?.kit;
+				return kit?.kind === 'strength' ? kit.exercises[0]!.exercise.name : null;
+			})
+			.toBe('Back squat');
+		// Once: a reload asks the server no more.
+		await page.reload();
+		await expect(heading).toHaveText('Back squat');
+		expect(requests).toHaveLength(1);
 	});
 
 	test('offline with no saved kit: the designed message, with a session of your own instead', async ({
