@@ -6,7 +6,7 @@
   one at a time, with Cancel). Skip set skips the planned set at hand, and Missed reps records
   the misses, prefilled from its target. Complete set dispatches the set.log and its
   follow-ups (log.ts: the move, and the rest the device's settings start) at once, as Skip set does the set.skip, and records performance.measure('pc:set-confirmed') from the tap
-  to the frame after the row changed. At its top, what this device could not save, with
+  to the presented frame that shows the row changed (presented.ts). At its top, what this device could not save, with
   Retry: the sets stay on screen meanwhile, marked 'Not saved on this device'.
   The prefill's rules (logging, M3's e1RM and load arithmetic, the vocabulary's labels) and the
   mutation builder stay out of /workout's initial JavaScript; the view shows it once the store
@@ -24,6 +24,7 @@
 	import { targetText } from '#lib/ui/workout/set-words.ts';
 	import { tick } from 'svelte';
 	import { logSet, skipSet } from './log.ts';
+	import { measureToPresented } from './presented.ts';
 
 	interface Props {
 		view: WorkoutView;
@@ -53,9 +54,7 @@
 		);
 		store.dispatch(mutation, ...followUps);
 		// The row changes in this task; the frame that shows it comes next.
-		requestAnimationFrame(() =>
-			performance.measure('pc:set-confirmed', { start, end: performance.now() })
-		);
+		measureToPresented('pc:set-confirmed', start);
 		// An extra set closes its logger: focus goes to Add a set, for another.
 		if (logger.extra) void tick().then(() => focusOn('[data-testid="add-set"]'));
 	}
