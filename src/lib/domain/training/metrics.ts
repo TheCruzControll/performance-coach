@@ -92,6 +92,20 @@ export function weekStartOf(instant: Date, timeZone: string): IsoDate {
 	return mondayOf(localDay(instant, timeZone));
 }
 
+/**
+ * weekStartOf in one time zone, for many instants: each day's Monday is worked out once (two
+ * years of sets fall on a few hundred days).
+ */
+export function weekStartIn(timeZone: string): (instant: Date) => IsoDate {
+	const mondays = new Map<IsoDate, IsoDate>();
+	return (instant) => {
+		const day = localDay(instant, timeZone);
+		let monday = mondays.get(day);
+		if (monday === undefined) mondays.set(day, (monday = mondayOf(day)));
+		return monday;
+	};
+}
+
 const isWorking = (set: E1rmSet) => !set.isWarmup && !set.isSkipped;
 
 /** Ties go to the most recent set. */
@@ -174,18 +188,35 @@ function musclesOf(exercises: ReadonlyMap<string, ExerciseMuscles>, exercise: st
  * set for the back.
  */
 function credit(week: WeekHardSets, exercise: ExerciseMuscles, count: number) {
+	creditWith(week, creditOf(exercise), count);
+}
+
+/** What one hard set of an exercise credits: each muscle, then each group at its best credit. */
+interface Credit {
+	muscles: (readonly [Muscle, number])[];
+	groups: (readonly [MuscleGroup, number])[];
+}
+
+function creditOf(exercise: ExerciseMuscles): Credit {
+	const muscles: Credit['muscles'] = [];
 	const groups = new Map<MuscleGroup, number>();
 	const worked = [
 		[exercise.primaryMuscles, HARD_SET_CREDIT.primary],
 		[exercise.secondaryMuscles, HARD_SET_CREDIT.secondary]
 	] as const;
-	for (const [muscles, value] of worked) {
-		for (const muscle of muscles) {
-			week.muscles[muscle] = (week.muscles[muscle] ?? 0) + value * count;
+	for (const [list, value] of worked) {
+		for (const muscle of list) {
+			muscles.push([muscle, value]);
 			const group = MUSCLE_GROUP[muscle];
 			groups.set(group, Math.max(groups.get(group) ?? 0, value));
 		}
 	}
+	return { muscles, groups: [...groups] };
+}
+
+function creditWith(week: WeekHardSets, { muscles, groups }: Credit, count: number) {
+	for (const [muscle, value] of muscles)
+		week.muscles[muscle] = (week.muscles[muscle] ?? 0) + value * count;
 	for (const [group, value] of groups)
 		week.groups[group] = (week.groups[group] ?? 0) + value * count;
 }
@@ -203,13 +234,18 @@ export function hardSets(
 	timeZone: string
 ): WeekHardSets[] {
 	const weeks = new Map<IsoDate, WeekHardSets>();
+	const weekOf = weekStartIn(timeZone);
+	// Each exercise's credit is worked out once, then added for each of its hard sets.
+	const credits = new Map<string, Credit>();
 	for (const set of sets) {
 		const muscles = musclesOf(exercises, set.exercise);
 		if (!isHardSet(isWorking(set), set.rpe)) continue;
-		const weekStart = weekStartOf(set.performedAt, timeZone);
+		const weekStart = weekOf(set.performedAt);
 		const week = weeks.get(weekStart) ?? emptyWeek(weekStart);
 		weeks.set(weekStart, week);
-		credit(week, muscles, 1);
+		let worked = credits.get(set.exercise);
+		if (!worked) credits.set(set.exercise, (worked = creditOf(muscles)));
+		creditWith(week, worked, 1);
 	}
 	return [...weeks.values()].sort((a, b) => a.weekStart.localeCompare(b.weekStart));
 }

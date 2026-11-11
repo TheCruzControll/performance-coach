@@ -10,7 +10,8 @@
  *
  * The levers (m6-plan), in order. Every plan already uses its index; the time is Node's CPU.
  * 1. Narrower columns: muscle lists as text, parsed once per value, saved about 20 ms at 'all' but
- *    turned setFacts at 'all' into a Seq Scan, failing its index gate: not kept.
+ *    turned setFacts at 'all' into a Seq Scan, failing its index gate: not kept (since opted in to
+ *    a whole read, below).
  * 2. Route-level concurrency: one executor runs one query at a time, and CPU (overview 'all' about
  *    440 ms of its 485–620 ms) is not hidden by overlapping reads: not applied.
  * 3. SQL pre-aggregation of stored outputs: no stored output holds these figures.
@@ -29,6 +30,17 @@
  * out. Local Node CPU medians (M1 Pro, shared and loaded), before → after:
  * overview 'all' 377–430 → 217–228, strength 'all' 390–433 → 214–227 (109 queries → 24),
  * strength 12w 216–253 → 124–133.
+ * Then, still near 300 ms on a slower CI runner (overview 'all' 354, strength 'all' 386): setFacts
+ * at 'all' reads set_records whole (the Seq Scan Postgres picks for 94 % of the table, opted in as
+ * segmentFacts is; a third of the old plan's time) and sends neither deleted_at nor the muscles,
+ * read once per exercise (exerciseMuscles); sessionFacts, segmentFacts and prescriptionFacts send
+ * one JSON array too (jsonRows), their id lists as one parameter; weekly figures bucket a period's
+ * facts by Monday once instead of filtering them all for each week; each set's day, each day's
+ * Monday and each exercise's hard-set credit are worked out once; the load ratio's daily loads are
+ * built once; and a run's segments are summed only for a total it lacks. Local medians (M1 Pro,
+ * shared and heavily loaded), wall then Node CPU, before → after: overview 'all' 277–291 → 201–211
+ * and 229–230 → 139–153, strength 'all' 249–302 → 198–229 and 216–225 → 152, strength 12w
+ * 136–213 → 106–148 and 109 → 84–91.
  */
 import { gzipSync } from 'node:zlib';
 import { stringify } from 'devalue';

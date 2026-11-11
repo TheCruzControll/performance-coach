@@ -33,6 +33,7 @@ import { cleanFloat } from '../units.ts';
 import type { CanonicalWorkoutRow } from '../workout/protocol.ts';
 import { weekStarts } from './periods.ts';
 import type { PeriodWindow, WeekRange } from './periods.ts';
+import { byMonday } from './series.ts';
 
 // ---- Judgements the owner can change here ----------------------------------------------------
 
@@ -192,10 +193,19 @@ export interface PeriodAdherence {
 /** Adherence for a period's complete weeks, each and together, with the week in progress apart. */
 export function periodAdherence(facts: AdherenceFacts, window: Weeks): PeriodAdherence {
 	const today = window.inProgress.through;
-	const weeks = weekStarts(window.weeks).map((monday) => weekAdherence(monday, facts, today));
+	// Each week reads its own sessions and workouts, bucketed once: 'all' has a hundred weeks.
+	const planned = byMonday(distinct(facts.planned), (s) => s.date);
+	const workouts = byMonday(facts.workouts, (w) => w.date);
+	const weekOf = (monday: IsoDate) =>
+		weekAdherence(
+			monday,
+			{ ...facts, planned: planned.get(monday) ?? [], workouts: workouts.get(monday) ?? [] },
+			today
+		);
+	const weeks = weekStarts(window.weeks).map(weekOf);
 	return {
 		weeks,
-		inProgress: weekAdherence(window.inProgress.weekStart, facts, today),
+		inProgress: weekOf(window.inProgress.weekStart),
 		total: {
 			...countOf(plannedIn(facts, window.weeks), facts.completed, today),
 			extra: weeks.reduce((sum, week) => sum + week.extra, 0)
@@ -262,19 +272,23 @@ function weekly<T>(
 	window: Weeks,
 	figure: (workouts: readonly LoggedWorkout[]) => T
 ): Weekly<T> {
-	const of = (from: IsoDate, to: IsoDate) =>
-		figure(workouts.filter((w) => within(w.date, from, to)));
+	const of = (from: IsoDate, to: IsoDate, theirs = workouts) =>
+		figure(theirs.filter((w) => within(w.date, from, to)));
+	// Each week reads its own workouts, bucketed once: 'all' has a hundred weeks.
+	const byWeek = byMonday(workouts, (w) => w.date);
+	const week = (weekStart: IsoDate, through: IsoDate) =>
+		of(weekStart, through, byWeek.get(weekStart) ?? []);
 	const { inProgress } = window;
 	return {
 		weeks: weekStarts(window.weeks).map((weekStart) => ({
 			weekStart,
 			inProgress: false as const,
-			...of(weekStart, addDays(weekStart, 6))
+			...week(weekStart, addDays(weekStart, 6))
 		})),
 		inProgress: {
 			weekStart: inProgress.weekStart,
 			inProgress: true as const,
-			...of(inProgress.weekStart, inProgress.through)
+			...week(inProgress.weekStart, inProgress.through)
 		},
 		total: window.weeks ? of(window.weeks.from, window.weeks.to) : figure([])
 	};
