@@ -1,7 +1,8 @@
 /**
  * The rest timer in a desktop window (1440 × 900): docked at the top of the main column under
  * the header, covering nothing, first in the main column's tab order; every control of the timer
- * and of the header's stopwatch has hover and focus-visible states.
+ * and of the header's stopwatch has hover and focus-visible states. Its place is kept, so the card
+ * never moves as the timer comes and goes.
  */
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { boxOf, expectNoSideScroll } from './desktop';
@@ -64,6 +65,36 @@ test.describe('the rest timer on a desktop', () => {
 		await page.evaluate(() => scrollTo(0, 0));
 		await expectNoSideScroll(page);
 		await captureScreen(page, testInfo, 'workout-rest');
+	});
+
+	test('its place is kept: the card stays put before the first set, while resting and after Skip', async ({
+		page
+	}) => {
+		const { strength } = await workoutDay();
+		await seedWorkout(page, strength);
+		await gotoWorkout(page);
+		await expect(page.locator('main#main[data-store]')).toBeAttached();
+		await page.getByTestId('workout-side').getByRole('button').nth(1).click();
+		await expect(heading(page)).toHaveText('Leg press');
+		const card = page.getByTestId('workout-main').getByTestId('exercise');
+		const slot = page.getByTestId('rest-slot');
+		await expect(slot).toBeVisible();
+		await expect(slot).toHaveText(/Rest\s*After your first set/);
+		const top = async () => (await boxOf(card)).y;
+		const idle = await top();
+
+		const load = logger(page).getByTestId('logger-load').getByRole('spinbutton');
+		await load.click();
+		await load.fill('120');
+		await load.press('Enter');
+		await logger(page).getByTestId('complete-set').click();
+		await expect(pill(page)).toHaveAttribute('data-phase', 'running');
+		await expect(slot).toHaveCount(0);
+		expect(await top(), 'resting').toBeCloseTo(idle, 0);
+
+		await pill(page).getByRole('button', { name: 'Skip' }).click();
+		await expect(page.getByTestId('start-rest')).toBeVisible();
+		expect(await top(), 'Start rest').toBeCloseTo(idle, 0);
 	});
 
 	test('every control of the timer and the stopwatch has hover and focus-visible states, in tab order', async ({

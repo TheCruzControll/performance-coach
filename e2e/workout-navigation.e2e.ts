@@ -11,7 +11,15 @@ import type { StrengthKit } from '../src/lib/domain/workout';
 import { DB_NAME, STORES } from '../src/lib/client/workout/names';
 import { expectNoSideScroll } from './desktop';
 import { captureScreen } from './support';
-import { gotoWorkout, readOutbox, readWorkout, seedWorkout, workoutDay } from './workout-support';
+import {
+	gotoWorkout,
+	readOutbox,
+	readWorkout,
+	seedWorkout,
+	watchMove,
+	workoutDay,
+	type WatchedMove
+} from './workout-support';
 
 let kit: StrengthKit;
 test.beforeAll(async () => {
@@ -204,6 +212,40 @@ test.describe('moving between exercises (IndexedDB only)', () => {
 				transform: getComputedStyle(el).transform
 			}))
 		).toEqual({ animations: 0, transform: 'none' });
+	});
+
+	test('Next to a taller or shorter card: Previous and Next never jump, they slide to their place', async ({
+		page
+	}) => {
+		await open(page);
+		const moves: WatchedMove[] = [];
+		for (let step = 0; step < kit.exercises.length - 1; step++) {
+			const move = await watchMove(page, 'exercise-next');
+			// The first frame shows them where they were.
+			expect(
+				Math.abs(move.first - move.before),
+				`step ${step + 1}: ${JSON.stringify(move)}`
+			).toBeLessThanOrEqual(1);
+			moves.push(move);
+		}
+		const moved = moves.filter((move) => Math.abs(move.after - move.before) > 1);
+		expect(moved.length, 'the fixture has cards of different heights').toBeGreaterThan(0);
+		for (const move of moved) expect(move.sliding, JSON.stringify(move)).toBe(1);
+	});
+
+	test('with reduced motion, Previous and Next land in their new place at once', async ({
+		page
+	}) => {
+		await page.emulateMedia({ reducedMotion: 'reduce' });
+		await open(page);
+		let moved = 0;
+		for (let step = 0; step < kit.exercises.length - 1; step++) {
+			const move = await watchMove(page, 'exercise-next');
+			expect(move.sliding).toBe(0);
+			expect(Math.abs(move.first - move.after), JSON.stringify(move)).toBeLessThanOrEqual(1);
+			if (Math.abs(move.after - move.before) > 1) moved += 1;
+		}
+		expect(moved, 'the fixture has cards of different heights').toBeGreaterThan(0);
 	});
 
 	test('a swipe that ends on a logged set’s row moves on without opening its editor', async ({
