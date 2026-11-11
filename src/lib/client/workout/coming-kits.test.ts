@@ -123,7 +123,12 @@ describe('saveComingKits', () => {
 			now: () => fridayNoon,
 			persist: async () => true
 		});
-		expect(started).toEqual({ status: 'started', path: '/workout/run' });
+		// Started from the kit saved the night before, so its page refreshes it in the background (#446).
+		expect(started).toEqual({
+			status: 'started',
+			path: '/workout/run',
+			refresh: expect.any(String)
+		});
 		store.close();
 	});
 });
