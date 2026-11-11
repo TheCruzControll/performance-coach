@@ -14,6 +14,9 @@
       keeps it and ends the workout as abandoned: only the changes logged in it go, and the start
       and its abandon wait to sync, however often it gets stuck. A toast says so when the store
       refuses it, because it would bring a workout back into progress beside the one in progress.
+      The finish or abandon of a workout a sign-out stripped from this device (the store's
+      heldEnds) offers no Discard: the server holds it in progress, so it waits for the server, and
+      a line says so. Discard of a change it depends on leaves it queued.
   - Waiting to sync: the rest, in order, in words.
   - A recovery session ('Finish adding your passkey') links to adding one; nothing is deleted.
   It re-reads the outbox whenever the store reports a change, so an answer shows at once.
@@ -21,9 +24,9 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import { onMount, tick } from 'svelte';
-	import { dependantsOf, STUCK_AFTER } from '#lib/client/workout/outbox-rules.ts';
+	import { STUCK_AFTER } from '#lib/client/workout/outbox-rules.ts';
 	import type { OutboxEntry, OutboxStatus } from '#lib/client/workout/outbox-rules.ts';
-	import { ActiveWorkoutError, discardAbandons, loggedIn } from '#lib/client/workout/store.ts';
+	import { ActiveWorkoutError } from '#lib/client/workout/store.ts';
 	import type { WorkoutStore } from '#lib/client/workout/store.ts';
 	import { DEFAULT_LOAD_INCREMENT } from '#lib/domain/units.ts';
 	import { describeMutation, problemText } from '#lib/domain/workout/describe.ts';
@@ -37,7 +40,7 @@
 	import { toast } from '#lib/ui/toast.svelte.ts';
 	import { syncWords } from '#lib/ui/workout/sync-words.ts';
 	import { fixFor, type FixEntry } from './fix/registry.ts';
-	import { abandonWords } from './fix/workout.ts';
+	import { discardOffer } from './fix/workout.ts';
 	import SetEditSheet from './SetEditSheet.svelte';
 
 	interface Props {
@@ -51,6 +54,8 @@
 	let { open = $bindable(), store, view, status }: Props = $props();
 
 	let entries = $state.raw<OutboxEntry[]>([]);
+	/** The ends kept for the server (the store's heldEnds): no Discard for them. */
+	let held = $state.raw<ReadonlySet<number>>(new Set());
 	let now = $state(Date.now());
 	let fixes = $state.raw<Partial<Record<string, FixEntry>>>({});
 	/** The entry whose Discard is being confirmed. */
@@ -81,7 +86,7 @@
 
 	async function read() {
 		try {
-			entries = await store.outbox();
+			[entries, held] = await Promise.all([store.outbox(), store.heldEnds()]);
 			now = Date.now();
 			for (const { parked, envelope } of entries) {
 				if (parked && !fixes[envelope.type]) {
@@ -112,7 +117,6 @@
 			e.parked!,
 			e.failingSince !== null && now - e.failingSince >= STUCK_AFTER.ms ? null : e.attempts
 		);
-	const goes = (seq: number) => 1 + dependantsOf(entries, seq).length;
 
 	/** Runs an answer, then puts focus on what is left: the store shows the change. */
 	async function act(run: () => Promise<void>) {
@@ -250,18 +254,21 @@
 					{#each attention as entry (entry.seq)}
 						{@const how = fixes[entry.envelope.type]}
 						{@const deleted = entry.parked!.message === SYNC_CODE_LABEL.deleted}
-						{@const abandoning = discardAbandons(entries, entry.seq)}
-						{@const n = abandoning ? loggedIn(entries, entry.seq).length : goes(entry.seq)}
+						{@const offer = discardOffer(entries, entry.seq, held)}
+						{@const n = offer.kind === 'held' ? 0 : offer.n}
 						<li class="item" data-testid="sync-issue">
 							<p class="what">{describeMutation(entry.envelope, context)}</p>
 							<p class="why">{problemOf(entry)}</p>
 							{#if notes[entry.seq]}
 								<p class="why" role="alert">Still not valid · {notes[entry.seq]}</p>
 							{/if}
-							{#if confirming === entry.seq}
+							{#if offer.kind === 'held'}
+								<p class="why" data-testid="held-end">{offer.words}</p>
+							{/if}
+							{#if confirming === entry.seq && offer.kind !== 'held'}
 								<p class="confirm" role="alert">
-									{#if abandoning}
-										{abandonWords(n)}
+									{#if offer.kind === 'abandon'}
+										{offer.words}
 									{:else}
 										{n === 1
 											? 'Discard this change?'
@@ -307,13 +314,15 @@
 											data-testid="try-again">Try again</Button
 										>
 									{/if}
-									<Button
-										variant="ghost"
-										size="sm"
-										icon="trash"
-										onclick={() => confirmDiscard(entry.seq)}
-										data-testid="discard-change">Discard</Button
-									>
+									{#if offer.kind !== 'held'}
+										<Button
+											variant="ghost"
+											size="sm"
+											icon="trash"
+											onclick={() => confirmDiscard(entry.seq)}
+											data-testid="discard-change">Discard</Button
+										>
+									{/if}
 								</div>
 							{/if}
 						</li>

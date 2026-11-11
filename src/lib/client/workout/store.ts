@@ -179,11 +179,15 @@ export interface WorkoutStore {
 	 * Discard of a parked change: the entry and every change that depends on it leave the outbox,
 	 * and their ids wait in `discarded` until the server has claimed them. A stuck workout.start
 	 * stays, queued again, with the workout.abandon queued behind it or a new one, and only the
-	 * changes logged in it go (discardAbandons, loggedIn). Rejects, writing nothing, with
-	 * RangeError for a change that is not parked, and with ActiveWorkoutError when it would bring a
-	 * workout back into progress beside another.
+	 * changes logged in it go (discardAbandons, loggedIn). The end of a workout the server holds
+	 * (endsOnServer) never goes: it waits for the server, and Discard of a change it depends on
+	 * leaves it queued. Rejects, writing nothing, with RangeError for a change that is not parked or
+	 * is such an end, and with ActiveWorkoutError when it would bring a workout back into progress
+	 * beside another.
 	 */
 	discard(seq: number): Promise<void>;
+	/** The seqs of the ends Discard keeps for the server (endsOnServer), as IndexedDB holds them. */
+	heldEnds(): Promise<ReadonlySet<number>>;
 	/** Try again: a stuck entry is queued again in its place, its count cleared. */
 	tryAgain(seq: number): Promise<void>;
 	/** Fix: the corrected change replaces the refused entry in its place, under the same id. */
@@ -268,7 +272,34 @@ export function loggedIn(entries: readonly OutboxEntry[], seq: number): OutboxEn
 	return dependantsOf(entries, seq).filter((e) => !abandons(e, workoutId));
 }
 
+/**
+ * The ends Discard never removes, by seq: each finish or abandon of a workout a 401 purge stripped,
+ * which the device holds no rows for (`hasRows`, StoredWorkout.canonical, false too when the purge
+ * deleted its record) and no queued workout.start will make. The server holds that workout in
+ * progress, and with no rows the device ends it on its own (endedBy). Discarding its end would
+ * leave it ended here, for prune to let go, and in progress on the server for good, so the end
+ * waits for the server to answer, however long that takes.
+ */
+export function endsOnServer(
+	entries: readonly OutboxEntry[],
+	hasRows: (workoutId: string) => boolean
+): Set<number> {
+	const starting = new Set(
+		entries.filter((e) => e.envelope.type === 'workout.start').map((e) => e.envelope.workoutId)
+	);
+	const held = new Set<number>();
+	for (const { seq, envelope } of entries) {
+		if (envelope.type !== 'workout.finish' && envelope.type !== 'workout.abandon') continue;
+		if (!starting.has(envelope.workoutId) && !hasRows(envelope.workoutId)) held.add(seq);
+	}
+	return held;
+}
+
 // ---- Internals ------------------------------------------------------------------------------
+
+/** The ids of the workouts this device holds the server's rows for (StoredWorkout.canonical). */
+const rowsHeld = (workouts: readonly StoredWorkout[]) =>
+	new Set(workouts.filter((w) => w.canonical).map((w) => w.id));
 
 /** A dispatch not written yet: its write is on its way, or failed (`failed`). */
 interface Queued {
@@ -749,7 +780,7 @@ export async function createStore({
 	 * after every entry, in the same transaction, and their workouts are re-recorded with them.
 	 */
 	async function rearrange(
-		rule: (entries: OutboxEntry[]) => OutboxEntry[],
+		rule: (entries: OutboxEntry[], hasRows: (workoutId: string) => boolean) => OutboxEntry[],
 		remember = false,
 		guard = false,
 		append?: (before: OutboxEntry[]) => Mutation[]
@@ -760,7 +791,8 @@ export async function createStore({
 			transact(db, names, async (tx) => {
 				const outbox = tx.objectStore(STORES.outbox);
 				const before = await outbox.getAll();
-				const after = new Map(rule(before).map((e) => [e.seq, e]));
+				const rows = rowsHeld(await tx.objectStore(STORES.workouts).getAll());
+				const after = new Map(rule(before, (id) => rows.has(id)).map((e) => [e.seq, e]));
 				const touched = new Set<string>();
 				const gone: string[] = [];
 				const ended = new Set<string>();
@@ -817,16 +849,28 @@ export async function createStore({
 	}
 
 	/**
-	 * Discard's rule: only a parked entry goes, with its dependants. A stuck start stays, queued
-	 * again, and so does any abandon of its workout (one parked stuck is queued again too): only
-	 * the changes logged in it go (discardAbandons, loggedIn).
+	 * Discard's rule: only a parked entry goes, with its dependants, less the ends kept for the
+	 * server (endsOnServer), and never one of those itself. A stuck start stays, queued again, and
+	 * so does any abandon of its workout (one parked stuck is queued again too): only the changes
+	 * logged in it go (discardAbandons, loggedIn).
 	 */
-	function discardRule(entries: OutboxEntry[], seq: number): OutboxEntry[] {
+	function discardRule(
+		entries: OutboxEntry[],
+		seq: number,
+		hasRows: (workoutId: string) => boolean
+	): OutboxEntry[] {
 		const entry = entries.find((e) => e.seq === seq);
 		if (!entry?.parked) {
 			throw new RangeError('Only a change that needs attention can be discarded');
 		}
-		if (!discardAbandons(entries, seq)) return discard(entries, seq);
+		const held = endsOnServer(entries, hasRows);
+		if (held.has(seq)) {
+			throw new RangeError('The end of a workout the server holds waits for the server');
+		}
+		if (!discardAbandons(entries, seq)) {
+			const left = new Set(discard(entries, seq).map((e) => e.seq));
+			return entries.filter((e) => left.has(e.seq) || held.has(e.seq));
+		}
 		const { workoutId } = entry.envelope;
 		const gone = new Set(loggedIn(entries, seq).map((e) => e.seq));
 		return entries.flatMap((e) => {
@@ -1027,7 +1071,21 @@ export async function createStore({
 		outbox,
 		countFailure: (seq, error) => revise((entries) => countFailure(entries, seq, error, now())),
 		backOnline: (offlineSince) => revise((entries) => backOnline(entries, offlineSince, now())),
-		discard: (seq) => rearrange((entries) => discardRule(entries, seq), true, true, abandonOf(seq)),
+		discard: (seq) =>
+			rearrange(
+				(entries, hasRows) => discardRule(entries, seq, hasRows),
+				true,
+				true,
+				abandonOf(seq)
+			),
+		async heldEnds() {
+			assertOpen();
+			const tx = db.transaction([STORES.workouts, STORES.outbox], 'readonly');
+			const rows = rowsHeld(await tx.objectStore(STORES.workouts).getAll());
+			const held = endsOnServer(await tx.objectStore(STORES.outbox).getAll(), (id) => rows.has(id));
+			await tx.done;
+			return held;
+		},
 		tryAgain: (seq) => rearrange((entries) => tryAgain(entries, seq)),
 		fix: (seq, envelope) => rearrange((entries) => replaceInPlace(entries, seq, envelope)),
 		discarded,

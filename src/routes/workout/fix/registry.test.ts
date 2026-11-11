@@ -6,7 +6,7 @@ import { queued } from '#lib/client/workout/outbox-rules.ts';
 import type { OutboxEntry } from '#lib/client/workout/outbox-rules.ts';
 import { discardAbandons, loggedIn } from '#lib/client/workout/store.ts';
 import { fixFor } from './registry';
-import { abandonWords } from './workout';
+import { abandonWords, discardOffer, HELD_END_WORDS } from './workout';
 
 const SET_TYPES = ['set.log', 'set.skip', 'set.edit'];
 const EDITOR_TYPES = [
@@ -152,5 +152,69 @@ describe('the Fix registry', () => {
 		};
 		expect(discardAbandons([refused, ...entries.slice(1)], 1)).toBe(false);
 		expect(discardAbandons([entries[0]!, stuck(2, notes('a'))], 2)).toBe(false);
+	});
+
+	it('offers no Discard for the end of a workout the server holds, only words that it retries', () => {
+		const workoutId = '00000000-0000-4000-8000-0000000000d1';
+		const at = '2026-11-07T08:00:00.000Z';
+		const update = createMutation('workout.update', { workoutId, at, payload: { notes: 'a' } });
+		const abandon = createMutation('workout.abandon', { workoutId, at, payload: {} });
+		const finish = createMutation('workout.finish', { workoutId, at, payload: {} });
+		const park = (seq: number, m: Mutation, reason: 'stuck' | 'refused'): OutboxEntry => ({
+			...queued(seq, m),
+			parked: { reason, errors: {}, message: 'Not valid' }
+		});
+
+		// The store's heldEnds names the end: the sheet offers no Discard for it.
+		for (const reason of ['stuck', 'refused'] as const) {
+			for (const end of [abandon, finish]) {
+				expect(discardOffer([park(1, end, reason)], 1, new Set([1]))).toEqual({
+					kind: 'held',
+					words: HELD_END_WORDS
+				});
+			}
+		}
+		expect(HELD_END_WORDS).toBe(
+			'Ending this workout on the server. It retries until it goes through.'
+		);
+
+		// Discard of a change it depends on does not count it among the changes that go.
+		const entries = [park(1, update, 'refused'), queued(2, abandon)];
+		expect(discardOffer(entries, 1, new Set([2]))).toEqual({ kind: 'discard', n: 1 });
+
+		// Not held (the device holds the workout's rows): Discard as before, counting the abandon.
+		expect(discardOffer(entries, 1, new Set())).toEqual({ kind: 'discard', n: 2 });
+		expect(discardOffer([park(1, abandon, 'refused')], 1, new Set())).toEqual({
+			kind: 'discard',
+			n: 1
+		});
+	});
+
+	it('offers a stuck start’s Discard as ending the workout, with the changes logged in it', () => {
+		const workoutId = '00000000-0000-4000-8000-0000000000d1';
+		const at = '2026-11-07T08:00:00.000Z';
+		const start = createMutation('workout.start', {
+			workoutId,
+			at,
+			payload: {
+				kind: 'strength',
+				title: 'Full body',
+				sessionType: 'strength',
+				discipline: 'strength',
+				plannedSessionId: null,
+				plannedLineage: null,
+				programId: null
+			}
+		});
+		const notes = createMutation('workout.update', { workoutId, at, payload: { notes: 'a' } });
+		const stuck: OutboxEntry = {
+			...queued(1, start),
+			parked: { reason: 'stuck', errors: {}, message: 'timeout' }
+		};
+		expect(discardOffer([stuck, queued(2, notes)], 1, new Set())).toEqual({
+			kind: 'abandon',
+			n: 1,
+			words: abandonWords(1)
+		});
 	});
 });

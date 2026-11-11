@@ -919,6 +919,118 @@ describe("the owner's answers to a change that needs attention", () => {
 		expect((await store.getActive())!.workoutId).toBe(W2);
 	});
 
+	/** W synced, then stripped by a 401 purge: the server holds it in progress, the device no rows. */
+	async function strippedWorkout(store: WorkoutStore) {
+		await started(store);
+		await store.acknowledge(appliedAll(W, [start()]));
+		await store.purgeServerCopies();
+	}
+
+	it.each([
+		['abandon', 'stuck', 'abandoned'],
+		['abandon', 'refused', 'abandoned'],
+		['finish', 'stuck', 'completed'],
+		['finish', 'refused', 'completed']
+	] as const)(
+		'refuses to discard the parked %s (%s) of a workout a sign-out stripped, and keeps it to sync',
+		async (type, reason, status) => {
+			const store = await open();
+			await strippedWorkout(store);
+			const end = type === 'abandon' ? make('workout.abandon', { payload: {} }) : finish();
+			expect(await store.dispatch(end).saved).toBe('saved');
+			const seq = (await store.outbox()).find((e) => e.envelope.id === end.id)!.seq;
+			if (reason === 'stuck') await stuck(store, seq);
+			else await store.acknowledge([{ id: end.id, status: 'rejected', code: 'invalid' }]);
+			expect(await store.heldEnds()).toEqual(new Set([seq]));
+			const before = await stored();
+
+			await expect(store.discard(seq)).rejects.toThrow(
+				new RangeError('The end of a workout the server holds waits for the server')
+			);
+
+			expect(await stored()).toEqual(before);
+			expect(before.ids).toEqual([end.id]);
+			expect(before.workouts).toMatchObject([{ id: W, status }]);
+			expect(await store.discarded()).toEqual([]);
+			if (reason === 'stuck') {
+				await store.tryAgain(seq);
+				expect((await store.outbox())[0]!.parked).toBeUndefined();
+			}
+		}
+	);
+
+	it('keeps a stripped workout’s abandon queued when a change it depends on is discarded', async () => {
+		const store = await open();
+		await strippedWorkout(store);
+		const notes = make('workout.update', { entityId: W, payload: { notes: 'Heavy' } });
+		const abandon = make('workout.abandon', { payload: {} });
+		store.dispatch(notes);
+		expect(await store.dispatch(abandon).saved).toBe('saved');
+		await store.acknowledge([{ id: notes.id, status: 'rejected', code: 'invalid' }]);
+		const [update, end] = await store.outbox();
+		expect(await store.heldEnds()).toEqual(new Set([end!.seq]));
+
+		await store.discard(update!.seq);
+
+		expect(await store.outbox()).toEqual([end]);
+		expect(await store.discarded()).toEqual([notes.id]);
+		expect((await stored()).workouts).toMatchObject([{ id: W, status: 'abandoned' }]);
+	});
+
+	it('refuses to discard the parked end of a workout a sign-out took off the device', async () => {
+		const store = await open();
+		await started(store);
+		await store.acknowledge(appliedAll(W, [start()]));
+		const abandon = make('workout.abandon', { payload: {} });
+		expect(await store.dispatch(abandon).saved).toBe('saved');
+		await store.purgeServerCopies(); // an ended workout leaves; its abandon stays to send
+		const [end] = await store.outbox();
+		await store.acknowledge([{ id: abandon.id, status: 'rejected', code: 'invalid' }]);
+		expect((await stored()).workouts).toEqual([]);
+		expect(await store.heldEnds()).toEqual(new Set([end!.seq]));
+
+		await expect(store.discard(end!.seq)).rejects.toThrow(RangeError);
+
+		expect((await stored()).ids).toEqual([abandon.id]);
+		expect(await store.discarded()).toEqual([]);
+	});
+
+	it('Discard of the parked abandon of a workout the device holds rows for works as before', async () => {
+		const store = await open();
+		await started(store);
+		await store.acknowledge(appliedAll(W, [start()]));
+		const abandon = make('workout.abandon', { payload: {} });
+		expect(await store.dispatch(abandon).saved).toBe('saved');
+		await store.acknowledge([{ id: abandon.id, status: 'rejected', code: 'invalid' }]);
+		const [end] = await store.outbox();
+		expect(await store.heldEnds()).toEqual(new Set());
+
+		await store.discard(end!.seq);
+
+		const db = await stored();
+		expect(db.ids).toEqual([]);
+		expect(db.workouts).toMatchObject([{ id: W, status: 'in_progress' }]);
+		expect(await store.discarded()).toEqual([abandon.id]);
+	});
+
+	it('Discard of the parked abandon of a stripped workout whose start is queued works as before', async () => {
+		const store = await open();
+		await started(store);
+		await store.purgeServerCopies(); // its start is still queued: it makes the rows
+		const abandon = make('workout.abandon', { payload: {} });
+		expect(await store.dispatch(abandon).saved).toBe('saved');
+		await store.acknowledge([{ id: abandon.id, status: 'rejected', code: 'invalid' }]);
+		const end = (await store.outbox()).find((e) => e.envelope.id === abandon.id)!;
+		expect(await store.heldEnds()).toEqual(new Set());
+
+		await store.discard(end.seq);
+
+		const db = await stored();
+		expect(db.ids).toEqual([W]);
+		expect(db.workouts).toMatchObject([{ id: W, status: 'in_progress' }]);
+		expect(await store.discarded()).toEqual([abandon.id]);
+	});
+
 	it('Try again still works on a device that already holds two workouts in progress', async () => {
 		const store = await open();
 		await started(store);
