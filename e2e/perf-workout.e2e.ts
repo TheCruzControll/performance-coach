@@ -329,26 +329,35 @@ async function apart(
 }
 
 /**
- * Arms a wait for the end of the options sheet's next motion (its panel's transform transition),
- * for `sheetSettled`: by event, since a poll would read the moving sheet every frame. Armed before
- * the tap that starts the motion; a motion that never ends lets go after 3 s, for the checks after.
+ * Arms a wait for the options sheet's next motion to end, for `sheetSettled`: by event, since a
+ * poll would read the moving sheet every frame. Opening ends with its panel's transform
+ * transition; closing with the dialog's close event (BottomSheet closes it at the transition's
+ * end, or 420 ms on, whichever comes first, which can cancel the transition). Armed before the tap
+ * that starts the motion; a motion that never ends lets go after 3 s, for the checks after.
  */
-const armSheetSettled = (page: Page) =>
-	page.evaluate(() => {
+const armSheetSettled = (page: Page, motion: 'open' | 'close') =>
+	page.evaluate((motion) => {
+		const inSheet = (target: EventTarget | null, depth: number) => {
+			let el = target instanceof Element ? target : null;
+			for (let i = 0; i < depth; i++) el = el?.parentElement ?? null;
+			return el?.getAttribute('data-testid') === 'exercise-actions-sheet';
+		};
 		(window as unknown as { __sheetSettled: Promise<void> }).__sheetSettled = new Promise(
 			(done) => {
-				const ended = (event: TransitionEvent) => {
-					if (event.propertyName !== 'transform') return;
-					const el = event.target instanceof Element ? event.target : null;
-					if (el?.parentElement?.getAttribute('data-testid') !== 'exercise-actions-sheet') return;
-					removeEventListener('transitionend', ended, true);
+				const type = motion === 'open' ? 'transitionend' : 'close';
+				const ended = (event: Event) => {
+					if (motion === 'open') {
+						if ((event as TransitionEvent).propertyName !== 'transform') return;
+						if (!inSheet(event.target, 1)) return;
+					} else if (!inSheet(event.target, 0)) return;
+					removeEventListener(type, ended, true);
 					done();
 				};
-				addEventListener('transitionend', ended, true);
+				addEventListener(type, ended, true);
 				setTimeout(done, 3_000);
 			}
 		);
-	});
+	}, motion);
 
 const sheetSettled = (page: Page) =>
 	page.evaluate(() => (window as unknown as { __sheetSettled: Promise<void> }).__sheetSettled);
@@ -522,11 +531,11 @@ test.describe('workout screen at 4× CPU', () => {
 						current,
 						windows,
 						async () => {
-							await armSheetSettled(current);
+							await armSheetSettled(current, 'open');
 							await card(current).getByTestId('exercise-actions').click();
 							await sheetSettled(current);
 							await expect(sheet(current)).toBeVisible();
-							await armSheetSettled(current);
+							await armSheetSettled(current, 'close');
 							await sheet(current).getByRole('button', { name: 'Close' }).click();
 							await sheetSettled(current);
 							await expect(sheet(current)).toBeHidden();
