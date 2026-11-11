@@ -8,9 +8,13 @@
  * - Batches come from outbox-rules' nextBatch: strict FIFO within the caps, a parked or waiting
  *   entry holding only its dependants. A change too large to send even alone is parked as refused.
  * - Every request is bounded: aborted after 15 s on the engine's own timer (an AbortController,
- *   never AbortSignal.timeout, so tests control it). A timeout, a network failure, a 5xx or any
- *   other refusal of the batch is counted against the entry that heads it and backs off with full
- *   jitter, and the lock is released at once, so a hung request never holds the flusher.
+ *   never AbortSignal.timeout, so tests control it), and the lock is released at once, so a hung
+ *   request never holds the flusher. Only this server's answers count towards 'Needs attention':
+ *   its JSON 5xx or other refusal of the batch is counted against the entry that heads it. A
+ *   timeout, a network failure or a page that is not its JSON (a captive portal, dead gym Wi-Fi,
+ *   where iOS still says online) is unreachable: nothing is counted, the 24 hours pause as they
+ *   do offline, and the status reads 'Can’t connect · N waiting' until the server answers. Both
+ *   back off with full jitter.
  * - An answer is applied by store.acknowledge in one IndexedDB transaction, the canonical rows
  *   stored with it, so the view re-projects; 'retry' and 'deferred' answers are counted there.
  *   A request names the workouts whose rows the device holds (store.held), so their answers carry
@@ -52,7 +56,7 @@ import type { WorkoutStore } from './store.ts';
 export const SYNC_URL = '/api/workouts/sync';
 /** One flusher per device: the Web Lock every tab's engine asks for before a round. */
 export const SYNC_LOCK = 'pc-workout-sync';
-/** A sync POST without its answer after this long is aborted, and counted as a failure. */
+/** A sync POST without its answer after this long is aborted: the server is out of reach. */
 export const REQUEST_TIMEOUT_MS = 15_000;
 /**
  * A saved change within this long of a round's start waits for the window to end, so a burst of
@@ -137,7 +141,10 @@ export interface SyncEngine {
 /** How a request ended. */
 type Outcome =
 	| { kind: 'answered'; results: SyncResult[] }
+	/** This server refused the batch (its JSON 5xx, a result list that is not the batch's): counted. */
 	| { kind: 'failed'; error: string }
+	/** No answer from this server: a timeout, a network failure, a page that is not its JSON. */
+	| { kind: 'unreachable' }
 	| { kind: 'session'; session: Exclude<SyncSession, 'active'> }
 	/** Cancelled because the page is being left: nothing is counted. */
 	| { kind: 'left' };
@@ -187,14 +194,6 @@ function answers(batch: readonly OutboxEntry[], results: unknown): results is Sy
 	);
 }
 
-async function errorOf(response: Response): Promise<unknown> {
-	try {
-		return ((await response.json()) as { error?: unknown }).error;
-	} catch {
-		return undefined;
-	}
-}
-
 export function startSync({
 	store,
 	fetch: request = (url, init) => fetch(url, init),
@@ -224,6 +223,8 @@ export function startSync({
 	let retryAt: number | null = null;
 	/** Since when the device has been offline; null while online. */
 	let offlineSince: number | null = null;
+	/** Since when, online, the server has not answered (a request went unanswered); null once it does. */
+	let unreachableSince: number | null = null;
 	let timer: unknown = null;
 	let running: Promise<void> | null = null;
 	let again = false;
@@ -265,25 +266,19 @@ export function startSync({
 				signal: controller.signal
 			});
 			if (response.status === 401) return { kind: 'session', session: 'signed-out' };
-			if (response.status === 403 && (await errorOf(response)) === 'passkey_required') {
+			// Every answer of this server is JSON: a portal's or a gateway's page throws here.
+			const body = (await response.json()) as (Partial<SyncResponse> & { error?: unknown }) | null;
+			if (response.status === 403 && body?.error === 'passkey_required') {
 				return { kind: 'session', session: 'passkey-required' };
 			}
 			if (!response.ok) return { kind: 'failed', error: `The server answered ${response.status}` };
-			const { results } = (await response.json()) as Partial<SyncResponse>;
+			const results = body?.results;
 			if (!answers(batch, results)) {
 				return { kind: 'failed', error: 'The server answered nonsense' };
 			}
 			return { kind: 'answered', results };
-		} catch (error) {
-			if (leaving()) return { kind: 'left' };
-			if (controller.signal.aborted) {
-				return { kind: 'failed', error: `No answer within ${REQUEST_TIMEOUT_MS / 1000} s` };
-			}
-			const unreadable = error instanceof SyntaxError;
-			return {
-				kind: 'failed',
-				error: unreadable ? 'The server answered nonsense' : 'The network failed'
-			};
+		} catch {
+			return leaving() ? { kind: 'left' } : { kind: 'unreachable' };
 		} finally {
 			cancel(timeout);
 			inFlight = false;
@@ -325,6 +320,16 @@ export function startSync({
 		for (const w of short) unheld.add(w);
 	}
 
+	/**
+	 * The server answered after it could not be reached: that stretch comes off each failing entry's
+	 * 24 hours, as offline time does (store.backOnline), before its answer is applied.
+	 */
+	async function reached(): Promise<void> {
+		if (unreachableSince === null) return;
+		await store.backOnline(unreachableSince);
+		unreachableSince = null;
+	}
+
 	/** Under the lock: batch after batch, until nothing is sendable, a failure, or a lost session. */
 	async function drain(): Promise<void> {
 		while (!stopped && session === 'active' && online() && !leaving()) {
@@ -340,7 +345,9 @@ export function startSync({
 			const workouts = [...new Set(sent.map((e) => e.envelope.workoutId))];
 			const holds = workouts.length > 0 ? await store.held(workouts) : [];
 			const held = holds.filter((w) => !unheld.has(w));
+			const sentAt = now();
 			const outcome = await post(sent, voids.ids, held);
+			if (outcome.kind === 'answered' || outcome.kind === 'failed') await reached();
 			switch (outcome.kind) {
 				case 'answered': {
 					attempt = 0;
@@ -357,6 +364,10 @@ export function startSync({
 				}
 				case 'failed':
 					if (sent[0]) await store.countFailure(sent[0].seq, outcome.error);
+					retryAt = now() + nextDelay(attempt++, random);
+					return;
+				case 'unreachable':
+					unreachableSince ??= sentAt;
 					retryAt = now() + nextDelay(attempt++, random);
 					return;
 				case 'session':
@@ -377,8 +388,10 @@ export function startSync({
 		}
 		if (session !== 'active') return;
 		if (offlineSince !== null) {
-			await store.backOnline(offlineSince);
+			// Out of reach before it went offline: the whole stretch pauses the 24 hours, once.
+			await store.backOnline(Math.min(offlineSince, unreachableSince ?? offlineSince));
 			offlineSince = null;
+			unreachableSince = null;
 			attempt = 0;
 			retryAt = null;
 		}
@@ -516,7 +529,14 @@ export function startSync({
 			if (!entries) return null;
 			// Signed out on an earlier page: shown so until the server answers, if anything is kept.
 			const lost = session === 'active' && suspended && entries.length > 0 ? 'signed-out' : session;
-			return syncStatus(entries, { online: online(), inFlight, session: lost, now: at, retryAt });
+			return syncStatus(entries, {
+				online: online(),
+				unreachable: unreachableSince !== null,
+				inFlight,
+				session: lost,
+				now: at,
+				retryAt
+			});
 		},
 		onChange(listener) {
 			listeners.add(listener);
