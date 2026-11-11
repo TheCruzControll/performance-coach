@@ -32,7 +32,10 @@ import { validateRequest, type RequestIssue } from '../provider/validate.ts';
 import { toolDefinitionsForRequest } from '../tools/registry.ts';
 import { SYSTEM_PROMPT } from './system.ts';
 
-/** Chat turns run at medium effort (the plan's effort decisions); drafts and summaries set theirs. */
+/**
+ * Chat turns run at medium effort (the plan's effort decisions), a quick question at low
+ * (effort.ts); drafts and summaries set theirs.
+ */
 export const CHAT_EFFORT: Effort = 'medium';
 
 export interface LayoutInput {

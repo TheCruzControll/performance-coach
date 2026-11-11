@@ -128,8 +128,15 @@ function hasHover(node: unknown): boolean {
 	return Object.entries(node).some(([key, value]) => key !== 'metadata' && hasHover(value));
 }
 
+/**
+ * Text every stylesheet finding needs: a query is an `@media` rule, a hover rule a `:hover`
+ * selector. A stylesheet without any of them is not parsed, which is most of them.
+ */
+const CSS_SUSPECT = /@media|:hover|--nav-height/;
+
 /** Check one stylesheet; `offset` places it in `source` (a style block inside a component). */
 function checkCss(file: string, source: string, css: string, offset: number): Finding[] {
+	if (!CSS_SUSPECT.test(css)) return [];
 	const findings: Finding[] = [];
 	const at = (rule: Rule, start: number, found: string) =>
 		findings.push({ file, line: lineAt(source, offset + start), rule, found });
@@ -198,7 +205,15 @@ const VIEWPORT_READS = [
 	/\bon:?resize\b/g
 ];
 
+/**
+ * Text every browser-code finding needs (the reads above, matchMedia, MediaQuery and
+ * --nav-height): a file without any of them is not scanned, which is most of them.
+ */
+const SCRIPT_SUSPECT =
+	/innerWidth|innerHeight|outerWidth|outerHeight|visualViewport|screen|resize|matchMedia|MediaQuery|--nav-height/;
+
 function checkScripts(file: string, source: string): Finding[] {
+	if (!SCRIPT_SUSPECT.test(source)) return [];
 	const code = source
 		.replace(STYLE_BLOCK, blank)
 		.replace(COMMENT_OR_STRING, (match) => (/^['"`]/.test(match) ? match : blank(match)));
@@ -267,9 +282,11 @@ describe('the responsive layout rules', () => {
 	});
 
 	it('holds on the tree', () => {
-		const findings = SRC_FILES.filter((file) => /\.(css|svelte|html|ts|js)$/.test(file)).flatMap(
-			(file) => check(file, readFileSync(file, 'utf8'))
-		);
+		// Only the files a rule applies to are read: reading the server code and the tests as well
+		// was most of this test's time.
+		const findings = SRC_FILES.filter(
+			(file) => STYLESHEET.test(file) || isBrowserCode(file)
+		).flatMap((file) => check(file, readFileSync(file, 'utf8')));
 		expect(findings.map(format), 'docs/design-system.md, Responsive layout').toEqual([]);
 	});
 

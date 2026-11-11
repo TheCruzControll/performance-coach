@@ -21,7 +21,7 @@ import {
 	exposure,
 	matchPrescription
 } from '../../analytics/prescribed.ts';
-import type { Exposure, PlannedLines } from '../../analytics/prescribed.ts';
+import type { Exposure, PlannedLines, PrescriptionMatch } from '../../analytics/prescribed.ts';
 import { LONG_RUN_JUMP_PCT, longRuns, paceByType, weeklyRunning } from '../../analytics/running.ts';
 import type { RunFact } from '../../analytics/running.ts';
 import { fillWeeks, mean } from '../../analytics/series.ts';
@@ -377,12 +377,15 @@ export function composeWeeklyReview(input: WeeklyReviewInput): WeeklyReview {
 	// Each planned exercise's exposures, by day, and the workout each was logged in.
 	const setsIn = Map.groupBy(sets, (s) => s.workoutId);
 	const workoutOf = new Map<Exposure, string>();
+	const matchOf = new Map<Exposure, PrescriptionMatch>();
 	const exposures = input.prescriptions
 		.filter((p) => inWindow(p.day))
 		.map((p) => {
 			const logged = (setsIn.get(p.workoutId) ?? []).map((s) => ({ ...s, exerciseId: s.exercise }));
-			const e = exposure(matchPrescription(p, logged, { unit: input.unit }), p.day);
+			const match = matchPrescription(p, logged, { unit: input.unit });
+			const e = exposure(match, p.day);
 			workoutOf.set(e, p.workoutId);
+			matchOf.set(e, match);
 			return e;
 		})
 		.sort(
@@ -459,6 +462,12 @@ export function composeWeeklyReview(input: WeeklyReviewInput): WeeklyReview {
 			.filter((e) => e.exerciseId === lift)
 			.flatMap((e) => e.rpeDeviations);
 		const deviation = mean(deviations);
+		// The sets each deviation came from (exposure's own rule), so actual − target = deviation.
+		const compared = weekExposures
+			.filter((e) => e.exerciseId === lift)
+			.flatMap((e) => matchOf.get(e)!.sets)
+			.filter((m) => m.status === 'done' && m.target?.warmUp === false && !m.substitute)
+			.flatMap((m) => (m.rpeDeviation === null ? [] : [[m.actual!.rpe!, m.target!.rpe!] as const]));
 		const read = consistency(exposuresOf.get(lift)!);
 		const good = goodness('rpe_deviation', deviation);
 		const sessions = plural(read.exposures.length, 'session');
@@ -477,7 +486,11 @@ export function composeWeeklyReview(input: WeeklyReviewInput): WeeklyReview {
 		add(
 			`rpe:${lift}`,
 			`${nameOf(lift)} RPE against target`,
-			[fig('Mean deviation', 'rpe_deviation', deviation)],
+			[
+				fig('Mean deviation', 'rpe_deviation', deviation),
+				fig('Actual', 'avg_rpe', mean(compared.map(([actual]) => actual))),
+				fig('Target', 'avg_rpe', mean(compared.map(([, target]) => target)))
+			],
 			call,
 			'rpe_deviation',
 			{
@@ -537,7 +550,13 @@ export function composeWeeklyReview(input: WeeklyReviewInput): WeeklyReview {
 		const plan = planned?.[g.group];
 		const figures = [
 			fig('Done', 'group_sets', g.sets),
-			...(plan === undefined ? [] : [fig('Planned', 'group_sets', plan)])
+			...(plan === undefined ? [] : [fig('Planned', 'group_sets', plan)]),
+			...(g.target
+				? [
+						fig('Target low', 'group_sets', g.target[0]),
+						fig('Target high', 'group_sets', g.target[1])
+					]
+				: [])
 		];
 		const label = `${MUSCLE_GROUP_LABEL[g.group]} hard sets`;
 		add(`volume:sets:${g.group}`, label, figures, [GROUP_LEVEL[g.status], words], 'group_sets');
@@ -594,6 +613,7 @@ export function composeWeeklyReview(input: WeeklyReviewInput): WeeklyReview {
 		const said = rounds === null ? 'No rounds recorded' : plural(rounds, 'round');
 		const figures = [
 			tally('Sessions', thai.sessions, 'session'),
+			fig('Time', 'training_time', thai.minutes === null ? null : thai.minutes * 60),
 			fig('Load', 'muay_thai_load', thai.load),
 			figure('Rounds', rounds, null, 'reported', said)
 		];

@@ -12,7 +12,9 @@ import type { WeeklyReviewSnapshot } from '#lib/domain/programming/review/snapsh
 import {
 	ReviewInputError,
 	ReviewNotFoundError,
+	ReviewSupersededError,
 	WeeklyReviewNotReviewableError,
+	WeeklyReviewRefreshError,
 	type WeeklyReviewView
 } from '#lib/server/services/reviews/index.ts';
 import type { TrainingDeps } from '#lib/server/services/training/shared.ts';
@@ -22,6 +24,7 @@ import {
 	loadReviews,
 	NOT_REVIEWED_MAX,
 	parseReviewKey,
+	refreshReview,
 	reviewRows,
 	weeklyReviewData,
 	type ReviewsDeps
@@ -282,6 +285,94 @@ describe('a weekly review as the screen shows it', () => {
 			trends: [],
 			notes: []
 		});
+	});
+});
+
+describe('an out-of-date review', () => {
+	const PROPOSAL = '0b7e2d4c-1a3f-4e5d-9c6b-8a7f6e5d4c3b';
+	const stale = (state: WeeklyReviewView['decision']['state'], laterChanges = 3) =>
+		weeklyReviewData(
+			view({
+				stale: true,
+				laterChanges,
+				decision: { state, proposalId: PROPOSAL } as WeeklyReviewView['decision']
+			})
+		).stale;
+
+	it('says how many changes came after it, and offers Refresh while the decision is open', () => {
+		expect(stale('undecided')).toEqual({
+			words: 'Computed before 3 later changes',
+			detail: 'You’ve logged training since. Refresh recomputes it and keeps this version.',
+			refreshable: true
+		});
+		expect(stale('partly_past', 1)).toMatchObject({
+			words: 'Computed before 1 later change',
+			refreshable: true
+		});
+		expect(
+			weeklyReviewData(view({ stale: true, laterChanges: 2, decision: { state: 'none' } })).stale
+		).toMatchObject({ refreshable: true });
+	});
+
+	it('a decided review never changes: no Refresh once applied, rejected or superseded', () => {
+		for (const state of ['applied', 'rejected', 'accepted_waiting', 'superseded'] as const)
+			expect(stale(state), state).toMatchObject({
+				detail: 'You’ve decided on its changes, so it stays as it was.',
+				refreshable: false
+			});
+	});
+
+	it('an up-to-date review shows no notice, and the id Refresh posts is the live revision', () => {
+		const data = weeklyReviewData(view({ stale: false, laterChanges: 0 }));
+		expect(data.stale).toBeNull();
+		expect(data.id).toBe(ID);
+	});
+});
+
+describe('Refresh', () => {
+	const today = vi.fn(async () => TODAY);
+	const refreshing = (outcome: () => Promise<unknown>) => {
+		const refresh = vi.fn(outcome) as never;
+		return { run: () => refreshReview('owner', ID, new Date(), { db, refresh, today }), refresh };
+	};
+
+	it('writes the next revision from today', async () => {
+		const { run, refresh } = refreshing(async () => ({ id: 'next' }));
+		await expect(run()).resolves.toEqual({ ok: true });
+		expect(refresh).toHaveBeenCalledWith('owner', ID, { today: TODAY }, { db });
+	});
+
+	it('already up to date, or refreshed first by another tap, shows the live revision', async () => {
+		for (const err of [new WeeklyReviewRefreshError('not_stale'), new ReviewSupersededError()])
+			await expect(refreshing(async () => Promise.reject(err)).run(), err.message).resolves.toEqual(
+				{ ok: true }
+			);
+	});
+
+	it('a decided or not-yet-reviewable review is a 409, an unknown one a 400, and anything else fails', async () => {
+		const decided = refreshing(async () => Promise.reject(new WeeklyReviewRefreshError('decided')));
+		await expect(decided.run()).resolves.toEqual({
+			ok: false,
+			status: 409,
+			data: { reason: 'decided' }
+		});
+		// An early review whose week is no longer all done waits for Monday, as Create does.
+		const early = refreshing(async () =>
+			Promise.reject(new WeeklyReviewNotReviewableError('2026-11-09'))
+		);
+		await expect(early.run()).resolves.toEqual({
+			ok: false,
+			status: 409,
+			data: { reason: 'not_ready' }
+		});
+		const gone = refreshing(async () => Promise.reject(new ReviewNotFoundError()));
+		await expect(gone.run()).resolves.toEqual({
+			ok: false,
+			status: 400,
+			data: { reason: 'invalid' }
+		});
+		const boom = new Error('db down');
+		await expect(refreshing(async () => Promise.reject(boom)).run()).rejects.toBe(boom);
 	});
 });
 

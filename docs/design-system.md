@@ -186,8 +186,9 @@ Tracking: `--tracking-display -0.032em`, `--tracking-tight -0.016em`, `--trackin
   thumbs and indicators. `prefers-reduced-motion` sets durations to 0 and disables shimmer.
 - **Glass:** `--color-glass` (92% canvas) + `backdrop-filter: saturate(180%) blur(32px)` on the
   bottom nav and the coach composer (opaque and blurred enough that text scrolling behind a tab
-  label cannot be read); the sheet scrim uses a light 2 px blur. Write only the standard
-  `backdrop-filter`; Lightning CSS adds `-webkit-backdrop-filter` for the Safari build targets.
+  label cannot be read). The sheet scrim has none: a blur under its fade is redrawn every frame.
+  Write only the standard `backdrop-filter`; Lightning CSS adds `-webkit-backdrop-filter` for the
+  Safari build targets.
   (Writing both, standard first, makes the minifier keep only the prefixed one, which Chromium
   ignores.) `pnpm budgets` fails if a
   built rule ships a `-webkit-` property without its standard twin, and e2e asserts the nav's
@@ -322,6 +323,9 @@ itself read it.
   centred over the column like a composer, above the tab bar below 1024 px and at the bottom of
   the content column beside the rail from there. It sits under `--resume-inset`, so the shell's
   bottom padding and every other bottom chrome rise with it and it covers nothing.
+- **The held screen** (`(app)/HeldScreen.svelte`) covers the column, not the window: fixed
+  under the nav from `--safe-top` and `--nav-inset-left`, the content column's width inside, so the
+  screen being left keeps its layout and scroll underneath.
 - Specs check chrome against the element it belongs to, never against `<main>` for a column:
   `expectCentredOver(page, chrome, area)` for screen chrome and
   `expectInColumn(page, chrome, column, others)` for column chrome. A screen that later turns
@@ -628,6 +632,7 @@ workout pages and is audited on `/design` → Workout, one state at a time.
 | `WorkoutList`                    | `src/routes/(app)/progress/workouts`. History, newest first: waiting to sync (not links), then each workout's dot, title, date, duration and key number; one 44 px link, `aria-current`.               |
 | `WorkoutDetail`                  | One workout in words: its numbers, PRs, sets with RPE and states, a run's segments (`RunDetail`) or a session's metrics (`OtherDetail`); a name opens its history sheet.                               |
 | `ResumeBar`                      | `src/routes/(app)`. Resume workout · title with the time and the sync pill, or N changes waiting to sync; screen chrome over the column that raises `--resume-inset`, so it covers nothing.            |
+| `HeldScreen`                     | `src/routes/(app)`. While another screen loads: its last copy in this page, else the tab's skeleton (aria-busy, 'Loading Train'); inert, fixed over the column under the nav.                          |
 
 ## Accessibility checklist (applies to every new component)
 
