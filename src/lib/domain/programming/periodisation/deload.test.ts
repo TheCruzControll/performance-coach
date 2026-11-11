@@ -373,7 +373,9 @@ describe('deloadWeek', () => {
 function m3Blocks(input: ProgrammingInput, options: GenerateOptions): BlockPlan[] {
 	const context = { input, options, log: new DecisionLog() };
 	let draft = firstDraft({ input, periodisation: null });
-	for (const stage of STAGES) draft = stage.run(draft, context);
+	// M3's stages: the schedule stage (generator-schedule) is M7's.
+	for (const stage of STAGES.filter((s) => s.name !== 'schedule'))
+		draft = stage.run(draft, context);
 	return draft.blocks;
 }
 

@@ -4,7 +4,12 @@
  *
  * generator-season (m7/28): the season, the goal order and modes, and the dose caps, each a
  * behaviour applied by the function its source names.
+ *
+ * generator-schedule (m7/29): the schedule stage, which repairs every planned week with the week
+ * scheduler: the week kinds repaired on their own, the hardest building week whose days the block
+ * shares, an eased session's loads, and a goal's session kept over one no goal trains.
  */
+import { HARDEST_BY, OWN_WEEKS } from '../../stages/schedule.ts';
 import type { RuleDefinition } from './types.ts';
 
 const PROGRAMMING = 'src/lib/domain/programming';
@@ -45,6 +50,44 @@ export const rules: readonly RuleDefinition[] = [
 		rationale:
 			'A dose is the least that keeps a goal; giving it more days would take them from the goal that leads now.',
 		source: `${PROGRAMMING}/demand.ts#allocateWeek`
+	},
+	{
+		id: 'generator.own_weeks',
+		kind: 'constant',
+		statement:
+			'Deload, taper, event, recovery, maintenance and cutback weeks are repaired on their own, without the days the building weeks share.',
+		rationale:
+			'Their sessions and load differ from the building weeks’, so the days that suit the hardest week need not suit them.',
+		source: `${PROGRAMMING}/stages/schedule.ts#OWN_WEEKS`,
+		values: OWN_WEEKS
+	},
+	{
+		id: 'generator.hardest_week',
+		kind: 'constant',
+		statement:
+			'The block’s building weeks share the days the scheduler gives its hardest building week, the one with the most planned load, unless a week costs less repaired as it was placed.',
+		rationale:
+			'A session keeps its day all block, so the week whose real demands clash most decides the days, and the lighter weeks follow it.',
+		source: `${PROGRAMMING}/stages/schedule.ts#HARDEST_BY`,
+		values: HARDEST_BY
+	},
+	{
+		id: 'generator.eased_loads',
+		kind: 'behaviour',
+		statement:
+			'A session eased to avoid a clash has each main lift it lowered loaded again at its new target RPE, as the loads and progression rules load a week with that cap, and its length checked again.',
+		rationale:
+			'An easier session prescribed with its old loads would ask for the old effort; its numbers must match what it now asks.',
+		source: `${PROGRAMMING}/stages/schedule.ts#reloaded`
+	},
+	{
+		id: 'generator.kept_over_ungoaled',
+		kind: 'behaviour',
+		statement:
+			'When no repair avoids a clash between a goal’s session and one no goal trains, such as a class you keep without a goal for it, the goal’s session keeps its day and the trade-off is recorded.',
+		rationale:
+			'Each of your goals ranks above training no goal names, and a trade-off the plan makes is yours to know about.',
+		source: `${PROGRAMMING}/stages/schedule.ts#schedule`
 	}
 ];
 

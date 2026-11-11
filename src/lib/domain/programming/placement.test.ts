@@ -5,7 +5,7 @@
  * class kept clear of intervals; an over-constrained week dropping, or by priority keeping, a
  * session; decisions that follow the sessions; every scenario deterministic and rule-clean.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { weekdayOf } from '../calendar';
 import { CATALOGUE } from '../exercises/index';
 import type { Weekday } from '../profile/catalog';
@@ -14,7 +14,7 @@ import { programPlanSchema } from '../training/schemas';
 import type { ProgramPlan, SessionPlan } from '../training/types';
 import { validate } from '../validation';
 import { weekBudget } from './demand';
-import { generateProgram } from './generate';
+import { generateProgram, STAGES } from './generate';
 import { buildProgrammingInput } from './input';
 import { checkWeek, demandOf } from './interference';
 import { SCENARIO_START, SCENARIOS, scenarioDay } from './scenarios';
@@ -25,6 +25,20 @@ const inputOf = (profile: TrainingProfile) =>
 	buildProgrammingInput(profile, { catalogue: CATALOGUE });
 const generate = (profile: TrainingProfile, options = OPTIONS) =>
 	generateProgram(inputOf(profile), options);
+/** The plan as placement leaves it, before the schedule stage (generator-schedule) repairs it. */
+function placed(profile: TrainingProfile, options = OPTIONS) {
+	const spy = vi
+		.spyOn(
+			STAGES.find((s) => s.name === 'schedule')!,
+			'run'
+		)
+		.mockImplementation((draft) => draft);
+	try {
+		return generate(profile, options);
+	} finally {
+		spy.mockRestore();
+	}
+}
 
 const weeksOf = (plan: ProgramPlan) => plan.blocks.flatMap((b) => b.weeks);
 const day = (s: SessionPlan) => weekdayOf(s.date);
@@ -335,7 +349,7 @@ describe('placement', () => {
 				preferredTimes: ['morning'],
 				commitments: [{ ...classes!, intensity: 'hard' }]
 			};
-			const plan = generate(p);
+			const plan = placed(p);
 			// The fight camp's fight week is light enough for both sessions; every week before it
 			// keeps one, on the day that clashes only with the marathon, held at maintenance.
 			const building = weeksOf(plan).filter((w) => w.kind !== 'event');
@@ -355,7 +369,7 @@ describe('placement', () => {
 		});
 
 		it('drops the lowest-priority sessions a part week 1 has no room for', () => {
-			const plan = generate(SCENARIOS.hybrid(), { ...OPTIONS, firstPlannedDay: scenarioDay(1, 3) });
+			const plan = placed(SCENARIOS.hybrid(), { ...OPTIONS, firstPlannedDay: scenarioDay(1, 3) });
 			const [first] = weeksOf(plan);
 			expect(first!.sessions.map((s) => [day(s), s.type, s.timeOfDay])).toEqual([
 				['thu', 'easy_run', 'morning'],
