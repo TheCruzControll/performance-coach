@@ -322,6 +322,9 @@ itself read it.
   centred over the column like a composer, above the tab bar below 1024 px and at the bottom of
   the content column beside the rail from there. It sits under `--resume-inset`, so the shell's
   bottom padding and every other bottom chrome rise with it and it covers nothing.
+- **The held screen** (`(app)/HeldScreen.svelte`) covers the column, not the window: fixed
+  under the nav from `--safe-top` and `--nav-inset-left`, the content column's width inside, so the
+  screen being left keeps its layout and scroll underneath.
 - Specs check chrome against the element it belongs to, never against `<main>` for a column:
   `expectCentredOver(page, chrome, area)` for screen chrome and
   `expectInColumn(page, chrome, column, others)` for column chrome. A screen that later turns
@@ -628,6 +631,7 @@ workout pages and is audited on `/design` → Workout, one state at a time.
 | `WorkoutList`                    | `src/routes/(app)/progress/workouts`. History, newest first: waiting to sync (not links), then each workout's dot, title, date, duration and key number; one 44 px link, `aria-current`.               |
 | `WorkoutDetail`                  | One workout in words: its numbers, PRs, sets with RPE and states, a run's segments (`RunDetail`) or a session's metrics (`OtherDetail`); a name opens its history sheet.                               |
 | `ResumeBar`                      | `src/routes/(app)`. Resume workout · title with the time and the sync pill, or N changes waiting to sync; screen chrome over the column that raises `--resume-inset`, so it covers nothing.            |
+| `HeldScreen`                     | `src/routes/(app)`. While another screen loads: its last copy in this page, else the tab's skeleton (aria-busy, 'Loading Train'); inert, fixed over the column under the nav.                          |
 
 ## Accessibility checklist (applies to every new component)
 
