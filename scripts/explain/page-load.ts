@@ -14,6 +14,10 @@
  *    a whole read, below).
  * 2. Route-level concurrency: one executor runs one query at a time, and CPU (overview 'all' about
  *    440 ms of its 485–620 ms) is not hidden by overlapping reads: not applied.
+ *    Today (screens.cases.ts) is the opposite case: 30 short statements and little CPU, so its
+ *    setup, program and plan are read together on the pool. Local medians over 3–4 runs each
+ *    (M1 Pro, heavily loaded), before → after: 16.0–23.7 → 10.4–16.1 ms, and 106–138 → 54–63 ms
+ *    with about 2.3 ms waited before each statement.
  * 3. SQL pre-aggregation of stored outputs: no stored output holds these figures.
  * 4, 5. An index is not missing. A closed-week cache table: applied once the owner gave it its
  *    slot (below).

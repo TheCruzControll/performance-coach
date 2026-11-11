@@ -33,10 +33,11 @@ agent/
   hooks.ts           TurnHooks: what the loop tells the turn (text, chips, calls, steps), no-op defaults
   policy.ts          the output gate: unsafe pain advice and ungrounded facts never reach the wire
   direct.ts          unambiguous lookups answered without a model call
-  rollover.ts        a segment becomes a summary note; the next opens with a new snapshot
+  rollover.ts        a segment becomes a summary note (made after the answer that fills it); the
+                     next opens with a new snapshot
   memory/load.ts     the memory snapshot that opens each segment
   prompt/            system.ts (frozen), context.ts (turn facts), layout.ts (cache-stable order),
-                     drafter.ts (the drafter's frozen prompt)
+                     drafter.ts (the drafter's frozen prompt), effort.ts (a quick question's effort)
   provider/          types.ts (LlmProvider), validate.ts (the API's rules), mock.ts and
                      mock-scripts/, faults.ts, select.ts, anthropic.ts (the only SDK import)
   tools/             schema.ts, define.ts, context.ts, output.ts, execute.ts, registry.ts and

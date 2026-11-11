@@ -75,8 +75,9 @@ test.describe('platform: health, PWA, observability', () => {
 		expect(csp).toContain("default-src 'self'");
 		expect(csp).toContain("frame-ancestors 'none'");
 		expect(csp).toContain("object-src 'none'");
-		// The template's and /workout's inline scripts by hash (vite.config.ts), then the nonce.
-		expect(csp).toMatch(/script-src 'self'( 'sha256-[^']+'){2} 'nonce-[^']+'/);
+		// The template's, /workout's and /offline's inline scripts by hash (vite.config.ts), then
+		// the nonce.
+		expect(csp).toMatch(/script-src 'self'( 'sha256-[^']+'){3} 'nonce-[^']+'/);
 		expect(csp).not.toMatch(/script-src[^;]*unsafe-inline/);
 		await expect(page.getByTestId('db-status')).toBeVisible(); // streamed script ran
 
@@ -107,6 +108,31 @@ test.describe('platform: health, PWA, observability', () => {
 			await expect(fonts, path).toHaveAttribute(
 				'href',
 				/mona-sans-latin-wght-normal\.[\w-]+\.woff2$/
+			);
+		}
+	});
+
+	test('first paint waits for no stylesheet request, and the styles come before the hints', async ({
+		page
+	}) => {
+		// vite.config.ts inlines the CSS a page renders with; hooks.server.ts (head-order.ts) puts
+		// it ahead of the preload hints. /workout is prerendered: the hook ran at build time.
+		for (const path of ['/today', '/train', '/progress', '/progress/workouts', '/workout']) {
+			const res = await page.request.get(path);
+			expect(res.ok(), path).toBe(true);
+			const html = await res.text();
+			const head = html.slice(0, html.indexOf('</head>'));
+			const loading = [...head.matchAll(/<link\b[^>]*\brel="stylesheet"[^>]*>/g)]
+				.map(([tag]) => tag)
+				.filter((tag) => !/\sdisabled\b/.test(tag));
+			expect(loading, `${path} links a stylesheet first paint waits for`).toEqual([]);
+			const style = head.indexOf('<style');
+			expect(style, `${path} inlines its styles`).toBeGreaterThan(-1);
+			expect(style, `${path} has its styles before the font preload`).toBeLessThan(
+				head.indexOf('rel="preload"')
+			);
+			expect(style, `${path} has its styles before the first modulepreload`).toBeLessThan(
+				head.indexOf('rel="modulepreload"')
 			);
 		}
 	});

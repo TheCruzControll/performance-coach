@@ -7,7 +7,9 @@
  *   - build assets + static files  → cache-first (immutable, versioned)
  *   - prerendered pages            → cache-first, whatever the query string, so a workout page
  *                                    (/workout?start=…) reloads offline from the precache
- *   - page navigations             → network only; on failure the prerendered /offline screen
+ *   - page navigations             → network only; on failure the prerendered /offline screen,
+ *                                    which sends a launch mid-workout to the workout
+ *                                    (lib/client/workout/launch.ts), sooner for the start URL
  *   - /api/*, __data.json          → network only (never cached: live, private data)
  *
  * Dynamic HTML is never stored: pages are sent `private, no-cache` because they carry personal
@@ -17,12 +19,12 @@
 import { version } from '$app/env';
 import { assets, immutable, prerendered } from '$app/manifest';
 import { self } from '$app/service-worker';
+import { navigationTimeout } from '#lib/client/workout/launch.ts';
+import { activeSummary } from '#lib/client/workout/probe.ts';
 
 const PREFIX = 'pc-';
 const SHELL_CACHE = `${PREFIX}shell-${version}`;
 const OFFLINE_URL = '/offline';
-/** A connected-but-dead network ("lie-fi") can hang a request for a minute; give up sooner. */
-const NAVIGATION_TIMEOUT_MS = 6000;
 
 /**
  * Home-screen/manifest icons (~280 KB of PNGs) are fetched by the OS when the app is
@@ -65,14 +67,23 @@ async function cacheFirst(request: Request): Promise<Response> {
 	return cached ?? fetch(request);
 }
 
+/** Whether a workout is in progress on this device (its IndexedDB, read without creating it). */
+const workoutInProgress = async () => (await activeSummary()) !== null;
+
+/**
+ * Rejects once the navigation's time is up (launch.ts navigationTimeout): a lie-fi network can hang
+ * it for a minute. Counted from the request, while IndexedDB answers whether a workout is on.
+ */
+async function timeUp(pathname: string): Promise<never> {
+	const asked = Date.now();
+	const ms = await navigationTimeout(pathname, workoutInProgress);
+	await new Promise((resolve) => setTimeout(resolve, Math.max(0, ms - (Date.now() - asked))));
+	throw new Error('navigation timeout');
+}
+
 async function navigate(request: Request): Promise<Response> {
 	try {
-		return await Promise.race([
-			fetch(request),
-			new Promise<never>((_, reject) =>
-				setTimeout(() => reject(new Error('navigation timeout')), NAVIGATION_TIMEOUT_MS)
-			)
-		]);
+		return await Promise.race([fetch(request), timeUp(new URL(request.url).pathname)]);
 	} catch {
 		// The offline screen holds no personal data; it renders in the app shell at the URL
 		// that failed, so tabs without server data keep working from the precache.
