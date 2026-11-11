@@ -9,8 +9,8 @@
  *
  * Initial JS is the complete *static* import graph of the app entry and the route's layout and
  * page nodes, read from Vite's manifest — not only the modulepreload list SvelteKit emits, which
- * can miss a chunk that is also reachable through a dynamic import (it is then fetched late, as
- * a waterfall; listed in the report). It also counts what a route's universal `load` imports
+ * could miss a chunk that is also reachable through a dynamic import (it is then fetched late,
+ * as a waterfall; such a chunk fails the run). It also counts what a route's universal `load` imports
  * dynamically (`+page.ts` / `+layout.ts`): the load awaits it before the page hydrates, so it is
  * initial too — the largest such import counts.
  *
@@ -217,6 +217,19 @@ for (const route of routes) {
 			fonts.size <= BUDGETS.preloadedFonts
 	});
 }
+
+/**
+ * Every chunk of a route's initial JS is modulepreloaded by its HTML. One that is not is fetched
+ * only once a module importing it runs: a round trip after the rest, before the page hydrates.
+ * SvelteKit dropped a chunk it reached through a dynamic import first (seven on /today);
+ * patches/@sveltejs__kit@*.patch fixes its find_deps.
+ */
+const lateProblems = rows
+	.filter((r) => r.late.length)
+	.map(
+		(r) =>
+			`${r.route}: ${r.late.map((f) => `${path.basename(f)} (${fmt(gzipBytes(f))})`).join(', ')}`
+	);
 
 const allCss = readdirSync(`${CLIENT}/_app/immutable/assets`).filter((f) => f.endsWith('.css'));
 const totalCss = allCss.reduce((sum, f) => sum + gzipBytes(`_app/immutable/assets/${f}`), 0);
@@ -619,12 +632,7 @@ const lines = [
 	`Total CSS in the build (gzip, not all of it on any one route): ${fmt(totalCss)} across ${allCss.length} files`,
 	`Service worker (gzip): ${fmt(sw)}`,
 	`Budgets: initial JS ≤ ${BUDGETS.routeJsKb} KB · route CSS ≤ ${BUDGETS.routeCssKb} KB · preloaded fonts ≤ ${BUDGETS.preloadedFonts}`,
-	...rows
-		.filter((r) => r.late.length)
-		.map(
-			(r) =>
-				`Not modulepreloaded (counted above; fetched after its importer): \`${r.route}\` ${r.late.map((f) => `${path.basename(f)} (${fmt(gzipBytes(f))})`).join(', ')}`
-		),
+	`Initial JS modulepreloaded in full (no chunk fetched only once its importer runs): ${lateProblems.length ? 'FAIL' : 'pass'}`,
 	`CSS output guard (standard property kept next to every -webkit- prefix): ${prefixProblems.length ? 'FAIL' : 'pass'}`,
 	`Root error page (imported before every hydration): its own ${rootErrorFile ? fmt(gzipBytes(rootErrorFile)) : '?'} chunk, no script or stylesheet a route does not load: ${rootErrorProblems.length ? 'FAIL' : 'pass'}`,
 	`SvelteKit start entry imports only the payload chunk (it runs it before setting the payload): ${payloadProblem ? 'FAIL' : 'pass'}`,
@@ -646,6 +654,12 @@ if (process.env.GITHUB_STEP_SUMMARY) {
 	appendFileSync(
 		process.env.GITHUB_STEP_SUMMARY,
 		`## Performance budgets\n\n${lines.join('\n')}\n`
+	);
+}
+
+if (lateProblems.length > 0) {
+	console.error(
+		`\nInitial JS fetched late (not modulepreloaded by the page):\n  - ${lateProblems.join('\n  - ')}`
 	);
 }
 
@@ -700,6 +714,7 @@ if (isolation.problems.length > 0) {
 const failed = rows.filter((r) => !r.ok);
 if (
 	failed.length > 0 ||
+	lateProblems.length > 0 ||
 	prefixProblems.length > 0 ||
 	shellProblems.length > 0 ||
 	rootErrorProblems.length > 0 ||
@@ -714,6 +729,7 @@ if (
 ) {
 	const what = [
 		...failed.map((r) => r.route),
+		...(lateProblems.length ? ['initial JS fetched late'] : []),
 		...(prefixProblems.length ? ['CSS prefixes'] : []),
 		...(shellProblems.length ? ['layout inlining'] : []),
 		...(rootErrorProblems.length ? ['root error page'] : []),
