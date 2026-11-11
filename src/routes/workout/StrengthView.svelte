@@ -645,6 +645,16 @@
 		user-select: none;
 	}
 
+	/* While the card follows a swipe or springs to rest (Navigation.svelte), it moves on the
+	   compositor and never widens the page. */
+	.swipe:global([data-moving]) {
+		overflow-x: clip;
+	}
+
+	.swipe:global([data-moving]) > :global(*) {
+		will-change: transform;
+	}
+
 	/* Previous and Next, then Up next with its Add exercise: their height is kept while they load.
 	   Packed at the top, so a shorter Up next never moves Previous and Next. */
 	.navigation {
