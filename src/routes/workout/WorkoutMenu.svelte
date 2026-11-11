@@ -9,11 +9,15 @@
   server holds is kept there as abandoned (start.ts's discardInProgress, the start conflict's
   Discard). A BottomSheet: a centred dialog from 1024 px, Escape closes it and focus returns.
   Every action is a primitive Button (44 px, hover and :focus-visible states).
+  Once a set is logged (hasLoggedSet), a visible Finish sits beside the More button too, so
+  finishing never means hunting through the menu; the menu keeps Finish workout. On a phone the
+  header then keeps the title to one line (WorkoutHeader.svelte), so nothing moves.
 -->
 <script lang="ts">
 	import type { InProgress } from '#lib/client/workout/start.ts';
 	import type { WorkoutStore } from '#lib/client/workout/store.ts';
 	import type { WorkoutView } from '#lib/domain/workout/index.ts';
+	import { hasLoggedSet } from '#lib/domain/workout/selectors.ts';
 	import BottomSheet from '#lib/ui/components/BottomSheet.svelte';
 	import Button from '#lib/ui/components/Button.svelte';
 	import IconButton from '#lib/ui/components/IconButton.svelte';
@@ -29,6 +33,7 @@
 	let { view, store, onfinish }: Props = $props();
 
 	let open = $state(false);
+	const logged = $derived(hasLoggedSet(view));
 
 	/** The workout as Discard's question shows it, once asked. */
 	let discarding = $state.raw<InProgress | null>(null);
@@ -90,16 +95,23 @@
 	}
 </script>
 
-<IconButton
-	icon="more"
-	label="Workout options"
-	onclick={(event) => {
-		// Safari never focuses a tapped button: the sheet returns focus to what has it.
-		(event.currentTarget as HTMLElement).focus();
-		open = true;
-	}}
-	data-testid="workout-menu-button"
-/>
+<span class="buttons">
+	{#if logged}
+		<Button size="sm" variant="secondary" onclick={finish} data-testid="header-finish"
+			>Finish</Button
+		>
+	{/if}
+	<IconButton
+		icon="more"
+		label="Workout options"
+		onclick={(event) => {
+			// Safari never focuses a tapped button: the sheet returns focus to what has it.
+			(event.currentTarget as HTMLElement).focus();
+			open = true;
+		}}
+		data-testid="workout-menu-button"
+	/>
+</span>
 
 <BottomSheet
 	bind:open
@@ -163,6 +175,13 @@
 {#if Settings}<Settings bind:open={settingsOpen} />{/if}
 
 <style>
+	/* Apart, so Finish's widened hit area never reaches over More's. */
+	.buttons {
+		display: flex;
+		align-items: center;
+		gap: var(--space-2);
+	}
+
 	.consequence {
 		font-size: var(--text-sm);
 		line-height: var(--leading-normal);

@@ -2,12 +2,14 @@
   @component
   The workout pages' header: Minimise (back to Today, where the resume bar waits) with the sync
   status (small, quiet beside logging, once it has loaded on idle), the workout's title, the
-  stopwatch and, beside it, the workout menu's More button (Finish, Discard). Two rows on a phone (Minimise and the status; the title and the stopwatch), one row
+  stopwatch and, beside it, the workout menu's More button (Finish, Discard), with a visible Finish
+  once a set is logged. Two rows on a phone (Minimise and the status; the title and the stopwatch), one row
   from 1024 px,
   where it spans the page over the columns. At a large text size the status takes a row of its own
   under Minimise rather than overflow; its width is the same in every state, so which line it
   takes never depends on what it says. It applies --safe-top itself: no shell does here.
-  With no title yet (restoring) the title's line is reserved, so nothing moves when it arrives.
+  With no title yet (restoring) the title's line is reserved, so nothing moves when it arrives;
+  on a phone, once the visible Finish joins the row, the title keeps to that line with an ellipsis.
 -->
 <script lang="ts">
 	import { resolve } from '$app/paths';
@@ -103,6 +105,16 @@
 		letter-spacing: var(--tracking-tight);
 		line-height: var(--leading-snug);
 		overflow-wrap: anywhere;
+	}
+
+	/* Once the visible Finish joins the row (a set is logged), the title keeps to its one line,
+	   ending in an ellipsis if it must, rather than grow the header mid-workout. */
+	@media (width < 64rem) {
+		.inner:has(.time :global([data-testid='header-finish'])) h1 {
+			overflow: hidden;
+			white-space: nowrap;
+			text-overflow: ellipsis;
+		}
 	}
 
 	@media (width >= 64rem) {

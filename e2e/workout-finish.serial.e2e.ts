@@ -1,6 +1,8 @@
 /**
  * Finishing a workout on /workout (WorkoutMenu, FinishSheet, Summary, the Shell's completed state
  * and fix/workout.ts), against the real server:
+ * - Once a set is logged, a visible Finish sits beside the header's More button, whose menu keeps
+ *   Finish workout; it opens the same finish.
  * - Finish with planned sets still open asks first; the summary shows the best set's e1RM as M1
  *   estimates it, marked estimated, a PR only above the kit's best, and the plank's seconds, not
  *   volume; the session RPE, the notes and the stopwatch's duration are stored; Done opens the
@@ -53,6 +55,7 @@ const menu = (page: Page) => page.getByTestId('workout-menu');
 const sheet = (page: Page) => page.getByTestId('finish-sheet');
 const summary = (page: Page) => page.getByTestId('workout-summary');
 const pill = (page: Page) => page.getByTestId('sync-pill');
+const headerFinish = (page: Page) => page.getByTestId('header-finish');
 const synced = (page: Page) => expect.poll(() => readOutbox(page), { timeout: 15_000 }).toEqual([]);
 
 const SET: LoggedSet = {
@@ -308,6 +311,41 @@ test.describe('finishing a workout', () => {
 		await expect(card(page).first()).toHaveAttribute('data-status', 'completed');
 	});
 
+	test('a visible Finish once a set is logged, beside the menu that keeps it', async ({
+		page,
+		request
+	}) => {
+		await startFromKit(page, request);
+		await expect(menuButton(page)).toBeVisible();
+		await expect(headerFinish(page)).toHaveCount(0);
+		const header = page.getByTestId('workout-header');
+		const title = header.getByRole('heading', { level: 1 });
+		const [headerBefore, titleBefore] = [await boxOf(header), await boxOf(title)];
+
+		await page.getByTestId('set-logger').getByTestId('complete-set').click();
+		await expect(headerFinish(page)).toBeVisible();
+		await expect(headerFinish(page)).toHaveText('Finish');
+		await expect(headerFinish(page)).toBeInViewport();
+		await expectNoSideScroll(page);
+		// The title keeps to its one line, so the header (and the page under it) never moves.
+		const [headerAfter, titleAfter] = [await boxOf(header), await boxOf(title)];
+		expect(Math.abs(headerAfter.height - headerBefore.height)).toBeLessThanOrEqual(1);
+		expect(Math.abs(titleAfter.height - titleBefore.height)).toBeLessThanOrEqual(1);
+		// Apart, so Finish's widened hit area never reaches over More's.
+		const [own, more] = [await boxOf(headerFinish(page)), await boxOf(menuButton(page))];
+		expect(more.x - (own.x + own.width)).toBeGreaterThanOrEqual(8);
+
+		// The menu keeps Finish workout.
+		await menuButton(page).click();
+		await expect(menu(page).getByTestId('menu-finish')).toBeVisible();
+		await page.keyboard.press('Escape');
+		await expect(menu(page)).toBeHidden();
+
+		await headerFinish(page).click();
+		await expect(sheet(page)).toBeVisible();
+		await expect(sheet(page).getByRole('heading', { name: 'Finish workout?' })).toBeVisible();
+	});
+
 	test('a replayed finish completes once', async ({ page, request }) => {
 		const { workoutId } = await startFromKit(page, request);
 		const sent: Mutation[] = [];
@@ -529,6 +567,36 @@ test.describe('discarding a workout', () => {
 
 test.describe('on a desktop window', () => {
 	test.use(DESKTOP);
+
+	test('the visible Finish sits beside the More button, with hover and focus states', async ({
+		page,
+		request
+	}) => {
+		const { kit, workoutId } = await startFromKit(page, request);
+		await injectMutation(
+			page,
+			setOf(kit as StrengthKit, workoutId, 'back_squat', 1, { weight: 100, reps: 5, rpe: 8 })
+		);
+		const finish = headerFinish(page);
+		await expect(finish).toBeVisible();
+		const [own, more] = [await boxOf(finish), await boxOf(menuButton(page))];
+		expect(own.x + own.width).toBeLessThanOrEqual(more.x);
+		expect(Math.abs(own.y + own.height / 2 - (more.y + more.height / 2))).toBeLessThanOrEqual(2);
+
+		const background = () => finish.evaluate((el) => getComputedStyle(el).backgroundColor);
+		const resting = await background();
+		await finish.hover();
+		await expect.poll(background).not.toBe(resting);
+		await page.mouse.move(0, 0);
+
+		await menuButton(page).focus();
+		await page.keyboard.press('Shift+Tab');
+		await expect(finish).toBeFocused();
+		expect(await finish.evaluate((el) => el.matches(':focus-visible'))).toBe(true);
+		await page.keyboard.press('Enter');
+		await expect(sheet(page)).toBeVisible();
+		await expectNoSideScroll(page);
+	});
 
 	test('the summary is a centred dialog at the readable width, its RPE and notes by keyboard, with hover and focus states', async ({
 		page
