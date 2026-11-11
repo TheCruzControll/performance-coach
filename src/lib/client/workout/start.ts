@@ -20,8 +20,8 @@
  *   it, or discardInProgress and start again. Discard drops a workout whose start has not synced
  *   (the store's Discard), and abandons one the server holds (workout.abandon, sent by the next
  *   page's sync engine). Opening the start link of the workout in progress resumes it.
- * - saveKits(lineages): today's kits, saved for a gym with no signal (Today calls it on idle, in
- *   start-entry-points), with the owner's units. A 401 purges and stops it.
+ * - saveKits(lineages): the coming days' kits, saved for a gym with no signal (Today and Train
+ *   call it on idle, coming-kits.ts), with the owner's units. A 401 purges and stops it.
  * Plain .ts with no runes: the store, the network and the clock are injected.
  */
 import type { IsoDate } from '#lib/domain/calendar.ts';
