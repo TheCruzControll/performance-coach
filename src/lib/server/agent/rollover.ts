@@ -39,6 +39,7 @@ import {
 	TURN_LIMITS,
 	type SegmentLimits
 } from '../../domain/coach/budgets.ts';
+import { isReviewEntry } from '../../domain/coach/review-entries.ts';
 import {
 	summaryText,
 	threadSummarySchema,
@@ -204,13 +205,14 @@ async function summarise(
 /**
  * Before a turn's transaction: when the thread's current segment is due to roll over, summarise it
  * into a thread_summary note. Null when nothing is due (a retried send, an archived thread, a
- * segment within its limits on the current prompt version).
+ * review's write-up thread, a segment within its limits on the current prompt version).
  */
 export async function summariseSegment(input: SummariseInput): Promise<RolloverPlan | null> {
 	const { ownerId, deps } = input;
 	if (await findOwnerMessage(ownerId, input.clientMessageId, deps)) return null;
 	const { thread, rows } = await getTranscript(ownerId, input.threadId, deps);
-	if (thread.archived) return null;
+	// A review's write-up thread is never summarised: memory carries the review itself.
+	if (thread.archived || isReviewEntry(thread.entry)) return null;
 	const reason = await dueReason(input, thread, rows);
 	if (reason === null) return null;
 

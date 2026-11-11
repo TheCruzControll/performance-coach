@@ -3,8 +3,9 @@
  * without editing it. generateNextBlock runs M3's exported STAGES with three changes: blocks is
  * replaced by nextShape (the review's dates, phase and deload), carryover (kept and rotated
  * exercises) runs once the strength days are filled, and results runs after progression (each
- * lift's start from its sessions). A stage M3 adds later is inherited. The input is
- * nextBlockInput's: loads start from the latest e1RM and running from the actual mileage.
+ * lift's start from its sessions). M3's prepare runs first, and a stage M3 or M7 adds later is
+ * inherited by name. The input is nextBlockInput's: loads start from the latest e1RM and running
+ * from the actual mileage.
  *
  * - CARRYOVER_AFTER: the strength days are filled by M3's strength stage and then by its volume
  *   stage, which adds accessories to reach each group's hard sets. A rotated exercise held only in
@@ -32,20 +33,31 @@ import type { WeightUnit } from '../../units.ts';
 import { validate } from '../../validation.ts';
 import { DecisionLog } from '../decisions.ts';
 import { clip } from '../demand.ts';
-import { GeneratedPlanError, STAGES } from '../generate.ts';
-import { canonicalJson, compareText, fingerprint, fnv1a64 } from '../random.ts';
+import { firstDraft, GeneratedPlanError, STAGES } from '../generate.ts';
+import {
+	canonicalJson,
+	compareText,
+	fingerprint,
+	fnv1a64,
+	GENERATOR_ID as M3_GENERATOR_ID
+} from '../random.ts';
 import type { CycleDirectives } from '../review/directives.ts';
 import { exerciseOf } from '../selection.ts';
-import type { Draft, Stage } from '../stage.ts';
+import type { Stage } from '../stage.ts';
 import { carryover } from '../stages/carryover.ts';
 import { bridgeBlock, nextShape } from '../stages/next-shape.ts';
+import { prepare } from '../stages/prepare.ts';
 import { results } from '../stages/results.ts';
 import type { LiftResults } from '../stages/results.ts';
 import type { NextBlockDates } from './dates.ts';
 import type { NextBlockInput } from './input.ts';
 
-/** The generator a version planned by this module stores (next-block-store). */
-export const GENERATOR_ID = 'next-block/1';
+/**
+ * The generator a version planned by this module stores (next-block-store): its own part, then
+ * M3's GENERATOR_ID (m7-stage-list), since fingerprint() hashes only the id it is given, so every
+ * M3 and M7 bump also refuses a next_cycle previewed before it.
+ */
+export const GENERATOR_ID = `next-block/1+${M3_GENERATOR_ID}`;
 
 /** The M3 stage carryover follows: the last that fills strength days with exercises. */
 export const CARRYOVER_AFTER = 'volume';
@@ -214,8 +226,10 @@ export function generateNextBlock(next: NextBlockInput, options: NextBlockOption
 	const { startsOn } = dates.block;
 	const { firstPlannedDay } = dates;
 	const log = new DecisionLog();
-	const context = { input: next.input, options: { startsOn, firstPlannedDay }, log };
-	let draft: Draft = { demand: null, blocks: [] };
+	const dated = { startsOn, firstPlannedDay };
+	const prepared = prepare(next.input, dated, log);
+	const context = { input: prepared.input, options: dated, log };
+	let draft = firstDraft(prepared);
 	for (const stage of nextStages(next, options)) draft = stage.run(draft, context);
 	const block = draft.blocks[0]!;
 	const bridge = dates.bridge && bridgeBlock(dates.bridge);

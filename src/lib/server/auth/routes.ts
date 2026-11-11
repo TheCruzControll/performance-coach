@@ -66,6 +66,7 @@ export const ROUTE_ACCESS = {
 	'/(app)/progress/exercises/[id]': 'owner',
 	'/(app)/progress/reviews/[[key]]': 'owner',
 	'/(app)/coach/[[thread]]': 'owner',
+	'/(app)/coach/proposals/[[id]]': 'owner',
 	'/(app)/profile': 'owner',
 	'/(app)/profile/security': 'owner',
 	'/(app)/profile/[section]': 'owner',
@@ -84,12 +85,17 @@ export const ROUTE_ACCESS = {
 	'/api/coach/runs': 'owner',
 
 	// threads
+	'/api/coach/threads': 'owner',
+	'/api/coach/threads/[id]': 'owner',
 
 	// proposals
 	'/api/coach/proposals/[id]': 'owner',
 
 	// memory
 	'/api/coach/memory': 'owner',
+
+	// Reviews (M6): a review's write-up, one coach turn (owner-only, Origin-checked, rate-limited)
+	'/api/reviews/narrate': 'owner',
 
 	// Workouts (M4): owner-only JSON, one anchor per area; each slice adds its line under its own.
 	// sync
