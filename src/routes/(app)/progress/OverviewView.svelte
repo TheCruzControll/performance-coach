@@ -11,8 +11,7 @@
   - A container-query grid: the cards pair up once the column is wide enough.
   - When a week or a block completes, its review prompt leads (ReviewPrompt, in a chunk of its
     own, trends.ts): create and open the review, or 'See your review'. The server's markup of it
-    (a working form) stays until its code arrives, and stays if that fails; after a client
-    navigation that fails, the page's Reviews row leads to the reviews screen instead.
+    (a working form) stays until its code arrives, and stays if that fails.
 -->
 <script lang="ts">
 	import { onMount, type Component } from 'svelte';
@@ -81,9 +80,15 @@
 			<Prompt review={overview.review} />
 		{:else if prompt}
 			<Served markup={prompt} />
+		{:else if Prompt}
+			<!-- Its code failed to load after a client navigation: the review, or the screen that creates it. -->
+			{@const href = overview.review.href ?? overview.review.create?.action.split('?')[0]}
+			<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- app paths from review-prompt.server.ts -->
+			<a class="card" {href} data-testid="review-prompt-link">
+				<h3>{overview.review.title}</h3>
+				<span class="context">{overview.review.summary}</span>
+			</a>
 		{/if}
-		<!-- If its code fails to load after a client navigation, the page's Reviews row above
-		     leads to the reviews screen, which creates it (no second ListRow here: budget). -->
 	{/if}
 	{#if overview.stage === 'history'}
 		<section class="headline" aria-labelledby="overview-headline">
