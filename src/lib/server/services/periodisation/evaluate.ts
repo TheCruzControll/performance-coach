@@ -13,7 +13,7 @@
  */
 import { addDays, type IsoDate } from '../../../domain/calendar';
 import type { Finding, WeekEvaluation } from '../../../domain/programming/evaluate/types';
-import { evaluateWeek } from '../../../domain/programming/evaluate/week';
+import { evaluateWeek, type PriorityHint } from '../../../domain/programming/evaluate/week';
 import { catalogueTraits, type TraitsOf } from '../../../domain/programming/interference';
 import { createProgramsRepository } from '../../db/repositories/programs';
 import { measure } from '../../observability/timing';
@@ -47,6 +47,30 @@ export interface WeekAt {
 	weekStartsOn: IsoDate;
 	/** The owner's today: what came before it is past. */
 	today: IsoDate;
+	/** The generator's priority trade-offs on the week's sessions (explain.ts), newest first. */
+	tradeoffs?: readonly TradeoffDecision[];
+}
+
+/** A priority_tradeoff decision: its sentence and the lineages it names. */
+export interface TradeoffDecision {
+	why: string;
+	affected: readonly string[];
+}
+
+/**
+ * Each trade-off as the judge's hint (m7/14): it becomes the resolution of the finding that
+ * names a session it affected, so the card says why the week keeps the clash. A session keeps
+ * only its newest trade-off: the judge reads its hints in its own order.
+ */
+export function tradeoffHints(tradeoffs: readonly TradeoffDecision[]): PriorityHint[] {
+	const hints = new Map<string, PriorityHint>();
+	for (const { why, affected } of tradeoffs) {
+		for (const lineage of affected) {
+			if (!hints.has(lineage))
+				hints.set(lineage, { kind: 'priority_tradeoff', lineage, text: why });
+		}
+	}
+	return [...hints.values()];
 }
 
 /**
@@ -126,7 +150,7 @@ async function traitsFor(ownerId: string, sessions: readonly StoredSession[], de
 /** The week `at` names judged, in Train's words. TrainingNotFoundError: no such version. */
 export async function getWeekEvaluation(
 	ownerId: string,
-	{ version, weekStartsOn, today }: WeekAt,
+	{ version, weekStartsOn, today, tradeoffs = [] }: WeekAt,
 	deps: TrainingDeps = {}
 ): Promise<WeekFindingsView> {
 	const { db } = resolveDeps(deps);
@@ -154,6 +178,7 @@ export async function getWeekEvaluation(
 		const evaluation = evaluateWeek(sessions, {
 			traitsOf: await traitsFor(ownerId, sessions, { db }),
 			openDates,
+			hints: tradeoffHints(tradeoffs),
 			today
 		});
 

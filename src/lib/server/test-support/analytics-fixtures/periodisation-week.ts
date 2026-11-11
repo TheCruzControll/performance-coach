@@ -18,6 +18,11 @@
  *   run a day, which breaks nothing.
  * - Next week the owner moved Lower A from Friday to Monday (version 2, through M3's moveSession),
  *   the day before Tuesday's hard Muay Thai: one avoid finding, kept because the owner moved it.
+ * - The generator's placement decisions (m7/14, PLACEMENT_DECISIONS), each citing its session in
+ *   every hybrid week, of the kinds the generator writes: the classes as a commitment
+ *   (commitments.ts) and Lower A kept off the day before hard Muay Thai (placement.ts). No stage
+ *   writes session_placed, so Upper A and the runs, on the days they prefer, are in none, and
+ *   neither are this week's sessions: they have no 'Why this day?'.
  *
  * Bridge weeks and 'First block complete' come from the bridge-week and block-end-late fixtures.
  * TEST ONLY, like the rest of this folder.
@@ -25,7 +30,12 @@
 import { addDays, daysBetween, type IsoDate } from '../../../domain/calendar';
 import { CATALOGUE } from '../../../domain/exercises/index';
 import { buildProgrammingInput, catalogueDigest, GENERATOR_ID } from '../../../domain/programming';
-import type { ProgramPlan, SessionPlan, SetPrescription } from '../../../domain/training/types';
+import type {
+	DecisionPlan,
+	ProgramPlan,
+	SessionPlan,
+	SetPrescription
+} from '../../../domain/training/types';
 import { createGoal, getTrainingProfile, saveSchedule } from '../../services/profile/index';
 import { moveSession } from '../../services/programs/edits';
 import { createProgramFromPlan, getProgramVersion } from '../../services/programs/index';
@@ -144,6 +154,33 @@ function currentWeek(ctx: SeedContext): SessionPlan[] {
 	return offset > 0 ? [lowerB(yesterday), muayThai(yesterday, 'sparring', null), ...ahead] : ahead;
 }
 
+/** The hybrid weeks by their place in Base (this week, place 1, is not one). */
+const HYBRID_PLACES = [0, 2, 3] as const;
+
+/**
+ * The generator's placement decisions on the hybrid weeks, in its own words
+ * (decisions/templates) and only of the kinds its stages write: which of hybridWeek's sessions,
+ * by place, each one cites.
+ */
+const PLACEMENT_DECISIONS: (Omit<DecisionPlan, 'refs' | 'evidence'> & { sessions: number[] })[] = [
+	{
+		kind: 'commitment_placed',
+		ruleKey: 'commitments.fixed',
+		summary: 'Muay Thai class on Tuesday and Thursday',
+		why: 'Muay Thai class is one of your fixed commitments, so it goes in first, every Tuesday and Thursday evening, for 90 min at hard intensity, and the rest of the week is planned around it.',
+		decidedBy: 'rules',
+		sessions: [0, 2]
+	},
+	{
+		kind: 'interference_resolved',
+		ruleKey: 'placement.heavy_lower_before_hard',
+		summary: 'Lower A kept clear of Muay Thai class',
+		why: 'Heavy lower body the day before hard Muay Thai: Lower A on Wednesday, then Muay Thai class on Thursday, so Lower A goes on Friday morning instead.',
+		decidedBy: 'rules',
+		sessions: [3]
+	}
+];
+
 /** A goal across the three disciplines, and the Tuesday and Thursday classes. */
 async function profile(ctx: SeedContext) {
 	const deps = { db: ctx.db };
@@ -210,7 +247,14 @@ const periodisationWeek: AnalyticsFixture = async (ctx): Promise<PeriodisationWe
 				decidedBy: 'rules',
 				refs: ['blocks.0'],
 				evidence: {}
-			}
+			},
+			...PLACEMENT_DECISIONS.map(({ sessions, ...decision }) => ({
+				...decision,
+				refs: HYBRID_PLACES.flatMap((w) =>
+					sessions.map((n) => `blocks.0.weeks.${w}.sessions.${n}`)
+				),
+				evidence: {}
+			}))
 		]
 	};
 	const input = buildProgrammingInput(await getTrainingProfile(ctx.ownerId, deps), {
