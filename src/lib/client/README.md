@@ -16,6 +16,7 @@ Code in this folder runs only in the browser. It must never import from `src/lib
 | `leaving.ts`             | Is the page being left? Loads it cancels on the way out (WebKit reports each) are then not logged or reported as errors         |
 | `profile-form.ts`        | Saves profile sections: validates with the services' zod schemas (loaded on idle, never initial JS), posts JSON to the action   |
 | `section-form.svelte.ts` | One profile section's form state (value, field errors, busy, dirty); `submit()` validates, then saves through `profile-form.ts` |
+| `screen-memory.ts`       | The last screen each tab showed (a DOM copy, one per tab), in memory only, so a revisit shows it at once                        |
 
 ## Workouts (M4)
 
@@ -48,6 +49,8 @@ boot path (#394) and the prepaint (#410). Sign-out flushes first and asks before
 | `workout/kinds.ts`                 | Workout kind → route path: `/workout`, `/workout/run`, `/workout/session`                                                                                                    | workout-shell                                  |
 | `workout/active.svelte.ts`         | The reactive active workout over the store, with the route's reducer table, and the store's `onChange` for the engine                                                        | workout-shell; workout-sync-wiring             |
 | `workout/start.ts`                 | `startPlanned`, `startAdHoc` and `saveKits(lineages)`; loaded only for `?start` or `?new`                                                                                    | workout-start                                  |
+| `workout/kit-mark.ts`              | `pc:kit-refresh:v1` in sessionStorage: the workout the start flow began from a saved kit, so its page refreshes it                                                           | workout-start                                  |
+| `workout/kit-refresh.ts`           | The saved kit's fresh copy, in the background: attached while the workout is untouched; replanned offers to start again                                                      | workout-start                                  |
 | `workout/today-kits.ts`            | `saveTodayKits` (Today, the only other screen that may create `pc-offline`); `savedToday`: the offline screen's list of today's saved sessions                               | start-entry-points                             |
 | `workout/library.ts`               | The exercise library, fetched with If-None-Match, cached and searched; a created exercise joins it at once, with the local name clash check                                  | add-exercise; custom-exercises-ui              |
 | `workout/shutdown.ts`              | What sign-out loads lazily: `unsyncedAfterFlush()` (the flush bounded to 5 s, then what is left) and `keepOnlyUnsynced()` (a signed-out URL without sign-out's marker)       | signout-workout-data                           |

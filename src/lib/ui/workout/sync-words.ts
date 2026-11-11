@@ -24,6 +24,11 @@ export function syncWords(status: OutboxStatus): SyncWords {
 			return words('refresh', 'Saving…');
 		case 'offline':
 			return words('wifi-off', `Offline · ${upTo999(status.pending)} pending`);
+		// Online, but the server does not answer (dead gym Wi-Fi, a captive portal): it keeps trying.
+		// Not 'Can’t reach the server', as elsewhere: the pill's box is its widest words, and those
+		// (16.6 em to 13.1 em) would drop it under Minimise on a phone in every state.
+		case 'unreachable':
+			return words('wifi-off', `Can’t connect · ${upTo999(status.waiting)} waiting`);
 		case 'retrying':
 			return words('clock', `Retrying in ${Math.max(1, status.seconds)} s`);
 		case 'attention':

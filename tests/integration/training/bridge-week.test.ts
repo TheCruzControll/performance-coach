@@ -11,14 +11,17 @@
 import { describe, expect, it } from 'vitest';
 import type { IsoDate } from '../../../src/lib/domain/calendar';
 import type { Executor } from '../../../src/lib/server/db';
-import { getTrainingWeek } from '../../../src/lib/server/services/programs/index';
+import {
+	getCurrentProgram,
+	getTrainingWeek
+} from '../../../src/lib/server/services/programs/index';
 import { seedAnalyticsFixture } from '../../../src/lib/server/test-support/analytics-fixtures/index';
 import { atLocal } from '../../../src/lib/server/test-support/analytics-fixtures/dashboards';
 import type { BridgeFixtureResult } from '../../../src/lib/server/test-support/analytics-fixtures/bridge-week';
 import { loadTodayPlan } from '../../../src/routes/(app)/today/plan.server';
 import { loadHistory } from '../../../src/routes/(app)/train/history/[[version]]/history.server';
 import { loadTrainWeek, type TrainWeekData } from '../../../src/routes/(app)/train/week.server';
-import { withRollback } from '../helpers';
+import { withCommitted, withRollback } from '../helpers';
 import { makeOwner } from '../profile/fixtures';
 
 const TZ = 'America/Los_Angeles';
@@ -141,12 +144,15 @@ describe('a bridge week', () => {
 		});
 	});
 
+	// Today reads the plan and its week together, each on its own connection: on the shared pool.
 	it('Today names the next block’s start in place of the week, and Up next is Build', async () => {
-		await withRollback(async (db) => {
+		await withCommitted(async (db) => {
 			const { owner } = await seeded(db, WEDNESDAY);
+			const program = await getCurrentProgram(owner, WEDNESDAY, { db });
+			if (!program) throw new Error('no active program');
 			const view = await loadTodayPlan(
 				owner,
-				{ today: WEDNESDAY, origin: origin('/today') },
+				{ today: WEDNESDAY, program, origin: origin('/today') },
 				{ db }
 			);
 			if (view.failed) throw new Error('the plan failed to load');
