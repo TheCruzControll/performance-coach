@@ -1,7 +1,8 @@
 <!--
   @component
-  The sync status as a small pill (sync-words.ts): Saved, Saving…, Offline · N pending, Retrying in
-  n s, N need attention, Sign in to sync · N waiting, Finish adding your passkey. Always words with
+  The sync status as a small pill (sync-words.ts): Saved, Saving…, Offline · N pending, Can’t
+  connect · N waiting, Retrying in n s, N need attention, Sign in to sync · N waiting, Finish adding
+  your passkey. Always words with
   an icon, never colour alone, in a polite status region, so a change is announced without moving
   focus. Quiet beside logging: small type on a faint surface, a warning tint only when the owner is
   needed. With `onopen` (whenever there is something to show) it is a 44 px button that opens the
@@ -28,7 +29,7 @@
 	const words = $derived(status && syncWords(status));
 	const widest = [
 		syncWords({ state: 'signed-out', waiting: 1000 }).text,
-		syncWords({ state: 'passkey', waiting: 0 }).text
+		syncWords({ state: 'unreachable', waiting: 1000 }).text
 	];
 </script>
 

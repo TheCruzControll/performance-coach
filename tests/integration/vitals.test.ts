@@ -133,4 +133,42 @@ describe('web vitals service', () => {
 			expect(summary[1]).toMatchObject({ name: 'TTFB', p75: 120, samples: 1 });
 		});
 	});
+	it('summarises TTFB, LCP and INP on the start route on their own', async () => {
+		await withRollback(async (tx) => {
+			const on = (route: string, path: string) => ({ ...lcp, route, path });
+			const today = on('/(app)/today', '/today');
+			const train = on('/(app)/train', '/train');
+			// TTFB: cold launches of Today are slow, Train is fast.
+			await recordVitals(
+				[
+					...[2400, 2600, 2800, 3000].map((value, i) => ({
+						...today,
+						id: `t-today-${i}`,
+						name: 'TTFB',
+						value
+					})),
+					...[100, 110, 120, 130].map((value, i) => ({
+						...train,
+						id: `t-train-${i}`,
+						name: 'TTFB',
+						value
+					})),
+					{ ...today, id: 'inp-today', name: 'INP', value: 88 },
+					{ ...train, id: 'inp-train', name: 'INP', value: 400 },
+					{ ...train, id: 'lcp-train', name: 'LCP', value: 900 },
+					{ ...today, id: 'cls-today', name: 'CLS', value: 0.02 }
+				],
+				{},
+				{ db: tx }
+			);
+			const summary = await getVitalsSummary(7, { db: tx });
+			const by = Object.fromEntries(summary.map((s) => [s.name, s]));
+			expect(by.TTFB).toMatchObject({ samples: 8, start: { p75: 2850, samples: 4 } });
+			expect(by.INP).toMatchObject({ p75: 322, samples: 2, start: { p75: 88, samples: 1 } });
+			// LCP only on another route: no start-route figure, rather than a zero.
+			expect(by.LCP).toMatchObject({ p75: 900, samples: 1, start: null });
+			// CLS is not a start-route metric, even with samples there.
+			expect(by.CLS!.start).toBeNull();
+		});
+	});
 });

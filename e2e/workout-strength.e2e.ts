@@ -11,6 +11,7 @@ import { createMutation } from '../src/lib/domain/workout/mutations';
 import { DB_NAME, STORES } from '../src/lib/client/workout/names';
 import { expectNoSideScroll } from './desktop';
 import { captureScreen } from './support';
+import { keptCard } from './workout-prepaint-support';
 import {
 	gotoWorkout,
 	injectMutation,
@@ -58,6 +59,8 @@ async function setPosition(page: Page, workoutId: string, position: number) {
  * /api/workouts traffic. `expectNothingNew` waits for this page's sync engine to send, lets the
  * page settle, and asserts the view read nothing from the server and queued nothing: every request
  * is the engine posting mutations from the snapshot, and the outbox is still exactly the snapshot.
+ * A reload of a workout this device kept a card for also asks for its rows from the inline script
+ * (prepaint.ts), for the reconcile: `{ rows }` expects that one GET of this load, held like the sync.
  */
 async function watchWorkouts(page: Page) {
 	const seeded = (await readOutbox(page)).map(({ envelope }) => envelope.id);
@@ -81,7 +84,7 @@ async function watchWorkouts(page: Page) {
 	const isSync = ({ method, path }: { method: string; path: string }) =>
 		method === 'POST' && path === '/api/workouts/sync';
 	return {
-		async expectNothingNew() {
+		async expectNothingNew({ rows }: { rows?: string } = {}) {
 			// The engine starts on idle after first render; anything the view sends comes before.
 			await expect
 				.poll(() => requests.some((r) => r.load === loads && isSync(r)), {
@@ -89,11 +92,14 @@ async function watchWorkouts(page: Page) {
 				})
 				.toBe(true);
 			await page.waitForTimeout(500);
+			const early = rows
+				? [{ load: loads, method: 'GET', path: `/api/workouts/${rows}`, ids: [] }]
+				: [];
 			expect(
 				requests.filter(
 					(r) => !isSync(r) || r.ids.length === 0 || !r.ids.every((id) => known.has(id))
 				)
-			).toEqual([]);
+			).toEqual(early);
 			// A write queued behind the held first batch never reaches the wire: the outbox shows it.
 			expect((await readOutbox(page)).map(({ envelope }) => envelope.id)).toEqual(seeded);
 		}
@@ -188,25 +194,36 @@ test.describe('the strength view (IndexedDB only)', () => {
 		await expect(card(page).getByTestId('set').first()).toHaveText(/^1\s*0:45 · RPE 7\s*Now$/);
 	});
 
-	test('a reload restores the same exercise, and nothing is read from /api/workouts', async ({
+	test('a reload restores the same exercise, and nothing is read from /api/workouts but the reconcile', async ({
 		page
 	}) => {
-		await seedAt(page, kit, 3);
+		const workoutId = await seedAt(page, kit, 3);
 		const workouts = await watchWorkouts(page);
-		// The logger shows once its chunk and the store have loaded, after the first render: compare
-		// the view with it on both sides of the reload.
+		// The logger shows once its chunk has loaded, after the first render, and the navigation once
+		// the store is open too (data-store): compare the view with both on each side of the reload.
 		const logger = page.getByTestId('workout-main').getByTestId('set-logger');
+		const pager = page
+			.getByTestId('workout-main')
+			.getByRole('navigation', { name: 'Previous and next exercise' });
+		const open = page.locator('main#main[data-store]');
 		await gotoWorkout(page);
 		await expect(card(page).getByRole('heading', { level: 2 })).toHaveText('Romanian deadlift');
 		await workouts.expectNothingNew();
+		await expect(open).toBeAttached();
 		await expect(logger).toBeVisible();
+		await expect(pager).toBeVisible();
 		const shown = await page.getByTestId('workout-main').innerText();
+		await expect.poll(() => keptCard(page)).not.toBeNull();
 		await page.reload();
 		await expect(page.locator('main#main[data-ready]')).toBeAttached();
 		await expect(card(page).getByRole('heading', { level: 2 })).toHaveText('Romanian deadlift');
+		await expect(open).toBeAttached();
 		await expect(logger).toBeVisible();
+		await expect(pager).toBeVisible();
 		expect(await page.getByTestId('workout-main').innerText()).toBe(shown);
-		await workouts.expectNothingNew();
+		// The rows the reconcile will want, asked for by the inline script and held: the view never
+		// waited for them.
+		await workouts.expectNothingNew({ rows: workoutId });
 	});
 
 	test('set rows say done, missed, skipped, extra and now in words', async ({ page }) => {

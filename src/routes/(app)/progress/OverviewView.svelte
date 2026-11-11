@@ -11,14 +11,14 @@
   - A container-query grid: the cards pair up once the column is wide enough.
   - When a week or a block completes, its review prompt leads (ReviewPrompt, in a chunk of its
     own, trends.ts): create and open the review, or 'See your review'. The server's markup of it
-    (a working form) stays until its code arrives, and stays if that fails.
+    (a working form) stays until its code arrives, and stays if that fails. If its code fails
+    after a client navigation, the page's Reviews row (+page.svelte) leads to the screen that
+    creates it.
 -->
 <script lang="ts">
 	import { onMount, type Component } from 'svelte';
-	import { resolve } from '$app/paths';
 	import EmptyState from '#lib/ui/components/EmptyState.svelte';
 	import Icon from '#lib/ui/components/Icon.svelte';
-	import ListRow from '#lib/ui/components/ListRow.svelte';
 	import VerdictBadge from '#lib/ui/analytics/VerdictBadge.svelte';
 	import type { IconName } from '#lib/ui/icons/icons.ts';
 	import type { OverviewData, VerdictCard } from './load';
@@ -82,15 +82,6 @@
 			<Prompt review={overview.review} />
 		{:else if prompt}
 			<Served markup={prompt} />
-		{:else if Prompt}
-			<!-- Its code failed to load after a client navigation: the reviews screen creates it. -->
-			<ListRow
-				title={overview.review.title}
-				subtitle={overview.review.summary}
-				icon="sparkle"
-				href={overview.review.href ?? resolve('/(app)/progress/reviews/[[key]]', {})}
-				data-testid="review-prompt-link"
-			/>
 		{/if}
 	{/if}
 	{#if overview.stage === 'history'}
