@@ -78,6 +78,9 @@ const review = (parts: Partial<CycleReviewData> = {}): CycleReviewData => ({
 
 const html = (data: CycleReviewData, props = {}) =>
 	render(CycleReview, { props: { review: data, ...props } }).body;
+/** A section's markup, up to the next: its <details> holds the verdict, the body follows it. */
+const sectionOf = (body: string, id: string) =>
+	body.split('data-testid="review-section"').find((part) => part.includes(`data-section="${id}"`))!;
 const text = (fragment: string) =>
 	fragment
 		.replace(/<!--[\s\S]*?-->/g, '')
@@ -101,7 +104,7 @@ describe('the cycle review on the server', () => {
 
 	it('each section with its verdict line; a chart’s room holds its table twin', () => {
 		const body = html(review());
-		const strength = /<details[^>]*data-section="strength"[\s\S]*?<\/details>/.exec(body)![0];
+		const strength = sectionOf(body, 'strength');
 		expect(text(strength)).toContain('Strength progression: 1 of 1 main lift progressed');
 		const twin = /<noscript>([\s\S]*?)<\/noscript>/.exec(strength)![1]!;
 		expect(text(twin)).toContain('Back squat estimated 1RM: Up 7.5 kg');
@@ -110,7 +113,7 @@ describe('the cycle review on the server', () => {
 
 	it('effectiveness: a table in words, leading to Keep or Rotate', () => {
 		const body = html(review());
-		const section = /<details[^>]*data-section="effectiveness"[\s\S]*?<\/details>/.exec(body)![0];
+		const section = sectionOf(body, 'effectiveness');
 		const found = /<table[^>]*data-testid="section-table"[\s\S]*?<\/table>/.exec(section)![0];
 		expect(text(found)).toBe(
 			'Exercise How it did Next block Curl Held. Stalled Rotate · a fresh stimulus'

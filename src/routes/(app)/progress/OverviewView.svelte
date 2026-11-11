@@ -15,10 +15,8 @@
 -->
 <script lang="ts">
 	import { onMount, type Component } from 'svelte';
-	import { resolve } from '$app/paths';
 	import EmptyState from '#lib/ui/components/EmptyState.svelte';
 	import Icon from '#lib/ui/components/Icon.svelte';
-	import ListRow from '#lib/ui/components/ListRow.svelte';
 	import VerdictBadge from '#lib/ui/analytics/VerdictBadge.svelte';
 	import type { IconName } from '#lib/ui/icons/icons.ts';
 	import type { OverviewData, VerdictCard } from './load';
@@ -83,14 +81,13 @@
 		{:else if prompt}
 			<Served markup={prompt} />
 		{:else if Prompt}
-			<!-- Its code failed to load after a client navigation: the reviews screen creates it. -->
-			<ListRow
-				title={overview.review.title}
-				subtitle={overview.review.summary}
-				icon="sparkle"
-				href={overview.review.href ?? resolve('/(app)/progress/reviews/[[key]]', {})}
-				data-testid="review-prompt-link"
-			/>
+			<!-- Its code failed to load after a client navigation: the review, or the screen that creates it. -->
+			{@const href = overview.review.href ?? overview.review.create?.action.split('?')[0]}
+			<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- app paths from review-prompt.server.ts -->
+			<a class="card" {href} data-testid="review-prompt-link">
+				<h3>{overview.review.title}</h3>
+				<span class="context">{overview.review.summary}</span>
+			</a>
 		{/if}
 	{/if}
 	{#if overview.stage === 'history'}
