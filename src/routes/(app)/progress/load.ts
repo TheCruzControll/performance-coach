@@ -33,6 +33,7 @@ import { getRunningDashboard } from '#lib/server/services/analytics/running.ts';
 import { getStrengthDashboard } from '#lib/server/services/analytics/strength.ts';
 import { recordServerError, type ServerErrorInput } from '#lib/server/services/errors.ts';
 import { resolveDeps, type TrainingDeps } from '#lib/server/services/training/shared.ts';
+import type { ReviewPromptView } from '#lib/ui/analytics/review-prompt.ts';
 import { sparkline } from '#lib/ui/analytics/sparkline.ts';
 import type { Tile, TileVerdict } from '#lib/ui/analytics/words.ts';
 import { barTable, type BarChartData } from '#lib/ui/charts/bar-model.ts';
@@ -42,6 +43,7 @@ import type { ChartTableData } from '#lib/ui/charts/table.ts';
 import { shortDate } from '#lib/ui/program/words.ts';
 import { generalData, type GeneralData } from './general-data.ts';
 import type { ProgressParams, ProgressView } from './params.ts';
+import { loadReviewPrompt } from './review-prompt.server.ts';
 import { runningData, type RunningData } from './running-data.ts';
 import { RANGE_WEEKS, strengthData, type StrengthData } from './strength-data.ts';
 
@@ -111,6 +113,8 @@ export interface OverviewData {
 	}[];
 	charts: { load: OverviewChart<BarChartData> | null; lifts: OverviewChart<LineChartData>[] };
 	timeline: TimelineEntry[];
+	/** A week or block to review, or its new review, at the top (review-prompt.server.ts). */
+	review: ReviewPromptView | null;
 }
 
 export type ProgressData =
@@ -140,6 +144,8 @@ export interface ProgressDeps extends Pick<TrainingDeps, 'db'> {
 	record?: typeof recordServerError;
 	/** The owner's day at `now`; ownerToday unless given. */
 	today?: typeof ownerToday;
+	/** Overview's review prompt; loadReviewPrompt unless given. */
+	prompt?: typeof loadReviewPrompt;
 }
 
 const capitalise = (words: string) => words.charAt(0).toUpperCase() + words.slice(1);
@@ -169,7 +175,10 @@ const number = (value: number, decimals: number) =>
 	(cleanFloat(value, decimals) + 0).toLocaleString('en-US', { maximumFractionDigits: decimals });
 
 /** The overview's figures as the screen shows them, in the overview's (the profile's) units. */
-export function overviewData(o: ProgressOverview): OverviewData {
+export function overviewData(
+	o: ProgressOverview,
+	review: ReviewPromptView | null = null
+): OverviewData {
 	const format = formatIn(o.units);
 	const { window, trendWindow: trend } = o;
 	const pointUnit = window.bucket === 'month' ? 'months' : 'weeks';
@@ -306,7 +315,8 @@ export function overviewData(o: ProgressOverview): OverviewData {
 		timeline: o.timeline.map(({ section, label, rule, on, ready }) => ({
 			...{ section, label, rule, ready },
 			on: on === null ? null : shortDate(on)
-		}))
+		})),
+		review
 	};
 }
 
@@ -323,7 +333,8 @@ export async function loadProgress(
 		running = getRunningDashboard,
 		general = getGeneralDashboard,
 		record = recordServerError,
-		today: dayOf = ownerToday
+		today: dayOf = ownerToday,
+		prompt = loadReviewPrompt
 	}: ProgressDeps = {}
 ): Promise<ProgressData> {
 	try {
@@ -342,7 +353,14 @@ export async function loadProgress(
 			return { failed: false, view, period, general: generalData(d) };
 		}
 		const o = await overview(executor, ownerId, { period, today });
-		return { failed: false, view, period, overview: overviewData(o) };
+		// After the overview, on the same handle; a failed read is recorded and Overview shows
+		// without its prompt.
+		const review = await prompt(ownerId, today, { db: executor }).catch(async (error: unknown) => {
+			const context = { load: 'progressReviewPrompt' };
+			await record({ error, kind: 'load', status: 500, ...origin, context }, { db: errorsDb });
+			return null;
+		});
+		return { failed: false, view, period, overview: overviewData(o, review) };
 	} catch (error) {
 		await record(
 			{ error, kind: 'load', status: 500, ...origin, context: { load: 'progress', view, period } },

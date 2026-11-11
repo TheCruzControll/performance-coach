@@ -7,7 +7,7 @@
  *   them (scripts/explain/history.explain.ts).
  * Nothing runs until a builder is awaited; await them in turn on one connection.
  */
-import { and, asc, desc, eq, gt, inArray, isNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, isNull, ne, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import type { ProposalStatus } from '../../../domain/training/vocabulary';
 import { coachProposals, programVersions } from '../schema';
@@ -20,7 +20,8 @@ export const COACH_PROPOSAL_INDEXES = {
 	openDuplicate: 'coach_proposals_owner_status_idx',
 	proposalPage: {
 		status: 'coach_proposals_owner_status_idx',
-		all: 'coach_proposals_owner_created_idx'
+		all: 'coach_proposals_owner_created_idx',
+		decided: 'coach_proposals_owner_created_idx'
 	},
 	decidedSince: 'coach_proposals_owner_closed_idx',
 	threadProposals: 'coach_proposals_thread_idx'
@@ -47,6 +48,8 @@ export const proposalViewColumns = {
 	supersededReason: coachProposals.supersededReason,
 	/** The rules provenance a review stored (evidence.source); null for the coach's own. */
 	source: sql<unknown>`${coachProposals.evidence} -> 'source'`,
+	/** A next_cycle's block (payload.fromBlockLineage): the cycle review it waits for. */
+	fromBlockLineage: sql<string | null>`${coachProposals.payload} ->> 'fromBlockLineage'`,
 	createdAt: coachProposals.createdAt,
 	closedAt: coachProposals.closedAt
 };
@@ -102,6 +105,8 @@ const cursor = alias(coachProposals, 'cursor');
 
 export interface ProposalPage {
 	status?: ProposalStatus;
+	/** Only the decided ones (any status but proposed): the inbox's Decided list. */
+	decided?: boolean;
 	/** Only these proposals (well-formed uuids). */
 	ids?: readonly string[];
 	/** The last proposal id of the previous page. */
@@ -115,7 +120,7 @@ export interface ProposalPage {
  * proposals gives an empty page.
  */
 export function proposalPage(db: Executor, ownerId: string, page: ProposalPage) {
-	const { status, ids, before, limit } = page;
+	const { status, decided, ids, before, limit } = page;
 	const after =
 		before === undefined
 			? undefined
@@ -128,6 +133,7 @@ export function proposalPage(db: Executor, ownerId: string, page: ProposalPage) 
 			and(
 				eq(coachProposals.ownerId, ownerId),
 				status === undefined ? undefined : eq(coachProposals.status, status),
+				decided ? ne(coachProposals.status, 'proposed') : undefined,
 				ids === undefined ? undefined : inArray(coachProposals.id, [...ids]),
 				after
 			)
