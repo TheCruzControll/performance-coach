@@ -2,8 +2,8 @@
   @component
   Profile → Running & Muay Thai: running volume, easy pace and recent race times; Muay Thai
   sessions, sparring and fights. Each part is shown while its discipline is in play or something
-  about it is saved, and either can be added here. Every number is optional; a race needs its
-  distance and time. Times go in on the phone's decimal keypad: "1.45.30" reads as 1:45:30.
+  about it is saved, and either can be added here. Every number is optional, heart rate included
+  (it sets the run zones in bpm); a race needs its distance and time. Times go in on the phone's decimal keypad: "1.45.30" reads as 1:45:30.
 -->
 <script lang="ts">
 	import { tick, untrack } from 'svelte';
@@ -131,6 +131,33 @@
 						autocomplete="off"
 						enterkeyhint="done"
 						placeholder="m.ss"
+					/>
+					<NumberField
+						label="Max heart rate"
+						unit="bpm"
+						integer
+						hint="Optional — sets your heart-rate zones"
+						bind:value={run.heartRate.max}
+						error={errors['running.heartRate.max']}
+						enterkeyhint="next"
+					/>
+					<NumberField
+						label="Resting heart rate"
+						unit="bpm"
+						integer
+						hint="Optional — sets your heart-rate zones"
+						bind:value={run.heartRate.resting}
+						error={errors['running.heartRate.resting']}
+						enterkeyhint="next"
+					/>
+					<NumberField
+						label="Threshold heart rate"
+						unit="bpm"
+						integer
+						hint="Optional — sets your heart-rate zones"
+						bind:value={run.heartRate.threshold}
+						error={errors['running.heartRate.threshold']}
+						enterkeyhint="next"
 					/>
 				</div>
 			</Card>

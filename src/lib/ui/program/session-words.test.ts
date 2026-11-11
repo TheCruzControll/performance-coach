@@ -1,14 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { BASELINE_INSTRUCTION } from '#lib/domain/training/describe.ts';
+import { BASELINE_INSTRUCTION, describeSegments } from '#lib/domain/training/describe.ts';
 import type { OtherDetails, RunSegment, SetPrescription } from '#lib/domain/training/types.ts';
 import {
 	adjustValues,
 	BASELINE_CALLOUT,
 	detailsView,
 	disciplineWords,
+	effortWords,
 	exerciseViews,
 	metricValue,
 	moveOption,
+	stepsInZones,
 	whenWords,
 	type ExerciseSource
 } from './session-words';
@@ -399,5 +401,55 @@ describe('adjustValues', () => {
 		expect(
 			adjustValues({ kind: 'other', details: details({ targetRpe: null }) }, { distanceUnit: 'km' })
 		).toEqual({ kind: 'other', durationMinutes: 90, targetRpe: null });
+	});
+});
+
+describe('run efforts in heart-rate zones', () => {
+	/** Max 190 and resting 50, by heart-rate reserve (as hr-zones.test.ts has them). */
+	const ZONES = [
+		[120, 134],
+		[134, 148],
+		[148, 162],
+		[162, 176],
+		[176, 190]
+	] as const;
+	const run = (over: Partial<RunSegment>): RunSegment => ({
+		kind: 'easy',
+		repeatGroup: null,
+		repeats: null,
+		distanceMetres: null,
+		durationSeconds: 600,
+		paceMinSecondsPerKm: null,
+		paceMaxSecondsPerKm: null,
+		hrZone: null,
+		targetRpe: null,
+		...over
+	});
+
+	it('reads a zone in bpm when the owner’s zones are known, and the zone alone otherwise', () => {
+		expect(effortWords({ hrZone: 2, targetRpe: null }, ZONES)).toBe('Zone 2 · 134–148 bpm');
+		expect(effortWords({ hrZone: 5, targetRpe: 8 }, ZONES)).toBe('Zone 5 · 176–190 bpm · RPE 8');
+		expect(effortWords({ hrZone: 2, targetRpe: null }, null)).toBe('Zone 2');
+		expect(effortWords({ hrZone: 3, targetRpe: 6 }, null)).toBe('Zone 3 · RPE 6');
+	});
+
+	it('keeps an RPE alone as it is, and says nothing with neither', () => {
+		expect(effortWords({ hrZone: null, targetRpe: 4 }, ZONES)).toBe('RPE 4');
+		expect(effortWords({ hrZone: null, targetRpe: null }, ZONES)).toBeNull();
+	});
+
+	it('gives each segment of each step its own effort, repeat groups included', () => {
+		const segments = [
+			run({ kind: 'warm_up', hrZone: 1 }),
+			run({ kind: 'interval', repeatGroup: 1, repeats: 6, distanceMetres: 400, targetRpe: 8 }),
+			run({ kind: 'recovery', repeatGroup: 1, repeats: 6, durationSeconds: 90, hrZone: 2 }),
+			run({ kind: 'cool_down', hrZone: 2, targetRpe: 3 })
+		];
+		const steps = stepsInZones(describeSegments(segments, { distanceUnit: 'km' }), segments, ZONES);
+		expect(steps.map((s) => [s.headline, s.segments.map((w) => w.target)])).toEqual([
+			['Warm-up 10:00', ['Zone 1 · 120–134 bpm']],
+			['6 × (Interval 400 m in 10:00 + Recovery 1:30)', ['RPE 8', 'Zone 2 · 134–148 bpm']],
+			['Cool-down 10:00', ['Zone 2 · 134–148 bpm · RPE 3']]
+		]);
 	});
 });

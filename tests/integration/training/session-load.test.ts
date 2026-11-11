@@ -11,7 +11,11 @@ import { describe, expect, it } from 'vitest';
 import { BASELINE_INSTRUCTION } from '../../../src/lib/domain/training/describe';
 import { workouts, type Executor } from '../../../src/lib/server/db';
 import { findErrorsByRequestId } from '../../../src/lib/server/services/errors';
-import { getAthleteProfile, saveBasics } from '../../../src/lib/server/services/profile/index';
+import {
+	getAthleteProfile,
+	saveBasics,
+	saveSpecifics
+} from '../../../src/lib/server/services/profile/index';
 import {
 	createProgramFromPlan,
 	getProgramVersion,
@@ -187,9 +191,33 @@ describe('the session screen’s load', () => {
 				{
 					repeats: 1,
 					headline: 'Cool-down 10:00',
-					segments: [{ headline: 'Cool-down 10:00', pace: null, target: 'HR zone 2' }]
+					segments: [{ headline: 'Cool-down 10:00', pace: null, target: 'Zone 2' }]
 				}
 			]);
+		});
+	});
+
+	it('a run reads its zones in bpm from the owner’s heart rates, and the zone alone once cleared', async () => {
+		await withRollback(async (db) => {
+			const { owner, stored } = await withProgram(db);
+			const key = lineageOf(stored, 0, 'Intervals');
+			const targets = async () =>
+				shown(await load(db, owner, key)).steps.flatMap((s) => s.segments.map((w) => w.target));
+			const heartRate = (hr: unknown) =>
+				saveSpecifics(
+					owner,
+					{ running: { unit: 'km', races: [], heartRate: hr }, muayThai: null },
+					{ db }
+				);
+
+			// Max 190 and resting 50: heart-rate reserve, zone 2 is 134–148.
+			await heartRate({ max: 190, resting: 50, threshold: null });
+			expect(await targets()).toEqual(['RPE 3', null, 'RPE 2', 'Zone 2 · 134–148 bpm']);
+			// A threshold comes first: zone 2 is 85–90 % of 170.
+			await heartRate({ max: 190, resting: 50, threshold: 170 });
+			expect((await targets()).at(-1)).toBe('Zone 2 · 145–153 bpm');
+			await heartRate(null);
+			expect(await targets()).toEqual(['RPE 3', null, 'RPE 2', 'Zone 2']);
 		});
 	});
 
