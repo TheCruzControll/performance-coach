@@ -44,7 +44,7 @@ import {
 import type { CycleDirectives } from '../review/directives.ts';
 import { exerciseOf } from '../selection.ts';
 import type { Stage } from '../stage.ts';
-import { carryover } from '../stages/carryover.ts';
+import { carryover, keptWhereTheyAre } from '../stages/carryover.ts';
 import { recordDoses } from '../stages/blocks.ts';
 import { bridgeBlock, nextShape } from '../stages/next-shape.ts';
 import { prepare } from '../stages/prepare.ts';
@@ -340,7 +340,7 @@ export function generateNextBlock(next: NextBlockInput, options: NextBlockOption
 			by: planned
 		});
 
-	const decisions = log.list();
+	const decisions = keptWhereTheyAre(block, context.input, log.list());
 	const checked = validate(programPlanSchema, {
 		title: clip(block.name, 80),
 		startsOn,
