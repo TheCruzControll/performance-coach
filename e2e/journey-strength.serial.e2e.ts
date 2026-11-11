@@ -36,7 +36,7 @@ import {
 	resetTrainingProfile,
 	SAME_ORIGIN
 } from './support';
-import { readOutbox } from './workout-support';
+import { historyAfterDone, readOutbox } from './workout-support';
 
 test.use({ timezoneId: PROGRAM_TZ, serviceWorkers: 'block' });
 // Whole journeys through several screens and the real server: well past the default 30 s.
@@ -413,6 +413,7 @@ async function strengthJourney(page: Page, request: APIRequestContext, testInfo:
 		await finishSheet(page).getByRole('radio', { name: '8', exact: true }).check();
 		await shoot(page, testInfo, 'summary');
 		await finishSheet(page).getByTestId('finish-done').click();
+		await historyAfterDone(page);
 		await landed(page, `/progress/workouts/${workoutId}`);
 		await expect(page.getByTestId('workout-detail')).toBeVisible();
 
