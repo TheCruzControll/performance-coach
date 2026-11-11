@@ -13,6 +13,7 @@ import {
 	type Phase,
 	type SessionType
 } from '#lib/domain/training/vocabulary.ts';
+import type { FindingNote } from '#lib/server/services/periodisation/evaluate.ts';
 import type { CurrentProgram, WeekChanges } from '#lib/server/services/programs/index.ts';
 import type { IconName } from '#lib/ui/icons/icons.ts';
 import {
@@ -134,8 +135,8 @@ export const BASELINE_BRIEF: AsidePanel = {
 export interface TrainDay {
 	/** 'Monday 9 November'. */
 	heading: string;
-	/** By lineage; `baseline` on a strength session of a baseline week. */
-	cards: (CardView & { lineage: string; baseline: boolean })[];
+	/** By lineage; `baseline` on a strength session of a baseline week; a finding's note. */
+	cards: (CardView & { lineage: string; baseline: boolean; note?: FindingNote })[];
 	/** With no sessions: recovery is part of the plan, and what comes next this week, if any. */
 	rest: string | null;
 }

@@ -43,7 +43,7 @@ const ALLOWANCES = {
 	timeline: 0.7,
 	replanNote: 0.1
 } as const;
-const ON: readonly (keyof typeof ALLOWANCES)[] = [];
+const ON: readonly (keyof typeof ALLOWANCES)[] = ['findings'];
 /** Random ids and the store's timestamps move a measure by a few bytes either way. */
 const TOLERANCE_B = 64;
 
