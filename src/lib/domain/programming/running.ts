@@ -16,6 +16,10 @@
  *   undated race at low confidence when no race has a date), else the told easy pace's, as
  *   ranges at each segment kind's training pace, with a decision saying which; with neither,
  *   segments carry RPE and HR zone alone.
+ * - With a heart rate told, a decision gives the zones in bpm by the first method (rules/paces.ts
+ *   HR_METHODS) the rates allow: threshold, then reserve (max and resting), then max. Segments keep
+ *   their zone numbers either way, so a profile without heart rate plans exactly as before
+ *   (hr-zones).
  * - A marathon or half week planned with its running targets (periodisation/endurance.ts) has
  *   its long run at the planned length, within the caps above and at most ENDURANCE.long_run's
  *   1.5 km over the longest planned before it, and its phase's race work up to its hooks' quality
@@ -52,7 +56,7 @@ import { clip, commitmentQuota, generatedFor } from './demand.ts';
 import type { WeekDemand } from './demand.ts';
 import { weeksToEvent } from './input.ts';
 import type { InputGoal, InputRunning, ProgrammingInput } from './input.ts';
-import { currentPaces, paceFor } from './paces.ts';
+import { currentPaces, heartRateZones, paceFor } from './paces.ts';
 import type { TrainingPaces } from './paces.ts';
 import { segmentOf } from './periodisation/endurance.ts';
 import { LIGHT_WEEK_KINDS } from './periodisation/kinds.ts';
@@ -60,6 +64,7 @@ import { ENDURANCE, hooksFor } from './rules/endurance.ts';
 import type { RaceWork } from './rules/endurance.ts';
 import { DOSES, MAINTENANCE_BLOCK } from './rules/maintenance.ts';
 import { RECENCY } from './rules/paces.ts';
+import type { HrMethod } from './rules/paces.ts';
 import * as R from './rules/running.ts';
 import type { GenerateOptions } from './stage.ts';
 
@@ -739,6 +744,47 @@ function justification(plan: Plan, o: Outcome, goal: InputGoal): string {
 	return ` Each week follows your race plan: its long run grows at most ${km(ENDURANCE.long_run.stepMetres)} a week, and every ${every}th week of base and build is a cutback at ${factor * 100} % of the biggest week.`;
 }
 
+/** Each heart-rate method's words: what it reads, and why it is the one used. */
+const HR_WORDS: Readonly<Record<HrMethod, { source: string; reason: string }>> = {
+	threshold: {
+		source: 'threshold heart rate',
+		reason:
+			'Friel’s running zones as shares of your threshold heart rate, used ahead of max or resting because threshold anchors them to your own physiology.'
+	},
+	reserve: {
+		source: 'max and resting heart rate',
+		reason:
+			'Heart-rate reserve (Karvonen): resting plus 50–100 % of the gap up to max, in 10 % steps, so your resting rate accounts for your fitness.'
+	},
+	max: {
+		source: 'max heart rate',
+		reason:
+			'10 % steps of your max from 50 %, the method that needs only one number. Add your resting or threshold heart rate for zones closer to your own fitness.'
+	}
+};
+
+/**
+ * The hr_zones_set decision's facts: the zones in bpm by paces.ts heartRateZones, or null with no
+ * heart rate told or rates that cannot all be right (then segments carry zone numbers alone).
+ */
+function zonesOf(running: InputRunning | null) {
+	const hr = running?.heartRate;
+	const found = hr
+		? heartRateZones({ maxHr: hr.max, restingHr: hr.resting, thresholdHr: hr.threshold })
+		: null;
+	if (!hr || !found) return null;
+	const { method, zones } = found;
+	const basis = {
+		threshold: `threshold of ${hr.threshold}`,
+		reserve: `max of ${hr.max} and resting ${hr.resting}`,
+		max: `max of ${hr.max}`
+	}[method];
+	const [low, high] = zones[0]!;
+	const rest = zones.slice(1).map(([from, to], i) => `zone ${i + 2} ${from}–${to}`);
+	const words = inWords([`Zone 1 is ${low}–${high} bpm`, ...rest]);
+	return { method, ...HR_WORDS[method], basis, zones: words };
+}
+
 function recordRuns(plan: Plan, o: Outcome, goal: InputGoal, log: DecisionLog) {
 	const { input, mode, level, race } = plan;
 	const minutes = input.sessionMinutes;
@@ -787,6 +833,8 @@ function recordRuns(plan: Plan, o: Outcome, goal: InputGoal, log: DecisionLog) {
 	});
 	const { source, reason, ruleKey } = o.paces;
 	log.add('run_pace_source', ruleKey, [], { source, reason });
+	const zones = zonesOf(input.running);
+	if (zones) log.add('hr_zones_set', 'paces.hr_methods', [], zones);
 	const q = plan.quality;
 	const name = q?.type === 'tempo_run' ? 'tempo run' : 'interval session';
 	const warrant = race

@@ -17,7 +17,7 @@ import type {
 import type { CustomExercise } from '../training/types';
 import { buildProgrammingInput, toExerciseKey, toExerciseRef, weeksToEvent } from './input';
 import type { InputSources, OwnedExercise } from './input';
-import { catalogueDigest, fingerprint, GENERATOR_ID } from './random';
+import { canonicalJson, catalogueDigest, fingerprint, GENERATOR_ID } from './random';
 import { DEFAULTS, GYM_PRESETS } from './rules/defaults';
 
 const AT = new Date('2026-11-01T08:00:00Z');
@@ -785,6 +785,7 @@ describe('the canonical input and its fingerprint', () => {
 		],
 		['a 1RM', (p) => (p.baselines[0]!.value = 145)],
 		['weekly running', (p) => (p.running!.weeklyDistance = 35)],
+		['a heart rate', (p) => (p.running!.heartRate = { max: 190, resting: null, threshold: null })],
 		['sparring', (p) => (p.muayThai!.sparringPerWeek = 2)],
 		['the nutrition phase', (p) => (p.profile.nutritionPhase = 'cut')],
 		[
@@ -802,6 +803,35 @@ describe('the canonical input and its fingerprint', () => {
 		const p = hybrid();
 		edit(p);
 		expect(print(p)).not.toBe(print(hybrid()));
+	});
+
+	it('keeps a profile without heart rate’s canonical input, and includes heartRate when one is told', () => {
+		const before = build(hybrid());
+		// The running input exactly as it was before hr-zones: no heartRate key at all.
+		expect(canonicalJson(before.running)).toBe(
+			'{"easyPaceSecondsPerKm":330,"longestRunMetres":16000,"races":[{"distanceMetres":10000,"racedOn":"2026-05-10","timeSeconds":2700},{"distanceMetres":5000,"racedOn":null,"timeSeconds":1260}],"runsPerWeek":3,"weeklyMetres":30000}'
+		);
+		expect(before.running).not.toHaveProperty('heartRate');
+		const blank = hybrid();
+		blank.running!.heartRate = { max: null, resting: null, threshold: null };
+		expect(build(blank)).toEqual(before);
+		expect(print(blank)).toBe(print(hybrid()));
+
+		const told = hybrid();
+		told.running!.heartRate = { max: 190, resting: 50, threshold: null };
+		expect(build(told).running).toEqual({
+			...before.running,
+			heartRate: { max: 190, resting: 50, threshold: null }
+		});
+		expect(print(told)).not.toBe(print(hybrid()));
+		// Heart rate alone is running specifics too; a goal that trains no running reads none.
+		told.running = { ...blank.running!, weeklyDistance: null, runsPerWeek: null, longestRun: null };
+		told.running.easyPaceSeconds = null;
+		told.running.races = [];
+		told.running.heartRate = { max: null, resting: null, threshold: 168 };
+		expect(build(told).running).toMatchObject({ heartRate: { threshold: 168 } });
+		told.goals = [goal({ title: 'Strength', disciplines: ['strength'] })];
+		expect(build(told).running).toBeNull();
 	});
 
 	it('changes with one catalogue entry, one custom exercise or the generator id', () => {
