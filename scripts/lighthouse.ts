@@ -50,11 +50,11 @@
  *   'I hate Bulgarian split squats, so replace them' and 'Plan my next cycle', as
  *   e2e/coach-inbox.serial.e2e.ts proposes them). They come after every other seeded screen,
  *   since the reset removes the program and the workouts those are audited on.
- * - after the coach, M6's screens, each on the fixture e2e/perf.e2e.ts measures it on, seeded
- *   through the test-only route (/api/test-support/analytics) after emptying the owner's training
- *   history, which a fixture requires: every /progress view and the squat's detail on twelve-weeks
- *   (seeded once), then a weekly review on week-complete and a cycle review on block-end, each
- *   created by posting the reviews list's form action as a no-JS Create does
+ * - after the coach, M6's screens, each on the fixture e2e/perf-progress-load.e2e.ts measures it
+ *   on, seeded through the test-only route (/api/test-support/analytics) after emptying the owner's
+ *   training history, which a fixture requires: every /progress view and the squat's detail on
+ *   twelve-weeks (seeded once), then a weekly review on week-complete and a cycle review on
+ *   block-end, each created by posting the reviews list's form action as a no-JS Create does
  */
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
@@ -485,14 +485,22 @@ async function seedDevice(device: ActiveSeed) {
 	const browser = await chromium.connectOverCDP(`http://127.0.0.1:${chrome.port}`);
 	try {
 		const page = await browser.contexts()[0]!.newPage();
+		// No service worker for the seed: its install would fetch the whole build in the
+		// background, and could refill the HTTP cache or take control after the clear below.
+		await page.addInitScript(() => {
+			if (!('serviceWorker' in navigator)) return;
+			navigator.serviceWorker.register = () => new Promise<ServiceWorkerRegistration>(() => {});
+		});
 		await page.goto(`${server.base}/robots.txt`);
 		await writeActiveWorkout(page, device);
 		if (sessionHeaders) await page.setExtraHTTPHeaders(sessionHeaders);
 		await page.goto(`${server.base}/workout`);
-		const kept = await page.waitForFunction((key) => localStorage.getItem(key), PREPAINT_KEY);
-		if (JSON.parse(String(await kept.jsonValue())).blocked) {
-			throw new Error('/workout lost the session: the device keeps no card to prepaint');
-		}
+		await page.waitForFunction((key) => localStorage.getItem(key), PREPAINT_KEY);
+		// Keep only the device's state (localStorage, IndexedDB): the audit, which skips the storage
+		// reset for it, stays a cold network load, with no cached chunk from here.
+		const cdp = await page.context().newCDPSession(page);
+		await cdp.send('Network.clearBrowserCache');
+		await cdp.detach();
 		await page.close();
 	} finally {
 		// Connected over CDP, this disconnects: the browser and its profile stay for the run.

@@ -3,10 +3,14 @@
 	"runs": [42846453746, 42855781208, 42869792811],
 	"legs": {
 		"alone/chromium": {
-			"exclusive › sessions.exclusive.e2e.ts": 8.7,
+			"perf › perf-coach-load.e2e.ts": 25,
 			"perf › perf-coach.e2e.ts": 72.5,
+			"perf › perf-progress-load.e2e.ts": 90,
 			"perf › perf-workout.e2e.ts": 21.3,
 			"perf › perf.e2e.ts": 151
+		},
+		"exclusive/chromium": {
+			"exclusive › sessions.exclusive.e2e.ts": 8.7
 		},
 		"main/chromium": {
 			"desktop-chromium › a11y-dark.e2e.ts": 117.8,
