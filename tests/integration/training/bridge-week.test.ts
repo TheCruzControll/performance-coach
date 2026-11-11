@@ -21,7 +21,7 @@ import type { BridgeFixtureResult } from '../../../src/lib/server/test-support/a
 import { loadTodayPlan } from '../../../src/routes/(app)/today/plan.server';
 import { loadHistory } from '../../../src/routes/(app)/train/history/[[version]]/history.server';
 import { loadTrainWeek, type TrainWeekData } from '../../../src/routes/(app)/train/week.server';
-import { withRollback } from '../helpers';
+import { withCommitted, withRollback } from '../helpers';
 import { makeOwner } from '../profile/fixtures';
 
 const TZ = 'America/Los_Angeles';
@@ -145,7 +145,8 @@ describe('a bridge week', () => {
 	});
 
 	it('Today names the next block’s start in place of the week, and Up next is Build', async () => {
-		await withRollback(async (db) => {
+		// Today reads the plan and its week together, each on its own connection: the shared pool.
+		await withCommitted(async (db) => {
 			const { owner } = await seeded(db, WEDNESDAY);
 			const program = await getCurrentProgram(owner, WEDNESDAY, { db });
 			if (!program) throw new Error('no active program');
