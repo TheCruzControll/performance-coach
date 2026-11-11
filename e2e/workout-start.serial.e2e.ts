@@ -365,12 +365,17 @@ test.describe('the kit held or unreachable', () => {
 		await expect(page.locator('main#main[data-store]')).toBeAttached();
 		const answer = await page.request.get(`/api/workouts/kit?lineage=${strength().lineage}`);
 		const fresh = (await answer.json()) as Extract<StartKit, { kind: 'strength' }>;
-		// The copy saved here is older: the squat had another name when Today saved it.
-		const [first, ...rest] = fresh.exercises;
-		const stale = {
-			...fresh,
-			exercises: [{ ...first!, exercise: { ...first!.exercise, name: 'Stale squat' } }, ...rest]
-		};
+		// The copy saved here is older: the squat had another name when Today saved it, wherever the
+		// kit names it (its slot, and another slot's alternatives: the view's names are the kit's).
+		const squat = fresh.exercises[0]!.exercise.id;
+		const stale = JSON.parse(JSON.stringify(fresh), (_key, value: unknown) =>
+			value &&
+			typeof value === 'object' &&
+			'name' in value &&
+			(value as { id?: unknown }).id === squat
+				? { ...value, name: 'Stale squat' }
+				: value
+		) as typeof fresh;
 		await saveKit(page, strength().lineage, stale);
 
 		const { release, requests } = await holdKits(page);
