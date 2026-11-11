@@ -199,6 +199,28 @@ async function readStore<T>(page: Page, store: string, key?: string): Promise<T>
 export const readOutbox = (page: Page) =>
 	readStore<{ seq: number; envelope: Mutation }[]>(page, STORES.outbox);
 
+/** A workout's History detail. */
+const DETAIL = /\/progress\/workouts\/[0-9a-f-]{36}$/;
+
+/**
+ * After Done, online: the History detail, which Done opens itself when the server takes the
+ * finish within about 300 ms (finish.ts FINISH_SYNC_WAIT_MS), else the completed state's 'View in
+ * History' once the sync confirms. A slower CI server takes either path; both end on the detail.
+ */
+export async function historyAfterDone(page: Page): Promise<void> {
+	const view = page.getByTestId('workout-summary').getByTestId('view-in-history');
+	const detail = () => DETAIL.test(new URL(page.url()).pathname);
+	await expect
+		.poll(async () => detail() || (await view.isVisible()), {
+			message: 'Done opens History, or offers View in History',
+			timeout: 15_000
+		})
+		.toBe(true);
+	// Done's own navigation can win the race with the click and detach the link: the URL decides.
+	if (!detail()) await view.click({ timeout: 5_000 }).catch(() => {});
+	await page.waitForURL(DETAIL);
+}
+
 /** A workout's stored record, or undefined. */
 export const readWorkout = (page: Page, workoutId: string) =>
 	readStore<Record<string, unknown> | undefined>(page, STORES.workouts, workoutId);
