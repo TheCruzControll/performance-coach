@@ -22,6 +22,7 @@ import type {
 	EquipmentProfile,
 	ExercisePreference,
 	ExperienceEntry,
+	HeartRate,
 	Injury,
 	MuayThaiProfile,
 	RunningProfile,
@@ -35,7 +36,8 @@ import {
 	type BaselineRow,
 	type ExercisePreferenceRow,
 	type NewBaseline,
-	type NewPreference
+	type NewPreference,
+	type RunningRow
 } from '../../db';
 import { measure } from '../../observability/timing';
 import { resolveExerciseNames, type ExerciseDef } from '../exercises/index';
@@ -220,6 +222,7 @@ export async function getSpecifics(ownerId: string, deps: ProfileDeps = {}): Pro
 					runsPerWeek: running.runsPerWeek,
 					longestRun: running.longestRun,
 					easyPaceSeconds: running.easyPaceSeconds,
+					...toHeartRate(running),
 					races: races.map(toRace),
 					notes: running.notes,
 					updatedAt: running.updatedAt
@@ -234,6 +237,22 @@ export async function getSpecifics(ownerId: string, deps: ProfileDeps = {}): Pro
 					updatedAt: muayThai.updatedAt
 				}
 			: null
+	};
+}
+
+/** `{ heartRate }` when the row holds at least one heart rate, else nothing (no key at all). */
+function toHeartRate(row: RunningRow): { heartRate?: HeartRate } {
+	const heartRate = { max: row.maxHr, resting: row.restingHr, threshold: row.thresholdHr };
+	return Object.values(heartRate).some((v) => v !== null) ? { heartRate } : {};
+}
+
+/** The columns a save writes: none when heart rate was left out, so the stored values stay. */
+function heartRateColumns(heartRate: HeartRate | null | undefined) {
+	if (heartRate === undefined) return {};
+	return {
+		maxHr: heartRate?.max ?? null,
+		restingHr: heartRate?.resting ?? null,
+		thresholdHr: heartRate?.threshold ?? null
 	};
 }
 
@@ -252,8 +271,8 @@ export async function saveSpecifics(
 			await repo.ensureProfile(ownerId);
 			const at = now();
 			if (data.running) {
-				const { races, ...running } = data.running;
-				await repo.upsertRunning(ownerId, running, at);
+				const { races, heartRate, ...running } = data.running;
+				await repo.upsertRunning(ownerId, { ...running, ...heartRateColumns(heartRate) }, at);
 				await repo.replaceRaces(
 					ownerId,
 					races.map((race) => ({

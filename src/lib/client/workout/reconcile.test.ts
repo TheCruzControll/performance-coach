@@ -610,7 +610,7 @@ describe('tabs', () => {
 		await purged;
 
 		// Nothing from the server is left: no rows, no kit, no names; only the change waiting.
-		expect(b.snapshot(W)).toEqual({ workoutId: W, view: null, notSaved: [] });
+		expect(b.snapshot(W)).toEqual({ workoutId: W, view: null, notSaved: [], pending: 0 });
 		expect(await b.listUnsynced()).toEqual([
 			{ workoutId: W, pending: 1, workout: expect.anything() }
 		]);
