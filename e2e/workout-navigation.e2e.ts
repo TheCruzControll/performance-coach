@@ -185,7 +185,10 @@ test.describe('moving between exercises (IndexedDB only)', () => {
 		await page.emulateMedia({ reducedMotion: 'reduce' });
 		await open(page);
 		const box = (await heading(page).boundingBox())!;
-		const x = box.x + box.width / 2;
+		// From the name's right end, so the 200 px drag stays on the screen, as a finger does.
+		// WebKit gives a mouse event whole-pixel coordinates, cut toward 0: from the name's middle
+		// the pointer ended off the left edge, at -72.3 read as -72, and the card was 1 px short.
+		const x = box.x + box.width - 8;
 		const y = box.y + box.height / 2;
 		await page.mouse.move(x, y);
 		await page.mouse.down();
