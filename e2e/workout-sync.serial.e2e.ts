@@ -147,6 +147,7 @@ const MESSAGES = [1, 999, 1000].flatMap((n) =>
 			{ state: 'synced' },
 			{ state: 'saving', pending: n },
 			{ state: 'offline', pending: n },
+			{ state: 'unreachable', waiting: n },
 			{ state: 'retrying', seconds: n === 1 ? 1 : 60, pending: n },
 			{ state: 'attention', count: n },
 			{ state: 'signed-out', waiting: n },
@@ -208,6 +209,47 @@ test.describe('the workout sync status', () => {
 		await expect(pill(page)).toHaveText('Saved');
 		expect(sent).toBe(3);
 		expect(await pillTexts(page)).toContainEqual(expect.stringMatching(/^Retrying in \d+ s$/));
+		expect(await pillBoxes(page), 'the pill keeps its box').toHaveLength(1);
+		expect(await rowsOf([set.id])).toHaveLength(1);
+	});
+
+	test('dead gym Wi-Fi: a sign-in page and a dropped connection read Can’t connect and count nothing, then Saved, one row', async ({
+		page
+	}) => {
+		await recordPill(page);
+		let sent = 0;
+		let release!: () => void;
+		const gate = new Promise<void>((resolve) => (release = resolve));
+		await page.route(`**${SYNC_URL}`, async (route) => {
+			sent++;
+			if (sent === 1) {
+				// A captive portal answers in its own words: not this server's JSON.
+				const body = '<!doctype html><title>Sign in to Gym Wi-Fi</title>';
+				return route.fulfill({ status: 200, contentType: 'text/html', body });
+			}
+			if (sent === 2) return route.abort('connectionreset');
+			await gate;
+			return route.continue();
+		});
+		const workoutId = await seedWorkout(page, kit);
+		const set = logOf(workoutId, 1);
+		await injectMutation(page, set);
+
+		await open(page);
+		// The third try waits at the gate: still out of reach, as far as the device knows.
+		await expect.poll(() => sent, { timeout: 15_000 }).toBe(3);
+		await expect(pill(page)).toHaveText(/^Can’t connect · \d+ waiting$/);
+		const waiting = (await readOutbox(page)) as unknown as {
+			attempts: number;
+			failingSince: number | null;
+		}[];
+		expect(waiting.length).toBeGreaterThan(0);
+		expect(waiting.map((e) => [e.attempts, e.failingSince])).toEqual(waiting.map(() => [0, null]));
+
+		release();
+		await synced(page);
+		await expect(pill(page)).toHaveText('Saved');
+		expect(sent).toBe(3);
 		expect(await pillBoxes(page), 'the pill keeps its box').toHaveLength(1);
 		expect(await rowsOf([set.id])).toHaveLength(1);
 	});

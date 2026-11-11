@@ -1,6 +1,7 @@
 /**
  * What the rest timer does besides showing the time (PRD §8): a vibration and a short tone when a
- * rest is over, and the screen kept awake during rest. Whether each is wanted is the device's
+ * rest is over, and the screen kept awake during rest; on an iPhone, a haptic tap on Complete set
+ * (not at rest's end: a timer has no user activation). Whether each is wanted is the device's
  * settings (settings.ts); `feedbackSupport` tells the settings sheet which to hide.
  *
  * - Each fails silently where the platform lacks it or refuses it, so a screen calls them without
@@ -14,8 +15,17 @@
 
 /** What feedback reads from the browser. */
 export interface FeedbackPlatform {
-	navigator?: { vibrate?: Navigator['vibrate']; wakeLock?: Pick<WakeLock, 'request'> };
-	document?: Pick<Document, 'visibilityState' | 'addEventListener' | 'removeEventListener'>;
+	navigator?: {
+		vibrate?: Navigator['vibrate'];
+		wakeLock?: Pick<WakeLock, 'request'>;
+		maxTouchPoints?: number;
+	};
+	document?: Pick<
+		Document,
+		'visibilityState' | 'addEventListener' | 'removeEventListener' | 'createElement' | 'body'
+	>;
+	/** Its prototype has `switch` where `<input type=checkbox switch>` is a switch (Safari 17.4+). */
+	HTMLInputElement?: { prototype: object };
 	AudioContext?: typeof AudioContext;
 	/** Safari before 14.1. */
 	webkitAudioContext?: typeof AudioContext;
@@ -26,7 +36,8 @@ const page = globalThis as FeedbackPlatform;
 /** Which of the three this browser has. */
 export function feedbackSupport(platform: FeedbackPlatform = page) {
 	return {
-		vibration: typeof platform.navigator?.vibrate === 'function',
+		// An iPhone has no Vibration API, but its haptic answers to the same setting.
+		vibration: typeof platform.navigator?.vibrate === 'function' || hasHaptic(platform),
 		tone: typeof (platform.AudioContext ?? platform.webkitAudioContext) === 'function',
 		wakeLock: typeof platform.navigator?.wakeLock?.request === 'function'
 	};
@@ -52,6 +63,52 @@ export function vibrate(
 	} catch {
 		return false;
 	}
+}
+
+// ---- The iPhone's haptic -------------------------------------------------------------------
+
+/**
+ * A light haptic tap on an iPhone, which has no Vibration API: iOS 18 taps the haptic engine when
+ * a switch (`<input type=checkbox switch>`) is toggled, so a hidden one is toggled through its
+ * label and removed. iOS does so only inside a user activation (a tap's handler), and nothing else
+ * happens: the switch is out of the page and the accessibility tree. False, doing nothing, where
+ * navigator.vibrate exists (vibrate is that platform's way), without a touch screen or a switch
+ * control, or where it throws; true says only that the switch was toggled, not that the phone
+ * tapped.
+ */
+export function haptic(platform: FeedbackPlatform = page): boolean {
+	const doc = platform.document;
+	if (!hasHaptic(platform) || !doc?.body) return false;
+	try {
+		const label = doc.createElement('label');
+		label.ariaHidden = 'true';
+		label.style.display = 'none';
+		const input = doc.createElement('input');
+		input.type = 'checkbox';
+		input.setAttribute('switch', '');
+		input.tabIndex = -1;
+		label.append(input);
+		doc.body.append(label);
+		try {
+			label.click();
+		} finally {
+			label.remove();
+		}
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+/** A touch screen, no Vibration API and a switch control: an iPhone, not desktop Safari. */
+function hasHaptic(platform: FeedbackPlatform): boolean {
+	const { navigator, HTMLInputElement } = platform;
+	return (
+		typeof navigator?.vibrate !== 'function' &&
+		(navigator?.maxTouchPoints ?? 0) > 0 &&
+		HTMLInputElement !== undefined &&
+		'switch' in HTMLInputElement.prototype
+	);
 }
 
 // ---- The tone -------------------------------------------------------------------------------

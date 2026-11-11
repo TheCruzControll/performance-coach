@@ -24,6 +24,10 @@
  *    a completed answer is stored with its blocks; an answer that did not complete is stored as a
  *    display_only row, shown and never replayed, so every stored segment stays a valid request.
  * 8. The run finishes with its outcome; `done` is always the last event.
+ * 9. When a completed answer left its segment due to roll over, its summary is made after the
+ *    answer, in work handed to TurnOptions.after, which keeps it alive past the stream (the
+ *    endpoint's waitUntil); the next turn then rolls over with no model call before its answer.
+ *    Without `after`, the summary waits for the next turn as in step 3.
  *
  * One query at a time: every service call is awaited before the next (docs/architecture.md).
  */
@@ -81,7 +85,13 @@ import { loadTurnFacts } from '../services/coach/turn-facts.ts';
 import { directAnswer, DIRECT_RUN } from './direct.ts';
 import type { TurnHooks } from './hooks.ts';
 import { loadMemory } from './memory/load.ts';
-import { rollover, rolloverChip, summariseSegment, type RolloverPlan } from './rollover.ts';
+import {
+	rollover,
+	rolloverChip,
+	summariseAhead,
+	summariseSegment,
+	type RolloverPlan
+} from './rollover.ts';
 import { runLoop, type LoopOutcome } from './orchestrator.ts';
 import { createOutputPolicy, type PolicyInput } from './policy.ts';
 import {
@@ -91,7 +101,8 @@ import {
 	type ReviewFacts,
 	type TurnFacts
 } from './prompt/context.ts';
-import { buildModelRequest, CHAT_EFFORT } from './prompt/layout.ts';
+import { chatEffort } from './prompt/effort.ts';
+import { buildModelRequest } from './prompt/layout.ts';
 import { promptVersion, SYSTEM_PROMPT } from './prompt/system.ts';
 import { DIRECT_ANSWER_REASONS } from './provider/select.ts';
 import { COACH_MODEL, type LlmProvider } from './provider/types.ts';
@@ -132,6 +143,11 @@ export interface TurnOptions {
 	toolEffects?: readonly ToolEffect[];
 	/** When the endpoint must have answered, in epoch milliseconds. */
 	deadlineAt?: number;
+	/**
+	 * Keeps work that runs after the turn's last event alive (a summary ahead, step 9); without it
+	 * none is started.
+	 */
+	after?: (work: Promise<void>) => void;
 }
 
 /** What a call to a tool the turn did not offer answers. */
@@ -446,10 +462,18 @@ async function turn(
 		// A retry runs on the stored message, never on what the retry sent.
 		const ownerText = rows[at]!.content as string;
 		const lookup = directIntent(ownerText);
+		const effort = chatEffort({
+			text: ownerText,
+			entry: input.entry ?? null,
+			painMode: detectPain(ownerText).reported,
+			opensSegment: !transcript.some(
+				(row) => row.kind === 'owner_message' && row.seq < owner.message.seq
+			)
+		});
 		const model = {
 			provider: provider.status === 'ready' ? provider.provider.name : 'none',
 			model: COACH_MODEL,
-			effort: CHAT_EFFORT
+			effort
 		};
 		const started = await startRun(
 			ownerId,
@@ -463,21 +487,34 @@ async function turn(
 			deps
 		);
 		const decided = since ? await listDecidedSince(ownerId, since, deps) : [];
-		return { owner, thread, first, transcript, after, ownerText, lookup, started, decided, rolled };
+		return {
+			owner,
+			thread,
+			first,
+			transcript,
+			after,
+			ownerText,
+			lookup,
+			effort,
+			started,
+			decided,
+			rolled
+		};
 	});
 	if (begun.answer !== undefined) {
 		// Answered already: the client shows the stored answer.
 		emit({ type: 'answer_completed', messageId: begun.answer });
 		return 'completed';
 	}
-	const { owner, thread, first, transcript, after, ownerText, lookup, started, decided, rolled } =
-		begun;
+	const { owner, thread, first, transcript, after, ownerText, lookup, effort, started } = begun;
+	const { decided, rolled } = begun;
 	const threadId = owner.thread.id;
 	let contextPending = !after.some((row) => row.kind === 'context');
 	const runId = (run.id = started.id);
 	emit({ type: 'run_started', threadId, runId, messageId: owner.message.id });
 	if (plan && rolled) emit(rolloverChip(plan));
 	const startedAt = Date.now();
+	const deadlineAt = options.deadlineAt ?? startedAt + TURN_LIMITS.turnMs;
 	let ttftMs: number | null = null;
 	const end = async (status: RunEnd, error: string | null = null) => {
 		await finishRun(ownerId, runId, { status, error, ttftMs }, deps);
@@ -560,7 +597,20 @@ async function turn(
 		);
 		await recordPolicy(callIndex);
 		emit({ type: 'answer_completed', messageId: ids.at(-1)! });
-		return end('completed');
+		const status = await end('completed');
+		if (options.after && provider.status === 'ready') {
+			const ahead = { ownerId, threadId, promptVersion: version, deadlineAt, deps };
+			const work = summariseAhead({
+				...ahead,
+				provider: provider.provider,
+				chatCallsBelow: DRAFT_CALL_INDEX_BASE
+			}).then(
+				() => undefined,
+				(error: unknown) => logger.error('coach summary ahead failed', { threadId, err: error })
+			);
+			options.after(work);
+		}
+		return status;
 	};
 
 	if (lookup) {
@@ -577,14 +627,14 @@ async function turn(
 		return end('budget_exhausted', 'daily_cap');
 	}
 
-	const deadlineAt = options.deadlineAt ?? Date.now() + TURN_LIMITS.turnMs;
 	const request = buildModelRequest({
 		preamble: { role: 'user', content: opening },
 		transcript: transcript.map(
 			(row) => ({ role: row.role, content: row.content }) as BetaMessageParam
 		),
 		context: contextPending ? context : null,
-		tools: definitions
+		tools: definitions,
+		effort
 	});
 	const hooks: Partial<TurnHooks> = {
 		onText: (text) => answer.text(text),

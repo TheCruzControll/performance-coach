@@ -1,3 +1,6 @@
 engineStrict: true
 onlyBuiltDependencies:
   - esbuild
+
+patchedDependencies:
+  '@sveltejs/kit@3.1.1': patches/@sveltejs__kit@3.1.1.patch

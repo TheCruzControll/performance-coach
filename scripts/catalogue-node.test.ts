@@ -72,6 +72,25 @@ describe('the exercise catalogue under plain Node', () => {
 		);
 	});
 
+	it('loads the strength weeks backfill db:migrate runs after migrating, Vite imports and all', () => {
+		// Its resolve hook finds the service's extensionless imports; a bad one breaks every deploy.
+		const result = plainNode(
+			path.join(root, 'scripts/lib/strength-weeks-backfill.ts'),
+			'{ backfillWeeks: typeof m.backfillWeeks, loaded }'
+		);
+		expect(result.stderr).not.toMatch(/Error/);
+		expect(result.status).toBe(0);
+		const { loaded, ...exports } = JSON.parse(result.stdout) as Record<string, unknown>;
+		expect(exports).toEqual({ backfillWeeks: 'function' });
+		expect(loaded).toEqual(
+			expect.arrayContaining([
+				'src/lib/server/services/analytics/strength-weeks.ts',
+				'src/lib/server/services/analytics/facts.ts',
+				'src/lib/server/db/repositories/strength-weeks.ts'
+			])
+		);
+	});
+
 	it('would fail on an extensionless runtime import, which only Vite resolves', () => {
 		const dir = mkdtempSync(path.join(tmpdir(), 'catalogue-node-'));
 		try {
