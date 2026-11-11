@@ -5,6 +5,8 @@
  *   estimates it, marked estimated, a PR only above the kit's best, and the plank's seconds, not
  *   volume; the session RPE, the notes and the stopwatch's duration are stored; Done opens the
  *   History detail; Train and Today show the session as Done.
+ * - On a slow connection Done shows the summary at once and never jumps late: the server held
+ *   past Done's wait, 'View in History' once the sync confirms, and the page stays put.
  * - (Chromium) offline, Done shows the completed state, which an offline reload keeps; back
  *   online it syncs, 'View in History' opens the detail, and the workout is listed once.
  * - A replayed finish completes once; a refused finish is fixed from the summary and lands once.
@@ -30,6 +32,7 @@ import { PROGRAM_TZ } from './program-support';
 import { captureScreen, query, resetTrainingProfile, SAME_ORIGIN } from './support';
 import {
 	gotoWorkout,
+	historyAfterDone,
 	injectMutation,
 	readOutbox,
 	seedWorkout,
@@ -283,7 +286,8 @@ test.describe('finishing a workout', () => {
 		await audit(page, 'the summary');
 		await sheet(page).getByTestId('finish-done').click();
 
-		await page.waitForURL(`**/progress/workouts/${workoutId}`);
+		await historyAfterDone(page);
+		await expect(page).toHaveURL(new RegExp(`/progress/workouts/${workoutId}$`));
 		await expect(page.getByTestId('workout-detail')).toBeVisible();
 		await expect(page.getByTestId('workout-notes')).toContainText('Squats moved well');
 		const row = (await workoutRow(workoutId))!;
@@ -315,7 +319,8 @@ test.describe('finishing a workout', () => {
 		await openFinish(page);
 		await sheet(page).getByTestId('finish-anyway').click();
 		await sheet(page).getByTestId('finish-done').click();
-		await page.waitForURL(`**/progress/workouts/${workoutId}`);
+		await historyAfterDone(page);
+		await expect(page).toHaveURL(new RegExp(`/progress/workouts/${workoutId}$`));
 		const finish = sent.find((m) => m.type === 'workout.finish')!;
 		expect(finish).toBeDefined();
 		const before = (await workoutRow(workoutId))!;
@@ -366,6 +371,59 @@ test.describe('finishing a workout', () => {
 		});
 		expect(await finishes(workoutId)).toBe(1);
 		await expect(summary(page).getByTestId('view-in-history')).toBeVisible();
+	});
+});
+
+test.describe('on a slow connection', () => {
+	// The finish's sync is held with page.route: WebKit's page.route misses a controlled page's
+	// requests.
+	test.use({ serviceWorkers: 'block' });
+
+	test('Done shows the summary at once and never jumps late: View in History once the sync confirms', async ({
+		page,
+		request
+	}) => {
+		const { workoutId } = await startFromKit(page, request);
+		let lift!: () => void;
+		const lifted = new Promise<void>((resolve) => (lift = resolve));
+		const held: Route[] = [];
+		await page.route(`**${SYNC_URL}`, async (route) => {
+			const body = route.request().postDataJSON() as SyncRequest | null;
+			if (body?.mutations.some((m) => m.type === 'workout.finish')) {
+				held.push(route);
+				await lifted;
+			}
+			await route.continue().catch(() => {});
+		});
+
+		await openFinish(page);
+		await sheet(page).getByTestId('finish-anyway').click();
+		await pickRpe(page, 7);
+		await sheet(page).getByTestId('finish-done').click();
+
+		// The local summary at once, while the server has not answered.
+		await expect(summary(page).getByTestId('summary-saved-here')).toHaveText(
+			'Saved on this device — syncing now.'
+		);
+		await expect(summary(page).getByTestId('summary-rpe')).toHaveText('Session RPE 7');
+		await expect.poll(() => held.length).toBe(1);
+		// Held well past Done's wait (about 300 ms), then the server answers.
+		await page.waitForTimeout(1_000);
+		await expect(page).toHaveURL(/\/workout$/);
+		lift();
+
+		const view = summary(page).getByTestId('view-in-history');
+		await expect(view).toBeVisible({ timeout: 15_000 });
+		await expect(summary(page).getByTestId('summary-synced')).toBeVisible();
+		expect((await workoutRow(workoutId))!.status).toBe('completed');
+		// A late jump would land here, as the sync confirms: the page stays on the summary.
+		await page.waitForTimeout(500);
+		await expect(page).toHaveURL(/\/workout$/);
+
+		await view.click();
+		await page.waitForURL(`**/progress/workouts/${workoutId}`);
+		await expect(page.getByTestId('workout-detail')).toBeVisible();
+		expect(await finishes(workoutId)).toBe(1);
 	});
 });
 

@@ -2,8 +2,9 @@
   @component
   The header's stopwatch for the workout shown: this device's, or, before this device has started
   one, the time since the workout started. Loaded with the view, never in the first render. It
-  can be paused, resumed and reset once the store is open (on idle; a tap before then does
-  nothing): device actions, stored with the workout, so a reload keeps them. One this device never
+  can be paused, resumed and reset: device actions, stored with the workout, so a reload keeps
+  them. A tap before the store is open (right after the first paint) waits for it, and is decided
+  then, on the workout as the store has it, at the time of the tap. One this device never
   started starts from the workout's start first. Paused, the time opens a sheet with Resume and
   Reset, so the header holds one control and keeps its geometry in both states. The sheet loads
   once the first frame has painted, so the first paint waits for the stopwatch alone; a tap
@@ -11,8 +12,7 @@
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import type { ChunkLoad } from '#lib/client/workout/active.svelte.ts';
-	import type { WorkoutStore } from '#lib/client/workout/store.ts';
+	import type { ChunkLoad, StoreWrite } from '#lib/client/workout/active.svelte.ts';
 	import type { LocalAction, WorkoutView } from '#lib/domain/workout/index.ts';
 	import { startStopwatch } from '#lib/domain/workout/timers.ts';
 	import type BottomSheetComponent from '#lib/ui/components/BottomSheet.svelte';
@@ -22,12 +22,13 @@
 
 	interface Props {
 		view: WorkoutView;
-		store?: WorkoutStore | null;
+		/** Writes through the page's store, now or once it opens (ActiveWorkout.write). */
+		write: StoreWrite;
 		/** The page's chunk loader, for the sheet. */
 		load: ChunkLoad;
 	}
 
-	let { view, store = null, load }: Props = $props();
+	let { view, write, load }: Props = $props();
 
 	let BottomSheet = $state.raw<typeof BottomSheetComponent | null>(null);
 	onMount(() =>
@@ -44,11 +45,12 @@
 	);
 
 	function act(type: 'stopwatch.pause' | 'stopwatch.resume' | 'stopwatch.reset') {
-		if (!store) return;
 		const workoutId = view.workout.id;
 		const action: LocalAction = { type, workoutId, at: Date.now() };
-		if (view.device.stopwatch.startedAt !== null) store.dispatch(action);
-		else store.dispatch({ type: 'stopwatch.start', workoutId, at: started }, action);
+		write((store) => {
+			if (view.device.stopwatch.startedAt !== null) store.dispatch(action);
+			else store.dispatch({ type: 'stopwatch.start', workoutId, at: started }, action);
+		});
 	}
 
 	let options = $state(false);
