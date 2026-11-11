@@ -65,6 +65,11 @@ describe('Today’s page data', () => {
 				today: TODAY,
 				selected: TODAY
 			});
+			// This week's figures stream beside the plan: nothing logged yet, so no data yet.
+			expect(await data.week).toMatchObject({
+				failed: false,
+				tiles: [{ value: null }, { value: null }, { value: null }]
+			});
 			expect(pool.peak()).toBeGreaterThan(1);
 		});
 	});
@@ -76,7 +81,8 @@ describe('Today’s page data', () => {
 			expect(data).toEqual({
 				setup: { complete: false, done: 0, total: expect.any(Number), next: 'welcome' },
 				program: undefined,
-				plan: undefined
+				plan: undefined,
+				week: undefined
 			});
 		});
 	});
@@ -87,6 +93,8 @@ describe('Today’s page data', () => {
 			const data = await loadToday(owner, { now, origin });
 			expect(data.setup).toMatchObject({ complete: true });
 			expect(data).toMatchObject({ program: 'none', plan: undefined });
+			// A week before any program still reads: no data yet until the first session.
+			expect(await data.week).toMatchObject({ failed: false });
 		});
 	});
 });

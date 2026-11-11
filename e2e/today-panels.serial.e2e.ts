@@ -81,8 +81,7 @@ async function routePanelChunk(
 
 /**
  * With onboarding incomplete, go from Profile to Today with the Setup chunk held: Today shows its
- * skeleton, and the setup card that replaces it moves nothing below it (This week, Plate
- * calculator).
+ * skeleton, and the setup card that replaces it moves nothing below it (This week).
  */
 async function setupArrivesInPlace(page: Page) {
 	await resetTrainingProfile();
@@ -109,11 +108,7 @@ async function setupArrivesInPlace(page: Page) {
 	await page.waitForFunction(() => document.fonts.status === 'loaded');
 
 	await expectNoShift(page, {
-		boxes: [
-			page.getByRole('heading', { level: 1, name: 'Today' }),
-			page.getByRole('heading', { level: 2, name: 'This week' }),
-			plates(page)
-		],
+		boxes: [page.getByRole('heading', { level: 1, name: 'Today' }), week(page)],
 		action: async () => {
 			release();
 			await expect(page.getByTestId('today-setup-count')).toHaveText('0 of 10 steps done');
@@ -134,7 +129,8 @@ async function setupArrivesInPlace(page: Page) {
 
 const notice = (page: Page) => page.getByTestId('today-panel-error');
 const goals = (page: Page) => page.getByTestId('today-goal');
-const plates = (page: Page) => page.getByRole('link', { name: /Plate calculator/ });
+/** This week's heading: under the summary (goals first), beside or under the state's panel. */
+const week = (page: Page) => page.getByRole('heading', { level: 2, name: 'This week' });
 
 async function audit(page: Page) {
 	await page.waitForFunction(() => document.fonts.status === 'loaded');
@@ -208,7 +204,7 @@ test.describe('with the service worker blocked, so page.route sees every chunk',
 			boxes: [
 				page.getByTestId('today-goals'),
 				page.getByTestId('today-schedule'),
-				plates(page),
+				week(page),
 				page.getByRole('heading', { level: 1, name: 'Today' })
 			],
 			action: async () => {
@@ -251,8 +247,7 @@ test.describe('with the service worker blocked, so page.route sees every chunk',
 		await expectNoShift(page, {
 			boxes: [
 				page.getByRole('heading', { level: 1, name: 'Today' }),
-				page.getByTestId('today-build'),
-				plates(page)
+				page.getByTestId('today-build')
 			],
 			action: async () => {
 				release();
@@ -283,7 +278,7 @@ test.describe('with the service worker blocked, so page.route sees every chunk',
 		// Only the panel failed: the rest of Today is there and works.
 		await expect(page.getByRole('heading', { level: 1, name: 'Today' })).toBeVisible();
 		await expect(page.getByTestId('today-build')).toBeVisible();
-		await expect(plates(page)).toBeVisible();
+		await expect(week(page)).toBeVisible();
 		await expect(page.locator('body')).not.toContainText(/500|internal error/i);
 		// It holds the panel's room: what is above it stays put once the panel arrives.
 		const panel = page.getByTestId('today-panel');
@@ -296,17 +291,19 @@ test.describe('with the service worker blocked, so page.route sees every chunk',
 		expect(await audit(page), 'dark').toEqual([]);
 		await captureScreen(page, testInfo, 'today-panel-error');
 
-		// Where the plate row sits in the document: Retry may scroll the page (Chromium reloads it).
+		// Where the Build card above the panel sits in the document: Retry may scroll the page
+		// (Chromium reloads it).
 		const documentTop = async () =>
-			(await plates(page).boundingBox())!.y + (await page.evaluate(() => window.scrollY));
-		const plateTop = await documentTop();
+			(await page.getByTestId('today-build').boundingBox())!.y +
+			(await page.evaluate(() => window.scrollY));
+		const buildTop = await documentTop();
 		letThrough();
 		await retry.click();
 		await expect(goals(page)).toHaveCount(1);
 		await expect(page.getByTestId('today-goal-countdown')).toHaveText('10 weeks to go');
 		await expect(notice(page)).toHaveCount(0);
 		await expect(page.getByTestId('today-panel')).toHaveCount(0);
-		expect(Math.abs((await documentTop()) - plateTop)).toBeLessThanOrEqual(1);
+		expect(Math.abs((await documentTop()) - buildTop)).toBeLessThanOrEqual(1);
 	});
 
 	test('the notice is designed in the light theme too', async ({ page }) => {
