@@ -78,7 +78,7 @@ export class ActiveWorkout {
 		}
 		this.signedOut = read.signedOut;
 		const view = project(table, read.inputs);
-		this.#show({ workoutId: read.inputs.workoutId, view, notSaved: [] });
+		this.#show({ workoutId: read.inputs.workoutId, view, notSaved: [], pending: 0 });
 	}
 
 	/**
