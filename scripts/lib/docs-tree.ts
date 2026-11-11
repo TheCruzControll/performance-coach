@@ -14,6 +14,8 @@ export interface DocsTree {
 	exists(target: string): boolean;
 	/** Every file under a folder, recursively. */
 	files(folder: string): string[];
+	/** Whether a file under a folder, recursively, passes `test`; it looks no further than the first. */
+	someFile(folder: string, test: (file: string) => boolean): boolean;
 }
 
 export const REPO_ROOT = fileURLToPath(new URL('../../', import.meta.url));
@@ -41,7 +43,20 @@ export function fsTree(root = REPO_ROOT): DocsTree {
 									.join('/')
 							)
 						)
-				: []
+				: [],
+		// A walk that stops at the first match: listing all of src/ for a cited `src/**/*.test.ts`
+		// was most of the docs-citations scan's time.
+		someFile: (folder, test) => {
+			const walk = (dir: string): boolean => {
+				if (!existsSync(at(dir))) return false;
+				for (const entry of readdirSync(at(dir), { withFileTypes: true })) {
+					const file = dir === '' ? entry.name : `${dir}/${entry.name}`;
+					if (entry.isFile() ? test(file) : entry.isDirectory() && walk(file)) return true;
+				}
+				return false;
+			};
+			return walk(clean(folder));
+		}
 	};
 }
 
@@ -52,7 +67,8 @@ export function memoryTree(contents: Record<string, string>): DocsTree {
 	return {
 		read: (file) => contents[clean(file)],
 		exists: (target) => names.includes(clean(target)) || names.some(under(target)),
-		files: (folder) => names.filter(under(folder))
+		files: (folder) => names.filter(under(folder)),
+		someFile: (folder, test) => names.filter(under(folder)).some(test)
 	};
 }
 
@@ -62,7 +78,7 @@ export function citedPathExists(tree: DocsTree, cited: string): boolean {
 	const fixed = cited.slice(0, cited.search(PATTERN));
 	const folder = fixed.slice(0, fixed.lastIndexOf('/') + 1);
 	const pattern = patternToRegExp(clean(cited));
-	return tree.files(folder).some((file) => pattern.test(file));
+	return tree.someFile(folder, (file) => pattern.test(file));
 }
 
 /** The gaps recorded in scripts/docs-known-gaps.json: today's, never a new one. */
