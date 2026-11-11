@@ -1,7 +1,8 @@
 /**
  * Moving between exercises in a desktop window (1440 × 900): the side list is one tab stop whose
  * arrows move the focus and whose Enter makes an exercise current, focus staying put; Previous and
- * Next work by Tab and Enter; every list row and both buttons have hover and focus states.
+ * Next work by Tab and Enter; every list row and both buttons have hover and focus states; a mouse
+ * drag moves the card with the pointer.
  */
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { expectNoSideScroll } from './desktop';
@@ -118,6 +119,30 @@ test.describe('moving between exercises on a desktop', () => {
 		await expect(heading(page)).toHaveText('Pull-up');
 		await expect(prev(page)).toBeFocused();
 		await expect(side(page).locator('[aria-current="step"]')).toHaveText(/^A1\s*Pull-up/);
+	});
+
+	test('a mouse drag across the wide card follows the pointer, moves on, and never widens the page', async ({
+		page
+	}) => {
+		await open(page);
+		const card = page.getByTestId('workout-main').getByTestId('exercise');
+		const box = (await heading(page).boundingBox())!;
+		const x = box.x + box.width / 2;
+		const y = box.y + box.height / 2;
+		await page.mouse.move(x, y);
+		await page.mouse.down();
+		await page.mouse.move(x - 260, y, { steps: 8 });
+		expect(
+			await card.evaluate((el) => new DOMMatrix(getComputedStyle(el).transform).m41)
+		).toBeCloseTo(-260, 0);
+		await expectNoSideScroll(page);
+		await page.mouse.up();
+		await expect(heading(page)).toHaveText('Leg press');
+		await expect(rows(page).nth(1)).toHaveAttribute('aria-current', 'step');
+		await expectNoSideScroll(page);
+		await expect
+			.poll(() => card.evaluate((el) => new DOMMatrix(getComputedStyle(el).transform).m41))
+			.toBe(0);
 	});
 
 	test('every list row and both buttons have hover and focus-visible states', async ({ page }) => {

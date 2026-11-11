@@ -20,14 +20,29 @@
  * - /workout/run and /workout/session, a shorter run each (steppers, chips or switches, and their
  *   log or save): INP ≤ 200 ms from Event Timing and from web-vitals' row for the route;
  * - /workout's main-thread blocking on a reload the service worker controls, with the workout
- *   active: median of 5 ≤ 250 ms (target 200), measured as perf.e2e.ts measures every screen.
+ *   active: median of 5 ≤ 250 ms (target 200), measured as perf.e2e.ts measures every screen;
+ * - every interaction named by what was tapped (tagged on pointerdown, since Event Timing's target
+ *   is null once a sheet's Close, Up next's Start or a swiped card has left the page), none left
+ *   unattributed, and the slowest of each load ≤ 200 ms: INP's "good" for every tap, not just
+ *   p75 (CI measured 56 ms at worst, run 42977173433, all of it then unattributed);
+ * - dropped frames: no frame over 32 ms (two 60 Hz frames: one dropped) while the options sheet
+ *   opens and closes, the card is swiped and comes back, and the rest bar runs and is worked,
+ *   leaving out the frames a tap was answered in, which the INP gates above hold (e2e/frames.ts).
+ *   A tapped motion is watched from its first tap, the rest bar as it runs. The Options tap is
+ *   answered until its sheet starts to move: on a page's first tap the sheet's chunk loads first,
+ *   so it mounts after the tap's first paint, where Event Timing has stopped; that wait is
+ *   annotated. Only the page's own work is measured: the sheet's motion is awaited by
+ *   its transition events, not polled (Playwright's visible and stable checks read the moving
+ *   sheet's box every frame, which restyles it on the main thread), and the trace keeps no DOM
+ *   snapshots (each is a 15-35 ms task on the page's main thread at 4×, CI run 43023511877).
  * Its own file in the perf project (playwright.config.ts), so perf.e2e.ts stays M3's. Never raise
  * a threshold without a measured reason recorded in docs/performance.md.
  */
 import { expect, test, type Page } from '@playwright/test';
 import type { KitExercise, StartKit, StrengthKit } from '../src/lib/domain/workout';
 import { adHoc } from '../scripts/lib/workout-seed';
-import { inp, percentile } from './inp';
+import { framesFrom, longFrames } from './frames';
+import { attribute, inp, percentile, type Tag } from './inp';
 import { resetPrograms } from './program-support';
 import { query } from './support';
 import { gotoWorkout, seedWorkout, workoutDay } from './workout-support';
@@ -48,16 +63,26 @@ const SETS = 5 * SETS_EACH;
 const SETS_PER_LOAD = SETS / LOADS;
 /** How far a swipe drags the card: well past swipe.ts's distance threshold. */
 const SWIPE_PX = 200;
+/** Two 60 Hz frames: a frame longer than this dropped at least one. */
+const FRAME_MS = 32;
+/** How long the rest bar is watched running, untouched, before its controls: one 1 Hz tick at least. */
+const REST_WATCH_MS = 1_100;
 
 /** The interactions logging a set is: layout shift is gated on them. */
 const LOGGING_KINDS = ['stepper', 'chip', 'complete-set'] as const;
 /** What else a load does: the next exercise, the rest timer, the options sheet and the swipes. */
 const OTHER_KINDS = ['start', 'rest', 'sheet', 'swipe', 'other'] as const;
+/** The motion the dropped-frame gate watches. */
+const MOTION_KINDS = ['sheet', 'swipe', 'rest'] as const;
+
+type Kind = (typeof LOGGING_KINDS)[number] | (typeof OTHER_KINDS)[number];
+type Motion = (typeof MOTION_KINDS)[number];
 
 interface Interaction {
 	id: number;
 	duration: number;
-	kind: (typeof LOGGING_KINDS)[number] | (typeof OTHER_KINDS)[number];
+	startTime: number;
+	kind: Kind;
 }
 
 interface LayoutShift {
@@ -86,6 +111,9 @@ test.beforeAll(async () => {
 	expect(kit.exercises.reduce((sum, slot) => sum + slot.sets.length, 0)).toBe(SETS);
 });
 
+// A trace's DOM snapshots are taken on the page's main thread at every step: in the frames.
+test.use({ trace: { mode: 'retain-on-failure', snapshots: false } });
+
 // Each test's workouts are its own: none left in progress for the next one, or for perf.e2e.ts.
 test.beforeEach(() => resetPrograms());
 test.afterAll(() => resetPrograms());
@@ -104,11 +132,21 @@ const decrease = (page: Page, field: 'logger-amount') =>
 		.getByTestId(field)
 		.getByRole('button', { name: /^Decrease / });
 
-/** Records Event Timing interactions (by what was tapped) and layout shifts, from the start. */
+/**
+ * Records Event Timing interactions (by what their target is), pointerdown tags (what was tapped,
+ * while it is still in the page) and layout shifts, from the start; and animation frames while
+ * __frames.start() is on, until __frames.stop() returns them.
+ */
 function observe() {
+	/** A transition of the options sheet itself (BottomSheet's panel, a child of the dialog). */
+	const sheetMotion = (event: TransitionEvent) =>
+		event.propertyName === 'transform' &&
+		event.target instanceof Element &&
+		event.target.parentElement?.getAttribute('data-testid') === 'exercise-actions-sheet';
 	const interactions: Interaction[] = [];
+	const tags: Tag<Kind>[] = [];
 	const shifts: Shift[] = [];
-	const kindOf = (target: Node | null): Interaction['kind'] => {
+	const kindOf = (target: EventTarget | null): Kind => {
 		const el = target instanceof Element ? target : null;
 		if (el?.closest('[data-testid="complete-set"]')) return 'complete-set';
 		if (el?.closest('[data-testid="rpe-chips"]')) return 'chip';
@@ -126,6 +164,7 @@ function observe() {
 			interactions.push({
 				id: entry.interactionId,
 				duration: entry.duration,
+				startTime: entry.startTime,
 				kind: kindOf(entry.target)
 			});
 		}
@@ -142,7 +181,64 @@ function observe() {
 				})
 			});
 	}).observe({ type: 'layout-shift', buffered: true });
-	Object.assign(window, { __interactions: interactions, __shifts: shifts });
+	// An Event Timing entry's startTime is its event's timeStamp, on the same clock.
+	addEventListener(
+		'pointerdown',
+		(event) => tags.push({ at: event.timeStamp, kind: kindOf(event.target) }),
+		{
+			capture: true,
+			passive: true
+		}
+	);
+	// The Options tap's answer: from its pointerdown to the sheet's first transition (its motion).
+	const answers: [number, number][] = [];
+	let asked: number | null = null;
+	addEventListener(
+		'pointerdown',
+		(event) => {
+			const el = event.target instanceof Element ? event.target : null;
+			if (el?.closest('[data-testid="exercise-actions"]')) asked = event.timeStamp;
+		},
+		{ capture: true, passive: true }
+	);
+	addEventListener(
+		'transitionrun',
+		(event) => {
+			if (asked === null || !sheetMotion(event)) return;
+			answers.push([asked, performance.now()]);
+			asked = null;
+		},
+		{ capture: true, passive: true }
+	);
+	let recording: { on: boolean; times: number[] } = { on: false, times: [] };
+	const frames = {
+		start() {
+			const now = { on: true, times: [] as number[] };
+			recording = now;
+			const tick = (at: number) => {
+				if (!now.on) return;
+				now.times.push(at);
+				requestAnimationFrame(tick);
+			};
+			requestAnimationFrame(tick);
+		},
+		stop() {
+			recording.on = false;
+			return recording.times;
+		}
+	};
+	Object.assign(window, {
+		__interactions: interactions,
+		__tags: tags,
+		__answers: answers,
+		__shifts: shifts,
+		__frames: frames
+	});
+}
+
+interface Frames {
+	start(): void;
+	stop(): number[];
 }
 
 const round = (ms: number) => Math.round(ms * 10) / 10;
@@ -199,14 +295,80 @@ function setsInOrder(kit: StrengthKit): PlannedSet[] {
 	return order;
 }
 
-/** Runs `action` and records when, painted before and after, so its shifts are told apart. */
-async function apart(page: Page, windows: [number, number][], action: () => Promise<void>) {
+/** A motion's animation frames: their timestamps, one window's worth. */
+interface MotionFrames {
+	kind: Motion;
+	times: number[];
+	/** When the motion's tap was asked for; none for one watched as it runs (`watchMs`). */
+	from?: number;
+}
+
+/**
+ * Runs `action` and records when, painted before and after, so its shifts are told apart. With
+ * `motion`, also records its animation frames into `frames`, for the dropped-frame gate, from
+ * `watchMs` before the window opens, or else with the time the action began (`from`), so the
+ * gate can watch it from its first tap.
+ */
+async function apart(
+	page: Page,
+	windows: [number, number][],
+	action: () => Promise<void>,
+	motion?: { kind: Motion; frames: MotionFrames[]; watchMs?: number }
+) {
 	await painted(page);
+	if (motion)
+		await page.evaluate(() => (window as unknown as { __frames: Frames }).__frames.start());
+	// Watched for its frames only: a late shift from the step before stays out of this window.
+	if (motion?.watchMs) await page.waitForTimeout(motion.watchMs);
 	const from = await now(page);
 	await action();
 	await painted(page);
+	if (motion) {
+		const times = await page.evaluate(() =>
+			(window as unknown as { __frames: Frames }).__frames.stop()
+		);
+		motion.frames.push({
+			kind: motion.kind,
+			times,
+			...(motion.watchMs ? {} : { from })
+		});
+	}
 	windows.push([from, await now(page)]);
 }
+
+/**
+ * Arms a wait for the options sheet's next motion to end, for `sheetSettled`: by event, since a
+ * poll would read the moving sheet every frame. Opening ends with its panel's transform
+ * transition; closing with the dialog's close event (BottomSheet closes it at the transition's
+ * end, or 420 ms on, whichever comes first, which can cancel the transition). Armed before the tap
+ * that starts the motion; a motion that never ends lets go after 3 s, for the checks after.
+ */
+const armSheetSettled = (page: Page, motion: 'open' | 'close') =>
+	page.evaluate((motion) => {
+		const inSheet = (target: EventTarget | null, depth: number) => {
+			let el = target instanceof Element ? target : null;
+			for (let i = 0; i < depth; i++) el = el?.parentElement ?? null;
+			return el?.getAttribute('data-testid') === 'exercise-actions-sheet';
+		};
+		(window as unknown as { __sheetSettled: Promise<void> }).__sheetSettled = new Promise(
+			(done) => {
+				const type = motion === 'open' ? 'transitionend' : 'close';
+				const ended = (event: Event) => {
+					if (motion === 'open') {
+						if ((event as TransitionEvent).propertyName !== 'transform') return;
+						if (!inSheet(event.target, 1)) return;
+					} else if (!inSheet(event.target, 0)) return;
+					removeEventListener(type, ended, true);
+					done();
+				};
+				addEventListener(type, ended, true);
+				setTimeout(done, 3_000);
+			}
+		);
+	}, motion);
+
+const sheetSettled = (page: Page) =>
+	page.evaluate(() => (window as unknown as { __sheetSettled: Promise<void> }).__sheetSettled);
 
 /** A mouse drag across the card's name, in steps, as a hand would (workout-navigation.e2e.ts). */
 async function swipe(page: Page, dx: number) {
@@ -257,12 +419,31 @@ async function beaconedInp(route: string, since: Date, longest: number) {
 	return beaconed();
 }
 
-/** What the page observed: its Event Timing interactions and its layout shifts. */
+/**
+ * What the page observed: its Event Timing interactions, pointerdown tags, layout shifts and the
+ * Options taps' answers ([pointerdown, the sheet's first transition], observe()).
+ */
 const observed = (page: Page) =>
-	page.evaluate(() => ({
-		interactions: (window as unknown as { __interactions: Interaction[] }).__interactions,
-		shifts: (window as unknown as { __shifts: Shift[] }).__shifts
-	}));
+	page.evaluate(() => {
+		const w = window as unknown as {
+			__interactions: Interaction[];
+			__tags: Tag<Kind>[];
+			__shifts: Shift[];
+			__answers: [number, number][];
+		};
+		return {
+			interactions: w.__interactions,
+			tags: w.__tags,
+			shifts: w.__shifts,
+			answers: w.__answers
+		};
+	});
+
+/** The interactions, each named by what was tapped (inp.ts attribute). */
+function attributed(interactions: Interaction[], tags: Tag<Kind>[]): Interaction[] {
+	const kinds = attribute(interactions, tags, 'other');
+	return interactions.map((i) => ({ ...i, kind: kinds.get(i.id) ?? i.kind }));
+}
 
 /** Opens a workout page against the real server, the store connected, at 4× CPU from here on. */
 async function openThrottled(page: Page, kind: StartKit['kind']) {
@@ -275,7 +456,7 @@ async function openThrottled(page: Page, kind: StartKit['kind']) {
 test.describe('workout screen at 4× CPU', () => {
 	test.skip(({ browserName }) => browserName !== 'chromium', 'CPU throttling uses CDP');
 
-	test(`20 sets over ${LOADS} fresh loads, with swipes, sheets and rest controls: confirmed p95 < ${CONFIRM_P95_MS} ms, INP p75 ≤ ${INP_MS} ms, no layout shift while logging`, async ({
+	test(`20 sets over ${LOADS} fresh loads, with swipes, sheets and rest controls: confirmed p95 < ${CONFIRM_P95_MS} ms, INP p75 ≤ ${INP_MS} ms and every tap attributed and ≤ ${INP_MS} ms, no layout shift while logging, no dropped frame in the motion`, async ({
 		page,
 		context
 	}, testInfo) => {
@@ -292,6 +473,15 @@ test.describe('workout screen at 4× CPU', () => {
 		const kinds: string[] = [];
 		const loggingShifts: Shift[] = [];
 		let apartShift = 0;
+		/** Per load: its slowest interaction and what it was; and the taps nothing named. */
+		const slowest: { kind: Kind; duration: number }[] = [];
+		const unattributed: string[] = [];
+		/** Per motion: frames watched, the longest of them, and the long ones no tap explains. */
+		const motion = new Map(
+			MOTION_KINDS.map((kind) => [kind, { frames: 0, longest: 0, dropped: [] as string[] }])
+		);
+		/** Per load: the Options tap to the frame its sheet starts to move in. */
+		const sheetWaits: string[] = [];
 		let restTaps = 0;
 		let done = 0;
 		let current = page;
@@ -309,16 +499,23 @@ test.describe('workout screen at 4× CPU', () => {
 			let taps = 0;
 			// What changes the screen by design: navigation, a sheet, the rest timer.
 			const windows: [number, number][] = [];
+			// The sheet's, the swipes' and the rest bar's animation frames.
+			const frames: MotionFrames[] = [];
 
 			// The card swiped to a neighbour and back: the next one, or the previous at the end.
 			const name = (await heading(current).textContent())!.trim();
 			const last = await current.getByTestId('exercise-next').isDisabled();
-			await apart(current, windows, async () => {
-				await swipe(current, last ? SWIPE_PX : -SWIPE_PX);
-				await expect(heading(current)).not.toHaveText(name);
-				await swipe(current, last ? -SWIPE_PX : SWIPE_PX);
-				await expect(heading(current)).toHaveText(name);
-			});
+			await apart(
+				current,
+				windows,
+				async () => {
+					await swipe(current, last ? SWIPE_PX : -SWIPE_PX);
+					await expect(heading(current)).not.toHaveText(name);
+					await swipe(current, last ? -SWIPE_PX : SWIPE_PX);
+					await expect(heading(current)).toHaveText(name);
+				},
+				{ kind: 'swipe', frames }
+			);
 			taps += 2;
 
 			for (const [i, set] of order
@@ -338,25 +535,40 @@ test.describe('workout screen at 4× CPU', () => {
 				}
 				if (i === 0) {
 					// The exercise's options, opened and closed.
-					await apart(current, windows, async () => {
-						await card(current).getByTestId('exercise-actions').click();
-						await expect(sheet(current)).toBeVisible();
-						await sheet(current).getByRole('button', { name: 'Close' }).click();
-						await expect(sheet(current)).toBeHidden();
-					});
+					await apart(
+						current,
+						windows,
+						async () => {
+							await armSheetSettled(current, 'open');
+							await card(current).getByTestId('exercise-actions').click();
+							await sheetSettled(current);
+							await expect(sheet(current)).toBeVisible();
+							await armSheetSettled(current, 'close');
+							await sheet(current).getByRole('button', { name: 'Close' }).click();
+							await sheetSettled(current);
+							await expect(sheet(current)).toBeHidden();
+						},
+						{ kind: 'sheet', frames }
+					);
 					taps += 2;
 				}
 				// pc:set-confirmed counts this page's sets only.
 				taps += await logOne(current, done - load * SETS_PER_LOAD, { weigh: set.weigh });
 				done += 1;
-				// The rest the set started, worked once a load: +30 s, Pause, Resume, Skip.
+				// The rest the set started, watched running, then worked once a load: +30 s, Pause,
+				// Resume, Skip.
 				if (restTaps < (load + 1) * 4 && (await pill(current).isVisible())) {
-					await apart(current, windows, async () => {
-						for (const control of ['+30 s', 'Pause rest', 'Resume rest', 'Skip']) {
-							await pill(current).getByRole('button', { name: control, exact: true }).click();
-						}
-						await expect(pill(current)).toHaveCount(0);
-					});
+					await apart(
+						current,
+						windows,
+						async () => {
+							for (const control of ['+30 s', 'Pause rest', 'Resume rest', 'Skip']) {
+								await pill(current).getByRole('button', { name: control, exact: true }).click();
+							}
+							await expect(pill(current)).toHaveCount(0);
+						},
+						{ kind: 'rest', frames, watchMs: REST_WATCH_MS }
+					);
 					taps += 4;
 					restTaps += 4;
 				}
@@ -367,10 +579,42 @@ test.describe('workout screen at 4× CPU', () => {
 			);
 			expect(confirmations).toHaveLength(SETS_PER_LOAD);
 			samples.push(...confirmations);
-			const { interactions, shifts } = await observed(current);
+			const seen = await observed(current);
+			const { shifts } = seen;
+			const interactions = attributed(seen.interactions, seen.tags);
 			await expect(current.locator('html')).toHaveAttribute('data-rum', 'ready');
 
 			eventInps.push(inp(interactions, taps));
+			const top = interactions.reduce<Interaction | undefined>(
+				(max, i) => (max && max.duration >= i.duration ? max : i),
+				undefined
+			);
+			if (top) slowest.push({ kind: top.kind, duration: top.duration });
+			for (const id of new Set(interactions.filter((i) => i.kind === 'other').map((i) => i.id)))
+				unattributed.push(`load ${load + 1}: interaction ${id}`);
+			// A frame a tap was answered in is the INP gates' (frames.ts longFrames).
+			const busy = interactions.map((i) => [i.startTime, i.startTime + i.duration] as const);
+			for (const { kind, times: all, from } of frames) {
+				// A tapped motion from its first tap (frames.ts framesFrom).
+				const first = from === undefined ? undefined : seen.tags.find((t) => t.at >= from)?.at;
+				const times = framesFrom(all, first);
+				const of = motion.get(kind)!;
+				of.frames += Math.max(0, times.length - 1);
+				for (let f = 1; f < times.length; f++)
+					of.longest = Math.max(of.longest, round(times[f]! - times[f - 1]!));
+				// The Options tap is answered until the frame its sheet starts to move in: the last
+				// frame begun by its first transition's event (frames begin before their events).
+				const answered =
+					kind === 'sheet'
+						? seen.answers.map(([tap, ran]) => {
+								const moving = Math.max(tap, ...times.filter((t) => t <= ran));
+								sheetWaits.push(`load ${load + 1}: ${round(moving - tap)}`);
+								return [tap, moving] as const;
+							})
+						: [];
+				for (const late of longFrames(times, [...busy, ...answered], FRAME_MS))
+					of.dropped.push(`load ${load + 1}: ${late.ms} ms at ${round(late.at)}`);
+			}
 			kinds.push(
 				[...LOGGING_KINDS, ...OTHER_KINDS]
 					.map((kind) => {
@@ -426,6 +670,23 @@ test.describe('workout screen at 4× CPU', () => {
 			type: 'web-vitals INP (ms)',
 			description: `p75 ${round(rumP75)} (route_id /workout) · loads ${rumInps.map((v) => (v === undefined ? `none (< ${WEB_VITALS_THRESHOLD_MS})` : round(v))).join(', ')}`
 		});
+		testInfo.annotations.push({
+			type: 'slowest interaction (ms)',
+			description: `${slowest.map((s, i) => `load ${i + 1}: ${s.kind} ${round(s.duration)}`).join(' · ')} · unattributed ${unattributed.length}`
+		});
+		testInfo.annotations.push({
+			type: 'frames (ms)',
+			description: [...motion]
+				.map(
+					([kind, of]) =>
+						`${kind}: ${of.frames} frames, longest ${of.longest} (a tap's included), over ${FRAME_MS} with no tap to answer: ${of.dropped.length ? of.dropped.join(', ') : 'none'}`
+				)
+				.join(' | ')
+		});
+		testInfo.annotations.push({
+			type: 'options sheet: tap to motion (ms)',
+			description: sheetWaits.join(' · ')
+		});
 		const shifted = loggingShifts.reduce((sum, s) => sum + s.value, 0);
 		const what = loggingShifts.flatMap((s) => s.sources).join(' · ');
 		testInfo.annotations.push({
@@ -442,6 +703,13 @@ test.describe('workout screen at 4× CPU', () => {
 			INP_MS
 		);
 		expect(shifted, `layout shift while logging: ${what}`).toBe(0);
+		expect(unattributed, 'every interaction is named by what was tapped').toEqual([]);
+		for (const [i, { kind, duration }] of slowest.entries())
+			expect(duration, `load ${i + 1}'s slowest interaction (${kind})`).toBeLessThanOrEqual(INP_MS);
+		for (const [kind, of] of motion) {
+			expect(of.frames, `${kind}: frames were watched`).toBeGreaterThan(0);
+			expect(of.dropped, `${kind}: frames over ${FRAME_MS} ms`).toEqual([]);
+		}
 	});
 
 	for (const [kind, route, interact] of [
