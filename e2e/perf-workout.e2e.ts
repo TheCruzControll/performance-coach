@@ -40,6 +40,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import type { KitExercise, StartKit, StrengthKit } from '../src/lib/domain/workout';
 import { adHoc } from '../scripts/lib/workout-seed';
+import { traced } from './diag-trace';
 import { longFrames } from './frames';
 import { attribute, inp, percentile, type Tag } from './inp';
 import { resetPrograms } from './program-support';
@@ -527,20 +528,22 @@ test.describe('workout screen at 4× CPU', () => {
 				}
 				if (i === 0) {
 					// The exercise's options, opened and closed.
-					await apart(
-						current,
-						windows,
-						async () => {
-							await armSheetSettled(current, 'open');
-							await card(current).getByTestId('exercise-actions').click();
-							await sheetSettled(current);
-							await expect(sheet(current)).toBeVisible();
-							await armSheetSettled(current, 'close');
-							await sheet(current).getByRole('button', { name: 'Close' }).click();
-							await sheetSettled(current);
-							await expect(sheet(current)).toBeHidden();
-						},
-						{ kind: 'sheet', frames }
+					await traced(current, testInfo, `sheet load ${load + 1}`, () =>
+						apart(
+							current,
+							windows,
+							async () => {
+								await armSheetSettled(current, 'open');
+								await card(current).getByTestId('exercise-actions').click();
+								await sheetSettled(current);
+								await expect(sheet(current)).toBeVisible();
+								await armSheetSettled(current, 'close');
+								await sheet(current).getByRole('button', { name: 'Close' }).click();
+								await sheetSettled(current);
+								await expect(sheet(current)).toBeHidden();
+							},
+							{ kind: 'sheet', frames }
+						)
 					);
 					taps += 2;
 				}
@@ -566,6 +569,10 @@ test.describe('workout screen at 4× CPU', () => {
 				}
 			}
 
+			await testInfo.attach(`frames load ${load + 1}`, {
+				body: JSON.stringify({ frames, observed: await observed(current) }),
+				contentType: 'application/json'
+			});
 			const confirmations = await current.evaluate(() =>
 				performance.getEntriesByName('pc:set-confirmed').map((entry) => entry.duration)
 			);
