@@ -436,16 +436,19 @@ describe('repairWeek: determinism and bounds', () => {
 		expect(r.evaluations).toBeLessThanOrEqual(BOUNDS.evaluations);
 		expect(r.after.cost).toBeLessThan(r.before.cost);
 		expect(r.actions.length).toBeGreaterThan(0);
-		// The fastest of 10 runs: the work itself, not a busy machine's other processes.
+		// The fastest of 10 runs, in this worker's CPU time: the work itself. Wall time is not: on a
+		// 4-CPU CI runner the other test workers can starve this one; a repair that takes about 13 ms
+		// on a laptop measured 100 ms of wall time on CI even at its fastest.
 		const fastest = Math.min(
 			...Array.from({ length: 10 }, () => {
-				const t = performance.now();
+				const t = process.cpuUsage();
 				repairWeek(clash, ctx);
-				return performance.now() - t;
+				const { user, system } = process.cpuUsage(t);
+				return (user + system) / 1000;
 			})
 		);
 		console.info(
-			`repairWeek: multiGoal's week in ${fastest.toFixed(1)} ms, ${r.evaluations} evaluations`
+			`repairWeek: multiGoal's week in ${fastest.toFixed(1)} CPU ms, ${r.evaluations} evaluations`
 		);
 		expect(fastest).toBeLessThan(100);
 	});

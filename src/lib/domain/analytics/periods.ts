@@ -17,26 +17,16 @@
  * Conventions for src/lib/domain/analytics (M6): pure (today is an argument), imported by path
  * (no index file), no zod, no runtime import of domain/programming or domain/exercises, and
  * client-safe only when listed in scripts/analytics-client-imports.test.ts. This module is
- * client-safe: screens parse ?period and label the period switcher with it.
+ * client-safe. The periods' names, labels and ?period parsing live in period-names.ts (re-exported
+ * here), which is what a screen's switcher loads: it keeps these windows and the calendar out of
+ * every Progress route's initial JavaScript.
  */
 import { addDays, daysBetween, mondayOf } from '../calendar.ts';
 import type { IsoDate } from '../calendar.ts';
+import type { Period } from './period-names.ts';
 import type { Bucket } from './types.ts';
 
-/** The periods Progress offers, shortest first. */
-export const PERIODS = ['4w', '12w', '26w', '52w', 'all'] as const;
-export type Period = (typeof PERIODS)[number];
-
-/** The period a screen opens on, and the one an unknown ?period value falls back to. */
-export const DEFAULT_PERIOD: Period = '12w';
-
-export const PERIOD_LABEL: Readonly<Record<Period, string>> = {
-	'4w': 'Last 4 weeks',
-	'12w': 'Last 12 weeks',
-	'26w': 'Last 26 weeks',
-	'52w': 'Last 52 weeks',
-	all: 'All time'
-};
+export { DEFAULT_PERIOD, PERIOD_LABEL, PERIODS, parsePeriod, type Period } from './period-names.ts';
 
 const PERIOD_WEEKS: Readonly<Record<Exclude<Period, 'all'>, number>> = {
 	'4w': 4,
@@ -57,11 +47,6 @@ export const MONTHLY_AFTER_WEEKS = 104;
  * so (trendWindow). Open question for the owner: or show 'Choose 12 weeks or longer for trends'.
  */
 export const TREND_MIN_WEEKS = 12;
-
-/** The period a ?period value names; anything else (missing, misspelt, another case) is DEFAULT_PERIOD. */
-export function parsePeriod(value: string | null | undefined): Period {
-	return PERIODS.find((period) => period === value) ?? DEFAULT_PERIOD;
-}
 
 /** Whole Monday-to-Sunday weeks: the first Monday, the last Sunday and how many weeks. */
 export interface WeekRange {
