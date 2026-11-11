@@ -5,17 +5,19 @@
  * Postgres, database and production server (.github/workflows/ci.yml). A leg keeps:
  * - one engine's projects: `chromium` or `webkit` (the project's `use.browserName`);
  * - one group's projects (groupOf): `main`, the functional specs; `serial`, the specs that run
- *   one at a time after them (serial-*); `alone`, perf and exclusive, which must have the leg to
- *   themselves (Chromium only); `sweeps`, the heavy sweep-* projects;
+ *   one at a time after them (serial-*); `alone`, perf, which must have the leg to itself, and
+ *   `exclusive`, whose specs end the sessions other specs use (both Chromium only); `sweeps`, the
+ *   heavy sweep-* projects;
  * - the setup projects it needs: `setup` (the Chromium owner setup) always, `setup-webkit` with
  *   WebKit.
  * A kept project's dependency on a removed one becomes a dependency on that project's nearest kept
- * ancestors, so serial still follows setup and exclusive still follows perf.
+ * ancestors, so serial still follows setup.
  *
- * Why `serial` and `alone` are legs of their own: Playwright's `--shard` splits only top-level
- * projects and runs every dependency project in full in every shard. The functional projects are
- * dependencies of the serial ones, and serial-chromium of perf and exclusive, so a leg holding
- * both could never shard. Apart, each leg's projects are top-level and shard on their own.
+ * Why `serial`, `alone` and `exclusive` are legs of their own: Playwright's `--shard` splits only
+ * top-level projects and runs every dependency project in full in every shard. The functional
+ * projects are dependencies of the serial ones, serial-chromium of perf and perf of exclusive, so a
+ * leg holding two of them could never shard: any shard with an exclusive test would run all of
+ * perf first. Apart, each leg's projects are top-level and shard on their own.
  *
  * With neither engine nor group set (a local run), the list comes back unchanged.
  */
@@ -23,12 +25,16 @@ import { devices, type Project } from '@playwright/test';
 import { DESKTOP } from './desktop';
 
 export const ENGINES = ['chromium', 'webkit'] as const;
-export const GROUPS = ['main', 'serial', 'alone', 'sweeps'] as const;
+export const GROUPS = ['main', 'serial', 'alone', 'exclusive', 'sweeps'] as const;
 export type Engine = (typeof ENGINES)[number];
 export type Group = (typeof GROUPS)[number];
 
+/** The groups whose specs run on Chromium alone (CDP throttling, the virtual authenticator). */
+const CHROMIUM_ONLY: readonly Group[] = ['alone', 'exclusive'];
+
 /**
- * The legs CI runs (.github/workflows/ci.yml): every group on both engines, `alone` on Chromium.
+ * The legs CI runs (.github/workflows/ci.yml): every group on both engines, `alone` and
+ * `exclusive` on Chromium.
  * `sweeps` has no leg until a *.sweep.e2e.ts spec exists: its legs would run only the setup the
  * other legs already run. The legs' --list union test (scripts/e2e-projects.test.ts) fails the
  * day a sweep spec lands without them.
@@ -36,7 +42,10 @@ export type Group = (typeof GROUPS)[number];
 export const LEGS: readonly { group: Group; engine: Engine }[] = GROUPS.filter(
 	(group) => group !== 'sweeps'
 ).flatMap((group) =>
-	(group === 'alone' ? (['chromium'] as const) : ENGINES).map((engine) => ({ group, engine }))
+	(CHROMIUM_ONLY.includes(group) ? (['chromium'] as const) : ENGINES).map((engine) => ({
+		group,
+		engine
+	}))
 );
 
 /** The owner setup every leg starts from; it runs on Chromium even in a WebKit leg. */
@@ -48,7 +57,8 @@ export const TARGET_CHECK = 'deployed-setup';
 export function groupOf(name: string): Group {
 	if (name.startsWith('sweep-')) return 'sweeps';
 	if (name.startsWith('serial-')) return 'serial';
-	if (name === 'perf' || name === 'exclusive') return 'alone';
+	if (name === 'perf') return 'alone';
+	if (name === 'exclusive') return 'exclusive';
 	return 'main';
 }
 
