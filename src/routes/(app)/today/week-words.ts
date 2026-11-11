@@ -1,8 +1,9 @@
 /**
  * Today's 'This week' tiles in words (week.server.ts composes them on the server, so the page
- * ships none of this): sessions, training load and distance from Monday through today, and one
- * line setting them against the same days of last week. Once anything has been logged an empty
- * week reads 0, never 'no data yet'; before the first session every tile reads 'no data yet'.
+ * ships only the empty tiles and the method's words): sessions, training load and distance from
+ * Monday through today, and one line setting them against the same days of last week. Once
+ * anything has been logged an empty week reads 0, never 'no data yet'; before the first session
+ * every tile reads 'no data yet'.
  * A load stays unknown (no data yet) only when this week's sessions all lack minutes or an RPE:
  * a number is never invented (PRD §12).
  */

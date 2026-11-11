@@ -2,10 +2,10 @@
 	import { onMount, tick } from 'svelte';
 	import { invalidateAll } from '$app/navigation';
 	import { preferences } from '#lib/client/preferences.svelte.ts';
-	import MetricContext from '#lib/ui/analytics/MetricContext.svelte';
 	import Button from '#lib/ui/components/Button.svelte';
 	import Card from '#lib/ui/components/Card.svelte';
 	import EmptyState from '#lib/ui/components/EmptyState.svelte';
+	import Icon from '#lib/ui/components/Icon.svelte';
 	import PageHeader from '#lib/ui/components/PageHeader.svelte';
 	import Section from '#lib/ui/components/Section.svelte';
 	import Stat from '#lib/ui/components/Stat.svelte';
@@ -225,31 +225,31 @@
 		{/if}
 
 		<!-- Monday to today against the same days last week (week.server.ts), streamed: the server's
-		     render waits for it, a client navigation shows the tiles empty and busy until it lands. -->
+		     render waits for it, a client navigation shows the tiles empty and busy until it lands.
+		     How training load is worked out is always there, so the section keeps its height. -->
 		<Section title="This week" data-testid="today-week">
 			{#await data.week}
 				{@render weekTiles(EMPTY_TILES, true)}
-				<p class="week-line">Counting this week…</p>
+				<p class="line">Counting this week…</p>
 			{:then view}
 				{#if view?.failed}
 					{@render weekTiles(EMPTY_TILES)}
-					<div class="week-error" data-testid="today-week-error">
-						<p class="week-line" role="status">Couldn’t load this week’s numbers.</p>
+					<div class="error" data-testid="today-week-error">
+						<p class="line" role="status">Couldn’t load this week’s numbers.</p>
 						<Button variant="secondary" size="sm" icon="refresh" loading={retrying} onclick={retry}>
 							Retry
 						</Button>
 					</div>
 				{:else}
 					{@render weekTiles(view?.tiles ?? EMPTY_TILES)}
-					<MetricContext
-						period={view?.against ?? NOTHING_YET}
-						comparison={null}
-						good={null}
-						method={LOAD_METHOD}
-						data-testid="today-week-context"
-					/>
+					<p class="line" data-testid="context-line">{view?.against ?? NOTHING_YET}</p>
 				{/if}
 			{/await}
+			<details class="how">
+				<summary><Icon name="chevron-right" size={16} strokeWidth={2} />How it’s worked out</summary
+				>
+				<p>{LOAD_METHOD}</p>
+			</details>
 		</Section>
 	</div>
 </div>
@@ -337,16 +337,57 @@
 		gap: var(--space-2);
 	}
 
-	.week-line {
+	/* This week's line and its disclosure, as the dashboards' metric context reads. */
+	.line,
+	.how p {
 		font-size: var(--text-xs);
 		line-height: var(--leading-normal);
 		color: var(--color-text-secondary);
 	}
 
-	.week-error {
+	.error {
 		display: grid;
 		justify-items: start;
 		gap: var(--space-2);
+	}
+
+	.how summary {
+		display: flex;
+		align-items: center;
+		gap: var(--space-1-5);
+		min-height: var(--touch-target);
+		width: fit-content;
+		padding: 0 var(--space-2);
+		margin-inline: calc(var(--space-2) * -1);
+		border-radius: var(--radius-sm);
+		color: var(--color-text-secondary);
+		font-size: var(--text-sm);
+		font-weight: var(--weight-medium);
+		cursor: pointer;
+		list-style: none;
+	}
+
+	.how summary::-webkit-details-marker {
+		display: none;
+	}
+
+	.how[open] summary :global(.icon) {
+		transform: rotate(90deg);
+	}
+
+	.how summary:active {
+		background: var(--color-surface-2);
+	}
+
+	@media (hover: hover) and (pointer: fine) {
+		.how summary:hover {
+			background: var(--color-surface-2);
+			color: var(--color-text);
+		}
+	}
+
+	.how p {
+		font-size: var(--text-sm);
 	}
 
 	/*
