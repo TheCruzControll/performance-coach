@@ -21,8 +21,9 @@ import { replay } from '#lib/domain/workout/project.ts';
 import { strengthTable } from '#lib/domain/workout/reducers/tables.ts';
 import type { StoredWorkout } from './db';
 import { DB_NAME, STORES } from './names';
-import { BACKOFF, nextDelay } from './outbox-rules';
+import { BACKOFF, nextDelay, STUCK_AFTER } from './outbox-rules';
 import type { OutboxEntry } from './outbox-rules';
+import { discardInProgress, inProgress } from './start';
 import { createStore } from './store';
 import type { WorkoutStore } from './store';
 import { REQUEST_TIMEOUT_MS, startSync, SYNC_LOCK, SYNC_URL } from './sync';
@@ -424,6 +425,11 @@ async function outbox(): Promise<OutboxEntry[]> {
 	return entries;
 }
 const outboxIds = async () => (await outbox()).map((e) => e.envelope.id);
+/** Parks an entry as stuck, the way a change that keeps failing is: only a parked one is discarded. */
+async function park(store: WorkoutStore, seq: number) {
+	for (let i = 0; i < STUCK_AFTER.failures; i++) await store.countFailure(seq, 'timeout');
+	expect((await outbox()).find((e) => e.seq === seq)!.parked?.reason).toBe('stuck');
+}
 
 /** Lets requests, IndexedDB and the engine's rounds run (they use the real event loop). */
 const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
@@ -1017,7 +1023,8 @@ describe('a discard while a request may still be running on the server (finding 
 		clock.advance(REQUEST_TIMEOUT_MS);
 		await eventually(async () => expect((await outbox())[0]!.attempts).toBe(1));
 
-		// The owner discards it and edits the set again.
+		// It keeps failing until it needs attention; the owner discards it and edits the set again.
+		await park(store, (await outbox())[0]!.seq);
 		await store.discard((await outbox())[0]!.seq);
 		const newer = edit('s1', 4);
 		await saved(store, newer);
@@ -1059,6 +1066,7 @@ describe('a discard while a request may still be running on the server (finding 
 		const db = await openDB(DB_NAME);
 		await db.put(STORES.meta, { key: 'discarded', value: older });
 		db.close();
+		await park(store, (await outbox())[0]!.seq);
 		await store.discard((await outbox())[0]!.seq);
 		await saved(store, newer);
 		clock.advance(BACKOFF.maxMs);
@@ -1082,6 +1090,7 @@ describe('a discard while a request may still be running on the server (finding 
 		server.script.push(500);
 		await e.flush();
 		const [entry] = await outbox();
+		await park(store, entry!.seq);
 
 		await store.discard(entry!.seq);
 		await e.flush(); // the store's change flushes; mid-backoff it only reads the outbox
@@ -1095,5 +1104,29 @@ describe('a discard while a request may still be running on the server (finding 
 			[[], [entry!.envelope.id], false]
 		]);
 		await eventually(async () => expect(await store.discarded()).toEqual([]));
+	});
+
+	it('Discard of a start whose request may have landed ends it abandoned on the server', async () => {
+		const store = await open();
+		const e = engine(store);
+		await e.flush();
+
+		// The start's POST passes 15 s while the server is still running it.
+		server.script.push('late');
+		await saved(store, start(), attach());
+		void e.flush();
+		await eventually(() => expect(server.received.at(-1)!.ids).toContain(W));
+		clock.advance(REQUEST_TIMEOUT_MS);
+		await eventually(async () => expect((await outbox())[0]!.attempts).toBe(1));
+		server.landLate();
+
+		// The start conflict's Discard, before any answer said the start landed.
+		await discardInProgress((await inProgress(store))!, { store, now: clock.now });
+		clock.advance(BACKOFF.maxMs);
+		await e.flush();
+		await eventually(async () => expect(await outboxIds()).toEqual([]));
+
+		expect(server.rowsOf(W)!.workout.status).toBe('abandoned');
+		expect(await store.discarded()).toEqual([]);
 	});
 });

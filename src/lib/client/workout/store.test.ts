@@ -755,6 +755,70 @@ describe("the owner's answers to a change that needs attention", () => {
 		expect((await store.getActive())!.workoutId).toBe(W2);
 	});
 
+	/** Parks an entry as stuck, the way a change that keeps failing is. */
+	async function stuck(store: WorkoutStore, seq: number) {
+		for (let i = 0; i < STUCK_AFTER.failures; i++) await store.countFailure(seq, 'timeout');
+		expect((await store.outbox()).find((e) => e.seq === seq)!.parked?.reason).toBe('stuck');
+	}
+
+	it('refuses to discard a change that is not parked', async () => {
+		const store = await open();
+		await started(store);
+		expect(await store.dispatch(log('s1', 1)).saved).toBe('saved');
+		const before = await stored();
+
+		for (const entry of await store.outbox()) {
+			await expect(store.discard(entry.seq)).rejects.toThrow(
+				new RangeError('Only a change that needs attention can be discarded')
+			);
+		}
+
+		expect(await stored()).toEqual(before);
+		expect(await store.discarded()).toEqual([]);
+		expect((await store.getActive())!.workoutId).toBe(W);
+	});
+
+	it('Discard of a stuck start keeps the start and abandons the workout', async () => {
+		const store = await open();
+		await started(store);
+		store.dispatch(log('s1', 1));
+		expect(await store.dispatch(log('s2', 2)).saved).toBe('saved');
+		const [entry] = await store.outbox();
+		await stuck(store, entry!.seq);
+
+		await store.discard(entry!.seq);
+
+		const outbox = await store.outbox();
+		expect(outbox.map((e) => e.envelope.type)).toEqual(['workout.start', 'workout.abandon']);
+		expect(outbox[0]).toEqual({ ...entry, attempts: 0 });
+		expect(outbox[0]!.parked).toBeUndefined();
+		expect(outbox[1]!.envelope).toMatchObject({ workoutId: W, at: iso(), payload: {} });
+		expect(outbox[1]!.seq).toBeGreaterThan(entry!.seq);
+		expect((await stored()).workouts).toMatchObject([
+			{ id: W, status: 'abandoned', finishedAt: iso() }
+		]);
+		expect(store.snapshot(W)!.view!.workout.status).toBe('abandoned');
+		expect(await store.discarded()).toEqual(['s1', 's2']);
+		expect(await store.getActive()).toBeNull();
+	});
+
+	it('a second Discard of a stuck start that still fails deletes it', async () => {
+		const store = await open();
+		await started(store);
+		expect(await store.dispatch(log('s1', 1)).saved).toBe('saved');
+		const [entry] = await store.outbox();
+		await stuck(store, entry!.seq);
+		await store.discard(entry!.seq);
+		const abandon = (await store.outbox())[1]!.envelope;
+		await stuck(store, entry!.seq);
+
+		await store.discard(entry!.seq);
+
+		expect(await stored()).toMatchObject({ workouts: [], outbox: [] });
+		expect(await store.discarded()).toEqual(['s1', W, abandon.id]);
+		expect(await store.getActive()).toBeNull();
+	});
+
 	it('Fix re-queues the corrected change in its place under its id; Try again unparks a stuck one', async () => {
 		const store = await open();
 		await started(store);

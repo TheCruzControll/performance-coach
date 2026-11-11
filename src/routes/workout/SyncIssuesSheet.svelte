@@ -10,8 +10,10 @@
       with the schemas (loaded on demand), then re-queued under its id, in its place. 'Deleted on another device' offers Discard only.
     - Try again, for a change parked after the cap: queued again, its count cleared.
     - Discard, after a confirmation that says how many changes go: the change and every later one
-      that depends on it. A toast says so when the store refuses it, because it would bring a
-      workout back into progress beside the one in progress.
+      that depends on it. A start that kept failing may have reached the server, so its Discard
+      keeps it and ends the workout as abandoned: only the changes logged in it go. A toast says so
+      when the store refuses it, because it would bring a workout back into progress beside the
+      one in progress.
   - Waiting to sync: the rest, in order, in words.
   - A recovery session ('Finish adding your passkey') links to adding one; nothing is deleted.
   It re-reads the outbox whenever the store reports a change, so an answer shows at once.
@@ -21,7 +23,7 @@
 	import { onMount, tick } from 'svelte';
 	import { dependantsOf, STUCK_AFTER } from '#lib/client/workout/outbox-rules.ts';
 	import type { OutboxEntry, OutboxStatus } from '#lib/client/workout/outbox-rules.ts';
-	import { ActiveWorkoutError } from '#lib/client/workout/store.ts';
+	import { ActiveWorkoutError, discardAbandons } from '#lib/client/workout/store.ts';
 	import type { WorkoutStore } from '#lib/client/workout/store.ts';
 	import { DEFAULT_LOAD_INCREMENT } from '#lib/domain/units.ts';
 	import { describeMutation, problemText } from '#lib/domain/workout/describe.ts';
@@ -35,6 +37,7 @@
 	import { toast } from '#lib/ui/toast.svelte.ts';
 	import { syncWords } from '#lib/ui/workout/sync-words.ts';
 	import { fixFor, type FixEntry } from './fix/registry.ts';
+	import { abandonWords } from './fix/workout.ts';
 	import SetEditSheet from './SetEditSheet.svelte';
 
 	interface Props {
@@ -244,7 +247,8 @@
 					{#each attention as entry (entry.seq)}
 						{@const how = fixes[entry.envelope.type]}
 						{@const deleted = entry.parked!.message === SYNC_CODE_LABEL.deleted}
-						{@const n = goes(entry.seq)}
+						{@const abandoning = discardAbandons(entries, entry.seq)}
+						{@const n = abandoning ? dependantsOf(entries, entry.seq).length : goes(entry.seq)}
 						<li class="item" data-testid="sync-issue">
 							<p class="what">{describeMutation(entry.envelope, context)}</p>
 							<p class="why">{problemOf(entry)}</p>
@@ -253,10 +257,15 @@
 							{/if}
 							{#if confirming === entry.seq}
 								<p class="confirm" role="alert">
-									{n === 1
-										? 'Discard this change?'
-										: `Discard ${n} changes? This one, and ${n - 1} made after it that depend on it.`}
-									{how?.discard ?? ''} There's no undo.
+									{#if abandoning}
+										{abandonWords(n)}
+									{:else}
+										{n === 1
+											? 'Discard this change?'
+											: `Discard ${n} changes? This one, and ${n - 1} made after it that depend on it.`}
+										{how?.discard ?? ''}
+									{/if}
+									There's no undo.
 								</p>
 								<div class="actions">
 									<Button
@@ -272,7 +281,7 @@
 										onclick={() => act(() => store.discard(entry.seq))}
 										data-testid="confirm-discard"
 									>
-										{n === 1 ? 'Discard' : `Discard ${n}`}
+										{n <= 1 ? 'Discard' : `Discard ${n}`}
 									</Button>
 								</div>
 							{:else}

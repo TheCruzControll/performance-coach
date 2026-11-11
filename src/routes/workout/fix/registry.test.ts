@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { createMutation, MUTATION_TYPES } from '#lib/domain/workout/index.ts';
+import type { Mutation } from '#lib/domain/workout/index.ts';
 import { JUST_SWAP_REASON } from '#lib/domain/workout/substitution.ts';
+import { dependantsOf, queued } from '#lib/client/workout/outbox-rules.ts';
+import type { OutboxEntry } from '#lib/client/workout/outbox-rules.ts';
+import { discardAbandons } from '#lib/client/workout/store.ts';
 import { fixFor } from './registry';
+import { abandonWords } from './workout';
 
 const SET_TYPES = ['set.log', 'set.skip', 'set.edit'];
 const EDITOR_TYPES = [
@@ -94,5 +99,51 @@ describe('the Fix registry', () => {
 		if (swap.kind !== 'editor') throw new Error('exercise.substitute has an editor');
 		expect((await swap.editor()).default).toBeTypeOf('function');
 		expect((await fixFor('exercise.skip')).discard).toBe('Discard keeps the exercise.');
+	});
+
+	it('says a stuck start’s Discard ends the workout as abandoned, counting the changes logged in it', () => {
+		const workoutId = '00000000-0000-4000-8000-0000000000d1';
+		const at = '2026-11-07T08:00:00.000Z';
+		const start = createMutation('workout.start', {
+			workoutId,
+			at,
+			payload: {
+				kind: 'strength',
+				title: 'Full body',
+				sessionType: 'strength',
+				discipline: 'strength',
+				plannedSessionId: null,
+				plannedLineage: null,
+				programId: null
+			}
+		});
+		const notes = (text: string) =>
+			createMutation('workout.update', { workoutId, at, payload: { notes: text } });
+		const stuck = (seq: number, m: Mutation): OutboxEntry => ({
+			...queued(seq, m),
+			parked: { reason: 'stuck', errors: {}, message: 'timeout' }
+		});
+		const entries = [stuck(1, start), queued(2, notes('a')), queued(3, notes('b'))];
+
+		expect(discardAbandons(entries, 1)).toBe(true);
+		const n = dependantsOf(entries, 1).length;
+		expect(abandonWords(n)).toBe(
+			'Discard ends this workout as abandoned and removes the 2 changes logged in it.'
+		);
+		expect(abandonWords(1)).toBe(
+			'Discard ends this workout as abandoned and removes the 1 change logged in it.'
+		);
+		expect(abandonWords(0)).toBe('Discard ends this workout as abandoned.');
+		for (const count of [0, 1, 2]) expect(abandonWords(count)).toMatch(/^Discard \w.+\.$/);
+
+		// Not for a refused start, a start with an abandon already queued, or any other change.
+		const refused: OutboxEntry = {
+			...entries[0]!,
+			parked: { reason: 'refused', errors: {}, message: 'Not valid' }
+		};
+		expect(discardAbandons([refused, ...entries.slice(1)], 1)).toBe(false);
+		const abandon = createMutation('workout.abandon', { workoutId, at, payload: {} });
+		expect(discardAbandons([...entries, queued(4, abandon)], 1)).toBe(false);
+		expect(discardAbandons([entries[0]!, stuck(2, notes('a'))], 2)).toBe(false);
 	});
 });

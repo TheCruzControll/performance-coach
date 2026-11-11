@@ -22,12 +22,14 @@
  * - reconciled and adopt store the server's rows from GET /api/workouts/[id] (reconcile.ts).
  * - A finished or abandoned workout leaves the device once every change of it is acknowledged:
  *   History reads the server from then on.
- * - discard, tryAgain and fix are the owner's answers to a change that needs attention. Discard
- *   also keeps the ids it removed until the server has claimed them (discarded, forget), so a
- *   request still on its way with one of them can never land it after a newer change.
+ * - discard, tryAgain and fix are the owner's answers to a change that needs attention: Discard
+ *   takes only a parked change. It also keeps the ids it removed until the server has claimed them
+ *   (discarded, forget), so a request still on its way with one of them can never land it after a
+ *   newer change. A stuck workout.start may have landed all the same, so its first Discard sends
+ *   it again with a workout.abandon after it: the workout ends abandoned, never left in progress.
  * Plain .ts with no runes, so Vitest's unit project runs it against fake-indexeddb.
  */
-import { entityKey, SYNC_CODE_LABEL } from '#lib/domain/workout/index.ts';
+import { createMutation, entityKey, SYNC_CODE_LABEL } from '#lib/domain/workout/index.ts';
 import type {
 	CanonicalWorkout,
 	DeviceState,
@@ -55,6 +57,7 @@ import {
 	applyResults,
 	backOnline,
 	countFailure,
+	dependantsOf,
 	discard,
 	queued,
 	replaceInPlace,
@@ -169,9 +172,11 @@ export interface WorkoutStore {
 	/** Back online after being offline since `offlineSince`: every entry's wait ends. */
 	backOnline(offlineSince: number): Promise<void>;
 	/**
-	 * Discard: the entry and every change that depends on it leave the outbox, and their ids wait in
-	 * `discarded` until the server has claimed them. Rejects with ActiveWorkoutError, writing
-	 * nothing, when it would bring a workout back into progress beside another.
+	 * Discard of a parked change: the entry and every change that depends on it leave the outbox,
+	 * and their ids wait in `discarded` until the server has claimed them. A stuck workout.start
+	 * with no abandon queued stays, queued again, and a workout.abandon follows it instead
+	 * (discardAbandons). Rejects, writing nothing, with RangeError for a change that is not parked,
+	 * and with ActiveWorkoutError when it would bring a workout back into progress beside another.
 	 */
 	discard(seq: number): Promise<void>;
 	/** Try again: a stuck entry is queued again in its place, its count cleared. */
@@ -228,6 +233,21 @@ export async function requestPersistence(
 	} catch {
 		return false;
 	}
+}
+
+/**
+ * Whether Discard of this entry keeps it and abandons its workout instead: a workout.start parked
+ * stuck may have reached the server (a timed-out request, an unread keepalive send), so deleting
+ * it could leave the workout in progress there for good. Once an abandon is queued behind it (an
+ * earlier Discard), a start stuck again is discarded like any other change.
+ */
+export function discardAbandons(entries: readonly OutboxEntry[], seq: number): boolean {
+	const entry = entries.find((e) => e.seq === seq);
+	if (entry?.envelope.type !== 'workout.start' || entry.parked?.reason !== 'stuck') return false;
+	const { workoutId } = entry.envelope;
+	return !entries.some(
+		(e) => e.envelope.type === 'workout.abandon' && e.envelope.workoutId === workoutId
+	);
 }
 
 // ---- Internals ------------------------------------------------------------------------------
@@ -704,12 +724,14 @@ export async function createStore({
 	 *
 	 * With `guard` (Discard) it refuses, writing nothing, to bring a workout back into progress
 	 * while another is in progress here: one in progress at a time. Try again and Fix pass none,
-	 * so they still work on a device that already holds two.
+	 * so they still work on a device that already holds two. `append`'s mutations join the outbox
+	 * after every entry, in the same transaction, and their workouts are re-recorded with them.
 	 */
 	async function rearrange(
 		rule: (entries: OutboxEntry[]) => OutboxEntry[],
 		remember = false,
-		guard = false
+		guard = false,
+		append?: (before: OutboxEntry[]) => Mutation[]
 	) {
 		assertOpen();
 		const names = [STORES.workouts, STORES.outbox, STORES.meta];
@@ -732,6 +754,10 @@ export async function createStore({
 						gone.push(entry.envelope.id);
 						if (entry.envelope.type === 'workout.start') ended.add(entry.envelope.workoutId);
 					}
+				}
+				for (const m of append?.(before) ?? []) {
+					await outbox.add(entryOf(m));
+					touched.add(m.workoutId);
 				}
 				if (remember && gone.length > 0) {
 					const meta = tx.objectStore(STORES.meta);
@@ -767,6 +793,32 @@ export async function createStore({
 			channel?.post({ type: 'closed', workoutId });
 		}
 	}
+
+	/**
+	 * Discard's rule: only a parked entry goes, with its dependants; a stuck start with no abandon
+	 * queued stays, queued again, and only its dependants go (discardAbandons).
+	 */
+	function discardRule(entries: OutboxEntry[], seq: number): OutboxEntry[] {
+		const entry = entries.find((e) => e.seq === seq);
+		if (!entry?.parked) {
+			throw new RangeError('Only a change that needs attention can be discarded');
+		}
+		if (!discardAbandons(entries, seq)) return discard(entries, seq);
+		const gone = new Set(dependantsOf(entries, seq).map((e) => e.seq));
+		return entries.flatMap((e) =>
+			e.seq === seq ? [queued(e.seq, e.envelope)] : gone.has(e.seq) ? [] : [e]
+		);
+	}
+
+	/** The abandon a stuck start's Discard appends behind it, read from the outbox before it. */
+	const abandonOf =
+		(seq: number) =>
+		(before: OutboxEntry[]): Mutation[] => {
+			if (!discardAbandons(before, seq)) return [];
+			const { workoutId } = before.find((e) => e.seq === seq)!.envelope;
+			const at = new Date(now()).toISOString();
+			return [createMutation('workout.abandon', { workoutId, at, payload: {} })];
+		};
 
 	async function discarded(): Promise<string[]> {
 		assertOpen();
@@ -941,7 +993,7 @@ export async function createStore({
 		outbox,
 		countFailure: (seq, error) => revise((entries) => countFailure(entries, seq, error, now())),
 		backOnline: (offlineSince) => revise((entries) => backOnline(entries, offlineSince, now())),
-		discard: (seq) => rearrange((entries) => discard(entries, seq), true, true),
+		discard: (seq) => rearrange((entries) => discardRule(entries, seq), true, true, abandonOf(seq)),
 		tryAgain: (seq) => rearrange((entries) => tryAgain(entries, seq)),
 		fix: (seq, envelope) => rearrange((entries) => replaceInPlace(entries, seq, envelope)),
 		discarded,

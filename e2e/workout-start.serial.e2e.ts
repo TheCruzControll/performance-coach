@@ -224,7 +224,7 @@ test.describe('starting a planned session', () => {
 		const dialog = page.getByRole('dialog', { name: 'Lower body & pull is in progress' });
 		await expect(dialog).toBeVisible();
 		await expect(page.getByTestId('start-conflict-consequence')).toHaveText(
-			'It has synced, so discarding keeps it in your history as abandoned, with everything you logged.'
+			'Discarding keeps it in your history as abandoned, with everything you logged.'
 		);
 		await expect(page.getByTestId('start-resume')).toHaveText('Resume Lower body & pull');
 		await captureScreen(page, testInfo, 'workout-start-conflict');

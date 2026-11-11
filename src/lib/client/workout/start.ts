@@ -17,9 +17,11 @@
  *   here: store.purgeServerCopies, then 'Sign in'. While a 401 has marked the device signed out,
  *   the server must answer as the owner before the workout held here shows, even in a conflict.
  * - A workout already in progress is answered as a conflict, before anything is fetched: Resume
- *   it, or discardInProgress and start again. Discard drops a workout whose start has not synced
- *   (the store's Discard), and abandons one the server holds (workout.abandon, sent by the next
- *   page's sync engine). Opening the start link of the workout in progress resumes it.
+ *   it, or discardInProgress and start again. Discard abandons it (workout.abandon, sent by the
+ *   next page's sync engine), synced or not, since a start not acknowledged may still have reached
+ *   the server; a start parked stuck is queued again first, so the abandon is not held behind it.
+ *   Only a start the server refused is deleted from the device (the store's Discard). Opening the
+ *   start link of the workout in progress resumes it.
  * - saveKits(lineages): today's kits, saved for a gym with no signal (Today calls it on idle, in
  *   start-entry-points), with the owner's units. A 401 purges and stops it.
  * Plain .ts with no runes: the store, the network and the clock are injected.
@@ -130,6 +132,8 @@ export interface InProgress {
 	plannedLineage: string | null;
 	/** Its workout.start's outbox entry while the server has not acknowledged it; null once synced. */
 	startSeq: number | null;
+	/** Why that entry needs attention (outbox-rules' Parked); null when it does not, or is synced. */
+	startParked: 'refused' | 'stuck' | null;
 }
 
 export type StartOutcome =
@@ -169,7 +173,8 @@ export async function inProgress(store: WorkoutStore): Promise<InProgress | null
 		title: row?.title || 'Workout',
 		startedAt: row?.startedAt ?? '',
 		plannedLineage: row?.plannedLineage ?? null,
-		startSeq: start?.seq ?? null
+		startSeq: start?.seq ?? null,
+		startParked: start?.parked?.reason ?? null
 	};
 }
 
@@ -271,16 +276,20 @@ export async function startAdHoc(
 }
 
 /**
- * Discard, from the conflict: an unsynced workout leaves the device with every change in it; one
- * the server holds is abandoned. False when this browser could not save that.
+ * Discard, from the conflict: the workout is abandoned, with every change in it, synced or not. A
+ * start the server refused never landed, so it leaves the device with them instead; a start parked
+ * stuck is queued again first, so the abandon follows it. False when this browser could not save.
  */
 export async function discardInProgress(
 	active: InProgress,
 	{ store, now = Date.now }: Pick<StartOptions, 'store' | 'now'>
 ): Promise<boolean> {
-	if (active.startSeq !== null) {
+	if (active.startSeq !== null && active.startParked === 'refused') {
 		await store.discard(active.startSeq);
 		return true;
+	}
+	if (active.startSeq !== null && active.startParked === 'stuck') {
+		await store.tryAgain(active.startSeq);
 	}
 	const abandon = createMutation('workout.abandon', {
 		workoutId: active.workoutId,
