@@ -1,4 +1,10 @@
-import { expect, type Browser, type Page, type TestInfo } from '@playwright/test';
+import {
+	expect,
+	type Browser,
+	type BrowserContextOptions,
+	type Page,
+	type TestInfo
+} from '@playwright/test';
 
 /**
  * Main-thread budget while a screen loads and hydrates, measured from real long tasks
@@ -35,23 +41,23 @@ export interface Seeded {
 	prepare?: (page: Page) => Promise<void>;
 	/** The test id the loaded screen shows once it is in the state measured. */
 	shows?: string;
+	/** Each fresh context's options over the project's: the zone a fixture was seeded in. */
+	context?: BrowserContextOptions;
 }
 
 /**
  * Loads `seeded.url` LOADS times, each in a fresh context, and expects the median blocking time
  * within GUARD_MS (and, with `maxShift`, every load's layout shift within MAX_SHIFT). Restores the
- * seeded state afterwards, pass or fail. `path` names the screen in the messages; `timezoneId`
- * opens each context in the zone a fixture was seeded in.
+ * seeded state afterwards, pass or fail. `path` names the screen in the messages.
  */
 export async function expectLoadBudget(
 	path: string,
-	{ url, restore, prepare, shows }: Seeded,
+	{ url, restore, prepare, shows, context: options }: Seeded,
 	{
 		browser,
 		testInfo,
-		maxShift = false,
-		timezoneId
-	}: { browser: Browser; testInfo: TestInfo; maxShift?: boolean; timezoneId?: string }
+		maxShift = false
+	}: { browser: Browser; testInfo: TestInfo; maxShift?: boolean }
 ): Promise<void> {
 	const samples: number[] = [];
 	const shifts: number[] = [];
@@ -63,7 +69,7 @@ export async function expectLoadBudget(
 			const context = await browser.newContext({
 				...testInfo.project.use,
 				...(path === '/' ? { storageState: { cookies: [], origins: [] } } : {}),
-				...(timezoneId ? { timezoneId } : {})
+				...options
 			});
 			const page = await context.newPage();
 			await page.addInitScript(() => {

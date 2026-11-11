@@ -65,15 +65,16 @@ function progressUrl(path: string, seeded: SeededAnalytics): string {
 async function seedProgressScreen(path: string, request: APIRequestContext): Promise<Seeded> {
 	const { seed, shows } = M6[path]!;
 	const restore = async () => {};
+	const context = { timezoneId: ANALYTICS_TZ };
 	if (seed === 'twelve-weeks') {
 		if (analytics?.seed !== seed) {
 			analytics = { seed, seeded: await seedAnalytics(request, 'twelve-weeks') };
 		}
-		return { url: progressUrl(path, analytics.seeded), restore, shows };
+		return { url: progressUrl(path, analytics.seeded), restore, shows, context };
 	}
 	analytics = undefined;
 	const url = await createReview(request, await seedReview(request, seed));
-	return { url, restore, shows };
+	return { url, restore, shows, context };
 }
 
 test.describe('main-thread budget (4× CPU)', () => {
@@ -88,8 +89,7 @@ test.describe('main-thread budget (4× CPU)', () => {
 			await expectLoadBudget(path, await seedProgressScreen(path, request), {
 				browser,
 				testInfo,
-				maxShift: true,
-				timezoneId: ANALYTICS_TZ
+				maxShift: true
 			});
 		});
 	}
