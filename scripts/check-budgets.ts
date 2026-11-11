@@ -32,6 +32,7 @@ import {
 } from './client-secret-scan.ts';
 import { PRELOADED_FONT_PATTERN } from '../src/lib/ui/fonts.ts';
 import { icons } from '../src/lib/ui/icons/icons.ts';
+import { precacheList } from '../src/lib/client/sw-precache.ts';
 
 export const BUDGETS = {
 	/** Initial JS per route (gzip), including the shared shell. */
@@ -39,7 +40,11 @@ export const BUDGETS = {
 	/** CSS a route renders with (gzip): render-blocking, so budgeted per route. */
 	routeCssKb: 14,
 	/** Font files preloaded on any route. */
-	preloadedFonts: 2
+	preloadedFonts: 2,
+	/** Files the service worker downloads at install (src/service-worker/index.ts precache). */
+	precacheFiles: 275,
+	/** Their decoded size: the install download before HTTP compression. */
+	precacheKb: 995
 } as const;
 
 const OUT = '.svelte-kit/output';
@@ -256,6 +261,61 @@ for (const file of allCss) {
 	}
 }
 const sw = existsSync(`${CLIENT}/service-worker.js`) ? gzipBytes('service-worker.js') : 0;
+
+/**
+ * Service-worker install download: the precache list the worker builds (precacheList, from the
+ * build files the precache-shell plugin in vite.config.ts picked, the static files and the
+ * prerendered pages), measured file by file. The worker must carry every picked file, so a build
+ * that lost the list fails rather than reporting a smaller download than it makes.
+ */
+const PRECACHE_SHELL = `${CLIENT}/.vite/precache-shell.json`;
+const precacheProblems: string[] = [];
+const shellList = existsSync(PRECACHE_SHELL)
+	? (JSON.parse(readFileSync(PRECACHE_SHELL, 'utf8')) as string[])
+	: [];
+if (!shellList.length) precacheProblems.push(`no build files to precache (${PRECACHE_SHELL})`);
+const swSource = existsSync(`${CLIENT}/service-worker.js`)
+	? readFileSync(`${CLIENT}/service-worker.js`, 'utf8')
+	: '';
+const notCarried = shellList.filter((file) => !swSource.includes(file));
+if (notCarried.length) {
+	precacheProblems.push(
+		`the service worker does not carry ${notCarried.length} of the picked files (${notCarried.slice(0, 3).join(', ')})`
+	);
+}
+const staticFiles = readdirSync('static', { recursive: true, withFileTypes: true })
+	.filter((entry) => entry.isFile())
+	.map((entry) => path.posix.join(path.relative('static', entry.parentPath), entry.name));
+const { manifest: served } = (await import(pathToFileURL(`${OUT}/server/manifest.js`).href)) as {
+	manifest: { prerendered_routes: Set<string> };
+};
+const precached = precacheList('https://precache.invalid/', [
+	...shellList,
+	...staticFiles,
+	...served.prerendered_routes
+]);
+const precacheFile = (pathname: string) =>
+	served.prerendered_routes.has(pathname)
+		? `${OUT}/prerendered/pages${pathname}.html`
+		: path.join(CLIENT, pathname);
+let precacheBytes = 0;
+let precacheGzip = 0;
+for (const pathname of precached) {
+	const file = precacheFile(pathname);
+	if (!existsSync(file)) {
+		precacheProblems.push(`${pathname}: not in the build`);
+		continue;
+	}
+	const bytes = readFileSync(file);
+	precacheBytes += bytes.length;
+	precacheGzip += gzipSync(bytes, { level: 9 }).length;
+}
+if (precached.length > BUDGETS.precacheFiles) {
+	precacheProblems.push(`${precached.length} files, over ${BUDGETS.precacheFiles}`);
+}
+if (kb(precacheBytes) > BUDGETS.precacheKb) {
+	precacheProblems.push(`${fmt(precacheBytes)} decoded, over ${BUDGETS.precacheKb} KB`);
+}
 
 /**
  * Layout inlining: the root layout's stylesheets (the global styles: tokens, fonts, layout.css)
@@ -631,6 +691,7 @@ const lines = [
 	'',
 	`Total CSS in the build (gzip, not all of it on any one route): ${fmt(totalCss)} across ${allCss.length} files`,
 	`Service worker (gzip): ${fmt(sw)}`,
+	`Service-worker install download (precache): ${precached.length} files, ${fmt(precacheBytes)} decoded (${fmt(precacheGzip)} gzip); budget ≤ ${BUDGETS.precacheFiles} files, ≤ ${BUDGETS.precacheKb} KB decoded: ${precacheProblems.length ? 'FAIL' : 'pass'}`,
 	`Budgets: initial JS ≤ ${BUDGETS.routeJsKb} KB · route CSS ≤ ${BUDGETS.routeCssKb} KB · preloaded fonts ≤ ${BUDGETS.preloadedFonts}`,
 	`Initial JS modulepreloaded in full (no chunk fetched only once its importer runs): ${lateProblems.length ? 'FAIL' : 'pass'}`,
 	`CSS output guard (standard property kept next to every -webkit- prefix): ${prefixProblems.length ? 'FAIL' : 'pass'}`,
@@ -703,6 +764,10 @@ if (iconProblems.length > 0) {
 	console.error(`\nIcon placement failed:\n  - ${iconProblems.join('\n  - ')}`);
 }
 
+if (precacheProblems.length > 0) {
+	console.error(`\nService-worker precache failed:\n  - ${precacheProblems.join('\n  - ')}`);
+}
+
 if (secretProblems.length > 0) {
 	console.error(`\nClient secrets failed:\n  - ${secretProblems.join('\n  - ')}`);
 }
@@ -724,6 +789,7 @@ if (
 	sectionProblems.length > 0 ||
 	catalogueChunks.length > 0 ||
 	iconProblems.length > 0 ||
+	precacheProblems.length > 0 ||
 	secretProblems.length > 0 ||
 	isolation.problems.length > 0
 ) {
@@ -739,6 +805,7 @@ if (
 		...(sectionProblems.length ? ['profile section CSS'] : []),
 		...(catalogueChunks.length ? ['catalogue placement'] : []),
 		...(iconProblems.length ? ['icon paths in JS'] : []),
+		...(precacheProblems.length ? ['service-worker precache'] : []),
 		...(secretProblems.length ? ['client secrets'] : []),
 		...(isolation.problems.length ? ['coach isolation'] : [])
 	];
