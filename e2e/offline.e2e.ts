@@ -414,6 +414,30 @@ test.describe('offline behaviour (service worker)', () => {
 		await expect(page.getByTestId('offline-today')).toHaveCount(0);
 	});
 
+	test('an offline cold start mid-workout runs from the precache alone: a set logs, the menu opens', async ({
+		page,
+		context
+	}) => {
+		// No workout page has loaded on this device: everything it runs must come from what the
+		// worker precached at install, its lazy logger, store and menu included.
+		await context.route('**/api/workouts/**', (route) => route.abort('internetdisconnected'));
+		await page.goto('/profile');
+		await waitForController(page);
+		const kits = await workoutDay();
+		await seedWorkout(page, kits.strength);
+
+		await context.setOffline(true);
+		await page.goto('/workout');
+		await expectLogger(page);
+		await page.getByTestId('set-logger').getByTestId('complete-set').click();
+		await expect
+			.poll(async () => (await readOutbox(page)).map((e) => e.envelope.type))
+			.toEqual(['workout.start', 'set.log']);
+		await page.getByTestId('workout-menu-button').click();
+		await expect(page.getByTestId('workout-menu')).toBeVisible();
+		await expect(page.getByTestId('offline-state')).toHaveCount(0);
+	});
+
 	test('dynamic pages are never stored by the service worker', async ({ page, context }) => {
 		await page.goto('/profile');
 		await waitForController(page);

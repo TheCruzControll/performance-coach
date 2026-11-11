@@ -4,8 +4,9 @@
  * workout pages; it returns to the same exercise, and a run to /workout/run. Today offers
  * 'Continue here' for a workout started on another device, and the two devices then share their
  * sets. A workout finished offline reads 'N changes waiting to sync' until the bar's own engine
- * has synced it. A fresh device creates no 'pc-offline' on any tab, except Today on a day with
- * sessions planned (it saves their kits). The app started offline (the service
+ * has synced it. A fresh device creates no 'pc-offline' on any tab, except Today and Train with
+ * sessions planned today or in the next two days (they save their kits, coming-kits.ts), so a
+ * session looked at the night before starts offline. The app started offline (the service
  * worker's offline screen for /today) shows the bar, and it restores the workout exactly. The bar
  * never shifts the layout, is axe-clean in both themes, and in a desktop window sits in the
  * content column beside the rail, above the last element of every tab.
@@ -368,9 +369,14 @@ test.describe('another device', () => {
 });
 
 test.describe('a fresh device', () => {
-	/** Every tab but Today: Train, then the others through the navigation. */
-	async function visitTabsButToday(page: Page) {
-		await openTab(page, '/train');
+	/** Train's idle pass has run: 'saved' with the coming days' kits, 'none' with none to save. */
+	const trainKits = (page: Page, kits: 'saved' | 'none') =>
+		expect(page.locator(`[data-testid="train-week"][data-kits="${kits}"]`)).toBeAttached({
+			timeout: 10_000
+		});
+
+	/** Every tab but Today and Train, through the navigation. */
+	async function visitOtherTabs(page: Page) {
 		for (const tab of TABS.slice(2)) {
 			await page
 				.getByRole('navigation', { name: 'Primary' })
@@ -381,7 +387,45 @@ test.describe('a fresh device', () => {
 		}
 	}
 
-	test("on a rest day, visiting every tab creates no 'pc-offline' database", async ({
+	/** The kits saved on this device, as [plan date, title], oldest first. */
+	const savedKits = (page: Page) =>
+		page.evaluate(
+			async ({ name, store }) => {
+				const db = await new Promise<IDBDatabase>((resolve, reject) => {
+					const request = indexedDB.open(name);
+					request.onsuccess = () => resolve(request.result);
+					request.onerror = () => reject(request.error);
+				});
+				const read = db.transaction(store).objectStore(store).getAll();
+				await new Promise((resolve) => (read.onsuccess = resolve));
+				db.close();
+				return (read.result as { kit: StartKit; savedAt: number }[])
+					.sort((a, b) => a.savedAt - b.savedAt)
+					.map(({ kit }) => [kit.date, kit.title]);
+			},
+			{ name: DB_NAME, store: STORES.kits }
+		);
+
+	/** The device's calendar day, `ahead` days on, as the program's timezone dates a session. */
+	const dayOn = (page: Page, ahead: number) =>
+		page.evaluate((ahead) => {
+			const d = new Date();
+			d.setDate(d.getDate() + ahead);
+			const pad = (n: number) => String(n).padStart(2, '0');
+			return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+		}, ahead);
+
+	test("with no program, visiting every tab creates no 'pc-offline' database", async ({ page }) => {
+		await query('update athlete_profiles set onboarding_completed_at = now()');
+		await openTab(page, '/today');
+		await openTab(page, '/train');
+		// Its idle pass has run, with nothing to save.
+		await trainKits(page, 'none');
+		await visitOtherTabs(page);
+		expect(await offlineDatabases(page)).toBe(0);
+	});
+
+	test("on a rest day, Today saves the coming days' sessions, for a start offline tomorrow", async ({
 		page,
 		request
 	}) => {
@@ -389,22 +433,33 @@ test.describe('a fresh device', () => {
 		await query('update athlete_profiles set onboarding_completed_at = now()');
 		await openTab(page, '/today');
 		await expect(page.getByTestId('today-rest')).toBeVisible();
-		// Its idle pass has run, with nothing to save.
-		await expect(page.locator('[data-testid="today-plan"][data-kits="none"]')).toBeAttached({
+		await expect(page.locator('[data-testid="today-plan"][data-kits="saved"]')).toBeAttached({
 			timeout: 10_000
 		});
-		await visitTabsButToday(page);
-		expect(await offlineDatabases(page)).toBe(0);
+		const [today, last] = [await dayOn(page, 0), await dayOn(page, 2)];
+		const saved = await savedKits(page);
+		expect(saved.length).toBeGreaterThan(0);
+		for (const [date] of saved) {
+			expect(date! > today && date! <= last, `${date} after ${today}, by ${last}`).toBe(true);
+		}
 	});
 
-	test("on a workout day, only Today creates it, to keep today's sessions ready", async ({
+	test("on a workout day, Train creates it too, keeping today's sessions ready", async ({
 		page,
 		request
 	}) => {
 		await seedProgram(request, { fixture: 'workout-day', start: 'this_week' });
 		await query('update athlete_profiles set onboarding_completed_at = now()');
-		await visitTabsButToday(page);
+		// With sessions to do, every tab but Today and Train still leaves the store alone.
+		await openTab(page, TABS[2].path);
+		await visitOtherTabs(page);
 		expect(await offlineDatabases(page)).toBe(0);
+		await openTab(page, '/train');
+		await trainKits(page, 'saved');
+		expect(await offlineDatabases(page)).toBe(1);
+		const today = await dayOn(page, 0);
+		const todays = (await savedKits(page)).filter(([date]) => date === today);
+		expect(todays).toHaveLength(3);
 		await page
 			.getByRole('navigation', { name: 'Primary' })
 			.getByRole('link', { name: 'Today' })
