@@ -207,8 +207,9 @@ Without a session, pages answer `303` to `/?next=<path>` (a JSON redirect for cl
 requests and enhanced form actions) and `/api/*` answers `401 {"error":"unauthenticated"}`. A
 stale or forged cookie is cleared. Static and prerendered files (immutable build assets, icons,
 manifest, robots.txt, the service worker, `/offline` and the three workout pages) never reach the
-hooks and hold no personal data: a workout page's data comes only from IndexedDB, which sign-out
-deletes, and from owner-only endpoints. Prerendered pages still get the dynamic responses'
+hooks and hold no personal data. A workout page's data comes only from IndexedDB, from
+`/workout`'s prepainted card in localStorage (`pc:workout-prepaint:v1`, #410) and from owner-only
+endpoints; sign-out deletes the first two. Prerendered pages still get the dynamic responses'
 security headers: `vercel.json` sends them `STATIC_PAGE_HEADERS`
 (`src/lib/server/security-headers.ts`), which adds `frame-ancestors 'none'` because their own CSP
 is a `<meta>` tag that cannot carry it. `scripts/vercel-headers.test.ts` keeps `vercel.json`

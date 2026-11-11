@@ -521,6 +521,8 @@ any device), `GET /api/workouts/kit` (`?lineage=` to start, `?session=` to adopt
 - Reducer tables per kind, each with the device actions: strength (core, custom exercises, sets,
   structure; `reducers/tables.ts`), run (core, run) and session (core, other). Tables are merged
   through a `/* @__PURE__ */` call, so no route ships another kind's reducers.
+- Before the app starts, `/workout` paints the current exercise card from a copy in localStorage
+  (`prepaint.ts`, `pc:workout-prepaint:v1`, #410); the hydrated view replaces it.
 - First render reads IndexedDB raw (`restore.ts`), never creating `pc-offline`. The store's write
   path and the page's one sync engine load together on idle (`online.ts`); every saved dispatch
   and every other tab's write flushes it.

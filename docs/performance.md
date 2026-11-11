@@ -384,46 +384,55 @@ Lighthouse on the same run, mobile and desktop: see "Lighthouse (desktop)" below
 
 ## M4 (workout) — measured 2026-11-10
 
-Measured by CI on GitHub's 4-vCPU Linux runners on the merged M4 code: run
+Measured by CI on GitHub's 4-vCPU Linux runners. Sizes, the main-thread table, set logging and
+INP below are from #370's last run,
+[42939723798](https://github.com/TheCruzControll/performance-coach/actions/runs/42939723798)
+(`3150095`, green). Its `src/` and `vite.config.ts` are the same as `main` with M4 merged,
+including the shorter boot path (#394), the prepaint (#410) and sign-out's flush (#367). The
+first M4 measurements, before those changes, came from runs
 [42806982845](https://github.com/TheCruzControll/performance-coach/actions/runs/42806982845)
-(`1852d13`, the strength journey's head) ran `pnpm build:node && pnpm budgets`, and run
+(`pnpm budgets`) and
 [42802588785](https://github.com/TheCruzControll/performance-coach/actions/runs/42802588785)
-(`6c4da6b`, the final workout measurements) ran the `perf` project and both Lighthouse commands.
-Both heads hold the same `src/` as the merged M4 head; only specs, scripts and CI differ.
+(`perf` and Lighthouse); they are quoted below where they differ.
 
-Initial JS and route CSS (gzip), every route; all pass, two preloaded fonts each:
+Initial JS and route CSS (gzip), every route; all pass, one preloaded font each (two before
+#394):
 
 | Route                              | Initial JS | Route CSS |
 | ---------------------------------- | ---------: | --------: |
-| `/(app)/progress`                  |    59.7 KB |   13.9 KB |
-| `/(app)/coach/[[thread]]`          |    59.5 KB |   10.5 KB |
-| `/(app)/train`                     |    59.0 KB |   11.0 KB |
-| `/(app)/train/session/[key]`       |    58.8 KB |   10.7 KB |
-| `/(app)/progress/workouts/[[id]]`  |    58.6 KB |   10.5 KB |
-| `/(app)/today`                     |    58.6 KB |   13.3 KB |
-| `/(app)/profile`                   |    57.5 KB |    9.1 KB |
-| `/(app)/profile/security`          |    57.3 KB |   11.3 KB |
-| `/(app)/progress/exercises/[id]`   |    57.3 KB |   12.9 KB |
-| `/(app)/train/history/[[version]]` |    56.3 KB |   10.2 KB |
-| `/(app)/profile/[section]`         |    55.9 KB |    8.0 KB |
-| `/setup`                           |    54.2 KB |    7.6 KB |
-| `/onboarding/[[step]]`             |    54.1 KB |    6.7 KB |
-| `/design`                          |    54.0 KB |    7.5 KB |
-| `/workout`                         |    53.8 KB |    8.5 KB |
-| `/workout/session`                 |    53.7 KB |    8.3 KB |
-| `/workout/run`                     |    53.7 KB |    8.3 KB |
-| `/(app)/offline`                   |    53.4 KB |    7.0 KB |
-| `/`                                |    52.5 KB |    6.5 KB |
-| `/recover/passkey`                 |    52.1 KB |    6.1 KB |
-| `/recover`                         |    51.1 KB |    6.4 KB |
+| `/(app)/coach/[[thread]]`          |    58.0 KB |   10.1 KB |
+| `/(app)/train`                     |    57.3 KB |   11.0 KB |
+| `/(app)/train/session/[key]`       |    57.0 KB |   10.7 KB |
+| `/(app)/progress`                  |    57.0 KB |   13.9 KB |
+| `/(app)/today`                     |    56.9 KB |   13.3 KB |
+| `/(app)/progress/workouts/[[id]]`  |    56.8 KB |   10.5 KB |
+| `/(app)/progress/reviews/[[key]]`  |    56.6 KB |   10.0 KB |
+| `/(app)/profile/security`          |    55.9 KB |   11.4 KB |
+| `/(app)/profile`                   |    55.8 KB |    9.1 KB |
+| `/(app)/train/history/[[version]]` |    54.6 KB |   10.2 KB |
+| `/(app)/progress/exercises/[id]`   |    54.3 KB |   12.9 KB |
+| `/(app)/profile/[section]`         |    54.1 KB |    8.0 KB |
+| `/workout`                         |    52.7 KB |    7.9 KB |
+| `/workout/run`                     |    52.5 KB |    6.3 KB |
+| `/workout/session`                 |    52.5 KB |    6.3 KB |
+| `/onboarding/[[step]]`             |    52.4 KB |    6.7 KB |
+| `/design`                          |    52.4 KB |    7.5 KB |
+| `/setup`                           |    52.2 KB |    7.6 KB |
+| `/(app)/offline`                   |    51.7 KB |    7.0 KB |
+| `/`                                |    50.3 KB |    6.5 KB |
+| `/recover/passkey`                 |    50.1 KB |    7.7 KB |
+| `/recover`                         |    49.3 KB |    6.4 KB |
 
-Of `/(app)/progress`'s initial JS, 3.7 KB is a chunk its `load` awaits.
+Of `/(app)/progress`'s initial JS, 3.8 KB is a chunk its `load` awaits; of
+`/(app)/progress/reviews/[[key]]`'s, 2.7 KB.
 
-- **Runways.** The plan's runways held for the workout pages: `/workout` 53.8 KB (runway
-  58.9), `/workout/run` and `/workout/session` 53.7 KB (58.0 and 57.5), their CSS 8.3–8.5 KB
-  (10). `/(app)/profile/security` is 57.3 KB (58.8). History, `/(app)/progress/workouts/[[id]]`,
-  is 58.6 KB, over its 56.0 KB runway but under the 60 KB gate. The tightest route is now M6's
-  `/(app)/progress` at 59.7 KB.
+- **Runways.** The plan's runways held for the workout pages: `/workout` 52.7 KB (runway
+  58.9), `/workout/run` and `/workout/session` 52.5 KB (58.0 and 57.5), their CSS 6.3–7.9 KB
+  (10). `/(app)/profile/security` is 55.9 KB (58.8). History,
+  `/(app)/progress/workouts/[[id]]`, is 56.8 KB, over its 56.0 KB runway but under the 60 KB
+  gate. The tightest route is now M5's `/(app)/coach/[[thread]]` at 58.0 KB. In run
+  42806982845, before #394, `/workout` was 53.8 KB and `/(app)/progress` the tightest at
+  59.7 KB.
 - **Icons draw from one SVG sprite** (`<use href="sprite#name">`; `src/lib/ui/icons/sprite.svg`,
   7.3 KB, 1.96 KB gzip, hashed, immutable, precached at install, #90): every route's initial JS
   dropped 1,799–1,805 B (`/design` 1,647 B, which ships the name list). A new icon costs no
@@ -451,31 +460,31 @@ Of `/(app)/progress`'s initial JS, 3.7 KB is a chunk its `load` awaits.
   compiles `$state` to a store subscription: +0.2 KB on every route in the prototype.
 - **Set logging** (`e2e/perf-workout.e2e.ts`, `perf` project, 4× CPU, 20 sets of the shared kit
   fixture with real taps over five fresh loads of `/workout`, with swipes, sheets and the rest
-  timer between them): a set shows as done in a median of **22.9 ms, p95 32.5 ms** (gate: p95
-  under 100 ms). The earlier spec on run 42806982845, 20 sets on one load: median 19.8 ms, p95
-  34.2 ms.
-- **INP p75** on `/workout`: **56 ms** from Event Timing (loads 56, 56, 56, 56, 40) and 56 ms
+  timer between them): a set shows as done in a median of **36.5 ms, p95 42.4 ms** (gate: p95
+  under 100 ms), with no layout shift while logging. Run 42802588785, before #370's fixes,
+  measured a median of 22.9 ms and p95 32.5 ms.
+- **INP p75** on `/workout`: **88 ms** from Event Timing (loads 80, 88, 96, 88, 56) and 88 ms
   from web-vitals, the library RUM beacons with `route_id` `/workout` (gate: 200 ms or less);
-  `/workout/session` 32 ms. There is no production p75 yet: the pages had no entry point until
+  `/workout/run` 80 ms and `/workout/session` 56 ms. Run 42802588785 measured 56 ms on
+  `/workout`. There is no production p75 yet: the pages had no entry point until
   start-entry-points.
-- **Open in run 42802588785.** The final set-logging test failed on a layout shift of 0.00045
-  while logging (the icon of the exercise name's history button moves), and `/workout/run`'s INP
-  test failed before measuring (its segment rows did not appear). Lighthouse's mobile gate failed
-  on `/workout · active` (below). #370 fixed the first two and merged with CI green (run
-  [42939723798](https://github.com/TheCruzControll/performance-coach/actions/runs/42939723798)).
-  The set-logging and INP numbers above are from run 42802588785, before those fixes.
+- **One green run so far.** These are the numbers of one green run (42939723798). #370 asks for
+  two; the second is still to record. Run 42802588785 failed: the final set-logging test on a
+  layout shift of 0.00045 while logging, and `/workout/run`'s INP test before measuring. #370
+  fixed both.
 
-Main-thread blocking while loading (median of 5 loads, 4× CPU; guard 250 ms, target 200 ms).
-These screens are now measured by `e2e/perf-workout-load.e2e.ts` with `e2e/load-budget.ts`:
+Main-thread blocking while loading (median of 5 loads, 4× CPU; guard 250 ms, target 200 ms),
+from `e2e/perf-workout-load.e2e.ts` with `e2e/load-budget.ts`. Medians in run 42802588785 were
+6, 2, 5, 0, 0 and 0 ms:
 
-| Screen                                      | Median | Loads (ms)     |
-| ------------------------------------------- | -----: | -------------- |
-| `/workout` (a workout in progress)          |      6 | 3, 5, 6, 8, 9  |
-| `/workout/run` (a run in progress)          |      2 | 0, 2, 2, 2, 3  |
-| `/workout/session` (a session in progress)  |      5 | 0, 0, 5, 6, 11 |
-| `/workout`, a service-worker reload         |      0 | 0, 0, 0, 0, 3  |
-| `/progress/workouts` (20 finished workouts) |      0 | 0, 0, 0, 0, 0  |
-| `/progress/workouts/<newest>`               |      0 | 0, 0, 0, 0, 14 |
+| Screen                                      | Median | Loads (ms)          |
+| ------------------------------------------- | -----: | ------------------- |
+| `/workout` (a workout in progress)          |     90 | 76, 82, 90, 98, 220 |
+| `/workout/run` (a run in progress)          |     87 | 14, 27, 87, 97, 100 |
+| `/workout/session` (a session in progress)  |     12 | 8, 10, 12, 13, 54   |
+| `/workout`, a service-worker reload         |      0 | 0, 0, 0, 0, 35      |
+| `/progress/workouts` (20 finished workouts) |      9 | 7, 7, 9, 9, 10      |
+| `/progress/workouts/<newest>`               |     25 | 21, 23, 25, 25, 27  |
 
 Lighthouse on run 42802588785, with workout data seeded (`--seed`); medians, mobile and desktop:
 
@@ -628,8 +637,8 @@ screen in the app. Plan, agreed before any M4 code lands:
 - `/workout` measured 58.7 KB after the workout shell, against 53.8 KB planned. The slimmer
   shared entry (table above) took it to 56.7 KB, so the later workout slices have 3.3 KB, not
   1.3 KB, under the 60 KB gate.
-- Outcome: `/workout` ended M4 at 53.8 KB with its screens merged (see "M4 (workout)"
-  above).
+- Outcome: `/workout` ended M4 at 52.7 KB with its screens merged, the boot path and the
+  prepaint (see "M4 (workout)" above).
 
 ### Main-thread budget (`e2e/load-budget.ts`, runs in CI on its own leg)
 
@@ -637,7 +646,8 @@ screen in the app. Plan, agreed before any M4 code lands:
 screens and `e2e/perf-workout-load.e2e.ts` to the workout screens. Both run in their own
 Playwright project (`perf`, one worker) that starts only after the functional Chromium suite has
 finished, so no other spec competes for CPU while it measures. In CI the project is its own leg,
-alone·chromium, split in 2 shards, each on a runner of its own; `exclusive` is a separate leg. On a busy
+alone·chromium, split in 2 shards, each on a runner of its own; `exclusive` runs in parallel on
+a leg of its own (only a local run starts it after `perf`). On a busy
 host (other builds, browsers or agents running) local numbers can still be noisy; re-run before
 chasing a regression.
 

@@ -135,7 +135,8 @@ Workers: 2 locally and in CI's main legs (whole files side by side), 1 in its ot
 CI runs the suite as separate legs, one per group and engine (`e2e/projects.ts`,
 `.github/workflows/ci.yml`). The `perf` project is the `alone` group: its own leg on Chromium,
 split in 2 shards (alone·chromium 1/2 and 2/2), each on a runner of its own with nothing else
-running. `exclusive` is a separate leg after it, also Chromium only.
+running. `exclusive` is a leg of its own beside them, also Chromium only. It runs in
+parallel with the other legs in CI; only a local run starts it after `perf`.
 
 ### Authentication
 

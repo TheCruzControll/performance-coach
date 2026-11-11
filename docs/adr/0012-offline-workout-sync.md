@@ -146,13 +146,14 @@ and how they were taken are in docs/performance.md, "M4 (workout)"):
 
 Each open question of the M4 plan that the code answers runs on the plan's default:
 
-| Question                       | Default                                                                  | Where                                                |
-| ------------------------------ | ------------------------------------------------------------------------ | ---------------------------------------------------- |
-| Two devices edit one set       | The last mutation the server applies wins; both are audited              | `reducers/sets.ts`, `services/workouts/sync.ts`      |
-| A change that keeps failing    | 'Needs attention' after 50 counted failures or 24 hours                  | `STUCK_AFTER` in `client/workout/outbox-rules.ts`    |
-| A session lost elsewhere       | Keep only unsynced changes and the unfinished workout's device state     | `purgeServerCopies` in `client/workout/store.ts`     |
-| Ledger retention               | Never pruned in M4                                                       | `db/schema/sync.ts`                                  |
-| Default rest per exercise type | Main lift 3:00, other compounds 2:00, isolation 1:30, timed 1:00         | `DEFAULT_REST_SECONDS` in `domain/workout/timers.ts` |
-| Load types                     | Assisted: no e1RM, volume or PR; unweighted bodyweight: 'most reps' only | `LOAD_RULES` in `domain/workout/logging.ts`          |
-| Supersets                      | A1 → A2 alternate, the round's rest after its last member                | `SUPERSET_FLOW` in `domain/workout/flow.ts`          |
-| Device settings                | Per device in localStorage; sign-out keeps them                          | `WORKOUT_SETTINGS_KEY`, `PLATES_KEY`                 |
+| Question                       | Default                                                                                          | Where                                                |
+| ------------------------------ | ------------------------------------------------------------------------------------------------ | ---------------------------------------------------- |
+| Two devices edit one set       | The last mutation the server applies wins; both are audited                                      | `reducers/sets.ts`, `services/workouts/sync.ts`      |
+| A change that keeps failing    | 'Needs attention' after 50 counted failures or 24 hours                                          | `STUCK_AFTER` in `client/workout/outbox-rules.ts`    |
+| A session lost elsewhere       | Keep only unsynced changes and the unfinished workout's device state                             | `purgeServerCopies` in `client/workout/store.ts`     |
+| Ledger retention               | Never pruned in M4                                                                               | `db/schema/sync.ts`                                  |
+| Default rest per exercise type | Main lift 3:00, other compounds 2:00, isolation 1:30, timed 1:00                                 | `DEFAULT_REST_SECONDS` in `domain/workout/timers.ts` |
+| Load types                     | Assisted: no e1RM, volume or PR; unweighted bodyweight: 'most reps' only                         | `LOAD_RULES` in `domain/workout/logging.ts`          |
+| Supersets                      | A1 → A2 alternate, the round's rest after its last member                                        | `SUPERSET_FLOW` in `domain/workout/flow.ts`          |
+| Device settings                | Per device in localStorage; sign-out keeps them                                                  | `WORKOUT_SETTINGS_KEY`, `PLATES_KEY`                 |
+| `/workout`'s prepainted card   | The current exercise's words in localStorage; dropped on every store change, deleted by sign-out | `PREPAINT_KEY` in `client/workout/prepaint.ts`       |
