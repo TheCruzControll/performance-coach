@@ -37,6 +37,13 @@
   - Layout: one column below 1024 px; from there the header spans the page, and the view's side
     and main columns sit side by side, centred, at --content-list beside --content-readable.
 -->
+<script module lang="ts">
+	// The header's stopwatch, which the first paint waits for: asked as the module is evaluated,
+	// before the page hydrates, as the routes ask for their views. Handled when the Shell mounts.
+	const clock = import.meta.env.SSR ? null : import('./WorkoutClock.svelte');
+	clock?.catch(() => {});
+</script>
+
 <script lang="ts">
 	import { onMount, untrack, type Component, type Snippet } from 'svelte';
 	import {
@@ -106,16 +113,10 @@
 
 	onMount(() => {
 		if (ready) void load(ready).then((module) => (viewLoaded = module !== null));
-		void load(() => import('./WorkoutClock.svelte')).then((module) => {
+		void load(() => clock!).then((module) => {
 			if (module) Clock = module.default;
 		});
 		void active.restore(load);
-		idle(
-			() =>
-				void import('#lib/client/vitals.ts')
-					.then((rum) => rum.startVitalsReporting())
-					.catch(() => {})
-		);
 		return () => active.close();
 	});
 
@@ -124,6 +125,11 @@
 		if (waiting || connecting) return;
 		connecting = true;
 		idle(async () => {
+			// RUM once the page shows what it restored, never before: its chunks would compete with
+			// the view's. Its observers are buffered, so it still reports the load's paints.
+			void import('#lib/client/vitals.ts')
+				.then((rum) => rum.startVitalsReporting())
+				.catch(() => {});
 			if (start) return;
 			await active.connect(load);
 			ui = await load(() => import('./sync-ui.ts'));
@@ -181,6 +187,7 @@
 			{#if shown && Clock && restore.phase === 'active'}<Clock
 					view={shown}
 					store={active.store}
+					{load}
 				/>{/if}
 		{/snippet}
 		{#snippet status()}

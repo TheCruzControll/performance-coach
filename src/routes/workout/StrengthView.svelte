@@ -4,7 +4,7 @@
   to it) as an ExerciseCard with its set rows, and from 1024 px the session's exercise list beside
   it. Below 1024 px the current exercise has the screen. It renders two siblings, the side list
   and the main column, which the Shell lays out as its columns.
-  - Under the rows, the logger (Logger.svelte, loaded right after the first render, and shown
+  - Under the rows, the logger (Logger.svelte, loaded once the first render has painted, and shown
     once the store has loaded too, so Complete set never waits for either) logs the set at hand
     in one tap: the row is done in the same frame, before anything is written, and in a superset
     the move to the partner is written with it. It never waits for the network.
@@ -13,7 +13,7 @@
     (the row's hover, focus or touch), whose Save sends a set.edit and whose Delete, confirmed, a
     set.delete. A chunk that cannot load (gone
     after a deploy) turns the page to 'App updated — reload to continue', never a broken sheet.
-  - Under the card, its navigation (Navigation.svelte, loaded after the first render and shown
+  - Under the card, its navigation (Navigation.svelte, loaded after the first paint and shown
     once the store can write, as the logger is, its space reserved meanwhile): Previous and Next,
     Up next (and Finish workout once every exercise is done), the swipe across the card and, from
     1024 px, the side list. Each is a goTo, stored with the workout, so a reload returns to it.
@@ -24,7 +24,7 @@
     so the keyboard reaches it first on a desktop. Its controls are device actions; Skip and
     Dismiss clear it. With no rest, once the exercise has a set done, Start rest in its place
     starts the exercise's (flow.ts restAt): for a device that leaves the rest to the owner, or
-    another after Skip. At zero (feedback.ts, loaded after the first render): a vibration and a tone
+    another after Skip. At zero (feedback.ts, loaded after the first paint): a vibration and a tone
     as the device's settings allow; the screen is kept awake during rest when they ask for it.
   - The card's Options button opens the exercise's quick actions (ExerciseActionsSheet.svelte,
     loaded on intent): Machine unavailable, Suggest an alternative, I don't like this exercise,
@@ -78,6 +78,7 @@
 	import type ExerciseActionsSheet from './ExerciseActionsSheet.svelte';
 	import type ExercisePicker from './ExercisePicker.svelte';
 	import ExerciseList from './ExerciseList.svelte';
+	import { afterPaint } from './lazy.ts';
 	import type LoggerView from './Logger.svelte';
 	import type NavigationView from './Navigation.svelte';
 	import type PlateSheet from './PlateSheet.svelte';
@@ -210,17 +211,20 @@
 		}
 	});
 
-	// The logger and its prefill rules load after the first render (Logger.svelte says why); it
-	// shows once the store (the Shell's, on idle) can write too. The navigation loads with it.
+	// The logger and its prefill rules load once the first render has painted (Logger.svelte says
+	// why), so their requests never delay the card's; it shows once the store (the Shell's, on
+	// idle) can write too. The navigation loads with it.
 	let Logger = $state.raw<typeof LoggerView | null>(null);
 	let Navigation = $state.raw<typeof NavigationView | null>(null);
 	onMount(() => {
 		if (import.meta.env.SSR) return;
-		void load(() => import('./Logger.svelte')).then((module) => {
-			if (module) Logger = module.default;
-		});
-		void load(() => import('./Navigation.svelte')).then((module) => {
-			if (module) Navigation = module.default;
+		afterPaint(() => {
+			void load(() => import('./Logger.svelte')).then((module) => {
+				if (module) Logger = module.default;
+			});
+			void load(() => import('./Navigation.svelte')).then((module) => {
+				if (module) Navigation = module.default;
+			});
 		});
 	});
 
@@ -344,15 +348,19 @@
 	onMount(() => {
 		if (import.meta.env.SSR) return;
 		let gone = false;
-		// The tone listens for the page's first tap, which browsers ask before it may sound.
-		void import('#lib/client/workout/feedback.ts')
-			.then((module) => {
-				if (gone) return;
-				const { vibrate, createTone, createWakeLock } = module;
-				feedback = { vibrate, tone: createTone(), wakeLock: createWakeLock() };
-			})
-			// Feedback is a nicety: the timer on screen is what tells the rest is over.
-			.catch(() => {});
+		// The tone listens for the page's first tap, which browsers ask before it may sound. After
+		// the first paint, as the logger.
+		afterPaint(
+			() =>
+				void import('#lib/client/workout/feedback.ts')
+					.then((module) => {
+						if (gone) return;
+						const { vibrate, createTone, createWakeLock } = module;
+						feedback = { vibrate, tone: createTone(), wakeLock: createWakeLock() };
+					})
+					// Feedback is a nicety: the timer on screen is what tells the rest is over.
+					.catch(() => {})
+		);
 		return () => {
 			gone = true;
 			feedback?.tone.dispose();
