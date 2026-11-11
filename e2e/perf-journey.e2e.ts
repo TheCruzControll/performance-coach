@@ -10,7 +10,9 @@
  *   so those get the same round trip and transfer time by context.route, which reaches the
  *   worker's requests on Chromium.
  * - Lie-fi: every request that reaches the network is held, unanswered, until the test ends
- *   (context.route); what the precache serves never reaches it.
+ *   (context.route, and a long latency on the page's network for what routes never see: the
+ *   browser's navigation preload, and the fetches of a worker just restarted); what the precache
+ *   serves never reaches it.
  * Every step's time is annotated: launch is from the navigation's start, the other steps from the
  * pointerdown of the tap. Gates, where the app promises not to wait on the network:
  * - the first set shows done in < 100 ms (pc:set-confirmed, M4 criterion 3), on both networks;
@@ -22,7 +24,14 @@
  * council items 1, 7, 8 and 13), so they are measured, not gated, until CI has numbers to set
  * gates from; on lie-fi, each tab switch is given TAB_CAP_MS and its outcome is reported.
  */
-import { expect, test, type BrowserContext, type Page, type Route } from '@playwright/test';
+import {
+	expect,
+	test,
+	type BrowserContext,
+	type CDPSession,
+	type Page,
+	type Route
+} from '@playwright/test';
 import { markAt, ms, usableAt } from './launch';
 import { PROGRAM_TZ, resetPrograms, seedProgram } from './program-support';
 import { query, TABS } from './support';
@@ -39,6 +48,8 @@ const NAVIGATION_TIMEOUT_MS = 6_000;
 const KIT_TIMEOUT_MS = 4_000;
 const OFFLINE_SCREEN_MS = NAVIGATION_TIMEOUT_MS + 3_000;
 const LIEFI_START_MS = KIT_TIMEOUT_MS + 2_000;
+/** Lie-fi's latency on the page's network: longer than the test runs, so nothing answers. */
+const LIE_FI_LATENCY_MS = 600_000;
 /** How long a tab switch on lie-fi is watched for an answer. */
 const TAB_CAP_MS = 10_000;
 const STRENGTH = 'Lower body & pull';
@@ -118,23 +129,25 @@ async function install(context: BrowserContext): Promise<string> {
 	return href;
 }
 
-/** A cold launch's page: the worker stopped, the CPU at 4× and, if given, the page's network. */
-async function coldPage(context: BrowserContext, slow: boolean): Promise<Page> {
+/** A cold launch's page: the worker stopped, the CPU at 4× and the page's network as given. */
+async function coldPage(context: BrowserContext, network: 'slow' | 'lie-fi') {
 	const page = await context.newPage();
 	const cdp = await context.newCDPSession(page);
 	await cdp.send('ServiceWorker.enable');
 	await cdp.send('ServiceWorker.stopAllWorkers');
 	await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 });
-	if (slow) {
-		await cdp.send('Network.enable');
-		await cdp.send('Network.emulateNetworkConditions', {
-			offline: false,
-			latency: RTT_MS,
-			downloadThroughput: DOWN_BYTES_PER_MS * 1000,
-			uploadThroughput: UP_BYTES_PER_MS * 1000
-		});
-	}
-	return page;
+	await cdp.send('Network.enable');
+	await cdp.send('Network.emulateNetworkConditions', {
+		offline: false,
+		...(network === 'slow'
+			? {
+					latency: RTT_MS,
+					downloadThroughput: DOWN_BYTES_PER_MS * 1000,
+					uploadThroughput: UP_BYTES_PER_MS * 1000
+				}
+			: { latency: LIE_FI_LATENCY_MS, downloadThroughput: -1, uploadThroughput: -1 })
+	});
+	return { page, cdp };
 }
 
 /** The service worker's own fetches at the slow network's round trip and transfer time. */
@@ -150,7 +163,12 @@ async function slowWorker(context: BrowserContext) {
 	});
 }
 
-/** Lie-fi: every request that reaches the network held until `restore()` fails them. */
+/**
+ * Lie-fi: every request that reaches the network held until `restore()` fails them. Routes never
+ * see the browser's navigation preload, nor (CI run 43015159931) the fetches of a worker just
+ * restarted, which answered /today in 30 ms: the cold page's latency (coldPage) holds those, and
+ * `restore()` takes it off again.
+ */
 async function lieFi(context: BrowserContext) {
 	const held: Route[] = [];
 	await context.route('**/*', (route) => {
@@ -158,7 +176,13 @@ async function lieFi(context: BrowserContext) {
 	});
 	return {
 		held: () => held.length,
-		async restore() {
+		async restore(cdp: CDPSession) {
+			await cdp.send('Network.emulateNetworkConditions', {
+				offline: false,
+				latency: 0,
+				downloadThroughput: -1,
+				uploadThroughput: -1
+			});
 			await context.unrouteAll({ behavior: 'ignoreErrors' });
 			for (const route of held) await route.abort('timedout').catch(() => {});
 		}
@@ -200,7 +224,7 @@ test.describe('the gym journey on a poor connection (4× CPU)', () => {
 			await context.addInitScript(tapClock);
 			await install(context);
 			await slowWorker(context);
-			const page = await coldPage(context, true);
+			const { page } = await coldPage(context, 'slow');
 			const steps: string[] = [];
 
 			await page.goto('/today', { waitUntil: 'commit' });
@@ -239,7 +263,7 @@ test.describe('the gym journey on a poor connection (4× CPU)', () => {
 			await context.addInitScript(tapClock);
 			const href = await install(context);
 			const network = await lieFi(context);
-			const page = await coldPage(context, false);
+			const { page, cdp } = await coldPage(context, 'lie-fi');
 			const steps: string[] = [];
 
 			// start_url: a server-rendered page the network never answers.
@@ -278,7 +302,7 @@ test.describe('the gym journey on a poor connection (4× CPU)', () => {
 			}
 			steps.push(`requests held ${network.held()}`);
 
-			await network.restore();
+			await network.restore(cdp);
 			// Back online: the store flushes as /workout opens, and the set lands once.
 			await page.goto('/workout');
 			await expect
