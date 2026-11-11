@@ -207,6 +207,10 @@ test('a tap that fails again reloads Train asking for the sheet, unless offline'
 	expect(await sameDocument(), 'a fresh document').toBe(false);
 	await expect(notice).toBeVisible();
 	await expect(page.getByTestId('plates-sheet')).toHaveCount(0);
+	// The fresh page's resume bar loads after its first paint (on idle, or once it has painted where
+	// there is no idle callback, as on WebKit): loaded while online, so the failures counted below
+	// are the Retry's alone.
+	await expect(page.locator('[data-testid="resume-slot"][data-looked="/train"]')).toBeAttached();
 
 	// Offline, a reload could only reach the offline screen: the notice comes back instead.
 	await markDocument();
