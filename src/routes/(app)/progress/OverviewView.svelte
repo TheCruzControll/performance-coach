@@ -147,13 +147,6 @@
 	{/if}
 
 	<TrendsLoader {overview} {served} />
-
-	<ListRow
-		title="Reviews"
-		icon="sparkle"
-		href={resolve('/(app)/progress/reviews/[[key]]', {})}
-		data-testid="reviews-row"
-	/>
 </div>
 
 <style>

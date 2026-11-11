@@ -215,7 +215,8 @@ describe('plans and prescriptions', () => {
 			const data = await seedDataset(db);
 			const runs = await createFactsLoader(db, data.owner, ALL).runs();
 			const tempo = runs.find((r) => r.sessionType === 'tempo_run')!;
-			const rows = await segmentFacts(db, data.owner, [...discarded(data), tempo.workout]);
+			const [read] = await segmentFacts(db, data.owner, [...discarded(data), tempo.workout]);
+			const rows = read!.rows;
 			expect(rows.map((r) => [r.workoutId, r.position])).toEqual(
 				tempo.segments.map((_, i) => [tempo.workout, i + 1])
 			);

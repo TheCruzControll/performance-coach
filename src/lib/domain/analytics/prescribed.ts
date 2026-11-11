@@ -19,7 +19,6 @@
  * path (no index file), no zod, no runtime import of domain/programming or domain/exercises.
  * Server-only at runtime: this is not in scripts/analytics-client-imports.test.ts's CLIENT_SAFE.
  */
-import { mondayOf } from '../calendar.ts';
 import type { IsoDate } from '../calendar.ts';
 import { prescribedLoad } from '../training/describe.ts';
 import { NON_WORKING_ROLES } from '../training/metrics.ts';
@@ -32,7 +31,7 @@ import type { CanonicalSet } from '../workout/protocol.ts';
 import { pairBySetIndex } from '../workout/selectors.ts';
 import type { Paired } from '../workout/selectors.ts';
 import type { LoggedSet } from '../workout/types.ts';
-import { mean } from './series.ts';
+import { mean, mondayOfDay } from './series.ts';
 
 // ---- Coaching judgements the owner can change here -------------------------------------------
 
@@ -349,13 +348,18 @@ export function rpeDeviationSummary(exposures: readonly Exposure[]): RpeDeviatio
 	const own = byDay(exposures.filter((e) => !e.substituted));
 	const by = (key: (e: Exposure) => string) => {
 		const groups = new Map<string, number[]>();
-		for (const e of own) groups.set(key(e), [...(groups.get(key(e)) ?? []), ...e.rpeDeviations]);
+		for (const e of own) {
+			const k = key(e);
+			const deviations = groups.get(k);
+			if (deviations) deviations.push(...e.rpeDeviations);
+			else groups.set(k, [...e.rpeDeviations]);
+		}
 		return Object.fromEntries([...groups].map(([k, deviations]) => [k, summarise(deviations)]));
 	};
 	return {
 		overall: summarise(own.flatMap((e) => e.rpeDeviations)),
 		byExercise: by((e) => e.exerciseId),
-		byWeek: by((e) => mondayOf(e.day))
+		byWeek: by((e) => mondayOfDay(e.day))
 	};
 }
 
