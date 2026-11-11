@@ -43,7 +43,7 @@ import { shortDate } from '#lib/ui/program/words.ts';
 import { generalData, type GeneralData } from './general-data.ts';
 import type { ProgressParams, ProgressView } from './params.ts';
 import { runningData, type RunningData } from './running-data.ts';
-import { strengthData, type StrengthData } from './strength-data.ts';
+import { RANGE_WEEKS, strengthData, type StrengthData } from './strength-data.ts';
 
 /** A discipline's card title (the services' areas: 'general' is training as a whole). */
 const AREA_TITLE: Readonly<Record<MetricArea, string>> = {
@@ -330,7 +330,7 @@ export async function loadProgress(
 		const today = await dayOf(ownerId, now, { db });
 		const executor = resolveDeps({ db }).db;
 		if (view === 'strength') {
-			const d = await strength(executor, ownerId, { period, today });
+			const d = await strength(executor, ownerId, { period, today, lastGroupWeeks: RANGE_WEEKS });
 			return { failed: false, view, period, strength: strengthData(d) };
 		}
 		if (view === 'running') {

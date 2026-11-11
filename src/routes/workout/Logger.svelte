@@ -1,20 +1,26 @@
 <!--
   @component
-  The strength view's logger, loaded right after the first render, as the store is: the set at
+  The strength view's logger, loaded once the first render has painted, as the store is: the set at
   hand prefilled for the exercise the slot performs (prefill.ts's nextSet), in the SetLogger, or
   'All sets logged' once its planned sets are done, with Add a set (an extra set beyond the plan,
   one at a time, with Cancel). Skip set skips the planned set at hand, and Missed reps records
   the misses, prefilled from its target. Complete set dispatches the set.log and its
   follow-ups (log.ts: the move, and the rest the device's settings start) at once, as Skip set does the set.skip, and records performance.measure('pc:set-confirmed') from the tap
-  to the frame after the row changed. At its top, what this device could not save, with
+  to the presented frame that shows the row changed (presented.ts). On an iPhone, Complete set
+  also taps the haptic engine (feedback.ts's haptic) in the tap itself, even one that waits for
+  the store, as the vibration setting allows. At its top, what this device could not save, with
   Retry: the sets stay on screen meanwhile, marked 'Not saved on this device'.
   The prefill's rules (logging, M3's e1RM and load arithmetic, the vocabulary's labels) and the
-  mutation builder stay out of /workout's initial JavaScript; the view shows it once the store
-  has loaded its workout, so a write is synchronous from the first tap.
+  mutation builder stay out of /workout's initial JavaScript. The view shows it as soon as it has
+  loaded (performance.mark('pc:logger-ready'), once per page); a write is synchronous once the
+  store has loaded its workout, and a tap before then waits for it (ActiveWorkout.write): Complete
+  set or Skip set once per set, however often it is tapped meanwhile, on the workout as the store
+  has it, at the time of the tap.
 -->
 <script lang="ts">
 	import { readWorkoutSettings } from '#lib/client/workout/settings.ts';
-	import type { NotSaved, WorkoutStore } from '#lib/client/workout/store.ts';
+	import type { StoreWrite } from '#lib/client/workout/active.svelte.ts';
+	import type { NotSaved } from '#lib/client/workout/store.ts';
 	import { DEFAULT_LOAD_INCREMENT } from '#lib/domain/units.ts';
 	import type { LoggedSet, SlotView, WorkoutView } from '#lib/domain/workout/index.ts';
 	import { defaultMissedReps, nextSet, RPE_CHIPS } from '#lib/domain/workout/prefill.ts';
@@ -22,8 +28,10 @@
 	import SetLogger from '#lib/ui/workout/SetLogger.svelte';
 	import { loadHint } from '#lib/ui/workout/logger-words.ts';
 	import { targetText } from '#lib/ui/workout/set-words.ts';
-	import { tick } from 'svelte';
+	import { haptic } from '#lib/client/workout/feedback.ts';
+	import { onMount, tick } from 'svelte';
 	import { logSet, skipSet } from './log.ts';
+	import { measureToPresented } from './presented.ts';
 
 	interface Props {
 		view: WorkoutView;
@@ -32,46 +40,55 @@
 		open: boolean;
 		/** What this device could not save (the store's snapshot), with Retry. */
 		notSaved: NotSaved[];
-		/** The active workout's store, its workout loaded: a write through it is synchronous. */
-		store: WorkoutStore;
+		/**
+		 * Writes through the active workout's store (ActiveWorkout.write): at once once it has
+		 * loaded its workout, so the write is synchronous, and as it opens before then.
+		 */
+		write: StoreWrite;
 	}
 
-	let { view, slot, open, notSaved, store }: Props = $props();
+	let { view, slot, open, notSaved, write }: Props = $props();
+
+	onMount(() => {
+		if (performance.getEntriesByName('pc:logger-ready', 'mark').length === 0)
+			performance.mark('pc:logger-ready');
+	});
 
 	/** Complete set: the set.log and its follow-up (log.ts), dispatched at once. */
 	function complete(setIndex: number, set: LoggedSet, event: MouseEvent) {
 		const start = event.timeStamp;
-		// Read at each set, so a change in the settings applies to the next rest.
-		const settings = readWorkoutSettings();
-		const { mutation, followUps } = logSet(
-			view,
-			slot.position,
-			setIndex,
-			set,
-			new Date().toISOString(),
-			{ autoStart: settings.autoStartRest, defaults: settings.rest }
-		);
-		store.dispatch(mutation, ...followUps);
-		// The row changes in this task; the frame that shows it comes next.
-		requestAnimationFrame(() =>
-			performance.measure('pc:set-confirmed', { start, end: performance.now() })
-		);
-		// An extra set closes its logger: focus goes to Add a set, for another.
-		if (logger.extra) void tick().then(() => focusOn('[data-testid="add-set"]'));
+		const { position } = slot;
+		const at = new Date().toISOString();
+		const extra = logger.extra;
+		write((store) => {
+			// Read at each set, so a change in the settings applies to the next rest.
+			const settings = readWorkoutSettings();
+			const { mutation, followUps } = logSet(view, position, setIndex, set, at, {
+				autoStart: settings.autoStartRest,
+				defaults: settings.rest
+			});
+			store.dispatch(mutation, ...followUps);
+			// The row changes in this task; the frame that shows it comes next. From the tap, so a
+			// write that waited for the store counts the wait.
+			measureToPresented('pc:set-confirmed', start);
+			// An extra set closes its logger: focus goes to Add a set, for another.
+			if (extra) void tick().then(() => focusOn('[data-testid="add-set"]'));
+		}, `set:${logger.key}`);
+		// Here, in the tap's user activation, which the iPhone's haptic needs, not in the write: one
+		// that waits for the store runs later, with no activation left.
+		if (readWorkoutSettings().vibration) haptic();
 	}
 
 	const focusOn = (selector: string) => document.querySelector<HTMLElement>(selector)?.focus();
 
 	/** Skip set: the set.skip and its follow-up, at once. */
 	function skip(setIndex: number, unit: LoggedSet['unit']) {
-		const { mutation, followUps } = skipSet(
-			view,
-			slot.position,
-			setIndex,
-			unit,
-			new Date().toISOString()
-		);
-		store.dispatch(mutation, ...followUps);
+		const { position } = slot;
+		const at = new Date().toISOString();
+		write((store) => {
+			const { mutation, followUps } = skipSet(view, position, setIndex, unit, at);
+			store.dispatch(mutation, ...followUps);
+		}, `set:${logger.key}`);
 	}
 
 	/** The extra set asked for with Add a set, by its key; it closes once logged or cancelled. */
@@ -89,9 +106,10 @@
 		focusOn('[data-testid="add-set"]');
 	}
 
-	const retry = async () => {
-		for (const { id } of notSaved) await store.retry(id);
-	};
+	const retry = () =>
+		write(async (store) => {
+			for (const { id } of notSaved) await store.retry(id);
+		});
 
 	const logger = $derived.by(() => {
 		const exercise = view.exercises[slot.exerciseId];

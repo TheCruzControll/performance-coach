@@ -11,7 +11,7 @@ import {
 	splitFences,
 	tables
 } from './docs-scan.ts';
-import { citedPathExists, memoryTree } from './docs-tree.ts';
+import { citedPathExists, fsTree, memoryTree } from './docs-tree.ts';
 
 const gap = (item: string, test = 'docs-env'): Gap => ({ test, doc: 'docs/environment.md', item });
 
@@ -120,5 +120,15 @@ describe('markdown extraction', () => {
 		expect(citedPathExists(tree, 'scripts/{auth,db}-setup-token.ts')).toBe(true);
 		expect(citedPathExists(tree, 'scripts/')).toBe(true);
 		expect(patternToRegExp('src/a.b/*.ts').test('src/aXb/c.ts')).toBe(false);
+	});
+
+	it('matches cited patterns on disk, in nested folders, and nothing for a pattern no file fits', () => {
+		const tree = fsTree();
+		expect(citedPathExists(tree, 'scripts/lib/docs-*.ts')).toBe(true);
+		expect(citedPathExists(tree, 'src/**/docs-tree.ts')).toBe(false);
+		expect(citedPathExists(tree, 'scripts/**/docs-tree.ts')).toBe(true);
+		expect(citedPathExists(tree, 'e2e/**/*.e2e.ts')).toBe(true);
+		expect(citedPathExists(tree, 'tests/integration/**/no-such-file-*.test.ts')).toBe(false);
+		expect(citedPathExists(tree, 'no-such-folder/**/*.ts')).toBe(false);
 	});
 });
