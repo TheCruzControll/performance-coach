@@ -241,11 +241,12 @@ export default defineConfig(({ command, mode }) => {
 							 * bring the whole chunk with it. Not the strength view's (selectors, groups, set
 							 * words), which load with that view, nor the flow (flow.ts), nor the run and other
 							 * families (reducers/run.ts and reducers/other.ts, with their routes' tables): in the
-							 * group, /workout would load them.
+							 * group, /workout would load them. ends.ts, the rule for when a workout may end, goes
+							 * with the reducers that load it.
 							 */
 							{
 								name: 'workout',
-								test: /src[\\/]lib[\\/]domain[\\/]workout[\\/](mutations|timers|project|reducers[\\/](?!(run|other)\.)\w+)\.ts$/
+								test: /src[\\/]lib[\\/]domain[\\/]workout[\\/](mutations|timers|project|ends|reducers[\\/](?!(run|other)\.)\w+)\.ts$/
 							}
 						]
 					}
