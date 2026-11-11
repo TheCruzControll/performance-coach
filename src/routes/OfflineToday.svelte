@@ -1,7 +1,7 @@
 <!--
   @component
   Today's sessions on the offline screen at the start URL or /offline (a launch with no signal),
-  from the kits Today saved on this device (client/workout/today-kits.ts), so a launch without a
+  from the kits Today and Train saved on this device (client/workout/coming-kits.ts), so a launch without a
   workout in progress can still start today's workout: each session's card with Start workout
   (/workout?start=, which starts from the saved kit offline), Resume for the workout in progress
   here, or Done once completed here. With none saved for today, a designed note says how to keep
@@ -66,7 +66,7 @@
 						icon="today"
 						tone="neutral"
 						title="No sessions saved for today"
-						description="Open Today with a connection and its sessions are kept here, ready to start with no signal."
+						description="Open Today or Train with a connection, the day before or on the day, and its sessions are kept here, ready to start with no signal."
 						data-testid="offline-today-empty"
 					/>
 				</Surface>
