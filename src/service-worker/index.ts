@@ -2,9 +2,12 @@
 /// <reference lib="esnext" />
 /// <reference lib="webworker" />
 /**
- * Service worker: precache the app shell and static assets per build version, clean up old
- * versions on activate (and take control of already-open pages), and serve:
- *   - build assets + static files  → cache-first (immutable, versioned)
+ * Service worker: precache per build version what the app needs offline (the shell, the workout
+ * pages and /offline: scripts/lib/precache-scope.ts) with the static files, copying the hashed
+ * files the previous version already cached instead of downloading them (lib/client/sw-precache.ts),
+ * clean up old versions on activate (and take control of already-open pages), and serve:
+ *   - precached files              → cache-first (versioned)
+ *   - other build files            → cache-first, cached on first use (content-hashed, immutable)
  *   - prerendered pages            → cache-first, whatever the query string, so a workout page
  *                                    (/workout?start=…) reloads offline from the precache
  *   - page navigations             → network only, through the navigation preload (enabled on
@@ -24,31 +27,35 @@ import { version } from '$app/env';
 import { assets, immutable, prerendered } from '$app/manifest';
 import { self } from '$app/service-worker';
 import { fromNetwork, isDataRequest, loadData } from '#lib/client/sw-network.ts';
+import { cacheFirst, precache, precacheList } from '#lib/client/sw-precache.ts';
 import { navigationTimeout } from '#lib/client/workout/launch.ts';
 import { activeSummary } from '#lib/client/workout/probe.ts';
+import { shell } from 'virtual:precache-shell';
 
 const PREFIX = 'pc-';
-const SHELL_CACHE = `${PREFIX}shell-${version}`;
+const SHELL_PREFIX = `${PREFIX}shell-`;
+const SHELL_CACHE = `${SHELL_PREFIX}${version}`;
 const OFFLINE_URL = '/offline';
 
-/**
- * Home-screen/manifest icons (~280 KB of PNGs) are fetched by the OS when the app is
- * installed and never displayed by the running app: keep them out of the install download.
- */
-const NOT_PRECACHED = /^\/icons\//;
-
-const PRECACHE = [
-	...immutable.map((f) => f.path),
+const scope = self.registration.scope;
+/** Every build file (content-hashed): cached on first use when not precached. */
+const IMMUTABLE = new Set(immutable.map((f) => new URL(f.path, scope).pathname));
+const PRECACHE = precacheList(scope, [
+	...shell,
 	...assets.map((f) => f.path),
 	...prerendered.map((f) => f.path)
-]
-	.map((path) => new URL(path, self.registration.scope).pathname)
-	.filter((path) => !NOT_PRECACHED.test(path));
-
+]);
 const PRECACHED = new Set(PRECACHE);
 
 self.addEventListener('install', (event) => {
-	event.waitUntil(caches.open(SHELL_CACHE).then((cache) => cache.addAll(PRECACHE)));
+	event.waitUntil(
+		precache(caches, {
+			name: SHELL_CACHE,
+			prefix: SHELL_PREFIX,
+			paths: PRECACHE,
+			hashed: IMMUTABLE
+		})
+	);
 });
 
 self.addEventListener('activate', (event) => {
@@ -68,13 +75,6 @@ self.addEventListener('activate', (event) => {
 		})()
 	);
 });
-
-async function cacheFirst(request: Request): Promise<Response> {
-	// A navigation here is to a prerendered page: the same data-free HTML for every query.
-	const ignoreSearch = request.mode === 'navigate';
-	const cached = await caches.match(request, { cacheName: SHELL_CACHE, ignoreSearch });
-	return cached ?? fetch(request);
-}
 
 /** Whether a workout is in progress on this device (its IndexedDB, read without creating it). */
 const workoutInProgress = async () => (await activeSummary()) !== null;
@@ -117,9 +117,17 @@ self.addEventListener('fetch', (event) => {
 	if (url.origin !== self.location.origin) return;
 	if (url.pathname.startsWith('/api/')) return;
 
-	if (PRECACHED.has(url.pathname)) {
-		// A navigation here leaves its preload unused: the browser cancels it.
-		event.respondWith(cacheFirst(request));
+	if (PRECACHED.has(url.pathname) || IMMUTABLE.has(url.pathname)) {
+		// A navigation here is to a prerendered page: the same data-free HTML for every query. It
+		// leaves its preload unused: the browser cancels it.
+		event.respondWith(
+			cacheFirst(caches, request, {
+				cacheName: SHELL_CACHE,
+				ignoreSearch: request.mode === 'navigate',
+				store: IMMUTABLE.has(url.pathname),
+				waitUntil: (work) => event.waitUntil(work)
+			})
+		);
 	} else if (request.mode === 'navigate') {
 		event.respondWith(navigate(request, event.preloadResponse));
 	} else if (isDataRequest(url)) {

@@ -343,10 +343,13 @@ function summarise(deviations: readonly number[]): DeviationSummary {
 	};
 }
 
+/** What a deviation summary reads of an exposure. */
+export type DeviationInput = Pick<Exposure, 'day' | 'exerciseId' | 'substituted' | 'rpeDeviations'>;
+
 /** Actual against target RPE over working sets, a substitute's exposures left out. */
-export function rpeDeviationSummary(exposures: readonly Exposure[]): RpeDeviationSummary {
+export function rpeDeviationSummary(exposures: readonly DeviationInput[]): RpeDeviationSummary {
 	const own = byDay(exposures.filter((e) => !e.substituted));
-	const by = (key: (e: Exposure) => string) => {
+	const by = (key: (e: DeviationInput) => string) => {
 		const groups = new Map<string, number[]>();
 		for (const e of own) {
 			const k = key(e);

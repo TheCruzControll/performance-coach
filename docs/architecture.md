@@ -552,8 +552,11 @@ any device), `GET /api/workouts/kit` (`?lineage=` to start, `?session=` to adopt
   and `static/brand/mark-arc.svg`, precached with the other static files. No browser code reads
   the window's size (`scripts/layout-rules.test.ts`), so SSR paints the final layout.
 - PWA: web manifest, PNG/SVG icons, and a SvelteKit service worker
-  (`src/service-worker/index.ts`) that precaches the versioned build + static assets, deletes old
-  caches and claims open pages on activate (so the first visit is already controlled), and
+  (`src/service-worker/index.ts`) that precaches what offline needs (the shell, the workout pages
+  and `/offline`, `scripts/lib/precache-scope.ts`) + static assets, copying the hashed files the
+  previous version cached instead of downloading them again, caches other build files on first
+  use, deletes old caches and claims open pages on activate (so the first visit is already
+  controlled), and
   serves navigations from the network with the prerendered `/offline` screen as the fallback.
   It **never stores dynamic HTML, `__data.json` or `/api/*`**: pages are `private, no-cache`
   because they carry personal data, and a stored copy would outlive sign-out and show stale

@@ -100,6 +100,7 @@ test.describe('/design → Workout', () => {
 			'Saved',
 			'Saving…',
 			'Offline · 3 pending',
+			'Can’t connect · 3 waiting',
 			'Retrying in 12 s',
 			'2 need attention',
 			'Sign in to sync · 4 waiting',
