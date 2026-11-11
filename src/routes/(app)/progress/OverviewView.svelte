@@ -9,22 +9,49 @@
     timeline, in a chunk of their own that loads after hydration, served as static markup until
     it has (trends.ts, TrendsLoader), so only the verdicts' code counts towards initial JS.
   - A container-query grid: the cards pair up once the column is wide enough.
+  - When a week or a block completes, its review prompt leads (ReviewPrompt, in a chunk of its
+    own, trends.ts): create and open the review, or 'See your review'. The server's markup of it
+    (a working form) stays until its code arrives, and stays if that fails. If its code fails
+    after a client navigation, the page's Reviews row (+page.svelte) leads to the screen that
+    creates it.
 -->
 <script lang="ts">
+	import { onMount, type Component } from 'svelte';
 	import EmptyState from '#lib/ui/components/EmptyState.svelte';
 	import Icon from '#lib/ui/components/Icon.svelte';
 	import VerdictBadge from '#lib/ui/analytics/VerdictBadge.svelte';
 	import type { IconName } from '#lib/ui/icons/icons.ts';
 	import type { OverviewData, VerdictCard } from './load';
+	import type { ReviewPromptView } from '#lib/ui/analytics/review-prompt.ts';
+	import ServedInPlace from '../today/panels/ServedInPlace.svelte';
+	import ServedMarkup from '../today/panels/ServedMarkup.svelte';
+	import { reviewPrompt } from './trends';
 	import TrendsLoader from './TrendsLoader.svelte';
 
 	interface Props {
 		overview: OverviewData;
 		/** The trends as the server rendered them (+page.ts, trends.ts). */
 		served?: string;
+		/** The review prompt as the server rendered it (+page.ts, trends.ts). */
+		prompt?: string;
 	}
 
-	let { overview, served }: Props = $props();
+	let { overview, served, prompt }: Props = $props();
+
+	/**
+	 * The live prompt once its code is in: at once after a client navigation (+page.ts waited for
+	 * it), after hydration on the page the server rendered, which shows its markup until then.
+	 */
+	let loaded = $state.raw<Component<{ review: ReviewPromptView }> | Error>();
+	const Prompt = $derived(
+		loaded ?? (import.meta.env.SSR || prompt ? undefined : reviewPrompt.settled())
+	);
+	onMount(() => {
+		if (prompt) reviewPrompt.preload().then(() => (loaded = reviewPrompt.settled()));
+	});
+	const Served: Component<{ markup: string }> = import.meta.env.SSR
+		? ServedMarkup
+		: (ServedInPlace as Component<{ markup: string }>);
 
 	const context = $derived(
 		[overview.context.period, overview.context.comparison, overview.context.trend].filter(
@@ -50,6 +77,13 @@
 </script>
 
 <div class="pc-overview-view" data-stage={overview.stage} data-testid="overview">
+	{#if overview.review}
+		{#if Prompt && !(Prompt instanceof Error)}
+			<Prompt review={overview.review} />
+		{:else if prompt}
+			<Served markup={prompt} />
+		{/if}
+	{/if}
 	{#if overview.stage === 'history'}
 		<section class="headline" aria-labelledby="overview-headline">
 			<p class="eyebrow">Am I improving?</p>
