@@ -56,6 +56,10 @@ const STRENGTH = 'Lower body & pull';
 /** Where a step's tap time is kept: a full navigation replaces the page's globals. */
 const DOWN_KEY = 'pc-test:pointerdown';
 
+// A trace's DOM snapshots run on the page's main thread (15-35 ms at 4×): one after the tap's
+// click would land before the frame that shows the set done.
+test.use({ trace: { mode: 'retain-on-failure', snapshots: false } });
+
 let onboarded: Date | null = null;
 test.beforeAll(async () => {
 	const [profile] = await query<{ at: Date | null }>(
@@ -210,9 +214,6 @@ async function switchTab(page: Page, tab: (typeof TABS)[number], timeout = 30_00
 test.describe('the gym journey on a poor connection (4× CPU)', () => {
 	test.skip(({ browserName }) => browserName !== 'chromium', 'CPU and network emulation use CDP');
 	test.describe.configure({ timeout: 240_000 });
-	// A trace's DOM snapshots run on the page's main thread (15-35 ms at 4×): one after the tap's
-	// click would land before the frame that shows the set done.
-	test.use({ trace: { mode: 'retain-on-failure', snapshots: false } });
 
 	test.beforeEach(async ({ request }) => {
 		await seedProgram(request, { fixture: 'workout-day', start: 'this_week' });

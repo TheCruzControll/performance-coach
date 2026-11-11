@@ -110,6 +110,9 @@ test.beforeAll(async () => {
 	expect(kit.exercises.reduce((sum, slot) => sum + slot.sets.length, 0)).toBe(SETS);
 });
 
+// A trace's DOM snapshots are taken on the page's main thread at every step: in the frames.
+test.use({ trace: { mode: 'retain-on-failure', snapshots: false } });
+
 // Each test's workouts are its own: none left in progress for the next one, or for perf.e2e.ts.
 test.beforeEach(() => resetPrograms());
 test.afterAll(() => resetPrograms());
@@ -435,8 +438,6 @@ async function openThrottled(page: Page, kind: StartKit['kind']) {
 
 test.describe('workout screen at 4× CPU', () => {
 	test.skip(({ browserName }) => browserName !== 'chromium', 'CPU throttling uses CDP');
-	// A trace's DOM snapshots are taken on the page's main thread at every step: in the frames.
-	test.use({ trace: { mode: 'retain-on-failure', snapshots: false } });
 
 	test(`20 sets over ${LOADS} fresh loads, with swipes, sheets and rest controls: confirmed p95 < ${CONFIRM_P95_MS} ms, INP p75 ≤ ${INP_MS} ms and every tap attributed and ≤ ${INP_MS} ms, no layout shift while logging, no dropped frame in the motion`, async ({
 		page,
