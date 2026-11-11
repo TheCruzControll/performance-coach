@@ -13,6 +13,7 @@
  */
 import { addDays, mondayOf, parseIsoDate, weekdayOf, type IsoDate } from '../../../domain/calendar';
 import type { ProfileDistanceUnit } from '../../../domain/profile/types';
+import { BRIDGE_PHASE, BRIDGE_WEEK_KIND } from '../../../domain/programming/next-block/dates';
 import { describeSession, type SessionLineOptions } from '../../../domain/training/describe';
 import type {
 	ExerciseRef,
@@ -80,6 +81,11 @@ export type TrainingWeek = WeekView & {
 	version: VersionInfo;
 	/** firstPlannedDay, when the date asked for is before it: the week given is week 1. */
 	programStartsOn?: IsoDate;
+	/**
+	 * In a bridge week (an unplanned week of a 'Between blocks' block, next-block/dates.ts): the
+	 * day the next block starts, the day after the bridge ends.
+	 */
+	nextBlockStartsOn?: IsoDate;
 };
 
 /** A planned exercise with its name in the owner's library. */
@@ -359,7 +365,10 @@ export async function getTrainingWeek(
 				};
 			}),
 			version: info,
-			...(date < firstPlannedDay ? { programStartsOn: firstPlannedDay } : {})
+			...(date < firstPlannedDay ? { programStartsOn: firstPlannedDay } : {}),
+			...(kind === BRIDGE_WEEK_KIND && week.block.phase === BRIDGE_PHASE
+				? { nextBlockStartsOn: addDays(week.block.endsOn, 1) }
+				: {})
 		};
 	});
 }

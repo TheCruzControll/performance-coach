@@ -24,7 +24,11 @@ export function createCoachMemoryRepository(db: Executor) {
 		recentDecisions: (ownerId: string, limit: number) => q.recentDecisions(db, ownerId, limit),
 		recentProposals: (ownerId: string, page: Parameters<typeof q.recentProposals>[2]) =>
 			q.recentProposals(db, ownerId, page),
-		recentNotes: (ownerId: string, kind: string, limit: number) =>
-			q.recentNotes(db, ownerId, kind, limit)
+		recentNotes: (
+			ownerId: string,
+			kind: string,
+			limit: number,
+			hiddenEntries?: readonly string[]
+		) => q.recentNotes(db, ownerId, kind, limit, hiddenEntries)
 	};
 }

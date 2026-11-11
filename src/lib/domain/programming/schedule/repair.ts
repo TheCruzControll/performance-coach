@@ -70,6 +70,8 @@ export interface RepairContext {
 	keepOwnerMoves?: boolean;
 	/** Lineages of sessions already logged: they never change. */
 	completed?: readonly string[];
+	/** Whether a generated session may be left out as a last resort: every one by default. */
+	mayDrop?: (session: EvaluatedSession) => boolean;
 	traitsOf?: TraitsOf;
 }
 
@@ -457,7 +459,7 @@ export function repairWeek<S extends EvaluatedSession>(
 		}
 		if (f.severity !== 'avoid') return;
 		for (const x of movable) {
-			if (x.now.source !== 'generator') continue;
+			if (x.now.source !== 'generator' || ctx.mayDrop?.(x.now) === false) continue;
 			if (rivals(state, f, x).some((w) => weight(x.now) >= w)) continue;
 			yield {
 				kind: 'drop',

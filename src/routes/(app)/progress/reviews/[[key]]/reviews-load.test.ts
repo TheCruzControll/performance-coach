@@ -10,21 +10,30 @@ import { METRICS } from '#lib/domain/analytics/metrics.ts';
 import type { Finding } from '#lib/domain/programming/review/brief.ts';
 import type { WeeklyReviewSnapshot } from '#lib/domain/programming/review/snapshot.ts';
 import {
+	CycleReviewNotReviewableError,
 	ReviewInputError,
 	ReviewNotFoundError,
+	ReviewSupersededError,
 	WeeklyReviewNotReviewableError,
+	WeeklyReviewRefreshError,
+	type CycleReviewView,
 	type WeeklyReviewView
 } from '#lib/server/services/reviews/index.ts';
 import type { TrainingDeps } from '#lib/server/services/training/shared.ts';
 import {
+	createCycle,
 	createReview,
+	CYCLE_IN_PROGRESS,
+	cycleRows,
 	findingVerdict,
 	loadReviews,
 	NOT_REVIEWED_MAX,
 	parseReviewKey,
+	refreshReview,
 	reviewRows,
 	weeklyReviewData,
-	type ReviewsDeps
+	type ReviewsDeps,
+	type WeeklyReviewData
 } from './load.ts';
 
 /** A Wednesday: this week is from 2 Nov, last week from 26 Oct. */
@@ -98,6 +107,10 @@ function view(parts: Partial<WeeklyReviewView> = {}, findings = [ADHERENCE, BENC
 		legacy: false,
 		snapshot,
 		writeUp: { state: 'none' },
+		proposal: null,
+		decision: { state: 'none' },
+		noProposal: null,
+		notProposed: [],
 		...parts
 	} as WeeklyReviewView;
 }
@@ -285,6 +298,94 @@ describe('a weekly review as the screen shows it', () => {
 	});
 });
 
+describe('an out-of-date review', () => {
+	const PROPOSAL = '0b7e2d4c-1a3f-4e5d-9c6b-8a7f6e5d4c3b';
+	const stale = (state: WeeklyReviewView['decision']['state'], laterChanges = 3) =>
+		weeklyReviewData(
+			view({
+				stale: true,
+				laterChanges,
+				decision: { state, proposalId: PROPOSAL } as WeeklyReviewView['decision']
+			})
+		).stale;
+
+	it('says how many changes came after it, and offers Refresh while the decision is open', () => {
+		expect(stale('undecided')).toEqual({
+			words: 'Computed before 3 later changes',
+			detail: 'You’ve logged training since. Refresh recomputes it and keeps this version.',
+			refreshable: true
+		});
+		expect(stale('partly_past', 1)).toMatchObject({
+			words: 'Computed before 1 later change',
+			refreshable: true
+		});
+		expect(
+			weeklyReviewData(view({ stale: true, laterChanges: 2, decision: { state: 'none' } })).stale
+		).toMatchObject({ refreshable: true });
+	});
+
+	it('a decided review never changes: no Refresh once applied, rejected or superseded', () => {
+		for (const state of ['applied', 'rejected', 'accepted_waiting', 'superseded'] as const)
+			expect(stale(state), state).toMatchObject({
+				detail: 'You’ve decided on its changes, so it stays as it was.',
+				refreshable: false
+			});
+	});
+
+	it('an up-to-date review shows no notice, and the id Refresh posts is the live revision', () => {
+		const data = weeklyReviewData(view({ stale: false, laterChanges: 0 }));
+		expect(data.stale).toBeNull();
+		expect(data.id).toBe(ID);
+	});
+});
+
+describe('Refresh', () => {
+	const today = vi.fn(async () => TODAY);
+	const refreshing = (outcome: () => Promise<unknown>) => {
+		const refresh = vi.fn(outcome) as never;
+		return { run: () => refreshReview('owner', ID, new Date(), { db, refresh, today }), refresh };
+	};
+
+	it('writes the next revision from today', async () => {
+		const { run, refresh } = refreshing(async () => ({ id: 'next' }));
+		await expect(run()).resolves.toEqual({ ok: true });
+		expect(refresh).toHaveBeenCalledWith('owner', ID, { today: TODAY }, { db });
+	});
+
+	it('already up to date, or refreshed first by another tap, shows the live revision', async () => {
+		for (const err of [new WeeklyReviewRefreshError('not_stale'), new ReviewSupersededError()])
+			await expect(refreshing(async () => Promise.reject(err)).run(), err.message).resolves.toEqual(
+				{ ok: true }
+			);
+	});
+
+	it('a decided or not-yet-reviewable review is a 409, an unknown one a 400, and anything else fails', async () => {
+		const decided = refreshing(async () => Promise.reject(new WeeklyReviewRefreshError('decided')));
+		await expect(decided.run()).resolves.toEqual({
+			ok: false,
+			status: 409,
+			data: { reason: 'decided' }
+		});
+		// An early review whose week is no longer all done waits for Monday, as Create does.
+		const early = refreshing(async () =>
+			Promise.reject(new WeeklyReviewNotReviewableError('2026-11-09'))
+		);
+		await expect(early.run()).resolves.toEqual({
+			ok: false,
+			status: 409,
+			data: { reason: 'not_ready' }
+		});
+		const gone = refreshing(async () => Promise.reject(new ReviewNotFoundError()));
+		await expect(gone.run()).resolves.toEqual({
+			ok: false,
+			status: 400,
+			data: { reason: 'invalid' }
+		});
+		const boom = new Error('db down');
+		await expect(refreshing(async () => Promise.reject(boom)).run()).rejects.toBe(boom);
+	});
+});
+
 describe('the load', () => {
 	const page = {
 		items: [
@@ -310,6 +411,13 @@ describe('the load', () => {
 		next: null
 	};
 
+	const NARRATION = {
+		target: { kind: 'weekly', id: ID },
+		view: { state: 'writing', ask: true },
+		lines: ['Your coach is writing this up…'],
+		discuss: '/coach?ask=x&from=weekly_review'
+	} as const;
+
 	function deps(parts: Partial<ReviewsDeps> = {}) {
 		const calls: string[] = [];
 		const track = <T>(name: string, value: T) =>
@@ -324,7 +432,9 @@ describe('the load', () => {
 			today: track('today', TODAY),
 			list: track('list', page),
 			reviewable: track('reviewable', { weekStartsOn: THIS_WEEK, reason: 'all_done' }),
+			block: track('block', null),
 			view: track('view', view()),
+			narration: track('narration', NARRATION),
 			record: vi.fn(async () => null),
 			...parts
 		} as unknown as Required<ReviewsDeps>;
@@ -336,7 +446,8 @@ describe('the load', () => {
 		const data = await loadReviews('owner', { key: `w-${LAST_WEEK}`, origin }, new Date(), d);
 		expect(data).toMatchObject({ failed: false, key: `w-${LAST_WEEK}`, empty: false });
 		if (data.failed) throw new Error('unreachable');
-		// The cycle review waits for its screen (cycle-review-screen): only weekly rows.
+		// Weekly rows here; the cycle review's in its own rows.
+		expect(data.cycles.map((r) => [r.state, r.key])).toEqual([['reviewed', 'c-c1']]);
 		expect(data.rows.map((r) => [r.state, r.weekStartsOn])).toEqual([
 			['due', THIS_WEEK],
 			['reviewed', LAST_WEEK]
@@ -349,8 +460,64 @@ describe('the load', () => {
 		expect(d.view).toHaveBeenCalledWith('owner', LAST_WEEK, { db });
 		expect(d.list).toHaveBeenCalledWith('owner', { limit: 50 }, { db });
 		expect(d.reviewable).toHaveBeenCalledWith('owner', TODAY, { db });
+		expect(d.block).toHaveBeenCalledWith('owner', TODAY, { db });
+		expect(d.narration).toHaveBeenCalledWith('owner', data.selected, { db });
+		expect(data.selected?.narration).toEqual(NARRATION);
+		expect(calls.at(-1)).toBe('narration:end');
 		for (let i = 0; i < calls.length; i += 2)
 			expect(calls[i + 1]).toBe(calls[i]!.replace('start', 'end'));
+	});
+
+	it("an open decision reads the head's changes on the owner's today; a decided one none", async () => {
+		const head = '0b7e2d4c-1a3f-4e5d-9c6b-8a7f6e5d4c3b';
+		const offer = {
+			id: 'load:a:2',
+			sessionDate: '2026-11-03',
+			why: 'Felt easier',
+			halfStep: null,
+			ahead: false
+		};
+		const open = view({
+			decision: { state: 'undecided', proposalId: head },
+			proposal: {
+				id: head,
+				rows: [{ label: 'Bench', before: '85 kg', after: '87.5 kg', date: null }]
+			}
+		} as unknown as Partial<WeeklyReviewView>);
+		const { d } = deps({
+			view: vi.fn(async () => open),
+			offers: vi.fn(async () => [offer])
+		});
+		const data = await loadReviews('owner', { key: `w-${LAST_WEEK}`, origin }, new Date(), d);
+		if (data.failed) throw new Error('unreachable');
+		expect(d.offers).toHaveBeenCalledWith('owner', head, TODAY, { db });
+		expect((data.selected as WeeklyReviewData | null)?.nextWeek).toMatchObject({
+			state: 'all_past',
+			items: [{ id: 'load:a:2', label: 'Bench', passed: 'Tuesday has passed' }]
+		});
+
+		const decided = view({
+			decision: { state: 'rejected', proposalId: head }
+		} as Partial<WeeklyReviewView>);
+		const again = deps({ view: vi.fn(async () => decided), offers: vi.fn(async () => [offer]) });
+		await loadReviews('owner', { key: `w-${LAST_WEEK}`, origin }, new Date(), again.d);
+		expect(again.d.offers).not.toHaveBeenCalled();
+	});
+
+	it('a write-up that fails to read is recorded and left out; the review still shows', async () => {
+		const { d } = deps({
+			narration: vi.fn(async () => {
+				throw new Error('coach tables down');
+			})
+		});
+		const data = await loadReviews('owner', { key: `w-${LAST_WEEK}`, origin }, new Date(), d);
+		if (data.failed) throw new Error('the review must show');
+		expect(data.selected).toMatchObject({ key: `w-${LAST_WEEK}` });
+		expect(data.selected?.narration).toBeUndefined();
+		expect(d.record).toHaveBeenCalledWith(
+			expect.objectContaining({ kind: 'load', context: { load: 'review-write-up' } }),
+			{ db: undefined }
+		);
 	});
 
 	it('no key: the list alone, empty with no review stored', async () => {
@@ -360,8 +527,8 @@ describe('the load', () => {
 		expect(d.view).not.toHaveBeenCalled();
 	});
 
-	it('a malformed key or a cycle key is a 404 before anything is read', async () => {
-		for (const key of ['w-2026-10-27', 'nope', `c-${ID}`]) {
+	it('a malformed key is a 404 before anything is read', async () => {
+		for (const key of ['w-2026-10-27', 'nope', 'c-123']) {
 			const { d } = deps();
 			const caught = await loadReviews('owner', { key, origin }, new Date(), d).catch(
 				(e: unknown) => e
@@ -451,5 +618,138 @@ describe('Create', () => {
 		await expect(
 			createReview('owner', LAST_WEEK, new Date(), { db, create: failing, today })
 		).rejects.toBe(boom);
+	});
+});
+
+describe('cycle reviews', () => {
+	const PROGRAM = '0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d';
+	const LINEAGE = '9f8e7d6c-5b4a-4c3d-8e2f-1a0b9c8d7e6f';
+	const block = (reviewable: boolean) => ({
+		...{ programId: PROGRAM, blockLineage: LINEAGE, name: 'Build' },
+		...{ startsOn: '2026-11-02', endsOn: '2026-11-29', reviewable }
+	});
+	const item = (id: string, startsOn: string, endsOn: string) => ({
+		...{ kind: 'cycle' as const, id, startsOn, endsOn },
+		...{ revision: 1, summary: `Block ${id}.`, legacy: false }
+	});
+	const weekly = { ...item('w', LAST_WEEK, '2026-11-01'), kind: 'weekly' as const };
+
+	it('rows: the running block, not reviewable yet, then each cycle review', () => {
+		const rows = cycleRows([weekly, item('c2', '2026-10-05', '2026-11-01')], block(false));
+		expect(rows).toEqual([
+			{
+				state: 'in_progress',
+				key: `b-${LINEAGE}`,
+				weekStartsOn: '2026-11-02',
+				title: 'Build · Block · 2 Nov – 29 Nov',
+				text: CYCLE_IN_PROGRESS,
+				cycle: { programId: PROGRAM, blockLineage: LINEAGE }
+			},
+			{
+				state: 'reviewed',
+				key: 'c-c2',
+				weekStartsOn: '2026-10-05',
+				title: 'Block · 5 Oct – 1 Nov',
+				text: 'Block c2.'
+			}
+		]);
+	});
+
+	it('rows: a reviewable block is due; with none, only the reviews', () => {
+		expect(cycleRows([], block(true))[0]).toMatchObject({ state: 'due', text: 'Ready to review' });
+		expect(cycleRows([weekly], null)).toEqual([]);
+	});
+
+	const legacy = {
+		review: { id: ID, summary: 'Old block.' },
+		legacy: true,
+		snapshot: null,
+		decision: { state: 'none' },
+		stale: false,
+		laterChanges: 0,
+		writeUp: { state: 'none' },
+		previews: [],
+		progression: null
+	} as unknown as CycleReviewView;
+
+	it('a cycle key opens its review by id, on the owner’s today, with the block’s row', async () => {
+		const list = vi.fn(async () => ({ items: [item(ID, '2026-10-05', '2026-11-01')], next: null }));
+		const cycleView = vi.fn(async () => legacy);
+		const d = {
+			db,
+			today: vi.fn(async () => TODAY),
+			list,
+			reviewable: vi.fn(async () => null),
+			block: vi.fn(async () => block(true)),
+			view: vi.fn(),
+			cycleView,
+			record: vi.fn(async () => null)
+		} as unknown as ReviewsDeps;
+		const data = await loadReviews('owner', { key: `c-${ID}`, origin }, new Date(), d);
+		if (data.failed) throw new Error('unreachable');
+		expect(cycleView).toHaveBeenCalledWith('owner', ID, TODAY, { db });
+		expect(d.view).not.toHaveBeenCalled();
+		expect(data.selected).toMatchObject({
+			kind: 'cycle',
+			key: `c-${ID}`,
+			summary: 'Old block.',
+			dates: 'Mon 5 Oct – Sun 1 Nov'
+		});
+		expect(data.cycles.map((r) => r.state)).toEqual(['due', 'reviewed']);
+	});
+
+	it('an unknown cycle review is a 404, never a recorded failure', async () => {
+		const d = {
+			db,
+			today: vi.fn(async () => TODAY),
+			list: vi.fn(async () => ({ items: [], next: null })),
+			reviewable: vi.fn(async () => null),
+			block: vi.fn(async () => null),
+			cycleView: vi.fn(async () => Promise.reject(new ReviewNotFoundError())),
+			record: vi.fn(async () => null)
+		} as unknown as ReviewsDeps;
+		const caught = await loadReviews('owner', { key: `c-${ID}`, origin }, new Date(), d).catch(
+			(e: unknown) => e
+		);
+		expect(isHttpError(caught, 404)).toBe(true);
+		expect(d.record).not.toHaveBeenCalled();
+	});
+
+	describe('Create', () => {
+		const today = vi.fn(async () => TODAY);
+		const target = { programId: PROGRAM, blockLineage: LINEAGE };
+
+		it('opens the block’s review, created now or already there', async () => {
+			const create = vi.fn(async () => ({ review: { id: ID }, created: false })) as never;
+			await expect(
+				createCycle('owner', target, new Date(), { db, create, today })
+			).resolves.toEqual({ ok: true, key: `c-${ID}` });
+			expect(create).toHaveBeenCalledWith('owner', { ...target, today: TODAY }, { db });
+		});
+
+		it('a block not reviewable yet is a 409 with the day it will be', async () => {
+			const create = vi.fn(async () =>
+				Promise.reject(new CycleReviewNotReviewableError('2026-11-30'))
+			) as never;
+			await expect(
+				createCycle('owner', target, new Date(), { db, create, today })
+			).resolves.toEqual({
+				ok: false,
+				status: 409,
+				data: { reason: 'not_reviewable', blockLineage: LINEAGE, ready: 'Ready Mon 30 Nov' }
+			});
+		});
+
+		it('an unknown block is a 400; anything else fails the request', async () => {
+			const unknown = vi.fn(async () => Promise.reject(new ReviewNotFoundError('block'))) as never;
+			await expect(
+				createCycle('owner', target, new Date(), { db, create: unknown, today })
+			).resolves.toMatchObject({ ok: false, status: 400, data: { reason: 'invalid' } });
+			const boom = new Error('db down');
+			const failing = vi.fn(async () => Promise.reject(boom)) as never;
+			await expect(
+				createCycle('owner', target, new Date(), { db, create: failing, today })
+			).rejects.toBe(boom);
+		});
 	});
 });

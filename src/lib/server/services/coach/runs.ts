@@ -101,6 +101,22 @@ export async function startRun(
 	return run;
 }
 
+/**
+ * The run still live on one of the owner's conversations, or null: none is running, or the one
+ * running started more than TURN_LIMITS.staleRunMs ago (startRun expires it).
+ */
+export async function liveRun(
+	ownerId: string,
+	threadId: string,
+	deps: CoachDeps = {}
+): Promise<{ id: string; startedAt: Date } | null> {
+	const { db, now } = resolveDeps(deps);
+	if (!isUuid(threadId)) return null;
+	const live = await createAgentRunsRepository(db).runningRun(ownerId, threadId);
+	if (!live || live.startedAt.getTime() <= now().getTime() - TURN_LIMITS.staleRunMs) return null;
+	return live;
+}
+
 export interface ModelCallInput {
 	/** The run's calls in order, from 0, failed and re-issued ones included. */
 	index: number;
