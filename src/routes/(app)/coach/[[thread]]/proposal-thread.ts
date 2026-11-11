@@ -2,12 +2,17 @@
  * How a conversation that made a proposal says things once (Thread.svelte). The card already
  * says what changes, why, and that nothing changes until Accept, so the answer before it keeps
  * only what the card does not say:
- * - a plain recommendation (no sources, no calculation, checked) is the card's pitch: dropped;
- * - a plain note ('Noted that you dislike …') becomes a footnote under the card;
+ * - a plain recommendation (no sources, no calculation, checked) is the card's pitch: dropped,
+ *   but only when every card is a program adjustment, whose card says all the pitch does. Other
+ *   pitches say what the card does not ('your current program doesn’t change', 'for this
+ *   session only'), so they stay;
+ * - a plain note ('Noted that you dislike …') becomes a footnote under the card, wherever it
+ *   stood in the answer, even as its opening line;
  * - every other block stays as it is: facts, numbers, safety, and any block with sources or
  *   'Not checked against your data'.
- * The conversation is titled by its outcome: its newest proposal's title.
+ * The conversation is titled by its outcome: its newest proposal's title, unless declined.
  */
+import type { ProposalCardView } from '#lib/domain/coach/cards.ts';
 import type { CompletedBlock } from '#lib/domain/coach/index.ts';
 import type { ShownMessage } from './words.ts';
 
@@ -22,10 +27,18 @@ export interface ProposalAnswer {
 const plain = (block: CompletedBlock) =>
 	block.grounded && block.sources.length === 0 && block.method === null;
 
-/** Split an answer that made a proposal into what it shows and its footnotes. */
-export function proposalAnswer(blocks: readonly CompletedBlock[]): ProposalAnswer {
+/** Whether these cards say all a plain recommendation before them would: program adjustments. */
+export const pitchFolded = (kinds: readonly string[]) =>
+	kinds.every((kind) => kind === 'program_adjustment');
+
+/** Split an answer that made proposals of these kinds into what it shows and its footnotes. */
+export function proposalAnswer(
+	blocks: readonly CompletedBlock[],
+	kinds: readonly string[]
+): ProposalAnswer {
+	const pitched = pitchFolded(kinds);
 	const folded = (block: CompletedBlock) =>
-		plain(block) && (block.kind === 'note' || block.kind === 'recommendation');
+		plain(block) && (block.kind === 'note' || (pitched && block.kind === 'recommendation'));
 	return {
 		blocks: blocks.filter((block) => !folded(block)),
 		footnotes: blocks.filter((block) => plain(block) && block.kind === 'note')
@@ -48,14 +61,20 @@ export function proposalRuns(messages: readonly ShownMessage[]): ProposalRuns {
 		if (message.from !== 'coach' || messages[at + 1]?.from !== 'proposal') return;
 		let last = at + 1;
 		while (messages[last + 1]?.from === 'proposal') last++;
-		const shown = proposalAnswer(message.blocks);
+		const kinds = messages
+			.slice(at + 1, last + 1)
+			.flatMap((m) => (m.from === 'proposal' ? [m.card.kind] : []));
+		const shown = proposalAnswer(message.blocks, kinds);
 		answers.set(message.id, shown.blocks);
 		if (shown.footnotes.length) footnotes.set(messages[last]!.id, shown.footnotes);
 	});
 	return { answers, footnotes };
 }
 
-/** The conversation's title: its newest proposal's, else the one it was given. */
-export function outcomeTitle(title: string, proposalTitles: readonly string[]): string {
-	return proposalTitles.at(-1) ?? title;
+/** The conversation's title: its newest proposal's that was not declined, else the one it was given. */
+export function outcomeTitle(
+	title: string,
+	cards: readonly Pick<ProposalCardView, 'title' | 'status'>[]
+): string {
+	return cards.findLast((card) => card.status !== 'rejected')?.title ?? title;
 }

@@ -18,8 +18,8 @@
   owner has scrolled up.
   A proposal shows as a card after the answer of the run that made it (a turn's, once the stored
   proposal is read). Such an answer says things once (proposal-thread.ts): its plain
-  recommendation, the card's pitch, is left out, its plain notes are footnotes under the card,
-  and the conversation is titled by its newest proposal. The card's code loads with the first card; a failed fetch is the chunk-failed
+  recommendation, a program adjustment card's pitch, is left out, its plain notes are footnotes
+  under the card, and the conversation is titled by its newest proposal not declined. The card's code loads with the first card; a failed fetch is the chunk-failed
   notice with Retry, and failing again while online reloads the conversation. Accept goes by id;
   the card then shows the proposal as the server answered (applied as version N, or superseded).
   Reject and 'Ask for changes' open RejectSheet, loaded on the first tap: a rejection goes by id
@@ -58,7 +58,7 @@
 	import { SCREEN_FAILURE_LABEL } from '#lib/ui/coach/coach-notices.ts';
 	import { toast } from '#lib/ui/toast.svelte.ts';
 	import type { ThreadView } from './coach.server';
-	import { outcomeTitle, proposalAnswer, proposalRuns } from './proposal-thread.ts';
+	import { outcomeTitle, pitchFolded, proposalAnswer, proposalRuns } from './proposal-thread.ts';
 
 	interface Props {
 		/** None while a new conversation's first answer streams, before its page opens. */
@@ -166,10 +166,14 @@
 	const title = $derived(
 		outcomeTitle(thread.title, [
 			...thread.messages.flatMap((m) =>
-				m.from === 'proposal' && !hidden.has(m.id) ? [cardFor(m.id)?.title ?? m.card.title] : []
+				m.from === 'proposal' && !hidden.has(m.id) ? [cardFor(m.id) ?? m.card] : []
 			),
 			...turns.flatMap((turn) =>
-				modeOf(turn) === 'whole' ? turn.proposals.map((p) => p.title) : []
+				modeOf(turn) === 'whole'
+					? turn.proposals.map(
+							(p) => cardFor(p.id) ?? { title: p.title, status: 'proposed' as const }
+						)
+					: []
 			)
 		])
 	);
@@ -434,7 +438,12 @@
 		{#each turns as turn (turn)}
 			{@const mode = modeOf(turn)}
 			{@const end = turn.settled && !turn.answered && turn.error}
-			{@const asked = turn.proposals.length ? proposalAnswer(turn.blocks) : null}
+			{@const asked = turn.proposals.length
+				? proposalAnswer(
+						turn.blocks,
+						turn.proposals.map((p) => p.kind)
+					)
+				: null}
 			{#if mode === 'whole' && !turn.retry}
 				<li class="owner" data-testid="owner-message">
 					<span class="visually-hidden">You:</span>
@@ -452,7 +461,11 @@
 						{@const blocks = asked?.blocks ?? turn.blocks}
 						<!-- A proposal's note or pitch, on its way to a footnote or left out, is not drafted. -->
 						{@const drafts = asked
-							? turn.drafts.filter((d) => d.kind !== 'note' && d.kind !== 'recommendation')
+							? turn.drafts.filter(
+									(d) =>
+										d.kind !== 'note' &&
+										!(d.kind === 'recommendation' && pitchFolded(turn.proposals.map((p) => p.kind)))
+								)
 							: turn.drafts}
 						{#if turn.chips.length}
 							<ul class="chips" aria-label="What the coach did">

@@ -3,7 +3,8 @@
   Circular icon-only button. `label` is required: it becomes the accessible name. With `tooltip`,
   a mouse or keyboard user on a desktop also sees the label, in a caption under the button
   aligned to its end (for a header's trailing buttons) while it is hovered or focused; a touch
-  screen never shows it. The caption is hidden from assistive technology, which reads the name.
+  screen never shows it. Escape hides it until the button is left or hovered again. The caption
+  is hidden from assistive technology, which reads the name.
 -->
 <script lang="ts">
 	import type { IconName } from '../icons/icons';
@@ -41,6 +42,8 @@
 		...rest
 	}: Props = $props();
 
+	/** Escape hid the caption (WCAG 1.4.13); leaving or hovering the button again resets it. */
+	let dismissed = $state(false);
 	const iconSize = $derived(size === 'lg' ? 26 : size === 'sm' ? 18 : 22);
 </script>
 
@@ -52,10 +55,19 @@
 	aria-label={label}
 	aria-pressed={pressed}
 	{disabled}
+	onkeydown={tooltip
+		? (event) => {
+				if (event.key === 'Escape') dismissed = true;
+			}
+		: undefined}
+	onblur={tooltip ? () => (dismissed = false) : undefined}
+	onpointerenter={tooltip ? () => (dismissed = false) : undefined}
 	{...rest}
 >
 	<Icon name={icon} size={iconSize} strokeWidth={size === 'lg' ? 2 : 1.75} />
-	{#if tooltip}<span class="tip" aria-hidden="true" data-testid="icon-tip">{label}</span>{/if}
+	{#if tooltip && !dismissed}<span class="tip" aria-hidden="true" data-testid="icon-tip"
+			>{label}</span
+		>{/if}
 </button>
 
 <style>

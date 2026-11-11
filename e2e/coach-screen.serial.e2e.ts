@@ -454,6 +454,13 @@ test.describe('on a desktop window', () => {
 		await expect(usage).toBeFocused();
 		await expect(tip(usage)).toBeVisible();
 		await expect(tip(usage)).toHaveText('Usage');
+
+		// Escape hides the caption without moving focus; the next button's caption shows again.
+		await page.keyboard.press('Escape');
+		await expect(usage).toBeFocused();
+		await expect(tip(usage)).toBeHidden();
+		await page.keyboard.press('Shift+Tab');
+		await expect(tip(knows)).toBeVisible();
 	});
 
 	test('the getting-ready notice keeps the readable column', async ({

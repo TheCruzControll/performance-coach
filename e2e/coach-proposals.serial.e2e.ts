@@ -9,6 +9,7 @@
  * first card; a failed fetch is the chunk-failed notice, whose Retry shows the card. The
  * conversation says things once: titled by the proposal, the answer's note a footnote under the
  * card, no recommendation repeating it, and 'Nothing changes until you accept' only on the card.
+ * A next cycle's pitch says what its card doesn't (the current program stays), so it stays.
  *
  * The split-squat-week fixture plans Bulgarian split squats; 'I hate Bulgarian split squats, so
  * replace them' records the dislike and proposes swapping them for their best alternative.
@@ -269,6 +270,25 @@ test('an owner edit since it was proposed supersedes it: Accept says why, and ap
 
 	await page.reload();
 	await expect(card(page).getByTestId('proposal-state')).toContainText('Superseded');
+});
+
+test('a next-cycle proposal keeps its pitch, which says the current program doesn’t change', async ({
+	page,
+	request
+}) => {
+	const turn = await postTurn(request, 'Plan my next cycle');
+	expect(turn.status).toBe(200);
+	const started = turn.events.find((event) => event.type === 'run_started');
+	expect(turn.events.some((event) => event.type === 'proposal')).toBe(true);
+	if (started?.type !== 'run_started') throw new Error('the turn started');
+	await openThread(page, started.threadId);
+
+	await expect(card(page)).toBeVisible({ timeout: 20_000 });
+	await expect(card(page)).toContainText('Nothing changes until you accept.');
+	// The card doesn’t say Accept leaves the current program alone; the pitch does, so it stays.
+	const pitch = page.getByTestId('thread').getByTestId('answer-block');
+	await expect(pitch).toHaveCount(1);
+	await expect(pitch).toContainText('your current program doesn’t change');
 });
 
 test('the card’s code failing to load is the chunk-failed notice, whose Retry shows the card', async ({
