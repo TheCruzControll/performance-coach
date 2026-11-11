@@ -279,8 +279,18 @@ test.describe('offline behaviour (service worker)', () => {
 	}) => {
 		await workoutInProgress(page, context);
 
-		// Connected, but the start URL's document never answers (context-level: the worker's fetch).
+		// Connected, but the start URL's document never answers: neither the worker's own fetch
+		// (context-level route) nor the browser's navigation preload, which routes never see, so a
+		// minute of latency on the page's network holds the preload instead.
 		await context.route(`**${START_URL}`, () => {});
+		await (
+			await context.newCDPSession(page)
+		).send('Network.emulateNetworkConditions', {
+			offline: false,
+			latency: 60_000,
+			downloadThroughput: -1,
+			uploadThroughput: -1
+		});
 		const asked = Date.now();
 		await page.goto(START_URL, { waitUntil: 'commit' }).catch(() => {});
 		await expect(page).toHaveURL(/\/workout$/);

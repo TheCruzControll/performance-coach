@@ -202,6 +202,12 @@ describe('the service worker', () => {
 		expect(worker).toMatch(/fromNetwork\(request, preload\)/);
 	});
 
+	it("races the navigation's timeout against the preload too, so a hung preload still ends in the offline screen", () => {
+		expect(worker).toMatch(
+			/Promise\.race\(\[\s*fromNetwork\(request, preload\),\s*timeUp\(new URL\(request\.url\)\.pathname\)\s*\]\)/
+		);
+	});
+
 	it('answers client-side data loads with loadData', () => {
 		expect(worker).toMatch(
 			/isDataRequest\(url\)\)\s*\{\s*event\.respondWith\(loadData\(request\)\)/
