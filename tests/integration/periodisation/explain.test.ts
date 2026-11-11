@@ -82,7 +82,11 @@ function program(data: TrainWeekData) {
 	return data;
 }
 
-/** A decision written straight into the store, `minutes` after the fixture's clock. */
+/**
+ * A decision written straight into the store, `minutes` after the program's newest one. The
+ * fixture's own decisions take the transaction's wall-clock now(), not its pinned clock, so a
+ * time fixed from NOW would sort before them on any later day.
+ */
 async function insertDecision(
 	db: Executor,
 	at: { programId: string; version: number; lineage: string; minutes: number },
@@ -94,6 +98,10 @@ async function insertDecision(
 		.where(
 			and(eq(programVersions.programId, at.programId), eq(programVersions.number, at.version))
 		);
+	const [latest] = await db
+		.select({ newest: sql<string | Date>`max(${programmingDecisions.createdAt})` })
+		.from(programmingDecisions)
+		.where(eq(programmingDecisions.programId, at.programId));
 	await db.insert(programmingDecisions).values({
 		programId: at.programId,
 		versionId: version!.id,
@@ -102,7 +110,7 @@ async function insertDecision(
 		why: `Repaired after ${at.minutes} minutes.`,
 		decidedBy: 'rules',
 		affected: [at.lineage],
-		createdAt: new Date(NOW.getTime() + at.minutes * 60_000),
+		createdAt: new Date(new Date(latest!.newest).getTime() + at.minutes * 60_000),
 		...over
 	});
 }
