@@ -4,7 +4,8 @@
  * - Every builder of db/queries/analytics.ts runs with the parameters facts.ts passes, for 12
  *   weeks and for 'all' in its windows of at most MAX_RANGE_DAYS (windowsOf), through the same
  *   plan check as M3's builders: on a large relation, the ANALYTICS_INDEXES entry and no Seq Scan
- *   (segmentFacts at 'all' may read its table whole); ANALYTICS_SMALL reads are recorded.
+ *   (setFacts and segmentFacts at 'all' may read their table whole); ANALYTICS_SMALL reads are
+ *   recorded.
  *   Each case must return rows, so a join is planned on real linked rows, never on empty input.
  *   workouts stays below the size gate for one owner's two years (about 1.2k rows, 34 pages), so a
  *   Seq Scan of it under the completed-workout join is the right plan: recorded, not gated.
@@ -113,8 +114,23 @@ const instants = ({ from, to }: { from: IsoDate; to: IsoDate }) => ({
 	start: new Date(Date.parse(`${from}T00:00:00Z`) - ZONE_SLACK_MS),
 	end: new Date(Date.parse(`${addDays(to, 1)}T00:00:00Z`) + ZONE_SLACK_MS)
 });
-/** segmentFacts at 'all' reads nearly every run's segments: the one case opted in to a whole read. */
+/** segmentFacts at 'all' reads nearly every run's segments: opted in to a whole read. */
 const SEGMENTS_WHOLE_READ = { wholeRead: 'run_record_segments' } as const;
+/**
+ * setFacts at 'all' reads nearly every set (one owner's two years are 94 % of set_records here):
+ * opted in to a whole read, which Postgres rightly picks over walking the index for most of the
+ * table. 12 weeks and the short second window still gate the index.
+ */
+const SETS_WHOLE_READ = { wholeRead: 'set_records' } as const;
+
+/**
+ * The rows a plan reads: an aggregate's input (a fact query's one JSON array), its InitPlans (the
+ * ids it probes with) aside, else its own.
+ */
+function rowsRead(top: PlanNode): PlanNode {
+	const input = (top.Plans ?? []).filter((p) => p['Parent Relationship'] !== 'InitPlan');
+	return top['Node Type'] === 'Aggregate' && input.length === 1 ? rowsRead(input[0]!) : top;
+}
 
 /** Noon on TODAY: the instant each page load runs at (its day comes from TODAY itself). */
 const NOW = new Date(`${TODAY}T12:00:00Z`);
@@ -185,7 +201,11 @@ export function analyticsExplain({ client, db, owner, readCatalog, render }: Har
 		const prescriptions = a.prescriptionFacts(db, plannedIds);
 		const facts = a.plannedFacts(db, owner);
 		const cases: Case[] = [
-			['setFacts', [A.setFacts], () => a.setFacts(db, owner, { start, end })],
+			[
+				'setFacts',
+				label.startsWith('all') ? [A.setFacts, SETS_WHOLE_READ] : [A.setFacts],
+				() => a.setFacts(db, owner, { start, end })
+			],
 			['sessionFacts', [A.sessionFacts], () => a.sessionFacts(db, owner, { start, end })],
 			[
 				`segmentFacts, ${runs.length} runs`,
@@ -238,7 +258,9 @@ export function analyticsExplain({ client, db, owner, readCatalog, render }: Har
 			startsOn: string | null;
 			endsOn: string | null;
 		}[],
-		lift: ''
+		lift: '',
+		/** Every exercise the owner's sets name, as exerciseMuscles reads them. */
+		exercises: [] as string[]
 	};
 	/** A failed read fails the timing instead of showing the load-failed notice. */
 	const rethrow = (async ({ error }) => {
@@ -250,6 +272,11 @@ export function analyticsExplain({ client, db, owner, readCatalog, render }: Har
 
 	const CASES: Case[] = [
 		...ranges.flatMap(([label, range]) => casesFor(label, range)),
+		[
+			"exerciseMuscles, every exercise the owner's sets name",
+			[],
+			() => a.exerciseMuscles(db, loaded.exercises)
+		],
 		['blockInputs, the active program', [], () => a.blockInputs(db, program)],
 		['firstActivity', [], () => a.firstActivity(db, owner)],
 		['reviews liveWeeklyReview', [R.liveWeeklyReview], () => r.liveWeeklyReview(db, owner, week)],
@@ -370,6 +397,11 @@ export function analyticsExplain({ client, db, owner, readCatalog, render }: Har
 				[owner]
 			);
 			loaded.lift = lifts.rows[0]!.id;
+			const named = await client.query<{ id: string }>(
+				'select distinct exercise_id as id from set_records where owner_id = $1',
+				[owner]
+			);
+			loaded.exercises = named.rows.map((row) => row.id);
 			catalog = await readCatalog();
 			machineLine = machine();
 		}, 120_000);
@@ -383,7 +415,8 @@ export function analyticsExplain({ client, db, owner, readCatalog, render }: Har
 			const result = explained.rows[0]!['QUERY PLAN'][0]!;
 			const top = result.Plan;
 			const problems = checkPlan(top, expected, catalog!);
-			if (!Number(top['Actual Rows'])) problems.push('no rows: the plan is not on real data');
+			if (!Number(rowsRead(top)['Actual Rows']))
+				problems.push('no rows: the plan is not on real data');
 			const notes = [
 				...pendingOf(expected, catalog!).map((p) => `pending ${p.index}`),
 				...wholeReadsOf(top, expected, catalog!).map(
@@ -404,7 +437,7 @@ export function analyticsExplain({ client, db, owner, readCatalog, render }: Har
 			const buffers = `${String(top['Shared Hit Blocks'])}/${String(top['Shared Read Blocks'])}`;
 			const gate = problems.length ? problems.join('; ') : ['pass', ...notes].join(', ');
 			results.push(
-				`| ${name} | ${declared || 'small, recorded'} | ${scans} | ${String(top['Actual Rows'])} | ${result['Execution Time'].toFixed(3)} ms | ${result['Planning Time'].toFixed(3)} ms | ${buffers} | ${gate} |`
+				`| ${name} | ${declared || 'small, recorded'} | ${scans} | ${String(rowsRead(top)['Actual Rows'])} | ${result['Execution Time'].toFixed(3)} ms | ${result['Planning Time'].toFixed(3)} ms | ${buffers} | ${gate} |`
 			);
 			plans.push(`### ${name}`, '', '```text', ...lines, '```', '');
 			expect(problems, `${name}\n${lines.join('\n')}`).toEqual([]);

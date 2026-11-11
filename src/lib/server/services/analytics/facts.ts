@@ -285,7 +285,11 @@ function factsView(
 	const at = (instant: Date) => on(localDay(instant, range.timeZone));
 	async function rows<T>(read: (loader: FactsLoader) => Promise<T[]>, keep: (row: T) => boolean) {
 		const kept: T[] = [];
-		for (const source of sources) kept.push(...(await read(source)).filter(keep));
+		for (const source of sources) {
+			// A source within these days is kept whole: its rows fall on its own days.
+			const whole = range.from <= source.range.from && source.range.to <= range.to;
+			for (const row of await read(source)) if (whole || keep(row)) kept.push(row);
+		}
 		return kept;
 	}
 	return {
