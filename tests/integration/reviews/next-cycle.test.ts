@@ -6,7 +6,8 @@
  *   lineage, loads from the block's e1RMs (basis estimated), kept and rotated exercises as the
  *   directives say; version N reads as it did, the review names the new version, and a second
  *   decision writes nothing
- * - a stale fingerprint is refused; no outline appends a block; three weeks late plans a bridge
+ * - a stale fingerprint is refused, one made under the next block's id before m7-stage-list too,
+ *   and the fresh preview's applies once; no outline appends a block; three weeks late plans a bridge
  *   and the outline from its shifted date; an owner override keeps a rotated exercise through a
  *   revision whose decision reads applied
  * - every path of M5's inbox: the review's own proposal is a 409 choose_start with the review's
@@ -16,9 +17,12 @@
  * outline block (Build, four weeks) starts on Monday 23 Nov.
  */
 import { sql } from 'drizzle-orm';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import * as strength from '../../../src/lib/domain/analytics/strength';
 import { localDay } from '../../../src/lib/domain/dates';
+import type { ProgrammingInput } from '../../../src/lib/domain/programming/input';
+import type * as Random from '../../../src/lib/domain/programming/random';
+import { GENERATOR_ID } from '../../../src/lib/domain/programming/next-block/generate';
 import { cleanFloat } from '../../../src/lib/domain/units';
 import type { Executor } from '../../../src/lib/server/db';
 import {
@@ -52,6 +56,26 @@ import type { ReviewFixtureResult } from '../../../src/lib/server/test-support/a
 import { POST } from '../../../src/routes/api/coach/proposals/[id]/+server';
 import { withCommitted, withRollback } from '../helpers';
 import { makeOwner } from '../profile/fixtures';
+
+/**
+ * fingerprint() as it is, recording what the next block hashed last, so a test can make the
+ * fingerprint the same preview had under the next block's id before m7-stage-list.
+ */
+const hashed = vi.hoisted(() => ({
+	last: null as null | { input: ProgrammingInput; digest: string },
+	actual: null as null | ((input: ProgrammingInput, digest: string, generator?: string) => string)
+}));
+vi.mock('../../../src/lib/domain/programming/random', async (importOriginal) => {
+	const random = await importOriginal<typeof Random>();
+	hashed.actual = random.fingerprint;
+	return {
+		...random,
+		fingerprint: (input: ProgrammingInput, digest: string, generator?: string) => {
+			if (generator?.startsWith('next-block/')) hashed.last = { input, digest };
+			return random.fingerprint(input, digest, generator);
+		}
+	};
+});
 
 const TZ = 'America/Los_Angeles';
 const TODAY = '2026-11-18';
@@ -168,7 +192,7 @@ describe('deciding the next cycle', () => {
 				id: decided.outcome === 'applied' ? decided.versionId : null,
 				created_by: 'rules',
 				summary: `Next block: ${shown.block.name}`,
-				generator: 'next-block/1',
+				generator: 'next-block/1+perfo-programming/6',
 				input_fingerprint: shown.fingerprint
 			});
 			expect(v2row!.catalogue_digest).toMatch(/^[0-9a-f]{16}$/);
@@ -271,6 +295,42 @@ describe('deciding the next cycle', () => {
 			const fresh = await preview(r, 'next_monday');
 			const decided = await decide(r, { start: 'next_monday', fingerprint: fresh.fingerprint });
 			expect(decided).toMatchObject({ outcome: 'applied', versionNumber: 2 });
+		});
+	});
+
+	it("refuses a preview made under 'next-block/1', then re-previews and applies once", async () => {
+		await withRollback(async (db) => {
+			const r = await reviewed(db, 'block-end');
+			hashed.last = null;
+			const shown = await preview(r, 'next_monday');
+			const { input, digest } = hashed.last!;
+			expect(hashed.actual!(input, digest, GENERATOR_ID)).toBe(shown.fingerprint);
+			// The same preview, fingerprinted by the id the next block stored before this change.
+			const before = hashed.actual!(input, digest, 'next-block/1');
+			expect(before).not.toBe(shown.fingerprint);
+
+			const refused = await decide(r, { start: 'next_monday', fingerprint: before }).catch(
+				(e: unknown) => e
+			);
+			expect(refused).toBeInstanceOf(NextCycleConflictError);
+			expect(refused).toMatchObject({ reason: 'profile' });
+			expect(await versions(db, r.programId)).toHaveLength(1);
+			expect((await decisionState(r.owner, r.review, { db })).state).toBe('undecided');
+
+			// The review previews again with the new fingerprint, which applies once.
+			const fresh = await preview(r, 'next_monday');
+			expect(fresh.fingerprint).toBe(shown.fingerprint);
+			const decided = await decide(r, { start: 'next_monday', fingerprint: fresh.fingerprint });
+			expect(decided).toMatchObject({ outcome: 'applied', versionNumber: 2 });
+			// Once: deciding again returns that decision and writes nothing.
+			expect(await decide(r, { start: 'next_monday', fingerprint: fresh.fingerprint })).toEqual(
+				decided
+			);
+			const rows = await versions(db, r.programId);
+			expect(rows.map((v) => [v.number, v.generator])).toEqual([
+				[1, rows[0]!.generator],
+				[2, GENERATOR_ID]
+			]);
 		});
 	});
 

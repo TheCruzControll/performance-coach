@@ -97,8 +97,11 @@ function split(event: EnduranceEvent, rest: number): { base: number; build: numb
 	return { base: rest - build, build };
 }
 
-/** A race workout's main segment; marathon pace covers `metres` of the long run. */
-function segmentOf(
+/**
+ * A race workout's main segment; marathon pace covers `metres` of the long run. The running stage
+ * (running.ts) builds its race-specific sessions from it too.
+ */
+export function segmentOf(
 	work: RaceWork,
 	metres: number | null,
 	paces: TrainingPaces | null

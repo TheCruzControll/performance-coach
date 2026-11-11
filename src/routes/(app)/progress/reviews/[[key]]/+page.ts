@@ -1,16 +1,24 @@
+import type { Component, Snippet } from 'svelte';
 import type { PageLoad } from './$types';
-import type { WeeklyReviewData } from './load';
+import type { CycleReviewData } from './cycle-data';
+import type { ReviewRow, WeeklyReviewData } from './load';
 
 /**
  * Each review kind's view as a string-literal relative import, awaited on the server and in the
  * browser alike (no SSR guard): the server renders the review's figures and verdicts, so it reads
- * without JavaScript and nothing moves at hydration. cycle-review-screen adds CycleReview.
+ * without JavaScript and nothing moves at hydration.
  */
 const VIEWS = {
-	weekly: () => import('./WeeklyReview.svelte')
-} as const satisfies Record<WeeklyReviewData['kind'], () => Promise<unknown>>;
+	weekly: () => import('./WeeklyReview.svelte'),
+	cycle: () => import('./CycleReview.svelte')
+} as const satisfies Record<(WeeklyReviewData | CycleReviewData)['kind'], () => Promise<unknown>>;
 
 export const load: PageLoad = async ({ data }) => {
 	if (data.failed || !data.selected) return { ...data, View: null };
-	return { ...data, View: (await VIEWS[data.selected.kind]()).default };
+	// Each kind's view takes that kind's review, which is the one selected.
+	const View = (await VIEWS[data.selected.kind]()).default as unknown as Component<{
+		review: WeeklyReviewData | CycleReviewData;
+		earlierCycles?: Snippet<[ReviewRow[]]>;
+	}>;
+	return { ...data, View };
 };

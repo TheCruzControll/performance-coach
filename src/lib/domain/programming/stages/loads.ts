@@ -7,12 +7,13 @@
 import { LIFT_LABEL } from '../../profile/catalog.ts';
 import { percentOfOneRepMax } from '../../rpe.ts';
 import type { BaselineLift, PlannedExercisePlan, WeekTargets } from '../../training/types.ts';
+import type { Phase } from '../../training/vocabulary.ts';
 import { cleanFloat, formatWeight } from '../../units.ts';
 import { toExerciseKey } from '../input.ts';
 import type { ProgrammingInput } from '../input.ts';
 import { eachMain, loadBaseline, topReps } from '../loads.ts';
 import type { MainLift } from '../loads.ts';
-import { knownShare } from '../progression.ts';
+import { knownShare, mainRpe } from '../progression.ts';
 import { exerciseOf } from '../selection.ts';
 import type { Stage } from '../stage.ts';
 
@@ -30,7 +31,7 @@ export function basisFacts(
 	input: ProgrammingInput
 ) {
 	const reps = topReps(planned);
-	const { rpeCap } = weeks.at(-1)!;
+	const rpeCap = mainRpe(weeks.at(-1)!);
 	const table = reps === null ? null : percentOfOneRepMax(reps, rpeCap);
 	if (reps === null || table === null) return null;
 	const exercise = exerciseOf(input, toExerciseKey(planned.exercise))?.name ?? LIFT_LABEL[lift];
@@ -60,15 +61,18 @@ export function basisFacts(
 export const loads: Stage = (draft, { input, log }) => {
 	const first = new Map<BaselineLift, Parameters<typeof basisFacts>>();
 	const refs = new Map<BaselineLift, string>();
+	// M7: a lift first planned in a week its phase prescribes (mainLifts) names that phase.
+	const phases = new Map<BaselineLift, Phase>();
 	const blocks = draft.blocks.map((block, b) => ({
 		...block,
 		weeks: block.weeks.map((week, w) => {
-			const { rpeCap } = week.targets;
+			const rpeCap = mainRpe(week.targets);
 			const targets = block.weeks.slice(0, w + 1).map((x) => x.targets);
 			return eachMain(week, input, (planned, main) => {
 				if (!first.has(main.lift)) {
 					first.set(main.lift, [planned, main, targets, input]);
 					refs.set(main.lift, `blocks.${b}`);
+					if (week.targets.mainLifts) phases.set(main.lift, block.phase);
 				}
 				return week.kind === 'baseline' ? loadBaseline(planned, main, rpeCap) : planned;
 			});
@@ -77,7 +81,13 @@ export const loads: Stage = (draft, { input, log }) => {
 	for (const [lift, args] of first) {
 		const facts = basisFacts(...args);
 		const rule = input.baselines[lift]?.kind ?? 'baseline_set';
-		if (facts) log.add('load_basis', `loads.${rule}`, [refs.get(lift)!], facts);
+		const phase = phases.get(lift);
+		if (facts) {
+			log.add('load_basis', `loads.${rule}`, [refs.get(lift)!], {
+				...facts,
+				...(phase && { phase })
+			});
+		}
 	}
 	return { ...draft, blocks };
 };
