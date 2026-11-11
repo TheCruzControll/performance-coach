@@ -83,6 +83,8 @@
 		{:else if prompt}
 			<Served markup={prompt} />
 		{/if}
+		<!-- If its code fails to load after a client navigation, the page's Reviews row above
+		     leads to the reviews screen, which creates it (no second ListRow here: budget). -->
 	{/if}
 	{#if overview.stage === 'history'}
 		<section class="headline" aria-labelledby="overview-headline">
