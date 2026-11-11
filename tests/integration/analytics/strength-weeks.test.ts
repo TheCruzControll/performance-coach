@@ -237,6 +237,21 @@ describe('reading the rollups', () => {
 			expect(await row(db, data.owner, weekOf(9))).toMatchObject({ written: true, split: true });
 			expect(await row(db, data.owner, weekOf(10))).toMatchObject({ written: true, split: true });
 			expect(await pages(db, data.owner)).toEqual(facts);
+
+			// Week 10 summed again on its own (marked stale alone) is still split: kept whole, it would
+			// hold Monday's set as a session of its own.
+			await db
+				.update(strengthWeekRollups)
+				.set({ writtenAt: null, digest: null, generation: sql`generation + 1` })
+				.where(
+					and(
+						eq(strengthWeekRollups.ownerId, data.owner),
+						eq(strengthWeekRollups.weekStart, weekOf(10))
+					)
+				);
+			expect(await refreshStrengthWeeks(db, data.owner, NOW)).toBe(1);
+			expect(await row(db, data.owner, weekOf(10))).toMatchObject({ written: true, split: true });
+			expect(await pages(db, data.owner)).toEqual(facts);
 		});
 	});
 
