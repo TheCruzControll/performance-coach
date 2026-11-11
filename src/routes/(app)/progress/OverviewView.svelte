@@ -75,12 +75,19 @@
 </script>
 
 <div class="pc-overview-view" data-stage={overview.stage} data-testid="overview">
-	<!-- If its code fails after a client navigation, the page's Reviews row is the way in. -->
 	{#if overview.review}
 		{#if Prompt && !(Prompt instanceof Error)}
 			<Prompt review={overview.review} />
 		{:else if prompt}
 			<Served markup={prompt} />
+		{:else if Prompt}
+			<!-- Its code failed to load after a client navigation: the review, or the screen that creates it. -->
+			{@const href = overview.review.href ?? overview.review.create?.action.split('?')[0]}
+			<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- app paths from review-prompt.server.ts -->
+			<a class="card" {href} data-testid="review-prompt-link">
+				<h3>{overview.review.title}</h3>
+				<span class="context">{overview.review.summary}</span>
+			</a>
 		{/if}
 	{/if}
 	{#if overview.stage === 'history'}
