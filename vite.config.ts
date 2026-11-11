@@ -143,8 +143,10 @@ export default defineConfig(({ command, mode }) => {
 						? adapterNode({ out: 'build', precompress: true })
 						: adapterVercel({ runtime: 'nodejs22.x' }),
 				version: { name: appVersion(), pollInterval: 0 },
-				// Small, render-critical CSS is inlined into the HTML to save a blocking round-trip.
-				inlineStyleThreshold: 4096,
+				// Inline the CSS a page renders with (each stylesheet under this many characters) into
+				// its HTML, so first paint waits for no stylesheet request: the root layout's 13 K
+				// characters included. Inlined or linked, `pnpm budgets` counts it in the route's CSS.
+				inlineStyleThreshold: 16384,
 				output: { bundleStrategy: 'split' },
 				// The root layout registers the service worker once the app has started and gone idle
 				// (src/lib/client/service-worker.ts); SvelteKit's registration runs on `load`, before it.
