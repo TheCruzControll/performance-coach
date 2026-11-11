@@ -1,4 +1,5 @@
 import { sql } from 'drizzle-orm';
+import type pg from 'pg';
 import { createDatabase, createPool, getDb, type Executor } from '../../src/lib/server/db';
 
 const ROLLBACK = Symbol('rollback');
@@ -107,4 +108,25 @@ export function unreachableDb() {
 		max: 1
 	});
 	return { db: createDatabase(pool), close: () => pool.end() };
+}
+
+/**
+ * Count the statements the shared pool has in flight at once, from now until `stop()`: `peak()`
+ * is the most at any moment, so above 1 when reads ran together (each on its own connection).
+ */
+export function watchPool(): { peak: () => number; stop: () => void } {
+	// drizzle keeps the pool it was made with on $client, which the Database type leaves out.
+	const pool = (getDb() as unknown as { $client: pg.Pool }).$client;
+	const query = pool.query;
+	let inFlight = 0;
+	let most = 0;
+	pool.query = function (this: typeof pool, ...args: unknown[]) {
+		inFlight++;
+		most = Math.max(most, inFlight);
+		const sent = Reflect.apply(query, this, args) as Promise<unknown>;
+		const settle = () => void inFlight--;
+		void sent.then(settle, settle);
+		return sent;
+	} as typeof query;
+	return { peak: () => most, stop: () => void (pool.query = query) };
 }

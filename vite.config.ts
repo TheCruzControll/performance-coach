@@ -6,6 +6,7 @@ import adapterVercel from '@sveltejs/adapter-vercel';
 import { sveltekit } from '@sveltejs/kit/vite';
 import { loadEnv, type Plugin } from 'vite';
 import { defineConfig } from 'vitest/config';
+import { LAUNCH_SCRIPT } from './src/lib/client/workout/launch.ts';
 import { PREPAINT_SCRIPT } from './src/lib/client/workout/prepaint.ts';
 
 /**
@@ -35,15 +36,18 @@ const scriptHash = (body: string) =>
 	`sha256-${createHash('sha256').update(body).digest('base64')}` as const;
 
 /**
- * CSP hashes for the inline scripts in src/app.html (the pre-paint theme script) and the one
+ * CSP hashes for the inline scripts in src/app.html (the pre-paint theme script), the one
  * /workout renders (src/routes/workout/Prepaint.svelte: the current exercise, painted before the
- * app starts). SvelteKit adds nonces/hashes for the scripts it generates, but not for these.
+ * app starts) and the one /offline renders (src/routes/(app)/offline/LaunchRedirect.svelte: a
+ * launch mid-workout opens the workout). SvelteKit adds nonces/hashes for the scripts it
+ * generates, but not for these.
  */
 function templateScriptHashes(): `sha256-${string}`[] {
 	const html = readFileSync(new URL('./src/app.html', import.meta.url), 'utf8');
 	return [
 		...[...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(([, body]) => scriptHash(body!)),
-		scriptHash(PREPAINT_SCRIPT)
+		scriptHash(PREPAINT_SCRIPT),
+		scriptHash(LAUNCH_SCRIPT)
 	];
 }
 

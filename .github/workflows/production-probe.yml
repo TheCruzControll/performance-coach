@@ -1,0 +1,48 @@
+# Production probe: time to first byte and Server-Timing of https://coach.nikocruz.com, cold and
+# warm, written to the job log and its summary (scripts/production-probe.ts).
+#
+# Its own workflow, never part of PR CI: it measures the deployed site from outside. Signed out
+# and with no secrets, it reaches only public endpoints: /today (the function's 303 to sign-in),
+# /workout (a prerendered CDN file) and /api/health (the function plus a database round trip).
+# Runs are six hours apart, so each one's first round follows at least six hours without probe
+# traffic (the owner's own use may still have warmed it: the server's `instance` flag in the
+# output says whether that first request really met a cold function). It never fails on
+# slowness; it fails only when a path does not answer or answers 5xx.
+name: Production probe
+
+on:
+  schedule:
+    - cron: '7 1,7,13,19 * * *' # every six hours (UTC), off the hour
+  workflow_dispatch:
+    inputs:
+      warm_rounds:
+        description: Warm rounds after the cold one (1-50)
+        default: '5'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-probe
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    name: Probe coach.nikocruz.com (cold, then warm)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      WARM_ROUNDS: ${{ inputs.warm_rounds || '5' }}
+    steps:
+      # The probe is one Node file with no dependencies: no install.
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: |
+            .nvmrc
+            scripts/production-probe.ts
+          sparse-checkout-cone-mode: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - name: Time /today, /workout and /api/health
+        run: node scripts/production-probe.ts --origin https://coach.nikocruz.com --warm "$WARM_ROUNDS"
