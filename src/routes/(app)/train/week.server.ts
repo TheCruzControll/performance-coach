@@ -18,6 +18,10 @@
  * - A planned week still ahead carries its findings (m7/04, services/periodisation/evaluate.ts):
  *   a note on each card a finding names, and the week line. An evaluation that fails is recorded
  *   (part 'periodisation') and the week renders without them.
+ * - Every card of a planned week a decision names says why it is on its day (m7/14,
+ *   services/periodisation/explain.ts), read before the findings, which take the generator's
+ *   priority trade-offs from it. A read that fails is recorded (part 'why') and the week renders
+ *   its findings without the disclosures.
  * - With no program, whether the training profile is complete picks the empty state's next step.
  * - It fails soft: a read that fails is recorded as a server error (kind 'load') and Train shows
  *   its designed error with Retry, inside the shell, instead of the 500 page.
@@ -31,6 +35,11 @@ import {
 	type WeekAt,
 	type WeekFindingsView
 } from '#lib/server/services/periodisation/evaluate.ts';
+import {
+	getPlacementWhy,
+	type PlacementAt,
+	type PlacementWhyView
+} from '#lib/server/services/periodisation/explain.ts';
 import { getOnboarding, listGoals } from '#lib/server/services/profile/index.ts';
 import {
 	getCurrentProgram,
@@ -54,6 +63,7 @@ import {
 	offPlanCard,
 	reviewNotice,
 	weekWords,
+	whyWords,
 	type AsidePanel,
 	type NextBlock,
 	type OffPlanWorkout,
@@ -112,10 +122,11 @@ export interface TrainLoadDeps extends Pick<TrainingDeps, 'db'> {
 	/** Where a failure is recorded (app_errors): the app's database unless given. */
 	errorsDb?: TrainingDeps['db'];
 	/**
-	 * The week's findings: on by default, read from `db` unless given its own. false skips every
-	 * M7 read: only the explain harness turns it off, to time Train's own path.
+	 * The week's findings and why: on by default, read from `db` unless given its own (and the why
+	 * from `why.db` when given). false skips every M7 read: only the explain harness turns it off,
+	 * to time Train's own path.
 	 */
-	periodisation?: false | Pick<TrainingDeps, 'db'>;
+	periodisation?: false | (Pick<TrainingDeps, 'db'> & { why?: Pick<TrainingDeps, 'db'> });
 }
 
 /** The week number in `param`, or null for the current week. */
@@ -153,16 +164,14 @@ async function offPlanIn(
 	return logged.filter((w) => w.status === 'completed').map(offPlanCard);
 }
 
-/** The week's findings, or null when reading them failed: recorded, and the week renders. */
-async function findingsOf(
-	ownerId: string,
-	at: WeekAt,
-	{ db, errorsDb, origin }: Pick<TrainLoadDeps, 'db' | 'errorsDb'> & Pick<TrainRequest, 'origin'>
-): Promise<WeekFindingsView | null> {
+type PartDeps = Pick<TrainLoadDeps, 'db' | 'errorsDb'> & Pick<TrainRequest, 'origin'>;
+
+/** `read`'s result, or null when it failed: recorded as Train's `part`, and the week renders. */
+async function softly<T>(part: string, read: () => Promise<T>, { errorsDb, origin }: PartDeps) {
 	try {
-		return await getWeekEvaluation(ownerId, at, { db });
+		return await read();
 	} catch (error) {
-		const context = { load: 'train', part: 'periodisation' };
+		const context = { load: 'train', part };
 		await recordServerError(
 			{ error, kind: 'load', status: 500, ...origin, context },
 			{ db: errorsDb }
@@ -171,14 +180,37 @@ async function findingsOf(
 	}
 }
 
-/** Each card with its finding's note, when it has one. */
-function withNotes(words: ReturnType<typeof weekWords>, findings: WeekFindingsView | null) {
+/** The week's findings, or null when reading them failed: recorded, and the week renders. */
+const findingsOf = (
+	ownerId: string,
+	at: WeekAt,
+	deps: PartDeps
+): Promise<WeekFindingsView | null> =>
+	softly('periodisation', () => getWeekEvaluation(ownerId, at, { db: deps.db }), deps);
+
+/** Why each session is on its day, or null when reading it failed: recorded. */
+const whyOf = (
+	ownerId: string,
+	at: PlacementAt,
+	deps: PartDeps
+): Promise<PlacementWhyView | null> =>
+	softly('why', () => getPlacementWhy(ownerId, at, { db: deps.db }), deps);
+
+/** Each card with its finding's note and its why, when it has them. */
+function withNotes(
+	words: ReturnType<typeof weekWords>,
+	findings: WeekFindingsView | null,
+	why: PlacementWhyView | null
+) {
 	const notes = findings?.notes ?? {};
+	const reasons = why?.byLineage ?? {};
 	const days = words.days.map((day) => ({
 		...day,
-		cards: day.cards.map((card) =>
-			notes[card.lineage] ? { ...card, note: notes[card.lineage] } : card
-		)
+		cards: day.cards.map((card) => ({
+			...card,
+			...(notes[card.lineage] && { note: notes[card.lineage] }),
+			...(reasons[card.lineage] && { why: whyWords(reasons[card.lineage]!) })
+		}))
 	}));
 	return { strip: words.strip, days };
 }
@@ -215,11 +247,24 @@ export async function loadTrainWeek(
 		const at = shown.planned && !bridge && { programId: program.id, weekLineage: shown.lineage };
 		const changes =
 			at && (await weekChanges(ownerId, { ...at, version: shown.version.number }, { db }));
-		const ahead = { version: shown.version.number, weekStartsOn: shown.startsOn, today };
-		const findings =
-			at && periodisation && shown.endsOn >= today
-				? await findingsOf(ownerId, ahead, { db: periodisation.db ?? db, errorsDb, origin })
+		const m7 = periodisation && { db: periodisation.db ?? db, errorsDb, origin };
+		const placed = shown.planned
+			? shown.days.flatMap((d) => d.sessions.map(({ lineage, date }) => ({ lineage, date })))
+			: [];
+		const why =
+			at && m7
+				? await whyOf(
+						ownerId,
+						{ programId: program.id, sessions: placed },
+						{ ...m7, db: periodisation.why?.db ?? m7.db }
+					)
 				: null;
+		const ahead = {
+			...{ version: shown.version.number, weekStartsOn: shown.startsOn, today },
+			tradeoffs: why?.tradeoffs ?? []
+		};
+		const findings =
+			at && m7 && shown.endsOn >= today ? await findingsOf(ownerId, ahead, m7) : null;
 		return {
 			state: 'program',
 			today,
@@ -235,7 +280,7 @@ export async function loadTrainWeek(
 					: `Week ${number} · Not planned yet`,
 			status: program.notStarted ? `Starts ${shortDate(program.firstPlannedDay)}` : null,
 			...(shown.planned && !bridge
-				? withNotes(weekWords(shown, today), findings)
+				? withNotes(weekWords(shown, today), findings, why)
 				: { strip: [], days: [] }),
 			weekLine: findings?.summary ?? null,
 			aside: [

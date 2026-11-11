@@ -43,7 +43,7 @@ const ALLOWANCES = {
 	timeline: 0.7,
 	replanNote: 0.1
 } as const;
-const ON: readonly (keyof typeof ALLOWANCES)[] = ['findings'];
+const ON: readonly (keyof typeof ALLOWANCES)[] = ['findings', 'why'];
 /** Random ids and the store's timestamps move a measure by a few bytes either way. */
 const TOLERANCE_B = 64;
 
@@ -67,14 +67,21 @@ describe('Train’s page data', () => {
 					...{ routeId: '/(app)/train', appVersion: '0.1.0+test' }
 				};
 				const data = await loadTrainWeek(owner, { now, week: WEEKS[name], origin }, { db });
-				expect(data.state).toBe('program');
+				if (data.state !== 'program') throw new Error(`expected a program, got ${data.state}`);
 				const bytes = gzipSync(JSON.stringify(data)).length;
+				// The same data without the cards' why: the why's own bytes, held to its own row.
+				const days = data.days.map((d) => ({
+					...d,
+					cards: d.cards.map(({ why: _why, ...card }) => card)
+				}));
+				const why = bytes - gzipSync(JSON.stringify({ ...data, days })).length;
 				const allowed = ON.reduce((sum, row) => sum + ALLOWANCES[row] * 1024, 0);
 				const growth = bytes - baseline.bytes[name];
 				console.log(
-					`Train page data, ${name} week: ${bytes} B gzip (${growth >= 0 ? '+' : ''}${growth} B on ${baseline.bytes[name]} B, allowed +${Math.round(allowed)} B)`
+					`Train page data, ${name} week: ${bytes} B gzip (${growth >= 0 ? '+' : ''}${growth} B on ${baseline.bytes[name]} B, allowed +${Math.round(allowed)} B; the why ${why} B of ${ALLOWANCES.why * 1024} B)`
 				);
 				expect(growth).toBeLessThanOrEqual(allowed + TOLERANCE_B);
+				expect(why).toBeLessThanOrEqual(ALLOWANCES.why * 1024);
 			});
 		}
 	);

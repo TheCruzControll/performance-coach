@@ -3,8 +3,8 @@
  * November 2026 is today). WeekStrip: seven named days Monday first, the server's today, dots
  * hidden behind each day's name, selection by tap and by arrow keys. SessionCard: every state in
  * words (baseline, pending, done, skipped, moved, read-only), and a week finding's note under a
- * card whose why opens from its line (m7/04). PrescriptionLines: describe.ts's
- * words, with no load it cannot compute. Every target is ≥ 44 px and nothing scrolls sideways at
+ * card whose why opens from its line (m7/04), then 'Why Saturday?' (m7/14). PrescriptionLines:
+ * describe.ts's words, with no load it cannot compute. Every target is ≥ 44 px and nothing scrolls sideways at
  * 393 px; at 1440 × 900 the panel keeps a readable width, with hover and focus states.
  * Runs on Chromium and WebKit; axe for the same panel lives in a11y-suite.ts.
  */
@@ -205,6 +205,15 @@ test.describe('/design → Plan', () => {
 				.evaluate((el) => getComputedStyle(el, '::before').backgroundColor);
 			expect(glyph).not.toBe(danger);
 		}
+		// Why this day (m7/14): its own disclosure after the note, closed, one line a decision.
+		const reasons = page.getByTestId('card-why');
+		await expect(reasons.locator('summary')).toHaveText('Why Saturday?');
+		await expect(reasons).not.toHaveAttribute('open');
+		await reasons.locator('summary').click();
+		await expect(reasons.locator('li')).toHaveText([
+			/^Priority trade-off \(Programming rules, version 1\): /,
+			/^Session placed \(Programming rules, version 1\): /
+		]);
 		await note.locator('summary').click();
 		await noted.scrollIntoViewIfNeeded();
 		await captureScreen(page, testInfo, 'design-program-note');
@@ -314,10 +323,10 @@ test.describe('/design → Plan', () => {
 	test('every target is at least 44 × 44 px', async ({ page }) => {
 		await openProgram(page);
 		const targets = page.getByRole('tabpanel').locator('a, button');
-		// Seven days and six card links, then the two notes' summaries.
+		// Seven days and six card links, then the two notes' summaries and the why's.
 		await expect(targets).toHaveCount(13);
 		const summaries = page.getByRole('tabpanel').locator('summary');
-		await expect(summaries).toHaveCount(2);
+		await expect(summaries).toHaveCount(3);
 		for (const summary of await summaries.all()) {
 			const box = (await summary.boundingBox())!;
 			expect(box.height).toBeGreaterThanOrEqual(44);

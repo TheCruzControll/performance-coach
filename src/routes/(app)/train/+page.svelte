@@ -281,6 +281,15 @@
 								<p>{card.note.why}</p>
 							</details>
 						{/if}
+						<!-- Why this day (m7/14): the decisions that put it here, closed by default. -->
+						{#if card.why}
+							<details class="why">
+								<summary>{card.why.title}</summary>
+								<ul>
+									{#each card.why.lines as line, i (i)}<li>{line}</li>{/each}
+								</ul>
+							</details>
+						{/if}
 					{:else}
 						<Surface padding="none" radius="lg">
 							<EmptyState
@@ -521,13 +530,15 @@
 	 * meaning; caution fills the glyph with the warning colour, never the danger tone. Here, not
 	 * in SessionCard, so Today and History load none of it (docs/performance.md).
 	 */
-	.note {
+	.note,
+	.why {
 		margin-top: calc(var(--space-2) * -1);
 		font-size: var(--text-sm);
 		color: var(--color-text-secondary);
 	}
 
-	.note summary {
+	.note summary,
+	.why summary {
 		display: flex;
 		align-items: baseline;
 		gap: var(--space-2);
@@ -536,7 +547,8 @@
 		list-style: none;
 	}
 
-	.note summary::-webkit-details-marker {
+	.note summary::-webkit-details-marker,
+	.why summary::-webkit-details-marker {
 		display: none;
 	}
 
@@ -554,14 +566,23 @@
 	}
 
 	@media (hover: hover) and (pointer: fine) {
-		.note summary:hover {
+		:is(.note, .why) summary:hover {
 			color: var(--color-text);
 			cursor: pointer;
 		}
 	}
 
-	.note p {
+	.note p,
+	.why ul {
 		padding: 0 var(--space-4);
+	}
+
+	/* Each decision on its own lines, the newest first, under the title that says which day. */
+	.why ul {
+		display: grid;
+		gap: var(--space-2);
+		padding-bottom: var(--space-3);
+		list-style: none;
 	}
 
 	/* A link in a panel: a full 44 px row, as the session screen's notices set theirs. */
