@@ -55,6 +55,8 @@
 		return RATINGS[value <= t.good ? 'good' : value <= t.poor ? 'fair' : 'poor'];
 	}
 
+	const samples = (n: number) => `${n} ${n === 1 ? 'sample' : 'samples'}`;
+
 	function formatVital(name: string, value: number) {
 		// No Intl here: formatter construction is measurable hydration cost on phones.
 		return name === 'CLS' ? value.toFixed(3) : String(Math.round(value));
@@ -206,11 +208,35 @@
 								value={formatVital(v.name, v.p75)}
 								unit={VITALS[v.name]?.unit || undefined}
 								rating={rating(v.name, v.p75)}
-								caption={`${v.samples} ${v.samples === 1 ? 'sample' : 'samples'}`}
+								caption={samples(v.samples)}
 								data-testid={`vital-${v.name}`}
 							/>
 						{/each}
 					</ul>
+					<!-- The app opens on Today (the manifest's start_url): what a launch costs. -->
+					<section class="start" aria-labelledby="start-vitals" data-testid="start-vitals">
+						<h3 id="start-vitals" class="subhead">Opening the app · Today</h3>
+						{#if vitals.some((v) => v.start)}
+							<ul class="vitals">
+								{#each vitals as v (v.name)}
+									{#if v.start}
+										<Stat
+											as="li"
+											level={2}
+											label={v.name}
+											value={formatVital(v.name, v.start.p75)}
+											unit={VITALS[v.name]?.unit || undefined}
+											rating={rating(v.name, v.start.p75)}
+											caption={samples(v.start.samples)}
+											data-testid={`start-vital-${v.name}`}
+										/>
+									{/if}
+								{/each}
+							</ul>
+						{:else}
+							<p class="note">No launches measured yet — they appear after you open the app.</p>
+						{/if}
+					</section>
 				{:else}
 					<p class="note">No samples yet — metrics are collected as you use the app.</p>
 				{/if}
@@ -381,6 +407,20 @@
 		margin: 0;
 		padding: 0;
 		list-style: none;
+	}
+
+	.start {
+		display: grid;
+		gap: var(--space-2);
+		margin-top: var(--space-4);
+		padding-top: var(--space-4);
+		border-top: 1px solid var(--color-border);
+	}
+
+	.subhead {
+		font-size: var(--text-sm);
+		font-weight: var(--weight-semibold);
+		color: var(--color-text-secondary);
 	}
 
 	.note {

@@ -4,7 +4,7 @@ import { resolve } from '$app/paths';
 import { testRoutesEnabled } from '#lib/server/env.ts';
 import { ownerId } from '#lib/server/forms/read.ts';
 import type { Actions, PageServerLoad } from './$types';
-import { createReview, loadReviews, type ReviewsDeps } from './load';
+import { createReview, loadReviews, refreshReview, type ReviewsDeps } from './load';
 
 /**
  * TEST ONLY: with test routes enabled (never in production), this cookie set to 'reviews' makes
@@ -41,5 +41,12 @@ export const actions = {
 		const result = await createReview(ownerId(locals), String(week ?? ''), new Date());
 		if (!result.ok) return fail(result.status, result.data);
 		redirect(303, resolve('/(app)/progress/reviews/[[key]]', { key: result.key }));
+	},
+	/** Refresh an out-of-date review (load.ts refreshReview), then show its live revision. */
+	refresh: async ({ locals, params, request }) => {
+		const id = (await request.formData()).get('reviewId');
+		const result = await refreshReview(ownerId(locals), String(id ?? ''), new Date());
+		if (!result.ok) return fail(result.status, result.data);
+		redirect(303, resolve('/(app)/progress/reviews/[[key]]', { key: params.key }));
 	}
 } satisfies Actions;

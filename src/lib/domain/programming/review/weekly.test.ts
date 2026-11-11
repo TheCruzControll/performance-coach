@@ -276,8 +276,17 @@ describe('composeWeeklyReview', () => {
 		);
 		expect(find(review.findings, 'muay_thai:load')!.figures.map((f) => f.words)).toEqual([
 			'1 session',
+			'1 h',
 			'360 AU',
 			'6 rounds'
+		]);
+		// Hard sets against the week's range, in numbers the range bars draw.
+		const quads = find(review.findings, 'volume:sets:quads')!.figures;
+		expect(quads.map((f) => [f.label, f.value])).toEqual([
+			['Done', expect.any(Number)],
+			['Planned', 12],
+			['Target low', 10],
+			['Target high', 20]
 		]);
 		expect(find(review.findings, 'running:mileage')!.verdict).toEqual({
 			level: 'good',
@@ -329,7 +338,11 @@ describe('composeWeeklyReview', () => {
 			level: 'watch',
 			words: 'Felt about an RPE or more easier than prescribed in 2 of the last 3 sessions'
 		});
-		expect(bench.figures[0]!.value).toBe(-1.5);
+		expect(bench.figures.map((f) => [f.label, f.value])).toEqual([
+			['Mean deviation', -1.5],
+			['Actual', 6.5],
+			['Target', 8]
+		]);
 		expect(bench.sources.map((s) => s.id)).toEqual(['this-mon', 'w1-mon', 'w2-mon']);
 		// The squat, on target every session, is not flagged.
 		expect(find(review.findings, 'rpe:back_squat')!.verdict.level).toBe('good');
@@ -479,7 +492,9 @@ describe('composeWeeklyReview', () => {
 		expect(deload(0.6)).toMatchObject({
 			figures: [
 				{ label: 'Done', value: 13 },
-				{ label: 'Planned', value: 6 }
+				{ label: 'Planned', value: 6 },
+				{ label: 'Target low', value: 6 },
+				{ label: 'Target high', value: 12 }
 			],
 			verdict: { level: 'watch', words: 'Above the target range: 6–12 (10–20 × 0.6)' }
 		});

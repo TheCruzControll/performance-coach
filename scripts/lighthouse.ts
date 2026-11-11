@@ -2,12 +2,13 @@
  * Lighthouse (mobile emulation, simulated slow 4G + 4× CPU) against the local production Node
  * server, using the preinstalled Playwright Chromium. Reports go to ./lighthouse-reports.
  *
- *   ORIGIN=http://localhost:4174 pnpm build:node && pnpm lighthouse   # every screen, 3 runs
+ *   ORIGIN=https://localhost:4174 pnpm build:node && pnpm lighthouse   # every screen, 3 runs
  *   pnpm lighthouse --desktop --seed   # desktop preset at 1440 × 900 → lighthouse-reports/desktop
  *   pnpm lighthouse --runs 5 --routes /,/today
  *   pnpm lighthouse --url https://preview.example.com   # audit an already-running server
  *   pnpm lighthouse --assert                            # exit 1 when a threshold is missed
  *   pnpm lighthouse --shard 2/3                         # every third route, from the second
+ *   pnpm lighthouse --server-delay 0                    # no injected server delay
  *
  * With --assert a route stops early once its runs so far decide every threshold's median
  * (3 of 5 runs passing or missing it: scripts/lib/lighthouse-verdict.ts); summary.json and the
@@ -21,12 +22,16 @@
  * wall time in the table and $GITHUB_STEP_SUMMARY.
  *
  * The local server uses E2E_DATABASE_URL (default: local coach_e2e) after applying migrations.
+ * The browser reaches it as production is reached (scripts/lib/lighthouse-lab.ts): over HTTPS and
+ * HTTP/2 on the build's origin, with the HTML and JSON compressed and every function response held
+ * --server-delay ms (default SERVER_DELAY_MS, production's warm TTFB less the app's own time);
+ * the server itself listens on a free port on 127.0.0.1, where this script's own requests go.
  *
  * Every app screen needs a session (deny by default), so the script mints one for the owner
  * directly in that disposable database (a placeholder owner if setup never ran) and sends its
  * cookie with every request; `/` (the sign-in screen) is audited signed out. Against an external
  * server (--url) pass a session cookie value in LIGHTHOUSE_SESSION, or only `/` is meaningful.
- * Build the Node server with ORIGIN=http://localhost:<port> so it knows it is served over HTTP.
+ * Build the Node server with ORIGIN=https://localhost:<port> so it knows it is served over HTTPS.
  *
  * --seed (on by default in CI; --no-seed turns it off) audits the program screens against a real
  * generated program. It needs the local server's database, so it cannot be used with --url:
@@ -46,6 +51,7 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { createServer, type AddressInfo } from 'node:net';
 import { parseArgs } from 'node:util';
 import { chromium } from '@playwright/test';
 import * as chromeLauncher from 'chrome-launcher';
@@ -55,6 +61,7 @@ import { PREPAINT_KEY } from '../src/lib/client/workout/prepaint.ts';
 import { LOCAL_DATABASE_URLS, runMigrations } from '../src/lib/server/db/migrate.ts';
 import type { StartKit, StrengthKit, SyncResponse } from '../src/lib/domain/workout/index.ts';
 import { readActionAnswer } from './lib/action-result.ts';
+import { labCertificate, SERVER_DELAY_MS, startLabProxy } from './lib/lighthouse-lab.ts';
 import { seedDemoProfile, type DemoProfile } from './lib/demo-profiles.ts';
 import { verdictDecided } from './lib/lighthouse-verdict.ts';
 import { lighthouseConfig, reportDir, type FormFactor } from './lib/lighthouse-config.ts';
@@ -87,6 +94,8 @@ const { values } = parseArgs({
 		'max-cls': { type: 'string', default: '0.1' },
 		'max-tbt': { type: 'string', default: '200' },
 		seed: { type: 'boolean', default: Boolean(process.env.CI) },
+		// Milliseconds each function response is held for (scripts/lib/lighthouse-lab.ts).
+		'server-delay': { type: 'string', default: String(SERVER_DELAY_MS) },
 		// i/N: every N-th audit of the full list, from the i-th (scripts/lib/lighthouse-shard.ts).
 		shard: { type: 'string', default: '1/1' }
 	}
@@ -125,10 +134,23 @@ const OUT_DIR = shardReportDir(reportDir(FORM_FACTOR), FORM_FACTOR, SHARD);
 /** The run's name in the table and the step summary: the form factor, and the shard if any. */
 const RUN_NAME = `${FORM_FACTOR}${SHARD.count > 1 ? ` · shard ${SHARD.index}/${SHARD.count}` : ''}`;
 const runs = Math.max(1, Number(values.runs));
+const SERVER_DELAY = Math.max(0, Number(values['server-delay']));
+if (!Number.isFinite(SERVER_DELAY)) {
+	throw new Error(`lighthouse: --server-delay takes milliseconds, not "${values['server-delay']}"`);
+}
 const routes = values.routes
 	.split(',')
 	.map((r) => r.trim())
 	.filter(Boolean);
+
+/** A port nothing listens on right now, on the loopback address the Node server binds. */
+async function freePort(): Promise<number> {
+	const probe = createServer();
+	await new Promise<void>((resolve) => probe.listen(0, '127.0.0.1', resolve));
+	const { port } = probe.address() as AddressInfo;
+	await new Promise((resolve) => probe.close(resolve));
+	return port;
+}
 
 async function waitForHealth(base: string, server: ChildProcess) {
 	const deadline = Date.now() + 30_000;
@@ -183,7 +205,7 @@ function builtOrigin(): URL {
 	const origin = /export const origin = "([^"]+)"/.exec(config)?.[1];
 	if (!origin) {
 		throw new Error(
-			'The Node build has no public origin. Rebuild with ORIGIN=http://localhost:4174 pnpm build:node.'
+			'The Node build has no public origin. Rebuild with ORIGIN=https://localhost:4174 pnpm build:node.'
 		);
 	}
 	return new URL(origin);
@@ -191,42 +213,65 @@ function builtOrigin(): URL {
 
 async function startServer(): Promise<{
 	base: string;
-	stop: () => void;
+	api: string;
+	spki: string;
+	stop: () => Promise<void>;
 	session: string;
 	db: string;
 	ownerId: string;
 }> {
 	if (!existsSync('build/index.js')) {
 		throw new Error(
-			'No Node build found. Run `ORIGIN=http://localhost:4174 pnpm build:node` first.'
+			'No Node build found. Run `ORIGIN=https://localhost:4174 pnpm build:node` first.'
 		);
 	}
 	const origin = builtOrigin();
 	const port = values.port ?? origin.port;
-	if (origin.hostname !== 'localhost' || origin.port !== port) {
+	if (origin.protocol !== 'https:' || origin.hostname !== 'localhost' || origin.port !== port) {
 		throw new Error(
-			`The build's origin is ${origin.origin}, but Lighthouse would serve http://localhost:${port}. ` +
-				`Rebuild with ORIGIN=http://localhost:${port} pnpm build:node.`
+			`The build's origin is ${origin.origin}, but Lighthouse would serve https://localhost:${port}. ` +
+				`Rebuild with ORIGIN=https://localhost:${port} pnpm build:node.`
 		);
 	}
 	const db = process.env.E2E_DATABASE_URL || LOCAL_DATABASE_URLS.e2e;
 	await runMigrations(db);
-	const base = `http://localhost:${port}`;
+	const base = `https://localhost:${port}`;
+	const internal = await freePort();
+	const api = `http://127.0.0.1:${internal}`;
 	const server = spawn(process.execPath, ['build/index.js'], {
 		stdio: 'ignore',
 		env: {
 			...process.env,
 			NODE_ENV: 'production',
 			APP_ENV: 'test',
-			PORT: port,
+			HOST: '127.0.0.1',
+			PORT: String(internal),
 			ORIGIN: base,
 			DATABASE_URL: db,
 			LOG_LEVEL: 'warn'
 		}
 	});
-	await waitForHealth(base, server);
+	let proxy: Awaited<ReturnType<typeof startLabProxy>>;
+	let certificate: ReturnType<typeof labCertificate>;
+	try {
+		await waitForHealth(api, server);
+		certificate = labCertificate();
+		proxy = await startLabProxy({
+			target: api,
+			port: Number(port),
+			certificate,
+			delayMs: SERVER_DELAY
+		});
+	} catch (error) {
+		server.kill('SIGTERM');
+		throw error;
+	}
 	const { token, ownerId } = await mintSession(db);
-	return { base, stop: () => server.kill('SIGTERM'), session: token, db, ownerId };
+	const stop = async () => {
+		await proxy.close();
+		server.kill('SIGTERM');
+	};
+	return { base, api, spki: certificate.spki, stop, session: token, db, ownerId };
 }
 
 /** Run `fn` with a client on the server's database. */
@@ -249,7 +294,9 @@ const median = (xs: number[]) => {
 const server = values.url
 	? {
 			base: values.url.replace(/\/$/, ''),
-			stop: () => {},
+			api: values.url.replace(/\/$/, ''),
+			spki: '',
+			stop: async () => {},
 			session: process.env.LIGHTHOUSE_SESSION ?? '',
 			db: '',
 			ownerId: ''
@@ -270,7 +317,16 @@ const chromePath = process.env.LIGHTHOUSE_CHROME_PATH || chromium.executablePath
 const launchChrome = () =>
 	chromeLauncher.launch({
 		chromePath,
-		chromeFlags: ['--headless=new', '--no-sandbox', '--disable-gpu', '--disable-dev-shm-usage']
+		chromeFlags: [
+			'--headless=new',
+			'--no-sandbox',
+			'--disable-gpu',
+			'--disable-dev-shm-usage',
+			// The lab's certificate (scripts/lib/lighthouse-lab.ts), trusted by its key alone: the page
+			// has no certificate error, so its service worker registers as it does in production.
+			// Chromium honours this only with a user data dir, which chrome-launcher always passes.
+			...(server.spki ? [`--ignore-certificate-errors-spki-list=${server.spki}`] : [])
+		]
 	});
 
 mkdirSync(OUT_DIR, { recursive: true });
@@ -350,7 +406,7 @@ async function seedProfile() {
 async function todayAction(name: 'preview' | 'build', payload: unknown): Promise<unknown> {
 	const body = new FormData();
 	body.set('payload', JSON.stringify(payload));
-	const response = await fetch(`${server.base}/today?/${name}`, {
+	const response = await fetch(`${server.api}/today?/${name}`, {
 		method: 'POST',
 		body,
 		headers: {
@@ -410,7 +466,7 @@ async function buildSeededProgram(): Promise<{
 
 /** The signed-in owner's JSON from `path`, as the app's own requests send it. */
 async function ownerJson(path: string, body?: unknown): Promise<unknown> {
-	const response = await fetch(`${server.base}${path}`, {
+	const response = await fetch(`${server.api}${path}`, {
 		method: body === undefined ? 'GET' : 'POST',
 		headers: { ...sessionHeaders, origin: server.base, 'content-type': 'application/json' },
 		...(body === undefined ? {} : { body: JSON.stringify(body) })
@@ -584,11 +640,15 @@ try {
 	}
 } finally {
 	await chrome.kill();
-	server.stop();
+	await server.stop();
 }
 
+/** How the audited server was reached: the lab's transport, or an external server as it is. */
+const TRANSPORT = values.url
+	? `served by ${server.base}`
+	: `HTTPS/HTTP2, compressed, ${SERVER_DELAY} ms server delay`;
 const lines = [
-	`Lighthouse ${lighthouseVersion} (${RUN_NAME}, simulated throttling) — median of ${runs} run(s) per route${values.assert ? ', stopping early once the runs so far decide every asserted threshold' : ''}, ${chromeVersion}`,
+	`Lighthouse ${lighthouseVersion} (${RUN_NAME}, simulated throttling, ${TRANSPORT}) — median of ${runs} run(s) per route${values.assert ? ', stopping early once the runs so far decide every asserted threshold' : ''}, ${chromeVersion}`,
 	'',
 	'| Route | Runs | Wall time | Perf | A11y | Best pr. | LCP | FCP | TBT | CLS | Speed Index |',
 	'| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |',
@@ -601,7 +661,14 @@ console.log(lines.join('\n'));
 writeFileSync(
 	`${OUT_DIR}/summary.json`,
 	JSON.stringify(
-		{ formFactor: FORM_FACTOR, shard: SHARD, runs, thresholds: THRESHOLDS, summaries },
+		{
+			formFactor: FORM_FACTOR,
+			shard: SHARD,
+			runs,
+			thresholds: THRESHOLDS,
+			serverDelayMs: values.url ? null : SERVER_DELAY,
+			summaries
+		},
 		null,
 		2
 	)
