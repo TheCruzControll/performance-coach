@@ -22,6 +22,7 @@ import { StoreClosedError } from './db';
 import type { StoredWorkout } from './db';
 import { DB_NAME, STORES } from './names';
 import { STUCK_AFTER, type OutboxEntry } from './outbox-rules';
+import { ACTIVE_WORKOUT_KEY } from './active-flag';
 import { PREPAINT_KEY, writePrepaint, type PrepaintCard } from './prepaint';
 import { activeSummary, pendingCount, waitingToSync } from './probe';
 import { ActiveWorkoutError, createStore, PRUNE_AFTER, requestPersistence } from './store';
@@ -997,5 +998,88 @@ describe("/workout's prepainted card", () => {
 		expect(storage.has(PREPAINT_KEY)).toBe(false);
 		keep();
 		expect(JSON.parse(storage.get(PREPAINT_KEY)!)).toMatchObject({ workoutId: W, card });
+	});
+});
+
+describe('the launch flag (active-flag.ts)', () => {
+	/** The page's localStorage, as a Map. */
+	function pageStorage() {
+		const map = new Map<string, string>();
+		vi.stubGlobal('localStorage', {
+			getItem: (key: string) => map.get(key) ?? null,
+			setItem: (key: string, value: string) => void map.set(key, value),
+			removeItem: (key: string) => void map.delete(key)
+		});
+		return map;
+	}
+	const flagged = (storage: Map<string, string>) => {
+		const flag = storage.get(ACTIVE_WORKOUT_KEY);
+		return flag === undefined ? null : (JSON.parse(flag) as { workoutId: string; kind: string });
+	};
+
+	it('flags the workout in progress from its start, and drops the flag when it finishes', async () => {
+		const storage = pageStorage();
+		const store = await open();
+		await started(store);
+		expect(flagged(storage)).toEqual({ v: 1, workoutId: W, kind: 'strength' });
+		expect(await store.dispatch(log('s1', 1)).saved).toBe('saved');
+		expect(flagged(storage)).toMatchObject({ workoutId: W });
+
+		expect(await store.dispatch(finish()).saved).toBe('saved');
+		expect(flagged(storage)).toBeNull();
+	});
+
+	it('drops the flag when the workout is abandoned, or its refused start discarded', async () => {
+		const storage = pageStorage();
+		const store = await open();
+		await started(store);
+		expect(await store.dispatch(make('workout.abandon', { payload: {} })).saved).toBe('saved');
+		expect(flagged(storage)).toBeNull();
+
+		await started(store, W2);
+		expect(flagged(storage)).toMatchObject({ workoutId: W2 });
+		await store.acknowledge([{ id: W2, status: 'rejected', code: 'invalid' }]);
+		expect(flagged(storage)).toMatchObject({ workoutId: W2 });
+		const seq = (await store.outbox()).find((e) => e.envelope.id === W2)!.seq;
+		await store.discard(seq);
+		expect(flagged(storage)).toBeNull();
+	});
+
+	it('drops the flag when another device finished it, on a page that never loaded it', async () => {
+		const storage = pageStorage();
+		const begun = start(W);
+		expect(await (await open()).dispatch(begun, attach(W)).saved).toBe('saved');
+		const store = await open(); // another page: nothing in memory
+		expect(await store.reconciled(serverRows(W, [begun]))).toBe(true);
+		expect(flagged(storage)).toMatchObject({ workoutId: W });
+
+		const rows = serverRows(W, [begun, finish(W)]);
+		await store.acknowledge([{ id: begun.id, status: 'applied', canonical: rows }]);
+		expect((await stored()).workouts).toEqual([]);
+		expect(flagged(storage)).toBeNull();
+	});
+
+	it("never drops the workout in progress's flag for another workout leaving", async () => {
+		const storage = pageStorage();
+		const store = await open();
+		const done = [start(W2), finish(W2)];
+		store.dispatch(done[0]!, attach(W2));
+		expect(await store.dispatch(done[1]!).saved).toBe('saved');
+		await started(store);
+		await store.acknowledge(appliedAll(W2, done));
+		expect((await stored()).workouts.map((w) => w.id)).toEqual([W]);
+		expect(flagged(storage)).toMatchObject({ workoutId: W });
+	});
+
+	it('getActive flags what IndexedDB holds: a workout kept before the flag, or none', async () => {
+		const storage = pageStorage();
+		await started(await open());
+		storage.clear(); // a workout started before this build
+		expect((await (await open()).getActive())!.workoutId).toBe(W);
+		expect(flagged(storage)).toEqual({ v: 1, workoutId: W, kind: 'strength' });
+
+		vi.stubGlobal('indexedDB', new IDBFactory()); // the browser evicted the database
+		expect(await (await open()).getActive()).toBeNull();
+		expect(flagged(storage)).toBeNull();
 	});
 });
