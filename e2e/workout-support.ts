@@ -42,6 +42,8 @@ export async function workoutDay(date = new Date().toISOString().slice(0, 10)) {
 interface Seed {
 	record: Record<string, unknown> | null;
 	entries: Record<string, unknown>[];
+	/** Saved start kits, as Today saves them (kits store). */
+	kits?: Record<string, unknown>[];
 }
 
 /**
@@ -68,9 +70,10 @@ async function writeDb(page: Page, seed: Seed, message: object | null) {
 				request.onsuccess = () => resolve(request.result);
 				request.onerror = () => reject(request.error);
 			});
-			const tx = db.transaction([stores.workouts, stores.outbox], 'readwrite');
+			const tx = db.transaction([stores.workouts, stores.outbox, stores.kits], 'readwrite');
 			if (seed.record) tx.objectStore(stores.workouts).put(seed.record);
 			for (const entry of seed.entries) tx.objectStore(stores.outbox).add(entry);
+			for (const kit of seed.kits ?? []) tx.objectStore(stores.kits).put(kit);
 			await new Promise((resolve, reject) => {
 				tx.oncomplete = resolve;
 				tx.onerror = () => reject(tx.error);
@@ -105,6 +108,17 @@ const entryOf = (envelope: Mutation) => ({
 	failingSince: null,
 	nextAt: null
 });
+
+/**
+ * Start kits saved on this device, in this order, as Today saves today's (start.ts saveKits): what
+ * a launch with no signal starts from. Seed before the page opens the store.
+ */
+export async function seedKits(page: Page, kits: readonly StartKit[]): Promise<void> {
+	await onOrigin(page);
+	const savedAt = Date.now();
+	const saved = kits.map((kit, i) => ({ lineage: kit.plannedLineage, kit, savedAt: savedAt + i }));
+	await writeDb(page, { record: null, entries: [], kits: saved }, null);
+}
 
 /**
  * A workout in progress on this device, as workout.start leaves it: its record with the kit and
