@@ -27,7 +27,7 @@ The planned layout; each M5 slice adds its own files.
 ```
 agent/
   coach.ts           composition root: resolves the provider, coachStatus(), runCoachTurn()
-  launch.ts          COACH_LAUNCHED: false until coach-launch flips it
+  launch.ts          COACH_LAUNCHED: true since coach-launch (kill switch: LLM_PROVIDER=off)
   turn.ts            one turn: owner message in, CoachEvents out, every step persisted
   orchestrator.ts    the manual loop: stop reasons, budgets, deadlines, cancellation
   hooks.ts           TurnHooks: what the loop tells the turn (text, chips, calls, steps), no-op defaults
