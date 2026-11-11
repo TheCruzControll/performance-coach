@@ -24,8 +24,8 @@
  *   the server; a start parked stuck is queued again first, so the abandon is not held behind it.
  *   Only a start the server refused is deleted from the device (the store's Discard). Opening the
  *   start link of the workout in progress resumes it.
- * - saveKits(lineages): today's kits, saved for a gym with no signal (Today calls it on idle, in
- *   start-entry-points), with the owner's units. A 401 purges and stops it.
+ * - saveKits(lineages): the coming days' kits, saved for a gym with no signal (Today and Train
+ *   call it on idle, coming-kits.ts), with the owner's units. A 401 purges and stops it.
  * Plain .ts with no runes: the store, the network and the clock are injected.
  */
 import type { IsoDate } from '#lib/domain/calendar.ts';
