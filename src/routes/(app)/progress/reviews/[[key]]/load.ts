@@ -28,7 +28,11 @@ import {
 	REVIEWS_PAGE,
 	ReviewInputError,
 	ReviewNotFoundError,
+	ReviewSupersededError,
+	REFRESHABLE,
+	refreshWeeklyReview,
 	reviewableWeek,
+	WeeklyReviewRefreshError,
 	WeeklyReviewNotReviewableError,
 	type WeeklyReviewView
 } from '#lib/server/services/reviews/index.ts';
@@ -36,6 +40,7 @@ import type { TrainingDeps } from '#lib/server/services/training/shared.ts';
 import type { TileVerdict } from '#lib/ui/analytics/verdict-words.ts';
 import { shortDate } from '#lib/ui/program/words.ts';
 import { slotOf } from '../../load.ts';
+import { reviewSections, type SectionView } from './sections.ts';
 
 /** The reviews one list shows: a page of the store's largest, about a year of weeks. */
 export const LIST_LIMIT = REVIEWS_PAGE.max;
@@ -81,6 +86,8 @@ export interface TrendView {
 
 export interface WeeklyReviewData {
 	kind: 'weekly';
+	/** The live revision's id, which Refresh posts. */
+	id: string;
 	key: string;
 	weekStartsOn: IsoDate;
 	title: string;
@@ -102,6 +109,14 @@ export interface WeeklyReviewData {
 	trends: TrendView[];
 	/** Verdict findings that are not trends (a baseline week). */
 	notes: { id: string; label: string; words: string }[];
+	/** RPE, volume, running, Muay Thai, recovery and fatigue, conflicts and PRs (sections.ts). */
+	sections: SectionView[];
+	/**
+	 * Facts changed since it was computed: how many, in words, and whether Refresh may write its
+	 * next revision (only while the decision is open; a decided review never changes). Null when
+	 * it is up to date.
+	 */
+	stale: { words: string; detail: string; refreshable: boolean } | null;
 	/** The coach's write-up once written (review-narrative-ui); null leaves its slot empty. */
 	writeUp: string | null;
 }
@@ -187,6 +202,17 @@ export function findingVerdict(finding: Finding): TileVerdict {
 	return { verdict: 'normal_variation' };
 }
 
+/** An out-of-date review's notice: Refresh only while its decision is open. */
+export function staleNotice(changes: number, refreshable: boolean) {
+	return {
+		words: `Computed before ${changes} later ${changes === 1 ? 'change' : 'changes'}`,
+		detail: refreshable
+			? 'You’ve logged training since. Refresh recomputes it and keeps this version.'
+			: 'You’ve decided on its changes, so it stays as it was.',
+		refreshable
+	};
+}
+
 /** A weekly review as the screen shows it, every figure from its stored snapshot. */
 export function weeklyReviewData(view: WeeklyReviewView): WeeklyReviewData {
 	const { weekStartsOn } = view.review;
@@ -194,8 +220,10 @@ export function weeklyReviewData(view: WeeklyReviewView): WeeklyReviewData {
 	const adherence = findings.find((f) => f.id === 'adherence');
 	const verdicts = findings.filter((f) => f.section === 'verdicts');
 	const pct = view.snapshot?.adherence.pct ?? null;
+	const changes = view.laterChanges;
 	return {
 		kind: 'weekly',
+		id: view.review.id,
 		key: weeklyKey(weekStartsOn),
 		weekStartsOn,
 		title: titleOf(weekStartsOn),
@@ -240,6 +268,8 @@ export function weeklyReviewData(view: WeeklyReviewView): WeeklyReviewData {
 		notes: verdicts
 			.filter((f) => f.metricId === null)
 			.map((f) => ({ id: f.id, label: f.label, words: f.verdict.words })),
+		sections: view.snapshot ? reviewSections(view.snapshot) : [],
+		stale: view.stale ? staleNotice(changes, REFRESHABLE.includes(view.decision.state)) : null,
 		writeUp: view.writeUp.state === 'written' ? view.writeUp.text : null
 	};
 }
@@ -338,6 +368,45 @@ export async function createReview(
 		}
 		if (err instanceof ReviewInputError)
 			return { ok: false, status: 400, data: { reason: 'invalid', weekStartsOn } };
+		throw err;
+	}
+}
+
+export type RefreshResult =
+	| { ok: true }
+	| { ok: false; status: 400 | 409; data: { reason: 'invalid' | 'decided' | 'not_ready' } };
+
+export interface RefreshDeps extends Pick<TrainingDeps, 'db'> {
+	refresh?: typeof refreshWeeklyReview;
+	today?: typeof ownerToday;
+}
+
+/**
+ * Refresh the review `id`: its next revision, recomputed from today's facts, with both rows kept.
+ * Already up to date, or refreshed by another tap first (superseded), is done all the same: the
+ * page then shows the live revision. A decided review is a 409, since it never changes, and so is
+ * an early review whose week is no longer done before it ends (not reviewable until Monday); an
+ * unknown id a 400; any other failure throws (a 500).
+ */
+export async function refreshReview(
+	ownerId: string,
+	id: string,
+	now: Date,
+	{ db, refresh = refreshWeeklyReview, today: dayOf = ownerToday }: RefreshDeps = {}
+): Promise<RefreshResult> {
+	const today = await dayOf(ownerId, now, { db });
+	try {
+		await refresh(ownerId, id, { today }, { db });
+		return { ok: true };
+	} catch (err) {
+		if (err instanceof WeeklyReviewRefreshError && err.reason === 'decided')
+			return { ok: false, status: 409, data: { reason: 'decided' } };
+		if (err instanceof WeeklyReviewNotReviewableError)
+			return { ok: false, status: 409, data: { reason: 'not_ready' } };
+		if (err instanceof WeeklyReviewRefreshError || err instanceof ReviewSupersededError)
+			return { ok: true };
+		if (err instanceof ReviewNotFoundError || err instanceof ReviewInputError)
+			return { ok: false, status: 400, data: { reason: 'invalid' } };
 		throw err;
 	}
 }

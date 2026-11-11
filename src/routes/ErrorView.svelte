@@ -17,12 +17,14 @@
 	import { onDestroy, onMount } from 'svelte';
 	import { afterNavigate, beforeNavigate, onNavigate } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import { page } from '$app/state';
 	import {
 		OFFLINE_PATH,
 		reloadFresh,
 		startOfflineRecovery,
 		trackPress
 	} from '#lib/client/recovery.ts';
+	import { listsToday } from '#lib/client/workout/launch.ts';
 	import Button from '#lib/ui/components/Button.svelte';
 	import EmptyState from '#lib/ui/components/EmptyState.svelte';
 	import PageHeader from '#lib/ui/components/PageHeader.svelte';
@@ -156,6 +158,14 @@
 		<p class="ref">Reference <code>{requestId}</code></p>
 	{/if}
 </section>
+
+<!-- A launch with no signal can still start today's sessions saved on this device. Loaded only
+     here, so no other screen's first load carries it; the service worker precaches it. -->
+{#if kind === 'offline' && inShell && listsToday(page.url.pathname)}
+	{#await import('./OfflineToday.svelte') then { default: OfflineToday }}
+		<OfflineToday />
+	{/await}
+{/if}
 
 <style>
 	.error-view {

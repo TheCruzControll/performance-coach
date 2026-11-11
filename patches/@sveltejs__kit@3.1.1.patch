@@ -1,0 +1,49 @@
+diff --git a/src/exports/vite/build/utils.js b/src/exports/vite/build/utils.js
+index e3873ac28a7f604e5801fb9ae7acbc94e9c5c760..ee84a83b48b9838408d9d9dc66e267256e74d7a5 100644
+--- a/src/exports/vite/build/utils.js
++++ b/src/exports/vite/build/utils.js
+@@ -26,6 +26,23 @@ export function find_deps(manifest, entry, add_dynamic_css, root) {
+ 	/** @type {Map<string, { css: Set<string>; assets: Set<string> }>} */
+ 	const stylesheet_map = new Map();
+ 
++	/** @type {Set<string>} */
++	const js_seen = new Set();
++
++	/**
++	 * A chunk reached through a dynamic import first is marked seen without its JS. When the
++	 * entry also imports it statically, add its JS and its static imports' (performance-coach
++	 * patch: otherwise those chunks get no modulepreload and are fetched late, as a waterfall).
++	 * @param {string} current
++	 */
++	function add_static_js(current) {
++		if (js_seen.has(current)) return;
++		js_seen.add(current);
++		const { chunk } = resolve_symlinks(manifest, current, root);
++		imports.add(chunk.file);
++		chunk.imports?.forEach(add_static_js);
++	}
++
+ 	/**
+ 	 * @param {string} current
+ 	 * @param {boolean} add_js
+@@ -33,12 +50,18 @@ export function find_deps(manifest, entry, add_dynamic_css, root) {
+ 	 * @param {number} dynamic_import_depth
+ 	 */
+ 	function traverse(current, add_js, initial_importer, dynamic_import_depth) {
+-		if (seen.has(current)) return;
++		if (seen.has(current)) {
++			if (add_js) add_static_js(current);
++			return;
++		}
+ 		seen.add(current);
+ 
+ 		const { chunk } = resolve_symlinks(manifest, current, root);
+ 
+-		if (add_js) imports.add(chunk.file);
++		if (add_js) {
++			js_seen.add(current);
++			imports.add(chunk.file);
++		}
+ 
+ 		if (chunk.assets) {
+ 			chunk.assets.forEach((asset) => imported_assets.add(asset));

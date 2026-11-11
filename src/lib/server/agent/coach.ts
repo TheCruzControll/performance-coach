@@ -78,6 +78,8 @@ export interface CoachTurnOptions {
 	deps?: CoachDeps;
 	/** When the endpoint must have answered, in epoch milliseconds. */
 	deadlineAt?: number;
+	/** Keeps the turn's work after its last event alive (turn.ts, TurnOptions.after). */
+	after?: (work: Promise<void>) => void;
 }
 
 /** One turn with the environment's provider; the stream always ends with `done`. */

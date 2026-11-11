@@ -22,6 +22,17 @@ describe('the settings sheet’s on/off rows', () => {
 		expect(keys(safari)).toEqual(['autoStartRest', 'sound', 'keepAwake']);
 	});
 
+	it('offers vibration on an iPhone, whose haptic tap on Complete set it turns off', () => {
+		const iPhone = feedbackSupport({
+			navigator: { maxTouchPoints: 5 },
+			AudioContext: class {} as unknown as typeof AudioContext,
+			HTMLInputElement: { prototype: { switch: false } }
+		});
+		expect(keys(iPhone)).toEqual(['autoStartRest', 'sound', 'vibration']);
+		const vibration = toggleRows(iPhone).find((row) => row.key === 'vibration');
+		expect(vibration?.description).toMatch(/iPhone/);
+	});
+
 	it('hides each feedback the browser lacks, and always offers starting rest by itself', () => {
 		expect(keys({ vibration: false, tone: false, wakeLock: false })).toEqual(['autoStartRest']);
 		expect(keys({ vibration: true, tone: false, wakeLock: false })).toEqual([
