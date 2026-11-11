@@ -102,10 +102,8 @@ export const LEG_PROJECTS: Readonly<Record<string, readonly ProjectFiles[]>> = {
 	'main/webkit': [iphone('webkit')],
 	'serial/chromium': [{ project: 'serial-chromium', testMatch: [SERIAL], testIgnore: [] }],
 	'serial/webkit': [{ project: 'serial-webkit', testMatch: [SERIAL], testIgnore: [] }],
-	'alone/chromium': [
-		{ project: 'perf', testMatch: PERF, testIgnore: [] },
-		{ project: 'exclusive', testMatch: [EXCLUSIVE], testIgnore: [] }
-	]
+	'alone/chromium': [{ project: 'perf', testMatch: PERF, testIgnore: [] }],
+	'exclusive/chromium': [{ project: 'exclusive', testMatch: [EXCLUSIVE], testIgnore: [] }]
 };
 
 /** A `**\/<name>` glob (`*` within the name) as a test of a `/`-separated path. */

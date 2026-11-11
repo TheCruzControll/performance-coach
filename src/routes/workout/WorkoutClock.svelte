@@ -5,17 +5,38 @@
   can be paused, resumed and reset once the store is open (on idle; a tap before then does
   nothing): device actions, stored with the workout, so a reload keeps them. One this device never
   started starts from the workout's start first. Paused, the time opens a sheet with Resume and
-  Reset, so the header holds one control and keeps its geometry in both states.
+  Reset, so the header holds one control and keeps its geometry in both states. The sheet loads
+  once the first frame has painted, so the first paint waits for the stopwatch alone; a tap
+  before then opens it as it arrives.
 -->
 <script lang="ts">
+	import { onMount } from 'svelte';
+	import type { ChunkLoad } from '#lib/client/workout/active.svelte.ts';
 	import type { WorkoutStore } from '#lib/client/workout/store.ts';
 	import type { LocalAction, WorkoutView } from '#lib/domain/workout/index.ts';
 	import { startStopwatch } from '#lib/domain/workout/timers.ts';
-	import BottomSheet from '#lib/ui/components/BottomSheet.svelte';
+	import type BottomSheetComponent from '#lib/ui/components/BottomSheet.svelte';
 	import Button from '#lib/ui/components/Button.svelte';
 	import Stopwatch from '#lib/ui/workout/Stopwatch.svelte';
+	import { afterPaint } from './lazy.ts';
 
-	let { view, store = null }: { view: WorkoutView; store?: WorkoutStore | null } = $props();
+	interface Props {
+		view: WorkoutView;
+		store?: WorkoutStore | null;
+		/** The page's chunk loader, for the sheet. */
+		load: ChunkLoad;
+	}
+
+	let { view, store = null, load }: Props = $props();
+
+	let BottomSheet = $state.raw<typeof BottomSheetComponent | null>(null);
+	onMount(() =>
+		afterPaint(() => {
+			void load(() => import('#lib/ui/components/BottomSheet.svelte')).then((module) => {
+				if (module) BottomSheet = module.default;
+			});
+		})
+	);
 
 	const started = $derived(Date.parse(view.workout.startedAt));
 	const stopwatch = $derived(
@@ -39,19 +60,21 @@
 
 <!-- Its controls show from the first render, so the header never shifts when the store opens. -->
 <Stopwatch {stopwatch} onpause={() => act('stopwatch.pause')} onoptions={() => (options = true)} />
-<BottomSheet bind:open={options} title="Workout time paused" data-testid="stopwatch-sheet">
-	{#snippet footer()}
-		<div class="actions">
-			<Button block icon="play" onclick={() => choose('stopwatch.resume')}
-				>Resume workout time</Button
-			>
-			<Button block variant="danger" icon="refresh" onclick={() => choose('stopwatch.reset')}
-				>Reset workout time</Button
-			>
-		</div>
-	{/snippet}
-	<p class="note">Reset sets the time back to 0:00.</p>
-</BottomSheet>
+{#if BottomSheet}
+	<BottomSheet bind:open={options} title="Workout time paused" data-testid="stopwatch-sheet">
+		{#snippet footer()}
+			<div class="actions">
+				<Button block icon="play" onclick={() => choose('stopwatch.resume')}
+					>Resume workout time</Button
+				>
+				<Button block variant="danger" icon="refresh" onclick={() => choose('stopwatch.reset')}
+					>Reset workout time</Button
+				>
+			</div>
+		{/snippet}
+		<p class="note">Reset sets the time back to 0:00.</p>
+	</BottomSheet>
+{/if}
 
 <style>
 	.note {
