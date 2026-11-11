@@ -130,17 +130,25 @@ re-bases on the current version, was added by substitution-handlers (#246) in
 
 ## Measured (2026-11-10)
 
-On the merged M4 code (CI runs 42806982845 and 42802588785, 4-vCPU Linux runners; the numbers
-and how they were taken are in docs/performance.md, "M4 (workout)"):
+On `main` with M4 merged, including the shorter boot path (#394), the prepaint (#410) and
+sign-out's flush (#367): CI run 42939723798 from #370, on 4-vCPU Linux runners. Its `src/` and
+`vite.config.ts` are the same as `main`. The numbers and how they were taken are in
+docs/performance.md, "M4 (workout)".
 
-- Initial JS: `/workout` 53.8 KB, `/workout/run` and `/workout/session` 53.7 KB, of 60 KB. One
+- Initial JS: `/workout` 52.7 KB, `/workout/run` and `/workout/session` 52.5 KB, of 60 KB. One
   route per kind kept every kind's whole path in `pnpm budgets`; the rejected lazy view measured
   about 1.0 KB more on the strength path in the plan's prototype.
-- A logged set shows as done in a median of 22.9 ms, p95 32.5 ms, over 20 sets at 4× CPU
-  (criterion: under 100 ms). INP p75 on `/workout` is 56 ms from Event Timing and from
+- A logged set shows as done in a median of 36.5 ms, p95 42.4 ms, over 20 sets at 4× CPU
+  (criterion: under 100 ms). INP p75 on `/workout` is 88 ms from Event Timing and from
   web-vitals (criterion: 200 ms or less).
 - A service-worker reload of `/workout` with a workout in progress blocks the main thread for a
-  median of 0 ms; loading it blocks for 6 ms.
+  median of 0 ms; loading it blocks for 90 ms (guard 250 ms).
+- Lighthouse mobile on `/workout · active`: LCP 903 ms, Performance 100 (#370's run
+  42933643722, after the prepaint).
+- These come from one green run. #370 asks for two; the second is still to record. The first
+  M4 measurements, runs 42806982845 and 42802588785, came before #394, #410 and #370's fixes:
+  `/workout` 53.8 KB, a median of 22.9 ms and p95 32.5 ms, INP 56 ms and 6 ms of blocking.
+  Run 42802588785 failed.
 
 ## Defaults the owner can change
 

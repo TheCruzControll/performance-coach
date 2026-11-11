@@ -21,8 +21,9 @@ Code in this folder runs only in the browser. It must never import from `src/lib
 
 Workout logging never loses a set and never waits on the network (PRD §9, §15, §18). The design
 is the offline workout sync ADR (`docs/adr/`); the wire format is `src/lib/domain/workout/`.
-Logic lives in plain `.ts`, because Vitest's unit project excludes `*.svelte.test.ts`; the three
-`.svelte.ts` modules are thin `$state.raw` wrappers.
+Logic lives in plain `.ts`, because Vitest's unit project excludes `*.svelte.test.ts`.
+`active.svelte.ts` and `status.svelte.ts` are thin `$state.raw` wrappers;
+`device-workout.svelte.ts` is one small `$state` object that the resume bar writes.
 
 Checked against the merged M4 code on 2026-11-10 (docs-m4), with sign-out's flush (#367), the
 boot path (#394) and the prepaint (#410). Sign-out flushes first and asks before it deletes
