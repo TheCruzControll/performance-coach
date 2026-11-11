@@ -5,9 +5,9 @@
   - With planned sets still open it asks first ('2 planned sets are still open'): Keep going, or
     Finish anyway.
   - Then the summary (Summary.svelte) with its fields: the duration, the session RPE and the notes.
-    Done sends a workout.finish carrying them through the page's `store` (finish.ts); online, once
-    the server has it, it opens the workout's History detail. Otherwise the page shows its
-    completed state.
+    Done sends a workout.finish carrying them through the page's `store` (finish.ts); online, if
+    the server has it within about 300 ms, it opens the workout's History detail. Otherwise the
+    page shows its completed state at once, with 'View in History' when the sync confirms.
   - Fix (fix/workout.ts) opens it on a refused workout.update or workout.finish, `m`: no question,
     the refused values and the server's errors in place, and Save hands back the change with the
     corrected values under the same id, for the sync sheet to re-queue in its place.
