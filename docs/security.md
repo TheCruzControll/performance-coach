@@ -158,16 +158,25 @@ assertion with one of the owner's existing passkeys on this session within the l
 
 ### Sign-out
 
+Unsynced workout changes are never deleted without the owner's choice (ADR 0012, 'Losing the
+session'). Before signing out, the screen flushes the workout outbox for at most 5 s
+(`src/lib/client/workout/shutdown.ts`) and, if changes are still unsynced, asks before signing
+out deletes them; "Stay signed in" keeps every change.
+
 `POST /api/auth/signout` revokes the session, deletes the cookie and sends
 `Clear-Site-Data: "cache"` (drops HTTP-cached and back/forward-cached pages). The browser then
-deletes every Cache Storage entry except the current versioned app shell (`pc-shell-<version>`:
-the public build and the offline screen), every IndexedDB database and session storage
-(`src/lib/client/signout.ts`), and lands on the sign-in screen. **Device preferences (theme,
-units in localStorage) are kept on purpose**: they are not account data. `"storage"` and
-`"cookies"` are deliberately not sent: `"storage"` would also wipe those preferences and
-unregister the offline app shell, and `"cookies"` applies to the whole registrable domain
-(`nikocruz.com`), not just this app. If the server cannot be reached the client says so and
-changes nothing (the HttpOnly cookie can only be deleted by the server).
+tells its other tabs to close the workout store, deletes every Cache Storage entry except the
+current versioned app shell (`pc-shell-<version>`: the public build and the offline screen),
+every IndexedDB database and session storage (`src/lib/client/signout.ts`), leaves a one-shot
+marker in session storage, and lands on the sign-in screen, which consumes the marker and clears
+again. A signed-out URL without the marker (typed, from history, or a sign-out without
+JavaScript) keeps only unsynced workout changes until the owner deletes them or signs in: what
+the server already holds is deleted, as after a 401, and the sign-in screen offers to delete the
+rest. **Device preferences (theme, units in localStorage) are kept on purpose**: they are not
+account data. `"storage"` and `"cookies"` are deliberately not sent: `"storage"` would also wipe
+those preferences and unregister the offline app shell, and `"cookies"` applies to the whole
+registrable domain (`nikocruz.com`), not just this app. If the server cannot be reached the
+client says so and changes nothing (the HttpOnly cookie can only be deleted by the server).
 
 ## Deny by default
 
@@ -329,7 +338,7 @@ access; denial of service by exhausting a client's rate limit from the same IP i
 | V4.1/4.2 Access control                      | Met     | Deny by default with a typed, tested route map; single owner, no IDOR surface.                       |
 | V4.2.2 CSRF                                  | Met     | Origin check on all unsafe methods + SvelteKit form check + SameSite (e2e).                          |
 | V7 Logging                                   | Met     | Audit log for auth events; no secrets or query strings in app logs.                                  |
-| V8.3 Sensitive private data                  | Partial | Pages `private, no-cache`; sign-out clears device data. Server-side encryption at rest is Neon's.    |
+| V8.3 Sensitive private data                  | Partial | Pages `private, no-cache`; sign-out clears device data, unsynced sets if agreed. Neon encrypts DB.   |
 | V13 API                                      | Met     | JSON endpoints validate input (zod), cap body size, answer `no-store`.                               |
 | V14.4 HTTP security headers                  | Met     | CSP, HSTS, nosniff, frame-ancestors none, referrer policy (e2e).                                     |
 
@@ -379,7 +388,7 @@ deliberate, documented choice. **N/A**: the mechanism does not exist here.
 | 3.1.1       | Session tokens never in URLs                                                | Met       | Cookie only. The setup token is in the setup link by design (one use, useless afterwards); the app logs paths without query strings, Vercel's request log keeps it.                                                                                                        |
 | 3.2.1       | A new token on authentication                                               | Met       | Rotation on passkey sign-in, setup, recovery and the recovery-to-full upgrade; the presented token is revoked (`sessions.test.ts`, `signin.test.ts`).                                                                                                                      |
 | 3.2.2–3.2.3 | At least 64 bits; stored only in secure cookies                             | Met       | 256-bit CSPRNG tokens in an HttpOnly cookie; only their SHA-256 in Postgres; nothing in local or session storage.                                                                                                                                                          |
-| 3.3.1       | Logout and expiry invalidate the session                                    | Met       | Revocation is checked on every request; sign-out deletes the cookie, sends `Clear-Site-Data: "cache"` and clears the device's account data (e2e on Chromium, `auth.e2e.ts`, and WebKit, `signout.e2e.ts`).                                                                 |
+| 3.3.1       | Logout and expiry invalidate the session                                    | Met       | Revocation is checked on every request; sign-out deletes the cookie, sends `Clear-Site-Data: "cache"` and clears the device's account data, unsynced workout changes only once the owner agrees (e2e on Chromium, `auth.e2e.ts`, and WebKit, `signout.e2e.ts`).            |
 | 3.3.2       | Re-authentication after 12 hours, or 30 minutes idle (level 2)              | Deviation | 30 days idle, 90 days absolute (ADR 0006: level 1's value). The app lives on the owner's own phone behind Face ID; compensating controls: step-up within 5 minutes for every credential or device change, sessions listed and revocable, revocation effective immediately. |
 | 3.3.3       | After a credential change or recovery, an option to end every other session | Met       | A recovery lands on Security already step-up fresh; removing the lost passkey ends its sessions; Sign out everywhere else.                                                                                                                                                 |
 | 3.3.4       | Active sessions visible; signing them out needs the credential again        | Met       | Session list; signing out one or all others needs step-up (`reauth.test.ts`, `reauth.e2e.ts`).                                                                                                                                                                             |
