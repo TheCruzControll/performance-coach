@@ -3,8 +3,9 @@
   Starting a workout from /workout?start=<lineage> or ?new=strength|run|other (start.ts), loaded
   only then, through the Shell's chunk loader (a chunk gone after a deploy shows 'App updated').
   In the Shell's body, at the readable width, centred from 1024 px.
-  - Getting your session ready: a skeleton with aria-busy while the kit is fetched (at most 4 s)
-    and the workout is written; then the kind's route replaces this URL.
+  - Getting your session ready: a skeleton with aria-busy while the workout is written, from the
+    kit saved on this device at once, or else from the fetched kit (at most 1.5 s); then the kind's
+    route replaces this URL, which fetches a saved kit's fresh copy (kit-mark.ts).
   - A workout already in progress: the conflict sheet (StartConflictSheet.svelte, lazy) offers
     Resume, or Discard and start this one; dismissed, the page offers both again.
   - Signed out (the kit answered 401): Sign in returns to this URL, which starts the workout.
@@ -19,6 +20,7 @@
 	import { preferences } from '#lib/client/preferences.svelte.ts';
 	import type { ChunkLoad } from '#lib/client/workout/active.svelte.ts';
 	import { workoutPath } from '#lib/client/workout/kinds.ts';
+	import { markKitRefresh } from '#lib/client/workout/kit-mark.ts';
 	import type * as Starter from '#lib/client/workout/start.ts';
 	import type { InProgress, StartOutcome } from '#lib/client/workout/start.ts';
 	import type { WorkoutStore } from '#lib/client/workout/store.ts';
@@ -63,7 +65,10 @@
 		} catch {
 			outcome = { status: 'not-saved' };
 		}
-		if (outcome.status === 'started') return location.replace(outcome.path);
+		if (outcome.status === 'started') {
+			if (outcome.refresh) markKitRefresh(outcome.refresh);
+			return location.replace(outcome.path);
+		}
 		shown = outcome;
 		if (outcome.status === 'conflict') void openSheet();
 	}
