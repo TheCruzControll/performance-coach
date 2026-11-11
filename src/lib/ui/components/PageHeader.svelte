@@ -1,6 +1,7 @@
 <!--
   @component
-  iOS-style large title with an eyebrow line and an optional trailing action.
+  iOS-style large title with an eyebrow line and an optional trailing action. A `badge` sits on
+  the eyebrow line, beside the eyebrow, so the large title never runs into it.
 -->
 <script lang="ts">
 	import type { Snippet } from 'svelte';
@@ -8,15 +9,22 @@
 	interface Props {
 		title: string;
 		eyebrow?: string;
+		/** A status badge for the eyebrow line, not the title's: the title keeps its full width. */
+		badge?: Snippet;
 		trailing?: Snippet;
 	}
 
-	let { title, eyebrow, trailing }: Props = $props();
+	let { title, eyebrow, badge, trailing }: Props = $props();
 </script>
 
 <header class="page-header">
 	<div class="titles">
-		{#if eyebrow}<p class="eyebrow">{eyebrow}</p>{/if}
+		{#if badge}
+			<div class="eyebrow-row">
+				{#if eyebrow}<p class="eyebrow">{eyebrow}</p>{/if}
+				{@render badge()}
+			</div>
+		{:else if eyebrow}<p class="eyebrow">{eyebrow}</p>{/if}
 		<h1 class="title">{title}</h1>
 	</div>
 	{#if trailing}<div class="trailing">{@render trailing()}</div>{/if}
@@ -35,6 +43,13 @@
 		display: grid;
 		gap: var(--space-1-5);
 		min-width: 0;
+	}
+
+	.eyebrow-row {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: var(--space-1-5) var(--space-2);
 	}
 
 	.title {

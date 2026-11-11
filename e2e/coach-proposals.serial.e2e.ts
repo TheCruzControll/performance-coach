@@ -6,7 +6,9 @@
  * that version in Train, where the decision keeps the coach's why; a reload keeps the applied
  * card. A double tap applies it once, a modified request still applies only what was stored, and
  * a proposal the owner's own edit overtook is superseded instead. The card's code loads with the
- * first card; a failed fetch is the chunk-failed notice, whose Retry shows the card.
+ * first card; a failed fetch is the chunk-failed notice, whose Retry shows the card. The
+ * conversation says things once: titled by the proposal, the answer's note a footnote under the
+ * card, no recommendation repeating it, and 'Nothing changes until you accept' only on the card.
  *
  * The split-squat-week fixture plans Bulgarian split squats; 'I hate Bulgarian split squats, so
  * replace them' records the dislike and proposes swapping them for their best alternative.
@@ -120,6 +122,25 @@ async function ownerMove(request: APIRequestContext) {
 	expect(await response.json()).toMatchObject({ type: 'success' });
 }
 
+/** The thread says things once: by its outcome, the note as a footnote, one 'nothing changes'. */
+async function expectSaidOnce(page: Page, title: string) {
+	const thread = page.getByTestId('thread');
+	await expect(thread.getByRole('heading', { level: 2 })).toHaveText(title);
+	await expect(thread.getByTestId('answer-footnote')).toHaveText(
+		/Noted that you dislike Bulgarian split squats\./
+	);
+	await expect(thread.getByTestId('answer-block')).toHaveCount(0);
+	// What the screen shows, not what a screen reader is told, and only once.
+	const shown = () =>
+		thread.evaluate((el) => {
+			const copy = el.cloneNode(true) as HTMLElement;
+			for (const hidden of copy.querySelectorAll('.visually-hidden')) hidden.remove();
+			return copy.textContent ?? '';
+		});
+	await expect.poll(async () => (await shown()).match(/nothing changes until/gi)?.length).toBe(1);
+	expect(await shown()).not.toMatch(/Recommendation/);
+}
+
 /** axe on the page as it is, in the dark and the light theme. */
 async function auditThemes(page: Page, state: string) {
 	for (const theme of ['dark', 'light'] as const) {
@@ -160,6 +181,7 @@ test('a proposed change shows inline with what changes, why and its impact; Acce
 	await expect(card(page).getByTestId('proposal-why')).toHaveText(stored!.rationale);
 	await expect(card(page).getByTestId('proposal-impact')).toBeVisible();
 	await expect(card(page)).toContainText('Nothing changes until you accept.');
+	await expectSaidOnce(page, stored!.title);
 	expect(await versions()).toBe(1);
 	await captureScreen(page, testInfo, 'coach-proposal-card');
 	await auditThemes(page, 'proposed');
@@ -175,6 +197,11 @@ test('a proposed change shows inline with what changes, why and its impact; Acce
 
 	await page.reload();
 	await expect(card(page).getByTestId('proposal-state')).toContainText('Applied as version 2');
+	await expect(page.getByTestId('thread').getByRole('heading', { level: 2 })).toHaveText(
+		stored!.title
+	);
+	await expect(page.getByTestId('answer-footnote')).toHaveCount(1);
+	await expect(page.getByTestId('answer-block')).toHaveCount(0);
 
 	await card(page).getByRole('link', { name: 'View in Train' }).click();
 	await expect(page).toHaveURL(/\/train\/history\/2$/);

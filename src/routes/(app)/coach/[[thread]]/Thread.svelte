@@ -17,7 +17,9 @@
   question again under its own id. While an answer streams the page follows it down, unless the
   owner has scrolled up.
   A proposal shows as a card after the answer of the run that made it (a turn's, once the stored
-  proposal is read). The card's code loads with the first card; a failed fetch is the chunk-failed
+  proposal is read). Such an answer says things once (proposal-thread.ts): its plain
+  recommendation, the card's pitch, is left out, its plain notes are footnotes under the card,
+  and the conversation is titled by its newest proposal. The card's code loads with the first card; a failed fetch is the chunk-failed
   notice with Retry, and failing again while online reloads the conversation. Accept goes by id;
   the card then shows the proposal as the server answered (applied as version N, or superseded).
   Reject and 'Ask for changes' open RejectSheet, loaded on the first tap: a rejection goes by id
@@ -38,18 +40,25 @@
 	import type { TurnRef } from '#lib/client/coach/stream.ts';
 	import type { HistoryRequest } from '#lib/client/workout/exercise-history.ts';
 	import { ASK_FOR_CHANGES, type ProposalCardView } from '#lib/domain/coach/cards.ts';
-	import { ANSWER_BLOCK_KIND_LABEL, COACH_ERROR_KIND_LABEL } from '#lib/domain/coach/index.ts';
+	import {
+		ANSWER_BLOCK_KIND_LABEL,
+		COACH_ERROR_KIND_LABEL,
+		type CompletedBlock
+	} from '#lib/domain/coach/index.ts';
 	import Badge from '#lib/ui/components/Badge.svelte';
 	import Button from '#lib/ui/components/Button.svelte';
+	import Icon from '#lib/ui/components/Icon.svelte';
 	import ActivityChip from '#lib/ui/coach/ActivityChip.svelte';
 	import AnswerBlocks from '#lib/ui/coach/AnswerBlocks.svelte';
 	import CoachNotice from '#lib/ui/coach/CoachNotice.svelte';
 	import LoadingRows from '#lib/ui/coach/LoadingRows.svelte';
 	import LiveAnnouncer from '#lib/ui/coach/LiveAnnouncer.svelte';
+	import RichText from '#lib/ui/coach/RichText.svelte';
 	import ThinkingIndicator from '#lib/ui/coach/ThinkingIndicator.svelte';
 	import { SCREEN_FAILURE_LABEL } from '#lib/ui/coach/coach-notices.ts';
 	import { toast } from '#lib/ui/toast.svelte.ts';
 	import type { ThreadView } from './coach.server';
+	import { outcomeTitle, proposalAnswer, proposalRuns } from './proposal-thread.ts';
 
 	interface Props {
 		/** None while a new conversation's first answer streams, before its page opens. */
@@ -151,6 +160,19 @@
 	/** The decisions that failed on the way and may go through if sent again, by proposal id. */
 	let failures = $state.raw<Record<string, Decision>>({});
 	const cardFor = (id: string): ProposalCardView | undefined => decided[id] ?? stored.get(id);
+
+	/** The stored answers that made proposals, as shown, and the footnotes under their cards. */
+	const runs = $derived(proposalRuns(thread.messages));
+	const title = $derived(
+		outcomeTitle(thread.title, [
+			...thread.messages.flatMap((m) =>
+				m.from === 'proposal' && !hidden.has(m.id) ? [cardFor(m.id)?.title ?? m.card.title] : []
+			),
+			...turns.flatMap((turn) =>
+				modeOf(turn) === 'whole' ? turn.proposals.map((p) => p.title) : []
+			)
+		])
+	);
 	const without = <T,>(record: Record<string, T>, id: string) =>
 		Object.fromEntries(Object.entries(record).filter(([key]) => key !== id));
 
@@ -354,6 +376,15 @@
 	{/if}
 {/snippet}
 
+{#snippet footnotes(blocks: readonly CompletedBlock[] | undefined)}
+	{#each blocks ?? [] as block (block.block)}
+		<div class="footnote" data-testid="answer-footnote">
+			<Icon name="info" size={14} strokeWidth={2} />
+			<div><span class="visually-hidden">Coach’s note:</span><RichText nodes={block.ast} /></div>
+		</div>
+	{/each}
+{/snippet}
+
 {#snippet ended(label: string, question: StoredQuestion | null, threadId = thread.id)}
 	<p class="ended">
 		<Badge tone="warning" icon="alert" data-testid="answer-ended">{label}</Badge>
@@ -372,7 +403,7 @@
 	onclickcapture={focusSource}
 	data-testid="thread"
 >
-	<h2 id="thread-title" class="title">{thread.title}</h2>
+	<h2 id="thread-title" class="title">{title}</h2>
 	<ol class="messages">
 		{#each thread.messages as message (message.id)}
 			{#if hidden.has(message.id)}
@@ -380,6 +411,7 @@
 			{:else if message.from === 'proposal'}
 				<li class="coach" data-testid="proposal">
 					{@render proposal(message.id, message.card.title)}
+					{@render footnotes(runs.footnotes.get(message.id))}
 				</li>
 			{:else if message.from === 'owner'}
 				<li class="owner" data-testid="owner-message">
@@ -387,18 +419,22 @@
 					<p class="bubble">{message.text}</p>
 				</li>
 			{:else}
-				<li class="coach" data-testid="coach-message">
-					<span class="visually-hidden">Coach:</span>
-					<AnswerBlocks blocks={message.blocks} onopenexercise={openExercise} />
-					{#if message.ended}
-						{@render ended(message.ended, message === lastShown ? retryable : null)}
-					{/if}
-				</li>
+				{@const blocks = runs.answers.get(message.id) ?? message.blocks}
+				{#if blocks.length || message.ended}
+					<li class="coach" data-testid="coach-message">
+						<span class="visually-hidden">Coach:</span>
+						<AnswerBlocks {blocks} onopenexercise={openExercise} />
+						{#if message.ended}
+							{@render ended(message.ended, message === lastShown ? retryable : null)}
+						{/if}
+					</li>
+				{/if}
 			{/if}
 		{/each}
 		{#each turns as turn (turn)}
 			{@const mode = modeOf(turn)}
 			{@const end = turn.settled && !turn.answered && turn.error}
+			{@const asked = turn.proposals.length ? proposalAnswer(turn.blocks) : null}
 			{#if mode === 'whole' && !turn.retry}
 				<li class="owner" data-testid="owner-message">
 					<span class="visually-hidden">You:</span>
@@ -413,6 +449,11 @@
 				>
 					<span class="visually-hidden">Coach:</span>
 					{#if mode === 'whole'}
+						{@const blocks = asked?.blocks ?? turn.blocks}
+						<!-- A proposal's note or pitch, on its way to a footnote or left out, is not drafted. -->
+						{@const drafts = asked
+							? turn.drafts.filter((d) => d.kind !== 'note' && d.kind !== 'recommendation')
+							: turn.drafts}
 						{#if turn.chips.length}
 							<ul class="chips" aria-label="What the coach did">
 								{#each turn.chips as chip (chip.id)}
@@ -423,19 +464,25 @@
 							</ul>
 						{/if}
 						{#if turn.thinking}<ThinkingIndicator data-testid="thinking" />{/if}
-						{#if turn.blocks.length}
-							<AnswerBlocks blocks={turn.blocks} onopenexercise={openExercise} />
+						{#if blocks.length}
+							<AnswerBlocks {blocks} onopenexercise={openExercise} />
 						{/if}
-						{#each turn.drafts as draft (draft.block)}
+						{#each drafts as draft (draft.block)}
 							<div class="draft" data-testid="answer-draft">
 								<span class="kind">{ANSWER_BLOCK_KIND_LABEL[draft.kind]}</span>
 								<p>{draft.text}</p>
 							</div>
 						{/each}
-						<LiveAnnouncer blocks={turn.blocks} complete={turn.answered} />
+						<LiveAnnouncer
+							blocks={asked
+								? turn.blocks.filter((b) => blocks.includes(b) || asked.footnotes.includes(b))
+								: turn.blocks}
+							complete={turn.answered}
+						/>
 						{#each turn.proposals as each (each.id)}
 							<div data-testid="proposal">{@render proposal(each.id, each.title)}</div>
 						{/each}
+						{@render footnotes(asked?.footnotes)}
 					{/if}
 					{#if end}
 						{@render ended(
@@ -514,6 +561,22 @@
 	.coach {
 		display: grid;
 		gap: var(--space-2);
+	}
+
+	/* A note the proposal card makes no room for: small, quiet, under the card. */
+	.footnote {
+		display: flex;
+		gap: var(--space-1-5);
+		align-items: flex-start;
+		color: var(--color-text-secondary);
+		font-size: var(--text-sm);
+		line-height: var(--leading-snug);
+		overflow-wrap: anywhere;
+	}
+
+	.footnote :global(svg) {
+		flex: none;
+		margin-top: 0.2em;
 	}
 
 	.ended {
