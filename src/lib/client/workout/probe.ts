@@ -9,7 +9,7 @@
  */
 import type { SessionKind } from '#lib/domain/training/types.ts';
 import type { Instant, StopwatchState } from '#lib/domain/workout/index.ts';
-import type { StoredWorkout } from './db.ts';
+import type { SavedKit, StoredWorkout } from './db.ts';
 import { DB_NAME, OUTBOX_INDEXES, STORES } from './names.ts';
 
 export interface ActiveSummary {
@@ -45,13 +45,17 @@ const result = <T>(request: IDBRequest<T>) =>
 		request.onerror = () => reject(request.error);
 	});
 
-async function read<T>(empty: T, query: (tx: IDBTransaction) => Promise<T>): Promise<T> {
+async function read<T>(
+	empty: T,
+	query: (tx: IDBTransaction) => Promise<T>,
+	stores: string[] = [STORES.workouts, STORES.outbox]
+): Promise<T> {
 	let db: IDBDatabase | null = null;
 	try {
 		db = await openExisting();
 		if (!db) return empty;
 		// Throws NotFoundError on a database without the workout stores: empty too.
-		return await query(db.transaction([STORES.workouts, STORES.outbox], 'readonly'));
+		return await query(db.transaction(stores, 'readonly'));
 	} catch {
 		return empty;
 	} finally {
@@ -111,4 +115,31 @@ export function waitingToSync(): Promise<WaitingSummary[]> {
 /** Every change on this device not synced yet, of any workout. */
 export function pendingCount(): Promise<number> {
 	return read(0, (tx) => result(tx.objectStore(STORES.outbox).count()));
+}
+
+/** A workout's planned session and where it stands: all the offline screen asks of it. */
+export interface PlannedRun {
+	kind: SessionKind;
+	status: StoredWorkout['status'];
+	plannedLineage: string;
+}
+
+/**
+ * The start kits saved on this device (Today's today-kits.ts), oldest first, and the workouts
+ * started from a planned session; both empty on a device without the database.
+ */
+export function savedKits(): Promise<{ kits: SavedKit[]; runs: PlannedRun[] }> {
+	return read(
+		{ kits: [], runs: [] },
+		async (tx) => {
+			const kits = await result<SavedKit[]>(tx.objectStore(STORES.kits).getAll());
+			const workouts = await result<StoredWorkout[]>(tx.objectStore(STORES.workouts).getAll());
+			const runs: PlannedRun[] = [];
+			for (const { kind, status, kit } of workouts) {
+				if (kit?.plannedLineage) runs.push({ kind, status, plannedLineage: kit.plannedLineage });
+			}
+			return { kits: kits.sort((a, b) => a.savedAt - b.savedAt), runs };
+		},
+		[STORES.kits, STORES.workouts]
+	);
 }
