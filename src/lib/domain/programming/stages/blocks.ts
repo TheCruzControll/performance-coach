@@ -13,12 +13,12 @@
  * per stream it trains. BlockPlan.progression holds only numbers, so each maintenance_dose names
  * its goal's ref and mode in its evidence.
  */
+import type { WeekPlan } from '../../training/types.ts';
 import { planFirstBlock } from '../blocks.ts';
 import type { DecisionLog, FactsFor } from '../decisions.ts';
 import { clip } from '../demand.ts';
 import type { ProgrammingInput } from '../input.ts';
 import { toBlockPlans } from '../periodisation/season.ts';
-import type { BlockSkeleton } from '../periodisation/season.ts';
 import { assumptionFacts } from '../rules/defaults.ts';
 import type { Periodisation, Stage } from '../stage.ts';
 
@@ -53,11 +53,18 @@ export function recordDoses({ dosesByWeek }: Periodisation, log: DecisionLog) {
 	}
 }
 
-/** A deload_scheduled for each deload week the season planned in an M7 first block. */
-function recordDeloads(first: BlockSkeleton, log: DecisionLog) {
-	if (first.type === null) return;
-	for (const [i, week] of first.weeks.entries()) {
-		if (week.kind !== 'deload') continue;
+/**
+ * A deload_scheduled for each deload week the season planned in a first block's `weeks`, but week
+ * `skip`: M6's next block (stages/next-shape.ts) records the season's deloads too, its directed
+ * one being the results stage's.
+ */
+export function recordDeloads(
+	weeks: readonly Pick<WeekPlan, 'kind' | 'targets'>[],
+	log: DecisionLog,
+	skip = -1
+) {
+	for (const [i, week] of weeks.entries()) {
+		if (week.kind !== 'deload' || i === skip) continue;
 		log.add('deload_scheduled', SCHEDULED_DELOAD_KEY, [`blocks.0.weeks.${i}`], {
 			week: i + 1,
 			rpeCap: week.targets.rpeCap,
@@ -90,7 +97,7 @@ export const blocks: Stage = (draft, { input, options, log }) => {
 		log.add(d.kind, d.ruleKey, d.refs, d.evidence as FactsFor<typeof d.kind>);
 	}
 	recordDoses(periodisation, log);
-	recordDeloads(season.blocks[0]!, log);
+	if (season.blocks[0]!.type !== null) recordDeloads(season.blocks[0]!.weeks, log);
 	recordInputs(input, log);
 	return { ...draft, blocks: toBlockPlans(season.blocks) };
 };

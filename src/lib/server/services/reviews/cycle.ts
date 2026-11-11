@@ -8,7 +8,8 @@
  *   CycleReviewNotReviewableError with the day it becomes available.
  * - Creating is one transaction under the owner's review lock, and idempotent. It reads the
  *   block's facts (the workouts before it too, for the ACWR), each week's targets (targets.ts) and
- *   M2's active goals, then evaluateCycle → directivesFrom → store. The next_cycle proposal is the
+ *   M2's active goals, then evaluateCycle → directivesFrom (with today's programming input, so the
+ *   season planner chooses the next block) → store. The next_cycle proposal is the
  *   directives' modifiable subset, created with the review's rules provenance (evidence.source)
  *   and linked to it. Decision: its evidence keeps the directives and the folded overrides, since
  *   the cycle snapshot's schema has no field for them; the previews and a refresh read them back.
@@ -419,10 +420,15 @@ async function compute(
 			}
 		: null;
 	const outline = read.next && { phase: read.next.phase, weeks: weeksOf(read.next) };
+	// Today's profile input: the season planner chooses the next block at today's goals (M7).
+	// Decision: the review keeps this choice; a goal change before accepting re-previews with it
+	// (the modes follow the new goals), as M6's goals-based directives did, until a refresh.
+	const profile = await programmingInputFor(ownerId, { db });
 	const directives = directivesFrom(
 		{ snapshot: evaluation.snapshot, running },
 		outline,
-		read.goals
+		read.goals,
+		profile
 	);
 	const folded = await coachNextCycles(db, ownerId, blockLineage);
 	const payloads = folded.map((f) => f.payload);

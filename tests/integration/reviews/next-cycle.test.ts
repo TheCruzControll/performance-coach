@@ -6,8 +6,10 @@
  *   lineage, loads from the block's e1RMs (basis estimated), kept and rotated exercises as the
  *   directives say; version N reads as it did, the review names the new version, and a second
  *   decision writes nothing
- * - a stale fingerprint is refused, one made under the next block's id before m7-stage-list too,
- *   and the fresh preview's applies once; no outline appends a block; three weeks late plans a bridge
+ * - the planned block is the season's (M7's next-cycle-periodised): its weeks from the directives'
+ *   weekPlan, decisions recording its block type and its goal's mode, an owner override clamped
+ * - a stale fingerprint is refused, one made under the next block's id before m7-stage-list or
+ *   before next-cycle-periodised too, and the fresh preview's applies once; no outline appends a block; three weeks late plans a bridge
  *   and the outline from its shifted date; an owner override keeps a rotated exercise through a
  *   revision whose decision reads applied
  * - every path of M5's inbox: the review's own proposal is a 409 choose_start with the review's
@@ -23,6 +25,7 @@ import { localDay } from '../../../src/lib/domain/dates';
 import type { ProgrammingInput } from '../../../src/lib/domain/programming/input';
 import type * as Random from '../../../src/lib/domain/programming/random';
 import { GENERATOR_ID } from '../../../src/lib/domain/programming/next-block/generate';
+import type { CycleDirectives } from '../../../src/lib/domain/programming/review/directives';
 import { cleanFloat } from '../../../src/lib/domain/units';
 import type { Executor } from '../../../src/lib/server/db';
 import {
@@ -35,7 +38,7 @@ import {
 	NextCycleConflictError
 } from '../../../src/lib/server/services/coach/apply/next-cycle';
 import { getExercisesByIds } from '../../../src/lib/server/services/exercises/index';
-import { saveSchedule } from '../../../src/lib/server/services/profile/index';
+import { listGoals, saveSchedule } from '../../../src/lib/server/services/profile/index';
 import {
 	getProgramVersion,
 	type StoredBlock
@@ -192,7 +195,7 @@ describe('deciding the next cycle', () => {
 				id: decided.outcome === 'applied' ? decided.versionId : null,
 				created_by: 'rules',
 				summary: `Next block: ${shown.block.name}`,
-				generator: 'next-block/1+perfo-programming/6',
+				generator: 'next-block/2+perfo-programming/6',
 				input_fingerprint: shown.fingerprint
 			});
 			expect(v2row!.catalogue_digest).toMatch(/^[0-9a-f]{16}$/);
@@ -267,6 +270,72 @@ describe('deciding the next cycle', () => {
 		});
 	});
 
+	it('stores the season’s block: its weeks, and decisions that record its type and its goal’s mode', async () => {
+		await withRollback(async (db) => {
+			const r = await reviewed(db, 'block-end');
+			const shown = await preview(r, 'next_monday');
+			await decide(r, { start: 'next_monday', fingerprint: shown.fingerprint });
+			const v2 = await getProgramVersion(r.owner, r.programId, 2, { db });
+			const planned = v2.blocks[1]!;
+
+			// The weeks are the season's (past its block, its last loading week again).
+			const own = await proposalRow(db, r.review.proposalId!);
+			const plan = (own.evidence.directives as unknown as CycleDirectives).weekPlan!;
+			const season = planned.weeks.map((_, i) => plan[i] ?? plan.at(-1)!);
+			expect(planned.weeks.map((w) => w.kind)).toEqual(season.map((w) => w.kind));
+			expect(planned.weeks.map((w) => w.targets.mainLifts)).toEqual(
+				season.map((w) => w.targets.mainLifts)
+			);
+			expect(planned.weeks[0]!.targets.mainLifts).toBeDefined();
+
+			// Its type, as the season chose it for the block's dates, and the goal's mode.
+			const types = v2.decisions.filter((d) => d.kind === 'block_type_chosen');
+			expect(types.map((d) => d.evidence)).toEqual([
+				expect.objectContaining({
+					type: 'strength',
+					block: planned.name,
+					weeks: 4,
+					startsOn: BUILD_STARTS
+				})
+			]);
+			const [goal] = await listGoals(r.owner, { db });
+			const modes = v2.decisions.filter((d) => d.kind === 'priority_resolved');
+			expect(modes.map((d) => d.evidence)).toContainEqual(
+				expect.objectContaining({ goalRef: goal!.id, mode: 'primary' })
+			);
+		});
+	});
+
+	it('holds an owner’s override to the review’s bounds on the season’s weeks', async () => {
+		await withRollback(async (db) => {
+			const r = await reviewed(db, 'block-end');
+			const shown = await preview(r, 'next_monday');
+			const targets = { rpeCap: 9.5, volumeFactor: 0.8, loadStep: 0.025, runVolumeFactor: 1 };
+			const decided = await decide(r, {
+				start: 'next_monday',
+				fingerprint: shown.fingerprint,
+				overrides: { targets }
+			});
+			expect(decided.outcome).toBe('applied');
+			const own = await proposalRow(db, r.review.proposalId!);
+			const cap = (own.payload.targets as { rpeCap: number }).rpeCap;
+			expect(cap).toBeLessThan(9.5);
+			const revision = await proposalRow(db, decided.proposalId);
+			expect((revision.evidence as unknown as { clamps: unknown[] }).clamps).toEqual([
+				{ field: 'targets.rpeCap', asked: 9.5, used: cap }
+			]);
+
+			const v2 = await getProgramVersion(r.owner, r.programId, 2, { db });
+			const weeks = v2.blocks[1]!.weeks;
+			const plan = (own.evidence.directives as unknown as CycleDirectives).weekPlan!;
+			const season = weeks.map((_, i) => plan[i] ?? plan.at(-1)!);
+			expect(weeks.every((w) => w.targets.rpeCap <= cap)).toBe(true);
+			expect(weeks.map((w) => w.targets.volumeFactor)).toEqual(
+				season.map((w) => cleanFloat(w.targets.volumeFactor * 0.8, 3))
+			);
+		});
+	});
+
 	it('refuses a fingerprint from before a profile change, and writes nothing', async () => {
 		await withRollback(async (db) => {
 			const r = await reviewed(db, 'block-end');
@@ -298,41 +367,45 @@ describe('deciding the next cycle', () => {
 		});
 	});
 
-	it("refuses a preview made under 'next-block/1', then re-previews and applies once", async () => {
-		await withRollback(async (db) => {
-			const r = await reviewed(db, 'block-end');
-			hashed.last = null;
-			const shown = await preview(r, 'next_monday');
-			const { input, digest } = hashed.last!;
-			expect(hashed.actual!(input, digest, GENERATOR_ID)).toBe(shown.fingerprint);
-			// The same preview, fingerprinted by the id the next block stored before this change.
-			const before = hashed.actual!(input, digest, 'next-block/1');
-			expect(before).not.toBe(shown.fingerprint);
+	// 'next-block/1' before m7-stage-list, 'next-block/1+…' before the season planned the next block.
+	it.each(['next-block/1', 'next-block/1+perfo-programming/6'])(
+		"refuses a preview made under '%s', then re-previews and applies once",
+		async (id) => {
+			await withRollback(async (db) => {
+				const r = await reviewed(db, 'block-end');
+				hashed.last = null;
+				const shown = await preview(r, 'next_monday');
+				const { input, digest } = hashed.last!;
+				expect(hashed.actual!(input, digest, GENERATOR_ID)).toBe(shown.fingerprint);
+				// The same preview, fingerprinted by an id the next block stored before.
+				const before = hashed.actual!(input, digest, id);
+				expect(before).not.toBe(shown.fingerprint);
 
-			const refused = await decide(r, { start: 'next_monday', fingerprint: before }).catch(
-				(e: unknown) => e
-			);
-			expect(refused).toBeInstanceOf(NextCycleConflictError);
-			expect(refused).toMatchObject({ reason: 'profile' });
-			expect(await versions(db, r.programId)).toHaveLength(1);
-			expect((await decisionState(r.owner, r.review, { db })).state).toBe('undecided');
+				const refused = await decide(r, { start: 'next_monday', fingerprint: before }).catch(
+					(e: unknown) => e
+				);
+				expect(refused).toBeInstanceOf(NextCycleConflictError);
+				expect(refused).toMatchObject({ reason: 'profile' });
+				expect(await versions(db, r.programId)).toHaveLength(1);
+				expect((await decisionState(r.owner, r.review, { db })).state).toBe('undecided');
 
-			// The review previews again with the new fingerprint, which applies once.
-			const fresh = await preview(r, 'next_monday');
-			expect(fresh.fingerprint).toBe(shown.fingerprint);
-			const decided = await decide(r, { start: 'next_monday', fingerprint: fresh.fingerprint });
-			expect(decided).toMatchObject({ outcome: 'applied', versionNumber: 2 });
-			// Once: deciding again returns that decision and writes nothing.
-			expect(await decide(r, { start: 'next_monday', fingerprint: fresh.fingerprint })).toEqual(
-				decided
-			);
-			const rows = await versions(db, r.programId);
-			expect(rows.map((v) => [v.number, v.generator])).toEqual([
-				[1, rows[0]!.generator],
-				[2, GENERATOR_ID]
-			]);
-		});
-	});
+				// The review previews again with the new fingerprint, which applies once.
+				const fresh = await preview(r, 'next_monday');
+				expect(fresh.fingerprint).toBe(shown.fingerprint);
+				const decided = await decide(r, { start: 'next_monday', fingerprint: fresh.fingerprint });
+				expect(decided).toMatchObject({ outcome: 'applied', versionNumber: 2 });
+				// Once: deciding again returns that decision and writes nothing.
+				expect(await decide(r, { start: 'next_monday', fingerprint: fresh.fingerprint })).toEqual(
+					decided
+				);
+				const rows = await versions(db, r.programId);
+				expect(rows.map((v) => [v.number, v.generator])).toEqual([
+					[1, rows[0]!.generator],
+					[2, GENERATOR_ID]
+				]);
+			});
+		}
+	);
 
 	it('with no outline left, appends the block after a bridge', async () => {
 		await withRollback(async (db) => {
@@ -514,7 +587,13 @@ describe("M5's inbox", () => {
 
 			// The preview plans from the folded head, and deciding applies it.
 			const shown = await preview(r, 'next_monday');
-			expect(shown.block.weeks.map((w) => w.targets.volumeFactor)).toEqual([0.8, 0.8, 0.88, 0.88]);
+			// The coach's 0.8 scales the season's weekly factors.
+			// Past the season's block, its last loading week repeats.
+			const plan = (head.evidence.directives as unknown as CycleDirectives).weekPlan!;
+			const season = [0, 1, 2, 3].map((i) => plan[i] ?? plan.at(-1)!);
+			expect(shown.block.weeks.map((w) => w.targets.volumeFactor)).toEqual(
+				season.map((w) => cleanFloat(w.targets.volumeFactor * 0.8, 3))
+			);
 			const decided = await decide(r, { start: 'next_monday', fingerprint: shown.fingerprint });
 			const headId = (decision as { proposalId: string }).proposalId;
 			expect(decided).toMatchObject({ outcome: 'applied', proposalId: headId });
