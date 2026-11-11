@@ -5,6 +5,8 @@
  * Service worker: precache the app shell and static assets per build version, clean up old
  * versions on activate (and take control of already-open pages), and serve:
  *   - build assets + static files  → cache-first (immutable, versioned)
+ *   - the Graphite 2004 preview's   → not precached (a device on today's design never fetches
+ *     stylesheet and font             them); cached the first time a device uses them
  *   - prerendered pages            → cache-first, whatever the query string, so a workout page
  *                                    (/workout?start=…) reloads offline from the precache
  *   - page navigations             → network only, through the navigation preload (enabled on
@@ -23,6 +25,7 @@
 import { version } from '$app/env';
 import { assets, immutable, prerendered } from '$app/manifest';
 import { self } from '$app/service-worker';
+import { DESIGN_ASSET } from '#lib/client/design.ts';
 import { fromNetwork, isDataRequest, loadData } from '#lib/client/sw-network.ts';
 import { navigationTimeout } from '#lib/client/workout/launch.ts';
 import { activeSummary } from '#lib/client/workout/probe.ts';
@@ -43,7 +46,7 @@ const PRECACHE = [
 	...prerendered.map((f) => f.path)
 ]
 	.map((path) => new URL(path, self.registration.scope).pathname)
-	.filter((path) => !NOT_PRECACHED.test(path));
+	.filter((path) => !NOT_PRECACHED.test(path) && !DESIGN_ASSET.test(path));
 
 const PRECACHED = new Set(PRECACHE);
 
@@ -74,6 +77,16 @@ async function cacheFirst(request: Request): Promise<Response> {
 	const ignoreSearch = request.mode === 'navigate';
 	const cached = await caches.match(request, { cacheName: SHELL_CACHE, ignoreSearch });
 	return cached ?? fetch(request);
+}
+
+/** A file only the Graphite preview loads: from the cache once this device has used it. */
+async function cacheOnUse(request: Request): Promise<Response> {
+	const cache = await caches.open(SHELL_CACHE);
+	const cached = await cache.match(request);
+	if (cached) return cached;
+	const response = await fetch(request);
+	if (response.ok) await cache.put(request, response.clone()).catch(() => {});
+	return response;
 }
 
 /** Whether a workout is in progress on this device (its IndexedDB, read without creating it). */
@@ -120,6 +133,8 @@ self.addEventListener('fetch', (event) => {
 	if (PRECACHED.has(url.pathname)) {
 		// A navigation here leaves its preload unused: the browser cancels it.
 		event.respondWith(cacheFirst(request));
+	} else if (DESIGN_ASSET.test(url.pathname)) {
+		event.respondWith(cacheOnUse(request));
 	} else if (request.mode === 'navigate') {
 		event.respondWith(navigate(request, event.preloadResponse));
 	} else if (isDataRequest(url)) {
