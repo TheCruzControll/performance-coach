@@ -94,7 +94,12 @@
 
 		<div class="pane">
 			{#if selected && data.View}
-				{#key selected.key}<data.View review={selected} />{/key}
+				{#key selected.key}<data.View
+						review={selected}
+						Body={data.Body}
+						body={data.body}
+						served={data.served}
+					/>{/key}
 			{:else}
 				<Surface padding="none" radius="xl">
 					<EmptyState
