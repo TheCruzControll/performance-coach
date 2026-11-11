@@ -27,12 +27,23 @@
     from IndexedDB and the precache, so an offline reload keeps it, with 'View in History' once
     the workout has synced.
   - Nothing reads the URL while prerendering: the HTML is the same, data-free, for everyone.
+  - prepaint: the page's current exercise, painted before the app starts from what this device
+    kept (Prepaint.svelte, /workout's), in the skeleton's place while restoring; from 1024 px it
+    takes the view's columns, so the view replaces it in place. Any phase but a workout in progress
+    drops what the device kept (prepaint.ts).
   - start: /workout?start= or ?new=, which the page reads once mounted. The start flow's chunk
     (StartFlow.svelte) is shown instead of any workout, through the page's chunk loader; the
     page neither connects its own store nor sends a workout of another kind to its route.
   - Layout: one column below 1024 px; from there the header spans the page, and the view's side
     and main columns sit side by side, centred, at --content-list beside --content-readable.
 -->
+<script module lang="ts">
+	// The header's stopwatch, which the first paint waits for: asked as the module is evaluated,
+	// before the page hydrates, as the routes ask for their views. Handled when the Shell mounts.
+	const clock = import.meta.env.SSR ? null : import('./WorkoutClock.svelte');
+	clock?.catch(() => {});
+</script>
+
 <script lang="ts">
 	import { onMount, untrack, type Component, type Snippet } from 'svelte';
 	import {
@@ -63,9 +74,11 @@
 		ready?: () => Promise<unknown>;
 		/** The start flow's chunk, once the page has read ?start or ?new. */
 		start?: () => Promise<{ default: Component<{ load: ChunkLoad }> }>;
+		/** The current exercise painted before the app starts, shown while restoring. */
+		prepaint?: Snippet;
 	}
 
-	let { table, children, ready, start }: Props = $props();
+	let { table, children, ready, start, prepaint }: Props = $props();
 
 	// A route's table never changes: read once.
 	const active = new ActiveWorkout(untrack(() => table));
@@ -100,16 +113,10 @@
 
 	onMount(() => {
 		if (ready) void load(ready).then((module) => (viewLoaded = module !== null));
-		void load(() => import('./WorkoutClock.svelte')).then((module) => {
+		void load(() => clock!).then((module) => {
 			if (module) Clock = module.default;
 		});
 		void active.restore(load);
-		idle(
-			() =>
-				void import('#lib/client/vitals.ts')
-					.then((rum) => rum.startVitalsReporting())
-					.catch(() => {})
-		);
 		return () => active.close();
 	});
 
@@ -118,6 +125,11 @@
 		if (waiting || connecting) return;
 		connecting = true;
 		idle(async () => {
+			// RUM once the page shows what it restored, never before: its chunks would compete with
+			// the view's. Its observers are buffered, so it still reports the load's paints.
+			void import('#lib/client/vitals.ts')
+				.then((rum) => rum.startVitalsReporting())
+				.catch(() => {});
 			if (start) return;
 			await active.connect(load);
 			ui = await load(() => import('./sync-ui.ts'));
@@ -149,6 +161,16 @@
 		location.replace(`${workoutPath(restore.kind)}${location.search}`);
 	});
 
+	// No workout in progress here (none, finished, another kind's, or no storage): the next load
+	// paints the skeleton, not a card this device kept. Loaded then, so no workout page's first
+	// render carries it.
+	$effect(() => {
+		if (restore.phase === 'loading' || restore.phase === 'active') return;
+		void import('#lib/client/workout/prepaint.ts')
+			.then((module) => module.clearPrepaint())
+			.catch(() => {});
+	});
+
 	const reload = () => location.reload();
 </script>
 
@@ -165,6 +187,7 @@
 			{#if shown && Clock && restore.phase === 'active'}<Clock
 					view={shown}
 					store={active.store}
+					{load}
 				/>{/if}
 		{/snippet}
 		{#snippet status()}
@@ -198,6 +221,7 @@
 		{:else if waiting || hidden || starting}
 			<div class="restoring" role="status" aria-busy="true" data-testid="workout-restoring">
 				<span class="visually-hidden">Restoring your workout</span>
+				{@render prepaint?.()}
 				{#each [0, 1, 2] as card (card)}
 					<Skeleton height="10rem" radius="var(--radius-lg)" />
 				{/each}
@@ -308,6 +332,11 @@
 		.restoring {
 			max-width: var(--content-readable);
 			margin: 0 auto;
+		}
+
+		/* A prepainted card takes the view's columns (Prepaint.svelte). */
+		.restoring:has(> :global(.prepaint:not([hidden], [data-rest]))) {
+			max-width: none;
 		}
 	}
 </style>
