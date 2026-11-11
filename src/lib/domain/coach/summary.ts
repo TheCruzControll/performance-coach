@@ -8,7 +8,7 @@
  *   open. The provider sends it as strict JSON Schema; zod checks it again with the bounds JSON
  *   Schema drops.
  * - threadSummaryNoteSchema is the thread_summary note's body: the summary, and the conversation
- *   and segment it closes. The note's summary column is the summary's `summary`, which memory
+ *   and segment it closes, and the last row of it the summary read. The note's summary column is the summary's `summary`, which memory
  *   lists; summaryText is what the next segment's preamble carries.
  *
  * Server-only: imported by path, never through ./index.ts (scripts/coach-index-imports.test.ts).
@@ -53,6 +53,8 @@ export type ThreadSummary = z.output<typeof threadSummarySchema>;
 export const threadSummaryNoteSchema = closed({
 	threadId: z.uuid('Unknown conversation'),
 	segment: z.int('Name the segment').check(z.minimum(1, 'Segments start at 1')),
+	/** The seq of the segment's last row the summary read; absent on notes stored before it. */
+	throughSeq: z.optional(z.int('Name the last row read').check(z.minimum(1, 'Rows start at 1'))),
 	...summaryShape
 });
 export type ThreadSummaryNote = z.output<typeof threadSummaryNoteSchema>;
