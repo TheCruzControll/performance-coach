@@ -426,7 +426,9 @@
 				loggerHeight = 0;
 				return;
 			}
-			sizes.observe(found);
+			// Its border box, as offsetHeight: the home indicator's inset is padding, and a change in
+			// it alone leaves the content box (the observer's default) as it was.
+			sizes.observe(found, { box: 'border-box' });
 			// Measured now, not at the observer's first report a frame later: the pill that appears
 			// with the first rest, or a new logger, never shows at the foot before it moves above it.
 			loggerHeight = found.offsetHeight;
