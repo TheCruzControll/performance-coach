@@ -194,7 +194,8 @@ test.describe('offline behaviour (service worker)', () => {
 	async function expectLogger(page: Page) {
 		await expect(page).toHaveURL(/\/workout$/);
 		await expect(page.getByTestId('complete-set')).toBeEnabled();
-		await expect(page.getByText('Back squat').first()).toBeVisible();
+		// The current exercise's card (the side list holding its name too is hidden on a phone).
+		await expect(page.getByRole('region', { name: 'Back squat' })).toBeVisible();
 		await expect(page.getByTestId('offline-state')).toHaveCount(0);
 	}
 
