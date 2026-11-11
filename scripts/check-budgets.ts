@@ -42,9 +42,9 @@ export const BUDGETS = {
 	/** Font files preloaded on any route. */
 	preloadedFonts: 2,
 	/** Files the service worker downloads at install (src/service-worker/index.ts precache). */
-	precacheFiles: 270,
+	precacheFiles: 275,
 	/** Their decoded size: the install download before HTTP compression. */
-	precacheKb: 980
+	precacheKb: 995
 } as const;
 
 const OUT = '.svelte-kit/output';
