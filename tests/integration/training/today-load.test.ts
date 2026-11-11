@@ -230,10 +230,12 @@ describe('Today’s plan', () => {
 	it('a failed review prompt read is recorded, and the plan shows without it', async () => {
 		await withRollback(async (db) => {
 			const owner = await seeded(db, 'today', '2026-11-02');
+			const program = await getCurrentProgram(owner, TODAY, { db });
+			if (!program) throw new Error('no active program');
 			const request = origin();
 			const view = await loadTodayPlan(
 				owner,
-				{ today: TODAY, origin: request },
+				{ today: TODAY, program, origin: request },
 				{
 					db,
 					errorsDb: db,

@@ -16,35 +16,36 @@ const VIEWS = {
 	cycle: () => import('./CycleReview.svelte')
 } as const satisfies Record<(WeeklyReviewData | CycleReviewData)['kind'], () => Promise<unknown>>;
 
+/** Each kind's view takes that kind's review, which is the one selected, and its own props. */
+type View = Component<{
+	review: WeeklyReviewData | CycleReviewData;
+	earlierCycles?: Snippet<[ReviewRow[]]>;
+	Body?: Component<BodyProps>;
+	body?: Promise<Component<BodyProps>>;
+	served?: string;
+}>;
+
 /**
  * Whether the next load hydrates the server's HTML: only the first one in a document opened on
  * Reviews, which keeps the server's markup of the review's body as sent until its code arrives,
  * so hydration never waits for it (review-body.ts). Any later load waits for that code with the
  * view's own.
  */
-/** Every view's props: each takes those of its own kind. */
-interface ViewProps {
-	review: WeeklyReviewData | CycleReviewData;
-	earlierCycles?: Snippet<[ReviewRow[]]>;
-	Body?: Component<BodyProps>;
-	body?: Promise<Component<BodyProps>>;
-	served?: string;
-}
-
 let hydrating =
 	browser && location.pathname.startsWith(resolve('/(app)/progress/reviews/[[key]]', {}));
 
 export const load: PageLoad = async ({ data }) => {
 	const kept = hydrating;
 	hydrating = false;
-	const none = { Body: undefined, body: undefined, served: undefined };
-	if (data.failed || !data.selected) return { ...data, View: null, ...none };
-	const selected = data.selected;
-	const view = async () =>
-		// Each kind's view takes that kind's review, which is the one selected.
-		(await VIEWS[selected.kind]()).default as unknown as Component<ViewProps>;
-	// Only the weekly review has a body of its own (review-body.ts).
-	if (selected.kind !== 'weekly') return { ...data, View: await view(), ...none };
+	if (data.failed || !data.selected) {
+		return { ...data, View: null, Body: undefined, body: undefined, served: undefined };
+	}
+	const { selected } = data;
+	const view = async () => (await VIEWS[selected.kind]()).default as unknown as View;
+	// Only the weekly review's body is a chunk of its own (review-body.ts).
+	if (selected.kind !== 'weekly') {
+		return { ...data, View: await view(), Body: undefined, body: undefined, served: undefined };
+	}
 	if (!browser) {
 		const View = await view();
 		const served = await servedBody({ review: selected });
