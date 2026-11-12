@@ -243,7 +243,7 @@
 					{@render weekTiles(EMPTY_TILES)}
 					<div class="error" data-testid="today-week-error">
 						<p class="line" role="status">Couldn’t load this week’s numbers.</p>
-						<Button variant="secondary" size="sm" icon="refresh" loading={retrying} onclick={retry}>
+						<Button variant="secondary" icon="refresh" loading={retrying} onclick={retry}>
 							Retry
 						</Button>
 					</div>

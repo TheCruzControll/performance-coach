@@ -266,9 +266,9 @@ test('once set up, Today lists the goals by rank with weeks to go, and the shape
 	const goalsBox = (await page.getByTestId('today-goals').boundingBox())!;
 	expect(goalsBox.y + goalsBox.height).toBeLessThanOrEqual((await thisWeek(page).boundingBox())!.y);
 	await expect(tiles(page)).toHaveText([
-		/^Sessions\s*—\s*No data yet$/,
-		/^Training load\s*—\s*No data yet$/,
-		/^Distance\s*—\s*No data yet$/
+		/^Sessions\s*—\s*No data yet\s*$/,
+		/^Training load\s*—\s*No data yet\s*$/,
+		/^Distance\s*—\s*No data yet\s*$/
 	]);
 	await expect(thisWeek(page)).toContainText('Your week fills in as you log sessions.');
 	// The tiles carry no caption: no repeated 'this week', no 'AU'.
@@ -347,9 +347,9 @@ test('once sessions are logged, This week shows real numbers for Monday to today
 	await gotoHydrated(page, '/today');
 	await expect(tiles(page)).toHaveCount(3);
 	const load = Math.round(week!.load ?? 0).toLocaleString('en-US');
-	await expect(tiles(page).nth(0)).toHaveText(new RegExp(`^Sessions\\s*${week!.sessions}$`));
-	await expect(tiles(page).nth(1)).toHaveText(new RegExp(`^Training load\\s*${load}$`));
-	await expect(tiles(page).nth(2)).toHaveText(/^Distance\s*[\d,]+(\.\d)?\s*km$/);
+	await expect(tiles(page).nth(0)).toHaveText(new RegExp(`^Sessions\\s*${week!.sessions}\\s*$`));
+	await expect(tiles(page).nth(1)).toHaveText(new RegExp(`^Training load\\s*${load}\\s*$`));
+	await expect(tiles(page).nth(2)).toHaveText(/^Distance\s*[\d,]+(\.\d)?\s*km\s*$/);
 	await expect(thisWeek(page)).not.toContainText('No data yet');
 	await expect(thisWeek(page).getByTestId('context-line')).toHaveText(
 		/^(By \w+day last week: \d+ sessions?, (training load [\d,]+, )?[\d.,]+ km\.|Nothing logged by \w+day last week\.)$/

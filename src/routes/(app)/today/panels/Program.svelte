@@ -97,7 +97,6 @@
 		<span class="trailing">
 			<Button
 				variant="ghost"
-				size="sm"
 				href={next.href}
 				aria-label={`Start ${card.title}`}
 				data-testid={next.id}>Start</Button
