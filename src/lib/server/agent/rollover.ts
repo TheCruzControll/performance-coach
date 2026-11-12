@@ -47,6 +47,7 @@ import {
 	TURN_LIMITS,
 	type SegmentLimits
 } from '../../domain/coach/budgets.ts';
+import { isReviewEntry } from '../../domain/coach/review-entries.ts';
 import {
 	summaryText,
 	threadSummarySchema,
@@ -292,14 +293,15 @@ function saveSummary(
 /**
  * Before a turn's transaction: when the thread's current segment is due to roll over, the summary
  * made ahead for it, or else a summary made now, as a thread_summary note. Null when nothing is
- * due (a retried send, an archived thread, a segment within its limits on the current prompt
- * version).
+ * due (a retried send, an archived thread, a review's write-up thread, a segment within its
+ * limits on the current prompt version).
  */
 export async function summariseSegment(input: SummariseInput): Promise<RolloverPlan | null> {
 	const { ownerId, deps } = input;
 	if (await findOwnerMessage(ownerId, input.clientMessageId, deps)) return null;
 	let { thread, rows } = await getTranscript(ownerId, input.threadId, deps);
-	if (thread.archived) return null;
+	// A review's write-up thread is never summarised: memory carries the review itself.
+	if (thread.archived || isReviewEntry(thread.entry)) return null;
 	const reason = await dueReason(input, thread, rows);
 	if (reason === null) return null;
 
@@ -330,7 +332,8 @@ export async function summariseSegment(input: SummariseInput): Promise<RolloverP
 export async function summariseAhead(input: AheadInput): Promise<boolean> {
 	const { ownerId, deps } = input;
 	const { thread, rows } = await getTranscript(ownerId, input.threadId, deps);
-	if (thread.archived || (await dueReason(input, thread, rows)) === null) return false;
+	if (thread.archived || isReviewEntry(thread.entry)) return false;
+	if ((await dueReason(input, thread, rows)) === null) return false;
 	const ms = Math.min(SUMMARY_TIMEOUT_MS, input.deadlineAt - Date.now());
 	if (ms <= 0 || (await spentToday(ownerId, deps)) >= DAILY_LIMITS.costMicros) return false;
 	const made = await summarise({ ...input, signal: AbortSignal.timeout(ms) }, thread, rows);

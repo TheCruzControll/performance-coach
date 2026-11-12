@@ -201,8 +201,8 @@ describe('records against SQL', () => {
 			}
 			const bench = await getExerciseAnalytics(db, data.owner, data.exercises.bench_press, ALL);
 			expect(bench.repMaxes[4]).toMatchObject({
-				record: { value: 85, text: '85 kg', on: weekOf(5) },
-				previous: { value: 82.5, text: '82.5 kg', on: weekOf(2) }
+				record: { value: 85, text: '85\u00a0kg', on: weekOf(5) },
+				previous: { value: 82.5, text: '82.5\u00a0kg', on: weekOf(2) }
 			});
 			// At 4w the figures read from week 5, yet records still weigh every earlier workout.
 			const short = { period: '4w', today: TODAY } as const;
@@ -280,7 +280,7 @@ describe('the e1RM figure', () => {
 			const a = await getExerciseAnalytics(db, data.owner, id, ALL);
 			expect(a.e1rm).toMatchObject({ metric: 'e1rm', kind: 'estimated' });
 			expect(a.e1rm.markers).toMatchObject([
-				{ kind: 'measured', kg: 100, label: 'Measured', text: '100 kg' }
+				{ kind: 'measured', kg: 100, label: 'Measured', text: '100\u00a0kg' }
 			]);
 			const weekly = await weeklyE1rm(db, data.owner, id);
 			expect(a.e1rm.series).toHaveLength(17);
@@ -293,7 +293,11 @@ describe('the e1RM figure', () => {
 			expect(round(a.e1rm.value!.value)).toBe(Math.max(...weekly.values()));
 			expect(a.availability).toEqual({ ready: true });
 			expect(a.topSets.sessions).toHaveLength(16);
-			expect(a.topSets.sessions[4]).toMatchObject({ on: weekOf(5), kg: 85, text: '85 kg × 5' });
+			expect(a.topSets.sessions[4]).toMatchObject({
+				on: weekOf(5),
+				kg: 85,
+				text: '85\u00a0kg × 5'
+			});
 		});
 	});
 
