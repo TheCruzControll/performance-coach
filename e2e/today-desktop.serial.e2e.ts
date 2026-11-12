@@ -1,11 +1,11 @@
 /**
  * Today in a desktop window (docs/design-system.md, Responsive layout → Screens): a wide screen.
  * The week runs across the top; the state's panel (the setup card, the Build card, Build my
- * program, or today's plan) takes the main column, and This week, the tools and the goals take
- * the side column. Every designed state keeps that frame: setup, ready, the program (a session
- * day, a rest day, starting Monday, the first block complete), a failed read, offline, a panel
- * whose code fails, and each of Build my program's states (pending, a generator failure, the
- * three conflicts, offline). Start week 1 is column chrome. Serial: each test sets up the one
+ * program, or today's plan) takes the main column, and the goals, then This week, take the side
+ * column (the plate calculator lives in Train and the workout, not on Today). Every designed
+ * state keeps that frame: setup, ready, the program (a session day, a rest day, starting Monday,
+ * the first block complete), a failed read, offline, a panel whose code fails, and each of Build
+ * my program's states (pending, a generator failure, the three conflicts, offline). Start week 1 is column chrome. Serial: each test sets up the one
  * owner's training profile or program (e2e/program-support.ts), and the last leaves it blank.
  */
 import AxeBuilder from '@axe-core/playwright';
@@ -58,7 +58,12 @@ type Theme = (typeof THEMES)[number];
 const side = (page: Page) => page.getByTestId('today-side');
 const heading = (page: Page) => page.getByRole('heading', { level: 1, name: 'Today' });
 const strip = (page: Page) => page.getByTestId('week-strip');
-const day = (page: Page) => page.getByTestId('today-day');
+/**
+ * The live panel's day, not its served copy: after a reload (Chromium's Retry, or the offline
+ * screen's recovery when it falls back to one) the server's markup shows first, cards and all,
+ * and the live panel replaces that element once it mounts, so a box read from the copy is null.
+ */
+const day = (page: Page) => page.locator('[data-testid="today-day"]:not([data-served] *)');
 const cards = (page: Page) => day(page).getByTestId('session-card');
 const plan = (page: Page) => page.getByTestId('today-plan');
 const rail = (page: Page) => page.getByRole('navigation', { name: 'Primary' });
@@ -227,7 +232,7 @@ const PROGRAM_MARKUP = 'today-up-next-empty';
 /** Only the BuildPreview panel's chunk carries its pending state's test id. */
 const PREVIEW_MARKUP = 'build-preview-pending';
 
-test('setup: the week across the top, the setup card beside This week and the tools', async ({
+test('setup: the week across the top, the setup card beside This week', async ({
 	page
 }, testInfo) => {
 	const errors = trackConsoleErrors(page);
@@ -244,7 +249,7 @@ test('setup: the week across the top, the setup card beside This week and the to
 
 	await expectBeside(card, side(page));
 	await expect(side(page).getByRole('heading', { name: 'This week' })).toBeVisible();
-	await expect(side(page).getByRole('link', { name: /Plate calculator/ })).toBeVisible();
+	await expect(page.getByRole('link', { name: /Plate calculator/ })).toHaveCount(0);
 	const cta = page.getByTestId('today-setup-continue');
 	await expectInView(page, cta);
 	await expectHoverAndFocus(page, cta, 'background');
@@ -263,6 +268,17 @@ test('ready: the Build card beside the goals and the schedule', async ({
 	for (const part of ['today-goals', 'today-schedule']) {
 		await expect(side(page).getByTestId(part)).toBeVisible();
 	}
+	// The goals lead the side column; This week follows, its disclosure with hover and focus.
+	const [goalsBox, weekBox] = [
+		await boxOf(side(page).getByTestId('today-goals')),
+		await boxOf(side(page).getByTestId('today-week'))
+	];
+	expect(goalsBox.y + goalsBox.height).toBeLessThanOrEqual(weekBox.y);
+	await expectHoverAndFocus(
+		page,
+		side(page).getByTestId('today-week').locator('summary'),
+		'background'
+	);
 	await expectInView(page, buildCta(page));
 	await expectHoverAndFocus(page, buildCta(page), 'background');
 	await expectWideFrame(page);

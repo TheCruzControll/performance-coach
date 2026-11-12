@@ -22,6 +22,7 @@ import {
 	type Engine,
 	type Group
 } from '../e2e/projects.ts';
+import { SERIAL_WORLDS } from '../e2e/worlds.ts';
 import { parseListing, type Listing } from './journey-map.ts';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -87,13 +88,24 @@ function after(projects: Project[], name: string): string[] {
 	return [...seen].sort();
 }
 
-const EXPECTED: Record<string, string[]> = {
+/** Each leg's projects, as selectProjects keeps them from today's whole list. */
+const SELECTED: Record<string, string[]> = {
 	'main/chromium': ['setup', 'iphone-chromium', 'desktop-chromium'],
 	'main/webkit': ['setup', 'setup-webkit', 'iphone-webkit'],
 	'serial/chromium': ['setup', 'serial-chromium'],
 	'serial/webkit': ['setup', 'setup-webkit', 'serial-webkit'],
 	'alone/chromium': ['setup', 'perf'],
 	'exclusive/chromium': ['setup', 'exclusive']
+};
+
+/**
+ * Each leg's projects as CI loads the config for it: a serial leg also copies the owner world
+ * the setups made into each of its workers' worlds first (`setup-worlds`, e2e/worlds.ts).
+ */
+const EXPECTED: Record<string, string[]> = {
+	...SELECTED,
+	'serial/chromium': ['setup', 'setup-worlds', 'serial-chromium'],
+	'serial/webkit': ['setup', 'setup-webkit', 'setup-worlds', 'serial-webkit']
 };
 
 describe.each([
@@ -114,7 +126,7 @@ describe.each([
 
 	it.each(LEGS)('keeps $group/$engine its own projects and setup', ({ group, engine }) => {
 		expect(names(selectProjects(projects, { engine, group }))).toEqual(
-			EXPECTED[`${group}/${engine}`]
+			SELECTED[`${group}/${engine}`]
 		);
 	});
 
@@ -196,6 +208,39 @@ describe('playwright.config.ts legs', () => {
 		expect(names(projects)).toEqual(EXPECTED['serial/webkit']);
 	});
 
+	// One worker per owner world (e2e/worlds.ts): the serial specs follow the world copy, which
+	// follows the setups, and run SERIAL_WORLDS at a time.
+	it.each(ENGINES)('runs a serial %s leg on its owner worlds, after the copy', async (engine) => {
+		const projects = await configProjects({ E2E_ENGINE: engine, E2E_GROUP: 'serial' });
+		const serial = projects.find((p) => p.name === `serial-${engine}`)!;
+		expect(serial.workers).toBe(SERIAL_WORLDS);
+		expect(serial.dependencies).toEqual(['setup-worlds']);
+		const copy = projects.find((p) => p.name === 'setup-worlds')!;
+		expect(copy.testMatch).toBe('**/worlds.setup.ts');
+		expect(copy.dependencies).toEqual([engine === 'webkit' ? 'setup-webkit' : 'setup']);
+		expect(after(projects, `serial-${engine}`)).toEqual(
+			engine === 'webkit' ? ['setup', 'setup-webkit', 'setup-worlds'] : ['setup', 'setup-worlds']
+		);
+	});
+
+	it('keeps one owner world, and one serial spec at a time, outside a serial CI leg', async () => {
+		for (const env of [{}, { E2E_GROUP: 'main' }, { E2E_GROUP: 'alone' }] as Record<
+			string,
+			string
+		>[]) {
+			const projects = await configProjects(env);
+			expect(names(projects), JSON.stringify(env)).not.toContain('setup-worlds');
+			for (const p of projects.filter((p) => p.name!.startsWith('serial-'))) {
+				expect(p.workers, p.name).toBe(1);
+			}
+		}
+		await configProjects({ E2E_GROUP: 'serial' });
+		vi.resetModules();
+		vi.stubEnv('CI', '');
+		const { default: local } = await import('../playwright.config.ts');
+		expect(names(local.projects ?? [])).not.toContain('setup-worlds');
+	});
+
 	it('adds WebKit outside CI when E2E_ENGINE=webkit', async () => {
 		const projects = await configProjects({ E2E_ENGINE: 'webkit', E2E_GROUP: 'main' });
 		vi.resetModules();
@@ -204,11 +249,11 @@ describe('playwright.config.ts legs', () => {
 		expect(names(config.projects ?? [])).toEqual(names(projects));
 	});
 
-	// main legs run whole files side by side on 2 workers, as every local run does; every other
-	// leg (and the whole suite in one CI job) keeps 1.
+	// main legs run whole files side by side on 2 workers, as every local run does; serial legs one
+	// per owner world (e2e/worlds.ts); every other leg (and the whole suite in one CI job) keeps 1.
 	it.each([
 		['main', 2],
-		['serial', 1],
+		['serial', SERIAL_WORLDS],
 		['alone', 1],
 		['exclusive', 1],
 		['sweeps', 1],
@@ -350,7 +395,8 @@ describe('the legs, listed by Playwright', () => {
 				const listing = listed(leg);
 				const name = `${leg.group}/${leg.engine}`;
 				expect([...listing.projects], name).toEqual(EXPECTED[name]);
-				return runs(listing);
+				// The world copy is a serial leg's own setup, which one world needs none of.
+				return runs(listing).filter((run) => !run.startsWith('setup-worlds › '));
 			})
 		);
 		expect(today.size).toBeGreaterThan(0);
