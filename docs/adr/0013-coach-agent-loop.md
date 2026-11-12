@@ -1,9 +1,13 @@
 # 0013 — Coach agent loop: a manual loop over LlmProvider, streamed as labelled blocks
 
-- **Status:** Proposed (M5). Numbered at merge, like a migration slot (0011 is M2X's email link,
-  0012 the offline sync ADR), so M5's slices refer to it by its title, "the coach agent loop
-  ADR". docs-agent-architecture accepts it, with the measured numbers, once the coach is
-  launched.
+- **Status:** Accepted (M5, 2026-11-11). Implemented as decided below and switched on in
+  production by coach-launch (#449); docs/agent-architecture.md describes the code. Measured: the
+  limits at 180 s are a 150 s turn, 75 s drafts, 10 s tools and 85 s drafting tools
+  (`src/lib/domain/coach/budgets.ts`), and `/(app)/coach/[[thread]]` loads 58.0 KB of initial JS
+  against the 60 KB gate (CI run 42939723798, docs/performance.md). The launch went ahead on the
+  owner's written go-ahead (2026-11-10) without a live run, so live latency, cache reads and label
+  compliance are not yet measured; structured output on chat turns stays the unused fallback until
+  a live run (`pnpm test:live`) shows it is needed.
 - **Context:** The coach answers with the owner's real data through tools over the same services
   the screens use (PRD §4, §12), on a Vercel function with Fluid compute. Every path must run
   offline and deterministically with the mock provider (ADR 0009). Each step must be stored byte
