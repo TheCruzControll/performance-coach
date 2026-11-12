@@ -143,7 +143,8 @@ describe('the Coach screen', () => {
 			expect((await ready(load(db, me, undefined, query))).prefill).toEqual({
 				text: 'How did it go?',
 				from: 'workout',
-				label: 'From your workout'
+				label: 'From your workout',
+				ref: null
 			});
 			const thread = await ask(db, me, 'Hi', '2026-11-10T20:05:00Z');
 			expect((await ready(load(db, me, thread, query))).prefill).toBeNull();
@@ -237,7 +238,8 @@ describe('the Coach screen', () => {
 					);
 					expect(data).toEqual({
 						failed: true,
-						prefill: thread === undefined ? { text: 'Hi', from: null, label: null } : null
+						prefill:
+							thread === undefined ? { text: 'Hi', from: null, label: null, ref: null } : null
 					});
 					const recorded = await findErrorsByRequestId(request.requestId, { db: tx });
 					expect(recorded).toHaveLength(1);
