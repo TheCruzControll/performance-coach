@@ -295,9 +295,10 @@ test.describe('with the service worker blocked, so page.route sees every chunk',
 		await captureScreen(page, testInfo, 'today-panel-error');
 
 		// Where the Build card above the panel sits in the document: Retry may scroll the page
-		// (Chromium reloads it).
+		// (Chromium reloads it). The live card, not its served copy: after the reload the copy
+		// shows first and is replaced once the card mounts, which leaves a box read from it null.
 		const documentTop = async () =>
-			(await page.getByTestId('today-build').boundingBox())!.y +
+			(await page.locator('[data-testid="today-build"]:not([data-served] *)').boundingBox())!.y +
 			(await page.evaluate(() => window.scrollY));
 		const buildTop = await documentTop();
 		letThrough();

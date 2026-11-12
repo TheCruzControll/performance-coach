@@ -186,6 +186,10 @@
 				{@const selected = chosen ?? week.selected}
 				{@const day = week.days.find((d) => d.date === selected) ?? week.days[0]!}
 				{@const isToday = day.date === week.today}
+				<!-- At most a key per discipline and one for the skipped ring (week-legend.ts). -->
+				{@const keys = new Set(
+					week.strip.flatMap((d) => d.dots.flatMap((t) => (t.skipped ? [t.tone, null] : [t.tone])))
+				).size}
 				{@const lead = isToday
 					? leadLineage(
 							day.cards.map((c) => ({
@@ -201,6 +205,13 @@
 					label={week.label}
 					onselect={(date) => (chosen = date)}
 					data-testid="week-strip"
+				/>
+				<!-- Graphite 2004's legend for the strip (WeekLegend.svelte); nothing on today's design.
+				     Its room: rows of three keys, 1.25rem each with 0.25rem between (graphite.css). -->
+				<StatusSlot
+					load={() => import('./WeekLegend.svelte')}
+					props={{ days: week.strip }}
+					room={`${Math.max(0, Math.ceil(keys / 3) * 1.5 - 0.25)}rem`}
 				/>
 				{#if week.today}
 					<!-- Graphite 2004's Status Display (TodayStatus.svelte); nothing on today's design. -->

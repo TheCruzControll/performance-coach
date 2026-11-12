@@ -1,6 +1,6 @@
 /**
- * The hooks Graphite 2004 styles the core controls, the shell and the Status Display by
- * (src/lib/ui/styles/graphite.css): each component renders its stable `data-ui` attribute on the
+ * The hooks Graphite 2004 styles the core controls, the shell, the Status Display and the week
+ * strip's legend by (src/lib/ui/styles/graphite.css): each component renders its stable `data-ui` attribute on the
  * element the stylesheet restyles, every hook the stylesheet names is one a component renders, and
  * no other route or component carries one, so nothing outside these components changes when
  * Graphite is chosen and nothing at all changes on today's design (the stylesheet is scoped to it;
@@ -12,6 +12,7 @@ import { createRawSnippet, type Component } from 'svelte';
 import { render } from 'svelte/server';
 import { describe, expect, it } from 'vitest';
 import ResumeBar from '../../../routes/(app)/ResumeBar.svelte';
+import WeekLegend from '../../../routes/(app)/today/panels/WeekLegend.svelte';
 import RestTimer from '../workout/RestTimer.svelte';
 import AppNav from './AppNav.svelte';
 import Badge from './Badge.svelte';
@@ -230,6 +231,14 @@ const CASES: Case[] = [
 		tag: 'div',
 		component: StatusSlot,
 		props: { load: () => Promise.reject(new Error('not on the server')), props: {}, room: '10rem' }
+	},
+	{
+		name: 'WeekLegend',
+		hook: 'week-legend',
+		tag: 'ul',
+		component: WeekLegend,
+		props: { days: [{ dots: [{ tone: 'strength', skipped: false }] }] },
+		file: 'src/routes/(app)/today/panels/WeekLegend.svelte'
 	}
 ];
 
