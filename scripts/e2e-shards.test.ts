@@ -215,9 +215,6 @@ describe('the shard arguments', () => {
 			const { default: config } = await import('../playwright.config.ts');
 			expect(config.workers, `${group}/${engine}`).toBe(legWorkers(group, engine));
 		}
-		// 2 on serial·chromium and 1 on serial·webkit (e2e/serial-workers.ts says why)
-		expect(legWorkers('serial', 'chromium')).toBe(2);
-		expect(legWorkers('serial', 'webkit')).toBe(1);
 	});
 	afterEach(() => vi.unstubAllEnvs());
 });

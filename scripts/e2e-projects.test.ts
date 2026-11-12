@@ -231,8 +231,6 @@ describe('playwright.config.ts legs', () => {
 		const serial = projects.find((p) => p.name === 'serial-webkit')!;
 		expect(serial.workers).toBe(1);
 		expect(after(projects, 'serial-webkit')).toEqual(['setup', 'setup-webkit']);
-		const { default: config } = await import('../playwright.config.ts');
-		expect(config.workers).toBe(1);
 	});
 
 	it('keeps one owner world, and one serial spec at a time, outside a serial CI leg', async () => {

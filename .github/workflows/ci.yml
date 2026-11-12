@@ -339,7 +339,7 @@ jobs:
             test-results/
             playwright-report/
             .e2e-server*.log
-          # The production servers' logs (one per owner world in serial legs) are dot-files,
+          # The production servers' logs (one per owner world in serial·chromium legs) are dot-files,
           # which upload-artifact skips by default.
           include-hidden-files: true
           retention-days: 14

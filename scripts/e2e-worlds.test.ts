@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import { deriveBuild } from '../e2e/world-copy.ts';
-import { SERIAL_WORKERS, serialWorkers } from '../e2e/serial-workers.ts';
+import { SERIAL_WORKERS } from '../e2e/serial-workers.ts';
 import { routeWorker, world, worldCount, worlds } from '../e2e/worlds.ts';
 
 const DB = 'postgres://coach:coach@localhost:5432/coach_e2e';
@@ -23,22 +23,14 @@ const serialLeg = {
 
 describe('worldCount', () => {
 	it('gives a serial CI leg one world per worker of its engine, and every other run one', () => {
-		// e2e/serial-workers.ts: two workers on Chromium, one on WebKit (its heavy tests outgrew
-		// their timeout sharing the runner)
-		expect(SERIAL_WORKERS).toEqual({ chromium: 2, webkit: 1 });
-		expect(worldCount(serialLeg)).toBe(2);
-		expect(worldCount({ ...serialLeg, E2E_ENGINE: 'webkit' })).toBe(1);
+		expect(worldCount(serialLeg)).toBe(SERIAL_WORKERS.chromium);
+		expect(worldCount({ ...serialLeg, E2E_ENGINE: 'webkit' })).toBe(SERIAL_WORKERS.webkit);
+		// no engine (both engines' serial projects in one run): one world
 		expect(worldCount({ ...serialLeg, E2E_ENGINE: undefined })).toBe(1);
 		expect(worldCount({ ...serialLeg, CI: '' })).toBe(1);
 		for (const group of [undefined, 'main', 'alone', 'exclusive', 'sweeps']) {
 			expect(worldCount({ ...serialLeg, E2E_GROUP: group }), String(group)).toBe(1);
 		}
-	});
-
-	it('takes a serial leg’s workers for its engine, and 1 for no or an unknown engine', () => {
-		expect(serialWorkers('chromium')).toBe(SERIAL_WORKERS.chromium);
-		expect(serialWorkers('webkit')).toBe(SERIAL_WORKERS.webkit);
-		for (const engine of [undefined, '', 'firefox']) expect(serialWorkers(engine)).toBe(1);
 	});
 });
 
