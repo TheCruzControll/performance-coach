@@ -513,6 +513,86 @@ Two changes closed the gap: a shorter boot path on every route (#394, below) and
 and best practices scored 100 on all three. #370's final run (42939723798) measured 905 ms and
 Performance 99 on the same screen.
 
+## M5 (coach) — measured 2026-11-11
+
+Measured by CI on GitHub's 4-vCPU Linux runners, on the coach as M5 finished it: run
+[43113434377](https://github.com/TheCruzControll/performance-coach/actions/runs/43113434377)
+on `9ac3521` (#463, with coach-launch #449, the final performance pass #395 and the degraded-state
+specs #396 merged in). That run was red (see "Open" below). The query plans come from #395's green
+run [42945475964](https://github.com/TheCruzControll/performance-coach/actions/runs/42945475964)
+(`8998fbb`). Every coach number below is the MockProvider's, so it measures the app, not the
+model.
+
+Initial JS and route CSS (gzip) of the coach routes, and the routes beside them:
+
+| Route                           | Initial JS | Route CSS | Gate (60 KB) |
+| ------------------------------- | ---------: | --------: | :----------: |
+| `/(app)/coach/[[thread]]`       |    60.3 KB |   10.2 KB |     FAIL     |
+| `/(app)/train`                  |    59.4 KB |   11.4 KB |     pass     |
+| `/(app)/today`                  |    58.7 KB |   13.7 KB |     pass     |
+| `/(app)/coach/proposals/[[id]]` |    55.3 KB |    9.1 KB |     pass     |
+| `/workout`                      |    54.0 KB |    8.3 KB |     pass     |
+
+- **The runway's final state.** The coach screen was 54.0 KB after coach-screen (#301), and the
+  runway rule held it plus the unmerged coach UI allowances to ≤ 57.5 KB. It reached 59.0 KB with
+  coach-thread-stream (#377), whose ThreadList was the lever pulled, and ended at 60.3 KB, over
+  the 60 KB gate. The stream client (about 2.2 KB), ProposalCard with DiffRows, RejectSheet, the
+  exercise history sheet and the Knows, Usage, Manage and Archived sheets load on demand, never in
+  initial JS or as a modulepreload. The inbox is 55.3 KB (#390 recorded 55.5 KB).
+- **Coach isolation**: no coach module can load from `/workout`, `/workout/run` or
+  `/workout/session` (pass).
+- The same run's service-worker precache was 278 files and 997.3 KB, over the 275-file, 995 KB cap
+  it carried; main has since raised the cap to 300 files and 1,100 KB.
+
+Main thread at 4× CPU (`perf` project, median of 5; guard 250 ms, target 200 ms):
+
+| Measure                                                   | Median | Runs                   |
+| --------------------------------------------------------- | -----: | ---------------------- |
+| `/coach/<long thread>` loading (`perf-coach-load.e2e.ts`) |  16 ms | 11, 11, 16, 25, 57     |
+| `/coach/proposals`, two waiting, loading                  |   0 ms | 0, 0, 0, 0, 3          |
+| A 60-message conversation opening (`perf-coach.e2e.ts`)   | 104 ms | 92, 219, 100, 104, 105 |
+| Blocking while a 3,000-token answer streams               |   0 ms | 0, 0, 0, 0, 0          |
+
+Layout shift was 0.0000 on every load. **Streaming** (mock 'perf-stream', about 300 tokens a
+second, about 10.5 s a stream): Event Timing INP 64 ms over 120 interactions while the owner typed;
+TTFT (`agent_runs.ttft_ms`) median 74 ms; the first words on screen a median 140 ms after Send,
+inside the stream's first quarter, so the output gate releases a clean answer as it arrives.
+
+Lighthouse, median per route:
+
+| Screen                     |  Mobile perf |     LCP |    TBT |  CLS | Desktop perf | Desktop LCP |
+| -------------------------- | -----------: | ------: | -----: | ---: | -----------: | ----------: |
+| `/coach`                   |          100 |  826 ms |  78 ms | 0.00 |          100 |      255 ms |
+| `/coach/[thread]` · long   |           96 | 1915 ms | 208 ms | 0.00 |          100 |      436 ms |
+| `/coach/proposals` · inbox | not measured |         |        |      | not measured |             |
+
+**Query plans.** `pnpm db:explain` loads `scripts/explain/coach-dataset.ts` (2,000 conversations,
+500 archived, about 36k messages, 8k runs, 2,000 pain reports) and gates every coach builder
+against its declared index: all passed, each through its index (threads, transcript, display
+pages, proposals, decided-since, notes, runs, the day's cap cost), the slowest gated one 0.74 ms
+(`lockThread`). The usage view's whole-history totals are recorded, not gated: tool frequency
+8.6 ms, run totals 3.3 ms, status counts 2.4 ms, unpriced calls 1.6 ms.
+
+**Server-side limits.** A turn runs at most 150 s inside the endpoint's 180 s
+(`COACH_MAX_DURATION_S`); a tool 10 s, a drafting tool 85 s, never past the turn; ≤ 8 chat calls,
+≤ 2 drafts, ≤ 40K output and ≤ 300K input tokens a turn; tools three at a time, one at a time on a
+transaction, each result ≤ 8 KB and 20 items a page. A drafting tool makes one structured-output
+call at effort high ('Drafting the change…'). The coaching memory takes ≤ 17 queries (profile ≤ 9,
+records ≤ 8), one at a time, and is capped at 6 KB by section priority. A segment rolls at 60K
+prompt tokens or 40 messages, costing one summary call at effort low (≤ 8K output tokens) and one
+cache miss on the next turn.
+
+**Cache behaviour: not yet measured.** The offline proof holds (each request is byte-equal to the
+last up to its end, and the mock reports a cache read on turn 2; `prompt/layout.test.ts`), but no
+live run has recorded `cache_read_input_tokens` or real TTFT.
+
+**Open.**
+
+- `/(app)/coach/[[thread]]` is 0.3 KB over the 60 KB gate in run 43113434377.
+- Lighthouse never audited the inbox: `scripts/lighthouse.ts` seeds it with real turns, and that
+  fetch failed on the server's self-signed certificate (`DEPTH_ZERO_SELF_SIGNED_CERT`), which
+  failed mobile shard 2/2 and ended the desktop step early.
+
 ## Budgets (enforced)
 
 `pnpm budgets` (`scripts/check-budgets.ts`) reads the SvelteKit build output and fails CI when a
@@ -558,6 +638,10 @@ ship the standard one too (see the glass note in `docs/design-system.md`). It al
   hydration, may add only its own chunk: no script or stylesheet a route does not already load
   (its content loads on demand: `src/routes/error-page.ts`, #394). The start entry must import
   exactly one chunk, `payload`, which imports nothing.
+- **coach secrets and isolation**: Anthropic SDK code (its signature literals in
+  `scripts/client-secret-scan.ts`), an `sk-ant-` key or the build-time `ANTHROPIC_API_KEY` (a
+  canary in CI) in any client file of either build fails, as does any `/workout` route that can
+  load a coach module (static, awaited or on demand, including helpers bundled into its chunks).
 
 ### Measured (`pnpm build && pnpm budgets`)
 
