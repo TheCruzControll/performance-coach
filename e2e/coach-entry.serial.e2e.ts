@@ -10,7 +10,7 @@
  * Serial: the program, the workout and the coach rows are the one owner's (e2e/coach-support.ts).
  */
 import AxeBuilder from '@axe-core/playwright';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 import type { StrengthKit } from '../src/lib/domain/workout';
 import { lastRun, openThread, query, resetCoach, seedCoach } from './coach-support';
 import { DESKTOP, expectMainCentred, expectNoSideScroll } from './desktop';
@@ -36,6 +36,12 @@ const message = (page: Page) => composer(page).getByRole('textbox', { name: 'Mes
 const card = (page: Page) => page.getByTestId('workout-main').getByTestId('exercise');
 const actionsSheet = (page: Page) => page.getByTestId('exercise-actions-sheet');
 const historySheet = (page: Page) => page.getByTestId('exercise-history-sheet');
+
+/** Today's workout-day program, with onboarding complete so Today shows the plan. */
+async function seedOnboarded(request: APIRequestContext) {
+	await seedProgram(request, { fixture: 'workout-day', start: 'this_week' });
+	await query('update athlete_profiles set onboarding_completed_at = now()');
+}
 
 /** The card's Options sheet, open. */
 async function openActions(page: Page) {
@@ -145,7 +151,7 @@ test('from an exercise’s history on the workout: how that exercise has progres
 });
 
 test('from Today: what to focus on next week', async ({ page, request }, testInfo) => {
-	await seedProgram(request, { fixture: 'workout-day', start: 'this_week' });
+	await seedOnboarded(request);
 	await gotoHydrated(page, '/today');
 	const ask = page.getByTestId('today-plan').getByTestId('ask-coach');
 	await expect(ask).toContainText(TODAY_QUESTION);
@@ -191,7 +197,7 @@ test.describe('offline', () => {
 		await actionsSheet(page).getByTestId('ask-coach').click();
 
 		await expect(page).toHaveURL(/\/coach\?/);
-		await expect(page.getByTestId('offline-state')).toContainText('You’re offline');
+		await expect(page.getByTestId('offline-state')).toContainText("You're offline");
 		await expect(page.getByRole('heading', { level: 1 })).toContainText('Coach');
 		await expect(page.locator('body')).not.toContainText(/500|internal error/i);
 		await captureScreen(page, testInfo, 'coach-entry-offline');
@@ -212,7 +218,7 @@ test.describe('desktop', () => {
 		page,
 		request
 	}, testInfo) => {
-		await seedProgram(request, { fixture: 'workout-day', start: 'this_week' });
+		await seedOnboarded(request);
 		await gotoHydrated(page, '/today');
 		const ask = page.getByTestId('today-plan').getByTestId('ask-coach');
 		await expect(ask).toBeVisible();
