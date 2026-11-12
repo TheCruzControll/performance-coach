@@ -5,6 +5,7 @@ import type { Metric } from 'web-vitals';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { workoutDayKits } from '../../../../tests/fixtures/workout-day';
 import type { FieldErrors } from '#lib/domain/validation.ts';
+import { changedRows, namedRows } from '#lib/domain/workout/changes.ts';
 import { createMutation, dependsOn, entityKey, SYNC_LIMITS } from '#lib/domain/workout/index.ts';
 import type {
 	LocalAction,
@@ -26,7 +27,7 @@ import type { OutboxEntry } from './outbox-rules';
 import { discardInProgress, inProgress } from './start';
 import { createStore } from './store';
 import type { WorkoutStore } from './store';
-import { REQUEST_TIMEOUT_MS, startSync, SYNC_LOCK, SYNC_URL } from './sync';
+import { COALESCE_MS, REQUEST_TIMEOUT_MS, startSync, SYNC_LOCK, SYNC_URL } from './sync';
 import type { SyncEngine, SyncLocks, SyncOptions } from './sync';
 
 /** RUM's web-vitals, replaced so a test can queue metrics for vitals.ts's flush at hide. */
@@ -126,6 +127,8 @@ type Step =
 	| 'late'
 	/** Cancelled by the browser, as when the page is being left. */
 	| 'cancelled'
+	/** The server applies the batch, then cannot read the workout's rows: the answer has none. */
+	| 'rowless'
 	/** A captive portal or a dead gym Wi-Fi's gateway answers with its own page, not the server's JSON. */
 	| 'portal'
 	| 'gateway';
@@ -133,6 +136,7 @@ type Step =
 interface Received {
 	ids: string[];
 	discarded: string[];
+	held: string[];
 	keepalive: boolean;
 	bytes: number;
 	signal: AbortSignal | undefined;
@@ -147,7 +151,8 @@ const json = (status: number, body: unknown) =>
  * POST /api/workouts/sync with M4's rules: a ledger of applied ids (a replay answers duplicate),
  * one result per mutation in order, a change whose target has not arrived deferred, a row's later
  * changes deferred once one of them is refused or deferred, and the canonical rows on the last
- * applied or duplicate result of each workout. Each set it applies is one row.
+ * applied or duplicate result of each workout: only the changed ones for a workout the request
+ * holds. Each set it applies is one row.
  */
 function fakeServer() {
 	const ledger = new Set<string>();
@@ -174,7 +179,7 @@ function fakeServer() {
 			pending: applied.filter((m) => m.workoutId === workoutId)
 		}).rows;
 
-	function apply(mutations: Mutation[]): SyncResult[] {
+	function apply(mutations: Mutation[], holds: readonly string[] = []): SyncResult[] {
 		const held: Mutation[] = [];
 		const results = mutations.map((m): SyncResult => {
 			const hold = (status: 'deferred' | 'rejected', code: SyncCode, errors?: FieldErrors) => {
@@ -203,7 +208,18 @@ function fakeServer() {
 		});
 		for (const [workoutId, i] of last) {
 			const canonical = rowsOf(workoutId);
-			if (canonical) results[i] = { ...results[i]!, canonical };
+			if (!canonical) continue;
+			if (!holds.includes(workoutId)) results[i] = { ...results[i]!, canonical };
+			else {
+				const named = mutations.filter(
+					(m, j) =>
+						m.workoutId === workoutId && ['applied', 'duplicate'].includes(results[j]!.status)
+				);
+				results[i] = {
+					...results[i]!,
+					changes: changedRows(canonical, new Set(named.flatMap(namedRows)))
+				};
+			}
 		}
 		answered.push(...results);
 		return results;
@@ -211,10 +227,11 @@ function fakeServer() {
 
 	async function fetch(url: string, init: RequestInit): Promise<Response> {
 		const body = init.body as string;
-		const { mutations, discarded = [] } = JSON.parse(body) as SyncRequest;
+		const { mutations, discarded = [], held = [] } = JSON.parse(body) as SyncRequest;
 		received.push({
 			ids: mutations.map((m) => m.id),
 			discarded,
+			held,
 			keepalive: init.keepalive === true,
 			bytes: encoder.encode(body).length,
 			signal: init.signal ?? undefined,
@@ -241,10 +258,13 @@ function fakeServer() {
 						)
 					);
 				case 'lost':
-					apply(mutations);
+					apply(mutations, held);
 					throw new TypeError('Failed to fetch');
 				case 'stranger':
-					return json(200, { v: 1, results: apply(mutations).map((r) => ({ ...r, id: fresh() })) });
+					return json(200, {
+						v: 1,
+						results: apply(mutations, held).map((r) => ({ ...r, id: fresh() }))
+					});
 				case 'cancelled':
 					throw new TypeError('Load failed');
 				case 'portal':
@@ -267,7 +287,11 @@ function fakeServer() {
 				case 503:
 					return json(step, { error: 'unavailable' });
 				case 'ok':
-					return json(200, { v: 1, results: apply(mutations) });
+					return json(200, { v: 1, results: apply(mutations, held) });
+				case 'rowless': {
+					const results = apply(mutations, held).map((r) => ({ id: r.id, status: r.status }));
+					return json(200, { v: 1, results });
+				}
 			}
 		} finally {
 			inFlight--;
@@ -282,7 +306,7 @@ function fakeServer() {
 		script,
 		rowsOf,
 		/** The server reaches the batches it was still running ('late'), after everything else. */
-		landLate: () => running.splice(0).map(apply),
+		landLate: () => running.splice(0).map((batch) => apply(batch)),
 		/** The rows a create made: one, however often its mutation arrived. */
 		rows: (entityId: string) => applied.filter((m) => m.id === entityId).length,
 		/** How often a mutation arrived, in any request. */
@@ -477,6 +501,9 @@ describe('delivery', () => {
 
 		expect(server.received.map((r) => r.ids.length)).toEqual([SYNC_LIMITS.maxMutations, 6]);
 		expect(server.received.flatMap((r) => r.ids)).toEqual(queued);
+		// Once the device holds the workout's rows, a request names it: only the changed rows return.
+		expect(server.received.map((r) => r.held)).toEqual([[], [W]]);
+		expect(server.answered.at(-1)!.changes!.sets.map((s) => s.id)).toEqual(sets.slice(-6));
 		expect(server.received.every((r) => r.url === SYNC_URL && !r.keepalive)).toBe(true);
 		expect(new Set(locks.names)).toEqual(new Set([SYNC_LOCK]));
 		expect(await outbox()).toEqual([]);
@@ -487,6 +514,28 @@ describe('delivery', () => {
 		expect(record!.canonical).toStrictEqual(server.rowsOf(W));
 		const shown = store.snapshot(W)!.view!.slots[0]!.sets;
 		expect(shown.map((s) => [s.id, s.pending])).toEqual(sets.map((id) => [id, false]));
+	});
+
+	it('asks for a workout whole after an answer applied its changes without its rows', async () => {
+		const store = await open();
+		await withSets(store, 's1');
+		const sync = engine(store);
+		await sync.flush();
+		await saved(store, log('s2', 2));
+		server.script.push('rowless');
+		await sync.flush();
+		expect(await outbox()).toEqual([]);
+
+		await saved(store, log('s3', 3));
+		await sync.flush();
+		expect(server.received.map((r) => r.held)).toEqual([[], [W], []]);
+		expect(server.answered.at(-1)!.canonical).toStrictEqual(server.rowsOf(W));
+		const shown = store.snapshot(W)!.view!.slots[0]!.sets;
+		expect(shown.map((s) => [s.id, s.pending])).toEqual([
+			['s1', false],
+			['s2', false],
+			['s3', false]
+		]);
 	});
 
 	it('retries a 500 after the seeded backoff, and the server holds one row', async () => {
@@ -850,6 +899,80 @@ describe('triggers', () => {
 		expect(Math.max(...clock.delays)).toBeLessThanOrEqual(BACKOFF.maxMs);
 		expect(clock.delays.filter((d) => d > 59 * SECOND).length).toBeGreaterThan(3);
 		expect(await outbox()).toEqual([]);
+	});
+
+	it(`sends a saved change at once after a quiet spell, and changes within ${COALESCE_MS} ms of a round's start in one round when that window ends`, async () => {
+		const store = await open();
+		await withSets(store);
+		const sync = engine(store);
+		await sync.flush(); // app start: the workout's start
+		expect(server.received).toHaveLength(1);
+
+		clock.advance(COALESCE_MS); // a quiet spell since that round began
+		await saved(store, log('s1', 1));
+		sync.soon();
+		await eventually(() => expect(server.received.map((r) => r.ids)).toEqual([[W], ['s1']]));
+		await sync.flush();
+
+		// A burst: the next set, its edit, and the store's own notices of each, as the page sends them.
+		await saved(store, log('s2', 2));
+		sync.soon();
+		const change = edit('s2', 4);
+		await saved(store, change);
+		sync.soon();
+		sync.soon();
+		await settle();
+		expect(server.received).toHaveLength(2);
+		expect(clock.pending).toBe(1);
+
+		clock.advance(COALESCE_MS);
+		await eventually(() => expect(server.received).toHaveLength(3));
+		await sync.flush();
+		expect(server.received[2]!.ids).toEqual(['s2', change.id]);
+		expect(await outbox()).toEqual([]);
+		expect(clock.pending).toBe(0);
+	});
+
+	it('sends the round it put off at once when the page is hidden, and nothing once stopped', async () => {
+		const store = await open();
+		await withSets(store);
+		const sync = engine(store);
+		await sync.flush();
+		await saved(store, log('s1', 1));
+		sync.soon();
+		await settle();
+		expect(server.received).toHaveLength(1);
+
+		page.document.visibilityState = 'hidden';
+		page.document.dispatchEvent(new Event('visibilitychange'));
+		await eventually(() => expect(server.received.map((r) => r.ids)).toEqual([[W], ['s1']]));
+		expect(clock.pending).toBe(0);
+
+		await sync.flush();
+		await saved(store, log('s2', 2));
+		sync.soon();
+		sync.stop();
+		expect(clock.pending).toBe(0);
+		clock.advance(COALESCE_MS);
+		await settle();
+		expect(server.received).toHaveLength(2);
+		expect(await outboxIds()).toEqual(['s2']);
+	});
+
+	it('keeps the pagehide batch current while a round waits out the window', async () => {
+		const store = await open();
+		await withSets(store);
+		const sync = engine(store);
+		await sync.flush();
+		await saved(store, log('s1', 1));
+		sync.soon();
+		await settle();
+		expect(server.received).toHaveLength(1);
+
+		page.window.dispatchEvent(new Event('pagehide'));
+
+		const keepalive = server.received.filter((r) => r.keepalive);
+		expect(keepalive.map((r) => r.ids)).toEqual([['s1']]);
 	});
 });
 

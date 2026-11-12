@@ -26,6 +26,7 @@ import {
 	ORIGIN,
 	query,
 	SAME_ORIGIN,
+	sessionCookieName,
 	signedOut,
 	SIX_GROUP_CODE,
 	toastWith,
@@ -48,7 +49,7 @@ const sha256 = (value: string) => createHash('sha256').update(value).digest('hex
 
 async function sessionCookie(context: BrowserContext) {
 	const cookies = await context.cookies(ORIGIN);
-	return cookies.find((c) => c.name === 'session' || c.name === '__Host-session');
+	return cookies.find((c) => c.name === sessionCookieName());
 }
 
 async function audit(page: Page, label: string) {
@@ -115,7 +116,13 @@ test.describe('passkey authentication (real WebAuthn ceremonies)', () => {
 
 		// An opaque random token in an HttpOnly, SameSite=Lax, host-only cookie; only its hash is stored.
 		const cookie = await sessionCookie(context);
-		expect(cookie).toMatchObject({ httpOnly: true, sameSite: 'Lax', path: '/' });
+		// Over HTTPS (E2E_TLS=1, deployments) it is also Secure, as the __Host- prefix demands.
+		expect(cookie).toMatchObject({
+			httpOnly: true,
+			sameSite: 'Lax',
+			path: '/',
+			secure: new URL(ORIGIN).protocol === 'https:'
+		});
 		expect(cookie!.value).toMatch(/^[A-Za-z0-9_-]{43}$/);
 		expect(
 			await query('select method, kind from auth_sessions where token_hash = $1', [

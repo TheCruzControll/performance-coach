@@ -7,6 +7,7 @@
 		type DistancePreference,
 		type ThemePreference
 	} from '#lib/client/preferences.svelte.ts';
+	import { setTheme } from '#lib/client/theme.ts';
 	import type { WeightUnit } from '#lib/domain/units.ts';
 	import Card from '#lib/ui/components/Card.svelte';
 	import Icon from '#lib/ui/components/Icon.svelte';
@@ -137,7 +138,7 @@
 							{ value: 'light', label: 'Light', icon: 'sun' },
 							{ value: 'system', label: 'Auto', icon: 'device' }
 						]}
-						onchange={(t: ThemePreference) => preferences.setTheme(t)}
+						onchange={(t: ThemePreference) => setTheme(t)}
 						data-testid="theme-control"
 					/>
 				</div>
