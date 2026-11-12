@@ -91,7 +91,7 @@ export const COACH_A11Y: readonly CoachA11yCase[] = [
 		name: '/coach, What the coach knows open and loaded',
 		open: async (page) => {
 			await gotoHydrated(page, '/coach');
-			await page.getByRole('button', { name: 'What the coach knows' }).click();
+			await page.getByRole('button', { name: 'What it knows' }).click();
 			await expect(page.getByTestId('knows-sheet')).toBeVisible();
 			await expect(page.getByTestId('knows-loading')).toHaveCount(0);
 		}
@@ -113,8 +113,12 @@ export const COACH_A11Y: readonly CoachA11yCase[] = [
 			const form = page.getByRole('form', { name: 'Message your coach' });
 			await form.getByRole('textbox', { name: 'Message' }).fill('How is my bench going?');
 			await form.getByRole('button', { name: 'Send' }).click();
-			// The turn's offline notice, or the stream client's when it had not loaded yet.
-			const notice = page.getByTestId('turn-notice').or(page.getByTestId('stream-failed'));
+			// The turn's offline notice; the stream client's when it had not loaded yet; or the
+			// conversation's, when its code was not loaded (and the service worker not yet in control).
+			const notice = page
+				.getByTestId('turn-notice')
+				.or(page.getByTestId('stream-failed'))
+				.or(page.getByTestId('thread-failed'));
 			await expect(notice.getByRole('button', { name: 'Retry' })).toBeVisible();
 		}
 	}
