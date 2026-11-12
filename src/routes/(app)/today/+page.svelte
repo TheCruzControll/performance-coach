@@ -211,7 +211,7 @@
 			>
 				{#snippet actions()}
 					<Button variant="secondary" icon="refresh" loading={retrying} onclick={retry}>
-						Retry
+						Try again
 					</Button>
 				{/snippet}
 			</EmptyState>
@@ -244,7 +244,7 @@
 					<div class="error" data-testid="today-week-error">
 						<p class="line" role="status">Couldn’t load this week’s numbers.</p>
 						<Button variant="secondary" icon="refresh" loading={retrying} onclick={retry}>
-							Retry
+							Try again
 						</Button>
 					</div>
 				{:else}

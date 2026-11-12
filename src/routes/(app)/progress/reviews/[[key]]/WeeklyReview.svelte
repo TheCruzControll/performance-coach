@@ -149,7 +149,7 @@
 					icon="refresh"
 					loading={refreshing === 'pending'}
 					disabled={!online}
-					data-testid="review-refresh">{refreshing === 'failed' ? 'Retry' : 'Refresh'}</Button
+					data-testid="review-refresh">{refreshing === 'failed' ? 'Try again' : 'Refresh'}</Button
 				>
 			{/if}
 		</form>
@@ -184,7 +184,8 @@
 			<Notice tone="danger" title="Couldn’t load the rest of this review">
 				Your training is safe. Check your connection, then try again.
 			</Notice>
-			<Button variant="secondary" icon="refresh" onclick={() => location.reload()}>Retry</Button>
+			<Button variant="secondary" icon="refresh" onclick={() => location.reload()}>Try again</Button
+			>
 		</div>
 	{/if}
 

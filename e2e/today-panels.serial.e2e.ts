@@ -287,10 +287,10 @@ test.describe('with the service worker blocked, so page.route sees every chunk',
 		const panel = page.getByTestId('today-panel');
 		await expect(panel).toHaveAttribute('aria-busy', 'false');
 		expect((await panel.boundingBox())!.height).toBeGreaterThanOrEqual(24 * 16 - 1);
-		const retry = failed.getByRole('button', { name: 'Retry' });
+		const retry = failed.getByRole('button', { name: 'Try again' });
 		const target = (await retry.boundingBox())!;
-		expect(target.width, 'Retry is at least 44 px wide').toBeGreaterThanOrEqual(44);
-		expect(target.height, 'Retry is at least 44 px tall').toBeGreaterThanOrEqual(44);
+		expect(target.width, 'Try again is at least 44 px wide').toBeGreaterThanOrEqual(44);
+		expect(target.height, 'Try again is at least 44 px tall').toBeGreaterThanOrEqual(44);
 		expect(await audit(page), 'dark').toEqual([]);
 		await captureScreen(page, testInfo, 'today-panel-error');
 
@@ -337,7 +337,7 @@ test.describe('with the service worker blocked, so page.route sees every chunk',
 			const box = (await notice(page).boundingBox())!;
 			expect(box.x).toBeGreaterThanOrEqual(main.x - 1);
 			expect(box.x + box.width).toBeLessThanOrEqual(main.x + main.width + 1);
-			const retry = notice(page).getByRole('button', { name: 'Retry' });
+			const retry = notice(page).getByRole('button', { name: 'Try again' });
 			const background = () => retry.evaluate((el) => getComputedStyle(el).backgroundColor);
 			const resting = await background();
 			await retry.hover();

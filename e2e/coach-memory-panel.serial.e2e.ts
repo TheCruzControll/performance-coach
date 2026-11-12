@@ -201,7 +201,7 @@ test.describe('with the network in the test’s hands', () => {
 		const failed = page.getByTestId('knows-failed');
 		await expect(failed).toContainText('Couldn’t load what the coach knows');
 		await captureScreen(page, testInfo, 'coach-memory-panel-failed');
-		await failed.getByRole('button', { name: 'Retry' }).click();
+		await failed.getByRole('button', { name: 'Try again' }).click();
 		await expect(page.getByTestId('knows-empty')).toBeVisible();
 		await expect(failed).toHaveCount(0);
 		expect(answered).toBe(2);

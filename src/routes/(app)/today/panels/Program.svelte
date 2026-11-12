@@ -146,7 +146,7 @@
 				>
 					{#snippet actions()}
 						<Button variant="secondary" icon="refresh" loading={retrying} onclick={retry}>
-							Retry
+							Try again
 						</Button>
 					{/snippet}
 				</EmptyState>

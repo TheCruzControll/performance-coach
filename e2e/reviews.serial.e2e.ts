@@ -183,7 +183,7 @@ test.describe('week-complete', () => {
 		await expect(page.getByTestId('error-view')).toHaveCount(0);
 
 		await context.clearCookies({ name: 'pc-test-fail' });
-		await failed.getByRole('button', { name: 'Retry' }).click();
+		await failed.getByRole('button', { name: 'Try again' }).click();
 		await expect(failed).toHaveCount(0);
 		await expect(page.getByTestId('review-row')).toHaveCount(1);
 	});
@@ -274,7 +274,7 @@ test.describe('a create that fails', () => {
 		await expect(createFor(page, week).getByTestId('create-failed')).toContainText(
 			'Couldn’t create this review'
 		);
-		await expect(createButton(page, week)).toHaveText('Retry');
+		await expect(createButton(page, week)).toHaveText('Try again');
 		await expect(page.getByTestId('error-view')).toHaveCount(0);
 		expect(await weeklyReviews(week)).toHaveLength(0);
 
