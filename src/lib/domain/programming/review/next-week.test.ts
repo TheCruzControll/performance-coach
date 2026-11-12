@@ -16,7 +16,14 @@ import { loadModel } from '../load/fatigue';
 import type { ModelLogged } from '../load/fatigue';
 import { fromPlanned } from '../load/systems';
 import type { ReviewEvaluation } from './evaluation';
-import { MAX_NEXT_WEEK_OPS, proposeNextWeek, stillAhead } from './next-week';
+import {
+	DELOAD_INSTEAD,
+	LIGHT_RUNNING_KINDS,
+	LIGHT_WEEK_KINDS,
+	MAX_NEXT_WEEK_OPS,
+	proposeNextWeek,
+	stillAhead
+} from './next-week';
 import type { NextSession, NextWeek, NextWeekContext, NextWeekExercise } from './next-week';
 import type { WeeklyReviewSnapshot } from './snapshot';
 
@@ -479,6 +486,104 @@ describe('proposeNextWeek: running', () => {
 		expect(out.notProposed).toMatchObject([
 			{ kind: 'distance', reason: 'not_expressible', words: expect.stringContaining('13 km') }
 		]);
+	});
+});
+
+describe("proposeNextWeek: M7's light weeks and deload", () => {
+	const mainBench = () =>
+		planned(
+			'bench_press',
+			[line({ role: 'top', sets: 1 }), line({ role: 'back_off', sets: 4 })],
+			'bench_press'
+		);
+	const missedLong = { prescribed: 16_000, completed: false, rpe: null, targetRpe: 5 };
+	const running = { previousPlanned: 30_000, actual: 30_000, lastLongRun: missedLong };
+
+	it('treats deload, taper, event and recovery weeks as light, and a cutback as light for running only', () => {
+		expect([...LIGHT_WEEK_KINDS].sort()).toEqual(['deload', 'event', 'recovery', 'taper']);
+		expect(LIGHT_RUNNING_KINDS).toEqual(['cutback']);
+	});
+
+	it.each(['deload', 'taper', 'event', 'recovery'] as const)(
+		'gives a %s week only an RPE cap on high fatigue, and flags the cycle review',
+		(kind) => {
+			const bench = mainBench();
+			const out = proposeNextWeek(
+				week([strength(day(1), [bench])], kind),
+				snapshot({ ...HIGH, next: { weekStartsOn: NEXT, state: 'planned', kind } }),
+				easier('bench_press'),
+				ctx()
+			);
+			expect(out.adjustments.map((a) => [a.kind, fields(a.op)])).toEqual([
+				['deload', { plannedExerciseLineage: bench.lineage, position: 1, targetRpe: 6 }],
+				['deload', { plannedExerciseLineage: bench.lineage, position: 2, targetRpe: 6 }]
+			]);
+			expect(out.cycleFlag).toContain(`${kind} week`);
+		}
+	);
+
+	it('gives a recovery week no progression when fatigue is low', () => {
+		const out = proposeNextWeek(
+			week([strength(day(1), [planned('bench_press', [line()], 'bench_press')])], 'recovery'),
+			snapshot({ next: { weekStartsOn: NEXT, state: 'planned', kind: 'recovery' } }),
+			easier('bench_press'),
+			ctx()
+		);
+		expect(out.adjustments).toEqual([]);
+	});
+
+	it('gives a cutback week its strength changes but no running change: no cap, no repeated long run', () => {
+		const sessions = () => [
+			strength(day(1), [planned('bench_press', [line()], 'bench_press')]),
+			run(day(2), 'easy_run', [segment('easy', 8_000)]),
+			run(day(6), 'long_run', [segment('warm_up', 1_000), segment('long', 17_000)])
+		];
+		const kinds = (kind: WeekKind) =>
+			proposeNextWeek(
+				week(sessions(), kind),
+				snapshot({ next: { weekStartsOn: NEXT, state: 'planned', kind } }),
+				easier('bench_press'),
+				ctx({ running })
+			).adjustments.map((a) => a.kind);
+
+		expect(kinds('accumulation')).toEqual(['long_run', 'load']);
+		expect(kinds('cutback')).toEqual(['load']);
+	});
+
+	it("proposes no ops for a week deloaded instead, listing every other change as not proposed ('deload')", () => {
+		const bench = mainBench();
+		const pushUps = planned('push_up', [
+			line({ loadKind: 'rpe_based', loadValue: null, loadUnit: null, sets: 3, targetRpe: 8 })
+		]);
+		const long = run(day(6), 'long_run', [segment('warm_up', 1_000), segment('long', 17_000)]);
+		const sessions = [strength(day(1), [bench, pushUps]), long];
+		const inputs = [snapshot(HIGH), [...easier('push_up')]] as const;
+
+		const m6 = proposeNextWeek(week(sessions), ...inputs, ctx({ running }));
+		expect(new Set(m6.adjustments.map((a) => a.kind))).toEqual(new Set(['deload', 'long_run']));
+
+		const out = proposeNextWeek(week(sessions), ...inputs, ctx({ running, deload: true }));
+		expect(out.adjustments).toEqual([]);
+		expect(out.boundary).toBe('deload');
+		expect(out.cycleFlag).toBeUndefined();
+		// M6's own deload of the main lifts is replaced, not listed; the long run waits for the deload.
+		expect(out.notProposed).toEqual([
+			{
+				...{ id: m6.adjustments.find((a) => a.kind === 'long_run')!.id, kind: 'long_run' },
+				...{ lineage: long.lineage, sessionDate: day(6), reason: 'deload', words: DELOAD_INSTEAD },
+				why: expect.stringContaining('was missed')
+			}
+		]);
+	});
+
+	it('is still late, with no ops, for a deloaded week that has ended', () => {
+		const out = proposeNextWeek(
+			week([strength(day(1), [mainBench()])]),
+			snapshot(HIGH),
+			[],
+			ctx({ today: addDays(NEXT, 8), deload: true })
+		);
+		expect(out).toMatchObject({ adjustments: [], notProposed: [], late: true });
 	});
 });
 

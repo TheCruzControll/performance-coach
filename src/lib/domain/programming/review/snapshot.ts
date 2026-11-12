@@ -11,7 +11,9 @@
  *   throws a SnapshotError naming the path, rather than show figures it cannot trust.
  *
  * Any change to the shape below or to the brief's (brief.ts) bumps SNAPSHOT_VERSION, and the rows
- * stored before it then read as legacy. Pure and server-only at runtime, like domain/programming.
+ * stored before it then read as legacy, except an additive optional field that every stored row
+ * already satisfies by leaving it out: M7's `deload` (m7-plan reactive-deload) is one, so v1 rows
+ * read as before. Pure and server-only at runtime, like domain/programming.
  */
 import * as z from 'zod/mini';
 import { addDays, mondayOf } from '../../calendar.ts';
@@ -20,6 +22,7 @@ import { validate } from '../../validation.ts';
 import type { FieldErrors } from '../../validation.ts';
 import { WEEK_KINDS } from '../../training/vocabulary.ts';
 import type { WeekKind } from '../../training/vocabulary.ts';
+import { REPLAN_REASONS } from '../../training/replan.ts';
 import type { FatigueLevel } from '../results.ts';
 import { reviewBriefSchema } from './brief.ts';
 import type { ReviewBrief } from './brief.ts';
@@ -59,6 +62,13 @@ export interface WeeklyReviewSnapshot {
 	fatigue: { level: FatigueLevel; reasons: string[] };
 	next: { weekStartsOn: IsoDate; state: NextWeekState; kind: WeekKind | null };
 	noProposal: NoProposalReason | null;
+	/**
+	 * M7: the review proposed a deload of `week` (next week, or the week holding the day it was
+	 * made on when next week had ended) instead of next week's changes, for `reasons`. Its boundary
+	 * is 'deload': no ops are stored, and next week's other changes are listed as not proposed.
+	 * Absent on every review that proposed no deload, and on every row stored before M7.
+	 */
+	deload?: { week: IsoDate; reasons: string[] };
 	brief: ReviewBrief;
 }
 
@@ -92,12 +102,25 @@ export const weeklyReviewSnapshotSchema = z
 			kind: z.nullable(z.enum(WEEK_KINDS as [WeekKind, ...WeekKind[]]))
 		}),
 		noProposal: z.nullable(z.enum(NO_PROPOSAL_REASONS)),
+		deload: z.optional(
+			z.strictObject({
+				week: isoDate,
+				reasons: z
+					.array(z.string().check(z.minLength(1), z.maxLength(REPLAN_REASONS.length)))
+					.check(z.maxLength(REPLAN_REASONS.max))
+			})
+		),
 		brief: reviewBriefSchema
 	})
 	.check(
 		z.refine((s) => mondayOf(s.weekStartsOn) === s.weekStartsOn, {
 			message: 'Not a Monday',
 			path: ['weekStartsOn'],
+			...whenValid
+		}),
+		z.refine((s) => !s.deload || mondayOf(s.deload.week) === s.deload.week, {
+			message: 'Not a Monday',
+			path: ['deload', 'week'],
 			...whenValid
 		}),
 		z.refine((s) => s.next.weekStartsOn === addDays(s.weekStartsOn, 7), {
