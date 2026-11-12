@@ -50,7 +50,7 @@ const CURSOR_PARAM = VERSION_PARAM;
  * JavaScript: its test id, glyph, tone, title and guidance.
  */
 export interface HistoryCard {
-	id: 'history-empty' | 'history-none' | 'history-error';
+	id: 'history-empty' | 'history-none' | 'history-error' | 'history-bridge';
 	icon: IconName;
 	tone: 'accent' | 'neutral' | 'combat';
 	title: string;
@@ -83,6 +83,15 @@ export const HISTORY_ERROR: HistoryCard = {
 	title: 'Couldn’t load your history',
 	description: 'Your plan is safe. Check your connection, then try again.'
 };
+
+/** A bridge week, as Train shows it: unplanned, and the day the next block starts. */
+const bridgeCard = (startsOn: IsoDate): HistoryCard => ({
+	id: 'history-bridge',
+	icon: 'clock',
+	tone: 'neutral',
+	title: 'Unplanned week · between blocks',
+	description: `The next block starts ${shortDate(startsOn)}. Nothing was planned this week: what was logged counts as off-plan.`
+});
 
 /** A decision as History lists it. */
 export interface DecisionItemView {
@@ -119,6 +128,8 @@ export interface VersionWeekView {
 	days: TrainDay[];
 	/** The day it opens on, Monday 0. */
 	selected: number;
+	/** A bridge week between blocks, in place of its seven empty days: when the next block starts. */
+	bridge?: HistoryCard;
 }
 
 export type HistoryData =
@@ -213,7 +224,8 @@ async function versionWeek(
 	return {
 		label: `${week.blockName} · Week ${week.number}`,
 		...weekWords(week, today),
-		selected: opens ? days.indexOf(opens) : Math.max(0, first)
+		selected: opens ? days.indexOf(opens) : Math.max(0, first),
+		...(week.nextBlockStartsOn && { bridge: bridgeCard(week.nextBlockStartsOn) })
 	};
 }
 
