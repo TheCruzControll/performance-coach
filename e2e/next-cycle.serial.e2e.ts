@@ -254,7 +254,7 @@ test.describe('block-end-late', () => {
 		await expect(preview(page)).toContainText(`${shortDate(thisMonday)} – `);
 
 		// Next Monday's preview: one more unplanned week, and the block a week later.
-		await choice.getByText('Next Monday').click();
+		await choice.getByRole('radio', { name: /Next Monday/ }).check();
 		await expect(preview(page)).toHaveCount(1);
 		await expect(preview(page).getByTestId('next-cycle-bridge')).toHaveText(
 			`Weeks ${from}–${from + k} stay unplanned`
@@ -263,7 +263,7 @@ test.describe('block-end-late', () => {
 		await auditBothThemes(page, 'Next block card, a late start');
 		await captureScreen(page, testInfo, 'next-cycle-late');
 
-		await choice.getByText('This week').click();
+		await choice.getByRole('radio', { name: /This week/ }).check();
 		await start(page).click();
 		await expect(page).toHaveURL(/\/train\?tool=plan$/);
 		const blocks = await blocksOf(seeded.programId!, 2);
