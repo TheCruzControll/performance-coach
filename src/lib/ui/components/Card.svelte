@@ -46,7 +46,7 @@
 	{...rest}
 >
 	{#if eyebrow || title || action}
-		<header class="head">
+		<header class="head" data-ui="card-head">
 			<div class="titles">
 				{#if eyebrow}<span class="eyebrow">{eyebrow}</span>{/if}
 				{#if title}<h2 id={titleId} class="title">{title}</h2>{/if}

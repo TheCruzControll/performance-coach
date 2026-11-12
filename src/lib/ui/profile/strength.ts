@@ -14,7 +14,7 @@ import {
 	type Lift
 } from '#lib/domain/profile/catalog.ts';
 import type { StrengthBaseline } from '#lib/domain/profile/types.ts';
-import type { WeightUnit } from '#lib/domain/units.ts';
+import { NBSP, roundEstimate, type WeightUnit } from '#lib/domain/units.ts';
 
 /** One lift being edited: every field the baselines schema reads, and the row's key. */
 export interface LiftDraft {
@@ -125,9 +125,19 @@ export function trim(n: number): string {
 	return String(Math.round(n * 100) / 100);
 }
 
-/** One line for a saved lift: "≈ 123.3 kg · Estimated, from 100 × 5 @ RPE 8". */
+/**
+ * A 1RM as a number with its unit: "140 kg" when lifted, "≈ 123.5 kg" when estimated, an
+ * estimate to the nearest 0.5 kg or 1 lb (units.ts roundEstimate), never "157.21 kg".
+ */
+export function oneRepMax(b: Pick<StrengthBaseline, 'kind' | 'value' | 'unit'>): string {
+	return b.kind === 'estimated'
+		? `≈ ${trim(roundEstimate(b.value, b.unit))}${NBSP}${b.unit}`
+		: `${trim(b.value)}${NBSP}${b.unit}`;
+}
+
+/** One line for a saved lift: "≈ 123.5 kg · Estimated, from 100 × 5 @ RPE 8". */
 export function baselineSummary(b: StrengthBaseline): string {
-	const value = `${b.kind === 'estimated' ? '≈ ' : ''}${trim(b.value)} ${b.unit}`;
+	const value = oneRepMax(b);
 	const how =
 		b.source === 'set' && b.setWeight != null && b.setReps != null
 			? `from ${trim(b.setWeight)} × ${b.setReps}${b.setRpe != null ? ` @ RPE ${b.setRpe}` : ''}`

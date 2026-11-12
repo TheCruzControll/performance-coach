@@ -36,6 +36,11 @@ export interface SyncRequest {
 	 * before any mutation, so that request answers 'duplicate' and never lands them late.
 	 */
 	discarded?: string[];
+	/**
+	 * The workouts whose rows the device already holds: each of their results carries only the
+	 * rows the batch's changes name (`changes`, changes.ts), not the whole workout.
+	 */
+	held?: string[];
 }
 
 /**
@@ -66,6 +71,11 @@ export interface SyncResult {
 	status: SyncStatus;
 	/** The workout's rows afterwards, on the last applied or duplicate result of each workout. */
 	canonical?: CanonicalWorkout;
+	/**
+	 * Instead of `canonical`, for a workout the request says the device holds (held): only the
+	 * rows the batch's applied and duplicate changes name, with the workout row (changes.ts).
+	 */
+	changes?: CanonicalWorkout;
 	/** rejected: field errors keyed by dotted path under `payload.`, as 'payload.weight'. */
 	errors?: FieldErrors;
 	code?: SyncCode;
