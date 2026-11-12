@@ -130,7 +130,7 @@
 						variant="secondary"
 						icon="refresh"
 						onclick={load}
-						data-testid="exercise-history-retry">Retry</Button
+						data-testid="exercise-history-retry">Try again</Button
 					>
 				{/snippet}
 			</EmptyState>
@@ -167,7 +167,7 @@
 						variant="secondary"
 						icon="refresh"
 						onclick={load}
-						data-testid="exercise-history-retry">Retry</Button
+						data-testid="exercise-history-retry">Try again</Button
 					>
 				{/snippet}
 			</EmptyState>
@@ -233,7 +233,7 @@
 						title="Couldn’t load older sessions"
 						data-testid="history-older-failed"
 					>
-						<Button variant="ghost" size="sm" onclick={showOlder}>Retry</Button>
+						<Button variant="ghost" size="sm" onclick={showOlder}>Try again</Button>
 					</Notice>
 				{/if}
 			</Section>

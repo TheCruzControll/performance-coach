@@ -753,7 +753,7 @@ test.describe('the root error page, loaded on demand', () => {
 		await onErrorPageChunk(page, (_pass, abort) => abort());
 		await gotoHydrated(page, '/today');
 		await failProfileData(page);
-		await expect(page.getByRole('heading', { level: 1, name: "You're offline" })).toBeVisible();
+		await expect(page.getByRole('heading', { level: 1, name: 'You’re offline' })).toBeVisible();
 		const retry = page.getByRole('link', { name: 'Try again' });
 		await expect(retry).toHaveAttribute('href', '/profile');
 		expect((await retry.boundingBox())?.height).toBeGreaterThanOrEqual(44);

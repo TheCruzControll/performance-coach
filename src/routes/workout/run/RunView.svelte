@@ -159,7 +159,7 @@
 		{#if snapshot.notSaved.length > 0}
 			<Notice tone="danger" title="Not saved on this device" data-testid="not-saved">
 				This browser couldn't save it.
-				<Button size="sm" variant="secondary" icon="refresh" onclick={retry}>Retry</Button>
+				<Button size="sm" variant="secondary" icon="refresh" onclick={retry}>Try again</Button>
 			</Notice>
 		{/if}
 		<Button block icon="check" disabled={!active.store} onclick={log} data-testid="log-segment">
