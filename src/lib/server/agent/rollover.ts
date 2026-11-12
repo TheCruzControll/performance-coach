@@ -293,8 +293,8 @@ function saveSummary(
 /**
  * Before a turn's transaction: when the thread's current segment is due to roll over, the summary
  * made ahead for it, or else a summary made now, as a thread_summary note. Null when nothing is
- * due (a retried send, an archived thread, a review's write-up thread, a segment within its limits
- * on the current prompt version).
+ * due (a retried send, an archived thread, a review's write-up thread, a segment within its
+ * limits on the current prompt version).
  */
 export async function summariseSegment(input: SummariseInput): Promise<RolloverPlan | null> {
 	const { ownerId, deps } = input;

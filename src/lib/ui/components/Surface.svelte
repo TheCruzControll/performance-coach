@@ -40,6 +40,7 @@
 	<a
 		{href}
 		class={['surface', 'interactive', className]}
+		data-ui="surface"
 		data-level={level}
 		data-padding={padding}
 		data-radius={radius}
@@ -52,6 +53,7 @@
 	<svelte:element
 		this={as}
 		class={['surface', interactive && 'interactive', className]}
+		data-ui="surface"
 		data-level={level}
 		data-padding={padding}
 		data-radius={radius}
