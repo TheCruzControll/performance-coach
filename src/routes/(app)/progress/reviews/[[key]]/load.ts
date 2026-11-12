@@ -28,6 +28,7 @@ import type { Finding, FindingLevel } from '#lib/domain/programming/review/brief
 import { ownerToday } from '#lib/server/local-date.ts';
 import { recordServerError, type ServerErrorInput } from '#lib/server/services/errors.ts';
 import { isUuid } from '#lib/server/services/ids.ts';
+import { getCurrentProgram } from '#lib/server/services/programs/index.ts';
 import {
 	createCycleReview,
 	CycleReviewNotReviewableError,
@@ -56,6 +57,7 @@ import type { TileVerdict } from '#lib/ui/analytics/verdict-words.ts';
 import { shortDate } from '#lib/ui/program/words.ts';
 import { slotOf } from '../../load.ts';
 import { cycleKey, cycleReviewData, cycleTitle, type CycleReviewData } from './cycle-data.ts';
+import { nextCycleView } from './next-cycle-data.ts';
 import { reviewSections, type SectionView } from './sections.ts';
 
 /** The reviews one list shows: a page of the store's largest, about a year of weeks. */
@@ -216,6 +218,7 @@ export interface ReviewsDeps extends Pick<TrainingDeps, 'db'> {
 	reviewable?: typeof reviewableWeek;
 	block?: typeof unreviewedBlock;
 	cycleView?: typeof getCycleReviewViewById;
+	current?: typeof getCurrentProgram;
 	record?: typeof recordServerError;
 	today?: typeof ownerToday;
 }
@@ -532,6 +535,7 @@ export async function loadReviews(
 		reviewable = reviewableWeek,
 		block = unreviewedBlock,
 		cycleView = getCycleReviewViewById,
+		current = getCurrentProgram,
 		record = recordServerError,
 		today: dayOf = ownerToday
 	}: ReviewsDeps = {}
@@ -553,7 +557,12 @@ export async function loadReviews(
 		let selected: WeeklyReviewData | CycleReviewData | null = null;
 		if (parsed?.kind === 'cycle') {
 			const shown = await cycleView(ownerId, parsed.id, today, { db });
-			selected = cycleReviewData(shown, page.items, cycles);
+			// A late start's bridge is numbered in the program's weeks, from its start.
+			const program = shown.previews.some((p) => p.dates.bridge)
+				? await current(ownerId, today, { db })
+				: null;
+			const next = nextCycleView(shown, { today, programStartsOn: program?.startsOn ?? null });
+			selected = cycleReviewData(shown, page.items, cycles, next);
 		}
 		if (parsed?.kind === 'weekly') {
 			const shown = await view(ownerId, parsed.weekStartsOn, { db });
