@@ -1,0 +1,194 @@
+/*
+ * Graphite 2004: the second design, a preview the owner can switch to (Profile → Appearance →
+ * Design, or ?design=graphite) and back. Today's design stays the default for everyone.
+ *
+ * Early-2000s Apple software put on an iPhone: graphite dark, a white-and-silver light theme, Aqua
+ * blue as the one accent in place of volt, Source Sans 3 standing in for Myriad, crisp 3–6 px
+ * corners. It maps the proposal's values onto the app's own token names (tokens.css), so every
+ * component restyles without an edit; the materials (strip, plastic, gel, selection well, bars,
+ * the Status Display) are new roles for the components to adopt.
+ *
+ * Its own build asset, in no route's CSS: the pre-paint script in src/app.html links it (and
+ * preloads Source Sans 3) only when this design is chosen, so a device on today's design never
+ * fetches a byte of it. Everything is scoped to :root[data-design='graphite'], which outranks the
+ * tokens' :root, and only colour stops sit in light-dark(), never a whole gradient. Motion
+ * durations are left alone, so reduced motion still zeroes them.
+ */
+
+@font-face {
+	font-family: 'Source Sans 3';
+	font-style: normal;
+	font-display: swap;
+	font-weight: 200 900;
+	src: url('@fontsource-variable/source-sans-3/files/source-sans-3-latin-wght-normal.woff2')
+		format('woff2-variations');
+	unicode-range:
+		U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+		U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/* Metric-matched to Source Sans 3 at weight 400 (its advance widths, hhea ascent and descent, read
+   from the font file), so the swap does not shift layout. */
+@font-face {
+	font-family: 'Source Sans 3 Fallback';
+	src: local('Arial'), local('Helvetica Neue'), local('Helvetica');
+	size-adjust: 93.2%;
+	ascent-override: 109.8%;
+	descent-override: 42.9%;
+	line-gap-override: 0%;
+}
+
+:root[data-design='graphite'] {
+	/* ---- Neutrals: graphite (cool grey-blue, never pure black); white and silver ------- */
+	--color-canvas: light-dark(#ffffff, #1c1d20);
+	--color-surface-1: light-dark(#ffffff, #26272b); /* the grouped box */
+	--color-surface-2: light-dark(#f7f7f7, #1f2023); /* the inset well: fields, tracks */
+	--color-surface-3: light-dark(#e8e8e8, #323338); /* pressed */
+	--color-surface-inverse: light-dark(#1d1d1f, #ececee);
+	--color-overlay: light-dark(rgb(29 29 31 / 0.32), rgb(10 11 13 / 0.62));
+	--color-glass: light-dark(rgb(255 255 255 / 0.94), rgb(28 29 32 / 0.94));
+
+	--color-border: light-dark(#d4d4d4, #393a40);
+	--color-border-strong: light-dark(#8a8a8a, #75767e);
+	--color-hairline: light-dark(#e3e3e3, #323339);
+	--color-highlight: light-dark(rgb(255 255 255 / 0.9), rgb(255 255 255 / 0.07));
+
+	--color-text: light-dark(#1d1d1f, #ececee);
+	--color-text-secondary: light-dark(#555559, #a9aab1);
+	--color-text-tertiary: light-dark(#66666b, #9a9ba3);
+	--color-text-disabled: light-dark(#b0b0b4, #55565c);
+	--color-text-inverse: light-dark(#ececee, #1d1d1f);
+
+	/* ---- Aqua: the one accent (a fill under white text, so one blue in both themes) ------ */
+	--color-accent: #1a6bd6;
+	--color-accent-hover: #2570d6;
+	--color-accent-pressed: #1252b8;
+	--color-on-accent: #ffffff;
+	--color-accent-text: light-dark(#0060c7, #6cb0ff);
+	--color-accent-subtle: light-dark(rgb(26 107 214 / 0.1), rgb(61 142 240 / 0.16));
+	--color-accent-ring: light-dark(#0060c7, #6cb0ff);
+
+	/* ---- Status (text-safe on canvas, box and well) ------------------------------------ */
+	--color-positive: light-dark(#1d7a35, #63c779);
+	--color-warning: light-dark(#94590a, #f0b44c);
+	--color-danger: light-dark(#c0271f, #ff9a90);
+	--color-danger-subtle: light-dark(rgb(192 39 31 / 0.1), rgb(255 154 144 / 0.14));
+	--color-info: light-dark(#0060c7, #6cb0ff);
+
+	/* ---- Disciplines (signals only: dots, tags) ---------------------------------------- */
+	--color-strength: light-dark(#a8740f, #e0ac44);
+	--color-running: light-dark(#2f8a3a, #6cc66f);
+	--color-combat: light-dark(#b8336f, #ec6fa8);
+	--color-hypertrophy: light-dark(#7a52cc, #ad8df0);
+	--color-conditioning: light-dark(#0f8a96, #45c0cc);
+
+	/* ---- Charts: the same hues stepped until every check in ui/charts/palette-check.ts
+	   passes on the box, in both themes (graphite.test.ts). The diverging pair is today's. */
+	--chart-strength: light-dark(#a8740f, #b88400);
+	--chart-hypertrophy: light-dark(#7a52cc, #9b7ae8);
+	--chart-conditioning: light-dark(#1894a1, #39a5ba);
+	--chart-combat: light-dark(#ac1260, #b54d98);
+	--chart-running: light-dark(#2f8a3a, #46a84f);
+	--chart-diverge-mid: light-dark(#86868a, #808187);
+	--chart-muted: light-dark(#8a8a8a, #75767e);
+	--chart-grid: light-dark(#ececec, #303136);
+	--chart-axis: light-dark(#d4d4d4, #393a40);
+	--chart-baseline: light-dark(#a8a8a8, #55565c);
+	--chart-band: light-dark(#f5f5f5, #2b2c30);
+
+	/* ---- Type: Source Sans 3, one family; about 7 % narrower than Mona Sans, so each step
+	   is a size up at the same width ------------------------------------------------------ */
+	--font-sans:
+		'Source Sans 3', 'Source Sans 3 Fallback', -apple-system, BlinkMacSystemFont, 'Segoe UI',
+		Roboto, sans-serif;
+	--font-display: var(--font-sans);
+	--font-numeric: var(--font-sans);
+
+	--text-xs: 0.8125rem; /* 13 — footnotes */
+	--text-sm: 0.9375rem; /* 15 — subheads */
+	--text-base: 1.0625rem; /* 17 — body */
+	--text-lg: 1.1875rem; /* 19 */
+	--text-xl: 1.5rem; /* 24 — titles */
+	--text-5xl: 3.75rem; /* 60 — the number that matters */
+
+	--leading-tight: 1.08;
+	--leading-normal: 1.4;
+
+	--weight-regular: 400;
+	--weight-semibold: 620;
+	--weight-bold: 650;
+	--weight-black: 760;
+
+	--tracking-display: -0.022em;
+	--tracking-tight: -0.014em;
+	--tracking-caps: 0.06em;
+
+	/* ---- Shape: crisp. Tags 3, fields and segments 4, buttons and boxes 6, sheets 10; no
+	   pills ------------------------------------------------------------------------------ */
+	--radius-xs: 3px;
+	--radius-sm: 4px;
+	--radius-md: 6px;
+	--radius-lg: 6px;
+	--radius-xl: 10px;
+	--radius-full: 6px;
+
+	/* ---- Depth: a top highlight and a tight shadow; content stays flat ------------------- */
+	--elevation-1:
+		inset 0 1px 0 0 var(--color-highlight),
+		0 1px 2px light-dark(rgb(0 0 0 / 0.08), rgb(0 0 0 / 0.35));
+	--elevation-2:
+		inset 0 1px 0 0 var(--color-highlight),
+		0 1px 2px light-dark(rgb(0 0 0 / 0.08), rgb(0 0 0 / 0.35)),
+		0 10px 24px -12px light-dark(rgb(0 0 0 / 0.18), rgb(0 0 0 / 0.5));
+	--elevation-3: inset 0 1px 0 0 var(--color-highlight), 0 -12px 40px rgb(0 0 0 / 0.45);
+	--glow-accent: 0 1px 2px light-dark(rgb(11 63 143 / 0.3), rgb(0 0 0 / 0.4));
+
+	/* ---- Motion: critically damped, no overshoot ---------------------------------------- */
+	--ease-spring: linear(0, 0.06 2.2%, 0.24 5.4%, 0.66 13.6%, 0.86 19.8%, 0.96 27%, 0.995 36%, 1);
+
+	/* ---- Materials (new roles; the components adopt them in later steps) ----------------- */
+	/* The silver title strip on every grouped box. */
+	--strip: linear-gradient(light-dark(#fbfbfb, #36373c), light-dark(#e9e9e9, #2c2d31));
+	--strip-edge: light-dark(#c9c9c9, #1b1c1f);
+	/* Aqua gel under a glass highlight: the primary action, one per screen. */
+	--gel:
+		linear-gradient(rgb(255 255 255 / 0.22), rgb(255 255 255 / 0.05) 50%, transparent 50%),
+		linear-gradient(#2570d6, #1252b8 55%, #195ec4);
+	--gel-pressed:
+		linear-gradient(rgb(255 255 255 / 0.12), rgb(255 255 255 / 0.03) 50%, transparent 50%),
+		linear-gradient(#1d64c4, #0e449e 55%, #1450ae);
+	--gel-edge: #0b3f8f;
+	/* Grey plastic: everything else you press. */
+	--plastic: linear-gradient(
+		light-dark(#ffffff, #4a4b51),
+		light-dark(#ededed, #3c3d42) 50%,
+		light-dark(#e3e3e3, #34353a) 50%,
+		light-dark(#f0f0f0, #3a3b40)
+	);
+	--plastic-pressed: linear-gradient(
+		light-dark(#e2e2e2, #2f3034),
+		light-dark(#d6d6d6, #2a2b2f) 50%,
+		light-dark(#cdcdcd, #26272b) 50%,
+		light-dark(#d9d9d9, #2b2c30)
+	);
+	--plastic-edge: light-dark(#a4a4a4, #19191c);
+	--on-plastic: light-dark(#1d1d1f, #f2f2f4);
+	/* Selection: a recessed graphite-blue well with Aqua ink, never the gel. */
+	--select: linear-gradient(light-dark(#c9d6e8, #18212d), light-dark(#d6e0ee, #1d2836));
+	--select-edge: light-dark(#93a7c2, #0d131b);
+	--select-ink: light-dark(#0a4c9c, #8cc3ff);
+	/* Bars that hold controls: the tab bar, the toolbar, the action bar. */
+	--bar: linear-gradient(
+		light-dark(#fafafa, #3a3b40),
+		light-dark(#ececec, #2b2c30) 50%,
+		light-dark(#e2e2e2, #202124) 50%,
+		light-dark(#e9e9e9, #1b1c1f)
+	);
+	--bar-edge: light-dark(#b9b9b9, #0d0d0f);
+	/* The Status Display: an inset backlit readout, dimmer in the dark. */
+	--lcd: linear-gradient(light-dark(#eef2f4, #9eabb6), light-dark(#d9e0e5, #8895a1));
+	--lcd-edge: light-dark(#8d979f, #0f1012);
+	--lcd-ink: light-dark(#1b2228, #0b1014);
+	--lcd-ink-2: light-dark(#4b5560, #1d252c);
+	--lcd-track: light-dark(rgb(27 34 40 / 0.14), rgb(16 22 27 / 0.16));
+}
