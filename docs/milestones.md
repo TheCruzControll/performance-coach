@@ -10,7 +10,7 @@ acceptance criteria were verified by running them — compiling is not done.
 | M2  | Auth & profile                  | **Done**: auth, production (#50), onboarding, Profile, Today (#60–#181), desktop (#85–#265); email link dropped by the owner on 2026-11-07 |
 | M3  | Training data model & programs  | **Done**: 49 slice PRs, #41 to #233; evidence per criterion below                                                                          |
 | M4  | Workout application             | **In progress**: the workout app merged, #87 to #410; the owner's screenshot review pending                                                |
-| M5  | AI performance coach            | Planned                                                                                                                                    |
+| M5  | AI performance coach            | **In progress**: every slice built, #101 to #463; the launch (#449) waits on the owner's screenshot review                                 |
 | M6  | Analytics & reviews             | Planned                                                                                                                                    |
 | M7  | Advanced coaching               | Planned                                                                                                                                    |
 | M8  | Performance & design refinement | Planned                                                                                                                                    |
@@ -293,6 +293,49 @@ Acceptance criteria:
 3. "I dislike X" persists; "machine unavailable" does not become a preference.
 4. Pain reports never produce "push through" advice (tested).
 5. No API key reaches the browser (verified in build output).
+
+Status: **in progress**. Every M5 slice is built: 60 slice PRs from #101 to #463 (this docs PR is
+the 61st), merged to `main` as numbered PRs like M3's and M4's, dark-launched behind `COACH_LAUNCHED` until
+coach-launch (#449) turns the real coach on in production. The design is in
+docs/agent-architecture.md (ADR 0009, 0013, 0014), the security review in docs/security.md
+("Coach (M5) review"), the tests in docs/testing.md ("Coach (M5)") and the numbers, measured by CI,
+in docs/performance.md ("M5 (coach)"). Evidence per criterion:
+
+- Criterion 1: one integration test per tool group, through `runTurn` on real Postgres with the
+  MockProvider: history (#287), programming reads (#219), analytics (#232), workout (#295),
+  preferences (#303) and programming proposals (#313), each with output-schema checks and a
+  foreign owner id that reads and writes nothing.
+- Criterion 2: every change is a `coach_proposals` row that Postgres keeps `proposed`, immutable
+  and forward-only (#203); Accept goes by id and applies in one transaction, a program kind as one
+  new version with a coach decision per op (#280, #282, #207); goals and preferences through
+  Profile's services (#210); a session swap through M4's ledger (#286). The cards (#381), decisions
+  (#385) and the inbox (#390) need the owner's tap, and the journeys show Accept → version N in
+  Train (#405).
+- Criterion 3: 'I hate Bulgarian split squats' records a coach-sourced dislike with a decision
+  note; a taken machine is situational and stores no preference
+  (`tests/integration/coach/tools-preferences.test.ts`, #303; statements, #153); the dislike
+  reaches a new conversation through memory (`e2e/coach-memory-panel.serial.e2e.ts`, #383).
+- Criterion 4: banned phrasings are bounded patterns (#153); the output gate holds pain-context
+  blocks to the end and replaces a failing one before any of it is sent (#226); a pain turn names
+  stopping, a gentler option and a professional (#295). The live suite's pain conversation has not
+  been run against the real model.
+- Criterion 5: `pnpm budgets` scans every client file of both builds for the SDK, `sk-ant-` keys
+  and CI's canary key (#201), and only the Anthropic provider imports the SDK at runtime (#123,
+  #193).
+- Core logging works with the coach failing, unavailable or not launched, with no coach request
+  (`e2e/coach-degrade.serial.e2e.ts`, #396).
+- The launch (#449): the owner's go-ahead of 2026-11-10 in place of a live run; the owner confirmed
+  `ANTHROPIC_API_KEY` in Production, Fluid compute, `LLM_PROVIDER` unset and the $5 daily cap. The
+  kill switch is `LLM_PROVIDER=off` and a redeploy (docs/environment.md, "The coach (M5)").
+
+Still open:
+
+- The owner's review of the coach screenshot set (#405), the merge gate of #449: not yet recorded.
+- The live suite (`pnpm test:live`) has never run against the real model, so prompt caching, real
+  TTFT and label compliance are not yet measured.
+- Lighthouse has no inbox audit (docs/performance.md, "M5 (coach)"). The coach screen, 60.3 KB
+  and over the 60 KB gate in the M5 run, is 57.5 KB since the shared JS trim (#473).
+- The real-device checklist has no coach item yet.
 
 ## M6 — Analytics & reviews [§10, §11]
 

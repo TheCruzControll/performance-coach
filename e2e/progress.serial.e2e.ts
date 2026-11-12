@@ -82,6 +82,93 @@ async function expectKpis(page: Page, seeded: SeededAnalytics, weeks: number) {
 	return o;
 }
 
+/**
+ * What does not fit in each KPI tile: a label under its badge or cut off, a value past the tile's
+ * padding, a two-word verdict split over two lines, a verdict past the padding. Empty when all fit.
+ */
+async function tileMisfits(page: Page): Promise<string[]> {
+	const misfits: string[] = [];
+	for (const id of KPIS) {
+		const found = await tile(page, id).evaluate((el) => {
+			const out: string[] = [];
+			const face = el.querySelector('.face') as HTMLElement;
+			const label = el.querySelector('.label') as HTMLElement;
+			const badge = el.querySelector('[data-ui="badge"]') as HTMLElement;
+			const value = el.querySelector('.value') as HTMLElement;
+			const style = getComputedStyle(face);
+			const box = face.getBoundingClientRect();
+			const inner = {
+				left: box.left + parseFloat(style.paddingLeft) - 0.5,
+				right: box.right - parseFloat(style.paddingRight) + 0.5
+			};
+			const l = label.getBoundingClientRect();
+			const b = badge.getBoundingClientRect();
+			const overlap = l.left < b.right && b.left < l.right && l.top < b.bottom && b.top < l.bottom;
+			if (overlap) out.push(`the badge covers '${label.textContent}'`);
+			if (label.scrollWidth > label.clientWidth + 0.5) out.push(`'${label.textContent}' is cut`);
+			const range = document.createRange();
+			range.selectNodeContents(value);
+			const v = range.getBoundingClientRect();
+			if (v.right > inner.right || v.left < inner.left)
+				out.push(`'${value.textContent}' overflows by ${(v.right - inner.right).toFixed(1)} px`);
+			const verdict = el.querySelector('[data-testid="verdict"]') as HTMLElement | null;
+			const phrase = verdict?.querySelector('.phrase') as HTMLElement | null;
+			if (verdict && phrase) {
+				const lines =
+					phrase.getBoundingClientRect().height / parseFloat(getComputedStyle(phrase).lineHeight);
+				if (lines > 1.5) out.push(`'${phrase.textContent}' wraps`);
+				if (verdict.getBoundingClientRect().right > inner.right)
+					out.push(`'${verdict.textContent}' overflows`);
+			}
+			return out;
+		});
+		misfits.push(...found.map((words) => `${id}: ${words}`));
+	}
+	return misfits;
+}
+
+/** The Training load chart's shown totals: at most two, and no two overlapping. */
+async function expectChartTotalsApart(page: Page) {
+	const chart = page.getByTestId('bar-chart').first();
+	await expect(chart).toBeVisible();
+	const shown = await chart.locator('.cap-text').evaluateAll((els) =>
+		els
+			.filter((el) => getComputedStyle(el).display !== 'none')
+			.map((el) => {
+				const { left, right } = el.getBoundingClientRect();
+				return { text: el.textContent, left, right };
+			})
+	);
+	expect(shown.length, 'the highest and the latest week carry a total').toBeGreaterThan(0);
+	expect(shown.length, 'no week but the highest and the latest').toBeLessThanOrEqual(2);
+	const [a, b] = [...shown].sort((x, y) => x.left - y.left);
+	if (a && b) expect(a.right, `${a.text} clears ${b.text}`).toBeLessThanOrEqual(b.left);
+}
+
+/** Each of the latest strength workout's stats keeps its value inside its tile's padding. */
+async function expectWorkoutStatsFit(page: Page) {
+	await gotoHydrated(page, '/progress/workouts');
+	await page
+		.getByTestId('workout-row')
+		.filter({ hasText: /\d+ sets/ })
+		.first()
+		.click();
+	const stats = page.getByTestId('workout-stats');
+	await expect(stats).toContainText('Volume');
+	const misfits = await stats.locator(':scope > *').evaluateAll((els) =>
+		els.flatMap((el) => {
+			const value = el.querySelector('.value') as HTMLElement;
+			const style = getComputedStyle(el);
+			const right = el.getBoundingClientRect().right - parseFloat(style.paddingRight) + 0.5;
+			const range = document.createRange();
+			range.selectNodeContents(value);
+			const over = range.getBoundingClientRect().right - right;
+			return over > 0 ? [`'${value.textContent}' overflows by ${over.toFixed(1)} px`] : [];
+		})
+	);
+	expect(misfits).toEqual([]);
+}
+
 /** '6,200 kg', or what a tile says for nothing. */
 const kg = (value: number) =>
 	value === 0
@@ -345,8 +432,30 @@ test.describe('twelve weeks', () => {
 		await captureScreen(page, testInfo, 'progress-overview-phone');
 	});
 
+	test('on a phone, labels, values and verdicts stay inside their tiles, and the workout’s stats in theirs', async ({
+		page
+	}) => {
+		await page.setViewportSize({ width: 393, height: 852 });
+		await gotoHydrated(page, '/progress');
+		await expectKpis(page, seeded, 12);
+		await page.waitForFunction(() => document.fonts.status === 'loaded');
+		expect(await tileMisfits(page)).toEqual([]);
+		await expectWorkoutStatsFit(page);
+	});
+
 	test.describe('in a desktop window', () => {
 		test.use({ ...DESKTOP });
+
+		test('tiles, chart totals and the workout’s stats neither overlap nor overflow', async ({
+			page
+		}) => {
+			await gotoHydrated(page, '/progress');
+			await expectKpis(page, seeded, 12);
+			await page.waitForFunction(() => document.fonts.status === 'loaded');
+			expect(await tileMisfits(page)).toEqual([]);
+			await expectChartTotalsApart(page);
+			await expectWorkoutStatsFit(page);
+		});
 
 		test('the five tiles share one row, nothing scrolls sideways', async ({ page }, testInfo) => {
 			await gotoHydrated(page, '/progress');

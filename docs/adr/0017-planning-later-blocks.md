@@ -1,8 +1,12 @@
-# NNNN — Planning later blocks: a new version, a bridge for a late start, no session before the first day
+# 0017 — Planning later blocks: a new version, a bridge for a late start, no session before the first day
 
-- **Status:** Proposed (M6). Extends [ADR 0010](0010-program-versioning.md). Numbered at merge,
-  like a migration slot, so M6's slices refer to it by its title, "the planning later blocks
-  ADR". docs-m6-architecture accepts it.
+- **Status:** Accepted (M6, 2026-11-12). Extends [ADR 0010](0010-program-versioning.md).
+  Implemented as decided below in `services/programs/next-block.ts` (`planBlock`) and
+  `db/repositories/program-replan.ts`, reached only from a cycle review's 'Start next block'
+  (`services/reviews/next-cycle.ts` → `services/coach/apply/next-cycle.ts`). One detail moved: the
+  new version is parsed with `programVersionSchema`, `programPlanSchema`'s rules without its
+  12-block cap, because planned blocks accumulate version after version. Bridge weeks are
+  designed in Train, History, Today and the plan timeline (bridge-week-states).
 - **Context:** M3 plans a program's first block and dates the road after it as outline blocks
   with no sessions. M6's cycle review plans the next block from what the owner actually did
   (PRD §11), often days or weeks after the last block ended, and sometimes with no outline left.

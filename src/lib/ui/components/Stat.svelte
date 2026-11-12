@@ -18,6 +18,11 @@
 		rating?: { tone: 'positive' | 'warning' | 'danger'; label: string };
 		/** 1 = tile on the canvas (28 px value); 2 = compact, nested inside a card (22 px). */
 		level?: 1 | 2;
+		/**
+		 * Steps a level-1 value down to the compact size when its tile is too narrow for it
+		 * ('1 h 00 min' two to a row on a phone). For a tile sized by its grid, never by its words.
+		 */
+		fit?: boolean;
 		as?: 'div' | 'li';
 		'data-testid'?: string;
 	}
@@ -29,6 +34,7 @@
 		caption,
 		rating,
 		level = 1,
+		fit = false,
 		as = 'div',
 		...rest
 	}: Props = $props();
@@ -36,7 +42,7 @@
 	const empty = $derived(value === null || value === '');
 </script>
 
-<svelte:element this={as} class="stat" data-level={level} {...rest}>
+<svelte:element this={as} class="stat" data-level={level} data-fit={fit || undefined} {...rest}>
 	<span class="label">{label}</span>
 	<span class="value numeric" class:empty>
 		{#if empty}
@@ -95,6 +101,17 @@
 
 	.value.empty {
 		color: var(--color-text-tertiary);
+	}
+
+	/* A fitted tile measures its own width (its grid sets it), and its value steps down in one. */
+	.stat[data-fit] {
+		container-type: inline-size;
+	}
+
+	@container (width < 8.5rem) {
+		.stat[data-fit] .value {
+			font-size: var(--text-xl);
+		}
 	}
 
 	.unit {

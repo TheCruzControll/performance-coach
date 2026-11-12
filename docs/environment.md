@@ -27,8 +27,8 @@ cp .env.example .env
 | `OWNER_EMAIL`            | email sign-in link           | —       | The only recipient of email sign-in links (ADR 0011): one address, lower-cased. Production only; never committed (fixtures use `example.test`). Unset or invalid: the link is off and the startup log names the variable, never its value; the server still starts. Set it only by following docs/deployment.md → "Email sign-in link".                                                                   |
 | `RESEND_API_KEY`         | email link, Production only  | —       | Resend API key (`re_…`) for the email sign-in link. Production only, Sensitive, server-side only. Unset or invalid: the link is off, named in the startup log. Never used with test routes on: a recording test provider takes its place. Set it only by following docs/deployment.md → "Email sign-in link".                                                                                             |
 | `EMAIL_FROM`             | no                           | —       | Sender of sign-in links: an address or `Name <address>`. Default `Performance Coach <onboarding@resend.dev>`, Resend's onboarding sender, which delivers only to the Resend account's own address; change it once nikocruz.com is verified in Resend. Invalid: the link is off. Set it only by following docs/deployment.md → "Email sign-in link".                                                       |
-| `LLM_PROVIDER`           | no                           | —       | Coach model provider (M5): `mock` (deterministic, no key), `anthropic`, or `off` (the owner's kill switch, from the next deploy). Unset: `anthropic` in production once launched (`agent/launch.ts`), `mock` elsewhere. Never stops the server: `mock` in production or a missing key makes the coach unavailable (`agent/provider/select.ts`).                                                           |
-| `ANTHROPIC_API_KEY`      | for the real coach           | —       | Server-side only. Needed by the real coach (production, or `LLM_PROVIDER=anthropic` elsewhere). Missing: the coach is unavailable (`no_key`) and one warning names the variable, never a value; the server still starts.                                                                                                                                                                                  |
+| `LLM_PROVIDER`           | no                           | —       | Coach model provider (M5): `mock` (deterministic, no key), `anthropic`, or `off` (the owner's kill switch, from the next deploy). Unset: `anthropic` in production once launched (`agent/launch.ts`), `mock` elsewhere. Never stops the server: `mock` in production or a missing key makes the coach unavailable. Every case: "The coach (M5)" below.                                                    |
+| `ANTHROPIC_API_KEY`      | real coach, Production only  | —       | Server-side only, Sensitive; never in Preview or Development. Needed by the real coach (production, or `LLM_PROVIDER=anthropic` elsewhere). Missing: the coach is unavailable (`no_key`) and one warning names the variable, never a value; the server still starts.                                                                                                                                      |
 | `CRON_SECRET`            | backup cron, Production only | —       | What Vercel Cron sends as `Authorization: Bearer <CRON_SECRET>` to `/api/cron/backup`; at least 32 visible ASCII characters. Generate it with `openssl rand -hex 32`; Production only, Sensitive; no other copy is needed (replace a lost one). Unset or too short: the route answers 404. The startup log names it, never its value. See docs/deployment.md → "Set up backups".                          |
 | `BACKUP_ENCRYPTION_KEY`  | backups, Production only     | —       | 32 bytes, base64 or base64url: the AES-256-GCM key every backup is sealed with. From `pnpm backup:keygen`; Production only, Sensitive, and saved in the owner's password manager at the same moment, which holds old keys for 13 months after a rotation. Unset or invalid: backups are off (the cron answers 503), named in the startup log; the server still starts.                                    |
 | `BLOB_READ_WRITE_TOKEN`  | backups, Production only     | —       | Read-write token of the private Blob store `performance-coach-backups`, injected into Production by connecting the store. Wins over `BACKUP_DIR`. The CLI's copy (`pnpm backup:list`, `backup:run --blob`, `backup:restore` of a Blob URL) comes from the store's page in Vercel, because Production values cannot be pulled; enter it per command, never in a committed file or shell history.           |
@@ -39,19 +39,21 @@ cp .env.example .env
 
 Test tooling (not read by the app):
 
-| Variable             | Default                                            | Used by                                           |
-| -------------------- | -------------------------------------------------- | ------------------------------------------------- |
-| `TEST_DATABASE_URL`  | `postgres://coach:coach@localhost:5432/coach_test` | `pnpm test:integration`, `db:reset:test`          |
-| `E2E_DATABASE_URL`   | `postgres://coach:coach@localhost:5432/coach_e2e`  | `pnpm test:e2e`, `pnpm lighthouse`                |
-| `E2E_PORT`           | `4173`                                             | Playwright production server port                 |
-| `E2E_SKIP_BUILD`     | unset                                              | `1` reuses an existing `build/`                   |
-| `E2E_WEBKIT`         | unset                                              | `1` adds the WebKit project locally               |
-| `E2E_PERF_ALONE`     | unset                                              | `1`: `--project=perf` runs only owner setup first |
-| `E2E_SETUP_TOKEN`    | set by e2e global setup                            | this run's owner setup token (setup project)      |
-| `LIGHTHOUSE_SESSION` | unset                                              | session cookie value for `pnpm lighthouse --url`  |
-| `ADAPTER`            | `vercel`                                           | `node` builds with adapter-node                   |
-| `PGADMIN_URL`        | unset                                              | `pnpm db:setup` admin connection (CI)             |
-| `LIFECYCLE_STRICT`   | unset (production)                                 | `1` in tests and e2e: see below                   |
+| Variable             | Default                                            | Used by                                                                   |
+| -------------------- | -------------------------------------------------- | ------------------------------------------------------------------------- |
+| `TEST_DATABASE_URL`  | `postgres://coach:coach@localhost:5432/coach_test` | `pnpm test:integration`, `db:reset:test`                                  |
+| `E2E_DATABASE_URL`   | `postgres://coach:coach@localhost:5432/coach_e2e`  | `pnpm test:e2e`, `pnpm lighthouse`                                        |
+| `E2E_PORT`           | `4173`                                             | Playwright production server port                                         |
+| `E2E_SKIP_BUILD`     | unset                                              | `1` reuses an existing `build/`                                           |
+| `E2E_WEBKIT`         | unset                                              | `1` adds the WebKit project locally                                       |
+| `E2E_PERF_ALONE`     | unset                                              | `1`: `--project=perf` runs only owner setup first                         |
+| `E2E_SETUP_TOKEN`    | set by e2e global setup                            | this run's owner setup token (setup project)                              |
+| `LIGHTHOUSE_SESSION` | unset                                              | session cookie value for `pnpm lighthouse --url`                          |
+| `ADAPTER`            | `vercel`                                           | `node` builds with adapter-node                                           |
+| `PGADMIN_URL`        | unset                                              | `pnpm db:setup` admin connection (CI); e2e owner worlds (docs/testing.md) |
+| `LIVE_LLM`           | unset                                              | `1` and a key: `pnpm test:live` calls the model                           |
+| `LIVE_LLM_DRY`       | unset                                              | `1`: `pnpm test:live` plays on the mock                                   |
+| `LIFECYCLE_STRICT`   | unset (production)                                 | `1` in tests and e2e: see below                                           |
 
 `LIFECYCLE_STRICT` is the one row above the app reads. `vite.config.ts` (the unit and integration
 projects) and `e2e/global-setup.ts` (the e2e server) set it to `1`, so the lifecycle guard
@@ -71,6 +73,38 @@ Vercel sets `VERCEL`, `VERCEL_ENV`, `VERCEL_URL`, `VERCEL_BRANCH_URL`, `VERCEL_R
 (`src/lib/server/auth/relying-party.ts`), and the commit SHA for the version string
 (`0.1.0+<sha7>`, also returned by `/api/health`). Production's relying party is fixed in code:
 `https://coach.nikocruz.com`, RP ID `coach.nikocruz.com`.
+
+## The coach (M5)
+
+`src/lib/server/agent/provider/select.ts` decides who answers, once per server, from
+`LLM_PROVIDER`, `ANTHROPIC_API_KEY` and `COACH_LAUNCHED`, a constant in
+`src/lib/server/agent/launch.ts` (`true` since coach-launch, #449; not an environment variable).
+
+| Environment                | `LLM_PROVIDER`       | Coach                                                           |
+| -------------------------- | -------------------- | --------------------------------------------------------------- |
+| Any                        | `off`                | unavailable, `disabled`: every turn refused                     |
+| Production, not launched   | anything else        | unavailable, `not_launched`: every turn refused, before any key |
+| Production                 | unset or `anthropic` | `anthropic` with a key; `no_key` without one                    |
+| Production                 | `mock`               | unavailable, `mock_in_production`                               |
+| Development, test, preview | unset or `mock`      | the mock, its answers badged 'Practice coach'                   |
+| Development, test, preview | `anthropic`          | `anthropic` with a key; `no_key` without one                    |
+
+`no_key` and `mock_in_production` are misconfigurations: one startup warning names the variable,
+and lookups that need no model still answer. A preview behaves like development, but `vercel.json`
+turns Git preview deployments off, so there is none unless someone deploys one by hand.
+
+**The owner's Vercel steps** (Project → Settings): `ANTHROPIC_API_KEY` set for Production only,
+Sensitive; Fluid compute on, which the turn endpoint's 180 s `maxDuration` needs on the Hobby plan;
+`LLM_PROVIDER` left unset to run the coach. To stop it, set `LLM_PROVIDER=off` for Production and
+redeploy; to start it again, delete the variable and redeploy. The owner confirmed the key, Fluid
+compute, the unset provider and the $5 daily cap before the launch (#449).
+
+`COACH_MAX_DURATION_S` (180, `src/lib/domain/coach/budgets.ts`) is a code constant, not an
+environment variable: the turn endpoint's `maxDuration`, from which every turn limit derives.
+Without Fluid compute, change it to 60; `turnLimits(60)` is tested to still work.
+
+`LIVE_LLM=1 ANTHROPIC_API_KEY=<a key of your own> pnpm test:live` runs the live suite against the
+real model, never in CI; it drops and re-migrates `TEST_DATABASE_URL` (docs/development.md).
 
 ## Per environment
 

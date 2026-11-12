@@ -2,12 +2,10 @@
  * Today's plan once a program exists: the week on the WeekStrip with each day's sessions (today
  * selected), 'Up next' (the next UP_NEXT_LIMIT sessions after today, across weeks), and the
  * states a day can be in: a rest day naming the next session, a program that starts later
- * ('Starts Monday', week 1 shown), a finished first block with nothing planned yet, until M6
- * plans the next one, or a bridge week between blocks (M6's late start), which names the day the
- * next block starts instead of seven rest days. When a week or a block completes, its review
- * prompt (progress/review-prompt.server.ts) comes with the plan. Words are composed here, with the data they
- * describe, so the panel ships none of the vocabulary. Kept out of +page.server.ts so integration
- * tests can run it with an unreachable database.
+ * ('Starts Monday', week 1 shown), or a finished first block with nothing planned yet, until M6
+ * plans the next one. Words are composed here, with the data they describe, so the panel ships
+ * none of the vocabulary. Kept out of +page.server.ts so integration tests can run it with an
+ * unreachable database.
  *
  * It is streamed, and it fails soft: a read that fails is recorded as a server error (kind
  * 'streamed', as Profile's are) and resolves to {failed: true}, which the panel shows as a
@@ -72,7 +70,7 @@ export interface PlanWeek {
 	days: PlanDay[];
 }
 
-/** A state's card: 'Starts Monday', 'Nothing planned yet' or 'Between blocks'. */
+/** A state's card: 'Starts Monday', or 'Nothing planned yet'. */
 export interface PlanNote {
 	title: string;
 	description: string;

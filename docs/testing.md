@@ -11,6 +11,7 @@ database, then unit tests for calculations. Never claim a suite passed without r
 | Budgets     | `pnpm budgets`          | `scripts/check-budgets.ts` | initial JS / CSS / font preloads + CSS prefix guard from the build |
 | Drift       | `pnpm db:drift`         | drizzle-kit + git          | fails when the schema changed without a committed migration        |
 | Lighthouse  | `pnpm lighthouse`       | `scripts/lighthouse.ts`    | mobile and desktop audits of the local production server           |
+| Live coach  | `pnpm test:live`        | Vitest (`live`)            | `tests/live/**` — the real model, opt-in, never in CI              |
 
 ## Unit tests
 
@@ -106,16 +107,16 @@ the CSRF Origin check, User-Agent and passkey labels, the rate-limit client netw
 
 Projects (all `devices['iPhone 15 Pro']` except `desktop-chromium`):
 
-| Project           | Browser  | Runs                                                                                            |
-| ----------------- | -------- | ----------------------------------------------------------------------------------------------- |
-| `setup`           | Chromium | `auth.setup.ts`: the owner's real first-run setup; saves the signed-in state                    |
-| `iphone-chromium` | Chromium | every functional spec, signed in from `setup`'s state                                           |
-| `perf`            | Chromium | `perf.e2e.ts` and `perf-*.e2e.ts`, alone with one worker, after the functional suite            |
-| `setup-webkit`    | WebKit   | `auth-webkit.setup.ts`: a session from the test-only route (CI or `E2E_WEBKIT=1`)               |
-| `iphone-webkit`   | WebKit   | every functional spec on that session (CI or `E2E_WEBKIT=1`; needs `playwright install webkit`) |
-| `serial-chromium` | Chromium | `*.serial.e2e.ts` one at a time, after the functional specs: they change the training profile   |
-| `serial-webkit`   | WebKit   | the same specs after `serial-chromium` (CI or `E2E_WEBKIT=1`)                                   |
-| `exclusive`       | Chromium | `*.exclusive.e2e.ts`, last and alone: account-wide actions                                      |
+| Project           | Browser  | Runs                                                                                                            |
+| ----------------- | -------- | --------------------------------------------------------------------------------------------------------------- |
+| `setup`           | Chromium | `auth.setup.ts`: the owner's real first-run setup; saves the signed-in state                                    |
+| `iphone-chromium` | Chromium | every functional spec, signed in from `setup`'s state                                                           |
+| `perf`            | Chromium | `perf.e2e.ts` and `perf-*.e2e.ts`, alone with one worker, after the functional suite                            |
+| `setup-webkit`    | WebKit   | `auth-webkit.setup.ts`: a session from the test-only route (CI or `E2E_WEBKIT=1`)                               |
+| `iphone-webkit`   | WebKit   | every functional spec on that session (CI or `E2E_WEBKIT=1`; needs `playwright install webkit`)                 |
+| `serial-chromium` | Chromium | `*.serial.e2e.ts` one at a time (per owner world), after the functional specs: they change the training profile |
+| `serial-webkit`   | WebKit   | the same specs after `serial-chromium` (CI or `E2E_WEBKIT=1`)                                                   |
+| `exclusive`       | Chromium | `*.exclusive.e2e.ts`, last and alone: account-wide actions                                                      |
 
 `desktop-chromium` opens `devices['Desktop Chrome']` resized to `DESKTOP` (`e2e/desktop.ts`:
 1440 × 900, a mouse and no touch, scale 1) from `setup`'s signed-in state and runs whole files:
@@ -130,7 +131,22 @@ Every UI slice is verified at the iPhone viewport (393 × 659) and at 1440 × 90
 `test.use(DESKTOP)` from `e2e/desktop.ts` or a `*.desktop.e2e.ts` spec, and its PR attaches both
 screenshots (docs/design-system.md, Responsive layout → Verification).
 
-Workers: 2 locally and in CI's main legs (whole files side by side), 1 in its other legs.
+Workers: 2 locally and in CI's main legs (whole files side by side), 2 in its serial legs (one per
+owner world, below), 1 in its other legs.
+
+**Owner worlds (CI's serial legs).** The app has one owner, and the serial specs reset and change
+that owner's training profile, so two of them never share a database and a server. A serial leg
+(`E2E_GROUP=serial` in CI) therefore runs 2 workers, each in an owner world of its own
+(`e2e/worlds.ts`): world 0 is the usual `E2E_PORT` and `coach_e2e`; world 1 serves on
+`E2E_PORT + 1` from `coach_w1_e2e` (`<name>_w<n>_e2e`, created with `PGADMIN_URL` when missing).
+Global setup resets every world's database and starts one production server per world, each from
+a copy of the one build made for its origin (`build-w<n>/`: adapter-node bakes its origin in), with
+its own log (`.e2e-server-w<n>.log`) and backups folder. Each worker serves the world of its
+`TEST_PARALLEL_INDEX` (`routeWorker`, from `playwright.config.ts`, points `E2E_PORT` and
+`E2E_DATABASE_URL` at it). The owner setups run once, in one world, and the `setup-worlds` project
+(`e2e/worlds.setup.ts`) then copies that world's database (owner, passkeys, sessions) into the
+others and checks every server signs both engines' states in. Within a world the serial specs
+still run one at a time. Every other run, local runs included, keeps one world.
 
 CI runs the suite as separate legs, one per group and engine (`e2e/projects.ts`,
 `.github/workflows/ci.yml`). The `perf` project is the `alone` group: its own leg on Chromium,
@@ -1234,11 +1250,120 @@ Captured into `test-results/screens/<project>/`, the desktop ones under `desktop
 - The journeys: `strength-*` (top set to History, the pain and dislike journey, the generated
   week), `journey-run-*`, `journey-thai-*` and `journey-history-*`, with desktop copies.
 
-## The LLM in tests
+## Coach (M5)
 
-Milestone 5 adds the coach behind `LlmProvider`. Tests use the deterministic `mock` provider by
-default (`LLM_PROVIDER=mock`); real-model integration tests will be opt-in and skipped without a
-key. No key exists in CI today.
+Every coach test but the live suite uses the deterministic MockProvider
+(`src/lib/server/agent/provider/mock.ts`). It refuses every request the 2026-10-21 Messages API
+would refuse (`provider/validate.ts`), plays scripts from `provider/mock-scripts/` (one file per
+tool group, plus adversarial and timing scripts) and never calls the real API. No key exists in CI
+but the bundle-scan canary.
+
+### Domain and agent (unit)
+
+- **Contract** (`src/lib/domain/coach/*.test.ts`, `scripts/coach-index-imports.test.ts`): the
+  answer grammar and SSE events give identical results split at every character and byte and in
+  1-, 7- and 64-byte chunks; unlabelled text is a note; a frame over 64 KB is refused, even while
+  it is arriving. Every source type maps to an app link, the exercise-history sheet or nothing,
+  never an absolute, protocol-relative or traversing URL. `domain/coach/index.ts` reaches no
+  package and no server-only module.
+- **Catalogue, activity, pricing, budgets**: 24 sorted tools in five groups with exactly three
+  drafting tools; chip words never show an id or key; prices exact in micro-dollars, a missing
+  model's cap price never below its cost; turn limits proved at 180 s and at the 60 s fallback.
+- **Safety** (`safety.test.ts`, `copy-scan.test.ts`, `statements.test.ts`): every banned pattern's
+  longest match is ≤ `MAX_PATTERN_CHARS` (80); M4's workout copy is scanned in a pain context;
+  statements use a fixture matcher.
+- **Markdown** (`markdown.test.ts`): every construct of the subset; HTML, `javascript:`, `data:`
+  and external links stay literal; 200 seeded hostile texts stay within the bounds.
+- **Tool framework** (`src/lib/server/agent/tools/*.test.ts`): strict JSON Schema from zod with
+  owner-named properties refused; canonical outputs capped at 8 KB; every call answered in order
+  in one message; three tools at a time on the pool, one on a transaction; reading tools stop at
+  10 s, drafting tools at 85 s (25 s at 60 s), never past the turn. `registry-complete.test.ts`:
+  all 24 tools registered once, in their group's file, with an output schema.
+- **Prompt** (`src/lib/server/agent/prompt/*.test.ts`): a pinned prompt hash; the prefix is
+  append-only across turns, tool steps and a version bump (a mock cache read on turn 2); planted
+  instructions reach the model only as `untrusted_text`.
+- **Providers**: `provider/anthropic.test.ts` runs the real SDK on a fake fetch over hand-written
+  SSE and error fixtures (`tests/fixtures/anthropic/`); `select.test.ts` covers every row of
+  docs/environment.md's resolution table; `proposals/draft.test.ts` covers the drafter.
+- **Browser** (`src/lib/client/coach/*.test.ts`): the stream reader and the turn state.
+- **Docs**: `scripts/coach-tools-doc.test.ts` keeps docs/coach-tools.md equal to the registry;
+  `scripts/client-secret-scan.test.ts` and `scripts/anthropic-sdk-imports.test.ts` prove the key
+  and SDK guards on planted input.
+
+### Integration (`tests/integration/coach/`, real Postgres)
+
+- **Schema**: `conversations-schema.test.ts` and `proposals-schema.test.ts` pin every CHECK and
+  guard by SQLSTATE and name (insert-only transcripts, run lifecycle, one running run per thread,
+  forward-only proposals, DELETE refused).
+- **Services**: `threads.test.ts` (messages stored once per client id, also under a race; gapless
+  seq), `runs.test.ts` (roll-ups, stale expiry, the cancel flag, the day's spend in the owner's
+  zone, unpriced-model cap pricing), `proposals.test.ts` (every kind, de-duplication, revision,
+  accept by id, a second accept writes nothing, foreign owner `not_found`),
+  `apply-program.test.ts`, `apply-profile.test.ts`, `apply-session.test.ts` and
+  `tests/integration/programs/batch.test.ts` (one version per proposal, one decision per op).
+- **Memory and summaries**: `memory-profile.test.ts` (≤ 9 queries), `memory-records.test.ts`,
+  `review-memory.test.ts`, `summaries.test.ts` (a segment rolls at its message or token limit or
+  on a new prompt version, and the next request replays nothing of it).
+- **One test per tool group, through `runTurn`**: `tools-history.test.ts`,
+  `tools-programming-reads.test.ts`, `tools-analytics.test.ts`, `tools-workout.test.ts`,
+  `tools-preferences.test.ts` and `tools-programming-proposals.test.ts`. Each validates real outputs
+  against the output schemas and runs a random owner id against the seeded owner's ids: nothing
+  read, nothing written.
+- **The turn**: `turn.test.ts`, `turn-endpoint.test.ts`, `policy.test.ts` (the output gate),
+  `direct.test.ts` (lookups without a model call), `first-words.test.ts`, and the endpoints
+  (`threads-endpoint`, `runs-endpoint`, `memory-endpoint`, `proposal-actions`), the screen loads
+  (`screen-load`, `screen-proposals`, `inbox-load`) and `test-support.test.ts`.
+- `tests/integration/analytics/analytics.test.ts` and `analytics-parity.test.ts`: the coach's
+  weekly summary, load and trends equal the screens' numbers.
+
+### End to end
+
+Coach specs use `e2e/coach-support.ts`: `resetCoach(request)` before each test; `seedCoach(request,
+fixture)` seeds bench-month, split-squat-week, run-weeks, long-thread, knee-pain,
+archived-threads or unpriced-run at the server's dates; `setCoachFault(request, fault, options)`
+sets a fault or a script. The route answers 404 unless test routes are enabled. The serial specs run on
+Chromium and Linux WebKit at the iPhone viewport; each screen's spec repeats its states in a
+1440 × 900 window and runs axe in both themes (`e2e/coach-a11y.ts`).
+
+- `design-coach.e2e.ts`, `design-coach.desktop.e2e.ts`: every answer state on /design → Coach.
+- `coach-screen.serial.e2e.ts`: suggestions, Recent conversations, the empty state, each
+  unavailable notice, the 404, loading and load-failed states.
+- `coach-stream.serial.e2e.ts`: 'Thinking…', activity chips, streamed blocks, Stop, a dropped
+  stream, leaving mid-answer; the stream client loads on demand.
+- `coach-states.serial.e2e.ts`: every failed-turn state (provider, rate-limit countdown, budget,
+  unavailable with a direct answer, refused, timeout, busy, offline), Retry leaving one owner
+  message; the stream client failing once and twice.
+- `coach-proposals.serial.e2e.ts` and `coach-proposal-decisions.serial.e2e.ts`: cards inline,
+  Accept → version N in Train, a double tap → one version, a tampered request ignored, an owner
+  edit → superseded; reject with a reason, Ask for changes, 500 then Retry, offline, chunk
+  failures.
+- `coach-inbox.serial.e2e.ts`: the Proposals inbox (order, decisions, filters, empty and failed
+  states, the desktop split).
+- `coach-threads.serial.e2e.ts`: rename, archive with Undo, Archived conversations, read-only
+  archived threads, Unarchive.
+- `coach-memory-panel.serial.e2e.ts`: 'What the coach knows'; a dislike persists into a new
+  conversation through structured memory, not chat.
+- `coach-usage.serial.e2e.ts`, `coach-exercise-sheet.serial.e2e.ts`, `coach-entry.serial.e2e.ts`
+  (Ask the coach from a workout, a history sheet and Today), `coach-support.serial.e2e.ts`.
+- `coach-degrade.serial.e2e.ts`: with the coach failing, unavailable and not launched, a whole
+  workout runs and no workout page, Today, Train or History sends a coach request.
+- `coach-journey.serial.e2e.ts`: the eight M5 journeys and the screenshot set. After a CI run,
+  `node scripts/coach-screens-index.ts <merged screens artifact dir>` writes `coach-index.html`, the
+  owner's contact sheet, and exits 1 if any screen in `e2e/coach-screens.ts` is missing.
+- Performance (`perf` project): `perf-coach.e2e.ts` (a 60-message conversation and a streamed
+  3,000-token answer) and `perf-coach-load.e2e.ts` (the long conversation and the inbox). Seeding
+  a coach fixture blanks the training profile, which each test puts back after its loads.
+
+### Live (`pnpm test:live`, opt-in, never in CI)
+
+`tests/live/coach.live.test.ts` runs six named conversations against the real model and
+`first-words.live.test.ts` records how soon the first words come. Start Postgres, run
+`pnpm db:setup` once, then `LIVE_LLM=1 ANTHROPIC_API_KEY=<key> pnpm test:live`. It drops and
+re-migrates `TEST_DATABASE_URL` (default `coach_test`) and fails past `LIVE_COST_CAP_MICROS` ($1);
+`LIVE_LLM_DRY=1 pnpm test:live` plays the same conversations on the mock. Known flake risks:
+conversation 2 assumes the model drafts a proposal rather than calling `substitute_exercise`, and
+conversation 1 that the answer quotes the month's top bench set. Not yet run against the real
+model.
 
 ## CI
 

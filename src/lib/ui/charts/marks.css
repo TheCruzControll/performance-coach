@@ -1,5 +1,5 @@
 /*
- * Chart marks (docs/adr/NNNN-hand-built-charts.md). A body imports this file, so it loads with the
+ * Chart marks (docs/adr/0016-hand-built-charts.md). A body imports this file, so it loads with the
  * body, after hydration, and is never render-blocking: `.pc-chart-body` is the reserved class
  * pnpm budgets looks for in a route's initial CSS.
  *

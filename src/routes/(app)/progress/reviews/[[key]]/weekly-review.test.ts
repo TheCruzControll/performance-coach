@@ -75,6 +75,14 @@ const text = (fragment: string) =>
 		.replace(/\s+/g, ' ')
 		.trim();
 
+const discuss = '/coach?ask=Hi&from=weekly_review&ref=review%3Aw-2026-10-26';
+const narration: WeeklyReviewData['narration'] = {
+	target: { kind: 'weekly', id: 'review-1' },
+	view: { state: 'written', text: 'Fact: You completed 5 of 6 sessions.', blocks: [] },
+	lines: ['Fact: You completed 5 of 6 sessions.'],
+	discuss
+};
+
 describe('the weekly review on the server', () => {
 	it('out of date and open: the notice, and Refresh posts the live revision', () => {
 		const body = html(review({ stale: staleNotice(3, true) }));
@@ -100,17 +108,7 @@ describe('the weekly review on the server', () => {
 
 	it('the write-up after the figures, with Discuss; none without one (before M6)', () => {
 		expect(html(review())).not.toContain('data-testid="review-write-up"');
-		const discuss = '/coach?ask=Hi&from=weekly_review&ref=review%3Aw-2026-10-26';
-		const body = html(
-			review({
-				narration: {
-					target: { kind: 'weekly', id: 'review-1' },
-					view: { state: 'written', text: 'Fact: You completed 5 of 6 sessions.', blocks: [] },
-					lines: ['Fact: You completed 5 of 6 sessions.'],
-					discuss
-				}
-			})
-		);
+		const body = html(review({ narration }));
 		const at = body.indexOf('data-testid="review-write-up"');
 		expect(at).toBeGreaterThan(body.indexOf('data-testid="review-adherence-words"'));
 		const section = body.slice(at, body.indexOf('</section>', at));

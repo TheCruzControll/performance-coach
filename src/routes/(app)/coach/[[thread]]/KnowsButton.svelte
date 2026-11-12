@@ -41,7 +41,8 @@
 
 <IconButton
 	icon="database"
-	label="What the coach knows"
+	label="What it knows"
+	tooltip
 	onclick={show}
 	data-testid="knows-button"
 />
