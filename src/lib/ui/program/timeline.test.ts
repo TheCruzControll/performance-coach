@@ -108,4 +108,38 @@ describe('timelineView', () => {
 			'Fight night'
 		]);
 	});
+
+	it('labels a bridge between blocks with its length, its weeks planned and hatched, never phased', () => {
+		const bridged: TimelinePlan = {
+			startsOn: '2026-11-02',
+			blocks: [
+				{ ...PLAN.blocks[1]!, startsOn: '2026-11-02', endsOn: '2026-11-29' },
+				{
+					phase: 'transition',
+					name: 'Between blocks',
+					startsOn: '2026-11-30',
+					endsOn: '2026-12-20',
+					outline: false,
+					goalRefs: []
+				},
+				{ ...PLAN.blocks[1]!, name: 'Build', startsOn: '2026-12-21', endsOn: '2027-01-17' }
+			]
+		};
+		const blocks = timelineView(bridged, { today: '2026-12-09', goals: [] });
+		expect(blocks.map((b) => [b.name, b.phase, b.span, b.bridge])).toEqual([
+			['Accumulation', null, 'Mon 2 Nov – Sun 29 Nov · 4 weeks', false],
+			['Between blocks · 3 weeks', null, 'Mon 30 Nov – Sun 20 Dec · Nothing planned', true],
+			['Build', 'Accumulation', 'Mon 21 Dec – Sun 17 Jan · 4 weeks', false]
+		]);
+		expect(blocks[1]!.weeks.map((w) => [w.number, w.planned, w.current])).toEqual([
+			[5, true, false],
+			[6, true, true],
+			[7, true, false]
+		]);
+		const one = timelineView(
+			{ ...bridged, blocks: [bridged.blocks[0]!, { ...bridged.blocks[1]!, endsOn: '2026-12-06' }] },
+			{ today: '2026-12-09', goals: [] }
+		);
+		expect(one[1]!.name).toBe('Between blocks · 1 week');
+	});
 });

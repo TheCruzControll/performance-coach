@@ -18,8 +18,10 @@
  * - A review already decided returns its decision as it is, so a retry never applies twice; the
  *   owner's review lock serialises two at once. A head whose program has moved on is superseded
  *   (program_changed) by acceptProposal, and nothing is applied.
+ * - nextWeekOffers lists the head's changes for the review screen, each split the same way.
  * Every query is awaited in turn, so the whole decision runs on one transaction.
  */
+import type { IsoDate } from '../../../domain/calendar';
 import type { ProgramOp } from '../../../domain/coach/proposals';
 import { localDay } from '../../../domain/dates';
 import { getDb } from '../../db';
@@ -40,6 +42,7 @@ import {
 	getWeeklyReview,
 	proposalHead,
 	ReviewInputError,
+	ReviewNotFoundError,
 	ReviewSupersededError,
 	type ReviewDeps
 } from './store';
@@ -240,4 +243,44 @@ export async function decideNextWeek(
 			passed
 		};
 	});
+}
+
+/** A change the review offers, as its screen lists it: still ahead today, or no longer. */
+export interface NextWeekOffer {
+	id: string;
+	/** The day of the session it changes; null for a proposal stored without its evidence. */
+	sessionDate: IsoDate | null;
+	why: string | null;
+	halfStep: ProgramOp | null;
+	/** False once its session has passed or started: deciding drops it (opsStillAhead). */
+	ahead: boolean;
+}
+
+/**
+ * The changes proposal `proposalId` (a review's head) offers, in its order, each split as
+ * decideNextWeek splits them on the owner's `today`, so the screen strikes through exactly the
+ * changes a decision would drop.
+ */
+export async function nextWeekOffers(
+	ownerId: string,
+	proposalId: string,
+	today: IsoDate,
+	deps: ReviewDeps = {}
+): Promise<NextWeekOffer[]> {
+	const db = deps.db ?? getDb();
+	// One transaction, the head locked as a decision locks it: the split is of this very row.
+	const { offered, ahead } = await db.transaction(async (tx) => {
+		const row = await createCoachProposalsRepository(tx).lockProposal(ownerId, proposalId);
+		if (!row) throw new ReviewNotFoundError('proposal');
+		const offered = offeredOf(row);
+		return { offered, ahead: await opsStillAhead(ownerId, offered, today, tx) };
+	});
+	const still = new Set(ahead.map((o) => o.id));
+	return offered.map((o) => ({
+		id: o.id,
+		sessionDate: (o.adjustment?.sessionDate as IsoDate | undefined) ?? null,
+		why: (o.adjustment?.why as string | undefined) ?? null,
+		halfStep: o.halfStep,
+		ahead: still.has(o.id)
+	}));
 }
