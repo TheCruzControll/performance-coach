@@ -169,7 +169,8 @@
 					type="submit"
 					loading={!!ui.pending}
 					disabled={!online}
-					data-testid="next-cycle-start-block">{ui.failed ? 'Retry' : 'Start next block'}</Button
+					data-testid="next-cycle-start-block"
+					>{ui.failed ? 'Try again' : 'Start next block'}</Button
 				>
 				<Button
 					variant="secondary"
