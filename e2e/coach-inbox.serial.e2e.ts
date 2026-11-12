@@ -295,7 +295,24 @@ test.describe('on a desktop window', () => {
 		await expect(waiting(page).nth(1)).toHaveAttribute('aria-current', 'page');
 		await expect(page.getByTestId('all-proposals')).toBeHidden();
 
+		// The other proposal's data is held from before its row is hovered: the body preloads a
+		// link's data once the pointer rests on it for 20 ms (data-sveltekit-preload-data="hover",
+		// src/app.html), and Enter then opens it from that preload without a request of its own.
+		// Held only from the Enter, the open finished at once whenever the hover had preloaded it.
+		let release!: () => void;
+		const held = new Promise<void>((done) => (release = done));
+		await page.route(`**/coach/proposals/${cycle.id}/__data.json*`, async (route) => {
+			await held;
+			await route.continue();
+		});
+
 		const row = waiting(page).first();
+		const border = () => row.evaluate((el) => getComputedStyle(el).borderColor);
+		const resting = await border();
+		await row.hover();
+		await expect.poll(border).not.toBe(resting);
+		await page.mouse.move(720, 880);
+
 		for (let i = 0; i < 30 && !(await row.evaluate((a) => a === document.activeElement)); i++) {
 			await page.keyboard.press('Tab');
 		}
@@ -305,20 +322,7 @@ test.describe('on a desktop window', () => {
 		await captureScreen(page, testInfo, 'coach-inbox-desktop');
 		await auditThemes(page, 'desktop');
 
-		// Opening the other proposal: the one shown stays, dimmed and busy, until it renders. Its
-		// data is held from the hover on: hovering preloads it, and opening it reuses that.
-		let release!: () => void;
-		const held = new Promise<void>((done) => (release = done));
-		await page.route(`**/coach/proposals/${cycle.id}/__data.json*`, async (route) => {
-			await held;
-			await route.continue();
-		});
-		const border = () => row.evaluate((el) => getComputedStyle(el).borderColor);
-		const resting = await border();
-		await row.hover();
-		await expect.poll(border).not.toBe(resting);
-		await page.mouse.move(720, 880);
-		await expect(row).toBeFocused();
+		// Opening the other proposal: the one shown stays, dimmed and busy, until it renders.
 		await page.keyboard.press('Enter');
 		await expect(page.getByTestId('inbox-pane')).toHaveAttribute('aria-busy', 'true');
 		await expect(row).toHaveAttribute('aria-busy', 'true');
