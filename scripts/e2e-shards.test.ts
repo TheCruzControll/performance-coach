@@ -363,7 +363,7 @@ describe('the CLI', () => {
 		const expected = shardArgs(planLeg('serial/webkit', table.legs['serial/webkit']!), {
 			current: 2,
 			total: 4,
-			workers: 1,
+			workers: legWorkers('serial'),
 			listFile: file
 		});
 		expect(readFileSync(file, 'utf8')).toBe(`${expected.lines.join('\n')}\n`);
