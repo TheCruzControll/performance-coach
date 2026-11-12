@@ -43,6 +43,9 @@ const cycleCreate = (page: Page) =>
 const isCreateCycle = (url: URL) => url.pathname === LIST && url.search === '?/createCycle';
 const section = (page: Page, id: string) =>
 	page.locator(`[data-testid="review-section"][data-section="${id}"]`);
+/** A section's own disclosure summary (its title and verdict), not a chart's 'Show as table'. */
+const opener = (page: Page, id: string) =>
+	section(page, id).locator('summary', { has: page.getByTestId('section-verdict') });
 const item = (page: Page, id: string) =>
 	page.locator(`[data-testid="review-item"][data-id="${id}"]`);
 
@@ -267,7 +270,7 @@ test.describe('block-end', () => {
 		await auditBothThemes(page, 'Cycle review');
 		await captureScreen(page, testInfo, 'cycle-review-phone');
 
-		await section(page, 'strength').locator(':scope > summary').click();
+		await opener(page, 'strength').click();
 		await expect(section(page, 'strength').getByTestId('line-chart').first()).toBeVisible();
 		await auditBothThemes(page, 'Cycle review, a section open');
 	});
