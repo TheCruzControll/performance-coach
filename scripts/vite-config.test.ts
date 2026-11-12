@@ -177,27 +177,59 @@ describe('the start-up chunk groups', () => {
 			expect(framework!(id), id).toBe(false);
 	});
 
-	it('boot: the app code every page starts with, and nothing else', async () => {
-		const { boot } = await groups();
+	it('framework: with the app code every page starts with, and nothing else', async () => {
+		const { framework } = await groups();
 		for (const id of [
+			src('hooks.client.ts'),
 			src('lib/client/errors.ts'),
 			src('lib/client/leaving.ts'),
 			src('lib/client/visits.ts'),
-			src('lib/client/service-worker.ts'),
+			src('lib/client/screen-memory.ts'),
 			src('lib/ui/toast.svelte.ts'),
 			src('lib/ui/components/Icon.svelte'),
-			src('routes/error-page.ts')
+			src('lib/ui/components/Toaster.svelte'),
+			src('routes/+layout.svelte'),
+			src('routes/error-page.ts'),
+			src('routes/workout/lazy.ts')
 		])
-			expect(boot!(id), id).toBe(true);
+			expect(framework!(id), id).toBe(true);
 		for (const id of [
 			src('lib/client/vitals.ts'),
 			src('lib/client/recovery.ts'),
+			src('lib/client/service-worker.ts'),
+			src('lib/client/signout.ts'),
 			src('lib/ui/components/IconButton.svelte'),
 			src('lib/ui/components/Button.svelte'),
 			src('routes/ErrorPage.svelte'),
 			src('routes/ErrorView.svelte'),
-			src('routes/(app)/AppShell.svelte')
+			src('routes/+error.svelte'),
+			src('routes/(app)/+layout.svelte'),
+			src('routes/(app)/AppShell.svelte'),
+			src('routes/(app)/HeldScreen.svelte')
 		])
-			expect(boot!(id), id).toBe(false);
+			expect(framework!(id), id).toBe(false);
+	});
+
+	it('AppShell: the (app) layout and the shell every app screen draws, and nothing else', async () => {
+		const { AppShell } = await groups();
+		for (const id of [
+			src('routes/(app)/+layout.svelte'),
+			src('routes/(app)/AppShell.svelte'),
+			src('routes/(app)/nav.ts'),
+			src('lib/ui/components/AppNav.svelte'),
+			src('lib/ui/components/PageHeader.svelte'),
+			src('lib/client/connectivity.svelte.ts')
+		])
+			expect(AppShell!(id), id).toBe(true);
+		for (const id of [
+			src('routes/+layout.svelte'),
+			src('routes/(app)/HeldScreen.svelte'),
+			src('routes/(app)/held.ts'),
+			src('routes/(app)/ResumeBar.svelte'),
+			src('routes/(app)/today/+page.svelte'),
+			src('lib/client/screen-memory.ts'),
+			src('lib/ui/components/Button.svelte')
+		])
+			expect(AppShell!(id), id).toBe(false);
 	});
 });

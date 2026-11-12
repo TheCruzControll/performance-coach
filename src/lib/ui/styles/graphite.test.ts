@@ -112,10 +112,22 @@ describe('graphite.css', () => {
 			selectors.filter((selector) => !selector.startsWith(SCOPE))
 		);
 		expect(unscoped).toEqual([]);
-		// The only at-rule around a rule keeps hover to fine pointers (scripts/layout-rules.test.ts).
+		// The only at-rules around a rule keep hover to fine pointers and split the shell at its
+		// breakpoint (scripts/layout-rules.test.ts); none nests another, which would hide its rules
+		// from the scope check above.
 		const media = TOP.filter((node) => node.at.startsWith('@media')).map((node) => node.at);
 		expect(media.length).toBeGreaterThan(0);
-		expect(new Set(media)).toEqual(new Set(['@media (hover: hover) and (pointer: fine)']));
+		expect(new Set(media)).toEqual(
+			new Set([
+				'@media (hover: hover) and (pointer: fine)',
+				'@media (width < 64rem)',
+				'@media (width >= 64rem)'
+			])
+		);
+		const nested = AST.filter((node) => node.type === 'Atrule').flatMap((node) =>
+			(node.block?.children ?? []).filter((child) => child.type === 'Atrule')
+		);
+		expect(nested).toEqual([]);
 		expect(GRAPHITE).not.toMatch(/@import|!important/);
 	});
 
@@ -433,5 +445,161 @@ describe('Graphite’s controls', () => {
 		expect(rule("[data-ui='sheet'] > .sheet").get('transition-timing-function')).toBe(
 			'var(--ease-spring)'
 		);
+	});
+});
+
+/** What every rule listing this selector declares, inside `at` (an @media prelude) or outside any. */
+function ruleAt(at: string | null, selector: string): ReadonlyMap<string, string> {
+	const nodes =
+		at === null
+			? AST.filter((n) => n.type === 'Rule')
+			: TOP.filter((n) => n.at === at).flatMap((n) => n.node.block?.children ?? []);
+	const found = nodes
+		.filter((n) => n.type === 'Rule')
+		.map(ruleOf)
+		.filter((r) => r.selectors.includes(`${SCOPE} ${selector}`));
+	expect(found.length, `${at ?? 'top'}: ${selector}`).toBeGreaterThan(0);
+	return new Map(found.flatMap((r) => [...r.declarations]));
+}
+
+const PHONE = '@media (width < 64rem)';
+const DESKTOP = '@media (width >= 64rem)';
+const rem = (value: string) => Number(/^([\d.]+)rem$/.exec(value)?.[1]);
+
+describe('Graphite’s shell', () => {
+	it('keeps the tab bar at --nav-height, each tab a target of 44 px or more', () => {
+		const tokenHeight = /--nav-height:\s*([\d.]+rem)/.exec(TOKENS_CSS)?.[1];
+		expect(tokenHeight).toBeDefined();
+		const list = ruleAt(PHONE, "[data-ui='nav'] > ul");
+		const tab = ruleAt(PHONE, "[data-ui='nav'] .item");
+		expect(tab.get('height')).toBe('auto');
+		// The bar's room is what --nav-inset-bottom reserves: the tab and the padding either side.
+		expect(rem(tab.get('min-height')!) + 2 * rem(list.get('padding-block')!)).toBe(
+			rem(tokenHeight!)
+		);
+		expect(rem(tab.get('min-height')!) * 16).toBeGreaterThanOrEqual(44);
+		expect(
+			rem(ruleAt(DESKTOP, "[data-ui='nav'] .item").get('min-height')!) * 16
+		).toBeGreaterThanOrEqual(44);
+	});
+
+	it('puts the current tab in the selection well with a filled glyph, and widens only its rail', () => {
+		expect(ruleAt(PHONE, "[data-ui='nav'] .item[aria-current='page']").get('background')).toBe(
+			'var(--select)'
+		);
+		expect(ruleAt(DESKTOP, "[data-ui='nav'] .item[aria-current='page']").get('background')).toBe(
+			'var(--select)'
+		);
+		expect(
+			Object.fromEntries(ruleAt(null, "[data-ui='nav'] .item[aria-current='page'] .icon"))
+		).toEqual({
+			fill: 'currentColor',
+			'fill-opacity': '0.22'
+		});
+		// The source list is the rail at another width: today's stays the icon rail.
+		expect(DECLARED.get('--rail-width')).toBe('14.5rem');
+		expect(/--rail-width:\s*([\d.]+rem)/.exec(TOKENS_CSS)?.[1]).toBe('5.5rem');
+		expect(ruleAt(DESKTOP, "[data-ui='nav'] .item").get('flex-direction')).toBe('row');
+	});
+
+	it('hides the page header’s eyebrow, but keeps a date as the subtitle under the title', () => {
+		expect(rule("[data-ui='page-header'] > .titles > .eyebrow").get('display')).toBe('none');
+		const date = rule("[data-ui='page-header'] > .titles > .eyebrow[data-date]");
+		expect(date.get('display')).toBe('block');
+		expect(date.get('order')).toBe('1');
+		expect(rule("[data-ui='page-header'] > .titles").get('flex-direction')).toBe('column');
+	});
+
+	it('set every shell label at 4.5:1 or more on the material under it, in both themes', () => {
+		const LABELS = [
+			{
+				where: 'a tab',
+				ink: ruleAt(PHONE, "[data-ui='nav'] .item").get('color')!,
+				under: ruleAt(PHONE, "[data-ui='nav']").get('background')!
+			},
+			{
+				where: 'the current tab',
+				ink: ruleAt(PHONE, "[data-ui='nav'] .item[aria-current='page']").get('color')!,
+				under: ruleAt(PHONE, "[data-ui='nav'] .item[aria-current='page']").get('background')!
+			},
+			{
+				where: 'a source-list item',
+				ink: ruleAt(DESKTOP, "[data-ui='nav'] .item").get('color')!,
+				under: ruleAt(DESKTOP, "[data-ui='nav']").get('background')!
+			},
+			{
+				where: 'the current source-list item',
+				ink: ruleAt(DESKTOP, "[data-ui='nav'] .item[aria-current='page']").get('color')!,
+				under: ruleAt(DESKTOP, "[data-ui='nav'] .item[aria-current='page']").get('background')!
+			},
+			{
+				where: 'the resume bar',
+				ink: 'var(--color-text)',
+				under: rule("[data-ui='resume-slot'] > .resume-bar").get('background')!
+			},
+			{
+				where: 'the resume bar’s detail',
+				ink: 'var(--color-text-secondary)',
+				under: rule("[data-ui='resume-slot'] > .resume-bar").get('background')!
+			},
+			{
+				where: 'the Status Display',
+				ink: rule("[data-ui='status'][data-kind] > .line").get('color')!,
+				under: rule("[data-ui='status'][data-kind]").get('background')!
+			},
+			{
+				where: 'its dim line',
+				ink: rule("[data-ui='status'][data-kind] > .line.dim").get('color')!,
+				under: rule("[data-ui='status'][data-kind]").get('background')!
+			},
+			{
+				where: 'its footer',
+				ink: rule("[data-ui='status'][data-kind] > .foot").get('color')!,
+				under: rule("[data-ui='status'][data-kind]").get('background')!
+			},
+			{
+				where: 'a paused rest',
+				ink: rule("[data-ui='rest'][data-phase='paused'] > .reading > .time").get('color')!,
+				under: rule("[data-ui='rest'][data-phase]").get('background')!
+			},
+			{
+				where: 'the rest timer’s Skip',
+				ink: 'var(--color-accent-text)',
+				under: rule("[data-ui='rest'][data-phase] > .controls").get('background')!
+			}
+		];
+		const low: string[] = [];
+		for (const mode of MODES) {
+			for (const { where, ink, under } of LABELS) {
+				const [fg] = paints(ink, mode);
+				const stops = paints(under, mode);
+				expect(fg, where).toBeDefined();
+				expect(stops.length, where).toBeGreaterThan(0);
+				for (const stop of stops) {
+					const ratio = contrast(fg!, stop);
+					if (ratio < 4.5) low.push(`${where} (${mode}): ${fg} on ${stop} ${ratio.toFixed(2)}`);
+				}
+			}
+		}
+		expect(low).toEqual([]);
+	});
+
+	it('holds the Status Display’s room from the first paint, and outranks the rest timer’s own rules', () => {
+		expect(Object.fromEntries(rule("div[data-ui='status-room']"))).toEqual({
+			display: 'grid',
+			order: '0',
+			'min-height': 'var(--status-room)'
+		});
+		// RestTimer's own phase rules weigh up to five classes and attributes (its paused time):
+		// each Graphite rule for it carries the hook, the phase and the path to the element.
+		const restRules = RULES.flatMap((r) => r.selectors).filter((sel) =>
+			sel.includes("[data-ui='rest']")
+		);
+		expect(restRules.length).toBeGreaterThan(5);
+		for (const selector of restRules)
+			expect(selector, selector).toMatch(/\[data-ui='rest'\]\[data-phase(='\w+')?\]/);
+		expect(
+			rule("[data-ui='rest'][data-phase] > .reading > .time").get('font-variant-numeric')
+		).toBe('tabular-nums lining-nums');
 	});
 });

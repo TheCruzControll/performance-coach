@@ -183,7 +183,7 @@
 </a>
 
 {#if session}
-	<PageHeader title={session.title} eyebrow={session.when} />
+	<PageHeader title={session.title} eyebrow={session.when} dated />
 
 	<!-- Wide from 1024 px (docs/design-system.md, Responsive layout → Screens): the side column
 	     (what it is and what can change) beside the main one (what to do). Below that the columns
