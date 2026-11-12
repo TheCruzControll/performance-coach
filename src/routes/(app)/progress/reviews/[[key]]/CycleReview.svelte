@@ -106,7 +106,9 @@
 		{:catch}
 			<section class="next">
 				<p>Couldn’t load your next block.</p>
-				<Button variant="secondary" icon="refresh" onclick={() => location.reload()}>Retry</Button>
+				<Button variant="secondary" icon="refresh" onclick={() => location.reload()}
+					>Try again</Button
+				>
 			</section>
 		{/await}
 	{/if}
