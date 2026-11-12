@@ -77,7 +77,7 @@
 		toast.show(SCREEN_FAILURE_LABEL.action_failed, {
 			tone: 'danger',
 			duration: 0,
-			action: { label: 'Retry', onclick: () => void undo(id, changed) }
+			action: { label: 'Try again', onclick: () => void undo(id, changed) }
 		});
 	}
 
@@ -89,7 +89,7 @@
 		<Notice tone="danger" title={failure.title} data-testid={`${action}-failed`}>
 			<p>{failure.body}</p>
 			<div class="action">
-				<Button variant="secondary" size="sm" icon="refresh" onclick={run}>Retry</Button>
+				<Button variant="secondary" size="sm" icon="refresh" onclick={run}>Try again</Button>
 			</div>
 		</Notice>
 	{/if}

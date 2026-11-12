@@ -1,8 +1,9 @@
 <!--
   @component
-  The reviews, newest first (load.ts reviewRows): a reviewed week is one link, ≥ 44 px, with its
+  The reviews, newest first (load.ts reviewRows, or cycleRows for blocks): a reviewed one is a link, ≥ 44 px, with its
   summary, hover, pressed and focus states and aria-current on the review shown beside the list;
-  a week with no review has a Create button, a form that works without JavaScript too. Create:
+  a week or block with no review has a Create button, a form that works without JavaScript too
+  (a block's posts ?/createCycle). Create:
 
   - pending: aria-busy and disabled, so a second tap posts nothing (the service is idempotent
     under the owner lock as well)
@@ -25,8 +26,11 @@
 	 */
 	const NOT_REVIEWABLE_WORDS =
 		'Your review is ready after Sunday, or once every session is done or skipped';
+	/** A block's refusal: the rule is cycle-review-service's reviewableBlock. */
+	const CYCLE_NOT_REVIEWABLE_WORDS =
+		'Your cycle review is ready once the block ends, or once its last week is done';
 
-	type Refusal = { weekStartsOn: string; ready?: string };
+	type Refusal = { weekStartsOn?: string; blockLineage?: string; ready?: string };
 	type CreateState = { kind: 'pending' } | { kind: 'failed' } | ({ kind: 'refused' } & Refusal);
 
 	interface Props {
@@ -35,9 +39,11 @@
 		selected: string | null;
 		/** A refusal the server rendered (a form posted without JavaScript). */
 		refused?: Refusal | null;
+		/** The list's accessible name. */
+		label?: string;
 	}
 
-	let { rows, selected, refused = null }: Props = $props();
+	let { rows, selected, refused = null, label = 'Weekly reviews' }: Props = $props();
 
 	/**
 	 * navigator.onLine and its events, read here rather than through client/connectivity: sharing
@@ -47,21 +53,25 @@
 	onMount(() => (online = navigator.onLine));
 
 	let states = $state<Record<string, CreateState>>({});
-	const stateOf = (week: string): CreateState | undefined =>
-		states[week] ?? (refused?.weekStartsOn === week ? { kind: 'refused', ...refused } : undefined);
+	const refusedHere = (row: ReviewRow) =>
+		row.cycle
+			? refused?.blockLineage === row.cycle.blockLineage
+			: refused?.weekStartsOn === row.weekStartsOn;
+	const stateOf = (row: ReviewRow): CreateState | undefined =>
+		states[row.key] ?? (refused && refusedHere(row) ? { kind: 'refused', ...refused } : undefined);
 
 	const create =
-		(week: string): SubmitFunction =>
+		(key: string): SubmitFunction =>
 		({ cancel }) => {
-			if (states[week]?.kind === 'pending' || !online) return cancel();
-			states[week] = { kind: 'pending' };
+			if (states[key]?.kind === 'pending' || !online) return cancel();
+			states[key] = { kind: 'pending' };
 			return async ({ result }) => {
 				if (result.type === 'failure' && result.data?.reason === 'not_reviewable')
-					states[week] = { kind: 'refused', weekStartsOn: week, ready: result.data.ready };
+					states[key] = { kind: 'refused', ready: result.data.ready };
 				else if (result.type === 'redirect') {
 					await applyAction(result);
-					delete states[week];
-				} else states[week] = { kind: 'failed' };
+					delete states[key];
+				} else states[key] = { kind: 'failed' };
 			};
 		};
 
@@ -70,7 +80,7 @@
 
 <svelte:window ononline={() => (online = true)} onoffline={() => (online = false)} />
 
-<ol class="rows" aria-label="Weekly reviews">
+<ol class="rows" aria-label={label}>
 	{#each rows as row (row.key)}
 		<li>
 			{#if row.state === 'reviewed'}
@@ -88,17 +98,22 @@
 					<Icon name="chevron-right" size={20} class="chevron" />
 				</a>
 			{:else}
-				{@const state = stateOf(row.weekStartsOn)}
+				{@const state = stateOf(row)}
 				<form
 					class="row create"
 					data-tone={TONE[row.state]}
 					method="POST"
-					action="?/create"
-					use:enhance={create(row.weekStartsOn)}
+					action={row.cycle ? '?/createCycle' : '?/create'}
+					use:enhance={create(row.key)}
 					data-state={row.state}
 					data-testid="review-create"
 				>
-					<input type="hidden" name="weekStartsOn" value={row.weekStartsOn} />
+					{#if row.cycle}
+						<input type="hidden" name="programId" value={row.cycle.programId} />
+						<input type="hidden" name="blockLineage" value={row.cycle.blockLineage} />
+					{:else}
+						<input type="hidden" name="weekStartsOn" value={row.weekStartsOn} />
+					{/if}
 					<span class="text">
 						<span class="title">{row.title}</span>
 						<span class="meta">{row.text}</span>
@@ -110,8 +125,8 @@
 						icon={state?.kind === 'failed' ? 'refresh' : undefined}
 						loading={state?.kind === 'pending'}
 						disabled={!online}
-						aria-label="{state?.kind === 'failed' ? 'Retry' : 'Create review'} · {row.title}"
-						>{state?.kind === 'failed' ? 'Retry' : 'Create review'}</Button
+						aria-label="{state?.kind === 'failed' ? 'Try again' : 'Create review'} · {row.title}"
+						>{state?.kind === 'failed' ? 'Try again' : 'Create review'}</Button
 					>
 					{#if !online}
 						<p class="note" data-testid="create-offline">
@@ -120,7 +135,9 @@
 					{:else if state?.kind === 'refused'}
 						<div class="note-wide">
 							<Notice tone="warning" icon="clock" data-testid="create-refused">
-								{NOT_REVIEWABLE_WORDS}{state.ready ? ` · ${state.ready}` : ''}
+								{row.cycle ? CYCLE_NOT_REVIEWABLE_WORDS : NOT_REVIEWABLE_WORDS}{state.ready
+									? ` · ${state.ready}`
+									: ''}
 							</Notice>
 						</div>
 					{:else if state?.kind === 'failed'}

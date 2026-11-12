@@ -2,12 +2,17 @@
   @component
   The workout pages' header: Minimise (back to Today, where the resume bar waits) with the sync
   status (small, quiet beside logging, once it has loaded on idle), the workout's title, the
-  stopwatch and, beside it, the workout menu's More button (Finish, Discard). Two rows on a phone (Minimise and the status; the title and the stopwatch), one row
-  from 1024 px,
+  stopwatch and, beside it, the workout menu's More button (Finish, Discard), with a visible Finish
+  at the end of the title's line once a set is logged. Two rows on a phone (Minimise and the
+  status; the title and the stopwatch), one row from 1024 px,
   where it spans the page over the columns. At a large text size the status takes a row of its own
   under Minimise rather than overflow; its width is the same in every state, so which line it
   takes never depends on what it says. It applies --safe-top itself: no shell does here.
   With no title yet (restoring) the title's line is reserved, so nothing moves when it arrives.
+  The visible Finish takes its room from the title's line, never the stopwatch's: the stopwatch
+  and More stay put, and on a phone the title keeps to one line (an ellipsis if it must), so it
+  is the same height with Finish or without. The title comes before the stopwatch in the markup,
+  as it does on screen, so the tab order runs Minimise, Finish, the stopwatch, More.
 -->
 <script lang="ts">
 	import { resolve } from '$app/paths';
@@ -24,9 +29,11 @@
 		status?: Snippet;
 		/** The workout menu's button, while a workout is in progress. */
 		menu?: Snippet;
+		/** The visible Finish, at the end of the title's line, once a set is logged. */
+		finish?: Snippet;
 	}
 
-	let { title, time, status, menu }: Props = $props();
+	let { title, time, status, menu, finish }: Props = $props();
 </script>
 
 <header class="header" data-testid="workout-header">
@@ -35,16 +42,17 @@
 			<Button variant="ghost" icon="chevron-down" href={resolve('/(app)/today')}>Minimise</Button>
 			{@render status?.()}
 		</div>
-		<div class="time">
-			{@render time?.()}
-			{@render menu?.()}
-		</div>
 		<div class="title">
 			{#if title === null}
 				<Skeleton width="12rem" height="2rem" radius="var(--radius-sm)" />
 			{:else}
 				<h1>{title}</h1>
 			{/if}
+			{@render finish?.()}
+		</div>
+		<div class="time">
+			{@render time?.()}
+			{@render menu?.()}
 		</div>
 	</div>
 </header>
@@ -103,6 +111,16 @@
 		letter-spacing: var(--tracking-tight);
 		line-height: var(--leading-snug);
 		overflow-wrap: anywhere;
+	}
+
+	/* On a phone the title keeps to its one line, ending in an ellipsis if it must, with the
+	   visible Finish beside it or not: the header never changes height when Finish arrives. */
+	@media (width < 64rem) {
+		h1 {
+			overflow: hidden;
+			white-space: nowrap;
+			text-overflow: ellipsis;
+		}
 	}
 
 	@media (width >= 64rem) {

@@ -83,8 +83,8 @@ export interface ReviewFixtureResult extends FixtureResult {
 	review: ReviewTarget;
 }
 
-const KEYS = ['back_squat', 'bench_press', 'deadlift'] as const;
-type Key = (typeof KEYS)[number];
+export const KEYS = ['back_squat', 'bench_press', 'deadlift'] as const;
+export type Key = (typeof KEYS)[number];
 /** Week w's working load (w counted from 0 in the block): +2.5 kg a week. */
 const LOAD: Record<Key, number> = { back_squat: 100, bench_press: 80, deadlift: 140 };
 
@@ -152,7 +152,7 @@ function muayThai(date: IsoDate, kind: 'class' | 'sparring', commitment: string 
 
 /** The week from `monday`; with `cutAt` (today), only what comes before today, then Strength C
  * and an evening easy run today. */
-function weekSessions(monday: IsoDate, rpe: number, commitment: string, cutAt?: IsoDate) {
+export function weekSessions(monday: IsoDate, rpe: number, commitment: string, cutAt?: IsoDate) {
 	const day = (d: number) => addDays(monday, d);
 	const all: SessionPlan[] = [
 		strength(day(0), 'Strength A', ['back_squat', 'bench_press'], rpe),
@@ -175,11 +175,20 @@ const TARGETS = {
 	accumulation: { rpeCap: TARGET_RPE, volumeFactor: 1, loadStep: 0.025, runVolumeFactor: 1 }
 };
 
-function week(monday: IsoDate, kind: 'accumulation' | 'deload', sessions: SessionPlan[]): WeekPlan {
+export function week(
+	monday: IsoDate,
+	kind: 'accumulation' | 'deload',
+	sessions: SessionPlan[]
+): WeekPlan {
 	return { kind, startsOn: monday, endsOn: addDays(monday, 6), targets: TARGETS[kind], sessions };
 }
 
-const block = (name: string, weeks: WeekPlan[], goal: string, outline = false): BlockPlan => ({
+export const block = (
+	name: string,
+	weeks: WeekPlan[],
+	goal: string,
+	outline = false
+): BlockPlan => ({
 	...{ phase: 'accumulation', name, startsOn: weeks[0]!.startsOn, endsOn: weeks.at(-1)!.endsOn },
 	...{ outline, goalRefs: [goal], weeks },
 	progression: outline ? {} : { rpeStepPerWeek: 0, rpeCap: TARGET_RPE }
@@ -187,7 +196,7 @@ const block = (name: string, weeks: WeekPlan[], goal: string, outline = false): 
 
 // ---- the scenarios ----------------------------------------------------------------------------
 
-interface Layout {
+export interface Layout {
 	/** The block's first week, in weeks from this one. */
 	first: number;
 	/** The block's last week's kind. */
@@ -196,8 +205,8 @@ interface Layout {
 	cut?: boolean;
 	/** An outline block of OUTLINE_WEEKS from the Monday after the block. */
 	outline?: boolean;
-	/** The week, in weeks from this one, whose bench is under target and sparring hard. */
-	hard?: number;
+	/** The week, in weeks from this one, whose bench is under target and sparring hard (or weeks). */
+	hard?: number | number[];
 	/** Of today's sessions, in their order: all logged, or all but the last. */
 	today?: 'all' | 'all_but_last';
 }
@@ -301,7 +310,7 @@ function startOf(ctx: SeedContext, s: StoredSession, minutes: number): Date {
 }
 
 /** Log planned session `s` of block week `w` (from 0) as planned, or as the hard week has it. */
-async function logSession(
+export async function logSession(
 	ctx: SeedContext,
 	ids: Record<Key, string>,
 	s: StoredSession,
@@ -369,7 +378,7 @@ async function logSession(
 }
 
 /** Store the layout's program and log it: the fixture's ids, and the block it reviews. */
-async function seedLayout(ctx: SeedContext, layout: Layout) {
+export async function seedLayout(ctx: SeedContext, layout: Layout) {
 	const programId = await storeProgram(ctx, layout);
 	const found = await resolveKeys(KEYS, { db: ctx.db });
 	const ids = Object.fromEntries(KEYS.map((k) => [k, found.get(k)!.id])) as Record<Key, string>;
@@ -385,7 +394,7 @@ async function seedLayout(ctx: SeedContext, layout: Layout) {
 		lineages: {}
 	};
 	for (const [w, planned] of first.weeks.entries()) {
-		const hard = layout.hard !== undefined && planned.startsOn === weekAt(ctx, layout.hard);
+		const hard = [layout.hard ?? []].flat().some((h) => planned.startsOn === weekAt(ctx, h));
 		for (const s of planned.sessions) {
 			const logged =
 				s.date < ctx.today ||
@@ -407,7 +416,7 @@ async function seedLayout(ctx: SeedContext, layout: Layout) {
 const weekAt = (ctx: SeedContext, offset: number) => addDays(ctx.weekStart, 7 * offset);
 
 /** A weekly scenario: the week `reviewed` weeks from this one is the one to review. */
-const weekly =
+export const weekly =
 	(layout: Layout, reviewed: number): AnalyticsFixture =>
 	async (ctx): Promise<ReviewFixtureResult> => {
 		const { result } = await seedLayout(ctx, layout);

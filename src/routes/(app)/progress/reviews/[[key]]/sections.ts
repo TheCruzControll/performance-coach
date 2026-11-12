@@ -20,6 +20,7 @@ import {
 	type DivergingBarsData,
 	type RangeBarsData
 } from '#lib/ui/charts/bar-model.ts';
+import type { LineChartData } from '#lib/ui/charts/line-model.ts';
 import { SERIES_TOKEN } from '#lib/ui/charts/palette.ts';
 import type { ChartTableData } from '#lib/ui/charts/table.ts';
 
@@ -62,7 +63,7 @@ export interface ItemView {
 	label: string;
 	words: string;
 	figures: FigureView[];
-	/** Each reason in its own line (fatigue). */
+	/** Each reason in its own line (fatigue; the cycle review's ACWR caveat). */
 	reasons: string[];
 }
 
@@ -78,12 +79,20 @@ export type ChartView =
 	| ({ body: 'diverging'; data: DivergingBarsData } & Frame)
 	| ({ body: 'range'; data: RangeBarsData } & Frame);
 
+/** A line chart in a section (the cycle review's progression). */
+export type LineChartView = { body: 'line'; data: LineChartData } & Frame;
+
 export interface SectionView {
-	id: SectionId;
+	/** A weekly SectionId, or a cycle section's (cycle-data.ts). */
+	id: string;
 	title: string;
 	verdict: { level: FindingLevel; words: string };
 	items: ItemView[];
 	chart: ChartView | null;
+	/** Line charts as small multiples, shown instead of `chart` (the cycle review's progression). */
+	charts?: LineChartView[];
+	/** A table in words after the items (the cycle review's effectiveness). */
+	table?: ChartTableData;
 }
 
 const WATCH: readonly FindingLevel[] = ['low', 'watch'];
@@ -94,7 +103,7 @@ const lead = (f: Finding) => `${f.label}: ${f.verdict.words}`;
 const list = (words: string[]) =>
 	words.length < 2 ? (words[0] ?? '') : `${words.slice(0, -1).join(', ')} and ${words.at(-1)}`;
 
-function item(f: Finding, reasons: string[] = []): ItemView {
+export function item(f: Finding, reasons: string[] = []): ItemView {
 	// Fatigue's words are its reasons, then any advice: the reasons become lines of their own.
 	const said = reasons.join('. ');
 	const rest = f.verdict.words.startsWith(said) ? f.verdict.words.slice(said.length) : '';

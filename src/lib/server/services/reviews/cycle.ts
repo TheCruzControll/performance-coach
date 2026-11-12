@@ -67,6 +67,7 @@ import {
 import { clip, type ReviewExercise } from '../../../domain/programming/review/weekly';
 import type { LiftResults } from '../../../domain/programming/stages/results';
 import { compareText } from '../../../domain/programming/random';
+import { PROPOSAL } from '../../../domain/training/lifecycles';
 import type { BaselineLift } from '../../../domain/training/types';
 import type { WeightUnit } from '../../../domain/units';
 import { getDb, type Executor } from '../../db';
@@ -74,7 +75,7 @@ import { createCoachProposalsRepository } from '../../db/repositories/coach-prop
 import { createProgramsRepository } from '../../db/repositories/programs';
 import { createReviewsRepository } from '../../db/repositories/reviews';
 import { createFactsLoader, createQueue } from '../analytics/facts';
-import { displayUnits, formatIn } from '../analytics/format';
+import { displayUnits, formatIn, type DisplayUnits } from '../analytics/format';
 import { getMuscleTargets } from '../analytics/targets';
 import { createProposal, getProposalView, type ProposalView } from '../coach/proposals';
 import { getExercisesByIds, type ExerciseDef } from '../exercises/index';
@@ -82,6 +83,7 @@ import { getAthleteProfile, listGoals } from '../profile/index';
 import { programmingInputFor } from '../programs/alternatives';
 import { getProgramVersion, type StoredBlock } from '../programs/index';
 import { isUuid } from '../ids';
+import { transition } from '../lifecycle-guard';
 import {
 	decisionOf,
 	getLiveCycleReview,
@@ -321,6 +323,43 @@ export async function reviewableBlock(
 	return null;
 }
 
+/** The block a cycle review row offers: reviewable today, or still running. */
+export interface UnreviewedBlock {
+	programId: string;
+	blockLineage: string;
+	name: string;
+	startsOn: IsoDate;
+	endsOn: IsoDate;
+	reviewable: boolean;
+}
+
+/**
+ * The block the reviews list offers to review: the latest started planned block with no live
+ * review that is reviewable today, else the running block (not reviewable yet); null when the
+ * latest started block is reviewed, or there is none. Read in turn, newest block first.
+ */
+export async function unreviewedBlock(
+	ownerId: string,
+	today: IsoDate,
+	deps: ReviewDeps = {}
+): Promise<UnreviewedBlock | null> {
+	const { db } = resolve(deps);
+	const version = await currentVersion(db, ownerId);
+	if (!version) return null;
+	const { timeZone } = await getAthleteProfile(ownerId, { db });
+	const started = version.blocks.filter((b) => trained(b) && b.startsOn <= today);
+	let running: UnreviewedBlock | null = null;
+	for (const block of started.toReversed()) {
+		if (await getLiveCycleReview(ownerId, version.programId, block.lineage, { db })) break;
+		const reviewable = block.endsOn < today || (await lastWeekDone(db, ownerId, block, timeZone));
+		const { lineage: blockLineage, name, startsOn, endsOn } = block;
+		const found = { programId: version.programId, blockLineage, name, startsOn, endsOn };
+		if (reviewable) return { ...found, reviewable };
+		running ??= { ...found, reviewable };
+	}
+	return running;
+}
+
 export interface CreateCycleReview {
 	programId: string;
 	blockLineage: string;
@@ -342,7 +381,8 @@ async function coachNextCycles(db: Executor, ownerId: string, lineage: string) {
 		if (p.kind !== 'next_cycle' || p.source !== null) continue;
 		const row = (await repo.lockProposal(ownerId, p.id))!;
 		const payload = row.payload as unknown as NextCycleSubset;
-		if (payload.fromBlockLineage === lineage) found.push({ id: row.id, payload });
+		if (payload.fromBlockLineage === lineage)
+			found.push({ id: row.id, status: row.status, payload });
 	}
 	return found;
 }
@@ -405,7 +445,13 @@ async function compute(
 		...{ directives, overrides, clamps },
 		folded: [...carried.folded, ...folded.map((f) => f.id)]
 	};
-	return { values, block, subset, evidence, newlyFolded: folded.map((f) => f.id) };
+	return {
+		values,
+		block,
+		subset,
+		evidence,
+		newlyFolded: folded.map(({ id, status }) => ({ id, status }))
+	};
 }
 type Computed = Awaited<ReturnType<typeof compute>>;
 
@@ -428,9 +474,10 @@ async function proposeFor(
 	);
 	await linkProposal(ownerId, 'cycle', review.id, proposal.id, deps);
 	const proposals = createCoachProposalsRepository(deps.db);
-	for (const id of c.newlyFolded) {
-		const decided = { status: 'superseded', supersededReason: 'folded_into_review' } as const;
-		await proposals.decide(ownerId, id, { ...decided, updatedAt: deps.now() });
+	for (const { id, status } of c.newlyFolded) {
+		const decided = { supersededReason: 'folded_into_review' } as const;
+		const t = transition(PROPOSAL, status, 'supersede');
+		await proposals.decide(ownerId, id, t, { ...decided, updatedAt: deps.now() });
 	}
 	return getCycleReview(ownerId, review.id, deps);
 }
@@ -495,10 +542,10 @@ export async function refreshCycleReview(
 		);
 		if (head?.status === 'proposed') {
 			const proposals = createCoachProposalsRepository(tx);
-			await proposals.lockProposal(ownerId, head.id);
+			const locked = (await proposals.lockProposal(ownerId, head.id))!;
 			const at = now();
-			await proposals.decide(ownerId, head.id, {
-				...{ status: 'superseded', supersededReason: 'review_refreshed' },
+			await proposals.decide(ownerId, head.id, transition(PROPOSAL, locked.status, 'supersede'), {
+				...{ supersededReason: 'review_refreshed' },
 				...{ closedAt: at, updatedAt: at }
 			});
 		}
@@ -540,6 +587,49 @@ export interface CycleReviewView {
 	writeUp: { state: 'written'; text: string } | { state: 'none' };
 	/** One per start on offer, the first being the default; none once the next block is planned. */
 	previews: NextBlockPreview[];
+	/** What the screen draws from the block as logged now; null once it left the current version. */
+	progression: CycleProgression | null;
+}
+
+/**
+ * The block's progression as the review screen draws it, from its facts as logged now (never
+ * stored): each judged exercise's estimated 1RM per session, and the weekly run distance.
+ */
+export interface CycleProgression {
+	lifts: { exercise: string; points: { on: IsoDate; kg: number }[] }[];
+	/** Metres in each week of the block; null when it held no run. */
+	distance: { weekStartsOn: IsoDate; metres: number }[] | null;
+	units: DisplayUnits;
+}
+
+async function progressionOf(
+	db: Executor,
+	ownerId: string,
+	block: StoredBlock,
+	read: BlockFacts,
+	snapshot: CycleReviewSnapshot,
+	profile: Awaited<ReturnType<typeof getAthleteProfile>>
+): Promise<CycleProgression> {
+	const { timeZone: tz } = profile;
+	const ids = snapshot.effectiveness.map((e) => e.exercise);
+	const defs = await getExercisesByIds(ownerId, ids, { db });
+	const setsOf = Map.groupBy(read.sets, (s) => s.exercise);
+	const lifts = snapshot.effectiveness.flatMap(({ exercise }) => {
+		const def = defs.get(exercise);
+		const points = def ? e1rmSeries(setsOf.get(exercise) ?? [], def, tz) : [];
+		return points.length
+			? [{ exercise, points: points.map((p) => ({ on: p.on, kg: p.value })) }]
+			: [];
+	});
+	const runs = await read.facts.runs();
+	const weeks = weeklyRunning(runs, windowOf(block), 'km', tz).weeks;
+	return {
+		lifts,
+		distance: runs.length
+			? weeks.map((w) => ({ weekStartsOn: w.weekStart, metres: w.metres }))
+			: null,
+		units: displayUnits(profile)
+	};
 }
 
 /** What the block showed, as the next block's input overlay and results stage read it. */
@@ -743,6 +833,21 @@ export async function getCycleReviewView(
 			? (await plannedOf(db, ownerId, review, head.id, read, { today, profile })).map(
 					(p) => p.preview
 				)
-			: []
+			: [],
+		progression:
+			snapshot && block && read
+				? await progressionOf(db, ownerId, block, read, snapshot, profile)
+				: null
 	};
+}
+
+/** The review `id`, whichever revision: its block's live review, as getCycleReviewView gives it. */
+export async function getCycleReviewViewById(
+	ownerId: string,
+	id: string,
+	today: IsoDate,
+	deps: ReviewDeps = {}
+): Promise<CycleReviewView> {
+	const { programId, blockLineageId: blockLineage } = await getCycleReview(ownerId, id, deps);
+	return getCycleReviewView(ownerId, { programId, blockLineage, today }, deps);
 }

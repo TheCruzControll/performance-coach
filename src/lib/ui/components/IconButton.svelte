@@ -1,6 +1,10 @@
 <!--
   @component
-  Circular icon-only button. `label` is required: it becomes the accessible name.
+  Circular icon-only button. `label` is required: it becomes the accessible name. With `tooltip`,
+  a mouse or keyboard user on a desktop also sees the label, in a caption under the button
+  aligned to its end (for a header's trailing buttons) while it is hovered or focused; a touch
+  screen never shows it. Escape hides it until the button is left or hovered again. The caption
+  is hidden from assistive technology, which reads the name.
 -->
 <script lang="ts">
 	import type { IconName } from '../icons/icons';
@@ -14,6 +18,8 @@
 		disabled?: boolean;
 		type?: 'button' | 'submit';
 		pressed?: boolean;
+		/** Caption the button with its label on hover and keyboard focus (fine pointers only). */
+		tooltip?: boolean;
 		onclick?: (event: MouseEvent) => void;
 		onpointerdown?: (event: PointerEvent) => void;
 		onpointerup?: (event: PointerEvent) => void;
@@ -32,9 +38,12 @@
 		disabled = false,
 		type = 'button',
 		pressed,
+		tooltip = false,
 		...rest
 	}: Props = $props();
 
+	/** Escape hid the caption (WCAG 1.4.13); leaving or hovering the button again resets it. */
+	let dismissed = $state(false);
 	const iconSize = $derived(size === 'lg' ? 26 : size === 'sm' ? 18 : 22);
 </script>
 
@@ -46,9 +55,22 @@
 	aria-label={label}
 	aria-pressed={pressed}
 	{disabled}
+	onkeydown={tooltip
+		? (event) => {
+				if (event.key === 'Escape') dismissed = true;
+			}
+		: undefined}
+	onblur={tooltip ? () => (dismissed = false) : undefined}
+	onpointerenter={tooltip ? () => (dismissed = false) : undefined}
 	{...rest}
 >
-	<Icon name={icon} size={iconSize} strokeWidth={size === 'lg' ? 2 : 1.75} />
+	<Icon
+		name={icon}
+		size={iconSize}
+		strokeWidth={size === 'lg' ? 2 : 1.75}
+	/>{#if tooltip && !dismissed}<span class="tip" aria-hidden="true" data-testid="icon-tip"
+			>{label}</span
+		>{/if}
 </button>
 
 <style>
@@ -117,6 +139,33 @@
 		}
 		.icon-btn[data-variant='accent']:hover:not(:disabled) {
 			background: var(--color-accent-hover);
+		}
+	}
+
+	/* Out of layout until shown, so a caption at a screen's edge never scrolls it sideways. */
+	.tip {
+		display: none;
+	}
+
+	@media (hover: hover) and (pointer: fine) {
+		.icon-btn:hover:not(:disabled) .tip,
+		.icon-btn:focus-visible .tip {
+			position: absolute;
+			top: calc(100% + var(--space-1-5));
+			right: 0;
+			z-index: var(--z-raised);
+			display: block;
+			padding: var(--space-1) var(--space-2);
+			border: 1px solid var(--color-border-strong);
+			border-radius: var(--radius-sm);
+			background: var(--color-surface-2);
+			box-shadow: var(--elevation-2);
+			color: var(--color-text);
+			font-size: var(--text-xs);
+			font-weight: var(--weight-medium);
+			line-height: var(--leading-snug);
+			white-space: nowrap;
+			pointer-events: none;
 		}
 	}
 
