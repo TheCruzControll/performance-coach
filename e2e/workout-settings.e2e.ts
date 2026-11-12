@@ -177,7 +177,7 @@ test.describe('the workout settings (IndexedDB only)', () => {
 		await expect(restSetting(page, 'isolation')).toHaveValue('1:30');
 	});
 
-	test('each feedback shows only where the browser has it: vibration is hidden on WebKit', async ({
+	test('each feedback shows only where the browser has it: vibration where it or the iPhone haptic is', async ({
 		page,
 		browserName
 	}) => {
@@ -185,11 +185,13 @@ test.describe('the workout settings (IndexedDB only)', () => {
 		await openSettings(page);
 		await expect(toggle(page, 'autoStartRest')).toBeVisible();
 		const has = await page.evaluate(() => ({
-			vibration: typeof navigator.vibrate === 'function',
+			vibrate: typeof navigator.vibrate === 'function',
+			// The iPhone's haptic (feedback.ts): a touch screen and a switch control.
+			haptic: navigator.maxTouchPoints > 0 && 'switch' in HTMLInputElement.prototype,
 			wakeLock: typeof navigator.wakeLock?.request === 'function'
 		}));
-		if (browserName === 'webkit') expect(has.vibration).toBe(false);
-		await expect(toggle(page, 'vibration')).toHaveCount(has.vibration ? 1 : 0);
+		if (browserName === 'webkit') expect(has.vibrate).toBe(false);
+		await expect(toggle(page, 'vibration')).toHaveCount(has.vibrate || has.haptic ? 1 : 0);
 		await expect(toggle(page, 'keepAwake')).toHaveCount(has.wakeLock ? 1 : 0);
 		await expect(toggle(page, 'sound')).toHaveCount(1);
 		if (browserName === 'chromium') await expect(toggle(page, 'vibration')).toBeVisible();

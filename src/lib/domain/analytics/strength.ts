@@ -27,7 +27,13 @@ import type { IsoDate } from '../calendar.ts';
 import { localDay } from '../dates.ts';
 import type { E1rmEstimate } from '../e1rm.ts';
 import type { StrengthBaseline } from '../profile/types.ts';
-import { bestE1rm, hardSets, isHardSet, personalRecords } from '../training/metrics.ts';
+import {
+	bestE1rm,
+	hardSets,
+	isHardSet,
+	personalRecords,
+	weekStartIn
+} from '../training/metrics.ts';
 import type { ExerciseMuscles, LoggedSet as MetricsSet } from '../training/metrics.ts';
 import type { BaselineLift } from '../training/types.ts';
 import { MUSCLE_GROUPS } from '../training/vocabulary.ts';
@@ -47,6 +53,7 @@ import type { LoggedSet as WorkoutSet } from '../workout/types.ts';
 import type { Weeks } from './adherence.ts';
 import { weekStarts } from './periods.ts';
 import { byWeek, fillWeeks, mean } from './series.ts';
+import type { Timed } from './series.ts';
 import type { SeriesPoint } from './types.ts';
 
 // ---- Choices the owner can change here --------------------------------------------------------
@@ -99,7 +106,11 @@ interface Session {
 	sets: StrengthFact[];
 }
 
-const live = (facts: readonly StrengthFact[]) => facts.filter((set) => set.deletedAt === null);
+/** The facts without a deletion: the same list when none has one, as the facts loader's never do. */
+const live = (facts: readonly StrengthFact[]) =>
+	facts.some((set) => set.deletedAt !== null)
+		? facts.filter((set) => set.deletedAt === null)
+		: facts;
 
 function lookup<E>(exercises: ReadonlyMap<string, E>, exercise: string): E {
 	const found = exercises.get(exercise);
@@ -112,11 +123,17 @@ function sessionsOf(facts: readonly StrengthFact[], timeZone: string): Session[]
 	const names = new Set(facts.map((set) => set.exercise));
 	if (names.size > 1) throw new RangeError(`One exercise's sets only: ${[...names].join(', ')}`);
 	const byWorkout = new Map<string, StrengthFact[]>();
-	for (const set of live(facts))
-		byWorkout.set(set.workoutId, [...(byWorkout.get(set.workoutId) ?? []), set]);
+	for (const set of live(facts)) {
+		const sets = byWorkout.get(set.workoutId);
+		if (sets) sets.push(set);
+		else byWorkout.set(set.workoutId, [set]);
+	}
 	return [...byWorkout]
 		.map(([workoutId, sets]) => {
-			const at = new Date(Math.min(...sets.map((set) => set.performedAt.getTime())));
+			let first = sets[0]!.performedAt;
+			for (const set of sets)
+				if (set.performedAt.getTime() < first.getTime()) first = set.performedAt;
+			const at = new Date(first.getTime());
 			return { workoutId, at, on: localDay(at, timeZone), sets };
 		})
 		.sort((a, b) => a.at.getTime() - b.at.getTime() || a.workoutId.localeCompare(b.workoutId));
@@ -145,10 +162,53 @@ export function e1rmSeries(
 	timeZone: string
 ): E1rmPoint[] {
 	return sessionsOf(facts, timeZone).flatMap(({ workoutId, on, sets }) => {
-		const best = bestE1rm(sets.filter((set) => e1rmApplies(set, exercise)));
-		if (!best) return [];
-		const { kind, value, method, confidence, set } = best;
-		return [{ kind, value, method, confidence, workoutId, on, setId: set.id }];
+		const point = e1rmPointOf(workoutId, on, sets, exercise);
+		return point ? [point] : [];
+	});
+}
+
+function e1rmPointOf(
+	workoutId: string,
+	on: IsoDate,
+	sets: readonly StrengthFact[],
+	exercise: RuledExercise
+): E1rmPoint | null {
+	const best = bestE1rm(sets.filter((set) => e1rmApplies(set, exercise)));
+	if (!best) return null;
+	const { kind, value, method, confidence, set } = best;
+	return { kind, value, method, confidence, workoutId, on, setId: set.id };
+}
+
+/** One session of one exercise as e1rmSeries and prTimeline read it. */
+export interface StrengthSession {
+	workoutId: string;
+	/** The day of its first set, and of its last. */
+	on: IsoDate;
+	lastOn: IsoDate;
+	/** e1rmSeries' point; null when no set gives an e1RM. */
+	point: E1rmPoint | null;
+	/** prTimeline's bests (sessionBests). */
+	bests: SessionBest[];
+}
+
+/** One exercise's sessions, oldest first, each with its e1RM point and its bests. */
+export function strengthSessions(
+	facts: readonly StrengthFact[],
+	exercise: RuledExercise,
+	timeZone: string,
+	/** Leave out the points (null) or the bests ([]), when nothing reads them. */
+	{ points = true, bests = true }: { points?: boolean; bests?: boolean } = {}
+): StrengthSession[] {
+	return sessionsOf(facts, timeZone).map(({ workoutId, on, sets }) => {
+		let last = sets[0]!.performedAt;
+		for (const set of sets) if (set.performedAt.getTime() > last.getTime()) last = set.performedAt;
+		return {
+			workoutId,
+			on,
+			lastOn: localDay(last, timeZone),
+			point: points ? e1rmPointOf(workoutId, on, sets, exercise) : null,
+			bests: bests ? sessionBests(sets, exercise) : []
+		};
 	});
 }
 
@@ -271,7 +331,7 @@ export interface StrengthPr {
 }
 
 /** One kind's best in a session, from the set that made it (none for volume). */
-interface Best {
+export interface SessionBest {
 	kind: StrengthPrKind;
 	reps: number | null;
 	value: number;
@@ -283,10 +343,14 @@ interface Best {
  * through M3's bestE1rm and personalRecords, in prKinds' order, then the session's volume load
  * (volumeOf) when it is above 0.
  */
-function sessionBests(sets: readonly StrengthFact[], exercise: RuledExercise): Best[] {
-	const competing = (kind: PrKind) =>
-		sets.filter((set) => prCandidates(set, exercise).includes(kind));
-	const bests: Best[] = [];
+export function sessionBests(
+	sets: readonly StrengthFact[],
+	exercise: RuledExercise
+): SessionBest[] {
+	// Each set's candidates are worked out once, then read for each kind.
+	const candidates = sets.map((set) => prCandidates(set, exercise));
+	const competing = (kind: PrKind) => sets.filter((_, i) => candidates[i]!.includes(kind));
+	const bests: SessionBest[] = [];
 	const e1rm = bestE1rm(competing('e1rm'));
 	if (e1rm) bests.push({ kind: 'e1rm', reps: null, value: e1rm.value, setId: e1rm.set.id });
 	for (const { reps, weightKg, set } of personalRecords(competing('rep_max')))
@@ -316,10 +380,28 @@ export function prTimeline(
 	exercise: RuledExercise,
 	timeZone: string
 ): StrengthPr[] {
+	return prsOf(
+		sessionsOf(facts, timeZone).map(({ workoutId, on, sets }) => ({
+			workoutId,
+			on,
+			bests: sessionBests(sets, exercise)
+		}))
+	);
+}
+
+/** One exercise's sessions, oldest first, each with its bests (sessionBests). */
+export type BestsSession = Pick<HeldRecord, 'workoutId' | 'on'> & { bests: readonly SessionBest[] };
+
+/**
+ * prTimeline's records over sessions whose bests are already worked out. A session's bests may
+ * leave out any that did not beat an earlier session's in the same run of sessions (a week's, as
+ * the week rollups keep them): such a best is no PR, and no record either.
+ */
+export function prsOf(sessions: readonly BestsSession[]): StrengthPr[] {
 	const records = new Map<string, HeldRecord>();
 	const prs: StrengthPr[] = [];
-	for (const { workoutId, on, sets } of sessionsOf(facts, timeZone)) {
-		for (const { kind, reps, value, setId } of sessionBests(sets, exercise)) {
+	for (const { workoutId, on, bests } of sessions) {
+		for (const { kind, reps, value, setId } of bests) {
 			const key = `${kind}:${reps ?? ''}`;
 			const previous = records.get(key);
 			if (previous && !above(value, previous.value)) continue;
@@ -346,11 +428,22 @@ export function weeklyTonnage(
 	timeZone: string,
 	window: Weeks
 ): SeriesPoint[] {
-	const lifted = live(facts).flatMap((set) => {
+	const weeks = tonnageByWeek(facts, exercises, timeZone);
+	return fillWeeks(weeks, window.weeks, 'zero', window.inProgress);
+}
+
+/** Tonnage in kg by week (byWeek's total), each week with anything lifted, in week order. */
+export function tonnageByWeek(
+	facts: readonly StrengthFact[],
+	exercises: ReadonlyMap<string, RuledExercise>,
+	timeZone: string
+): Map<IsoDate, number> {
+	const lifted: Timed[] = [];
+	for (const set of live(facts)) {
 		const kg = volumeOf(set, lookup(exercises, set.exercise));
-		return kg === null ? [] : [{ at: set.performedAt, value: kg }];
-	});
-	return fillWeeks(byWeek(lifted, timeZone), window.weeks, 'zero', window.inProgress);
+		if (kg !== null) lifted.push({ at: set.performedAt, value: kg });
+	}
+	return byWeek(lifted, timeZone);
 }
 
 /** A week's hard sets: how many (M3's isHardSet), and M3's credit per muscle and group. */
@@ -373,24 +466,58 @@ export function weeklyHardSets(
 	timeZone: string,
 	window: Weeks
 ): HardSetWeek[] {
+	const weeks = hardSetsByWeek(facts, exercises, timeZone);
+	return [
+		...weekStarts(window.weeks).map((weekStart) => hardSetWeek(weeks, weekStart, false)),
+		hardSetWeek(weeks, window.inProgress.weekStart, true)
+	];
+}
+
+/** A week's hard sets without its place: how many, and the credit per muscle and group. */
+export type HardSetCount = Pick<HardSetWeek, 'sets' | 'muscles' | 'groups'>;
+
+/** weeklyHardSets' figures by week, each week with a hard set. Throws as weeklyHardSets does. */
+export function hardSetsByWeek(
+	facts: readonly StrengthFact[],
+	exercises: ReadonlyMap<string, ExerciseMuscles>,
+	timeZone: string
+): Map<IsoDate, HardSetCount> {
 	const sets = live(facts);
 	const credited = new Map(hardSets(sets, exercises, timeZone).map((w) => [w.weekStart, w]));
-	const hard = sets.filter((set) => isHardSet(isWorking(set), set.rpe));
-	const counts = byWeek(
-		hard.map((set) => ({ at: set.performedAt, value: 1 })),
-		timeZone
+	// How many by week, as byWeek would total them, in one pass.
+	const weekOf = weekStartIn(timeZone);
+	const counts = new Map<IsoDate, number>();
+	for (const set of sets) {
+		if (!isHardSet(isWorking(set), set.rpe)) continue;
+		const weekStart = weekOf(set.performedAt);
+		counts.set(weekStart, (counts.get(weekStart) ?? 0) + 1);
+	}
+	return new Map(
+		[...counts].map(([weekStart, n]) => [
+			weekStart,
+			{
+				sets: n,
+				muscles: credited.get(weekStart)?.muscles ?? {},
+				groups: credited.get(weekStart)?.groups ?? {}
+			}
+		])
 	);
-	const week = (weekStart: IsoDate, inProgress: boolean): HardSetWeek => ({
+}
+
+/** A week of hardSetsByWeek's figures as weeklyHardSets gives it: nothing hard is 0 sets. */
+export function hardSetWeek(
+	weeks: ReadonlyMap<IsoDate, HardSetCount>,
+	weekStart: IsoDate,
+	inProgress: boolean
+): HardSetWeek {
+	const week = weeks.get(weekStart);
+	return {
 		weekStart,
 		inProgress,
-		sets: counts.get(weekStart) ?? 0,
-		muscles: credited.get(weekStart)?.muscles ?? {},
-		groups: credited.get(weekStart)?.groups ?? {}
-	});
-	return [
-		...weekStarts(window.weeks).map((weekStart) => week(weekStart, false)),
-		week(window.inProgress.weekStart, true)
-	];
+		sets: week?.sets ?? 0,
+		muscles: week?.muscles ?? {},
+		groups: week?.groups ?? {}
+	};
 }
 
 /** A group's hard-set range for a week, both ends included: [lowest, highest]. */
@@ -475,10 +602,15 @@ export function weeklyRpe(
 	timeZone: string,
 	window: Weeks
 ): SeriesPoint[] {
-	const rated = live(facts).flatMap((set) =>
-		isWorking(set) && set.rpe !== null ? [{ at: set.performedAt, value: set.rpe }] : []
-	);
-	return fillWeeks(byWeek(rated, timeZone, mean), window.weeks, 'gap', window.inProgress);
+	return fillWeeks(rpeByWeek(facts, timeZone), window.weeks, 'gap', window.inProgress);
+}
+
+/** rpeSummary's mean by week, each week with a rated working set. */
+export function rpeByWeek(facts: readonly StrengthFact[], timeZone: string): Map<IsoDate, number> {
+	const rated: Timed[] = [];
+	for (const set of live(facts))
+		if (isWorking(set) && set.rpe !== null) rated.push({ at: set.performedAt, value: set.rpe });
+	return byWeek(rated, timeZone, mean);
 }
 
 // ---- Key lifts --------------------------------------------------------------------------------
@@ -499,7 +631,29 @@ export function keyLifts(
 	facts: readonly StrengthFact[],
 	exercises: ReadonlyMap<string, Pick<StrengthExercise, 'measure' | 'loadType' | 'baselineLift'>>
 ): KeyLift[] {
-	const seen = new Map<string, { workouts: Set<string>; last: number; e1rm: boolean }>();
+	const seen = liftStats(facts, exercises);
+	return pickKeyLifts(
+		[...seen].map(([id, held]) => [id, { ...held, sessions: held.workouts.size }]),
+		exercises
+	);
+}
+
+/** What keyLifts reads of one exercise's working sets. */
+export interface LiftStats {
+	/** The workouts with a working set of it. */
+	workouts: Set<string>;
+	/** The latest working set's instant, in ms; 0 with none. */
+	last: number;
+	/** Whether any working set gives an e1RM (e1rmApplies). */
+	e1rm: boolean;
+}
+
+/** Each exercise with a working set in the facts, in the order first performed. */
+export function liftStats(
+	facts: readonly StrengthFact[],
+	exercises: ReadonlyMap<string, RuledExercise>
+): Map<string, LiftStats> {
+	const seen = new Map<string, LiftStats>();
 	for (const set of live(facts)) {
 		if (!isWorking(set)) continue;
 		const exercise = lookup(exercises, set.exercise);
@@ -509,13 +663,21 @@ export function keyLifts(
 		held.e1rm ||= e1rmApplies(set, exercise);
 		seen.set(set.exercise, held);
 	}
-	return [...seen]
+	return seen;
+}
+
+/** keyLifts' choice from each exercise's stats, its workouts counted as `sessions`. */
+export function pickKeyLifts(
+	stats: readonly (readonly [string, Pick<LiftStats, 'last' | 'e1rm'> & { sessions: number }])[],
+	exercises: ReadonlyMap<string, Pick<StrengthExercise, 'baselineLift'>>
+): KeyLift[] {
+	return stats
 		.filter(([, held]) => held.e1rm)
 		.map(([id, held]) => ({
 			lift: {
 				exercise: id,
 				baselineLift: lookup(exercises, id).baselineLift,
-				sessions: held.workouts.size
+				sessions: held.sessions
 			},
 			last: held.last
 		}))

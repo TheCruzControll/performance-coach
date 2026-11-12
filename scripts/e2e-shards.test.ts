@@ -26,6 +26,7 @@ import {
 	testCalls,
 	type ShardEntry
 } from './e2e-shards.ts';
+import { LEGS } from '../e2e/projects.ts';
 import { ciShardedLegs, fileKey, inPool, listRuns } from './lib/playwright-list.ts';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -128,7 +129,7 @@ describe('planShards', () => {
 		expect(legs.length).toBeGreaterThan(0);
 		for (const { group, engine, of } of legs) {
 			const list = planLeg(`${group}/${engine}`, table.legs[`${group}/${engine}`]!);
-			const workers = legWorkers(group);
+			const workers = legWorkers(group, engine);
 			const [one, ...rest] = planShards(list, of, workers).map((s) => shardCost(s, workers));
 			for (const other of rest) expect(one, `${group}/${engine}`).toBeLessThan(other);
 		}
@@ -205,13 +206,14 @@ describe('the shard arguments', () => {
 		});
 	});
 
-	it('gives a CI leg as many Playwright workers as the config does', async () => {
-		for (const group of ['main', 'serial', 'alone']) {
+	it('gives every CI leg as many Playwright workers as the config does', async () => {
+		for (const { group, engine } of LEGS) {
 			vi.resetModules();
 			vi.stubEnv('CI', '1');
 			vi.stubEnv('E2E_GROUP', group);
+			vi.stubEnv('E2E_ENGINE', engine);
 			const { default: config } = await import('../playwright.config.ts');
-			expect(config.workers, group).toBe(legWorkers(group));
+			expect(config.workers, `${group}/${engine}`).toBe(legWorkers(group, engine));
 		}
 	});
 	afterEach(() => vi.unstubAllEnvs());
@@ -260,7 +262,9 @@ describe('the leg’s spec files', () => {
 		]);
 		expect(legKeys(LEG_PROJECTS['alone/chromium']!, files)).toEqual([
 			'perf › perf.e2e.ts',
-			'perf › perf-coach.e2e.ts',
+			'perf › perf-coach.e2e.ts'
+		]);
+		expect(legKeys(LEG_PROJECTS['exclusive/chromium']!, files)).toEqual([
 			'exclusive › sessions.exclusive.e2e.ts'
 		]);
 	});
@@ -333,7 +337,7 @@ describe('the leg’s spec files', () => {
 			for (const entry of entries.filter((e) => !(e.key in table.legs[leg]!))) {
 				expect(entry.seconds, `${entry.key}, untimed`).toBeGreaterThan(0);
 			}
-			const planned = planShards(entries, of, legWorkers(group)).flatMap((s) => s.keys);
+			const planned = planShards(entries, of, legWorkers(group, engine)).flatMap((s) => s.keys);
 			expect(planned.sort()).toEqual([...keys].sort());
 		}
 	});
@@ -361,7 +365,7 @@ describe('the CLI', () => {
 		const expected = shardArgs(planLeg('serial/webkit', table.legs['serial/webkit']!), {
 			current: 2,
 			total: 4,
-			workers: 1,
+			workers: legWorkers('serial', 'webkit'),
 			listFile: file
 		});
 		expect(readFileSync(file, 'utf8')).toBe(`${expected.lines.join('\n')}\n`);
@@ -375,7 +379,7 @@ describe('the CLI', () => {
 
 	it('prints nothing and writes nothing for one shard or a local run', () => {
 		const file = path.join(scratch, 'none.txt');
-		const alone = cli({ E2E_GROUP: 'alone', E2E_ENGINE: 'chromium', E2E_SHARD: '1/1' }, file);
+		const alone = cli({ E2E_GROUP: 'exclusive', E2E_ENGINE: 'chromium', E2E_SHARD: '1/1' }, file);
 		expect([alone.status, alone.stdout]).toEqual([0, '']);
 		const local = cli({}, file);
 		expect([local.status, local.stdout]).toEqual([0, '']);

@@ -8,6 +8,7 @@
  *   provider is loaded by a dynamic import, on the first turn that needs it, so a mock or an
  *   unavailable coach never loads it.
  * - coachStatus() says whether the coach can answer, and why not, without loading anything.
+ * - admitCoachTurn() counts a turn against the 'coach.turn' rate limit.
  * - runCoachTurn() runs one turn (turn.ts) with that provider. The turn hands the tools M3's
  *   matchExercise over the owner's library (services/coach/turn-facts.ts) in their ToolContext.
  * - coachEventStream() frames a turn's events as server-sent events, with a heartbeat.
@@ -15,7 +16,10 @@
  *   coach unavailable for a reason and shorten a turn; nowhere else can anything set them.
  */
 import { encodeSse, SSE_HEARTBEAT, type CoachEvent } from '../../domain/coach/events.ts';
+import type { ToolEffect } from '../../domain/coach/tools.ts';
 import type { CoachUnavailableReason } from '../../domain/coach/vocabulary.ts';
+import type { AuthRequest } from '../auth/context.ts';
+import { enforceRateLimit } from '../auth/rate-limit.ts';
 import { getEnv, type Env } from '../env.ts';
 import { logger } from '../observability/logger.ts';
 import type { CoachDeps } from '../services/coach/shared.ts';
@@ -78,6 +82,21 @@ export interface CoachTurnOptions {
 	deps?: CoachDeps;
 	/** When the endpoint must have answered, in epoch milliseconds. */
 	deadlineAt?: number;
+	/** Only the tools with these effects are offered (turn.ts); all of them by default. */
+	toolEffects?: readonly ToolEffect[];
+	/** Keeps the turn's work after its last event alive (turn.ts, TurnOptions.after). */
+	after?: (work: Promise<void>) => void;
+}
+
+/**
+ * Count one turn against the 'coach.turn' rate limit, all devices together: AuthError
+ * rate_limited (429) once over it. Every turn counts, a review's write-up included.
+ */
+export async function admitCoachTurn(
+	request: AuthRequest | null,
+	deps: CoachDeps = {}
+): Promise<void> {
+	await enforceRateLimit('coach.turn', 'global', request, deps);
 }
 
 /** One turn with the environment's provider; the stream always ends with `done`. */

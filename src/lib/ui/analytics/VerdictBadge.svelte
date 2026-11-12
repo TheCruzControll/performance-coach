@@ -3,14 +3,15 @@
   A trend verdict in words plus an icon: 'Real improvement', 'Real decline', 'Normal variation' or
   'Not enough data yet · 2 of 6 weeks', with 'over the last 12 weeks' when the verdict reads other
   weeks than the period's (words.ts). The words carry the meaning; the tone only reinforces it.
-  Sentence case and free to wrap, unlike Badge, so the longest verdict fits a tile at 320 px.
+  Sentence case and free to wrap, unlike Badge, so the longest verdict fits a tile at 320 px; its
+  phrase ('Real improvement') wraps inside itself only when it is wider than the line.
 -->
 <script lang="ts">
 	import Icon from '../components/Icon.svelte';
 	import {
 		verdictIcon,
+		verdictParts,
 		verdictTone,
-		verdictWords,
 		type TileVerdict,
 		type VerdictWindow
 	} from './verdict-words.ts';
@@ -23,11 +24,13 @@
 	}
 
 	let { verdict, window, ...rest }: Props = $props();
+
+	const parts = $derived(verdictParts(verdict, window));
 </script>
 
 <span class="verdict" data-tone={verdictTone(verdict)} data-testid="verdict" {...rest}>
 	<span class="glyph"><Icon name={verdictIcon(verdict)} size={14} strokeWidth={2} /></span>
-	<span>{verdictWords(verdict, window)}</span>
+	<span><span class="phrase">{parts[0]}</span>{parts[1]}</span>
 </span>
 
 <style>
@@ -46,6 +49,11 @@
 		font-size: var(--text-xs);
 		font-weight: var(--weight-semibold);
 		line-height: 1.3;
+	}
+
+	/* 'Real improvement' never parts across lines while it fits one; the window after it may wrap. */
+	.phrase {
+		display: inline-block;
 	}
 
 	.glyph {

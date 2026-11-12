@@ -142,9 +142,9 @@ for (const theme of THEMES) {
 		await expect(notice).toBeVisible();
 		await expect(page.getByTestId('plates-sheet')).toHaveCount(0);
 		await expect(row.locator('..')).toHaveAttribute('aria-busy', 'false');
-		const target = await notice.getByRole('button', { name: 'Retry' }).boundingBox();
-		expect(target?.width, 'Retry is at least 44 px wide').toBeGreaterThanOrEqual(44);
-		expect(target?.height, 'Retry is at least 44 px tall').toBeGreaterThanOrEqual(44);
+		const target = await notice.getByRole('button', { name: 'Try again' }).boundingBox();
+		expect(target?.width, 'Try again is at least 44 px wide').toBeGreaterThanOrEqual(44);
+		expect(target?.height, 'Try again is at least 44 px tall').toBeGreaterThanOrEqual(44);
 		if (theme === 'light')
 			await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
 		await page.evaluate(() => document.fonts.ready);
@@ -154,7 +154,7 @@ for (const theme of THEMES) {
 		// Back online, Retry opens the sheet: in place where the browser fetches a failed module
 		// again, or by reloading Train with ?tool=plates where it does not (Chromium).
 		offline = false;
-		await notice.getByRole('button', { name: 'Retry' }).click();
+		await notice.getByRole('button', { name: 'Try again' }).click();
 		const sheet = page.getByRole('dialog', { name: 'Plate calculator' });
 		await expect(sheet).toBeVisible();
 		await expect(sheet.getByTestId('plates-result')).toContainText('25 · 15');
@@ -207,14 +207,22 @@ test('a tap that fails again reloads Train asking for the sheet, unless offline'
 	expect(await sameDocument(), 'a fresh document').toBe(false);
 	await expect(notice).toBeVisible();
 	await expect(page.getByTestId('plates-sheet')).toHaveCount(0);
+	// The fresh page's resume bar loads after its first paint (on idle, or once it has painted where
+	// there is no idle callback, as on WebKit): loaded while online, so the failures counted below
+	// are the Retry's alone.
+	await expect(page.locator('[data-testid="resume-slot"][data-looked="/train"]')).toBeAttached();
+	// So does real-user monitoring (on idle, or 1.5 s after mount without an idle callback), which
+	// marks the page once web-vitals has arrived.
+	await expect(page.locator('html')).toHaveAttribute('data-rum', 'ready');
 
 	// Offline, a reload could only reach the offline screen: the notice comes back instead.
 	await markDocument();
 	await context.setOffline(true);
 	const offline = await failedImports();
-	// Tapped, as on the phone: a click leaves the mouse where Retry was, and as the notice goes the
-	// rest timer's row slides under it, whose hover prefetch fails offline too and is counted.
-	await notice.getByRole('button', { name: 'Retry' }).tap();
+	// Pressed, which leaves the pointer where it was: a click, and on WebKit a tap too, leave it
+	// where Retry was, and as the notice goes the rest timer's row slides under it, whose hover
+	// prefetch fails offline too and is counted.
+	await notice.getByRole('button', { name: 'Try again' }).press('Enter');
 	await expect.poll(failedImports, { message: 'the retry ran and failed' }).toBe(offline + 1);
 	await expect(notice).toBeVisible();
 	await page.waitForTimeout(500);
@@ -243,7 +251,7 @@ test('leaving Train while a Retry is on its way never brings the owner back', as
 	const notice = failedNotice(page);
 	await page.getByTestId('open-plates').tap();
 	await expect(notice).toBeVisible();
-	await notice.getByRole('button', { name: 'Retry' }).click();
+	await notice.getByRole('button', { name: 'Try again' }).click();
 	await expect(page.getByTestId('open-plates').locator('..')).toHaveAttribute('aria-busy', 'true');
 
 	await page

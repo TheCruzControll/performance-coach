@@ -1,14 +1,19 @@
 /**
  * Finishing a workout on /workout (WorkoutMenu, FinishSheet, Summary, the Shell's completed state
  * and fix/workout.ts), against the real server:
+ * - Once a set is logged, a visible Finish sits at the end of the title's line, before the
+ *   stopwatch and the More button, whose menu keeps Finish workout; it opens the same finish, and
+ *   nothing in the header moves when it arrives.
  * - Finish with planned sets still open asks first; the summary shows the best set's e1RM as M1
  *   estimates it, marked estimated, a PR only above the kit's best, and the plank's seconds, not
  *   volume; the session RPE, the notes and the stopwatch's duration are stored; Done opens the
  *   History detail; Train and Today show the session as Done.
+ * - On a slow connection Done shows the summary at once and never jumps late: the server held
+ *   past Done's wait, 'View in History' once the sync confirms, and the page stays put.
  * - (Chromium) offline, Done shows the completed state, which an offline reload keeps; back
  *   online it syncs, 'View in History' opens the detail, and the workout is listed once.
  * - A replayed finish completes once; a refused finish is fixed from the summary and lands once.
- * - Discard abandons a synced workout and leaves nothing in Postgres of an unsynced one.
+ * - Discard abandons a workout, synced or not: an unsynced one reaches Postgres abandoned.
  * - axe in both themes, the screens, and the desktop dialog by keyboard, hovered and focused.
  * Serial: programs, workouts and the profile are the one owner's (resetTrainingProfile).
  */
@@ -30,6 +35,7 @@ import { PROGRAM_TZ } from './program-support';
 import { captureScreen, query, resetTrainingProfile, SAME_ORIGIN } from './support';
 import {
 	gotoWorkout,
+	historyAfterDone,
 	injectMutation,
 	readOutbox,
 	seedWorkout,
@@ -50,6 +56,7 @@ const menu = (page: Page) => page.getByTestId('workout-menu');
 const sheet = (page: Page) => page.getByTestId('finish-sheet');
 const summary = (page: Page) => page.getByTestId('workout-summary');
 const pill = (page: Page) => page.getByTestId('sync-pill');
+const headerFinish = (page: Page) => page.getByTestId('header-finish');
 const synced = (page: Page) => expect.poll(() => readOutbox(page), { timeout: 15_000 }).toEqual([]);
 
 const SET: LoggedSet = {
@@ -283,7 +290,8 @@ test.describe('finishing a workout', () => {
 		await audit(page, 'the summary');
 		await sheet(page).getByTestId('finish-done').click();
 
-		await page.waitForURL(`**/progress/workouts/${workoutId}`);
+		await historyAfterDone(page);
+		await expect(page).toHaveURL(new RegExp(`/progress/workouts/${workoutId}$`));
 		await expect(page.getByTestId('workout-detail')).toBeVisible();
 		await expect(page.getByTestId('workout-notes')).toContainText('Squats moved well');
 		const row = (await workoutRow(workoutId))!;
@@ -304,6 +312,53 @@ test.describe('finishing a workout', () => {
 		await expect(card(page).first()).toHaveAttribute('data-status', 'completed');
 	});
 
+	test('a visible Finish once a set is logged, beside the menu that keeps it', async ({
+		page,
+		request
+	}) => {
+		await startFromKit(page, request);
+		await expect(menuButton(page)).toBeVisible();
+		await expect(headerFinish(page)).toHaveCount(0);
+		const header = page.getByTestId('workout-header');
+		const title = header.getByRole('heading', { level: 1 });
+		const stopwatch = header.getByTestId('stopwatch');
+		const [headerBefore, titleBefore] = [await boxOf(header), await boxOf(title)];
+		const [clockBefore, moreBefore] = [await boxOf(stopwatch), await boxOf(menuButton(page))];
+
+		// The first set works up to a weight with none suggested: it logs once a weight is in.
+		const logger = page.getByTestId('set-logger');
+		await logger
+			.getByTestId('logger-load')
+			.getByRole('button', { name: /^Increase / })
+			.click();
+		await logger.getByTestId('complete-set').click();
+		await expect(headerFinish(page)).toBeVisible();
+		await expect(headerFinish(page)).toHaveText('Finish');
+		await expect(headerFinish(page)).toBeInViewport();
+		await expectNoSideScroll(page);
+		// The title keeps to its one line, so the header (and the page under it) never moves.
+		const [headerAfter, titleAfter] = [await boxOf(header), await boxOf(title)];
+		expect(Math.abs(headerAfter.height - headerBefore.height)).toBeLessThanOrEqual(1);
+		expect(Math.abs(titleAfter.height - titleBefore.height)).toBeLessThanOrEqual(1);
+		// It takes the title's room, never the stopwatch's: the stopwatch and More stay put.
+		const [clockAfter, moreAfter] = [await boxOf(stopwatch), await boxOf(menuButton(page))];
+		expect(Math.abs(clockAfter.x - clockBefore.x)).toBeLessThanOrEqual(1);
+		expect(Math.abs(moreAfter.x - moreBefore.x)).toBeLessThanOrEqual(1);
+		// Apart, so Finish's widened hit area never reaches over the stopwatch's.
+		const own = await boxOf(headerFinish(page));
+		expect(clockAfter.x - (own.x + own.width)).toBeGreaterThanOrEqual(8);
+
+		// The menu keeps Finish workout.
+		await menuButton(page).click();
+		await expect(menu(page).getByTestId('menu-finish')).toBeVisible();
+		await page.keyboard.press('Escape');
+		await expect(menu(page)).toBeHidden();
+
+		await headerFinish(page).click();
+		await expect(sheet(page)).toBeVisible();
+		await expect(sheet(page).getByRole('heading', { name: 'Finish workout?' })).toBeVisible();
+	});
+
 	test('a replayed finish completes once', async ({ page, request }) => {
 		const { workoutId } = await startFromKit(page, request);
 		const sent: Mutation[] = [];
@@ -315,7 +370,8 @@ test.describe('finishing a workout', () => {
 		await openFinish(page);
 		await sheet(page).getByTestId('finish-anyway').click();
 		await sheet(page).getByTestId('finish-done').click();
-		await page.waitForURL(`**/progress/workouts/${workoutId}`);
+		await historyAfterDone(page);
+		await expect(page).toHaveURL(new RegExp(`/progress/workouts/${workoutId}$`));
 		const finish = sent.find((m) => m.type === 'workout.finish')!;
 		expect(finish).toBeDefined();
 		const before = (await workoutRow(workoutId))!;
@@ -366,6 +422,59 @@ test.describe('finishing a workout', () => {
 		});
 		expect(await finishes(workoutId)).toBe(1);
 		await expect(summary(page).getByTestId('view-in-history')).toBeVisible();
+	});
+});
+
+test.describe('on a slow connection', () => {
+	// The finish's sync is held with page.route: WebKit's page.route misses a controlled page's
+	// requests.
+	test.use({ serviceWorkers: 'block' });
+
+	test('Done shows the summary at once and never jumps late: View in History once the sync confirms', async ({
+		page,
+		request
+	}) => {
+		const { workoutId } = await startFromKit(page, request);
+		let lift!: () => void;
+		const lifted = new Promise<void>((resolve) => (lift = resolve));
+		const held: Route[] = [];
+		await page.route(`**${SYNC_URL}`, async (route) => {
+			const body = route.request().postDataJSON() as SyncRequest | null;
+			if (body?.mutations.some((m) => m.type === 'workout.finish')) {
+				held.push(route);
+				await lifted;
+			}
+			await route.continue().catch(() => {});
+		});
+
+		await openFinish(page);
+		await sheet(page).getByTestId('finish-anyway').click();
+		await pickRpe(page, 7);
+		await sheet(page).getByTestId('finish-done').click();
+
+		// The local summary at once, while the server has not answered.
+		await expect(summary(page).getByTestId('summary-saved-here')).toHaveText(
+			'Saved on this device — syncing now.'
+		);
+		await expect(summary(page).getByTestId('summary-rpe')).toHaveText('Session RPE 7');
+		await expect.poll(() => held.length).toBe(1);
+		// Held well past Done's wait (about 300 ms), then the server answers.
+		await page.waitForTimeout(1_000);
+		await expect(page).toHaveURL(/\/workout$/);
+		lift();
+
+		const view = summary(page).getByTestId('view-in-history');
+		await expect(view).toBeVisible({ timeout: 15_000 });
+		await expect(summary(page).getByTestId('summary-synced')).toBeVisible();
+		expect((await workoutRow(workoutId))!.status).toBe('completed');
+		// A late jump would land here, as the sync confirms: the page stays on the summary.
+		await page.waitForTimeout(500);
+		await expect(page).toHaveURL(/\/workout$/);
+
+		await view.click();
+		await page.waitForURL(`**/progress/workouts/${workoutId}`);
+		await expect(page.getByTestId('workout-detail')).toBeVisible();
+		expect(await finishes(workoutId)).toBe(1);
 	});
 });
 
@@ -427,7 +536,9 @@ test.describe('discarding a workout', () => {
 		const { workoutId } = await startFromKit(page, request);
 		await menuButton(page).click();
 		await menu(page).getByTestId('menu-discard').click();
-		await expect(menu(page).getByTestId('discard-consequence')).toContainText('It has synced');
+		await expect(menu(page).getByTestId('discard-consequence')).toHaveText(
+			'Discarding keeps it in your history as abandoned. It never shows as done.'
+		);
 		await expect(menu(page).getByTestId('keep-workout')).toBeFocused();
 		await captureScreen(page, testInfo, 'workout-discard');
 		await audit(page, 'the discard question');
@@ -443,7 +554,9 @@ test.describe('discarding a workout', () => {
 		// The sync is held with page.route: WebKit's page.route misses a controlled page's requests.
 		test.use({ serviceWorkers: 'block' });
 
-		test('an unsynced workout leaves nothing in Postgres', async ({ page }) => {
+		test('an unsynced workout is abandoned, never left in progress in Postgres', async ({
+			page
+		}) => {
 			const workoutId = await seedWorkout(page, await adHocKit());
 			// Held here, and aborted before the hold lifts: WebKit sends a request still held when
 			// its route goes, which would reach the server after the discard.
@@ -453,8 +566,9 @@ test.describe('discarding a workout', () => {
 			await expect(page.locator('main#main[data-store]')).toBeAttached();
 			await menuButton(page).click();
 			await menu(page).getByTestId('menu-discard').click();
-			await expect(menu(page).getByTestId('discard-consequence')).toContainText(
-				"It hasn't synced yet"
+			// Its start may already have reached the server, so it is abandoned, not deleted.
+			await expect(menu(page).getByTestId('discard-consequence')).toHaveText(
+				'Discarding keeps it in your history as abandoned. It never shows as done.'
 			);
 			await menu(page).getByTestId('confirm-discard').click();
 			await expect(page.getByTestId('workout-empty')).toBeVisible();
@@ -464,13 +578,47 @@ test.describe('discarding a workout', () => {
 			await page.reload();
 			await expect(page.locator('main#main[data-store]')).toBeAttached();
 			await synced(page);
-			expect(await query('select 1 from workouts where client_id = $1', [workoutId])).toEqual([]);
+			expect((await workoutRow(workoutId))?.status).toBe('abandoned');
 		});
 	});
 });
 
 test.describe('on a desktop window', () => {
 	test.use(DESKTOP);
+
+	test('the visible Finish sits beside the More button, with hover and focus states', async ({
+		page,
+		request
+	}) => {
+		const { kit, workoutId } = await startFromKit(page, request);
+		await injectMutation(
+			page,
+			setOf(kit as StrengthKit, workoutId, 'back_squat', 1, { weight: 100, reps: 5, rpe: 8 })
+		);
+		const finish = headerFinish(page);
+		await expect(finish).toBeVisible();
+		const [own, more] = [await boxOf(finish), await boxOf(menuButton(page))];
+		expect(own.x + own.width).toBeLessThanOrEqual(more.x);
+		expect(Math.abs(own.y + own.height / 2 - (more.y + more.height / 2))).toBeLessThanOrEqual(2);
+
+		const background = () => finish.evaluate((el) => getComputedStyle(el).backgroundColor);
+		const resting = await background();
+		await finish.hover();
+		await expect.poll(background).not.toBe(resting);
+		await page.mouse.move(0, 0);
+
+		// In the tab order as on screen: Finish, then the stopwatch, then More.
+		const stopwatch = page.getByRole('button', { name: 'Pause workout time' });
+		await menuButton(page).focus();
+		await page.keyboard.press('Shift+Tab');
+		await expect(stopwatch).toBeFocused();
+		await page.keyboard.press('Shift+Tab');
+		await expect(finish).toBeFocused();
+		expect(await finish.evaluate((el) => el.matches(':focus-visible'))).toBe(true);
+		await page.keyboard.press('Enter');
+		await expect(sheet(page)).toBeVisible();
+		await expectNoSideScroll(page);
+	});
 
 	test('the summary is a centred dialog at the readable width, its RPE and notes by keyboard, with hover and focus states', async ({
 		page

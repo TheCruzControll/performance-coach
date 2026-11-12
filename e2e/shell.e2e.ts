@@ -214,6 +214,54 @@ test.describe('app shell on an iPhone viewport', () => {
 		expect(midTransition, 'one shot, taken after the tab change ended').toEqual([false]);
 	});
 
+	// A navigation that starts before the last cross-fade is ready (Back then Forward, or a second
+	// tap) skips it, and the browser rejects that cross-fade's `ready`: expected, so never an
+	// unhandled rejection. Each cross-fade is held for two seconds, before or after its update, so
+	// the second tap certainly lands in that window. The tap is dispatched, not clicked: a click
+	// waits for animation frames, which the browser pauses while a cross-fade's update runs.
+	for (const when of ['before', 'after'] as const) {
+		test(`a tab change made while the last cross-fade is held ${when} its update reports no error`, async ({
+			page
+		}) => {
+			await page.addInitScript((when) => {
+				const start = document.startViewTransition?.bind(document);
+				const held = { active: 0, overtaken: 0 };
+				Object.assign(window, { __held: held });
+				if (!start) return;
+				const hold = async () => {
+					held.active += 1;
+					await new Promise((resolve) => setTimeout(resolve, 2000));
+					held.active -= 1;
+				};
+				document.startViewTransition = ((update: () => unknown) => {
+					if (held.active) held.overtaken += 1;
+					return start(async () => {
+						if (when === 'before') await hold();
+						await update();
+						if (when === 'after') await hold();
+					});
+				}) as typeof document.startViewTransition;
+			}, when);
+			const errors = trackConsoleErrors(page);
+			const held = () =>
+				page.evaluate(
+					() => (window as unknown as { __held: { active: number; overtaken: number } }).__held
+				);
+			await gotoHydrated(page, '/today');
+			const nav = page.getByRole('navigation', { name: 'Primary' });
+			await nav.getByRole('link', { name: 'Train' }).click();
+			if (when === 'after') {
+				await expect(page.getByRole('heading', { level: 1, name: 'Train' })).toBeVisible();
+			}
+			await expect.poll(async () => (await held()).active, 'Train’s cross-fade is held').toBe(1);
+			await nav.getByRole('link', { name: 'Progress' }).dispatchEvent('click');
+			await expect(page.getByRole('heading', { level: 1, name: 'Progress' })).toBeVisible();
+			await expect.poll(() => page.evaluate(() => !document.activeViewTransition)).toBe(true);
+			expect((await held()).overtaken, 'Progress’s cross-fade started during the hold').toBe(1);
+			expect(errors).toEqual([]);
+		});
+	}
+
 	test('no console errors on any screen, including interactive ones', async ({ page }) => {
 		const errors = trackConsoleErrors(page);
 		for (const path of [...TABS.map((t) => t.path), '/profile/security', '/design', '/offline']) {
@@ -315,9 +363,17 @@ test.describe('app shell on an iPhone viewport', () => {
 	test('leaving a screen while a sheet is open releases the page scroll lock', async ({ page }) => {
 		const overflow = () => page.evaluate(() => document.documentElement.style.overflow);
 
-		// Arrive with the sheet opening by itself (Today's shortcut), then go Back.
-		await page.goto('/today');
-		await page.locator('a[href="/train?tool=plates"]').click();
+		// Arrive client-side with the sheet opening by itself (?tool=plates), then go Back. Today no
+		// longer links the calculator, so the test adds the link for the router to follow.
+		await gotoHydrated(page, '/today');
+		await page.evaluate(() => {
+			const link = Object.assign(document.createElement('a'), {
+				href: '/train?tool=plates',
+				textContent: 'Plate calculator'
+			});
+			document.querySelector('main')!.prepend(link);
+		});
+		await page.getByRole('link', { name: 'Plate calculator', exact: true }).click();
 		const sheet = page.getByRole('dialog', { name: 'Plate calculator' });
 		await expect(sheet).toBeVisible();
 		expect(await overflow()).toBe('hidden');
@@ -463,6 +519,153 @@ test.describe('app shell on an iPhone viewport', () => {
 });
 
 /**
+ * A tab answers the touch, not the server: the pressed tab is current at once, and until its data
+ * arrives the content shows that screen's skeleton, or the last time it showed in this page
+ * ((app)/HeldScreen.svelte). Today loads again when the app comes back to the foreground after
+ * its TTL or on another day (today/freshness.ts).
+ */
+test.describe('tabs answer before the server does', () => {
+	// Every request reaches page.route: none is answered by the service worker.
+	test.use({ serviceWorkers: 'block' });
+
+	/** Holds `path`'s data requests until `release()`; `seen` resolves once one has been held. */
+	async function holdData(page: Page, path: string) {
+		let release!: () => void;
+		const released = new Promise<void>((resolve) => (release = resolve));
+		let seen!: () => void;
+		const held = new Promise<void>((resolve) => (seen = resolve));
+		await page.route(
+			(url) => url.pathname === `${path}/__data.json`,
+			async (route) => {
+				seen();
+				await released;
+				await route.continue().catch(() => {});
+			}
+		);
+		return { held, release };
+	}
+
+	test("a pressed tab is current at once, and its skeleton shows until the tab's data arrives", async ({
+		page
+	}, testInfo) => {
+		const errors = trackConsoleErrors(page);
+		await gotoHydrated(page, '/today');
+		const data = await holdData(page, '/train');
+		const nav = page.getByRole('navigation', { name: 'Primary' });
+		const train = nav.getByRole('link', { name: 'Train' });
+		// Pointerdown to the tab marked current, on the page's own clock.
+		await page.evaluate(() => {
+			const link = document.querySelector('.app-nav a[href="/train"]')!;
+			const marks: Record<string, number> = {};
+			(window as unknown as { marks: Record<string, number> }).marks = marks;
+			addEventListener('pointerdown', () => (marks.down = performance.now()), { capture: true });
+			new MutationObserver(() => {
+				if (link.getAttribute('aria-current') === 'page') marks.current ??= performance.now();
+			}).observe(link, { attributes: true, attributeFilter: ['aria-current'] });
+		});
+		const box = (await train.boundingBox())!;
+		await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+		await page.mouse.down();
+		await expect(train).toHaveAttribute('aria-current', 'page');
+		await expect(nav.locator('[aria-current="page"]')).toHaveCount(1);
+		const marked = await page.evaluate(() => {
+			const { marks } = window as unknown as { marks: Record<string, number> };
+			return marks.current! - marks.down!;
+		});
+		testInfo.annotations.push({
+			type: 'pointerdown to tab marked current',
+			description: `${marked.toFixed(1)} ms`
+		});
+		expect(marked, 'the tab is marked within a few frames of the touch').toBeLessThan(50);
+
+		await page.mouse.up();
+		await data.held;
+		const held = page.getByTestId('held-screen');
+		await expect(held).toHaveAttribute('data-held', 'skeleton');
+		await expect(held).toHaveAttribute('aria-busy', 'true');
+		await expect(page.getByRole('status').filter({ hasText: 'Loading Train' })).toBeAttached();
+		// Past the press's own hold on the tab (AppNav.svelte): the navigation keeps it current.
+		await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 500)));
+		await expect(train).toHaveAttribute('aria-current', 'page');
+		await expect(held).toBeVisible();
+		await expect(page.getByRole('heading', { level: 1, name: 'Train' })).toHaveCount(0);
+
+		data.release();
+		await expect(page.getByRole('heading', { level: 1, name: 'Train' })).toBeVisible();
+		await expect(held).toHaveCount(0);
+		await expect(train).toHaveAttribute('aria-current', 'page');
+		expect(errors).toEqual([]);
+	});
+
+	test('a tab shown before shows its last screen at once, while its data loads', async ({
+		page
+	}) => {
+		const errors = trackConsoleErrors(page);
+		await gotoHydrated(page, '/today');
+		const nav = page.getByRole('navigation', { name: 'Primary' });
+		await nav.getByRole('link', { name: 'Train' }).click();
+		await expect(page.getByRole('heading', { level: 1, name: 'Train' })).toBeVisible();
+
+		const data = await holdData(page, '/today');
+		await nav.getByRole('link', { name: 'Today' }).click();
+		await data.held;
+		const held = page.getByTestId('held-screen');
+		await expect(held).toHaveAttribute('data-held', 'last');
+		await expect(held).toContainText('Today');
+		// A copy, inert and hidden from assistive technology, that nothing can find by id.
+		await expect(held.locator(':scope > [inert][aria-hidden="true"]')).toHaveCount(1);
+		await expect(held.locator('[id], [data-testid]')).toHaveCount(0);
+		await expect(page.getByRole('heading', { level: 1, name: 'Today' })).toHaveCount(0);
+		await expect(nav.getByRole('link', { name: 'Today' })).toHaveAttribute('aria-current', 'page');
+
+		data.release();
+		await expect(page.getByRole('heading', { level: 1, name: 'Today' })).toBeVisible();
+		await expect(held).toHaveCount(0);
+		expect(errors).toEqual([]);
+	});
+
+	test('Today loads again when the app returns after its TTL, with the new date', async ({
+		page
+	}) => {
+		await page.clock.install();
+		await gotoHydrated(page, '/today');
+		const loads: string[] = [];
+		page.on('request', (request) => {
+			if (new URL(request.url()).pathname === '/today/__data.json') loads.push(request.url());
+		});
+		const foreground = () =>
+			page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+
+		// Back at once: nothing to load.
+		await foreground();
+
+		// A day later (past the 30-minute TTL), just after midnight.
+		const expected = await page.evaluate(() => {
+			const next = new Date();
+			next.setDate(next.getDate() + 1);
+			next.setHours(0, 5, 0, 0);
+			return {
+				time: next.getTime(),
+				eyebrow: next.toLocaleDateString('en-GB', {
+					weekday: 'long',
+					day: 'numeric',
+					month: 'long'
+				})
+			};
+		});
+		await page.clock.setSystemTime(expected.time);
+		const reload = page.waitForRequest(
+			(request) => new URL(request.url()).pathname === '/today/__data.json'
+		);
+		await foreground();
+		await reload;
+		await expect(page.locator('.page-header .eyebrow')).toHaveText(expected.eyebrow);
+		await expect(page.getByRole('heading', { level: 1, name: 'Today' })).toBeVisible();
+		expect(loads, 'one load: the return right after loading asked for none').toHaveLength(1);
+	});
+});
+
+/**
  * The root error page is imported before every page hydrates, so its content loads on demand
  * (src/routes/error-page.ts): with the page on the server and on a server-rendered error, as
  * soon as the app has hydrated, or when an error needs it.
@@ -598,7 +801,7 @@ test.describe('the root error page, loaded on demand', () => {
 		await onErrorPageChunk(page, (_pass, abort) => abort());
 		await gotoHydrated(page, '/today');
 		await failProfileData(page);
-		await expect(page.getByRole('heading', { level: 1, name: "You're offline" })).toBeVisible();
+		await expect(page.getByRole('heading', { level: 1, name: 'You’re offline' })).toBeVisible();
 		const retry = page.getByRole('link', { name: 'Try again' });
 		await expect(retry).toHaveAttribute('href', '/profile');
 		expect((await retry.boundingBox())?.height).toBeGreaterThanOrEqual(44);

@@ -1,6 +1,19 @@
 import { defineConfig, devices, type Project } from '@playwright/test';
 import { DESKTOP } from './e2e/desktop';
-import { bypassHeaders, e2eProjects, GROUPS, parseChoice, SMOKE } from './e2e/projects';
+import {
+	bypassHeaders,
+	DEFAULT_E2E_PORT,
+	e2eBaseURL,
+	e2eProjects,
+	galleryMode,
+	galleryProjects,
+	GROUPS,
+	parseChoice,
+	SMOKE,
+	tlsEnabled
+} from './e2e/projects';
+import { routeWorker, worldCount } from './e2e/worlds';
+import { ensureCertificate } from './scripts/e2e-tls/cert';
 
 /**
  * End-to-end tests run against the real production Node server (adapter-node build) and a
@@ -32,11 +45,38 @@ import { bypassHeaders, e2eProjects, GROUPS, parseChoice, SMOKE } from './e2e/pr
  * read-only `*.smoke.e2e.ts` specs, signed out; E2E_TEST_AUTH=1 with it runs the whole suite
  * against an external server with test routes on; E2E_DEPLOYED_LOCAL=1 runs the smoke specs
  * against the local production build with test routes off. The local projects run the smoke
- * specs too, the desktop one included.
+ * specs too, the desktop one included. E2E_TLS=1 (local and local-deployed) serves the build over
+ * https://localhost:<E2E_PORT> through a proxy that applies vercel.json's headers (scripts/e2e-tls),
+ * so the session cookie is __Host-session, Secure, as deployed.
+ *
+ * E2E_GALLERY=1 (.github/workflows/screen-gallery.yml) runs nothing but the owner setups and the
+ * screen gallery (e2e/gallery.gallery.ts) on one worker (e2e/projects.ts galleryProjects).
+ *
+ * A serial CI leg (E2E_GROUP=serial) runs its specs on its engine's SERIAL_WORKERS workers
+ * (e2e/serial-workers.ts: 2 on Chromium, 1 on WebKit, and why), each with an owner world of its
+ * own: a database and a production server (e2e/worlds.ts). With more than one, global setup starts
+ * them, routeWorker points each worker at its own before anything reads E2E_PORT or
+ * E2E_DATABASE_URL, and `setup-worlds` copies the world the owner setup made into the others
+ * before any serial spec.
  */
-export const E2E_PORT = Number(process.env.E2E_PORT ?? 4173);
-const baseURL = process.env.E2E_BASE_URL ?? `http://localhost:${E2E_PORT}`;
+// Before baseURL: in a worker of a run with more than one world, E2E_PORT and E2E_DATABASE_URL
+// become its own world's.
+routeWorker(process.env);
+const worlds = worldCount(process.env);
+export const E2E_PORT = Number(process.env.E2E_PORT || DEFAULT_E2E_PORT);
+const baseURL = e2eBaseURL(process.env);
+// E2E_TLS=1: the local TLS proxy's certificate, whose public key Chromium trusts (e2e/projects.ts
+// withTls). Made here because the projects need its hash; global setup serves the same files.
+// The runner (no TEST_WORKER_INDEX) always makes or renews it and exports its hash, overwriting
+// any stale E2E_TLS_SPKI left in the shell; workers inherit that hash, so none regenerates the
+// key mid-run and pins a different one from the certificate being served.
+const tlsSpki = tlsEnabled(process.env)
+	? process.env.TEST_WORKER_INDEX
+		? process.env.E2E_TLS_SPKI
+		: (process.env.E2E_TLS_SPKI = ensureCertificate().spki)
+	: undefined;
 const group = parseChoice('E2E_GROUP', process.env.E2E_GROUP, GROUPS);
+const gallery = galleryMode(process.env);
 const withWebKit =
 	Boolean(process.env.CI) || process.env.E2E_WEBKIT === '1' || process.env.E2E_ENGINE === 'webkit';
 
@@ -65,12 +105,20 @@ const SERIAL = '**/*.serial.e2e.ts';
 // E2E_SERIAL_ALONE=1: run serial specs right after the owner setup, without the functional suite.
 const serialAlone = process.env.E2E_SERIAL_ALONE === '1';
 
+const setup: Project = {
+	name: 'setup',
+	testMatch: '**/auth.setup.ts',
+	use: { ...iphone, browserName: 'chromium' }
+};
+const setupWebKit: Project = {
+	name: 'setup-webkit',
+	testMatch: '**/auth-webkit.setup.ts',
+	dependencies: ['setup'],
+	use: { ...iphone, browserName: 'webkit' }
+};
+
 const projects: Project[] = [
-	{
-		name: 'setup',
-		testMatch: '**/auth.setup.ts',
-		use: { ...iphone, browserName: 'chromium' }
-	},
+	setup,
 	{
 		name: 'iphone-chromium',
 		testIgnore: [...FUNCTIONAL_IGNORE, DESKTOP_ONLY],
@@ -105,31 +153,39 @@ const projects: Project[] = [
 ];
 
 if (withWebKit) {
-	projects.push(
-		{
-			name: 'setup-webkit',
-			testMatch: '**/auth-webkit.setup.ts',
-			dependencies: ['setup'],
-			use: { ...iphone, browserName: 'webkit' }
-		},
-		{
-			name: 'iphone-webkit',
-			testIgnore: [...FUNCTIONAL_IGNORE, DESKTOP_ONLY],
-			dependencies: ['setup-webkit'],
-			use: { ...iphone, browserName: 'webkit', storageState: WEBKIT_STATE }
-		}
-	);
+	projects.push(setupWebKit, {
+		name: 'iphone-webkit',
+		testIgnore: [...FUNCTIONAL_IGNORE, DESKTOP_ONLY],
+		dependencies: ['setup-webkit'],
+		use: { ...iphone, browserName: 'webkit', storageState: WEBKIT_STATE }
+	});
 }
 
-// One spec at a time, after the functional suites: they reset and change the owner's training
-// profile, which every browser and worker shares.
+// With more than one owner world (a serial CI leg), after the owner setups: the world they ran in
+// is copied into every other world (e2e/worlds.setup.ts). It opens no browser; it takes the leg's
+// engine only so the leg keeps it.
+if (worlds > 1) {
+	projects.push({
+		name: 'setup-worlds',
+		testMatch: '**/worlds.setup.ts',
+		dependencies: [withWebKit ? 'setup-webkit' : 'setup'],
+		use: { browserName: process.env.E2E_ENGINE === 'webkit' ? 'webkit' : 'chromium' }
+	});
+}
+
+// One spec at a time per owner world, after the functional suites: they reset and change the
+// owner's training profile, which every browser and worker of a world shares. One world (every
+// run but a serial·chromium CI leg) is one spec at a time.
 projects.push({
 	name: 'serial-chromium',
 	testMatch: SERIAL,
-	dependencies: serialAlone
-		? ['setup']
-		: ['iphone-chromium', 'desktop-chromium', ...(withWebKit ? ['iphone-webkit'] : [])],
-	workers: 1,
+	dependencies:
+		worlds > 1
+			? ['setup-worlds']
+			: serialAlone
+				? ['setup']
+				: ['iphone-chromium', 'desktop-chromium', ...(withWebKit ? ['iphone-webkit'] : [])],
+	workers: worlds,
 	fullyParallel: false,
 	use: { ...iphone, browserName: 'chromium', storageState: CHROMIUM_STATE }
 });
@@ -137,8 +193,13 @@ if (withWebKit) {
 	projects.push({
 		name: 'serial-webkit',
 		testMatch: SERIAL,
-		dependencies: serialAlone ? ['setup-webkit', 'serial-chromium'] : ['serial-chromium'],
-		workers: 1,
+		dependencies:
+			worlds > 1
+				? ['setup-worlds']
+				: serialAlone
+					? ['setup-webkit', 'serial-chromium']
+					: ['serial-chromium'],
+		workers: worlds,
 		fullyParallel: false,
 		use: { ...iphone, browserName: 'webkit', storageState: WEBKIT_STATE }
 	});
@@ -182,8 +243,10 @@ export default defineConfig({
 	forbidOnly: Boolean(process.env.CI),
 	retries: process.env.CI ? 1 : 0,
 	// CI main legs run whole files side by side on 2 workers, as local runs do (auth.setup.ts
-	// registers a passkey per worker). serial, alone and sweeps legs keep 1.
-	workers: process.env.CI && group !== 'main' ? 1 : 2,
+	// registers a passkey per worker). serial legs run one worker per owner world
+	// (e2e/serial-workers.ts: 2 on Chromium, 1 on WebKit); alone, exclusive and sweeps legs keep 1.
+	// The gallery reseeds the one owner screen by screen: one worker, wherever it runs.
+	workers: gallery ? 1 : worlds > 1 ? worlds : process.env.CI && group !== 'main' ? 1 : 2,
 	timeout: 30_000,
 	expect: { timeout: 7_500 },
 	reporter: [
@@ -199,5 +262,12 @@ export default defineConfig({
 		colorScheme: 'dark',
 		extraHTTPHeaders: bypassHeaders(process.env)
 	},
-	projects: e2eProjects(process.env, projects)
+	projects: gallery
+		? galleryProjects({
+				setup,
+				setupWebKit,
+				chromiumState: CHROMIUM_STATE,
+				webkitState: WEBKIT_STATE
+			})
+		: e2eProjects(process.env, projects, tlsSpki)
 });

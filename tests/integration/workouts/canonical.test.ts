@@ -21,6 +21,7 @@ import {
 	type SyncResult,
 	type WorkoutView
 } from '../../../src/lib/domain/workout/index';
+import { mergeRows } from '../../../src/lib/domain/workout/changes';
 import { e1rmOf } from '../../../src/lib/domain/workout/logging';
 import { project } from '../../../src/lib/domain/workout/project';
 import { strengthTable } from '../../../src/lib/domain/workout/reducers/tables';
@@ -434,6 +435,59 @@ describe('convergence', () => {
 				'workout.start',
 				'workout.update'
 			]);
+		});
+	}, 120_000);
+});
+
+describe('changed rows', () => {
+	it(`a device that holds the rows and folds in only the changed ones ends on the server's rows, answers lost and re-sent included (${SERVER_SEEDS / 2} seeds)`, async () => {
+		await withRollback(async (db) => {
+			const { owner, id } = await setup(db);
+			const kit: StrengthKit = {
+				...workoutDayKits({ date: '2026-11-06', exerciseId: id }).strength,
+				plannedSessionId: null,
+				plannedLineage: null,
+				programId: null
+			};
+			let changed = 0;
+			let healed = 0;
+			for (let seed = 1; seed <= SERVER_SEEDS / 2; seed++) {
+				const { workoutId, mutations } = strengthSequence(seed, kit);
+				const random = seededRandom(`changes:${seed}`);
+				// The device: its outbox, and the rows it holds, as store.acknowledge keeps them.
+				let outbox = serverSupported(mutations);
+				let rows: CanonicalWorkout | null = null;
+				while (outbox.length > 0) {
+					const batch = outbox.slice(0, 1 + random.int(8));
+					const held = rows ? [workoutId] : [];
+					const { results } = await applySyncBatch(
+						owner,
+						JSON.parse(JSON.stringify(batch)) as Record<string, unknown>[],
+						{ db, held }
+					);
+					if (random.next() < 0.3) continue; // the answer is lost: the same changes go again
+					for (const r of results) {
+						expect(['applied', 'duplicate'], `seed ${seed}: ${JSON.stringify(r)}`).toContain(
+							r.status
+						);
+						if (r.status === 'duplicate') healed++;
+						if (r.canonical) rows = r.canonical;
+						if (r.changes) {
+							expect(r.canonical, `seed ${seed}`).toBeUndefined();
+							rows = mergeRows(rows, r.changes);
+							changed++;
+						}
+					}
+					const answered = new Set(results.map((r) => r.id));
+					outbox = outbox.filter((m) => !answered.has(m.id));
+				}
+				const server = (await getCanonicalWorkout(owner, workoutId, { db }))!;
+				const view = (canonical: CanonicalWorkout) =>
+					project(strengthTable, { workoutId, kit, canonical, pending: [] });
+				expect(view(rows!), `seed ${seed}`).toStrictEqual(view(server));
+			}
+			expect(changed).toBeGreaterThan(SERVER_SEEDS);
+			expect(healed).toBeGreaterThan(SERVER_SEEDS / 2);
 		});
 	}, 120_000);
 });

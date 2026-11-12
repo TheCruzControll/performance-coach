@@ -52,6 +52,7 @@ import { analyticsExplain } from './analytics.cases';
 import { generateCoachDataset, loadCoachDataset } from './coach-dataset';
 import { FIRST_MONDAY, generateDataset, loadDataset, WEEKS } from './dataset';
 import { checkPlan, scansOf, sizeClass, type Catalog, type PlanNode } from './plan-check';
+import { screensExplain } from './screens.cases';
 
 const url = process.env.EXPLAIN_DATABASE_URL || LOCAL_DATABASE_URLS.explain;
 const client = new pg.Client({ ...connectionConfig(url), application_name: 'db-explain' });
@@ -596,7 +597,8 @@ afterAll(async () => {
 		...results,
 		'',
 		...plans,
-		...m6.report()
+		...m6.report(),
+		...screens.report()
 	];
 	mkdirSync('test-results', { recursive: true });
 	writeFileSync('test-results/explain.md', `${report.join('\n')}\n`);
@@ -639,4 +641,9 @@ describe(`db:explain on ${redactUrl(url)}`, () => {
 });
 
 // M6's fact queries on their own owner, loaded once M3's cases have run.
+const screens = screensExplain({ url, owner });
+// Coach's screens first: M6's loader replaces the training rows the coach dataset names.
+screens.coach();
 const m6 = analyticsExplain({ client, db, owner, readCatalog, render });
+// The other main screens' page data on the same owner, once M6's loads are timed.
+screens.main();

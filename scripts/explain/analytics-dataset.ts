@@ -15,6 +15,12 @@
  *   history. So the loader replaces dataset.ts's training and program rows (TRUNCATE, the reset
  *   code's one bypass of the history guards) with these, under the same owner, then analyses: the
  *   relations hold one owner's two years, as production would.
+ * - Its review history (generateReviewHistory, m6-plan 'analytics-explain'): a weekly review of
+ *   every week before the newest reviewed one and a cycle review of every ended block, each with
+ *   its proposal. SUPERSEDED_SHARE of them were refreshed (a superseded revision 1 beside the live
+ *   revision 2) and REVISED_SHARE of the proposals revised ('Ask for changes'). Their computed
+ *   columns are copied from reviews the services wrote on this data (ReviewTemplates), so each row
+ *   is as large as a real one; the reviews a page load reads are those real ones.
  */
 import { addDays, type IsoDate } from '../../src/lib/domain/calendar';
 import { LIFTS } from '../../src/lib/domain/profile/catalog';
@@ -22,7 +28,17 @@ import type { ProgrammingInput } from '../../src/lib/domain/programming/input';
 import { seededRandom } from '../../src/lib/domain/programming/random';
 import { GYM_PRESETS } from '../../src/lib/domain/programming/rules/defaults';
 import type pg from 'pg';
-import { FIRST_MONDAY, generateDataset, loadDataset, WEEKS, type Dataset } from './dataset';
+import * as schema from '../../src/lib/server/db/schema';
+import { NEXT_CYCLE_TITLE } from '../../src/lib/server/services/reviews/cycle';
+import { PROPOSAL_TITLE } from '../../src/lib/server/services/reviews/weekly';
+import {
+	FIRST_MONDAY,
+	generateDataset,
+	insertAll,
+	loadDataset,
+	WEEKS,
+	type Dataset
+} from './dataset';
 
 /** The first of its seeds whose missed sessions leave ≥ 400 runs (407). */
 export const ANALYTICS_SEED = 'db-explain/analytics/3';
@@ -156,6 +172,230 @@ export function generateAnalyticsDataset(ownerId: string, seed: string = ANALYTI
 
 /** Truncates the owner's training and program rows, inserts the analytics history, analyses. */
 export async function loadAnalyticsDataset(client: pg.ClientBase, d: Dataset): Promise<void> {
-	await client.query('truncate programs, workouts, recovery_notes cascade');
+	// The week rollups are summed from the workouts: truncated with them (TRUNCATE fires no trigger).
+	await client.query('truncate programs, workouts, recovery_notes, strength_week_rollups cascade');
 	await loadDataset(client, d, { owner: false });
+}
+
+/** The share of reviews refreshed once: a superseded revision 1 beside the live revision 2. */
+export const SUPERSEDED_SHARE = 0.1;
+/** The share of proposals the owner asked to change, each revised up to REVISIONS_MAX times. */
+export const REVISED_SHARE = 0.2;
+export const REVISIONS_MAX = 3;
+
+/** A stored review's computed columns, copied onto every generated review of its kind. */
+/** A jsonb column's value, as the schema types it. */
+type Json = Record<string, unknown>;
+
+export interface ReviewTemplate {
+	snapshot: Json;
+	summary: string;
+	snapshotVersion: number;
+	analyticsVersion: number;
+	inputsDigest: string;
+}
+
+/** A stored next_cycle proposal's content, copied onto every generated cycle review's proposal. */
+export interface ProposalTemplate {
+	summary: string;
+	rationale: string;
+	payload: Json;
+	evidence: Json;
+	diff: Json | null;
+	impact: Json | null;
+	payloadHash: string;
+}
+
+export interface ReviewTemplates {
+	weekly: ReviewTemplate;
+	cycle: ReviewTemplate;
+	nextCycle: ProposalTemplate;
+}
+
+type Insert<T extends { $inferInsert: unknown }> = T['$inferInsert'];
+type Proposal = Insert<typeof schema.coachProposals>;
+
+/** How each proposal ended, applied after the inserts (a proposal is stored 'proposed'). */
+interface Decision {
+	id: string;
+	status: 'accepted' | 'rejected' | 'superseded';
+	closedAt: Date;
+	supersededReason: 'revised' | 'review_refreshed' | 'sessions_passed' | null;
+}
+
+export interface ReviewHistory {
+	weeklyReviews: Insert<typeof schema.weeklyReviews>[];
+	cycleReviews: Insert<typeof schema.cycleReviews>[];
+	coachProposals: Proposal[];
+	decisions: Decision[];
+}
+
+/** What a generated review is made from: its revision, when, whether refreshed, its id. */
+interface Revision {
+	id: string;
+	revision: number;
+	createdAt: Date;
+	/** Superseded by a refresh, so its proposal was superseded with it. */
+	refreshed: boolean;
+}
+
+const DAY = 86_400_000;
+
+/**
+ * The owner's review history up to `today`, leaving out the week and block whose reviews the
+ * services wrote (`written`): those are the live reviews a page load reads.
+ */
+export function generateReviewHistory(
+	d: Dataset,
+	templates: ReviewTemplates,
+	{ today, written }: { today: IsoDate; written: { week: IsoDate; blockLineage: string } },
+	seed: string = `${ANALYTICS_SEED}/reviews`
+): ReviewHistory {
+	const rng = seededRandom(seed);
+	const hex = () =>
+		Math.floor(rng.next() * 2 ** 32)
+			.toString(16)
+			.padStart(8, '0');
+	const id = () => {
+		const h = hex() + hex() + hex() + hex();
+		return `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-a${h.slice(17, 20)}-${h.slice(20)}`;
+	};
+	const ownerId = d.owner.id!;
+	const heads = new Map(d.heads.map((head) => [head.programId, head.versionId]));
+	const h: ReviewHistory = {
+		weeklyReviews: [],
+		cycleReviews: [],
+		coachProposals: [],
+		decisions: []
+	};
+
+	/** A review's proposal, then its revisions, each decided; returns the one the review links. */
+	function propose(content: Omit<Proposal, 'id' | 'ownerId'>, { createdAt, refreshed }: Revision) {
+		const count = rng.next() < REVISED_SHARE ? 1 + rng.int(REVISIONS_MAX) : 0;
+		const ids = Array.from({ length: count + 1 }, id);
+		const roll = rng.next();
+		ids.forEach((proposalId, i) => {
+			const at = new Date(createdAt.getTime() + i * DAY);
+			const revisionOf = i ? ids[i - 1]! : null;
+			h.coachProposals.push({ ...content, id: proposalId, ownerId, revisionOf, createdAt: at });
+			const closedAt = new Date(at.getTime() + 3_600_000);
+			const decision = (status: Decision['status'], reason: Decision['supersededReason'] = null) =>
+				h.decisions.push({ id: proposalId, status, closedAt, supersededReason: reason });
+			if (i < count) decision('superseded', 'revised');
+			else if (refreshed) decision('superseded', 'review_refreshed');
+			else if (roll < 0.7) decision('accepted');
+			else if (roll < 0.9) decision('rejected');
+			else decision('superseded', 'sessions_passed');
+		});
+		return ids[0]!;
+	}
+
+	/** The live review and, SUPERSEDED_SHARE of the time, the revision 1 it replaced. */
+	function revisions<R>(createdAt: Date, make: (r: Revision) => R) {
+		const refreshed = rng.next() < SUPERSEDED_SHARE;
+		const live: Revision = { id: id(), revision: refreshed ? 2 : 1, createdAt, refreshed: false };
+		const liveRow = { ...make(live), id: live.id };
+		if (!refreshed) return [liveRow];
+		const first: Revision = {
+			id: id(),
+			revision: 1,
+			createdAt: new Date(+createdAt - 2 * DAY),
+			refreshed
+		};
+		return [
+			{ ...make(first), id: first.id, supersededAt: createdAt, supersededBy: live.id },
+			liveRow
+		];
+	}
+	const computed = ({
+		snapshot,
+		summary,
+		snapshotVersion,
+		analyticsVersion,
+		inputsDigest
+	}: ReviewTemplate) => ({ snapshot, summary, snapshotVersion, analyticsVersion, inputsDigest });
+	const morningAfter = (day: IsoDate) => new Date(Date.parse(`${addDays(day, 1)}T07:30:00Z`));
+
+	const blocks = d.programBlocks.filter((block) => heads.has(block.programId));
+	for (let w = 0; w < WEEKS; w++) {
+		const monday = addDays(FIRST_MONDAY, w * 7);
+		if (monday >= written.week) break;
+		const block = blocks.find((b) => b.startsOn! <= monday && monday <= b.endsOn!);
+		const programId = block?.programId ?? null;
+		const versionId = programId && heads.get(programId)!;
+		const { weekly } = templates;
+		const rows = revisions(morningAfter(addDays(monday, 6)), (r) => ({
+			...{ ownerId, weekStartsOn: monday, programId, versionId },
+			...{ revision: r.revision, createdAt: r.createdAt, ...computed(weekly) },
+			proposalId:
+				programId &&
+				propose(
+					{
+						...{ kind: 'program_adjustment', title: PROPOSAL_TITLE, programId },
+						...{ baseVersionId: versionId, payloadVersion: 1, payloadHash: hex() + hex() },
+						summary: `${1 + rng.int(4)} changes to next week`,
+						rationale: `From your review of the week of ${monday}: ${weekly.summary}`,
+						payload: { ops: Array.from({ length: 1 + rng.int(4) }, () => ({ op: 'swap' })) },
+						evidence: {
+							adjustments: [],
+							source: {
+								kind: 'weekly_review',
+								reviewId: r.id,
+								revision: r.revision,
+								weekStartsOn: monday
+							}
+						}
+					},
+					r
+				)
+		}));
+		h.weeklyReviews.push(...rows);
+	}
+	for (const block of blocks) {
+		if (block.endsOn! >= today || block.lineageId === written.blockLineage) continue;
+		const { cycle, nextCycle } = templates;
+		const versionId = heads.get(block.programId)!;
+		const rows = revisions(morningAfter(block.endsOn!), (r) => ({
+			...{ ownerId, programId: block.programId, blockLineageId: block.lineageId!, versionId },
+			...{ blockStartsOn: block.startsOn, blockEndsOn: block.endsOn },
+			...{ revision: r.revision, createdAt: r.createdAt, ...computed(cycle) },
+			proposalId: propose(
+				{
+					...{ kind: 'next_cycle', title: NEXT_CYCLE_TITLE, programId: block.programId },
+					...{ baseVersionId: versionId, payloadVersion: 1, payloadHash: nextCycle.payloadHash },
+					...{ summary: nextCycle.summary, rationale: nextCycle.rationale },
+					...{ payload: nextCycle.payload, diff: nextCycle.diff, impact: nextCycle.impact },
+					evidence: {
+						...nextCycle.evidence,
+						source: { kind: 'cycle_review', reviewId: r.id, revision: r.revision }
+					}
+				},
+				r
+			)
+		}));
+		h.cycleReviews.push(...rows);
+	}
+	return h;
+}
+/** Inserts the review history in one transaction, decides its proposals, then analyses. */
+export async function loadReviewHistory(client: pg.ClientBase, h: ReviewHistory): Promise<void> {
+	await client.query('begin');
+	try {
+		await insertAll(client, schema.coachProposals, h.coachProposals);
+		await insertAll(client, schema.weeklyReviews, h.weeklyReviews);
+		await insertAll(client, schema.cycleReviews, h.cycleReviews);
+		await client.query(
+			`update coach_proposals p set status = e.status, closed_at = e."closedAt",
+			   superseded_reason = e."supersededReason"
+			 from jsonb_to_recordset($1::jsonb) e(id uuid, status text, "closedAt" timestamptz,
+			   "supersededReason" text)
+			 where p.id = e.id`,
+			[JSON.stringify(h.decisions)]
+		);
+		await client.query('commit');
+	} catch (err) {
+		await client.query('rollback');
+		throw err;
+	}
+	await client.query('analyze');
 }

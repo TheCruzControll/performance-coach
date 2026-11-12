@@ -100,7 +100,7 @@ function dashboard(
 ): StrengthDashboard {
 	const window = periodWindow(TODAY, period, FIRST);
 	const squat = figure('e1rm', {
-		value: { text: '286.6 lb', value: 130 },
+		value: { text: '130 kg', value: 130 },
 		series: weekly([100, 102.5, null, 105, 107.5, 110, 112.5, 115, 117.5, 120, 125, 130, 140])
 	});
 	return {
@@ -175,6 +175,18 @@ function dashboard(
 }
 
 describe('strengthData', () => {
+	it('says a lift that ended where it started held there, beside the headline best', () => {
+		const d = dashboard();
+		const flat = {
+			...d.keyLifts[0]!,
+			value: { text: '105 kg', value: 105 },
+			series: weekly([100, 105, 102.5, ...Array(8).fill(null), 100, 101])
+		};
+		const [lift] = strengthData({ ...d, keyLifts: [flat] }).lifts;
+		expect(lift!.best).toEqual({ text: '105 kg', value: 105 });
+		expect(lift!.chart.summary).toBe('Estimated 1RM held at 100 kg, with a best of 105 kg.');
+	});
+
 	it('charts each key lift as a small multiple in the profile’s units, the others listed apart', () => {
 		const s = strengthData(dashboard());
 		expect(s.stage).toBe('history');
@@ -182,14 +194,15 @@ describe('strengthData', () => {
 		expect(squat).toMatchObject({
 			id: 'squat-id',
 			name: 'Back squat',
-			best: { text: '286.6 lb', value: 130 },
+			best: { text: '130 kg', value: 130 },
 			verdict: { verdict: 'real_trend', direction: 'up', good: true }
 		});
 		expect(squat!.chart.data.unit).toBe('lb');
-		// 100 kg is 220.5 lb; a missing week is a gap; this week is the flagged last slot.
+		// 100 kg is 220.46 lb, an estimate to the pound; a missing week is a gap; this week is
+		// the flagged last slot.
 		expect(squat!.chart.data.series[0]!.points[0]).toEqual({
-			value: 220.5,
-			text: '220.5',
+			value: 220,
+			text: '220',
 			kind: 'estimated'
 		});
 		expect(squat!.chart.data.series[0]!.points[2]).toBeNull();
@@ -211,10 +224,45 @@ describe('strengthData', () => {
 		expect(s.tonnage.chart.data.series[0]!.values[0]).toEqual({ value: 2204.6, text: '2,205' });
 		expect(s.tonnage.chart.data.slots.at(-1)).toMatchObject({ inProgress: true });
 		expect(s.tonnage.chart.table.rows.at(-1)).toMatchObject({ inProgress: true });
-		expect(s.tonnage.tile.soFar).toEqual({ value: '881.8 lb', lastWeek: null, through: TODAY });
+		expect(s.tonnage.tile.soFar).toEqual({
+			value: '881.8\u00a0lb',
+			lastWeek: null,
+			through: TODAY
+		});
 		expect(s.hardSets.chart.data.unit).toBe('sets');
 		expect(s.hardSets.chart.data.series[0]!.values[0]).toEqual({ value: 16.5, text: '16.5' });
 		expect(s.hardSets.chart.summary).toContain('this week so far is outlined');
+	});
+
+	it('names the weeks before over a section only when one of its tiles shows a change against them', () => {
+		// No earlier figure to compare with: no delta, so no 'Compared with…' over the tile.
+		const empty = strengthData(dashboard());
+		expect(empty.tonnage.tile.delta).toBeNull();
+		expect(empty.tonnage.context.comparison).toBeNull();
+		expect(empty.hardSets.context.comparison).toBeNull();
+		expect(empty.rpe.context.comparison).toBeNull();
+		const d = dashboard();
+		const compared = (f: Figure): Figure => ({
+			...f,
+			value: { text: '8', value: 8 },
+			comparison: {
+				...f.comparison,
+				value: 8,
+				previous: 7.5,
+				delta: 0.5,
+				pct: 6.7,
+				change: 'worse'
+			}
+		});
+		const s = strengthData({
+			...d,
+			tonnage: { ...d.tonnage, ...compared(d.tonnage) },
+			rpe: { ...d.rpe, average: compared(d.rpe.average) }
+		});
+		expect(s.tonnage.context.comparison).toBe('Compared with the 12 weeks before');
+		expect(s.hardSets.context.comparison).toBeNull();
+		// Either RPE tile's change is enough for the section's shared context.
+		expect(s.rpe.context.comparison).toBe('Compared with the 12 weeks before');
 	});
 
 	it('shows the last complete week against its range, the plan ticked, with each week’s range', () => {
@@ -329,7 +377,11 @@ describe('loadProgress, the Strength view', () => {
 		const strength = vi.fn(async () => dashboard());
 		const overview = vi.fn();
 		const data = await loadProgress('owner-1', request, NOW, { db, strength, overview, today });
-		expect(strength).toHaveBeenCalledWith(db, 'owner-1', { period: '12w', today: TODAY });
+		expect(strength).toHaveBeenCalledWith(db, 'owner-1', {
+			period: '12w',
+			today: TODAY,
+			lastGroupWeeks: RANGE_WEEKS
+		});
 		expect(overview).not.toHaveBeenCalled();
 		expect(data).toMatchObject({ failed: false, view: 'strength', period: '12w' });
 		expect(data.failed === false && data.view === 'strength' && data.strength.lifts).toHaveLength(

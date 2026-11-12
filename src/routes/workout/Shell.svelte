@@ -9,30 +9,47 @@
     route's reducer table and the header's stopwatch (WorkoutClock.svelte) meanwhile: a skeleton
     that reserves the header, then the view, 'No workout in progress', 'This browser can't keep a workout' or 'App
     updated — reload to continue'. A workout of another kind is sent to its own route first.
-  - On idle after the first render (data-ready, which waits for the view and stopwatch chunks
-    too, not only the restore), the store loads (its write path stays out of the first render) with the
-    page's one sync engine (online.ts), which every change the store reports flushes, from any
-    view or sheet; unmounting stops it. RUM loads on idle too, so INP is attributed to the
-    workout route. data-store marks the store open; the view gets the active workout, to write
-    through it.
-  - The sync status loads on idle after the engine (sync-ui.ts): the header's pill, which opens the
+  - Once the first render (data-ready, which waits for the view and stopwatch chunks too, not
+    only the restore) has painted, on every engine (afterPaint: WebKit has no idle callback), the
+    store loads (its write path stays out of the first render) with the page's one sync engine
+    (online.ts), which every change the store reports flushes, from any view or sheet; unmounting
+    stops it. A tap that comes first waits for it (ActiveWorkout.write). RUM loads on idle, so
+    INP is attributed to the workout route. data-store and performance.mark('pc:store-open',
+    once per page) mark the store open; the view gets the active workout, to write through it.
+    A workout the start flow began from a saved kit (kit-mark.ts) then has its fresh kit fetched
+    in the background (kit-refresh.ts, loaded then). A fresh kit for an edited plan (replanned)
+    shows 'Your plan changed' while nothing is done in the workout: Use the new plan discards it
+    and starts the session again from the fresh kit.
+  - The sync status loads after the engine (sync-ui.ts): the header's pill, which opens the
     sync sheet. After a 401 the page shows the signed-out state instead of the workout: no workout
     details, only the changes waiting. A page restored after a 401 (active.signedOut) shows none
     of it before the engine has said otherwise.
   - Finish and Discard: the header's More button opens the workout menu (WorkoutMenu.svelte, loaded
-    on idle with the store), and Finish (from it, or the strength view's after the last exercise)
+    with the store), and Finish (from it, the header's visible Finish once a set is logged,
+    HeaderFinish.svelte, which loads with it, or the strength view's after the last exercise)
     the finish sheet (FinishSheet.svelte, loaded then). Done sends the finish through the store
     (finish.ts); online, once the server has it, the sheet opens its History detail. Otherwise
     the page shows its completed state (Summary.svelte, loaded then): the summary, read-only,
     from IndexedDB and the precache, so an offline reload keeps it, with 'View in History' once
     the workout has synced.
   - Nothing reads the URL while prerendering: the HTML is the same, data-free, for everyone.
+  - prepaint: the page's current exercise, painted before the app starts from what this device
+    kept (Prepaint.svelte, /workout's), in the skeleton's place while restoring; from 1024 px it
+    takes the view's columns, so the view replaces it in place. Any phase but a workout in progress
+    drops what the device kept (prepaint.ts).
   - start: /workout?start= or ?new=, which the page reads once mounted. The start flow's chunk
     (StartFlow.svelte) is shown instead of any workout, through the page's chunk loader; the
     page neither connects its own store nor sends a workout of another kind to its route.
   - Layout: one column below 1024 px; from there the header spans the page, and the view's side
     and main columns sit side by side, centred, at --content-list beside --content-readable.
 -->
+<script module lang="ts">
+	// The header's stopwatch, which the first paint waits for: asked as the module is evaluated,
+	// before the page hydrates, as the routes ask for their views. Handled when the Shell mounts.
+	const clock = import.meta.env.SSR ? null : import('./WorkoutClock.svelte');
+	clock?.catch(() => {});
+</script>
+
 <script lang="ts">
 	import { onMount, untrack, type Component, type Snippet } from 'svelte';
 	import {
@@ -41,14 +58,18 @@
 		type ChunkLoad
 	} from '#lib/client/workout/active.svelte.ts';
 	import { workoutPath } from '#lib/client/workout/kinds.ts';
+	import { kitRefreshMarked } from '#lib/client/workout/kit-mark.ts';
+	import type * as KitRefresh from '#lib/client/workout/kit-refresh.ts';
 	import type { AnyTable } from '#lib/domain/workout/project.ts';
 	import Button from '#lib/ui/components/Button.svelte';
 	import EmptyState from '#lib/ui/components/EmptyState.svelte';
+	import Notice from '#lib/ui/components/Notice.svelte';
 	import Skeleton from '#lib/ui/components/Skeleton.svelte';
 	import EmptyWorkout from './EmptyWorkout.svelte';
 	import type FinishSheet from './FinishSheet.svelte';
+	import type HeaderFinishComponent from './HeaderFinish.svelte';
 	import type Summary from './Summary.svelte';
-	import { chunkLoader } from './lazy.ts';
+	import { afterPaint, chunkLoader } from './lazy.ts';
 	import type * as SyncUi from './sync-ui.ts';
 	import type WorkoutClock from './WorkoutClock.svelte';
 	import WorkoutHeader from './WorkoutHeader.svelte';
@@ -63,9 +84,11 @@
 		ready?: () => Promise<unknown>;
 		/** The start flow's chunk, once the page has read ?start or ?new. */
 		start?: () => Promise<{ default: Component<{ load: ChunkLoad }> }>;
+		/** The current exercise painted before the app starts, shown while restoring. */
+		prepaint?: Snippet;
 	}
 
-	let { table, children, ready, start }: Props = $props();
+	let { table, children, ready, start, prepaint }: Props = $props();
 
 	// A route's table never changes: read once.
 	const active = new ActiveWorkout(untrack(() => table));
@@ -84,6 +107,8 @@
 	);
 	let ui = $state.raw<typeof SyncUi | null>(null);
 	let Menu = $state.raw<typeof WorkoutMenu | null>(null);
+	/** The header's visible Finish, which loads with the menu. */
+	let HeaderFinish = $state.raw<typeof HeaderFinishComponent | null>(null);
 	let Finish = $state.raw<typeof FinishSheet | null>(null);
 	const sync = $derived(ui?.outboxStatus.current);
 	const signedOut = $derived(sync?.state === 'signed-out' ? sync.waiting : null);
@@ -92,6 +117,9 @@
 	const starting = $derived(!!start && restore.phase !== 'app-updated');
 	/** What the page may show of the workout: nothing once signed out, or while starting one. */
 	const shown = $derived(hidden || start ? null : view);
+	/** kit-refresh.ts once the fresh kit pins an edited plan's session (replanned). */
+	let replanned = $state.raw<typeof KitRefresh | null>(null);
+	const offerFresh = $derived(!!replanned && !!shown && replanned.untouched(shown));
 
 	const idle = (run: () => void) => {
 		if ('requestIdleCallback' in window) requestIdleCallback(run, { timeout: 2000 });
@@ -100,16 +128,10 @@
 
 	onMount(() => {
 		if (ready) void load(ready).then((module) => (viewLoaded = module !== null));
-		void load(() => import('./WorkoutClock.svelte')).then((module) => {
+		void load(() => clock!).then((module) => {
 			if (module) Clock = module.default;
 		});
 		void active.restore(load);
-		idle(
-			() =>
-				void import('#lib/client/vitals.ts')
-					.then((rum) => rum.startVitalsReporting())
-					.catch(() => {})
-		);
 		return () => active.close();
 	});
 
@@ -117,11 +139,31 @@
 	$effect(() => {
 		if (waiting || connecting) return;
 		connecting = true;
-		idle(async () => {
+		// RUM once the page shows what it restored, never before: its chunks would compete with
+		// the view's. Its observers are buffered, so it still reports the load's paints.
+		idle(() => {
+			void import('#lib/client/vitals.ts')
+				.then((rum) => rum.startVitalsReporting())
+				.catch(() => {});
+		});
+		afterPaint(async () => {
 			if (start) return;
-			await active.connect(load);
+			const opened = await active.connect(load);
+			// Once per page, as pc:logger-ready (Logger.svelte): the first load's figure.
+			if (opened && performance.getEntriesByName('pc:store-open', 'mark').length === 0)
+				performance.mark('pc:store-open');
+			const shownId = 'snapshot' in active.current ? active.current.snapshot.workoutId : null;
+			if (opened && shownId && kitRefreshMarked(shownId)) {
+				void load(() => import('#lib/client/workout/kit-refresh.ts'))
+					.then(async (module) => {
+						if ((await module?.refreshMarked(opened, shownId)) === 'replanned') replanned = module;
+					})
+					.catch(() => {});
+			}
 			ui = await load(() => import('./sync-ui.ts'));
-			Menu = (await load(() => import('./WorkoutMenu.svelte')))?.default ?? null;
+			const menu = await load(() => import('./WorkoutMenu.svelte'));
+			Menu = menu?.default ?? null;
+			HeaderFinish = menu?.HeaderFinish ?? null;
 		});
 	});
 
@@ -149,7 +191,24 @@
 		location.replace(`${workoutPath(restore.kind)}${location.search}`);
 	});
 
+	// No workout in progress here (none, finished, another kind's, or no storage): the next load
+	// paints the skeleton, not a card this device kept. Loaded then, so no workout page's first
+	// render carries it.
+	$effect(() => {
+		if (restore.phase === 'loading' || restore.phase === 'active') return;
+		void import('#lib/client/workout/prepaint.ts')
+			.then((module) => module.clearPrepaint())
+			.catch(() => {});
+	});
+
 	const reload = () => location.reload();
+
+	async function startAfresh() {
+		const id = 'snapshot' in restore ? restore.snapshot.workoutId : null;
+		const url = id && active.store ? await replanned?.startAfresh(active.store, id) : null;
+		if (url) location.replace(url);
+		else replanned = null;
+	}
 </script>
 
 <main
@@ -164,7 +223,8 @@
 		{#snippet time()}
 			{#if shown && Clock && restore.phase === 'active'}<Clock
 					view={shown}
-					store={active.store}
+					write={active.write}
+					{load}
 				/>{/if}
 		{/snippet}
 		{#snippet status()}
@@ -181,6 +241,11 @@
 				</span>
 			{/if}
 		{/snippet}
+		{#snippet finish()}
+			{#if shown && restore.phase === 'active' && HeaderFinish && active.store}
+				<HeaderFinish view={shown} onfinish={() => (active.finishing = true)} />
+			{/if}
+		{/snippet}
 	</WorkoutHeader>
 
 	<div class="body">
@@ -189,6 +254,14 @@
 		{:else if ui && signedOut !== null}
 			<ui.SignedOutState waiting={signedOut} />
 		{:else if restore.phase === 'active' && viewReady && !hidden && !starting}
+			{#if offerFresh}
+				<div class="replanned">
+					<Notice icon="refresh" title="Your plan changed" data-testid="workout-replanned">
+						This session was edited after this device saved it.
+						<Button size="sm" variant="secondary" onclick={startAfresh}>Use the new plan</Button>
+					</Notice>
+				</div>
+			{/if}
 			<div class="columns">{@render children(restore.snapshot, load, active)}</div>
 		{:else if restore.phase === 'completed' && Completed && !hidden && !starting}
 			{@const { view: done, notSaved } = restore.snapshot}
@@ -198,6 +271,7 @@
 		{:else if waiting || hidden || starting}
 			<div class="restoring" role="status" aria-busy="true" data-testid="workout-restoring">
 				<span class="visually-hidden">Restoring your workout</span>
+				{@render prepaint?.()}
 				{#each [0, 1, 2] as card (card)}
 					<Skeleton height="10rem" radius="var(--radius-lg)" />
 				{/each}
@@ -263,6 +337,10 @@
 		flex-direction: column;
 	}
 
+	.replanned {
+		margin-bottom: var(--space-4);
+	}
+
 	.restoring {
 		display: grid;
 		gap: var(--space-4);
@@ -305,9 +383,18 @@
 			width: min(100%, var(--content-readable));
 		}
 
+		.replanned {
+			margin-bottom: var(--space-4);
+		}
+
 		.restoring {
 			max-width: var(--content-readable);
 			margin: 0 auto;
+		}
+
+		/* A prepainted card takes the view's columns (Prepaint.svelte). */
+		.restoring:has(> :global(.prepaint:not([hidden], [data-rest]))) {
+			max-width: none;
 		}
 	}
 </style>

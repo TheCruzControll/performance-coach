@@ -1,11 +1,15 @@
 import { execSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import adapterNode from '@sveltejs/adapter-node';
 import adapterVercel from '@sveltejs/adapter-vercel';
 import { sveltekit } from '@sveltejs/kit/vite';
 import { loadEnv, type Plugin } from 'vite';
 import { defineConfig } from 'vitest/config';
+import { readBuildGraph, shellFiles } from './scripts/lib/precache-scope.ts';
+import { LAUNCH_SCRIPT } from './src/lib/client/workout/launch.ts';
+import { PREPAINT_SCRIPT } from './src/lib/client/workout/prepaint.ts';
 
 /**
  * Deployment target. Production runs on Vercel (Node runtime, Fluid compute); local e2e,
@@ -30,15 +34,23 @@ function appVersion(): string {
 	return `${pkg.version}+${sha.slice(0, 7)}`;
 }
 
+const scriptHash = (body: string) =>
+	`sha256-${createHash('sha256').update(body).digest('base64')}` as const;
+
 /**
- * CSP hashes for the inline scripts in src/app.html (the pre-paint theme script). SvelteKit
- * adds nonces/hashes for the scripts it generates, but not for scripts in the template.
+ * CSP hashes for the inline scripts in src/app.html (the pre-paint theme script), the one
+ * /workout renders (src/routes/workout/Prepaint.svelte: the current exercise, painted before the
+ * app starts) and the one /offline renders (src/routes/(app)/offline/LaunchRedirect.svelte: a
+ * launch mid-workout opens the workout). SvelteKit adds nonces/hashes for the scripts it
+ * generates, but not for these.
  */
 function templateScriptHashes(): `sha256-${string}`[] {
 	const html = readFileSync(new URL('./src/app.html', import.meta.url), 'utf8');
-	return [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(
-		([, body]) => `sha256-${createHash('sha256').update(body!).digest('base64')}` as const
-	);
+	return [
+		...[...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(([, body]) => scriptHash(body!)),
+		scriptHash(PREPAINT_SCRIPT),
+		scriptHash(LAUNCH_SCRIPT)
+	];
 }
 
 /** Svelte and SvelteKit's client, with the packages they bundle (rolldown's codeSplitting groups). */
@@ -47,6 +59,19 @@ const FRAMEWORK = /[\\/]node_modules[\\/](svelte|@sveltejs[\\/]kit|devalue|clsx)
 const FRAMEWORK_OUTSIDE = /[\\/]runtime[\\/](client[\\/](entry|payload)\.js$|app[\\/]forms[\\/])/;
 /** SvelteKit's payload module (see the `payload` chunk group). */
 const PAYLOAD = /[\\/]@sveltejs[\\/]kit[\\/]src[\\/]runtime[\\/]client[\\/]payload\.js$/;
+/**
+ * The app's code every page loads first, in the framework chunk (see its group): the client hooks
+ * with error reporting and the leaving state (leaving.ts is also imported alone by lazy code: the
+ * workout sync engine), the root error page's loader (src/routes/error-page.ts), the root layout
+ * with what it starts (RUM visits, the toasts and their Toaster), the screen memory the (app)
+ * layout keeps (also imported by sign-out, which any page can load), afterPaint
+ * (workout/lazy.ts: the (app) shell's and the workout pages') and Icon, which every screen draws.
+ */
+const BOOT =
+	/src[\\/](hooks\.client\.ts|routes[\\/](\+layout\.svelte|error-page\.ts|workout[\\/]lazy\.ts)|lib[\\/]client[\\/](errors|leaving|visits|screen-memory)\.ts|lib[\\/]ui[\\/](toast\.svelte\.ts|components[\\/](Icon|Toaster)\.svelte))$/;
+/** The (app) layout and its shell, which every app screen loads (see the `AppShell` group). */
+const APP_SHELL =
+	/src[\\/](routes[\\/]\(app\)[\\/](\+layout\.svelte|AppShell\.svelte|nav\.ts)|lib[\\/]ui[\\/]components[\\/](AppNav|PageHeader)\.svelte|lib[\\/]client[\\/]connectivity\.svelte\.ts)$/;
 
 /**
  * Writes .vite/chunk-modules.json into the client build: each chunk's file and the src/ modules
@@ -78,6 +103,66 @@ function chunkModules(): Plugin {
 	};
 }
 
+/**
+ * The lazy modules a workout page paints its first frame with: each route's view, the header's
+ * stopwatch, and the projection with the route's reducer table (the Shell keeps its skeleton
+ * until they have loaded). Their chunks keep Vite's preload of their dependencies (build
+ * .modulePreload below), so a view and everything it imports are fetched at once, not one import
+ * level after another (each level a round trip before the active workout's LCP).
+ */
+const FIRST_PAINT =
+	/src[\\/](routes[\\/]workout[\\/](StrengthView|WorkoutClock|run[\\/]RunView|session[\\/]OtherView)\.svelte|lib[\\/]domain[\\/]workout[\\/](project|reducers[\\/](tables|run|other))\.ts)$/;
+
+/** The client chunks holding a FIRST_PAINT module, by file name, filled as the bundle is written. */
+const firstPaintChunks = new Set<string>();
+
+function firstPaint(): Plugin {
+	return {
+		name: 'first-paint-chunks',
+		apply: 'build',
+		applyToEnvironment: (environment) => environment.name === 'client',
+		// Before Vite's own generateBundle, which asks build.modulePreload what each import preloads.
+		generateBundle: {
+			order: 'pre',
+			handler(_, bundle) {
+				for (const chunk of Object.values(bundle)) {
+					if (chunk.type === 'chunk' && chunk.moduleIds.some((id) => FIRST_PAINT.test(id)))
+						firstPaintChunks.add(chunk.fileName);
+				}
+			}
+		}
+	};
+}
+
+const PRECACHE_SHELL = 'virtual:precache-shell';
+
+/**
+ * `virtual:precache-shell`: the build files the service worker precaches, read from the client
+ * build (scripts/lib/precache-scope.ts). SvelteKit builds the worker after the client build and
+ * the prerendering, so both manifests are written by then. Also writes the list to
+ * .vite/precache-shell.json, which `pnpm budgets` measures. In `vite dev` there are no build files
+ * (`$app/manifest`'s `immutable` is empty too): the list is empty.
+ */
+function precacheShell(): Plugin {
+	return {
+		name: 'precache-shell',
+		resolveId: (id) => (id === PRECACHE_SHELL ? `\0${PRECACHE_SHELL}` : undefined),
+		async load(id) {
+			if (id !== `\0${PRECACHE_SHELL}`) return;
+			const { config, name } = this.environment;
+			if (config.command !== 'build' || name !== 'serviceWorker') return 'export const shell = [];';
+			const client = path.resolve(config.root, config.build.outDir);
+			const files = shellFiles(await readBuildGraph(path.dirname(client)));
+			this.emitFile({
+				type: 'asset',
+				fileName: '.vite/precache-shell.json',
+				source: JSON.stringify(files)
+			});
+			return `export const shell = ${JSON.stringify(files)};`;
+		}
+	};
+}
+
 export default defineConfig(({ command, mode }) => {
 	// Make `.env` values visible to server code that reads `process.env` during `vite dev`.
 	// Production servers receive real environment variables from the platform instead.
@@ -90,6 +175,8 @@ export default defineConfig(({ command, mode }) => {
 	return {
 		plugins: [
 			chunkModules(),
+			firstPaint(),
+			precacheShell(),
 			sveltekit({
 				compilerOptions: {
 					// Runes everywhere in our own code; libraries decide for themselves.
@@ -101,8 +188,10 @@ export default defineConfig(({ command, mode }) => {
 						? adapterNode({ out: 'build', precompress: true })
 						: adapterVercel({ runtime: 'nodejs22.x' }),
 				version: { name: appVersion(), pollInterval: 0 },
-				// Small, render-critical CSS is inlined into the HTML to save a blocking round-trip.
-				inlineStyleThreshold: 4096,
+				// Inline the CSS a page renders with (each stylesheet under this many characters) into
+				// its HTML, so first paint waits for no stylesheet request: the root layout's 13 K
+				// characters included. Inlined or linked, `pnpm budgets` counts it in the route's CSS.
+				inlineStyleThreshold: 16384,
 				output: { bundleStrategy: 'split' },
 				// The root layout registers the service worker once the app has started and gone idle
 				// (src/lib/client/service-worker.ts); SvelteKit's registration runs on `load`, before it.
@@ -177,23 +266,24 @@ export default defineConfig(({ command, mode }) => {
 							/**
 							 * The framework: Svelte's runtime and SvelteKit's client, without its form helpers
 							 * ($app/forms, only on screens with a form) and its entry modules, which SvelteKit
-							 * looks up by file (FRAMEWORK_OUTSIDE).
+							 * looks up by file (FRAMEWORK_OUTSIDE), and with the app's code every page loads
+							 * first (BOOT). Every page loads all of it, and one chunk costs fewer bytes than
+							 * the same code in three: each file is gzipped on its own (docs/performance.md).
 							 */
 							{
 								name: 'framework',
-								test: (id) => FRAMEWORK.test(id) && !FRAMEWORK_OUTSIDE.test(id)
+								test: (id) => (FRAMEWORK.test(id) && !FRAMEWORK_OUTSIDE.test(id)) || BOOT.test(id)
 							},
 							/**
-							 * The app's code every page loads first: error reporting and the leaving state
-							 * (hooks.client.ts, also imported alone by lazy code: the workout sync engine imports
-							 * leaving.ts), the root error page's loader (src/routes/error-page.ts), what the root
-							 * layout starts (RUM visits, toasts, the service worker registration) and Icon, which
-							 * every screen draws.
+							 * The (app) layout, its shell and nav, and PageHeader, which every app screen loads
+							 * (/design and the root error page too, which draw the header or the shell), in one
+							 * chunk instead of five. Named after AppShell so its stylesheet, inlined into every
+							 * app page, keeps the name pnpm budgets checks.
+							 * screen-memory.ts is in BOOT, not here: this group takes its modules'
+							 * dependencies, and sign-out, which any page can load, imports it, which would link
+							 * this stylesheet into the sign-in pages.
 							 */
-							{
-								name: 'boot',
-								test: /src[\\/](lib[\\/]client[\\/](errors|leaving|visits|service-worker)\.ts|lib[\\/]ui[\\/](toast\.svelte\.ts|components[\\/]Icon\.svelte)|routes[\\/]error-page\.ts)$/
-							},
+							{ name: 'AppShell', test: APP_SHELL },
 							/**
 							 * The workout pages' projection (the M4 plan's runway lever 2): project.ts, its
 							 * reducers, the mutations and the timers, which every workout page loads while it
@@ -203,11 +293,12 @@ export default defineConfig(({ command, mode }) => {
 							 * bring the whole chunk with it. Not the strength view's (selectors, groups, set
 							 * words), which load with that view, nor the flow (flow.ts), nor the run and other
 							 * families (reducers/run.ts and reducers/other.ts, with their routes' tables): in the
-							 * group, /workout would load them.
+							 * group, /workout would load them. ends.ts, the rule for when a workout may end, goes
+							 * with the reducers that load it.
 							 */
 							{
 								name: 'workout',
-								test: /src[\\/]lib[\\/]domain[\\/]workout[\\/](mutations|timers|project|reducers[\\/](?!(run|other)\.)\w+)\.ts$/
+								test: /src[\\/]lib[\\/]domain[\\/]workout[\\/](mutations|timers|project|ends|reducers[\\/](?!(run|other)\.)\w+)\.ts$/
 							}
 						]
 					}
@@ -228,12 +319,17 @@ export default defineConfig(({ command, mode }) => {
 			 * hints: SvelteKit's entry chunks, whose imports are the route nodes (and an HTML entry,
 			 * which SvelteKit does not have). The cost is on a fetch from the network (before the
 			 * service worker holds the build): a lazy module's chunks arrive in import order, not
-			 * all at once.
+			 * all at once. Except the workout pages' first paint (FIRST_PAINT): those chunks load as
+			 * the page starts, never on a tap, and one that fails shows 'App updated', answered by
+			 * reloading the page, never by a Retry within it; so their dependencies come at once, as
+			 * the route's own nodes' do.
 			 */
 			modulePreload: {
 				// `deps`: the JavaScript to preload for one dynamic import; Vite adds its stylesheets.
-				resolveDependencies: (_url, deps, { hostId, hostType }) =>
-					hostType === 'html' || hostId.includes('/immutable/entry/') ? deps : []
+				resolveDependencies: (url, deps, { hostId, hostType }) =>
+					hostType === 'html' || hostId.includes('/immutable/entry/') || firstPaintChunks.has(url)
+						? deps
+						: []
 			}
 		},
 		test: {

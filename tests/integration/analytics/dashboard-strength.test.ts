@@ -257,7 +257,8 @@ describe('the strength dashboard against SQL', () => {
 			}
 			// The abandoned 250 kg deadlift and the 200 kg squat in progress never count.
 			const dl = d.keyLifts.find((l) => l.exerciseId === deadlift)!;
-			expect(dl.value!.text).toMatch(/^\d{3}(\.\d)? kg$/);
+			// An estimate, shown to the nearest 0.5 kg.
+			expect(dl.value!.text).toMatch(/^\d{3}(\.5)?\u00a0kg$/);
 			expect(Math.max(...d.keyLifts.map((l) => l.value!.value))).toBeLessThan(250);
 
 			for (const point of d.tonnage.series) {
@@ -280,7 +281,7 @@ describe('the strength dashboard against SQL', () => {
 				mean: round(d.rpe.average.value!.value),
 				deviation: round(d.rpe.deviation.value!.value)
 			});
-			expect(d.rpe.deviation.value!.text).toMatch(/^[+−]?[\d.]+ RPE$/);
+			expect(d.rpe.deviation.value!.text).toMatch(/^[+−]?[\d.]+\u00a0RPE$/);
 
 			const prs = prOrder(await prRows(db, data.owner, WEEK_ONE));
 			expect(d.prs.total).toBe(prs.length);
@@ -398,6 +399,22 @@ describe('muscle groups', () => {
 		});
 	});
 
+	it('with lastGroupWeeks are the last complete weeks and this one, as every week gives them', async () => {
+		await withRollback(async (db) => {
+			const data = await seedDataset(db);
+			const every = await getStrengthDashboard(db, data.owner, { period: 'all', today: TODAY });
+			const last = await getStrengthDashboard(db, data.owner, {
+				period: 'all',
+				today: TODAY,
+				lastGroupWeeks: 3
+			});
+			expect(last.muscleGroups.weeks).toEqual(every.muscleGroups.weeks.slice(-4));
+			expect(last.muscleGroups.weeks.at(-1)!.inProgress).toBe(true);
+			expect({ ...last, muscleGroups: null }).toEqual({ ...every, muscleGroups: null });
+			expect(last.muscleGroups.availability).toEqual(every.muscleGroups.availability);
+		});
+	});
+
 	it('keep every planned group of an unlogged week with no stored target, arms included', async () => {
 		await withRollback(async (db) => {
 			const owner = await makeOwner(db);
@@ -449,7 +466,7 @@ describe('windows and comparisons', () => {
 			expect(round(squat.comparison.value!)).toBe(now.get(id));
 			expect(round(squat.comparison.previous!)).toBe(before.get(id));
 			expect(squat.comparison.change).toBe('better');
-			expect(squat.comparison.words).toMatch(/^Up .+ kg on the previous 4 weeks$/);
+			expect(squat.comparison.words).toMatch(/^Up .+\u00a0kg on the previous 4 weeks$/);
 			expect(d.tonnage.trend.window.label).toBe('Trend over the last 12 weeks');
 		});
 	});
@@ -485,7 +502,7 @@ describe('windows and comparisons', () => {
 			expect(d.tonnage.comparison.words).toBe('No earlier weeks like these to compare with');
 			const bench = d.keyLifts.find((l) => l.exerciseId === data.exercises.bench_press)!;
 			expect(bench.markers).toMatchObject([
-				{ kind: 'measured', kg: 100, label: 'Measured', text: '100 kg' }
+				{ kind: 'measured', kg: 100, label: 'Measured', text: '100\u00a0kg' }
 			]);
 			expect(bench.kind).toBe('estimated');
 		});
@@ -532,7 +549,7 @@ describe('the week in progress', () => {
 			expect(lastWeek).not.toBe(await tonnage(db, data.owner, weekOf(16), LAST_DAY));
 			expect(d.tonnage.soFar).toMatchObject({ value: 2100, lastWeek });
 			expect(d.tonnage.soFar.text).toBe(
-				`This week so far: 2,100 kg · ${lastWeek.toLocaleString('en-US')} kg by Wednesday last week`
+				`This week so far: 2,100\u00a0kg · ${lastWeek.toLocaleString('en-US')}\u00a0kg by Wednesday last week`
 			);
 			expect(d.hardSets.soFar).toMatchObject({ value: 3 });
 			// The week in progress keeps its PRs.

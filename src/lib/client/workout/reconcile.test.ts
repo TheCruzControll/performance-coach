@@ -24,7 +24,14 @@ import { StoreClosedError } from './db';
 import type { StoredWorkout } from './db';
 import { DB_NAME, STORES } from './names';
 import type { OutboxEntry } from './outbox-rules';
-import { createReconciler, kitUrl, RECONCILE_TIMEOUT_MS, workoutUrl } from './reconcile';
+import { EARLY_ROWS, type EarlyRows } from './prepaint';
+import {
+	createReconciler,
+	kitUrl,
+	RECONCILE_TIMEOUT_MS,
+	takeEarlyRows,
+	workoutUrl
+} from './reconcile';
 import type { ReconcileOptions } from './reconcile';
 import { createStore } from './store';
 import type { StoreChange, WorkoutStore } from './store';
@@ -436,6 +443,90 @@ describe('reconcile', () => {
 	});
 });
 
+describe('the GET already out (prepaint.ts, EARLY_ROWS)', () => {
+	/** A GET the inline script started: answered with `answer`, or never (rejects on its abort). */
+	function earlyRows(answer?: Response): EarlyRows {
+		const controller = new AbortController();
+		const response = answer
+			? Promise.resolve(answer)
+			: new Promise<Response>((_, reject) =>
+					controller.signal.addEventListener('abort', () =>
+						reject(new DOMException('This operation was aborted', 'AbortError'))
+					)
+				);
+		return { workoutId: W, response, controller };
+	}
+
+	it('answers from it, sends no GET of its own, and asks for it once', async () => {
+		const store = await open();
+		const s1 = log('s1', 1);
+		const begun = await synced(store, s1);
+		const rows = serverRows([begun, s1, log('o1', 1, { position: 2 })]);
+		const early = vi.fn(() => earlyRows(json(200, rows)));
+		const reconciler = reconcilerOf(store, { early });
+
+		expect(await reconciler.reconcile(W)).toBe('reconciled');
+
+		expect(early).toHaveBeenCalledExactlyOnceWith(W);
+		expect(api.fetch).not.toHaveBeenCalled();
+		expect(setIds(store.snapshot(W)!.view)).toEqual(['s1', 'o1']);
+		expect((await stored()).workouts[0]!.canonical).toStrictEqual(rows);
+
+		// The next reconcile (becoming visible, after a sync) sends its own.
+		expect(await reconciler.reconcile(W)).toBe('lost');
+		expect(early).toHaveBeenCalledTimes(1);
+		expect(api.calls.map((c) => c.url)).toEqual([workoutUrl(W)]);
+	});
+
+	it('sends its own when the page hands it none', async () => {
+		const store = await open();
+		await synced(store, log('s1', 1));
+		const early = vi.fn(() => null);
+		expect(await reconcilerOf(store, { early }).reconcile(W)).toBe('lost');
+		expect(early).toHaveBeenCalledExactlyOnceWith(W);
+		expect(api.calls.map((c) => c.url)).toEqual([workoutUrl(W)]);
+	});
+
+	it('aborts it at 10 s as it would its own, and changes nothing', async () => {
+		const store = await open();
+		await synced(store, log('s1', 1));
+		const before = await stored();
+		const timers = manualTimers();
+		const early = earlyRows();
+
+		const outcome = reconcilerOf(store, { ...timers, early: () => early }).reconcile(W);
+		await vi.waitFor(() => expect(timers.pending).toBe(1));
+		timers.advance(RECONCILE_TIMEOUT_MS - 1);
+		expect(early.controller.signal.aborted).toBe(false);
+		timers.advance(1);
+		expect(early.controller.signal.aborted).toBe(true);
+
+		expect(await outcome).toBe('failed');
+		expect(timers.pending).toBe(0);
+		expect(api.fetch).not.toHaveBeenCalled();
+		expect(await stored()).toStrictEqual(before);
+	});
+
+	it('is taken from the page once, and only as the inline script leaves it', () => {
+		const early = earlyRows();
+		const page: Record<string, unknown> = { [EARLY_ROWS]: early };
+		expect(takeEarlyRows(page)).toBe(early);
+		expect(page).toEqual({});
+		expect(takeEarlyRows(page)).toBeNull();
+
+		for (const left of [
+			null,
+			{ ...early, workoutId: 7 },
+			{ ...early, response: {} },
+			{ workoutId: W }
+		]) {
+			const other: Record<string, unknown> = { [EARLY_ROWS]: left };
+			expect(takeEarlyRows(other)).toBeNull();
+			expect(other).toEqual({});
+		}
+	});
+});
+
 describe('adoptRemote', () => {
 	it('builds the same view the original device shows', async () => {
 		const original = await open();
@@ -610,7 +701,7 @@ describe('tabs', () => {
 		await purged;
 
 		// Nothing from the server is left: no rows, no kit, no names; only the change waiting.
-		expect(b.snapshot(W)).toEqual({ workoutId: W, view: null, notSaved: [] });
+		expect(b.snapshot(W)).toEqual({ workoutId: W, view: null, notSaved: [], pending: 0 });
 		expect(await b.listUnsynced()).toEqual([
 			{ workoutId: W, pending: 1, workout: expect.anything() }
 		]);
