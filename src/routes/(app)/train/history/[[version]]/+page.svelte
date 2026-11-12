@@ -96,7 +96,11 @@
 	<a class="back" href={HISTORY} data-testid="back-to-history">
 		<Icon name="chevron-left" size={18} /> History
 	</a>
-	<PageHeader title={`Version ${version.number}`} eyebrow={`${version.when} · ${version.by}`} />
+	<PageHeader
+		title={`Version ${version.number}`}
+		eyebrow={`${version.when} · ${version.by}`}
+		dated
+	/>
 
 	<!-- Split from 1024 px (docs/design-system.md, Responsive layout → Screens): the list beside
 	     the version, which stays in the URL. A phone shows the version alone. -->
@@ -115,41 +119,54 @@
 			{/if}
 
 			<Section title={shown.week.label} data-testid="version-week">
-				<WeekStrip
-					days={shown.week.strip}
-					today={shown.today}
-					selected={day ? shown.week.strip[selectedIndex]!.date : null}
-					label={shown.week.label}
-					onselect={(date) =>
-						(chosen = {
-							version: version.number,
-							day: shown.week.strip.findIndex((d) => d.date === date)
-						})}
-					data-testid="week-strip"
-				/>
-				{#if day}
-					<h3 class="day">{day.heading}</h3>
-					{#each day.cards as card (card.lineage)}
-						{@const href = sessionHref(card.lineage)}
-						<SessionCard
-							session={card}
-							{href}
-							baseline={card.baseline}
-							pending={navigatingTo(href)}
-							data-testid="session-card"
+				{#if shown.week.bridge}
+					{@const bridge = shown.week.bridge}
+					<Surface padding="none" radius="lg">
+						<EmptyState
+							icon={bridge.icon}
+							tone={bridge.tone}
+							title={bridge.title}
+							description={bridge.description}
+							data-testid={bridge.id}
 						/>
-					{:else}
-						<Surface padding="none" radius="lg">
-							<EmptyState
-								compact
-								icon="moon"
-								tone="neutral"
-								title="Rest day"
-								description={day.rest ?? undefined}
-								data-testid="rest-day"
+					</Surface>
+				{:else}
+					<WeekStrip
+						days={shown.week.strip}
+						today={shown.today}
+						selected={day ? shown.week.strip[selectedIndex]!.date : null}
+						label={shown.week.label}
+						onselect={(date) =>
+							(chosen = {
+								version: version.number,
+								day: shown.week.strip.findIndex((d) => d.date === date)
+							})}
+						data-testid="week-strip"
+					/>
+					{#if day}
+						<h3 class="day">{day.heading}</h3>
+						{#each day.cards as card (card.lineage)}
+							{@const href = sessionHref(card.lineage)}
+							<SessionCard
+								session={card}
+								{href}
+								baseline={card.baseline}
+								pending={navigatingTo(href)}
+								data-testid="session-card"
 							/>
-						</Surface>
-					{/each}
+						{:else}
+							<Surface padding="none" radius="lg">
+								<EmptyState
+									compact
+									icon="moon"
+									tone="neutral"
+									title="Rest day"
+									description={day.rest ?? undefined}
+									data-testid="rest-day"
+								/>
+							</Surface>
+						{/each}
+					{/if}
 				{/if}
 			</Section>
 
@@ -225,7 +242,7 @@
 		{/if}
 		{#if olderFailed}
 			<Notice tone="danger" title="Couldn’t load older versions" data-testid="older-failed">
-				<button type="button" class="retry" onclick={showOlder}>Retry</button>
+				<button type="button" class="retry" onclick={showOlder}>Try again</button>
 			</Notice>
 		{/if}
 	</div>

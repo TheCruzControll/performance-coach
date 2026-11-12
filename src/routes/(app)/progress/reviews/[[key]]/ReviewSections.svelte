@@ -72,7 +72,7 @@
 					<figure class="slot">
 						<p>Couldn’t load this chart.</p>
 						<Button variant="secondary" icon="refresh" onclick={() => location.reload()}
-							>Retry</Button
+							>Try again</Button
 						>
 					</figure>
 				{/await}
