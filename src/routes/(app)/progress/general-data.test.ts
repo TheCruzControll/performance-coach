@@ -142,7 +142,7 @@ function dashboard(
 	const figures = Object.fromEntries(
 		GENERAL_METRICS.map((id) => [id, figure(id, 6, '6')])
 	) as Record<GeneralMetric, GeneralFigure>;
-	figures.adherence = figure('adherence', 90, '90 %');
+	figures.adherence = figure('adherence', 90, '90%');
 	figures.adherence.series = points([...Array(count - 1).fill(100), 50, 40]);
 	figures.sessions.soFar = { metric: 'sessions', value: 2, lastWeek: 3, text: '' };
 	figures.sleep = figure('sleep', 7.5, '7.5 h');
@@ -264,13 +264,16 @@ describe('generalData', () => {
 		expect(time.table.rows[0]!.values).toEqual(['120', '90', '90', '300']);
 		expect(time.summary).toBe('About 300 min a week, stacked by discipline.');
 		expect(g.time.missing).toBe('1 session without a duration, left out: Athletic (Wed 28 Oct)');
-		expect(g.sessions.tile.soFar).toMatchObject({ value: '2 sessions', lastWeek: '3 sessions' });
+		expect(g.sessions.tile.soFar).toMatchObject({
+			value: '2\u00a0sessions',
+			lastWeek: '3\u00a0sessions'
+		});
 	});
 
 	it('gives adherence its tile, the period’s counts, each week’s rate and this week so far', () => {
 		const g = generalData(dashboard());
 		expect(g.noPlan).toBeNull();
-		expect(g.adherence.tile).toMatchObject({ value: '90 %', canonical: 90 });
+		expect(g.adherence.tile).toMatchObject({ value: '90%', canonical: 90 });
 		expect(g.adherence.counts.map((c) => [c.key, c.label, c.value])).toEqual([
 			['completed', 'Completed', 57],
 			['skipped', 'Skipped', 2],
@@ -287,6 +290,26 @@ describe('generalData', () => {
 		]);
 		expect(columns(table)).toEqual(['Adherence']);
 		expect(summary).toBe('57 of 60 sessions due were done.');
+	});
+
+	it('names the earlier period only over a tile that shows a change against it', () => {
+		const d = dashboard();
+		const fresh = generalData(d);
+		expect(fresh.adherence.tile.delta).toBeNull();
+		expect(fresh.adherence.context.comparison).toBeNull();
+		// Steady over its weeks: the tile says so in place of 'No earlier period to compare with'.
+		expect(fresh.adherence.tile.verdict).toEqual({ verdict: 'normal_variation' });
+		const compared = {
+			...d.figures.adherence.comparison,
+			previous: 80,
+			delta: 10,
+			change: 'better'
+		};
+		const figures = { ...d.figures, adherence: { ...d.figures.adherence, comparison: compared } };
+		const g = generalData({ ...d, figures } as typeof d);
+		expect(g.adherence.tile.delta).toMatchObject({ value: 10, against: 'the 12 weeks before' });
+		expect(g.adherence.context.comparison).toBe('Compared with the 12 weeks before');
+		expect(g.sessions.context.comparison).toBeNull();
 	});
 
 	it('stacks load by discipline and names the sessions it leaves out', () => {

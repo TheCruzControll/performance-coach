@@ -4,12 +4,14 @@ import {
 	convertDistance,
 	convertPace,
 	convertWeight,
+	ESTIMATE_INCREMENT,
 	formatDuration,
 	formatWeight,
 	kgToLb,
 	lbToKg,
 	paceSecondsPer,
 	parseDuration,
+	roundEstimate,
 	roundToIncrement
 } from './units';
 
@@ -83,6 +85,18 @@ describe('durations', () => {
 		expect(parseDuration('1:75')).toBeNull();
 		expect(parseDuration('1:61:00')).toBeNull();
 		expect(parseDuration('abc')).toBeNull();
+	});
+});
+
+describe('roundEstimate', () => {
+	it('shows an estimated max to the nearest 0.5 kg or 1 lb, never to the hundredth', () => {
+		expect(roundEstimate(157.21, 'kg')).toBe(157);
+		expect(roundEstimate(157.3, 'kg')).toBe(157.5);
+		expect(roundEstimate(101.6, 'kg')).toBe(101.5);
+		expect(roundEstimate(98.75, 'kg')).toBe(99);
+		expect(roundEstimate(123.33, 'lb')).toBe(123);
+		expect(roundEstimate(264.55, 'lb')).toBe(265);
+		expect(ESTIMATE_INCREMENT).toEqual({ kg: 0.5, lb: 1 });
 	});
 });
 

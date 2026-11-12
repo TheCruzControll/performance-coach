@@ -118,6 +118,8 @@ export interface OwnerTurnInput {
 	text: string;
 	/** Where a new conversation was started from (the turn's entry). */
 	entry?: ThreadEntry | null;
+	/** A new conversation's title in place of one from the message (a review's write-up). */
+	title?: string;
 	/** What a new conversation's first segment starts on (PROMPT_VERSION, the active version). */
 	segment: { promptVersion: string; programVersionId: string | null };
 	/**
@@ -176,7 +178,7 @@ export async function startOwnerTurn(
 			if (continuing === null) {
 				thread = await r.insertThread({
 					ownerId,
-					title: titleFromMessage(text),
+					title: input.title === undefined ? titleFromMessage(text) : threadTitle(input.title),
 					titleSource: 'first_message',
 					entry: input.entry ?? null,
 					segmentPromptVersion: segmentPrompt(input.segment.promptVersion),
@@ -229,6 +231,14 @@ export async function findOwnerMessage(
 	if (!isUuid(clientMessageId)) return null;
 	const { db } = resolveDeps(deps);
 	return createCoachRepository(db).messageByClientId(ownerId, clientMessageId);
+}
+
+function threadTitle(title: string): string {
+	const trimmed = title.trim();
+	if (trimmed === '' || chars(trimmed) > THREAD_TITLE_MAX) {
+		throw new CoachInputError('title', `Use 1 to ${THREAD_TITLE_MAX} characters`);
+	}
+	return trimmed;
 }
 
 function programVersion(id: string | null): string | null {
