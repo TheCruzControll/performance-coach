@@ -11,11 +11,14 @@ Code in this folder runs only in the browser. It must never import from `src/lib
 | `visits.ts`              | The screens shown in this page, recorded by the root layout for `vitals.ts` (the only RUM code in initial JS)                   |
 | `preferences.svelte.ts`  | Per-device theme and unit preferences (localStorage)                                                                            |
 | `preferences-start.ts`   | The root layout's start for preferences, loaded after mount so only screens that show a unit have them in initial JS            |
+| `theme.ts`               | Applies the theme preference to the page (profile's picker, the preferences start); not in the unit-only screens' initial JS    |
+| `design.ts`              | Per-device design: today's (default) or the Graphite 2004 preview; applied before first paint by `src/app.html`'s head script   |
 | `connectivity.svelte.ts` | `online` state from `navigator.onLine` + events (a hint: failed requests are still handled, see `src/hooks.client.ts`)          |
-| `service-worker.ts`      | Registers the service worker after `load` and hydration, in an idle period (SvelteKit's on-`load` registration is off)          |
+| `service-worker.ts`      | Registers the service worker after `load` and hydration, in an idle period; imported on mount (SvelteKit's registration is off) |
 | `leaving.ts`             | Is the page being left? Loads it cancels on the way out (WebKit reports each) are then not logged or reported as errors         |
 | `profile-form.ts`        | Saves profile sections: validates with the services' zod schemas (loaded on idle, never initial JS), posts JSON to the action   |
 | `section-form.svelte.ts` | One profile section's form state (value, field errors, busy, dirty); `submit()` validates, then saves through `profile-form.ts` |
+| `screen-memory.ts`       | The last screen each tab showed (a DOM copy, one per tab), in memory only, so a revisit shows it at once                        |
 
 ## Workouts (M4)
 
@@ -48,7 +51,10 @@ boot path (#394) and the prepaint (#410). Sign-out flushes first and asks before
 | `workout/kinds.ts`                 | Workout kind → route path: `/workout`, `/workout/run`, `/workout/session`                                                                                                    | workout-shell                                  |
 | `workout/active.svelte.ts`         | The reactive active workout over the store, with the route's reducer table, and the store's `onChange` for the engine                                                        | workout-shell; workout-sync-wiring             |
 | `workout/start.ts`                 | `startPlanned`, `startAdHoc` and `saveKits(lineages)`; loaded only for `?start` or `?new`                                                                                    | workout-start                                  |
-| `workout/today-kits.ts`            | `saveTodayKits` (Today, the only other screen that may create `pc-offline`); `savedToday`: the offline screen's list of today's saved sessions                               | start-entry-points                             |
+| `workout/coming-kits.ts`           | `comingLineages`, `saveComingKits`: today's and the next two days' kits (Today and Train, the only other screens that may create `pc-offline`)                               | start-entry-points                             |
+| `workout/kit-mark.ts`              | `pc:kit-refresh:v1` in sessionStorage: the workout the start flow began from a saved kit, so its page refreshes it                                                           | workout-start                                  |
+| `workout/kit-refresh.ts`           | The saved kit's fresh copy, in the background: attached while the workout is untouched; replanned offers to start again                                                      | workout-start                                  |
+| `workout/today-kits.ts`            | `savedToday`: the offline screen's list of today's saved sessions                                                                                                            | start-entry-points                             |
 | `workout/library.ts`               | The exercise library, fetched with If-None-Match, cached and searched; a created exercise joins it at once, with the local name clash check                                  | add-exercise; custom-exercises-ui              |
 | `workout/shutdown.ts`              | What sign-out loads lazily: `unsyncedAfterFlush()` (the flush bounded to 5 s, then what is left) and `keepOnlyUnsynced()` (a signed-out URL without sign-out's marker)       | signout-workout-data                           |
 | `workout/previous.ts`              | The last session of an exercise the kit holds none for (5 s timeout), attached with `kit.attach` when its slot becomes current                                               | substitutions                                  |

@@ -16,6 +16,10 @@
     stops it. A tap that comes first waits for it (ActiveWorkout.write). RUM loads on idle, so
     INP is attributed to the workout route. data-store and performance.mark('pc:store-open',
     once per page) mark the store open; the view gets the active workout, to write through it.
+    A workout the start flow began from a saved kit (kit-mark.ts) then has its fresh kit fetched
+    in the background (kit-refresh.ts, loaded then). A fresh kit for an edited plan (replanned)
+    shows 'Your plan changed' while nothing is done in the workout: Use the new plan discards it
+    and starts the session again from the fresh kit.
   - The sync status loads after the engine (sync-ui.ts): the header's pill, which opens the
     sync sheet. After a 401 the page shows the signed-out state instead of the workout: no workout
     details, only the changes waiting. A page restored after a 401 (active.signedOut) shows none
@@ -53,9 +57,12 @@
 		type ChunkLoad
 	} from '#lib/client/workout/active.svelte.ts';
 	import { workoutPath } from '#lib/client/workout/kinds.ts';
+	import { kitRefreshMarked } from '#lib/client/workout/kit-mark.ts';
+	import type * as KitRefresh from '#lib/client/workout/kit-refresh.ts';
 	import type { AnyTable } from '#lib/domain/workout/project.ts';
 	import Button from '#lib/ui/components/Button.svelte';
 	import EmptyState from '#lib/ui/components/EmptyState.svelte';
+	import Notice from '#lib/ui/components/Notice.svelte';
 	import Skeleton from '#lib/ui/components/Skeleton.svelte';
 	import EmptyWorkout from './EmptyWorkout.svelte';
 	import type FinishSheet from './FinishSheet.svelte';
@@ -106,6 +113,9 @@
 	const starting = $derived(!!start && restore.phase !== 'app-updated');
 	/** What the page may show of the workout: nothing once signed out, or while starting one. */
 	const shown = $derived(hidden || start ? null : view);
+	/** kit-refresh.ts once the fresh kit pins an edited plan's session (replanned). */
+	let replanned = $state.raw<typeof KitRefresh | null>(null);
+	const offerFresh = $derived(!!replanned && !!shown && replanned.untouched(shown));
 
 	const idle = (run: () => void) => {
 		if ('requestIdleCallback' in window) requestIdleCallback(run, { timeout: 2000 });
@@ -138,6 +148,14 @@
 			// Once per page, as pc:logger-ready (Logger.svelte): the first load's figure.
 			if (opened && performance.getEntriesByName('pc:store-open', 'mark').length === 0)
 				performance.mark('pc:store-open');
+			const shownId = 'snapshot' in active.current ? active.current.snapshot.workoutId : null;
+			if (opened && shownId && kitRefreshMarked(shownId)) {
+				void load(() => import('#lib/client/workout/kit-refresh.ts'))
+					.then(async (module) => {
+						if ((await module?.refreshMarked(opened, shownId)) === 'replanned') replanned = module;
+					})
+					.catch(() => {});
+			}
 			ui = await load(() => import('./sync-ui.ts'));
 			Menu = (await load(() => import('./WorkoutMenu.svelte')))?.default ?? null;
 		});
@@ -178,6 +196,13 @@
 	});
 
 	const reload = () => location.reload();
+
+	async function startAfresh() {
+		const id = 'snapshot' in restore ? restore.snapshot.workoutId : null;
+		const url = id && active.store ? await replanned?.startAfresh(active.store, id) : null;
+		if (url) location.replace(url);
+		else replanned = null;
+	}
 </script>
 
 <main
@@ -218,6 +243,14 @@
 		{:else if ui && signedOut !== null}
 			<ui.SignedOutState waiting={signedOut} />
 		{:else if restore.phase === 'active' && viewReady && !hidden && !starting}
+			{#if offerFresh}
+				<div class="replanned">
+					<Notice icon="refresh" title="Your plan changed" data-testid="workout-replanned">
+						This session was edited after this device saved it.
+						<Button size="sm" variant="secondary" onclick={startAfresh}>Use the new plan</Button>
+					</Notice>
+				</div>
+			{/if}
 			<div class="columns">{@render children(restore.snapshot, load, active)}</div>
 		{:else if restore.phase === 'completed' && Completed && !hidden && !starting}
 			{@const { view: done, notSaved } = restore.snapshot}
@@ -293,6 +326,10 @@
 		flex-direction: column;
 	}
 
+	.replanned {
+		margin-bottom: var(--space-4);
+	}
+
 	.restoring {
 		display: grid;
 		gap: var(--space-4);
@@ -333,6 +370,10 @@
 			grid-column: 1 / -1;
 			justify-self: center;
 			width: min(100%, var(--content-readable));
+		}
+
+		.replanned {
+			margin-bottom: var(--space-4);
 		}
 
 		.restoring {

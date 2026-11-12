@@ -30,6 +30,66 @@ keeps listening to `prefers-color-scheme` while open, so when iOS switches appea
 automatic dark mode at sunset) the theme-color and status-bar metas follow the CSS (e2e-tested).
 **Browser baseline:** `light-dark()` needs Safari 17.5+ / Chrome 123+.
 
+### Designs
+
+Two designs, chosen per device: today's (the default for everyone) and **Graphite 2004**, a
+preview of the proposed design (graphite and silver, Aqua in place of volt, Source Sans 3, 3–10 px
+corners). Profile → Appearance → Design switches between them, as does `?design=graphite` or
+`?design=current` (saved too; handy for screenshots). The choice is stored in localStorage
+(`pc:design:v1`, kept across sign-out) and applied before first paint by the head script in
+`src/app.html`, which sets `data-design="graphite"` on `<html>`, links
+`src/lib/ui/styles/graphite.css` (render-blocking) and preloads Source Sans 3.
+
+- `graphite.css` is a build asset of its own, in no route's CSS: today's design ships none of it
+  and the service worker precaches none of it (it caches it once a device uses it).
+- Its token rule overrides tokens under `:root[data-design='graphite']`, so components restyle
+  without edits; colour stops alone sit in `light-dark()`. It adds the material roles (`--strip`,
+  `--plastic`, `--gel`, `--select`, `--bar`, `--lcd` and their edges and inks) for components to
+  adopt.
+- **Controls:** the core components carry a stable `data-ui` hook (`button`, `segmented`,
+  `choices`, `stepper`, `field`, `toggle`, `chip`, `badge`, `surface`, `card-head`, `section`,
+  `list-row`, `notice`, `toaster`, `sheet`), which only `graphite.css` reads, every selector
+  inside the Graphite scope. There: the gel primary button, plastic secondary and danger keys,
+  plain Aqua-text ghost; connected plastic segments and choices with the chosen one in the
+  selection well; fields and the stepper in inset wells behind a ≥ 3:1 border; the ON/OFF switch
+  inside the 44 px Toggle row; 3 px tags; boxes whose Card header is the silver strip; toasts and
+  sheets with 10 px corners on the spring; and focus as a 2 px Aqua-ink outline 2 px out (inset
+  −3 px inside the segmented control and the stepper). No route styles a hook, and the hooks are
+  only on these components (`components/graphite-hooks.test.ts`).
+- **Shell:** AppNav (`nav`) below 1024 px is the glossy graphite tab bar at today's
+  `--nav-height`, the current tab in the selection well with its glyph filled; from 1024 px the
+  rail is the source list (`--rail-width: 14.5rem` in Graphite only; rows of icon and label, the
+  current one in the well), a CSS-only change. PageHeader (`page-header`) sets the 34 px large
+  title and hides the eyebrow, except a date (`dated`, Today), which becomes the subtitle under
+  it. The resume bar (`resume-slot`) is drawn in the bar material.
+- **Status Display:** `StatusDisplay.svelte` (`status`; a line, the big numeral or a name, a dim
+  line, an elapsed/total bar, a footer) on Today (`today/panels/TodayStatus.svelte`: the week,
+  today's session, sessions done, the connection) and the run view (`RunStatus.svelte`: the run's
+  pace), each composed from the data the screen already shows. `StatusSlot.svelte` (`status-room`)
+  is the only switch today's design carries: it loads the display with a dynamic import only on a
+  page showing Graphite, holding its room from first paint so nothing moves. The rest timer
+  (`rest`) becomes the display in CSS alone: the time left as the big numeral, its controls on a
+  strip beneath the glass.
+- **Screens:** each screen's own parts, the look only, from an element the screen already renders
+  (its test id, or two class names of one component), so today's design ships not a byte more;
+  `graphite.test.ts` fails when a test id or class it names leaves the markup. Workout: the RPE
+  grid as two connected rows of plastic keys, the answer in the selection well; the set states as
+  rows of one box, Now in the Aqua wash, a done set's number in green; below 1024 px Complete set
+  (the gel) on a band of the bar material; the pain sheet's choices as rows under a silver strip.
+  Today: the week strip as one box with full day names, today's in Aqua and bold, the chosen date
+  in the well, and under it a legend (`today/panels/WeekLegend.svelte`, `week-legend` hook, loaded
+  through StatusSlot like a Status Display, in rows of three so its room is known); today's session
+  card and its Start workout in one box. Progress: the view tabs and the period control as one kind
+  of connected segmented control; in a chart of estimates the line is dashed, and a measured value
+  is a square labelled 'measured'. Coach: below 1024 px the composer docks full-bleed on the tab bar
+  in the bar material, its writing well taking the focus ring; the proposal card's header is the
+  silver strip, without the accent side stripe. Profile: the preferences as rows split by
+  hairlines. Onboarding: the step progress as a recessed track filled with gel, What we'll ask as
+  a grouped box.
+- `graphite.test.ts` holds it to the chart palette checks and 4.5:1 text contrast in both themes;
+  `e2e/design-switch*.e2e.ts` run axe on it and check no flash, no layout shift and no Graphite
+  request on today's design. The screen gallery shoots every screen in both designs.
+
 ## Colour
 
 | Token                    | Dark      | Light     | Use                                                |
@@ -323,6 +383,9 @@ itself read it.
   centred over the column like a composer, above the tab bar below 1024 px and at the bottom of
   the content column beside the rail from there. It sits under `--resume-inset`, so the shell's
   bottom padding and every other bottom chrome rise with it and it covers nothing.
+- **The held screen** (`(app)/HeldScreen.svelte`) covers the column, not the window: fixed
+  under the nav from `--safe-top` and `--nav-inset-left`, the content column's width inside, so the
+  screen being left keeps its layout and scroll underneath.
 - Specs check chrome against the element it belongs to, never against `<main>` for a column:
   `expectCentredOver(page, chrome, area)` for screen chrome and
   `expectInColumn(page, chrome, column, others)` for column chrome. A screen that later turns
@@ -483,7 +546,7 @@ later-pass screen).
 | Component           | Highlights                                                                                                                                                                                                                                                                         |
 | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `Button`            | `primary · secondary · ghost · danger`, `sm · md · lg` (36/48/56 px; hit area always ≥ 44 px), leading/trailing icon, `loading` (keeps width, `aria-busy`), `block`, renders `<a>` with `href`; pressed = scale 0.97 + tone.                                                       |
-| `IconButton`        | Circular, required `label` (accessible name), `ghost · filled · accent`, `sm · md · lg`.                                                                                                                                                                                           |
+| `IconButton`        | Circular, required `label` (accessible name), `ghost · filled · accent`, `sm · md · lg`; `tooltip` captions it with the label on hover and keyboard focus (fine pointers only).                                                                                                    |
 | `Icon`              | Inline SVG set (`src/lib/ui/icons/icons.ts`, 24 px grid, 1.75 px round strokes); decorative unless `label`.                                                                                                                                                                        |
 | `Surface` / `Card`  | Levels 1–3, padding, radius, discipline `tone` tint, `interactive`/`href`; `Card` adds eyebrow/title/action header (`aria-labelledby`).                                                                                                                                            |
 | `NumberStepper`     | One-handed −/+ (56 px), press-and-hold accelerating repeat, tap-to-type (`inputmode=decimal`), `role=spinbutton` with ArrowUp/Down, PageUp/Down, Home/End; `error` replaces `hint` (`aria-invalid`, `role=alert`).                                                                 |
@@ -494,7 +557,7 @@ later-pass screen).
 | `Skeleton`          | Shimmer placeholder (static under reduced motion); pair with `aria-busy` on the region.                                                                                                                                                                                            |
 | `EmptyState`        | Medallion glyph (tone-tinted), title, guidance, optional actions; `compact` variant.                                                                                                                                                                                               |
 | `Toaster` + `toast` | Polite live region; `neutral · positive · danger`; optional action; auto-dismiss. Screen chrome at the top, centred over the column (beside the rail from 1024 px), or in the window outside the shell.                                                                            |
-| `PageHeader`        | Eyebrow + large title + trailing slot.                                                                                                                                                                                                                                             |
+| `PageHeader`        | Eyebrow + large title + trailing slot; a `badge` sits on the eyebrow line, clear of the title.                                                                                                                                                                                     |
 | `BrandMark`         | The performance-gauge mark (also the PWA icon).                                                                                                                                                                                                                                    |
 | `Stat`              | The one metric tile: label, big value + inline unit, optional rating (word + dot), caption. `level 1` on the canvas (28 px value), `level 2` nested in a card (22 px). No value → a dash announced as "No data yet", never a made-up number.                                       |
 | `Badge`             | Uppercase status pill: `neutral` (default; the only tone for "Soon"), `accent` (the next step, sparingly), `positive · warning · danger`; optional icon. Words carry the meaning.                                                                                                  |
@@ -629,6 +692,7 @@ workout pages and is audited on `/design` → Workout, one state at a time.
 | `WorkoutList`                    | `src/routes/(app)/progress/workouts`. History, newest first: waiting to sync (not links), then each workout's dot, title, date, duration and key number; one 44 px link, `aria-current`.               |
 | `WorkoutDetail`                  | One workout in words: its numbers, PRs, sets with RPE and states, a run's segments (`RunDetail`) or a session's metrics (`OtherDetail`); a name opens its history sheet.                               |
 | `ResumeBar`                      | `src/routes/(app)`. Resume workout · title with the time and the sync pill, or N changes waiting to sync; screen chrome over the column that raises `--resume-inset`, so it covers nothing.            |
+| `HeldScreen`                     | `src/routes/(app)`. While another screen loads: its last copy in this page, else the tab's skeleton (aria-busy, 'Loading Train'); inert, fixed over the column under the nav.                          |
 
 ## Accessibility checklist (applies to every new component)
 

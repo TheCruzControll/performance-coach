@@ -1,11 +1,13 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { resolve } from '$app/paths';
+	import { savedDesign, setDesign, type Design } from '#lib/client/design.ts';
 	import {
 		preferences,
 		type DistancePreference,
 		type ThemePreference
 	} from '#lib/client/preferences.svelte.ts';
+	import { setTheme } from '#lib/client/theme.ts';
 	import type { WeightUnit } from '#lib/domain/units.ts';
 	import Card from '#lib/ui/components/Card.svelte';
 	import Icon from '#lib/ui/components/Icon.svelte';
@@ -22,7 +24,13 @@
 
 	let { data }: PageProps = $props();
 
-	onMount(() => preferences.load());
+	/** This device's design (src/lib/client/design.ts): today's until the saved one is read. */
+	let design = $state<Design>('current');
+
+	onMount(() => {
+		preferences.load();
+		design = savedDesign();
+	});
 
 	const initials = $derived(
 		data.owner.name
@@ -130,9 +138,28 @@
 							{ value: 'light', label: 'Light', icon: 'sun' },
 							{ value: 'system', label: 'Auto', icon: 'device' }
 						]}
-						onchange={(t: ThemePreference) => preferences.setTheme(t)}
+						onchange={(t: ThemePreference) => setTheme(t)}
 						data-testid="theme-control"
 					/>
+				</div>
+				<div class="pref">
+					<span class="pref-label">Design</span>
+					<!-- A segmented control, as its neighbours: Profile already loads it, so the
+					     choice adds no chunk to the app's entry, which every page loads. -->
+					<SegmentedControl
+						label="Design"
+						size="sm"
+						bind:value={design}
+						options={[
+							{ value: 'current', label: 'Current' },
+							{ value: 'graphite', label: 'Graphite 2004' }
+						]}
+						onchange={setDesign}
+						data-testid="design-control"
+					/>
+					<p class="pref-note">
+						Graphite 2004 is a preview of the proposed design. Today’s stays the default.
+					</p>
 				</div>
 			</div>
 		</Card>
@@ -337,6 +364,11 @@
 	.pref-label {
 		font-size: var(--text-sm);
 		color: var(--color-text-secondary);
+	}
+
+	.pref-note {
+		font-size: var(--text-xs);
+		color: var(--color-text-tertiary);
 	}
 
 	.rows {
