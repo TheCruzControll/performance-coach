@@ -16,6 +16,7 @@ import { shortDate } from '../src/lib/ui/program/words';
 import {
 	ANALYTICS_TZ,
 	auditBothThemes,
+	query,
 	resetAnalytics,
 	seedAnalytics,
 	type SeededAnalytics
@@ -32,6 +33,8 @@ type Seeded = SeededAnalytics & { nextBlock: { startsOn: string; week: number } 
 let seeded: Seeded;
 test.beforeAll(async ({ request }) => {
 	seeded = (await seedAnalytics(request, 'bridge-week')) as Seeded;
+	// Today shows the plan only once onboarding is complete.
+	await query('update athlete_profiles set onboarding_completed_at = now()');
 });
 test.afterAll(async () => {
 	await resetAnalytics();
