@@ -20,6 +20,7 @@ import { WEEKDAY_INFO } from '../../../domain/profile/catalog';
 import {
 	DECIDER_LABEL,
 	DECISION_KIND_LABEL,
+	type Decider,
 	type DecisionKind
 } from '../../../domain/training/vocabulary';
 import { createPeriodisationRepository } from '../../db/repositories/periodisation';
@@ -127,4 +128,70 @@ export async function getPlacementWhy(
 		)
 		.map(({ why, affected }) => ({ why, affected }));
 	return { byLineage, tradeoffs };
+}
+
+/**
+ * Decision (m7-plan, tools-periodisation-reads): the most decisions the coach's explain tool lists
+ * for one week or session, the owner's first, so it stays within its output cap.
+ */
+export const MAX_TRADEOFF_DECISIONS = 24;
+
+/** A stored decision as the coach cites it: its id, kind, rule, words, decider and version. */
+export interface ScheduleDecision {
+	/** programming_decisions.id, as a source ref's id. */
+	id: string;
+	kind: DecisionKind;
+	ruleKey: string | null;
+	summary: string;
+	why: string;
+	decidedBy: Decider;
+	version: number;
+	/** The lineages of the sessions it names, among those asked about. */
+	sessions: string[];
+}
+
+export interface ScheduleTradeoffs {
+	/** The owner's moves first, then newest first. */
+	decisions: ScheduleDecision[];
+	/** The priority trade-offs among them that keep a clash, newest first (evaluate.ts's hints). */
+	tradeoffs: TradeoffDecision[];
+}
+
+/**
+ * The coach's view of why a week's sessions sit where they do (tools-periodisation-reads): the
+ * same decisions as 'Why this day?', in one read with its limit (so the trade-off hints, and the
+ * week's grade, match Train's), with their ids, kinds and deciders as data. An unknown or foreign
+ * program explains nothing.
+ */
+export async function getScheduleTradeoffs(
+	ownerId: string,
+	{ programId, sessions }: PlacementAt,
+	deps: TrainingDeps = {}
+): Promise<ScheduleTradeoffs> {
+	const { db } = resolveDeps(deps);
+	const lineages = sessions.map((s) => s.lineage);
+	const rows = await measure('periodisation', () =>
+		createPeriodisationRepository(db).decisionsForLineages(ownerId, programId, lineages, {
+			kinds: WHY_KINDS,
+			limit: MAX_WHY_ITEMS * sessions.length
+		})
+	);
+	const decisions = rows
+		.toSorted((a, b) => Number(a.decidedBy !== 'owner') - Number(b.decidedBy !== 'owner'))
+		.map((row) => ({
+			id: String(row.id),
+			kind: row.kind,
+			ruleKey: row.ruleKey,
+			summary: row.summary,
+			why: row.why,
+			decidedBy: row.decidedBy,
+			version: row.version,
+			sessions: lineages.filter((lineage) => row.affected.includes(lineage))
+		}));
+	const tradeoffs = rows
+		.filter(
+			(row) => row.kind === 'priority_tradeoff' && CLASH_KEPT_RULES.includes(row.ruleKey ?? '')
+		)
+		.map(({ why, affected }) => ({ why, affected }));
+	return { decisions, tradeoffs };
 }

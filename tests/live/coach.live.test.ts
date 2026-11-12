@@ -266,7 +266,7 @@ describe.skipIf(MODE === 'off')(
 				expect(request.tools?.map((tool) => tool.name)).toEqual(TOOL_NAMES);
 				expect(request.output_config.effort).toBe(CHAT_EFFORT);
 			}
-			expect(TOOL_NAMES).toHaveLength(24);
+			expect(TOOL_NAMES).toHaveLength(26);
 			const { system, tools } = requests[0]!;
 			const prefix = await model.provider.countTokens({
 				max_tokens: 1,

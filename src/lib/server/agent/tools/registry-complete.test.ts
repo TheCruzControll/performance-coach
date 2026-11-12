@@ -38,7 +38,7 @@ function registryIssues(files: readonly ToolGroupFile[]): string[] {
 
 describe('the registry is the catalogue', () => {
 	it('registers every catalogue tool by name, sorted as every request lists them', () => {
-		expect(TOOL_NAMES).toHaveLength(24);
+		expect(TOOL_NAMES).toHaveLength(26);
 		expect(COACH_TOOLS.map((tool) => tool.name)).toEqual(TOOL_NAMES);
 		const sorted = [...COACH_TOOLS].sort((a, b) => compareText(a.name, b.name));
 		expect(sorted).toEqual(COACH_TOOLS);
@@ -47,6 +47,21 @@ describe('the registry is the catalogue', () => {
 	it('defines each tool once, in its group’s file, with the catalogue’s effect, drafts flag and an output schema', () => {
 		expect(registryIssues(TOOL_GROUP_FILES)).toEqual([]);
 		for (const tool of COACH_TOOLS) expect(tool.entry).toBe(TOOL_CATALOGUE[tool.name]);
+	});
+
+	it('keeps the programming group in its three files: reads, proposals and the engine’s reads', () => {
+		const programming = TOOL_GROUP_FILES.filter((f) => f.group === 'programming');
+		expect(programming.map((f) => f.file)).toEqual([
+			'programming-reads.ts',
+			'programming-proposals.ts',
+			'periodisation.ts'
+		]);
+		const engine = programming.find((f) => f.file === 'periodisation.ts')!;
+		expect(engine.tools.map((t) => t.name)).toEqual([
+			'evaluate_week_interference',
+			'explain_schedule_tradeoffs'
+		]);
+		expect(engine.effects).toEqual(['read']);
 	});
 
 	it('has as many drafting tools as the drafter has kinds', () => {

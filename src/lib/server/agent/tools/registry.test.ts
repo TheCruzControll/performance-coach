@@ -39,6 +39,7 @@ describe('COACH_TOOLS', () => {
 			'history.ts',
 			'programming-reads.ts',
 			'programming-proposals.ts',
+			'periodisation.ts',
 			'workout.ts',
 			'preferences.ts',
 			'analytics.ts'

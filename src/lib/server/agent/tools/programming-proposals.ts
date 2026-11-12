@@ -6,7 +6,8 @@
  *
  * - propose_program_adjustment: the drafter (effort high) writes M3's edits against the active
  *   program's sessions from today on, with each exercise's alternatives; accepted, they become
- *   one new version.
+ *   one new version. Given ops (evaluate_week_interference's suggestedRepair.ops), it drafts
+ *   nothing and stores exactly those, still checked by checkProposal.
  * - create_training_program: M3's previewProgram, never the coach's own plan, stored as a
  *   new_program proposal by the preview's fingerprint. Refused while a program is active
  *   (NEW_PROGRAM_NEEDS_NO_PROGRAM); a profile changed before accept supersedes it.
@@ -18,8 +19,16 @@
  * supersedes it ('revised'). Stored text travels as untrusted_text.
  */
 import * as z from 'zod/mini';
-import { addDays, type IsoDate } from '../../../domain/calendar.ts';
-import { NEXT_CYCLE_AWAITS, RATIONALE_MAX, TITLE_MAX } from '../../../domain/coach/proposals.ts';
+import { addDays, weekdayOf, type IsoDate } from '../../../domain/calendar.ts';
+import {
+	MAX_PROPOSAL_OPS,
+	NEXT_CYCLE_AWAITS,
+	programOpSchema,
+	RATIONALE_MAX,
+	TITLE_MAX,
+	type ProgramOp
+} from '../../../domain/coach/proposals.ts';
+import { WEEKDAY_INFO } from '../../../domain/profile/catalog.ts';
 import { classifyExerciseStatement } from '../../../domain/coach/statements.ts';
 import { toExerciseKey } from '../../../domain/programming/input.ts';
 import type { ExerciseRef } from '../../../domain/training/types.ts';
@@ -162,20 +171,48 @@ function sessionData(s: StoredSession, idOf: (ref: ExerciseRef) => string | null
 
 // ---- propose_program_adjustment ---------------------------------------------------------
 
+/** What the adjustment drafter reads: the program, the sessions it may change and their exercises. */
+async function adjustmentData(
+	ctx: Ctx,
+	current: { title: string; version: { number: number } },
+	sessions: readonly StoredSession[],
+	planned: readonly Planned[]
+) {
+	const { exercises, idOf } = await exerciseData(ctx, planned);
+	return {
+		today: ctx.today,
+		program: { title: untrusted(current.title), version: current.version.number },
+		sessions: sessions.map((s) => sessionData(s, idOf)),
+		exercises
+	};
+}
+
+/** The title of ops passed as they are: 'Move Lower A to Friday', or how many changes. */
+function opsTitle(ops: readonly ProgramOp[], sessions: readonly StoredSession[]): string {
+	const [first] = ops;
+	const named = first && sessions.find((s) => s.lineage === first.sessionLineage);
+	const title =
+		ops.length === 1 && first?.op === 'move' && named
+			? `Move ${named.title} to ${WEEKDAY_INFO[weekdayOf(first.toDate as IsoDate)].label}`
+			: `${ops.length} change${ops.length === 1 ? '' : 's'} to your program`;
+	return Array.from(title).slice(0, TITLE_MAX).join('').trim();
+}
+
 const draftedOutput = z.object({ proposal: proposalOutput });
 
 const proposeProgramAdjustmentTool = defineTool({
 	name: 'propose_program_adjustment',
-	description: `Propose a change to the owner's active program from today on: move or skip sessions, swap an exercise (scope never_again only after the owner said in this message that they dislike it), or adjust sets, run segments or a session's details. Describe the change in request (up to ${RATIONALE_MAX} characters); it is drafted against the program's sessions and each exercise's alternatives, and stored as a proposal the owner accepts or rejects, so nothing changes yet. sessionLineages (from get_current_training_week or get_training_schedule, up to ${ADJUSTMENT_SESSIONS_MAX}) narrows it to those sessions; left out, the drafter sees the next ${ADJUSTMENT_DAYS} days. revises names the open proposal the owner asked you to change: it is replaced. For today's session before it starts use update_workout; inside a workout, substitute_exercise.`,
+	description: `Propose a change to the owner's active program from today on: move or skip sessions, swap an exercise (scope never_again only after the owner said in this message that they dislike it), or adjust sets, run segments or a session's details. Describe the change in request (up to ${RATIONALE_MAX} characters); it is drafted against the program's sessions and each exercise's alternatives, and stored as a proposal the owner accepts or rejects, so nothing changes yet. sessionLineages (from get_current_training_week or get_training_schedule, up to ${ADJUSTMENT_SESSIONS_MAX}) narrows it to those sessions; left out, the drafter sees the next ${ADJUSTMENT_DAYS} days. revises names the open proposal the owner asked you to change: it is replaced. For today's session before it starts use update_workout; inside a workout, substitute_exercise. ops (up to ${MAX_PROPOSAL_OPS}) takes evaluate_week_interference's suggestedRepair.ops exactly as returned: they are stored as given, with request as the reason, and nothing is drafted.`,
 	input: z.object({
 		request: text(RATIONALE_MAX),
 		sessionLineages: z.optional(
 			z.array(uuid).check(z.minLength(1), z.maxLength(ADJUSTMENT_SESSIONS_MAX))
 		),
-		revises: z.optional(uuid)
+		revises: z.optional(uuid),
+		ops: z.optional(z.array(programOpSchema).check(z.minLength(1), z.maxLength(MAX_PROPOSAL_OPS)))
 	}),
 	output: draftedOutput,
-	run: async ({ request, sessionLineages, revises }, ctx: Ctx) => {
+	run: async ({ request, sessionLineages, revises, ops }, ctx: Ctx) => {
 		const { current, version } = await activeVersion(ctx);
 		await checkRevises(ctx, revises, 'program_adjustment');
 		const upcoming = version.blocks
@@ -192,14 +229,14 @@ const proposeProgramAdjustmentTool = defineTool({
 				sessionLineage: missing
 			});
 		const planned = sessions.flatMap((s) => (s.kind === 'strength' ? s.exercises : []));
-		const { exercises, idOf } = await exerciseData(ctx, planned);
-		const data = {
-			today: ctx.today,
-			program: { title: untrusted(current.title), version: current.version.number },
-			sessions: sessions.map((s) => sessionData(s, idOf)),
-			exercises
-		};
-		const draft = await draftInTool('program_adjustment', { request, data }, ctx);
+		// Ops the engine computed are stored as they are: no draft, and checkProposal still runs.
+		const draft = ops
+			? { title: opsTitle(ops, upcoming), rationale: request, payload: { ops } }
+			: await draftInTool(
+					'program_adjustment',
+					{ request, data: await adjustmentData(ctx, current, sessions, planned) },
+					ctx
+				);
 		// A lasting swap saves a dislike when accepted: only the owner's words this turn allow it.
 		const disliked = new Set(
 			classifyExerciseStatement(ctx.ownerText, [], (words) => ctx.matchExercise(words))

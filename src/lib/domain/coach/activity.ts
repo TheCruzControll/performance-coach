@@ -138,6 +138,8 @@ const WORDING: Readonly<Record<ToolName, (f: Facts) => Triple>> = {
 		'Couldn’t load your program’s history'
 	],
 	get_coach_proposals: () => check('my earlier proposals'),
+	evaluate_week_interference: () => check('this week’s schedule'),
+	explain_schedule_tradeoffs: () => look('why your week is shaped this way'),
 	propose_program_adjustment: () => draft('the change'),
 	create_training_program: () => [
 		'Building a new program…',

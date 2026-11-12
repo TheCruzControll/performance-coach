@@ -1,7 +1,7 @@
 /**
  * Every coach tool, from one file per tool group: each tools slice replaces only its own file, so
- * no two slices edit this one. A tool sits in its catalogue group's file (programming reads and
- * proposals in two), and the registry is sorted by name, the order every request lists tools in,
+ * no two slices edit this one. A tool sits in its catalogue group's file (programming reads,
+ * proposals and the engine's periodisation reads in three), and the registry is sorted by name, the order every request lists tools in,
  * so the cached prefix is byte-stable.
  */
 import {
@@ -14,6 +14,7 @@ import { compareText } from '../../../domain/programming/random.ts';
 import { ANALYTICS_TOOLS } from './analytics.ts';
 import type { CoachTool, StrictToolDefinition } from './define.ts';
 import { HISTORY_TOOLS } from './history.ts';
+import { PERIODISATION_TOOLS } from './periodisation.ts';
 import { PREFERENCE_TOOLS } from './preferences.ts';
 import { PROGRAMMING_PROPOSAL_TOOLS } from './programming-proposals.ts';
 import { PROGRAMMING_READ_TOOLS } from './programming-reads.ts';
@@ -38,6 +39,7 @@ export const TOOL_GROUP_FILES: readonly ToolGroupFile[] = Object.freeze([
 	file('history.ts', 'history', HISTORY_TOOLS),
 	file('programming-reads.ts', 'programming', PROGRAMMING_READ_TOOLS, ['read']),
 	file('programming-proposals.ts', 'programming', PROGRAMMING_PROPOSAL_TOOLS, ['propose']),
+	file('periodisation.ts', 'programming', PERIODISATION_TOOLS, ['read']),
 	file('workout.ts', 'workout', WORKOUT_TOOLS),
 	file('preferences.ts', 'preferences', PREFERENCE_TOOLS),
 	file('analytics.ts', 'analytics', ANALYTICS_TOOLS)
