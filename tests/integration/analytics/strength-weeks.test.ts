@@ -313,8 +313,12 @@ describe('writing the rollups', () => {
 	it('writes again the past week a sync logs, edits or deletes a set of, with its new figures', async () => {
 		await withRollback(async (db) => {
 			const data = await seeded(db);
-			const sync = (mutations: unknown[]) =>
-				applySyncBatch(data.owner, JSON.parse(JSON.stringify(mutations)), { db, now: () => NOW });
+			const sync = (mutations: unknown[], held: string[] = []) =>
+				applySyncBatch(data.owner, JSON.parse(JSON.stringify(mutations)), {
+					db,
+					now: () => NOW,
+					held
+				});
 			// A forgotten Friday workout of week 12, logged and finished after the fact.
 			const workoutId = crypto.randomUUID();
 			const friday = addDays(weekOf(12), 4);
@@ -353,22 +357,36 @@ describe('writing the rollups', () => {
 				tonnage: before + 300
 			});
 
-			await sync([
-				createMutation('set.edit', {
-					workoutId,
-					entityId: log.id,
-					at: at('19:00'),
-					payload: { ...done, weight: 40 }
-				})
-			]);
+			// The device holds the workout's rows now, so its answers carry only the changed rows.
+			const edited = await sync(
+				[
+					createMutation('set.edit', {
+						workoutId,
+						entityId: log.id,
+						at: at('19:00'),
+						payload: { ...done, weight: 40 }
+					})
+				],
+				[workoutId]
+			);
+			expect(edited.results[0]).toMatchObject({ status: 'applied', changes: expect.anything() });
+			expect(edited.results[0]!.canonical).toBeUndefined();
 			expect(await row(db, data.owner, weekOf(12))).toMatchObject({
 				written: true,
 				tonnage: before + 400
 			});
 
-			await sync([
-				createMutation('set.delete', { workoutId, entityId: log.id, at: at('19:05'), payload: {} })
-			]);
+			await sync(
+				[
+					createMutation('set.delete', {
+						workoutId,
+						entityId: log.id,
+						at: at('19:05'),
+						payload: {}
+					})
+				],
+				[workoutId]
+			);
 			expect(await row(db, data.owner, weekOf(12))).toMatchObject({
 				written: true,
 				tonnage: before

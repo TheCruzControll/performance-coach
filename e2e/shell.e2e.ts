@@ -315,9 +315,17 @@ test.describe('app shell on an iPhone viewport', () => {
 	test('leaving a screen while a sheet is open releases the page scroll lock', async ({ page }) => {
 		const overflow = () => page.evaluate(() => document.documentElement.style.overflow);
 
-		// Arrive with the sheet opening by itself (Today's shortcut), then go Back.
-		await page.goto('/today');
-		await page.locator('a[href="/train?tool=plates"]').click();
+		// Arrive client-side with the sheet opening by itself (?tool=plates), then go Back. Today no
+		// longer links the calculator, so the test adds the link for the router to follow.
+		await gotoHydrated(page, '/today');
+		await page.evaluate(() => {
+			const link = Object.assign(document.createElement('a'), {
+				href: '/train?tool=plates',
+				textContent: 'Plate calculator'
+			});
+			document.querySelector('main')!.prepend(link);
+		});
+		await page.getByRole('link', { name: 'Plate calculator', exact: true }).click();
 		const sheet = page.getByRole('dialog', { name: 'Plate calculator' });
 		await expect(sheet).toBeVisible();
 		expect(await overflow()).toBe('hidden');

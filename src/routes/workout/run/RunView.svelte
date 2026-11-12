@@ -22,6 +22,7 @@
 	import Button from '#lib/ui/components/Button.svelte';
 	import ChoiceGroup from '#lib/ui/components/ChoiceGroup.svelte';
 	import Notice from '#lib/ui/components/Notice.svelte';
+	import StatusSlot from '#lib/ui/components/StatusSlot.svelte';
 	import Stat from '#lib/ui/components/Stat.svelte';
 	import TextArea from '#lib/ui/components/TextArea.svelte';
 	import RpeChips from '#lib/ui/workout/RpeChips.svelte';
@@ -136,6 +137,13 @@
 </nav>
 
 <div class="main" data-testid="run-main">
+	<!-- Graphite 2004's Status Display (RunStatus.svelte), first in both layouts; nothing on today's
+	     design, where the entry's header, Totals and the segment list say the same. -->
+	<StatusSlot
+		load={() => import('./RunStatus.svelte')}
+		props={{ input: { items, item, planned: !!planned, totals: run, unit } }}
+		room="9rem"
+	/>
 	<section class="card entry" aria-labelledby="segment-name" data-testid="run-entry">
 		<header class="head">
 			<p class="place">
