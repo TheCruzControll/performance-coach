@@ -1,5 +1,94 @@
 # Performance Coach: handoff (Claude Code on the owner's Meta Mac, resumed 2026-11-09; read the first section first)
 
+## Paused 2026-11-12 06:47 PST for the owner's call (read this first)
+
+The owner asked for everything to stop before an 08:15 PST call: no workflow, agent, watcher or
+test run was left running. The goal stays with the owner (`/goal clear` stops it). Resume from this
+section; the older sections below are history.
+
+### Merged since the last handoff update (2026-11-09 → 2026-11-12 06:20 PST)
+
+Main is green (CI and the post-deploy smoke). Highlights, newest first:
+- Coach and review roots: #402 bridge weeks, #399 coach entry points, #393 coach error states,
+  #388 next week's adjustments (fixed a real bug: changes for sessions already past were counted as
+  0 from the browser), #390 Proposals inbox (fixed a CSS rule that showed "All proposals" beside the
+  list on desktop), #389 review narration, #386 thread management.
+- Lifecycles series complete: A #353, D #367, B #415, C #452, E #470 (each with a passing
+  post-deploy smoke; report in `.git/pc-wf/GOAL.md`).
+- Design: the Graphite 2004 switcher (#451, #464, #466, #471; today's design stays the default) and
+  design wave 0 (#453, #457, #459, #460, #472, #474, #475, #477, #478).
+- Performance and CI: #473 shared initial JS trimmed (every app route ≤ 57 KB of the 60 KB budget),
+  #480 serial E2E legs on 2 isolated workers per leg, #484 serial WebKit back to 1 worker per leg
+  (6 legs; heavy WebKit specs had passed 30 s with 2 workers), #483 Graphite's axe check split per
+  screen (was one 20–29.5 s test), #479 / #485 / #447 test races fixed (Today's served-copy panel,
+  the inbox's hover preload, the 401 reconcile).
+- Also #384 (E2E over HTTPS), #447, #456, #458, #465, and the rest in `git log --first-parent`.
+
+### Screen gallery for the owner
+
+Run 43167538102 (`screen-gallery.yml`): 308 screens, 154 in today's design and 154 in Graphite
+2004, iPhone WebKit and 1440 × 900 desktop Chromium, dark and light. Download with
+`scripts/gallery-download.sh 43167538102 <empty dir>` and open `index.html`.
+
+### Open PRs at the pause (39)
+
+- Close: #405 coach journeys (red on E2E after its last main merge; not yet diagnosed), #406 See
+  trends link (green before, now stale: main moved under its coach specs; merge main and re-run),
+  #454 workout layout motion (merge main and re-run).
+- Root lanes finished but conflicting again after later merges (merge the parent branch, then
+  main, then fix CI): #392 cycle review screen, #397 next-cycle UI, #398 proposal origin label (its
+  last fix, the 'Choose when it starts' button wrapping on a phone, is reviewed and pushed:
+  fe864e95), #407 review narrative UI.
+- The M6/M7 stacked tree (each stacks on unmerged parents; conflicts are inherited): #409, #411,
+  #412, #413, #414, #416, #417, #418, #419, #421, #422, #423, #426, #434, #435, #443, #455, #461,
+  #462, #467, #469, and round 3's #476, #481, #482, #486, #487, #488. Docs stacked on coach PRs:
+  #463, #468. Coach tests stacked on the coach chain: #395, #396.
+- Owner-gated: #449 coach launch (Merge hold: the owner reviews the coach-journeys screenshots
+  first; it also conflicts now). Never merge #13 or #157 without the owner.
+
+### How to resume
+
+1. Restart the merge watcher: `bash /tmp/pc-scratch/bin/wait-ready.sh` (one merge per pass; holds
+   in `/tmp/pc-scratch/wait-ignore.txt`: plain numbers stay until removed, `<pr>@<sha>` lapse on
+   push; the M6/M7 tree is listed in `/tmp/pc-scratch/chain-plain-holds.txt`).
+2. Merge the roots first, bottom up, then the tree. Re-merging the whole stacked tree after every
+   main change did not keep up; fixing and merging roots did. Lanes are `open-prs.js` items in
+   `ci` mode, one at a time, each told to merge its just-fixed parent branch, then main, then wait
+   for fresh CI and fix every red check (up to 3 CI rounds). Next roots: #392 → #397 → #398 → #407,
+   then #409, #411, #412 …, and the M7 chain from #416 / #461.
+3. Round 3 (`.git/pc-wf/round3.js`, args `.git/pc-wf/r3.json`) was stopped mid-run: resume with
+   `Workflow({scriptPath: '.git/pc-wf/round3.js', resumeFromRunId: 'wf_b33e3211-475'})`; completed
+   agents replay from cache. Add "Merge hold:" to the preview-e2e-run and restore-drill-record PRs
+   when they open.
+4. Council pass 2 (performance and design) after the remaining design and perf PRs land.
+
+### Changes to the harness and CI this run
+
+- `slot` gives each heavy command its share of the CPUs (`VITEST_MAX_WORKERS` = CPUs ÷ slots);
+  three full unit runs had driven the load past 300 on 10 CPUs.
+- The watcher reports a conflict once per head (`.wait-seen-conflict`), so stacked PRs no longer
+  stop it on every pass; steward-plan counts skipped or neutral required checks as passing, as
+  GitHub does (no more false "main: failure" after docs-only pushes).
+- CI: serial Chromium runs 2 isolated worlds per leg (own database and server each); serial WebKit
+  1 per leg (`e2e/serial-workers.ts` holds the counts and the measured reason). PR runs went from
+  ~26 jobs / ~150 job-minutes to 24 / ~133; wall time is mostly runner queueing (about 20
+  concurrent jobs). Deferred: refresh `e2e/timings.json` for 2-worker Chromium after three green
+  main runs, then lower the serial legs' step timeouts.
+
+### Waiting on the owner
+
+- Review the screen gallery (both designs) and decide on Graphite 2004.
+- Review the coach-journeys screenshots, then lift #449's merge hold.
+- preview-e2e-run secrets, the restore drill, the 1.0 sign-off.
+- The local Playwright browser server on port 3333 has been down: agents cannot run browser tests
+  locally, so every E2E fix waits on a CI round.
+
+### Notes
+
+- Two test-only follow-ups were pushed without their own sol-review because they mirror reviewed
+  changes: #393's coach specs find "Try again" (as #407 did) and #399's offline check expects
+  "You’re offline" (the copy pass's apostrophe).
+
 ## Claude Code on the owner's Mac, running (resumed 2026-11-09 18:00 UTC)
 
 This section is the current state. The pi sections below are history; their rules and lessons still hold.
