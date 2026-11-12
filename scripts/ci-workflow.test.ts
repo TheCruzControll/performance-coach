@@ -1,7 +1,7 @@
 /**
  * The run rules in .github/workflows/ci.yml. Every merge to `main` gets a complete run: only a
  * newer push to the same pull request cancels a run. Artifact uploads keep the hidden files they
- * list, such as the e2e production server's `.e2e-server.log`: upload-artifact skips dot-files
+ * list, such as the e2e production servers' `.e2e-server*.log`: upload-artifact skips dot-files
  * unless `include-hidden-files` is set.
  */
 import { spawnSync } from 'node:child_process';
@@ -187,10 +187,11 @@ const isHidden = (path: string) =>
 	!path.startsWith('!') && path.split('/').some((part) => /^\.[^./]/.test(part));
 
 describe('CI artifacts', () => {
-	it('uploads the e2e production server log, a dot-file, with hidden files included', () => {
-		// e2e/global-setup.ts writes the server's output there.
-		const upload = uploads().find((step) => step.paths.includes('.e2e-server.log'));
-		expect(upload?.job, 'the job that uploads .e2e-server.log').toBe('e2e-legs');
+	it('uploads the e2e production server logs, dot-files, with hidden files included', () => {
+		// e2e/global-setup.ts writes each owner world's server output to one (worldFiles): world 0's
+		// to .e2e-server.log, world n's to .e2e-server-w<n>.log.
+		const upload = uploads().find((step) => step.paths.includes('.e2e-server*.log'));
+		expect(upload?.job, 'the job that uploads .e2e-server*.log').toBe('e2e-legs');
 		expect(upload?.includesHiddenFiles, 'include-hidden-files').toBe(true);
 	});
 

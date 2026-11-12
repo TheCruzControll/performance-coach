@@ -11,8 +11,8 @@
  * left out.
  *
  * planShards splits a leg's entries into shards, longest first, each into the shard it leaves
- * cheapest. A shard's cost is its wall clock with the leg's workers (2 in main, 1 elsewhere,
- * playwright.config.ts): its summed seconds over the workers, but never less than its largest
+ * cheapest. A shard's cost is its wall clock with the leg's workers (2 in main and serial, 1
+ * elsewhere, playwright.config.ts): its summed seconds over the workers, but never less than its largest
  * file. Shard 1 is planned 10% lighter, because it also runs anything the plan missed.
  *
  * The CLI reads E2E_GROUP, E2E_ENGINE and E2E_SHARD (`<current>/<total>`) and writes the shard's
@@ -57,8 +57,12 @@ export const SHARD_ONE_SHARE = 0.9;
  */
 export const SHARD_ONE_FILES: readonly string[] = ['a11y-dark.e2e.ts', 'a11y-light.e2e.ts'];
 
-/** Playwright workers a CI leg of `group` runs (playwright.config.ts). */
-export const legWorkers = (group: string) => (group === 'main' ? 2 : 1);
+/**
+ * Playwright workers a CI leg of `group` runs (playwright.config.ts): 2 in main; in serial, one
+ * per owner world (e2e/worlds.ts SERIAL_WORLDS, which scripts/e2e-projects.test.ts checks this
+ * against); 1 elsewhere.
+ */
+export const legWorkers = (group: string) => (group === 'main' || group === 'serial' ? 2 : 1);
 
 /** A shard's planned wall clock: its seconds over the workers, at least its largest file. */
 export const shardCost = (shard: PlannedShard, workers: number) =>
