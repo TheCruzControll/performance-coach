@@ -16,6 +16,7 @@ import {
 	readOutbox,
 	readWorkout,
 	seedWorkout,
+	slidesEnded,
 	watchMove,
 	workoutDay,
 	type WatchedMove
@@ -258,6 +259,8 @@ test.describe('moving between exercises (IndexedDB only)', () => {
 		await expect(heading(page)).toHaveText('Plank');
 		await logger(page).getByTestId('complete-set').click();
 		await expect(heading(page)).toHaveText('Pull-up');
+		// The card slid to its place (flip.ts): the row is pressed where it rests.
+		await slidesEnded(page);
 		const row = card(page).getByTestId('set').first().getByRole('button');
 		// Above the logger, which covers the foot of the screen.
 		await row.evaluate((el) => el.scrollIntoView({ block: 'start' }));

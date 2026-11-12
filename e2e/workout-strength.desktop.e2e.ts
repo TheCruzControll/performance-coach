@@ -47,8 +47,13 @@ test.describe('the strength view on a desktop', () => {
 
 		const list = await boxOf(side(page));
 		const main = await boxOf(card(page));
+		// The main column starts with the rest timer's kept place, the card under it.
+		const column = await boxOf(page.getByTestId('workout-main'));
+		const rest = await boxOf(page.getByTestId('rest-slot'));
 		expect(list.x + list.width, 'the list ends before the exercise').toBeLessThan(main.x);
-		expect(Math.abs(list.y - main.y), 'both start at the same height').toBeLessThanOrEqual(1);
+		expect(Math.abs(list.y - column.y), 'both start at the same height').toBeLessThanOrEqual(1);
+		expect(Math.abs(rest.y - column.y), 'the rest’s place first').toBeLessThanOrEqual(1);
+		expect(main.y, 'the card under it').toBeGreaterThanOrEqual(rest.y + rest.height);
 
 		const rows = side(page).getByRole('listitem');
 		await expect(rows).toHaveText([

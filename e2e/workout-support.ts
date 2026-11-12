@@ -299,7 +299,27 @@ export function watchMove(page: Page, testId: 'exercise-next' | 'exercise-prev')
 		await frame();
 		const first = top();
 		const sliding = block.getAnimations().length;
-		await Promise.all(block.getAnimations().map((animation) => animation.finished));
+		// A slide a later change starts again from where it is seen cancels the one before it.
+		while (block.getAnimations().length > 0)
+			await Promise.allSettled(block.getAnimations().map((animation) => animation.finished));
 		return { before, first, after: top(), sliding };
 	}, testId);
+}
+
+/**
+ * Waits until the strength view's blocks (the card, its navigation, the rest pill and the logger)
+ * have ended their slides (flip.ts), so what is read or pressed next is where it rests.
+ */
+export async function slidesEnded(page: Page) {
+	await expect
+		.poll(() =>
+			page.evaluate(() =>
+				[
+					...document.querySelectorAll<HTMLElement>(
+						'[data-testid="workout-main"] > *, [data-testid="workout-main"] > .rest > .pill'
+					)
+				].some((block) => block.getAnimations().length > 0)
+			)
+		)
+		.toBe(false);
 }

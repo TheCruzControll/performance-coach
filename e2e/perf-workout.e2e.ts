@@ -46,7 +46,7 @@ import { framesFrom, longFrames } from './frames';
 import { attribute, inp, percentile, type Tag } from './inp';
 import { resetPrograms } from './program-support';
 import { query } from './support';
-import { gotoWorkout, seedWorkout, workoutDay } from './workout-support';
+import { gotoWorkout, seedWorkout, slidesEnded, workoutDay } from './workout-support';
 
 /** Tap to the frame that shows the set done (M4 criterion 3). */
 const CONFIRM_P95_MS = 100;
@@ -381,8 +381,13 @@ const armSheetSettled = (page: Page, motion: 'open' | 'close') =>
 const sheetSettled = (page: Page) =>
 	page.evaluate(() => (window as unknown as { __sheetSettled: Promise<void> }).__sheetSettled);
 
-/** A mouse drag across the card's name, in steps, as a hand would (workout-navigation.e2e.ts). */
+/**
+ * A mouse drag across the card's name, in steps, as a hand would (workout-navigation.e2e.ts),
+ * once the blocks a change moved have slid to their place (flip.ts): the rest pill rising with a
+ * taller logger passes over the name on a short screen.
+ */
 async function swipe(page: Page, dx: number) {
+	await slidesEnded(page);
 	const box = (await heading(page).boundingBox())!;
 	const x = box.x + box.width / 2;
 	const y = box.y + box.height / 2;

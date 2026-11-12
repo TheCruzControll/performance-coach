@@ -80,7 +80,8 @@ test.describe('the rest timer on a desktop', () => {
 		const slot = page.getByTestId('rest-slot');
 		await expect(slot).toBeVisible();
 		await expect(slot).toHaveText(/Rest\s*After your first set/);
-		const top = async () => (await boxOf(card)).y;
+		// Its top on the page: a click on the logger's Complete set scrolls it into view.
+		const top = async () => (await boxOf(card)).y + (await page.evaluate(() => scrollY));
 		const idle = await top();
 
 		const load = logger(page).getByTestId('logger-load').getByRole('spinbutton');

@@ -133,6 +133,10 @@ export function trackConsoleErrors(
  * 'disabled'` cuts the transition short mid-capture, and WebKit can save the frame in which the
  * tab bar is out of the page but its transition snapshot is already gone (a shot with no nav).
  * Infinite animations (spinner, skeleton) never settle; the screenshot option stops those.
+ * One with more than AMBIENT_MS left to run is what the screen shows, not a transition (the rest
+ * timer's bar fills over the whole rest, RestTimer.svelte): it is not waited for, and for the shot
+ * it is held where it is, at playback rate 0, which the screenshot option leaves alone, rather
+ * than finished (a full bar, for the rest of the test).
  */
 export async function captureScreen(page: Page, testInfo: TestInfo, name: string) {
 	await page.evaluate(() => document.fonts.ready);
@@ -141,23 +145,48 @@ export async function captureScreen(page: Page, testInfo: TestInfo, name: string
 		.poll(
 			() =>
 				page.evaluate(
-					() =>
+					(ambientMs) =>
 						!document.activeViewTransition &&
-						document
-							.getAnimations()
-							.every(
-								(a) =>
-									a.playState !== 'running' || a.effect?.getComputedTiming().endTime === Infinity
-							)
+						document.getAnimations().every((a) => {
+							if (a.playState !== 'running' || !a.effect) return true;
+							const { endTime, localTime } = a.effect.getComputedTiming();
+							return Number(endTime) - Number(localTime ?? 0) > ambientMs;
+						}),
+					AMBIENT_MS
 				),
 			{ message: 'the screen settles: no view transition or finite animation running' }
 		)
 		.toBe(true);
-	return page.screenshot({
-		path: `test-results/screens/${testInfo.project.name}/${name}.png`,
-		animations: 'disabled'
-	});
+	const held = await page.evaluateHandle(
+		(ambientMs) =>
+			document
+				.getAnimations()
+				.filter((a) => {
+					if (!a.effect || a.playbackRate === 0) return false;
+					const { endTime, localTime } = a.effect.getComputedTiming();
+					const left = Number(endTime) - Number(localTime ?? 0);
+					return Number.isFinite(left) && left > ambientMs;
+				})
+				.map((a) => {
+					const rate = a.playbackRate;
+					a.playbackRate = 0;
+					return () => (a.playbackRate = rate);
+				}),
+		AMBIENT_MS
+	);
+	try {
+		return await page.screenshot({
+			path: `test-results/screens/${testInfo.project.name}/${name}.png`,
+			animations: 'disabled'
+		});
+	} finally {
+		await held.evaluate((resumes) => resumes.forEach((resume) => resume()));
+		await held.dispose();
+	}
 }
+
+/** Left to run beyond this, an animation is the screen's state, not a transition (captureScreen). */
+const AMBIENT_MS = 5_000;
 
 export interface AppRoute {
 	/** SvelteKit route id, e.g. `/(app)/profile/security`. */
