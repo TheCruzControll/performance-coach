@@ -450,11 +450,18 @@
 	// card, its navigation, the rest pill and the logger are read where they are before the screen
 	// changes, and those that moved slide from there in the frame after, before it paints. The
 	// logger's height is read again then, so the pill above it slides to its final place at once.
+	// Only a change after the first render: as the screen first takes its places (the column bound,
+	// the logger's space kept, the pill fixed above it), nothing slides into them.
 	let before: Map<HTMLElement, number> | null = null;
+	let watched: string | null = null;
 	$effect.pre(() => {
-		void [current?.position, current?.open, rest === null, startable, Logger];
+		const changes = [current?.position, current?.open, rest === null, rest === null && startable];
+		const key = `${changes.join()}:${Logger !== null}`;
 		const column = main;
 		if (!column || before) return;
+		const last = watched;
+		watched = key;
+		if (last === null || last === key) return;
 		const blocks = () =>
 			column.querySelectorAll<HTMLElement>(
 				':scope > .rest > .pill, :scope > .swipe, :scope > .navigation, :scope > [data-testid="set-logger"]'

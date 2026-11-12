@@ -147,6 +147,12 @@
 		);
 	}
 
+	/* Over, its words take the room beside +30 s and Dismiss, on two lines if they must, rather
+	   than push the controls onto a row of their own. */
+	.rest[data-phase='over'] .reading {
+		flex: 1 1 0;
+	}
+
 	.time {
 		font-size: var(--text-3xl);
 		font-weight: var(--weight-bold);
@@ -204,10 +210,12 @@
 		}
 	}
 
-	/* Reduced motion: no animation; the bar steps to the reading's progress once a second. */
+	/* Reduced motion: no animation; the bar steps to the reading's progress once a second. No
+	   transition either: base.css gives every element a 0.01 ms one, which WebKit can hold. */
 	@media (prefers-reduced-motion: reduce) {
 		.fill {
 			animation-name: none;
+			transition-property: none;
 			transform: scaleX(var(--progress));
 		}
 	}
