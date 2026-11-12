@@ -202,11 +202,11 @@ describe('overviewData', () => {
 		expect(tonnage.canonical).toBe(12_000);
 		expect(tonnage.delta).toEqual({
 			value: 10,
-			text: '+22 lb',
+			text: '+22\u00a0lb',
 			change: 'better',
 			against: 'the 12 weeks before'
 		});
-		expect(tonnage.soFar).toEqual({ value: '220.5 lb', lastWeek: null, through: TODAY });
+		expect(tonnage.soFar).toEqual({ value: '220.5\u00a0lb', lastWeek: null, through: TODAY });
 	});
 
 	it('draws the sparkline on the server from complete weeks only', () => {
@@ -228,6 +228,32 @@ describe('overviewData', () => {
 		const all = overviewData(trained('all'));
 		expect(all.tiles[0]!.tile.delta).toBeNull();
 		expect(all.context.comparison).toBeNull();
+	});
+
+	it('names no earlier period over tiles none of which has a change against it', () => {
+		const o = trained();
+		const noEarlier = { ...o.kpis[0]!.comparison, previous: null, delta: null, change: null };
+		const fresh = overviewData({ ...o, kpis: [{ ...o.kpis[0]!, comparison: noEarlier }] });
+		expect(fresh.tiles[0]!.tile.delta).toBeNull();
+		expect(fresh.context.comparison).toBeNull();
+		expect(fresh.context.period).toBe('Last 12 weeks');
+	});
+
+	it('words a lift that ended where it began as held, with its best, each to the pound', () => {
+		const o = trained();
+		// 44.7 kg is 98.55 lb and 46 kg 101.4 lb: an estimate shows to the pound.
+		const points = weekly([44.7, 46, 44.8, ...Array(9).fill(null), 45]);
+		const flat = overviewData({
+			...o,
+			series: { ...o.series, keyLifts: [{ exerciseId: 'bench', name: 'Bench press', points }] }
+		});
+		const [bench] = flat.charts.lifts;
+		expect(bench!.summary).toBe('Estimated 1RM held at 99\u00a0lb, with a best of 101\u00a0lb.');
+		expect(bench!.data.series[0]!.points.slice(0, 3).map((p) => p?.text)).toEqual([
+			'99',
+			'101',
+			'99'
+		]);
 	});
 
 	it('gives each discipline a card with its verdict words, window and evidence badges', () => {
@@ -252,11 +278,12 @@ describe('overviewData', () => {
 		const squat = charts.lifts[0]!;
 		expect(squat.data.unit).toBe('lb');
 		const points = squat.data.series[0]!.points;
-		expect(points[0]).toEqual({ value: 220.5, text: '220.5', kind: 'estimated' });
+		// 100 kg is 220.46 lb: an estimate shows to the pound.
+		expect(points[0]).toEqual({ value: 220, text: '220', kind: 'estimated' });
 		expect(points[2]).toBeNull();
 		expect(squat.data.slots.at(-1)).toMatchObject({ inProgress: true });
 		expect(squat.data.slots.filter((s) => s.inProgress)).toHaveLength(1);
-		expect(squat.summary).toBe('Estimated 1RM went from 220.5 lb to 275.6 lb.');
+		expect(squat.summary).toBe('Estimated 1RM went from 220\u00a0lb to 276\u00a0lb.');
 		expect(squat.table.rows).toHaveLength(13);
 	});
 
