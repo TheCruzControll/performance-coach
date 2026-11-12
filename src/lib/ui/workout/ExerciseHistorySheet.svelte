@@ -14,6 +14,8 @@
   - Ask the coach opens Coach with 'How has my <exercise> progressed?' about it (a link:
     ui/ask-link.ts, so the workout loads no coach module). Not by exercise id alone: that sheet is
     already over a conversation.
+  - See trends opens the exercise's Progress detail (/progress/exercises/[id]) from any of its
+    sheets, whatever the history's state, but not for an exercise that is gone.
   Each new `request` opens it afresh; a null one closes it (History's Back). `onclose` is the
   owner closing it.
 -->
@@ -25,6 +27,7 @@
 		type HistoryRequest,
 		type HistorySet
 	} from '#lib/client/workout/exercise-history.ts';
+	import { resolve } from '$app/paths';
 	import { ASK_QUESTIONS, askHref } from '#lib/ui/ask-link.ts';
 	import BottomSheet from '#lib/ui/components/BottomSheet.svelte';
 	import Button from '#lib/ui/components/Button.svelte';
@@ -243,6 +246,16 @@
 					</Notice>
 				{/if}
 			</Section>
+		{/if}
+		{#if shown && status !== 'not-found'}
+			<ListRow
+				icon="progress"
+				tone="strength"
+				title="See trends"
+				subtitle="Best e1RM, rep maxes and PRs over time"
+				href={resolve('/(app)/progress/exercises/[id]', { id: shown.exerciseId })}
+				data-testid="history-trends"
+			/>
 		{/if}
 		{#if question}
 			<ListRow
