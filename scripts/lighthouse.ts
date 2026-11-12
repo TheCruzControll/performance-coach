@@ -580,7 +580,7 @@ async function seedCoach(fixture: CoachFixture): Promise<SeededCoach> {
 
 /** One turn in a new conversation, sent as the composer sends it and read to its end. */
 async function coachTurn(text: string): Promise<void> {
-	const response = await fetch(`${server.base}/api/coach/turns`, {
+	const response = await fetch(`${server.api}/api/coach/turns`, {
 		method: 'POST',
 		headers: { ...sessionHeaders, origin: server.base, 'content-type': 'application/json' },
 		body: JSON.stringify({ threadId: null, clientMessageId: randomUUID(), text })
@@ -667,7 +667,7 @@ async function createReview(seeded: SeededAnalytics): Promise<string> {
 		body.set('blockLineage', review.blockLineageId);
 	}
 	const action = review.kind === 'weekly' ? 'create' : 'createCycle';
-	const response = await fetch(`${server.base}/progress/reviews?/${action}`, {
+	const response = await fetch(`${server.api}/progress/reviews?/${action}`, {
 		method: 'POST',
 		body,
 		headers: { ...sessionHeaders, origin: server.base },
