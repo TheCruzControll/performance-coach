@@ -33,6 +33,7 @@ import { APPLIERS } from '../../../src/lib/server/services/coach/apply';
 import { applyReplan } from '../../../src/lib/server/services/coach/apply/replan';
 import {
 	acceptProposal,
+	createProposal,
 	getProposalView,
 	rejectProposal
 } from '../../../src/lib/server/services/coach/proposals';
@@ -67,6 +68,8 @@ const WEDNESDAY = '2026-11-18';
 const NEXT_MONDAY = '2026-11-23';
 const MONDAY = '2026-11-16';
 const THURSDAY = '2026-11-19';
+const FRIDAY = '2026-11-20';
+const SATURDAY = '2026-11-21';
 const NEXT_TUESDAY = '2026-11-24';
 /** Real reads on a loaded CI runner: far above the context's 300 ms default. */
 const SLOW_OK = 10_000;
@@ -300,6 +303,10 @@ describe('staleness at accept', () => {
 				proposeAgain: true,
 				proposal: { status: 'superseded', supersededReason: 'profile_changed' }
 			});
+			expect(await acceptProposal(owner, proposal.id, deps)).toMatchObject({
+				changed: false,
+				proposeAgain: true
+			});
 			expect(await versionCount(db, programId)).toBe(1);
 		});
 	});
@@ -402,6 +409,40 @@ describe('staleness at accept', () => {
 		});
 	});
 
+	it('a deload accepted Saturday applies though Friday’s sparring, eased in its preview, has passed', async () => {
+		await withRollback(async (db) => {
+			const { owner, programId, deps } = await seeded(db, 'week-complete', MONDAY);
+			const v1 = await getProgramVersion(owner, programId, 1, { db });
+			const sparring = sessionsOf(v1, MONDAY).find((s) => s.date === FRIDAY)!;
+			// Friday's sparring under the generator's own title, so a deload retitles it to pads.
+			// Sessions are history; the guard is lifted inside this rolled-back transaction only.
+			await db.execute(
+				sql`alter table planned_sessions disable trigger planned_sessions_refuse_update`
+			);
+			await db.execute(
+				sql`update planned_sessions set title = 'Muay Thai sparring' where id = ${sparring.id}`
+			);
+			const shown = await previewReplan(
+				owner,
+				{ today: MONDAY, directive: deloadOf(MONDAY) },
+				{ db, statementTimeoutMs: SLOW_OK }
+			);
+			if ('refusal' in shown) throw new Error(shown.why);
+			expect(JSON.stringify(shown.weeks)).toContain('Muay Thai pad work');
+			const { proposal } = await propose(
+				owner,
+				{ today: MONDAY, directive: deloadOf(MONDAY) },
+				deps
+			);
+			// Monday's preview retitled the generated sparring; on Saturday it is past and kept.
+			const decided = await acceptProposal(owner, proposal.id, { ...deps, now: clock(SATURDAY) });
+			expect(decided.proposal).toMatchObject({ status: 'applied', appliedVersion: { number: 2 } });
+			const v2 = await getProgramVersion(owner, programId, 2, { db });
+			const kept = sessionsOf(v2, MONDAY).find((s) => s.lineage === sparring.lineage);
+			expect(kept).toMatchObject({ type: 'muay_thai', title: 'Muay Thai sparring' });
+		});
+	});
+
 	it('a deload accepted after its week: sessions_passed', async () => {
 		await withRollback(async (db) => {
 			const { owner, programId, deps } = await seeded(db, 'week-complete', MONDAY);
@@ -455,13 +496,24 @@ describe('a weekly review’s deload', () => {
 				{ weekStartsOn: reviewed, today: MONDAY },
 				deps
 			);
-			const { proposal } = await propose(
+			// As M6's review proposes: through createProposal, which previews it again itself.
+			const directive = deloadOf(next, 'reactive');
+			const shown = await previewReplan(owner, { today: MONDAY, directive }, deps);
+			if ('refusal' in shown) throw new Error(shown.why);
+			const { proposal } = await createProposal(
 				owner,
 				{
-					today: MONDAY,
-					directive: deloadOf(next, 'reactive'),
-					source: 'weekly_review',
-					review: { reviewId: review.id, revision: review.revision, weekStartsOn: reviewed }
+					proposal: {
+						...{ kind: 'replan', title: 'Deload next week', rationale: 'Legs heavy' },
+						payload: {
+							...{ directive, from: shown.from, baseVersionNumber: shown.baseVersionNumber },
+							...{ fingerprint: shown.fingerprint, shapeDigest: shown.shapeDigest }
+						}
+					},
+					provenance: {
+						kind: 'weekly_review',
+						...{ reviewId: review.id, revision: review.revision, weekStartsOn: reviewed }
+					}
 				},
 				deps
 			);

@@ -6,7 +6,8 @@
  * - a regenerate or splice whose `from` has passed, or has something logged or skipped from it
  *   (the preview starts later) → start_passed
  * - a different fingerprint (today's profile, the directive, the base, `from`) → profile_changed
- * - a different shape (phases, week kinds and dates, sessions, never loads) → plan_changed
+ * - a regenerate's or splice's different shape (phases, week kinds and dates, sessions, never
+ *   loads) → plan_changed
  * - a deload whose week has no session still ahead (the preview refuses nothing_ahead) → M6's
  *   sessions_passed
  * Otherwise the preview is stored once: storeReplan for a regenerate or a splice, reviseDeload for
@@ -306,7 +307,9 @@ export async function applyReplan(
 	if (shown.baseVersionNumber !== payload.baseVersionNumber) return superseded('program_changed');
 	if (!deload && shown.from !== payload.from) return superseded('start_passed');
 	if (shown.fingerprint !== payload.fingerprint) return superseded('profile_changed');
-	if (shown.shapeDigest !== payload.shapeDigest) return superseded('plan_changed');
+	// A deload eases its week in place: the base and fingerprint pin that week, and its sessions
+	// already past keep their own type and title at accept, so the whole-week shape would differ.
+	if (!deload && shown.shapeDigest !== payload.shapeDigest) return superseded('plan_changed');
 
 	const row = await createCoachProposalsRepository(deps.db).proposal(ownerId, proposalId);
 	const source = (row?.source ?? null) as {

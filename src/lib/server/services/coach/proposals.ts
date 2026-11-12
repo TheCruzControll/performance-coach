@@ -741,7 +741,7 @@ export interface DecidedProposal {
 	superseded?: { reason: typeof SESSIONS_PASSED; href: string };
 	/** Where a next_cycle went when a cycle review took it in (the outcome's href). */
 	href?: string;
-	/** A replan superseded by this accept: it can be proposed again from today's plan. */
+	/** A replan found stale at an accept (this one or an earlier): it can be proposed again. */
 	proposeAgain?: true;
 }
 
@@ -819,8 +819,9 @@ export async function acceptProposal(
 	deps: CoachDeps = {}
 ): Promise<DecidedProposal> {
 	const decided = await acceptOnce(ownerId, id, deps);
-	const { kind, status } = decided.proposal;
-	const again = decided.changed && kind === 'replan' && status === 'superseded';
+	const { kind, status, supersededReason } = decided.proposal;
+	// Any accept of a stale replan, this one or a repeat; never one the owner revised.
+	const again = kind === 'replan' && status === 'superseded' && supersededReason !== 'revised';
 	return again ? { ...decided, proposeAgain: true } : decided;
 }
 
