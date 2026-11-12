@@ -1,8 +1,9 @@
 /**
  * Finishing a workout on /workout (WorkoutMenu, FinishSheet, Summary, the Shell's completed state
  * and fix/workout.ts), against the real server:
- * - Once a set is logged, a visible Finish sits beside the header's More button, whose menu keeps
- *   Finish workout; it opens the same finish.
+ * - Once a set is logged, a visible Finish sits at the end of the title's line, before the
+ *   stopwatch and the More button, whose menu keeps Finish workout; it opens the same finish, and
+ *   nothing in the header moves when it arrives.
  * - Finish with planned sets still open asks first; the summary shows the best set's e1RM as M1
  *   estimates it, marked estimated, a PR only above the kit's best, and the plank's seconds, not
  *   volume; the session RPE, the notes and the stopwatch's duration are stored; Done opens the
@@ -320,9 +321,17 @@ test.describe('finishing a workout', () => {
 		await expect(headerFinish(page)).toHaveCount(0);
 		const header = page.getByTestId('workout-header');
 		const title = header.getByRole('heading', { level: 1 });
+		const stopwatch = header.getByTestId('stopwatch');
 		const [headerBefore, titleBefore] = [await boxOf(header), await boxOf(title)];
+		const [clockBefore, moreBefore] = [await boxOf(stopwatch), await boxOf(menuButton(page))];
 
-		await page.getByTestId('set-logger').getByTestId('complete-set').click();
+		// The first set works up to a weight with none suggested: it logs once a weight is in.
+		const logger = page.getByTestId('set-logger');
+		await logger
+			.getByTestId('logger-load')
+			.getByRole('button', { name: /^Increase / })
+			.click();
+		await logger.getByTestId('complete-set').click();
 		await expect(headerFinish(page)).toBeVisible();
 		await expect(headerFinish(page)).toHaveText('Finish');
 		await expect(headerFinish(page)).toBeInViewport();
@@ -331,9 +340,13 @@ test.describe('finishing a workout', () => {
 		const [headerAfter, titleAfter] = [await boxOf(header), await boxOf(title)];
 		expect(Math.abs(headerAfter.height - headerBefore.height)).toBeLessThanOrEqual(1);
 		expect(Math.abs(titleAfter.height - titleBefore.height)).toBeLessThanOrEqual(1);
-		// Apart, so Finish's widened hit area never reaches over More's.
-		const [own, more] = [await boxOf(headerFinish(page)), await boxOf(menuButton(page))];
-		expect(more.x - (own.x + own.width)).toBeGreaterThanOrEqual(8);
+		// It takes the title's room, never the stopwatch's: the stopwatch and More stay put.
+		const [clockAfter, moreAfter] = [await boxOf(stopwatch), await boxOf(menuButton(page))];
+		expect(Math.abs(clockAfter.x - clockBefore.x)).toBeLessThanOrEqual(1);
+		expect(Math.abs(moreAfter.x - moreBefore.x)).toBeLessThanOrEqual(1);
+		// Apart, so Finish's widened hit area never reaches over the stopwatch's.
+		const own = await boxOf(headerFinish(page));
+		expect(clockAfter.x - (own.x + own.width)).toBeGreaterThanOrEqual(8);
 
 		// The menu keeps Finish workout.
 		await menuButton(page).click();

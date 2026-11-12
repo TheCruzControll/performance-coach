@@ -68,8 +68,8 @@ export function progress(view: WorkoutView): Progress {
 }
 
 /**
- * Whether any set is logged (not skipped, not deleted): from then the header offers Finish
- * beside the workout menu, which keeps it too.
+ * Whether any set is logged (not skipped, not deleted): from then the header offers a visible
+ * Finish (HeaderFinish.svelte), and the workout menu keeps it too.
  */
 export function hasLoggedSet(view: WorkoutView): boolean {
 	return view.slots.some((slot) => slot.sets.some((set) => !set.isSkipped));
