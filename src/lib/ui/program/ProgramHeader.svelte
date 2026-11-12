@@ -1,7 +1,9 @@
 <!--
   @component
   Train's program header: the program's title, the block and where the week shown sits in it
-  ('Baseline week · Week 1 of 5'), an optional status as a badge ('Starts Mon 9 Nov'),
+  ('Baseline week · Week 1 of 5'), the week's findings in one line under it ('1 heads-up this
+  week'; the caller leaves it out where it would mislead), an optional status as a badge
+  ('Starts Mon 9 Nov'),
   and the weeks as numbered pills between previous and next. Each is a link the caller resolved,
   so changing week is a navigation the server renders: it replaces the history entry and keeps
   the scroll position and the focus (data-sveltekit-replacestate and -reset="false" on the nav). The
@@ -39,6 +41,8 @@
 		next?: string;
 		/** A status in words beside the position, e.g. 'Starts Mon 9 Nov'. */
 		status?: string | null;
+		/** The week's findings in one line, under the position: '1 heads-up this week'. */
+		line?: string | null;
 		/** The actions row: `.action` buttons or links, and any notice about them. */
 		actions?: Snippet;
 	}
@@ -53,6 +57,7 @@
 		previous,
 		next,
 		status,
+		line,
 		actions
 	}: Props = $props();
 	const id = $props.id();
@@ -73,6 +78,8 @@
 	<div class="titles">
 		<h2 {id} class="title">{title}</h2>
 		<p class="position" data-testid="program-position">{position}</p>
+		<!-- Always in the markup, hidden while empty: no week line adds no block. -->
+		<p class="position" data-testid="week-line">{line}</p>
 		{#if status}
 			<p class="status"><Badge icon="clock" data-testid="program-status">{status}</Badge></p>
 		{/if}
@@ -131,6 +138,10 @@
 	.position {
 		font-size: var(--text-sm);
 		color: var(--color-text-secondary);
+	}
+
+	.position:empty {
+		display: none;
 	}
 
 	.status {

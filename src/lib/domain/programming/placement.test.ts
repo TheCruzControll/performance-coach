@@ -5,7 +5,7 @@
  * class kept clear of intervals; an over-constrained week dropping, or by priority keeping, a
  * session; decisions that follow the sessions; every scenario deterministic and rule-clean.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { weekdayOf } from '../calendar';
 import { CATALOGUE } from '../exercises/index';
 import type { Weekday } from '../profile/catalog';
@@ -14,7 +14,7 @@ import { programPlanSchema } from '../training/schemas';
 import type { ProgramPlan, SessionPlan } from '../training/types';
 import { validate } from '../validation';
 import { weekBudget } from './demand';
-import { generateProgram } from './generate';
+import { generateProgram, STAGES } from './generate';
 import { buildProgrammingInput } from './input';
 import { checkWeek, demandOf } from './interference';
 import { SCENARIO_START, SCENARIOS, scenarioDay } from './scenarios';
@@ -25,6 +25,20 @@ const inputOf = (profile: TrainingProfile) =>
 	buildProgrammingInput(profile, { catalogue: CATALOGUE });
 const generate = (profile: TrainingProfile, options = OPTIONS) =>
 	generateProgram(inputOf(profile), options);
+/** The plan as placement leaves it, before the schedule stage (generator-schedule) repairs it. */
+function placed(profile: TrainingProfile, options = OPTIONS) {
+	const spy = vi
+		.spyOn(
+			STAGES.find((s) => s.name === 'schedule')!,
+			'run'
+		)
+		.mockImplementation((draft) => draft);
+	try {
+		return generate(profile, options);
+	} finally {
+		spy.mockRestore();
+	}
+}
 
 const weeksOf = (plan: ProgramPlan) => plan.blocks.flatMap((b) => b.weeks);
 const day = (s: SessionPlan) => weekdayOf(s.date);
@@ -126,14 +140,14 @@ describe('the hybrid scenario', () => {
 		}
 	});
 
-	it('explains the conflicts: the classes, and the marathon ranked above strength', () => {
+	it('explains the conflicts: the classes, and the marathon ranked above strength, which keeps its own full-body split as a secondary goal', () => {
 		const resolved = plan.decisions.filter((d) => d.kind === 'interference_resolved');
 		expect(resolved.map((d) => d.summary)).toEqual([
-			'Strength A kept clear of Muay Thai class',
-			'Strength B kept clear of Muay Thai class'
+			'Full body A kept clear of Muay Thai class',
+			'Full body B kept clear of Muay Thai class'
 		]);
 		expect(resolved[0]!.why).toBe(
-			'Heavy lower body the day before hard Muay Thai: Strength A on Monday, then Muay Thai class on Tuesday, so Strength A goes on Tuesday morning instead.'
+			'Heavy lower body the day before hard Muay Thai: Full body A on Monday, then Muay Thai class on Tuesday, so Full body A goes on Tuesday morning instead.'
 		);
 		const priority = plan.decisions.filter(
 			(d) => d.kind === 'priority_tradeoff' && d.ruleKey === 'placement.priority'
@@ -213,15 +227,29 @@ describe('placement', () => {
 		p.muayThai = { sessionsPerWeek: 3, sparringPerWeek: 1, fights: 0, notes: null, updatedAt };
 		const plan = generate(p);
 		const combat = weeksOf(plan).map((w) => w.sessions.filter((s) => demandOf(s).hardCombat));
-		expect(combat.map((sessions) => sessions.length)).toEqual([1, 2, 2, 2, 1]);
+		// generator-combat: the fight camp's sparring and conditioning in its building weeks, and a
+		// fight week of technique and light pads.
+		expect(combat.map((sessions) => sessions.length)).toEqual([2, 3, 3, 3, 0]);
 		expect(avoidIn(plan)).toEqual([]);
-		for (const week of weeksOf(plan)) {
-			expect(week.sessions.filter((s) => s.kind === 'strength')).toHaveLength(3);
-		}
+		// The camp takes no strength session here (no generator.camp_room decision): placement drops
+		// Full body B and C (every_day_clashes), since the camp's conditioning counts as hard Muay Thai.
+		const strength = weeksOf(plan).map((w) => w.sessions.filter((s) => s.kind === 'strength'));
+		expect(strength.map((sessions) => sessions.length)).toEqual([3, 1, 1, 1, 3]);
 		expect(plan.decisions.filter((d) => d.ruleKey.startsWith('placement.'))).toEqual([
 			expect.objectContaining({
 				ruleKey: 'placement.priority',
 				summary: 'Fight over Keep strength'
+			}),
+			...['Full body B', 'Full body C', 'Full body B'].map((session) =>
+				expect.objectContaining({
+					ruleKey: 'placement.every_day_clashes',
+					evidence: expect.objectContaining({ session })
+				})
+			),
+			// The fight week's third Muay Thai session has no day left before the Saturday fight.
+			expect.objectContaining({
+				ruleKey: 'placement.no_room',
+				evidence: expect.objectContaining({ session: 'Muay Thai technique' })
 			})
 		]);
 	});
@@ -286,15 +314,15 @@ describe('placement', () => {
 			expect(plan.decisions.filter((d) => d.kind === 'session_dropped')).toEqual([
 				expect.objectContaining({
 					ruleKey: 'placement.every_day_clashes',
-					summary: 'Strength B left out this week',
-					why: 'The week has no room for Strength B: every day left breaks a rule, such as heavy lower body the day before hard Muay Thai: Strength B on Tuesday, then Muay Thai class on Wednesday. Lower-priority sessions give way first.',
+					summary: 'Full body B left out this week',
+					why: 'The week has no room for Full body B: every day left breaks a rule, such as heavy lower body the day before hard Muay Thai: Full body B on Tuesday, then Muay Thai class on Wednesday. Lower-priority sessions give way first.',
 					refs: weeksOf(plan).map((_, w) => `blocks.0.weeks.${w}`)
 				})
 			]);
 			// Saturday is the one free day not before a class: a Sunday is before next Monday's.
 			for (const week of weeksOf(plan)) {
 				const lifting = week.sessions.filter((s) => s.kind === 'strength');
-				expect(lifting.map((s) => [s.title, day(s)])).toEqual([['Strength A', 'sat']]);
+				expect(lifting.map((s) => [s.title, day(s)])).toEqual([['Full body A', 'sat']]);
 			}
 			expect(avoidIn(plan)).toEqual([]);
 		});
@@ -335,22 +363,27 @@ describe('placement', () => {
 				preferredTimes: ['morning'],
 				commitments: [{ ...classes!, intensity: 'hard' }]
 			};
-			const plan = generate(p);
-			for (const week of weeksOf(plan)) {
+			const plan = placed(p);
+			// The fight camp's fight week is light enough for both sessions; every week before it
+			// keeps one, on the day that clashes only with the marathon, held at maintenance.
+			const building = weeksOf(plan).filter((w) => w.kind !== 'event');
+			expect(building).toHaveLength(4);
+			for (const week of building) {
 				const lifting = week.sessions.filter((s) => s.kind === 'strength');
-				expect(lifting.map((s) => [s.title, day(s)])).toEqual([['Strength A', 'fri']]);
+				expect(lifting.map((s) => [s.title, day(s)])).toEqual([['Full body A', 'fri']]);
 			}
 			expect(
 				plan.decisions.filter((d) => d.ruleKey.startsWith('placement.')).map((d) => d.summary)
 			).toEqual([
-				'Strength A kept clear of Muay Thai class',
+				'Full body A kept clear of Muay Thai class',
+				'Full body B kept clear of Muay Thai class',
 				'Keep strength over Marathon',
-				'Strength B left out this week'
+				'Full body B left out this week'
 			]);
 		});
 
 		it('drops the lowest-priority sessions a part week 1 has no room for', () => {
-			const plan = generate(SCENARIOS.hybrid(), { ...OPTIONS, firstPlannedDay: scenarioDay(1, 3) });
+			const plan = placed(SCENARIOS.hybrid(), { ...OPTIONS, firstPlannedDay: scenarioDay(1, 3) });
 			const [first] = weeksOf(plan);
 			expect(first!.sessions.map((s) => [day(s), s.type, s.timeOfDay])).toEqual([
 				['thu', 'easy_run', 'morning'],
@@ -361,8 +394,8 @@ describe('placement', () => {
 			expect(plan.decisions.filter((d) => d.kind === 'session_dropped')).toEqual([
 				expect.objectContaining({
 					ruleKey: 'placement.no_room',
-					summary: 'Strength B left out this week',
-					why: 'The week has no room for Strength B: the days left this week hold 3 sessions besides your commitments. Lower-priority sessions give way first.',
+					summary: 'Full body B left out this week',
+					why: 'The week has no room for Full body B: the days left this week hold 3 sessions besides your commitments. Lower-priority sessions give way first.',
 					refs: ['blocks.0.weeks.0']
 				})
 			]);

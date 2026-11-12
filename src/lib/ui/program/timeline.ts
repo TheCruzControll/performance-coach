@@ -9,7 +9,7 @@ import { addDays, daysBetween, type IsoDate } from '#lib/domain/calendar.ts';
 import type { GoalStatus } from '#lib/domain/profile/catalog.ts';
 import type { Goal } from '#lib/domain/profile/types.ts';
 import type { BlockPlan } from '#lib/domain/training/types.ts';
-import { PHASE_LABEL } from '#lib/domain/training/vocabulary.ts';
+import { PHASE_LABEL, type Phase } from '#lib/domain/training/vocabulary.ts';
 import { shortDate } from './words.ts';
 
 /** The plan's dated blocks: a stored program's summary or a generated plan fits. */
@@ -32,6 +32,12 @@ export type TimelineGoal = Pick<Goal, 'id' | 'title' | 'eventDate' | 'status'>;
  * built around it. An event past the outline is planned later (blocks.ts), so it is not shown.
  */
 export const EVENTS_LEFT_OUT: readonly GoalStatus[] = ['dropped'];
+
+/**
+ * A late start's bridge between blocks: next-block/dates.ts's BRIDGE_PHASE, the only block of
+ * that phase (server-only there, so named again here). Its weeks are planned with no sessions.
+ */
+const BRIDGE_PHASE: Phase = 'transition';
 
 /** A dated goal in its week: 'Fight night', 'Sat 26 Dec'. */
 export interface TimelineEvent {
@@ -61,6 +67,8 @@ export interface TimelineBlock {
 	span: string;
 	/** Dated, with its weeks not planned yet. */
 	outline: boolean;
+	/** Unplanned weeks between two blocks: 'Between blocks · 3 weeks', the weeks 'Unplanned'. */
+	bridge: boolean;
 	/** It holds the week that holds today. */
 	current: boolean;
 	weeks: TimelineWeek[];
@@ -102,12 +110,15 @@ export function timelineView(
 			};
 		});
 		const phase = PHASE_LABEL[block.phase];
+		const length = `${count} ${count === 1 ? 'week' : 'weeks'}`;
+		const bridge = block.phase === BRIDGE_PHASE;
 		return {
 			key: block.startsOn,
-			name: block.name,
-			phase: block.name.toLowerCase().startsWith(phase.toLowerCase()) ? null : phase,
-			span: `${range(block.startsOn, block.endsOn)} · ${count} ${count === 1 ? 'week' : 'weeks'}`,
+			name: bridge ? `${phase} · ${length}` : block.name,
+			phase: bridge || block.name.toLowerCase().startsWith(phase.toLowerCase()) ? null : phase,
+			span: `${range(block.startsOn, block.endsOn)} · ${bridge ? 'Nothing planned' : length}`,
 			outline: block.outline,
+			bridge,
 			current: weeks.some((week) => week.current),
 			weeks
 		};

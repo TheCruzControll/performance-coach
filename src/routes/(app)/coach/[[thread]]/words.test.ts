@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { CompletedBlock } from '#lib/domain/coach/index.ts';
 import { COMPOSER_MAX_CHARS } from '#lib/ui/coach/composer-keys.ts';
 import type { ProposalCardView } from '#lib/domain/coach/cards.ts';
+import { ASK_QUESTIONS, askHref } from '#lib/ui/ask-link.ts';
 import { archivedWords, prefillOf, shownMessages, whenWords, type DisplayedRow } from './words';
 
 const search = (query: string) => new URLSearchParams(query);
@@ -16,7 +17,8 @@ describe('prefillOf', () => {
 		expect(prefillOf(search('ask=%20How%20did%20it%20go%3F%20&from=workout'))).toEqual({
 			text: 'How did it go?',
 			from: 'workout',
-			label: 'From your workout'
+			label: 'From your workout',
+			ref: null
 		});
 		expect(prefillOf(search('ask=Next%20week%3F&from=today'))?.label).toBe('From Today');
 	});
@@ -25,15 +27,90 @@ describe('prefillOf', () => {
 		expect(prefillOf(search('ask=Hi&from=calendar'))).toEqual({
 			text: 'Hi',
 			from: 'calendar',
-			label: null
+			label: null,
+			ref: null
 		});
 		expect(prefillOf(search('ask=Hi&from=Workout%2F1'))).toEqual({
 			text: 'Hi',
 			from: null,
-			label: null
+			label: null,
+			ref: null
 		});
 		// Inherited keys are not entries.
 		expect(prefillOf(search('ask=Hi&from=constructor'))?.label).toBeNull();
+	});
+
+	it('takes the entry’s ref as a source ref, and drops a malformed or unknown one', () => {
+		expect(prefillOf(search('ask=Hi&from=workout&ref=workout%3Aw-1'))?.ref).toEqual({
+			type: 'workout',
+			id: 'w-1'
+		});
+		for (const ref of ['workout', 'calendar:1', 'workout:a/b', 'workout:', 'exercise:x|Label']) {
+			expect(
+				prefillOf(search(`ask=Hi&from=workout&ref=${encodeURIComponent(ref)}`))?.ref
+			).toBeNull();
+		}
+		// A ref goes with an entry: without a valid `from` the turn would not send it.
+		expect(prefillOf(search('ask=Hi&ref=workout%3Aw-1'))?.ref).toBeNull();
+		expect(prefillOf(search('ask=Hi&from=Bad%2F1&ref=workout%3Aw-1'))?.ref).toBeNull();
+	});
+
+	it('reads every Ask the coach link back as its question, chip and ref', () => {
+		const prefill = (href: string) => prefillOf(new URL(href, 'https://coach.test').searchParams);
+		const workoutId = '0b5e2b8e-9d0c-4f61-8a43-5d3b8e7f2a10';
+		expect(
+			prefill(askHref(ASK_QUESTIONS.workout, 'workout', { type: 'workout', id: workoutId }))
+		).toEqual({
+			text: 'Can we change today’s workout?',
+			from: 'workout',
+			label: 'From your workout',
+			ref: { type: 'workout', id: workoutId }
+		});
+		expect(
+			prefill(
+				askHref(ASK_QUESTIONS.exercise('Back squat'), 'exercise', {
+					type: 'exercise',
+					id: 'back_squat'
+				})
+			)
+		).toEqual({
+			text: 'How has my Back squat progressed?',
+			from: 'exercise',
+			label: 'From an exercise’s history',
+			ref: { type: 'exercise', id: 'back_squat' }
+		});
+		expect(prefill(askHref(ASK_QUESTIONS.today, 'today'))).toEqual({
+			text: 'What should I focus on next week?',
+			from: 'today',
+			label: 'From Today',
+			ref: null
+		});
+	});
+
+	it('reads a review’s Discuss link back as its chip and its review ref', () => {
+		const prefill = (href: string) => prefillOf(new URL(href, 'https://coach.test').searchParams);
+		const cycle = 'c-0b5e2b8e-9d0c-4f61-8a43-5d3b8e7f2a10';
+		expect(
+			prefill(
+				askHref(ASK_QUESTIONS.review('weekly'), 'weekly_review', {
+					type: 'review',
+					id: 'w-2026-11-09'
+				})
+			)
+		).toEqual({
+			text: 'Can we go through my weekly review?',
+			from: 'weekly_review',
+			label: 'From your weekly review',
+			ref: { type: 'review', id: 'w-2026-11-09' }
+		});
+		expect(
+			prefill(askHref(ASK_QUESTIONS.review('cycle'), 'cycle_review', { type: 'review', id: cycle }))
+		).toEqual({
+			text: 'Can we go through my cycle review?',
+			from: 'cycle_review',
+			label: 'From your cycle review',
+			ref: { type: 'review', id: cycle }
+		});
 	});
 
 	it('cuts the question at the composer’s limit, in characters', () => {

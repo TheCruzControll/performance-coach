@@ -7,7 +7,7 @@
  */
 import { render } from 'svelte/server';
 import { describe, expect, it } from 'vitest';
-import { staleNotice, type WeeklyReviewData } from './load.ts';
+import { staleNotice, type NextWeekView, type WeeklyReviewData } from './load.ts';
 import type { SectionView } from './sections.ts';
 import ReviewBody from './ReviewBody.svelte';
 import WeeklyReview from './WeeklyReview.svelte';
@@ -55,6 +55,7 @@ const review = (parts: Partial<WeeklyReviewData> = {}): WeeklyReviewData => ({
 	sections: [RPE],
 	stale: null,
 	writeUp: null,
+	nextWeek: null,
 	...parts
 });
 
@@ -90,9 +91,39 @@ describe('the weekly review on the server', () => {
 		expect(html(review())).not.toContain('review-stale');
 	});
 
+	it('the write-up after the figures, with Discuss; none without one (before M6)', () => {
+		expect(html(review())).not.toContain('data-testid="review-write-up"');
+		const discuss = '/coach?ask=Hi&from=weekly_review&ref=review%3Aw-2026-10-26';
+		const body = html(
+			review({
+				narration: {
+					target: { kind: 'weekly', id: 'review-1' },
+					view: { state: 'written', text: 'Fact: You completed 5 of 6 sessions.', blocks: [] },
+					lines: ['Fact: You completed 5 of 6 sessions.'],
+					discuss
+				}
+			})
+		);
+		const at = body.indexOf('data-testid="review-write-up"');
+		expect(at).toBeGreaterThan(body.indexOf('data-testid="review-adherence-words"'));
+		const section = body.slice(at, body.indexOf('</section>', at));
+		expect(text(`<${section}`)).toContain('Fact: You completed 5 of 6 sessions.');
+		expect(section).toContain(`href="${discuss.replaceAll('&', '&amp;')}"`);
+	});
+
 	it('sends the body as the markup the load rendered, between the counts and the write-up', () => {
 		const sent = render(WeeklyReview, {
-			props: { review: review(), served: '<section>the body</section>' }
+			props: {
+				review: review({
+					narration: {
+						target: { kind: 'weekly', id: 'review-1' },
+						view: { state: 'written', text: 'Fact: You completed 5 of 6 sessions.', blocks: [] },
+						lines: ['Fact: You completed 5 of 6 sessions.'],
+						discuss: '/coach'
+					}
+				}),
+				served: '<section>the body</section>'
+			}
 		}).body;
 		expect(sent).toMatch(
 			/<div data-served(="")? style="display: contents">(<!--[^>]*-->)?<section>the body<\/section>/
@@ -128,5 +159,83 @@ describe('the weekly review on the server', () => {
 
 	it('a legacy review has no sections', () => {
 		expect(bodyHtml(review({ legacy: true, sections: [] }))).not.toContain('review-section');
+	});
+
+	describe("next week's card", () => {
+		const item = (id: string, parts: Partial<NextWeekView['items'][number]> = {}) => ({
+			...{ id, label: `Change ${id}`, before: '85 kg', after: '87.5 kg', why: `Why ${id}` },
+			...{ half: null, passed: null },
+			...parts
+		});
+		const card = (parts: Partial<NextWeekView>): NextWeekView => ({
+			...{ state: 'partly_past', title: 'Some sessions have passed — apply the rest?' },
+			...{ words: '1 of 2 changes are still ahead.', items: [], notProposed: [] },
+			link: null,
+			...parts
+		});
+		const formOf = (body: string, action: string) =>
+			new RegExp(`<form[^>]*action="\\?/${action}"[\\s\\S]*?</form>`).exec(body)?.[0] ?? '';
+
+		it('posts each change still ahead, ticked, with its half step; a passed one struck, unposted', () => {
+			const items = [
+				item('load:a', { passed: 'Monday has passed', half: '86.25 kg' }),
+				item('load:b', { half: '86.25 kg' })
+			];
+			const body = html(review({ nextWeek: card({ items }) }));
+			const decide = formOf(body, 'decide');
+			expect(decide).toMatch(/method="POST"/);
+			expect(decide).toMatch(/<input type="hidden" name="reviewId" value="review-2"/);
+			const [passed, ahead] = decide.split('data-testid="review-next-item"').slice(1);
+			expect(passed).toMatch(
+				/<input[^>]*type="checkbox"[^>]*name="item"[^>]*value="load:a"[^>]*disabled/
+			);
+			expect(passed).not.toMatch(/\bchecked\b/);
+			expect(text(passed!)).toContain('Monday has passed');
+			expect(passed).not.toContain('choice:load:a');
+			expect(ahead).toMatch(
+				/<input[^>]*type="checkbox"[^>]*name="item"[^>]*value="load:b"[^>]*checked/
+			);
+			// Unticked, the change posts as proposed (forms/reviews.ts choicesOf).
+			expect(ahead).toMatch(
+				/type="checkbox" name="choice:load:b" value="half_step"(?![^>]*checked)/
+			);
+			expect(text(ahead!)).toContain('Half step · 86.25 kg');
+			expect(text(ahead!)).toContain('Why load:b');
+			expect(text(ahead!)).toContain('Change load:b 85 kg → to 87.5 kg');
+			expect(decide).toMatch(
+				/type="submit"[^>]*data-testid="review-next-generate"|data-testid="review-next-generate"[^>]*type="submit"/
+			);
+			// Keep posts the same form to ?/keep, without JavaScript too.
+			expect(decide).toMatch(
+				/<button[^>]*formaction="\?\/keep"[^>]*data-testid="review-next-keep"/
+			);
+			expect(text(decide)).toContain('Keep next week as planned');
+		});
+
+		it('all past: struck through with no actions', () => {
+			const items = [item('load:a', { passed: 'Monday has passed' })];
+			const body = html(
+				review({
+					nextWeek: card({ state: 'all_past', title: 'Too late to change next week', items })
+				})
+			);
+			expect(text(body)).toContain('Too late to change next week');
+			expect(body).toContain('review-next-item');
+			expect(body).not.toContain('review-next-generate');
+			expect(body).not.toContain('action="?/keep"');
+		});
+
+		it('applied: the version in History, with no form', () => {
+			const nextWeek = card({
+				state: 'applied',
+				title: 'Next week updated · version 4',
+				words: null,
+				link: { href: '/train/history/4', label: 'See version 4 in History' }
+			});
+			const body = html(review({ nextWeek }));
+			expect(body).not.toContain('<form method="POST" action="?/decide"');
+			expect(text(body)).toContain('Next week updated · version 4');
+			expect(body).toMatch(/<a[^>]*href="\/train\/history\/4"[^>]*data-testid="review-next-link"/);
+		});
 	});
 });

@@ -34,6 +34,8 @@
 		/** Multiple choice, always in the options' order. */
 		values?: T[];
 		onchange?: () => void;
+		/** The inputs' form field name, for a choice a form posts; a unique one otherwise. */
+		name?: string;
 		'data-testid'?: string;
 	}
 
@@ -48,6 +50,7 @@
 		value = $bindable(null),
 		values = $bindable([]),
 		onchange,
+		name,
 		'data-testid': testId
 	}: Props = $props();
 
@@ -89,7 +92,7 @@
 				<input
 					class="input"
 					type={multiple ? 'checkbox' : 'radio'}
-					name={id}
+					name={name ?? id}
 					value={option.value}
 					{...{ checked: multiple ? values.includes(option.value) : value === option.value }}
 					aria-invalid={error ? 'true' : undefined}

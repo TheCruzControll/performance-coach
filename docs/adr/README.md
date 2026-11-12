@@ -25,3 +25,4 @@ Status values: Proposed · Accepted · Superseded.
 | [NNNN](NNNN-periodisation-engine.md)     | Periodisation: rules as data, one evaluator, one load model   | Proposed |
 | [NNNN](NNNN-planning-later-blocks.md)    | Planning later blocks: a new version, a bridge, no past days  | Proposed |
 | [NNNN](NNNN-lifecycles-as-data.md)       | Lifecycles as data: a typed transition table per status list  | Proposed |
+| [NNNN](NNNN-replans-as-versions.md)      | Re-plans as versions: four directives, three mechanisms       | Proposed |
