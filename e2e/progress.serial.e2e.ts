@@ -85,7 +85,7 @@ async function expectKpis(page: Page, seeded: SeededAnalytics, weeks: number) {
 /** '6,200 kg', or what a tile says for nothing. */
 const kg = (value: number) =>
 	value === 0
-		? /(0 kg|nothing)/
+		? /(0\s+kg|nothing)/
 		: `${value.toLocaleString('en-US', { maximumFractionDigits: 1 })} kg`;
 
 test.describe('twelve weeks', () => {
@@ -119,6 +119,22 @@ test.describe('twelve weeks', () => {
 
 	test('each verdict says its words and its window, at 12 weeks and at 4', async ({ page }) => {
 		await gotoHydrated(page, '/progress');
+		// Every arrow follows better, not the raw sign: a faster pace's improvement points up.
+		const verdicts = page.getByTestId('verdict');
+		await expect(verdicts.first()).toBeVisible();
+		for (const verdict of await verdicts.all()) {
+			const words = (await verdict.textContent())!.trim();
+			const icon = verdict.locator('use');
+			if (words.startsWith('Real improvement')) {
+				await expect(icon, words).toHaveAttribute('href', /#trend-up$/);
+			} else if (words.startsWith('Real decline')) {
+				await expect(icon, words).toHaveAttribute('href', /#trend-down$/);
+			}
+		}
+		// A number and its unit never part: a non-breaking space joins them.
+		const tonnage = (await tile(page, 'tonnage').getByTestId('tile-sentence').textContent())!;
+		expect(tonnage).toMatch(/\d\u00a0kg/);
+		expect(tonnage).not.toMatch(/\d kg/);
 		const strength = page.locator('[data-testid="verdict-card"][data-area="strength"]');
 		await expect(strength).toContainText('Trend over the last 12 weeks');
 		await expect(
