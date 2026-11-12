@@ -16,7 +16,8 @@
   I focus on next week?' (a link: ui/ask-link.ts). In a bridge week between blocks, 'Between
   blocks' names the day the next block starts, with 'Log something else', in place of the week.
   When a week or a block completes, its review prompt leads (ReviewPrompt: create and open it, or
-  'See your review'). Code-split behind PanelLoader.
+  'See your review'). A light or special week is named at the top of the day with its why, as
+  Train's header names it ('Deload week', server text). Code-split behind PanelLoader.
 -->
 <script lang="ts">
 	import { invalidateAll } from '$app/navigation';
@@ -256,6 +257,13 @@
 					gap={isToday ? 'md' : 'sm'}
 					data-testid="today-day"
 				>
+					<!-- Inside the day's section: on a desktop screen the plan's rows are Today's (subgrid). -->
+					{#if view.weekKind}
+						<p class="kind" data-testid="today-week-kind">
+							<Badge data-testid="week-kind-label">{view.weekKind.label}</Badge>
+							{view.weekKind.why}
+						</p>
+					{/if}
 					{#each day.cards as card (card.lineage)}
 						{#if isToday}
 							<div class="session" data-testid="today-session">
@@ -346,6 +354,16 @@
 	}
 
 	.note-copy {
+		font-size: var(--text-sm);
+		color: var(--color-text-secondary);
+	}
+
+	/* The week's kind and why, a quiet line atop the day, as Train's header has it. */
+	.kind {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: var(--space-1) var(--space-2);
 		font-size: var(--text-sm);
 		color: var(--color-text-secondary);
 	}

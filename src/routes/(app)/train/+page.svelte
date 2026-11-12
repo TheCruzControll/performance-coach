@@ -196,7 +196,8 @@
 			position={view.position}
 			weeks={Array.from({ length: view.program.plannedWeeks }, (_, i) => ({
 				number: i + 1,
-				href: weekHref(i + 1)
+				href: weekHref(i + 1),
+				mark: view.marks[i + 1]
 			}))}
 			shown={view.shown}
 			current={view.program.currentWeek}
@@ -205,6 +206,7 @@
 			next={view.shown < view.totalWeeks ? weekHref(view.shown + 1) : undefined}
 			status={view.status}
 			line={view.weekLine}
+			kind={view.weekKind}
 		>
 			{#snippet actions()}
 				<button

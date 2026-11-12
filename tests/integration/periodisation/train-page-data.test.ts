@@ -43,7 +43,7 @@ const ALLOWANCES = {
 	timeline: 0.7,
 	replanNote: 0.1
 } as const;
-const ON: readonly (keyof typeof ALLOWANCES)[] = ['findings', 'why'];
+const ON: readonly (keyof typeof ALLOWANCES)[] = ['findings', 'why', 'weekKinds'];
 /** Random ids and the store's timestamps move a measure by a few bytes either way. */
 const TOLERANCE_B = 64;
 
@@ -75,13 +75,17 @@ describe('Train’s page data', () => {
 					cards: d.cards.map(({ why: _why, ...card }) => card)
 				}));
 				const why = bytes - gzipSync(JSON.stringify({ ...data, days })).length;
+				// The same data without the week-kind line and the pills' words: their own bytes.
+				const { weekKind: _kind, marks: _marks, ...unmarked } = data;
+				const weekKinds = bytes - gzipSync(JSON.stringify(unmarked)).length;
 				const allowed = ON.reduce((sum, row) => sum + ALLOWANCES[row] * 1024, 0);
 				const growth = bytes - baseline.bytes[name];
 				console.log(
-					`Train page data, ${name} week: ${bytes} B gzip (${growth >= 0 ? '+' : ''}${growth} B on ${baseline.bytes[name]} B, allowed +${Math.round(allowed)} B; the why ${why} B of ${ALLOWANCES.why * 1024} B)`
+					`Train page data, ${name} week: ${bytes} B gzip (${growth >= 0 ? '+' : ''}${growth} B on ${baseline.bytes[name]} B, allowed +${Math.round(allowed)} B; the why ${why} B of ${ALLOWANCES.why * 1024} B; week kinds ${weekKinds} B of ${ALLOWANCES.weekKinds * 1024} B)`
 				);
 				expect(growth).toBeLessThanOrEqual(allowed + TOLERANCE_B);
 				expect(why).toBeLessThanOrEqual(ALLOWANCES.why * 1024);
+				expect(weekKinds).toBeLessThanOrEqual(ALLOWANCES.weekKinds * 1024);
 			});
 		}
 	);

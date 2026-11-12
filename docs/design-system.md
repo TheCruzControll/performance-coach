@@ -729,7 +729,7 @@ m7/14 placement-why: every card of a planned week that a decision names has 'Why
 
 m7/23 move-evaluation: not built yet.
 
-m7/38 week-kind-indicators: not built yet.
+m7/38 week-kind-indicators: a deload, taper, event, recovery, cutback or maintenance week still ahead is named in `ProgramHeader` under the position, and at the top of Today's day (inside its section, so the desktop subgrid keeps its rows): the kind as a neutral `Badge` ('Deload week'), then its why as plain secondary text, the server's words (the week's own decision's summary, else M3's, else `WEEK_KIND_WHY`), with ' · 10K race in 24 days' when an event is within 8 weeks. Never a tone: lighter is deliberate, not a warning. The badge never wraps; the why wraps under it on a narrow screen. On Train the tag is the line's `::before`, drawn from `data-tag` in `Badge`'s neutral style rather than the component, and a light week's pill draws its word after its number in the same style from `data-mark` ('Deload', 'Taper', 'Event', 'Recovery', 'Cutback'; a maintenance week none), its accessible name saying it ('Week 4, Taper'): no element or component for either, to keep Train's initial JS small. No line on a normal, past, outline or bridge week, or when the read fails.
 
 m7/39 periodisation-timeline: not built yet.
 

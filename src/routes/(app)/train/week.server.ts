@@ -22,6 +22,10 @@
  *   services/periodisation/explain.ts), read before the findings, which take the generator's
  *   priority trade-offs from it. A read that fails is recorded (part 'why') and the week renders
  *   its findings without the disclosures.
+ * - A deload, taper, event, recovery, cutback or maintenance week still ahead names its kind
+ *   with one line of why and any event's countdown, and each week pill carries its kind's word
+ *   (m7/38, services/periodisation/week-line.ts). A read that fails is recorded (part
+ *   'weekLine') and the week renders without them.
  * - With no program, whether the training profile is complete picks the empty state's next step.
  * - It fails soft: a read that fails is recorded as a server error (kind 'load') and Train shows
  *   its designed error with Retry, inside the shell, instead of the 500 page.
@@ -40,6 +44,11 @@ import {
 	type PlacementAt,
 	type PlacementWhyView
 } from '#lib/server/services/periodisation/explain.ts';
+import {
+	getWeekLine,
+	type WeekLineAt,
+	type WeekLineView
+} from '#lib/server/services/periodisation/week-line.ts';
 import { getOnboarding, listGoals } from '#lib/server/services/profile/index.ts';
 import {
 	getCurrentProgram,
@@ -100,6 +109,10 @@ export type TrainWeekData =
 			days: TrainDay[];
 			/** Its findings counted: on a planned week still ahead, else null (week line). */
 			weekLine: string | null;
+			/** A light or special week still ahead: 'Deload week', and why (m7/38); else null. */
+			weekKind: { label: string; why: string } | null;
+			/** The planned weeks' pill words, by number: { 4: 'Deload' }. */
+			marks: Record<number, string>;
 			/** The side column: week 1's brief in a baseline week, then what a review changed. */
 			aside: AsidePanel[];
 			/** In place of the week's sessions: first block complete, not planned yet, or a bridge. */
@@ -126,7 +139,13 @@ export interface TrainLoadDeps extends Pick<TrainingDeps, 'db'> {
 	 * from `why.db` when given). false skips every M7 read: only the explain harness turns it off,
 	 * to time Train's own path.
 	 */
-	periodisation?: false | (Pick<TrainingDeps, 'db'> & { why?: Pick<TrainingDeps, 'db'> });
+	periodisation?:
+		| false
+		| (Pick<TrainingDeps, 'db'> & {
+				why?: Pick<TrainingDeps, 'db'>;
+				/** The week-kind line and the pills' words (m7/38). */
+				line?: Pick<TrainingDeps, 'db'>;
+		  });
 }
 
 /** The week number in `param`, or null for the current week. */
@@ -195,6 +214,16 @@ const whyOf = (
 	deps: PartDeps
 ): Promise<PlacementWhyView | null> =>
 	softly('why', () => getPlacementWhy(ownerId, at, { db: deps.db }), deps);
+
+/** The week's kind line and the pills' words, or null when reading them failed: recorded. */
+const lineOf = (ownerId: string, at: WeekLineAt, deps: PartDeps): Promise<WeekLineView | null> =>
+	softly('weekLine', () => getWeekLine(ownerId, at, { db: deps.db }), deps);
+
+/** The kind line in words: its why, then any countdown. */
+const kindWords = ({ label, why, countdown }: NonNullable<WeekLineView['line']>) => ({
+	label,
+	why: countdown ? `${why} · ${countdown}` : why
+});
 
 /** Each card with its finding's note and its why, when it has them. */
 function withNotes(
@@ -265,6 +294,18 @@ export async function loadTrainWeek(
 		};
 		const findings =
 			at && m7 && shown.endsOn >= today ? await findingsOf(ownerId, ahead, m7) : null;
+		const goals = await listGoals(ownerId, { db });
+		const lineAt = { programId: program.id, version: shown.version.number, today, goals };
+		// Only a week still ahead shows its line: a past one reads only the pills' words.
+		const withLine = Boolean(at) && shown.endsOn >= today;
+		const kinds = m7
+			? await lineOf(
+					ownerId,
+					{ ...lineAt, weekStartsOn: shown.startsOn, withLine },
+					{ ...m7, db: periodisation.line?.db ?? m7.db }
+				)
+			: null;
+		const line = kinds?.line;
 		return {
 			state: 'program',
 			today,
@@ -283,6 +324,8 @@ export async function loadTrainWeek(
 				? withNotes(weekWords(shown, today), findings, why)
 				: { strip: [], days: [] }),
 			weekLine: findings?.summary ?? null,
+			weekKind: line ? kindWords(line) : null,
+			marks: kinds?.marks ?? {},
 			aside: [
 				...(shown.planned && shown.kind === 'baseline' ? [BASELINE_BRIEF] : []),
 				...(changes ? [reviewNotice(changes)] : [])
@@ -295,7 +338,7 @@ export async function loadTrainWeek(
 						? blockCompleteCard(program, shown.phase, await cycleReviewKey(ownerId, program, db))
 						: notPlannedCard(number, shown.phase),
 			offPlan,
-			plan: timelineView(program, { today, goals: await listGoals(ownerId, { db }) })
+			plan: timelineView(program, { today, goals })
 		};
 	} catch (error) {
 		await recordServerError(

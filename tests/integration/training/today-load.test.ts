@@ -209,6 +209,8 @@ describe('Today’s plan', () => {
 						'You trained through every planned week, Mon 26 Oct – Sun 1 Nov. Your next block is planned from how this one went.'
 				},
 				upNext: [],
+				// No week is shown, so no week-kind line (m7/38).
+				weekKind: null,
 				// The block is over and has no review: Today offers it (review-prompt.server.ts).
 				review: expect.objectContaining({
 					kind: 'cycle',
