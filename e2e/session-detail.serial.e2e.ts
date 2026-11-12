@@ -164,6 +164,14 @@ test.describe('a program that starts next week', () => {
 		await expect(steps).toHaveCount(3);
 		await expect(steps.nth(0)).toHaveText(/^\s*Warm-up 10:00\s*RPE 3\s*$/);
 		await expect(steps.nth(1)).toContainText('Repeat 6 times');
+		// On screen the count says it once ('6×'); the words are for a screen reader alone.
+		const times = steps.nth(1).locator('.times');
+		const shown = await times.evaluate((el) => {
+			const copy = el.cloneNode(true) as HTMLElement;
+			copy.querySelectorAll('.visually-hidden').forEach((hidden) => hidden.remove());
+			return copy.textContent?.trim();
+		});
+		expect(shown, 'the count is not repeated in words on screen').toBe('6×');
 		await expect(steps.nth(1).getByRole('listitem')).toHaveText([
 			/^\s*Interval 400 m\s*6:02–6:26 \/mi\s*$/,
 			/^\s*Recovery 1:30\s*RPE 2\s*$/

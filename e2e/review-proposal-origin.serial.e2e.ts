@@ -182,15 +182,17 @@ test.describe('a cycle review’s next cycle', () => {
 		const seeded = await seedReview(request, 'block-end');
 		if (seeded.review.kind !== 'cycle') throw new Error('a cycle scenario');
 		const { blockLineageId } = seeded.review;
-		// Created as the list's Create posts it without JavaScript: a 303 to the review.
+		// Created as the list's Create posts it from its script: a redirect to the review.
 		const created = await request.post(`${LIST}?/createCycle`, {
-			headers: SAME_ORIGIN,
-			form: { programId: seeded.programId!, blockLineage: blockLineageId },
-			maxRedirects: 0
+			headers: { ...SAME_ORIGIN, accept: 'application/json', 'x-sveltekit-action': 'true' },
+			form: { programId: seeded.programId!, blockLineage: blockLineageId }
 		});
-		expect(created.status()).toBe(303);
 		const [review] = await cycleReviews(blockLineageId);
 		reviewId = review!.id;
+		expect(await created.json()).toMatchObject({
+			type: 'redirect',
+			location: `${LIST}/c-${reviewId}`
+		});
 		own = review!.proposalId!;
 		folded = await asCoach(own, 'Coach: heavier triples next block');
 		planned = await asCoach(own, 'Coach: one more idea for next block');

@@ -84,13 +84,11 @@ const text = (fragment: string) =>
 		.replace(/<[^>]+>/g, ' ')
 		.replace(/\s+/g, ' ')
 		.trim();
-
-/** A section's markup: its disclosure, then its body, up to the next section (ReviewSections). */
+/** One section's markup: from its element to the next section's (its body follows its details). */
 const sectionOf = (body: string, id: string) => {
-	const start = body.search(new RegExp(`<div[^>]*data-section="${id}"`));
-	if (start < 0) throw new Error(`no section ${id}`);
-	const next = body.slice(start + 1).search(/<div[^>]*data-section="/);
-	return next < 0 ? body.slice(start) : body.slice(start, start + 1 + next);
+	const rest = body.slice(body.search(new RegExp(`<div[^>]*data-section="${id}"`)));
+	const next = rest.slice(1).search(/<div[^>]*data-testid="review-section"/);
+	return next < 0 ? rest : rest.slice(0, next + 1);
 };
 
 describe('the cycle review on the server', () => {
