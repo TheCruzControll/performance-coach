@@ -129,7 +129,7 @@
 	{#if sheetFailed}
 		<Notice tone="danger" title="Couldn’t load this part of the coach" data-testid="sheet-failed">
 			<p>Check your connection, then try again. Nothing was lost.</p>
-			<Button variant="secondary" size="sm" icon="refresh" onclick={reject}>Retry</Button>
+			<Button variant="secondary" size="sm" icon="refresh" onclick={reject}>Try again</Button>
 		</Notice>
 	{/if}
 

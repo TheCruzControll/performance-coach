@@ -6,7 +6,9 @@
  * - The decision is on the head of the review's proposal chain (proposalHead), undecided or
  *   partly past (superseded as sessions_passed by an accept from M5's inbox).
  * - The chosen ops are split with opsStillAhead, as acceptProposal splits them: a change whose
- *   session has passed or started is dropped and counted in `passed`.
+ *   session has passed or started is dropped. `passed` counts every offered change no longer
+ *   ahead, chosen or not: the card cannot post one (its checkbox is disabled), and it is left out
+ *   either way.
  * - Everything as proposed and still ahead: the head is accepted as it is.
  * - Anything left out, at a half step or no longer ahead: an owner revision of the head
  *   (createProposal, revision_of the head, the review's provenance with modifiedBy 'owner' when
@@ -18,8 +20,10 @@
  * - A review already decided returns its decision as it is, so a retry never applies twice; the
  *   owner's review lock serialises two at once. A head whose program has moved on is superseded
  *   (program_changed) by acceptProposal, and nothing is applied.
+ * - nextWeekOffers lists the head's changes for the review screen, each split the same way.
  * Every query is awaited in turn, so the whole decision runs on one transaction.
  */
+import type { IsoDate } from '../../../domain/calendar';
 import type { ProgramOp } from '../../../domain/coach/proposals';
 import { localDay } from '../../../domain/dates';
 import { getDb } from '../../db';
@@ -40,6 +44,7 @@ import {
 	getWeeklyReview,
 	proposalHead,
 	ReviewInputError,
+	ReviewNotFoundError,
 	ReviewSupersededError,
 	type ReviewDeps
 } from './store';
@@ -66,7 +71,7 @@ export type NextWeekDecision =
 			proposalId: string;
 			versionId: string | null;
 			versionNumber: number | null;
-			/** Chosen changes dropped because their sessions had passed. */
+			/** Offered changes left out because their sessions had passed or started. */
 			passed: number;
 	  }
 	| { outcome: 'rejected'; proposalId: string }
@@ -168,7 +173,7 @@ export async function decideNextWeek(
 			(await opsStillAhead(ownerId, offered, localDay(now(), timeZone), tx)).map((o) => o.id)
 		);
 		const kept = chosen.filter((c) => ahead.has(c.id));
-		const passed = chosen.length - kept.length;
+		const passed = offered.filter((o) => !ahead.has(o.id)).length;
 
 		/** The owner's revision of the head holding `changes`, the base of their decision. */
 		const revise = async (changes: readonly Chosen[], trimmed: number) => {
@@ -240,4 +245,44 @@ export async function decideNextWeek(
 			passed
 		};
 	});
+}
+
+/** A change the review offers, as its screen lists it: still ahead today, or no longer. */
+export interface NextWeekOffer {
+	id: string;
+	/** The day of the session it changes; null for a proposal stored without its evidence. */
+	sessionDate: IsoDate | null;
+	why: string | null;
+	halfStep: ProgramOp | null;
+	/** False once its session has passed or started: deciding drops it (opsStillAhead). */
+	ahead: boolean;
+}
+
+/**
+ * The changes proposal `proposalId` (a review's head) offers, in its order, each split as
+ * decideNextWeek splits them on the owner's `today`, so the screen strikes through exactly the
+ * changes a decision would drop.
+ */
+export async function nextWeekOffers(
+	ownerId: string,
+	proposalId: string,
+	today: IsoDate,
+	deps: ReviewDeps = {}
+): Promise<NextWeekOffer[]> {
+	const db = deps.db ?? getDb();
+	// One transaction, the head locked as a decision locks it: the split is of this very row.
+	const { offered, ahead } = await db.transaction(async (tx) => {
+		const row = await createCoachProposalsRepository(tx).lockProposal(ownerId, proposalId);
+		if (!row) throw new ReviewNotFoundError('proposal');
+		const offered = offeredOf(row);
+		return { offered, ahead: await opsStillAhead(ownerId, offered, today, tx) };
+	});
+	const still = new Set(ahead.map((o) => o.id));
+	return offered.map((o) => ({
+		id: o.id,
+		sessionDate: (o.adjustment?.sessionDate as IsoDate | undefined) ?? null,
+		why: (o.adjustment?.why as string | undefined) ?? null,
+		halfStep: o.halfStep,
+		ahead: still.has(o.id)
+	}));
 }

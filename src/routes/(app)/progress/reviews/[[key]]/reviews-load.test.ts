@@ -19,6 +19,7 @@ import {
 } from '#lib/server/services/reviews/index.ts';
 import type { TrainingDeps } from '#lib/server/services/training/shared.ts';
 import {
+	changeWords,
 	createReview,
 	findingVerdict,
 	loadReviews,
@@ -101,6 +102,10 @@ function view(parts: Partial<WeeklyReviewView> = {}, findings = [ADHERENCE, BENC
 		legacy: false,
 		snapshot,
 		writeUp: { state: 'none' },
+		proposal: null,
+		decision: { state: 'none' },
+		noProposal: null,
+		notProposed: [],
 		...parts
 	} as WeeklyReviewView;
 }
@@ -202,6 +207,14 @@ describe('a verdict as its badge says it', () => {
 	});
 });
 
+describe('a trend’s change in plain words', () => {
+	it('says which way it went and by how much, never a bare figure along the trend', () => {
+		expect(changeWords(9.5, '9.5 kg')).toBe('Up 9.5 kg so far');
+		expect(changeWords(-12, '12 s/km')).toBe('Down 12 s/km so far');
+		expect(changeWords(0, '0 kg')).toBe('No change so far');
+	});
+});
+
 describe('a weekly review as the screen shows it', () => {
 	it('the hero, planned against completed and each trend with its context, from the snapshot', () => {
 		const data = weeklyReviewData(view());
@@ -232,7 +245,7 @@ describe('a weekly review as the screen shows it', () => {
 				label: 'Bench press estimated 1RM',
 				verdict: { verdict: 'real_trend', direction: 'up', good: true },
 				words: 'Trending up, improving',
-				change: '5 kg',
+				change: 'Up 5 kg so far',
 				context: {
 					period: 'Trend over the last 9 weeks',
 					good: METRICS.e1rm.good.words,
@@ -442,6 +455,42 @@ describe('the load', () => {
 		expect(d.reviewable).toHaveBeenCalledWith('owner', TODAY, { db });
 		for (let i = 0; i < calls.length; i += 2)
 			expect(calls[i + 1]).toBe(calls[i]!.replace('start', 'end'));
+	});
+
+	it("an open decision reads the head's changes on the owner's today; a decided one none", async () => {
+		const head = '0b7e2d4c-1a3f-4e5d-9c6b-8a7f6e5d4c3b';
+		const offer = {
+			id: 'load:a:2',
+			sessionDate: '2026-11-03',
+			why: 'Felt easier',
+			halfStep: null,
+			ahead: false
+		};
+		const open = view({
+			decision: { state: 'undecided', proposalId: head },
+			proposal: {
+				id: head,
+				rows: [{ label: 'Bench', before: '85 kg', after: '87.5 kg', date: null }]
+			}
+		} as unknown as Partial<WeeklyReviewView>);
+		const { d } = deps({
+			view: vi.fn(async () => open),
+			offers: vi.fn(async () => [offer])
+		});
+		const data = await loadReviews('owner', { key: `w-${LAST_WEEK}`, origin }, new Date(), d);
+		if (data.failed) throw new Error('unreachable');
+		expect(d.offers).toHaveBeenCalledWith('owner', head, TODAY, { db });
+		expect(data.selected?.nextWeek).toMatchObject({
+			state: 'all_past',
+			items: [{ id: 'load:a:2', label: 'Bench', passed: 'Tuesday has passed' }]
+		});
+
+		const decided = view({
+			decision: { state: 'rejected', proposalId: head }
+		} as Partial<WeeklyReviewView>);
+		const again = deps({ view: vi.fn(async () => decided), offers: vi.fn(async () => [offer]) });
+		await loadReviews('owner', { key: `w-${LAST_WEEK}`, origin }, new Date(), again.d);
+		expect(again.d.offers).not.toHaveBeenCalled();
 	});
 
 	it('no key: the list alone, empty with no review stored', async () => {
