@@ -7,7 +7,9 @@
  * files the previous version already cached instead of downloading them (lib/client/sw-precache.ts),
  * clean up old versions on activate (and take control of already-open pages), and serve:
  *   - precached files              → cache-first (versioned)
- *   - other build files            → cache-first, cached on first use (content-hashed, immutable)
+ *   - other build files            → cache-first, cached on first use (content-hashed, immutable);
+ *                                    the Graphite 2004 preview's stylesheet and font are never
+ *                                    precached (a device on today's design never fetches them)
  *   - prerendered pages            → cache-first, whatever the query string, so a workout page
  *                                    (/workout?start=…) reloads offline from the precache
  *   - page navigations             → network only, through the navigation preload (enabled on
@@ -26,6 +28,7 @@
 import { version } from '$app/env';
 import { assets, immutable, prerendered } from '$app/manifest';
 import { self } from '$app/service-worker';
+import { DESIGN_ASSET } from '#lib/client/design.ts';
 import { fromNetwork, isDataRequest, loadData } from '#lib/client/sw-network.ts';
 import { cacheFirst, precache, precacheList } from '#lib/client/sw-precache.ts';
 import { navigationTimeout } from '#lib/client/workout/launch.ts';
@@ -44,7 +47,7 @@ const PRECACHE = precacheList(scope, [
 	...shell,
 	...assets.map((f) => f.path),
 	...prerendered.map((f) => f.path)
-]);
+]).filter((path) => !DESIGN_ASSET.test(path));
 const PRECACHED = new Set(PRECACHE);
 
 self.addEventListener('install', (event) => {

@@ -19,7 +19,7 @@
 	let { tone = 'neutral', icon, children, ...rest }: Props = $props();
 </script>
 
-<span class="badge" class:with-icon={icon} data-tone={tone} {...rest}>
+<span class="badge" data-ui="badge" class:with-icon={icon} data-tone={tone} {...rest}>
 	{#if icon}<Icon name={icon} size={14} strokeWidth={2} />{/if}
 	{@render children()}
 </span>

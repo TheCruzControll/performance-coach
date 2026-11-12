@@ -3,7 +3,8 @@
  * - /coach: the open conversations newest first, a page at a time, each with when it was last
  *   active in the owner's zone; ?before pages on, a malformed cursor is the first page; archived
  *   ones are not listed; the prefill an entry point sent.
- * - /coach/<id>: the conversation's shown messages in order, through the threads service.
+ * - /coach/<id>: the conversation's shown messages in order, through the threads service, and
+ *   whether it is archived (read-only until unarchived).
  * - A malformed or unknown id, or someone else's conversation, is the 404 page.
  * - A read that fails is the screen's load-failed state, recorded.
  */
@@ -17,7 +18,8 @@ import {
 	appendTurnStep,
 	archiveThread,
 	startOwnerTurn,
-	THREAD_PAGE
+	THREAD_PAGE,
+	unarchiveThread
 } from '../../../src/lib/server/services/coach/threads';
 import {
 	loadCoachScreen,
@@ -178,6 +180,7 @@ describe('the Coach screen', () => {
 			expect(data.thread).toEqual({
 				id: thread,
 				title: 'How is my bench?',
+				archived: false,
 				messages: [
 					{
 						id: expect.any(String),
@@ -194,6 +197,18 @@ describe('the Coach screen', () => {
 					}
 				]
 			});
+		});
+	});
+
+	it('opens an archived conversation marked archived, with its messages, until it is unarchived', async () => {
+		await withRollback(async (db) => {
+			const me = await owner(db);
+			const thread = await ask(db, me, 'Old question', '2026-11-10T20:05:00Z');
+			await archiveThread(me, thread, { db });
+			const archived = (await ready(load(db, me, thread))).thread!;
+			expect([archived.archived, archived.messages.map((m) => m.from)]).toEqual([true, ['owner']]);
+			await unarchiveThread(me, thread, { db });
+			expect((await ready(load(db, me, thread))).thread!.archived).toBe(false);
 		});
 	});
 
