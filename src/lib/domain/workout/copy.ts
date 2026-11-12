@@ -78,15 +78,15 @@ export const SLOT_STATE_COPY: Record<SlotState, string | null> = {
 
 export const PAIN_COPY = {
 	title: 'This hurts',
-	intro: 'Stopping is always OK. Where it hurts and how bad are optional.',
-	area: { label: 'Where does it hurt?', hint: 'Optional' },
-	severity: { label: 'How bad is it?', hint: 'Optional' },
+	intro: 'Stopping is always OK.',
+	area: { label: 'Where does it hurt?' },
+	severity: { label: 'How bad is it?' },
 	/** The explicit 'none' of the area and the severity (radios cannot be cleared). */
 	unsure: 'Not sure',
 	choices: 'What would you like to do?',
 	stop: { label: 'Stop this exercise', detail: 'Its remaining sets are marked as skipped' },
 	end: { label: 'End the workout here', detail: 'Save what you did and finish' },
-	note: { label: 'Note', hint: 'Optional', placeholder: 'What happened?' },
+	note: { label: 'Note', placeholder: 'What happened?' },
 	injuries: {
 		text: 'If it keeps coming back, add it to your injuries so your plan works around it.',
 		link: 'Add it to Profile → Injuries'

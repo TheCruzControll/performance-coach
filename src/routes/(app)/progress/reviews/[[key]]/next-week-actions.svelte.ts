@@ -1,10 +1,12 @@
 /**
  * What next week's card (NextWeekCard) does with its form once JavaScript runs, fetched on the
- * first tap so the review the page awaits stays small:
+ * first tap so the review the page awaits stays small. A cycle review's next-block card
+ * (NextCycleCard) posts ?/startCycle through send the same way:
  * - a post goes in place (the form action's JSON answer), aria-busy while it is on its way, and
  *   a second one meanwhile, or one made offline, posts nothing
  * - applied: the toast ('Next week updated · version 4 · …') and Train at next week
- * - kept, too late or changed meanwhile: the review reloads, and the card shows it
+ * - kept, too late or changed meanwhile: the review reloads, and the card shows it; a refusal
+ *   that says why (a next block's preview gone stale) says so on the reloaded card
  * - a refused post (nothing ticked) says why; a post that failed on its way says the plan has
  *   not changed, and the next tap (Retry) posts the same form again. Keep's say so in its sheet.
  * - Keep opens its sheet (KeepSheet, fetched and mounted here), whose optional reason goes with
@@ -15,7 +17,7 @@ import { deserialize } from '$app/forms';
 import { goto, invalidateAll } from '$app/navigation';
 import { toast } from '#lib/ui/toast.svelte.ts';
 
-type Mode = 'decide' | 'keep';
+type Mode = 'decide' | 'keep' | 'startCycle';
 
 /** The card's state, which these change. */
 export interface NextWeekUi {
@@ -94,6 +96,8 @@ export async function send(
 		} else if (result.type === 'success' || result.type === 'failure') {
 			if (keep) keep.open = false;
 			await invalidateAll();
+			const message = result.type === 'failure' && result.data?.message;
+			if (message) [ui.failure, ui.failed] = [String(message), mode];
 		} else [ui.failure, ui.failed] = [FAILED, mode];
 	} catch {
 		[ui.failure, ui.failed] = [FAILED, mode];

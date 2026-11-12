@@ -35,7 +35,7 @@
 						<VerdictBadge verdict={trend.verdict} />
 					</div>
 					<p class="words" data-testid="trend-words">
-						{trend.words}{trend.change ? ` · ${trend.change} along the trend` : ''}
+						{trend.words}{trend.change ? ` · ${trend.change}` : ''}
 					</p>
 					<MetricContext
 						period={trend.context.period}

@@ -220,7 +220,8 @@ function programPlan(start: IsoDate, weeks: number, commitment: string, goal: st
 		week(addDays(start, 7 * i), i + 1, commitment)
 	);
 	const cuts = weeks > 8 ? [0, 4, 8, weeks] : [0, weeks];
-	const names = ['Base', 'Build', 'Push'] as const;
+	// Plain block names, as an owner would read them: never a bare 'Push'.
+	const names = ['Base', 'Build', 'Peak'] as const;
 	const blocks: BlockPlan[] = cuts.slice(1).map((end, b) => {
 		const own = all.slice(cuts[b], end);
 		return {

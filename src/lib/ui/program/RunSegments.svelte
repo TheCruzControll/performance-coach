@@ -27,8 +27,9 @@
 		<li class="step" class:repeat={step.repeats > 1} data-testid="run-step">
 			{#if step.repeats > 1}
 				<p class="times">
+					<!-- The count says it once on screen; a screen reader hears it in words. -->
 					<span class="count numeric" aria-hidden="true">{step.repeats}×</span>
-					Repeat {step.repeats} times
+					<span class="visually-hidden">Repeat {step.repeats} times</span>
 				</p>
 			{/if}
 			<ol class="segments">

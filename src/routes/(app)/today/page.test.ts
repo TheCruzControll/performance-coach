@@ -26,8 +26,14 @@ async function loadModule(where: { browser: false } | { browser: true; pathname:
 }
 
 type Module = Awaited<ReturnType<typeof loadModule>>;
-const run = async (module: Module, setup: unknown, program?: unknown, plan?: unknown) =>
-	module.load({ data: { setup, program, plan } } as unknown as Parameters<Module['load']>[0]);
+const run = async (
+	module: Module,
+	setup: unknown,
+	program?: unknown,
+	plan?: unknown,
+	week?: unknown
+) =>
+	module.load({ data: { setup, program, plan, week } } as unknown as Parameters<Module['load']>[0]);
 
 /** Whether the load finishes while the panel's import is still held. */
 async function finishesBeforeImport(module: Module): Promise<boolean> {
@@ -111,6 +117,24 @@ describe("Today's universal load", () => {
 		const streamed = Promise.resolve(plan);
 		const navigated = (await run(module, setup, 'active', streamed)) as { plan: unknown };
 		expect(navigated.plan).toBe(streamed);
+	});
+
+	it('waits for this week’s streamed figures on the server and when hydrating; a navigation passes them on', async () => {
+		const setup = { complete: true, goals: [], week: {} };
+		const week = { failed: false, tiles: [], against: 'Nothing logged by Monday last week.' };
+		const server = await loadModule({ browser: false });
+		expect(await run(server, setup, 'none', undefined, Promise.resolve(week))).toMatchObject({
+			week
+		});
+		const browser = await loadModule({ browser: true, pathname: '/today' });
+		expect(await run(browser, setup, 'none', undefined, Promise.resolve(week))).toMatchObject({
+			week
+		});
+		const streamed = Promise.resolve(week);
+		const navigated = (await run(browser, setup, 'none', undefined, streamed)) as {
+			week: unknown;
+		};
+		expect(navigated.week).toBe(streamed);
 	});
 
 	it('waits for the import on the server, and sends the panel as markup', async () => {

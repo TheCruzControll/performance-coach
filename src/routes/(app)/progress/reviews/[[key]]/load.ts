@@ -28,6 +28,7 @@ import type { Finding, FindingLevel } from '#lib/domain/programming/review/brief
 import { ownerToday } from '#lib/server/local-date.ts';
 import { recordServerError, type ServerErrorInput } from '#lib/server/services/errors.ts';
 import { isUuid } from '#lib/server/services/ids.ts';
+import { getCurrentProgram } from '#lib/server/services/programs/index.ts';
 import {
 	createCycleReview,
 	CycleReviewNotReviewableError,
@@ -56,6 +57,7 @@ import type { TileVerdict } from '#lib/ui/analytics/verdict-words.ts';
 import { shortDate } from '#lib/ui/program/words.ts';
 import { slotOf } from '../../load.ts';
 import { cycleKey, cycleReviewData, cycleTitle, type CycleReviewData } from './cycle-data.ts';
+import { nextCycleView } from './next-cycle-data.ts';
 import { reviewSections, type SectionView } from './sections.ts';
 
 /** The reviews one list shows: a page of the store's largest, about a year of weeks. */
@@ -74,6 +76,12 @@ export function parseReviewKey(key: string | undefined): ReviewKey | null | unde
 		return { kind: 'weekly', weekStartsOn: rest };
 	if (prefix === 'c-' && isUuid(rest)) return { kind: 'cycle', id: rest };
 	return undefined;
+}
+
+/** A trend's change in plain words: 'Up 9.5 kg so far', 'Down 12 s/km so far', 'No change so far'. */
+export function changeWords(value: number, size: string): string {
+	if (value === 0) return 'No change so far';
+	return `${value > 0 ? 'Up' : 'Down'} ${size} so far`;
 }
 
 export const weeklyKey = (weekStartsOn: IsoDate) => `w-${weekStartsOn}`;
@@ -97,7 +105,7 @@ export interface TrendView {
 	verdict: TileVerdict;
 	/** The stored verdict's words ('Trending up, improving'). */
 	words: string;
-	/** The change along the trend, in words ('5 kg'); null when none was measured. */
+	/** The change over the weeks read, in plain words ('Up 5 kg so far'); null when none was measured. */
 	change: string | null;
 	context: { period: string; good: string; method: string; caveat: string | null };
 }
@@ -210,6 +218,7 @@ export interface ReviewsDeps extends Pick<TrainingDeps, 'db'> {
 	reviewable?: typeof reviewableWeek;
 	block?: typeof unreviewedBlock;
 	cycleView?: typeof getCycleReviewViewById;
+	current?: typeof getCurrentProgram;
 	record?: typeof recordServerError;
 	today?: typeof ownerToday;
 }
@@ -489,7 +498,7 @@ export function weeklyReviewData(
 					label: f.label,
 					verdict: findingVerdict(f),
 					words: f.verdict.words,
-					change: change && change.value !== null ? change.words : null,
+					change: change && change.value !== null ? changeWords(change.value, change.words) : null,
 					context: {
 						period: f.window?.label ?? 'This week',
 						good: metric.good.words,
@@ -526,6 +535,7 @@ export async function loadReviews(
 		reviewable = reviewableWeek,
 		block = unreviewedBlock,
 		cycleView = getCycleReviewViewById,
+		current = getCurrentProgram,
 		record = recordServerError,
 		today: dayOf = ownerToday
 	}: ReviewsDeps = {}
@@ -547,7 +557,12 @@ export async function loadReviews(
 		let selected: WeeklyReviewData | CycleReviewData | null = null;
 		if (parsed?.kind === 'cycle') {
 			const shown = await cycleView(ownerId, parsed.id, today, { db });
-			selected = cycleReviewData(shown, page.items, cycles);
+			// A late start's bridge is numbered in the program's weeks, from its start.
+			const program = shown.previews.some((p) => p.dates.bridge)
+				? await current(ownerId, today, { db })
+				: null;
+			const next = nextCycleView(shown, { today, programStartsOn: program?.startsOn ?? null });
+			selected = cycleReviewData(shown, page.items, cycles, next);
 		}
 		if (parsed?.kind === 'weekly') {
 			const shown = await view(ownerId, parsed.weekStartsOn, { db });

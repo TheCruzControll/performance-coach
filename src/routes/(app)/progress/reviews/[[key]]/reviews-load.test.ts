@@ -21,6 +21,7 @@ import {
 } from '#lib/server/services/reviews/index.ts';
 import type { TrainingDeps } from '#lib/server/services/training/shared.ts';
 import {
+	changeWords,
 	createCycle,
 	createReview,
 	CYCLE_IN_PROGRESS,
@@ -212,6 +213,14 @@ describe('a verdict as its badge says it', () => {
 	});
 });
 
+describe('a trend’s change in plain words', () => {
+	it('says which way it went and by how much, never a bare figure along the trend', () => {
+		expect(changeWords(9.5, '9.5 kg')).toBe('Up 9.5 kg so far');
+		expect(changeWords(-12, '12 s/km')).toBe('Down 12 s/km so far');
+		expect(changeWords(0, '0 kg')).toBe('No change so far');
+	});
+});
+
 describe('a weekly review as the screen shows it', () => {
 	it('the hero, planned against completed and each trend with its context, from the snapshot', () => {
 		const data = weeklyReviewData(view());
@@ -242,7 +251,7 @@ describe('a weekly review as the screen shows it', () => {
 				label: 'Bench press estimated 1RM',
 				verdict: { verdict: 'real_trend', direction: 'up', good: true },
 				words: 'Trending up, improving',
-				change: '5 kg',
+				change: 'Up 5 kg so far',
 				context: {
 					period: 'Trend over the last 9 weeks',
 					good: METRICS.e1rm.good.words,
@@ -641,6 +650,7 @@ describe('cycle reviews', () => {
 		stale: false,
 		laterChanges: 0,
 		writeUp: { state: 'none' },
+		previews: [],
 		progression: null
 	} as unknown as CycleReviewView;
 

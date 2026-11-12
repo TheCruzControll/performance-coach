@@ -59,6 +59,19 @@ const FRAMEWORK = /[\\/]node_modules[\\/](svelte|@sveltejs[\\/]kit|devalue|clsx)
 const FRAMEWORK_OUTSIDE = /[\\/]runtime[\\/](client[\\/](entry|payload)\.js$|app[\\/]forms[\\/])/;
 /** SvelteKit's payload module (see the `payload` chunk group). */
 const PAYLOAD = /[\\/]@sveltejs[\\/]kit[\\/]src[\\/]runtime[\\/]client[\\/]payload\.js$/;
+/**
+ * The app's code every page loads first, in the framework chunk (see its group): the client hooks
+ * with error reporting and the leaving state (leaving.ts is also imported alone by lazy code: the
+ * workout sync engine), the root error page's loader (src/routes/error-page.ts), the root layout
+ * with what it starts (RUM visits, the toasts and their Toaster), the screen memory the (app)
+ * layout keeps (also imported by sign-out, which any page can load), afterPaint
+ * (workout/lazy.ts: the (app) shell's and the workout pages') and Icon, which every screen draws.
+ */
+const BOOT =
+	/src[\\/](hooks\.client\.ts|routes[\\/](\+layout\.svelte|error-page\.ts|workout[\\/]lazy\.ts)|lib[\\/]client[\\/](errors|leaving|visits|screen-memory)\.ts|lib[\\/]ui[\\/](toast\.svelte\.ts|components[\\/](Icon|Toaster)\.svelte))$/;
+/** The (app) layout and its shell, which every app screen loads (see the `AppShell` group). */
+const APP_SHELL =
+	/src[\\/](routes[\\/]\(app\)[\\/](\+layout\.svelte|AppShell\.svelte|nav\.ts)|lib[\\/]ui[\\/]components[\\/](AppNav|PageHeader)\.svelte|lib[\\/]client[\\/]connectivity\.svelte\.ts)$/;
 
 /**
  * Writes .vite/chunk-modules.json into the client build: each chunk's file and the src/ modules
@@ -253,23 +266,24 @@ export default defineConfig(({ command, mode }) => {
 							/**
 							 * The framework: Svelte's runtime and SvelteKit's client, without its form helpers
 							 * ($app/forms, only on screens with a form) and its entry modules, which SvelteKit
-							 * looks up by file (FRAMEWORK_OUTSIDE).
+							 * looks up by file (FRAMEWORK_OUTSIDE), and with the app's code every page loads
+							 * first (BOOT). Every page loads all of it, and one chunk costs fewer bytes than
+							 * the same code in three: each file is gzipped on its own (docs/performance.md).
 							 */
 							{
 								name: 'framework',
-								test: (id) => FRAMEWORK.test(id) && !FRAMEWORK_OUTSIDE.test(id)
+								test: (id) => (FRAMEWORK.test(id) && !FRAMEWORK_OUTSIDE.test(id)) || BOOT.test(id)
 							},
 							/**
-							 * The app's code every page loads first: error reporting and the leaving state
-							 * (hooks.client.ts, also imported alone by lazy code: the workout sync engine imports
-							 * leaving.ts), the root error page's loader (src/routes/error-page.ts), what the root
-							 * layout starts (RUM visits, toasts, the service worker registration) and Icon, which
-							 * every screen draws.
+							 * The (app) layout, its shell and nav, and PageHeader, which every app screen loads
+							 * (/design and the root error page too, which draw the header or the shell), in one
+							 * chunk instead of five. Named after AppShell so its stylesheet, inlined into every
+							 * app page, keeps the name pnpm budgets checks.
+							 * screen-memory.ts is in BOOT, not here: this group takes its modules'
+							 * dependencies, and sign-out, which any page can load, imports it, which would link
+							 * this stylesheet into the sign-in pages.
 							 */
-							{
-								name: 'boot',
-								test: /src[\\/](lib[\\/]client[\\/](errors|leaving|visits|service-worker)\.ts|lib[\\/]ui[\\/](toast\.svelte\.ts|components[\\/]Icon\.svelte)|routes[\\/]error-page\.ts)$/
-							},
+							{ name: 'AppShell', test: APP_SHELL },
 							/**
 							 * The workout pages' projection (the M4 plan's runway lever 2): project.ts, its
 							 * reducers, the mutations and the timers, which every workout page loads while it
