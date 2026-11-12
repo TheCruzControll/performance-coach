@@ -77,6 +77,7 @@ export const DECISION_GROUP: Readonly<Record<DecisionKind, DecisionGroup | null>
 	run_volume: 'loads',
 	run_pace_source: 'loads',
 	owner_confirmed: null,
+	start_moved: null,
 	session_moved: null,
 	session_skipped: null,
 	exercise_swapped: null,

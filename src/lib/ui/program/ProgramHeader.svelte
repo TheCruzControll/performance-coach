@@ -10,7 +10,7 @@
   more weeks than fit; the screen itself never does. Every target is ≥ 44 px.
 
   `actions`, a row under the titles, holds the program's own screens and sheets ('Plan', then
-  'History'): each a `.action` the caller renders (a button or a link), styled here alike, and
+  'History', and 'Start date' until it has started): each a `.action` the caller renders (a button or a link), styled here alike, and
   busy (`aria-busy`) while what it opens is on its way.
 
   In a wide column (WIDE_HEADER below, a desktop screen's width) the actions sit at the end of the

@@ -33,6 +33,7 @@
 
 	const weekHref = (n: number) => `${resolve('/(app)/train')}?week=${n}`;
 	const HISTORY_HREF = resolve('/(app)/train/history/[[version]]', {});
+	const START_HREF = resolve('/(app)/train/start');
 
 	// ---- The week shown ----------------------------------------------------------------------
 
@@ -225,6 +226,16 @@
 				>
 					<Icon name="clock" size={18} />History
 				</a>
+				{#if view.movable}
+					<a
+						class="action"
+						href={START_HREF}
+						aria-busy={navigating.to?.url.pathname === START_HREF}
+						data-testid="open-start"
+					>
+						<Icon name="today" size={18} />Start date
+					</a>
+				{/if}
 				{#if plan.failed}
 					<div class="plan-failed">
 						<Notice tone="danger" title="Couldn’t open your plan">
