@@ -230,7 +230,6 @@ describe('Today’s plan', () => {
 	it('a failed review prompt read is recorded, and the plan shows without it', async () => {
 		await withCommitted(async (db) => {
 			const owner = await seeded(db, 'today', '2026-11-02');
-			const program = (await getCurrentProgram(owner, TODAY, { db }))!;
 			const request = origin();
 			const program = (await getCurrentProgram(owner, TODAY, { db }))!;
 			const view = await loadTodayPlan(
