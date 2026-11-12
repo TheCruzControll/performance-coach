@@ -364,7 +364,7 @@ const GROUPS: Group[] = [
 				await expect(page.getByTestId('proposal-card')).toBeVisible();
 			});
 			await shot('coach', 'memory', async () => {
-				await page.getByRole('button', { name: 'What the coach knows' }).click();
+				await page.getByRole('button', { name: 'What it knows' }).click();
 				await expect(page.getByTestId('knows-sheet')).toBeVisible();
 				await expect(page.getByTestId('knows-loading')).toHaveCount(0);
 			});

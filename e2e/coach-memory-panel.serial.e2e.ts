@@ -38,7 +38,7 @@ const composer = (page: Page) => page.getByRole('form', { name: 'Message your co
 
 async function openKnows(page: Page, path = '/coach') {
 	await gotoHydrated(page, path);
-	await page.getByRole('button', { name: 'What the coach knows' }).click();
+	await page.getByRole('button', { name: 'What it knows' }).click();
 	await expect(sheet(page)).toBeVisible();
 }
 

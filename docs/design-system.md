@@ -56,6 +56,20 @@ corners). Profile → Appearance → Design switches between them, as does `?des
   sheets with 10 px corners on the spring; and focus as a 2 px Aqua-ink outline 2 px out (inset
   −3 px inside the segmented control and the stepper). No route styles a hook, and the hooks are
   only on these components (`components/graphite-hooks.test.ts`).
+- **Shell:** AppNav (`nav`) below 1024 px is the glossy graphite tab bar at today's
+  `--nav-height`, the current tab in the selection well with its glyph filled; from 1024 px the
+  rail is the source list (`--rail-width: 14.5rem` in Graphite only; rows of icon and label, the
+  current one in the well), a CSS-only change. PageHeader (`page-header`) sets the 34 px large
+  title and hides the eyebrow, except a date (`dated`, Today), which becomes the subtitle under
+  it. The resume bar (`resume-slot`) is drawn in the bar material.
+- **Status Display:** `StatusDisplay.svelte` (`status`; a line, the big numeral or a name, a dim
+  line, an elapsed/total bar, a footer) on Today (`today/panels/TodayStatus.svelte`: the week,
+  today's session, sessions done, the connection) and the run view (`RunStatus.svelte`: the run's
+  pace), each composed from the data the screen already shows. `StatusSlot.svelte` (`status-room`)
+  is the only switch today's design carries: it loads the display with a dynamic import only on a
+  page showing Graphite, holding its room from first paint so nothing moves. The rest timer
+  (`rest`) becomes the display in CSS alone: the time left as the big numeral, its controls on a
+  strip beneath the glass.
 - `graphite.test.ts` holds it to the chart palette checks and 4.5:1 text contrast in both themes;
   `e2e/design-switch*.e2e.ts` run axe on it and check no flash, no layout shift and no Graphite
   request on today's design. The screen gallery shoots every screen in both designs.
@@ -516,7 +530,7 @@ later-pass screen).
 | Component           | Highlights                                                                                                                                                                                                                                                                         |
 | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `Button`            | `primary · secondary · ghost · danger`, `sm · md · lg` (36/48/56 px; hit area always ≥ 44 px), leading/trailing icon, `loading` (keeps width, `aria-busy`), `block`, renders `<a>` with `href`; pressed = scale 0.97 + tone.                                                       |
-| `IconButton`        | Circular, required `label` (accessible name), `ghost · filled · accent`, `sm · md · lg`.                                                                                                                                                                                           |
+| `IconButton`        | Circular, required `label` (accessible name), `ghost · filled · accent`, `sm · md · lg`; `tooltip` captions it with the label on hover and keyboard focus (fine pointers only).                                                                                                    |
 | `Icon`              | Inline SVG set (`src/lib/ui/icons/icons.ts`, 24 px grid, 1.75 px round strokes); decorative unless `label`.                                                                                                                                                                        |
 | `Surface` / `Card`  | Levels 1–3, padding, radius, discipline `tone` tint, `interactive`/`href`; `Card` adds eyebrow/title/action header (`aria-labelledby`).                                                                                                                                            |
 | `NumberStepper`     | One-handed −/+ (56 px), press-and-hold accelerating repeat, tap-to-type (`inputmode=decimal`), `role=spinbutton` with ArrowUp/Down, PageUp/Down, Home/End; `error` replaces `hint` (`aria-invalid`, `role=alert`).                                                                 |
@@ -527,7 +541,7 @@ later-pass screen).
 | `Skeleton`          | Shimmer placeholder (static under reduced motion); pair with `aria-busy` on the region.                                                                                                                                                                                            |
 | `EmptyState`        | Medallion glyph (tone-tinted), title, guidance, optional actions; `compact` variant.                                                                                                                                                                                               |
 | `Toaster` + `toast` | Polite live region; `neutral · positive · danger`; optional action; auto-dismiss. Screen chrome at the top, centred over the column (beside the rail from 1024 px), or in the window outside the shell.                                                                            |
-| `PageHeader`        | Eyebrow + large title + trailing slot.                                                                                                                                                                                                                                             |
+| `PageHeader`        | Eyebrow + large title + trailing slot; a `badge` sits on the eyebrow line, clear of the title.                                                                                                                                                                                     |
 | `BrandMark`         | The performance-gauge mark (also the PWA icon).                                                                                                                                                                                                                                    |
 | `Stat`              | The one metric tile: label, big value + inline unit, optional rating (word + dot), caption. `level 1` on the canvas (28 px value), `level 2` nested in a card (22 px). No value → a dash announced as "No data yet", never a made-up number.                                       |
 | `Badge`             | Uppercase status pill: `neutral` (default; the only tone for "Soon"), `accent` (the next step, sparingly), `positive · warning · danger`; optional icon. Words carry the meaning.                                                                                                  |
