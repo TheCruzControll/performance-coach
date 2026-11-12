@@ -300,7 +300,8 @@
 		opacity: 0.6;
 	}
 
-	.to-list {
+	/* Beside the list it has nothing to go back to; .back.to-list outranks .back's display. */
+	.back.to-list {
 		display: none;
 	}
 
