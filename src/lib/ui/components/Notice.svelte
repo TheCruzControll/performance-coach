@@ -31,6 +31,7 @@
 
 <div
 	class="notice"
+	data-ui="notice"
 	data-tone={tone}
 	role={tone === 'danger' ? 'alert' : 'status'}
 	data-testid={testId}

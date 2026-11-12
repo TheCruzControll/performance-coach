@@ -72,6 +72,7 @@
 
 <fieldset
 	class="choices"
+	data-ui="choices"
 	class:invalid={Boolean(error)}
 	data-variant={variant}
 	data-multiple={multiple || undefined}
