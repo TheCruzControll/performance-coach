@@ -193,10 +193,12 @@ export function generalData(d: GeneralDashboard): GeneralData {
 			sparkline: sparkline(f.series)
 		};
 	}
-	const view = (id: GeneralMetric): FigureView => ({
-		context: contextOf(id),
-		tile: tileOf(figures[id])
-	});
+	/** The context names the earlier period only when the tile shows a change against it. */
+	const view = (id: GeneralMetric): FigureView => {
+		const tile = tileOf(figures[id]);
+		const context = contextOf(id);
+		return { context: tile.delta ? context : { ...context, comparison: null }, tile };
+	};
 
 	/** Weekly points, the week in progress last, regrouped by month when the period is. */
 	const bucketed = (points: SeriesPoint[]) => (bucket === 'month' ? byMonth(points) : points);

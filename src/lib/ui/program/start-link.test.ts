@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { resumeLink, startLink, type StartLink } from './start-link';
+import { leadLineage, resumeLink, startLink, type StartLink } from './start-link';
 
 const L = '0f6b1c1e-4a7d-4b8e-9c2a-000000000021';
 const W = '0f6b1c1e-4a7d-4b8e-9c2a-000000000001';
@@ -51,5 +51,40 @@ describe('resumeLink', () => {
 		expect(resumeLink(L, start, { plannedLineage: null, href: '/workout' })).toBe(start);
 		expect(resumeLink(L, start, null)).toBe(start);
 		expect(resumeLink(L, null, run)).toBeNull();
+	});
+});
+
+describe('leadLineage', () => {
+	const done: StartLink = { id: 'done-workout', label: 'Done · View', href: '/x', icon: 'check' };
+	const resume: StartLink = {
+		id: 'resume-workout',
+		label: 'Resume',
+		href: '/workout',
+		icon: 'play'
+	};
+
+	it('leads with the first session still to start, past any done or skipped one', () => {
+		expect(
+			leadLineage([
+				{ lineage: 'a', link: done },
+				{ lineage: 'b', link: null },
+				{ lineage: 'c', link: start },
+				{ lineage: 'd', link: start }
+			])
+		).toBe('c');
+	});
+
+	it('leads with the workout in progress over an earlier session to start', () => {
+		expect(
+			leadLineage([
+				{ lineage: 'a', link: start },
+				{ lineage: 'b', link: resume }
+			])
+		).toBe('b');
+	});
+
+	it('leads with none once nothing is left to start', () => {
+		expect(leadLineage([{ lineage: 'a', link: done }])).toBeNull();
+		expect(leadLineage([])).toBeNull();
 	});
 });

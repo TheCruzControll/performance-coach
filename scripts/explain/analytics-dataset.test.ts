@@ -5,8 +5,16 @@
  * owner it is loaded for.
  */
 import { describe, expect, it } from 'vitest';
-import { generateDataset } from './dataset';
-import { ANALYTICS_SEED, generateAnalyticsDataset } from './analytics-dataset';
+import { addDays } from '../../src/lib/domain/calendar';
+import { FIRST_MONDAY, generateDataset, WEEKS } from './dataset';
+import {
+	ANALYTICS_SEED,
+	generateAnalyticsDataset,
+	generateReviewHistory,
+	REVISIONS_MAX,
+	SUPERSEDED_SHARE,
+	type ReviewTemplates
+} from './analytics-dataset';
 
 const OWNER = generateDataset().owner.id!;
 const data = generateAnalyticsDataset(OWNER);
@@ -106,5 +114,106 @@ describe('the analytics explain dataset', { timeout: 30_000 }, () => {
 		const set = data.setRecords.find((s) => s.clientMutationId === edit.clientMutationId)!;
 		expect(set.weight).toBe(edit.weight);
 		expect(set.e1rmKg).toBe(edit.e1rmKg);
+	});
+});
+
+describe('the analytics owner’s review history', { timeout: 30_000 }, () => {
+	const today = addDays(FIRST_MONDAY, (WEEKS - 1) * 7 + 2);
+	const week = addDays(FIRST_MONDAY, (WEEKS - 2) * 7);
+	const ended = data.programBlocks.filter((b) => b.endsOn! < today);
+	const written = { week, blockLineage: ended.at(-1)!.lineageId! };
+	const computed = (summary: string) => ({
+		...{ snapshot: { version: 1, brief: { findings: [] } }, summary },
+		...{ snapshotVersion: 1, analyticsVersion: 1, inputsDigest: 'digest' }
+	});
+	const templates: ReviewTemplates = {
+		weekly: computed('10 of 12 sessions done.'),
+		cycle: computed('43 of 46 sessions done.'),
+		nextCycle: {
+			...{ summary: 'Next block', rationale: 'From your review', payload: { weeks: 5 } },
+			...{ evidence: { directives: { rpe: [6, 8] } }, diff: null, impact: null },
+			payloadHash: '0123456789abcdef'
+		}
+	};
+	const history = generateReviewHistory(data, templates, { today, written });
+	const live = <R extends { supersededAt?: Date | null }>(rows: R[]) =>
+		rows.filter((row) => !row.supersededAt);
+
+	it('reviews every week before the written one, and every ended block but the written one', () => {
+		const weeks = live(history.weeklyReviews).map((row) => row.weekStartsOn);
+		expect(weeks).toEqual(
+			Array.from({ length: WEEKS - 2 }, (_, w) => addDays(FIRST_MONDAY, w * 7))
+		);
+		expect(weeks.length).toBeGreaterThanOrEqual(100);
+		const blocks = live(history.cycleReviews).map((row) => row.blockLineageId);
+		expect(blocks).toEqual(
+			ended.filter((b) => b.lineageId !== written.blockLineage).map((b) => b.lineageId)
+		);
+		expect(blocks.length + 1).toBeGreaterThanOrEqual(20);
+		for (const row of [...history.weeklyReviews, ...history.cycleReviews]) {
+			expect(row.ownerId).toBe(OWNER);
+			expect(row).toMatchObject({ snapshotVersion: 1, inputsDigest: 'digest' });
+		}
+	});
+
+	it('is the same for the same seed', () => {
+		const again = generateReviewHistory(data, templates, { today, written });
+		expect(again).toEqual(history);
+	});
+
+	it('supersedes about one review in ten with its next revision, which stays live', () => {
+		const all = [...history.weeklyReviews, ...history.cycleReviews];
+		const superseded = all.filter((row) => row.supersededAt);
+		const share = superseded.length / live(all).length;
+		expect(share).toBeGreaterThan(SUPERSEDED_SHARE / 2);
+		expect(share).toBeLessThan(SUPERSEDED_SHARE * 2);
+		const byId = new Map(all.map((row) => [row.id, row]));
+		for (const row of superseded) {
+			const next = byId.get(row.supersededBy!)!;
+			expect(next.supersededAt ?? null).toBeNull();
+			expect([row.revision, next.revision]).toEqual([1, 2]);
+			expect(+row.createdAt!).toBeLessThan(+row.supersededAt!);
+		}
+		// db:explain reads one superseded revision of each kind.
+		expect(history.weeklyReviews.some((row) => row.supersededAt)).toBe(true);
+		expect(history.cycleReviews.some((row) => row.supersededAt)).toBe(true);
+		const keys = live(history.weeklyReviews).map((row) => row.weekStartsOn);
+		expect(new Set(keys).size).toBe(keys.length);
+	});
+
+	it('links each review a program plans to its proposal, some revised, all decided', () => {
+		const proposals = new Map(history.coachProposals.map((p) => [p.id, p]));
+		const reviews = [...history.weeklyReviews, ...history.cycleReviews];
+		for (const row of reviews) {
+			if (row.programId === null) expect(row.proposalId).toBeNull();
+			else expect(proposals.get(row.proposalId!)).toMatchObject({ programId: row.programId });
+		}
+		const revisions = history.coachProposals.filter((p) => p.revisionOf);
+		expect(revisions.length).toBeGreaterThan(10);
+		for (const p of revisions) expect(proposals.has(p.revisionOf!)).toBe(true);
+		const depth = (id: string): number => {
+			const next = revisions.find((p) => p.revisionOf === id);
+			return next ? 1 + depth(next.id!) : 0;
+		};
+		const linked = reviews.flatMap((row) => row.proposalId ?? []);
+		expect(Math.max(...linked.map(depth))).toBeLessThanOrEqual(REVISIONS_MAX);
+		expect(linked.some((id) => depth(id) >= 2)).toBe(true);
+		const decided = new Map(history.decisions.map((x) => [x.id, x]));
+		expect(decided.size).toBe(history.coachProposals.length);
+		for (const p of revisions)
+			expect(decided.get(p.revisionOf!)).toMatchObject({
+				status: 'superseded',
+				supersededReason: 'revised'
+			});
+		for (const row of reviews.filter((r) => r.supersededAt && r.proposalId)) {
+			const head = (id: string): string => {
+				const next = revisions.find((p) => p.revisionOf === id);
+				return next ? head(next.id!) : id;
+			};
+			expect(decided.get(head(row.proposalId!))).toMatchObject({
+				supersededReason: 'review_refreshed'
+			});
+		}
+		for (const p of history.coachProposals) expect(p.status ?? 'proposed').toBe('proposed');
 	});
 });

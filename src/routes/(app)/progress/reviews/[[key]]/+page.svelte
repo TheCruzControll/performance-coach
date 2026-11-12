@@ -69,7 +69,9 @@
 			<Notice tone="danger" title="Couldn’t load your reviews">
 				Your training is safe. Try again in a moment.
 			</Notice>
-			<Button variant="secondary" icon="refresh" loading={retrying} onclick={retry}>Retry</Button>
+			<Button variant="secondary" icon="refresh" loading={retrying} onclick={retry}
+				>Try again</Button
+			>
 		</div>
 	{:else}
 		<section class="list" aria-label="Reviews" bind:this={list}>
@@ -94,7 +96,12 @@
 
 		<div class="pane">
 			{#if selected && data.View}
-				{#key selected.key}<data.View review={selected} />{/key}
+				{#key selected.key}<data.View
+						review={selected}
+						Body={data.Body}
+						body={data.body}
+						served={data.served}
+					/>{/key}
 			{:else}
 				<Surface padding="none" radius="xl">
 					<EmptyState

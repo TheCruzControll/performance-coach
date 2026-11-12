@@ -9,6 +9,7 @@
  */
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
+import { contrast } from '../src/lib/ui/charts/palette-check';
 import { COACH_A11Y } from './coach-a11y';
 import { answerHistory, openWorkoutPanel, pick } from './design-workout';
 import { isDesktopPage } from './desktop';
@@ -45,6 +46,39 @@ export async function audit(page: Page): Promise<string[]> {
 	return violations.flatMap((v) =>
 		v.nodes.map((n) => `${v.id} (${v.impact}): ${n.target.join(' ')} — ${n.failureSummary}`)
 	);
+}
+
+/** A computed `rgb(r, g, b)` or `rgba(r, g, b, a)` as channels (0-255) and alpha (0-1). */
+function channels(colour: string): number[] {
+	const match = /^rgba?\((\d+), (\d+), (\d+)(?:, ([\d.]+))?\)$/.exec(colour);
+	if (!match) throw new Error(`not a computed rgb() colour: ${colour}`);
+	return [Number(match[1]), Number(match[2]), Number(match[3]), Number(match[4] ?? 1)];
+}
+
+/** `top` painted over an opaque `bottom`. */
+const paint = (top: number[], bottom: number[]) =>
+	[0, 1, 2].map((i) => top[i]! * top[3]! + bottom[i]! * (1 - top[3]!)).concat(1);
+
+const hex = (rgb: number[]) =>
+	'#' +
+	rgb
+		.slice(0, 3)
+		.map((c) => Math.round(c).toString(16).padStart(2, '0'))
+		.join('');
+
+/**
+ * Whether a ring reaches WCAG's 3:1 (1.4.11, 2.4.13) against what is behind it: the ancestors'
+ * backgrounds, nearest first, painted from the first opaque one up, then the ring over them.
+ */
+function focusRingContrast(ring: string, backgrounds: string[]): string {
+	const layers = backgrounds.map(channels);
+	const base = layers.findIndex((layer) => layer[3] === 1);
+	if (base < 0) throw new Error('no opaque background behind the ring');
+	const behind = layers
+		.slice(0, base)
+		.reduceRight((under, layer) => paint(layer, under), layers[base]!);
+	const ratio = contrast(hex(paint(channels(ring), behind)), hex(behind));
+	return ratio >= 3 ? '≥ 3:1' : `${ratio.toFixed(2)}:1`;
 }
 
 /** Every axe test, for one theme: the body of each theme's spec file. */
@@ -102,6 +136,31 @@ export function a11ySuite(theme: 'dark' | 'light'): void {
 			await expect(page.getByTestId('plates-result')).toBeVisible();
 			await page.waitForTimeout(500);
 			expect(await audit(page)).toEqual([]);
+		});
+
+		test('the keyboard focus ring reaches 3:1 against the page behind it', async ({ page }) => {
+			await gotoHydrated(page, '/design');
+			if (theme === 'light')
+				await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+			// Arrow keys move the tablist's focus, so the ring shows as it does from the keyboard.
+			const buttons = page.getByRole('tab', { name: 'Buttons' });
+			await buttons.focus();
+			await page.keyboard.press('ArrowRight');
+			await page.keyboard.press('ArrowLeft');
+			await expect(buttons).toBeFocused();
+			const { outline, style, layers } = await buttons.evaluate((el) => {
+				const css = getComputedStyle(el);
+				// The ring is drawn outside the tab, over its ancestors' backgrounds.
+				const backgrounds: string[] = [];
+				for (let node = el.parentElement; node; node = node.parentElement) {
+					backgrounds.push(getComputedStyle(node).backgroundColor);
+				}
+				return { outline: css.outlineColor, style: css.outlineStyle, layers: backgrounds };
+			});
+			expect(style).toBe('solid');
+			expect(focusRingContrast(outline, layers), `${outline} on ${layers.join(' / ')}`).toBe(
+				'≥ 3:1'
+			);
 		});
 
 		test('a Profile section asking to discard its changes has no violations', async ({ page }) => {

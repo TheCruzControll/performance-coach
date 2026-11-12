@@ -11,10 +11,8 @@
   - A container-query grid: the cards pair up once the column is wide enough.
 -->
 <script lang="ts">
-	import { resolve } from '$app/paths';
 	import EmptyState from '#lib/ui/components/EmptyState.svelte';
 	import Icon from '#lib/ui/components/Icon.svelte';
-	import ListRow from '#lib/ui/components/ListRow.svelte';
 	import VerdictBadge from '#lib/ui/analytics/VerdictBadge.svelte';
 	import type { IconName } from '#lib/ui/icons/icons.ts';
 	import type { OverviewData, VerdictCard } from './load';
@@ -80,7 +78,11 @@
 						<ul class="evidence">
 							{#each card.evidence as item, i (i)}
 								<li>
-									<span class="subject">{item.subject}</span>
+									<span class="subject"
+										>{item.subject}{#if item.hint}<span class="visually-hidden">: </span><span
+												class="hint">{item.hint}</span
+											>{/if}</span
+									>
 									<VerdictBadge verdict={item.verdict} />
 								</li>
 							{/each}
@@ -106,13 +108,6 @@
 	{/if}
 
 	<TrendsLoader {overview} {served} />
-
-	<ListRow
-		title="Reviews"
-		icon="sparkle"
-		href={resolve('/(app)/progress/reviews/[[key]]', {})}
-		data-testid="reviews-row"
-	/>
 </div>
 
 <style>
@@ -234,8 +229,16 @@
 	}
 
 	.subject {
+		display: grid;
+		gap: var(--space-0-5);
 		font-size: var(--text-sm);
 		color: var(--color-text-secondary);
+	}
+
+	/* What a jargon measure means, under its name. */
+	.hint {
+		font-size: var(--text-xs);
+		color: var(--color-text-tertiary);
 	}
 
 	/* A wide column (a desktop window): the cards pair up. */

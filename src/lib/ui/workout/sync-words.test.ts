@@ -8,6 +8,7 @@ describe('syncWords', () => {
 				{ state: 'synced' },
 				{ state: 'saving', pending: 2 },
 				{ state: 'offline', pending: 3 },
+				{ state: 'unreachable', waiting: 2 },
 				{ state: 'retrying', seconds: 4, pending: 1 },
 				{ state: 'retrying', seconds: 0, pending: 1 },
 				{ state: 'attention', count: 1 },
@@ -22,6 +23,7 @@ describe('syncWords', () => {
 			'check: Saved',
 			'refresh: Saving…',
 			'wifi-off: Offline · 3 pending',
+			'wifi-off: Can’t connect · 2 waiting',
 			'clock: Retrying in 4 s',
 			'clock: Retrying in 1 s',
 			'alert: 1 needs attention',
@@ -31,17 +33,49 @@ describe('syncWords', () => {
 		]);
 	});
 
+	it('says only Saved quietly, with no pill, and never an alert quietly', () => {
+		const statuses = [
+			{ state: 'synced' },
+			{ state: 'saving', pending: 2 },
+			{ state: 'offline', pending: 3 },
+			{ state: 'unreachable', waiting: 2 },
+			{ state: 'retrying', seconds: 4, pending: 1 },
+			{ state: 'attention', count: 1 },
+			{ state: 'signed-out', waiting: 2 },
+			{ state: 'passkey', waiting: 2 }
+		] as const;
+		// No other words carry the flag at all.
+		const quiet = statuses.map((status) => syncWords(status)).filter((words) => 'quiet' in words);
+		expect(quiet).toEqual([{ icon: 'check', text: 'Saved', alert: false, quiet: true }]);
+	});
+
 	it('says no count past 999, so the longest words stay the reserved ones', () => {
 		expect(
 			[999, 1000, 25_000].map((n) => [
 				syncWords({ state: 'signed-out', waiting: n }).text,
 				syncWords({ state: 'offline', pending: n }).text,
-				syncWords({ state: 'attention', count: n }).text
+				syncWords({ state: 'attention', count: n }).text,
+				syncWords({ state: 'unreachable', waiting: n }).text
 			])
 		).toEqual([
-			['Sign in to sync · 999 waiting', 'Offline · 999 pending', '999 need attention'],
-			['Sign in to sync · 999+ waiting', 'Offline · 999+ pending', '999+ need attention'],
-			['Sign in to sync · 999+ waiting', 'Offline · 999+ pending', '999+ need attention']
+			[
+				'Sign in to sync · 999 waiting',
+				'Offline · 999 pending',
+				'999 need attention',
+				'Can’t connect · 999 waiting'
+			],
+			[
+				'Sign in to sync · 999+ waiting',
+				'Offline · 999+ pending',
+				'999+ need attention',
+				'Can’t connect · 999+ waiting'
+			],
+			[
+				'Sign in to sync · 999+ waiting',
+				'Offline · 999+ pending',
+				'999+ need attention',
+				'Can’t connect · 999+ waiting'
+			]
 		]);
 	});
 });

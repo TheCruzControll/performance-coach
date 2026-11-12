@@ -82,6 +82,33 @@
 
 	const sessionHref = (lineage: string) => resolve('/(app)/train/session/[key]', { key: lineage });
 
+	// ---- The coming days' kits, for a gym with no signal --------------------------------------
+
+	/** Once the idle pass has run: 'saved' or 'none', as on Today. What the specs wait for. */
+	let kits = $state<'saved' | 'none'>();
+
+	/**
+	 * Once the week shows and the browser is idle, its sessions still to do today and in the next
+	 * two days (coming-kits.ts): never on the server, again for each week shown.
+	 */
+	$effect(() => {
+		let live = true;
+		const sessions = week ? week.days.flatMap((d) => d.sessions) : [];
+		const today = view?.today;
+		const save = async () => {
+			let saved: string[] = [];
+			if (today) {
+				const coming = await import('#lib/client/workout/coming-kits.ts');
+				saved = await coming.saveComingKits(sessions, today);
+			}
+			if (live) kits = saved.length ? 'saved' : 'none';
+		};
+		const go = () => live && void save().catch(() => {});
+		if ('requestIdleCallback' in window) requestIdleCallback(go, { timeout: 2000 });
+		else setTimeout(go, 800);
+		return () => (live = false);
+	});
+
 	let reloading = $state(false);
 	async function reload() {
 		reloading = true;
@@ -201,7 +228,7 @@
 				{#if plan.failed}
 					<div class="plan-failed">
 						<Notice tone="danger" title="Couldn’t open your plan">
-							<button type="button" class="retry" onclick={plan.show}>Retry</button>
+							<button type="button" class="retry" onclick={plan.show}>Try again</button>
 						</Notice>
 					</div>
 				{/if}
@@ -212,7 +239,13 @@
 
 	<!-- Busy while the next week loads; only the week's own strip and cards go inert, never the
 	     state card's link, which may hold the focus of the change it started. -->
-	<div class="week" aria-busy={loading} inert={loading && !data.card} data-testid="train-week">
+	<div
+		class="week"
+		aria-busy={loading}
+		inert={loading && !data.card}
+		data-testid="train-week"
+		data-kits={kits}
+	>
 		{#if data.card}
 			{@const card = data.card}
 			<Surface padding="none" radius="xl">
@@ -239,6 +272,15 @@
 					data-testid="train-next"
 				/>
 			</div>
+			<!-- A bridge week's workouts, which no plan holds: each says Off-plan. One box, so the
+			     desktop subgrid gives them one row. -->
+			{#if view?.offPlan.length}
+				<div class="logged">
+					{#each view.offPlan as workout (workout.id)}
+						<SessionCard session={workout} data-testid="off-plan-workout" />
+					{/each}
+				</div>
+			{/if}
 		{:else if week}
 			<WeekStrip
 				days={view!.strip}
@@ -314,7 +356,7 @@
 			/>
 			{#if plates.failed}
 				<Notice tone="danger" title="Couldn’t open the plate calculator">
-					<button type="button" class="retry" onclick={plates.show} use:reveal>Retry</button>
+					<button type="button" class="retry" onclick={plates.show} use:reveal>Try again</button>
 				</Notice>
 			{/if}
 		</div>
@@ -330,7 +372,7 @@
 			/>
 			{#if restTimer.failed}
 				<Notice tone="danger" title="Couldn’t open the rest timer">
-					<button type="button" class="retry" onclick={restTimer.show} use:reveal>Retry</button>
+					<button type="button" class="retry" onclick={restTimer.show} use:reveal>Try again</button>
 				</Notice>
 			{/if}
 			<!-- A running rest shows here, under its row, with the sheet closed. -->
@@ -475,6 +517,11 @@
 		gap: var(--space-1-5);
 		margin: 0;
 		padding-left: var(--space-5);
+	}
+
+	.logged {
+		display: grid;
+		gap: var(--space-2);
 	}
 
 	.tool {

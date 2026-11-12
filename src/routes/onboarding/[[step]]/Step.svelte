@@ -13,7 +13,7 @@
   the title and the editor: the welcome's intro, or on a return visit its card to pick up at the
   furthest step advanced.
 
-  From 1024 px the step is a card centred in the window, the progress bar across its top and
+  From 1024 px the step is a card centred in the window, the progress bar inset along its top and
   Back, Skip and Continue in a row under the form (Back is in both places, one shown per
   width, so the focus order follows the layout). The review declares wide, so its
   blocks sit in two columns.
@@ -229,10 +229,12 @@
 					Check your connection, then try again.
 				</Notice>
 				<!-- A reload: the browser keeps a failed module fetch for the life of the page. -->
-				<Button variant="secondary" icon="refresh" onclick={() => location.reload()}>Retry</Button>
+				<Button variant="secondary" icon="refresh" onclick={() => location.reload()}
+					>Try again</Button
+				>
 			</div>
 		{:else if Editor && form}
-			<Editor bind:value={form.value} errors={form.errors} context={context!} />
+			<Editor bind:value={form.value} errors={form.errors} context={context!} heading={title} />
 		{:else if Summary && form && profile}
 			<Summary {profile} {steps} errors={form.errors} href={fromReviewHref} />
 		{:else}
@@ -430,8 +432,9 @@
 	/*
 	 * A desktop window: the step is a card as tall as the window allows (capped), the same size on
 	 * every step, so moving on moves neither the card nor its action row. The progress bar runs
-	 * across its top edge; the form scrolls inside it when it is taller than the room; the actions
-	 * close the card in a row under the form, Continue at the right, never pinned to the window.
+	 * along its top, inset from the edge and the rounded corners so no segment clips into them;
+	 * the form scrolls inside it when it is taller than the room; the actions close the card in a
+	 * row under the form, Continue at the right, never pinned to the window.
 	 */
 	@media (width >= 64rem) {
 		.step {
@@ -448,12 +451,9 @@
 		}
 
 		.progress {
+			--progress-inset: var(--space-6);
 			order: -1;
-			margin: 0 calc(-1 * var(--card-padding));
-		}
-
-		.segment {
-			border-radius: 0;
+			margin: var(--progress-inset) calc(var(--progress-inset) - var(--card-padding)) 0;
 		}
 
 		.top {

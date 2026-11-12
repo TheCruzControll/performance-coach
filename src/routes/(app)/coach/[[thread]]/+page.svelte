@@ -107,6 +107,7 @@
 	let liveFailed = $state.raw<string | null>(null);
 	let liveFailures = 0;
 	let starting = $state(false);
+	let entered: PageData['prefill'] | undefined;
 	async function send(text: string) {
 		if (starting) return; // a second press while the client loads
 		starting = true;
@@ -122,7 +123,10 @@
 		}
 		liveFailed = null;
 		draft = '';
-		void turns.send(text, data.prefill?.from);
+		// An entry (where Coach was opened from, and about what) goes with its first question.
+		const entry = data.prefill === entered ? null : data.prefill;
+		entered = data.prefill;
+		void turns.send(text, entry?.from, entry?.ref ?? null);
 	}
 
 	/** A turn about something on screen: 'Ask for changes' sends the proposal it revises. */

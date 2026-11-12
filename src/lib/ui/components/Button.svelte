@@ -18,6 +18,8 @@
 		/** Render as a link. Ignored while disabled. */
 		href?: string;
 		type?: 'button' | 'submit' | 'reset';
+		/** A submit button's own form action, e.g. '?/keep' beside its form's '?/decide'. */
+		formaction?: string;
 		icon?: IconName;
 		iconEnd?: IconName;
 		loading?: boolean;
@@ -71,6 +73,7 @@
 	<a
 		{href}
 		class="btn"
+		data-ui="button"
 		class:block
 		data-variant={variant}
 		data-size={size}
@@ -84,6 +87,7 @@
 	<button
 		{type}
 		class="btn"
+		data-ui="button"
 		class:block
 		data-variant={variant}
 		data-size={size}

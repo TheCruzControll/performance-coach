@@ -289,7 +289,7 @@ test.describe('logging a set (IndexedDB only)', () => {
 		await expect.poll(async () => (await setLogs(page)).length).toBe(2);
 	});
 
-	test('Complete set shows only once the store can write: the first tap is done in the frame after it, however slow the store loads', async ({
+	test('the first Complete set once the store can write is done in the frame after the tap, however slow the store loads', async ({
 		page
 	}) => {
 		// Hold the store's chunk (online.ts, from Vite's manifest) for a second.
@@ -302,8 +302,10 @@ test.describe('logging a set (IndexedDB only)', () => {
 		});
 		await seedWorkout(page, kit);
 		await gotoWorkout(page);
-		// No wait for data-store: tap as soon as Complete set is there.
+		// The logger shows before the store opens, and a tap then waits for it
+		// (workout-early-taps.e2e.ts); tap as soon as the store is open (data-store).
 		await expect(page.getByTestId('complete-set')).toBeVisible();
+		await expect(page.locator('main#main[data-store]')).toBeAttached();
 		expect((await completeInFrame(page)).states).toEqual(['done', 'current', 'todo', 'todo']);
 	});
 
@@ -341,7 +343,7 @@ test.describe('logging a set (IndexedDB only)', () => {
 		expect(await audit(page)).toEqual([]);
 
 		await liftPut(page);
-		await notice.getByRole('button', { name: 'Retry' }).click();
+		await notice.getByRole('button', { name: 'Try again' }).click();
 		await expect(notice).toBeHidden();
 		await expect(rows(page).first()).toHaveAttribute('data-state', 'done');
 		const logs = await setLogs(page);
