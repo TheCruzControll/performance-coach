@@ -215,9 +215,10 @@ jobs:
   # at 1.5×), and its 14 is unchanged: never raised to fit, it gains a shard if it nears 14.
   # Those runs took 10.8-15.6 minutes, against a 10-minute goal: serial·chromium's and
   # main·chromium's slowest shards took 10.8 Playwright minutes, serial·webkit's 10.0. Replayed on
-  # their per-file seconds with the spec files of today, a third shard for each Chromium leg and a
-  # seventh for serial·webkit bring every leg's slowest shard to 8.9 minutes at most (medians:
-  # main·chromium 6.3, serial·chromium 7.5, serial·webkit 8.3; main·webkit stays at 7.8 and 8.7).
+  # their per-file seconds with the spec files of today, a third shard for each Chromium leg and
+  # two more for serial·webkit bring every leg's slowest shard to 8.7 minutes at most (median and
+  # max: main·chromium 6.3 and 7.0, serial·chromium 7.7 and 8.5, serial·webkit 8.1 and 8.1;
+  # main·webkit stays at 7.8 and 8.7). serial·webkit in 7 would still reach 9.1 (8.4 median).
   # main·chromium's a11y files (642 s over 2 workers) then fill shard 1 by themselves at 321 s,
   # 3 s more than shards 2 and 3: the planner puts nothing else there, and the rule allows a
   # shard 1 holding only those files to be heavier by less than its 10% (SHARD_ONE_SHARE).
@@ -244,13 +245,14 @@ jobs:
           - { group: serial, engine: chromium, shard: 1, of: 3, minutes: 14 }
           - { group: serial, engine: chromium, shard: 2, of: 3, minutes: 14 }
           - { group: serial, engine: chromium, shard: 3, of: 3, minutes: 14 }
-          - { group: serial, engine: webkit, shard: 1, of: 7, minutes: 15 }
-          - { group: serial, engine: webkit, shard: 2, of: 7, minutes: 15 }
-          - { group: serial, engine: webkit, shard: 3, of: 7, minutes: 15 }
-          - { group: serial, engine: webkit, shard: 4, of: 7, minutes: 15 }
-          - { group: serial, engine: webkit, shard: 5, of: 7, minutes: 15 }
-          - { group: serial, engine: webkit, shard: 6, of: 7, minutes: 15 }
-          - { group: serial, engine: webkit, shard: 7, of: 7, minutes: 15 }
+          - { group: serial, engine: webkit, shard: 1, of: 8, minutes: 15 }
+          - { group: serial, engine: webkit, shard: 2, of: 8, minutes: 15 }
+          - { group: serial, engine: webkit, shard: 3, of: 8, minutes: 15 }
+          - { group: serial, engine: webkit, shard: 4, of: 8, minutes: 15 }
+          - { group: serial, engine: webkit, shard: 5, of: 8, minutes: 15 }
+          - { group: serial, engine: webkit, shard: 6, of: 8, minutes: 15 }
+          - { group: serial, engine: webkit, shard: 7, of: 8, minutes: 15 }
+          - { group: serial, engine: webkit, shard: 8, of: 8, minutes: 15 }
           - { group: alone, engine: chromium, shard: 1, of: 2, minutes: 5 }
           - { group: alone, engine: chromium, shard: 2, of: 2, minutes: 5 }
           - { group: exclusive, engine: chromium, shard: 1, of: 1, minutes: 5 }
