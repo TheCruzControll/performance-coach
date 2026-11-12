@@ -30,6 +30,36 @@ keeps listening to `prefers-color-scheme` while open, so when iOS switches appea
 automatic dark mode at sunset) the theme-color and status-bar metas follow the CSS (e2e-tested).
 **Browser baseline:** `light-dark()` needs Safari 17.5+ / Chrome 123+.
 
+### Designs
+
+Two designs, chosen per device: today's (the default for everyone) and **Graphite 2004**, a
+preview of the proposed design (graphite and silver, Aqua in place of volt, Source Sans 3, 3–10 px
+corners). Profile → Appearance → Design switches between them, as does `?design=graphite` or
+`?design=current` (saved too; handy for screenshots). The choice is stored in localStorage
+(`pc:design:v1`, kept across sign-out) and applied before first paint by the head script in
+`src/app.html`, which sets `data-design="graphite"` on `<html>`, links
+`src/lib/ui/styles/graphite.css` (render-blocking) and preloads Source Sans 3.
+
+- `graphite.css` is a build asset of its own, in no route's CSS: today's design ships none of it
+  and the service worker precaches none of it (it caches it once a device uses it).
+- Its token rule overrides tokens under `:root[data-design='graphite']`, so components restyle
+  without edits; colour stops alone sit in `light-dark()`. It adds the material roles (`--strip`,
+  `--plastic`, `--gel`, `--select`, `--bar`, `--lcd` and their edges and inks) for components to
+  adopt.
+- **Controls:** the core components carry a stable `data-ui` hook (`button`, `segmented`,
+  `choices`, `stepper`, `field`, `toggle`, `chip`, `badge`, `surface`, `card-head`, `section`,
+  `list-row`, `notice`, `toaster`, `sheet`), which only `graphite.css` reads, every selector
+  inside the Graphite scope. There: the gel primary button, plastic secondary and danger keys,
+  plain Aqua-text ghost; connected plastic segments and choices with the chosen one in the
+  selection well; fields and the stepper in inset wells behind a ≥ 3:1 border; the ON/OFF switch
+  inside the 44 px Toggle row; 3 px tags; boxes whose Card header is the silver strip; toasts and
+  sheets with 10 px corners on the spring; and focus as a 2 px Aqua-ink outline 2 px out (inset
+  −3 px inside the segmented control and the stepper). No route styles a hook, and the hooks are
+  only on these components (`components/graphite-hooks.test.ts`).
+- `graphite.test.ts` holds it to the chart palette checks and 4.5:1 text contrast in both themes;
+  `e2e/design-switch*.e2e.ts` run axe on it and check no flash, no layout shift and no Graphite
+  request on today's design. The screen gallery shoots every screen in both designs.
+
 ## Colour
 
 | Token                    | Dark      | Light     | Use                                                |

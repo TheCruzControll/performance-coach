@@ -16,6 +16,7 @@
 		LIFT_LABEL,
 		type Lift
 	} from '#lib/domain/profile/catalog.ts';
+	import { roundEstimate } from '#lib/domain/units.ts';
 	import Badge from '../components/Badge.svelte';
 	import Button from '../components/Button.svelte';
 	import ChoiceGroup from '../components/ChoiceGroup.svelte';
@@ -187,8 +188,10 @@
 						</div>
 						<p class="estimate" role="status" data-testid="baseline-estimate">
 							{#if estimate}
-								≈ <strong class="numeric">{trim(estimate.value)} {lift.unit}</strong> estimated 1RM
-								· {estimate.confidence} confidence
+								≈ <strong class="numeric"
+									>{trim(roundEstimate(estimate.value, lift.unit))}&nbsp;{lift.unit}</strong
+								>
+								estimated 1RM · {estimate.confidence} confidence
 							{:else if lift.setWeight != null && lift.setReps != null}
 								Can’t estimate from that set — use 1–12 reps at RPE 6–10.
 							{:else}

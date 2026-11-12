@@ -404,6 +404,12 @@ test('goals: Continue without a goal is refused and says why; a crafted Skip cha
 }) => {
 	await gotoHydrated(page, '/onboarding/goals');
 	await stepReady(page, 'goals');
+	// The question is asked once, by the step's title; the empty state under it only guides.
+	await expect(page.getByText('What are you training for?')).toHaveCount(1);
+	await expect(page.getByRole('heading', { level: 1 })).toHaveText('What are you training for?');
+	await expect(page.getByTestId('goals-empty')).toContainText(
+		'Add a goal and the coach plans your training around it.'
+	);
 	await next(page).click();
 	await expect(page.getByRole('alert').filter({ hasText: 'Add at least one goal' })).toHaveText(
 		'Add at least one goal to continue.'
@@ -456,10 +462,10 @@ test('review: lifts by name with how each was found, and Edit comes back to the 
 	await stepReady(page, 'review');
 	const lifts = block(page, 'strength').getByRole('listitem');
 	await expect(lifts.filter({ hasText: 'Weighted pull-up' })).toHaveText(
-		/^Weighted pull-up\s*40 kg\s*Measured$/
+		/^Weighted pull-up\s*40\s+kg\s*Measured$/
 	);
 	await expect(lifts.filter({ hasText: 'Back squat' })).toHaveText(
-		/^Back squat\s*≈ [\d.]+ kg\s*Estimated$/
+		/^Back squat\s*≈ \d+(\.5)?\s+kg\s*Estimated$/
 	);
 	await expect(block(page, 'strength')).not.toContainText('Week one');
 	// A strength goal only: no running or Muay Thai, so no specifics block.
