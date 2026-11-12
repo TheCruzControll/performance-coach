@@ -104,7 +104,7 @@ Their shortest paths:
 
 ## Coverage record
 
-Sync commit: `f15b739e2f84a20f89f8c049e87763697a125301`
+Sync commit: `8db536e0ffb7efe4b0d81fdbd0cce9988b6884d4`
 
 At this commit the model was confirmed to describe every function below. `check.sh` exits 2 when a file listed here differs from it. Move it forward only after you have confirmed that the model describes every covered function at the new commit, and say so in the PR.
 
