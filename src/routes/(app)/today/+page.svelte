@@ -131,7 +131,7 @@
 
 <svelte:document onvisibilitychange={refreshIfStale} />
 
-<PageHeader title="Today" {eyebrow} />
+<PageHeader title="Today" {eyebrow} dated />
 
 {#if !active}
 	<ol class="week" aria-label="This week">

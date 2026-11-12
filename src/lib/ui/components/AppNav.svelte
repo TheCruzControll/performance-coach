@@ -5,6 +5,8 @@
   1024 px a solid rail at the left, under the brand mark that layout.css draws. Each item is a
   real link (works without JS) with aria-current on the active tab, so the destinations, their
   order and the current one are the same in both. A pressed tab is marked current on pointerdown.
+  Graphite 2004 (graphite.css, the `nav` hook) makes the bar glossy graphite with the current tab
+  in the selection well, and the rail its source list; no markup changes between them.
 -->
 <script lang="ts" module>
 	import type { IconName } from '../icons/icons';
@@ -53,7 +55,7 @@
 	const isActive = (href: string) => current === href || current.startsWith(`${href}/`);
 </script>
 
-<nav class="app-nav" aria-label="Primary">
+<nav class="app-nav" data-ui="nav" aria-label="Primary">
 	<ul>
 		{#each items as item (item.href)}
 			{@const active = isActive(item.href)}

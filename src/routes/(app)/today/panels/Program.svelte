@@ -25,6 +25,7 @@
 	import ListRow from '#lib/ui/components/ListRow.svelte';
 	import Section from '#lib/ui/components/Section.svelte';
 	import Skeleton from '#lib/ui/components/Skeleton.svelte';
+	import StatusSlot from '#lib/ui/components/StatusSlot.svelte';
 	import Surface from '#lib/ui/components/Surface.svelte';
 	import SessionCard from '#lib/ui/program/SessionCard.svelte';
 	import { resumeLink } from '#lib/ui/program/start-link.ts';
@@ -182,6 +183,10 @@
 					onselect={(date) => (chosen = date)}
 					data-testid="week-strip"
 				/>
+				{#if week.today}
+					<!-- Graphite 2004's Status Display (TodayStatus.svelte); nothing on today's design. -->
+					<StatusSlot load={() => import('./TodayStatus.svelte')} props={{ week }} room="9.5rem" />
+				{/if}
 				<Section title={day.heading} gap={isToday ? 'md' : 'sm'} data-testid="today-day">
 					{#snippet action()}
 						{#if isToday}<Badge tone="accent">Today</Badge>{/if}
