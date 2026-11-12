@@ -16,10 +16,10 @@
  * Server-only at runtime: only the modules listed in scripts/analytics-client-imports.test.ts are
  * client-safe, and this is not one; screens receive its results.
  */
-import { addDays, weekdayOf } from '../calendar.ts';
+import { addDays, mondayOf, weekdayOf } from '../calendar.ts';
 import type { IsoDate } from '../calendar.ts';
 import { localDay } from '../dates.ts';
-import { weekStartOf } from '../training/metrics.ts';
+import { weekStartIn } from '../training/metrics.ts';
 import { cleanFloat } from '../units.ts';
 import { sameDaysLastWeek, weekStarts } from './periods.ts';
 import type { DayRange, InProgressWeek, WeekRange } from './periods.ts';
@@ -101,7 +101,9 @@ function group(
 	const groups = new Map<IsoDate, number[]>();
 	for (const { at, value } of values) {
 		const key = keyOf(at);
-		groups.set(key, [...(groups.get(key) ?? []), value]);
+		const bucket = groups.get(key);
+		if (bucket) bucket.push(value);
+		else groups.set(key, [value]);
 	}
 	const reduced = new Map<IsoDate, number>();
 	for (const key of [...groups.keys()].sort()) {
@@ -126,7 +128,31 @@ export function byWeek(
 	timeZone: string,
 	reduce: Reduce = total
 ): Map<IsoDate, number> {
-	return group(values, (at) => weekStartOf(at, timeZone), reduce);
+	return group(values, weekStartIn(timeZone), reduce);
+}
+
+/**
+ * Items by the Monday of their day's week, each week's in the order given, so each week of a long
+ * period reads its own items instead of filtering all of them. Each day's Monday is worked out once.
+ */
+export function byMonday<T>(items: readonly T[], dayOf: (item: T) => IsoDate): Map<IsoDate, T[]> {
+	return Map.groupBy(items, (item) => mondayOfDay(dayOf(item)));
+}
+
+/**
+ * Each day's Monday once worked out, for every request: the figures ask for the week of every
+ * fact, over a few thousand days. Emptied once it holds MONDAY_MEMO_MAX days. (This module is
+ * server-only, so the memo costs no route its JavaScript.)
+ */
+const MONDAY_MEMO_MAX = 10_000;
+const mondays = new Map<IsoDate, IsoDate>();
+export function mondayOfDay(day: IsoDate): IsoDate {
+	let monday = mondays.get(day);
+	if (monday === undefined) {
+		if (mondays.size >= MONDAY_MEMO_MAX) mondays.clear();
+		mondays.set(day, (monday = mondayOf(day)));
+	}
+	return monday;
 }
 
 /** How fillWeeks marks a week with no value: 0 (a count of nothing) or null (a gap). */

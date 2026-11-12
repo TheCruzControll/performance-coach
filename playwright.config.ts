@@ -1,6 +1,14 @@
 import { defineConfig, devices, type Project } from '@playwright/test';
 import { DESKTOP } from './e2e/desktop';
-import { bypassHeaders, e2eProjects, GROUPS, parseChoice, SMOKE } from './e2e/projects';
+import {
+	bypassHeaders,
+	e2eProjects,
+	galleryMode,
+	galleryProjects,
+	GROUPS,
+	parseChoice,
+	SMOKE
+} from './e2e/projects';
 
 /**
  * End-to-end tests run against the real production Node server (adapter-node build) and a
@@ -33,10 +41,14 @@ import { bypassHeaders, e2eProjects, GROUPS, parseChoice, SMOKE } from './e2e/pr
  * against an external server with test routes on; E2E_DEPLOYED_LOCAL=1 runs the smoke specs
  * against the local production build with test routes off. The local projects run the smoke
  * specs too, the desktop one included.
+ *
+ * E2E_GALLERY=1 (.github/workflows/screen-gallery.yml) runs nothing but the owner setups and the
+ * screen gallery (e2e/gallery.gallery.ts) on one worker (e2e/projects.ts galleryProjects).
  */
 export const E2E_PORT = Number(process.env.E2E_PORT ?? 4173);
 const baseURL = process.env.E2E_BASE_URL ?? `http://localhost:${E2E_PORT}`;
 const group = parseChoice('E2E_GROUP', process.env.E2E_GROUP, GROUPS);
+const gallery = galleryMode(process.env);
 const withWebKit =
 	Boolean(process.env.CI) || process.env.E2E_WEBKIT === '1' || process.env.E2E_ENGINE === 'webkit';
 
@@ -65,12 +77,20 @@ const SERIAL = '**/*.serial.e2e.ts';
 // E2E_SERIAL_ALONE=1: run serial specs right after the owner setup, without the functional suite.
 const serialAlone = process.env.E2E_SERIAL_ALONE === '1';
 
+const setup: Project = {
+	name: 'setup',
+	testMatch: '**/auth.setup.ts',
+	use: { ...iphone, browserName: 'chromium' }
+};
+const setupWebKit: Project = {
+	name: 'setup-webkit',
+	testMatch: '**/auth-webkit.setup.ts',
+	dependencies: ['setup'],
+	use: { ...iphone, browserName: 'webkit' }
+};
+
 const projects: Project[] = [
-	{
-		name: 'setup',
-		testMatch: '**/auth.setup.ts',
-		use: { ...iphone, browserName: 'chromium' }
-	},
+	setup,
 	{
 		name: 'iphone-chromium',
 		testIgnore: [...FUNCTIONAL_IGNORE, DESKTOP_ONLY],
@@ -105,20 +125,12 @@ const projects: Project[] = [
 ];
 
 if (withWebKit) {
-	projects.push(
-		{
-			name: 'setup-webkit',
-			testMatch: '**/auth-webkit.setup.ts',
-			dependencies: ['setup'],
-			use: { ...iphone, browserName: 'webkit' }
-		},
-		{
-			name: 'iphone-webkit',
-			testIgnore: [...FUNCTIONAL_IGNORE, DESKTOP_ONLY],
-			dependencies: ['setup-webkit'],
-			use: { ...iphone, browserName: 'webkit', storageState: WEBKIT_STATE }
-		}
-	);
+	projects.push(setupWebKit, {
+		name: 'iphone-webkit',
+		testIgnore: [...FUNCTIONAL_IGNORE, DESKTOP_ONLY],
+		dependencies: ['setup-webkit'],
+		use: { ...iphone, browserName: 'webkit', storageState: WEBKIT_STATE }
+	});
 }
 
 // One spec at a time, after the functional suites: they reset and change the owner's training
@@ -182,8 +194,9 @@ export default defineConfig({
 	forbidOnly: Boolean(process.env.CI),
 	retries: process.env.CI ? 1 : 0,
 	// CI main legs run whole files side by side on 2 workers, as local runs do (auth.setup.ts
-	// registers a passkey per worker). serial, alone and sweeps legs keep 1.
-	workers: process.env.CI && group !== 'main' ? 1 : 2,
+	// registers a passkey per worker). serial, alone, exclusive and sweeps legs keep 1.
+	// The gallery reseeds the one owner screen by screen: one worker, wherever it runs.
+	workers: gallery || (process.env.CI && group !== 'main') ? 1 : 2,
 	timeout: 30_000,
 	expect: { timeout: 7_500 },
 	reporter: [
@@ -199,5 +212,12 @@ export default defineConfig({
 		colorScheme: 'dark',
 		extraHTTPHeaders: bypassHeaders(process.env)
 	},
-	projects: e2eProjects(process.env, projects)
+	projects: gallery
+		? galleryProjects({
+				setup,
+				setupWebKit,
+				chromiumState: CHROMIUM_STATE,
+				webkitState: WEBKIT_STATE
+			})
+		: e2eProjects(process.env, projects)
 });

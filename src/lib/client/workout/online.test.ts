@@ -8,6 +8,7 @@ import { replay } from '#lib/domain/workout/project.ts';
 import { strengthTable } from '#lib/domain/workout/reducers/tables.ts';
 import { broadcast, openTabChannel } from './channel';
 import { goOnline } from './online';
+import { EARLY_ROWS, type EarlyRows } from './prepaint';
 import { readActive } from './restore';
 import { outboxStatus } from './status.svelte';
 import { createStore } from './store';
@@ -117,6 +118,19 @@ describe('goOnline', () => {
 		const skip = skipOf(W, 1);
 		expect(await page.store.dispatch(skip).saved).toBe('saved');
 		await vi.waitFor(() => expect(batches.flat()).toEqual([start.id, skip.id]));
+		page.stop();
+	});
+
+	it("sends through the page's fetch when none is given", async () => {
+		const { batches, fetch } = server();
+		vi.stubGlobal('fetch', fetch);
+		const page = await goOnline(
+			{ table: strengthTable, channel: openTabChannel(CHANNEL) },
+			{ locks: null, events: null, online: () => true, leaving: () => false }
+		);
+		const start = startOf(W);
+		expect(await page.store.dispatch(start, kitOf(W)).saved).toBe('saved');
+		await vi.waitFor(() => expect(batches.flat()).toEqual([start.id]));
 		page.stop();
 	});
 
@@ -330,5 +344,131 @@ describe('reconcile, when a screen opens online', () => {
 		expect(await page.store.signedOut()).toBe(false);
 		expect(outboxStatus.current).toEqual({ state: 'synced' });
 		page.stop();
+	});
+});
+
+describe("a cold /workout load: the GET the page's inline script started (prepaint.ts)", () => {
+	/**
+	 * A workout started and synced here, so nothing waits to be sent; the server's rows also hold
+	 * a set another device logged. The calls each later page sends, and its rows.
+	 */
+	async function syncedHere() {
+		const start = startOf(W);
+		const elsewhere = skipOf(W, 2);
+		const rows = replay(strengthTable, {
+			workoutId: W,
+			kit: null,
+			canonical: null,
+			pending: [start, elsewhere]
+		}).rows;
+		const calls: string[] = [];
+		const fetch = vi.fn(async (url: string, init: RequestInit) => {
+			calls.push(`${init.method ?? 'GET'} ${url}`);
+			if (init.method !== 'POST') return Response.json(rows);
+			const { mutations } = JSON.parse(init.body as string) as SyncRequest;
+			return Response.json({
+				v: 1,
+				results: mutations.map(({ id }) => ({ id, status: 'applied' }))
+			});
+		});
+		const page = await goOnline(
+			{ table: strengthTable, channel: openTabChannel(CHANNEL) },
+			{ fetch, locks: null, events: null, online: () => true, leaving: () => false }
+		);
+		expect(await page.store.dispatch(start, kitOf(W)).saved).toBe('saved');
+		await vi.waitFor(async () => expect(await page.store.outbox()).toEqual([]));
+		await page.reconciled;
+		page.stop();
+		calls.length = 0;
+		return { calls, fetch, rows, elsewhere };
+	}
+
+	/** What the inline script leaves on the page: a GET of `workoutId`'s rows, answered with `rows`. */
+	function leaveEarly(workoutId: string, rows: unknown): EarlyRows {
+		const early = {
+			workoutId,
+			controller: new AbortController(),
+			response: Promise.resolve(Response.json(rows))
+		};
+		vi.stubGlobal(EARLY_ROWS, early);
+		return early;
+	}
+
+	const reopen = (fetch: ReturnType<typeof vi.fn>, online = true) =>
+		goOnline(
+			{ table: strengthTable, channel: openTabChannel(CHANNEL) },
+			{
+				fetch: fetch as never,
+				locks: null,
+				events: null,
+				online: () => online,
+				leaving: () => false
+			}
+		);
+
+	const setIdsOf = async (page: Awaited<ReturnType<typeof goOnline>>) =>
+		(await page.store.load(W))!.view!.slots.flatMap((slot) => slot.sets.map((set) => set.id));
+
+	it('stores its rows, with no GET of its own, when nothing was sent or changed since it left', async () => {
+		const { calls, fetch, rows, elsewhere } = await syncedHere();
+		const early = leaveEarly(W, rows);
+
+		const page = await reopen(fetch);
+		await page.reconciled;
+
+		expect(calls).toEqual([]);
+		expect(early.controller.signal.aborted).toBe(false);
+		expect(EARLY_ROWS in globalThis).toBe(false); // no later page takes it
+		expect(await setIdsOf(page)).toEqual([elsewhere.id]);
+		page.stop();
+	});
+
+	it('is aborted, and the reconcile sends its own GET after the flush, when the page had a change to send', async () => {
+		const { calls, fetch, rows } = await syncedHere();
+		// A set saved on the last page whose send never left: the early GET predates its answer.
+		const last = await otherTab();
+		await last.load(W);
+		expect(await last.dispatch(skipOf(W, 1)).saved).toBe('saved');
+		last.close();
+		const early = leaveEarly(W, { ...rows, sets: [] });
+
+		const page = await reopen(fetch);
+		await page.reconciled;
+
+		expect(early.controller.signal.aborted).toBe(true);
+		expect(calls).toEqual(['POST /api/workouts/sync', `GET /api/workouts/${W}`]);
+		page.stop();
+	});
+
+	it('is aborted when the store reported a change before the reconcile asked for it', async () => {
+		const { calls, fetch, rows } = await syncedHere();
+		const early = leaveEarly(W, rows);
+
+		const page = await reopen(fetch);
+		// A tap on this page that sends nothing (the view moves to the next exercise).
+		await page.store.load(W);
+		page.store.dispatch({ type: 'goTo', workoutId: W, position: 2 });
+		await page.reconciled;
+
+		expect(early.controller.signal.aborted).toBe(true);
+		expect(calls).toEqual([`GET /api/workouts/${W}`]);
+		page.stop();
+	});
+
+	it('is aborted for a workout that is not the one in progress, or offline', async () => {
+		const { calls, fetch, rows } = await syncedHere();
+		const other = leaveEarly('00000000-0000-4000-8000-0000000000b2', rows);
+		const page = await reopen(fetch);
+		await page.reconciled;
+		expect(other.controller.signal.aborted).toBe(true);
+		expect(calls).toEqual([`GET /api/workouts/${W}`]);
+		page.stop();
+
+		const offline = leaveEarly(W, rows);
+		const away = await reopen(fetch, false);
+		await away.reconciled;
+		expect(offline.controller.signal.aborted).toBe(true);
+		expect(calls).toHaveLength(1);
+		away.stop();
 	});
 });
