@@ -207,14 +207,22 @@ test('a tap that fails again reloads Train asking for the sheet, unless offline'
 	expect(await sameDocument(), 'a fresh document').toBe(false);
 	await expect(notice).toBeVisible();
 	await expect(page.getByTestId('plates-sheet')).toHaveCount(0);
+	// The fresh page's resume bar loads after its first paint (on idle, or once it has painted where
+	// there is no idle callback, as on WebKit): loaded while online, so the failures counted below
+	// are the Retry's alone.
+	await expect(page.locator('[data-testid="resume-slot"][data-looked="/train"]')).toBeAttached();
+	// So does real-user monitoring (on idle, or 1.5 s after mount without an idle callback), which
+	// marks the page once web-vitals has arrived.
+	await expect(page.locator('html')).toHaveAttribute('data-rum', 'ready');
 
 	// Offline, a reload could only reach the offline screen: the notice comes back instead.
 	await markDocument();
 	await context.setOffline(true);
 	const offline = await failedImports();
-	// Tapped, as on the phone: a click leaves the mouse where Retry was, and as the notice goes the
-	// rest timer's row slides under it, whose hover prefetch fails offline too and is counted.
-	await notice.getByRole('button', { name: 'Retry' }).tap();
+	// Pressed, which leaves the pointer where it was: a click, and on WebKit a tap too, leave it
+	// where Retry was, and as the notice goes the rest timer's row slides under it, whose hover
+	// prefetch fails offline too and is counted.
+	await notice.getByRole('button', { name: 'Retry' }).press('Enter');
 	await expect.poll(failedImports, { message: 'the retry ran and failed' }).toBe(offline + 1);
 	await expect(notice).toBeVisible();
 	await page.waitForTimeout(500);

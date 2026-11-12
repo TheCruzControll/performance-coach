@@ -461,3 +461,293 @@ test.describe('app shell on an iPhone viewport', () => {
 		}
 	});
 });
+
+/**
+ * A tab answers the touch, not the server: the pressed tab is current at once, and until its data
+ * arrives the content shows that screen's skeleton, or the last time it showed in this page
+ * ((app)/HeldScreen.svelte). Today loads again when the app comes back to the foreground after
+ * its TTL or on another day (today/freshness.ts).
+ */
+test.describe('tabs answer before the server does', () => {
+	// Every request reaches page.route: none is answered by the service worker.
+	test.use({ serviceWorkers: 'block' });
+
+	/** Holds `path`'s data requests until `release()`; `seen` resolves once one has been held. */
+	async function holdData(page: Page, path: string) {
+		let release!: () => void;
+		const released = new Promise<void>((resolve) => (release = resolve));
+		let seen!: () => void;
+		const held = new Promise<void>((resolve) => (seen = resolve));
+		await page.route(
+			(url) => url.pathname === `${path}/__data.json`,
+			async (route) => {
+				seen();
+				await released;
+				await route.continue().catch(() => {});
+			}
+		);
+		return { held, release };
+	}
+
+	test("a pressed tab is current at once, and its skeleton shows until the tab's data arrives", async ({
+		page
+	}, testInfo) => {
+		const errors = trackConsoleErrors(page);
+		await gotoHydrated(page, '/today');
+		const data = await holdData(page, '/train');
+		const nav = page.getByRole('navigation', { name: 'Primary' });
+		const train = nav.getByRole('link', { name: 'Train' });
+		// Pointerdown to the tab marked current, on the page's own clock.
+		await page.evaluate(() => {
+			const link = document.querySelector('.app-nav a[href="/train"]')!;
+			const marks: Record<string, number> = {};
+			(window as unknown as { marks: Record<string, number> }).marks = marks;
+			addEventListener('pointerdown', () => (marks.down = performance.now()), { capture: true });
+			new MutationObserver(() => {
+				if (link.getAttribute('aria-current') === 'page') marks.current ??= performance.now();
+			}).observe(link, { attributes: true, attributeFilter: ['aria-current'] });
+		});
+		const box = (await train.boundingBox())!;
+		await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+		await page.mouse.down();
+		await expect(train).toHaveAttribute('aria-current', 'page');
+		await expect(nav.locator('[aria-current="page"]')).toHaveCount(1);
+		const marked = await page.evaluate(() => {
+			const { marks } = window as unknown as { marks: Record<string, number> };
+			return marks.current! - marks.down!;
+		});
+		testInfo.annotations.push({
+			type: 'pointerdown to tab marked current',
+			description: `${marked.toFixed(1)} ms`
+		});
+		expect(marked, 'the tab is marked within a few frames of the touch').toBeLessThan(50);
+
+		await page.mouse.up();
+		await data.held;
+		const held = page.getByTestId('held-screen');
+		await expect(held).toHaveAttribute('data-held', 'skeleton');
+		await expect(held).toHaveAttribute('aria-busy', 'true');
+		await expect(page.getByRole('status').filter({ hasText: 'Loading Train' })).toBeAttached();
+		// Past the press's own hold on the tab (AppNav.svelte): the navigation keeps it current.
+		await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 500)));
+		await expect(train).toHaveAttribute('aria-current', 'page');
+		await expect(held).toBeVisible();
+		await expect(page.getByRole('heading', { level: 1, name: 'Train' })).toHaveCount(0);
+
+		data.release();
+		await expect(page.getByRole('heading', { level: 1, name: 'Train' })).toBeVisible();
+		await expect(held).toHaveCount(0);
+		await expect(train).toHaveAttribute('aria-current', 'page');
+		expect(errors).toEqual([]);
+	});
+
+	test('a tab shown before shows its last screen at once, while its data loads', async ({
+		page
+	}) => {
+		const errors = trackConsoleErrors(page);
+		await gotoHydrated(page, '/today');
+		const nav = page.getByRole('navigation', { name: 'Primary' });
+		await nav.getByRole('link', { name: 'Train' }).click();
+		await expect(page.getByRole('heading', { level: 1, name: 'Train' })).toBeVisible();
+
+		const data = await holdData(page, '/today');
+		await nav.getByRole('link', { name: 'Today' }).click();
+		await data.held;
+		const held = page.getByTestId('held-screen');
+		await expect(held).toHaveAttribute('data-held', 'last');
+		await expect(held).toContainText('Today');
+		// A copy, inert and hidden from assistive technology, that nothing can find by id.
+		await expect(held.locator(':scope > [inert][aria-hidden="true"]')).toHaveCount(1);
+		await expect(held.locator('[id], [data-testid]')).toHaveCount(0);
+		await expect(page.getByRole('heading', { level: 1, name: 'Today' })).toHaveCount(0);
+		await expect(nav.getByRole('link', { name: 'Today' })).toHaveAttribute('aria-current', 'page');
+
+		data.release();
+		await expect(page.getByRole('heading', { level: 1, name: 'Today' })).toBeVisible();
+		await expect(held).toHaveCount(0);
+		expect(errors).toEqual([]);
+	});
+
+	test('Today loads again when the app returns after its TTL, with the new date', async ({
+		page
+	}) => {
+		await page.clock.install();
+		await gotoHydrated(page, '/today');
+		const loads: string[] = [];
+		page.on('request', (request) => {
+			if (new URL(request.url()).pathname === '/today/__data.json') loads.push(request.url());
+		});
+		const foreground = () =>
+			page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+
+		// Back at once: nothing to load.
+		await foreground();
+
+		// A day later (past the 30-minute TTL), just after midnight.
+		const expected = await page.evaluate(() => {
+			const next = new Date();
+			next.setDate(next.getDate() + 1);
+			next.setHours(0, 5, 0, 0);
+			return {
+				time: next.getTime(),
+				eyebrow: next.toLocaleDateString('en-GB', {
+					weekday: 'long',
+					day: 'numeric',
+					month: 'long'
+				})
+			};
+		});
+		await page.clock.setSystemTime(expected.time);
+		const reload = page.waitForRequest(
+			(request) => new URL(request.url()).pathname === '/today/__data.json'
+		);
+		await foreground();
+		await reload;
+		await expect(page.locator('.page-header .eyebrow')).toHaveText(expected.eyebrow);
+		await expect(page.getByRole('heading', { level: 1, name: 'Today' })).toBeVisible();
+		expect(loads, 'one load: the return right after loading asked for none').toHaveLength(1);
+	});
+});
+
+/**
+ * The root error page is imported before every page hydrates, so its content loads on demand
+ * (src/routes/error-page.ts): with the page on the server and on a server-rendered error, as
+ * soon as the app has hydrated, or when an error needs it.
+ */
+test.describe('the root error page, loaded on demand', () => {
+	// Every request reaches page.route: none is answered from the service worker's precache.
+	test.use({ serviceWorkers: 'block' });
+
+	/** The error page's own chunk: the only code that hides the shell's offline notice. */
+	const ERROR_PAGE_CHUNK = /hideOfflineNotice:!0/;
+
+	/**
+	 * Hands the error page's chunk to `handle` (every other script passes) and resolves `served`
+	 * once it has been answered.
+	 */
+	async function onErrorPageChunk(
+		page: Page,
+		handle: (pass: () => Promise<void>, abort: () => Promise<void>) => Promise<void>
+	) {
+		let served = false;
+		await page.route('**/_app/immutable/**/*.js', async (route) => {
+			const response = await route.fetch();
+			const body = await response.text();
+			const pass = () => route.fulfill({ response, body });
+			if (!ERROR_PAGE_CHUNK.test(body)) return pass();
+			await handle(
+				async () => {
+					await pass();
+					served = true;
+				},
+				() => route.abort('connectionrefused')
+			);
+		});
+		return { served: () => served };
+	}
+
+	/** Profile's data request fails as a dropped connection: SvelteKit renders the root error page. */
+	async function failProfileData(page: Page) {
+		await page.route(
+			(url) => url.pathname === '/profile/__data.json',
+			(route) => route.abort('connectionrefused')
+		);
+		await page
+			.getByRole('navigation', { name: 'Primary' })
+			.getByRole('link', { name: 'Profile' })
+			.click();
+	}
+
+	test('a server-rendered error page hydrates the markup the server sent', async ({ page }) => {
+		await page.addInitScript(() => {
+			const removed: string[] = [];
+			new MutationObserver((records) => {
+				for (const record of records)
+					for (const node of record.removedNodes)
+						if (
+							node instanceof Element &&
+							(node.matches('[data-testid="error-view"]') ||
+								node.querySelector('[data-testid="error-view"]'))
+						)
+							removed.push(node.outerHTML.slice(0, 80));
+			}).observe(document, { childList: true, subtree: true });
+			Object.assign(window, { removed });
+		});
+		// Chromium logs a document that answers 404 as a failed resource: only that line is expected.
+		const errors = trackConsoleErrors(
+			page,
+			(msg) =>
+				msg.text().includes('status of 404') &&
+				new URL(msg.location().url).pathname === '/nothing-here'
+		);
+		const response = await page.goto('/nothing-here');
+		expect(response?.status()).toBe(404);
+		expect(await response?.text()).toContain('data-root-error');
+		await page.waitForLoadState('networkidle');
+		await expect(page.getByRole('heading', { name: 'Nothing here' })).toBeVisible();
+		expect(await page.evaluate(() => (window as unknown as { removed: string[] }).removed)).toEqual(
+			[]
+		);
+
+		// Hydrated: its link is a client-side navigation, not a page load.
+		await page.getByRole('link', { name: 'Back to Today' }).click();
+		await expect(page.getByRole('heading', { level: 1, name: 'Today' })).toBeVisible();
+		expect(await page.evaluate(() => performance.getEntriesByType('navigation').length)).toBe(1);
+		expect(errors).toEqual([]);
+	});
+
+	test('once the app has hydrated, an offline error renders without the network', async ({
+		page,
+		context
+	}) => {
+		const chunk = await onErrorPageChunk(page, (pass) => pass());
+		await gotoHydrated(page, '/today');
+		// No idle wait (WebKit has none): the page loaded with the requests that follow hydration.
+		expect(chunk.served(), 'the page loaded after hydration').toBe(true);
+
+		await context.setOffline(true);
+		await page
+			.getByRole('navigation', { name: 'Primary' })
+			.getByRole('link', { name: 'Profile' })
+			.click();
+		await expect(page.getByTestId('offline-state')).toBeVisible();
+		await expect(page.getByRole('heading', { level: 1, name: 'Profile' })).toBeVisible();
+	});
+
+	test('an error before the page has loaded shows once it arrives', async ({ page }) => {
+		let requested = false;
+		let release!: () => void;
+		const held = new Promise<void>((resolve) => (release = resolve));
+		const chunk = await onErrorPageChunk(page, async (pass) => {
+			requested = true;
+			await held;
+			await pass();
+		});
+		// Not gotoHydrated: the held request keeps the network busy. The page is asked for once the
+		// app has hydrated, so the request also says the app has started.
+		await page.goto('/today');
+		await expect.poll(() => requested, { message: 'hydration asked for the page' }).toBe(true);
+		await failProfileData(page);
+		// The error page has replaced Today, its content still on its way.
+		await expect(page.getByRole('heading', { level: 1, name: 'Today' })).toHaveCount(0);
+		await expect(page.getByTestId('error-view')).toHaveCount(0);
+
+		release();
+		await expect(page.getByTestId('error-view')).toBeVisible();
+		await expect(page.getByTestId('offline-state')).toBeVisible();
+		await expect(page.getByRole('heading', { level: 1, name: 'Profile' })).toBeVisible();
+		expect(chunk.served()).toBe(true);
+	});
+
+	test('when the page cannot be fetched, the error still says so, with a way to try again', async ({
+		page
+	}) => {
+		await onErrorPageChunk(page, (_pass, abort) => abort());
+		await gotoHydrated(page, '/today');
+		await failProfileData(page);
+		await expect(page.getByRole('heading', { level: 1, name: "You're offline" })).toBeVisible();
+		const retry = page.getByRole('link', { name: 'Try again' });
+		await expect(retry).toHaveAttribute('href', '/profile');
+		expect((await retry.boundingBox())?.height).toBeGreaterThanOrEqual(44);
+	});
+});

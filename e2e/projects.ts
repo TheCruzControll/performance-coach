@@ -5,17 +5,19 @@
  * Postgres, database and production server (.github/workflows/ci.yml). A leg keeps:
  * - one engine's projects: `chromium` or `webkit` (the project's `use.browserName`);
  * - one group's projects (groupOf): `main`, the functional specs; `serial`, the specs that run
- *   one at a time after them (serial-*); `alone`, perf and exclusive, which must have the leg to
- *   themselves (Chromium only); `sweeps`, the heavy sweep-* projects;
+ *   one at a time after them (serial-*); `alone`, perf, which must have the leg to itself, and
+ *   `exclusive`, whose specs end the sessions other specs use (both Chromium only); `sweeps`, the
+ *   heavy sweep-* projects;
  * - the setup projects it needs: `setup` (the Chromium owner setup) always, `setup-webkit` with
  *   WebKit.
  * A kept project's dependency on a removed one becomes a dependency on that project's nearest kept
- * ancestors, so serial still follows setup and exclusive still follows perf.
+ * ancestors, so serial still follows setup.
  *
- * Why `serial` and `alone` are legs of their own: Playwright's `--shard` splits only top-level
- * projects and runs every dependency project in full in every shard. The functional projects are
- * dependencies of the serial ones, and serial-chromium of perf and exclusive, so a leg holding
- * both could never shard. Apart, each leg's projects are top-level and shard on their own.
+ * Why `serial`, `alone` and `exclusive` are legs of their own: Playwright's `--shard` splits only
+ * top-level projects and runs every dependency project in full in every shard. The functional
+ * projects are dependencies of the serial ones, serial-chromium of perf and perf of exclusive, so a
+ * leg holding two of them could never shard: any shard with an exclusive test would run all of
+ * perf first. Apart, each leg's projects are top-level and shard on their own.
  *
  * With neither engine nor group set (a local run), the list comes back unchanged.
  */
@@ -23,12 +25,16 @@ import { devices, type LaunchOptions, type Project } from '@playwright/test';
 import { DESKTOP } from './desktop';
 
 export const ENGINES = ['chromium', 'webkit'] as const;
-export const GROUPS = ['main', 'serial', 'alone', 'sweeps'] as const;
+export const GROUPS = ['main', 'serial', 'alone', 'exclusive', 'sweeps'] as const;
 export type Engine = (typeof ENGINES)[number];
 export type Group = (typeof GROUPS)[number];
 
+/** The groups whose specs run on Chromium alone (CDP throttling, the virtual authenticator). */
+const CHROMIUM_ONLY: readonly Group[] = ['alone', 'exclusive'];
+
 /**
- * The legs CI runs (.github/workflows/ci.yml): every group on both engines, `alone` on Chromium.
+ * The legs CI runs (.github/workflows/ci.yml): every group on both engines, `alone` and
+ * `exclusive` on Chromium.
  * `sweeps` has no leg until a *.sweep.e2e.ts spec exists: its legs would run only the setup the
  * other legs already run. The legs' --list union test (scripts/e2e-projects.test.ts) fails the
  * day a sweep spec lands without them.
@@ -36,7 +42,10 @@ export type Group = (typeof GROUPS)[number];
 export const LEGS: readonly { group: Group; engine: Engine }[] = GROUPS.filter(
 	(group) => group !== 'sweeps'
 ).flatMap((group) =>
-	(group === 'alone' ? (['chromium'] as const) : ENGINES).map((engine) => ({ group, engine }))
+	(CHROMIUM_ONLY.includes(group) ? (['chromium'] as const) : ENGINES).map((engine) => ({
+		group,
+		engine
+	}))
 );
 
 /** The owner setup every leg starts from; it runs on Chromium even in a WebKit leg. */
@@ -48,7 +57,8 @@ export const TARGET_CHECK = 'deployed-setup';
 export function groupOf(name: string): Group {
 	if (name.startsWith('sweep-')) return 'sweeps';
 	if (name.startsWith('serial-')) return 'serial';
-	if (name === 'perf' || name === 'exclusive') return 'alone';
+	if (name === 'perf') return 'alone';
+	if (name === 'exclusive') return 'exclusive';
 	return 'main';
 }
 
@@ -233,6 +243,22 @@ export function tlsEnabled(env: E2EEnv): boolean {
 	return true;
 }
 
+/**
+ * The screen gallery (.github/workflows/screen-gallery.yml): E2E_GALLERY=1 runs only the
+ * `*.gallery.ts` specs, which no other run lists (the config's testMatch is `*.e2e.ts`), so the
+ * gallery adds nothing to a CI leg or a shard plan. It is a whole run of its own: it refuses a
+ * leg's selection and the deployed targets.
+ */
+export const GALLERY = '**/*.gallery.ts';
+
+export function galleryMode(env: E2EEnv): boolean {
+	if (env.E2E_GALLERY !== '1') return false;
+	for (const name of ['E2E_ENGINE', 'E2E_GROUP', 'E2E_BASE_URL', 'E2E_DEPLOYED_LOCAL']) {
+		if (env[name]) throw new Error(`E2E_GALLERY=1 is a run of its own: unset ${name}`);
+	}
+	return true;
+}
+
 /** The app's origin under test: E2E_BASE_URL, else localhost on E2E_PORT, over HTTPS with E2E_TLS. */
 export function e2eBaseURL(env: E2EEnv): string {
 	if (env.E2E_BASE_URL) return env.E2E_BASE_URL;
@@ -262,4 +288,60 @@ export function withTls(projects: readonly Project[], spki: string): Project[] {
 		}
 		return { ...project, use };
 	});
+}
+
+/** iPhone 15's screen in CSS pixels: the gallery captures the phone at its full height. */
+export const IPHONE_15 = { width: 393, height: 852 } as const;
+
+/**
+ * The gallery's projects: the owner setups, then the gallery specs on an iPhone 15 in WebKit (at
+ * 3x) and a 1440 × 900 desktop window in Chromium, each signed in from its engine's setup. A
+ * screen that fails is recorded by the spec, never retried; `metadata.galleryDevice` names the
+ * device in each file name.
+ */
+export function galleryProjects({
+	setup,
+	setupWebKit,
+	chromiumState,
+	webkitState
+}: {
+	setup: Project;
+	setupWebKit: Project;
+	chromiumState: string;
+	webkitState: string;
+}): Project[] {
+	const gallery = { testMatch: GALLERY, retries: 0, fullyParallel: false } as const;
+	const timeouts = { actionTimeout: 10_000, navigationTimeout: 20_000 } as const;
+	return [
+		setup,
+		setupWebKit,
+		{
+			name: 'gallery-iphone-webkit',
+			...gallery,
+			dependencies: [setupWebKit.name!],
+			metadata: { galleryDevice: 'iphone' },
+			use: {
+				...devices['iPhone 15'],
+				viewport: IPHONE_15,
+				contextOptions: { screen: IPHONE_15 },
+				deviceScaleFactor: 3,
+				browserName: 'webkit',
+				storageState: webkitState,
+				...timeouts
+			}
+		},
+		{
+			name: 'gallery-desktop-chromium',
+			...gallery,
+			dependencies: [setup.name!],
+			metadata: { galleryDevice: 'desktop' },
+			use: {
+				...devices['Desktop Chrome'],
+				...DESKTOP,
+				browserName: 'chromium',
+				storageState: chromiumState,
+				...timeouts
+			}
+		}
+	];
 }

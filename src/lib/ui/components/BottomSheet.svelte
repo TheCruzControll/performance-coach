@@ -8,6 +8,8 @@
 -->
 <script lang="ts">
 	import { onDestroy, type Snippet } from 'svelte';
+	import { watchContentSize } from '../content-size.ts';
+	import { returnFocus } from '../focus-return.ts';
 	import { lockScroll } from '../scroll-lock.ts';
 	import IconButton from './IconButton.svelte';
 
@@ -58,22 +60,9 @@
 	$effect(() => {
 		const el = body;
 		if (!el || !mounted) return;
-		const measure = () => (scrolls = el.scrollHeight > el.clientHeight);
-		const resized = new ResizeObserver(measure);
-		const watch = () => {
-			resized.disconnect();
-			resized.observe(el);
-			for (const child of el.children) resized.observe(child);
-		};
-		const changed = new MutationObserver(() => {
-			watch();
-			measure();
-		});
-		changed.observe(el, { childList: true });
-		watch();
+		const stop = watchContentSize(el, () => (scrolls = el.scrollHeight > el.clientHeight));
 		return () => {
-			resized.disconnect();
-			changed.disconnect();
+			stop();
 			scrolls = false;
 		};
 	});
@@ -113,7 +102,14 @@
 		releaseScroll?.();
 		releaseScroll = null;
 		dragY = 0;
-		if (opener?.isConnected) opener.focus({ preventScroll: true });
+		// Again on the next frames while WebKit refuses it (focus-return.ts), unless this sheet has
+		// opened again or focus is somewhere outside it.
+		if (opener?.isConnected) {
+			returnFocus(opener, () => {
+				const at = document.activeElement;
+				return !dialog?.open && (!at || at === document.body || !!dialog?.contains(at));
+			});
+		}
 	}
 
 	function transitionDone(): Promise<void> {
@@ -170,6 +166,7 @@
 <dialog
 	bind:this={dialog}
 	class="sheet-dialog"
+	data-ui="sheet"
 	class:visible
 	class:wide
 	aria-labelledby={`${id}-title`}
@@ -242,11 +239,13 @@
 		background: transparent;
 	}
 
+	/* No backdrop blur: under the fade, a blur of the whole screen behind it is redrawn every frame
+	   (10-16 ms a frame in CI's software compositor, against 3-5 without the sheet), and the
+	   sheet's motion dropped frames (perf-workout.e2e.ts). */
 	.scrim {
 		position: absolute;
 		inset: 0;
 		background: var(--color-overlay);
-		backdrop-filter: blur(2px);
 		opacity: 0;
 		transition: opacity var(--duration-slow) var(--ease-standard);
 	}

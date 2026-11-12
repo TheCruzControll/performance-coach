@@ -40,7 +40,11 @@ import {
 	MEMORY_RECORD_LIMITS
 } from '../../src/lib/server/services/coach/memory-records';
 import { NOTES_PAGE } from '../../src/lib/server/services/coach/notes';
-import { PROPOSAL_IDS_MAX, PROPOSAL_PAGE } from '../../src/lib/server/services/coach/proposals';
+import {
+	PROPOSAL_IDS_MAX,
+	PROPOSAL_PAGE,
+	THREAD_PROPOSALS_MAX
+} from '../../src/lib/server/services/coach/proposals';
 import { RUN_PAGE } from '../../src/lib/server/services/coach/runs';
 import { THREAD_PAGE, THREAD_VIEW_MESSAGES } from '../../src/lib/server/services/coach/threads';
 import { ACTIVE_WORKOUTS_LIMIT } from '../../src/lib/server/services/workouts/canonical';
@@ -48,6 +52,7 @@ import { analyticsExplain } from './analytics.cases';
 import { generateCoachDataset, loadCoachDataset } from './coach-dataset';
 import { FIRST_MONDAY, generateDataset, loadDataset, WEEKS } from './dataset';
 import { checkPlan, scansOf, sizeClass, type Catalog, type PlanNode } from './plan-check';
+import { screensExplain } from './screens.cases';
 
 const url = process.env.EXPLAIN_DATABASE_URL || LOCAL_DATABASE_URLS.explain;
 const client = new pg.Client({ ...connectionConfig(url), application_name: 'db-explain' });
@@ -246,6 +251,19 @@ const COACH_CASES: Case[] = [
 		'coach decidedSince, a week',
 		[P.decidedSince],
 		() => cp.decidedSince(db, owner, new Date(NOW.getTime() - 7 * 86_400_000), PROPOSAL_IDS_MAX)
+	],
+	[
+		'coach threadProposals, the newest page’s runs',
+		[P.threadProposals],
+		() =>
+			cp.threadProposals(db, owner, busy.id!, {
+				runIds: [
+					...new Set(
+						busyMessages.slice(-THREAD_VIEW_MESSAGES).flatMap((m) => (m.runId ? [m.runId] : []))
+					)
+				],
+				limit: THREAD_PROPOSALS_MAX
+			})
 	],
 	[
 		'coach latestNotes',
@@ -579,7 +597,8 @@ afterAll(async () => {
 		...results,
 		'',
 		...plans,
-		...m6.report()
+		...m6.report(),
+		...screens.report()
 	];
 	mkdirSync('test-results', { recursive: true });
 	writeFileSync('test-results/explain.md', `${report.join('\n')}\n`);
@@ -622,4 +641,9 @@ describe(`db:explain on ${redactUrl(url)}`, () => {
 });
 
 // M6's fact queries on their own owner, loaded once M3's cases have run.
+const screens = screensExplain({ url, owner });
+// Coach's screens first: M6's loader replaces the training rows the coach dataset names.
+screens.coach();
 const m6 = analyticsExplain({ client, db, owner, readCatalog, render });
+// The other main screens' page data on the same owner, once M6's loads are timed.
+screens.main();

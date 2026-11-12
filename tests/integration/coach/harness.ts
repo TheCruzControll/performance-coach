@@ -12,6 +12,7 @@ import type { CoachEvent } from '../../../src/lib/domain/coach/events';
 import { MockProvider, type MockScript } from '../../../src/lib/server/agent/provider/mock';
 import type { LlmProvider, ModelRequest } from '../../../src/lib/server/agent/provider/types';
 import { validateRequest } from '../../../src/lib/server/agent/provider/validate';
+import type { TurnEntry } from '../../../src/lib/server/agent/tools/context';
 import type { CoachTool } from '../../../src/lib/server/agent/tools/define';
 import { runTurn, type TurnOptions } from '../../../src/lib/server/agent/turn';
 import { coachMessages, type Executor } from '../../../src/lib/server/db';
@@ -30,6 +31,8 @@ export interface Scripted {
 	text?: string;
 	threadId?: string | null;
 	clientMessageId?: string;
+	/** What the turn is about (an entry point, or the proposal 'Ask for changes' revises). */
+	entry?: TurnEntry | null;
 	tools?: readonly CoachTool<ResolvedCoachDeps>[];
 	/** A MockProvider playing `script` by default. */
 	provider?: TurnOptions['provider'];
@@ -38,6 +41,8 @@ export interface Scripted {
 	controller?: AbortController;
 	/** Awaited on each event as it arrives; the turn keeps running meanwhile. */
 	onEvent?: (event: CoachEvent) => void | Promise<void>;
+	/** Receives the turn's work after its last event (TurnOptions.after); none without it. */
+	after?: TurnOptions['after'];
 }
 
 export interface ScriptedTurn {
@@ -84,12 +89,14 @@ export async function runScripted(script: MockScript, options: Scripted): Promis
 			threadId: options.threadId ?? null,
 			clientMessageId: options.clientMessageId ?? crypto.randomUUID(),
 			text: options.text ?? 'How is my training going?',
+			entry: options.entry ?? null,
 			signal: controller.signal
 		},
 		{
 			provider,
 			deps: { db: options.db, now: options.now ?? (() => new Date(TURN_NOW)) },
-			...(tools && { tools })
+			...(tools && { tools }),
+			...(options.after && { after: options.after })
 		}
 	);
 	for await (const event of stream) {

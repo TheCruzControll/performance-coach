@@ -12,19 +12,27 @@
  *   next write, or retry, writes it first, so the outbox keeps the order of the actions.
  * - Writes are serial within a page. Each one reads what other tabs wrote in its transaction, so
  *   none is lost; the device state is the last tab's to write.
- * - One workout is in progress at a time; a second workout.start is refused.
+ * - One workout is in progress at a time; a second workout.start is refused, and so is a Discard
+ *   that would bring a workout back into progress beside another.
  * - It closes for good when the database is deleted or upgraded under it (db.ts), or when another
  *   tab says sign-out is about to delete it.
  * - Tabs (channel.ts): after each write it tells the other tabs, which re-read what changed.
+ * - /workout's prepainted card (prepaint.ts): every change it reports or workout it writes drops
+ *   it, and a purge blocks it until signedIn.
+ * - The launch flag (active-flag.ts): each workout it writes or getActive reads flags the one in
+ *   progress, or drops its flag once it ends or leaves the device, so a launch offline opens it.
  * - reconciled and adopt store the server's rows from GET /api/workouts/[id] (reconcile.ts).
  * - A finished or abandoned workout leaves the device once every change of it is acknowledged:
  *   History reads the server from then on.
- * - discard, tryAgain and fix are the owner's answers to a change that needs attention. Discard
- *   also keeps the ids it removed until the server has claimed them (discarded, forget), so a
- *   request still on its way with one of them can never land it after a newer change.
+ * - discard, tryAgain and fix are the owner's answers to a change that needs attention: Discard
+ *   takes only a parked change. It also keeps the ids it removed until the server has claimed them
+ *   (discarded, forget), so a request still on its way with one of them can never land it after a
+ *   newer change. A stuck workout.start may have landed all the same, so its Discard sends it
+ *   again with a workout.abandon after it, however often it gets stuck: the workout ends
+ *   abandoned, never left in progress. Only a start the server refused is deleted.
  * Plain .ts with no runes, so Vitest's unit project runs it against fake-indexeddb.
  */
-import { entityKey, SYNC_CODE_LABEL } from '#lib/domain/workout/index.ts';
+import { createMutation, entityKey, SYNC_CODE_LABEL } from '#lib/domain/workout/index.ts';
 import type {
 	CanonicalWorkout,
 	DeviceState,
@@ -37,19 +45,23 @@ import type {
 	SyncResult,
 	WorkoutView
 } from '#lib/domain/workout/index.ts';
+import { canEnd } from '#lib/domain/workout/ends.ts';
 import { applyLocal, applyMutation, replay, viewOf } from '#lib/domain/workout/project.ts';
 import type { AnyTable, WorkoutState } from '#lib/domain/workout/project.ts';
 import { initialDevice } from '#lib/domain/workout/reducers/device.ts';
 import type { IDBPTransaction, StoreNames } from 'idb';
 import { openTabChannel } from './channel.ts';
 import type { TabChannel, TabMessage } from './channel.ts';
-import { openWorkoutDb, StoreClosedError } from './db.ts';
+import { closeForGood, openWorkoutDb, StoreClosedError } from './db.ts';
 import type { CachedLibrary, CloseReason, StoredWorkout, WorkoutDb, WorkoutSchema } from './db.ts';
+import { clearActiveWorkout, noteWorkout, workoutGone } from './active-flag.ts';
 import { LIBRARY_KEY, OUTBOX_INDEXES, STORES } from './names.ts';
+import { blockPrepaint, clearPrepaint, unblockPrepaint } from './prepaint.ts';
 import {
 	applyResults,
 	backOnline,
 	countFailure,
+	dependantsOf,
 	discard,
 	queued,
 	replaceInPlace,
@@ -86,6 +98,8 @@ export interface WorkoutSnapshot {
 	/** null while no rows hold the workout. */
 	view: WorkoutView | null;
 	notSaved: NotSaved[];
+	/** Actions shown but not written here yet, the not-saved ones included. */
+	pending: number;
 }
 
 export interface Dispatched {
@@ -162,10 +176,18 @@ export interface WorkoutStore {
 	/** Back online after being offline since `offlineSince`: every entry's wait ends. */
 	backOnline(offlineSince: number): Promise<void>;
 	/**
-	 * Discard: the entry and every change that depends on it leave the outbox, and their ids wait in
-	 * `discarded` until the server has claimed them.
+	 * Discard of a parked change: the entry and every change that depends on it leave the outbox,
+	 * and their ids wait in `discarded` until the server has claimed them. A stuck workout.start
+	 * stays, queued again, with the workout.abandon queued behind it or a new one, and only the
+	 * changes logged in it go (discardAbandons, loggedIn). The end of a workout the server holds
+	 * (endsOnServer) never goes: it waits for the server, and Discard of a change it depends on
+	 * leaves it queued. Rejects, writing nothing, with RangeError for a change that is not parked or
+	 * is such an end, and with ActiveWorkoutError when it would bring a workout back into progress
+	 * beside another.
 	 */
 	discard(seq: number): Promise<void>;
+	/** The seqs of the ends Discard keeps for the server (endsOnServer), as IndexedDB holds them. */
+	heldEnds(): Promise<ReadonlySet<number>>;
 	/** Try again: a stuck entry is queued again in its place, its count cleared. */
 	tryAgain(seq: number): Promise<void>;
 	/** Fix: the corrected change replaces the refused entry in its place, under the same id. */
@@ -203,6 +225,12 @@ export interface WorkoutStore {
 	getLibrary(): Promise<CachedLibrary | null>;
 	prune(): Promise<{ workouts: string[]; kits: string[] }>;
 	onChange(listener: (change: StoreChange) => void): () => void;
+	/**
+	 * Closes this store, for good, and its channel, but not the page: a store created later on this
+	 * page opens 'pc-offline' again. For a short-lived store its opener lets go of (sign-out's,
+	 * workout/shutdown.ts). Its listeners hear 'closed' ('deleted'): nothing is left to show.
+	 */
+	close(): void;
 }
 
 /** Best effort: Safari evicts a site's storage after 7 days unused unless it is installed. */
@@ -216,7 +244,62 @@ export async function requestPersistence(
 	}
 }
 
+/** Whether this entry is a workout.abandon of that workout. */
+function abandons(entry: OutboxEntry, workoutId: string): boolean {
+	return entry.envelope.type === 'workout.abandon' && entry.envelope.workoutId === workoutId;
+}
+
+/**
+ * Whether Discard of this entry keeps it and abandons its workout instead: a workout.start parked
+ * stuck may have reached the server (a timed-out request, an unread keepalive send), so deleting
+ * it, or the abandon queued behind it, could leave the workout in progress there for good. It is
+ * queued again however often it gets stuck, since a timeout or a network error counts nothing
+ * toward the cap. Only a start the server refused (parked 'refused') never landed, and is deleted.
+ */
+export function discardAbandons(entries: readonly OutboxEntry[], seq: number): boolean {
+	const entry = entries.find((e) => e.seq === seq);
+	return entry?.envelope.type === 'workout.start' && entry.parked?.reason === 'stuck';
+}
+
+/**
+ * What Discard of a stuck start removes (discardAbandons): the changes logged in its workout, in
+ * order, never a workout.abandon queued to end it.
+ */
+export function loggedIn(entries: readonly OutboxEntry[], seq: number): OutboxEntry[] {
+	const start = entries.find((e) => e.seq === seq);
+	if (!start) return [];
+	const { workoutId } = start.envelope;
+	return dependantsOf(entries, seq).filter((e) => !abandons(e, workoutId));
+}
+
+/**
+ * The ends Discard never removes, by seq: each finish or abandon of a workout a 401 purge stripped,
+ * which the device holds no rows for (`hasRows`, StoredWorkout.canonical, false too when the purge
+ * deleted its record) and no queued workout.start will make. The server holds that workout in
+ * progress, and with no rows the device ends it on its own (endedBy). Discarding its end would
+ * leave it ended here, for prune to let go, and in progress on the server for good, so the end
+ * waits for the server to answer, however long that takes.
+ */
+export function endsOnServer(
+	entries: readonly OutboxEntry[],
+	hasRows: (workoutId: string) => boolean
+): Set<number> {
+	const starting = new Set(
+		entries.filter((e) => e.envelope.type === 'workout.start').map((e) => e.envelope.workoutId)
+	);
+	const held = new Set<number>();
+	for (const { seq, envelope } of entries) {
+		if (envelope.type !== 'workout.finish' && envelope.type !== 'workout.abandon') continue;
+		if (!starting.has(envelope.workoutId) && !hasRows(envelope.workoutId)) held.add(seq);
+	}
+	return held;
+}
+
 // ---- Internals ------------------------------------------------------------------------------
+
+/** The ids of the workouts this device holds the server's rows for (StoredWorkout.canonical). */
+const rowsHeld = (workouts: readonly StoredWorkout[]) =>
+	new Set(workouts.filter((w) => w.canonical).map((w) => w.id));
 
 /** A dispatch not written yet: its write is on its way, or failed (`failed`). */
 interface Queued {
@@ -298,6 +381,28 @@ const fold = (table: AnyTable, state: WorkoutState, actions: readonly Action[]) 
 		state
 	);
 
+/**
+ * The status of a workout no rows hold (a purge stripped it): the previous one, moved by its pending
+ * finishes and abandons as WORKOUT's table allows, so a stripped workout still ends.
+ */
+function endedBy(
+	pending: readonly Mutation[],
+	previous: StoredWorkout | undefined
+): Pick<StoredWorkout, 'status' | 'finishedAt'> {
+	let status = previous?.status ?? 'in_progress';
+	let finishedAt = previous?.finishedAt ?? null;
+	for (const m of pending) {
+		if (m.type === 'workout.finish' && canEnd(status, 'finish')) {
+			status = 'completed';
+			finishedAt = m.at;
+		} else if (m.type === 'workout.abandon' && canEnd(status, 'abandon')) {
+			status = 'abandoned';
+			finishedAt = m.at;
+		}
+	}
+	return { status, finishedAt };
+}
+
 /** A workout's record, its header read from the projection of what it holds. */
 function recordOf(
 	table: AnyTable,
@@ -309,13 +414,14 @@ function recordOf(
 	const pending = entries.map((e) => e.envelope);
 	const row = replay(table, { workoutId, kit, canonical, pending, device }).rows?.workout;
 	const header = row ?? previous;
+	const { status, finishedAt } = row ?? endedBy(pending, previous);
 	return {
 		id: workoutId,
 		kind: header?.kind ?? table.kind,
 		title: header?.title ?? '',
 		startedAt: header?.startedAt ?? '',
-		status: header?.status ?? 'in_progress',
-		finishedAt: header?.finishedAt ?? null,
+		status,
+		finishedAt,
 		kit,
 		canonical,
 		device
@@ -329,9 +435,16 @@ export async function createStore({
 	channel = typeof window === 'undefined' ? null : openTabChannel()
 }: StoreOptions): Promise<WorkoutStore> {
 	const listeners = new Set<(change: StoreChange) => void>();
-	const emit = (change: StoreChange) => listeners.forEach((listener) => listener(change));
+	// Every change drops the prepainted card (prepaint.ts): the view keeps it again from what it
+	// then shows, so the card on the next load is never older than what this store holds.
+	const emit = (change: StoreChange) => {
+		clearPrepaint();
+		listeners.forEach((listener) => listener(change));
+	};
 	let closed: CloseReason | null = null;
 	let unlisten = () => {};
+	/** The IndexedDB this store opens 'pc-offline' from: the page it closes for good. */
+	const page = globalThis.indexedDB;
 	const shut = (reason: CloseReason) => {
 		if (closed) return;
 		closed = reason;
@@ -364,7 +477,8 @@ export async function createStore({
 		view: loaded.view,
 		notSaved: loaded.queue.flatMap((q) =>
 			q.failed ? [{ id: q.id, entities: q.mutations.map(entityKey), reason: q.failed }] : []
-		)
+		),
+		pending: loaded.queue.length
 	});
 
 	/** The stored inputs replayed, then what this page has not written yet, in order. */
@@ -426,6 +540,8 @@ export async function createStore({
 
 	/** Memory's new base after a write here, shown, and told to the other tabs. */
 	function stored(record: StoredWorkout, entries: OutboxEntry[], always = false) {
+		clearPrepaint(); // also for a workout not in memory, which emits nothing
+		noteWorkout(record);
 		if (always || memory.has(record.id)) {
 			remember(record.id, record, entries);
 			emit({ type: 'view', workoutId: record.id });
@@ -454,9 +570,13 @@ export async function createStore({
 			case 'purged':
 				return void reread(memory.keys()).then(() => emit({ type: 'purged' }));
 			case 'signed-out':
-				// Sign-out deletes the database next: this page lets go of it, for good.
+				// Another tab signs out and deletes the database next: this page lets go of it, for good,
+				// and never opens it again (closeForGood), so a stale tab cannot recreate it after the
+				// deletion. The signing-out page closes its own stores with close() instead, which leaves
+				// it free to open the store again when the owner stays signed in.
 				memory.clear();
 				db.close();
+				closeForGood(page, 'deleted');
 				return shut('deleted');
 		}
 	}
@@ -518,6 +638,7 @@ export async function createStore({
 		loaded.queue = loaded.queue.filter((q) => !items.includes(q));
 		Object.assign(loaded, written);
 		rebuild(loaded);
+		noteWorkout(written.record);
 		for (const item of items) item.settle('saved');
 		finish('saved');
 		emit({ type: 'saved', workoutId });
@@ -623,6 +744,8 @@ export async function createStore({
 		);
 		for (const { record, entries } of written.read.values()) stored(record, entries);
 		for (const workoutId of written.pruned) {
+			clearPrepaint();
+			workoutGone(workoutId);
 			if (memory.delete(workoutId)) emit({ type: 'view', workoutId });
 			channel?.post({ type: 'closed', workoutId });
 		}
@@ -650,15 +773,26 @@ export async function createStore({
 	 * An owner's answer (Discard, Try again, Fix) in one transaction: the outbox as `rule` leaves it,
 	 * each workout it touched re-recorded and shown, and with `remember` the removed ids kept to
 	 * send as discarded. A discarded workout.start takes its workout off the device.
+	 *
+	 * With `guard` (Discard) it refuses, writing nothing, to bring a workout back into progress
+	 * while another is in progress here: one in progress at a time. Try again and Fix pass none,
+	 * so they still work on a device that already holds two. `append`'s mutations join the outbox
+	 * after every entry, in the same transaction, and their workouts are re-recorded with them.
 	 */
-	async function rearrange(rule: (entries: OutboxEntry[]) => OutboxEntry[], remember = false) {
+	async function rearrange(
+		rule: (entries: OutboxEntry[], hasRows: (workoutId: string) => boolean) => OutboxEntry[],
+		remember = false,
+		guard = false,
+		append?: (before: OutboxEntry[]) => Mutation[]
+	) {
 		assertOpen();
 		const names = [STORES.workouts, STORES.outbox, STORES.meta];
 		const written = await serial(() =>
 			transact(db, names, async (tx) => {
 				const outbox = tx.objectStore(STORES.outbox);
 				const before = await outbox.getAll();
-				const after = new Map(rule(before).map((e) => [e.seq, e]));
+				const rows = rowsHeld(await tx.objectStore(STORES.workouts).getAll());
+				const after = new Map(rule(before, (id) => rows.has(id)).map((e) => [e.seq, e]));
 				const touched = new Set<string>();
 				const gone: string[] = [];
 				const ended = new Set<string>();
@@ -673,6 +807,10 @@ export async function createStore({
 						gone.push(entry.envelope.id);
 						if (entry.envelope.type === 'workout.start') ended.add(entry.envelope.workoutId);
 					}
+				}
+				for (const m of append?.(before) ?? []) {
+					await outbox.add(entryOf(m));
+					touched.add(m.workoutId);
 				}
 				if (remember && gone.length > 0) {
 					const meta = tx.objectStore(STORES.meta);
@@ -690,6 +828,11 @@ export async function createStore({
 					const entries = await outbox.index(BY_WORKOUT).getAll(workoutId);
 					const { kit, canonical, device } = previous;
 					const record = recordOf(table, workoutId, { kit, canonical, device, entries }, previous);
+					if (guard && previous.status !== 'in_progress' && record.status === 'in_progress') {
+						const others = await tx.objectStore(STORES.workouts).getAll();
+						const active = others.find((w) => w.id !== workoutId && w.status === 'in_progress');
+						if (active) throw new ActiveWorkoutError(active.id); // aborts: nothing is written
+					}
 					await tx.objectStore(STORES.workouts).put(record);
 					read.set(workoutId, { record, entries });
 				}
@@ -698,10 +841,58 @@ export async function createStore({
 		);
 		for (const { record, entries } of written.read.values()) stored(record, entries);
 		for (const workoutId of written.ended) {
+			clearPrepaint();
+			workoutGone(workoutId);
 			if (memory.delete(workoutId)) emit({ type: 'view', workoutId });
 			channel?.post({ type: 'closed', workoutId });
 		}
 	}
+
+	/**
+	 * Discard's rule: only a parked entry goes, with its dependants, less the ends kept for the
+	 * server (endsOnServer), and never one of those itself. A stuck start stays, queued again, and
+	 * so does any abandon of its workout (one parked stuck is queued again too): only the changes
+	 * logged in it go (discardAbandons, loggedIn).
+	 */
+	function discardRule(
+		entries: OutboxEntry[],
+		seq: number,
+		hasRows: (workoutId: string) => boolean
+	): OutboxEntry[] {
+		const entry = entries.find((e) => e.seq === seq);
+		if (!entry?.parked) {
+			throw new RangeError('Only a change that needs attention can be discarded');
+		}
+		const held = endsOnServer(entries, hasRows);
+		if (held.has(seq)) {
+			throw new RangeError('The end of a workout the server holds waits for the server');
+		}
+		if (!discardAbandons(entries, seq)) {
+			const left = new Set(discard(entries, seq).map((e) => e.seq));
+			return entries.filter((e) => left.has(e.seq) || held.has(e.seq));
+		}
+		const { workoutId } = entry.envelope;
+		const gone = new Set(loggedIn(entries, seq).map((e) => e.seq));
+		return entries.flatMap((e) => {
+			if (gone.has(e.seq)) return [];
+			const stuckAbandon = abandons(e, workoutId) && e.parked?.reason === 'stuck';
+			return e.seq === seq || stuckAbandon ? [queued(e.seq, e.envelope)] : [e];
+		});
+	}
+
+	/**
+	 * The abandon a stuck start's Discard appends behind it, read from the outbox before it: none
+	 * when one is queued already (an earlier Discard), which stays.
+	 */
+	const abandonOf =
+		(seq: number) =>
+		(before: OutboxEntry[]): Mutation[] => {
+			if (!discardAbandons(before, seq)) return [];
+			const { workoutId } = before.find((e) => e.seq === seq)!.envelope;
+			if (before.some((e) => abandons(e, workoutId))) return [];
+			const at = new Date(now()).toISOString();
+			return [createMutation('workout.abandon', { workoutId, at, payload: {} })];
+		};
 
 	async function discarded(): Promise<string[]> {
 		assertOpen();
@@ -749,6 +940,8 @@ export async function createStore({
 				return kept;
 			})
 		);
+		// Signed out: no card on the next load, and none kept until the server answers as the owner.
+		blockPrepaint();
 		for (const [workoutId, { record, entries }] of left) {
 			if (!memory.has(workoutId)) continue;
 			remember(workoutId, record, entries);
@@ -844,6 +1037,8 @@ export async function createStore({
 			})
 		);
 		for (const workoutId of gone.workouts) {
+			clearPrepaint();
+			workoutGone(workoutId);
 			if (memory.delete(workoutId)) emit({ type: 'view', workoutId });
 			channel?.post({ type: 'closed', workoutId });
 		}
@@ -859,6 +1054,9 @@ export async function createStore({
 			const active = (await db.getAll(STORES.workouts))
 				.filter((w) => w.status === 'in_progress')
 				.sort((a, b) => (a.startedAt < b.startedAt ? 1 : -1))[0];
+			// What IndexedDB holds: also flags a workout started before the flag existed.
+			if (active) noteWorkout(active);
+			else clearActiveWorkout();
 			return active ? load(active.id) : null;
 		},
 		load,
@@ -873,7 +1071,21 @@ export async function createStore({
 		outbox,
 		countFailure: (seq, error) => revise((entries) => countFailure(entries, seq, error, now())),
 		backOnline: (offlineSince) => revise((entries) => backOnline(entries, offlineSince, now())),
-		discard: (seq) => rearrange((entries) => discard(entries, seq), true),
+		discard: (seq) =>
+			rearrange(
+				(entries, hasRows) => discardRule(entries, seq, hasRows),
+				true,
+				true,
+				abandonOf(seq)
+			),
+		async heldEnds() {
+			assertOpen();
+			const tx = db.transaction([STORES.workouts, STORES.outbox], 'readonly');
+			const rows = rowsHeld(await tx.objectStore(STORES.workouts).getAll());
+			const held = endsOnServer(await tx.objectStore(STORES.outbox).getAll(), (id) => rows.has(id));
+			await tx.done;
+			return held;
+		},
 		tryAgain: (seq) => rearrange((entries) => tryAgain(entries, seq)),
 		fix: (seq, envelope) => rearrange((entries) => replaceInPlace(entries, seq, envelope)),
 		discarded,
@@ -886,6 +1098,7 @@ export async function createStore({
 		async signedIn() {
 			assertOpen();
 			await db.delete(STORES.meta, 'signedOut');
+			unblockPrepaint();
 		},
 		reconciled,
 		adopt,
@@ -918,6 +1131,12 @@ export async function createStore({
 		onChange(listener) {
 			listeners.add(listener);
 			return () => listeners.delete(listener);
+		},
+		close() {
+			if (closed) return;
+			memory.clear();
+			db.close();
+			shut('deleted');
 		}
 	};
 }

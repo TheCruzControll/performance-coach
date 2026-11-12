@@ -64,8 +64,16 @@ const AREA_LABEL: Readonly<Record<MetricArea, string>> = {
 /** Formats a canonical value (`as: 'value'`) or the size of a change (`as: 'delta'`, never negative). */
 export type Format = (metric: Metric, value: number, as: 'value' | 'delta') => string;
 
-const number = (value: number, decimals: number) =>
-	(cleanFloat(value, decimals) + 0).toLocaleString('en-US', { maximumFractionDigits: decimals });
+/** One number format per number of decimals, made once: toLocaleString makes one per call. */
+const formats = new Map<number, Intl.NumberFormat>();
+const number = (value: number, decimals: number) => {
+	let format = formats.get(decimals);
+	if (!format) {
+		format = new Intl.NumberFormat('en-US', { maximumFractionDigits: decimals });
+		formats.set(decimals, format);
+	}
+	return format.format(cleanFloat(value, decimals) + 0);
+};
 const count = (value: number, one: string, many: string) =>
 	`${number(value, 1)} ${cleanFloat(value, 1) === 1 ? one : many}`;
 function hours(seconds: number): string {

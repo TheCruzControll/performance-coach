@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { resolve } from '$app/paths';
+	import { savedDesign, setDesign, type Design } from '#lib/client/design.ts';
 	import {
 		preferences,
 		type DistancePreference,
@@ -22,7 +23,13 @@
 
 	let { data }: PageProps = $props();
 
-	onMount(() => preferences.load());
+	/** This device's design (src/lib/client/design.ts): today's until the saved one is read. */
+	let design = $state<Design>('current');
+
+	onMount(() => {
+		preferences.load();
+		design = savedDesign();
+	});
 
 	const initials = $derived(
 		data.owner.name
@@ -54,6 +61,8 @@
 		if (!t) return undefined;
 		return RATINGS[value <= t.good ? 'good' : value <= t.poor ? 'fair' : 'poor'];
 	}
+
+	const samples = (n: number) => `${n} ${n === 1 ? 'sample' : 'samples'}`;
 
 	function formatVital(name: string, value: number) {
 		// No Intl here: formatter construction is measurable hydration cost on phones.
@@ -132,6 +141,25 @@
 						data-testid="theme-control"
 					/>
 				</div>
+				<div class="pref">
+					<span class="pref-label">Design</span>
+					<!-- A segmented control, as its neighbours: Profile already loads it, so the
+					     choice adds no chunk to the app's entry, which every page loads. -->
+					<SegmentedControl
+						label="Design"
+						size="sm"
+						bind:value={design}
+						options={[
+							{ value: 'current', label: 'Current' },
+							{ value: 'graphite', label: 'Graphite 2004' }
+						]}
+						onchange={setDesign}
+						data-testid="design-control"
+					/>
+					<p class="pref-note">
+						Graphite 2004 is a preview of the proposed design. Today’s stays the default.
+					</p>
+				</div>
 			</div>
 		</Card>
 	</div>
@@ -206,11 +234,35 @@
 								value={formatVital(v.name, v.p75)}
 								unit={VITALS[v.name]?.unit || undefined}
 								rating={rating(v.name, v.p75)}
-								caption={`${v.samples} ${v.samples === 1 ? 'sample' : 'samples'}`}
+								caption={samples(v.samples)}
 								data-testid={`vital-${v.name}`}
 							/>
 						{/each}
 					</ul>
+					<!-- The app opens on Today (the manifest's start_url): what a launch costs. -->
+					<section class="start" aria-labelledby="start-vitals" data-testid="start-vitals">
+						<h3 id="start-vitals" class="subhead">Opening the app · Today</h3>
+						{#if vitals.some((v) => v.start)}
+							<ul class="vitals">
+								{#each vitals as v (v.name)}
+									{#if v.start}
+										<Stat
+											as="li"
+											level={2}
+											label={v.name}
+											value={formatVital(v.name, v.start.p75)}
+											unit={VITALS[v.name]?.unit || undefined}
+											rating={rating(v.name, v.start.p75)}
+											caption={samples(v.start.samples)}
+											data-testid={`start-vital-${v.name}`}
+										/>
+									{/if}
+								{/each}
+							</ul>
+						{:else}
+							<p class="note">No launches measured yet — they appear after you open the app.</p>
+						{/if}
+					</section>
 				{:else}
 					<p class="note">No samples yet — metrics are collected as you use the app.</p>
 				{/if}
@@ -313,6 +365,11 @@
 		color: var(--color-text-secondary);
 	}
 
+	.pref-note {
+		font-size: var(--text-xs);
+		color: var(--color-text-tertiary);
+	}
+
 	.rows {
 		display: grid;
 		margin: 0;
@@ -381,6 +438,20 @@
 		margin: 0;
 		padding: 0;
 		list-style: none;
+	}
+
+	.start {
+		display: grid;
+		gap: var(--space-2);
+		margin-top: var(--space-4);
+		padding-top: var(--space-4);
+		border-top: 1px solid var(--color-border);
+	}
+
+	.subhead {
+		font-size: var(--text-sm);
+		font-weight: var(--weight-semibold);
+		color: var(--color-text-secondary);
 	}
 
 	.note {

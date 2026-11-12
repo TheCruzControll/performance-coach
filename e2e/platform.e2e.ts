@@ -63,6 +63,8 @@ test.describe('platform: health, PWA, observability', () => {
 		const response = await page.goto('/today');
 		const headers = response!.headers();
 		expect(headers['server-timing']).toMatch(/total;dur=[\d.]+/);
+		// The server has handled requests before this one (the sign-in, at least): warm.
+		expect(headers['server-timing']).toMatch(/instance;desc="warm"/);
 		expect(headers['x-request-id']).toMatch(/^[\w.:-]{8,}$/);
 		expect(headers['x-content-type-options']).toBe('nosniff');
 		expect(headers['cache-control']).toBe('private, no-cache');
@@ -75,7 +77,9 @@ test.describe('platform: health, PWA, observability', () => {
 		expect(csp).toContain("default-src 'self'");
 		expect(csp).toContain("frame-ancestors 'none'");
 		expect(csp).toContain("object-src 'none'");
-		expect(csp).toMatch(/script-src 'self' 'sha256-[^']+' 'nonce-[^']+'/);
+		// The template's, /workout's and /offline's inline scripts by hash (vite.config.ts), then
+		// the nonce.
+		expect(csp).toMatch(/script-src 'self'( 'sha256-[^']+'){3} 'nonce-[^']+'/);
 		expect(csp).not.toMatch(/script-src[^;]*unsafe-inline/);
 		await expect(page.getByTestId('db-status')).toBeVisible(); // streamed script ran
 
@@ -97,12 +101,42 @@ test.describe('platform: health, PWA, observability', () => {
 		expect(outcome).toMatch(/^blocked:script-src/);
 	});
 
-	test('preloads at most two font files', async ({ page }) => {
-		await page.goto('/today');
-		const fonts = page.locator('link[rel="preload"][as="font"]');
-		const count = await fonts.count();
-		expect(count).toBeGreaterThanOrEqual(1);
-		expect(count).toBeLessThanOrEqual(2);
+	test('preloads one font file, the Mona Sans latin face', async ({ page }) => {
+		// Hubot Sans (headings) loads when a heading uses it (src/lib/ui/fonts.ts).
+		for (const path of ['/', '/today']) {
+			await page.goto(path);
+			const fonts = page.locator('link[rel="preload"][as="font"]');
+			await expect(fonts, path).toHaveCount(1);
+			await expect(fonts, path).toHaveAttribute(
+				'href',
+				/mona-sans-latin-wght-normal\.[\w-]+\.woff2$/
+			);
+		}
+	});
+
+	test('first paint waits for no stylesheet request, and the styles come before the hints', async ({
+		page
+	}) => {
+		// vite.config.ts inlines the CSS a page renders with; hooks.server.ts (head-order.ts) puts
+		// it ahead of the preload hints. /workout is prerendered: the hook ran at build time.
+		for (const path of ['/today', '/train', '/progress', '/progress/workouts', '/workout']) {
+			const res = await page.request.get(path);
+			expect(res.ok(), path).toBe(true);
+			const html = await res.text();
+			const head = html.slice(0, html.indexOf('</head>'));
+			const loading = [...head.matchAll(/<link\b[^>]*\brel="stylesheet"[^>]*>/g)]
+				.map(([tag]) => tag)
+				.filter((tag) => !/\sdisabled\b/.test(tag));
+			expect(loading, `${path} links a stylesheet first paint waits for`).toEqual([]);
+			const style = head.indexOf('<style');
+			expect(style, `${path} inlines its styles`).toBeGreaterThan(-1);
+			expect(style, `${path} has its styles before the font preload`).toBeLessThan(
+				head.indexOf('rel="preload"')
+			);
+			expect(style, `${path} has its styles before the first modulepreload`).toBeLessThan(
+				head.indexOf('rel="modulepreload"')
+			);
+		}
 	});
 
 	test('serves a valid web app manifest with installable icons', async ({ page, request }) => {

@@ -24,17 +24,20 @@ const CLIENT = path.resolve(import.meta.dirname, '../.svelte-kit/output/client')
 
 /**
  * The chunk the sync engine (sync.ts) is built into, in the build under test: online.ts's, which
- * the page loads on idle with the store (Vite's manifest).
+ * the page loads on idle with the store, or one it imports, as sign-out's shutdown.ts shares
+ * sync.ts with it (Vite's manifest).
  */
 function syncChunk(): string {
 	const manifest = JSON.parse(readFileSync(`${CLIENT}/.vite/manifest.json`, 'utf8')) as Record<
 		string,
-		{ file: string } | undefined
+		{ file: string; imports?: string[] } | undefined
 	>;
-	const chunk = manifest['src/lib/client/workout/online.ts'];
-	if (!chunk) throw new Error('online.ts is not in the build under test');
-	expect(readFileSync(`${CLIENT}/${chunk.file}`, 'utf8')).toContain(SYNC_LOCK);
-	return chunk.file;
+	const online = manifest['src/lib/client/workout/online.ts'];
+	if (!online) throw new Error('online.ts is not in the build under test');
+	const files = [online.file, ...(online.imports ?? []).flatMap((k) => manifest[k]?.file ?? [])];
+	const file = files.find((f) => readFileSync(`${CLIENT}/${f}`, 'utf8').includes(SYNC_LOCK));
+	if (!file) throw new Error('sync.ts is not in online.ts or its imports');
+	return file;
 }
 
 let kit: StrengthKit;

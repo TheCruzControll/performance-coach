@@ -9,10 +9,13 @@
  *
  * Initial JS is the complete *static* import graph of the app entry and the route's layout and
  * page nodes, read from Vite's manifest — not only the modulepreload list SvelteKit emits, which
- * can miss a chunk that is also reachable through a dynamic import (it is then fetched late, as
- * a waterfall; listed in the report). It also counts what a route's universal `load` imports
+ * could miss a chunk that is also reachable through a dynamic import (it is then fetched late,
+ * as a waterfall; such a chunk fails the run). It also counts what a route's universal `load` imports
  * dynamically (`+page.ts` / `+layout.ts`): the load awaits it before the page hydrates, so it is
  * initial too — the largest such import counts.
+ *
+ * Route CSS counts every stylesheet the page renders with, whether SvelteKit inlines it into the
+ * HTML or links it; the report shows how much of it is still linked (a render-blocking request).
  */
 import { appendFileSync, existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -29,6 +32,7 @@ import {
 } from './client-secret-scan.ts';
 import { PRELOADED_FONT_PATTERN } from '../src/lib/ui/fonts.ts';
 import { icons } from '../src/lib/ui/icons/icons.ts';
+import { precacheList } from '../src/lib/client/sw-precache.ts';
 
 export const BUDGETS = {
 	/** Initial JS per route (gzip), including the shared shell. */
@@ -36,7 +40,14 @@ export const BUDGETS = {
 	/** CSS a route renders with (gzip): render-blocking, so budgeted per route. */
 	routeCssKb: 14,
 	/** Font files preloaded on any route. */
-	preloadedFonts: 2
+	preloadedFonts: 2,
+	/**
+	 * Files the service worker downloads at install (src/service-worker/index.ts precache). Set
+	 * with room above the 275 files #458 measured, like the route budgets (owner, 2026-11-11).
+	 */
+	precacheFiles: 300,
+	/** Their decoded size: the install download before HTTP compression (995 KB at #458). */
+	precacheKb: 1100
 } as const;
 
 const OUT = '.svelte-kit/output';
@@ -61,6 +72,8 @@ interface Route {
 }
 interface ViteChunk {
 	file: string;
+	/** The chunk's name: for a chunk group's chunk, the group's name. */
+	name?: string;
 	src?: string;
 	imports?: string[];
 	dynamicImports?: string[];
@@ -157,6 +170,8 @@ interface Row {
 	/** Of `js`: the largest import its universal load awaits before hydrating. */
 	loadJs: number;
 	css: number;
+	/** Of `css`: the stylesheets linked rather than inlined (each a request before first paint). */
+	linked: string[];
 	fonts: string[];
 	/** Statically imported chunks SvelteKit does not modulepreload (fetched as a waterfall). */
 	late: string[];
@@ -171,6 +186,7 @@ for (const route of routes) {
 	);
 	const preloaded = new Set(client.imports);
 	const css = new Set(client.stylesheets);
+	const inlined = new Set<string>();
 	const fonts = new Set(
 		client.fonts.filter((f) => PRELOADED_FONT_PATTERN.test(f.filename)).map((f) => f.file)
 	);
@@ -179,6 +195,7 @@ for (const route of routes) {
 		const node = nodes[id]!;
 		node.imports.forEach((f) => preloaded.add(f));
 		node.stylesheets.forEach((f) => css.add(f));
+		node.inlineStyles.forEach((f) => inlined.add(f));
 		node.fonts
 			.filter((f) => PRELOADED_FONT_PATTERN.test(f.filename))
 			.forEach((f) => fonts.add(f.file));
@@ -199,6 +216,7 @@ for (const route of routes) {
 		js: jsBytes,
 		loadJs,
 		css: cssBytes,
+		linked: [...css].filter((f) => !inlined.has(f)),
 		fonts: [...fonts],
 		late: [...js].filter((f) => !preloaded.has(f)),
 		ok:
@@ -207,6 +225,19 @@ for (const route of routes) {
 			fonts.size <= BUDGETS.preloadedFonts
 	});
 }
+
+/**
+ * Every chunk of a route's initial JS is modulepreloaded by its HTML. One that is not is fetched
+ * only once a module importing it runs: a round trip after the rest, before the page hydrates.
+ * SvelteKit dropped a chunk it reached through a dynamic import first (seven on /today);
+ * patches/@sveltejs__kit@*.patch fixes its find_deps.
+ */
+const lateProblems = rows
+	.filter((r) => r.late.length)
+	.map(
+		(r) =>
+			`${r.route}: ${r.late.map((f) => `${path.basename(f)} (${fmt(gzipBytes(f))})`).join(', ')}`
+	);
 
 const allCss = readdirSync(`${CLIENT}/_app/immutable/assets`).filter((f) => f.endsWith('.css'));
 const totalCss = allCss.reduce((sum, f) => sum + gzipBytes(`_app/immutable/assets/${f}`), 0);
@@ -235,16 +266,75 @@ for (const file of allCss) {
 const sw = existsSync(`${CLIENT}/service-worker.js`) ? gzipBytes('service-worker.js') : 0;
 
 /**
- * App shell inlining: the (app) layout's own stylesheets (AppShell with the nav, and the icons)
- * are inlined into every app page while each is shorter than SvelteKit's inlineStyleThreshold
- * (vite.config.ts). One that grows past it becomes a render-blocking request on every app route,
- * phone included, and no gzip budget notices. The server node lists what it inlined
- * (`inline_styles`); page-agnostic shell rules belong in src/lib/ui/styles/layout.css instead.
+ * Service-worker install download: the precache list the worker builds (precacheList, from the
+ * build files the precache-shell plugin in vite.config.ts picked, the static files and the
+ * prerendered pages), measured file by file. The worker must carry every picked file, so a build
+ * that lost the list fails rather than reporting a smaller download than it makes.
+ */
+const PRECACHE_SHELL = `${CLIENT}/.vite/precache-shell.json`;
+const precacheProblems: string[] = [];
+const shellList = existsSync(PRECACHE_SHELL)
+	? (JSON.parse(readFileSync(PRECACHE_SHELL, 'utf8')) as string[])
+	: [];
+if (!shellList.length) precacheProblems.push(`no build files to precache (${PRECACHE_SHELL})`);
+const swSource = existsSync(`${CLIENT}/service-worker.js`)
+	? readFileSync(`${CLIENT}/service-worker.js`, 'utf8')
+	: '';
+const notCarried = shellList.filter((file) => !swSource.includes(file));
+if (notCarried.length) {
+	precacheProblems.push(
+		`the service worker does not carry ${notCarried.length} of the picked files (${notCarried.slice(0, 3).join(', ')})`
+	);
+}
+const staticFiles = readdirSync('static', { recursive: true, withFileTypes: true })
+	.filter((entry) => entry.isFile())
+	.map((entry) => path.posix.join(path.relative('static', entry.parentPath), entry.name));
+const { manifest: served } = (await import(pathToFileURL(`${OUT}/server/manifest.js`).href)) as {
+	manifest: { prerendered_routes: Set<string> };
+};
+const precached = precacheList('https://precache.invalid/', [
+	...shellList,
+	...staticFiles,
+	...served.prerendered_routes
+]);
+const precacheFile = (pathname: string) =>
+	served.prerendered_routes.has(pathname)
+		? `${OUT}/prerendered/pages${pathname}.html`
+		: path.join(CLIENT, pathname);
+let precacheBytes = 0;
+let precacheGzip = 0;
+for (const pathname of precached) {
+	const file = precacheFile(pathname);
+	if (!existsSync(file)) {
+		precacheProblems.push(`${pathname}: not in the build`);
+		continue;
+	}
+	const bytes = readFileSync(file);
+	precacheBytes += bytes.length;
+	precacheGzip += gzipSync(bytes, { level: 9 }).length;
+}
+if (precached.length > BUDGETS.precacheFiles) {
+	precacheProblems.push(`${precached.length} files, over ${BUDGETS.precacheFiles}`);
+}
+if (kb(precacheBytes) > BUDGETS.precacheKb) {
+	precacheProblems.push(`${fmt(precacheBytes)} decoded, over ${BUDGETS.precacheKb} KB`);
+}
+
+/**
+ * Layout inlining: the root layout's stylesheets (the global styles: tokens, fonts, layout.css)
+ * and the (app) layout's (AppShell with the nav, and the icons) are inlined into every page
+ * while each is shorter than SvelteKit's inlineStyleThreshold (vite.config.ts). One that grows
+ * past it becomes a render-blocking request on every route (every app route for the shell),
+ * phone included; the gzip budget counts it either way, so it would not notice. The server node
+ * lists what it inlined (`inline_styles`); page-agnostic shell rules belong in
+ * src/lib/ui/styles/layout.css.
  */
 const INLINE_STYLE_THRESHOLD = Number(
 	/inlineStyleThreshold:\s*(\d+)/.exec(readFileSync('vite.config.ts', 'utf8'))?.[1]
 );
+const ROOT_LAYOUT = '_layout';
 const SHELL_LAYOUT = '(app)/_layout';
+const rootNode = nodes.find((node) => node.component === ROOT_LAYOUT);
 const shellNode = nodes.find((node) => node.component === SHELL_LAYOUT);
 const lengthOf = (file: string) => readFileSync(path.join(CLIENT, file), 'utf8').length;
 const count = (n: number) => n.toLocaleString('en');
@@ -252,15 +342,21 @@ const shellProblems: string[] = [];
 if (!Number.isFinite(INLINE_STYLE_THRESHOLD)) {
 	shellProblems.push('no inlineStyleThreshold in vite.config.ts: update this guard');
 }
-if (!shellNode) shellProblems.push(`no ${SHELL_LAYOUT} node in the build: update this guard`);
-for (const file of shellNode?.stylesheets ?? []) {
-	if (!shellNode!.inlineStyles.includes(file)) {
-		shellProblems.push(
-			`${path.basename(file)} is ${count(lengthOf(file))} characters, not under ${count(INLINE_STYLE_THRESHOLD)}, ` +
-				'so it is linked instead of inlined: move page-agnostic rules to src/lib/ui/styles/layout.css'
-		);
+for (const [name, node] of [
+	[ROOT_LAYOUT, rootNode],
+	[SHELL_LAYOUT, shellNode]
+] as const) {
+	if (!node) shellProblems.push(`no ${name} node in the build: update this guard`);
+	for (const file of node?.stylesheets ?? []) {
+		if (!node!.inlineStyles.includes(file)) {
+			shellProblems.push(
+				`${name}: ${path.basename(file)} is ${count(lengthOf(file))} characters, not under ${count(INLINE_STYLE_THRESHOLD)}, ` +
+					'so it is linked instead of inlined: trim it, or move what only some pages need to their components'
+			);
+		}
 	}
 }
+const rootSheetLength = Math.max(0, ...(rootNode?.stylesheets ?? []).map(lengthOf));
 const shellSheet = shellNode?.stylesheets.find((file) =>
 	path.basename(file).startsWith('AppShell.')
 );
@@ -535,27 +631,76 @@ const isolation = coachIsolation(
 	JSON.parse(readFileSync(`${CLIENT}/${CHUNK_MODULES}`, 'utf8')) as Record<string, string[]>
 );
 
+/**
+ * The root error page on every start-up: SvelteKit imports it before it hydrates any page, so
+ * whatever it imports statically is a step on every route's start-up, however rarely an error
+ * shows. Apart from its own small chunk it may bring no script or stylesheet a route does not
+ * already load: its content loads on demand (src/routes/error-page.ts).
+ */
+const ROOT_ERROR = '_error';
+const rootError = nodes.find((node) => node.component === ROOT_ERROR);
+const rootErrorProblems: string[] = [];
+const rootErrorFile = rootError?.imports[0];
+if (!rootError || !rootErrorFile) {
+	rootErrorProblems.push(`no ${ROOT_ERROR} node in the build: update this guard`);
+} else {
+	const errorJs = staticClosure(rootError.imports);
+	const errorCss = cssOf(keysOf(errorJs));
+	for (const route of routes) {
+		if (!route.page) continue;
+		const ids = [...route.page.layouts, route.page.leaf].filter(
+			(n): n is number => n !== undefined
+		);
+		const js = staticClosure([...client.imports, ...ids.flatMap((id) => nodes[id]!.imports)]);
+		const css = cssOf(keysOf(js));
+		const extra = [
+			...[...errorJs].filter((f) => f !== rootErrorFile && !js.has(f)),
+			...[...errorCss].filter((f) => !css.has(f))
+		];
+		if (extra.length) {
+			rootErrorProblems.push(`${route.id}: ${extra.map((f) => path.basename(f)).join(', ')}`);
+		}
+	}
+}
+
+/**
+ * start.js imports SvelteKit's payload module and the preload helper alone (the `payload` chunk
+ * group in vite.config.ts): it runs its imports before it sets the payload, then imports the
+ * client, whose modules read the payload while they initialise ($app/env's version). A chunk
+ * group that pulled the payload module in with them would run them early, with an empty payload.
+ */
+const PAYLOAD_GROUP = 'payload';
+const startEntry = Object.entries(vite).find(([key]) =>
+	key.endsWith('/@sveltejs/kit/src/runtime/client/entry.js')
+)?.[1];
+const startImports = startEntry?.imports ?? [];
+const payloadProblem = !startEntry
+	? 'no SvelteKit start entry in the build: update this guard'
+	: startImports.length !== 1 ||
+		  vite[startImports[0]!]?.name !== PAYLOAD_GROUP ||
+		  vite[startImports[0]!]?.imports?.length
+		? `${path.basename(startEntry.file)} imports ${startImports.map((k) => `${path.basename(vite[k]!.file)} (${vite[k]!.name})`).join(', ')}`
+		: '';
+
 const lines = [
-	'| Route | Initial JS (gzip) | of which awaited by `load` | Route CSS (gzip) | Preloaded fonts | Status |',
-	'| --- | ---: | ---: | ---: | ---: | :---: |',
+	'| Route | Initial JS (gzip) | of which awaited by `load` | Route CSS (gzip) | of which linked, not inlined | Preloaded fonts | Status |',
+	'| --- | ---: | ---: | ---: | ---: | ---: | :---: |',
 	...rows
 		.sort((a, b) => b.js - a.js)
 		.map(
 			(r) =>
-				`| \`${r.route}\` | ${fmt(r.js)} | ${r.loadJs ? fmt(r.loadJs) : '–'} | ${fmt(r.css)} | ${r.fonts.length} | ${r.ok ? 'pass' : 'FAIL'} |`
+				`| \`${r.route}\` | ${fmt(r.js)} | ${r.loadJs ? fmt(r.loadJs) : '–'} | ${fmt(r.css)} | ${r.linked.length ? `${fmt(r.linked.reduce((n, f) => n + gzipBytes(f), 0))} (${r.linked.map((f) => path.basename(f)).join(', ')})` : '–'} | ${r.fonts.length} | ${r.ok ? 'pass' : 'FAIL'} |`
 		),
 	'',
 	`Total CSS in the build (gzip, not all of it on any one route): ${fmt(totalCss)} across ${allCss.length} files`,
 	`Service worker (gzip): ${fmt(sw)}`,
+	`Service-worker install download (precache): ${precached.length} files, ${fmt(precacheBytes)} decoded (${fmt(precacheGzip)} gzip); budget ≤ ${BUDGETS.precacheFiles} files, ≤ ${BUDGETS.precacheKb} KB decoded: ${precacheProblems.length ? 'FAIL' : 'pass'}`,
 	`Budgets: initial JS ≤ ${BUDGETS.routeJsKb} KB · route CSS ≤ ${BUDGETS.routeCssKb} KB · preloaded fonts ≤ ${BUDGETS.preloadedFonts}`,
-	...rows
-		.filter((r) => r.late.length)
-		.map(
-			(r) =>
-				`Not modulepreloaded (counted above; fetched after its importer): \`${r.route}\` ${r.late.map((f) => `${path.basename(f)} (${fmt(gzipBytes(f))})`).join(', ')}`
-		),
+	`Initial JS modulepreloaded in full (no chunk fetched only once its importer runs): ${lateProblems.length ? 'FAIL' : 'pass'}`,
 	`CSS output guard (standard property kept next to every -webkit- prefix): ${prefixProblems.length ? 'FAIL' : 'pass'}`,
-	`App shell stylesheets inlined into every app page (AppShell ${shellSheet ? count(lengthOf(shellSheet)) : '?'} of ${count(INLINE_STYLE_THRESHOLD)} characters): ${shellProblems.length ? 'FAIL' : 'pass'}`,
+	`Root error page (imported before every hydration): its own ${rootErrorFile ? fmt(gzipBytes(rootErrorFile)) : '?'} chunk, no script or stylesheet a route does not load: ${rootErrorProblems.length ? 'FAIL' : 'pass'}`,
+	`SvelteKit start entry imports only the payload chunk (it runs it before setting the payload): ${payloadProblem ? 'FAIL' : 'pass'}`,
+	`Layout stylesheets inlined into every page (root layout ${count(rootSheetLength)} and AppShell ${shellSheet ? count(lengthOf(shellSheet)) : '?'} of ${count(INLINE_STYLE_THRESHOLD)} characters): ${shellProblems.length ? 'FAIL' : 'pass'}`,
 	`@simplewebauthn/browser: on demand only, never in initial JS; loadable from ${webauthnRoutes
 		.sort()
 		.map((r) => `\`${r}\``)
@@ -576,12 +721,28 @@ if (process.env.GITHUB_STEP_SUMMARY) {
 	);
 }
 
+if (lateProblems.length > 0) {
+	console.error(
+		`\nInitial JS fetched late (not modulepreloaded by the page):\n  - ${lateProblems.join('\n  - ')}`
+	);
+}
+
 if (prefixProblems.length > 0) {
 	console.error(`\nCSS output guard failed:\n  - ${prefixProblems.join('\n  - ')}`);
 }
 
 if (shellProblems.length > 0) {
-	console.error(`\nApp shell inlining failed:\n  - ${shellProblems.join('\n  - ')}`);
+	console.error(`\nLayout inlining failed:\n  - ${shellProblems.join('\n  - ')}`);
+}
+
+if (rootErrorProblems.length > 0) {
+	console.error(
+		`\nRoot error page start-up failed (it imports what these routes do not load):\n  - ${rootErrorProblems.join('\n  - ')}`
+	);
+}
+
+if (payloadProblem) {
+	console.error(`\nSvelteKit start entry failed: ${payloadProblem}`);
 }
 
 if (webauthnProblems.length > 0) {
@@ -606,6 +767,10 @@ if (iconProblems.length > 0) {
 	console.error(`\nIcon placement failed:\n  - ${iconProblems.join('\n  - ')}`);
 }
 
+if (precacheProblems.length > 0) {
+	console.error(`\nService-worker precache failed:\n  - ${precacheProblems.join('\n  - ')}`);
+}
+
 if (secretProblems.length > 0) {
 	console.error(`\nClient secrets failed:\n  - ${secretProblems.join('\n  - ')}`);
 }
@@ -617,25 +782,33 @@ if (isolation.problems.length > 0) {
 const failed = rows.filter((r) => !r.ok);
 if (
 	failed.length > 0 ||
+	lateProblems.length > 0 ||
 	prefixProblems.length > 0 ||
 	shellProblems.length > 0 ||
+	rootErrorProblems.length > 0 ||
+	payloadProblem ||
 	webauthnProblems.length > 0 ||
 	validationProblems.length > 0 ||
 	sectionProblems.length > 0 ||
 	catalogueChunks.length > 0 ||
 	iconProblems.length > 0 ||
+	precacheProblems.length > 0 ||
 	secretProblems.length > 0 ||
 	isolation.problems.length > 0
 ) {
 	const what = [
 		...failed.map((r) => r.route),
+		...(lateProblems.length ? ['initial JS fetched late'] : []),
 		...(prefixProblems.length ? ['CSS prefixes'] : []),
-		...(shellProblems.length ? ['app shell inlining'] : []),
+		...(shellProblems.length ? ['layout inlining'] : []),
+		...(rootErrorProblems.length ? ['root error page'] : []),
+		...(payloadProblem ? ['SvelteKit start entry'] : []),
 		...(webauthnProblems.length ? ['WebAuthn library placement'] : []),
 		...(validationProblems.length ? ['validation placement'] : []),
 		...(sectionProblems.length ? ['profile section CSS'] : []),
 		...(catalogueChunks.length ? ['catalogue placement'] : []),
 		...(iconProblems.length ? ['icon paths in JS'] : []),
+		...(precacheProblems.length ? ['service-worker precache'] : []),
 		...(secretProblems.length ? ['client secrets'] : []),
 		...(isolation.problems.length ? ['coach isolation'] : [])
 	];
