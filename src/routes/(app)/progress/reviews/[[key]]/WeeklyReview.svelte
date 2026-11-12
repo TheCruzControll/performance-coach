@@ -10,7 +10,7 @@
     code fails to load, they read as sent, with a notice and Retry, which reloads: Chromium keeps
     a failed module fetch for the document's lifetime.
   - next week's changes to take, change or skip, or what was decided (NextWeekCard)
-  - the write-up's slot, empty until the coach writes it (review-narrative-ui)
+  - the coach's write-up, or why there is none, and 'Discuss with your coach' (CoachWriteUp)
   - out of date (training logged since): 'Computed before N later changes', with Refresh while
     its decision is open. Refresh writes the next revision and keeps this one; like Create it is
     busy while it posts (a second tap posts nothing), says why on a failure and resends as
@@ -28,6 +28,7 @@
 	import ServedMarkup from '../../../today/panels/ServedMarkup.svelte';
 	import type { WeeklyReviewData } from './load';
 	import NextWeekCard from './NextWeekCard.svelte';
+	import CoachWriteUp from './CoachWriteUp.svelte';
 	import type { BodyProps } from './review-body';
 	import ReviewHero from './ReviewHero.svelte';
 
@@ -174,9 +175,9 @@
 
 	{#if review.nextWeek}<NextWeekCard next={review.nextWeek} reviewId={review.id} {online} />{/if}
 
-	<div class="write-up" data-testid="review-write-up">
-		{#if review.writeUp}<p>{review.writeUp}</p>{/if}
-	</div>
+	{#if review.narration}
+		<CoachWriteUp narration={review.narration} />
+	{/if}
 </article>
 
 <style>
@@ -231,10 +232,6 @@
 		display: grid;
 		gap: var(--space-3);
 		justify-items: start;
-	}
-
-	.write-up:empty {
-		display: none;
 	}
 
 	/* A wide enough column: the four counts on one row. */

@@ -13,7 +13,8 @@
   create the device's database (coming-kits.ts). Last, Ask the coach opens Coach with 'What should
   I focus on next week?' (a link: ui/ask-link.ts). In a bridge week between blocks, 'Between
   blocks' names the day the next block starts, with 'Log something else', in place of the week.
-  Code-split behind PanelLoader.
+  When a week or a block completes, its review prompt leads (ReviewPrompt: create and open it, or
+  'See your review'). Code-split behind PanelLoader.
 -->
 <script lang="ts">
 	import { invalidateAll } from '$app/navigation';
@@ -21,6 +22,7 @@
 	import { navigating } from '$app/state';
 	import { deviceWorkout } from '#lib/client/workout/device-workout.svelte.ts';
 	import type { IsoDate } from '#lib/domain/calendar.ts';
+	import ReviewPrompt from '#lib/ui/analytics/ReviewPrompt.svelte';
 	import { ASK_QUESTIONS, askHref } from '#lib/ui/ask-link.ts';
 	import Badge from '#lib/ui/components/Badge.svelte';
 	import Button from '#lib/ui/components/Button.svelte';
@@ -144,6 +146,10 @@
 				</EmptyState>
 			</Card>
 		{:else}
+			{#if view.review}
+				<ReviewPrompt review={view.review} />
+			{/if}
+
 			{#if view.starts}
 				<Card tone="accent" padding="lg" data-testid="today-starts">
 					<div class="note">
