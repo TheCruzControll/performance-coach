@@ -206,13 +206,16 @@
 		{:else if state.kind === 'superseded'}
 			<Badge tone="warning" icon="alert">Superseded</Badge>
 			<p class="quiet" data-testid="proposal-superseded-reason">
-				{state.words}{#if state.link}
+				<!-- The words, the dot and the link are siblings, so the spaces between them stay. -->
+				{#if state.link}
+					{state.words}
 					<span class="dot" aria-hidden="true">·</span>
 					<a class="view" href={state.link.href} data-testid="proposal-review"
-						>{state.link.words}{#if state.link.words === OPEN_REVIEW}<span class="visually-hidden">
-								the review</span
-							>{/if}</a
+						>{#if state.link.words === OPEN_REVIEW}{state.link.words}
+							<span class="visually-hidden">the review</span>{:else}{state.link.words}{/if}</a
 					>
+				{:else}
+					{state.words}
 				{/if}
 			</p>
 		{:else}
