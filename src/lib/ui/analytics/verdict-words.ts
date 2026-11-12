@@ -26,6 +26,15 @@ export interface VerdictWindow {
  * trend in a metric with no better way is a 'Real rise' or a 'Real fall'.
  */
 export function verdictWords(verdict: TileVerdict, window?: VerdictWindow): string {
+	return verdictParts(verdict, window).join('');
+}
+
+/**
+ * The verdict's words in two: its phrase, which VerdictBadge keeps on one line where it fits
+ * ('Real improvement'), and the rest, which may wrap (' over the last 12 weeks', ' · 2 of 6
+ * weeks'). Joined, they are verdictWords.
+ */
+export function verdictParts(verdict: TileVerdict, window?: VerdictWindow): [string, string] {
 	const over =
 		window && !window.sameAsPeriod && window.weeks ? ` over the last ${window.weeks} weeks` : '';
 	switch (verdict.verdict) {
@@ -38,17 +47,27 @@ export function verdictWords(verdict: TileVerdict, window?: VerdictWindow): stri
 					: verdict.good
 						? 'Real improvement'
 						: 'Real decline';
-			return words + over;
+			return [words, over];
 		}
 		case 'normal_variation':
-			return 'Normal variation' + over;
+			return ['Normal variation', over];
 		case 'insufficient_data':
-			return `Not enough data yet · ${verdict.have} of ${verdict.need} ${verdict.unit}` + over;
+			return [
+				'Not enough data yet',
+				` · ${verdict.have} of ${verdict.need} ${verdict.unit}` + over
+			];
 	}
 }
 
+/**
+ * A real trend's arrow follows better, not the raw sign: a pace that fell (faster) is an
+ * improvement and points up beside its 'Real improvement'. With no better way, the way it moved.
+ */
 export function verdictIcon(verdict: TileVerdict): IconName {
-	if (verdict.verdict === 'real_trend') return `trend-${verdict.direction}`;
+	if (verdict.verdict === 'real_trend') {
+		if (verdict.good === null) return `trend-${verdict.direction}`;
+		return verdict.good ? 'trend-up' : 'trend-down';
+	}
 	return verdict.verdict === 'normal_variation' ? 'trend-flat' : 'clock';
 }
 

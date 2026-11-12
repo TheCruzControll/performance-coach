@@ -43,5 +43,5 @@
 	}
 </script>
 
-<IconButton icon="pulse" label="Coach usage" onclick={show} data-testid="usage-button" />
+<IconButton icon="pulse" label="Usage" tooltip onclick={show} data-testid="usage-button" />
 {#if Sheet}<Sheet bind:open />{/if}

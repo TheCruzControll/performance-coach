@@ -73,6 +73,7 @@
 	<a
 		{href}
 		class="btn"
+		data-ui="button"
 		class:block
 		data-variant={variant}
 		data-size={size}
@@ -86,6 +87,7 @@
 	<button
 		{type}
 		class="btn"
+		data-ui="button"
 		class:block
 		data-variant={variant}
 		data-size={size}

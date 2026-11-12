@@ -1,6 +1,7 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type BrowserContext, type Page } from '@playwright/test';
 import { ACTIVE_WORKOUT_KEY } from '../src/lib/client/workout/active-flag';
+import { DATA_TIMEOUT_MS } from '../src/lib/client/sw-network';
 import { ACTIVE_LAUNCH_TIMEOUT_MS, START_URL } from '../src/lib/client/workout/launch';
 import { expectNoSideScroll, isDesktopPage } from './desktop';
 import { TABS } from './support';
@@ -161,6 +162,55 @@ test.describe('offline behaviour (service worker)', () => {
 		});
 	});
 
+	test('on lie-fi, a client-side data load gives up and shows the offline state', async ({
+		page,
+		context
+	}) => {
+		await page.goto('/today');
+		await waitForController(page);
+
+		// Connected, but the server never answers (context-level: the worker's fetches too). The
+		// health probe hangs as well, so the screen's own retry cannot recover mid-test.
+		const hang = () => {};
+		await context.route('**/__data.json*', hang);
+		await context.route('**/api/health', hang);
+		const asked = Date.now();
+		await page
+			.getByRole('navigation', { name: 'Primary' })
+			.getByRole('link', { name: 'Profile' })
+			.click();
+		const state = page.getByTestId('offline-state');
+		// The worker's bounded wait, not the minute or more a hung request takes.
+		await expect(state).toContainText("Can't reach the server", {
+			timeout: DATA_TIMEOUT_MS + 4_000
+		});
+		expect(Date.now() - asked).toBeGreaterThanOrEqual(DATA_TIMEOUT_MS - 500);
+		await expect(page).toHaveURL(/\/profile$/);
+		await expect(page.getByRole('heading', { level: 1, name: 'Profile' })).toBeVisible();
+		await expect(page.locator('body')).not.toContainText(/500|503|internal error/i);
+		await context.unrouteAll({ behavior: 'ignoreErrors' });
+	});
+
+	test('navigation preload is on, and server-rendered pages still load through it', async ({
+		page
+	}) => {
+		await page.goto('/today');
+		await waitForController(page);
+		expect(
+			await page.evaluate(async () => {
+				const registration = await navigator.serviceWorker.ready;
+				return (await registration.navigationPreload.getState()).enabled;
+			})
+		).toBe(true);
+
+		// A controlled load of a server-rendered page gets its live data (the preload's answer).
+		await page.goto('/profile');
+		await expect(page.getByTestId('db-status')).toContainText(/connected · \d+ ms/i, {
+			timeout: 15_000
+		});
+		await expect(page.getByTestId('offline-state')).toHaveCount(0);
+	});
+
 	test('the /offline document at its own URL never reloads itself', async ({ page }) => {
 		// Healthy server: the recovery probe would succeed, and reloading /offline lands on the
 		// offline screen again, so it must not probe or reload there at all.
@@ -229,8 +279,18 @@ test.describe('offline behaviour (service worker)', () => {
 	}) => {
 		await workoutInProgress(page, context);
 
-		// Connected, but the start URL's document never answers (context-level: the worker's fetch).
+		// Connected, but the start URL's document never answers: neither the worker's own fetch
+		// (context-level route) nor the browser's navigation preload, which routes never see, so a
+		// minute of latency on the page's network holds the preload instead.
 		await context.route(`**${START_URL}`, () => {});
+		await (
+			await context.newCDPSession(page)
+		).send('Network.emulateNetworkConditions', {
+			offline: false,
+			latency: 60_000,
+			downloadThroughput: -1,
+			uploadThroughput: -1
+		});
 		const asked = Date.now();
 		await page.goto(START_URL, { waitUntil: 'commit' }).catch(() => {});
 		await expect(page).toHaveURL(/\/workout$/);
@@ -352,6 +412,30 @@ test.describe('offline behaviour (service worker)', () => {
 		await page.goto('/progress');
 		await expect(page.getByTestId('offline-state')).toBeVisible();
 		await expect(page.getByTestId('offline-today')).toHaveCount(0);
+	});
+
+	test('an offline cold start mid-workout runs from the precache alone: a set logs, the menu opens', async ({
+		page,
+		context
+	}) => {
+		// No workout page has loaded on this device: everything it runs must come from what the
+		// worker precached at install, its lazy logger, store and menu included.
+		await context.route('**/api/workouts/**', (route) => route.abort('internetdisconnected'));
+		await page.goto('/profile');
+		await waitForController(page);
+		const kits = await workoutDay();
+		await seedWorkout(page, kits.strength);
+
+		await context.setOffline(true);
+		await page.goto('/workout');
+		await expectLogger(page);
+		await page.getByTestId('set-logger').getByTestId('complete-set').click();
+		await expect
+			.poll(async () => (await readOutbox(page)).map((e) => e.envelope.type))
+			.toEqual(['workout.start', 'set.log']);
+		await page.getByTestId('workout-menu-button').click();
+		await expect(page.getByTestId('workout-menu')).toBeVisible();
+		await expect(page.getByTestId('offline-state')).toHaveCount(0);
 	});
 
 	test('dynamic pages are never stored by the service worker', async ({ page, context }) => {

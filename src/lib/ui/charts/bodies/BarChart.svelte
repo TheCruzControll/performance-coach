@@ -2,8 +2,9 @@
   @component
   The bar chart body (CHART_BODIES.bar), drawn after hydration inside ChartFrame's plot box. One
   series is a column a week; two or more are stacked by discipline in STACK_ORDER, a 2 px surface
-  gap between parts, a rect-key legend naming them and each complete stack's total on its cap
-  where it fits (a cap hides when its week's band is too narrow for it). Columns are HTML boxes
+  gap between parts, a rect-key legend naming them and the total on the caps of the highest and
+  the latest complete stacks where it fits (a cap hides when its week's band is too narrow for
+  it); every other total is in its tooltip and the table twin. Columns are HTML boxes
   (bar-model.ts, marks.css): at most 24 px wide, a 4 px rounded data end, square at the baseline.
   The SVG draws only the optional target band. A planned outline, dashed, stands around each
   column; the week in progress is outlined, not filled, and labelled 'so far'.

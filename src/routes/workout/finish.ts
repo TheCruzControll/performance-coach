@@ -5,8 +5,10 @@
  * - the summary's fields (duration from the stopwatch, session RPE, notes), as they start and as
  *   the finish carries them
  * - finishWorkout: Done. The finish and the stopwatch's pause go through the store in one write
- *   (the engine flushes it); online, it waits for the server's answer, so the History detail it
- *   opens has the workout. Offline, refused or slow, the page stays on its completed state.
+ *   (the engine flushes it); online, it opens the History detail only if the server takes it
+ *   within FINISH_SYNC_WAIT_MS of Done, so the detail has the workout and the page never jumps
+ *   late. Offline, refused or slow, the page stays on its completed state, the summary at once,
+ *   with 'View in History' when the sync confirms.
  * - the summary in words (domain summary.ts's numbers): an e1RM and a PR from one always say
  *   'estimated', because both come from RPE estimates; nothing here says 'record'.
  * Plain .ts with no runes: the store and the clock are given.
@@ -26,11 +28,12 @@ import type { ExerciseResult, Pr, WorkoutSummary } from '#lib/domain/workout/sum
 export const FINISH_RPE_CHIPS: readonly number[] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
 /**
- * Owner decision (open question, plan default): how long Done waits, online, for the server to take
- * the finish before it opens the History detail. Past it (a slow or lying connection) the page
- * stays on its completed state, which offers 'View in History' once the workout has synced.
+ * How long, from Done, the server has to take the finish for the page to open the History detail
+ * by itself: about as long as a navigation still feels like Done's answer. Past it (a slow or
+ * lying connection) the page stays on its completed state, the local summary shown at once, which
+ * offers 'View in History' once the workout has synced: never a page jump seconds after Done.
  */
-export const FINISH_SYNC_WAIT_MS = 8_000;
+export const FINISH_SYNC_WAIT_MS = 300;
 
 /** M3's finishWorkoutSchema: a duration up to a day, notes up to 500 characters. */
 export const DURATION_MINUTES = [1, 24 * 60] as const;
@@ -136,8 +139,9 @@ export function synced(store: WorkoutStore, workoutId: string, waitMs: number): 
 
 /**
  * Done: `finish` and the stopwatch's pause in one write. 'history' once the server has the
- * finished workout (online only); 'stay' offline, refused or past the wait, on the completed
- * state; 'not-saved' when this browser refused the write.
+ * finished workout within `waitMs` of Done, the write on this device included (online only);
+ * 'stay' offline, refused or past the wait, on the completed state; 'not-saved' when this
+ * browser refused the write.
  */
 export async function finishWorkout(
 	store: WorkoutStore,
@@ -149,10 +153,13 @@ export async function finishWorkout(
 	}: FinishOptions = {}
 ): Promise<'history' | 'stay' | 'not-saved'> {
 	const { workoutId } = finish;
-	const { saved } = store.dispatch(finish, { type: 'stopwatch.pause', workoutId, at: now() });
+	const tapped = now();
+	const { saved } = store.dispatch(finish, { type: 'stopwatch.pause', workoutId, at: tapped });
 	if ((await saved) !== 'saved') return 'not-saved';
 	if (!online()) return 'stay';
-	return (await synced(store, workoutId, waitMs)) ? 'history' : 'stay';
+	const left = waitMs - (now() - tapped);
+	if (left <= 0) return 'stay';
+	return (await synced(store, workoutId, left)) ? 'history' : 'stay';
 }
 
 // ---- In words -------------------------------------------------------------------------------

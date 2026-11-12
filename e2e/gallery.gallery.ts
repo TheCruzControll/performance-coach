@@ -1,18 +1,21 @@
 /**
  * The screen gallery (.github/workflows/screen-gallery.yml; E2E_GALLERY=1 only, never a PR leg):
  * full-page PNGs of every main screen and important state, for design reviews, on the device the
- * project names (an iPhone 15 in WebKit, a 1440 × 900 desktop in Chromium) in both themes.
+ * project names (an iPhone 15 in WebKit, a 1440 × 900 desktop in Chromium) in both designs (today's
+ * and the Graphite 2004 preview, for the owner to compare) and both themes.
  *
  * Each group seeds the one owner with the existing test-support seeds (fixture programs, the
  * analytics and review histories, the coach fixtures, a workout started from the server's kit),
- * then shoots its screens. Every group runs once per theme in a fresh signed-in context, so it
- * seeds again: the seeds each start from a reset. The theme is the app's own saved preference
- * (localStorage, read before first paint by src/app.html) and the matching colour scheme.
+ * then shoots its screens. Every group runs once per design and theme in a fresh signed-in context,
+ * so it seeds again: the seeds each start from a reset. The design and the theme are the app's own
+ * saved preferences (localStorage, read before first paint by src/app.html), with the matching
+ * colour scheme.
  *
  * A shot that fails is recorded as failed, with why, and the group goes on: this spec captures,
  * it does not judge. Each shot appends a record to test-results/gallery/results-<device>.jsonl,
- * from which scripts/gallery-index.ts writes the contact sheet. A screen that does not exist yet
- * (a link the shot looks for is missing) shows up there as failed until it lands.
+ * from which scripts/gallery-index.ts writes the contact sheet. A screen that is not on main yet
+ * (its route, or the link to it, is missing) throws NotOnMainYet, saying what is missing, and shows
+ * up there as 'not on main yet' rather than failed until it lands.
  */
 import { appendFileSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
@@ -25,9 +28,13 @@ import {
 	type TestInfo
 } from '@playwright/test';
 import {
+	GALLERY_DESIGNS,
 	GALLERY_DEVICES,
 	GALLERY_THEMES,
+	NotOnMainYet,
+	recordOf,
 	shotFileName,
+	type GalleryDesign,
 	type GalleryDevice,
 	type GalleryTheme,
 	type ShotRecord
@@ -35,13 +42,15 @@ import {
 import { ANALYTICS_TZ, seedAnalytics } from './analytics-support';
 import { COACH_TZ, openThread, postTurn, resetCoach, seedCoach } from './coach-support';
 import { PROGRAM_TZ, seedProgram } from './program-support';
-import { seedReview } from './review-support';
+import { resetReviews, seedReview } from './review-support';
 import { gotoHydrated, query, resetTrainingProfile, signedOut } from './support';
 import { startFromKit } from './workout-start-support';
 
 const DIR = 'test-results/gallery';
 /** The app's saved display preferences (src/lib/client/preferences.svelte.ts PREFERENCES_KEY). */
 const PREFERENCES_KEY = 'pc:prefs:v1';
+/** This device's design (src/lib/client/design.ts DESIGN_KEY). */
+const DESIGN_KEY = 'pc:design:v1';
 /** What the coach fixture 'split-squat-week' answers with a proposal (coach-proposals spec). */
 const REPLACE = 'I hate Bulgarian split squats, so replace them';
 
@@ -54,8 +63,9 @@ interface Fixtures {
 
 interface Shooter {
 	/**
-	 * Run `open`, then capture the whole page as <screen>--<state>--<device>--<theme>.png. A
-	 * failure is recorded, never thrown; with `skip`, nothing runs and the reason is recorded.
+	 * Run `open`, then capture the whole page as <screen>--<state>--<device>--<design>--<theme>.png. A
+	 * failure is recorded, never thrown (NotOnMainYet as absent); with `skip`, nothing runs and the
+	 * reason is recorded.
 	 */
 	shot(
 		screen: string,
@@ -71,16 +81,10 @@ interface Group {
 	name: string;
 	timezoneId: string;
 	signedOut?: boolean;
-	/** The test's timeout, per theme. */
+	/** The test's timeout, per design and theme. */
 	minutes: number;
 	run(shooter: Shooter, fixtures: Fixtures): Promise<void>;
 }
-
-/** Playwright's coloured error text: ESC [ … m. */
-const ANSI_COLOUR = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, 'g');
-
-const reasonOf = (err: unknown) =>
-	(err instanceof Error ? err.message : String(err)).replace(ANSI_COLOUR, '').trim().slice(0, 600);
 
 /** The page settles: fonts loaded, no view transition and no finite animation running. */
 async function settle(page: Page): Promise<void> {
@@ -105,7 +109,12 @@ async function settle(page: Page): Promise<void> {
 		.catch(() => {}); // a screen that never settles is still worth a look
 }
 
-function shooter(page: Page, testInfo: TestInfo, theme: GalleryTheme): Shooter {
+function shooter(
+	page: Page,
+	testInfo: TestInfo,
+	design: GalleryDesign,
+	theme: GalleryTheme
+): Shooter {
 	const device = testInfo.project.metadata.galleryDevice as GalleryDevice;
 	if (!GALLERY_DEVICES.includes(device)) {
 		throw new Error(`project ${testInfo.project.name} names no gallery device`);
@@ -115,8 +124,8 @@ function shooter(page: Page, testInfo: TestInfo, theme: GalleryTheme): Shooter {
 		appendFileSync(path.join(DIR, `results-${device}.jsonl`), `${JSON.stringify(entry)}\n`);
 	return {
 		async shot(screen, state, open, { skip } = {}) {
-			const file = shotFileName({ screen, state, device, theme });
-			const key = { screen, state, device, theme };
+			const file = shotFileName({ screen, state, device, design, theme });
+			const key = { screen, state, device, design, theme };
 			if (skip) {
 				record({ ...key, status: 'skipped', reason: skip });
 				return false;
@@ -132,12 +141,12 @@ function shooter(page: Page, testInfo: TestInfo, theme: GalleryTheme): Shooter {
 				record({ ...key, status: 'captured', file });
 				return true;
 			} catch (err) {
-				record({ ...key, status: 'failed', reason: reasonOf(err) });
+				record(recordOf(key, err));
 				return false;
 			}
 		},
 		fail(screen, state, err) {
-			record({ screen, state, device, theme, status: 'failed', reason: reasonOf(err) });
+			record(recordOf({ screen, state, device, design, theme }, err));
 		}
 	};
 }
@@ -287,8 +296,16 @@ const GROUPS: Group[] = [
 			await seedReview(request, 'block-end');
 			await shot('progress', 'cycle-review-due', () => visit(page, '/progress/reviews'));
 			await shot('progress', 'cycle-review', async () => {
-				await visit(page, '/progress/reviews');
-				await follow(page, '/progress/reviews/c-');
+				await resetReviews(request);
+				const seeded = await seedAnalytics(request, 'block-reviewed');
+				const { cycleReviewId } = seeded as typeof seeded & { cycleReviewId: string };
+				// Every c- key is the 404 page until the cycle review screen lands (load.ts).
+				const url = `/progress/reviews/c-${cycleReviewId}`;
+				if ((await page.request.get(url)).status() === 404) {
+					throw new NotOnMainYet('A stored cycle review has no screen to open it yet.');
+				}
+				await visit(page, url);
+				await page.waitForLoadState('networkidle');
 			});
 		}
 	},
@@ -303,8 +320,15 @@ const GROUPS: Group[] = [
 				await expect(page.getByTestId('set-logger')).toBeVisible();
 			});
 			await shot('workout', 'rest-timer', async () => {
-				await page.getByTestId('set-logger').getByTestId('complete-set').click();
-				await expect(page.getByTestId('rest-timer')).toBeVisible();
+				// The kit invents no weight for the top set (Weight 0), and a set without one is refused:
+				// log it at 100 kg, as the strength journey does, so its rest starts.
+				const logger = page.getByTestId('set-logger');
+				const load = logger.getByTestId('logger-load').getByRole('spinbutton');
+				await load.click();
+				await load.fill('100');
+				await load.press('Enter');
+				await logger.getByTestId('complete-set').click();
+				await expect(page.getByTestId('rest-timer')).toHaveAttribute('data-phase', 'running');
 			});
 			await shot('workout', 'this-hurts', async () => {
 				const card = page.getByTestId('workout-main').getByTestId('exercise');
@@ -313,8 +337,13 @@ const GROUPS: Group[] = [
 				await expect(page.getByTestId('pain-sheet')).toBeVisible();
 			});
 			await shot('workout', 'finish', async () => {
+				// This hurts opens over the quick actions sheet: close both, or its scrim takes the tap.
 				await page.keyboard.press('Escape');
 				await expect(page.getByTestId('pain-sheet')).toBeHidden();
+				const actions = page.getByTestId('exercise-actions-sheet');
+				await expect(actions).toBeVisible();
+				await page.keyboard.press('Escape');
+				await expect(actions).toBeHidden();
 				await page.getByTestId('workout-menu-button').click();
 				await page.getByTestId('workout-menu').getByTestId('menu-finish').click();
 				await expect(page.getByTestId('finish-sheet')).toBeVisible();
@@ -353,16 +382,18 @@ const GROUPS: Group[] = [
 				await expect(page.getByTestId('proposal-card')).toBeVisible();
 			});
 			await shot('coach', 'memory', async () => {
-				await page.getByRole('button', { name: 'What the coach knows' }).click();
+				await page.getByRole('button', { name: 'What it knows' }).click();
 				await expect(page.getByTestId('knows-sheet')).toBeVisible();
 				await expect(page.getByTestId('knows-loading')).toHaveCount(0);
 			});
 			await shot('coach', 'proposals-inbox', async () => {
 				await visit(page, '/coach', 'Coach');
-				await page
-					.getByRole('link', { name: /proposals/i })
-					.first()
-					.click();
+				// CoachHeader's ProposalsLink renders nothing until the proposals inbox lands.
+				const inbox = page.getByRole('link', { name: /proposals/i });
+				if ((await inbox.count()) === 0) {
+					throw new NotOnMainYet('Coach has no link to the proposals inbox yet.');
+				}
+				await inbox.first().click();
 				await page.waitForLoadState('networkidle');
 			});
 		}
@@ -392,35 +423,38 @@ for (const group of GROUPS) {
 		test.use({ timezoneId: group.timezoneId });
 		if (group.signedOut) test.use({ storageState: signedOut });
 
-		for (const theme of GALLERY_THEMES) {
-			test.describe(theme, () => {
-				test.use({ colorScheme: theme });
+		for (const design of GALLERY_DESIGNS) {
+			for (const theme of GALLERY_THEMES) {
+				test.describe(`${design} ${theme}`, () => {
+					test.use({ colorScheme: theme });
 
-				test(`${group.name} screens in the ${theme} theme`, async ({
-					page,
-					context,
-					request,
-					browserName
-				}, testInfo) => {
-					test.setTimeout(group.minutes * 60_000);
-					await context.addInitScript(
-						([key, value]) => {
-							try {
-								localStorage.setItem(key!, JSON.stringify({ theme: value }));
-							} catch {
-								// about:blank has no storage: nothing to apply there.
-							}
-						},
-						[PREFERENCES_KEY, theme]
-					);
-					const shots = shooter(page, testInfo, theme);
-					try {
-						await group.run(shots, { page, context, request, browserName });
-					} catch (err) {
-						shots.fail(group.name, 'seed', err);
-					}
+					test(`${group.name} screens in the ${design} design, ${theme} theme`, async ({
+						page,
+						context,
+						request,
+						browserName
+					}, testInfo) => {
+						test.setTimeout(group.minutes * 60_000);
+						await context.addInitScript(
+							([prefsKey, designKey, savedTheme, savedDesign]) => {
+								try {
+									localStorage.setItem(prefsKey!, JSON.stringify({ theme: savedTheme }));
+									localStorage.setItem(designKey!, savedDesign!);
+								} catch {
+									// about:blank has no storage: nothing to apply there.
+								}
+							},
+							[PREFERENCES_KEY, DESIGN_KEY, theme, design]
+						);
+						const shots = shooter(page, testInfo, design, theme);
+						try {
+							await group.run(shots, { page, context, request, browserName });
+						} catch (err) {
+							shots.fail(group.name, 'seed', err);
+						}
+					});
 				});
-			});
+			}
 		}
 	});
 }
