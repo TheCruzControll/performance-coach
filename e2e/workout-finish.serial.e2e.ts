@@ -607,7 +607,11 @@ test.describe('on a desktop window', () => {
 		await expect.poll(background).not.toBe(resting);
 		await page.mouse.move(0, 0);
 
+		// In the tab order as on screen: Finish, then the stopwatch, then More.
+		const stopwatch = page.getByRole('button', { name: 'Pause workout time' });
 		await menuButton(page).focus();
+		await page.keyboard.press('Shift+Tab');
+		await expect(stopwatch).toBeFocused();
 		await page.keyboard.press('Shift+Tab');
 		await expect(finish).toBeFocused();
 		expect(await finish.evaluate((el) => el.matches(':focus-visible'))).toBe(true);

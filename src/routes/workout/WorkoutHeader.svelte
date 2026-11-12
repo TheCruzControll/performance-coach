@@ -11,7 +11,8 @@
   With no title yet (restoring) the title's line is reserved, so nothing moves when it arrives.
   The visible Finish takes its room from the title's line, never the stopwatch's: the stopwatch
   and More stay put, and on a phone the title keeps to one line (an ellipsis if it must), so it
-  is the same height with Finish or without.
+  is the same height with Finish or without. The title comes before the stopwatch in the markup,
+  as it does on screen, so the tab order runs Minimise, Finish, the stopwatch, More.
 -->
 <script lang="ts">
 	import { resolve } from '$app/paths';
@@ -41,10 +42,6 @@
 			<Button variant="ghost" icon="chevron-down" href={resolve('/(app)/today')}>Minimise</Button>
 			{@render status?.()}
 		</div>
-		<div class="time">
-			{@render time?.()}
-			{@render menu?.()}
-		</div>
 		<div class="title">
 			{#if title === null}
 				<Skeleton width="12rem" height="2rem" radius="var(--radius-sm)" />
@@ -52,6 +49,10 @@
 				<h1>{title}</h1>
 			{/if}
 			{@render finish?.()}
+		</div>
+		<div class="time">
+			{@render time?.()}
+			{@render menu?.()}
 		</div>
 	</div>
 </header>
