@@ -21,8 +21,8 @@ import {
 } from '#lib/server/services/reviews/index.ts';
 import type { TrainingDeps } from '#lib/server/services/training/shared.ts';
 import {
-	createCycle,
 	changeWords,
+	createCycle,
 	createReview,
 	CYCLE_IN_PROGRESS,
 	cycleRows,
