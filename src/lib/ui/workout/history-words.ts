@@ -5,7 +5,7 @@
  * so it is unit-tested without a browser.
  */
 import { localDay } from '#lib/domain/dates.ts';
-import { convertWeight, formatWeight } from '#lib/domain/units.ts';
+import { convertWeight, formatWeight, roundEstimate } from '#lib/domain/units.ts';
 import type { Instant, LoggedSet } from '#lib/domain/workout/index.ts';
 import type {
 	ExerciseHistory,
@@ -53,7 +53,7 @@ export function historySetWords(
 export function bestWords(best: HistoryBest, timeZone?: string) {
 	const { set } = best;
 	return {
-		value: `Estimated 1RM · ${formatWeight(convertWeight(best.value, 'kg', set.unit), set.unit, 1)}`,
+		value: `Estimated 1RM · ${formatWeight(roundEstimate(convertWeight(best.value, 'kg', set.unit), set.unit), set.unit, 1)}`,
 		from: `From ${doneText({ ...set, rpe: null })} · ${dayOf(set.performedAt, timeZone)}`
 	};
 }

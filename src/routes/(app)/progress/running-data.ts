@@ -18,7 +18,7 @@ import { PERIOD_LABEL } from '#lib/domain/analytics/periods.ts';
 import { LONG_RUN_JUMP_PCT } from '#lib/domain/analytics/running.ts';
 import type { SeriesPoint } from '#lib/domain/analytics/types.ts';
 import { SESSION_TYPE_LABEL } from '#lib/domain/training/vocabulary.ts';
-import { cleanFloat, convertPace, formatDuration, fromMetres } from '#lib/domain/units.ts';
+import { cleanFloat, convertPace, formatDuration, fromMetres, NBSP } from '#lib/domain/units.ts';
 import { formatIn } from '#lib/server/services/analytics/format.ts';
 import {
 	HR_NOT_TRACKED,
@@ -102,9 +102,10 @@ export function runningData(d: RunningDashboard): RunningData {
 	const rowHeader = window.bucket === 'month' ? 'Month' : 'Week';
 	const against = window.previous ? `the ${window.previous.count} weeks before` : null;
 	const verdictWindow = { sameAsPeriod: trend.sameAsPeriod, weeks: trend.weeks?.count ?? null };
-	const contextOf = (id: MetricId, method = METRICS[id].method): SectionContext => ({
+	/** With a tile, the context names the earlier period only when the tile shows a change against it. */
+	const contextOf = (id: MetricId, method = METRICS[id].method, tile?: Tile): SectionContext => ({
 		period,
-		comparison: against && `Compared with ${against}`,
+		comparison: tile && !tile.delta ? null : against && `Compared with ${against}`,
 		trend: trend.sameAsPeriod ? null : trend.label,
 		good: METRICS[id].good.words,
 		method,
@@ -191,7 +192,7 @@ export function runningData(d: RunningDashboard): RunningData {
 		};
 		const complete = t.points.filter((p) => !p.inProgress && p.value !== null);
 		const [first, last] = [complete[0], complete.at(-1)];
-		const words = (p: SeriesPoint) => `${formatDuration(perUnit(p.value!))} /${unit}`;
+		const words = (p: SeriesPoint) => `${formatDuration(perUnit(p.value!))}${NBSP}/${unit}`;
 		return {
 			id: t.sessionType,
 			label,
@@ -206,7 +207,9 @@ export function runningData(d: RunningDashboard): RunningData {
 						? 'Only this week so far.'
 						: complete.length === 1
 							? `One ${window.bucket} in these weeks: ${words(last)}.`
-							: `From ${words(first)} to ${words(last)}.`,
+							: words(first) === words(last)
+								? `Held at ${words(first)}.`
+								: `From ${words(first)} to ${words(last)}.`,
 				table: lineTable(data, rowHeader),
 				data
 			}
@@ -276,12 +279,14 @@ export function runningData(d: RunningDashboard): RunningData {
 	};
 
 	const ran = m.points.some((p) => !p.inProgress && (p.value ?? 0) > 0);
+	const mileageTile = tileOf(m.kpi, m.trend, m.points, m.soFar);
+	const frequencyTile = tileOf(f.kpi, f.trend, f.points);
 	return {
 		stage: ran ? 'history' : m.inProgress.runs > 0 ? 'first_week' : 'new',
 		window: verdictWindow,
 		mileage: {
-			context: contextOf('mileage'),
-			tile: tileOf(m.kpi, m.trend, m.points, m.soFar),
+			context: contextOf('mileage', undefined, mileageTile),
+			tile: mileageTile,
 			chart: {
 				id: 'mileage',
 				title: mileageData.title,
@@ -313,8 +318,8 @@ export function runningData(d: RunningDashboard): RunningData {
 		efforts,
 		frequency: {
 			title: `Runs per ${window.bucket}`,
-			context: contextOf('run_frequency'),
-			tile: tileOf(f.kpi, f.trend, f.points),
+			context: contextOf('run_frequency', undefined, frequencyTile),
+			tile: frequencyTile,
 			chart: {
 				id: 'runs',
 				title: runsData.title,

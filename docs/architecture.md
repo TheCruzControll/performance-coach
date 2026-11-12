@@ -469,15 +469,15 @@ sequenceDiagram
   participant PG as Postgres
   Page->>IDB: dispatch: outbox entry + device state, one readwrite transaction
   IDB-->>Page: project(table, kit, canonical, pending, device)
-  Page->>Engine: 'saved' flushes
+  Page->>Engine: 'saved' flushes (a burst within 250 ms in one round)
   Engine->>IDB: nextBatch (FIFO, ≤ 25 mutations, ≤ 64 KB)
   Engine->>API: the batch
   loop each mutation, in its own transaction
     API->>PG: claim its id in sync_mutations
     API->>PG: M3's services write the canonical rows (training_audit)
   end
-  API-->>Engine: a result per mutation, with the canonical rows
-  Engine->>IDB: acknowledge: store the rows, drop the entries
+  API-->>Engine: a result per mutation, with the canonical rows (only the changed ones once held)
+  Engine->>IDB: acknowledge: store or fold in the rows, drop the entries
   IDB-->>Page: the same projection, now from the server's rows
 ```
 
@@ -552,8 +552,11 @@ any device), `GET /api/workouts/kit` (`?lineage=` to start, `?session=` to adopt
   and `static/brand/mark-arc.svg`, precached with the other static files. No browser code reads
   the window's size (`scripts/layout-rules.test.ts`), so SSR paints the final layout.
 - PWA: web manifest, PNG/SVG icons, and a SvelteKit service worker
-  (`src/service-worker/index.ts`) that precaches the versioned build + static assets, deletes old
-  caches and claims open pages on activate (so the first visit is already controlled), and
+  (`src/service-worker/index.ts`) that precaches what offline needs (the shell, the workout pages
+  and `/offline`, `scripts/lib/precache-scope.ts`) + static assets, copying the hashed files the
+  previous version cached instead of downloading them again, caches other build files on first
+  use, deletes old caches and claims open pages on activate (so the first visit is already
+  controlled), and
   serves navigations from the network with the prerendered `/offline` screen as the fallback.
   It **never stores dynamic HTML, `__data.json` or `/api/*`**: pages are `private, no-cache`
   because they carry personal data, and a stored copy would outlive sign-out and show stale

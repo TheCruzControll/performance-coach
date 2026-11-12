@@ -45,7 +45,8 @@
 	type Older = { rows: ThreadRowView[]; next: string | null };
 	/**
 	 * Older pages loaded below the first, kept with the first page's conversations: a new first
-	 * page (a conversation answered meanwhile) starts the list again.
+	 * page (a conversation answered meanwhile), or a conversation renamed, archived or unarchived
+	 * (onchanged), starts the list again.
 	 */
 	let older = $state.raw<{ after: string; pages: Older[] } | null>(null);
 	const first = $derived(ready ? ready.threads.map((row) => row.id).join() : '');
@@ -93,7 +94,8 @@
 				throw error;
 			}
 		));
-	const canAsk = $derived(data.coach.status === 'ready');
+	// An archived conversation is read-only until unarchived (its banner, ArchivedBanner).
+	const canAsk = $derived(data.coach.status === 'ready' && !ready?.thread?.archived);
 
 	let starting = false;
 	async function send(text: string) {
@@ -148,10 +150,11 @@
 	 * Budget lever (M5 plan, Budgets: 'the recent-conversations list on idle'): the list's code
 	 * loads on demand too, in the browser as soon as /coach shows, so the stream client fits in the
 	 * route's 60 KB. Loading rows hold its place meanwhile; Retry imports again. With no
-	 * conversation there is no list: the server renders the empty state, the screen's largest
-	 * text, so it paints with the page instead of after a chunk.
+	 * conversation the server renders the empty state, the screen's largest text, so it paints
+	 * with the page instead of after a chunk; the list's code still loads, and stays, for its
+	 * 'Archived conversations' (archived ones stay in reach) and the Undo after archiving the last.
 	 */
-	const wantsList = $derived(!page.params.thread && rows.length > 0);
+	const wantsList = $derived(!page.params.thread);
 	const listCode = $derived.by(() => {
 		void threadAttempt;
 		if (!wantsList) return null;
@@ -165,6 +168,12 @@
 
 {#snippet failed()}
 	<CoachNotice kind="load_failed" onretry={retry} {retrying} data-testid="load-failed" />
+{/snippet}
+{#snippet empty()}
+	<section class="recent" aria-labelledby="recent-heading">
+		<h2 id="recent-heading" class="eyebrow">Recent conversations</h2>
+		<CoachNotice kind="empty" data-testid="coach-empty" />
+	</section>
 {/snippet}
 {#snippet cannot()}
 	{#if unavailable}<CoachNotice kind={unavailable} data-testid="coach-unavailable" />{/if}
@@ -203,14 +212,13 @@
 		{#if data.prefill?.label}<ContextChip label={data.prefill.label} />{/if}
 		<Suggestions onpick={canAsk ? (text) => (draft = text) : undefined} />
 		{@render cannot()}
-		{#if ready && rows.length === 0}
-			<section class="recent" aria-labelledby="recent-heading">
-				<h2 id="recent-heading" class="eyebrow">Recent conversations</h2>
-				<CoachNotice kind="empty" data-testid="coach-empty" />
-			</section>
-		{:else if ready}
+		{#if ready}
 			{#await listCode}
-				<LoadingRows label="Loading your conversations…" data-testid="list-loading" />
+				{#if rows.length === 0}
+					{@render empty()}
+				{:else}
+					<LoadingRows label="Loading your conversations…" data-testid="list-loading" />
+				{/if}
 			{:then code}
 				{#if code}<code.default
 						{rows}
@@ -218,8 +226,10 @@
 						{loadingOlder}
 						{olderFailed}
 						onolder={showOlder}
+						onchanged={() => (older = null)}
 					/>{/if}
 			{:catch}
+				{#if rows.length === 0}{@render empty()}{/if}
 				<CoachNotice
 					kind="chunk_failed"
 					onretry={() => threadAttempt++}

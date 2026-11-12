@@ -11,9 +11,9 @@
  * left out.
  *
  * planShards splits a leg's entries into shards, longest first, each into the shard it leaves
- * cheapest. A shard's cost is its wall clock with the leg's workers (2 in main, 1 elsewhere,
- * playwright.config.ts): its summed seconds over the workers, but never less than its largest
- * file. Shard 1 is planned 10% lighter, because it also runs anything the plan missed.
+ * cheapest. A shard's cost is its wall clock with the leg's workers (legWorkers, as
+ * playwright.config.ts runs them): its summed seconds over the workers, but never less than its
+ * largest file. Shard 1 is planned 10% lighter, because it also runs anything the plan missed.
  *
  * The CLI reads E2E_GROUP, E2E_ENGINE and E2E_SHARD (`<current>/<total>`) and writes the shard's
  * files to <list-file> as `[<project>] › <file>` lines, paths relative to e2e/ (Playwright's
@@ -28,12 +28,13 @@
  * are planned into shard 1, which runs them by inversion (SHARD_ONE_FILES). The listing test
  * (scripts/e2e-shards.listing.test.ts) fails if another such file is planned elsewhere.
  *
- * Node builtins, the spec files and the timing table only, so CI runs it before anything else is
- * built.
+ * Node builtins, the spec files, the timing table and e2e/serial-workers.ts (no imports) only, so
+ * CI runs it before anything else is built.
  */
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { serialWorkers } from '../e2e/serial-workers.ts';
 
 /** One `<project> › <file>` of a leg and its measured seconds. */
 export interface ShardEntry {
@@ -57,8 +58,13 @@ export const SHARD_ONE_SHARE = 0.9;
  */
 export const SHARD_ONE_FILES: readonly string[] = ['a11y-dark.e2e.ts', 'a11y-light.e2e.ts'];
 
-/** Playwright workers a CI leg of `group` runs (playwright.config.ts). */
-export const legWorkers = (group: string) => (group === 'main' ? 2 : 1);
+/**
+ * Playwright workers the CI leg `group`/`engine` runs (playwright.config.ts): 2 in main; in serial,
+ * its engine's SERIAL_WORKERS (e2e/serial-workers.ts: 2 on Chromium, 1 on WebKit); 1 elsewhere.
+ * scripts/e2e-shards.test.ts checks this against the config's workers for every leg.
+ */
+export const legWorkers = (group: string, engine: string) =>
+	group === 'main' ? 2 : group === 'serial' ? serialWorkers(engine) : 1;
 
 /** A shard's planned wall clock: its seconds over the workers, at least its largest file. */
 export const shardCost = (shard: PlannedShard, workers: number) =>
@@ -323,7 +329,7 @@ function main(): void {
 	const { lines, args } = shardArgs(entries, {
 		current,
 		total,
-		workers: legWorkers(group),
+		workers: legWorkers(group, engine),
 		listFile
 	});
 	writeFileSync(listFile, `${lines.join('\n')}\n`);

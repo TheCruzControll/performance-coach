@@ -17,7 +17,7 @@ import { mondayOf } from '#lib/domain/calendar.ts';
 import { METRICS } from '#lib/domain/analytics/metrics.ts';
 import { PERIOD_LABEL, type Period } from '#lib/domain/analytics/periods.ts';
 import { MOVEMENT_PATTERN_LABEL, MUSCLE_LABEL } from '#lib/domain/training/vocabulary.ts';
-import { cleanFloat, convertWeight } from '#lib/domain/units.ts';
+import { cleanFloat, convertWeight, roundEstimate } from '#lib/domain/units.ts';
 import { ownerToday } from '#lib/server/local-date.ts';
 import {
 	getExerciseAnalytics,
@@ -33,7 +33,12 @@ import {
 	type TrainingDeps
 } from '#lib/server/services/training/shared.ts';
 import { sparkline } from '#lib/ui/analytics/sparkline.ts';
-import type { Tile, TileVerdict, VerdictWindow } from '#lib/ui/analytics/words.ts';
+import {
+	spanSentence,
+	type Tile,
+	type TileVerdict,
+	type VerdictWindow
+} from '#lib/ui/analytics/words.ts';
 import { lineTable, type LineChartData, type LinePoint } from '#lib/ui/charts/line-model.ts';
 import { SERIES_TOKEN } from '#lib/ui/charts/palette.ts';
 import { shortDate } from '#lib/ui/program/words.ts';
@@ -167,10 +172,14 @@ const prView = (pr: ExercisePr, i: number): PrView => ({
 function e1rmChart(a: ExerciseAnalytics, period: string): ExerciseDetail['chart'] {
 	const unit = a.units.weight;
 	const { bucket } = a.window;
-	const display = (kg: number) => cleanFloat(convertWeight(kg, 'kg', unit), 1);
+	/** An estimate to 0.5 kg or 1 lb; a measured max as it was lifted, to 0.1. */
+	const display = (kg: number, kind: LinePoint['kind']) =>
+		kind === 'estimated'
+			? roundEstimate(convertWeight(kg, 'kg', unit), unit)
+			: cleanFloat(convertWeight(kg, 'kg', unit), 1);
 	const point = (kg: number, kind: LinePoint['kind']): LinePoint => ({
-		value: display(kg),
-		text: oneDecimal(display(kg)),
+		value: display(kg, kind),
+		text: oneDecimal(display(kg, kind)),
 		kind
 	});
 	const series = a.e1rm.series;
@@ -179,7 +188,8 @@ function e1rmChart(a: ExerciseAnalytics, period: string): ExerciseDetail['chart'
 	const maxes = series.map<LinePoint | null>(() => null);
 	for (const marker of a.e1rm.markers) {
 		const i = marker.on === null ? undefined : slotIndex.get(slotKey(marker.on));
-		if (i === undefined || (maxes[i] && maxes[i].value >= display(marker.kg))) continue;
+		if (i === undefined || (maxes[i] && maxes[i].value >= display(marker.kg, marker.kind)))
+			continue;
 		maxes[i] = point(marker.kg, marker.kind);
 	}
 	const title = `${a.exercise.name} · estimated 1RM`;
@@ -206,7 +216,7 @@ function e1rmChart(a: ExerciseAnalytics, period: string): ExerciseDetail['chart'
 			? 'No estimate in these weeks yet.'
 			: complete.length === 1
 				? `One estimate in these weeks: ${last.text}.`
-				: `Estimated 1RM went from ${first.text} to ${last.text}.`;
+				: spanSentence('Estimated 1RM', first.text!, last.text!, a.e1rm.value?.text);
 	const trend = a.trendWindow.sameAsPeriod ? [] : [a.trendWindow.label];
 	return {
 		id: 'e1rm',
@@ -238,9 +248,8 @@ export function exerciseDetail(a: ExerciseAnalytics): ExerciseDetail {
 		waiting: availability.ready ? null : { have: availability.have, need: availability.need },
 		context: {
 			period,
-			comparison: a.window.previous
-				? `Compared with the ${a.window.previous.count} weeks before`
-				: null,
+			// The tile's own comparison: none when it has no earlier period to show a change on.
+			comparison: e1rm.delta ? `Compared with ${e1rm.delta.against}` : null,
 			trend: a.trendWindow.sameAsPeriod ? null : a.trendWindow.label,
 			good: metric.good.words,
 			method: metric.method,

@@ -38,7 +38,8 @@ function statePanels({ setup, program }: Parameters<PageLoad>[0]['data']): Panel
  *
  * Today's plan is streamed (+page.server.ts). A client navigation passes it on as a promise, so
  * Today shows at once with the plan's skeleton; the server's render waits for it, so the plan is
- * in the markup it sends, and the hydrating load takes it as already settled.
+ * in the markup it sends, and the hydrating load takes it as already settled. This week's
+ * figures (week.server.ts) are streamed and settled the same way.
  */
 export const load: PageLoad = async ({ data }) => {
 	const kept = hydrating;
@@ -49,9 +50,10 @@ export const load: PageLoad = async ({ data }) => {
 	if (browser) {
 		if (!kept) return { ...data, served };
 		for (const name of panels) served[name] = SERVED_IN_PLACE;
-		return { ...data, plan: await data.plan, served };
+		return { ...data, plan: await data.plan, week: await data.week, served };
 	}
 	const plan = await data.plan;
+	const week = await data.week;
 	await imported;
 	for (const name of panels) {
 		const Panel = settledPanel(PANELS[name]);
@@ -60,5 +62,5 @@ export const load: PageLoad = async ({ data }) => {
 			served[name] = await servedPanel(Panel, props);
 		}
 	}
-	return { ...data, plan, served };
+	return { ...data, plan, week, served };
 };

@@ -70,7 +70,7 @@
 	}
 </script>
 
-<div class="field" class:invalid={Boolean(error)}>
+<div class="field" data-ui="field" class:invalid={Boolean(error)}>
 	<label class="label" for={id}>
 		{label}{#if optional}<span class="eyebrow">&nbsp;Optional</span>{/if}
 	</label>
