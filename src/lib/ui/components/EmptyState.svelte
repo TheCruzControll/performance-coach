@@ -3,6 +3,7 @@
   Designed empty state: a quiet glyph medallion, a clear title, one or two sentences of
   guidance and (optionally) a single next action. The title is left out where the heading just
   above already says it (onboarding's goals step), so a screen never reads the same line twice.
+  Centred by default; `align="start"` lines it up with a left-aligned page title above it.
 -->
 <script lang="ts">
 	import type { Snippet } from 'svelte';
@@ -17,6 +18,8 @@
 		tone?:
 			'accent' | 'neutral' | 'strength' | 'running' | 'combat' | 'hypertrophy' | 'conditioning';
 		compact?: boolean;
+		/** 'start' under a left-aligned page title (the error view in the app shell). */
+		align?: 'center' | 'start';
 		actions?: Snippet;
 		'data-testid'?: string;
 	}
@@ -27,12 +30,19 @@
 		description,
 		tone = 'accent',
 		compact = false,
+		align = 'center',
 		actions,
 		'data-testid': testId
 	}: Props = $props();
 </script>
 
-<div class="empty" class:compact data-tone={tone} data-testid={testId}>
+<div
+	class="empty"
+	class:compact
+	class:start={align === 'start'}
+	data-tone={tone}
+	data-testid={testId}
+>
 	<div class="medallion" aria-hidden="true">
 		<span class="ring"></span>
 		<Icon name={icon} size={compact ? 22 : 28} />
@@ -57,6 +67,17 @@
 	.compact {
 		gap: var(--space-3);
 		padding: var(--space-6) var(--space-2);
+	}
+
+	/* Lined up with the page title above it: its text starts where the title does. */
+	.start {
+		justify-items: start;
+		padding-inline: 0;
+		text-align: start;
+	}
+
+	.start .actions {
+		justify-content: flex-start;
 	}
 
 	.empty[data-tone='neutral'] {

@@ -125,7 +125,7 @@
 							loading={sending.has(row.id)}
 							onclick={() => unarchive(row.id)}
 							data-testid="unarchive-row"
-							>{failed.has(row.id) ? 'Retry' : 'Unarchive'}<span class="visually-hidden">
+							>{failed.has(row.id) ? 'Try again' : 'Unarchive'}<span class="visually-hidden">
 								{row.title}</span
 							></Button
 						>

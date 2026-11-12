@@ -38,7 +38,7 @@
 		{#if copy.retry && onretry}
 			<div class="action">
 				<Button variant="secondary" size="sm" icon="refresh" loading={retrying} onclick={onretry}
-					>Retry</Button
+					>Try again</Button
 				>
 			</div>
 		{/if}

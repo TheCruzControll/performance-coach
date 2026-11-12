@@ -69,7 +69,9 @@
 			<Notice tone="danger" title="Couldn’t load your reviews">
 				Your training is safe. Try again in a moment.
 			</Notice>
-			<Button variant="secondary" icon="refresh" loading={retrying} onclick={retry}>Retry</Button>
+			<Button variant="secondary" icon="refresh" loading={retrying} onclick={retry}
+				>Try again</Button
+			>
 		</div>
 	{:else}
 		<section class="list" aria-label="Reviews" bind:this={list}>
