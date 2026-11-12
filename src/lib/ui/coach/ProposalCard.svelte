@@ -78,7 +78,7 @@
 		<h3 id="{id}-title" class="title">{card.title}</h3>
 		{#if card.origin}
 			<a class="view origin" href={card.origin.href} data-testid="proposal-origin"
-				>{card.origin.words} <Icon name="chevron-right" size={14} /></a
+				>{card.origin.words}<Icon name="chevron-right" size={14} /></a
 			>
 		{/if}
 	</header>
