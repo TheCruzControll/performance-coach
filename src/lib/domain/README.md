@@ -316,6 +316,20 @@ rows, once each though two back muscles are primary and one secondary, and 0.5 f
 shoulders 1.5, biceps 1.5, forearms 1.5, quads 1 and hips 1. Against a back range of 3.5–10 that
 week is `within`, at the low edge.
 
+### Strength weeks (`analytics/strength-weeks.ts`)
+
+- `strengthWeeks(facts, exercises, timeZone, mondays, plan)` → what each strength figure reads of
+  each week: `tonnageByWeek`'s, `hardSetsByWeek`'s and `rpeByWeek`'s values, each exercise's
+  `liftStats` and rated RPEs, its sessions (`strengthSessions`: the e1RM point and the bests,
+  by the week of the first set) and the exposures of the workouts started in the week (none
+  without a `plan`). A week keeps only the bests that beat an earlier session's of the same week:
+  `prsOf` over them gives `prTimeline`'s records exactly.
+- `packWeek(week)` / `unpackWeek(weekStart, packed)` → the stored form of a week whose workouts are
+  all its own, and back, key for key.
+- `DIGEST_VERSION` → the version of what a rollup stores. Bump it in the PR that changes any figure
+  `packWeek` gives for the same facts, from functions outside analytics too (e1RM, records, load
+  rules, hard sets, prescription matching); the unit test pins one week's figures per version.
+
 ### Prescribed against actual (`analytics/prescribed.ts`)
 
 Every logged set is paired with the prescription line it was logged against, so actual against
@@ -754,6 +768,8 @@ block after it, as now dated.
 `ProgrammingInput` for today's profile (`base`, from `buildProgrammingInput`) overlaid with what the
 block actually showed (`ResultsSnapshot`, from M6's strength and running analytics), so the next
 block starts from actual results. The same arguments give the same result, in any list order.
+`actualsOverlay(base, snapshot)` → `{ input, assumptions }` is that overlay alone (baselines and
+running, no directives), which a re-plan applies with no cycle review (M7 replan-preview).
 
 - Baselines: each lift's latest e1RM, kind `estimated`; a measured 1RM achieved after it stays
   measured (an undated one counts as older); with no e1RM the profile's value or null stays. Only

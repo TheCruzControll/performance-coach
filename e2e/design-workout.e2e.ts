@@ -100,6 +100,7 @@ test.describe('/design → Workout', () => {
 			'Saved',
 			'Saving…',
 			'Offline · 3 pending',
+			'Can’t connect · 3 waiting',
 			'Retrying in 12 s',
 			'2 need attention',
 			'Sign in to sync · 4 waiting',
@@ -201,7 +202,7 @@ test.describe('/design → Workout', () => {
 			const panel = await openWorkoutPanel(page);
 			await panel.getByTestId('exercise-history-open').click();
 			const sheet = page.getByTestId('exercise-history-sheet');
-			await expect(sheet.getByTestId('history-best')).toContainText('123.3');
+			await expect(sheet.getByTestId('history-best')).toContainText('Estimated 1RM · 123.5 kg');
 			await expect(sheet.getByTestId('history-session')).toHaveCount(2);
 			await captureScreen(page, test.info(), 'design-workout-history');
 			await page.keyboard.press('Escape');

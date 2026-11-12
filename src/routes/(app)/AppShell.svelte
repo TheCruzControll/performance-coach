@@ -1,29 +1,35 @@
 <!--
   @component
-  The app shell: the primary navigation (a bottom bar, a rail from 1024 px), a safe-area-aware
-  content column centred beside it, and a connectivity notice. The nav comes before <main>, so
+  The app shell: the primary navigation (a bottom bar, a rail from 1024 px; the tab a navigation
+  goes to is current from its start), a safe-area-aware content column centred beside it, and a
+  connectivity notice. The nav comes before <main>, so
   on a desktop window Tab goes from the skip link through the rail to the content, as the eye
   reads it. Used by the (app) layout and by the root error page for app URLs, so a screen that
   fails to load (e.g. offline) never strands the user without navigation.
-  On idle after hydration it loads the resume bar (ResumeBar.svelte), one dynamic import: the bar
+  On idle after hydration (or, without an idle callback, as on WebKit, once the first frame has
+  painted) it loads the resume bar (ResumeBar.svelte), one dynamic import: the bar
   draws itself only when a workout waits on this device (or, on Today, on another one), so the
   offline screen, which the service worker serves inside this shell, is a way back into it too.
 -->
 <script lang="ts">
 	import { onMount, type Component, type Snippet } from 'svelte';
+	import { navigating } from '$app/state';
 	import { connectivity } from '#lib/client/connectivity.svelte.ts';
 	import AppNav from '#lib/ui/components/AppNav.svelte';
 	import Icon from '#lib/ui/components/Icon.svelte';
-	import { APP_NAV } from './nav';
+	import { afterPaint } from '../workout/lazy.ts';
+	import { activePath, APP_NAV } from './nav';
 
 	interface Props {
 		pathname: string;
 		/** The screen is itself an offline/error state: no separate offline notice. */
 		hideOfflineNotice?: boolean;
+		/** Drawn over the content while another screen loads ((app)/HeldScreen.svelte). */
+		held?: Snippet;
 		children: Snippet;
 	}
 
-	let { pathname, hideOfflineNotice = false, children }: Props = $props();
+	let { pathname, hideOfflineNotice = false, held, children }: Props = $props();
 
 	let ResumeBar = $state.raw<Component<{ pathname: string }> | null>(null);
 	onMount(() => {
@@ -41,12 +47,12 @@
 				() => {}
 			);
 		if ('requestIdleCallback' in window) requestIdleCallback(load, { timeout: 3000 });
-		else setTimeout(load, 1500);
+		else afterPaint(load);
 	});
 </script>
 
 <div class="shell">
-	<AppNav items={APP_NAV} {pathname} />
+	<AppNav items={APP_NAV} pathname={activePath(pathname, navigating.to?.url)} />
 	<main id="main" class="content" tabindex="-1">
 		<div class="notice-region" role="status">
 			{#if !connectivity.online && !hideOfflineNotice}
@@ -58,6 +64,7 @@
 		</div>
 		{@render children()}
 	</main>
+	{@render held?.()}
 	{#if ResumeBar}<ResumeBar {pathname} />{/if}
 </div>
 

@@ -1,6 +1,6 @@
 /**
  * Onboarding in a desktop window (1440 × 900; docs/design-system.md, Responsive layout →
- * Screens): each step is a card centred in the window, the progress bar across its top and
+ * Screens): each step is a card centred in the window, the progress bar inset along its top and
  * Back, Skip and Continue in a row under the form, all in view without scrolling; the review is wide, its blocks in two columns. The designed states (no
  * connection, no goal yet) keep that layout, their notice in the card above the action row.
  * Serial, like onboarding.serial.e2e.ts: every test starts from a blank training profile, and
@@ -74,9 +74,9 @@ async function auditBothThemes(page: Page, label: string) {
 
 /**
  * The step's card: centred in the window at the width the step declares, the progress bar
- * across its top edge, and the action row inside it under the form (covering none of it), with
- * Continue a button in that row rather than a full-width bar, wholly in view with the page
- * unscrolled. Nothing scrolls sideways.
+ * along its top, inset from the edge, and the action row inside it under the form (covering
+ * none of it), with Continue a button in that row rather than a full-width bar, wholly in view
+ * with the page unscrolled. Nothing scrolls sideways.
  */
 async function expectCard(page: Page, width: '--content-readable' | '--content-wide') {
 	const box = await boxOf(card(page));
@@ -87,9 +87,24 @@ async function expectCard(page: Page, width: '--content-readable' | '--content-w
 		Math.abs(box.x - right),
 		`gaps beside the card: ${box.x} and ${right}`
 	).toBeLessThanOrEqual(1);
+	// The bar is inset from the card's edge and rounded corners, so no segment clips into the
+	// border: measured from the card's outer edge, its 1px border and then the 24px inset.
 	const bar = await boxOf(page.getByTestId('step-progress'));
-	expect(bar.y - box.y, 'the progress bar runs along the card’s top edge').toBeLessThanOrEqual(2);
-	expect(box.width - bar.width, 'the progress bar spans the card').toBeLessThanOrEqual(2);
+	const border = await card(page).evaluate((el) => parseFloat(getComputedStyle(el).borderTopWidth));
+	const inset = (await tokenPx(page, '--space-6')) + border;
+	expect(
+		Math.abs(bar.y - box.y - inset),
+		`the bar is ${bar.y - box.y}px below the card’s top`
+	).toBeLessThanOrEqual(1);
+	expect(
+		Math.abs(bar.x - box.x - inset),
+		`the bar is ${bar.x - box.x}px in from the left`
+	).toBeLessThanOrEqual(1);
+	expect(
+		Math.abs(box.x + box.width - (bar.x + bar.width) - inset),
+		'the bar is as far in from the right'
+	).toBeLessThanOrEqual(1);
+	expect(await firstSegmentRadius(page), 'the segments keep their rounded ends').toBeGreaterThan(0);
 	await expectInColumn(page, actionRow(page), card(page), [form(page)]);
 	await expect(next(page)).toBeInViewport({ ratio: 1 });
 	const row = await boxOf(actionRow(page));
@@ -114,6 +129,14 @@ async function expectCard(page: Page, width: '--content-readable' | '--content-w
 	expect(await page.evaluate(() => window.scrollY), 'the page is not scrolled').toBe(0);
 	await expectNoSideScroll(page);
 }
+
+/** The first progress segment's corner radius, in px. */
+const firstSegmentRadius = (page: Page) =>
+	page
+		.getByTestId('step-progress')
+		.locator('.segment')
+		.first()
+		.evaluate((el) => parseFloat(getComputedStyle(el).borderTopLeftRadius));
 
 /** Press Tab until `target` has focus (the keyboard alone, in reading order). */
 async function tabTo(page: Page, target: Locator, max = 60) {
@@ -178,6 +201,7 @@ test('welcome to review with the keyboard alone, each step a card with its actio
 	// A general running goal through its sheet (it brings the specifics step): typing, Space on a
 	// checkbox, Enter on Save goal.
 	await checkStep(page, testInfo, 'goals');
+	await expectAskedOnce(page);
 	await tabTo(page, page.getByTestId('goal-path-general'));
 	await page.keyboard.press('Enter');
 	const sheet = page.getByTestId('goal-sheet');
@@ -270,6 +294,16 @@ test('welcome to review with the keyboard alone, each step a card with its actio
 	await expect(page).toHaveURL('/today');
 	expect(errors).toEqual([]);
 });
+
+/** The goals step asks its question once: in its title, not again over the empty state. */
+async function expectAskedOnce(page: Page) {
+	await expect(page.getByText('What are you training for?')).toHaveCount(1);
+	await expect(page.getByRole('heading', { name: 'What are you training for?' })).toHaveCount(1);
+	await expect(page.getByRole('heading', { level: 1 })).toHaveText('What are you training for?');
+	await expect(page.getByTestId('goals-empty')).toContainText(
+		'Add a goal and the coach plans your training around it.'
+	);
+}
 
 /** The review's blocks in two columns: the first two side by side, the third under the first. */
 async function expectTwoColumns(page: Page) {

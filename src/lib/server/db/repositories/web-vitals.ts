@@ -9,6 +9,8 @@ export interface VitalSummaryRow {
 	name: WebVitalName;
 	p75: number;
 	samples: number;
+	/** The same metric on one route only (`p75Since`'s `routeId`); null without samples there. */
+	route: { p75: number; samples: number } | null;
 }
 
 export function createWebVitalsRepository(db: Executor) {
@@ -38,18 +40,32 @@ export function createWebVitalsRepository(db: Executor) {
 			return written.length;
 		},
 
-		/** 75th percentile per metric since `since` (Core Web Vitals are assessed at p75). */
-		async p75Since(since: Date): Promise<VitalSummaryRow[]> {
+		/**
+		 * 75th percentile per metric since `since` (Core Web Vitals are assessed at p75), and the
+		 * same on `routeId` alone, in the same query.
+		 */
+		async p75Since(since: Date, routeId: string | null = null): Promise<VitalSummaryRow[]> {
+			const onRoute = sql`${webVitals.routeId} = ${routeId}`;
 			const rows = await db
 				.select({
 					name: webVitals.name,
 					p75: sql<number>`percentile_cont(0.75) within group (order by ${webVitals.value})`,
-					samples: count()
+					samples: count(),
+					routeP75: sql<
+						number | null
+					>`percentile_cont(0.75) within group (order by ${webVitals.value}) filter (where ${onRoute})`,
+					routeSamples: sql<number>`count(*) filter (where ${onRoute})`
 				})
 				.from(webVitals)
 				.where(gte(webVitals.recordedAt, since))
 				.groupBy(webVitals.name);
-			return rows.map((row) => ({ ...row, p75: Number(row.p75), samples: Number(row.samples) }));
+			return rows.map(({ routeP75, routeSamples, ...row }) => ({
+				...row,
+				p75: Number(row.p75),
+				samples: Number(row.samples),
+				route:
+					Number(routeSamples) > 0 ? { p75: Number(routeP75), samples: Number(routeSamples) } : null
+			}));
 		},
 
 		async recent(limit = 50): Promise<WebVitalRow[]> {

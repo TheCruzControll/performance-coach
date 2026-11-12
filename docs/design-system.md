@@ -30,6 +30,36 @@ keeps listening to `prefers-color-scheme` while open, so when iOS switches appea
 automatic dark mode at sunset) the theme-color and status-bar metas follow the CSS (e2e-tested).
 **Browser baseline:** `light-dark()` needs Safari 17.5+ / Chrome 123+.
 
+### Designs
+
+Two designs, chosen per device: today's (the default for everyone) and **Graphite 2004**, a
+preview of the proposed design (graphite and silver, Aqua in place of volt, Source Sans 3, 3–10 px
+corners). Profile → Appearance → Design switches between them, as does `?design=graphite` or
+`?design=current` (saved too; handy for screenshots). The choice is stored in localStorage
+(`pc:design:v1`, kept across sign-out) and applied before first paint by the head script in
+`src/app.html`, which sets `data-design="graphite"` on `<html>`, links
+`src/lib/ui/styles/graphite.css` (render-blocking) and preloads Source Sans 3.
+
+- `graphite.css` is a build asset of its own, in no route's CSS: today's design ships none of it
+  and the service worker precaches none of it (it caches it once a device uses it).
+- Its token rule overrides tokens under `:root[data-design='graphite']`, so components restyle
+  without edits; colour stops alone sit in `light-dark()`. It adds the material roles (`--strip`,
+  `--plastic`, `--gel`, `--select`, `--bar`, `--lcd` and their edges and inks) for components to
+  adopt.
+- **Controls:** the core components carry a stable `data-ui` hook (`button`, `segmented`,
+  `choices`, `stepper`, `field`, `toggle`, `chip`, `badge`, `surface`, `card-head`, `section`,
+  `list-row`, `notice`, `toaster`, `sheet`), which only `graphite.css` reads, every selector
+  inside the Graphite scope. There: the gel primary button, plastic secondary and danger keys,
+  plain Aqua-text ghost; connected plastic segments and choices with the chosen one in the
+  selection well; fields and the stepper in inset wells behind a ≥ 3:1 border; the ON/OFF switch
+  inside the 44 px Toggle row; 3 px tags; boxes whose Card header is the silver strip; toasts and
+  sheets with 10 px corners on the spring; and focus as a 2 px Aqua-ink outline 2 px out (inset
+  −3 px inside the segmented control and the stepper). No route styles a hook, and the hooks are
+  only on these components (`components/graphite-hooks.test.ts`).
+- `graphite.test.ts` holds it to the chart palette checks and 4.5:1 text contrast in both themes;
+  `e2e/design-switch*.e2e.ts` run axe on it and check no flash, no layout shift and no Graphite
+  request on today's design. The screen gallery shoots every screen in both designs.
+
 ## Colour
 
 | Token                    | Dark      | Light     | Use                                                |
@@ -186,8 +216,9 @@ Tracking: `--tracking-display -0.032em`, `--tracking-tight -0.016em`, `--trackin
   thumbs and indicators. `prefers-reduced-motion` sets durations to 0 and disables shimmer.
 - **Glass:** `--color-glass` (92% canvas) + `backdrop-filter: saturate(180%) blur(32px)` on the
   bottom nav and the coach composer (opaque and blurred enough that text scrolling behind a tab
-  label cannot be read); the sheet scrim uses a light 2 px blur. Write only the standard
-  `backdrop-filter`; Lightning CSS adds `-webkit-backdrop-filter` for the Safari build targets.
+  label cannot be read). The sheet scrim has none: a blur under its fade is redrawn every frame.
+  Write only the standard `backdrop-filter`; Lightning CSS adds `-webkit-backdrop-filter` for the
+  Safari build targets.
   (Writing both, standard first, makes the minifier keep only the prefixed one, which Chromium
   ignores.) `pnpm budgets` fails if a
   built rule ships a `-webkit-` property without its standard twin, and e2e asserts the nav's
@@ -322,6 +353,9 @@ itself read it.
   centred over the column like a composer, above the tab bar below 1024 px and at the bottom of
   the content column beside the rail from there. It sits under `--resume-inset`, so the shell's
   bottom padding and every other bottom chrome rise with it and it covers nothing.
+- **The held screen** (`(app)/HeldScreen.svelte`) covers the column, not the window: fixed
+  under the nav from `--safe-top` and `--nav-inset-left`, the content column's width inside, so the
+  screen being left keeps its layout and scroll underneath.
 - Specs check chrome against the element it belongs to, never against `<main>` for a column:
   `expectCentredOver(page, chrome, area)` for screen chrome and
   `expectInColumn(page, chrome, column, others)` for column chrome. A screen that later turns
@@ -629,6 +663,7 @@ workout pages and is audited on `/design` → Workout, one state at a time.
 | `WorkoutList`                    | `src/routes/(app)/progress/workouts`. History, newest first: waiting to sync (not links), then each workout's dot, title, date, duration and key number; one 44 px link, `aria-current`.               |
 | `WorkoutDetail`                  | One workout in words: its numbers, PRs, sets with RPE and states, a run's segments (`RunDetail`) or a session's metrics (`OtherDetail`); a name opens its history sheet.                               |
 | `ResumeBar`                      | `src/routes/(app)`. Resume workout · title with the time and the sync pill, or N changes waiting to sync; screen chrome over the column that raises `--resume-inset`, so it covers nothing.            |
+| `HeldScreen`                     | `src/routes/(app)`. While another screen loads: its last copy in this page, else the tab's skeleton (aria-busy, 'Loading Train'); inert, fixed over the column under the nav.                          |
 
 ## Accessibility checklist (applies to every new component)
 
@@ -658,9 +693,9 @@ workout pages and is audited on `/design` → Workout, one state at a time.
 
 One line per M7 UI slice, each replaced by its own slice only; docs-m7 turns them into rows.
 
-m7/04 train-week-findings: not built yet.
+m7/04 train-week-findings: a week finding is one line right under its `SessionCard` (outside the card's link): the summary of a native `<details>` whose body is the why, so it opens without JavaScript, with a 44 px summary, the focus ring and a brighter colour on hover. A CSS glyph (a ring, filled in `--color-warning` for `caution`) and the words carry the meaning, label first: 'Heads-up' (an avoid finding nothing explains, or the owner's own move; caution), 'Your move' (advice) or 'Trade-off, explained' (kept for a stated reason); never the danger tone. Its markup and CSS live in Train's page, not in `SessionCard`, so Today and History load none of it (Train's 0.15 KB allowance); /design → Plan shows a copy. `ProgramHeader` shows the week line under the position, in its style, hidden while empty: '1 heads-up this week', 'No clashes ahead this week' (the current week counts only what is ahead) or 'No clashes this week'; Train leaves it empty on past, outline and bridge weeks and on 'First block complete'.
 
-m7/14 placement-why: not built yet.
+m7/14 placement-why: every card of a planned week that a decision names has 'Why Monday?' under it (after its finding's note, when it has one): a second native `<details>`, closed by default, with the note's 44 px summary, focus ring and hover colour but no glyph, so it never reads as a finding. Its body is a plain list, one line a decision, the owner's moves first, then newest first, at most six: 'Session moved (You, version 2): …'. The server writes every word (lever 3: plain text in one native disclosure), and its markup and CSS sit beside the note's in Train's page (lever 1), so Today and History load none of it; /design → Plan shows one under the trade-off card. A session no decision names has none, and when the decisions cannot be read the week renders without them.
 
 m7/23 move-evaluation: not built yet.
 

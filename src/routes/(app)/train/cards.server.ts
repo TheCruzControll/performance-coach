@@ -13,6 +13,8 @@ import {
 	type Phase,
 	type SessionType
 } from '#lib/domain/training/vocabulary.ts';
+import type { FindingNote } from '#lib/server/services/periodisation/evaluate.ts';
+import type { PlacementWhy } from '#lib/server/services/periodisation/explain.ts';
 import type { CurrentProgram, WeekChanges } from '#lib/server/services/programs/index.ts';
 import type { IconName } from '#lib/ui/icons/icons.ts';
 import {
@@ -134,11 +136,26 @@ export const BASELINE_BRIEF: AsidePanel = {
 export interface TrainDay {
 	/** 'Monday 9 November'. */
 	heading: string;
-	/** By lineage; `baseline` on a strength session of a baseline week. */
-	cards: (CardView & { lineage: string; baseline: boolean })[];
+	/**
+	 * By lineage; `baseline` on a strength session of a baseline week; a finding's note; why the
+	 * session is on its day (whyWords).
+	 */
+	cards: (CardView & { lineage: string; baseline: boolean; note?: FindingNote; why?: CardWhy })[];
 	/** With no sessions: recovery is part of the plan, and what comes next this week, if any. */
 	rest: string | null;
 }
+
+/** 'Why Tuesday?' under a card: its title and one plain line per decision (m7/14, lever 3). */
+export interface CardWhy {
+	title: string;
+	lines: string[];
+}
+
+/** 'Session moved (You, version 2): You moved Lower A from Friday to Monday. …' */
+export const whyWords = ({ title, items }: PlacementWhy): CardWhy => ({
+	title,
+	lines: items.map((i) => `${i.kind} (${i.decidedBy}, version ${i.version}): ${i.why}`)
+});
 
 /** A planned week in words: WeekStrip's days, and each day's heading, cards and rest line. */
 export function weekWords(

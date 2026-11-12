@@ -25,7 +25,7 @@
 	const id = $props.id();
 </script>
 
-<div class="toggle">
+<div class="toggle" data-ui="toggle">
 	<span class="text">
 		<label class="title" for={id}>{label}</label>
 		{#if description}<span class="description" id="{id}-description">{description}</span>{/if}
