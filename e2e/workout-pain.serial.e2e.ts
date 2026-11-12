@@ -506,6 +506,7 @@ test.describe('the words and the way out', () => {
 		await expect(page.locator('html')).toHaveAttribute('data-design', 'graphite');
 		await goTo(page, 'Leg press');
 		await hurts(page);
+		await details(page);
 		await area(page, 'Knee').check();
 		await severity(page, 'Severe').check();
 		await expect(options(page).first()).toBeVisible();
