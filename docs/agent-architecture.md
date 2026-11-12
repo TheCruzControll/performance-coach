@@ -1,7 +1,9 @@
 # AI coach: agent architecture
 
-How the coach works, as built in Milestone 5 and switched on in production by coach-launch. The
-decisions behind it are ADR [0009](adr/0009-llm-provider-interface.md) (the provider interface),
+How the coach works, as built in Milestone 5 and switched on in production by coach-launch, with
+what Milestone 6 added: analytics on M6's engine, review write-ups and review proposals (see
+[Reviews (M6)](#reviews-m6)). The decisions behind it are ADR
+[0009](adr/0009-llm-provider-interface.md) (the provider interface),
 [0013](adr/0013-coach-agent-loop.md) (the agent loop) and
 [0014](adr/0014-coach-memory-proposals.md) (memory and proposals). The code's map is
 [`src/lib/server/agent/README.md`](../src/lib/server/agent/README.md); the tools, with every
@@ -33,10 +35,10 @@ until the owner accepts a proposal.
 | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `src/lib/domain/coach/`       | The pure contract. Client-safe through `index.ts` (no zod): vocabulary, events, sources, rich text, memory, the tool catalogue, activity wording, pricing and budgets (`scripts/coach-index-imports.test.ts`). Imported by path: safety, statements, intents and sentences (client-safe), and the server-only answer parser, markdown, proposals, rules, diff, grounding, memory format, summary, trends and notes. |
 | `src/lib/server/db/`          | Schema (`schema/coach.ts`, `schema/agent-runs.ts`, M3's `schema/coaching.ts`), repositories, and the guards in `drizzle/0024_coach_conversations_guards.sql` and `drizzle/0026_coach_proposals_guards.sql`.                                                                                                                                                                                                         |
-| `src/lib/server/services/`    | `coach/*` (threads, runs, proposals, memory, notes, turn facts), `coach/apply/*` (the appliers, one group per file), `analytics` and `programs/batch.ts`. `coach/shared.ts` holds `CoachDeps` and `toolRuntime(deps)`.                                                                                                                                                                                              |
-| `src/lib/server/agent/`       | The provider, the loop, the tools, the prompt and the output policy. It never imports `server/db`, types included (ESLint).                                                                                                                                                                                                                                                                                         |
+| `src/lib/server/services/`    | `coach/*` (threads, runs, proposals, memory, notes, turn facts), `coach/apply/*` (the appliers, one group per file), `analytics` (M6's engine), `reviews` (M6) and `programs/batch.ts`. `coach/shared.ts` holds `CoachDeps` and `toolRuntime(deps)`.                                                                                                                                                                |
+| `src/lib/server/agent/`       | The provider, the loop, the tools, the prompt and the output policy; `reviews/narrate.ts`, a review's write-up (M6). It never imports `server/db`, types included (ESLint).                                                                                                                                                                                                                                         |
 | `src/lib/client/coach/`, `ui` | The stream client (loaded on demand, never as a modulepreload) and the coach components.                                                                                                                                                                                                                                                                                                                            |
-| `src/routes/`                 | `(app)/coach/[[thread]]`, `(app)/coach/proposals/[[id]]`, `api/coach/*` and `api/test-support/coach`.                                                                                                                                                                                                                                                                                                               |
+| `src/routes/`                 | `(app)/coach/[[thread]]`, `(app)/coach/proposals/[[id]]`, `api/coach/*`, `api/reviews/narrate` (M6) and `api/test-support/coach`.                                                                                                                                                                                                                                                                                   |
 
 `@anthropic-ai/*` is imported at runtime only by `agent/provider/anthropic.ts`, by a dynamic
 import, and by `tests/live` (ESLint and `scripts/anthropic-sdk-imports.test.ts`); everything else
@@ -309,12 +311,27 @@ output schema are in [coach-tools.md](coach-tools.md).
 | Tool                                               | Service                                                                                                                                                                  |
 | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `get_current_program`, `get_current_training_week` | `src/lib/server/services/programs/read.ts`: `getCurrentProgram`, `getTrainingWeek` (and `getTodayPlan`, `getPlannedSession`)                                             |
-| `get_exercise_history`, `get_personal_records`     | `src/lib/server/services/training/history.ts`: `getExerciseHistory`, `getLastPerformances`, `getPersonalRecords`                                                         |
+| `get_exercise_history`, `get_personal_records`     | M4's `getExerciseHistory` for the sets; the records, PRs and e1RM trend are M6's (below)                                                                                 |
 | `create_training_program`                          | `src/lib/server/services/programming/`: `previewProgram` drafts it; accepting the proposal builds it with `buildProgram`, the same path as Today's Build card            |
 | `propose_program_adjustment`                       | A `coach_proposals` row against the current version (`base_version_id`); accepting it applies its ops as one version (`applyProgramEdits`, `services/programs/batch.ts`) |
 
 The services take `deps.source: 'coach'`, which a revision records as its decider and an edit of
 the training log as its audit actor.
+
+### Services behind the analytics and records tools (M6)
+
+Every figure is the one Progress shows, from the same engine (docs/architecture.md, "Analytics
+(M6)"), so an answer and a screen never disagree:
+
+| Tool                                                                         | Service                                                                                                                                                                                                                                                                                                                                                                                                       |
+| ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `get_weekly_training_summary`, `get_training_load`, `get_performance_trends` | `src/lib/server/services/analytics/index.ts`, which reads the General, Running and Strength dashboards and cites the counted facts behind each figure. Each result names its `dashboard`; each figure carries `about` (metric id, kind, definition, caveat); each trend its `verdict`, the `window` it read and the `classifier` (`TREND_METHOD`). A week's summary names the week's live review as a source. |
+| `get_personal_records`                                                       | `src/lib/server/services/analytics/records.ts` (`getStrengthRecords`): the best e1RM, rep maxes and the PR timeline, as `prs` and `prCount`, judged as the strength dashboard judges them                                                                                                                                                                                                                     |
+| `get_exercise_history`                                                       | M4's `getExerciseHistory` for the sets, a page at a time, plus `getExerciseAnalytics` (`services/analytics/exercise.ts`) for the records and the `e1rmTrend` over the `period` asked for, as exercise detail shows it                                                                                                                                                                                         |
+
+Only completed, undeleted workouts count for every one of these, so a set in an abandoned workout
+is never a record. Too little data is a result (`insufficient_data`, saying what is missing), never
+a zero.
 
 ### Services behind the workout tools (M4)
 
@@ -380,7 +397,7 @@ proposal on the same base is returned instead of a second row.
 | `workout_update`       | a draft, effort high  | `program.ts`: the same, refused once the workout has started                   |
 | `session_substitution` | the strict tool input | `session.ts`: M4's dispatcher in a live workout, else M3's one-off swap        |
 | `new_program`          | M3's `previewProgram` | `program-create.ts`: `buildProgram` (proposed only while no program is active) |
-| `next_cycle`           | a draft, effort high  | `next-cycle.ts`: accepted, then waits for or folds into the cycle review (M6)  |
+| `next_cycle`           | a draft, effort high  | `next-cycle.ts`: M6's paths, below ([Reviews (M6)](#reviews-m6))               |
 | `goal_update`          | the strict tool input | `profile.ts`: M2's goal services, source 'coach'                               |
 | `preference_update`    | the strict tool input | `profile.ts`: `recordExercisePreference`, source 'coach'                       |
 
@@ -397,6 +414,96 @@ superseded; accepted → applied or superseded); decided rows are frozen; DELETE
 CHECKs (`drizzle/0025_coach_proposals.sql`): `coach_proposals_applied_ck` (applied exactly when
 `applied_version_id` or `applied_ref` is set), `coach_proposals_superseded_ck`,
 `coach_proposals_closed_ck`, `coach_proposals_decision_ck`, and M3's `coach_proposals_program_ck`.
+
+## Reviews (M6)
+
+The weekly and cycle reviews are computed, stored and proposed by code alone
+(docs/architecture.md, "Reviews and replanning (M6)"). The coach adds a write-up afterwards, and
+never makes a review's proposal.
+
+### Write-ups: a read-only coach turn behind its own endpoint
+
+`narrateReview` (`src/lib/server/agent/reviews/narrate.ts`) is called only from
+`POST /api/reviews/narrate` `{kind, id}` (owner-only, Origin-checked, at most 1 KB, never cached;
+404 for a review that is not the owner's, 409 for one a refresh superseded). It runs one coach turn
+through `agent/coach.ts` like any other: the launch gate, the `coach.turn` rate limit and the daily
+cost cap.
+
+- **Hidden threads.** The turn runs in the review's own thread, opened with the entry
+  `weekly_review_writeup` or `cycle_review_writeup` and titled 'Week of 2 Nov: review'. The
+  owner's conversation lists, thread summaries and memory's other-threads section leave such
+  threads out (`REVIEW_ENTRIES`, `src/lib/domain/coach/review-entries.ts`). Its owner message has a
+  client message id derived from the review's id and revision (`narrationMessageId`), so every
+  call for one revision finds the same thread and a retry stores nothing new.
+- **Read-only.** `NARRATION_TOOL_EFFECTS` is `['read']`: the turn sees only read tools, so it
+  can never propose or write. The rules' proposal is already stored.
+- **Data-only input.** The owner message is code's own words ('Review my week of 2 Nov'). The turn
+  context adds the entry, the review's ref, and the review proposal's id, kind and decision (read
+  from the head of its revision chain), each a checked token (`prompt/context.ts`). The findings
+  reach the model as memory's review section and through the read tools, never as free text in
+  the prompt.
+- **Grounding.** The answer goes through the same parser and output policy as every turn: a fact
+  or metric that does not cite what this turn's tools or memory returned becomes a note marked
+  'Not checked against your data'.
+- **Released text.** What is stored, once, in the review's `narrative` (with its run, thread and
+  time) is `releasedText`: each display block's label and words as the owner saw them, the
+  policy's replacements included, never the model's raw output. The screen draws the run's display
+  blocks with M5's `AnswerBlocks` over that text (`narrationBlocks`).
+- **A lifetime of its own.** The run is never given `request.signal`, and the endpoint's
+  `maxDuration` is `COACH_MAX_DURATION_S`, as a turn's: a client that leaves never cancels it, and
+  the result is stored for the next visit. `GET /api/reviews/narrate?kind&id` answers the stored
+  write-up, the run still writing it, or neither (`narrationState`).
+- **Polling.** The page requests the write-up once, on idle, for a review that has none
+  (`WRITE_UP_ON_OPEN`, the owner's default for the plan's open question). Another tab or an earlier
+  visit running it answers `busy`, and the page polls the GET at 2, 4 and 8 s, then every 8 s up to
+  `COACH_MAX_DURATION_S` (`write-up-client.ts`, `POLL_STEPS_MS`).
+- **Degradation.** Every way the coach cannot answer is an outcome, never an error the review
+  shows: `unavailable` (not launched, switched off, misconfigured, the daily budget, the rate limit
+  with its wait, or busy) or `failed`. The review's figures and proposal stand; the write-up's box
+  says why, with Retry where asking again can help. A superseded revision is never written up.
+
+'Discuss with your coach' is a separate, visible conversation: `/coach` with `from` set to
+`weekly_review` or `cycle_review` and `ref` to `review:<key>`, an entry the Coach screen keeps only
+when the review is the owner's.
+
+### Review origins in memory and `get_coach_proposals`
+
+A review's proposal stores the review as `evidence.source` (`RulesProvenance`: the kind, review
+id and revision, and `modifiedBy: 'owner'` or `trimmed: n` on the owner's revision of it).
+
+- Memory's record half (`services/coach/memory-records.ts`) lists each proposal with who proposed
+  it, the coach or a review's rules, with the review as a source; and the newest live weekly
+  reviews and the newest live cycle review (never a superseded revision): the summary, the
+  verdicts and the decision, read from the head of its proposal's chain.
+- `get_coach_proposals` returns each proposal's `origin` (`coach`, `weekly_review` or
+  `cycle_review`) and the review as a source, and tells the model never to present a review's
+  proposal as its own.
+- M5's card and inbox label a review's proposals ('From your weekly review · Week of 2 Nov') and
+  M6's superseded reasons: `review_refreshed`, `folded_into_review`, `sessions_passed` and
+  `cycle_planned` (`SUPERSEDED_REASON_LABEL`).
+
+### `next_cycle`, applied by M6
+
+`create_next_training_cycle` drafts a `next_cycle` brief; accepting it plans nothing by itself,
+because a next block needs a start choice and a fresh preview, which only the cycle review has
+(`services/coach/apply/next-cycle.ts`):
+
+- The review's own proposal, or the owner's revision of it, is refused on accept with 'Choose when
+  it starts in your cycle review' (`choose_start`) and the review's link.
+- A coach `next_cycle` for a block with no live review is accepted and waits for it
+  (`NEXT_CYCLE_AWAITS`); creating the review folds its fields in as overrides, held to the
+  directives' bounds, and supersedes it as `folded_into_review`.
+- One for a block whose review is undecided becomes an owner revision of the review's head and is
+  superseded as `folded_into_review`; one for a decided review is superseded as `cycle_planned`
+  once the next block is planned, else as `folded_into_review`. Either way the outcome carries the
+  review's link.
+- 'Start next block' in the review plans the block as the program's next version
+  (`applyNextCycle`, `planBlock`) and supersedes every other open `next_cycle` for that block as
+  `cycle_planned`.
+
+Weekly reviews propose a `program_adjustment` whose ops M5's applier applies as one version, with
+a `review_applied` decision. Accepted from the inbox after some of its sessions have passed, it is
+superseded as `sessions_passed` and links to the review, which applies the rest.
 
 ## Cost and latency
 
