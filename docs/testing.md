@@ -156,7 +156,7 @@ still run one at a time. Every other run, serial·webkit and local runs included
 
 CI runs the suite as separate legs, one per group and engine (`e2e/projects.ts`,
 `.github/workflows/ci.yml`). The `perf` project is the `alone` group: its own leg on Chromium,
-split in 2 shards (alone·chromium 1/2 and 2/2), each on a runner of its own with nothing else
+split in 3 shards (alone·chromium 1/3 to 3/3), each on a runner of its own with nothing else
 running. `exclusive` is a leg of its own beside them, also Chromium only. It runs in
 parallel with the other legs in CI; only a local run starts it after `perf`.
 
@@ -310,7 +310,7 @@ Specs:
   of 5 cold loads; target ≤ 200 ms, fails above 250 ms (docs/performance.md).
   `perf-workout-load.e2e.ts` holds the workout screens to the same budget (docs/testing.md,
   "Workouts (M4)" → Performance). The `perf` project runs alone, with one worker, after the
-  functional suite, so parallel specs cannot skew it; in CI that is the alone·chromium leg, in 2
+  functional suite, so parallel specs cannot skew it; in CI that is the alone·chromium leg, in 3
   shards. App
   screens load signed in, `/` signed out. The program screens are seeded through the fixture
   route: Train, the week's longest strength session and History on the hybrid program this week,
@@ -1214,7 +1214,7 @@ functional projects ignore them): 20 sets over five fresh loads at 4× CPU, set-
 logging, INP on `/workout/run` and `/workout/session`, and the main thread on a service-worker
 reload. `e2e/perf-workout-load.e2e.ts` holds the active workout pages and History to the
 page-load budget in `e2e/load-budget.ts`, as `e2e/perf.e2e.ts` does the other screens. In CI the
-`perf` project is the alone·chromium leg, in 2 shards. `pnpm lighthouse --seed` audits History
+`perf` project is the alone·chromium leg, in 3 shards. `pnpm lighthouse --seed` audits History
 and the active workout. Numbers: docs/performance.md, "M4 (workout)".
 
 ### Journeys

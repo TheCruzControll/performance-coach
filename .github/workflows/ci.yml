@@ -223,6 +223,19 @@ jobs:
   # shard 1 holding only those files to be heavier by less than its 10% (SHARD_ONE_SHARE).
   # main·chromium's `minutes` drop to 17: 1.5 × its slowest 2-worker shard in those runs (10.8).
   # serial·chromium keeps 14 and serial·webkit 15, as above, until their new shards are measured.
+  # alone·chromium's slower shard then took 4.7-4.8 of its 5 Playwright minutes (main's runs
+  # 43310070229 and 43317134476, #491's 43309953955): the table had no seconds for
+  # perf-coach-load.e2e.ts, and its estimate pushed perf-journey.e2e.ts into shard 2. The leg's
+  # seconds now come from main's six green runs 43301957635 to 43317134476 (perf-coach-load's from
+  # the two that ran it; the other legs' from the runs above). Two shards rebalanced on them would
+  # still take 4.2-4.3 minutes, past the 3.3 (5 / 1.5) its timeout leaves room for, so it took a
+  # third: perf.e2e.ts (135-145 s) fills one by itself, and replayed on those runs' per-file
+  # seconds no shard passes 3.2 minutes (3.3 in 43317903481, slowed by a failed test's retries).
+  # perf.e2e.ts outweighs a third of the leg, and the planner seeded shard 1 with the longest file,
+  # so that file would have made shard 1 the heaviest. It now seeds shard 1 last
+  # (scripts/e2e-shards.ts): main's legs plan the same files as before (their shard 1 starts with
+  # the a11y files); serial's legs re-plan at the same planned maxima (417 s and 451 s).
+  # alone·chromium's `minutes` stay 5 until three runs per shard are measured.
   e2e-legs:
     name: E2E ${{ matrix.group }} · ${{ matrix.engine }} · ${{ matrix.shard }}/${{ matrix.of }}
     # Pinned to the newest Ubuntu release Playwright builds WebKit for (its browser builds are
@@ -251,8 +264,9 @@ jobs:
           - { group: serial, engine: webkit, shard: 5, of: 7, minutes: 15 }
           - { group: serial, engine: webkit, shard: 6, of: 7, minutes: 15 }
           - { group: serial, engine: webkit, shard: 7, of: 7, minutes: 15 }
-          - { group: alone, engine: chromium, shard: 1, of: 2, minutes: 5 }
-          - { group: alone, engine: chromium, shard: 2, of: 2, minutes: 5 }
+          - { group: alone, engine: chromium, shard: 1, of: 3, minutes: 5 }
+          - { group: alone, engine: chromium, shard: 2, of: 3, minutes: 5 }
+          - { group: alone, engine: chromium, shard: 3, of: 3, minutes: 5 }
           - { group: exclusive, engine: chromium, shard: 1, of: 1, minutes: 5 }
     steps:
       - uses: actions/checkout@v7

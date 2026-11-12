@@ -97,9 +97,10 @@ describe('planShards', () => {
 			}
 		}
 		const equal = [10, 10].map((seconds, i) => ({ key: `p › f${i}.e2e.ts`, seconds }));
+		// shard 1 is seeded last
 		expect(planShards(equal, 2, 2, noneFirst).map((s) => s.keys)).toEqual([
-			['p › f0.e2e.ts'],
-			['p › f1.e2e.ts']
+			['p › f1.e2e.ts'],
+			['p › f0.e2e.ts']
 		]);
 		expect(() => planShards(equal, 3, 1)).toThrow(/2 files cannot fill 3 shards/);
 		expect(() => planShards(equal, 0, 1)).toThrow(/shard count 0/);
@@ -164,14 +165,27 @@ describe('planShards', () => {
 			planShards(keyed(seconds), of, workers, noneFirst).map((s) =>
 				s.keys.map((k) => k.slice(4, -7))
 			);
-		// f1 (10 s) costs 20 after it in shard 2 or 3; shard 3 (cost 15) is lighter than 2 (20)
-		expect(plan([20, 10, 40, 10, 30, 40, 20, 30], 3, 2)).toEqual([
-			['f2'],
-			['f5', 'f6', 'f1', 'f3'],
-			['f4', 'f7', 'f0']
+		// f5 (20 s) costs 40 after it in shard 2 or 3; shard 3 (cost 30) is lighter than 2 (40)
+		expect(plan([40, 30, 30, 30, 30, 20], 3, 2)).toEqual([
+			['f2', 'f4'],
+			['f0'],
+			['f1', 'f3', 'f5']
 		]);
 		// the 5 s file costs 15 in shard 2 or 3 at the same cost now: shard 2
-		expect(plan([10, 10, 10, 5], 3, 1)).toEqual([['f0'], ['f1', 'f3'], ['f2']]);
+		expect(plan([10, 10, 10, 5], 3, 1)).toEqual([['f2'], ['f0', 'f3'], ['f1']]);
+	});
+
+	it('seeds shard 1 last, so a file longer than an even split never makes it the heaviest', () => {
+		// alone/chromium's perf.e2e.ts (140 s) outweighs a third of the leg (~133 s): seeded
+		// first, it would have been shard 1's alone, and shard 1 the heaviest
+		const leg = [150, 73, 55, 37, 34, 28, 21, 7].map((seconds, i) => ({
+			key: `perf › f${i}.e2e.ts`,
+			seconds
+		}));
+		const plan = planShards(leg, 3, 1, noneFirst);
+		expect(plan[1]!.keys).toEqual(['perf › f0.e2e.ts']);
+		const [one, ...rest] = plan.map((shard) => shardCost(shard, 1));
+		for (const other of rest) expect(one).toBeLessThan(other);
 	});
 
 	it('plans the files a module declares tests for into shard 1', () => {

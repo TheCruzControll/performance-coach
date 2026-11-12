@@ -192,7 +192,8 @@ const longestFirst = (a: ShardEntry, b: ShardEntry) =>
 
 /**
  * Splits `entries` into `of` shards (index 0 is shard 1). `shardOne` entries go to shard 1 first;
- * then, longest first, an empty shard takes the next entry (the lowest index first), and otherwise
+ * then, longest first, an empty shard takes the next entry (the lowest index first, shard 1 last:
+ * a file longer than an even split would otherwise make it the heaviest), and otherwise
  * the entry goes to the shard whose cost after it is lowest, shard 1's cost counted at
  * 1 / SHARD_ONE_SHARE; ties go to the lighter shard, then the lower index.
  */
@@ -220,8 +221,11 @@ export function planShards(
 	const sorted = [...entries].sort(longestFirst);
 	for (const entry of sorted.filter((e) => shardOne(e.key))) add(shards[0]!, entry);
 	for (const entry of sorted.filter((e) => !shardOne(e.key))) {
-		const empty = shards.findIndex((s) => s.keys.length === 0);
-		if (empty !== -1) {
+		const empty = [...shards.keys()]
+			.slice(1)
+			.concat(0)
+			.find((i) => shards[i]!.keys.length === 0);
+		if (empty !== undefined) {
 			add(shards[empty]!, entry);
 			continue;
 		}

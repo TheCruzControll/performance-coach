@@ -719,7 +719,7 @@ screen in the app. Plan, agreed before any M4 code lands:
 screens and `e2e/perf-workout-load.e2e.ts` to the workout screens. Both run in their own
 Playwright project (`perf`, one worker) that starts only after the functional Chromium suite has
 finished, so no other spec competes for CPU while it measures. In CI the project is its own leg,
-alone·chromium, split in 2 shards, each on a runner of its own; `exclusive` runs in parallel on
+alone·chromium, split in 3 shards, each on a runner of its own; `exclusive` runs in parallel on
 a leg of its own (only a local run starts it after `perf`). On a busy
 host (other builds, browsers or agents running) local numbers can still be noisy; re-run before
 chasing a regression.
