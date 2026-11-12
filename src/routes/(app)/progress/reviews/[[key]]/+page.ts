@@ -16,7 +16,7 @@ const VIEWS = {
 	cycle: () => import('./CycleReview.svelte')
 } as const satisfies Record<(WeeklyReviewData | CycleReviewData)['kind'], () => Promise<unknown>>;
 
-/** What each kind's view takes: the weekly review also takes its body (review-body.ts). */
+/** Each kind's view takes that kind's review, which is the one selected, and its own props. */
 type View = Component<{
 	review: WeeklyReviewData | CycleReviewData;
 	earlierCycles?: Snippet<[ReviewRow[]]>;
@@ -37,22 +37,24 @@ let hydrating =
 export const load: PageLoad = async ({ data }) => {
 	const kept = hydrating;
 	hydrating = false;
-	const none = { Body: undefined, body: undefined, served: undefined };
-	if (data.failed || !data.selected) return { ...data, View: null, ...none };
-	const selected = data.selected;
-	// Each kind's view takes that kind's review, which is the one selected.
-	const viewOf = async () => (await VIEWS[selected.kind]()).default as unknown as View;
-	// Only the weekly review has a body in a chunk of its own.
-	if (selected.kind !== 'weekly') return { ...data, View: await viewOf(), ...none };
+	if (data.failed || !data.selected) {
+		return { ...data, View: null, Body: undefined, body: undefined, served: undefined };
+	}
+	const { selected } = data;
+	const view = async () => (await VIEWS[selected.kind]()).default as unknown as View;
+	// Only the weekly review's body is a chunk of its own (review-body.ts).
+	if (selected.kind !== 'weekly') {
+		return { ...data, View: await view(), Body: undefined, body: undefined, served: undefined };
+	}
 	if (!browser) {
-		const View = await viewOf();
+		const View = await view();
 		const served = await servedBody({ review: selected });
 		return { ...data, View, Body: undefined, body: undefined, served };
 	}
 	// Started with the view's own import. A failed import is WeeklyReview's to show (Retry).
 	const body = importBody();
 	body.catch(() => {});
-	const View = await viewOf();
+	const View = await view();
 	if (kept) return { ...data, View, Body: undefined, body, served: SERVED_IN_PLACE };
 	return { ...data, View, Body: await body, body: undefined, served: undefined };
 };
