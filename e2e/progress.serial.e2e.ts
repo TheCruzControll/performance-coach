@@ -140,6 +140,12 @@ test.describe('twelve weeks', () => {
 		await expect(
 			strength.getByRole('listitem').filter({ hasText: 'Back squat' }).getByTestId('verdict')
 		).toHaveText('Real improvement');
+		// A measure named in training jargon says under its name what it means.
+		const general = page.locator('[data-testid="verdict-card"][data-area="general"]');
+		await expect(general.getByRole('listitem').filter({ hasText: 'Training load' })).toContainText(
+			'Minutes × how hard each session felt, added up'
+		);
+		await expect(general).not.toContainText('not judged');
 		await expect(tile(page, 'mileage').getByTestId('verdict')).toHaveText('Real improvement');
 
 		await gotoHydrated(page, '/progress?period=4w');
