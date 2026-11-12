@@ -39,7 +39,8 @@
 	--color-on-accent: #0c0e03;
 	--color-accent-text: light-dark(#4b6400, #d2f25a);
 	--color-accent-subtle: light-dark(rgb(124 160 0 / 0.14), rgb(200 240 49 / 0.12));
-	--color-accent-ring: light-dark(rgb(98 128 0 / 0.55), rgb(200 240 49 / 0.6));
+	/* Focus ring: ≥ 3:1 against the canvas and every surface in both themes (focus-ring.test.ts). */
+	--color-accent-ring: light-dark(#628000, rgb(200 240 49 / 0.6));
 
 	/* ---- Color: status (text-safe: ≥ 4.5:1 on canvas, surface-1 and surface-2) ------- */
 	--color-positive: light-dark(#0f7a40, #5bd68a);

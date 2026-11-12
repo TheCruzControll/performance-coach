@@ -13,8 +13,9 @@
  *
  * A shot that fails is recorded as failed, with why, and the group goes on: this spec captures,
  * it does not judge. Each shot appends a record to test-results/gallery/results-<device>.jsonl,
- * from which scripts/gallery-index.ts writes the contact sheet. A screen that does not exist yet
- * (a link the shot looks for is missing) shows up there as failed until it lands.
+ * from which scripts/gallery-index.ts writes the contact sheet. A screen that is not on main yet
+ * (its route, or the link to it, is missing) throws NotOnMainYet, saying what is missing, and shows
+ * up there as 'not on main yet' rather than failed until it lands.
  */
 import { appendFileSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
@@ -30,6 +31,8 @@ import {
 	GALLERY_DESIGNS,
 	GALLERY_DEVICES,
 	GALLERY_THEMES,
+	NotOnMainYet,
+	recordOf,
 	shotFileName,
 	type GalleryDesign,
 	type GalleryDevice,
@@ -39,7 +42,7 @@ import {
 import { ANALYTICS_TZ, seedAnalytics } from './analytics-support';
 import { COACH_TZ, openThread, postTurn, resetCoach, seedCoach } from './coach-support';
 import { PROGRAM_TZ, seedProgram } from './program-support';
-import { seedReview } from './review-support';
+import { resetReviews, seedReview } from './review-support';
 import { gotoHydrated, query, resetTrainingProfile, signedOut } from './support';
 import { startFromKit } from './workout-start-support';
 
@@ -61,7 +64,8 @@ interface Fixtures {
 interface Shooter {
 	/**
 	 * Run `open`, then capture the whole page as <screen>--<state>--<device>--<design>--<theme>.png. A
-	 * failure is recorded, never thrown; with `skip`, nothing runs and the reason is recorded.
+	 * failure is recorded, never thrown (NotOnMainYet as absent); with `skip`, nothing runs and the
+	 * reason is recorded.
 	 */
 	shot(
 		screen: string,
@@ -81,12 +85,6 @@ interface Group {
 	minutes: number;
 	run(shooter: Shooter, fixtures: Fixtures): Promise<void>;
 }
-
-/** Playwright's coloured error text: ESC [ … m. */
-const ANSI_COLOUR = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, 'g');
-
-const reasonOf = (err: unknown) =>
-	(err instanceof Error ? err.message : String(err)).replace(ANSI_COLOUR, '').trim().slice(0, 600);
 
 /** The page settles: fonts loaded, no view transition and no finite animation running. */
 async function settle(page: Page): Promise<void> {
@@ -143,12 +141,12 @@ function shooter(
 				record({ ...key, status: 'captured', file });
 				return true;
 			} catch (err) {
-				record({ ...key, status: 'failed', reason: reasonOf(err) });
+				record(recordOf(key, err));
 				return false;
 			}
 		},
 		fail(screen, state, err) {
-			record({ screen, state, device, design, theme, status: 'failed', reason: reasonOf(err) });
+			record(recordOf({ screen, state, device, design, theme }, err));
 		}
 	};
 }
@@ -298,8 +296,16 @@ const GROUPS: Group[] = [
 			await seedReview(request, 'block-end');
 			await shot('progress', 'cycle-review-due', () => visit(page, '/progress/reviews'));
 			await shot('progress', 'cycle-review', async () => {
-				await visit(page, '/progress/reviews');
-				await follow(page, '/progress/reviews/c-');
+				await resetReviews(request);
+				const seeded = await seedAnalytics(request, 'block-reviewed');
+				const { cycleReviewId } = seeded as typeof seeded & { cycleReviewId: string };
+				// Every c- key is the 404 page until the cycle review screen lands (load.ts).
+				const url = `/progress/reviews/c-${cycleReviewId}`;
+				if ((await page.request.get(url)).status() === 404) {
+					throw new NotOnMainYet('A stored cycle review has no screen to open it yet.');
+				}
+				await visit(page, url);
+				await page.waitForLoadState('networkidle');
 			});
 		}
 	},
@@ -314,8 +320,15 @@ const GROUPS: Group[] = [
 				await expect(page.getByTestId('set-logger')).toBeVisible();
 			});
 			await shot('workout', 'rest-timer', async () => {
-				await page.getByTestId('set-logger').getByTestId('complete-set').click();
-				await expect(page.getByTestId('rest-timer')).toBeVisible();
+				// The kit invents no weight for the top set (Weight 0), and a set without one is refused:
+				// log it at 100 kg, as the strength journey does, so its rest starts.
+				const logger = page.getByTestId('set-logger');
+				const load = logger.getByTestId('logger-load').getByRole('spinbutton');
+				await load.click();
+				await load.fill('100');
+				await load.press('Enter');
+				await logger.getByTestId('complete-set').click();
+				await expect(page.getByTestId('rest-timer')).toHaveAttribute('data-phase', 'running');
 			});
 			await shot('workout', 'this-hurts', async () => {
 				const card = page.getByTestId('workout-main').getByTestId('exercise');
@@ -324,8 +337,13 @@ const GROUPS: Group[] = [
 				await expect(page.getByTestId('pain-sheet')).toBeVisible();
 			});
 			await shot('workout', 'finish', async () => {
+				// This hurts opens over the quick actions sheet: close both, or its scrim takes the tap.
 				await page.keyboard.press('Escape');
 				await expect(page.getByTestId('pain-sheet')).toBeHidden();
+				const actions = page.getByTestId('exercise-actions-sheet');
+				await expect(actions).toBeVisible();
+				await page.keyboard.press('Escape');
+				await expect(actions).toBeHidden();
 				await page.getByTestId('workout-menu-button').click();
 				await page.getByTestId('workout-menu').getByTestId('menu-finish').click();
 				await expect(page.getByTestId('finish-sheet')).toBeVisible();
@@ -370,10 +388,12 @@ const GROUPS: Group[] = [
 			});
 			await shot('coach', 'proposals-inbox', async () => {
 				await visit(page, '/coach', 'Coach');
-				await page
-					.getByRole('link', { name: /proposals/i })
-					.first()
-					.click();
+				// CoachHeader's ProposalsLink renders nothing until the proposals inbox lands.
+				const inbox = page.getByRole('link', { name: /proposals/i });
+				if ((await inbox.count()) === 0) {
+					throw new NotOnMainYet('Coach has no link to the proposals inbox yet.');
+				}
+				await inbox.first().click();
 				await page.waitForLoadState('networkidle');
 			});
 		}

@@ -4,9 +4,11 @@
  * first sign-in and back into it after a reload. The card is server-rendered and fails soft: a
  * read that fails is a designed error with Retry, never a 500. Once it is complete, Today
  * summarises the open goals by rank (weeks to go counted from the device's date) and the shape of
- * the week, with the commitments marked on the week strip. Serial (one test at a time, after the
- * functional suites): every test starts from a blank training profile, which every browser and
- * worker shares, and the last one leaves it blank again.
+ * the week, with the commitments marked on the week strip, then This week: sessions, training load
+ * and distance from Monday to today against the same days last week (no data yet before the first
+ * session, 0 for an empty week after it, a designed error with Retry when the read fails).
+ * Serial (one test at a time, after the functional suites): every test starts from a blank
+ * training profile, which every browser and worker shares, and the last one leaves it blank again.
  */
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
@@ -20,6 +22,7 @@ import {
 	SAME_ORIGIN,
 	trackConsoleErrors
 } from './support';
+import { seedAnalytics } from './analytics-support';
 
 const card = (page: Page) => page.getByTestId('today-setup');
 const count = (page: Page) => page.getByTestId('today-setup-count');
@@ -98,6 +101,8 @@ async function setUp(request: APIRequestContext) {
 }
 
 const goals = (page: Page) => page.getByTestId('today-goal');
+const thisWeek = (page: Page) => page.getByTestId('today-week');
+const tiles = (page: Page) => thisWeek(page).getByTestId('today-stat');
 
 async function audit(page: Page) {
 	await page.waitForFunction(() => document.fonts.status === 'loaded');
@@ -257,6 +262,19 @@ test('once set up, Today lists the goals by rank with weeks to go, and the shape
 		else await expect(days.nth(i)).not.toContainText('Muay Thai class');
 	}
 
+	// Goals come first, then This week: nothing logged yet, so no data yet, and no plate row.
+	const goalsBox = (await page.getByTestId('today-goals').boundingBox())!;
+	expect(goalsBox.y + goalsBox.height).toBeLessThanOrEqual((await thisWeek(page).boundingBox())!.y);
+	await expect(tiles(page)).toHaveText([
+		/^Sessions\s*—\s*No data yet\s*$/,
+		/^Training load\s*—\s*No data yet\s*$/,
+		/^Distance\s*—\s*No data yet\s*$/
+	]);
+	await expect(thisWeek(page)).toContainText('Your week fills in as you log sessions.');
+	// The tiles carry no caption: no repeated 'this week', no 'AU'.
+	expect((await tiles(page).allTextContents()).join(' ')).not.toMatch(/this week|\bAU\b/i);
+	await expect(page.getByRole('link', { name: /Plate calculator/ })).toHaveCount(0);
+
 	expect(await audit(page), 'dark').toEqual([]);
 	await captureScreen(page, testInfo, 'today-ready');
 	await page.evaluate(() =>
@@ -274,38 +292,105 @@ test('once set up, the goals and schedule are server-rendered, so nothing moves 
 	request
 }) => {
 	await setUp(request);
-	// What the server-rendered page holds before any script runs, and where the plate row sits:
-	// once hydrated, the same goals are there and nothing above the plate row has moved.
+	// What the server-rendered page holds before any script runs, and where This week sits under
+	// the goals: once hydrated, the same goals and tiles are there and This week has not moved.
 	await page.addInitScript(() => {
-		const plateTop = () =>
-			document.querySelector('a[href*="tool=plates"]')!.getBoundingClientRect().top;
+		const weekTop = () =>
+			document.querySelector('[data-testid="today-week"]')!.getBoundingClientRect().top;
 		document.addEventListener('DOMContentLoaded', () =>
 			Object.assign(window, {
 				__painted: {
-					plateTop: plateTop(),
+					weekTop: weekTop(),
 					goals: document.querySelectorAll('[data-testid="today-goal"]').length,
-					schedule: !!document.querySelector('[data-testid="today-schedule"]')
+					schedule: !!document.querySelector('[data-testid="today-schedule"]'),
+					tiles: document.querySelectorAll('[data-testid="today-stat"]').length
 				}
 			})
 		);
-		Object.assign(window, { __plateTop: plateTop });
+		Object.assign(window, { __weekTop: weekTop });
 	});
 	await gotoHydrated(page, '/today');
 	await expect(goals(page)).toHaveCount(3);
 	type Measured = {
-		__painted: { plateTop: number; goals: number; schedule: boolean };
-		__plateTop: () => number;
+		__painted: { weekTop: number; goals: number; schedule: boolean; tiles: number };
+		__weekTop: () => number;
 	};
 	const painted = await page.evaluate(() => (window as unknown as Measured).__painted);
 	expect(painted.goals, 'goals in the server-rendered page').toBe(3);
 	expect(painted.schedule, 'schedule in the server-rendered page').toBe(true);
-	const now = await page.evaluate(() => (window as unknown as Measured).__plateTop());
-	expect(Math.abs(now - painted.plateTop), 'nothing moves above the plate row').toBeLessThanOrEqual(
-		1
+	expect(painted.tiles, 'This week in the server-rendered page').toBe(3);
+	const now = await page.evaluate(() => (window as unknown as Measured).__weekTop());
+	expect(Math.abs(now - painted.weekTop), 'This week does not move').toBeLessThanOrEqual(1);
+	const goalsBox = (await page.getByTestId('today-goals').boundingBox())!;
+	expect(painted.weekTop).toBeGreaterThan(goalsBox.y + goalsBox.height);
+});
+
+test('once sessions are logged, This week shows real numbers for Monday to today, and explains training load', async ({
+	page,
+	request
+}, testInfo) => {
+	const errors = trackConsoleErrors(page);
+	const seeded = await seedAnalytics(request, 'twelve-weeks');
+	await query('update athlete_profiles set onboarding_completed_at = now()');
+	// The oracle: completed, undeleted workouts on the owner's days Monday to today, by SQL.
+	const [week] = await query<{ sessions: number; load: number | null }>(
+		`select count(*)::int as sessions,
+			sum(coalesce(w.duration_s, r.duration_s, o.duration_minutes * 60)::float8 / 60
+				* coalesce(w.session_rpe, r.rpe, o.rpe)::float8)::float8 as load
+		   from workouts w
+		   left join run_records r on r.workout_id = w.id
+		   left join other_session_records o on o.workout_id = w.id
+		  where w.status = 'completed' and w.deleted_at is null
+		    and (w.started_at at time zone $1)::date between $2::date and $3::date`,
+		[seeded.timeZone, seeded.weekStart, seeded.today]
 	);
-	const plate = (await page.getByRole('link', { name: /Plate calculator/ }).boundingBox())!;
-	const goalsTop = (await page.getByTestId('today-goals').boundingBox())!.y;
-	expect(goalsTop).toBeGreaterThan(plate.y + plate.height);
+	await gotoHydrated(page, '/today');
+	await expect(tiles(page)).toHaveCount(3);
+	const load = Math.round(week!.load ?? 0).toLocaleString('en-US');
+	await expect(tiles(page).nth(0)).toHaveText(new RegExp(`^Sessions\\s*${week!.sessions}\\s*$`));
+	await expect(tiles(page).nth(1)).toHaveText(new RegExp(`^Training load\\s*${load}\\s*$`));
+	await expect(tiles(page).nth(2)).toHaveText(/^Distance\s*[\d,]+(\.\d)?\s*km\s*$/);
+	await expect(thisWeek(page)).not.toContainText('No data yet');
+	await expect(thisWeek(page).getByTestId('context-line')).toHaveText(
+		/^(By \w+day last week: \d+ sessions?, (training load [\d,]+, )?[\d.,]+ km\.|Nothing logged by \w+day last week\.)$/
+	);
+
+	const how = thisWeek(page).getByText('How it’s worked out');
+	const box = (await how.boundingBox())!;
+	expect(box.height).toBeGreaterThanOrEqual(44);
+	await how.click();
+	await expect(thisWeek(page)).toContainText('minutes × its session RPE');
+	expect(await audit(page), 'dark').toEqual([]);
+	await captureScreen(page, testInfo, 'today-this-week');
+	await page.evaluate(() => (document.documentElement.dataset.theme = 'light'));
+	expect(await audit(page), 'light').toEqual([]);
+	expect(errors).toEqual([]);
+});
+
+test('a This week read that fails is a designed error with Retry, and Retry recovers', async ({
+	page,
+	request
+}, testInfo) => {
+	await setUp(request);
+	// The table This week reads runs from is out of reach while the screen loads.
+	await query('alter table run_records rename to run_records_away');
+	try {
+		await gotoHydrated(page, '/today');
+		const failed = page.getByTestId('today-week-error');
+		await expect(failed).toContainText('Couldn’t load this week’s numbers.');
+		await expect(goals(page)).toHaveCount(3);
+		const retry = failed.getByRole('button', { name: 'Retry' });
+		expect((await retry.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+		expect(await audit(page), 'dark').toEqual([]);
+		await captureScreen(page, testInfo, 'today-this-week-error');
+	} finally {
+		await query('alter table run_records_away rename to run_records');
+	}
+	await page.getByTestId('today-week-error').getByRole('button', { name: 'Retry' }).click();
+	await expect(page.getByTestId('today-week-error')).toHaveCount(0);
+	await expect(thisWeek(page).getByTestId('context-line')).toHaveText(
+		'Your week fills in as you log sessions.'
+	);
 });
 
 test('reordering goals in Profile changes the order on Today', async ({ page, request }) => {
@@ -366,6 +451,9 @@ test('a setup read that fails is a designed error with Retry inside the shell, a
 		await expect(page.getByRole('navigation', { name: 'Primary' })).toBeVisible();
 		await expect(page.locator('body')).not.toContainText(/500|internal error/i);
 		await expect(card(page)).toHaveCount(0);
+		// This week was not read either: it says so, never that the week is empty.
+		await expect(page.getByTestId('today-week-error')).toBeVisible();
+		await expect(thisWeek(page)).not.toContainText('Your week fills in as you log sessions.');
 		const retry = failed.getByRole('button', { name: 'Retry' });
 		const target = (await retry.boundingBox())!;
 		expect(target.height).toBeGreaterThanOrEqual(44);

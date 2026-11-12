@@ -332,12 +332,8 @@ export async function summariseSegment(input: SummariseInput): Promise<RolloverP
 export async function summariseAhead(input: AheadInput): Promise<boolean> {
 	const { ownerId, deps } = input;
 	const { thread, rows } = await getTranscript(ownerId, input.threadId, deps);
-	if (
-		thread.archived ||
-		isReviewEntry(thread.entry) ||
-		(await dueReason(input, thread, rows)) === null
-	)
-		return false;
+	if (thread.archived || isReviewEntry(thread.entry)) return false;
+	if ((await dueReason(input, thread, rows)) === null) return false;
 	const ms = Math.min(SUMMARY_TIMEOUT_MS, input.deadlineAt - Date.now());
 	if (ms <= 0 || (await spentToday(ownerId, deps)) >= DAILY_LIMITS.costMicros) return false;
 	const made = await summarise({ ...input, signal: AbortSignal.timeout(ms) }, thread, rows);
