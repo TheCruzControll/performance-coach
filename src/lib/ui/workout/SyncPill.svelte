@@ -5,8 +5,8 @@
   your passkey. Always words with
   an icon, never colour alone, in a polite status region, so a change is announced without moving
   focus. Quiet beside logging: small type on a faint surface, a warning tint only when the owner is
-  needed. With `onopen` (whenever there is something to show) it is a 44 px button that opens the
-  sync sheet, the pill inside it taking the hover (fine pointers) and the focus ring; `onintent` (pointer down,
+  needed; Saved, when all is well, is quiet text with its check and no pill. With `onopen`
+  (whenever there is something to show) it is a 44 px button that opens the sync sheet, the pill inside it taking the hover (fine pointers) and the focus ring; `onintent` (pointer down,
   hover, focus) lets the page fetch the sheet first. The workout header shows it, and the resume
   bar reuses it. It sits flush right, so its box never depends on the words: the two longest any
   state can show sit hidden in the same grid cell, in tabular figures, and size it at every text
@@ -37,6 +37,7 @@
 	<span
 		class="pill"
 		data-alert={words.alert || undefined}
+		data-quiet={words.quiet || undefined}
 		data-a={widest[0]}
 		data-b={widest[1]}
 		data-testid={testid}
@@ -117,6 +118,14 @@
 		display: flex;
 		align-items: center;
 		gap: var(--space-1-5);
+	}
+
+	/* Saved: quiet text with its check, flush with the reserved box's end (beside the title from
+	   1024 px), with no pill around it, so no empty field the width of the longest words shows. */
+	.pill[data-quiet] {
+		justify-items: end;
+		border-color: transparent;
+		background: none;
 	}
 
 	.pill[data-alert] {

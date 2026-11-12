@@ -343,7 +343,7 @@ test.describe('logging a set (IndexedDB only)', () => {
 		expect(await audit(page)).toEqual([]);
 
 		await liftPut(page);
-		await notice.getByRole('button', { name: 'Retry' }).click();
+		await notice.getByRole('button', { name: 'Try again' }).click();
 		await expect(notice).toBeHidden();
 		await expect(rows(page).first()).toHaveAttribute('data-state', 'done');
 		const logs = await setLogs(page);

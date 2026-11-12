@@ -158,7 +158,7 @@ describe('Program', () => {
 		expect(complete).toContain('href="/train"');
 		const failed = await served({ failed: true });
 		expect(failed).toContain('Couldn’t load today’s plan');
-		expect(failed).toContain('Retry');
+		expect(failed).toContain('Try again');
 		expect(failed).not.toContain('today-up-next');
 	});
 });
