@@ -140,7 +140,7 @@ describe('planShards', () => {
 			// is the lightest at its planned share.
 			const pinnedOnly = plan[0]!.keys.every((key) => SHARD_ONE_FILES.includes(fileOf(key)));
 			const share = pinnedOnly ? SHARD_ONE_SHARE : 1;
-			for (const other of rest) expect(one * share, `${group}/${engine}`).toBeLessThan(other);
+			for (const other of rest) expect(one! * share, `${group}/${engine}`).toBeLessThan(other);
 		}
 	});
 
