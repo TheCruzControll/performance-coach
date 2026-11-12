@@ -437,7 +437,7 @@ test.describe('the lazy sheets’ chunks failing', () => {
 
 		// Back online, Retry opens the sheet (in place, or by reloading with ?tool=plates).
 		failing = false;
-		await notice.getByRole('button', { name: 'Retry' }).click();
+		await notice.getByRole('button', { name: 'Try again' }).click();
 		await expectCentredDialog(page, page.getByRole('dialog', { name: 'Plate calculator' }));
 	});
 
@@ -467,7 +467,7 @@ test.describe('the lazy sheets’ chunks failing', () => {
 		await auditBothThemes(page, testInfo, 'plan-retry');
 
 		await page.unroute(chunk);
-		await notice.getByRole('button', { name: 'Retry' }).click();
+		await notice.getByRole('button', { name: 'Try again' }).click();
 		await expectCentredDialog(page, page.getByRole('dialog', { name: 'Your plan' }));
 	});
 });

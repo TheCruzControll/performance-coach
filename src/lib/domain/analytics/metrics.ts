@@ -343,7 +343,7 @@ const ENTRIES = {
 	},
 	srpe_load: load(
 		'Training load',
-		'Minutes × session RPE of each workout, added up by week; a session without either is named, never counted as 0.',
+		'Minutes × session RPE (how hard it felt, out of 10) of each workout, added up by week in arbitrary units (AU), so an hour at RPE 7 is 420 AU; a session without either is named, never counted as 0.',
 		{ need: 1, unit: 'sessions' }
 	),
 	acwr: {
@@ -383,13 +383,18 @@ const ENTRIES = {
 			watch: [{ to: GOOD.monotony.watch }],
 			levels: { good: 'Varied days', watch: 'Days becoming alike', low: 'Every day much the same' }
 		},
-		method: 'The mean of a week’s seven daily loads ÷ their standard deviation.',
+		method:
+			'How alike a week’s days are: the mean of its seven daily loads ÷ their standard deviation, lower when hard and easy days differ.',
 		mpc: LOAD
 	},
-	strain: load('Strain', 'A week’s load × its monotony.', week),
+	strain: load(
+		'Strain',
+		'A week’s load × its monotony, in arbitrary units (AU): high when a big week has no easy days.',
+		week
+	),
 	muay_thai_load: load(
 		'Muay Thai load',
-		'Minutes × session RPE of each week’s Muay Thai sessions added up.',
+		'Minutes × session RPE (how hard it felt, out of 10) of each week’s Muay Thai sessions added up, in arbitrary units (AU).',
 		{ need: 1, unit: 'sessions' }
 	),
 	// ---- Recovery

@@ -43,7 +43,7 @@
 			icon={failed ? 'refresh' : undefined}
 			loading={sending}
 			onclick={unarchive}
-			data-testid="unarchive">{failed ? 'Retry' : 'Unarchive'}</Button
+			data-testid="unarchive">{failed ? 'Try again' : 'Unarchive'}</Button
 		>
 	</div>
 </Notice>

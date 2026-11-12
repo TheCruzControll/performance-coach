@@ -108,7 +108,7 @@
 						Your training is safe. Try again in a moment.
 					</Notice>
 					<Button variant="secondary" icon="refresh" loading={retrying} onclick={retry}>
-						Retry
+						Try again
 					</Button>
 				</div>
 			{:else if data.view === 'strength'}

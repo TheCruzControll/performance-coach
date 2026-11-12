@@ -319,7 +319,7 @@ test.describe('/design → Coach', () => {
 			const notice = page.getByTestId(`notice-${kind}`);
 			await expect(notice, kind).toContainText(copy.title);
 			await expect(notice, kind).toContainText(copy.body);
-			await expect(notice.getByRole('button', { name: 'Retry' }), kind).toHaveCount(
+			await expect(notice.getByRole('button', { name: 'Try again' }), kind).toHaveCount(
 				copy.retry ? 1 : 0
 			);
 		}
@@ -344,15 +344,17 @@ test.describe('/design → Coach', () => {
 		const readout = page.getByTestId('notice-readout');
 		await expect(readout).toHaveText('retry: none');
 		for (const kind of ['offline', 'provider', 'chunk_failed', 'load_failed'] as const) {
-			await page.getByTestId(`notice-${kind}`).getByRole('button', { name: 'Retry' }).click();
+			await page.getByTestId(`notice-${kind}`).getByRole('button', { name: 'Try again' }).click();
 			await expect(readout).toHaveText(`retry: ${kind}`);
 		}
 		// A Retry under way is busy and takes no second press.
-		const busy = page.getByTestId('notice-action_failed').getByRole('button', { name: 'Retry' });
+		const busy = page
+			.getByTestId('notice-action_failed')
+			.getByRole('button', { name: 'Try again' });
 		await expect(busy).toHaveAttribute('aria-busy', 'true');
 		await expect(busy).toBeDisabled();
 		// Retry is a compact button: its 44 px is the hit area, not the 36 px border box.
-		await expectHitAreas(page.getByRole('button', { name: 'Retry' }));
+		await expectHitAreas(page.getByRole('button', { name: 'Try again' }));
 
 		await expect(page.getByTestId('mock-badge')).toContainText('Practice coach');
 		await expectNoSideScroll(page);
