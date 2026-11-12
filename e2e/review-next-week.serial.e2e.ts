@@ -379,12 +379,15 @@ test.describe('review-aged: stored on Monday, decided later in the week', () => 
 });
 
 test.describe('nothing to decide', () => {
-	/** Create the review of `week` from the list, then open it. */
+	/**
+	 * Create the review of `week` from the list (by default the week due for review: this week is
+	 * still in progress until it ends), then open it.
+	 */
 	async function create(page: Page, week?: string) {
 		await gotoHydrated(page, LIST);
 		const form = week
 			? page.locator(`[data-testid="review-create"]:has(input[value="${week}"])`)
-			: page.getByTestId('review-create').first();
+			: page.locator('[data-testid="review-create"][data-state="due"]');
 		await form.getByRole('button').click();
 		await expect(page).toHaveURL(/\/progress\/reviews\/w-/);
 		await expect(card(page)).toBeVisible();
@@ -427,7 +430,18 @@ test.describe('nothing to decide', () => {
 
 	test('a review after next week ended: late', async ({ page, request }) => {
 		const seeded = await seedReview(request, 'week-late');
-		await create(page, seeded.review.kind === 'weekly' ? seeded.review.weekStartsOn : undefined);
+		if (seeded.review.kind !== 'weekly') throw new Error('A weekly scenario');
+		// The list offers only this week and last until an older review is stored: create two
+		// weeks back through its Create action, as the form posts it without JavaScript.
+		const { weekStartsOn } = seeded.review;
+		const created = await request.post(`${LIST}?/create`, {
+			headers: SAME_ORIGIN,
+			form: { weekStartsOn },
+			maxRedirects: 0
+		});
+		expect(created.status()).toBe(303);
+		expect(created.headers().location).toBe(`${LIST}/w-${weekStartsOn}`);
+		await gotoHydrated(page, `${LIST}/w-${weekStartsOn}`);
 		await expect(card(page)).toHaveAttribute('data-state', 'late');
 		await expect(card(page).getByRole('heading', { level: 3 })).toHaveText(
 			'This review came after next week ended'
