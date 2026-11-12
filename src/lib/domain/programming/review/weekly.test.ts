@@ -7,8 +7,15 @@ import type { RecoveryEntry } from '../../analytics/workload';
 import { catalogueByKey } from '../../exercises/index';
 import type { SetPrescription } from '../../training/types';
 import type { OtherSessionKind, SessionType } from '../../training/vocabulary';
+import type { Discipline } from '../../profile/catalog';
+import { CONCURRENT_RULES } from '../rules/concurrent';
+import { RANK_WEIGHTS } from '../rules/priority';
+import type { GoalPriority } from '../priority/weights';
 import { demandOf, INTERFERENCE_RULES } from '../interference';
+import { loadModel } from '../load/fatigue';
+import { fromLogged } from '../load/from-facts';
 import { SUMMARY_MAX } from './brief';
+import type { ReviewEvaluation } from './evaluation';
 import type { Finding } from './brief';
 import { readSnapshot, SNAPSHOT_VERSION, weeklyReviewSnapshotSchema } from './snapshot';
 import { composeWeeklyReview, performedSessions, scaledTargets, TRAILING_WEEKS } from './weekly';
@@ -584,6 +591,151 @@ describe('composeWeeklyReview', () => {
 		const none = composeWeeklyReview(weeks[1]!);
 		expect(none.snapshot.noProposal).toBe('no_program');
 		expect(none.summary).toBe('Nothing planned or logged this week.');
+	});
+});
+
+/**
+ * M7's evaluation over `w` as the review service builds it: the load model from 42 days before the
+ * week through its Sunday, on the logged sessions (nothing planned: the logs judge each system).
+ */
+function evaluation(w: Week, more: Partial<ReviewEvaluation> = {}): ReviewEvaluation {
+	const from = day(-42);
+	const traitsOf = (ref: { key: string } | { customId: string }) =>
+		'key' in ref ? EXERCISES.get(ref.key) : undefined;
+	const facts = { workouts: w.workouts, sets: w.sets, runs: w.runs, timeZone: TZ };
+	const logged = fromLogged(facts, traitsOf).filter((l) => l.date >= from);
+	const days = loadModel({ planned: [], logged, from, to: day(6), today: day(8), traitsOf });
+	return {
+		load: { from, days, planned: [], logged },
+		priorities: [],
+		weekKind: 'accumulation',
+		events: [],
+		...more
+	};
+}
+
+/** The usual history, with Monday's lifts moved to Tuesday heavy, after hard sparring Monday. */
+function sparredThenSquatted(): Week {
+	const w = history();
+	const lifted = new Set(['this-mon']);
+	w.workouts = w.workouts.filter((o) => !lifted.has(o.id));
+	w.sets = w.sets.filter((s) => !lifted.has(s.workoutId));
+	w.prescriptions = w.prescriptions.filter((p) => !lifted.has(p.workoutId));
+	workout(w, 'this-spar', MONDAY, 'muay_thai', {
+		discipline: 'muay_thai',
+		durationSeconds: 7200,
+		sessionRpe: 9.5,
+		other: { kind: 'sparring', durationMinutes: 120, rpe: 9.5, metrics: [] }
+	});
+	lift(w, 'this-tue', day(1), 'back_squat', { sets: 5, kg: 140, rpe: 9, target: 8 });
+	return w;
+}
+
+/** A goal's priority at `rank` (0 leads), with its rank weight. */
+const goal = (title: string, disciplines: Discipline[], rank: number): GoalPriority => ({
+	goalId: title.toLowerCase().replaceAll(' ', '-'),
+	title,
+	disciplines,
+	priority: rank + 1,
+	rank,
+	weight: RANK_WEIGHTS[rank]!,
+	mode: rank === 0 ? 'primary' : 'secondary',
+	why: `${title} is in place ${rank + 1}.`,
+	eventKind: null,
+	eventDate: null,
+	weeksToEvent: null,
+	inWindow: false,
+	rule: 'priority.rank_weights'
+});
+
+const conflictsOf = (findings: Finding[]) => findings.filter((f) => f.section === 'conflicts');
+
+describe("composeWeeklyReview with M7's evaluation", () => {
+	it('lists residual fatigue: hard sparring logged Monday, then heavy squats Tuesday, with its why', () => {
+		const w = sparredThenSquatted();
+		const review = composeWeeklyReview(input(w, { evaluation: evaluation(w) }));
+		const residual = conflictsOf(review.findings).find((f) =>
+			f.id.endsWith(':concurrent.residual_fatigue_before_hard')
+		)!;
+		expect(residual).toMatchObject({
+			label: CONCURRENT_RULES.residual_fatigue_before_hard.headline,
+			window: { from: MONDAY, to: day(1), label: '2 days' },
+			sources: [
+				{ type: 'workout', id: 'this-spar', date: MONDAY },
+				{ type: 'workout', id: 'this-tue', date: day(1) }
+			]
+		});
+		expect(residual.verdict.level).toBe('watch');
+		expect(residual.verdict.words).toMatch(/^this-spar on Monday, then this-tue on Tuesday, with /);
+		expect(residual.verdict.words).toContain(CONCURRENT_RULES.residual_fatigue_before_hard.why);
+		// checkWeek alone does not see it: the sparring left no M3 rule broken on Tuesday.
+		const m3 = composeWeeklyReview(input(w));
+		expect(conflictsOf(m3.findings).map((f) => f.label)).not.toContain(residual.label);
+	});
+
+	it('lists every conflict checkWeek lists, as M6 stored it: a superset', () => {
+		const w = history();
+		w.workouts = w.workouts.filter((o) => o.id !== 'this-sat');
+		thai(w, 'this-sat', day(5), 'sparring');
+		run(w, 'this-sun', day(6), 'long_run', 16, 100);
+		// Heavy squats, then hard sparring that evening: M3's same-day order, which evaluateWeek
+		// leaves to priorities (none ranked here).
+		const sameDay = history();
+		lift(sameDay, 'this-mon', MONDAY, 'back_squat', { sets: 5, kg: 140, rpe: 9, target: 8 });
+		thai(sameDay, 'this-mon-spar', MONDAY, 'sparring', 9);
+		sameDay.workouts.at(-1)!.startedAt = at(MONDAY, 240);
+		const sameDayM6 = conflictsOf(composeWeeklyReview(input(sameDay)).findings);
+		expect(sameDayM6.map((f) => f.id.split(':').at(-1))).toContain('same_day_order');
+		for (const week of [w, sparredThenSquatted(), sameDay]) {
+			const m6 = conflictsOf(composeWeeklyReview(input(week)).findings);
+			const m7 = conflictsOf(
+				composeWeeklyReview(input(week, { evaluation: evaluation(week) })).findings
+			);
+			const entry = (f: Finding) => ({
+				rule: f.id.split(':').at(-1),
+				label: f.label,
+				verdict: f.verdict,
+				window: f.window,
+				sources: f.sources
+			});
+			expect(m6.length).toBeGreaterThan(0);
+			expect(m7.map(entry)).toEqual(expect.arrayContaining(m6.map(entry)));
+		}
+	});
+
+	it('leaves M3’s same-day order to the priorities when they rank the pair', () => {
+		const sameDay = history();
+		lift(sameDay, 'this-mon', MONDAY, 'back_squat', { sets: 5, kg: 140, rpe: 9, target: 8 });
+		thai(sameDay, 'this-mon-spar', MONDAY, 'sparring', 9);
+		sameDay.workouts.at(-1)!.startedAt = at(MONDAY, 240);
+		const rules = (priorities: GoalPriority[]) =>
+			conflictsOf(
+				composeWeeklyReview(input(sameDay, { evaluation: evaluation(sameDay, { priorities }) }))
+					.findings
+			).map((f) => f.id.split(':').at(-1));
+		// Strength ranked first, squats first: the owner's order, so the day is clean.
+		const strength = rules([
+			goal('Get stronger', ['strength'], 0),
+			goal('Fight', ['muay_thai'], 1)
+		]);
+		expect(strength).not.toContain('same_day_order');
+		expect(strength).not.toContain('concurrent.same_day_priority_order');
+		// Combat ranked first: listed once, by the priorities.
+		const combat = rules([goal('Fight', ['muay_thai'], 0), goal('Get stronger', ['strength'], 1)]);
+		expect(combat).not.toContain('same_day_order');
+		expect(combat).toContain('concurrent.same_day_priority_order');
+	});
+
+	it('gives the same bytes for the same input, and M6’s bytes without the evaluation', () => {
+		const w = sparredThenSquatted();
+		const once = composeWeeklyReview(input(w, { evaluation: evaluation(w) }));
+		const again = composeWeeklyReview(input(w, { evaluation: evaluation(w) }));
+		expect(JSON.stringify(again)).toBe(JSON.stringify(once));
+		expect(once.summary).toMatch(/\d conflicts?/);
+		// Without it the review is M6's, conflicts by checkWeek alone.
+		const m6 = composeWeeklyReview(input(w));
+		expect(JSON.stringify(composeWeeklyReview(input(w)))).toBe(JSON.stringify(m6));
+		expect(conflictsOf(m6.findings).every((f) => !f.id.includes('concurrent.'))).toBe(true);
 	});
 });
 

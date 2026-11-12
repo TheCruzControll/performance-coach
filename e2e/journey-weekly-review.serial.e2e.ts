@@ -310,7 +310,7 @@ test.describe('review-aged: decided late in the week', () => {
 		await shoot(page, testInfo, 'aged-review');
 		if (passed === total) {
 			await expect(card(page)).toHaveAttribute('data-state', 'all_past');
-			test.skip(true, 'Saturday or Sunday: every change has passed, so there is no rest to apply');
+			test.skip(true, 'From Friday: every change has passed, so there is no rest to apply');
 		}
 		await expect(card(page)).toHaveAttribute('data-state', 'partly_past');
 		await page.getByTestId('review-next-generate').click();

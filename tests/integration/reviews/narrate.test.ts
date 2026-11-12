@@ -82,10 +82,12 @@ async function seedWeek(db: Executor) {
 	const owner = await makeOwner(db);
 	await seedAnalyticsFixture(owner, 'week-complete', { timeZone: TZ, now: NOW }, { db });
 	const deps = { db, now };
+	// M6's checkWeek path (the context reads skipped), so the review holds a proposal: with M7's
+	// judge the hard week's next week has no move a finding would not name (m7/24).
 	const { review } = await createWeeklyReview(
 		owner,
 		{ weekStartsOn: REVIEWED, today: TODAY },
-		deps
+		{ ...deps, context: { reader: async () => null } }
 	);
 	const target: ReviewTarget = { kind: 'weekly', id: review.id };
 	return { owner, review, target, deps };
