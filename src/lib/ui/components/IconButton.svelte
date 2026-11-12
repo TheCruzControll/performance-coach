@@ -64,8 +64,11 @@
 	onpointerenter={tooltip ? () => (dismissed = false) : undefined}
 	{...rest}
 >
-	<Icon name={icon} size={iconSize} strokeWidth={size === 'lg' ? 2 : 1.75} />
-	{#if tooltip && !dismissed}<span class="tip" aria-hidden="true" data-testid="icon-tip"
+	<Icon
+		name={icon}
+		size={iconSize}
+		strokeWidth={size === 'lg' ? 2 : 1.75}
+	/>{#if tooltip && !dismissed}<span class="tip" aria-hidden="true" data-testid="icon-tip"
 			>{label}</span
 		>{/if}
 </button>
