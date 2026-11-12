@@ -76,8 +76,12 @@ describe('experienceLine', () => {
 
 describe('baselineValue', () => {
 	it('marks an estimate as approximate, never a lifted max', () => {
-		expect(baselineValue({ kind: 'measured', value: 140, unit: 'kg' })).toBe('140 kg');
-		expect(baselineValue({ kind: 'estimated', value: 123.333, unit: 'lb' })).toBe('≈ 123.33 lb');
+		expect(baselineValue({ kind: 'measured', value: 140, unit: 'kg' })).toBe('140\u00a0kg');
+		expect(baselineValue({ kind: 'measured', value: 142.25, unit: 'kg' })).toBe('142.25\u00a0kg');
+		// An estimate to the nearest 1 lb or 0.5 kg, never '123.33 lb'.
+		expect(baselineValue({ kind: 'estimated', value: 123.333, unit: 'lb' })).toBe('≈ 123\u00a0lb');
+		expect(baselineValue({ kind: 'estimated', value: 157.21, unit: 'kg' })).toBe('≈ 157\u00a0kg');
+		expect(baselineValue({ kind: 'estimated', value: 157.3, unit: 'kg' })).toBe('≈ 157.5\u00a0kg');
 	});
 });
 

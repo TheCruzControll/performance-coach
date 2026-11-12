@@ -98,7 +98,7 @@ describe('getRunningDashboard', () => {
 			const metres = mondays.map((m) => oracle.get(m)!.metres);
 			expect(board.mileage.mean!.value).toBeCloseTo(mean(metres), 6);
 			expect(board.mileage.longestRun!.value).toBe(longMetres(16));
-			expect(board.mileage.longestRun!.text).toBe('17 km');
+			expect(board.mileage.longestRun!.text).toBe('17\u00a0km');
 			expect(board.mileage.about).toMatchObject({ metric: 'mileage', kind: 'calculated' });
 			const previous = weeksOf(1, 4).map((m) => oracle.get(m)?.metres ?? 0);
 			// 12 weeks before week 5 hold only weeks 1–4: zero-filled, so the mean is of 12 weeks.
@@ -114,7 +114,9 @@ describe('getRunningDashboard', () => {
 				expect(p.period!.value, p.sessionType).toBeCloseTo(paces[p.sessionType]!, 6);
 				expect(p.trend!.window).toEqual(board.trendWindow);
 			}
-			expect(board.pace.find((p) => p.sessionType === 'long_run')!.period!.text).toBe('5:30 /km');
+			expect(board.pace.find((p) => p.sessionType === 'long_run')!.period!.text).toBe(
+				'5:30\u00a0/km'
+			);
 
 			// Planned: the tempo run (5 mi as 1609 + 4828 + 1609 m) and the long run; the intervals
 			// are planned by time. Week 9's tempo run was skipped; week 10's long run was missed.
@@ -170,7 +172,12 @@ describe('getRunningDashboard', () => {
 			expect(tenK.reported.map((r) => r.day)).toEqual([addDays(weekOf(8), 6)]);
 			expect(board.efforts.find((d) => d.distance === '5k')!.best).toBeNull();
 			expect(tenK.reported).toMatchObject([
-				{ label: 'reported', eventName: 'Riverside 10K', time: '48:00', pace: { text: '4:48 /km' } }
+				{
+					label: 'reported',
+					eventName: 'Riverside 10K',
+					time: '48:00',
+					pace: { text: '4:48\u00a0/km' }
+				}
 			]);
 		});
 	});
@@ -187,13 +194,13 @@ describe('getRunningDashboard', () => {
 			expect(mi.mileage.weeks.map((w) => w.distance.value)).toEqual(
 				km.mileage.weeks.map((w) => w.distance.value)
 			);
-			expect(mi.mileage.longestRun).toEqual({ text: '10.6 mi', value: longMetres(16) });
+			expect(mi.mileage.longestRun).toEqual({ text: '10.6\u00a0mi', value: longMetres(16) });
 			const long = mi.pace.find((p) => p.sessionType === 'long_run')!;
-			expect(long.period!.text).toBe('8:51 /mi');
+			expect(long.period!.text).toBe('8:51\u00a0/mi');
 			expect(long.period!.value).toBe(
 				km.pace.find((p) => p.sessionType === 'long_run')!.period!.value
 			);
-			expect(mi.mileage.soFar.text).toMatch(/ mi by Wednesday last week$/);
+			expect(mi.mileage.soFar.text).toMatch(/\d\u00a0mi by Wednesday last week$/);
 		});
 	});
 
@@ -257,7 +264,7 @@ describe('getRunningDashboard', () => {
 			expect(after.frequency.inProgress).toBe(1);
 			// Last week's Monday to Wednesday: week 16's intervals on Tuesday.
 			expect(after.mileage.soFar.text).toBe(
-				'This week so far: 30 km · 7.5 km by Wednesday last week'
+				'This week so far: 30\u00a0km · 7.5\u00a0km by Wednesday last week'
 			);
 		});
 	});

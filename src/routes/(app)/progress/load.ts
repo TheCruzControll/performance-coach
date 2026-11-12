@@ -19,7 +19,7 @@ import { PERIOD_LABEL } from '#lib/domain/analytics/periods.ts';
 import type { TrendResult } from '#lib/domain/analytics/trend.ts';
 import type { SeriesPoint } from '#lib/domain/analytics/types.ts';
 import type { LoadGroup } from '#lib/domain/analytics/workload.ts';
-import { cleanFloat, convertWeight } from '#lib/domain/units.ts';
+import { cleanFloat, convertWeight, roundEstimate } from '#lib/domain/units.ts';
 import { ownerToday } from '#lib/server/local-date.ts';
 import { formatIn } from '#lib/server/services/analytics/format.ts';
 import {
@@ -35,7 +35,7 @@ import { recordServerError, type ServerErrorInput } from '#lib/server/services/e
 import { resolveDeps, type TrainingDeps } from '#lib/server/services/training/shared.ts';
 import type { ReviewPromptView } from '#lib/ui/analytics/review-prompt.ts';
 import { sparkline } from '#lib/ui/analytics/sparkline.ts';
-import type { Tile, TileVerdict } from '#lib/ui/analytics/words.ts';
+import { spanSentence, type Tile, type TileVerdict } from '#lib/ui/analytics/words.ts';
 import { barTable, type BarChartData } from '#lib/ui/charts/bar-model.ts';
 import { lineTable, type LineChartData } from '#lib/ui/charts/line-model.ts';
 import { SERIES_TOKEN } from '#lib/ui/charts/palette.ts';
@@ -222,7 +222,7 @@ export function overviewData(
 		const complete = points.filter((p) => !p.inProgress && p.value !== null);
 		if (complete.length === 0) return [];
 		const unit = o.units.weight;
-		const display = (kg: number) => cleanFloat(convertWeight(kg, 'kg', unit), 1);
+		const display = (kg: number) => roundEstimate(convertWeight(kg, 'kg', unit), unit);
 		const title = `${name} · estimated 1RM`;
 		const data: LineChartData = {
 			title,
@@ -242,10 +242,12 @@ export function overviewData(
 			]
 		};
 		const [first, last] = [complete[0]!, complete.at(-1)!];
+		const e1rm = (kg: number) => format(METRICS.e1rm, kg, 'value');
+		const best = Math.max(...complete.map((p) => p.value!));
 		const summary =
 			complete.length === 1
-				? `One estimate in these weeks: ${format(METRICS.e1rm, last.value!, 'value')}.`
-				: `Estimated 1RM went from ${format(METRICS.e1rm, first.value!, 'value')} to ${format(METRICS.e1rm, last.value!, 'value')}.`;
+				? `One estimate in these weeks: ${e1rm(last.value!)}.`
+				: spanSentence('Estimated 1RM', e1rm(first.value!), e1rm(last.value!), e1rm(best));
 		const context = [
 			periodWords,
 			'Estimated from your sets',
@@ -288,9 +290,11 @@ export function overviewData(
 		stage: history ? 'history' : thisWeek ? 'first_week' : 'new',
 		context: {
 			period: periodWords,
-			comparison: window.previous
-				? `Compared with the ${window.previous.count} weeks before`
-				: null,
+			// Only when a tile has a change to show: no tile says 'no earlier period' under it.
+			comparison:
+				window.previous && tiles.some(({ tile }) => tile.delta)
+					? `Compared with the ${window.previous.count} weeks before`
+					: null,
 			trend: trend.sameAsPeriod ? null : trend.label
 		},
 		headline: o.headline,
