@@ -1,10 +1,17 @@
-import { expect, type Browser, type Page, type TestInfo } from '@playwright/test';
+import {
+	expect,
+	type Browser,
+	type BrowserContextOptions,
+	type Page,
+	type TestInfo
+} from '@playwright/test';
 
 /**
  * Main-thread budget while a screen loads and hydrates, measured from real long tasks
  * (PerformanceObserver) under DevTools 4× CPU throttling: the sum of each task's time over
  * 50 ms, i.e. total blocking time, over load + 1.5 s. Median of 5 cold loads per screen.
- * perf.e2e.ts measures the app's screens with it, perf-workout-load.e2e.ts the workout screens.
+ * perf.e2e.ts measures the app's screens with it, perf-workout-load.e2e.ts the workout screens and
+ * perf-coach-load.e2e.ts the coach's.
  *
  * This is the CI regression guard for hydration cost: it measures real work, while
  * Lighthouse's TBT is a simulation (×4 of observed task time) that amplifies VM noise
@@ -34,6 +41,8 @@ export interface Seeded {
 	prepare?: (page: Page) => Promise<void>;
 	/** The test id the loaded screen shows once it is in the state measured. */
 	shows?: string;
+	/** Each fresh context's options over the project's: the zone a fixture was seeded in. */
+	context?: BrowserContextOptions;
 }
 
 /**
@@ -43,7 +52,7 @@ export interface Seeded {
  */
 export async function expectLoadBudget(
 	path: string,
-	{ url, restore, prepare, shows }: Seeded,
+	{ url, restore, prepare, shows, context: options }: Seeded,
 	{
 		browser,
 		testInfo,
@@ -57,11 +66,11 @@ export async function expectLoadBudget(
 			// A fresh context per load: cold caches, no service worker yet. Signed in (the
 			// project's storage state), except for the sign-in screen, which only a signed-out
 			// browser sees.
-			const context = await browser.newContext(
-				path === '/'
-					? { ...testInfo.project.use, storageState: { cookies: [], origins: [] } }
-					: testInfo.project.use
-			);
+			const context = await browser.newContext({
+				...testInfo.project.use,
+				...(path === '/' ? { storageState: { cookies: [], origins: [] } } : {}),
+				...options
+			});
 			const page = await context.newPage();
 			await page.addInitScript(() => {
 				const tasks: number[] = [];
