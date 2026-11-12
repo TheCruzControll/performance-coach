@@ -163,6 +163,51 @@ describe('checkProposal', () => {
 		).toEqual({});
 	});
 
+	it('starts a replan on a Monday still ahead, at its path', () => {
+		const block = (directive: object, from: string) =>
+			withPayload('replan', {
+				directive: {
+					...(FIXTURES.replan.payload as { directive: object }).directive,
+					...directive
+				},
+				from
+			});
+		// From Monday 9 Nov a regenerating replan may start that day; from Tuesday, only the next.
+		expect(errorsOf(block({}, '2026-11-09'))).toEqual({});
+		expect(errorsOf(block({}, '2026-11-09'), { ...CONTEXT, today: '2026-11-10' })).toEqual({
+			'payload.from': M.startPassed
+		});
+		expect(errorsOf(block({}, '2026-11-02'))).toEqual({ 'payload.from': M.startPassed });
+		const deload = (week: string, from = week) =>
+			withPayload('replan', {
+				directive: { kind: 'deload', week, trigger: 'owner', reasons: [] },
+				from
+			});
+		// A deload's week may be the one in progress, never one already over.
+		expect(errorsOf(deload('2026-11-09'), { ...CONTEXT, today: '2026-11-12' })).toEqual({});
+		expect(errorsOf(deload('2026-11-02'))).toEqual({
+			'payload.directive.week': M.past
+		});
+		expect(errorsOf(deload('2026-11-16', '2026-11-23'))).toEqual({ 'payload.from': M.deloadWeek });
+	});
+
+	it('refuses a replan naming a goal the owner does not have', () => {
+		expect(
+			errorsOf(
+				withPayload('replan', {
+					directive: { kind: 'block', phase: 'maintenance', weeks: 4, focusGoalRef: UNKNOWN }
+				})
+			)
+		).toEqual({
+			'payload.directive.focusGoalRef': M.unknownGoal
+		});
+		const taper = { kind: 'taper', goalRef: UNKNOWN, form: 'full' };
+		expect(errorsOf(withPayload('replan', { directive: taper }))).toEqual({
+			'payload.directive.goalRef': M.unknownGoal
+		});
+		expect(errorsOf(withPayload('replan', { directive: { ...taper, goalRef: GOAL } }))).toEqual({});
+	});
+
 	it('checks against the today it is given, so accepting later can refuse', () => {
 		expect(errorsOf(FIXTURES.workout_update, { ...CONTEXT, today: '2026-11-10' })).toEqual({
 			'payload.ops.0.sessionLineage': M.past,

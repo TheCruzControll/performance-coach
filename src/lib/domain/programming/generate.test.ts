@@ -1,7 +1,8 @@
 /**
- * generate.ts: the stage list runs in its documented order and each later stage runs its own
- * implementation; every scenario composes into a plan the contract accepts; the minimal profile gets
- * one default_assumed decision per assumption; the same input gives byte-identical JSON.
+ * generate.ts: the stage list runs in its documented order and each stage runs its own
+ * implementation, phasing before volume and schedule last; every scenario composes into a plan the contract accepts; the minimal profile gets
+ * one default_assumed decision per assumption; the same input gives byte-identical JSON, and every
+ * scenario's plan is the one hashed before m7-stage-list.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CATALOGUE } from '../exercises/index';
@@ -13,11 +14,16 @@ import { strength as strengthTemplates } from './decisions/templates/strength';
 import { volume as volumeTemplates } from './decisions/templates/volume';
 import { GeneratedPlanError, generateProgram, STAGES } from './generate';
 import { buildProgrammingInput } from './input';
+import { fnv1a64 } from './random';
 import { SCENARIO_START, SCENARIOS, scenarioDay } from './scenarios';
+import type { ScenarioKey } from './scenarios';
 import { demandIn } from './stage';
 import type { Draft } from './stage';
+import { blocks } from './stages/blocks';
+import { demand } from './stages/demand';
 import { loads } from './stages/loads';
 import { placement } from './stages/placement';
+import * as stages from './stages/prepare';
 import { progression } from './stages/progression';
 import { strength } from './stages/strength';
 import { timefit } from './stages/timefit';
@@ -41,10 +47,12 @@ describe('the stage list', () => {
 		'running',
 		'other',
 		'placement',
+		'phasing',
 		'volume',
 		'loads',
 		'progression',
-		'timefit'
+		'timefit',
+		'schedule'
 	];
 
 	it('runs every stage once, in the documented order, each on the draft the one before returned', () => {
@@ -61,17 +69,25 @@ describe('the stage list', () => {
 		generate(SCENARIOS.minimal());
 		expect(STAGES.map((s) => s.name)).toEqual(ORDER);
 		expect(ran).toEqual(ORDER);
-		expect(drafts[0]).toEqual({ demand: null, blocks: [] });
+		// The first draft carries prepare's season; the blocks stage plans it, outlines included.
+		expect(drafts[0]).toMatchObject({ demand: null, blocks: [] });
+		expect(drafts[0]!.periodisation?.season.blocks).toHaveLength(4);
 		expect(drafts[1]!.demand?.budget.trainingDays).toBe(3);
-		expect(drafts[2]!.blocks).toHaveLength(1);
+		expect(drafts[2]!.blocks.map((b) => b.weeks.length)).toEqual([5, 0, 0, 0]);
 	});
 
-	it.each(Object.entries({ strength, volume, loads, progression, placement, timefit }))(
-		'runs the %s stage of its own',
-		(name, run) => {
-			expect(STAGES.find((s) => s.name === name)?.run).toBe(run);
-		}
-	);
+	it.each(
+		Object.entries({ demand, blocks, strength, volume, loads, progression, placement, timefit })
+	)('runs the %s stage of its own', (name, run) => {
+		expect(STAGES.find((s) => s.name === name)?.run).toBe(run);
+	});
+
+	it('runs phasing after placement and before volume, which counts the hard sets it sets, and schedule last', () => {
+		const names = STAGES.map((s) => s.name);
+		expect(names.indexOf('phasing')).toBe(names.indexOf('placement') + 1);
+		expect(names.indexOf('volume')).toBe(names.indexOf('phasing') + 1);
+		expect(names.at(-1)).toBe('schedule');
+	});
 
 	it('gives the demand to the stages after it, and refuses to before the demand stage', () => {
 		expect(() => demandIn({ demand: null, blocks: [] })).toThrow('The demand stage runs first');
@@ -88,7 +104,8 @@ describe('generateProgram', () => {
 			startsOn: SCENARIO_START,
 			firstPlannedDay: SCENARIO_START
 		});
-		expect(plan.blocks.map((b) => b.weeks.length)).toEqual([5]);
+		// M3's first block, then the season's outlines: accumulation, intensification, realization.
+		expect(plan.blocks.map((b) => b.weeks.length)).toEqual([5, 0, 0, 0]);
 		expect(
 			plan.decisions.filter((d) => d.kind === 'default_assumed').map((d) => d.ruleKey)
 		).toEqual(input.assumptions.map((a) => a.ruleKey));
@@ -101,7 +118,10 @@ describe('generateProgram', () => {
 			'program_purpose',
 			'block_structure',
 			...input.assumptions.map(() => 'default_assumed'),
-			'day_allocation'
+			'day_allocation',
+			// The season's: who leads the first block, and the block type it chose.
+			'priority_resolved',
+			'block_type_chosen'
 		]);
 		expect(plan.decisions.filter((d) => d.kind === 'split_chosen')).toHaveLength(1);
 	});
@@ -213,4 +233,70 @@ describe('generateProgram', () => {
 			);
 		}
 	});
+});
+
+/**
+ * Every scenario's plan as JSON, the bytes a version stores, hashed on a Monday and a Thursday start
+ * before m7-stage-list moved the demand and blocks stages and added prepare, phasing and schedule.
+ * With prepare as the identity (no season), M3's stages still plan these bytes exactly: the M7
+ * hunks in demand.ts, splits.ts and input.ts change nothing without a season. generator-running
+ * ('perfo-programming/5') changed the plans with runs, hybrid's and journey's: their paces come from
+ * paces.ts's VDOT, so their pinned hashes are its.
+ */
+const GOLDEN: Record<ScenarioKey, readonly [monday: string, thursday: string]> = {
+	beginner: ['d4bfc183ab8ee435', 'e76eed0b701d71ea'],
+	powerlifter: ['7002151f6b51da7b', 'ce338ae4b7af709d'],
+	hybrid: ['f8bc80dd615645ed', '3100524562860ed5'],
+	injuredShoulder: ['1372ab5296078226', '48ee5ba593935dd7'],
+	dumbbellsOnly: ['71015477f3f97476', '92907395e75da37b'],
+	journey: ['550aa8d3fa4c7208', 'c323c0f6f372651f'],
+	minimal: ['c3e4d72addb45c7a', '57bb88bd394355e1']
+};
+
+/**
+ * The same plans with the season (generator-season) and every week repaired by the schedule stage
+ * (generator-schedule, GENERATOR_ID 'perfo-programming/3', which changed hybrid's), and each
+ * week's prescriptions by its block type (generator-phasing, 'perfo-programming/4': hybrid's
+ * secondary strength held to the lower half of its band), and runs from current fitness
+ * (generator-running, 'perfo-programming/5': hybrid's and journey's paces from their VDOT), and
+ * Muay Thai from the fight camp (generator-combat, 'perfo-programming/6': journey's camp weeks get
+ * their sparring and conditioning); a later GENERATOR_ID bump changes them, and its PR lists each.
+ */
+const GOLDEN_SEASON: Record<ScenarioKey, readonly [monday: string, thursday: string]> = {
+	beginner: ['40ac8a97f8ac8304', 'afbafd92042977bf'],
+	powerlifter: ['53368325fc4eeb18', '7cce2ec2cd815ba0'],
+	hybrid: ['4b442a4bbffe9dba', '6e5143cbd95d1af0'],
+	injuredShoulder: ['a4e42532f422ef13', 'e020e654173b406a'],
+	dumbbellsOnly: ['7eb70d064378cab5', '2ebb5a975014b49c'],
+	journey: ['281fd08bbc77905c', '9d3d00aeebff9b16'],
+	minimal: ['69abd4d5ab6fd927', '1cb83a5371a0118c']
+};
+
+const hashesOf = (key: ScenarioKey) => {
+	const input = inputOf(SCENARIOS[key]());
+	return [OPTIONS, { ...OPTIONS, firstPlannedDay: scenarioDay(1, 3) }].map((start) =>
+		fnv1a64(JSON.stringify(generateProgram(input, start)))
+	);
+};
+
+describe('byte-identical plans', () => {
+	it.each(Object.keys(GOLDEN) as ScenarioKey[])(
+		'%s: with no season, the plan is byte for byte the one from before the stage list moved',
+		(key) => {
+			vi.spyOn(stages, 'prepare').mockImplementation((input) => ({ input, periodisation: null }));
+			// M3's stages alone: the schedule stage (generator-schedule) is M7's.
+			vi.spyOn(
+				STAGES.find((s) => s.name === 'schedule')!,
+				'run'
+			).mockImplementation((d) => d);
+			expect(hashesOf(key)).toEqual(GOLDEN[key]);
+		}
+	);
+
+	it.each(Object.keys(GOLDEN_SEASON) as ScenarioKey[])(
+		'%s: with the season, the plan is byte for byte the one generator-season pinned',
+		(key) => {
+			expect(hashesOf(key)).toEqual(GOLDEN_SEASON[key]);
+		}
+	);
 });

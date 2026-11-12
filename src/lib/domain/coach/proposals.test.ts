@@ -15,6 +15,7 @@ import {
 	ALTERNATIVE,
 	EXERCISE,
 	FIXTURES,
+	GOAL,
 	PLANNED,
 	SESSION
 } from '../../../../tests/fixtures/coach-proposals';
@@ -246,6 +247,37 @@ const M3: Record<ProgramOpKind, [z.ZodMiniType, Record<string, unknown>[]]> = {
 		]
 	]
 };
+
+describe('the replan payload', () => {
+	const replan = (payload: object) => ({
+		...FIXTURES.replan,
+		payload: { ...(FIXTURES.replan.payload as object), ...payload }
+	});
+	const errorsOf = (input: unknown) => {
+		const result = validate(proposalSchema, input);
+		return result.ok ? {} : result.errors;
+	};
+
+	it('takes each directive, and refuses a start that is not a Monday at its path', () => {
+		const deload = { kind: 'deload', week: '2026-11-16', trigger: 'reactive', reasons: ['Tired'] };
+		const taper = { kind: 'taper', goalRef: GOAL, form: 'mini' };
+		const priorities = { kind: 'priorities', cause: 'reorder' };
+		for (const directive of [deload, taper, priorities])
+			expect(errorsOf(replan({ directive }))).toEqual({});
+		expect(errorsOf(replan({ from: '2026-11-17' }))).toEqual({
+			'payload.from': 'Start on a Monday'
+		});
+		expect(errorsOf(replan({ fingerprint: 'stale' }))).toEqual({
+			'payload.fingerprint': 'Not a digest'
+		});
+	});
+
+	it('refuses a key its directive does not name, instead of dropping it', () => {
+		const directive = { kind: 'priorities', cause: 'reorder', ops: [] };
+		expect(errorsOf(replan({ directive }))).toEqual({ 'payload.directive': 'Unknown field: ops' });
+		expect(errorsOf(replan({ change: 'all' }))).toEqual({ payload: 'Unknown field: change' });
+	});
+});
 
 describe('programOpSchema', () => {
 	it('has one op per M3 edit', () => {

@@ -45,7 +45,7 @@ const substitutedFrom = alias(exercises, 'substituted_from');
  * exercises, set prescriptions, run segments and details, one query each. Every query is keyed by
  * the version alone (the membership primary keys, then each child's parent index), so the count
  * never grows with the program. Rows come in stored order and name their parent:
- * - blocks by position, weeks by date, sessions by day and order in the day
+ * - blocks by date (then position), weeks by date, sessions by day and order in the day
  * - exercises, sets and segments by their parent, then position
  * Nothing runs until a builder is awaited; await them in turn on one connection.
  */
@@ -57,7 +57,9 @@ export function versionTree(db: Executor, versionId: string) {
 			.from(programVersionBlocks)
 			.innerJoin(programBlocks, eq(programBlocks.id, programVersionBlocks.blockId))
 			.where(eq(programVersionBlocks.versionId, versionId))
-			.orderBy(asc(programBlocks.position)),
+			// A version's blocks never overlap, so their dates order them: a re-plan shares the blocks
+			// after a taper (older positions) behind blocks it adds (replan-store).
+			.orderBy(asc(programBlocks.startsOn), asc(programBlocks.position)),
 		weeks: versionWeeks(db, versionId),
 		...sessionsWithChildren(
 			db,

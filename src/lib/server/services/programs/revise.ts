@@ -23,7 +23,8 @@ import {
 	type ExerciseChange,
 	type SegmentChange,
 	type SessionChange,
-	type SetChange
+	type SetChange,
+	type WeekChange
 } from '../../db/repositories/programs';
 import type { Executor } from '../../db/types';
 import { measure } from '../../observability/timing';
@@ -65,8 +66,10 @@ export interface WeekCopies {
  * How the copies differ from the base, by lineage: a session's columns and its details; a run
  * segment by its session's lineage and position; a planned exercise's columns; a set
  * prescription by its exercise's lineage and position. A revision changes values, never rows.
+ * A week's kind and targets by its lineage (M7: a deload marks its week); left out, unchanged.
  */
 export interface CopyChanges {
+	weeks?: Record<string, WeekChange>;
 	sessions?: Record<string, SessionChange>;
 	details?: Record<string, DetailChange>;
 	segments?: Record<string, Record<number, SegmentChange>>;
@@ -171,6 +174,7 @@ function changesByBaseId(copies: WeekCopies, changes: CopyChanges) {
 		if (!copy) throw new Error(`the revision changes a ${what} outside the weeks it copies`);
 		return copy.from;
 	};
+	const week = base(copies.weeks, 'week');
 	const session = base(copies.sessions, 'session');
 	const exercise = base(copies.exercises, 'planned exercise');
 	const by = <T>(record: Record<string, T> = {}, id: (lineage: string) => string) =>
@@ -183,6 +187,7 @@ function changesByBaseId(copies: WeekCopies, changes: CopyChanges) {
 			])
 		);
 	return {
+		weeks: by(changes.weeks, week),
 		sessions: by(changes.sessions, session),
 		details: by(changes.details, session),
 		segments: at(changes.segments, session),

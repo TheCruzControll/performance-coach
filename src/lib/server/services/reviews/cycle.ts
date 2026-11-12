@@ -8,7 +8,8 @@
  *   CycleReviewNotReviewableError with the day it becomes available.
  * - Creating is one transaction under the owner's review lock, and idempotent. It reads the
  *   block's facts (the workouts before it too, for the ACWR), each week's targets (targets.ts) and
- *   M2's active goals, then evaluateCycle → directivesFrom → store. The next_cycle proposal is the
+ *   M2's active goals, then evaluateCycle → directivesFrom (with today's programming input, so the
+ *   season planner chooses the next block) → store. The next_cycle proposal is the
  *   directives' modifiable subset, created with the review's rules provenance (evidence.source)
  *   and linked to it. Decision: its evidence keeps the directives and the folded overrides, since
  *   the cycle snapshot's schema has no field for them; the previews and a refresh read them back.
@@ -72,10 +73,11 @@ import type { BaselineLift } from '../../../domain/training/types';
 import type { WeightUnit } from '../../../domain/units';
 import { getDb, type Executor } from '../../db';
 import { createCoachProposalsRepository } from '../../db/repositories/coach-proposals';
+import { createPeriodiseRepository } from '../../db/repositories/program-periodise';
 import { createProgramsRepository } from '../../db/repositories/programs';
 import { createReviewsRepository } from '../../db/repositories/reviews';
 import { createFactsLoader, createQueue } from '../analytics/facts';
-import { displayUnits, formatIn } from '../analytics/format';
+import { displayUnits, formatIn, type DisplayUnits } from '../analytics/format';
 import { getMuscleTargets } from '../analytics/targets';
 import { createProposal, getProposalView, type ProposalView } from '../coach/proposals';
 import { getExercisesByIds, type ExerciseDef } from '../exercises/index';
@@ -299,6 +301,20 @@ async function readBlock(
 
 // ---- create ------------------------------------------------------------------------------
 
+/**
+ * Decision (m7-plan open question: a block a re-plan cuts short): it gets no cycle review of its
+ * own; the block replacing it is reviewed at its end. True reviews it like any other block.
+ */
+export const REVIEW_CUT_BLOCKS = false;
+
+/** The version's planned training blocks started by `today`, those a re-plan cut short left out. */
+async function reviewable(db: Executor, version: Version, today: IsoDate) {
+	const started = version.blocks.filter((b) => trained(b) && b.startsOn <= today);
+	if (REVIEW_CUT_BLOCKS || !started.length) return started;
+	const cut = await createPeriodiseRepository(db).cutShortLineages(version.version.id);
+	return started.filter((b) => !cut.has(b.lineage));
+}
+
 /** The latest planned block the owner can review today and has not; null with none. */
 export async function reviewableBlock(
 	ownerId: string,
@@ -309,7 +325,7 @@ export async function reviewableBlock(
 	const version = await currentVersion(db, ownerId);
 	if (!version) return null;
 	const { timeZone } = await getAthleteProfile(ownerId, { db });
-	const started = version.blocks.filter((b) => trained(b) && b.startsOn <= today);
+	const started = await reviewable(db, version, today);
 	for (const block of started.toReversed()) {
 		const ended = block.endsOn < today;
 		if (!ended && !(await lastWeekDone(db, ownerId, block, timeZone))) continue;
@@ -321,6 +337,43 @@ export async function reviewableBlock(
 		};
 	}
 	return null;
+}
+
+/** The block a cycle review row offers: reviewable today, or still running. */
+export interface UnreviewedBlock {
+	programId: string;
+	blockLineage: string;
+	name: string;
+	startsOn: IsoDate;
+	endsOn: IsoDate;
+	reviewable: boolean;
+}
+
+/**
+ * The block the reviews list offers to review: the latest started planned block with no live
+ * review that is reviewable today, else the running block (not reviewable yet); null when the
+ * latest started block is reviewed, or there is none. Read in turn, newest block first.
+ */
+export async function unreviewedBlock(
+	ownerId: string,
+	today: IsoDate,
+	deps: ReviewDeps = {}
+): Promise<UnreviewedBlock | null> {
+	const { db } = resolve(deps);
+	const version = await currentVersion(db, ownerId);
+	if (!version) return null;
+	const { timeZone } = await getAthleteProfile(ownerId, { db });
+	const started = await reviewable(db, version, today);
+	let running: UnreviewedBlock | null = null;
+	for (const block of started.toReversed()) {
+		if (await getLiveCycleReview(ownerId, version.programId, block.lineage, { db })) break;
+		const reviewable = block.endsOn < today || (await lastWeekDone(db, ownerId, block, timeZone));
+		const { lineage: blockLineage, name, startsOn, endsOn } = block;
+		const found = { programId: version.programId, blockLineage, name, startsOn, endsOn };
+		if (reviewable) return { ...found, reviewable };
+		running ??= { ...found, reviewable };
+	}
+	return running;
 }
 
 export interface CreateCycleReview {
@@ -385,10 +438,15 @@ async function compute(
 			}
 		: null;
 	const outline = read.next && { phase: read.next.phase, weeks: weeksOf(read.next) };
+	// Today's profile input: the season planner chooses the next block at today's goals (M7).
+	// Decision: the review keeps this choice; a goal change before accepting re-previews with it
+	// (the modes follow the new goals), as M6's goals-based directives did, until a refresh.
+	const profile = await programmingInputFor(ownerId, { db });
 	const directives = directivesFrom(
 		{ snapshot: evaluation.snapshot, running },
 		outline,
-		read.goals
+		read.goals,
+		profile
 	);
 	const folded = await coachNextCycles(db, ownerId, blockLineage);
 	const payloads = folded.map((f) => f.payload);
@@ -550,6 +608,49 @@ export interface CycleReviewView {
 	writeUp: { state: 'written'; text: string } | { state: 'none' };
 	/** One per start on offer, the first being the default; none once the next block is planned. */
 	previews: NextBlockPreview[];
+	/** What the screen draws from the block as logged now; null once it left the current version. */
+	progression: CycleProgression | null;
+}
+
+/**
+ * The block's progression as the review screen draws it, from its facts as logged now (never
+ * stored): each judged exercise's estimated 1RM per session, and the weekly run distance.
+ */
+export interface CycleProgression {
+	lifts: { exercise: string; points: { on: IsoDate; kg: number }[] }[];
+	/** Metres in each week of the block; null when it held no run. */
+	distance: { weekStartsOn: IsoDate; metres: number }[] | null;
+	units: DisplayUnits;
+}
+
+async function progressionOf(
+	db: Executor,
+	ownerId: string,
+	block: StoredBlock,
+	read: BlockFacts,
+	snapshot: CycleReviewSnapshot,
+	profile: Awaited<ReturnType<typeof getAthleteProfile>>
+): Promise<CycleProgression> {
+	const { timeZone: tz } = profile;
+	const ids = snapshot.effectiveness.map((e) => e.exercise);
+	const defs = await getExercisesByIds(ownerId, ids, { db });
+	const setsOf = Map.groupBy(read.sets, (s) => s.exercise);
+	const lifts = snapshot.effectiveness.flatMap(({ exercise }) => {
+		const def = defs.get(exercise);
+		const points = def ? e1rmSeries(setsOf.get(exercise) ?? [], def, tz) : [];
+		return points.length
+			? [{ exercise, points: points.map((p) => ({ on: p.on, kg: p.value })) }]
+			: [];
+	});
+	const runs = await read.facts.runs();
+	const weeks = weeklyRunning(runs, windowOf(block), 'km', tz).weeks;
+	return {
+		lifts,
+		distance: runs.length
+			? weeks.map((w) => ({ weekStartsOn: w.weekStart, metres: w.metres }))
+			: null,
+		units: displayUnits(profile)
+	};
 }
 
 /** What the block showed, as the next block's input overlay and results stage read it. */
@@ -753,6 +854,21 @@ export async function getCycleReviewView(
 			? (await plannedOf(db, ownerId, review, head.id, read, { today, profile })).map(
 					(p) => p.preview
 				)
-			: []
+			: [],
+		progression:
+			snapshot && block && read
+				? await progressionOf(db, ownerId, block, read, snapshot, profile)
+				: null
 	};
+}
+
+/** The review `id`, whichever revision: its block's live review, as getCycleReviewView gives it. */
+export async function getCycleReviewViewById(
+	ownerId: string,
+	id: string,
+	today: IsoDate,
+	deps: ReviewDeps = {}
+): Promise<CycleReviewView> {
+	const { programId, blockLineageId: blockLineage } = await getCycleReview(ownerId, id, deps);
+	return getCycleReviewView(ownerId, { programId, blockLineage, today }, deps);
 }

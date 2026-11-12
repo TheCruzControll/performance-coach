@@ -8,11 +8,13 @@
  *   that is not eligible for them (equipment, injuries); eligibility arrives as data.
  * - A workout_update touches one session. (At most MAX_PROPOSAL_OPS ops is the schema's.)
  * - Every id names something the owner has: a session, its planned exercise, a block, a goal.
+ * - A replan starts on a Monday still ahead: a regenerating or splicing one from the next Monday
+ *   (today when it is a Monday) on, a deload's week this week or later and its from that week.
  *
  * Errors are keyed by the dotted path of the field at fault, as validate() keys a schema's, so a
  * card or a tool result can point at it. Server-only and pure: imported by path, no clock, no I/O.
  */
-import type { IsoDate } from '../calendar.ts';
+import { addDays, mondayOf, type IsoDate } from '../calendar.ts';
 import { validate, type FieldErrors, type Validated } from '../validation.ts';
 import { proposalSchema, type ProgramOp, type Proposal } from './proposals.ts';
 
@@ -42,7 +44,9 @@ export const RULE_MESSAGES = {
 	pastDay: 'Pick today or later',
 	disliked: 'You dislike this exercise',
 	ineligible: 'Not an option for you',
-	oneSession: 'One session per workout update'
+	oneSession: 'One session per workout update',
+	startPassed: 'Start on a Monday still ahead',
+	deloadWeek: 'Start on the deloaded week'
 } as const;
 const M = RULE_MESSAGES;
 
@@ -132,6 +136,19 @@ function proposalErrors(proposal: Proposal, context: ProposalContext): FieldErro
 		case 'preference_update':
 			// The exercise is looked up when it is recorded (recordExercisePreference).
 			break;
+		case 'replan': {
+			const { directive, from } = proposal.payload;
+			const thisWeek = mondayOf(context.today);
+			const nextMonday = thisWeek === context.today ? thisWeek : addDays(thisWeek, 7);
+			if (directive.kind === 'deload') {
+				if (directive.week < thisWeek) fail('directive.week', M.past);
+				if (from !== directive.week) fail('from', M.deloadWeek);
+			} else if (from < nextMonday) fail('from', M.startPassed);
+			if (directive.kind === 'block' && directive.focusGoalRef)
+				goal(directive.focusGoalRef, 'directive.focusGoalRef');
+			if (directive.kind === 'taper') goal(directive.goalRef, 'directive.goalRef');
+			break;
+		}
 	}
 	return errors;
 }

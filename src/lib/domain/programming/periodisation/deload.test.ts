@@ -8,10 +8,15 @@ import { addDays, mondayOf } from '../../calendar';
 import type { IsoDate } from '../../calendar';
 import { CATALOGUE, catalogueByKey } from '../../exercises/index';
 import type { ExperienceLevel } from '../../profile/catalog';
-import type { SessionPlan, WeekPlan } from '../../training/types';
+import type { BlockPlan, SessionPlan, WeekPlan } from '../../training/types';
 import type { WeekKind } from '../../training/vocabulary';
-import { buildProgrammingInput, generateProgram } from '../index';
+import { DecisionLog } from '../decisions';
+import { firstDraft, STAGES } from '../generate';
+import { buildProgrammingInput } from '../index';
+import type { ProgrammingInput } from '../input';
+import type { GenerateOptions } from '../stage';
 import { loadModel } from '../load/fatigue';
+import { paceFor, trainingPaces, vdotFromPerformance } from '../paces';
 import type { ModelPlanned } from '../load/fatigue';
 import { fromLogged } from '../load/from-facts';
 import { composeWeeklyReview } from '../review/weekly';
@@ -365,16 +370,25 @@ describe('deloadWeek', () => {
 
 // ---- deloadSessions -----------------------------------------------------------------------------
 
-/** Week 2 of S1's first block: strength, runs with a tempo, and two Muay Thai classes. */
+/** M3's blocks for `input`: its stages from a draft with no season, prepare left out. */
+function m3Blocks(input: ProgrammingInput, options: GenerateOptions): BlockPlan[] {
+	const context = { input, options, log: new DecisionLog() };
+	let draft = firstDraft({ input, periodisation: null });
+	// M3's stages: the schedule stage (generator-schedule) is M7's.
+	for (const stage of STAGES.filter((s) => s.name !== 'schedule'))
+		draft = stage.run(draft, context);
+	return draft.blocks;
+}
+
+/**
+ * Week 2 of S1's first block: strength, runs with a tempo, and two Muay Thai classes. It is the
+ * week M3's stages plan with no season (generator-season changes the generated week), so these
+ * tests pin deloadSessions and nothing else.
+ */
 function s1Week(): WeekPlan {
-	const plan = generateProgram(
-		buildProgrammingInput(M7_SCENARIOS.multiGoal(), { catalogue: CATALOGUE }),
-		{
-			startsOn: SCENARIO_START,
-			firstPlannedDay: SCENARIO_START
-		}
-	);
-	const week = structuredClone(plan.blocks[0]!.weeks[1]!);
+	const input = buildProgrammingInput(M7_SCENARIOS.multiGoal(), { catalogue: CATALOGUE });
+	const [block] = m3Blocks(input, { startsOn: SCENARIO_START, firstPlannedDay: SCENARIO_START });
+	const week = structuredClone(block!.weeks[1]!);
 	// One absolute load, and one Muay Thai session of the plan's own: sparring.
 	const lift = week.sessions.find((s) => s.kind === 'strength')!;
 	lift.exercises[0]!.sets[0] = {
@@ -459,12 +473,14 @@ describe('deloadSessions', () => {
 		const tempo = out.find((s) => s.date === addDays(week.startsOn, 4) && s.kind === 'run')!;
 		expect(tempo).toMatchObject({ type: 'easy_run', title: 'Easy run', intensity: 'easy' });
 		if (tempo.kind !== 'run') throw new Error('a run');
+		// The plan's own easy pace: E from the VDOT of S1's 10K in 45:00 (generator-running).
+		const [easyPace] = paceFor('easy', trainingPaces(vdotFromPerformance(10_000, 45 * 60)));
 		expect(
 			tempo.segments.map((g) => [g.kind, g.durationSeconds, g.hrZone, g.paceMinSecondsPerKm])
 		).toEqual([
-			['warm_up', 420, 2, 324],
-			['easy', 840, 2, 324],
-			['cool_down', 420, 2, 324]
+			['warm_up', 420, 2, easyPace],
+			['easy', 840, 2, easyPace],
+			['cool_down', 420, 2, easyPace]
 		]);
 		const easy = out.find((s) => s.type === 'easy_run' && s.date === week.startsOn)!;
 		if (easy.kind !== 'run') throw new Error('a run');

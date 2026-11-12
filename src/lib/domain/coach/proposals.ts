@@ -9,7 +9,9 @@
  * - session_substitution has M4's substitution fields and reasons (training/schemas.ts);
  * - goal_update carries M2's goal schemas, and preference_update M2's like or dislike;
  * - new_program names what M3's preview showed (services/programming), by its fingerprint;
- * - next_cycle is a brief for M6's cycle review, with M3's week targets and vocabulary.
+ * - next_cycle is a brief for M6's cycle review, with M3's week targets and vocabulary;
+ * - replan is M7's re-plan request (training/replan.ts) and the hashes of the preview it showed:
+ *   the change itself is derived again at accept (services/coach/apply/replan.ts).
  *
  * Every object is closed: a key the schema does not name is refused, not dropped, so a payload
  * means exactly what was checked and its JSON Schema states additionalProperties: false. What
@@ -45,6 +47,7 @@ import {
 	substitutionSchema,
 	weekTargetsSchema
 } from '../training/schemas.ts';
+import { replanDirectiveSchema, replanPayloadSchema } from '../training/replan.ts';
 import { MUSCLE_GROUPS, PHASES } from '../training/vocabulary.ts';
 
 export const PROPOSAL_KINDS = [
@@ -54,7 +57,8 @@ export const PROPOSAL_KINDS = [
 	'new_program',
 	'next_cycle',
 	'goal_update',
-	'preference_update'
+	'preference_update',
+	'replan'
 ] as const;
 export type ProposalKind = (typeof PROPOSAL_KINDS)[number];
 
@@ -275,6 +279,23 @@ const preferenceUpdate = closed({
 	reason: exercisePreferenceSchema.shape.reason
 });
 
+// ---- a re-plan ------------------------------------------------------------------------------
+
+/** M7's re-plan payload, every object closed: the request and the hashes, never the change. */
+const replan = closed({
+	...replanPayloadSchema.shape,
+	directive: z.discriminatedUnion(
+		'kind',
+		[
+			closed(replanDirectiveSchema.def.options[0].shape),
+			closed(replanDirectiveSchema.def.options[1].shape),
+			closed(replanDirectiveSchema.def.options[2].shape),
+			closed(replanDirectiveSchema.def.options[3].shape)
+		],
+		'Pick a re-plan'
+	)
+});
+
 // ---- the proposal ---------------------------------------------------------------------------
 
 export const PAYLOAD_SCHEMAS = {
@@ -284,7 +305,8 @@ export const PAYLOAD_SCHEMAS = {
 	new_program: newProgram,
 	next_cycle: nextCycle,
 	goal_update: goalUpdate,
-	preference_update: preferenceUpdate
+	preference_update: preferenceUpdate,
+	replan
 } as const satisfies Record<ProposalKind, z.ZodMiniType>;
 
 type Payloads = typeof PAYLOAD_SCHEMAS;
@@ -317,7 +339,8 @@ export const proposalSchema = z.discriminatedUnion(
 		proposal('new_program'),
 		proposal('next_cycle'),
 		proposal('goal_update'),
-		proposal('preference_update')
+		proposal('preference_update'),
+		proposal('replan')
 	],
 	'Unknown proposal kind'
 );

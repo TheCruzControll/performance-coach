@@ -9,6 +9,7 @@ import type { TrendResult } from '#lib/domain/analytics/trend.ts';
 import type { SeriesPoint } from '#lib/domain/analytics/types.ts';
 import type { OverviewKpi, ProgressOverview } from '#lib/server/services/analytics/overview.ts';
 import type { TrainingDeps } from '#lib/server/services/training/shared.ts';
+import type { ReviewPromptView } from '#lib/ui/analytics/review-prompt.ts';
 import { sparkline } from '#lib/ui/analytics/sparkline.ts';
 import { loadProgress, overviewData, tileVerdict, type ProgressRequest } from './load.ts';
 
@@ -353,12 +354,45 @@ describe('loadProgress', () => {
 	const NOW = new Date('2026-11-04T12:00:00Z');
 	const today = vi.fn(async () => TODAY);
 
-	it('reads the overview for the asked period on the owner today', async () => {
+	const review: ReviewPromptView = {
+		...{ kind: 'weekly', state: 'reviewed', title: 'Your week in review', summary: 'A hard week.' },
+		...{ href: '/progress/reviews/w-2026-10-26', create: null, notReady: 'Ready after Sunday' }
+	};
+
+	it('reads the overview for the asked period on the owner today, then its review prompt', async () => {
 		const read = vi.fn(async () => trained('4w'));
-		const data = await loadProgress('owner-1', request, NOW, { db, overview: read, today });
+		const prompt = vi.fn(async () => review);
+		const data = await loadProgress('owner-1', request, NOW, { db, overview: read, today, prompt });
 		expect(today).toHaveBeenCalledWith('owner-1', NOW, { db });
 		expect(read).toHaveBeenCalledWith(db, 'owner-1', { period: '4w', today: TODAY });
+		expect(prompt).toHaveBeenCalledWith('owner-1', TODAY, { db });
 		expect(data).toMatchObject({ failed: false, view: 'overview', period: '4w' });
+		expect(data.failed === false && data.view === 'overview' && data.overview.review).toEqual(
+			review
+		);
+	});
+
+	it('records a failed prompt read and shows the overview without it', async () => {
+		const error = new Error('lock timeout');
+		const record = vi.fn(async () => null);
+		const data = await loadProgress('owner-1', request, NOW, {
+			db,
+			overview: async () => trained('4w'),
+			prompt: async () => {
+				throw error;
+			},
+			record,
+			today
+		});
+		expect(data).toMatchObject({ failed: false, view: 'overview', overview: { review: null } });
+		expect(record).toHaveBeenCalledWith(
+			expect.objectContaining({
+				error,
+				kind: 'load',
+				context: { load: 'progressReviewPrompt' }
+			}),
+			{ db: undefined }
+		);
 	});
 
 	it('records a failed read and returns the failed state, never throwing', async () => {
