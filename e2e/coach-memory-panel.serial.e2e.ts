@@ -103,6 +103,12 @@ test('a dislike said to the coach is in Profile, and a new conversation knows it
 		'/profile/exercises'
 	);
 	await expect(page.getByTestId('knows-decisions')).toContainText(SPLIT_SQUAT);
+	// Dated as the rest of the app dates things ('Tue 10 Nov'), never 'Nov 10, 2026'.
+	const day =
+		/\b(Mon|Tue|Wed|Thu|Fri|Sat|Sun) \d{1,2} (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\b/;
+	await expect(page.getByTestId('knows-decisions')).toContainText(day);
+	await expect(sheet(page)).toContainText(new RegExp(`As of ${day.source}\\.`));
+	await expect(sheet(page)).not.toContainText(/[A-Z][a-z]{2} \d{1,2}, \d{4}/);
 	await expect(sheet(page)).not.toContainText(DISLIKE);
 	await expectNoSideScroll(page);
 	await captureScreen(page, testInfo, 'coach-memory-panel');

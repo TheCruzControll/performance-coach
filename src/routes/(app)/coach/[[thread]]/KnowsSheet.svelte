@@ -17,6 +17,7 @@
 	import Notice from '#lib/ui/components/Notice.svelte';
 	import Section from '#lib/ui/components/Section.svelte';
 	import LoadingRows from '#lib/ui/coach/LoadingRows.svelte';
+	import { knowsDate } from './knows-dates';
 	import type { KnowsView } from './knows';
 
 	let { open = $bindable() }: { open: boolean } = $props();
@@ -40,10 +41,6 @@
 	$effect(() => {
 		if (open) untrack(load);
 	});
-
-	// A record's day, not an instant: written as that calendar day wherever the browser is.
-	const day = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeZone: 'UTC' });
-	const dated = (iso: string) => day.format(new Date(`${iso}T00:00:00Z`));
 </script>
 
 <BottomSheet
@@ -99,7 +96,9 @@
 										<span class="title">{item.title}</span>
 										{#if item.detail || item.date}
 											<span class="detail">
-												{[item.date && dated(item.date), item.detail].filter(Boolean).join(' · ')}
+												{[item.date && knowsDate(item.date, view.asOf), item.detail]
+													.filter(Boolean)
+													.join(' · ')}
 											</span>
 										{/if}
 									</span>
@@ -110,7 +109,7 @@
 					</ul>
 				</Section>
 			{/each}
-			<p class="caption">As of {dated(view.asOf)}.</p>
+			<p class="caption">As of {knowsDate(view.asOf, view.asOf)}.</p>
 		{/if}
 	</div>
 </BottomSheet>
