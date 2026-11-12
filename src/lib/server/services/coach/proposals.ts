@@ -52,6 +52,8 @@ import {
 	runSegmentSchema,
 	setPrescriptionSchema
 } from '../../../domain/training/schemas';
+import { PROPOSAL } from '../../../domain/training/lifecycles';
+import type { ProposalEvent } from '../../../domain/training/lifecycles';
 import { PROPOSAL_STATUSES, type ProposalStatus } from '../../../domain/training/vocabulary';
 import { validate, type FieldErrors } from '../../../domain/validation';
 import {
@@ -70,6 +72,7 @@ import { runMinutes } from '../programs/edits';
 import { listExercisePreferences } from '../training/preferences';
 import { TrainingInputError } from '../training/shared';
 import { listActiveWorkouts } from '../workouts/canonical';
+import { transition } from '../lifecycle-guard';
 import { APPLIERS, type Applier, type ApplyOutcome } from './apply';
 import { refuseReviewNextCycle } from './apply/next-cycle';
 import { SESSION_ENDED, substitutionEnded } from './apply/session';
@@ -557,7 +560,7 @@ export async function createProposal(
 		if (duplicate) return { proposal: await view(repo, ownerId, duplicate), duplicate: true };
 
 		let revises: string | null = null;
-		let open = false;
+		let revisesFrom: ProposalStatus | null = null;
 		if (input.revises != null) {
 			const predecessor = await lockOwn(repo, ownerId, input.revises);
 			// A review's proposal superseded as sessions_passed is the base of the owner's revision
@@ -567,7 +570,7 @@ export async function createProposal(
 				throw new ProposalClosedError(predecessor.status);
 			}
 			revises = predecessor.id;
-			open = predecessor.status === 'proposed';
+			revisesFrom = predecessor.status;
 		}
 		const { rows, impact } = describeProposal(proposal, diffContext);
 		const lines = summaryLines(proposal, diffContext);
@@ -593,9 +596,14 @@ export async function createProposal(
 			createdAt: at,
 			updatedAt: at
 		});
-		if (revises && open) {
+		if (revises && revisesFrom === 'proposed') {
 			const superseded = { supersededReason: 'revised', closedAt: at, updatedAt: at } as const;
-			await repo.decide(ownerId, revises, { status: 'superseded', ...superseded });
+			await repo.decide(
+				ownerId,
+				revises,
+				transition(PROPOSAL, revisesFrom, 'supersede'),
+				superseded
+			);
 		}
 		return { proposal: await view(repo, ownerId, id), duplicate: false };
 	});
@@ -650,21 +658,27 @@ export async function opsStillAhead<T extends { op: ProgramOp }>(
 	return stillAhead(dated, today, begun).map((d) => d.item);
 }
 
-function decisionOf(outcome: ApplyOutcome, at: Date): ProposalDecision {
+/** The applier's outcome as the PROPOSAL event it makes and the columns it sets. */
+function decisionOf(
+	outcome: ApplyOutcome,
+	at: Date
+): { event: ProposalEvent; set: Omit<ProposalDecision, 'status'> } {
 	const closed = { closedAt: at, updatedAt: at };
 	switch (outcome.status) {
 		case 'applied':
 			return {
-				status: 'applied',
-				appliedVersionId: outcome.appliedVersionId,
-				appliedRef: outcome.appliedRef,
-				programId: outcome.programId,
-				...closed
+				event: 'apply',
+				set: {
+					appliedVersionId: outcome.appliedVersionId,
+					appliedRef: outcome.appliedRef,
+					programId: outcome.programId,
+					...closed
+				}
 			};
 		case 'accepted':
-			return { status: 'accepted', ...closed };
+			return { event: 'accept', set: closed };
 		case 'superseded':
-			return { status: 'superseded', supersededReason: outcome.reason, ...closed };
+			return { event: 'supersede', set: { supersededReason: outcome.reason, ...closed } };
 	}
 }
 
@@ -693,7 +707,8 @@ export async function acceptProposal(
 			const current = await createProgramsRepository(resolved.db).currentProgram(ownerId);
 			if (current?.version.id !== row.baseVersionId) {
 				const superseded = { supersededReason: 'program_changed' as const, closedAt: at };
-				await repo.decide(ownerId, row.id, { status: 'superseded', ...superseded, updatedAt: at });
+				const t = transition(PROPOSAL, row.status, 'supersede');
+				await repo.decide(ownerId, row.id, t, { ...superseded, updatedAt: at });
 				return { proposal: await view(repo, ownerId, row.id), changed: true };
 			}
 		}
@@ -710,7 +725,12 @@ export async function acceptProposal(
 					closedAt: at,
 					updatedAt: at
 				} as const;
-				await repo.decide(ownerId, row.id, { status: 'superseded', ...superseded });
+				await repo.decide(
+					ownerId,
+					row.id,
+					transition(PROPOSAL, row.status, 'supersede'),
+					superseded
+				);
 				const proposal = await view(repo, ownerId, row.id);
 				return {
 					proposal,
@@ -734,7 +754,8 @@ export async function acceptProposal(
 		});
 		if (!checked) {
 			const superseded = { supersededReason: SESSION_ENDED, closedAt: at };
-			await repo.decide(ownerId, row.id, { status: 'superseded', ...superseded, updatedAt: at });
+			const t = transition(PROPOSAL, row.status, 'supersede');
+			await repo.decide(ownerId, row.id, t, { ...superseded, updatedAt: at });
 			return { proposal: await view(repo, ownerId, row.id), changed: true };
 		}
 		const { proposal, today } = checked;
@@ -748,7 +769,8 @@ export async function acceptProposal(
 			today,
 			deps: resolved
 		});
-		await repo.decide(ownerId, row.id, decisionOf(outcome, at));
+		const { event, set } = decisionOf(outcome, at);
+		await repo.decide(ownerId, row.id, transition(PROPOSAL, row.status, event), set);
 		const href = outcome.status === 'superseded' ? outcome.href : undefined;
 		return { proposal: await view(repo, ownerId, row.id), changed: true, ...(href && { href }) };
 	});
@@ -776,8 +798,7 @@ export async function rejectProposal(
 		}
 		if (row.status !== 'proposed') throw new ProposalClosedError(row.status);
 		const at = resolved.now();
-		await repo.decide(ownerId, row.id, {
-			status: 'rejected',
+		await repo.decide(ownerId, row.id, transition(PROPOSAL, row.status, 'reject'), {
 			decisionNote: reason,
 			closedAt: at,
 			updatedAt: at

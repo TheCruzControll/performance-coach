@@ -10,15 +10,24 @@ import {
 import { getTableName, is } from 'drizzle-orm';
 import { PgTable } from 'drizzle-orm/pg-core';
 import pg from 'pg';
+import { sessionCookie } from '../src/lib/server/auth/cookies';
 import { LOCAL_DATABASE_URLS } from '../src/lib/server/db/migrate';
 import * as profileSchema from '../src/lib/server/db/schema/profile';
 import { DESKTOP } from './desktop';
+import { e2eBaseURL } from './projects';
 import { resetPrograms } from './program-support';
 
 /** The app's origin: state-changing requests must send it (`Origin`), as browsers do. */
-export const ORIGIN =
-	process.env.E2E_BASE_URL ?? `http://localhost:${process.env.E2E_PORT ?? 4173}`;
+export const ORIGIN = e2eBaseURL(process.env);
 export const SAME_ORIGIN = { origin: ORIGIN } as const;
+
+/**
+ * The session cookie's name at `baseURL`, as the server names it (cookies.ts): `__Host-session`
+ * over HTTPS (E2E_TLS=1, deployments), `session` over plain-HTTP localhost.
+ */
+export function sessionCookieName(baseURL: string = ORIGIN): string {
+	return sessionCookie(baseURL).name;
+}
 
 /** A browser state with no session: for signed-out specs (`test.use({ storageState: signedOut })`). */
 export const signedOut = { cookies: [], origins: [] };

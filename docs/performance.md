@@ -543,6 +543,11 @@ Initial JS and route CSS (gzip) of the coach routes, and the routes beside them:
   `/workout/session` (pass).
 - The same run's service-worker precache was 278 files and 997.3 KB, over the 275-file, 995 KB cap
   it carried; main has since raised the cap to 300 files and 1,100 KB.
+- **Back under the gate.** The shared JS trim (#473, below) closed the 0.3 KB: run
+  [43160552141](https://github.com/TheCruzControll/performance-coach/actions/runs/43160552141) on
+  `dfe367b` (#449 with main merged) measured `/(app)/coach/[[thread]]` 57.5 KB, `/(app)/train`
+  57.2 KB, `/(app)/today` 56.4 KB, the inbox 53.3 KB and `/workout` 53.1 KB, every route passing,
+  and the precache at 274 files and 1,011.5 KB, inside its 300-file, 1,100 KB cap.
 
 Main thread at 4× CPU (`perf` project, median of 5; guard 250 ms, target 200 ms):
 
@@ -593,10 +598,77 @@ live run has recorded `cache_read_input_tokens` or real TTFT.
 
 **Open.**
 
-- `/(app)/coach/[[thread]]` is 0.3 KB over the 60 KB gate in run 43113434377.
 - Lighthouse never audited the inbox: `scripts/lighthouse.ts` seeds it with real turns, and that
   fetch failed on the server's self-signed certificate (`DEPTH_ZERO_SELF_SIGNED_CERT`), which
   failed mobile shard 2/2 and ended the desktop step early.
+
+## Shared JS trimmed — measured 2026-11-11
+
+Every app route had 0.2–6.0 KB of room under the 60 KB gate (`/(app)/coach/[[thread]]` 59.8 KB,
+`/(app)/train` 59.4 KB), and most of each route is code every app route shares. Measured locally
+with `pnpm build:node && pnpm budgets` on main `8cccc77` and on this change.
+
+- **Fewer, larger start-up chunks.** Each file is gzipped on its own, so code every page loads
+  costs fewer bytes in one chunk than in several. The boot code and the root layout's own code
+  (with its Toaster) joined the `framework` chunk; the (app) layout, its shell, nav and PageHeader
+  are one `AppShell` chunk instead of five. The code shared by every route went from 45,620 B to
+  44,965 B, and with what every app route adds, from 49,923 B to 47,825 B (−2.0 KB). The root
+  layout's and the (app) layout's nodes are now 70 B each. No code loads later for this: only
+  the chunk boundaries moved. `/design` draws PageHeader, so it now loads the `AppShell`
+  chunk too (+1.7 KB, 54.2 KB). screen-memory.ts is in the `framework` group, not `AppShell`:
+  that group takes its modules' dependencies, and sign-out, which any page can load, imports
+  the screen memory, which put AppShell's stylesheet into the sign-in pages' CSS.
+- **The held screen's rule loads with HeldScreen.** Choosing what to hold over a navigation
+  (`(app)/held.ts`, with Today's freshness rule) moved from the (app) layout into HeldScreen's
+  module, which loads after the first paint. Copies of the screens left are still kept from the
+  start, so a tab left before then shows again.
+- **The service-worker registration is imported on mount** (it ran on idle already): 0.1 KB off
+  every route.
+- **Theme application** (`theme.ts`) left `preferences.svelte.ts`: Today and Train show only a
+  unit, so they no longer ship it (0.25 KB each).
+- **The coach's availability words** (`domain/coach/availability.ts`, re-exported by
+  `vocabulary.ts`) are a module of their own, and the vocabulary's `keysOf` is marked free of side
+  effects: the Coach screen no longer ships the rest of the coach vocabulary, which only an open
+  conversation uses (0.45 KB).
+
+Initial JS (gzip), before and after:
+
+| Route                              |  Before |   After |  Change |
+| ---------------------------------- | ------: | ------: | ------: |
+| `/(app)/coach/[[thread]]`          | 59.8 KB | 57.0 KB | −2.8 KB |
+| `/(app)/train`                     | 59.4 KB | 57.0 KB | −2.4 KB |
+| `/(app)/today`                     | 58.7 KB | 56.5 KB | −2.2 KB |
+| `/(app)/train/session/[key]`       | 58.7 KB | 56.6 KB | −2.1 KB |
+| `/(app)/progress`                  | 58.6 KB | 56.5 KB | −2.1 KB |
+| `/(app)/progress/workouts/[[id]]`  | 58.6 KB | 56.5 KB | −2.1 KB |
+| `/(app)/progress/reviews/[[key]]`  | 58.0 KB | 56.0 KB | −2.0 KB |
+| `/(app)/profile`                   | 57.9 KB | 56.0 KB | −1.9 KB |
+| `/(app)/profile/security`          | 57.5 KB | 55.4 KB | −2.1 KB |
+| `/(app)/train/history/[[version]]` | 56.5 KB | 54.4 KB | −2.1 KB |
+| `/(app)/progress/exercises/[id]`   | 56.0 KB | 53.9 KB | −2.1 KB |
+| `/(app)/profile/[section]`         | 55.8 KB | 53.7 KB | −2.1 KB |
+| `/(app)/offline`                   | 54.0 KB | 51.9 KB | −2.1 KB |
+| `/workout`                         | 53.9 KB | 53.1 KB | −0.8 KB |
+| `/workout/run`                     | 53.8 KB | 53.0 KB | −0.8 KB |
+| `/workout/session`                 | 53.8 KB | 52.9 KB | −0.9 KB |
+| `/design`                          | 52.5 KB | 54.2 KB | +1.7 KB |
+| `/onboarding/[[step]]`             | 52.5 KB | 51.9 KB | −0.6 KB |
+| `/setup`                           | 52.4 KB | 51.7 KB | −0.7 KB |
+| `/`                                | 50.4 KB | 49.8 KB | −0.6 KB |
+| `/recover/passkey`                 | 50.2 KB | 49.6 KB | −0.6 KB |
+| `/recover`                         | 49.5 KB | 48.8 KB | −0.7 KB |
+
+Every app route is now at least 3 KB under the gate; the tightest are `/(app)/train` (58,357 B)
+and `/(app)/coach/[[thread]]` (58,323 B), 11 B and 45 B under 57 KB. Route CSS is 0.2–0.5 KB
+lower on every app route (PageHeader's styles are inlined with the shell's, and the merged
+stylesheets gzip better) and no higher elsewhere, but for `/design` (7.5 → 8.2 KB: the shell's
+stylesheet). The precache went from 276 to 270 files.
+
+Not done, and why: the framework itself (Svelte's runtime and SvelteKit's client, about 38 KB) is
+most of what is left, and Rolldown places modules, not exports: Svelte's runtime is reached
+through one barrel from every component, so a runtime helper only one screen uses stays in the
+framework chunk. The toasts stay in the initial JS and the router keeps its modulepreload hints,
+for the reasons above.
 
 ## Budgets (enforced)
 
@@ -697,12 +769,14 @@ Fonts: only Mona Sans latin (39.8 KB) is preloaded (`src/lib/ui/fonts.ts`); Hubo
 (48.3 KB) loads when a heading uses it. One preloaded font per route (#394). Both are woff2 and
 cached immutably.
 
-Start-up chunks: three Rolldown groups in `vite.config.ts` (#394). `payload` comes first
+Start-up chunks: Rolldown groups in `vite.config.ts` (#394). `payload` comes first
 (SvelteKit's `client/payload.js` and the preload helper), then `framework` (Svelte, SvelteKit's
-client without `$app/forms` or its entries, devalue, clsx), then `boot` (errors, leaving, visits,
-service-worker, toast, Icon, error-page). They merge code that (nearly) every page loads and cut
-about 10 requests from every route's start-up (/workout: 25 to 14 boot scripts); the budgets
-bound any helper that rides along.
+client without `$app/forms` or its entries, devalue, clsx, and the app's boot code: the client
+hooks, errors, leaving, visits, toast, Icon, error-page, the root layout with its Toaster, screen
+memory and afterPaint), then `AppShell` (the (app) layout, AppShell, AppNav, nav, connectivity and
+PageHeader, on every app screen). They merge code that (nearly) every page loads and cut about 10
+requests from every route's start-up (/workout: 25 to 14 boot scripts); the budgets bound any
+helper that rides along. `boot` was a group of its own until the shared-JS trim above.
 
 Service-worker install download (precache): only what the shell, `/workout` and `/offline` need
 (#458), **275 files, 995 KB** decoded (about 440 KB gzip) when it was scoped; other immutable

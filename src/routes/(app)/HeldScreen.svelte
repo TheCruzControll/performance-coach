@@ -7,6 +7,21 @@
   so Back still finds it scrolled where it was. Inert and hidden from assistive technology; the
   region is aria-busy and names what is loading.
 -->
+<script lang="ts" module>
+	import { screens } from '#lib/client/screen-memory.ts';
+	import { heldFor, type Held, type Where } from './held';
+	import { isStale } from './today/freshness';
+
+	/**
+	 * What to hold while a navigation from `from` to `to` loads (held.ts): a copy kept on another
+	 * day or longer ago than Today's TTL (today/freshness.ts) is not shown. Here, not in the
+	 * layout, so it loads with this component and is in no screen's initial JavaScript.
+	 */
+	export function holding(from: Where, to: Where | null | undefined): Held<readonly Node[]> | null {
+		return heldFor(from, to, (url) => screens.recall(url, (keptAt) => isStale(keptAt, new Date())));
+	}
+</script>
+
 <script lang="ts">
 	import PageHeader from '#lib/ui/components/PageHeader.svelte';
 	import Skeleton from '#lib/ui/components/Skeleton.svelte';

@@ -56,6 +56,20 @@ corners). Profile → Appearance → Design switches between them, as does `?des
   sheets with 10 px corners on the spring; and focus as a 2 px Aqua-ink outline 2 px out (inset
   −3 px inside the segmented control and the stepper). No route styles a hook, and the hooks are
   only on these components (`components/graphite-hooks.test.ts`).
+- **Shell:** AppNav (`nav`) below 1024 px is the glossy graphite tab bar at today's
+  `--nav-height`, the current tab in the selection well with its glyph filled; from 1024 px the
+  rail is the source list (`--rail-width: 14.5rem` in Graphite only; rows of icon and label, the
+  current one in the well), a CSS-only change. PageHeader (`page-header`) sets the 34 px large
+  title and hides the eyebrow, except a date (`dated`, Today), which becomes the subtitle under
+  it. The resume bar (`resume-slot`) is drawn in the bar material.
+- **Status Display:** `StatusDisplay.svelte` (`status`; a line, the big numeral or a name, a dim
+  line, an elapsed/total bar, a footer) on Today (`today/panels/TodayStatus.svelte`: the week,
+  today's session, sessions done, the connection) and the run view (`RunStatus.svelte`: the run's
+  pace), each composed from the data the screen already shows. `StatusSlot.svelte` (`status-room`)
+  is the only switch today's design carries: it loads the display with a dynamic import only on a
+  page showing Graphite, holding its room from first paint so nothing moves. The rest timer
+  (`rest`) becomes the display in CSS alone: the time left as the big numeral, its controls on a
+  strip beneath the glass.
 - `graphite.test.ts` holds it to the chart palette checks and 4.5:1 text contrast in both themes;
   `e2e/design-switch*.e2e.ts` run axe on it and check no flash, no layout shift and no Graphite
   request on today's design. The screen gallery shoots every screen in both designs.
@@ -701,8 +715,9 @@ dashed).
 **The screenshot review.** `coach-journey.serial.e2e.ts` captures the set, and
 `scripts/coach-screens-index.ts` turns a CI run's screens into the owner's contact sheet. The
 owner's review is the merge gate of coach-launch (#449). Outcome: not yet recorded; its
-follow-ups go here once it is. Known before it: the coach screen is 0.3 KB over the initial-JS
-gate, and the inbox has no Lighthouse audit (docs/performance.md, "M5 (coach)").
+follow-ups go here once it is. Known before it: the inbox has no Lighthouse audit
+(docs/performance.md, "M5 (coach)"); the coach screen, once 0.3 KB over the initial-JS gate, is
+back under it since the shared JS trim (#473).
 
 ## Accessibility checklist (applies to every new component)
 

@@ -333,8 +333,8 @@ Still open:
 - The owner's review of the coach screenshot set (#405), the merge gate of #449: not yet recorded.
 - The live suite (`pnpm test:live`) has never run against the real model, so prompt caching, real
   TTFT and label compliance are not yet measured.
-- `/(app)/coach/[[thread]]` is 60.3 KB, over the 60 KB gate, and Lighthouse has no inbox audit
-  (docs/performance.md, "M5 (coach)").
+- Lighthouse has no inbox audit (docs/performance.md, "M5 (coach)"). The coach screen, 60.3 KB
+  and over the 60 KB gate in the M5 run, is 57.5 KB since the shared JS trim (#473).
 - The real-device checklist has no coach item yet.
 
 ## M6 — Analytics & reviews [§10, §11]
