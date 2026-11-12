@@ -91,11 +91,15 @@ export function worlds(env: E2EEnv): World[] {
  * world of the worker's TEST_PARALLEL_INDEX (and records it as E2E_WORLD); anywhere else it
  * changes nothing. The specs read both (e2eBaseURL, support.ts query), so they reach only their
  * own world's server and database.
+ *
+ * It routes from E2E_WORLD0_* whenever they are set, never from what it finds in E2E_PORT or
+ * E2E_WORLD: Playwright hands the environment a setup project's worker changed to the workers
+ * of the projects that depend on it, so a serial worker starts with the setup worker's world.
  */
 export function routeWorker(env: NodeJS.ProcessEnv): void {
-	if (worldCount(env) === 1 || env.TEST_PARALLEL_INDEX === undefined || env.E2E_WORLD) return;
-	const own = world(Number(env.TEST_PARALLEL_INDEX), env);
+	if (worldCount(env) === 1 || env.TEST_PARALLEL_INDEX === undefined) return;
 	const zero = worldZero(env);
+	const own = world(Number(env.TEST_PARALLEL_INDEX), env);
 	env.E2E_WORLD0_PORT = String(zero.port);
 	env.E2E_WORLD0_DATABASE_URL = zero.databaseUrl;
 	env.E2E_WORLD = String(own.index);

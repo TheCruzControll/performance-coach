@@ -76,6 +76,19 @@ describe('routeWorker', () => {
 		expect(env).toEqual(routed);
 	});
 
+	it('routes a worker that inherits a setup worker’s world to its own', () => {
+		// Playwright gives dependent projects' workers the environment their setup's worker left.
+		const setupWorker: NodeJS.ProcessEnv = { ...serialLeg, TEST_PARALLEL_INDEX: '0' };
+		routeWorker(setupWorker);
+		const serialWorker: NodeJS.ProcessEnv = { ...setupWorker, TEST_PARALLEL_INDEX: '1' };
+		routeWorker(serialWorker);
+		expect(serialWorker).toMatchObject({ E2E_WORLD: '1', E2E_PORT: '4174' });
+		expect(serialWorker.E2E_DATABASE_URL).toMatch(/coach_w1_e2e$/);
+		const back: NodeJS.ProcessEnv = { ...serialWorker, TEST_PARALLEL_INDEX: '0' };
+		routeWorker(back);
+		expect(back).toMatchObject({ E2E_WORLD: '0', E2E_PORT: '4173', E2E_DATABASE_URL: DB });
+	});
+
 	it('leaves world 0’s worker, the runner and one-world runs as they are', () => {
 		const zero: NodeJS.ProcessEnv = { ...serialLeg, TEST_PARALLEL_INDEX: '0' };
 		routeWorker(zero);
