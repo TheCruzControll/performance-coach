@@ -22,7 +22,7 @@ import {
 	type Engine,
 	type Group
 } from '../e2e/projects.ts';
-import { SERIAL_WORLDS } from '../e2e/worlds.ts';
+import { SERIAL_WORKERS } from '../e2e/serial-workers.ts';
 import { parseListing, type Listing } from './journey-map.ts';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -99,13 +99,13 @@ const SELECTED: Record<string, string[]> = {
 };
 
 /**
- * Each leg's projects as CI loads the config for it: a serial leg also copies the owner world
- * the setups made into each of its workers' worlds first (`setup-worlds`, e2e/worlds.ts).
+ * Each leg's projects as CI loads the config for it: a serial·chromium leg, which runs a worker
+ * per owner world, also copies the world the setups made into the others first (`setup-worlds`,
+ * e2e/worlds.ts). serial·webkit runs one worker, so one world (e2e/serial-workers.ts).
  */
 const EXPECTED: Record<string, string[]> = {
 	...SELECTED,
-	'serial/chromium': ['setup', 'setup-worlds', 'serial-chromium'],
-	'serial/webkit': ['setup', 'setup-webkit', 'setup-worlds', 'serial-webkit']
+	'serial/chromium': ['setup', 'setup-worlds', 'serial-chromium']
 };
 
 describe.each([
@@ -209,18 +209,28 @@ describe('playwright.config.ts legs', () => {
 	});
 
 	// One worker per owner world (e2e/worlds.ts): the serial specs follow the world copy, which
-	// follows the setups, and run SERIAL_WORLDS at a time.
-	it.each(ENGINES)('runs a serial %s leg on its owner worlds, after the copy', async (engine) => {
-		const projects = await configProjects({ E2E_ENGINE: engine, E2E_GROUP: 'serial' });
-		const serial = projects.find((p) => p.name === `serial-${engine}`)!;
-		expect(serial.workers).toBe(SERIAL_WORLDS);
+	// follows the setups, and run SERIAL_WORKERS.chromium at a time.
+	it('runs a serial chromium leg on its owner worlds, after the copy', async () => {
+		const projects = await configProjects({ E2E_ENGINE: 'chromium', E2E_GROUP: 'serial' });
+		const serial = projects.find((p) => p.name === 'serial-chromium')!;
+		expect(SERIAL_WORKERS.chromium).toBeGreaterThan(1);
+		expect(serial.workers).toBe(SERIAL_WORKERS.chromium);
 		expect(serial.dependencies).toEqual(['setup-worlds']);
 		const copy = projects.find((p) => p.name === 'setup-worlds')!;
 		expect(copy.testMatch).toBe('**/worlds.setup.ts');
-		expect(copy.dependencies).toEqual([engine === 'webkit' ? 'setup-webkit' : 'setup']);
-		expect(after(projects, `serial-${engine}`)).toEqual(
-			engine === 'webkit' ? ['setup', 'setup-webkit', 'setup-worlds'] : ['setup', 'setup-worlds']
-		);
+		expect(copy.dependencies).toEqual(['setup']);
+		expect(after(projects, 'serial-chromium')).toEqual(['setup', 'setup-worlds']);
+	});
+
+	// WebKit's heavy serial tests outgrew their timeout two to a runner (e2e/serial-workers.ts):
+	// its serial leg runs one spec at a time in its one world, after the setups, with no copy.
+	it('runs a serial webkit leg on one worker in one owner world', async () => {
+		const projects = await configProjects({ E2E_ENGINE: 'webkit', E2E_GROUP: 'serial' });
+		expect(SERIAL_WORKERS.webkit).toBe(1);
+		expect(names(projects)).not.toContain('setup-worlds');
+		const serial = projects.find((p) => p.name === 'serial-webkit')!;
+		expect(serial.workers).toBe(1);
+		expect(after(projects, 'serial-webkit')).toEqual(['setup', 'setup-webkit']);
 	});
 
 	it('keeps one owner world, and one serial spec at a time, outside a serial CI leg', async () => {
@@ -250,19 +260,25 @@ describe('playwright.config.ts legs', () => {
 	});
 
 	// main legs run whole files side by side on 2 workers, as every local run does; serial legs one
-	// per owner world (e2e/worlds.ts); every other leg (and the whole suite in one CI job) keeps 1.
+	// per owner world (e2e/serial-workers.ts: 2 on Chromium, 1 on WebKit); every other leg (and the
+	// whole suite in one CI job) keeps 1.
 	it.each([
-		['main', 2],
-		['serial', SERIAL_WORLDS],
-		['alone', 1],
-		['exclusive', 1],
-		['sweeps', 1],
-		['', 1]
-	] as const)('gives E2E_GROUP=%j %i worker(s) in CI', async (group, workers) => {
-		await configProjects({ E2E_GROUP: group });
-		const { default: config } = await import('../playwright.config.ts');
-		expect(config.workers).toBe(workers);
-	});
+		['main', 'chromium', 2],
+		['serial', 'chromium', SERIAL_WORKERS.chromium],
+		['serial', 'webkit', SERIAL_WORKERS.webkit],
+		['serial', '', 1],
+		['alone', 'chromium', 1],
+		['exclusive', 'chromium', 1],
+		['sweeps', 'chromium', 1],
+		['', '', 1]
+	] as const)(
+		'gives E2E_GROUP=%j E2E_ENGINE=%j %i worker(s) in CI',
+		async (group, engine, workers) => {
+			await configProjects({ E2E_GROUP: group, E2E_ENGINE: engine });
+			const { default: config } = await import('../playwright.config.ts');
+			expect(config.workers).toBe(workers);
+		}
+	);
 
 	it('keeps 2 workers outside CI', async () => {
 		await configProjects({ E2E_GROUP: 'serial' });
@@ -395,7 +411,7 @@ describe('the legs, listed by Playwright', () => {
 				const listing = listed(leg);
 				const name = `${leg.group}/${leg.engine}`;
 				expect([...listing.projects], name).toEqual(EXPECTED[name]);
-				// The world copy is a serial leg's own setup, which one world needs none of.
+				// The world copy is serial·chromium's own setup, which one world needs none of.
 				return runs(listing).filter((run) => !run.startsWith('setup-worlds › '));
 			})
 		);
