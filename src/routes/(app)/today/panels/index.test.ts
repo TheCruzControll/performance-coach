@@ -98,7 +98,7 @@ describe('Program', () => {
 		});
 		const html = await served(day('2026-11-05', 'Thursday 5 November'));
 		const links = [
-			...html.matchAll(/<a href="([^"]+)" class="btn[^"]*" data-variant="(\w+)"[^>]*>/g)
+			...html.matchAll(/<a href="([^"]+)" class="btn[^"]*"[^>]*? data-variant="(\w+)"[^>]*>/g)
 		];
 		expect(
 			links.map(([tag, href, variant]) => [href, variant, /aria-label="([^"]*)"/.exec(tag)?.[1]])
