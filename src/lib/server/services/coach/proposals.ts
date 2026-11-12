@@ -811,6 +811,8 @@ export async function rejectProposal(
 
 export interface ProposalQuery {
 	status?: ProposalStatus;
+	/** Only the decided ones: any status but proposed (the inbox's Decided list). */
+	decided?: boolean;
 	/** Only these, up to PROPOSAL_IDS_MAX; an id that is not the owner's is left out. */
 	ids?: readonly string[];
 	/** The `next` of the previous page. */
@@ -831,7 +833,7 @@ export async function listProposals(
 	query: ProposalQuery = {},
 	deps: CoachDeps = {}
 ): Promise<ProposalList> {
-	const { status, ids, before, limit = PROPOSAL_PAGE.default } = query;
+	const { status, decided, ids, before, limit = PROPOSAL_PAGE.default } = query;
 	if (!Number.isInteger(limit) || limit < 1 || limit > PROPOSAL_PAGE.max) {
 		throw new CoachInputError('limit', `1 to ${PROPOSAL_PAGE.max} at a time`);
 	}
@@ -848,6 +850,7 @@ export async function listProposals(
 	const { db } = resolveDeps(deps);
 	const rows = await createCoachProposalsRepository(db).proposalPage(ownerId, {
 		status,
+		decided,
 		ids: wanted,
 		before,
 		limit: limit + 1

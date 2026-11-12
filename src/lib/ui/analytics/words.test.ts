@@ -14,6 +14,7 @@ import {
 	type Tile,
 	type TileDelta
 } from './words.ts';
+import { verdictParts } from './verdict-words.ts';
 
 const against = 'the 12 weeks before';
 const delta = (value: number, change: TileDelta['change'], text: string): TileDelta => ({
@@ -112,6 +113,20 @@ describe('the verdict', () => {
 		expect(verdictWords(thin)).toBe('Not enough data yet · 2 of 6 weeks');
 		expect(verdictIcon(thin)).toBe('clock');
 		expect(verdictTone(thin)).toBe('neutral');
+	});
+
+	it('splits its phrase, kept on one line, from the window and count, which may wrap', () => {
+		const up = { verdict: 'real_trend', direction: 'up', good: true } as const;
+		expect(verdictParts(up, twelve)).toEqual(['Real improvement', ' over the last 12 weeks']);
+		expect(verdictParts(up)).toEqual(['Real improvement', '']);
+		expect(verdictParts({ verdict: 'normal_variation' })).toEqual(['Normal variation', '']);
+		const thin = { verdict: 'insufficient_data', have: 2, need: 6, unit: 'weeks' } as const;
+		expect(verdictParts(thin, twelve)).toEqual([
+			'Not enough data yet',
+			' · 2 of 6 weeks over the last 12 weeks'
+		]);
+		for (const verdict of [up, thin, { verdict: 'normal_variation' } as const])
+			expect(verdictParts(verdict, twelve).join('')).toBe(verdictWords(verdict, twelve));
 	});
 });
 

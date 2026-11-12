@@ -47,7 +47,7 @@ const runCards = (page: Page) => page.getByTestId('usage-run');
 
 async function openUsage(page: Page) {
 	await gotoHydrated(page, '/coach');
-	await page.getByRole('button', { name: 'Coach usage' }).click();
+	await page.getByRole('button', { name: 'Usage', exact: true }).click();
 	await expect(sheet(page)).toBeVisible();
 }
 
