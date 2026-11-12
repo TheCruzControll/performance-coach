@@ -99,6 +99,8 @@ test.describe('in Graphite', () => {
 		await expect(control).not.toBeChecked();
 		expect(await word()).toBe('OFF');
 		expect(Math.round((await track.boundingBox())!.width)).toBe(76);
+		// The row sits below the fold on a phone; the tap needs it on screen.
+		await row.scrollIntoViewIfNeeded();
 		const area = (await row.boundingBox())!;
 		expect(area.height).toBeGreaterThanOrEqual(44);
 

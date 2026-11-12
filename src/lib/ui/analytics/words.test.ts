@@ -4,10 +4,13 @@ import {
 	deltaTone,
 	deltaWords,
 	soFarWords,
+	spanSentence,
 	tileSentence,
+	valueWords,
 	verdictIcon,
 	verdictTone,
 	verdictWords,
+	withinWords,
 	type Tile,
 	type TileDelta
 } from './words.ts';
@@ -21,18 +24,25 @@ const delta = (value: number, change: TileDelta['change'], text: string): TileDe
 });
 
 describe('the delta', () => {
-	it('says better for a fall in a lower-is-better metric, with a falling icon and a positive tone', () => {
+	it('says better for a fall in a lower-is-better metric, its arrow pointing up with better', () => {
 		const faster = delta(-8, 'better', '−0:08 /km');
 		expect(deltaWords(faster)).toBe('−0:08 /km better than the 12 weeks before');
-		expect(deltaIcon(faster)).toBe('trend-down');
+		expect(deltaIcon(faster)).toBe('trend-up');
 		expect(deltaTone(faster)).toBe('positive');
 	});
 
-	it('says worse for a rise in a lower-is-better metric, as a warning', () => {
+	it('says worse for a rise in a lower-is-better metric, as a warning, its arrow pointing down', () => {
 		const slower = delta(5, 'worse', '+0:05 /km');
 		expect(deltaWords(slower)).toBe('+0:05 /km worse than the 12 weeks before');
-		expect(deltaIcon(slower)).toBe('trend-up');
+		expect(deltaIcon(slower)).toBe('trend-down');
 		expect(deltaTone(slower)).toBe('warning');
+	});
+
+	it('points a higher-is-better rise up and its fall down, and a metric with no better way as it moved', () => {
+		expect(deltaIcon(delta(5, 'better', '+5 kg'))).toBe('trend-up');
+		expect(deltaIcon(delta(-3, 'worse', '−3 sets'))).toBe('trend-down');
+		expect(deltaIcon(delta(0.4, 'up', '+0.4 kg'))).toBe('trend-up');
+		expect(deltaIcon(delta(-0.4, 'down', '−0.4 kg'))).toBe('trend-down');
 	});
 
 	it('is neutral for a metric with no better way, and for a change the trend calls noise', () => {
@@ -77,6 +87,19 @@ describe('the verdict', () => {
 		expect(verdictTone(up)).toBe('positive');
 	});
 
+	it('points a real trend’s arrow at better: a faster pace is an improvement pointing up', () => {
+		const faster = { verdict: 'real_trend', direction: 'down', good: true } as const;
+		expect(verdictWords(faster)).toBe('Real improvement');
+		expect(verdictIcon(faster)).toBe('trend-up');
+		const slower = { verdict: 'real_trend', direction: 'up', good: false } as const;
+		expect(verdictWords(slower)).toBe('Real decline');
+		expect(verdictIcon(slower)).toBe('trend-down');
+		expect(verdictIcon({ verdict: 'real_trend', direction: 'down', good: null })).toBe(
+			'trend-down'
+		);
+		expect(verdictIcon({ verdict: 'real_trend', direction: 'up', good: null })).toBe('trend-up');
+	});
+
 	it('words a decline, a direction-free trend and too little data', () => {
 		const down = { verdict: 'real_trend', direction: 'down', good: false } as const;
 		expect(verdictWords(down)).toBe('Real decline');
@@ -107,7 +130,7 @@ describe('the tile as one sentence', () => {
 
 	it('reads its value, kind, delta, week so far and verdict in order', () => {
 		expect(tileSentence(tile)).toBe(
-			'Squat e1RM: 142.5 kg, estimated. +5 kg better than the 12 weeks before. ' +
+			'Squat e1RM: 142.5\u00a0kg, estimated. +5 kg better than the 12 weeks before. ' +
 				'This week so far: 140 kg · 137.5 kg by Wednesday last week. ' +
 				'Real improvement over the last 12 weeks.'
 		);
@@ -116,7 +139,16 @@ describe('the tile as one sentence', () => {
 	it('says there is nothing to compare with, and leaves out what it was not given', () => {
 		expect(
 			tileSentence({ ...tile, delta: null, soFar: null, verdict: null, kind: 'measured' })
-		).toBe('Squat e1RM: 142.5 kg, measured. No earlier period to compare with.');
+		).toBe('Squat e1RM: 142.5\u00a0kg, measured. No earlier period to compare with.');
+	});
+
+	it('with no earlier period, says how its own weeks moved, in the same words as its verdict', () => {
+		expect(tileSentence({ ...tile, delta: null, soFar: null })).toBe(
+			'Squat e1RM: 142.5\u00a0kg, estimated. Improving over 12 weeks. ' +
+				'Real improvement over the last 12 weeks.'
+		);
+		// It never says there is no earlier period above a verdict that read twelve weeks.
+		expect(tileSentence({ ...tile, delta: null })).not.toContain('No earlier period');
 	});
 
 	it('keeps Stat’s contract with no value: no data yet, never a number', () => {
@@ -133,5 +165,74 @@ describe('the tile as one sentence', () => {
 		expect(tileSentence(first)).toBe(
 			'Squat e1RM: no data yet. This week so far: 140 kg · 137.5 kg by Wednesday last week.'
 		);
+	});
+});
+
+describe('a tile with no earlier period', () => {
+	const twelve = { sameAsPeriod: true, weeks: 12 };
+
+	it('describes the trend within its weeks, by better rather than by the raw sign', () => {
+		const improving = { verdict: 'real_trend', direction: 'down', good: true } as const;
+		expect(withinWords(improving, twelve)).toBe('Improving over 12 weeks');
+		const declining = { verdict: 'real_trend', direction: 'up', good: false } as const;
+		expect(withinWords(declining, twelve)).toBe('Declining over 12 weeks');
+		expect(withinWords({ verdict: 'normal_variation' }, twelve)).toBe(
+			'Holding steady over 12 weeks'
+		);
+		expect(withinWords({ verdict: 'real_trend', direction: 'up', good: null }, twelve)).toBe(
+			'Rising over 12 weeks'
+		);
+		expect(withinWords({ verdict: 'real_trend', direction: 'down', good: null }, twelve)).toBe(
+			'Falling over 12 weeks'
+		);
+	});
+
+	it('counts its weeks in words that agree with the number', () => {
+		const steady = { verdict: 'normal_variation' } as const;
+		expect(withinWords(steady, { sameAsPeriod: true, weeks: 1 })).toBe(
+			'Holding steady over 1 week'
+		);
+		expect(withinWords(steady, { sameAsPeriod: true, weeks: null })).toBe(
+			'Holding steady over these weeks'
+		);
+	});
+
+	it('says nothing of a trend it has not read: too little data, or no verdict', () => {
+		const thin = { verdict: 'insufficient_data', have: 2, need: 6, unit: 'weeks' } as const;
+		expect(withinWords(thin, twelve)).toBeNull();
+		expect(withinWords(null, twelve)).toBeNull();
+		expect(withinWords(undefined)).toBeNull();
+	});
+});
+
+describe('a chart’s sentence', () => {
+	it('says held at when its two ends read the same, with the headline best beside it', () => {
+		expect(spanSentence('Estimated 1RM', '98.5\u00a0kg', '98.5\u00a0kg', '101.5\u00a0kg')).toBe(
+			'Estimated 1RM held at 98.5\u00a0kg, with a best of 101.5\u00a0kg.'
+		);
+		expect(spanSentence('Estimated 1RM', '98.5\u00a0kg', '98.5\u00a0kg', '98.5\u00a0kg')).toBe(
+			'Estimated 1RM held at 98.5\u00a0kg.'
+		);
+	});
+
+	it('says went from and to, naming the best only when it is neither end', () => {
+		expect(spanSentence('Estimated 1RM', '123.5\u00a0kg', '157\u00a0kg', '157\u00a0kg')).toBe(
+			'Estimated 1RM went from 123.5\u00a0kg to 157\u00a0kg.'
+		);
+		expect(spanSentence('Estimated 1RM', '100\u00a0kg', '102.5\u00a0kg', '105\u00a0kg')).toBe(
+			'Estimated 1RM went from 100\u00a0kg to 102.5\u00a0kg, with a best of 105\u00a0kg.'
+		);
+		expect(spanSentence('Estimated 1RM', '100\u00a0kg', '102.5\u00a0kg')).toBe(
+			'Estimated 1RM went from 100\u00a0kg to 102.5\u00a0kg.'
+		);
+	});
+});
+
+describe('a value with its unit', () => {
+	it('keeps the unit on the number’s line with a non-breaking space, and a percentage tight', () => {
+		expect(valueWords('142.5', 'kg')).toBe('142.5\u00a0kg');
+		expect(valueWords('5:42', '/km')).toBe('5:42\u00a0/km');
+		expect(valueWords('100', '%')).toBe('100%');
+		expect(valueWords('14')).toBe('14');
 	});
 });

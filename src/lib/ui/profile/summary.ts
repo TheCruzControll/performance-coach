@@ -20,12 +20,11 @@ import type {
 	Injury,
 	MuayThaiProfile,
 	RaceResult,
-	RunningProfile,
-	StrengthBaseline
+	RunningProfile
 } from '#lib/domain/profile/types.ts';
 import { formatDuration } from '#lib/domain/units.ts';
 import { shortIsoDate } from './goals';
-import { trim } from './strength';
+import { oneRepMax, trim } from './strength';
 
 const join = (parts: (string | false | null | undefined)[]) => parts.filter(Boolean).join(' · ');
 const by = (date: string | null) => (date ? ` by ${shortIsoDate(date)}` : '');
@@ -45,10 +44,8 @@ export function experienceLine(e: Pick<ExperienceEntry, 'level' | 'years' | 'ses
 	]);
 }
 
-/** A 1RM as a number: "140 kg" when lifted, "≈ 123.3 kg" when estimated. */
-export function baselineValue(b: Pick<StrengthBaseline, 'kind' | 'value' | 'unit'>): string {
-	return `${b.kind === 'estimated' ? '≈ ' : ''}${trim(b.value)} ${b.unit}`;
-}
+/** A 1RM as a number: "140 kg" when lifted, "≈ 123.5 kg" when estimated (strength.ts). */
+export const baselineValue = oneRepMax;
 
 /** "40 km a week · 4 runs · longest 21 km · easy 5:45/km". */
 export function runningLine(r: RunningProfile): string {

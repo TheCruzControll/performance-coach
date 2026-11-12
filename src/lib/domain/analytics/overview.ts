@@ -22,7 +22,7 @@
  */
 import { addDays, weekdayOf } from '../calendar.ts';
 import { WEEKDAY_INFO } from '../profile/catalog.ts';
-import { cleanFloat, formatDuration } from '../units.ts';
+import { cleanFloat, formatDuration, NBSP, roundEstimate } from '../units.ts';
 import { METRIC_AREAS, METRICS } from './metrics.ts';
 import type { GoodLevel, Metric, MetricArea, MetricId, Range } from './metrics.ts';
 import { trendWindow } from './periods.ts';
@@ -75,28 +75,33 @@ const number = (value: number, decimals: number) => {
 	return format.format(cleanFloat(value, decimals) + 0);
 };
 const count = (value: number, one: string, many: string) =>
-	`${number(value, 1)} ${cleanFloat(value, 1) === 1 ? one : many}`;
+	`${number(value, 1)}${NBSP}${cleanFloat(value, 1) === 1 ? one : many}`;
 function hours(seconds: number): string {
 	const minutes = Math.round(seconds / 60);
 	const h = Math.floor(minutes / 60);
 	const m = minutes % 60;
-	if (h === 0) return `${m} min`;
-	return m === 0 ? `${h} h` : `${h} h ${m} min`;
+	if (h === 0) return `${m}${NBSP}min`;
+	return m === 0 ? `${h}${NBSP}h` : `${h}${NBSP}h ${m}${NBSP}min`;
 }
 
-/** Canonical display: '6,200 kg', '5:30 /km' or '12 s/km', '42.2 km', '85 %' or '10 points'. */
+/**
+ * Canonical display: '6,200 kg', '5:30 /km' or '12 s/km', '42.2 km', '85%' or '10 points', each
+ * number and unit joined by a non-breaking space so they never part; an estimated max to 0.5 kg.
+ */
 export const formatCanonical: Format = (metric, value, as) => {
 	switch (metric.unit) {
 		case 'kg':
-			return `${number(value, 1)} kg`;
+			return `${number(metric.kind === 'estimated' ? roundEstimate(value, 'kg') : value, 1)}${NBSP}kg`;
 		case 'sets':
 			return count(value, 'set', 'sets');
 		case 'rpe':
-			return as === 'value' ? `RPE ${number(value, 1)}` : `${number(value, 1)} RPE`;
+			return as === 'value' ? `RPE${NBSP}${number(value, 1)}` : `${number(value, 1)}${NBSP}RPE`;
 		case 'm':
-			return `${number(value / 1000, 1)} km`;
+			return `${number(value / 1000, 1)}${NBSP}km`;
 		case 's/km':
-			return as === 'value' ? `${formatDuration(value)} /km` : `${number(value, 0)} s/km`;
+			return as === 'value'
+				? `${formatDuration(value)}${NBSP}/km`
+				: `${number(value, 0)}${NBSP}s/km`;
 		case 'runs':
 			return count(value, 'run', 'runs');
 		case 'sessions':
@@ -104,15 +109,15 @@ export const formatCanonical: Format = (metric, value, as) => {
 		case 's':
 			return hours(value);
 		case 'pct':
-			return as === 'value' ? `${number(value, 0)} %` : count(Math.round(value), 'point', 'points');
+			return as === 'value' ? `${number(value, 0)}%` : count(Math.round(value), 'point', 'points');
 		case 'AU':
-			return `${number(value, 0)} AU`;
+			return `${number(value, 0)}${NBSP}AU`;
 		case 'ratio':
 			return number(value, 2);
 		case 'h':
-			return `${number(value, 1)} h`;
+			return `${number(value, 1)}${NBSP}h`;
 		case 'scale':
-			return as === 'value' ? `${number(value, 1)} / 5` : number(value, 1);
+			return as === 'value' ? `${number(value, 1)}${NBSP}/${NBSP}5` : number(value, 1);
 	}
 };
 
