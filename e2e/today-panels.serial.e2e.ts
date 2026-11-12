@@ -81,9 +81,11 @@ async function routePanelChunk(
 
 /**
  * With onboarding incomplete, go from Profile to Today with the Setup chunk held: Today shows its
- * skeleton, and the setup card that replaces it moves nothing below it (This week).
+ * skeleton, and the setup card that replaces it moves nothing below it (This week). On a phone the
+ * card fills its skeleton’s room; on the wide layout nothing sits under it in its column, so it
+ * takes its own height there, never more than the room.
  */
-async function setupArrivesInPlace(page: Page) {
+async function setupArrivesInPlace(page: Page, room: 'fills' | 'own' = 'fills') {
 	await resetTrainingProfile();
 	let release = () => {};
 	const held = new Promise<void>((resolve) => (release = resolve));
@@ -120,10 +122,15 @@ async function setupArrivesInPlace(page: Page) {
 		Math.abs(card.y - reserved.y),
 		'the card starts where its skeleton did'
 	).toBeLessThanOrEqual(1);
-	expect(
-		Math.abs(card.height - reserved.height),
-		'the card fills the skeleton’s room'
-	).toBeLessThanOrEqual(1);
+	if (room === 'fills')
+		expect(
+			Math.abs(card.height - reserved.height),
+			'the card fills the skeleton’s room'
+		).toBeLessThanOrEqual(1);
+	else
+		expect(card.height, 'the card fits in the skeleton’s room').toBeLessThanOrEqual(
+			reserved.height + 1
+		);
 	await expectNoSideScroll(page);
 }
 
@@ -325,7 +332,7 @@ test.describe('with the service worker blocked, so page.route sees every chunk',
 		test('with setup incomplete, the setup card replaces its skeleton in place', async ({
 			page
 		}) => {
-			await setupArrivesInPlace(page);
+			await setupArrivesInPlace(page, 'own');
 		});
 
 		test('the notice sits in the wide column, and Retry has a hover state', async ({
