@@ -9,12 +9,14 @@
  * - Profile → Injuries opens, and the workout stays on the device
  * - a refused report (a 600-character note) is fixed from the sync sheet and lands once
  * - offline, it waits in the outbox and syncs once
- * - axe in both themes, the screens, and the desktop dialog with its keyboard and hover.
+ * - axe in both themes, the screens, and the desktop dialog with its keyboard and hover
+ * - in Graphite 2004, the choices as one box, axe in both themes.
  * Serial: programs, workouts and the profile are the one owner's.
  */
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
 import type { KitExercise, StrengthKit } from '../src/lib/domain/workout';
+import { PAIN_COPY } from '../src/lib/domain/workout/copy';
 import { createMutation } from '../src/lib/domain/workout/mutations';
 import { DESKTOP, expectNoSideScroll } from './desktop';
 import { PROGRAM_TZ, seedProgram } from './program-support';
@@ -94,6 +96,18 @@ const reports = (workoutId: string) =>
 	);
 
 const synced = (page: Page) => expect.poll(() => readOutbox(page), { timeout: 15_000 }).toEqual([]);
+
+/**
+ * The choices' box, what to do (not the area and severity groups): its border and the gap between
+ * its rows (graphite.css, the pain sheet).
+ */
+const boxed = (page: Page) =>
+	pain(page)
+		.getByRole('region', { name: PAIN_COPY.choices })
+		.evaluate((el) => {
+			const style = getComputedStyle(el);
+			return { border: style.borderTopWidth, gap: style.rowGap };
+		});
 
 /** axe in the dark and the light theme, the page as it is. */
 async function audit(page: Page, what: string) {
@@ -405,6 +419,35 @@ test.describe('the words and the way out', () => {
 		await severity(page, 'Severe').check();
 		await expect(options(page).first()).toBeVisible();
 		await audit(page, 'the pain sheet with its choices');
+		// Today's design: the choices stand apart, with no box around them.
+		expect(await boxed(page)).toEqual({ border: '0px', gap: '8px' });
+	});
+
+	test('Graphite 2004: the choices are one box, and the sheet passes axe in dark and light', async ({
+		page,
+		request
+	}) => {
+		await page.addInitScript(() => localStorage.setItem('pc:design:v1', 'graphite'));
+		await startFromKit(page, request);
+		await expect(page.locator('html')).toHaveAttribute('data-design', 'graphite');
+		await goTo(page, 'Leg press');
+		await hurts(page);
+		await area(page, 'Knee').check();
+		await severity(page, 'Severe').check();
+		await expect(options(page).first()).toBeVisible();
+		expect(await boxed(page)).toEqual({ border: '1px', gap: '0px' });
+		// Only what to do is boxed: the area and severity groups keep their own spacing, unboxed.
+		for (const group of ['pain-area', 'pain-severity']) {
+			const look = await pain(page)
+				.getByTestId(group)
+				.evaluate((el) => {
+					const style = getComputedStyle(el);
+					return { border: style.borderTopWidth, gap: style.rowGap };
+				});
+			expect(look, group).toEqual({ border: '0px', gap: '8px' });
+		}
+		await page.waitForFunction(() => document.fonts.status === 'loaded');
+		await audit(page, 'the pain sheet in Graphite');
 	});
 });
 
