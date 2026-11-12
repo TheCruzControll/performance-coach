@@ -89,7 +89,7 @@ test.describe('offline behaviour (service worker)', () => {
 		await page.reload();
 		await expect(page).toHaveURL(/\/profile$/);
 		await expect(page.getByTestId('offline-state')).toBeVisible();
-		await expect(page.getByTestId('offline-state')).toContainText("You're offline");
+		await expect(page.getByTestId('offline-state')).toContainText('You’re offline');
 		await expect(nav).toBeVisible();
 		await expect(nav.getByRole('link', { name: 'Profile' })).toHaveAttribute(
 			'aria-current',
@@ -111,7 +111,7 @@ test.describe('offline behaviour (service worker)', () => {
 		await expect(page.getByTestId('offline-state')).toBeVisible();
 		await page.reload();
 		await expect(page).toHaveURL(/\/progress$/);
-		await expect(page.getByTestId('offline-state')).toContainText("You're offline");
+		await expect(page.getByTestId('offline-state')).toContainText('You’re offline');
 		await expect(nav.getByRole('link', { name: 'Progress' })).toHaveAttribute(
 			'aria-current',
 			'page'
@@ -151,7 +151,7 @@ test.describe('offline behaviour (service worker)', () => {
 			.click();
 		const state = page.getByTestId('offline-state');
 		await expect(state).toBeVisible();
-		await expect(state).toContainText("Can't reach the server");
+		await expect(state).toContainText('Can’t reach the server');
 		expect(await page.evaluate(() => navigator.onLine)).toBe(true);
 
 		// The server comes back: with no `online` event to wait for, the screen's own retry
@@ -181,7 +181,7 @@ test.describe('offline behaviour (service worker)', () => {
 			.click();
 		const state = page.getByTestId('offline-state');
 		// The worker's bounded wait, not the minute or more a hung request takes.
-		await expect(state).toContainText("Can't reach the server", {
+		await expect(state).toContainText('Can’t reach the server', {
 			timeout: DATA_TIMEOUT_MS + 4_000
 		});
 		expect(Date.now() - asked).toBeGreaterThanOrEqual(DATA_TIMEOUT_MS - 500);
@@ -215,7 +215,7 @@ test.describe('offline behaviour (service worker)', () => {
 		// Healthy server: the recovery probe would succeed, and reloading /offline lands on the
 		// offline screen again, so it must not probe or reload there at all.
 		await page.goto('/offline');
-		await expect(page.getByTestId('offline-state')).toContainText("You're offline");
+		await expect(page.getByTestId('offline-state')).toContainText('You’re offline');
 		await page.evaluate(() => Object.assign(window, { __sameDocument: true }));
 		const probes: string[] = [];
 		page.on('request', (r) => r.url().endsWith('/api/health') && probes.push(r.url()));
@@ -269,7 +269,7 @@ test.describe('offline behaviour (service worker)', () => {
 		// Any other screen reloaded offline keeps its designed offline state, in the shell.
 		await page.goto('/progress').catch(() => {});
 		await expect(page).toHaveURL(/\/progress$/);
-		await expect(page.getByTestId('offline-state')).toContainText("You're offline");
+		await expect(page.getByTestId('offline-state')).toContainText('You’re offline');
 		await expect(page.getByRole('navigation', { name: 'Primary' })).toBeVisible();
 	});
 
@@ -314,7 +314,7 @@ test.describe('offline behaviour (service worker)', () => {
 		await context.setOffline(true);
 		await page.goto(START_URL).catch(() => {});
 		await expect(page).toHaveURL(/\/today$/);
-		await expect(page.getByTestId('offline-state')).toContainText("You're offline");
+		await expect(page.getByTestId('offline-state')).toContainText('You’re offline');
 	});
 
 	/** Today on the page's clock: the day the offline screen lists saved kits for. */
@@ -358,7 +358,7 @@ test.describe('offline behaviour (service worker)', () => {
 		await context.setOffline(true);
 		await page.goto(START_URL);
 		await expect(page).toHaveURL(/\/today$/);
-		await expect(page.getByTestId('offline-state')).toContainText("You're offline");
+		await expect(page.getByTestId('offline-state')).toContainText('You’re offline');
 		const sessions = page.getByTestId('offline-today').getByTestId('offline-session');
 		// Today's, in the order Today saved them; another day's kit is left out.
 		await expect(sessions).toHaveCount(3);
@@ -399,7 +399,7 @@ test.describe('offline behaviour (service worker)', () => {
 
 		await context.setOffline(true);
 		await page.goto(START_URL);
-		await expect(page.getByTestId('offline-state')).toContainText("You're offline");
+		await expect(page.getByTestId('offline-state')).toContainText('You’re offline');
 		await expect(page.getByTestId('offline-today-empty')).toContainText(
 			'No sessions saved for today'
 		);

@@ -49,7 +49,7 @@
 			loading={pending}
 			disabled={!online}
 			onclick={() => pending || onsubmit()}
-			data-testid="keep-submit">{failure ? 'Retry' : 'Keep as planned'}</Button
+			data-testid="keep-submit">{failure ? 'Try again' : 'Keep as planned'}</Button
 		>
 	{/snippet}
 </BottomSheet>
