@@ -53,7 +53,8 @@ async function create(request: APIRequestContext, seeded: SeededReview): Promise
 					data: { programId: seeded.programId!, blockLineage: seeded.review.blockLineageId }
 				};
 	const response = await request.post(`${LIST}?/${form.action}`, {
-		headers: SAME_ORIGIN,
+		// A browser's no-JS post asks for HTML; Playwright's default */* gets the action's JSON.
+		headers: { ...SAME_ORIGIN, accept: 'text/html' },
 		form: form.data,
 		maxRedirects: 0
 	});
