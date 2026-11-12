@@ -11,7 +11,7 @@
  *   they get the code that renders them, not what they load on demand.
  * - The shell itself (SvelteKit's entry, the root and app layouts and error pages) gets everything.
  *
- * - Graphite 2004's Status Displays (GRAPHITE_ONLY) are left out: a device on today's design never
+ * - Graphite 2004's Status Displays and week legend (GRAPHITE_ONLY) are left out: a device on today's design never
  *   loads them, so its worker must not fetch them either; offline, StatusSlot then shows none.
  *
  * A route id or Status Display here that the build does not have fails the build, so renaming one
@@ -38,9 +38,13 @@ export const TAB_PAGES = [
 	'/(app)/profile'
 ] as const;
 
-/** The Status Displays StatusSlot loads only on Graphite 2004 (their own imports stay out with them). */
+/**
+ * What StatusSlot loads only on Graphite 2004, the Status Displays and the week strip's legend
+ * (their own imports stay out with them).
+ */
 export const GRAPHITE_ONLY = [
 	'src/routes/(app)/today/panels/TodayStatus.svelte',
+	'src/routes/(app)/today/panels/WeekLegend.svelte',
 	'src/routes/workout/run/RunStatus.svelte'
 ] as const;
 
