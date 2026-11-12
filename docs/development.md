@@ -70,8 +70,9 @@ one setup).
 
 ### The live coach suite (`pnpm test:live`)
 
-Six conversations against the real model (`tests/live/`), asserting properties, never wording;
-it fails past `LIVE_COST_CAP_MICROS` ($1). It never runs in CI. Prerequisites:
+Six named conversations against the real model (`tests/live/coach.live.test.ts`), plus two that
+record how soon the first words come (`first-words.live.test.ts`), asserting properties, never
+wording; each file fails past `LIVE_COST_CAP_MICROS` ($1). It never runs in CI. Prerequisites:
 
 1. A running local Postgres, and `pnpm db:setup` run once.
 2. It uses `TEST_DATABASE_URL` (default `coach_test`), which it drops and re-migrates; a name not
