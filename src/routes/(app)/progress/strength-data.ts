@@ -21,7 +21,7 @@ import { METRICS, type MetricId } from '#lib/domain/analytics/metrics.ts';
 import { PERIOD_LABEL } from '#lib/domain/analytics/periods.ts';
 import type { Availability } from '#lib/domain/analytics/types.ts';
 import { MUSCLE_GROUP_LABEL } from '#lib/domain/training/vocabulary.ts';
-import { cleanFloat, convertWeight } from '#lib/domain/units.ts';
+import { cleanFloat, convertWeight, roundEstimate } from '#lib/domain/units.ts';
 import { formatIn } from '#lib/server/services/analytics/format.ts';
 import type {
 	Figure,
@@ -32,6 +32,7 @@ import type {
 import { sparkline } from '#lib/ui/analytics/sparkline.ts';
 import {
 	KIND_WORD,
+	spanSentence,
 	type Tile,
 	type TileVerdict,
 	type VerdictWindow
@@ -169,10 +170,16 @@ export function strengthData(d: StrengthDashboard): StrengthData {
 		comparison: window.previous ? `Compared with the ${window.previous.count} weeks before` : null,
 		trend: trend.sameAsPeriod ? null : trend.label
 	};
-	const sectionOf = (id: MetricId, availability: Availability): StrengthSection => {
+	/** With tiles, the context names the earlier period only when one of them shows a change against it. */
+	const sectionOf = (
+		id: MetricId,
+		availability: Availability,
+		...tiles: Tile[]
+	): StrengthSection => {
 		const { good, method, caveat } = METRICS[id];
+		const comparison = tiles.length && !tiles.some((t) => t.delta) ? null : context.comparison;
 		return {
-			context: { ...context, good: good.words, method, caveat: caveat ?? null },
+			context: { ...context, comparison, good: good.words, method, caveat: caveat ?? null },
 			waiting: waitingOf(availability)
 		};
 	};
@@ -204,6 +211,8 @@ export function strengthData(d: StrengthDashboard): StrengthData {
 	}
 
 	const weight = (kg: number) => cleanFloat(convertWeight(kg, 'kg', d.units.weight), 1);
+	const estimate = (kg: number) =>
+		roundEstimate(convertWeight(kg, 'kg', d.units.weight), d.units.weight);
 
 	const lifts = d.keyLifts.map((lift): LiftView => {
 		const title = `${lift.name} · estimated 1RM`;
@@ -219,7 +228,7 @@ export function strengthData(d: StrengthDashboard): StrengthData {
 					points: lift.series.map((p) =>
 						p.value === null
 							? null
-							: { value: weight(p.value), text: number(weight(p.value), 1), kind: 'estimated' }
+							: { value: estimate(p.value), text: number(estimate(p.value), 1), kind: 'estimated' }
 					)
 				}
 			]
@@ -231,7 +240,7 @@ export function strengthData(d: StrengthDashboard): StrengthData {
 				? 'No estimate in these weeks yet.'
 				: complete.length === 1
 					? `One estimate in these weeks: ${last.text}.`
-					: `Estimated 1RM went from ${first.text} to ${last.text}.`;
+					: spanSentence('Estimated 1RM', first.text!, last.text!, lift.value?.text);
 		return {
 			id: lift.exerciseId,
 			name: lift.name,
@@ -275,10 +284,11 @@ export function strengthData(d: StrengthDashboard): StrengthData {
 		const complete = figure.series.filter((p) => !p.inProgress && p.value !== null);
 		const mean = complete.reduce((sum, p) => sum + p.value!, 0) / (complete.length || 1);
 		const { soFar } = figure;
+		const tile = tileOf(figure, label);
 		return {
-			...sectionOf(figure.metric, figure.availability),
+			...sectionOf(figure.metric, figure.availability, tile),
 			tile: {
-				...tileOf(figure, label),
+				...tile,
 				soFar: {
 					value: shown(figure.metric, soFar.value),
 					lastWeek: shown(figure.metric, soFar.lastWeek),
@@ -364,6 +374,8 @@ export function strengthData(d: StrengthDashboard): StrengthData {
 			})()
 		: null;
 
+	const rpeAverage = tileOf(d.rpe.average, 'Average RPE');
+	const rpeDeviation = tileOf(d.rpe.deviation, 'RPE against target');
 	const deviations = d.rpe.byLift.flatMap((lift) =>
 		lift.againstTarget ? [{ key: lift.exerciseId, label: lift.name, ...lift.againstTarget }] : []
 	);
@@ -403,9 +415,9 @@ export function strengthData(d: StrengthDashboard): StrengthData {
 			weeks: complete.slice(-RANGE_WEEKS).toReversed().map(groupRow)
 		},
 		rpe: {
-			...sectionOf('rpe_deviation', d.rpe.deviation.availability),
-			average: tileOf(d.rpe.average, 'Average RPE'),
-			deviation: tileOf(d.rpe.deviation, 'RPE against target'),
+			...sectionOf('rpe_deviation', d.rpe.deviation.availability, rpeAverage, rpeDeviation),
+			average: rpeAverage,
+			deviation: rpeDeviation,
 			chart: deviations.length
 				? {
 						id: 'rpe',

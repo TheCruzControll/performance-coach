@@ -68,7 +68,7 @@ import { DIVERGING_FIXTURE, RANGE_FIXTURE } from '../src/routes/design/bar-fixtu
 import { announce } from '../src/lib/ui/charts/line-model';
 import { STACK_ORDER } from '../src/lib/ui/charts/palette';
 import { PERIODS, type Period } from '../src/lib/domain/analytics/periods';
-import { tileSentence } from '../src/lib/ui/analytics/words';
+import { tileSentence, withinWords } from '../src/lib/ui/analytics/words';
 import { tileFixtures } from '../src/routes/design/tile-fixture';
 import { boxOf, expectNoShift, expectNoSideScroll } from './desktop';
 import { captureScreen, gotoHydrated, trackConsoleErrors } from './support';
@@ -837,8 +837,9 @@ test.describe('/design → Charts: trend tiles on a phone', () => {
 				'This week so far: 140 kg · 137.5 kg by Wednesday last week. Real improvement.'
 		);
 		// The visible face is hidden from screen readers, so nothing is read twice.
+		// The accessibility tree reads the value's non-breaking space ('142.5 kg') as a plain one.
 		const tree = (await tile.ariaSnapshot()).trim().split('\n');
-		expect(tree.join('\n')).toContain(tileSentence(squat('12w').tile));
+		expect(tree.join('\n')).toContain(tileSentence(squat('12w').tile).replaceAll('\u00a0', ' '));
 		expect(tree.length, 'the list item and its one sentence').toBeLessThanOrEqual(2);
 		await expect(tile.getByText('Estimated', { exact: true })).toBeVisible();
 		// The sparkline: one polyline with a non-scaling 2 px stroke, and an 8 px hollow end ring.
@@ -866,7 +867,7 @@ test.describe('/design → Charts: trend tiles on a phone', () => {
 		await expect(empty.getByTestId('sparkline')).toHaveCount(0);
 	});
 
-	test('a lower-is-better metric that fell says better, with a falling icon in the positive tone', async ({
+	test('a lower-is-better metric that fell says better, its arrows pointing up with better in the positive tone', async ({
 		page
 	}) => {
 		await gotoHydrated(page, '/design');
@@ -874,7 +875,11 @@ test.describe('/design → Charts: trend tiles on a phone', () => {
 		const delta = tileOf(page, 'tile-pace').getByTestId('delta');
 		await expect(delta).toHaveText('−0:08 /km better than the 12 weeks before');
 		await expect(delta).toHaveAttribute('data-tone', 'positive');
-		await expect(delta.locator('use')).toHaveAttribute('href', /#trend-down$/);
+		// The arrow follows better, not the raw sign: a faster pace points up, as its verdict does.
+		await expect(delta.locator('use')).toHaveAttribute('href', /#trend-up$/);
+		const verdict = tileOf(page, 'tile-pace').getByTestId('verdict');
+		await expect(verdict).toHaveText('Real improvement');
+		await expect(verdict.locator('use')).toHaveAttribute('href', /#trend-up$/);
 		// A fall the trend calls normal variation is neutral, however it moved.
 		const noise = tileOf(page, 'tile-sets').getByTestId('delta');
 		await expect(noise).toHaveText('−3 sets worse than the 12 weeks before');
@@ -907,10 +912,18 @@ test.describe('/design → Charts: trend tiles on a phone', () => {
 			'Last 4 weeks · Compared with the 4 weeks before · Trend over the last 12 weeks · ' +
 				'Good is a real rise over the trend window'
 		);
-		// All time has no earlier period, and still a verdict.
+		// All time has no earlier period: the tile says how its own weeks moved, in the words of
+		// the verdict under it, never 'No earlier period' above a real improvement.
 		await periodLink(page, 'All time').click();
-		await expect(tile.getByTestId('delta')).toHaveText('No earlier period to compare with');
+		const all = squat('all').tile;
+		expect(withinWords(all.verdict, all.window)).toBe('Improving over 87 weeks');
+		await expect(tile.getByTestId('delta')).toHaveText('Improving over 87 weeks');
+		await expect(tile).not.toContainText('No earlier period');
 		await expect(tile.getByTestId('verdict')).toHaveText('Real improvement');
+		await expect(tile.getByTestId('tile-sentence')).toHaveText(tileSentence(all));
+		await expect(page.getByTestId('tiles-context').getByTestId('context-line')).not.toContainText(
+			'Compared with'
+		);
 	});
 
 	test('period links are real links: each switch is a history entry, keeping scroll and focus', async ({

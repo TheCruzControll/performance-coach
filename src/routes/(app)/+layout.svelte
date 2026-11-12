@@ -1,12 +1,12 @@
 <script lang="ts">
-	import { onMount, type Component } from 'svelte';
+	import { onMount } from 'svelte';
 	import { onNavigate } from '$app/navigation';
 	import { navigating, page } from '$app/state';
 	import { screens } from '#lib/client/screen-memory.ts';
 	import { afterPaint } from '../workout/lazy.ts';
 	import AppShell from './AppShell.svelte';
-	import { heldFor, isAppPath, isTabRoot, type Held } from './nav';
-	import { isStale } from './today/freshness';
+	import type * as Held from './HeldScreen.svelte';
+	import { isAppPath, isTabRoot } from './nav';
 	import type { LayoutProps } from './$types';
 
 	let { children }: LayoutProps = $props();
@@ -35,15 +35,13 @@
 	 * not shown, so a revisit never shows an old day or plan. The memory goes with the app shell,
 	 * and when any tab signs out (signout.ts here).
 	 *
-	 * HeldScreen and the sign-out listener load once the first frame has painted, as the resume
-	 * bar does (AppShell.svelte), so neither is initial JS or CSS; a tap before then is marked
-	 * on the tab bar only.
+	 * HeldScreen (with what it holds for a navigation: held.ts) and the sign-out listener load
+	 * once the first frame has painted, as the resume bar does (AppShell.svelte), so neither is
+	 * initial JS or CSS; a tap before then is marked on the tab bar only. The copies are kept from
+	 * the start, so a screen left before then still shows again.
 	 */
-	const holding = $derived(
-		heldFor(page.url, navigating.to?.url, (url) =>
-			screens.recall(url, (keptAt) => isStale(keptAt, new Date()))
-		)
-	);
+	let HeldScreen = $state.raw<typeof Held | null>(null);
+	const holding = $derived(HeldScreen?.holding(page.url, navigating.to?.url) ?? null);
 
 	onNavigate(({ from, to }) => {
 		const main = document.getElementById('main');
@@ -65,7 +63,6 @@
 		screens.keep(from.url, copies);
 	});
 
-	let HeldScreen = $state.raw<Component<Held<readonly Node[]>> | null>(null);
 	onMount(() => {
 		let stop = () => {};
 		let gone = false;
@@ -78,7 +75,7 @@
 					? Promise.reject(new Error('client only'))
 					: import('./HeldScreen.svelte')
 			).then(
-				(m) => (HeldScreen = m.default),
+				(m) => (HeldScreen = m),
 				() => {}
 			);
 			void import('#lib/client/workout/channel.ts').then(
@@ -114,7 +111,7 @@
 		// A screen shown again over its last copy updates in place, without a cross-fade.
 		if (
 			!document.startViewTransition ||
-			(holding?.last && HeldScreen) ||
+			holding?.last ||
 			navigation.from?.url.pathname === navigation.to?.url.pathname ||
 			matchMedia('(prefers-reduced-motion: reduce)').matches
 		) {
@@ -140,6 +137,6 @@
 >
 	{@render children()}
 	{#snippet held()}
-		{#if holding && HeldScreen}<HeldScreen label={holding.label} last={holding.last} />{/if}
+		{#if holding && HeldScreen}<HeldScreen.default label={holding.label} last={holding.last} />{/if}
 	{/snippet}
 </AppShell>
