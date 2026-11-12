@@ -74,15 +74,18 @@ async function decisionNote(id: string) {
 	return row!.note;
 }
 
-/** Accept the review's proposal from M5's inbox, as its Accept posts it. */
-async function acceptInInbox(request: APIRequestContext, s: Seeded) {
+/**
+ * Accept the review's proposal from M5's inbox, as its Accept posts it: 200 when it applied, 409
+ * (the inbox card's answer all the same) when it was superseded because some sessions had passed.
+ */
+async function acceptInInbox(request: APIRequestContext, s: Seeded, status: 200 | 409 = 200) {
 	const { id } = (await proposalChain((await weeklyReviews(s.review.weekStartsOn))[0]!.proposalId!))
 		.chain[0]!;
 	const response = await request.post(`/api/coach/proposals/${id}`, {
 		headers: SAME_ORIGIN,
 		data: { action: 'accept' }
 	});
-	expect(response.ok()).toBe(true);
+	expect(response.status()).toBe(status);
 }
 
 /** Skip a session through Train's own action, as another tab would: the plan moves on. */
@@ -356,7 +359,7 @@ test.describe('review-aged: stored on Monday, decided later in the week', () => 
 		page,
 		request
 	}) => {
-		await acceptInInbox(request, seeded);
+		await acceptInInbox(request, seeded, 409);
 		expect((await head(seeded)).supersededReason).toBe('sessions_passed');
 		expect(await programVersions(seeded.programId)).toHaveLength(1);
 
