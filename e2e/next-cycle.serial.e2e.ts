@@ -8,7 +8,7 @@
  *   lists the new block's weeks as planned and Train opens on its week 1; the old version and its
  *   outline stay in History; a rotated exercise kept is planned; a second tap while the first is
  *   on its way posts nothing (one version); a profile changed since the preview refreshes it, and
- *   Retry starts the fresh one
+ *   Try again starts the fresh one
  * - block-end-late (ended weeks ago): 'This week' says it starts today, the lived-through weeks
  *   read as an unplanned bridge and the next block's dates follow it; starting this week plans
  *   the bridge and the block from this Monday
@@ -155,7 +155,7 @@ test.describe('block-end', () => {
 		expect(row!.dislikes).not.toContain('bench_press');
 	});
 
-	test('a profile changed since the preview refreshes it, and Retry starts the fresh one', async ({
+	test('a profile changed since the preview refreshes it, and Try again starts the fresh one', async ({
 		page
 	}) => {
 		await createReview(page);
@@ -169,7 +169,7 @@ test.describe('block-end', () => {
 		await expect(page.getByTestId('next-cycle-failure')).toContainText('has been refreshed');
 		await expect(fingerprint).not.toHaveValue(before);
 		expect(await programVersions(seeded.programId!)).toHaveLength(1);
-		await expect(start(page)).toHaveText('Retry');
+		await expect(start(page)).toHaveText('Try again');
 		await start(page).click();
 		await expect(page).toHaveURL(/\/train\?tool=plan$/);
 		expect(await programVersions(seeded.programId!)).toHaveLength(2);
