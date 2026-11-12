@@ -139,8 +139,10 @@ export default defineConfig(({ command, mode }) => {
 						? adapterNode({ out: 'build', precompress: true })
 						: adapterVercel({ runtime: 'nodejs22.x' }),
 				version: { name: appVersion(), pollInterval: 0 },
-				// Small, render-critical CSS is inlined into the HTML to save a blocking round-trip.
-				inlineStyleThreshold: 4096,
+				// Inline the CSS a page renders with (each stylesheet under this many characters) into
+				// its HTML, so first paint waits for no stylesheet request: the root layout's 13 K
+				// characters included. Inlined or linked, `pnpm budgets` counts it in the route's CSS.
+				inlineStyleThreshold: 16384,
 				output: { bundleStrategy: 'split' },
 				// The root layout registers the service worker once the app has started and gone idle
 				// (src/lib/client/service-worker.ts); SvelteKit's registration runs on `load`, before it.
@@ -241,11 +243,12 @@ export default defineConfig(({ command, mode }) => {
 							 * bring the whole chunk with it. Not the strength view's (selectors, groups, set
 							 * words), which load with that view, nor the flow (flow.ts), nor the run and other
 							 * families (reducers/run.ts and reducers/other.ts, with their routes' tables): in the
-							 * group, /workout would load them.
+							 * group, /workout would load them. ends.ts, the rule for when a workout may end, goes
+							 * with the reducers that load it.
 							 */
 							{
 								name: 'workout',
-								test: /src[\\/]lib[\\/]domain[\\/]workout[\\/](mutations|timers|project|reducers[\\/](?!(run|other)\.)\w+)\.ts$/
+								test: /src[\\/]lib[\\/]domain[\\/]workout[\\/](mutations|timers|project|ends|reducers[\\/](?!(run|other)\.)\w+)\.ts$/
 							}
 						]
 					}
