@@ -347,11 +347,21 @@ describe('disciplineVerdict', () => {
 			verdict: 'holding',
 			counts: { steady: 1, moving: 1, judged: 1 },
 			sentence:
-				'1 of 1 training measure within normal variation · 1 moving, not judged better or worse'
+				'1 of 1 training measure within normal variation · Load is rising, neither better nor worse on its own'
 		});
 		expect(verdict.evidence[0]!.words).toBe('Load: trending up');
 		expect(disciplineVerdict('general', [load]).sentence).toBe(
-			'No verdict on your training measures · 1 moving, not judged better or worse'
+			'No verdict on your training measures · Load is rising, neither better nor worse on its own'
+		);
+		// Named, in plain words, whichever way they go and however many there are.
+		const falling = evidence('Load', 'srpe_load', rising(4000, -60));
+		expect(disciplineVerdict('general', [falling]).sentence).toBe(
+			'No verdict on your training measures · Load is falling, neither better nor worse on its own'
+		);
+		const strain = evidence('Strain', 'strain', rising(5000, 300));
+		const muayThai = evidence('Muay Thai load', 'muay_thai_load', rising(300, 30));
+		expect(disciplineVerdict('general', [strain, load, muayThai]).sentence).toBe(
+			'No verdict on your training measures · Load, Muay Thai load and Strain are changing, neither better nor worse on their own'
 		);
 	});
 

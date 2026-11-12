@@ -228,7 +228,7 @@
 				{#if plan.failed}
 					<div class="plan-failed">
 						<Notice tone="danger" title="Couldn’t open your plan">
-							<button type="button" class="retry" onclick={plan.show}>Retry</button>
+							<button type="button" class="retry" onclick={plan.show}>Try again</button>
 						</Notice>
 					</div>
 				{/if}
@@ -356,7 +356,7 @@
 			/>
 			{#if plates.failed}
 				<Notice tone="danger" title="Couldn’t open the plate calculator">
-					<button type="button" class="retry" onclick={plates.show} use:reveal>Retry</button>
+					<button type="button" class="retry" onclick={plates.show} use:reveal>Try again</button>
 				</Notice>
 			{/if}
 		</div>
@@ -372,7 +372,7 @@
 			/>
 			{#if restTimer.failed}
 				<Notice tone="danger" title="Couldn’t open the rest timer">
-					<button type="button" class="retry" onclick={restTimer.show} use:reveal>Retry</button>
+					<button type="button" class="retry" onclick={restTimer.show} use:reveal>Try again</button>
 				</Notice>
 			{/if}
 			<!-- A running rest shows here, under its row, with the sheet closed. -->

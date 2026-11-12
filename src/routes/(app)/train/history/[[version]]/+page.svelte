@@ -242,7 +242,7 @@
 		{/if}
 		{#if olderFailed}
 			<Notice tone="danger" title="Couldn’t load older versions" data-testid="older-failed">
-				<button type="button" class="retry" onclick={showOlder}>Retry</button>
+				<button type="button" class="retry" onclick={showOlder}>Try again</button>
 			</Notice>
 		{/if}
 	</div>

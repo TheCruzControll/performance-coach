@@ -43,7 +43,7 @@ export const ERROR_CARD: StateCard = {
 	tone: 'combat',
 	title: 'Couldn’t load your program',
 	description: 'Your plan is safe. Check your connection, then try again.',
-	next: { title: 'Retry', subtitle: 'Load your week again', icon: 'refresh', to: 'retry' }
+	next: { title: 'Try again', subtitle: 'Load your week again', icon: 'refresh', to: 'retry' }
 };
 
 /** No program: build one on Today once the training profile is complete, else finish it first. */

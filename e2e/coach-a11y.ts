@@ -119,7 +119,7 @@ export const COACH_A11Y: readonly CoachA11yCase[] = [
 				.getByTestId('turn-notice')
 				.or(page.getByTestId('stream-failed'))
 				.or(page.getByTestId('thread-failed'));
-			await expect(notice.getByRole('button', { name: 'Retry' })).toBeVisible();
+			await expect(notice.getByRole('button', { name: 'Try again' })).toBeVisible();
 		}
 	}
 ];
