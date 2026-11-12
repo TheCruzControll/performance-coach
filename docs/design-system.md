@@ -695,6 +695,47 @@ workout pages and is audited on `/design` → Workout, one state at a time.
 | `ResumeBar`                      | `src/routes/(app)`. Resume workout · title with the time and the sync pill, or N changes waiting to sync; screen chrome over the column that raises `--resume-inset`, so it covers nothing.            |
 | `HeldScreen`                     | `src/routes/(app)`. While another screen loads: its last copy in this page, else the tab's skeleton (aria-busy, 'Loading Train'); inert, fixed over the column under the nav.                          |
 
+## The coach (M5)
+
+A conversation in the readable column (Responsive layout → Screens), with the composer as screen
+chrome; the Proposals inbox is a split screen from 1024 px. Every state has its own words, and
+words carry it, never colour alone. All of them are on `/design` → Coach and in the screenshot set
+(`e2e/coach-screens.ts`: 55 states, each at 393 × 659 and 1440 × 900).
+
+| Component                         | Highlights                                                                                                                                                                                                                                  |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `AnswerBlocks`                    | `src/lib/ui/coach`, like the next ten rows. An answer's blocks, each labelled in words (Fact, Calculated, Recommendation, Safety, Note); a metric's method behind a disclosure; 'Not checked against your data'; dated sources; 'Show all'. |
+| `RichText`                        | A block's words as elements from the server's tree, never `{@html}`; a link only for an app path.                                                                                                                                           |
+| `ActivityChip`                    | One step of a turn in words ('Looking at your last 6 bench sessions…', then what it found or that it could not); a spinner, check or alert only repeats it.                                                                                 |
+| `ThinkingIndicator`               | 'Thinking…' between Send and the first step or words: three dots in CSS that hold still under reduced motion.                                                                                                                               |
+| `LiveAnnouncer`                   | A polite log: each completed block once, then 'Answer complete'; never tokens.                                                                                                                                                              |
+| `Composer`                        | 'Message your coach', up to 4,000 characters over eight lines; Send becomes Stop; Enter sends on a fine pointer, Return adds a line on a phone; disabled, it says why in its placeholder.                                                   |
+| `CoachNotice`                     | Every state the coach cannot answer in: not launched, switched off, misconfigured, each way a turn ends, chunk-failed, load-failed, action-failed and empty; Retry where it can work; a rate limit counts down.                             |
+| `LoadingRows`                     | Skeleton rows the shape of conversations or messages, `aria-busy` with words for screen readers.                                                                                                                                            |
+| `MockBadge`                       | 'Practice coach' on every answer the mock wrote.                                                                                                                                                                                            |
+| `ProposalCard`, `DiffRows`        | What changes (from … to …, 'Added', 'Removed'), why and the impact; Accept, Reject, 'Ask for changes'; busy while deciding; 'Couldn’t save' with Retry; offline says why; then 'Applied as version N'. Loaded with the first card.          |
+| `RejectSheet`                     | Lazy: an optional reason (reject) or what should change (revise).                                                                                                                                                                           |
+| `Thread`                          | `src/routes/(app)/coach/[[thread]]`, like the rest. The conversation, oldest first, with live turns, notices in place of a failed answer, and cards after the answer that made them.                                                        |
+| `ThreadList`, `ManageSheet`       | Recent conversations with 'Show older'; rename, and archive with an Undo toast.                                                                                                                                                             |
+| `ArchivedSheet`, `ArchivedBanner` | Archived conversations, a page at a time, with Unarchive; an archived conversation opens read-only under 'Archived · Unarchive to continue'.                                                                                                |
+| `KnowsSheet`, `UsageSheet`        | 'What the coach knows' from structured memory, section by section; usage as cards on a phone and a table in a `wide` dialog (`BottomSheet`'s `wide`: 56rem, centred, from 1024 px). Both loaded on the first press.                         |
+| `Suggestions`, `ContextChip`      | PRD §12's questions, two columns from 1024 px, disabled and dashed while the coach cannot answer; where a prefilled question came from.                                                                                                     |
+| `InboxList`, `Detail`             | `src/routes/(app)/coach/proposals/[[id]]`. Waiting for you, then Decided; the opened proposal beside the list from 1024 px, with the same card and decisions.                                                                               |
+
+Designed states, by name: Thinking (`ThinkingIndicator`), loading (`LoadingRows`, the inbox's
+`Pending`), chunk-failed ('Couldn’t load this part of the coach': a toast or notice with Retry, and
+a second failure while online reloads the page), action-failed ('That didn’t go through': in place
+on the card, row or sheet, with Retry), Archived (`ArchivedBanner`) and not-launched ('Answers
+grounded in your own training data are on their way', the composer disabled and the suggestions
+dashed).
+
+**The screenshot review.** `coach-journey.serial.e2e.ts` captures the set, and
+`scripts/coach-screens-index.ts` turns a CI run's screens into the owner's contact sheet. The
+owner's review is the merge gate of coach-launch (#449). Outcome: not yet recorded; its
+follow-ups go here once it is. Known before it: the inbox has no Lighthouse audit
+(docs/performance.md, "M5 (coach)"); the coach screen, once 0.3 KB over the initial-JS gate, is
+back under it since the shared JS trim (#473).
+
 ## Accessibility checklist (applies to every new component)
 
 - Touch targets ≥ 44 × 44 px; visible `:focus-visible` ring (`--color-accent-ring`).
