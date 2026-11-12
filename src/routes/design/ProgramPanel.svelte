@@ -75,6 +75,32 @@
 		Object.entries(SESSIONS).map(([key, s]) => [key, cardView(s)])
 	) as Record<keyof typeof SESSIONS, CardView>;
 
+	/** Week findings as Train's load words them (services/periodisation/evaluate.ts). */
+	const LEGS =
+		'Heavy squats, hinges or a high-volume leg day tire the legs for a day or more: hard Muay Thai on tired legs risks injury, and a long run on them is slower and harder to recover from.';
+	const NOTES = [
+		{
+			card: 'thursdayThai',
+			tone: 'caution',
+			text: 'Heads-up · Heavy lower body the day before hard Muay Thai · After Lower body strength the day before',
+			why: `${LEGS} You moved Lower body strength here from Friday.`
+		},
+		{
+			card: 'long',
+			tone: 'neutral',
+			text: 'Trade-off, explained · Heavy lower body the day before a long run · After Lower body strength the day before',
+			why: `${LEGS} Your marathon ranks ahead of your strength goal, so the long run keeps its day.`,
+			// Why this day, as Train's load words it (m7/14, train/cards.server.ts whyWords).
+			reasons: {
+				title: 'Why Saturday?',
+				lines: [
+					'Priority trade-off (Programming rules, version 1): Your marathon ranks ahead of your strength goal, so the long run keeps its day.',
+					'Session placed (Programming rules, version 1): Long run goes on Saturday: your longest free morning.'
+				]
+			}
+		}
+	] as const;
+
 	let selected = $state<IsoDate | null>(TODAY);
 
 	/** Wednesday's Upper body moving: the days after today, each with what is planned there. */
@@ -171,6 +197,27 @@
 		<SessionCard session={CARDS.mobility} href="#mobility" data-testid="card-moved" />
 		<!-- Read-only, as an older version shows it: no link. -->
 		<SessionCard session={CARDS.thursdayThai} data-testid="card-read-only" />
+		<!-- A week finding under its card, as Train renders it (m7/04, train/+page.svelte, where
+		     its markup and CSS live so Today and History load none of it): caution, then neutral. -->
+		{#each NOTES as note (note.card)}
+			<SessionCard
+				session={CARDS[note.card]}
+				href={note.tone === 'caution' ? '#thai' : undefined}
+				data-testid={note.tone === 'caution' ? 'card-note' : 'card-note-tradeoff'}
+			/>
+			<details class="note" data-tone={note.tone}>
+				<summary>{note.text}</summary>
+				<p>{note.why}</p>
+			</details>
+			{#if 'reasons' in note}
+				<details class="why" data-testid="card-why">
+					<summary>{note.reasons.title}</summary>
+					<ul>
+						{#each note.reasons.lines as line (line)}<li>{line}</li>{/each}
+					</ul>
+				</details>
+			{/if}
+		{/each}
 	</Section>
 
 	<Section title="Move sheet">
@@ -199,6 +246,61 @@
 </div>
 
 <style>
+	/* Train's note and why (train/+page.svelte), copied for the reference: keep them in step. */
+	.note,
+	.why {
+		margin-top: calc(var(--space-2) * -1);
+		font-size: var(--text-sm);
+		color: var(--color-text-secondary);
+	}
+
+	.note summary,
+	.why summary {
+		display: flex;
+		align-items: baseline;
+		gap: var(--space-2);
+		min-height: var(--touch-target);
+		padding: var(--space-3) var(--space-4);
+		list-style: none;
+	}
+
+	.note summary::-webkit-details-marker,
+	.why summary::-webkit-details-marker {
+		display: none;
+	}
+
+	.note summary::before {
+		content: '';
+		flex: none;
+		width: 0.5rem;
+		height: 0.5rem;
+		border-radius: 50%;
+		box-shadow: inset 0 0 0 1.5px;
+	}
+
+	.note[data-tone='caution'] summary::before {
+		background: var(--color-warning);
+	}
+
+	@media (hover: hover) and (pointer: fine) {
+		:is(.note, .why) summary:hover {
+			color: var(--color-text);
+			cursor: pointer;
+		}
+	}
+
+	.note p,
+	.why ul {
+		padding: 0 var(--space-4);
+	}
+
+	.why ul {
+		display: grid;
+		gap: var(--space-2);
+		padding-bottom: var(--space-3);
+		list-style: none;
+	}
+
 	.grid {
 		display: grid;
 		gap: var(--space-6);

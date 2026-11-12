@@ -84,6 +84,8 @@ export interface CoachTurnOptions {
 	deadlineAt?: number;
 	/** Only the tools with these effects are offered (turn.ts); all of them by default. */
 	toolEffects?: readonly ToolEffect[];
+	/** Keeps the turn's work after its last event alive (turn.ts, TurnOptions.after). */
+	after?: (work: Promise<void>) => void;
 }
 
 /**
