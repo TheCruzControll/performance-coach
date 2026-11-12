@@ -206,9 +206,11 @@ jobs:
   # measurements. Two workers share the runner's 4 vCPUs: in 43172816565 a serial·chromium spec
   # file took 1.15× its 1-worker time, so serial·chromium runs 2 and went from 3 shards to 2 (8.5
   # and 8.8 job minutes there). A serial·webkit one took 1.39×, and its heaviest tests passed their
-  # 30 s timeout, attempt and retry (43178306850), so serial·webkit runs 1 again, in 5 shards as
-  # before (9.4-11.6 job minutes in 43170932662): ~460-515 s of specs a shard at the speed of the
-  # timing table's runs. `minutes` stay unchanged until three such runs are measured.
+  # 30 s timeout, attempt and retry (43178306850), so serial·webkit runs 1 again. In 5 shards, as
+  # before, its shards took 8.6-11.8 job minutes (43186419116; 9.4-11.6 in 43170932662): about
+  # 100 s of setup on top of their specs. So it went to 6, ~385-425 s of specs a shard at the
+  # timing table's speed, about 9 job minutes. `minutes` stay unchanged until three such runs are
+  # measured.
   e2e-legs:
     name: E2E ${{ matrix.group }} · ${{ matrix.engine }} · ${{ matrix.shard }}/${{ matrix.of }}
     # Pinned to the newest Ubuntu release Playwright builds WebKit for (its browser builds are
@@ -228,11 +230,12 @@ jobs:
           - { group: main, engine: webkit, shard: 3, of: 3, minutes: 13 }
           - { group: serial, engine: chromium, shard: 1, of: 2, minutes: 14 }
           - { group: serial, engine: chromium, shard: 2, of: 2, minutes: 14 }
-          - { group: serial, engine: webkit, shard: 1, of: 5, minutes: 15 }
-          - { group: serial, engine: webkit, shard: 2, of: 5, minutes: 15 }
-          - { group: serial, engine: webkit, shard: 3, of: 5, minutes: 15 }
-          - { group: serial, engine: webkit, shard: 4, of: 5, minutes: 15 }
-          - { group: serial, engine: webkit, shard: 5, of: 5, minutes: 15 }
+          - { group: serial, engine: webkit, shard: 1, of: 6, minutes: 15 }
+          - { group: serial, engine: webkit, shard: 2, of: 6, minutes: 15 }
+          - { group: serial, engine: webkit, shard: 3, of: 6, minutes: 15 }
+          - { group: serial, engine: webkit, shard: 4, of: 6, minutes: 15 }
+          - { group: serial, engine: webkit, shard: 5, of: 6, minutes: 15 }
+          - { group: serial, engine: webkit, shard: 6, of: 6, minutes: 15 }
           - { group: alone, engine: chromium, shard: 1, of: 2, minutes: 5 }
           - { group: alone, engine: chromium, shard: 2, of: 2, minutes: 5 }
           - { group: exclusive, engine: chromium, shard: 1, of: 1, minutes: 5 }
