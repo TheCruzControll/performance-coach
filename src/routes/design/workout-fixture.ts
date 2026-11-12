@@ -38,6 +38,7 @@ export const SYNC_STATES: readonly OutboxStatus[] = [
 	{ state: 'synced' },
 	{ state: 'saving', pending: 2 },
 	{ state: 'offline', pending: 3 },
+	{ state: 'unreachable', waiting: 3 },
 	{ state: 'retrying', seconds: 12, pending: 3 },
 	{ state: 'attention', count: 2 },
 	{ state: 'signed-out', waiting: 4 },

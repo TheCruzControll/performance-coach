@@ -172,7 +172,8 @@ export function generateAnalyticsDataset(ownerId: string, seed: string = ANALYTI
 
 /** Truncates the owner's training and program rows, inserts the analytics history, analyses. */
 export async function loadAnalyticsDataset(client: pg.ClientBase, d: Dataset): Promise<void> {
-	await client.query('truncate programs, workouts, recovery_notes cascade');
+	// The week rollups are summed from the workouts: truncated with them (TRUNCATE fires no trigger).
+	await client.query('truncate programs, workouts, recovery_notes, strength_week_rollups cascade');
 	await loadDataset(client, d, { owner: false });
 }
 

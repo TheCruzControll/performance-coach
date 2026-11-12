@@ -49,7 +49,10 @@ describe('Program', () => {
 			upNext: [{ ...card('Intervals', 'b0'), when: 'Tomorrow' }]
 		});
 		expect(html).toContain('data-testid="week-strip"');
-		expect(html).toContain('Thursday 5 November');
+		// Today is named by the page's eyebrow date: its day says so to assistive tech only, and a
+		// rest day promises no sessions.
+		expect(html).toContain('class="visually-hidden">Today</h2>');
+		expect(html).not.toContain('Thursday 5 November');
 		expect(html).toContain('Next: Intervals, tomorrow.');
 		expect(html).toContain('Tomorrow');
 		expect(html).toContain('href="/train/session/b0"');
@@ -71,6 +74,66 @@ describe('Program', () => {
 		expect(html).not.toContain('data-testid="week-strip"');
 		expect(html).not.toContain('data-testid="today-rest"');
 		expect(html).toContain('href="/train/session/b1"');
+	});
+
+	it('gives only the next session the primary Start; later ones a trailing text Start', async () => {
+		const start = (lineage: string) => ({
+			id: 'start-workout',
+			label: 'Start workout',
+			href: `/workout?start=${lineage}`,
+			icon: 'play'
+		});
+		const done = {
+			id: 'done-workout',
+			label: 'Done · View',
+			href: '/progress/workouts',
+			icon: 'check'
+		};
+		const day = (date: string, heading: string) => ({
+			failed: false,
+			week: {
+				label: 'Week 1',
+				today: '2026-11-05',
+				selected: date,
+				strip: [],
+				days: [
+					{
+						date,
+						heading,
+						cards: [
+							{ ...card('Full body', 'a0'), status: 'completed', start: done },
+							{ ...card('Intervals', 'b0'), start: start('b0') },
+							{ ...card('Muay Thai class', 'c0'), start: start('c0') }
+						],
+						rest: null
+					}
+				]
+			},
+			starts: null,
+			complete: null,
+			upNext: []
+		});
+		const html = await served(day('2026-11-05', 'Thursday 5 November'));
+		const links = [
+			...html.matchAll(/<a href="([^"]+)" class="btn[^"]*"[^>]*? data-variant="(\w+)"[^>]*>/g)
+		];
+		expect(
+			links.map(([tag, href, variant]) => [href, variant, /aria-label="([^"]*)"/.exec(tag)?.[1]])
+		).toEqual([
+			['/progress/workouts', 'secondary', undefined],
+			['/workout?start=b0', 'primary', undefined],
+			['/workout?start=c0', 'ghost', 'Start Muay Thai class'],
+			['/workout', 'ghost', undefined]
+		]);
+		expect(html).toContain('class="visually-hidden">Today’s sessions</h2>');
+		expect(html.match(/Start workout/g)).toHaveLength(1);
+		expect(html).toMatch(
+			/data-testid="start-workout"><!--\[-1-->.*?<span class="label[^"]*"><!---->Start<!---->/
+		);
+		// Another day of the week keeps its date, and offers no Start.
+		const other = await served(day('2026-11-06', 'Friday 6 November'));
+		expect(other).toMatch(/<h2 id="[^"]+" class="title[^"]*">Friday 6 November<\/h2>/);
+		expect(other).not.toContain('/workout?start=');
 	});
 
 	it('shows the starts and block-complete states, and a failed read with Retry', async () => {

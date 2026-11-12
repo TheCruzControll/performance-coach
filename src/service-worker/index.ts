@@ -2,13 +2,24 @@
 /// <reference lib="esnext" />
 /// <reference lib="webworker" />
 /**
- * Service worker: precache the app shell and static assets per build version, clean up old
- * versions on activate (and take control of already-open pages), and serve:
- *   - build assets + static files  → cache-first (immutable, versioned)
+ * Service worker: precache per build version what the app needs offline (the shell, the workout
+ * pages and /offline: scripts/lib/precache-scope.ts) with the static files, copying the hashed
+ * files the previous version already cached instead of downloading them (lib/client/sw-precache.ts),
+ * clean up old versions on activate (and take control of already-open pages), and serve:
+ *   - precached files              → cache-first (versioned)
+ *   - other build files            → cache-first, cached on first use (content-hashed, immutable);
+ *                                    the Graphite 2004 preview's stylesheet and font are never
+ *                                    precached (a device on today's design never fetches them)
  *   - prerendered pages            → cache-first, whatever the query string, so a workout page
  *                                    (/workout?start=…) reloads offline from the precache
- *   - page navigations             → network only; on failure the prerendered /offline screen
- *   - /api/*, __data.json          → network only (never cached: live, private data)
+ *   - page navigations             → network only, through the navigation preload (enabled on
+ *                                    activate) when the browser made one; on failure the
+ *                                    prerendered /offline screen, which sends a launch
+ *                                    mid-workout to the workout (lib/client/workout/launch.ts),
+ *                                    sooner for the start URL
+ *   - __data.json                  → network only, with a bounded wait: past it, or on failure,
+ *                                    a 503 carrying the offline error (lib/client/sw-network.ts)
+ *   - /api/*                       → not handled (network only; never cached: live, private data)
  *
  * Dynamic HTML is never stored: pages are sent `private, no-cache` because they carry personal
  * data, and a stored copy would outlive sign-out and show stale state (e.g. a health check) as
@@ -17,31 +28,37 @@
 import { version } from '$app/env';
 import { assets, immutable, prerendered } from '$app/manifest';
 import { self } from '$app/service-worker';
+import { DESIGN_ASSET } from '#lib/client/design.ts';
+import { fromNetwork, isDataRequest, loadData } from '#lib/client/sw-network.ts';
+import { cacheFirst, precache, precacheList } from '#lib/client/sw-precache.ts';
+import { navigationTimeout } from '#lib/client/workout/launch.ts';
+import { activeSummary } from '#lib/client/workout/probe.ts';
+import { shell } from 'virtual:precache-shell';
 
 const PREFIX = 'pc-';
-const SHELL_CACHE = `${PREFIX}shell-${version}`;
+const SHELL_PREFIX = `${PREFIX}shell-`;
+const SHELL_CACHE = `${SHELL_PREFIX}${version}`;
 const OFFLINE_URL = '/offline';
-/** A connected-but-dead network ("lie-fi") can hang a request for a minute; give up sooner. */
-const NAVIGATION_TIMEOUT_MS = 6000;
 
-/**
- * Home-screen/manifest icons (~280 KB of PNGs) are fetched by the OS when the app is
- * installed and never displayed by the running app: keep them out of the install download.
- */
-const NOT_PRECACHED = /^\/icons\//;
-
-const PRECACHE = [
-	...immutable.map((f) => f.path),
+const scope = self.registration.scope;
+/** Every build file (content-hashed): cached on first use when not precached. */
+const IMMUTABLE = new Set(immutable.map((f) => new URL(f.path, scope).pathname));
+const PRECACHE = precacheList(scope, [
+	...shell,
 	...assets.map((f) => f.path),
 	...prerendered.map((f) => f.path)
-]
-	.map((path) => new URL(path, self.registration.scope).pathname)
-	.filter((path) => !NOT_PRECACHED.test(path));
-
+]).filter((path) => !DESIGN_ASSET.test(path));
 const PRECACHED = new Set(PRECACHE);
 
 self.addEventListener('install', (event) => {
-	event.waitUntil(caches.open(SHELL_CACHE).then((cache) => cache.addAll(PRECACHE)));
+	event.waitUntil(
+		precache(caches, {
+			name: SHELL_CACHE,
+			prefix: SHELL_PREFIX,
+			paths: PRECACHE,
+			hashed: IMMUTABLE
+		})
+	);
 });
 
 self.addEventListener('activate', (event) => {
@@ -51,6 +68,10 @@ self.addEventListener('activate', (event) => {
 			for (const key of await caches.keys()) {
 				if (key.startsWith(PREFIX) && key !== SHELL_CACHE) await caches.delete(key);
 			}
+			// A server-rendered navigation's request starts while this worker boots, not after it
+			// (preloadResponse in navigate). Where it is unsupported or refused, navigate fetches as
+			// before; it never stands in the way of claiming the open pages below.
+			await self.registration.navigationPreload?.enable().catch(() => {});
 			// Control the page that installed us (the first visit), so offline support starts
 			// now rather than after the next navigation.
 			await self.clients.claim();
@@ -58,20 +79,28 @@ self.addEventListener('activate', (event) => {
 	);
 });
 
-async function cacheFirst(request: Request): Promise<Response> {
-	// A navigation here is to a prerendered page: the same data-free HTML for every query.
-	const ignoreSearch = request.mode === 'navigate';
-	const cached = await caches.match(request, { cacheName: SHELL_CACHE, ignoreSearch });
-	return cached ?? fetch(request);
+/** Whether a workout is in progress on this device (its IndexedDB, read without creating it). */
+const workoutInProgress = async () => (await activeSummary()) !== null;
+
+/**
+ * Rejects once the navigation's time is up (launch.ts navigationTimeout): a lie-fi network can hang
+ * it for a minute. Counted from the request, while IndexedDB answers whether a workout is on.
+ */
+async function timeUp(pathname: string): Promise<never> {
+	const asked = Date.now();
+	const ms = await navigationTimeout(pathname, workoutInProgress);
+	await new Promise((resolve) => setTimeout(resolve, Math.max(0, ms - (Date.now() - asked))));
+	throw new Error('navigation timeout');
 }
 
-async function navigate(request: Request): Promise<Response> {
+async function navigate(
+	request: Request,
+	preload: Promise<Response | undefined> | undefined
+): Promise<Response> {
 	try {
 		return await Promise.race([
-			fetch(request),
-			new Promise<never>((_, reject) =>
-				setTimeout(() => reject(new Error('navigation timeout')), NAVIGATION_TIMEOUT_MS)
-			)
+			fromNetwork(request, preload),
+			timeUp(new URL(request.url).pathname)
 		]);
 	} catch {
 		// The offline screen holds no personal data; it renders in the app shell at the URL
@@ -91,9 +120,20 @@ self.addEventListener('fetch', (event) => {
 	if (url.origin !== self.location.origin) return;
 	if (url.pathname.startsWith('/api/')) return;
 
-	if (PRECACHED.has(url.pathname)) {
-		event.respondWith(cacheFirst(request));
+	if (PRECACHED.has(url.pathname) || IMMUTABLE.has(url.pathname)) {
+		// A navigation here is to a prerendered page: the same data-free HTML for every query. It
+		// leaves its preload unused: the browser cancels it.
+		event.respondWith(
+			cacheFirst(caches, request, {
+				cacheName: SHELL_CACHE,
+				ignoreSearch: request.mode === 'navigate',
+				store: IMMUTABLE.has(url.pathname),
+				waitUntil: (work) => event.waitUntil(work)
+			})
+		);
 	} else if (request.mode === 'navigate') {
-		event.respondWith(navigate(request));
+		event.respondWith(navigate(request, event.preloadResponse));
+	} else if (isDataRequest(url)) {
+		event.respondWith(loadData(request));
 	}
 });

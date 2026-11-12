@@ -1,13 +1,15 @@
 /**
  * The weekly review as the server renders it (what a browser without JavaScript shows): an
  * out-of-date review's notice with a Refresh form that posts the live revision's id, none once it
- * is decided, and each section a disclosure whose summary holds its title and verdict line, its
- * figures and chart (title, summary and, without JavaScript, its numbers) inside. The e2e spec covers the browser.
+ * is decided, the body (ReviewBody) as the markup the load sent, and each section a disclosure
+ * whose summary holds its title and verdict line, its figures and chart (title, summary and,
+ * without JavaScript, its numbers) after it. The e2e spec covers the browser.
  */
 import { render } from 'svelte/server';
 import { describe, expect, it } from 'vitest';
 import { staleNotice, type NextWeekView, type WeeklyReviewData } from './load.ts';
 import type { SectionView } from './sections.ts';
+import ReviewBody from './ReviewBody.svelte';
 import WeeklyReview from './WeeklyReview.svelte';
 
 const RPE: SectionView = {
@@ -57,7 +59,15 @@ const review = (parts: Partial<WeeklyReviewData> = {}): WeeklyReviewData => ({
 	...parts
 });
 
+const narration: NonNullable<WeeklyReviewData['narration']> = {
+	target: { kind: 'weekly', id: 'review-1' },
+	view: { state: 'written', text: 'Fact: You completed 5 of 6 sessions.', blocks: [] },
+	lines: ['Fact: You completed 5 of 6 sessions.'],
+	discuss: '/coach'
+};
+
 const html = (data: WeeklyReviewData) => render(WeeklyReview, { props: { review: data } }).body;
+const bodyHtml = (data: WeeklyReviewData) => render(ReviewBody, { props: { review: data } }).body;
 const text = (fragment: string) =>
 	fragment
 		.replace(/<!--[\s\S]*?-->/g, '')
@@ -91,16 +101,7 @@ describe('the weekly review on the server', () => {
 	it('the write-up after the figures, with Discuss; none without one (before M6)', () => {
 		expect(html(review())).not.toContain('data-testid="review-write-up"');
 		const discuss = '/coach?ask=Hi&from=weekly_review&ref=review%3Aw-2026-10-26';
-		const body = html(
-			review({
-				narration: {
-					target: { kind: 'weekly', id: 'review-1' },
-					view: { state: 'written', text: 'Fact: You completed 5 of 6 sessions.', blocks: [] },
-					lines: ['Fact: You completed 5 of 6 sessions.'],
-					discuss
-				}
-			})
-		);
+		const body = html(review({ narration: { ...narration, discuss } }));
 		const at = body.indexOf('data-testid="review-write-up"');
 		expect(at).toBeGreaterThan(body.indexOf('data-testid="review-adherence-words"'));
 		const section = body.slice(at, body.indexOf('</section>', at));
@@ -108,12 +109,25 @@ describe('the weekly review on the server', () => {
 		expect(section).toContain(`href="${discuss.replaceAll('&', '&amp;')}"`);
 	});
 
+	it('sends the body as the markup the load rendered, between the counts and the write-up', () => {
+		const sent = render(WeeklyReview, {
+			props: { review: review({ narration }), served: '<section>the body</section>' }
+		}).body;
+		expect(sent).toMatch(
+			/<div data-served(="")? style="display: contents">(<!--[^>]*-->)?<section>the body<\/section>/
+		);
+		expect(sent.indexOf('the body')).toBeLessThan(sent.indexOf('data-testid="review-write-up"'));
+		expect(html(review())).not.toContain('data-served');
+	});
+
 	it('each section is a disclosure, collapsed until opened, its verdict line in the summary', () => {
-		const body = html(review());
-		const start = body.search(/<details[^>]*data-section="rpe"/);
+		const sent = bodyHtml(review());
+		const start = sent.search(/<div[^>]*data-section="rpe"/);
 		expect(start).toBeGreaterThan(-1);
-		const section = body.slice(start, body.indexOf('data-testid="review-write-up"'));
+		const section = sent.slice(start);
 		expect(/<details[^>]*>/.exec(section)![0]).not.toMatch(/\bopen\b/);
+		// The body follows the disclosure, so only a closed one below 1024 px hides it.
+		expect(section).toMatch(/<\/details>\s*<div class="body/);
 		const summary = /<summary[^>]*>([\s\S]*?)<\/summary>/.exec(section)![1]!;
 		expect(text(summary)).toBe('RPE against target Bench press RPE against target: Felt easier');
 		expect(section).toMatch(
@@ -132,7 +146,7 @@ describe('the weekly review on the server', () => {
 	});
 
 	it('a legacy review has no sections', () => {
-		expect(html(review({ legacy: true, sections: [] }))).not.toContain('review-section');
+		expect(bodyHtml(review({ legacy: true, sections: [] }))).not.toContain('review-section');
 	});
 
 	describe("next week's card", () => {
