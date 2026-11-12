@@ -152,7 +152,7 @@ function muayThai(date: IsoDate, kind: 'class' | 'sparring', commitment: string 
 
 /** The week from `monday`; with `cutAt` (today), only what comes before today, then Strength C
  * and an evening easy run today. */
-function weekSessions(monday: IsoDate, rpe: number, commitment: string, cutAt?: IsoDate) {
+export function weekSessions(monday: IsoDate, rpe: number, commitment: string, cutAt?: IsoDate) {
 	const day = (d: number) => addDays(monday, d);
 	const all: SessionPlan[] = [
 		strength(day(0), 'Strength A', ['back_squat', 'bench_press'], rpe),
@@ -175,11 +175,20 @@ const TARGETS = {
 	accumulation: { rpeCap: TARGET_RPE, volumeFactor: 1, loadStep: 0.025, runVolumeFactor: 1 }
 };
 
-function week(monday: IsoDate, kind: 'accumulation' | 'deload', sessions: SessionPlan[]): WeekPlan {
+export function week(
+	monday: IsoDate,
+	kind: 'accumulation' | 'deload',
+	sessions: SessionPlan[]
+): WeekPlan {
 	return { kind, startsOn: monday, endsOn: addDays(monday, 6), targets: TARGETS[kind], sessions };
 }
 
-const block = (name: string, weeks: WeekPlan[], goal: string, outline = false): BlockPlan => ({
+export const block = (
+	name: string,
+	weeks: WeekPlan[],
+	goal: string,
+	outline = false
+): BlockPlan => ({
 	...{ phase: 'accumulation', name, startsOn: weeks[0]!.startsOn, endsOn: weeks.at(-1)!.endsOn },
 	...{ outline, goalRefs: [goal], weeks },
 	progression: outline ? {} : { rpeStepPerWeek: 0, rpeCap: TARGET_RPE }
@@ -369,7 +378,7 @@ export async function logSession(
 }
 
 /** Store the layout's program and log it: the fixture's ids, and the block it reviews. */
-async function seedLayout(ctx: SeedContext, layout: Layout) {
+export async function seedLayout(ctx: SeedContext, layout: Layout) {
 	const programId = await storeProgram(ctx, layout);
 	const found = await resolveKeys(KEYS, { db: ctx.db });
 	const ids = Object.fromEntries(KEYS.map((k) => [k, found.get(k)!.id])) as Record<Key, string>;

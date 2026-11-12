@@ -237,7 +237,7 @@
 			data-testid="edit-sheet-error"
 		>
 			{#snippet actions()}
-				<Button variant="secondary" icon="refresh" onclick={retry}>Retry</Button>
+				<Button variant="secondary" icon="refresh" onclick={retry}>Try again</Button>
 			{/snippet}
 		</EmptyState>
 	{:else}

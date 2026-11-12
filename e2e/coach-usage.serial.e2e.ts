@@ -186,7 +186,7 @@ test.describe('with the network in the test’s hands', () => {
 		const failed = page.getByTestId('usage-failed');
 		await expect(failed).toContainText('Couldn’t load usage');
 		await captureScreen(page, testInfo, 'coach-usage-failed');
-		await failed.getByRole('button', { name: 'Retry' }).click();
+		await failed.getByRole('button', { name: 'Try again' }).click();
 		await expect(page.getByTestId('usage-empty')).toContainText('No coach runs yet');
 		await expect(failed).toHaveCount(0);
 		expect(answered).toBe(2);

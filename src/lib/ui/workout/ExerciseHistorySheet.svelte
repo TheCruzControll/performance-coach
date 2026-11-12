@@ -11,6 +11,11 @@
     previous session, or the one attached to the workout) and says so, or that it has none. By
     exercise id alone it says the history needs a connection, with Retry.
   - A request that fails, or gets no answer within HISTORY_TIMEOUT_MS, shows its error with Retry.
+  - Ask the coach opens Coach with 'How has my <exercise> progressed?' about it (a link:
+    ui/ask-link.ts, so the workout loads no coach module). Not by exercise id alone: that sheet is
+    already over a conversation.
+  - See trends opens the exercise's Progress detail (/progress/exercises/[id]) from any of its
+    sheets, whatever the history's state, but not for an exercise that is gone.
   Each new `request` opens it afresh; a null one closes it (History's Back). `onclose` is the
   owner closing it.
 -->
@@ -22,9 +27,12 @@
 		type HistoryRequest,
 		type HistorySet
 	} from '#lib/client/workout/exercise-history.ts';
+	import { resolve } from '$app/paths';
+	import { ASK_QUESTIONS, askHref } from '#lib/ui/ask-link.ts';
 	import BottomSheet from '#lib/ui/components/BottomSheet.svelte';
 	import Button from '#lib/ui/components/Button.svelte';
 	import EmptyState from '#lib/ui/components/EmptyState.svelte';
+	import ListRow from '#lib/ui/components/ListRow.svelte';
 	import Notice from '#lib/ui/components/Notice.svelte';
 	import Section from '#lib/ui/components/Section.svelte';
 	import Skeleton from '#lib/ui/components/Skeleton.svelte';
@@ -99,6 +107,7 @@
 	const best = $derived(history?.records.bestE1rm && bestWords(history.records.bestE1rm));
 	const fallback = $derived(shown?.fallback ?? null);
 	const offline = $derived(offlineWords(shown));
+	const question = $derived(shown?.name === undefined ? null : ASK_QUESTIONS.exercise(shown.name));
 </script>
 
 <BottomSheet
@@ -130,7 +139,7 @@
 						variant="secondary"
 						icon="refresh"
 						onclick={load}
-						data-testid="exercise-history-retry">Retry</Button
+						data-testid="exercise-history-retry">Try again</Button
 					>
 				{/snippet}
 			</EmptyState>
@@ -167,7 +176,7 @@
 						variant="secondary"
 						icon="refresh"
 						onclick={load}
-						data-testid="exercise-history-retry">Retry</Button
+						data-testid="exercise-history-retry">Try again</Button
 					>
 				{/snippet}
 			</EmptyState>
@@ -233,10 +242,29 @@
 						title="Couldn’t load older sessions"
 						data-testid="history-older-failed"
 					>
-						<Button variant="ghost" size="sm" onclick={showOlder}>Retry</Button>
+						<Button variant="ghost" size="sm" onclick={showOlder}>Try again</Button>
 					</Notice>
 				{/if}
 			</Section>
+		{/if}
+		{#if shown && status !== 'not-found'}
+			<ListRow
+				icon="progress"
+				tone="strength"
+				title="See trends"
+				subtitle="Best e1RM, rep maxes and PRs over time"
+				href={resolve('/(app)/progress/exercises/[id]', { id: shown.exerciseId })}
+				data-testid="history-trends"
+			/>
+		{/if}
+		{#if question}
+			<ListRow
+				icon="coach"
+				title="Ask the coach"
+				subtitle={question}
+				href={askHref(question, 'exercise', { type: 'exercise', id: shown!.exerciseId })}
+				data-testid="ask-coach"
+			/>
 		{/if}
 	</div>
 </BottomSheet>
