@@ -243,6 +243,13 @@ test('setup: the week across the top, the setup card beside This week', async ({
 	expect(Math.abs(week.x + week.width - (sideBox.x + sideBox.width))).toBeLessThanOrEqual(1);
 
 	await expectBeside(card, side(page));
+	// As tall as what it says: no empty band between its words and its progress.
+	const words = await boxOf(card.getByText('About five minutes'));
+	const count = await boxOf(page.getByTestId('today-setup-count'));
+	expect(
+		count.y - (words.y + words.height),
+		'the progress follows the words, with no dead space'
+	).toBeLessThanOrEqual(await tokenPx(page, '--space-4'));
 	await expect(side(page).getByRole('heading', { name: 'This week' })).toBeVisible();
 	await expect(page.getByRole('link', { name: /Plate calculator/ })).toHaveCount(0);
 	const cta = page.getByTestId('today-setup-continue');

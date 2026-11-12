@@ -34,7 +34,8 @@
 	 * Room each panel holds while its code loads or after it fails: about its height on a phone,
 	 * so what sits below it stays put when it arrives. Setup sits above the rest of Today, so it
 	 * keeps its room once it arrives too (its card fills it, Continue at the foot): at least its
-	 * height on a phone, the tallest it gets at the supported sizes.
+	 * height on a phone, the tallest it gets at the supported sizes. On the wide layout nothing
+	 * sits under it in its column, so it takes its own height there, with no empty room inside.
 	 */
 	const SETUP_HEIGHT = '24rem';
 	const SUMMARY_HEIGHT = '24rem';
@@ -176,7 +177,7 @@
 	<!-- The state's panel is code-split (panels/index.ts): the server sends it as markup, kept as
 	     sent until its code arrives, and a client navigation shows its skeleton until then. -->
 	{#if setup && !setup.complete}
-		<div class="setup-room" style:min-height={SETUP_HEIGHT}>
+		<div class="setup-room setup" style:--room={SETUP_HEIGHT}>
 			<PanelLoader
 				load={PANELS.setup}
 				height={SETUP_HEIGHT}
@@ -185,7 +186,7 @@
 			/>
 		</div>
 	{:else if setup && data.program === 'none'}
-		<div class="setup-room" style:min-height={BUILD_HEIGHT}>
+		<div class="setup-room" style:--room={BUILD_HEIGHT}>
 			<PanelLoader
 				load={PANELS.build}
 				height={BUILD_HEIGHT}
@@ -331,6 +332,7 @@
 
 	.setup-room {
 		display: grid;
+		min-height: var(--room);
 	}
 
 	.day:not(.today) .dot.free {
@@ -423,6 +425,11 @@
 			gap: var(--space-6);
 			grid-column: 2;
 			grid-row: 1;
+		}
+
+		/* The setup card has its column to itself: as tall as what it says, no empty band inside. */
+		.setup-room.setup {
+			min-height: 0;
 		}
 
 		.stack.active {
