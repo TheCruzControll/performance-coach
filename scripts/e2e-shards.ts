@@ -59,8 +59,8 @@ export const SHARD_ONE_FILES: readonly string[] = ['a11y-dark.e2e.ts', 'a11y-lig
 
 /**
  * Playwright workers a CI leg of `group` runs (playwright.config.ts): 2 in main; in serial, one
- * per owner world (e2e/worlds.ts SERIAL_WORLDS, which scripts/e2e-projects.test.ts checks this
- * against); 1 elsewhere.
+ * per owner world (e2e/worlds.ts SERIAL_WORLDS; scripts/e2e-shards.test.ts checks this against
+ * the config's workers); 1 elsewhere.
  */
 export const legWorkers = (group: string) => (group === 'main' || group === 'serial' ? 2 : 1);
 

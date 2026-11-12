@@ -25,7 +25,8 @@ import { DEFAULT_E2E_PORT, e2eBaseURL, type E2EEnv } from './projects';
 
 /**
  * Workers, and so worlds, of a serial CI leg (scripts/e2e-shards.ts legWorkers plans with the
- * same number; scripts/e2e-projects.test.ts checks they agree).
+ * same number: scripts/e2e-shards.test.ts checks it against the config's workers, and
+ * scripts/e2e-projects.test.ts the serial projects' workers against this).
  */
 export const SERIAL_WORLDS = 2;
 

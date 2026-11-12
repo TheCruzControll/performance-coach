@@ -4,7 +4,8 @@
  *
  * Admin work (creating a database, copying rows past their triggers and foreign keys) connects
  * as PGADMIN_URL, the superuser `pnpm db:setup` uses (CI sets it), or else as E2E_DATABASE_URL's
- * own role; the specs and the servers keep connecting as E2E_DATABASE_URL's role.
+ * own role, which then needs CREATEDB and superuser (session_replication_role); the specs and the
+ * servers keep connecting as E2E_DATABASE_URL's role.
  */
 import { cpSync, existsSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
