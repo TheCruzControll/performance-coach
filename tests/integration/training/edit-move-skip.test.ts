@@ -10,7 +10,11 @@
  */
 import { describe, expect, it } from 'vitest';
 import { addDays } from '../../../src/lib/domain/calendar';
-import { BLOCKS_EDIT, type Severity } from '../../../src/lib/domain/programming/interference';
+import {
+	BLOCKS_EDIT,
+	INTERFERENCE_RULES,
+	type Severity
+} from '../../../src/lib/domain/programming/interference';
 import type {
 	ProgramPlan,
 	SessionPlan,
@@ -39,8 +43,29 @@ import {
 	FIXTURE_COMMITMENT,
 	FIXTURE_GOAL
 } from '../../../src/lib/server/test-support/program-fixtures';
+import { CONCURRENT_RULES } from '../../../src/lib/domain/programming/rules/concurrent';
+import {
+	createAnalyticsRepository,
+	type AnalyticsRepository
+} from '../../../src/lib/server/db/repositories/analytics';
+import { findErrorsByRequestId } from '../../../src/lib/server/services/errors';
+import {
+	createContextCache,
+	readContext,
+	type ContextDeps,
+	type ContextReader
+} from '../../../src/lib/server/services/periodisation/context';
+import { CLEARS_CLASH } from '../../../src/lib/server/services/programs/edits';
+import { getAthleteProfile } from '../../../src/lib/server/services/profile/index';
+import {
+	finishWorkout,
+	logOtherSession,
+	startWorkout
+} from '../../../src/lib/server/services/training/log';
+import { seedAnalyticsFixture } from '../../../src/lib/server/test-support/analytics-fixtures/index';
+import type { PeriodisationWeekResult } from '../../../src/lib/server/test-support/analytics-fixtures/periodisation-week';
 import { withRollback } from '../helpers';
-import { makeOwner } from '../profile/fixtures';
+import { makeOwner, makeSecondOwner } from '../profile/fixtures';
 
 const MONDAY = '2026-11-09';
 const day = (n: number) => addDays(MONDAY, n);
@@ -419,17 +444,21 @@ describe('moveSession', () => {
 			const warnings = [
 				{
 					rule: 'heavy_lower_before_hard',
+					area: 'interference',
 					severity: 'avoid',
 					days: [FRI, SAT],
 					message:
-						'Heavy lower body the day before hard Muay Thai: Lower A on Friday, then Sparring on Saturday.'
+						'Heavy lower body the day before hard Muay Thai: Lower A on Friday, then Sparring on Saturday.',
+					why: INTERFERENCE_RULES.heavy_lower_before_hard.why
 				},
 				{
 					rule: 'hard_days_apart',
+					area: 'interference',
 					severity: 'prefer',
 					days: [FRI, SAT],
 					message:
-						'Hard days back to back, though the week has room to keep them apart: Lower A on Friday, then Sparring on Saturday.'
+						'Hard days back to back, though the week has room to keep them apart: Lower A on Friday, then Sparring on Saturday.',
+					why: INTERFERENCE_RULES.hard_days_apart.why
 				}
 			];
 
@@ -442,7 +471,7 @@ describe('moveSession', () => {
 			const v2 = await versionOf(db, owner, programId, 2);
 			expect(titled(v2, 'Lower A')).toMatchObject({ date: FRI, status: 'moved' });
 			expect(v2.decisions[0]!.why).toBe(
-				`You moved Lower A from Mon to Fri. No reason given. ${warnings[0]!.message} ${warnings[1]!.message}`
+				`You moved Lower A from Mon to Fri. No reason given. ${warnings[0]!.message} ${warnings[0]!.why} ${warnings[1]!.message} ${warnings[1]!.why}`
 			);
 			expect(v2.decisions[0]!.evidence).toEqual({ from: MON, to: FRI, warnings: 2 });
 		});
@@ -482,6 +511,7 @@ describe('moveSession', () => {
 					warnings: [
 						{
 							rule: 'hard_days_apart',
+							area: 'interference',
 							severity: 'prefer',
 							days: [SAT, SUN],
 							message:
@@ -608,7 +638,15 @@ describe('getMoveTargets', () => {
 			expect(await getMoveTargets(owner, longRun.lineage, WED, { db })).toEqual([
 				{ date: WED, planned: 'Rest day' },
 				{ date: THU, planned: 'Upper A' },
-				{ date: FRI, planned: 'Mobility' },
+				{
+					date: FRI,
+					planned: 'Mobility',
+					// The long run on Friday, the day before Saturday's sparring.
+					warning: {
+						headline: INTERFERENCE_RULES.hard_days_apart.headline,
+						why: INTERFERENCE_RULES.hard_days_apart.why
+					}
+				},
 				{ date: SAT, planned: 'Sparring' }
 			]);
 			expect(
@@ -672,8 +710,11 @@ describe('getMoveTargets', () => {
 			expect(why).toBe(
 				[
 					`You moved ${long('Lower A')} from Thu to Fri. ${reason}.`,
-					...moved.warnings.slice(0, 3).map((w) => w.message),
-					'And 2 more warnings.'
+					// The rule's reason follows its first warning only.
+					moved.warnings[0]!.message,
+					INTERFERENCE_RULES.heavy_lower_before_hard.why,
+					moved.warnings[1]!.message,
+					'And 3 more warnings.'
 				].join(' ')
 			);
 		});
@@ -744,6 +785,267 @@ describe('skipSession', () => {
 				)
 			).toEqual({ sessionLineage: 'This session has passed' });
 			expect(await versionCount(db, owner)).toBe(3);
+		});
+	});
+});
+
+// ---- M7's rules on a move (m7/23 move-evaluation) -------------------------------------------
+
+/** Wide enough for real-data reads on a loaded CI runner; the stalls test the 300 ms default. */
+const SLOW_OK = 10_000;
+
+const origin = (requestId = crypto.randomUUID()) => ({
+	requestId,
+	method: 'POST',
+	path: '/train/session/x',
+	routeId: '/(app)/train/session/[key]',
+	appVersion: '0.1.0+test'
+});
+
+/** An owner whose profile row exists, as it does for anyone with a program (the build reads it). */
+async function ownerWithProfile(db: Executor) {
+	const owner = await makeOwner(db);
+	await getAthleteProfile(owner, { db });
+	return owner;
+}
+
+/** A context cache on `db` whose reads are counted, in `events` as 'context'. */
+function countedContexts(
+	db: Executor,
+	owner: string,
+	more: Partial<ContextDeps> = {},
+	events: string[] = []
+) {
+	const reader: ContextReader = (tx, ownerId, at, deps) => {
+		events.push('context');
+		return (more.reader ?? readContext)(tx, ownerId, at, deps);
+	};
+	const contexts = createContextCache(owner, {
+		db,
+		statementTimeoutMs: SLOW_OK,
+		...more,
+		reader
+	});
+	return { contexts, events, reads: () => events.filter((e) => e === 'context').length };
+}
+
+/** `db` with each transaction it opens (a savepoint, on a test transaction) noted in `events`. */
+function noting(db: Executor, events: string[]): Executor {
+	return new Proxy(db, {
+		get(target, key) {
+			const value = Reflect.get(target, key) as unknown;
+			if (key !== 'transaction' || typeof value !== 'function') return value;
+			return (...args: unknown[]) => {
+				events.push('transaction');
+				return Reflect.apply(value, target, args);
+			};
+		}
+	});
+}
+
+/** Hard sparring the owner logged on Tuesday at noon, not in the plan: three hours at RPE 10. */
+async function loggedSparring(db: Executor, owner: string) {
+	const clientId = crypto.randomUUID();
+	const startedAt = new Date(`${TUE}T12:00:00Z`);
+	await startWorkout(
+		owner,
+		{
+			clientId,
+			kind: 'other',
+			discipline: 'muay_thai',
+			sessionType: 'muay_thai',
+			title: 'Open mat',
+			plannedSessionId: null,
+			startedAt: startedAt.toISOString()
+		},
+		{ db }
+	);
+	await logOtherSession(
+		owner,
+		{
+			workoutClientId: clientId,
+			...{ kind: 'sparring', durationMinutes: 180, rpe: 10, metrics: [], notes: null }
+		},
+		{ db }
+	);
+	const finishedAt = new Date(startedAt.getTime() + 10_800_000).toISOString();
+	await finishWorkout(
+		owner,
+		clientId,
+		{ status: 'completed', finishedAt, durationSeconds: 10_800, sessionRpe: 10 },
+		{ db }
+	);
+}
+
+/**
+ * Sparring on Thursday evening, Lower A on Saturday and the long run on Sunday, with hard
+ * sparring logged on Tuesday: moving Lower A to Wednesday puts it the day before Thursday's
+ * sparring, on legs still carrying Tuesday's.
+ */
+async function residualWeek(db: Executor) {
+	const owner = await ownerWithProfile(db);
+	const programId = await store(db, owner, [
+		week(MONDAY, [sparring(THU), lowerBody(SAT), run(SUN, 'long_run')])
+	]);
+	await loggedSparring(db, owner);
+	const lower = titled(await versionOf(db, owner, programId, 1), 'Lower A');
+	return { owner, programId, lower, move: { sessionLineage: lower.lineage, toDate: WED } };
+}
+
+describe("a move judged with M7's rules", () => {
+	it('onto the day before hard sparring, after a logged hard session, warns residual fatigue with its why', async () => {
+		await withRollback(async (db) => {
+			const { owner, programId, move } = await residualWeek(db);
+			const { contexts } = countedContexts(db, owner);
+			const at = { version: 1, today: TUE };
+
+			// The sheet's Wednesday shows one of the move's warnings: M3's clash before M7's
+			// (TARGET_WARNING_ORDER), though residual fatigue comes first by its day.
+			const targets = await getMoveTargets(owner, move.sessionLineage, TUE, { db, contexts });
+			expect(targets.find((t) => t.date === WED)?.warning).toEqual({
+				headline: 'Heavy lower body the day before hard Muay Thai',
+				why: INTERFERENCE_RULES.heavy_lower_before_hard.why
+			});
+			const checked = await checkMove(owner, move, at, { db, contexts });
+			const moved = await moveSession(owner, move, at, { db, contexts });
+			expect(moved.warnings).toEqual(checked);
+			expect(moved.warnings.map((w) => [w.area, w.rule])).toEqual([
+				['concurrent', 'residual_fatigue_before_hard'],
+				['interference', 'heavy_lower_before_hard'],
+				['interference', 'hard_days_apart']
+			]);
+			expect(moved.warnings[0]).toMatchObject({
+				severity: 'avoid',
+				days: [TUE, WED],
+				message:
+					'A hard session on an overloaded system: Open mat on Tuesday, then Lower A on Wednesday, with the nervous system still overloaded.',
+				why: CONCURRENT_RULES.residual_fatigue_before_hard.why
+			});
+			// The move still goes ahead, and its decision records each warning with its reason.
+			const { why } = (await versionOf(db, owner, programId, 2)).decisions[0]!;
+			expect(why).toContain(
+				`${moved.warnings[0]!.message} ${CONCURRENT_RULES.residual_fatigue_before_hard.why}`
+			);
+		});
+	});
+
+	it("lists each day's warning, and marks the day the scheduler would pick in the owner-move fixture", async () => {
+		await withRollback(async (db) => {
+			const owner = await makeOwner(db);
+			const now = new Date('2026-11-11T12:00:00Z');
+			const seeded = (await seedAnalyticsFixture(
+				owner,
+				'periodisation-week',
+				{ timeZone: 'UTC', now },
+				{ db }
+			)) as unknown as PeriodisationWeekResult;
+			const { contexts } = countedContexts(db, owner);
+			const targets = await getMoveTargets(owner, seeded.lineages.moved!, '2026-11-11', {
+				db,
+				contexts
+			});
+			const monday = seeded.mondays.moved;
+			const heavy = INTERFERENCE_RULES.heavy_lower_before_hard;
+			expect(targets).toEqual([
+				// The morning lifts before the evening class: with priorities, in their order.
+				{ date: addDays(monday, 1), planned: 'Muay Thai class' },
+				{
+					date: addDays(monday, 2),
+					planned: 'Upper A',
+					warning: { headline: 'Heavy lower body the day before hard Muay Thai', why: heavy.why }
+				},
+				{ date: addDays(monday, 3), planned: 'Muay Thai class' },
+				{ date: addDays(monday, 4), planned: 'Rest day', clears: CLEARS_CLASH },
+				{
+					date: addDays(monday, 5),
+					planned: 'Easy run',
+					warning: { headline: 'Heavy lower body the day before a long run', why: heavy.why }
+				},
+				{
+					date: addDays(monday, 6),
+					planned: 'Long run',
+					// Both in the morning: M7's rule, read only with the context.
+					warning: {
+						headline: CONCURRENT_RULES.same_day_separation.headline,
+						why: CONCURRENT_RULES.same_day_separation.why
+					}
+				}
+			]);
+		});
+	});
+
+	it('reads the context once for every day of the week, and before the move’s transaction', async () => {
+		await withRollback(async (db) => {
+			const owner = await ownerWithProfile(db);
+			const programId = await store(db, owner);
+			const lower = titled(await versionOf(db, owner, programId, 1), 'Lower A');
+
+			const listed = countedContexts(db, owner);
+			const targets = await getMoveTargets(owner, lower.lineage, MON, {
+				db,
+				contexts: listed.contexts
+			});
+			expect(targets.map((t) => t.date)).toEqual([TUE, WED, THU, FRI, SAT, SUN]);
+			expect(listed.reads()).toBe(1);
+
+			// The context's own savepoint and its reads, and only then the revision's transaction.
+			const events: string[] = [];
+			const on = noting(db, events);
+			const moving = countedContexts(on, owner, {}, events);
+			await moveSession(
+				owner,
+				{ sessionLineage: lower.lineage, toDate: WED },
+				{ version: 1, today: MON },
+				{ db: on, contexts: moving.contexts }
+			);
+			expect(events).toEqual(['transaction', 'context', 'transaction']);
+		});
+	});
+
+	it('with the facts loader failing, warns with M3’s rules, saves the move and records the failure', async () => {
+		await withRollback(async (db) => {
+			const { owner, programId, move } = await residualWeek(db);
+			const failing = new Proxy(createAnalyticsRepository(db), {
+				get: () => () => Promise.reject(new Error('facts unavailable'))
+			}) as AnalyticsRepository;
+			const { requestId } = origin();
+			const contexts = createContextCache(owner, {
+				db,
+				repository: failing,
+				origin: origin(requestId)
+			});
+
+			const moved = await moveSession(owner, move, { version: 1, today: TUE }, { db, contexts });
+			expect(moved.number).toBe(2);
+			// No residual fatigue: without the context, only M3's rules judge the move.
+			expect(moved.warnings.map((w) => [w.area, w.rule])).toEqual([
+				['interference', 'heavy_lower_before_hard'],
+				['interference', 'hard_days_apart']
+			]);
+			expect(titled(await versionOf(db, owner, programId, 2), 'Lower A').date).toBe(WED);
+			const errors = await findErrorsByRequestId(requestId, { db });
+			expect(errors.map((e) => e.context)).toEqual([
+				expect.objectContaining({ part: 'evaluation-context' })
+			]);
+		});
+	});
+
+	it("refuses another owner's session without reading any context", async () => {
+		await withRollback(async (db) => {
+			const { lower } = await residualWeek(db);
+			const stranger = await makeSecondOwner(db);
+			const { contexts, reads } = countedContexts(db, stranger);
+			const at = { version: 1, today: TUE };
+			await expect(
+				getMoveTargets(stranger, lower.lineage, TUE, { db, contexts })
+			).rejects.toBeInstanceOf(TrainingNotFoundError);
+			await expect(
+				moveSession(stranger, { sessionLineage: lower.lineage, toDate: WED }, at, {
+					db,
+					contexts
+				})
+			).rejects.toBeInstanceOf(TrainingNotFoundError);
+			expect(reads()).toBe(0);
 		});
 	});
 });

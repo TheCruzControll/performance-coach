@@ -91,7 +91,7 @@ async function applyOps(
 	input: Omit<ApplyInput, 'proposal'>,
 	proposal: Extract<Proposal, { kind: 'program_adjustment' | 'workout_update' }>
 ): Promise<ApplyOutcome> {
-	const { ownerId, proposalId, baseVersionId, today, deps } = input;
+	const { ownerId, proposalId, baseVersionId, today, deps, contexts } = input;
 	const current = await createProgramsRepository(deps.db).currentProgram(ownerId);
 	if (!current || current.version.id !== baseVersionId) return PROGRAM_CHANGED;
 	const { title, rationale, payload } = proposal;
@@ -108,7 +108,7 @@ async function applyOps(
 				evidence: { proposalId },
 				...fromReview(row?.source, payload.ops)
 			},
-			{ db: deps.db, now: deps.now }
+			{ db: deps.db, now: deps.now, ...(contexts && { contexts }) }
 		);
 		return { status: 'applied', appliedVersionId: version.versionId };
 	} catch (error) {

@@ -30,11 +30,12 @@ import {
 } from '../../../domain/coach/proposals';
 import { decisionPlanSchema } from '../../../domain/training/schemas';
 import type { Decider } from '../../../domain/training/vocabulary';
+import { createContextCache } from '../periodisation/context';
 import {
 	parseWith,
+	resolveDeps,
 	TrainingInputError,
-	TrainingNotFoundError,
-	type TrainingDeps
+	TrainingNotFoundError
 } from '../training/shared';
 import {
 	detailsApplier,
@@ -45,6 +46,7 @@ import {
 	swapApplier,
 	settled,
 	type EditApplier,
+	type MoveDeps,
 	type PlannedEdit
 } from './edits';
 import {
@@ -163,11 +165,14 @@ function merge(into: CopyChanges, add: CopyChanges): boolean {
 export async function applyProgramEdits(
 	ownerId: string,
 	batch: ProgramEditBatch,
-	deps: TrainingDeps = {}
+	deps: MoveDeps = {}
 ): Promise<RevisedVersion> {
 	const { title, rationale, ops } = parseWith(batchSchema, batch);
 	const decidedBy = batch.decidedBy ?? 'coach';
-	const coach: TrainingDeps = { ...deps, source: decidedBy };
+	// One context provider for the whole batch (unless given), on the executor given: inside
+	// acceptProposal's transaction its reads run in a savepoint, and the moves of a week share one.
+	const contexts = deps.contexts ?? createContextCache(ownerId, { db: resolveDeps(deps).db });
+	const coach: MoveDeps = { ...deps, source: decidedBy, contexts };
 	const at = { version: batch.baseVersion, today: batch.today };
 
 	const edits: PlannedEdit[] = [];

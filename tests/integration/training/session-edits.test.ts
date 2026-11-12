@@ -12,6 +12,7 @@
 import { isActionFailure } from '@sveltejs/kit';
 import { describe, expect, it } from 'vitest';
 import { addDays } from '../../../src/lib/domain/calendar';
+import { CONCURRENT_RULES } from '../../../src/lib/domain/programming/rules/concurrent';
 import { workouts, type Executor } from '../../../src/lib/server/db';
 import { getAthleteProfile, saveBasics } from '../../../src/lib/server/services/profile/index';
 import {
@@ -124,6 +125,9 @@ async function versionCount(db: Executor, owner: string) {
 	return (await getVersionHistory(owner, {}, { db }))!.versions.length;
 }
 
+/** concurrent.same_day_separation's reason (rules/concurrent.ts). */
+const SEPARATION_WHY = CONCURRENT_RULES.same_day_separation.why;
+
 describe('the session screen’s edits, as loaded', () => {
 	it('offers Move on the current version: every later day of the week, with what is planned there', async () => {
 		await withRollback(async (db) => {
@@ -135,7 +139,14 @@ describe('the session screen’s edits, as loaded', () => {
 				locked: null,
 				moveTo: [
 					{ date: TUE, label: 'Tue 10 Nov', day: 'Tuesday', planned: 'Muay Thai class' },
-					{ date: WED, label: 'Wed 11 Nov', day: 'Wednesday', planned: 'Intervals' },
+					{
+						date: WED,
+						label: 'Wed 11 Nov',
+						day: 'Wednesday',
+						planned: 'Intervals',
+						// M7's rule: both in the morning (move-evaluation).
+						warning: { headline: 'Two sessions too close together', why: SEPARATION_WHY }
+					},
 					{
 						date: THU,
 						label: 'Thu 12 Nov',
@@ -268,7 +279,7 @@ describe('the session screen’s edit actions', () => {
 				kind: 'session_moved',
 				decidedBy: 'owner',
 				summary: 'Moved Full body from Mon to Wed',
-				why: 'You moved Full body from Mon to Wed. Work trip on Monday.'
+				why: `You moved Full body from Mon to Wed. Work trip on Monday. Two sessions too close together: Intervals in the morning, then Full body in the morning, on Wednesday: 0 hours apart, under 6. ${SEPARATION_WHY}`
 			});
 		});
 	});
@@ -286,13 +297,15 @@ describe('the session screen’s edit actions', () => {
 				warnings: { severity: string; message: string }[];
 			};
 			const avoid = checked.warnings.filter((w) => w.severity === 'avoid');
-			expect(avoid).toEqual([
-				{
-					severity: 'avoid',
-					message:
-						'Heavy lower body the day before hard Muay Thai: Full body on Wednesday, then Muay Thai class on Thursday.'
-				}
-			]);
+			expect(avoid).toContainEqual({
+				severity: 'avoid',
+				message:
+					'Heavy lower body the day before hard Muay Thai: Full body on Wednesday, then Muay Thai class on Thursday.'
+			});
+			// M7's rules join M3's (move-evaluation): three hard days in a row, among others.
+			expect(avoid.map((w) => w.message.slice(0, w.message.indexOf(':')))).toContain(
+				'Three hard days in a row'
+			);
 			// Advice too ('prefer'): hard days back to back, which the week has room to avoid.
 			expect(checked.warnings.length).toBeGreaterThan(avoid.length);
 			expect(await versionCount(db, owner)).toBe(1);
@@ -301,7 +314,11 @@ describe('the session screen’s edit actions', () => {
 			const [latest] = (await getVersionHistory(owner, {}, { db }))!.versions;
 			const { why } = latest!.decisions[0]!;
 			expect(why.startsWith('You moved Full body from Mon to Wed. No reason given. ')).toBe(true);
-			for (const { message } of checked.warnings) expect(why).toContain(message);
+			// Each warning with its rule's reason, as many as fit, then how many more there are.
+			const shown = checked.warnings.filter((w) => why.includes(w.message)).length;
+			const more = Number(/And (\d+) more warnings?\.$/.exec(why)?.[1] ?? 0);
+			expect(shown).toBeGreaterThan(0);
+			expect(shown + more).toBe(checked.warnings.length);
 		});
 	});
 

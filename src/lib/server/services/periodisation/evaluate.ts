@@ -184,17 +184,24 @@ const daysOf = (days: readonly FatigueDay[], monday: IsoDate): DayFatigue[] =>
 			source: d.source
 		}));
 
+/** A move the scheduler would make to clear a finding: the session, and the day it goes to. */
+export interface ClearingMove {
+	lineage: string;
+	title: string;
+	to: IsoDate;
+}
+
 /**
- * The scheduler's dry-run fix for each actionable avoid finding, as a sentence by its rule and
- * sessions: 'Moving Lower A to Monday clears this.' It may move the owner's own moves
- * (keepOwnerMoves false), only sessions still ahead and not done, and only as an M3 move.
+ * The scheduler's dry-run fix for each actionable avoid finding (repairWeek), by the finding it
+ * clears. It may move the owner's own moves (keepOwnerMoves false), only sessions still ahead and
+ * not done, and only as an M3 move. Train's 'clears this' and the Move sheet's day both read it.
  */
-function suggestionsOf(
+export function clearingMoves(
 	sessions: readonly StoredSession[],
 	context: EvaluationContext,
 	options: { open: IsoDate[]; today: IsoDate; done: ReadonlySet<string>; traitsOf: TraitsOf },
 	monday: IsoDate
-): Map<Finding, string> {
+): Map<Finding, ClearingMove> {
 	const repaired = repairWeek(sessions, {
 		open: options.open,
 		priorities: context.priorities,
@@ -213,7 +220,7 @@ function suggestionsOf(
 		traitsOf: options.traitsOf
 	});
 	const moved = new Set(repaired.ops.map((op) => op.sessionLineage));
-	const out = new Map<Finding, string>();
+	const out = new Map<Finding, ClearingMove>();
 	for (const finding of repaired.before.evaluation.findings) {
 		if (finding.severity !== 'avoid' || !finding.actionable) continue;
 		const named = new Set(finding.sessions.map((s) => s.lineage));
@@ -226,9 +233,18 @@ function suggestionsOf(
 				moved.has(a.session.lineage)
 		);
 		if (action) {
-			const day = WEEKDAY_INFO[weekdayOf(action.to!.date)].label;
-			out.set(finding, `Moving ${action.session.title} to ${day} clears this.`);
+			const { lineage, title } = action.session;
+			out.set(finding, { lineage: lineage!, title, to: action.to!.date });
 		}
+	}
+	return out;
+}
+
+/** clearingMoves as a sentence by each finding: 'Moving Lower A to Monday clears this.' */
+function suggestionsOf(...args: Parameters<typeof clearingMoves>): Map<Finding, string> {
+	const out = new Map<Finding, string>();
+	for (const [finding, { title, to }] of clearingMoves(...args)) {
+		out.set(finding, `Moving ${title} to ${WEEKDAY_INFO[weekdayOf(to)].label} clears this.`);
 	}
 	return out;
 }
