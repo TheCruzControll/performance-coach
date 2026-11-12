@@ -17,8 +17,10 @@ import {
 	startKitUrl,
 	startPlanned,
 	startRequestOf,
+	UNSAVED_KIT_TIMEOUT_MS,
 	type StartOptions
 } from './start';
+import { STUCK_AFTER } from './outbox-rules';
 import { createStore, type WorkoutStore } from './store';
 
 const KITS = workoutDayKits({ date: '2026-11-06' });
@@ -115,6 +117,17 @@ describe('fetchKit', () => {
 		abort!();
 		expect(await answer).toEqual({ ok: false, reason: 'unreachable' });
 	});
+
+	it('gives up after the timeout it is given', async () => {
+		let delay = 0;
+		await fetchKit(STRENGTH.lineage, {
+			...server({ [url]: KITS.strength }),
+			setTimeout: (_run, ms) => (delay = ms),
+			clearTimeout: () => {},
+			timeoutMs: 1_234
+		});
+		expect(delay).toBe(1_234);
+	});
 });
 
 describe('startPlanned', () => {
@@ -143,15 +156,41 @@ describe('startPlanned', () => {
 		expect(persist).toHaveBeenCalledOnce();
 	});
 
-	it('unreachable, starts from the kit saved on this device', async () => {
+	it('the created workout is not marked for a refresh: its kit is the fresh one', async () => {
+		const { fetch } = server({ [startKitUrl(RUN.lineage)]: KITS.run });
+		expect(await startPlanned(RUN.lineage, options(fetch))).not.toHaveProperty('refresh');
+	});
+
+	it('a kit saved on this device starts it at once, with no request, and names the workout whose kit to refresh', async () => {
 		await store.saveKit(STRENGTH.lineage, KITS.strength);
-		const { fetch } = server({ [startKitUrl(STRENGTH.lineage)]: new TypeError('offline') });
-		expect(await startPlanned(STRENGTH.lineage, options(fetch))).toEqual({
-			status: 'started',
-			path: '/workout'
-		});
-		expect((await store.getActive())!.view!.kit).toEqual(KITS.strength);
+		// A server that never answers: a start that waited on it would never resolve.
+		const fetch = vi.fn((_url: string, _init: RequestInit) => new Promise<Response>(() => {}));
+		const outcome = await startPlanned(STRENGTH.lineage, options(fetch));
+		const active = (await store.getActive())!;
+		expect(outcome).toEqual({ status: 'started', path: '/workout', refresh: active.workoutId });
+		expect(fetch).not.toHaveBeenCalled();
+		expect(active.view!.kit).toEqual(KITS.strength);
 		expect(await outboxTypes()).toEqual(['workout.start']);
+		expect(persist).toHaveBeenCalledOnce();
+	});
+
+	it('with no kit saved, the request is given up on after 1.5 s, not 4 s', async () => {
+		let abort: (() => void) | null = null;
+		let delay = 0;
+		const fetch = (_url: string, init: RequestInit) =>
+			new Promise<Response>((_resolve, reject) => {
+				init.signal!.addEventListener('abort', () => reject(new DOMException('', 'AbortError')));
+			});
+		const outcome = startPlanned(STRENGTH.lineage, {
+			...options(fetch),
+			setTimeout: (run, ms) => ((abort = run), (delay = ms)),
+			clearTimeout: () => {}
+		});
+		await vi.waitFor(() => expect(abort).not.toBeNull());
+		expect(delay).toBe(UNSAVED_KIT_TIMEOUT_MS);
+		expect(UNSAVED_KIT_TIMEOUT_MS).toBe(1_500);
+		abort!();
+		expect(await outcome).toEqual({ status: 'unreachable' });
 	});
 
 	it('unreachable with no saved kit: nothing is written', async () => {
@@ -164,8 +203,7 @@ describe('startPlanned', () => {
 		expect(persist).not.toHaveBeenCalled();
 	});
 
-	it('a 404 says missing, even with a saved kit', async () => {
-		await store.saveKit(STRENGTH.lineage, KITS.strength);
+	it('with no saved kit, a 404 says missing', async () => {
 		const url = startKitUrl(STRENGTH.lineage);
 		expect(await startPlanned(STRENGTH.lineage, options(server({ [url]: 404 }).fetch))).toEqual({
 			status: 'missing'
@@ -173,14 +211,14 @@ describe('startPlanned', () => {
 		expect(await store.outbox()).toEqual([]);
 	});
 
-	it('a 401 asks for a sign-in and purges what the server holds, as the sync engine does', async () => {
-		await store.saveKit(STRENGTH.lineage, KITS.strength);
+	it('with no saved kit, a 401 asks for a sign-in and purges what the server holds, as the sync engine does', async () => {
+		await store.saveKit(RUN.lineage, KITS.run);
 		await store.saveUnits(UNITS);
 		const url = startKitUrl(STRENGTH.lineage);
 		expect(await startPlanned(STRENGTH.lineage, options(server({ [url]: 401 }).fetch))).toEqual({
 			status: 'signed-out'
 		});
-		expect(await store.getKit(STRENGTH.lineage)).toBeNull();
+		expect(await store.getKit(RUN.lineage)).toBeNull();
 		expect(await store.getUnits()).toBeNull();
 		expect(await store.signedOut()).toBe(true);
 		expect(await store.outbox()).toEqual([]);
@@ -201,7 +239,8 @@ describe('startPlanned', () => {
 				title: KITS.strength.title,
 				startedAt: new Date(T0).toISOString(),
 				plannedLineage: STRENGTH.lineage,
-				startSeq: start!.seq
+				startSeq: start!.seq,
+				startParked: null
 			}
 		});
 		expect(second.calls).toEqual([]);
@@ -224,18 +263,74 @@ describe('discardInProgress', () => {
 		return (await inProgress(store))!;
 	}
 
-	it('drops a workout whose start has not synced, then the new one starts', async () => {
+	it('abandons an unsynced workout instead of deleting it', async () => {
 		const active = await startStrength();
-		expect(active.startSeq).not.toBeNull();
+		expect(active).toMatchObject({ startSeq: expect.any(Number), startParked: null });
 		expect(await discardInProgress(active, { store, now: () => T0 })).toBe(true);
+		// Its start may already have reached the server: the abandon follows it there.
+		expect(await outboxTypes()).toEqual(['workout.start', 'workout.abandon']);
 		expect(await store.getActive()).toBeNull();
-		expect(await store.outbox()).toEqual([]);
+		expect((await store.load(active.workoutId))!.view!.workout.status).toBe('abandoned');
 
 		const run = server({ [startKitUrl(RUN.lineage)]: KITS.run });
 		expect(await startPlanned(RUN.lineage, options(run.fetch))).toEqual({
 			status: 'started',
 			path: '/workout/run'
 		});
+	});
+
+	it('deletes a workout whose start the server refused', async () => {
+		const started = await startStrength();
+		await store.acknowledge([{ id: started.workoutId, status: 'rejected', code: 'invalid' }]);
+		const active = (await inProgress(store))!;
+		expect(active).toEqual({ ...started, startParked: 'refused' });
+
+		expect(await discardInProgress(active, { store, now: () => T0 })).toBe(true);
+		expect(await store.outbox()).toEqual([]);
+		expect(await store.load(active.workoutId)).toBeNull();
+		expect(await store.getActive()).toBeNull();
+	});
+
+	it('abandons a workout whose start is stuck, and the start is queued again', async () => {
+		const started = await startStrength();
+		for (let i = 0; i < STUCK_AFTER.failures; i++) {
+			await store.countFailure(started.startSeq!, 'timeout');
+		}
+		const active = (await inProgress(store))!;
+		expect(active).toEqual({ ...started, startParked: 'stuck' });
+
+		expect(await discardInProgress(active, { store, now: () => T0 + 1000 })).toBe(true);
+		const [start, abandon] = await store.outbox();
+		expect(start).toMatchObject({ seq: started.startSeq, attempts: 0 });
+		expect(start!.parked).toBeUndefined();
+		expect(abandon!.envelope).toMatchObject({
+			type: 'workout.abandon',
+			workoutId: active.workoutId,
+			at: new Date(T0 + 1000).toISOString()
+		});
+		expect(await store.outbox()).toHaveLength(2);
+		expect((await store.load(active.workoutId))!.view!.workout.status).toBe('abandoned');
+		expect(await store.getActive()).toBeNull();
+	});
+
+	it('queues again a start that got stuck after the conflict was read, before the abandon', async () => {
+		const active = await startStrength();
+		expect(active.startParked).toBeNull();
+		// Another tab's sync engine parks the start while the conflict sheet is open.
+		for (let i = 0; i < STUCK_AFTER.failures; i++) {
+			await store.countFailure(active.startSeq!, 'timeout');
+		}
+
+		expect(await discardInProgress(active, { store, now: () => T0 + 1000 })).toBe(true);
+		const [start, abandon] = await store.outbox();
+		expect(start).toMatchObject({ seq: active.startSeq, attempts: 0 });
+		expect(start!.parked).toBeUndefined();
+		expect(abandon!.envelope).toMatchObject({
+			type: 'workout.abandon',
+			workoutId: active.workoutId
+		});
+		expect(await store.outbox()).toHaveLength(2);
+		expect((await store.load(active.workoutId))!.view!.workout.status).toBe('abandoned');
 	});
 
 	it('abandons a workout the server holds, then the new one starts after it in the outbox', async () => {
@@ -255,7 +350,7 @@ describe('discardInProgress', () => {
 		};
 		await store.acknowledge([{ id: entry!.envelope.id, status: 'applied', canonical }]);
 		const active = (await inProgress(store))!;
-		expect(active).toEqual({ ...started, startSeq: null });
+		expect(active).toEqual({ ...started, startSeq: null, startParked: null });
 
 		expect(await discardInProgress(active, { store, now: () => T0 + 1000 })).toBe(true);
 		const abandoned = await store.load(active.workoutId);
@@ -372,6 +467,14 @@ describe('on a device a 401 marked signed out', () => {
 			).toEqual({ status: 'signed-out' });
 		}
 		expect(await store.signedOut()).toBe(true);
+
+		// A kit saved here starts nothing either, before the server answers as the owner.
+		await store.saveKit(STRENGTH.lineage, KITS.strength);
+		const offline = server({ [url]: new TypeError('offline') });
+		expect(await startPlanned(STRENGTH.lineage, options(offline.fetch))).toEqual({
+			status: 'signed-out'
+		});
+		expect(offline.calls).toEqual([url]);
 
 		const owner = server({ [url]: KITS.strength });
 		expect(await startPlanned(STRENGTH.lineage, options(owner.fetch))).toMatchObject({

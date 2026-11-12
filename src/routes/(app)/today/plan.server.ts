@@ -12,15 +12,20 @@
  * It is streamed, and it fails soft: a read that fails is recorded as a server error (kind
  * 'streamed', as Profile's are) and resolves to {failed: true}, which the panel shows as a
  * designed error with Retry.
+ *
+ * It reads from the program loadTodayProgram found, so the week it shows (today's, or week 1's
+ * before the start) is known at once: the plan and that week are read together, each service on
+ * its own pool connection (docs/architecture.md). So its `db` is the pool, never a transaction.
  */
 import { daysBetween, weekdayOf, type IsoDate } from '#lib/domain/calendar.ts';
 import { WEEKDAY_INFO } from '#lib/domain/profile/catalog.ts';
 import type { SessionView } from '#lib/domain/training/types.ts';
 import { recordServerError } from '#lib/server/services/errors.ts';
 import {
-	getCurrentProgram,
 	getTodayPlan,
-	getTrainingWeek
+	getTrainingWeek,
+	type CurrentProgram,
+	type TodayPlan
 } from '#lib/server/services/programs/index.ts';
 import { completedWorkoutIds } from '#lib/server/services/workouts/history.ts';
 import type { ReviewPromptView } from '#lib/ui/analytics/review-prompt.ts';
@@ -75,14 +80,16 @@ export interface PlanNote {
 
 export interface ReadyPlan {
 	failed: false;
+	/** The owner's today: what the coming days' kits count from (coming-kits.ts). */
+	today: IsoDate;
 	/** Null once the first block is complete or in a bridge week: no session is planned. */
 	week: PlanWeek | null;
 	starts: PlanNote | null;
 	complete: PlanNote | null;
 	/** In a bridge week between blocks, in place of the week: when the next block starts. */
 	bridge?: PlanNote;
-	/** 'Tomorrow', 'Wednesday' or 'Mon 16 Nov' says when each is. */
-	upNext: (PlanCard & { when: string })[];
+	/** 'Tomorrow', 'Wednesday' or 'Mon 16 Nov' says when each is, on `date`. */
+	upNext: (PlanCard & { when: string; date: IsoDate })[];
 	/**
 	 * A week or block to review, or its review once written (review-prompt.server.ts), at the
 	 * top; null with none, or when its read failed (recorded: the plan shows without it).
@@ -109,38 +116,44 @@ const card = (session: SessionView, baselineWeek: boolean): PlanCard => ({
 async function readPlan(
 	ownerId: string,
 	today: IsoDate,
+	program: CurrentProgram,
 	db: SetupDeps['db']
 ): Promise<Omit<ReadyPlan, 'review'>> {
-	// One query at a time on the one handle (docs/architecture.md).
-	const plan = await getTodayPlan(ownerId, today, { db });
-	// loadTodayProgram found the program a moment ago; only a concurrent archive removes it.
-	if (!plan) throw new Error('the active program disappeared while Today loaded');
-	const upNext = plan.upNext.map((s) => {
-		const when = dayWords(s.date, today);
-		return { ...card(s, false), when: when[0]!.toUpperCase() + when.slice(1) };
-	});
-	if (plan.blockComplete) {
-		const program = await getCurrentProgram(ownerId, today, { db });
-		if (!program) throw new Error('the active program disappeared while Today loaded');
+	const upNextOf = (plan: TodayPlan) =>
+		plan.upNext.map((s) => {
+			const when = dayWords(s.date, today);
+			return { ...card(s, false), when: when[0]!.toUpperCase() + when.slice(1), date: s.date };
+		});
+	if (program.blockComplete) {
+		const plan = await getTodayPlan(ownerId, today, { db });
+		// loadTodayProgram found the program a moment ago; only a concurrent archive removes it.
+		if (!plan) throw new Error('the active program disappeared while Today loaded');
 		const { firstPlannedDay, lastPlannedDay } = program;
 		return {
 			failed: false,
+			today,
 			week: null,
 			starts: null,
 			complete: {
 				title: 'Nothing planned yet',
 				description: `You trained through every planned week, ${shortDate(firstPlannedDay)} – ${shortDate(lastPlannedDay)}. Your next block is planned from how this one went.`
 			},
-			upNext
+			upNext: upNextOf(plan)
 		};
 	}
-	const selected = plan.startsOn ?? today;
-	const week = await getTrainingWeek(ownerId, { date: selected }, {}, { db });
+	const selected = program.notStarted ? program.firstPlannedDay : today;
+	// Two services together, each on its own pool connection; inside each, one query at a time.
+	const [plan, week] = await Promise.all([
+		getTodayPlan(ownerId, today, { db }),
+		getTrainingWeek(ownerId, { date: selected }, {}, { db })
+	]);
+	if (!plan) throw new Error('the active program disappeared while Today loaded');
 	if (!week?.planned) throw new Error(`no planned week holds ${selected}`);
+	const upNext = upNextOf(plan);
 	if (week.nextBlockStartsOn) {
 		const description = `Your next block starts ${shortDate(week.nextBlockStartsOn)}. Nothing is planned until then: what you log counts as off-plan.`;
 		const bridge = { title: 'Between blocks', description };
-		return { failed: false, week: null, starts: null, complete: null, bridge, upNext };
+		return { failed: false, today, week: null, starts: null, complete: null, bridge, upNext };
 	}
 	const baseline = week.kind === 'baseline';
 	const later = [...week.days.flatMap((d) => d.sessions), ...plan.upNext];
@@ -153,6 +166,7 @@ async function readPlan(
 	);
 	return {
 		failed: false,
+		today,
 		week: {
 			label: `Week ${week.number}`,
 			today: inWeek,
@@ -188,12 +202,12 @@ async function readPlan(
 
 /**
  * Today's plan at the owner's `today` (ownerToday, read once per request by loadTodayProgram),
- * for +page.server.ts to stream, with the review prompt read after it on the same handle. Never
- * rejects: a failed prompt read is recorded and the plan shows without it.
+ * from the `program` it found, for load.server.ts to stream, with the review prompt read after
+ * it. Never rejects: a failed prompt read is recorded and the plan shows without it.
  */
 export function loadTodayPlan(
 	ownerId: string,
-	{ today, origin }: { today: IsoDate; origin: SetupOrigin },
+	{ today, program, origin }: { today: IsoDate; program: CurrentProgram; origin: SetupOrigin },
 	{ db, errorsDb, prompt = loadReviewPrompt }: SetupDeps & { prompt?: typeof loadReviewPrompt } = {}
 ): Promise<TodayPlanView> {
 	const record = (error: unknown, kind: 'todayPlan' | 'todayReviewPrompt') =>
@@ -201,7 +215,7 @@ export function loadTodayPlan(
 			{ error, kind: 'streamed', status: 500, ...origin, context: { load: kind } },
 			{ db: errorsDb }
 		);
-	return readPlan(ownerId, today, db).then(
+	return readPlan(ownerId, today, program, db).then(
 		async (plan) => {
 			const review = await prompt(ownerId, today, { db }).catch(async (error: unknown) => {
 				await record(error, 'todayReviewPrompt');

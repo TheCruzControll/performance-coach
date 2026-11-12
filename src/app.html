@@ -18,6 +18,9 @@
 		<link rel="manifest" href="%sveltekit.assets%/manifest.webmanifest" />
 		<link rel="icon" href="%sveltekit.assets%/favicon.svg" type="image/svg+xml" />
 		<link rel="apple-touch-icon" href="%sveltekit.assets%/icons/apple-touch-icon.png" />
+		<!-- The Graphite 2004 preview's stylesheet and font, filled in by the server (see
+		     hooks.server.ts); fetched only when that design is chosen. -->
+		<meta name="pc-graphite" content="%pc.graphite.stylesheet%" data-font="%pc.graphite.font%" />
 		<script>
 			// Allowed by the CSP through its sha256 hash, computed from this file in vite.config.ts.
 			// Note when the page starts being left, from its first moment: a navigation away can
@@ -33,6 +36,17 @@
 				// arrive after a navigation away has already started.
 				if (e.persisted) window.__pcLeftAt = undefined;
 			});
+			// A module the page is still loading as it is left fails (WebKit cancels it: "Importing a
+			// module script failed."), rejecting SvelteKit's start script before the app's reporting
+			// (src/lib/client/errors.ts) has started. Not an error, only while the leave lasts
+			// (LEAVING_RESET_MS in leaving.ts); any other failure is still logged and reported.
+			addEventListener('unhandledrejection', function (e) {
+				var leftAt = window.__pcLeftAt;
+				var leaving = leftAt !== undefined && Date.now() - leftAt < 10000;
+				if (leaving && e.reason instanceof TypeError && /\bmodule\b/i.test(e.reason.message)) {
+					e.preventDefault();
+				}
+			});
 			// Apply the saved theme before first paint (see src/lib/client/preferences.svelte.ts).
 			try {
 				var t = JSON.parse(localStorage.getItem('pc:prefs:v1') || '{}').theme;
@@ -46,6 +60,47 @@
 							'default';
 					}
 				}
+			} catch (e) {}
+			// Apply the chosen design before first paint (see src/lib/client/design.ts): today's
+			// unless this device chose the Graphite 2004 preview, here or with ?design=graphite.
+			// `__pcDesign` also switches it while the page is open.
+			try {
+				window.__pcDesign = function (d) {
+					var root = document.documentElement;
+					var links = document.querySelectorAll('link[data-design]');
+					if (d !== 'graphite') {
+						delete root.dataset.design;
+						for (var i = 0; i < links.length; i++) links[i].remove();
+						return;
+					}
+					root.dataset.design = d;
+					var meta = document.querySelector('meta[name="pc-graphite"]');
+					if (links.length || !meta || meta.content.charAt(0) === '%') return;
+					var font = document.createElement('link');
+					font.rel = 'preload';
+					font.as = 'font';
+					font.type = 'font/woff2';
+					font.crossOrigin = 'anonymous';
+					font.href = meta.dataset.font;
+					var sheet = document.createElement('link');
+					sheet.rel = 'stylesheet';
+					sheet.href = meta.content;
+					// A stylesheet a script inserts blocks rendering only when asked to: no flash of today's.
+					sheet.setAttribute('blocking', 'render');
+					font.dataset.design = sheet.dataset.design = d;
+					document.head.append(font, sheet);
+				};
+				window.__pcDesign(
+					(function (asked) {
+						try {
+							if (asked !== 'graphite' && asked !== 'current') {
+								return localStorage.getItem('pc:design:v1');
+							}
+							localStorage.setItem('pc:design:v1', asked);
+						} catch (e) {}
+						return asked;
+					})(new URLSearchParams(location.search).get('design'))
+				);
 			} catch (e) {}
 		</script>
 		%sveltekit.head%

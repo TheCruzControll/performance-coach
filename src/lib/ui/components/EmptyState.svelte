@@ -1,7 +1,8 @@
 <!--
   @component
   Designed empty state: a quiet glyph medallion, a clear title, one or two sentences of
-  guidance and (optionally) a single next action.
+  guidance and (optionally) a single next action. The title is left out where the heading just
+  above already says it (onboarding's goals step), so a screen never reads the same line twice.
 -->
 <script lang="ts">
 	import type { Snippet } from 'svelte';
@@ -10,7 +11,8 @@
 
 	interface Props {
 		icon: IconName;
-		title: string;
+		/** Omit only when the heading the state sits under already says it. */
+		title?: string;
 		description?: string;
 		tone?:
 			'accent' | 'neutral' | 'strength' | 'running' | 'combat' | 'hypertrophy' | 'conditioning';
@@ -36,7 +38,7 @@
 		<Icon name={icon} size={compact ? 22 : 28} />
 	</div>
 	<div class="copy">
-		<h2 class="title">{title}</h2>
+		{#if title}<h2 class="title">{title}</h2>{/if}
 		{#if description}<p class="description">{description}</p>{/if}
 	</div>
 	{#if actions}<div class="actions">{@render actions()}</div>{/if}

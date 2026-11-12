@@ -1,11 +1,14 @@
 import { execSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import adapterNode from '@sveltejs/adapter-node';
 import adapterVercel from '@sveltejs/adapter-vercel';
 import { sveltekit } from '@sveltejs/kit/vite';
 import { loadEnv, type Plugin } from 'vite';
 import { defineConfig } from 'vitest/config';
+import { readBuildGraph, shellFiles } from './scripts/lib/precache-scope.ts';
+import { LAUNCH_SCRIPT } from './src/lib/client/workout/launch.ts';
 import { PREPAINT_SCRIPT } from './src/lib/client/workout/prepaint.ts';
 
 /**
@@ -35,15 +38,18 @@ const scriptHash = (body: string) =>
 	`sha256-${createHash('sha256').update(body).digest('base64')}` as const;
 
 /**
- * CSP hashes for the inline scripts in src/app.html (the pre-paint theme script) and the one
+ * CSP hashes for the inline scripts in src/app.html (the pre-paint theme script), the one
  * /workout renders (src/routes/workout/Prepaint.svelte: the current exercise, painted before the
- * app starts). SvelteKit adds nonces/hashes for the scripts it generates, but not for these.
+ * app starts) and the one /offline renders (src/routes/(app)/offline/LaunchRedirect.svelte: a
+ * launch mid-workout opens the workout). SvelteKit adds nonces/hashes for the scripts it
+ * generates, but not for these.
  */
 function templateScriptHashes(): `sha256-${string}`[] {
 	const html = readFileSync(new URL('./src/app.html', import.meta.url), 'utf8');
 	return [
 		...[...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(([, body]) => scriptHash(body!)),
-		scriptHash(PREPAINT_SCRIPT)
+		scriptHash(PREPAINT_SCRIPT),
+		scriptHash(LAUNCH_SCRIPT)
 	];
 }
 
@@ -115,6 +121,35 @@ function firstPaint(): Plugin {
 	};
 }
 
+const PRECACHE_SHELL = 'virtual:precache-shell';
+
+/**
+ * `virtual:precache-shell`: the build files the service worker precaches, read from the client
+ * build (scripts/lib/precache-scope.ts). SvelteKit builds the worker after the client build and
+ * the prerendering, so both manifests are written by then. Also writes the list to
+ * .vite/precache-shell.json, which `pnpm budgets` measures. In `vite dev` there are no build files
+ * (`$app/manifest`'s `immutable` is empty too): the list is empty.
+ */
+function precacheShell(): Plugin {
+	return {
+		name: 'precache-shell',
+		resolveId: (id) => (id === PRECACHE_SHELL ? `\0${PRECACHE_SHELL}` : undefined),
+		async load(id) {
+			if (id !== `\0${PRECACHE_SHELL}`) return;
+			const { config, name } = this.environment;
+			if (config.command !== 'build' || name !== 'serviceWorker') return 'export const shell = [];';
+			const client = path.resolve(config.root, config.build.outDir);
+			const files = shellFiles(await readBuildGraph(path.dirname(client)));
+			this.emitFile({
+				type: 'asset',
+				fileName: '.vite/precache-shell.json',
+				source: JSON.stringify(files)
+			});
+			return `export const shell = ${JSON.stringify(files)};`;
+		}
+	};
+}
+
 export default defineConfig(({ command, mode }) => {
 	// Make `.env` values visible to server code that reads `process.env` during `vite dev`.
 	// Production servers receive real environment variables from the platform instead.
@@ -128,6 +163,7 @@ export default defineConfig(({ command, mode }) => {
 		plugins: [
 			chunkModules(),
 			firstPaint(),
+			precacheShell(),
 			sveltekit({
 				compilerOptions: {
 					// Runes everywhere in our own code; libraries decide for themselves.
@@ -139,8 +175,10 @@ export default defineConfig(({ command, mode }) => {
 						? adapterNode({ out: 'build', precompress: true })
 						: adapterVercel({ runtime: 'nodejs22.x' }),
 				version: { name: appVersion(), pollInterval: 0 },
-				// Small, render-critical CSS is inlined into the HTML to save a blocking round-trip.
-				inlineStyleThreshold: 4096,
+				// Inline the CSS a page renders with (each stylesheet under this many characters) into
+				// its HTML, so first paint waits for no stylesheet request: the root layout's 13 K
+				// characters included. Inlined or linked, `pnpm budgets` counts it in the route's CSS.
+				inlineStyleThreshold: 16384,
 				output: { bundleStrategy: 'split' },
 				// The root layout registers the service worker once the app has started and gone idle
 				// (src/lib/client/service-worker.ts); SvelteKit's registration runs on `load`, before it.
@@ -241,11 +279,12 @@ export default defineConfig(({ command, mode }) => {
 							 * bring the whole chunk with it. Not the strength view's (selectors, groups, set
 							 * words), which load with that view, nor the flow (flow.ts), nor the run and other
 							 * families (reducers/run.ts and reducers/other.ts, with their routes' tables): in the
-							 * group, /workout would load them.
+							 * group, /workout would load them. ends.ts, the rule for when a workout may end, goes
+							 * with the reducers that load it.
 							 */
 							{
 								name: 'workout',
-								test: /src[\\/]lib[\\/]domain[\\/]workout[\\/](mutations|timers|project|reducers[\\/](?!(run|other)\.)\w+)\.ts$/
+								test: /src[\\/]lib[\\/]domain[\\/]workout[\\/](mutations|timers|project|ends|reducers[\\/](?!(run|other)\.)\w+)\.ts$/
 							}
 						]
 					}
