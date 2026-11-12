@@ -118,7 +118,7 @@
 			{:else if data.view === 'general'}
 				<data.View general={data.general} served={data.served} />
 			{:else if data.view === 'overview'}
-				<data.View overview={data.overview} served={data.served} />
+				<data.View overview={data.overview} served={data.served} prompt={data.prompt} />
 			{/if}
 		</PeriodPicker>
 	</div>

@@ -22,6 +22,7 @@ import * as m2 from '../profile/catalog.ts';
 import type * as types from '../profile/types.ts';
 import type { BaselineLift, CustomExercise, ExerciseRef } from '../training/types.ts';
 import { cleanFloat, convertPace, convertWeight, toMetres } from '../units.ts';
+import type { GoalMode } from './evaluate/types.ts';
 import { canonicalJson, compareText, exerciseContent } from './random.ts';
 import { DEFAULTS, GYM_PRESETS, defaultCommitmentMinutes } from './rules/defaults.ts';
 import type { DefaultKey } from './rules/defaults.ts';
@@ -122,6 +123,12 @@ export interface ProgrammingInput {
 	assumptions: Assumption[];
 	/** The M2 uuids of `goals`, `paused` and `commitments`, by position. Not canonical. */
 	refs: { goals: string[]; paused: string[]; commitments: string[] };
+	/**
+	 * Each shaping goal's mode by its ref (M7). Only prepare (stages/prepare.ts) sets it, on the
+	 * input it hands the stages: buildProgrammingInput never does, so the stored snapshot and the
+	 * fingerprint stay as they were (canonicalJson drops undefined).
+	 */
+	modes?: Readonly<Record<string, GoalMode>>;
 }
 
 /** One of the owner's exercises as the library service lists it. */

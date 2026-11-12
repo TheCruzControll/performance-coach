@@ -13,7 +13,9 @@ import {
 	type Phase,
 	type SessionType
 } from '#lib/domain/training/vocabulary.ts';
-import type { CurrentProgram } from '#lib/server/services/programs/index.ts';
+import type { FindingNote } from '#lib/server/services/periodisation/evaluate.ts';
+import type { PlacementWhy } from '#lib/server/services/periodisation/explain.ts';
+import type { CurrentProgram, WeekChanges } from '#lib/server/services/programs/index.ts';
 import type { IconName } from '#lib/ui/icons/icons.ts';
 import {
 	cardView,
@@ -24,8 +26,13 @@ import {
 	type StripDayView
 } from '#lib/ui/program/words.ts';
 
-/** Where the next step goes: a screen, a week of the program, or Train again (Retry). */
-export type NextStep = 'today' | 'profile' | 'this-week' | 'retry' | { week: number };
+/** Where the next step goes: a screen, a week of the program, Train again (Retry), or a path. */
+export type NextStep =
+	'today' | 'profile' | 'this-week' | 'retry' | { week: number } | { href: string };
+
+/** The reviews screen: the list, or one review by its key ('w-2026-11-09', 'c-<id>'). */
+const reviewsHref = (key: string | null) =>
+	key ? `/progress/reviews/${key}` : '/progress/reviews';
 
 export interface StateCard {
 	/** Its test id, which names the state. */
@@ -67,15 +74,17 @@ export function noProgramCard(profileComplete: boolean): StateCard {
 	};
 }
 
-type BlockSummary = Pick<CurrentProgram, 'firstPlannedDay' | 'lastPlannedDay' | 'plannedWeeks'>;
+type BlockSummary = Pick<CurrentProgram, 'firstPlannedDay' | 'lastPlannedDay'>;
 
 /**
- * The planned weeks are over and only outline weeks are left, until M6 plans the next block:
- * a summary, never a made-up session.
+ * The planned weeks are over and only outline weeks are left, until the cycle review plans the
+ * next block: a summary, never a made-up session, and the way to that review (`review`, its key;
+ * null before it exists).
  */
 export function blockCompleteCard(
-	{ firstPlannedDay, lastPlannedDay, plannedWeeks }: BlockSummary,
-	next: Phase | null
+	{ firstPlannedDay, lastPlannedDay }: BlockSummary,
+	next: Phase | null,
+	review: string | null
 ): StateCard {
 	return {
 		id: 'train-block-complete',
@@ -84,16 +93,34 @@ export function blockCompleteCard(
 		title: 'First block complete',
 		description: `You trained through every planned week, ${shortDate(firstPlannedDay)} – ${shortDate(lastPlannedDay)}. Your next block is planned from how this one went${next ? `, starting with ${PHASE_LABEL[next]}` : ''}.`,
 		next: {
-			title: `Look back at week ${plannedWeeks}`,
-			subtitle: 'Your last planned week',
-			icon: 'clock',
-			to: { week: plannedWeeks }
+			title: review ? 'Open your cycle review' : 'Review this block',
+			subtitle: 'How it went, and your next block',
+			icon: 'progress',
+			to: { href: reviewsHref(review) }
 		}
 	};
 }
 
+/**
+ * A part of the week's side column (beside the day on desktop, under it on a phone), in words:
+ * week 1's brief, or what a weekly review changed. One shape, so Train renders both with one
+ * piece of markup: each point is a sentence, after an optional bold lead ('' for none).
+ */
+export interface AsidePanel {
+	/** Its test id, which also names its heading. */
+	id: 'baseline-brief' | 'review-notice';
+	tone: 'accent' | 'default';
+	eyebrow: string;
+	title: string;
+	lead: string;
+	points: { lead: string; text: string }[];
+	links: { id: string; href: string; label: string }[];
+}
+
 /** Week 1's brief, under its sessions: what a baseline week is for and how to train it. */
-export const BASELINE_BRIEF = {
+export const BASELINE_BRIEF: AsidePanel = {
+	id: 'baseline-brief',
+	tone: 'accent',
 	eyebrow: 'Week 1',
 	title: 'Your baseline week',
 	lead: 'This week finds your starting point: from week 2, every load is worked out from what you log now.',
@@ -101,18 +128,34 @@ export const BASELINE_BRIEF = {
 		'Work up to the target effort (RPE) on each lift, never to failure.',
 		'Record the weight, reps and RPE of every set.',
 		'Runs and classes go at the effort shown: easy means you can still talk.'
-	]
-} as const;
+	].map((text) => ({ lead: '', text })),
+	links: []
+};
 
 /** A day of the week shown, in words: its heading, its sessions' cards, or a rest-day line. */
 export interface TrainDay {
 	/** 'Monday 9 November'. */
 	heading: string;
-	/** By lineage; `baseline` on a strength session of a baseline week. */
-	cards: (CardView & { lineage: string; baseline: boolean })[];
+	/**
+	 * By lineage; `baseline` on a strength session of a baseline week; a finding's note; why the
+	 * session is on its day (whyWords).
+	 */
+	cards: (CardView & { lineage: string; baseline: boolean; note?: FindingNote; why?: CardWhy })[];
 	/** With no sessions: recovery is part of the plan, and what comes next this week, if any. */
 	rest: string | null;
 }
+
+/** 'Why Tuesday?' under a card: its title and one plain line per decision (m7/14, lever 3). */
+export interface CardWhy {
+	title: string;
+	lines: string[];
+}
+
+/** 'Session moved (You, version 2): You moved Lower A from Friday to Monday. …' */
+export const whyWords = ({ title, items }: PlacementWhy): CardWhy => ({
+	title,
+	lines: items.map((i) => `${i.kind} (${i.decidedBy}, version ${i.version}): ${i.why}`)
+});
 
 /** A planned week in words: WeekStrip's days, and each day's heading, cards and rest line. */
 export function weekWords(
@@ -206,5 +249,34 @@ export function offPlanCard(workout: {
 		statusWords: 'Off-plan',
 		line: `${shortDate(workout.date)}${minutes}`,
 		tone: sessionTone(workout.sessionType)
+	};
+}
+
+/**
+ * Train's notice for a week a weekly review changed: who applied what, each change with its why,
+ * and its links: the version in History, then the review (the reviews list if it is gone).
+ */
+export function reviewNotice({ applied, changes, version, review }: WeekChanges): AsidePanel {
+	return {
+		id: 'review-notice',
+		tone: 'default',
+		eyebrow: `Version ${version.number}`,
+		title: 'Updated from your weekly review',
+		lead: applied,
+		points: changes.map(({ summary, why }) => ({ lead: `${summary}.`, text: why })),
+		links: [
+			{
+				id: 'review-notice-version',
+				href: `/train/history/${version.number}`,
+				label: 'See it in History'
+			},
+			review
+				? {
+						id: 'review-notice-review',
+						href: reviewsHref(`w-${review.weekStartsOn}`),
+						label: 'Open your weekly review'
+					}
+				: { id: 'review-notice-review', href: reviewsHref(null), label: 'See your reviews' }
+		]
 	};
 }
