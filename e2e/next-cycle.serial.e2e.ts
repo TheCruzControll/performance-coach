@@ -169,7 +169,7 @@ test.describe('block-end', () => {
 		await expect(page.getByTestId('next-cycle-failure')).toContainText('has been refreshed');
 		await expect(fingerprint).not.toHaveValue(before);
 		expect(await programVersions(seeded.programId!)).toHaveLength(1);
-		await expect(start(page)).toHaveText('Retry');
+		await expect(start(page)).toHaveText('Try again');
 		await start(page).click();
 		await expect(page).toHaveURL(/\/train\?tool=plan$/);
 		expect(await programVersions(seeded.programId!)).toHaveLength(2);

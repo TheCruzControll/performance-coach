@@ -115,7 +115,7 @@ export const COACH_A11Y: readonly CoachA11yCase[] = [
 			await form.getByRole('button', { name: 'Send' }).click();
 			// The turn's offline notice, or the stream client's when it had not loaded yet.
 			const notice = page.getByTestId('turn-notice').or(page.getByTestId('stream-failed'));
-			await expect(notice.getByRole('button', { name: 'Retry' })).toBeVisible();
+			await expect(notice.getByRole('button', { name: 'Try again' })).toBeVisible();
 		}
 	}
 ];
