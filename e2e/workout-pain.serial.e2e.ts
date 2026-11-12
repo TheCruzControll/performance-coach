@@ -1,6 +1,9 @@
 /**
  * 'This hurts' on /workout (PainSheet, opened from ExerciseActionsSheet; Fix in fix/pain.ts),
  * against the real server and the server's own kit (startFromKit):
+ * - what to do comes first: Stop, then the gentler options, then End the workout here, with where
+ *   it hurts, how bad and the note folded under 'Add details (optional)'; Stop is in view on a
+ *   phone as the sheet opens
  * - the gentler options are the kit's for the chosen area: none that loads the lower back on the
  *   Romanian deadlift, none that bends the knee deep on the leg press; with none, Stop is offered
  * - Stop reads Stopped and stores the report; a gentler option swaps with reason pain; severe
@@ -69,6 +72,14 @@ async function hurts(page: Page) {
 	await expect(pain(page).getByTestId('pain-stop')).toBeVisible();
 }
 
+const toggle = (page: Page) => pain(page).getByTestId('pain-details-toggle');
+
+/** Unfolds 'Add details (optional)': where it hurts, how bad and the note. */
+async function details(page: Page) {
+	await toggle(page).click();
+	await expect(toggle(page)).toHaveAttribute('aria-expanded', 'true');
+}
+
 /** Each option's text starts with its name. */
 const names = (list: readonly { exercise: { name: string } }[]) =>
 	list.map((o) => new RegExp('^' + o.exercise.name.replace(/[.*+?^$()|[\]\\{}]/g, '\\$&')));
@@ -132,6 +143,59 @@ async function audit(page: Page, what: string) {
 	await page.evaluate(() => delete document.documentElement.dataset.theme);
 }
 
+test.describe('reach mid-set', () => {
+	test('Stop is first and in view, the details folded; the gentler options come second', async ({
+		page,
+		request
+	}) => {
+		await startFromKit(page, request);
+		await goTo(page, 'Leg press');
+		await hurts(page);
+		await expect(pain(page).getByTestId('pain-stop')).toBeInViewport();
+		await expect(pain(page)).toContainText('Stopping is always OK.');
+		// Stop, then the fold; nothing about the area shown yet.
+		const testids = (selectors: string[]) =>
+			pain(page)
+				.locator(selectors.map((id) => `[data-testid="${id}"]`).join(', '))
+				.evaluateAll((els) => els.map((el) => el.getAttribute('data-testid')));
+		expect(await testids(['pain-stop', 'pain-details-toggle', 'pain-area'])).toEqual([
+			'pain-stop',
+			'pain-details-toggle'
+		]);
+		await expect(toggle(page)).toHaveText('Add details (optional)');
+		await expect(toggle(page)).toHaveAttribute('aria-expanded', 'false');
+		// It names what it controls only while that is there.
+		await expect(toggle(page)).not.toHaveAttribute('aria-controls');
+		await expect(pain(page).getByTestId('pain-severity')).toHaveCount(0);
+		await expect(pain(page).getByTestId('pain-note')).toHaveCount(0);
+
+		await details(page);
+		await expect(toggle(page)).toHaveAttribute('aria-controls', 'pain-details');
+		await expect(pain(page).locator('#pain-details')).toBeVisible();
+		await area(page, 'Knee').check();
+		await severity(page, 'Severe').check();
+		// The gentler options come second: after Stop, before End the workout here and the fold.
+		await expect(options(page).first()).toBeVisible();
+		const order = await testids([
+			'pain-stop',
+			'alternative',
+			'pain-end',
+			'pain-details-toggle',
+			'pain-area'
+		]);
+		expect(order[0]).toBe('pain-stop');
+		expect(order.slice(-3)).toEqual(['pain-end', 'pain-details-toggle', 'pain-area']);
+		expect(order.slice(1, -3).length).toBeGreaterThan(0);
+		expect(order.slice(1, -3).every((id) => id === 'alternative')).toBe(true);
+
+		// Folded again, the choices stay as they were.
+		await toggle(page).click();
+		await expect(pain(page).getByTestId('pain-area')).toHaveCount(0);
+		await expect(pain(page).getByTestId('pain-end')).toBeVisible();
+		await expect(options(page).first()).toBeVisible();
+	});
+});
+
 test.describe('the gentler options', () => {
 	test('lower back on the Romanian deadlift: nothing that loads the spine, back-friendly first', async ({
 		page,
@@ -148,6 +212,7 @@ test.describe('the gentler options', () => {
 		await goTo(page, 'Romanian deadlift');
 		await hurts(page);
 		await expect(options(page)).toHaveCount(0);
+		await details(page);
 		await area(page, 'Lower back').check();
 		await severity(page, 'Moderate').check();
 		await expect(pain(page).getByTestId('pain-gentler-heading')).toHaveText(
@@ -172,6 +237,7 @@ test.describe('the gentler options', () => {
 
 		await goTo(page, 'Leg press');
 		await hurts(page);
+		await details(page);
 		await area(page, 'Knee').check();
 		await expect(options(page)).toHaveText(names(gentler));
 		await options(page).first().click();
@@ -227,6 +293,7 @@ test.describe('the gentler options', () => {
 		await gotoWorkout(page, 'strength', { sync: 'real' });
 		await goTo(page, 'Leg press');
 		await hurts(page);
+		await details(page);
 		await area(page, 'Knee').check();
 		await expect(pain(page).getByTestId('pain-no-gentler')).toHaveText(
 			'Nothing gentler on your knee today, so stopping is the safe choice.'
@@ -244,6 +311,7 @@ test.describe('stopping', () => {
 		const { workoutId } = await startFromKit(page, request);
 		await goTo(page, 'Romanian deadlift');
 		await hurts(page);
+		await details(page);
 		await area(page, 'Lower back').check();
 		await severity(page, 'Moderate').check();
 		await pain(page).getByTestId('pain-note').fill('Twinge on the way up');
@@ -286,6 +354,7 @@ test.describe('stopping', () => {
 		await goTo(page, 'Leg press');
 		await hurts(page);
 		await expect(pain(page).getByTestId('pain-end')).toHaveCount(0);
+		await details(page);
 		await severity(page, 'Severe').check();
 		const end = pain(page).getByTestId('pain-end');
 		await expect(end).toHaveText(/End the workout here/);
@@ -308,6 +377,7 @@ test.describe('stopping', () => {
 		// The sheet's code is loaded online; a device offline from the start has it precached.
 		await hurts(page);
 		await context.setOffline(true);
+		await details(page);
 		await area(page, 'Knee').check();
 		await pain(page).getByTestId('pain-stop').click();
 		await expect(pain(page)).toBeHidden();
@@ -331,6 +401,7 @@ test.describe('the words and the way out', () => {
 		await goTo(page, 'Leg press');
 		await hurts(page);
 		// Every part shown: the gentler options and End the workout here.
+		await details(page);
 		await area(page, 'Lower back').check();
 		await severity(page, 'Severe').check();
 		await expect(pain(page).getByTestId('pain-end')).toBeVisible();
@@ -389,6 +460,8 @@ test.describe('the words and the way out', () => {
 
 		await expect(pain(page)).toBeVisible();
 		await expect(pain(page).getByTestId('pain-error')).toBeVisible();
+		// The details are the point of Fix: unfolded, with no choices and no fold.
+		await expect(toggle(page)).toHaveCount(0);
 		await expect(area(page, 'Knee')).toBeChecked();
 		const note = pain(page).getByTestId('pain-note');
 		await expect(note).toHaveValue('x'.repeat(600));
@@ -415,6 +488,7 @@ test.describe('the words and the way out', () => {
 		await goTo(page, 'Leg press');
 		await hurts(page);
 		await audit(page, 'the pain sheet');
+		await details(page);
 		await area(page, 'Knee').check();
 		await severity(page, 'Severe').check();
 		await expect(options(page).first()).toBeVisible();
@@ -432,6 +506,7 @@ test.describe('the words and the way out', () => {
 		await expect(page.locator('html')).toHaveAttribute('data-design', 'graphite');
 		await goTo(page, 'Leg press');
 		await hurts(page);
+		await details(page);
 		await area(page, 'Knee').check();
 		await severity(page, 'Severe').check();
 		await expect(options(page).first()).toBeVisible();
@@ -463,6 +538,11 @@ test.describe('desktop', () => {
 		await hurts(page);
 		await expect(page.getByRole('dialog', { name: 'This hurts' })).toBeVisible();
 
+		// The details unfold by keyboard.
+		await toggle(page).focus();
+		await page.keyboard.press('Enter');
+		await expect(toggle(page)).toHaveAttribute('aria-expanded', 'true');
+
 		// The area by keyboard: Space picks, the arrows move the choice.
 		await area(page, 'Neck').focus();
 		await page.keyboard.press('Space');
@@ -478,10 +558,11 @@ test.describe('desktop', () => {
 		await expect(severity(page, 'Severe')).toBeChecked();
 		await expect(pain(page).getByTestId('pain-end')).toBeVisible();
 
-		// The note, then Stop, with a keyboard focus ring.
-		await page.keyboard.press('Tab');
-		await page.keyboard.press('Tab');
+		// Back up the reading order: Stop comes before everything else, with a keyboard focus ring.
 		const stop = pain(page).getByTestId('pain-stop');
+		for (let i = 0; i < 30 && !(await stop.evaluate((el) => el === document.activeElement)); i++) {
+			await page.keyboard.press('Shift+Tab');
+		}
 		await expect(stop).toBeFocused();
 		await expect(stop).toHaveCSS('outline-style', 'solid');
 
