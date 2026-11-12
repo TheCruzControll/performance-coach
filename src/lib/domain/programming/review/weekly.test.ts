@@ -276,8 +276,8 @@ describe('composeWeeklyReview', () => {
 		);
 		expect(find(review.findings, 'muay_thai:load')!.figures.map((f) => f.words)).toEqual([
 			'1 session',
-			'1 h',
-			'360 AU',
+			'1\u00a0h',
+			'360\u00a0AU',
 			'6 rounds'
 		]);
 		// Hard sets against the week's range, in numbers the range bars draw.
@@ -290,7 +290,7 @@ describe('composeWeeklyReview', () => {
 		]);
 		expect(find(review.findings, 'running:mileage')!.verdict).toEqual({
 			level: 'good',
-			words: '5 km of 5 km planned'
+			words: '5\u00a0km of 5\u00a0km planned'
 		});
 		// The same load every week: steady, never a trend.
 		expect(find(review.findings, 'verdicts:tonnage')!.verdict.level).toBe('neutral');
@@ -318,7 +318,7 @@ describe('composeWeeklyReview', () => {
 		expect(review.summary).toBe('2 of 4 sessions done.');
 		expect(find(review.findings, 'running:mileage')!.verdict).toEqual({
 			level: 'watch',
-			words: '0 km of 5 km planned'
+			words: '0\u00a0km of 5\u00a0km planned'
 		});
 	});
 

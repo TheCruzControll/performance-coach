@@ -36,10 +36,12 @@ import type {
 	BetaToolUseBlock,
 	BetaUserMessageParam
 } from '@anthropic-ai/sdk/resources/beta/messages';
+import * as z from 'zod/mini';
 import { createAnswerParser } from '../../domain/coach/answer.ts';
 import { DAILY_LIMITS, TURN_LIMITS } from '../../domain/coach/budgets.ts';
 import type { CoachEvent, CompletedBlock } from '../../domain/coach/events.ts';
 import { directIntent } from '../../domain/coach/intents.ts';
+import type { ToolEffect } from '../../domain/coach/tools.ts';
 import { detectPain } from '../../domain/coach/safety.ts';
 import type {
 	CoachErrorKind,
@@ -92,7 +94,13 @@ import {
 } from './rollover.ts';
 import { runLoop, type LoopOutcome } from './orchestrator.ts';
 import { createOutputPolicy, type PolicyInput } from './policy.ts';
-import { segmentPreamble, turnContext, weekSummary, type TurnFacts } from './prompt/context.ts';
+import {
+	segmentPreamble,
+	turnContext,
+	weekSummary,
+	type ReviewFacts,
+	type TurnFacts
+} from './prompt/context.ts';
 import { chatEffort } from './prompt/effort.ts';
 import { buildModelRequest } from './prompt/layout.ts';
 import { promptVersion, SYSTEM_PROMPT } from './prompt/system.ts';
@@ -101,6 +109,7 @@ import { COACH_MODEL, type LlmProvider } from './provider/types.ts';
 import { toolContext, type ToolDrafter, type TurnEntry } from './tools/context.ts';
 import type { CoachTool } from './tools/define.ts';
 import type { ToolCallOutcome } from './tools/execute.ts';
+import { ToolError } from './tools/output.ts';
 import { COACH_TOOLS } from './tools/registry.ts';
 
 export type TurnProvider =
@@ -114,6 +123,10 @@ export interface TurnInput {
 	clientMessageId: string;
 	text: string;
 	entry?: TurnEntry | null;
+	/** A new conversation's title in place of one from the message. */
+	title?: string;
+	/** The review a write-up turn is about: its proposal and decision, in the turn context. */
+	review?: ReviewFacts | null;
 	/** The request's: it aborts when the client leaves. */
 	signal: AbortSignal;
 }
@@ -123,6 +136,11 @@ export interface TurnOptions {
 	deps?: CoachDeps;
 	/** The registry's by default; the prompt version is computed from them. */
 	tools?: readonly CoachTool<ResolvedCoachDeps>[];
+	/**
+	 * Only the tools with these effects are offered (a review's write-up: ['read']); a call to any
+	 * other answers is_error NOT_AVAILABLE without running. All of them by default.
+	 */
+	toolEffects?: readonly ToolEffect[];
 	/** When the endpoint must have answered, in epoch milliseconds. */
 	deadlineAt?: number;
 	/**
@@ -130,6 +148,26 @@ export interface TurnOptions {
 	 * none is started.
 	 */
 	after?: (work: Promise<void>) => void;
+}
+
+/** What a call to a tool the turn did not offer answers. */
+export const NOT_AVAILABLE = 'not available in a review';
+
+/** The tools a turn offers, and every tool it answers: those not offered refuse without running. */
+function restrictTools(
+	tools: readonly CoachTool<ResolvedCoachDeps>[],
+	effects: readonly ToolEffect[] | undefined
+) {
+	if (!effects) return { offered: tools, answered: tools };
+	const offered = tools.filter((tool) => effects.includes(tool.entry.effect));
+	const refused = tools
+		.filter((tool) => !offered.includes(tool))
+		.map((tool) => ({
+			...tool,
+			inputSchema: z.unknown(),
+			run: () => Promise.reject(new ToolError('NOT_AVAILABLE', NOT_AVAILABLE))
+		}));
+	return { offered, answered: [...offered, ...refused] };
 }
 
 /** The error a turn that did not complete ends with. budget_exhausted is the turn's own limit. */
@@ -341,8 +379,11 @@ async function turn(
 		emit({ type: 'error', kind: 'unavailable', reason: provider.reason });
 		return null;
 	}
-	const tools = options.tools ?? (COACH_TOOLS as readonly CoachTool<ResolvedCoachDeps>[]);
-	const definitions = tools.map((tool) => tool.definition);
+	const { offered, answered: tools } = restrictTools(
+		options.tools ?? (COACH_TOOLS as readonly CoachTool<ResolvedCoachDeps>[]),
+		options.toolEffects
+	);
+	const definitions = offered.map((tool) => tool.definition);
 	const version = promptVersion({ system: SYSTEM_PROMPT, tools: definitions, model: COACH_MODEL });
 	const day = await loadTurnFacts(ownerId, deps);
 	const activeVersion = day.program?.versionId ?? null;
@@ -398,6 +439,7 @@ async function turn(
 				clientMessageId: input.clientMessageId,
 				text: input.text,
 				entry: input.entry ?? null,
+				...(input.title !== undefined && { title: input.title }),
 				segment: { promptVersion: version, programVersionId: activeVersion },
 				preamble: preamble as TurnStep['assistant']['content'] | undefined
 			},
@@ -500,7 +542,8 @@ async function turn(
 				: null,
 		entry,
 		painMode: pain.reported,
-		decidedProposals: decided
+		decidedProposals: decided,
+		review: input.review ?? null
 	};
 	const context = turnContext(facts);
 	const opening = first.content as BetaUserMessageParam['content'];

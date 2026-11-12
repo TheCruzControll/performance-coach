@@ -47,8 +47,15 @@ export function verdictWords(verdict: TileVerdict, window?: VerdictWindow): stri
 	}
 }
 
+/**
+ * A real trend's arrow follows better, not the raw sign: a pace that fell (faster) is an
+ * improvement and points up beside its 'Real improvement'. With no better way, the way it moved.
+ */
 export function verdictIcon(verdict: TileVerdict): IconName {
-	if (verdict.verdict === 'real_trend') return `trend-${verdict.direction}`;
+	if (verdict.verdict === 'real_trend') {
+		if (verdict.good === null) return `trend-${verdict.direction}`;
+		return verdict.good ? 'trend-up' : 'trend-down';
+	}
 	return verdict.verdict === 'normal_variation' ? 'trend-flat' : 'clock';
 }
 
