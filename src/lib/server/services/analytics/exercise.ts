@@ -58,7 +58,7 @@ import { getAthleteProfile } from '../profile/index';
 import { getLastPerformances, MAX_LAST_PERFORMANCES, type Performance } from '../training/history';
 import { TrainingNotFoundError } from '../training/shared';
 import { createFactsLoader } from './facts';
-import { displayUnits, formatIn, weight, type DisplayUnits } from './format';
+import { displayUnits, estimate, formatIn, weight, type DisplayUnits } from './format';
 import type { Figure, FigureContext } from './strength';
 
 /** The recent sessions the screen lists, newest first. */
@@ -281,7 +281,9 @@ export async function getExerciseAnalytics(
 		}
 	}
 	const shownPr = (pr: StrengthPr, value: number) =>
-		pr.kind === 'most_reps' ? `${value} reps` : weight(value, units).text;
+		pr.kind === 'most_reps'
+			? `${value} reps`
+			: (pr.kind === 'e1rm' ? estimate : weight)(value, units).text;
 	const prs = prTimeline(history, lift, timeZone).map((pr) => ({
 		...pr,
 		text: shownPr(pr, pr.value),

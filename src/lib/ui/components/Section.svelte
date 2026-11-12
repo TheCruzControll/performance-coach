@@ -20,7 +20,7 @@
 	const id = $props.id();
 </script>
 
-<section class="section" data-gap={gap} aria-labelledby={id} {...rest}>
+<section class="section" data-ui="section" data-gap={gap} aria-labelledby={id} {...rest}>
 	<header class="head">
 		<h2 {id} class="title">{title}</h2>
 		{#if action}{@render action()}{/if}

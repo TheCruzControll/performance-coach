@@ -11,6 +11,7 @@ import { historyScripts } from './history.ts';
 import { preferenceScripts } from './preferences.ts';
 import { programmingProposalScripts } from './programming-proposals.ts';
 import { programmingReadScripts } from './programming-reads.ts';
+import { reviewScripts } from './reviews.ts';
 import { safetyScripts } from './safety.ts';
 import { summaryScripts } from './summaries.ts';
 import { testScripts } from './test.ts';
@@ -18,6 +19,7 @@ import { workoutScripts } from './workout.ts';
 
 export const MOCK_SCRIPTS: readonly MockScript[] = Object.freeze([
 	...summaryScripts,
+	...reviewScripts,
 	...historyScripts,
 	...programmingReadScripts,
 	...programmingProposalScripts,

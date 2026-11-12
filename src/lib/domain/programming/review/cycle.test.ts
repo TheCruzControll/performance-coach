@@ -488,7 +488,7 @@ describe('evaluateCycle', () => {
 		});
 		expect(find(review.findings, 'goals:squat:strength')!.verdict.words).toMatch(/ to go$/);
 		expect(find(review.findings, 'goals:race:running')!.verdict.words).toBe(
-			'Target race pace 4:30 /km · 6 weeks to the event'
+			'Target race pace 4:30\u00a0/km · 6 weeks to the event'
 		);
 		expect(find(review.findings, 'goals:custom:none')!.verdict.words).toMatch(/^No measure/);
 	});
