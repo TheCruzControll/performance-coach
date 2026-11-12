@@ -322,6 +322,28 @@ test('stopped at schedule: a new browser context picks up there, from /onboardin
 		expect(await audit(again)).toEqual([]);
 		await again.evaluate(() => document.documentElement.removeAttribute('data-theme'));
 		await captureScreen(again, testInfo, 'onboarding-resume');
+		// In Graphite 2004 the card is a grouped box (graphite.css), and passes axe in both themes.
+		const look = () =>
+			card.evaluate((el) => {
+				const style = getComputedStyle(el);
+				return { radius: style.borderTopLeftRadius, raised: style.boxShadow !== 'none' };
+			});
+		expect(await look()).toEqual({ radius: '20px', raised: false });
+		await again.evaluate(() => localStorage.setItem('pc:design:v1', 'graphite'));
+		await gotoHydrated(again, '/onboarding');
+		await stepReady(again, 'welcome');
+		await expect(again.locator('html')).toHaveAttribute('data-design', 'graphite');
+		expect(await look()).toEqual({ radius: '6px', raised: true });
+		await again.waitForFunction(() => document.fonts.status === 'loaded');
+		await again.waitForTimeout(400);
+		expect(await audit(again)).toEqual([]);
+		await again.evaluate(() => document.documentElement.setAttribute('data-theme', 'light'));
+		await again.waitForTimeout(400);
+		expect(await audit(again)).toEqual([]);
+		await again.evaluate(() => {
+			document.documentElement.removeAttribute('data-theme');
+			localStorage.removeItem('pc:design:v1');
+		});
 
 		await card.getByRole('link', { name: 'Pick up there' }).click();
 		await expect(again).toHaveURL('/onboarding/schedule');
