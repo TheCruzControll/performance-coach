@@ -837,8 +837,9 @@ test.describe('/design → Charts: trend tiles on a phone', () => {
 				'This week so far: 140 kg · 137.5 kg by Wednesday last week. Real improvement.'
 		);
 		// The visible face is hidden from screen readers, so nothing is read twice.
+		// The accessibility tree reads the value's non-breaking space ('142.5 kg') as a plain one.
 		const tree = (await tile.ariaSnapshot()).trim().split('\n');
-		expect(tree.join('\n')).toContain(tileSentence(squat('12w').tile));
+		expect(tree.join('\n')).toContain(tileSentence(squat('12w').tile).replaceAll('\u00a0', ' '));
 		expect(tree.length, 'the list item and its one sentence').toBeLessThanOrEqual(2);
 		await expect(tile.getByText('Estimated', { exact: true })).toBeVisible();
 		// The sparkline: one polyline with a non-scaling 2 px stroke, and an 8 px hollow end ring.
