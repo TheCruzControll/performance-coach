@@ -1047,7 +1047,7 @@
 }
 
 /* ---- The pain sheet: what to do, as rows of one box under a silver strip ------------------ */
-:root[data-design='graphite'] [data-testid='pain-sheet'] .choices {
+:root[data-design='graphite'] [data-testid='pain-sheet'] section.choices {
 	gap: 0;
 	overflow: hidden;
 	border: 1px solid var(--color-border);
@@ -1055,7 +1055,7 @@
 	background: var(--color-surface-1);
 	box-shadow: var(--elevation-1);
 }
-:root[data-design='graphite'] [data-testid='pain-sheet'] .choices > h3.heading {
+:root[data-design='graphite'] [data-testid='pain-sheet'] section.choices > h3.heading {
 	margin: 0;
 	padding: 0.5rem 0.875rem;
 	border-bottom: 1px solid var(--strip-edge);
@@ -1063,32 +1063,32 @@
 	color: var(--color-text-secondary);
 	font-size: var(--text-xs);
 }
-:root[data-design='graphite'] [data-testid='pain-sheet'] .choices > h4.heading {
+:root[data-design='graphite'] [data-testid='pain-sheet'] section.choices > h4.heading {
 	margin: 0;
 	padding: 0.75rem 0.875rem 0.25rem;
 	border-top: 1px solid var(--color-hairline);
 }
-:root[data-design='graphite'] [data-testid='pain-sheet'] .choices > :not(h3, h4) {
+:root[data-design='graphite'] [data-testid='pain-sheet'] section.choices > :not(h3, h4) {
 	margin-inline: 0.875rem;
 }
-:root[data-design='graphite'] [data-testid='pain-sheet'] .choices > .entry {
+:root[data-design='graphite'] [data-testid='pain-sheet'] section.choices > .entry {
 	margin: 0;
 	padding: 0.75rem 0.875rem;
 	border: 0;
 	border-radius: 0;
 	background: none;
 }
-:root[data-design='graphite'] [data-testid='pain-sheet'] .choices > .entry + .entry,
-:root[data-design='graphite'] [data-testid='pain-sheet'] .choices > :not(h4) + .entry.end {
+:root[data-design='graphite'] [data-testid='pain-sheet'] section.choices > .entry + .entry,
+:root[data-design='graphite'] [data-testid='pain-sheet'] section.choices > :not(h4) + .entry.end {
 	border-top: 1px solid var(--color-hairline);
 }
-:root[data-design='graphite'] [data-testid='pain-sheet'] .choices > .entry:active {
+:root[data-design='graphite'] [data-testid='pain-sheet'] section.choices > .entry:active {
 	background: var(--color-accent-subtle);
 }
-:root[data-design='graphite'] [data-testid='pain-sheet'] .choices > .entry:focus-visible {
+:root[data-design='graphite'] [data-testid='pain-sheet'] section.choices > .entry:focus-visible {
 	outline-offset: -3px;
 }
-:root[data-design='graphite'] [data-testid='pain-sheet'] .choices > :last-child:not(.entry) {
+:root[data-design='graphite'] [data-testid='pain-sheet'] section.choices > :last-child:not(.entry) {
 	margin-bottom: 0.875rem;
 }
 
@@ -1426,7 +1426,7 @@
 		.day:not([aria-checked='true']):hover::before,
 	:root[data-design='graphite'] [data-testid='set'] > button.set:hover,
 	:root[data-design='graphite'] [data-testid='today-session'] > a.card:hover,
-	:root[data-design='graphite'] [data-testid='pain-sheet'] .choices > .entry:hover {
+	:root[data-design='graphite'] [data-testid='pain-sheet'] section.choices > .entry:hover {
 		border-color: transparent;
 		background: color-mix(in srgb, var(--color-surface-1) 94%, var(--color-text));
 	}

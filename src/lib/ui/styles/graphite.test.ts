@@ -669,8 +669,8 @@ describe('Graphite’s screens', () => {
 			},
 			{
 				where: 'the pain sheet’s strip',
-				ink: rule("[data-testid='pain-sheet'] .choices > h3.heading").get('color')!,
-				under: rule("[data-testid='pain-sheet'] .choices > h3.heading").get('background')!
+				ink: rule("[data-testid='pain-sheet'] section.choices > h3.heading").get('color')!,
+				under: rule("[data-testid='pain-sheet'] section.choices > h3.heading").get('background')!
 			},
 			{
 				// ProposalCard's own eyebrow colour, on Graphite's strip.
