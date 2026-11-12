@@ -20,6 +20,10 @@
  * - The view reads the decision from the proposal chain's head, never the proposal first linked.
  * - Next week's rules read no e1RM trend or latest e1RM: an RPE-based line moves its target RPE,
  *   within the week's RPE cap, and a load moves on its own plates.
+ * - With a program, the conflicts and next week's changes are judged by M7's evaluator, with the
+ *   evaluation context read from the review's own facts loader inside its transaction (a
+ *   savepoint bounds the reads, periodisation/context.ts); when the context's reads fail they are
+ *   recorded and M6's checkWeek judges instead.
  * Every query is awaited in turn, so the whole create or refresh runs on one transaction.
  */
 import { addDays, mondayOf, parseIsoDate, type IsoDate } from '../../../domain/calendar';
@@ -50,6 +54,7 @@ import {
 	type VolumeTargets,
 	type WeeklyReviewInput
 } from '../../../domain/programming/review/weekly';
+import type { ReviewEvaluation } from '../../../domain/programming/review/evaluation';
 import { estimateMinutes } from '../../../domain/programming/timefit';
 import { PROPOSAL } from '../../../domain/training/lifecycles';
 import type { ExerciseRef } from '../../../domain/training/types';
@@ -61,6 +66,11 @@ import { createReviewsRepository } from '../../db/repositories/reviews';
 import { createFactsLoader, createQueue, type DatedSession } from '../analytics/facts';
 import { displayUnits, formatIn } from '../analytics/format';
 import { getMuscleTargets, type WeekTarget } from '../analytics/targets';
+import {
+	evaluationContext,
+	type ContextDeps,
+	type EvaluationContext
+} from '../periodisation/context';
 import { createProposal, getProposalView, type ProposalView } from '../coach/proposals';
 import { getExercisesByIds, resolveKeys, type ExerciseDef } from '../exercises/index';
 import { transition } from '../lifecycle-guard';
@@ -299,9 +309,25 @@ async function readWeek(db: Executor, ownerId: string, monday: IsoDate, today: I
 		digest: read.digest,
 		format: formatIn(displayUnits(profile))
 	};
-	return { input, plan, defs, runs, weekSessions, profile };
+	return { input, plan, defs, runs, weekSessions, profile, facts };
 }
 type Week = Awaited<ReturnType<typeof readWeek>>;
+
+/** What createWeeklyReview and refreshWeeklyReview may be given beyond ReviewDeps. */
+export interface WeeklyReviewDeps extends ReviewDeps {
+	/** The evaluation context's reads (periodisation/context.ts), for a test to stall or slow. */
+	context?: Pick<ContextDeps, 'reader' | 'statementTimeoutMs' | 'repository' | 'origin'>;
+}
+
+/** The context as the review's judge reads it (review/evaluation.ts). */
+const reviewEvaluationOf = (context: EvaluationContext): ReviewEvaluation => ({
+	load: context.load,
+	priorities: context.priorities,
+	weekKind: context.weekKind,
+	events: context.events,
+	...(context.level && { level: context.level }),
+	preferredTimes: context.preferredTimes
+});
 
 /** Every planned session of the week is completed or skipped (and it plans at least one). */
 export function allDone(
@@ -330,7 +356,8 @@ async function nextWeekOf(
 	ownerId: string,
 	week: Week,
 	snapshot: WeeklyReviewSnapshot,
-	exposures: readonly Exposure[]
+	exposures: readonly Exposure[],
+	evaluation: ReviewEvaluation | null
 ): Promise<NextWeekProposal> {
 	const { input, plan, defs, runs, weekSessions } = week;
 	const monday = addDays(input.weekStartsOn, 7);
@@ -395,7 +422,8 @@ async function nextWeekOf(
 			workouts: started.map((s) => ({ plannedLineage: s.lineage })),
 			sessionMinutes: programming.sessionMinutes,
 			estimateMinutes: (s) => estimateMinutes(s, programming),
-			running
+			running,
+			...(evaluation && { evaluation })
 		}
 	);
 }
@@ -461,14 +489,35 @@ function checkWeek({ weekStartsOn, today }: CreateWeeklyReview) {
 	if (weekStartsOn > today) throw new ReviewInputError('weekStartsOn', 'That week has not started');
 }
 
-/** The week's review as stored, and next week's changes to propose (null: none). */
-async function compute(db: Executor, ownerId: string, monday: IsoDate, today: IsoDate) {
+/**
+ * The week's review as stored, and next week's changes to propose (null: none). With a program,
+ * the conflicts and next week's moves are judged with M7's evaluation context, read from the
+ * review's own facts loader inside `db` (the caller's transaction: a savepoint bounds it). A null
+ * context (its reads failed, recorded) keeps M3's checkWeek.
+ */
+async function compute(
+	db: Executor,
+	ownerId: string,
+	monday: IsoDate,
+	today: IsoDate,
+	deps: WeeklyReviewDeps['context'] = {}
+) {
 	const week = await readWeek(db, ownerId, monday, today);
 	const ended = today > addDays(monday, 6);
 	if (!ended && !(EARLY_REVIEW && allDone(week.input.week.sessions, week.input.completedLineages)))
 		throw new WeeklyReviewNotReviewableError(addDays(monday, 7));
-	const composed = composeWeeklyReview(week.input);
-	const proposal = await nextWeekOf(db, ownerId, week, composed.snapshot, composed.exposures);
+	const at = week.plan && { versionId: week.plan.versionId, weekStartsOn: monday, today };
+	const context = at && (await evaluationContext(ownerId, at, { ...deps, db, facts: week.facts }));
+	const evaluation = context ? reviewEvaluationOf(context) : null;
+	const composed = composeWeeklyReview({ ...week.input, ...(evaluation && { evaluation }) });
+	const proposal = await nextWeekOf(
+		db,
+		ownerId,
+		week,
+		composed.snapshot,
+		composed.exposures,
+		evaluation
+	);
 	const reason: NoProposalReason | null =
 		composed.snapshot.noProposal ?? (proposal.adjustments.length ? null : 'no_changes');
 	const findings = [...composed.snapshot.brief.findings, ...nextFindings(proposal, reason)];
@@ -544,7 +593,7 @@ async function proposeFor(
 export async function createWeeklyReview(
 	ownerId: string,
 	options: CreateWeeklyReview,
-	deps: ReviewDeps = {}
+	deps: WeeklyReviewDeps = {}
 ): Promise<{ review: StoredWeeklyReview; created: boolean }> {
 	checkWeek(options);
 	const { db, now } = resolve(deps);
@@ -553,7 +602,8 @@ export async function createWeeklyReview(
 		await createReviewsRepository(tx).lock(ownerId);
 		const live = await getLiveWeeklyReview(ownerId, options.weekStartsOn, inTx);
 		if (live) return { review: live, created: false };
-		const { values, proposal } = await compute(tx, ownerId, options.weekStartsOn, options.today);
+		const { weekStartsOn, today } = options;
+		const { values, proposal } = await compute(tx, ownerId, weekStartsOn, today, deps.context);
 		const { review } = await storeWeeklyReview(
 			ownerId,
 			{ ...values, weekStartsOn: options.weekStartsOn },
@@ -575,7 +625,7 @@ export async function refreshWeeklyReview(
 	ownerId: string,
 	id: string,
 	{ today }: { today: IsoDate },
-	deps: ReviewDeps = {}
+	deps: WeeklyReviewDeps = {}
 ): Promise<StoredWeeklyReview> {
 	const { db, now } = resolve(deps);
 	return db.transaction(async (tx) => {
@@ -587,7 +637,13 @@ export async function refreshWeeklyReview(
 		const head = await proposalHead(ownerId, review, inTx);
 		if (!REFRESHABLE.includes(decisionOf(head).state))
 			throw new WeeklyReviewRefreshError('decided');
-		const { values, proposal } = await compute(tx, ownerId, review.weekStartsOn, today);
+		const { values, proposal } = await compute(
+			tx,
+			ownerId,
+			review.weekStartsOn,
+			today,
+			deps.context
+		);
 		if (!stale(review, values.inputsDigest)) throw new WeeklyReviewRefreshError('not_stale');
 		const next = await supersedeWeeklyReview(ownerId, id, { ...values, proposalId: null }, inTx);
 		if (head?.status === 'proposed') {

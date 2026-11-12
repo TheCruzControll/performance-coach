@@ -2,10 +2,12 @@
  * Today's plan once a program exists: the week on the WeekStrip with each day's sessions (today
  * selected), 'Up next' (the next UP_NEXT_LIMIT sessions after today, across weeks), and the
  * states a day can be in: a rest day naming the next session, a program that starts later
- * ('Starts Monday', week 1 shown), or a finished first block with nothing planned yet, until M6
- * plans the next one. Words are composed here, with the data they describe, so the panel ships
- * none of the vocabulary. Kept out of +page.server.ts so integration tests can run it with an
- * unreachable database.
+ * ('Starts Monday', week 1 shown), a finished first block with nothing planned yet, until M6
+ * plans the next one, or a bridge week between blocks (M6's late start), which names the day the
+ * next block starts instead of seven rest days. When a week or a block completes, its review
+ * prompt (progress/review-prompt.server.ts) comes with the plan. Words are composed here, with the data they
+ * describe, so the panel ships none of the vocabulary. Kept out of +page.server.ts so integration
+ * tests can run it with an unreachable database.
  *
  * It is streamed, and it fails soft: a read that fails is recorded as a server error (kind
  * 'streamed', as Profile's are) and resolves to {failed: true}, which the panel shows as a
@@ -26,6 +28,7 @@ import {
 	type TodayPlan
 } from '#lib/server/services/programs/index.ts';
 import { completedWorkoutIds } from '#lib/server/services/workouts/history.ts';
+import type { ReviewPromptView } from '#lib/ui/analytics/review-prompt.ts';
 import { startLink, type StartLink } from '#lib/ui/program/start-link.ts';
 import {
 	cardView,
@@ -35,6 +38,7 @@ import {
 	type CardView,
 	type StripDayView
 } from '#lib/ui/program/words.ts';
+import { loadReviewPrompt } from '../progress/review-prompt.server';
 import type { SetupDeps, SetupOrigin } from './setup.server';
 
 /**
@@ -68,25 +72,32 @@ export interface PlanWeek {
 	days: PlanDay[];
 }
 
-/** A state's card: 'Starts Monday', or 'Nothing planned yet'. */
+/** A state's card: 'Starts Monday', 'Nothing planned yet' or 'Between blocks'. */
 export interface PlanNote {
 	title: string;
 	description: string;
 }
 
-export type TodayPlanView =
-	| { failed: true }
-	| {
-			failed: false;
-			/** The owner's today: what the coming days' kits count from (coming-kits.ts). */
-			today: IsoDate;
-			/** Null once the first block is complete: no week is planned. */
-			week: PlanWeek | null;
-			starts: PlanNote | null;
-			complete: PlanNote | null;
-			/** 'Tomorrow', 'Wednesday' or 'Mon 16 Nov' says when each is, on `date`. */
-			upNext: (PlanCard & { when: string; date: IsoDate })[];
-	  };
+export interface ReadyPlan {
+	failed: false;
+	/** The owner's today: what the coming days' kits count from (coming-kits.ts). */
+	today: IsoDate;
+	/** Null once the first block is complete or in a bridge week: no session is planned. */
+	week: PlanWeek | null;
+	starts: PlanNote | null;
+	complete: PlanNote | null;
+	/** In a bridge week between blocks, in place of the week: when the next block starts. */
+	bridge?: PlanNote;
+	/** 'Tomorrow', 'Wednesday' or 'Mon 16 Nov' says when each is, on `date`. */
+	upNext: (PlanCard & { when: string; date: IsoDate })[];
+	/**
+	 * A week or block to review, or its review once written (review-prompt.server.ts), at the
+	 * top; null with none, or when its read failed (recorded: the plan shows without it).
+	 */
+	review: ReviewPromptView | null;
+}
+
+export type TodayPlanView = { failed: true } | ReadyPlan;
 
 /** 'tomorrow', a weekday within the coming six days ('Wednesday'), else 'Mon 16 Nov'. */
 function dayWords(date: IsoDate, from: IsoDate): string {
@@ -107,7 +118,7 @@ async function readPlan(
 	today: IsoDate,
 	program: CurrentProgram,
 	db: SetupDeps['db']
-): Promise<TodayPlanView> {
+): Promise<Omit<ReadyPlan, 'review'>> {
 	const upNextOf = (plan: TodayPlan) =>
 		plan.upNext.map((s) => {
 			const when = dayWords(s.date, today);
@@ -139,6 +150,11 @@ async function readPlan(
 	if (!plan) throw new Error('the active program disappeared while Today loaded');
 	if (!week?.planned) throw new Error(`no planned week holds ${selected}`);
 	const upNext = upNextOf(plan);
+	if (week.nextBlockStartsOn) {
+		const description = `Your next block starts ${shortDate(week.nextBlockStartsOn)}. Nothing is planned until then: what you log counts as off-plan.`;
+		const bridge = { title: 'Between blocks', description };
+		return { failed: false, today, week: null, starts: null, complete: null, bridge, upNext };
+	}
 	const baseline = week.kind === 'baseline';
 	const later = [...week.days.flatMap((d) => d.sessions), ...plan.upNext];
 	const inWeek = week.startsOn <= today && today <= week.endsOn ? today : null;
@@ -186,18 +202,30 @@ async function readPlan(
 
 /**
  * Today's plan at the owner's `today` (ownerToday, read once per request by loadTodayProgram),
- * from the `program` it found, for load.server.ts to stream. Never rejects.
+ * from the `program` it found, for load.server.ts to stream, with the review prompt read after it
+ * on the pool. Never rejects: a failed prompt read is recorded and the plan shows without it.
  */
 export function loadTodayPlan(
 	ownerId: string,
 	{ today, program, origin }: { today: IsoDate; program: CurrentProgram; origin: SetupOrigin },
-	{ db, errorsDb }: SetupDeps = {}
+	{ db, errorsDb, prompt = loadReviewPrompt }: SetupDeps & { prompt?: typeof loadReviewPrompt } = {}
 ): Promise<TodayPlanView> {
-	return readPlan(ownerId, today, program, db).catch(async (error: unknown) => {
-		await recordServerError(
-			{ error, kind: 'streamed', status: 500, ...origin, context: { load: 'todayPlan' } },
+	const record = (error: unknown, kind: 'todayPlan' | 'todayReviewPrompt') =>
+		recordServerError(
+			{ error, kind: 'streamed', status: 500, ...origin, context: { load: kind } },
 			{ db: errorsDb }
 		);
-		return { failed: true } as const;
-	});
+	return readPlan(ownerId, today, program, db).then(
+		async (plan) => {
+			const review = await prompt(ownerId, today, { db }).catch(async (error: unknown) => {
+				await record(error, 'todayReviewPrompt');
+				return null;
+			});
+			return { ...plan, review };
+		},
+		async (error: unknown) => {
+			await record(error, 'todayPlan');
+			return { failed: true } as const;
+		}
+	);
 }

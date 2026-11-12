@@ -59,6 +59,23 @@ describe('Program', () => {
 		expect(html).not.toContain('aria-busy="true"');
 	});
 
+	it('shows a bridge week as Between blocks with Log something else, never a week of rest days', async () => {
+		const html = await served({
+			failed: false,
+			week: null,
+			starts: null,
+			complete: null,
+			bridge: { title: 'Between blocks', description: 'Your next block starts Mon 23 Nov.' },
+			upNext: [{ ...card('Strength A', 'b1'), when: 'Monday' }]
+		});
+		expect(html).toContain('data-testid="today-bridge"');
+		expect(html).toContain('Your next block starts Mon 23 Nov.');
+		expect(html).toMatch(/<a[^>]*href="\/workout"[^>]*data-testid="log-something-else"/);
+		expect(html).not.toContain('data-testid="week-strip"');
+		expect(html).not.toContain('data-testid="today-rest"');
+		expect(html).toContain('href="/train/session/b1"');
+	});
+
 	it('gives only the next session the primary Start; later ones a trailing text Start', async () => {
 		const start = (lineage: string) => ({
 			id: 'start-workout',

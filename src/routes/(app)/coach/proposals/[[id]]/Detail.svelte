@@ -47,9 +47,16 @@
 		onsubmit: (words: string | null) => void;
 	}>;
 
-	/** What a decision here answered, until the page's own data catches up. */
+	/**
+	 * What a decision here answered, until the page's own data catches up: then the server's card,
+	 * which also names the review a next cycle was folded into.
+	 */
 	let answered = $state.raw<ProposalCardView | null>(null);
-	const card = $derived(answered?.id === detail.card.id ? answered : detail.card);
+	const card = $derived(
+		answered?.id === detail.card.id && answered.status !== detail.card.status
+			? answered
+			: detail.card
+	);
 	let pending = $state<Decision['action'] | null>(null);
 	let failure = $state.raw<Decision | null>(null);
 	let online = $state(true);
@@ -145,8 +152,6 @@
 			<Icon name="coach" size={18} /> Open the conversation
 			<Icon name="chevron-right" size={16} />
 		</a>
-	{:else if detail.from}
-		<p class="from">{detail.from}</p>
 	{/if}
 </section>
 
@@ -184,8 +189,7 @@
 		text-transform: uppercase;
 	}
 
-	.dates,
-	.from {
+	.dates {
 		color: var(--color-text-secondary);
 		font-size: var(--text-sm);
 	}

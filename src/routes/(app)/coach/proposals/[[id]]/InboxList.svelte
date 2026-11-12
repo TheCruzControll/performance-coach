@@ -2,7 +2,8 @@
   @component
   The inbox's list: the proposals waiting for the owner under 'Waiting for you', then the decided
   ones under 'Decided', each newest first, in words composed on the server (inbox.server.ts). A row
-  is one link, ≥ 44 px, with its title, kind and day, and where it stands as a badge (words plus a
+  is one link, ≥ 44 px, with its title, the review that proposed it ('Weekly review') for a review's,
+  kind and day, and where it stands as a badge (words plus a
   treatment, never colour alone). Hover, pressed and focus states; aria-current on the proposal
   shown beside the list; aria-busy with a progress line while it opens. Rows keep focus and scroll
   when opened, so a desktop window's list stays put.
@@ -66,7 +67,11 @@
 					>
 						<span class="text">
 							<span class="title">{row.title}</span>
-							<span class="meta">{row.meta}</span>
+							<span class="meta"
+								>{#if row.origin}<span class="origin" data-testid="inbox-origin">{row.origin}</span>
+									·
+								{/if}{row.meta}</span
+							>
 						</span>
 						<Badge tone={TONE[row.status]} icon={row.status === 'proposed' ? 'sparkle' : undefined}
 							>{row.state}</Badge
@@ -164,6 +169,11 @@
 	.meta {
 		font-size: var(--text-sm);
 		color: var(--color-text-secondary);
+	}
+
+	.origin {
+		color: var(--color-text);
+		font-weight: var(--weight-medium);
 	}
 
 	.row :global(.chevron) {
