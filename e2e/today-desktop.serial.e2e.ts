@@ -58,7 +58,12 @@ type Theme = (typeof THEMES)[number];
 const side = (page: Page) => page.getByTestId('today-side');
 const heading = (page: Page) => page.getByRole('heading', { level: 1, name: 'Today' });
 const strip = (page: Page) => page.getByTestId('week-strip');
-const day = (page: Page) => page.getByTestId('today-day');
+/**
+ * The live panel's day, not its served copy: after a reload (Chromium's Retry, or the offline
+ * screen's recovery when it falls back to one) the server's markup shows first, cards and all,
+ * and the live panel replaces that element once it mounts, so a box read from the copy is null.
+ */
+const day = (page: Page) => page.locator('[data-testid="today-day"]:not([data-served] *)');
 const cards = (page: Page) => day(page).getByTestId('session-card');
 const plan = (page: Page) => page.getByTestId('today-plan');
 const rail = (page: Page) => page.getByRole('navigation', { name: 'Primary' });

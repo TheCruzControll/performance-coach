@@ -11,7 +11,8 @@
   - Continue here (Today only, online, nothing on this device): builds the other device's workout
     here, then opens its page.
   It looks again on every screen change, when the page becomes visible again, and once the
-  engine has synced everything. data-looked names the screen it last looked for.
+  engine has synced everything. data-looked names the screen it last looked for. Graphite 2004
+  draws the bar in the bar material (graphite.css, the `resume-slot` hook).
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
@@ -121,7 +122,7 @@
 	const plural = (n: number) => (n === 1 ? 'change' : 'changes');
 </script>
 
-<div class="resume-slot" data-looked={looked} data-testid="resume-slot">
+<div class="resume-slot" data-ui="resume-slot" data-looked={looked} data-testid="resume-slot">
 	{#if resume.type !== 'none'}
 		<div class="resume-bar" data-type={resume.type} data-testid="resume-bar">
 			{#if resume.type === 'active'}

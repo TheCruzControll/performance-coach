@@ -45,6 +45,7 @@ import type {
 	SyncResult,
 	WorkoutView
 } from '#lib/domain/workout/index.ts';
+import { mergeRows } from '#lib/domain/workout/changes.ts';
 import { canEnd } from '#lib/domain/workout/ends.ts';
 import { applyLocal, applyMutation, replay, viewOf } from '#lib/domain/workout/project.ts';
 import type { AnyTable, WorkoutState } from '#lib/domain/workout/project.ts';
@@ -169,6 +170,11 @@ export interface WorkoutStore {
 	 * finished workout with no change left leaves the device.
 	 */
 	acknowledge(results: readonly SyncResult[]): Promise<void>;
+	/**
+	 * Which of these workouts hold the server's rows on this device: a sync request names them
+	 * (held), so their answers carry only the changed rows, which acknowledge folds in.
+	 */
+	held(workoutIds: readonly string[]): Promise<string[]>;
 	/** Every outbox entry in seq order, as IndexedDB holds it: what the sync engine sends from. */
 	outbox(): Promise<OutboxEntry[]>;
 	/** A 5xx or a timeout of a batch the entry heads, counted against it (outbox-rules). */
@@ -713,17 +719,28 @@ export async function createStore({
 					if (!next) await outbox.delete(entry.seq);
 					else if (next !== entry) await outbox.put(next);
 				}
-				// The server's whole workout, on the last result of each workout that carries it.
+				// The server's whole workout, or the rows that changed, on the last result of each workout.
 				const rows = new Map<string, CanonicalWorkout>();
-				for (const r of results) if (r.canonical) rows.set(r.canonical.workout.id, r.canonical);
-				const touched = new Set([...entries.map((e) => e.envelope.workoutId), ...rows.keys()]);
+				const changed = new Map<string, CanonicalWorkout>();
+				for (const r of results) {
+					if (r.canonical) rows.set(r.canonical.workout.id, r.canonical);
+					if (r.changes) changed.set(r.changes.workout.id, r.changes);
+				}
+				const touched = new Set([
+					...entries.map((e) => e.envelope.workoutId),
+					...rows.keys(),
+					...changed.keys()
+				]);
 				const read = new Map<string, { record: StoredWorkout; entries: OutboxEntry[] }>();
 				const pruned: string[] = [];
 				for (const workoutId of touched) {
 					const previous = await workouts.get(workoutId);
 					if (!previous) continue; // not on this device: reconcile adopts it
 					const left = await outbox.index(BY_WORKOUT).getAll(workoutId);
-					const canonical = rows.get(workoutId) ?? previous.canonical;
+					const changes = changed.get(workoutId);
+					const canonical =
+						rows.get(workoutId) ??
+						(changes ? mergeRows(previous.canonical, changes) : previous.canonical);
 					const inputs = { kit: previous.kit, canonical, device: previous.device, entries: left };
 					const record = recordOf(table, workoutId, inputs, previous);
 					// Finished or abandoned, and every change of it acknowledged: History reads the server.
@@ -749,6 +766,17 @@ export async function createStore({
 			if (memory.delete(workoutId)) emit({ type: 'view', workoutId });
 			channel?.post({ type: 'closed', workoutId });
 		}
+	}
+
+	async function held(workoutIds: readonly string[]): Promise<string[]> {
+		assertOpen();
+		const tx = db.transaction(STORES.workouts, 'readonly');
+		const found: string[] = [];
+		for (const workoutId of workoutIds) {
+			if ((await tx.store.get(workoutId))?.canonical) found.push(workoutId);
+		}
+		await tx.done;
+		return found;
 	}
 
 	async function outbox(): Promise<OutboxEntry[]> {
@@ -1068,6 +1096,7 @@ export async function createStore({
 		dispatch,
 		retry,
 		acknowledge,
+		held,
 		outbox,
 		countFailure: (seq, error) => revise((entries) => countFailure(entries, seq, error, now())),
 		backOnline: (offlineSince) => revise((entries) => backOnline(entries, offlineSince, now())),
