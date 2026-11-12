@@ -107,16 +107,16 @@ the CSRF Origin check, User-Agent and passkey labels, the rate-limit client netw
 
 Projects (all `devices['iPhone 15 Pro']` except `desktop-chromium`):
 
-| Project           | Browser  | Runs                                                                                            |
-| ----------------- | -------- | ----------------------------------------------------------------------------------------------- |
-| `setup`           | Chromium | `auth.setup.ts`: the owner's real first-run setup; saves the signed-in state                    |
-| `iphone-chromium` | Chromium | every functional spec, signed in from `setup`'s state                                           |
-| `perf`            | Chromium | `perf.e2e.ts` and `perf-*.e2e.ts`, alone with one worker, after the functional suite            |
-| `setup-webkit`    | WebKit   | `auth-webkit.setup.ts`: a session from the test-only route (CI or `E2E_WEBKIT=1`)               |
-| `iphone-webkit`   | WebKit   | every functional spec on that session (CI or `E2E_WEBKIT=1`; needs `playwright install webkit`) |
-| `serial-chromium` | Chromium | `*.serial.e2e.ts` one at a time, after the functional specs: they change the training profile   |
-| `serial-webkit`   | WebKit   | the same specs after `serial-chromium` (CI or `E2E_WEBKIT=1`)                                   |
-| `exclusive`       | Chromium | `*.exclusive.e2e.ts`, last and alone: account-wide actions                                      |
+| Project           | Browser  | Runs                                                                                                            |
+| ----------------- | -------- | --------------------------------------------------------------------------------------------------------------- |
+| `setup`           | Chromium | `auth.setup.ts`: the owner's real first-run setup; saves the signed-in state                                    |
+| `iphone-chromium` | Chromium | every functional spec, signed in from `setup`'s state                                                           |
+| `perf`            | Chromium | `perf.e2e.ts` and `perf-*.e2e.ts`, alone with one worker, after the functional suite                            |
+| `setup-webkit`    | WebKit   | `auth-webkit.setup.ts`: a session from the test-only route (CI or `E2E_WEBKIT=1`)                               |
+| `iphone-webkit`   | WebKit   | every functional spec on that session (CI or `E2E_WEBKIT=1`; needs `playwright install webkit`)                 |
+| `serial-chromium` | Chromium | `*.serial.e2e.ts` one at a time (per owner world), after the functional specs: they change the training profile |
+| `serial-webkit`   | WebKit   | the same specs after `serial-chromium` (CI or `E2E_WEBKIT=1`)                                                   |
+| `exclusive`       | Chromium | `*.exclusive.e2e.ts`, last and alone: account-wide actions                                                      |
 
 `desktop-chromium` opens `devices['Desktop Chrome']` resized to `DESKTOP` (`e2e/desktop.ts`:
 1440 × 900, a mouse and no touch, scale 1) from `setup`'s signed-in state and runs whole files:
@@ -131,7 +131,22 @@ Every UI slice is verified at the iPhone viewport (393 × 659) and at 1440 × 90
 `test.use(DESKTOP)` from `e2e/desktop.ts` or a `*.desktop.e2e.ts` spec, and its PR attaches both
 screenshots (docs/design-system.md, Responsive layout → Verification).
 
-Workers: 2 locally and in CI's main legs (whole files side by side), 1 in its other legs.
+Workers: 2 locally and in CI's main legs (whole files side by side), 2 in its serial legs (one per
+owner world, below), 1 in its other legs.
+
+**Owner worlds (CI's serial legs).** The app has one owner, and the serial specs reset and change
+that owner's training profile, so two of them never share a database and a server. A serial leg
+(`E2E_GROUP=serial` in CI) therefore runs 2 workers, each in an owner world of its own
+(`e2e/worlds.ts`): world 0 is the usual `E2E_PORT` and `coach_e2e`; world 1 serves on
+`E2E_PORT + 1` from `coach_w1_e2e` (`<name>_w<n>_e2e`, created with `PGADMIN_URL` when missing).
+Global setup resets every world's database and starts one production server per world, each from
+a copy of the one build made for its origin (`build-w<n>/`: adapter-node bakes its origin in), with
+its own log (`.e2e-server-w<n>.log`) and backups folder. Each worker serves the world of its
+`TEST_PARALLEL_INDEX` (`routeWorker`, from `playwright.config.ts`, points `E2E_PORT` and
+`E2E_DATABASE_URL` at it). The owner setups run once, in one world, and the `setup-worlds` project
+(`e2e/worlds.setup.ts`) then copies that world's database (owner, passkeys, sessions) into the
+others and checks every server signs both engines' states in. Within a world the serial specs
+still run one at a time. Every other run, local runs included, keeps one world.
 
 CI runs the suite as separate legs, one per group and engine (`e2e/projects.ts`,
 `.github/workflows/ci.yml`). The `perf` project is the `alone` group: its own leg on Chromium,

@@ -779,7 +779,12 @@
 	letter-spacing: var(--tracking-display);
 	line-height: var(--leading-tight);
 }
-:root[data-design='graphite'] [data-ui='page-header'] > .titles > .eyebrow {
+:root[data-design='graphite'] [data-ui='page-header'] > .titles > .eyebrow,
+:root[data-design='graphite']
+	[data-ui='page-header']
+	> .titles
+	> .eyebrow-row
+	> .eyebrow:not([data-date]) {
 	display: none;
 }
 :root[data-design='graphite'] [data-ui='page-header'] > .titles > .eyebrow[data-date] {

@@ -39,21 +39,21 @@ cp .env.example .env
 
 Test tooling (not read by the app):
 
-| Variable             | Default                                            | Used by                                           |
-| -------------------- | -------------------------------------------------- | ------------------------------------------------- |
-| `TEST_DATABASE_URL`  | `postgres://coach:coach@localhost:5432/coach_test` | `pnpm test:integration`, `db:reset:test`          |
-| `E2E_DATABASE_URL`   | `postgres://coach:coach@localhost:5432/coach_e2e`  | `pnpm test:e2e`, `pnpm lighthouse`                |
-| `E2E_PORT`           | `4173`                                             | Playwright production server port                 |
-| `E2E_SKIP_BUILD`     | unset                                              | `1` reuses an existing `build/`                   |
-| `E2E_WEBKIT`         | unset                                              | `1` adds the WebKit project locally               |
-| `E2E_PERF_ALONE`     | unset                                              | `1`: `--project=perf` runs only owner setup first |
-| `E2E_SETUP_TOKEN`    | set by e2e global setup                            | this run's owner setup token (setup project)      |
-| `LIGHTHOUSE_SESSION` | unset                                              | session cookie value for `pnpm lighthouse --url`  |
-| `ADAPTER`            | `vercel`                                           | `node` builds with adapter-node                   |
-| `PGADMIN_URL`        | unset                                              | `pnpm db:setup` admin connection (CI)             |
-| `LIVE_LLM`           | unset                                              | `1` and a key: `pnpm test:live` calls the model   |
-| `LIVE_LLM_DRY`       | unset                                              | `1`: `pnpm test:live` plays on the mock           |
-| `LIFECYCLE_STRICT`   | unset (production)                                 | `1` in tests and e2e: see below                   |
+| Variable             | Default                                            | Used by                                                                   |
+| -------------------- | -------------------------------------------------- | ------------------------------------------------------------------------- |
+| `TEST_DATABASE_URL`  | `postgres://coach:coach@localhost:5432/coach_test` | `pnpm test:integration`, `db:reset:test`                                  |
+| `E2E_DATABASE_URL`   | `postgres://coach:coach@localhost:5432/coach_e2e`  | `pnpm test:e2e`, `pnpm lighthouse`                                        |
+| `E2E_PORT`           | `4173`                                             | Playwright production server port                                         |
+| `E2E_SKIP_BUILD`     | unset                                              | `1` reuses an existing `build/`                                           |
+| `E2E_WEBKIT`         | unset                                              | `1` adds the WebKit project locally                                       |
+| `E2E_PERF_ALONE`     | unset                                              | `1`: `--project=perf` runs only owner setup first                         |
+| `E2E_SETUP_TOKEN`    | set by e2e global setup                            | this run's owner setup token (setup project)                              |
+| `LIGHTHOUSE_SESSION` | unset                                              | session cookie value for `pnpm lighthouse --url`                          |
+| `ADAPTER`            | `vercel`                                           | `node` builds with adapter-node                                           |
+| `PGADMIN_URL`        | unset                                              | `pnpm db:setup` admin connection (CI); e2e owner worlds (docs/testing.md) |
+| `LIVE_LLM`           | unset                                              | `1` and a key: `pnpm test:live` calls the model                           |
+| `LIVE_LLM_DRY`       | unset                                              | `1`: `pnpm test:live` plays on the mock                                   |
+| `LIFECYCLE_STRICT`   | unset (production)                                 | `1` in tests and e2e: see below                                           |
 
 `LIFECYCLE_STRICT` is the one row above the app reads. `vite.config.ts` (the unit and integration
 projects) and `e2e/global-setup.ts` (the e2e server) set it to `1`, so the lifecycle guard
