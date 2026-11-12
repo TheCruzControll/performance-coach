@@ -21,7 +21,7 @@ import { broadcast, openTabChannel } from './channel';
 import { StoreClosedError } from './db';
 import type { StoredWorkout } from './db';
 import { DB_NAME, STORES } from './names';
-import { STUCK_AFTER, type OutboxEntry } from './outbox-rules';
+import { queued, STUCK_AFTER, type OutboxEntry } from './outbox-rules';
 import { ACTIVE_WORKOUT_KEY } from './active-flag';
 import { PREPAINT_KEY, writePrepaint, type PrepaintCard } from './prepaint';
 import { activeSummary, pendingCount, waitingToSync } from './probe';
@@ -958,6 +958,27 @@ describe("the owner's answers to a change that needs attention", () => {
 			}
 		}
 	);
+
+	it('re-queues a stripped workout’s refused abandon through Fix, still kept for the server', async () => {
+		const store = await open();
+		await strippedWorkout(store);
+		const abandon = make('workout.abandon', { payload: {} });
+		expect(await store.dispatch(abandon).saved).toBe('saved');
+		await store.acknowledge([
+			{ id: abandon.id, status: 'rejected', code: 'invalid', errors: { at: 'Not before' } }
+		]);
+		const [end] = await store.outbox();
+		expect(end!.parked).toMatchObject({ reason: 'refused' });
+		const later = '2026-11-08T09:30:00.000Z';
+
+		await store.fix(end!.seq, { ...abandon, at: later }); // the sheet's Try again (sentAgain)
+
+		const [again] = await store.outbox();
+		expect(again).toEqual(queued(end!.seq, { ...abandon, at: later }));
+		expect(await store.heldEnds()).toEqual(new Set([end!.seq]));
+		expect((await stored()).workouts).toMatchObject([{ id: W, status: 'abandoned' }]);
+		expect(await store.discarded()).toEqual([]);
+	});
 
 	it('keeps a stripped workout’s abandon queued when a change it depends on is discarded', async () => {
 		const store = await open();

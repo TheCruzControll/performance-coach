@@ -5,11 +5,13 @@
  * session RPE and notes and the server's errors; Save re-queues it under its id. Discard of a
  * start that kept failing ends the workout as abandoned instead of deleting it (abandonWords), and
  * the end of a workout a sign-out stripped from the device is not offered at all (discardOffer):
- * the server holds that workout in progress, so its finish or abandon waits for the server.
+ * the server holds that workout in progress, so its finish or abandon waits for the server, and
+ * Try again sends it once more, refused or stuck (sentAgain).
  */
 import { dependantsOf } from '#lib/client/workout/outbox-rules.ts';
 import type { OutboxEntry } from '#lib/client/workout/outbox-rules.ts';
 import { discardAbandons, loggedIn } from '#lib/client/workout/store.ts';
+import type { FieldErrors } from '#lib/domain/validation.ts';
 import type { Mutation } from '#lib/domain/workout/index.ts';
 import type { FamilyFixes } from './registry.ts';
 
@@ -32,18 +34,27 @@ export function abandonWords(n: number): string {
 	return `Discard ends this workout as abandoned and removes the ${changes} logged in it.`;
 }
 
-/** What the sync sheet says of an end the server must answer (the store's endsOnServer). */
-export const HELD_END_WORDS =
-	'Ending this workout on the server. It retries until it goes through.';
+/**
+ * What the sync sheet says of an end the server must answer (the store's endsOnServer), parked
+ * stuck or refused. Neither retries by itself: a parked change waits for Try again.
+ */
+export const HELD_END_WORDS = {
+	stuck:
+		'The server still has this workout in progress, so this change stays until it goes through. Try again to send it.',
+	refused:
+		'The server still has this workout in progress and did not take this change. It stays until it goes through. Try again to send it once more.'
+} as const;
 
 /**
  * What the sync sheet offers for a parked change, from the outbox and the store's heldEnds:
- * - held: the end of a workout the server holds. No Discard, only these words.
+ * - held: the end of a workout the server holds. No Discard, only these words, and Try again:
+ *   `resend` when it was refused, so Try again re-queues it through Fix (sentAgain), since the
+ *   outbox's own Try again only re-queues a stuck change.
  * - abandon: a stuck start, whose Discard ends the workout as abandoned; `n` changes logged in it go.
  * - discard: `n` changes go, this one and those that depend on it, less any end held for the server.
  */
 export type DiscardOffer =
-	| { kind: 'held'; words: string }
+	| { kind: 'held'; words: string; resend: boolean }
 	| { kind: 'abandon'; n: number; words: string }
 	| { kind: 'discard'; n: number };
 
@@ -52,7 +63,10 @@ export function discardOffer(
 	seq: number,
 	held: ReadonlySet<number>
 ): DiscardOffer {
-	if (held.has(seq)) return { kind: 'held', words: HELD_END_WORDS };
+	if (held.has(seq)) {
+		const resend = entries.find((e) => e.seq === seq)?.parked?.reason === 'refused';
+		return { kind: 'held', words: HELD_END_WORDS[resend ? 'refused' : 'stuck'], resend };
+	}
 	if (discardAbandons(entries, seq)) {
 		const n = loggedIn(entries, seq).length;
 		return { kind: 'abandon', n, words: abandonWords(n) };
@@ -61,6 +75,16 @@ export function discardOffer(
 		kind: 'discard',
 		n: 1 + dependantsOf(entries, seq).filter((e) => !held.has(e.seq)).length
 	};
+}
+
+/**
+ * Try again for a refused end the server holds (discardOffer's `resend`): the same change, under its
+ * id, re-queued in its place. When the server named its time (`at`: a finish before the workout's
+ * start, as a clock set back makes it), it goes at `now` instead, so a time that the clock has
+ * since put right is not refused again.
+ */
+export function sentAgain(m: Mutation, errors: FieldErrors, now: Date): Mutation {
+	return 'at' in errors ? { ...m, at: now.toISOString() } : m;
 }
 
 export const fixes: FamilyFixes<

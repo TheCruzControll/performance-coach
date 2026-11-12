@@ -6,7 +6,7 @@ import { queued } from '#lib/client/workout/outbox-rules.ts';
 import type { OutboxEntry } from '#lib/client/workout/outbox-rules.ts';
 import { discardAbandons, loggedIn } from '#lib/client/workout/store.ts';
 import { fixFor } from './registry';
-import { abandonWords, discardOffer, HELD_END_WORDS } from './workout';
+import { abandonWords, discardOffer, HELD_END_WORDS, sentAgain } from './workout';
 
 const SET_TYPES = ['set.log', 'set.skip', 'set.edit'];
 const EDITOR_TYPES = [
@@ -154,7 +154,7 @@ describe('the Fix registry', () => {
 		expect(discardAbandons([entries[0]!, stuck(2, notes('a'))], 2)).toBe(false);
 	});
 
-	it('offers no Discard for the end of a workout the server holds, only words that it retries', () => {
+	it('offers no Discard for the end of a workout the server holds, only words and Try again', () => {
 		const workoutId = '00000000-0000-4000-8000-0000000000d1';
 		const at = '2026-11-07T08:00:00.000Z';
 		const update = createMutation('workout.update', { workoutId, at, payload: { notes: 'a' } });
@@ -165,18 +165,28 @@ describe('the Fix registry', () => {
 			parked: { reason, errors: {}, message: 'Not valid' }
 		});
 
-		// The store's heldEnds names the end: the sheet offers no Discard for it.
-		for (const reason of ['stuck', 'refused'] as const) {
-			for (const end of [abandon, finish]) {
-				expect(discardOffer([park(1, end, reason)], 1, new Set([1]))).toEqual({
-					kind: 'held',
-					words: HELD_END_WORDS
-				});
-			}
+		// The store's heldEnds names the end: the sheet offers no Discard for it. A refused one is
+		// re-sent through Fix (resend), as the outbox's Try again only re-queues a stuck one.
+		for (const end of [abandon, finish]) {
+			expect(discardOffer([park(1, end, 'stuck')], 1, new Set([1]))).toEqual({
+				kind: 'held',
+				words: HELD_END_WORDS.stuck,
+				resend: false
+			});
+			expect(discardOffer([park(1, end, 'refused')], 1, new Set([1]))).toEqual({
+				kind: 'held',
+				words: HELD_END_WORDS.refused,
+				resend: true
+			});
 		}
-		expect(HELD_END_WORDS).toBe(
-			'Ending this workout on the server. It retries until it goes through.'
-		);
+		// Neither says it retries by itself: a parked change waits for Try again.
+		expect(HELD_END_WORDS).toEqual({
+			stuck:
+				'The server still has this workout in progress, so this change stays until it goes through. Try again to send it.',
+			refused:
+				'The server still has this workout in progress and did not take this change. It stays until it goes through. Try again to send it once more.'
+		});
+		for (const words of Object.values(HELD_END_WORDS)) expect(words).not.toMatch(/retries/);
 
 		// Discard of a change it depends on does not count it among the changes that go.
 		const entries = [park(1, update, 'refused'), queued(2, abandon)];
@@ -188,6 +198,23 @@ describe('the Fix registry', () => {
 			kind: 'discard',
 			n: 1
 		});
+	});
+
+	it('re-sends a refused held end under its id, at the time now only when the server named its time', () => {
+		const workoutId = '00000000-0000-4000-8000-0000000000d1';
+		const at = '2026-11-07T08:00:00.000Z';
+		const now = new Date('2026-11-08T09:30:00.000Z');
+		const abandon = createMutation('workout.abandon', { workoutId, at, payload: {} });
+		const finish = createMutation('workout.finish', { workoutId, at, payload: {} });
+
+		for (const end of [abandon, finish]) {
+			const retimed = sentAgain(end, { at: 'Not before the workout started' }, now);
+			expect(retimed).toEqual({ ...end, at: now.toISOString() });
+			expect(retimed.id).toBe(end.id);
+			// Refused for another reason (another account, a type not supported yet): sent as it was.
+			expect(sentAgain(end, {}, now)).toBe(end);
+			expect(sentAgain(end, { 'payload.rpe': 'Too high' }, now)).toBe(end);
+		}
 	});
 
 	it('offers a stuck start’s Discard as ending the workout, with the changes logged in it', () => {

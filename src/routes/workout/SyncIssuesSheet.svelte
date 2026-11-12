@@ -16,7 +16,9 @@
       refuses it, because it would bring a workout back into progress beside the one in progress.
       The finish or abandon of a workout a sign-out stripped from this device (the store's
       heldEnds) offers no Discard: the server holds it in progress, so it waits for the server, and
-      a line says so. Discard of a change it depends on leaves it queued.
+      a line says so. Nothing re-sends a parked one by itself, so it offers Try again, refused too:
+      the same change through Fix, at the time now when the server named its time (sentAgain).
+      Discard of a change it depends on leaves it queued.
   - Waiting to sync: the rest, in order, in words.
   - A recovery session ('Finish adding your passkey') links to adding one; nothing is deleted.
   It re-reads the outbox whenever the store reports a change, so an answer shows at once.
@@ -40,7 +42,7 @@
 	import { toast } from '#lib/ui/toast.svelte.ts';
 	import { syncWords } from '#lib/ui/workout/sync-words.ts';
 	import { fixFor, type FixEntry } from './fix/registry.ts';
-	import { discardOffer } from './fix/workout.ts';
+	import { discardOffer, sentAgain } from './fix/workout.ts';
 	import SetEditSheet from './SetEditSheet.svelte';
 
 	interface Props {
@@ -311,6 +313,17 @@
 											size="sm"
 											icon="refresh"
 											onclick={() => act(() => store.tryAgain(entry.seq))}
+											data-testid="try-again">Try again</Button
+										>
+									{:else if offer.kind === 'held' && offer.resend}
+										<Button
+											size="sm"
+											icon="refresh"
+											onclick={() =>
+												requeue(
+													entry.seq,
+													sentAgain(entry.envelope, entry.parked!.errors, new Date())
+												)}
 											data-testid="try-again">Try again</Button
 										>
 									{/if}
