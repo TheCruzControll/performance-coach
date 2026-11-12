@@ -768,6 +768,8 @@ block after it, as now dated.
 `ProgrammingInput` for today's profile (`base`, from `buildProgrammingInput`) overlaid with what the
 block actually showed (`ResultsSnapshot`, from M6's strength and running analytics), so the next
 block starts from actual results. The same arguments give the same result, in any list order.
+`actualsOverlay(base, snapshot)` → `{ input, assumptions }` is that overlay alone (baselines and
+running, no directives), which a re-plan applies with no cycle review (M7 replan-preview).
 
 - Baselines: each lift's latest e1RM, kind `estimated`; a measured 1RM achieved after it stays
   measured (an undated one counts as older); with no e1RM the profile's value or null stays. Only
