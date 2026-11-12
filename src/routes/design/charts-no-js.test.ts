@@ -182,10 +182,12 @@ describe('the trend tiles without JavaScript', () => {
 		);
 	});
 
-	it('at all time, say there is no earlier period, and keep a verdict', () => {
+	it('at all time, say how the weeks moved in place of a comparison, and keep a verdict', () => {
 		const page = renderAt('?period=all');
 		const squat = text(all(tile(page, 'tile-squat'), 'p')[0]!.inner);
-		expect(squat).toContain('No earlier period to compare with.');
+		// No earlier period: the trend within the window, never 'no earlier period' over a verdict.
+		expect(squat).toContain('Improving over 87 weeks.');
+		expect(squat).not.toContain('No earlier period');
 		expect(squat).toMatch(/Real improvement\.$/);
 		expect(text(all(section(page, 'tiles-context'), 'p')[0]!.inner)).toBe(
 			'All time · Good is a real rise over the trend window'

@@ -20,6 +20,7 @@ import {
 	UNSAVED_KIT_TIMEOUT_MS,
 	type StartOptions
 } from './start';
+import { STUCK_AFTER } from './outbox-rules';
 import { createStore, type WorkoutStore } from './store';
 
 const KITS = workoutDayKits({ date: '2026-11-06' });
@@ -238,7 +239,8 @@ describe('startPlanned', () => {
 				title: KITS.strength.title,
 				startedAt: new Date(T0).toISOString(),
 				plannedLineage: STRENGTH.lineage,
-				startSeq: start!.seq
+				startSeq: start!.seq,
+				startParked: null
 			}
 		});
 		expect(second.calls).toEqual([]);
@@ -261,18 +263,74 @@ describe('discardInProgress', () => {
 		return (await inProgress(store))!;
 	}
 
-	it('drops a workout whose start has not synced, then the new one starts', async () => {
+	it('abandons an unsynced workout instead of deleting it', async () => {
 		const active = await startStrength();
-		expect(active.startSeq).not.toBeNull();
+		expect(active).toMatchObject({ startSeq: expect.any(Number), startParked: null });
 		expect(await discardInProgress(active, { store, now: () => T0 })).toBe(true);
+		// Its start may already have reached the server: the abandon follows it there.
+		expect(await outboxTypes()).toEqual(['workout.start', 'workout.abandon']);
 		expect(await store.getActive()).toBeNull();
-		expect(await store.outbox()).toEqual([]);
+		expect((await store.load(active.workoutId))!.view!.workout.status).toBe('abandoned');
 
 		const run = server({ [startKitUrl(RUN.lineage)]: KITS.run });
 		expect(await startPlanned(RUN.lineage, options(run.fetch))).toEqual({
 			status: 'started',
 			path: '/workout/run'
 		});
+	});
+
+	it('deletes a workout whose start the server refused', async () => {
+		const started = await startStrength();
+		await store.acknowledge([{ id: started.workoutId, status: 'rejected', code: 'invalid' }]);
+		const active = (await inProgress(store))!;
+		expect(active).toEqual({ ...started, startParked: 'refused' });
+
+		expect(await discardInProgress(active, { store, now: () => T0 })).toBe(true);
+		expect(await store.outbox()).toEqual([]);
+		expect(await store.load(active.workoutId)).toBeNull();
+		expect(await store.getActive()).toBeNull();
+	});
+
+	it('abandons a workout whose start is stuck, and the start is queued again', async () => {
+		const started = await startStrength();
+		for (let i = 0; i < STUCK_AFTER.failures; i++) {
+			await store.countFailure(started.startSeq!, 'timeout');
+		}
+		const active = (await inProgress(store))!;
+		expect(active).toEqual({ ...started, startParked: 'stuck' });
+
+		expect(await discardInProgress(active, { store, now: () => T0 + 1000 })).toBe(true);
+		const [start, abandon] = await store.outbox();
+		expect(start).toMatchObject({ seq: started.startSeq, attempts: 0 });
+		expect(start!.parked).toBeUndefined();
+		expect(abandon!.envelope).toMatchObject({
+			type: 'workout.abandon',
+			workoutId: active.workoutId,
+			at: new Date(T0 + 1000).toISOString()
+		});
+		expect(await store.outbox()).toHaveLength(2);
+		expect((await store.load(active.workoutId))!.view!.workout.status).toBe('abandoned');
+		expect(await store.getActive()).toBeNull();
+	});
+
+	it('queues again a start that got stuck after the conflict was read, before the abandon', async () => {
+		const active = await startStrength();
+		expect(active.startParked).toBeNull();
+		// Another tab's sync engine parks the start while the conflict sheet is open.
+		for (let i = 0; i < STUCK_AFTER.failures; i++) {
+			await store.countFailure(active.startSeq!, 'timeout');
+		}
+
+		expect(await discardInProgress(active, { store, now: () => T0 + 1000 })).toBe(true);
+		const [start, abandon] = await store.outbox();
+		expect(start).toMatchObject({ seq: active.startSeq, attempts: 0 });
+		expect(start!.parked).toBeUndefined();
+		expect(abandon!.envelope).toMatchObject({
+			type: 'workout.abandon',
+			workoutId: active.workoutId
+		});
+		expect(await store.outbox()).toHaveLength(2);
+		expect((await store.load(active.workoutId))!.view!.workout.status).toBe('abandoned');
 	});
 
 	it('abandons a workout the server holds, then the new one starts after it in the outbox', async () => {
@@ -292,7 +350,7 @@ describe('discardInProgress', () => {
 		};
 		await store.acknowledge([{ id: entry!.envelope.id, status: 'applied', canonical }]);
 		const active = (await inProgress(store))!;
-		expect(active).toEqual({ ...started, startSeq: null });
+		expect(active).toEqual({ ...started, startSeq: null, startParked: null });
 
 		expect(await discardInProgress(active, { store, now: () => T0 + 1000 })).toBe(true);
 		const abandoned = await store.load(active.workoutId);
