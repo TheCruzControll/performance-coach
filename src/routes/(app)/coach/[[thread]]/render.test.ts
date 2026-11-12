@@ -100,6 +100,7 @@ describe('Thread with a proposal', () => {
 			thread: {
 				id: 't1',
 				title: question,
+				archived: false,
 				messages: [
 					{ id: 'o1', from: 'owner', text: question, clientId: 'c1' },
 					{

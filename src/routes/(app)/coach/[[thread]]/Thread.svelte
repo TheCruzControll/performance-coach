@@ -14,7 +14,8 @@
   checked block. A shown answer stays as it streamed (its stored copy is not drawn twice); a turn
   that ended otherwise gives way to what the server stored, and keeps only how it ended when
   nothing was stored. An interrupted or failed last answer offers Retry, which asks the same
-  question again under its own id. While an answer streams the page follows it down, unless the
+  question again under its own id. An archived conversation is read-only: its banner
+  (ArchivedBanner) offers Unarchive. While an answer streams the page follows it down, unless the
   owner has scrolled up.
   A proposal shows as a card after the answer of the run that made it (a turn's, once the stored
   proposal is read). Such an answer says things once (proposal-thread.ts): its plain
@@ -57,6 +58,7 @@
 	import ThinkingIndicator from '#lib/ui/coach/ThinkingIndicator.svelte';
 	import { SCREEN_FAILURE_LABEL } from '#lib/ui/coach/coach-notices.ts';
 	import { toast } from '#lib/ui/toast.svelte.ts';
+	import ArchivedBanner from './ArchivedBanner.svelte';
 	import type { ThreadView } from './coach.server';
 	import { outcomeTitle, pitchFolded, proposalAnswer, proposalRuns } from './proposal-thread.ts';
 
@@ -69,7 +71,7 @@
 		onask?: (text: string, from: string, ref: TurnRef) => void;
 	}
 
-	const NEW: ThreadView = { id: '', title: 'New conversation', messages: [] };
+	const NEW: ThreadView = { id: '', title: 'New conversation', archived: false, messages: [] };
 	let { thread = NEW, live = null, onask }: Props = $props();
 
 	const turns = $derived(live?.visible ?? []);
@@ -408,6 +410,7 @@
 	data-testid="thread"
 >
 	<h2 id="thread-title" class="title">{title}</h2>
+	{#if thread.archived}<ArchivedBanner id={thread.id} />{/if}
 	<ol class="messages">
 		{#each thread.messages as message (message.id)}
 			{#if hidden.has(message.id)}

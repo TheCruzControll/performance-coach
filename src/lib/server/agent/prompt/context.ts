@@ -74,6 +74,13 @@ export interface TurnFacts {
 	painMode: boolean;
 	/** Proposals decided since the previous turn. */
 	decidedProposals: DecidedProposal[];
+	/** A review's write-up (agent/reviews/narrate.ts): the review's proposal and its decision. */
+	review?: ReviewFacts | null;
+}
+
+/** The proposal a review made, read from its revision chain's head, and the decision on it. */
+export interface ReviewFacts {
+	proposal: { id: string; kind: string; decision: string } | null;
 }
 
 /**
@@ -163,7 +170,16 @@ export function turnContext(facts: TurnFacts): BetaSystemMessageParam {
 			id: check(proposal.id, ID, 'a proposal id'),
 			kind: check(proposal.kind, TOKEN, 'a proposal kind'),
 			status: check(proposal.status, TOKEN, 'a proposal status')
-		}))
+		})),
+		...(facts.review && {
+			review: {
+				proposal: facts.review.proposal && {
+					id: check(facts.review.proposal.id, ID, 'the review’s proposal id'),
+					kind: check(facts.review.proposal.kind, TOKEN, 'the review’s proposal kind'),
+					decision: check(facts.review.proposal.decision, TOKEN, 'the review’s decision')
+				}
+			}
+		})
 	};
 	return { role: 'system', content: `${TURN_CONTEXT_HEADER}\n${canonicalJson(body)}` };
 }
