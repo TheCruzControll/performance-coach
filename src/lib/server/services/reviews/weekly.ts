@@ -51,6 +51,7 @@ import {
 	type WeeklyReviewInput
 } from '../../../domain/programming/review/weekly';
 import { estimateMinutes } from '../../../domain/programming/timefit';
+import { PROPOSAL } from '../../../domain/training/lifecycles';
 import type { ExerciseRef } from '../../../domain/training/types';
 import { cleanFloat } from '../../../domain/units';
 import { getDb, type Executor } from '../../db';
@@ -62,6 +63,7 @@ import { displayUnits, formatIn } from '../analytics/format';
 import { getMuscleTargets, type WeekTarget } from '../analytics/targets';
 import { createProposal, getProposalView, type ProposalView } from '../coach/proposals';
 import { getExercisesByIds, resolveKeys, type ExerciseDef } from '../exercises/index';
+import { transition } from '../lifecycle-guard';
 import { getAthleteProfile } from '../profile/index';
 import { programmingInputFor } from '../programs/alternatives';
 import { getProgramVersion, type StoredSession, type StoredWeek } from '../programs/index';
@@ -591,9 +593,8 @@ export async function refreshWeeklyReview(
 		if (head?.status === 'proposed') {
 			const at = now();
 			const proposals = createCoachProposalsRepository(tx);
-			await proposals.lockProposal(ownerId, head.id);
-			await proposals.decide(ownerId, head.id, {
-				status: 'superseded',
+			const locked = (await proposals.lockProposal(ownerId, head.id))!;
+			await proposals.decide(ownerId, head.id, transition(PROPOSAL, locked.status, 'supersede'), {
 				supersededReason: 'review_refreshed',
 				closedAt: at,
 				updatedAt: at

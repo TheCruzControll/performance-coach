@@ -1,18 +1,18 @@
 <script lang="ts">
 	import { onMount, tick } from 'svelte';
 	import { invalidateAll } from '$app/navigation';
-	import { resolve } from '$app/paths';
 	import { preferences } from '#lib/client/preferences.svelte.ts';
 	import Button from '#lib/ui/components/Button.svelte';
 	import Card from '#lib/ui/components/Card.svelte';
 	import EmptyState from '#lib/ui/components/EmptyState.svelte';
-	import ListRow from '#lib/ui/components/ListRow.svelte';
+	import Icon from '#lib/ui/components/Icon.svelte';
 	import PageHeader from '#lib/ui/components/PageHeader.svelte';
 	import Section from '#lib/ui/components/Section.svelte';
 	import Stat from '#lib/ui/components/Stat.svelte';
 	import { isStale } from './freshness';
 	import { PANELS } from './panels';
 	import PanelLoader from './panels/PanelLoader.svelte';
+	import { EMPTY_TILES, LOAD_METHOD, NOTHING_YET, type WeekTile } from './week-words';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -117,13 +117,21 @@
 			return { letter, date: d.getDate(), isToday: i === mondayOffset };
 		});
 	});
-
-	const stats = $derived([
-		{ label: 'Sessions', caption: 'this week' },
-		{ label: 'Load', caption: 'AU' },
-		{ label: 'Distance', caption: preferences.distance }
-	]);
 </script>
+
+{#snippet weekTiles(tiles: readonly WeekTile[], busy = false)}
+	<div class="stats" aria-busy={busy || undefined}>
+		{#each tiles as tile (tile.id)}
+			<Stat
+				label={tile.label}
+				value={tile.value}
+				unit={tile.unit}
+				caption={tile.caption}
+				data-testid="today-stat"
+			/>
+		{/each}
+	</div>
+{/snippet}
 
 <svelte:head>
 	<title>Today · Performance Coach</title>
@@ -163,7 +171,7 @@
 {/if}
 
 <!-- Wide from 1024 px (docs/design-system.md, Responsive layout → Screens): the state's panel in
-     the main column, This week, the tools and the summary in the side column. -->
+     the main column, the summary (goals first) and This week in the side column. -->
 <div class="stack" class:active data-layout="wide" hidden={building}>
 	<!-- The state's panel is code-split (panels/index.ts): the server sends it as markup, kept as
 	     sent until its code arrives, and a client navigation shows its skeleton until then. -->
@@ -212,22 +220,6 @@
 
 	<!-- The side column from 1024 px; below it, its items are the stack's own (display: contents). -->
 	<div class="side" data-testid="today-side">
-		<Section title="This week">
-			<div class="stats">
-				{#each stats as stat (stat.label)}
-					<Stat label={stat.label} caption={stat.caption} />
-				{/each}
-			</div>
-		</Section>
-
-		<ListRow
-			href={resolve('/(app)/train?tool=plates')}
-			icon="plate"
-			tone="strength"
-			title="Plate calculator"
-			subtitle="Load the bar in kg or lb"
-		/>
-
 		<!-- Once set up: the goals by rank and the shape of the week. -->
 		{#if setup?.complete}
 			<PanelLoader
@@ -237,6 +229,35 @@
 				served={data.served.summary}
 			/>
 		{/if}
+
+		<!-- Monday to today against the same days last week (week.server.ts), streamed: the server's
+		     render waits for it, a client navigation shows the tiles empty and busy until it lands.
+		     How training load is worked out is always there, so the section keeps its height. -->
+		<Section title="This week" data-testid="today-week">
+			{#await data.week}
+				{@render weekTiles(EMPTY_TILES, true)}
+				<p class="line">Counting this week…</p>
+			{:then view}
+				<!-- No figures once set up (or with the setup unread): the week was not read, not empty. -->
+				{#if view?.failed || (!view && setup?.complete !== false)}
+					{@render weekTiles(EMPTY_TILES)}
+					<div class="error" data-testid="today-week-error">
+						<p class="line" role="status">Couldn’t load this week’s numbers.</p>
+						<Button variant="secondary" icon="refresh" loading={retrying} onclick={retry}>
+							Retry
+						</Button>
+					</div>
+				{:else}
+					{@render weekTiles(view?.tiles ?? EMPTY_TILES)}
+					<p class="line" data-testid="context-line">{view?.against ?? NOTHING_YET}</p>
+				{/if}
+			{/await}
+			<details class="how">
+				<summary><Icon name="chevron-right" size={16} strokeWidth={2} />How it’s worked out</summary
+				>
+				<p>{LOAD_METHOD}</p>
+			</details>
+		</Section>
 	</div>
 </div>
 
@@ -321,6 +342,59 @@
 		display: grid;
 		grid-template-columns: repeat(3, minmax(0, 1fr));
 		gap: var(--space-2);
+	}
+
+	/* This week's line and its disclosure, as the dashboards' metric context reads. */
+	.line,
+	.how p {
+		font-size: var(--text-xs);
+		line-height: var(--leading-normal);
+		color: var(--color-text-secondary);
+	}
+
+	.error {
+		display: grid;
+		justify-items: start;
+		gap: var(--space-2);
+	}
+
+	.how summary {
+		display: flex;
+		align-items: center;
+		gap: var(--space-1-5);
+		min-height: var(--touch-target);
+		width: fit-content;
+		padding: 0 var(--space-2);
+		margin-inline: calc(var(--space-2) * -1);
+		border-radius: var(--radius-sm);
+		color: var(--color-text-secondary);
+		font-size: var(--text-sm);
+		font-weight: var(--weight-medium);
+		cursor: pointer;
+		list-style: none;
+	}
+
+	.how summary::-webkit-details-marker {
+		display: none;
+	}
+
+	.how[open] summary :global(.icon) {
+		transform: rotate(90deg);
+	}
+
+	.how summary:active {
+		background: var(--color-surface-2);
+	}
+
+	@media (hover: hover) and (pointer: fine) {
+		.how summary:hover {
+			background: var(--color-surface-2);
+			color: var(--color-text);
+		}
+	}
+
+	.how p {
+		font-size: var(--text-sm);
 	}
 
 	/*
