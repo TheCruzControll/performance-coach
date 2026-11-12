@@ -201,6 +201,22 @@ as data.
 - **Motion.** Marks do not animate in. Hover and scrub feedback uses `--duration-fast`, a
   refetch keeps the previous frame at reduced opacity with `aria-busy`, and under
   `prefers-reduced-motion` nothing moves.
+- **HTML marks** ([ADR 0016](adr/0016-hand-built-charts.md)). The SVG draws only lines, areas and
+  bands: a 0–100 viewBox stretched to the plot box, 2 px `non-scaling-stroke` lines. Every mark
+  with a pixel size is an HTML box placed in percent and sized in CSS (`ui/charts/marks.css`), so
+  it reads the same at 320 px and at 1440 px: columns at most 24 px wide with a 4 px rounded data
+  end, square at the baseline; a 2 px surface gap between stacked parts; 8 px markers with a 2 px
+  ring; hit areas at least 24 px; tick labels. Nothing measures the window, and hover rules sit
+  inside `(hover: hover) and (pointer: fine)`.
+- **Every mark is reachable.** A line chart is one tab stop whose arrow keys move the week, read
+  by a polite live region; a bar chart's marks and a row chart's rows (`RowList`, each row a 44 px
+  button) take the tab stop in turn (roving), with Home, End and Escape. A tap, hover or focus
+  shows the same words as the mark's name, in a tooltip kept inside the plot.
+- **Forced colours.** Marks become `CanvasText`; stacked parts alternate 45° and 135° hatches,
+  which the legend repeats; sides and statuses stay in words.
+- **'So far' everywhere.** The week in progress is never in a total, a mean or a verdict: tiles
+  give it as 'This week so far' against the same days of last week, charts as a dashed ring or an
+  outlined column, and table twins as a row marked 'so far'.
 
 ## Typography
 
@@ -465,6 +481,12 @@ later-pass screen).
 - **Progress** (`/progress`): wide (`data-layout="wide"` on its root). From 1024 px the view nav
   and the period picker share one row over the view; the overview's five trend tiles keep one row,
   and its discipline cards and chart frames pair up from a 44 rem column (a container query).
+- **Reviews** (`/progress/reviews/[[key]]`): split. From 1024 px the reviews list (the block to
+  review, the cycle reviews, then every week, a Create button on each one not yet reviewed)
+  beside the review shown (`aria-current`), or beside 'Pick a review'; every section of a review
+  shows in full, with nothing to open. Below 1024 px the list and a review are separate screens,
+  with 'All reviews' back to the list, opening a review focuses its title, and each section
+  collapses to its verdict line.
 - **Exercise detail** (`/progress/exercises/[id]`): wide. From a 44 rem column (a container
   query) the e1RM tile sits beside its context, the e1RM chart beside the rep-max table, and the
   PRs beside the top sets and RPE; the recent sessions fill rows of cards. From 1024 px the period
@@ -735,6 +757,47 @@ owner's review is the merge gate of coach-launch (#449). Outcome: not yet record
 follow-ups go here once it is. Known before it: the inbox has no Lighthouse audit
 (docs/performance.md, "M5 (coach)"); the coach screen, once 0.3 KB over the initial-JS gate, is
 back under it since the shared JS trim (#473).
+
+## Progress and reviews (M6)
+
+Every number comes from the server in context: its period, its comparison, its verdict with the
+weeks it read, and whether it is estimated or measured. A screen never shows a ghost chart: before
+the data exists it says what appears and when. Charts follow Data visualisation above; the chart
+kit and the analytics components are on `/design` → Charts.
+
+**Screenshots** (CI artifacts, `test-results/screens/<project>/<name>.png`, each at 393 × 659 and
+1440 × 900): `progress-{overview,strength,running,general,exercise}-{phone,desktop}`
+(`e2e/progress*.serial.e2e.ts`), `reviews-*`, `review-sections-*`, `review-next-week-*`,
+`review-write-up*`, `review-entry-*`, `review-proposal-*`, `cycle-review-*`, `next-cycle-*`,
+`train-review-notice-*` and `bridge-week-*` (their `e2e/*.serial.e2e.ts` specs), and the kit's
+`design-charts-*` and `design-tiles-*` (`e2e/design-charts*.e2e.ts`: 320 px, 393 px, 1440 px,
+both themes, hover, tap, scrub, forced colours, loading and failed). The screen gallery
+(`e2e/gallery.gallery.ts`) shoots the `progress` and `reviews` groups in both designs and themes.
+
+| Component                      | Highlights                                                                                                                                                                                                                                                                                                                                                                     |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `ChartFrame`                   | `src/lib/ui/charts`, like the next six rows. Every chart's frame, server-rendered: title, context caption, one-sentence summary and the table twin, the plot box reserved at full height. The body fades in after hydration; a failed body is a Notice with Retry; without JavaScript the plot says so; `availability` ('Available after 6 weeks') takes the plot's place.     |
+| `ChartTable`                   | The table twin behind 'Show as table': scoped headers with units, 'No data' for a gap, the week in progress marked 'so far'. It never computes.                                                                                                                                                                                                                                |
+| `LineChart`                    | Up to four series, legend from two, direct end labels with leaders (numbers under 18 rem); estimates as hollow rings, measurements as square diamonds; scrubbing snaps a crosshair to the nearest week (`touch-action: pan-y`).                                                                                                                                                |
+| `BarChart`                     | A column a week, stacked by discipline in `STACK_ORDER` with a rect-key legend and each stack's total on its cap where it fits; a dashed planned outline; the week in progress outlined, not filled.                                                                                                                                                                           |
+| `RangeBars`                    | Muscle-group volume against its target range: a bar a group in one hue, largest first, the range as a bracket (open past the axis), a tick for the plan, and 'Below range', 'Within range' or 'Above range' in words with an icon.                                                                                                                                             |
+| `DivergingBars`                | Actual minus target RPE a row an exercise, from a zero in the middle: easier in `--chart-diverge-cool`, harder in `--chart-diverge-warm`, within ±0.5 in the hueless mid, each side said in words ('Easier', 'On target', 'Harder').                                                                                                                                           |
+| `RowList`                      | The rows the two horizontal bodies draw: a legend in words, each row a 44 px button named by its words, a value axis, and a tooltip beside the row.                                                                                                                                                                                                                            |
+| `TrendTile`                    | `src/lib/ui/analytics`, like the next four rows. One metric at a glance: value and unit, Estimated or Measured, the change against the named previous period (icon and word, neutral on normal variation), 'This week so far', a static server-computed sparkline and the verdict with its window; one sentence to a screen reader; `data-value` holds the canonical number.   |
+| `VerdictBadge`                 | 'Real improvement', 'Real decline', 'Normal variation' or 'Not enough data yet · 2 of 6 weeks', plus 'over the last 12 weeks' when it reads other weeks; words first, tone only reinforces, free to wrap at 320 px.                                                                                                                                                            |
+| `MetricContext`                | One line of context (period, comparison, trend window, what counts as good), then a disclosure with how the figure is worked out and its caveat, in the catalogue's words.                                                                                                                                                                                                     |
+| `PeriodPicker`                 | Five real links to `?period=` (4w, 12w, 26w, 52w, All), each ≥ 44 px at 320 px and a history entry; while another period loads the figures hold their frame dimmed, inert and `aria-busy`, never a skeleton.                                                                                                                                                                   |
+| `ReviewPrompt`                 | 'Your week in review is ready' or 'Block complete — review it and plan the next' at the top of Today and Overview: Create review (a form that works without JavaScript; pending, not reviewable yet, failed with Retry, offline), or 'See your review'.                                                                                                                        |
+| Progress views                 | `src/routes/(app)/progress`: Overview (a verdict card per discipline, then the tiles and headline charts), Strength, Running and General (an intro, then their trends), each served whole by the server; their trends load after hydration in place (`TrendsLoader`, `SectionLoader`), and a failed chunk says 'Couldn’t load your trends' with Retry while the verdicts stay. |
+| Exercise detail                | `progress/exercises/[id]`: the e1RM verdict in the header, then the best estimated 1RM with the profile's maxes as their own marks, the e1RM chart beside the 1–10 rep-max table, PRs, top sets, RPE against target and recent sessions linking to their workouts.                                                                                                             |
+| `ReviewList`                   | `src/routes/(app)/progress/reviews/[[key]]`, like the rest. Reviews newest first, each a ≥ 44 px link with its summary; a week or block with no review has Create, with the same four states as `ReviewPrompt`.                                                                                                                                                                |
+| `ReviewHero`                   | The weekly and cycle review's shared hero: period, title (focused on a phone), one-sentence summary and the adherence meter in words.                                                                                                                                                                                                                                          |
+| `ReviewSections`, `ReviewBody` | The review's trends and sections (RPE, volume and intensity, running, Muay Thai, recovery and fatigue, conflicts, PRs; for a block, goals, progression, fatigue and exercise effectiveness), each a disclosure with its verdict line; each chart's room reserved, its table without JavaScript.                                                                                |
+| `NextWeekCard`, `KeepSheet`    | Next week's changes, each with before → after, its why, a checkbox and a half step; a passed one struck through ('Monday has passed'); 'Generate next week' and 'Keep next week as planned' with an optional reason; pending, offline and failed with Retry; then what was decided, with the version in History.                                                               |
+| `NextCycleCard`                | The next block: 'This week' or 'Next Monday', each with its own preview (phase, weeks, dates, a bridge's unplanned weeks, weeks lost before a race, week 1, what changes and why, starting loads labelled estimated); Adjust (keep an exercise, move or skip the deload); 'Start next block'.                                                                                  |
+| `CoachWriteUp`, `WriteUpLive`  | The coach's write-up after the figures, in a box reserved at six lines: written, 'Your coach is writing this up…', or why there is none (not launched, switched off, budget, rate limited, offline, failed) with Retry; 'Discuss with your coach'.                                                                                                                             |
+| Bridge weeks                   | A late start's unplanned weeks: Train's state card ('Unplanned week · between blocks', with the day the next block starts and the week's workouts marked Off-plan), History's notice, Today's 'Between blocks', and `BlockTimeline`'s hatched block with its weeks 'Unplanned'.                                                                                                |
+| Train's review notice          | On a week a review changed: who decided it, each change with its why, and a link to the review (`services/programs/week-changes.ts`).                                                                                                                                                                                                                                          |
 
 ## Accessibility checklist (applies to every new component)
 
