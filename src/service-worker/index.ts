@@ -7,9 +7,9 @@
  * files the previous version already cached instead of downloading them (lib/client/sw-precache.ts),
  * clean up old versions on activate (and take control of already-open pages), and serve:
  *   - precached files              → cache-first (versioned)
- *   - other build files            → cache-first, cached on first use (content-hashed, immutable)
- *   - Graphite's stylesheet, font  → never precached (a device on today's design never fetches
- *                                    them): cached the first time a device uses them, as above
+ *   - other build files            → cache-first, cached on first use (content-hashed, immutable);
+ *                                    the Graphite 2004 preview's stylesheet and font are never
+ *                                    precached (a device on today's design never fetches them)
  *   - prerendered pages            → cache-first, whatever the query string, so a workout page
  *                                    (/workout?start=…) reloads offline from the precache
  *   - page navigations             → network only, through the navigation preload (enabled on
