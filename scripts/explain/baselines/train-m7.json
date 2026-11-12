@@ -1,0 +1,7 @@
+{
+	"commit": "a8ce41caf5d19212e3a2854a7b7ffb8b39f0d13a",
+	"clock": "2026-11-11T12:00:00Z",
+	"timeZone": "UTC",
+	"measure": "gzip of JSON.stringify(loadTrainWeek(...)): a proxy for /train/__data.json, without devalue's encoding or data from +page.server.ts and the layout",
+	"bytes": { "current": 1786, "moved": 1868 }
+}

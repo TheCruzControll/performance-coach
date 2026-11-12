@@ -18,6 +18,8 @@
 		/** Render as a link. Ignored while disabled. */
 		href?: string;
 		type?: 'button' | 'submit' | 'reset';
+		/** A submit button's own form action, e.g. '?/keep' beside its form's '?/decide'. */
+		formaction?: string;
 		icon?: IconName;
 		iconEnd?: IconName;
 		loading?: boolean;
