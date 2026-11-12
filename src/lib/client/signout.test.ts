@@ -9,7 +9,9 @@ import { openTabChannel, TAB_CHANNEL } from './workout/channel';
 import type { StoreChange } from './workout/store';
 import { DB_NAME, STORES } from './workout/names';
 import { pendingCount } from './workout/probe';
+import { ACTIVE_WORKOUT_KEY } from './workout/active-flag';
 import { PREPAINT_KEY } from './workout/prepaint';
+import { DESIGN_KEY } from './design';
 import { createStore } from './workout/store';
 
 const KIT = workoutDayKits({ date: '2026-11-06' }).strength;
@@ -147,8 +149,22 @@ describe('signOut', () => {
 		}
 	});
 
+	it('signOut forgets the screens this page kept in memory', async () => {
+		const { signOut } = await load();
+		const { screens } = await import('./screen-memory');
+		screens.keep(new URL('https://coach.test/today'), []);
+		serverSignsOut();
+
+		await signOut();
+
+		expect(screens.size).toBe(0);
+		expect(replace).toHaveBeenCalledWith('/?signedOut=1');
+	});
+
 	it('signOut changes nothing when the server refuses', async () => {
 		const { signOut, SIGNED_OUT_MARKER } = await load();
+		const { screens } = await import('./screen-memory');
+		screens.keep(new URL('https://coach.test/today'), []);
 		await seedWorkout();
 		vi.stubGlobal(
 			'fetch',
@@ -161,6 +177,7 @@ describe('signOut', () => {
 		expect(await pendingCount()).toBe(2);
 		expect(storage.getItem(SIGNED_OUT_MARKER)).toBeNull();
 		expect(await cacheStorage.keys()).toContain('pc-account-data');
+		expect(screens.size).toBe(1);
 		expect(replace).not.toHaveBeenCalled();
 	});
 });
@@ -296,7 +313,7 @@ describe('clearAfterSignedOutUrl', () => {
 });
 
 describe('clearDeviceAccountData', () => {
-	it("deletes /workout's prepainted card, blocked or not, keeping workouts or not, and keeps the device's preferences", async () => {
+	it("deletes /workout's prepainted card, blocked or not, keeping workouts or not, and keeps the device's preferences and design", async () => {
 		const { clearDeviceAccountData } = await load();
 		for (const keepWorkouts of [false, true]) {
 			for (const held of [
@@ -305,7 +322,8 @@ describe('clearDeviceAccountData', () => {
 			]) {
 				const map = new Map([
 					[PREPAINT_KEY, held],
-					['pc:prefs:v1', '{"theme":"light"}']
+					['pc:prefs:v1', '{"theme":"light"}'],
+					[DESIGN_KEY, 'graphite']
 				]);
 				vi.stubGlobal('localStorage', {
 					getItem: (key: string) => map.get(key) ?? null,
@@ -315,8 +333,28 @@ describe('clearDeviceAccountData', () => {
 
 				await clearDeviceAccountData({ keepWorkouts });
 
-				expect([...map.keys()]).toEqual(['pc:prefs:v1']);
+				// The theme, units and design are this device's, not the account's.
+				expect([...map.keys()]).toEqual(['pc:prefs:v1', DESIGN_KEY]);
 			}
+		}
+	});
+
+	it('deletes the launch flag, so a launch offline never opens a workout after sign-out', async () => {
+		const { clearDeviceAccountData } = await load();
+		for (const keepWorkouts of [false, true]) {
+			const map = new Map([
+				[ACTIVE_WORKOUT_KEY, '{"v":1,"workoutId":"w","kind":"strength"}'],
+				['pc:prefs:v1', '{"theme":"light"}']
+			]);
+			vi.stubGlobal('localStorage', {
+				getItem: (key: string) => map.get(key) ?? null,
+				setItem: (key: string, value: string) => void map.set(key, value),
+				removeItem: (key: string) => void map.delete(key)
+			});
+
+			await clearDeviceAccountData({ keepWorkouts });
+
+			expect([...map.keys()]).toEqual(['pc:prefs:v1']);
 		}
 	});
 });

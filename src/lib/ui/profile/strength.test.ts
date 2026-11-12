@@ -231,19 +231,20 @@ describe('liveEstimate', () => {
 
 describe('baselineSummary', () => {
 	it('marks an estimate with ≈ and says what it came from', () => {
-		expect(baselineSummary(bench)).toBe('≈ 123.3 kg · Estimated, from 100 × 5 @ RPE 8');
+		// An estimate to the nearest 0.5 kg: 123.3 shows as 123.5.
+		expect(baselineSummary(bench)).toBe('≈ 123.5\u00a0kg · Estimated, from 100 × 5 @ RPE 8');
 		expect(baselineSummary({ ...bench, setRpe: null })).toBe(
-			'≈ 123.3 kg · Estimated, from 100 × 5'
+			'≈ 123.5\u00a0kg · Estimated, from 100 × 5'
 		);
 		expect(
 			baselineSummary({ ...bench, source: 'estimate', value: 125, setWeight: null, setReps: null })
-		).toBe('≈ 125 kg · Estimated, my best guess');
+		).toBe('≈ 125\u00a0kg · Estimated, my best guess');
 	});
 
 	it('gives a measured max as it was lifted', () => {
-		expect(baselineSummary(squat)).toBe('140 kg · Measured, tested max');
+		expect(baselineSummary(squat)).toBe('140\u00a0kg · Measured, tested max');
 		expect(baselineSummary({ ...squat, source: 'competition', value: 317.5, unit: 'lb' })).toBe(
-			'317.5 lb · Measured, competition lift'
+			'317.5\u00a0lb · Measured, competition lift'
 		);
 	});
 });

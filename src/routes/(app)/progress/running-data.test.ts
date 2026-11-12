@@ -194,12 +194,25 @@ describe('runningData', () => {
 		expect(table.columns.map((c) => c.label)).toEqual(['Distance', 'Planned']);
 		expect(r.mileage.tile).toMatchObject({
 			label: 'Weekly distance',
-			value: `${(16_000 / MILE).toFixed(1)} mi`,
+			value: `${(16_000 / MILE).toFixed(1)}\u00a0mi`,
 			canonical: 16_000,
 			delta: { against: 'the 12 weeks before' }
 		});
-		expect(r.mileage.tile.soFar).toMatchObject({ value: '5 mi', lastWeek: '3.7 mi' });
+		expect(r.mileage.tile.soFar).toMatchObject({ value: '5\u00a0mi', lastWeek: '3.7\u00a0mi' });
 		expect(r.mileage.chart.context).toContain('Planned outlined');
+	});
+
+	it('names the weeks before over mileage only when its tile shows a change against them', () => {
+		expect(runningData(dashboard()).mileage.context.comparison).toBe(
+			'Compared with the 12 weeks before'
+		);
+		// An empty earlier period gives no delta, so the tile describes the trend within the window.
+		const d = dashboard();
+		const empty = { ...d.mileage.kpi, previous: null, delta: null, change: null };
+		const r = runningData({ ...d, mileage: { ...d.mileage, kpi: empty } });
+		expect(r.mileage.tile.delta).toBeNull();
+		expect(r.mileage.context.comparison).toBeNull();
+		expect(r.frequency.context.comparison).toBe('Compared with the 12 weeks before');
 	});
 
 	it('leaves the plan out of a monthly chart, where no single plan fits a column', () => {
@@ -229,7 +242,7 @@ describe('runningData', () => {
 		expect(first.text).toBe('8:03');
 		expect(tempo!.chart.data.unit).toBe('min/mi');
 		expect(tempo!.chart.context).toContain('min/mi (lower is faster)');
-		expect(tempo!.chart.summary).toBe('From 8:03 /mi to 7:43 /mi.');
+		expect(tempo!.chart.summary).toBe('From 8:03\u00a0/mi to 7:43\u00a0/mi.');
 		// A type no pace metric judges is drawn and never given a verdict.
 		expect(recovery).toMatchObject({ id: 'recovery_run', verdict: null, pace: null });
 		expect(recovery!.chart.summary).toBe('Only this week so far.');

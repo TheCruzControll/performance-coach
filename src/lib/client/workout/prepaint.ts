@@ -18,10 +18,24 @@
  * - only what the card shows: the exercise's name, place and prescription, its sets in words
  * Storage that is missing, blocked or full is never an error.
  *
+ * The same script starts the workout's reconcile GET (reconcile.ts) as the parser reaches it, so a
+ * cold load fetches the server's rows alongside the app's chunks rather than after them (online.ts
+ * takes the request it left in EARLY_ROWS, or aborts it).
+ *
  * No imports: vite.config.ts imports PREPAINT_SCRIPT to allow it by its CSP hash.
  */
 
 export const PREPAINT_KEY = 'pc:workout-prepaint:v1';
+
+/** Where the inline script leaves the GET it started of the kept workout's rows (EarlyRows). */
+export const EARLY_ROWS = '__pcEarlyRows';
+
+/** The GET of /api/workouts/[id] the inline script started, and what aborts it. */
+export interface EarlyRows {
+	workoutId: string;
+	response: Promise<Response>;
+	controller: AbortController;
+}
 
 /** What the key holds while signed out: the view's writes leave it in place. */
 const BLOCKED = '{"v":1,"blocked":true}';
@@ -182,7 +196,8 @@ export function unblockPrepaint(storage = pageStorage()): void {
 /**
  * The inline script (Prepaint.svelte puts it right after its empty, hidden container): with a
  * valid snapshot, and no ?start or ?new, it builds the card into the container and shows it, all
- * or nothing. Text only through textContent and attributes, never as markup. Every field is
+ * or nothing, then (online) starts the GET of the workout's rows, as reconcile.ts's workoutUrl
+ * asks it. Text only through textContent and attributes, never as markup. Every field is
  * checked as it is used: anything malformed throws, and nothing is shown. ES2017, no modules:
  * it runs as the parser reaches it, before the first paint, on every engine the app supports.
  */
@@ -281,5 +296,16 @@ export const PREPAINT_SCRIPT = `(function () {
 		root.appendChild(card);
 		if (s.rest) root.setAttribute('data-rest', '');
 		root.hidden = false;
+		if (navigator.onLine !== false) {
+			var a = new AbortController();
+			(window['${EARLY_ROWS}'] = {
+				workoutId: s.workoutId,
+				controller: a,
+				response: fetch('/api/workouts/' + encodeURIComponent(s.workoutId), {
+					headers: { accept: 'application/json' },
+					signal: a.signal
+				})
+			}).response.catch(function () {});
+		}
 	} catch (e) {}
 })();`;
