@@ -34,7 +34,7 @@
 	import { goalDraft, goalSummary, newGoal, type GoalDraft } from './goals';
 	import type GoalSheet from './GoalSheet.svelte';
 
-	let { value = $bindable(), manage = false }: EditorProps<Goal[]> = $props();
+	let { value = $bindable(), manage = false, heading }: EditorProps<Goal[]> = $props();
 	const id = $props.id();
 
 	/** Open goals, top priority first (achieved and dropped goals hold no rank). */
@@ -51,6 +51,10 @@
 	let draft = $state.raw<GoalDraft | null>(null);
 	/** Started from "Several goals at once": the next goal is asked for, and its rank explained. */
 	let several = $state(false);
+
+	/** The empty state's question, left out under a heading that already asks it (onboarding). */
+	const EMPTY_TITLE = 'What are you training for?';
+	const emptyTitle = $derived(heading === EMPTY_TITLE ? undefined : EMPTY_TITLE);
 
 	/** Fetch the sheet on first intent, so it is usually here by the time the tap lands. */
 	function preload() {
@@ -197,7 +201,7 @@
 	{#if ranked.length === 0}
 		<EmptyState
 			icon="target"
-			title="What are you training for?"
+			title={emptyTitle}
 			description="Add a goal and the coach plans your training around it."
 			compact
 			data-testid="goals-empty"

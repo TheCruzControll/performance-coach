@@ -221,19 +221,20 @@ describe('Today’s plan', () => {
 	});
 
 	it('offers no review mid-week while sessions remain, in a program that started this week', async () => {
-		await withRollback(async (db) => {
+		await withCommitted(async (db) => {
 			const owner = await seeded(db, 'today', '2026-11-02');
 			expect((await viewOf(db, owner)).review).toBeNull();
 		});
 	});
 
 	it('a failed review prompt read is recorded, and the plan shows without it', async () => {
-		await withRollback(async (db) => {
+		await withCommitted(async (db) => {
 			const owner = await seeded(db, 'today', '2026-11-02');
+			const program = (await getCurrentProgram(owner, TODAY, { db }))!;
 			const request = origin();
 			const view = await loadTodayPlan(
 				owner,
-				{ today: TODAY, origin: request },
+				{ today: TODAY, program, origin: request },
 				{
 					db,
 					errorsDb: db,
