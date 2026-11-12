@@ -1,11 +1,15 @@
 /**
  * Which state Today shows once onboarding is complete (src/routes/(app)/today/program.server.ts),
- * on real Postgres: 'none' until a program is built, then 'active', with the owner's today. When the database cannot be
- * reached it fails soft: null, and the failure recorded as a server error.
+ * on real Postgres: 'none' until a program is built, then 'active', with the owner's today and
+ * the program. When the database cannot be reached it fails soft: null, and the failure recorded
+ * as a server error.
  */
 import { describe, expect, it } from 'vitest';
 import { findErrorsByRequestId } from '../../../src/lib/server/services/errors';
-import { createProgramFromPlan } from '../../../src/lib/server/services/programs/index';
+import {
+	createProgramFromPlan,
+	getCurrentProgram
+} from '../../../src/lib/server/services/programs/index';
 import { programFixture } from '../../../src/lib/server/test-support/program-fixtures';
 import { loadTodayProgram } from '../../../src/routes/(app)/today/program.server';
 import { unreachableDb, withRollback } from '../helpers';
@@ -26,14 +30,19 @@ describe('Today’s program state', () => {
 			const owner = await makeOwner(db);
 			expect(await loadTodayProgram(owner, { now, origin: origin() }, { db })).toEqual({
 				state: 'none',
-				today: '2026-11-05'
+				today: '2026-11-05',
+				program: null
 			});
 			const plan = programFixture('hybrid', { monday: '2026-11-09', today: '2026-11-05' });
-			await createProgramFromPlan(owner, plan, { source: 'rules' }, { db });
+			const { programId } = await createProgramFromPlan(owner, plan, { source: 'rules' }, { db });
+			// The program itself too, as getCurrentProgram reads it, for the plan to read from.
 			expect(await loadTodayProgram(owner, { now, origin: origin() }, { db })).toEqual({
 				state: 'active',
-				today: '2026-11-05'
+				today: '2026-11-05',
+				program: await getCurrentProgram(owner, '2026-11-05', { db })
 			});
+			const found = await loadTodayProgram(owner, { now, origin: origin() }, { db });
+			expect(found?.program).toMatchObject({ id: programId, notStarted: true });
 		});
 	});
 

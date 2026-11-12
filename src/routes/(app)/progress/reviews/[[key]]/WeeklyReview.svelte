@@ -20,22 +20,53 @@
 <script lang="ts">
 	import { applyAction, enhance, type SubmitFunction } from '$app/forms';
 	import { invalidateAll } from '$app/navigation';
-	import { onMount } from 'svelte';
-	import MetricContext from '#lib/ui/analytics/MetricContext.svelte';
-	import VerdictBadge from '#lib/ui/analytics/VerdictBadge.svelte';
+	import { hydrate, onMount, unmount, type Component } from 'svelte';
 	import Button from '#lib/ui/components/Button.svelte';
 	import Notice from '#lib/ui/components/Notice.svelte';
+	import ServedInPlace from '../../../today/panels/ServedInPlace.svelte';
+	import ServedMarkup from '../../../today/panels/ServedMarkup.svelte';
 	import type { WeeklyReviewData } from './load';
 	import NextWeekCard from './NextWeekCard.svelte';
 	import CoachWriteUp from './CoachWriteUp.svelte';
 	import ReviewHero from './ReviewHero.svelte';
-	import ReviewSections from './ReviewSections.svelte';
+	import type { BodyProps } from './review-body';
 
 	interface Props {
 		review: WeeklyReviewData;
+		/** The body's code, when the load waited for it (+page.ts, review-body.ts). */
+		Body?: Component<BodyProps>;
+		/** The body's code while the page the server rendered hydrates. */
+		body?: Promise<Component<BodyProps>>;
+		/** The body as the server rendered it, kept as sent until its code arrives. */
+		served?: string;
 	}
 
-	let { review }: Props = $props();
+	let { review, Body, body, served }: Props = $props();
+
+	/** The markup on the server; in the browser, the same element kept as sent (no props). */
+	const Held: Component<{ markup: string }> = import.meta.env.SSR
+		? ServedMarkup
+		: (ServedInPlace as Component<{ markup: string }>);
+	let article = $state<HTMLElement>();
+	let failed = $state(false);
+
+	// The body the server sent, hydrated in place once its code arrives.
+	$effect(() => {
+		const target = article?.querySelector(':scope > [data-served]');
+		if (!body || !target) return;
+		let live: Record<string, unknown> | undefined;
+		let gone = false;
+		body.then(
+			(Live) => {
+				if (!gone) live = hydrate(Live, { target, props: { review } });
+			},
+			() => (failed = true)
+		);
+		return () => {
+			gone = true;
+			if (live) unmount(live);
+		};
+	});
 	const adherence = $derived(review.adherence);
 
 	// navigator.onLine read here, as ReviewList does, to keep client/connectivity off this route.
@@ -67,7 +98,12 @@
 
 <svelte:window ononline={() => (online = true)} onoffline={() => (online = false)} />
 
-<article class="pc-weekly-review" aria-labelledby="review-title" data-testid="weekly-review">
+<article
+	class="pc-weekly-review"
+	aria-labelledby="review-title"
+	data-testid="weekly-review"
+	bind:this={article}
+>
 	<ReviewHero
 		eyebrow="Weekly review · {review.dates}"
 		title={review.title}
@@ -122,36 +158,19 @@
 		</section>
 	{/if}
 
-	{#if review.trends.length || review.notes.length}
-		<section class="section" aria-labelledby="trends-title">
-			<h3 id="trends-title">What is really changing</h3>
-			{#each review.notes as note (note.id)}
-				<p class="words" data-testid="review-note">{note.words}</p>
-			{/each}
-			<ul class="trends">
-				{#each review.trends as trend (trend.id)}
-					<li class="trend" data-testid="review-trend" data-id={trend.id}>
-						<div class="trend-head">
-							<h4>{trend.label}</h4>
-							<VerdictBadge verdict={trend.verdict} />
-						</div>
-						<p class="words" data-testid="trend-words">
-							{trend.words}{trend.change ? ` · ${trend.change} along the trend` : ''}
-						</p>
-						<MetricContext
-							period={trend.context.period}
-							comparison={null}
-							good={trend.context.good}
-							method={trend.context.method}
-							caveat={trend.context.caveat}
-						/>
-					</li>
-				{/each}
-			</ul>
-		</section>
+	{#if Body}
+		<Body {review} />
+	{:else if served}
+		<Held markup={served} />
 	{/if}
-
-	<div class="sections"><ReviewSections sections={review.sections} /></div>
+	{#if failed && !Body}
+		<div class="failed" data-testid="review-body-error">
+			<Notice tone="danger" title="Couldn’t load the rest of this review">
+				Your training is safe. Check your connection, then try again.
+			</Notice>
+			<Button variant="secondary" icon="refresh" onclick={() => location.reload()}>Retry</Button>
+		</div>
+	{/if}
 
 	{#if review.nextWeek}<NextWeekCard next={review.nextWeek} reviewId={review.id} {online} />{/if}
 
@@ -207,42 +226,11 @@
 		font-weight: var(--weight-semibold);
 	}
 
-	.trends {
-		display: grid;
-		gap: var(--space-3);
-		margin: 0;
-		padding: 0;
-		list-style: none;
-	}
-
-	.trend {
-		display: grid;
-		gap: var(--space-2);
-		padding: var(--space-4);
-		border: 1px solid var(--color-border);
-		border-radius: var(--radius-lg);
-	}
-
-	.trend-head {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		justify-content: space-between;
-		gap: var(--space-2);
-	}
-
-	h4 {
-		font-weight: var(--weight-semibold);
-	}
-
-	.stale {
+	.stale,
+	.failed {
 		display: grid;
 		gap: var(--space-3);
 		justify-items: start;
-	}
-
-	.sections:empty {
-		display: none;
 	}
 
 	/* A wide enough column: the four counts on one row. */

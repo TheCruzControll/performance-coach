@@ -93,4 +93,24 @@ describe('formatWeight', () => {
 		expect(formatWeight(220.462262, 'lb')).toBe('220.46 lb');
 		expect(formatWeight(1250, 'kg')).toBe('1,250 kg');
 	});
+
+	it('groups thousands, keeps a minus and never shows -0', () => {
+		expect(formatWeight(1234567.891, 'lb')).toBe('1,234,567.89 lb');
+		expect(formatWeight(999.999, 'kg')).toBe('1,000 kg');
+		expect(formatWeight(-1250.5, 'kg')).toBe('-1,250.5 kg');
+		expect(formatWeight(-0.001, 'kg')).toBe('0 kg');
+		expect(formatWeight(0, 'kg')).toBe('0 kg');
+	});
+
+	it('writes what toLocaleString would, without building a number formatter', () => {
+		const values = [0, 0.004, 0.005, 1, 2.5, 7.25, 12.345, 99.95, 102.49999999999999, 999.5];
+		const scaled = values.flatMap((v) => [v, v * 10, v * 1000, v * 123457, -v]);
+		for (const decimals of [0, 1, 2, 3, 6]) {
+			for (const value of scaled) {
+				const rounded = cleanFloat(value, decimals) + 0;
+				const expected = rounded.toLocaleString('en-US', { maximumFractionDigits: decimals });
+				expect(formatWeight(value, 'kg', decimals)).toBe(`${expected} kg`);
+			}
+		}
+	});
 });

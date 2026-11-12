@@ -83,6 +83,33 @@
 
 	const sessionHref = (lineage: string) => resolve('/(app)/train/session/[key]', { key: lineage });
 
+	// ---- The coming days' kits, for a gym with no signal --------------------------------------
+
+	/** Once the idle pass has run: 'saved' or 'none', as on Today. What the specs wait for. */
+	let kits = $state<'saved' | 'none'>();
+
+	/**
+	 * Once the week shows and the browser is idle, its sessions still to do today and in the next
+	 * two days (coming-kits.ts): never on the server, again for each week shown.
+	 */
+	$effect(() => {
+		let live = true;
+		const sessions = week ? week.days.flatMap((d) => d.sessions) : [];
+		const today = view?.today;
+		const save = async () => {
+			let saved: string[] = [];
+			if (today) {
+				const coming = await import('#lib/client/workout/coming-kits.ts');
+				saved = await coming.saveComingKits(sessions, today);
+			}
+			if (live) kits = saved.length ? 'saved' : 'none';
+		};
+		const go = () => live && void save().catch(() => {});
+		if ('requestIdleCallback' in window) requestIdleCallback(go, { timeout: 2000 });
+		else setTimeout(go, 800);
+		return () => (live = false);
+	});
+
 	let reloading = $state(false);
 	async function reload() {
 		reloading = true;
@@ -213,7 +240,13 @@
 
 	<!-- Busy while the next week loads; only the week's own strip and cards go inert, never the
 	     state card's link, which may hold the focus of the change it started. -->
-	<div class="week" aria-busy={loading} inert={loading && !data.card} data-testid="train-week">
+	<div
+		class="week"
+		aria-busy={loading}
+		inert={loading && !data.card}
+		data-testid="train-week"
+		data-kits={kits}
+	>
 		{#if data.card}
 			{@const card = data.card}
 			<Surface padding="none" radius="xl">

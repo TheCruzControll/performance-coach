@@ -124,9 +124,18 @@ export interface RunningProfile {
 	runsPerWeek: number | null;
 	longestRun: number | null;
 	easyPaceSeconds: number | null;
+	/** Present only when at least one heart rate is stored (so older literals stay valid). */
+	heartRate?: HeartRate;
 	races: RaceResult[];
 	notes: string | null;
 	updatedAt: Date;
+}
+
+/** Whole beats per minute, each null when unknown; resting < threshold < max where given. */
+export interface HeartRate {
+	max: number | null;
+	resting: number | null;
+	threshold: number | null;
 }
 
 export interface MuayThaiProfile {

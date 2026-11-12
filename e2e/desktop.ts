@@ -87,6 +87,9 @@ export async function layoutShiftDuring(page: Page, action: () => Promise<unknow
 			}
 		});
 	});
+	// Only content that was already painted can shift: a page set a moment ago may not have had
+	// its first frame yet, and a block inserted before that frame scores nothing.
+	await nextFrames(page);
 	await action();
 	await nextFrames(page);
 	return page.evaluate(() =>
