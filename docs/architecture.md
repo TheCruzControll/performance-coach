@@ -93,6 +93,11 @@ of its own (`@typescript-eslint/no-restricted-imports`), so the layer rules abov
 the same files (`scripts/server-only-imports.test.ts`), and `pnpm budgets` fails if the
 catalogue's header is in any client chunk.
 
+`src/lib/domain/analytics/` (M6) is server-only at runtime too, except the modules listed in
+`CLIENT_SAFE` (`periods.ts`, `period-names.ts`, `types.ts`). A test enforces it rather than
+ESLint, because it follows imports through every module a browser file can reach: see
+"Analytics (M6)".
+
 ### Why services sit between routes and the database
 
 The coach (M5) must be able to do everything the UI can — read history, propose changes,
@@ -133,6 +138,8 @@ first, then `pnpm lifecycles`.
   migration. M2 training-profile tables: see "Training profile (M2)" below. M3's programs,
   prescriptions, exercise library, training log and coaching memory: see "Training model (M3)"
   below. M4's sync ledger (`sync_mutations`) and `pain_reports`: see "Offline workouts (M4)".
+  M6's `strength_week_rollups` and the review columns: see "Analytics (M6)" and "Reviews and
+  replanning (M6)".
 
 ## Training profile (M2)
 
@@ -320,8 +327,9 @@ erDiagram
 - **Coaching memory** (`schema/coaching.ts`): `exercise_preferences` links each like or dislike
   to the library (`exercise_id`, one per owner and exercise) with its `source`.
   `coach_proposals` have a closed lifecycle; M5 ties each to its conversation and guards it
-  (`drizzle/0026_coach_proposals_guards.sql`). `weekly_reviews` hold one per owner and Monday
-  and `cycle_reviews` one per block lineage, for M6.
+  (`drizzle/0026_coach_proposals_guards.sql`). `weekly_reviews` hold one live review per owner
+  and Monday, and `cycle_reviews` one per block lineage, with their superseded revisions beside
+  them (M6's columns: "Reviews and replanning (M6)").
 
 ### Immutability and the audit
 
@@ -453,6 +461,8 @@ screens ("Why services sit between routes and the database"):
 
 Each takes `deps.source` ('owner' unless told otherwise; the coach's tools pass 'coach'), which a
 revision records as its decider and an edit of the log as its audit actor. docs/agent-architecture.md maps the tools onto them.
+Since M6 the coach's records and analytics tools read M6's engine instead of the history reads
+above ("Analytics (M6)").
 
 ## Offline workouts (M4)
 
@@ -561,6 +571,244 @@ docs/agent-architecture.md, ADR 0013 and ADR 0014; the tools catalogue is docs/c
 The agent never imports `server/db`, types included (ESLint): it reads only `serialTools` from
 `ToolContext`. Migrations `0023` to `0027` add the conversations, the proposals' columns, their
 guards and the coach indexes.
+
+## Analytics (M6)
+
+Every number on Progress, in the reviews, on Today's 'This week' and in the coach's analytics
+tools comes from one engine, so a screen and an answer never give one figure two values or two
+verdicts (PRD §10). The trend method is [ADR 0015](adr/0015-trend-classification.md) and the
+charts are [ADR 0016](adr/0016-hand-built-charts.md). `src/lib/domain/README.md` documents each
+function.
+
+### Layers
+
+| Module                                        | Holds                                                                                                                                              |
+| --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/lib/domain/analytics/`                   | Pure definitions: periods, series and statistics, the trend classifier, strength, prescribed against actual, running, adherence, workload, metrics |
+| `src/lib/server/db/queries/analytics.ts`      | The fact queries, each defined once, with `ANALYTICS_INDEXES` naming the index each is shaped for; `repositories/analytics.ts` runs them           |
+| `src/lib/server/services/analytics/`          | The facts loader, the dashboards, the overview, one exercise, records, targets, the week so far and the coach's analytics                          |
+| `src/lib/ui/analytics/`, `src/lib/ui/charts/` | Tiles, verdicts, context and the period picker; the chart kit, its frame and table twin, and the lazy chart bodies                                 |
+| `src/routes/(app)/progress/`                  | The overview and the Strength, Running and General views (`?view`, `?period`), exercise detail and the reviews                                     |
+
+Like the rest of the domain, `domain/analytics` is pure (today is always an argument), imported
+by path (there is no index file), with no zod and no runtime import of `domain/programming` or
+`domain/exercises`. It is server-only at runtime except `CLIENT_SAFE` (`periods.ts`,
+`period-names.ts`, `types.ts`): `scripts/analytics-client-imports.test.ts` walks every runtime
+import from every browser-reachable file and fails, naming the chain, when one reaches any other
+analytics module. Screens receive results, never definitions. The walk is
+`scripts/import-graph.ts`, the one runtime-import walker, which M3's
+`scripts/training-index-imports.test.ts`, `scripts/chart-body-imports.test.ts` and the workout and
+secret-scan tests share: static imports, re-exports and string-literal `import()`, in `.ts` files
+and every `<script>` block of a `.svelte` file, with `import type` erased and
+`import { type X }` still counted.
+
+Any change to a definition bumps `ANALYTICS_VERSION` (`domain/analytics/version.ts`) in the same
+PR. A stored review keeps the version that computed it, and its inputs digest includes it.
+
+### Which workouts count
+
+Only completed, undeleted workouts: set, session and segment facts join their workout and keep
+`COUNTED_STATUS` ('completed') with `deleted_at` null (`queries/analytics.ts`), so an abandoned or
+unfinished workout never reaches a PR, a total, a review or a coach answer. M3's `setsInRange`
+(weekly hard sets) follows the same rule. M3's `bestE1rms` and `repMaxes` deliberately still read
+every undeleted set: they feed the start kit's 'prior bests' and the exercise history sheet,
+which show what was lifted. `services/analytics/records.ts` records the difference, and the coach's
+`get_personal_records` reads M6's records, not M3's.
+
+### Periods and the week in progress
+
+A period (`4w`, `12w`, `26w`, `52w`, `all`; `DEFAULT_PERIOD` `12w`) is whole Monday-to-Sunday weeks
+that have ended, on the owner's calendar (`periods.ts`). Totals, averages, trends and comparisons
+read those weeks only, so a Wednesday never looks like a decline. The previous period is as many
+complete weeks before; `all` has none, and is bucketed by month once it spans more than
+`MONTHLY_AFTER_WEEKS` (104) weeks. Today's week is apart: 'This week so far', compared with the
+same days of last week (`sameDaysLastWeek`), marked 'so far' on charts and tiles, and never in a
+total or a verdict. A verdict reads `trendWindow(period)`: the period's own weeks from 12 weeks
+up, else the last `TREND_MIN_WEEKS` (12) complete weeks, which the tile names ('Trend over the
+last 12 weeks'). Both are the M6 plan's defaults and still open questions for the owner.
+
+### Facts, targets, services and trends
+
+- **The facts loader** (`services/analytics/facts.ts`): one per request and owner. Each kind
+  (sets, counted workouts, runs with their segments, prescriptions, the plan, recovery check-ins,
+  baselines and races) is read at most once, when first asked for, one query at a time even when
+  several are asked for together, so it may run on a transaction. A range longer than
+  `MAX_RANGE_DAYS` is read in consecutive windows (`windowsOf`), rows are kept by the owner's day
+  they fell on, and each read is timed as `analytics` in `Server-Timing`. Services that compose
+  (the overview) share one loader through `sharedFacts`.
+- **Targets** (`services/analytics/targets.ts`): a week's hard-set range per muscle group comes
+  from the stored input of the lowest-numbered generated version that plans its block (version 1
+  for M3's first blocks, the planning version for later ones), through volume.ts's
+  `hardSetBand`, scaled by the week's volume factor. Changing today's goals or nutrition phase
+  never rewrites a past week. A program with no stored input shows its planned line only
+  (`NO_STORED_TARGET`).
+- **Services**: `getProgressOverview` (verdicts per discipline, KPI tiles, headline series, and
+  when each insight appears), `getStrengthDashboard`, `getRunningDashboard`,
+  `getGeneralDashboard`, `getExerciseAnalytics`, `getStrengthRecords`, `getMuscleTargets`,
+  `getWeekSoFar` (Today), and the coach's `getWeeklyTrainingSummary`, `getTrainingLoad` and
+  `getPerformanceTrends`, which read the dashboards rather than computing anything again. Every
+  figure carries its metric id, kind, method and caveat from the catalogue (`metrics.ts`), its
+  availability, its comparison and its verdict with the weeks it read, plus display strings in the
+  profile's units (`format.ts`, `UNITS_FROM` 'profile': the plan's open question, defaulted to
+  the units workout logging uses).
+- **Trends**: `classifyTrend` (`domain/analytics/trend.ts`): a Theil–Sen line, a Mann–Kendall p,
+  noise as 1.4826 × MAD, and a real trend only at p < 0.05 with a change of at least the larger of
+  the metric's minimal practical change and twice the noise, standing with any one outlier left
+  out. Six points over 21 days before any verdict. ADR 0015 has the measured error rates.
+- **Closed weeks, summed once** (`strength_week_rollups`,
+  `drizzle/0032_strength_week_rollups.sql`, `services/analytics/strength-weeks.ts`): one derived
+  row per owner and Monday holding the Strength view's sums for that week. Database triggers
+  (`drizzle/0033_strength_week_rollups_stale.sql`) mark a week stale on any write that could
+  change it; a sync batch that completes or deletes a
+  workout rewrites its weeks (`refreshStrengthWeeks`), and every `pnpm db:migrate` backfills the
+  rest (`backfillStrengthWeeks`). A read uses a rollup only when it is current for the time zone,
+  analytics version and digest version, and not split; otherwise it sums the facts, so a figure is
+  the same either way.
+
+### Server-rendered views and performance
+
+- Each Progress view and each review kind is a string-literal import that `+page.ts` awaits on the
+  server and in the browser alike, with no SSR guard: the server renders the verdicts and every
+  number, so Progress reads without JavaScript, period links work as plain links, and nothing
+  moves at hydration.
+- What is not the answer in words loads after hydration in a chunk of its own: Overview's tiles
+  and charts, each view's trends, the exercise page's trends and the weekly review's body
+  (`trends.ts`, `review-body.ts`). The server sends that part as static markup, which the page
+  keeps as sent (`ServedInPlace`) until its code arrives and hydrates it in place; a failed chunk
+  keeps the markup readable, with a notice and Retry.
+- Charts are hand-built (ADR 0016): `ChartFrame` server-renders the title, the context, the
+  one-sentence summary and the table twin and reserves the plot box; the body (`CHART_BODIES` in
+  `ui/charts/bodies.ts`, behind `import.meta.env.SSR`) draws into it after hydration, so no chart
+  code is initial JS and no chart CSS is render-blocking.
+- Page loads are measured by `pnpm db:explain` on two years of data
+  (`scripts/explain/page-load.ts`), devalue serialisation included, gated at a median of
+  `PAGE_LIMIT_MS` (300 ms) and `PAGE_DATA_LIMIT_BYTES` (32 KB gzip) of page data; every fact
+  query's plan is gated on its index (`scripts/explain/analytics.cases.ts`). docs/performance.md
+  has the measurements.
+
+## Reviews and replanning (M6)
+
+A weekly review judges one week and proposes next week's changes; a cycle review judges one block
+and plans the next. Both are computed by code alone and stored before the coach writes a word, so
+a coach outage never blocks one (PRD §11). Planning a later block is
+[ADR 0017](adr/0017-planning-later-blocks.md).
+
+| Module                                                                      | Holds                                                                                                                                         |
+| --------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/lib/domain/programming/review/`                                        | The snapshots and their schemas, the findings brief, the inputs digest, the weekly and cycle compositions, next week's ops and the directives |
+| `src/lib/domain/programming/results.ts`, `next-block/`                      | Progression from results; the next block's dates, input and generator                                                                         |
+| `src/lib/server/services/reviews/`                                          | The store, the weekly and cycle reviews' create, refresh and read, deciding next week and the next cycle                                      |
+| `src/lib/server/services/programs/next-block.ts`, `week-changes.ts`         | Storing a planned block as a version; what a review changed in a week, for Train's notice                                                     |
+| `src/lib/server/services/coach/apply/next-cycle.ts`                         | Every inbox path for a `next_cycle`, and applying the review's own                                                                            |
+| `src/lib/server/agent/reviews/narrate.ts`, `src/routes/api/reviews/narrate` | The coach's write-up (docs/agent-architecture.md)                                                                                             |
+| `src/routes/(app)/progress/reviews/[[key]]`                                 | The reviews list and one review (`w-<Monday>` or `c-<id>`), with its form actions                                                             |
+
+```mermaid
+flowchart TD
+  Due["Week or block reviewable<br/>(ended, or every session done or skipped)"] --> Create["create: compose from facts,<br/>store snapshot + digest"]
+  Create --> Propose["rules' proposal<br/>(evidence.source = the review)"]
+  Create -. "first opening" .-> Narrate["coach write-up<br/>(set once, read-only turn)"]
+  Create --> Stale{"training logged since?<br/>(digest differs)"}
+  Stale -- "decision open" --> Refresh["refresh: revision n + 1,<br/>old row kept, superseded"]
+  Refresh --> Propose
+  Propose --> Decide{"owner decides<br/>(on the chain's head)"}
+  Decide -- "weekly: as proposed" --> Accept["accepted, applied as one version<br/>(review_applied)"]
+  Decide -- "half step, left out, or passed" --> Revise["owner revision (revision_of),<br/>then applied"]
+  Decide -- "keep / not now" --> Reject["rejected, with a note"]
+  Decide -- "cycle: start chosen" --> Plan["planBlock: version N + 1<br/>(bridge if late)"]
+  Inbox["M5 inbox accept"] -- "weekly, some sessions past" --> Passed["superseded: sessions_passed,<br/>finish in the review"] --> Revise
+  Inbox -- "the review's next_cycle" --> Choose["refused: choose_start,<br/>link to the review"]
+```
+
+### Lifecycle, snapshots and supersession
+
+- **When**: a week is reviewable once it has ended, or earlier once every planned session is
+  completed or skipped (`EARLY_REVIEW`); a block once its last planned week has ended, or earlier
+  on the same rule. Before that, creating it is a not-reviewable error with the day it will be.
+  Today and Progress lead with a prompt when one is due (`progress/review-prompt.server.ts`).
+- **Create** runs in one transaction under the owner's review lock (an advisory lock), and is
+  idempotent: the live review is returned as it is. It loads the facts (the week and its
+  `TRAILING_WEEKS`, or the block and the weeks before it for the ACWR), the targets and the goals,
+  composes the snapshot and brief, stores them, and proposes.
+- **Snapshots** keep the figures as they were (`snapshot.ts`, `cycle-snapshot.ts`), versioned by
+  `snapshot_version`. A row written before M6 (version 0) or at a version this code does not
+  know reads as legacy, with its summary; a current-version row that breaks its schema throws
+  `SnapshotError` naming the path rather than show figures it cannot trust.
+- **Out of date**: `inputs_digest` (`digest.ts`) hashes every fact the review read with its
+  `updated_at`, each workout's status and `ANALYTICS_VERSION`. When today's digest differs the
+  review says 'Computed before N later changes'. Refresh writes revision n + 1 and keeps the old
+  row (`superseded_at`, `superseded_by`), only while its decision is open, and for a cycle review
+  only while no next block is planned from it. An undecided head proposal is superseded as
+  `review_refreshed` before the new one is proposed.
+- **Postgres guards it** (`drizzle/0029_reviews_guards.sql`): identity and content never change,
+  a superseded row never changes, the write-up (with its run, thread and time), `proposal_id` and
+  `next_version_id` are set once from null, a cycle review whose next block is planned is never
+  superseded, and DELETE is refused. `superseded_by` is DEFERRABLE INITIALLY DEFERRED, so a
+  refresh marks the live row with the next revision's id, then inserts it, in one transaction, and
+  the partial live unique index never sees two live rows.
+
+### Proposals, provenance and late decisions
+
+- A review's proposal is an M5 `coach_proposals` row: a `program_adjustment` for a weekly review,
+  a `next_cycle` for a cycle review. `evidence.source` (`RulesProvenance`) names the review and
+  its revision, so M5's card, the inbox, memory and `get_coach_proposals` say the review's rules
+  proposed it, never the coach.
+- An owner's change is a revision (`revision_of`), with `modifiedBy: 'owner'` and, when changes
+  for passed sessions were dropped, `trimmed: n`. The review's decision is always read from the
+  head of that chain (`proposalHead`, `decisionState`), never from the proposal it first linked.
+- **Late decisions**: deciding next week on any day of it applies only the chosen changes whose
+  sessions are still ahead (`opsStillAhead`, the same split `acceptProposal` uses); the rest are
+  dropped and counted ('2 changes were for sessions already past'). Accepting such a proposal from
+  M5's inbox supersedes it as `sessions_passed` and links to the review, which applies the rest as
+  the owner's revision. If nothing chosen is still ahead, nothing is written.
+
+### Next week and the next block
+
+- **Next week as edit ops** (`programming/review/next-week.ts`): the results rules
+  (`results.ts`) and interference checks turned into M3's edit ops on generated sessions still
+  ahead, each with its why and a half step, at most `MAX_NEXT_WEEK_OPS` (12, M5's limit); anything
+  an op cannot express is listed as not proposed, with its reason. A late week (next week has
+  ended), a boundary week (next week is the cycle review's) and a week no program plans store no
+  proposal, and say why. Applying writes one version through M5's applier, with a
+  `review_applied` decision that Train's notice reads (`services/programs/week-changes.ts`).
+- **The next block as a version**: the cycle review's directives (`review/directives.ts`) feed
+  `generateNextBlock` over today's profile overlaid with what the block showed
+  (`next-block/input.ts`). The review screen previews each start on offer (this week or next
+  Monday, `DEFAULT_NEXT_BLOCK_START` this week); 'Start next block' posts the chosen start with its
+  preview's fingerprint, and a fingerprint that no longer matches is a conflict that writes nothing
+  (`services/reviews/next-cycle.ts`). `planBlock` stores the block as version N + 1 under the
+  program head's lock, sharing the base's planned blocks and rewriting the outline after it.
+- **Bridges**: a start k ≥ 1 weeks after the reviewed block ended stores a 'Between blocks' block
+  of k unplanned weeks with no sessions (`next-block/dates.ts`); before an event the build is
+  shortened instead, so the event's date never moves. Workouts logged in a bridge are off-plan.
+- **The first-day rule**: no new-block session may fall before the day the owner chose to start,
+  so 'this week' from a Wednesday plans nothing on Monday or Tuesday.
+- **The inbox paths for `next_cycle`** (`services/coach/apply/next-cycle.ts`): the review's own
+  proposal, or a revision of it, is refused with 'Choose when it starts in your cycle review'
+  (`choose_start`) and a link; a coach's `next_cycle` for a block with no review is accepted and
+  waits for the review (`NEXT_CYCLE_AWAITS`), which folds it in as clamped overrides; one for a
+  block whose review is undecided is folded into an owner revision of its head
+  (`folded_into_review`); once the next block is planned, every other open `next_cycle` for that
+  block is superseded as `cycle_planned`.
+
+### The review table additions
+
+`drizzle/0028_reviews_provenance.sql` gives `weekly_reviews` and `cycle_reviews` (M3's tables):
+
+- `snapshot_version`, `analytics_version`, `inputs_digest`, `revision` (from 1),
+  `superseded_at` and `superseded_by` (a self-reference), and the write-up's `narrative_run_id`,
+  `narrative_thread_id` and `narrated_at` beside M3's `narrative`.
+- `weekly_reviews.program_id` and `version_id`: the program and version that planned the week.
+- `cycle_reviews.version_id`, `block_starts_on` and `block_ends_on`: the version that planned the
+  block and its dates; `next_version_id` (M3's) names the version planned from it.
+- One live row per week (`weekly_reviews_owner_week_uq`) or block (`cycle_reviews_block_uq`),
+  partial on `superseded_at is null`, a unique index per revision beside each, and
+  `cycle_reviews_owner_ends_idx` for the list. CHECKs hold a current-version row coherent (a
+  digest, an analytics version, the block's dates); rows written before M6 stay valid.
+
+`drizzle/0030_review_superseded_reasons.sql` adds `review_refreshed`, `folded_into_review`,
+`sessions_passed` and `cycle_planned` to the proposals' superseded reasons, each with its label
+(`SUPERSEDED_REASON_LABEL`).
 
 ## Frontend
 
