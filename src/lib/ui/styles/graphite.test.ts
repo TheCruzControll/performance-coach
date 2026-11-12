@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { parseCss } from 'svelte/compiler';
 import { describe, expect, it } from 'vitest';
+import { LEGEND_COLUMNS } from '../../../routes/(app)/today/panels/week-legend.ts';
 import { DIVERGING, FURNITURE, SERIES_TOKEN } from '../charts/palette.ts';
 import {
 	checkPalette,
@@ -601,5 +602,178 @@ describe('Graphite’s shell', () => {
 		expect(
 			rule("[data-ui='rest'][data-phase] > .reading > .time").get('font-variant-numeric')
 		).toBe('tabular-nums lining-nums');
+	});
+});
+
+describe('Graphite’s screens', () => {
+	/** The screens' rules: everything after the Screens heading. */
+	const RAW = readFileSync(new URL('./graphite.css', import.meta.url), 'utf8');
+	const SCREENS = RAW.slice(RAW.indexOf('==== Screens')).replace(/\/\*[\s\S]*?\*\//g, '');
+	/** Every Svelte file under src, tests aside (git ls-files: quick on a busy runner). */
+	const SVELTE = execFileSync(
+		'git',
+		['ls-files', '--cached', '--others', '--exclude-standard', '--', 'src/**/*.svelte'],
+		{ encoding: 'utf8' }
+	)
+		.split('\n')
+		.filter(Boolean)
+		.map((file) => readFileSync(file, 'utf8').replace(/<style[\s\S]*?<\/style>/g, ''));
+
+	it('start from test ids the screens still render, so a rename cannot silently drop a rule', () => {
+		const ids = new Set([...SCREENS.matchAll(/\[data-testid='([\w-]+)'\]/g)].map(([, id]) => id!));
+		expect(ids.size).toBeGreaterThan(8);
+		const missing = [...ids].filter(
+			(id) => !SVELTE.some((markup) => markup.includes(`data-testid="${id}"`))
+		);
+		expect(missing).toEqual([]);
+	});
+
+	it('reach in only by class names a component still gives its markup', () => {
+		const given = new Set(
+			SVELTE.flatMap((markup) => [
+				...[...markup.matchAll(/\bclass="([^"]*)"/g)].flatMap(([, list]) =>
+					list!.replace(/\{[^}]*\}/g, ' ').split(/\s+/)
+				),
+				...[...markup.matchAll(/\bclass:([\w-]+)/g)].map(([, name]) => name!)
+			])
+		);
+		// Class selectors, not the decimals inside values (0.875rem).
+		const named = new Set(
+			[...SCREENS.matchAll(/(?<![\w.-])\.([a-z][\w-]*)/g)].map(([, name]) => name!)
+		);
+		expect(named.size).toBeGreaterThan(20);
+		expect([...named].filter((name) => !given.has(name))).toEqual([]);
+	});
+
+	it('set every label at 4.5:1 or more on the material under it, in both themes', () => {
+		const LABELS = [
+			{
+				where: 'an RPE key',
+				ink: rule("[data-testid='rpe-chips'] .face").get('color')!,
+				under: rule("[data-testid='rpe-chips'] .face").get('background')!
+			},
+			{
+				where: 'the chosen RPE',
+				ink: rule("[data-testid='rpe-chips'] .input:checked + .face").get('color')!,
+				under: rule("[data-testid='rpe-chips'] .input:checked + .face").get('background')!
+			},
+			{
+				where: 'a view tab',
+				ink: rule('nav.views > a.view').get('color')!,
+				under: rule('nav.views').get('background')!
+			},
+			{
+				where: 'the current view and period',
+				ink: rule("nav.views > a.view[aria-current='page']").get('color')!,
+				under: rule("nav.views > a.view[aria-current='page']").get('background')!
+			},
+			{
+				where: 'the pain sheet’s strip',
+				ink: rule("[data-testid='pain-sheet'] .choices > h3.heading").get('color')!,
+				under: rule("[data-testid='pain-sheet'] .choices > h3.heading").get('background')!
+			},
+			{
+				// ProposalCard's own eyebrow colour, on Graphite's strip.
+				where: 'the proposal’s strip',
+				ink: 'var(--color-text-secondary)',
+				under: rule('article.proposal[data-status] > .head').get('background')!
+			},
+			{
+				where: 'the docked composer’s count',
+				ink: 'var(--color-text-secondary)',
+				under: ruleAt(PHONE, 'form.composer.chrome').get('background')!
+			}
+		];
+		const low: string[] = [];
+		for (const mode of MODES) {
+			for (const { where, ink, under } of LABELS) {
+				const [fg] = paints(ink, mode);
+				const stops = paints(under, mode);
+				expect(fg, where).toBeDefined();
+				expect(stops.length, where).toBeGreaterThan(0);
+				for (const stop of stops) {
+					const ratio = contrast(fg!, stop);
+					if (ratio < 4.5) low.push(`${where} (${mode}): ${fg} on ${stop} ${ratio.toFixed(2)}`);
+				}
+			}
+		}
+		expect(low).toEqual([]);
+	});
+
+	it('use the period control’s rules for the view tabs too, so both read as one control', () => {
+		const pairs = [
+			['nav.views', '.period-view > nav.picker > ul'],
+			['nav.views > a.view', '.period-view > nav.picker a.period'],
+			[
+				"nav.views > a.view[aria-current='page']",
+				".period-view > nav.picker a.period[aria-current='page']"
+			]
+		] as const;
+		for (const [view, period] of pairs) {
+			const found = TOP_RULES.find((r) => r.selectors.includes(`${SCOPE} ${view}`));
+			expect(found?.selectors, view).toContain(`${SCOPE} ${period}`);
+		}
+	});
+
+	it('never shrink a target: no rule sizes a key, tab, day, set or sheet row', () => {
+		const TARGETS = /\.face|a\.view|a\.period|\.entry|\.day\b|\.set\b|\.chips/;
+		const sized = RULES.filter((r) =>
+			r.selectors.some((s) => s.startsWith(SCOPE) && SCREENS.includes(s.slice(SCOPE.length + 1)))
+		)
+			.filter((r) => r.selectors.some((s) => TARGETS.test(s.split(' ').at(-1)!)))
+			.flatMap((r) =>
+				['height', 'min-height', 'min-width', 'block-size', 'width']
+					.filter((p) => r.declarations.has(p))
+					.map((p) => `${r.selectors[0]}: ${p}`)
+			);
+		// A view tab and a period give up only their spare min-width: each is a column of the
+		// control, wider than 44 px at 390 px (four views, five periods), and keeps its 44 px height.
+		expect(sized).toEqual([`${SCOPE} nav.views > a.view: min-width`]);
+	});
+
+	it('put Complete set on the bar material only where the logger is stuck to the foot', () => {
+		const logger = ruleAt(PHONE, "[data-testid='set-logger']");
+		// The band: the large button (3.5rem in Graphite), its gap above and the padding below.
+		expect(rule("[data-ui='button'][data-size='lg']").get('--btn-height')).toBe('3.5rem');
+		expect(logger.get('--action-bar')).toBe(
+			'calc(3.5rem + 2 * var(--space-3) + var(--safe-bottom))'
+		);
+		expect(logger.get('background')).toContain('var(--bar) left bottom / 100% var(--action-bar)');
+		// From 1024 px it is a card in the column: no bar there, nor for every width.
+		expect(RULES.filter((r) => r.selectors.some((s) => s.includes('set-logger')))).toHaveLength(1);
+	});
+
+	it('hold the legend’s room to the rows Program.svelte counts', () => {
+		const legend = rule("[data-ui='week-legend']");
+		expect(legend.get('grid-template-columns')).toBe(`repeat(${LEGEND_COLUMNS}, max-content)`);
+		expect(legend.get('line-height')).toBe('1.25rem');
+		expect(legend.get('gap')).toMatch(/^0\.25rem /);
+		const program = readFileSync(
+			new URL('../../../routes/(app)/today/panels/Program.svelte', import.meta.url),
+			'utf8'
+		);
+		expect(program).toContain(`Math.ceil(keys / ${LEGEND_COLUMNS}) * ${1.25 + 0.25} - 0.25`);
+		expect(rule("[data-ui='week-legend'] > li").get('white-space')).toBe('nowrap');
+	});
+
+	it('dash a line only in a chart of estimates, and label a measured value in words', () => {
+		const dashed = RULES.find((r) =>
+			r.selectors.some((s) => s.includes("path[data-testid='line-path']"))
+		);
+		expect(dashed?.selectors).toEqual([
+			`${SCOPE} [data-testid='line-chart']:has(.pc-marker[data-kind='estimated']) path[data-testid='line-path']`
+		]);
+		expect(dashed?.declarations.get('stroke-dasharray')).toBe('5 4');
+		expect(
+			rule("[data-testid='line-chart'] .pc-marker[data-kind='measured']::after").get('content')
+		).toBe("'measured'");
+	});
+
+	it('dock the composer on the tab bar only below 1024 px, flush with its top edge', () => {
+		const dock = ruleAt(PHONE, 'form.composer.chrome');
+		expect(dock.get('bottom')).toBe('var(--nav-inset-bottom)');
+		expect(dock.get('background')).toBe('var(--bar)');
+		expect(dock.get('width')).toBe('100%');
+		expect(TOP_RULES.some((r) => r.selectors.some((s) => s.includes('form.composer')))).toBe(false);
 	});
 });

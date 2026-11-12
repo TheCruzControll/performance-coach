@@ -70,6 +70,22 @@ corners). Profile → Appearance → Design switches between them, as does `?des
   page showing Graphite, holding its room from first paint so nothing moves. The rest timer
   (`rest`) becomes the display in CSS alone: the time left as the big numeral, its controls on a
   strip beneath the glass.
+- **Screens:** each screen's own parts, the look only, from an element the screen already renders
+  (its test id, or two class names of one component), so today's design ships not a byte more;
+  `graphite.test.ts` fails when a test id or class it names leaves the markup. Workout: the RPE
+  grid as two connected rows of plastic keys, the answer in the selection well; the set states as
+  rows of one box, Now in the Aqua wash, a done set's number in green; below 1024 px Complete set
+  (the gel) on a band of the bar material; the pain sheet's choices as rows under a silver strip.
+  Today: the week strip as one box with full day names, today's in Aqua and bold, the chosen date
+  in the well, and under it a legend (`today/panels/WeekLegend.svelte`, `week-legend` hook, loaded
+  through StatusSlot like a Status Display, in rows of three so its room is known); today's session
+  card and its Start workout in one box. Progress: the view tabs and the period control as one kind
+  of connected segmented control; in a chart of estimates the line is dashed, and a measured value
+  is a square labelled 'measured'. Coach: below 1024 px the composer docks full-bleed on the tab bar
+  in the bar material, its writing well taking the focus ring; the proposal card's header is the
+  silver strip, without the accent side stripe. Profile: the preferences as rows split by
+  hairlines. Onboarding: the step progress as a recessed track filled with gel, What we'll ask as
+  a grouped box.
 - `graphite.test.ts` holds it to the chart palette checks and 4.5:1 text contrast in both themes;
   `e2e/design-switch*.e2e.ts` run axe on it and check no flash, no layout shift and no Graphite
   request on today's design. The screen gallery shoots every screen in both designs.

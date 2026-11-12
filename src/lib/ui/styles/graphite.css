@@ -960,3 +960,474 @@
 	order: 0;
 	min-height: var(--status-room);
 }
+
+/* ==== Screens =========================================================================
+   Each screen's own parts, restyled to the prototype's screens: the look only, never what a
+   screen does or says. A rule starts from an element the screen already renders (its test id, or
+   two class names of one component) and reaches in by the class names the component gives it, so
+   today's design ships not a byte more; graphite.test.ts checks that every test id and class named
+   here is still in the markup. The week strip's legend is the one new part, and Graphite's alone
+   (WeekLegend.svelte, through StatusSlot). */
+
+/* ---- Workout: the logger's action bar ---------------------------------------------------
+   Below 1024 px the logger is stuck to the foot: Complete set (the gel) sits on the bar material,
+   a band as tall as the button, its gap above and the padding below, drawn behind the box. */
+@media (width < 64rem) {
+	:root[data-design='graphite'] [data-testid='set-logger'] {
+		--action-bar: calc(3.5rem + 2 * var(--space-3) + var(--safe-bottom));
+		border-top-color: var(--bar-edge);
+		background:
+			linear-gradient(var(--bar-edge), var(--bar-edge)) left bottom var(--action-bar) / 100% 1px
+				no-repeat,
+			var(--bar) left bottom / 100% var(--action-bar) no-repeat,
+			var(--color-surface-1);
+	}
+}
+
+/* ---- The RPE grid: two connected rows of plastic keys; the answer sits in the well ------- */
+:root[data-design='graphite'] [data-testid='rpe-chips'] > .chips {
+	gap: 1px;
+	overflow: hidden;
+	border: 1px solid var(--plastic-edge);
+	border-radius: var(--radius-sm);
+	background: var(--plastic-edge);
+}
+:root[data-design='graphite'] [data-testid='rpe-chips'] .face {
+	border: 0;
+	border-radius: 0;
+	background: var(--plastic);
+	box-shadow: inset 0 1px 0 var(--color-highlight);
+	color: var(--on-plastic);
+	font-size: var(--text-base);
+}
+:root[data-design='graphite'] [data-testid='rpe-chips'] .input:checked + .face {
+	background: var(--select);
+	box-shadow: inset 0 1px 3px rgb(0 0 0 / 0.3);
+	color: var(--select-ink);
+}
+:root[data-design='graphite'] [data-testid='rpe-chips'] .input:checked + .face .tick {
+	border-color: var(--select-ink);
+}
+:root[data-design='graphite'] [data-testid='rpe-chips'] .input:not(:checked):active + .face {
+	transform: none;
+	background: var(--plastic-pressed);
+}
+:root[data-design='graphite'] [data-testid='rpe-chips'] .input:focus-visible + .face {
+	outline-offset: -3px;
+	border-radius: var(--radius-xs);
+}
+
+/* ---- The set states: rows of one box, split by hairlines; Now in the Aqua wash -------------- */
+:root[data-design='graphite'] [data-testid='exercise'] > .sets {
+	gap: 0;
+}
+:root[data-design='graphite'] [data-testid='exercise'] > .sets > li + li {
+	border-top: 1px solid var(--color-hairline);
+}
+:root[data-design='graphite'] [data-testid='set'] > .set {
+	border-color: transparent;
+	border-radius: var(--radius-sm);
+}
+:root[data-design='graphite'] [data-testid='set'][data-state='current'] > .set {
+	background: var(--color-accent-subtle);
+}
+:root[data-design='graphite'] [data-testid='set'][data-state='current'] .index {
+	color: var(--color-accent-text);
+	font-weight: var(--weight-semibold);
+}
+:root[data-design='graphite'] [data-testid='set'][data-state='done'] .index {
+	color: var(--color-positive);
+	font-weight: var(--weight-semibold);
+}
+:root[data-design='graphite'] [data-testid='set'][data-state='todo'] .text {
+	color: var(--color-text-tertiary);
+}
+:root[data-design='graphite'] [data-testid='set'] > .set:focus-visible {
+	outline-offset: -2px;
+}
+
+/* ---- The pain sheet: what to do, as rows of one box under a silver strip ------------------ */
+:root[data-design='graphite'] [data-testid='pain-sheet'] .choices {
+	gap: 0;
+	overflow: hidden;
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius-md);
+	background: var(--color-surface-1);
+	box-shadow: var(--elevation-1);
+}
+:root[data-design='graphite'] [data-testid='pain-sheet'] .choices > h3.heading {
+	margin: 0;
+	padding: 0.5rem 0.875rem;
+	border-bottom: 1px solid var(--strip-edge);
+	background: var(--strip);
+	color: var(--color-text-secondary);
+	font-size: var(--text-xs);
+}
+:root[data-design='graphite'] [data-testid='pain-sheet'] .choices > h4.heading {
+	margin: 0;
+	padding: 0.75rem 0.875rem 0.25rem;
+	border-top: 1px solid var(--color-hairline);
+}
+:root[data-design='graphite'] [data-testid='pain-sheet'] .choices > :not(h3, h4) {
+	margin-inline: 0.875rem;
+}
+:root[data-design='graphite'] [data-testid='pain-sheet'] .choices > .entry {
+	margin: 0;
+	padding: 0.75rem 0.875rem;
+	border: 0;
+	border-radius: 0;
+	background: none;
+}
+:root[data-design='graphite'] [data-testid='pain-sheet'] .choices > .entry + .entry,
+:root[data-design='graphite'] [data-testid='pain-sheet'] .choices > :not(h4) + .entry.end {
+	border-top: 1px solid var(--color-hairline);
+}
+:root[data-design='graphite'] [data-testid='pain-sheet'] .choices > .entry:active {
+	background: var(--color-accent-subtle);
+}
+:root[data-design='graphite'] [data-testid='pain-sheet'] .choices > .entry:focus-visible {
+	outline-offset: -3px;
+}
+:root[data-design='graphite'] [data-testid='pain-sheet'] .choices > :last-child:not(.entry) {
+	margin-bottom: 0.875rem;
+}
+
+/* ---- Today: the week strip, its legend and the session box ---------------------------------
+   The strip is one box of seven days split by hairlines, each day by its name ('Wed'), today's in
+   Aqua and bold, the chosen day's date in the selection well. */
+:root[data-design='graphite'] [data-testid='week-strip'] {
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius-md);
+	background: var(--color-surface-1);
+	box-shadow: var(--elevation-1);
+}
+:root[data-design='graphite'] [data-testid='week-strip'] > .day + .day {
+	border-left: 1px solid var(--color-hairline);
+}
+:root[data-design='graphite'] [data-testid='week-strip'] .day::before {
+	inset: 2px;
+	border-color: transparent;
+	border-radius: var(--radius-sm);
+	background: none;
+	box-shadow: none;
+}
+:root[data-design='graphite'] [data-testid='week-strip'] .name {
+	font-size: var(--text-xs);
+	letter-spacing: 0;
+	text-transform: none;
+}
+:root[data-design='graphite'] [data-testid='week-strip'] .letter {
+	display: none;
+}
+:root[data-design='graphite'] [data-testid='week-strip'] .short {
+	display: inline;
+}
+:root[data-design='graphite'] [data-testid='week-strip'] .day[aria-current='date'] .name {
+	color: var(--color-accent-text);
+	font-weight: var(--weight-bold);
+}
+:root[data-design='graphite'] [data-testid='week-strip'] .date {
+	width: 2rem;
+	height: 1.75rem;
+	aspect-ratio: auto;
+	border-radius: var(--radius-sm);
+	font-size: var(--text-lg);
+}
+:root[data-design='graphite'] [data-testid='week-strip'] .day[aria-current='date'] .date {
+	box-shadow: none;
+}
+:root[data-design='graphite'] [data-testid='week-strip'] .day[aria-checked='true'] .date {
+	background: var(--select);
+	box-shadow:
+		inset 0 0 0 1px var(--select-edge),
+		inset 0 1px 3px rgb(0 0 0 / 0.25);
+	color: var(--select-ink);
+	font-weight: var(--weight-bold);
+}
+
+/* The legend: rows of three keys, one row 1.25rem tall (Program.svelte holds its room). */
+:root[data-design='graphite'] [data-ui='week-legend'] {
+	display: grid;
+	grid-template-columns: repeat(3, max-content);
+	align-content: start;
+	gap: 0.25rem 0.875rem;
+	margin: 0;
+	padding: 0 0.75rem;
+	list-style: none;
+	color: var(--color-text-secondary);
+	font-size: var(--text-xs);
+	line-height: 1.25rem;
+}
+:root[data-design='graphite'] [data-ui='week-legend'] > li {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.3125rem;
+	white-space: nowrap;
+}
+:root[data-design='graphite'] [data-ui='week-legend'] .key {
+	width: 0.5rem;
+	height: 0.5rem;
+	border-radius: 50%;
+	background: var(--tone);
+}
+:root[data-design='graphite'] [data-ui='week-legend'] .key.ring {
+	background: none;
+	box-shadow: inset 0 0 0 1.5px var(--color-text-secondary);
+}
+/* Its room follows the strip in every week (Program.svelte). On a phone it sits close under the
+   strip it explains (its room too, so nothing moves); a week with no sessions holds no room, and
+   then takes no gap either: min() is 0 for a 0rem room, and the gap otherwise. */
+:root[data-design='graphite'] [data-testid='week-strip'] + div[data-ui='status-room'] {
+	--legend-gap: var(--space-6);
+	margin-top: calc(min(var(--status-room) * 100, var(--legend-gap)) - var(--space-6));
+}
+@media (width < 64rem) {
+	:root[data-design='graphite'] [data-testid='week-strip'] + div[data-ui='status-room'] {
+		--legend-gap: var(--space-2);
+	}
+}
+
+/* Today's session: the card and its Start workout in one box. */
+:root[data-design='graphite'] [data-testid='today-session'] {
+	gap: 0;
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius-md);
+	background: var(--color-surface-1);
+	box-shadow: var(--elevation-1);
+}
+:root[data-design='graphite'] [data-testid='today-session'] > .card {
+	border: 0;
+	border-radius: calc(var(--radius-md) - 1px) calc(var(--radius-md) - 1px) 0 0;
+	background: none;
+	box-shadow: none;
+}
+:root[data-design='graphite'] [data-testid='today-session'] > [data-ui='button'] {
+	width: auto;
+	margin: 0 var(--space-4) var(--space-4);
+}
+
+/* ---- Progress: the view tabs and the period control as connected plastic segments, the
+   current one in the well; estimates as a dashed line, measured values as labelled marks ---- */
+:root[data-design='graphite'] nav.views,
+:root[data-design='graphite'] .period-view > nav.picker > ul {
+	display: grid;
+	grid-auto-columns: minmax(0, 1fr);
+	grid-auto-flow: column;
+	gap: 0;
+	padding: 0;
+	overflow: hidden;
+	border: 1px solid var(--plastic-edge);
+	border-radius: var(--radius-sm);
+	background: var(--plastic);
+	box-shadow: 0 1px 1px rgb(0 0 0 / 0.12);
+}
+:root[data-design='graphite'] nav.views > a.view,
+:root[data-design='graphite'] .period-view > nav.picker a.period {
+	min-width: 0;
+	padding: 0 0.25rem;
+	border-radius: 0;
+	background: none;
+	box-shadow: none;
+	color: var(--on-plastic);
+	text-align: center;
+}
+:root[data-design='graphite'] nav.views > a.view + a.view,
+:root[data-design='graphite'] .period-view > nav.picker li + li {
+	border-left: 1px solid var(--plastic-edge);
+}
+:root[data-design='graphite'] nav.views > a.view[aria-current='page'],
+:root[data-design='graphite'] .period-view > nav.picker a.period[aria-current='page'] {
+	background: var(--select);
+	box-shadow: inset 0 1px 3px rgb(0 0 0 / 0.3);
+	color: var(--select-ink);
+}
+:root[data-design='graphite'] nav.views > a.view:not([aria-current='page']):active,
+:root[data-design='graphite'] .period-view > nav.picker a.period:not([aria-current='page']):active {
+	background: var(--plastic-pressed);
+}
+:root[data-design='graphite'] nav.views > a.view:focus-visible,
+:root[data-design='graphite'] .period-view > nav.picker a.period:focus-visible {
+	outline-offset: -3px;
+	border-radius: var(--radius-xs);
+}
+
+:root[data-design='graphite']
+	[data-testid='line-chart']:has(.pc-marker[data-kind='estimated'])
+	path[data-testid='line-path'] {
+	stroke-dasharray: 5 4;
+}
+:root[data-design='graphite'] [data-testid='line-legend'] .key[data-kind='estimated'] {
+	inline-size: 1rem;
+	block-size: 0;
+	border-top: 2px dashed var(--chart-muted);
+	border-radius: 0;
+	box-shadow: none;
+}
+:root[data-design='graphite'] [data-testid='line-chart'] .key[data-kind='measured'],
+:root[data-design='graphite'] [data-testid='line-chart'] .pc-marker[data-kind='measured'] {
+	rotate: none;
+	border-radius: 2px;
+}
+:root[data-design='graphite'] [data-testid='line-chart'] .pc-marker[data-kind='measured'] {
+	inline-size: 10px;
+	block-size: 10px;
+	box-shadow: 0 0 0 2px var(--chart-surface);
+}
+/* Its label: the plot is hidden from assistive tech, whose table twin says 'measured'. */
+:root[data-design='graphite'] [data-testid='line-chart'] .pc-marker[data-kind='measured']::after {
+	content: 'measured';
+	position: absolute;
+	bottom: calc(100% + 4px);
+	left: 50%;
+	translate: -50% 0;
+	color: var(--color-text);
+	font-size: 0.6875rem;
+	font-weight: var(--weight-bold);
+	line-height: 1;
+	white-space: nowrap;
+}
+
+/* ---- Coach: the composer docked on the tab bar, and the proposal under a silver strip ------- */
+@media (width < 64rem) {
+	:root[data-design='graphite'] form.composer.chrome {
+		left: 0;
+		bottom: var(--nav-inset-bottom);
+		width: 100%;
+		padding: 0.4375rem max(var(--gutter), var(--safe-right)) 0.4375rem
+			max(var(--gutter), var(--safe-left));
+		transform: none;
+		border: 0;
+		border-top: 1px solid var(--bar-edge);
+		border-radius: 0;
+		background: var(--bar);
+		backdrop-filter: none;
+		box-shadow: inset 0 1px 0 var(--color-highlight);
+	}
+	:root[data-design='graphite'] form.composer.chrome:has(.input:focus-visible) {
+		box-shadow: inset 0 1px 0 var(--color-highlight);
+	}
+	/* The class twice outweighs Composer's own focus and hover edges (0,5,0), which would tint the
+	   bar's top edge: the well takes the focus ring. */
+	:root[data-design='graphite'] form.composer.chrome.chrome {
+		border-top-color: var(--bar-edge);
+	}
+	/* The writing surface: an inset well, which takes the focus ring. */
+	:root[data-design='graphite'] form.composer.chrome > .input {
+		padding-inline: 0.625rem;
+		border: 1px solid var(--color-border-strong);
+		border-radius: var(--radius-sm);
+		background: var(--color-surface-2);
+		box-shadow: inset 0 1px 2px rgb(0 0 0 / 0.15);
+	}
+	:root[data-design='graphite'] form.composer.chrome > .input:focus-visible {
+		outline: 2px solid var(--color-accent-ring);
+		outline-offset: 1px;
+	}
+	/* Offline or busy: the well goes flat and dashed, as Composer's own disabled look. */
+	:root[data-design='graphite'] form.composer.chrome.disabled > .input {
+		border-style: dashed;
+		background: transparent;
+		box-shadow: none;
+	}
+}
+
+:root[data-design='graphite'] article.proposal[data-status] {
+	border-left-width: 1px;
+	border-left-color: var(--color-border);
+	box-shadow: var(--elevation-1);
+}
+:root[data-design='graphite'] article.proposal[data-status] > .head {
+	margin: calc(-1 * var(--space-4)) calc(-1 * var(--space-4)) 0;
+	padding: 0.625rem var(--space-4);
+	border-bottom: 1px solid var(--strip-edge);
+	border-radius: calc(var(--radius-lg) - 1px) calc(var(--radius-lg) - 1px) 0 0;
+	background: var(--strip);
+}
+:root[data-design='graphite'] article.proposal[data-status] .eyebrow,
+:root[data-design='graphite'] article.proposal[data-status] .label {
+	letter-spacing: 0;
+	text-transform: none;
+}
+
+/* ---- Profile and onboarding: grouped boxes, rows split by hairlines -------------------------- */
+:root[data-design='graphite'] .prefs > .pref + .pref {
+	padding-top: var(--space-4);
+	border-top: 1px solid var(--color-hairline);
+}
+:root[data-design='graphite'] .prefs > .pref > .pref-label {
+	color: var(--color-text);
+	font-weight: var(--weight-semibold);
+}
+
+:root[data-design='graphite'] [data-testid='step-progress'] {
+	gap: 2px;
+	padding: 2px;
+	border-radius: var(--radius-xs);
+	background: var(--color-surface-2);
+	box-shadow:
+		inset 0 0 0 1px var(--color-border),
+		inset 0 1px 2px rgb(0 0 0 / 0.2);
+}
+:root[data-design='graphite'] [data-testid='step-progress'] > .segment {
+	height: 6px;
+	border-radius: 1px;
+	background: none;
+}
+:root[data-design='graphite'] [data-testid='step-progress'] > .segment:is(.done, .current) {
+	background: var(--gel);
+}
+:root[data-design='graphite'] [data-testid='step-progress'] > .segment.current {
+	box-shadow: 0 0 0 1px var(--gel-edge);
+}
+
+:root[data-design='graphite'] ul.ahead {
+	gap: 0;
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius-md);
+	background: var(--color-surface-1);
+	box-shadow: var(--elevation-1);
+}
+:root[data-design='graphite'] ul.ahead > li {
+	padding: var(--space-2) var(--space-4);
+}
+:root[data-design='graphite'] ul.ahead > li + li {
+	border-top: 1px solid var(--color-hairline);
+}
+:root[data-design='graphite'] ul.ahead .glyph {
+	border: 1px solid var(--plastic-edge);
+	border-radius: var(--radius-sm);
+	background: var(--plastic);
+	box-shadow: inset 0 1px 0 var(--color-highlight);
+}
+:root[data-design='graphite'] .onboarding .resume {
+	border-color: var(--color-border);
+	border-radius: var(--radius-md);
+	background: var(--color-surface-1);
+	box-shadow: var(--elevation-1);
+}
+
+@media (hover: hover) and (pointer: fine) {
+	:root[data-design='graphite'] nav.views > a.view:not([aria-current='page']):hover,
+	:root[data-design='graphite']
+		.period-view
+		> nav.picker
+		a.period:not([aria-current='page']):hover {
+		background: light-dark(rgb(255 255 255 / 0.45), rgb(255 255 255 / 0.05));
+		color: var(--on-plastic);
+	}
+	:root[data-design='graphite'] [data-testid='rpe-chips'] .input:not(:checked):hover + .face {
+		background: var(--plastic);
+		box-shadow:
+			inset 0 1px 0 var(--color-highlight),
+			inset 0 0 0 1px var(--color-border-strong);
+	}
+	:root[data-design='graphite']
+		[data-testid='week-strip']
+		.day:not([aria-checked='true']):hover::before,
+	:root[data-design='graphite'] [data-testid='set'] > button.set:hover,
+	:root[data-design='graphite'] [data-testid='today-session'] > a.card:hover,
+	:root[data-design='graphite'] [data-testid='pain-sheet'] .choices > .entry:hover {
+		border-color: transparent;
+		background: color-mix(in srgb, var(--color-surface-1) 94%, var(--color-text));
+	}
+}
