@@ -74,7 +74,7 @@
 						type="submit"
 						icon={status === 'failed' ? 'refresh' : undefined}
 						loading={status === 'pending'}
-						disabled={!online}>{status === 'failed' ? 'Retry' : 'Create review'}</Button
+						disabled={!online}>{status === 'failed' ? 'Try again' : 'Create review'}</Button
 					>
 				</form>
 				{#if !online}

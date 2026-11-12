@@ -134,7 +134,7 @@ test.describe('week-complete, on Today', () => {
 			await expect(promptOf(page).getByTestId('create-failed')).toContainText(
 				'Couldn’t create this review'
 			);
-			await expect(createButton(page)).toHaveText('Retry');
+			await expect(createButton(page)).toHaveText('Try again');
 			await expect(page.getByTestId('error-view')).toHaveCount(0);
 			await expect(page).toHaveURL(/\/today$/);
 			expect(await weeklyReviews(week)).toHaveLength(0);
