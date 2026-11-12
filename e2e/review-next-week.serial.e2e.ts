@@ -276,7 +276,7 @@ test.describe('review-ahead: every change still ahead', () => {
 			});
 			await generate(page).click();
 			await expect(page.getByTestId('review-next-failure')).toContainText('Couldn’t save it');
-			await expect(generate(page)).toHaveText('Retry');
+			await expect(generate(page)).toHaveText('Try again');
 			expect(await programVersions(seeded.programId)).toHaveLength(1);
 			await generate(page).click();
 			await expect(page).toHaveURL(/\/train\?week=4$/);

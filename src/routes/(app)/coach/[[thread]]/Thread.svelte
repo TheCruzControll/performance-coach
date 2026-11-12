@@ -14,7 +14,13 @@
   checked block. A shown answer stays as it streamed (its stored copy is not drawn twice); a turn
   that ended otherwise gives way to what the server stored, and keeps only how it ended when
   nothing was stored. An interrupted or failed last answer offers Retry, which asks the same
-  question again under its own id. An archived conversation is read-only: its banner
+  question again under its own id.
+  A turn that ended on an error shows it as its notice (coach-notices.ts), in place of an answer
+  or below the partial it stored: busy, timed out, a failure on the coach's side or no
+  connection offer Retry, which asks the same question again under the same id, in the turn's
+  place, so the conversation keeps one copy of it; a rate limit counts down to when it can be
+  asked again, then offers Retry; an unavailable coach or a spent budget links to Today and
+  Train, which keep working. An archived conversation is read-only: its banner
   (ArchivedBanner) offers Unarchive. While an answer streams the page follows it down, unless the
   owner has scrolled up.
   A proposal shows as a card after the answer of the run that made it (a turn's, once the stored
@@ -44,6 +50,7 @@
 	import {
 		ANSWER_BLOCK_KIND_LABEL,
 		COACH_ERROR_KIND_LABEL,
+		type CoachErrorKind,
 		type CompletedBlock
 	} from '#lib/domain/coach/index.ts';
 	import Badge from '#lib/ui/components/Badge.svelte';
@@ -56,7 +63,7 @@
 	import LiveAnnouncer from '#lib/ui/coach/LiveAnnouncer.svelte';
 	import RichText from '#lib/ui/coach/RichText.svelte';
 	import ThinkingIndicator from '#lib/ui/coach/ThinkingIndicator.svelte';
-	import { SCREEN_FAILURE_LABEL } from '#lib/ui/coach/coach-notices.ts';
+	import { SCREEN_FAILURE_LABEL, waitUntilWords, waitWords } from '#lib/ui/coach/coach-notices.ts';
 	import { toast } from '#lib/ui/toast.svelte.ts';
 	import ArchivedBanner from './ArchivedBanner.svelte';
 	import type { ThreadView } from './coach.server';
@@ -80,15 +87,35 @@
 			(m) => m.from === 'owner' && m.clientId === turn.request.clientMessageId
 		);
 
+	/** Ends the stored partial's own label already words ('Stopped', 'Interrupted'). */
+	const QUIET: readonly CoachErrorKind[] = ['cancelled', 'interrupted'];
+	/** Ends that asking the same question again can fix: Retry is offered. */
+	const AGAIN: readonly CoachErrorKind[] = ['provider', 'timeout', 'busy', 'offline'];
+
 	/**
 	 * How a turn shows: whole while it runs or once its answer is shown; after it ended otherwise,
-	 * not at all when an answer to it is stored, else only how it ended.
+	 * only how it ended, below what it stored (the last turn's error), else not at all when an
+	 * answer to it is stored.
 	 */
 	function modeOf(turn: CoachTurn): 'whole' | 'ended' | null {
 		const at = turn.settled && !turn.answered ? ownerOf(turn) : -1;
 		if (at < 0) return 'whole';
-		return thread.messages[at + 1]?.from === 'coach' ? null : 'ended';
+		if (thread.messages[at + 1]?.from !== 'coach') return 'ended';
+		return turn.error && !QUIET.includes(turn.error) && turn === turns.at(-1) ? 'ended' : null;
 	}
+
+	/** Now, a second at a time while a rate-limited turn counts down, from when it starts. */
+	let now = $state(Date.now());
+	$effect(() => {
+		const until = Math.max(0, ...turns.map((turn) => turn.retryAt ?? 0));
+		if (until <= Date.now()) return;
+		now = Date.now();
+		const tick = setInterval(() => {
+			now = Date.now();
+			if (now >= until) clearInterval(tick);
+		}, 1000);
+		return () => clearInterval(tick);
+	});
 
 	/** Stored messages a whole turn already shows: its question, its answer and its cards. */
 	const hidden = $derived(
@@ -327,7 +354,7 @@
 				toast.show(SCREEN_FAILURE_LABEL.chunk_failed, {
 					tone: 'danger',
 					duration: 0,
-					action: { label: 'Retry', onclick: () => openExercise(exerciseId) }
+					action: { label: 'Try again', onclick: () => openExercise(exerciseId) }
 				});
 			}
 		);
@@ -396,10 +423,36 @@
 		<Badge tone="warning" icon="alert" data-testid="answer-ended">{label}</Badge>
 		{#if question && live}
 			<Button variant="secondary" size="sm" onclick={() => live.retry(question, threadId)}
-				>Retry</Button
+				>Try again</Button
 			>
 		{/if}
 	</p>
+{/snippet}
+
+{#snippet notice(turn: CoachTurn, end: CoachErrorKind)}
+	{@const wait = end === 'rate_limited' && turn.retryAt !== null ? turn.retryAt - now : null}
+	{@const again = turn === turns.at(-1) && (AGAIN.includes(end) || (wait !== null && wait <= 0))}
+	<CoachNotice
+		kind={end}
+		retry={again}
+		onretry={again ? () => live?.again(turn) : undefined}
+		data-testid="turn-notice"
+	>
+		{#if wait !== null}
+			<!-- A countdown in a live region would be read out every second. -->
+			<p class="wait" aria-hidden="true" data-testid="turn-wait">{waitWords(wait)}</p>
+			<p class="visually-hidden">{waitUntilWords(turn.retryAt!)}</p>
+		{:else if end === 'unavailable' || end === 'budget'}
+			<div class="elsewhere">
+				<Button variant="secondary" size="sm" icon="today" href={resolve('/(app)/today')}
+					>Today’s workout</Button
+				>
+				<Button variant="secondary" size="sm" icon="train" href={resolve('/(app)/train')}
+					>Train</Button
+				>
+			</div>
+		{/if}
+	</CoachNotice>
 {/snippet}
 
 <article
@@ -500,16 +553,16 @@
 						{/each}
 						{@render footnotes(asked?.footnotes)}
 					{/if}
-					{#if end}
+					{#if end && QUIET.includes(end)}
 						{@render ended(
 							COACH_ERROR_KIND_LABEL[end],
-							turn === turns.at(-1) &&
-								turn.threadId &&
-								(end === 'interrupted' || end === 'provider' || end === 'timeout')
+							turn === turns.at(-1) && turn.threadId && end === 'interrupted'
 								? { clientMessageId: turn.request.clientMessageId, text: turn.request.text }
 								: null,
 							turn.threadId ?? undefined
 						)}
+					{:else if end}
+						{@render notice(turn, end)}
 					{/if}
 				</li>
 			{/if}
@@ -601,6 +654,17 @@
 		align-items: center;
 		gap: var(--space-2);
 		justify-self: start;
+	}
+
+	.wait {
+		font-variant-numeric: tabular-nums;
+	}
+
+	.elsewhere {
+		display: flex;
+		flex-wrap: wrap;
+		gap: var(--space-2);
+		margin-top: var(--space-2);
 	}
 
 	.chips {

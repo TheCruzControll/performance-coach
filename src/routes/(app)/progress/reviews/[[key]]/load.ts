@@ -76,6 +76,12 @@ export function parseReviewKey(key: string | undefined): ReviewKey | null | unde
 	return undefined;
 }
 
+/** A trend's change in plain words: 'Up 9.5 kg so far', 'Down 12 s/km so far', 'No change so far'. */
+export function changeWords(value: number, size: string): string {
+	if (value === 0) return 'No change so far';
+	return `${value > 0 ? 'Up' : 'Down'} ${size} so far`;
+}
+
 export const weeklyKey = (weekStartsOn: IsoDate) => `w-${weekStartsOn}`;
 
 export interface ReviewRow {
@@ -97,7 +103,7 @@ export interface TrendView {
 	verdict: TileVerdict;
 	/** The stored verdict's words ('Trending up, improving'). */
 	words: string;
-	/** The change along the trend, in words ('5 kg'); null when none was measured. */
+	/** The change over the weeks read, in plain words ('Up 5 kg so far'); null when none was measured. */
 	change: string | null;
 	context: { period: string; good: string; method: string; caveat: string | null };
 }
@@ -489,7 +495,7 @@ export function weeklyReviewData(
 					label: f.label,
 					verdict: findingVerdict(f),
 					words: f.verdict.words,
-					change: change && change.value !== null ? change.words : null,
+					change: change && change.value !== null ? changeWords(change.value, change.words) : null,
 					context: {
 						period: f.window?.label ?? 'This week',
 						good: metric.good.words,

@@ -314,10 +314,10 @@ test.describe('with the network in the test’s hands', () => {
 		await expect(notice).toBeVisible();
 		await expect(page.getByTestId('plan-sheet')).toHaveCount(0);
 		await expect(plan(page)).toHaveAttribute('aria-busy', 'false');
-		const retry = notice.getByRole('button', { name: 'Retry' });
+		const retry = notice.getByRole('button', { name: 'Try again' });
 		const target = await retry.boundingBox();
-		expect(target?.width, 'Retry is at least 44 px wide').toBeGreaterThanOrEqual(44);
-		expect(target?.height, 'Retry is at least 44 px tall').toBeGreaterThanOrEqual(44);
+		expect(target?.width, 'Try again is at least 44 px wide').toBeGreaterThanOrEqual(44);
+		expect(target?.height, 'Try again is at least 44 px tall').toBeGreaterThanOrEqual(44);
 		await captureScreen(page, testInfo, 'train-plan-retry');
 
 		// Back online, Retry opens the sheet: in place where the browser fetches a failed module
