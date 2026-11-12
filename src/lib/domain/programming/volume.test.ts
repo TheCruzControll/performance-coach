@@ -14,11 +14,12 @@ import { isHardSet, NON_WORKING_ROLES, plannedHardSets } from '../training/metri
 import type { ProgramPlan, StrengthSessionPlan, WeekPlan } from '../training/types';
 import type { MuscleGroup } from '../training/vocabulary';
 import { DecisionLog } from './decisions';
-import { generateProgram, STAGES } from './generate';
+import { firstDraft, generateProgram, STAGES } from './generate';
 import { buildProgrammingInput } from './input';
 import { SCENARIO_START, SCENARIOS } from './scenarios';
 import type { ScenarioKey } from './scenarios';
 import type { Draft } from './stage';
+import { prepare } from './stages/prepare';
 import { volume } from './stages/volume';
 import { estimateMinutes } from './timefit';
 
@@ -30,10 +31,12 @@ const inputOf = (profile: TrainingProfile) =>
 	buildProgrammingInput(profile, { catalogue: CATALOGUE });
 const generate = (profile: TrainingProfile) => generateProgram(inputOf(profile), OPTIONS);
 
-/** The plan generateProgram makes, with the volume stage left out. */
+/** The plan generateProgram makes, prepare included, with the volume stage left out. */
 function withoutVolume(profile: TrainingProfile): Pick<ProgramPlan, 'blocks' | 'decisions'> {
-	const context = { input: inputOf(profile), options: OPTIONS, log: new DecisionLog() };
-	let draft: Draft = { demand: null, blocks: [] };
+	const log = new DecisionLog();
+	const prepared = prepare(inputOf(profile), OPTIONS, log);
+	const context = { input: prepared.input, options: OPTIONS, log };
+	let draft: Draft = firstDraft(prepared);
 	for (const stage of STAGES) if (stage.name !== 'volume') draft = stage.run(draft, context);
 	return { blocks: draft.blocks, decisions: context.log.list() };
 }
@@ -85,7 +88,15 @@ describe('weekly hard sets per major group', () => {
 		const before = withoutVolume(p);
 		expect(spreadOf(before, 'chest')[0]).toBeLessThan(10);
 		const plan = generate(p);
-		expect(fullWeeks(plan)).toHaveLength(4);
+		expect(plan.blocks[0]!.weeks.map((w) => w.kind)).toEqual([
+			'baseline',
+			'accumulation',
+			'accumulation',
+			'accumulation',
+			'accumulation',
+			'deload'
+		]);
+		expect(fullWeeks(plan)).toHaveLength(5);
 		for (const week of fullWeeks(plan)) {
 			for (const group of MAJOR) {
 				expect(hardSets(week, group), `${group} in ${week.startsOn}`).toBeGreaterThanOrEqual(10);
@@ -96,10 +107,14 @@ describe('weekly hard sets per major group', () => {
 		}
 	});
 
-	it('gives strength 4–10 when a marathon ranks above it', () => {
-		const plan = generate(SCENARIOS.hybrid());
+	it('gives strength 4–10 when it is held at maintenance behind a marathon', () => {
+		// Strength third, behind the marathon and Muay Thai: under half the leader's weight.
+		const p = SCENARIOS.hybrid();
+		const rank: Record<string, number> = { Marathon: 1, 'Muay Thai': 2, 'Stay strong': 3 };
+		p.goals = p.goals.map((g) => ({ ...g, priority: rank[g.title]! }));
+		const plan = generate(p);
 		expect(plan.decisions.find((d) => d.kind === 'split_chosen')?.summary).toContain('maintenance');
-		expect(spreadOf(withoutVolume(SCENARIOS.hybrid()), 'hamstrings')[0]).toBeLessThan(4);
+		expect(spreadOf(withoutVolume(p), 'hamstrings')[0]).toBeLessThan(4);
 		for (const week of fullWeeks(plan)) {
 			for (const group of MAJOR) {
 				expect(hardSets(week, group), `${group} in ${week.startsOn}`).toBeGreaterThanOrEqual(4);
