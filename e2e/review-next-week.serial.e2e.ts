@@ -432,15 +432,16 @@ test.describe('nothing to decide', () => {
 		const seeded = await seedReview(request, 'week-late');
 		if (seeded.review.kind !== 'weekly') throw new Error('A weekly scenario');
 		// The list offers only this week and last until an older review is stored: create two
-		// weeks back through its Create action, as the form posts it without JavaScript.
+		// weeks back through its Create action, as the form's script posts it.
 		const { weekStartsOn } = seeded.review;
 		const created = await request.post(`${LIST}?/create`, {
-			headers: SAME_ORIGIN,
-			form: { weekStartsOn },
-			maxRedirects: 0
+			headers: { ...SAME_ORIGIN, accept: 'application/json', 'x-sveltekit-action': 'true' },
+			form: { weekStartsOn }
 		});
-		expect(created.status()).toBe(303);
-		expect(created.headers().location).toBe(`${LIST}/w-${weekStartsOn}`);
+		expect(await created.json()).toMatchObject({
+			type: 'redirect',
+			location: `${LIST}/w-${weekStartsOn}`
+		});
 		await gotoHydrated(page, `${LIST}/w-${weekStartsOn}`);
 		await expect(card(page)).toHaveAttribute('data-state', 'late');
 		await expect(card(page).getByRole('heading', { level: 3 })).toHaveText(
