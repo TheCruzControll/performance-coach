@@ -38,9 +38,10 @@ let detail: string;
 
 test.beforeAll(async ({ request }) => {
 	seeded = await seedAnalytics(request, 'twelve-weeks');
-	// The latest completed, undeleted workout with live sets of the lift.
+	// The latest completed, undeleted workout with live sets of the lift. History's detail is
+	// addressed by the workout's client id, not its row id.
 	const [row] = await query<{ id: string }>(
-		`select w.id from workouts w
+		`select w.client_id as id from workouts w
 		join set_records s on s.workout_id = w.id and s.deleted_at is null
 		join exercises e on e.id = s.exercise_id
 		where e.key = $1 and w.status = 'completed' and w.deleted_at is null
