@@ -11,8 +11,10 @@ Code in this folder runs only in the browser. It must never import from `src/lib
 | `visits.ts`              | The screens shown in this page, recorded by the root layout for `vitals.ts` (the only RUM code in initial JS)                   |
 | `preferences.svelte.ts`  | Per-device theme and unit preferences (localStorage)                                                                            |
 | `preferences-start.ts`   | The root layout's start for preferences, loaded after mount so only screens that show a unit have them in initial JS            |
+| `theme.ts`               | Applies the theme preference to the page (profile's picker, the preferences start); not in the unit-only screens' initial JS    |
+| `design.ts`              | Per-device design: today's (default) or the Graphite 2004 preview; applied before first paint by `src/app.html`'s head script   |
 | `connectivity.svelte.ts` | `online` state from `navigator.onLine` + events (a hint: failed requests are still handled, see `src/hooks.client.ts`)          |
-| `service-worker.ts`      | Registers the service worker after `load` and hydration, in an idle period (SvelteKit's on-`load` registration is off)          |
+| `service-worker.ts`      | Registers the service worker after `load` and hydration, in an idle period; imported on mount (SvelteKit's registration is off) |
 | `leaving.ts`             | Is the page being left? Loads it cancels on the way out (WebKit reports each) are then not logged or reported as errors         |
 | `profile-form.ts`        | Saves profile sections: validates with the services' zod schemas (loaded on idle, never initial JS), posts JSON to the action   |
 | `section-form.svelte.ts` | One profile section's form state (value, field errors, busy, dirty); `submit()` validates, then saves through `profile-form.ts` |

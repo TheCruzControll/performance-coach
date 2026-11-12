@@ -202,7 +202,7 @@ test.describe('/design → Workout', () => {
 			const panel = await openWorkoutPanel(page);
 			await panel.getByTestId('exercise-history-open').click();
 			const sheet = page.getByTestId('exercise-history-sheet');
-			await expect(sheet.getByTestId('history-best')).toContainText('123.3');
+			await expect(sheet.getByTestId('history-best')).toContainText('Estimated 1RM · 123.5 kg');
 			await expect(sheet.getByTestId('history-session')).toHaveCount(2);
 			await captureScreen(page, test.info(), 'design-workout-history');
 			await page.keyboard.press('Escape');
