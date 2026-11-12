@@ -9,8 +9,9 @@
  *   and nothing is written.
  * - Overrides make an owner revision of the head (revision_of, the review's provenance with
  *   modifiedBy 'owner'), held to the directives' bounds, and the revision is what is applied.
- *   `keep` keeps an exercise the rules would rotate: the revision carries the directives with it
- *   kept, which the preview and the plan then read.
+ *   `keep` keeps an exercise the rules would rotate, and `deload` moves the block's deload to its
+ *   first or last week or skips it: the revision carries the directives with the change, which
+ *   the preview and the plan then read, and its ending and constraints say the same.
  * - The block is planned by applyNextCycle as the program's next version; reject plans nothing.
  * Every query is awaited in turn, so the whole decision runs on one transaction.
  */
@@ -21,8 +22,10 @@ import {
 } from '../../../domain/programming/next-block/dates';
 import {
 	clampOverrides,
+	DELOAD_FIRST,
 	modifiableSubset,
 	type CycleDirectives,
+	type DeloadPlacement,
 	type NextCycleSubset
 } from '../../../domain/programming/review/directives';
 import { getDb } from '../../db';
@@ -45,10 +48,16 @@ export const NO_NEXT_BLOCK = 'This review has no next block to decide';
 /** The reason a kept exercise's directive gives once the owner keeps what the rules rotated. */
 export const OWNER_KEPT = 'Kept: your choice';
 
-/** What the owner may change before the block is planned; `keep` names rotated exercises by id. */
+/**
+ * What the owner may change before the block is planned; `keep` names rotated exercises by id,
+ * and `deload` places the block's deload (none skips it).
+ */
 export type NextCycleOverrides = Partial<Omit<NextCycleSubset, 'fromBlockLineage'>> & {
 	keep?: readonly string[];
+	deload?: DeloadPlacement;
 };
+
+const DELOADS: readonly DeloadPlacement[] = ['first', 'last', 'none'];
 
 export interface DecideNextCycle {
 	/** The fingerprint of the preview the owner saw for `start`. */
@@ -142,13 +151,25 @@ export async function decideNextCycle(
 			const { source, ...evidence } = row.evidence as unknown as CycleEvidence & {
 				source: RulesProvenance;
 			};
-			const { keep = [], ...fields } = input.overrides;
-			const directives = keep.length ? kept(evidence.directives, keep) : evidence.directives;
+			const { keep = [], deload, ...fields } = input.overrides;
+			if (deload !== undefined && !DELOADS.includes(deload))
+				throw new ReviewInputError('overrides.deload', 'Move the deload, or skip it');
+			let directives = keep.length ? kept(evidence.directives, keep) : evidence.directives;
+			if (deload !== undefined) directives = { ...directives, deload };
 			// A keep changes how many exercises the rules' focus says are kept, unless the owner
 			// wrote their own focus; otherwise the head's focus (a folded coach's) stays.
 			const asked = { ...(row.payload as unknown as NextCycleSubset), ...fields };
-			if (fields.focus === undefined && keep.length)
-				asked.focus = modifiableSubset(directives).focus;
+			const own = modifiableSubset(directives);
+			if (fields.focus === undefined && keep.length) asked.focus = own.focus;
+			// A moved or skipped deload: the ending and the first-week constraint say where it is.
+			if (deload !== undefined) {
+				if (fields.ending === undefined) asked.ending = own.ending;
+				if (fields.constraints === undefined)
+					asked.constraints = [
+						...(deload === 'first' ? [DELOAD_FIRST] : []),
+						...asked.constraints.filter((c) => c !== DELOAD_FIRST)
+					].slice(0, 10);
+			}
 			const { subset, clamps } = clampOverrides(asked, directives);
 			const { proposal } = await createProposal(
 				ownerId,

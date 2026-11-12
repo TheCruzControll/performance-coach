@@ -141,7 +141,7 @@
 				data-testid={testId}
 			>
 				{#snippet actions()}
-					<Button variant="secondary" icon="refresh" onclick={onretry}>Retry</Button>
+					<Button variant="secondary" icon="refresh" onclick={onretry}>Try again</Button>
 				{/snippet}
 			</EmptyState>
 		</Surface>
@@ -183,7 +183,7 @@
 						icon="refresh"
 						loading={retrying}
 						onclick={retry}
-						data-testid="inbox-retry">Retry</Button
+						data-testid="inbox-retry">Try again</Button
 					>
 				{/snippet}
 			</EmptyState>
@@ -300,7 +300,8 @@
 		opacity: 0.6;
 	}
 
-	.to-list {
+	/* Beside the list it has nothing to go back to; .back.to-list outranks .back's display. */
+	.back.to-list {
 		display: none;
 	}
 

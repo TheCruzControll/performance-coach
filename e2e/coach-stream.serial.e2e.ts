@@ -319,7 +319,7 @@ test('Stop ends the answer as Stopped and cancels the run', async ({ page, reque
 	await expect(ended(page)).toHaveText('Stopped');
 	await expect(composer(page).getByRole('button', { name: 'Send' })).toBeVisible();
 	await expect.poll(async () => (await lastRun())?.status).toBe('cancelled');
-	await expect(page.getByRole('button', { name: 'Retry' })).toHaveCount(0);
+	await expect(page.getByRole('button', { name: 'Try again' })).toHaveCount(0);
 	await captureScreen(page, testInfo, 'coach-stopped');
 
 	await page.reload();
@@ -363,7 +363,7 @@ test('an answer that fails while it streams ends on its stored partial with Retr
 	await expect(answers).toHaveCount(before + 1, { timeout: 20_000 });
 	await expect(answers.last().getByTestId('answer-ended')).toHaveText('Failed');
 	await expect(page.getByTestId('live-answer')).toHaveCount(0);
-	const retry = page.getByRole('button', { name: 'Retry' });
+	const retry = page.getByRole('button', { name: 'Try again' });
 	await expect(retry).toBeVisible();
 
 	// Retry fails too: its own partial follows the first, and Retry still shows.
@@ -398,7 +398,7 @@ test('leaving mid-answer interrupts it; back on the conversation, Retry asks the
 	await setCoachFault(request, 'none');
 	await openThread(page, seeded.threads.bench!);
 	await expect(ended(page).last()).toHaveText('Interrupted');
-	const retry = page.getByRole('button', { name: 'Retry' });
+	const retry = page.getByRole('button', { name: 'Try again' });
 	await expect(retry).toBeVisible();
 	await expectNoSideScroll(page);
 	await captureScreen(page, testInfo, 'coach-interrupted');

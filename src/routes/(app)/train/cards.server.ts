@@ -7,7 +7,12 @@
 import type { IsoDate } from '#lib/domain/calendar.ts';
 import { WEEKDAY_INFO } from '#lib/domain/profile/catalog.ts';
 import type { DayView, WeekView } from '#lib/domain/training/types.ts';
-import { PHASE_LABEL, type Phase } from '#lib/domain/training/vocabulary.ts';
+import {
+	PHASE_LABEL,
+	sessionTone,
+	type Phase,
+	type SessionType
+} from '#lib/domain/training/vocabulary.ts';
 import type { CurrentProgram } from '#lib/server/services/programs/index.ts';
 import type { IconName } from '#lib/ui/icons/icons.ts';
 import {
@@ -24,7 +29,7 @@ export type NextStep = 'today' | 'profile' | 'this-week' | 'retry' | { week: num
 
 export interface StateCard {
 	/** Its test id, which names the state. */
-	id: 'train-error' | 'train-empty' | 'train-block-complete' | 'train-not-planned';
+	id: 'train-error' | 'train-empty' | 'train-block-complete' | 'train-not-planned' | 'train-bridge';
 	icon: IconName;
 	tone: 'accent' | 'neutral' | 'combat';
 	title: string;
@@ -38,7 +43,7 @@ export const ERROR_CARD: StateCard = {
 	tone: 'combat',
 	title: 'Couldn’t load your program',
 	description: 'Your plan is safe. Check your connection, then try again.',
-	next: { title: 'Retry', subtitle: 'Load your week again', icon: 'refresh', to: 'retry' }
+	next: { title: 'Try again', subtitle: 'Load your week again', icon: 'refresh', to: 'retry' }
 };
 
 /** No program: build one on Today once the training profile is complete, else finish it first. */
@@ -150,5 +155,56 @@ export function notPlannedCard(week: number, phase: Phase | null): StateCard {
 			icon: 'today',
 			to: 'this-week'
 		}
+	};
+}
+
+/** The next block, as a bridge week names it: its first day, name and first program week. */
+export interface NextBlock {
+	startsOn: IsoDate;
+	name: string;
+	week: number;
+}
+
+/**
+ * A bridge week (a late start's unplanned weeks between blocks, M6): a deliberate gap with the
+ * day the next block starts, never seven rest days. Its next step opens that block's first week.
+ */
+export function bridgeCard({ startsOn, name, week }: NextBlock): StateCard {
+	return {
+		id: 'train-bridge',
+		icon: 'clock',
+		tone: 'neutral',
+		title: 'Unplanned week · between blocks',
+		description: `Your next block starts ${shortDate(startsOn)}. Nothing is planned until then: train as you like, and what you log counts as off-plan.`,
+		next: {
+			title: 'See your next block',
+			subtitle: `${name} · Week ${week}`,
+			icon: 'train',
+			to: { week }
+		}
+	};
+}
+
+/** A workout logged in a bridge week, which no plan holds, as a card: 'Easy run', 'Off-plan'. */
+export type OffPlanWorkout = CardView & { id: string };
+
+/** The card of a workout logged in a bridge week: its day and length, and 'Off-plan'. */
+export function offPlanCard(workout: {
+	id: string;
+	title: string;
+	sessionType: SessionType;
+	date: IsoDate;
+	durationSeconds: number | null;
+}): OffPlanWorkout {
+	const minutes = workout.durationSeconds
+		? ` · ${Math.round(workout.durationSeconds / 60)} min`
+		: '';
+	return {
+		id: workout.id,
+		title: workout.title,
+		status: 'completed',
+		statusWords: 'Off-plan',
+		line: `${shortDate(workout.date)}${minutes}`,
+		tone: sessionTone(workout.sessionType)
 	};
 }

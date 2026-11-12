@@ -81,9 +81,11 @@ async function routePanelChunk(
 
 /**
  * With onboarding incomplete, go from Profile to Today with the Setup chunk held: Today shows its
- * skeleton, and the setup card that replaces it moves nothing below it (This week).
+ * skeleton, and the setup card that replaces it moves nothing below it (This week). On a phone the
+ * card fills its skeleton’s room; on the wide layout nothing sits under it in its column, so it
+ * takes its own height there, never more than the room.
  */
-async function setupArrivesInPlace(page: Page) {
+async function setupArrivesInPlace(page: Page, room: 'fills' | 'own' = 'fills') {
 	await resetTrainingProfile();
 	let release = () => {};
 	const held = new Promise<void>((resolve) => (release = resolve));
@@ -120,10 +122,15 @@ async function setupArrivesInPlace(page: Page) {
 		Math.abs(card.y - reserved.y),
 		'the card starts where its skeleton did'
 	).toBeLessThanOrEqual(1);
-	expect(
-		Math.abs(card.height - reserved.height),
-		'the card fills the skeleton’s room'
-	).toBeLessThanOrEqual(1);
+	if (room === 'fills')
+		expect(
+			Math.abs(card.height - reserved.height),
+			'the card fills the skeleton’s room'
+		).toBeLessThanOrEqual(1);
+	else
+		expect(card.height, 'the card fits in the skeleton’s room').toBeLessThanOrEqual(
+			reserved.height + 1
+		);
 	await expectNoSideScroll(page);
 }
 
@@ -287,17 +294,18 @@ test.describe('with the service worker blocked, so page.route sees every chunk',
 		const panel = page.getByTestId('today-panel');
 		await expect(panel).toHaveAttribute('aria-busy', 'false');
 		expect((await panel.boundingBox())!.height).toBeGreaterThanOrEqual(24 * 16 - 1);
-		const retry = failed.getByRole('button', { name: 'Retry' });
+		const retry = failed.getByRole('button', { name: 'Try again' });
 		const target = (await retry.boundingBox())!;
-		expect(target.width, 'Retry is at least 44 px wide').toBeGreaterThanOrEqual(44);
-		expect(target.height, 'Retry is at least 44 px tall').toBeGreaterThanOrEqual(44);
+		expect(target.width, 'Try again is at least 44 px wide').toBeGreaterThanOrEqual(44);
+		expect(target.height, 'Try again is at least 44 px tall').toBeGreaterThanOrEqual(44);
 		expect(await audit(page), 'dark').toEqual([]);
 		await captureScreen(page, testInfo, 'today-panel-error');
 
 		// Where the Build card above the panel sits in the document: Retry may scroll the page
-		// (Chromium reloads it).
+		// (Chromium reloads it). The live card, not its served copy: after the reload the copy
+		// shows first and is replaced once the card mounts, which leaves a box read from it null.
 		const documentTop = async () =>
-			(await page.getByTestId('today-build').boundingBox())!.y +
+			(await page.locator('[data-testid="today-build"]:not([data-served] *)').boundingBox())!.y +
 			(await page.evaluate(() => window.scrollY));
 		const buildTop = await documentTop();
 		letThrough();
@@ -324,7 +332,7 @@ test.describe('with the service worker blocked, so page.route sees every chunk',
 		test('with setup incomplete, the setup card replaces its skeleton in place', async ({
 			page
 		}) => {
-			await setupArrivesInPlace(page);
+			await setupArrivesInPlace(page, 'own');
 		});
 
 		test('the notice sits in the wide column, and Retry has a hover state', async ({
@@ -337,7 +345,7 @@ test.describe('with the service worker blocked, so page.route sees every chunk',
 			const box = (await notice(page).boundingBox())!;
 			expect(box.x).toBeGreaterThanOrEqual(main.x - 1);
 			expect(box.x + box.width).toBeLessThanOrEqual(main.x + main.width + 1);
-			const retry = notice(page).getByRole('button', { name: 'Retry' });
+			const retry = notice(page).getByRole('button', { name: 'Try again' });
 			const background = () => retry.evaluate((el) => getComputedStyle(el).backgroundColor);
 			const resting = await background();
 			await retry.hover();

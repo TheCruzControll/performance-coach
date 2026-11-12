@@ -1,17 +1,29 @@
 import { browser } from '$app/env';
 import { resolve } from '$app/paths';
+import type { Component, Snippet } from 'svelte';
 import type { PageLoad } from './$types';
-import type { WeeklyReviewData } from './load';
-import { importBody, servedBody, SERVED_IN_PLACE } from './review-body';
+import type { CycleReviewData } from './cycle-data';
+import type { ReviewRow, WeeklyReviewData } from './load';
+import { importBody, servedBody, SERVED_IN_PLACE, type BodyProps } from './review-body';
 
 /**
  * Each review kind's view as a string-literal relative import, awaited on the server and in the
  * browser alike (no SSR guard): the server renders the review's figures and verdicts, so it reads
- * without JavaScript and nothing moves at hydration. cycle-review-screen adds CycleReview.
+ * without JavaScript and nothing moves at hydration.
  */
 const VIEWS = {
-	weekly: () => import('./WeeklyReview.svelte')
-} as const satisfies Record<WeeklyReviewData['kind'], () => Promise<unknown>>;
+	weekly: () => import('./WeeklyReview.svelte'),
+	cycle: () => import('./CycleReview.svelte')
+} as const satisfies Record<(WeeklyReviewData | CycleReviewData)['kind'], () => Promise<unknown>>;
+
+/** Each kind's view takes that kind's review, which is the one selected, and its own props. */
+type View = Component<{
+	review: WeeklyReviewData | CycleReviewData;
+	earlierCycles?: Snippet<[ReviewRow[]]>;
+	Body?: Component<BodyProps>;
+	body?: Promise<Component<BodyProps>>;
+	served?: string;
+}>;
 
 /**
  * Whether the next load hydrates the server's HTML: only the first one in a document opened on
@@ -28,15 +40,21 @@ export const load: PageLoad = async ({ data }) => {
 	if (data.failed || !data.selected) {
 		return { ...data, View: null, Body: undefined, body: undefined, served: undefined };
 	}
+	const { selected } = data;
+	const view = async () => (await VIEWS[selected.kind]()).default as unknown as View;
+	// Only the weekly review's body is a chunk of its own (review-body.ts).
+	if (selected.kind !== 'weekly') {
+		return { ...data, View: await view(), Body: undefined, body: undefined, served: undefined };
+	}
 	if (!browser) {
-		const View = (await VIEWS[data.selected.kind]()).default;
-		const served = await servedBody({ review: data.selected });
+		const View = await view();
+		const served = await servedBody({ review: selected });
 		return { ...data, View, Body: undefined, body: undefined, served };
 	}
 	// Started with the view's own import. A failed import is WeeklyReview's to show (Retry).
 	const body = importBody();
 	body.catch(() => {});
-	const View = (await VIEWS[data.selected.kind]()).default;
+	const View = await view();
 	if (kept) return { ...data, View, Body: undefined, body, served: SERVED_IN_PLACE };
 	return { ...data, View, Body: await body, body: undefined, served: undefined };
 };
