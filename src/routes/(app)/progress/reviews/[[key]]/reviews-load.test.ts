@@ -650,6 +650,7 @@ describe('cycle reviews', () => {
 		stale: false,
 		laterChanges: 0,
 		writeUp: { state: 'none' },
+		previews: [],
 		progression: null
 	} as unknown as CycleReviewView;
 
