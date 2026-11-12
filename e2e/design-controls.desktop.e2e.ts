@@ -4,6 +4,7 @@
  * design keeps its own hover, and a sheet is still the centred window, on the spring.
  */
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { layoutWidth } from './desktop';
 import { gotoHydrated } from './support';
 
 const DESIGN_KEY = 'pc:design:v1';
@@ -77,9 +78,9 @@ test('a Graphite sheet is the centred window, on the spring', async ({ page }) =
 	});
 	expect(style.corner).toBe('10px');
 	expect(style.easing).toMatch(/^linear\(/);
+	// Centred in the layout area: the window less the scrollbar gutter.
 	const box = (await sheet.boundingBox())!;
-	const viewport = page.viewportSize()!;
-	expect(Math.abs(box.x + box.width / 2 - viewport.width / 2)).toBeLessThanOrEqual(2);
+	expect(Math.abs(box.x + box.width / 2 - (await layoutWidth(page)) / 2)).toBeLessThanOrEqual(2);
 	await page.keyboard.press('Escape');
 	await expect(dialog).toBeHidden();
 });
