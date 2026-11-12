@@ -13,8 +13,10 @@ import type { FieldErrors } from '#lib/domain/validation.ts';
 
 /**
  * When a change that keeps failing is parked as 'Needs attention', with Try again and Discard: at
- * 50 counted failures, or 24 hours after the first of them, less any time spent offline. The
- * numbers are the owner's to change (the M4 plan's open question 26).
+ * 50 counted failures, or 24 hours after the first of them, less any time spent offline or unable
+ * to reach the server. Only this server's answers count (sync.ts): a timeout, a network error or a
+ * page that is not its JSON never does. The numbers are the owner's to change (the M4 plan's open
+ * question 26).
  */
 export const STUCK_AFTER = { failures: 50, ms: 24 * 60 * 60 * 1000 };
 
@@ -46,9 +48,9 @@ export interface OutboxEntry {
 	/** The outbox's autoIncrement key: the order changes are sent in. */
 	seq: number;
 	envelope: Mutation;
-	/** Counted failures: a 'retry' or 'deferred' answer, or a 5xx or timeout of a batch it heads. */
+	/** Counted failures: a 'retry' or 'deferred' answer, or this server refusing a batch it heads. */
 	attempts: number;
-	/** When the first counted failure happened, moved on by any time spent offline since. */
+	/** When the first counted failure happened, moved on by any time offline or unreachable since. */
 	failingSince: number | null;
 	/** Not sent before this time: its backoff after a 'retry' or 'deferred' answer. */
 	nextAt: number | null;
@@ -65,8 +67,14 @@ const isWaiting = (entry: OutboxEntry, now: number) => entry.nextAt !== null && 
 
 const encoder = new TextEncoder();
 const bytesOf = (value: unknown) => encoder.encode(JSON.stringify(value)).length;
-/** The request body around the mutations: `{"v":1,"mutations":[…]}`, in UTF-8 bytes. */
-const EMPTY_BODY = bytesOf({ v: 1, mutations: [] });
+/**
+ * The request body around the mutations, in UTF-8 bytes: `{"v":1,"mutations":[…]}` with the largest
+ * `discarded` and `held` lists the server takes (25 ids each), so neither can push it over a cap.
+ */
+const MOST_IDS = Array<string>(SYNC_LIMITS.maxMutations).fill(
+	'00000000-0000-0000-0000-000000000000'
+);
+const EMPTY_BODY = bytesOf({ v: 1, mutations: [], discarded: MOST_IDS, held: MOST_IDS });
 
 export interface Batch {
 	entries: OutboxEntry[];
@@ -166,7 +174,7 @@ export function applyResults(
 }
 
 /**
- * A 5xx or a timeout of a batch this entry heads, in words ('The server answered 500'): counted
+ * This server refusing a batch this entry heads, in words ('The server answered 500'): counted
  * against it alone. Its wait is the engine's own backoff, so nextAt is unchanged.
  */
 export function countFailure(
@@ -179,8 +187,9 @@ export function countFailure(
 }
 
 /**
- * Back online after being offline since `offlineSince`: every wait ends at once, and the time spent
- * offline is taken off each failing entry's 24 hours, since an offline device counts no failure.
+ * Back online after being offline since `offlineSince`, or the server answering again after it
+ * could not be reached since then: every wait ends at once, and that time is taken off each failing
+ * entry's 24 hours, since a device that cannot reach the server counts no failure.
  */
 export function backOnline(
 	entries: readonly OutboxEntry[],
@@ -249,6 +258,11 @@ export type SyncSession = 'active' | 'signed-out' | 'passkey-required';
 
 export interface StatusContext {
 	online: boolean;
+	/**
+	 * Online, but the server has not answered since a request went unanswered (a timeout, a network
+	 * error, a page that is not its JSON): dead gym Wi-Fi, a captive portal.
+	 */
+	unreachable: boolean;
 	/** A sync request is on its way. */
 	inFlight: boolean;
 	session: SyncSession;
@@ -258,13 +272,14 @@ export interface StatusContext {
 }
 
 /**
- * Saved · Saving… · Offline · N pending · Retrying in n s · N need attention · Sign in to sync · N
- * waiting · Finish adding your passkey. The words are the screens'.
+ * Saved · Saving… · Offline · N pending · Can’t connect · N waiting · Retrying in n s · N need
+ * attention · Sign in to sync · N waiting · Finish adding your passkey. The words are the screens'.
  */
 export type OutboxStatus =
 	| { state: 'synced' }
 	| { state: 'saving'; pending: number }
 	| { state: 'offline'; pending: number }
+	| { state: 'unreachable'; waiting: number }
 	| { state: 'retrying'; seconds: number; pending: number }
 	| { state: 'attention'; count: number }
 	| { state: 'signed-out'; waiting: number }
@@ -272,11 +287,11 @@ export type OutboxStatus =
 
 /**
  * One status, the first that holds: the session, changes that need the owner, offline, nothing
- * pending, a request on its way, the engine's wait, something ready to send, and otherwise the
- * soonest entry's wait.
+ * pending, the server out of reach (a retry on its way included, until it answers), a request on
+ * its way, the engine's wait, something ready to send, and otherwise the soonest entry's wait.
  */
 export function syncStatus(entries: readonly OutboxEntry[], context: StatusContext): OutboxStatus {
-	const { online, inFlight, session, now, retryAt } = context;
+	const { online, unreachable, inFlight, session, now, retryAt } = context;
 	const pending = entries.length;
 	if (session === 'signed-out') return { state: 'signed-out', waiting: pending };
 	if (session === 'passkey-required') return { state: 'passkey', waiting: pending };
@@ -284,6 +299,7 @@ export function syncStatus(entries: readonly OutboxEntry[], context: StatusConte
 	if (parked > 0) return { state: 'attention', count: parked };
 	if (!online) return { state: 'offline', pending };
 	if (pending === 0) return { state: 'synced' };
+	if (unreachable) return { state: 'unreachable', waiting: pending };
 	if (inFlight) return { state: 'saving', pending };
 	const retrying = (at: number) => ({
 		state: 'retrying' as const,

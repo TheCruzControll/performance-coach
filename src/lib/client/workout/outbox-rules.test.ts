@@ -171,6 +171,15 @@ describe('nextBatch', () => {
 		expect(sendable(entries)).toEqual([1, 2]);
 	});
 
+	it('leaves room in its byte cap for the largest discarded and held lists', () => {
+		const ids = Array.from({ length: SYNC_LIMITS.maxMutations }, () => crypto.randomUUID());
+		const fill = BATCH_CAPS.flush.maxBytes - bodyBytes(outbox(update(''))) - 10;
+		const batch = nextBatch(outbox(update('x'.repeat(fill)), log(W2)), T0, BATCH_CAPS.flush);
+		const mutations = batch.entries.map((e) => e.envelope);
+		const body = JSON.stringify({ v: 1, mutations, discarded: ids, held: ids });
+		expect(new TextEncoder().encode(body).length).toBeLessThanOrEqual(BATCH_CAPS.flush.maxBytes);
+	});
+
 	it('leaves 16 KB of the 64 KB keepalive quota for RUM', () => {
 		expect(SYNC_LIMITS.maxBytes - BATCH_CAPS.keepalive.maxBytes).toBe(16 * 1024);
 	});
@@ -354,7 +363,7 @@ describe('applyResults', () => {
 	});
 });
 
-describe('countFailure: a 5xx or a timeout of a batch the entry heads', () => {
+describe('countFailure: this server refusing a batch the entry heads (its JSON 5xx)', () => {
 	it('counts only that entry, parks it at the cap with its last error, and leaves its wait to the engine', () => {
 		let entries = outbox(log(), log());
 		for (let i = 0; i < STUCK_AFTER.failures - 1; i++) {
@@ -364,11 +373,11 @@ describe('countFailure: a 5xx or a timeout of a batch the entry heads', () => {
 		expect(entries[0]?.parked).toBeUndefined();
 		expect(entries[1]).toEqual(queued(2, entries[1]!.envelope));
 
-		entries = countFailure(entries, 1, 'No answer in 15 s', T0 + HOUR);
+		entries = countFailure(entries, 1, 'The server answered 503', T0 + HOUR);
 		expect(entries[0]?.parked).toEqual({
 			reason: 'stuck',
 			errors: {},
-			message: 'No answer in 15 s'
+			message: 'The server answered 503'
 		});
 	});
 
@@ -468,7 +477,17 @@ describe('syncStatus', () => {
 		return SESSIONS.flatMap((session) =>
 			BOOLS.flatMap((online) =>
 				BOOLS.flatMap((inFlight) =>
-					RETRY_AT.map((retryAt) => ({ session, online, inFlight, retryAt, now: T0, ...fixed }))
+					BOOLS.flatMap((unreachable) =>
+						RETRY_AT.map((retryAt) => ({
+							session,
+							online,
+							inFlight,
+							unreachable,
+							retryAt,
+							now: T0,
+							...fixed
+						}))
+					)
 				)
 			)
 		);
@@ -512,17 +531,35 @@ describe('syncStatus', () => {
 		each(['empty'], { session: 'active', online: true }, () => ({ state: 'synced' }));
 	});
 
+	it("online but this server can't be reached (lie-fi): can't connect, with what is waiting, until it answers", () => {
+		each(
+			['ready', 'waiting', 'held'],
+			{ session: 'active', online: true, unreachable: true },
+			() => ({
+				state: 'unreachable',
+				waiting: 2
+			})
+		);
+	});
+
 	it('online with a request on its way: saving', () => {
-		each(['ready', 'waiting', 'held'], { session: 'active', online: true, inFlight: true }, () => ({
-			state: 'saving',
-			pending: 2
-		}));
+		each(
+			['ready', 'waiting', 'held'],
+			{ session: 'active', online: true, unreachable: false, inFlight: true },
+			() => ({ state: 'saving', pending: 2 })
+		);
 	});
 
 	it('while the engine waits after a failed batch: retrying in its seconds', () => {
 		each(
 			['ready', 'waiting', 'held'],
-			{ session: 'active', online: true, inFlight: false, retryAt: T0 + 10 * SECOND },
+			{
+				session: 'active',
+				online: true,
+				unreachable: false,
+				inFlight: false,
+				retryAt: T0 + 10 * SECOND
+			},
 			() => ({ state: 'retrying', seconds: 10, pending: 2 })
 		);
 	});
@@ -530,7 +567,7 @@ describe('syncStatus', () => {
 	it('something ready to send: saving', () => {
 		each(
 			['ready', 'waiting'],
-			{ session: 'active', online: true, inFlight: false, retryAt: null },
+			{ session: 'active', online: true, unreachable: false, inFlight: false, retryAt: null },
 			() => ({
 				state: 'saving',
 				pending: 2
@@ -539,11 +576,11 @@ describe('syncStatus', () => {
 	});
 
 	it('everything waiting, or held behind a wait: retrying in its seconds, rounded up', () => {
-		each(['held'], { session: 'active', online: true, inFlight: false, retryAt: null }, () => ({
-			state: 'retrying',
-			seconds: 2,
-			pending: 2
-		}));
+		each(
+			['held'],
+			{ session: 'active', online: true, unreachable: false, inFlight: false, retryAt: null },
+			() => ({ state: 'retrying', seconds: 2, pending: 2 })
+		);
 	});
 });
 
@@ -567,6 +604,7 @@ describe('purity', () => {
 			session: 'active',
 			online: true,
 			inFlight: false,
+			unreachable: false,
 			retryAt: null,
 			now: T0
 		});

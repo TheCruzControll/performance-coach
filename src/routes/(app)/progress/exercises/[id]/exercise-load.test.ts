@@ -165,13 +165,14 @@ describe('exerciseDetail', () => {
 		expect(chart.data.unit).toBe('lb');
 		expect(chart.data.slots.map((s) => s.tick)).toEqual(['12 Oct', '19 Oct', '26 Oct', '2 Nov']);
 		expect(chart.data.slots.at(-1)).toMatchObject({ inProgress: true });
-		expect(estimated!.points[0]).toEqual({ value: 220.5, text: '220.5', kind: 'estimated' });
+		// An estimate to the pound: 100 kg is 220.46 lb, 110 kg is 242.5 lb.
+		expect(estimated!.points[0]).toEqual({ value: 220, text: '220', kind: 'estimated' });
 		expect(estimated!.points[1]).toBeNull();
-		expect(estimated!.points[2]!.value).toBeCloseTo(110 * LB, 1);
+		expect(estimated!.points[2]!.value).toBe(243);
 		expect(chart.summary).toBe('Estimated 1RM went from 220.5 lb to 242.5 lb.');
 		expect(chart.plotted).toBe(true);
 		// The table twin carries every week, the estimate named as one.
-		expect(chart.table.rows[0]!.values[0]).toBe('220.5, estimated');
+		expect(chart.table.rows[0]!.values[0]).toBe('220, estimated');
 	});
 
 	it('marks a dated profile max in its week as measured, apart from the estimates', () => {
@@ -213,6 +214,25 @@ describe('exerciseDetail', () => {
 		expect(detail.waiting).toBeNull();
 	});
 
+	it('names the earlier period only when the tile has a change against it', () => {
+		const a = analytics();
+		expect(exerciseDetail(a).context.comparison).toBe('Compared with the 12 weeks before');
+		const none = { ...a.e1rm.comparison, previous: null, delta: null, change: null };
+		const fresh = exerciseDetail({ ...a, e1rm: { ...a.e1rm, comparison: none } });
+		expect(fresh.e1rm.delta).toBeNull();
+		expect(fresh.context.comparison).toBeNull();
+	});
+
+	it('says the e1RM held when it ended where it began, beside the headline best', () => {
+		const a = analytics();
+		const series = a.e1rm.series.map((p, i) =>
+			i === 2 ? { ...p, value: 100, text: '220.5 lb' } : p
+		);
+		const held = { ...a.e1rm, series, value: { text: '231.5 lb', value: 105 } };
+		const { chart } = exerciseDetail({ ...a, e1rm: held });
+		expect(chart.summary).toBe('Estimated 1RM held at 220.5 lb, with a best of 231.5 lb.');
+	});
+
 	it('lists rep maxes with their date and the record beaten, PRs newest first', () => {
 		const detail = exerciseDetail(analytics());
 		expect(detail.repMaxes).toEqual([
@@ -236,7 +256,7 @@ describe('exerciseDetail', () => {
 			id: 'w3',
 			title: 'Strength A',
 			on: 'Mon 2 Nov',
-			summary: '2 sets · best 209.4 lb × 6'
+			summary: '2 sets · best 209.4\u00a0lb × 6'
 		});
 	});
 

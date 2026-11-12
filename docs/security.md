@@ -22,6 +22,13 @@ Out of scope (accepted): compromise of the owner's unlocked device or password m
 (iCloud Keychain), of Vercel/Neon/GitHub accounts, or of the platform's TLS. A malicious browser
 extension on the owner's browser can act as the owner.
 
+- **A session lost elsewhere.** When the device's next sync request gets a 401 (signed out
+  elsewhere, revoked from Security, or expired), it deletes the server's copies it holds (saved
+  kits, canonical rows, the cached library, the owner's units and finished workouts). It keeps
+  only the unsynced outbox entries and the unfinished workout's device state until a sign-in
+  ([ADR 0012](adr/0012-offline-workout-sync.md), "Losing the session"). The workout pages then
+  show no workout details, only how many changes wait.
+
 ## Accounts and credentials
 
 - **One owner.** `owners` has a `singleton` column that is always true and unique: a second owner
@@ -158,16 +165,31 @@ assertion with one of the owner's existing passkeys on this session within the l
 
 ### Sign-out
 
+Unsynced workout changes are never deleted without the owner's choice (ADR 0012, 'Losing the
+session'). Before signing out, the screen flushes the workout outbox for at most 5 s
+(`src/lib/client/workout/shutdown.ts`) and, if changes are still unsynced, asks before signing
+out deletes them; "Stay signed in" keeps every change.
+
 `POST /api/auth/signout` revokes the session, deletes the cookie and sends
 `Clear-Site-Data: "cache"` (drops HTTP-cached and back/forward-cached pages). The browser then
-deletes every Cache Storage entry except the current versioned app shell (`pc-shell-<version>`:
-the public build and the offline screen), every IndexedDB database and session storage
-(`src/lib/client/signout.ts`), and lands on the sign-in screen. **Device preferences (theme,
-units in localStorage) are kept on purpose**: they are not account data. `"storage"` and
-`"cookies"` are deliberately not sent: `"storage"` would also wipe those preferences and
-unregister the offline app shell, and `"cookies"` applies to the whole registrable domain
-(`nikocruz.com`), not just this app. If the server cannot be reached the client says so and
-changes nothing (the HttpOnly cookie can only be deleted by the server).
+tells its other tabs to close the workout store, deletes every Cache Storage entry except the
+current versioned app shell (`pc-shell-<version>`: the public build and the offline screen),
+every IndexedDB database and session storage (`src/lib/client/signout.ts`), leaves a one-shot
+marker in session storage, and lands on the sign-in screen, which consumes the marker and clears
+again. A signed-out URL without the marker (typed, from history, or a sign-out without
+JavaScript) keeps only unsynced workout changes until the owner deletes them or signs in: what
+the server already holds is deleted, as after a 401, and the sign-in screen offers to delete the
+rest. It also deletes /workout's prepainted card from localStorage (`pc:workout-prepaint:v1`:
+the current exercise's name, prescription and sets, the only account data kept there). A lost
+session (a 401's purge) blocks that card until the server answers as the owner again. **Device
+preferences (theme, units in localStorage) are kept on purpose**: they are not account data. The
+workout settings (`pc:workout:v1`: rest per exercise type, auto-start rest, sound, vibration,
+keep-awake), the plate inventory (`pc:plates:v1`, one per unit) and Train's rest timer
+(`pc:rest:v1`) are device preferences too, and sign-out keeps them. `"storage"` and `"cookies"`
+are deliberately not sent: `"storage"` would also wipe those preferences and unregister the
+offline app shell, and `"cookies"` applies to the whole registrable domain (`nikocruz.com`), not
+just this app. If the server cannot be reached the client says so and changes nothing (the
+HttpOnly cookie can only be deleted by the server).
 
 ## Deny by default
 
@@ -175,17 +197,24 @@ changes nothing (the HttpOnly cookie can only be deleted by the server).
 access is declared in `routes.ts` (`ROUTE_ACCESS`, typed against SvelteKit's generated `RouteId`
 union, so an unclassified route fails `pnpm check`); an unknown route is `owner`.
 
-| Access        | Routes                                                                                                                                                                                                                                       |
-| ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `public`      | `/` (sign-in), `/setup`, `/recover`, `/api/auth/signin/{options,verify}`, `/api/auth/setup/{options,verify}`, `/api/auth/signout`, `/api/health`, `/offline` (prerendered), `/api/test-support/session` (404 unless test routes are enabled) |
-| `any-session` | `/recover/passkey`, `/api/auth/passkeys/{options,verify}`                                                                                                                                                                                    |
-| `owner`       | everything else, including `/api/auth/reauth/{options,verify}`, `/api/vitals` and `/api/client-errors`                                                                                                                                       |
+| Access        | Routes                                                                                                                                                                                                                                                                                                                |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `public`      | `/` (sign-in), `/setup`, `/recover`, `/api/auth/signin/{options,verify}`, `/api/auth/setup/{options,verify}`, `/api/auth/signout`, `/api/health`, `/offline` (prerendered), `/workout`, `/workout/run`, `/workout/session` (prerendered, data-free), `/api/test-support/session` (404 unless test routes are enabled) |
+| `any-session` | `/recover/passkey`, `/api/auth/passkeys/{options,verify}`                                                                                                                                                                                                                                                             |
+| `owner`       | everything else, including `/api/auth/reauth/{options,verify}`, `/api/vitals` and `/api/client-errors`                                                                                                                                                                                                                |
 
 Without a session, pages answer `303` to `/?next=<path>` (a JSON redirect for client-side data
 requests and enhanced form actions) and `/api/*` answers `401 {"error":"unauthenticated"}`. A
 stale or forged cookie is cleared. Static and prerendered files (immutable build assets, icons,
-manifest, robots.txt, the service worker, `/offline`) never reach the hooks and hold no personal
-data. Proven by `src/lib/server/auth/routes.test.ts` and `e2e/access.e2e.ts`, which walk
+manifest, robots.txt, the service worker, `/offline` and the three workout pages) never reach the
+hooks and hold no personal data. A workout page's data comes only from IndexedDB, from
+`/workout`'s prepainted card in localStorage (`pc:workout-prepaint:v1`, #410) and from owner-only
+endpoints; sign-out deletes the first two. Prerendered pages still get the dynamic responses'
+security headers: `vercel.json` sends them `STATIC_PAGE_HEADERS`
+(`src/lib/server/security-headers.ts`), which adds `frame-ancestors 'none'` because their own CSP
+is a `<meta>` tag that cannot carry it. `scripts/vercel-headers.test.ts` keeps `vercel.json`
+equal to that constant for every prerendered page, and the post-deploy smoke check asserts it in
+production. Proven by `src/lib/server/auth/routes.test.ts` and `e2e/access.e2e.ts`, which walk
 `src/routes` so new routes are covered automatically.
 
 ## CSRF
@@ -198,6 +227,11 @@ Three independent layers:
    Browsers send `Origin` on all such requests; a missing one is refused.
 2. **SvelteKit's form check** (`csrf.checkOrigin`, on by default) for form actions.
 3. **`SameSite=Lax`** on the session cookie: cross-site subrequests and POSTs carry no session.
+
+`POST /api/workouts/sync` is owner-only and Origin-checked by the guard, takes JSON capped at
+64 KB (413 above), and validates every mutation on its own before it touches the database
+(`src/lib/server/services/workouts/sync.ts`). A recovery session's request answers 403 and the
+device keeps everything.
 
 ## Rate limits (Postgres, no Redis)
 
@@ -272,6 +306,12 @@ docs/architecture.md "Training model (M3)"):
 - **Deleting the owner is refused**: its cascade reaches guarded tables. `pnpm auth:reset-owner`
   keeps the owner row and all training data, so a reset never needs a delete. Erasing training
   history is a deliberate maintenance step outside the app.
+- **Pain reports** (`pain_reports`, M4) are health data: where it hurt, severity, what the owner
+  chose and a free-text note (1 to 500 characters). Owner-scoped, audited in `training_audit`,
+  never hard-deleted, and never stored as an exercise preference.
+- **The sync ledger** (`sync_mutations`, M4) holds mutation ids, types, row ids and times, no
+  training values. It is never pruned in M4, so an outbox replayed months later is still applied
+  at most once; its rows refuse UPDATE and DELETE like the history tables.
 
 ## Test-only routes
 
@@ -329,7 +369,7 @@ access; denial of service by exhausting a client's rate limit from the same IP i
 | V4.1/4.2 Access control                      | Met     | Deny by default with a typed, tested route map; single owner, no IDOR surface.                       |
 | V4.2.2 CSRF                                  | Met     | Origin check on all unsafe methods + SvelteKit form check + SameSite (e2e).                          |
 | V7 Logging                                   | Met     | Audit log for auth events; no secrets or query strings in app logs.                                  |
-| V8.3 Sensitive private data                  | Partial | Pages `private, no-cache`; sign-out clears device data. Server-side encryption at rest is Neon's.    |
+| V8.3 Sensitive private data                  | Partial | Pages `private, no-cache`; sign-out clears device data, unsynced sets if agreed. Neon encrypts DB.   |
 | V13 API                                      | Met     | JSON endpoints validate input (zod), cap body size, answer `no-store`.                               |
 | V14.4 HTTP security headers                  | Met     | CSP, HSTS, nosniff, frame-ancestors none, referrer policy (e2e).                                     |
 
@@ -379,7 +419,7 @@ deliberate, documented choice. **N/A**: the mechanism does not exist here.
 | 3.1.1       | Session tokens never in URLs                                                | Met       | Cookie only. The setup token is in the setup link by design (one use, useless afterwards); the app logs paths without query strings, Vercel's request log keeps it.                                                                                                        |
 | 3.2.1       | A new token on authentication                                               | Met       | Rotation on passkey sign-in, setup, recovery and the recovery-to-full upgrade; the presented token is revoked (`sessions.test.ts`, `signin.test.ts`).                                                                                                                      |
 | 3.2.2–3.2.3 | At least 64 bits; stored only in secure cookies                             | Met       | 256-bit CSPRNG tokens in an HttpOnly cookie; only their SHA-256 in Postgres; nothing in local or session storage.                                                                                                                                                          |
-| 3.3.1       | Logout and expiry invalidate the session                                    | Met       | Revocation is checked on every request; sign-out deletes the cookie, sends `Clear-Site-Data: "cache"` and clears the device's account data (e2e on Chromium, `auth.e2e.ts`, and WebKit, `signout.e2e.ts`).                                                                 |
+| 3.3.1       | Logout and expiry invalidate the session                                    | Met       | Revocation is checked on every request; sign-out deletes the cookie, sends `Clear-Site-Data: "cache"` and clears the device's account data, unsynced workout changes only once the owner agrees (e2e on Chromium, `auth.e2e.ts`, and WebKit, `signout.e2e.ts`).            |
 | 3.3.2       | Re-authentication after 12 hours, or 30 minutes idle (level 2)              | Deviation | 30 days idle, 90 days absolute (ADR 0006: level 1's value). The app lives on the owner's own phone behind Face ID; compensating controls: step-up within 5 minutes for every credential or device change, sessions listed and revocable, revocation effective immediately. |
 | 3.3.3       | After a credential change or recovery, an option to end every other session | Met       | A recovery lands on Security already step-up fresh; removing the lost passkey ends its sessions; Sign out everywhere else.                                                                                                                                                 |
 | 3.3.4       | Active sessions visible; signing them out needs the credential again        | Met       | Session list; signing out one or all others needs step-up (`reauth.test.ts`, `reauth.e2e.ts`).                                                                                                                                                                             |

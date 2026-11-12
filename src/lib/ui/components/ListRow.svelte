@@ -64,11 +64,13 @@
 {/snippet}
 
 {#if disabled}
-	<div class="row" aria-disabled="true" {...rest}>{@render body()}</div>
+	<div class="row" data-ui="list-row" aria-disabled="true" {...rest}>{@render body()}</div>
 {:else if href}
-	<a class="row interactive" {href} {...rest}>{@render body()}</a>
+	<a class="row interactive" data-ui="list-row" {href} {...rest}>{@render body()}</a>
 {:else}
-	<button type="button" class="row interactive" {onclick} {...rest}>{@render body()}</button>
+	<button type="button" class="row interactive" data-ui="list-row" {onclick} {...rest}
+		>{@render body()}</button
+	>
 {/if}
 
 <style>

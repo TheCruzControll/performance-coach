@@ -1,9 +1,11 @@
 <!--
   @component
   One metric with its context at a glance (M6): its label and value with its unit, an Estimated
-  or Measured badge, the change against the named previous period (an icon and a word, toned by
-  direction × good, neutral when the trend calls it normal variation), the week so far against
-  the same days of last week, a static sparkline and the trend verdict with its window.
+  or Measured badge, the change against the named previous period (an icon that follows better
+  and a word, toned by direction × good, neutral when the trend calls it normal variation) or,
+  with no earlier period, the trend within its own weeks read from the same verdict, the week so
+  far against the same days of last week, a static sparkline and the trend verdict with its
+  window.
 
   - The server sends every number formatted and the sparkline computed (sparkline.ts), so a tile
     costs no chart code; the polyline is stretched over its box with a non-scaling 2 px stroke.
@@ -24,6 +26,7 @@
 		NO_COMPARISON,
 		soFarWords,
 		tileSentence,
+		withinWords,
 		type Tile
 	} from './words.ts';
 
@@ -36,6 +39,8 @@
 	let { tile, as = 'div', ...rest }: Props = $props();
 
 	const empty = $derived(tile.value === null);
+	/** With no earlier period: the trend within the tile's own weeks, from its verdict. */
+	const within = $derived(withinWords(tile.verdict, tile.window));
 	const shape = $derived(
 		tile.kind === 'estimated' ? 'ring' : tile.kind === 'measured' ? 'diamond' : 'dot'
 	);
@@ -85,6 +90,8 @@
 					{tile.delta.against}</span
 				>
 			</p>
+		{:else if within}
+			<p class="line" data-testid="delta">{within}</p>
 		{:else}
 			<p class="line quiet" data-testid="delta">{NO_COMPARISON}</p>
 		{/if}
@@ -98,10 +105,10 @@
 </svelte:element>
 
 <style>
+	/* The padding is the face's, so a narrow tile can step it down (its container query below). */
 	.tile {
 		container-type: inline-size;
 		min-width: 0;
-		padding: var(--space-4);
 		border-radius: var(--radius-lg);
 		border: 1px solid var(--color-border);
 		background: var(--color-surface-1);
@@ -112,18 +119,22 @@
 		display: grid;
 		align-content: start;
 		gap: var(--space-2);
+		padding: var(--space-4);
 	}
 
+	/* The label keeps its words: when it and the badge do not fit one line, the badge wraps under it. */
 	.head {
 		display: flex;
+		flex-wrap: wrap;
 		align-items: center;
 		justify-content: space-between;
-		gap: var(--space-2);
+		gap: var(--space-1) var(--space-2);
 		min-width: 0;
 	}
 
 	.label {
 		min-width: 0;
+		overflow-wrap: break-word;
 		font-size: var(--text-xs);
 		font-weight: var(--weight-medium);
 		color: var(--color-text-secondary);
@@ -250,9 +261,23 @@
 	}
 
 	/* A narrow tile (three to a row, or 320 px): the sparkline takes its own row under the value. */
-	@container (width < 12rem) {
+	@container (width < 14rem) {
 		.main {
 			grid-template-columns: minmax(0, 1fr);
+		}
+	}
+
+	/*
+	 * Two to a row on a phone: the padding and the value step down a size, so '71 sessions' stays
+	 * inside the tile and 'Real improvement' on one line.
+	 */
+	@container (width < 12rem) {
+		.face {
+			padding: var(--space-3);
+		}
+
+		.value {
+			font-size: var(--text-xl);
 		}
 	}
 </style>

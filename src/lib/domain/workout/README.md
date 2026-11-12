@@ -5,36 +5,41 @@ logging, the optimistic UI) and on the server (the sync endpoint), so the screen
 never disagree. The contract is wire format v1, decided in the offline workout sync ADR
 (`docs/adr/`).
 
-This list is written once, for every M4 domain module. Later slices do not edit it; docs-m4
-checks it against the merged code.
+Checked against the merged M4 code on 2026-11-10 (docs-m4).
 
 ## Where to import from
 
-- `index.ts`: the contract (`types.ts`, `mutations.ts`, `protocol.ts`). It never loads a
-  validator, so the workout pages may import it. Not re-exported from `src/lib/domain/index.ts`.
+- `index.ts`: the contract (`types.ts`, `mutations.ts`, `order.ts`, `protocol.ts`). It never
+  loads a validator, so the workout pages may import it. Not re-exported from
+  `src/lib/domain/index.ts`.
 - By path: every other module below; `schemas.ts` (zod) on servers always and in browsers only
   on demand (the Fix flow).
 - Test-only: `tests/fixtures/workout-day.ts`, the start kits of M3's 'workout-day' program.
 
 ## Modules
 
-| Module                       | What it holds                                                                                                                                                       | Slice                                                   |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
-| `types.ts`                   | `StartKit` (strength, run, other), `KitExercise`, `KitSet`, `LoggedSet`, `DeviceState` with its rest and stopwatch, `WorkoutView`                                   | workout-contract                                        |
-| `mutations.ts`               | The 16 `MUTATION_TYPES` and their `MUTATION_RULES` (kinds, identity, entity), `Envelope`, `createMutation`, `entityKey`, `dependsOn`, `LocalAction`, `PAIN_ACTIONS` | workout-contract                                        |
-| `protocol.ts`                | `SyncRequest`, `SyncResult` with `SYNC_STATUSES` and `SYNC_CODE_LABEL`, `SYNC_LIMITS`, `CanonicalWorkout` keyed by client ids                                       | workout-contract                                        |
-| `timers.ts`                  | The rest timer and the stopwatch on absolute timestamps; `restFor(set, exercise, defaults)`, `restClassOf(exercise, set)`                                           | workout-timers                                          |
-| `project.ts`, `selectors.ts` | `project()`, `applyMutation()`, `applyLocal()` over a reducer table; `setsFor`, `currentExercise`, `nextExercise`, `previousFor`, progress, planned vs logged       | workout-projection                                      |
-| `reducers/`                  | `core`, `sets`, `device`, `structure`, `run`, `other`; `tables.ts`: `strengthTable`, `otherTable`; `run.ts`: `runTable`; each typed over its kind's types           | workout-projection; substitution-rules; run-other-rules |
-| `logging.ts`                 | `setFields(measure, loadType)`, `checkSet(set, exercise)` at dotted paths, `e1rmApplies`, `volumeOf`, `totals`, `prKinds`                                           | logging-rules                                           |
-| `prefill.ts`                 | `nextSet(slot, logged, kit, unit)`, `defaultMissedReps`, `RPE_CHIPS`                                                                                                | set-prefill                                             |
-| `flow.ts`                    | `groups(kit)` with A1/A2 labels, `afterSet(view, position)`, `upNext(view)`                                                                                         | workout-flow                                            |
-| `run.ts`, `other.ts`         | `expandSegments`, `segmentPace`, `runTotals`; `metricInput`                                                                                                         | run-other-rules                                         |
-| `summary.ts`                 | The finish summary: volume, estimated e1RM and PRs, duration and session load                                                                                       | workout-summary                                         |
-| `substitution.ts`, `copy.ts` | `QUICK_ACTIONS`, `effectsOf`, `rankFor`, `painChoices`; every quick-action, dislike and pain string                                                                 | substitution-rules                                      |
-| `describe.ts`                | Each mutation in words, 'Set 3 of Back squat · 100 kg × 5'                                                                                                          | sync-status                                             |
-| `adhoc.ts`                   | `adhocKit(kind, units, now)`                                                                                                                                        | workout-start                                           |
-| `schemas.ts`                 | zod/mini: `envelopeSchema`, a payload schema per type, `syncRequestSchema`, `DB_CHECKED_BAD_VALUES`, `SCHEMA_ONLY_BAD_VALUES`                                       | mutation-schemas                                        |
+| Module                       | What it holds                                                                                                                                                                           | Slice                                                   |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| `types.ts`                   | `StartKit` (strength, run, other), `KitExercise`, `KitSet`, `LoggedSet`, `DeviceState` with its rest and stopwatch, `WorkoutView`                                                       | workout-contract                                        |
+| `mutations.ts`               | The 16 `MUTATION_TYPES` and their `MUTATION_RULES` (kinds, identity, entity), `Envelope`, `createMutation`, `entityKey`, `LocalAction`, `PAIN_ACTIONS`                                  | workout-contract                                        |
+| `order.ts`                   | `dependsOn`: the order the outbox and the server keep, apart from `mutations.ts` so the workout pages' initial JS stays small                                                           | workout-contract; workout-sync-wiring                   |
+| `protocol.ts`                | `SyncRequest`, `SyncResult` with `SYNC_STATUSES` and `SYNC_CODE_LABEL`, `SYNC_LIMITS`, `CanonicalWorkout` keyed by client ids                                                           | workout-contract                                        |
+| `changes.ts`                 | `namedRows`, `changedRows` (the rows a sync answer carries for a held workout) and `mergeRows` (the device folds them into the rows it holds)                                           | perf-sync-ack                                           |
+| `timers.ts`                  | The rest timer and the stopwatch on absolute timestamps; `restFor(set, exercise, defaults)`, `restClassOf(exercise, set)`, `DEFAULT_REST_SECONDS`                                       | workout-timers                                          |
+| `project.ts`, `selectors.ts` | `project()`, `applyMutation()`, `applyLocal()`, `replay`, `viewOf`, `onRows` over a reducer table; `setsFor`, `slotAt`, `currentExercise`, `nextExercise`, `previousFor`, progress      | workout-projection                                      |
+| `reducers/`                  | `core`, `sets`, `device`, `structure` (with the `structureSlot` hook), `run`, `other`; `strengthTable` in `tables.ts`, `runTable` in `run.ts`, `otherTable` in `other.ts`               | workout-projection; substitution-rules; run-other-rules |
+| `logging.ts`                 | `LOAD_RULES`, `setFields(measure, loadType)`, `checkSet(set, exercise)` at dotted paths, `e1rmOf`, `e1rmApplies`, `volumeOf` (kg), `totals`, `prKinds`, `prCandidates`, `PR_KIND_LABEL` | logging-rules                                           |
+| `prefill.ts`                 | `nextSet(slot, logged, kit, unit)`, `defaultMissedReps`, `RPE_CHIPS`                                                                                                                    | set-prefill                                             |
+| `groups.ts`                  | `groups(kit)` with A1/A2 labels, apart from `flow.ts` so the first render labels without the flow's rules                                                                               | workout-flow                                            |
+| `flow.ts`                    | `afterSet(view, position, { defaults, supersets })`: the next set and the rest that starts; `SUPERSET_FLOW` (the owner's superset decision)                                             | workout-flow                                            |
+| `up-next.ts`                 | `upNext(view)`, split from `flow.ts` so the strength view's navigation loads it on demand                                                                                               | workout-flow; exercise-navigation                       |
+| `run.ts`, `other.ts`         | `expandSegments`, `segmentPace`, `runTotals`; `metricInput`, `metricType`, `metricTemplate`, `checkMetrics`                                                                             | run-other-rules                                         |
+| `summary.ts`                 | The finish summary: volume, estimated e1RM and PRs, duration and session load                                                                                                           | workout-summary                                         |
+| `substitution.ts`, `copy.ts` | `QUICK_ACTIONS`, `effectsOf`, `rankFor`, `painChoices`; every quick-action, dislike and pain string                                                                                     | substitution-rules                                      |
+| `ends.ts`, `lifecycles.ts`   | `canEnd` and `END_FROM`, which the device reducer loads; `WORKOUT`, the lifecycle table `docs/lifecycles.md` is generated from                                                          | lifecycles                                              |
+| `describe.ts`                | Each mutation in words, 'Set 3 of Back squat · 100 kg × 5'                                                                                                                              | sync-status                                             |
+| `adhoc.ts`                   | `adhocKit(kind, units, now)`                                                                                                                                                            | workout-start                                           |
+| `schemas.ts`                 | zod/mini: `envelopeSchema`, a payload schema per type, `syncRequestSchema`, `DB_CHECKED_BAD_VALUES`, `SCHEMA_ONLY_BAD_VALUES`                                                           | mutation-schemas                                        |
 
 ## The contract in brief
 

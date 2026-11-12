@@ -68,7 +68,7 @@ import { DIVERGING_FIXTURE, RANGE_FIXTURE } from '../src/routes/design/bar-fixtu
 import { announce } from '../src/lib/ui/charts/line-model';
 import { STACK_ORDER } from '../src/lib/ui/charts/palette';
 import { PERIODS, type Period } from '../src/lib/domain/analytics/periods';
-import { tileSentence } from '../src/lib/ui/analytics/words';
+import { tileSentence, withinWords } from '../src/lib/ui/analytics/words';
 import { tileFixtures } from '../src/routes/design/tile-fixture';
 import { boxOf, expectNoShift, expectNoSideScroll } from './desktop';
 import { captureScreen, gotoHydrated, trackConsoleErrors } from './support';
@@ -631,28 +631,38 @@ test.describe('/design → Charts: the bar chart on a phone', () => {
 		for (const id of ['bar-adherence', 'bar-stacked', 'bar-target']) await expectBarTable(page, id);
 	});
 
-	test('a total sits on each complete stack only where it fits its week', async ({ page }) => {
+	test('a total sits on the highest and the latest complete stack only where it fits its week', async ({
+		page
+	}) => {
+		const capsOf = () =>
+			barBody(page, 'bar-stacked')
+				.locator('.cap')
+				.evaluateAll((els) =>
+					els.map((el) => {
+						const text = el.querySelector('.cap-text') as HTMLElement;
+						return {
+							shown: getComputedStyle(text).display !== 'none',
+							text: text.textContent,
+							fits: text.scrollWidth <= el.clientWidth + 0.5
+						};
+					})
+				);
 		await page.setViewportSize({ width: 320, height: 640 });
 		await gotoHydrated(page, '/design');
 		await openCharts(page);
 		await expectBarCharts(page);
-		const caps = await barBody(page, 'bar-stacked')
-			.locator('.cap')
-			.evaluateAll((els) =>
-				els.map((el) => {
-					const text = el.querySelector('.cap-text') as HTMLElement;
-					return {
-						shown: getComputedStyle(text).display !== 'none',
-						text: text.textContent,
-						fits: text.scrollWidth <= el.clientWidth + 0.5
-					};
-				})
-			);
 		const model = barModel(barFixture('bar-stacked').data);
-		expect(caps.map((cap) => cap.text)).toEqual(model.caps.map((cap) => cap.text));
-		expect(caps.some((cap) => cap.shown)).toBe(true);
-		for (const cap of caps) if (cap.shown) expect(cap.fits, `${cap.text} fits`).toBe(true);
+		// The highest week is also the latest complete one: one total, not one a week.
+		expect(model.caps.map((cap) => cap.text)).toEqual(['620']);
+		const narrow = await capsOf();
+		expect(narrow.map((cap) => cap.text)).toEqual(model.caps.map((cap) => cap.text));
+		for (const cap of narrow) if (cap.shown) expect(cap.fits, `${cap.text} fits`).toBe(true);
 		await expect(barBody(page, 'bar-stacked').getByTestId('bar-so-far')).toHaveText('so far');
+
+		// With room for it, the total shows on its cap and fits there.
+		await page.setViewportSize({ width: 768, height: 1024 });
+		await expect.poll(async () => (await capsOf()).map((cap) => cap.shown)).toEqual([true]);
+		for (const cap of await capsOf()) expect(cap.fits, `${cap.text} fits`).toBe(true);
 	});
 
 	test('under forced colours the parts are outlined and hatched, never told apart by hue', async ({
@@ -837,8 +847,9 @@ test.describe('/design → Charts: trend tiles on a phone', () => {
 				'This week so far: 140 kg · 137.5 kg by Wednesday last week. Real improvement.'
 		);
 		// The visible face is hidden from screen readers, so nothing is read twice.
+		// The accessibility tree reads the value's non-breaking space ('142.5 kg') as a plain one.
 		const tree = (await tile.ariaSnapshot()).trim().split('\n');
-		expect(tree.join('\n')).toContain(tileSentence(squat('12w').tile));
+		expect(tree.join('\n')).toContain(tileSentence(squat('12w').tile).replaceAll('\u00a0', ' '));
 		expect(tree.length, 'the list item and its one sentence').toBeLessThanOrEqual(2);
 		await expect(tile.getByText('Estimated', { exact: true })).toBeVisible();
 		// The sparkline: one polyline with a non-scaling 2 px stroke, and an 8 px hollow end ring.
@@ -866,7 +877,7 @@ test.describe('/design → Charts: trend tiles on a phone', () => {
 		await expect(empty.getByTestId('sparkline')).toHaveCount(0);
 	});
 
-	test('a lower-is-better metric that fell says better, with a falling icon in the positive tone', async ({
+	test('a lower-is-better metric that fell says better, its arrows pointing up with better in the positive tone', async ({
 		page
 	}) => {
 		await gotoHydrated(page, '/design');
@@ -874,7 +885,11 @@ test.describe('/design → Charts: trend tiles on a phone', () => {
 		const delta = tileOf(page, 'tile-pace').getByTestId('delta');
 		await expect(delta).toHaveText('−0:08 /km better than the 12 weeks before');
 		await expect(delta).toHaveAttribute('data-tone', 'positive');
-		await expect(delta.locator('use')).toHaveAttribute('href', /#trend-down$/);
+		// The arrow follows better, not the raw sign: a faster pace points up, as its verdict does.
+		await expect(delta.locator('use')).toHaveAttribute('href', /#trend-up$/);
+		const verdict = tileOf(page, 'tile-pace').getByTestId('verdict');
+		await expect(verdict).toHaveText('Real improvement');
+		await expect(verdict.locator('use')).toHaveAttribute('href', /#trend-up$/);
 		// A fall the trend calls normal variation is neutral, however it moved.
 		const noise = tileOf(page, 'tile-sets').getByTestId('delta');
 		await expect(noise).toHaveText('−3 sets worse than the 12 weeks before');
@@ -907,10 +922,18 @@ test.describe('/design → Charts: trend tiles on a phone', () => {
 			'Last 4 weeks · Compared with the 4 weeks before · Trend over the last 12 weeks · ' +
 				'Good is a real rise over the trend window'
 		);
-		// All time has no earlier period, and still a verdict.
+		// All time has no earlier period: the tile says how its own weeks moved, in the words of
+		// the verdict under it, never 'No earlier period' above a real improvement.
 		await periodLink(page, 'All time').click();
-		await expect(tile.getByTestId('delta')).toHaveText('No earlier period to compare with');
+		const all = squat('all').tile;
+		expect(withinWords(all.verdict, all.window)).toBe('Improving over 87 weeks');
+		await expect(tile.getByTestId('delta')).toHaveText('Improving over 87 weeks');
+		await expect(tile).not.toContainText('No earlier period');
 		await expect(tile.getByTestId('verdict')).toHaveText('Real improvement');
+		await expect(tile.getByTestId('tile-sentence')).toHaveText(tileSentence(all));
+		await expect(page.getByTestId('tiles-context').getByTestId('context-line')).not.toContainText(
+			'Compared with'
+		);
 	});
 
 	test('period links are real links: each switch is a history entry, keeping scroll and focus', async ({
