@@ -13,7 +13,8 @@ import {
 	describePrescription,
 	describeSegment,
 	type PrescriptionOptions,
-	type PrescriptionWords
+	type PrescriptionWords,
+	type RunStep
 } from '#lib/domain/training/describe.ts';
 import type {
 	CustomMetric,
@@ -32,6 +33,42 @@ import {
 	type SessionType
 } from '#lib/domain/training/vocabulary.ts';
 import { longDate, shortDate } from './words.ts';
+
+/** Heart-rate zones 1 to 5 in bpm, [low, high], as heartRateZones (programming/paces.ts) gives them. */
+export type ZoneBands = readonly (readonly [low: number, high: number])[];
+
+/**
+ * A run segment's effort on the session screen: 'Zone 2 · 134–148 bpm' with the owner's zones,
+ * 'Zone 2' without them, then its RPE; none when it has neither.
+ */
+export function effortWords(
+	{ hrZone, targetRpe }: Pick<RunSegment, 'hrZone' | 'targetRpe'>,
+	zones: ZoneBands | null
+): string | null {
+	const band = hrZone === null ? undefined : zones?.[hrZone - 1];
+	const zone = band ? `Zone ${hrZone} · ${band[0]}–${band[1]} bpm` : hrZone && `Zone ${hrZone}`;
+	const rpe = targetRpe === null ? null : `RPE ${targetRpe}`;
+	return [zone, rpe].filter(Boolean).join(' · ') || null;
+}
+
+/**
+ * A run's steps (describeSegments, which keeps the segments in order) with each segment's effort
+ * in effortWords.
+ */
+export function stepsInZones(
+	steps: readonly RunStep[],
+	segments: readonly Pick<RunSegment, 'hrZone' | 'targetRpe'>[],
+	zones: ZoneBands | null
+): RunStep[] {
+	let i = 0;
+	return steps.map((step) => ({
+		...step,
+		segments: step.segments.map((words) => ({
+			...words,
+			target: effortWords(segments[i++]!, zones)
+		}))
+	}));
+}
 
 /** 'Tuesday 10 November · Evening'; the time of day only when known (never 'varies'). */
 export function whenWords(date: IsoDate, timeOfDay: TimeOfDay | null): string {

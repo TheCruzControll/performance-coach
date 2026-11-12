@@ -22,6 +22,7 @@ import * as m2 from '../profile/catalog.ts';
 import type * as types from '../profile/types.ts';
 import type { BaselineLift, CustomExercise, ExerciseRef } from '../training/types.ts';
 import { cleanFloat, convertPace, convertWeight, toMetres } from '../units.ts';
+import type { GoalMode } from './evaluate/types.ts';
 import { canonicalJson, compareText, exerciseContent } from './random.ts';
 import { DEFAULTS, GYM_PRESETS, defaultCommitmentMinutes } from './rules/defaults.ts';
 import type { DefaultKey } from './rules/defaults.ts';
@@ -73,6 +74,12 @@ export interface InputRunning {
 	longestRunMetres: number | null;
 	easyPaceSecondsPerKm: number | null;
 	races: { distanceMetres: number; timeSeconds: number; racedOn: IsoDate | null }[];
+	/**
+	 * Whole bpm, each null when not told (M2's running.heartRate), present only when at least one
+	 * is given (hr-zones). canonicalJson drops an absent key, so a profile without heart rate keeps
+	 * the canonical input and fingerprint it had before.
+	 */
+	heartRate?: { max: number | null; resting: number | null; threshold: number | null };
 }
 
 export type InputMuayThai = Omit<types.MuayThaiProfile, 'notes' | 'updatedAt'>;
@@ -122,6 +129,12 @@ export interface ProgrammingInput {
 	assumptions: Assumption[];
 	/** The M2 uuids of `goals`, `paused` and `commitments`, by position. Not canonical. */
 	refs: { goals: string[]; paused: string[]; commitments: string[] };
+	/**
+	 * Each shaping goal's mode by its ref (M7). Only prepare (stages/prepare.ts) sets it, on the
+	 * input it hands the stages: buildProgrammingInput never does, so the stored snapshot and the
+	 * fingerprint stay as they were (canonicalJson drops undefined).
+	 */
+	modes?: Readonly<Record<string, GoalMode>>;
 }
 
 /** One of the owner's exercises as the library service lists it. */
@@ -177,11 +190,18 @@ function toRunning(running: types.RunningProfile | null): InputRunning | null {
 		easyPaceSecondsPerKm: pace === null ? null : cleanFloat(convertPace(pace, unit, 'km')),
 		races: running.races
 			.map(({ distanceMetres, timeSeconds, racedOn }) => ({ distanceMetres, timeSeconds, racedOn }))
-			.sort(byContent)
+			.sort(byContent),
+		...toHeartRate(running.heartRate)
 	};
 	return Object.values(result).some((v) => v !== null && (!Array.isArray(v) || v.length))
 		? result
 		: null;
+}
+
+/** `{ heartRate }` when at least one heart rate is told, else no key at all. */
+function toHeartRate(hr: types.HeartRate | undefined): Pick<InputRunning, 'heartRate'> {
+	if (!hr || [hr.max, hr.resting, hr.threshold].every((v) => v === null)) return {};
+	return { heartRate: { max: hr.max, resting: hr.resting, threshold: hr.threshold } };
 }
 
 /** Whole weeks from the program's first Monday to the goal's event; null without an event. */

@@ -168,7 +168,7 @@ test.describe('a program that starts next week', () => {
 			/^\s*Interval 400 m\s*6:02–6:26 \/mi\s*$/,
 			/^\s*Recovery 1:30\s*RPE 2\s*$/
 		]);
-		await expect(steps.nth(2)).toHaveText(/^\s*Cool-down 10:00\s*HR zone 2\s*$/);
+		await expect(steps.nth(2)).toHaveText(/^\s*Cool-down 10:00\s*Zone 2\s*$/);
 		await expect(page.getByTestId('baseline-callout')).toHaveCount(0);
 		await captureScreen(page, testInfo, 'session-run');
 

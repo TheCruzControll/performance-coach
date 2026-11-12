@@ -148,9 +148,15 @@ const M7_FACTS = {
 		why: `The long run grows from 16 km to 30 km across Marathon build, 1.5 km a week, never past 32 km. ${BECAUSE}`
 	},
 	hr_zones_set: {
-		facts: { source: 'threshold heart rate', value: '172 bpm', reason: BECAUSE },
-		summary: 'Heart-rate zones from your threshold heart rate',
-		why: `Run segments’ heart-rate zones come from your threshold heart rate of 172 bpm. ${BECAUSE}`
+		facts: {
+			source: 'max and resting heart rate',
+			zones:
+				'Zone 1 is 120–134 bpm, zone 2 134–148, zone 3 148–162, zone 4 162–176 and zone 5 176–190',
+			basis: 'max of 190 and resting 50',
+			reason: BECAUSE
+		},
+		summary: 'Heart-rate zones from your max and resting heart rate',
+		why: `Zone 1 is 120–134 bpm, zone 2 134–148, zone 3 148–162, zone 4 162–176 and zone 5 176–190, from your max of 190 and resting 50. ${BECAUSE} Each run keeps its zone number.`
 	},
 	replanned: {
 		facts: {

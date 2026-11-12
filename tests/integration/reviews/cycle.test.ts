@@ -23,12 +23,14 @@ import {
 } from '../../../src/lib/domain/programming/review/directives';
 import { programPlanSchema } from '../../../src/lib/domain/training/schemas';
 import type { BlockPlan, ProgramPlan } from '../../../src/lib/domain/training/types';
+import { cleanFloat } from '../../../src/lib/domain/units';
 import { validate } from '../../../src/lib/domain/validation';
 import type { Executor } from '../../../src/lib/server/db';
 import { acceptProposal, createProposal } from '../../../src/lib/server/services/coach/proposals';
 import { getMuscleTargets } from '../../../src/lib/server/services/analytics/targets';
 import { getExercisesByIds } from '../../../src/lib/server/services/exercises/index';
 import { listGoals, saveSchedule } from '../../../src/lib/server/services/profile/index';
+import { programmingInputFor } from '../../../src/lib/server/services/programs/alternatives';
 import { getProgramVersion } from '../../../src/lib/server/services/programs/index';
 import {
 	createCycleReview,
@@ -334,7 +336,8 @@ describe('creating a cycle review', () => {
 				true
 			);
 
-			// The directives follow from the stored snapshot, the block's runs (SQL) and the outline.
+			// The directives follow from the stored snapshot, the block's runs (SQL), the outline and
+			// today's profile input, from which the season planner gives the block's weeks.
 			const snapshot = stored.read.legacy ? null! : stored.read.snapshot;
 			const { rows: runs } = await db.execute<{ week: string; metres: number }>(
 				sql`select to_char(date_trunc('week', (w.started_at at time zone ${TZ})::date), 'YYYY-MM-DD') as week,
@@ -353,9 +356,11 @@ describe('creating a cycle review', () => {
 			};
 			const goals = await listGoals(owner, { db });
 			const outline = { phase: 'accumulation' as const, weeks: 4 };
-			const directives = directivesFrom({ snapshot, running }, outline, goals);
+			const profile = await programmingInputFor(owner, { db });
+			const directives = directivesFrom({ snapshot, running }, outline, goals, profile);
 			expect(row.evidence.directives).toEqual(directives);
 			expect(directives).toMatchObject({ fromBlockLineage: target.blockLineage, weeks: 4 });
+			expect(directives.weekPlan!.length).toBeGreaterThan(0);
 			expect(payload).toEqual(modifiableSubset(directives));
 			expect(row.evidence).toMatchObject({ clamps: [], folded: [] });
 		});
@@ -407,9 +412,13 @@ describe('creating a cycle review', () => {
 			]);
 
 			const [preview] = (await view(owner, target, db)).previews;
-			// The previews plan from the folded subset: its 0.8 scales M3's weekly factors (1, 1, 1.1, 1.1).
+			// The previews plan from the folded subset: its 0.8 scales the season's weekly factors.
 			const factors = preview!.block.weeks.map((w) => w.targets.volumeFactor);
-			expect(factors).toEqual([0.8, 0.8, 0.88, 0.88]);
+			// Past the season's block, its last loading week repeats.
+			const plan = row.evidence.directives.weekPlan!;
+			const season = [0, 1, 2, 3].map((i) => plan[i] ?? plan.at(-1)!);
+			expect(factors).toEqual(season.map((w) => cleanFloat(w.targets.volumeFactor * 0.8, 3)));
+			expect(factors).not.toEqual(season.map((w) => w.targets.volumeFactor));
 			// A refresh keeps what was folded, though the coach's proposal is closed by now.
 			await lateSet(db, owner, seeded.exercises.bench_press!);
 			const refreshed = await refreshCycleReview(owner, stored.id, { today: TODAY }, deps);

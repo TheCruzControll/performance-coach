@@ -15,7 +15,9 @@
  *   its kind's applier (./apply) in the same transaction. A proposal already decided returns as
  *   stored and nothing is written.
  * - rejectProposal stores the owner's optional reason; rejecting twice changes nothing.
- * - listProposals and getProposalView read one view model, from the stored rows only.
+ * - listProposals and getProposalView read one view model, from the stored rows only; a card's
+ *   view (a decision's answer, getProposalView, listThreadProposals) also names the cycle review a
+ *   coach next_cycle waits for or was settled in.
  * Every function is owner-scoped: someone else's proposal is not found, like a missing one.
  */
 import type { IsoDate } from '../../../domain/calendar';
@@ -60,6 +62,7 @@ import {
 	type ProposalViewRow
 } from '../../db/repositories/coach-proposals';
 import { createProgramsRepository } from '../../db/repositories/programs';
+import type { Executor } from '../../db/types';
 import { DECISION_NOTE_MAX, type AppliedRef } from '../../db/schema/coaching';
 import { getExercisesByIds, resolveKeys, type ExerciseDef } from '../exercises/index';
 import { isUuid } from '../ids';
@@ -69,9 +72,10 @@ import { programmingInputFor } from '../programs/alternatives';
 import { runMinutes } from '../programs/edits';
 import { listExercisePreferences } from '../training/preferences';
 import { TrainingInputError } from '../training/shared';
+import { getLiveCycleReview } from '../reviews/store';
 import { listActiveWorkouts } from '../workouts/canonical';
 import { APPLIERS, type Applier, type ApplyOutcome } from './apply';
-import { refuseReviewNextCycle } from './apply/next-cycle';
+import { cycleReviewHref, refuseReviewNextCycle } from './apply/next-cycle';
 import { SESSION_ENDED, substitutionEnded } from './apply/session';
 import {
 	CoachInputError,
@@ -151,6 +155,16 @@ export interface ProposalView {
 	revisionOf: string | null;
 	/** The review that proposed it by the rules (evidence.source); null for the coach's own. */
 	origin: ProposalOrigin | null;
+	/**
+	 * The review's own open next_cycle: its start is chosen in the cycle review at href, so M5's
+	 * card offers that instead of Accept (an accept is a 409 choose_start). Null otherwise.
+	 */
+	chooseStart: { href: string } | null;
+	/**
+	 * The live cycle review a coach next_cycle waits for (accepted), or was folded into or planned
+	 * by (superseded): the plan's awaitsReview. Null otherwise.
+	 */
+	cycleReview: { href: string } | null;
 	createdAt: Date;
 	closedAt: Date | null;
 	/** What it touches, each once: its rows' records, the version it made, what it revises. */
@@ -177,6 +191,8 @@ export interface ProposalOrigin {
 	kind: RulesProvenance['kind'];
 	reviewId: string;
 	href: string;
+	/** A weekly review's Monday ('From your weekly review · Week of 2 Nov'); null for a cycle's. */
+	weekStartsOn: IsoDate | null;
 	/** The review as a coach source, whose action opens that page (sourceAction). */
 	source: SourceRef;
 }
@@ -187,10 +203,16 @@ export const REVIEW_SOURCE_LABEL: Record<RulesProvenance['kind'], string> = {
 	cycle_review: 'Cycle review'
 };
 
-const origin = (kind: RulesProvenance['kind'], reviewId: string, key: string): ProposalOrigin => ({
+const origin = (
+	kind: RulesProvenance['kind'],
+	reviewId: string,
+	key: string,
+	weekStartsOn: IsoDate | null = null
+): ProposalOrigin => ({
 	kind,
 	reviewId,
 	href: `/progress/reviews/${key}`,
+	weekStartsOn,
 	source: { type: 'review', id: key, label: REVIEW_SOURCE_LABEL[kind] }
 });
 
@@ -200,7 +222,7 @@ export function originOf(source: unknown): ProposalOrigin | null {
 	const { kind, reviewId, weekStartsOn } = source as Partial<RulesProvenance>;
 	if (typeof reviewId !== 'string') return null;
 	if (kind === 'weekly_review' && typeof weekStartsOn === 'string')
-		return origin(kind, reviewId, reviewKey({ kind: 'weekly', weekStartsOn }));
+		return origin(kind, reviewId, reviewKey({ kind: 'weekly', weekStartsOn }), weekStartsOn);
 	if (kind === 'cycle_review')
 		return origin(kind, reviewId, reviewKey({ kind: 'cycle', id: reviewId }));
 	return null;
@@ -237,6 +259,9 @@ function toView(row: ProposalViewRow): ProposalView {
 	for (const ref of refs) {
 		if (ref && !links.has(`${ref.type}:${ref.id}`)) links.set(`${ref.type}:${ref.id}`, ref);
 	}
+	const from = originOf(row.source);
+	const choose =
+		row.kind === 'next_cycle' && row.status === 'proposed' && from?.kind === 'cycle_review';
 	return {
 		id: row.id,
 		kind: row.kind as ProposalKind,
@@ -255,7 +280,9 @@ function toView(row: ProposalViewRow): ProposalView {
 		supersededReason: row.supersededReason,
 		threadId: row.threadId,
 		revisionOf: row.revisionOf,
-		origin: originOf(row.source),
+		origin: from,
+		chooseStart: choose ? { href: from.href } : null,
+		cycleReview: null,
 		createdAt: row.createdAt,
 		closedAt: row.closedAt,
 		links: [...links.values()]
@@ -264,10 +291,41 @@ function toView(row: ProposalViewRow): ProposalView {
 
 type Repository = ReturnType<typeof createCoachProposalsRepository>;
 
-async function view(repo: Repository, ownerId: string, id: string): Promise<ProposalView> {
-	const row = await repo.proposal(ownerId, id);
+/** How a coach next_cycle closes once a cycle review takes it over: both lead to the review. */
+const COACH_CYCLE_SETTLED: ReadonlySet<SupersededReason | null> = new Set([
+	'folded_into_review',
+	'cycle_planned'
+]);
+
+/** Live cycle reviews already looked up, by `${programId}:${fromBlockLineage}`. */
+type CycleReviews = Map<string, { href: string } | null>;
+
+/**
+ * Its view, naming the live cycle review a coach next_cycle waits for or was settled in: one
+ * lookup per block (`seen`), awaited in turn on `db`.
+ */
+async function viewOf(
+	db: Executor,
+	ownerId: string,
+	row: ProposalViewRow,
+	seen: CycleReviews = new Map()
+): Promise<ProposalView> {
+	const found = toView(row);
+	const settled = found.status === 'accepted' || COACH_CYCLE_SETTLED.has(found.supersededReason);
+	if (found.kind !== 'next_cycle' || found.origin || !settled) return found;
+	if (row.programId === null || row.fromBlockLineage === null) return found;
+	const key = `${row.programId}:${row.fromBlockLineage}`;
+	if (!seen.has(key)) {
+		const review = await getLiveCycleReview(ownerId, row.programId, row.fromBlockLineage, { db });
+		seen.set(key, review && { href: cycleReviewHref(review.id) });
+	}
+	return { ...found, cycleReview: seen.get(key) ?? null };
+}
+
+async function view(db: Executor, ownerId: string, id: string): Promise<ProposalView> {
+	const row = await createCoachProposalsRepository(db).proposal(ownerId, id);
 	if (!row) throw new CoachNotFoundError('proposal');
-	return toView(row);
+	return viewOf(db, ownerId, row);
 }
 
 /** One of the owner's proposals, locked for the transaction. */
@@ -554,7 +612,8 @@ export async function createProposal(
 		const of = { kind: proposal.kind, payloadHash: hash, baseVersionId: base?.versionId ?? null };
 		await repo.lockCreates(ownerId);
 		const duplicate = await repo.openDuplicate(ownerId, of);
-		if (duplicate) return { proposal: await view(repo, ownerId, duplicate), duplicate: true };
+		if (duplicate)
+			return { proposal: await view(resolved.db, ownerId, duplicate), duplicate: true };
 
 		let revises: string | null = null;
 		let open = false;
@@ -597,7 +656,7 @@ export async function createProposal(
 			const superseded = { supersededReason: 'revised', closedAt: at, updatedAt: at } as const;
 			await repo.decide(ownerId, revises, { status: 'superseded', ...superseded });
 		}
-		return { proposal: await view(repo, ownerId, id), duplicate: false };
+		return { proposal: await view(resolved.db, ownerId, id), duplicate: false };
 	});
 }
 
@@ -684,7 +743,7 @@ export async function acceptProposal(
 		const repo = createCoachProposalsRepository(resolved.db);
 		const row = await lockOwn(repo, ownerId, id);
 		if (row.status !== 'proposed') {
-			return { proposal: await view(repo, ownerId, row.id), changed: false };
+			return { proposal: await view(resolved.db, ownerId, row.id), changed: false };
 		}
 		// The review's own next_cycle stays proposed whatever its base: the review plans it.
 		if (row.kind === 'next_cycle') refuseReviewNextCycle(row.evidence);
@@ -694,7 +753,7 @@ export async function acceptProposal(
 			if (current?.version.id !== row.baseVersionId) {
 				const superseded = { supersededReason: 'program_changed' as const, closedAt: at };
 				await repo.decide(ownerId, row.id, { status: 'superseded', ...superseded, updatedAt: at });
-				return { proposal: await view(repo, ownerId, row.id), changed: true };
+				return { proposal: await view(resolved.db, ownerId, row.id), changed: true };
 			}
 		}
 		// A review's proposal with a session now past or started is finished in the review instead.
@@ -711,7 +770,7 @@ export async function acceptProposal(
 					updatedAt: at
 				} as const;
 				await repo.decide(ownerId, row.id, { status: 'superseded', ...superseded });
-				const proposal = await view(repo, ownerId, row.id);
+				const proposal = await view(resolved.db, ownerId, row.id);
 				return {
 					proposal,
 					changed: true,
@@ -735,7 +794,7 @@ export async function acceptProposal(
 		if (!checked) {
 			const superseded = { supersededReason: SESSION_ENDED, closedAt: at };
 			await repo.decide(ownerId, row.id, { status: 'superseded', ...superseded, updatedAt: at });
-			return { proposal: await view(repo, ownerId, row.id), changed: true };
+			return { proposal: await view(resolved.db, ownerId, row.id), changed: true };
 		}
 		const { proposal, today } = checked;
 		const apply = APPLIERS[proposal.kind] as Applier<ProposalKind>;
@@ -750,7 +809,11 @@ export async function acceptProposal(
 		});
 		await repo.decide(ownerId, row.id, decisionOf(outcome, at));
 		const href = outcome.status === 'superseded' ? outcome.href : undefined;
-		return { proposal: await view(repo, ownerId, row.id), changed: true, ...(href && { href }) };
+		return {
+			proposal: await view(resolved.db, ownerId, row.id),
+			changed: true,
+			...(href && { href })
+		};
 	});
 }
 
@@ -772,7 +835,7 @@ export async function rejectProposal(
 		const repo = createCoachProposalsRepository(resolved.db);
 		const row = await lockOwn(repo, ownerId, id);
 		if (row.status === 'rejected') {
-			return { proposal: await view(repo, ownerId, row.id), changed: false };
+			return { proposal: await view(resolved.db, ownerId, row.id), changed: false };
 		}
 		if (row.status !== 'proposed') throw new ProposalClosedError(row.status);
 		const at = resolved.now();
@@ -782,7 +845,7 @@ export async function rejectProposal(
 			closedAt: at,
 			updatedAt: at
 		});
-		return { proposal: await view(repo, ownerId, row.id), changed: true };
+		return { proposal: await view(resolved.db, ownerId, row.id), changed: true };
 	});
 }
 
@@ -790,6 +853,8 @@ export async function rejectProposal(
 
 export interface ProposalQuery {
 	status?: ProposalStatus;
+	/** Only the decided ones: any status but proposed (the inbox's Decided list). */
+	decided?: boolean;
 	/** Only these, up to PROPOSAL_IDS_MAX; an id that is not the owner's is left out. */
 	ids?: readonly string[];
 	/** The `next` of the previous page. */
@@ -810,7 +875,7 @@ export async function listProposals(
 	query: ProposalQuery = {},
 	deps: CoachDeps = {}
 ): Promise<ProposalList> {
-	const { status, ids, before, limit = PROPOSAL_PAGE.default } = query;
+	const { status, decided, ids, before, limit = PROPOSAL_PAGE.default } = query;
 	if (!Number.isInteger(limit) || limit < 1 || limit > PROPOSAL_PAGE.max) {
 		throw new CoachInputError('limit', `1 to ${PROPOSAL_PAGE.max} at a time`);
 	}
@@ -827,6 +892,7 @@ export async function listProposals(
 	const { db } = resolveDeps(deps);
 	const rows = await createCoachProposalsRepository(db).proposalPage(ownerId, {
 		status,
+		decided,
 		ids: wanted,
 		before,
 		limit: limit + 1
@@ -879,12 +945,17 @@ export async function listThreadProposals(
 ): Promise<ThreadProposal[]> {
 	const wanted = [...new Set(runIds.filter(isUuid))];
 	if (!isUuid(threadId) || wanted.length === 0) return [];
-	const rows = await createCoachProposalsRepository(resolveDeps(deps).db).threadProposals(
-		ownerId,
-		threadId,
-		{ runIds: wanted, limit: THREAD_PROPOSALS_MAX }
-	);
-	return rows.map((row) => ({ runId: row.runId!, proposal: toView(row) }));
+	const { db } = resolveDeps(deps);
+	const rows = await createCoachProposalsRepository(db).threadProposals(ownerId, threadId, {
+		runIds: wanted,
+		limit: THREAD_PROPOSALS_MAX
+	});
+	const seen: CycleReviews = new Map();
+	const proposals: ThreadProposal[] = [];
+	for (const row of rows) {
+		proposals.push({ runId: row.runId!, proposal: await viewOf(db, ownerId, row, seen) });
+	}
+	return proposals;
 }
 
 /** One of the owner's proposals as its card and the inbox's detail show it. */
@@ -894,5 +965,5 @@ export async function getProposalView(
 	deps: CoachDeps = {}
 ): Promise<ProposalView> {
 	if (!isUuid(id)) throw new CoachNotFoundError('proposal');
-	return view(createCoachProposalsRepository(resolveDeps(deps).db), ownerId, id);
+	return view(resolveDeps(deps).db, ownerId, id);
 }

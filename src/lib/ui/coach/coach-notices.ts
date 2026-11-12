@@ -152,6 +152,26 @@ export const COACH_NOTICES: Readonly<Record<CoachNoticeKind, NoticeCopy>> = Obje
 	) as Record<CoachNoticeKind, NoticeCopy>
 );
 
+/**
+ * How long until a rate-limited turn may be asked again, counted down on its notice: seconds up
+ * to a minute and a half, then whole minutes, rounded up so it never says 'now' early.
+ */
+export function waitWords(ms: number): string {
+	const seconds = Math.ceil(ms / 1000);
+	if (seconds <= 0) return 'You can ask again now.';
+	if (seconds <= 90) return `You can ask again in ${seconds} second${seconds === 1 ? '' : 's'}.`;
+	return `You can ask again in ${Math.ceil(seconds / 60)} minutes.`;
+}
+
+/**
+ * The same wait for screen readers, which would read a ticking countdown out every second: the
+ * clock time it ends, rounded up to the minute so it never names a time too early.
+ */
+export function waitUntilWords(at: number, locale?: string): string {
+	const time = new Intl.DateTimeFormat(locale, { hour: 'numeric', minute: '2-digit' });
+	return `You can ask again at ${time.format(Math.ceil(at / 60_000) * 60_000)}.`;
+}
+
 /** The words of the badge on every answer the practice (mock) provider wrote. */
 export const MOCK_BADGE = {
 	label: 'Practice coach',

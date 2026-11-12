@@ -710,7 +710,15 @@ withheld'), fatigue and the deload need.
 `directivesFrom({ snapshot, running }, outline, goals)` → the next block's `CycleDirectives`, by
 code from the stored cycle snapshot, the block's actual weekly run distance and longest run, the
 next outline block (`{ phase, weeks }`, or null) and M2's goals. Every number is in
-`DIRECTIVE_RULES`.
+`DIRECTIVE_RULES`. Given today's `ProgrammingInput` as a fourth argument (the cycle review
+service passes it; M7), `planSeason` plans from the Monday after the block at today's goals, its
+continuity the reviewed phase (no second baseline week), and again from the end of each block
+until the block's weeks and any bridge a start chosen on the review's day adds are covered:
+`weekPlan` is those weeks (each week's kind and targets), its first block gives an appended
+block's `phase` and `weeks` (at least 3), and `blockType` is the `block_type_chosen` of the
+block's phase. An outline phase the season plans for none of the block's weeks is replaced by
+its first block's phase, the decision's reason saying so (`outlined`). With a `weekPlan`, `deload` is `first` when needed (a
+`last` only when worth considering and the season places none), else the season's cadence.
 
 - `phase` and `weeks`: the outline's (`fromOutline`); with none left, the reviewed phase when it
   repeats (accumulation, hypertrophy, a base or build…), else accumulation, for `appendWeeks` (5).
@@ -783,13 +791,20 @@ Each change is an `OverlayAssumption` `{ rule, field, value, why }` (`OVERLAY_RU
 bridge?, decisions, fingerprint, significantChanges }`: M3's generator extended with progression
 from actual results, without editing it. `next` is `nextBlockInput`'s; `previous` is the reviewed
 block as planned, each lift's exposures and e1RM trend (`LiftResults`) and the owner's unit.
-`nextStages` is M3's `STAGES` with three changes (a renamed M3 stage throws):
+M3's `prepare` runs first, and `nextStages` is M3's `STAGES`, matched by name so M7's `phasing`
+and `schedule` are inherited, with three changes (a renamed M3 stage throws):
 
 - `nextShape` (`stages/next-shape.ts`) replaces `blocks`: one planned block on `dates.block`,
   named and goal-linked as the outline block it plans, its weeks by `nextWeekKinds` (accumulation,
   build in a marathon or half phase, taper in a taper phase, the directed deload first or last) and
   `nextWeekTargets` (M3's, the RPE cap held to the review's, the volume and running factors scaled
   by the owner's part, the review's load step; a held block repeats the first building week).
+  With the directives' `weekPlan` (M7), `plannedWeeks` gives the weeks instead: the season's
+  past the bridge's weeks, then its last loading week again past its end, the directed deload first or last unless the
+  season deloads that week, every week held to the review's targets as above (a held block
+  repeats the season's first loading week); the block records the season's `block_type_chosen`
+  and a `deload_scheduled` for each of the season's own deloads, and an outline whose phase the
+  season replaced is named for its phase.
   Every stage plans from `dates.firstPlannedDay`. `bridgeBlock` emits the bridge, kept out of the
   draft: k `unplanned` weeks with `BRIDGE_TARGETS` and no sessions.
 - `carryover` (`stages/carryover.ts`) runs after `CARRYOVER_AFTER` (volume, the last stage that
@@ -808,7 +823,9 @@ block as planned, each lift's exposures and e1RM trend (`LiftResults`) and the o
 The block is checked by `programPlanSchema` as a plan of its own (no session before
 `firstPlannedDay`; decision refs name it `blocks.0`), the bridge and block as whole, contiguous
 weeks first. `next_block_planned` states the block, its start, the bridge and any `lostWeeks`.
-`GENERATOR_ID` is `next-block/1`; the fingerprint is M3's over the input, with a digest of the
+`GENERATOR_ID` is `next-block/2+` M3's `GENERATOR_ID` (2 since the season plans the block), so an M3 or M7 bump refuses a preview made
+before it (`ConflictError` reason `profile`, then the review previews again); the fingerprint is
+M3's over the input, with a digest of the
 directives, the owner's part, the dates, the outline and the previous block with its results.
 `significantChanges` (`SIGNIFICANT`): swaps, loads moved ≥ 5 % by results (as applied), ±2 hard
 sets a week per group (logged as a `results_progression`), run volume ≥ 10 %, a phase change, a
