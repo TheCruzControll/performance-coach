@@ -41,10 +41,13 @@ export const BUDGETS = {
 	routeCssKb: 14,
 	/** Font files preloaded on any route. */
 	preloadedFonts: 2,
-	/** Files the service worker downloads at install (src/service-worker/index.ts precache). */
-	precacheFiles: 275,
-	/** Their decoded size: the install download before HTTP compression. */
-	precacheKb: 995
+	/**
+	 * Files the service worker downloads at install (src/service-worker/index.ts precache). Set
+	 * with room above the 275 files #458 measured, like the route budgets (owner, 2026-11-11).
+	 */
+	precacheFiles: 300,
+	/** Their decoded size: the install download before HTTP compression (995 KB at #458). */
+	precacheKb: 1100
 } as const;
 
 const OUT = '.svelte-kit/output';
