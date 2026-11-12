@@ -1336,8 +1336,8 @@ Chromium and Linux WebKit at the iPhone viewport; each screen's spec repeats its
   `node scripts/coach-screens-index.ts <merged screens artifact dir>` writes `coach-index.html`, the
   owner's contact sheet, and exits 1 if any screen in `e2e/coach-screens.ts` is missing.
 - Performance (`perf` project): `perf-coach.e2e.ts` (a 60-message conversation and a streamed
-  3,000-token answer) and `perf-coach-load.e2e.ts` (the long conversation and the inbox). The
-  coach screens are measured last: seeding one blanks the training profile.
+  3,000-token answer) and `perf-coach-load.e2e.ts` (the long conversation and the inbox). Seeding
+  a coach fixture blanks the training profile, which each test puts back after its loads.
 
 ### Live (`pnpm test:live`, opt-in, never in CI)
 

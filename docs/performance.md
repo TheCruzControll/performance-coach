@@ -582,6 +582,11 @@ records ≤ 8), one at a time, and is capped at 6 KB by section priority. A segm
 prompt tokens or 40 messages, costing one summary call at effort low (≤ 8K output tokens) and one
 cache miss on the next turn.
 
+**First words (#428).** A rollover summary is made after the answer that fills a segment
+(`waitUntil`), so the next turn's first words never wait for a summary call (mock, summary call
+1500 ms: the rollover turn's first words 1605-1803 ms → 93 ms). A short, general question that
+opens its segment runs at effort low (`prompt/effort.ts`).
+
 **Cache behaviour: not yet measured.** The offline proof holds (each request is byte-equal to the
 last up to its end, and the mock reports a cache read on turn 2; `prompt/layout.test.ts`), but no
 live run has recorded `cache_read_input_tokens` or real TTFT.
