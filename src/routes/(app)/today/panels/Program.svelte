@@ -13,7 +13,9 @@
   sessions still to do today and in the next two days, so they start in a gym with no signal, even
   one looked at the night before: with Train, the only places outside the workout pages that
   create the device's database (coming-kits.ts). Last, Ask the coach opens Coach with 'What should
-  I focus on next week?' (a link: ui/ask-link.ts). Code-split behind PanelLoader.
+  I focus on next week?' (a link: ui/ask-link.ts). In a bridge week between blocks, 'Between
+  blocks' names the day the next block starts, with 'Log something else', in place of the week.
+  Code-split behind PanelLoader.
 -->
 <script lang="ts">
 	import { invalidateAll } from '$app/navigation';
@@ -181,6 +183,29 @@
 					href={TRAIN_HREF}
 					data-testid="today-train-link"
 				/>
+			{/if}
+
+			{#if view.bridge}
+				<Surface padding="none" radius="xl">
+					<EmptyState
+						icon="clock"
+						tone="neutral"
+						title={view.bridge.title}
+						description={view.bridge.description}
+						data-testid="today-bridge"
+					>
+						{#snippet actions()}
+							<Button
+								variant="secondary"
+								icon="plus"
+								href={resolve('/workout')}
+								data-testid="log-something-else"
+							>
+								Log something else
+							</Button>
+						{/snippet}
+					</EmptyState>
+				</Surface>
 			{/if}
 
 			{#if view.week}

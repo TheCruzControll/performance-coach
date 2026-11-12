@@ -272,6 +272,15 @@
 					data-testid="train-next"
 				/>
 			</div>
+			<!-- A bridge week's workouts, which no plan holds: each says Off-plan. One box, so the
+			     desktop subgrid gives them one row. -->
+			{#if view?.offPlan.length}
+				<div class="logged">
+					{#each view.offPlan as workout (workout.id)}
+						<SessionCard session={workout} data-testid="off-plan-workout" />
+					{/each}
+				</div>
+			{/if}
 		{:else if week}
 			<WeekStrip
 				days={view!.strip}
@@ -508,6 +517,11 @@
 		gap: var(--space-1-5);
 		margin: 0;
 		padding-left: var(--space-5);
+	}
+
+	.logged {
+		display: grid;
+		gap: var(--space-2);
 	}
 
 	.tool {

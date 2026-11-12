@@ -197,7 +197,7 @@ test.describe('offline', () => {
 		await actionsSheet(page).getByTestId('ask-coach').click();
 
 		await expect(page).toHaveURL(/\/coach\?/);
-		await expect(page.getByTestId('offline-state')).toContainText("You're offline");
+		await expect(page.getByTestId('offline-state')).toContainText('You’re offline');
 		await expect(page.getByRole('heading', { level: 1 })).toContainText('Coach');
 		await expect(page.locator('body')).not.toContainText(/500|internal error/i);
 		await captureScreen(page, testInfo, 'coach-entry-offline');

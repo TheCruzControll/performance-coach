@@ -7,7 +7,8 @@
  *   (preloadData). A cursor names its list and the last proposal shown (`w.<id>` or `d.<id>`);
  *   a malformed one is the first page.
  * - /coach/proposals/<id>: that proposal as its card shows it, with when it was proposed and
- *   decided, the owner's reason for a rejection, and the conversation it came from.
+ *   decided, the owner's reason for a rejection, and the conversation it came from; a review's
+ *   proposal names its review instead, in its row and on its card (with a link).
  * - A malformed or unknown id, or someone else's proposal, is the 404 page in the shell. The route
  *   has no param matcher, which would cost every route JavaScript (docs/performance.md).
  * - It fails soft: a read that fails is recorded as a server error (kind 'load') and the screen
@@ -72,6 +73,8 @@ export interface InboxRow {
 	state: string;
 	/** Its kind and the day it was proposed: 'Program change · Mon 9 Nov'. */
 	meta: string;
+	/** The review whose rules proposed it ('Weekly review', 'Cycle review'); null for the coach's. */
+	origin: string | null;
 }
 
 /** The proposal the inbox opened, beside the list on a desktop window. */
@@ -82,10 +85,8 @@ export interface InboxDetail {
 	dates: string[];
 	/** The owner's reason for a rejection; their own words, shown as text. */
 	note: string | null;
-	/** The conversation it came from; null for a review's. */
+	/** The conversation it came from; null for a review's, whose card names the review. */
 	threadId: string | null;
-	/** 'From your weekly review' for a proposal the rules made for a review. */
-	from: string | null;
 }
 
 export type InboxData =
@@ -156,7 +157,7 @@ async function pageOf(
 
 const stateWords = (card: ProposalCardView) => {
 	const state = cardState(card);
-	return state.kind === 'proposed' ? 'Waiting for you' : state.words;
+	return state.kind === 'proposed' || state.kind === 'choose' ? 'Waiting for you' : state.words;
 };
 
 const dayWords = (at: Date, timeZone: string) => shortDate(localDay(at, timeZone));
@@ -169,8 +170,7 @@ function detailOf(view: ProposalView, timeZone: string): InboxDetail {
 		kind: kindWords(view.kind),
 		dates,
 		note: view.decisionNote,
-		threadId: view.threadId,
-		from: view.origin ? `From your ${REVIEW_SOURCE_LABEL[view.origin.kind].toLowerCase()}` : null
+		threadId: view.threadId
 	};
 }
 
@@ -202,7 +202,8 @@ export async function loadInbox(
 					title: each.title,
 					status: each.status,
 					state: stateWords(card),
-					meta: `${kindWords(each.kind)} · ${dayWords(each.createdAt, timeZone)}`
+					meta: `${kindWords(each.kind)} · ${dayWords(each.createdAt, timeZone)}`,
+					origin: each.origin && REVIEW_SOURCE_LABEL[each.origin.kind]
 				};
 			}),
 			next,

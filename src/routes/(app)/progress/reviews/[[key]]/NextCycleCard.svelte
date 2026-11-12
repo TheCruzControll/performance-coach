@@ -14,7 +14,7 @@
     waiting here, as the reviews list.
   - Pending: aria-busy, and a second tap posts nothing (generating takes about a second). A stale
     preview (the profile or training changed) reloads with the fresh one and says so. Offline:
-    Start is disabled and says why. A failure says so, and Retry posts again.
+    Start is disabled and says why. A failure says so, and Try again posts again.
   - Otherwise: planned (with the plan's link), decided elsewhere, or superseded.
 
   CycleReview loads it after hydration. Posting in place is next-week-actions.svelte.ts's send,
