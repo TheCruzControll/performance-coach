@@ -199,7 +199,10 @@ test('unavailable: today’s workout is still answered; anything else is the una
 	await expect(retry(page)).toHaveCount(0);
 	await notice(page).getByRole('link', { name: 'Train' }).click();
 	await expect(page.getByRole('heading', { level: 1, name: 'Train' })).toBeVisible();
+	// Leaving the screen forgets its turns: back on the conversation, asking again shows it again.
 	await page.goBack();
+	await ask(page, BENCH);
+	await ended(page);
 	await notice(page).getByRole('link', { name: 'Today’s workout' }).click();
 	await expect(page.getByRole('heading', { level: 1 })).toContainText('Today');
 });
@@ -421,7 +424,11 @@ test.describe('on a desktop window', () => {
 
 			const action = shown.getByRole('button').or(shown.getByRole('link')).first();
 			if ((await action.count()) > 0) {
+				// The keyboard reaches it: a focus() after the mouse pressed Send shows no ring.
 				await action.focus();
+				await page.keyboard.press('Shift+Tab');
+				await page.keyboard.press('Tab');
+				await expect(action).toBeFocused();
 				await expect
 					.poll(() => action.evaluate((el) => getComputedStyle(el).outlineStyle))
 					.not.toBe('none');
