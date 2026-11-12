@@ -64,6 +64,7 @@ export const ROUTE_ACCESS = {
 	'/(app)/progress': 'owner',
 	'/(app)/progress/workouts/[[id]]': 'owner',
 	'/(app)/progress/exercises/[id]': 'owner',
+	'/(app)/progress/reviews/[[key]]': 'owner',
 	'/(app)/coach/[[thread]]': 'owner',
 	'/(app)/coach/proposals/[[id]]': 'owner',
 	'/(app)/profile': 'owner',
@@ -84,6 +85,8 @@ export const ROUTE_ACCESS = {
 	'/api/coach/runs': 'owner',
 
 	// threads
+	'/api/coach/threads': 'owner',
+	'/api/coach/threads/[id]': 'owner',
 
 	// proposals
 	'/api/coach/proposals/[id]': 'owner',

@@ -382,6 +382,205 @@ Initial JS and route CSS (gzip), every route; all pass, two preloaded fonts each
 
 Lighthouse on the same run, mobile and desktop: see "Lighthouse (desktop)" below.
 
+## M4 (workout) — measured 2026-11-10
+
+Measured by CI on GitHub's 4-vCPU Linux runners. Sizes, the main-thread table, set logging and
+INP below are from #370's last run,
+[42939723798](https://github.com/TheCruzControll/performance-coach/actions/runs/42939723798)
+(`3150095`, green). Its `src/` and `vite.config.ts` are the same as `main` with M4 merged,
+including the shorter boot path (#394), the prepaint (#410) and sign-out's flush (#367). The
+first M4 measurements, before those changes, came from runs
+[42806982845](https://github.com/TheCruzControll/performance-coach/actions/runs/42806982845)
+(`pnpm budgets`) and
+[42802588785](https://github.com/TheCruzControll/performance-coach/actions/runs/42802588785)
+(`perf` and Lighthouse); they are quoted below where they differ.
+
+Initial JS and route CSS (gzip), every route; all pass, one preloaded font each (two before
+#394):
+
+| Route                              | Initial JS | Route CSS |
+| ---------------------------------- | ---------: | --------: |
+| `/(app)/coach/[[thread]]`          |    58.0 KB |   10.1 KB |
+| `/(app)/train`                     |    57.3 KB |   11.0 KB |
+| `/(app)/train/session/[key]`       |    57.0 KB |   10.7 KB |
+| `/(app)/progress`                  |    57.0 KB |   13.9 KB |
+| `/(app)/today`                     |    56.9 KB |   13.3 KB |
+| `/(app)/progress/workouts/[[id]]`  |    56.8 KB |   10.5 KB |
+| `/(app)/progress/reviews/[[key]]`  |    56.6 KB |   10.0 KB |
+| `/(app)/profile/security`          |    55.9 KB |   11.4 KB |
+| `/(app)/profile`                   |    55.8 KB |    9.1 KB |
+| `/(app)/train/history/[[version]]` |    54.6 KB |   10.2 KB |
+| `/(app)/progress/exercises/[id]`   |    54.3 KB |   12.9 KB |
+| `/(app)/profile/[section]`         |    54.1 KB |    8.0 KB |
+| `/workout`                         |    52.7 KB |    7.9 KB |
+| `/workout/run`                     |    52.5 KB |    6.3 KB |
+| `/workout/session`                 |    52.5 KB |    6.3 KB |
+| `/onboarding/[[step]]`             |    52.4 KB |    6.7 KB |
+| `/design`                          |    52.4 KB |    7.5 KB |
+| `/setup`                           |    52.2 KB |    7.6 KB |
+| `/(app)/offline`                   |    51.7 KB |    7.0 KB |
+| `/`                                |    50.3 KB |    6.5 KB |
+| `/recover/passkey`                 |    50.1 KB |    7.7 KB |
+| `/recover`                         |    49.3 KB |    6.4 KB |
+
+Of `/(app)/progress`'s initial JS, 3.8 KB is a chunk its `load` awaits; of
+`/(app)/progress/reviews/[[key]]`'s, 2.7 KB.
+
+- **Runways.** The plan's runways held for the workout pages: `/workout` 52.7 KB (runway
+  58.9), `/workout/run` and `/workout/session` 52.5 KB (58.0 and 57.5), their CSS 6.3–7.9 KB
+  (10). `/(app)/profile/security` is 55.9 KB (58.8). History,
+  `/(app)/progress/workouts/[[id]]`, is 56.8 KB, over its 56.0 KB runway but under the 60 KB
+  gate. The tightest route is now M5's `/(app)/coach/[[thread]]` at 58.0 KB. In run
+  42806982845, before #394, `/workout` was 53.8 KB and `/(app)/progress` the tightest at
+  59.7 KB.
+- **Icons draw from one SVG sprite** (`<use href="sprite#name">`; `src/lib/ui/icons/sprite.svg`,
+  7.3 KB, 1.96 KB gzip, hashed, immutable, precached at install, #90): every route's initial JS
+  dropped 1,799–1,805 B (`/design` 1,647 B, which ships the name list). A new icon costs no
+  JavaScript, and `pnpm budgets` fails if icon path data reaches a client chunk.
+- **One prerendered route per workout kind.** Each page imports only its own view, so each
+  kind's whole path is a budgeted row. Two more route nodes cost about 60 B on every route; the
+  rejected alternative, a lazy view per kind on one route, measured about 1.0 KB more on the
+  strength path in the plan's prototype, because the shared store modules and the view gzip as
+  separate chunks.
+- **What loads after first render.** `/workout` went from 59.3 KB to 51.4 KB when the
+  projection, the route's reducer table, the strength view and the header stopwatch moved into
+  chunks fetched while the Shell restores (#249). The store's write path and the sync engine load
+  on idle (`online.ts`); the outbox order (`order.ts`, about 0.25 KB) stays out of
+  `mutations.ts`; the logger and the prefill rules load right after first render; the set
+  editor, every sheet, `CustomExerciseSheet` and each Fix module load on intent. New workout UI that
+  is not on the restoring skeleton belongs in a lazy chunk too. The resume bar is one idle import
+  from AppShell (at most 0.15 KB on every app route).
+- **Prepaint.** /workout paints the current exercise before the app starts, from the card it
+  keeps in localStorage (`src/lib/client/workout/prepaint.ts`, `pc:workout-prepaint:v1`, #410).
+  The inline script is allowed by its CSP hash and is 1.34 KB gzipped (a unit test caps it at
+  1.5 KB). The store drops the copy on every change; a 401 blocks it; sign-out deletes it.
+- **Svelte runtime rules.** A runtime feature the app does not already use joins the runtime
+  chunk every route loads, so none goes onto a workout page without a measured reason (one
+  `$state.snapshot` measured 230 B). In a component that calls `$state()`, a prop named `state`
+  compiles `$state` to a store subscription: +0.2 KB on every route in the prototype.
+- **Set logging** (`e2e/perf-workout.e2e.ts`, `perf` project, 4× CPU, 20 sets of the shared kit
+  fixture with real taps over five fresh loads of `/workout`, with swipes, sheets and the rest
+  timer between them): a set shows as done in a median of **36.5 ms, p95 42.4 ms** (gate: p95
+  under 100 ms), with no layout shift while logging. Run 42802588785, before #370's fixes,
+  measured a median of 22.9 ms and p95 32.5 ms.
+- **INP p75** on `/workout`: **88 ms** from Event Timing (loads 80, 88, 96, 88, 56) and 88 ms
+  from web-vitals, the library RUM beacons with `route_id` `/workout` (gate: 200 ms or less);
+  `/workout/run` 80 ms and `/workout/session` 56 ms. Run 42802588785 measured 56 ms on
+  `/workout`. There is no production p75 yet: the pages had no entry point until
+  start-entry-points.
+- **One green run so far.** These are the numbers of one green run (42939723798). #370 asks for
+  two; the second is still to record. Run 42802588785 failed: the final set-logging test on a
+  layout shift of 0.00045 while logging, and `/workout/run`'s INP test before measuring. #370
+  fixed both.
+
+Main-thread blocking while loading (median of 5 loads, 4× CPU; guard 250 ms, target 200 ms),
+from `e2e/perf-workout-load.e2e.ts` with `e2e/load-budget.ts`. Medians in run 42802588785 were
+6, 2, 5, 0, 0 and 0 ms:
+
+| Screen                                      | Median | Loads (ms)          |
+| ------------------------------------------- | -----: | ------------------- |
+| `/workout` (a workout in progress)          |     90 | 76, 82, 90, 98, 220 |
+| `/workout/run` (a run in progress)          |     87 | 14, 27, 87, 97, 100 |
+| `/workout/session` (a session in progress)  |     12 | 8, 10, 12, 13, 54   |
+| `/workout`, a service-worker reload         |      0 | 0, 0, 0, 0, 35      |
+| `/progress/workouts` (20 finished workouts) |      9 | 7, 7, 9, 9, 10      |
+| `/progress/workouts/<newest>`               |     25 | 21, 23, 25, 25, 27  |
+
+Lighthouse on run 42802588785, with workout data seeded (`--seed`); medians, mobile and desktop:
+
+| Screen                    | Mobile perf | Mobile LCP | Mobile TBT | Desktop perf | Desktop LCP |
+| ------------------------- | ----------: | ---------: | ---------: | -----------: | ----------: |
+| `/progress/workouts`      |        1.00 |   1,209 ms |      28 ms |         1.00 |      325 ms |
+| `/progress/workouts/[id]` |        1.00 |   1,207 ms |      60 ms |         1.00 |      323 ms |
+| `/workout · active`       |        0.90 |   3,348 ms |     179 ms |         0.99 |      843 ms |
+
+Accessibility and best practices scored 1.00 on all three. `/workout · active`'s mobile LCP was
+over the 2,500 ms gate while its FCP was 756 ms. The page is prerendered with no data, so the
+card could only paint once the whole app had started.
+
+Two changes closed the gap: a shorter boot path on every route (#394, below) and the prepaint
+(#410, above). Lighthouse on #370's run
+[42933643722](https://github.com/TheCruzControll/performance-coach/actions/runs/42933643722)
+(`229ab35`, with #410 merged), medians, mobile and desktop:
+
+| Screen                    | Mobile perf | Mobile LCP | Mobile TBT | Desktop perf | Desktop LCP |
+| ------------------------- | ----------: | ---------: | ---------: | -----------: | ----------: |
+| `/progress/workouts`      |         100 |   1,205 ms |       0 ms |          100 |      468 ms |
+| `/progress/workouts/[id]` |         100 |   1,204 ms |      23 ms |          100 |      331 ms |
+| `/workout · active`       |         100 |     903 ms |      25 ms |          100 |      244 ms |
+
+`/workout · active` now meets the gate: **LCP 903 ms, Performance 100**, CLS 0.000. Accessibility
+and best practices scored 100 on all three. #370's final run (42939723798) measured 905 ms and
+Performance 99 on the same screen.
+
+## Shared JS trimmed — measured 2026-11-11
+
+Every app route had 0.2–6.0 KB of room under the 60 KB gate (`/(app)/coach/[[thread]]` 59.8 KB,
+`/(app)/train` 59.4 KB), and most of each route is code every app route shares. Measured locally
+with `pnpm build:node && pnpm budgets` on main `8cccc77` and on this change.
+
+- **Fewer, larger start-up chunks.** Each file is gzipped on its own, so code every page loads
+  costs fewer bytes in one chunk than in several. The boot code and the root layout's own code
+  (with its Toaster) joined the `framework` chunk; the (app) layout, its shell, nav and PageHeader
+  are one `AppShell` chunk instead of five. The code shared by every route went from 45,620 B to
+  44,965 B, and with what every app route adds, from 49,923 B to 47,825 B (−2.0 KB). The root
+  layout's and the (app) layout's nodes are now 70 B each. No code loads later for this: only
+  the chunk boundaries moved. `/design` draws PageHeader, so it now loads the `AppShell`
+  chunk too (+1.7 KB, 54.2 KB). screen-memory.ts is in the `framework` group, not `AppShell`:
+  that group takes its modules' dependencies, and sign-out, which any page can load, imports
+  the screen memory, which put AppShell's stylesheet into the sign-in pages' CSS.
+- **The held screen's rule loads with HeldScreen.** Choosing what to hold over a navigation
+  (`(app)/held.ts`, with Today's freshness rule) moved from the (app) layout into HeldScreen's
+  module, which loads after the first paint. Copies of the screens left are still kept from the
+  start, so a tab left before then shows again.
+- **The service-worker registration is imported on mount** (it ran on idle already): 0.1 KB off
+  every route.
+- **Theme application** (`theme.ts`) left `preferences.svelte.ts`: Today and Train show only a
+  unit, so they no longer ship it (0.25 KB each).
+- **The coach's availability words** (`domain/coach/availability.ts`, re-exported by
+  `vocabulary.ts`) are a module of their own, and the vocabulary's `keysOf` is marked free of side
+  effects: the Coach screen no longer ships the rest of the coach vocabulary, which only an open
+  conversation uses (0.45 KB).
+
+Initial JS (gzip), before and after:
+
+| Route                              |  Before |   After |  Change |
+| ---------------------------------- | ------: | ------: | ------: |
+| `/(app)/coach/[[thread]]`          | 59.8 KB | 57.0 KB | −2.8 KB |
+| `/(app)/train`                     | 59.4 KB | 57.0 KB | −2.4 KB |
+| `/(app)/today`                     | 58.7 KB | 56.5 KB | −2.2 KB |
+| `/(app)/train/session/[key]`       | 58.7 KB | 56.6 KB | −2.1 KB |
+| `/(app)/progress`                  | 58.6 KB | 56.5 KB | −2.1 KB |
+| `/(app)/progress/workouts/[[id]]`  | 58.6 KB | 56.5 KB | −2.1 KB |
+| `/(app)/progress/reviews/[[key]]`  | 58.0 KB | 56.0 KB | −2.0 KB |
+| `/(app)/profile`                   | 57.9 KB | 56.0 KB | −1.9 KB |
+| `/(app)/profile/security`          | 57.5 KB | 55.4 KB | −2.1 KB |
+| `/(app)/train/history/[[version]]` | 56.5 KB | 54.4 KB | −2.1 KB |
+| `/(app)/progress/exercises/[id]`   | 56.0 KB | 53.9 KB | −2.1 KB |
+| `/(app)/profile/[section]`         | 55.8 KB | 53.7 KB | −2.1 KB |
+| `/(app)/offline`                   | 54.0 KB | 51.9 KB | −2.1 KB |
+| `/workout`                         | 53.9 KB | 53.1 KB | −0.8 KB |
+| `/workout/run`                     | 53.8 KB | 53.0 KB | −0.8 KB |
+| `/workout/session`                 | 53.8 KB | 52.9 KB | −0.9 KB |
+| `/design`                          | 52.5 KB | 54.2 KB | +1.7 KB |
+| `/onboarding/[[step]]`             | 52.5 KB | 51.9 KB | −0.6 KB |
+| `/setup`                           | 52.4 KB | 51.7 KB | −0.7 KB |
+| `/`                                | 50.4 KB | 49.8 KB | −0.6 KB |
+| `/recover/passkey`                 | 50.2 KB | 49.6 KB | −0.6 KB |
+| `/recover`                         | 49.5 KB | 48.8 KB | −0.7 KB |
+
+Every app route is now at least 3 KB under the gate; the tightest are `/(app)/train` (58,357 B)
+and `/(app)/coach/[[thread]]` (58,323 B), 11 B and 45 B under 57 KB. Route CSS is 0.2–0.5 KB
+lower on every app route (PageHeader's styles are inlined with the shell's, and the merged
+stylesheets gzip better) and no higher elsewhere, but for `/design` (7.5 → 8.2 KB: the shell's
+stylesheet). The precache went from 276 to 270 files.
+
+Not done, and why: the framework itself (Svelte's runtime and SvelteKit's client, about 38 KB) is
+most of what is left, and Rolldown places modules, not exports: Svelte's runtime is reached
+through one barrel from every component, so a runtime helper only one screen uses stays in the
+framework chunk. The toasts stay in the initial JS and the router keeps its modulepreload hints,
+for the reasons above.
+
 ## Budgets (enforced)
 
 `pnpm budgets` (`scripts/check-budgets.ts`) reads the SvelteKit build output and fails CI when a
@@ -421,7 +620,12 @@ inlined into every app page (3,660 of 4,096 characters; `pnpm budgets` fails if 
 instead).
 
 The same script also guards the CSS output: every built rule that ships a `-webkit-` property must
-ship the standard one too (see the glass note in `docs/design-system.md`).
+ship the standard one too (see the glass note in `docs/design-system.md`). It also checks:
+
+- the **root error page** (`src/routes/+error.svelte`), which SvelteKit imports before every
+  hydration, may add only its own chunk: no script or stylesheet a route does not already load
+  (its content loads on demand: `src/routes/error-page.ts`, #394). The start entry must import
+  exactly one chunk, `payload`, which imports nothing.
 
 ### Measured (`pnpm build && pnpm budgets`)
 
@@ -468,10 +672,24 @@ every route 0.1 KB more than the toasts themselves. They slide with CSS animatio
 Deleting all of the root layout's and the client hooks' own code takes 5.5 KB off the shared JS
 and 3.6 KB off `/(app)/today` (measured, not shipped): that is the ceiling for the app's code.
 The rest is framework, and the router's modulepreload hints (vite.config.ts) stay.
-Fonts: Mona Sans latin 39.8 KB + Hubot Sans latin 48.3 KB (woff2, preloaded, cached immutably).
+Fonts: only Mona Sans latin (39.8 KB) is preloaded (`src/lib/ui/fonts.ts`); Hubot Sans latin
+(48.3 KB) loads when a heading uses it. One preloaded font per route (#394). Both are woff2 and
+cached immutably.
 
-Service-worker install download (precache, measured in Chromium in review round 1): **74 files,
-353 KB** decoded. Home-screen icons are excluded; the OS fetches them once at install.
+Start-up chunks: Rolldown groups in `vite.config.ts` (#394). `payload` comes first
+(SvelteKit's `client/payload.js` and the preload helper), then `framework` (Svelte, SvelteKit's
+client without `$app/forms` or its entries, devalue, clsx, and the app's boot code: the client
+hooks, errors, leaving, visits, toast, Icon, error-page, the root layout with its Toaster, screen
+memory and afterPaint), then `AppShell` (the (app) layout, AppShell, AppNav, nav, connectivity and
+PageHeader, on every app screen). They merge code that (nearly) every page loads and cut about 10
+requests from every route's start-up (/workout: 25 to 14 boot scripts); the budgets bound any
+helper that rides along. `boot` was a group of its own until the shared-JS trim above.
+
+Service-worker install download (precache): only what the shell, `/workout` and `/offline` need
+(#458), **275 files, 995 KB** decoded (about 440 KB gzip) when it was scoped; other immutable
+assets are cached on first use. `pnpm budgets` caps it at **300 files and 1,100 KB** decoded, room
+above the measured size like the route budgets (owner, 2026-11-11). Home-screen icons are
+excluded; the OS fetches them once at install.
 
 ### Headroom and the M4 workout-screen plan
 
@@ -485,18 +703,24 @@ screen in the app. Plan, agreed before any M4 code lands:
   plate calculator, substitution sheet, rest-timer settings, history, notes.
 - IndexedDB/outbox code (M4 offline store) loads after first render (`requestIdleCallback`), not
   in the hydration path.
-- Guards: `pnpm budgets` (size), `e2e/perf.e2e.ts` gains the workout screen (main-thread
+- Guards: `pnpm budgets` (size), `e2e/perf-workout-load.e2e.ts` for the workout screens (main-thread
   ≤ 200 ms at 4× CPU), M4 criterion 3 (< 100 ms to visual confirmation of a logged set) and INP
   p75 ≤ 200 ms on that `route_id` from RUM.
 - If the shell itself must grow, raise the budget only with a measured reason in this file.
 - `/workout` measured 58.7 KB after the workout shell, against 53.8 KB planned. The slimmer
   shared entry (table above) took it to 56.7 KB, so the later workout slices have 3.3 KB, not
   1.3 KB, under the 60 KB gate.
+- Outcome: `/workout` ended M4 at 52.7 KB with its screens merged, the boot path and the
+  prepaint (see "M4 (workout)" above).
 
-### Main-thread budget (`e2e/perf.e2e.ts`, runs in CI with the e2e suite)
+### Main-thread budget (`e2e/load-budget.ts`, runs in CI on its own leg)
 
-It is its own Playwright project (`perf`, one worker) that starts only after the functional
-Chromium suite has finished, so no other spec competes for CPU while it measures. On a busy
+`e2e/load-budget.ts` holds the page-load budget. `e2e/perf.e2e.ts` applies it to the app's
+screens and `e2e/perf-workout-load.e2e.ts` to the workout screens. Both run in their own
+Playwright project (`perf`, one worker) that starts only after the functional Chromium suite has
+finished, so no other spec competes for CPU while it measures. In CI the project is its own leg,
+alone·chromium, split in 2 shards, each on a runner of its own; `exclusive` runs in parallel on
+a leg of its own (only a local run starts it after `perf`). On a busy
 host (other builds, browsers or agents running) local numbers can still be noisy; re-run before
 chasing a regression.
 

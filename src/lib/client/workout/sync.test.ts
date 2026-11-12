@@ -5,6 +5,7 @@ import type { Metric } from 'web-vitals';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { workoutDayKits } from '../../../../tests/fixtures/workout-day';
 import type { FieldErrors } from '#lib/domain/validation.ts';
+import { changedRows, namedRows } from '#lib/domain/workout/changes.ts';
 import { createMutation, dependsOn, entityKey, SYNC_LIMITS } from '#lib/domain/workout/index.ts';
 import type {
 	LocalAction,
@@ -21,11 +22,12 @@ import { replay } from '#lib/domain/workout/project.ts';
 import { strengthTable } from '#lib/domain/workout/reducers/tables.ts';
 import type { StoredWorkout } from './db';
 import { DB_NAME, STORES } from './names';
-import { BACKOFF, nextDelay } from './outbox-rules';
+import { BACKOFF, nextDelay, STUCK_AFTER } from './outbox-rules';
 import type { OutboxEntry } from './outbox-rules';
+import { discardInProgress, inProgress } from './start';
 import { createStore } from './store';
 import type { WorkoutStore } from './store';
-import { REQUEST_TIMEOUT_MS, startSync, SYNC_LOCK, SYNC_URL } from './sync';
+import { COALESCE_MS, REQUEST_TIMEOUT_MS, startSync, SYNC_LOCK, SYNC_URL } from './sync';
 import type { SyncEngine, SyncLocks, SyncOptions } from './sync';
 
 /** RUM's web-vitals, replaced so a test can queue metrics for vitals.ts's flush at hide. */
@@ -124,11 +126,17 @@ type Step =
 	/** No answer, but the server goes on and applies the batch when the test says (landLate). */
 	| 'late'
 	/** Cancelled by the browser, as when the page is being left. */
-	| 'cancelled';
+	| 'cancelled'
+	/** The server applies the batch, then cannot read the workout's rows: the answer has none. */
+	| 'rowless'
+	/** A captive portal or a dead gym Wi-Fi's gateway answers with its own page, not the server's JSON. */
+	| 'portal'
+	| 'gateway';
 
 interface Received {
 	ids: string[];
 	discarded: string[];
+	held: string[];
 	keepalive: boolean;
 	bytes: number;
 	signal: AbortSignal | undefined;
@@ -143,7 +151,8 @@ const json = (status: number, body: unknown) =>
  * POST /api/workouts/sync with M4's rules: a ledger of applied ids (a replay answers duplicate),
  * one result per mutation in order, a change whose target has not arrived deferred, a row's later
  * changes deferred once one of them is refused or deferred, and the canonical rows on the last
- * applied or duplicate result of each workout. Each set it applies is one row.
+ * applied or duplicate result of each workout: only the changed ones for a workout the request
+ * holds. Each set it applies is one row.
  */
 function fakeServer() {
 	const ledger = new Set<string>();
@@ -170,7 +179,7 @@ function fakeServer() {
 			pending: applied.filter((m) => m.workoutId === workoutId)
 		}).rows;
 
-	function apply(mutations: Mutation[]): SyncResult[] {
+	function apply(mutations: Mutation[], holds: readonly string[] = []): SyncResult[] {
 		const held: Mutation[] = [];
 		const results = mutations.map((m): SyncResult => {
 			const hold = (status: 'deferred' | 'rejected', code: SyncCode, errors?: FieldErrors) => {
@@ -199,7 +208,18 @@ function fakeServer() {
 		});
 		for (const [workoutId, i] of last) {
 			const canonical = rowsOf(workoutId);
-			if (canonical) results[i] = { ...results[i]!, canonical };
+			if (!canonical) continue;
+			if (!holds.includes(workoutId)) results[i] = { ...results[i]!, canonical };
+			else {
+				const named = mutations.filter(
+					(m, j) =>
+						m.workoutId === workoutId && ['applied', 'duplicate'].includes(results[j]!.status)
+				);
+				results[i] = {
+					...results[i]!,
+					changes: changedRows(canonical, new Set(named.flatMap(namedRows)))
+				};
+			}
 		}
 		answered.push(...results);
 		return results;
@@ -207,10 +227,11 @@ function fakeServer() {
 
 	async function fetch(url: string, init: RequestInit): Promise<Response> {
 		const body = init.body as string;
-		const { mutations, discarded = [] } = JSON.parse(body) as SyncRequest;
+		const { mutations, discarded = [], held = [] } = JSON.parse(body) as SyncRequest;
 		received.push({
 			ids: mutations.map((m) => m.id),
 			discarded,
+			held,
 			keepalive: init.keepalive === true,
 			bytes: encoder.encode(body).length,
 			signal: init.signal ?? undefined,
@@ -237,12 +258,25 @@ function fakeServer() {
 						)
 					);
 				case 'lost':
-					apply(mutations);
+					apply(mutations, held);
 					throw new TypeError('Failed to fetch');
 				case 'stranger':
-					return json(200, { v: 1, results: apply(mutations).map((r) => ({ ...r, id: fresh() })) });
+					return json(200, {
+						v: 1,
+						results: apply(mutations, held).map((r) => ({ ...r, id: fresh() }))
+					});
 				case 'cancelled':
 					throw new TypeError('Load failed');
+				case 'portal':
+					return new Response('<!doctype html><title>Sign in to Gym-WiFi</title>', {
+						status: 200,
+						headers: { 'content-type': 'text/html' }
+					});
+				case 'gateway':
+					return new Response('<html><body>502 Bad Gateway</body></html>', {
+						status: 502,
+						headers: { 'content-type': 'text/html' }
+					});
 				case 401:
 					return json(401, { error: 'unauthenticated', message: 'Sign in to continue.' });
 				case 'passkey':
@@ -253,7 +287,11 @@ function fakeServer() {
 				case 503:
 					return json(step, { error: 'unavailable' });
 				case 'ok':
-					return json(200, { v: 1, results: apply(mutations) });
+					return json(200, { v: 1, results: apply(mutations, held) });
+				case 'rowless': {
+					const results = apply(mutations, held).map((r) => ({ id: r.id, status: r.status }));
+					return json(200, { v: 1, results });
+				}
 			}
 		} finally {
 			inFlight--;
@@ -268,7 +306,7 @@ function fakeServer() {
 		script,
 		rowsOf,
 		/** The server reaches the batches it was still running ('late'), after everything else. */
-		landLate: () => running.splice(0).map(apply),
+		landLate: () => running.splice(0).map((batch) => apply(batch)),
 		/** The rows a create made: one, however often its mutation arrived. */
 		rows: (entityId: string) => applied.filter((m) => m.id === entityId).length,
 		/** How often a mutation arrived, in any request. */
@@ -424,6 +462,11 @@ async function outbox(): Promise<OutboxEntry[]> {
 	return entries;
 }
 const outboxIds = async () => (await outbox()).map((e) => e.envelope.id);
+/** Parks an entry as stuck, the way a change that keeps failing is: only a parked one is discarded. */
+async function park(store: WorkoutStore, seq: number) {
+	for (let i = 0; i < STUCK_AFTER.failures; i++) await store.countFailure(seq, 'timeout');
+	expect((await outbox()).find((e) => e.seq === seq)!.parked?.reason).toBe('stuck');
+}
 
 /** Lets requests, IndexedDB and the engine's rounds run (they use the real event loop). */
 const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
@@ -458,6 +501,9 @@ describe('delivery', () => {
 
 		expect(server.received.map((r) => r.ids.length)).toEqual([SYNC_LIMITS.maxMutations, 6]);
 		expect(server.received.flatMap((r) => r.ids)).toEqual(queued);
+		// Once the device holds the workout's rows, a request names it: only the changed rows return.
+		expect(server.received.map((r) => r.held)).toEqual([[], [W]]);
+		expect(server.answered.at(-1)!.changes!.sets.map((s) => s.id)).toEqual(sets.slice(-6));
 		expect(server.received.every((r) => r.url === SYNC_URL && !r.keepalive)).toBe(true);
 		expect(new Set(locks.names)).toEqual(new Set([SYNC_LOCK]));
 		expect(await outbox()).toEqual([]);
@@ -468,6 +514,28 @@ describe('delivery', () => {
 		expect(record!.canonical).toStrictEqual(server.rowsOf(W));
 		const shown = store.snapshot(W)!.view!.slots[0]!.sets;
 		expect(shown.map((s) => [s.id, s.pending])).toEqual(sets.map((id) => [id, false]));
+	});
+
+	it('asks for a workout whole after an answer applied its changes without its rows', async () => {
+		const store = await open();
+		await withSets(store, 's1');
+		const sync = engine(store);
+		await sync.flush();
+		await saved(store, log('s2', 2));
+		server.script.push('rowless');
+		await sync.flush();
+		expect(await outbox()).toEqual([]);
+
+		await saved(store, log('s3', 3));
+		await sync.flush();
+		expect(server.received.map((r) => r.held)).toEqual([[], [W], []]);
+		expect(server.answered.at(-1)!.canonical).toStrictEqual(server.rowsOf(W));
+		const shown = store.snapshot(W)!.view!.slots[0]!.sets;
+		expect(shown.map((s) => [s.id, s.pending])).toEqual([
+			['s1', false],
+			['s2', false],
+			['s3', false]
+		]);
 	});
 
 	it('retries a 500 after the seeded backoff, and the server holds one row', async () => {
@@ -509,7 +577,7 @@ describe('delivery', () => {
 
 		expect(server.rows('s1')).toBe(1); // committed, though the device never heard
 		expect(await outboxIds()).toEqual([W, 's1']);
-		expect((await outbox())[0]!.attempts).toBe(1);
+		expect((await outbox())[0]!.attempts).toBe(0); // the network lost it: nothing counted
 		const acknowledge = vi.spyOn(store, 'acknowledge');
 
 		clock.advance(nextDelay(0, seeded(SEED)));
@@ -579,9 +647,10 @@ describe('delivery', () => {
 
 		clock.advance(1);
 		expect(server.received[0]!.signal!.aborted).toBe(true);
-		// Counted against the batch's head, and the lock is free: the other tab flushes at once.
+		// The server is out of reach, so nothing is counted, and the lock is free: the other tab
+		// flushes at once.
 		await eventually(() => expect(server.received).toHaveLength(2));
-		expect(countFailure).toHaveBeenCalledWith(1, 'No answer within 15 s');
+		expect(countFailure).not.toHaveBeenCalled();
 		expect(server.received[1]!.ids).toEqual([W, 's1']);
 		await b.flush();
 		expect(server.rows('s1')).toBe(1);
@@ -831,6 +900,203 @@ describe('triggers', () => {
 		expect(clock.delays.filter((d) => d > 59 * SECOND).length).toBeGreaterThan(3);
 		expect(await outbox()).toEqual([]);
 	});
+
+	it(`sends a saved change at once after a quiet spell, and changes within ${COALESCE_MS} ms of a round's start in one round when that window ends`, async () => {
+		const store = await open();
+		await withSets(store);
+		const sync = engine(store);
+		await sync.flush(); // app start: the workout's start
+		expect(server.received).toHaveLength(1);
+
+		clock.advance(COALESCE_MS); // a quiet spell since that round began
+		await saved(store, log('s1', 1));
+		sync.soon();
+		await eventually(() => expect(server.received.map((r) => r.ids)).toEqual([[W], ['s1']]));
+		await sync.flush();
+
+		// A burst: the next set, its edit, and the store's own notices of each, as the page sends them.
+		await saved(store, log('s2', 2));
+		sync.soon();
+		const change = edit('s2', 4);
+		await saved(store, change);
+		sync.soon();
+		sync.soon();
+		await settle();
+		expect(server.received).toHaveLength(2);
+		expect(clock.pending).toBe(1);
+
+		clock.advance(COALESCE_MS);
+		await eventually(() => expect(server.received).toHaveLength(3));
+		await sync.flush();
+		expect(server.received[2]!.ids).toEqual(['s2', change.id]);
+		expect(await outbox()).toEqual([]);
+		expect(clock.pending).toBe(0);
+	});
+
+	it('sends the round it put off at once when the page is hidden, and nothing once stopped', async () => {
+		const store = await open();
+		await withSets(store);
+		const sync = engine(store);
+		await sync.flush();
+		await saved(store, log('s1', 1));
+		sync.soon();
+		await settle();
+		expect(server.received).toHaveLength(1);
+
+		page.document.visibilityState = 'hidden';
+		page.document.dispatchEvent(new Event('visibilitychange'));
+		await eventually(() => expect(server.received.map((r) => r.ids)).toEqual([[W], ['s1']]));
+		expect(clock.pending).toBe(0);
+
+		await sync.flush();
+		await saved(store, log('s2', 2));
+		sync.soon();
+		sync.stop();
+		expect(clock.pending).toBe(0);
+		clock.advance(COALESCE_MS);
+		await settle();
+		expect(server.received).toHaveLength(2);
+		expect(await outboxIds()).toEqual(['s2']);
+	});
+
+	it('keeps the pagehide batch current while a round waits out the window', async () => {
+		const store = await open();
+		await withSets(store);
+		const sync = engine(store);
+		await sync.flush();
+		await saved(store, log('s1', 1));
+		sync.soon();
+		await settle();
+		expect(server.received).toHaveLength(1);
+
+		page.window.dispatchEvent(new Event('pagehide'));
+
+		const keepalive = server.received.filter((r) => r.keepalive);
+		expect(keepalive.map((r) => r.ids)).toEqual([['s1']]);
+	});
+});
+
+// ---- Lie-fi: online, but the server out of reach ---------------------------------------------
+
+describe('lie-fi: online, but the server out of reach', () => {
+	it("counts no timeout, network error or page that is not the server's JSON, backs off, and reads Can’t connect · N waiting", async () => {
+		const store = await open();
+		await withSets(store, 's1');
+		server.script.push('hang', 'cancelled', 'portal', 'gateway', 'hang');
+		const countFailure = vi.spyOn(store, 'countFailure');
+		const sync = engine(store);
+		await eventually(() => expect(server.received).toHaveLength(1));
+		expect(sync.status()).toEqual({ state: 'saving', pending: 2 });
+
+		clock.advance(REQUEST_TIMEOUT_MS);
+		await eventually(() => expect(sync.status()).toEqual({ state: 'unreachable', waiting: 2 }));
+		await sync.flush(); // a dispatch's flush waits for the backoff
+		await settle();
+		expect(server.received).toHaveLength(1);
+
+		for (const sent of [2, 3, 4]) {
+			clock.advance(BACKOFF.maxMs); // the engine's own timer sends again
+			await eventually(() => expect(server.received).toHaveLength(sent));
+			await sync.flush();
+			expect(sync.status()).toEqual({ state: 'unreachable', waiting: 2 });
+		}
+		clock.advance(BACKOFF.maxMs);
+		await eventually(() => expect(server.received).toHaveLength(5));
+		// A retry on its way still reads Can’t connect, not Saving…, until the server answers.
+		expect(sync.status()).toEqual({ state: 'unreachable', waiting: 2 });
+		clock.advance(REQUEST_TIMEOUT_MS);
+		await sync.flush();
+		expect(countFailure).not.toHaveBeenCalled();
+		expect((await outbox()).map((e) => [e.attempts, e.failingSince])).toEqual([
+			[0, null],
+			[0, null]
+		]);
+
+		clock.advance(BACKOFF.maxMs); // the server answers at last
+		await eventually(async () => expect(await outbox()).toEqual([]));
+		await sync.flush();
+		expect(server.rows('s1')).toBe(1);
+		expect(sync.status()).toEqual({ state: 'synced' });
+	});
+
+	it('never parks the workout behind Needs attention, however long the lie-fi lasts', async () => {
+		const store = await open();
+		await withSets(store, 's1');
+		const STEPS: Step[] = ['portal', 'gateway', 'cancelled'];
+		const misses = STUCK_AFTER.failures + 10;
+		server.script.push(...Array.from({ length: misses }, (_, i) => STEPS[i % STEPS.length]!));
+		const sync = engine(store);
+		await sync.flush();
+		for (let sent = 2; sent <= misses; sent++) {
+			clock.advance(BACKOFF.maxMs);
+			await eventually(() => expect(server.received).toHaveLength(sent));
+			await sync.flush();
+		}
+
+		const outboxNow = await outbox();
+		expect(outboxNow.map((e) => [e.attempts, e.failingSince, e.parked])).toEqual([
+			[0, null, undefined],
+			[0, null, undefined]
+		]);
+		expect(sync.status()).toEqual({ state: 'unreachable', waiting: 2 });
+
+		clock.advance(BACKOFF.maxMs);
+		await eventually(async () => expect(await outbox()).toEqual([]));
+		expect(server.rows(W)).toBe(1);
+		expect(server.rows('s1')).toBe(1);
+	});
+
+	it('pauses the 24 hours while the server is out of reach, as it does offline', async () => {
+		const store = await open();
+		await withSets(store, 's1');
+		server.script.push(500, 'portal', 500);
+		const sync = engine(store);
+		await sync.flush(); // the server's own 500: counted
+		expect((await outbox())[0]).toMatchObject({ attempts: 1, failingSince: T0 });
+
+		const wait = nextDelay(0, seeded(SEED));
+		clock.advance(wait); // the backoff timer: the gym's Wi-Fi answers with its sign-in page
+		await eventually(() => expect(server.received).toHaveLength(2));
+		await sync.flush();
+		expect(sync.status()).toEqual({ state: 'unreachable', waiting: 2 });
+
+		// A day and an hour later the app is in view again, and the server answers 500 once more.
+		clock.jump(25 * HOUR);
+		page.document.dispatchEvent(new Event('visibilitychange'));
+		await eventually(() => expect(server.received).toHaveLength(3));
+		await sync.flush();
+		const [head] = await outbox();
+		expect(head).toMatchObject({ attempts: 2, failingSince: T0 + 25 * HOUR });
+		expect(head!.parked).toBeUndefined();
+		expect(sync.status()).toMatchObject({ state: 'retrying', pending: 2 });
+	});
+
+	it('pauses out of reach, then offline, as one stretch, taken off the 24 hours once', async () => {
+		const store = await open();
+		await withSets(store, 's1');
+		server.script.push(500, 'portal', 500);
+		const sync = engine(store);
+		await sync.flush(); // the server's own 500: counted
+		const wait = nextDelay(0, seeded(SEED));
+		clock.advance(wait); // the gym's Wi-Fi answers with its sign-in page
+		await eventually(() => expect(server.received).toHaveLength(2));
+		await sync.flush();
+		expect(sync.status()).toEqual({ state: 'unreachable', waiting: 2 });
+
+		// An hour later the phone gives up on the Wi-Fi, and is offline for two more.
+		clock.jump(HOUR);
+		online = false;
+		await sync.flush();
+		expect(sync.status()).toEqual({ state: 'offline', pending: 2 });
+		clock.jump(2 * HOUR);
+		online = true;
+		page.window.dispatchEvent(new Event('online'));
+		await eventually(() => expect(server.received).toHaveLength(3));
+		await sync.flush();
+		const [head] = await outbox();
+		expect(head).toMatchObject({ attempts: 2, failingSince: T0 + 3 * HOUR });
+		expect(sync.status()).toMatchObject({ state: 'retrying', pending: 2 });
+	});
 });
 
 // ---- The session ---------------------------------------------------------------------------
@@ -1015,9 +1281,10 @@ describe('a discard while a request may still be running on the server (finding 
 		void e.flush();
 		await eventually(() => expect(server.received.at(-1)!.ids).toEqual([stale.id]));
 		clock.advance(REQUEST_TIMEOUT_MS);
-		await eventually(async () => expect((await outbox())[0]!.attempts).toBe(1));
+		await eventually(() => expect(e.status()).toMatchObject({ state: 'unreachable' }));
 
-		// The owner discards it and edits the set again.
+		// It keeps failing until it needs attention; the owner discards it and edits the set again.
+		await park(store, (await outbox())[0]!.seq);
 		await store.discard((await outbox())[0]!.seq);
 		const newer = edit('s1', 4);
 		await saved(store, newer);
@@ -1052,13 +1319,14 @@ describe('a discard while a request may still be running on the server (finding 
 		void e.flush();
 		await eventually(() => expect(server.received.at(-1)!.ids).toEqual([stale.id]));
 		clock.advance(REQUEST_TIMEOUT_MS);
-		await eventually(async () => expect((await outbox())[0]!.attempts).toBe(1));
+		await eventually(() => expect(e.status()).toMatchObject({ state: 'unreachable' }));
 
 		// As many older discards as one request holds still wait, so the stale edit's id is the 26th.
 		const older = Array.from({ length: SYNC_LIMITS.maxMutations }, fresh);
 		const db = await openDB(DB_NAME);
 		await db.put(STORES.meta, { key: 'discarded', value: older });
 		db.close();
+		await park(store, (await outbox())[0]!.seq);
 		await store.discard((await outbox())[0]!.seq);
 		await saved(store, newer);
 		clock.advance(BACKOFF.maxMs);
@@ -1082,6 +1350,7 @@ describe('a discard while a request may still be running on the server (finding 
 		server.script.push(500);
 		await e.flush();
 		const [entry] = await outbox();
+		await park(store, entry!.seq);
 
 		await store.discard(entry!.seq);
 		await e.flush(); // the store's change flushes; mid-backoff it only reads the outbox
@@ -1095,5 +1364,29 @@ describe('a discard while a request may still be running on the server (finding 
 			[[], [entry!.envelope.id], false]
 		]);
 		await eventually(async () => expect(await store.discarded()).toEqual([]));
+	});
+
+	it('Discard of a start whose request may have landed ends it abandoned on the server', async () => {
+		const store = await open();
+		const e = engine(store);
+		await e.flush();
+
+		// The start's POST passes 15 s while the server is still running it.
+		server.script.push('late');
+		await saved(store, start(), attach());
+		void e.flush();
+		await eventually(() => expect(server.received.at(-1)!.ids).toContain(W));
+		clock.advance(REQUEST_TIMEOUT_MS);
+		await eventually(() => expect(e.status()).toMatchObject({ state: 'unreachable' }));
+		server.landLate();
+
+		// The start conflict's Discard, before any answer said the start landed.
+		await discardInProgress((await inProgress(store))!, { store, now: clock.now });
+		clock.advance(BACKOFF.maxMs);
+		await e.flush();
+		await eventually(async () => expect(await outboxIds()).toEqual([]));
+
+		expect(server.rowsOf(W)!.workout.status).toBe('abandoned');
+		expect(await store.discarded()).toEqual([]);
 	});
 });

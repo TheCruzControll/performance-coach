@@ -1,12 +1,12 @@
 import { json } from '@sveltejs/kit';
 import type { Config } from '@sveltejs/adapter-vercel';
+import { waitUntil } from '@vercel/functions';
 import * as z from 'zod/mini';
 import { COACH_MAX_DURATION_S, TURN_LIMITS } from '#lib/domain/coach/budgets.ts';
 import { isSourceType, REF_ID_MAX, REF_LABEL_MAX } from '#lib/domain/coach/sources.ts';
-import { coachEventStream, runCoachTurn } from '#lib/server/agent/coach.ts';
+import { admitCoachTurn, coachEventStream, runCoachTurn } from '#lib/server/agent/coach.ts';
 import type { TurnEntry } from '#lib/server/agent/tools/context.ts';
 import { authErrorResponse, authRequest } from '#lib/server/auth/index.ts';
-import { enforceRateLimit } from '#lib/server/auth/rate-limit.ts';
 import type { RequestHandler } from './$types';
 
 /** Vercel lets a turn run this long (Fluid compute); every turn limit derives from it. */
@@ -53,7 +53,7 @@ export const POST: RequestHandler = async (event) => {
 	const { request, locals } = event;
 	const deadlineAt = Date.now() + TURN_LIMITS.turnMs;
 	try {
-		await enforceRateLimit('coach.turn', 'global', authRequest(event));
+		await admitCoachTurn(authRequest(event));
 	} catch (err) {
 		return authErrorResponse(err);
 	}
@@ -85,7 +85,8 @@ export const POST: RequestHandler = async (event) => {
 			entry: (body.data.entry ?? null) as TurnEntry | null,
 			signal: stop.signal
 		},
-		{ deadlineAt }
+		// A summary made after the answer outlives the stream (on Vercel, within maxDuration).
+		{ deadlineAt, after: (work) => void waitUntil(work) }
 	);
 	const stream = coachEventStream(turn, { onCancel: () => stop.abort() });
 	return new Response(stream, {

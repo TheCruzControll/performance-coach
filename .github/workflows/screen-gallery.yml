@@ -1,0 +1,128 @@
+# The screen gallery: full-page PNGs of every main screen and state on an iPhone 15 (WebKit, 3x)
+# and a 1440 × 900 desktop (Chromium), in today's design and the Graphite 2004 preview, each in the
+# dark and the light theme, for design reviews.
+# Started by hand only (never on a push or a pull request, so it adds nothing to CI time):
+#   gh workflow run screen-gallery.yml --ref <branch>
+#   scripts/gallery-download.sh <run id> <dir>   # then open <dir>/index.html
+# It builds and starts the production Node server as the E2E legs do (e2e/global-setup.ts), seeds
+# the owner with the e2e seeds and runs e2e/gallery.gallery.ts (E2E_GALLERY=1, playwright.config.ts).
+# A screen that fails is marked failed on the contact sheet; the artifact is uploaded either way.
+name: Screen gallery
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: screen-gallery-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  DATABASE_URL: postgres://coach:coach@localhost:5432/coach_dev
+  DATABASE_URL_UNPOOLED: postgres://coach:coach@localhost:5432/coach_dev
+  TEST_DATABASE_URL: postgres://coach:coach@localhost:5432/coach_test
+  E2E_DATABASE_URL: postgres://coach:coach@localhost:5432/coach_e2e
+  EXPLAIN_DATABASE_URL: postgres://coach:coach@localhost:5432/coach_explain
+  PGADMIN_URL: postgres://postgres:postgres@localhost:5432/postgres
+
+jobs:
+  gallery:
+    name: Screen gallery (iPhone WebKit · desktop Chromium · dark + light)
+    # As the E2E legs: the newest Ubuntu release Playwright builds WebKit for.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v7
+      - name: Start Postgres 18 (in the background)
+        run: nohup sh -c 'docker run -d --name postgres -p 5432:5432 -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=postgres postgres:18' > "$RUNNER_TEMP/postgres-start.log" 2>&1 &
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Runner image
+        id: image
+        run: echo "os=${ImageOS:-unknown}" >> "$GITHUB_OUTPUT"
+      # The E2E legs' caches: the same keys, so a WebKit leg's copy is restored here.
+      - name: Cache Playwright browsers
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ steps.image.outputs.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+      - name: Playwright system packages
+        id: apt
+        run: ./scripts/ci-playwright-deps.sh key chromium webkit >> "$GITHUB_OUTPUT"
+      - name: Cache Playwright system packages
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/apt-playwright
+          key: apt-playwright-v2-${{ steps.image.outputs.os }}-${{ steps.apt.outputs.packages }}-${{ steps.apt.outputs.image }}
+          restore-keys: apt-playwright-v2-${{ steps.image.outputs.os }}-${{ steps.apt.outputs.packages }}-
+      - name: Install Playwright system dependencies
+        timeout-minutes: 12
+        run: ./scripts/ci-playwright-deps.sh install ~/.cache/apt-playwright chromium webkit
+      - name: Install Playwright browsers
+        timeout-minutes: 8
+        run: |
+          for attempt in 1 2 3; do
+            if timeout 150 pnpm exec playwright install chromium webkit; then
+              exit 0
+            fi
+            echo "::warning::browser download attempt ${attempt} failed or timed out; retrying"
+            sleep 5
+          done
+          echo "::error::browser download failed 3 times"
+          exit 1
+      - name: Wait for Postgres
+        env:
+          WAIT_SECONDS: 90
+        run: |
+          for _ in $(seq "$WAIT_SECONDS"); do
+            if pg_isready -h localhost -p 5432 -U postgres; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::Postgres did not accept TCP connections within ${WAIT_SECONDS} s"
+          cat "$RUNNER_TEMP/postgres-start.log"
+          docker logs postgres
+          exit 1
+      - name: Create roles and databases
+        run: pnpm db:setup
+      - name: Capture the screens (global setup builds and starts the production Node server)
+        # One worker. A run took 6 min with one design (2026-11-11), so about 12 with two; the group
+        # budgets (29 min a design and theme) are each test's ceiling, never the expected time.
+        timeout-minutes: 120
+        env:
+          E2E_GALLERY: '1'
+        run: pnpm test:e2e
+      - name: Write the contact sheet
+        if: ${{ !cancelled() }}
+        run: |
+          mkdir -p test-results/gallery
+          node scripts/gallery-index.ts test-results/gallery
+      - name: Upload the gallery
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: screen-gallery
+          path: |
+            test-results/gallery/*.png
+            test-results/gallery/index.html
+          retention-days: 30
+          if-no-files-found: warn
+      - name: Upload the run's report and server log
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: screen-gallery-report
+          path: |
+            test-results/gallery/*.jsonl
+            playwright-report/
+            .e2e-server.log
+          include-hidden-files: true
+          retention-days: 14
+          if-no-files-found: ignore
