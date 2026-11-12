@@ -1,7 +1,7 @@
 /**
  * Chart scales, pure: values to percent of the plot box, ticks a person can read, and the labels
  * of week and month slots. Nothing here knows pixels; marks get their pixel sizes from CSS
- * (marks.css), so a chart holds at any width (docs/adr/NNNN-hand-built-charts.md).
+ * (marks.css), so a chart holds at any width (docs/adr/0016-hand-built-charts.md).
  */
 
 /** At most this many value ticks on an axis: enough to read a value, few enough to stay quiet. */

@@ -1,6 +1,6 @@
 <!--
   @component
-  Every chart's frame (docs/adr/NNNN-hand-built-charts.md). The server renders the title, a
+  Every chart's frame (docs/adr/0016-hand-built-charts.md). The server renders the title, a
   context caption (period · comparison · estimated or measured · trend window), the one-sentence
   summary and the table twin, and reserves the plot box at its full height, x-axis band included,
   with a hairline grid. After hydration the body, a CHART_BODIES loader, draws into that box and

@@ -1,7 +1,12 @@
-# NNNN — Hand-built charts: lazy SVG for lines, HTML for marks, one SSR-guarded registry
+# 0016 — Hand-built charts: lazy SVG for lines, HTML for marks, one SSR-guarded registry
 
-- **Status:** Proposed (M6). Numbered at merge, like a migration slot, so M6's slices refer to it
-  by its title, "the hand-built charts ADR". docs-m6-architecture accepts it.
+- **Status:** Accepted (M6, 2026-11-12). Built as decided below: four bodies (`line`, `bar`,
+  `range`, `diverging`) in `src/lib/ui/charts/bodies/`, loaded only through `CHART_BODIES`
+  (`bodies.ts`), on Progress, exercise detail and both reviews. Two details came later:
+  horizontal bars (range and diverging) share `RowList.svelte`, each row a 44 px button, and a
+  body that fails twice while online reloads the page, because Chromium keeps a failed module
+  fetch for the document's lifetime. The `pnpm budgets` check on `pc-chart-body` is m6-perf's
+  (#413), still open on 2026-11-12.
 - **Context:** Progress, exercise detail and the weekly and cycle reviews draw trends, stacked
   weekly totals, ranges and signed differences (PRD §10, §11), on an iPhone first and in a desktop
   window (§16). Every chart must read the same at 320 px and at 1440 px: a column is a column,
