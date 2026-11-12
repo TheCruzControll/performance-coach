@@ -9,19 +9,36 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import { deriveBuild } from '../e2e/world-copy.ts';
-import { routeWorker, SERIAL_WORLDS, world, worldCount, worlds } from '../e2e/worlds.ts';
+import { SERIAL_WORKERS, serialWorkers } from '../e2e/serial-workers.ts';
+import { routeWorker, world, worldCount, worlds } from '../e2e/worlds.ts';
 
 const DB = 'postgres://coach:coach@localhost:5432/coach_e2e';
-const serialLeg = { CI: '1', E2E_GROUP: 'serial', E2E_PORT: '4173', E2E_DATABASE_URL: DB };
+const serialLeg = {
+	CI: '1',
+	E2E_GROUP: 'serial',
+	E2E_ENGINE: 'chromium',
+	E2E_PORT: '4173',
+	E2E_DATABASE_URL: DB
+};
 
 describe('worldCount', () => {
-	it('gives a serial CI leg SERIAL_WORLDS worlds, and every other run one', () => {
-		expect(SERIAL_WORLDS).toBeGreaterThan(1);
-		expect(worldCount(serialLeg)).toBe(SERIAL_WORLDS);
+	it('gives a serial CI leg one world per worker of its engine, and every other run one', () => {
+		// e2e/serial-workers.ts: two workers on Chromium, one on WebKit (its heavy tests outgrew
+		// their timeout sharing the runner)
+		expect(SERIAL_WORKERS).toEqual({ chromium: 2, webkit: 1 });
+		expect(worldCount(serialLeg)).toBe(2);
+		expect(worldCount({ ...serialLeg, E2E_ENGINE: 'webkit' })).toBe(1);
+		expect(worldCount({ ...serialLeg, E2E_ENGINE: undefined })).toBe(1);
 		expect(worldCount({ ...serialLeg, CI: '' })).toBe(1);
 		for (const group of [undefined, 'main', 'alone', 'exclusive', 'sweeps']) {
 			expect(worldCount({ ...serialLeg, E2E_GROUP: group }), String(group)).toBe(1);
 		}
+	});
+
+	it('takes a serial leg’s workers for its engine, and 1 for no or an unknown engine', () => {
+		expect(serialWorkers('chromium')).toBe(SERIAL_WORKERS.chromium);
+		expect(serialWorkers('webkit')).toBe(SERIAL_WORKERS.webkit);
+		for (const engine of [undefined, '', 'firefox']) expect(serialWorkers(engine)).toBe(1);
 	});
 });
 
@@ -52,7 +69,7 @@ describe('world', () => {
 	});
 
 	it('refuses a world the run does not have, and a database a reset would refuse', () => {
-		expect(() => world(SERIAL_WORLDS, serialLeg)).toThrow(/worlds 0 to/);
+		expect(() => world(SERIAL_WORKERS.chromium, serialLeg)).toThrow(/worlds 0 to/);
 		expect(() => world(1, { E2E_PORT: '4173' })).toThrow(/worlds 0 to 0/);
 		expect(() =>
 			world(1, { ...serialLeg, E2E_DATABASE_URL: 'postgres://localhost/coach_dev' })
@@ -95,7 +112,8 @@ describe('routeWorker', () => {
 		expect(zero).toMatchObject({ E2E_PORT: '4173', E2E_DATABASE_URL: DB, E2E_WORLD: '0' });
 		for (const env of [
 			{ ...serialLeg },
-			{ ...serialLeg, E2E_GROUP: 'main', TEST_PARALLEL_INDEX: '1' }
+			{ ...serialLeg, E2E_GROUP: 'main', TEST_PARALLEL_INDEX: '1' },
+			{ ...serialLeg, E2E_ENGINE: 'webkit', TEST_PARALLEL_INDEX: '0' }
 		] as NodeJS.ProcessEnv[]) {
 			const before = { ...env };
 			routeWorker(env);
@@ -104,9 +122,9 @@ describe('routeWorker', () => {
 	});
 
 	it('refuses a worker past the run’s worlds', () => {
-		expect(() => routeWorker({ ...serialLeg, TEST_PARALLEL_INDEX: String(SERIAL_WORLDS) })).toThrow(
-			/worlds 0 to/
-		);
+		expect(() =>
+			routeWorker({ ...serialLeg, TEST_PARALLEL_INDEX: String(SERIAL_WORKERS.chromium) })
+		).toThrow(/worlds 0 to/);
 	});
 });
 

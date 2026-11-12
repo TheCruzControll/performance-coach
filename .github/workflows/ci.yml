@@ -199,14 +199,16 @@ jobs:
   # Every shard holds whole files, planned by measured seconds, or estimated ones for spec files
   # the table lacks (scripts/e2e-shards.ts).
   # Shard timeouts stay at the unsharded leg's value until three runs per shard are measured.
-  # main legs run 2 Playwright workers (playwright.config.ts), the other legs 1; main's `minutes`
-  # stay at their 1-worker values until three 2-worker runs are measured.
-  # serial legs run 2 workers too, each with an owner world of its own (a database and a
-  # production server, e2e/worlds.ts). Two workers share the runner's 4 vCPUs: in 43172816565 a
-  # serial·chromium spec file took 1.15× its 1-worker time and a serial·webkit one 1.39×. So
-  # serial·chromium went from 3 shards to 2 (8.5 and 8.8 job minutes there), and serial·webkit
-  # from 5 to 4: at 3 its two heavier shards took 11.8 and 12.4, longer than any 1-worker shard.
-  # Their `minutes` stay unchanged until three such runs are measured.
+  # main legs run 2 Playwright workers (playwright.config.ts), alone and exclusive 1; main's
+  # `minutes` stay at their 1-worker values until three 2-worker runs are measured.
+  # serial legs run one worker per owner world (a database and a production server each,
+  # e2e/worlds.ts), as many as e2e/serial-workers.ts sets for the engine: the one place, with the
+  # measurements. Two workers share the runner's 4 vCPUs: in 43172816565 a serial·chromium spec
+  # file took 1.15× its 1-worker time, so serial·chromium runs 2 and went from 3 shards to 2 (8.5
+  # and 8.8 job minutes there). A serial·webkit one took 1.39×, and its heaviest tests passed their
+  # 30 s timeout, attempt and retry (43178306850), so serial·webkit runs 1 again, in 5 shards as
+  # before (9.4-11.6 job minutes in 43170932662): ~460-515 s of specs a shard at the speed of the
+  # timing table's runs. `minutes` stay unchanged until three such runs are measured.
   e2e-legs:
     name: E2E ${{ matrix.group }} · ${{ matrix.engine }} · ${{ matrix.shard }}/${{ matrix.of }}
     # Pinned to the newest Ubuntu release Playwright builds WebKit for (its browser builds are
@@ -226,10 +228,11 @@ jobs:
           - { group: main, engine: webkit, shard: 3, of: 3, minutes: 13 }
           - { group: serial, engine: chromium, shard: 1, of: 2, minutes: 14 }
           - { group: serial, engine: chromium, shard: 2, of: 2, minutes: 14 }
-          - { group: serial, engine: webkit, shard: 1, of: 4, minutes: 15 }
-          - { group: serial, engine: webkit, shard: 2, of: 4, minutes: 15 }
-          - { group: serial, engine: webkit, shard: 3, of: 4, minutes: 15 }
-          - { group: serial, engine: webkit, shard: 4, of: 4, minutes: 15 }
+          - { group: serial, engine: webkit, shard: 1, of: 5, minutes: 15 }
+          - { group: serial, engine: webkit, shard: 2, of: 5, minutes: 15 }
+          - { group: serial, engine: webkit, shard: 3, of: 5, minutes: 15 }
+          - { group: serial, engine: webkit, shard: 4, of: 5, minutes: 15 }
+          - { group: serial, engine: webkit, shard: 5, of: 5, minutes: 15 }
           - { group: alone, engine: chromium, shard: 1, of: 2, minutes: 5 }
           - { group: alone, engine: chromium, shard: 2, of: 2, minutes: 5 }
           - { group: exclusive, engine: chromium, shard: 1, of: 1, minutes: 5 }
