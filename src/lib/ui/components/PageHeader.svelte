@@ -1,7 +1,9 @@
 <!--
   @component
   iOS-style large title with an eyebrow line and an optional trailing action. A `badge` sits on
-  the eyebrow line, beside the eyebrow, so the large title never runs into it.
+  the eyebrow line, beside the eyebrow, so the large title never runs into it. In Graphite 2004
+  (graphite.css, the `page-header` hook) the eyebrow is hidden, and a date eyebrow (`dated`) is the
+  subtitle under the title instead.
 -->
 <script lang="ts">
 	import type { Snippet } from 'svelte';
@@ -11,20 +13,22 @@
 		eyebrow?: string;
 		/** A status badge for the eyebrow line, not the title's: the title keeps its full width. */
 		badge?: Snippet;
+		/** The eyebrow is the date: Graphite 2004 shows it as the subtitle. */
+		dated?: boolean;
 		trailing?: Snippet;
 	}
 
-	let { title, eyebrow, badge, trailing }: Props = $props();
+	let { title, eyebrow, badge, dated = false, trailing }: Props = $props();
 </script>
 
-<header class="page-header">
+<header class="page-header" data-ui="page-header">
 	<div class="titles">
 		{#if badge}
 			<div class="eyebrow-row">
-				{#if eyebrow}<p class="eyebrow">{eyebrow}</p>{/if}
+				{#if eyebrow}<p class="eyebrow" data-date={dated || undefined}>{eyebrow}</p>{/if}
 				{@render badge()}
 			</div>
-		{:else if eyebrow}<p class="eyebrow">{eyebrow}</p>{/if}
+		{:else if eyebrow}<p class="eyebrow" data-date={dated || undefined}>{eyebrow}</p>{/if}
 		<h1 class="title">{title}</h1>
 	</div>
 	{#if trailing}<div class="trailing">{@render trailing()}</div>{/if}

@@ -67,6 +67,7 @@ import {
 import { clip, type ReviewExercise } from '../../../domain/programming/review/weekly';
 import type { LiftResults } from '../../../domain/programming/stages/results';
 import { compareText } from '../../../domain/programming/random';
+import { PROPOSAL } from '../../../domain/training/lifecycles';
 import type { BaselineLift } from '../../../domain/training/types';
 import type { WeightUnit } from '../../../domain/units';
 import { getDb, type Executor } from '../../db';
@@ -82,6 +83,7 @@ import { getAthleteProfile, listGoals } from '../profile/index';
 import { programmingInputFor } from '../programs/alternatives';
 import { getProgramVersion, type StoredBlock } from '../programs/index';
 import { isUuid } from '../ids';
+import { transition } from '../lifecycle-guard';
 import {
 	decisionOf,
 	getLiveCycleReview,
@@ -342,7 +344,8 @@ async function coachNextCycles(db: Executor, ownerId: string, lineage: string) {
 		if (p.kind !== 'next_cycle' || p.source !== null) continue;
 		const row = (await repo.lockProposal(ownerId, p.id))!;
 		const payload = row.payload as unknown as NextCycleSubset;
-		if (payload.fromBlockLineage === lineage) found.push({ id: row.id, payload });
+		if (payload.fromBlockLineage === lineage)
+			found.push({ id: row.id, status: row.status, payload });
 	}
 	return found;
 }
@@ -405,7 +408,13 @@ async function compute(
 		...{ directives, overrides, clamps },
 		folded: [...carried.folded, ...folded.map((f) => f.id)]
 	};
-	return { values, block, subset, evidence, newlyFolded: folded.map((f) => f.id) };
+	return {
+		values,
+		block,
+		subset,
+		evidence,
+		newlyFolded: folded.map(({ id, status }) => ({ id, status }))
+	};
 }
 type Computed = Awaited<ReturnType<typeof compute>>;
 
@@ -428,9 +437,10 @@ async function proposeFor(
 	);
 	await linkProposal(ownerId, 'cycle', review.id, proposal.id, deps);
 	const proposals = createCoachProposalsRepository(deps.db);
-	for (const id of c.newlyFolded) {
-		const decided = { status: 'superseded', supersededReason: 'folded_into_review' } as const;
-		await proposals.decide(ownerId, id, { ...decided, updatedAt: deps.now() });
+	for (const { id, status } of c.newlyFolded) {
+		const decided = { supersededReason: 'folded_into_review' } as const;
+		const t = transition(PROPOSAL, status, 'supersede');
+		await proposals.decide(ownerId, id, t, { ...decided, updatedAt: deps.now() });
 	}
 	return getCycleReview(ownerId, review.id, deps);
 }
@@ -495,10 +505,10 @@ export async function refreshCycleReview(
 		);
 		if (head?.status === 'proposed') {
 			const proposals = createCoachProposalsRepository(tx);
-			await proposals.lockProposal(ownerId, head.id);
+			const locked = (await proposals.lockProposal(ownerId, head.id))!;
 			const at = now();
-			await proposals.decide(ownerId, head.id, {
-				...{ status: 'superseded', supersededReason: 'review_refreshed' },
+			await proposals.decide(ownerId, head.id, transition(PROPOSAL, locked.status, 'supersede'), {
+				...{ supersededReason: 'review_refreshed' },
 				...{ closedAt: at, updatedAt: at }
 			});
 		}
