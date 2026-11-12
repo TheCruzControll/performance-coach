@@ -228,7 +228,7 @@ test.describe('a chart whose frame fails to load', () => {
 		});
 		await gotoHydrated(page, reviewUrl());
 		const rpe = section(page, 'rpe');
-		const retry = rpe.getByRole('button', { name: 'Retry' });
+		const retry = rpe.getByRole('button', { name: 'Try again' });
 		await expect(retry).toBeVisible();
 		await expect(rpe).toContainText('Couldn’t load this chart.');
 		await expect(rpe.locator('[aria-busy="true"]')).toHaveCount(0);
@@ -236,7 +236,7 @@ test.describe('a chart whose frame fails to load', () => {
 		failing = false;
 		await retry.click();
 		await expect(rpe.getByTestId('diverging-chart')).toBeVisible({ timeout: 15_000 });
-		await expect(rpe.getByRole('button', { name: 'Retry' })).toHaveCount(0);
+		await expect(rpe.getByRole('button', { name: 'Try again' })).toHaveCount(0);
 	});
 });
 

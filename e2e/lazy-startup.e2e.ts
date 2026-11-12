@@ -71,7 +71,7 @@ test('toasts need no network: one shown offline appears whole, and reconnecting 
 	await page.getByRole('button', { name: 'Error toast', exact: true }).click();
 	const next = toastWith(page, 'Sync failed');
 	await expect(next.getByRole('button', { name: 'Dismiss notification' })).toBeVisible();
-	await expect(next.getByRole('button', { name: 'Retry' })).toBeVisible();
+	await expect(next.getByRole('button', { name: 'Try again' })).toBeVisible();
 	await expect(offline).toHaveCount(0, { timeout: 10_000 });
 
 	const inserted = await page.evaluate(

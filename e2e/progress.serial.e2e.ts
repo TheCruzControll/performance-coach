@@ -227,6 +227,12 @@ test.describe('twelve weeks', () => {
 		await expect(
 			strength.getByRole('listitem').filter({ hasText: 'Back squat' }).getByTestId('verdict')
 		).toHaveText('Real improvement');
+		// A measure named in training jargon says under its name what it means.
+		const general = page.locator('[data-testid="verdict-card"][data-area="general"]');
+		await expect(general.getByRole('listitem').filter({ hasText: 'Training load' })).toContainText(
+			'Minutes × how hard each session felt, added up'
+		);
+		await expect(general).not.toContainText('not judged');
 		await expect(tile(page, 'mileage').getByTestId('verdict')).toHaveText('Real improvement');
 
 		await gotoHydrated(page, '/progress?period=4w');
@@ -348,7 +354,7 @@ test.describe('twelve weeks', () => {
 
 			// Where the browser keeps the failed fetch (Chromium), Retry reloads Progress.
 			failing = false;
-			await failed.getByRole('button', { name: 'Retry' }).click();
+			await failed.getByRole('button', { name: 'Try again' }).click();
 			await expect(failed).toHaveCount(0);
 			await expectKpis(page, seeded, 12);
 		});
@@ -386,7 +392,7 @@ test.describe('twelve weeks', () => {
 		await expect(page.getByTestId('error-view')).toHaveCount(0);
 
 		await context.clearCookies({ name: 'pc-test-fail' });
-		await failed.getByRole('button', { name: 'Retry' }).click();
+		await failed.getByRole('button', { name: 'Try again' }).click();
 		await expect(failed).toHaveCount(0);
 		await expect(page.getByTestId('overview')).toHaveAttribute('data-stage', 'history');
 		await expectKpis(page, seeded, 12);

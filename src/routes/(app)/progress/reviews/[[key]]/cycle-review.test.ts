@@ -84,7 +84,6 @@ const text = (fragment: string) =>
 		.replace(/<[^>]+>/g, ' ')
 		.replace(/\s+/g, ' ')
 		.trim();
-
 /** A section's markup: its disclosure, then its body, up to the next section (ReviewSections). */
 const sectionOf = (body: string, id: string) => {
 	const start = body.search(new RegExp(`<div[^>]*data-section="${id}"`));

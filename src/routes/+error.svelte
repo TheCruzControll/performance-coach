@@ -28,7 +28,7 @@
 		id="main"
 		style="display: grid; place-content: center; gap: var(--space-3); min-height: 100dvh; padding: var(--space-6); text-align: center"
 	>
-		<h1>{page.error?.offline ? "You're offline" : 'Something went wrong'}</h1>
+		<h1>{page.error?.offline ? 'You’re offline' : 'Something went wrong'}</h1>
 		<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- this screen's own URL -->
 		<a href={page.url.pathname + page.url.search} style={RETRY_STYLE}>Try again</a>
 	</main>

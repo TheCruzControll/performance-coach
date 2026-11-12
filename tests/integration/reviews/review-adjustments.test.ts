@@ -136,45 +136,53 @@ describe('review-aged: a review stored on Monday, decided later in the week', ()
 		});
 	});
 
-	it('on Thursday Generate applies only the rest and says how many had passed', async () => {
-		await withRollback(async (db) => {
-			const s = await seed(db, 'review-aged', THURSDAY);
-			const { offers } = await card(s);
-			const passed = offers.filter((o) => !o.ahead).length;
-			const before = await versions(db, s.owner);
-			const result = await decideReview(
-				s.owner,
-				{
-					form: form([
-						['reviewId', s.first.review.id],
-						...offers.map((o): [string, string] => ['item', o.id])
-					]),
-					mode: 'decide',
-					weekStartsOn: s.seeded.review.weekStartsOn
-				},
-				s.deps
-			);
-			expect(passed).toBeGreaterThan(0);
-			expect(result).toEqual({
-				outcome: 'applied',
-				words: `Next week updated · version ${before + 1} · ${passed} ${passed === 1 ? 'change was' : 'changes were'} for sessions already past`,
-				href: '/train?week=4'
-			});
-			const after = await card(s);
-			expect(after.card.state).toBe('applied');
-			expect(after.card.link).toEqual({
-				href: `/train/history/${before + 1}`,
-				label: `See version ${before + 1} in History`
-			});
-			const [applied] = (
-				await db.execute<{ n: number }>(
-					sql`select jsonb_array_length(payload->'ops')::int as n from coach_proposals
+	// The card posts only the changes still ahead: a passed one's checkbox is disabled.
+	it.each([
+		['every change posted', false],
+		['only those still ahead posted, as the card posts them', true]
+	])(
+		'on Thursday Generate applies only the rest and says how many had passed (%s)',
+		async (_, aheadOnly) => {
+			await withRollback(async (db) => {
+				const s = await seed(db, 'review-aged', THURSDAY);
+				const { offers } = await card(s);
+				const passed = offers.filter((o) => !o.ahead).length;
+				const posted = aheadOnly ? offers.filter((o) => o.ahead) : offers;
+				const before = await versions(db, s.owner);
+				const result = await decideReview(
+					s.owner,
+					{
+						form: form([
+							['reviewId', s.first.review.id],
+							...posted.map((o): [string, string] => ['item', o.id])
+						]),
+						mode: 'decide',
+						weekStartsOn: s.seeded.review.weekStartsOn
+					},
+					s.deps
+				);
+				expect(passed).toBeGreaterThan(0);
+				expect(result).toEqual({
+					outcome: 'applied',
+					words: `Next week updated · version ${before + 1} · ${passed} ${passed === 1 ? 'change was' : 'changes were'} for sessions already past`,
+					href: '/train?week=4'
+				});
+				const after = await card(s);
+				expect(after.card.state).toBe('applied');
+				expect(after.card.link).toEqual({
+					href: `/train/history/${before + 1}`,
+					label: `See version ${before + 1} in History`
+				});
+				const [applied] = (
+					await db.execute<{ n: number }>(
+						sql`select jsonb_array_length(payload->'ops')::int as n from coach_proposals
 						where owner_id = ${s.owner} and status = 'applied'`
-				)
-			).rows;
-			expect(applied!.n).toBe(offers.length - passed);
-		});
-	});
+					)
+				).rows;
+				expect(applied!.n).toBe(offers.length - passed);
+			});
+		}
+	);
 });
 
 describe('review-ahead: every change still ahead', () => {

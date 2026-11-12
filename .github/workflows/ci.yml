@@ -186,12 +186,12 @@ jobs:
   # took 7.3-8.8 Playwright minutes in 42695476716 to 42698046025, no more than main's.
   # Then the legs took more shards at about the same runner-minutes, so the longest leg, not the
   # sum, sets a run's wall clock: main·webkit 3, serial·chromium 3, serial·webkit 5 (14 entries,
-  # 22 jobs a pull-request run, 20 starting at once). main·chromium stays in two: its a11y files
-  # alone (484 s over 2 workers) would make shard 1 of three the heaviest, which shard 1 must
-  # never be (it also runs any file the plan missed; scripts/e2e-shards.test.ts fails at three).
+  # 22 jobs a pull-request run, 20 starting at once). main·chromium stayed in two: its a11y files
+  # alone (484 s over 2 workers) would have made shard 1 of three the heaviest, which the rule then
+  # forbade (it also runs any file the plan missed; scripts/e2e-shards.test.ts fails at three).
   # Predicted Playwright steps at runs 42712377736 and 42711097021's speed: main·webkit ~274 s,
   # serial·chromium ~330 s, serial·webkit ~326 s, alone 204-224 s. main·chromium's two shards
-  # took 392-455 s there, so it stays the longest leg until its a11y files can leave shard 1.
+  # took 392-455 s there, so it stayed the longest leg (for its third shard, see the end).
   # alone·chromium ran 4.9 of its 5 minutes on main (42914798868, 42916363395) and timed out once
   # M4's workout screens joined the budgets (42933643722), so it split in two, each shard a runner
   # of its own, perf still alone on it: ~150 s of specs a shard at that run's speed. exclusive left
@@ -209,8 +209,20 @@ jobs:
   # 30 s timeout, attempt and retry (43178306850), so serial·webkit runs 1 again. In 5 shards, as
   # before, its shards took 8.6-11.8 job minutes (43186419116; 9.4-11.6 in 43170932662): about
   # 100 s of setup on top of their specs. So it went to 6, ~385-425 s of specs a shard at the
-  # timing table's speed, about 9 job minutes. `minutes` stay unchanged until three such runs are
-  # measured.
+  # timing table's speed, about 9 job minutes. Measured since, in main's six green runs
+  # 43197965258 to 43232612790 (the timing table's runs): serial·webkit's slowest shard took 10.0
+  # Playwright minutes, so its `minutes` stay 15 (1.5 × 10.0). serial·chromium's took 10.8 (16.2
+  # at 1.5×), and its 14 is unchanged: never raised to fit, it gains a shard if it nears 14.
+  # Those runs took 10.8-15.6 minutes, against a 10-minute goal: serial·chromium's and
+  # main·chromium's slowest shards took 10.8 Playwright minutes, serial·webkit's 10.0. Replayed on
+  # their per-file seconds with the spec files of today, a third shard for each Chromium leg and a
+  # seventh for serial·webkit bring every leg's slowest shard to 8.9 minutes at most (medians:
+  # main·chromium 6.3, serial·chromium 7.5, serial·webkit 8.3; main·webkit stays at 7.8 and 8.7).
+  # main·chromium's a11y files (642 s over 2 workers) then fill shard 1 by themselves at 321 s,
+  # 3 s more than shards 2 and 3: the planner puts nothing else there, and the rule allows a
+  # shard 1 holding only those files to be heavier by less than its 10% (SHARD_ONE_SHARE).
+  # main·chromium's `minutes` drop to 17: 1.5 × its slowest 2-worker shard in those runs (10.8).
+  # serial·chromium keeps 14 and serial·webkit 15, as above, until their new shards are measured.
   e2e-legs:
     name: E2E ${{ matrix.group }} · ${{ matrix.engine }} · ${{ matrix.shard }}/${{ matrix.of }}
     # Pinned to the newest Ubuntu release Playwright builds WebKit for (its browser builds are
@@ -223,19 +235,22 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { group: main, engine: chromium, shard: 1, of: 2, minutes: 19 }
-          - { group: main, engine: chromium, shard: 2, of: 2, minutes: 19 }
+          - { group: main, engine: chromium, shard: 1, of: 3, minutes: 17 }
+          - { group: main, engine: chromium, shard: 2, of: 3, minutes: 17 }
+          - { group: main, engine: chromium, shard: 3, of: 3, minutes: 17 }
           - { group: main, engine: webkit, shard: 1, of: 3, minutes: 13 }
           - { group: main, engine: webkit, shard: 2, of: 3, minutes: 13 }
           - { group: main, engine: webkit, shard: 3, of: 3, minutes: 13 }
-          - { group: serial, engine: chromium, shard: 1, of: 2, minutes: 14 }
-          - { group: serial, engine: chromium, shard: 2, of: 2, minutes: 14 }
-          - { group: serial, engine: webkit, shard: 1, of: 6, minutes: 15 }
-          - { group: serial, engine: webkit, shard: 2, of: 6, minutes: 15 }
-          - { group: serial, engine: webkit, shard: 3, of: 6, minutes: 15 }
-          - { group: serial, engine: webkit, shard: 4, of: 6, minutes: 15 }
-          - { group: serial, engine: webkit, shard: 5, of: 6, minutes: 15 }
-          - { group: serial, engine: webkit, shard: 6, of: 6, minutes: 15 }
+          - { group: serial, engine: chromium, shard: 1, of: 3, minutes: 14 }
+          - { group: serial, engine: chromium, shard: 2, of: 3, minutes: 14 }
+          - { group: serial, engine: chromium, shard: 3, of: 3, minutes: 14 }
+          - { group: serial, engine: webkit, shard: 1, of: 7, minutes: 15 }
+          - { group: serial, engine: webkit, shard: 2, of: 7, minutes: 15 }
+          - { group: serial, engine: webkit, shard: 3, of: 7, minutes: 15 }
+          - { group: serial, engine: webkit, shard: 4, of: 7, minutes: 15 }
+          - { group: serial, engine: webkit, shard: 5, of: 7, minutes: 15 }
+          - { group: serial, engine: webkit, shard: 6, of: 7, minutes: 15 }
+          - { group: serial, engine: webkit, shard: 7, of: 7, minutes: 15 }
           - { group: alone, engine: chromium, shard: 1, of: 2, minutes: 5 }
           - { group: alone, engine: chromium, shard: 2, of: 2, minutes: 5 }
           - { group: exclusive, engine: chromium, shard: 1, of: 1, minutes: 5 }
