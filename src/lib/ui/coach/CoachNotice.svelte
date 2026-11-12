@@ -4,9 +4,12 @@
   switched off, misconfigured), how a turn ended (rate limited, budget, refused, busy, offline, a
   failure), a piece of the screen that failed to load or a write that failed, each a Notice with
   an icon and words, and Retry where trying again can work; or the empty state, when there is no
-  conversation yet. Retry is offered only with `onretry`, and is busy while `retrying`.
+  conversation yet. Retry is offered only with `onretry`, and is busy while `retrying`; `retry`
+  overrides whether the state offers it (a rate limit's, once its wait is over). `children` adds
+  what the state needs below its words: a countdown, links to the rest of the app.
 -->
 <script lang="ts">
+	import type { Snippet } from 'svelte';
 	import Button from '../components/Button.svelte';
 	import EmptyState from '../components/EmptyState.svelte';
 	import Notice from '../components/Notice.svelte';
@@ -16,10 +19,12 @@
 		kind: CoachNoticeKind;
 		onretry?: () => void;
 		retrying?: boolean;
+		retry?: boolean;
 		'data-testid'?: string;
+		children?: Snippet;
 	}
 
-	let { kind, onretry, retrying = false, 'data-testid': testId }: Props = $props();
+	let { kind, onretry, retrying = false, retry, 'data-testid': testId, children }: Props = $props();
 
 	const copy = $derived(COACH_NOTICES[kind]);
 </script>
@@ -35,7 +40,8 @@
 {:else}
 	<Notice tone={copy.tone} icon={copy.icon} title={copy.title} data-testid={testId}>
 		<p>{copy.body}</p>
-		{#if copy.retry && onretry}
+		{@render children?.()}
+		{#if (retry ?? copy.retry) && onretry}
 			<div class="action">
 				<Button variant="secondary" size="sm" icon="refresh" loading={retrying} onclick={onretry}
 					>Try again</Button

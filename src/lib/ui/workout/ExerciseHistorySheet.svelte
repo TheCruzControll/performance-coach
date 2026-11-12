@@ -11,6 +11,9 @@
     previous session, or the one attached to the workout) and says so, or that it has none. By
     exercise id alone it says the history needs a connection, with Retry.
   - A request that fails, or gets no answer within HISTORY_TIMEOUT_MS, shows its error with Retry.
+  - Ask the coach opens Coach with 'How has my <exercise> progressed?' about it (a link:
+    ui/ask-link.ts, so the workout loads no coach module). Not by exercise id alone: that sheet is
+    already over a conversation.
   Each new `request` opens it afresh; a null one closes it (History's Back). `onclose` is the
   owner closing it.
 -->
@@ -22,9 +25,11 @@
 		type HistoryRequest,
 		type HistorySet
 	} from '#lib/client/workout/exercise-history.ts';
+	import { ASK_QUESTIONS, askHref } from '#lib/ui/ask-link.ts';
 	import BottomSheet from '#lib/ui/components/BottomSheet.svelte';
 	import Button from '#lib/ui/components/Button.svelte';
 	import EmptyState from '#lib/ui/components/EmptyState.svelte';
+	import ListRow from '#lib/ui/components/ListRow.svelte';
 	import Notice from '#lib/ui/components/Notice.svelte';
 	import Section from '#lib/ui/components/Section.svelte';
 	import Skeleton from '#lib/ui/components/Skeleton.svelte';
@@ -99,6 +104,7 @@
 	const best = $derived(history?.records.bestE1rm && bestWords(history.records.bestE1rm));
 	const fallback = $derived(shown?.fallback ?? null);
 	const offline = $derived(offlineWords(shown));
+	const question = $derived(shown?.name === undefined ? null : ASK_QUESTIONS.exercise(shown.name));
 </script>
 
 <BottomSheet
@@ -237,6 +243,15 @@
 					</Notice>
 				{/if}
 			</Section>
+		{/if}
+		{#if question}
+			<ListRow
+				icon="coach"
+				title="Ask the coach"
+				subtitle={question}
+				href={askHref(question, 'exercise', { type: 'exercise', id: shown!.exerciseId })}
+				data-testid="ask-coach"
+			/>
 		{/if}
 	</div>
 </BottomSheet>

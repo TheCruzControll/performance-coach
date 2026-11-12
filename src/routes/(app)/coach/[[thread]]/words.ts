@@ -5,6 +5,7 @@
  */
 import type { ProposalCardView } from '#lib/domain/coach/cards.ts';
 import type { CompletedBlock } from '#lib/domain/coach/index.ts';
+import { parseRef, type SourceRef } from '#lib/domain/coach/sources.ts';
 import { MESSAGE_STATUS_LABEL, type MessageStatus } from '#lib/domain/coach/vocabulary.ts';
 import { addDays } from '#lib/domain/calendar.ts';
 import { localDay } from '#lib/domain/dates.ts';
@@ -69,22 +70,32 @@ export interface RunCard {
 export const ENTRY_LABEL: Readonly<Record<string, string>> = Object.freeze({
 	workout: 'From your workout',
 	exercise: 'From an exercise’s history',
-	today: 'From Today'
+	today: 'From Today',
+	weekly_review: 'From your weekly review',
+	cycle_review: 'From your cycle review'
 });
 
-/** The question an entry point opened Coach with (?ask=…&from=…), and its chip's words. */
+/**
+ * The question an entry point opened Coach with (?ask=…&from=…&ref=…, built by ui/ask-link.ts),
+ * and its chip's words.
+ */
 export interface Prefill {
 	text: string;
 	/** The entry's `from`, as the turn endpoint takes it; null when none or malformed. */
 	from: string | null;
 	/** The chip's words; null when the entry has none. */
 	label: string | null;
+	/** What the entry is about (`ref=type:id`), sent with the first turn; null without an entry. */
+	ref: SourceRef | null;
 }
 
 /** The turn endpoint's rule for an entry's `from` (api/coach/turns). */
 const ENTRY_FROM = /^[a-z][a-z_]{0,31}$/;
 
-/** The prefill in a /coach URL: `ask` (trimmed, at most the composer's limit) and `from`. */
+/**
+ * The prefill in a /coach URL: `ask` (trimmed, at most the composer's limit), `from`, and `ref`
+ * when it is a source ref (parseRef, with no label) and `from` is valid.
+ */
 export function prefillOf(search: URLSearchParams): Prefill | null {
 	const text = Array.from((search.get('ask') ?? '').trim())
 		.slice(0, COMPOSER_MAX_CHARS)
@@ -93,10 +104,12 @@ export function prefillOf(search: URLSearchParams): Prefill | null {
 	if (text === '') return null;
 	const raw = search.get('from');
 	const from = raw !== null && ENTRY_FROM.test(raw) ? raw : null;
+	const ref = from === null ? null : parseRef(search.get('ref') ?? '');
 	return {
 		text,
 		from,
-		label: (from !== null && Object.hasOwn(ENTRY_LABEL, from) && ENTRY_LABEL[from]) || null
+		label: (from !== null && Object.hasOwn(ENTRY_LABEL, from) && ENTRY_LABEL[from]) || null,
+		ref: ref && !ref.label ? ref : null
 	};
 }
 

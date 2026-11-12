@@ -783,7 +783,8 @@ Each change is an `OverlayAssumption` `{ rule, field, value, why }` (`OVERLAY_RU
 bridge?, decisions, fingerprint, significantChanges }`: M3's generator extended with progression
 from actual results, without editing it. `next` is `nextBlockInput`'s; `previous` is the reviewed
 block as planned, each lift's exposures and e1RM trend (`LiftResults`) and the owner's unit.
-`nextStages` is M3's `STAGES` with three changes (a renamed M3 stage throws):
+M3's `prepare` runs first, and `nextStages` is M3's `STAGES`, matched by name so M7's `phasing`
+and `schedule` are inherited, with three changes (a renamed M3 stage throws):
 
 - `nextShape` (`stages/next-shape.ts`) replaces `blocks`: one planned block on `dates.block`,
   named and goal-linked as the outline block it plans, its weeks by `nextWeekKinds` (accumulation,
@@ -808,7 +809,9 @@ block as planned, each lift's exposures and e1RM trend (`LiftResults`) and the o
 The block is checked by `programPlanSchema` as a plan of its own (no session before
 `firstPlannedDay`; decision refs name it `blocks.0`), the bridge and block as whole, contiguous
 weeks first. `next_block_planned` states the block, its start, the bridge and any `lostWeeks`.
-`GENERATOR_ID` is `next-block/1`; the fingerprint is M3's over the input, with a digest of the
+`GENERATOR_ID` is `next-block/1+` M3's `GENERATOR_ID`, so an M3 or M7 bump refuses a preview made
+before it (`ConflictError` reason `profile`, then the review previews again); the fingerprint is
+M3's over the input, with a digest of the
 directives, the owner's part, the dates, the outline and the previous block with its results.
 `significantChanges` (`SIGNIFICANT`): swaps, loads moved ≥ 5 % by results (as applied), ±2 hard
 sets a week per group (logged as a `results_progression`), run volume ≥ 10 %, a phase change, a

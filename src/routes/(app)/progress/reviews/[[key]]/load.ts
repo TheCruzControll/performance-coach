@@ -4,14 +4,18 @@
  * give the stored reviews and the week that is due; this module arranges them into the list the
  * screen shows and the selected review's view, every figure from its stored snapshot.
  *
- * - The key is 'w-YYYY-MM-DD' (a weekly review, by its Monday), 'c-<uuid>' (a cycle review) or
- *   absent (the list alone). A malformed key, a week with no review and, until the cycle review
- *   screen adds its view, any cycle key are the 404 page in the shell.
+ * - The key is 'w-YYYY-MM-DD' (a weekly review, by its Monday), 'c-<uuid>' (a cycle review, by
+ *   any revision's id: its block's live review shows) or absent (the list alone). A malformed key,
+ *   a week with no review and an unknown cycle review are the 404 page in the shell.
+ * - Cycle rows (cycleRows) come first: the block to review (due, or still running), then each
+ *   cycle review, newest first. The cycle view is cycle-data.ts's.
  * - The list is newest first: this week while it has no review (due once every session is done
  *   or skipped, otherwise in progress), then each week back to the oldest review on the page,
  *   reviewed or 'Not reviewed yet'.
  * - Next week's card (nextWeekView): the changes still open with each one's why, its half step
  *   and whether its session has passed, or what was decided, or why nothing is proposed.
+ * - The selected review's write-up (reviewNarration): stored, being written, or why there is none,
+ *   with its 'Discuss with your coach' link; none for a review written before M6.
  * - It fails soft: a failed read is recorded as a server error (kind 'load') and the screen shows
  *   its load-failed notice with Retry, inside the shell, instead of the 500 page.
  */
@@ -23,10 +27,19 @@ import { WEEKDAY_INFO } from '#lib/domain/weekdays.ts';
 import { METRICS } from '#lib/domain/analytics/metrics.ts';
 import { TREND_MIN_POINTS } from '#lib/domain/analytics/trend.ts';
 import type { Finding, FindingLevel } from '#lib/domain/programming/review/brief.ts';
+import { coachStatus } from '#lib/server/agent/coach.ts';
+import { narrationBlocks, narrationState } from '#lib/server/agent/reviews/narrate.ts';
 import { ownerToday } from '#lib/server/local-date.ts';
 import { recordServerError, type ServerErrorInput } from '#lib/server/services/errors.ts';
 import { isUuid } from '#lib/server/services/ids.ts';
+import { getCurrentProgram } from '#lib/server/services/programs/index.ts';
 import {
+	createCycleReview,
+	CycleReviewNotReviewableError,
+	getCycleReviewViewById,
+	unreviewedBlock,
+	type ReviewListItem,
+	type UnreviewedBlock,
 	createWeeklyReview,
 	getWeeklyReviewView,
 	listReviews,
@@ -45,9 +58,19 @@ import {
 } from '#lib/server/services/reviews/index.ts';
 import type { TrainingDeps } from '#lib/server/services/training/shared.ts';
 import type { TileVerdict } from '#lib/ui/analytics/verdict-words.ts';
+import { ASK_QUESTIONS, askHref } from '#lib/ui/ask-link.ts';
 import { shortDate } from '#lib/ui/program/words.ts';
 import { slotOf } from '../../load.ts';
+import { cycleKey, cycleReviewData, cycleTitle, type CycleReviewData } from './cycle-data.ts';
+import { nextCycleView } from './next-cycle-data.ts';
 import { reviewSections, type SectionView } from './sections.ts';
+import {
+	linesOf,
+	noticeOf,
+	WRITE_UP_ON_OPEN,
+	type NarrationView,
+	type WriteUpTarget
+} from './write-up.ts';
 
 /** The reviews one list shows: a page of the store's largest, about a year of weeks. */
 export const LIST_LIMIT = REVIEWS_PAGE.max;
@@ -84,6 +107,8 @@ export interface ReviewRow {
 	title: string;
 	/** The review's summary, or what the row's state means. */
 	text: string;
+	/** A cycle row's block: what its Create posts. */
+	cycle?: { programId: string; blockLineage: string };
 }
 
 export interface TrendView {
@@ -130,8 +155,10 @@ export interface WeeklyReviewData {
 	 * it is up to date.
 	 */
 	stale: { words: string; detail: string; refreshable: boolean } | null;
-	/** The coach's write-up once written (review-narrative-ui); null leaves its slot empty. */
+	/** The coach's stored write-up; null until written. */
 	writeUp: string | null;
+	/** The write-up as the screen first shows it (loadReviews); absent before M6. */
+	narration?: Narration;
 	/** Next week's card; null for a review written before M6. */
 	nextWeek: NextWeekView | null;
 }
@@ -186,8 +213,20 @@ export type ReviewsData =
 			rows: ReviewRow[];
 			/** No review stored yet. */
 			empty: boolean;
-			selected: WeeklyReviewData | null;
+			/** The block to review, then the cycle reviews (cycleRows). */
+			cycles: ReviewRow[];
+			selected: WeeklyReviewData | CycleReviewData | null;
 	  };
+
+/** The write-up's first view, its words as the server renders them, and Discuss's link. */
+export interface Narration {
+	/** The review it is about, as the write-up endpoint takes it. */
+	target: WriteUpTarget;
+	view: NarrationView;
+	/** The frame's paragraphs (CoachWriteUp), before and without JavaScript. */
+	lines: string[];
+	discuss: string;
+}
 
 export interface ReviewsRequest {
 	key: string | undefined;
@@ -201,8 +240,12 @@ export interface ReviewsDeps extends Pick<TrainingDeps, 'db'> {
 	view?: typeof getWeeklyReviewView;
 	offers?: typeof nextWeekOffers;
 	reviewable?: typeof reviewableWeek;
+	block?: typeof unreviewedBlock;
+	cycleView?: typeof getCycleReviewViewById;
+	current?: typeof getCurrentProgram;
 	record?: typeof recordServerError;
 	today?: typeof ownerToday;
+	narration?: typeof reviewNarration;
 }
 
 const titleOf = (weekStartsOn: IsoDate) =>
@@ -239,6 +282,38 @@ export function reviewRows(
 		}
 	}
 	return rows;
+}
+
+/** What a running block's row says: when its review is ready. */
+export const CYCLE_IN_PROGRESS =
+	'In progress · ready once the block ends, or once its last week is done';
+
+/** The cycle rows: the block to review (due or running), then each cycle review, newest first. */
+export function cycleRows(
+	items: readonly ReviewListItem[],
+	block: UnreviewedBlock | null
+): ReviewRow[] {
+	const rows: ReviewRow[] = items.flatMap((i) =>
+		i.kind === 'cycle' && i.startsOn && i.endsOn
+			? [
+					{
+						...{ state: 'reviewed' as const, key: cycleKey(i.id), weekStartsOn: i.startsOn },
+						...{ title: cycleTitle(i.startsOn, i.endsOn), text: i.summary }
+					}
+				]
+			: []
+	);
+	if (!block) return rows;
+	const { programId, blockLineage, startsOn, endsOn, reviewable } = block;
+	return [
+		{
+			...{ state: reviewable ? 'due' : 'in_progress', key: `b-${blockLineage}` },
+			...{ weekStartsOn: startsOn, title: `${block.name} · ${cycleTitle(startsOn, endsOn)}` },
+			text: reviewable ? STATE_TEXT.due : CYCLE_IN_PROGRESS,
+			cycle: { programId, blockLineage }
+		},
+		...rows
+	];
 }
 
 /** 'Trending up, improving' as a VerdictBadge says it; the words are trendCall's (review/weekly.ts). */
@@ -468,6 +543,34 @@ export function weeklyReviewData(
 	};
 }
 
+/**
+ * The selected review's write-up as the screen first shows it: the stored text with the run's
+ * display blocks, a run still writing it (the page polls), a coach that cannot answer (not
+ * launched or switched off: the page asks nothing), or a request to make on idle (or, with
+ * WRITE_UP_ON_OPEN off, an offer). Discuss opens Coach from weekly_review or cycle_review, about
+ * the review by its page key (sources.ts reviewKey, the id a review ref carries).
+ */
+export async function reviewNarration(
+	ownerId: string,
+	review: Pick<WeeklyReviewData | CycleReviewData, 'kind' | 'id' | 'key'>,
+	deps: Pick<TrainingDeps, 'db'> = {}
+): Promise<Narration> {
+	const discuss = askHref(ASK_QUESTIONS.review(review.kind), `${review.kind}_review`, {
+		type: 'review',
+		id: review.key
+	});
+	const state = await narrationState(ownerId, review, deps);
+	const coach = coachStatus();
+	let view: NarrationView;
+	if (state.state === 'written') {
+		const blocks = await narrationBlocks(ownerId, state, deps);
+		view = { state: 'written', text: state.narrative, blocks };
+	} else if (state.state === 'running') view = { state: 'writing', ask: false };
+	else if (coach.status === 'unavailable') view = noticeOf(coach.reason);
+	else view = WRITE_UP_ON_OPEN ? { state: 'writing', ask: true } : noticeOf('ask');
+	return { target: { kind: review.kind, id: review.id }, view, lines: linesOf(view), discuss };
+}
+
 /** The decisions whose changes the card lists for deciding. */
 const OPEN: readonly string[] = ['undecided', 'partly_past'];
 
@@ -483,32 +586,65 @@ export async function loadReviews(
 		view = getWeeklyReviewView,
 		offers = nextWeekOffers,
 		reviewable = reviewableWeek,
+		block = unreviewedBlock,
+		cycleView = getCycleReviewViewById,
+		current = getCurrentProgram,
 		record = recordServerError,
-		today: dayOf = ownerToday
+		today: dayOf = ownerToday,
+		narration = reviewNarration
 	}: ReviewsDeps = {}
 ): Promise<ReviewsData> {
 	const parsed = parseReviewKey(key);
-	// No cycle view yet: cycle-review-screen adds it, with its VIEWS entry in +page.ts.
-	if (parsed === undefined || parsed?.kind === 'cycle') error(404, 'Not found');
+	if (parsed === undefined) error(404, 'Not found');
 	try {
 		const today = await dayOf(ownerId, now, { db });
 		// One query at a time: each read finishes before the next starts.
 		const page = await list(ownerId, { limit: LIST_LIMIT }, { db });
 		const due = await reviewable(ownerId, today, { db });
+		const unreviewed = await block(ownerId, today, { db });
 		const weekly = page.items.flatMap((item) =>
 			item.kind === 'weekly' && item.startsOn
 				? [{ weekStartsOn: item.startsOn, summary: item.summary }]
 				: []
 		);
-		const shown = parsed && (await view(ownerId, parsed.weekStartsOn, { db }));
-		const open = shown && OPEN.includes(shown.decision.state) && shown.proposal;
-		const offered = open ? await offers(ownerId, open.id, today, { db }) : [];
-		const selected = shown && weeklyReviewData(shown, offered, today);
+		const cycles = cycleRows(page.items, unreviewed);
+		let selected: WeeklyReviewData | CycleReviewData | null = null;
+		if (parsed?.kind === 'cycle') {
+			const shown = await cycleView(ownerId, parsed.id, today, { db });
+			// A late start's bridge is numbered in the program's weeks, from its start.
+			const program = shown.previews.some((p) => p.dates.bridge)
+				? await current(ownerId, today, { db })
+				: null;
+			const next = nextCycleView(shown, { today, programStartsOn: program?.startsOn ?? null });
+			selected = cycleReviewData(shown, page.items, cycles, next);
+		}
+		if (parsed?.kind === 'weekly') {
+			const shown = await view(ownerId, parsed.weekStartsOn, { db });
+			const open = OPEN.includes(shown.decision.state) && shown.proposal;
+			const offered = open ? await offers(ownerId, open.id, today, { db }) : [];
+			selected = weeklyReviewData(shown, offered, today);
+		}
+		// The write-up never fails the review: a failed read is recorded and leaves it out.
+		if (selected && !selected.legacy)
+			selected.narration = await narration(ownerId, selected, { db }).catch(async (err) => {
+				await record(
+					{
+						error: err,
+						kind: 'load',
+						status: 500,
+						...origin,
+						context: { load: 'review-write-up' }
+					},
+					{ db: errorsDb }
+				);
+				return undefined;
+			});
 		return {
 			failed: false,
 			key: key ?? null,
 			rows: reviewRows(weekly, due?.weekStartsOn ?? null, today),
-			empty: weekly.length === 0,
+			empty: page.items.length === 0,
+			cycles,
 			selected
 		};
 	} catch (err) {
@@ -608,6 +744,45 @@ export async function refreshReview(
 			return { ok: true };
 		if (err instanceof ReviewNotFoundError || err instanceof ReviewInputError)
 			return { ok: false, status: 400, data: { reason: 'invalid' } };
+		throw err;
+	}
+}
+
+export type CycleCreateResult =
+	| { ok: true; key: string }
+	| {
+			ok: false;
+			status: 400 | 409;
+			data: { reason: 'invalid' | 'not_reviewable'; blockLineage: string; ready?: string };
+	  };
+
+export interface CycleCreateDeps extends Pick<TrainingDeps, 'db'> {
+	create?: typeof createCycleReview;
+	today?: typeof ownerToday;
+}
+
+/**
+ * Create the review of a program's block, or find the one already there (idempotent under the
+ * owner's review lock). A block not reviewable yet is a 409 with the day it will be; an unknown
+ * block a 400; any other failure throws (a 500).
+ */
+export async function createCycle(
+	ownerId: string,
+	{ programId, blockLineage }: { programId: string; blockLineage: string },
+	now: Date,
+	{ db, create = createCycleReview, today: dayOf = ownerToday }: CycleCreateDeps = {}
+): Promise<CycleCreateResult> {
+	const today = await dayOf(ownerId, now, { db });
+	try {
+		const { review } = await create(ownerId, { programId, blockLineage, today }, { db });
+		return { ok: true, key: cycleKey(review.id) };
+	} catch (err) {
+		if (err instanceof CycleReviewNotReviewableError) {
+			const ready = `Ready ${shortDate(err.availableOn)}`;
+			return { ok: false, status: 409, data: { reason: 'not_reviewable', blockLineage, ready } };
+		}
+		if (err instanceof ReviewNotFoundError || err instanceof ReviewInputError)
+			return { ok: false, status: 400, data: { reason: 'invalid', blockLineage } };
 		throw err;
 	}
 }

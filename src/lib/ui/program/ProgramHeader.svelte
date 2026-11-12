@@ -1,8 +1,12 @@
 <!--
   @component
   Train's program header: the program's title, the block and where the week shown sits in it
-  ('Baseline week · Week 1 of 5'), an optional status as a badge ('Starts Mon 9 Nov'),
-  and the weeks as numbered pills between previous and next. Each is a link the caller resolved,
+  ('Baseline week · Week 1 of 5'), the week's findings in one line under it ('1 heads-up this
+  week'; the caller leaves it out where it would mislead), a light or special week's kind as a
+  neutral tag with its why ('Deload week', 'Deload in week 4'; the tag drawn from data-tag), an
+  optional status as a badge ('Starts Mon 9 Nov'), and the weeks as numbered pills between
+  previous and next, a light week's pill with its word after its number ('Deload', drawn from
+  data-mark). Each is a link the caller resolved,
   so changing week is a navigation the server renders: it replaces the history entry and keeps
   the scroll position and the focus (data-sveltekit-replacestate and -reset="false" on the nav). The
   week shown is the current page, this week is ringed (as WeekStrip rings today), and the week
@@ -26,8 +30,8 @@
 		title: string;
 		/** The block's name and the week's place: 'Baseline week · Week 1 of 5'. */
 		position: string;
-		/** The planned weeks' pills, by number from 1, each with its resolved link. */
-		weeks: readonly { number: number; href: string }[];
+		/** The planned weeks' pills, by number from 1, each with its resolved link and any word. */
+		weeks: readonly { number: number; href: string; mark?: string }[];
 		/** The number of the week shown. */
 		shown: number;
 		/** The number of the week that holds today, if it is planned. */
@@ -39,6 +43,10 @@
 		next?: string;
 		/** A status in words beside the position, e.g. 'Starts Mon 9 Nov'. */
 		status?: string | null;
+		/** The week's findings in one line, under the position: '1 heads-up this week'. */
+		line?: string | null;
+		/** The week's kind and why, server text: 'Deload week', 'Deload in week 4'. */
+		kind?: { label: string; why: string } | null;
 		/** The actions row: `.action` buttons or links, and any notice about them. */
 		actions?: Snippet;
 	}
@@ -53,6 +61,8 @@
 		previous,
 		next,
 		status,
+		line,
+		kind,
 		actions
 	}: Props = $props();
 	const id = $props.id();
@@ -73,6 +83,11 @@
 	<div class="titles">
 		<h2 {id} class="title">{title}</h2>
 		<p class="position" data-testid="program-position">{position}</p>
+		<!-- Always in the markup, hidden while empty: no week line adds no block. -->
+		<p class="position" data-testid="week-line">{line}</p>
+		<!-- The same, hidden while empty: the kind as a tag drawn from data-tag in Badge's neutral
+		     style (no element or component, to keep Train's initial JS small), then the why. -->
+		<p class="position kind" data-testid="week-kind" data-tag={kind?.label}>{kind?.why}</p>
 		{#if status}
 			<p class="status"><Badge icon="clock" data-testid="program-status">{status}</Badge></p>
 		{/if}
@@ -86,10 +101,11 @@
 					<a
 						class="pill numeric"
 						href={week.href}
-						aria-label={`Week ${week.number}${week.number === current ? ', this week' : ''}`}
+						aria-label={`Week ${week.number}${week.mark ? `, ${week.mark}` : ''}${week.number === current ? ', this week' : ''}`}
 						aria-current={week.number === shown ? 'page' : undefined}
 						aria-busy={week.number === pending ? 'true' : undefined}
-						data-this-week={week.number === current ? '' : undefined}>{week.number}</a
+						data-this-week={week.number === current ? '' : undefined}
+						data-mark={week.mark}>{week.number}</a
 					>
 				</li>
 			{/each}
@@ -131,6 +147,51 @@
 	.position {
 		font-size: var(--text-sm);
 		color: var(--color-text-secondary);
+	}
+
+	.position:empty {
+		display: none;
+	}
+
+	/* The kind's tag, then its why, which wraps under it on a narrow screen. */
+	.kind {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: var(--space-1) var(--space-2);
+	}
+
+	/*
+	 * Badge's neutral tone (components/Badge.svelte): words, never a colour, carry the kind. The
+	 * line's tag comes from data-tag, and a light week's pill shows its word after its number from
+	 * data-mark (its aria-label says it), so neither renders an element or a component for it.
+	 */
+	.kind::before,
+	.pill[data-mark]::before {
+		display: inline-flex;
+		flex: none;
+		align-items: center;
+		min-height: 1.375rem;
+		padding: 0 var(--space-2);
+		border-radius: var(--radius-full);
+		background: var(--color-surface-2);
+		box-shadow: inset 0 0 0 1px var(--color-border);
+		color: var(--color-text-secondary);
+		font-size: var(--text-2xs);
+		font-weight: var(--weight-semibold);
+		letter-spacing: var(--tracking-caps);
+		line-height: 1;
+		text-transform: uppercase;
+		white-space: nowrap;
+	}
+
+	.kind::before {
+		content: attr(data-tag);
+	}
+
+	.pill[data-mark]::before {
+		content: attr(data-mark);
+		order: 1;
 	}
 
 	.status {
@@ -228,7 +289,11 @@
 			transform var(--duration-fast) var(--ease-out);
 	}
 
+	/* A light week's word sits after its number, and the pill grows to hold both. */
 	.pill {
+		grid-auto-flow: column;
+		gap: var(--space-1-5);
+		padding: 0 var(--space-3);
 		font-weight: var(--weight-semibold);
 	}
 

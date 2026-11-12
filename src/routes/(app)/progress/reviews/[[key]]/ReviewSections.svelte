@@ -15,9 +15,16 @@
 <script lang="ts">
 	import Button from '#lib/ui/components/Button.svelte';
 	import Icon from '#lib/ui/components/Icon.svelte';
+	import type { Snippet } from 'svelte';
 	import type { SectionView } from './sections';
 
-	let { sections }: { sections: readonly SectionView[] } = $props();
+	interface Props {
+		sections: readonly SectionView[];
+		/** What a section shows after its items (the cycle review's effectiveness table). */
+		after?: Snippet<[SectionView]>;
+	}
+
+	let { sections, after }: Props = $props();
 
 	// A chart's frame loads after hydration, never on the server (guarded as bodies.ts guards a
 	// body), so ChartFrame, the bodies and their styles are neither initial JS nor render-blocking
@@ -25,6 +32,7 @@
 	// Retry reloads the page: Chromium keeps a failed module fetch for the document's lifetime.
 	const never = () => new Promise<never>(() => {});
 	const block = import.meta.env.SSR ? never() : import('./ChartBlock.svelte');
+	const chartsOf = (s: SectionView) => s.charts ?? (s.chart ? [s.chart] : []);
 </script>
 
 {#each sections as section (section.id)}
@@ -41,22 +49,22 @@
 			</summary>
 		</details>
 		<div class="body">
-			{#if section.chart}
+			{#each chartsOf(section) as chart, i (i)}
 				{#await block}
-					<figure class="slot" style:--plot={section.chart.height} aria-busy="true">
+					<figure class="slot" style:--plot={chart.height} aria-busy="true">
 						<noscript>
 							<table data-testid="chart-table">
-								<caption>{section.chart.title}: {section.chart.summary}</caption>
+								<caption>{chart.title}: {chart.summary}</caption>
 								<thead>
 									<tr>
-										<th scope="col">{section.chart.table.rowHeader}</th>
-										{#each section.chart.table.columns as column (column.label)}
+										<th scope="col">{chart.table.rowHeader}</th>
+										{#each chart.table.columns as column (column.label)}
 											<th scope="col">{column.label}{column.unit ? ` (${column.unit})` : ''}</th>
 										{/each}
 									</tr>
 								</thead>
 								<tbody>
-									{#each section.chart.table.rows as row (row.label)}
+									{#each chart.table.rows as row (row.label)}
 										<tr>
 											<th scope="row">{row.label}</th>
 											{#each row.values as value, i (i)}<td>{value ?? 'No data'}</td>{/each}
@@ -67,7 +75,7 @@
 						</noscript>
 					</figure>
 				{:then { default: Block }}
-					<Block chart={section.chart} />
+					<Block {chart} />
 				{:catch}
 					<figure class="slot">
 						<p>Couldn’t load this chart.</p>
@@ -76,7 +84,7 @@
 						>
 					</figure>
 				{/await}
-			{/if}
+			{/each}
 			<ul class="items">
 				{#each section.items as item (item.id)}
 					<li class="item" data-testid="review-item" data-id={item.id}>
@@ -96,6 +104,7 @@
 					</li>
 				{/each}
 			</ul>
+			{@render after?.(section)}
 		</div>
 	</div>
 {/each}

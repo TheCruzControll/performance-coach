@@ -23,6 +23,7 @@ import type {
 	AnswerBlockKind,
 	CoachErrorKind,
 	CoachEvent,
+	CoachUnavailableReason,
 	CompletedBlock,
 	RunStatus
 } from '#lib/domain/coach/index.ts';
@@ -56,6 +57,8 @@ export interface TurnOptions {
 	fetch?: Fetch;
 	/** How long settleRun waits (tests shorten it). */
 	settle?: Parameters<typeof settleRun>[1];
+	/** Whether the device has a connection (navigator.onLine; tests choose). */
+	online?: () => boolean;
 }
 
 const nextFrame = (draw: () => void) => {
@@ -79,6 +82,10 @@ export class CoachTurn {
 	proposals = $state.raw<TurnProposal[]>([]);
 	running = $state(true);
 	error = $state<CoachErrorKind | null>(null);
+	/** Why the coach was unavailable, when the error says. */
+	reason = $state<CoachUnavailableReason | null>(null);
+	/** When a rate-limited turn may be asked again, in epoch milliseconds. */
+	retryAt = $state<number | null>(null);
 	status = $state<RunStatus | null>(null);
 	/** The screen has read what is stored since the turn ended. */
 	settled = $state(false);
@@ -88,6 +95,7 @@ export class CoachTurn {
 	#frame: (draw: () => void) => void;
 	#fetch: Fetch | undefined;
 	#settle: TurnOptions['settle'];
+	#online: () => boolean;
 	#abort = new AbortController();
 	#stopping = false;
 	/** Deltas since the last frame, by block. */
@@ -104,6 +112,7 @@ export class CoachTurn {
 		this.#frame = options.frame ?? nextFrame;
 		this.#fetch = options.fetch;
 		this.#settle = options.settle;
+		this.#online = options.online ?? (() => navigator.onLine !== false);
 	}
 
 	/** Nothing to show yet: the coach is working out its answer. */
@@ -174,6 +183,8 @@ export class CoachTurn {
 				return;
 			case 'error':
 				this.error = event.kind;
+				this.reason = event.reason ?? null;
+				this.#waitFor(event.retryAfterS);
 				return;
 			case 'done':
 				this.status = event.status;
@@ -190,6 +201,10 @@ export class CoachTurn {
 		this.drafts = this.drafts.map((draft) =>
 			draft.block in pending ? { ...draft, text: draft.text + pending[draft.block] } : draft
 		);
+	}
+
+	#waitFor(seconds: number | undefined) {
+		if (seconds) this.retryAt = Date.now() + seconds * 1000;
 	}
 
 	/** A new block starts: words still waiting for a frame join the blocks they belong to. */
@@ -213,8 +228,15 @@ export class CoachTurn {
 			{ signal: this.#abort.signal, fetch: this.#fetch }
 		);
 		this.flush();
-		if (end.kind === 'refused') this.error = end.error;
-		else if (end.kind !== 'done') {
+		if (end.kind === 'refused') {
+			this.error = end.error;
+			this.#waitFor(end.retryAfterS);
+		} else if (end.kind === 'dropped' && !this.#stopping && !this.#online()) {
+			// No connection: nothing the server kept can be read until it is back.
+			this.error = 'offline';
+			this.running = false;
+			return false;
+		} else if (end.kind !== 'done') {
 			this.error ??= this.#stopping ? 'cancelled' : 'interrupted';
 			if (end.kind === 'aborted' && !this.#stopping) {
 				this.running = false;
@@ -294,6 +316,19 @@ export class CoachTurns {
 	/** Ask a stored question again: the server answers it under its own id. */
 	retry(question: StoredQuestion, threadId: string): Promise<void> {
 		return this.#start(new CoachTurn({ threadId, ...question }, { ...this.#options, retry: true }));
+	}
+
+	/**
+	 * Ask a turn that did not complete again, in its place: the same question under the same id,
+	 * so the server never stores it twice. Its words stay where they are: drawn by the new turn
+	 * while nothing is stored or the screen has not read it (an offline end reads nothing), or
+	 * left as the stored message.
+	 */
+	again(turn: CoachTurn): Promise<void> {
+		this.list = this.list.filter((each) => each !== turn);
+		const request = { ...turn.request, threadId: turn.threadId ?? turn.request.threadId };
+		const retry = turn.retry || (turn.ownerMessageId !== null && turn.error !== 'offline');
+		return this.#start(new CoachTurn(request, { ...this.#options, retry }));
 	}
 
 	async stop(): Promise<void> {
