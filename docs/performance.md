@@ -615,8 +615,11 @@ service-worker, toast, Icon, error-page). They merge code that (nearly) every pa
 about 10 requests from every route's start-up (/workout: 25 to 14 boot scripts); the budgets
 bound any helper that rides along.
 
-Service-worker install download (precache, measured in Chromium in review round 1): **74 files,
-353 KB** decoded. Home-screen icons are excluded; the OS fetches them once at install.
+Service-worker install download (precache): only what the shell, `/workout` and `/offline` need
+(#458), **275 files, 995 KB** decoded (about 440 KB gzip) when it was scoped; other immutable
+assets are cached on first use. `pnpm budgets` caps it at **300 files and 1,100 KB** decoded, room
+above the measured size like the route budgets (owner, 2026-11-11). Home-screen icons are
+excluded; the OS fetches them once at install.
 
 ### Headroom and the M4 workout-screen plan
 

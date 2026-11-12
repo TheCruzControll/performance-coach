@@ -30,6 +30,26 @@ keeps listening to `prefers-color-scheme` while open, so when iOS switches appea
 automatic dark mode at sunset) the theme-color and status-bar metas follow the CSS (e2e-tested).
 **Browser baseline:** `light-dark()` needs Safari 17.5+ / Chrome 123+.
 
+### Designs
+
+Two designs, chosen per device: today's (the default for everyone) and **Graphite 2004**, a
+preview of the proposed design (graphite and silver, Aqua in place of volt, Source Sans 3, 3–10 px
+corners). Profile → Appearance → Design switches between them, as does `?design=graphite` or
+`?design=current` (saved too; handy for screenshots). The choice is stored in localStorage
+(`pc:design:v1`, kept across sign-out) and applied before first paint by the head script in
+`src/app.html`, which sets `data-design="graphite"` on `<html>`, links
+`src/lib/ui/styles/graphite.css` (render-blocking) and preloads Source Sans 3.
+
+- `graphite.css` is a build asset of its own, in no route's CSS: today's design ships none of it
+  and the service worker precaches none of it (it caches it once a device uses it).
+- It only overrides tokens under `:root[data-design='graphite']`, so components restyle without
+  edits; colour stops alone sit in `light-dark()`. It adds the material roles (`--strip`,
+  `--plastic`, `--gel`, `--select`, `--bar`, `--lcd` and their edges and inks) for components to
+  adopt.
+- `graphite.test.ts` holds it to the chart palette checks and 4.5:1 text contrast in both themes;
+  `e2e/design-switch*.e2e.ts` run axe on it and check no flash, no layout shift and no Graphite
+  request on today's design. The screen gallery shoots every screen in both designs.
+
 ## Colour
 
 | Token                    | Dark      | Light     | Use                                                |
