@@ -63,7 +63,7 @@ test.afterEach(async ({ page, request }) => {
 const composer = (page: Page) => page.getByRole('form', { name: 'Message your coach' });
 const message = (page: Page) => composer(page).getByRole('textbox', { name: 'Message' });
 const notice = (page: Page) => page.getByTestId('turn-notice');
-const retry = (page: Page) => notice(page).getByRole('button', { name: 'Retry' });
+const retry = (page: Page) => notice(page).getByRole('button', { name: 'Try again' });
 const asked = (page: Page, text: string) =>
 	page.getByTestId('owner-message').filter({ hasText: text });
 
@@ -231,7 +231,7 @@ test('timeout: the partial it stored, why it ended, and one Retry', async ({
 		'Failed'
 	);
 	await shows(page, 'timeout', 'The answer took too long', testInfo);
-	await expect(page.getByRole('button', { name: 'Retry' })).toHaveCount(1);
+	await expect(page.getByRole('button', { name: 'Try again' })).toHaveCount(1);
 
 	await setCoachFault(request, 'none');
 	await retry(page).click();
@@ -313,7 +313,7 @@ test('the stream client failing once is the chunk-failed notice, whose Retry sen
 	// In place on WebKit; on Chromium, which keeps the failed fetch, through a reload of the
 	// conversation that keeps the question in the composer.
 	await page.unroute(chunk);
-	await failed.getByRole('button', { name: 'Retry' }).click();
+	await failed.getByRole('button', { name: 'Try again' }).click();
 	await expect(failed).toHaveCount(0, { timeout: 20_000 });
 	if ((await asked(page, BENCH).count()) === 0) {
 		await page.waitForLoadState('networkidle');
@@ -341,7 +341,7 @@ test('the stream client failing twice reloads the conversation, the question kep
 	await expect(failed).toBeVisible();
 
 	armed = true;
-	await failed.getByRole('button', { name: 'Retry' }).click();
+	await failed.getByRole('button', { name: 'Try again' }).click();
 	await expect.poll(() => reloaded, { message: 'the second failure reloads' }).toBe(true);
 	await page.waitForLoadState('networkidle');
 	await expect(page).toHaveURL(new RegExp(`/coach/${seeded.threads.bench}$`));
