@@ -723,7 +723,7 @@ test.describe('on a desktop window', () => {
 				await shoot(page, testInfo, loading, { light: false });
 				release();
 				const notice = page.getByTestId(`${prefix}-failed`);
-				await expect(notice.getByRole('button', { name: 'Retry' })).toBeVisible();
+				await expect(notice.getByRole('button', { name: 'Try again' })).toBeVisible();
 				await shoot(page, testInfo, failed, { light: false });
 			});
 		}
