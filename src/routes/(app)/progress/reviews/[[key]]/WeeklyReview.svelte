@@ -9,6 +9,7 @@
     (review-body.ts), so nothing is replaced and a section opened meanwhile stays open. If the
     code fails to load, they read as sent, with a notice and Retry, which reloads: Chromium keeps
     a failed module fetch for the document's lifetime.
+  - next week's changes to take, change or skip, or what was decided (NextWeekCard)
   - the write-up's slot, empty until the coach writes it (review-narrative-ui)
   - out of date (training logged since): 'Computed before N later changes', with Refresh while
     its decision is open. Refresh writes the next revision and keeps this one; like Create it is
@@ -26,6 +27,7 @@
 	import ServedInPlace from '../../../today/panels/ServedInPlace.svelte';
 	import ServedMarkup from '../../../today/panels/ServedMarkup.svelte';
 	import type { WeeklyReviewData } from './load';
+	import NextWeekCard from './NextWeekCard.svelte';
 	import type { BodyProps } from './review-body';
 
 	interface Props {
@@ -188,6 +190,8 @@
 			>
 		</div>
 	{/if}
+
+	{#if review.nextWeek}<NextWeekCard next={review.nextWeek} reviewId={review.id} {online} />{/if}
 
 	<div class="write-up" data-testid="review-write-up">
 		{#if review.writeUp}<p>{review.writeUp}</p>{/if}

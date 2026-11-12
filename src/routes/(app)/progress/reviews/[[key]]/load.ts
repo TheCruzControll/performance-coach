@@ -10,11 +10,16 @@
  * - The list is newest first: this week while it has no review (due once every session is done
  *   or skipped, otherwise in progress), then each week back to the oldest review on the page,
  *   reviewed or 'Not reviewed yet'.
+ * - Next week's card (nextWeekView): the changes still open with each one's why, its half step
+ *   and whether its session has passed, or what was decided, or why nothing is proposed.
  * - It fails soft: a failed read is recorded as a server error (kind 'load') and the screen shows
  *   its load-failed notice with Retry, inside the shell, instead of the 500 page.
  */
 import { error } from '@sveltejs/kit';
-import { addDays, mondayOf, parseIsoDate, type IsoDate } from '#lib/domain/calendar.ts';
+import { addDays, mondayOf, parseIsoDate, weekdayOf, type IsoDate } from '#lib/domain/calendar.ts';
+import type { ProgramOp } from '#lib/domain/coach/proposals.ts';
+import { cleanFloat } from '#lib/domain/units.ts';
+import { WEEKDAY_INFO } from '#lib/domain/weekdays.ts';
 import { METRICS } from '#lib/domain/analytics/metrics.ts';
 import { TREND_MIN_POINTS } from '#lib/domain/analytics/trend.ts';
 import type { Finding, FindingLevel } from '#lib/domain/programming/review/brief.ts';
@@ -25,6 +30,7 @@ import {
 	createWeeklyReview,
 	getWeeklyReviewView,
 	listReviews,
+	nextWeekOffers,
 	REVIEWS_PAGE,
 	ReviewInputError,
 	ReviewNotFoundError,
@@ -34,6 +40,7 @@ import {
 	reviewableWeek,
 	WeeklyReviewRefreshError,
 	WeeklyReviewNotReviewableError,
+	type NextWeekOffer,
 	type WeeklyReviewView
 } from '#lib/server/services/reviews/index.ts';
 import type { TrainingDeps } from '#lib/server/services/training/shared.ts';
@@ -125,6 +132,50 @@ export interface WeeklyReviewData {
 	stale: { words: string; detail: string; refreshable: boolean } | null;
 	/** The coach's write-up once written (review-narrative-ui); null leaves its slot empty. */
 	writeUp: string | null;
+	/** Next week's card; null for a review written before M6. */
+	nextWeek: NextWeekView | null;
+}
+
+/** One change the owner can take, change or leave out. */
+export interface NextWeekItemView {
+	id: string;
+	label: string;
+	before: string | null;
+	after: string | null;
+	why: string;
+	/** Its half step in words ('86.25 kg'); null when it has none. */
+	half: string | null;
+	/** Why it can no longer change ('Monday has passed'); null while its session is ahead. */
+	passed: string | null;
+}
+
+/**
+ * What next week's card shows, from the review's decision (its proposal chain's head):
+ * - open: undecided; partly_past: decided late or superseded from M5's inbox, with what is left;
+ *   all_past: every change's session has passed
+ * - no_ops, no_program, boundary, late: nothing was proposed, and why
+ * - applied (from here or M5's inbox), rejected, superseded (the plan changed), waiting
+ */
+export interface NextWeekView {
+	state:
+		| 'open'
+		| 'partly_past'
+		| 'all_past'
+		| 'no_ops'
+		| 'no_program'
+		| 'boundary'
+		| 'late'
+		| 'applied'
+		| 'rejected'
+		| 'superseded'
+		| 'waiting';
+	title: string;
+	words: string | null;
+	/** The changes to decide on (open and partly_past; all_past lists them struck through). */
+	items: NextWeekItemView[];
+	/** The changes the rules found but could not propose, each with why. */
+	notProposed: { id: string; label: string; words: string }[];
+	link: { href: string; label: string } | null;
 }
 
 export type ReviewsData =
@@ -148,6 +199,7 @@ export interface ReviewsDeps extends Pick<TrainingDeps, 'db'> {
 	errorsDb?: TrainingDeps['db'];
 	list?: typeof listReviews;
 	view?: typeof getWeeklyReviewView;
+	offers?: typeof nextWeekOffers;
 	reviewable?: typeof reviewableWeek;
 	record?: typeof recordServerError;
 	today?: typeof ownerToday;
@@ -219,8 +271,143 @@ export function staleNotice(changes: number, refreshable: boolean) {
 	};
 }
 
+/** Where next week's card links: the build is on Today. */
+export const BUILD_LINK = { href: '/today', label: 'Build my program' };
+/** Decision: the reviews list, until cycle-review-screen gives each cycle review its key. */
+export const CYCLE_REVIEW_LINK = { href: '/progress/reviews', label: 'Open your cycle review' };
+
+export const NEXT_WEEK_TITLES: Record<NextWeekView['state'], string> = {
+	open: 'Next week’s changes',
+	partly_past: 'Some sessions have passed — apply the rest?',
+	all_past: 'Too late to change next week',
+	no_ops: 'Next week stays as planned',
+	no_program: 'Build a program to get adjustments',
+	boundary: 'Next week starts a new block',
+	late: 'This review came after next week ended',
+	applied: 'Next week updated',
+	rejected: 'Kept as planned',
+	superseded: 'Your plan changed since this review',
+	waiting: 'Accepted · being applied'
+};
+
+const NO_PROPOSAL_STATE = { no_changes: 'no_ops', boundary: 'boundary', late: 'late' } as const;
+
+/** The card's own words with no program: the stored ones can name the cycle review instead. */
+const NO_PROGRAM_WORDS =
+	'No program plans next week. Once one does, each review proposes its changes here.';
+
+/** Why a change can no longer apply: its day has passed, or its session has begun. */
+function passedWords(date: IsoDate | null, today: IsoDate): string {
+	if (date === null) return 'Its session has passed';
+	const day = WEEKDAY_INFO[weekdayOf(date)].label;
+	return date < today ? `${day} has passed` : `${day}’s session has started`;
+}
+
+/** A half step's values in words, in the units its row's 'after' uses ('86.25 kg · RPE 7.5'). */
+export function halfWords(op: ProgramOp, after: string | null): string {
+	const v = op as unknown as Partial<Record<string, number>>;
+	const load = /\b(kg|lb)\b/.exec(after ?? '')?.[1] ?? 'kg';
+	const miles = /\bmi\b/.test(after ?? '');
+	const reps =
+		v.repsMin !== undefined && v.repsMax !== undefined && v.repsMin !== v.repsMax
+			? `${v.repsMin}–${v.repsMax}`
+			: (v.repsMax ?? v.repsMin);
+	const metres = v.distanceMetres;
+	return [
+		v.sets !== undefined && `${v.sets} sets`,
+		reps !== undefined && `${reps} reps`,
+		v.loadValue !== undefined && `${v.loadValue} ${load}`,
+		v.targetRpe !== undefined && `RPE ${v.targetRpe}`,
+		metres !== undefined &&
+			(miles ? `${cleanFloat(metres / 1609.344, 2)} mi` : `${cleanFloat(metres / 1000, 2)} km`),
+		v.durationSeconds !== undefined && `${Math.round(v.durationSeconds / 60)} min`
+	]
+		.filter(Boolean)
+		.join(' · ');
+}
+
+/**
+ * Next week's card from the review's decision: the head's changes (`offers`, split on the owner's
+ * `today`) while it is open, what was decided, or why nothing was proposed.
+ */
+export function nextWeekView(
+	view: WeeklyReviewView,
+	offers: readonly NextWeekOffer[],
+	today: IsoDate
+): NextWeekView | null {
+	if (view.legacy) return null;
+	const { decision, proposal } = view;
+	const card = (state: NextWeekView['state'], words: string | null, more = {}): NextWeekView => ({
+		...{ state, title: NEXT_WEEK_TITLES[state], words, items: [] },
+		notProposed: view.notProposed.map((f) => ({
+			id: f.id,
+			label: f.label,
+			words: f.verdict.words
+		})),
+		link: null,
+		...more
+	});
+	switch (decision.state) {
+		case 'none': {
+			if (!view.noProposal) return null;
+			const { reason, words } = view.noProposal;
+			if (reason === 'no_program')
+				return card('no_program', NO_PROGRAM_WORDS, { link: BUILD_LINK });
+			const link = reason === 'boundary' ? CYCLE_REVIEW_LINK : null;
+			return card(NO_PROPOSAL_STATE[reason], words, { link });
+		}
+		case 'applied': {
+			const n = decision.versionNumber;
+			return card('applied', null, {
+				title: n === null ? NEXT_WEEK_TITLES.applied : `Next week updated · version ${n}`,
+				link:
+					n === null ? null : { href: `/train/history/${n}`, label: `See version ${n} in History` }
+			});
+		}
+		case 'rejected':
+			return card('rejected', proposal?.decisionNote ?? 'Next week stays as planned.');
+		case 'superseded':
+			return card(
+				'superseded',
+				'Its changes were for your plan as it was, so none were applied. Next week stays as it is now.'
+			);
+		case 'accepted_waiting':
+			return card('waiting', 'Your plan is being updated.');
+		default: {
+			const rows = proposal?.rows ?? [];
+			const items = offers.map((o, i): NextWeekItemView => {
+				const row = rows[i];
+				return {
+					id: o.id,
+					label: row?.label ?? 'Change',
+					before: row?.before ?? null,
+					after: row?.after ?? null,
+					why: o.why ?? '',
+					half: o.halfStep && halfWords(o.halfStep, row?.after ?? null),
+					passed: o.ahead ? null : passedWords(o.sessionDate, today)
+				};
+			});
+			const passed = items.filter((item) => item.passed).length;
+			if (passed === items.length)
+				return card(
+					'all_past',
+					'Every change was for a session that has passed, so next week stays as planned.',
+					{ items }
+				);
+			if (passed === 0 && decision.state === 'undecided') return card('open', null, { items });
+			const left = items.length - passed;
+			const words = `${left} of ${items.length} ${items.length === 1 ? 'change is' : 'changes are'} still ahead.`;
+			return card('partly_past', words, { items });
+		}
+	}
+}
+
 /** A weekly review as the screen shows it, every figure from its stored snapshot. */
-export function weeklyReviewData(view: WeeklyReviewView): WeeklyReviewData {
+export function weeklyReviewData(
+	view: WeeklyReviewView,
+	offers: readonly NextWeekOffer[] = [],
+	today: IsoDate = view.review.weekStartsOn
+): WeeklyReviewData {
 	const { weekStartsOn } = view.review;
 	const findings = view.snapshot?.brief.findings ?? [];
 	const adherence = findings.find((f) => f.id === 'adherence');
@@ -276,9 +463,13 @@ export function weeklyReviewData(view: WeeklyReviewView): WeeklyReviewData {
 			.map((f) => ({ id: f.id, label: f.label, words: f.verdict.words })),
 		sections: view.snapshot ? reviewSections(view.snapshot) : [],
 		stale: view.stale ? staleNotice(changes, REFRESHABLE.includes(view.decision.state)) : null,
-		writeUp: view.writeUp.state === 'written' ? view.writeUp.text : null
+		writeUp: view.writeUp.state === 'written' ? view.writeUp.text : null,
+		nextWeek: nextWeekView(view, offers, today)
 	};
 }
+
+/** The decisions whose changes the card lists for deciding. */
+const OPEN: readonly string[] = ['undecided', 'partly_past'];
 
 /** The reviews screen on the owner's day at `now`: 404 for a bad key, failing soft otherwise. */
 export async function loadReviews(
@@ -290,6 +481,7 @@ export async function loadReviews(
 		errorsDb,
 		list = listReviews,
 		view = getWeeklyReviewView,
+		offers = nextWeekOffers,
 		reviewable = reviewableWeek,
 		record = recordServerError,
 		today: dayOf = ownerToday
@@ -308,7 +500,10 @@ export async function loadReviews(
 				? [{ weekStartsOn: item.startsOn, summary: item.summary }]
 				: []
 		);
-		const selected = parsed && weeklyReviewData(await view(ownerId, parsed.weekStartsOn, { db }));
+		const shown = parsed && (await view(ownerId, parsed.weekStartsOn, { db }));
+		const open = shown && OPEN.includes(shown.decision.state) && shown.proposal;
+		const offered = open ? await offers(ownerId, open.id, today, { db }) : [];
+		const selected = shown && weeklyReviewData(shown, offered, today);
 		return {
 			failed: false,
 			key: key ?? null,

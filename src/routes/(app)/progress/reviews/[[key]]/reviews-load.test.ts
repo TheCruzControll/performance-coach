@@ -102,6 +102,10 @@ function view(parts: Partial<WeeklyReviewView> = {}, findings = [ADHERENCE, BENC
 		legacy: false,
 		snapshot,
 		writeUp: { state: 'none' },
+		proposal: null,
+		decision: { state: 'none' },
+		noProposal: null,
+		notProposed: [],
 		...parts
 	} as WeeklyReviewView;
 }
@@ -451,6 +455,42 @@ describe('the load', () => {
 		expect(d.reviewable).toHaveBeenCalledWith('owner', TODAY, { db });
 		for (let i = 0; i < calls.length; i += 2)
 			expect(calls[i + 1]).toBe(calls[i]!.replace('start', 'end'));
+	});
+
+	it("an open decision reads the head's changes on the owner's today; a decided one none", async () => {
+		const head = '0b7e2d4c-1a3f-4e5d-9c6b-8a7f6e5d4c3b';
+		const offer = {
+			id: 'load:a:2',
+			sessionDate: '2026-11-03',
+			why: 'Felt easier',
+			halfStep: null,
+			ahead: false
+		};
+		const open = view({
+			decision: { state: 'undecided', proposalId: head },
+			proposal: {
+				id: head,
+				rows: [{ label: 'Bench', before: '85 kg', after: '87.5 kg', date: null }]
+			}
+		} as unknown as Partial<WeeklyReviewView>);
+		const { d } = deps({
+			view: vi.fn(async () => open),
+			offers: vi.fn(async () => [offer])
+		});
+		const data = await loadReviews('owner', { key: `w-${LAST_WEEK}`, origin }, new Date(), d);
+		if (data.failed) throw new Error('unreachable');
+		expect(d.offers).toHaveBeenCalledWith('owner', head, TODAY, { db });
+		expect(data.selected?.nextWeek).toMatchObject({
+			state: 'all_past',
+			items: [{ id: 'load:a:2', label: 'Bench', passed: 'Tuesday has passed' }]
+		});
+
+		const decided = view({
+			decision: { state: 'rejected', proposalId: head }
+		} as Partial<WeeklyReviewView>);
+		const again = deps({ view: vi.fn(async () => decided), offers: vi.fn(async () => [offer]) });
+		await loadReviews('owner', { key: `w-${LAST_WEEK}`, origin }, new Date(), again.d);
+		expect(again.d.offers).not.toHaveBeenCalled();
 	});
 
 	it('no key: the list alone, empty with no review stored', async () => {
