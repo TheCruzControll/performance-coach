@@ -179,7 +179,8 @@ test.describe('a weekly review', () => {
 		await setCoachFault(request, 'slow');
 		const context = await browser.newContext();
 		const page = await context.newPage();
-		await gotoHydrated(page, url);
+		// Not gotoHydrated: its networkidle would wait out the write-up's request, so the whole run.
+		await page.goto(url);
 		await expect(writeUp(page)).toHaveAttribute('data-state', 'writing');
 		await expect.poll(async () => (await runs()).length, { timeout: 15_000 }).toBe(1);
 		await context.close();
@@ -201,11 +202,11 @@ test.describe('a weekly review', () => {
 	}) => {
 		await setCoachFault(request, 'slow');
 		const first = await browser.newPage();
-		await gotoHydrated(first, url);
+		await first.goto(url); // not gotoHydrated, as above: it would wait the run out
 		await expect.poll(async () => (await runs()).length, { timeout: 15_000 }).toBe(1);
 
 		const second = await browser.newPage();
-		await gotoHydrated(second, url);
+		await second.goto(url);
 		await expect(writeUp(second)).toHaveAttribute('data-state', 'writing');
 		await expect(writeUp(second)).toContainText('Your coach is writing this up…');
 		await written(first);
