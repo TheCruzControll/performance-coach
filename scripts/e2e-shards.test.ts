@@ -53,6 +53,9 @@ function entries(count: number, seed: number): ShardEntry[] {
 
 const noneFirst = () => false;
 
+/** The file of a `<project> › <file>` key. */
+const fileOf = (key: string) => key.slice(key.indexOf(' › ') + 3);
+
 /** Seeded cases: shard counts 1-5, 1 or 2 workers, up to 30 more entries than shards. */
 const cases = Array.from({ length: 300 }, (_, i) => {
 	const next = random(1000 + i);
@@ -130,9 +133,28 @@ describe('planShards', () => {
 		for (const { group, engine, of } of legs) {
 			const list = planLeg(`${group}/${engine}`, table.legs[`${group}/${engine}`]!);
 			const workers = legWorkers(group, engine);
-			const [one, ...rest] = planShards(list, of, workers).map((s) => shardCost(s, workers));
-			for (const other of rest) expect(one, `${group}/${engine}`).toBeLessThan(other);
+			const plan = planShards(list, of, workers);
+			const [one, ...rest] = plan.map((s) => shardCost(s, workers));
+			// Shard 1 must hold SHARD_ONE_FILES. When those alone outweigh an even split
+			// (main/chromium in 3), no plan makes it the lightest: then it holds nothing else and
+			// is the lightest at its planned share.
+			const pinnedOnly = plan[0]!.keys.every((key) => SHARD_ONE_FILES.includes(fileOf(key)));
+			const share = pinnedOnly ? SHARD_ONE_SHARE : 1;
+			for (const other of rest) expect(one * share, `${group}/${engine}`).toBeLessThan(other);
 		}
+	});
+
+	it('leaves shard 1 its SHARD_ONE_FILES alone when they outweigh the others', () => {
+		const pinned = [
+			{ key: 'p › a11y-dark.e2e.ts', seconds: 100 },
+			{ key: 'p › a11y-light.e2e.ts', seconds: 100 }
+		];
+		const others = Array.from({ length: 6 }, (_, i) => ({ key: `p › f${i}.e2e.ts`, seconds: 64 }));
+		const [first, ...rest] = planShards([...pinned, ...others], 3, 2);
+		// 200 s over 2 workers costs 100; the others' 384 s split into 96 each, none in shard 1
+		expect(first!.keys).toEqual(pinned.map((e) => e.key));
+		expect(shardCost(first!, 2)).toBe(100);
+		expect(rest.map((shard) => shardCost(shard, 2))).toEqual([96, 96]);
 	});
 
 	it('breaks ties on the lighter shard, then the lower index', () => {
