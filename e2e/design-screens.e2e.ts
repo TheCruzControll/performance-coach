@@ -243,50 +243,65 @@ test.describe('onboarding', () => {
 	}
 });
 
+/** Graphite and `theme` chosen before any page loads, as Profile → Appearance saves them. */
+const chooseGraphite = (page: Page, theme: 'dark' | 'light') =>
+	page.addInitScript(
+		([key, t]) => {
+			localStorage.setItem(key!, 'graphite');
+			localStorage.setItem('pc:prefs:v1', JSON.stringify({ theme: t }));
+		},
+		[DESIGN_KEY, theme]
+	);
+
+/** /design's workout states, opened in Graphite with an RPE answered (8). */
+async function openGraphiteWorkout(page: Page) {
+	await openWorkoutPanel(page);
+	await settle(page, 'graphite');
+	await page
+		.getByTestId('rpe-chips')
+		.first()
+		.getByRole('radio', { name: '8', exact: true })
+		.check();
+}
+
+/**
+ * The restyled screens axe checks in Graphite, one test each so no test carries every screen's
+ * navigation and audit: each opens its screen to the state the audit sees.
+ */
+const RESTYLED: readonly { name: string; open: (page: Page) => Promise<void> }[] = [
+	...['/progress', '/profile', '/coach'].map((path) => ({
+		name: path,
+		open: async (page: Page) => {
+			await gotoHydrated(page, path);
+			await settle(page, 'graphite');
+		}
+	})),
+	{ name: '/design workout', open: openGraphiteWorkout },
+	// The workout states stay open under the component tabs, so each tab's audit sees them too.
+	...['Plan', 'Coach'].map((tab) => ({
+		name: `/design ${tab}`,
+		open: async (page: Page) => {
+			await openGraphiteWorkout(page);
+			await page.getByRole('tab', { name: tab }).click();
+			await expect(page.getByRole('tabpanel', { name: tab })).toBeVisible();
+		}
+	}))
+];
+
 test.describe('axe in Graphite', () => {
 	for (const theme of ['dark', 'light'] as const) {
-		test(`the restyled screens pass axe (${theme})`, async ({ page }) => {
-			await page.addInitScript(
-				([key, t]) => {
-					localStorage.setItem(key!, 'graphite');
-					localStorage.setItem('pc:prefs:v1', JSON.stringify({ theme: t }));
-				},
-				[DESIGN_KEY, theme]
-			);
-			const found: string[] = [];
-			for (const path of ['/progress', '/profile', '/coach']) {
-				await gotoHydrated(page, path);
-				await settle(page, 'graphite');
+		for (const screen of RESTYLED) {
+			test(`${screen.name} passes axe (${theme})`, async ({ page }) => {
+				await chooseGraphite(page, theme);
+				await screen.open(page);
 				await page.waitForTimeout(400); // entrance transitions settle: contrast on final colours
-				found.push(...(await audit(page)).map((v) => `${path}: ${v}`));
-			}
-			await openWorkoutPanel(page);
-			await settle(page, 'graphite');
-			await page
-				.getByTestId('rpe-chips')
-				.first()
-				.getByRole('radio', { name: '8', exact: true })
-				.check();
-			await page.waitForTimeout(400);
-			found.push(...(await audit(page)).map((v) => `/design workout: ${v}`));
-			for (const tab of ['Plan', 'Coach']) {
-				await page.getByRole('tab', { name: tab }).click();
-				await expect(page.getByRole('tabpanel', { name: tab })).toBeVisible();
-				await page.waitForTimeout(400);
-				found.push(...(await audit(page)).map((v) => `/design ${tab}: ${v}`));
-			}
-			expect(found).toEqual([]);
-		});
+				expect(await audit(page)).toEqual([]);
+			});
+		}
 
 		for (const path of SCREENS.filter((p) => p.startsWith('/onboarding'))) {
 			test(`${path} passes axe (${theme})`, async ({ page }) => {
-				await page.addInitScript(
-					([key, t]) => {
-						localStorage.setItem(key!, 'graphite');
-						localStorage.setItem('pc:prefs:v1', JSON.stringify({ theme: t }));
-					},
-					[DESIGN_KEY, theme]
-				);
+				await chooseGraphite(page, theme);
 				await gotoHydrated(page, path);
 				await settle(page, 'graphite');
 				// A step's editor loads after the screen, in place of its skeleton.
