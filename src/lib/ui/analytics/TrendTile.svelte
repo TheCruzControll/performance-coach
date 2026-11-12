@@ -1,9 +1,11 @@
 <!--
   @component
   One metric with its context at a glance (M6): its label and value with its unit, an Estimated
-  or Measured badge, the change against the named previous period (an icon and a word, toned by
-  direction × good, neutral when the trend calls it normal variation), the week so far against
-  the same days of last week, a static sparkline and the trend verdict with its window.
+  or Measured badge, the change against the named previous period (an icon that follows better
+  and a word, toned by direction × good, neutral when the trend calls it normal variation) or,
+  with no earlier period, the trend within its own weeks read from the same verdict, the week so
+  far against the same days of last week, a static sparkline and the trend verdict with its
+  window.
 
   - The server sends every number formatted and the sparkline computed (sparkline.ts), so a tile
     costs no chart code; the polyline is stretched over its box with a non-scaling 2 px stroke.
@@ -24,6 +26,7 @@
 		NO_COMPARISON,
 		soFarWords,
 		tileSentence,
+		withinWords,
 		type Tile
 	} from './words.ts';
 
@@ -36,6 +39,8 @@
 	let { tile, as = 'div', ...rest }: Props = $props();
 
 	const empty = $derived(tile.value === null);
+	/** With no earlier period: the trend within the tile's own weeks, from its verdict. */
+	const within = $derived(withinWords(tile.verdict, tile.window));
 	const shape = $derived(
 		tile.kind === 'estimated' ? 'ring' : tile.kind === 'measured' ? 'diamond' : 'dot'
 	);
@@ -85,6 +90,8 @@
 					{tile.delta.against}</span
 				>
 			</p>
+		{:else if within}
+			<p class="line" data-testid="delta">{within}</p>
 		{:else}
 			<p class="line quiet" data-testid="delta">{NO_COMPARISON}</p>
 		{/if}
