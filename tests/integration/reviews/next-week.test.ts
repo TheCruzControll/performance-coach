@@ -124,7 +124,10 @@ async function reviewed(db: Executor, day: IsoDate, { monday = false } = {}) {
 	await loadLine(db, owner, bench, THURSDAY, 2);
 	if (monday) for (const position of [2, 3, 4]) await loadLine(db, owner, bench, MONDAY, position);
 	const deps = { db, now };
-	const { review } = await createWeeklyReview(owner, { weekStartsOn: REVIEWED, today: day }, deps);
+	// M6's checkWeek path (the context reads skipped): with M7's judge the hard week's next week has
+	// no move a finding would not name (m7/24), and these tests decide M6's proposal.
+	const m6 = { ...deps, context: { reader: async () => null } };
+	const { review } = await createWeeklyReview(owner, { weekStartsOn: REVIEWED, today: day }, m6);
 	const head = await proposalRow(db, review.proposalId!);
 	const adjustments = head.evidence.adjustments!;
 	const all = (choice: NextWeekItem['choice'] = 'proposed') =>

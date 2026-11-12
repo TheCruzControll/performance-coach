@@ -2,7 +2,7 @@
  * The weekly review's sections (src/routes/(app)/progress/reviews/[[key]]/ReviewSections.svelte)
  * on week-complete, the hard week: tonnage, hard sets per group, mileage against the week before,
  * average RPE, RPE against target per lift, and Muay Thai sessions, minutes and rounds equal the
- * SQL oracles; each conflict of the hard sparring's week shows its why. An edit to a logged set
+ * SQL oracles; each conflict of the hard sparring's week, judged by M7's evaluator, shows its why. An edit to a logged set
  * makes the review out of date, and Refresh (busy while it posts) writes its next revision, both
  * rows kept.
  * On a phone each section collapses to its verdict line and opens on a tap; in a desktop window
@@ -14,6 +14,7 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { addDays } from '../src/lib/domain/calendar';
 import { INTERFERENCE_RULES } from '../src/lib/domain/programming/interference';
+import { CONCURRENT_RULES } from '../src/lib/domain/programming/rules/concurrent';
 import { MUSCLE_GROUP_LABEL, type MuscleGroup } from '../src/lib/domain/training/vocabulary';
 import { DESKTOP, expectNoSideScroll } from './desktop';
 import { muayThaiWeeks } from './oracles/general';
@@ -143,16 +144,17 @@ test('the sections’ figures equal the oracles', async ({ page }) => {
 test('the hard sparring’s conflict shows its why', async ({ page }) => {
 	await gotoHydrated(page, reviewUrl());
 	const conflicts = section(page, 'conflicts');
-	// The week as performed: heavy squats on Monday before Tuesday's hard class, and Thursday's
-	// heavy deadlifts before Friday's hard sparring. Its five hard days have room for three apart
-	// (Tuesday's class is a commitment), so hard_days_apart leaves Saturday's long run alone.
-	await expect(conflicts.getByTestId('review-item')).toHaveCount(2);
+	// The week as performed, judged by M7's evaluator on the load logged: heavy squats on Monday
+	// before Tuesday's hard class and Thursday's heavy deadlifts before Friday's hard sparring (M3's
+	// rules, as M6 listed them), each also a residual-fatigue conflict, then the hard-day cap, the
+	// legs still tired for Saturday's long run, and three hard days in a row.
+	await expect(conflicts.getByTestId('review-item')).toHaveCount(7);
 	const rows = [
 		[
 			'conflicts:1:heavy_lower_before_hard',
 			'Strength A on Monday, then Muay Thai class on Tuesday'
 		],
-		['conflicts:2:heavy_lower_before_hard', 'Strength B on Thursday, then Sparring on Friday']
+		['conflicts:4:heavy_lower_before_hard', 'Strength B on Thursday, then Sparring on Friday']
 	] as const;
 	for (const [id, where] of rows) {
 		const rule = id.split(':')[2] as keyof typeof INTERFERENCE_RULES;
@@ -160,7 +162,20 @@ test('the hard sparring’s conflict shows its why', async ({ page }) => {
 			`${where}. ${INTERFERENCE_RULES[rule].why}`
 		);
 	}
-	await expect(conflicts.getByTestId('section-verdict')).toContainText(/^2 conflicts: /);
+	const m7 = [
+		'conflicts:2:concurrent.residual_fatigue_before_hard',
+		'conflicts:3:concurrent.hard_days_cap',
+		'conflicts:5:concurrent.residual_fatigue_before_hard',
+		'conflicts:6:concurrent.residual_fatigue_before_hard',
+		'conflicts:7:concurrent.three_hard_days'
+	] as const;
+	for (const id of m7) {
+		const rule = id.split('.')[1] as keyof typeof CONCURRENT_RULES;
+		await expect(item(page, id).getByTestId('item-words'), id).toHaveText(
+			new RegExp(`\\. ${CONCURRENT_RULES[rule].why.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`)
+		);
+	}
+	await expect(conflicts.getByTestId('section-verdict')).toContainText(/^7 conflicts: /);
 });
 
 test('on a phone each section collapses to its verdict line, and a tap opens it', async ({

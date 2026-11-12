@@ -62,7 +62,9 @@ async function seed(db: Executor, fixture = 'week-complete') {
 		{ timeZone: TZ, now: NOW },
 		{ db }
 	)) as unknown as Seeded;
-	return { owner, seeded, deps: { db, now } };
+	// M6's checkWeek path (the context reads skipped), so the review holds a proposal: with M7's
+	// judge the hard week's next week has no move a finding would not name (m7/24).
+	return { owner, seeded, deps: { db, now, context: { reader: async () => null } } };
 }
 
 const review = (owner: string, deps: { db: Executor; now: () => Date }, weekStartsOn = REVIEWED) =>

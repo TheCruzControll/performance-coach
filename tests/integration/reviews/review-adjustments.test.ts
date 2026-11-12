@@ -25,6 +25,7 @@ import { makeOwner } from '../profile/fixtures';
 const TZ = 'America/Los_Angeles';
 const MONDAY = '2026-11-16';
 const THURSDAY = '2026-11-19';
+const FRIDAY = '2026-11-20';
 const SATURDAY = '2026-11-21';
 const WEDNESDAY = '2026-11-18';
 
@@ -359,14 +360,15 @@ describe('on every weekday, as the specs rely on', () => {
 		}
 	});
 
-	it('review-aged: at least one change has passed or started; every one from Saturday', async () => {
+	it('review-aged: at least one change has passed or started; every one from Friday', async () => {
 		for (const day of DAYS) {
 			await withRollback(async (db) => {
 				const s = await seed(db, 'review-aged', day);
 				const { offers, card: shown } = await card(s);
 				const passed = offers.filter((o) => !o.ahead).length;
 				expect(passed, day).toBeGreaterThan(0);
-				expect(shown.state, day).toBe(day >= SATURDAY ? 'all_past' : 'partly_past');
+				// Monday's and Thursday's bench: M7's judge proposes no move in the hard week's next week.
+				expect(shown.state, day).toBe(day >= FRIDAY ? 'all_past' : 'partly_past');
 			});
 		}
 	});
