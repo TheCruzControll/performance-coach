@@ -11,11 +11,8 @@
  *   they get the code that renders them, not what they load on demand.
  * - The shell itself (SvelteKit's entry, the root and app layouts and error pages) gets everything.
  *
- * - Graphite 2004's Status Displays and week legend (GRAPHITE_ONLY) are left out: a device on today's design never
- *   loads them, so its worker must not fetch them either; offline, StatusSlot then shows none.
- *
- * A route id or Status Display here that the build does not have fails the build, so renaming one
- * cannot quietly drop a page from offline support or put Graphite code in every device's precache.
+ * A route id here that the build does not have fails the build, so renaming a route cannot quietly
+ * drop it from offline support.
  */
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -36,16 +33,6 @@ export const TAB_PAGES = [
 	'/(app)/progress',
 	'/(app)/coach/[[thread]]',
 	'/(app)/profile'
-] as const;
-
-/**
- * What StatusSlot loads only on Graphite 2004, the Status Displays and the week strip's legend
- * (their own imports stay out with them).
- */
-export const GRAPHITE_ONLY = [
-	'src/routes/(app)/today/panels/TodayStatus.svelte',
-	'src/routes/(app)/today/panels/WeekLegend.svelte',
-	'src/routes/workout/run/RunStatus.svelte'
 ] as const;
 
 /** One chunk of Vite's client manifest (`.vite/manifest.json`, keyed by source). */
@@ -89,11 +76,6 @@ export function shellFiles(graph: BuildGraph): string[] {
 	const files = (indexes: (number | undefined)[]) =>
 		indexes.filter((i) => i !== undefined).flatMap((i) => graph.nodeFiles(i));
 
-	const graphiteOnly = new Set<string>(GRAPHITE_ONLY);
-	for (const key of graphiteOnly) {
-		if (!graph.vite[key]) throw new Error(`precache: the build has no ${key}`);
-	}
-
 	const seen = new Set<string>();
 	/** Adds `roots` and what they import; with `lazy`, their dynamic imports too (never a node). */
 	const walk = (roots: string[], lazy: boolean) => {
@@ -110,7 +92,7 @@ export function shellFiles(graph: BuildGraph): string[] {
 			// SvelteKit's app entry imports every route node dynamically: those are routes, not code
 			// this page loads, so a node only comes in through a route listed above.
 			for (const key of chunk.dynamicImports ?? []) {
-				if (!graph.vite[key]!.isEntry && !graphiteOnly.has(key)) queue.push(graph.vite[key]!.file);
+				if (!graph.vite[key]!.isEntry) queue.push(graph.vite[key]!.file);
 			}
 		}
 	};

@@ -166,7 +166,6 @@
 <dialog
 	bind:this={dialog}
 	class="sheet-dialog"
-	data-ui="sheet"
 	class:visible
 	class:wide
 	aria-labelledby={`${id}-title`}

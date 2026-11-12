@@ -11,7 +11,6 @@ import { DB_NAME, STORES } from './workout/names';
 import { pendingCount } from './workout/probe';
 import { ACTIVE_WORKOUT_KEY } from './workout/active-flag';
 import { PREPAINT_KEY } from './workout/prepaint';
-import { DESIGN_KEY } from './design';
 import { createStore } from './workout/store';
 
 const KIT = workoutDayKits({ date: '2026-11-06' }).strength;
@@ -313,7 +312,7 @@ describe('clearAfterSignedOutUrl', () => {
 });
 
 describe('clearDeviceAccountData', () => {
-	it("deletes /workout's prepainted card, blocked or not, keeping workouts or not, and keeps the device's preferences and design", async () => {
+	it("deletes /workout's prepainted card, blocked or not, keeping workouts or not, and keeps the device's preferences", async () => {
 		const { clearDeviceAccountData } = await load();
 		for (const keepWorkouts of [false, true]) {
 			for (const held of [
@@ -322,8 +321,7 @@ describe('clearDeviceAccountData', () => {
 			]) {
 				const map = new Map([
 					[PREPAINT_KEY, held],
-					['pc:prefs:v1', '{"theme":"light"}'],
-					[DESIGN_KEY, 'graphite']
+					['pc:prefs:v1', '{"theme":"light"}']
 				]);
 				vi.stubGlobal('localStorage', {
 					getItem: (key: string) => map.get(key) ?? null,
@@ -333,8 +331,7 @@ describe('clearDeviceAccountData', () => {
 
 				await clearDeviceAccountData({ keepWorkouts });
 
-				// The theme, units and design are this device's, not the account's.
-				expect([...map.keys()]).toEqual(['pc:prefs:v1', DESIGN_KEY]);
+				expect([...map.keys()]).toEqual(['pc:prefs:v1']);
 			}
 		}
 	});

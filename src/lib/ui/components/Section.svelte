@@ -22,7 +22,7 @@
 	const id = $props.id();
 </script>
 
-<section class="section" data-ui="section" data-gap={gap} aria-labelledby={id} {...rest}>
+<section class="section" data-gap={gap} aria-labelledby={id} {...rest}>
 	{#if titleHidden}
 		<h2 {id} class="visually-hidden">{title}</h2>
 	{:else}

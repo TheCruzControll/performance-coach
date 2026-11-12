@@ -70,7 +70,6 @@
 
 <div
 	class="segmented"
-	data-ui="segmented"
 	data-size={size}
 	role="radiogroup"
 	aria-label={label}

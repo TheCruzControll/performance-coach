@@ -1,15 +1,13 @@
 /**
  * The screen gallery (.github/workflows/screen-gallery.yml; E2E_GALLERY=1 only, never a PR leg):
  * full-page PNGs of every main screen and important state, for design reviews, on the device the
- * project names (an iPhone 15 in WebKit, a 1440 × 900 desktop in Chromium) in both designs (today's
- * and the Graphite 2004 preview, for the owner to compare) and both themes.
+ * project names (an iPhone 15 in WebKit, a 1440 × 900 desktop in Chromium) in both themes.
  *
  * Each group seeds the one owner with the existing test-support seeds (fixture programs, the
  * analytics and review histories, the coach fixtures, a workout started from the server's kit),
- * then shoots its screens. Every group runs once per design and theme in a fresh signed-in context,
- * so it seeds again: the seeds each start from a reset. The design and the theme are the app's own
- * saved preferences (localStorage, read before first paint by src/app.html), with the matching
- * colour scheme.
+ * then shoots its screens. Every group runs once per theme in a fresh signed-in context, so it
+ * seeds again: the seeds each start from a reset. The theme is the app's own saved preference
+ * (localStorage, read before first paint by src/app.html) and the matching colour scheme.
  *
  * A shot that fails is recorded as failed, with why, and the group goes on: this spec captures,
  * it does not judge. Each shot appends a record to test-results/gallery/results-<device>.jsonl,
@@ -28,13 +26,11 @@ import {
 	type TestInfo
 } from '@playwright/test';
 import {
-	GALLERY_DESIGNS,
 	GALLERY_DEVICES,
 	GALLERY_THEMES,
 	NotOnMainYet,
 	recordOf,
 	shotFileName,
-	type GalleryDesign,
 	type GalleryDevice,
 	type GalleryTheme,
 	type ShotRecord
@@ -49,8 +45,6 @@ import { startFromKit } from './workout-start-support';
 const DIR = 'test-results/gallery';
 /** The app's saved display preferences (src/lib/client/preferences.svelte.ts PREFERENCES_KEY). */
 const PREFERENCES_KEY = 'pc:prefs:v1';
-/** This device's design (src/lib/client/design.ts DESIGN_KEY). */
-const DESIGN_KEY = 'pc:design:v1';
 /** What the coach fixture 'split-squat-week' answers with a proposal (coach-proposals spec). */
 const REPLACE = 'I hate Bulgarian split squats, so replace them';
 
@@ -63,7 +57,7 @@ interface Fixtures {
 
 interface Shooter {
 	/**
-	 * Run `open`, then capture the whole page as <screen>--<state>--<device>--<design>--<theme>.png. A
+	 * Run `open`, then capture the whole page as <screen>--<state>--<device>--<theme>.png. A
 	 * failure is recorded, never thrown (NotOnMainYet as absent); with `skip`, nothing runs and the
 	 * reason is recorded.
 	 */
@@ -81,7 +75,7 @@ interface Group {
 	name: string;
 	timezoneId: string;
 	signedOut?: boolean;
-	/** The test's timeout, per design and theme. */
+	/** The test's timeout, per theme. */
 	minutes: number;
 	run(shooter: Shooter, fixtures: Fixtures): Promise<void>;
 }
@@ -109,12 +103,7 @@ async function settle(page: Page): Promise<void> {
 		.catch(() => {}); // a screen that never settles is still worth a look
 }
 
-function shooter(
-	page: Page,
-	testInfo: TestInfo,
-	design: GalleryDesign,
-	theme: GalleryTheme
-): Shooter {
+function shooter(page: Page, testInfo: TestInfo, theme: GalleryTheme): Shooter {
 	const device = testInfo.project.metadata.galleryDevice as GalleryDevice;
 	if (!GALLERY_DEVICES.includes(device)) {
 		throw new Error(`project ${testInfo.project.name} names no gallery device`);
@@ -124,8 +113,8 @@ function shooter(
 		appendFileSync(path.join(DIR, `results-${device}.jsonl`), `${JSON.stringify(entry)}\n`);
 	return {
 		async shot(screen, state, open, { skip } = {}) {
-			const file = shotFileName({ screen, state, device, design, theme });
-			const key = { screen, state, device, design, theme };
+			const file = shotFileName({ screen, state, device, theme });
+			const key = { screen, state, device, theme };
 			if (skip) {
 				record({ ...key, status: 'skipped', reason: skip });
 				return false;
@@ -146,7 +135,7 @@ function shooter(
 			}
 		},
 		fail(screen, state, err) {
-			record(recordOf({ screen, state, device, design, theme }, err));
+			record(recordOf({ screen, state, device, theme }, err));
 		}
 	};
 }
@@ -423,38 +412,35 @@ for (const group of GROUPS) {
 		test.use({ timezoneId: group.timezoneId });
 		if (group.signedOut) test.use({ storageState: signedOut });
 
-		for (const design of GALLERY_DESIGNS) {
-			for (const theme of GALLERY_THEMES) {
-				test.describe(`${design} ${theme}`, () => {
-					test.use({ colorScheme: theme });
+		for (const theme of GALLERY_THEMES) {
+			test.describe(theme, () => {
+				test.use({ colorScheme: theme });
 
-					test(`${group.name} screens in the ${design} design, ${theme} theme`, async ({
-						page,
-						context,
-						request,
-						browserName
-					}, testInfo) => {
-						test.setTimeout(group.minutes * 60_000);
-						await context.addInitScript(
-							([prefsKey, designKey, savedTheme, savedDesign]) => {
-								try {
-									localStorage.setItem(prefsKey!, JSON.stringify({ theme: savedTheme }));
-									localStorage.setItem(designKey!, savedDesign!);
-								} catch {
-									// about:blank has no storage: nothing to apply there.
-								}
-							},
-							[PREFERENCES_KEY, DESIGN_KEY, theme, design]
-						);
-						const shots = shooter(page, testInfo, design, theme);
-						try {
-							await group.run(shots, { page, context, request, browserName });
-						} catch (err) {
-							shots.fail(group.name, 'seed', err);
-						}
-					});
+				test(`${group.name} screens in the ${theme} theme`, async ({
+					page,
+					context,
+					request,
+					browserName
+				}, testInfo) => {
+					test.setTimeout(group.minutes * 60_000);
+					await context.addInitScript(
+						([key, value]) => {
+							try {
+								localStorage.setItem(key!, JSON.stringify({ theme: value }));
+							} catch {
+								// about:blank has no storage: nothing to apply there.
+							}
+						},
+						[PREFERENCES_KEY, theme]
+					);
+					const shots = shooter(page, testInfo, theme);
+					try {
+						await group.run(shots, { page, context, request, browserName });
+					} catch (err) {
+						shots.fail(group.name, 'seed', err);
+					}
 				});
-			}
+			});
 		}
 	});
 }
