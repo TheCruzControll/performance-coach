@@ -404,6 +404,12 @@ test('goals: Continue without a goal is refused and says why; a crafted Skip cha
 }) => {
 	await gotoHydrated(page, '/onboarding/goals');
 	await stepReady(page, 'goals');
+	// The question is asked once, by the step's title; the empty state under it only guides.
+	await expect(page.getByText('What are you training for?')).toHaveCount(1);
+	await expect(page.getByRole('heading', { level: 1 })).toHaveText('What are you training for?');
+	await expect(page.getByTestId('goals-empty')).toContainText(
+		'Add a goal and the coach plans your training around it.'
+	);
 	await next(page).click();
 	await expect(page.getByRole('alert').filter({ hasText: 'Add at least one goal' })).toHaveText(
 		'Add at least one goal to continue.'

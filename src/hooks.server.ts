@@ -12,6 +12,7 @@ import { createContext, runWithContext } from '#lib/server/observability/context
 import { instance } from '#lib/server/observability/instance.ts';
 import { logger } from '#lib/server/observability/logger.ts';
 import { serverTimingHeader } from '#lib/server/observability/timing.ts';
+import { withDesignAssets } from '#lib/server/design-assets.ts';
 import { stylesFirst } from '#lib/server/head-order.ts';
 import { SECURITY_HEADERS } from '#lib/server/security-headers.ts';
 import { recordServerError } from '#lib/server/services/errors.ts';
@@ -67,8 +68,9 @@ export const handle: Handle = async ({ event, resolve }) => {
 					input.type === 'js' ||
 					input.type === 'css' ||
 					(input.type === 'font' && shouldPreloadFont(input.filename)),
-				// The styles first paint waits for go before the preload hints (head-order.ts).
-				transformPageChunk: ({ html }) => stylesFirst(html)
+				// The styles first paint waits for go before the preload hints (head-order.ts); the
+				// Graphite preview's asset URLs fill the template's placeholders (design-assets.ts).
+				transformPageChunk: ({ html }) => stylesFirst(withDesignAssets(html))
 			}));
 
 		const durationMs = performance.now() - ctx.startedAt;

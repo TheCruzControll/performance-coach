@@ -1,11 +1,13 @@
 import { execSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import adapterNode from '@sveltejs/adapter-node';
 import adapterVercel from '@sveltejs/adapter-vercel';
 import { sveltekit } from '@sveltejs/kit/vite';
 import { loadEnv, type Plugin } from 'vite';
 import { defineConfig } from 'vitest/config';
+import { readBuildGraph, shellFiles } from './scripts/lib/precache-scope.ts';
 import { LAUNCH_SCRIPT } from './src/lib/client/workout/launch.ts';
 import { PREPAINT_SCRIPT } from './src/lib/client/workout/prepaint.ts';
 
@@ -119,6 +121,35 @@ function firstPaint(): Plugin {
 	};
 }
 
+const PRECACHE_SHELL = 'virtual:precache-shell';
+
+/**
+ * `virtual:precache-shell`: the build files the service worker precaches, read from the client
+ * build (scripts/lib/precache-scope.ts). SvelteKit builds the worker after the client build and
+ * the prerendering, so both manifests are written by then. Also writes the list to
+ * .vite/precache-shell.json, which `pnpm budgets` measures. In `vite dev` there are no build files
+ * (`$app/manifest`'s `immutable` is empty too): the list is empty.
+ */
+function precacheShell(): Plugin {
+	return {
+		name: 'precache-shell',
+		resolveId: (id) => (id === PRECACHE_SHELL ? `\0${PRECACHE_SHELL}` : undefined),
+		async load(id) {
+			if (id !== `\0${PRECACHE_SHELL}`) return;
+			const { config, name } = this.environment;
+			if (config.command !== 'build' || name !== 'serviceWorker') return 'export const shell = [];';
+			const client = path.resolve(config.root, config.build.outDir);
+			const files = shellFiles(await readBuildGraph(path.dirname(client)));
+			this.emitFile({
+				type: 'asset',
+				fileName: '.vite/precache-shell.json',
+				source: JSON.stringify(files)
+			});
+			return `export const shell = ${JSON.stringify(files)};`;
+		}
+	};
+}
+
 export default defineConfig(({ command, mode }) => {
 	// Make `.env` values visible to server code that reads `process.env` during `vite dev`.
 	// Production servers receive real environment variables from the platform instead.
@@ -132,6 +163,7 @@ export default defineConfig(({ command, mode }) => {
 		plugins: [
 			chunkModules(),
 			firstPaint(),
+			precacheShell(),
 			sveltekit({
 				compilerOptions: {
 					// Runes everywhere in our own code; libraries decide for themselves.

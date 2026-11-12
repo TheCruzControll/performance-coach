@@ -125,7 +125,7 @@ export interface PlannedRun {
 }
 
 /**
- * The start kits saved on this device (Today's today-kits.ts), oldest first, and the workouts
+ * The start kits saved on this device (Today's and Train's, coming-kits.ts), oldest first, and the workouts
  * started from a planned session; both empty on a device without the database.
  */
 export function savedKits(): Promise<{ kits: SavedKit[]; runs: PlannedRun[] }> {
