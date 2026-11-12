@@ -145,7 +145,7 @@
 			{/if}
 		{/snippet}
 		{#if state.kind === 'choose'}
-			<div class="actions">
+			<div class="actions choose">
 				<Button href={state.href} iconEnd="chevron-right" data-testid="proposal-choose-start"
 					>{state.words}</Button
 				>
@@ -323,6 +323,13 @@
 		display: flex;
 		flex-wrap: wrap;
 		gap: var(--space-2);
+	}
+
+	/* The review link's label is long: on a phone it wraps inside the card, not past its edge. */
+	.actions.choose > :global(.btn) {
+		max-width: 100%;
+		white-space: normal;
+		text-align: center;
 	}
 
 	.failure {
