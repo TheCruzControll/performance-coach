@@ -17,22 +17,20 @@
  *   that world's database into every other one. Every world starts from the same owner, passkeys
  *   and sessions, as one serial leg's specs always have.
  *
- * Only E2E_GROUP=serial in CI runs more than one world (SERIAL_WORLDS); every other run keeps one,
- * where all of this is a no-op: the main group's specs share the one owner by design.
+ * Only a serial CI leg (E2E_GROUP=serial) on an engine whose SERIAL_WORKERS is above 1 (Chromium;
+ * WebKit keeps one, e2e/serial-workers.ts says why) runs more than one world; every other run
+ * keeps one, where all of this is a no-op: the main group's specs share the one owner by design.
  */
 import { LOCAL_DATABASE_URLS } from '../src/lib/server/db/migrate';
 import { DEFAULT_E2E_PORT, e2eBaseURL, type E2EEnv } from './projects';
+import { serialWorkers } from './serial-workers';
 
 /**
- * Workers, and so worlds, of a serial CI leg (scripts/e2e-shards.ts legWorkers plans with the
- * same number: scripts/e2e-shards.test.ts checks it against the config's workers, and
- * scripts/e2e-projects.test.ts the serial projects' workers against this).
+ * How many worlds this run serves: one per worker of a serial CI leg (serialWorkers, the one place
+ * they are set per engine), else 1.
  */
-export const SERIAL_WORLDS = 2;
-
-/** How many worlds this run serves: SERIAL_WORLDS in a serial CI leg, else 1. */
 export function worldCount(env: E2EEnv): number {
-	return env.CI && env.E2E_GROUP === 'serial' ? SERIAL_WORLDS : 1;
+	return env.CI && env.E2E_GROUP === 'serial' ? serialWorkers(env.E2E_ENGINE) : 1;
 }
 
 export interface World {
