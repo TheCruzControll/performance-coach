@@ -83,7 +83,7 @@
 		<Notice tone="danger" title="Couldn’t load this lift’s trends">
 			Your training is safe. Check your connection, then try again.
 		</Notice>
-		<Button variant="secondary" icon="refresh" onclick={retry}>Retry</Button>
+		<Button variant="secondary" icon="refresh" onclick={retry}>Try again</Button>
 	</div>
 {:else}
 	<div class="reserve" aria-busy="true" data-testid="exercise-trends">

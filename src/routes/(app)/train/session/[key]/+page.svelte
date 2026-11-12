@@ -143,7 +143,7 @@
 		toast.show('Couldn’t open the editor. Check your connection.', {
 			tone: 'danger',
 			action: {
-				label: 'Retry',
+				label: 'Try again',
 				onclick: () => {
 					retried = true;
 					edit(kind, about);

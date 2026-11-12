@@ -229,7 +229,7 @@ test.describe('/design → Coach on a desktop', () => {
 
 		const targets = [
 			page.getByTestId('composer-running').getByRole('button', { name: 'Stop' }),
-			page.getByTestId('notice-provider').getByRole('button', { name: 'Retry' })
+			page.getByTestId('notice-provider').getByRole('button', { name: 'Try again' })
 		];
 		for (const target of targets) {
 			await target.scrollIntoViewIfNeeded();
