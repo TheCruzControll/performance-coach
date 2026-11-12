@@ -45,12 +45,12 @@ test('Graphite: the logger card, the RPE ring inside the grid, and a lit key', a
 	expect(await css(face, 'outline-style')).toBe('solid');
 	expect(await css(face, 'outline-offset')).toBe('-3px');
 
-	const otherFace = rpe
-		.getByRole('radio', { name: '9', exact: true })
-		.locator('xpath=following-sibling::span[1]');
+	// Hover the radio itself: it sits over its face (opacity 0, z-index 1) and takes the pointer.
+	const nine = rpe.getByRole('radio', { name: '9', exact: true });
+	const otherFace = nine.locator('xpath=following-sibling::span[1]');
 	await page.mouse.move(0, 0);
 	const before = await css(otherFace, 'box-shadow');
-	await otherFace.hover();
+	await nine.hover();
 	await expect.poll(() => css(otherFace, 'box-shadow')).not.toBe(before);
 	await expectNoSideScroll(page);
 });
