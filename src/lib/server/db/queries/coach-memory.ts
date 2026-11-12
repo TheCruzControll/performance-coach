@@ -14,7 +14,18 @@
  *   (scripts/explain/history.explain.ts).
  * Nothing runs until a builder is awaited; await them in turn on one connection.
  */
-import { and, desc, eq, gte, isNotNull, isNull, sql, type SQL, type SQLWrapper } from 'drizzle-orm';
+import {
+	and,
+	desc,
+	eq,
+	gte,
+	inArray,
+	isNotNull,
+	isNull,
+	sql,
+	type SQL,
+	type SQLWrapper
+} from 'drizzle-orm';
 import type { PgTable } from 'drizzle-orm/pg-core';
 import type {
 	BaselineKind,
@@ -32,6 +43,7 @@ import {
 	athleteProfiles,
 	coachNotes,
 	coachProposals,
+	coachThreads,
 	cycleReviews,
 	equipmentProfiles,
 	exercisePreferences,
@@ -363,13 +375,36 @@ export function recentProposals(
 	return pendingRows.unionAll(decidedRows).orderBy(sql`is_open desc, at desc, id desc`);
 }
 
-/** The owner's newest coach notes of one kind (thread summaries, workout analyses). */
-export function recentNotes(db: Executor, ownerId: string, kind: string, limit: number) {
+/**
+ * The owner's newest coach notes of one kind (thread summaries, workout analyses). A note about a
+ * thread (body.threadId) opened with one of `hiddenEntries` is left out.
+ */
+export function recentNotes(
+	db: Executor,
+	ownerId: string,
+	kind: string,
+	limit: number,
+	hiddenEntries: readonly string[] = []
+) {
 	const n = coachNotes;
+	const t = coachThreads;
+	const hidden =
+		hiddenEntries.length === 0
+			? undefined
+			: sql`not exists (${db
+					.select({ one: sql`1` })
+					.from(t)
+					.where(
+						and(
+							sql`${t.id}::text = ${n.body}->>'threadId'`,
+							eq(t.ownerId, ownerId),
+							inArray(sql`${t.entry}->>'from'`, [...hiddenEntries])
+						)
+					)})`;
 	return db
 		.select({ id: n.id, date: dayOf(n.createdAt, ownerId), summary: n.summary, body: n.body })
 		.from(n)
-		.where(and(eq(n.ownerId, ownerId), eq(n.kind, kind)))
+		.where(and(eq(n.ownerId, ownerId), eq(n.kind, kind), hidden))
 		.orderBy(desc(n.createdAt), desc(n.id))
 		.limit(limit);
 }

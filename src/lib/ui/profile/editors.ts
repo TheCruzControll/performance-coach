@@ -23,6 +23,8 @@ export interface EditorProps<T> {
 	context: SectionContext;
 	/** Profile: the section's whole story, such as a goal's status and past goals. */
 	manage?: boolean;
+	/** The heading the editor is shown under (an onboarding step's title): not repeated inside. */
+	heading?: string;
 }
 
 /** One section, ready to edit. */

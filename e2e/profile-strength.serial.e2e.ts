@@ -5,6 +5,7 @@
  */
 import { expect, test, type Page } from '@playwright/test';
 import { estimateOneRepMax } from '../src/lib/domain/e1rm';
+import { roundEstimate } from '../src/lib/domain/units';
 import {
 	captureScreen,
 	gotoHydrated,
@@ -107,10 +108,13 @@ test('a tested squat is stored as measured and a bench from a set as estimated, 
 	await bench.getByRole('textbox', { name: 'Weight' }).fill('100');
 	await bench.getByRole('textbox', { name: 'Reps' }).fill('5');
 	await bench.getByRole('textbox', { name: 'RPE' }).fill('8');
-	// Worked out live with the function the server stores it with (to the hundredth it keeps).
+	// Worked out live with the function the server stores it with (to the hundredth it keeps),
+	// and shown as an estimate is: to the nearest 0.5 kg, never to the hundredth.
 	const e1rm = estimateOneRepMax({ weight: 100, reps: 5, rpe: 8 })!;
 	const stored = Math.round(e1rm.value * 100) / 100;
-	const estimate = `≈ ${stored} kg estimated 1RM · ${e1rm.confidence} confidence`;
+	const shown = roundEstimate(e1rm.value, 'kg');
+	expect(shown % 0.5).toBe(0);
+	const estimate = `≈ ${shown} kg estimated 1RM · ${e1rm.confidence} confidence`;
 	await expect(bench.getByTestId('baseline-estimate')).toHaveText(estimate);
 
 	await page.getByTestId('save-section').click();

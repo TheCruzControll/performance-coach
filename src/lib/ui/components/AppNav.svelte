@@ -4,7 +4,9 @@
   Shell). Below 1024 px a glass tab bar fixed to the bottom, clear of the home indicator; from
   1024 px a solid rail at the left, under the brand mark that layout.css draws. Each item is a
   real link (works without JS) with aria-current on the active tab, so the destinations, their
-  order and the current one are the same in both.
+  order and the current one are the same in both. A pressed tab is marked current on pointerdown.
+  Graphite 2004 (graphite.css, the `nav` hook) makes the bar glossy graphite with the current tab
+  in the selection well, and the rail its source list; no markup changes between them.
 -->
 <script lang="ts" module>
 	import type { IconName } from '../icons/icons';
@@ -27,10 +29,33 @@
 
 	let { items, pathname }: Props = $props();
 
-	const isActive = (href: string) => pathname === href || pathname.startsWith(`${href}/`);
+	/**
+	 * The tab under a finger or a pressed mouse button, marked current at once, as a native tab
+	 * bar does on touch: the navigation (and with it the pathname) starts only on click. Kept for
+	 * a moment after the release, until the navigation has begun; let go at once when the press
+	 * is cancelled or a mouse leaves the tab, which never clicks.
+	 */
+	let pressed = $state<string | null>(null);
+	let release: ReturnType<typeof setTimeout> | undefined;
+	const RELEASE_MS = 300;
+
+	function press(event: PointerEvent, href: string) {
+		if (!event.isPrimary || event.button !== 0) return;
+		if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+		clearTimeout(release);
+		pressed = href;
+	}
+
+	function letGo(after = 0) {
+		clearTimeout(release);
+		release = setTimeout(() => (pressed = null), after);
+	}
+
+	const current = $derived(pressed ?? pathname);
+	const isActive = (href: string) => current === href || current.startsWith(`${href}/`);
 </script>
 
-<nav class="app-nav" aria-label="Primary">
+<nav class="app-nav" data-ui="nav" aria-label="Primary">
 	<ul>
 		{#each items as item (item.href)}
 			{@const active = isActive(item.href)}
@@ -40,6 +65,12 @@
 					class="item"
 					aria-current={active ? 'page' : undefined}
 					data-sveltekit-preload-data="tap"
+					onpointerdown={(event) => press(event, item.href)}
+					onpointerup={() => letGo(RELEASE_MS)}
+					onpointercancel={() => letGo()}
+					onpointerleave={(event) => {
+						if (event.pointerType === 'mouse') letGo();
+					}}
 				>
 					<span class="glyph">
 						<Icon name={item.icon} size={24} strokeWidth={active ? 2 : 1.75} />

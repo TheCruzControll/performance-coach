@@ -91,18 +91,52 @@ describe('barModel: stacks', () => {
 	});
 
 	it('puts each complete stack’s total on its cap, above its planned outline when that is higher', () => {
-		const data = chart([series('strength', [6, 4, 3]), series('hypertrophy', [8, 5, 2])], {
-			slots: slots(3, true),
-			planned: [v(10), v(12), v(14)]
+		const data = chart([series('strength', [6, 4, 4, 3]), series('hypertrophy', [8, 5, 1, 2])], {
+			slots: slots(4, true),
+			planned: [v(10), v(12), v(12), v(14)]
 		});
 		const model = barModel(data);
 		expect(model.caps.map(({ slot, text }) => ({ slot, text }))).toEqual([
 			{ slot: 0, text: '14' },
-			{ slot: 1, text: '9' }
+			{ slot: 2, text: '5' }
 		]);
 		expect(model.caps[0]!.bottom).toBeCloseTo(model.scale.at(14), 9);
 		expect(model.caps[1]!.bottom).toBeCloseTo(model.scale.at(12), 9);
 		expect(model.caps.map((cap) => cap.beforeSoFar)).toEqual([false, true]);
+	});
+
+	it('labels only the highest complete stack and the latest, so totals never collide', () => {
+		const data = chart(
+			[series('strength', [6, 9, 4, 5, 3, 1]), series('running', [2, 3, 2, 4, 3, 1])],
+			{ slots: slots(6, true) }
+		);
+		const model = barModel(data);
+		// Slot 1 is the highest (12); slot 4 the latest complete one; slot 5 is so far.
+		expect(model.caps.map(({ slot, text }) => ({ slot, text }))).toEqual([
+			{ slot: 1, text: '12' },
+			{ slot: 4, text: '6' }
+		]);
+		expect(model.caps.map((cap) => cap.beforeSoFar)).toEqual([false, true]);
+	});
+
+	it('gives one label when the latest complete stack is the highest, and the latest of a tie', () => {
+		const latest = barModel(chart([series('strength', [2, 3, 8]), series('running', [1, 1, 2])]));
+		expect(latest.caps.map((cap) => cap.slot)).toEqual([2]);
+		const tie = barModel(
+			chart([series('strength', [7, 2, 7, 1]), series('running', [1, 1, 1, 1])])
+		);
+		expect(tie.caps.map((cap) => cap.slot)).toEqual([3]);
+	});
+
+	it('drops the highest stack’s total when it sits right next to the latest, so the two never overlap', () => {
+		const next = barModel(
+			chart([series('strength', [2, 1, 9, 3]), series('running', [1, 1, 1, 1])])
+		);
+		expect(next.caps.map((cap) => cap.slot)).toEqual([3]);
+		const apart = barModel(
+			chart([series('strength', [9, 1, 2, 3]), series('running', [1, 1, 1, 1])])
+		);
+		expect(apart.caps.map((cap) => cap.slot)).toEqual([0, 3]);
 	});
 
 	it('leaves room over the tallest column for the label on its cap', () => {

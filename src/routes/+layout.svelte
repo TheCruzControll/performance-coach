@@ -4,7 +4,6 @@
 	import { afterNavigate } from '$app/navigation';
 	import { page } from '$app/state';
 	import { setErrorContext } from '#lib/client/errors.ts';
-	import { registerServiceWorkerWhenIdle } from '#lib/client/service-worker.ts';
 	import { noteNavigation } from '#lib/client/visits.ts';
 	import Toaster from '#lib/ui/components/Toaster.svelte';
 	import type { LayoutProps } from './$types';
@@ -25,7 +24,12 @@
 		// iOS Safari only applies :active styles when a touch listener exists.
 		document.addEventListener('touchstart', () => {}, { passive: true });
 		// After hydration, not on `load`, which comes before it (src/lib/client/service-worker.ts).
-		registerServiceWorkerWhenIdle();
+		// Its code loads then too, so it is in no page's initial JS; a page that cannot fetch it
+		// (offline before the worker is installed, or after a deploy) registers on its next load.
+		void import('#lib/client/service-worker.ts').then(
+			(module) => module.registerServiceWorkerWhenIdle(),
+			() => {}
+		);
 		// The root error page loads on demand; have it here before an error needs it, as
 		// SvelteKit's own eager import did, but after hydration (src/routes/error-page.ts).
 		loadErrorPage();

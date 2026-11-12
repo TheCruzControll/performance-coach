@@ -118,6 +118,11 @@ export function whenWords(at: Date, now: Date, timeZone: string): string {
 	return shortDate(day);
 }
 
+/** When a conversation was archived, in the owner's zone: 'Archived today · 09:14', 'Archived Mon 2 Nov'. */
+export function archivedWords(at: Date, now: Date, timeZone: string): string {
+	return `Archived ${whenWords(at, now, timeZone).replace(/^(Today|Yesterday)/, (day) => day.toLowerCase())}`;
+}
+
 const isBlocks = (value: unknown): value is CompletedBlock[] =>
 	Array.isArray(value) &&
 	value.every((block) => typeof block === 'object' && block !== null && 'kind' in block);
