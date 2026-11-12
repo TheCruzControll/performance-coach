@@ -4,8 +4,9 @@
  * e2e/gallery.gallery.ts captures every main screen and state on each device, in both designs
  * (today's and the Graphite 2004 preview, so the owner can compare them) and both themes, and
  * appends one record per shot to `results-<device>.jsonl` beside the PNGs: captured, failed (with
- * why) or skipped (with why, e.g. an engine that cannot emulate it). A shot that fails never
- * fails the run, so the sheet is where a failure shows.
+ * why), skipped (with why, e.g. an engine that cannot emulate it) or absent (the screen is not on
+ * main yet: the shot threw NotOnMainYet, saying what is missing). A shot that fails never fails the
+ * run, so the sheet is where a failure shows.
  *
  * `node scripts/gallery-index.ts <dir>` reads every `results-*.jsonl` in <dir> and writes
  * <dir>/index.html: one row per screen and state, one column per device, design and theme, each cell the
@@ -34,11 +35,31 @@ export interface ShotKey {
 }
 
 export interface ShotRecord extends ShotKey {
-	status: 'captured' | 'failed' | 'skipped';
+	status: 'captured' | 'failed' | 'skipped' | 'absent';
 	/** The PNG's file name, when captured. */
 	file?: string;
-	/** Why it failed or was skipped. */
+	/** Why it failed, was skipped or is absent. */
 	reason?: string;
+}
+
+/**
+ * Thrown by a shot when the screen it captures is not on main yet (its route, or the link to it,
+ * is missing): recorded as absent with `message`, never as a failure.
+ */
+export class NotOnMainYet extends Error {
+	override name = 'NotOnMainYet';
+}
+
+/** Playwright's coloured error text: ESC [ … m. */
+const ANSI_COLOUR = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, 'g');
+
+/** The record of a shot that threw `err`: absent for NotOnMainYet, otherwise failed, with why. */
+export function recordOf(key: ShotKey, err: unknown): ShotRecord {
+	const reason = (err instanceof Error ? err.message : String(err))
+		.replace(ANSI_COLOUR, '')
+		.trim()
+		.slice(0, 600);
+	return { ...key, status: err instanceof NotOnMainYet ? 'absent' : 'failed', reason };
 }
 
 const SLUG = /^[a-z0-9]+(-[a-z0-9]+)*$/;
@@ -75,8 +96,13 @@ function cell(record: ShotRecord | undefined): string {
 		const src = encodeURI(record.file);
 		return `<td class="captured"><a href="${src}"><img src="${src}" alt="${escape(record.file)}" loading="lazy"></a></td>`;
 	}
-	const label = record.status === 'skipped' ? 'skipped' : 'failed';
-	return `<td class="${label}"><strong>${label}</strong><p>${escape(record.reason ?? '')}</p></td>`;
+	const [kind, label] =
+		record.status === 'absent'
+			? ['absent', 'not on main yet']
+			: record.status === 'skipped'
+				? ['skipped', 'skipped']
+				: ['failed', 'failed'];
+	return `<td class="${kind}"><strong>${label}</strong><p>${escape(record.reason ?? '')}</p></td>`;
 }
 
 /**
@@ -114,13 +140,13 @@ th, td { border: 1px solid #333; padding: 8px; vertical-align: top; text-align: 
 thead th { position: sticky; top: 0; background: #111; }
 img { display: block; width: 240px; height: auto; }
 td.failed { background: #3a1414; width: 240px; }
-td.skipped, td.missing { background: #222; color: #aaa; width: 240px; }
+td.skipped, td.missing, td.absent { background: #222; color: #aaa; width: 240px; }
 p { margin: 4px 0 0; white-space: pre-wrap; word-break: break-word; }
 </style>
 </head>
 <body>
 <h1>${escape(title)}</h1>
-<p class="summary">${count('captured')} captured · ${count('failed')} failed · ${count('skipped')} skipped</p>
+<p class="summary">${count('captured')} captured · ${count('failed')} failed · ${count('skipped')} skipped · ${count('absent')} not on main yet</p>
 <table>
 <thead><tr><th>screen--state</th>${head}</tr></thead>
 <tbody>
@@ -154,5 +180,8 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
 	const records = readRecords(dir);
 	writeFileSync(path.join(dir, 'index.html'), renderIndex(records));
 	const failed = records.filter((r) => r.status === 'failed').length;
-	console.log(`[gallery] ${records.length} shots indexed, ${failed} failed: ${dir}/index.html`);
+	const absent = records.filter((r) => r.status === 'absent').length;
+	console.log(
+		`[gallery] ${records.length} shots indexed, ${failed} failed, ${absent} not on main yet: ${dir}/index.html`
+	);
 }
