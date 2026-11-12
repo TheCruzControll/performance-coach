@@ -449,7 +449,7 @@ describe('a weekly review’s deload', () => {
 		await withRollback(async (db) => {
 			const { owner, programId, fixture, deps } = await seeded(db, 'week-complete', MONDAY);
 			if (fixture.review.kind !== 'weekly') throw new Error('a weekly fixture');
-			const reviewed = fixture.review.weekStartsOn;
+			const { weekStartsOn: reviewed, nextWeekStartsOn: next } = fixture.review;
 			const { review } = await createWeeklyReview(
 				owner,
 				{ weekStartsOn: reviewed, today: MONDAY },
@@ -459,7 +459,7 @@ describe('a weekly review’s deload', () => {
 				owner,
 				{
 					today: MONDAY,
-					directive: deloadOf(fixture.review.nextWeekStartsOn, 'reactive'),
+					directive: deloadOf(next, 'reactive'),
 					source: 'weekly_review',
 					review: { reviewId: review.id, revision: review.revision, weekStartsOn: reviewed }
 				},
@@ -473,9 +473,7 @@ describe('a weekly review’s deload', () => {
 
 			await acceptProposal(owner, proposal.id, deps);
 			const v2 = await getProgramVersion(owner, programId, 2, { db });
-			const week = v2.blocks
-				.flatMap((b) => b.weeks)
-				.find((w) => w.startsOn === fixture.review.nextWeekStartsOn)!;
+			const week = v2.blocks.flatMap((b) => b.weeks).find((w) => w.startsOn === next)!;
 			const applied = v2.decisions.find((d) => d.kind === 'review_applied')!;
 			expect(applied).toMatchObject({
 				decidedBy: 'rules',
