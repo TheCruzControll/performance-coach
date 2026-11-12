@@ -75,7 +75,7 @@ Folders are layers. Allowed dependencies point inwards. Every "Must not import" 
 | `src/lib/domain/`               | Pure, isomorphic training math (units, e1RM, RPE, plates, load). No I/O. | nothing outside itself                         | server, client, ui, Svelte/Kit, `node:*`, drivers       |
 | `src/lib/server/db/`            | Drizzle schema, pool/client, repositories, migration helpers             | `domain`, `server/env`, `server/observability` | services, agent, ui, client, SvelteKit                  |
 | `src/lib/server/services/`      | Application use-cases shared by routes **and** the agent                 | `db`, `domain`, `observability`                | agent, ui, client, SvelteKit                            |
-| `src/lib/server/agent/`         | AI coach: provider interface, tools, orchestration (scaffold in M1)      | `services`, `domain`                           | `db` (tools go through services), ui, client, SvelteKit |
+| `src/lib/server/agent/`         | AI coach: providers, the agent loop, tools, the output gate (M5)         | `services`, `domain`                           | `db` (tools go through services), ui, client, SvelteKit |
 | `src/lib/server/auth/`          | Passkey auth (SimpleWebAuthn), sessions, recovery, the request guard     | `services`, `db`, `env`, `observability`       | ui, client                                              |
 | `src/lib/server/forms/`         | Form actions for routes: owner check, JSON payload → service, failures   | `services`, `domain`, SvelteKit                | `db`, `pg`, `drizzle-orm`, agent, ui, client            |
 | `src/lib/server/observability/` | Logger, request context, Server-Timing helpers (a leaf)                  | Node built-ins only                            | db, services, agent, auth, ui, client, SvelteKit        |
@@ -536,6 +536,31 @@ any device), `GET /api/workouts/kit` (`?lineage=` to start, `?session=` to adopt
 - Layouts for the phone and for a 1440 × 900 window (two centred columns, the rest timer docked
   in the main column, History's list beside its detail) are in docs/design-system.md,
   "Responsive layout → Screens".
+
+## Coach (M5)
+
+The coach answers from the owner's own records through the same services the screens use, and
+changes nothing without the owner's Accept. The design, the loop and the tools are in
+docs/agent-architecture.md, ADR 0013 and ADR 0014; the tools catalogue is docs/coach-tools.md.
+
+### Modules
+
+| Module                                                            | Holds                                                                                                                                                                                         |
+| ----------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/lib/domain/coach/`                                           | Pure: vocabularies, SSE events, the answer grammar, sources, the tool catalogue, pricing, budgets, safety; server-only parsers (markdown, proposals, diff, grounding, memory format, summary) |
+| `src/lib/server/agent/`                                           | The loop: `coach.ts` (composition root), `turn.ts`, `orchestrator.ts`, `policy.ts` (output gate), `direct.ts`, `rollover.ts`, `launch.ts`                                                     |
+| `src/lib/server/agent/provider/`                                  | `LlmProvider`: the mock, request validation, the Anthropic provider (the only runtime SDK import), selection                                                                                  |
+| `src/lib/server/agent/prompt/`, `tools/`, `memory/`, `proposals/` | The system prompt and cache layout; the 24 tools in six group files; the memory preamble; the drafter                                                                                         |
+| `src/lib/server/services/coach/`                                  | Threads, runs, proposals and their `apply/*` appliers, memory, notes, `shared.ts` (`toolRuntime`)                                                                                             |
+| `src/lib/server/db/schema/coach.ts`, `agent-runs.ts`              | Threads, messages (the `json` transcript), notes; runs, model calls, tool calls; the proposals' M5 columns are in M3's `coaching.ts`                                                          |
+| `src/lib/client/coach/`                                           | `stream.ts` (the SSE reader over `fetch`), `turn.svelte.ts` (a turn's state), `proposals.ts`                                                                                                  |
+| `src/lib/ui/coach/`                                               | Answer blocks, the composer, notices, the proposal card and its sheet (docs/design-system.md)                                                                                                 |
+| `src/routes/(app)/coach/`                                         | The Coach screen (`[[thread]]`) and the Proposals inbox (`proposals/[[id]]`)                                                                                                                  |
+| `src/routes/api/coach/`                                           | `turns` (SSE), `runs` (with cancel), `threads`, `proposals/[id]`, `memory`; all owner routes                                                                                                  |
+
+The agent never imports `server/db`, types included (ESLint): it reads only `serialTools` from
+`ToolContext`. Migrations `0023` to `0027` add the conversations, the proposals' columns, their
+guards and the coach indexes.
 
 ## Frontend
 
