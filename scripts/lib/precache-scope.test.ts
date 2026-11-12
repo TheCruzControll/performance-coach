@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it, onTestFinished } from 'vitest';
 import {
+	GRAPHITE_ONLY,
 	OFFLINE_PAGES,
 	readBuildGraph,
 	shellFiles,
@@ -34,7 +35,8 @@ const nodeChunk = (i: number): string => `_app/immutable/nodes/${i}.js`;
 /**
  * A small build: every node imports a shared chunk; the app entry imports every node lazily; the
  * workout page and a tab each have a lazy sheet; the root layout has a stylesheet with a font;
- * one route (/design) is outside the scope with its own chunk.
+ * one route (/design) is outside the scope with its own chunk; the run page and Today each load a
+ * Graphite-only Status Display, which imports StatusDisplay.
  */
 function graph(): BuildGraph {
 	const vite: Record<string, ViteChunk> = {
@@ -59,6 +61,15 @@ function graph(): BuildGraph {
 		},
 		'_sheet-dep.js': { file: '_app/immutable/chunks/sheet-dep.js' },
 		'src/routes/(app)/train/Plates.svelte': { file: '_app/immutable/chunks/train-plates.js' },
+		'src/routes/workout/run/RunStatus.svelte': {
+			file: '_app/immutable/chunks/run-status.js',
+			imports: ['_status-display.js']
+		},
+		'src/routes/(app)/today/panels/TodayStatus.svelte': {
+			file: '_app/immutable/chunks/today-status.js',
+			imports: ['_status-display.js']
+		},
+		'_status-display.js': { file: '_app/immutable/chunks/status-display.js' },
 		'_design-only.js': { file: '_app/immutable/chunks/design-only.js' },
 		'src/routes/+layout.css': {
 			file: '_app/immutable/assets/0.css',
@@ -71,6 +82,12 @@ function graph(): BuildGraph {
 	vite[`nodes/${leafOf('/workout')}.js`]!.dynamicImports = ['src/routes/workout/Sheet.svelte'];
 	vite[`nodes/${leafOf('/(app)/train')}.js`]!.dynamicImports = [
 		'src/routes/(app)/train/Plates.svelte'
+	];
+	vite[`nodes/${leafOf('/workout/run')}.js`]!.dynamicImports = [
+		'src/routes/workout/run/RunStatus.svelte'
+	];
+	vite[`nodes/${leafOf('/(app)/today')}.js`]!.dynamicImports = [
+		'src/routes/(app)/today/panels/TodayStatus.svelte'
 	];
 	vite[`nodes/${OTHER_LEAF}.js`]!.imports = ['_shared.js', '_design-only.js'];
 	vite['nodes/0.js']!.css = ['_app/immutable/assets/0.css'];
@@ -127,6 +144,18 @@ describe('shellFiles', () => {
 		expect(files).not.toContain('_app/immutable/chunks/train-plates.js');
 		expect(files).not.toContain(nodeChunk(OTHER_LEAF));
 		expect(files).not.toContain('_app/immutable/chunks/design-only.js');
+	});
+
+	it("leaves out Graphite 2004's Status Displays, even on a page served offline", () => {
+		expect(files).not.toContain('_app/immutable/chunks/run-status.js');
+		expect(files).not.toContain('_app/immutable/chunks/today-status.js');
+		expect(files).not.toContain('_app/immutable/chunks/status-display.js');
+	});
+
+	it('fails when the build lacks a Status Display it must leave out', () => {
+		const build = graph();
+		delete build.vite[GRAPHITE_ONLY[1]];
+		expect(() => shellFiles(build)).toThrow(`precache: the build has no ${GRAPHITE_ONLY[1]}`);
 	});
 
 	it('lists each file once, sorted', () => {

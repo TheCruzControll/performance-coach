@@ -9,9 +9,13 @@
     and adherence with the deload need (ReviewSections: each collapses to its verdict line on a
     phone; from 1024 px every section shows in full; without JavaScript each chart is its table)
   - out of date (training logged in the block since): 'Computed before N later changes'
+  - the next block: what it will be, why it changes and when it starts, then Start (NextCycleCard,
+    loaded after hydration as a chart's frame is, so its code and styles, with ChoiceGroup's and
+    WeekStrip's, are neither initial JS nor render-blocking CSS; until then, and without
+    JavaScript, its title and words)
   - earlier cycles, each linking to its review (the page's ReviewList), and the version this one
     planned, in History
-  - the write-up's slot, empty until the coach writes it (review-narrative-ui)
+  - the coach's write-up, or why there is none, and 'Discuss with your coach' (CoachWriteUp)
 
   A review written before M6 shows its summary alone.
 -->
@@ -22,6 +26,7 @@
 	import Notice from '#lib/ui/components/Notice.svelte';
 	import type { CycleReviewData } from './cycle-data';
 	import type { ReviewRow } from './load';
+	import CoachWriteUp from './CoachWriteUp.svelte';
 	import ReviewHero from './ReviewHero.svelte';
 	import ReviewSections from './ReviewSections.svelte';
 	import type { SectionView } from './sections';
@@ -37,6 +42,9 @@
 
 	let { review, earlierCycles }: Props = $props();
 	const adherence = $derived(review.adherence);
+	// The m6-plan budget lever: the card's styles move into the lazily loaded part that uses them.
+	const never = () => new Promise<never>(() => {});
+	const card = import.meta.env.SSR ? never() : import('./NextCycleCard.svelte');
 </script>
 
 {#snippet after({ table }: SectionView)}
@@ -88,6 +96,22 @@
 
 	<div class="sections"><ReviewSections sections={review.sections} {after} /></div>
 
+	{#if review.next}
+		{#await card}
+			<section class="next" aria-busy="true" data-testid="next-cycle-slot">
+				<h3>{review.next.title}</h3>
+				{#if review.next.words}<p>{review.next.words}</p>{/if}
+			</section>
+		{:then { default: NextCycleCard }}
+			<NextCycleCard next={review.next} reviewId={review.id} />
+		{:catch}
+			<section class="next">
+				<p>Couldn’t load your next block.</p>
+				<Button variant="secondary" icon="refresh" onclick={() => location.reload()}>Retry</Button>
+			</section>
+		{/await}
+	{/if}
+
 	{#if review.history || review.earlier.length}
 		<section class="earlier" aria-label="Earlier cycles" data-testid="earlier-cycles">
 			{#if review.history}
@@ -106,14 +130,15 @@
 		</section>
 	{/if}
 
-	<div class="write-up" data-testid="review-write-up">
-		{#if review.writeUp}<p>{review.writeUp}</p>{/if}
-	</div>
+	{#if review.narration}
+		<CoachWriteUp narration={review.narration} />
+	{/if}
 </article>
 
 <style>
 	.pc-cycle-review,
-	.earlier {
+	.earlier,
+	.next {
 		display: grid;
 		gap: var(--space-6);
 		min-width: 0;
@@ -137,8 +162,7 @@
 		vertical-align: top;
 	}
 
-	.sections:empty,
-	.write-up:empty {
+	.sections:empty {
 		display: none;
 	}
 </style>

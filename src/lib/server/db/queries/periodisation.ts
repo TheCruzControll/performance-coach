@@ -20,7 +20,7 @@ export const PERIODISATION_INDEXES = {
 
 /**
  * The program's decisions that name any of `lineages` in `affected`, newest first, of `kinds`
- * when given, at most `limit`, each with the number of the version it produced. Owner-scoped
+ * when given, at most `limit`, each with its evidence and the number of the version it produced. Owner-scoped
  * through the program, so another owner's program returns nothing. `lineages` travels as one
  * jsonb parameter (as programs.ts's affectedNodes), so the statement never grows with the week.
  */
@@ -42,6 +42,7 @@ export function decisionsForLineages(
 			why: d.why,
 			decidedBy: d.decidedBy,
 			affected: d.affected,
+			evidence: d.evidence,
 			version: programVersions.number
 		})
 		.from(d)
