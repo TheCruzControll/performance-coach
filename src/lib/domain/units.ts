@@ -82,6 +82,19 @@ export function cleanFloat(value: number, decimals = 6): number {
 export const DEFAULT_LOAD_INCREMENT: Record<WeightUnit, number> = { kg: 2.5, lb: 5 };
 
 /**
+ * How finely an estimated max is shown: an estimate from reps and RPE is not good to 0.01 kg, so
+ * '157.21 kg' claims a precision it never had. To the nearest 0.5 kg or 1 lb.
+ */
+export const ESTIMATE_INCREMENT: Record<WeightUnit, number> = { kg: 0.5, lb: 1 };
+
+/** An estimated max, already in `unit`, rounded as it is shown: 157.21 kg → 157 kg. */
+export const roundEstimate = (value: number, unit: WeightUnit): number =>
+	roundToIncrement(value, ESTIMATE_INCREMENT[unit]);
+
+/** A non-breaking space: a number and its unit never part at the end of a line ('142.5 kg'). */
+export const NBSP = '\u00a0';
+
+/**
  * Pace in seconds per unit distance, from a duration (seconds) and distance (metres).
  * Returns null when the distance is zero.
  */

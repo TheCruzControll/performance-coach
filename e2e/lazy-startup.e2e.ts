@@ -23,15 +23,21 @@ async function onChunk(
 	});
 }
 
-// Progress formats on the server in the profile's units (M6), so only Today reads the device's.
-test('Today shows the saved units when the preference start fails to load', async ({ page }) => {
+// Progress and Today format on the server in the profile's units (M6), so Profile's device
+// preferences are the screen that reads the saved ones.
+test('Profile shows the saved units when the preference start fails to load', async ({ page }) => {
 	await page.addInitScript(() =>
 		localStorage.setItem('pc:prefs:v1', '{"theme":"dark","units":"lb","distance":"mi"}')
 	);
 	await onChunk(page, /as startPreferences\}/, (route) => route.abort());
 
-	await gotoHydrated(page, '/today');
-	await expect(page.getByText('mi', { exact: true })).toBeVisible();
+	await gotoHydrated(page, '/profile');
+	const choice = (group: string, name: string) =>
+		page
+			.getByRole('radiogroup', { name: group, exact: true })
+			.getByRole('radio', { name, exact: true });
+	await expect(choice('Units', 'lb')).toHaveAttribute('aria-checked', 'true');
+	await expect(choice('Distance', 'mi')).toHaveAttribute('aria-checked', 'true');
 });
 
 test('toasts need no network: one shown offline appears whole, and reconnecting neither repeats it nor stops the next', async ({

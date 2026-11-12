@@ -302,7 +302,10 @@ const focusedStop = (page: Page): Promise<Stop> =>
 		const next = el.nextElementSibling;
 		const drawn = getComputedStyle(el).opacity === '0' && next instanceof HTMLElement ? next : el;
 		const style = getComputedStyle(drawn);
-		const shown = (colour: string) => colour !== 'transparent' && !/,\s*0\)$/.test(colour);
+		// Invisible: transparent, or an rgba() whose alpha is 0. An opaque rgb() ending in a zero
+		// blue channel, as the light ring rgb(98, 128, 0) does, is shown.
+		const shown = (colour: string) =>
+			colour !== 'transparent' && !/^rgba\(.*,\s*0(?:\.0+)?\)$/.test(colour);
 		const outline =
 			style.outlineStyle !== 'none' && shown(style.outlineColor)
 				? parseFloat(style.outlineWidth)

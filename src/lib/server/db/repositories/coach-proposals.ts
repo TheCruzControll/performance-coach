@@ -5,6 +5,8 @@
  * src/lib/server/services/coach/proposals.ts.
  */
 import { and, eq, sql } from 'drizzle-orm';
+import type { Transitioned } from '../../../domain/lifecycle';
+import type { ProposalStatus } from '../../../domain/training/vocabulary';
 import * as q from '../queries/coach-proposals';
 import { coachProposals } from '../schema';
 import type { Executor } from '../types';
@@ -62,12 +64,29 @@ export function createCoachProposalsRepository(db: Executor) {
 			(await first(db.insert(coachProposals).values(values).returning({ id: coachProposals.id })))!
 				.id,
 
-		/** Record a decision on one of the owner's proposals. */
-		decide: async (ownerId: string, id: string, set: ProposalDecision) => {
-			await db
+		/**
+		 * Record a decision on one of the owner's proposals: the move `t` (from transition(), so the
+		 * PROPOSAL table saw it), only while the row is still in `t.from`. Callers hold its row lock,
+		 * so a row that has moved is a bug, not a race.
+		 */
+		decide: async (
+			ownerId: string,
+			id: string,
+			t: Transitioned<ProposalStatus>,
+			set: Omit<ProposalDecision, 'status'>
+		) => {
+			const updated = await db
 				.update(coachProposals)
-				.set(set)
-				.where(and(eq(coachProposals.id, id), eq(coachProposals.ownerId, ownerId)));
+				.set({ ...set, status: t.to })
+				.where(
+					and(
+						eq(coachProposals.id, id),
+						eq(coachProposals.ownerId, ownerId),
+						eq(coachProposals.status, t.from)
+					)
+				)
+				.returning({ id: coachProposals.id });
+			if (updated.length === 0) throw new Error('coach proposal moved under its lock');
 		}
 	};
 }
