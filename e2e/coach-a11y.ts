@@ -86,5 +86,14 @@ export const COACH_A11Y: readonly CoachA11yCase[] = [
 			await expect(page.getByTestId('knows-sheet')).toBeVisible();
 			await expect(page.getByTestId('knows-loading')).toHaveCount(0);
 		}
+	},
+	{
+		name: '/coach, Archived conversations open and loaded',
+		open: async (page) => {
+			await gotoHydrated(page, '/coach');
+			await page.getByTestId('archived-link').click();
+			await expect(page.getByTestId('archived-sheet')).toBeVisible();
+			await expect(page.getByTestId('archived-loading')).toHaveCount(0);
+		}
 	}
 ];
