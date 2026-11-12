@@ -91,6 +91,18 @@ const GENERATED_START = {
 		'a week 1 the generator built: its first strength session asks for a load by RPE, invents none, and a logged set reaches Postgres'
 };
 
+/** coach-journeys' journeys (the M5 brief's list), each a test on an iPhone and on a desktop window. */
+const COACH_JOURNEYS = [
+	'journey 1: how has my bench progressed: the facts and their sources are the sets Postgres holds',
+	'journey 2: change today’s workout, Accept, and Train shows the new version with the why',
+	'journey 3: a rejection’s reason reaches the next turn’s get_coach_proposals and the memory panel',
+	'journey 4: a dislike said to the coach is in Profile, and accepted, out of next week',
+	'in a workout › journey 5: the leg press is taken: a substitution in the workout, no preference, the same version',
+	'journey 6: the knee report is in the memory panel, and a pain message gets the safety block with no banned phrase',
+	'in a workout › journey 7: the coach unavailable, while a set logged in the workout reaches Postgres',
+	'journey 8: a reload keeps the conversation and its proposal, in Coach and in the inbox'
+];
+
 export const JOURNEYS: readonly JourneyEntry[] = [
 	{
 		id: 'login',
@@ -191,7 +203,15 @@ export const JOURNEYS: readonly JourneyEntry[] = [
 		prd: '§19: multiple concurrent disciplines',
 		pending: 'journey-concurrent-disciplines'
 	},
-	{ id: 'coach', prd: COACH_PRD, pending: 'coach-journeys' }
+	{
+		id: 'coach',
+		prd: COACH_PRD,
+		projects: SERIAL,
+		tests: COACH_JOURNEYS.map((title) => ({
+			file: 'coach-journey.serial.e2e.ts',
+			title: `on an iPhone › ${title}`
+		}))
+	}
 ];
 
 /**
