@@ -76,7 +76,7 @@
 			{#if unsaved}
 				<Notice tone="danger" title="Not saved on this device" data-testid="summary-not-saved">
 					This browser refused to save the finish.
-					<Button size="sm" variant="secondary" icon="refresh" onclick={retry}>Retry</Button>
+					<Button size="sm" variant="secondary" icon="refresh" onclick={retry}>Try again</Button>
 				</Notice>
 			{:else if synced}
 				<Notice tone="positive" title="Synced" data-testid="summary-synced">

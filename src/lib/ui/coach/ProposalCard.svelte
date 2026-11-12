@@ -146,7 +146,7 @@
 								icon="refresh"
 								disabled={offline}
 								onclick={() => !offline && onretry?.()}
-								data-testid="proposal-retry">Retry</Button
+								data-testid="proposal-retry">Try again</Button
 							>
 						</span>
 					</Notice>

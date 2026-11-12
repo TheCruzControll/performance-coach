@@ -13,7 +13,7 @@
  * - It fails soft: a failed read is recorded as a server error (kind 'load') and the page shows
  *   its load-failed notice with Retry, inside the shell, instead of the 500 page.
  */
-import { METRICS, type MetricArea } from '#lib/domain/analytics/metrics.ts';
+import { METRICS, type MetricArea, type MetricId } from '#lib/domain/analytics/metrics.ts';
 import { VERDICT_WORDS, type Verdict } from '#lib/domain/analytics/overview.ts';
 import { PERIOD_LABEL } from '#lib/domain/analytics/periods.ts';
 import type { TrendResult } from '#lib/domain/analytics/trend.ts';
@@ -73,8 +73,17 @@ export interface VerdictCard {
 	sentence: string;
 	/** 'Trend over the last 12 weeks'. */
 	window: string;
-	evidence: { subject: string; verdict: TileVerdict }[];
+	/** `hint`: what a measure named in training jargon means, in plain words; null otherwise. */
+	evidence: { subject: string; verdict: TileVerdict; hint: string | null }[];
 }
+
+/** The measures whose names are training jargon, each in a few plain words under its name. */
+export const MEASURE_HINT: Partial<Record<MetricId, string>> = {
+	srpe_load: 'Minutes × how hard each session felt, added up',
+	muay_thai_load: 'Minutes × how hard each class felt, added up',
+	monotony: 'How alike your days are; lower means more varied',
+	strain: 'Load × monotony; high when a big week has no easy days'
+};
 
 export interface OverviewChart<D> {
 	id: string;
@@ -298,7 +307,8 @@ export function overviewData(o: ProgressOverview): OverviewData {
 			window: v.window.label,
 			evidence: v.evidence.map((e) => ({
 				subject: e.subject,
-				verdict: tileVerdict(e.trend.result, pointUnit)
+				verdict: tileVerdict(e.trend.result, pointUnit),
+				hint: MEASURE_HINT[e.trend.metric] ?? null
 			}))
 		})),
 		tiles,

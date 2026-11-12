@@ -84,7 +84,9 @@
 				<Notice tone="danger" title="Couldn’t load this exercise">
 					Your training is safe. Try again in a moment.
 				</Notice>
-				<Button variant="secondary" icon="refresh" loading={retrying} onclick={retry}>Retry</Button>
+				<Button variant="secondary" icon="refresh" loading={retrying} onclick={retry}
+					>Try again</Button
+				>
 			</div>
 		{:else}
 			<div class="pc-exercise-view" data-state={detail.waiting ? 'waiting' : 'ready'}>

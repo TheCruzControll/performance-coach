@@ -7,11 +7,7 @@
  *
  * Each list is the keys of its label table, so no key lacks a label, as in domain/training.
  */
-type Labels = Readonly<Record<string, string>>;
-
-/** The keys of a label table, in their written order. */
-const keysOf = <L extends Labels>(labels: L) =>
-	Object.keys(labels) as readonly (keyof L & string)[];
+import { keysOf } from './labels.ts';
 
 // ---- Answers --------------------------------------------------------------------------------
 
@@ -120,33 +116,6 @@ export const SUPERSEDED_REASONS = keysOf(SUPERSEDED_REASON_LABEL);
 
 // ---- Availability and errors ----------------------------------------------------------------
 
-/**
- * Wire. Why the coach cannot run a turn. not_launched and disabled refuse every turn; no_key and
- * mock_in_production are misconfigurations that still serve direct answers (PRD §15).
- */
-export const COACH_UNAVAILABLE_REASON_LABEL = {
-	no_key: 'The coach has no API key',
-	mock_in_production: 'The practice coach cannot run in production',
-	not_launched: 'Your coach is getting ready',
-	disabled: 'The coach is switched off'
-};
-export type CoachUnavailableReason = keyof typeof COACH_UNAVAILABLE_REASON_LABEL;
-export const COACH_UNAVAILABLE_REASONS = keysOf(COACH_UNAVAILABLE_REASON_LABEL);
-
-/** Wire. The error a turn's stream ends with; offline is the browser's own. */
-export const COACH_ERROR_KIND_LABEL = {
-	unavailable: 'The coach is unavailable',
-	rate_limited: 'Too many questions in a short time',
-	budget: 'Today’s coach budget is used up',
-	refused: 'The coach can’t help with that',
-	busy: 'Another answer is still running',
-	timeout: 'The answer took too long',
-	provider: 'The coach service had a problem',
-	cancelled: 'Stopped',
-	interrupted: 'The answer was interrupted',
-	invalid_request: 'That message couldn’t be sent',
-	not_found: 'Conversation not found',
-	offline: 'You’re offline'
-};
-export type CoachErrorKind = keyof typeof COACH_ERROR_KIND_LABEL;
-export const COACH_ERROR_KINDS = keysOf(COACH_ERROR_KIND_LABEL);
+// In their own module: the Coach screen's notices show them, so they are in its initial
+// JavaScript, which the rest of this vocabulary (shown only once a conversation opens) is not.
+export * from './availability.ts';
