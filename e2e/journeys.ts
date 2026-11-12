@@ -91,6 +91,30 @@ const GENERATED_START = {
 		'a week 1 the generator built: its first strength session asks for a load by RPE, invents none, and a logged set reaches Postgres'
 };
 
+/** journey-weekly-review's loop, on an iPhone and in a desktop window, and its late decision. */
+const WEEKLY = 'journey-weekly-review.serial.e2e.ts';
+const WEEKLY_TITLE =
+	'journey: log today’s last session → review the week from Today → a half step and one left out → next week in Train, History and the inbox';
+const WEEKLY_JOURNEY = { file: WEEKLY, title: `on an iPhone › ${WEEKLY_TITLE}` };
+const WEEKLY_JOURNEY_DESKTOP = { file: WEEKLY, title: `in a desktop window › ${WEEKLY_TITLE}` };
+const WEEKLY_AGED = {
+	file: WEEKLY,
+	title:
+		'review-aged: decided late in the week › the passed changes are struck through, the rest are applied, and Train lists only those'
+};
+
+/** coach-journeys' journeys (the M5 brief's list), each a test on an iPhone and on a desktop window. */
+const COACH_JOURNEYS = [
+	'journey 1: how has my bench progressed: the facts and their sources are the sets Postgres holds',
+	'journey 2: change today’s workout, Accept, and Train shows the new version with the why',
+	'journey 3: a rejection’s reason reaches the next turn’s get_coach_proposals and the memory panel',
+	'journey 4: a dislike said to the coach is in Profile, and accepted, out of next week',
+	'in a workout › journey 5: the leg press is taken: a substitution in the workout, no preference, the same version',
+	'journey 6: the knee report is in the memory panel, and a pain message gets the safety block with no banned phrase',
+	'in a workout › journey 7: the coach unavailable, while a set logged in the workout reaches Postgres',
+	'journey 8: a reload keeps the conversation and its proposal, in Coach and in the inbox'
+];
+
 export const JOURNEYS: readonly JourneyEntry[] = [
 	{
 		id: 'login',
@@ -184,14 +208,32 @@ export const JOURNEYS: readonly JourneyEntry[] = [
 		tests: [STRENGTH_JOURNEY]
 	},
 	{ id: 'view-history', prd: '§19: view history', projects: SERIAL, tests: [STRENGTH_JOURNEY] },
-	{ id: 'weekly-review', prd: '§19: weekly review', pending: 'journey-weekly-review' },
-	{ id: 'next-week', prd: '§19: generate next week', pending: 'journey-weekly-review' },
+	{
+		id: 'weekly-review',
+		prd: '§19: weekly review',
+		projects: SERIAL,
+		tests: [WEEKLY_JOURNEY, WEEKLY_JOURNEY_DESKTOP]
+	},
+	{
+		id: 'next-week',
+		prd: '§19: generate next week',
+		projects: SERIAL,
+		tests: [WEEKLY_JOURNEY, WEEKLY_JOURNEY_DESKTOP, WEEKLY_AGED]
+	},
 	{
 		id: 'concurrent-disciplines',
 		prd: '§19: multiple concurrent disciplines',
 		pending: 'journey-concurrent-disciplines'
 	},
-	{ id: 'coach', prd: COACH_PRD, pending: 'coach-journeys' }
+	{
+		id: 'coach',
+		prd: COACH_PRD,
+		projects: SERIAL,
+		tests: COACH_JOURNEYS.map((title) => ({
+			file: 'coach-journey.serial.e2e.ts',
+			title: `on an iPhone › ${title}`
+		}))
+	}
 ];
 
 /**

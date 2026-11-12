@@ -12,7 +12,11 @@
   something else'. Once the plan shows and the browser is idle, Today saves the kits of the
   sessions still to do today and in the next two days, so they start in a gym with no signal, even
   one looked at the night before: with Train, the only places outside the workout pages that
-  create the device's database (coming-kits.ts). Code-split behind PanelLoader.
+  create the device's database (coming-kits.ts). Last, Ask the coach opens Coach with 'What
+  should I focus on next week?' (a link: ui/ask-link.ts). In a bridge week between blocks,
+  'Between blocks' names the day the next block starts, with 'Log something else', in place of
+  the week. When a week or a block completes, its review prompt leads (ReviewPrompt: create and
+  open it, or 'See your review'). Code-split behind PanelLoader.
 -->
 <script lang="ts">
 	import { invalidateAll } from '$app/navigation';
@@ -20,6 +24,8 @@
 	import { navigating } from '$app/state';
 	import { deviceWorkout } from '#lib/client/workout/device-workout.svelte.ts';
 	import type { IsoDate } from '#lib/domain/calendar.ts';
+	import ReviewPrompt from '#lib/ui/analytics/ReviewPrompt.svelte';
+	import { ASK_QUESTIONS, askHref } from '#lib/ui/ask-link.ts';
 	import Badge from '#lib/ui/components/Badge.svelte';
 	import Button from '#lib/ui/components/Button.svelte';
 	import Card from '#lib/ui/components/Card.svelte';
@@ -152,6 +158,10 @@
 				</EmptyState>
 			</Card>
 		{:else}
+			{#if view.review}
+				<ReviewPrompt review={view.review} />
+			{/if}
+
 			{#if view.starts}
 				<Card tone="accent" padding="lg" data-testid="today-starts">
 					<div class="note">
@@ -179,6 +189,29 @@
 					href={TRAIN_HREF}
 					data-testid="today-train-link"
 				/>
+			{/if}
+
+			{#if view.bridge}
+				<Surface padding="none" radius="xl">
+					<EmptyState
+						icon="clock"
+						tone="neutral"
+						title={view.bridge.title}
+						description={view.bridge.description}
+						data-testid="today-bridge"
+					>
+						{#snippet actions()}
+							<Button
+								variant="secondary"
+								icon="plus"
+								href={resolve('/workout')}
+								data-testid="log-something-else"
+							>
+								Log something else
+							</Button>
+						{/snippet}
+					</EmptyState>
+				</Surface>
 			{/if}
 
 			{#if view.week}
@@ -280,6 +313,14 @@
 					</Surface>
 				{/if}
 			</Section>
+
+			<ListRow
+				icon="coach"
+				title="Ask the coach"
+				subtitle={ASK_QUESTIONS.today}
+				href={askHref(ASK_QUESTIONS.today, 'today')}
+				data-testid="ask-coach"
+			/>
 		{/if}
 	{/await}
 </div>

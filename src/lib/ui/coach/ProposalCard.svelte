@@ -4,7 +4,10 @@
   rows), why, and the impact on each week it touches, or that the week's totals stay as they
   were. Nothing changes until Accept; then it says where it went: 'Applied as version N' with a
   link to that version in Train, 'Waits for your cycle review' for an accepted next cycle, or why
-  it was superseded. Loaded on demand with the first card a conversation shows. Accept, Reject
+  it was superseded. A proposal the rules made for one of M6's reviews names it under the title
+  ('From your weekly review · Week of 2 Nov', a link to the review); M6's superseded reasons, and
+  'Waits for your cycle review', link to the review that took it over, and the review's own next
+  cycle leads to the review to choose its start instead of offering Accept. Loaded on demand with the first card a conversation shows. Accept, Reject
   and 'Ask for changes' are the screen's (`onaccept`, `onreject`, `onrevise`); while a decision is
   on its way its button is busy and nothing else can be pressed. A decision that did not go
   through (`failed`) says so in place with Retry (`onretry`), which sends the same decision again:
@@ -12,7 +15,7 @@
   outcome is announced.
 -->
 <script lang="ts">
-	import { cardState, type ProposalCardView } from '#lib/domain/coach/cards.ts';
+	import { cardState, OPEN_REVIEW, type ProposalCardView } from '#lib/domain/coach/cards.ts';
 	import Badge from '../components/Badge.svelte';
 	import Button from '../components/Button.svelte';
 	import Icon from '../components/Icon.svelte';
@@ -73,6 +76,11 @@
 	<header class="head">
 		<span class="eyebrow"><Icon name="sparkle" size={14} /> Proposed change</span>
 		<h3 id="{id}-title" class="title">{card.title}</h3>
+		{#if card.origin}
+			<a class="view origin" href={card.origin.href} data-testid="proposal-origin"
+				>{card.origin.words} <Icon name="chevron-right" size={14} /></a
+			>
+		{/if}
 	</header>
 
 	<section class="part" aria-labelledby="{id}-what">
@@ -108,7 +116,49 @@
 	</section>
 
 	<footer class="foot" data-testid="proposal-state">
-		{#if state.kind === 'proposed'}
+		<!-- A decision that did not go through, or the offline hint; else `idle`. -->
+		{#snippet hint(idle: string)}
+			{#if failed && !busy}
+				<div class="failure">
+					<Notice tone="danger" title="Couldn’t save" data-testid="proposal-failure">
+						<span id="{id}-hint"
+							>Check your connection and try again. It’s never applied twice.</span
+						>
+						<span class="retry">
+							<Button
+								variant="secondary"
+								size="sm"
+								icon="refresh"
+								disabled={offline}
+								onclick={() => !offline && onretry?.()}
+								data-testid="proposal-retry">Retry</Button
+							>
+						</span>
+					</Notice>
+				</div>
+			{:else if offline}
+				<p id="{id}-hint" class="quiet offline" data-testid="proposal-offline">
+					<Icon name="wifi-off" size={14} /> You’re offline. Decide once you’re back online.
+				</p>
+			{:else}
+				<p id="{id}-hint" class="quiet">{idle}</p>
+			{/if}
+		{/snippet}
+		{#if state.kind === 'choose'}
+			<div class="actions">
+				<Button href={state.href} iconEnd="chevron-right" data-testid="proposal-choose-start"
+					>{state.words}</Button
+				>
+				<Button
+					variant="secondary"
+					loading={rejecting}
+					disabled={!onreject || (!rejecting && !open)}
+					onclick={() => open && onreject?.()}
+					data-testid="proposal-reject">Reject</Button
+				>
+			</div>
+			{@render hint('Its start and a fresh preview are chosen in the review.')}
+		{:else if state.kind === 'proposed'}
 			<div class="actions">
 				<Button
 					icon="check"
@@ -133,31 +183,7 @@
 					data-testid="proposal-revise">Ask for changes</Button
 				>
 			</div>
-			{#if failed && !busy}
-				<div class="failure">
-					<Notice tone="danger" title="Couldn’t save" data-testid="proposal-failure">
-						<span id="{id}-hint"
-							>Check your connection and try again. It’s never applied twice.</span
-						>
-						<span class="retry">
-							<Button
-								variant="secondary"
-								size="sm"
-								icon="refresh"
-								disabled={offline}
-								onclick={() => !offline && onretry?.()}
-								data-testid="proposal-retry">Retry</Button
-							>
-						</span>
-					</Notice>
-				</div>
-			{:else if offline}
-				<p id="{id}-hint" class="quiet offline" data-testid="proposal-offline">
-					<Icon name="wifi-off" size={14} /> You’re offline. Decide once you’re back online.
-				</p>
-			{:else}
-				<p id="{id}-hint" class="quiet">Nothing changes until you accept.</p>
-			{/if}
+			{@render hint('Nothing changes until you accept.')}
 		{:else if state.kind === 'applied'}
 			<p class="outcome">
 				<Badge tone="positive" icon="check">{state.words}</Badge>
@@ -169,16 +195,32 @@
 				{/if}
 			</p>
 		{:else if state.kind === 'waiting'}
-			<Badge tone="accent" icon="clock">{state.words}</Badge>
+			{#if state.href}
+				<a class="view" href={state.href} data-testid="proposal-review"
+					><Badge tone="accent" icon="clock">{state.words}</Badge>
+					<Icon name="chevron-right" size={14} /></a
+				>
+			{:else}
+				<Badge tone="accent" icon="clock">{state.words}</Badge>
+			{/if}
 		{:else if state.kind === 'superseded'}
 			<Badge tone="warning" icon="alert">Superseded</Badge>
-			<p class="quiet">{state.words}</p>
+			<p class="quiet" data-testid="proposal-superseded-reason">
+				{state.words}{#if state.link}
+					<span class="dot" aria-hidden="true">·</span>
+					<a class="view" href={state.link.href} data-testid="proposal-review"
+						>{state.link.words}{#if state.link.words === OPEN_REVIEW}<span class="visually-hidden">
+								the review</span
+							>{/if}</a
+					>
+				{/if}
+			</p>
 		{:else}
 			<Badge tone="neutral">{state.words}</Badge>
 		{/if}
 	</footer>
 	<p class="visually-hidden" role="status">
-		{state.kind !== 'proposed'
+		{state.kind !== 'proposed' && state.kind !== 'choose'
 			? `${card.title}: ${state.words}`
 			: accepting
 				? 'Accepting…'
@@ -304,6 +346,11 @@
 
 	.dot {
 		color: var(--color-text-tertiary);
+	}
+
+	.origin {
+		justify-self: start;
+		font-weight: var(--weight-medium);
 	}
 
 	.view {

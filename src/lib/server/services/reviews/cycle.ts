@@ -75,7 +75,7 @@ import { createCoachProposalsRepository } from '../../db/repositories/coach-prop
 import { createProgramsRepository } from '../../db/repositories/programs';
 import { createReviewsRepository } from '../../db/repositories/reviews';
 import { createFactsLoader, createQueue } from '../analytics/facts';
-import { displayUnits, formatIn } from '../analytics/format';
+import { displayUnits, formatIn, type DisplayUnits } from '../analytics/format';
 import { getMuscleTargets } from '../analytics/targets';
 import { createProposal, getProposalView, type ProposalView } from '../coach/proposals';
 import { getExercisesByIds, type ExerciseDef } from '../exercises/index';
@@ -323,6 +323,43 @@ export async function reviewableBlock(
 	return null;
 }
 
+/** The block a cycle review row offers: reviewable today, or still running. */
+export interface UnreviewedBlock {
+	programId: string;
+	blockLineage: string;
+	name: string;
+	startsOn: IsoDate;
+	endsOn: IsoDate;
+	reviewable: boolean;
+}
+
+/**
+ * The block the reviews list offers to review: the latest started planned block with no live
+ * review that is reviewable today, else the running block (not reviewable yet); null when the
+ * latest started block is reviewed, or there is none. Read in turn, newest block first.
+ */
+export async function unreviewedBlock(
+	ownerId: string,
+	today: IsoDate,
+	deps: ReviewDeps = {}
+): Promise<UnreviewedBlock | null> {
+	const { db } = resolve(deps);
+	const version = await currentVersion(db, ownerId);
+	if (!version) return null;
+	const { timeZone } = await getAthleteProfile(ownerId, { db });
+	const started = version.blocks.filter((b) => trained(b) && b.startsOn <= today);
+	let running: UnreviewedBlock | null = null;
+	for (const block of started.toReversed()) {
+		if (await getLiveCycleReview(ownerId, version.programId, block.lineage, { db })) break;
+		const reviewable = block.endsOn < today || (await lastWeekDone(db, ownerId, block, timeZone));
+		const { lineage: blockLineage, name, startsOn, endsOn } = block;
+		const found = { programId: version.programId, blockLineage, name, startsOn, endsOn };
+		if (reviewable) return { ...found, reviewable };
+		running ??= { ...found, reviewable };
+	}
+	return running;
+}
+
 export interface CreateCycleReview {
 	programId: string;
 	blockLineage: string;
@@ -550,6 +587,49 @@ export interface CycleReviewView {
 	writeUp: { state: 'written'; text: string } | { state: 'none' };
 	/** One per start on offer, the first being the default; none once the next block is planned. */
 	previews: NextBlockPreview[];
+	/** What the screen draws from the block as logged now; null once it left the current version. */
+	progression: CycleProgression | null;
+}
+
+/**
+ * The block's progression as the review screen draws it, from its facts as logged now (never
+ * stored): each judged exercise's estimated 1RM per session, and the weekly run distance.
+ */
+export interface CycleProgression {
+	lifts: { exercise: string; points: { on: IsoDate; kg: number }[] }[];
+	/** Metres in each week of the block; null when it held no run. */
+	distance: { weekStartsOn: IsoDate; metres: number }[] | null;
+	units: DisplayUnits;
+}
+
+async function progressionOf(
+	db: Executor,
+	ownerId: string,
+	block: StoredBlock,
+	read: BlockFacts,
+	snapshot: CycleReviewSnapshot,
+	profile: Awaited<ReturnType<typeof getAthleteProfile>>
+): Promise<CycleProgression> {
+	const { timeZone: tz } = profile;
+	const ids = snapshot.effectiveness.map((e) => e.exercise);
+	const defs = await getExercisesByIds(ownerId, ids, { db });
+	const setsOf = Map.groupBy(read.sets, (s) => s.exercise);
+	const lifts = snapshot.effectiveness.flatMap(({ exercise }) => {
+		const def = defs.get(exercise);
+		const points = def ? e1rmSeries(setsOf.get(exercise) ?? [], def, tz) : [];
+		return points.length
+			? [{ exercise, points: points.map((p) => ({ on: p.on, kg: p.value })) }]
+			: [];
+	});
+	const runs = await read.facts.runs();
+	const weeks = weeklyRunning(runs, windowOf(block), 'km', tz).weeks;
+	return {
+		lifts,
+		distance: runs.length
+			? weeks.map((w) => ({ weekStartsOn: w.weekStart, metres: w.metres }))
+			: null,
+		units: displayUnits(profile)
+	};
 }
 
 /** What the block showed, as the next block's input overlay and results stage read it. */
@@ -753,6 +833,21 @@ export async function getCycleReviewView(
 			? (await plannedOf(db, ownerId, review, head.id, read, { today, profile })).map(
 					(p) => p.preview
 				)
-			: []
+			: [],
+		progression:
+			snapshot && block && read
+				? await progressionOf(db, ownerId, block, read, snapshot, profile)
+				: null
 	};
+}
+
+/** The review `id`, whichever revision: its block's live review, as getCycleReviewView gives it. */
+export async function getCycleReviewViewById(
+	ownerId: string,
+	id: string,
+	today: IsoDate,
+	deps: ReviewDeps = {}
+): Promise<CycleReviewView> {
+	const { programId, blockLineageId: blockLineage } = await getCycleReview(ownerId, id, deps);
+	return getCycleReviewView(ownerId, { programId, blockLineage, today }, deps);
 }

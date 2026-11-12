@@ -48,6 +48,7 @@
 		"backup:restore": "node scripts/backup-restore.ts",
 		"budgets": "node scripts/check-budgets.ts",
 		"docs:prs": "node scripts/docs-prs.ts",
+		"docs:coach-tools": "COACH_TOOLS_DOC=write vitest run --project unit scripts/coach-tools-doc.test.ts",
 		"lighthouse": "node scripts/lighthouse.ts",
 		"icons": "node scripts/generate-icons.ts",
 		"icons:sprite": "node scripts/generate-icon-sprite.ts",

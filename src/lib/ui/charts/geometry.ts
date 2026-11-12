@@ -1,5 +1,5 @@
 /**
- * Where marks go, pure, in percent of the plot box (docs/adr/NNNN-hand-built-charts.md):
+ * Where marks go, pure, in percent of the plot box (docs/adr/0016-hand-built-charts.md):
  * - the SVG draws only lines and areas, in a 0–100 viewBox stretched to the box
  *   (preserveAspectRatio none) with non-scaling strokes, so its paths are written in percent;
  * - every mark with a pixel size (a column, a stack segment, a marker, a hit area, a label) is an

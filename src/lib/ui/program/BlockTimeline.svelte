@@ -3,7 +3,8 @@
   The plan as a timeline, in timeline.ts's words: each block on a rail (the block holding this
   week marked, an outline block dashed) with its name, phase, dates and length, then its weeks.
   The week that holds today says 'This week', a dated goal sits under its week as an 'Event',
-  and an outline week says 'Not planned yet' and is never a link. With `weekHref`, each planned
+  and an outline week says 'Not planned yet' and is never a link. A bridge between blocks (a late
+  start's unplanned weeks) is hatched, its weeks 'Unplanned'. With `weekHref`, each planned
   week is a link to it (≥ 44 px) and `onweek` hears the tap first; without it (a preview) no week
   is a link.
 -->
@@ -24,13 +25,14 @@
 	let { blocks, weekHref, onweek, 'data-testid': testId }: Props = $props();
 </script>
 
-{#snippet row(week: TimelineWeek)}
+{#snippet row(week: TimelineWeek, bridge: boolean)}
 	<span class="label">
 		<span class="number">Week {week.number}</span>
 		<span class="dates">{week.dates}</span>
 	</span>
 	{#if week.current}<Badge tone="accent">This week</Badge>{/if}
 	{#if !week.planned}<span class="later">Not planned yet</span>{/if}
+	{#if bridge}<span class="later">Unplanned</span>{/if}
 {/snippet}
 
 <ol class="timeline" data-testid={testId}>
@@ -38,6 +40,7 @@
 		<li
 			class="block"
 			data-outline={block.outline ? '' : undefined}
+			data-bridge={block.bridge ? '' : undefined}
 			data-current={block.current ? '' : undefined}
 			data-testid="plan-block"
 		>
@@ -61,7 +64,7 @@
 								onclick={(event) => onweek?.(event, week.number)}
 								data-testid="plan-week"
 							>
-								{@render row(week)}
+								{@render row(week, block.bridge)}
 								<span class="chevron"><Icon name="chevron-right" size={18} /></span>
 							</a>
 						{:else}
@@ -70,7 +73,7 @@
 								aria-current={week.current ? 'date' : undefined}
 								data-testid="plan-week"
 							>
-								{@render row(week)}
+								{@render row(week, block.bridge)}
 							</div>
 						{/if}
 						{#each week.events as event, i (i)}
@@ -186,6 +189,15 @@
 	.block[data-outline] .weeks {
 		border-style: dashed;
 		background: transparent;
+	}
+
+	/* A bridge: hatched, a gap in the plan rather than weeks of it. */
+	.block[data-bridge] .weeks {
+		background: repeating-linear-gradient(
+			-45deg,
+			var(--color-surface-2) 0 6px,
+			var(--color-surface-1) 6px 12px
+		);
 	}
 
 	.weeks > li + li {

@@ -1,7 +1,12 @@
-# NNNN — Trend classification: a Theil–Sen line, a Mann–Kendall p and a minimal change
+# 0015 — Trend classification: a Theil–Sen line, a Mann–Kendall p and a minimal change
 
-- **Status:** Proposed (M6). Numbered at merge, like a migration slot, so M6's slices refer to it
-  by its title, "the trend classification ADR". docs-m6-architecture accepts it.
+- **Status:** Accepted (M6, 2026-11-12). Implemented as decided below in
+  `src/lib/domain/analytics/trend.ts` (`TREND_METHOD` `theil-sen+mann-kendall/1`, at
+  `ANALYTICS_VERSION` 1), and every M6 verdict reads it: the overview and the Strength, Running
+  and General views (`domain/analytics/overview.ts` and the services), the weekly and cycle
+  reviews, the coach's analytics tools (`services/analytics/index.ts`) and memory's trends
+  (`domain/coach/trends.ts`). The thresholds are still the M6 plan's open question to the owner:
+  named constants here and each metric's `mpc` in `domain/analytics/metrics.ts`.
 - **Context:** Progress, the weekly and cycle reviews, the progression rules and the coach must
   each say whether a figure is really improving, really declining or only varying, and say the
   same thing (PRD §10, §11). Training series are short (6 to 52 weekly points), noisy (an e1RM
