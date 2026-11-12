@@ -31,6 +31,14 @@
  * call is skipped) or the client leaving mid-call keeps the segment for a later turn to summarise.
  * A prompt version change rolls regardless.
  *
+ * Off the critical path (owner decision 2026-11-11): the summary need not delay an answer. When a
+ * completed answer leaves its segment due, summariseAhead makes the summary after that answer has
+ * streamed, while the owner reads it, and stores it naming the last row it read (throughSeq). The
+ * next turn's summariseSegment first waits for a summary still being made on the thread, then
+ * uses a stored one that read every row of the segment, with no model call before its answer; it
+ * summarises inline only when there is none (the summary ahead failed, ran out of time, or the
+ * segment changed since).
+ *
  * One query at a time: every service call is awaited before the next (docs/architecture.md).
  */
 import {
@@ -47,10 +55,11 @@ import {
 } from '../../domain/coach/summary.ts';
 import { validate } from '../../domain/validation.ts';
 import { logger } from '../observability/logger.ts';
-import { saveNote } from '../services/coach/notes.ts';
+import { latestNotes, saveNote } from '../services/coach/notes.ts';
 import {
 	finishRun,
 	lastCallInputTokens,
+	listRuns,
 	recordModelCall,
 	spentToday,
 	startRun
@@ -76,6 +85,9 @@ export const SUMMARY_TIMEOUT_MS = TURN_LIMITS.draftMs;
 
 /** The run a summary is recorded in (agent_runs.kind). */
 export const SUMMARY_RUN_KIND = 'summary';
+
+/** How often a turn looks again while a summary ahead is still being made on its thread. */
+export const SUMMARY_POLL_MS = 200;
 
 export type RolloverReason = 'prompt_version' | 'input_tokens' | 'messages';
 
@@ -104,11 +116,28 @@ export interface SummariseInput {
 	limits?: SegmentLimits;
 }
 
+/** A summary made after a turn's answer, for the next turn (summariseAhead). */
+export interface AheadInput {
+	ownerId: string;
+	threadId: string;
+	promptVersion: string;
+	provider: LlmProvider;
+	chatCallsBelow: number;
+	/** When the endpoint must have finished, in epoch milliseconds: the call ends by then. */
+	deadlineAt: number;
+	deps: CoachDeps;
+	limits?: SegmentLimits;
+}
+
+type DueInput = Pick<SummariseInput, 'ownerId' | 'promptVersion' | 'chatCallsBelow' | 'deps'> & {
+	limits?: SegmentLimits;
+};
+
 const NO_USAGE = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 };
 
 /** Why the thread's current segment must roll over before the turn, or null. */
 async function dueReason(
-	input: SummariseInput,
+	input: DueInput,
 	thread: CoachThread,
 	rows: readonly TranscriptRow[]
 ): Promise<RolloverReason | null> {
@@ -125,7 +154,7 @@ async function dueReason(
 
 /** The summary call, recorded in its own run: the summary, or null when it failed. */
 async function summarise(
-	input: SummariseInput & { provider: LlmProvider },
+	input: Pick<SummariseInput, 'ownerId' | 'signal' | 'deps'> & { provider: LlmProvider },
 	thread: CoachThread,
 	rows: readonly TranscriptRow[]
 ): Promise<{ summary: ThreadSummary; runId: string } | null> {
@@ -202,21 +231,88 @@ async function summarise(
 	return { summary: checked.data, runId: run.id };
 }
 
+/** The stored summary of the thread's current segment that read every row of it, or null. */
+async function stored(
+	ownerId: string,
+	thread: CoachThread,
+	rows: readonly TranscriptRow[],
+	deps: CoachDeps
+) {
+	const through = rows.at(-1)?.seq;
+	if (through === undefined) return null;
+	const notes = await latestNotes(ownerId, 'thread_summary', {}, deps);
+	const { id: threadId, segment } = thread;
+	const note = notes.find(
+		({ body }) =>
+			body.threadId === threadId && body.segment === segment && body.throughSeq === through
+	);
+	return note ? { summary: summaryText(note.body), noteId: note.id } : null;
+}
+
 /**
- * Before a turn's transaction: when the thread's current segment is due to roll over, summarise it
- * into a thread_summary note. Null when nothing is due (a retried send, an archived thread, a
- * review's write-up thread, a segment within its limits on the current prompt version).
+ * While a summary ahead is still being made on the thread, wait for it, up to its own limit. True
+ * when it waited.
+ */
+async function settle(input: SummariseInput, thread: CoachThread): Promise<boolean> {
+	const until = Date.now() + SUMMARY_TIMEOUT_MS;
+	let waited = false;
+	while (Date.now() < until && !input.signal.aborted) {
+		const [newest] = (await listRuns(input.ownerId, { limit: 1 }, input.deps)).runs;
+		const making =
+			newest?.status === 'running' &&
+			newest.kind === SUMMARY_RUN_KIND &&
+			newest.threadId === thread.id;
+		if (!making) return waited;
+		waited = true;
+		await new Promise((resolve) => setTimeout(resolve, SUMMARY_POLL_MS));
+	}
+	return waited;
+}
+
+/** The summary as a thread_summary note, naming the run and the last row it read. */
+function saveSummary(
+	ownerId: string,
+	thread: CoachThread,
+	rows: readonly TranscriptRow[],
+	made: { summary: ThreadSummary; runId: string },
+	deps: CoachDeps
+) {
+	const body = { threadId: thread.id, segment: thread.segment, throughSeq: rows.at(-1)?.seq };
+	return saveNote(
+		ownerId,
+		{
+			kind: 'thread_summary',
+			body: { ...body, ...made.summary },
+			summary: made.summary.summary,
+			runId: made.runId
+		},
+		deps
+	);
+}
+
+/**
+ * Before a turn's transaction: when the thread's current segment is due to roll over, the summary
+ * made ahead for it, or else a summary made now, as a thread_summary note. Null when nothing is
+ * due (a retried send, an archived thread, a review's write-up thread, a segment within its limits
+ * on the current prompt version).
  */
 export async function summariseSegment(input: SummariseInput): Promise<RolloverPlan | null> {
 	const { ownerId, deps } = input;
 	if (await findOwnerMessage(ownerId, input.clientMessageId, deps)) return null;
-	const { thread, rows } = await getTranscript(ownerId, input.threadId, deps);
+	let { thread, rows } = await getTranscript(ownerId, input.threadId, deps);
 	// A review's write-up thread is never summarised: memory carries the review itself.
 	if (thread.archived || isReviewEntry(thread.entry)) return null;
 	const reason = await dueReason(input, thread, rows);
 	if (reason === null) return null;
 
 	const plan: RolloverPlan = { segment: thread.segment, reason, summary: null, noteId: null };
+	if (input.provider && (await settle(input, thread))) {
+		// Read again: a send that rolled the thread over meanwhile leaves nothing to summarise.
+		({ thread, rows } = await getTranscript(ownerId, input.threadId, deps));
+		if (thread.segment !== plan.segment) return null;
+	}
+	const ahead = await stored(ownerId, thread, rows, deps);
+	if (ahead) return { ...plan, ...ahead };
 	// Not attempted (cap spent, client gone): only a prompt version change still rolls over.
 	const later = reason === 'prompt_version' ? plan : null;
 	const { provider } = input;
@@ -224,17 +320,26 @@ export async function summariseSegment(input: SummariseInput): Promise<RolloverP
 	if ((await spentToday(ownerId, deps)) >= DAILY_LIMITS.costMicros) return later;
 	const made = await summarise({ ...input, provider }, thread, rows);
 	if (!made) return input.signal.aborted ? later : plan;
-	const note = await saveNote(
-		ownerId,
-		{
-			kind: 'thread_summary',
-			body: { threadId: thread.id, segment: thread.segment, ...made.summary },
-			summary: made.summary.summary,
-			runId: made.runId
-		},
-		deps
-	);
+	const note = await saveSummary(ownerId, thread, rows, made, deps);
 	return { ...plan, summary: summaryText(made.summary), noteId: note.id };
+}
+
+/**
+ * After a turn's completed answer: when it left the segment due to roll over, summarise the
+ * segment now, so the next turn starts its answer with no summary call. True when a summary was
+ * stored. A provider error fails only its summary run; the caller logs anything else.
+ */
+export async function summariseAhead(input: AheadInput): Promise<boolean> {
+	const { ownerId, deps } = input;
+	const { thread, rows } = await getTranscript(ownerId, input.threadId, deps);
+	if (thread.archived || isReviewEntry(thread.entry)) return false;
+	if ((await dueReason(input, thread, rows)) === null) return false;
+	const ms = Math.min(SUMMARY_TIMEOUT_MS, input.deadlineAt - Date.now());
+	if (ms <= 0 || (await spentToday(ownerId, deps)) >= DAILY_LIMITS.costMicros) return false;
+	const made = await summarise({ ...input, signal: AbortSignal.timeout(ms) }, thread, rows);
+	if (!made) return false;
+	await saveSummary(ownerId, thread, rows, made, deps);
+	return true;
 }
 
 export interface RolloverInput {
