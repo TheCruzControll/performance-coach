@@ -111,7 +111,8 @@ describe('the Proposals inbox load', () => {
 					title: 'Like bench 2',
 					status: 'proposed',
 					state: 'Waiting for you',
-					meta: 'Exercise preference · Mon 9 Nov'
+					meta: 'Exercise preference · Mon 9 Nov',
+					origin: null
 				},
 				expect.objectContaining({ id: third, status: 'rejected', state: 'Declined' }),
 				expect.objectContaining({ id: first, status: 'rejected', state: 'Declined' })
@@ -209,7 +210,6 @@ describe('the Proposals inbox load', () => {
 				dates: ['Proposed Mon 9 Nov', 'Decided Mon 9 Nov'],
 				note: 'My shoulder disagrees',
 				threadId: null,
-				from: null,
 				card: { id: rejected, status: 'rejected', title: 'Like bench 1' }
 			});
 			expect((await ready(load(db, ownerId, open))).detail).toMatchObject({
