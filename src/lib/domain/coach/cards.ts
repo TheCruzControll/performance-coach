@@ -45,7 +45,7 @@ export interface ProposalCardView {
 
 /** Where a review's proposal came from (services/coach/proposals.ts ProposalOrigin). */
 export interface CardOrigin {
-	kind: 'weekly_review' | 'cycle_review';
+	kind: 'weekly_review' | 'cycle_review' | 'goal_priority' | 'fatigue';
 	href: string;
 	/** A weekly review's Monday. */
 	weekStartsOn?: IsoDate | null;
@@ -72,8 +72,15 @@ export interface ProposalCardSource {
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-/** 'From your weekly review · Week of 2 Nov', or 'From your cycle review'. */
+/** Where an M7 re-plan the rules made came from, in words. */
+const ENGINE_WORDS = {
+	goal_priority: 'From your goal change',
+	fatigue: 'From your training load'
+} as const;
+
+/** 'From your weekly review · Week of 2 Nov', 'From your cycle review', or an engine's words. */
 function originWords({ kind, weekStartsOn }: CardOrigin): string {
+	if (kind === 'goal_priority' || kind === 'fatigue') return ENGINE_WORDS[kind];
 	if (kind === 'cycle_review') return 'From your cycle review';
 	if (!weekStartsOn) return 'From your weekly review';
 	const day = `${Number(weekStartsOn.slice(8))} ${MONTHS[Number(weekStartsOn.slice(5, 7)) - 1]}`;
@@ -135,8 +142,9 @@ export function parseCard(value: unknown): ProposalCardView | null {
 		isLink(value.cycleReview) &&
 		isLink(value.chooseStart) &&
 		(!isObject(value.origin) ||
-			value.origin.kind === 'weekly_review' ||
-			value.origin.kind === 'cycle_review');
+			['weekly_review', 'cycle_review', 'goal_priority', 'fatigue'].includes(
+				value.origin.kind as string
+			));
 	return fine ? cardOf(value as unknown as ProposalCardSource) : null;
 }
 
