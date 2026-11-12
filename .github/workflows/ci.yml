@@ -209,8 +209,10 @@ jobs:
   # 30 s timeout, attempt and retry (43178306850), so serial·webkit runs 1 again. In 5 shards, as
   # before, its shards took 8.6-11.8 job minutes (43186419116; 9.4-11.6 in 43170932662): about
   # 100 s of setup on top of their specs. So it went to 6, ~385-425 s of specs a shard at the
-  # timing table's speed, about 9 job minutes. `minutes` stay unchanged until three such runs are
-  # measured.
+  # timing table's speed, about 9 job minutes. Measured since, in main's six green runs
+  # 43197965258 to 43232612790 (the timing table's runs): serial·webkit's slowest shard took 10.0
+  # Playwright minutes, so its `minutes` stay 15 (1.5 × 10.0). serial·chromium's took 10.8 (16.2
+  # at 1.5×), and its 14 is unchanged: never raised to fit, it gains a shard if it nears 14.
   e2e-legs:
     name: E2E ${{ matrix.group }} · ${{ matrix.engine }} · ${{ matrix.shard }}/${{ matrix.of }}
     # Pinned to the newest Ubuntu release Playwright builds WebKit for (its browser builds are
