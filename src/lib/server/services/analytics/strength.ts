@@ -74,7 +74,7 @@ import type { ExerciseDef } from '../exercises/index';
 import { getAthleteProfile } from '../profile/index';
 import { factsSource, type DashboardDeps } from './facts';
 import { createStrengthWeeks, type StrengthWeeksSource } from './strength-weeks';
-import { displayUnits, formatIn, weight, type DisplayUnits, type Shown } from './format';
+import { displayUnits, estimate, formatIn, weight, type DisplayUnits, type Shown } from './format';
 import { getMuscleTargets, type WeekTarget } from './targets';
 
 /** The most PRs the view lists, newest first; `prs.total` counts them all. */
@@ -512,7 +512,9 @@ export async function getStrengthDashboard(
 	// ---- PRs: every record broken in the period or this week, against all earlier training
 	const prFrom = window.weeks?.from ?? inProgress.weekStart;
 	const shownPr = (pr: StrengthPr, value: number) =>
-		pr.kind === 'most_reps' ? `${value} reps` : weight(value, units).text;
+		pr.kind === 'most_reps'
+			? `${value} reps`
+			: (pr.kind === 'e1rm' ? estimate : weight)(value, units).text;
 	const prs = liftsFrom(records)
 		.flatMap(([id, { sessions }]) =>
 			prsOf(sessions)

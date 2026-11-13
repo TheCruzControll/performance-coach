@@ -64,12 +64,13 @@ describe('historySetWords', () => {
 describe('bestWords', () => {
 	it('labels the best e1RM as an estimate, in the unit its set was logged in, with that set', () => {
 		expect(bestWords({ kind: 'estimated', value: 116.67, set: SET }, 'UTC')).toEqual({
-			value: 'Estimated 1RM · 116.7 kg',
+			// An estimate to the nearest 0.5 kg, as Progress shows it.
+			value: 'Estimated 1RM · 116.5 kg',
 			from: 'From 100 kg × 5 reps · Wed 4 Nov'
 		});
 		const lb = { ...SET, weight: 225, unit: 'lb' as const };
 		expect(bestWords({ kind: 'estimated', value: 120, set: lb }, 'UTC').value).toBe(
-			'Estimated 1RM · 264.6 lb'
+			'Estimated 1RM · 265 lb'
 		);
 	});
 });

@@ -538,7 +538,7 @@ test.describe('with the network in the test’s hands', () => {
 		await page.getByTestId('workout-history-row').click();
 		const card = page.getByTestId('history-error');
 		await expect(card).toContainText('Couldn’t load your workouts');
-		await card.getByRole('button', { name: 'Retry' }).click();
+		await card.getByRole('button', { name: 'Try again' }).click();
 		await expect(page.getByTestId('history-empty')).toBeVisible();
 		await expect(card).toHaveCount(0);
 	});

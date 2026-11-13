@@ -8,6 +8,7 @@
 -->
 <script lang="ts">
 	import { onDestroy, type Snippet } from 'svelte';
+	import { watchContentSize } from '../content-size.ts';
 	import { returnFocus } from '../focus-return.ts';
 	import { lockScroll } from '../scroll-lock.ts';
 	import IconButton from './IconButton.svelte';
@@ -59,22 +60,9 @@
 	$effect(() => {
 		const el = body;
 		if (!el || !mounted) return;
-		const measure = () => (scrolls = el.scrollHeight > el.clientHeight);
-		const resized = new ResizeObserver(measure);
-		const watch = () => {
-			resized.disconnect();
-			resized.observe(el);
-			for (const child of el.children) resized.observe(child);
-		};
-		const changed = new MutationObserver(() => {
-			watch();
-			measure();
-		});
-		changed.observe(el, { childList: true });
-		watch();
+		const stop = watchContentSize(el, () => (scrolls = el.scrollHeight > el.clientHeight));
 		return () => {
-			resized.disconnect();
-			changed.disconnect();
+			stop();
 			scrolls = false;
 		};
 	});
@@ -178,6 +166,7 @@
 <dialog
 	bind:this={dialog}
 	class="sheet-dialog"
+	data-ui="sheet"
 	class:visible
 	class:wide
 	aria-labelledby={`${id}-title`}

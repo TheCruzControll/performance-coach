@@ -96,7 +96,11 @@
 	<a class="back" href={HISTORY} data-testid="back-to-history">
 		<Icon name="chevron-left" size={18} /> History
 	</a>
-	<PageHeader title={`Version ${version.number}`} eyebrow={`${version.when} · ${version.by}`} />
+	<PageHeader
+		title={`Version ${version.number}`}
+		eyebrow={`${version.when} · ${version.by}`}
+		dated
+	/>
 
 	<!-- Split from 1024 px (docs/design-system.md, Responsive layout → Screens): the list beside
 	     the version, which stays in the URL. A phone shows the version alone. -->
@@ -238,7 +242,7 @@
 		{/if}
 		{#if olderFailed}
 			<Notice tone="danger" title="Couldn’t load older versions" data-testid="older-failed">
-				<button type="button" class="retry" onclick={showOlder}>Retry</button>
+				<button type="button" class="retry" onclick={showOlder}>Try again</button>
 			</Notice>
 		{/if}
 	</div>

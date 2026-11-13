@@ -146,7 +146,9 @@
 		data-testid="swap-error"
 	>
 		{#snippet actions()}
-			<Button variant="secondary" icon="refresh" loading={reloading} onclick={reload}>Retry</Button>
+			<Button variant="secondary" icon="refresh" loading={reloading} onclick={reload}
+				>Try again</Button
+			>
 		{/snippet}
 	</EmptyState>
 {:else if !choices.alternatives.length}

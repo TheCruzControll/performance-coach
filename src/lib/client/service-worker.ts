@@ -4,11 +4,11 @@
  * SvelteKit's own registration (turned off in vite.config.ts) runs on `load`, and here `load`
  * comes before the app has started: it fires once the modulepreloaded chunks have arrived, and
  * the app's code is evaluated and hydrated in the tasks right after it. Registering then starts
- * the worker and its install, which downloads the whole build into the cache, while the page is
+ * the worker and its install, which downloads what offline needs into the cache, while the page is
  * still evaluating and hydrating. Hypothesis, not yet confirmed: that install is one cause of the
  * start-up task Lighthouse sometimes saw stretched on CI's runners (about 60 ms to several
- * hundred). Either way the worker is not needed before the app runs, so the root layout calls
- * this on mount, after hydration.
+ * hundred). Either way the worker is not needed before the app runs, so the root layout imports
+ * this module and calls it on mount, after hydration.
  */
 
 /** Where SvelteKit serves the built service worker (paths.base is empty). */

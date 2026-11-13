@@ -350,7 +350,7 @@ test.describe('with the service worker blocked, so page.route sees every request
 		const failed = page.getByTestId('build-preview-error');
 		await expect(failed).toContainText('Couldn’t plan week 1');
 		await expect(page.getByRole('navigation', { name: 'Primary' })).toBeVisible();
-		const retry = failed.getByRole('button', { name: 'Retry' });
+		const retry = failed.getByRole('button', { name: 'Try again' });
 		expect((await retry.boundingBox())!.height).toBeGreaterThanOrEqual(44);
 		expect(await audit(page), 'failed, dark').toEqual([]);
 		failing = false;
@@ -380,7 +380,7 @@ test.describe('with the service worker blocked, so page.route sees every request
 		const chunkError = page.getByTestId('today-panel-error');
 		await expect(chunkError).toContainText('Couldn’t load this part of Today');
 		failing = false;
-		await chunkError.getByRole('button', { name: 'Retry' }).click();
+		await chunkError.getByRole('button', { name: 'Try again' }).click();
 		// WebKit fetches the module again in place; Chromium keeps the failed fetch and reloads
 		// Today, where the Build card opens the preview again. The card stays mounted, hidden, while
 		// the preview takes Today's place, so only one of the two is ever visible.
@@ -416,7 +416,7 @@ test.describe('with the service worker blocked, so page.route sees every request
 			await held;
 			await route.continue();
 		});
-		await notice(page).getByRole('button', { name: 'Retry' }).click();
+		await notice(page).getByRole('button', { name: 'Try again' }).click();
 		await expect(start(page)).toHaveAttribute('aria-busy', 'true');
 		await expect(start(page)).toBeDisabled();
 		release();
