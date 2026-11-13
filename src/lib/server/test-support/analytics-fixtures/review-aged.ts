@@ -41,7 +41,7 @@ import {
 export const FIXED_BENCH_KG = 85;
 
 /** review-ahead's block: its first week, so that this week is its third and next week its last. */
-const AHEAD: Layout = {
+export const AHEAD: Layout = {
 	first: 2 - BLOCK_WEEKS,
 	lastKind: 'accumulation',
 	cut: true,
@@ -52,7 +52,7 @@ const AHEAD: Layout = {
 const AGED: Layout = { first: 1 - BLOCK_WEEKS, lastKind: 'accumulation', outline: true, hard: -1 };
 
 /** Add the fixed bench line to the current version's bench on `date`; that session's lineage. */
-async function fixedBench(ctx: SeedContext, date: IsoDate): Promise<string> {
+export async function fixedBench(ctx: SeedContext, date: IsoDate): Promise<string> {
 	const bench = (await resolveKeys(['bench_press'], { db: ctx.db })).get('bench_press')!.id;
 	const { rows } = await ctx.db.execute<{ id: string; lineage: string }>(
 		sql`select pe.id::text as id, ps.lineage_id::text as lineage from planned_exercises pe
