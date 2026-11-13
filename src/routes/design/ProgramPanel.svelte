@@ -1,8 +1,8 @@
 <!--
   /design: the program display components (loaded when its tab opens), on one fixture week of a
   hybrid plan, Wednesday 4 November 2026 being today: every session state, a card whose link is
-  navigating (pending), prescriptions in describe.ts's words, and the Move sheet's body with the
-  days left this week and with none left.
+  navigating (pending), prescriptions in describe.ts's words, the Move sheet's body with the
+  days left this week and with none left, and the plan sheet's season (m7/39) loaded and streaming.
 -->
 <script lang="ts">
 	import { addDays, type IsoDate } from '#lib/domain/calendar.ts';
@@ -13,12 +13,16 @@
 		type RunSegment,
 		type SetPrescription
 	} from '#lib/domain/training/index.ts';
+	import type { Phase } from '#lib/domain/training/vocabulary.ts';
 	import Section from '#lib/ui/components/Section.svelte';
 	import Surface from '#lib/ui/components/Surface.svelte';
+	import BlockTimeline from '#lib/ui/program/BlockTimeline.svelte';
 	import MoveSheet from '#lib/ui/program/MoveSheet.svelte';
 	import PrescriptionLines from '#lib/ui/program/PrescriptionLines.svelte';
 	import SessionCard from '#lib/ui/program/SessionCard.svelte';
+	import { seasonView, type SeasonRoad } from '#lib/ui/program/season.ts';
 	import { moveOption } from '#lib/ui/program/session-words.ts';
+	import { timelineView } from '#lib/ui/program/timeline.ts';
 	import WeekStrip from '#lib/ui/program/WeekStrip.svelte';
 	import {
 		cardView,
@@ -181,6 +185,55 @@
 		],
 		{ distanceUnit: 'km' }
 	);
+
+	/** A fight camp, its recovery and a marathon in outline (the road as Train's load reads it). */
+	const FIGHT = '00000000-0000-4000-8000-000000000051';
+	const RUN = '00000000-0000-4000-8000-000000000052';
+	const road = (phase: Phase, label: string, from: number, weeks: number, outline = true) => ({
+		phase,
+		label,
+		name: label,
+		startsOn: addDays(MONDAY, 7 * from),
+		endsOn: addDays(MONDAY, 7 * (from + weeks) - 1),
+		outline,
+		goalRefs: [FIGHT, RUN],
+		weeks: outline
+			? []
+			: Array.from({ length: weeks }, (_, i) => ({
+					startsOn: addDays(MONDAY, 7 * (from + i)),
+					kind: i === 2 ? 'deload' : 'accumulation'
+				})),
+		modesNote: null,
+		goals: [
+			{ title: 'Muay Thai fight', mode: from === 0 ? 'primary' : 'secondary' },
+			{ title: 'Marathon', mode: from === 0 ? 'secondary' : 'primary' },
+			{ title: 'Build muscle', mode: 'maintenance' }
+		] as SeasonRoad['blocks'][number]['goals']
+	});
+	const ROAD = {
+		blocks: [
+			road('fight_camp', 'Fight camp', 0, 4, false),
+			road('recovery', 'Recovery', 4, 1),
+			road('marathon_build', 'Marathon build', 5, 8),
+			road('marathon_taper', 'Marathon taper', 13, 2)
+		],
+		events: [
+			{ goalTitle: 'Muay Thai fight', date: addDays(MONDAY, 26) },
+			{ goalTitle: 'Marathon', date: addDays(MONDAY, 104) }
+		],
+		markers: [{ week: addDays(MONDAY, 91), kind: 'taper' }]
+	};
+	const GOALS = ROAD.events.map((e, i) => ({
+		id: [FIGHT, RUN][i]!,
+		title: e.goalTitle,
+		eventDate: e.date,
+		status: 'active' as const
+	}));
+	const PLAN = timelineView(
+		{ startsOn: MONDAY, blocks: ROAD.blocks },
+		{ today: TODAY, goals: GOALS }
+	);
+	const SEASON = seasonView(ROAD, TODAY);
 </script>
 
 <div class="grid">
@@ -226,6 +279,16 @@
 		</Surface>
 		<Surface padding="md" data-testid="move-empty-fixture">
 			<MoveSheet lineage={MOVING} version={1} targets={[]} />
+		</Surface>
+	</Section>
+
+	<Section title="Season timeline">
+		<Surface padding="md" data-testid="season-fixture">
+			<BlockTimeline blocks={PLAN} weekHref={(n) => `#week-${n}`} season={SEASON} lanes={3} />
+		</Surface>
+		<!-- Streaming: M3's timeline, aria-busy, the lanes' room held. -->
+		<Surface padding="md" data-testid="season-pending-fixture">
+			<BlockTimeline blocks={PLAN} season={null} lanes={3} />
 		</Surface>
 	</Section>
 

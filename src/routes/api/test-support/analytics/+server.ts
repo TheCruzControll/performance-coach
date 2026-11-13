@@ -1,6 +1,11 @@
 import { error, json } from '@sveltejs/kit';
 import { testRoutesEnabled } from '#lib/server/env.ts';
 import { ownerId } from '#lib/server/forms/profile.ts';
+import {
+	isRoadFault,
+	ROAD_FAULTS,
+	setRoadFault
+} from '#lib/server/services/periodisation/road-faults.ts';
 import { isProfileInputError } from '#lib/server/services/profile/index.ts';
 import {
 	AnalyticsSeedConflictError,
@@ -52,4 +57,24 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 		if (isProfileInputError(err)) return invalid('The profile refused timeZone', err.errors);
 		throw err;
 	}
+};
+
+/**
+ * TEST ONLY: PUT {roadFault}, one of ROAD_FAULTS (m7/39, road-faults.ts): 'slow' holds Train's
+ * road read until the next PUT (at most ROAD_FAULT_HOLD_MS), 'fail' fails it, 'none' clears it and
+ * releases any read held. Answers 200 {roadFault}; 404 where test routes are not enabled.
+ */
+export const PUT: RequestHandler = async ({ locals, request }) => {
+	if (!testRoutesEnabled()) error(404, 'Not found');
+	ownerId(locals);
+	let body: { roadFault?: unknown };
+	try {
+		body = JSON.parse(await request.text()) ?? {};
+	} catch {
+		return invalid('Body must be JSON');
+	}
+	const { roadFault } = body;
+	if (!isRoadFault(roadFault)) return invalid(`roadFault must be one of ${ROAD_FAULTS.join(', ')}`);
+	setRoadFault(roadFault);
+	return json({ roadFault });
 };
