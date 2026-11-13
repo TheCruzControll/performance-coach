@@ -7,9 +7,10 @@
  * - A commitment counts toward its discipline's quota (COMMITMENT_QUOTA).
  * - The free days go to the goals by priority: every goal up to its `min` first, then by turns up
  *   to its `max` (SESSIONS_WANTED). A day no goal asks for gets a mobility session.
- * - Two sessions share a day only under DOUBLES; otherwise the lowest-priority session is dropped.
+ * - Two sessions share a day only under DOUBLES (doubleTime); otherwise the lowest-priority
+ *   session is dropped.
  */
-import type { Discipline } from '../../profile/catalog.ts';
+import type { Discipline, TimeOfDay } from '../../profile/catalog.ts';
 
 /** What a commitment counts toward: strength days, runs, or other sessions. */
 export type Quota = 'strength' | 'runs' | 'other';
@@ -66,13 +67,43 @@ export const SESSIONS_WANTED: Readonly<Record<Discipline, SessionsWanted>> = {
 };
 
 /**
- * A second session in a day sits on a commitment day, and only when the owner gave two distinct
- * preferred times ('it varies' is not one), so each session has its own time, and sessions of at
- * most `maxSessionMinutes`, so the day leaves recovery between them.
+ * A second session in a day sits beside one commitment, at a time of its own: one of two distinct
+ * preferred times the commitment leaves free, or, when the owner gave fewer (or 'it varies'), the
+ * other end of the day from a commitment with a set time (doubleTime). Each session is at most
+ * `maxSessionMinutes`, so the day leaves recovery between them.
  */
 export const DOUBLES = {
 	distinctTimes: 2,
 	maxSessionMinutes: 90,
 	rationale:
-		'two sessions in a day need two distinct preferred times and sessions of 90 min or less'
+		'two sessions in a day need two times (two preferred times, or a commitment with a set time) and sessions of 90 min or less'
 } as const;
+
+/** Beside a commitment at this time with no second preferred time, a session goes at the other end of the day. */
+export const OTHER_END_OF_DAY: Readonly<
+	Record<Exclude<TimeOfDay, 'varies'>, Exclude<TimeOfDay, 'varies'>>
+> = {
+	early_morning: 'evening',
+	morning: 'evening',
+	midday: 'evening',
+	afternoon: 'morning',
+	evening: 'morning'
+};
+
+/**
+ * The time a generated session takes beside a commitment at `taken`, or null when the day cannot
+ * hold a second session (DOUBLES): with two distinct preferred times, the first one `taken` leaves
+ * free. Beside a commitment with a set time: the one preferred time, if it is at the other end of
+ * the day; with no preferred time ('it varies'), OTHER_END_OF_DAY. Otherwise null.
+ */
+export function doubleTime(
+	taken: TimeOfDay | null,
+	preferred: readonly TimeOfDay[]
+): Exclude<TimeOfDay, 'varies'> | null {
+	const distinct = preferred.filter((t): t is Exclude<TimeOfDay, 'varies'> => t !== 'varies');
+	if (distinct.length >= DOUBLES.distinctTimes) return distinct.find((t) => t !== taken) ?? null;
+	if (taken === null || taken === 'varies') return null;
+	if (distinct.length === 0) return OTHER_END_OF_DAY[taken];
+	const [only] = distinct as [Exclude<TimeOfDay, 'varies'>];
+	return OTHER_END_OF_DAY[only] === OTHER_END_OF_DAY[taken] ? null : only;
+}

@@ -45,7 +45,7 @@ export const DEFAULTS = {
 		missing: 'You haven’t said when in the day you train.',
 		assumed: 'no set time of day',
 		rationale:
-			'Sessions get no time, and no day holds two: that needs two distinct times, and ‘it varies’ is not one.'
+			'Sessions on a day of their own get no time. Beside a class with a set time, a session goes at the other end of the day: a morning before an evening class.'
 	},
 	session_minutes: {
 		value: 60,

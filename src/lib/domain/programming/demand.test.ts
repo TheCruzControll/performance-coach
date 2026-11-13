@@ -1,7 +1,7 @@
 /**
  * demand.ts, the one day rule: training days from daysPerWeek and the open days, the free days
  * the commitments leave (never negative), each commitment counted toward its quota, the free
- * days given by goal priority, doubles only with two distinct times, and a decision whenever the
+ * days given by goal priority, doubles only with a second time for the day, and a decision whenever the
  * week cannot give a goal what it asks for.
  */
 import { describe, expect, it } from 'vitest';
@@ -58,7 +58,8 @@ describe('weekBudget', () => {
 			trainingDays: 5,
 			commitmentDays: 2,
 			freeDays: 3,
-			doublesAllowed: true
+			doublesAllowed: true,
+			doubleDays: ['tue', 'thu']
 		});
 	});
 
@@ -96,15 +97,30 @@ describe('weekBudget', () => {
 		});
 	});
 
-	it('allows doubles only with two distinct times and sessions of 90 minutes or less', () => {
+	it('allows doubles only with two times for the day and sessions of 90 minutes or less', () => {
+		// The journey's classes are Tuesday and Thursday evenings.
 		const doubles = (schedule: Partial<Schedule>) =>
-			weekBudget(inputOf(variant('journey', schedule))).doublesAllowed;
-		expect(doubles({ preferredTimes: ['morning', 'evening'] })).toBe(true);
-		expect(doubles({ preferredTimes: ['evening'] })).toBe(false);
-		expect(doubles({ preferredTimes: ['evening', 'varies'] })).toBe(false);
-		expect(doubles({ preferredTimes: [] })).toBe(false);
-		expect(doubles({ preferredTimes: ['morning', 'evening'], sessionMinutes: 90 })).toBe(true);
-		expect(doubles({ preferredTimes: ['morning', 'evening'], sessionMinutes: 120 })).toBe(false);
+			weekBudget(inputOf(variant('journey', schedule))).doubleDays;
+		expect(doubles({ preferredTimes: ['morning', 'evening'] })).toEqual(['tue', 'thu']);
+		// One preferred time: only at the other end of the day from the class.
+		expect(doubles({ preferredTimes: ['evening'] })).toEqual([]);
+		expect(doubles({ preferredTimes: ['evening', 'varies'] })).toEqual([]);
+		expect(doubles({ preferredTimes: ['morning'] })).toEqual(['tue', 'thu']);
+		// No set time ('it varies'): beside a class with a set time, the other end of the day.
+		expect(doubles({ preferredTimes: [] })).toEqual(['tue', 'thu']);
+		expect(doubles({ preferredTimes: ['varies'] })).toEqual(['tue', 'thu']);
+		expect(doubles({ preferredTimes: ['morning', 'evening'], sessionMinutes: 90 })).toEqual([
+			'tue',
+			'thu'
+		]);
+		expect(doubles({ preferredTimes: ['morning', 'evening'], sessionMinutes: 120 })).toEqual([]);
+		const [classes] = SCENARIOS.journey().schedule.commitments;
+		const untimed = { commitments: [{ ...classes!, timeOfDay: null }] };
+		expect(doubles({ preferredTimes: [], ...untimed })).toEqual([]);
+		expect(doubles({ preferredTimes: ['morning', 'evening'], ...untimed })).toEqual(['tue', 'thu']);
+		expect(weekBudget(inputOf(variant('journey', { preferredTimes: ['evening'] })))).toMatchObject({
+			doublesAllowed: false
+		});
 	});
 });
 
@@ -166,7 +182,7 @@ describe('allocateWeek', () => {
 			expect.objectContaining({
 				ruleKey: 'days.dropped',
 				summary: '2 of 2 strength sessions left out this week',
-				why: expect.stringContaining('two distinct preferred times')
+				why: expect.stringContaining('two preferred times, or a commitment with a set time')
 			})
 		]);
 	});
@@ -220,7 +236,14 @@ describe('allocateWeek', () => {
 			expect(decisions.filter((d) => d.kind === 'session_dropped')).toEqual([]);
 		});
 
-		it.each([[['evening']], [['evening', 'varies']], [[]]] as const)(
+		it('takes the run beside the evening class in the morning when no time is set', () => {
+			const { shares, allocation, decisions } = allocate(fightAndMarathon([]));
+			expect(shares.runs).toEqual({ committed: 0, generated: 3 });
+			expect(allocation.doubles).toBe(1);
+			expect(decisions.filter((d) => d.kind === 'session_dropped')).toEqual([]);
+		});
+
+		it.each([[['evening']], [['evening', 'varies']]] as const)(
 			'is not allowed with %j: the lowest-priority session is dropped',
 			(times) => {
 				const { shares, allocation, decisions } = allocate(fightAndMarathon([...times]));
