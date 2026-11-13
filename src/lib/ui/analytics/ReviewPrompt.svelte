@@ -9,7 +9,7 @@
   - pending: aria-busy and disabled, so a second tap posts nothing (the service is idempotent
     under the owner lock as well)
   - not reviewable yet (409): when it will be, and why
-  - failure (500, or the request never answered): a notice, and the button resends as Retry
+  - failure (500, or the request never answered): a notice, and the button resends as Try again
   - offline: disabled, with 'You're offline'
 
   An EmptyState in an accent frame. The frame and the state lines are styled inline, not in a
@@ -74,7 +74,7 @@
 						type="submit"
 						icon={status === 'failed' ? 'refresh' : undefined}
 						loading={status === 'pending'}
-						disabled={!online}>{status === 'failed' ? 'Retry' : 'Create review'}</Button
+						disabled={!online}>{status === 'failed' ? 'Try again' : 'Create review'}</Button
 					>
 				</form>
 				{#if !online}
