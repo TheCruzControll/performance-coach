@@ -169,7 +169,8 @@
 			<Notice tone="danger" title="Couldn’t load the rest of this review">
 				Your training is safe. Check your connection, then try again.
 			</Notice>
-			<Button variant="secondary" icon="refresh" onclick={() => location.reload()}>Try again</Button>
+			<Button variant="secondary" icon="refresh" onclick={() => location.reload()}>Try again</Button
+			>
 		</div>
 	{/if}
 
