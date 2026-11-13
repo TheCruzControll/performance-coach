@@ -670,7 +670,8 @@ async function createReview(seeded: SeededAnalytics): Promise<string> {
 	const response = await fetch(`${server.api}/progress/reviews?/${action}`, {
 		method: 'POST',
 		body,
-		headers: { ...sessionHeaders, origin: server.base },
+		// A browser's no-JS post asks for HTML; fetch's default */* gets the action's JSON.
+		headers: { ...sessionHeaders, origin: server.base, accept: 'text/html' },
 		redirect: 'manual'
 	});
 	const location = response.headers.get('location');

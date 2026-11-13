@@ -129,7 +129,8 @@ test.describe('reviews', () => {
 						form: { programId: seeded.programId!, blockLineage: review.blockLineageId }
 					};
 		const response = await request.post(`/progress/reviews?/${action}`, {
-			headers: SAME_ORIGIN,
+			// A browser's no-JS post asks for HTML; Playwright's default */* gets the action's JSON.
+			headers: { ...SAME_ORIGIN, accept: 'text/html' },
 			form,
 			maxRedirects: 0
 		});
