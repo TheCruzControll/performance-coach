@@ -94,7 +94,9 @@ test.describe('review-ahead: next week generated from the review', () => {
 
 		await notice(page).getByTestId('review-notice-version').click();
 		await expect(page).toHaveURL(/\/train\/history\/2$/);
-		await expect(page.getByTestId('decision').filter({ hasText: review.why })).toBeVisible();
+		await expect(
+			page.getByTestId('version-changes').getByTestId('decision').filter({ hasText: review.why })
+		).toBeVisible();
 
 		await gotoHydrated(page, `/train?week=${week}`);
 		await notice(page).getByTestId('review-notice-review').click();
