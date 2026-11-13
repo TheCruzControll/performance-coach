@@ -31,7 +31,7 @@ import { lineTable, type LineChartData } from '#lib/ui/charts/line-model.ts';
 import { SERIES_TOKEN } from '#lib/ui/charts/palette.ts';
 import { shortDate } from '#lib/ui/program/words.ts';
 import { slotOf } from '../../load.ts';
-import type { ReviewRow } from './load.ts';
+import type { Narration, ReviewRow } from './load.ts';
 import type { NextCycleView } from './next-cycle-data.ts';
 import { item, type ItemView, type LineChartView, type SectionView } from './sections.ts';
 
@@ -86,6 +86,8 @@ export interface CycleReviewData {
 	/** The version its decision planned, in History; null until one is. */
 	history: { version: number; label: string } | null;
 	writeUp: string | null;
+	/** The write-up as the screen first shows it (load.ts loadReviews); absent before M6. */
+	narration?: Narration;
 	/** The next block's card (next-cycle-data.ts); null with none to decide or show. */
 	next: NextCycleView | null;
 }

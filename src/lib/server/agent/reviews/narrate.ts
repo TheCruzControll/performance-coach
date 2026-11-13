@@ -168,6 +168,27 @@ export async function narrationState(
 	return live ? { state: 'running', runId: live.id } : { state: 'none' };
 }
 
+/**
+ * The display blocks of the run that wrote a review's write-up, as its thread stored them (the
+ * output policy's replacements included): what the reviews screen draws with M5's AnswerBlocks.
+ */
+export async function narrationBlocks(
+	ownerId: string,
+	{ runId, threadId }: { runId: string | null; threadId: string | null },
+	deps: CoachDeps = {}
+): Promise<CompletedBlock[]> {
+	const rows = await narrativeBlocks(
+		ownerId,
+		{ narrativeRunId: runId, narrativeThreadId: threadId },
+		deps
+	);
+	return rows.flatMap((row) =>
+		row.kind === 'assistant'
+			? ((row.display as { blocks?: CompletedBlock[] } | null)?.blocks ?? [])
+			: []
+	);
+}
+
 /** The run that wrote the answer `messageId`, read back from its thread (a retried write-up). */
 async function answerRun(ownerId: string, threadId: string, messageId: string, deps: CoachDeps) {
 	const { messages } = await getThreadView(ownerId, threadId, {}, deps);
@@ -256,16 +277,7 @@ export async function narrateReview(
 	runId ??= await answerRun(ownerId, threadId, answer, deps);
 	if (runId === null) return { outcome: 'failed', error: 'provider', runId };
 
-	const rows = await narrativeBlocks(
-		ownerId,
-		{ narrativeRunId: runId, narrativeThreadId: threadId },
-		deps
-	);
-	const blocks = rows.flatMap((row) =>
-		row.kind === 'assistant'
-			? ((row.display as { blocks?: CompletedBlock[] } | null)?.blocks ?? [])
-			: []
-	);
+	const blocks = await narrationBlocks(ownerId, { runId, threadId }, deps);
 	const narrative = releasedText(blocks);
 	if (narrative === '') return { outcome: 'failed', error: 'provider', runId };
 	try {

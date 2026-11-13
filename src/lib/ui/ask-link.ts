@@ -7,11 +7,11 @@
  */
 
 /** Where each entry point is, as the turn endpoint and Coach's chip name it. */
-export type AskFrom = 'workout' | 'exercise' | 'today';
+export type AskFrom = 'workout' | 'exercise' | 'today' | 'weekly_review' | 'cycle_review';
 
-/** What the question is about: a workout or an exercise, by its id. */
+/** What the question is about: a workout or an exercise by its id, a review by its page key. */
 export interface AskRef {
-	type: 'workout' | 'exercise';
+	type: 'workout' | 'exercise' | 'review';
 	id: string;
 }
 
@@ -22,7 +22,9 @@ export interface AskRef {
 export const ASK_QUESTIONS = Object.freeze({
 	workout: 'Can we change today’s workout?',
 	exercise: (name: string) => `How has my ${name} progressed?`,
-	today: 'What should I focus on next week?'
+	today: 'What should I focus on next week?',
+	/** A review's 'Discuss with your coach' (M6, review-narrative-ui). */
+	review: (kind: 'weekly' | 'cycle') => `Can we go through my ${kind} review?`
 });
 
 /** Coach (/coach) with `ask` prefilled from `from`, about `ref` when given. */
