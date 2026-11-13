@@ -5,7 +5,7 @@
  *
  * - week-complete: Today's card creates and opens last week's review, then reads 'See your
  *   review'. Create's states: pending (aria-busy, a second tap posts nothing: one row), a 500
- *   with Retry that recovers, offline (disabled, Chromium). On a Sunday the block's last week is
+ *   with Try again that recovers, offline (disabled, Chromium). On a Sunday the block's last week is
  *   done too and Today offers the block instead (block-end covers it), so these skip.
  * - block-end: the cycle card creates and opens the block's review.
  * - A program that started this week, mid-week with sessions to come: no prompt.
@@ -15,7 +15,7 @@
  *
  * Serial: the history is the one owner's, which every browser and worker shares.
  */
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 import { weekdayOf } from '../src/lib/domain/calendar';
 import { DESKTOP, boxOf, expectNoSideScroll } from './desktop';
 import { cycleReviews, weeklyReviews } from './oracles/reviews';
@@ -23,8 +23,10 @@ import { seedProgram } from './program-support';
 import {
 	ANALYTICS_TZ,
 	auditBothThemes,
+	query,
 	resetReviews,
 	seedReview,
+	type ReviewScenario,
 	type SeededReview
 } from './review-support';
 import { captureScreen, gotoHydrated } from './support';
@@ -42,6 +44,14 @@ const promptOf = (page: Page) => page.getByTestId('review-prompt');
 const createButton = (page: Page) => promptOf(page).getByRole('button');
 /** Create's POST from a prompt: the reviews screen's own actions. */
 const isCreate = (url: URL) => url.pathname === LIST && url.search === '?/create';
+/** Today shows the plan, and so the prompt, only once onboarding is complete. */
+const onboard = () => query('update athlete_profiles set onboarding_completed_at = now()');
+/** Seed `scenario` (seedReview), with onboarding complete. */
+async function seedOnboarded(request: APIRequestContext, scenario: ReviewScenario) {
+	const seeded = await seedReview(request, scenario);
+	await onboard();
+	return seeded;
+}
 
 test.afterAll(async ({ request }) => {
 	await resetReviews(request);
@@ -51,7 +61,7 @@ test.describe('week-complete, on Today', () => {
 	let seeded: SeededReview;
 
 	test.beforeAll(async ({ request }) => {
-		seeded = await seedReview(request, 'week-complete');
+		seeded = await seedOnboarded(request, 'week-complete');
 	});
 
 	test('the week’s prompt leads the plan; axe is clean and the screen is captured', async ({
@@ -121,7 +131,7 @@ test.describe('week-complete, on Today', () => {
 		// page.route sees requests from a page the service worker controls only when it is blocked.
 		test.use({ serviceWorkers: 'block' });
 
-		test('a 500 shows Retry inside the card, and Retry resends and opens the review', async ({
+		test('a 500 shows Try again inside the card, and Try again resends and opens the review', async ({
 			page
 		}) => {
 			test.skip(isSunday(seeded), SUNDAY);
@@ -134,7 +144,7 @@ test.describe('week-complete, on Today', () => {
 			await expect(promptOf(page).getByTestId('create-failed')).toContainText(
 				'Couldn’t create this review'
 			);
-			await expect(createButton(page)).toHaveText('Retry');
+			await expect(createButton(page)).toHaveText('Try again');
 			await expect(page.getByTestId('error-view')).toHaveCount(0);
 			await expect(page).toHaveURL(/\/today$/);
 			expect(await weeklyReviews(week)).toHaveLength(0);
@@ -149,8 +159,8 @@ test.describe('week-complete, on Today', () => {
 			page,
 			request
 		}) => {
-			// The Retry test above wrote the review: start again from none.
-			seeded = await seedReview(request, 'week-complete');
+			// The Try again test above wrote the review: start again from none.
+			seeded = await seedOnboarded(request, 'week-complete');
 			test.skip(isSunday(seeded), SUNDAY);
 			const week = weekOf(seeded);
 			await gotoHydrated(page, '/today');
@@ -194,7 +204,7 @@ test.describe('block-end, on Today', () => {
 	let seeded: SeededReview;
 
 	test.beforeAll(async ({ request }) => {
-		seeded = await seedReview(request, 'block-end');
+		seeded = await seedOnboarded(request, 'block-end');
 	});
 
 	test('the cycle card creates and opens the block’s review, then reads See your review', async ({
@@ -230,6 +240,7 @@ test('mid-week, with sessions to come in a program that started this week: no pr
 	// The review fixture writes a complete training profile; the program then replaces its own.
 	await seedReview(request, 'week-complete');
 	await seedProgram(request, { fixture: 'today', start: 'this_week' });
+	await onboard();
 	await gotoHydrated(page, '/today');
 	await expect(page.getByTestId('today-session').first()).toBeVisible();
 	await expect(promptOf(page)).toHaveCount(0);
@@ -239,7 +250,7 @@ test.describe('week-complete, on Progress', () => {
 	let seeded: SeededReview;
 
 	test.beforeAll(async ({ request }) => {
-		seeded = await seedReview(request, 'week-complete');
+		seeded = await seedOnboarded(request, 'week-complete');
 	});
 
 	test('the prompt leads Overview, creates and opens the review, then reads See your review', async ({
