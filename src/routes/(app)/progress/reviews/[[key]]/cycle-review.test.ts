@@ -78,21 +78,17 @@ const review = (parts: Partial<CycleReviewData> = {}): CycleReviewData => ({
 
 const html = (data: CycleReviewData, props = {}) =>
 	render(CycleReview, { props: { review: data, ...props } }).body;
-/** A section's markup, up to the next: its <details> holds the verdict, the body follows it. */
-const sectionOf = (body: string, id: string) =>
-	body.split('data-testid="review-section"').find((part) => part.includes(`data-section="${id}"`))!;
 const text = (fragment: string) =>
 	fragment
 		.replace(/<!--[\s\S]*?-->/g, '')
 		.replace(/<[^>]+>/g, ' ')
 		.replace(/\s+/g, ' ')
 		.trim();
-/** A section's markup: its disclosure, then its body, up to the next section (ReviewSections). */
+/** One section's markup: from its element to the next section's (its body follows its details). */
 const sectionOf = (body: string, id: string) => {
-	const start = body.search(new RegExp(`<div[^>]*data-section="${id}"`));
-	if (start < 0) throw new Error(`no section ${id}`);
-	const next = body.slice(start + 1).search(/<div[^>]*data-section="/);
-	return next < 0 ? body.slice(start) : body.slice(start, start + 1 + next);
+	const rest = body.slice(body.search(new RegExp(`<div[^>]*data-section="${id}"`)));
+	const next = rest.slice(1).search(/<div[^>]*data-testid="review-section"/);
+	return next < 0 ? rest : rest.slice(0, next + 1);
 };
 
 describe('the cycle review on the server', () => {
@@ -108,12 +104,6 @@ describe('the cycle review on the server', () => {
 			/data-value="1"[^>]*data-testid="review-count-missed"[^>]*>1 session missed</
 		);
 	});
-
-	/** A section's markup: its disclosure and the body after it (ReviewSections), to the next one. */
-	const sectionOf = (body: string, id: string) =>
-		new RegExp(
-			`<div[^>]*data-section="${id}"[\\s\\S]*?(?=<div[^>]*data-testid="review-section"|$)`
-		).exec(body)![0];
 
 	it('each section with its verdict line; a chart’s room holds its table twin', () => {
 		const body = html(review());
