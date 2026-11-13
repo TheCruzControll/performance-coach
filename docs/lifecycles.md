@@ -33,3 +33,14 @@ go. Why the tables exist: the "Lifecycles as data" ADR in `docs/adr/`.
 | `accepted` | `apply`     | `applied`    | the applier writes in the same transaction; coach_proposals: status, applied_version_id or applied_ref, program_id, closed_at | known     | no     | accepted → applied is allowed by the trigger; no code performs it yet (a cycle review applies its own proposal).        |
 | `proposed` | `supersede` | `superseded` | coach_proposals: status, superseded_reason, closed_at                                                                         | known     | no     | accepted → superseded: a cycle review folds the coach’s accepted next_cycle into its own proposal (folded_into_review). |
 | `accepted` | `supersede` | `superseded` | coach_proposals: status, superseded_reason, closed_at                                                                         | known     | no     | accepted → superseded: a cycle review folds the coach’s accepted next_cycle into its own proposal (folded_into_review). |
+
+## program
+
+- **Stored in:** programs.status and archived_at (Postgres)
+- **States:** `active`, `archived` (initial: `active`; terminal: `archived`)
+- **Write sites:** `src/lib/server/services/programs/archive.ts archiveProgram`
+- **Tests:** `tests/integration/programs/archive.test.ts`, `src/lib/domain/lifecycles.test.ts`
+
+| From     | Event | To         | Effects                                                                                                                                                             | Certainty | Legacy | Why                                                                          |
+| -------- | ----- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- | ------ | ---------------------------------------------------------------------------- |
+| `active` | `end` | `archived` | programs: status, archived_at; its open coach proposals are superseded (program_changed); Today offers Build my program again; logged workouts and History are kept | known     | no     | Refused while a workout of the program is in progress (workout_in_progress). |

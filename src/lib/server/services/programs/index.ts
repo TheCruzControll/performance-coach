@@ -11,6 +11,12 @@ export {
 	type ProgramOrigin
 } from './store';
 export {
+	archiveProgram,
+	ProgramArchiveConflictError,
+	type ArchivedProgram,
+	type ProgramArchiveConflictReason
+} from './archive';
+export {
 	getCurrentProgram,
 	getPlannedSession,
 	getTodayPlan,

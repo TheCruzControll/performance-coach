@@ -4,7 +4,7 @@
  * access: validation, de-duplication, revisions and decisions belong to
  * src/lib/server/services/coach/proposals.ts.
  */
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { Transitioned } from '../../../domain/lifecycle';
 import type { ProposalStatus } from '../../../domain/training/vocabulary';
 import * as q from '../queries/coach-proposals';
@@ -59,6 +59,21 @@ export function createCoachProposalsRepository(db: Executor) {
 			threadId: string,
 			page: Parameters<typeof q.threadProposals>[3]
 		) => q.threadProposals(db, ownerId, threadId, page),
+
+		/** The program's proposals still open (proposed or accepted), locked for the transaction. */
+		lockOpenForProgram: (ownerId: string, programId: string) =>
+			db
+				.select({ id: coachProposals.id, status: coachProposals.status })
+				.from(coachProposals)
+				.where(
+					and(
+						eq(coachProposals.ownerId, ownerId),
+						eq(coachProposals.programId, programId),
+						inArray(coachProposals.status, ['proposed', 'accepted'])
+					)
+				)
+				.orderBy(coachProposals.id)
+				.for('update'),
 
 		insertProposal: async (values: NewProposalRow) =>
 			(await first(db.insert(coachProposals).values(values).returning({ id: coachProposals.id })))!
