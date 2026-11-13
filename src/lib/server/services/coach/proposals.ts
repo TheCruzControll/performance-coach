@@ -68,6 +68,7 @@ import type { Executor } from '../../db/types';
 import { DECISION_NOTE_MAX, type AppliedRef } from '../../db/schema/coaching';
 import { getExercisesByIds, resolveKeys, type ExerciseDef } from '../exercises/index';
 import { isUuid } from '../ids';
+import { createContextCache, type ContextCache } from '../periodisation/context';
 import { getAthleteProfile, listGoals } from '../profile';
 import { checkMove, getProgramVersion, type StoredSession } from '../programs';
 import { programmingInputFor } from '../programs/alternatives';
@@ -438,7 +439,8 @@ interface Checked {
 async function checkAgainstToday(
 	ownerId: string,
 	input: unknown,
-	{ db, now }: ResolvedCoachDeps
+	{ db, now }: ResolvedCoachDeps,
+	contexts: ContextCache = createContextCache(ownerId, { db })
 ): Promise<Checked> {
 	const parsed = validate(proposalSchema, input);
 	if (!parsed.ok) throw new ProposalRefusedError(parsed.errors);
@@ -523,7 +525,8 @@ async function checkAgainstToday(
 			const { op: _move, ...move } = op;
 			const at = { version: found.version.number, today };
 			try {
-				for (const w of await checkMove(ownerId, move, at, { db })) warnings.push(w.message);
+				for (const w of await checkMove(ownerId, move, at, { db, contexts }))
+					warnings.push(w.message);
 			} catch (error) {
 				if (!(error instanceof TrainingInputError)) throw error;
 				for (const [path, m] of Object.entries(error.errors))
@@ -804,13 +807,17 @@ export async function acceptProposal(
 			rationale: row.rationale,
 			payload: row.payload
 		};
-		const checked = await checkAgainstToday(ownerId, stored, resolved).catch(async (error) => {
-			// A refused substitution whose workout or session is over is superseded instead.
-			const parsed = validate(proposalSchema, stored);
-			if (!(error instanceof ProposalRefusedError) || !parsed.ok) throw error;
-			if (!(await substitutionEnded(ownerId, parsed.data, resolved.db))) throw error;
-			return null;
-		});
+		// One context read for the check and the applier's moves (M7's rules), in this transaction.
+		const contexts = createContextCache(ownerId, { db: resolved.db });
+		const checked = await checkAgainstToday(ownerId, stored, resolved, contexts).catch(
+			async (error) => {
+				// A refused substitution whose workout or session is over is superseded instead.
+				const parsed = validate(proposalSchema, stored);
+				if (!(error instanceof ProposalRefusedError) || !parsed.ok) throw error;
+				if (!(await substitutionEnded(ownerId, parsed.data, resolved.db))) throw error;
+				return null;
+			}
+		);
 		if (!checked) {
 			const superseded = { supersededReason: SESSION_ENDED, closedAt: at };
 			const t = transition(PROPOSAL, row.status, 'supersede');
@@ -826,7 +833,8 @@ export async function acceptProposal(
 			programId: row.programId,
 			baseVersionId: row.baseVersionId,
 			today,
-			deps: resolved
+			deps: resolved,
+			contexts
 		});
 		const { event, set } = decisionOf(outcome, at);
 		await repo.decide(ownerId, row.id, transition(PROPOSAL, row.status, event), set);

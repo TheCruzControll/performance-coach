@@ -257,6 +257,23 @@ describe('moveOption', () => {
 			day: 'Tuesday'
 		});
 	});
+
+	it('keeps the warning a move there would bring, and the day the scheduler would pick', () => {
+		const warning = {
+			headline: 'Heavy lower body the day before hard Muay Thai',
+			why: 'Tired legs.'
+		};
+		expect(moveOption({ date: '2026-11-11', planned: 'Upper A', warning })).toEqual({
+			date: '2026-11-11',
+			label: 'Wed 11 Nov',
+			day: 'Wednesday',
+			planned: 'Upper A',
+			warning
+		});
+		expect(
+			moveOption({ date: '2026-11-13', planned: 'Rest day', clears: 'Clears this week’s clash' })
+		).toMatchObject({ clears: 'Clears this week’s clash' });
+	});
 });
 
 describe('adjustValues', () => {

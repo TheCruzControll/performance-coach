@@ -8,6 +8,7 @@ import type { IsoDate } from '../../../../domain/calendar';
 import type { NEXT_CYCLE_AWAITS, Proposal, ProposalKind } from '../../../../domain/coach/proposals';
 import type { SupersededReason } from '../../../../domain/coach/vocabulary';
 import type { AppliedRef } from '../../../db/schema/coaching';
+import type { ContextCache } from '../../periodisation/context';
 import type { ResolvedCoachDeps } from '../shared';
 
 export interface ApplyInput<K extends ProposalKind = ProposalKind> {
@@ -22,6 +23,8 @@ export interface ApplyInput<K extends ProposalKind = ProposalKind> {
 	today: IsoDate;
 	/** `db` is the accept transaction. */
 	deps: ResolvedCoachDeps;
+	/** The accept's week contexts, which its check has read already: one of the edits' own unless given. */
+	contexts?: ContextCache;
 }
 
 export type ApplyOutcome =
