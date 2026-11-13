@@ -178,7 +178,7 @@
 	}
 </script>
 
-<div class="stepper" class:invalid={Boolean(error)} data-testid={testId}>
+<div class="stepper" data-ui="stepper" class:invalid={Boolean(error)} data-testid={testId}>
 	<label class="label" for={id}>{label}</label>
 	<div class="row">
 		<IconButton

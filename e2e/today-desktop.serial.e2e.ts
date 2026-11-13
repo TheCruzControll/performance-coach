@@ -1,11 +1,11 @@
 /**
  * Today in a desktop window (docs/design-system.md, Responsive layout → Screens): a wide screen.
  * The week runs across the top; the state's panel (the setup card, the Build card, Build my
- * program, or today's plan) takes the main column, and This week, the tools and the goals take
- * the side column. Every designed state keeps that frame: setup, ready, the program (a session
- * day, a rest day, starting Monday, the first block complete), a failed read, offline, a panel
- * whose code fails, and each of Build my program's states (pending, a generator failure, the
- * three conflicts, offline). Start week 1 is column chrome. Serial: each test sets up the one
+ * program, or today's plan) takes the main column, and the goals, then This week, take the side
+ * column (the plate calculator lives in Train and the workout, not on Today). Every designed
+ * state keeps that frame: setup, ready, the program (a session day, a rest day, starting Monday,
+ * the first block complete), a failed read, offline, a panel whose code fails, and each of Build
+ * my program's states (pending, a generator failure, the three conflicts, offline). Start week 1 is column chrome. Serial: each test sets up the one
  * owner's training profile or program (e2e/program-support.ts), and the last leaves it blank.
  */
 import AxeBuilder from '@axe-core/playwright';
@@ -58,7 +58,12 @@ type Theme = (typeof THEMES)[number];
 const side = (page: Page) => page.getByTestId('today-side');
 const heading = (page: Page) => page.getByRole('heading', { level: 1, name: 'Today' });
 const strip = (page: Page) => page.getByTestId('week-strip');
-const day = (page: Page) => page.getByTestId('today-day');
+/**
+ * The live panel's day, not its served copy: after a reload (Chromium's Retry, or the offline
+ * screen's recovery when it falls back to one) the server's markup shows first, cards and all,
+ * and the live panel replaces that element once it mounts, so a box read from the copy is null.
+ */
+const day = (page: Page) => page.locator('[data-testid="today-day"]:not([data-served] *)');
 const cards = (page: Page) => day(page).getByTestId('session-card');
 const plan = (page: Page) => page.getByTestId('today-plan');
 const rail = (page: Page) => page.getByRole('navigation', { name: 'Primary' });
@@ -227,7 +232,7 @@ const PROGRAM_MARKUP = 'today-up-next-empty';
 /** Only the BuildPreview panel's chunk carries its pending state's test id. */
 const PREVIEW_MARKUP = 'build-preview-pending';
 
-test('setup: the week across the top, the setup card beside This week and the tools', async ({
+test('setup: the week across the top, the setup card beside This week', async ({
 	page
 }, testInfo) => {
 	const errors = trackConsoleErrors(page);
@@ -243,8 +248,15 @@ test('setup: the week across the top, the setup card beside This week and the to
 	expect(Math.abs(week.x + week.width - (sideBox.x + sideBox.width))).toBeLessThanOrEqual(1);
 
 	await expectBeside(card, side(page));
+	// As tall as what it says: no empty band between its words and its progress.
+	const words = await boxOf(card.getByText('About five minutes'));
+	const count = await boxOf(page.getByTestId('today-setup-count'));
+	expect(
+		count.y - (words.y + words.height),
+		'the progress follows the words, with no dead space'
+	).toBeLessThanOrEqual(await tokenPx(page, '--space-4'));
 	await expect(side(page).getByRole('heading', { name: 'This week' })).toBeVisible();
-	await expect(side(page).getByRole('link', { name: /Plate calculator/ })).toBeVisible();
+	await expect(page.getByRole('link', { name: /Plate calculator/ })).toHaveCount(0);
 	const cta = page.getByTestId('today-setup-continue');
 	await expectInView(page, cta);
 	await expectHoverAndFocus(page, cta, 'background');
@@ -263,6 +275,17 @@ test('ready: the Build card beside the goals and the schedule', async ({
 	for (const part of ['today-goals', 'today-schedule']) {
 		await expect(side(page).getByTestId(part)).toBeVisible();
 	}
+	// The goals lead the side column; This week follows, its disclosure with hover and focus.
+	const [goalsBox, weekBox] = [
+		await boxOf(side(page).getByTestId('today-goals')),
+		await boxOf(side(page).getByTestId('today-week'))
+	];
+	expect(goalsBox.y + goalsBox.height).toBeLessThanOrEqual(weekBox.y);
+	await expectHoverAndFocus(
+		page,
+		side(page).getByTestId('today-week').locator('summary'),
+		'background'
+	);
 	await expectInView(page, buildCta(page));
 	await expectHoverAndFocus(page, buildCta(page), 'background');
 	await expectWideFrame(page);
@@ -380,7 +403,7 @@ test.describe('a program with sessions today', () => {
 			);
 			expect(Math.abs(box.x - title.x), 'the notice starts at the content’s edge').toBeLessThan(1);
 			await expect(side(page).getByTestId('today-goals')).toBeVisible();
-			const retry = failed.getByRole('button', { name: 'Retry' });
+			const retry = failed.getByRole('button', { name: 'Try again' });
 			await expectInView(page, retry);
 			await expectHoverAndFocus(page, retry, 'background');
 			await expectWideFrame(page);
@@ -688,7 +711,7 @@ test.describe('Build my program', () => {
 			await buildCta(page).click();
 			const failed = page.getByTestId('build-preview-error');
 			await expect(failed).toContainText('Couldn’t plan week 1');
-			const retry = failed.getByRole('button', { name: 'Retry' });
+			const retry = failed.getByRole('button', { name: 'Try again' });
 			await expectInView(page, retry);
 			await expect(rail(page)).toBeVisible();
 			await expectWideFrame(page);
@@ -710,7 +733,7 @@ test.describe('Build my program', () => {
 			await buildCta(page).click();
 			const offline = page.getByTestId('build-preview-error');
 			await expect(offline).toContainText('You’re offline');
-			const retry = offline.getByRole('button', { name: 'Retry' });
+			const retry = offline.getByRole('button', { name: 'Try again' });
 			await expectInView(page, retry);
 			await expectWideFrame(page);
 			await auditBothThemes(page, testInfo, 'preview-offline');
@@ -735,14 +758,14 @@ test.describe('Build my program', () => {
 			const readable = await tokenPx(page, '--content-readable');
 			expect(box.width, 'the notice keeps to the main column').toBeLessThanOrEqual(readable + 1);
 			expect(Math.abs(box.x - title.x), 'the notice starts at the content’s edge').toBeLessThan(1);
-			await expectInView(page, failed.getByRole('button', { name: 'Retry' }));
+			await expectInView(page, failed.getByRole('button', { name: 'Try again' }));
 			await expectWideFrame(page);
 			await auditBothThemes(page, testInfo, 'preview-retry');
 
 			// WebKit imports the chunk again in place; Chromium reloads Today, where the Build card
 			// opens the preview again.
 			failing = false;
-			await failed.getByRole('button', { name: 'Retry' }).click();
+			await failed.getByRole('button', { name: 'Try again' }).click();
 			const shown = ready(page).or(buildCard(page)).filter({ visible: true });
 			await expect(shown).toBeVisible({ timeout: 15_000 });
 			if (await buildCard(page).isVisible()) await buildCta(page).click();

@@ -16,6 +16,8 @@ import { addDays } from '../../../src/lib/domain/calendar';
 import { CATALOGUE } from '../../../src/lib/domain/exercises/index';
 import { buildProgrammingInput, generateProgram } from '../../../src/lib/domain/programming/index';
 import { SCENARIOS } from '../../../src/lib/domain/programming/scenarios';
+import { step } from '../../../src/lib/domain/lifecycle';
+import { PROPOSAL } from '../../../src/lib/domain/training/lifecycles';
 import type { ProgramPlan } from '../../../src/lib/domain/training/types';
 import { MockProvider, type MockScript } from '../../../src/lib/server/agent/provider/mock';
 import { programmingReadScripts } from '../../../src/lib/server/agent/provider/mock-scripts/programming-reads';
@@ -403,8 +405,9 @@ describe('get_coach_proposals', () => {
 			await rejectProposal(owner, move.id, { reason: REASON }, { db, now: () => decidedAt });
 			// The set change lands as version 2 (its applier is another slice's), recorded as applied.
 			const v2 = await skipLater(db, owner);
-			await createCoachProposalsRepository(db).decide(owner, sets.id, {
-				status: 'applied',
+			const s = step(PROPOSAL, 'proposed', 'apply');
+			if (!s.ok) throw new Error('unreachable');
+			await createCoachProposalsRepository(db).decide(owner, sets.id, s.t, {
 				appliedVersionId: v2.versionId,
 				closedAt: decidedAt,
 				updatedAt: decidedAt

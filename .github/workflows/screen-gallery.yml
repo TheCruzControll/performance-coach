@@ -1,5 +1,6 @@
 # The screen gallery: full-page PNGs of every main screen and state on an iPhone 15 (WebKit, 3x)
-# and a 1440 × 900 desktop (Chromium), in the dark and the light theme, for design reviews.
+# and a 1440 × 900 desktop (Chromium), in today's design and the Graphite 2004 preview, each in the
+# dark and the light theme, for design reviews.
 # Started by hand only (never on a push or a pull request, so it adds nothing to CI time):
 #   gh workflow run screen-gallery.yml --ref <branch>
 #   scripts/gallery-download.sh <run id> <dir>   # then open <dir>/index.html
@@ -92,7 +93,8 @@ jobs:
       - name: Create roles and databases
         run: pnpm db:setup
       - name: Capture the screens (global setup builds and starts the production Node server)
-        # One worker: the group budgets (29 min a theme) for 2 themes on 2 devices, at worst.
+        # One worker. A run took 6 min with one design (2026-11-11), so about 12 with two; the group
+        # budgets (29 min a design and theme) are each test's ceiling, never the expected time.
         timeout-minutes: 120
         env:
           E2E_GALLERY: '1'

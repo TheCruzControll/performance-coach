@@ -118,7 +118,11 @@
 						<ul class="evidence">
 							{#each card.evidence as item, i (i)}
 								<li>
-									<span class="subject">{item.subject}</span>
+									<span class="subject"
+										>{item.subject}{#if item.hint}<span class="visually-hidden">: </span><span
+												class="hint">{item.hint}</span
+											>{/if}</span
+									>
 									<VerdictBadge verdict={item.verdict} />
 								</li>
 							{/each}
@@ -265,8 +269,16 @@
 	}
 
 	.subject {
+		display: grid;
+		gap: var(--space-0-5);
 		font-size: var(--text-sm);
 		color: var(--color-text-secondary);
+	}
+
+	/* What a jargon measure means, under its name. */
+	.hint {
+		font-size: var(--text-xs);
+		color: var(--color-text-tertiary);
 	}
 
 	/* A wide column (a desktop window): the cards pair up. */

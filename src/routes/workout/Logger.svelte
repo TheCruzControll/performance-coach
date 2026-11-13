@@ -162,7 +162,7 @@
 						: "This browser couldn't save it."}
 				</span>
 			</p>
-			<Button size="sm" variant="secondary" icon="refresh" onclick={retry}>Retry</Button>
+			<Button size="sm" variant="secondary" icon="refresh" onclick={retry}>Try again</Button>
 		</div>
 	{/if}
 {/snippet}

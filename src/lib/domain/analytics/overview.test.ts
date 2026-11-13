@@ -92,7 +92,7 @@ describe('trendOf', () => {
 		expect(trend.window.weeks).toEqual(W12.weeks);
 		// The KPI covers the period's own 4 weeks.
 		const figure = kpi('e1rm', { value: 122, weeks: W4.weeks }, { value: 114, weeks: W4.previous });
-		expect(figure.words).toBe('Up 8 kg on the previous 4 weeks');
+		expect(figure.words).toBe('Up 8\u00a0kg on the previous 4 weeks');
 	});
 
 	it('gives a verdict, naming its window, at every period', () => {
@@ -155,7 +155,7 @@ describe('kpi', () => {
 			{ value: 138, weeks: W12.previous }
 		);
 		expect(figure).toMatchObject({ value: 142.5, previous: 138, delta: 4.5, change: 'better' });
-		expect(figure.words).toBe('Up 4.5 kg on the previous 12 weeks');
+		expect(figure.words).toBe('Up 4.5\u00a0kg on the previous 12 weeks');
 		// 11 weeks against 12, overlapping weeks, or no earlier weeks: no comparison at all.
 		const eleven = { from: '2026-05-25', to: '2026-08-09', count: 11 };
 		for (const previous of [
@@ -184,7 +184,7 @@ describe('kpi', () => {
 		expect(faster).toMatchObject({
 			delta: -12,
 			change: 'better',
-			words: '12 s/km faster than the previous 12 weeks'
+			words: '12\u00a0s/km faster than the previous 12 weeks'
 		});
 		const slower = kpi(
 			'pace_tempo',
@@ -193,15 +193,15 @@ describe('kpi', () => {
 		);
 		expect(slower).toMatchObject({
 			change: 'worse',
-			words: '5 s/km slower than the previous 12 weeks'
+			words: '5\u00a0s/km slower than the previous 12 weeks'
 		});
 		expect(
 			kpi('mileage', { value: 120_500, weeks: W12.weeks }, { value: 130_000, weeks: W12.previous })
 				.words
-		).toBe('Down 9.5 km on the previous 12 weeks');
+		).toBe('Down 9.5\u00a0km on the previous 12 weeks');
 		expect(
 			kpi('adherence', { value: 90, weeks: W12.weeks }, { value: 80, weeks: W12.previous }).words
-		).toBe('Up 10 points on the previous 12 weeks');
+		).toBe('Up 10\u00a0points on the previous 12 weeks');
 	});
 
 	it('words a change by its rounded figure, and one that rounds to nothing as about the same', () => {
@@ -209,7 +209,7 @@ describe('kpi', () => {
 			kpi(id, { value, weeks: W12.weeks }, { value: previous, weeks: W12.previous }).words;
 		expect(words('adherence', 80.4, 80)).toBe('About the same as the previous 12 weeks');
 		expect(words('pace_easy', 330.3, 330)).toBe('About the same as the previous 12 weeks');
-		expect(words('hard_sets', 11.04, 10)).toBe('Up 1 set on the previous 12 weeks');
+		expect(words('hard_sets', 11.04, 10)).toBe('Up 1\u00a0set on the previous 12 weeks');
 	});
 });
 
@@ -228,7 +228,7 @@ describe('soFarLine', () => {
 			metric: 'tonnage',
 			value: 6200,
 			lastWeek: 5900,
-			text: 'This week so far: 6,200 kg · 5,900 kg by Wednesday last week'
+			text: 'This week so far: 6,200\u00a0kg · 5,900\u00a0kg by Wednesday last week'
 		});
 		expect(Object.keys(line)).not.toContain('change');
 		const empty = soFar([], W12.inProgress, { timeZone: 'UTC', direction: 'up' });
@@ -347,11 +347,21 @@ describe('disciplineVerdict', () => {
 			verdict: 'holding',
 			counts: { steady: 1, moving: 1, judged: 1 },
 			sentence:
-				'1 of 1 training measure within normal variation · 1 moving, not judged better or worse'
+				'1 of 1 training measure within normal variation · Load is rising, neither better nor worse on its own'
 		});
 		expect(verdict.evidence[0]!.words).toBe('Load: trending up');
 		expect(disciplineVerdict('general', [load]).sentence).toBe(
-			'No verdict on your training measures · 1 moving, not judged better or worse'
+			'No verdict on your training measures · Load is rising, neither better nor worse on its own'
+		);
+		// Named, in plain words, whichever way they go and however many there are.
+		const falling = evidence('Load', 'srpe_load', rising(4000, -60));
+		expect(disciplineVerdict('general', [falling]).sentence).toBe(
+			'No verdict on your training measures · Load is falling, neither better nor worse on its own'
+		);
+		const strain = evidence('Strain', 'strain', rising(5000, 300));
+		const muayThai = evidence('Muay Thai load', 'muay_thai_load', rising(300, 30));
+		expect(disciplineVerdict('general', [strain, load, muayThai]).sentence).toBe(
+			'No verdict on your training measures · Load, Muay Thai load and Strain are changing, neither better nor worse on their own'
 		);
 	});
 
