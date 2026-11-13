@@ -1,9 +1,9 @@
 /**
  * Keeps the strength view's blocks from jumping when a change moves them (PRD §7: the next
  * exercise's card is taller or shorter, the logger changes, the rest pill rises with it): a FLIP.
- * `places` reads where each block is before the change; `glide`, in the frame after (before it
- * paints), shows each block that moved where it was and slides it to its new place on the
- * compositor. It animates the `translate` property, so the swipe's transform on the card is left
+ * `places` reads where each block is before the change; `glide`, once it is written (in the same
+ * task, so no scroll comes between), shows each block that moved where it was and, from the frame
+ * that paints the change, slides it to its new place on the compositor. It animates the `translate` property, so the swipe's transform on the card is left
  * alone, and a block caught mid-slide starts again from where it is seen. With motion reduced they
  * move at once.
  */
@@ -44,12 +44,19 @@ export function glide(before: Map<HTMLElement, number>, footed: (block: HTMLElem
 	const offsets = blocks.map((block) =>
 		slideFrom(before.get(block)!, block.getBoundingClientRect().top, footed(block))
 	);
+	const slides: Animation[] = [];
 	blocks.forEach((block, i) => {
 		const offset = offsets[i]!;
 		if (offset === 0) return;
-		running.set(
-			block,
-			block.animate([{ translate: `0 ${offset}px` }, { translate: '0 0' }], SLIDE)
-		);
+		const slide = block.animate([{ translate: `0 ${offset}px` }, { translate: '0 0' }], SLIDE);
+		// Held where it was until the frame that paints the change, which it starts from: started
+		// now, it would count the wait as part of its time and first be seen already under way.
+		slide.pause();
+		slides.push(slide);
+		running.set(block, slide);
+	});
+	if (slides.length === 0) return;
+	requestAnimationFrame(() => {
+		for (const slide of slides) if (slide.playState === 'paused') slide.play();
 	});
 }

@@ -448,7 +448,9 @@
 
 	// Nothing jumps (flip.ts): when the exercise, its logger, the rest or Start rest changes, the
 	// card, its navigation, the rest pill and the logger are read where they are before the screen
-	// changes, and those that moved slide from there in the frame after, before it paints. The
+	// changes, and those that moved slide from there once it is written, in the same task, before
+	// it paints: a scroll or a tap waiting for the next frame would be read as a move, and a slide
+	// starting after it would carry the blocks from where they were on the screen before. The
 	// logger's height is read again then, so the pill above it slides to its final place at once.
 	// Only a change after the first render: as the screen first takes its places (the column bound,
 	// the logger's space kept, the pill fixed above it), nothing slides into them.
@@ -467,7 +469,7 @@
 				':scope > .rest > .pill, :scope > .swipe, :scope > .navigation, :scope > [data-testid="set-logger"]'
 			);
 		before = untrack(() => places(blocks()));
-		requestAnimationFrame(() => {
+		void tick().then(() => {
 			const from = before!;
 			before = null;
 			const logger = column.querySelector<HTMLElement>(':scope > [data-testid="set-logger"]');
