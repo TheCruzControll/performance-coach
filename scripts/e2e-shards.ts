@@ -13,7 +13,9 @@
  * planShards splits a leg's entries into shards, longest first, each into the shard it leaves
  * cheapest. A shard's cost is its wall clock with the leg's workers (legWorkers, as
  * playwright.config.ts runs them): its summed seconds over the workers, but never less than its
- * largest file. Shard 1 is planned 10% lighter, because it also runs anything the plan missed.
+ * largest file. Shard 1 is planned 10% lighter, because it also runs anything the plan missed,
+ * unless the files it must hold (SHARD_ONE_FILES, below) come near the other shards' cost alone:
+ * then it holds only those, and may be the heaviest.
  *
  * The CLI reads E2E_GROUP, E2E_ENGINE and E2E_SHARD (`<current>/<total>`) and writes the shard's
  * files to <list-file> as `[<project>] › <file>` lines, paths relative to e2e/ (Playwright's

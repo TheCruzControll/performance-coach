@@ -78,7 +78,7 @@
 		<h3 id="{id}-title" class="title">{card.title}</h3>
 		{#if card.origin}
 			<a class="view origin" href={card.origin.href} data-testid="proposal-origin"
-				>{card.origin.words} <Icon name="chevron-right" size={14} /></a
+				>{card.origin.words}<Icon name="chevron-right" size={14} /></a
 			>
 		{/if}
 	</header>
@@ -145,7 +145,7 @@
 			{/if}
 		{/snippet}
 		{#if state.kind === 'choose'}
-			<div class="actions">
+			<div class="actions choose">
 				<Button href={state.href} iconEnd="chevron-right" data-testid="proposal-choose-start"
 					>{state.words}</Button
 				>
@@ -206,13 +206,16 @@
 		{:else if state.kind === 'superseded'}
 			<Badge tone="warning" icon="alert">Superseded</Badge>
 			<p class="quiet" data-testid="proposal-superseded-reason">
-				{state.words}{#if state.link}
+				<!-- The words, the dot and the link are siblings, so the spaces between them stay. -->
+				{#if state.link}
+					{state.words}
 					<span class="dot" aria-hidden="true">·</span>
 					<a class="view" href={state.link.href} data-testid="proposal-review"
-						>{state.link.words}{#if state.link.words === OPEN_REVIEW}<span class="visually-hidden">
-								the review</span
-							>{/if}</a
+						>{#if state.link.words === OPEN_REVIEW}{state.link.words}
+							<span class="visually-hidden">the review</span>{:else}{state.link.words}{/if}</a
 					>
+				{:else}
+					{state.words}
 				{/if}
 			</p>
 		{:else}
@@ -320,6 +323,13 @@
 		display: flex;
 		flex-wrap: wrap;
 		gap: var(--space-2);
+	}
+
+	/* The review link's label is long: on a phone it wraps inside the card, not past its edge. */
+	.actions.choose > :global(.btn) {
+		max-width: 100%;
+		white-space: normal;
+		text-align: center;
 	}
 
 	.failure {
