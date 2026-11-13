@@ -94,10 +94,13 @@
 	}
 
 	async function hide() {
-		if (!dialog?.open) return;
+		// Held across the wait: a sheet closed as the page navigates (End this plan) can be torn
+		// down before its transition ends, which nulls `dialog`; onDestroy has closed it by then.
+		const closing = dialog;
+		if (!closing?.open) return;
 		visible = false;
 		await transitionDone();
-		dialog.close();
+		if (closing.open) closing.close();
 		mounted = false;
 		releaseScroll?.();
 		releaseScroll = null;
