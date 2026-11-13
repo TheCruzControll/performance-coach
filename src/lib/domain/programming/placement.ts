@@ -140,7 +140,11 @@ const planned = (s: SessionPlan): SessionPlan =>
 		? { ...s, intensity: PLACEMENT.planStrengthAs }
 		: s;
 
+/** A generated conditioning session is a zone 2 bike in an easy run's place (cross-training.ts). */
+const zone2 = (s: SessionPlan) => s.source === 'generator' && s.type === 'conditioning';
+
 function roleOf(s: SessionPlan): Role {
+	if (zone2(s)) return 'easy_run';
 	const demand = demandOf(planned(s));
 	if (s.kind === 'run')
 		return demand.longRun ? 'long_run' : demand.hard ? 'quality_run' : 'easy_run';
@@ -155,6 +159,7 @@ function streamOf(s: SessionPlan, input: ProgrammingInput): string | null {
 		return c ? commitmentStream(c) : null;
 	}
 	if (s.kind !== 'other') return s.kind === 'run' ? 'runs' : 'strength';
+	if (zone2(s)) return 'runs';
 	return s.type === 'mobility' ? null : s.discipline;
 }
 

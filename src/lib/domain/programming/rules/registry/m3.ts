@@ -455,6 +455,13 @@ const runningRules: RuleDefinition[] = [
 		'Continuous running at threshold builds the pace a long race is run near.'
 	),
 	constant(
+		'running.zone2_bike',
+		`${R}#ZONE2_BIKE`,
+		running.ZONE2_BIKE,
+		`With a bike, and runs that serve a goal training more than running, half of each week's generated easy runs (rounded up, the latest first) become a zone 2 bike session of the same length; every week keeps at least ${running.ZONE2_BIKE.keepRuns} run, and a goal about running or with a race ahead keeps its easy runs.`,
+		'The bike gives the same easy aerobic work without the impact, so the legs stay fresher for lifting and Muay Thai.'
+	),
+	constant(
 		'running.interval_run',
 		`${R}#QUALITY.intervals`,
 		running.QUALITY.intervals,
