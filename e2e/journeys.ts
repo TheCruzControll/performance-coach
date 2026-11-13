@@ -91,6 +91,17 @@ const GENERATED_START = {
 		'a week 1 the generator built: its first strength session asks for a load by RPE, invents none, and a logged set reaches Postgres'
 };
 
+/** journey-weekly-review's loop, on an iPhone and in a desktop window, and its late decision. */
+const WEEKLY = 'journey-weekly-review.serial.e2e.ts';
+const WEEKLY_TITLE =
+	'journey: log today’s last session → review the week from Today → a half step and one left out → next week in Train, History and the inbox';
+const WEEKLY_JOURNEY = { file: WEEKLY, title: `on an iPhone › ${WEEKLY_TITLE}` };
+const WEEKLY_JOURNEY_DESKTOP = { file: WEEKLY, title: `in a desktop window › ${WEEKLY_TITLE}` };
+const WEEKLY_AGED = {
+	file: WEEKLY,
+	title:
+		'review-aged: decided late in the week › the passed changes are struck through, the rest are applied, and Train lists only those'
+};
 /** coach-journeys' journeys (the M5 brief's list), each a test on an iPhone and on a desktop window. */
 const COACH_JOURNEYS = [
 	'journey 1: how has my bench progressed: the facts and their sources are the sets Postgres holds',
@@ -196,8 +207,18 @@ export const JOURNEYS: readonly JourneyEntry[] = [
 		tests: [STRENGTH_JOURNEY]
 	},
 	{ id: 'view-history', prd: '§19: view history', projects: SERIAL, tests: [STRENGTH_JOURNEY] },
-	{ id: 'weekly-review', prd: '§19: weekly review', pending: 'journey-weekly-review' },
-	{ id: 'next-week', prd: '§19: generate next week', pending: 'journey-weekly-review' },
+	{
+		id: 'weekly-review',
+		prd: '§19: weekly review',
+		projects: SERIAL,
+		tests: [WEEKLY_JOURNEY, WEEKLY_JOURNEY_DESKTOP]
+	},
+	{
+		id: 'next-week',
+		prd: '§19: generate next week',
+		projects: SERIAL,
+		tests: [WEEKLY_JOURNEY, WEEKLY_JOURNEY_DESKTOP, WEEKLY_AGED]
+	},
 	{
 		id: 'concurrent-disciplines',
 		prd: '§19: multiple concurrent disciplines',
