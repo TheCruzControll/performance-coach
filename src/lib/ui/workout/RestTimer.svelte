@@ -1,8 +1,13 @@
 <!--
   @component
   The rest timer (PRD §8): the time left in big tabular numerals over a progress bar, read from
-  the rest's timestamps (timers.ts, rest-words.ts) at each whole second, so it is exact after a
-  refresh or a closed tab. Running: Pause, Reset, +30 s and Skip. Paused: Resume in their place.
+  the rest's timestamps (timers.ts, rest-words.ts) at each whole second, on the screen's one clock
+  (clock.ts), so it is exact after a refresh or a closed tab and the stopwatch changes on the same
+  frame. The bar is one CSS animation over the rest's whole length, started as far in as the rest
+  has run (restBar): it fills continuously on the compositor with no JavaScript per frame, stands
+  still while paused, and starts again from the timestamps on each change and each return to the
+  page. With motion reduced it steps once a second instead. Over, it keeps the running height,
+  so nothing around it moves. Running: Pause, Reset, +30 s and Skip. Paused: Resume in their place.
   Once over it counts up, 'Rest over · 0:42 ago', in the accent, with +30 s and Dismiss; a polite
   status says 'Rest over' as it ends. The screen places it and does what each control asks;
   everything said is in rest-words.ts. Graphite 2004 shows it as its Status Display (graphite.css,
@@ -12,7 +17,9 @@
 	import type { RestState } from '#lib/domain/workout/types.ts';
 	import Button from '../components/Button.svelte';
 	import IconButton from '../components/IconButton.svelte';
-	import { msToNextTick, readRest } from './rest-words.ts';
+	import { untrack } from 'svelte';
+	import { clock } from './clock.ts';
+	import { readRest, restAnchor, restBar } from './rest-words.ts';
 
 	interface Props {
 		rest: RestState;
@@ -29,23 +36,38 @@
 
 	let now = $state(Date.now());
 
-	// Ticks on the whole seconds the time turns over on; a paused rest shows no change.
+	// Ticks on the whole seconds the time turns over on, leading the screen's clock; a paused rest
+	// shows no change.
 	$effect(() => {
 		const current = rest;
 		now = Date.now();
 		if (current.pausedAt !== null) return;
-		let timer: ReturnType<typeof setTimeout>;
-		const tick = () => {
-			now = Date.now();
-			timer = setTimeout(tick, msToNextTick(current, now));
-		};
-		timer = setTimeout(tick, msToNextTick(current, now));
-		return () => clearTimeout(timer);
+		return clock.join({ anchor: restAnchor(current), lead: true, tick: (at) => (now = at) });
 	});
 
 	const reading = $derived(readRest(rest, now));
 	const over = $derived(reading.phase === 'over');
 	const paused = $derived(reading.phase === 'paused');
+
+	// Back on the page (a locked phone, another app), the bar starts again from the timestamps:
+	// the animation's timeline may have stood still meanwhile.
+	let returns = $state(0);
+	$effect(() => {
+		const back = () => {
+			if (document.visibilityState === 'visible') returns += 1;
+		};
+		document.addEventListener('visibilitychange', back);
+		return () => document.removeEventListener('visibilitychange', back);
+	});
+
+	/** What starts the bar's animation again: a change of the rest, its phase, or a return. */
+	const barKey = $derived(
+		`${rest.startedAt}:${rest.durationMs}:${rest.addedMs}:${rest.pausedAt}:${reading.phase}:${returns}`
+	);
+	const bar = $derived.by(() => {
+		void barKey;
+		return untrack(() => restBar(rest, Date.now()));
+	});
 </script>
 
 <section
@@ -82,7 +104,16 @@
 		<Button variant="ghost" onclick={onclear}>{over ? 'Dismiss' : 'Skip'}</Button>
 	</div>
 	<div class="track" aria-hidden="true">
-		<div class="fill" style:transform="scaleX({reading.progress})"></div>
+		{#key barKey}
+			<div
+				class="fill"
+				data-testid="rest-bar"
+				style:--progress={reading.progress}
+				style:animation-duration="{bar.durationMs}ms"
+				style:animation-delay="{bar.delayMs}ms"
+				style:animation-play-state={bar.running ? 'running' : 'paused'}
+			></div>
+		{/key}
 	</div>
 	<span class="visually-hidden" role="status">{over ? 'Rest over' : ''}</span>
 </section>
@@ -106,9 +137,20 @@
 		background: color-mix(in srgb, var(--color-accent-subtle) 60%, var(--color-surface-2));
 	}
 
+	/* The eyebrow over the time: over, its one line keeps that height, so the pill never moves. */
 	.reading {
 		display: grid;
+		align-content: center;
 		min-width: 0;
+		min-height: calc(
+			var(--text-2xs) * var(--leading-normal) + var(--text-3xl) * var(--leading-tight)
+		);
+	}
+
+	/* Over, its words take the room beside +30 s and Dismiss, on two lines if they must, rather
+	   than push the controls onto a row of their own. */
+	.rest[data-phase='over'] .reading {
+		flex: 1 1 0;
 	}
 
 	.time {
@@ -148,10 +190,34 @@
 		overflow: hidden;
 	}
 
+	/* Empty to full over the rest (its duration, delay and play state set inline): a transform,
+	   so the compositor runs it. */
 	.fill {
 		height: 100%;
 		background: var(--color-accent);
 		transform-origin: left;
+		animation-name: fill;
+		animation-timing-function: linear;
+		animation-fill-mode: both;
+	}
+
+	@keyframes fill {
+		from {
+			transform: scaleX(0);
+		}
+		to {
+			transform: scaleX(1);
+		}
+	}
+
+	/* Reduced motion: no animation; the bar steps to the reading's progress once a second. No
+	   transition either: base.css gives every element a 0.01 ms one, which WebKit can hold. */
+	@media (prefers-reduced-motion: reduce) {
+		.fill {
+			animation-name: none;
+			transition-property: none;
+			transform: scaleX(var(--progress));
+		}
 	}
 
 	.rest[data-phase='paused'] .fill {

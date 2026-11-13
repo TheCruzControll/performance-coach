@@ -352,8 +352,9 @@
 		}
 	}
 
-	/* The view's columns (Shell.svelte): the card where the main column's starts. A rest's timer
-	   sits above it there, so with a rest shown the skeleton stays instead. */
+	/* The view's columns (Shell.svelte): the card where the main column's starts, under the rest
+	   timer's kept place and the column's gap (StrengthView.svelte; change them together). A rest's
+	   timer sits above it there, so with a rest shown the skeleton stays instead. */
 	@media (width >= 64rem) {
 		:global(.prepaint:not([hidden]):not([data-rest]) ~ *) {
 			display: none;
@@ -373,6 +374,10 @@
 
 		:global(.prepaint > .card) {
 			grid-column: 2;
+			margin-top: calc(
+				2 * var(--space-3) + 2px + var(--text-2xs) * var(--leading-normal) + var(--text-3xl) *
+					var(--leading-tight) + var(--space-2) + 4px + var(--space-4)
+			);
 		}
 	}
 </style>

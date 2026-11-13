@@ -259,3 +259,67 @@ export async function gotoWorkout(
 	await page.goto(`${WORKOUT_PATHS[kind]}${search}`);
 	await expect(page.locator('main#main[data-ready]')).toBeAttached();
 }
+
+/** Where Next (or Previous) was before a tap on it, in the first frame after, and once settled. */
+export interface WatchedMove {
+	before: number;
+	first: number;
+	after: number;
+	/** The slides running on its block (the strength view's navigation) in that first frame. */
+	sliding: number;
+}
+
+/**
+ * Taps Previous or Next in the page and reads where the button is (its top as seen, a slide
+ * included): before, in the first frame the change paints, and once its block's slides have ended.
+ * The first frame is read after the strength view's own (flip.ts), as the browser paints it.
+ */
+export function watchMove(page: Page, testId: 'exercise-next' | 'exercise-prev') {
+	return page.evaluate(async (id): Promise<WatchedMove> => {
+		const button = document.querySelector<HTMLElement>(`[data-testid="${id}"]`)!;
+		const block = button.closest<HTMLElement>('.navigation')!;
+		const top = () => button.getBoundingClientRect().top;
+		const frame = () => new Promise((done) => requestAnimationFrame(done));
+		await frame();
+		const before = top();
+		// The change's DOM written (its effects have run, each frame request made), then a frame.
+		const changed = new Promise<void>((done) => {
+			const observer = new MutationObserver(() => {
+				observer.disconnect();
+				done();
+			});
+			observer.observe(document.getElementById('main')!, {
+				subtree: true,
+				childList: true,
+				characterData: true
+			});
+		});
+		button.click();
+		await changed;
+		await frame();
+		const first = top();
+		const sliding = block.getAnimations().length;
+		// A slide a later change starts again from where it is seen cancels the one before it.
+		while (block.getAnimations().length > 0)
+			await Promise.allSettled(block.getAnimations().map((animation) => animation.finished));
+		return { before, first, after: top(), sliding };
+	}, testId);
+}
+
+/**
+ * Waits until the strength view's blocks (the card, its navigation, the rest pill and the logger)
+ * have ended their slides (flip.ts), so what is read or pressed next is where it rests.
+ */
+export async function slidesEnded(page: Page) {
+	await expect
+		.poll(() =>
+			page.evaluate(() =>
+				[
+					...document.querySelectorAll<HTMLElement>(
+						'[data-testid="workout-main"] > *, [data-testid="workout-main"] > .rest > .pill'
+					)
+				].some((block) => block.getAnimations().length > 0)
+			)
+		)
+		.toBe(false);
+}

@@ -37,6 +37,18 @@ const control = (page: Page, name: string) => pill(page).getByRole('button', { n
 const stopwatch = (page: Page) => page.getByTestId('stopwatch');
 const sheet = (page: Page) => page.getByTestId('stopwatch-sheet');
 const stopwatchText = async (page: Page) => (await stopwatch(page).textContent())!.trim();
+const bar = (page: Page) => pill(page).getByTestId('rest-bar');
+
+/** The bar's animations, its scale as drawn, and any transform written on it by script. */
+const readBar = (page: Page) =>
+	bar(page).evaluate((el) => ({
+		animations: el.getAnimations().map((animation) => {
+			const { duration, delay } = animation.effect!.getTiming();
+			return { playState: animation.playState, duration, delay };
+		}),
+		scale: new DOMMatrix(getComputedStyle(el).transform).a,
+		written: (el as HTMLElement).style.transform
+	}));
 
 /** Seeds the workout, opens /workout with the clock installed, and goes to exercise `name`. */
 async function open(page: Page, name = 'Back squat', { pause = true } = {}): Promise<string> {
@@ -176,6 +188,94 @@ test.describe('the rest timer (IndexedDB only)', () => {
 		await control(page, 'Dismiss').click();
 		await expect(pill(page)).toHaveCount(0);
 		expect(errors).toEqual([]);
+	});
+
+	test('the bar is one CSS animation from the timestamps: it fills on its own, holds while paused, takes +30 s into its length, and over it is full at the same height', async ({
+		page
+	}) => {
+		await open(page, 'Leg press');
+		await logLegPress(page);
+		await expect(time(page)).toHaveText('2:00');
+		expect(await readBar(page)).toMatchObject({
+			animations: [{ playState: 'running', duration: 120_000, delay: 0 }],
+			written: ''
+		});
+		const height = (await pill(page).boundingBox())!.height;
+
+		// Paused 40 s in: it stands a third of the way, still.
+		await page.clock.fastForward(40_000);
+		await control(page, 'Pause rest').click();
+		await expect(pill(page)).toHaveAttribute('data-phase', 'paused');
+		const paused = await readBar(page);
+		expect(paused.animations).toEqual([{ playState: 'paused', duration: 120_000, delay: -40_000 }]);
+		expect(paused.scale).toBeCloseTo(1 / 3, 2);
+		expect(paused.written).toBe('');
+
+		// +30 s while paused: the same 40 s in, of 2:30.
+		await control(page, '+30 s').click();
+		await expect(time(page)).toHaveText('1:50');
+		const added = await readBar(page);
+		expect(added.animations).toEqual([{ playState: 'paused', duration: 150_000, delay: -40_000 }]);
+		expect(added.scale).toBeCloseTo(40 / 150, 2);
+
+		await control(page, 'Resume rest').click();
+		expect((await readBar(page)).animations).toEqual([
+			{ playState: 'running', duration: 150_000, delay: -40_000 }
+		]);
+
+		// Run out: full, nothing left running, and the pill keeps its height.
+		await page.clock.fastForward(111_000);
+		await expect(pill(page)).toHaveAttribute('data-phase', 'over');
+		expect((await readBar(page)).scale).toBeCloseTo(1, 5);
+		expect((await pill(page).boundingBox())!.height).toBeCloseTo(height, 0);
+	});
+
+	test('with reduced motion the bar has no animation and steps with the time', async ({ page }) => {
+		await page.emulateMedia({ reducedMotion: 'reduce' });
+		await open(page, 'Leg press');
+		await logLegPress(page);
+		await expect(time(page)).toHaveText('2:00');
+		await page.clock.fastForward(30_000);
+		await expect(time(page)).toHaveText('1:30');
+		const reading = await readBar(page);
+		expect(reading.animations).toEqual([]);
+		expect(reading.scale).toBeCloseTo(0.25, 2);
+	});
+
+	test('the stopwatch changes on the rest timer’s frame, never between its ticks', async ({
+		page
+	}) => {
+		await open(page, 'Leg press');
+		await logLegPress(page);
+		await expect(time(page)).toHaveText('2:00');
+		// Half a second into the rest, the stopwatch from 0:00 (paused, reset, then resumed): on
+		// its own it would turn over half a second apart from the rest.
+		await page.clock.runFor(500);
+		await page.getByRole('button', { name: 'Pause workout time' }).click();
+		await page.getByRole('button', { name: 'Workout time paused: resume or reset' }).click();
+		await sheet(page).getByRole('button', { name: 'Reset workout time' }).click();
+		await expect(sheet(page)).toBeHidden();
+		await expect(stopwatch(page)).toHaveText('0:00');
+		await page.getByRole('button', { name: 'Workout time paused: resume or reset' }).click();
+		await sheet(page).getByRole('button', { name: 'Resume workout time' }).click();
+		await expect(sheet(page)).toBeHidden();
+		await expect(time(page)).toHaveText('2:00');
+
+		const read = async () => [await stopwatchText(page), (await time(page).textContent())!.trim()];
+		let [watch, rest] = await read();
+		let turns = 0;
+		for (let step = 0; step < 40; step++) {
+			await page.clock.runFor(100);
+			const [nextWatch, nextRest] = await read();
+			if (nextWatch !== watch) {
+				turns += 1;
+				expect(nextRest, `the stopwatch turned to ${nextWatch} with the rest at ${rest}`).not.toBe(
+					rest
+				);
+			}
+			[watch, rest] = [nextWatch!, nextRest!];
+		}
+		expect(turns, 'the stopwatch ran').toBeGreaterThanOrEqual(3);
 	});
 
 	test('Start rest starts one by hand: with auto-start off, and again after Skip', async ({
