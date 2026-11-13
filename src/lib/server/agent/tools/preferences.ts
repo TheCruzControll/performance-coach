@@ -400,6 +400,9 @@ const updateTrainingGoalsTool = defineTool({
 	description: `Propose a change to the owner's goals: add one, edit one, change its status, or reorder the open goals (ids lists every open goal, top priority first; goalIds come from get_training_preferences). It is stored as a proposal the owner accepts or rejects, so nothing changes yet. title up to ${TITLE_MAX} characters; rationale says why, up to ${RATIONALE_MAX}.`,
 	input: proposalDraftSchema('goal_update'),
 	output: z.object({ proposal: proposalOutput }),
+	// Its ops union alone has 20 optional and 21 union-typed parameters, past the API's caps for a
+	// whole request (16 unions): strict, it fails every request. zod checks the input instead.
+	strict: false,
 	run: async ({ title, rationale, payload }, ctx: Ctx) => {
 		// Someone else's or an unknown goal is NOT_FOUND, before anything is stored.
 		const own = new Set((await listGoals(ctx.ownerId, deps(ctx))).map((g) => g.id));

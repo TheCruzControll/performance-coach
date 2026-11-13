@@ -115,8 +115,11 @@ From the claude-api skill, as `provider/anthropic.ts` and `prompt/layout.ts` bui
 - `thinking` is omitted (always adaptive on Opus 5.5). `output_config.effort` is always explicit:
   `medium` for chat (`CHAT_EFFORT`), `low` for a quick question that opens its segment
   (`prompt/effort.ts`) and for summaries, `high` for drafts.
-- `tool_choice` is omitted (auto). Every tool is `strict: true`, closed and
-  `eager_input_streaming: true`; each input is validated with zod before the tool runs.
+- `tool_choice` is omitted (auto). Every tool is closed and `eager_input_streaming: true`; each
+  input is validated with zod before the tool runs. Tools that propose or write are also
+  `strict: true`; reads and `update_training_goals` are not, because the API caps strict schemas per
+  request (20 tools, 24 optional and 16 union-typed parameters in all) and refuses the whole
+  request past them. `validateRequest` checks the caps before anything is sent.
 - No prefill, no sampling parameter, no document block in an assistant message and no cited text
   block in a user message: `validateRequest` refuses such a body before it is sent.
 - Refusal fallbacks: beta `server-side-fallback-2026-07-01` with `fallbacks: 'default'`. A

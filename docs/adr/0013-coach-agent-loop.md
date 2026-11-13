@@ -29,8 +29,10 @@
 - **The request**, from the claude-api skill (SDK 1.x, API version 2026-10-21): model
   `claude-opus-5-5`; `thinking` omitted, since it is always adaptive; `output_config.effort` always
   explicit (medium for chat, high for drafts, low for summaries); `tool_choice` omitted (auto),
-  with the prompt steering; every tool `strict`, closed and `eager_input_streaming`, and each
-  parsed input validated with zod before it runs; no prefill and no sampling parameter; and
+  with the prompt steering; every tool closed and `eager_input_streaming`, and each parsed input
+  validated with zod before it runs; `strict` on the tools that propose or write (amended
+  2026-11-13: all 24 strict broke the API's per-request strict-schema caps, so every turn was a
+  400; reads and `update_training_goals` are not strict); no prefill and no sampling parameter; and
   server-side refusal fallbacks (`fallbacks: 'default'`), where a fallback block resets the visible
   answer and `usage.iterations` prices each attempt at its own model's rates.
 - **Limits from one constant.** `COACH_MAX_DURATION_S` sets the endpoint's maxDuration, and the

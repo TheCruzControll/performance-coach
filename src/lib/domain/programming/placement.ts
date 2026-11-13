@@ -40,6 +40,7 @@ import { clip, commitmentStream } from './demand.ts';
 import type { WeekDemand } from './demand.ts';
 import type { ProgrammingInput } from './input.ts';
 import { checkWeek, demandOf } from './interference.ts';
+import { doubleTime } from './rules/days.ts';
 import type { Violation } from './interference.ts';
 import { compareText } from './random.ts';
 import { openDates } from './running.ts';
@@ -176,11 +177,16 @@ function itemOf(session: SessionPlan, index: number, { input, demand }: Week): I
 const timeRank = (time: TimeOfDay | null) =>
 	time === null || time === 'varies' ? TIMES_OF_DAY.length : TIMES_OF_DAY.indexOf(time);
 
-/** Each day's times and order: commitments keep their times, the others take those left. */
+/**
+ * Each day's times and order: commitments keep their times, the others take those left; a second
+ * session beside one commitment takes the time DOUBLES gives it (doubleTime).
+ */
 function arrange(items: readonly Item[], preferred: readonly TimeOfDay[]): Item[] {
 	return [...Map.groupBy(items, (item) => item.session.date).values()].flatMap((day) => {
-		const taken = day.filter((i) => i.fixed).map((i) => i.session.timeOfDay);
-		const left = preferred.filter((time) => !taken.includes(time));
+		const fixed = day.filter((i) => i.fixed);
+		const taken = fixed.map((i) => i.session.timeOfDay);
+		const beside = fixed.length === 1 ? doubleTime(taken[0]!, preferred) : null;
+		const left = beside ? [beside] : preferred.filter((time) => !taken.includes(time));
 		return day
 			.map((i) =>
 				i.fixed ? i : { ...i, session: { ...i.session, timeOfDay: left.shift() ?? null } }
@@ -270,7 +276,8 @@ function candidates(x: Item, placed: readonly Item[], w: Week): Candidate[] {
 		const fixed = here.filter((i) => i.fixed).length;
 		if (here.length > fixed) return [];
 		if (fixed === 0) return freeUsed < budget.freeDays ? [score(x, date, false, placed, w)] : [];
-		const double = fixed === 1 && budget.doublesAllowed && doubles < allocation.doubles;
+		const double =
+			fixed === 1 && budget.doubleDays.includes(weekdayOf(date)) && doubles < allocation.doubles;
 		return double ? [score(x, date, true, placed, w)] : [];
 	});
 }
@@ -346,9 +353,10 @@ function placeWeek(
 	const fixedOn = (date: IsoDate) => placed.filter((i) => i.session.date === date).length;
 	const room =
 		Math.min(budget.freeDays, w.open.filter((d) => fixedOn(d) === 0).length) +
-		(budget.doublesAllowed
-			? Math.min(allocation.doubles, w.open.filter((d) => fixedOn(d) === 1).length)
-			: 0);
+		Math.min(
+			allocation.doubles,
+			w.open.filter((d) => fixedOn(d) === 1 && budget.doubleDays.includes(weekdayOf(d))).length
+		);
 	const lowestFirst = [...queue].sort(
 		(a, b) => b.rank - a.rank || b.role - a.role || b.index - a.index
 	);

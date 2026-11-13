@@ -324,7 +324,8 @@ describe('placement', () => {
 		});
 
 		it('keeps it on a day that clashes only with a lower goal, though its best day clashes with a higher one', () => {
-			// Fight, then strength, then the marathon; hard classes Tue/Thu; one preferred time.
+			// Fight, then strength, then the marathon; hard classes Tue/Thu evenings; one preferred
+			// time, the classes' own, so no class day can take a second session.
 			const p = SCENARIOS.journey();
 			const [fight, marathon, strength] = p.goals;
 			p.goals = [fight!, { ...strength!, priority: 2 }, { ...marathon!, priority: 3 }];
@@ -332,7 +333,7 @@ describe('placement', () => {
 			p.schedule = {
 				...p.schedule,
 				daysPerWeek: 6,
-				preferredTimes: ['morning'],
+				preferredTimes: ['evening'],
 				commitments: [{ ...classes!, intensity: 'hard' }]
 			};
 			const plan = generate(p);
@@ -406,6 +407,64 @@ describe('placement', () => {
 		});
 		for (const week of weeksOf(generate(p))) {
 			expect(week.sessions.map(day)).toEqual(['tue', 'thu', 'sat']);
+		}
+	});
+});
+
+describe('a fighter who also lifts and runs, with classes five days a week and no set time', () => {
+	// One goal across lifting, running and Muay Thai; classes on five days, most with a set time;
+	// 'it varies' as the preferred time, so the free days alone cannot hold the lifts and runs.
+	const fighter = () =>
+		variant([{ title: 'Fitter', disciplines: ['strength', 'running', 'muay_thai'] }], {
+			daysPerWeek: 7,
+			availableDays: [],
+			preferredTimes: ['varies'],
+			sessionMinutes: 60,
+			commitments: [
+				commitment({ label: 'Drilling', days: ['mon'], intensity: 'light' }),
+				commitment({
+					id: '00000000-0000-4000-8000-000000000231',
+					label: 'Pads and Clinch',
+					days: ['tue', 'thu'],
+					durationMinutes: 120,
+					intensity: 'hard'
+				}),
+				commitment({
+					id: '00000000-0000-4000-8000-000000000232',
+					label: 'Comp Team Sparring',
+					days: ['wed'],
+					timeOfDay: null,
+					durationMinutes: 90,
+					intensity: 'hard'
+				}),
+				commitment({
+					id: '00000000-0000-4000-8000-000000000233',
+					label: 'Sparring',
+					days: ['sat'],
+					timeOfDay: 'morning'
+				})
+			]
+		});
+
+	it('adds its lifts and runs as morning sessions beside evening classes', () => {
+		expect(weekBudget(inputOf(fighter())).doubleDays).toEqual(['mon', 'tue', 'thu', 'sat']);
+		const plan = generate(fighter());
+		expect(validate(programPlanSchema, plan).ok).toBe(true);
+		expect(plan.decisions.filter((d) => d.kind === 'session_dropped')).toEqual([]);
+		const building = weeksOf(plan).find((w) => w.kind === 'accumulation')!;
+		const generated = building.sessions.filter((s) => s.source === 'generator');
+		expect(generated.filter((s) => s.kind === 'strength').length).toBeGreaterThanOrEqual(2);
+		expect(generated.filter((s) => s.discipline === 'running').length).toBeGreaterThanOrEqual(2);
+		for (const s of generated) {
+			const beside = building.sessions.filter(
+				(o) => o.source === 'commitment' && o.date === s.date
+			);
+			// Never beside the class with no set time, and never at the class's own time.
+			expect(beside.map((o) => o.title)).not.toContain('Comp Team Sparring');
+			if (beside.length > 0) {
+				expect(s.timeOfDay).not.toBeNull();
+				expect(s.timeOfDay).not.toBe(beside[0]!.timeOfDay);
+			}
 		}
 	});
 });
