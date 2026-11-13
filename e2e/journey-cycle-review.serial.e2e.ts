@@ -19,7 +19,7 @@
  * here holds a request, so the service worker stays on (WebKit's page.route trap does not apply).
  * Serial: the history is the one owner's, which every browser and worker shares.
  */
-import { expect, test, type Page, type TestInfo } from '@playwright/test';
+import { expect, test, type APIRequestContext, type Page, type TestInfo } from '@playwright/test';
 import { addDays, daysBetween, mondayOf } from '../src/lib/domain/calendar';
 import { DESKTOP, expectNoSideScroll, isDesktopPage } from './desktop';
 import { cycleReviews, programVersions } from './oracles/reviews';
@@ -29,6 +29,7 @@ import {
 	query,
 	resetReviews,
 	seedReview,
+	type ReviewScenario,
 	type ReviewTarget,
 	type SeededReview
 } from './review-support';
@@ -49,6 +50,16 @@ const cycleOf = (seeded: SeededReview): Cycle => {
 /** The program's week (1-based, from the reviewed block's first Monday) that starts on `monday`. */
 const weekNumber = (cycle: Cycle, monday: string) =>
 	daysBetween(cycle.blockStartsOn, monday) / 7 + 1;
+
+/**
+ * Seed `scenario` (seedReview), with onboarding complete: Today shows the plan, and so the review
+ * prompt, only once it is.
+ */
+async function seedOnboarded(request: APIRequestContext, scenario: ReviewScenario) {
+	const seeded = await seedReview(request, scenario);
+	await query('update athlete_profiles set onboarding_completed_at = now()');
+	return seeded;
+}
 
 const card = (page: Page) => page.getByTestId('next-cycle');
 const preview = (page: Page) => page.locator('[data-testid="next-cycle-preview"]:visible');
@@ -247,14 +258,14 @@ test.describe('block-end: on time', () => {
 		page,
 		request
 	}, testInfo) => {
-		await onTime(page, await seedReview(request, 'block-end'), testInfo);
+		await onTime(page, await seedOnboarded(request, 'block-end'), testInfo);
 	});
 
 	test.describe('in a desktop window', () => {
 		test.use({ ...DESKTOP });
 
 		test('the same journey at 1440 × 900', async ({ page, request }, testInfo) => {
-			await onTime(page, await seedReview(request, 'block-end'), testInfo);
+			await onTime(page, await seedOnboarded(request, 'block-end'), testInfo);
 		});
 	});
 });
@@ -264,14 +275,14 @@ test.describe('block-end-late: a late start', () => {
 		page,
 		request
 	}, testInfo) => {
-		await late(page, await seedReview(request, 'block-end-late'), testInfo);
+		await late(page, await seedOnboarded(request, 'block-end-late'), testInfo);
 	});
 
 	test.describe('in a desktop window', () => {
 		test.use({ ...DESKTOP });
 
 		test('the same late start at 1440 × 900', async ({ page, request }, testInfo) => {
-			await late(page, await seedReview(request, 'block-end-late'), testInfo);
+			await late(page, await seedOnboarded(request, 'block-end-late'), testInfo);
 		});
 	});
 });
