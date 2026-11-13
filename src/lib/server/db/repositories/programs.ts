@@ -15,6 +15,7 @@ import {
 	affectedNodes,
 	completedLineages,
 	currentProgram,
+	latestInput,
 	plannedSessionsInRange,
 	sessionById,
 	sessionByLineage,
@@ -402,6 +403,12 @@ export function createProgramsRepository(db: Executor) {
 		async currentProgram(ownerId: string, number?: number): Promise<VersionRow | null> {
 			const [row] = await currentProgram(db, ownerId, number);
 			return row ?? null;
+		},
+
+		/** The input the program's newest generated version was built from; null with none. */
+		async latestInput(programId: string): Promise<Record<string, unknown> | null> {
+			const [row] = await latestInput(db, programId);
+			return (row?.input as Record<string, unknown> | undefined) ?? null;
 		},
 
 		async versionOutline(versionId: string): Promise<VersionOutlineRows> {

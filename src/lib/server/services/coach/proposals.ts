@@ -82,6 +82,7 @@ import { getLiveCycleReview } from '../reviews/store';
 import { listActiveWorkouts } from '../workouts/canonical';
 import { transition } from '../lifecycle-guard';
 import { previewReplan, type ReplanPreview } from '../periodisation/preview';
+import { replanForPriorities } from '../periodisation/priority';
 import { APPLIERS, type Applier, type ApplyOutcome } from './apply';
 import { cycleReviewHref, refuseReviewNextCycle } from './apply/next-cycle';
 import { replanEnded } from './apply/replan';
@@ -820,6 +821,11 @@ export async function acceptProposal(
 ): Promise<DecidedProposal> {
 	const decided = await acceptOnce(ownerId, id, deps);
 	const { kind, status, supersededReason } = decided.proposal;
+	// Once committed, an applied goal_update may have moved the goals' priorities: the trigger
+	// proposes a re-plan, and never throws, so it cannot fail the accept.
+	if (decided.changed && kind === 'goal_update' && status === 'applied') {
+		await replanForPriorities(ownerId, { cause: 'goal_update' }, deps);
+	}
 	// Any accept of a stale replan, this one or a repeat; never one the owner revised.
 	const again = kind === 'replan' && status === 'superseded' && supersededReason !== 'revised';
 	return again ? { ...decided, proposeAgain: true } : decided;
