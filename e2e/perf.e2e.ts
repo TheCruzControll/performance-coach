@@ -6,7 +6,8 @@ import { query } from './support';
 /**
  * The main-thread budget while each of the app's screens loads (e2e/load-budget.ts: median
  * blocking time of 5 cold loads at 4× CPU, within GUARD_MS). The workout screens, measured with a
- * workout in progress or a full History, are perf-workout-load.e2e.ts's.
+ * workout in progress or a full History, are perf-workout-load.e2e.ts's; the coach's on their
+ * fixtures perf-coach-load.e2e.ts's; M6's (/progress views and reviews) perf-progress-load.e2e.ts's.
  *
  * Program screens (PROGRAM_SCREENS) are also held to MAX_SHIFT: the sum of layout shifts no input
  * explains, on every load, so a streamed or lazy panel never pushes content once it has painted.

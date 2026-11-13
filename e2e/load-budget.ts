@@ -10,8 +10,8 @@ import {
  * Main-thread budget while a screen loads and hydrates, measured from real long tasks
  * (PerformanceObserver) under DevTools 4× CPU throttling: the sum of each task's time over
  * 50 ms, i.e. total blocking time, over load + 1.5 s. Median of 5 cold loads per screen.
- * perf.e2e.ts measures the app's screens with it, perf-workout-load.e2e.ts the workout screens and
- * perf-coach-load.e2e.ts the coach's.
+ * perf.e2e.ts measures the app's screens with it, perf-workout-load.e2e.ts the workout screens,
+ * perf-coach-load.e2e.ts the coach's and perf-progress-load.e2e.ts M6's.
  *
  * This is the CI regression guard for hydration cost: it measures real work, while
  * Lighthouse's TBT is a simulation (×4 of observed task time) that amplifies VM noise

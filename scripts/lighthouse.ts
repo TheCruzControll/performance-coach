@@ -55,6 +55,11 @@
  *   'I hate Bulgarian split squats, so replace them' and 'Plan my next cycle', as
  *   e2e/coach-inbox.serial.e2e.ts proposes them). They come after every other seeded screen,
  *   since the reset removes the program and the workouts those are audited on.
+ * - after the coach, M6's screens, each on the fixture e2e/perf-progress-load.e2e.ts measures it
+ *   on, seeded through the test-only route (/api/test-support/analytics) after emptying the owner's
+ *   training history, which a fixture requires: every /progress view and the squat's detail on
+ *   twelve-weeks (seeded once), then a weekly review on week-complete and a cycle review on
+ *   block-end, each created by posting the reviews list's form action as a no-JS Create does
  */
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
@@ -70,6 +75,8 @@ import { LOCAL_DATABASE_URLS, runMigrations } from '../src/lib/server/db/migrate
 import type { StartKit, StrengthKit, SyncResponse } from '../src/lib/domain/workout/index.ts';
 import { createSseDecoder } from '../src/lib/domain/coach/events.ts';
 import type { CoachFixture, SeededCoach } from '../src/lib/server/test-support/coach-fixtures.ts';
+import type { SeededAnalytics } from '../src/lib/server/test-support/analytics-fixtures/index.ts';
+import type { ReviewTarget } from '../src/lib/server/test-support/analytics-fixtures/reviews.ts';
 import { readActionAnswer } from './lib/action-result.ts';
 import { labCertificate, SERVER_DELAY_MS, startLabProxy } from './lib/lighthouse-lab.ts';
 import { seedDemoProfile, type DemoProfile } from './lib/demo-profiles.ts';
@@ -607,6 +614,82 @@ async function seedCoachScreen(label: CoachRoute): Promise<string> {
 	return '/coach/proposals';
 }
 
+/**
+ * M6's screens --seed audits last, by label: each one's analytics fixture, and its path on it.
+ * The /progress screens share twelve-weeks; each review is created on its own scenario.
+ */
+const M6_SCREENS = {
+	'/progress · twelve weeks': { fixture: 'twelve-weeks', path: () => '/progress' },
+	'/progress · strength': { fixture: 'twelve-weeks', path: () => '/progress?view=strength' },
+	'/progress · running': { fixture: 'twelve-weeks', path: () => '/progress?view=running' },
+	'/progress · general': { fixture: 'twelve-weeks', path: () => '/progress?view=general' },
+	'/progress/exercises/[id]': {
+		fixture: 'twelve-weeks',
+		path: (seeded: SeededAnalytics) => `/progress/exercises/${seeded.exercises.back_squat}`
+	},
+	'/progress/reviews/[[key]] · weekly': { fixture: 'week-complete', path: createReview },
+	'/progress/reviews/[[key]] · cycle': { fixture: 'block-end', path: createReview }
+} as const satisfies Record<
+	string,
+	{ fixture: string; path: (seeded: SeededAnalytics) => string | Promise<string> }
+>;
+type M6Route = keyof typeof M6_SCREENS;
+const M6_ROUTES = Object.keys(M6_SCREENS) as M6Route[];
+
+/** The fixture M6's screens were last seeded on (the /progress screens share one seed). */
+let analytics: { fixture: string; seeded: SeededAnalytics } | undefined;
+
+/**
+ * Empty the owner's programs, workouts, notes, reviews and conversations (an analytics fixture is
+ * refused on top of training data), then seed `fixture` through the test-only route.
+ */
+async function seedAnalytics(fixture: string): Promise<SeededAnalytics> {
+	await withClient(server.db, (client) =>
+		client.query(
+			`truncate programs, workouts, recovery_notes, weekly_reviews, cycle_reviews, coach_proposals,
+			   coach_threads cascade;
+			 delete from exercises where owner_id is not null`
+		)
+	);
+	return (await ownerJson('/api/test-support/analytics', {
+		fixture,
+		timeZone: SEED_TIME_ZONE
+	})) as SeededAnalytics;
+}
+
+/** Create the seeded scenario's review, posted as a no-JS Create posts it: the page it opens. */
+async function createReview(seeded: SeededAnalytics): Promise<string> {
+	const { review } = seeded as SeededAnalytics & { review: ReviewTarget };
+	const body = new FormData();
+	if (review.kind === 'weekly') body.set('weekStartsOn', review.weekStartsOn);
+	else {
+		body.set('programId', seeded.programId ?? '');
+		body.set('blockLineage', review.blockLineageId);
+	}
+	const action = review.kind === 'weekly' ? 'create' : 'createCycle';
+	const response = await fetch(`${server.api}/progress/reviews?/${action}`, {
+		method: 'POST',
+		body,
+		// A browser's no-JS post asks for HTML; fetch's default */* gets the action's JSON.
+		headers: { ...sessionHeaders, origin: server.base, accept: 'text/html' },
+		redirect: 'manual'
+	});
+	const location = response.headers.get('location');
+	if (response.status !== 303 || !location) {
+		throw new Error(`/progress/reviews?/${action} answered ${response.status}`);
+	}
+	return new URL(location, server.base).pathname;
+}
+
+/** M6's screen `label` on its fixture: the path to audit. */
+async function seedM6Screen(label: M6Route): Promise<string> {
+	const { fixture, path } = M6_SCREENS[label];
+	if (analytics?.fixture !== fixture || fixture !== 'twelve-weeks') {
+		analytics = { fixture, seeded: await seedAnalytics(fixture) };
+	}
+	return path(analytics.seeded);
+}
+
 /** The program screens --seed audits after the routes, in this order, by label. */
 const PROGRAM_ROUTES = [
 	'/today · program',
@@ -636,12 +719,18 @@ type WorkoutRoute = (typeof WORKOUT_ROUTES)[number];
 const COACH_ROUTES = ['/coach/[thread] · long', '/coach/proposals · inbox'] as const;
 type CoachRoute = (typeof COACH_ROUTES)[number];
 
-const SEEDED_ROUTES = [...PROGRAM_ROUTES, ...WORKOUT_ROUTES, ...COACH_ROUTES] as const;
+const SEEDED_ROUTES = [
+	...PROGRAM_ROUTES,
+	...WORKOUT_ROUTES,
+	...COACH_ROUTES,
+	...M6_ROUTES
+] as const;
 type SeededRoute = (typeof SEEDED_ROUTES)[number];
 const isProgramRoute = (label: SeededRoute): label is ProgramRoute =>
 	(PROGRAM_ROUTES as readonly string[]).includes(label);
 const isCoachRoute = (label: SeededRoute): label is CoachRoute =>
 	(COACH_ROUTES as readonly string[]).includes(label);
+const isM6Route = (label: SeededRoute): label is M6Route => Object.hasOwn(M6_SCREENS, label);
 
 /** Every audit of the run, in order: the routes, then with --seed the program and workout screens. */
 const AUDITS: ({ label: string; path: string } | { label: string; seeded: SeededRoute })[] = [
@@ -708,7 +797,12 @@ try {
 			continue;
 		}
 		if (isCoachRoute(audit.seeded)) {
+			analytics = undefined;
 			await auditRoute(audit.label, await seedCoachScreen(audit.seeded));
+			continue;
+		}
+		if (isM6Route(audit.seeded)) {
+			await auditRoute(audit.label, await seedM6Screen(audit.seeded));
 			continue;
 		}
 		program ??= await buildSeededProgram();

@@ -3,9 +3,11 @@
 	"runs": [43197965258, 43214943119, 43215462605, 43219770430, 43226702763, 43232612790],
 	"legs": {
 		"alone/chromium": {
+			"perf › perf-coach-load.e2e.ts": 25,
 			"perf › perf-coach.e2e.ts": 73.1,
 			"perf › perf-journey.e2e.ts": 28,
 			"perf › perf-launch.e2e.ts": 6.5,
+			"perf › perf-progress-load.e2e.ts": 90,
 			"perf › perf-soak.e2e.ts": 34.2,
 			"perf › perf-workout-load.e2e.ts": 54.8,
 			"perf › perf-workout.e2e.ts": 36.7,
