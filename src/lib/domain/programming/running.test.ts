@@ -15,6 +15,7 @@ import { validate } from '../validation';
 import { DecisionLog } from './decisions';
 import { STAGES } from './generate';
 import { buildProgrammingInput } from './input';
+import { paceFor, trainingPaces, vdotFromEasyPace, vdotFromPerformance } from './paces';
 import { MARATHON_HOOKS } from './rules/running';
 import { SCENARIO_START, SCENARIOS, scenarioDay } from './scenarios';
 import type { Draft, GenerateOptions } from './stage';
@@ -214,8 +215,13 @@ describe('planRuns', () => {
 			runWeeklyIncreaseMax: 0.1
 		});
 		expect(decision('run_volume')!.summary).toBe('Week 1 running: 24.9 km over 4 runs');
+		// generator-running: E pace of the VDOT the told easy pace implies.
+		const [fast, slow] = paceFor('easy', trainingPaces(vdotFromEasyPace(360)));
 		for (const run of weeks.flatMap(generated)) {
-			expect(run.segments[0]).toMatchObject({ paceMinSecondsPerKm: 339, paceMaxSecondsPerKm: 381 });
+			expect(run.segments[0]).toMatchObject({
+				paceMinSecondsPerKm: fast,
+				paceMaxSecondsPerKm: slow
+			});
 			expect(run.estMinutes).toBe(Math.round((metres(run) / 1000) * 6));
 		}
 	});
@@ -320,6 +326,9 @@ describe('planRuns', () => {
 	});
 
 	it('takes interval paces from a 10K time, and falls back to RPE and heart-rate zone', () => {
+		// generator-running: I pace of the race's VDOT by Daniels' formula.
+		const vdot = vdotFromPerformance(10_000, 50 * 60);
+		const [fast, slow] = paceFor('interval', trainingPaces(vdot));
 		const raced = plan(runner('intermediate', running({ weeklyDistance: 30, races: [tenK] })));
 		raced.weeks.forEach((week) => {
 			const intervals = generated(week).find((r) => r.type === 'interval_run');
@@ -332,28 +341,32 @@ describe('planRuns', () => {
 				['cool_down', null, 600]
 			]);
 			expect(intervals!.segments[1]).toMatchObject({
-				paceMinSecondsPerKm: 282,
-				paceMaxSecondsPerKm: 294,
+				paceMinSecondsPerKm: fast,
+				paceMaxSecondsPerKm: slow,
 				hrZone: 5,
 				targetRpe: Math.min(8, week.targets.rpeCap)
 			});
 		});
 		expect(raced.decision('run_pace_source')).toMatchObject({
-			summary: 'Run targets from your race time',
+			summary: `Run targets from your race time, a VDOT of ${Math.round(vdot)}`,
 			why: expect.stringContaining(
-				'Paces come from your 10K in 50:00 on 2026-10-04, carried to the 10K by Riegel’s formula.'
+				`Paces come from your 10K in 50:00 on 4 Oct, a VDOT of ${Math.round(vdot)}, by Daniels’ formula.`
 			)
 		});
 
-		// Riegel’s formula carries a 5K in 24:00 to a 10K in about 50:02, so the same paces.
+		// A 5K in 24:00 sets its own VDOT, and the paces follow it.
 		const fiveK = { ...tenK, distance: '5k' as const, distanceMetres: 5000, timeSeconds: 24 * 60 };
 		const five = plan(runner('intermediate', running({ weeklyDistance: 30, races: [fiveK] })));
 		const fiveIntervals = generated(five.weeks[1]!).find((r) => r.type === 'interval_run')!;
+		const [fiveFast, fiveSlow] = paceFor(
+			'interval',
+			trainingPaces(vdotFromPerformance(5000, 1440))
+		);
 		expect(fiveIntervals.segments[1]).toMatchObject({
-			paceMinSecondsPerKm: 282,
-			paceMaxSecondsPerKm: 294
+			paceMinSecondsPerKm: fiveFast,
+			paceMaxSecondsPerKm: fiveSlow
 		});
-		expect(five.decision('run_pace_source')!.why).toContain('your 5K in 24:00 on 2026-10-04');
+		expect(five.decision('run_pace_source')!.why).toContain('your 5K in 24:00 on 4 Oct');
 
 		const effort = plan(runner('intermediate', running({ weeklyDistance: 30 })));
 		const intervals = generated(effort.weeks[1]!).find((r) => r.type === 'interval_run')!;
@@ -418,16 +431,21 @@ describe('planRuns', () => {
 		}
 	});
 
-	it('takes easy paces from the easy pace and quality paces from the race when both are told', () => {
+	it('takes every pace from the race when an easy pace is told too (generator-running)', () => {
 		const both = running({ weeklyDistance: 30, easyPaceSeconds: 330, races: [tenK] });
 		const { weeks, decision } = plan(runner('intermediate', both));
+		const paces = trainingPaces(vdotFromPerformance(10_000, 50 * 60));
 		const [easy] = generated(weeks[1]!).filter((r) => r.type === 'easy_run');
-		expect(easy!.segments[0]).toMatchObject({ paceMinSecondsPerKm: 311, paceMaxSecondsPerKm: 349 });
+		const [fast, slow] = paceFor('easy', paces);
+		expect(easy!.segments[0]).toMatchObject({
+			paceMinSecondsPerKm: fast,
+			paceMaxSecondsPerKm: slow
+		});
 		const intervals = generated(weeks[1]!).find((r) => r.type === 'interval_run')!;
-		expect(intervals.segments[1]).toMatchObject({ paceMinSecondsPerKm: 282 });
-		expect(decision('run_pace_source')!.why).toContain(
-			'Easy paces come from your easy pace of 5:30 /km, quality paces from your 10K in 50:00'
-		);
+		expect(intervals.segments[1]).toMatchObject({
+			paceMinSecondsPerKm: paceFor('interval', paces)[0]
+		});
+		expect(decision('run_pace_source')!.why).toContain('Paces come from your 10K in 50:00');
 	});
 
 	it('leads a marathon 20 weeks out through outline phases to race day, each with its hooks', () => {

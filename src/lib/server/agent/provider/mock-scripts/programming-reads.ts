@@ -36,7 +36,12 @@ interface ProposalsResult {
 }
 
 /** Who made a review's proposal, in the answer's words. */
-const PROPOSER = { weekly_review: 'Your weekly review', cycle_review: 'Your cycle review' };
+const PROPOSER = {
+	weekly_review: 'Your weekly review',
+	cycle_review: 'Your cycle review',
+	goal_priority: 'Your goal change',
+	fatigue: 'Your training load'
+};
 
 /** The rejected proposals the turn context lists, by id. */
 function rejectedIds(context: MockContext): string[] {

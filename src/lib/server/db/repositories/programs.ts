@@ -8,13 +8,14 @@
  * INSERT (chunked only past ROWS_PER_INSERT) and nothing needs RETURNING. A revision copies a
  * week's subtree with one INSERT … SELECT per table instead, its changes written in as it goes.
  */
-import { and, asc, eq, getTableColumns, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, getTableColumns, lte, sql, type SQL } from 'drizzle-orm';
 import { alias, type PgColumn, type PgTable } from 'drizzle-orm/pg-core';
 import type { IsoDate } from '../../../domain/calendar';
 import {
 	affectedNodes,
 	completedLineages,
 	currentProgram,
+	latestInput,
 	plannedSessionsInRange,
 	sessionById,
 	sessionByLineage,
@@ -108,6 +109,8 @@ export type ExerciseChange = Change<typeof plannedExercises, 'id' | 'sessionId' 
 export type SetChange = Change<typeof setPrescriptions, 'id' | 'plannedExerciseId'>;
 export type SegmentChange = Change<typeof plannedRunSegments, 'id' | 'sessionId'>;
 export type DetailChange = Change<typeof plannedSessionDetails, 'sessionId'>;
+/** A copied week's kind and targets: a deload marks its week (M7's replan-store). */
+export type WeekChange = Partial<Pick<Insert<typeof programWeeks>, 'kind' | 'targets'>>;
 
 /** The rows a revision copies: each base row's id → its copy's, and the version they join. */
 export interface SubtreeCopy {
@@ -115,10 +118,14 @@ export interface SubtreeCopy {
 	weeks: Map<string, string>;
 	sessions: Map<string, string>;
 	exercises: Map<string, string>;
+	/** Each copied week's new block by its base block's id; without it, a copy keeps its block. */
+	blocks?: Map<string, string>;
 }
 
 /** How copies differ from their base rows, by the base row's id (or its parent's, then position). */
 export interface SubtreeChanges {
+	/** By the week's id. */
+	weeks?: Map<string, WeekChange>;
 	sessions: Map<string, SessionChange>;
 	exercises: Map<string, ExerciseChange>;
 	/** By the session's id. */
@@ -301,12 +308,17 @@ export function createProgramsRepository(db: Executor) {
 		},
 
 		/**
-		 * Copy these weeks into the version, top down: the weeks and their membership, then their
-		 * sessions, the sessions' exercises, segments and details, and the exercises' sets.
+		 * Copy these weeks into the version, top down: the weeks (into `copy.blocks`' new block when
+		 * given) and their membership, then their sessions, the sessions' exercises, segments and details, and the exercises' sets.
 		 */
 		async copyWeekSubtree(copy: SubtreeCopy, changes: SubtreeChanges): Promise<void> {
-			const { versionId, weeks, sessions, exercises } = copy;
-			await copyRows({ table: programWeeks, ids: weeks });
+			const { versionId, weeks, sessions, exercises, blocks } = copy;
+			await copyRows({
+				table: programWeeks,
+				ids: weeks,
+				...(blocks && { parent: { column: programWeeks.blockId, ids: blocks } }),
+				changes: changes.weeks
+			});
 			await db
 				.insert(programVersionWeeks)
 				.values([...weeks.values()].map((weekId) => ({ versionId, weekId })));
@@ -393,6 +405,12 @@ export function createProgramsRepository(db: Executor) {
 			return row ?? null;
 		},
 
+		/** The input the program's newest generated version was built from; null with none. */
+		async latestInput(programId: string): Promise<Record<string, unknown> | null> {
+			const [row] = await latestInput(db, programId);
+			return (row?.input as Record<string, unknown> | undefined) ?? null;
+		},
+
 		async versionOutline(versionId: string): Promise<VersionOutlineRows> {
 			const q = versionTree(db, versionId);
 			return { blocks: await q.blocks, weeks: await q.weeks };
@@ -470,6 +488,42 @@ export function createProgramsRepository(db: Executor) {
 			if (!lineages.length) return new Set();
 			const rows = await completedLineages(db, ownerId, lineages);
 			return new Set(rows.flatMap((row) => (row.lineage ? [row.lineage] : [])));
+		},
+
+		/**
+		 * The newest of the owner's versions of `programId`, up to version `number`, with a `kind`
+		 * decision that touched a session of week `weekLineage` as that version holds it, and the
+		 * decision's evidence; null when none did. A program's versions form one chain (each revises
+		 * the current one), so every number up to `number` is in its history.
+		 */
+		async latestDecisionOnWeek(
+			ownerId: string,
+			at: { programId: string; number: number; weekLineage: string; kind: DecisionRow['kind'] }
+		) {
+			const d = programmingDecisions;
+			const v = programVersions;
+			const [row] = await db
+				.select({ id: v.id, number: v.number, createdBy: v.createdBy, evidence: d.evidence })
+				.from(d)
+				.innerJoin(v, eq(v.id, d.versionId))
+				.innerJoin(programs, eq(programs.id, d.programId))
+				.where(
+					and(
+						eq(programs.ownerId, ownerId),
+						eq(d.programId, at.programId),
+						lte(v.number, at.number),
+						eq(d.kind, at.kind),
+						sql`exists (select 1 from ${programVersionWeeks}
+							join ${programWeeks} on ${programWeeks.id} = ${programVersionWeeks.weekId}
+							join ${plannedSessions} on ${plannedSessions.weekId} = ${programWeeks.id}
+							where ${programVersionWeeks.versionId} = ${v.id}
+								and ${programWeeks.lineageId} = ${at.weekLineage}
+								and ${d.affected} @> jsonb_build_array(${plannedSessions.lineageId}::text))`
+					)
+				)
+				.orderBy(desc(v.number), desc(d.id))
+				.limit(1);
+			return row ?? null;
 		},
 
 		/** The decisions that produced a version, in the order they were written. */

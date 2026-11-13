@@ -3,9 +3,10 @@
  * rotate and change, derived by code from the stored snapshot (cycle-snapshot.ts), the next outline
  * block and M2's goals. The same input gives the same directives.
  *
- * - directivesFrom(evaluation, outline, goals): the phase and weeks, keep and rotate with reasons,
- *   a volume change per muscle group, a target RPE range, the deload's place, the running start,
- *   the days to avoid and the progression strategy.
+ * - directivesFrom(evaluation, outline, goals, profile?): the phase and weeks, keep and rotate with
+ *   reasons, a volume change per muscle group, a target RPE range, the deload's place, the running
+ *   start, the days to avoid and the progression strategy. Given today's profile input (M7's
+ *   next-cycle-periodised), the season planner chooses the block: see seasonWeeks.
  * - modifiableSubset(directives): the part the owner may change, as M5's next_cycle payload
  *   (`import type` only: domain/programming never loads the coach's schemas).
  * - clampOverrides(overrides, directives): an owner's or a coach's changes held to the bounds
@@ -14,13 +15,19 @@
  * Every judgement is a named number in DIRECTIVE_RULES. Pure and server-only at runtime, like all
  * of domain/programming.
  */
+import { addDays, daysBetween, mondayOf } from '../../calendar.ts';
 import type { ProposalPayload } from '../../coach/proposals.ts';
 import { WEEKDAY_INFO } from '../../profile/catalog.ts';
 import type { Weekday } from '../../profile/catalog.ts';
 import { PHASE_LABEL } from '../../training/vocabulary.ts';
-import type { MuscleGroup, Phase } from '../../training/vocabulary.ts';
+import type { DecisionPlan, WeekTargets } from '../../training/types.ts';
+import type { MuscleGroup, Phase, WeekKind } from '../../training/vocabulary.ts';
 import { cleanFloat, roundToIncrement } from '../../units.ts';
+import type { FactsFor } from '../decisions.ts';
+import { clip } from '../demand.ts';
+import type { ProgrammingInput } from '../input.ts';
 import { MAX_NEXT_BLOCK_WEEKS } from '../next-block/dates.ts';
+import { planSeason } from '../periodisation/season.ts';
 import { FIRST_BLOCK } from '../rules/blocks.ts';
 import { RESULT_RULES, RUN_RESULT_RULES } from '../rules/results.ts';
 import { DELOAD_AFTER_WEEKS, racePaceTarget } from './cycle.ts';
@@ -78,6 +85,12 @@ export type DeloadPlacement = 'first' | 'last' | 'none';
 /** progress: the results rules may add load and volume; hold: nothing increases. */
 export type ProgressionStrategy = 'progress' | 'hold';
 
+/** One week the season planner gives the block: its kind and its targets. */
+export interface PlannedWeek {
+	kind: WeekKind;
+	targets: WeekTargets;
+}
+
 export interface Reasoned {
 	exercise: string;
 	reason: string;
@@ -103,6 +116,15 @@ export interface CycleDirectives {
 	} | null;
 	avoidDays: Weekday[];
 	progression: ProgressionStrategy;
+	/**
+	 * The season planner's weeks from the Monday after the reviewed block (M7), which nextShape plans
+	 * from, past any bridge before the block. Absent when the
+	 * directives were made without today's profile (M6's, a review stored before M7, a season the
+	 * plan budget refused), when nextShape plans the phase's own weeks.
+	 */
+	weekPlan?: PlannedWeek[];
+	/** The season's block_type_chosen for the block, recorded with it; absent with no weekPlan. */
+	blockType?: { ruleKey: string; facts: FactsFor<'block_type_chosen'> };
 }
 
 /** The review as directives read it: its stored snapshot and the block's actual running. */
@@ -130,20 +152,80 @@ const metres = (m: number) => roundToIncrement(m, RUN_RESULT_RULES.roundMetres, 
 /** A start under one rounding step is no start: next_cycle refuses 0 m. */
 const runStart = (m: number) => metres(m) || null;
 
-/** The next block's directives from a cycle evaluation, the next outline and M2's goals. */
+/** One week of the season from the Monday after the reviewed block, with its block's phase. */
+interface SeasonWeek extends PlannedWeek {
+	phase: Phase;
+}
+
+/**
+ * The season planner's weeks from the Monday after the reviewed block, at today's goals (M7),
+ * covering a block of `blockWeeks` and any bridge before it: its first block, then, planned again from the end of each, the next,
+ * so a block longer than the season's first (an outline's fixed weeks) holds the season's later
+ * phases too. Each plan's continuity is the phase before it, so the season plans no second
+ * baseline week and carries that phase on into an event's run-up; a finished block's phase starts
+ * its own step (weeksDone 0) and its own deload cadence. The running start is the block's actual
+ * mileage. With each block's phase, its block_type_chosen. Null with no shaping goal, or a season
+ * the plan budget refuses.
+ */
+function seasonWeeks(
+	s: CycleReviewSnapshot,
+	profile: ProgrammingInput,
+	start: { weeklyMetres: number | null; longRunMetres: number | null },
+	blockWeeks: number
+) {
+	if (!(profile.maintenance ? profile.paused : profile.goals).length) return null;
+	const told = profile.running;
+	const input: ProgrammingInput = told
+		? {
+				...profile,
+				running: {
+					...told,
+					weeklyMetres: start.weeklyMetres ?? told.weeklyMetres,
+					longestRunMetres: start.longRunMetres ?? told.longestRunMetres
+				}
+			}
+		: profile;
+	// The block, for an appended one the most weeks an owner may ask, and the weeks a start chosen
+	// on the review's day puts before it (a bridge, which nextShape skips).
+	let from = mondayOf(addDays(s.block.to, 1));
+	const ahead = Math.max(0, daysBetween(from, addDays(mondayOf(s.computedOn), 7)) / 7);
+	const cover = Math.min(blockWeeks, DIRECTIVE_RULES.maxWeeks) + ahead;
+	const weeks: SeasonWeek[] = [];
+	const blocks: { phase: Phase; weeks: number; chosen: DecisionPlan | undefined }[] = [];
+	let phase = s.block.phase;
+	while (weeks.length < cover) {
+		const plan = planSeason(input, from, { continuity: { phase, weeksDone: 0 } });
+		if ('refusal' in plan || !plan.blocks[0]!.weeks.length) break;
+		const first = plan.blocks[0]!;
+		const chosen = plan.decisions.find(
+			(d) => d.kind === 'block_type_chosen' && d.refs.includes('blocks.0')
+		);
+		blocks.push({ phase: first.phase, weeks: first.weeks.length, chosen });
+		weeks.push(...first.weeks.map(({ kind, targets }) => ({ kind, targets, phase: first.phase })));
+		from = addDays(first.endsOn, 1);
+		phase = first.phase;
+	}
+	return blocks.length ? { blocks, weeks } : null;
+}
+
+/**
+ * The next block's directives from a cycle evaluation, the next outline and M2's goals. With
+ * `profile`, today's programming input, the season planner (seasonWeeks) gives the phase, the weeks
+ * of an appended block and the weekPlan, its weeks from the Monday after the reviewed block; an
+ * outline phase it plans for none of the block's weeks is replaced, and the block_type_chosen it
+ * records says so. A 'needed' deload is still placed first; otherwise the
+ * season's cadence places the deloads. M6's other directives stand.
+ */
 export function directivesFrom(
 	evaluation: CycleEvaluation,
 	outline: NextOutline | null,
-	goals: readonly CycleGoal[]
+	goals: readonly CycleGoal[],
+	profile: ProgrammingInput | null = null
 ): CycleDirectives {
 	const R = DIRECTIVE_RULES;
 	const s = evaluation.snapshot;
 	const withheld = s.adherence.verdictsWithheld;
 	const high = s.fatigue.level === 'high';
-	const phase =
-		outline?.phase ?? (REPEATABLE.includes(s.block.phase) ? s.block.phase : 'accumulation');
-	// A longer outline block is planned for its first maxWeeks (next-block/dates.ts).
-	const weeks = Math.min(outline?.weeks ?? R.appendWeeks, R.maxWeeks);
 
 	const keep: Reasoned[] = [];
 	const rotate: Reasoned[] = [];
@@ -190,14 +272,6 @@ export function directivesFrom(
 		return { group, change, reason };
 	});
 
-	const deload: DeloadPlacement = TAPERS.includes(phase)
-		? 'none'
-		: s.deloadNeed.verdict === 'needed'
-			? 'first'
-			: s.deloadNeed.verdict === 'consider' || weeks >= DELOAD_AFTER_WEEKS
-				? 'last'
-				: 'none';
-
 	const runningGoals = goals.flatMap((g) => {
 		const pace = racePaceTarget(g);
 		return pace === null ? [] : [{ goalId: g.id, secondsPerKm: pace }];
@@ -205,14 +279,58 @@ export function directivesFrom(
 	const actual = evaluation.running;
 	const recent = actual?.weeklyMetres.slice(-R.runWeeks) ?? [];
 	const ran = recent.some((m) => m > 0);
+	const start = {
+		weeklyMetres: ran ? runStart(recent.reduce((a, b) => a + b, 0) / recent.length) : null,
+		longRunMetres: actual?.longestRunMetres ? runStart(actual.longestRunMetres) : null
+	};
+
+	const season = profile && seasonWeeks(s, profile, start, outline?.weeks ?? R.maxWeeks);
+	// A longer outline block is planned for its first maxWeeks (next-block/dates.ts); an appended
+	// block is the season's first block, at least minWeeks long.
+	const appended = season ? Math.max(R.minWeeks, season.blocks[0]!.weeks) : R.appendWeeks;
+	const weeks = Math.min(outline?.weeks ?? appended, R.maxWeeks);
+	// An outline phase the season plans for any of the block's weeks stands; one it plans for none
+	// is replaced by the season's first block's phase.
+	const kept = outline && season?.weeks.slice(0, weeks).some((w) => w.phase === outline.phase);
+	const seasonPhase = season && (kept ? outline!.phase : season.blocks[0]!.phase);
+	const replaced = seasonPhase && outline && outline.phase !== seasonPhase ? outline : null;
+	const phase =
+		seasonPhase ??
+		outline?.phase ??
+		(REPEATABLE.includes(s.block.phase) ? s.block.phase : 'accumulation');
 	const running =
 		ran || runningGoals.length || RUNNING_PHASE.test(phase)
-			? {
-					weeklyMetres: ran ? runStart(recent.reduce((a, b) => a + b, 0) / recent.length) : null,
-					longRunMetres: actual?.longestRunMetres ? runStart(actual.longestRunMetres) : null,
-					paces: runningGoals
-				}
+			? { ...start, paces: runningGoals }
 			: null;
+	const weekPlan = season?.weeks.map(({ kind, targets }) => ({ kind, targets }));
+	const planned = weekPlan?.slice(0, weeks).some((w) => w.kind === 'deload');
+	const deload: DeloadPlacement = TAPERS.includes(phase)
+		? 'none'
+		: s.deloadNeed.verdict === 'needed'
+			? 'first'
+			: weekPlan
+				? s.deloadNeed.verdict === 'consider' && !planned
+					? 'last'
+					: 'none'
+				: s.deloadNeed.verdict === 'consider' || weeks >= DELOAD_AFTER_WEEKS
+					? 'last'
+					: 'none';
+	const chosen = season?.blocks.find((b) => b.phase === phase)?.chosen;
+	const facts = chosen?.evidence as FactsFor<'block_type_chosen'> | undefined;
+	const blockType = chosen &&
+		facts && {
+			ruleKey: chosen.ruleKey,
+			facts: replaced
+				? {
+						...facts,
+						outlined: replaced.phase,
+						reason: clip(
+							`Your plan outlined ${PHASE_LABEL[replaced.phase].toLowerCase()} here, but at today's goals it no longer fits. ${String(facts.reason)}`,
+							200
+						)
+					}
+				: facts
+		};
 
 	return {
 		fromBlockLineage: s.block.lineage,
@@ -226,7 +344,9 @@ export function directivesFrom(
 		deload,
 		running,
 		avoidDays: [...s.adherence.oftenMissed],
-		progression: withheld || high ? 'hold' : 'progress'
+		progression: withheld || high ? 'hold' : 'progress',
+		...(weekPlan && { weekPlan }),
+		...(blockType && { blockType })
 	};
 }
 
@@ -266,7 +386,11 @@ export function modifiableSubset(d: CycleDirectives): NextCycleSubset {
 			weeklyMetres: d.running.weeklyMetres,
 			longRunMetres: d.running.longRunMetres
 		},
-		ending: TAPERS.includes(d.phase) ? 'taper' : d.deload === 'last' ? 'deload' : 'none',
+		ending: TAPERS.includes(d.phase)
+			? 'taper'
+			: d.deload === 'last' || d.weekPlan?.[d.weeks - 1]?.kind === 'deload'
+				? 'deload'
+				: 'none',
 		constraints: constraints.slice(0, 10)
 	};
 }

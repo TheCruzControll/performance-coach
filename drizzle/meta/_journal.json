@@ -239,6 +239,13 @@
       "when": 1794377657190,
       "tag": "0033_strength_week_rollups_stale",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1794473005865,
+      "tag": "0034_replan_superseded_reasons",
+      "breakpoints": true
     }
   ]
 }

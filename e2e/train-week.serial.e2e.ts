@@ -378,7 +378,7 @@ test('a program that starts next Monday says so, and shows week 1 from its first
 	await expect(page.getByTestId('previous-week')).toHaveCount(0);
 });
 
-test('once the planned weeks are over, the first block is complete: a summary, never a fake session', async ({
+test('once the planned weeks are over, the first block is complete: a summary, never a fake session, and the way to its review', async ({
 	page,
 	request
 }, testInfo) => {
@@ -397,9 +397,10 @@ test('once the planned weeks are over, the first block is complete: a summary, n
 	await captureScreen(page, testInfo, 'train-block-complete');
 	expect(await audit(page)).toEqual([]);
 
+	// Its next step is the block's cycle review: the reviews list creates it.
+	await expect(page.getByTestId('train-next')).toContainText('Review this block');
 	await page.getByTestId('train-next').click();
-	await expect(page).toHaveURL(/\/train\?week=1$/);
-	await expect(position(page)).toHaveText('Baseline week · Week 1 of 1');
+	await expect(page).toHaveURL(/\/progress\/reviews$/);
 });
 
 test('with no program, Train says what comes first and links to it', async ({ page }, testInfo) => {

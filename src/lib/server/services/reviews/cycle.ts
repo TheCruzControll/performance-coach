@@ -8,7 +8,8 @@
  *   CycleReviewNotReviewableError with the day it becomes available.
  * - Creating is one transaction under the owner's review lock, and idempotent. It reads the
  *   block's facts (the workouts before it too, for the ACWR), each week's targets (targets.ts) and
- *   M2's active goals, then evaluateCycle → directivesFrom → store. The next_cycle proposal is the
+ *   M2's active goals, then evaluateCycle → directivesFrom (with today's programming input, so the
+ *   season planner chooses the next block) → store. The next_cycle proposal is the
  *   directives' modifiable subset, created with the review's rules provenance (evidence.source)
  *   and linked to it. Decision: its evidence keeps the directives and the folded overrides, since
  *   the cycle snapshot's schema has no field for them; the previews and a refresh read them back.
@@ -72,6 +73,7 @@ import type { BaselineLift } from '../../../domain/training/types';
 import type { WeightUnit } from '../../../domain/units';
 import { getDb, type Executor } from '../../db';
 import { createCoachProposalsRepository } from '../../db/repositories/coach-proposals';
+import { createPeriodiseRepository } from '../../db/repositories/program-periodise';
 import { createProgramsRepository } from '../../db/repositories/programs';
 import { createReviewsRepository } from '../../db/repositories/reviews';
 import { createFactsLoader, createQueue } from '../analytics/facts';
@@ -299,6 +301,20 @@ async function readBlock(
 
 // ---- create ------------------------------------------------------------------------------
 
+/**
+ * Decision (m7-plan open question: a block a re-plan cuts short): it gets no cycle review of its
+ * own; the block replacing it is reviewed at its end. True reviews it like any other block.
+ */
+export const REVIEW_CUT_BLOCKS = false;
+
+/** The version's planned training blocks started by `today`, those a re-plan cut short left out. */
+async function reviewable(db: Executor, version: Version, today: IsoDate) {
+	const started = version.blocks.filter((b) => trained(b) && b.startsOn <= today);
+	if (REVIEW_CUT_BLOCKS || !started.length) return started;
+	const cut = await createPeriodiseRepository(db).cutShortLineages(version.version.id);
+	return started.filter((b) => !cut.has(b.lineage));
+}
+
 /** The latest planned block the owner can review today and has not; null with none. */
 export async function reviewableBlock(
 	ownerId: string,
@@ -309,7 +325,7 @@ export async function reviewableBlock(
 	const version = await currentVersion(db, ownerId);
 	if (!version) return null;
 	const { timeZone } = await getAthleteProfile(ownerId, { db });
-	const started = version.blocks.filter((b) => trained(b) && b.startsOn <= today);
+	const started = await reviewable(db, version, today);
 	for (const block of started.toReversed()) {
 		const ended = block.endsOn < today;
 		if (!ended && !(await lastWeekDone(db, ownerId, block, timeZone))) continue;
@@ -347,7 +363,7 @@ export async function unreviewedBlock(
 	const version = await currentVersion(db, ownerId);
 	if (!version) return null;
 	const { timeZone } = await getAthleteProfile(ownerId, { db });
-	const started = version.blocks.filter((b) => trained(b) && b.startsOn <= today);
+	const started = await reviewable(db, version, today);
 	let running: UnreviewedBlock | null = null;
 	for (const block of started.toReversed()) {
 		if (await getLiveCycleReview(ownerId, version.programId, block.lineage, { db })) break;
@@ -422,10 +438,15 @@ async function compute(
 			}
 		: null;
 	const outline = read.next && { phase: read.next.phase, weeks: weeksOf(read.next) };
+	// Today's profile input: the season planner chooses the next block at today's goals (M7).
+	// Decision: the review keeps this choice; a goal change before accepting re-previews with it
+	// (the modes follow the new goals), as M6's goals-based directives did, until a refresh.
+	const profile = await programmingInputFor(ownerId, { db });
 	const directives = directivesFrom(
 		{ snapshot: evaluation.snapshot, running },
 		outline,
-		read.goals
+		read.goals,
+		profile
 	);
 	const folded = await coachNextCycles(db, ownerId, blockLineage);
 	const payloads = folded.map((f) => f.payload);

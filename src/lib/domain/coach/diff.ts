@@ -9,6 +9,8 @@
  * - The impact is M3's metrics (plannedHardSets, sessionLoadOf) on each touched week, before and
  *   after: hard sets per muscle group, planned minutes, session load and run metres.
  * - Wording goes through M3's describe helpers, in the owner's units.
+ * - A replan's rows, impact and summary lines are M7's describeChanges (programming/replan),
+ *   which the proposals service runs on the preview and hands over as `replan`.
  * - Names, muscles and the minutes estimate arrive as data in the context: this module never
  *   imports domain/exercises or domain/programming. Interference warnings need the database, so
  *   the proposals service adds them when it creates the proposal.
@@ -103,6 +105,24 @@ export interface DiffContext {
 	blocks: readonly { lineage: string; name: string }[];
 	/** The active program, if any. */
 	program: { title: string } | null;
+	/** A replan's describeChanges, in the owner's units: its rows, impact and summary lines. */
+	replan?: ReplanChanges;
+}
+
+/** describeChanges' output as a replan's card reads it (programming/replan/changes.ts). */
+export interface ReplanChanges {
+	weeks: readonly {
+		label: string;
+		rows: readonly {
+			kind: 'added' | 'removed' | 'moved' | 'changed' | 'block' | 'week';
+			label: string;
+			before: string | null;
+			after: string | null;
+			date: IsoDate | null;
+		}[];
+	}[];
+	impact: readonly WeekImpact[];
+	summaryLines: readonly string[];
 }
 
 // ---- Rows and impact ------------------------------------------------------------------------
@@ -632,6 +652,21 @@ export function describeProposal(proposal: Proposal, context: DiffContext): Prop
 			return { rows: cycleRows(proposal.payload, context, ex), impact: [] };
 		case 'goal_update':
 			return { rows: goalRows(proposal.payload.ops, context), impact: [] };
+		case 'replan': {
+			const changes = replanOf(context);
+			const rows = changes.weeks.flatMap((w) =>
+				w.rows.map((r) =>
+					diffRow(
+						r.kind === 'block' || r.kind === 'week' ? 'program' : 'session',
+						`${w.label} · ${r.label}`,
+						r.before,
+						r.after,
+						r.date
+					)
+				)
+			);
+			return { rows, impact: [...changes.impact] };
+		}
 		case 'preference_update': {
 			const p = proposal.payload;
 			const exercise = ex.byId(p.exerciseId);
@@ -650,6 +685,11 @@ export function describeProposal(proposal: Proposal, context: DiffContext): Prop
 	}
 }
 
+function replanOf(context: DiffContext): ReplanChanges {
+	if (!context.replan) throw new RangeError('A replan is described by its changes');
+	return context.replan;
+}
+
 /** A line no longer than SUMMARY_LINE_MAX, cut at a word with an ellipsis. */
 function clip(line: string): string {
 	if (line.length <= SUMMARY_LINE_MAX) return line;
@@ -666,6 +706,7 @@ const rowLine = (row: DiffRow) =>
  * impact, or the next rows when nothing is measured. The first fills coach_proposals.summary.
  */
 export function summaryLines(proposal: Proposal, context: DiffContext): string[] {
+	if (proposal.kind === 'replan') return replanOf(context).summaryLines.map(clip);
 	const { rows, impact } = describeProposal(proposal, context);
 	const [first, ...rest] = rows;
 	const more = rest.length
