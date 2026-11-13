@@ -95,6 +95,9 @@ export const ROUTE_ACCESS = {
 	// memory
 	'/api/coach/memory': 'owner',
 
+	// Reviews (M6): a review's write-up, one coach turn (owner-only, Origin-checked, rate-limited)
+	'/api/reviews/narrate': 'owner',
+
 	// Workouts (M4): owner-only JSON, one anchor per area; each slice adds its line under its own.
 	// sync
 	'/api/workouts/sync': 'owner',
