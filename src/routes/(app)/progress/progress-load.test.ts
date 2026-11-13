@@ -4,6 +4,7 @@
  * data, and a failed read recorded and turned into the load-failed state.
  */
 import { describe, expect, it, vi } from 'vitest';
+import { METRICS } from '#lib/domain/analytics/metrics.ts';
 import { periodWindow, trendWindow, type Period } from '#lib/domain/analytics/periods.ts';
 import type { TrendResult } from '#lib/domain/analytics/trend.ts';
 import type { SeriesPoint } from '#lib/domain/analytics/types.ts';
@@ -203,11 +204,11 @@ describe('overviewData', () => {
 		expect(tonnage.canonical).toBe(12_000);
 		expect(tonnage.delta).toEqual({
 			value: 10,
-			text: '+22 lb',
+			text: '+22\u00a0lb',
 			change: 'better',
 			against: 'the 12 weeks before'
 		});
-		expect(tonnage.soFar).toEqual({ value: '220.5 lb', lastWeek: null, through: TODAY });
+		expect(tonnage.soFar).toEqual({ value: '220.5\u00a0lb', lastWeek: null, through: TODAY });
 	});
 
 	it('draws the sparkline on the server from complete weeks only', () => {
@@ -231,6 +232,32 @@ describe('overviewData', () => {
 		expect(all.context.comparison).toBeNull();
 	});
 
+	it('names no earlier period over tiles none of which has a change against it', () => {
+		const o = trained();
+		const noEarlier = { ...o.kpis[0]!.comparison, previous: null, delta: null, change: null };
+		const fresh = overviewData({ ...o, kpis: [{ ...o.kpis[0]!, comparison: noEarlier }] });
+		expect(fresh.tiles[0]!.tile.delta).toBeNull();
+		expect(fresh.context.comparison).toBeNull();
+		expect(fresh.context.period).toBe('Last 12 weeks');
+	});
+
+	it('words a lift that ended where it began as held, with its best, each to the pound', () => {
+		const o = trained();
+		// 44.7 kg is 98.55 lb and 46 kg 101.4 lb: an estimate shows to the pound.
+		const points = weekly([44.7, 46, 44.8, ...Array(9).fill(null), 45]);
+		const flat = overviewData({
+			...o,
+			series: { ...o.series, keyLifts: [{ exerciseId: 'bench', name: 'Bench press', points }] }
+		});
+		const [bench] = flat.charts.lifts;
+		expect(bench!.summary).toBe('Estimated 1RM held at 99\u00a0lb, with a best of 101\u00a0lb.');
+		expect(bench!.data.series[0]!.points.slice(0, 3).map((p) => p?.text)).toEqual([
+			'99',
+			'101',
+			'99'
+		]);
+	});
+
 	it('gives each discipline a card with its verdict words, window and evidence badges', () => {
 		const [card] = overviewData(trained()).cards;
 		expect(card).toEqual({
@@ -241,10 +268,37 @@ describe('overviewData', () => {
 			sentence: '1 of 2 main lifts trending up',
 			window: 'Trend over the last 12 weeks',
 			evidence: [
-				{ subject: 'Back squat', verdict: { verdict: 'real_trend', direction: 'up', good: true } },
-				{ subject: 'Bench press', verdict: { verdict: 'normal_variation' } }
+				{
+					subject: 'Back squat',
+					verdict: { verdict: 'real_trend', direction: 'up', good: true },
+					hint: null
+				},
+				{ subject: 'Bench press', verdict: { verdict: 'normal_variation' }, hint: null }
 			]
 		});
+	});
+
+	it('says under a jargon measure’s name what it means, in plain words', () => {
+		const input = trained();
+		const [verdict] = input.verdicts;
+		const [first] = verdict!.evidence;
+		const measures = (['srpe_load', 'muay_thai_load', 'monotony', 'strain'] as const).map(
+			(metric) => ({
+				...first!,
+				subject: METRICS[metric].label,
+				trend: { ...first!.trend, metric }
+			})
+		);
+		const [card] = overviewData({
+			...input,
+			verdicts: [{ ...verdict!, area: 'general', evidence: measures }]
+		}).cards;
+		expect(card!.evidence.map(({ subject, hint }) => [subject, hint])).toEqual([
+			['Training load', 'Minutes × how hard each session felt, added up'],
+			['Muay Thai load', 'Minutes × how hard each class felt, added up'],
+			['Monotony', 'How alike your days are; lower means more varied'],
+			['Strain', 'Load × monotony; high when a big week has no easy days']
+		]);
 	});
 
 	it('charts each key lift in the profile units, the week in progress as its last slot', () => {
@@ -253,11 +307,12 @@ describe('overviewData', () => {
 		const squat = charts.lifts[0]!;
 		expect(squat.data.unit).toBe('lb');
 		const points = squat.data.series[0]!.points;
-		expect(points[0]).toEqual({ value: 220.5, text: '220.5', kind: 'estimated' });
+		// 100 kg is 220.46 lb: an estimate shows to the pound.
+		expect(points[0]).toEqual({ value: 220, text: '220', kind: 'estimated' });
 		expect(points[2]).toBeNull();
 		expect(squat.data.slots.at(-1)).toMatchObject({ inProgress: true });
 		expect(squat.data.slots.filter((s) => s.inProgress)).toHaveLength(1);
-		expect(squat.summary).toBe('Estimated 1RM went from 220.5 lb to 275.6 lb.');
+		expect(squat.summary).toBe('Estimated 1RM went from 220\u00a0lb to 276\u00a0lb.');
 		expect(squat.table.rows).toHaveLength(13);
 	});
 

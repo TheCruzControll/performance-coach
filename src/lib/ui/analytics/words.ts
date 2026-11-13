@@ -2,7 +2,7 @@
  * The words of a metric at a glance (M6 trend tiles), shared by TrendTile and the specs, so a
  * tile's visible parts and the one sentence a screen reader hears never disagree. A verdict's own
  * words (VerdictBadge) are in verdict-words.ts, re-exported here.
- * Pure and client-safe: it imports only types, the calendar and the weekday names.
+ * Pure and client-safe: it imports only types, the calendar, the weekday names and NBSP.
  *
  * The server sends every number already formatted in the owner's units (`value`, `delta.text`,
  * the so-far values); this module only arranges them into words, picks each part's tone and
@@ -10,6 +10,7 @@
  */
 import { weekdayOf, type IsoDate } from '#lib/domain/calendar.ts';
 import type { Change, MetricKind } from '#lib/domain/analytics/types.ts';
+import { NBSP } from '#lib/domain/units.ts';
 import { WEEKDAY_INFO } from '#lib/domain/weekdays.ts';
 import type { IconName } from '../icons/icons.ts';
 import type { Sparkline } from './sparkline.ts';
@@ -66,8 +67,30 @@ export interface Tile {
 	sparkline?: Sparkline | null;
 }
 
-/** What a tile says with no earlier period to set its value against. */
+/** What a tile says with no earlier period and no trend within its own weeks yet. */
 export const NO_COMPARISON = 'No earlier period to compare with';
+
+/**
+ * With no earlier period, what a tile says of its own weeks, from its verdict, so the line and the
+ * verdict under it never disagree: 'Improving over 12 weeks', 'Holding steady over 12 weeks', or
+ * 'Rising' and 'Falling' for a metric with no better way. Null without a verdict that has read
+ * enough weeks: the tile then says NO_COMPARISON.
+ */
+export function withinWords(verdict?: TileVerdict | null, window?: VerdictWindow): string | null {
+	if (!verdict || verdict.verdict === 'insufficient_data') return null;
+	const weeks = window?.weeks;
+	const over = weeks ? `over ${weeks} ${weeks === 1 ? 'week' : 'weeks'}` : 'over these weeks';
+	if (verdict.verdict === 'normal_variation') return `Holding steady ${over}`;
+	const words =
+		verdict.good === null
+			? verdict.direction === 'up'
+				? 'Rising'
+				: 'Falling'
+			: verdict.good
+				? 'Improving'
+				: 'Declining';
+	return `${words} ${over}`;
+}
 
 /** How a delta's number is set against the previous period: '+5 kg better than …'. */
 export const CHANGE_WORDS: Readonly<Record<Change, string>> = {
@@ -78,16 +101,26 @@ export const CHANGE_WORDS: Readonly<Record<Change, string>> = {
 	same: 'the same as'
 };
 
-/** The value with its unit, as read aloud: '142.5 kg', '5:42 /km'. */
-export const valueWords = (value: string, unit?: string) => (unit ? `${value} ${unit}` : value);
+/**
+ * The value with its unit, kept on one line by a non-breaking space: '142.5 kg', '5:42 /km';
+ * a percentage takes no space at all: '100%'.
+ */
+export const valueWords = (value: string, unit?: string) =>
+	!unit ? value : unit === '%' ? `${value}%` : `${value}${NBSP}${unit}`;
 
 /** '+5 kg better than the 12 weeks before'. */
 export const deltaWords = (delta: TileDelta) =>
 	`${delta.text} ${CHANGE_WORDS[delta.change]} ${delta.against}`;
 
-/** The delta's icon: the way the number moved, whichever way is better. */
-export const deltaIcon = (delta: TileDelta): IconName =>
-	delta.value > 0 ? 'trend-up' : delta.value < 0 ? 'trend-down' : 'trend-flat';
+/**
+ * The delta's icon follows better, not the raw sign: a pace 8 s faster points up beside its
+ * 'better than'. A metric with no better way shows the way the number moved.
+ */
+export function deltaIcon(delta: TileDelta): IconName {
+	if (delta.change === 'better') return 'trend-up';
+	if (delta.change === 'worse') return 'trend-down';
+	return delta.value > 0 ? 'trend-up' : delta.value < 0 ? 'trend-down' : 'trend-flat';
+}
 
 /**
  * The delta's tone, by direction × good: better is positive, worse a warning, and a metric with
@@ -106,6 +139,19 @@ export function soFarWords(soFar: TileSoFar): string {
 }
 
 /**
+ * A chart's sentence from its first and last complete points, already formatted, and the
+ * headline value beside it (a best estimate), so the sentence and the headline never disagree:
+ * 'Estimated 1RM held at 98.5 kg, with a best of 101.5 kg.' 'Held at' when the two ends read the
+ * same; the best is said only when it is neither end.
+ */
+export function spanSentence(subject: string, first: string, last: string, best?: string | null) {
+	const peak = best && best !== first && best !== last ? `, with a best of ${best}` : '';
+	return first === last
+		? `${subject} held at ${first}${peak}.`
+		: `${subject} went from ${first} to ${last}${peak}.`;
+}
+
+/**
  * The tile as one sentence, what a screen reader hears in place of its parts: 'Squat e1RM:
  * 142.5 kg, estimated. +5 kg better than the 12 weeks before. This week so far: … Real
  * improvement over the last 12 weeks.' With no value, Stat's contract: 'no data yet', never a
@@ -119,7 +165,7 @@ export function tileSentence(tile: Tile): string {
 	}
 	const parts = [
 		`${tile.label}: ${valueWords(tile.value, tile.unit)}, ${KIND_WORD[tile.kind].toLowerCase()}`,
-		tile.delta ? deltaWords(tile.delta) : NO_COMPARISON,
+		tile.delta ? deltaWords(tile.delta) : (withinWords(tile.verdict, tile.window) ?? NO_COMPARISON),
 		...(tile.soFar ? [soFarWords(tile.soFar)] : []),
 		...(tile.verdict ? [verdictWords(tile.verdict, tile.window)] : [])
 	];

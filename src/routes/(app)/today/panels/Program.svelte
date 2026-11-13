@@ -6,21 +6,23 @@
   'Nothing planned yet' with its summary, an empty Up next and the way to Train. The plan is
   streamed: its skeleton holds the room until it arrives, and a failed read is a designed error
   with Retry. Today's sessions each offer Start workout or Done · View (start-link.ts, composed
-  on the server), or Resume for the workout in progress on this device, and the day offers 'Log
-  something else'. Once the plan shows and the browser is idle, Today saves the kits of today's
-  sessions still to do, so they start in a gym with no signal: the one place outside the workout
-  pages that creates the device's database (today-kits.ts). Last, Ask the coach opens Coach with
-  'What should I focus on next week?' (a link: ui/ask-link.ts). In a bridge week between blocks,
-  'Between blocks' names the day the next block starts, with 'Log something else', in place of
-  the week. When a week or a block completes, its review prompt leads (ReviewPrompt: create and
-  open it, or 'See your review'). Code-split behind PanelLoader.
+  on the server), or Resume for the workout in progress on this device: only the lead session
+  (leadLineage) has the primary button, the others a quiet trailing Start. Today is named by the
+  page's eyebrow date, so its day carries no visible date of its own. The day offers 'Log
+  something else'. Once the plan shows and the browser is idle, Today saves the kits of the
+  sessions still to do today and in the next two days, so they start in a gym with no signal, even
+  one looked at the night before: with Train, the only places outside the workout pages that
+  create the device's database (coming-kits.ts). Last, Ask the coach opens Coach with 'What should
+  I focus on next week?' (a link: ui/ask-link.ts). In a bridge week between blocks, 'Between
+  blocks' names the day the next block starts, with 'Log something else', in place of the week.
+  When a week or a block completes, its review prompt leads (ReviewPrompt: create and open it, or
+  'See your review'). Code-split behind PanelLoader.
 -->
 <script lang="ts">
 	import { invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { navigating } from '$app/state';
 	import { deviceWorkout } from '#lib/client/workout/device-workout.svelte.ts';
-	import { saveTodayKits } from '#lib/client/workout/today-kits.ts';
 	import type { IsoDate } from '#lib/domain/calendar.ts';
 	import ReviewPrompt from '#lib/ui/analytics/ReviewPrompt.svelte';
 	import { ASK_QUESTIONS, askHref } from '#lib/ui/ask-link.ts';
@@ -31,14 +33,18 @@
 	import ListRow from '#lib/ui/components/ListRow.svelte';
 	import Section from '#lib/ui/components/Section.svelte';
 	import Skeleton from '#lib/ui/components/Skeleton.svelte';
+	import StatusSlot from '#lib/ui/components/StatusSlot.svelte';
 	import Surface from '#lib/ui/components/Surface.svelte';
 	import SessionCard from '#lib/ui/program/SessionCard.svelte';
-	import { resumeLink } from '#lib/ui/program/start-link.ts';
+	import { leadLineage, resumeLink } from '#lib/ui/program/start-link.ts';
 	import WeekStrip from '#lib/ui/program/WeekStrip.svelte';
 	import type { PageData } from '../$types';
 
 	type TodayPlanView = Awaited<NonNullable<PageData['plan']>>;
-	type PlanCard = Omit<Extract<TodayPlanView, { failed: false }>['upNext'][number], 'when'>;
+	type PlanCard = Omit<
+		Extract<TodayPlanView, { failed: false }>['upNext'][number],
+		'when' | 'date'
+	>;
 
 	interface Props {
 		/** Settled when Today was server-rendered; a promise after a client navigation. */
@@ -54,8 +60,8 @@
 	const TRAIN_HREF = resolve('/(app)/train');
 
 	/**
-	 * Once the idle pass has run: 'saved' with today's kits on this device (today-kits.ts), 'none'
-	 * with none to save (a rest day: nothing created). What the specs wait for.
+	 * Once the idle pass has run: 'saved' with the coming days' kits on this device (coming-kits.ts),
+	 * 'none' with none to save (rest days ahead: nothing created). What the specs wait for.
 	 */
 	let kits = $state<'saved' | 'none'>();
 
@@ -65,11 +71,11 @@
 		const shown = plan;
 		const save = async () => {
 			const view = await shown;
-			const today = !view.failed && view.week?.days.find((d) => d.date === view.week!.today);
-			const saved = await saveTodayKits(today ? today.cards : [], async (lineages) => {
-				const start = await import('#lib/client/workout/start.ts');
-				return start.saveKits(lineages, { store: await start.openStartStore() });
-			});
+			let saved: string[] = [];
+			if (!view.failed) {
+				const coming = await import('#lib/client/workout/coming-kits.ts');
+				saved = await coming.saveComingKits(datedSessions(view), view.today);
+			}
 			if (live) kits = saved.length ? 'saved' : 'none';
 		};
 		const go = () => live && void save().catch(() => {});
@@ -77,6 +83,12 @@
 		else setTimeout(go, 800);
 		return () => (live = false);
 	});
+
+	/** The week's sessions on their days, then Up next's, which may cross into the next week. */
+	const datedSessions = (view: Extract<TodayPlanView, { failed: false }>) => [
+		...(view.week?.days.flatMap((d) => d.cards.map((c) => ({ ...c, date: d.date }))) ?? []),
+		...view.upNext
+	];
 
 	let retrying = $state(false);
 	async function retry() {
@@ -86,9 +98,18 @@
 	}
 </script>
 
-{#snippet go(card: PlanCard)}
+{#snippet go(card: PlanCard, lead: string | null)}
 	{@const next = resumeLink(card.lineage, card.start, deviceWorkout.active)}
-	{#if next}
+	{#if next?.id === 'start-workout' && card.lineage !== lead}
+		<span class="trailing">
+			<Button
+				variant="ghost"
+				href={next.href}
+				aria-label={`Start ${card.title}`}
+				data-testid={next.id}>Start</Button
+			>
+		</span>
+	{:else if next}
 		<Button
 			variant={next.icon === 'check' ? 'secondary' : 'primary'}
 			icon={next.icon}
@@ -131,7 +152,7 @@
 				>
 					{#snippet actions()}
 						<Button variant="secondary" icon="refresh" loading={retrying} onclick={retry}>
-							Retry
+							Try again
 						</Button>
 					{/snippet}
 				</EmptyState>
@@ -198,6 +219,18 @@
 				{@const selected = chosen ?? week.selected}
 				{@const day = week.days.find((d) => d.date === selected) ?? week.days[0]!}
 				{@const isToday = day.date === week.today}
+				<!-- At most a key per discipline and one for the skipped ring (week-legend.ts). -->
+				{@const keys = new Set(
+					week.strip.flatMap((d) => d.dots.flatMap((t) => (t.skipped ? [t.tone, null] : [t.tone])))
+				).size}
+				{@const lead = isToday
+					? leadLineage(
+							day.cards.map((c) => ({
+								lineage: c.lineage,
+								link: resumeLink(c.lineage, c.start, deviceWorkout.active)
+							}))
+						)
+					: null}
 				<WeekStrip
 					days={week.strip}
 					today={week.today}
@@ -206,15 +239,28 @@
 					onselect={(date) => (chosen = date)}
 					data-testid="week-strip"
 				/>
-				<Section title={day.heading} gap={isToday ? 'md' : 'sm'} data-testid="today-day">
-					{#snippet action()}
-						{#if isToday}<Badge tone="accent">Today</Badge>{/if}
-					{/snippet}
+				<!-- Graphite 2004's legend for the strip (WeekLegend.svelte); nothing on today's design.
+				     Its room: rows of three keys, 1.25rem each with 0.25rem between (graphite.css). -->
+				<StatusSlot
+					load={() => import('./WeekLegend.svelte')}
+					props={{ days: week.strip }}
+					room={`${Math.max(0, Math.ceil(keys / 3) * 1.5 - 0.25)}rem`}
+				/>
+				{#if week.today}
+					<!-- Graphite 2004's Status Display (TodayStatus.svelte); nothing on today's design. -->
+					<StatusSlot load={() => import('./TodayStatus.svelte')} props={{ week }} room="9.5rem" />
+				{/if}
+				<Section
+					title={isToday ? (day.cards.length ? 'Today’s sessions' : 'Today') : day.heading}
+					titleHidden={isToday}
+					gap={isToday ? 'md' : 'sm'}
+					data-testid="today-day"
+				>
 					{#each day.cards as card (card.lineage)}
 						{#if isToday}
 							<div class="session" data-testid="today-session">
 								{@render cardFor(card, 'session-card')}
-								{@render go(card)}
+								{@render go(card, lead)}
 							</div>
 						{:else}
 							{@render cardFor(card, 'session-card')}
@@ -307,6 +353,12 @@
 	.session {
 		display: grid;
 		gap: var(--space-2);
+	}
+
+	/* A later session's Start: quiet, at the row's trailing edge, under its card. */
+	.trailing {
+		justify-self: end;
+		margin-top: calc(var(--space-2) * -1);
 	}
 
 	.up-next {

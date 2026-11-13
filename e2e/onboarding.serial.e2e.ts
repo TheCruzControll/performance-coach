@@ -322,6 +322,28 @@ test('stopped at schedule: a new browser context picks up there, from /onboardin
 		expect(await audit(again)).toEqual([]);
 		await again.evaluate(() => document.documentElement.removeAttribute('data-theme'));
 		await captureScreen(again, testInfo, 'onboarding-resume');
+		// In Graphite 2004 the card is a grouped box (graphite.css), and passes axe in both themes.
+		const look = () =>
+			card.evaluate((el) => {
+				const style = getComputedStyle(el);
+				return { radius: style.borderTopLeftRadius, raised: style.boxShadow !== 'none' };
+			});
+		expect(await look()).toEqual({ radius: '20px', raised: false });
+		await again.evaluate(() => localStorage.setItem('pc:design:v1', 'graphite'));
+		await gotoHydrated(again, '/onboarding');
+		await stepReady(again, 'welcome');
+		await expect(again.locator('html')).toHaveAttribute('data-design', 'graphite');
+		expect(await look()).toEqual({ radius: '6px', raised: true });
+		await again.waitForFunction(() => document.fonts.status === 'loaded');
+		await again.waitForTimeout(400);
+		expect(await audit(again)).toEqual([]);
+		await again.evaluate(() => document.documentElement.setAttribute('data-theme', 'light'));
+		await again.waitForTimeout(400);
+		expect(await audit(again)).toEqual([]);
+		await again.evaluate(() => {
+			document.documentElement.removeAttribute('data-theme');
+			localStorage.removeItem('pc:design:v1');
+		});
 
 		await card.getByRole('link', { name: 'Pick up there' }).click();
 		await expect(again).toHaveURL('/onboarding/schedule');
@@ -404,6 +426,12 @@ test('goals: Continue without a goal is refused and says why; a crafted Skip cha
 }) => {
 	await gotoHydrated(page, '/onboarding/goals');
 	await stepReady(page, 'goals');
+	// The question is asked once, by the step's title; the empty state under it only guides.
+	await expect(page.getByText('What are you training for?')).toHaveCount(1);
+	await expect(page.getByRole('heading', { level: 1 })).toHaveText('What are you training for?');
+	await expect(page.getByTestId('goals-empty')).toContainText(
+		'Add a goal and the coach plans your training around it.'
+	);
 	await next(page).click();
 	await expect(page.getByRole('alert').filter({ hasText: 'Add at least one goal' })).toHaveText(
 		'Add at least one goal to continue.'
@@ -456,10 +484,10 @@ test('review: lifts by name with how each was found, and Edit comes back to the 
 	await stepReady(page, 'review');
 	const lifts = block(page, 'strength').getByRole('listitem');
 	await expect(lifts.filter({ hasText: 'Weighted pull-up' })).toHaveText(
-		/^Weighted pull-up\s*40 kg\s*Measured$/
+		/^Weighted pull-up\s*40\s+kg\s*Measured$/
 	);
 	await expect(lifts.filter({ hasText: 'Back squat' })).toHaveText(
-		/^Back squat\s*≈ [\d.]+ kg\s*Estimated$/
+		/^Back squat\s*≈ \d+(\.5)?\s+kg\s*Estimated$/
 	);
 	await expect(block(page, 'strength')).not.toContainText('Week one');
 	// A strength goal only: no running or Muay Thai, so no specifics block.

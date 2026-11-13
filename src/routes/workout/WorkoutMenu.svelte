@@ -4,12 +4,20 @@
   states; the Shell loads it on idle with the store, its place kept meanwhile) and its sheet:
   Finish workout, which opens the finish sheet; Settings, which opens the workout settings
   (SettingsSheet.svelte, loaded then) over the menu, so closing them comes back to it; and
-  Discard workout, which asks first and says what it does. A
-  workout that has not synced is deleted from this device with everything logged in it; one the
-  server holds is kept there as abandoned (start.ts's discardInProgress, the start conflict's
-  Discard). A BottomSheet: a centred dialog from 1024 px, Escape closes it and focus returns.
-  Every action is a primitive Button (44 px, hover and :focus-visible states).
+  Discard workout, which asks first and says what it does. The workout is kept in History as
+  abandoned, synced or not, since its start may have reached the server; only one whose start the
+  server refused is deleted from this device with everything logged in it (start.ts's
+  discardInProgress, the start conflict's Discard). A BottomSheet: a centred dialog from 1024 px,
+  Escape closes it and focus returns. Every action is a primitive Button (44 px, hover and
+  :focus-visible states).
+  Once a set is logged, a visible Finish (HeaderFinish.svelte, exported from here so it loads with
+  the menu) sits at the end of the title's line too, so finishing never means hunting through the
+  menu; the menu keeps Finish workout.
 -->
+<script module lang="ts">
+	export { default as HeaderFinish } from './HeaderFinish.svelte';
+</script>
+
 <script lang="ts">
 	import type { InProgress } from '#lib/client/workout/start.ts';
 	import type { WorkoutStore } from '#lib/client/workout/store.ts';
@@ -110,9 +118,9 @@
 	<div bind:this={body}>
 		{#if discarding}
 			<p class="consequence" data-testid="discard-consequence">
-				{discarding.startSeq === null
-					? 'It has synced, so discarding marks it abandoned on the server. It never shows as done.'
-					: "It hasn't synced yet, so discarding deletes it from this device, with everything logged in it."}
+				{discarding.startParked === 'refused'
+					? 'The server refused it, so discarding deletes it from this device, with everything logged in it.'
+					: 'Discarding keeps it in your history as abandoned. It never shows as done.'}
 			</p>
 			{#if failed}
 				<p class="error" role="alert">Not saved on this device. Try again.</p>

@@ -78,15 +78,18 @@ const review = (parts: Partial<CycleReviewData> = {}): CycleReviewData => ({
 
 const html = (data: CycleReviewData, props = {}) =>
 	render(CycleReview, { props: { review: data, ...props } }).body;
-/** A section's markup, up to the next: its <details> holds the verdict, the body follows it. */
-const sectionOf = (body: string, id: string) =>
-	body.split('data-testid="review-section"').find((part) => part.includes(`data-section="${id}"`))!;
 const text = (fragment: string) =>
 	fragment
 		.replace(/<!--[\s\S]*?-->/g, '')
 		.replace(/<[^>]+>/g, ' ')
 		.replace(/\s+/g, ' ')
 		.trim();
+/** One section's markup: from its element to the next section's (its body follows its details). */
+const sectionOf = (body: string, id: string) => {
+	const rest = body.slice(body.search(new RegExp(`<div[^>]*data-section="${id}"`)));
+	const next = rest.slice(1).search(/<div[^>]*data-testid="review-section"/);
+	return next < 0 ? rest : rest.slice(0, next + 1);
+};
 
 describe('the cycle review on the server', () => {
 	it('the hero: the block, its summary, adherence and each count’s value', () => {

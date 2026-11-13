@@ -26,6 +26,7 @@ import {
 	testCalls,
 	type ShardEntry
 } from './e2e-shards.ts';
+import { LEGS } from '../e2e/projects.ts';
 import { ciShardedLegs, fileKey, inPool, listRuns } from './lib/playwright-list.ts';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -51,6 +52,9 @@ function entries(count: number, seed: number): ShardEntry[] {
 }
 
 const noneFirst = () => false;
+
+/** The file of a `<project> › <file>` key. */
+const fileOf = (key: string) => key.slice(key.indexOf(' › ') + 3);
 
 /** Seeded cases: shard counts 1-5, 1 or 2 workers, up to 30 more entries than shards. */
 const cases = Array.from({ length: 300 }, (_, i) => {
@@ -128,10 +132,29 @@ describe('planShards', () => {
 		expect(legs.length).toBeGreaterThan(0);
 		for (const { group, engine, of } of legs) {
 			const list = planLeg(`${group}/${engine}`, table.legs[`${group}/${engine}`]!);
-			const workers = legWorkers(group);
-			const [one, ...rest] = planShards(list, of, workers).map((s) => shardCost(s, workers));
-			for (const other of rest) expect(one, `${group}/${engine}`).toBeLessThan(other);
+			const workers = legWorkers(group, engine);
+			const plan = planShards(list, of, workers);
+			const [one, ...rest] = plan.map((s) => shardCost(s, workers));
+			// Shard 1 must hold SHARD_ONE_FILES. When those alone outweigh an even split
+			// (main/chromium in 3), no plan makes it the lightest: then it holds nothing else and
+			// is the lightest at its planned share.
+			const pinnedOnly = plan[0]!.keys.every((key) => SHARD_ONE_FILES.includes(fileOf(key)));
+			const share = pinnedOnly ? SHARD_ONE_SHARE : 1;
+			for (const other of rest) expect(one! * share, `${group}/${engine}`).toBeLessThan(other);
 		}
+	});
+
+	it('leaves shard 1 its SHARD_ONE_FILES alone when they outweigh the others', () => {
+		const pinned = [
+			{ key: 'p › a11y-dark.e2e.ts', seconds: 100 },
+			{ key: 'p › a11y-light.e2e.ts', seconds: 100 }
+		];
+		const others = Array.from({ length: 6 }, (_, i) => ({ key: `p › f${i}.e2e.ts`, seconds: 64 }));
+		const [first, ...rest] = planShards([...pinned, ...others], 3, 2);
+		// 200 s over 2 workers costs 100; the others' 384 s split into 96 each, none in shard 1
+		expect(first!.keys).toEqual(pinned.map((e) => e.key));
+		expect(shardCost(first!, 2)).toBe(100);
+		expect(rest.map((shard) => shardCost(shard, 2))).toEqual([96, 96]);
 	});
 
 	it('breaks ties on the lighter shard, then the lower index', () => {
@@ -205,13 +228,14 @@ describe('the shard arguments', () => {
 		});
 	});
 
-	it('gives a CI leg as many Playwright workers as the config does', async () => {
-		for (const group of ['main', 'serial', 'alone']) {
+	it('gives every CI leg as many Playwright workers as the config does', async () => {
+		for (const { group, engine } of LEGS) {
 			vi.resetModules();
 			vi.stubEnv('CI', '1');
 			vi.stubEnv('E2E_GROUP', group);
+			vi.stubEnv('E2E_ENGINE', engine);
 			const { default: config } = await import('../playwright.config.ts');
-			expect(config.workers, group).toBe(legWorkers(group));
+			expect(config.workers, `${group}/${engine}`).toBe(legWorkers(group, engine));
 		}
 	});
 	afterEach(() => vi.unstubAllEnvs());
@@ -335,7 +359,7 @@ describe('the leg’s spec files', () => {
 			for (const entry of entries.filter((e) => !(e.key in table.legs[leg]!))) {
 				expect(entry.seconds, `${entry.key}, untimed`).toBeGreaterThan(0);
 			}
-			const planned = planShards(entries, of, legWorkers(group)).flatMap((s) => s.keys);
+			const planned = planShards(entries, of, legWorkers(group, engine)).flatMap((s) => s.keys);
 			expect(planned.sort()).toEqual([...keys].sort());
 		}
 	});
@@ -363,7 +387,7 @@ describe('the CLI', () => {
 		const expected = shardArgs(planLeg('serial/webkit', table.legs['serial/webkit']!), {
 			current: 2,
 			total: 4,
-			workers: 1,
+			workers: legWorkers('serial', 'webkit'),
 			listFile: file
 		});
 		expect(readFileSync(file, 'utf8')).toBe(`${expected.lines.join('\n')}\n`);
