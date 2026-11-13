@@ -835,6 +835,14 @@ Commitments, running, interference rules and placement across disciplines. Unit 
   `strength_class` session counted as a strength day with no hard sets credited; a commitment no
   goal trains adds to the week; a null duration and intensity get 90 min (Muay Thai) and moderate,
   with `default_assumed` decisions and a `commitment_placed` why that says so.
+- **Zone 2 bike** (`cross-training.test.ts`): with a bike and runs serving a goal that trains more
+  than running, half of each week's generated easy runs (rounded up, the latest first) become a
+  `conditioning` session titled Zone 2 bike, with the run's day, time, minutes and RPE and zone 2
+  notes (60–70 % of max heart rate), and an `exercise_substituted` decision (`running.zone2_bike`)
+  citing each; every week keeps at least one run (a running commitment counts); long and quality
+  runs never move; a goal about running alone, or one with a race ahead, keeps its easy runs; with no
+  bike nothing changes. The owner's week (Muay Thai five days, a Saturday club run) moves its Monday
+  morning easy run to the bike and leaves the lifts and Muay Thai exactly as they were.
 - **Running** (`running.test.ts`): no runs without a running discipline (a running commitment stays
   the only run); a new runner gets easy runs only, timed, each at RPE 4.5 and HR zone 2; no running
   specifics gives the time-based week 1 (30-minute easy runs and a 45-minute long run) with a

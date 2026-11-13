@@ -5,7 +5,7 @@
  * one, such as whether the long run may outrun the session length (an open question), is a
  * one-line edit.
  */
-import type { Discipline, ExperienceLevel, Intensity } from '../../profile/catalog.ts';
+import type { Discipline, Equipment, ExperienceLevel, Intensity } from '../../profile/catalog.ts';
 import type { RunSegment } from '../../training/types.ts';
 import type {
 	OtherSessionKind,
@@ -189,6 +189,36 @@ export const MUAY_THAI = {
 	Extract<OtherSessionKind, 'technical' | 'pad_work' | 'sparring'>,
 	{ title: string; rpe: number; intensity: SessionIntensity; rounds: number }
 > & { roundMinutes: number; sparringWeeks: readonly WeekKind[] };
+
+/**
+ * Zone 2 on the bike instead of some easy runs (cross-training.ts). With a bike in the owner's
+ * kit, and runs that serve a goal training more than running (general fitness beside Muay Thai or
+ * lifting), `share` of the week's generated easy runs, rounded up and the latest first, become a
+ * steady zone 2 bike session of the same length: the same aerobic work, without the impact, so
+ * the legs stay fresher for the rest of the week. The week always keeps `keepRuns` actual runs,
+ * a running commitment counting. A goal about running itself, or one with a race ahead, keeps
+ * its easy runs: there only recovery runs may move to the bike. Long, tempo and interval runs
+ * always stay runs. Zone 2 is `hrMaxShare` of max heart rate, conversational.
+ */
+export const ZONE2_BIKE = {
+	equipment: 'bike',
+	exercise: 'stationary_bike',
+	title: 'Zone 2 bike',
+	convert: ['easy_run', 'recovery_run'],
+	convertWithRace: ['recovery_run'],
+	share: 0.5,
+	keepRuns: 1,
+	hrMaxShare: [0.6, 0.7]
+} as const satisfies {
+	equipment: Equipment;
+	exercise: string;
+	title: string;
+	convert: readonly SessionType[];
+	convertWithRace: readonly SessionType[];
+	share: number;
+	keepRuns: number;
+	hrMaxShare: readonly [number, number];
+};
 
 /** A mobility session on a free day no goal asks for: short and easy, within the session length. */
 export const MOBILITY = { minutes: 30, rpe: 3 } as const;
