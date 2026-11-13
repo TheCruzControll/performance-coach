@@ -22,11 +22,12 @@
 
 	/**
 	 * Shown when Create is refused because the week is not reviewable yet. The rule is the m6-plan
-	 * open question 'early review' (EARLY_REVIEW in services/reviews/weekly.ts): change both.
+	 * open question 'early review' (EARLY_REVIEW in services/reviews/weekly.ts): change both, and
+	 * the review prompt's copy of these words (NOT_READY in progress/review-prompt.server.ts).
 	 */
 	const NOT_REVIEWABLE_WORDS =
 		'Your review is ready after Sunday, or once every session is done or skipped';
-	/** A block's refusal: the rule is cycle-review-service's reviewableBlock. */
+	/** A block's refusal: the rule is cycle-review-service's reviewableBlock (NOT_READY too). */
 	const CYCLE_NOT_REVIEWABLE_WORDS =
 		'Your cycle review is ready once the block ends, or once its last week is done';
 

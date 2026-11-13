@@ -105,6 +105,10 @@
 	// screen: WebKit can take a second or more, while the new URL is already in place. A later
 	// navigation (Back, another tab) can finish in the meantime, and SvelteKit would still render
 	// the earlier one over it, so a navigation overtaken like that is left unrendered.
+	// A navigation that starts while the last cross-fade is still under way (Back, then Forward)
+	// skips that one: the browser rejects its `ready` with an AbortError, and SvelteKit rejects
+	// the overtaken navigation's `complete`. Both are expected, so neither is reported as an
+	// unhandled rejection (lib/client/errors.ts); any other failure of `ready` still is.
 	let latest = 0;
 	onNavigate((navigation) => {
 		const id = ++latest;
@@ -120,12 +124,14 @@
 		return new Promise((done) => {
 			const transition = document.startViewTransition(async () => {
 				if (id !== latest) {
-					transition.ready.catch(() => {}); // skipped on purpose: nothing to report
 					transition.skipTransition();
 					return;
 				}
 				done();
-				await navigation.complete;
+				await navigation.complete.catch(() => {}); // overtaken: the newer one takes over
+			});
+			transition.ready.catch((error: unknown) => {
+				if (!(error instanceof DOMException && error.name === 'AbortError')) throw error;
 			});
 		});
 	});

@@ -420,6 +420,13 @@ describe('the load', () => {
 		next: null
 	};
 
+	const NARRATION = {
+		target: { kind: 'weekly', id: ID },
+		view: { state: 'writing', ask: true },
+		lines: ['Your coach is writing this up…'],
+		discuss: '/coach?ask=x&from=weekly_review'
+	} as const;
+
 	function deps(parts: Partial<ReviewsDeps> = {}) {
 		const calls: string[] = [];
 		const track = <T>(name: string, value: T) =>
@@ -436,6 +443,7 @@ describe('the load', () => {
 			reviewable: track('reviewable', { weekStartsOn: THIS_WEEK, reason: 'all_done' }),
 			block: track('block', null),
 			view: track('view', view()),
+			narration: track('narration', NARRATION),
 			record: vi.fn(async () => null),
 			...parts
 		} as unknown as Required<ReviewsDeps>;
@@ -462,6 +470,9 @@ describe('the load', () => {
 		expect(d.list).toHaveBeenCalledWith('owner', { limit: 50 }, { db });
 		expect(d.reviewable).toHaveBeenCalledWith('owner', TODAY, { db });
 		expect(d.block).toHaveBeenCalledWith('owner', TODAY, { db });
+		expect(d.narration).toHaveBeenCalledWith('owner', data.selected, { db });
+		expect(data.selected?.narration).toEqual(NARRATION);
+		expect(calls.at(-1)).toBe('narration:end');
 		for (let i = 0; i < calls.length; i += 2)
 			expect(calls[i + 1]).toBe(calls[i]!.replace('start', 'end'));
 	});
@@ -500,6 +511,22 @@ describe('the load', () => {
 		const again = deps({ view: vi.fn(async () => decided), offers: vi.fn(async () => [offer]) });
 		await loadReviews('owner', { key: `w-${LAST_WEEK}`, origin }, new Date(), again.d);
 		expect(again.d.offers).not.toHaveBeenCalled();
+	});
+
+	it('a write-up that fails to read is recorded and left out; the review still shows', async () => {
+		const { d } = deps({
+			narration: vi.fn(async () => {
+				throw new Error('coach tables down');
+			})
+		});
+		const data = await loadReviews('owner', { key: `w-${LAST_WEEK}`, origin }, new Date(), d);
+		if (data.failed) throw new Error('the review must show');
+		expect(data.selected).toMatchObject({ key: `w-${LAST_WEEK}` });
+		expect(data.selected?.narration).toBeUndefined();
+		expect(d.record).toHaveBeenCalledWith(
+			expect.objectContaining({ kind: 'load', context: { load: 'review-write-up' } }),
+			{ db: undefined }
+		);
 	});
 
 	it('no key: the list alone, empty with no review stored', async () => {
@@ -650,6 +677,7 @@ describe('cycle reviews', () => {
 		stale: false,
 		laterChanges: 0,
 		writeUp: { state: 'none' },
+		previews: [],
 		progression: null
 	} as unknown as CycleReviewView;
 

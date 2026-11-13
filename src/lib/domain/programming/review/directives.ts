@@ -234,12 +234,15 @@ export function directivesFrom(
 
 const halfStep = (n: number) => Math.round(n * 2) / 2;
 
+/** The constraint a deload in the block's first week adds to the owner's part. */
+export const DELOAD_FIRST = 'Open with a deload week';
+
 /** The directives as M5's next_cycle payload: what the owner may change before it is planned. */
 export function modifiableSubset(d: CycleDirectives): NextCycleSubset {
 	const changes = d.volume.map((v) => v.change);
 	const mean = changes.length ? changes.reduce((a, b) => a + b, 0) / changes.length : 0;
 	const constraints = [
-		...(d.deload === 'first' ? ['Open with a deload week'] : []),
+		...(d.deload === 'first' ? [DELOAD_FIRST] : []),
 		...(d.progression === 'hold' ? ['No load or volume increases this block'] : []),
 		...d.avoidDays.map((day) => `Avoid ${WEEKDAY_INFO[day].label}s: often missed`)
 	];

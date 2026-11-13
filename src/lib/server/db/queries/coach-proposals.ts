@@ -48,6 +48,8 @@ export const proposalViewColumns = {
 	supersededReason: coachProposals.supersededReason,
 	/** The rules provenance a review stored (evidence.source); null for the coach's own. */
 	source: sql<unknown>`${coachProposals.evidence} -> 'source'`,
+	/** A next_cycle's block (payload.fromBlockLineage): the cycle review it waits for. */
+	fromBlockLineage: sql<string | null>`${coachProposals.payload} ->> 'fromBlockLineage'`,
 	createdAt: coachProposals.createdAt,
 	closedAt: coachProposals.closedAt
 };
