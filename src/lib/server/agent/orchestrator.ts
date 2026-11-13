@@ -330,7 +330,10 @@ export async function runLoop<Deps>(input: LoopInput<Deps>): Promise<LoopResult>
 			...used,
 			ttftMs,
 			latencyMs: record.latencyMs,
-			error: record.error
+			error: record.error,
+			// The provider's own words (status, API error type, request id, a refused request's
+			// reason): never the key or the model's output. A 400 is unreadable without them.
+			errorMessage: outcome.ok ? null : outcome.error.message
 		});
 		await hooks.onCall(record);
 		return { ...outcome, record };

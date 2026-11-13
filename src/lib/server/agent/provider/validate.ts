@@ -19,6 +19,13 @@ import { EFFORTS, type Effort, type ModelRequest } from './types.ts';
 /** The most cache_control breakpoints a request may carry, top-level automatic caching included. */
 export const MAX_BREAKPOINTS = 4;
 
+/**
+ * Structured outputs' explicit complexity limits, summed over every strict tool schema and the
+ * output_config.format schema of one request (the structured-outputs docs, "Schema complexity
+ * limits"). Past any of them the API refuses the whole request with a 400 before the model runs.
+ */
+export const STRICT_LIMITS = { tools: 20, optional: 24, unions: 16 } as const;
+
 export const REQUEST_RULE = {
 	no_messages: 'A request needs at least one message',
 	first_not_user: 'The first message must be a user message',
@@ -31,7 +38,10 @@ export const REQUEST_RULE = {
 		'A mid-conversation system message follows a user message, and is last or followed by an assistant message',
 	too_many_breakpoints: `A request carries at most ${MAX_BREAKPOINTS} cache breakpoints`,
 	tools_unsorted: 'Tools are sorted by name, each once, so the prefix is byte-stable (coach)',
-	tool_not_strict: 'Every tool is a custom tool with strict: true (coach)',
+	tool_not_custom: 'Every tool is a custom tool (coach)',
+	too_many_strict_tools: `A request carries at most ${STRICT_LIMITS.tools} strict tools`,
+	too_many_optional: `Strict schemas have at most ${STRICT_LIMITS.optional} optional parameters in all`,
+	too_many_unions: `Strict schemas have at most ${STRICT_LIMITS.unions} union-typed parameters in all`,
 	tool_schema_open: 'Every object in a tool’s input schema sets additionalProperties: false',
 	tool_choice:
 		'tool_choice is absent or auto: Opus 5.5 refuses forced tool use, and the coach never turns tools off',
@@ -73,6 +83,7 @@ export function validateRequest(request: RequestBody): RequestIssue[] {
 	if (!EFFORTS.includes(effort as Effort)) flag('no_effort', 'output_config.effort');
 
 	checkTools(request.tools ?? [], flag);
+	checkStrictLimits(request, flag);
 	checkMessages(request.messages, flag);
 	if (breakpoints(request) > MAX_BREAKPOINTS) flag('too_many_breakpoints', 'cache_control');
 	return issues;
@@ -83,15 +94,46 @@ type Flag = (rule: RequestRule, at: string) => void;
 function checkTools(tools: readonly unknown[], flag: Flag) {
 	let previous: string | undefined;
 	tools.forEach((each, index) => {
-		const tool = each as { name?: string; type?: string | null; strict?: boolean };
+		const tool = each as { name?: string; type?: string | null };
 		const at = `tools[${index}]`;
 		const name = tool.name ?? '';
 		if (previous !== undefined && !(previous < name)) flag('tools_unsorted', at);
 		previous = name;
-		if ((tool.type ?? 'custom') !== 'custom' || tool.strict !== true) flag('tool_not_strict', at);
+		if ((tool.type ?? 'custom') !== 'custom') flag('tool_not_custom', at);
 		if (!closed((each as { input_schema?: unknown }).input_schema))
 			flag('tool_schema_open', `${at}.input_schema`);
 	});
+}
+
+/** The strict schemas a request compiles: its strict tools' inputs and its output format. */
+function checkStrictLimits(request: RequestBody, flag: Flag) {
+	const body = request as unknown as Record<string, unknown>;
+	const tools = ((request.tools ?? []) as unknown[]).filter(
+		(tool) => (tool as { strict?: unknown }).strict === true
+	);
+	const format = (body.output_config as { format?: { schema?: unknown } } | undefined)?.format;
+	const schemas = [
+		...tools.map((tool) => (tool as { input_schema?: unknown }).input_schema),
+		...(format?.schema ? [format.schema] : [])
+	];
+	const count = { optional: 0, unions: 0 };
+	for (const schema of schemas) countComplexity(schema, count);
+	if (tools.length > STRICT_LIMITS.tools) flag('too_many_strict_tools', 'tools');
+	if (count.optional > STRICT_LIMITS.optional) flag('too_many_optional', 'tools');
+	if (count.unions > STRICT_LIMITS.unions) flag('too_many_unions', 'tools');
+}
+
+/** Adds a schema's optional properties and its anyOf or type-array nodes, at any depth. */
+function countComplexity(schema: unknown, count: { optional: number; unions: number }) {
+	if (Array.isArray(schema)) return schema.forEach((each) => countComplexity(each, count));
+	if (!schema || typeof schema !== 'object') return;
+	const node = schema as Record<string, unknown>;
+	if (Array.isArray(node.anyOf) || Array.isArray(node.type)) count.unions += 1;
+	const properties = (node.properties ?? {}) as Record<string, unknown>;
+	const required = new Set(Array.isArray(node.required) ? node.required : []);
+	for (const name of Object.keys(properties)) if (!required.has(name)) count.optional += 1;
+	for (const key of SCHEMA_MAPS) countComplexity(Object.values(node[key] ?? {}), count);
+	for (const key of SCHEMA_CHILDREN) countComplexity(node[key], count);
 }
 
 /** True when every object schema in it, at any depth, sets additionalProperties: false. */

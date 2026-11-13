@@ -108,4 +108,22 @@ describe('toolDefinitionsForRequest', () => {
 	it('is the registry’s definitions, in its order', () => {
 		expect(toolDefinitionsForRequest()).toEqual(COACH_TOOLS.map((each) => each.definition));
 	});
+
+	// Every real turn sends all of them: past the API's strict-schema caps it answered every turn
+	// with a 400 in production, which no test of a smaller registry could see.
+	it('sends all the coach’s tools within the API’s strict-schema limits', () => {
+		const issues = validateRequest({
+			max_tokens: 1_000,
+			output_config: { effort: 'medium' },
+			messages: [{ role: 'user', content: 'Hi' }],
+			tools: [...toolDefinitionsForRequest()]
+		});
+		expect(issues).toEqual([]);
+		const strict = toolDefinitionsForRequest().filter((each) => each.strict);
+		expect(strict.map((each) => each.name)).toEqual(
+			COACH_TOOLS.filter(
+				(each) => each.entry.effect !== 'read' && each.name !== 'update_training_goals'
+			).map((each) => each.name)
+		);
+	});
 });
