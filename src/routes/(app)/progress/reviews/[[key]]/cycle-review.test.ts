@@ -78,6 +78,9 @@ const review = (parts: Partial<CycleReviewData> = {}): CycleReviewData => ({
 
 const html = (data: CycleReviewData, props = {}) =>
 	render(CycleReview, { props: { review: data, ...props } }).body;
+/** A section's markup, up to the next: its <details> holds the verdict, the body follows it. */
+const sectionOf = (body: string, id: string) =>
+	body.split('data-testid="review-section"').find((part) => part.includes(`data-section="${id}"`))!;
 const text = (fragment: string) =>
 	fragment
 		.replace(/<!--[\s\S]*?-->/g, '')

@@ -230,27 +230,29 @@ describe('Today’s plan', () => {
 	it('a failed review prompt read is recorded, and the plan shows without it', async () => {
 		await withCommitted(async (db) => {
 			const owner = await seeded(db, 'today', '2026-11-02');
-			const program = await getCurrentProgram(owner, TODAY, { db });
-			if (!program) throw new Error('no active program');
-			const request = origin();
-			const view = await loadTodayPlan(
-				owner,
-				{ today: TODAY, program, origin: request },
-				{
-					db,
-					errorsDb: db,
-					prompt: async () => {
-						throw new Error('lock timeout');
+			const program = (await getCurrentProgram(owner, TODAY, { db }))!;
+			// The error row is written in a transaction rolled back after, not left committed.
+			await withRollback(async (tx) => {
+				const request = origin();
+				const view = await loadTodayPlan(
+					owner,
+					{ today: TODAY, program, origin: request },
+					{
+						db,
+						errorsDb: tx,
+						prompt: async () => {
+							throw new Error('lock timeout');
+						}
 					}
-				}
-			);
-			expect(view).toMatchObject({ failed: false, review: null });
-			expect(view.failed || view.week).toBeTruthy();
-			const recorded = await findErrorsByRequestId(request.requestId, { db });
-			expect(recorded).toHaveLength(1);
-			expect(recorded[0]).toMatchObject({
-				kind: 'streamed',
-				context: expect.objectContaining({ load: 'todayReviewPrompt' })
+				);
+				expect(view).toMatchObject({ failed: false, review: null });
+				expect(view.failed || view.week).toBeTruthy();
+				const recorded = await findErrorsByRequestId(request.requestId, { db: tx });
+				expect(recorded).toHaveLength(1);
+				expect(recorded[0]).toMatchObject({
+					kind: 'streamed',
+					context: expect.objectContaining({ load: 'todayReviewPrompt' })
+				});
 			});
 		});
 	});
