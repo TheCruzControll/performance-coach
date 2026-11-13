@@ -29,3 +29,13 @@ export {
 	type ProgramStart,
 	type StartDates
 } from './start';
+export {
+	ALREADY_THEN,
+	getStartMove,
+	moveProgramStart,
+	NOT_OFFERED,
+	StartMoveError,
+	type MovedStart,
+	type MoveRequest,
+	type StartMove
+} from './move';

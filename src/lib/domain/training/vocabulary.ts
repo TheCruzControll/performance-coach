@@ -403,6 +403,7 @@ export const DECISION_KIND_LABEL = {
 	session_dropped: 'Session dropped',
 	unmapped_avoidance: 'Avoidance not matched',
 	owner_confirmed: 'Confirmed by you',
+	start_moved: 'Start moved',
 	session_moved: 'Session moved',
 	session_skipped: 'Session skipped',
 	exercise_swapped: 'Exercise swapped',

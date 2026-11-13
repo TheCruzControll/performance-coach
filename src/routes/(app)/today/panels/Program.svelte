@@ -2,7 +2,7 @@
   @component
   Today once a program exists (plan.server.ts): the week on a WeekStrip with today selected and
   its sessions as cards, each opening its detail, then 'Up next' across weeks. A rest day names
-  the next session; before week 1, 'Starts Monday' over week 1; once the first block is over,
+  the next session; before week 1, 'Starts Monday' over week 1, with Change start date (Train's Start date screen); once the first block is over,
   'Nothing planned yet' with its summary, an empty Up next and the way to Train. The plan is
   streamed: its skeleton holds the room until it arrives, and a failed read is a designed error
   with Retry. Today's sessions each offer Start workout or Done · View (start-link.ts, composed
@@ -58,6 +58,7 @@
 
 	const sessionHref = (lineage: string) => resolve('/(app)/train/session/[key]', { key: lineage });
 	const TRAIN_HREF = resolve('/(app)/train');
+	const START_HREF = resolve('/(app)/train/start');
 
 	/**
 	 * Once the idle pass has run: 'saved' with the coming days' kits on this device (coming-kits.ts),
@@ -170,6 +171,13 @@
 						<p class="note-copy">{view.starts.description}</p>
 					</div>
 				</Card>
+				<ListRow
+					icon="today"
+					title="Change start date"
+					subtitle="Any time before you begin training"
+					href={START_HREF}
+					data-testid="today-change-start"
+				/>
 			{/if}
 
 			{#if view.complete}

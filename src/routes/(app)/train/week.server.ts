@@ -16,6 +16,9 @@
  *   change and its why, the version that applied it and the review. 'First block complete' leads
  *   to the last planned block's cycle review, or to the reviews list that creates it.
  * - With no program, whether the training profile is complete picks the empty state's next step.
+ *   A program exists only once onboarding is complete (the build refuses it before), so a running
+ *   program never shows before the owner's setup is done.
+ * - Until its first planned day has passed, the header offers Start date (/train/start).
  * - It fails soft: a read that fails is recorded as a server error (kind 'load') and Train shows
  *   its designed error with Retry, inside the shell, instead of the 500 page.
  */
@@ -77,6 +80,11 @@ export type TrainWeekData =
 			position: string;
 			/** 'Starts Mon 9 Nov' before the program starts, else null. */
 			status: string | null;
+			/**
+			 * Its start may still move (Start date, /train/start): its first planned day is today or
+			 * later. A workout logged before then also keeps it, which that screen says.
+			 */
+			movable: boolean;
 			/** The week in words, Monday first (both empty for a week that is not planned). */
 			strip: StripDayView[];
 			days: TrainDay[];
@@ -184,6 +192,7 @@ export async function loadTrainWeek(
 					? 'First block complete'
 					: `Week ${number} · Not planned yet`,
 			status: program.notStarted ? `Starts ${shortDate(program.firstPlannedDay)}` : null,
+			movable: today <= program.firstPlannedDay,
 			...(shown.planned && !bridge ? weekWords(shown, today) : { strip: [], days: [] }),
 			aside: [
 				...(shown.planned && shown.kind === 'baseline' ? [BASELINE_BRIEF] : []),

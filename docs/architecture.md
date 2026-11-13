@@ -435,6 +435,21 @@ progression → timefit
   `ProgrammingConflictError` (`profile`, `library` or `start_date`) writes nothing. Week 1 starts
   next Monday by default (`DEFAULT_PROGRAM_START`); 'This week' plans from today. A repeated
   build returns the stored program; another build is refused while one is active.
+- **Only after setup** (owner decision 2026-11-12): nothing builds a program before onboarding is
+  complete. `previewProgram` and `buildProgram` refuse it (`onboarding`), and every path that
+  creates one goes through them: Today's Build, the coach's `new_program` proposal and its preview
+  tool. `createProgramFromPlan` is named only by the build and test support
+  (`scripts/program-start-gate.test.ts`), so Today and Train can show a program only once setup
+  is done.
+- **Moving the start** (`services/programming/move.ts`, rules in
+  `domain/programming/start-move.ts`; Train's Start date screen, `/train/start`): until training
+  begins (the first planned day is today or later and no workout is logged against the program),
+  week 1 may start this week from today or on any of the next `MOVE_WEEKS_AHEAD` (8) Mondays.
+  The move regenerates the program from the profile for the new dates, so blocks and weeks stay
+  on Mondays and a dated goal keeps its date (its taper is placed from the new start, never
+  shifted past the event), and stores it as the next version, sharing none of its parent's
+  blocks, with a `start_moved` decision first, and the program keeps its title. History lists
+  it; moving back plans it again for the earlier dates.
 
 ### Services the coach (M5) calls
 

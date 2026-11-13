@@ -7,9 +7,11 @@
  *   The outline blocks the replan plans or moves are not shared; they come back as new rows.
  * - new block rows with their weeks and sessions, one multi-row INSERT per table, each row
  *   arriving with its id and lineage already set (chunked only past ROWS_PER_INSERT).
+ * A moved start (services/programming/move.ts) writes the same way, sharing none of its parent's
+ * blocks, and asks first whether anything was logged against the program (loggedAgainst).
  * Plain data access: what is planned, and whether the whole version holds, is the service's.
  */
-import { sql } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import type { PgTable } from 'drizzle-orm/pg-core';
 import {
 	plannedExercises,
@@ -21,7 +23,8 @@ import {
 	programVersions,
 	programVersionWeeks,
 	programWeeks,
-	setPrescriptions
+	setPrescriptions,
+	workouts
 } from '../schema';
 import type { Executor } from '../types';
 import type { ProgramTreeRows } from './programs';
@@ -63,6 +66,22 @@ export function createReplanRepository(db: Executor) {
 				select ${id}::uuid, m.week_id from ${programVersionWeeks} m
 				join ${programWeeks} w on w.id = m.week_id
 				where m.version_id = ${parent} and w.block_id in ${ids(sharedBlockIds)}`);
+		},
+
+		/** Whether the owner has a workout logged against the program (in progress counts). */
+		async loggedAgainst(ownerId: string, programId: string): Promise<boolean> {
+			const rows = await db
+				.select({ id: workouts.id })
+				.from(workouts)
+				.where(
+					and(
+						eq(workouts.ownerId, ownerId),
+						eq(workouts.programId, programId),
+						isNull(workouts.deletedAt)
+					)
+				)
+				.limit(1);
+			return rows.length > 0;
 		},
 
 		/** New blocks from the top down: blocks, their membership, weeks, theirs, then sessions. */

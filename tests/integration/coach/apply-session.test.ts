@@ -17,6 +17,7 @@ import { count, eq } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
 import type { ProposalKind } from '../../../src/lib/domain/coach/proposals';
 import {
+	athleteProfiles,
 	coachProposals,
 	exercisePreferences,
 	programs,
@@ -418,6 +419,25 @@ describe('accepting a new program', () => {
 					})
 				})
 			]);
+		});
+	});
+
+	// A program starts only after setup (owner decision 2026-11-12): the build refuses it whatever
+	// asks, the coach included. Onboarding never comes undone in the app, so the test undoes it.
+	it('is refused while setup is unfinished, stays proposed and builds nothing', async () => {
+		await withRollback(async (db) => {
+			const { ownerId, deps, id } = await onboarded(db);
+			await db
+				.update(athleteProfiles)
+				.set({ onboardingCompletedAt: null })
+				.where(eq(athleteProfiles.ownerId, ownerId));
+			const error = await acceptProposal(ownerId, id, deps).catch((e: unknown) => e);
+			expect(error).toBeInstanceOf(ProposalRefusedError);
+			expect((error as ProposalRefusedError).errors).toEqual({
+				'payload.onboarding': 'Finish setting up your profile first'
+			});
+			expect(await storedProposal(db, id)).toMatchObject({ status: 'proposed', programId: null });
+			expect(await programRows(db, ownerId)).toEqual([]);
 		});
 	});
 
