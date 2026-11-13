@@ -482,7 +482,7 @@ const runningRules: RuleDefinition[] = [
 	behaviour(
 		'running.paces_from_told',
 		'running.ts#planRuns',
-		'Paces come from your told easy pace and your latest race, as ranges.',
+		'With no recent race, paces come from the VDOT your told easy pace implies, as ranges.',
 		'Your own numbers set paces you can actually hold.'
 	),
 	behaviour(

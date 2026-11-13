@@ -14,11 +14,12 @@ import { isHardSet, NON_WORKING_ROLES, plannedHardSets } from '../training/metri
 import type { ProgramPlan, StrengthSessionPlan, WeekPlan } from '../training/types';
 import type { MuscleGroup } from '../training/vocabulary';
 import { DecisionLog } from './decisions';
-import { generateProgram, STAGES } from './generate';
+import { firstDraft, generateProgram, STAGES } from './generate';
 import { buildProgrammingInput } from './input';
 import { SCENARIO_START, SCENARIOS } from './scenarios';
 import type { ScenarioKey } from './scenarios';
 import type { Draft } from './stage';
+import { prepare } from './stages/prepare';
 import { volume } from './stages/volume';
 import { estimateMinutes } from './timefit';
 
@@ -30,13 +31,29 @@ const inputOf = (profile: TrainingProfile) =>
 	buildProgrammingInput(profile, { catalogue: CATALOGUE });
 const generate = (profile: TrainingProfile) => generateProgram(inputOf(profile), OPTIONS);
 
-/** The plan generateProgram makes, with the volume stage left out. */
-function withoutVolume(profile: TrainingProfile): Pick<ProgramPlan, 'blocks' | 'decisions'> {
-	const context = { input: inputOf(profile), options: OPTIONS, log: new DecisionLog() };
-	let draft: Draft = { demand: null, blocks: [] };
-	for (const stage of STAGES) if (stage.name !== 'volume') draft = stage.run(draft, context);
+/**
+ * The plan generateProgram makes, prepare included, with the volume stage left out; with no
+ * season (`season` false), as M3 plans it, every week sharing hardSetBand's band.
+ */
+function withoutVolume(
+	profile: TrainingProfile,
+	season = true,
+	stages: typeof STAGES = STAGES.filter((s) => s.name !== 'volume')
+): Pick<ProgramPlan, 'blocks' | 'decisions'> {
+	const log = new DecisionLog();
+	const input = inputOf(profile);
+	const prepared = season ? prepare(input, OPTIONS, log) : { input, periodisation: null };
+	const context = { input: prepared.input, options: OPTIONS, log };
+	let draft: Draft = firstDraft(prepared);
+	for (const stage of stages) draft = stage.run(draft, context);
 	return { blocks: draft.blocks, decisions: context.log.list() };
 }
+
+/**
+ * `profile`'s plan with no season: M3's volume rules, which M7's weeks with their own setsPerGroup
+ * replace (generate-phasing.test.ts), so the hypertrophy cases below test M3's band.
+ */
+const m3Plan = (profile: TrainingProfile) => withoutVolume(profile, false, STAGES);
 
 /** The minimal profile training for size, `days` days a week of `minutes` each. */
 function hypertrophy(days: number, minutes: number, phase: NutritionPhase | null = null) {
@@ -85,7 +102,15 @@ describe('weekly hard sets per major group', () => {
 		const before = withoutVolume(p);
 		expect(spreadOf(before, 'chest')[0]).toBeLessThan(10);
 		const plan = generate(p);
-		expect(fullWeeks(plan)).toHaveLength(4);
+		expect(plan.blocks[0]!.weeks.map((w) => w.kind)).toEqual([
+			'baseline',
+			'accumulation',
+			'accumulation',
+			'accumulation',
+			'accumulation',
+			'deload'
+		]);
+		expect(fullWeeks(plan)).toHaveLength(5);
 		for (const week of fullWeeks(plan)) {
 			for (const group of MAJOR) {
 				expect(hardSets(week, group), `${group} in ${week.startsOn}`).toBeGreaterThanOrEqual(10);
@@ -96,10 +121,14 @@ describe('weekly hard sets per major group', () => {
 		}
 	});
 
-	it('gives strength 4–10 when a marathon ranks above it', () => {
-		const plan = generate(SCENARIOS.hybrid());
+	it('gives strength 4–10 when it is held at maintenance behind a marathon', () => {
+		// Strength third, behind the marathon and Muay Thai: under half the leader's weight.
+		const p = SCENARIOS.hybrid();
+		const rank: Record<string, number> = { Marathon: 1, 'Muay Thai': 2, 'Stay strong': 3 };
+		p.goals = p.goals.map((g) => ({ ...g, priority: rank[g.title]! }));
+		const plan = generate(p);
 		expect(plan.decisions.find((d) => d.kind === 'split_chosen')?.summary).toContain('maintenance');
-		expect(spreadOf(withoutVolume(SCENARIOS.hybrid()), 'hamstrings')[0]).toBeLessThan(4);
+		expect(spreadOf(withoutVolume(p), 'hamstrings')[0]).toBeLessThan(4);
 		for (const week of fullWeeks(plan)) {
 			for (const group of MAJOR) {
 				expect(hardSets(week, group), `${group} in ${week.startsOn}`).toBeGreaterThanOrEqual(4);
@@ -120,7 +149,7 @@ describe('weekly hard sets per major group', () => {
 	});
 
 	it('says why a group stays over the range: in its overreach or heaviest weeks, or every week', () => {
-		const why = (plan: ProgramPlan, group: string) =>
+		const why = (plan: Pick<ProgramPlan, 'decisions'>, group: string) =>
 			plan.decisions.find((d) => d.kind === 'volume_adjusted' && d.evidence.group === group)?.why;
 		const plan = generate(SCENARIOS.minimal());
 		expect(why(plan, 'Quads')).toBe(
@@ -129,7 +158,7 @@ describe('weekly hard sets per major group', () => {
 		expect(why(plan, 'Back')).toBe(
 			'Back gets 17–27 hard sets a week, for the 8–14 that suits getting stronger. Sets were added to Chin-up. Pulling keeps level with pushing, so it goes over every week.'
 		);
-		expect(why(generate(hypertrophy(4, 75)), 'Shoulders')).toMatch(
+		expect(why(m3Plan(hypertrophy(4, 75)), 'Shoulders')).toMatch(
 			/^Shoulders gets 14–22 hard sets a week, .+\. The heaviest week gives each main lift a back-off set more, so it goes over by design\.$/
 		);
 		const cut = SCENARIOS.minimal();
@@ -198,8 +227,8 @@ describe('the nutrition phase', () => {
 		);
 
 	it('a cut takes about a fifth of the sets off, at the same intensity, with decisions', () => {
-		const kept = generate(hypertrophy(4, 75));
-		const cut = generate(hypertrophy(4, 75, 'cut'));
+		const kept = m3Plan(hypertrophy(4, 75));
+		const cut = m3Plan(hypertrophy(4, 75, 'cut'));
 		const share = total(cut, 0) / total(kept, 0);
 		expect(share).toBeGreaterThanOrEqual(0.75);
 		expect(share).toBeLessThanOrEqual(0.85);
@@ -272,8 +301,8 @@ describe('the nutrition phase', () => {
 	});
 
 	it('a bulk moves every major group toward the top of the range, with decisions', () => {
-		const kept = generate(hypertrophy(4, 75));
-		const bulk = generate(hypertrophy(4, 75, 'bulk'));
+		const kept = m3Plan(hypertrophy(4, 75));
+		const bulk = m3Plan(hypertrophy(4, 75, 'bulk'));
 		expect(total(bulk, 0)).toBeGreaterThan(total(kept, 0) + 15);
 		for (const g of MAJOR) {
 			expect(spreadOf(bulk, g)[0], g).toBeGreaterThanOrEqual(spreadOf(kept, g)[0]);
@@ -291,7 +320,7 @@ describe('the nutrition phase', () => {
 
 	it('a hypertrophy bulk in 3 × 45-minute sessions stays within 45 minutes and records the trade-off', () => {
 		const input = inputOf(hypertrophy(3, 45, 'bulk'));
-		const plan = generateProgram(input, OPTIONS);
+		const plan = m3Plan(hypertrophy(3, 45, 'bulk'));
 		const sessions = plan.blocks[0]!.weeks.flatMap(strengthIn);
 		expect(sessions.length).toBeGreaterThan(0);
 		for (const s of sessions) {
@@ -338,8 +367,8 @@ describe('the volume stage', () => {
 
 	it('changes only work besides the main lifts, alike in every week of the block', () => {
 		const p = hypertrophy(4, 75);
-		const before = withoutVolume(p).blocks[0]!.weeks;
-		const weeks = generate(p).blocks[0]!.weeks;
+		const before = withoutVolume(p, false).blocks[0]!.weeks;
+		const weeks = m3Plan(p).blocks[0]!.weeks;
 		const mains = (w: WeekPlan) =>
 			strengthIn(w).map((s) => s.exercises.filter((e) => e.sets.some((l) => l.role === 'top')));
 		// Progression gives the main lifts more back-off sets in a week above full volume.

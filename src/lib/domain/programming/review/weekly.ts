@@ -46,10 +46,11 @@ import type * as v from '../../training/vocabulary.ts';
 import { cleanFloat, convertWeight } from '../../units.ts';
 import type { WeightUnit } from '../../units.ts';
 import type { ExerciseTraits, InterferenceSession } from '../interference.ts';
-import { checkWeek, INTERFERENCE_RULES } from '../interference.ts';
 import { fatigueLevel, rpeCreep } from '../results.ts';
 import { RESULT_RULES } from '../rules/results.ts';
 import { SUMMARY_MAX } from './brief.ts';
+import { m3Conflicts, performedConflicts } from './evaluation.ts';
+import type { ReviewConflict, ReviewEvaluation } from './evaluation.ts';
 import type { Finding, FindingFigure, FindingLevel, FindingSection } from './brief.ts';
 import { inputsDigest } from './digest.ts';
 import type { DigestFacts } from './digest.ts';
@@ -140,6 +141,8 @@ export interface WeeklyReviewInput {
 	digest: DigestFacts;
 	/** Words in the profile's units; canonical units by default. */
 	format?: Format;
+	/** M7's context for the week (evaluation.ts): the conflicts are judged with evaluateWeek. */
+	evaluation?: ReviewEvaluation;
 }
 
 export interface WeeklyReview {
@@ -673,18 +676,28 @@ export function composeWeeklyReview(input: WeeklyReviewInput): WeeklyReview {
 		[FATIGUE_LEVEL[fatigue.level], why]
 	);
 
-	// Conflicts in the week as it was performed.
+	// Conflicts in the week as it was performed: with the evaluation, M7's evaluateWeek on the
+	// logged load (evaluation.ts); without it, M3's checkWeek as before.
 	const performed = performedSessions(weekWorkouts, weekSets, weekRuns, input.week.sessions);
 	const traitsOf = (ref: { key: string } | { customId: string }) =>
 		exercises.get('key' in ref ? ref.key : `custom:${ref.customId}`);
-	const conflicts = checkWeek(performed, { traitsOf });
+	const rpeOf = (id: string) => {
+		const w = weekWorkouts.find((o) => o.id === id)!;
+		return w.sessionRpe ?? w.run?.rpe ?? w.other?.rpe ?? null;
+	};
+	const conflicts: ReviewConflict[] = input.evaluation
+		? performedConflicts(
+				performed.map((p) => ({ ...p, rpe: rpeOf(p.id) })),
+				input.evaluation,
+				{ monday, today, traitsOf }
+			)
+		: m3Conflicts(performed, traitsOf);
 	conflicts.forEach((c, n) => {
-		const [headline, where] = c.message.split(/: (.*)/s) as [string, string];
 		const days = { from: c.days[0]!, to: c.days.at(-1)!, label: plural(c.days.length, 'day') };
-		const call: Call = ['watch', `${where} ${INTERFERENCE_RULES[c.rule].why}`];
-		add(`conflicts:${n + 1}:${c.rule}`, headline, [], call, null, {
+		const call: Call = ['watch', `${c.where} ${c.why}`];
+		add(`conflicts:${n + 1}:${c.rule}`, c.headline, [], call, null, {
 			window: days,
-			sources: refs(c.sessions.map((s) => s.id))
+			sources: refs(c.workouts)
 		});
 	});
 

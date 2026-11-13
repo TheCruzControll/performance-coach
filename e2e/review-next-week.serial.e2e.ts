@@ -11,8 +11,8 @@
  *   the review reads applied.
  * - review-aged (stored on Monday): the changes whose sessions have passed are struck through,
  *   Generate applies only the rest and the toast says how many had passed; accepted in M5's
- *   inbox, the review offers the rest, and applying it makes one version. On a Saturday or
- *   Sunday every one has passed: the card says it is too late, and both skip the rest (the
+ *   inbox, the review offers the rest, and applying it makes one version. From Friday every
+ *   one has passed: the card says it is too late, and both skip the rest (the
  *   integration test pins Thursday).
  * - next-week-deload (no ops), no program (to the build), block-end (a new block: to the cycle
  *   review) and week-late (late), each created from the list.
@@ -329,13 +329,13 @@ test.describe('review-aged: stored on Monday, decided later in the week', () => 
 		expect(passed).toBeGreaterThan(0);
 		await expect(passedItems(page).first()).toContainText(/has passed|has started/);
 		if (passed === total) {
-			// Saturday or Sunday: every change has passed.
+			// From Friday: every change has passed.
 			await expect(card(page)).toHaveAttribute('data-state', 'all_past');
 			await expect(card(page).getByRole('heading', { level: 3 })).toHaveText(
 				'Too late to change next week'
 			);
 			await expect(generate(page)).toHaveCount(0);
-			test.skip(true, 'Saturday or Sunday: every change has passed, so there is no rest to apply');
+			test.skip(true, 'From Friday: every change has passed, so there is no rest to apply');
 		}
 		await expect(card(page)).toHaveAttribute('data-state', 'partly_past');
 		await expect(card(page).getByRole('heading', { level: 3 })).toHaveText(
@@ -368,7 +368,7 @@ test.describe('review-aged: stored on Monday, decided later in the week', () => 
 		const passed = await passedItems(page).count();
 		if (passed === total) {
 			await expect(card(page)).toHaveAttribute('data-state', 'all_past');
-			test.skip(true, 'Saturday or Sunday: every change has passed, so there is no rest to apply');
+			test.skip(true, 'From Friday: every change has passed, so there is no rest to apply');
 		}
 		await expect(card(page)).toHaveAttribute('data-state', 'partly_past');
 		await generate(page).click();

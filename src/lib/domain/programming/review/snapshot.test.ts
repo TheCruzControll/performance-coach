@@ -125,6 +125,49 @@ describe('the v1 weekly snapshot', () => {
 	});
 });
 
+describe("M7's deload on the v1 snapshot", () => {
+	const deload = {
+		week: '2026-11-09',
+		reasons: ['Soreness 4 of 5', 'Back squat: estimated 1RM really declining']
+	};
+
+	it('reads a v1 row stored before M7 unchanged, with no deload', () => {
+		const read = readSnapshot(row(1));
+		expect(read.legacy).toBe(false);
+		expect(read.legacy === false && 'deload' in read.snapshot).toBe(false);
+		expect(read).toEqual({ legacy: false, version: 1, summary: SUMMARY, snapshot });
+	});
+
+	it('round-trips a deload snapshot through its schema and jsonb unchanged, at version 1', () => {
+		const withDeload: WeeklyReviewSnapshot = { ...snapshot, deload };
+		expect(readSnapshot(row(SNAPSHOT_VERSION, withDeload))).toEqual({
+			legacy: false,
+			version: 1,
+			summary: SUMMARY,
+			snapshot: withDeload
+		});
+	});
+
+	it('refuses a deload off a Monday, more than 5 reasons, a reason over 160 characters or empty', () => {
+		expect(refusedAt({ ...snapshot, deload: { ...deload, week: '2026-11-10' } })).toBe(
+			'deload.week'
+		);
+		expect(refusedAt({ ...snapshot, deload: { ...deload, reasons: Array(6).fill('Sore') } })).toBe(
+			'deload.reasons'
+		);
+		expect(refusedAt({ ...snapshot, deload: { ...deload, reasons: ['x'.repeat(161)] } })).toBe(
+			'deload.reasons.0'
+		);
+		expect(refusedAt({ ...snapshot, deload: { ...deload, reasons: [''] } })).toBe(
+			'deload.reasons.0'
+		);
+		expect(refusedAt({ ...snapshot, deload: { ...deload, ops: [] } })).toBe('deload');
+		expect(refusedAt({ ...snapshot, deload: { ...deload, reasons: ['x'.repeat(160)] } })).toBe(
+			null
+		);
+	});
+});
+
 describe('the findings brief', () => {
 	it('refuses a long summary, a repeated id, a reversed range and an unknown metric', () => {
 		const errors = (value: ReviewBrief) => {

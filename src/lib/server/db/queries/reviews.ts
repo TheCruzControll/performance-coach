@@ -148,6 +148,8 @@ export function reviewsPage(
 /** The newest revision a proposal's chain reaches, and how many revisions it took. */
 export type ProposalHeadRow = {
 	id: string;
+	/** The head's kind: a weekly review's is a program_adjustment, or (M7) a replan. */
+	kind: string;
 	status: ProposalStatus;
 	supersededReason: SupersededReason | null;
 	appliedVersionId: string | null;
@@ -173,7 +175,8 @@ export async function proposalChain(
 			join chain on p.revision_of = chain.id
 			where p.owner_id = ${ownerId}::uuid and chain.depth < ${PROPOSAL_CHAIN_MAX}
 		)
-		select p.id::text as "id", p.status as "status", p.superseded_reason as "supersededReason",
+		select p.id::text as "id", p.kind as "kind", p.status as "status",
+			p.superseded_reason as "supersededReason",
 			p.applied_version_id::text as "appliedVersionId", v.number as "appliedVersionNumber",
 			chain.depth as "depth"
 		from chain
@@ -209,7 +212,7 @@ export async function proposalHeads(
 			where p.owner_id = ${ownerId}::uuid and chain.depth < ${PROPOSAL_CHAIN_MAX}
 		)
 		select distinct on (chain.root) chain.root::text as "rootId", p.id::text as "id",
-			p.status as "status", p.superseded_reason as "supersededReason",
+			p.kind as "kind", p.status as "status", p.superseded_reason as "supersededReason",
 			p.applied_version_id::text as "appliedVersionId", v.number as "appliedVersionNumber",
 			chain.depth as "depth"
 		from chain

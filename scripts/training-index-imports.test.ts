@@ -17,7 +17,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { chains, ROOT as root } from './import-graph.ts';
 
 const training = (file: string) => path.join(root, 'src/lib/domain/training', file);
-const VALIDATORS = [training('schemas.ts'), training('edits.ts')];
+const VALIDATORS = [training('schemas.ts'), training('edits.ts'), training('replan.ts')];
 const isZod = (specifier: string) => specifier === 'zod' || specifier.startsWith('zod/');
 
 /** Every chain of runtime imports from `entry` to a validator, the modules and the packages. */
@@ -35,6 +35,12 @@ describe('domain/training/index.ts', () => {
 		expect(visited).toContain('src/lib/domain/training/vocabulary.ts');
 		expect(visited).toContain('src/lib/domain/training/describe.ts');
 		expect(visited).toContain('src/lib/domain/profile/catalog.ts');
+	});
+
+	it('never reaches the re-plan contract, which validates with zod/mini', () => {
+		const { visited } = validatorChains(training('index.ts'));
+		expect(visited).not.toContain('src/lib/domain/training/replan.ts');
+		expect(validatorChains(training('replan.ts')).packages).toContain('zod/mini');
 	});
 
 	it('keeps describe.ts, in Train’s and Today’s initial JS, to domain modules and no package', () => {

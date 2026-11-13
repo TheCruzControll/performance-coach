@@ -16,7 +16,6 @@
  * It reads from the program loadTodayProgram found, so the week it shows (today's, or week 1's
  * before the start) is known at once: the plan and that week are read together, each service on
  * its own pool connection (docs/architecture.md). So its `db` is the pool, never a transaction.
- * The review prompt is read once the plan is in, so a plan that fails records only its own error.
  */
 import { daysBetween, weekdayOf, type IsoDate } from '#lib/domain/calendar.ts';
 import { WEEKDAY_INFO } from '#lib/domain/profile/catalog.ts';
@@ -203,8 +202,9 @@ async function readPlan(
 
 /**
  * Today's plan at the owner's `today` (ownerToday, read once per request by loadTodayProgram),
- * from the `program` it found, for load.server.ts to stream, with the review prompt read after
- * it. Never rejects: a failed prompt read is recorded and the plan shows without it.
+ * from the `program` it found, for load.server.ts to stream, with the review prompt read after it
+ * on the same handle. Never rejects: a failed prompt read is recorded and the plan shows without
+ * it.
  */
 export function loadTodayPlan(
 	ownerId: string,

@@ -12,11 +12,11 @@
   something else'. Once the plan shows and the browser is idle, Today saves the kits of the
   sessions still to do today and in the next two days, so they start in a gym with no signal, even
   one looked at the night before: with Train, the only places outside the workout pages that
-  create the device's database (coming-kits.ts). Last, Ask the coach opens Coach with 'What should
-  I focus on next week?' (a link: ui/ask-link.ts). In a bridge week between blocks, 'Between
-  blocks' names the day the next block starts, with 'Log something else', in place of the week.
-  When a week or a block completes, its review prompt leads (ReviewPrompt: create and open it, or
-  'See your review'). Code-split behind PanelLoader.
+  create the device's database (coming-kits.ts). Last, Ask the coach opens Coach with 'What
+  should I focus on next week?' (a link: ui/ask-link.ts). In a bridge week between blocks,
+  'Between blocks' names the day the next block starts, with 'Log something else', in place of
+  the week. When a week or a block completes, its review prompt leads (ReviewPrompt: create and
+  open it, or 'See your review'). Code-split behind PanelLoader.
 -->
 <script lang="ts">
 	import { invalidateAll } from '$app/navigation';

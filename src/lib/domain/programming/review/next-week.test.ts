@@ -10,8 +10,20 @@ import { setPrescriptionSchema } from '../../training/schemas';
 import type { RunSegment, SetPrescription } from '../../training/types';
 import type { WeekKind } from '../../training/vocabulary';
 import { validate } from '../../validation';
+import { evaluateWeek } from '../evaluate/week';
 import { checkWeek } from '../interference';
-import { MAX_NEXT_WEEK_OPS, proposeNextWeek, stillAhead } from './next-week';
+import { loadModel } from '../load/fatigue';
+import type { ModelLogged } from '../load/fatigue';
+import { fromPlanned } from '../load/systems';
+import type { ReviewEvaluation } from './evaluation';
+import {
+	DELOAD_INSTEAD,
+	LIGHT_RUNNING_KINDS,
+	LIGHT_WEEK_KINDS,
+	MAX_NEXT_WEEK_OPS,
+	proposeNextWeek,
+	stillAhead
+} from './next-week';
 import type { NextSession, NextWeek, NextWeekContext, NextWeekExercise } from './next-week';
 import type { WeeklyReviewSnapshot } from './snapshot';
 
@@ -477,6 +489,104 @@ describe('proposeNextWeek: running', () => {
 	});
 });
 
+describe("proposeNextWeek: M7's light weeks and deload", () => {
+	const mainBench = () =>
+		planned(
+			'bench_press',
+			[line({ role: 'top', sets: 1 }), line({ role: 'back_off', sets: 4 })],
+			'bench_press'
+		);
+	const missedLong = { prescribed: 16_000, completed: false, rpe: null, targetRpe: 5 };
+	const running = { previousPlanned: 30_000, actual: 30_000, lastLongRun: missedLong };
+
+	it('treats deload, taper, event and recovery weeks as light, and a cutback as light for running only', () => {
+		expect([...LIGHT_WEEK_KINDS].sort()).toEqual(['deload', 'event', 'recovery', 'taper']);
+		expect(LIGHT_RUNNING_KINDS).toEqual(['cutback']);
+	});
+
+	it.each(['deload', 'taper', 'event', 'recovery'] as const)(
+		'gives a %s week only an RPE cap on high fatigue, and flags the cycle review',
+		(kind) => {
+			const bench = mainBench();
+			const out = proposeNextWeek(
+				week([strength(day(1), [bench])], kind),
+				snapshot({ ...HIGH, next: { weekStartsOn: NEXT, state: 'planned', kind } }),
+				easier('bench_press'),
+				ctx()
+			);
+			expect(out.adjustments.map((a) => [a.kind, fields(a.op)])).toEqual([
+				['deload', { plannedExerciseLineage: bench.lineage, position: 1, targetRpe: 6 }],
+				['deload', { plannedExerciseLineage: bench.lineage, position: 2, targetRpe: 6 }]
+			]);
+			expect(out.cycleFlag).toContain(`${kind} week`);
+		}
+	);
+
+	it('gives a recovery week no progression when fatigue is low', () => {
+		const out = proposeNextWeek(
+			week([strength(day(1), [planned('bench_press', [line()], 'bench_press')])], 'recovery'),
+			snapshot({ next: { weekStartsOn: NEXT, state: 'planned', kind: 'recovery' } }),
+			easier('bench_press'),
+			ctx()
+		);
+		expect(out.adjustments).toEqual([]);
+	});
+
+	it('gives a cutback week its strength changes but no running change: no cap, no repeated long run', () => {
+		const sessions = () => [
+			strength(day(1), [planned('bench_press', [line()], 'bench_press')]),
+			run(day(2), 'easy_run', [segment('easy', 8_000)]),
+			run(day(6), 'long_run', [segment('warm_up', 1_000), segment('long', 17_000)])
+		];
+		const kinds = (kind: WeekKind) =>
+			proposeNextWeek(
+				week(sessions(), kind),
+				snapshot({ next: { weekStartsOn: NEXT, state: 'planned', kind } }),
+				easier('bench_press'),
+				ctx({ running })
+			).adjustments.map((a) => a.kind);
+
+		expect(kinds('accumulation')).toEqual(['long_run', 'load']);
+		expect(kinds('cutback')).toEqual(['load']);
+	});
+
+	it("proposes no ops for a week deloaded instead, listing every other change as not proposed ('deload')", () => {
+		const bench = mainBench();
+		const pushUps = planned('push_up', [
+			line({ loadKind: 'rpe_based', loadValue: null, loadUnit: null, sets: 3, targetRpe: 8 })
+		]);
+		const long = run(day(6), 'long_run', [segment('warm_up', 1_000), segment('long', 17_000)]);
+		const sessions = [strength(day(1), [bench, pushUps]), long];
+		const inputs = [snapshot(HIGH), [...easier('push_up')]] as const;
+
+		const m6 = proposeNextWeek(week(sessions), ...inputs, ctx({ running }));
+		expect(new Set(m6.adjustments.map((a) => a.kind))).toEqual(new Set(['deload', 'long_run']));
+
+		const out = proposeNextWeek(week(sessions), ...inputs, ctx({ running, deload: true }));
+		expect(out.adjustments).toEqual([]);
+		expect(out.boundary).toBe('deload');
+		expect(out.cycleFlag).toBeUndefined();
+		// M6's own deload of the main lifts is replaced, not listed; the long run waits for the deload.
+		expect(out.notProposed).toEqual([
+			{
+				...{ id: m6.adjustments.find((a) => a.kind === 'long_run')!.id, kind: 'long_run' },
+				...{ lineage: long.lineage, sessionDate: day(6), reason: 'deload', words: DELOAD_INSTEAD },
+				why: expect.stringContaining('was missed')
+			}
+		]);
+	});
+
+	it('is still late, with no ops, for a deloaded week that has ended', () => {
+		const out = proposeNextWeek(
+			week([strength(day(1), [mainBench()])]),
+			snapshot(HIGH),
+			[],
+			ctx({ today: addDays(NEXT, 8), deload: true })
+		);
+		expect(out).toMatchObject({ adjustments: [], notProposed: [], late: true });
+	});
+});
+
 describe('proposeNextWeek: conflicts', () => {
 	it('moves a generated session away from a hard Muay Thai commitment the day after heavy legs', () => {
 		const squat = planned(
@@ -532,6 +642,155 @@ describe('proposeNextWeek: conflicts', () => {
 
 		const out = proposeNextWeek(week(sessions), snapshot(), [], ctx({ today: day(1) }));
 		expect(out.adjustments.map((a) => [a.kind, a.after])).toEqual([['move', { date: day(3) }]]);
+	});
+});
+
+describe("proposeNextWeek with M7's evaluation", () => {
+	const FROM = addDays(NEXT, -49);
+	const WEEKDAY: Record<IsoDate, string> = Object.fromEntries(
+		['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map((d, n) => [
+			day(n),
+			d
+		])
+	);
+	const squat = (rpe: number) =>
+		planned('back_squat', [line({ role: 'top', sets: 1, targetRpe: rpe })], 'back_squat');
+	const legsOn = (date: IsoDate, rpe = 8.5) =>
+		strength(date, [squat(rpe)], { title: 'Legs', intensity: rpe >= 8 ? 'hard' : 'moderate' });
+
+	/**
+	 * The review's evaluation: six weeks planned like next week (legs Tuesday, sparring Wednesday),
+	 * the typical hard sessions the model judges against, and `logged` sessions; nothing else
+	 * logged, so the planned weeks before today count nothing.
+	 */
+	function evaluation(logged: ModelLogged[] = []): ReviewEvaluation {
+		const planned = [1, 2, 3, 4, 5, 6].flatMap((n) => [
+			legsOn(addDays(NEXT, 1 - 7 * n)),
+			muayThai(addDays(NEXT, 2 - 7 * n))
+		]);
+		const to = addDays(NEXT, -1);
+		const days = loadModel({ planned, logged, from: FROM, to, today: NEXT });
+		return {
+			load: { from: FROM, days, planned, logged },
+			priorities: [],
+			weekKind: 'accumulation',
+			events: []
+		};
+	}
+
+	/** Two and a half hours of hard sparring logged on the reviewed week's Sunday. */
+	const sundaySparring = (): ModelLogged => ({
+		...fromPlanned({
+			...muayThai(addDays(NEXT, -1)),
+			estMinutes: 150,
+			targetRpe: 9.5
+		} as NextSession),
+		intensity: null,
+		source: 'logged',
+		plannedLineage: null
+	});
+
+	/** Next week judged as Train judges it: the load continuing from the reviewed week. */
+	const judged = (sessions: NextSession[], e: ReviewEvaluation) =>
+		evaluateWeek(sessions, {
+			today: NEXT,
+			context: {
+				load: {
+					days: loadModel({
+						planned: [...e.load.planned, ...sessions],
+						logged: e.load.logged,
+						from: FROM,
+						to: day(6),
+						today: NEXT
+					}),
+					logged: e.load.logged
+				},
+				priorities: [],
+				week: { kind: 'accumulation' },
+				events: []
+			}
+		});
+
+	it('never moves a session to the day after a logged hard session: repairWeek’s move clears the conflict', () => {
+		const legs = legsOn(day(1));
+		const sessions = [legs, muayThai(day(2))];
+		const e = evaluation([sundaySparring()]);
+		// checkWeek alone takes Legs to Monday, the nearest day, the day after Sunday's sparring.
+		const m6 = proposeNextWeek(week(sessions), snapshot(), [], ctx());
+		expect(m6.adjustments.map((a) => a.after)).toEqual([{ date: day(0) }]);
+		const onMonday = sessions.map((s) => (s === legs ? { ...s, date: day(0) } : s));
+		expect(judged(onMonday, e).findings.map((f) => f.rule)).toContain(
+			'concurrent.residual_fatigue_before_hard'
+		);
+
+		const out = proposeNextWeek(week(sessions), snapshot(), [], ctx({ evaluation: e }));
+
+		expect(out.adjustments).toHaveLength(1);
+		const [move] = out.adjustments;
+		expect(move).toMatchObject({
+			kind: 'move',
+			lineage: legs.lineage,
+			before: { date: day(1) },
+			op: { op: 'move', sessionLineage: legs.lineage },
+			evidence: { rule: 'placement.heavy_lower_before_hard', severity: 'avoid' },
+			options: { half_step: null }
+		});
+		const to = (move!.op as { toDate: IsoDate }).toDate;
+		expect(to).not.toBe(day(0));
+		expect(move!.why).toBe(
+			`Heavy lower body the day before hard Muay Thai: Legs on Tuesday, then Sparring on Wednesday. Moving Legs to ${WEEKDAY[to]} clears this.`
+		);
+		const after = judged(
+			sessions.map((s) => (s === legs ? { ...s, date: to } : s)),
+			e
+		);
+		const named = (f: { sessions: { lineage?: string }[] }) =>
+			f.sessions.some((s) => s.lineage === legs.lineage);
+		expect(after.findings.filter((f) => f.severity === 'avoid' && named(f))).toEqual([]);
+		expect(
+			judged(sessions, e).findings.filter((f) => f.severity === 'avoid' && named(f))
+		).not.toEqual([]);
+	});
+
+	it('does not propose a change that adds an avoid finding, and says which', () => {
+		const byRpe = line({ loadKind: 'rpe_based', loadValue: null, loadUnit: null, targetRpe: 7.5 });
+		const legs = strength(day(1), [planned('back_squat', [byRpe], 'back_squat')], {
+			title: 'Legs'
+		});
+		const sessions = [legs, muayThai(day(2))];
+		const exposures = easier('back_squat');
+		// Without the evaluation, RPE 7.5 to 8 is proposed: a heavy squat the day before sparring.
+		const m6 = proposeNextWeek(week(sessions), snapshot(), exposures, ctx());
+		expect(m6.adjustments.map((a) => [a.kind, a.after])).toEqual([['rpe', { targetRpe: 8 }]]);
+
+		const out = proposeNextWeek(
+			week(sessions),
+			snapshot(),
+			exposures,
+			ctx({ evaluation: evaluation() })
+		);
+
+		expect(out.adjustments).toEqual([]);
+		expect(out.notProposed).toEqual([
+			{
+				id: m6.adjustments[0]!.id,
+				kind: 'rpe',
+				lineage: m6.adjustments[0]!.lineage,
+				sessionDate: day(1),
+				why: m6.adjustments[0]!.why,
+				reason: 'conflict',
+				words: 'Heavy lower body the day before hard Muay Thai'
+			}
+		]);
+	});
+
+	it('keeps every change that adds no avoid finding, as checkWeek’s path does', () => {
+		const bench = planned('bench_press', [line()], 'bench_press');
+		const sessions = [strength(day(1), [bench])];
+		const args = [week(sessions), snapshot(), easier('bench_press')] as const;
+		const out = proposeNextWeek(...args, ctx({ evaluation: evaluation() }));
+		expect(out).toEqual(proposeNextWeek(...args, ctx()));
+		expect(out.adjustments).toHaveLength(1);
 	});
 });
 

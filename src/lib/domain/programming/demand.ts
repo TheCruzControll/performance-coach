@@ -10,6 +10,7 @@ import { WEEKDAYS } from '../profile/catalog.ts';
 import type { Weekday } from '../profile/catalog.ts';
 import type { DecisionLog } from './decisions.ts';
 import type { InputCommitment, InputGoal, ProgrammingInput } from './input.ts';
+import type { GoalDose } from './priority/doses.ts';
 import { COMMITMENT_QUOTA, DOUBLES, SESSIONS_WANTED } from './rules/days.ts';
 import type { Quota, Stream } from './rules/days.ts';
 
@@ -90,11 +91,32 @@ export function commitmentStream(commitment: InputCommitment): string {
 
 const total = (s: StreamShare) => s.committed + s.generated;
 
-/** Sessions by stream: the commitments count first, then the free days go by goal priority. */
+/**
+ * The most sessions a week `stream` gets when every goal training it is held at its dose: the
+ * largest of their doses' most; null when a goal that leads or trains alongside wants it, or
+ * every goal is paused (M3's maintenance already holds each stream at its fewest).
+ */
+function dosedMost(input: ProgrammingInput, stream: Stream, doses: readonly GoalDose[]) {
+	const own = doses.filter((d) => (d.stream === 'hypertrophy' ? 'strength' : d.stream) === stream);
+	const trains = input.goals.flatMap((g, i) =>
+		g.disciplines.some((d) => SESSIONS_WANTED[d].stream === stream) ? [input.refs.goals[i]] : []
+	);
+	if (input.maintenance || !own.length) return null;
+	if (trains.some((ref) => !own.some((d) => d.goal.id === ref))) return null;
+	return Math.max(...own.map((d) => d.dose.sessions.max));
+}
+
+/**
+ * Sessions by stream: the commitments count first, then the free days go by goal priority. With
+ * M7's `doses`, a stream only goals held at maintenance train stops at its dose's most sessions,
+ * and the days it would have taken go round again, the leader's stream first. Without them,
+ * nothing changes.
+ */
 export function allocateWeek(
 	input: ProgrammingInput,
 	budget: WeekBudget,
-	log: DecisionLog
+	log: DecisionLog,
+	doses: readonly GoalDose[] = []
 ): WeekAllocation {
 	const goals = input.maintenance ? input.paused : input.goals;
 	const streams: StreamShare[] = [];
@@ -111,6 +133,10 @@ export function allocateWeek(
 	}
 	// At maintenance (every goal paused), no goal gets more than its fewest.
 	if (input.maintenance) for (const s of streams) s.max = s.min;
+	for (const s of streams) {
+		const most = dosedMost(input, s.stream, doses);
+		if (most !== null) [s.min, s.max] = [Math.min(s.min, most), Math.min(s.max, most)];
+	}
 	for (const c of input.commitments) {
 		const share = streams.find((s) => s.stream === commitmentStream(c));
 		if (share) share.committed += c.days.length;

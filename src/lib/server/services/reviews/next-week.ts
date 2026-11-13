@@ -21,6 +21,12 @@
  *   owner's review lock serialises two at once. A head whose program has moved on is superseded
  *   (program_changed) by acceptProposal, and nothing is applied.
  * - nextWeekOffers lists the head's changes for the review screen, each split the same way.
+ * - M7: a head of kind replan (the review's reactive deload) is taken or kept whole: Accept
+ *   (`accept: true`) is acceptProposal, whose applier re-checks the sessions still ahead (late:
+ *   superseded as sessions_passed); Keep is rejectProposal with the note. Items and half steps do
+ *   not apply to it, and a request carrying them is refused; `accept` is refused on a head of
+ *   changes, which are chosen one by one. The result keeps M6's shape, with passed 0: a deload
+ *   drops nothing the owner chose, it eases whatever is still ahead.
  * Every query is awaited in turn, so the whole decision runs on one transaction.
  */
 import type { IsoDate } from '../../../domain/calendar';
@@ -52,6 +58,10 @@ import {
 /** What the review says when every chosen change was for a session already past. */
 export const TOO_LATE = 'Too late to change next week';
 export const NOTHING_TO_DECIDE = 'This review proposes no changes for next week';
+/** A deload is taken or kept whole: it has no changes to choose among. */
+export const WHOLE_ONLY = 'A deload is taken or kept as a whole';
+/** `accept` takes a deload; a review's changes are chosen one by one. */
+export const ONE_BY_ONE = 'Choose the changes one by one';
 
 /** A change taken as proposed, or at its half step; a change not listed is left out. */
 export interface NextWeekItem {
@@ -61,6 +71,8 @@ export interface NextWeekItem {
 
 export interface DecideNextWeek {
 	items: readonly NextWeekItem[];
+	/** M7: take a replan head (a deload) whole; without it, a replan head is kept (rejected). */
+	accept?: boolean;
 	/** The owner's reason when nothing is taken: stored with the rejection. */
 	note?: string | null;
 }
@@ -93,6 +105,7 @@ type ProposalRow = NonNullable<
 
 /** The head's changes: payload.ops, paired by place with the review's evidence.adjustments. */
 function offeredOf(row: ProposalRow): Offered[] {
+	if (row.kind === 'replan') return [];
 	const { ops } = row.payload as { ops: ProgramOp[] };
 	const evidence = row.evidence as { adjustments?: Record<string, unknown>[] } | null;
 	const adjustments = evidence?.adjustments?.length === ops.length ? evidence.adjustments : [];
@@ -158,6 +171,11 @@ export async function decideNextWeek(
 		if (decision.state === 'rejected') return { outcome: 'rejected', proposalId: head.id };
 		if (decision.state === 'superseded')
 			return { outcome: 'superseded', proposalId: head.id, reason: decision.reason };
+		if (decision.state === 'late')
+			return { outcome: 'superseded', proposalId: head.id, reason: 'sessions_passed' };
+		const replan = row.kind === 'replan';
+		if (replan && input.items.length) throw new ReviewInputError('items', WHOLE_ONLY);
+		if (!replan && input.accept) throw new ReviewInputError('items', ONE_BY_ONE);
 
 		// Undecided or partly past. A program edited since the review supersedes it.
 		const current = await createProgramsRepository(tx).currentProgram(ownerId);
@@ -165,6 +183,21 @@ export async function decideNextWeek(
 			if (row.status !== 'proposed')
 				return { outcome: 'superseded', proposalId: row.id, reason: 'program_changed' };
 			return superseded((await acceptProposal(ownerId, row.id, inTx)).proposal);
+		}
+		if (replan) {
+			if (!input.accept) {
+				await rejectProposal(ownerId, row.id, { reason: input.note ?? null }, inTx);
+				return { outcome: 'rejected', proposalId: row.id };
+			}
+			const { proposal } = await acceptProposal(ownerId, row.id, inTx);
+			if (proposal.status !== 'applied') return superseded(proposal);
+			return {
+				outcome: 'applied',
+				proposalId: proposal.id,
+				versionId: proposal.appliedVersion?.id ?? null,
+				versionNumber: proposal.appliedVersion?.number ?? null,
+				passed: 0
+			};
 		}
 		const offered = offeredOf(row);
 		const chosen = choose(offered, input.items);

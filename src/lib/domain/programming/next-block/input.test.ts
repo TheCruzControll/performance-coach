@@ -4,7 +4,7 @@ import type { TrainingProfile } from '../../profile/types';
 import { buildProgrammingInput } from '../input';
 import { SCENARIOS } from '../scenarios';
 import type { CycleDirectives } from '../review/directives';
-import { nextBlockInput } from './input';
+import { actualsOverlay, nextBlockInput } from './input';
 import type { ResultsSnapshot } from './input';
 
 const SQUAT = 'back_squat';
@@ -302,5 +302,41 @@ describe('nextBlockInput: determinism', () => {
 		expect(JSON.stringify(nextBlockInput(base(), reversed, directives()))).toBe(
 			JSON.stringify(first)
 		);
+	});
+});
+
+describe('actualsOverlay: what the training showed, with no cycle review (M7 re-plans)', () => {
+	const actual = snapshot({
+		e1rms: [{ lift: SQUAT, point: { value: 152.5, on: '2026-10-30' } }],
+		running: RUNNING
+	});
+
+	it('sets the e1RM baselines and the actual running, recording each, and nothing else', () => {
+		const { input, assumptions } = actualsOverlay(base(), actual);
+		expect(input.baselines.back_squat).toEqual({ kg: 152.5, kind: 'estimated' });
+		expect(input.running?.weeklyMetres).toBe(32000);
+		expect(input.running?.longestRunMetres).toBe(24300);
+		expect(assumptions.map((a) => a.rule)).toEqual(
+			expect.arrayContaining(['e1rm_baseline', 'actual_weekly', 'last_long_run', 'easy_pace'])
+		);
+		// No directive is read: likes and dislikes stay the profile's, and nothing is clamped.
+		expect(input.likes).toEqual(base().likes);
+		expect(input.dislikes).toEqual(base().dislikes);
+		expect(assumptions.some((a) => a.rule.startsWith('kept') || a.rule.startsWith('rotated'))).toBe(
+			false
+		);
+	});
+
+	it('is the overlay nextBlockInput applies before the directives', () => {
+		const alone = actualsOverlay(base(), actual);
+		const next = nextBlockInput(base(), actual, directives({ keep: [], rotate: [] }));
+		expect(next.input).toEqual({ ...alone.input, likes: next.input.likes });
+		expect(next.assumptions).toEqual(alone.assumptions);
+	});
+
+	it('leaves an input with nothing logged as it was, but for the profile’s baselines noted', () => {
+		const { input, assumptions } = actualsOverlay(base(), snapshot());
+		expect(input).toEqual(base());
+		expect(assumptions.every((a) => a.rule === 'profile_baseline')).toBe(true);
 	});
 });
