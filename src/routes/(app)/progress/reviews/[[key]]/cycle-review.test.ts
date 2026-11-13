@@ -109,6 +109,12 @@ describe('the cycle review on the server', () => {
 		);
 	});
 
+	/** A section's markup: its disclosure and the body after it (ReviewSections), to the next one. */
+	const sectionOf = (body: string, id: string) =>
+		new RegExp(
+			`<div[^>]*data-section="${id}"[\\s\\S]*?(?=<div[^>]*data-testid="review-section"|$)`
+		).exec(body)![0];
+
 	it('each section with its verdict line; a chart’s room holds its table twin', () => {
 		const body = html(review());
 		const strength = sectionOf(body, 'strength');
