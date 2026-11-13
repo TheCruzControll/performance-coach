@@ -51,11 +51,11 @@ describe('the views', () => {
 			action: null
 		});
 		expect(viewOfReply({ outcome: 'unavailable', reason: 'rate_limited' })).toMatchObject({
-			action: 'Retry'
+			action: 'Try again'
 		});
 		expect(viewOfReply({ outcome: 'failed' })).toMatchObject({
 			title: 'Couldn’t write this up',
-			action: 'Retry'
+			action: 'Try again'
 		});
 		// Refreshed in another tab since this page loaded: reload, not a Retry that fails again.
 		expect(viewOfReply({ outcome: 'superseded' })).toMatchObject({
@@ -91,7 +91,7 @@ describe('the views', () => {
 	it('a poll: written, still running, or ended with nothing stored (a failure)', () => {
 		expect(viewOfPoll({ state: 'written', ...WRITTEN })).toMatchObject({ state: 'written' });
 		expect(viewOfPoll({ state: 'running' })).toEqual({ state: 'writing', ask: false });
-		expect(viewOfPoll({ state: 'none' })).toMatchObject({ action: 'Retry' });
+		expect(viewOfPoll({ state: 'none' })).toMatchObject({ action: 'Try again' });
 	});
 });
 

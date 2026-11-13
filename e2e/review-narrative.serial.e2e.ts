@@ -53,7 +53,8 @@ async function create(request: APIRequestContext, seeded: SeededReview): Promise
 					data: { programId: seeded.programId!, blockLineage: seeded.review.blockLineageId }
 				};
 	const response = await request.post(`${LIST}?/${form.action}`, {
-		headers: SAME_ORIGIN,
+		// A browser's no-JS post asks for HTML; Playwright's default */* gets the action's JSON.
+		headers: { ...SAME_ORIGIN, accept: 'text/html' },
 		form: form.data,
 		maxRedirects: 0
 	});
@@ -178,7 +179,8 @@ test.describe('a weekly review', () => {
 		await setCoachFault(request, 'slow');
 		const context = await browser.newContext();
 		const page = await context.newPage();
-		await gotoHydrated(page, url);
+		// Not gotoHydrated: its networkidle would wait out the write-up's request, so the whole run.
+		await page.goto(url);
 		await expect(writeUp(page)).toHaveAttribute('data-state', 'writing');
 		await expect.poll(async () => (await runs()).length, { timeout: 15_000 }).toBe(1);
 		await context.close();
@@ -200,11 +202,11 @@ test.describe('a weekly review', () => {
 	}) => {
 		await setCoachFault(request, 'slow');
 		const first = await browser.newPage();
-		await gotoHydrated(first, url);
+		await first.goto(url); // not gotoHydrated, as above: it would wait the run out
 		await expect.poll(async () => (await runs()).length, { timeout: 15_000 }).toBe(1);
 
 		const second = await browser.newPage();
-		await gotoHydrated(second, url);
+		await second.goto(url);
 		await expect(writeUp(second)).toHaveAttribute('data-state', 'writing');
 		await expect(writeUp(second)).toContainText('Your coach is writing this up…');
 		await written(first);
