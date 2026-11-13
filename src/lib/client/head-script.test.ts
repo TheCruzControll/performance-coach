@@ -9,10 +9,15 @@ const HEAD_SCRIPT = /<script>([\s\S]*?)<\/script>/.exec(
 
 /** A window as far as the head script sees it. */
 let page: EventTarget & { __pcLeftAt?: number };
+/** This device's localStorage, as far as the head script sees it. */
+const stored = new Map<string, string>();
 
 function runHeadScript() {
 	page = new EventTarget();
-	const storage = { getItem: () => null };
+	const storage = {
+		getItem: (key: string) => stored.get(key) ?? null,
+		removeItem: (key: string) => stored.delete(key)
+	};
 	new Function('window', 'addEventListener', 'localStorage', 'document', 'matchMedia', HEAD_SCRIPT)(
 		page,
 		page.addEventListener.bind(page),
@@ -37,6 +42,7 @@ const CHROMIUM_IMPORT = new TypeError(
 
 beforeEach(() => {
 	vi.useFakeTimers();
+	stored.clear();
 	runHeadScript();
 });
 
@@ -72,5 +78,14 @@ describe('the head script, on a module that fails to load', () => {
 		expect(rejectUnhandled(WEBKIT_IMPORT)).toBe(true);
 		vi.advanceTimersByTime(1);
 		expect(rejectUnhandled(WEBKIT_IMPORT)).toBe(false);
+	});
+});
+
+describe('the head script, on a device an earlier version saved a design choice on', () => {
+	it('removes the choice, and keeps the device’s preferences', () => {
+		stored.set('pc:prefs:v1', JSON.stringify({ theme: 'dark' }));
+		stored.set('pc:design:v1', 'graphite');
+		runHeadScript();
+		expect([...stored.keys()]).toEqual(['pc:prefs:v1']);
 	});
 });

@@ -136,11 +136,13 @@ describe('planShards', () => {
 			const plan = planShards(list, of, workers);
 			const [one, ...rest] = plan.map((s) => shardCost(s, workers));
 			// Shard 1 must hold SHARD_ONE_FILES. When those alone outweigh an even split
-			// (main/chromium in 3), no plan makes it the lightest: then it holds nothing else and
-			// is the lightest at its planned share.
+			// (main/chromium in 3), no plan makes it the lightest: then it holds nothing else, and
+			// the leg waits on those files alone, every other shard as light or lighter.
 			const pinnedOnly = plan[0]!.keys.every((key) => SHARD_ONE_FILES.includes(fileOf(key)));
-			const share = pinnedOnly ? SHARD_ONE_SHARE : 1;
-			for (const other of rest) expect(one! * share, `${group}/${engine}`).toBeLessThan(other);
+			for (const other of rest) {
+				if (pinnedOnly) expect(other, `${group}/${engine}`).toBeLessThanOrEqual(one!);
+				else expect(one!, `${group}/${engine}`).toBeLessThan(other);
+			}
 		}
 	});
 

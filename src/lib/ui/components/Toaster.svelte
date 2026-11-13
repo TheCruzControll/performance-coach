@@ -27,7 +27,7 @@
 	const remove = (id: number) => (shown = shown.filter((item) => item.id !== id));
 </script>
 
-<div class="toaster" data-ui="toaster" role="status" aria-live="polite" aria-atomic="false">
+<div class="toaster" role="status" aria-live="polite" aria-atomic="false">
 	{#each shown as item (item.id)}
 		<div
 			class="toast"

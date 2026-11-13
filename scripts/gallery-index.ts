@@ -1,15 +1,14 @@
 /**
  * The screen gallery's contact sheet (.github/workflows/screen-gallery.yml).
  *
- * e2e/gallery.gallery.ts captures every main screen and state on each device, in both designs
- * (today's and the Graphite 2004 preview, so the owner can compare them) and both themes, and
+ * e2e/gallery.gallery.ts captures every main screen and state on each device in both themes and
  * appends one record per shot to `results-<device>.jsonl` beside the PNGs: captured, failed (with
  * why), skipped (with why, e.g. an engine that cannot emulate it) or absent (the screen is not on
  * main yet: the shot threw NotOnMainYet, saying what is missing). A shot that fails never fails the
  * run, so the sheet is where a failure shows.
  *
  * `node scripts/gallery-index.ts <dir>` reads every `results-*.jsonl` in <dir> and writes
- * <dir>/index.html: one row per screen and state, one column per device, design and theme, each cell the
+ * <dir>/index.html: one row per screen and state, one column per device and theme, each cell the
  * PNG (linked full size) or what kept it out. Node builtins only.
  */
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -17,11 +16,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const GALLERY_DEVICES = ['iphone', 'desktop'] as const;
-/** The designs (src/lib/client/design.ts): today's, then the Graphite 2004 preview beside it. */
-export const GALLERY_DESIGNS = ['current', 'graphite'] as const;
 export const GALLERY_THEMES = ['dark', 'light'] as const;
 export type GalleryDevice = (typeof GALLERY_DEVICES)[number];
-export type GalleryDesign = (typeof GALLERY_DESIGNS)[number];
 export type GalleryTheme = (typeof GALLERY_THEMES)[number];
 
 export interface ShotKey {
@@ -30,7 +26,6 @@ export interface ShotKey {
 	/** Its state, e.g. `strength`. */
 	state: string;
 	device: GalleryDevice;
-	design: GalleryDesign;
 	theme: GalleryTheme;
 }
 
@@ -64,18 +59,15 @@ export function recordOf(key: ShotKey, err: unknown): ShotRecord {
 
 const SLUG = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
-/**
- * `<screen>--<state>--<device>--<design>--<theme>.png`: screen and state are lower-case kebab
- * slugs.
- */
-export function shotFileName({ screen, state, device, design, theme }: ShotKey): string {
+/** `<screen>--<state>--<device>--<theme>.png`: screen and state are lower-case kebab slugs. */
+export function shotFileName({ screen, state, device, theme }: ShotKey): string {
 	for (const [name, value] of [
 		['screen', screen],
 		['state', state]
 	] as const) {
 		if (!SLUG.test(value)) throw new Error(`gallery ${name} '${value}': use a kebab-case slug`);
 	}
-	return `${screen}--${state}--${device}--${design}--${theme}.png`;
+	return `${screen}--${state}--${device}--${theme}.png`;
 }
 
 const escape = (text: string) =>
@@ -85,10 +77,9 @@ const escape = (text: string) =>
 	);
 
 const COLUMNS = GALLERY_DEVICES.flatMap((device) =>
-	GALLERY_DESIGNS.flatMap((design) => GALLERY_THEMES.map((theme) => ({ device, design, theme })))
+	GALLERY_THEMES.map((theme) => ({ device, theme }))
 );
-const columnOf = ({ device, design, theme }: Omit<ShotKey, 'screen' | 'state'>) =>
-	`${device}--${design}--${theme}`;
+const columnOf = ({ device, theme }: Omit<ShotKey, 'screen' | 'state'>) => `${device}--${theme}`;
 
 function cell(record: ShotRecord | undefined): string {
 	if (!record) return '<td class="missing">not run</td>';
@@ -118,9 +109,7 @@ export function renderIndex(records: readonly ShotRecord[], title = 'Screen gall
 	}
 	const latest = [...rows.values()].flatMap((row) => [...row.values()]);
 	const count = (status: ShotRecord['status']) => latest.filter((r) => r.status === status).length;
-	const head = COLUMNS.map(
-		({ device, design, theme }) => `<th>${device} · ${design} · ${theme}</th>`
-	).join('');
+	const head = COLUMNS.map(({ device, theme }) => `<th>${device} · ${theme}</th>`).join('');
 	const body = [...rows]
 		.map(([row, shots]) => {
 			const cells = COLUMNS.map((column) => cell(shots.get(columnOf(column))));

@@ -16,7 +16,7 @@
 	let { tone, as = 'span', children }: Props = $props();
 </script>
 
-<svelte:element this={as} class="chip" data-ui="chip">
+<svelte:element this={as} class="chip">
 	{#if tone}<span class="dot" style:background={`var(--color-${tone})`} aria-hidden="true"
 		></span>{/if}
 	{@render children()}
