@@ -1,7 +1,10 @@
 # 0014 — Coach memory and proposals: a snapshot from records, changes only as accepted proposals
 
-- **Status:** Proposed (M5). Numbered at merge, so M5's slices refer to it by its title, "the
-  coach memory and proposals ADR". docs-agent-architecture accepts it once the coach is launched.
+- **Status:** Accepted (M5, 2026-11-11). Implemented and switched on in production by
+  coach-launch (#449); docs/agent-architecture.md describes the code. Two details moved during
+  M5: the snapshot takes at most 18 queries (9 for the profile, 9 for the records, which read the
+  reviews' decisions too), and a segment's summary is made right after the answer that fills it
+  when it can, so the next turn rolls over without a model call first.
 - **Context:** Context must persist across conversations from structured data, not a replayed
   chat (PRD §4). An explicit "I dislike this exercise" must persist, while a machine being taken
   must not become a preference (PRD §4, §6). Recommendations and committed changes are separate,
@@ -12,7 +15,7 @@
 ## Decision
 
 - **One snapshot, built from records.** `getCoachingMemory` builds a deterministic
-  `MemorySnapshot` (`src/lib/domain/coach/memory.ts`) in at most 17 queries: profile sections
+  `MemorySnapshot` (`src/lib/domain/coach/memory.ts`) in at most 18 queries: profile sections
   (goals ranked, the program and week, the last 14 days planned against done, baselines measured
   or estimated, trends, preferences with their source and reason, equipment, injuries, movements
   to avoid) and record sections (pain reports from the last 28 days, recovery notes, decisions
