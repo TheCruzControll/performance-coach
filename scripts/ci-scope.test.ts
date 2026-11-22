@@ -184,6 +184,10 @@ describe('decide, other events and failures', () => {
 			scope: 'full',
 			reason: 'event workflow_dispatch'
 		});
+		expect(decide({ EVENT_NAME: 'schedule', SHA: 'x' }, git)).toEqual({
+			scope: 'full',
+			reason: 'event schedule'
+		});
 		expect(calls).toEqual([]);
 	});
 

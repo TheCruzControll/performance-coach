@@ -1390,7 +1390,7 @@ The run's first job, `Scope of the run`, runs `scripts/ci-scope.ts`. A change th
 `.env.example`, and a
 merge to `main`, onto the previous tip, whose tree its pull request already tested, is a light run: it skips the
 integration tests, the e2e legs and Lighthouse. Lint, type-check, unit tests (which include the docs
-guards) and the build always run.
+guards) and the build always run. Because most runs on `main` are light, a nightly scheduled run tests `main` in full.
 
 `.github/workflows/post-deploy-smoke.yml` checks production from outside after every production
 deploy (health with the database up, the sign-in screen, deny by default, security headers on
