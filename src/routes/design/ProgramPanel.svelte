@@ -89,7 +89,15 @@
 			card: 'long',
 			tone: 'neutral',
 			text: 'Trade-off, explained · Heavy lower body the day before a long run · After Lower body strength the day before',
-			why: `${LEGS} Your marathon ranks ahead of your strength goal, so the long run keeps its day.`
+			why: `${LEGS} Your marathon ranks ahead of your strength goal, so the long run keeps its day.`,
+			// Why this day, as Train's load words it (m7/14, train/cards.server.ts whyWords).
+			reasons: {
+				title: 'Why Saturday?',
+				lines: [
+					'Priority trade-off (Programming rules, version 1): Your marathon ranks ahead of your strength goal, so the long run keeps its day.',
+					'Session placed (Programming rules, version 1): Long run goes on Saturday: your longest free morning.'
+				]
+			}
 		}
 	] as const;
 
@@ -201,6 +209,14 @@
 				<summary>{note.text}</summary>
 				<p>{note.why}</p>
 			</details>
+			{#if 'reasons' in note}
+				<details class="why" data-testid="card-why">
+					<summary>{note.reasons.title}</summary>
+					<ul>
+						{#each note.reasons.lines as line (line)}<li>{line}</li>{/each}
+					</ul>
+				</details>
+			{/if}
 		{/each}
 	</Section>
 
@@ -230,14 +246,16 @@
 </div>
 
 <style>
-	/* Train's note (train/+page.svelte), copied for the reference: keep the two in step. */
-	.note {
+	/* Train's note and why (train/+page.svelte), copied for the reference: keep them in step. */
+	.note,
+	.why {
 		margin-top: calc(var(--space-2) * -1);
 		font-size: var(--text-sm);
 		color: var(--color-text-secondary);
 	}
 
-	.note summary {
+	.note summary,
+	.why summary {
 		display: flex;
 		align-items: baseline;
 		gap: var(--space-2);
@@ -246,7 +264,8 @@
 		list-style: none;
 	}
 
-	.note summary::-webkit-details-marker {
+	.note summary::-webkit-details-marker,
+	.why summary::-webkit-details-marker {
 		display: none;
 	}
 
@@ -264,14 +283,22 @@
 	}
 
 	@media (hover: hover) and (pointer: fine) {
-		.note summary:hover {
+		:is(.note, .why) summary:hover {
 			color: var(--color-text);
 			cursor: pointer;
 		}
 	}
 
-	.note p {
+	.note p,
+	.why ul {
 		padding: 0 var(--space-4);
+	}
+
+	.why ul {
+		display: grid;
+		gap: var(--space-2);
+		padding-bottom: var(--space-3);
+		list-style: none;
 	}
 
 	.grid {
