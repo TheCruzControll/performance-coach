@@ -10,7 +10,8 @@
  *   preference), today's substitution (dislike) and, when the slot performs its planned exercise,
  *   the program's swap from today. The server decides whether the program still holds it.
  * - This hurts: a pain report, never a preference. Stop this exercise comes first, then the
- *   kit's gentler options for the chosen area, then End the workout here when it is severe.
+ *   kit's gentler options for the chosen area, then End the workout here when it is severe. In a
+ *   run or a class it offers End the workout here alone (SESSION_PAIN_CHOICES).
  * - Skip exercise: a skipped set for each planned set not done yet.
  */
 import type { BodyArea, Equipment, Severity } from '../profile/catalog.ts';
@@ -175,6 +176,13 @@ export function painChoices(
 		...(ends ? [{ action: 'ended_workout' as const }] : [])
 	];
 }
+
+/**
+ * What This hurts offers in a run or a class, which perform no exercise: End the workout
+ * here, at any severity. There is no gentler exercise to switch to, and stopping is always
+ * offered (PRD §6).
+ */
+export const SESSION_PAIN_CHOICES: readonly PainChoice[] = [{ action: 'ended_workout' }];
 
 /** The pain report actions after which nothing more is done in the slot: it reads Stopped. */
 export const STOPPING_PAIN_ACTIONS: readonly PainAction[] = ['stopped', 'ended_workout'];

@@ -249,6 +249,8 @@ every server instance shares the counters. The first refusal of a window is audi
 | `reauth`          | 20 / 15 minutes | session  |
 | `manage`          | 60 / minute     | session  |
 | `signout`         | 30 / minute     | client   |
+| `coach.turn`      | 30 / 10 minutes | all      |
+| `coach.action`    | 60 / minute     | all      |
 
 The client address is the platform's (`getClientAddress()`: `x-forwarded-for` as set by Vercel).
 A client bucket keys on the whole address for IPv4 and on the /64 for IPv6 (`client-network.ts`):
@@ -258,6 +260,12 @@ network routed a larger prefix (a /56 or /48) still spans many /64s, just as an 
 many IPv4 addresses: per-client limits slow abuse rather than bound it. The audit log keeps the
 full address. Refusals answer `429` with `Retry-After`, except the `/setup` page, which answers
 `404` like any other refused setup link.
+
+Coach endpoints (`/api/coach/*`) are owner routes, Origin-checked by the guard, rate-limited
+across all the owner's devices (`coach.turn` for turns, `coach.action` for everything else) and
+cost-capped at $5 a day (`DAILY_COST_CAP_USD`), and the cap ends a turn with a `budget` error event
+in the stream and records the run as `budget_exhausted` (`daily_cap`), rather than answering `429`;
+a rate-limit refusal answers `429` with `Retry-After`.
 
 Stale counters are pruned on writes: the first hit of each window also deletes up to 100 counters
 whose window started over two days ago (longer than any window; `RATE_LIMIT_PRUNE` in `policy.ts`),
@@ -331,11 +339,22 @@ Lighthouse) can enable them.
 - Server-only configuration is validated by `src/lib/server/env.ts` and never bundled for the
   browser (SvelteKit refuses `server/` imports in client code). `ANTHROPIC_API_KEY` never reaches
   the browser.
+- `@anthropic-ai/*` is imported at runtime only by `src/lib/server/agent/provider/anthropic.ts`
+  (ESLint, and `scripts/anthropic-sdk-imports.test.ts`, which also catches dynamic imports). A
+  missing `ANTHROPIC_API_KEY` never stops the server: the coach reports `no_key`, and the one
+  startup warning names the variable, never its value. The provider's errors carry kind, status,
+  type and request id, with the key redacted, and never keep the SDK error as a cause; for a
+  refused request (`bad_request`) they also carry the API's reason.
 - The setup **token** is never stored anywhere: only its hash is configured (and, once used,
   recorded in `used_setup_tokens`). Vercel's own request logs record full URLs, so the setup
   request's token appears there; it is useless once setup has completed, also after an owner
   reset (a used token is refused for good). Remove `OWNER_SETUP_TOKEN_HASH` after setup. The app's
   own logs record paths without query strings.
+- Logs and `app_errors` pass through `src/lib/server/observability/redact.ts`. It masks
+  credential-named fields, Postgres URL passwords, Bearer tokens, `sk-ant-`, `re_`,
+  `vercel_blob_rw_`, `npg_` and PEM keys, the exact values of the server's secret variables,
+  email addresses and URL query strings, and caps strings at 2 KB (stacks at 8 KB). Client error
+  and vitals paths are stored without their query strings.
 - `.env` is git-ignored; nothing secret is committed.
 
 ## What is and isn't protected
@@ -351,27 +370,110 @@ passkeys, except within 5 minutes of the owner's own passkey use on that session
 detect unusual sign-in locations; the audit log is not tamper-proof against someone with database
 access; denial of service by exhausting a client's rate limit from the same IP is possible.
 
+## Coach (M5) review
+
+The coach's attack surface as merged at the end of M5, reviewed against the code. The design is in
+docs/agent-architecture.md; this section records what protects each part and what is left.
+
+**Prompt injection.** Anything stored that the owner or a model once wrote (thread titles, notes,
+summaries, rejection reasons, proposal text) reaches the model only as `untrusted_text`, labelled
+as data (`src/lib/server/agent/prompt/context.ts`). The turn-context system message carries only
+facts the server computed: dates, counts, ids and statuses, never a decided proposal's note.
+Memory sits in a user-role preamble, never in a system message. No tool commits a program, goal or
+workout change: each is a proposal the owner accepts. The one direct write,
+`update_exercise_preferences`, needs an explicit statement about that exercise in this turn's
+stored owner message (`classifyExerciseStatement`); a dislike that reached the coach through a
+stored note becomes a proposal (`tests/integration/coach/tools-preferences.test.ts`).
+
+**Tool authorisation.** `ToolContext` takes the owner from the session, and `toStrictJsonSchema`
+refuses any tool input property named `owner`, `ownerId` or `owner_id`, so no model input can
+choose whose data a tool reads. Every id is looked up owner-scoped. Each tool group's integration
+test runs a `ToolContext` with a random owner id against the seeded owner's ids: reads give
+`NOT_FOUND`, and writes and proposals give `is_error` with zero rows written
+(`tests/integration/coach/tools-*.test.ts`, `tests/integration/coach/proposals.test.ts`). Every
+input is validated with zod before its tool runs. An unexpected tool error reaches the model only
+as a generic `INTERNAL` result.
+
+**Proposal tampering.** Accept and reject take only the proposal id; the server re-parses the
+stored payload and re-checks it against today's data. Postgres refuses the rest: rows are inserted
+`proposed` only, their content (payload with its version and hash, diff, impact, base version,
+thread, run, tool call, revision) never changes, status moves forward only (proposed → accepted,
+rejected, applied or superseded; accepted → applied or superseded), decided rows are frozen and
+DELETE is refused (`drizzle/0026_coach_proposals_guards.sql`). Transcripts, model calls, tool calls
+and coach notes are insert-only; a thread changes only its title, archive state and forward
+segment, a run only while running (`drizzle/0024_coach_conversations_guards.sql`). A second accept
+writes nothing, and a tampered request is ignored (`e2e/coach-proposals.serial.e2e.ts`).
+
+**Key handling.** `@anthropic-ai/sdk` is pinned to 1.6.0, which sends `Authorization: Bearer` and
+API version 2026-10-21; the app sends no header override. The key is set in Vercel's Production
+environment only, and `vercel.json` disables Git preview deployments. `pnpm budgets` fails if the
+SDK (literals only its pinned release ships), an `sk-ant-` key or the build-time
+`ANTHROPIC_API_KEY` is in any client file of either build; CI builds with a canary key
+(`.github/workflows/ci.yml`) and a positive control requires the SDK's literals in the server
+output (`scripts/client-secret-scan.ts`).
+
+**The launch switch and the kill switch.** `COACH_LAUNCHED` (`src/lib/server/agent/launch.ts`)
+kept production at `not_launched` until coach-launch (#449) flipped it. `LLM_PROVIDER=off` is the
+owner's kill switch in any environment, effective at the next deploy: `disabled` refuses every
+turn before anything is stored, as `not_launched` does. Test overrides of the provider, faults and
+scripts are read only where test routes are enabled, which a Vercel build never is.
+
+**Rate limits and cap pricing.** `coach.turn` (30 per 10 minutes) and `coach.action` (60 a
+minute) are shared by every device. The $5 daily cap sums `cap_cost_micros`, a NOT NULL column
+that prices a model missing from `PRICING` at the highest known rate of each token type, rounded
+up, so a fallback or unknown model never under-counts. A day at the cap is refused before any
+model call; within a turn, the loop stops at 8 chat calls, 2 drafts, 40K output or 300K input
+tokens (`src/lib/domain/coach/budgets.ts`).
+
+**The SSE endpoint.** `POST /api/coach/turns` is an owner route: Origin-checked, rate-limited,
+body capped at 64 KB and parsed strictly; it answers `text/event-stream` with `no-store`. Answers
+never carry HTML: the server parses a small markdown subset into a tree
+(`src/lib/domain/coach/markdown.ts`), a link survives only as an app path that `sourceAction`
+builds, and the browser renders text nodes only (`RichText.svelte`, never `{@html}`).
+
+**The output gate.** `src/lib/server/agent/policy.ts` scans every answer block before release:
+clean text goes at sentence ends, or at a clause boundary that keeps 80 characters held to be
+rescanned; a block that names pain or holds a context phrase is held to the answer's end, and in
+pain mode every block is. A failing block is replaced by safe guidance before any of it is sent,
+and ungrounded facts and metrics become 'Not checked against your data'. Each intervention is a
+`_policy` row in `agent_tool_calls`.
+
+**Logs.** Coach logs carry ids, counts, token usage and timings, not message text. A failed model
+call's `errorMessage` (`src/lib/server/agent/orchestrator.ts`) carries the provider's error, which
+for a refused request (`bad_request`) includes the API's reason. A failure's `err`, logged through
+`serializeError`, keeps its message after redaction (see Residual risks). The redactor walks plain objects and arrays only, so a class instance other than those is logged as `JSON.stringify` writes it, unredacted.
+
+**Residual risks.**
+
+- The model can still be talked into a poor recommendation by the owner's own words; proposals
+  and the owner's confirmation are the control, not the prompt.
+- A logged error message may quote what a service refused. Secrets, tokens and email addresses
+  are masked (see Secrets), but other free text a message quotes is not detected. A token in a relative path inside a message (`/recover?token=…`) is not masked, while stored `path` fields lose their query string.
+- The live suite, including its prompt-injection and refusal conversations, has not been run
+  against the real model (the owner's go-ahead of 2026-11-10 replaced it; #449).
+- The kill switch takes a redeploy; there is no runtime toggle.
+
 ## Self-review (OWASP ASVS 4.0, level 2, the relevant chapters)
 
-| ASVS                                         | Status  | Evidence                                                                                             |
-| -------------------------------------------- | ------- | ---------------------------------------------------------------------------------------------------- |
-| V2.1 Password security                       | N/A     | No passwords exist.                                                                                  |
-| V2.2 General authenticator (anti-automation) | Met     | DB rate limits on every auth endpoint (`rate-limit.test.ts`); failures audited.                      |
-| V2.5 Credential recovery                     | Met     | Single-use 80-bit codes, hashed, burned atomically; recovery forces a new passkey; regeneration.     |
-| V2.6 Look-up secrets                         | Met     | Codes random (CSPRNG), single use, stored hashed (SHA-256 is adequate at 80 bits of entropy).        |
-| V2.7/2.8 Out-of-band / OTP                   | N/A     | Not used.                                                                                            |
-| V2.9 Cryptographic authenticators            | Met     | WebAuthn via SimpleWebAuthn; UV required; counters enforced; origin and RP ID verified.              |
-| V3.1/3.2 Session binding & generation        | Met     | 256-bit CSPRNG tokens; new token on authentication; hash at rest.                                    |
-| V3.3 Session termination                     | Met     | Sign-out, revoke one / all others; idle 30 d + absolute 90 d; revocation immediate (tests).          |
-| V3.4 Cookie-based sessions                   | Met     | `__Host-` prefix, Secure, HttpOnly, SameSite=Lax, Path=/ (unit + e2e).                               |
-| V3.5 Token-based sessions                    | N/A     | Cookie sessions only.                                                                                |
-| V3.7 Defenses against session exploits       | Met     | Step-up: a recent passkey assertion (5 min) before passkey, recovery-code or device changes (tests). |
-| V4.1/4.2 Access control                      | Met     | Deny by default with a typed, tested route map; single owner, no IDOR surface.                       |
-| V4.2.2 CSRF                                  | Met     | Origin check on all unsafe methods + SvelteKit form check + SameSite (e2e).                          |
-| V7 Logging                                   | Met     | Audit log for auth events; no secrets or query strings in app logs.                                  |
-| V8.3 Sensitive private data                  | Partial | Pages `private, no-cache`; sign-out clears device data, unsynced sets if agreed. Neon encrypts DB.   |
-| V13 API                                      | Met     | JSON endpoints validate input (zod), cap body size, answer `no-store`.                               |
-| V14.4 HTTP security headers                  | Met     | CSP, HSTS, nosniff, frame-ancestors none, referrer policy (e2e).                                     |
+| ASVS                                         | Status  | Evidence                                                                                                                           |
+| -------------------------------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| V2.1 Password security                       | N/A     | No passwords exist.                                                                                                                |
+| V2.2 General authenticator (anti-automation) | Met     | DB rate limits on every auth endpoint (`rate-limit.test.ts`); failures audited.                                                    |
+| V2.5 Credential recovery                     | Met     | Single-use 80-bit codes, hashed, burned atomically; recovery forces a new passkey; regeneration.                                   |
+| V2.6 Look-up secrets                         | Met     | Codes random (CSPRNG), single use, stored hashed (SHA-256 is adequate at 80 bits of entropy).                                      |
+| V2.7/2.8 Out-of-band / OTP                   | N/A     | Not used.                                                                                                                          |
+| V2.9 Cryptographic authenticators            | Met     | WebAuthn via SimpleWebAuthn; UV required; counters enforced; origin and RP ID verified.                                            |
+| V3.1/3.2 Session binding & generation        | Met     | 256-bit CSPRNG tokens; new token on authentication; hash at rest.                                                                  |
+| V3.3 Session termination                     | Met     | Sign-out, revoke one / all others; idle 30 d + absolute 90 d; revocation immediate (tests).                                        |
+| V3.4 Cookie-based sessions                   | Met     | `__Host-` prefix, Secure, HttpOnly, SameSite=Lax, Path=/ (unit + e2e).                                                             |
+| V3.5 Token-based sessions                    | N/A     | Cookie sessions only.                                                                                                              |
+| V3.7 Defenses against session exploits       | Met     | Step-up: a recent passkey assertion (5 min) before passkey, recovery-code or device changes (tests).                               |
+| V4.1/4.2 Access control                      | Met     | Deny by default with a typed, tested route map; single owner, no IDOR surface.                                                     |
+| V4.2.2 CSRF                                  | Met     | Origin check on all unsafe methods + SvelteKit form check + SameSite (e2e).                                                        |
+| V7 Logging                                   | Met     | Audit log for auth events; no secrets or query strings in app logs.                                                                |
+| V8.3 Sensitive private data                  | Partial | Pages `private, no-cache`, `/api/*` `no-store` by default; sign-out clears device data, unsynced sets if agreed. Neon encrypts DB. |
+| V13 API                                      | Met     | JSON endpoints validate input (zod), cap body size, answer `no-store`.                                                             |
+| V14.4 HTTP security headers                  | Met     | CSP, HSTS, nosniff, frame-ancestors none, referrer and permissions policies, COOP, CORP same-origin (e2e, unit).                   |
 
 Open items: WebKit runs only on the test-minted session in e2e, so passkey ceremonies on iOS
 Safari (sign-in, setup, step-up) are verified on a real device (docs/testing.md checklist) rather

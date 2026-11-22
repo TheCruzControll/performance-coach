@@ -108,7 +108,7 @@ shared component costs every route, Security included.
   67, `/coach` 40, `/profile` 87, `/profile/security` 60 — every screen meets the 200 ms target.
 - **Lighthouse, one run per screen** (signed in via a session the script mints; `/` signed out):
   perf 98–100, accessibility 100, best practices 100, CLS 0.000 everywhere; `/profile/security`
-  LCP 1.07 s, TBT 103–153 ms. A single run is not a median: the 5-run CI assertion is the gate.
+  LCP 1.07 s, TBT 103–153 ms. A single run is not a median: the 5-run assertion was the gate, while CI ran it.
 - **Server:** every dynamic request now does one indexed session lookup, reported as
   `Server-Timing: auth;dur=…`.
 
@@ -197,7 +197,7 @@ none shifted (worst unexplained layout-shift sum 0.0000 on every load, `MAX_SHIF
 | `/onboarding`               |     66 | 57, 57, 66, 86, 129     |
 
 **Lighthouse** (mobile, simulated throttling, median of 5 runs, Lighthouse 13.6.0, Chrome
-153.0.8010.12; `lighthouse: all thresholds met`). With `--seed` (on in CI) the runner seeds a
+153.0.8010.12; `lighthouse: all thresholds met`). With `--seed` the runner seeds a
 demo profile, audits Today's Build card, then builds through `?/preview` and `?/build` and audits
 Today's program state, Train, the longest session and History:
 
@@ -581,6 +581,111 @@ through one barrel from every component, so a runtime helper only one screen use
 framework chunk. The toasts stay in the initial JS and the router keeps its modulepreload hints,
 for the reasons above.
 
+## Advanced coaching (M7)
+
+One paragraph per M7 slice, each replaced by its own slice only; docs-m7 turns them into its
+measured section.
+
+m7/04 train-week-findings: Train page data is committed in
+`scripts/explain/baselines/train-m7.json` (gzip bytes of JSON of `loadTrainWeek`, a proxy for
+`/train/__data.json`, for periodisation-week's current and owner-move weeks on its pinned clock,
+±64 B) and gated by `tests/integration/periodisation/train-page-data.test.ts` against `ALLOWANCES`
+(findings 0.6, why 1.5, week kinds 0.1, timeline 0.7, re-plan note 0.1 KB); findings measured
++207 B. Train's load with `deps.periodisation` on vs off in `pnpm db:explain`
+(`scripts/explain/periodisation.cases.ts`): ≤ +10 ms median target, failing above +25 ms
+(measured +6.8 ms locally). `/(app)/train` +137 B initial JS, +151 B route CSS; every other route
+within ±2 B.
+
+## M5 (coach) — measured 2026-11-11
+
+These numbers were measured on `9ac3521`, before the shared-JS trim (#473) recorded in "Shared JS
+trimmed" above, which brought `/(app)/coach/[[thread]]` to 57.0 KB, under the gate. The table below
+is the record of that run, not the current state: the coach route is not over the gate today.
+
+Measured by CI on GitHub's 4-vCPU Linux runners, on the coach as M5 finished it: run
+[43113434377](https://github.com/TheCruzControll/performance-coach/actions/runs/43113434377)
+on `9ac3521` (#463, with coach-launch #449, the final performance pass #395 and the degraded-state
+specs #396 merged in). That run was red (see "Open" below). The query plans come from #395's green
+run [42945475964](https://github.com/TheCruzControll/performance-coach/actions/runs/42945475964)
+(`8998fbb`). Every coach number below is the MockProvider's, so it measures the app, not the
+model.
+
+Initial JS and route CSS (gzip) of the coach routes, and the routes beside them:
+
+| Route                           | Initial JS | Route CSS | Gate (60 KB) |
+| ------------------------------- | ---------: | --------: | :----------: |
+| `/(app)/coach/[[thread]]`       |    60.3 KB |   10.2 KB |     FAIL     |
+| `/(app)/train`                  |    59.4 KB |   11.4 KB |     pass     |
+| `/(app)/today`                  |    58.7 KB |   13.7 KB |     pass     |
+| `/(app)/coach/proposals/[[id]]` |    55.3 KB |    9.1 KB |     pass     |
+| `/workout`                      |    54.0 KB |    8.3 KB |     pass     |
+
+- **The runway's final state.** The coach screen was 54.0 KB after coach-screen (#301), and the
+  runway rule held it plus the unmerged coach UI allowances to ≤ 57.5 KB. It reached 59.0 KB with
+  coach-thread-stream (#377), whose ThreadList was the lever pulled, and ended at 60.3 KB, over
+  the 60 KB gate. The stream client (about 2.2 KB), ProposalCard with DiffRows, RejectSheet, the
+  exercise history sheet and the Knows, Usage, Manage and Archived sheets load on demand, never in
+  initial JS or as a modulepreload. The inbox is 55.3 KB (#390 recorded 55.5 KB).
+- **Coach isolation**: no coach module can load from `/workout`, `/workout/run` or
+  `/workout/session` (pass).
+- The same run's service-worker precache was 278 files and 997.3 KB, over the 275-file, 995 KB cap
+  it carried; main has since raised the cap to 300 files and 1,100 KB.
+
+Main thread at 4× CPU (`perf` project, median of 5; guard 250 ms, target 200 ms):
+
+| Measure                                                   | Median | Runs                   |
+| --------------------------------------------------------- | -----: | ---------------------- |
+| `/coach/<long thread>` loading (`perf-coach-load.e2e.ts`) |  16 ms | 11, 11, 16, 25, 57     |
+| `/coach/proposals`, two waiting, loading                  |   0 ms | 0, 0, 0, 0, 3          |
+| A 60-message conversation opening (`perf-coach.e2e.ts`)   | 104 ms | 92, 219, 100, 104, 105 |
+| Blocking while a 3,000-token answer streams               |   0 ms | 0, 0, 0, 0, 0          |
+
+Layout shift was 0.0000 on every load. **Streaming** (mock 'perf-stream', about 300 tokens a
+second, about 10.5 s a stream): Event Timing INP 64 ms over 120 interactions while the owner typed;
+TTFT (`agent_runs.ttft_ms`) median 74 ms; the first words on screen a median 140 ms after Send,
+inside the stream's first quarter, so the output gate releases a clean answer as it arrives.
+
+Lighthouse, median per route:
+
+| Screen                     |  Mobile perf |     LCP |    TBT |  CLS | Desktop perf | Desktop LCP |
+| -------------------------- | -----------: | ------: | -----: | ---: | -----------: | ----------: |
+| `/coach`                   |          100 |  826 ms |  78 ms | 0.00 |          100 |      255 ms |
+| `/coach/[thread]` · long   |           96 | 1915 ms | 208 ms | 0.00 |          100 |      436 ms |
+| `/coach/proposals` · inbox | not measured |         |        |      | not measured |             |
+
+**Query plans.** `pnpm db:explain` loads `scripts/explain/coach-dataset.ts` (2,000 conversations,
+500 archived, about 36k messages, 8k runs, 2,000 pain reports) and gates every coach builder
+against its declared index: all passed, each through its index (threads, transcript, display
+pages, proposals, decided-since, notes, runs, the day's cap cost), the slowest gated one 0.74 ms
+(`lockThread`). The usage view's whole-history totals are recorded, not gated: tool frequency
+8.6 ms, run totals 3.3 ms, status counts 2.4 ms, unpriced calls 1.6 ms.
+
+**Server-side limits.** A turn runs at most 150 s inside the endpoint's 180 s
+(`COACH_MAX_DURATION_S`); a tool 10 s, a drafting tool 85 s, never past the turn; ≤ 8 chat calls,
+≤ 2 drafts, ≤ 40K output and ≤ 300K input tokens a turn; tools three at a time, one at a time on a
+transaction, each result ≤ 8 KB and 20 items a page. A drafting tool makes one structured-output
+call at effort high ('Drafting the change…'). The coaching memory takes ≤ 17 queries (profile ≤ 9,
+records ≤ 8), one at a time, and is capped at 6 KB by section priority. A segment rolls at 60K
+prompt tokens or 40 messages, costing one summary call at effort low (≤ 8K output tokens) and one
+cache miss on the next turn.
+
+**First words (#428).** A rollover summary is made after the answer that fills a segment
+(`waitUntil`), so the next turn's first words never wait for a summary call (mock, summary call
+1500 ms: the rollover turn's first words 1605-1803 ms → 93 ms). A short, general question that
+opens its segment runs at effort low (`prompt/effort.ts`).
+
+**Cache behaviour: not yet measured.** The offline proof holds (each request is byte-equal to the
+last up to its end, and the mock reports a cache read on turn 2; `prompt/layout.test.ts`), but no
+live run has recorded `cache_read_input_tokens` or real TTFT.
+
+**Open.**
+
+- Lighthouse never audited the inbox: `scripts/lighthouse.ts` seeds it with real turns, and that
+  fetch failed in run 43113434377 on the server's self-signed certificate
+  (`DEPTH_ZERO_SELF_SIGNED_CERT`), which failed mobile shard 2/2 and ended the desktop step early.
+  The seeding failure was fixed in 61d467b9, with #395; no inbox audit number has been recorded
+  since.
+
 ## Budgets (enforced)
 
 `pnpm budgets` (`scripts/check-budgets.ts`) reads the SvelteKit build output and fails CI when a
@@ -626,6 +731,10 @@ ship the standard one too (see the glass note in `docs/design-system.md`). It al
   hydration, may add only its own chunk: no script or stylesheet a route does not already load
   (its content loads on demand: `src/routes/error-page.ts`, #394). The start entry must import
   exactly one chunk, `payload`, which imports nothing.
+- **coach secrets and isolation**: Anthropic SDK code (its signature literals in
+  `scripts/client-secret-scan.ts`), an `sk-ant-` key or the build-time `ANTHROPIC_API_KEY` (a
+  canary in CI) in any client file of either build fails, as does any `/workout` route that can
+  load a coach module (static, awaited or on demand, including helpers bundled into its chunks).
 
 ### Measured (`pnpm build && pnpm budgets`)
 
@@ -713,14 +822,14 @@ screen in the app. Plan, agreed before any M4 code lands:
 - Outcome: `/workout` ended M4 at 52.7 KB with its screens merged, the boot path and the
   prepaint (see "M4 (workout)" above).
 
-### Main-thread budget (`e2e/load-budget.ts`, runs in CI on its own leg)
+### Main-thread budget (`e2e/load-budget.ts`, run locally: CI does not test performance)
 
 `e2e/load-budget.ts` holds the page-load budget. `e2e/perf.e2e.ts` applies it to the app's
 screens and `e2e/perf-workout-load.e2e.ts` to the workout screens. Both run in their own
 Playwright project (`perf`, one worker) that starts only after the functional Chromium suite has
-finished, so no other spec competes for CPU while it measures. In CI the project is its own leg,
-alone·chromium, split in 2 shards, each on a runner of its own; `exclusive` runs in parallel on
-a leg of its own (only a local run starts it after `perf`). On a busy
+finished, so no other spec competes for CPU while it measures. CI does not run the project (the
+owner's decision: performance is not tested in CI). Run it locally with
+`E2E_PERF_ALONE=1 pnpm test:e2e --project=perf`. On a busy
 host (other builds, browsers or agents running) local numbers can still be noisy; re-run before
 chasing a regression.
 
@@ -751,7 +860,8 @@ guard at 200 ms, `/profile` failed about one run in six on noise alone.
 
 ## Lighthouse (mobile)
 
-Command (exactly what CI runs): `pnpm build:node && pnpm lighthouse --runs 5 --assert --min-perf
+Command (the one CI ran until it stopped testing performance; run locally the same way):
+`pnpm build:node && pnpm lighthouse --runs 5 --assert --min-perf
 0.9 --max-tbt 300` — every app screen, median of 5, a **fresh browser per run**.
 
 - Lighthouse **13.6.0**, Chrome **153.0.8010.12** (Playwright build, `--headless=new`), default
@@ -828,7 +938,8 @@ this build reproduced it: per-run TBT up to 635 ms, perf 84–100. Findings:
 
 ## Lighthouse (desktop)
 
-Command (what CI runs after the mobile run, as a step that never fails the job):
+Command (CI ran it after the mobile run, as a step that never failed the job, until it stopped
+testing performance; run locally the same way):
 `pnpm build:node && pnpm lighthouse --desktop --seed --runs 3 --assert`. It audits the mobile
 run's screens with Lighthouse's desktop preset (desktop throttling, no CPU slowdown) at
 1440 × 900 and 1x (`scripts/lib/lighthouse-config.ts`), applies the same `--assert` thresholds and
@@ -867,7 +978,8 @@ Desktop LCP is 245–454 ms with no blocking time; mobile LCP is 903–1205 ms w
 | Initial JS / CSS / fonts  | budgets above                 | —                       | **met** (tightest: `/train` 55.5 / 60 KB)                               |
 | API latency `/api/health` | ≤ 50 ms server time           | p75 from logs           | local: cold 11.9 ms, warm 1.2–1.9 ms incl. DB round-trip (round 1)      |
 
-CI runs the main-thread budget (with the e2e suite) as the **tight regression guard**, plus
+Until performance left CI (the owner's decision), CI ran the main-thread budget (with the e2e suite)
+as the **tight regression guard**, plus
 `pnpm lighthouse --runs 5 --assert --min-perf 0.9 --max-tbt 300` on **every app screen**
 (including the streamed, DB-backed `/profile`) as the Lighthouse check: the score target itself,
 and TBT with 50% headroom for shared-runner noise. On GitHub's runners (CI run
@@ -913,6 +1025,6 @@ GET /profile           total ≈ 38 ms at first byte; streamed work settled ≈ 
 ORIGIN=http://localhost:4174 pnpm build:node   # the origin is baked into Node builds
 pnpm budgets
 E2E_PERF_ALONE=1 pnpm test:e2e --project=perf  # owner setup, then the main-thread budget alone
-pnpm lighthouse --runs 5 --assert --min-perf 0.9 --max-tbt 300  # every screen (CI command)
-pnpm lighthouse --desktop --seed --runs 3 --assert  # the same screens at 1440 × 900 (CI, not gating)
+pnpm lighthouse --runs 5 --assert --min-perf 0.9 --max-tbt 300  # every screen (the command CI ran)
+pnpm lighthouse --desktop --seed --runs 3 --assert  # the same screens at 1440 × 900 (not gating)
 ```

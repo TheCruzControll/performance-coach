@@ -10,6 +10,7 @@
  *   rows, so neither depends on the order the other arrives in.
  * - Each pace is the one Postgres generates from the row's own distance and time (run.ts's
  *   segmentPace, per km), so a row this device changed reads as it will once stored.
+ * - The table also takes pain.report (core.ts `pain`): a run reports pain with no exercise.
  *
  * runTable (/workout/run's) lives here, not in tables.ts, which /workout loads: that route ships
  * none of the run family.
@@ -19,7 +20,7 @@ import { onRows } from '../project.ts';
 import type { MutationReducers, ReducerTable } from '../project.ts';
 import type { CanonicalRun, CanonicalSegment, CanonicalWorkout } from '../protocol.ts';
 import { segmentPace } from '../run.ts';
-import { core } from './core.ts';
+import { core, pain } from './core.ts';
 import { device } from './device.ts';
 
 const RUN_FIELDS = [
@@ -84,6 +85,6 @@ export const run: MutationReducers<'run.log' | 'run.segment'> = {
 
 export const runTable: ReducerTable<'run'> = {
 	kind: 'run',
-	mutations: { ...core, ...run },
+	mutations: { ...core, ...pain, ...run },
 	local: device
 };

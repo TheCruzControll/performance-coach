@@ -1,6 +1,6 @@
 import { DatabaseError } from 'pg';
-import { describe, expect, it } from 'vitest';
-import { serializeError } from './logger';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { logger, serializeError } from './logger';
 
 const SECRET = 'PRIVATE-BODYWEIGHT-82.4kg';
 
@@ -99,5 +99,67 @@ describe('serializeError', () => {
 			message: 'connect ECONNREFUSED 127.0.0.1:1'
 		});
 		expect(serializeError('string error')).toEqual({ message: 'string error' });
+	});
+});
+
+describe('logger', () => {
+	// A Blob token, concatenated so the secret scan does not read this file as a leak.
+	const blobToken = 'vercel_blob_rw_' + 'StoreId123_abcDEF456ghi';
+
+	afterEach(() => {
+		vi.restoreAllMocks();
+		vi.unstubAllEnvs();
+	});
+
+	/** The first line the logger wrote to stderr, raw and parsed. */
+	function firstLine(spy: { mock: { calls: unknown[][] } }) {
+		const raw = String(spy.mock.calls[0]?.[0]);
+		return { raw, entry: JSON.parse(raw) as Record<string, unknown> };
+	}
+
+	it('redacts a credential-named field and keeps the rest', () => {
+		const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+		logger.error('cron: request refused', {
+			authorization: 'Bearer abcdEFGH1234',
+			path: '/api/cron/x'
+		});
+		const { raw, entry } = firstLine(spy);
+		expect(entry).toMatchObject({ authorization: '[redacted]', path: '/api/cron/x' });
+		expect(raw).not.toContain('abcdEFGH1234');
+	});
+
+	it('redacts a token quoted in the message of a nested cause', () => {
+		const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+		logger.error('backup failed', {
+			err: new Error('Blob put failed', {
+				cause: new Error('token ' + blobToken + ' rejected')
+			})
+		});
+		const { raw, entry } = firstLine(spy);
+		expect(raw).not.toContain(blobToken);
+		const err = entry.err as { cause: { message: string } };
+		expect(err.cause.message).toContain('[redacted]');
+	});
+
+	it('never throws: a field that cannot be read writes a line marked unserializable', () => {
+		const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+		const fields = {
+			get boom(): string {
+				throw new Error('getter failed');
+			}
+		};
+		expect(() => logger.error('cron: failed', fields)).not.toThrow();
+		const { raw, entry } = firstLine(spy);
+		expect(raw).toContain('[unserializable]');
+		expect(entry).toMatchObject({ level: 'error', msg: 'cron: failed', error: '[unserializable]' });
+	});
+
+	it('redacts the exact value of a secret variable', () => {
+		// Concatenated so the secret scan does not read this file as a leaked connection string.
+		const dbUrl = 'postgres://coach:' + 'sentinelPw123' + '@db.example.test/coach';
+		vi.stubEnv('DATABASE_URL', dbUrl);
+		const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+		logger.error('x', { err: new Error('connect failed for ' + dbUrl) });
+		expect(firstLine(spy).raw).not.toContain('sentinelPw123');
 	});
 });

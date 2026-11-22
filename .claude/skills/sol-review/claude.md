@@ -53,19 +53,19 @@ The reviewer is Claude Opus 5.5 (`claude-opus-5-5`). Start it with the `Agent`
 tool:
 
 - `model: "opus"`, `effort` as chosen in SKILL.md (the skill sets it
-  explicitly), `subagent_type: "general-purpose"`, `run_in_background: false`.
+  explicitly), `subagent_type: "general-purpose"`.
 - `description`: short, e.g. "sol-review round 1".
 - `prompt`: the round 1 brief from SKILL.md, filled in. The subagent starts
   without this conversation, so include everything it needs.
 
-Use another model only if the user names one (e.g. `fable` for Claude Fable
-5.1, `sonnet` for Claude Sonnet 5.5). A reply is a non-empty final message with
+Use another model only if the user names one (e.g. `fable` for Claude Fable,
+`sonnet` for Claude Sonnet). A reply is a non-empty final message with
 a `VERDICT:` line; anything else is a failure. Record model `Claude Opus 5.5`
 (or what ran) and the effort.
 
-The `Agent` call returns when the reviewer finishes; that is the notice. A
-foreground call has nothing to cancel: on failure, make a fresh `Agent` call
-with the brief and the ledger.
+The reviewer runs in the background and you are notified when it finishes;
+that is the notice. On failure, stop it with `TaskStop` if it is still
+running, then make a fresh `Agent` call with the brief and the ledger.
 
 ## Next round
 

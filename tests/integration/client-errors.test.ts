@@ -42,6 +42,27 @@ describe('client error reporting service', () => {
 		});
 	});
 
+	it('stores a report without its bearer token, email address or query strings', async () => {
+		await withRollback(async (tx) => {
+			const row = await recordClientError(
+				{
+					...report,
+					message: 'fetch failed: Authorization: Bearer abcdEFGH1234 for owner@example.test',
+					stack: 'TypeError: boom\n    at sync (https://coach.example.test/setup?token=secret123)',
+					path: '/setup?token=secret123'
+				},
+				{ requestId: 'req-client-redact' },
+				{ db: tx, limiter: unlimited }
+			);
+			for (const text of [row.message, row.stack]) {
+				expect(text).not.toContain('abcdEFGH1234');
+				expect(text).not.toContain('owner@example.test');
+				expect(text).not.toContain('secret123');
+			}
+			expect(row.path).toBe('/setup');
+		});
+	});
+
 	it('rejects malformed and oversized reports', async () => {
 		await withRollback(async (tx) => {
 			const deps = { db: tx, limiter: unlimited };

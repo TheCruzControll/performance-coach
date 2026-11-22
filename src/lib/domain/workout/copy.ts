@@ -29,6 +29,13 @@ export const QUICK_ACTION_COPY: Record<QuickAction, ChoiceWords> = {
 	skip: { label: 'Skip exercise', detail: 'Its remaining sets are marked as skipped' }
 };
 
+/** A run's and a class's quick actions (SessionActionsSheet), and the sheet's title. */
+export const SESSION_ACTION_COPY = {
+	title: { run: 'Run options', other: 'Session options' },
+	pain: { label: 'This hurts', detail: 'Stop here and save what you did' },
+	skip: { label: 'Skip this segment', detail: 'Move on to the next one still to run' }
+};
+
 /** The alternatives list, by the action that opened it, and its state when nothing fits. */
 export const ALTERNATIVES_COPY = {
 	machine_unavailable: {
