@@ -714,7 +714,8 @@ kit and the analytics components are on `/design` → Charts.
 `train-review-notice-*` and `bridge-week-*` (their `e2e/*.serial.e2e.ts` specs), and the kit's
 `design-charts-*` and `design-tiles-*` (`e2e/design-charts*.e2e.ts`: 320 px, 393 px, 1440 px,
 both themes, hover, tap, scrub, forced colours, loading and failed). The screen gallery
-(`e2e/gallery.gallery.ts`) shoots the `progress` and `reviews` groups in both designs and themes.
+(`e2e/gallery.gallery.ts`) shoots Progress's screens in its `history` group and the reviews in its
+`reviews` group, in both themes.
 
 | Component                      | Highlights                                                                                                                                                                                                                                                                                                                                                                     |
 | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |

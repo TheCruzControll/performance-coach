@@ -596,7 +596,7 @@ by path (there is no index file), with no zod and no runtime import of `domain/p
 `period-names.ts`, `types.ts`): `scripts/analytics-client-imports.test.ts` walks every runtime
 import from every browser-reachable file and fails, naming the chain, when one reaches any other
 analytics module. Screens receive results, never definitions. The walk is
-`scripts/import-graph.ts`, the one runtime-import walker, which M3's
+`scripts/import-graph.ts`, the shared runtime-import walker, which M3's
 `scripts/training-index-imports.test.ts`, `scripts/chart-body-imports.test.ts` and the workout and
 secret-scan tests share: static imports, re-exports and string-literal `import()`, in `.ts` files
 and every `<script>` block of a `.svelte` file, with `import type` erased and
@@ -683,8 +683,9 @@ last 12 weeks'). Both are the M6 plan's defaults and still open questions for th
 - Page loads are measured by `pnpm db:explain` on two years of data
   (`scripts/explain/page-load.ts`), devalue serialisation included, gated at a median of
   `PAGE_LIMIT_MS` (300 ms) and `PAGE_DATA_LIMIT_BYTES` (32 KB gzip) of page data; every fact
-  query's plan is gated on its index (`scripts/explain/analytics.cases.ts`). docs/performance.md
-  has the measurements.
+  query's plan is gated on its index, except that `setFacts` and `segmentFacts` at `all` may read
+  their table whole (`scripts/explain/analytics.cases.ts`). docs/performance.md has the
+  measurements.
 
 ## Reviews and replanning (M6)
 
@@ -779,8 +780,9 @@ flowchart TD
   (`services/reviews/next-cycle.ts`). `planBlock` stores the block as version N + 1 under the
   program head's lock, sharing the base's planned blocks and rewriting the outline after it.
 - **Bridges**: a start k ≥ 1 weeks after the reviewed block ended stores a 'Between blocks' block
-  of k unplanned weeks with no sessions (`next-block/dates.ts`); before an event the build is
-  shortened instead, so the event's date never moves. Workouts logged in a bridge are off-plan.
+  of k unplanned weeks with no sessions (`next-block/dates.ts`); before an event the blocks
+  leading to it are also shortened to absorb them, so the event's date never moves. Workouts
+  logged in a bridge are off-plan.
 - **The first-day rule**: no new-block session may fall before the day the owner chose to start,
   so 'this week' from a Wednesday plans nothing on Monday or Tuesday.
 - **The inbox paths for `next_cycle`** (`services/coach/apply/next-cycle.ts`): the review's own

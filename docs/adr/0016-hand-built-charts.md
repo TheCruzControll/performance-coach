@@ -5,8 +5,8 @@
   (`bodies.ts`), on Progress, exercise detail and both reviews. Two details came later:
   horizontal bars (range and diverging) share `RowList.svelte`, each row a 44 px button, and a
   body that fails twice while online reloads the page, because Chromium keeps a failed module
-  fetch for the document's lifetime. The `pnpm budgets` check on `pc-chart-body` is m6-perf's
-  (#413), still open on 2026-11-12.
+  fetch for the document's lifetime. The `pnpm budgets` check on `pc-chart-body` belongs to the
+  m6-perf slice, which has not merged yet.
 - **Context:** Progress, exercise detail and the weekly and cycle reviews draw trends, stacked
   weekly totals, ranges and signed differences (PRD §10, §11), on an iPhone first and in a desktop
   window (§16). Every chart must read the same at 320 px and at 1440 px: a column is a column,

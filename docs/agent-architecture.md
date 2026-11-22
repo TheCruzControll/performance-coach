@@ -330,7 +330,7 @@ Every figure is the one Progress shows, from the same engine (docs/architecture.
 | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `get_weekly_training_summary`, `get_training_load`, `get_performance_trends` | `src/lib/server/services/analytics/index.ts`, which reads the General, Running and Strength dashboards and cites the counted facts behind each figure. Each result names its `dashboard`; each figure carries `about` (metric id, kind, definition, caveat); each trend its `verdict`, the `window` it read and the `classifier` (`TREND_METHOD`). A week's summary names the week's live review as a source. |
 | `get_personal_records`                                                       | `src/lib/server/services/analytics/records.ts` (`getStrengthRecords`): the best e1RM, rep maxes and the PR timeline, as `prs` and `prCount`, judged as the strength dashboard judges them                                                                                                                                                                                                                     |
-| `get_exercise_history`                                                       | M4's `getExerciseHistory` for the sets, a page at a time, plus `getExerciseAnalytics` (`services/analytics/exercise.ts`) for the records and the `e1rmTrend` over the `period` asked for, as exercise detail shows it                                                                                                                                                                                         |
+| `get_exercise_history`                                                       | M4's `getExerciseHistory` for the sets, a page at a time, plus `getStrengthRecords` (`services/analytics/records.ts`) for its records and `getExerciseAnalytics` (`services/analytics/exercise.ts`) for the `e1rmTrend` over the `period` asked for, as exercise detail shows it                                                                                                                              |
 
 Only completed, undeleted workouts count for every one of these, so a set in an abandoned workout
 is never a record. Too little data is a result (`insufficient_data`, saying what is missing), never
@@ -459,7 +459,8 @@ cost cap.
 - **Polling.** The page requests the write-up once, on idle, for a review that has none
   (`WRITE_UP_ON_OPEN`, the owner's default for the plan's open question). Another tab or an earlier
   visit running it answers `busy`, and the page polls the GET at 2, 4 and 8 s, then every 8 s up to
-  `COACH_MAX_DURATION_S` (`write-up-client.ts`, `POLL_STEPS_MS`).
+  `COACH_MAX_DURATION_S` (`write-up-client.ts`; `WRITE_UP_ON_OPEN` and `POLL_STEPS_MS` are in
+  `write-up.ts`).
 - **Degradation.** Every way the coach cannot answer is an outcome, never an error the review
   shows: `unavailable` (not launched, switched off, misconfigured, the daily budget, the rate limit
   with its wait, or busy) or `failed`. The review's figures and proposal stand; the write-up's box

@@ -45,7 +45,7 @@ agent/
                      one file per tool group
   proposals/         draft.ts: structured-output drafts for program, workout and cycle proposals
   reviews/           narrate.ts: a review's write-up, one read-only turn in a hidden thread (M6),
-                     called only from api/reviews/narrate
+                     run only from api/reviews/narrate; the review's load reads its state
 ```
 
 The provider is chosen by `provider/select.ts` from `LLM_PROVIDER` (`mock`, `anthropic` or `off`)
