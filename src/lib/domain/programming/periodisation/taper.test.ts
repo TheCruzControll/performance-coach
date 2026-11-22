@@ -2,8 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { staticRuleKeys } from '../../../../../scripts/rule-keys';
 import { addDays, daysBetween } from '../../calendar';
 import { CATALOGUE } from '../../exercises/index';
-import type { SessionPlan, WeekPlan } from '../../training/types';
-import { buildProgrammingInput, generateProgram } from '../index';
+import type { BlockPlan, SessionPlan, WeekPlan } from '../../training/types';
+import { DecisionLog } from '../decisions';
+import { firstDraft, STAGES } from '../generate';
+import { buildProgrammingInput } from '../index';
+import type { ProgrammingInput } from '../input';
+import type { GenerateOptions } from '../stage';
 import { RULE_BY_ID } from '../rules/registry/index';
 import { MUAY_THAI } from '../rules/running';
 import { OPENERS } from '../rules/strength-phases';
@@ -76,14 +80,23 @@ describe('taperWeeks', () => {
 	});
 });
 
-/** S9's first block (a runner who lifts): strength on Monday and Thursday, five runs. */
+/** M3's blocks for `input`: its stages from a draft with no season, prepare left out. */
+function m3Blocks(input: ProgrammingInput, options: GenerateOptions): BlockPlan[] {
+	const context = { input, options, log: new DecisionLog() };
+	let draft = firstDraft({ input, periodisation: null });
+	for (const stage of STAGES) draft = stage.run(draft, context);
+	return draft.blocks;
+}
+
+/**
+ * S9's first block (a runner who lifts): strength on Monday and Thursday, five runs. It is the
+ * block M3's stages plan with no season (generator-season changes the generated one), so these
+ * tests pin taperSessions and nothing else.
+ */
 function runnerWeeks(): WeekPlan[] {
 	const input = buildProgrammingInput(M7_SCENARIOS.runnerLifter(), { catalogue: CATALOGUE });
-	const plan = generateProgram(input, {
-		startsOn: SCENARIO_START,
-		firstPlannedDay: SCENARIO_START
-	});
-	return plan.blocks[0]!.weeks.slice(0, 4);
+	const [block] = m3Blocks(input, { startsOn: SCENARIO_START, firstPlannedDay: SCENARIO_START });
+	return block!.weeks.slice(0, 4);
 }
 
 const strengthDays = (weeks: readonly WeekPlan[]) =>

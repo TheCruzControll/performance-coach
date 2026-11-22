@@ -278,24 +278,28 @@ describe('moving the start', () => {
 				await getProgramVersion(owner, programId, 1, { db }),
 				await getProgramVersion(owner, programId, 2, { db })
 			];
+			// The season plans the meet's run-up phase by phase (periodisation/strength.ts), the first
+			// phase with its weeks: 4 weeks out, a novice's accumulation is 1 week, week 1's baseline;
+			// 3 weeks out it is cut, and intensification leads with the baseline.
+			const road = (v: ProgramVersion) => v.blocks.map((b) => [b.phase, b.startsOn, b.endsOn]);
+			expect(v1.blocks[0]!.weeks.map((w) => w.kind)).toEqual(['baseline']);
+			expect(v2.blocks[0]!.weeks.map((w) => w.kind)).toEqual(['baseline', 'intensification']);
+			expect(road(v1).slice(0, 3)).toEqual([
+				['accumulation', BUILT_ON, '2026-11-15'],
+				['intensification', LATER, '2026-11-29'],
+				['taper', '2026-11-30', '2026-12-13']
+			]);
+			expect(road(v2).slice(0, 2)).toEqual([
+				['intensification', LATER, '2026-11-29'],
+				['taper', '2026-11-30', '2026-12-13']
+			]);
+			// The run-up is a week shorter and still ends on the meet's Sunday; the 1-week taper
+			// before the meet is the same in both, never shifted past it.
 			const taper = (v: ProgramVersion) =>
-				v.blocks.flatMap((b) => b.weeks).find((w) => w.kind === 'taper');
-			expect(v1.blocks[0]!.weeks.map((w) => w.kind)).toEqual([
-				'baseline',
-				'build',
-				'build',
-				'build',
-				'taper'
-			]);
-			expect(v2.blocks[0]!.weeks.map((w) => w.kind)).toEqual([
-				'baseline',
-				'build',
-				'build',
-				'taper'
-			]);
-			expect(taper(v1)).toMatchObject({ startsOn: '2026-12-07', endsOn: '2026-12-13' });
-			expect(taper(v2)).toMatchObject({ startsOn: '2026-12-07', endsOn: '2026-12-13' });
-			expect(v2.blocks[0]!.endsOn).toBe('2026-12-13');
+				v.decisions.filter((d) => d.kind === 'taper_planned').map((d) => d.summary);
+			expect(taper(v1)).toEqual(['Taper before Meet: 1 week']);
+			expect(taper(v2)).toEqual(taper(v1));
+			expect(v2.blocks[2]!.startsOn).toBe('2026-12-14');
 		});
 	});
 });
