@@ -169,8 +169,8 @@ describe('wire format v1', () => {
 				(MUTATION_RULES[type].kinds as readonly string[]).includes(kind)
 			);
 		const workout = ['workout.start', 'workout.update', 'workout.finish', 'workout.abandon'];
-		expect(kindsOf('run')).toEqual([...workout, 'run.log', 'run.segment']);
-		expect(kindsOf('other')).toEqual([...workout, 'other.log']);
+		expect(kindsOf('run')).toEqual([...workout, 'pain.report', 'run.log', 'run.segment']);
+		expect(kindsOf('other')).toEqual([...workout, 'pain.report', 'other.log']);
 		expect(kindsOf('strength')).toEqual(
 			MUTATION_TYPES.filter((t) => !t.startsWith('run.') && t !== 'other.log')
 		);
@@ -338,6 +338,14 @@ describe('dependencies', () => {
 		expect(dependsOn(report, gentler)).toBe(true);
 		expect(dependsOn(make('pain.report'), gentler)).toBe(false);
 	});
+
+	it('makes a pain report naming no exercise independent of an exercise.create', () => {
+		const custom = make('exercise.create', { entityId: 'x1', workoutId: OTHER_W });
+		const report = make('pain.report', {
+			payload: { ...PAYLOADS['pain.report'], exerciseId: null }
+		});
+		expect(dependsOn(report, custom)).toBe(false);
+	});
 });
 
 describe('types', () => {
@@ -354,6 +362,7 @@ describe('types', () => {
 			| 'workout.abandon'
 			| 'run.log'
 			| 'run.segment'
+			| 'pain.report'
 		>();
 
 		function family(m: Mutation): string {

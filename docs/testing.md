@@ -1108,7 +1108,7 @@ the server builds exactly those kits, so change both together.
   AA after Z; Up next naming the partner.
 - **Substitution rules and copy** (`substitution.test.ts`, `copy.test.ts`): only a confirmed
   dislike writes a preference; machine unavailable ranks alternatives needing none of the slot's
-  equipment first; This hurts offers Stop first and End the workout when severe; every string in
+  equipment first; This hurts offers Stop first and End the workout when severe (in a run or a class, End alone); every string in
   `copy.ts` is scanned for push-through phrases and diagnosis words.
 - **Schemas** (`schemas.test.ts`): `DB_CHECKED_BAD_VALUES` (also refused by Postgres CHECKs,
   replayed through the repositories by `sync.test.ts`) and `SCHEMA_ONLY_BAD_VALUES` (open
@@ -1150,7 +1150,8 @@ unit project excludes `*.svelte.test.ts`. Tab-channel tests open
 second owner needs the singleton rule lifted inside it: `secondOwner`); `structure.test.ts`,
 `pain.test.ts`, `runs-other.test.ts` and `custom-exercises.test.ts` cover each handler family:
 applied once, duplicate on replay, deferred until its target arrives, refused at its path, and a
-situational swap that writes no preference or version.
+situational swap that writes no preference or version. `pain.test.ts` also takes a run's and a
+class's report, which names no exercise, and refuses a strength report without one.
 
 ### Workout reads
 

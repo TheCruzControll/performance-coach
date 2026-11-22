@@ -102,6 +102,16 @@ export const freeItem = (position: number, kind: RunSegmentKind): SegmentItem =>
 export const nextFreePosition = (items: readonly SegmentItem[]) =>
 	(items.at(-1)?.position ?? 0) + 1;
 
+/**
+ * Skip this segment's target: the next segment not logged yet after `position`, else the
+ * first before it; null when no other is left. In segmentItems only planned segments wait
+ * unlogged.
+ */
+export function nextToLog(items: readonly SegmentItem[], position: number): number | null {
+	const left = items.filter((i) => i.logged === null && i.position !== position);
+	return (left.find((i) => i.position > position) ?? left[0])?.position ?? null;
+}
+
 /** What the entry starts from: the logged values, else the target's. */
 export function prefillOf({ logged, target }: SegmentItem): SegmentValues {
 	if (logged) {

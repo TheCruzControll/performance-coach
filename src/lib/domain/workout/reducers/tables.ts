@@ -9,7 +9,7 @@
  * (MUTATION_RULES), so a missing case fails pnpm check, and no table takes another kind's family.
  */
 import type { ReducerTable } from '../project.ts';
-import { core, customExercises } from './core.ts';
+import { core, customExercises, pain } from './core.ts';
 import { device } from './device.ts';
 import { sets } from './sets.ts';
 import { structure, structureSlot } from './structure.ts';
@@ -18,12 +18,12 @@ import { structure, structureSlot } from './structure.ts';
  * Families as one table's cases. Each call is marked pure: a bundler keeps an object spread it
  * cannot prove free of getters, and with it the family, so a route would ship every table.
  */
-const merge = <A, B, C = object, D = object>(a: A, b: B, c?: C, d?: D) =>
-	Object.assign({}, a, b, c, d) as A & B & C & D;
+const merge = <A, B, C = object, D = object, E = object>(a: A, b: B, c?: C, d?: D, e?: E) =>
+	Object.assign({}, a, b, c, d, e) as A & B & C & D & E;
 
 export const strengthTable: ReducerTable<'strength'> = {
 	kind: 'strength',
-	mutations: /* @__PURE__ */ merge(core, customExercises, sets, structure),
+	mutations: /* @__PURE__ */ merge(core, pain, customExercises, sets, structure),
 	local: device,
 	slot: structureSlot
 };

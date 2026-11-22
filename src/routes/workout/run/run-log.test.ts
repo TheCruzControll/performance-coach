@@ -13,6 +13,7 @@ import {
 	freeItem,
 	HEART_RATE,
 	nextFreePosition,
+	nextToLog,
 	paceOf,
 	prefillOf,
 	runFieldMutation,
@@ -236,5 +237,36 @@ describe('the run view’s segments', () => {
 	it('keeps its words and bounds equal to the vocabulary’s and M3’s', () => {
 		expect(SEGMENT_WORDS).toEqual(RUN_SEGMENT_KIND_LABEL);
 		expect(HEART_RATE).toEqual(RECORD_LIMITS.heartRate);
+	});
+});
+
+describe('nextToLog', () => {
+	const itemsOf = (state: WorkoutState) => segmentItems(viewIn(state));
+
+	it('gives the segment after the one on screen while nothing is logged', () => {
+		expect(nextToLog(itemsOf(started()), 1)).toBe(2);
+	});
+
+	it('skips a segment already logged', () => {
+		const { state } = log(started(), 2, values(400, 92));
+		expect(nextToLog(itemsOf(state), 1)).toBe(3);
+	});
+
+	it('wraps to the first segment still to log, when none is left after the one on screen', () => {
+		const { state } = log(started(), 14, values(400, 92));
+		expect(itemsOf(state)).toHaveLength(14);
+		expect(nextToLog(itemsOf(state), 14)).toBe(1);
+	});
+
+	it('gives null when every other segment is logged', () => {
+		let state = started();
+		for (const { position } of itemsOf(state)) {
+			if (position !== 5) state = log(state, position, values(400, 92)).state;
+		}
+		expect(nextToLog(itemsOf(state), 5)).toBeNull();
+	});
+
+	it('gives the first segment to log from a free segment beyond the plan', () => {
+		expect(nextToLog(itemsOf(started()), 15)).toBe(1);
 	});
 });
