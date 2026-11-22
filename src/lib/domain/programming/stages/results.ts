@@ -156,8 +156,9 @@ export function results({ results: lifts, unit, hold, deload }: ResultsStage): S
 			});
 		}
 		if (deload !== 'none') {
-			const at = weeks.findIndex((w) => w.kind === 'deload');
-			if (at >= 0)
+			// The directed week: a season's weekPlan may deload other weeks too (stages/next-shape.ts).
+			const at = deload === 'first' ? 0 : weeks.length - 1;
+			if (weeks[at]?.kind === 'deload')
 				log.add('deload_scheduled', `results.deload_${deload}`, [`blocks.0.weeks.${at}`], {
 					week: at + 1,
 					rpeCap: weeks[at]!.targets.rpeCap,

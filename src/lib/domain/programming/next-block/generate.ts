@@ -28,7 +28,7 @@ import type { BlockPlan, DecisionPlan, WeekPlan } from '../../training/types.ts'
 import { exerciseRefKey, plannedHardSets } from '../../training/metrics.ts';
 import type { ExerciseMuscles } from '../../training/metrics.ts';
 import { MUSCLE_GROUP_LABEL, PHASE_LABEL } from '../../training/vocabulary.ts';
-import type { MuscleGroup } from '../../training/vocabulary.ts';
+import type { MuscleGroup, Phase } from '../../training/vocabulary.ts';
 import type { WeightUnit } from '../../units.ts';
 import { validate } from '../../validation.ts';
 import { DecisionLog } from '../decisions.ts';
@@ -41,6 +41,7 @@ import {
 	fnv1a64,
 	GENERATOR_ID as M3_GENERATOR_ID
 } from '../random.ts';
+import { placedDeload } from '../review/directives.ts';
 import type { CycleDirectives } from '../review/directives.ts';
 import { exerciseOf } from '../selection.ts';
 import type { Stage } from '../stage.ts';
@@ -56,9 +57,10 @@ import type { NextBlockInput } from './input.ts';
 /**
  * The generator a version planned by this module stores (next-block-store): its own part, then
  * M3's GENERATOR_ID (m7-stage-list), since fingerprint() hashes only the id it is given, so every
- * M3 and M7 bump also refuses a next_cycle previewed before it.
+ * M3 and M7 bump also refuses a next_cycle previewed before it. Its own part is 2 since the cycle
+ * review plans the block from the season (next-cycle-periodised).
  */
-export const GENERATOR_ID = `next-block/1+${M3_GENERATOR_ID}`;
+export const GENERATOR_ID = `next-block/2+${M3_GENERATOR_ID}`;
 
 /** The M3 stage carryover follows: the last that fills strength days with exercises. */
 export const CARRYOVER_AFTER = 'volume';
@@ -122,10 +124,26 @@ export function nextStages(
 		[CARRYOVER_AFTER]: { name: 'carryover', run: carryover({ previous: previous.block, ...d }) },
 		progression: {
 			name: 'results',
-			run: results({ results: previous.results, unit: previous.unit, hold, deload: d.deload })
+			run: results({
+				results: previous.results,
+				unit: previous.unit,
+				hold,
+				deload: placedDeload(d)
+			})
 		}
 	};
-	const shape = { dates, outline, phase: next.subset.phase, deload: d.deload, hold };
+	// The season's weeks and block type are its phase's: a phase an override changed plans its own.
+	const { weekPlan, blockType } = next.subset.phase === d.phase ? d : {};
+	const shape = {
+		dates,
+		outline,
+		phase: next.subset.phase,
+		deload: d.deload,
+		ownerDeload: d.ownerDeload,
+		hold,
+		weekPlan,
+		blockType
+	};
 	const list = STAGES.flatMap((stage) => {
 		const run =
 			stage.name === 'blocks'
@@ -242,10 +260,13 @@ export function generateNextBlock(next: NextBlockInput, options: NextBlockOption
 	const k = dates.bridge?.weeks ?? 0;
 
 	const phase = PHASE_LABEL[block.phase].toLowerCase();
+	const outlined = directives.blockType?.facts.outlined as Phase | undefined;
 	const reason = [
-		directives.fromOutline
-			? `It is the ${phase} phase your plan outlined.`
-			: `The rules plan a ${phase} block after your last one.`,
+		outlined
+			? `Your plan outlined ${PHASE_LABEL[outlined].toLowerCase()} here; at today's goals the season plans ${phase}.`
+			: directives.fromOutline
+				? `It is the ${phase} phase your plan outlined.`
+				: `The rules plan a ${phase} block after your last one.`,
 		k === 1 ? ' The week since your last block is left unplanned, between blocks.' : '',
 		k > 1 ? ` The ${k} weeks since your last block are left unplanned, between blocks.` : ''
 	].join('');

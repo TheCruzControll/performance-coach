@@ -10,8 +10,9 @@
  * - Overrides make an owner revision of the head (revision_of, the review's provenance with
  *   modifiedBy 'owner'), held to the directives' bounds, and the revision is what is applied.
  *   `keep` keeps an exercise the rules would rotate, and `deload` moves the block's deload to its
- *   first or last week or skips it: the revision carries the directives with the change, which
- *   the preview and the plan then read, and its ending and constraints say the same.
+ *   first or last week or skips it: the revision carries the directives with the change (the
+ *   owner's `ownerDeload` for first or none, `deload` for last), which the preview and the plan
+ *   then read, and its ending and constraints say the same.
  * - The block is planned by applyNextCycle as the program's next version; reject plans nothing.
  * Every query is awaited in turn, so the whole decision runs on one transaction.
  */
@@ -24,6 +25,7 @@ import {
 	clampOverrides,
 	DELOAD_FIRST,
 	modifiableSubset,
+	placedDeload,
 	type CycleDirectives,
 	type DeloadPlacement,
 	type NextCycleSubset
@@ -98,6 +100,15 @@ function kept(directives: CycleDirectives, keep: readonly string[]): CycleDirect
 }
 
 /**
+ * The owner's deload choice on the directives: moved to the first week or skipped is `ownerDeload`,
+ * and `deload`, the rules' place, stays as derived; moved to the last week is `deload`, as before.
+ */
+function withDeload(d: CycleDirectives, deload: DeloadPlacement): CycleDirectives {
+	if (deload === 'last') return { ...d, deload, ownerDeload: undefined };
+	return { ...d, ownerDeload: deload };
+}
+
+/**
  * Decide on the owner's cycle review `reviewId`: plan its next block from `start` as the
  * preview with `fingerprint` showed it, with any overrides, or reject it.
  */
@@ -155,7 +166,7 @@ export async function decideNextCycle(
 			if (deload !== undefined && !DELOADS.includes(deload))
 				throw new ReviewInputError('overrides.deload', 'Move the deload, or skip it');
 			let directives = keep.length ? kept(evidence.directives, keep) : evidence.directives;
-			if (deload !== undefined) directives = { ...directives, deload };
+			if (deload !== undefined) directives = withDeload(directives, deload);
 			// A keep changes how many exercises the rules' focus says are kept, unless the owner
 			// wrote their own focus; otherwise the head's focus (a folded coach's) stays.
 			const asked = { ...(row.payload as unknown as NextCycleSubset), ...fields };
@@ -166,7 +177,7 @@ export async function decideNextCycle(
 				if (fields.ending === undefined) asked.ending = own.ending;
 				if (fields.constraints === undefined)
 					asked.constraints = [
-						...(deload === 'first' ? [DELOAD_FIRST] : []),
+						...(placedDeload(directives) === 'first' ? [DELOAD_FIRST] : []),
 						...asked.constraints.filter((c) => c !== DELOAD_FIRST)
 					].slice(0, 10);
 			}

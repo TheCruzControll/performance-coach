@@ -31,6 +31,7 @@ runs the criteria and updates milestones.md.
 
 ## Recently merged
 
+- The cycle review plans the next block from the season, and the deload choice on the review still applies to it.
 - During a run, Swap moves the rest of it to a zone 2 bike; during a Muay Thai class, Swap offers a
   lighter format.
 - A least-privilege database role for the app, re-granted by every migration and restore. Production switches to it in an owner step.
