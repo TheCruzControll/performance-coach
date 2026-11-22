@@ -186,7 +186,25 @@ describe('the stage list', () => {
 
 	it('stores an id that carries M3’s GENERATOR_ID, so an M3 or M7 bump changes the fingerprint', () => {
 		expect(GENERATOR_ID).toBe(`next-block/1+${M3_GENERATOR_ID}`);
-		expect(GENERATOR_ID).toBe('next-block/1+perfo-programming/1');
+		expect(GENERATOR_ID).toBe('next-block/1+perfo-programming/2');
+	});
+});
+
+describe('the season through prepare (generator-season)', () => {
+	it('records a maintenance_dose for each stream the season caps in the block', () => {
+		const { result } = scenario({ key: 'hybrid' });
+		const doses = result.decisions.filter((d) => d.kind === 'maintenance_dose');
+		expect(doses.length).toBeGreaterThan(0);
+		for (const d of doses) expect(d.evidence).toMatchObject({ mode: 'maintenance' });
+	});
+
+	it('resolves the priorities over the block it plans, not a fresh season’s first block', () => {
+		for (const key of ['beginner', 'powerlifter', 'hybrid'] as const) {
+			const { result } = scenario({ key });
+			const resolved = result.decisions.filter((d) => d.kind === 'priority_resolved');
+			expect(resolved.length, key).toBeGreaterThan(0);
+			expect(resolved.at(-1)!.evidence.until, key).toBe(result.block.endsOn);
+		}
 	});
 });
 
@@ -339,9 +357,10 @@ describe('scenarios', () => {
 			exercise: exerciseOf(next.input, best)!.name
 		});
 		expect(result.significantChanges.some((c) => c.kind === 'swap')).toBe(true);
-		// The owner's part scales each building week's volume: M3's 1, 1, 1.1 by 1.1.
+		// The owner's part scales each building week's volume by 1.1: the block fills the season's
+		// two-week accumulation outline, M3's 1, 1 (generator-season; M3's road had no outline here).
 		expect(next.subset.targets.volumeFactor).toBe(1.1);
-		expect(result.block.weeks.map((w) => w.targets.volumeFactor)).toEqual([1.1, 1.1, 1.21, 1.21]);
+		expect(result.block.weeks.map((w) => w.targets.volumeFactor)).toEqual([1.1, 1.1]);
 	});
 
 	it('a fatigued hybrid athlete: week 1 is a deload, scheduled and explained', () => {
@@ -608,16 +627,17 @@ describe('structure', () => {
 });
 
 /**
- * The next block, its bridge, decisions and significant changes as JSON, hashed before
- * m7-stage-list ran prepare and the phasing and schedule stages in it. Only the fingerprint may
- * change with a stage list or GENERATOR_ID change; these bytes change only with a plan change.
+ * The next block, its bridge, decisions and significant changes as JSON, hashed after
+ * generator-season made prepare plan the season (its priorities, order, modes and doses). Only the
+ * fingerprint may change with a stage list or GENERATOR_ID change; these bytes change only with a
+ * plan change, and the PR that changes them lists each.
  */
 const GOLDEN_CASES: [string, Case, string][] = [
-	['a beginner on time', { key: 'beginner' }, 'd9ff51f2529b32dc'],
+	['a beginner on time', { key: 'beginner' }, '8594230b9f4e2914'],
 	[
 		'a powerlifter from next Monday',
 		{ key: 'powerlifter', start: 'next_monday' },
-		'0f587813d394f360'
+		'402b6dddf4e0f811'
 	],
 	[
 		'a hybrid with results and a last-week deload',
@@ -629,12 +649,12 @@ const GOLDEN_CASES: [string, Case, string][] = [
 			],
 			directives: { deload: 'last' }
 		},
-		'de62ab44bcc36475'
+		'e61d20ef82ab7c45'
 	],
 	[
 		'the journey two weeks late',
 		{ key: 'journey', today: addDays(ON_TIME, 14) },
-		'fc4f6cb48ac87fb9'
+		'17139ca8c900cf9b'
 	]
 ];
 

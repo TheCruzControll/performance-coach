@@ -45,6 +45,7 @@ import type { CycleDirectives } from '../review/directives.ts';
 import { exerciseOf } from '../selection.ts';
 import type { Stage } from '../stage.ts';
 import { carryover } from '../stages/carryover.ts';
+import { recordDoses } from '../stages/blocks.ts';
 import { bridgeBlock, nextShape } from '../stages/next-shape.ts';
 import { prepare } from '../stages/prepare.ts';
 import { results } from '../stages/results.ts';
@@ -227,7 +228,12 @@ export function generateNextBlock(next: NextBlockInput, options: NextBlockOption
 	const { firstPlannedDay } = dates;
 	const log = new DecisionLog();
 	const dated = { startsOn, firstPlannedDay };
-	const prepared = prepare(next.input, dated, log);
+	const prepared = prepare(next.input, dated, log, {
+		phase: next.subset.phase,
+		endsOn: dates.block.endsOn
+	});
+	// nextShape replaces the blocks stage, which records the doses the demand stage applies.
+	if (prepared.periodisation) recordDoses(prepared.periodisation, log);
 	const context = { input: prepared.input, options: dated, log };
 	let draft = firstDraft(prepared);
 	for (const stage of nextStages(next, options)) draft = stage.run(draft, context);

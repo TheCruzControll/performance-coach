@@ -118,7 +118,12 @@ describe('a moved start, planned again', () => {
 			firstPlannedDay
 		});
 	const weeks = (p: ProgramPlan) => p.blocks.flatMap((b) => b.weeks);
-	const taperWeek = (p: ProgramPlan) => weeks(p).find((w) => w.kind === 'taper');
+	/** The fight camp's fight week, its taper (fight-camp.ts): the week holding the fight. */
+	const fightWeek = (p: ProgramPlan) => weeks(p).find((w) => w.kind === 'event');
+	/** The season runs past race day to its horizon; the marathon's taper ends on race day. */
+	const raceTaper = (p: ProgramPlan) => p.blocks.find((b) => b.phase === 'marathon_taper');
+	const tapers = (p: ProgramPlan) =>
+		p.decisions.filter((d) => d.kind === 'taper_planned').map((d) => d.summary);
 
 	/** Blocks run on from one another, each week Monday to Sunday, from week 1's Monday. */
 	function expectMondayWeeks(p: ProgramPlan) {
@@ -146,38 +151,44 @@ describe('a moved start, planned again', () => {
 			'baseline',
 			'build',
 			'build',
-			'build',
-			'taper'
+			'peak',
+			'event'
 		]);
 		expect(after.blocks[0]!.weeks.map((w) => w.kind)).toEqual([
 			'baseline',
 			'build',
-			'build',
-			'taper'
+			'peak',
+			'event'
 		]);
-		// The same week, the one holding the fight, tapers in both: never shifted past it.
-		expect(taperWeek(before)).toMatchObject({ startsOn: scenarioDay(5, 0) });
-		expect(taperWeek(after)).toMatchObject({ startsOn: scenarioDay(5, 0) });
+		// The same week, the one holding the fight, is the fight week in both: never shifted past it.
+		expect(fightWeek(before)).toMatchObject({ startsOn: scenarioDay(5, 0) });
+		expect(fightWeek(after)).toMatchObject({ startsOn: scenarioDay(5, 0) });
 		expect(after.blocks[0]!.endsOn).toBe(scenarioDay(5, 6));
-		expect(taperWeek(after)!.startsOn <= FIGHT && FIGHT <= taperWeek(after)!.endsOn).toBe(true);
-		// The outline still ends on race day.
-		expect(after.blocks.at(-1)!.endsOn).toBe(RACE);
+		expect(fightWeek(after)!.startsOn <= FIGHT && FIGHT <= fightWeek(after)!.endsOn).toBe(true);
+		expect(tapers(after)).toEqual(tapers(before));
+		expect(tapers(after)).toContain('Taper before Fight: 1 week');
+		// The marathon still tapers to race day.
+		expect(raceTaper(after)!.endsOn).toBe(RACE);
 	});
 
-	it('past the fight, it is no longer planned for: the marathon leads, and the outline ends on race day', () => {
+	it('past the fight, it is no longer planned for: its recovery week, then the marathon leads to race day', () => {
 		const after = plan(SCENARIOS.journey(), scenarioDay(6, 0));
 		expectMondayWeeks(after);
-		expect(after.blocks[0]!.phase).toBe('marathon_base');
-		expect(after.blocks.some((b) => b.name.includes('Fight'))).toBe(false);
-		expect(after.blocks.at(-1)!.endsOn).toBe(RACE);
-		expect(after.decisions.some((d) => d.summary === 'Taper before Fight')).toBe(false);
+		// A fight just before the start keeps only its recovery (windows.ts), then the marathon.
+		expect(after.blocks.map((b) => b.phase).slice(0, 2)).toEqual(['recovery', 'marathon_base']);
+		expect(after.blocks[0]!.weeks.map((w) => w.kind)).toEqual(['recovery']);
+		expect(after.blocks.some((b) => b.phase === 'fight_camp' || b.name.includes('Fight'))).toBe(
+			false
+		);
+		expect(raceTaper(after)!.endsOn).toBe(RACE);
+		expect(tapers(after).some((s) => s.startsWith('Taper before Fight'))).toBe(false);
 	});
 
 	it('from today this week: week 1 runs Monday to Sunday, with nothing planned before today', () => {
 		const p = plan(SCENARIOS.hybrid(), SCENARIO_START, scenarioDay(1, 2));
 		expectMondayWeeks(p);
 		expect(weeks(p)[0]!.sessions.length).toBeGreaterThan(0);
-		expect(p.blocks.at(-1)!.endsOn).toBe(RACE);
+		expect(raceTaper(p)!.endsOn).toBe(RACE);
 	});
 
 	it('from a Thursday in the week after, via startFrom: week 1 is that Monday, planned from the Thursday', () => {
@@ -190,6 +201,6 @@ describe('a moved start, planned again', () => {
 		for (const w of weeks(p)) expect(weekdayOf(w.startsOn)).toBe('mon');
 		expect(weeks(p)[0]!.startsOn).toBe(startsOn);
 		expect(p.decisions.length).toBeGreaterThan(0);
-		expect(p.blocks.at(-1)!.endsOn).toBe(RACE);
+		expect(raceTaper(p)!.endsOn).toBe(RACE);
 	});
 });
