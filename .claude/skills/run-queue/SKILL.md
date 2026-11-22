@@ -68,9 +68,9 @@ request when the merges changed what it says.
   request. A row whose pull request merged is done. A worktree in the state file with no agent
   running and no stage recorded as waiting is a row a previous session left mid-step; read its
   diff and carry on from there.
-- Look for a train in flight: the state file, and `gh pr list --state open --head` for any
-  `train/` branch (`gh pr list --state open --json headRefName,number`). If one is open, a train is
-  in flight.
+- Look for a train in flight: the state file, and on GitHub
+  `gh pr list --state open --limit 100 --json headRefName,number --jq '.[] | select(.headRefName | startswith("train/"))'`.
+  If that lists one, a train is in flight.
 - Check production: the newest `Post-deploy smoke` run should be complete and passing
   (`gh run list --workflow "Post-deploy smoke" --limit 3`). If the last one failed, stop here and
   tell the owner. Nothing merges on top of a broken production.
@@ -132,6 +132,9 @@ When no train is in flight (step 1 found none) and at least one row is ready:
 
 **A train that falls behind.** If `main` moves while a train is in flight, do not rebase the
 train: close its pull request, delete its branch, and build a new train from the new `main`.
+
+Whenever a train is closed or merged, remove `../pc-wt/loop-train` and delete the train branch,
+local and remote, before building the next.
 
 Only one train is ever in flight. Rows that become ready meanwhile wait for the next one. Do not
 add to a train after its run has started, and do not push to a branch that is on a train.
