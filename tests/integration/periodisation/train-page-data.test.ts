@@ -16,6 +16,7 @@ import { gzipSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import { seedAnalyticsFixture } from '../../../src/lib/server/test-support/analytics-fixtures/index';
 import { FIXTURE_WEEKS } from '../../../src/lib/server/test-support/analytics-fixtures/periodisation-week';
+import { loadTrainRoad } from '../../../src/routes/(app)/train/road.server';
 import { loadTrainWeek } from '../../../src/routes/(app)/train/week.server';
 import { withRollback } from '../helpers';
 import { makeOwner } from '../profile/fixtures';
@@ -43,7 +44,7 @@ const ALLOWANCES = {
 	timeline: 0.7,
 	replanNote: 0.1
 } as const;
-const ON: readonly (keyof typeof ALLOWANCES)[] = ['findings', 'why', 'weekKinds'];
+const ON: readonly (keyof typeof ALLOWANCES)[] = ['findings', 'why', 'weekKinds', 'timeline'];
 /** Random ids and the store's timestamps move a measure by a few bytes either way. */
 const TOLERANCE_B = 64;
 
@@ -66,8 +67,12 @@ describe('Train’s page data', () => {
 					...{ requestId: crypto.randomUUID(), method: 'GET', path: '/train' },
 					...{ routeId: '/(app)/train', appVersion: '0.1.0+test' }
 				};
-				const data = await loadTrainWeek(owner, { now, week: WEEKS[name], origin }, { db });
-				if (data.state !== 'program') throw new Error(`expected a program, got ${data.state}`);
+				const week = await loadTrainWeek(owner, { now, week: WEEKS[name], origin }, { db });
+				if (week.state !== 'program') throw new Error(`expected a program, got ${week.state}`);
+				// The season +page.server.ts streams beside the week (m7/39), in the same payload.
+				const road = await loadTrainRoad(owner, { today: week.today, origin }, { db });
+				expect(road).not.toBeNull();
+				const data = { ...week, road };
 				const bytes = gzipSync(JSON.stringify(data)).length;
 				// The same data without the cards' why: the why's own bytes, held to its own row.
 				const days = data.days.map((d) => ({
@@ -78,14 +83,18 @@ describe('Train’s page data', () => {
 				// The same data without the week-kind line and the pills' words: their own bytes.
 				const { weekKind: _kind, marks: _marks, ...unmarked } = data;
 				const weekKinds = bytes - gzipSync(JSON.stringify(unmarked)).length;
+				// The same data without the season and its lanes' count: the timeline's own bytes.
+				const { road: _road, openGoals: _lanes, ...flat } = data;
+				const timeline = bytes - gzipSync(JSON.stringify(flat)).length;
 				const allowed = ON.reduce((sum, row) => sum + ALLOWANCES[row] * 1024, 0);
 				const growth = bytes - baseline.bytes[name];
 				console.log(
-					`Train page data, ${name} week: ${bytes} B gzip (${growth >= 0 ? '+' : ''}${growth} B on ${baseline.bytes[name]} B, allowed +${Math.round(allowed)} B; the why ${why} B of ${ALLOWANCES.why * 1024} B; week kinds ${weekKinds} B of ${ALLOWANCES.weekKinds * 1024} B)`
+					`Train page data, ${name} week: ${bytes} B gzip (${growth >= 0 ? '+' : ''}${growth} B on ${baseline.bytes[name]} B, allowed +${Math.round(allowed)} B; the why ${why} B of ${ALLOWANCES.why * 1024} B; week kinds ${weekKinds} B of ${ALLOWANCES.weekKinds * 1024} B; the timeline ${timeline} B of ${ALLOWANCES.timeline * 1024} B)`
 				);
 				expect(growth).toBeLessThanOrEqual(allowed + TOLERANCE_B);
 				expect(why).toBeLessThanOrEqual(ALLOWANCES.why * 1024);
 				expect(weekKinds).toBeLessThanOrEqual(ALLOWANCES.weekKinds * 1024);
+				expect(timeline).toBeLessThanOrEqual(ALLOWANCES.timeline * 1024);
 			});
 		}
 	);

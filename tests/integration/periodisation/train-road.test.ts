@@ -67,17 +67,19 @@ describe('Train’s season', () => {
 			expect(season.legend).toMatch(/^◆ Muay Thai fight · .+ ◆ Marathon · /);
 			expect(season.marks.filter((m) => m.kind === 'pin')).toHaveLength(2);
 			expect(season.marks.filter((m) => m.kind === 'now')).toHaveLength(1);
-			// The lanes the sheet reserves while the season streams (week.openGoals) come with m7r/22.
-			expect(Math.max(...season.blocks.map((b) => b.lanes.length))).toBe(4);
+			// The room the sheet holds while the season streams is every lane it then shows.
+			expect(week.openGoals).toBe(4);
+			const widest = Math.max(...season.blocks.map((b) => b.lanes.length));
+			expect(widest).toBe(week.openGoals);
 		});
 	});
 
 	it('a program built before M7: its roles worked out from its goals, and labelled so', async () => {
 		await withRollback(async (db) => {
-			const { season } = await seeded(db, 'periodisation-road-m3');
+			const { week, season } = await seeded(db, 'periodisation-road-m3');
 			expect(season.note).toBe(DERIVED_MODES_NOTE);
 			expect(season.blocks[0]!.lanes[0]).toMatchObject({ goal: 'Marathon', lead: true });
-			expect(Math.max(...season.blocks.map((b) => b.lanes.length))).toBe(3);
+			expect(Math.max(...season.blocks.map((b) => b.lanes.length))).toBe(week.openGoals);
 		});
 	});
 

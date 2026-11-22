@@ -103,11 +103,19 @@ export interface SeasonView {
 
 const weeksIn = (from: IsoDate, to: IsoDate) => Math.round((daysBetween(from, to) + 1) / 7);
 
-/** The season from `road`, as of `today`; null when the road holds no block. */
-export function seasonView(road: SeasonRoad, today: IsoDate): SeasonView | null {
+/**
+ * The season from `road`, as of `today`; null when the road holds no block. With the program's
+ * `firstPlannedDay` (a program starting mid-week), the track starts on that day, not the Monday.
+ */
+export function seasonView(
+	road: SeasonRoad,
+	today: IsoDate,
+	firstPlannedDay?: IsoDate
+): SeasonView | null {
 	const first = road.blocks[0];
 	if (!first) return null;
-	const start = first.startsOn;
+	const start =
+		firstPlannedDay && firstPlannedDay > first.startsOn ? firstPlannedDay : first.startsOn;
 	const days = daysBetween(start, road.blocks.at(-1)!.endsOn) + 1;
 	const at = (date: IsoDate, offset = 0) =>
 		Math.round(((daysBetween(start, date) + offset) / days) * 1000) / 10;

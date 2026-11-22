@@ -229,7 +229,7 @@
 		return {
 			lead: `${p.summary.title} · ${p.summary.plannedWeeks} weeks planned · from ${shortDate(p.firstPlannedDay)}`,
 			timeline: timelineView(
-				{ startsOn: p.startsOn, blocks: p.summary.blocks },
+				{ startsOn: p.startsOn, firstPlannedDay: p.firstPlannedDay, blocks: p.summary.blocks },
 				{ today, goals: [] }
 			),
 			stripToday: within(today) ? today : null,
