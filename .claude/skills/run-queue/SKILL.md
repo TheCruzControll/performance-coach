@@ -18,16 +18,18 @@ here.
 
 | Stage                                  | At once | What limits it                                        |
 | -------------------------------------- | ------- | ----------------------------------------------------- |
-| Local: spec, build, review, fix rounds | 3 rows  | Your attention and context, not the machine           |
-| Waiting on CI                          | 6 rows  | GitHub's runner queue                                  |
+| Local: spec, build, review, fix rounds | 5 rows  | Your attention and context, not the machine           |
+| Waiting on CI                          | 10 rows | GitHub's runner queue                                  |
 | Merge and deploy                       | 1 train | Each merge is a production deploy that must be checked |
 
 Agents are light: the model runs in the cloud. What is heavy is a full suite, a build or
-Playwright, and none of those run on this machine (see `feature-slice`). So three rows in the
-local stage means up to three background agents and three worktrees, plus narrow checks.
+Playwright, and none of those run on this machine (see `feature-slice`). So five rows in the
+local stage means up to five background agents and five worktrees, plus narrow checks. A pull
+request's CI run is 8 jobs (`scripts/ci-legs.ts`) against about 20 that GitHub runs at once, so
+two or three runs make progress together.
 
 These numbers are the settings. Lower them if agents start failing, if CI runs queue for more than
-a few minutes, or if you lose track of a row. Raise the local number only after a run where three
+a few minutes, or if you lose track of a row. Raise the local number only after a run where five
 rows went through cleanly.
 
 ## Where state lives
@@ -80,7 +82,7 @@ request when the merges changed what it says.
 A merge needs CI to have passed on the tree that lands, and a full run is 28 jobs. Merging rows
 one by one costs a rebase and a full run per row. So rows merge together: a train is one branch
 that holds several ready rows on top of the current `main`, tested once and merged once. One
-train is one CI run, one deploy and one post-deploy check, for up to four rows.
+train is one CI run, one deploy and one post-deploy check, for up to six rows.
 
 First read each waiting row's checks (`gh pr checks <number>`).
 
@@ -102,7 +104,7 @@ First read each waiting row's checks (`gh pr checks <number>`).
 When no train is in flight (step 1 found none) and at least one row is ready:
 
 1. **Build it.** In a worktree of its own (`../pc-wt/loop-train`), create `train/<date>-<n>` from
-   `origin/main`. Merge the ready rows into it in queue order, at most four, each by its boarding
+   `origin/main`. Merge the ready rows into it in queue order, at most six, each by its boarding
    SHA: `git merge --no-ff <boarding sha> -m "Merge <PR title> (#<number>)"`. After each merge,
    `git diff --name-only HEAD^1 HEAD` must list only files in `gh pr diff <number> --name-only`.
    If a merge conflicts, or the diff lists more, undo it (`git merge --abort` or
@@ -152,7 +154,7 @@ to replace. Never cancel a run on `main`.
 
 ### 3. Fill the local slots
 
-While fewer than three rows are in the local stage and fewer than six are waiting on CI, take the
+While fewer than five rows are in the local stage and fewer than ten are waiting on CI, take the
 next row, top to bottom, that you can act on:
 
 - `pr-open`: an existing pull request to finish.
@@ -247,7 +249,7 @@ minute: what merged, what was parked and why, and what is waiting on them.
 ## What this skill never does
 
 - Merge outside `feature-slice`'s gate, push to `main`, or force-push `main`.
-- Merge two trains without confirming the first one's deploy in between, or put more than four
+- Merge two trains without confirming the first one's deploy in between, or put more than six
   rows on one train.
 - Resolve a conflict on a train, or push to a branch that is on a train.
 - Roll back production, change environment variables, or touch Neon or Vercel settings.
