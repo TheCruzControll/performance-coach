@@ -174,7 +174,7 @@ so services and the M5 coach's tools call the same functions and get the same pl
 - `generateProgram(input, { startsOn, firstPlannedDay })` → `ProgramPlan`: the first block and
   its outline, every decision with its 'why' (`program_purpose` first), checked against
   `programPlanSchema`. A plan the contract refuses throws `GeneratedPlanError` with its dotted
-  paths. `startsOn` is a Monday; a 'This week' start plans only from `firstPlannedDay`.
+  paths. `startsOn` is a Monday; a start after it (`firstPlannedDay` later in week 1) plans only from `firstPlannedDay`.
 - `catalogueDigest(catalogue, customExercises)`, `fingerprint(input, digest)` and
   `GENERATOR_ID`: the same profile, library and generator give the same fingerprint, so a build
   can tell a changed profile or library from a retry.

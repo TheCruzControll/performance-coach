@@ -4,7 +4,8 @@
   before anything is saved, then Start week 1, which stores it as version 1 and opens Train.
   - The preview: the block timeline, week 1's sessions on their days, what week 1 is for, and
     every decision grouped (purpose, what we assumed, placement, conflicts, left out, loads), each
-    'why' a disclosure. 'Next Monday' or 'This week' previews again with week 1's new dates.
+    'why' a disclosure. 'Next Monday' or 'This week', or any day picked under 'Or pick a day',
+    previews again with week 1's new dates.
   - The device's time zone goes with both requests, read from Intl as each is sent, so the
     preview and the build agree on today (forms/build.ts).
   - Designed states: a skeleton (aria-busy) holding the room while the preview loads; a failed
@@ -33,6 +34,7 @@
 	import Notice from '#lib/ui/components/Notice.svelte';
 	import Section from '#lib/ui/components/Section.svelte';
 	import Skeleton from '#lib/ui/components/Skeleton.svelte';
+	import TextField from '#lib/ui/components/TextField.svelte';
 	import { toast } from '#lib/ui/toast.svelte.ts';
 
 	interface Props {
@@ -43,11 +45,16 @@
 	let { onclose }: Props = $props();
 
 	type ProgramStart = PreviewResult['start'];
+	type NamedStart = keyof PreviewResult['starts'];
 
-	const START_LABEL: Record<ProgramStart, string> = {
+	const START_LABEL: Record<NamedStart, string> = {
 		next_monday: 'Next Monday',
 		this_week: 'This week'
 	};
+
+	/** Whether a start is a day picked in the date field, not one of the named starts. */
+	const isDay = (value: ProgramStart | null): value is string =>
+		value !== null && value !== 'this_week' && value !== 'next_monday';
 
 	/** The rationale's headings, in the order the preview lists them. */
 	const GROUPS = [
@@ -107,6 +114,8 @@
 	let phase = $state<'loading' | 'ready' | 'failed' | 'offline'>('loading');
 	let result = $state.raw<PreviewResult | null>(null);
 	let start = $state<ProgramStart | null>(null);
+	/** The date field's value: a day picked, or '' while a named start is chosen. */
+	let day = $state('');
 	let notice = $state<Notified | null>(null);
 	let starting = $state(false);
 	let heading = $state<HTMLElement>();
@@ -154,6 +163,7 @@
 		else if (outcome.type === 'success') {
 			result = outcome.data as unknown as PreviewResult;
 			start = result.start;
+			day = isDay(start) ? start : '';
 			phase = 'ready';
 		} else if (outcome.type === 'redirect') await applyAction(outcome);
 		else phase = 'failed';
@@ -185,8 +195,20 @@
 			const reason = outcome.type === 'failure' ? outcome.data?.reason : undefined;
 			notice = CONFLICTS.find((c) => c === reason) ?? 'failed';
 			// The build no longer matches what was shown: show what it would build now.
-			if (notice !== 'failed' && notice !== 'program_exists') await preview();
+			if (notice !== 'failed' && notice !== 'program_exists') {
+				// A day that has passed would be refused again: the default start takes its place.
+				if (notice === 'start_date' && isDay(start)) start = null;
+				await preview();
+			}
 		}
+	}
+
+	/** A day picked under 'Or pick a day': week 1 is previewed from it, when the window offers it. */
+	function pickDay() {
+		if (!result || !/^\d{4}-\d{2}-\d{2}$/.test(day)) return;
+		if (day < result.today || day > result.latestStart) return;
+		start = day;
+		preview();
 	}
 
 	onMount(() => {
@@ -231,7 +253,7 @@
 				title,
 				items: p.decisions[key].filter((d) => d !== purpose)
 			})).filter((g) => g.items.length > 0),
-			starts: (Object.keys(result.starts) as ProgramStart[]).map((value) => ({
+			starts: (Object.keys(result.starts) as NamedStart[]).map((value) => ({
 				value,
 				label: START_LABEL[value],
 				hint:
@@ -276,6 +298,19 @@
 			bind:value={start}
 			onchange={preview}
 			data-testid="build-start-choice"
+		/>
+	{/if}
+
+	{#if view && result}
+		<TextField
+			label="Or pick a day"
+			type="date"
+			bind:value={day}
+			min={result.today}
+			max={result.latestStart}
+			hint={`Any day to ${shortDate(result.latestStart)}. Week 1 runs to that Sunday.`}
+			onchange={pickDay}
+			data-testid="build-start-day"
 		/>
 	{/if}
 

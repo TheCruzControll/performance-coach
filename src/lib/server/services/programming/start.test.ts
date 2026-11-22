@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { addDays } from '../../../domain/calendar';
-import { DEFAULT_PROGRAM_START, START_OPTIONS, startDates } from './start';
+import { validate } from '../../../domain/validation';
+import { DEFAULT_PROGRAM_START, previewRequestSchema, START_OPTIONS, startDates } from './start';
 
 const MONDAY = '2026-11-09';
 
@@ -26,5 +27,28 @@ describe('when a new program starts', () => {
 			const today = addDays(MONDAY, day);
 			expect(startDates(today, 'this_week')).toEqual({ startsOn: MONDAY, firstPlannedDay: today });
 		}
+	});
+
+	it('starts on a picked day in the week it is in, planned from that day', () => {
+		expect(startDates('2026-11-10', '2026-11-12')).toEqual({
+			startsOn: '2026-11-09',
+			firstPlannedDay: '2026-11-12'
+		});
+	});
+
+	it('reads a named start or a day, and refuses anything else in words for the field', () => {
+		const today = '2026-11-10';
+		expect(validate(previewRequestSchema, { today, start: '2026-11-12' })).toEqual({
+			ok: true,
+			data: { today, start: '2026-11-12' }
+		});
+		expect(validate(previewRequestSchema, { today, start: 'this_week' })).toEqual({
+			ok: true,
+			data: { today, start: 'this_week' }
+		});
+		expect(validate(previewRequestSchema, { today, start: 'someday' })).toEqual({
+			ok: false,
+			errors: { start: 'Pick when to start' }
+		});
 	});
 });

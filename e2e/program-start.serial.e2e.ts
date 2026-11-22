@@ -104,7 +104,7 @@ test('before setup is finished there is no running program anywhere, and the bui
 	await gotoHydrated(page, '/train/start');
 	await expect(page.getByTestId('start-setup')).toContainText('Finish setting up first');
 	await expect(page.getByTestId('start-next')).toHaveAttribute('href', '/today');
-	await expect(page.getByTestId('start-choices')).toHaveCount(0);
+	await expect(page.getByTestId('start-day')).toHaveCount(0);
 	expect(await audit(page)).toEqual([]);
 	await captureScreen(page, testInfo, 'train-start-setup');
 
@@ -134,14 +134,11 @@ async function moveAWeekLater(page: Page, request: APIRequestContext) {
 	await page.getByTestId('open-start').click();
 	await expect(page).toHaveURL('/train/start');
 	await expect(page.getByTestId('start-current')).toHaveText(`Week 1 starts ${longDate(built)}.`);
-	const choices = page.getByTestId('start-choices');
-	const current = choices.getByRole('radio', {
-		name: new RegExp(`${shortDate(built)}.*Your current start`)
-	});
-	await expect(current).toBeChecked();
+	const day = page.getByTestId('start-day');
+	await expect(day).toHaveValue(built);
 	// Nothing to move until another start is picked.
 	await expect(page.getByTestId('move-start')).toBeDisabled();
-	await choices.getByRole('radio', { name: shortDate(moved), exact: true }).check();
+	await day.fill(moved);
 	await page.getByTestId('move-start').click();
 
 	await expect(toastWith(page, `Start moved to ${shortDate(moved)} · version 2`)).toBeVisible();
@@ -184,13 +181,7 @@ test('moving the start a week later updates Train, Today and History', async ({
 	await expect(page).toHaveURL('/train/start');
 	expect(await audit(page)).toEqual([]);
 	await captureScreen(page, testInfo, 'train-start');
-	await page
-		.getByTestId('start-choices')
-		.getByRole('radio', {
-			name: built === today() ? `Today, ${shortDate(built)}` : shortDate(built),
-			exact: true
-		})
-		.check();
+	await page.getByTestId('start-day').fill(built);
 	await page.getByTestId('move-start').click();
 	await expect(toastWith(page, `Start moved to ${shortDate(built)} · version 3`)).toBeVisible();
 	expect((await versions()).map((v) => [v.number, v.first_planned_day])).toEqual([
@@ -212,7 +203,7 @@ test.describe('in a desktop window', () => {
 		const errors = trackConsoleErrors(page);
 		await moveAWeekLater(page, request);
 		await gotoHydrated(page, '/train/start');
-		await expect(page.getByTestId('start-choices')).toBeVisible();
+		await expect(page.getByTestId('start-day')).toBeVisible();
 		await expectMainCentred(page);
 		await expectNoSideScroll(page);
 		expect(await audit(page)).toEqual([]);

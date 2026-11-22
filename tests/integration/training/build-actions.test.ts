@@ -126,6 +126,8 @@ describe('the Build actions count today in the device’s time zone', () => {
 			const deps = { db, now: at() };
 			const auckland = await preview(owner, { timeZone: AUCKLAND, start: 'this_week' }, deps);
 			expect(auckland.today).toBe('2026-11-06');
+			// The last day the date field offers: today plus 56 days.
+			expect(auckland.latestStart).toBe('2027-01-01');
 			expect([auckland.preview.startsOn, auckland.preview.firstPlannedDay]).toEqual([
 				'2026-11-02',
 				'2026-11-06'

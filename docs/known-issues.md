@@ -46,9 +46,6 @@ Last reviewed: 2026-11-21, against `main` at the merge of #501.
   there are no real-device or RUM p75 numbers yet. M8's criterion on Core Web Vitals depends on
   them.
 
-- **The start-date rules await the owner.** A move offers the next eight Mondays and is refused
-  once the first planned day has passed or a workout is logged. The owner has not confirmed those
-  limits.
 - **A move does not see an unsynced offline workout.** A workout started offline from a start kit
   of the old version, and not yet synced, is not counted when a move checks for logged workouts.
   After the move it syncs against a session the current version no longer has.

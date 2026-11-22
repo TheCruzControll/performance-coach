@@ -23,6 +23,7 @@ import {
 	type ProgrammingInput
 } from '../../../domain/programming/index';
 import { toExerciseKey } from '../../../domain/programming/input';
+import { startDay } from '../../../domain/programming/start-move';
 import type {
 	BlockPlan,
 	DecisionPlan,
@@ -36,7 +37,13 @@ import { getExercisesByIds, listCustomExercises } from '../exercises/index';
 import { getTrainingProfile } from '../profile';
 import { listExercisePreferences } from '../training/preferences';
 import { parseWith, resolveDeps, TrainingInputError, type TrainingDeps } from '../training/shared';
-import { previewRequestSchema, startDates, type StartDates } from './start';
+import {
+	PICK_A_DAY,
+	PROGRAM_STARTS,
+	previewRequestSchema,
+	startDates,
+	type StartDates
+} from './start';
 
 export interface ProgrammingDeps extends TrainingDeps {
 	/** The catalogue the generator reads; CATALOGUE unless a test changes it. */
@@ -244,7 +251,8 @@ function exerciseNamesIn(week: WeekPlan, names: ReadonlyMap<ExerciseKey, string>
 
 /**
  * Preview the program a build would store: `request` is the owner's local today and when to
- * start ('next_monday' or 'this_week'). Refused with a TrainingInputError at `onboarding` until
+ * start ('next_monday', 'this_week' or a day from today to eight weeks ahead). Refused with a
+ * TrainingInputError at `start` for a day the window does not offer, and at `onboarding` until
  * onboarding is complete.
  */
 export async function previewProgram(
@@ -253,6 +261,10 @@ export async function previewProgram(
 	deps: ProgrammingDeps = {}
 ): Promise<ProgramPreview> {
 	const { today, start } = parseWith(previewRequestSchema, request);
+	const named = (PROGRAM_STARTS as readonly string[]).includes(start);
+	if (!named && startDay(start, today) === null) {
+		throw new TrainingInputError({ start: PICK_A_DAY });
+	}
 	const dates = startDates(today, start);
 	const { plan, digest, fingerprint, names } = await generateFor(ownerId, dates, deps);
 	const week = plan.blocks[0]!.weeks[0]!;

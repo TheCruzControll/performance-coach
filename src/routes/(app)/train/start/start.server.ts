@@ -7,9 +7,10 @@
  * - Until onboarding is complete no program can exist (a build refuses it), so the screen says
  *   what comes first and links to Today's setup card; with no program, to Today's Build.
  * - A start that can no longer move says why, with the day week 1 began.
- * - Otherwise the starts the move offers, in words: 'This week' (from today) and the next Mondays,
- *   the current one marked, and a Monday after a dated goal's event says the event would no longer
- *   be planned for. Words are composed here, so they cost the screen no JavaScript.
+ * - Otherwise a date field for the first day of training, from today to eight weeks ahead, filled
+ *   in with the current first planned day, with its hint and a line for each dated goal's event in
+ *   that window that a later start would leave out. Words are composed here, so they cost the
+ *   screen no JavaScript.
  * - ?/move posts the start and the version it was chosen on as plain fields, so it works before
  *   JavaScript runs. It answers the toast's words and Train's path; a refusal comes back as the
  *   program forms' failures (400 with the field's error, 409 with the conflict's reason).
@@ -18,7 +19,7 @@
  */
 import type { IsoDate } from '#lib/domain/calendar.ts';
 import { localDay } from '#lib/domain/dates.ts';
-import { eventsSkipped, type StartChoice } from '#lib/domain/programming/start-move.ts';
+import { eventsAhead, startWords } from '#lib/domain/programming/start-move.ts';
 import { programFieldsAction } from '#lib/server/forms/program.ts';
 import { ownerToday } from '#lib/server/local-date.ts';
 import { recordServerError, type ServerErrorInput } from '#lib/server/services/errors.ts';
@@ -42,12 +43,6 @@ export interface StartCard {
 	next: { label: string; to: 'today' | 'train' | 'retry' };
 }
 
-export interface StartOption {
-	value: StartChoice['value'];
-	label: string;
-	hint?: string;
-}
-
 export type StartPageData =
 	| { state: 'card'; card: StartCard }
 	| {
@@ -56,9 +51,15 @@ export type StartPageData =
 			version: number;
 			/** 'Week 1 starts Monday 23 November.' */
 			current: string;
-			options: StartOption[];
-			/** The option keeping the current start, if one does; else none is picked. */
-			chosen: StartChoice['value'] | null;
+			/** The date field's value at first: the current first planned day. */
+			day: IsoDate;
+			/** The field's bounds: today and latestStart(today). */
+			min: IsoDate;
+			max: IsoDate;
+			/** 'Any day from today to Thu 31 Dec. Week 1 runs to that Sunday, so a later day plans less of it.' */
+			hint: string;
+			/** One line per dated event in the window: 'Meet is Sat 21 Nov: a start after it no longer plans for it.' */
+			events: string[];
 	  };
 
 export interface StartRequest {
@@ -138,31 +139,20 @@ export async function loadStart(
 		if (move.refusal) {
 			return { state: 'card', card: fixedCard(move.refusal, move.current.firstPlannedDay) };
 		}
-		const events = await datedEvents(ownerId, db);
-		const options = move.choices.map((c): StartOption => {
-			const label =
-				c.value === 'this_week'
-					? 'This week'
-					: c.startsOn === today
-						? `Today, ${shortDate(c.startsOn)}`
-						: shortDate(c.startsOn);
-			const skipped = eventsSkipped(c, today, events);
-			const hint =
-				c.value === move.currentValue
-					? 'Your current start'
-					: skipped.length
-						? `After ${skipped.map((e) => `${e.title} (${shortDate(e.date)})`).join(', ')}: no longer planned for`
-						: c.value === 'this_week'
-							? `From today, ${shortDate(today)}`
-							: undefined;
-			return { value: c.value, label, ...(hint && { hint }) };
-		});
+		// The window is present while the start can move (getStartMove sets none otherwise).
+		const bounds = move.window!;
+		const events = eventsAhead(today, await datedEvents(ownerId, db)).map(
+			(e) => `${e.title} is ${shortDate(e.date)}: a start after it no longer plans for it.`
+		);
 		return {
 			state: 'open',
 			version: move.version,
 			current: `Week 1 starts ${longDate(move.current.firstPlannedDay)}.`,
-			options,
-			chosen: move.currentValue
+			day: move.current.firstPlannedDay,
+			min: bounds.earliest,
+			max: bounds.latest,
+			hint: `Any day from today to ${startWords(bounds.latest)}. Week 1 runs to that Sunday, so a later day plans less of it.`,
+			events
 		};
 	} catch (error) {
 		await recordServerError(

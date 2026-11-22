@@ -2,7 +2,7 @@
   Train's Start date screen (start.server.ts): when week 1 starts, and moving it while no training
   has begun. A native form, so it posts before JavaScript runs; once it does, the post goes in
   place: busy while it is on its way (a second tap posts nothing), then the toast ('Start moved to
-  Mon 23 Nov · version 2') and Train. A refusal says why under the choices; a post that failed on
+  Mon 23 Nov · version 2') and Train. A refusal says why under the date field; a post that failed on
   its way says the plan has not changed, and the button says Try again. Offline, the button is
   disabled and says why.
 -->
@@ -12,13 +12,13 @@
 	import { goto, invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import Button from '#lib/ui/components/Button.svelte';
-	import ChoiceGroup from '#lib/ui/components/ChoiceGroup.svelte';
 	import EmptyState from '#lib/ui/components/EmptyState.svelte';
 	import Icon from '#lib/ui/components/Icon.svelte';
 	import ListRow from '#lib/ui/components/ListRow.svelte';
 	import Notice from '#lib/ui/components/Notice.svelte';
 	import PageHeader from '#lib/ui/components/PageHeader.svelte';
 	import Surface from '#lib/ui/components/Surface.svelte';
+	import TextField from '#lib/ui/components/TextField.svelte';
 	import { toast } from '#lib/ui/toast.svelte.ts';
 	import type { PageProps } from './$types';
 
@@ -39,7 +39,7 @@
 	const card = $derived(data.state === 'card' ? data.card : null);
 
 	// svelte-ignore state_referenced_locally
-	let start = $state(open?.chosen ?? null);
+	let start = $state(open?.day ?? '');
 	let pending = $state(false);
 	let failure = $state<string | null>(null);
 	let reloading = $state(false);
@@ -118,9 +118,9 @@
 					} else if (result.type === 'failure') {
 						const data = result.data ?? {};
 						const errors = data.errors as Record<string, string> | undefined;
-						// The choices as they are now (a new day, a newer version), the pick kept if offered.
+						// The window and the first day as they are now (a new day, a newer version); the pick is kept while it falls in the window.
 						await invalidateAll();
-						if (!open?.options.some((o) => o.value === start)) start = open?.chosen ?? null;
+						if (!open || start < open.min || start > open.max) start = open?.day ?? '';
 						failure = errors
 							? (Object.values(errors)[0] ?? FAILED)
 							: (REFUSED[String(data.reason)] ?? (data.message ? String(data.message) : FAILED));
@@ -133,14 +133,24 @@
 			}}
 		>
 			<input type="hidden" name="version" value={open.version} />
-			<ChoiceGroup
-				legend="When week 1 starts"
+			<TextField
+				label="First day of training"
+				type="date"
 				name="start"
-				variant="card"
-				options={open.options}
+				min={open.min}
+				max={open.max}
 				bind:value={start}
-				data-testid="start-choices"
+				required
+				hint={open.hint}
+				data-testid="start-day"
 			/>
+			{#if open.events.length}
+				<ul class="note" data-testid="start-events">
+					{#each open.events as event, i (i)}
+						<li>{event}</li>
+					{/each}
+				</ul>
+			{/if}
 			<p class="note">
 				Your program is planned again from your profile for the new dates. Goals with a date keep
 				it, and the change is listed in History.
@@ -155,7 +165,7 @@
 				type="submit"
 				block
 				loading={pending}
-				disabled={!online || !start || start === open.chosen}
+				disabled={!online || !start || start === open.day}
 				data-testid="move-start">{failure ? 'Try again' : 'Move the start'}</Button
 			>
 		</form>
@@ -184,6 +194,14 @@
 	form {
 		display: grid;
 		gap: var(--space-5);
+	}
+
+	ul.note {
+		display: grid;
+		gap: var(--space-1);
+		margin: 0;
+		padding: 0;
+		list-style: none;
 	}
 
 	.current {

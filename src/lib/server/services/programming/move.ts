@@ -23,13 +23,11 @@ import type { IsoDate } from '../../../domain/calendar';
 import { DecisionLog } from '../../../domain/programming/decisions';
 import { GENERATOR_ID } from '../../../domain/programming/index';
 import {
-	choiceOf,
-	currentChoice,
+	latestStart,
 	moveRefusal,
 	sameStart,
-	startChoices,
+	startDay,
 	startWords,
-	type StartChoice,
 	type StartDates,
 	type StartMoveRefusal
 } from '../../../domain/programming/start-move';
@@ -50,6 +48,7 @@ import {
 	TrainingNotFoundError
 } from '../training/shared';
 import { generateFor, type ProgrammingDeps } from './preview';
+import { PICK_A_DAY } from './start';
 
 const REFUSAL_MESSAGE: Readonly<Record<StartMoveRefusal, string>> = {
 	started: "the program's first planned day has passed",
@@ -65,7 +64,7 @@ export class StartMoveError extends ConflictError<StartMoveRefusal> {
 }
 
 /** What the screen says at `start` for a start the move does not offer, or the current one. */
-export const NOT_OFFERED = 'Pick one of the dates shown';
+export const NOT_OFFERED = PICK_A_DAY;
 export const ALREADY_THEN = 'Your program already starts then';
 
 /** Who the move's 'why' says moved it. */
@@ -75,17 +74,15 @@ const WHO: Readonly<Record<Decider, string>> = {
 	rules: 'The programming rules'
 };
 
-/** What a move may do today: the current start, why it can't move, and the starts offered. */
+/** What a move may do today: the current start, why it can't move, and the window it may fall in. */
 export interface StartMove {
 	/** The current version, which a move is made on. */
 	version: number;
 	current: StartDates;
 	/** Why it can no longer move; null while it can. */
 	refusal: StartMoveRefusal | null;
-	/** Earliest first; none once it can't move. */
-	choices: StartChoice[];
-	/** The choice that keeps the current start, if one does. */
-	currentValue: StartChoice['value'] | null;
+	/** The window a new start may fall in: today to latestStart(today). Present while it can move. */
+	window: { earliest: IsoDate; latest: IsoDate } | null;
 }
 
 export interface MovedStart extends RevisedVersion, StartDates {
@@ -120,16 +117,15 @@ export async function getStartMove(
 			version: number,
 			current,
 			refusal,
-			choices: refusal ? [] : startChoices(today),
-			currentValue: currentChoice(current, today)?.value ?? null
+			window: refusal ? null : { earliest: today, latest: latestStart(today) }
 		};
 	});
 }
 
 /**
- * Move the owner's active program's start to `request.start` ('this_week' or a Monday the move
- * offers on `request.today`), as its next version made on `request.baseVersionNumber`.
- * `deps.source` moves it: the owner on Train, or the coach.
+ * Move the owner's active program's start to `request.start`, a day from `request.today` to eight
+ * weeks ahead, as its next version made on `request.baseVersionNumber`. `deps.source` moves it:
+ * the owner on Train, or the coach.
  */
 export async function moveProgramStart(
 	ownerId: string,
@@ -137,11 +133,10 @@ export async function moveProgramStart(
 	deps: ProgrammingDeps = {}
 ): Promise<MovedStart> {
 	const { today, baseVersionNumber, start } = parseWith(moveRequestSchema, request);
-	const choice = choiceOf(start, today);
-	if (!choice) throw new TrainingInputError({ start: NOT_OFFERED });
+	const dates = startDay(start, today);
+	if (!dates) throw new TrainingInputError({ start: NOT_OFFERED });
 	const { db, now, source } = resolveDeps(deps);
 	if (source === 'rules') throw new TrainingInputError({ source: 'You or the coach move it' });
-	const dates: StartDates = { startsOn: choice.startsOn, firstPlannedDay: choice.firstPlannedDay };
 
 	return measure('db', () =>
 		db.transaction(async (tx) => {

@@ -1,7 +1,8 @@
 /**
- * start-move.ts: the starts a move offers (this week from today, then whole weeks from the next
- * Mondays), when a start can no longer move, and, through the generator, that a moved start keeps
- * every week on a Monday and every dated event on its date, its taper just before it.
+ * start-move.ts: the days a start may fall on (any day from today to START_DAYS_AHEAD days ahead,
+ * week 1 being that day's Monday-to-Sunday week), when a start can no longer move, and, through
+ * the generator, that a moved start keeps every week on a Monday and every dated event on its
+ * date, its taper just before it.
  */
 import { describe, expect, it } from 'vitest';
 import { addDays, mondayOf, weekdayOf } from '../calendar';
@@ -12,81 +13,65 @@ import { generateProgram } from './generate';
 import { buildProgrammingInput } from './input';
 import { SCENARIO_START, SCENARIOS, scenarioDay } from './scenarios';
 import {
-	choiceOf,
-	currentChoice,
-	eventsSkipped,
-	MOVE_WEEKS_AHEAD,
+	eventsAhead,
+	latestStart,
 	moveRefusal,
 	sameStart,
-	startChoices,
+	START_DAYS_AHEAD,
+	startDay,
+	startFrom,
 	startWords
 } from './start-move';
 
 const WEDNESDAY = '2026-11-11';
 const MONDAY = '2026-11-16';
 
-describe('the starts a move offers', () => {
-	it('on a Wednesday: this week from today, then the next Mondays, each a whole week', () => {
-		const choices = startChoices(WEDNESDAY);
-		expect(choices[0]).toEqual({
-			value: 'this_week',
-			startsOn: '2026-11-09',
-			firstPlannedDay: WEDNESDAY
-		});
-		const mondays = choices.slice(1);
-		expect(mondays).toHaveLength(MOVE_WEEKS_AHEAD);
-		mondays.forEach((c, i) => {
-			const monday = addDays(MONDAY, 7 * i);
-			expect(c).toEqual({ value: monday, startsOn: monday, firstPlannedDay: monday });
-		});
+describe('a start on any day from today to eight weeks ahead', () => {
+	it('takes every day from today to latestStart: week 1 is that day’s week, planned from the day', () => {
+		expect(latestStart(WEDNESDAY)).toBe(addDays(WEDNESDAY, START_DAYS_AHEAD));
+		for (let d = 0; d <= START_DAYS_AHEAD; d++) {
+			const day = addDays(WEDNESDAY, d);
+			expect(startDay(day, WEDNESDAY), day).toEqual({
+				startsOn: mondayOf(day),
+				firstPlannedDay: day
+			});
+		}
 	});
 
-	it('on a Monday: today is the first Monday, and this week is the same start, so not offered twice', () => {
-		const choices = startChoices(MONDAY);
-		expect(choices.map((c) => c.value)).toEqual(
-			Array.from({ length: MOVE_WEEKS_AHEAD }, (_, i) => addDays(MONDAY, 7 * i))
-		);
-	});
-
-	it('offers this week only while a part first week is allowed', () => {
-		expect(startChoices(WEDNESDAY, { partialFirstWeek: false })[0]!.value).toBe(MONDAY);
-	});
-
-	it('starts week 1 on a Monday every time, with its first planned day inside it', () => {
-		for (let day = 0; day < 7; day++) {
-			const today = addDays('2026-12-28', day); // across a new year
-			for (const c of startChoices(today)) {
-				expect(mondayOf(c.startsOn)).toBe(c.startsOn);
-				expect(c.firstPlannedDay >= c.startsOn && c.firstPlannedDay <= addDays(c.startsOn, 6)).toBe(
-					true
-				);
-				expect(c.firstPlannedDay >= today).toBe(true);
+	it('starts week 1 on a Monday every time, with its first planned day inside it, across a new year', () => {
+		for (let offset = 0; offset < 7; offset++) {
+			const today = addDays('2026-12-28', offset);
+			for (let d = 0; d <= START_DAYS_AHEAD; d++) {
+				const day = addDays(today, d);
+				const dates = startDay(day, today)!;
+				expect(mondayOf(dates.startsOn)).toBe(dates.startsOn);
+				expect(
+					dates.firstPlannedDay >= dates.startsOn &&
+						dates.firstPlannedDay <= addDays(dates.startsOn, 6)
+				).toBe(true);
+				expect(dates.firstPlannedDay).toBe(day);
 			}
 		}
 	});
 
-	it('takes only a value it offers: never a past Monday, another weekday or one past the window', () => {
-		expect(choiceOf('this_week', WEDNESDAY)?.firstPlannedDay).toBe(WEDNESDAY);
-		expect(choiceOf(MONDAY, WEDNESDAY)?.startsOn).toBe(MONDAY);
-		expect(choiceOf('2026-11-09', WEDNESDAY)).toBeNull(); // this week's Monday has passed
-		expect(choiceOf('2026-11-17', WEDNESDAY)).toBeNull(); // a Tuesday
-		expect(choiceOf(addDays(MONDAY, 7 * MOVE_WEEKS_AHEAD), WEDNESDAY)).toBeNull();
-		expect(choiceOf('this_week', MONDAY)).toBeNull();
-		for (const junk of [undefined, null, 5, '', 'next_monday', {}]) {
-			expect(choiceOf(junk, WEDNESDAY)).toBeNull();
+	it('refuses a day that has passed, one past the window, a name, or a value that is not a real date', () => {
+		expect(startDay(addDays(WEDNESDAY, -1), WEDNESDAY)).toBeNull();
+		expect(startDay(addDays(WEDNESDAY, START_DAYS_AHEAD + 1), WEDNESDAY)).toBeNull();
+		for (const junk of ['this_week', 'next_monday', '2026-02-30', '', null, 42]) {
+			expect(startDay(junk, WEDNESDAY), String(junk)).toBeNull();
 		}
 	});
 
-	it('finds the choice that keeps the current start, if today offers it', () => {
+	it('while PARTIAL_FIRST_WEEK is off, takes only a Monday', () => {
+		const thursday = addDays(MONDAY, 3);
+		expect(startDay(thursday, WEDNESDAY, { partialFirstWeek: false })).toBeNull();
+		expect(startDay(MONDAY, WEDNESDAY, { partialFirstWeek: false })).toEqual(startFrom(MONDAY));
+	});
+
+	it('keeps the current start when it is the one asked for', () => {
 		const next = { startsOn: MONDAY, firstPlannedDay: MONDAY };
-		expect(currentChoice(next, WEDNESDAY)?.value).toBe(MONDAY);
-		const fromToday = { startsOn: '2026-11-09', firstPlannedDay: WEDNESDAY };
-		expect(currentChoice(fromToday, WEDNESDAY)?.value).toBe('this_week');
-		// Built yesterday for 'this week': tomorrow it has started, so no choice keeps it.
-		const yesterday = { startsOn: '2026-11-09', firstPlannedDay: '2026-11-10' };
-		expect(currentChoice(yesterday, WEDNESDAY)).toBeNull();
 		expect(sameStart(next, { ...next })).toBe(true);
-		expect(sameStart(next, fromToday)).toBe(false);
+		expect(sameStart(next, { startsOn: MONDAY, firstPlannedDay: '2026-11-17' })).toBe(false);
 	});
 });
 
@@ -106,21 +91,15 @@ describe('when a start can no longer move', () => {
 });
 
 describe('the events a start would leave out', () => {
-	const events = [
-		{ title: 'Past', date: '2026-11-10' },
-		{ title: 'Soon', date: '2026-11-21' },
-		{ title: 'Later', date: '2026-12-12' }
-	];
-	it('names the events from today on before the new first planned day', () => {
-		const start = (monday: string) => ({ startsOn: monday, firstPlannedDay: monday });
-		expect(eventsSkipped(start(MONDAY), WEDNESDAY, events)).toEqual([]);
-		expect(eventsSkipped(start('2026-11-23'), WEDNESDAY, events).map((e) => e.title)).toEqual([
-			'Soon'
-		]);
-		expect(eventsSkipped(start('2026-12-14'), WEDNESDAY, events).map((e) => e.title)).toEqual([
-			'Soon',
-			'Later'
-		]);
+	it('keeps the events from today to latestStart, inclusive, earliest first', () => {
+		const events = [
+			{ title: 'Late', date: latestStart(WEDNESDAY) },
+			{ title: 'Beyond', date: addDays(latestStart(WEDNESDAY), 1) },
+			{ title: 'Soon', date: '2026-11-21' },
+			{ title: 'Today', date: WEDNESDAY },
+			{ title: 'Past', date: '2026-11-10' }
+		];
+		expect(eventsAhead(WEDNESDAY, events).map((e) => e.title)).toEqual(['Today', 'Soon', 'Late']);
 	});
 });
 
@@ -198,6 +177,19 @@ describe('a moved start, planned again', () => {
 		const p = plan(SCENARIOS.hybrid(), SCENARIO_START, scenarioDay(1, 2));
 		expectMondayWeeks(p);
 		expect(weeks(p)[0]!.sessions.length).toBeGreaterThan(0);
+		expect(p.blocks.at(-1)!.endsOn).toBe(RACE);
+	});
+
+	it('from a Thursday in the week after, via startFrom: week 1 is that Monday, planned from the Thursday', () => {
+		const thursday = addDays(SCENARIO_START, 10); // a Thursday, in the week after the first Monday
+		const { startsOn, firstPlannedDay } = startFrom(thursday);
+		expect(startsOn).toBe(addDays(SCENARIO_START, 7));
+		expect(firstPlannedDay).toBe(thursday);
+		const p = plan(SCENARIOS.hybrid(), startsOn, firstPlannedDay);
+		expectMondayWeeks(p);
+		for (const w of weeks(p)) expect(weekdayOf(w.startsOn)).toBe('mon');
+		expect(weeks(p)[0]!.startsOn).toBe(startsOn);
+		expect(p.decisions.length).toBeGreaterThan(0);
 		expect(p.blocks.at(-1)!.endsOn).toBe(RACE);
 	});
 });

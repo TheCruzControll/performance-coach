@@ -9,11 +9,13 @@
  *   whose first planned day has passed or that has training logged against it, and an unfinished
  *   setup
  * - the screen's load and ?/move: the setup card before onboarding, the no-program card, the
- *   choices in words, and the move's answer or its refusal.
+ *   date field and its events, and the move's answer or its refusal.
+ * - a first program on a day of the window, through the preview and the build
  */
 import { isActionFailure } from '@sveltejs/kit';
 import { eq, sql } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
+import { mondayOf } from '../../../src/lib/domain/calendar';
 import { athleteProfiles, type Executor } from '../../../src/lib/server/db';
 import {
 	completeOnboarding,
@@ -26,7 +28,9 @@ import {
 	getStartMove,
 	moveProgramStart,
 	NOT_OFFERED,
+	PICK_A_DAY,
 	previewProgram,
+	ProgrammingConflictError,
 	StartMoveError
 } from '../../../src/lib/server/services/programming/index';
 import {
@@ -56,6 +60,8 @@ const TODAY = '2026-11-05';
 const NOW = new Date('2026-11-05T10:00:00Z');
 const BUILT_ON = '2026-11-09';
 const LATER = '2026-11-16';
+/** The last day of the window: today plus 56 days. */
+const LATEST = '2026-12-31';
 const ORIGIN = {
 	requestId: 'test',
 	method: 'GET',
@@ -218,11 +224,47 @@ describe('moving the start', () => {
 				sessionsOf(v1).map((s) => [s.title, s.date])
 			);
 
-			await move(db, owner, 'this_week', 3);
+			await move(db, owner, TODAY, 3);
 			const v4 = await getProgramVersion(owner, programId, 4, { db });
 			expect([v4.startsOn, v4.firstPlannedDay]).toEqual(['2026-11-02', TODAY]);
 			expect(v4.version.summary).toBe('Moved the start to Thu 5 Nov');
 			expect(sessionsOf(v4).every((s) => s.date >= TODAY)).toBe(true);
+		});
+	});
+
+	it('to any day: a Thursday two weeks out, then the last day of the window', async () => {
+		await withRollback(async (db) => {
+			const owner = await readyOwner(db);
+			const programId = await built(db, owner);
+			const moved = await move(db, owner, '2026-11-19');
+			expect(moved).toMatchObject({
+				number: 2,
+				startsOn: LATER,
+				firstPlannedDay: '2026-11-19',
+				from: { startsOn: BUILT_ON, firstPlannedDay: BUILT_ON }
+			});
+
+			const v2 = await getProgramVersion(owner, programId, 2, { db });
+			expect([v2.startsOn, v2.firstPlannedDay]).toEqual([LATER, '2026-11-19']);
+			expect(sessionsOf(v2).every((s) => s.date >= '2026-11-19')).toBe(true);
+			for (const week of v2.blocks.flatMap((b) => b.weeks)) {
+				expect(mondayOf(week.startsOn)).toBe(week.startsOn);
+			}
+			expect(v2.version.summary).toBe('Moved the start to Thu 19 Nov');
+			expect(v2.decisions[0]).toMatchObject({
+				kind: 'start_moved',
+				summary: 'Moved the start to Thu 19 Nov'
+			});
+
+			// Train and Today read the new first day.
+			const week = await getTrainingWeek(owner, { date: TODAY }, {}, { db });
+			expect(week).toMatchObject({ startsOn: LATER, programStartsOn: '2026-11-19' });
+			expect((await getTodayPlan(owner, TODAY, { db }))?.startsOn).toBe('2026-11-19');
+
+			// The last day of the window is accepted too.
+			await move(db, owner, LATEST, 2);
+			const v3 = await getProgramVersion(owner, programId, 3, { db });
+			expect([v3.startsOn, v3.firstPlannedDay]).toEqual(['2026-12-28', LATEST]);
 		});
 	});
 
@@ -275,7 +317,15 @@ describe('a move refused, writing nothing', () => {
 			const owner = await readyOwner(db);
 			await built(db, owner);
 			const before = await counts(db);
-			for (const start of ['2026-11-10', '2026-10-26', '2027-03-01', 'next_monday', '']) {
+			for (const start of [
+				'2026-11-04',
+				'2027-01-01',
+				'2027-03-01',
+				'this_week',
+				'next_monday',
+				'2026-02-30',
+				''
+			]) {
 				const error = await refusal(move(db, owner, start));
 				expect(error, start).toBeInstanceOf(TrainingInputError);
 				expect((error as TrainingInputError).errors).toEqual({ start: NOT_OFFERED });
@@ -297,7 +347,7 @@ describe('a move refused, writing nothing', () => {
 			expect(await counts(db)).toEqual(before);
 			expect(await getStartMove(owner, '2026-11-10', { db })).toMatchObject({
 				refusal: 'started',
-				choices: []
+				window: null
 			});
 			// On the first planned day itself, nothing is logged yet: it still moves.
 			await move(db, owner, LATER, 1, BUILT_ON);
@@ -349,6 +399,87 @@ describe('a move refused, writing nothing', () => {
 	});
 });
 
+describe('a first program on any day', () => {
+	const THURSDAY = '2026-11-12';
+	const shown = (db: Executor, owner: string, today: string, start: string) =>
+		previewProgram(owner, { today, start }, { db });
+
+	it('previews a start on a day of the window: its week from Monday, with nothing before the day', async () => {
+		await withRollback(async (db) => {
+			const owner = await readyOwner(db);
+			const preview = await shown(db, owner, TODAY, THURSDAY);
+			expect([preview.startsOn, preview.firstPlannedDay]).toEqual(['2026-11-09', THURSDAY]);
+			expect(preview.week.days.filter((d) => d.date < THURSDAY).flatMap((d) => d.sessions)).toEqual(
+				[]
+			);
+		});
+	});
+
+	it('builds the previewed day: version 1 keeps the same dates', async () => {
+		await withRollback(async (db) => {
+			const owner = await readyOwner(db);
+			const preview = await shown(db, owner, TODAY, THURSDAY);
+			await buildProgram(
+				owner,
+				{
+					today: TODAY,
+					start: THURSDAY,
+					startsOn: preview.startsOn,
+					firstPlannedDay: preview.firstPlannedDay,
+					fingerprint: preview.fingerprint,
+					digest: preview.digest
+				},
+				{ db }
+			);
+			expect(await getCurrentProgram(owner, TODAY, { db })).toMatchObject({
+				startsOn: '2026-11-09',
+				firstPlannedDay: THURSDAY
+			});
+		});
+	});
+
+	it('refuses a preview outside the window, naming the field', async () => {
+		await withRollback(async (db) => {
+			const owner = await readyOwner(db);
+			for (const start of ['2026-11-04', '2027-01-01']) {
+				const error = await refusal(shown(db, owner, TODAY, start));
+				expect(error, start).toBeInstanceOf(TrainingInputError);
+				expect((error as TrainingInputError).errors, start).toEqual({ start: PICK_A_DAY });
+			}
+		});
+	});
+
+	it('refuses a build whose dates the preview did not give, or whose day has passed, writing nothing', async () => {
+		await withRollback(async (db) => {
+			const owner = await readyOwner(db);
+			const preview = await shown(db, owner, TODAY, THURSDAY);
+			const confirm = {
+				today: TODAY,
+				start: THURSDAY,
+				startsOn: preview.startsOn,
+				firstPlannedDay: preview.firstPlannedDay,
+				fingerprint: preview.fingerprint,
+				digest: preview.digest
+			};
+			const before = await counts(db);
+
+			const other = await refusal(
+				buildProgram(owner, { ...confirm, firstPlannedDay: '2026-11-13' }, { db })
+			);
+			expect(other).toBeInstanceOf(TrainingInputError);
+			expect(Object.keys((other as TrainingInputError).errors)).toEqual(['firstPlannedDay']);
+
+			const passed = await refusal(
+				buildProgram(owner, { ...confirm, today: '2026-11-13' }, { db })
+			);
+			expect(passed).toBeInstanceOf(ProgrammingConflictError);
+			expect((passed as ProgrammingConflictError).reason).toBe('start_date');
+
+			expect(await counts(db)).toEqual(before);
+		});
+	});
+});
+
 describe('the Start date screen', () => {
 	const load = (db: Executor, owner: string) =>
 		loadStart(owner, { now: NOW, origin: ORIGIN }, { db, errorsDb: db });
@@ -385,29 +516,20 @@ describe('the Start date screen', () => {
 		});
 	});
 
-	it('offers this week and the next Mondays in words, the current one marked', async () => {
+	it('offers any day from today to eight weeks ahead, the current start filled in, and names the events in the window', async () => {
 		await withRollback(async (db) => {
 			const owner = await readyOwner(db, { event: '2026-11-21' });
 			await built(db, owner);
-			const data = await load(db, owner);
-			expect(data).toMatchObject({
+			expect(await load(db, owner)).toEqual({
 				state: 'open',
 				version: 1,
 				current: 'Week 1 starts Monday 9 November.',
-				chosen: BUILT_ON
+				day: BUILT_ON,
+				min: TODAY,
+				max: LATEST,
+				hint: 'Any day from today to Thu 31 Dec. Week 1 runs to that Sunday, so a later day plans less of it.',
+				events: ['Meet is Sat 21 Nov: a start after it no longer plans for it.']
 			});
-			if (data.state !== 'open') throw new Error('expected the choices');
-			expect(data.options.slice(0, 4)).toEqual([
-				{ value: 'this_week', label: 'This week', hint: 'From today, Thu 5 Nov' },
-				{ value: BUILT_ON, label: 'Mon 9 Nov', hint: 'Your current start' },
-				{ value: LATER, label: 'Mon 16 Nov' },
-				{
-					value: '2026-11-23',
-					label: 'Mon 23 Nov',
-					hint: 'After Meet (Sat 21 Nov): no longer planned for'
-				}
-			]);
-			expect(data.options).toHaveLength(9);
 		});
 	});
 
@@ -435,12 +557,21 @@ describe('the Start date screen', () => {
 			]);
 			const unknown = await actions.move({
 				locals: locals(owner),
-				request: post({ version: '2', start: '2026-11-17' })
+				request: post({ version: '2', start: '2027-01-04' })
 			});
 			expect(isActionFailure(unknown) && [unknown.status, unknown.data]).toEqual([
 				400,
 				{ errors: { start: NOT_OFFERED } }
 			]);
+			const tuesday = await actions.move({
+				locals: locals(owner),
+				request: post({ version: '2', start: '2026-11-17' })
+			});
+			expect(tuesday).toEqual({
+				words: 'Start moved to Tue 17 Nov · version 3',
+				href: '/train',
+				firstPlannedDay: '2026-11-17'
+			});
 		});
 	});
 
