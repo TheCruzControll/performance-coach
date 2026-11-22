@@ -18,16 +18,18 @@ here.
 
 | Stage                                  | At once | What limits it                                        |
 | -------------------------------------- | ------- | ----------------------------------------------------- |
-| Local: spec, build, review, fix rounds | 3 rows  | Your attention and context, not the machine           |
-| Waiting on CI                          | 6 rows  | GitHub's runner queue                                  |
+| Local: spec, build, review, fix rounds | 5 rows  | Your attention and context, not the machine           |
+| Waiting on CI                          | 10 rows | GitHub's runner queue                                  |
 | Merge and deploy                       | 1 train | Each merge is a production deploy that must be checked |
 
 Agents are light: the model runs in the cloud. What is heavy is a full suite, a build or
-Playwright, and none of those run on this machine (see `feature-slice`). So three rows in the
-local stage means up to three background agents and three worktrees, plus narrow checks.
+Playwright, and none of those run on this machine (see `feature-slice`). So five rows in the
+local stage means up to five background agents and five worktrees, plus narrow checks. A pull
+request's CI run is 8 jobs (`scripts/ci-legs.ts`) against about 20 that GitHub runs at once, so
+two or three runs make progress together.
 
 These numbers are the settings. Lower them if agents start failing, if CI runs queue for more than
-a few minutes, or if you lose track of a row. Raise the local number only after a run where three
+a few minutes, or if you lose track of a row. Raise the local number only after a run where five
 rows went through cleanly.
 
 ## Where state lives
@@ -71,6 +73,11 @@ request when the merges changed what it says.
 - Look for a train in flight: the state file, and on GitHub
   `gh pr list --state open --limit 100 --json headRefName,number --jq '.[] | select(.headRefName | startswith("train/"))'`.
   If that lists one, a train is in flight.
+- Check `main`'s newest finished nightly run (`gh run list --workflow CI --event schedule
+  --status completed --limit 1`). If it failed, start `ci-triage` on it. Until a later full run
+  of `main` passes (the next nightly, or one started with `gh workflow run CI --ref main`), the
+  only train to build is one holding the row that fixes the failure: a train on a broken `main`
+  fails for a reason none of its rows caused.
 - Check production: the newest `Post-deploy smoke` run should be complete and passing
   (`gh run list --workflow "Post-deploy smoke" --limit 3`). If the last one failed, stop here and
   tell the owner. Nothing merges on top of a broken production.
@@ -80,18 +87,20 @@ request when the merges changed what it says.
 A merge needs CI to have passed on the tree that lands, and a full run is 28 jobs. Merging rows
 one by one costs a rebase and a full run per row. So rows merge together: a train is one branch
 that holds several ready rows on top of the current `main`, tested once and merged once. One
-train is one CI run, one deploy and one post-deploy check, for up to four rows.
+train is one CI run, one deploy and one post-deploy check, for up to six rows.
 
 First read each waiting row's checks (`gh pr checks <number>`).
 
 - **Still running:** leave it.
 - **A check failed:** start a `ci-triage` agent for it in the background (`feature-slice` step 7)
   and move on. A `REAL` verdict turns into a fix round, which needs a local slot.
-- **All green:** the row is ready to board when all of these hold, and then its head
+- **All green, or only `PRE-EXISTING` failures:** the row is ready to board when all of these hold, and then its head
   (`gh pr view <number> --json headRefOid`) is its boarding SHA, recorded in the state file:
   - its head is the commit its last review approved, or a clean rebase or merge of `main` into it
     with no other change;
-  - its checks passed on that head;
+  - its checks passed on that head; or every failed check on that head has a `ci-triage` verdict
+    of `PRE-EXISTING` (none `REAL`, `FLAKE` or `UNCLEAR`), and each is fixed by a row on the same
+    train or already on `main`. The train's run then proves both;
   - its pull request's base is `main`. A stacked row (base is another row's branch) does not
     board: once the row beneath it has merged, retarget it (`gh pr edit <number> --base main`),
     bring it up to date, and review the result before it boards;
@@ -102,7 +111,7 @@ First read each waiting row's checks (`gh pr checks <number>`).
 When no train is in flight (step 1 found none) and at least one row is ready:
 
 1. **Build it.** In a worktree of its own (`../pc-wt/loop-train`), create `train/<date>-<n>` from
-   `origin/main`. Merge the ready rows into it in queue order, at most four, each by its boarding
+   `origin/main`. Merge the ready rows into it in queue order, at most six, each by its boarding
    SHA: `git merge --no-ff <boarding sha> -m "Merge <PR title> (#<number>)"`. After each merge,
    `git diff --name-only HEAD^1 HEAD` must list only files in `gh pr diff <number> --name-only`.
    If a merge conflicts, or the diff lists more, undo it (`git merge --abort` or
@@ -152,7 +161,7 @@ to replace. Never cancel a run on `main`.
 
 ### 3. Fill the local slots
 
-While fewer than three rows are in the local stage and fewer than six are waiting on CI, take the
+While fewer than five rows are in the local stage and fewer than ten are waiting on CI, take the
 next row, top to bottom, that you can act on:
 
 - `pr-open`: an existing pull request to finish.
@@ -247,7 +256,7 @@ minute: what merged, what was parked and why, and what is waiting on them.
 ## What this skill never does
 
 - Merge outside `feature-slice`'s gate, push to `main`, or force-push `main`.
-- Merge two trains without confirming the first one's deploy in between, or put more than four
+- Merge two trains without confirming the first one's deploy in between, or put more than six
   rows on one train.
 - Resolve a conflict on a train, or push to a branch that is on a train.
 - Roll back production, change environment variables, or touch Neon or Vercel settings.

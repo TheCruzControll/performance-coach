@@ -19,8 +19,9 @@ The path uses plain `Agent` calls, so it works in any Claude Code harness.
   nowhere else. Never push to `main` directly, and never force-push `main`. A pull request branch
   you have rebased is pushed with `git push --force-with-lease`, never plain `--force`.
 - **Heavy work runs on GitHub, not here.** This machine has 8 GB of memory. CI runs type-check,
-  lint, the unit and integration suites, both builds, the budgets, every Playwright journey on
-  Chromium and WebKit, and Lighthouse, on every pull request that changes more than docs. Do not run `pnpm check`,
+  lint, the unit and integration suites, both builds, the budgets and the PRD journeys on
+  Chromium on every pull request that changes more than docs; the rest of the e2e suite and the
+  journeys on WebKit run nightly (`scripts/ci-legs.ts`). Performance is not tested. Do not run `pnpm check`,
   `pnpm lint`, `pnpm test:unit`, `pnpm test:integration`, `pnpm build` or `pnpm test:e2e`
   locally. Run narrow checks on the files in hand, push, and let CI be the judge.
 - **One worktree per slice.** Several slices can be in progress at once under `run-queue`, each in
@@ -151,17 +152,17 @@ grep "<journey file>"`).
 
 Under `run-queue`, rows merge as a train (that skill's step 2). A row boards only when every line
 below that concerns the row holds for its boarding head: its review, its queue status, the
-stop-for-the-owner cases and `plan/queue.md`. Its own checks must be green, but its branch need
+stop-for-the-owner cases and `plan/queue.md`. Its own checks must be green, or fail only where `run-queue` step 2 allows, but its branch need
 not contain `main`. The lines about checks, `main`, the proof and deploys are then checked on the
 train's branch and its run. Run alone, the whole gate applies to the slice's own pull request.
 
 Merge only when every line below is true on the PR's latest head. If any is false, do not merge;
 fix it or park the slice.
 
-- All five required checks are green on the latest head, and none was skipped or disabled to get
+- All four required checks are green on the latest head, and none was skipped or disabled to get
   there. The one exception is a light run: when the `Scope of the run` job answered `light` (the
-  change touches only docs, the plan, agent tooling, root Markdown or `.env.example`), the integration tests, the e2e legs and
-  Lighthouse are skipped by design, and there is no journey to confirm in step 8.
+  change touches only docs, the plan, agent tooling, root Markdown or `.env.example`), the integration tests and the e2e legs
+  are skipped by design, and there is no journey to confirm in step 8.
 - The checks ran on the `main` this would land on. After `git fetch origin`, the branch must
   contain the tip of `main` (`git merge-base --is-ancestor origin/main HEAD` succeeds in the
   slice's worktree). If it does not, rebase onto `origin/main`, push with `--force-with-lease`,
