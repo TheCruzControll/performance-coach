@@ -7,6 +7,8 @@
 # The first job decides the run's scope (scripts/ci-scope.ts). A change to docs, the plan or agent
 # tooling only, and a merge to main of a tree its pull request already tested, are `light`: they
 # skip the integration tests and the e2e legs, which could not find anything.
+# Because most runs on main are light, a nightly run tests main in full, so a failure that depends
+# on the date or on two merges together is caught within a day.
 name: CI
 
 on:
@@ -14,9 +16,11 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+  schedule:
+    - cron: '17 10 * * *'
 
 # A new push to a pull request cancels that pull request's older run. Every other run (each merge
-# to main, a manual run) has a group of its own, so it always finishes. One group for all of main
+# to main, a manual or nightly run) has a group of its own, so it always finishes. One group for all of main
 # would leave merges untested: cancel-in-progress stops the running one, and even without it a
 # newer run replaces the one still waiting.
 concurrency:

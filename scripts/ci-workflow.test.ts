@@ -141,12 +141,22 @@ function run(event: string, ref: string, runId: string, headRef = ''): Context {
 const merge = (runId: string) => concurrencyOf(run('push', 'refs/heads/main', runId));
 const manualRun = (runId: string) =>
 	concurrencyOf(run('workflow_dispatch', 'refs/heads/main', runId));
+const nightlyRun = (runId: string) => concurrencyOf(run('schedule', 'refs/heads/main', runId));
 const pullRequestPush = (pr: number, runId: string) =>
 	concurrencyOf(run('pull_request', `refs/pull/${pr}/merge`, runId, `branch-${pr}`));
 
 // GitHub runs one run per concurrency group and keeps one more waiting. A newer run replaces the
 // waiting one whatever cancel-in-progress says, and with it also cancels the running one.
 describe('CI concurrency', () => {
+	it('runs main nightly in a group of its own, never cancelled by another run', () => {
+		expect(under(ci, 'on').map((line) => line.text)).toContain('schedule:');
+		expect(nightlyRun('1')).toEqual({
+			group: expect.stringContaining('-1'),
+			cancelInProgress: false
+		});
+		expect(nightlyRun('1').group).not.toBe(nightlyRun('2').group);
+	});
+
 	it('gives each merge to main and each manual run a group of its own', () => {
 		const runs = [merge('101'), merge('102'), merge('103'), manualRun('104')];
 		const groups = new Set(runs.map((r) => r.group));

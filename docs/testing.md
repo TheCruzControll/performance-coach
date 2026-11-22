@@ -1388,7 +1388,8 @@ The run's first job, `Scope of the run`, runs `scripts/ci-scope.ts`. A change th
 `docs/`, `plan/`, agent tooling (`.claude/`, `.agents/`, `.codex/`, `.pi/`), root Markdown or
 `.env.example`, and a merge to `main`, onto the previous tip, whose tree its pull request already
 tested, is a light run: it skips the integration tests and the e2e legs. Lint, type-check, unit tests
-(which include the docs guards) and the build always run.
+(which include the docs guards) and the build always run. A nightly scheduled run tests `main`'s
+full set, since most runs on `main` are light.
 
 `.github/workflows/post-deploy-smoke.yml` checks production from outside after every production
 deploy (health with the database up, the sign-in screen, deny by default, security headers on
