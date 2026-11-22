@@ -1267,11 +1267,18 @@ key. No key exists in CI today.
 
 `.github/workflows/ci.yml` runs lint, type-check, the migration drift check, unit + integration
 (postgres:18 service), both builds + budgets, Playwright (Chromium + WebKit) and an asserted
-Lighthouse run on every PR and push to `main`. After the mobile run, `pnpm lighthouse --desktop`
+Lighthouse run on every full run of a PR or a push to `main` (a light run skips some; see below). After the mobile run, `pnpm lighthouse --desktop`
 audits the same screens with Lighthouse's desktop preset (desktop throttling, no CPU slowdown) at
 1440 × 900 and 1x (`scripts/lib/lighthouse-config.ts`), writes to `lighthouse-reports/desktop` and
 applies the same `--assert` thresholds, as a step that never fails the job; its table is in the
 step summary (docs/performance.md, "Lighthouse (desktop)").
+
+The run's first job, `Scope of the run`, runs `scripts/ci-scope.ts`. A change that touches only
+`docs/`, `plan/`, agent tooling (`.claude/`, `.agents/`, `.codex/`, `.pi/`), root Markdown or
+`.env.example`, and a
+merge to `main` whose tree its pull request already tested, is a light run: it skips the
+integration tests, the e2e legs and Lighthouse. Lint, type-check, unit tests (which include the docs
+guards) and the build always run.
 
 `.github/workflows/post-deploy-smoke.yml` checks production from outside after every production
 deploy (health with the database up, the sign-in screen, deny by default, security headers on
