@@ -350,6 +350,11 @@ Lighthouse) can enable them.
   request's token appears there; it is useless once setup has completed, also after an owner
   reset (a used token is refused for good). Remove `OWNER_SETUP_TOKEN_HASH` after setup. The app's
   own logs record paths without query strings.
+- Logs and `app_errors` pass through `src/lib/server/observability/redact.ts`. It masks
+  credential-named fields, Postgres URL passwords, Bearer tokens, `sk-ant-`, `re_`,
+  `vercel_blob_rw_`, `npg_` and PEM keys, the exact values of the server's secret variables,
+  email addresses and URL query strings, and caps strings at 2 KB (stacks at 8 KB). Client error
+  and vitals paths are stored without their query strings.
 - `.env` is git-ignored; nothing secret is committed.
 
 ## What is and isn't protected
@@ -436,39 +441,39 @@ and ungrounded facts and metrics become 'Not checked against your data'. Each in
 **Logs.** Coach logs carry ids, counts, token usage and timings, not message text. A failed model
 call's `errorMessage` (`src/lib/server/agent/orchestrator.ts`) carries the provider's error, which
 for a refused request (`bad_request`) includes the API's reason. A failure's `err`, logged through
-`serializeError`, keeps its message (see Residual risks).
+`serializeError`, keeps its message after redaction (see Residual risks). The redactor walks plain objects and arrays only, so a class instance other than those is logged as `JSON.stringify` writes it, unredacted.
 
 **Residual risks.**
 
 - The model can still be talked into a poor recommendation by the owner's own words; proposals
   and the owner's confirmation are the control, not the prompt.
-- A logged error message may quote what a service refused (for example an exercise name). It
-  never holds the key, but it is not scrubbed of the owner's words.
+- A logged error message may quote what a service refused. Secrets, tokens and email addresses
+  are masked (see Secrets), but other free text a message quotes is not detected. A token in a relative path inside a message (`/recover?token=…`) is not masked, while stored `path` fields lose their query string.
 - The live suite, including its prompt-injection and refusal conversations, has not been run
   against the real model (the owner's go-ahead of 2026-11-10 replaced it; #449).
 - The kill switch takes a redeploy; there is no runtime toggle.
 
 ## Self-review (OWASP ASVS 4.0, level 2, the relevant chapters)
 
-| ASVS                                         | Status  | Evidence                                                                                             |
-| -------------------------------------------- | ------- | ---------------------------------------------------------------------------------------------------- |
-| V2.1 Password security                       | N/A     | No passwords exist.                                                                                  |
-| V2.2 General authenticator (anti-automation) | Met     | DB rate limits on every auth endpoint (`rate-limit.test.ts`); failures audited.                      |
-| V2.5 Credential recovery                     | Met     | Single-use 80-bit codes, hashed, burned atomically; recovery forces a new passkey; regeneration.     |
-| V2.6 Look-up secrets                         | Met     | Codes random (CSPRNG), single use, stored hashed (SHA-256 is adequate at 80 bits of entropy).        |
-| V2.7/2.8 Out-of-band / OTP                   | N/A     | Not used.                                                                                            |
-| V2.9 Cryptographic authenticators            | Met     | WebAuthn via SimpleWebAuthn; UV required; counters enforced; origin and RP ID verified.              |
-| V3.1/3.2 Session binding & generation        | Met     | 256-bit CSPRNG tokens; new token on authentication; hash at rest.                                    |
-| V3.3 Session termination                     | Met     | Sign-out, revoke one / all others; idle 30 d + absolute 90 d; revocation immediate (tests).          |
-| V3.4 Cookie-based sessions                   | Met     | `__Host-` prefix, Secure, HttpOnly, SameSite=Lax, Path=/ (unit + e2e).                               |
-| V3.5 Token-based sessions                    | N/A     | Cookie sessions only.                                                                                |
-| V3.7 Defenses against session exploits       | Met     | Step-up: a recent passkey assertion (5 min) before passkey, recovery-code or device changes (tests). |
-| V4.1/4.2 Access control                      | Met     | Deny by default with a typed, tested route map; single owner, no IDOR surface.                       |
-| V4.2.2 CSRF                                  | Met     | Origin check on all unsafe methods + SvelteKit form check + SameSite (e2e).                          |
-| V7 Logging                                   | Met     | Audit log for auth events; no secrets or query strings in app logs.                                  |
-| V8.3 Sensitive private data                  | Partial | Pages `private, no-cache`; sign-out clears device data, unsynced sets if agreed. Neon encrypts DB.   |
-| V13 API                                      | Met     | JSON endpoints validate input (zod), cap body size, answer `no-store`.                               |
-| V14.4 HTTP security headers                  | Met     | CSP, HSTS, nosniff, frame-ancestors none, referrer policy (e2e).                                     |
+| ASVS                                         | Status  | Evidence                                                                                                                           |
+| -------------------------------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| V2.1 Password security                       | N/A     | No passwords exist.                                                                                                                |
+| V2.2 General authenticator (anti-automation) | Met     | DB rate limits on every auth endpoint (`rate-limit.test.ts`); failures audited.                                                    |
+| V2.5 Credential recovery                     | Met     | Single-use 80-bit codes, hashed, burned atomically; recovery forces a new passkey; regeneration.                                   |
+| V2.6 Look-up secrets                         | Met     | Codes random (CSPRNG), single use, stored hashed (SHA-256 is adequate at 80 bits of entropy).                                      |
+| V2.7/2.8 Out-of-band / OTP                   | N/A     | Not used.                                                                                                                          |
+| V2.9 Cryptographic authenticators            | Met     | WebAuthn via SimpleWebAuthn; UV required; counters enforced; origin and RP ID verified.                                            |
+| V3.1/3.2 Session binding & generation        | Met     | 256-bit CSPRNG tokens; new token on authentication; hash at rest.                                                                  |
+| V3.3 Session termination                     | Met     | Sign-out, revoke one / all others; idle 30 d + absolute 90 d; revocation immediate (tests).                                        |
+| V3.4 Cookie-based sessions                   | Met     | `__Host-` prefix, Secure, HttpOnly, SameSite=Lax, Path=/ (unit + e2e).                                                             |
+| V3.5 Token-based sessions                    | N/A     | Cookie sessions only.                                                                                                              |
+| V3.7 Defenses against session exploits       | Met     | Step-up: a recent passkey assertion (5 min) before passkey, recovery-code or device changes (tests).                               |
+| V4.1/4.2 Access control                      | Met     | Deny by default with a typed, tested route map; single owner, no IDOR surface.                                                     |
+| V4.2.2 CSRF                                  | Met     | Origin check on all unsafe methods + SvelteKit form check + SameSite (e2e).                                                        |
+| V7 Logging                                   | Met     | Audit log for auth events; no secrets or query strings in app logs.                                                                |
+| V8.3 Sensitive private data                  | Partial | Pages `private, no-cache`, `/api/*` `no-store` by default; sign-out clears device data, unsynced sets if agreed. Neon encrypts DB. |
+| V13 API                                      | Met     | JSON endpoints validate input (zod), cap body size, answer `no-store`.                                                             |
+| V14.4 HTTP security headers                  | Met     | CSP, HSTS, nosniff, frame-ancestors none, referrer and permissions policies, COOP, CORP same-origin (e2e, unit).                   |
 
 Open items: WebKit runs only on the test-minted session in e2e, so passkey ceremonies on iOS
 Safari (sign-in, setup, step-up) are verified on a real device (docs/testing.md checklist) rather

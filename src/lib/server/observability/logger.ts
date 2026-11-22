@@ -3,8 +3,10 @@
  *
  * Vercel (and any log drain) ingests stdout line-by-line, so JSON lines are searchable without
  * a logging SDK. The request context (request id) is attached automatically when available.
+ * Every entry passes through `redactValue` (`./redact.ts`) before it is written.
  */
 import { currentContext } from './context.ts';
+import { redactText, redactValue } from './redact.ts';
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 type Threshold = LogLevel | 'silent';
@@ -133,16 +135,28 @@ export function serializeError(error: unknown): Record<string, unknown> {
 
 function write(level: LogLevel, msg: string, fields?: Record<string, unknown>): void {
 	if (ORDER[level] < ORDER[threshold]) return;
-	const ctx = currentContext();
-	const entry: Record<string, unknown> = {
-		level,
-		time: new Date().toISOString(),
-		msg,
-		...(ctx ? { requestId: ctx.requestId } : {}),
-		...fields
-	};
-	if (entry.err !== undefined) entry.err = serializeError(entry.err);
-	const line = JSON.stringify(entry);
+	let line: string;
+	try {
+		// Inside the try: a field whose getter throws fails at the spread below, before redaction.
+		const ctx = currentContext();
+		const entry: Record<string, unknown> = {
+			level,
+			time: new Date().toISOString(),
+			msg,
+			...(ctx ? { requestId: ctx.requestId } : {}),
+			...fields
+		};
+		if (entry.err !== undefined) entry.err = serializeError(entry.err);
+		line = JSON.stringify(redactValue(entry));
+	} catch {
+		// The logger never throws: the line keeps its level, time and message, and says why it is short.
+		line = JSON.stringify({
+			level,
+			time: new Date().toISOString(),
+			msg: redactText(String(msg)),
+			error: '[unserializable]'
+		});
+	}
 	if (level === 'error' || level === 'warn') console.error(line);
 	else console.log(line);
 }
