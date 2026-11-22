@@ -17,6 +17,7 @@ import {
 	JUST_SWAP_REASON,
 	QUICK_ACTIONS,
 	effectsOf,
+	lighterKinds,
 	painChoices,
 	rankFor,
 	unfinishedSets
@@ -742,5 +743,23 @@ describe('the structure reducers', () => {
 			}
 		}
 		expect(checked).toBeGreaterThan(200);
+	});
+});
+
+describe('lighterKinds', () => {
+	it('steps a Muay Thai format down: sparring to pad work, then technique; pad work to technique', () => {
+		expect(lighterKinds('sparring', 'muay_thai')).toEqual(['pad_work', 'technical']);
+		expect(lighterKinds('pad_work', 'muay_thai')).toEqual(['technical']);
+	});
+
+	it('lets a commitment class drop to technique, and no other kind is lighter', () => {
+		expect(lighterKinds('class', 'muay_thai')).toEqual(['technical']);
+		expect(lighterKinds('technical', 'muay_thai')).toEqual([]);
+		expect(lighterKinds('conditioning', 'muay_thai')).toEqual([]);
+	});
+
+	it('offers nothing outside Muay Thai, whatever the kind', () => {
+		expect(lighterKinds('class', 'custom')).toEqual([]);
+		expect(lighterKinds('sparring', 'running')).toEqual([]);
 	});
 });

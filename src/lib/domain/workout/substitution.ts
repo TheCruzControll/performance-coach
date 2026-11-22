@@ -13,9 +13,11 @@
  *   kit's gentler options for the chosen area, then End the workout here when it is severe. In a
  *   run or a class it offers End the workout here alone (SESSION_PAIN_CHOICES).
  * - Skip exercise: a skipped set for each planned set not done yet.
+ * - Swap in a run: the rest of it on a zone 2 bike (SWAP_BIKE). Swap in a class: a lighter Muay
+ *   Thai format (lighterKinds).
  */
-import type { BodyArea, Equipment, Severity } from '../profile/catalog.ts';
-import type { SubstitutionReason } from '../training/vocabulary.ts';
+import type { BodyArea, Discipline, Equipment, Severity } from '../profile/catalog.ts';
+import type { OtherSessionKind, SessionType, SubstitutionReason } from '../training/vocabulary.ts';
 import type { MutationType, PainAction } from './mutations.ts';
 import type { KitAlternative, SlotView } from './types.ts';
 
@@ -183,6 +185,41 @@ export function painChoices(
  * offered (PRD §6).
  */
 export const SESSION_PAIN_CHOICES: readonly PainChoice[] = [{ action: 'ended_workout' }];
+
+/**
+ * Swap in a run: the rest of it as the generator's zone 2 bike session (domain/programming
+ * cross-training.ts, ZONE2_BIKE), which programming/swap-parity.test.ts holds this to. Its
+ * planned minutes are the run's unlogged segments', fallbackMinutes when they say none.
+ */
+export const SWAP_BIKE = {
+	title: 'Zone 2 bike',
+	sessionType: 'conditioning',
+	kind: 'conditioning',
+	fallbackMinutes: 20
+} as const satisfies {
+	title: string;
+	sessionType: SessionType;
+	kind: OtherSessionKind;
+	fallbackMinutes: number;
+};
+
+/**
+ * Swap in a class: the Muay Thai formats lighter than each, lightest last (MUAY_THAI's RPEs:
+ * sparring 8, pad work 7, technique 6; swap-parity.test.ts holds it to them). A commitment class
+ * may drop to technique. Any other kind has none.
+ */
+export const LIGHTER_KINDS: Readonly<
+	Partial<Record<OtherSessionKind, readonly OtherSessionKind[]>>
+> = {
+	sparring: ['pad_work', 'technical'],
+	pad_work: ['technical'],
+	class: ['technical']
+};
+
+/** The lighter class types Swap offers: Muay Thai's only; none for any other discipline. */
+export function lighterKinds(kind: OtherSessionKind, discipline: Discipline): OtherSessionKind[] {
+	return discipline === 'muay_thai' ? [...(LIGHTER_KINDS[kind] ?? [])] : [];
+}
 
 /** The pain report actions after which nothing more is done in the slot: it reads Stopped. */
 export const STOPPING_PAIN_ACTIONS: readonly PainAction[] = ['stopped', 'ended_workout'];

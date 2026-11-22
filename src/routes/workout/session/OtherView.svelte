@@ -10,7 +10,9 @@
   - A value Save cannot send is marked at its field; a change this device could not save says so,
     with Retry.
   - Options opens the session's quick actions (SessionActionsSheet.svelte, loaded on its first
-    intent): This hurts, which ends the session.
+    intent): This hurts, which ends the session, and Swap to a lighter session, where Muay Thai
+    has a lighter format: the type it picks sets the Type field here (a draft, as any change),
+    and Save sends it.
   One column at every width: from 1024 px the Shell centres it at the readable width. Every control
   has hover and :focus-visible states (the primitives').
 -->
@@ -178,6 +180,9 @@
 		store={active.store}
 		{load}
 		skipTo={null}
+		minutesLeft={null}
+		sessionKind={values.kind}
+		onlighter={(kind) => edit({ kind })}
 		onfinish={() => (active.finishing = true)}
 	/>
 {/if}

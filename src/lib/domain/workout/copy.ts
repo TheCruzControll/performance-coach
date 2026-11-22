@@ -33,7 +33,22 @@ export const QUICK_ACTION_COPY: Record<QuickAction, ChoiceWords> = {
 export const SESSION_ACTION_COPY = {
 	title: { run: 'Run options', other: 'Session options' },
 	pain: { label: 'This hurts', detail: 'Stop here and save what you did' },
-	skip: { label: 'Skip this segment', detail: 'Move on to the next one still to run' }
+	skip: { label: 'Skip this segment', detail: 'Move on to the next one still to run' },
+	swap: {
+		run: {
+			label: 'Swap to a zone 2 bike',
+			detail: 'Ride the rest easy; what you ran stays logged',
+			note: 'The run ends here and a bike session starts. Ride at a pace you could talk at.'
+		},
+		other: {
+			label: 'Swap to a lighter session',
+			detail: 'An easier format for today',
+			note: 'Just for today: your plan stays the same.'
+		},
+		/** The bike option's name; the sheet adds its minutes: 'Zone 2 bike · 25 min'. */
+		bike: 'Zone 2 bike',
+		back: 'Back'
+	}
 };
 
 /** The alternatives list, by the action that opened it, and its state when nothing fits. */
