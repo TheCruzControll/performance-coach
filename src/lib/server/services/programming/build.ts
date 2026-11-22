@@ -19,7 +19,6 @@ import { daysBetween, mondayOf } from '../../../domain/calendar';
 import { DecisionLog } from '../../../domain/programming/decisions';
 import { GENERATOR_ID } from '../../../domain/programming/index';
 import { latestStart } from '../../../domain/programming/start-move';
-import { PARTIAL_FIRST_WEEK } from '../../../domain/training/schemas';
 import type { FieldErrors } from '../../../domain/validation';
 import { createProgramFromPlan, type CreatedProgram } from '../programs/store';
 import { ConflictError, parseWith, resolveDeps, TrainingInputError } from '../training/shared';
@@ -64,7 +63,6 @@ function dateErrors({ today, start, startsOn, firstPlannedDay }: BuildRequest): 
 	else if (!named && start > latestStart(today)) errors.start = PICK_A_DAY;
 	// A day before today is not an input error: buildProgram's `firstPlannedDay < today` check makes
 	// it ProgrammingConflictError('start_date'), as for a 'This week' build sent after midnight.
-	else if (!named && !PARTIAL_FIRST_WEEK && mondayOf(start) !== start) errors.start = PICK_A_DAY;
 	else if (mondayOf(startsOn) !== startsOn) errors.startsOn = 'Start on a Monday';
 	else if (offset < 0 || offset > 6 || (start === 'next_monday' && offset !== 0)) {
 		errors.firstPlannedDay = 'Not a day of week 1';

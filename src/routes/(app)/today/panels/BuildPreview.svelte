@@ -166,7 +166,12 @@
 			day = isDay(start) ? start : '';
 			phase = 'ready';
 		} else if (outcome.type === 'redirect') await applyAction(outcome);
-		else phase = 'failed';
+		else {
+			// A refused day (one that went past while the page stayed open) is dropped, so Try
+			// again previews the default start instead of repeating the refusal.
+			if (isDay(start)) start = null;
+			phase = 'failed';
+		}
 	}
 
 	/** Start week 1: store the previewed program, then open Train. */
