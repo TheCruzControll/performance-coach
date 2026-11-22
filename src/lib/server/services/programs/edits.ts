@@ -8,11 +8,15 @@
  * - Only a session dated today or later can be edited, and only to a day from today on
  *   (reachableDates). A completed or skipped session cannot be moved or skipped. Each refusal is
  *   a field error, at `sessionLineage` or `toDate`.
- * - A move that breaks an interference rule goes ahead: BLOCKS_EDIT in domain/programming/
- *   interference.ts blocks no severity by default. The rules the move newly breaks are returned
- *   and written into the decision's 'why'; checkMove gives the same warnings before saving.
- * - getMoveTargets lists the days a move can reach, each with what is planned there, so the Move
- *   sheet offers only those, and none when no day is left.
+ * - A move that breaks a rule goes ahead: BLOCKS_EDIT in domain/programming/interference.ts
+ *   blocks no severity by default. The rules the move newly breaks are returned and written into
+ *   the decision's 'why', each with its reason; checkMove gives the same warnings before saving.
+ * - A move is judged by evaluateWeek with the week's context (services/periodisation/context.ts):
+ *   M3's rules and M7's, on what the owner actually did. The context is read once per request or
+ *   batch (MoveDeps.contexts), before the revision's transaction opens, and in a savepoint inside
+ *   a caller's; when it cannot be read (recorded), M3's checkWeek alone judges the move.
+ * - getMoveTargets lists the days a move can reach, each with what is planned there and the rule
+ *   a move there would break, so the Move sheet offers only those, and none when no day is left.
  * - A swap offers only the exercise's alternatives (./alternatives.ts); 'never again' also saves
  *   a dislike in the same transaction. An adjustment is checked whole with its prescription's
  *   schema, and the session's estimate and load are worked out again.
@@ -29,13 +33,15 @@ import { addDays, parseIsoDate, weekdayOf, type IsoDate } from '../../../domain/
 import { TIMES_OF_DAY, WEEKDAY_INFO, type TimeOfDay } from '../../../domain/profile/catalog';
 import { render, TEMPLATES } from '../../../domain/programming/decisions';
 import { NO_REASON } from '../../../domain/programming/decisions/templates/edits';
+import type { Finding } from '../../../domain/programming/evaluate/types';
+import { evaluateWeek } from '../../../domain/programming/evaluate/week';
 import {
 	BLOCKS_EDIT,
-	checkWeek,
 	type InterferenceRule,
-	type Severity,
-	type Violation
+	type Severity
 } from '../../../domain/programming/interference';
+import { loadModel } from '../../../domain/programming/load/fatigue';
+import type { ConcurrentRule } from '../../../domain/programming/rules/concurrent';
 import { toExerciseKey } from '../../../domain/programming/input';
 import { ASSUMED_EASY_PACE } from '../../../domain/programming/rules/running';
 import { estimateMinutes } from '../../../domain/programming/timefit';
@@ -76,6 +82,13 @@ import type { Executor } from '../../db/types';
 import { measure } from '../../observability/timing';
 import { getExercisesByIds, type ExerciseDef } from '../exercises/index';
 import { isUuid } from '../ids';
+import {
+	createContextCache,
+	weekContextOf,
+	type ContextCache,
+	type EvaluationContext
+} from '../periodisation/context';
+import { clearingMoves } from '../periodisation/evaluate';
 import { recordExercisePreference } from '../training/preferences';
 import {
 	parseWith,
@@ -119,21 +132,50 @@ export interface EditAt {
 	today: IsoDate;
 }
 
+/** What the Move sheet says on the day the scheduler (repairWeek) would move the session to. */
+export const CLEARS_CLASH = 'Clears this week’s clash';
+
+/**
+ * Decision (m7-plan, move-evaluation): a day of the Move sheet shows one finding, the first a
+ * move there would add in this order: avoid before prefer, then M3's placement rules before M7's
+ * concurrent ones (the more concrete clash), then evaluateWeek's own order.
+ */
+export const TARGET_WARNING_ORDER = {
+	severity: ['avoid', 'prefer'],
+	area: ['interference', 'concurrent']
+} as const satisfies { severity: readonly Severity[]; area: readonly Finding['area'][] };
+
 /** A day a session can move to, with what is planned there in one line. */
 export interface MoveTarget {
 	date: IsoDate;
 	/** 'Upper A · Easy run', or 'Rest day'. */
 	planned: string;
+	/** The finding a move there would add (TARGET_WARNING_ORDER), with its rule's reason. */
+	warning?: { headline: string; why: string };
+	/** CLEARS_CLASH on the day the scheduler would move the session to. */
+	clears?: string;
 }
 
-/** An interference rule that a move newly breaks. */
+/** A rule that a move newly breaks: M3's interference rules, and M7's with a context. */
 export interface MoveWarning {
-	rule: InterferenceRule;
+	/** The rule's key in its area: 'heavy_lower_before_hard', 'residual_fatigue_before_hard'. */
+	rule: InterferenceRule | ConcurrentRule;
+	area: Finding['area'];
 	severity: Severity;
 	/** The dates it spans, earliest first. */
 	days: IsoDate[];
 	/** One sentence naming its days and sessions, as the decision records it. */
 	message: string;
+	/** The rule's reason. */
+	why: string;
+}
+
+/**
+ * A move's deps: the request's or batch's contexts (createContextCache), which a move reads once
+ * per week; one of its own on `db` unless given.
+ */
+export interface MoveDeps extends TrainingDeps {
+	contexts?: ContextCache;
 }
 
 export interface MovedSession extends RevisedVersion {
@@ -296,24 +338,71 @@ const timeRank = (time: TimeOfDay | null) =>
 /** The sessions that will happen: what the interference rules read. */
 const happening = (sessions: StoredSession[]) => sessions.filter((s) => s.status !== 'skipped');
 
-/** A violation by its rule, days and sessions, to tell one the move made from one already there. */
-const violationKey = (v: Violation<StoredSession>) =>
-	[v.rule, ...v.days, ...v.sessions.map((s) => s.lineage)].join(' ');
+/** A finding by its rule, days and sessions, to tell one the move made from one already there. */
+const findingKey = (f: Finding) =>
+	[f.rule, ...f.days, ...f.sessions.map((s) => s.lineage ?? `${s.title} ${s.date}`)].join(' ');
 
 /**
- * The move as copy changes and the warnings it brings. On its new day, the session goes before
- * the first session with a later time of day, or last, and that day is numbered again from 1.
- * Back on the day it was planned for, it is planned again; otherwise it keeps the day of its
- * first move as moved_from.
+ * The week judged by evaluateWeek: with the context, its load modelled again on these sessions
+ * (a move moves its fatigue) and every M7 rule; without one, M3's checkWeek alone, as before M7.
  */
-function planMove(target: Target, move: MoveSessionInput, today: IsoDate) {
+function judge(
+	target: Target,
+	sessions: readonly StoredSession[],
+	today: IsoDate,
+	context: EvaluationContext | null
+): Finding[] {
+	const openDates = reachableDates(target, today);
+	if (!context) return evaluateWeek(sessions, { openDates, today }).findings;
+	const monday = target.week.startsOn;
+	const days = loadModel({
+		planned: [...context.load.planned.filter((s) => s.date < monday), ...sessions],
+		logged: context.load.logged,
+		from: context.load.from,
+		to: target.week.endsOn,
+		today,
+		traitsOf: context.traitsOf
+	});
+	const week = { ...weekContextOf(context), load: { days, logged: context.load.logged } };
+	return evaluateWeek(sessions, { openDates, today, traitsOf: context.traitsOf, context: week })
+		.findings;
+}
+
+/** A finding as a move's warning: its rule by its key in its area. */
+const toWarning = ({ rule, area, severity, days, message, why }: Finding): MoveWarning => ({
+	rule: rule.slice(rule.indexOf('.') + 1) as MoveWarning['rule'],
+	area,
+	severity,
+	days,
+	message,
+	why
+});
+
+/** A TrainingInputError at its fields when the session cannot move to `toDate`. */
+function checkMovable(target: Target, toDate: IsoDate, today: IsoDate) {
 	const errors: Record<string, string> = {};
 	const refused = sessionRefusal(target, today);
 	if (refused) errors.sessionLineage = refused;
-	const away = destinationRefusal(target, move.toDate, today);
+	const away = destinationRefusal(target, toDate, today);
 	if (away) errors.toDate = away;
 	if (Object.keys(errors).length > 0) throw new TrainingInputError(errors);
+}
 
+/**
+ * The move as copy changes and the warnings it brings, judged with `context` (null: checkWeek
+ * alone) against the week before it (`before`). On its new day, the session goes before the
+ * first session with a later time of day, or last, and that day is numbered again from 1. Back on
+ * the day it was planned for, it is planned again; otherwise it keeps the day of its first move
+ * as moved_from.
+ */
+function planMove(
+	target: Target,
+	move: MoveSessionInput,
+	today: IsoDate,
+	context: EvaluationContext | null,
+	before: readonly Finding[] = judge(target, target.sessions, today, context)
+) {
+	checkMovable(target, move.toDate, today);
 	const { session, sessions } = target;
 	const timeOfDay = move.timeOfDay === undefined ? session.timeOfDay : move.timeOfDay;
 	const rank = timeRank(timeOfDay);
@@ -343,12 +432,47 @@ function planMove(target: Target, move: MoveSessionInput, today: IsoDate) {
 			: { ...s, orderInDay };
 	});
 
-	const options = { openDates: reachableDates(target, today) };
-	const before = new Set(checkWeek(happening(sessions), options).map(violationKey));
-	const warnings = checkWeek(happening(after), options)
-		.filter((v) => !before.has(violationKey(v)))
-		.map(({ rule, severity, days, message }): MoveWarning => ({ rule, severity, days, message }));
-	return { changes, warnings };
+	const had = new Set(before.map(findingKey));
+	const added = judge(target, after, today, context).filter((f) => !had.has(findingKey(f)));
+	return { changes, added, warnings: added.map(toWarning) };
+}
+
+/** The context of the target's week, from the request's or batch's contexts (MoveDeps). */
+function contextOf(ownerId: string, target: Target, today: IsoDate, deps: MoveDeps) {
+	const contexts = deps.contexts ?? createContextCache(ownerId, { db: resolveDeps(deps).db });
+	return contexts.get({ versionId: target.versionId, weekStartsOn: target.week.startsOn, today });
+}
+
+/** TARGET_WARNING_ORDER's rank of a finding: lower shows first, an unlisted area last. */
+const warningRank = ({ severity, area }: Finding) => {
+	const areas: readonly string[] = TARGET_WARNING_ORDER.area;
+	const at = areas.indexOf(area);
+	return (
+		TARGET_WARNING_ORDER.severity.indexOf(severity) * (areas.length + 1) +
+		(at < 0 ? areas.length : at)
+	);
+};
+
+/**
+ * The day the scheduler would move the target's session to, when the week has an actionable
+ * avoid clash naming it: clearingMoves' move of this session, as Train's 'clears this' reads it.
+ */
+function suggestedDay(
+	target: Target,
+	today: IsoDate,
+	context: EvaluationContext,
+	before: readonly Finding[],
+	done: ReadonlySet<string>
+): IsoDate | undefined {
+	const lineage = target.session.lineage;
+	const clash = before.some(
+		(f) => f.severity === 'avoid' && f.actionable && f.sessions.some((s) => s.lineage === lineage)
+	);
+	if (!clash) return undefined;
+	const open = reachableDates(target, today);
+	const options = { open, today, done, traitsOf: context.traitsOf };
+	const moves = clearingMoves(target.sessions, context, options, target.week.startsOn);
+	return [...moves.values()].find((m) => m.lineage === lineage)?.to;
 }
 
 const dayLabel = (date: IsoDate) => WEEKDAY_INFO[weekdayOf(date)].short;
@@ -393,7 +517,10 @@ function moveDecision(
 		reason: reasonText(reason)
 	};
 	const head = render(template.why, { ...facts, warnings: '' }, 'session_moved');
-	const messages = warnings.map((w) => w.message);
+	// Each warning, with its rule's reason the first time the rule is named.
+	const messages = warnings.map((w, n) =>
+		warnings.findIndex((o) => o.rule === w.rule) === n ? `${w.message} ${w.why}` : w.message
+	);
 	return {
 		kind: 'session_moved',
 		summary: render(template.summary, facts, 'session_moved'),
@@ -405,25 +532,46 @@ function moveDecision(
 
 /**
  * The days the session `lineage` of the current version can move to, from `today` on: none for a
- * session that has passed, is skipped or is done, or when no day of its week is left.
+ * session that has passed, is skipped or is done, or when no day of its week is left. Each day
+ * carries the finding a move there would add (TARGET_WARNING_ORDER), and the day the scheduler
+ * would pick says CLEARS_CLASH; the week's context is read once for all of them.
  */
 export async function getMoveTargets(
 	ownerId: string,
 	lineage: string,
 	today: IsoDate,
-	deps: TrainingDeps = {}
+	deps: MoveDeps = {}
 ): Promise<MoveTarget[]> {
 	checkToday(today);
-	const target = await locate(resolveDeps(deps).db, ownerId, lineage);
+	const { db } = resolveDeps(deps);
+	const target = await locate(db, ownerId, lineage);
 	if (sessionRefusal(target, today)) return [];
-	return reachableDates(target, today)
-		.filter((date) => destinationRefusal(target, date, today) === null)
-		.map((date) => {
-			const titles = happening(target.sessions)
-				.filter((s) => s.date === date)
-				.map((s) => s.title);
-			return { date, planned: titles.join(' · ') || REST_DAY };
-		});
+	const dates = reachableDates(target, today).filter(
+		(date) => destinationRefusal(target, date, today) === null
+	);
+	if (dates.length === 0) return [];
+	const context = await contextOf(ownerId, target, today, deps);
+	const before = judge(target, target.sessions, today, context);
+	const ahead = target.sessions.filter((s) => s.date >= today).map((s) => s.lineage);
+	const done = context
+		? await measure('db', () => createProgramsRepository(db).completedLineages(ownerId, ahead))
+		: new Set<string>();
+	const suggested = context && suggestedDay(target, today, context, before, done);
+	return dates.map((date): MoveTarget => {
+		const titles = happening(target.sessions)
+			.filter((s) => s.date === date)
+			.map((s) => s.title);
+		const move = { sessionLineage: lineage, toDate: date };
+		const [first] = planMove(target, move, today, context, before).added.toSorted(
+			(a, b) => warningRank(a) - warningRank(b)
+		);
+		return {
+			date,
+			planned: titles.join(' · ') || REST_DAY,
+			...(first && { warning: { headline: first.headline, why: first.why } }),
+			...(date === suggested && { clears: CLEARS_CLASH })
+		};
+	});
 }
 
 /** The warnings `move` would record, before it is saved; it is refused as moveSession refuses it. */
@@ -431,26 +579,33 @@ export async function checkMove(
 	ownerId: string,
 	input: unknown,
 	at: EditAt,
-	deps: TrainingDeps = {}
+	deps: MoveDeps = {}
 ): Promise<MoveWarning[]> {
 	const move = parseWith(moveSessionSchema, input);
 	const today = checkToday(at.today);
 	const target = await locate(resolveDeps(deps).db, ownerId, move.sessionLineage, at.version);
-	return planMove(target, move, today).warnings;
+	checkMovable(target, move.toDate, today);
+	return planMove(target, move, today, await contextOf(ownerId, target, today, deps)).warnings;
 }
 
-/** moveSession's applier: the move, its decision and the warnings it brings. */
+/**
+ * moveSession's applier: the move, its decision and the warnings it brings. The week's context
+ * comes from `deps.contexts` (a batch's, read in a savepoint of its transaction), or is read on
+ * `deps.db` before anything is written.
+ */
 export async function moveApplier(
 	ownerId: string,
 	input: unknown,
 	at: EditAt,
-	deps: TrainingDeps = {}
+	deps: MoveDeps = {}
 ): Promise<PlannedEdit & { warnings: MoveWarning[] }> {
 	const move = parseWith(moveSessionSchema, input);
 	const today = checkToday(at.today);
 	const { db, source } = resolveDeps(deps);
 	const target = await locate(db, ownerId, move.sessionLineage, at.version);
-	const { changes, warnings } = planMove(target, move, today);
+	checkMovable(target, move.toDate, today);
+	const context = await contextOf(ownerId, target, today, deps);
+	const { changes, warnings } = planMove(target, move, today, context);
 	const blocking = warnings.find((w) => BLOCKS_EDIT[w.severity]);
 	if (blocking) throw new TrainingInputError({ toDate: blocking.message });
 	return {
@@ -462,14 +617,15 @@ export async function moveApplier(
 }
 
 /**
- * Move a session to another day of its week as the next version, with its reason and the
- * interference rules it newly breaks; those warnings are returned too.
+ * Move a session to another day of its week as the next version, with its reason and the rules
+ * it newly breaks (each with its reason); those warnings are returned too. The week's context is
+ * read on the pool before the revision's transaction opens.
  */
 export async function moveSession(
 	ownerId: string,
 	input: unknown,
 	at: EditAt,
-	deps: TrainingDeps = {}
+	deps: MoveDeps = {}
 ): Promise<MovedSession> {
 	const { warnings, ...edit } = await moveApplier(ownerId, input, at, deps);
 	return { ...(await revise(ownerId, edit, at, deps)), warnings };
