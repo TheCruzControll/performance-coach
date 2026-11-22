@@ -112,10 +112,14 @@ Run only what is cheap, on the files the slice changed:
 pnpm exec prettier --check <changed files>
 pnpm exec eslint <changed files>
 pnpm exec vitest run --project unit <changed or new test files>
+pnpm security:scan
+git add -A && git diff --quiet   # nothing left unstaged before the commit
 ```
 
-Every push of a change to code starts 28 CI jobs, and about 20 run at once across all pull
-requests, so push finished work, not work in progress. Commit locally as often as you like, and
+Pass file lists with `xargs`; zsh does not split an unquoted variable into words.
+
+Every push of a change to code starts 8 CI jobs (`scripts/ci-legs.ts`), so push finished work,
+not work in progress. Commit locally as often as you like, and
 push once per review round. Keep docs-only changes in pull requests of their own where the slice
 allows it: CI runs those in a few minutes (`scripts/ci-scope.ts`).
 
