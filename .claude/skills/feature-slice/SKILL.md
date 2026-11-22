@@ -16,7 +16,8 @@ The path uses plain `Agent` calls, so it works in any Claude Code harness.
 
 - **A merge is a production deploy.** Every merge to `main` deploys coach.nikocruz.com and
   migrates its database. The owner has allowed this path to merge, under the gate in step 9 and
-  nowhere else. Never push to `main` directly, and never force-push.
+  nowhere else. Never push to `main` directly, and never force-push `main`. A pull request branch
+  you have rebased is pushed with `git push --force-with-lease`, never plain `--force`.
 - **Heavy work runs on GitHub, not here.** This machine has 8 GB of memory. CI runs type-check,
   lint, the unit and integration suites, both builds, the budgets, every Playwright journey on
   Chromium and WebKit, and Lighthouse, on every pull request. Do not run `pnpm check`,
