@@ -1,4 +1,4 @@
-import { fail, redirect } from '@sveltejs/kit';
+import { fail, redirect, type RequestEvent } from '@sveltejs/kit';
 import { version } from '$app/env';
 import { resolve } from '$app/paths';
 import { testRoutesEnabled } from '#lib/server/env.ts';
@@ -11,7 +11,8 @@ import {
 	loadReviews,
 	parseReviewKey,
 	refreshReview,
-	type ReviewsDeps
+	type ReviewsDeps,
+	type ReviewsRequest
 } from './load';
 
 /**
@@ -24,16 +25,20 @@ const failing: ReviewsDeps['list'] = () => {
 	throw new Error('Forced failure (test routes)');
 };
 
+/** The request as a recorded failure carries it: its id, method, path, route and app version. */
+const originOf = ({ locals, request, route, url }: RequestEvent): ReviewsRequest['origin'] => ({
+	requestId: locals.requestId,
+	method: request.method,
+	path: url.pathname,
+	routeId: route.id,
+	appVersion: version
+});
+
 /** The reviews and the one the key selects (load.ts); a bad key is a 404. */
-export const load: PageServerLoad = async ({ cookies, locals, params, request, route, url }) => {
+export const load: PageServerLoad = async (event) => {
+	const { cookies, locals, params } = event;
 	const forced = testRoutesEnabled() && cookies.get(FAIL_COOKIE) === 'reviews';
-	const origin = {
-		requestId: locals.requestId,
-		method: request.method,
-		path: url.pathname,
-		routeId: route.id,
-		appVersion: version
-	};
+	const origin = originOf(event);
 	return loadReviews(
 		ownerId(locals),
 		{ key: params.key, origin },
@@ -44,9 +49,12 @@ export const load: PageServerLoad = async ({ cookies, locals, params, request, r
 
 export const actions = {
 	/** Create the week's review (or find it), then open it: a 303, with or without JavaScript. */
-	create: async ({ locals, request }) => {
-		const week = (await request.formData()).get('weekStartsOn');
-		const result = await createReview(ownerId(locals), String(week ?? ''), new Date());
+	create: async (event) => {
+		const week = (await event.request.formData()).get('weekStartsOn');
+		const origin = originOf(event);
+		const result = await createReview(ownerId(event.locals), String(week ?? ''), new Date(), {
+			origin
+		});
 		if (!result.ok) return fail(result.status, result.data);
 		redirect(303, resolve('/(app)/progress/reviews/[[key]]', { key: result.key }));
 	},
@@ -60,11 +68,14 @@ export const actions = {
 		redirect(303, resolve('/(app)/progress/reviews/[[key]]', { key: result.key }));
 	},
 	/** Refresh an out-of-date review (load.ts refreshReview), then show its live revision. */
-	refresh: async ({ locals, params, request }) => {
-		const id = (await request.formData()).get('reviewId');
-		const result = await refreshReview(ownerId(locals), String(id ?? ''), new Date());
+	refresh: async (event) => {
+		const id = (await event.request.formData()).get('reviewId');
+		const origin = originOf(event);
+		const result = await refreshReview(ownerId(event.locals), String(id ?? ''), new Date(), {
+			origin
+		});
 		if (!result.ok) return fail(result.status, result.data);
-		redirect(303, resolve('/(app)/progress/reviews/[[key]]', { key: params.key }));
+		redirect(303, resolve('/(app)/progress/reviews/[[key]]', { key: event.params.key }));
 	},
 	/** Generate next week from the ticked changes (forms/reviews.ts). */
 	decide: (event) => decide(event, 'decide'),

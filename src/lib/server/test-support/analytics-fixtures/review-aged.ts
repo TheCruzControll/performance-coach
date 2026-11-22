@@ -13,8 +13,8 @@
  * - review-aged: week-complete (last week reviewed, the hard week) with its review and proposal
  *   created on this week's Monday, before any of this week was logged. Every session of this week
  *   dated before today has passed since; on a Monday, today's Strength A is logged after the
- *   review, so its change has started and is dropped all the same. Late in the week (Saturday,
- *   Sunday) every change has passed.
+ *   review, so its change has started and is dropped all the same. From Friday every change (the
+ *   Monday and Thursday bench lines: M7's judge proposes no move that week) has passed.
  *
  * Each returns `review` (the week reviewed and its next week) and `lineages.benchMonday` and
  * `lineages.benchThursday`: next week's two strength sessions with the fixed bench line.

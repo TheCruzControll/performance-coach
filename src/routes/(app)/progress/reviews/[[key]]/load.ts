@@ -674,6 +674,13 @@ export type CreateResult =
 	  };
 
 export interface CreateDeps extends Pick<TrainingDeps, 'db'> {
+	/**
+	 * Where the context's failures are recorded (app_errors), with `origin` below: the review's own
+	 * transaction unless given. Passed to the review service only when `origin` is.
+	 */
+	errorsDb?: TrainingDeps['db'];
+	/** The route's origin, under which a failed context read is recorded (the request's id). */
+	origin?: ReviewsRequest['origin'];
 	create?: typeof createWeeklyReview;
 	today?: typeof ownerToday;
 }
@@ -687,11 +694,15 @@ export async function createReview(
 	ownerId: string,
 	weekStartsOn: string,
 	now: Date,
-	{ db, create = createWeeklyReview, today: dayOf = ownerToday }: CreateDeps = {}
+	{ db, errorsDb, origin, create = createWeeklyReview, today: dayOf = ownerToday }: CreateDeps = {}
 ): Promise<CreateResult> {
 	const today = await dayOf(ownerId, now, { db });
 	try {
-		const { review } = await create(ownerId, { weekStartsOn, today }, { db });
+		const { review } = await create(
+			ownerId,
+			{ weekStartsOn, today },
+			{ db, ...(origin && { context: { origin, errorsDb } }) }
+		);
 		return { ok: true, key: weeklyKey(review.weekStartsOn) };
 	} catch (err) {
 		if (err instanceof WeeklyReviewNotReviewableError) {
@@ -714,6 +725,13 @@ export type RefreshResult =
 	| { ok: false; status: 400 | 409; data: { reason: 'invalid' | 'decided' | 'not_ready' } };
 
 export interface RefreshDeps extends Pick<TrainingDeps, 'db'> {
+	/**
+	 * Where the context's failures are recorded (app_errors), with `origin` below: the review's own
+	 * transaction unless given. Passed to the review service only when `origin` is.
+	 */
+	errorsDb?: TrainingDeps['db'];
+	/** The route's origin, under which a failed context read is recorded (the request's id). */
+	origin?: ReviewsRequest['origin'];
 	refresh?: typeof refreshWeeklyReview;
 	today?: typeof ownerToday;
 }
@@ -729,11 +747,17 @@ export async function refreshReview(
 	ownerId: string,
 	id: string,
 	now: Date,
-	{ db, refresh = refreshWeeklyReview, today: dayOf = ownerToday }: RefreshDeps = {}
+	{
+		db,
+		errorsDb,
+		origin,
+		refresh = refreshWeeklyReview,
+		today: dayOf = ownerToday
+	}: RefreshDeps = {}
 ): Promise<RefreshResult> {
 	const today = await dayOf(ownerId, now, { db });
 	try {
-		await refresh(ownerId, id, { today }, { db });
+		await refresh(ownerId, id, { today }, { db, ...(origin && { context: { origin, errorsDb } }) });
 		return { ok: true };
 	} catch (err) {
 		if (err instanceof WeeklyReviewRefreshError && err.reason === 'decided')

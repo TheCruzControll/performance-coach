@@ -30,6 +30,7 @@ import {
 	getProposalView
 } from '../../../src/lib/server/services/coach/proposals';
 import { CoachInputError } from '../../../src/lib/server/services/coach/shared';
+import { findErrorsByRequestId } from '../../../src/lib/server/services/errors';
 import { getExercisesByIds } from '../../../src/lib/server/services/exercises/index';
 import {
 	createWeeklyReview,
@@ -40,6 +41,7 @@ import {
 	WeeklyReviewNotReviewableError,
 	WeeklyReviewRefreshError
 } from '../../../src/lib/server/services/reviews';
+import type { WeeklyReviewDeps } from '../../../src/lib/server/services/reviews/weekly';
 import {
 	editSet,
 	finishWorkout,
@@ -62,7 +64,24 @@ const now = () => NOW;
 
 type Seeded = ReviewFixtureResult & { exercises: Record<string, string> };
 
-async function seed(db: Executor, fixture: string) {
+/**
+ * M6's checkWeek path (the context reads skipped): with M7's judge the hard week's next week has
+ * no move a finding would not name (m7/24), so these tests of the proposal's storage keep M6's.
+ */
+const M6_PATH = { reader: async () => null };
+
+/** Far above the 300 ms default: real-data reads on a loaded CI runner (as weekly-conflicts). */
+const SLOW_OK = { statementTimeoutMs: 10_000 };
+
+const origin = (requestId = crypto.randomUUID()) => ({
+	requestId,
+	method: 'POST',
+	path: '/progress/reviews',
+	routeId: '/(app)/progress/reviews/[[key]]',
+	appVersion: '0.1.0+test'
+});
+
+async function seed(db: Executor, fixture: string, context?: WeeklyReviewDeps['context']) {
 	const owner = await makeOwner(db);
 	const seeded = (await seedAnalyticsFixture(
 		owner,
@@ -70,7 +89,7 @@ async function seed(db: Executor, fixture: string) {
 		{ timeZone: TZ, now: NOW },
 		{ db }
 	)) as unknown as Seeded;
-	return { owner, seeded, deps: { db, now } };
+	return { owner, seeded, deps: { db, now, ...(context && { context }) } };
 }
 
 const review = (owner: string, deps: { db: Executor; now?: () => Date }, weekStartsOn = REVIEWED) =>
@@ -259,7 +278,7 @@ describe('creating a weekly review', () => {
 
 	it('stores it with its snapshot, inputs digest and versions, once', async () => {
 		await withRollback(async (db) => {
-			const { owner, deps } = await seed(db, 'week-complete');
+			const { owner, deps } = await seed(db, 'week-complete', M6_PATH);
 			const first = await review(owner, deps);
 			const again = await review(owner, deps);
 			expect(first.created).toBe(true);
@@ -317,7 +336,7 @@ describe('creating a weekly review', () => {
 describe("next week's proposal", () => {
 	it('is an M5 program_adjustment whose evidence.source names the review, with an origin linking back', async () => {
 		await withRollback(async (db) => {
-			const { owner, seeded, deps } = await seed(db, 'week-complete');
+			const { owner, seeded, deps } = await seed(db, 'week-complete', M6_PATH);
 			const { review: stored } = await review(owner, deps);
 			expect(stored.proposalId).not.toBeNull();
 			const row = await proposalRow(db, stored.proposalId!);
@@ -404,7 +423,7 @@ describe("next week's proposal", () => {
 
 	it("refuses rules provenance on a conversation's proposal", async () => {
 		await withRollback(async (db) => {
-			const { owner, deps } = await seed(db, 'week-complete');
+			const { owner, deps } = await seed(db, 'week-complete', M6_PATH);
 			const { review: stored } = await review(owner, deps);
 			const { payload, title, rationale } = await proposalRow(db, stored.proposalId!);
 			const both = createProposal(
@@ -439,7 +458,11 @@ describe("next week's proposal", () => {
 
 	it('takes no −40 % ops when next week is already a planned deload', async () => {
 		await withRollback(async (db) => {
-			const { owner, deps } = await seed(db, 'next-week-deload');
+			const { requestId } = origin();
+			const { owner, deps } = await seed(db, 'next-week-deload', {
+				...SLOW_OK,
+				origin: origin(requestId)
+			});
 			const { review: stored } = await review(owner, deps);
 			const snapshot = stored.read.legacy ? null : stored.read.snapshot;
 			expect(snapshot?.next).toEqual({ weekStartsOn: THIS_WEEK, state: 'planned', kind: 'deload' });
@@ -448,7 +471,12 @@ describe("next week's proposal", () => {
 						.ops ?? [])
 				: [];
 			expect(ops.filter((op) => op.sets !== undefined)).toEqual([]);
-			expect(snapshot?.noProposal).toBe('no_changes');
+			// Only M7's move: Strength B, on legs the hard week left overloaded, away from Friday's
+			// sparring (M6's checkWeek saw nothing at RPE 6, so proposed nothing).
+			expect(ops.map((op) => (op as { op: string }).op)).toEqual(['move']);
+			expect(snapshot?.noProposal).toBeNull();
+			const errors = await findErrorsByRequestId(requestId, { db });
+			expect(errors.filter((e) => e.context?.part === 'evaluation-context')).toEqual([]);
 		});
 	});
 
@@ -468,7 +496,7 @@ describe("next week's proposal", () => {
 describe('refreshing a weekly review', () => {
 	it('goes stale after a late set; a refresh supersedes it, keeping both rows and both proposals', async () => {
 		await withRollback(async (db) => {
-			const { owner, seeded, deps } = await seed(db, 'week-complete');
+			const { owner, seeded, deps } = await seed(db, 'week-complete', M6_PATH);
 			const { review: first } = await review(owner, deps);
 			expect((await getWeeklyReviewView(owner, REVIEWED, deps)).stale).toBe(false);
 			await expect(
@@ -548,7 +576,7 @@ describe('refreshing a weekly review', () => {
 
 	it("is allowed while the owner's revision is undecided, and refused once it is applied", async () => {
 		await withRollback(async (db) => {
-			const { owner, seeded, deps } = await seed(db, 'week-complete');
+			const { owner, seeded, deps } = await seed(db, 'week-complete', M6_PATH);
 			const { review: first } = await review(owner, deps);
 			const head = await proposalRow(db, first.proposalId!);
 			const [move] = (head.payload as { ops: Record<string, unknown>[] }).ops;
