@@ -2,7 +2,8 @@
   @component
   Labelled single-line text input. Large (56 px) for thumbs, a visible label above (never a
   placeholder-as-label), hint or error text wired to the input with aria-describedby, and a
-  16 px font so iOS Safari does not zoom on focus. `type="date"` takes and gives `YYYY-MM-DD`.
+  16 px font so iOS Safari does not zoom on focus. `type="date"` takes and gives `YYYY-MM-DD`;
+  `min` and `max` bound a date in that form.
 -->
 <script lang="ts">
 	import type { HTMLInputAttributes } from 'svelte/elements';
@@ -26,10 +27,14 @@
 		required?: boolean;
 		disabled?: boolean;
 		maxlength?: number;
+		/** The earliest and latest a date field takes, `YYYY-MM-DD`. */
+		min?: string;
+		max?: string;
 		/** Monospace, tracked-out text (codes). */
 		mono?: boolean;
 		input?: HTMLInputElement;
 		oninput?: (event: Event & { currentTarget: HTMLInputElement }) => void;
+		onchange?: (event: Event & { currentTarget: HTMLInputElement }) => void;
 		'data-testid'?: string;
 	}
 

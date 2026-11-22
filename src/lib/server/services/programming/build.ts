@@ -18,11 +18,12 @@ import * as z from 'zod/mini';
 import { daysBetween, mondayOf } from '../../../domain/calendar';
 import { DecisionLog } from '../../../domain/programming/decisions';
 import { GENERATOR_ID } from '../../../domain/programming/index';
+import { latestStart } from '../../../domain/programming/start-move';
 import type { FieldErrors } from '../../../domain/validation';
 import { createProgramFromPlan, type CreatedProgram } from '../programs/store';
 import { ConflictError, parseWith, resolveDeps, TrainingInputError } from '../training/shared';
 import { generateFor, type ProgrammingDeps } from './preview';
-import { previewRequestSchema, startDates } from './start';
+import { PICK_A_DAY, PROGRAM_STARTS, previewRequestSchema, startDates } from './start';
 
 export type ProgrammingConflictReason = 'profile' | 'library' | 'start_date';
 
@@ -57,10 +58,15 @@ export type BuildRequest = z.output<typeof buildRequestSchema>;
 function dateErrors({ today, start, startsOn, firstPlannedDay }: BuildRequest): FieldErrors {
 	const errors: FieldErrors = {};
 	const offset = daysBetween(startsOn, firstPlannedDay);
-	if (mondayOf(startsOn) !== startsOn) errors.startsOn = 'Start on a Monday';
+	const named = (PROGRAM_STARTS as readonly string[]).includes(start);
+	if (!named && firstPlannedDay !== start) errors.firstPlannedDay = 'Not this start’s first day';
+	else if (!named && start > latestStart(today)) errors.start = PICK_A_DAY;
+	// A day before today is not an input error: buildProgram's `firstPlannedDay < today` check makes
+	// it ProgrammingConflictError('start_date'), as for a 'This week' build sent after midnight.
+	else if (mondayOf(startsOn) !== startsOn) errors.startsOn = 'Start on a Monday';
 	else if (offset < 0 || offset > 6 || (start === 'next_monday' && offset !== 0)) {
 		errors.firstPlannedDay = 'Not a day of week 1';
-	} else if (firstPlannedDay > startDates(today, start).firstPlannedDay) {
+	} else if (named && firstPlannedDay > startDates(today, start).firstPlannedDay) {
 		errors.firstPlannedDay = 'Later than this start allows';
 	}
 	return errors;
