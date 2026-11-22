@@ -11,16 +11,26 @@
  *   U+2028, bytea, text[] with NULLs, an enum and a self-reference
  * - backup_cycle_a and backup_cycle_b: a two-table cycle, nullable on a's side
  * - backup_bulk: BULK_ROWS rows, more than two FETCHes' worth
+ *
+ * With `{ everyTable: true }` it also gives every other exported table a row (every-table.ts), so
+ * the round trip covers the whole schema.
  */
+import { CATALOGUE } from '../../../src/lib/domain/exercises/index';
+import { buildProgrammingInput } from '../../../src/lib/domain/programming';
 import { createDatabase, createPool } from '../../../src/lib/server/db';
 import { LOCAL_DATABASE_URLS, resetDatabase } from '../../../src/lib/server/db/migrate';
 import { LATE_ALLOWED } from '../../../src/lib/server/db/backup/tables';
-import { createGoal, saveSchedule } from '../../../src/lib/server/services/profile';
+import {
+	createGoal,
+	getTrainingProfile,
+	saveSchedule
+} from '../../../src/lib/server/services/profile';
 import { createProgramFromPlan } from '../../../src/lib/server/services/programs/index';
 import { programFixture } from '../../../src/lib/server/test-support/program-fixtures';
 import { setUpOwner } from '../auth/fixtures';
 import { clock, generalGoal } from '../profile/fixtures';
 import { exerciseIds, logOther, logRun, logStrength, utc } from '../training/fixtures/history';
+import { seedEveryTable } from './every-table';
 
 export type ScratchRole = 'src' | 'dst';
 
@@ -73,7 +83,9 @@ export const EDGE_DDL = `
 	CREATE TABLE backup_bulk (id int PRIMARY KEY, label text NOT NULL);`;
 
 /** Migrate the source afresh and seed it; returns its URL and the owner's id. */
-export async function prepareSource(): Promise<{ url: string; ownerId: string }> {
+export async function prepareSource({
+	everyTable = false
+}: { everyTable?: boolean } = {}): Promise<{ url: string; ownerId: string }> {
 	const url = scratchUrl('src');
 	await resetDatabase(url);
 	const pool = createPool(url, { max: 1 });
@@ -117,18 +129,32 @@ export async function prepareSource(): Promise<{ url: string; ownerId: string }>
 				generator: 'perfo-programming/1',
 				fingerprint: '0123456789abcdef',
 				digest: 'fedcba9876543210',
-				snapshot: { daysPerWeek: 4, goals: [] }
+				snapshot: buildProgrammingInput(await getTrainingProfile(ownerId, { db }), {
+					catalogue: CATALOGUE
+				}) as unknown as Record<string, unknown>
 			},
 			{ db }
 		);
 		const ids = await exerciseIds(db, ['back_squat', 'bench_press']);
-		await logStrength(db, ownerId, { startedAt: utc('2026-11-09', '17:00') }, [
+		const strength = await logStrength(db, ownerId, { startedAt: utc('2026-11-09', '17:00') }, [
 			{ exercise: ids.back_squat, weight: 140, reps: 5, rpe: 8 },
 			{ exercise: ids.back_squat, weight: 142.5, reps: 3 },
 			{ exercise: ids.bench_press, weight: 92.5, reps: 8, warmup: true }
 		]);
-		await logRun(db, ownerId, { startedAt: utc('2026-11-10', '07:00'), metres: 8_042 });
+		const runWorkoutId = await logRun(db, ownerId, {
+			startedAt: utc('2026-11-10', '07:00'),
+			metres: 8_042
+		});
 		await logOther(db, ownerId, { startedAt: utc('2026-11-10', '19:00'), kind: 'class' });
+		if (everyTable) {
+			await seedEveryTable(db, {
+				ownerId,
+				now: time.now,
+				strengthWorkoutId: strength.workoutId,
+				runWorkoutId,
+				exercises: ids
+			});
+		}
 
 		await pool.query(EDGE_DDL);
 		await pool.query(

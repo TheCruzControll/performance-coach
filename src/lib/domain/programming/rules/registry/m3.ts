@@ -83,7 +83,7 @@ const days: RuleDefinition[] = [
 		'days.doubles',
 		'rules/days.ts#DOUBLES',
 		DOUBLES,
-		'Two sessions share a day only on a commitment day, with two distinct preferred times and sessions of 90 minutes or less.',
+		'Two sessions share a day only on a commitment day, at two times (two preferred times, or the other end of the day from a class with a set time when you gave no time), with sessions of 90 minutes or less.',
 		'Each session needs its own time, and a day that holds two must still leave recovery between them.'
 	),
 	behaviour(

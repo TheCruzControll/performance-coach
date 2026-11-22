@@ -5,8 +5,7 @@
   refresh or a closed tab. Running: Pause, Reset, +30 s and Skip. Paused: Resume in their place.
   Once over it counts up, 'Rest over · 0:42 ago', in the accent, with +30 s and Dismiss; a polite
   status says 'Rest over' as it ends. The screen places it and does what each control asks;
-  everything said is in rest-words.ts. Graphite 2004 shows it as its Status Display (graphite.css,
-  the `rest` hook): the time left as the big numeral on the readout, the controls beneath it.
+  everything said is in rest-words.ts.
 -->
 <script lang="ts">
 	import type { RestState } from '#lib/domain/workout/types.ts';
@@ -48,13 +47,7 @@
 	const paused = $derived(reading.phase === 'paused');
 </script>
 
-<section
-	class="rest"
-	data-ui="rest"
-	aria-label="Rest timer"
-	data-phase={reading.phase}
-	data-testid="rest-timer"
->
+<section class="rest" aria-label="Rest timer" data-phase={reading.phase} data-testid="rest-timer">
 	<div class="reading">
 		{#if over}
 			<p class="time over" data-testid="rest-time">

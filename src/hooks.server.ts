@@ -12,9 +12,13 @@ import { createContext, runWithContext } from '#lib/server/observability/context
 import { instance } from '#lib/server/observability/instance.ts';
 import { logger } from '#lib/server/observability/logger.ts';
 import { serverTimingHeader } from '#lib/server/observability/timing.ts';
-import { withDesignAssets } from '#lib/server/design-assets.ts';
 import { stylesFirst } from '#lib/server/head-order.ts';
-import { SECURITY_HEADERS } from '#lib/server/security-headers.ts';
+import {
+	defaultCacheControl,
+	failedRequestResponse,
+	isApiPath,
+	SECURITY_HEADERS
+} from '#lib/server/security-headers.ts';
 import { recordServerError } from '#lib/server/services/errors.ts';
 import { shouldPreloadFont } from '#lib/ui/fonts.ts';
 
@@ -60,7 +64,20 @@ export const handle: Handle = async ({ event, resolve }) => {
 	return runWithContext(ctx, async () => {
 		// Every route needs a session unless src/lib/server/auth/routes.ts says otherwise.
 		// Prerendering (build time) renders only public, data-free pages and has no database.
-		const denied = building ? null : await guardRequest(event);
+		let denied: Response | null = null;
+		if (!building) {
+			try {
+				denied = await guardRequest(event);
+			} catch (error) {
+				// SvelteKit's fallback for a throwing handle would skip every header below.
+				const body = await handleError({ kind: 'unknown', error, event });
+				denied = failedRequestResponse(
+					isApiPath(event.url.pathname) || event.isDataRequest,
+					// handleError's type leaves status and message optional; it always sets message.
+					body as App.Error | void
+				);
+			}
+		}
 		const response =
 			denied ??
 			(await resolve(event, {
@@ -68,9 +85,8 @@ export const handle: Handle = async ({ event, resolve }) => {
 					input.type === 'js' ||
 					input.type === 'css' ||
 					(input.type === 'font' && shouldPreloadFont(input.filename)),
-				// The styles first paint waits for go before the preload hints (head-order.ts); the
-				// Graphite preview's asset URLs fill the template's placeholders (design-assets.ts).
-				transformPageChunk: ({ html }) => stylesFirst(withDesignAssets(html))
+				// The styles first paint waits for go before the preload hints (head-order.ts).
+				transformPageChunk: ({ html }) => stylesFirst(html)
 			}));
 
 		const durationMs = performance.now() - ctx.startedAt;
@@ -80,10 +96,12 @@ export const handle: Handle = async ({ event, resolve }) => {
 			'server-timing': serverTiming,
 			'x-request-id': requestId
 		};
-		const type = response.headers.get('content-type') ?? '';
-		if (type.startsWith('text/html') && !response.headers.has('cache-control')) {
-			// Personal data will live in these pages: browsers may revalidate, CDNs must not store.
-			headers['cache-control'] = 'private, no-cache';
+		if (!response.headers.has('cache-control')) {
+			const cacheControl = defaultCacheControl(
+				event.url.pathname,
+				response.headers.get('content-type') ?? ''
+			);
+			if (cacheControl) headers['cache-control'] = cacheControl;
 		}
 
 		if (!building) {

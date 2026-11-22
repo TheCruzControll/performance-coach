@@ -12,6 +12,7 @@ import {
 	type NewWebVital,
 	type WebVitalName
 } from '../db';
+import { pathOnly } from '../observability/redact';
 import { measure } from '../observability/timing';
 
 export const MAX_VITALS_PER_REQUEST = 20;
@@ -100,7 +101,7 @@ export async function recordVitals(
 		delta: v.delta ?? null,
 		rating: v.rating,
 		navigationType: v.navigationType ?? null,
-		path: v.path,
+		path: pathOnly(v.path),
 		routeId: v.route ?? null,
 		effectiveConnectionType: v.effectiveConnectionType ?? null,
 		appVersion: meta.appVersion ?? null,

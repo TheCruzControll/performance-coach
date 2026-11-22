@@ -43,7 +43,7 @@ import { PLACEMENT } from '../placement.ts';
 import type { GoalPriority } from '../priority/weights.ts';
 import { canonicalJson, compareText } from '../random.ts';
 import { CONCURRENT_RULES } from '../rules/concurrent.ts';
-import { DOUBLES } from '../rules/days.ts';
+import { DOUBLES, doubleTime } from '../rules/days.ts';
 import { DEFAULT_RPE } from '../rules/load.ts';
 import { BOUNDS, EASE, OBJECTIVE, TIME_RULES } from '../rules/schedule.ts';
 import type { RuleSeverity } from '../rules/registry/types.ts';
@@ -372,14 +372,10 @@ export function repairWeek<S extends EvaluatedSession>(
 			const now = { ...i.now, orderInDay: 1 + Math.max(0, ...others.map((o) => o.now.orderInDay)) };
 			if (others.some((o) => o.now.source !== 'commitment')) return null;
 			if (others.length === 0) return { ...i, now };
-			// A double: beside one commitment only, at a preferred time it leaves free (DOUBLES).
-			const free = [...times].filter((t) => t !== others[0]!.now.timeOfDay);
-			const double =
-				others.length === 1 &&
-				times.size >= DOUBLES.distinctTimes &&
-				now.estMinutes <= DOUBLES.maxSessionMinutes &&
-				free.length > 0;
-			return double ? { ...i, now: { ...now, timeOfDay: free[0]! } } : null;
+			// A double: beside one commitment only, at the time DOUBLES leaves it (doubleTime).
+			const time = others.length === 1 ? doubleTime(others[0]!.now.timeOfDay, [...times]) : null;
+			const double = time !== null && now.estMinutes <= DOUBLES.maxSessionMinutes;
+			return double ? { ...i, now: { ...now, timeOfDay: time } } : null;
 		});
 		return placed.some((i) => i === null) ? null : (placed as Item<S>[]);
 	};

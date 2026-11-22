@@ -15,6 +15,9 @@
  * - A planned week a weekly review changed carries the notice's words (week-changes.ts): each
  *   change and its why, the version that applied it and the review. 'First block complete' leads
  *   to the last planned block's cycle review, or to the reviews list that creates it.
+ * - A planned week still ahead carries its findings (m7/04, services/periodisation/evaluate.ts):
+ *   a note on each card a finding names, and the week line. An evaluation that fails is recorded
+ *   (part 'periodisation') and the week renders without them.
  * - With no program, whether the training profile is complete picks the empty state's next step.
  *   A program exists only once onboarding is complete (the build refuses it before), so a running
  *   program never shows before the owner's setup is done.
@@ -26,6 +29,11 @@ import type { IsoDate } from '#lib/domain/calendar.ts';
 import { daysBetween } from '#lib/domain/calendar.ts';
 import { ownerToday } from '#lib/server/local-date.ts';
 import { recordServerError, type ServerErrorInput } from '#lib/server/services/errors.ts';
+import {
+	getWeekEvaluation,
+	type WeekAt,
+	type WeekFindingsView
+} from '#lib/server/services/periodisation/evaluate.ts';
 import { getOnboarding, listGoals } from '#lib/server/services/profile/index.ts';
 import {
 	getCurrentProgram,
@@ -88,6 +96,8 @@ export type TrainWeekData =
 			/** The week in words, Monday first (both empty for a week that is not planned). */
 			strip: StripDayView[];
 			days: TrainDay[];
+			/** Its findings counted: on a planned week still ahead, else null (week line). */
+			weekLine: string | null;
 			/** The side column: week 1's brief in a baseline week, then what a review changed. */
 			aside: AsidePanel[];
 			/** In place of the week's sessions: first block complete, not planned yet, or a bridge. */
@@ -109,6 +119,11 @@ export interface TrainRequest {
 export interface TrainLoadDeps extends Pick<TrainingDeps, 'db'> {
 	/** Where a failure is recorded (app_errors): the app's database unless given. */
 	errorsDb?: TrainingDeps['db'];
+	/**
+	 * The week's findings: on by default, read from `db` unless given its own. false skips every
+	 * M7 read: only the explain harness turns it off, to time Train's own path.
+	 */
+	periodisation?: false | Pick<TrainingDeps, 'db'>;
 }
 
 /** The week number in `param`, or null for the current week. */
@@ -146,10 +161,40 @@ async function offPlanIn(
 	return logged.filter((w) => w.status === 'completed').map(offPlanCard);
 }
 
+/** The week's findings, or null when reading them failed: recorded, and the week renders. */
+async function findingsOf(
+	ownerId: string,
+	at: WeekAt,
+	{ db, errorsDb, origin }: Pick<TrainLoadDeps, 'db' | 'errorsDb'> & Pick<TrainRequest, 'origin'>
+): Promise<WeekFindingsView | null> {
+	try {
+		return await getWeekEvaluation(ownerId, at, { db });
+	} catch (error) {
+		const context = { load: 'train', part: 'periodisation' };
+		await recordServerError(
+			{ error, kind: 'load', status: 500, ...origin, context },
+			{ db: errorsDb }
+		);
+		return null;
+	}
+}
+
+/** Each card with its finding's note, when it has one. */
+function withNotes(words: ReturnType<typeof weekWords>, findings: WeekFindingsView | null) {
+	const notes = findings?.notes ?? {};
+	const days = words.days.map((day) => ({
+		...day,
+		cards: day.cards.map((card) =>
+			notes[card.lineage] ? { ...card, note: notes[card.lineage] } : card
+		)
+	}));
+	return { strip: words.strip, days };
+}
+
 export async function loadTrainWeek(
 	ownerId: string,
 	{ now, week, origin }: TrainRequest,
-	{ db, errorsDb }: TrainLoadDeps = {}
+	{ db, errorsDb, periodisation = {} }: TrainLoadDeps = {}
 ): Promise<TrainWeekData> {
 	try {
 		const today = await ownerToday(ownerId, now, { db });
@@ -178,6 +223,11 @@ export async function loadTrainWeek(
 		const at = shown.planned && !bridge && { programId: program.id, weekLineage: shown.lineage };
 		const changes =
 			at && (await weekChanges(ownerId, { ...at, version: shown.version.number }, { db }));
+		const ahead = { version: shown.version.number, weekStartsOn: shown.startsOn, today };
+		const findings =
+			at && periodisation && shown.endsOn >= today
+				? await findingsOf(ownerId, ahead, { db: periodisation.db ?? db, errorsDb, origin })
+				: null;
 		return {
 			state: 'program',
 			today,
@@ -193,7 +243,10 @@ export async function loadTrainWeek(
 					: `Week ${number} · Not planned yet`,
 			status: program.notStarted ? `Starts ${shortDate(program.firstPlannedDay)}` : null,
 			movable: today <= program.firstPlannedDay,
-			...(shown.planned && !bridge ? weekWords(shown, today) : { strip: [], days: [] }),
+			...(shown.planned && !bridge
+				? withNotes(weekWords(shown, today), findings)
+				: { strip: [], days: [] }),
+			weekLine: findings?.summary ?? null,
 			aside: [
 				...(shown.planned && shown.kind === 'baseline' ? [BASELINE_BRIEF] : []),
 				...(changes ? [reviewNotice(changes)] : [])

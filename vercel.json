@@ -17,9 +17,10 @@
 				{ "key": "referrer-policy", "value": "strict-origin-when-cross-origin" },
 				{
 					"key": "permissions-policy",
-					"value": "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+					"value": "camera=(), microphone=(), geolocation=(), payment=(), usb=(), display-capture=(), browsing-topics=(), hid=(), serial=(), bluetooth=(), midi=(), screen-wake-lock=(self)"
 				},
 				{ "key": "cross-origin-opener-policy", "value": "same-origin" },
+				{ "key": "cross-origin-resource-policy", "value": "same-origin" },
 				{ "key": "strict-transport-security", "value": "max-age=63072000; includeSubDomains" },
 				{ "key": "x-robots-tag", "value": "noindex, nofollow" },
 				{ "key": "content-security-policy", "value": "frame-ancestors 'none'" }
@@ -33,9 +34,10 @@
 				{ "key": "referrer-policy", "value": "strict-origin-when-cross-origin" },
 				{
 					"key": "permissions-policy",
-					"value": "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+					"value": "camera=(), microphone=(), geolocation=(), payment=(), usb=(), display-capture=(), browsing-topics=(), hid=(), serial=(), bluetooth=(), midi=(), screen-wake-lock=(self)"
 				},
 				{ "key": "cross-origin-opener-policy", "value": "same-origin" },
+				{ "key": "cross-origin-resource-policy", "value": "same-origin" },
 				{ "key": "strict-transport-security", "value": "max-age=63072000; includeSubDomains" },
 				{ "key": "x-robots-tag", "value": "noindex, nofollow" },
 				{ "key": "content-security-policy", "value": "frame-ancestors 'none'" }
@@ -49,9 +51,10 @@
 				{ "key": "referrer-policy", "value": "strict-origin-when-cross-origin" },
 				{
 					"key": "permissions-policy",
-					"value": "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+					"value": "camera=(), microphone=(), geolocation=(), payment=(), usb=(), display-capture=(), browsing-topics=(), hid=(), serial=(), bluetooth=(), midi=(), screen-wake-lock=(self)"
 				},
 				{ "key": "cross-origin-opener-policy", "value": "same-origin" },
+				{ "key": "cross-origin-resource-policy", "value": "same-origin" },
 				{ "key": "strict-transport-security", "value": "max-age=63072000; includeSubDomains" },
 				{ "key": "x-robots-tag", "value": "noindex, nofollow" },
 				{ "key": "content-security-policy", "value": "frame-ancestors 'none'" }
@@ -65,9 +68,10 @@
 				{ "key": "referrer-policy", "value": "strict-origin-when-cross-origin" },
 				{
 					"key": "permissions-policy",
-					"value": "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+					"value": "camera=(), microphone=(), geolocation=(), payment=(), usb=(), display-capture=(), browsing-topics=(), hid=(), serial=(), bluetooth=(), midi=(), screen-wake-lock=(self)"
 				},
 				{ "key": "cross-origin-opener-policy", "value": "same-origin" },
+				{ "key": "cross-origin-resource-policy", "value": "same-origin" },
 				{ "key": "strict-transport-security", "value": "max-age=63072000; includeSubDomains" },
 				{ "key": "x-robots-tag", "value": "noindex, nofollow" },
 				{ "key": "content-security-policy", "value": "frame-ancestors 'none'" }

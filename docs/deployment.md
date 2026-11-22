@@ -121,15 +121,15 @@ A GitHub Actions workflow triggered by Vercel's GitHub deployment statuses. When
 `https://coach.nikocruz.com/api/health` reports that deployment's commit, then checks the domain
 from outside, signed out, with no secrets:
 
-| Check                                                                   | Expected                                                                                                                                                                                                                   |
-| ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET /api/health`                                                       | 200 with `ok: true` and `db: "up"` (a real query)                                                                                                                                                                          |
-| `GET /`                                                                 | 200: the sign-in screen with passkey sign-in, not the "passkeys aren't available on this address" notice                                                                                                                   |
-| Security headers on `/`                                                 | CSP with `frame-ancestors 'none'`, `object-src 'none'` and no inline scripts; `Strict-Transport-Security`; `nosniff`; `X-Frame-Options: DENY`; referrer and permissions policies; COOP; `X-Robots-Tag: noindex`; `private` |
-| Security headers on `/offline` and the three `/workout*` pages          | Exactly `STATIC_PAGE_HEADERS`, sent from `vercel.json`: the hooks' security headers (not `private`: these pages hold no personal data) and a CSP of `frame-ancestors 'none'`                                               |
-| `GET /today`                                                            | 303 to `/?next=%2Ftoday`                                                                                                                                                                                                   |
-| `POST /api/vitals`, `POST /api/client-errors` (with the app's `Origin`) | 401 `unauthenticated` (without the `Origin` the CSRF check would answer 403 first)                                                                                                                                         |
-| `POST /api/test-support/session`                                        | 404: the test-only session route does not exist in production                                                                                                                                                              |
+| Check                                                                   | Expected                                                                                                                                                                                                                         |
+| ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/health`                                                       | 200 with `ok: true` and `db: "up"` (a real query), `cache-control: no-store`                                                                                                                                                     |
+| `GET /`                                                                 | 200: the sign-in screen with passkey sign-in, not the "passkeys aren't available on this address" notice                                                                                                                         |
+| Security headers on `/`                                                 | CSP with `frame-ancestors 'none'`, `object-src 'none'` and no inline scripts; `Strict-Transport-Security`; `nosniff`; `X-Frame-Options: DENY`; referrer and permissions policies; COOP; CORP; `X-Robots-Tag: noindex`; `private` |
+| Security headers on `/offline` and the three `/workout*` pages          | Exactly `STATIC_PAGE_HEADERS`, sent from `vercel.json`: the hooks' security headers (not `private`: these pages hold no personal data) and a CSP of `frame-ancestors 'none'`                                                     |
+| `GET /today`                                                            | 303 to `/?next=%2Ftoday`                                                                                                                                                                                                         |
+| `POST /api/vitals`, `POST /api/client-errors` (with the app's `Origin`) | 401 `unauthenticated` (without the `Origin` the CSRF check would answer 403 first)                                                                                                                                               |
+| `POST /api/test-support/session`                                        | 404: the test-only session route does not exist in production                                                                                                                                                                    |
 
 Every check runs and is listed in the run's summary; any failure fails the run (Actions →
 **Post-deploy smoke**; the trigger is Vercel's bot, so check there after a merge rather than
@@ -556,13 +556,17 @@ ID under "What exists".
   after every deploy. Preview deployments sit behind Vercel Authentication.
 - **Dynamic responses** (every page and `/api/*`, i.e. everything that runs `hooks.server.ts`)
   carry `x-robots-tag: noindex`, `x-frame-options: DENY`, `nosniff`, `referrer-policy`,
-  `permissions-policy`, `cross-origin-opener-policy`, `strict-transport-security` (Vercel also
-  adds HSTS on its domains) and a **Content-Security-Policy** generated by SvelteKit
-  (`csp` in `vite.config.ts`): `default-src 'self'`, `script-src 'self'` + a per-response nonce +
-  the sha256 of the inline theme script (no `unsafe-inline` for scripts), `object-src 'none'`,
-  `base-uri 'self'`, `form-action 'self'`, `frame-ancestors 'none'`. Styles allow
-  `'unsafe-inline'` because Svelte renders `style` attributes. e2e asserts the header and that an
-  injected inline script is refused.
+  `permissions-policy`, `cross-origin-opener-policy`, `cross-origin-resource-policy: same-origin`,
+  `strict-transport-security` (Vercel also adds HSTS on its domains) and a **Content-Security-Policy**
+  generated by SvelteKit (`csp` in `vite.config.ts`): `default-src 'self'`, `script-src 'self'` + a
+  per-response nonce + the sha256 of the inline theme script (no `unsafe-inline` for scripts),
+  `object-src 'none'`, `base-uri 'self'`, `form-action 'self'`, `frame-ancestors 'none'`. Styles
+  allow `'unsafe-inline'` because Svelte renders `style` attributes. e2e asserts the header and that
+  an injected inline script is refused. `/api/*` answers without their own `cache-control` get
+  `no-store`, pages `private, no-cache` (`defaultCacheControl` in
+  `src/lib/server/security-headers.ts`), and a request whose auth guard throws still gets a 500
+  with these headers. Two kinds of response never reach the hooks and carry none of these
+  headers: what SvelteKit answers before them (the trailing-slash 308, a missing `/_app/*` file's 404) and Vercel's own platform errors.
 - **Static and prerendered files** (`/_app/immutable/*`, icons, `manifest.webmanifest`,
   `robots.txt`, `/offline`, `/workout`, `/workout/run`, `/workout/session`) are served by the CDN
   (Vercel) or `sirv` (adapter-node) without running hooks. They contain no personal data. On

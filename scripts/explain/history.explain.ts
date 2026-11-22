@@ -51,6 +51,7 @@ import { ACTIVE_WORKOUTS_LIMIT } from '../../src/lib/server/services/workouts/ca
 import { analyticsExplain } from './analytics.cases';
 import { generateCoachDataset, loadCoachDataset } from './coach-dataset';
 import { FIRST_MONDAY, generateDataset, loadDataset, WEEKS } from './dataset';
+import { periodisationExplain } from './periodisation.cases';
 import { checkPlan, scansOf, sizeClass, type Catalog, type PlanNode } from './plan-check';
 import { screensExplain } from './screens.cases';
 
@@ -645,5 +646,7 @@ const screens = screensExplain({ url, owner });
 // Coach's screens first: M6's loader replaces the training rows the coach dataset names.
 screens.coach();
 const m6 = analyticsExplain({ client, db, owner, readCatalog, render });
+// M7's server time against the same paths without M7, on M3's owner.
+periodisationExplain({ db, owner });
 // The other main screens' page data on the same owner, once M6's loads are timed.
 screens.main();

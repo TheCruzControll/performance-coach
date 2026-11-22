@@ -27,7 +27,7 @@ import { ensureCertificate } from './scripts/e2e-tls/cert';
  *   WebKit has no virtual authenticator.
  * - Specs that need a signed-out browser opt out with `test.use({ storageState: signedOut })`.
  *
- * Projects: iPhone-class viewport on Chromium everywhere; CI (or E2E_WEBKIT=1) adds WebKit,
+ * Projects: iPhone-class viewport on Chromium everywhere; CI (or E2E_WEBKIT=1) can add WebKit (which legs CI runs: scripts/ci-legs.ts),
  * the engine behind iOS Safari (and Chrome for iOS). `desktop-chromium` opens a 1440 × 900
  * desktop window and runs whole files: every `*.desktop.e2e.ts`, which the iPhone projects skip,
  * plus the shell, offline and axe specs. There is no desktop WebKit project: the one user's

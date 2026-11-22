@@ -264,6 +264,13 @@ describe('getProgressOverview', () => {
 				cycle_review: { on: null, ready: false }
 			});
 
+			// On its own Sunday the first weekly review's day has come, but nothing is logged: not
+			// ready, so the owner is still new (Progress says their progress starts with a session).
+			const sunday = '2026-11-08';
+			const onSunday = await getProgressOverview(db, owner, { period: '12w', today: sunday });
+			expect(onSunday.availability.weekly_review).toMatchObject({ on: sunday, ready: false });
+			expect(onSunday.timeline.some((s) => s.ready)).toBe(false);
+
 			const monday = '2026-11-09';
 			await createProgramFromPlan(
 				owner,
