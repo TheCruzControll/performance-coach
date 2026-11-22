@@ -11,22 +11,23 @@ Last updated: 2026-11-21, from `main` at the merge of #501 (2026-11-13).
 distinct slice branches (`m4/57`, `m5/46`, and so on) named in the git history, so it shows where
 work has landed even though the milestone has not been signed off.
 
-| #   | Milestone                       | Recorded status                              | Merged slices       |
-| --- | ------------------------------- | -------------------------------------------- | ------------------- |
-| M1  | Foundation & infrastructure     | Done                                         | one PR              |
-| M2  | Auth & profile                  | Done                                         | 34, plus 17 desktop |
-| M3  | Training data model & programs  | Done                                         | 42 named in history |
-| M4  | Workout application             | In progress: owner screenshot review pending | 55                  |
-| M5  | AI performance coach            | Planned                                      | 55                  |
-| M6  | Analytics & reviews             | Planned                                      | 59                  |
-| M7  | Advanced coaching               | Planned                                      | 17                  |
-| M8  | Performance & design refinement | Planned                                      | none                |
-| M9  | Final QA & production release   | Planned                                      | 19                  |
+| #   | Milestone                       | Recorded status                                                        | Merged slices       |
+| --- | ------------------------------- | ---------------------------------------------------------------------- | ------------------- |
+| M1  | Foundation & infrastructure     | Done                                                                   | one PR              |
+| M2  | Auth & profile                  | Done                                                                   | 34, plus 17 desktop |
+| M3  | Training data model & programs  | Done                                                                   | 42 named in history |
+| M4  | Workout application             | In progress: owner screenshot review pending                           | 55                  |
+| M5  | AI performance coach            | In progress: launched; screenshot review and first live-suite run open | 55                  |
+| M6  | Analytics & reviews             | Planned                                                                | 59                  |
+| M7  | Advanced coaching               | Planned                                                                | 17                  |
+| M8  | Performance & design refinement | Planned                                                                | none                |
+| M9  | Final QA & production release   | Planned                                                                | 19                  |
 
 M4 has evidence recorded per criterion and waits only on the owner's screenshot review and the
-real-device checklist's workout item. M5, M6, M7 and M9 have substantial merged work but no
-recorded verification against their acceptance criteria. Treat them as built and unverified until
-someone runs the criteria and updates milestones.md.
+real-device checklist's workout item. M5 has evidence recorded per criterion; its screenshot review
+and first live-suite run are open. M6, M7 and M9 have substantial merged work but no recorded
+verification against their acceptance criteria. Treat them as built and unverified until someone
+runs the criteria and updates milestones.md.
 
 ## Recently merged
 
@@ -54,6 +55,8 @@ someone runs the criteria and updates milestones.md.
 
 - Land or close the 32 open pull requests.
 - Finish M4: the owner's screenshot review and the real-device workout check.
-- Verify M5 and M6 against their acceptance criteria and record the evidence in milestones.md.
+- Finish M5: the owner's screenshot review (#405), the first live-suite run, an inbox Lighthouse
+  number, and a coach item on the real-device checklist.
+- Verify M6 against its acceptance criteria and record the evidence in milestones.md.
 - M8: the performance and design councils, which fill the skeletons in `docs/reports/`.
 - M9: security review, the restore drill, and owner sign-off on the deployed app.

@@ -4,17 +4,17 @@ Source of scope: [`product-requirements.md`](product-requirements.md) (section n
 brackets). Each milestone ships as its own PR to `main` with evidence (PRD §20). "Done" means the
 acceptance criteria were verified by running them — compiling is not done.
 
-| #   | Milestone                       | Status                                                                                                                                     |
-| --- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| M1  | Foundation & infrastructure     | **Done** (PR #1, merged 2026-11-05); deferred items carried below                                                                          |
-| M2  | Auth & profile                  | **Done**: auth, production (#50), onboarding, Profile, Today (#60–#181), desktop (#85–#265); email link dropped by the owner on 2026-11-07 |
-| M3  | Training data model & programs  | **Done**: 49 slice PRs, #41 to #233; evidence per criterion below                                                                          |
-| M4  | Workout application             | **In progress**: the workout app merged, #87 to #410; the owner's screenshot review pending                                                |
-| M5  | AI performance coach            | **In progress**: every slice built, #101 to #463; the launch (#449) waits on the owner's screenshot review                                 |
-| M6  | Analytics & reviews             | Planned                                                                                                                                    |
-| M7  | Advanced coaching               | Planned                                                                                                                                    |
-| M8  | Performance & design refinement | Planned                                                                                                                                    |
-| M9  | Final QA & production release   | Planned                                                                                                                                    |
+| #   | Milestone                       | Status                                                                                                                                                       |
+| --- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| M1  | Foundation & infrastructure     | **Done** (PR #1, merged 2026-11-05); deferred items carried below                                                                                            |
+| M2  | Auth & profile                  | **Done**: auth, production (#50), onboarding, Profile, Today (#60–#181), desktop (#85–#265); email link dropped by the owner on 2026-11-07                   |
+| M3  | Training data model & programs  | **Done**: 49 slice PRs, #41 to #233; evidence per criterion below                                                                                            |
+| M4  | Workout application             | **In progress**: the workout app merged, #87 to #410; the owner's screenshot review pending                                                                  |
+| M5  | AI performance coach            | **In progress**: every slice built, #101 to #463; launched (#449) and live in production; the screenshot review (#405) and the first live-suite run are open |
+| M6  | Analytics & reviews             | Planned                                                                                                                                                      |
+| M7  | Advanced coaching               | Planned                                                                                                                                                      |
+| M8  | Performance & design refinement | Planned                                                                                                                                                      |
+| M9  | Final QA & production release   | Planned                                                                                                                                                      |
 
 ---
 
@@ -296,7 +296,7 @@ Acceptance criteria:
 
 Status: **in progress**. Every M5 slice is built: 60 slice PRs from #101 to #463 (this docs PR is
 the 61st), merged to `main` as numbered PRs like M3's and M4's, dark-launched behind `COACH_LAUNCHED` until
-coach-launch (#449) turns the real coach on in production. The design is in
+coach-launch (#449) turned the real coach on in production on 2026-11-12. The design is in
 docs/agent-architecture.md (ADR 0009, 0013, 0014), the security review in docs/security.md
 ("Coach (M5) review"), the tests in docs/testing.md ("Coach (M5)") and the numbers, measured by CI,
 in docs/performance.md ("M5 (coach)"). Evidence per criterion:
@@ -330,11 +330,14 @@ in docs/performance.md ("M5 (coach)"). Evidence per criterion:
 
 Still open:
 
-- The owner's review of the coach screenshot set (#405), the merge gate of #449: not yet recorded.
+- The owner's review of the coach screenshot set (#405): not yet recorded. It is a review after
+  launch, not a merge gate; the launch (#449) merged on 2026-11-12 and the coach is live in
+  production.
 - The live suite (`pnpm test:live`) has never run against the real model, so prompt caching, real
-  TTFT and label compliance are not yet measured.
-- `/(app)/coach/[[thread]]` is 60.3 KB, over the 60 KB gate, and Lighthouse has no inbox audit
-  (docs/performance.md, "M5 (coach)").
+  TTFT and label compliance are not yet measured. The real model now runs in production, since #500
+  fixed the 400s that failed every production turn.
+- Lighthouse has no inbox audit yet: the seeding failure was fixed in 61d467b9, with #395, and no
+  inbox audit number has been recorded since (docs/performance.md, "M5 (coach)").
 - The real-device checklist has no coach item yet.
 
 ## M6 — Analytics & reviews [§10, §11]

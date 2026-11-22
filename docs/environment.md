@@ -51,8 +51,8 @@ Test tooling (not read by the app):
 | `LIGHTHOUSE_SESSION` | unset                                              | session cookie value for `pnpm lighthouse --url`                          |
 | `ADAPTER`            | `vercel`                                           | `node` builds with adapter-node                                           |
 | `PGADMIN_URL`        | unset                                              | `pnpm db:setup` admin connection (CI); e2e owner worlds (docs/testing.md) |
-| `LIVE_LLM`           | unset                                              | `1` and a key: `pnpm test:live` calls the model   |
-| `LIVE_LLM_DRY`       | unset                                              | `1`: `pnpm test:live` plays on the mock           |
+| `LIVE_LLM`           | unset                                              | `1` and a key: `pnpm test:live` calls the model                           |
+| `LIVE_LLM_DRY`       | unset                                              | `1`: `pnpm test:live` plays on the mock                                   |
 | `LIFECYCLE_STRICT`   | unset (production)                                 | `1` in tests and e2e: see below                                           |
 
 `LIFECYCLE_STRICT` is the one row above the app reads. `vite.config.ts` (the unit and integration

@@ -671,9 +671,12 @@ dashed).
 
 **The screenshot review.** `coach-journey.serial.e2e.ts` captures the set, and
 `scripts/coach-screens-index.ts` turns a CI run's screens into the owner's contact sheet. The
-owner's review is the merge gate of coach-launch (#449). Outcome: not yet recorded; its
-follow-ups go here once it is. Known before it: the coach screen is 0.3 KB over the initial-JS
-gate, and the inbox has no Lighthouse audit (docs/performance.md, "M5 (coach)").
+launch (#449) merged on 2026-11-12 and the coach is live in production, so the owner's review is
+no longer its merge gate; it is still open as a review after launch (#405). Outcome: not yet
+recorded; its follow-ups go here once it is. Known from the M5 measurements: the coach route was
+0.3 KB over the initial-JS gate on `9ac3521`, before #473 trimmed it under the gate, and the inbox
+has no Lighthouse audit recorded yet; its seeding failure was fixed in 61d467b9 (with #395)
+(docs/performance.md, "M5 (coach)").
 
 ## Accessibility checklist (applies to every new component)
 

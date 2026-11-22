@@ -583,6 +583,10 @@ for the reasons above.
 
 ## M5 (coach) — measured 2026-11-11
 
+These numbers were measured on `9ac3521`, before the shared-JS trim (#473) recorded in "Shared JS
+trimmed" above, which brought `/(app)/coach/[[thread]]` to 57.0 KB, under the gate. The table below
+is the record of that run, not the current state: the coach route is not over the gate today.
+
 Measured by CI on GitHub's 4-vCPU Linux runners, on the coach as M5 finished it: run
 [43113434377](https://github.com/TheCruzControll/performance-coach/actions/runs/43113434377)
 on `9ac3521` (#463, with coach-launch #449, the final performance pass #395 and the degraded-state
@@ -661,10 +665,11 @@ live run has recorded `cache_read_input_tokens` or real TTFT.
 
 **Open.**
 
-- `/(app)/coach/[[thread]]` is 0.3 KB over the 60 KB gate in run 43113434377.
 - Lighthouse never audited the inbox: `scripts/lighthouse.ts` seeds it with real turns, and that
-  fetch failed on the server's self-signed certificate (`DEPTH_ZERO_SELF_SIGNED_CERT`), which
-  failed mobile shard 2/2 and ended the desktop step early.
+  fetch failed in run 43113434377 on the server's self-signed certificate
+  (`DEPTH_ZERO_SELF_SIGNED_CERT`), which failed mobile shard 2/2 and ended the desktop step early.
+  The seeding failure was fixed in 61d467b9, with #395; no inbox audit number has been recorded
+  since.
 
 ## Budgets (enforced)
 

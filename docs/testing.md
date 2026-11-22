@@ -1263,8 +1263,9 @@ Captured into `test-results/screens/<project>/`, the desktop ones under `desktop
 Every coach test but the live suite uses the deterministic MockProvider
 (`src/lib/server/agent/provider/mock.ts`). It refuses every request the 2026-10-21 Messages API
 would refuse (`provider/validate.ts`), plays scripts from `provider/mock-scripts/` (one file per
-tool group, plus adversarial and timing scripts) and never calls the real API. No key exists in CI
-but the bundle-scan canary.
+tool group, plus `general.ts`, `reviews.ts`, `summaries.ts`, the pain and grounding scripts in
+`safety.ts` and the coach's states in the browser ('slow' and 'perf-stream' among them) in
+`test.ts`) and never calls the real API. No key exists in CI but the bundle-scan canary.
 
 ### Domain and agent (unit)
 
@@ -1321,8 +1322,9 @@ but the bundle-scan canary.
   `direct.test.ts` (lookups without a model call), `first-words.test.ts`, and the endpoints
   (`threads-endpoint`, `runs-endpoint`, `memory-endpoint`, `proposal-actions`), the screen loads
   (`screen-load`, `screen-proposals`, `inbox-load`) and `test-support.test.ts`.
-- `tests/integration/analytics/analytics.test.ts` and `analytics-parity.test.ts`: the coach's
-  weekly summary, load and trends equal the screens' numbers.
+- `tests/integration/analytics/analytics.test.ts` and
+  `tests/integration/coach/analytics-parity.test.ts`: the coach's weekly summary, load and trends
+  equal the screens' numbers.
 
 ### End to end
 
