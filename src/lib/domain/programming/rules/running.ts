@@ -202,7 +202,6 @@ export const MUAY_THAI = {
  */
 export const ZONE2_BIKE = {
 	equipment: 'bike',
-	exercise: 'stationary_bike',
 	title: 'Zone 2 bike',
 	convert: ['easy_run', 'recovery_run'],
 	convertWithRace: ['recovery_run'],
@@ -211,7 +210,6 @@ export const ZONE2_BIKE = {
 	hrMaxShare: [0.6, 0.7]
 } as const satisfies {
 	equipment: Equipment;
-	exercise: string;
 	title: string;
 	convert: readonly SessionType[];
 	convertWithRace: readonly SessionType[];

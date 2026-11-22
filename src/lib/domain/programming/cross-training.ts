@@ -121,7 +121,7 @@ export function planZone2Bike(
 		log.add('exercise_substituted', 'running.zone2_bike', paths.slice(0, MAX_REFS), {
 			exercise: ZONE2_BIKE.title,
 			original,
-			reason: `you have a bike, and riding gives the same easy aerobic work without the pounding, so your legs stay fresher for the rest of your week; ${paths.length === 1 ? 'one easy run moves' : 'some easy runs move'} to it, and every week keeps at least one run`,
+			reason: `riding gives the same easy aerobic work without the pounding, so your legs stay fresher; ${paths.length === 1 ? 'one easy run moves' : 'some easy runs move'} to it, and every week keeps at least one run`,
 			intent: `easy aerobic minutes in zone 2, about ${ZONE} of your max heart rate, at a pace you could talk at.`
 		});
 	}

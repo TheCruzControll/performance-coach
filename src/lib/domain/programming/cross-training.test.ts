@@ -177,12 +177,59 @@ describe('which runs move to the bike', () => {
 		return p;
 	};
 
+	/** The same general runner with the same kit, with or without a bike in it. */
+	const kitted = (bike: boolean, over: (p: TrainingProfile) => void = () => {}) =>
+		generalRunner((p) => {
+			const kit = ['barbell', 'squat_rack', 'bench', 'dumbbells', 'treadmill'] as const;
+			p.equipment = {
+				...p.equipment!,
+				gymType: null,
+				equipment: [...kit, ...(bike ? (['bike'] as const) : [])]
+			};
+			over(p);
+		});
+
 	it('with no bike, changes nothing', () => {
-		const p = generalRunner(
-			(p) => (p.equipment = { ...p.equipment!, gymType: 'strength', equipment: [] })
-		);
-		const plan = generate(p);
+		const plan = generate(kitted(false));
+		const bikePlan = generate(kitted(true));
+		// The same profile with a bike does convert, so the comparison below is not empty.
+		expect(weeksOf(bikePlan).flatMap(bikes).length).toBeGreaterThan(0);
 		expect(weeksOf(plan).flatMap(bikes)).toEqual([]);
+		expect(plan.decisions.some((d) => d.ruleKey === 'running.zone2_bike')).toBe(false);
+		// Each bike session replaces one run, so every week has as many runs with the bike.
+		weeksOf(plan).forEach((week, w) => {
+			const bikeWeek = weeksOf(bikePlan)[w]!;
+			expect(runs(week).length).toBe(runs(bikeWeek).length + bikes(bikeWeek).length);
+		});
+	});
+
+	it('never converts a tempo or interval run', () => {
+		const quality = (plan: ProgramPlan) =>
+			weeksOf(plan).map((week) =>
+				runs(week)
+					.filter((r) => r.type === 'tempo_run' || r.type === 'interval_run')
+					.map((r) => [r.type, r.date])
+			);
+		// A distance runner gets tempo runs; the general runner gets interval runs.
+		const distance = (bike: boolean) =>
+			kitted(bike, (p) => {
+				p.goals = [{ ...p.goals[0]!, disciplines: ['strength', 'distance_running'] } as Goal];
+				p.experience = [
+					...p.experience,
+					{
+						...p.experience[0]!,
+						id: '00000000-0000-4000-8000-000000000998',
+						discipline: 'distance_running',
+						level: 'intermediate'
+					}
+				];
+			});
+		const cases = { tempo_run: distance, interval_run: kitted };
+		for (const [type, make] of Object.entries(cases)) {
+			const plan = quality(generate(make(false)));
+			expect(plan.flat().map(([kind]) => kind)).toContain(type);
+			expect(quality(generate(make(true)))).toEqual(plan);
+		}
 	});
 
 	it('keeps half the easy runs, the first first, and every week at least one run', () => {
