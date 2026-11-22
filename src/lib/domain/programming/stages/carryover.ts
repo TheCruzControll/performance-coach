@@ -17,13 +17,13 @@
  *   exercise_rotated decision naming the accessory that holds the old slot now, pointing at it.
  * - A main lift (one with a top set) is never displaced: directives never rotate one.
  */
-import type { BlockPlan, StrengthSessionPlan } from '../../training/types.ts';
+import type { BlockPlan, DecisionPlan, StrengthSessionPlan } from '../../training/types.ts';
 import { MOVEMENT_PATTERN_LABEL } from '../../training/vocabulary.ts';
 import { alternativesFor, RELATED_PATTERNS } from '../alternatives.ts';
 import { isEligible } from '../eligibility.ts';
 import type { LibraryExercise } from '../eligibility.ts';
 import { toExerciseKey, toExerciseRef } from '../input.ts';
-import type { ExerciseKey } from '../input.ts';
+import type { ExerciseKey, ProgrammingInput } from '../input.ts';
 import type { Reasoned } from '../review/directives.ts';
 import { exerciseOf } from '../selection.ts';
 import type { Stage } from '../stage.ts';
@@ -100,6 +100,26 @@ function filled(
 		})
 	}));
 	return { ...block, weeks };
+}
+
+/**
+ * `decisions` with each exercise_kept naming where its exercise sits in the finished `block`.
+ * Carryover logs it before timefit, which may then drop that accessory from a session, so the
+ * decision moves to the exercise's first place left in the block, or goes when there is none.
+ */
+export function keptWhereTheyAre(
+	block: BlockPlan,
+	input: ProgrammingInput,
+	decisions: DecisionPlan[]
+): DecisionPlan[] {
+	const paths = new Map(
+		[...exercisesIn(block)].map(([key, at]) => [exerciseOf(input, key)?.name, at.path])
+	);
+	return decisions.flatMap((d) => {
+		if (d.kind !== 'exercise_kept') return [d];
+		const path = paths.get(String(d.evidence.exercise));
+		return !path ? [] : path === d.refs[0] ? [d] : [{ ...d, refs: [path] }];
+	});
 }
 
 export function carryover({ previous, keep, rotate }: Carryover): Stage {
