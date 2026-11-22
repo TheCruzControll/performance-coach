@@ -171,6 +171,12 @@ Confirm that the journey from step 5 was among it:
 
 ## 9. Merge
 
+Under `run-queue`, rows merge as a train (that skill's step 2). A row boards only when every line
+below that concerns the row holds for its boarding head: its review, its queue status, the
+stop-for-the-owner cases and `plan/queue.md`. Its own checks must be green, but its branch need
+not contain `main`. The lines about checks, `main`, the proof and deploys are then checked on the
+train's branch and its run. Run alone, the whole gate applies to the slice's own pull request.
+
 Merge only when every line below is true on the PR's latest head. If any is false, do not merge;
 fix it or park the slice.
 
@@ -183,7 +189,9 @@ fix it or park the slice.
   slice's worktree). If it does not, rebase onto `origin/main`, push with `--force-with-lease`,
   and wait for green on the new head before coming back to this gate. Two pull requests that each
   pass alone can break together, and this is the only place that catches it before production. A
-  rebase that applied cleanly needs no new review; one where you resolved a conflict does.
+  rebase that applied cleanly needs no new review; one where you resolved a conflict does. For a
+  train, do not rebase: close its pull request, delete the branch, and build a new train from the
+  new `origin/main`.
 - The last review of this head returned `APPROVE`, or every blocker and should was fixed and
   re-reviewed.
 - Step 8 confirmed the slice's journey passed in CI on this head, and any formal check from
@@ -191,7 +199,7 @@ fix it or park the slice.
 - The slice is not one of the "stop for the owner" cases above, and its queue row is not `hold` or
   `owner`.
 - The branch does not change `plan/queue.md`, unless it is the queue's own housekeeping change.
-- No earlier merge is still deploying. One merge at a time, however many slices are in flight.
+- No earlier merge is still deploying. One merge at a time, a row or a train, however many slices are in flight.
 
 Merge the way this repo's history does, as a merge commit titled `Merge <PR title> (#<number>)`:
 

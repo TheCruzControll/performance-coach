@@ -1388,7 +1388,7 @@ step summary (docs/performance.md, "Lighthouse (desktop)").
 The run's first job, `Scope of the run`, runs `scripts/ci-scope.ts`. A change that touches only
 `docs/`, `plan/`, agent tooling (`.claude/`, `.agents/`, `.codex/`, `.pi/`), root Markdown or
 `.env.example`, and a
-merge to `main` whose tree its pull request already tested, is a light run: it skips the
+merge to `main`, onto the previous tip, whose tree its pull request already tested, is a light run: it skips the
 integration tests, the e2e legs and Lighthouse. Lint, type-check, unit tests (which include the docs
 guards) and the build always run.
 
