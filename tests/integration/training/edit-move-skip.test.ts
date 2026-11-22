@@ -56,7 +56,11 @@ import {
 	type ContextReader
 } from '../../../src/lib/server/services/periodisation/context';
 import { CLEARS_CLASH } from '../../../src/lib/server/services/programs/edits';
-import { getAthleteProfile } from '../../../src/lib/server/services/profile/index';
+import {
+	createGoal,
+	getAthleteProfile,
+	saveExperience
+} from '../../../src/lib/server/services/profile/index';
 import {
 	finishWorkout,
 	logOtherSession,
@@ -65,7 +69,7 @@ import {
 import { seedAnalyticsFixture } from '../../../src/lib/server/test-support/analytics-fixtures/index';
 import type { PeriodisationWeekResult } from '../../../src/lib/server/test-support/analytics-fixtures/periodisation-week';
 import { withRollback } from '../helpers';
-import { makeOwner, makeSecondOwner } from '../profile/fixtures';
+import { generalGoal, makeOwner, makeSecondOwner } from '../profile/fixtures';
 
 const MONDAY = '2026-11-09';
 const day = (n: number) => addDays(MONDAY, n);
@@ -779,6 +783,47 @@ describe('getMoveTargets', () => {
 					'And 3 more warnings.'
 				].join(' ')
 			);
+		});
+	});
+
+	it('warns hard_days_cap when a move adds a hard day, and not when it lands on a day already hard', async () => {
+		await withRollback(async (db) => {
+			const owner = await ownerWithProfile(db);
+			// The cap is read at the owner's level in the leading goal's discipline (CONTEXT_LEVEL), so
+			// the owner needs a goal and a level: intermediate, a cap of four hard days.
+			await createGoal(owner, generalGoal(), { db });
+			await saveExperience(
+				owner,
+				{ entries: [{ discipline: 'strength', level: 'intermediate' }] },
+				{ db }
+			);
+			// Five hard days, Monday to Friday, over the cap. Thursday holds two of them; Saturday is free.
+			const programId = await store(db, owner, [
+				week(MONDAY, [
+					lowerBody(MON, 'Lower A'),
+					lowerBody(TUE, 'Lower B'),
+					lowerBody(WED, 'Lower C'),
+					lowerBody(THU, 'Lower D'),
+					{ ...lowerBody(THU, 'Lower E'), timeOfDay: 'afternoon', orderInDay: 2 },
+					lowerBody(FRI, 'Lower F')
+				])
+			]);
+			const at = { version: 1, today: MON };
+			const lowerE = titled(await versionOf(db, owner, programId, 1), 'Lower E');
+			const checkTo = (toDate: string) =>
+				checkMove(owner, { sessionLineage: lowerE.lineage, toDate }, at, { db });
+
+			// Lower E to Saturday, the free day: the week's hard days go from five to six.
+			const toFreeDay = await checkTo(SAT);
+			expect(toFreeDay.find((w) => w.rule === 'hard_days_cap')).toMatchObject({
+				area: 'concurrent',
+				days: [MON, TUE, WED, THU, FRI, SAT]
+			});
+
+			// Lower E to Tuesday, where Lower B already is: Thursday keeps Lower D, so the week still has
+			// five hard days and the finding it had before is not a new one.
+			const toHardDay = await checkTo(TUE);
+			expect(toHardDay.map((w) => w.rule)).not.toContain('hard_days_cap');
 		});
 	});
 });

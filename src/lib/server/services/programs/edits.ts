@@ -356,13 +356,16 @@ const TALLY_RULES: ReadonlySet<string> = new Set(
 
 /**
  * A finding by its rule, days and sessions, to tell one the move made from one already there. A
- * tally rule's finding goes by its rule and its sessions in any order, whatever their days.
+ * tally rule's finding goes by its rule and its sessions in any order, whatever their days; the
+ * hard-day cap also by how many days hold them.
  */
 const findingKey = (f: Finding) => {
 	const named = f.sessions.map((s) => s.lineage ?? `${s.title} ${s.date}`);
-	return TALLY_RULES.has(f.rule)
-		? [f.rule, ...named.toSorted()].join(' ')
-		: [f.rule, ...f.days, ...named].join(' ');
+	if (!TALLY_RULES.has(f.rule)) return [f.rule, ...f.days, ...named].join(' ');
+	// hard_days_cap counts days, not sessions: spreading the same hard sessions over one more day
+	// makes the week worse, so its key carries the day count.
+	const days = f.rule === 'concurrent.hard_days_cap' ? [`${new Set(f.days).size} days`] : [];
+	return [f.rule, ...days, ...named.toSorted()].join(' ');
 };
 
 /**
