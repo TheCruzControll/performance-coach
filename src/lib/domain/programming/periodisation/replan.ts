@@ -9,8 +9,11 @@
  *   no bridge, every still-eligible exercise kept and none rotated, and the season (planSeason,
  *   carrying the phase under way on) outlines the rest.
  *   After an outline nothing is planned in detail, so the new block is an outline too.
- * - splice (taper) and in place (deload): not planned yet. replanSkeleton refuses both with
- *   REFUSALS until they are added (m7r/27).
+ * - splice (taper): the event's taper weeks are taperSessions of the current weeks, in a taper
+ *   block cut into the event-aligned one; a mini-taper changes its days in place. Every block
+ *   after the event is kept.
+ * - in place (deload): the target week's sessions still ahead (dated today or later, with no
+ *   workout) get deloadSessions' values, and the week becomes a deload with deload targets.
  * Event dates never move and nothing before `from` changes. Each case it cannot plan is a refusal
  * with its sentence (REFUSALS).
  *
@@ -37,22 +40,31 @@ import { toExerciseKey } from '../input.ts';
 import type { ProgrammingInput } from '../input.ts';
 import { generateNextBlock } from '../next-block/generate.ts';
 import type { PreviousBlock } from '../next-block/generate.ts';
-import { leaderOn } from '../priority/weights.ts';
+import { eventKindOf, leaderOn } from '../priority/weights.ts';
 import { canonicalJson, fingerprint, fnv1a64 } from '../random.ts';
 import { shapeDigest } from '../replan/changes.ts';
 import { DELOAD_AFTER_WEEKS } from '../review/cycle.ts';
 import { DIRECTIVE_RULES, modifiableSubset } from '../review/directives.ts';
 import type { CycleDirectives } from '../review/directives.ts';
+import { TARGETS } from '../rules/deload.ts';
 import { CONFLICTS } from '../rules/priority.ts';
-import { MECHANISMS, mechanismOf, REFUSALS, REPLAN_GENERATOR_ID } from '../rules/replan.ts';
+import {
+	DELOAD_HOLD,
+	MECHANISMS,
+	mechanismOf,
+	REFUSALS,
+	REPLAN_GENERATOR_ID
+} from '../rules/replan.ts';
 import type { ReplanMechanism, ReplanRefusalReason } from '../rules/replan.ts';
 import { PLAN_BUDGET } from '../rules/road.ts';
+import { BY_PRIORITY, TAPERS } from '../rules/taper.ts';
 import { exerciseOf } from '../selection.ts';
+import { deloadSessions, deloadWeek } from './deload.ts';
 import type { SessionOptions } from './deload.ts';
 import { BLOCK_PHASES } from './kinds.ts';
 import { planSeason, toBlockPlans } from './season.ts';
 import type { BlockSkeleton, SeasonPlan } from './season.ts';
-import { taperWeeks } from './taper.ts';
+import { taperSessions, taperWeeks } from './taper.ts';
 import type { TaperPlan } from './taper.ts';
 
 export interface ReplanOptions {
@@ -129,7 +141,13 @@ type Base = Pick<
 	ReplanSkeleton,
 	'directive' | 'mechanism' | 'from' | 'today' | 'current' | 'fingerprint' | 'started'
 >;
+type Directive<K extends ReplanDirective['kind']> = Extract<ReplanDirective, { kind: K }>;
 
+/** The phases of a block that tapers for an event. */
+const TAPER_PHASES: readonly Phase[] = ['taper', 'marathon_taper', 'half_taper'];
+/** The rule a taper a re-plan spliced into the sessions cites (taperPlanned). */
+const APPLIED = 'replan.splice';
+const sundayOf = (date: IsoDate) => addDays(mondayOf(date), 6);
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 const sessionKey = (s: { date: IsoDate; orderInDay: number }) => `${s.date}#${s.orderInDay}`;
 const weeksIn = (startsOn: IsoDate, endsOn: IsoDate) => (daysBetween(startsOn, endsOn) + 1) / 7;
@@ -333,6 +351,134 @@ function regenerate(
 }
 
 /**
+ * The spliced taper's taper_planned decision, worded as the season words one. It cites the splice
+ * (APPLIED), not the taper rule as the season's does: a re-plan's taper is in the sessions, so a
+ * later taper directive for the same event, mini or full, finds it and is refused, and every later
+ * splice or deload carries it on (generateReplan), so a taper is never applied twice.
+ */
+function taperPlanned(title: string, taper: TaperPlan, block: number): DecisionPlan {
+	const { days } = taper;
+	const steps = days ? [days.factor] : taper.weeks.map((t) => t.factor);
+	return new DecisionLog().add('taper_planned', APPLIED, [`blocks.${block}`], {
+		event: clip(title, 60),
+		date: taper.raceOn,
+		length: days
+			? plural(daysBetween(days.from, taper.raceOn), 'day')
+			: plural(taper.weeks.length, 'week'),
+		steps: `${steps.map((f) => Math.round(f * 100)).join(', ')} % of the volume`,
+		reason: clip(days ? BY_PRIORITY.why : TAPERS[taper.event].why, 200)
+	});
+}
+
+function splice(
+	input: ProgrammingInput,
+	{ current, directive, from: at }: ReplanOptions & { directive: Directive<'taper'> },
+	base: Base
+): ReplanSkeleton | ReplanRefusal {
+	const { goals, refs } = goalsOf(input);
+	const goal = goals[refs.indexOf(directive.goalRef)];
+	const kind = goal && eventKindOf(goal);
+	if (!goal?.eventDate || !kind || goal.eventDate < at)
+		return refuse('not_applicable', 'Only an event still ahead can be tapered for.');
+	const date = goal.eventDate;
+	const taper = taperWeeks(kind, directive.form === 'full' ? 'primary' : 'secondary', date);
+	// A version records only its own decisions, so a full taper is also found by its block.
+	const planned =
+		current.blocks.some(
+			(b) => TAPER_PHASES.includes(b.phase) && b.startsOn <= date && b.endsOn >= date
+		) ||
+		current.decisions.some(
+			(d) =>
+				d.kind === 'taper_planned' &&
+				d.evidence.date === date &&
+				[APPLIED, taper.ruleKey, `taper.${kind}`].includes(d.ruleKey)
+		);
+	if (planned)
+		return refuse('not_applicable', `${goal.title} on ${date} already has its taper planned.`);
+	const first = taper.days?.from ?? taper.weeks[0]?.startsOn;
+	if (!first || first < at) return refuse('too_close');
+	const dates = datesOf(mondayOf(first), sundayOf(taper.days?.to ?? date));
+	const last = current.blocks.at(-1)!;
+	if (dates.endsOn > last.endsOn)
+		return refuse('not_applicable', `Your plan ends on ${last.endsOn}, before ${goal.title}.`);
+	const replaces = current.blocks.flatMap((b, i) =>
+		b.endsOn >= dates.startsOn && b.startsOn <= dates.endsOn ? [i] : []
+	);
+	const inside = replaces.map((i) => current.blocks[i]!);
+	if (taper.days ? inside.some((b) => b.outline) : new Set(inside.map((b) => b.outline)).size > 1)
+		return refuse('not_applicable', 'Those weeks are not all planned in detail yet.');
+	if (taper.days) {
+		// A mini-taper changes its days' sessions in place: no block moves.
+		const before = current.blocks.slice(0, replaces[0]);
+		const after = current.blocks.slice(replaces.at(-1)! + 1);
+		const decisions = [taperPlanned(goal.title, taper, before.length)];
+		return skeletonOf(base, { dates, replaces, before, after, taper, decisions });
+	}
+	const { before, cutAt } = around(current, dates.startsOn);
+	const next = addDays(dates.endsOn, 1);
+	const after = current.blocks
+		.filter((b) => b.endsOn >= next)
+		.map((b) =>
+			b.startsOn >= next
+				? b
+				: { ...b, startsOn: next, weeks: b.weeks.filter((w) => w.startsOn >= next) }
+		);
+	if (before.length + after.length + 1 > PLAN_BUDGET.blocks) return refuse('too_many_blocks');
+	const decisions = [taperPlanned(goal.title, taper, before.length)];
+	return skeletonOf(base, { dates, replaces, before, cutAt, after, taper, decisions });
+}
+
+function inPlace(
+	input: ProgrammingInput,
+	{ current, directive, today }: ReplanOptions & { directive: Directive<'deload'> },
+	base: Base
+): ReplanSkeleton | ReplanRefusal {
+	const { week } = directive;
+	if (addDays(week, 6) < today) return refuse('nothing_ahead');
+	const ahead = addDays(mondayOf(today), 7 * DELOAD_HOLD.ownerWeeksAhead);
+	if (directive.trigger !== 'reactive' && week > ahead)
+		return refuse('not_applicable', 'Only this week or next can be deloaded.');
+	const b = current.blocks.findIndex((x) => !x.outline && x.weeks.some((w) => w.startsOn === week));
+	if (b < 0) return refuse('not_applicable', 'That week is not planned in detail yet.');
+	const until = addDays(week, 7 * (DELOAD_HOLD.weeksAfter + 1) - 1);
+	const light: readonly string[] = DELOAD_HOLD.kinds;
+	const phases: readonly Phase[] = DELOAD_HOLD.phases;
+	const within = (x: { startsOn: IsoDate }) => x.startsOn >= week && x.startsOn <= until;
+	// An outline block has no weeks yet: a light-phase one (a taper, a recovery) is its light weeks.
+	const held = [
+		...current.blocks
+			.flatMap((x) => x.weeks.filter((w) => light.includes(w.kind)))
+			.map((w) => ({ startsOn: w.startsOn, what: `A ${w.kind} week` })),
+		...current.blocks
+			.filter((x) => x.outline && phases.includes(x.phase))
+			.map((x) => ({ startsOn: x.startsOn, what: `A ${PHASE_LABEL[x.phase].toLowerCase()} block` }))
+	].find(within);
+	// Only an event its goal leads on gets a taper or an event week; one trained through gets none.
+	const { goals, refs } = goalsOf(input);
+	const event = goals.find(
+		(g, i) =>
+			g.eventDate &&
+			within({ startsOn: g.eventDate }) &&
+			leaderOn(input, mondayOf(g.eventDate))?.goalId === refs[i]
+	);
+	if (held || event) {
+		const what = held
+			? `${held.what} starts on ${held.startsOn}`
+			: `${event!.title} is on ${event!.eventDate}`;
+		return refuse('not_applicable', `${what}: ${DELOAD_HOLD.why}`);
+	}
+	const target = current.blocks[b]!.weeks.find((w) => w.startsOn === week)!;
+	if (!target.sessions.some((s) => s.date >= today && !base.started.includes(sessionKey(s))))
+		return refuse('nothing_ahead');
+	return skeletonOf(base, {
+		dates: datesOf(week, addDays(week, 6)),
+		replaces: [b],
+		before: current.blocks.slice(0, b),
+		after: current.blocks.slice(b + 1)
+	});
+}
+
+/**
  * What a re-plan changes and where, from today's profile input, or the refusal with its sentence.
  * The fingerprint is taken here, from the profile before any results overlay.
  */
@@ -341,15 +487,9 @@ export function replanSkeleton(
 	o: ReplanOptions
 ): ReplanSkeleton | ReplanRefusal {
 	const { directive } = o;
-	// m7r/27 splices a taper and deloads a week in place; until then both are refused, not guessed.
-	if (directive.kind === 'taper' || directive.kind === 'deload')
-		return refuse(
-			'not_applicable',
-			`Re-planning a ${directive.kind} is not available yet; nothing was changed.`
-		);
 	// A program that has not started yet is re-planned from its own start.
 	const start = o.current.startsOn;
-	const from = o.from < start ? start : o.from;
+	const from = directive.kind === 'deload' ? directive.week : o.from < start ? start : o.from;
 	if (mondayOf(from) !== from) throw new RangeError(`A re-plan starts on a Monday: ${from}`);
 	const { baseVersionNumber, catalogueDigest = null } = o;
 	const digest = fnv1a64(canonicalJson({ directive, baseVersionNumber, from, catalogueDigest }));
@@ -362,6 +502,8 @@ export function replanSkeleton(
 		fingerprint: fingerprint(input, digest, REPLAN_GENERATOR_ID),
 		started: (o.started ?? []).map(sessionKey).sort()
 	};
+	if (directive.kind === 'taper') return splice(input, { ...o, from, directive }, base);
+	if (directive.kind === 'deload') return inPlace(input, { ...o, directive }, base);
 	return regenerate(input, { ...o, from }, base);
 }
 
@@ -395,6 +537,41 @@ function replanned(s: ReplanSkeleton, refs: string[]): DecisionPlan {
 	});
 }
 
+/** The full taper's blocks: its weeks taperSessions of the current ones, kind taper. */
+function taperBlock(s: ReplanSkeleton, goalRef: string): BlockPlan {
+	const taper = s.taper!;
+	const { startsOn, endsOn } = s.dates;
+	const phase: Phase =
+		taper.event === 'marathon' ? 'marathon_taper' : taper.event === 'half' ? 'half_taper' : 'taper';
+	const replaced = s.replaces.map((i) => s.current.blocks[i]!);
+	const current = replaced
+		.flatMap((b) => b.weeks)
+		.filter((w) => w.startsOn >= startsOn && w.startsOn <= endsOn);
+	const weeks = taperSessions(current, taper).map((w) => {
+		const factor = taper.weeks.find((t) => t.startsOn === w.startsOn)?.factor;
+		if (factor === undefined) return w;
+		const of = (n: number) => Math.round(n * factor * 100) / 100;
+		const { volumeFactor, runVolumeFactor } = w.targets;
+		const targets = {
+			...w.targets,
+			volumeFactor: of(volumeFactor),
+			runVolumeFactor: of(runVolumeFactor)
+		};
+		return { ...w, kind: 'taper' as const, targets };
+	});
+	const outline = replaced[0]!.outline;
+	return {
+		phase,
+		name: PHASE_LABEL[phase],
+		startsOn,
+		endsOn,
+		outline,
+		goalRefs: [goalRef],
+		progression: {},
+		weeks
+	};
+}
+
 /**
  * The re-planned version from the skeleton. `input` is what a regenerated block is generated from
  * (the service's results overlay: loads from the latest e1RM, running from the actual mileage);
@@ -405,9 +582,10 @@ export function generateReplan(
 	s: ReplanSkeleton,
 	previous: ReplanPrevious
 ): Replan {
-	const { current, directive, before } = s;
+	const { current, directive, before, after } = s;
 	let blocks: BlockPlan[];
 	let made: DecisionPlan[] = s.decisions;
+	let weeks: WeekPlan[] = [];
 	if (s.full) {
 		const options = { startsOn: s.from, firstPlannedDay: current.firstPlannedDay };
 		({ blocks, decisions: made } = generateProgram(input, options));
@@ -431,11 +609,50 @@ export function generateReplan(
 		// generateNextBlock's refs name its block as blocks.0.
 		const at = (r: string) => r.replace(/^blocks\.0(?=\.|$)/, `blocks.${before.length}`);
 		made = [...next.decisions.map((d) => ({ ...d, refs: d.refs.map(at) })), ...made];
-	} else {
-		// After an outline: the regenerated block is an outline too, and the road after it follows.
+	} else if (s.mechanism === 'regenerate') {
 		blocks = [...before, ...toBlockPlans(s.outline)];
+	} else if (s.taper?.days) {
+		const changed = s.replaces.map((i) => {
+			const b = current.blocks[i]!;
+			return { ...b, weeks: taperSessions(b.weeks, s.taper!) };
+		});
+		blocks = [...before, ...changed, ...after];
+		weeks = changed
+			.flatMap((b) => b.weeks)
+			.filter((w) => w.startsOn >= s.dates.startsOn && w.startsOn <= s.dates.endsOn);
+	} else if (s.taper) {
+		const block = taperBlock(s, directive.kind === 'taper' ? directive.goalRef : '');
+		[blocks, weeks] = [[...before, block, ...after], block.weeks];
+	} else {
+		const block = current.blocks[s.replaces[0]!]!;
+		const started = new Set(s.started);
+		const ahead = (x: { date: IsoDate; orderInDay: number }) =>
+			x.date >= s.today && !started.has(sessionKey(x));
+		const week = block.weeks.find((w) => w.startsOn === s.from)!;
+		const targets = deloadWeek(week.targets, TARGETS, week.kind);
+		const sessions = deloadSessions(week, TARGETS, ahead, previous.sessions);
+		const deload: WeekPlan = { ...week, kind: 'deload', targets, sessions };
+		blocks = [
+			...before,
+			{ ...block, weeks: block.weeks.map((w) => (w === week ? deload : w)) },
+			...after
+		];
+		weeks = [deload];
 	}
-	const decisions = [replanned(s, [`blocks.${s.full ? 0 : before.length}`]), ...made];
+	// A version records only its own decisions: a splice or a deload keeps the sessions of every
+	// taper a re-plan applied, so it carries their decisions on (a regenerate plans them afresh).
+	const within = (date: unknown) =>
+		blocks.findIndex((b) => b.startsOn <= String(date) && b.endsOn >= String(date));
+	const applied = current.decisions.flatMap((d) =>
+		s.mechanism !== 'regenerate' &&
+		d.kind === 'taper_planned' &&
+		d.ruleKey === APPLIED &&
+		String(d.evidence.date) >= s.from &&
+		within(d.evidence.date) >= 0
+			? [{ ...d, refs: [`blocks.${within(d.evidence.date)}`] }]
+			: []
+	);
+	const decisions = [replanned(s, [`blocks.${s.full ? 0 : before.length}`]), ...made, ...applied];
 	const checked = validate(programPlanSchema, {
 		title: current.title,
 		startsOn: s.full ? s.from : current.startsOn,
@@ -448,7 +665,7 @@ export function generateReplan(
 	return {
 		plan,
 		outline: plan.blocks.filter((b) => b.outline),
-		weeks: [],
+		weeks,
 		decisions: plan.decisions,
 		fingerprint: s.fingerprint,
 		shapeDigest: shapeDigest(plan, s.from)
