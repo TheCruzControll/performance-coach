@@ -1,8 +1,9 @@
 /**
  * The restore's row step (scripts/backup/restore.ts), from the scratch source to the scratch
- * destination: export → seal → open → restore gives back every row, id and sequence in one
- * verified transaction, through guards that would refuse historical rows; a file or target it
- * must not restore is refused before any write, and a failure part-way leaves nothing behind.
+ * destination: every exported table seeded (every-table.ts), export → seal → open → restore gives
+ * back every row, id and sequence in one verified transaction, through guards that would refuse
+ * historical rows; a file or target it must not restore is refused before any write, and a failure
+ * part-way leaves nothing behind.
  */
 import { randomBytes } from 'node:crypto';
 import { rm } from 'node:fs/promises';
@@ -174,7 +175,7 @@ async function expectMigratedEmpty(): Promise<void> {
 }
 
 beforeAll(async () => {
-	({ url: srcUrl, ownerId } = await prepareSource());
+	({ url: srcUrl, ownerId } = await prepareSource({ everyTable: true }));
 	src = await connect(srcUrl);
 	dst = await connect(dstUrl);
 	await src.query(GUARDED_DDL);
@@ -188,6 +189,15 @@ beforeAll(async () => {
 afterAll(async () => {
 	await src?.end();
 	await dst?.end();
+});
+
+describe('the seeded source', () => {
+	it('holds a row in every exported table, so the round trip restores every table', () => {
+		const empty = Object.entries(archive.trailer.rowCounts)
+			.filter(([, count]) => count === 0)
+			.map(([name]) => name);
+		expect(empty, 'exported tables with no row: give each one a row in every-table.ts').toEqual([]);
+	});
 });
 
 describe('restoreArchive', () => {

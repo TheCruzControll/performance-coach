@@ -60,7 +60,8 @@
   transaction**: the pinned settings; `DISABLE TRIGGER USER` on every exported table, so the
   database's own guard and audit triggers neither refuse nor rewrite restored rows; the rows in
   restore order with their identities (`OVERRIDING SYSTEM VALUE`); the late columns of a
-  foreign-key cycle; `setval` for every sequence; `ENABLE TRIGGER USER`; the digests recomputed
+  foreign-key cycle; `setval` for every sequence; `SET CONSTRAINTS ALL IMMEDIATE`, then `ENABLE TRIGGER USER`
+  (Postgres refuses to alter a table with pending deferred checks); the digests recomputed
   in SQL and compared with the trailer, rolling back on any difference; then a marker and
   `COMMIT`. A rerun of the same file answers already restored. The runtime grants are re-applied
   after it.
