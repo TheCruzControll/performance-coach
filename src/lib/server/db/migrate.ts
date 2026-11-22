@@ -12,6 +12,7 @@ import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import pg from 'pg';
 import { connectionConfig } from './connection.ts';
+import { applyRuntimeGrants } from './runtime-grants.ts';
 import { seedExerciseCatalogue, type CatalogueSeed } from './seed/exercises.ts';
 
 /** Local defaults created by scripts/db-setup.sh. Never used in preview/production. */
@@ -58,8 +59,9 @@ export interface MigrateOptions {
 
 /**
  * Apply all pending SQL migrations from ./drizzle using a direct (non-pooled) connection, then
- * seed the exercise catalogue under the same lock, so every migrated database has the library
- * the code was built with.
+ * re-applies the runtime role's grants (runtime-grants.ts; a role this login cannot create only
+ * warns, and the migration still completes), then seeds the exercise catalogue under the same
+ * lock, so every migrated database has the library the code was built with.
  */
 export async function runMigrations(
 	url: string,
@@ -87,6 +89,7 @@ export async function runMigrations(
 			migrationsTable: MIGRATIONS_TABLE
 		});
 		const total = await countApplied(client);
+		await applyRuntimeGrants(client);
 		const library = options.seed === false ? null : await seedExerciseCatalogue(client);
 		return { applied: total - before, total, library };
 	} finally {

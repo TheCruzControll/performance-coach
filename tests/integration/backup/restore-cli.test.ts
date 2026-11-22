@@ -22,6 +22,7 @@ import { connectionConfig } from '../../../src/lib/server/db/connection';
 import { journalMigrations, runMigrations } from '../../../src/lib/server/db/migrate';
 import { EXIT, main } from '../../../scripts/backup-restore';
 import { inspectTarget } from '../../../scripts/backup/target';
+import { runtimeUrl } from '../helpers';
 import { prepareSource, scratchUrl } from './scratch';
 
 const root = fileURLToPath(new URL('../../../', import.meta.url));
@@ -224,6 +225,32 @@ describe('backup:restore', () => {
 				{ url: BLOB_URL, authorization: `Bearer ${TOKEN}`, redirect: 'error' }
 			]);
 			await expectRestored();
+		},
+		SLOW
+	);
+
+	it(
+		're-applies the runtime grants on every restore, even without the forward migration',
+		async () => {
+			await runMigrations(dstUrl, { seed: false });
+			await dst.query(`REVOKE ALL ON ALL TABLES IN SCHEMA public FROM coach_runtime;
+				REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM coach_runtime;
+				REVOKE ALL ON drizzle.__drizzle_migrations FROM coach_runtime;
+				REVOKE ALL ON SCHEMA drizzle FROM coach_runtime`);
+			const app = await connect(runtimeUrl(dstUrl));
+			try {
+				await expect(app.query('SELECT count(*) FROM owners')).rejects.toMatchObject({
+					code: '42501'
+				});
+				const result = restore(['--yes', '--no-forward-migrate']);
+				expect(result.stderr).toBe('');
+				expect(result.status).toBe(EXIT.ok);
+				expect(result.stdout).toContain('Grants:   coach_runtime re-applied.');
+				await app.query('SELECT count(*) FROM owners');
+				await app.query('SELECT count(*) FROM drizzle.__drizzle_migrations');
+			} finally {
+				await app.end();
+			}
 		},
 		SLOW
 	);

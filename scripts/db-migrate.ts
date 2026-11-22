@@ -9,6 +9,7 @@
  * Always use a direct (non-pooled) connection for migrations (Neon: host without `-pooler`).
  */
 import { LOCAL_DATABASE_URLS, redactUrl, runMigrations } from '../src/lib/server/db/migrate.ts';
+import { isRuntimeRoleUrl } from '../src/lib/server/db/runtime-grants.ts';
 
 const url =
 	process.env.DATABASE_URL_UNPOOLED ||
@@ -17,6 +18,23 @@ const url =
 
 if (!url) {
 	console.error('db:migrate: set DATABASE_URL_UNPOOLED (or DATABASE_URL).');
+	process.exit(1);
+}
+let parses = true;
+try {
+	new URL(url);
+} catch {
+	parses = false;
+}
+if (!parses) {
+	// Never print the input: a malformed URL can still carry a password. redactUrl would throw on it.
+	console.error('not a postgres:// URL');
+	process.exit(2);
+}
+if (isRuntimeRoleUrl(url)) {
+	console.error(
+		`db:migrate: ${redactUrl(url)} is the app's runtime role, which cannot migrate. Set DATABASE_URL_UNPOOLED to the owner's direct URL.`
+	);
 	process.exit(1);
 }
 

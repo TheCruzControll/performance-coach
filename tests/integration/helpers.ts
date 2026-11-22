@@ -130,3 +130,11 @@ export function watchPool(): { peak: () => number; stop: () => void } {
 	} as typeof query;
 	return { peak: () => most, stop: () => void (pool.query = query) };
 }
+
+/** `url` with the local runtime login (coach_app, created by `pnpm db:setup`) in place of its user. */
+export function runtimeUrl(url: string): string {
+	const u = new URL(url);
+	u.username = 'coach_app';
+	u.password = 'coach_app';
+	return u.toString();
+}

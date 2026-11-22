@@ -29,6 +29,7 @@
 		"db:generate": "drizzle-kit generate",
 		"db:drift": "drizzle-kit generate && git diff --exit-code --stat -- drizzle && test -z \"$(git status --porcelain -- drizzle)\"",
 		"db:migrate": "node --env-file-if-exists=.env scripts/db-migrate.ts",
+		"db:grants": "node --env-file-if-exists=.env scripts/db-grants.ts",
 		"db:reset:test": "node --env-file-if-exists=.env scripts/db-reset.ts --target test",
 		"db:reset:e2e": "node --env-file-if-exists=.env scripts/db-reset.ts --target e2e",
 		"db:explain": "vitest run --project explain",

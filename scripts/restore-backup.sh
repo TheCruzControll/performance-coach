@@ -9,6 +9,7 @@
 # - Restore into a NEW Neon branch (or a scratch local database) first, verify, then promote.
 #   Use a direct (non-pooled) connection string for the target.
 # - Asks for confirmation unless --yes is passed. Never prints the passphrase or password.
+# - Then re-applies the runtime role's grants (scripts/db-grants.ts), which `--no-privileges` drops.
 set -euo pipefail
 
 usage() {
@@ -20,8 +21,9 @@ usage() {
 backup="$1"
 target="$2"
 confirm="${3:-}"
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-for tool in gpg pg_restore; do
+for tool in gpg pg_restore node; do
   command -v "$tool" >/dev/null 2>&1 || { echo "restore: '$tool' is required" >&2; exit 1; }
 done
 [[ -f "$backup" ]] || { echo "restore: no such file: $backup" >&2; exit 1; }
@@ -70,5 +72,11 @@ echo "restore: archive OK ($entries entries); restoring into $redacted"
 
 pg_restore --clean --if-exists --no-owner --no-privileges --single-transaction --exit-on-error \
   --dbname="$target" "$workdir/backup.dump"
+
+echo "restore: re-applying the runtime role's grants (--no-privileges dropped them)"
+if ! (cd "$repo_root" && node scripts/db-grants.ts "$target"); then
+  echo 'restore finished but grants failed; run: pnpm db:grants "<url>"' >&2
+  exit 1
+fi
 
 echo "restore: done"
