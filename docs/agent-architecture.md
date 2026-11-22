@@ -284,6 +284,7 @@ output schema are in [coach-tools.md](coach-tools.md).
 | --------------------------------------------------------------------------- | ----------- | ------- | ------ |
 | [`create_next_training_cycle`](coach-tools.md#create_next_training_cycle)   | Programming | propose | yes    |
 | [`create_training_program`](coach-tools.md#create_training_program)         | Programming | propose | no     |
+| [`evaluate_week_interference`](coach-tools.md#evaluate_week_interference)   | Programming | read    | no     |
 | [`get_coach_proposals`](coach-tools.md#get_coach_proposals)                 | Programming | read    | no     |
 | [`get_current_program`](coach-tools.md#get_current_program)                 | Programming | read    | no     |
 | [`get_current_training_week`](coach-tools.md#get_current_training_week)     | Programming | read    | no     |
