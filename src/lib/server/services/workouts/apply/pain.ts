@@ -16,6 +16,9 @@
  *   program, whatever its action, area or severity. The coach (M5) reads it as pain memory.
  * - The workout must be the owner's (missing: deferred until it arrives; another owner's:
  *   forbidden) and the exercise in the owner's library, or it is refused at payload.exerciseId.
+ * - A run's or a class's report names no exercise (exercise_id null) at its segment's position (a
+ *   class: 1). A strength workout's must name one, and a run's or a class's must not; each is
+ *   refused at payload.exerciseId.
  */
 import { createPainReportsRepository } from '../../../db/repositories/pain-reports';
 import { createTrainingLogRepository } from '../../../db/repositories/training-log';
@@ -30,8 +33,16 @@ export const painHandlers: Handlers<'pain.report'> = {
 		if (!workout || workout.deletedAt) throw new TrainingNotFoundError('workout');
 		const { position, plannedLineage, exerciseId, area, severity, action, substitutionId, note } =
 			m.payload;
-		const found = await getExercisesByIds(ownerId, [exerciseId], { db });
-		if (!found.has(exerciseId)) throw new TrainingInputError({ exerciseId: 'Not in your library' });
+		if (exerciseId === null) {
+			if (workout.kind === 'strength')
+				throw new TrainingInputError({ exerciseId: 'Pick the exercise that hurt' });
+		} else {
+			if (workout.kind !== 'strength')
+				throw new TrainingInputError({ exerciseId: 'A run or a class names no exercise' });
+			const found = await getExercisesByIds(ownerId, [exerciseId], { db });
+			if (!found.has(exerciseId))
+				throw new TrainingInputError({ exerciseId: 'Not in your library' });
+		}
 		const stored = await createPainReportsRepository(db).insertReport({
 			id: m.id,
 			ownerId,

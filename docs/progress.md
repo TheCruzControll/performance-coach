@@ -31,6 +31,7 @@ runs the criteria and updates milestones.md.
 
 ## Recently merged
 
+- During a run or a class, This hurts records the pain and ends the session; a run can skip a segment.
 - End a plan and build a new one, keeping every logged workout (#501).
 - The coach answers again, and programs can lift and run beside timed classes (#500).
 - The agent architecture rewritten from the code, with a generated tools catalogue, and the coach

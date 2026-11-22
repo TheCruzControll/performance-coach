@@ -30,7 +30,7 @@ export function changedRows(rows: CanonicalWorkout, ids: ReadonlySet<string>): C
 	const exerciseIds = new Set([
 		...sets.map((s) => s.exerciseId),
 		...substitutions.flatMap((s) => [s.fromExerciseId, s.toExerciseId]),
-		...pain.map((p) => p.exerciseId)
+		...pain.flatMap((p) => (p.exerciseId === null ? [] : [p.exerciseId]))
 	]);
 	const exercises = Object.fromEntries(
 		Object.entries(rows.exercises).filter(([id]) => exerciseIds.has(id))

@@ -21,8 +21,9 @@ function exercisesOf(m: Mutation): string[] {
 		case 'set.log':
 		case 'set.skip':
 		case 'exercise.skip':
-		case 'pain.report':
 			return [m.payload.exerciseId];
+		case 'pain.report':
+			return m.payload.exerciseId === null ? [] : [m.payload.exerciseId];
 		case 'exercise.substitute':
 		case 'exercise.dislike':
 			return [m.payload.fromExerciseId, m.payload.toExerciseId];

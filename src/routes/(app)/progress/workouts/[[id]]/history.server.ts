@@ -332,7 +332,7 @@ export function detailView(detail: WorkoutDetail, { timeZone }: Context): Workou
 		pain: live(canonical.pain).map((p) => ({
 			key: p.id,
 			title: [
-				name(p.exerciseId),
+				p.exerciseId !== null && name(p.exerciseId),
 				p.area && BODY_AREA_LABEL[p.area],
 				p.severity && SEVERITY_INFO[p.severity].label,
 				PAIN_ACTION_WORDS[p.action]
