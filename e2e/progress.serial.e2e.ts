@@ -129,6 +129,8 @@ async function tileMisfits(page: Page): Promise<string[]> {
 
 /** The Training load chart's shown totals: at most two, and no two overlapping. */
 async function expectChartTotalsApart(page: Page) {
+	// The overview's charts draw once they near the screen (ChartFrame's deferred).
+	await page.getByTestId('chart-load').scrollIntoViewIfNeeded();
 	const chart = page.getByTestId('bar-chart').first();
 	await expect(chart).toBeVisible();
 	const shown = await chart.locator('.cap-text').evaluateAll((els) =>

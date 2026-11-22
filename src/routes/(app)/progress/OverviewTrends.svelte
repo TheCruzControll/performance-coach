@@ -6,7 +6,8 @@
   - Once anything is logged, the KPI TrendTiles, each with its change on the previous period and
     the week so far, then what each figure is and what counts as good.
   - Once there is history, the headline ChartFrames (load by discipline, each key lift's
-    estimated 1RM), server-rendered with their table twins; only the plot waits for its body.
+    estimated 1RM), server-rendered with their table twins; only the plot waits for its body, and
+    each chart's body draws once it nears the screen.
   - Until then, what appears and when (the dated timeline), never a ghost chart.
 
   Its sections are rows of the view's grid, as if the view rendered them itself.
@@ -65,6 +66,7 @@
 					body={CHART_BODIES.bar}
 					props={{ data: chart.data }}
 					height="16rem"
+					deferred
 					data-testid="chart-load"
 				/>
 			{/if}
@@ -73,6 +75,7 @@
 					{...chart}
 					body={CHART_BODIES.line}
 					props={{ data: chart.data }}
+					deferred
 					data-testid="chart-lift"
 				/>
 			{/each}

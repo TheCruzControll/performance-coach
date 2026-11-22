@@ -32,8 +32,9 @@
 - **The frame is server-rendered.** `ChartFrame` renders the title, a context caption (period ·
   comparison · estimated or measured · trend window), the one-sentence summary and the table twin
   (`ChartTable`, a `<details>` 'Show as table'), and reserves the plot box at its full height. The
-  body loads after hydration and fades in; nothing moves. A failed chunk is a Notice with Retry;
-  without JavaScript the plot says 'Chart needs JavaScript' beside the table.
+  body loads after hydration and fades in; nothing moves; a frame marked `deferred` (Progress →
+  Overview) loads it once its plot box is within a screen of the viewport. A failed chunk is a
+  Notice with Retry; without JavaScript the plot says 'Chart needs JavaScript' beside the table.
 
 ## Alternatives
 

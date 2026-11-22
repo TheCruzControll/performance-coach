@@ -4,11 +4,12 @@
   context caption (period · comparison · estimated or measured · trend window), the one-sentence
   summary and the table twin, and reserves the plot box at its full height, x-axis band included,
   with a hairline grid. After hydration the body, a CHART_BODIES loader, draws into that box and
-  fades in (not under reduced motion), so nothing moves. A body that fails to load is a Notice with
-  Retry, which imports it again in place (WebKit fetches anew); if that fails too while online the
-  page reloads, because Chromium keeps a failed module fetch for the document's lifetime. Without
-  JavaScript the plot says so beside the table. `availability` takes the plot's place when there is
-  nothing to draw yet ('Available after 6 weeks'), and then no body loads.
+  fades in (not under reduced motion), so nothing moves. A frame marked `deferred` loads it only
+  once the plot box is within a screen of the viewport (near-viewport.ts). A body that fails to
+  load is a Notice with Retry, which imports it again in place (WebKit fetches anew); if that fails
+  too while online the page reloads, because Chromium keeps a failed module fetch for the document's
+  lifetime. Without JavaScript the plot says so beside the table. `availability` takes the plot's
+  place when there is nothing to draw yet ('Available after 6 weeks'), and then no body loads.
 -->
 <!-- eslint-disable-next-line @typescript-eslint/no-explicit-any -- any body's props -->
 <script lang="ts" generics="P extends Record<string, any>">
@@ -17,6 +18,7 @@
 	import Notice from '../components/Notice.svelte';
 	import type { ChartBodyLoader } from './bodies.ts';
 	import ChartTable from './ChartTable.svelte';
+	import { whenNear } from './near-viewport.ts';
 	import type { ChartTableData } from './table.ts';
 
 	interface Props {
@@ -31,6 +33,8 @@
 		/** The plot box's height, its x-axis band included: the room the server reserves. */
 		height?: string;
 		availability?: Snippet;
+		/** Load the body only once the plot box is within a screen of the viewport (near-viewport.ts). */
+		deferred?: boolean;
 		'data-testid'?: string;
 	}
 
@@ -43,12 +47,14 @@
 		props,
 		height = '13rem',
 		availability,
+		deferred = false,
 		'data-testid': testId
 	}: Props = $props();
 
 	let Body = $state.raw<Component<P>>();
 	let failed = $state(false);
 	let failures = 0;
+	let plot = $state<HTMLElement>();
 
 	async function load() {
 		failed = false;
@@ -61,7 +67,9 @@
 	}
 
 	onMount(() => {
-		if (!availability) load();
+		if (availability) return;
+		if (!deferred || !plot) return void load();
+		return whenNear(plot, load);
 	});
 </script>
 
@@ -72,6 +80,7 @@
 		<p class="summary">{summary}</p>
 	</figcaption>
 	<div
+		bind:this={plot}
 		class="plot"
 		style:block-size={height}
 		aria-busy={!availability && !Body && !failed}

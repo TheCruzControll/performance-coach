@@ -156,6 +156,20 @@ async function follow(page: Page, prefix: string) {
 	await page.waitForLoadState('networkidle');
 }
 
+/**
+ * Scroll each chart into view until its deferred body has drawn (aria-busy false, ChartFrame),
+ * then back to the top: the full-page shot would otherwise show empty plot grids.
+ */
+async function drawPlots(page: Page) {
+	const plots = page.getByTestId('chart-plot');
+	await expect(plots.first()).toBeVisible();
+	for (const plot of await plots.all()) {
+		await plot.scrollIntoViewIfNeeded();
+		await expect(plot).toHaveAttribute('aria-busy', 'false');
+	}
+	await page.evaluate(() => window.scrollTo(0, 0));
+}
+
 const GROUPS: Group[] = [
 	{
 		name: 'today',
@@ -222,7 +236,10 @@ const GROUPS: Group[] = [
 				['running', '/progress?view=running'],
 				['general', '/progress?view=general']
 			] as const) {
-				await shot('progress', state, () => visit(page, to, 'Progress'));
+				await shot('progress', state, async () => {
+					await visit(page, to, 'Progress');
+					if (state === 'overview') await drawPlots(page);
+				});
 			}
 			await shot('progress', 'exercise', async () => {
 				const squat = seeded.exercises.back_squat;
