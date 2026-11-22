@@ -90,7 +90,10 @@ async function reviewed(db: Executor, day: IsoDate, { monday = false } = {}) {
 	const bench = seeded.exercises.bench_press!;
 	await loadLine(db, owner, bench, THURSDAY, 2);
 	if (monday) for (const position of [2, 3, 4]) await loadLine(db, owner, bench, MONDAY, position);
-	const { review } = await createWeeklyReview(owner, { weekStartsOn: REVIEWED, today: day }, deps);
+	// M6's checkWeek path (the context reads skipped): with M7's judge the hard week's next week has
+	// no move a finding would not name (m7/24), and these tests read M6's changes.
+	const m6 = { ...deps, context: { reader: async () => null } };
+	const { review } = await createWeeklyReview(owner, { weekStartsOn: REVIEWED, today: day }, m6);
 	const { rows } = await db.execute<{ evidence: { adjustments: Adjustment[] } }>(
 		sql`select evidence from coach_proposals where id = ${review.proposalId}`
 	);

@@ -629,10 +629,12 @@ with their statuses and kind; next week's state and kind; the facts of the week 
 - `running`: distance against the plan (`MILEAGE_ON_PLAN`) and the week before, pace by type, and
   the long run. `muay_thai`: sessions, load and rounds. `recovery`: the notes' means.
 - `fatigue`: the ACWR with its caveat, and `fatigueLevel`'s level and reasons.
-- `conflicts`: `checkWeek` over the week as performed. `performedSessions` reads a logged workout
-  as a session: a run with its segments, an other session with its kind, a strength session
-  with a line per set done (its RPE as the target), the intensity from the session RPE
-  (`PERFORMED_INTENSITY`) and the source from the planned session it completed.
+- `conflicts`: with `input.evaluation` (`ReviewEvaluation`, `review/evaluation.ts`), M7's
+  `evaluateWeek` over the week as performed, on the logged load; without it, `checkWeek` alone over
+  the same sessions. `performedSessions` reads a logged workout as a session: a run with its
+  segments, an other session with its kind, a strength session with a line per set done (its RPE
+  as the target), the intensity from the session RPE (`PERFORMED_INTENSITY`) and the source from
+  the planned session it completed.
 - `prs`, then `next`: next week's kind, or the boundary the cycle review takes over.
 
 The summary (at most `SUMMARY_MAX`) leads with adherence, then fatigue, conflicts, PRs and the
@@ -648,17 +650,23 @@ ops (`adjust_set`, `adjust_run_segment`, `move`) that M5's `programOpSchema` acc
 adjustment has its `id`, `kind`, `lineage`, `sessionDate`, `op`, changed fields `before` and
 `after`, `options` (`proposed` and `half_step`, halfway on the field's grain, or null), `why`
 (clipped into the op's `reason`, the version decision's why), `evidence`, `significant` and
-`priority`.
+`priority`. Its conflicts and every change are judged with M7's evaluator when `ctx.evaluation` is
+given (`ReviewEvaluation`, `review/evaluation.ts`), and with `checkWeek` alone without it.
 
 - Lines: `decideFromResults` per working line, the op in the line's own load kind. Fatigue `high`
   deloads the main lifts (`DELOAD`: sets × 0.6, RPE ≤ 6) with no progression; in a week already
   light (`LIGHT_WEEK_KINDS`: deload, taper, event) it only caps RPE and sets `cycleFlag`.
 - Running: `adaptRunning`. A missed long run is repeated on its longest segment; the week is held
   to +10 % by shortening easy, steady and long segments (`CAPPED_SEGMENTS`) in proportion.
-- Conflicts: an `avoid` rule of `checkWeek` resolved by moving a generated session to the nearest
-  day of the week that breaks no rule the week did not already break.
+- Conflicts: with `ctx.evaluation`, an `avoid` finding of M7's `evaluateWeek` is resolved by
+  `repairWeek`'s moves, and each change is kept only when `nextWeekJudge` adds no `avoid` finding
+  to the week as changed so far. Without it, an `avoid` rule of `checkWeek` is resolved by moving
+  a generated session to the nearest day of the week that breaks no rule the week did not already
+  break.
 - Not proposed, with `reason` and `words`: what M3's edits cannot express (a hold's seconds), an
-  added set past `sessionMinutes`, and past `MAX_NEXT_WEEK_OPS` (12) by `PRIORITY`.
+  added set past `sessionMinutes`, past `MAX_NEXT_WEEK_OPS` (12) by `PRIORITY`, and `conflict`: a
+  change that adds a finding of M7's judge, an `avoid` one or one still ahead that names a session
+  the move moves. `words` is that finding's headline.
 - Only a generated session dated today or later with no workout is touched. `stillAhead(items,
 today, workouts)` is that filter for decide time. Next week outside the block → `boundary:
 'cycle'`; next week ended → `late`.
