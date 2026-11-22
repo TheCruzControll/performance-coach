@@ -349,7 +349,7 @@ export function replanSkeleton(
 		);
 	// A program that has not started yet is re-planned from its own start.
 	const start = o.current.startsOn;
-	const from = directive.kind === 'deload' ? directive.week : o.from < start ? start : o.from;
+	const from = o.from < start ? start : o.from;
 	if (mondayOf(from) !== from) throw new RangeError(`A re-plan starts on a Monday: ${from}`);
 	const { baseVersionNumber, catalogueDigest = null } = o;
 	const digest = fnv1a64(canonicalJson({ directive, baseVersionNumber, from, catalogueDigest }));
