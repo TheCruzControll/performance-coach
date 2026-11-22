@@ -7,10 +7,12 @@
  * Abuse limits: payloads are size-capped and validated, and each server instance accepts at
  * most CLIENT_ERROR_LIMIT reports per minute (one user; the client also caps itself). The
  * endpoint requires a session once auth lands (M2).
+ * Message, stack and path are redacted before they are stored (`../observability/redact.ts`).
  */
 import { z } from 'zod';
 import { createAppErrorsRepository, getDb, type AppErrorRow, type Executor } from '../db';
 import { logger } from '../observability/logger';
+import { MAX_STACK, pathOnly, redactText } from '../observability/redact';
 
 export const CLIENT_ERROR_SOURCES = ['error', 'unhandledrejection', 'handleError'] as const;
 export const CLIENT_ERROR_LIMIT = 30;
@@ -93,12 +95,13 @@ export async function recordClientError(
 	if (!(deps.limiter ?? limiter).take()) throw new ClientErrorRateLimited();
 
 	const report = parsed.data;
+	const path = pathOnly(report.path);
 	logger.warn('client error', {
 		requestId: meta.requestId,
 		source: report.source,
 		name: report.name,
 		message: report.message,
-		path: report.path,
+		path,
 		route: report.route
 	});
 	return createAppErrorsRepository(deps.db ?? getDb()).insert({
@@ -106,10 +109,10 @@ export async function recordClientError(
 		status: null,
 		requestId: meta.requestId ?? null,
 		method: null,
-		path: report.path,
+		path,
 		routeId: report.route ?? null,
-		message: `${report.name}: ${report.message}`,
-		stack: report.stack ?? null,
+		message: redactText(`${report.name}: ${report.message}`),
+		stack: report.stack === undefined ? null : redactText(report.stack, MAX_STACK),
 		appVersion: report.version ?? null,
 		context: {
 			source: report.source,

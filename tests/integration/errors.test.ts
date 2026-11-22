@@ -126,4 +126,53 @@ describe('error recording service', () => {
 			await broken.close();
 		}
 	});
+
+	describe('redaction of stored errors', () => {
+		afterEach(() => {
+			vi.unstubAllEnvs();
+		});
+
+		it('stores no token, quotes the path without its query, and keeps innocent context', async () => {
+			// Concatenated so the secret scan does not read this file as a leak.
+			const blobToken = 'vercel_blob_rw_' + 'StoreId123_abcDEF456ghi';
+			await withRollback(async (tx) => {
+				const row = await recordServerError(
+					{
+						error: new Error('backup upload failed', {
+							cause: new Error('store said ' + blobToken)
+						}),
+						kind: 'unknown',
+						status: 500,
+						requestId: 'req-redact-1',
+						path: '/api/cron/backup?x=1',
+						context: { trigger: 'cron', token: 'raw-token-value' }
+					},
+					{ db: tx }
+				);
+				expect(row).not.toBeNull();
+				for (const text of [row?.message, row?.stack, JSON.stringify(row?.context)]) {
+					expect(text).not.toContain(blobToken);
+					expect(text).not.toContain('raw-token-value');
+				}
+				expect(row?.context).toMatchObject({ token: '[redacted]', trigger: 'cron' });
+				expect(row?.path).toBe('/api/cron/backup');
+			});
+		});
+
+		it('stores the exact value of a configured secret as [redacted]', async () => {
+			vi.stubEnv('CRON_SECRET', 'sentinel-cron-0123456789');
+			await withRollback(async (tx) => {
+				const row = await recordServerError(
+					{
+						error: new Error('cron refused sentinel-cron-0123456789'),
+						kind: 'unknown',
+						status: 500,
+						requestId: 'req-redact-2'
+					},
+					{ db: tx }
+				);
+				expect(row?.message).toBe('cron refused [redacted]');
+			});
+		});
+	});
 });

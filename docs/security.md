@@ -350,6 +350,11 @@ Lighthouse) can enable them.
   request's token appears there; it is useless once setup has completed, also after an owner
   reset (a used token is refused for good). Remove `OWNER_SETUP_TOKEN_HASH` after setup. The app's
   own logs record paths without query strings.
+- Logs and `app_errors` pass through `src/lib/server/observability/redact.ts`. It masks
+  credential-named fields, Postgres URL passwords, Bearer tokens, `sk-ant-`, `re_`,
+  `vercel_blob_rw_`, `npg_` and PEM keys, the exact values of the server's secret variables,
+  email addresses and URL query strings, and caps strings at 2 KB (stacks at 8 KB). Client error
+  and vitals paths are stored without their query strings.
 - `.env` is git-ignored; nothing secret is committed.
 
 ## What is and isn't protected
@@ -436,14 +441,14 @@ and ungrounded facts and metrics become 'Not checked against your data'. Each in
 **Logs.** Coach logs carry ids, counts, token usage and timings, not message text. A failed model
 call's `errorMessage` (`src/lib/server/agent/orchestrator.ts`) carries the provider's error, which
 for a refused request (`bad_request`) includes the API's reason. A failure's `err`, logged through
-`serializeError`, keeps its message (see Residual risks).
+`serializeError`, keeps its message after redaction (see Residual risks). The redactor walks plain objects and arrays only, so a class instance other than those is logged as `JSON.stringify` writes it, unredacted.
 
 **Residual risks.**
 
 - The model can still be talked into a poor recommendation by the owner's own words; proposals
   and the owner's confirmation are the control, not the prompt.
-- A logged error message may quote what a service refused (for example an exercise name). It
-  never holds the key, but it is not scrubbed of the owner's words.
+- A logged error message may quote what a service refused. Secrets, tokens and email addresses
+  are masked (see Secrets), but other free text a message quotes is not detected. A token in a relative path inside a message (`/recover?token=…`) is not masked, while stored `path` fields lose their query string.
 - The live suite, including its prompt-injection and refusal conversations, has not been run
   against the real model (the owner's go-ahead of 2026-11-10 replaced it; #449).
 - The kill switch takes a redeploy; there is no runtime toggle.
