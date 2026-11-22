@@ -136,7 +136,10 @@ export function createAnalyticsRepository(db: Executor) {
 				for (const row of await q.planned(program.versionId, from, to)) {
 					const { lineageId: lineage, scheduledOn: date, status, movedFrom, discipline } = row;
 					planned.push({ lineage, date, status, movedFrom, discipline });
-					if (discipline === 'running') runs.set(row.id, { lineage, date, status });
+					// A zone 2 bike session keeps the running discipline but is conditioning: no run
+					// planned by time, so it stays out of the planned distance.
+					if (discipline === 'running' && row.sessionType !== 'conditioning')
+						runs.set(row.id, { lineage, date, status });
 				}
 			}
 			const lineages = [...new Set(planned.map((s) => s.lineage))];

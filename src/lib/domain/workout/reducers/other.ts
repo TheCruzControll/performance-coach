@@ -6,12 +6,13 @@
  *
  * otherTable (/workout/session's) lives here, not in tables.ts, which /workout loads: that route
  * ships none of the other family.
+ * The table also takes pain.report (core.ts `pain`): a class reports pain with no exercise.
  */
 import type { OtherFields } from '../mutations.ts';
 import { onRows } from '../project.ts';
 import type { MutationReducers, ReducerTable } from '../project.ts';
 import type { CanonicalOther } from '../protocol.ts';
-import { core } from './core.ts';
+import { core, pain } from './core.ts';
 import { device } from './device.ts';
 
 /** The session's values, and nothing else a payload or its metrics may hold. */
@@ -31,6 +32,6 @@ export const other: MutationReducers<'other.log'> = {
 
 export const otherTable: ReducerTable<'other'> = {
 	kind: 'other',
-	mutations: { ...core, ...other },
+	mutations: { ...core, ...pain, ...other },
 	local: device
 };

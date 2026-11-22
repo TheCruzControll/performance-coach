@@ -9,12 +9,18 @@
     it synced too.
   - A value Save cannot send is marked at its field; a change this device could not save says so,
     with Retry.
+  - Options opens the session's quick actions (SessionActionsSheet.svelte, loaded on its first
+    intent): This hurts, which ends the session.
   One column at every width: from 1024 px the Shell centres it at the readable width. Every control
   has hover and :focus-visible states (the primitives').
 -->
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import type { ActiveSnapshot, ActiveWorkout } from '#lib/client/workout/active.svelte.ts';
+	import type {
+		ActiveSnapshot,
+		ActiveWorkout,
+		ChunkLoad
+	} from '#lib/client/workout/active.svelte.ts';
 	import type { OtherFields } from '#lib/domain/workout/index.ts';
 	import Button from '#lib/ui/components/Button.svelte';
 	import Notice from '#lib/ui/components/Notice.svelte';
@@ -27,13 +33,16 @@
 		type SessionErrors
 	} from './session-log.ts';
 	import SessionFields from './SessionFields.svelte';
+	import type SessionActionsSheet from '../SessionActionsSheet.svelte';
 
 	interface Props {
 		snapshot: ActiveSnapshot;
+		/** The page's chunk loader, for the quick actions. */
+		load: ChunkLoad;
 		active: ActiveWorkout;
 	}
 
-	let { snapshot, active }: Props = $props();
+	let { snapshot, load, active }: Props = $props();
 	const view = $derived(snapshot.view);
 	const plan = $derived(view.kit?.kind === 'other' ? view.kit.other : null);
 	const template = $derived(templateOf(view));
@@ -94,26 +103,50 @@
 					? 'Saved on this device'
 					: 'Saved'
 	);
+
+	// The quick actions: fetched on the Options button's first intent, opened on each tap.
+	let Actions = $state.raw<typeof SessionActionsSheet | null>(null);
+	let acting = $state.raw<object | null>(null);
+	function prefetchActions() {
+		void load(() => import('../SessionActionsSheet.svelte')).then((module) => {
+			if (module) Actions = module.default;
+		});
+	}
+	function openActions(event: MouseEvent) {
+		(event.currentTarget as HTMLElement).focus();
+		prefetchActions();
+		acting = {};
+	}
 </script>
 
 <div class="main" data-testid="session-main">
 	<section class="card" aria-labelledby="session-name" data-testid="session-entry">
 		<header class="head">
-			<p class="place">
-				{plan && view.workout.plannedSessionId ? 'Planned session' : 'Your session'}
-			</p>
-			<h2 id="session-name">{view.workout.title}</h2>
-			{#if plan}
-				<p class="target" data-testid="session-plan">
-					{[
-						KIND_WORDS[plan.kind],
-						`${plan.durationMinutes} min`,
-						plan.targetRpe !== null && `RPE ${plan.targetRpe}`
-					]
-						.filter(Boolean)
-						.join(' · ')}
+			<div class="words">
+				<p class="place">
+					{plan && view.workout.plannedSessionId ? 'Planned session' : 'Your session'}
 				</p>
-			{/if}
+				<h2 id="session-name">{view.workout.title}</h2>
+				{#if plan}
+					<p class="target" data-testid="session-plan">
+						{[
+							KIND_WORDS[plan.kind],
+							`${plan.durationMinutes} min`,
+							plan.targetRpe !== null && `RPE ${plan.targetRpe}`
+						]
+							.filter(Boolean)
+							.join(' · ')}
+					</p>
+				{/if}
+			</div>
+			<Button
+				variant="secondary"
+				icon="refresh"
+				onpointerdown={prefetchActions}
+				onclick={openActions}
+				aria-label="Session options"
+				data-testid="session-actions">Options</Button
+			>
 		</header>
 		<SessionFields {values} {errors} {template} onchange={edit} />
 	</section>
@@ -138,6 +171,17 @@
 	</div>
 </div>
 
+{#if Actions && acting && active.store}
+	<Actions
+		{view}
+		request={acting}
+		store={active.store}
+		{load}
+		skipTo={null}
+		onfinish={() => (active.finishing = true)}
+	/>
+{/if}
+
 <style>
 	.main {
 		display: flex;
@@ -158,8 +202,16 @@
 	}
 
 	.head {
+		display: flex;
+		align-items: flex-start;
+		justify-content: space-between;
+		gap: var(--space-3);
+	}
+
+	.words {
 		display: grid;
 		gap: var(--space-1);
+		min-width: 0;
 	}
 
 	.place {

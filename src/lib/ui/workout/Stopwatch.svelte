@@ -1,6 +1,8 @@
 <!--
   @component
-  The workout's running time, pauses left out (timers.ts), ticking once a second while it runs. A
+  The workout's running time, pauses left out (timers.ts), ticking on its whole seconds while it
+  runs, on the screen's one clock (clock.ts): while a rest runs it changes on the rest timer's
+  frame, at most a second after its own turn, so the two never tick apart. A
   timer role, which is not announced every second. With its handlers, the time itself is the
   Pause button while it runs; once paused (the time dimmed and called paused) it opens Resume and
   Reset (onoptions), so the header never gains a control. The button lies over the time, 44 px
@@ -11,6 +13,7 @@
 	import { stopwatchElapsed } from '#lib/domain/workout/timers.ts';
 	import type { StopwatchState } from '#lib/domain/workout/index.ts';
 	import Icon from '../components/Icon.svelte';
+	import { clock } from './clock.ts';
 
 	interface Props {
 		stopwatch: StopwatchState;
@@ -26,9 +29,10 @@
 
 	$effect(() => {
 		now = Date.now();
-		if (stopwatch.runningSince === null) return;
-		const tick = setInterval(() => (now = Date.now()), 1000);
-		return () => clearInterval(tick);
+		const { runningSince, accumulatedMs } = stopwatch;
+		if (runningSince === null) return;
+		// Its reading turns over each whole second on from when it would have read 0.
+		return clock.join({ anchor: runningSince - accumulatedMs, tick: (at) => (now = at) });
 	});
 
 	const elapsed = $derived(formatDuration(Math.floor(stopwatchElapsed(stopwatch, now) / 1000)));

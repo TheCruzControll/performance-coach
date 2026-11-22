@@ -835,6 +835,14 @@ Commitments, running, interference rules and placement across disciplines. Unit 
   `strength_class` session counted as a strength day with no hard sets credited; a commitment no
   goal trains adds to the week; a null duration and intensity get 90 min (Muay Thai) and moderate,
   with `default_assumed` decisions and a `commitment_placed` why that says so.
+- **Zone 2 bike** (`cross-training.test.ts`): with a bike and runs serving a goal that trains more
+  than running, half of each week's generated easy runs (rounded up, the latest first) become a
+  `conditioning` session titled Zone 2 bike, with the run's day, time, minutes and RPE and zone 2
+  notes (60–70 % of max heart rate), and an `exercise_substituted` decision (`running.zone2_bike`)
+  citing each; every week keeps at least one run (a running commitment counts); long and quality
+  runs never move; a goal about running alone, or one with a race ahead, keeps its easy runs; with no
+  bike nothing changes. The owner's week (Muay Thai five days, a Saturday club run) moves its Monday
+  morning easy run to the bike and leaves the lifts and Muay Thai exactly as they were.
 - **Running** (`running.test.ts`): no runs without a running discipline (a running commitment stays
   the only run); a new runner gets easy runs only, timed, each at RPE 4.5 and HR zone 2; no running
   specifics gives the time-based week 1 (30-minute easy runs and a 45-minute long run) with a
@@ -1108,7 +1116,7 @@ the server builds exactly those kits, so change both together.
   AA after Z; Up next naming the partner.
 - **Substitution rules and copy** (`substitution.test.ts`, `copy.test.ts`): only a confirmed
   dislike writes a preference; machine unavailable ranks alternatives needing none of the slot's
-  equipment first; This hurts offers Stop first and End the workout when severe; every string in
+  equipment first; This hurts offers Stop first and End the workout when severe (in a run or a class, End alone); every string in
   `copy.ts` is scanned for push-through phrases and diagnosis words.
 - **Schemas** (`schemas.test.ts`): `DB_CHECKED_BAD_VALUES` (also refused by Postgres CHECKs,
   replayed through the repositories by `sync.test.ts`) and `SCHEMA_ONLY_BAD_VALUES` (open
@@ -1150,7 +1158,8 @@ unit project excludes `*.svelte.test.ts`. Tab-channel tests open
 second owner needs the singleton rule lifted inside it: `secondOwner`); `structure.test.ts`,
 `pain.test.ts`, `runs-other.test.ts` and `custom-exercises.test.ts` cover each handler family:
 applied once, duplicate on replay, deferred until its target arrives, refused at its path, and a
-situational swap that writes no preference or version.
+situational swap that writes no preference or version. `pain.test.ts` also takes a run's and a
+class's report, which names no exercise, and refuses a strength report without one.
 
 ### Workout reads
 

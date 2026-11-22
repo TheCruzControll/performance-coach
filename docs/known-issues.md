@@ -6,6 +6,15 @@ would close it.
 
 Last reviewed: 2026-11-21, against `main` at the merge of #501.
 
+## Product limits
+
+- During a run, This hurts on segment 51 or later is refused, because a pain report's position is
+  capped at 50 (`src/lib/domain/workout/schemas.ts`); the owner can only discard it. Runs plan up
+  to 100 segments, so this needs an unusually long run.
+- A zone 2 bike session counts in the planned running volume. The generator sizes the week's run
+  volume before some easy runs become bike sessions, so the next block's run volume may start lower
+  than planned. Unconfirmed.
+
 ## Stale documentation
 
 - **milestones.md lists M6 to M9 as Planned.** The git history holds merged slices for M6 (59), M7

@@ -66,7 +66,9 @@ export function describeMutation(m: Mutation, context: DescribeContext): string 
 		case 'exercise.create':
 			return `New exercise · ${m.payload.name}`;
 		case 'pain.report':
-			return `Pain during ${exercise(m.payload.exerciseId)}`;
+			return m.payload.exerciseId === null
+				? 'Pain during the session'
+				: `Pain during ${exercise(m.payload.exerciseId)}`;
 		case 'run.log':
 			return 'Run details';
 		case 'run.segment':

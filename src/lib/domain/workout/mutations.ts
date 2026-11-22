@@ -3,7 +3,8 @@
  * envelope, the identity rule and entity keys; the dependencies the outbox and the server order
  * by are order.ts's. Device actions (LocalAction) go through the same dispatch but are never sent.
  *
- * After merge, only new types and optional payload fields are added.
+ * After merge, only new types and optional payload fields are added, and a field may widen to take
+ * null, so every payload an older device sends still parses.
  */
 import type { BodyArea, Discipline, Severity } from '../profile/catalog.ts';
 import type { CustomExercise, CustomMetric, SessionKind } from '../training/types.ts';
@@ -56,12 +57,13 @@ export const PAIN_ACTIONS = ['stopped', 'substituted', 'ended_workout'] as const
 export type PainAction = (typeof PAIN_ACTIONS)[number];
 
 /**
- * Something hurt during a slot; area and severity may be left out. The report writes only itself:
- * stopping also sends exercise.skip, and a gentler option an exercise.substitute (reason pain),
- * whose id substitutionId names.
+ * Something hurt during a slot, or during a run's segment or a class (position 1); area and
+ * severity may be left out. The report writes only itself: stopping also sends exercise.skip, and a
+ * gentler option an exercise.substitute (reason pain), whose id substitutionId names.
  */
 export interface PainReport extends SlotChange {
-	exerciseId: string;
+	/** The exercise that hurt; null in a run or a class, which perform none. */
+	exerciseId: string | null;
 	area: BodyArea | null;
 	severity: Severity | null;
 	action: PainAction;
@@ -177,7 +179,7 @@ export const MUTATION_RULES = {
 	'exercise.substitute': { kinds: STRENGTH, identity: 'create', entity: 'slot' },
 	'exercise.dislike': { kinds: STRENGTH, identity: 'create', entity: 'slot' },
 	'exercise.create': { kinds: STRENGTH, identity: 'create', entity: 'exercise' },
-	'pain.report': { kinds: STRENGTH, identity: 'create', entity: 'slot' },
+	'pain.report': { kinds: ANY, identity: 'create', entity: 'slot' },
 	'run.log': { kinds: ['run'], identity: 'record', entity: 'run' },
 	'run.segment': { kinds: ['run'], identity: 'segment', entity: 'segment' },
 	'other.log': { kinds: ['other'], identity: 'record', entity: 'other' }

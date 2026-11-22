@@ -88,8 +88,8 @@ export function toCanonicalWorkout(
 			id: p.id,
 			position: p.exercisePosition,
 			plannedLineage: p.plannedExerciseLineageId,
-			// pain.report always names its exercise; '' only for a row written without one.
-			exerciseId: p.exerciseId ?? '',
+			// null: a run's or a class's report, which names no exercise.
+			exerciseId: p.exerciseId,
 			area: p.bodyArea,
 			severity: p.severity,
 			action: p.action,

@@ -31,8 +31,11 @@ runs the criteria and updates milestones.md.
 
 ## Recently merged
 
-- A program starts only after setup, and its start date can be moved from Train until the first
-  planned day, re-planning rather than shifting.
+- The workout screen no longer jumps between exercises or when the rest timer comes and goes,
+  and the rest bar and stopwatch move together.
+- During a run or a class, This hurts records the pain and ends the session; a run can skip a segment.
+- A program starts only after setup, on any day the owner picks, and its start date can be moved
+  from Train until the first planned day, re-planning rather than shifting.
 - End a plan and build a new one, keeping every logged workout (#501).
 - The coach answers again, and programs can lift and run beside timed classes (#500).
 - The agent architecture rewritten from the code, with a generated tools catalogue, and the coach

@@ -527,7 +527,8 @@ The domain and client folders list their modules in their own READMEs.
 - **`pain_reports`** (`drizzle/0021_pain_reports.sql`, guards in `0022`): where it hurt, how
   badly, what the owner chose (`stopped`, `substituted`, `ended_workout`) and a note, keyed by
   the device's id. M3's logged-table guards apply: edits are audited, DELETE is refused. A pain
-  report is never an exercise preference; the coach reads the last 28 days of them.
+  report is never an exercise preference; the coach reads the last 28 days of them. A run's or a class's report names no exercise
+  (`exercise_id` null), at the run's segment or position 1 for a class.
 - `drizzle/0017_log_gaps.sql` added what M4 logs to M3's training log: time, distance and
   assisted sets, missed reps independent of reps, and the substitution's slot.
 

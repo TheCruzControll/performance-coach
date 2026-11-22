@@ -32,7 +32,12 @@ what they find in your own changes:
 pnpm exec prettier --check <files you changed>
 pnpm exec eslint <files you changed>
 pnpm exec vitest run --project unit <test files you wrote or changed>
+pnpm security:scan
 ```
+
+The secrets scan reads any Postgres URL that carries a password, fixtures included, as a
+credential. Build fixture URLs from parts (scheme, user and the rest joined at runtime, as
+`scripts/db-grants.test.ts` does) rather than allowlisting them.
 
 Do not run `pnpm check`, `pnpm lint`, `pnpm test:unit`, `pnpm test:integration`, `pnpm build` or
 Playwright. If your change needs an integration or e2e test, write it and say in the report that
@@ -41,6 +46,10 @@ CI has to prove it.
 If a check fails for a reason outside your change, leave it alone and say so in the report.
 
 Do not commit, push, or open a pull request. The caller reviews the diff first.
+
+Never use `git stash`: the stash list is shared by every worktree of this repo and holds the
+owner's work. To show a test fails without your change, copy the original with
+`git show HEAD:<file> > <temporary file>`, swap it in by hand, and restore it.
 
 ## Report
 

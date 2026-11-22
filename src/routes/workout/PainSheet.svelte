@@ -14,6 +14,9 @@
   - Fix (fix/pain.ts) opens it on a refused pain.report, `m`: the refused details, unfolded, with
     the server's errors in place, and Save instead of the choices and the fold; it hands back the
     report with the corrected details under the same id (actions.ts correctedReport).
+  - In a run or a class (no exercise): End the workout here is the one choice
+    (SESSION_PAIN_CHOICES), at any severity, and the description is the session's title;
+    SessionActionsSheet sends it.
   Its props are the Fix registry's (FixEditorProps), with `position` and `onreport` for the flow.
 -->
 <script lang="ts">
@@ -24,7 +27,7 @@
 	import { gentlerHeading, noGentler, PAIN_COPY, SEVERITY_COPY } from '#lib/domain/workout/copy.ts';
 	import type { Mutation, WorkoutView } from '#lib/domain/workout/index.ts';
 	import { slotAt } from '#lib/domain/workout/selectors.ts';
-	import { painChoices } from '#lib/domain/workout/substitution.ts';
+	import { painChoices, SESSION_PAIN_CHOICES } from '#lib/domain/workout/substitution.ts';
 	import type { PainChoice } from '#lib/domain/workout/substitution.ts';
 	import BottomSheet from '#lib/ui/components/BottomSheet.svelte';
 	import Button from '#lib/ui/components/Button.svelte';
@@ -67,9 +70,12 @@
 
 	const refused = $derived(m?.type === 'pain.report' ? m : null);
 	const slot = $derived(view && slotAt(view, refused?.payload.position ?? position ?? 0));
+	const session = $derived(view !== null && view.workout.kind !== 'strength');
 	const name = $derived(
-		(view && view.exercises[refused?.payload.exerciseId ?? slot?.exerciseId ?? '']?.name) ??
-			'Exercise'
+		session
+			? view!.workout.title
+			: ((view && view.exercises[refused?.payload.exerciseId ?? slot?.exerciseId ?? '']?.name) ??
+					'Exercise')
 	);
 
 	// Each time it opens: empty for the flow, the refused report's for Fix.
@@ -96,7 +102,9 @@
 		note: note || null
 	});
 	const chosenArea = $derived(unsure(area));
-	const choices = $derived(slot ? painChoices(slot, chosenArea, unsure(severity)) : []);
+	const choices = $derived(
+		session ? SESSION_PAIN_CHOICES : slot ? painChoices(slot, chosenArea, unsure(severity)) : []
+	);
 	const gentler = $derived(choices.flatMap((c) => (c.action === 'substituted' ? [c.option] : [])));
 	const ends = $derived(choices.some((c) => c.action === 'ended_workout'));
 
@@ -154,8 +162,10 @@
 		{#if !refused}
 			<section class="choices" aria-labelledby="pain-choices">
 				<h3 id="pain-choices" class="heading">{PAIN_COPY.choices}</h3>
-				{@render entry(PAIN_COPY.stop, () => choose({ action: 'stopped' }), 'pain-stop')}
-				{#if chosenArea}
+				{#if !session}
+					{@render entry(PAIN_COPY.stop, () => choose({ action: 'stopped' }), 'pain-stop')}
+				{/if}
+				{#if chosenArea && !session}
 					<h4 class="heading" data-testid="pain-gentler-heading">{gentlerHeading(chosenArea)}</h4>
 					{#if gentler.length > 0}
 						<AlternativeList
