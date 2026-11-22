@@ -20,7 +20,7 @@ The path uses plain `Agent` calls, so it works in any Claude Code harness.
   you have rebased is pushed with `git push --force-with-lease`, never plain `--force`.
 - **Heavy work runs on GitHub, not here.** This machine has 8 GB of memory. CI runs type-check,
   lint, the unit and integration suites, both builds, the budgets, every Playwright journey on
-  Chromium and WebKit, and Lighthouse, on every pull request. Do not run `pnpm check`,
+  Chromium and WebKit, and Lighthouse, on every pull request that changes more than docs. Do not run `pnpm check`,
   `pnpm lint`, `pnpm test:unit`, `pnpm test:integration`, `pnpm build` or `pnpm test:e2e`
   locally. Run narrow checks on the files in hand, push, and let CI be the judge.
 - **One worktree per slice.** Several slices can be in progress at once under `run-queue`, each in
@@ -90,33 +90,18 @@ report.
 If the fix list is not empty, start a fresh builder with the spec, the fix list, and the current
 state of the branch, then review again. That is one fix round.
 
-## 5. Add to the verifications
+## 5. Tests: only what the slice needs
 
-The loop improves only if each slice adds to what the next one can check, and CI can only prove
-what a test covers. Before the pull request opens, in the same branch:
+The owner wants CI small: a pull request runs lint, type-check, unit and integration tests, the
+build, and the PRD journeys in one browser (`scripts/ci-legs.ts`). Keep it that way.
 
-- **The journey that proves this slice.** If an existing e2e journey covers what the owner will
-  see, name it. If none does, the slice is not done until one does: have the builder write the
-  spec file (see the `verify-coach` skill's Drive section for how the journeys are written). CI
-  runs it.
-- **A new feature, or a new way into one:** add or update its file in
-  `.claude/skills/verify-coach/features/` and the row in that folder's `README.md`, and add the
-  journey to `e2e/journeys.ts` when it is a product journey.
-- **A new promise that tests cannot cover:** when the slice introduces state that several actors
-  change, a sequence that must happen exactly once or in order, or a lifecycle with forbidden
-  transitions, create a formal verification for it. Follow pstack's
-  `create-formal-verification-skill` (read its `SKILL.md` under the installed pstack plugin's
-  `skills/` folder), put the model under `verification/<area>/` and the skill under
-  `.claude/skills/verify-<area>/`. Most slices add no such promise; do not invent one.
-- **A change to code a formal skill covers:** run that skill's check here. It is not in CI yet,
-  and the baseline takes under a minute. Today that is `verify-workout-sync`, for the offline sync
-  engine, the outbox and the server's sync ledger. Exit 2 means the code moved past the model;
-  follow the skill's "When the code changed", update the model if the behaviour changed on
-  purpose, and move its sync commit forward once the model describes the code again.
-
-If a verification skill's own instructions turned out wrong or stale during this run, fix them in
-this branch too. Never weaken a journey or a model to get a pass; if the check itself is wrong,
-say so and fix it as its own change.
+- Every slice comes with unit or integration tests for the logic it adds, which fail without it.
+- Add or change a browser test only when the slice adds or changes one of the PRD journeys
+  (`e2e/journey-*.serial.e2e.ts`); then update that journey. Do not add other e2e specs,
+  screenshot sets, performance guards, accessibility sweeps or formal models.
+- A change to code `verify-workout-sync` covers (the offline sync engine, the outbox, the
+  server's sync ledger): run that skill's check here; the baseline takes under a minute.
+- Never weaken a test to get a pass. If a test is wrong, fix it as its own change.
 
 ## 6. Narrow local checks, then open the pull request
 
@@ -127,6 +112,11 @@ pnpm exec prettier --check <changed files>
 pnpm exec eslint <changed files>
 pnpm exec vitest run --project unit <changed or new test files>
 ```
+
+Every push of a change to code starts 28 CI jobs, and about 20 run at once across all pull
+requests, so push finished work, not work in progress. Commit locally as often as you like, and
+push once per review round. Keep docs-only changes in pull requests of their own where the slice
+allows it: CI runs those in a few minutes (`scripts/ci-scope.ts`).
 
 Commit with a Conventional Commits message. Then `git fetch origin` and rebase the branch onto
 `origin/main` before every push, so CI always runs on the newest `main` and conflicts show up here
@@ -152,37 +142,42 @@ Reproduce a failure locally only when the log is not enough, and then with one s
 
 ## 8. Confirm the proof
 
-Green checks are not yet proof that this slice works; they are proof that whatever ran passed.
-Confirm that the journey from step 5 was among it:
-
-- Find the CI run for the PR's latest head (`gh pr checks <number>`, then `gh run view <run-id>`).
-- Confirm the journey's tests ran and passed in an e2e leg. The leg's log lists every test title
-  (`gh run view <run-id> --log | grep "<journey file>"`). A journey that was skipped, or that
-  matched no test, proves nothing.
-- The evidence is the run link and the leg's `playwright-<run>-<group>-<engine>-<shard>`
-  artifact, which holds the screenshots, the report and the server log for 14 days.
+Green checks prove what ran. Confirm the slice's own tests were among it: the unit or integration
+tests it added ran and passed in the PR's latest run (`gh pr checks <number>`), and, when the
+slice changed a PRD journey, that journey passed in the e2e job (`gh run view <run-id> --log |
+grep "<journey file>"`).
 
 ## 9. Merge
+
+Under `run-queue`, rows merge as a train (that skill's step 2). A row boards only when every line
+below that concerns the row holds for its boarding head: its review, its queue status, the
+stop-for-the-owner cases and `plan/queue.md`. Its own checks must be green, but its branch need
+not contain `main`. The lines about checks, `main`, the proof and deploys are then checked on the
+train's branch and its run. Run alone, the whole gate applies to the slice's own pull request.
 
 Merge only when every line below is true on the PR's latest head. If any is false, do not merge;
 fix it or park the slice.
 
 - All five required checks are green on the latest head, and none was skipped or disabled to get
-  there.
+  there. The one exception is a light run: when the `Scope of the run` job answered `light` (the
+  change touches only docs, the plan, agent tooling, root Markdown or `.env.example`), the integration tests, the e2e legs and
+  Lighthouse are skipped by design, and there is no journey to confirm in step 8.
 - The checks ran on the `main` this would land on. After `git fetch origin`, the branch must
   contain the tip of `main` (`git merge-base --is-ancestor origin/main HEAD` succeeds in the
   slice's worktree). If it does not, rebase onto `origin/main`, push with `--force-with-lease`,
   and wait for green on the new head before coming back to this gate. Two pull requests that each
   pass alone can break together, and this is the only place that catches it before production. A
-  rebase that applied cleanly needs no new review; one where you resolved a conflict does.
+  rebase that applied cleanly needs no new review; one where you resolved a conflict does. For a
+  train, do not rebase: close its pull request, delete the branch, and build a new train from the
+  new `origin/main`.
 - The last review of this head returned `APPROVE`, or every blocker and should was fixed and
   re-reviewed.
-- Step 8 confirmed the slice's journey passed in CI on this head, and any formal check from
-  step 5 passed.
+- Step 8 confirmed the slice's tests passed in CI on this head, and the `verify-workout-sync`
+  check passed if step 5 called for it.
 - The slice is not one of the "stop for the owner" cases above, and its queue row is not `hold` or
   `owner`.
 - The branch does not change `plan/queue.md`, unless it is the queue's own housekeeping change.
-- No earlier merge is still deploying. One merge at a time, however many slices are in flight.
+- No earlier merge is still deploying. One merge at a time, a row or a train, however many slices are in flight.
 
 Merge the way this repo's history does, as a merge commit titled `Merge <PR title> (#<number>)`:
 
@@ -208,7 +203,7 @@ Tell the owner:
 - the PR link and whether it merged, or why it is parked
 - what was built, against the spec
 - the reviewer's verdict, what was fixed, and what was declined and why
-- the CI run link, the journey that proves the slice, and any formal check and its result
+- the CI run link, the tests that prove the slice, and the sync check if it ran
 - what you added to the verification skills
 - the post-deploy result
 - fix rounds used, and anything left as a follow-up

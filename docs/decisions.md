@@ -43,9 +43,9 @@ Summaries only. Status is as recorded in [adr/README.md](adr/README.md).
 | [0012](adr/0012-offline-workout-sync.md)     | Offline workout sync: device inputs, one projection, a ledger     | Accepted |
 | [0013](adr/0013-coach-agent-loop.md)         | A manual coach agent loop, streamed as labelled blocks            | Accepted |
 | [0014](adr/0014-coach-memory-proposals.md)   | Coach memory from records; changes only as proposals              | Accepted |
-| [NNNN](adr/NNNN-trend-classification.md)     | Trend vs noise: Theil–Sen, Mann–Kendall, a minimal change         | Proposed |
+| [0015](adr/0015-trend-classification.md)     | Trend vs noise: Theil–Sen, Mann–Kendall, a minimal change         | Accepted |
+| [0016](adr/0016-hand-built-charts.md)        | Hand-built charts: lazy SVG lines, HTML marks, one registry       | Accepted |
+| [0017](adr/0017-planning-later-blocks.md)    | Planning later blocks: a new version, a bridge, no past days      | Accepted |
 | [NNNN](adr/NNNN-encrypted-backups.md)        | App-level encrypted backups: a daily cron to a private Blob store | Proposed |
-| [NNNN](adr/NNNN-hand-built-charts.md)        | Hand-built charts: lazy SVG lines, HTML marks, one registry       | Proposed |
 | [NNNN](adr/NNNN-periodisation-engine.md)     | Periodisation: rules as data, one evaluator, one load model       | Proposed |
-| [NNNN](adr/NNNN-planning-later-blocks.md)    | Planning later blocks: a new version, a bridge, no past days      | Proposed |
 | [NNNN](adr/NNNN-lifecycles-as-data.md)       | Lifecycles as data: a typed transition table per status list      | Proposed |

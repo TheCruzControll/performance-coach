@@ -1,5 +1,8 @@
 # Continuous integration: every pull request and every push to main.
 # Jobs run in parallel; each is independently reproducible locally (see docs/testing.md).
+# The first job decides the run's scope (scripts/ci-scope.ts). A change to docs, the plan or agent
+# tooling only, and a merge to main of a tree its pull request already tested, are `light`: they
+# skip the integration tests, the e2e legs and Lighthouse, which could not find anything.
 name: CI
 
 on:
@@ -30,6 +33,33 @@ env:
   PGADMIN_URL: postgres://postgres:postgres@localhost:5432/postgres
 
 jobs:
+  # Decides what this run needs (scripts/ci-scope.ts): `light` or `full`. The script never fails
+  # and answers `full` whenever it cannot tell. The jobs that read its answer skip only on an
+  # explicit `light`; the aggregate checks below fail if this job did not succeed.
+  changes:
+    name: Scope of the run
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      scope: ${{ steps.scope.outputs.scope }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The whole history: the diff needs the base commit, a merge needs its parents.
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - name: Decide the scope
+        id: scope
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BEFORE_SHA: ${{ github.event.before }}
+          SHA: ${{ github.sha }}
+        run: node scripts/ci-scope.ts >> "$GITHUB_OUTPUT"
+
   quality:
     name: Lint & type-check
     runs-on: ubuntu-latest
@@ -77,6 +107,8 @@ jobs:
 
   integration:
     name: Integration tests & query plans
+    needs: [changes]
+    if: ${{ needs.changes.outputs.scope == 'full' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -128,23 +160,26 @@ jobs:
 
   # The check branch protection requires, under the combined job's old name: green only when both
   # jobs are. always(), not !cancelled(): a required check skipped in a cancelled run would count
-  # as passing. Pull requests only, as the E2E check below.
+  # as passing. Pull requests only, as the E2E check below. A skipped job passes only in a light run.
   test:
     name: Unit & integration tests
     if: ${{ always() && github.event_name == 'pull_request' }}
-    needs: [unit, integration]
+    needs: [changes, unit, integration]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - name: Unit and integration tests passed
         env:
+          CHANGES: ${{ needs.changes.result }}
+          SCOPE: ${{ needs.changes.outputs.scope }}
           UNIT: ${{ needs.unit.result }}
           INTEGRATION: ${{ needs.integration.result }}
         run: |
-          if [ "$UNIT" != success ] || [ "$INTEGRATION" != success ]; then
-            echo "::error::Unit tests: $UNIT; integration tests: $INTEGRATION"
-            exit 1
-          fi
+          case "$CHANGES:$UNIT:$INTEGRATION:$SCOPE" in
+            success:success:success:*|success:success:skipped:light) exit 0 ;;
+          esac
+          echo "::error::Scope job: $CHANGES; unit tests: $UNIT; integration tests: $INTEGRATION; run scope: $SCOPE"
+          exit 1
 
   build:
     name: Build (Vercel + Node) & budgets
@@ -224,8 +259,23 @@ jobs:
   # shard 1 holding only those files to be heavier by less than its 10% (SHARD_ONE_SHARE).
   # main·chromium's `minutes` drop to 17: 1.5 × its slowest 2-worker shard in those runs (10.8).
   # serial·chromium keeps 14 and serial·webkit 15, as above, until their new shards are measured.
+  # alone·chromium's slower shard then took 4.7-4.8 of its 5 Playwright minutes (main's runs
+  # 43310070229 and 43317134476, #491's 43309953955): the table had no seconds for
+  # perf-coach-load.e2e.ts, and its estimate pushed perf-journey.e2e.ts into shard 2. The leg's
+  # seconds now come from main's six green runs 43301957635 to 43317134476 (perf-coach-load's from
+  # the two that ran it; the other legs' from the runs above). Two shards rebalanced on them would
+  # still take 4.2-4.3 minutes, past the 3.3 (5 / 1.5) its timeout leaves room for, so it took a
+  # third: perf.e2e.ts (135-145 s) fills one by itself, and replayed on those runs' per-file
+  # seconds no shard passes 3.2 minutes (3.3 in 43317903481, slowed by a failed test's retries).
+  # perf.e2e.ts outweighs a third of the leg, and the planner seeded shard 1 with the longest file,
+  # so that file would have made shard 1 the heaviest. It now seeds shard 1 last
+  # (scripts/e2e-shards.ts): main's legs plan the same files as before (their shard 1 starts with
+  # the a11y files); serial's legs re-plan within 2 s of their planned maxima (serial·chromium 433 s, serial·webkit 411 to 413 s).
+  # alone·chromium's `minutes` stay 5 until three runs per shard are measured.
   e2e-legs:
     name: E2E ${{ matrix.group }} · ${{ matrix.engine }} · ${{ matrix.shard }}/${{ matrix.of }}
+    needs: [changes]
+    if: ${{ needs.changes.outputs.scope == 'full' }}
     # Pinned to the newest Ubuntu release Playwright builds WebKit for (its browser builds are
     # "ubuntu-24.04"). On ubuntu-latest (26.04) WebKit's ~140 MB of system packages came
     # through a cold mirror at ~50 KB/s and the install timed out before any test ran.
@@ -253,8 +303,9 @@ jobs:
           - { group: serial, engine: webkit, shard: 6, of: 8, minutes: 15 }
           - { group: serial, engine: webkit, shard: 7, of: 8, minutes: 15 }
           - { group: serial, engine: webkit, shard: 8, of: 8, minutes: 15 }
-          - { group: alone, engine: chromium, shard: 1, of: 2, minutes: 5 }
-          - { group: alone, engine: chromium, shard: 2, of: 2, minutes: 5 }
+          - { group: alone, engine: chromium, shard: 1, of: 3, minutes: 5 }
+          - { group: alone, engine: chromium, shard: 2, of: 3, minutes: 5 }
+          - { group: alone, engine: chromium, shard: 3, of: 3, minutes: 5 }
           - { group: exclusive, engine: chromium, shard: 1, of: 1, minutes: 5 }
     steps:
       - uses: actions/checkout@v7
@@ -369,21 +420,25 @@ jobs:
   # fails, since a skipped required check would count as passing. Required checks gate only pull
   # requests, so pushes and manual runs skip it: there the run's own result already fails on a
   # failed leg, and this job would only queue behind every pull request's jobs (an hour at peak).
+  # A skipped job passes only in a light run.
   e2e:
     name: E2E (iPhone viewport · Chromium + WebKit)
     if: ${{ always() && github.event_name == 'pull_request' }}
-    needs: [e2e-legs]
+    needs: [changes, e2e-legs]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - name: Every leg passed
         env:
+          CHANGES: ${{ needs.changes.result }}
+          SCOPE: ${{ needs.changes.outputs.scope }}
           LEGS: ${{ needs.e2e-legs.result }}
         run: |
-          if [ "$LEGS" != success ]; then
-            echo "::error::E2E legs: $LEGS"
-            exit 1
-          fi
+          case "$CHANGES:$LEGS:$SCOPE" in
+            success:success:*|success:skipped:light) exit 0 ;;
+          esac
+          echo "::error::Scope job: $CHANGES; E2E legs: $LEGS; run scope: $SCOPE"
+          exit 1
 
   # Lighthouse in parallel shards (scripts/lighthouse.ts --shard i/N): shard i audits every N-th
   # screen of the full list, the routes and then the seeded program screens, so a slice that adds
@@ -396,6 +451,8 @@ jobs:
   # unsharded and never gating (lighthouse-desktop, below).
   lighthouse-shards:
     name: Lighthouse (mobile) · ${{ matrix.shard }}/${{ matrix.of }}
+    needs: [changes]
+    if: ${{ needs.changes.outputs.scope == 'full' }}
     # The e2e Chromium legs' image, so their saved system packages and browsers restore here
     # with no network (keys carry the image). Lighthouse's throttling is simulated, so the image
     # does not move its scores.
@@ -488,28 +545,34 @@ jobs:
           if-no-files-found: ignore
 
   # The check branch protection requires: green only when every shard is. It runs even when a
-  # shard fails, since a skipped required check would count as passing.
+  # shard fails, since a skipped required check would count as passing. A skipped job passes only
+  # in a light run.
   lighthouse:
     name: Lighthouse (mobile)
     if: ${{ always() }}
-    needs: [lighthouse-shards]
+    needs: [changes, lighthouse-shards]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - name: Every shard passed
         env:
+          CHANGES: ${{ needs.changes.result }}
+          SCOPE: ${{ needs.changes.outputs.scope }}
           SHARDS: ${{ needs.lighthouse-shards.result }}
         run: |
-          if [ "$SHARDS" != success ]; then
-            echo "::error::Lighthouse shards: $SHARDS"
-            exit 1
-          fi
+          case "$CHANGES:$SHARDS:$SCOPE" in
+            success:success:*|success:skipped:light) exit 0 ;;
+          esac
+          echo "::error::Scope job: $CHANGES; Lighthouse shards: $SHARDS; run scope: $SCOPE"
+          exit 1
 
   # Desktop runs on a runner of its own, so the required mobile check (above) ends when its one
   # audit does instead of waiting about 2 minutes more for this one. Not a required check, and no
   # job needs it: it reports, it never blocks a merge.
   lighthouse-desktop:
     name: Lighthouse desktop (measured, not gating)
+    needs: [changes]
+    if: ${{ needs.changes.outputs.scope == 'full' }}
     # The e2e Chromium legs' image, as for the mobile shards above.
     runs-on: ubuntu-24.04
     timeout-minutes: 20

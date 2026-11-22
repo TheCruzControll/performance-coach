@@ -8,19 +8,18 @@ Last reviewed: 2026-11-21, against `main` at the merge of #501.
 
 ## Stale documentation
 
-- **milestones.md lists M5 to M9 as Planned.** The git history holds merged slices for M5 (55),
-  M6 (59), M7 (17) and M9 (19), and 25 M7 pull requests are open. No evidence is recorded against
-  those milestones' criteria. Closes when each milestone's criteria are run and the table is
-  updated.
-- **The README status block stops at Milestone 4.** It says nothing of the coach, analytics,
-  reviews or periodisation work that has merged. Closes when the README status is rewritten from
+- **milestones.md lists M6 to M9 as Planned.** The git history holds merged slices for M6 (59), M7
+  (17) and M9 (19), and 25 M7 pull requests are open. No evidence is recorded against those
+  milestones' criteria. Closes when each milestone's criteria are run and the table is updated.
+- **The README status block stops at Milestone 5.** It says nothing of the analytics, reviews or
+  periodisation work (M6 and M7) that has merged. Closes when the README status is rewritten from
   [progress.md](progress.md).
 - **The README repository map marks the coach as "(M5)" and the offline store as "(M4)"**, as if
   both were still to come. Both folders hold shipped code.
-- **Six ADRs are still named `NNNN-` and Proposed**: trend classification, encrypted backups,
-  hand-built charts, the periodisation engine, planning later blocks, and lifecycles as data.
-  Work under several of them has merged. Closes when the docs slice numbers them and sets their
-  status.
+- **Three ADRs are still named `NNNN-` and Proposed**: encrypted backups, the periodisation
+  engine, and lifecycles as data. Work under several of them has merged. Closes when the docs
+  slice numbers them and sets their status. M6's three (trend classification, hand-built charts,
+  planning later blocks) are accepted as 0015 to 0017.
 - **ADR 0011 (email sign-in link) is still Accepted**, while milestones.md records that the owner
   dropped the emailed link on 2026-11-07. Not checked against the code. Closes when the ADR is
   marked Superseded or the note in milestones.md is corrected.
