@@ -6,9 +6,14 @@
  *   come from the owner's library; a session planned before today and never logged is named missed
  * - its range is capped at 49 days, its facts are read once per request, and a caller's facts
  *   loader adds no fact query
+ * - an owner with no profile row: the context still loads, with no profile-derived fields, and no
+ *   profile row is written (the reads run in a read-only transaction)
  * - a stalled read, under the one-query guard: on the pool Postgres cancels it at the statement
  *   timeout and the connection is released; inside a caller's transaction the savepoint ends it
  *   and the transaction carries on to its commit
+ * - on Train: a hard sparring session logged on Monday makes Tuesday’s heavy squats a
+ *   residual-fatigue finding with the scheduler’s fix, and a failing facts read is recorded while
+ *   the week still renders with checkWeek’s findings
  */
 import { sql } from 'drizzle-orm';
 import type pg from 'pg';
@@ -20,6 +25,7 @@ import {
 	createAnalyticsRepository,
 	type AnalyticsRepository
 } from '../../../src/lib/server/db/repositories/analytics';
+import { createProfileRepository } from '../../../src/lib/server/db/repositories/profile';
 import { createProgramsRepository } from '../../../src/lib/server/db/repositories/programs';
 import { createFactsLoader } from '../../../src/lib/server/services/analytics/facts';
 import { findErrorsByRequestId } from '../../../src/lib/server/services/errors';
@@ -33,10 +39,19 @@ import {
 } from '../../../src/lib/server/services/periodisation/context';
 import { createGoal, getAthleteProfile } from '../../../src/lib/server/services/profile/index';
 import { createProgramFromPlan } from '../../../src/lib/server/services/programs/index';
-import { finishWorkout, logSet, startWorkout } from '../../../src/lib/server/services/training/log';
+import {
+	finishWorkout,
+	logOtherSession,
+	logSet,
+	startWorkout
+} from '../../../src/lib/server/services/training/log';
 import { seedAnalyticsFixture } from '../../../src/lib/server/test-support/analytics-fixtures/index';
-import type { PeriodisationWeekResult } from '../../../src/lib/server/test-support/analytics-fixtures/periodisation-week';
+import {
+	FIXTURE_WEEKS,
+	type PeriodisationWeekResult
+} from '../../../src/lib/server/test-support/analytics-fixtures/periodisation-week';
 import { programFixture } from '../../../src/lib/server/test-support/program-fixtures';
+import { loadTrainWeek } from '../../../src/routes/(app)/train/week.server';
 import { takeOverlaps } from '../one-query-per-client';
 import { withRollback } from '../helpers';
 import { makeOwner, makeSecondOwner } from '../profile/fixtures';
@@ -433,6 +448,102 @@ describe('the week’s context', () => {
 				'load',
 				'priorities',
 				'week'
+			]);
+		});
+	});
+
+	it('an owner with no profile row: the context still loads with no profile-derived fields, and writes no row', async () => {
+		await withRollback(async (db) => {
+			const owner = await makeOwner(db);
+			const plan = programFixture('one-week', { monday: MONDAY, today: MONDAY });
+			await createProgramFromPlan(owner, plan, { source: 'rules' }, { db });
+			const requestId = crypto.randomUUID();
+			const context = await evaluationContext(
+				owner,
+				{ versionId: await versionId(db, owner), weekStartsOn: MONDAY, today: TODAY },
+				{ db, origin: origin(requestId) }
+			);
+			expect(context).not.toBeNull();
+			expect(context).toMatchObject({ priorities: [], level: null, preferredTimes: [] });
+			expect(context!.load.days.length).toBeGreaterThan(0);
+			expect(await findErrorsByRequestId(requestId, { db })).toEqual([]);
+			expect(await createProfileRepository(db).getProfile(owner)).toBeNull();
+		});
+	});
+});
+
+describe('on Train', () => {
+	it('hard sparring logged on Monday makes Tuesday’s heavy squats a residual-fatigue finding, with the fix', async () => {
+		await withRollback(async (db) => {
+			const owner = await ownerWithProfile(db);
+			const tuesday = '2026-11-10';
+			const plan = programFixture('one-week', { monday: MONDAY, today: MONDAY });
+			const week = plan.blocks[0]!.weeks[0]!;
+			const lifts = week.sessions[0]!;
+			if (lifts.kind !== 'strength') throw new Error('expected Monday’s strength session');
+			// Tuesday's lifts with the back squat at RPE 8: heavy lower body. Nothing else that week.
+			lifts.exercises[1]!.sets = lifts.exercises[1]!.sets.map((s) => ({ ...s, targetRpe: 8 }));
+			week.sessions = [{ ...lifts, date: tuesday, title: 'Lower A' }];
+			await createProgramFromPlan(owner, plan, { source: 'rules' }, { db });
+			await logged(
+				db,
+				owner,
+				new Date('2026-11-09T18:00:00Z'),
+				{ kind: 'other', discipline: 'muay_thai', sessionType: 'muay_thai', title: 'Sparring' },
+				{ durationSeconds: 7200, sessionRpe: 9.5 },
+				(workoutClientId) =>
+					logOtherSession(
+						owner,
+						{
+							workoutClientId,
+							...{ kind: 'sparring', durationMinutes: 120, rpe: 9.5, metrics: [], notes: null }
+						},
+						{ db }
+					)
+			);
+			const data = await loadTrainWeek(
+				owner,
+				{ now: new Date('2026-11-10T06:00:00Z'), week: null, origin: origin() },
+				{ db, errorsDb: db, periodisation: { context: { statementTimeoutMs: SLOW_OK } } }
+			);
+			if (data.state !== 'program') throw new Error(`expected a program, got ${data.state}`);
+			const card = data.days.flatMap((d) => d.cards).find((c) => c.title === 'Lower A' && c.note);
+			expect(card?.note).toMatchObject({
+				label: 'Heads-up',
+				text: expect.stringMatching(/^Heads-up · A hard session on an overloaded system · /),
+				why: expect.stringMatching(/Moving Lower A to \w+day clears this\.$/)
+			});
+		});
+	});
+
+	it('still renders when the facts loader fails: recorded, judged by checkWeek alone', async () => {
+		await withRollback(async (db) => {
+			const owner = await makeOwner(db);
+			const seeded = (await seedAnalyticsFixture(
+				owner,
+				'periodisation-week',
+				{ timeZone: 'UTC', now: NOW },
+				{ db }
+			)) as unknown as PeriodisationWeekResult;
+			const failing = new Proxy(createAnalyticsRepository(db), {
+				get: () => () => Promise.reject(new Error('facts unavailable'))
+			}) as AnalyticsRepository;
+			const { requestId } = origin();
+			const data = await loadTrainWeek(
+				owner,
+				{ now: NOW, week: String(FIXTURE_WEEKS.moved), origin: origin(requestId) },
+				{ db, errorsDb: db, periodisation: { context: { repository: failing } } }
+			);
+			if (data.state !== 'program') throw new Error(`expected a program, got ${data.state}`);
+			// checkWeek's finding on the owner's move, without the scheduler's fix.
+			expect(data.weekLine).toBe('1 heads-up this week');
+			const note = data.days
+				.flatMap((d) => d.cards)
+				.find((c) => c.lineage === seeded.lineages.moved)?.note;
+			expect(note?.why).toMatch(/You moved Lower A here from Friday\.$/);
+			const errors = await findErrorsByRequestId(requestId, { db });
+			expect(errors.map((e) => e.context)).toEqual([
+				expect.objectContaining({ part: 'evaluation-context' })
 			]);
 		});
 	});

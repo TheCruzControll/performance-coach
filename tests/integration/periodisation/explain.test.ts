@@ -24,6 +24,7 @@ import {
 	getPlacementWhy,
 	MAX_WHY_ITEMS
 } from '../../../src/lib/server/services/periodisation/explain';
+import { getAthleteProfile } from '../../../src/lib/server/services/profile/index';
 import {
 	createProgramFromPlan,
 	getCurrentProgram,
@@ -92,6 +93,8 @@ function program(data: TrainWeekData) {
  */
 async function tradeoffWeek(db: Executor, ruleKey: string | null = 'placement.priority_kept') {
 	const owner = await makeOwner(db);
+	// The profile row a program's owner has (ownerWithProfile in context.test.ts): the context reads it.
+	await getAthleteProfile(owner, { db });
 	const plan = programFixture('one-week', { monday: '2026-11-09', today: '2026-11-09' });
 	const monday = plan.blocks[0]!.weeks[0]!.sessions[0]!;
 	if (monday.kind !== 'strength') throw new Error('expected Monday’s strength session');
@@ -277,6 +280,7 @@ describe('getPlacementWhy', () => {
 			const { tradeoffs } = await getPlacementWhy(owner, { programId: p.id, sessions }, { db });
 			expect(tradeoffs).toHaveLength(1);
 			const monday = sessions.find((s) => s.date === '2026-11-09')!;
+			const { requestId } = origin();
 			const week = await getWeekEvaluation(
 				owner,
 				{
@@ -285,8 +289,11 @@ describe('getPlacementWhy', () => {
 					today: '2026-11-09',
 					tradeoffs
 				},
-				{ db }
+				{ db, errorsDb: db, origin: origin(requestId) }
 			);
+			// The evaluation context loaded: its days are the week's, and no read of it failed.
+			expect(week.days.length).toBeGreaterThan(0);
+			expect(await findErrorsByRequestId(requestId, { db })).toEqual([]);
 			expect(week.notes[monday.lineage]).toMatchObject({
 				label: NOTE_LABEL.tradeOff,
 				text: expect.stringMatching(
@@ -296,7 +303,9 @@ describe('getPlacementWhy', () => {
 					/Your strength goal ranks above Muay Thai, so its Full body keeps Monday\.$/
 				)
 			});
-			expect(week.summary).toMatch(/1 trade-off, explained$/);
+			// The context's three-hard-day finding also shares that sentence: two trade-offs, as Train's
+			// test counts them.
+			expect(week.summary).toMatch(/2 trade-offs, explained$/);
 		});
 	});
 });
@@ -322,7 +331,9 @@ describe('a priority trade-off', () => {
 					/Your strength goal ranks above Muay Thai, so its Full body keeps Monday\.$/
 				)
 			});
-			expect(program(data).weekLine).toMatch(/1 trade-off, explained$/);
+			// With the evaluation context (m7/22), Monday to Wednesday is also three hard days in a
+			// row, which shares the Monday trade-off's sentence.
+			expect(program(data).weekLine).toMatch(/2 trade-offs, explained$/);
 			expect(card.why).toEqual({
 				title: 'Why Monday?',
 				lines: [
