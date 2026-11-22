@@ -11,9 +11,11 @@
  *    `INSERT … OVERRIDING SYSTEM VALUE SELECT … FROM stage CROSS JOIN LATERAL
  *    json_populate_record(NULL::t, line::json) ORDER BY ord`, the late columns left NULL.
  * 4. UPDATE the late columns from the same lines, joined on the primary key.
- * 5. ALTER SEQUENCE … RESTART then setval every sequence, ENABLE TRIGGER USER, SET CONSTRAINTS
- *    ALL IMMEDIATE. A bare setval survives ROLLBACK; the RESTART gives the sequence a new
- *    relfilenode inside the transaction, so the setval that follows rolls back with it.
+ * 5. ALTER SEQUENCE … RESTART then setval every sequence, SET CONSTRAINTS ALL IMMEDIATE, then
+ *    ENABLE TRIGGER USER: the deferred foreign-key checks (the reviews' superseded_by keys) must
+ *    run first, since Postgres refuses to ALTER a table with pending trigger events. A bare
+ *    setval survives ROLLBACK; the RESTART gives the sequence a new relfilenode inside the
+ *    transaction, so the setval that follows rolls back with it.
  * 6. Recompute every table's digest in SQL and roll back on any difference from the trailer.
  * 7. Write the marker (target.ts), then COMMIT.
  * Any error rolls the whole transaction back: the target stays migrated and empty, and its
@@ -162,8 +164,8 @@ export async function restoreArchive(
 				archive.sequences.map((s) => s.isCalled)
 			]
 		);
-		await client.query(allTables.map((t) => `ALTER TABLE ${t} ENABLE TRIGGER USER`).join(';\n'));
 		await client.query('SET CONSTRAINTS ALL IMMEDIATE');
+		await client.query(allTables.map((t) => `ALTER TABLE ${t} ENABLE TRIGGER USER`).join(';\n'));
 
 		const digests = await tableDigests(client, tables);
 		const { rowCounts, tableDigests: expected } = archive.trailer;
