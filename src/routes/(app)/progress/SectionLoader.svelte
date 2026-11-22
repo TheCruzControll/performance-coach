@@ -84,6 +84,6 @@
 		<Notice tone="danger" title="Couldn’t load your {name} trends">
 			Your training is safe. Check your connection, then try again.
 		</Notice>
-		<Button variant="secondary" icon="refresh" {loading} onclick={retry}>Retry</Button>
+		<Button variant="secondary" icon="refresh" {loading} onclick={retry}>Try again</Button>
 	</div>
 {/if}

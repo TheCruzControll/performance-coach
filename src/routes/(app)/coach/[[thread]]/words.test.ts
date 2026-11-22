@@ -87,6 +87,32 @@ describe('prefillOf', () => {
 		});
 	});
 
+	it('reads a review’s Discuss link back as its chip and its review ref', () => {
+		const prefill = (href: string) => prefillOf(new URL(href, 'https://coach.test').searchParams);
+		const cycle = 'c-0b5e2b8e-9d0c-4f61-8a43-5d3b8e7f2a10';
+		expect(
+			prefill(
+				askHref(ASK_QUESTIONS.review('weekly'), 'weekly_review', {
+					type: 'review',
+					id: 'w-2026-11-09'
+				})
+			)
+		).toEqual({
+			text: 'Can we go through my weekly review?',
+			from: 'weekly_review',
+			label: 'From your weekly review',
+			ref: { type: 'review', id: 'w-2026-11-09' }
+		});
+		expect(
+			prefill(askHref(ASK_QUESTIONS.review('cycle'), 'cycle_review', { type: 'review', id: cycle }))
+		).toEqual({
+			text: 'Can we go through my cycle review?',
+			from: 'cycle_review',
+			label: 'From your cycle review',
+			ref: { type: 'review', id: cycle }
+		});
+	});
+
 	it('cuts the question at the composer’s limit, in characters', () => {
 		const long = '💪'.repeat(COMPOSER_MAX_CHARS + 5);
 		const text = prefillOf(search(`ask=${encodeURIComponent(long)}`))!.text;

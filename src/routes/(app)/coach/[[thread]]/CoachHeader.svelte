@@ -1,8 +1,9 @@
 <!--
   @component
   The Coach screens' header: the large title, the practice coach's badge while the mock answers
-  (words, never colour alone), and the header's actions, each a slot one slice fills: the
-  proposals inbox, 'What the coach knows' and usage.
+  (words, never colour alone) on the eyebrow line, where the title cannot run into it, and the
+  header's actions, each a slot one slice fills: the proposals inbox, 'What it knows' and
+  'Usage', the icon buttons named and, for a mouse, captioned with those words.
 -->
 <script lang="ts">
 	import PageHeader from '#lib/ui/components/PageHeader.svelte';
@@ -14,10 +15,11 @@
 	let { mockBadge }: { mockBadge: boolean } = $props();
 </script>
 
-<PageHeader title="Coach" eyebrow="Ask anything">
+{#snippet practice()}<MockBadge data-testid="mock-badge" />{/snippet}
+
+<PageHeader title="Coach" eyebrow="Ask anything" badge={mockBadge ? practice : undefined}>
 	{#snippet trailing()}
 		<div class="actions">
-			{#if mockBadge}<MockBadge data-testid="mock-badge" />{/if}
 			<ProposalsLink />
 			<KnowsButton />
 			<UsageButton />

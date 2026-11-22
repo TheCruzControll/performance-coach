@@ -25,7 +25,8 @@
     details, only the changes waiting. A page restored after a 401 (active.signedOut) shows none
     of it before the engine has said otherwise.
   - Finish and Discard: the header's More button opens the workout menu (WorkoutMenu.svelte, loaded
-    with the store), and Finish (from it, or the strength view's after the last exercise)
+    with the store), and Finish (from it, the header's visible Finish once a set is logged,
+    HeaderFinish.svelte, which loads with it, or the strength view's after the last exercise)
     the finish sheet (FinishSheet.svelte, loaded then). Done sends the finish through the store
     (finish.ts); online, once the server has it, the sheet opens its History detail. Otherwise
     the page shows its completed state (Summary.svelte, loaded then): the summary, read-only,
@@ -66,6 +67,7 @@
 	import Skeleton from '#lib/ui/components/Skeleton.svelte';
 	import EmptyWorkout from './EmptyWorkout.svelte';
 	import type FinishSheet from './FinishSheet.svelte';
+	import type HeaderFinishComponent from './HeaderFinish.svelte';
 	import type Summary from './Summary.svelte';
 	import { afterPaint, chunkLoader } from './lazy.ts';
 	import type * as SyncUi from './sync-ui.ts';
@@ -105,6 +107,8 @@
 	);
 	let ui = $state.raw<typeof SyncUi | null>(null);
 	let Menu = $state.raw<typeof WorkoutMenu | null>(null);
+	/** The header's visible Finish, which loads with the menu. */
+	let HeaderFinish = $state.raw<typeof HeaderFinishComponent | null>(null);
 	let Finish = $state.raw<typeof FinishSheet | null>(null);
 	const sync = $derived(ui?.outboxStatus.current);
 	const signedOut = $derived(sync?.state === 'signed-out' ? sync.waiting : null);
@@ -157,7 +161,9 @@
 					.catch(() => {});
 			}
 			ui = await load(() => import('./sync-ui.ts'));
-			Menu = (await load(() => import('./WorkoutMenu.svelte')))?.default ?? null;
+			const menu = await load(() => import('./WorkoutMenu.svelte'));
+			Menu = menu?.default ?? null;
+			HeaderFinish = menu?.HeaderFinish ?? null;
 		});
 	});
 
@@ -233,6 +239,11 @@
 						<Menu view={shown} store={active.store} onfinish={() => (active.finishing = true)} />
 					{/if}
 				</span>
+			{/if}
+		{/snippet}
+		{#snippet finish()}
+			{#if shown && restore.phase === 'active' && HeaderFinish && active.store}
+				<HeaderFinish view={shown} onfinish={() => (active.finishing = true)} />
 			{/if}
 		{/snippet}
 	</WorkoutHeader>

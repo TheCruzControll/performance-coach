@@ -21,6 +21,7 @@ import {
 } from '#lib/server/services/reviews/index.ts';
 import type { TrainingDeps } from '#lib/server/services/training/shared.ts';
 import {
+	changeWords,
 	createCycle,
 	createReview,
 	CYCLE_IN_PROGRESS,
@@ -212,6 +213,14 @@ describe('a verdict as its badge says it', () => {
 	});
 });
 
+describe('a trend’s change in plain words', () => {
+	it('says which way it went and by how much, never a bare figure along the trend', () => {
+		expect(changeWords(9.5, '9.5 kg')).toBe('Up 9.5 kg so far');
+		expect(changeWords(-12, '12 s/km')).toBe('Down 12 s/km so far');
+		expect(changeWords(0, '0 kg')).toBe('No change so far');
+	});
+});
+
 describe('a weekly review as the screen shows it', () => {
 	it('the hero, planned against completed and each trend with its context, from the snapshot', () => {
 		const data = weeklyReviewData(view());
@@ -242,7 +251,7 @@ describe('a weekly review as the screen shows it', () => {
 				label: 'Bench press estimated 1RM',
 				verdict: { verdict: 'real_trend', direction: 'up', good: true },
 				words: 'Trending up, improving',
-				change: '5 kg',
+				change: 'Up 5 kg so far',
 				context: {
 					period: 'Trend over the last 9 weeks',
 					good: METRICS.e1rm.good.words,
@@ -411,6 +420,13 @@ describe('the load', () => {
 		next: null
 	};
 
+	const NARRATION = {
+		target: { kind: 'weekly', id: ID },
+		view: { state: 'writing', ask: true },
+		lines: ['Your coach is writing this up…'],
+		discuss: '/coach?ask=x&from=weekly_review'
+	} as const;
+
 	function deps(parts: Partial<ReviewsDeps> = {}) {
 		const calls: string[] = [];
 		const track = <T>(name: string, value: T) =>
@@ -427,6 +443,7 @@ describe('the load', () => {
 			reviewable: track('reviewable', { weekStartsOn: THIS_WEEK, reason: 'all_done' }),
 			block: track('block', null),
 			view: track('view', view()),
+			narration: track('narration', NARRATION),
 			record: vi.fn(async () => null),
 			...parts
 		} as unknown as Required<ReviewsDeps>;
@@ -453,6 +470,9 @@ describe('the load', () => {
 		expect(d.list).toHaveBeenCalledWith('owner', { limit: 50 }, { db });
 		expect(d.reviewable).toHaveBeenCalledWith('owner', TODAY, { db });
 		expect(d.block).toHaveBeenCalledWith('owner', TODAY, { db });
+		expect(d.narration).toHaveBeenCalledWith('owner', data.selected, { db });
+		expect(data.selected?.narration).toEqual(NARRATION);
+		expect(calls.at(-1)).toBe('narration:end');
 		for (let i = 0; i < calls.length; i += 2)
 			expect(calls[i + 1]).toBe(calls[i]!.replace('start', 'end'));
 	});
@@ -491,6 +511,22 @@ describe('the load', () => {
 		const again = deps({ view: vi.fn(async () => decided), offers: vi.fn(async () => [offer]) });
 		await loadReviews('owner', { key: `w-${LAST_WEEK}`, origin }, new Date(), again.d);
 		expect(again.d.offers).not.toHaveBeenCalled();
+	});
+
+	it('a write-up that fails to read is recorded and left out; the review still shows', async () => {
+		const { d } = deps({
+			narration: vi.fn(async () => {
+				throw new Error('coach tables down');
+			})
+		});
+		const data = await loadReviews('owner', { key: `w-${LAST_WEEK}`, origin }, new Date(), d);
+		if (data.failed) throw new Error('the review must show');
+		expect(data.selected).toMatchObject({ key: `w-${LAST_WEEK}` });
+		expect(data.selected?.narration).toBeUndefined();
+		expect(d.record).toHaveBeenCalledWith(
+			expect.objectContaining({ kind: 'load', context: { load: 'review-write-up' } }),
+			{ db: undefined }
+		);
 	});
 
 	it('no key: the list alone, empty with no review stored', async () => {
@@ -641,6 +677,7 @@ describe('cycle reviews', () => {
 		stale: false,
 		laterChanges: 0,
 		writeUp: { state: 'none' },
+		previews: [],
 		progression: null
 	} as unknown as CycleReviewView;
 

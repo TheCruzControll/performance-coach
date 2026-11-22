@@ -138,7 +138,7 @@ test('a history request answering 500 shows the error with Retry, which recovers
 	await auditThemes(page, 'error');
 
 	await page.unrouteAll({ behavior: 'ignoreErrors' });
-	await error.getByRole('button', { name: 'Retry' }).click();
+	await error.getByRole('button', { name: 'Try again' }).click();
 	await expectBenchMonth(page);
 	await expect(error).toHaveCount(0);
 });
@@ -164,10 +164,10 @@ test('offline it says the history needs a connection, and Retry recovers once ba
 	await auditThemes(page, 'offline');
 
 	// Still offline, Retry keeps the state; back online, it loads.
-	await offline.getByRole('button', { name: 'Retry' }).click();
+	await offline.getByRole('button', { name: 'Try again' }).click();
 	await expect(offline).toContainText('Exercise history needs a connection');
 	await context.setOffline(false);
-	await offline.getByRole('button', { name: 'Retry' }).click();
+	await offline.getByRole('button', { name: 'Try again' }).click();
 	await expectBenchMonth(page);
 });
 
@@ -189,7 +189,7 @@ test('the sheet’s code failing to load is the chunk-failed toast, whose Retry 
 	// In place on WebKit; on Chromium, which keeps the failed fetch, through a reload of the
 	// conversation that opens the sheet once its code arrives.
 	await page.unroute(chunk);
-	await failed.getByRole('button', { name: 'Retry' }).click();
+	await failed.getByRole('button', { name: 'Try again' }).click();
 	await expectBenchMonth(page);
 	await expect(page).toHaveURL(threadPath());
 

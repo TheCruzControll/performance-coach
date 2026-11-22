@@ -244,7 +244,7 @@ test.describe('twelve weeks', () => {
 
 			// Where the browser keeps the failed fetch (Chromium), Retry reloads the page.
 			failing = false;
-			await failed.getByRole('button', { name: 'Retry' }).click();
+			await failed.getByRole('button', { name: 'Try again' }).click();
 			await expect(failed).toHaveCount(0);
 			await expectBestE1rm(page, seeded, 'back_squat', 12);
 		});
@@ -268,7 +268,7 @@ test.describe('twelve weeks', () => {
 		await expect(page.getByTestId('error-view')).toHaveCount(0);
 
 		await context.clearCookies({ name: 'pc-test-fail' });
-		await failed.getByRole('button', { name: 'Retry' }).click();
+		await failed.getByRole('button', { name: 'Try again' }).click();
 		await expect(failed).toHaveCount(0);
 		await expectBestE1rm(page, seeded, 'back_squat', 12);
 	});

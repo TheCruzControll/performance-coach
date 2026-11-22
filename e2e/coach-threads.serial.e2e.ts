@@ -304,7 +304,7 @@ test.describe('with the network in the test’s hands', () => {
 		const failed = page.getByTestId('rename-failed');
 		await expect(failed).toContainText('That didn’t go through');
 		await captureScreen(page, testInfo, 'coach-rename-failed');
-		await failed.getByRole('button', { name: 'Retry' }).click();
+		await failed.getByRole('button', { name: 'Try again' }).click();
 		await expect(manageSheet(page)).toBeHidden();
 		await expect(threadRows(page).first()).toContainText('Bench block');
 		expect(answered).toBe(2);
@@ -340,7 +340,7 @@ test.describe('with the network in the test’s hands', () => {
 		const failed = page.getByTestId('archived-failed');
 		await expect(failed).toContainText('Couldn’t load your conversations');
 		await captureScreen(page, testInfo, 'coach-archived-failed');
-		await failed.getByRole('button', { name: 'Retry' }).click();
+		await failed.getByRole('button', { name: 'Try again' }).click();
 		await expect(archivedRows(page)).toHaveCount(3);
 		await expect(failed).toHaveCount(0);
 		expect(answered).toBe(2);
@@ -363,7 +363,7 @@ test.describe('with the network in the test’s hands', () => {
 		await row.getByRole('button', { name: `Unarchive ${NEWEST_ARCHIVED}` }).click();
 		await expect(row.getByTestId('unarchive-failed')).toContainText('That didn’t go through');
 		await captureScreen(page, testInfo, 'coach-unarchive-failed');
-		await row.getByRole('button', { name: `Retry ${NEWEST_ARCHIVED}` }).click();
+		await row.getByRole('button', { name: `Try again ${NEWEST_ARCHIVED}` }).click();
 		await expect(archivedRows(page)).toHaveCount(2);
 		expect(answered).toBe(2);
 	});

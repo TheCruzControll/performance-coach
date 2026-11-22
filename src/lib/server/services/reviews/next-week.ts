@@ -6,7 +6,9 @@
  * - The decision is on the head of the review's proposal chain (proposalHead), undecided or
  *   partly past (superseded as sessions_passed by an accept from M5's inbox).
  * - The chosen ops are split with opsStillAhead, as acceptProposal splits them: a change whose
- *   session has passed or started is dropped and counted in `passed`.
+ *   session has passed or started is dropped. `passed` counts every offered change no longer
+ *   ahead, chosen or not: the card cannot post one (its checkbox is disabled), and it is left out
+ *   either way.
  * - Everything as proposed and still ahead: the head is accepted as it is.
  * - Anything left out, at a half step or no longer ahead: an owner revision of the head
  *   (createProposal, revision_of the head, the review's provenance with modifiedBy 'owner' when
@@ -69,7 +71,7 @@ export type NextWeekDecision =
 			proposalId: string;
 			versionId: string | null;
 			versionNumber: number | null;
-			/** Chosen changes dropped because their sessions had passed. */
+			/** Offered changes left out because their sessions had passed or started. */
 			passed: number;
 	  }
 	| { outcome: 'rejected'; proposalId: string }
@@ -171,7 +173,7 @@ export async function decideNextWeek(
 			(await opsStillAhead(ownerId, offered, localDay(now(), timeZone), tx)).map((o) => o.id)
 		);
 		const kept = chosen.filter((c) => ahead.has(c.id));
-		const passed = chosen.length - kept.length;
+		const passed = offered.filter((o) => !ahead.has(o.id)).length;
 
 		/** The owner's revision of the head holding `changes`, the base of their decision. */
 		const revise = async (changes: readonly Chosen[], trimmed: number) => {

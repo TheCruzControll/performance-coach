@@ -261,7 +261,8 @@
 			<span class="notice-body">
 				{NOTICES[notice].body}
 				{#if notice === 'failed' || notice === 'offline'}
-					<Button variant="secondary" size="sm" icon="refresh" onclick={startWeek}>Retry</Button>
+					<Button variant="secondary" size="sm" icon="refresh" onclick={startWeek}>Try again</Button
+					>
 				{/if}
 			</span>
 		</Notice>
@@ -300,7 +301,7 @@
 					: 'Something went wrong while planning. Nothing was saved.'}
 			>
 				{#snippet actions()}
-					<Button variant="secondary" icon="refresh" onclick={preview}>Retry</Button>
+					<Button variant="secondary" icon="refresh" onclick={preview}>Try again</Button>
 				{/snippet}
 			</EmptyState>
 		</div>

@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { cardOf, cardState, NEXT_CYCLE_WAITS, parseCard, type ProposalCardView } from './cards.ts';
+import {
+	cardOf,
+	cardState,
+	CHOOSE_START,
+	NEXT_CYCLE_WAITS,
+	parseCard,
+	type ProposalCardView
+} from './cards.ts';
 
 /** A proposal view as the server sends it: more than a card reads. */
 const view = {
@@ -129,5 +136,102 @@ describe('cardState', () => {
 			kind: 'rejected',
 			words: 'Declined'
 		});
+	});
+});
+
+describe("M6's reviews on the card", () => {
+	const weekly = {
+		...view,
+		threadId: null,
+		origin: {
+			kind: 'weekly_review',
+			href: '/progress/reviews/w-2026-11-02',
+			weekStartsOn: '2026-11-02'
+		}
+	} as const;
+	const cycleHref = '/progress/reviews/c-7d0f0b8e-1a2b-4c3d-8e9f-0a1b2c3d4e5f';
+
+	it('names the review a proposal came from, with its week, and links to it', () => {
+		expect(cardOf(weekly).origin).toEqual({
+			words: 'From your weekly review · Week of 2 Nov',
+			href: '/progress/reviews/w-2026-11-02'
+		});
+		const cycle = { ...view, origin: { kind: 'cycle_review', href: cycleHref } } as const;
+		expect(cardOf(cycle).origin).toEqual({ words: 'From your cycle review', href: cycleHref });
+		expect(cardOf(view).origin).toBeUndefined();
+	});
+
+	it.each([
+		['review_refreshed', 'Replaced by a refreshed review', 'open'],
+		['sessions_passed', 'Some sessions have passed', 'Finish in your weekly review']
+	] as const)('labels %s and links it to the review', (reason, words, link) => {
+		const superseded = { ...weekly, status: 'superseded', supersededReason: reason } as const;
+		expect(cardState(cardOf(superseded))).toEqual({
+			kind: 'superseded',
+			words,
+			link: { words: link, href: '/progress/reviews/w-2026-11-02' }
+		});
+	});
+
+	it.each([
+		['folded_into_review', 'Folded into your cycle review'],
+		['cycle_planned', 'Your next block is already planned']
+	] as const)('labels a coach next cycle %s and links it to the cycle review', (reason, words) => {
+		const coach = {
+			...view,
+			kind: 'next_cycle',
+			status: 'superseded',
+			supersededReason: reason,
+			cycleReview: { href: cycleHref }
+		} as const;
+		expect(cardOf(coach).origin).toBeUndefined();
+		expect(cardState(cardOf(coach))).toEqual({
+			kind: 'superseded',
+			words,
+			link: { words: 'open', href: cycleHref }
+		});
+	});
+
+	it('leaves the coach’s own superseded reasons unlinked', () => {
+		const revised = { ...weekly, status: 'superseded', supersededReason: 'revised' } as const;
+		expect(cardState(cardOf(revised))).toEqual({
+			kind: 'superseded',
+			words: 'Replaced by a revised proposal'
+		});
+	});
+
+	it('links a waiting next cycle to the cycle review once there is one', () => {
+		const waiting = { ...view, kind: 'next_cycle', status: 'accepted' } as const;
+		expect(cardState(cardOf(waiting))).toEqual({ kind: 'waiting', words: NEXT_CYCLE_WAITS });
+		expect(cardState(cardOf({ ...waiting, cycleReview: { href: cycleHref } }))).toEqual({
+			kind: 'waiting',
+			words: NEXT_CYCLE_WAITS,
+			href: cycleHref
+		});
+	});
+
+	it("offers the review's own next cycle in the review instead of Accept", () => {
+		const own = {
+			...view,
+			kind: 'next_cycle',
+			origin: { kind: 'cycle_review', href: cycleHref },
+			chooseStart: { href: cycleHref }
+		} as const;
+		expect(cardState(cardOf(own))).toEqual({
+			kind: 'choose',
+			words: CHOOSE_START,
+			href: cycleHref
+		});
+		expect(CHOOSE_START).toBe('Choose when it starts in your cycle review');
+	});
+
+	it('keeps the review links through JSON, and refuses a link off the app', () => {
+		const own = { ...weekly, chooseStart: null, cycleReview: null };
+		expect(parseCard(JSON.parse(JSON.stringify(own)))).toEqual(cardOf(own));
+		for (const href of ['https://evil.example/', '//evil.example/', 'javascript:alert(1)']) {
+			expect(parseCard({ ...weekly, origin: { ...weekly.origin, href } })).toBeNull();
+			expect(parseCard({ ...view, cycleReview: { href } })).toBeNull();
+		}
+		expect(parseCard({ ...weekly, origin: { ...weekly.origin, kind: 'coach' } })).toBeNull();
 	});
 });

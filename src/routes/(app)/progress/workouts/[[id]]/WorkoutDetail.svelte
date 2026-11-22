@@ -54,7 +54,7 @@
 	{#if detail.stats.length}
 		<div class="stats" data-testid="workout-stats">
 			{#each detail.stats as stat (stat.label)}
-				<Stat label={stat.label} value={stat.value} />
+				<Stat label={stat.label} value={stat.value} fit />
 			{/each}
 		</div>
 	{/if}
@@ -182,9 +182,10 @@
 		outline-offset: 2px;
 	}
 
+	/* Two to a row on a phone, three beside the list on a desktop: room for '1 h 00 min' at 28 px. */
 	.stats {
 		display: grid;
-		grid-template-columns: repeat(auto-fill, minmax(7rem, 1fr));
+		grid-template-columns: repeat(auto-fill, minmax(min(100%, 10rem), 1fr));
 		gap: var(--space-2);
 	}
 

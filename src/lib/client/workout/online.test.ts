@@ -257,6 +257,8 @@ describe('reconcile, when a screen opens online', () => {
 		);
 		expect(await page.store.dispatch(start, kitOf(W)).saved).toBe('saved');
 		await vi.waitFor(async () => expect(await page.store.outbox()).toEqual([]));
+		// Its own reconcile GET, sent once that flush has ended, is out before a test counts calls.
+		await page.reconciled;
 		page.stop();
 		const reopen = () =>
 			goOnline(

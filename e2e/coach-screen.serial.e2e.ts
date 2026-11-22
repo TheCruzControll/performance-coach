@@ -85,6 +85,22 @@ async function manyThreads(count: number) {
 	);
 }
 
+/**
+ * The header: the practice coach's badge on the eyebrow line, above the large title and clear of
+ * it, and the icon buttons named for what they open.
+ */
+async function expectCleanHeader(page: Page) {
+	const title = (await page.getByRole('heading', { level: 1, name: 'Coach' }).boundingBox())!;
+	const badge = (await page.getByTestId('mock-badge').boundingBox())!;
+	expect(badge.y + badge.height, 'the badge ends above the title').toBeLessThanOrEqual(title.y);
+	for (const name of ['What it knows', 'Usage']) {
+		const button = (await page.getByRole('button', { name, exact: true }).boundingBox())!;
+		expect(button.x, `${name} starts after the title`).toBeGreaterThanOrEqual(
+			title.x + title.width
+		);
+	}
+}
+
 test('with no conversation, the suggestions sit under the header over the empty state', async ({
 	page
 }, testInfo) => {
@@ -102,6 +118,10 @@ test('with no conversation, the suggestions sit under the header over the empty 
 	await expect(page.getByTestId('coach-unavailable')).toHaveCount(0);
 	await expect(page.getByTestId('context-chip')).toHaveCount(0);
 	await expect(coachTab(page)).toHaveAttribute('aria-current', 'page');
+	await expectCleanHeader(page);
+	// A touch screen never shows the icon buttons' captions.
+	await expect(page.getByTestId('icon-tip')).toHaveCount(2);
+	for (const tip of await page.getByTestId('icon-tip').all()) await expect(tip).toBeHidden();
 
 	// The suggestions come first in the column, and every one ends above the composer.
 	const bar = (await composer(page).boundingBox())!;
@@ -206,7 +226,7 @@ test.describe('when the coach cannot answer', () => {
 		await gotoHydrated(page, '/coach');
 		const notice = page.getByTestId('coach-unavailable');
 		await expect(notice).toContainText('Your coach is getting ready');
-		await expect(notice.getByRole('button', { name: 'Retry' })).toHaveCount(0);
+		await expect(notice.getByRole('button', { name: 'Try again' })).toHaveCount(0);
 		await expect(page.getByTestId('mock-badge')).toHaveCount(0);
 		await expect(composer(page).getByRole('textbox', { name: 'Message' })).toBeDisabled();
 		await expect(page.locator('.prompt')).toHaveCount(4);
@@ -301,7 +321,7 @@ test.describe('with the network in the test’s hands', () => {
 		await expect(threadRows(page)).toHaveCount(20);
 
 		const release = await hold(page, isOlder);
-		await failed.getByRole('button', { name: 'Retry' }).click();
+		await failed.getByRole('button', { name: 'Try again' }).click();
 		await expect(older).toHaveAttribute('aria-busy', 'true');
 		await expect(page.getByRole('status').filter({ hasText: 'Loading older' })).toHaveCount(1);
 		release();
@@ -343,7 +363,7 @@ test.describe('with the network in the test’s hands', () => {
 		await expectNoSideScroll(page);
 		await captureScreen(page, testInfo, 'coach-load-failed');
 
-		await failed.getByRole('button', { name: 'Retry' }).click();
+		await failed.getByRole('button', { name: 'Try again' }).click();
 		await expect(page.getByTestId('owner-message')).toHaveText(new RegExp(BENCH_QUESTION));
 		await expect(failed).toHaveCount(0);
 	});
@@ -404,6 +424,43 @@ test.describe('on a desktop window', () => {
 		await expect.poll(() => back.evaluate((el) => getComputedStyle(el).color)).not.toBe(colour);
 		await expectNoSideScroll(page);
 		await captureScreen(page, testInfo, 'coach-thread-desktop');
+	});
+
+	test('the header is clear, and its icon buttons are captioned on hover and keyboard focus', async ({
+		page
+	}, testInfo) => {
+		await gotoHydrated(page, '/coach');
+		await page.evaluate(() => document.fonts.ready);
+		await expectCleanHeader(page);
+		const knows = page.getByRole('button', { name: 'What it knows', exact: true });
+		const usage = page.getByRole('button', { name: 'Usage', exact: true });
+		const tip = (button: typeof knows) => button.getByTestId('icon-tip');
+		await expect(tip(knows)).toBeHidden();
+
+		await knows.hover();
+		await expect(tip(knows)).toBeVisible();
+		await expect(tip(knows)).toHaveText('What it knows');
+		const box = (await tip(knows).boundingBox())!;
+		const button = (await knows.boundingBox())!;
+		expect(box.y, 'under the button').toBeGreaterThanOrEqual(button.y + button.height);
+		await expectNoSideScroll(page);
+		await captureScreen(page, testInfo, 'coach-header-tooltip-desktop');
+
+		// Tab from one to the next: the caption follows keyboard focus, not only the pointer.
+		await page.mouse.move(0, 0);
+		await expect(tip(knows)).toBeHidden();
+		await knows.focus();
+		await page.keyboard.press('Tab');
+		await expect(usage).toBeFocused();
+		await expect(tip(usage)).toBeVisible();
+		await expect(tip(usage)).toHaveText('Usage');
+
+		// Escape hides the caption without moving focus; the next button's caption shows again.
+		await page.keyboard.press('Escape');
+		await expect(usage).toBeFocused();
+		await expect(tip(usage)).toBeHidden();
+		await page.keyboard.press('Shift+Tab');
+		await expect(tip(knows)).toBeVisible();
 	});
 
 	test('the getting-ready notice keeps the readable column', async ({

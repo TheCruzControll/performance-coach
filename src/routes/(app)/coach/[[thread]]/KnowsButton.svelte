@@ -32,7 +32,7 @@
 				toast.show(SCREEN_FAILURE_LABEL.chunk_failed, {
 					tone: 'danger',
 					duration: 0,
-					action: { label: 'Retry', onclick: show }
+					action: { label: 'Try again', onclick: show }
 				});
 			}
 		);
@@ -41,7 +41,8 @@
 
 <IconButton
 	icon="database"
-	label="What the coach knows"
+	label="What it knows"
+	tooltip
 	onclick={show}
 	data-testid="knows-button"
 />

@@ -1,0 +1,38 @@
+{
+	"permissions": {
+		"allow": ["mcp__Neon"],
+		"ask": [
+			"mcp__Neon__delete_project",
+			"mcp__Neon__delete_branch",
+			"mcp__Neon__delete_postgres_database",
+			"mcp__Neon__delete_postgres_endpoint",
+			"mcp__Neon__delete_postgres_role",
+			"mcp__Neon__delete_snapshot",
+			"mcp__Neon__delete_storage_bucket",
+			"mcp__Neon__delete_storage_object",
+			"mcp__Neon__delete_storage_objects_by_prefix",
+			"mcp__Neon__delete_function",
+			"mcp__Neon__delete_functions_custom_domain",
+			"mcp__Neon__delete_trigger",
+			"mcp__Neon__delete_data_api",
+			"mcp__Neon__delete_auth_user",
+			"mcp__Neon__delete_auth_oauth_client",
+			"mcp__Neon__delete_auth_oauth_provider",
+			"mcp__Neon__delete_auth_trusted_domain",
+			"mcp__Neon__reset_from_parent",
+			"mcp__Neon__restore_snapshot",
+			"mcp__Neon__finalize_branch_restore",
+			"mcp__Neon__set_default_branch",
+			"mcp__Neon__complete_database_migration",
+			"mcp__Neon__reset_postgres_role_password",
+			"mcp__Neon__revoke_credential",
+			"mcp__Neon__rotate_credential",
+			"mcp__Neon__rotate_auth_oauth_client_secret",
+			"mcp__Neon__rotate_realtime_secret",
+			"mcp__Neon__disable_auth",
+			"mcp__Neon__disable_realtime",
+			"mcp__Neon__suspend_postgres_endpoint",
+			"mcp__Neon__update_project"
+		]
+	}
+}

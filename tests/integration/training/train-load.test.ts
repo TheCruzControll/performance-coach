@@ -240,7 +240,7 @@ describe('Train’s load', () => {
 					{ db: broken.db, errorsDb: tx }
 				);
 				expect(data).toMatchObject({ state: 'error', card: { id: 'train-error' } });
-				expect(data.card?.next).toMatchObject({ title: 'Retry', to: 'retry' });
+				expect(data.card?.next).toMatchObject({ title: 'Try again', to: 'retry' });
 				const recorded = await findErrorsByRequestId(request.requestId, { db: tx });
 				expect(recorded).toHaveLength(1);
 				expect(recorded[0]).toMatchObject({

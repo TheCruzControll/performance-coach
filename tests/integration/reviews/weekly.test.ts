@@ -349,6 +349,7 @@ describe("next week's proposal", () => {
 				kind: 'weekly_review',
 				reviewId: stored.id,
 				href: `/progress/reviews/w-${REVIEWED}`,
+				weekStartsOn: REVIEWED,
 				source: { type: 'review', id: `w-${REVIEWED}`, label: 'Weekly review' }
 			});
 

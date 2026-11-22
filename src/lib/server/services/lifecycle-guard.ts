@@ -23,8 +23,9 @@ import { logger } from '../observability/logger';
  * - `workout`: enforced, though nothing calls `transition(WORKOUT, …)` yet: its writers check
  *   `canEnd` (src/lib/domain/workout/ends.ts) and absorb an illegal end instead of throwing.
  * - `proposal`: observed; Postgres (drizzle/0026) enforces the same table.
+ * - `program`: enforced; archiveProgram moves a program only from active.
  */
-export const ENFORCE = { workout: true, proposal: false } as const;
+export const ENFORCE = { workout: true, proposal: false, program: true } as const;
 
 /** The move `event` makes from `from`, checked against the machine's table (see the module doc). */
 export function transition<S extends string, E extends string>(

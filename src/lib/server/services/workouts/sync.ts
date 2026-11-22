@@ -10,7 +10,9 @@
  *    the exercise's load type with logging-rules' checkSet, given the transaction as deps.db and
  *    'owner' as the audit actor.
  * 4. Answer its status; the last applied or duplicate result of each workout carries the
- *    workout's canonical rows, read once the batch is done.
+ *    workout's canonical rows, read once the batch is done. For a workout the device says it
+ *    holds the rows for (the body's `held`), only the rows the batch's applied and duplicate
+ *    changes name go, as `changes` (domain/workout/changes.ts): the device folds them into its own.
  * 5. Once anything applied to a workout that counts (completed, or deleted), sum the closed weeks
  *    the batch marked stale into strength_week_rollups (services/analytics/strength-weeks.ts); a
  *    failure there is logged and changes no result.
@@ -43,6 +45,7 @@ import {
 	type SyncResponse,
 	type SyncResult
 } from '../../../domain/workout/index';
+import { changedRows, namedRows } from '../../../domain/workout/changes';
 import { envelopeSchema } from '../../../domain/workout/schemas';
 import { validate, type FieldErrors } from '../../../domain/validation';
 import { createExercisesRepository } from '../../db/repositories/exercises';
@@ -87,6 +90,8 @@ export interface SyncDeps {
 	requestId?: string | null;
 	/** Ids the owner discarded on the device: claimed before any mutation is applied. */
 	discarded?: readonly string[];
+	/** Workouts whose rows the device holds: their results carry only the changed rows. */
+	held?: readonly string[];
 }
 
 /** The database could not be reached, or failed, before any mutation was answered: 503. */
@@ -106,14 +111,15 @@ const upTo = z.maxLength(
 
 /**
  * The protocol, checked before any mutation: v1, up to 25 mutations, each with a UUID id so its
- * result can name it, and up to 25 discarded ids; something to sync. Each mutation's own shape is
+ * result can name it, up to 25 discarded ids and up to 25 workouts held; something to sync. Each mutation's own shape is
  * validated on its own, so one bad change is one rejected result, not a refused batch.
  */
 const protocolSchema = z
 	.object({
 		v: z.literal(1, 'Wire format v1'),
 		mutations: z.array(z.looseObject({ id: z.uuid('Unknown id') })).check(upTo),
-		discarded: z.optional(z.array(z.uuid('Unknown id')).check(upTo))
+		discarded: z.optional(z.array(z.uuid('Unknown id')).check(upTo)),
+		held: z.optional(z.array(z.uuid('Unknown id')).check(upTo))
 	})
 	.check(
 		z.refine((body) => body.mutations.length + (body.discarded?.length ?? 0) > 0, {
@@ -123,7 +129,7 @@ const protocolSchema = z
 	);
 
 export type ParsedSyncBody =
-	| { ok: true; mutations: Record<string, unknown>[]; discarded: string[] }
+	| { ok: true; mutations: Record<string, unknown>[]; discarded: string[]; held: string[] }
 	| {
 			ok: false;
 			status: 400 | 413;
@@ -145,8 +151,8 @@ export function parseSyncBody(text: string): ParsedSyncBody {
 	const parsed = validate(protocolSchema, body);
 	if (!parsed.ok)
 		return { ok: false, status: 400, error: 'invalid_request', errors: parsed.errors };
-	const { mutations, discarded = [] } = parsed.data;
-	return { ok: true, mutations, discarded };
+	const { mutations, discarded = [], held = [] } = parsed.data;
+	return { ok: true, mutations, discarded, held };
 }
 
 // ---- One mutation ---------------------------------------------------------------------------
@@ -301,8 +307,8 @@ export async function applySyncBatch(
 	const resolved = resolveDeps({ db: deps.db, now: deps.now, source: 'owner' });
 	const requestId = deps.requestId ?? null;
 	const results: SyncResult[] = [];
-	/** Workout client ids by result, for the canonical rows. */
-	const workoutOf: string[] = [];
+	/** The valid mutations by result, for the canonical rows. */
+	const mutationOf: Mutation[] = [];
 	const held: unknown[] = [];
 
 	try {
@@ -320,7 +326,7 @@ export async function applySyncBatch(
 			continue;
 		}
 		const m = parsed.data as Mutation;
-		workoutOf[i] = m.workoutId;
+		mutationOf[i] = m;
 		if (held.some((earlier) => waitsFor(m, earlier))) {
 			results.push({ id, status: 'deferred', code: 'blocked' });
 			held.push(m);
@@ -341,16 +347,20 @@ export async function applySyncBatch(
 		if (result.status === 'rejected' || result.status === 'deferred') held.push(m);
 	}
 
-	await attachCanonical(ownerId, results, workoutOf, resolved.db);
+	await attachCanonical(ownerId, results, mutationOf, new Set(deps.held), resolved.db);
 	if (results.some((r) => r.status === 'applied') && results.some(counts))
 		await refreshWeeks(ownerId, resolved);
 	return { v: 1, results };
 }
 
-/** A result whose workout counts in Progress, or has stopped counting: completed, or deleted. */
-const counts = ({ canonical }: SyncResult) =>
-	canonical !== undefined &&
-	(canonical.workout.status === 'completed' || canonical.workout.deletedAt !== null);
+/**
+ * A result whose workout counts in Progress, or has stopped counting: completed, or deleted. A
+ * held workout's `changes` carry its workout row whole, so either answer tells.
+ */
+const counts = ({ canonical, changes }: SyncResult) => {
+	const workout = (canonical ?? changes)?.workout;
+	return workout !== undefined && (workout.status === 'completed' || workout.deletedAt !== null);
+};
 
 /**
  * Sum again the closed weeks the batch marked stale, and any not summed yet (the deploy's
@@ -366,23 +376,34 @@ async function refreshWeeks(ownerId: string, { db, now }: ResolvedTrainingDeps) 
 	}
 }
 
-/** The workout's rows on the last applied or duplicate result of each workout, read in turn. */
+/**
+ * The workout's rows on the last applied or duplicate result of each workout, read in turn: only
+ * the rows its applied and duplicate changes name for a workout the device holds.
+ */
 async function attachCanonical(
 	ownerId: string,
 	results: SyncResult[],
-	workoutOf: readonly string[],
+	mutationOf: readonly Mutation[],
+	held: ReadonlySet<string>,
 	db: Executor
 ) {
 	const last = new Map<string, number>();
+	const named = new Map<string, Set<string>>();
 	results.forEach((r, i) => {
-		if ((r.status === 'applied' || r.status === 'duplicate') && workoutOf[i]) {
-			last.set(workoutOf[i]!, i);
+		const m = mutationOf[i];
+		if ((r.status === 'applied' || r.status === 'duplicate') && m) {
+			last.set(m.workoutId, i);
+			const ids = named.get(m.workoutId) ?? new Set();
+			for (const id of namedRows(m)) ids.add(id);
+			named.set(m.workoutId, ids);
 		}
 	});
 	for (const [workout, i] of last) {
 		try {
 			const canonical = await getCanonicalWorkout(ownerId, workout, { db });
-			if (canonical) results[i]!.canonical = canonical;
+			if (!canonical) continue;
+			if (held.has(workout)) results[i]!.changes = changedRows(canonical, named.get(workout)!);
+			else results[i]!.canonical = canonical;
 		} catch (err) {
 			// Applied is applied: the device reconciles the rows later.
 			logger.warn('sync: canonical rows not read', { err, workout });

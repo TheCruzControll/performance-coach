@@ -14,6 +14,9 @@
 import { eq, sql } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
 import { payloadHash } from '../../../src/lib/domain/coach/proposals';
+import { step } from '../../../src/lib/domain/lifecycle';
+import { PROPOSAL } from '../../../src/lib/domain/training/lifecycles';
+import type { ProposalEvent } from '../../../src/lib/domain/training/lifecycles';
 import type { ProposalStatus } from '../../../src/lib/domain/training/vocabulary';
 import {
 	agentRuns,
@@ -324,6 +327,38 @@ describe('coach proposals', () => {
 			expect(
 				await attempt(tx, (db) => update(db, proposed, { status: 'pending' as ProposalStatus }))
 			).toEqual(ck('status'));
+		});
+	});
+
+	it('the PROPOSAL lifecycle agrees with the guards', async () => {
+		await withRollback(async (tx) => {
+			const s = await setup(tx);
+			const reach: Record<ProposalStatus, Change[]> = {
+				proposed: [],
+				accepted: [ACCEPTED],
+				rejected: [REJECTED],
+				applied: [APPLIED_REF],
+				superseded: [SUPERSEDED]
+			};
+			const change: Record<ProposalEvent, Change> = {
+				accept: ACCEPTED,
+				reject: REJECTED,
+				apply: APPLIED_REF,
+				supersede: SUPERSEDED
+			};
+			for (const from of PROPOSAL.states) {
+				for (const event of Object.keys(change) as ProposalEvent[]) {
+					if (from === 'accepted' && event === 'accept') continue;
+					const id = await s.store(tx, reach[from]);
+					const allowed = (await attempt(tx, (db) => update(db, id, change[event]))) === null;
+					expect(allowed, `${from} × ${event}`).toBe(step(PROPOSAL, from, event).ok);
+				}
+			}
+			// The guard lets a same-status update through; the table refuses it and the service never
+			// issues it (acceptProposal returns early unless the proposal is proposed).
+			const fromAccepted = await s.store(tx, [ACCEPTED]);
+			expect(await attempt(tx, (db) => update(db, fromAccepted, ACCEPTED))).toBeNull();
+			expect(step(PROPOSAL, 'accepted', 'accept').ok).toBe(false);
 		});
 	});
 

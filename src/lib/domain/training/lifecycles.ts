@@ -12,13 +12,21 @@ import type { ProposalStatus } from './vocabulary.ts';
 export type ProposalEvent = 'accept' | 'reject' | 'apply' | 'supersede';
 
 const NOT_YET =
-	'accepted → … is allowed by the trigger; no code performs it yet (it awaits the cycle review).';
+	'accepted → applied is allowed by the trigger; no code performs it yet (a cycle review applies its own proposal).';
+const FOLDED =
+	'accepted → superseded: a cycle review folds the coach’s accepted next_cycle into its own proposal (folded_into_review).';
 
 export const PROPOSAL = /* @__PURE__ */ defineLifecycle<ProposalStatus, ProposalEvent>({
 	id: 'proposal',
 	storedIn: 'coach_proposals.status (Postgres), guarded by drizzle/0026',
 	writeSites: ['src/lib/server/db/repositories/coach-proposals.ts decide'],
-	tests: [],
+	tests: [
+		'tests/integration/coach/proposals-schema.test.ts',
+		'tests/integration/coach/proposals.test.ts',
+		'tests/integration/coach/proposal-actions.test.ts',
+		'tests/integration/reviews/cycle.test.ts',
+		'src/lib/domain/lifecycles.test.ts'
+	],
 	states: PROPOSAL_STATUSES,
 	initial: ['proposed'],
 	terminal: ['rejected', 'applied', 'superseded'],
@@ -46,7 +54,7 @@ export const PROPOSAL = /* @__PURE__ */ defineLifecycle<ProposalStatus, Proposal
 			from: ['proposed', 'accepted'],
 			to: 'superseded',
 			effects: ['coach_proposals: status, superseded_reason, closed_at'],
-			why: NOT_YET
+			why: FOLDED
 		}
 	}
 });

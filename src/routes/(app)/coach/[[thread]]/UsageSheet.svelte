@@ -97,7 +97,7 @@
 			<Notice tone="danger" icon="alert" title="Couldn’t load usage" data-testid="usage-failed">
 				<p>Check your connection, then try again.</p>
 				<div class="action">
-					<Button variant="secondary" size="sm" icon="refresh" onclick={load}>Retry</Button>
+					<Button variant="secondary" size="sm" icon="refresh" onclick={load}>Try again</Button>
 				</div>
 			</Notice>
 		{:else if !summary || summary.runs === 0}

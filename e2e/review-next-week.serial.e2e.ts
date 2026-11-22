@@ -74,15 +74,18 @@ async function decisionNote(id: string) {
 	return row!.note;
 }
 
-/** Accept the review's proposal from M5's inbox, as its Accept posts it. */
-async function acceptInInbox(request: APIRequestContext, s: Seeded) {
+/**
+ * Accept the review's proposal from M5's inbox, as its Accept posts it: 200 when it applied, 409
+ * (the inbox card's answer all the same) when it was superseded because some sessions had passed.
+ */
+async function acceptInInbox(request: APIRequestContext, s: Seeded, status: 200 | 409 = 200) {
 	const { id } = (await proposalChain((await weeklyReviews(s.review.weekStartsOn))[0]!.proposalId!))
 		.chain[0]!;
 	const response = await request.post(`/api/coach/proposals/${id}`, {
 		headers: SAME_ORIGIN,
 		data: { action: 'accept' }
 	});
-	expect(response.ok()).toBe(true);
+	expect(response.status()).toBe(status);
 }
 
 /** Skip a session through Train's own action, as another tab would: the plan moves on. */
@@ -273,7 +276,7 @@ test.describe('review-ahead: every change still ahead', () => {
 			});
 			await generate(page).click();
 			await expect(page.getByTestId('review-next-failure')).toContainText('Couldn’t save it');
-			await expect(generate(page)).toHaveText('Retry');
+			await expect(generate(page)).toHaveText('Try again');
 			expect(await programVersions(seeded.programId)).toHaveLength(1);
 			await generate(page).click();
 			await expect(page).toHaveURL(/\/train\?week=4$/);
@@ -356,7 +359,7 @@ test.describe('review-aged: stored on Monday, decided later in the week', () => 
 		page,
 		request
 	}) => {
-		await acceptInInbox(request, seeded);
+		await acceptInInbox(request, seeded, 409);
 		expect((await head(seeded)).supersededReason).toBe('sessions_passed');
 		expect(await programVersions(seeded.programId)).toHaveLength(1);
 
@@ -376,12 +379,15 @@ test.describe('review-aged: stored on Monday, decided later in the week', () => 
 });
 
 test.describe('nothing to decide', () => {
-	/** Create the review of `week` from the list, then open it. */
+	/**
+	 * Create the review of `week` from the list (by default the week due for review: this week is
+	 * still in progress until it ends), then open it.
+	 */
 	async function create(page: Page, week?: string) {
 		await gotoHydrated(page, LIST);
 		const form = week
 			? page.locator(`[data-testid="review-create"]:has(input[value="${week}"])`)
-			: page.getByTestId('review-create').first();
+			: page.locator('[data-testid="review-create"][data-state="due"]');
 		await form.getByRole('button').click();
 		await expect(page).toHaveURL(/\/progress\/reviews\/w-/);
 		await expect(card(page)).toBeVisible();
@@ -424,7 +430,19 @@ test.describe('nothing to decide', () => {
 
 	test('a review after next week ended: late', async ({ page, request }) => {
 		const seeded = await seedReview(request, 'week-late');
-		await create(page, seeded.review.kind === 'weekly' ? seeded.review.weekStartsOn : undefined);
+		if (seeded.review.kind !== 'weekly') throw new Error('A weekly scenario');
+		// The list offers only this week and last until an older review is stored: create two
+		// weeks back through its Create action, as the form's script posts it.
+		const { weekStartsOn } = seeded.review;
+		const created = await request.post(`${LIST}?/create`, {
+			headers: { ...SAME_ORIGIN, accept: 'application/json', 'x-sveltekit-action': 'true' },
+			form: { weekStartsOn }
+		});
+		expect(await created.json()).toMatchObject({
+			type: 'redirect',
+			location: `${LIST}/w-${weekStartsOn}`
+		});
+		await gotoHydrated(page, `${LIST}/w-${weekStartsOn}`);
 		await expect(card(page)).toHaveAttribute('data-state', 'late');
 		await expect(card(page).getByRole('heading', { level: 3 })).toHaveText(
 			'This review came after next week ended'

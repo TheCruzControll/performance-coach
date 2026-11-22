@@ -130,7 +130,7 @@ Pick the reviewer for your harness (tools: see your path file):
 - Pi: GPT Sol through a Pi subagent (see pi.md).
 - Claude Code without T3 (terminal, Desktop, cloud): the reviewer is Claude
   Opus 5.5 (`claude-opus-5-5`), started as a subagent (see claude.md). Use
-  another model only if the user names one (e.g. Claude Fable 5.1).
+  another model only if the user names one (e.g. Claude Fable).
 
 Outside T3 and Pi (multi-vendor through their own providers), stay inside the
 harness's own model family. Never call another vendor's CLI from a

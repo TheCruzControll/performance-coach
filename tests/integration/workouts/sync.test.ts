@@ -411,6 +411,93 @@ describe('duplicates and order', () => {
 	});
 });
 
+describe('a workout the device holds (held): only the changed rows', () => {
+	/** Apply mutations as the endpoint does, for a device that holds `held`'s rows. */
+	const syncHeld = (db: Executor, owner: string, mutations: readonly unknown[], held: string[]) =>
+		applySyncBatch(owner, JSON.parse(JSON.stringify(mutations)) as Record<string, unknown>[], {
+			db,
+			held
+		});
+
+	it('answers the rows the batch names with the workout row, not the whole workout, which an answer without held still carries', async () => {
+		await withRollback(async (db) => {
+			const { owner, squat, plank } = await setup(db);
+			const workout = await started(db, owner);
+			const sets = Array.from({ length: 40 }, (_, i) =>
+				logOf(workout, squat, { setIndex: i + 1 }, i)
+			);
+			expect(statuses((await sync(db, owner, sets.slice(0, 25))).results)).toEqual(
+				Array(25).fill('applied')
+			);
+			expect(statuses((await sync(db, owner, sets.slice(25, 39))).results)).toEqual(
+				Array(14).fill('applied')
+			);
+			const plankSet = { position: 2, setIndex: 1, weight: null, reps: null, seconds: 60 };
+			const batch = [sets[39]!, editOf(workout, sets[2]!.id, { reps: 4 })];
+			const other = logOf(workout, plank, plankSet);
+
+			const { results } = await syncHeld(db, owner, [...batch, other], [workout]);
+
+			expect(statuses(results)).toEqual(['applied', 'applied', 'applied']);
+			expect(results.slice(0, 2).every((r) => !r.changes && !r.canonical)).toBe(true);
+			const { changes, canonical } = results[2]!;
+			expect(canonical).toBeUndefined();
+			expect(changes!.sets.map((s) => [s.id, s.reps])).toEqual([
+				[sets[2]!.id, 4],
+				[sets[39]!.id, 5],
+				[other.id, null]
+			]);
+			expect(changes!.workout).toMatchObject({ id: workout, status: 'in_progress' });
+			expect(Object.keys(changes!.exercises).sort()).toEqual([squat, plank].sort());
+
+			// The same request without held: the whole workout, as every device before this one reads it.
+			const replayed = await sync(db, owner, [...batch, other]);
+			expect(statuses(replayed.results)).toEqual(['duplicate', 'duplicate', 'duplicate']);
+			const whole = replayed.results[2]!.canonical!;
+			expect(whole.sets).toHaveLength(41);
+			expect(replayed.results[2]!.changes).toBeUndefined();
+			const bytes = (rows: unknown) => new TextEncoder().encode(JSON.stringify(rows)).length;
+			console.info(
+				`sync: 41-set workout, whole rows ${bytes(whole)} B; 3 changed rows ${bytes(changes)} B`
+			);
+			expect(bytes(changes) * 8).toBeLessThan(bytes(whole));
+		});
+	});
+
+	it('a change answered duplicate brings its row, so a lost answer still reaches the device', async () => {
+		await withRollback(async (db) => {
+			const { owner, squat } = await setup(db);
+			const workout = await started(db, owner);
+			const log = logOf(workout, squat);
+			await sync(db, owner, [log]); // the device never hears this answer
+
+			const { results } = await syncHeld(db, owner, [log], [workout]);
+
+			expect(results[0]).toMatchObject({ id: log.id, status: 'duplicate' });
+			expect(results[0]!.changes!.sets).toEqual([
+				expect.objectContaining({ id: log.id, reps: 5, weight: 100, deletedAt: null })
+			]);
+		});
+	});
+
+	it('a workout not held still gets the whole workout in a batch that also holds one', async () => {
+		await withRollback(async (db) => {
+			const { owner, squat } = await setup(db);
+			const one = await started(db, owner);
+			const two = await started(db, owner);
+			await sync(db, owner, [logOf(one, squat), logOf(two, squat)]);
+			const batch = [logOf(one, squat, { setIndex: 2 }), logOf(two, squat, { setIndex: 2 })];
+
+			const { results } = await syncHeld(db, owner, batch, [one]);
+
+			expect(results[0]!.changes!.sets.map((s) => s.id)).toEqual([batch[0]!.id]);
+			expect(results[0]!.canonical).toBeUndefined();
+			expect(results[1]!.canonical!.sets).toHaveLength(2);
+			expect(results[1]!.changes).toBeUndefined();
+		});
+	});
+});
+
 describe('the set shapes the screens send', () => {
 	const rowOf = async (db: Executor, owner: string, m: Mutation) => {
 		const { results } = await sync(db, owner, [m]);
@@ -854,6 +941,24 @@ describe('the request body', () => {
 		);
 		expect(parsed).toMatchObject({ ok: true });
 		expect(parsed.ok && parsed.mutations).toHaveLength(25);
+	});
+
+	it('takes up to 25 held workouts beside the mutations, and never held alone', () => {
+		const ids = (n: number) => Array.from({ length: n }, deviceId);
+		const body = (held: string[], mutations = [logOf(deviceId(), deviceId())]) =>
+			JSON.stringify({ v: 1, mutations, held });
+		const held = ids(25);
+		expect(parseSyncBody(body(held))).toMatchObject({ ok: true, held });
+		expect(
+			parseSyncBody(JSON.stringify({ v: 1, mutations: [logOf(deviceId(), deviceId())] }))
+		).toMatchObject({ ok: true, held: [] });
+		for (const bad of [ids(26), ['not-a-uuid']]) {
+			expect(parseSyncBody(body(bad))).toMatchObject({ ok: false, status: 400 });
+		}
+		expect(parseSyncBody(body(ids(1), []))).toMatchObject({
+			ok: false,
+			errors: { mutations: 'Nothing to sync' }
+		});
 	});
 });
 

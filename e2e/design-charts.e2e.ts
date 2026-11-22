@@ -166,7 +166,7 @@ test.describe('/design → Charts, while the body loads', () => {
 			fixtureFrame(page).getByRole('heading', { name: 'Hard sets a week' })
 		).toBeVisible();
 		await expect(fixtureFrame(page).getByText('Show as table')).toBeVisible();
-		const retry = failed.getByRole('button', { name: 'Retry' });
+		const retry = failed.getByRole('button', { name: 'Try again' });
 		const box = await boxOf(retry);
 		expect(box.height).toBeGreaterThanOrEqual(44);
 		expect(box.width).toBeGreaterThanOrEqual(44);
@@ -631,28 +631,38 @@ test.describe('/design → Charts: the bar chart on a phone', () => {
 		for (const id of ['bar-adherence', 'bar-stacked', 'bar-target']) await expectBarTable(page, id);
 	});
 
-	test('a total sits on each complete stack only where it fits its week', async ({ page }) => {
+	test('a total sits on the highest and the latest complete stack only where it fits its week', async ({
+		page
+	}) => {
+		const capsOf = () =>
+			barBody(page, 'bar-stacked')
+				.locator('.cap')
+				.evaluateAll((els) =>
+					els.map((el) => {
+						const text = el.querySelector('.cap-text') as HTMLElement;
+						return {
+							shown: getComputedStyle(text).display !== 'none',
+							text: text.textContent,
+							fits: text.scrollWidth <= el.clientWidth + 0.5
+						};
+					})
+				);
 		await page.setViewportSize({ width: 320, height: 640 });
 		await gotoHydrated(page, '/design');
 		await openCharts(page);
 		await expectBarCharts(page);
-		const caps = await barBody(page, 'bar-stacked')
-			.locator('.cap')
-			.evaluateAll((els) =>
-				els.map((el) => {
-					const text = el.querySelector('.cap-text') as HTMLElement;
-					return {
-						shown: getComputedStyle(text).display !== 'none',
-						text: text.textContent,
-						fits: text.scrollWidth <= el.clientWidth + 0.5
-					};
-				})
-			);
 		const model = barModel(barFixture('bar-stacked').data);
-		expect(caps.map((cap) => cap.text)).toEqual(model.caps.map((cap) => cap.text));
-		expect(caps.some((cap) => cap.shown)).toBe(true);
-		for (const cap of caps) if (cap.shown) expect(cap.fits, `${cap.text} fits`).toBe(true);
+		// The highest week is also the latest complete one: one total, not one a week.
+		expect(model.caps.map((cap) => cap.text)).toEqual(['620']);
+		const narrow = await capsOf();
+		expect(narrow.map((cap) => cap.text)).toEqual(model.caps.map((cap) => cap.text));
+		for (const cap of narrow) if (cap.shown) expect(cap.fits, `${cap.text} fits`).toBe(true);
 		await expect(barBody(page, 'bar-stacked').getByTestId('bar-so-far')).toHaveText('so far');
+
+		// With room for it, the total shows on its cap and fits there.
+		await page.setViewportSize({ width: 768, height: 1024 });
+		await expect.poll(async () => (await capsOf()).map((cap) => cap.shown)).toEqual([true]);
+		for (const cap of await capsOf()) expect(cap.fits, `${cap.text} fits`).toBe(true);
 	});
 
 	test('under forced colours the parts are outlined and hatched, never told apart by hue', async ({

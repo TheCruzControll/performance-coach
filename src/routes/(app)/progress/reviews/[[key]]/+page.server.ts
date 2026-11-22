@@ -3,7 +3,7 @@ import { version } from '$app/env';
 import { resolve } from '$app/paths';
 import { testRoutesEnabled } from '#lib/server/env.ts';
 import { ownerId } from '#lib/server/forms/read.ts';
-import { decideReview } from '#lib/server/forms/reviews.ts';
+import { decideCycle, decideReview } from '#lib/server/forms/reviews.ts';
 import type { Actions, PageServerLoad } from './$types';
 import {
 	createCycle,
@@ -69,7 +69,17 @@ export const actions = {
 	/** Generate next week from the ticked changes (forms/reviews.ts). */
 	decide: (event) => decide(event, 'decide'),
 	/** Keep next week as planned, with an optional reason. */
-	keep: (event) => decide(event, 'keep')
+	keep: (event) => decide(event, 'keep'),
+	/** Plan the next block from the start chosen, as its preview showed it (forms/reviews.ts). */
+	startCycle: async ({ locals, params, request }) => {
+		if (parseReviewKey(params.key)?.kind !== 'cycle')
+			return fail(404, { reason: 'not_found' as const });
+		const result = await decideCycle(ownerId(locals), { form: await request.formData() });
+		// Posted without JavaScript: the plan overview, as the toast would.
+		const href = 'href' in result && result.href;
+		if (href && !request.headers.has('x-sveltekit-action')) redirect(303, href);
+		return result;
+	}
 } satisfies Actions;
 
 async function decide(

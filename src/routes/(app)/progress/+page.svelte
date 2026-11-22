@@ -108,7 +108,7 @@
 						Your training is safe. Try again in a moment.
 					</Notice>
 					<Button variant="secondary" icon="refresh" loading={retrying} onclick={retry}>
-						Retry
+						Try again
 					</Button>
 				</div>
 			{:else if data.view === 'strength'}
@@ -118,7 +118,7 @@
 			{:else if data.view === 'general'}
 				<data.View general={data.general} served={data.served} />
 			{:else if data.view === 'overview'}
-				<data.View overview={data.overview} served={data.served} />
+				<data.View overview={data.overview} served={data.served} prompt={data.prompt} />
 			{/if}
 		</PeriodPicker>
 	</div>

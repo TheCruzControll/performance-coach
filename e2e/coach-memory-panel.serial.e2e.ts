@@ -38,7 +38,7 @@ const composer = (page: Page) => page.getByRole('form', { name: 'Message your co
 
 async function openKnows(page: Page, path = '/coach') {
 	await gotoHydrated(page, path);
-	await page.getByRole('button', { name: 'What the coach knows' }).click();
+	await page.getByRole('button', { name: 'What it knows' }).click();
 	await expect(sheet(page)).toBeVisible();
 }
 
@@ -103,6 +103,12 @@ test('a dislike said to the coach is in Profile, and a new conversation knows it
 		'/profile/exercises'
 	);
 	await expect(page.getByTestId('knows-decisions')).toContainText(SPLIT_SQUAT);
+	// Dated as the rest of the app dates things ('Tue 10 Nov'), never 'Nov 10, 2026'.
+	const day =
+		/\b(Mon|Tue|Wed|Thu|Fri|Sat|Sun) \d{1,2} (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\b/;
+	await expect(page.getByTestId('knows-decisions')).toContainText(day);
+	await expect(sheet(page)).toContainText(new RegExp(`As of ${day.source}\\.`));
+	await expect(sheet(page)).not.toContainText(/[A-Z][a-z]{2} \d{1,2}, \d{4}/);
 	await expect(sheet(page)).not.toContainText(DISLIKE);
 	await expectNoSideScroll(page);
 	await captureScreen(page, testInfo, 'coach-memory-panel');
@@ -201,7 +207,7 @@ test.describe('with the network in the test’s hands', () => {
 		const failed = page.getByTestId('knows-failed');
 		await expect(failed).toContainText('Couldn’t load what the coach knows');
 		await captureScreen(page, testInfo, 'coach-memory-panel-failed');
-		await failed.getByRole('button', { name: 'Retry' }).click();
+		await failed.getByRole('button', { name: 'Try again' }).click();
 		await expect(page.getByTestId('knows-empty')).toBeVisible();
 		await expect(failed).toHaveCount(0);
 		expect(answered).toBe(2);

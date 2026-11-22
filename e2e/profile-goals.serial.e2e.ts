@@ -1180,7 +1180,7 @@ test.describe('with the network in the test’s hands', () => {
 		await expect(sheetOf(page)).toHaveCount(0);
 
 		await page.unroute(chunk);
-		await page.getByRole('button', { name: 'Retry' }).click();
+		await page.getByRole('button', { name: 'Try again' }).click();
 		await editorReady(page);
 		await expect(page.getByTestId('goals-error')).toHaveCount(0);
 		await page.getByTestId('goal-path-event').click();

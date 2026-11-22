@@ -4,11 +4,13 @@
  * data, and a failed read recorded and turned into the load-failed state.
  */
 import { describe, expect, it, vi } from 'vitest';
+import { METRICS } from '#lib/domain/analytics/metrics.ts';
 import { periodWindow, trendWindow, type Period } from '#lib/domain/analytics/periods.ts';
 import type { TrendResult } from '#lib/domain/analytics/trend.ts';
 import type { SeriesPoint } from '#lib/domain/analytics/types.ts';
 import type { OverviewKpi, ProgressOverview } from '#lib/server/services/analytics/overview.ts';
 import type { TrainingDeps } from '#lib/server/services/training/shared.ts';
+import type { ReviewPromptView } from '#lib/ui/analytics/review-prompt.ts';
 import { sparkline } from '#lib/ui/analytics/sparkline.ts';
 import { loadProgress, overviewData, tileVerdict, type ProgressRequest } from './load.ts';
 
@@ -266,10 +268,37 @@ describe('overviewData', () => {
 			sentence: '1 of 2 main lifts trending up',
 			window: 'Trend over the last 12 weeks',
 			evidence: [
-				{ subject: 'Back squat', verdict: { verdict: 'real_trend', direction: 'up', good: true } },
-				{ subject: 'Bench press', verdict: { verdict: 'normal_variation' } }
+				{
+					subject: 'Back squat',
+					verdict: { verdict: 'real_trend', direction: 'up', good: true },
+					hint: null
+				},
+				{ subject: 'Bench press', verdict: { verdict: 'normal_variation' }, hint: null }
 			]
 		});
+	});
+
+	it('says under a jargon measure’s name what it means, in plain words', () => {
+		const input = trained();
+		const [verdict] = input.verdicts;
+		const [first] = verdict!.evidence;
+		const measures = (['srpe_load', 'muay_thai_load', 'monotony', 'strain'] as const).map(
+			(metric) => ({
+				...first!,
+				subject: METRICS[metric].label,
+				trend: { ...first!.trend, metric }
+			})
+		);
+		const [card] = overviewData({
+			...input,
+			verdicts: [{ ...verdict!, area: 'general', evidence: measures }]
+		}).cards;
+		expect(card!.evidence.map(({ subject, hint }) => [subject, hint])).toEqual([
+			['Training load', 'Minutes × how hard each session felt, added up'],
+			['Muay Thai load', 'Minutes × how hard each class felt, added up'],
+			['Monotony', 'How alike your days are; lower means more varied'],
+			['Strain', 'Load × monotony; high when a big week has no easy days']
+		]);
 	});
 
 	it('charts each key lift in the profile units, the week in progress as its last slot', () => {
@@ -353,12 +382,45 @@ describe('loadProgress', () => {
 	const NOW = new Date('2026-11-04T12:00:00Z');
 	const today = vi.fn(async () => TODAY);
 
-	it('reads the overview for the asked period on the owner today', async () => {
+	const review: ReviewPromptView = {
+		...{ kind: 'weekly', state: 'reviewed', title: 'Your week in review', summary: 'A hard week.' },
+		...{ href: '/progress/reviews/w-2026-10-26', create: null, notReady: 'Ready after Sunday' }
+	};
+
+	it('reads the overview for the asked period on the owner today, then its review prompt', async () => {
 		const read = vi.fn(async () => trained('4w'));
-		const data = await loadProgress('owner-1', request, NOW, { db, overview: read, today });
+		const prompt = vi.fn(async () => review);
+		const data = await loadProgress('owner-1', request, NOW, { db, overview: read, today, prompt });
 		expect(today).toHaveBeenCalledWith('owner-1', NOW, { db });
 		expect(read).toHaveBeenCalledWith(db, 'owner-1', { period: '4w', today: TODAY });
+		expect(prompt).toHaveBeenCalledWith('owner-1', TODAY, { db });
 		expect(data).toMatchObject({ failed: false, view: 'overview', period: '4w' });
+		expect(data.failed === false && data.view === 'overview' && data.overview.review).toEqual(
+			review
+		);
+	});
+
+	it('records a failed prompt read and shows the overview without it', async () => {
+		const error = new Error('lock timeout');
+		const record = vi.fn(async () => null);
+		const data = await loadProgress('owner-1', request, NOW, {
+			db,
+			overview: async () => trained('4w'),
+			prompt: async () => {
+				throw error;
+			},
+			record,
+			today
+		});
+		expect(data).toMatchObject({ failed: false, view: 'overview', overview: { review: null } });
+		expect(record).toHaveBeenCalledWith(
+			expect.objectContaining({
+				error,
+				kind: 'load',
+				context: { load: 'progressReviewPrompt' }
+			}),
+			{ db: undefined }
+		);
 	});
 
 	it('records a failed read and returns the failed state, never throwing', async () => {

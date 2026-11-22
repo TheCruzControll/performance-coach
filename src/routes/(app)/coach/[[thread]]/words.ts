@@ -70,7 +70,9 @@ export interface RunCard {
 export const ENTRY_LABEL: Readonly<Record<string, string>> = Object.freeze({
 	workout: 'From your workout',
 	exercise: 'From an exercise’s history',
-	today: 'From Today'
+	today: 'From Today',
+	weekly_review: 'From your weekly review',
+	cycle_review: 'From your cycle review'
 });
 
 /**

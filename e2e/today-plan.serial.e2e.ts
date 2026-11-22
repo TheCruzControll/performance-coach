@@ -125,11 +125,22 @@ test.describe('a program with sessions today', () => {
 		await expect(page.getByTestId('today-goals')).toBeVisible();
 		await expect(page.getByTestId('today-schedule')).toHaveCount(0);
 
-		await expect(page.getByTestId('today-day').getByRole('heading', { level: 2 })).toHaveText(
-			longDate(seeded.today)
-		);
+		// The date shows once, in the eyebrow: today's day is named for assistive tech only, with no
+		// Today chip and no second date.
+		const dayHeading = page.getByTestId('today-day').getByRole('heading', { level: 2 });
+		await expect(dayHeading).toHaveText('Today’s sessions');
+		await expect(dayHeading).toHaveClass(/visually-hidden/);
+		await expect(page.getByTestId('today-day')).not.toContainText(longDate(seeded.today));
+		await expect(page.getByTestId('today-day')).not.toContainText(/\bToday\b(?!’s sessions)/);
 		await expect(cards(page)).toHaveCount(2);
 		expect(await titles(cards(page))).toEqual(['Full body', 'Muay Thai class']);
+		// Only the next session leads with Start workout; the later one has a quiet trailing Start.
+		const starts = page.getByTestId('today-session').getByTestId('start-workout');
+		await expect(starts).toHaveText(['Start workout', 'Start']);
+		await expect(starts.nth(0)).toHaveAttribute('data-variant', 'primary');
+		await expect(starts.nth(1)).toHaveAttribute('data-variant', 'ghost');
+		await expect(starts.nth(1)).toHaveAccessibleName('Start Muay Thai class');
+		expect((await starts.nth(1).boundingBox())!.height).toBeGreaterThanOrEqual(44);
 		await expect(cards(page).first()).toContainText('Baseline');
 		// Nothing else is planned this week after today: Up next is next week's first three.
 		expect(await titles(upNext(page))).toEqual(

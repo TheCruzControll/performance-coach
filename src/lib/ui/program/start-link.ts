@@ -51,3 +51,17 @@ export function resumeLink(
 	if (!link || active?.plannedLineage !== lineage) return link;
 	return { id: 'resume-workout', label: 'Resume', href: active.href, icon: 'play' };
 }
+
+/**
+ * The one session of a day whose way in leads (Today's primary button): the workout in progress
+ * (Resume), else the first session still to start. The others' Start is a quiet trailing link,
+ * so the day has one call to action. Null when nothing is left to start or resume.
+ */
+export function leadLineage(
+	ways: readonly { lineage: string; link: StartLink | null }[]
+): string | null {
+	const lead =
+		ways.find((w) => w.link?.id === 'resume-workout') ??
+		ways.find((w) => w.link?.id === 'start-workout');
+	return lead?.lineage ?? null;
+}

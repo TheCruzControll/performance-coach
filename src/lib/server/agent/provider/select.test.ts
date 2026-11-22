@@ -42,15 +42,26 @@ function resolve(env: CoachProviderEnv, launched: boolean) {
 }
 
 describe('resolveCoachProvider', () => {
-	it('ships with the coach not launched: only coach-launch flips it', () => {
-		expect(COACH_LAUNCHED).toBe(false);
+	it('ships with the coach launched: production with a key and LLM_PROVIDER unset runs anthropic', () => {
+		expect(COACH_LAUNCHED).toBe(true);
 		const { choice } = resolve({ appEnv: 'production', ANTHROPIC_API_KEY: KEY }, COACH_LAUNCHED);
-		expect(choice).toEqual(unavailable('not_launched'));
+		expect(choice).toEqual(anthropic);
 	});
 
 	it('defaults `launched` to the shipped constant', () => {
 		const env: CoachProviderEnv = { appEnv: 'production', ANTHROPIC_API_KEY: KEY };
-		expect(resolveCoachProvider(env, undefined, vi.fn())).toEqual(unavailable('not_launched'));
+		expect(resolveCoachProvider(env, undefined, vi.fn())).toEqual(anthropic);
+	});
+
+	it("the shipped constant still honours the kill switch: production with LLM_PROVIDER 'off' is disabled", () => {
+		const warn = vi.fn();
+		const env: CoachProviderEnv = {
+			appEnv: 'production',
+			LLM_PROVIDER: 'off',
+			ANTHROPIC_API_KEY: KEY
+		};
+		expect(resolveCoachProvider(env, undefined, warn)).toEqual(unavailable('disabled'));
+		expect(warn).not.toHaveBeenCalled();
 	});
 
 	describe('every combination of environment, key, LLM_PROVIDER and launch', () => {

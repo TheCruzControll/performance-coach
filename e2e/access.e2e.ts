@@ -9,7 +9,7 @@ import { expect, test, type APIRequestContext } from '@playwright/test';
 import { createSseDecoder } from '../src/lib/domain/coach/events';
 import { ROUTE_ACCESS, routeAccess } from '../src/lib/server/auth/routes';
 import { signInUrl } from '../src/lib/server/auth/return-path';
-import { appRoutes, ORIGIN, query, SAME_ORIGIN, signedOut } from './support';
+import { appRoutes, ORIGIN, query, SAME_ORIGIN, sessionCookieName, signedOut } from './support';
 
 const ROUTES = appRoutes();
 /** A request the program fixture route would answer by storing a program. */
@@ -226,11 +226,13 @@ test.describe('signed out: deny by default', () => {
 			});
 			expect(res.status(), name).toBe(303);
 		}
+		// The server's own name for it (__Host-session over HTTPS): only that one is cleared.
+		const name = sessionCookieName();
 		const res = await request.get('/api/vitals', {
-			headers: { cookie: `session=${'B'.repeat(43)}` }
+			headers: { cookie: `${name}=${'B'.repeat(43)}` }
 		});
 		expect(res.status()).toBe(401);
-		expect(res.headers()['set-cookie']).toMatch(/^session=; .*Max-Age=0/i);
+		expect(res.headers()['set-cookie']).toMatch(new RegExp(`^${name}=; .*Max-Age=0`, 'i'));
 	});
 });
 

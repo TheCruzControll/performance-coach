@@ -13,7 +13,7 @@ import { SYNC_URL } from '../src/lib/client/workout/sync';
 import type { MutationPayloads, StrengthKit, SyncRequest } from '../src/lib/domain/workout';
 import { createMutation } from '../src/lib/domain/workout/mutations';
 import { syncWords } from '../src/lib/ui/workout/sync-words';
-import { DESKTOP } from './desktop';
+import { boxOf, DESKTOP } from './desktop';
 import { captureScreen, query, SAME_ORIGIN, signedOut } from './support';
 import {
 	gotoWorkout,
@@ -652,6 +652,29 @@ test.describe('losing the session', () => {
 
 test.describe('on a desktop window', () => {
 	test.use({ ...DESKTOP, serviceWorkers: 'block' });
+
+	test('Saved is quiet 12 px text with its check beside the title, not an empty field', async ({
+		page
+	}) => {
+		await syncedWorkout(page);
+		await expect(pill(page)).toHaveText('Saved');
+		const face = page.getByTestId('sync-status').locator('.pill');
+		expect(
+			await face.evaluate((el) => {
+				const style = getComputedStyle(el);
+				return [style.backgroundColor, style.borderTopColor, style.fontSize];
+			})
+		).toEqual(['rgba(0, 0, 0, 0)', 'rgba(0, 0, 0, 0)', '12px']);
+		await expect(face.locator('svg')).toBeVisible();
+		// The words sit at the end of the reserved box, so beside the title, not across a gap.
+		const words = await boxOf(face.locator('.words'));
+		const title = await boxOf(
+			page.getByTestId('workout-header').getByRole('heading', { level: 1 })
+		);
+		const gap = title.x - (words.x + words.width);
+		expect(gap).toBeGreaterThanOrEqual(0);
+		expect(gap).toBeLessThanOrEqual(40);
+	});
 
 	test('the pill has hover and focus states, and the sheet is a dialog: focus moves in, Escape closes, focus returns', async ({
 		page

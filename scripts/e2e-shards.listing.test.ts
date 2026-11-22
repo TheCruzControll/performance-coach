@@ -69,7 +69,7 @@ function halfTimedArgs(leg: { group: string; engine: string; of: number }, curre
 	const { lines, args } = plannedArgs(planLeg(name, halfTimed(name).timed), {
 		current,
 		total: leg.of,
-		workers: legWorkers(leg.group),
+		workers: legWorkers(leg.group, leg.engine),
 		listFile
 	});
 	writeFileSync(listFile, `${lines.join('\n')}\n`);
@@ -151,7 +151,7 @@ describe('the sharded legs, listed by Playwright with each shard’s list', () =
 			expectShards(
 				whole,
 				shards,
-				planShards(planLeg(name, table.legs[name]!), of, legWorkers(group))
+				planShards(planLeg(name, table.legs[name]!), of, legWorkers(group, engine))
 			);
 		}
 	);
@@ -164,7 +164,7 @@ describe('the sharded legs, listed by Playwright with each shard’s list', () =
 			const name = `${group}/${engine}`;
 			const { whole, half } = listings.get(name)!;
 			const { timed, untimed } = halfTimed(name);
-			const plan = planShards(planLeg(name, timed), of, legWorkers(group));
+			const plan = planShards(planLeg(name, timed), of, legWorkers(group, engine));
 			expectShards(whole, half, plan);
 			const elsewhere = half.slice(1).flatMap(files);
 			expect(elsewhere.filter((key) => untimed.includes(key)).length).toBeGreaterThan(0);

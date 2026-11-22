@@ -497,6 +497,8 @@ async function preferenceJourney(page: Page, request: APIRequestContext, testInf
 		await goTo(page, 'Leg press');
 		await act(page, 'pain');
 		await expect(painSheet(page)).toBeVisible();
+		// Where it hurts is folded under Add details (optional).
+		await painSheet(page).getByTestId('pain-details-toggle').click();
 		await painSheet(page)
 			.getByTestId('pain-area')
 			.getByRole('radio', { name: 'Knee', exact: true })

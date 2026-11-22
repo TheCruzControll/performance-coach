@@ -27,10 +27,12 @@ import {
 	clampOverrides,
 	type NextCycleSubset
 } from '../../../../domain/programming/review/directives';
+import { PROPOSAL } from '../../../../domain/training/lifecycles';
 import type { Decider } from '../../../../domain/training/vocabulary';
 import { createCoachProposalsRepository } from '../../../db/repositories/coach-proposals';
 import { createReviewsRepository } from '../../../db/repositories/reviews';
 import { listCustomExercises } from '../../exercises/index';
+import { transition } from '../../lifecycle-guard';
 import { APPEND, planBlock } from '../../programs/next-block';
 import type { CycleEvidence, PlannedNextBlock } from '../../reviews/cycle';
 import {
@@ -155,8 +157,8 @@ async function closeOthers(
 		const payload = row.payload as unknown as NextCycleSubset;
 		if (row.status !== 'proposed' || payload.fromBlockLineage !== blockLineage) continue;
 		const at = deps.now();
-		await repo.decide(ownerId, row.id, {
-			...{ status: 'superseded', supersededReason: 'cycle_planned' },
+		await repo.decide(ownerId, row.id, transition(PROPOSAL, row.status, 'supersede'), {
+			...{ supersededReason: 'cycle_planned' },
 			...{ closedAt: at, updatedAt: at }
 		});
 	}
@@ -210,8 +212,10 @@ export async function applyNextCycle(
 	);
 	await setNextVersion(ownerId, review.id, stored.versionId, deps);
 	const at = deps.now();
-	await createCoachProposalsRepository(deps.db).decide(ownerId, proposalId, {
-		...{ status: 'applied', appliedVersionId: stored.versionId },
+	const repo = createCoachProposalsRepository(deps.db);
+	const row = (await repo.lockProposal(ownerId, proposalId))!;
+	await repo.decide(ownerId, row.id, transition(PROPOSAL, row.status, 'apply'), {
+		...{ appliedVersionId: stored.versionId },
 		...{ closedAt: at, updatedAt: at }
 	});
 	await closeOthers(ownerId, review.blockLineageId, proposalId, deps);

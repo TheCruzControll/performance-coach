@@ -262,7 +262,7 @@ test.describe('with two synced workouts of back squat', () => {
 		await auditThemes(page, 'error');
 
 		await page.unrouteAll({ behavior: 'ignoreErrors' });
-		await error.getByRole('button', { name: 'Retry' }).click();
+		await error.getByRole('button', { name: 'Try again' }).click();
 		await expectBothSessions(page);
 		await expect(error).toHaveCount(0);
 	});
@@ -286,7 +286,7 @@ test.describe('with two synced workouts of back squat', () => {
 
 		await page.unrouteAll({ behavior: 'ignoreErrors' });
 		release();
-		await error.getByRole('button', { name: 'Retry' }).click();
+		await error.getByRole('button', { name: 'Try again' }).click();
 		await expectBothSessions(page);
 	});
 });

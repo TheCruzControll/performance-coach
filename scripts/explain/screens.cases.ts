@@ -1,9 +1,9 @@
 /**
  * The main screens' page data in db:explain (page-load.ts), on the analytics owner after M6's
- * cases have run: Today with its streamed plan, Train, a session, Coach and one conversation,
- * History and one workout, the start kit endpoint and a full sync batch. Each is timed as the M6
- * loads are (WARM_UPS untimed runs, then the median and p95 of TIMED_RUNS, serialisation
- * included) and gated the same way: a median over PAGE_LIMIT_MS or page data over
+ * cases have run: Today with its streamed plan and week, Train, a session, Coach and one
+ * conversation, History and one workout, the start kit endpoint and a full sync batch. Each is
+ * timed as the M6 loads are (WARM_UPS untimed runs, then the median and p95 of TIMED_RUNS,
+ * serialisation included) and gated the same way: a median over PAGE_LIMIT_MS or page data over
  * PAGE_DATA_LIMIT_BYTES gzip fails the run.
  * - Every load runs on its own pool of POOL_MAX connections (db/client.ts createPool), as the app
  *   does, so a load that reads on several connections at once is timed as it runs.
@@ -140,9 +140,11 @@ export function screensExplain({ url, owner }: { url: string; owner: string }) {
 	const today = async (db: Database) => {
 		const data = await loadToday(owner, { now: NOW, origin: origin('/today') }, { db });
 		const plan = await data.plan;
+		const week = await data.week;
 		ready('/today', data, (d) => d.setup?.complete === true && d.program === 'active');
 		ready('/today plan', plan, (p) => p?.failed === false && p.week !== null);
-		return { ...data, plan };
+		ready('/today week', week, (w) => w?.failed === false);
+		return { ...data, plan, week };
 	};
 
 	/** A new workout's start and its sets, as one flush sends them. */

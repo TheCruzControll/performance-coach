@@ -23,7 +23,7 @@
 			onclick={() =>
 				toast.show('Sync failed — will retry', {
 					tone: 'danger',
-					action: { label: 'Retry', onclick: () => {} }
+					action: { label: 'Try again', onclick: () => {} }
 				})}>Error toast</Button
 		>
 		<Button variant="secondary" onclick={() => (sheet = true)} data-testid="open-sheet"

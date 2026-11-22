@@ -8,7 +8,14 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
-import { readRecords, renderIndex, shotFileName, type ShotRecord } from './gallery-index.ts';
+import {
+	NotOnMainYet,
+	readRecords,
+	recordOf,
+	renderIndex,
+	shotFileName,
+	type ShotRecord
+} from './gallery-index.ts';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const scratch = mkdtempSync(path.join(tmpdir(), 'gallery-index-'));
@@ -18,16 +25,14 @@ const captured = (
 	screen: string,
 	state: string,
 	device: 'iphone' | 'desktop',
-	theme: 'dark' | 'light',
-	design: 'current' | 'graphite' = 'current'
+	theme: 'dark' | 'light'
 ): ShotRecord => ({
 	screen,
 	state,
 	device,
-	design,
 	theme,
 	status: 'captured',
-	file: shotFileName({ screen, state, device, design, theme })
+	file: shotFileName({ screen, state, device, theme })
 });
 
 const missing = (n: number) => Array<string>(n).fill('missing');
@@ -41,25 +46,18 @@ function rows(html: string): string[][] {
 }
 
 describe('shotFileName', () => {
-	it('names a shot <screen>--<state>--<device>--<design>--<theme>.png', () => {
+	it('names a shot <screen>--<state>--<device>--<theme>.png', () => {
 		expect(
-			shotFileName({
-				screen: 'today',
-				state: 'rest-day',
-				device: 'iphone',
-				design: 'current',
-				theme: 'dark'
-			})
-		).toBe('today--rest-day--iphone--current--dark.png');
+			shotFileName({ screen: 'today', state: 'rest-day', device: 'iphone', theme: 'dark' })
+		).toBe('today--rest-day--iphone--dark.png');
 		expect(
 			shotFileName({
 				screen: 'progress',
 				state: 'weekly-review',
 				device: 'desktop',
-				design: 'graphite',
 				theme: 'light'
 			})
-		).toBe('progress--weekly-review--desktop--graphite--light.png');
+		).toBe('progress--weekly-review--desktop--light.png');
 	});
 
 	it('refuses a screen or state that would break the name apart', () => {
@@ -71,14 +69,7 @@ describe('shotFileName', () => {
 			['../profile', 'main']
 		]) {
 			expect(
-				() =>
-					shotFileName({
-						screen: screen!,
-						state: state!,
-						device: 'iphone',
-						design: 'current',
-						theme: 'dark'
-					}),
+				() => shotFileName({ screen: screen!, state: state!, device: 'iphone', theme: 'dark' }),
 				`${screen}/${state}`
 			).toThrow(/kebab-case/);
 		}
@@ -86,36 +77,28 @@ describe('shotFileName', () => {
 });
 
 describe('renderIndex', () => {
-	it('shows each screen and state as a row, its eight device, design and theme shots as linked images', () => {
+	it('shows each screen and state as a row, its four device and theme shots as linked images', () => {
 		const records = (['iphone', 'desktop'] as const).flatMap((device) =>
-			(['current', 'graphite'] as const).flatMap((design) =>
-				(['dark', 'light'] as const).flatMap((theme) => [
-					captured('today', 'sessions', device, theme, design),
-					captured('train', 'week', device, theme, design)
-				])
-			)
+			(['dark', 'light'] as const).flatMap((theme) => [
+				captured('today', 'sessions', device, theme),
+				captured('train', 'week', device, theme)
+			])
 		);
 		const html = renderIndex(records);
-		const all = Array<string>(8).fill('captured');
 		expect(rows(html)).toEqual([
-			['today--sessions', ...all],
-			['train--week', ...all]
+			['today--sessions', 'captured', 'captured', 'captured', 'captured'],
+			['train--week', 'captured', 'captured', 'captured', 'captured']
 		]);
-		// Each device's two designs side by side, so the owner compares a screen across them.
 		expect([...html.matchAll(/<th>([^<]+)<\/th>/g)].map((m) => m[1]).slice(1)).toEqual([
-			'iphone · current · dark',
-			'iphone · current · light',
-			'iphone · graphite · dark',
-			'iphone · graphite · light',
-			'desktop · current · dark',
-			'desktop · current · light',
-			'desktop · graphite · dark',
-			'desktop · graphite · light'
+			'iphone · dark',
+			'iphone · light',
+			'desktop · dark',
+			'desktop · light'
 		]);
 		expect(html).toContain(
-			'<a href="today--sessions--desktop--graphite--light.png"><img src="today--sessions--desktop--graphite--light.png"'
+			'<a href="today--sessions--desktop--light.png"><img src="today--sessions--desktop--light.png"'
 		);
-		expect(html).toContain('16 captured · 0 failed · 0 skipped');
+		expect(html).toContain('8 captured · 0 failed · 0 skipped · 0 not on main yet');
 	});
 
 	it('records a failed screen as failed with its reason, and a shot never run as not run', () => {
@@ -125,7 +108,6 @@ describe('renderIndex', () => {
 				screen: 'coach',
 				state: 'inbox',
 				device: 'iphone',
-				design: 'current',
 				theme: 'dark',
 				status: 'failed',
 				reason: 'locator.click: Timeout 10000ms exceeded <a href="/x">'
@@ -134,22 +116,43 @@ describe('renderIndex', () => {
 				screen: 'offline',
 				state: 'today',
 				device: 'iphone',
-				design: 'current',
 				theme: 'light',
 				status: 'skipped',
 				reason: 'offline emulation is Chromium-only'
 			}
 		]);
 		expect(rows(html)).toEqual([
-			['coach--empty', 'captured', ...missing(7)],
-			['coach--inbox', 'failed', ...missing(7)],
-			['offline--today', 'missing', 'skipped', ...missing(6)]
+			['coach--empty', 'captured', ...missing(3)],
+			['coach--inbox', 'failed', ...missing(3)],
+			['offline--today', 'missing', 'skipped', ...missing(2)]
 		]);
 		// The reason is shown as text, never as markup.
 		expect(html).toContain('Timeout 10000ms exceeded &lt;a href=&quot;/x&quot;&gt;');
 		expect(html).not.toContain('<a href="/x">');
 		expect(html).toContain('offline emulation is Chromium-only');
 		expect(html).toContain('1 captured · 1 failed · 1 skipped');
+	});
+
+	it('shows a screen not on main yet as not on main yet with what is missing, never as failed', () => {
+		const html = renderIndex([
+			captured('coach', 'empty', 'iphone', 'dark'),
+			{
+				screen: 'coach',
+				state: 'proposals-inbox',
+				device: 'iphone',
+				theme: 'dark',
+				status: 'absent',
+				reason: 'Coach has no link to the proposals inbox yet.'
+			}
+		]);
+		expect(rows(html)).toEqual([
+			['coach--empty', 'captured', ...missing(3)],
+			['coach--proposals-inbox', 'absent', ...missing(3)]
+		]);
+		expect(html).toContain(
+			'<td class="absent"><strong>not on main yet</strong><p>Coach has no link to the proposals inbox yet.</p></td>'
+		);
+		expect(html).toContain('1 captured · 0 failed · 0 skipped · 1 not on main yet');
 	});
 
 	it('keeps the last record of a shot taken twice', () => {
@@ -159,9 +162,39 @@ describe('renderIndex', () => {
 			reason: 'first attempt'
 		};
 		const html = renderIndex([failed, captured('today', 'sessions', 'iphone', 'dark')]);
-		expect(rows(html)).toEqual([['today--sessions', 'captured', ...missing(7)]]);
+		expect(rows(html)).toEqual([['today--sessions', 'captured', ...missing(3)]]);
 		expect(html).not.toContain('first attempt');
 		expect(html).toContain('1 captured · 0 failed');
+	});
+});
+
+describe('recordOf', () => {
+	const key = {
+		screen: 'progress',
+		state: 'cycle-review',
+		device: 'desktop',
+		theme: 'light'
+	} as const;
+
+	it('records NotOnMainYet as absent, with what is missing', () => {
+		expect(
+			recordOf(key, new NotOnMainYet('The reviews list has no cycle review to open yet.'))
+		).toEqual({
+			...key,
+			status: 'absent',
+			reason: 'The reviews list has no cycle review to open yet.'
+		});
+	});
+
+	it('records any other error as failed, its colour codes stripped and its reason capped', () => {
+		const esc = String.fromCharCode(27);
+		expect(recordOf(key, new Error(`  ${esc}[31mlocator.click${esc}[39m: Timeout  `))).toEqual({
+			...key,
+			status: 'failed',
+			reason: 'locator.click: Timeout'
+		});
+		expect(recordOf(key, 'x'.repeat(700)).reason).toHaveLength(600);
+		expect(recordOf(key, 'not an error').status).toBe('failed');
 	});
 });
 
@@ -174,7 +207,16 @@ describe('node scripts/gallery-index.ts <dir>', () => {
 		writeFileSync(
 			path.join(dir, 'results-iphone.jsonl'),
 			line(captured('today', 'sessions', 'iphone', 'dark')) +
-				line({ ...captured('coach', 'inbox', 'iphone', 'dark'), status: 'failed', reason: 'gone' })
+				line({
+					...captured('coach', 'inbox', 'iphone', 'dark'),
+					status: 'failed',
+					reason: 'gone'
+				}) +
+				line({
+					...captured('progress', 'cycle-review', 'iphone', 'dark'),
+					status: 'absent',
+					reason: 'not yet'
+				})
 		);
 		writeFileSync(
 			path.join(dir, 'results-desktop.jsonl'),
@@ -187,7 +229,8 @@ describe('node scripts/gallery-index.ts <dir>', () => {
 		expect(readRecords(dir).map((r) => `${r.screen}--${r.state}--${r.device}`)).toEqual([
 			'today--sessions--desktop',
 			'today--sessions--iphone',
-			'coach--inbox--iphone'
+			'coach--inbox--iphone',
+			'progress--cycle-review--iphone'
 		]);
 
 		const run = spawnSync(process.execPath, ['scripts/gallery-index.ts', dir], {
@@ -195,11 +238,12 @@ describe('node scripts/gallery-index.ts <dir>', () => {
 			encoding: 'utf8'
 		});
 		expect(run.status, run.stderr).toBe(0);
-		expect(run.stdout).toContain('3 shots indexed, 1 failed');
+		expect(run.stdout).toContain('4 shots indexed, 1 failed, 1 not on main yet');
 		const html = readFileSync(path.join(dir, 'index.html'), 'utf8');
 		expect(rows(html)).toEqual([
-			['today--sessions', 'captured', ...missing(4), 'captured', ...missing(2)],
-			['coach--inbox', 'failed', ...missing(7)]
+			['today--sessions', 'captured', ...missing(2), 'captured'],
+			['coach--inbox', 'failed', ...missing(3)],
+			['progress--cycle-review', 'absent', ...missing(3)]
 		]);
 	});
 

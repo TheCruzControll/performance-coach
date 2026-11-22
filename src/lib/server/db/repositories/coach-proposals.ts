@@ -4,7 +4,9 @@
  * access: validation, de-duplication, revisions and decisions belong to
  * src/lib/server/services/coach/proposals.ts.
  */
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
+import type { Transitioned } from '../../../domain/lifecycle';
+import type { ProposalStatus } from '../../../domain/training/vocabulary';
 import * as q from '../queries/coach-proposals';
 import { coachProposals } from '../schema';
 import type { Executor } from '../types';
@@ -58,16 +60,48 @@ export function createCoachProposalsRepository(db: Executor) {
 			page: Parameters<typeof q.threadProposals>[3]
 		) => q.threadProposals(db, ownerId, threadId, page),
 
+		/** The program's proposals still open (proposed or accepted), locked for the transaction. */
+		lockOpenForProgram: (ownerId: string, programId: string) =>
+			db
+				.select({ id: coachProposals.id, status: coachProposals.status })
+				.from(coachProposals)
+				.where(
+					and(
+						eq(coachProposals.ownerId, ownerId),
+						eq(coachProposals.programId, programId),
+						inArray(coachProposals.status, ['proposed', 'accepted'])
+					)
+				)
+				.orderBy(coachProposals.id)
+				.for('update'),
+
 		insertProposal: async (values: NewProposalRow) =>
 			(await first(db.insert(coachProposals).values(values).returning({ id: coachProposals.id })))!
 				.id,
 
-		/** Record a decision on one of the owner's proposals. */
-		decide: async (ownerId: string, id: string, set: ProposalDecision) => {
-			await db
+		/**
+		 * Record a decision on one of the owner's proposals: the move `t` (from transition(), so the
+		 * PROPOSAL table saw it), only while the row is still in `t.from`. Callers hold its row lock,
+		 * so a row that has moved is a bug, not a race.
+		 */
+		decide: async (
+			ownerId: string,
+			id: string,
+			t: Transitioned<ProposalStatus>,
+			set: Omit<ProposalDecision, 'status'>
+		) => {
+			const updated = await db
 				.update(coachProposals)
-				.set(set)
-				.where(and(eq(coachProposals.id, id), eq(coachProposals.ownerId, ownerId)));
+				.set({ ...set, status: t.to })
+				.where(
+					and(
+						eq(coachProposals.id, id),
+						eq(coachProposals.ownerId, ownerId),
+						eq(coachProposals.status, t.from)
+					)
+				)
+				.returning({ id: coachProposals.id });
+			if (updated.length === 0) throw new Error('coach proposal moved under its lock');
 		}
 	};
 }

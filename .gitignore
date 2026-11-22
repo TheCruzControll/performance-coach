@@ -6,6 +6,7 @@ node_modules
 .netlify
 /.svelte-kit
 /build
+/build-w*
 
 # Test, performance and coverage artifacts
 /test-results
@@ -13,9 +14,10 @@ node_modules
 /blob-report
 /playwright/.cache
 /e2e/.auth
+/e2e/.tls
 /lighthouse-reports
 /coverage
-/.e2e-server.log
+/.e2e-server*.log
 
 # Backups (never commit database dumps)
 *.dump
@@ -40,3 +42,10 @@ vite.config.ts.timestamp-*
 
 # Model checker downloads (verification/*/check.sh)
 /verification/*/.cache
+
+# Evidence kept by the verify-coach skill (.claude/skills/verify-coach)
+/verify-evidence
+
+# The build loop's live state and log (.claude/skills/run-queue)
+/plan/.loop-state.json
+/plan/.loop-log.md

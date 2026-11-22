@@ -45,6 +45,8 @@ interface StoredFinding {
 	section: string;
 	metricId: string | null;
 	verdict: { words: string };
+	/** A trend's first figure is its change: signed value, unsigned words ('9.5 kg'). */
+	figures: { value: number | null; words: string }[];
 }
 
 /** The live review's stored summary and snapshot (adherence and findings), read in SQL. */
@@ -91,6 +93,13 @@ async function expectFigures(page: Page, seeded: SeededReview) {
 	for (const trend of trends) {
 		const item = page.locator(`[data-testid="review-trend"][data-id="${trend.id}"]`);
 		await expect(item.getByTestId('trend-words')).toContainText(trend.verdict.words);
+		// The change in plain words, which way and how much: never '9.5 kg along the trend'.
+		const change = trend.figures[0];
+		if (change?.value)
+			await expect(item.getByTestId('trend-words')).toContainText(
+				`${change.value > 0 ? 'Up' : 'Down'} ${change.words} so far`
+			);
+		await expect(item.getByTestId('trend-words')).not.toContainText('along the trend');
 		await expect(item.getByTestId('verdict')).toBeVisible();
 	}
 }
@@ -183,7 +192,7 @@ test.describe('week-complete', () => {
 		await expect(page.getByTestId('error-view')).toHaveCount(0);
 
 		await context.clearCookies({ name: 'pc-test-fail' });
-		await failed.getByRole('button', { name: 'Retry' }).click();
+		await failed.getByRole('button', { name: 'Try again' }).click();
 		await expect(failed).toHaveCount(0);
 		await expect(page.getByTestId('review-row')).toHaveCount(1);
 	});
@@ -274,7 +283,7 @@ test.describe('a create that fails', () => {
 		await expect(createFor(page, week).getByTestId('create-failed')).toContainText(
 			'Couldn’t create this review'
 		);
-		await expect(createButton(page, week)).toHaveText('Retry');
+		await expect(createButton(page, week)).toHaveText('Try again');
 		await expect(page.getByTestId('error-view')).toHaveCount(0);
 		expect(await weeklyReviews(week)).toHaveLength(0);
 

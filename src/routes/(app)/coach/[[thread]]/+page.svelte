@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, type Component } from 'svelte';
 	import { invalidateAll, preloadData } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { navigating, page } from '$app/state';
@@ -10,9 +10,12 @@
 	import Composer from '#lib/ui/coach/Composer.svelte';
 	import LoadingRows from '#lib/ui/coach/LoadingRows.svelte';
 	import type { CoachNoticeKind } from '#lib/ui/coach/coach-notices.ts';
+	import ServedInPlace from '../../today/panels/ServedInPlace.svelte';
+	import ServedMarkup from '../../today/panels/ServedMarkup.svelte';
 	import CoachHeader from './CoachHeader.svelte';
 	import ContextChip from './ContextChip.svelte';
 	import Suggestions from './Suggestions.svelte';
+	import { importThread } from './thread-code';
 	import type { ThreadRowView } from './words';
 	import type { PageData, PageProps } from './$types';
 
@@ -159,7 +162,9 @@
 	 * A conversation's code (its answer blocks, their words and dates) loads on demand, in the
 	 * browser only, so the list's initial JavaScript stays within budget (docs/performance.md). It
 	 * starts with the navigation that opens one, alongside its data; until it arrives the
-	 * conversation shows loading rows, and a failed import offers Retry, which imports again.
+	 * conversation shows loading rows, and a failed import offers Retry, which imports again. On
+	 * the page the server rendered, the conversation is its static markup instead (thread-code.ts,
+	 * +page.ts), kept as sent and inert until the live conversation takes its place.
 	 */
 	const never = () => new Promise<never>(() => {});
 	const wantsThread = $derived(Boolean(page.params.thread) || switching || live?.asking);
@@ -167,8 +172,14 @@
 	const threadCode = $derived.by(() => {
 		void threadAttempt;
 		if (!wantsThread) return null;
-		return import.meta.env.SSR ? never() : import('./Thread.svelte');
+		return import.meta.env.SSR ? never() : importThread();
 	});
+	/** The markup on the server; in the browser, the same element kept as sent (no props). */
+	const Served: Component<{ markup: string }> = import.meta.env.SSR
+		? ServedMarkup
+		: (ServedInPlace as Component<{ markup: string }>);
+	/** The server's conversation, until the first import of its code settles. */
+	const served = $derived(threadAttempt === 0 ? data.served : undefined);
 
 	/**
 	 * Budget lever (M5 plan, Budgets: 'the recent-conversations list on idle'): the list's code
@@ -214,7 +225,11 @@
 		</a>
 		{#if ready?.thread || live?.asking}
 			{#await threadCode}
-				<LoadingRows label="Loading the conversation…" data-testid="thread-loading" />
+				{#if served}
+					<div class="served" inert data-testid="thread-loading"><Served markup={served} /></div>
+				{:else}
+					<LoadingRows label="Loading the conversation…" data-testid="thread-loading" />
+				{/if}
 			{:then code}
 				{#if code}<code.default
 						thread={ready?.thread ?? undefined}
@@ -289,6 +304,11 @@
 		display: grid;
 		gap: var(--space-5);
 		padding-bottom: calc(var(--space-20) + var(--space-2));
+	}
+
+	/* The served conversation lays out as the live one does, in its place in the grid. */
+	.served {
+		display: contents;
 	}
 
 	.recent {

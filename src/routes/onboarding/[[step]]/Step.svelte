@@ -229,7 +229,9 @@
 					Check your connection, then try again.
 				</Notice>
 				<!-- A reload: the browser keeps a failed module fetch for the life of the page. -->
-				<Button variant="secondary" icon="refresh" onclick={() => location.reload()}>Retry</Button>
+				<Button variant="secondary" icon="refresh" onclick={() => location.reload()}
+					>Try again</Button
+				>
 			</div>
 		{:else if Editor && form}
 			<Editor bind:value={form.value} errors={form.errors} context={context!} heading={title} />

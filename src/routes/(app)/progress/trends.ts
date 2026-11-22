@@ -14,6 +14,10 @@
  * - General's (GeneralTrends): adherence, sessions and time by discipline, load and its ratio,
  *   Muay Thai and recovery under the view's intro, loaded as Strength's are (SectionLoader).
  *
+ * - Overview's review prompt (ReviewPrompt), when a week or a block completes: loaded as
+ *   Overview's trends are on the page the server rendered, and awaited by a client navigation as
+ *   Strength's are, so it never moves the screen under it. Its served markup is a working form.
+ *
  * Either way the server renders the section as static markup (`served…`), which the page keeps as
  * sent until the code arrives, so hydration never waits for it.
  *
@@ -21,6 +25,7 @@
  * source as initial JS, and the load only starts these, as Today's do with their panels.
  */
 import type { Component } from 'svelte';
+import type { ReviewPromptView } from '#lib/ui/analytics/review-prompt.ts';
 import type { GeneralData } from './general-data';
 import type { OverviewData } from './load';
 import type { RunningData } from './running-data';
@@ -107,6 +112,10 @@ export const runningTrends = lazySection<RunningTrendsProps>(
 );
 export const generalTrends = lazySection<GeneralTrendsProps>(
 	() => import('./GeneralTrends.svelte')
+);
+
+export const reviewPrompt = lazySection<{ review: ReviewPromptView }>(
+	() => import('#lib/ui/analytics/ReviewPrompt.svelte')
 );
 
 export const { preload: preloadTrends, settled: settledTrends, served: servedTrends } = overview;

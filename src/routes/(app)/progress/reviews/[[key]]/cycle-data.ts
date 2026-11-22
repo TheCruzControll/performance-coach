@@ -31,7 +31,8 @@ import { lineTable, type LineChartData } from '#lib/ui/charts/line-model.ts';
 import { SERIES_TOKEN } from '#lib/ui/charts/palette.ts';
 import { shortDate } from '#lib/ui/program/words.ts';
 import { slotOf } from '../../load.ts';
-import type { ReviewRow } from './load.ts';
+import type { Narration, ReviewRow } from './load.ts';
+import type { NextCycleView } from './next-cycle-data.ts';
 import { item, type ItemView, type LineChartView, type SectionView } from './sections.ts';
 
 /**
@@ -85,6 +86,10 @@ export interface CycleReviewData {
 	/** The version its decision planned, in History; null until one is. */
 	history: { version: number; label: string } | null;
 	writeUp: string | null;
+	/** The write-up as the screen first shows it (load.ts loadReviews); absent before M6. */
+	narration?: Narration;
+	/** The next block's card (next-cycle-data.ts); null with none to decide or show. */
+	next: NextCycleView | null;
 }
 
 const WATCH: readonly FindingLevel[] = ['low', 'watch'];
@@ -375,13 +380,15 @@ export function cycleSections(view: CycleReviewView): SectionView[] {
 }
 
 /**
- * A cycle review as the screen shows it: `items` is the list page (a legacy review's dates) and
- * `rows` its cycle rows (cycleRows), whose earlier reviews it links to.
+ * A cycle review as the screen shows it: `items` is the list page (a legacy review's dates),
+ * `rows` its cycle rows (cycleRows), whose earlier reviews it links to, and `next` its next-block
+ * card (nextCycleView).
  */
 export function cycleReviewData(
 	view: CycleReviewView,
 	items: readonly ReviewListItem[],
-	rows: readonly ReviewRow[]
+	rows: readonly ReviewRow[],
+	next: NextCycleView | null = null
 ): CycleReviewData {
 	const { snapshot, review, decision } = view;
 	const self = items.find((i) => i.id === review.id);
@@ -430,6 +437,7 @@ export function cycleReviewData(
 						label: `See version ${decision.versionNumber} in History`
 					}
 				: null,
-		writeUp: view.writeUp.state === 'written' ? view.writeUp.text : null
+		writeUp: view.writeUp.state === 'written' ? view.writeUp.text : null,
+		next
 	};
 }

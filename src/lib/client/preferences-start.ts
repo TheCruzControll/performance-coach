@@ -4,7 +4,8 @@
  * in their initial JS, and they load the saved values themselves, on mount. A separate module so
  * that the root layout's `import()` costs those screens nothing.
  */
-import { applyTheme, preferences } from './preferences.svelte.ts';
+import { preferences } from './preferences.svelte.ts';
+import { applyTheme } from './theme.ts';
 
 export function startPreferences(): void {
 	preferences.load();

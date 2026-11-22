@@ -139,7 +139,9 @@
 			     importing it again fails at once (and a deploy may have replaced the chunk). The
 			     editor's code is never a modulepreload, whose failure WebKit would carry over the
 			     reload (vite.config.ts, build.modulePreload). -->
-				<Button variant="secondary" icon="refresh" onclick={() => location.reload()}>Retry</Button>
+				<Button variant="secondary" icon="refresh" onclick={() => location.reload()}
+					>Try again</Button
+				>
 			</div>
 		{:else}
 			<!-- Shaped like a form: labels over fields, a row of choices, a notes box. -->

@@ -587,7 +587,7 @@ test.describe('a program that starts next week', () => {
 			await expectNoSideScroll(page);
 			await auditBothThemes(page, testInfo, 'older-failed');
 
-			await failed.getByRole('button', { name: 'Retry' }).click();
+			await failed.getByRole('button', { name: 'Try again' }).click();
 			await expect(versions(page)).toHaveCount(22);
 			await expect(failed).toHaveCount(0);
 			await expect(heading(page)).toHaveText('Version 22');

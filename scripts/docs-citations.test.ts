@@ -33,7 +33,9 @@ const CITED_DOCS = [
 	'docs/performance.md',
 	'docs/development.md',
 	'docs/deployment.md',
-	'docs/environment.md'
+	'docs/environment.md',
+	'docs/agent-architecture.md',
+	'docs/coach-tools.md'
 ];
 const ONCE_IT_EXISTS = ['docs/reports/security-review.md'];
 

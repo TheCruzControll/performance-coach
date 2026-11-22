@@ -163,6 +163,18 @@ export async function getCycleReview(ownerId: string, id: string, deps: ReviewDe
 	return cycle(row);
 }
 
+/**
+ * Whether `key`, a review's page key (`w-<Monday>` or `c-<id>`, domain/coach/sources.ts
+ * reviewKey), names one of the owner's reviews: what a review ref is checked against.
+ */
+export async function hasReview(ownerId: string, key: string, deps: ReviewDeps = {}) {
+	const id = key.slice(2);
+	if (key.startsWith('w-'))
+		return (await getLiveWeeklyReview(ownerId, id as IsoDate, deps)) !== null;
+	if (!key.startsWith('c-') || !isUuid(id)) return false;
+	return (await createReviewsRepository(resolve(deps).db).cycleReview(ownerId, id)) !== null;
+}
+
 /** The owner's live review of a week, or null. */
 export async function getLiveWeeklyReview(
 	ownerId: string,

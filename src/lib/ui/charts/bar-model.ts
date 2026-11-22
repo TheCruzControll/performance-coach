@@ -1,8 +1,8 @@
 /**
  * The bar chart's model, pure (bodies/BarChart.svelte draws it): weekly columns, or stacks by
  * discipline, as HTML boxes in percent of the data area (geometry.ts), with a planned outline per
- * column, an optional target band in the SVG, totals on the caps of a stack, and the words each
- * mark's tooltip and the table twin say.
+ * column, an optional target band in the SVG, totals on the caps of the highest and the latest
+ * complete stacks, and the words each mark's tooltip and the table twin say.
  *
  * - One series draws a column a slot, standing on zero (a negative value hangs below it). Two or
  *   more are stacked, disciplines always in STACK_ORDER whatever order they come in; a zero,
@@ -96,7 +96,7 @@ export interface BarModel {
 	/** In slot order, each slot's from the baseline up: the keyboard's order. */
 	marks: BarMark[];
 	plans: (Column & { slot: number })[];
-	/** A stack's total on its cap, for complete slots. */
+	/** A stack's total on its cap: the highest complete stack's and the latest complete one's. */
 	caps: (BarLabel & { text: string; beforeSoFar: boolean })[];
 	soFar: BarLabel | null;
 	/** The labelled slots; a minor one hides in a narrow chart. */
@@ -183,9 +183,23 @@ export function barModel(data: BarChartData): BarModel {
 		bottom: scale.at(Math.max(0, tops[slot] ?? 0, planned[slot] ?? 0))
 	});
 	const inProgress = data.slots.findIndex((slot) => slot.inProgress);
+	// Only the highest complete stack (the latest of a tie) and the latest one carry their total:
+	// a total on every cap collides with its neighbours' in a wide chart. A highest stack right
+	// next to the latest gives up its total, since two neighbouring totals overlap too.
+	const complete = data.slots.flatMap((_, slot) => (tops[slot] && !soFarAt(slot) ? [slot] : []));
+	const highest = complete.reduce<number | null>(
+		(best, slot) => (best === null || tops[slot]! >= tops[best]! ? slot : best),
+		null
+	);
+	const latest = complete.at(-1);
+	const labelled = new Set(
+		highest !== null && latest !== undefined && highest === latest - 1
+			? [latest]
+			: [highest, latest]
+	);
 	const caps = stacked
 		? data.slots.flatMap((_, slot) =>
-				tops[slot] && !soFarAt(slot)
+				labelled.has(slot)
 					? [
 							{
 								...labelAt(slot),

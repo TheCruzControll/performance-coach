@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { checkLifecycle, step } from './lifecycle.ts';
 import { LIFECYCLES } from './lifecycles.ts';
 import { PROPOSAL } from './training/lifecycles.ts';
+import { PROGRAM } from './training/program-lifecycle.ts';
 import type { ProposalEvent } from './training/lifecycles.ts';
 import type { ProposalStatus } from './training/vocabulary.ts';
 import { canEnd } from './workout/ends.ts';
@@ -22,7 +23,7 @@ describe('the lifecycle registry', () => {
 	it('ids are unique', () => {
 		const ids = LIFECYCLES.map((l) => l.id);
 		expect(new Set(ids).size).toBe(ids.length);
-		expect(ids).toEqual(['workout', 'proposal']);
+		expect(ids).toEqual(['workout', 'proposal', 'program']);
 	});
 });
 
@@ -45,6 +46,13 @@ describe('PROPOSAL', () => {
 			])
 		);
 		expect(table).toEqual(guard);
+	});
+});
+
+describe('PROGRAM', () => {
+	it('an active program ends once, and an archived one stays archived', () => {
+		expect(step(PROGRAM, 'active', 'end')).toMatchObject({ ok: true, t: { to: 'archived' } });
+		expect(step(PROGRAM, 'archived', 'end').ok).toBe(false);
 	});
 });
 

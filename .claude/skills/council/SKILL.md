@@ -76,8 +76,8 @@ Rounds: 2
 | Gemini Pro | 7/10 | 9/10 |
 ```
 
-Name each delegate by the model that ran (in Claude Code without T3, for
-example Claude Fable 5.1, Claude Opus 5.5, Claude Sonnet 5.5).
+Name each delegate by the model that ran, using the name the delegate
+reports, not one from this file.
 
 If a delegate gives no score, write `no score`. Do not invent one.
 If the PR is open, edit the description (tools: see your path file). Do not
