@@ -67,6 +67,11 @@ Last reviewed: 2026-11-21, against `main` at the merge of #501.
   in the meet week. Outline blocks hold no stored weeks yet, so nothing is shown wrong today. It may
   matter when the next block fills that outline in.
 
+- **The cycle review's deload choices cover the last-week deload only.** "Skip the deload" does
+  not remove a deload the rules or the season put in week 1. "Move it to the last week" can leave
+  a season deload in week 1 as well, which gives two. A deload the owner moved to week 1 is
+  explained with the rules' "fatigue to clear" wording.
+
 ## Working on this repo
 
 - **The repo needs Node 22 and refuses anything else.** `.npmrc` sets `engine-strict`, so a pnpm

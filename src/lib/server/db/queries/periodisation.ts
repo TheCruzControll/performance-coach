@@ -43,6 +43,8 @@ export function decisionsForLineages(
 			decidedBy: d.decidedBy,
 			affected: d.affected,
 			evidence: d.evidence,
+			/** The event's day, for a decision about one (taper_planned's, event_taper's evidence). */
+			date: sql<string | null>`${d.evidence}->>'date'`,
 			version: programVersions.number
 		})
 		.from(d)
