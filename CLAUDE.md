@@ -90,7 +90,8 @@ These are checked by lint or by tests, so a change that breaks one fails CI.
 
 - **Layer boundaries.** `domain` is pure, `server` never reaches the browser, `client` is
   browser-only, and the import rules between them are linted (ADR 0004).
-- **Conventional Commits**, one slice per PR to `main`. Every merge to `main` deploys production,
+- **Conventional Commits**, one slice per pull request. Slices reach `main` in trains (`run-queue`),
+  whose merge commit is titled `Merge train: #<a>, #<b> (#<train>)`. Every merge to `main` deploys production,
   migrating the database first.
 - **Docs are tested.** Paths, `pnpm` scripts and relative links cited in the operational docs must
   exist. Every `#123` in `docs/` must be a merged PR. Every ADR needs one row in

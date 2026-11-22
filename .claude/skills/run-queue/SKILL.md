@@ -19,7 +19,7 @@ here.
 | Stage                                  | At once | What limits it                                        |
 | -------------------------------------- | ------- | ----------------------------------------------------- |
 | Local: spec, build, review, fix rounds | 3 rows  | Your attention and context, not the machine           |
-| Waiting on CI                          | 6 rows  | GitHub's runner queue, and rebases after each merge   |
+| Waiting on CI                          | 6 rows  | GitHub's runner queue                                  |
 | Merge and deploy                       | 1 train | Each merge is a production deploy that must be checked |
 
 Agents are light: the model runs in the cloud. What is heavy is a full suite, a build or
@@ -43,12 +43,13 @@ Parallel rows cannot all edit one file on their own branches, so live state is n
   the row is done, open means it is in flight, whatever the file says.
 - **`plan/.loop-state.json`** (git-ignored, in the main checkout) holds what GitHub cannot: for
   each row in flight, its worktree path, its stage, the commit the last review approved, the fix
-  rounds used, and a note. Write it after every step. A new session reads it to carry on. If it
+  rounds used, its boarding SHA once it is ready, and a note; and the train in flight, with its
+  pull request, its branch and each row's boarding SHA. Write it after every step. A new session reads it to carry on. If it
   is lost, nothing breaks: rows with an open pull request are found on GitHub and reviewed again.
 - **`plan/.loop-log.md`** (git-ignored) is the running log and the lessons, one line each, newest
   first.
 
-**Housekeeping.** When the loop stops, and after every ten merges, put the accumulated changes
+**Housekeeping.** When the loop stops, and after every ten rows merged, put the accumulated changes
 into `plan/queue.md` in one small pull request (`chore(plan): queue housekeeping`): mark merged
 rows `merged`, parked rows `parked` with their reason, and copy the new log lines and lessons in.
 It goes through the same path and gate as any slice. Update `docs/progress.md` in the same pull
@@ -67,6 +68,9 @@ request when the merges changed what it says.
   request. A row whose pull request merged is done. A worktree in the state file with no agent
   running and no stage recorded as waiting is a row a previous session left mid-step; read its
   diff and carry on from there.
+- Look for a train in flight: the state file, and `gh pr list --state open --head` for any
+  `train/` branch (`gh pr list --state open --json headRefName,number`). If one is open, a train is
+  in flight.
 - Check production: the newest `Post-deploy smoke` run should be complete and passing
   (`gh run list --workflow "Post-deploy smoke" --limit 3`). If the last one failed, stop here and
   tell the owner. Nothing merges on top of a broken production.
@@ -83,34 +87,54 @@ First read each waiting row's checks (`gh pr checks <number>`).
 - **Still running:** leave it.
 - **A check failed:** start a `ci-triage` agent for it in the background (`feature-slice` step 7)
   and move on. A `REAL` verdict turns into a fix round, which needs a local slot.
-- **All green on its own head:** the row is ready for a train, if its last review approved that
-  head. It does not need to be up to date with `main`; the train's run proves that.
+- **All green:** the row is ready to board when all of these hold, and then its head
+  (`gh pr view <number> --json headRefOid`) is its boarding SHA, recorded in the state file:
+  - its head is the commit its last review approved, or a clean rebase or merge of `main` into it
+    with no other change;
+  - its checks passed on that head;
+  - its pull request's base is `main`. A stacked row (base is another row's branch) does not
+    board: once the row beneath it has merged, retarget it (`gh pr edit <number> --base main`),
+    bring it up to date, and review the result before it boards;
+  - every line of `feature-slice` step 9 that concerns the row itself holds: its queue status is
+    not `hold` or `owner`, it is not a stop-for-the-owner case, it does not change
+    `plan/queue.md`, and it names its journey. Its branch need not contain `main`.
 
-Then, when no train is in flight and at least one row is ready:
+When no train is in flight (step 1 found none) and at least one row is ready:
 
 1. **Build it.** In a worktree of its own (`../pc-wt/loop-train`), create `train/<date>-<n>` from
-   `origin/main`. Merge the ready rows into it in queue order, at most four, each with
-   `git merge --no-ff origin/<branch> -m "Merge <PR title> (#<number>)"`. Stacked rows go in stack
-   order. If a merge conflicts, abort that merge and leave the row out: it goes back to the local
-   stage to be brought up to date and reviewed again. Never resolve a conflict on the train.
+   `origin/main`. Merge the ready rows into it in queue order, at most four, each by its boarding
+   SHA: `git merge --no-ff <boarding sha> -m "Merge <PR title> (#<number>)"`. After each merge,
+   `git diff --name-only HEAD^1 HEAD` must list only files in `gh pr diff <number> --name-only`.
+   If a merge conflicts, or the diff lists more, undo it (`git merge --abort` or
+   `git reset --hard HEAD^1`) and leave the row out: it goes back to the local stage to be brought
+   up to date and reviewed again. Never resolve a conflict on a train.
 2. **Open it.** Push the branch and open a pull request titled `train: #<a>, #<b>, #<c>`, whose
-   description lists each row with its pull request, its reviewer verdict and its journey.
-   A train of one row is that row's own pull request instead: bring the branch up to date with
-   `main` and push, as before.
+   description lists each row with its pull request, boarding SHA, reviewer verdict and journey.
+   Record the train in the state file. A train of one row is that row's own pull request instead:
+   bring its branch up to date with `main`, push, and merge it with `feature-slice` step 9's own
+   command and subject.
 3. **Wait for its run,** using the time for other work. A train is not reviewed again: it holds
    only reviewed heads and clean merges.
-4. **If a check fails,** triage it. A flake is re-run. A real failure belongs to a row: close the
-   train's pull request, send that row back for a fix round, and build the next train from the
-   rest. If triage cannot tell which row, split the train in two and run each half.
+4. **If a check fails,** brief `ci-triage` with the train's rows and each row's files, and ask it
+   to name the row the failure belongs to. A flake is re-run. A real failure: close the train's
+   pull request, send that row back for a fix round, and build the next train from the rest. If
+   triage cannot tell, close the train and build one smaller train from the first half; the rest
+   wait for the next train. If every row passes alone but not together, the later row goes back
+   to its local stage.
 5. **When it is green,** apply `feature-slice` steps 8 to 10 to the train: confirm in the train's
-   run that every row's journey ran and passed, check the gate for the train's branch, and merge it
-   with `gh pr merge <train> --merge --subject "Merge train: #<a>, #<b>, #<c> (#<train>)"`. GitHub
-   marks each row's pull request merged, because `main` now contains its head. Confirm that
-   (`gh pr view <number> --json state`), wait for `Post-deploy smoke`, and only then build the
-   next train.
+   run that every row's journey ran and passed, check the gate's lines about checks, `main`, proof
+   and deploys on the train's branch, and merge it with
+   `gh pr merge <train> --merge --subject "Merge train: #<a>, #<b>, #<c> (#<train>)"`. Confirm
+   each row's pull request now shows `MERGED` (`gh pr view <number> --json state`); if one does
+   not, build no further train, log it and tell the owner, because step 1 would treat that row as
+   still in flight. Wait for `Post-deploy smoke`, then remove `../pc-wt/loop-train` and delete the
+   train branch, local and remote.
 
-While a train is in flight, rows that become ready wait for the next one. Do not add to a train
-after its run has started, and do not push to a branch that is on a train.
+**A train that falls behind.** If `main` moves while a train is in flight, do not rebase the
+train: close its pull request, delete its branch, and build a new train from the new `main`.
+
+Only one train is ever in flight. Rows that become ready meanwhile wait for the next one. Do not
+add to a train after its run has started, and do not push to a branch that is on a train.
 
 After a train merges, rows still in flight are behind `main`. Bring a row up to date straight away
 only if the train touched files that row also changes (`gh pr diff <number> --name-only` against
@@ -118,9 +142,10 @@ the merged files), so a conflict surfaces early. Otherwise leave it: its next tr
 
 **Keep CI runs few.** Every push of a code change starts a full run, and about 20 jobs run at
 once across all pull requests. Push a row once per review round, never to see what CI says about
-unfinished work. Before pushing, check the runner queue (`gh run list --status queued --limit 20`):
-when more than two full runs are waiting, do local work first. Cancel a run that can no longer
-matter (`gh run cancel <id>`): a closed pull request's, or one on a head you are about to replace.
+unfinished work. Before pushing code, check the runner queue (`gh run list --status queued`):
+when more than two runs of code changes are waiting, do local work first. Cancel a run that can
+no longer matter (`gh run cancel <id>`): a closed pull request's, or one on a head you are about
+to replace. Never cancel a run on `main`.
 
 ### 3. Fill the local slots
 
