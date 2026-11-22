@@ -221,6 +221,12 @@ the PRD journeys they touch through `verify-coach`, as `feature-slice` requires.
 added. M7's acceptance criterion 2, a journey with several disciplines at once, is
 `e2e/journey-run-muay-thai.serial.e2e.ts` on `main`.
 
+## Changes while building
+
+- **m7r/03 is parked.** See the queue's lessons. m7r/04 to m7r/10 depend on it.
+- **m7r/07 restores an assertion.** `next-block/periodised.test.ts` lost its marathon-pace steady-segment assertion in m7r/11 (PR 537), because the feature is m7r/07's. m7r/07 adds it back.
+- **m7r/12 and m7r/14 test Train in later slices.** Their Train-wiring tests moved to m7r/13 and m7r/15.
+
 ## For the owner
 
 1. **The generator slices change new plans as soon as they merge.** These are m7r/02 to m7r/05,
