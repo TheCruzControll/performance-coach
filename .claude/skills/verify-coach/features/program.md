@@ -13,6 +13,8 @@ stay readable.
   when one is measured.
 - `move` and `swap` change a session and create a new version with its why.
 - `history` lists every version; older ones are read-only.
+- `findings` puts a calm note, with its why, under each card still ahead that clashes with
+  another session, and counts them in Train's header.
 
 ## How to get to it (user POV)
 
@@ -24,6 +26,9 @@ stay readable.
 ## Driving it with verify-coach
 
 `verify run e2e/program-journey.serial.e2e.ts`
+
+`verify run e2e/train-findings.serial.e2e.ts` for `findings`: the notes and the week line on a
+seeded week, against the domain's own evaluation of the stored week.
 
 The spec goes through the real onboarding screens and the real generator, with no fixture program.
 Proof is Train's week matching the generator's rules, versions 2 and 3 in History with their

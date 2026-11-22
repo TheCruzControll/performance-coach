@@ -156,10 +156,9 @@ others and checks every server signs both engines' states in. Within a world the
 still run one at a time. Every other run, serial·webkit and local runs included, keeps one world.
 
 CI runs the suite as separate legs, one per group and engine (`e2e/projects.ts`,
-`.github/workflows/ci.yml`). The `perf` project is the `alone` group: its own leg on Chromium,
-split in 3 shards (alone·chromium 1/3 to 3/3), each on a runner of its own with nothing else
-running. `exclusive` is a leg of its own beside them, also Chromium only. It runs in
-parallel with the other legs in CI; only a local run starts it after `perf`.
+`scripts/ci-legs.ts`), in a scheduled or manual run. The `perf` project is the `alone` group, which
+no CI leg runs (performance is not tested in CI). Locally it runs with `E2E_GROUP=alone`, alone on
+the machine. `exclusive` is a leg of its own in CI, Chromium only, and runs without `perf`.
 
 ### Authentication
 
@@ -311,8 +310,8 @@ Specs:
   of 5 cold loads; target ≤ 200 ms, fails above 250 ms (docs/performance.md).
   `perf-workout-load.e2e.ts` holds the workout screens to the same budget (docs/testing.md,
   "Workouts (M4)" → Performance). The `perf` project runs alone, with one worker, after the
-  functional suite, so parallel specs cannot skew it; in CI that is the alone·chromium leg, in 3
-  shards. App
+  functional suite, so parallel specs cannot skew it; CI does not run it (performance is not tested
+  in CI). App
   screens load signed in, `/` signed out. The program screens are seeded through the fixture
   route: Train, the week's longest strength session and History on the hybrid program this week,
   Today in its Build-card state (onboarding complete, no program) and its program state (the
@@ -1215,8 +1214,8 @@ functional projects ignore them): 20 sets over five fresh loads at 4× CPU, set-
 100 ms, INP p75 of 200 ms or less from Event Timing and web-vitals, no layout shift while
 logging, INP on `/workout/run` and `/workout/session`, and the main thread on a service-worker
 reload. `e2e/perf-workout-load.e2e.ts` holds the active workout pages and History to the
-page-load budget in `e2e/load-budget.ts`, as `e2e/perf.e2e.ts` does the other screens. In CI the
-`perf` project is the alone·chromium leg, in 3 shards. `pnpm lighthouse --seed` audits History
+page-load budget in `e2e/load-budget.ts`, as `e2e/perf.e2e.ts` does the other screens. CI does not
+run the `perf` project (performance is not tested in CI). `pnpm lighthouse --seed` audits History
 and the active workout. Numbers: docs/performance.md, "M4 (workout)".
 
 ### Journeys
@@ -1257,6 +1256,21 @@ Captured into `test-results/screens/<project>/`, the desktop ones under `desktop
   `desktop-history-detail`, `desktop-exercise-history`.
 - The journeys: `strength-*` (top set to History, the pain and dislike journey, the generated
   week), `journey-run-*`, `journey-thai-*` and `journey-history-*`, with desktop copies.
+
+## Advanced coaching (M7)
+
+One paragraph per M7 slice, each replaced by its own slice only; docs-m7 turns them into its test
+inventory.
+
+m7/04 train-week-findings: the periodisation-week fixture
+(`src/lib/server/test-support/analytics-fixtures/periodisation-week.ts`): a clean hybrid week, the
+owner's move of Lower A to the day before Tuesday's hard Muay Thai next week, a past week, this
+week's passed clash, a clean week and outline weeks.
+`tests/integration/periodisation/evaluate.test.ts`. `e2e/train-findings.serial.e2e.ts` and
+`e2e/periodisation-support.ts` (`weekEvaluation(weekStart, today)`: the SQL-side oracle that runs
+domain `evaluateWeek` over the stored week with the service's open dates).
+
+## The LLM in tests
 
 ## Coach (M5)
 
@@ -1377,20 +1391,20 @@ model.
 
 ## CI
 
-`.github/workflows/ci.yml` runs lint, type-check, the migration drift check, unit + integration
-(postgres:18 service), both builds + budgets, Playwright (Chromium + WebKit) and an asserted
-Lighthouse run on every full run of a PR or a push to `main` (a light run skips some; see below). After the mobile run, `pnpm lighthouse --desktop`
-audits the same screens with Lighthouse's desktop preset (desktop throttling, no CPU slowdown) at
-1440 × 900 and 1x (`scripts/lib/lighthouse-config.ts`), writes to `lighthouse-reports/desktop` and
-applies the same `--assert` thresholds, as a step that never fails the job; its table is in the
-step summary (docs/performance.md, "Lighthouse (desktop)").
+`.github/workflows/ci.yml` runs on every pull request and every push to `main`: lint, type-check, the
+migration drift check, unit tests, the integration tests (postgres:18 service), both builds with the
+budgets, and one e2e job that runs the PRD journeys on Chromium. A scheduled or manual run
+(`workflow_dispatch`) also runs every Chromium e2e leg (main, serial and exclusive, as shards) and the
+journeys on WebKit, the only WebKit run in CI. Each event's legs are listed in `scripts/ci-legs.ts`.
+Performance is not tested in CI, by the owner's decision, to keep CI simple and cheap: Lighthouse and
+the `perf` project run locally only (`pnpm lighthouse`, `E2E_GROUP=alone pnpm test:e2e`).
 
 The run's first job, `Scope of the run`, runs `scripts/ci-scope.ts`. A change that touches only
 `docs/`, `plan/`, agent tooling (`.claude/`, `.agents/`, `.codex/`, `.pi/`), root Markdown or
-`.env.example`, and a
-merge to `main`, onto the previous tip, whose tree its pull request already tested, is a light run: it skips the
-integration tests, the e2e legs and Lighthouse. Lint, type-check, unit tests (which include the docs
-guards) and the build always run.
+`.env.example`, and a merge to `main`, onto the previous tip, whose tree its pull request already
+tested, is a light run: it skips the integration tests and the e2e legs. Lint, type-check, unit tests
+(which include the docs guards) and the build always run. A nightly scheduled run tests `main`'s
+full set, since most runs on `main` are light.
 
 `.github/workflows/post-deploy-smoke.yml` checks production from outside after every production
 deploy (health with the database up, the sign-in screen, deny by default, security headers on

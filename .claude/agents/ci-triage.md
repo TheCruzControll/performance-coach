@@ -19,7 +19,7 @@ You edit nothing and you do not re-run checks, push, or comment on the PR. The c
 3. Read the code the error points at, at the PR's head commit (`git fetch origin pull/<pr>/head`, then `git show <sha>:<path>`), and the PR's diff. Decide whether the change could have caused this failure.
 4. Check history when it helps: whether the same test or step has failed on `main` or on unrelated PRs recently (`gh run list --workflow <name> --status failure --limit 20`).
 
-The workflows are in `.github/workflows/`. The checks you will see are lint and type-check, unit and integration tests (real Postgres), e2e (Playwright on Chromium and WebKit, phone and desktop), and the Vercel build. `docs/testing.md` describes the suites and their known timing-sensitive specs.
+The workflows are in `.github/workflows/`. The checks you will see are lint and type-check, unit and integration tests (real Postgres), e2e (Playwright: the PRD journeys on Chromium for each change; the full Chromium suite and the journeys on WebKit nightly, `scripts/ci-legs.ts`), and the Vercel build. `docs/testing.md` describes the suites and their known timing-sensitive specs.
 
 ## Judging
 

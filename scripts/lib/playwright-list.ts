@@ -4,8 +4,8 @@
  * the shard tests (scripts/e2e-shards.test.ts, scripts/e2e-shards.listing.test.ts).
  */
 import { spawn } from 'node:child_process';
-import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { CHROMIUM_LEGS } from '../ci-legs.ts';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 
@@ -89,19 +89,14 @@ export const fileKey = (run: string) => run.split(' › ').slice(0, 2).join(' �
 /** Whether a listed run belongs to a setup project. */
 export const isSetupRun = (run: string) => /^setup(-\w+)? › /.test(run);
 
-/** Each leg in ci.yml's e2e matrix and its shard count (`of`). */
+/** Each leg of a scheduled CI run's Chromium e2e legs (scripts/ci-legs.ts) and its shard count (`of`). */
 export function ciLegs(): { group: string; engine: string; of: number }[] {
-	const workflow = readFileSync(new URL('../../.github/workflows/ci.yml', import.meta.url), 'utf8');
 	const legs = new Map<string, { group: string; engine: string; of: number }>();
-	for (const [, flow] of workflow.matchAll(/^\s*- \{(.*group:.*)\}\s*$/gm)) {
-		const entry = Object.fromEntries(
-			flow!.split(',').map((pair) => pair.split(':').map((s) => s.trim()))
-		) as Record<string, string>;
-		const leg = { group: entry.group!, engine: entry.engine!, of: Number(entry.of) };
-		legs.set(`${leg.group}/${leg.engine}`, leg);
+	for (const leg of CHROMIUM_LEGS) {
+		legs.set(`${leg.group}/${leg.engine}`, { group: leg.group, engine: leg.engine, of: leg.of });
 	}
 	return [...legs.values()];
 }
 
-/** Each sharded leg in ci.yml's e2e matrix and its shard count (`of`). */
+/** Each sharded leg in ci.yml's e2e legs and its shard count (`of`). */
 export const ciShardedLegs = () => ciLegs().filter((leg) => leg.of > 1);
