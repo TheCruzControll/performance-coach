@@ -31,6 +31,7 @@ runs the criteria and updates milestones.md.
 
 ## Recently merged
 
+- A least-privilege database role for the app, re-granted by every migration and restore. Production switches to it in an owner step.
 - The workout screen no longer jumps between exercises or when the rest timer comes and goes,
   and the rest bar and stopwatch move together.
 - During a run or a class, This hurts records the pain and ends the session; a run can skip a segment.

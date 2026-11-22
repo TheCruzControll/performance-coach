@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Create the local Postgres role and databases used for development and tests. Idempotent.
+# Create the local Postgres role and databases used for development and tests, and the runtime
+# roles `coach_runtime` (NOLOGIN) and `coach_app` (LOGIN, member of coach_runtime). Idempotent.
 #
 #   pnpm db:setup
 #
@@ -41,6 +42,16 @@ psql_admin <<'SQL'
 SELECT format('CREATE ROLE %I LOGIN PASSWORD %L', :'db_user', :'db_password')
 WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = :'db_user') \gexec
 ALTER ROLE :"db_user" WITH LOGIN PASSWORD :'db_password';
+SQL
+
+echo "db-setup: ensuring roles 'coach_runtime' (no login) and 'coach_app' (the app's login)"
+psql_admin <<'SQL'
+SELECT 'CREATE ROLE coach_runtime NOLOGIN'
+WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'coach_runtime') \gexec
+SELECT 'CREATE ROLE coach_app LOGIN PASSWORD ''coach_app'''
+WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'coach_app') \gexec
+ALTER ROLE coach_app WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT PASSWORD 'coach_app';
+GRANT coach_runtime TO coach_app;
 SQL
 
 for db in "${DB_NAMES[@]}"; do

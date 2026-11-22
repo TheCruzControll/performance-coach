@@ -13,14 +13,15 @@
 ```sh
 pnpm install            # also runs `svelte-kit sync`
 cp .env.example .env    # local defaults work as-is
-pnpm db:setup           # creates role `coach` and databases coach_dev / coach_test / coach_e2e / coach_explain (idempotent)
+pnpm db:setup           # creates roles `coach`, `coach_runtime` and `coach_app` and the databases (idempotent)
 pnpm db:migrate         # applies drizzle/*.sql to coach_dev
 pnpm dev                # http://localhost:5173
 ```
 
 `pnpm db:setup` connects as the local `postgres` superuser via peer auth (or uses
-`PGADMIN_URL`/`PG*` variables when set), creates the `coach` login role and the four databases.
-Re-running it is safe.
+`PGADMIN_URL`/`PG*` variables when set), creates the `coach` login role, the runtime roles
+`coach_runtime` (no login, the app's data rights) and `coach_app` (the app's login, a member of
+`coach_runtime`), and the four databases. Re-running it is safe.
 
 ## Signing in locally
 
@@ -113,6 +114,8 @@ With neither flag every test is skipped and no database is touched.
 4. Commit schema + SQL + `drizzle/meta`. Keep changes backward compatible with the deployed code
    (expand → migrate data → contract in a later release).
 
+**After pulling the runtime role change**, run `pnpm db:setup` once: every migration run now grants to `coach_runtime`, which only db:setup can create locally.
+
 **Guards and triggers** (ADR 0010) go in a custom migration, never in a generated file, which a
 regenerate would overwrite: `pnpm drizzle-kit generate --custom --name <guards>` adds an empty
 SQL file to the journal; write the SQL there.
@@ -163,6 +166,7 @@ index (a migration, newest in the journal), and record the plan before and after
 
 - **`Invalid environment configuration`** at startup: the message lists each bad variable.
 - **Integration tests cannot connect**: start Postgres and run `pnpm db:setup`.
+- **`runtime grants skipped: coach_runtime is missing and this role cannot create it`** (a warning from `pnpm db:migrate`; `pnpm db:grants` exits 1 on it): run `pnpm db:setup` once.
 - **`something is already serving http://localhost:4173`** in e2e: stop the other server or set
   `E2E_PORT`.
 - **"Cross-site request refused" from a local Node build**: it was built without (or with a
