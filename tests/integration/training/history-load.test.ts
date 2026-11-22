@@ -119,6 +119,10 @@ async function status(promise: Promise<unknown>): Promise<number> {
 	return error.status;
 }
 
+/** M7's heads-up a move to Wednesday morning earns: Intervals is already there (m7r/16). */
+const WEDNESDAY_HEADS_UP =
+	'Two sessions too close together: Intervals in the morning, then Full body in the morning, on Wednesday: 0 hours apart, under 6. Two hard sessions need about six hours between them, so the second starts recovered; a hard and a moderate one are better apart too.';
+
 describe('History’s list', () => {
 	it('lists the versions newest first: when, who, what changed and every decision’s why', async () => {
 		await withRollback(async (db) => {
@@ -145,7 +149,7 @@ describe('History’s list', () => {
 				}
 			]);
 			expect(v2!.decisions.map((d) => d.why)).toEqual([
-				'You moved Full body from Mon to Wed. Work trip on Monday.'
+				`You moved Full body from Mon to Wed. Work trip on Monday. ${WEDNESDAY_HEADS_UP}`
 			]);
 			// Version 1: what the rules decided, each with its own words and why.
 			expect(v1!.summary).toBe('Your first program');
@@ -207,7 +211,7 @@ describe('History’s list', () => {
 				[1, 'Programming rules']
 			]);
 			expect(versions[0]!.decisions[0]!.why).toBe(
-				'You moved Full body from Mon to Wed. No reason given.'
+				`You moved Full body from Mon to Wed. No reason given. ${WEDNESDAY_HEADS_UP}`
 			);
 		});
 	});

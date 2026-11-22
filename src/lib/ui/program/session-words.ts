@@ -186,11 +186,18 @@ export interface MoveOption {
 	day: string;
 	/** 'Easy run · Muay Thai class', or 'Rest day'. */
 	planned: string;
+	/** The rule a move there would break, in a few words, with the rule's reason. */
+	warning?: { headline: string; why: string };
+	/** 'Clears this week’s clash', on the day the scheduler would pick. */
+	clears?: string;
 }
 
 /** A day a session can move to (the program services' getMoveTargets), in the sheet's words. */
-export function moveOption({ date, planned }: { date: IsoDate; planned: string }): MoveOption {
-	return { date, label: shortDate(date), day: WEEKDAY_INFO[weekdayOf(date)].label, planned };
+export function moveOption({
+	date,
+	...said
+}: Pick<MoveOption, 'date' | 'planned' | 'warning' | 'clears'>): MoveOption {
+	return { date, label: shortDate(date), day: WEEKDAY_INFO[weekdayOf(date)].label, ...said };
 }
 
 /** A planned exercise on the session screen: its words, and what Swap names. */

@@ -13,6 +13,7 @@
  * The hybrid fixture's week 1 runs Monday 9 to Sunday 15 November 2026; it is Monday morning.
  */
 import { and, count, eq } from 'drizzle-orm';
+import pg from 'pg';
 import { describe, expect, it } from 'vitest';
 import { RULE_MESSAGES } from '../../../src/lib/domain/coach/proposal-rules';
 import type { ProposalKind } from '../../../src/lib/domain/coach/proposals';
@@ -195,6 +196,31 @@ describe('accepting a program_adjustment', () => {
 					evidence: expect.objectContaining({ proposalId: id })
 				});
 			}
+		});
+	});
+
+	it("reads the moves' week context once, for its check and its edits (m7/23)", async () => {
+		await withRollback(async (db) => {
+			const f = await withProgram(db);
+			const id = await propose(f, 'program_adjustment', [
+				{ op: 'move', sessionLineage: f.intervals.lineage, toDate: FRIDAY }
+			]);
+			// Every context read sets its statement timeout first (periodisation/context.ts).
+			let reads = 0;
+			const query = pg.Client.prototype.query;
+			pg.Client.prototype.query = function (this: pg.Client, ...args: unknown[]) {
+				const [q] = args as [string | { text?: string }];
+				const text = typeof q === 'string' ? q : (q?.text ?? '');
+				if (text.startsWith('set local statement_timeout')) reads += 1;
+				return Reflect.apply(query, this, args);
+			} as typeof query;
+			try {
+				const { proposal } = await acceptProposal(f.ownerId, id, f.deps);
+				expect(proposal).toMatchObject({ status: 'applied', appliedVersion: { number: 2 } });
+			} finally {
+				pg.Client.prototype.query = query;
+			}
+			expect(reads).toBe(1);
 		});
 	});
 
