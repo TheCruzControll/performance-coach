@@ -1,20 +1,22 @@
 /**
- * `node scripts/ci-scope.ts`: whether this CI run needs its heavy jobs, `light` or `full`
- * (.github/workflows/ci.yml, job `changes`). Written to stdout as `scope=<scope>` for
- * $GITHUB_OUTPUT, and explained on stderr.
+ * `node scripts/ci-scope.ts`: whether this CI run needs its heavy jobs, `light` or `full`, and
+ * which e2e legs it runs (.github/workflows/ci.yml, job `changes`). Written to stdout as two lines
+ * for $GITHUB_OUTPUT: `scope=<scope>`, and `legs=<JSON>`, the matrix of the e2e legs `legsFor`
+ * picks for the event (scripts/ci-legs.ts). The scope is explained on stderr.
  *
  * A run is `light` when nothing it changes can be tested by the heavy jobs (integration tests,
- * the e2e legs, Lighthouse) to find anything new: every changed path is documentation, the plan or
- * agent tooling (LIGHT_PATHS), or it is a merge to main, onto the previous tip, whose tree its pull
+ * the e2e legs) to find anything new: every changed path is documentation, the plan or agent
+ * tooling (LIGHT_PATHS), or it is a merge to main, onto the previous tip, whose tree its pull
  * request already tested.
  * Every other answer is `full`, including every case the script cannot read: a missing commit, an
  * event it does not know, or a git failure. The script never fails.
  *
- * Node builtins only, so CI runs it before `pnpm install`.
+ * Node builtins and scripts/ci-legs.ts only, so CI runs it before `pnpm install`.
  */
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { legsFor } from './ci-legs.ts';
 
 export type Scope = 'light' | 'full';
 
@@ -126,6 +128,8 @@ function gitInThisRepo(): Git {
 function main(): void {
 	const decision = decide(process.env, gitInThisRepo());
 	process.stdout.write(`scope=${decision.scope}\n`);
+	const legs = legsFor(process.env.EVENT_NAME ?? '');
+	process.stdout.write(`legs=${JSON.stringify({ include: legs })}\n`);
 	process.stderr.write(`ci scope: ${decision.scope} (${decision.reason})\n`);
 }
 

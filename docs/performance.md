@@ -108,7 +108,7 @@ shared component costs every route, Security included.
   67, `/coach` 40, `/profile` 87, `/profile/security` 60 — every screen meets the 200 ms target.
 - **Lighthouse, one run per screen** (signed in via a session the script mints; `/` signed out):
   perf 98–100, accessibility 100, best practices 100, CLS 0.000 everywhere; `/profile/security`
-  LCP 1.07 s, TBT 103–153 ms. A single run is not a median: the 5-run CI assertion is the gate.
+  LCP 1.07 s, TBT 103–153 ms. A single run is not a median: the 5-run assertion was the gate, while CI ran it.
 - **Server:** every dynamic request now does one indexed session lookup, reported as
   `Server-Timing: auth;dur=…`.
 
@@ -197,7 +197,7 @@ none shifted (worst unexplained layout-shift sum 0.0000 on every load, `MAX_SHIF
 | `/onboarding`               |     66 | 57, 57, 66, 86, 129     |
 
 **Lighthouse** (mobile, simulated throttling, median of 5 runs, Lighthouse 13.6.0, Chrome
-153.0.8010.12; `lighthouse: all thresholds met`). With `--seed` (on in CI) the runner seeds a
+153.0.8010.12; `lighthouse: all thresholds met`). With `--seed` the runner seeds a
 demo profile, audits Today's Build card, then builds through `?/preview` and `?/build` and audits
 Today's program state, Train, the longest session and History:
 
@@ -807,14 +807,14 @@ screen in the app. Plan, agreed before any M4 code lands:
 - Outcome: `/workout` ended M4 at 52.7 KB with its screens merged, the boot path and the
   prepaint (see "M4 (workout)" above).
 
-### Main-thread budget (`e2e/load-budget.ts`, runs in CI on its own leg)
+### Main-thread budget (`e2e/load-budget.ts`, run locally: CI does not test performance)
 
 `e2e/load-budget.ts` holds the page-load budget. `e2e/perf.e2e.ts` applies it to the app's
 screens and `e2e/perf-workout-load.e2e.ts` to the workout screens. Both run in their own
 Playwright project (`perf`, one worker) that starts only after the functional Chromium suite has
-finished, so no other spec competes for CPU while it measures. In CI the project is its own leg,
-alone·chromium, split in 3 shards, each on a runner of its own; `exclusive` runs in parallel on
-a leg of its own (only a local run starts it after `perf`). On a busy
+finished, so no other spec competes for CPU while it measures. CI does not run the project (the
+owner's decision: performance is not tested in CI). Run it locally with
+`E2E_PERF_ALONE=1 pnpm test:e2e --project=perf`. On a busy
 host (other builds, browsers or agents running) local numbers can still be noisy; re-run before
 chasing a regression.
 
@@ -845,7 +845,8 @@ guard at 200 ms, `/profile` failed about one run in six on noise alone.
 
 ## Lighthouse (mobile)
 
-Command (exactly what CI runs): `pnpm build:node && pnpm lighthouse --runs 5 --assert --min-perf
+Command (the one CI ran until it stopped testing performance; run locally the same way):
+`pnpm build:node && pnpm lighthouse --runs 5 --assert --min-perf
 0.9 --max-tbt 300` — every app screen, median of 5, a **fresh browser per run**.
 
 - Lighthouse **13.6.0**, Chrome **153.0.8010.12** (Playwright build, `--headless=new`), default
@@ -922,7 +923,8 @@ this build reproduced it: per-run TBT up to 635 ms, perf 84–100. Findings:
 
 ## Lighthouse (desktop)
 
-Command (what CI runs after the mobile run, as a step that never fails the job):
+Command (CI ran it after the mobile run, as a step that never failed the job, until it stopped
+testing performance; run locally the same way):
 `pnpm build:node && pnpm lighthouse --desktop --seed --runs 3 --assert`. It audits the mobile
 run's screens with Lighthouse's desktop preset (desktop throttling, no CPU slowdown) at
 1440 × 900 and 1x (`scripts/lib/lighthouse-config.ts`), applies the same `--assert` thresholds and
@@ -961,7 +963,8 @@ Desktop LCP is 245–454 ms with no blocking time; mobile LCP is 903–1205 ms w
 | Initial JS / CSS / fonts  | budgets above                 | —                       | **met** (tightest: `/train` 55.5 / 60 KB)                               |
 | API latency `/api/health` | ≤ 50 ms server time           | p75 from logs           | local: cold 11.9 ms, warm 1.2–1.9 ms incl. DB round-trip (round 1)      |
 
-CI runs the main-thread budget (with the e2e suite) as the **tight regression guard**, plus
+Until performance left CI (the owner's decision), CI ran the main-thread budget (with the e2e suite)
+as the **tight regression guard**, plus
 `pnpm lighthouse --runs 5 --assert --min-perf 0.9 --max-tbt 300` on **every app screen**
 (including the streamed, DB-backed `/profile`) as the Lighthouse check: the score target itself,
 and TBT with 50% headroom for shared-runner noise. On GitHub's runners (CI run
@@ -1007,6 +1010,6 @@ GET /profile           total ≈ 38 ms at first byte; streamed work settled ≈ 
 ORIGIN=http://localhost:4174 pnpm build:node   # the origin is baked into Node builds
 pnpm budgets
 E2E_PERF_ALONE=1 pnpm test:e2e --project=perf  # owner setup, then the main-thread budget alone
-pnpm lighthouse --runs 5 --assert --min-perf 0.9 --max-tbt 300  # every screen (CI command)
-pnpm lighthouse --desktop --seed --runs 3 --assert  # the same screens at 1440 × 900 (CI, not gating)
+pnpm lighthouse --runs 5 --assert --min-perf 0.9 --max-tbt 300  # every screen (the command CI ran)
+pnpm lighthouse --desktop --seed --runs 3 --assert  # the same screens at 1440 × 900 (not gating)
 ```
