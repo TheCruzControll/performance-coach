@@ -54,6 +54,7 @@ one setup).
 | `pnpm test:integration` | Vitest integration project against `coach_test`                               |
 | `pnpm test:e2e`         | Playwright against the production Node build                                  |
 | `pnpm test`             | all three test suites                                                         |
+| `pnpm test:live`        | the live coach suite (opt-in, billed, never in CI): see below                 |
 | `pnpm build`            | production build for Vercel (`.vercel/output`)                                |
 | `pnpm build:node`       | production build for Node (`build/`), used by e2e/Lighthouse                  |
 | `pnpm start`            | run `build/index.js` with `.env` (set `ORIGIN`/`PORT` as needed)              |
@@ -66,6 +67,24 @@ one setup).
 | `pnpm db:explain`       | query plans on a two-year dataset in `coach_explain`, gated (see below)       |
 | `pnpm icons`            | re-render PNG icons from `static/icons/*.svg`                                 |
 | `pnpm icons:sprite`     | regenerate the icon sprite and names from `src/lib/ui/icons/icons.ts`         |
+
+### The live coach suite (`pnpm test:live`)
+
+Six named conversations against the real model (`tests/live/coach.live.test.ts`), plus two that
+record how soon the first words come (`first-words.live.test.ts`), asserting properties, never
+wording; each file fails past `LIVE_COST_CAP_MICROS` ($1). It never runs in CI. Prerequisites:
+
+1. A running local Postgres, and `pnpm db:setup` run once.
+2. It uses `TEST_DATABASE_URL` (default `coach_test`), which it drops and re-migrates; a name not
+   ending in `_test` is refused.
+3. A key of your own, never the production key:
+
+```sh
+LIVE_LLM=1 ANTHROPIC_API_KEY=<key> pnpm test:live
+LIVE_LLM_DRY=1 pnpm test:live   # the same conversations on the mock, free
+```
+
+With neither flag every test is skipped and no database is touched.
 
 ## Conventions
 
