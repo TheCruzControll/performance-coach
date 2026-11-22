@@ -165,7 +165,7 @@ describe('CI concurrency', () => {
 
 /** The `if` of every job that waits for the scope job: it runs only on a full run. */
 const FULL_ONLY = "${{ needs.changes.outputs.scope == 'full' }}";
-/** The jobs that skip on a light run: the heavy ones, and the three aggregate checks. */
+/** The jobs that wait for the scope job: the heavy ones, which a light run skips, and the three aggregate checks. */
 const HEAVY = ['integration', 'e2e-legs', 'lighthouse-shards', 'lighthouse-desktop'];
 const AGGREGATES = ['test', 'e2e', 'lighthouse'];
 /** The results a `needs` context can hold, and the run scopes the scope job can answer. */

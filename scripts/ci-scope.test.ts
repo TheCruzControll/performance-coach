@@ -48,6 +48,9 @@ describe('scopeOf', () => {
 
 	it('is full for Markdown nested below the root, which the build can read', () => {
 		expect(scopeOf(['src/README.md'])).toBe('full');
+		for (const path of ['src/lib/docs/x.ts', 'e2e/plan/x.ts', 'src/.env.example', '.env']) {
+			expect(scopeOf([path]), path).toBe('full');
+		}
 	});
 
 	it('is full for the workflows and the package manifest', () => {
@@ -117,6 +120,20 @@ describe('decide, push', () => {
 			reason: 'merge of a tree its pull request already tested'
 		});
 		expect(calls.some((call) => call.startsWith('diff'))).toBe(false);
+	});
+
+	it('diffs when the merge’s first parent is not the previous tip, even with equal trees', () => {
+		const diff = `diff --name-only --no-renames older1 ${MERGE}`;
+		const { git } = fakeGit({
+			[`rev-list --parents -n 1 ${MERGE}`]: parents,
+			[`rev-parse ${MERGE}^{tree}`]: 'tree1',
+			[`rev-parse ${HEAD}^{tree}`]: 'tree1',
+			[diff]: 'src/app.ts'
+		});
+		expect(decide({ EVENT_NAME: 'push', SHA: MERGE, BEFORE_SHA: 'older1' }, git)).toEqual({
+			scope: 'full',
+			reason: 'changes src/app.ts'
+		});
 	});
 
 	it('diffs before and after when the merge tree differs from its second parent’s', () => {

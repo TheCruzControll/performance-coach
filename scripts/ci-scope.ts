@@ -5,7 +5,8 @@
  *
  * A run is `light` when nothing it changes can be tested by the heavy jobs (integration tests,
  * the e2e legs, Lighthouse) to find anything new: every changed path is documentation, the plan or
- * agent tooling (LIGHT_PATHS), or it is a merge to main whose tree its pull request already tested.
+ * agent tooling (LIGHT_PATHS), or it is a merge to main, onto the previous tip, whose tree its pull
+ * request already tested.
  * Every other answer is `full`, including every case the script cannot read: a missing commit, an
  * event it does not know, or a git failure. The script never fails.
  *
@@ -93,6 +94,7 @@ export function decide(env: RunEnv, git: Git): Decision {
 			const parents = git(['rev-list', '--parents', '-n', '1', sha]).split(' ').slice(1);
 			if (
 				parents.length === 2 &&
+				parents[0] === env.BEFORE_SHA &&
 				git(['rev-parse', `${sha}^{tree}`]) === git(['rev-parse', `${parents[1]}^{tree}`])
 			) {
 				return { scope: 'light', reason: 'merge of a tree its pull request already tested' };

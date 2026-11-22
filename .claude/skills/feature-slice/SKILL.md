@@ -20,7 +20,7 @@ The path uses plain `Agent` calls, so it works in any Claude Code harness.
   you have rebased is pushed with `git push --force-with-lease`, never plain `--force`.
 - **Heavy work runs on GitHub, not here.** This machine has 8 GB of memory. CI runs type-check,
   lint, the unit and integration suites, both builds, the budgets, every Playwright journey on
-  Chromium and WebKit, and Lighthouse, on every pull request. Do not run `pnpm check`,
+  Chromium and WebKit, and Lighthouse, on every pull request that changes more than docs. Do not run `pnpm check`,
   `pnpm lint`, `pnpm test:unit`, `pnpm test:integration`, `pnpm build` or `pnpm test:e2e`
   locally. Run narrow checks on the files in hand, push, and let CI be the judge.
 - **One worktree per slice.** Several slices can be in progress at once under `run-queue`, each in
@@ -160,6 +160,8 @@ Reproduce a failure locally only when the log is not enough, and then with one s
 Green checks are not yet proof that this slice works; they are proof that whatever ran passed.
 Confirm that the journey from step 5 was among it:
 
+- The proof is in the pull request's run. The run on `main` after the merge is a light run and
+  holds no e2e results.
 - Find the CI run for the PR's latest head (`gh pr checks <number>`, then `gh run view <run-id>`).
 - Confirm the journey's tests ran and passed in an e2e leg. The leg's log lists every test title
   (`gh run view <run-id> --log | grep "<journey file>"`). A journey that was skipped, or that
@@ -174,7 +176,7 @@ fix it or park the slice.
 
 - All five required checks are green on the latest head, and none was skipped or disabled to get
   there. The one exception is a light run: when the `Scope of the run` job answered `light` (the
-  change touches only docs, the plan or agent tooling), the integration tests, the e2e legs and
+  change touches only docs, the plan, agent tooling, root Markdown or `.env.example`), the integration tests, the e2e legs and
   Lighthouse are skipped by design, and there is no journey to confirm in step 8.
 - The checks ran on the `main` this would land on. After `git fetch origin`, the branch must
   contain the tip of `main` (`git merge-base --is-ancestor origin/main HEAD` succeeds in the
