@@ -141,7 +141,8 @@ const planned = (s: SessionPlan): SessionPlan =>
 		: s;
 
 /** A generated conditioning session is a zone 2 bike in an easy run's place (cross-training.ts). */
-const zone2 = (s: SessionPlan) => s.source === 'generator' && s.type === 'conditioning';
+export const zone2 = (s: Pick<SessionPlan, 'source' | 'type'>) =>
+	s.source === 'generator' && s.type === 'conditioning';
 
 function roleOf(s: SessionPlan): Role {
 	if (zone2(s)) return 'easy_run';

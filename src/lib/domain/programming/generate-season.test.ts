@@ -12,7 +12,7 @@ import type { ProgramPlan } from '../training/types';
 import { validate } from '../validation';
 import { DecisionLog } from './decisions';
 import { allocateWeek, generatedFor, weekBudget } from './demand';
-import { generateProgram } from './generate';
+import { generateProgram, STAGES } from './generate';
 import { buildProgrammingInput } from './input';
 import { M7_SCENARIOS, m7Day } from './periodisation/scenarios';
 import type { M7ScenarioKey } from './periodisation/scenarios';
@@ -206,6 +206,12 @@ describe('modes and parity', () => {
 	});
 
 	it('gives every goal paused M3’s maintenance plan, apart from its maintenance_dose decisions', () => {
+		// As the stages before the schedule stage plan it: that stage (generator-schedule) then
+		// repairs each week with the held goals' priorities, which M3's plan has none of.
+		vi.spyOn(
+			STAGES.find((s) => s.name === 'schedule')!,
+			'run'
+		).mockImplementation((d) => d);
 		const paused = M7_SCENARIOS.allPaused();
 		const plan = generate(paused);
 		const m3 = m3Plan(paused);
