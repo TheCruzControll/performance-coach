@@ -128,8 +128,9 @@ pnpm exec eslint <changed files>
 pnpm exec vitest run --project unit <changed or new test files>
 ```
 
-Commit with a Conventional Commits message, push the branch, and open the PR with the `file-pr`
-skill. Put the spec's goal first in the description, then the review result and the journey that
+Commit with a Conventional Commits message. Then `git fetch origin` and rebase the branch onto
+`origin/main` before every push, so CI always runs on the newest `main` and conflicts show up here
+instead of at merge time. Push the branch and open the PR with the `file-pr` skill. Put the spec's goal first in the description, then the review result and the journey that
 proves the slice. Opening the pull request is what starts the real checks.
 
 ## 7. Let CI run, and fix what it finds
@@ -168,8 +169,12 @@ fix it or park the slice.
 
 - All five required checks are green on the latest head, and none was skipped or disabled to get
   there.
-- The PR is not behind its base and has no conflicts. If `main` moved under it in files the slice
-  touches, rebase, push, and wait for green again.
+- The checks ran on the `main` this would land on. After `git fetch origin`, the branch must
+  contain the tip of `main` (`git merge-base --is-ancestor origin/main HEAD` succeeds in the
+  slice's worktree). If it does not, rebase onto `origin/main`, push with `--force-with-lease`,
+  and wait for green on the new head before coming back to this gate. Two pull requests that each
+  pass alone can break together, and this is the only place that catches it before production. A
+  rebase that applied cleanly needs no new review; one where you resolved a conflict does.
 - The last review of this head returned `APPROVE`, or every blocker and should was fixed and
   re-reviewed.
 - Step 8 confirmed the slice's journey passed in CI on this head, and any formal check from

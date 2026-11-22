@@ -59,7 +59,10 @@ request when the merges changed what it says.
 ### 1. Read the state
 
 - Read `plan/queue.md`, `plan/.loop-state.json` and the top of `plan/.loop-log.md`.
-- `git fetch origin`.
+- `git fetch origin`, then fast-forward the main checkout (`git pull --ff-only origin main` there),
+  so the skills and the queue you read are the newest. If it will not fast-forward because another
+  session has changes there, leave it, read `plan/queue.md` and the skills from `origin/main`
+  instead (`git show origin/main:<path>`), and say so in the log.
 - Reconcile with GitHub: for every row in the state file and every `pr-open` row, look up its pull
   request. A row whose pull request merged is done. A worktree in the state file with no agent
   running and no stage recorded as waiting is a row a previous session left mid-step; read its
@@ -81,9 +84,15 @@ Go through the rows waiting on CI, oldest first, and read each one's checks
   merge, and wait for the post-deploy check. Merge one row, wait for its deploy to be confirmed,
   then the next. Never queue two merges.
 
-After a merge, the other rows in flight are behind `main`. Rebase a row only if the merge touched
-files that row also changes (`gh pr diff <number> --name-only` against the merged files); then
-push it and let CI run again. A row whose files the merge did not touch stays as it is.
+  The gate only passes a branch whose checks ran on the current `main`. So after any merge, the
+  next green row is one rebase and one CI run away from merging: rebase it, push, and use the wait
+  for other work. Take rows in the order they went green, and do not rebase the ones further back
+  until their turn, or every merge would restart CI for all of them.
+
+After a merge, the other rows in flight are behind `main`. Rebase a row straight away only if the
+merge touched files that row also changes (`gh pr diff <number> --name-only` against the merged
+files), so a conflict surfaces early; push it and let CI run again. A row whose files the merge did
+not touch waits for its turn at the gate.
 
 ### 3. Fill the local slots
 
