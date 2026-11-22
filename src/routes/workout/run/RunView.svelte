@@ -11,7 +11,8 @@
   - The run's RPE (1 to 10) and notes are a run.log each, sent when they change.
   - A change this device could not save says so, with Retry.
   - Options opens the run's quick actions (SessionActionsSheet.svelte, loaded on its first intent):
-    This hurts, and Skip this segment while another is still to log.
+    This hurts, Swap to a zone 2 bike (the run ends here and the bike session starts), and Skip
+    this segment while another is still to log.
   Below 1024 px one column: the entry, the segments, the totals, the effort. From 1024 px the
   segments sit beside the rest (the Shell's columns), the list sticky. Every control has hover
   and :focus-visible states; the list's rows move focus with the arrow keys.
@@ -36,6 +37,7 @@
 		distanceText,
 		entryError,
 		freeItem,
+		minutesToRun,
 		nextFreePosition,
 		nextToLog,
 		normalized,
@@ -246,6 +248,9 @@
 		store={active.store}
 		{load}
 		{skipTo}
+		minutesLeft={minutesToRun(items)}
+		sessionKind={null}
+		onlighter={() => {}}
 		onfinish={() => (active.finishing = true)}
 	/>
 {/if}

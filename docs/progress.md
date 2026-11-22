@@ -31,6 +31,8 @@ runs the criteria and updates milestones.md.
 
 ## Recently merged
 
+- During a run, Swap moves the rest of it to a zone 2 bike; during a Muay Thai class, Swap offers a
+  lighter format.
 - A least-privilege database role for the app, re-granted by every migration and restore. Production switches to it in an owner step.
 - The workout screen no longer jumps between exercises or when the rest timer comes and goes,
   and the rest bar and stopwatch move together.
