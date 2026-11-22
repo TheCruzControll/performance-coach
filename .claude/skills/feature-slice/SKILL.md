@@ -90,33 +90,18 @@ report.
 If the fix list is not empty, start a fresh builder with the spec, the fix list, and the current
 state of the branch, then review again. That is one fix round.
 
-## 5. Add to the verifications
+## 5. Tests: only what the slice needs
 
-The loop improves only if each slice adds to what the next one can check, and CI can only prove
-what a test covers. Before the pull request opens, in the same branch:
+The owner wants CI small: a pull request runs lint, type-check, unit and integration tests, the
+build, and the PRD journeys in one browser (`scripts/ci-legs.ts`). Keep it that way.
 
-- **The journey that proves this slice.** If an existing e2e journey covers what the owner will
-  see, name it. If none does, the slice is not done until one does: have the builder write the
-  spec file (see the `verify-coach` skill's Drive section for how the journeys are written). CI
-  runs it.
-- **A new feature, or a new way into one:** add or update its file in
-  `.claude/skills/verify-coach/features/` and the row in that folder's `README.md`, and add the
-  journey to `e2e/journeys.ts` when it is a product journey.
-- **A new promise that tests cannot cover:** when the slice introduces state that several actors
-  change, a sequence that must happen exactly once or in order, or a lifecycle with forbidden
-  transitions, create a formal verification for it. Follow pstack's
-  `create-formal-verification-skill` (read its `SKILL.md` under the installed pstack plugin's
-  `skills/` folder), put the model under `verification/<area>/` and the skill under
-  `.claude/skills/verify-<area>/`. Most slices add no such promise; do not invent one.
-- **A change to code a formal skill covers:** run that skill's check here. It is not in CI yet,
-  and the baseline takes under a minute. Today that is `verify-workout-sync`, for the offline sync
-  engine, the outbox and the server's sync ledger. Exit 2 means the code moved past the model;
-  follow the skill's "When the code changed", update the model if the behaviour changed on
-  purpose, and move its sync commit forward once the model describes the code again.
-
-If a verification skill's own instructions turned out wrong or stale during this run, fix them in
-this branch too. Never weaken a journey or a model to get a pass; if the check itself is wrong,
-say so and fix it as its own change.
+- Every slice comes with unit or integration tests for the logic it adds, which fail without it.
+- Add or change a browser test only when the slice adds or changes one of the PRD journeys
+  (`e2e/journey-*.serial.e2e.ts`); then update that journey. Do not add other e2e specs,
+  screenshot sets, performance guards, accessibility sweeps or formal models.
+- A change to code `verify-workout-sync` covers (the offline sync engine, the outbox, the
+  server's sync ledger): run that skill's check here; the baseline takes under a minute.
+- Never weaken a test to get a pass. If a test is wrong, fix it as its own change.
 
 ## 6. Narrow local checks, then open the pull request
 
@@ -157,17 +142,10 @@ Reproduce a failure locally only when the log is not enough, and then with one s
 
 ## 8. Confirm the proof
 
-Green checks are not yet proof that this slice works; they are proof that whatever ran passed.
-Confirm that the journey from step 5 was among it:
-
-- The proof is in the pull request's run. The run on `main` after the merge is a light run and
-  holds no e2e results.
-- Find the CI run for the PR's latest head (`gh pr checks <number>`, then `gh run view <run-id>`).
-- Confirm the journey's tests ran and passed in an e2e leg. The leg's log lists every test title
-  (`gh run view <run-id> --log | grep "<journey file>"`). A journey that was skipped, or that
-  matched no test, proves nothing.
-- The evidence is the run link and the leg's `playwright-<run>-<group>-<engine>-<shard>`
-  artifact, which holds the screenshots, the report and the server log for 14 days.
+Green checks prove what ran. Confirm the slice's own tests were among it: the unit or integration
+tests it added ran and passed in the PR's latest run (`gh pr checks <number>`), and, when the
+slice changed a PRD journey, that journey passed in the e2e job (`gh run view <run-id> --log |
+grep "<journey file>"`).
 
 ## 9. Merge
 
@@ -194,8 +172,8 @@ fix it or park the slice.
   new `origin/main`.
 - The last review of this head returned `APPROVE`, or every blocker and should was fixed and
   re-reviewed.
-- Step 8 confirmed the slice's journey passed in CI on this head, and any formal check from
-  step 5 passed.
+- Step 8 confirmed the slice's tests passed in CI on this head, and the `verify-workout-sync`
+  check passed if step 5 called for it.
 - The slice is not one of the "stop for the owner" cases above, and its queue row is not `hold` or
   `owner`.
 - The branch does not change `plan/queue.md`, unless it is the queue's own housekeeping change.
@@ -225,7 +203,7 @@ Tell the owner:
 - the PR link and whether it merged, or why it is parked
 - what was built, against the spec
 - the reviewer's verdict, what was fixed, and what was declined and why
-- the CI run link, the journey that proves the slice, and any formal check and its result
+- the CI run link, the tests that prove the slice, and the sync check if it ran
 - what you added to the verification skills
 - the post-deploy result
 - fix rounds used, and anything left as a follow-up

@@ -97,7 +97,7 @@ First read each waiting row's checks (`gh pr checks <number>`).
     bring it up to date, and review the result before it boards;
   - every line of `feature-slice` step 9 that concerns the row itself holds: its queue status is
     not `hold` or `owner`, it is not a stop-for-the-owner case, it does not change
-    `plan/queue.md`, and it names its journey. Its branch need not contain `main`.
+    and `plan/queue.md`. Its branch need not contain `main`.
 
 When no train is in flight (step 1 found none) and at least one row is ready:
 
@@ -109,7 +109,7 @@ When no train is in flight (step 1 found none) and at least one row is ready:
    `git reset --hard HEAD^1`) and leave the row out: it goes back to the local stage to be brought
    up to date and reviewed again. Never resolve a conflict on a train.
 2. **Open it.** Push the branch and open a pull request titled `train: #<a>, #<b>, #<c>`, whose
-   description lists each row with its pull request, boarding SHA, reviewer verdict and journey.
+   description lists each row with its pull request, boarding SHA and reviewer verdict.
    Record the train in the state file. A train of one row is that row's own pull request instead:
    bring its branch up to date with `main`, push, and merge it with `feature-slice` step 9's own
    command and subject.
@@ -122,7 +122,7 @@ When no train is in flight (step 1 found none) and at least one row is ready:
    wait for the next train. If every row passes alone but not together, the later row goes back
    to its local stage.
 5. **When it is green,** apply `feature-slice` steps 8 to 10 to the train: confirm in the train's
-   run that every row's journey ran and passed, check the gate's lines about checks, `main`, proof
+   run that every row's tests ran and passed, check the gate's lines about checks, `main`, proof
    and deploys on the train's branch, and merge it with
    `gh pr merge <train> --merge --subject "Merge train: #<a>, #<b>, #<c> (#<train>)"`. Confirm
    each row's pull request now shows `MERGED` (`gh pr view <number> --json state`); if one does
@@ -191,8 +191,6 @@ guess.
 - A `pr-open` row enters `feature-slice` at its review step. First bring its branch up to date
   with `main` in the worktree, so the review and CI see what would merge. A pull request that only
   needed a rebase is still reviewed before it merges; it was written before the current `main`.
-- A row for verifying a milestone uses the `milestone-verifier` agent, then records the evidence
-  in `docs/milestones.md` and `docs/progress.md` as a docs pull request through the same path.
 - A row marked L, or too large for one pull request, is split first: replace it with smaller rows
   in the next housekeeping change, each with its own spec, and take the first.
 
