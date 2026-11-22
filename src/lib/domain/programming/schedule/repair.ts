@@ -39,7 +39,7 @@ import {
 import type { SessionDemand, TraitsOf } from '../interference.ts';
 import { loadModel } from '../load/fatigue.ts';
 import type { ModelLogged, ModelPlanned } from '../load/fatigue.ts';
-import { PLACEMENT } from '../placement.ts';
+import { PLACEMENT, zone2 } from '../placement.ts';
 import type { GoalPriority } from '../priority/weights.ts';
 import { canonicalJson, compareText } from '../random.ts';
 import { CONCURRENT_RULES } from '../rules/concurrent.ts';
@@ -70,6 +70,8 @@ export interface RepairContext {
 	keepOwnerMoves?: boolean;
 	/** Lineages of sessions already logged: they never change. */
 	completed?: readonly string[];
+	/** Whether a generated session may be left out as a last resort: every one by default. */
+	mayDrop?: (session: EvaluatedSession) => boolean;
 	traitsOf?: TraitsOf;
 }
 
@@ -266,12 +268,18 @@ export function repairWeek<S extends EvaluatedSession>(
 		return demands.get(s)!;
 	};
 
+	/**
+	 * A session as the load model reads it: a generated zone 2 bike loads as the easy run it
+	 * replaced (cross-training.ts), as placement places it, not as conditioning's hard efforts.
+	 */
+	const asLoaded = <P extends ModelPlanned>(s: P): P =>
+		s.kind === 'other' && zone2(s) ? { ...s, type: 'easy_run' } : s;
 	const contextOf = (week: readonly S[]): WeekContext => {
 		const dates = week.map((s) => s.date).sort(compareText);
 		const monday = mondayOf(dates[0] ?? ctx.load?.from ?? '2000-01-03');
 		const load = ctx.load && {
 			days: loadModel({
-				planned: [...(ctx.load.planned ?? []), ...week],
+				planned: [...(ctx.load.planned ?? []), ...week].map(asLoaded),
 				logged: ctx.load.logged,
 				from: ctx.load.from,
 				to: addDays(mondayOf(dates.at(-1) ?? monday), 6),
@@ -455,7 +463,7 @@ export function repairWeek<S extends EvaluatedSession>(
 		}
 		if (f.severity !== 'avoid') return;
 		for (const x of movable) {
-			if (x.now.source !== 'generator') continue;
+			if (x.now.source !== 'generator' || ctx.mayDrop?.(x.now) === false) continue;
 			if (rivals(state, f, x).some((w) => weight(x.now) >= w)) continue;
 			yield {
 				kind: 'drop',
