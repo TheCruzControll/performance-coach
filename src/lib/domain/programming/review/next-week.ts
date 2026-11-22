@@ -13,6 +13,9 @@
  * - Anything an op cannot express, or that breaks the session length, is listed as not proposed
  *   with its reason, never approximated; past MAX_NEXT_WEEK_OPS, the rest are too, by priority.
  * - Next week outside this block is the cycle review's (boundary); next week ended is late.
+ * - With M7's context (ctx.evaluation, review/evaluation.ts), a conflict is resolved by repairWeek
+ *   instead, and every change is judged by evaluateWeek: one that adds an avoid finding is listed
+ *   as not proposed ('conflict'), with the finding's headline.
  *
  * Pure and deterministic, and server-only at runtime, like all of domain/programming.
  */
@@ -45,6 +48,8 @@ import type { ExerciseTraits, TraitsOf, Violation } from '../interference.ts';
 import { adaptRunning, decideFromResults } from '../results.ts';
 import type { LongRunResults } from '../results.ts';
 import { RESULT_RULES, RUN_RESULT_RULES } from '../rules/results.ts';
+import { nextWeekJudge } from './evaluation.ts';
+import type { ReviewEvaluation } from './evaluation.ts';
 import type { NextWeekState, WeeklyReviewSnapshot } from './snapshot.ts';
 
 // ---- Judgements the owner can change here ----------------------------------------------------
@@ -123,6 +128,11 @@ export interface NextWeekContext {
 	estimateMinutes: (session: Pick<StrengthSessionPlan, 'exercises'>) => number;
 	/** The reviewed week's planned and run metres, and its last long run; null with no running. */
 	running?: { previousPlanned: number; actual: number; lastLongRun: LongRunResults['last'] } | null;
+	/**
+	 * M7's context (evaluation.ts): a conflict is resolved by repairWeek, and every change is
+	 * judged by evaluateWeek; without it, checkWeek as before.
+	 */
+	evaluation?: ReviewEvaluation;
 }
 
 export type AdjustmentKind =
@@ -150,7 +160,7 @@ export interface Adjustment {
 	priority: number;
 }
 
-export type NotProposedReason = 'over_limit' | 'session_minutes' | 'not_expressible';
+export type NotProposedReason = 'over_limit' | 'session_minutes' | 'not_expressible' | 'conflict';
 
 /** A change with its own `why`, and the `reason` and `words` for not proposing it. */
 export type NotProposed = Pick<Adjustment, 'id' | 'kind' | 'lineage' | 'sessionDate' | 'why'> & {
@@ -494,6 +504,40 @@ export function proposeNextWeek(
 	const days = Array.from({ length: 7 }, (_, n) => addDays(nextWeek.startsOn, n)).filter(
 		(d) => d >= today
 	);
+	const judge =
+		ctx.evaluation &&
+		nextWeekJudge(
+			ctx.evaluation,
+			{
+				sessions: happening,
+				monday: nextWeek.startsOn,
+				kind: nextWeek.kind,
+				today,
+				open: days,
+				traitsOf
+			},
+			ahead,
+			MOVE_SEVERITY
+		);
+	for (const m of judge ? judge.moves() : []) {
+		const proposed = {
+			op: 'move',
+			sessionLineage: m.sessionLineage,
+			toDate: m.toDate,
+			...(m.timeOfDay !== undefined && { timeOfDay: m.timeOfDay }),
+			reason: clip(m.why, REASON_MAX)
+		} as ProgramOp;
+		candidates.push({
+			...item('move', m.sessionLineage, m.from, m.why),
+			proposed,
+			half: null,
+			before: { date: m.from },
+			after: { date: m.toDate },
+			evidence: { rule: m.rule, severity: m.severity },
+			significant: false,
+			priority: PRIORITY.move
+		});
+	}
 	const check = (week: readonly NextSession[]) => checkWeek(week, { traitsOf, openDates: days });
 	const keyOf = (v: Violation<NextSession>) =>
 		[v.rule, ...v.days, ...v.sessions.map((s) => s.lineage)].join(' ');
@@ -541,7 +585,7 @@ export function proposeNextWeek(
 		}
 		return false;
 	};
-	while (resolveOne());
+	while (!judge && resolveOne());
 
 	// Rank; check each op with M5's schema (M3's edits inside it), the session length and the cap.
 	candidates.sort(
@@ -555,6 +599,8 @@ export function proposeNextWeek(
 		open.flatMap((s) => (s.kind === 'strength' ? [[s.lineage, s.exercises] as const] : []))
 	);
 	const adjustments: Adjustment[] = [];
+	/** Whether repairWeek's moves were kept together, once the first of them is judged. */
+	let movesKept: boolean | undefined;
 	for (const c of candidates) {
 		const { proposed, half, line, ...rest } = c;
 		if (!validate(programOpSchema, proposed).ok) {
@@ -579,6 +625,23 @@ export function proposeNextWeek(
 		if (adjustments.length >= MAX_NEXT_WEEK_OPS) {
 			refuse(c, 'over_limit', NOT_PROPOSED.limit);
 			continue;
+		}
+		// Judged with the changes kept so far. repairWeek's moves are judged together first, as it
+		// chose them (a swap is two moves), when every one of them is an op within the cap; else, or
+		// refused together, each is judged on its own.
+		if (judge) {
+			if (c.kind === 'move' && movesKept === undefined) {
+				const moves = candidates.filter((m) => m.kind === 'move');
+				const fit =
+					adjustments.length + moves.length <= MAX_NEXT_WEEK_OPS &&
+					moves.every((m) => validate(programOpSchema, m.proposed).ok);
+				movesKept = fit && judge.adds(moves) === null;
+			}
+			const added = c.kind === 'move' && movesKept ? '' : (judge.adds([c])?.headline ?? '');
+			if (added) {
+				refuse(c, 'conflict', added);
+				continue;
+			}
 		}
 		if (next) exercisesNow.set(proposed.sessionLineage, next);
 		const halfStep = half !== null && validate(programOpSchema, half).ok ? half : null;
