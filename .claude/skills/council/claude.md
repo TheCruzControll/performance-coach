@@ -6,9 +6,9 @@ Claude Code tools to use. Load deferred tools with ToolSearch
 
 ## Seats (single vendor)
 
-Claude Code (terminal, Desktop, cloud): Claude Fable 5.1, Claude Opus 5.5, and
-Claude Sonnet 5.5. If one is not on the account, use Claude Haiku 5.5
-(`"haiku"`) in its place.
+Claude Code (terminal, Desktop, cloud): the current Claude Fable, Claude Opus
+and Claude Sonnet (`"fable"`, `"opus"`, `"sonnet"`). If one is not on the
+account, use Claude Haiku (`"haiku"`) in its place.
 
 When you cannot seat three different models or a named member, report it
 with `AskUserQuestion` (if listed) so the user can decide; never substitute on
@@ -26,16 +26,11 @@ Send three `Agent` calls in one message so they run in parallel:
   sol-review/council skills, score out of 10 for code review). Include the
   diff or the branch/PR to read, since a subagent starts without this
   conversation.
-- Optional `run_in_background: true` to keep working while they run; you are
-  notified when each finishes.
+- Delegates run in the background; you are notified when each finishes.
 
 For a fresh round, continue each finished delegate with `SendMessage` (`to`
 its agentId from the spawn result, or its name) with what changed, so it keeps
 its earlier context. Start a new `Agent` only if continuing is not possible.
-
-Optional: if the user opted into a workflow (said ultracode or asked for one),
-the `Workflow` tool can run the rounds deterministically. Otherwise use
-`Agent` directly.
 
 ## Edit the PR description
 

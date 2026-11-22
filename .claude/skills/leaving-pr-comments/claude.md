@@ -11,9 +11,8 @@ Desktop on your machine)** it is not.
 
 ## Header values
 
-- `<model>`: the model name your system prompt states, e.g. Claude Opus 5.5,
-  Claude Fable 5.1, Claude Sonnet 5.5, Claude Haiku 5.5. A subagent uses its
-  own model, not the parent's.
+- `<model>`: the model name your system prompt states, version included. A
+  subagent uses its own model, not the parent's.
 - `<user>`: the user's name if they gave it, else their GitHub login from
   `mcp__github__get_me` (locally also `gh api user --jq .login`).
 
