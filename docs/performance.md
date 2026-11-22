@@ -581,6 +581,21 @@ through one barrel from every component, so a runtime helper only one screen use
 framework chunk. The toasts stay in the initial JS and the router keeps its modulepreload hints,
 for the reasons above.
 
+## Advanced coaching (M7)
+
+One paragraph per M7 slice, each replaced by its own slice only; docs-m7 turns them into its
+measured section.
+
+m7/04 train-week-findings: Train page data is committed in
+`scripts/explain/baselines/train-m7.json` (gzip bytes of JSON of `loadTrainWeek`, a proxy for
+`/train/__data.json`, for periodisation-week's current and owner-move weeks on its pinned clock,
+±64 B) and gated by `tests/integration/periodisation/train-page-data.test.ts` against `ALLOWANCES`
+(findings 0.6, why 1.5, week kinds 0.1, timeline 0.7, re-plan note 0.1 KB); findings measured
++207 B. Train's load with `deps.periodisation` on vs off in `pnpm db:explain`
+(`scripts/explain/periodisation.cases.ts`): ≤ +10 ms median target, failing above +25 ms
+(measured +6.8 ms locally). `/(app)/train` +137 B initial JS, +151 B route CSS; every other route
+within ±2 B.
+
 ## Budgets (enforced)
 
 `pnpm budgets` (`scripts/check-budgets.ts`) reads the SvelteKit build output and fails CI when a

@@ -1257,6 +1257,19 @@ Captured into `test-results/screens/<project>/`, the desktop ones under `desktop
 - The journeys: `strength-*` (top set to History, the pain and dislike journey, the generated
   week), `journey-run-*`, `journey-thai-*` and `journey-history-*`, with desktop copies.
 
+## Advanced coaching (M7)
+
+One paragraph per M7 slice, each replaced by its own slice only; docs-m7 turns them into its test
+inventory.
+
+m7/04 train-week-findings: the periodisation-week fixture
+(`src/lib/server/test-support/analytics-fixtures/periodisation-week.ts`): a clean hybrid week, the
+owner's move of Lower A to the day before Tuesday's hard Muay Thai next week, a past week, this
+week's passed clash, a clean week and outline weeks.
+`tests/integration/periodisation/evaluate.test.ts`. `e2e/train-findings.serial.e2e.ts` and
+`e2e/periodisation-support.ts` (`weekEvaluation(weekStart, today)`: the SQL-side oracle that runs
+domain `evaluateWeek` over the stored week with the service's open dates).
+
 ## The LLM in tests
 
 Milestone 5 adds the coach behind `LlmProvider`. Tests use the deterministic `mock` provider by
