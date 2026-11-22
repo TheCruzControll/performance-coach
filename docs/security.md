@@ -263,7 +263,9 @@ full address. Refusals answer `429` with `Retry-After`, except the `/setup` page
 
 Coach endpoints (`/api/coach/*`) are owner routes, Origin-checked by the guard, rate-limited
 across all the owner's devices (`coach.turn` for turns, `coach.action` for everything else) and
-cost-capped at $5 a day (`DAILY_COST_CAP_USD`); a refusal answers `429` with `Retry-After`.
+cost-capped at $5 a day (`DAILY_COST_CAP_USD`), and the cap ends a turn with a `budget` error event
+in the stream and records the run as `budget_exhausted` (`daily_cap`), rather than answering `429`;
+a rate-limit refusal answers `429` with `Retry-After`.
 
 Stale counters are pruned on writes: the first hit of each window also deletes up to 100 counters
 whose window started over two days ago (longer than any window; `RATE_LIMIT_PRUNE` in `policy.ts`),
@@ -340,8 +342,9 @@ Lighthouse) can enable them.
 - `@anthropic-ai/*` is imported at runtime only by `src/lib/server/agent/provider/anthropic.ts`
   (ESLint, and `scripts/anthropic-sdk-imports.test.ts`, which also catches dynamic imports). A
   missing `ANTHROPIC_API_KEY` never stops the server: the coach reports `no_key`, and the one
-  startup warning names the variable, never its value. The provider's errors carry only kind,
-  status, type and request id, with the key redacted, and never keep the SDK error as a cause.
+  startup warning names the variable, never its value. The provider's errors carry kind, status,
+  type and request id, with the key redacted, and never keep the SDK error as a cause; for a
+  refused request (`bad_request`) they also carry the API's reason.
 - The setup **token** is never stored anywhere: only its hash is configured (and, once used,
   recorded in `used_setup_tokens`). Vercel's own request logs record full URLs, so the setup
   request's token appears there; it is useless once setup has completed, also after an owner
@@ -430,8 +433,10 @@ pain mode every block is. A failing block is replaced by safe guidance before an
 and ungrounded facts and metrics become 'Not checked against your data'. Each intervention is a
 `_policy` row in `agent_tool_calls`.
 
-**Logs.** Coach logs carry ids, counts, token usage and timings, never message text. Failures are
-logged as `err` through `serializeError`.
+**Logs.** Coach logs carry ids, counts, token usage and timings, not message text. A failed model
+call's `errorMessage` (`src/lib/server/agent/orchestrator.ts`) carries the provider's error, which
+for a refused request (`bad_request`) includes the API's reason. A failure's `err`, logged through
+`serializeError`, keeps its message (see Residual risks).
 
 **Residual risks.**
 

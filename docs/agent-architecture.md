@@ -543,7 +543,8 @@ the usage view shows.
 - Stored free text reaches the model only as `untrusted_text`; no tool commits a program change;
   a direct preference write needs the owner's own words this turn.
 - `pnpm budgets` fails if SDK code, an `sk-ant-` key or CI's canary key is in any client output.
-- Logs carry ids and counts, never message text.
+- Logs carry ids and counts, never message text; a failed model call's `errorMessage` carries the
+  provider's error, including a refused request's reason (docs/security.md).
 
 ## Testing
 

@@ -31,8 +31,10 @@ log every set and talk to the coach.
 > Coach or from a workout, Today or an exercise's history; answers stream with labelled facts,
 > metrics and recommendations grounded in your own records, from 24 tools over the app's services.
 > Every change it suggests is a proposal you accept or reject; pain never gets 'push through'.
-> The launch (#449), which turns the real coach on in production, waits on the owner's screenshot
-> review; `LLM_PROVIDER=off` switches it off again ([docs/environment.md](docs/environment.md)).
+> The launch (#449) merged on 2026-11-12 and the real coach is live in production; #500 fixed the
+> 400s that failed every production turn. The owner's screenshot review (#405) is still open, as a
+> review after launch rather than a merge gate; `LLM_PROVIDER=off` switches the coach off again
+> ([docs/environment.md](docs/environment.md)).
 
 ## Stack
 
