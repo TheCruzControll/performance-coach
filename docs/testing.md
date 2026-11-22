@@ -1273,6 +1273,13 @@ audits the same screens with Lighthouse's desktop preset (desktop throttling, no
 applies the same `--assert` thresholds, as a step that never fails the job; its table is in the
 step summary (docs/performance.md, "Lighthouse (desktop)").
 
+The run's first job, `Scope of the run`, runs `scripts/ci-scope.ts`. A change that touches only
+`docs/`, `plan/`, agent tooling (`.claude/`, `.agents/`, `.codex/`, `.pi/`), root Markdown or
+`.env.example`, and a
+merge to `main` whose tree its pull request already tested, is a light run: it skips the
+integration tests, the e2e legs and Lighthouse. Lint, type-check, unit tests (which include the docs
+guards) and the build always run.
+
 `.github/workflows/post-deploy-smoke.yml` checks production from outside after every production
 deploy (health with the database up, the sign-in screen, deny by default, security headers on
 `/` and on the prerendered pages, no test-only routes; docs/deployment.md). It needs no secrets and

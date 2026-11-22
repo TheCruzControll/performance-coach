@@ -1,6 +1,7 @@
 /**
- * The run rules in .github/workflows/ci.yml. Every merge to `main` gets a complete run: only a
- * newer push to the same pull request cancels a run. Artifact uploads keep the hidden files they
+ * The run rules in .github/workflows/ci.yml. Every merge to `main` gets a run of its own: only a
+ * newer push to the same pull request cancels a run. A run's scope job decides whether its heavy
+ * jobs run. Artifact uploads keep the hidden files they
  * list, such as the e2e production servers' `.e2e-server*.log`: upload-artifact skips dot-files
  * unless `include-hidden-files` is set.
  */
@@ -159,6 +160,60 @@ describe('CI concurrency', () => {
 		expect(pullRequestPush(8, '203').group, 'another pull request').not.toBe(older.group);
 		expect(merge('204').cancelInProgress, 'a merge to main').toBe(false);
 		expect(manualRun('205').cancelInProgress, 'a manual run').toBe(false);
+	});
+});
+
+/** The `if` of every job that waits for the scope job: it runs only on a full run. */
+const FULL_ONLY = "${{ needs.changes.outputs.scope == 'full' }}";
+/** The jobs that skip on a light run: the heavy ones, and the three aggregate checks. */
+const HEAVY = ['integration', 'e2e-legs', 'lighthouse-shards', 'lighthouse-desktop'];
+const AGGREGATES = ['test', 'e2e', 'lighthouse'];
+/** The results a `needs` context can hold, and the run scopes the scope job can answer. */
+const RESULTS = ['success', 'failure', 'cancelled', 'skipped'];
+const SCOPES = ['full', 'light', ''];
+
+/** The job ids a job's `needs` lists. */
+const needsOf = (job: Line[]) =>
+	(value(job, 'needs') ?? '')
+		.replace(/[[\]]/g, '')
+		.split(/[\s,]+/)
+		.filter(Boolean);
+
+describe('CI scope', () => {
+	it('decides the scope in its own first job, from the full history and the event', () => {
+		const jobs = under(ci, 'jobs');
+		expect(jobs[0]!.text).toBe('changes:');
+		const job = under(jobs, 'changes');
+		expect(value(under(job, 'outputs'), 'scope')).toBe('${{ steps.scope.outputs.scope }}');
+		const steps = stepsOf(job);
+		const checkout = steps.find((fields) => value(fields, 'uses')?.startsWith('actions/checkout@'));
+		expect(value(under(checkout!, 'with'), 'fetch-depth')).toBe('0');
+		const scope = steps.find((fields) => value(fields, 'id') === 'scope')!;
+		expect(value(scope, 'run')).toBe('node scripts/ci-scope.ts >> "$GITHUB_OUTPUT"');
+		const env = under(scope, 'env');
+		expect(value(env, 'EVENT_NAME')).toBe('${{ github.event_name }}');
+		expect(value(env, 'BASE_SHA')).toBe('${{ github.event.pull_request.base.sha }}');
+		expect(value(env, 'HEAD_SHA')).toBe('${{ github.event.pull_request.head.sha }}');
+		expect(value(env, 'BEFORE_SHA')).toBe('${{ github.event.before }}');
+		expect(value(env, 'SHA')).toBe('${{ github.sha }}');
+	});
+
+	it('runs the heavy jobs only on a full run, after the scope job, and no other job', () => {
+		const jobs = under(ci, 'jobs');
+		for (const id of HEAVY) {
+			const job = under(jobs, id);
+			expect(value(job, 'needs'), id).toBe('[changes]');
+			expect(value(job, 'if'), id).toBe(FULL_ONLY);
+		}
+		for (const id of ['quality', 'unit', 'build']) {
+			const job = under(jobs, id);
+			expect(value(job, 'needs'), id).toBeUndefined();
+			expect(value(job, 'if'), id).toBeUndefined();
+		}
+		const waiting = jobs
+			.filter((job) => needsOf(job.children).includes('changes'))
+			.map((job) => job.text.replace(/:$/, ''));
+		expect(waiting.sort()).toEqual([...AGGREGATES, ...HEAVY].sort());
 	});
 });
 
@@ -374,17 +429,35 @@ describe('CI e2e legs', () => {
 		);
 		expect(checks.map((job) => job.text)).toEqual(['e2e:']);
 		const aggregate = checks[0]!.children;
-		expect(value(aggregate, 'needs')).toBe('[e2e-legs]');
+		expect(value(aggregate, 'needs')).toBe('[changes, e2e-legs]');
 		// A required check that is skipped counts as passed, so on a pull request it must run after a
 		// failed leg too. Required checks gate only pull requests, so pushes and manual runs skip it
 		// rather than queue a 3-second job behind every pull request's jobs.
 		expect(value(aggregate, 'if')).toBe("${{ always() && github.event_name == 'pull_request' }}");
-		// The legs themselves still run on every event, so a merge to main still fails on a failed leg.
-		expect(value(legsJob(), 'if')).toBeUndefined();
+		// The legs run on every full run, so a merge to main still fails on a failed leg.
+		expect(value(legsJob(), 'if')).toBe(FULL_ONLY);
 		const step = under(aggregate, 'steps')[0]!;
 		const fields = [step, ...step.children];
-		expect(value(under(fields, 'env'), 'LEGS')).toBe('${{ needs.e2e-legs.result }}');
-		expect(value(fields, 'run')).toMatch(/^if \[ "\$LEGS" != success \]; then\n.*\n\s*exit 1\n/);
+		const env = under(fields, 'env');
+		expect(value(env, 'CHANGES')).toBe('${{ needs.changes.result }}');
+		expect(value(env, 'SCOPE')).toBe('${{ needs.changes.outputs.scope }}');
+		expect(value(env, 'LEGS')).toBe('${{ needs.e2e-legs.result }}');
+		const script = value(fields, 'run')!;
+		for (const changes of RESULTS) {
+			for (const legs of RESULTS) {
+				for (const scope of SCOPES) {
+					// Passes only when the scope job succeeded and the legs either passed or were
+					// skipped by a light run.
+					const passed =
+						changes === 'success' &&
+						(legs === 'success' || (legs === 'skipped' && scope === 'light'));
+					expect(
+						exitCode(script, { CHANGES: changes, LEGS: legs, SCOPE: scope }),
+						`scope job ${changes}, legs ${legs}, run scope '${scope}'`
+					).toBe(passed ? 0 : 1);
+				}
+			}
+		}
 	});
 });
 
@@ -470,12 +543,30 @@ describe('CI Lighthouse', () => {
 		const checks = under(ci, 'jobs').filter((job) => value(job.children, 'name') === MOBILE_CHECK);
 		expect(checks.map((job) => job.text)).toEqual(['lighthouse:']);
 		const aggregate = checks[0]!.children;
-		expect(value(aggregate, 'needs')).toBe('[lighthouse-shards]');
+		expect(value(aggregate, 'needs')).toBe('[changes, lighthouse-shards]');
 		expect(value(aggregate, 'if')).toBe('${{ always() }}');
 		const step = under(aggregate, 'steps')[0]!;
 		const fields = [step, ...step.children];
-		expect(value(under(fields, 'env'), 'SHARDS')).toBe('${{ needs.lighthouse-shards.result }}');
-		expect(value(fields, 'run')).toMatch(/^if \[ "\$SHARDS" != success \]; then\n.*\n\s*exit 1\n/);
+		const env = under(fields, 'env');
+		expect(value(env, 'CHANGES')).toBe('${{ needs.changes.result }}');
+		expect(value(env, 'SCOPE')).toBe('${{ needs.changes.outputs.scope }}');
+		expect(value(env, 'SHARDS')).toBe('${{ needs.lighthouse-shards.result }}');
+		const script = value(fields, 'run')!;
+		for (const changes of RESULTS) {
+			for (const shards of RESULTS) {
+				for (const scope of SCOPES) {
+					// Passes only when the scope job succeeded and the shards either passed or were
+					// skipped by a light run.
+					const passed =
+						changes === 'success' &&
+						(shards === 'success' || (shards === 'skipped' && scope === 'light'));
+					expect(
+						exitCode(script, { CHANGES: changes, SHARDS: shards, SCOPE: scope }),
+						`scope job ${changes}, shards ${shards}, run scope '${scope}'`
+					).toBe(passed ? 0 : 1);
+				}
+			}
+		}
 	});
 
 	it('asserts the median of an odd run count in every audit, mobile and desktop', () => {
@@ -502,7 +593,7 @@ describe('CI Lighthouse', () => {
 		]);
 	});
 
-	it('measures desktop in a job of its own, on every event, without gating', () => {
+	it('measures desktop in a job of its own, on every full run, without gating', () => {
 		const jobs = under(ci, 'jobs');
 		const job = under(jobs, 'lighthouse-desktop');
 		expect(lighthouseCommands('lighthouse-desktop')).toEqual([
@@ -522,7 +613,7 @@ describe('CI Lighthouse', () => {
 		expect(jobs.flatMap((j) => value(j.children, 'needs') ?? '').join(' ')).not.toMatch(
 			/lighthouse-desktop/
 		);
-		expect(value(job, 'if')).toBeUndefined();
+		expect(value(job, 'if')).toBe(FULL_ONLY);
 		// The same production Node build, served where the Lighthouse script looks for it.
 		const build = stepsOf(job).find((fields) => value(fields, 'run') === 'pnpm build:node')!;
 		expect(value(under(build, 'env'), 'ORIGIN')).toBe('https://localhost:4174');
@@ -695,9 +786,11 @@ describe('CI unit and integration tests', () => {
 		] as const) {
 			expect(value(job(id), 'name'), id).toBe(name);
 			expect(value(job(id), 'timeout-minutes'), id).toBe('15');
-			// Every event runs them, so a merge to main still fails on a failed test.
-			expect(value(job(id), 'if'), id).toBeUndefined();
 		}
+		// Unit tests run on every event, so a merge to main still fails on a failed test.
+		expect(value(job('unit'), 'if'), 'unit').toBeUndefined();
+		// Integration tests run on a full run only (the scope job, see CI scope).
+		expect(value(job('integration'), 'if'), 'integration').toBe(FULL_ONLY);
 	});
 
 	it('report through one check, under its old name, that passes only when both jobs did', () => {
@@ -706,24 +799,40 @@ describe('CI unit and integration tests', () => {
 		);
 		expect(checks.map((job) => job.text)).toEqual(['test:']);
 		const gate = checks[0]!.children;
-		expect(value(gate, 'needs')).toBe('[unit, integration]');
+		expect(value(gate, 'needs')).toBe('[changes, unit, integration]');
 		// A skipped required check counts as passed, so on a pull request it runs after a failure
 		// or a cancellation too (always(), not !cancelled()).
 		expect(value(gate, 'if')).toBe("${{ always() && github.event_name == 'pull_request' }}");
 		const steps = stepsOf(gate);
 		expect(steps).toHaveLength(1);
 		const step = steps[0]!;
-		expect(value(under(step, 'env'), 'UNIT')).toBe('${{ needs.unit.result }}');
-		expect(value(under(step, 'env'), 'INTEGRATION')).toBe('${{ needs.integration.result }}');
+		const env = under(step, 'env');
+		expect(value(env, 'CHANGES')).toBe('${{ needs.changes.result }}');
+		expect(value(env, 'SCOPE')).toBe('${{ needs.changes.outputs.scope }}');
+		expect(value(env, 'UNIT')).toBe('${{ needs.unit.result }}');
+		expect(value(env, 'INTEGRATION')).toBe('${{ needs.integration.result }}');
 		const script = value(step, 'run')!;
-		const results = ['success', 'failure', 'cancelled', 'skipped'];
-		for (const unit of results) {
-			for (const integration of results) {
-				const passed = unit === 'success' && integration === 'success';
-				expect(
-					exitCode(script, { UNIT: unit, INTEGRATION: integration }),
-					`unit ${unit}, integration ${integration}`
-				).toBe(passed ? 0 : 1);
+		for (const changes of RESULTS) {
+			for (const unit of RESULTS) {
+				for (const integration of RESULTS) {
+					for (const scope of SCOPES) {
+						// Passes only when the scope job and unit tests succeeded and the integration
+						// tests either passed or were skipped by a light run.
+						const passed =
+							changes === 'success' &&
+							unit === 'success' &&
+							(integration === 'success' || (integration === 'skipped' && scope === 'light'));
+						expect(
+							exitCode(script, {
+								CHANGES: changes,
+								UNIT: unit,
+								INTEGRATION: integration,
+								SCOPE: scope
+							}),
+							`scope job ${changes}, unit ${unit}, integration ${integration}, run scope '${scope}'`
+						).toBe(passed ? 0 : 1);
+					}
+				}
 			}
 		}
 	});

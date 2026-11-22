@@ -128,6 +128,11 @@ pnpm exec eslint <changed files>
 pnpm exec vitest run --project unit <changed or new test files>
 ```
 
+Every push of a change to code starts 28 CI jobs, and about 20 run at once across all pull
+requests, so push finished work, not work in progress. Commit locally as often as you like, and
+push once per review round. Keep docs-only changes in pull requests of their own where the slice
+allows it: CI runs those in a few minutes (`scripts/ci-scope.ts`).
+
 Commit with a Conventional Commits message. Then `git fetch origin` and rebase the branch onto
 `origin/main` before every push, so CI always runs on the newest `main` and conflicts show up here
 instead of at merge time. Push the branch and open the PR with the `file-pr` skill. Put the spec's goal first in the description, then the review result and the journey that
@@ -168,7 +173,9 @@ Merge only when every line below is true on the PR's latest head. If any is fals
 fix it or park the slice.
 
 - All five required checks are green on the latest head, and none was skipped or disabled to get
-  there.
+  there. The one exception is a light run: when the `Scope of the run` job answered `light` (the
+  change touches only docs, the plan or agent tooling), the integration tests, the e2e legs and
+  Lighthouse are skipped by design, and there is no journey to confirm in step 8.
 - The checks ran on the `main` this would land on. After `git fetch origin`, the branch must
   contain the tip of `main` (`git merge-base --is-ancestor origin/main HEAD` succeeds in the
   slice's worktree). If it does not, rebase onto `origin/main`, push with `--force-with-lease`,
