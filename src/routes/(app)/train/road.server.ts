@@ -17,7 +17,11 @@ import type { TrainLoadDeps, TrainRequest } from './week.server';
 
 export async function loadTrainRoad(
 	ownerId: string,
-	{ today, origin }: { today: IsoDate } & Pick<TrainRequest, 'origin'>,
+	{
+		today,
+		origin,
+		firstPlannedDay
+	}: { today: IsoDate; firstPlannedDay?: IsoDate } & Pick<TrainRequest, 'origin'>,
 	{ db, errorsDb }: Pick<TrainLoadDeps, 'db' | 'errorsDb'> = {}
 ): Promise<SeasonView | null> {
 	try {
@@ -25,7 +29,7 @@ export async function loadTrainRoad(
 		if (fault === 'slow') await roadReleased();
 		if (fault === 'fail') throw new Error('test fault: the road read failed');
 		const road = await getRoadView(ownerId, today, { db });
-		return road && seasonView(road, today);
+		return road && seasonView(road, today, firstPlannedDay);
 	} catch (error) {
 		const context = { load: 'train', part: 'road' };
 		await recordServerError(

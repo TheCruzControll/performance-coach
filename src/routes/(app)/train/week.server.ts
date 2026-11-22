@@ -26,6 +26,8 @@
  *   with one line of why and any event's countdown, and each week pill carries its kind's word
  *   (m7/38, services/periodisation/week-line.ts). A read that fails is recorded (part
  *   'weekLine') and the week renders without them.
+ * - The number of goals the season's lanes list (m7/39), so the plan sheet reserves their room
+ *   while the season streams (road.server.ts, from +page.server.ts).
  * - With no program, whether the training profile is complete picks the empty state's next step.
  *   A program exists only once onboarding is complete (the build refuses it before), so a running
  *   program never shows before the owner's setup is done.
@@ -35,6 +37,7 @@
  */
 import type { IsoDate } from '#lib/domain/calendar.ts';
 import { daysBetween } from '#lib/domain/calendar.ts';
+import type { Goal } from '#lib/domain/profile/types.ts';
 import { ownerToday } from '#lib/server/local-date.ts';
 import { recordServerError, type ServerErrorInput } from '#lib/server/services/errors.ts';
 import type { ContextDeps } from '#lib/server/services/periodisation/context.ts';
@@ -130,6 +133,8 @@ export type TrainWeekData =
 			offPlan: OffPlanWorkout[];
 			/** The whole plan in words, for the plan overview. */
 			plan: TimelineBlock[];
+			/** The goals the season gives a lane in each block (laneCount), reserved while it streams. */
+			openGoals: number;
 	  };
 
 export interface TrainRequest {
@@ -158,6 +163,14 @@ export interface TrainLoadDeps extends Pick<TrainingDeps, 'db'> {
 				context?: Pick<ContextDeps, 'repository' | 'reader' | 'statementTimeoutMs'>;
 		  });
 }
+
+/**
+ * How many goals the season gives a lane in a block: the active goals, or with every open goal
+ * paused the paused ones (M3's shaping goals, which the road's modes cover).
+ */
+const laneCount = (goals: readonly Pick<Goal, 'status'>[]) =>
+	goals.filter((g) => g.status === 'active').length ||
+	goals.filter((g) => g.status === 'paused').length;
 
 /** The week number in `param`, or null for the current week. */
 const weekParam = (param: string | null) =>
@@ -363,7 +376,8 @@ export async function loadTrainWeek(
 						? blockCompleteCard(program, shown.phase, await cycleReviewKey(ownerId, program, db))
 						: notPlannedCard(number, shown.phase),
 			offPlan,
-			plan: timelineView(program, { today, goals })
+			plan: timelineView(program, { today, goals }),
+			openGoals: laneCount(goals)
 		};
 	} catch (error) {
 		await recordServerError(

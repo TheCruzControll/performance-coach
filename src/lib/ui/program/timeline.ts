@@ -16,6 +16,11 @@ import { shortDate } from './words.ts';
 export interface TimelinePlan {
 	/** The Monday of week 1. */
 	startsOn: IsoDate;
+	/**
+	 * The program's first day with sessions, which a program starting mid-week begins on: week 1 and
+	 * block 1 show their dates from it, not from the Monday before. Absent, they show from the Monday.
+	 */
+	firstPlannedDay?: IsoDate;
 	blocks: readonly Pick<
 		BlockPlan,
 		'phase' | 'name' | 'startsOn' | 'endsOn' | 'outline' | 'goalRefs'
@@ -78,11 +83,13 @@ const weeksIn = (from: IsoDate, to: IsoDate) => (daysBetween(from, to) + 1) / 7;
 const range = (from: IsoDate, to: IsoDate) => `${shortDate(from)} – ${shortDate(to)}`;
 
 export function timelineView(
-	{ startsOn, blocks }: TimelinePlan,
+	{ startsOn, firstPlannedDay, blocks }: TimelinePlan,
 	{ today, goals }: { today: IsoDate; goals: readonly TimelineGoal[] }
 ): TimelineBlock[] {
 	const served = new Set(blocks.flatMap((block) => block.goalRefs));
 	const endsOn = blocks.reduce((end, block) => (block.endsOn > end ? block.endsOn : end), startsOn);
+	// Week 1 and block 1 show from the first planned day, never from the Monday before it.
+	const shownStart = firstPlannedDay && firstPlannedDay > startsOn ? firstPlannedDay : startsOn;
 	const events = goals.flatMap((goal) =>
 		goal.eventDate !== null &&
 		served.has(goal.id) &&
@@ -101,7 +108,7 @@ export function timelineView(
 			const within = (date: IsoDate) => monday <= date && date <= sunday;
 			return {
 				number: daysBetween(startsOn, monday) / 7 + 1,
-				dates: range(monday, sunday),
+				dates: range(monday === startsOn ? shownStart : monday, sunday),
 				planned: !block.outline,
 				current: within(today),
 				events: events
@@ -116,7 +123,7 @@ export function timelineView(
 			key: block.startsOn,
 			name: bridge ? `${phase} · ${length}` : block.name,
 			phase: bridge || block.name.toLowerCase().startsWith(phase.toLowerCase()) ? null : phase,
-			span: `${range(block.startsOn, block.endsOn)} · ${bridge ? 'Nothing planned' : length}`,
+			span: `${range(block.startsOn === startsOn ? shownStart : block.startsOn, block.endsOn)} · ${bridge ? 'Nothing planned' : length}`,
 			outline: block.outline,
 			bridge,
 			current: weeks.some((week) => week.current),

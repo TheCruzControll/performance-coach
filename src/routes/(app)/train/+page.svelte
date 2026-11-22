@@ -439,6 +439,8 @@
 		{weekHref}
 		onweek={openWeek}
 		onclose={closeSheet}
+		road={view.road}
+		openGoals={view.openGoals}
 	/>
 {/if}
 
