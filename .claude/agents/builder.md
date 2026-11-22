@@ -42,6 +42,10 @@ If a check fails for a reason outside your change, leave it alone and say so in 
 
 Do not commit, push, or open a pull request. The caller reviews the diff first.
 
+Never use `git stash`: the stash list is shared by every worktree of this repo and holds the
+owner's work. To show a test fails without your change, copy the original with
+`git show HEAD:<file> > <temporary file>`, swap it in by hand, and restore it.
+
 ## Report
 
 Reply with:
