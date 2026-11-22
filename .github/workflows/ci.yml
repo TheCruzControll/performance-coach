@@ -16,9 +16,9 @@ on:
     - cron: '17 10 * * *'
 
 # A new push to a pull request cancels that pull request's older run. Every other run (each merge
-# to main, a manual or nightly run) has a group of its own, so it always finishes. One group for all of main
-# would leave merges untested: cancel-in-progress stops the running one, and even without it a
-# newer run replaces the one still waiting.
+# to main, a manual or nightly run) has a group of its own, so it always finishes. One group for
+# all of main would leave merges untested: cancel-in-progress stops the running one, and even
+# without it a newer run replaces the one still waiting.
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
