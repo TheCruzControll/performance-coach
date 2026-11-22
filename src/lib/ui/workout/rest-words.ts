@@ -44,13 +44,35 @@ export function readRest(rest: RestState, now: number): RestReading {
 }
 
 /**
- * The ms until what a running rest shows next changes: the countdown and the overtime both turn
- * over on the same whole seconds from its end, so the screen ticks with them, never a second late.
+ * The instant a rest's readings turn over from: the countdown and the overtime both change on
+ * the whole seconds from its end, so the screen's clock (clock.ts) ticks with them, never late.
  */
-export function msToNextTick(rest: RestState, now: number): number {
-	const end = rest.startedAt + rest.durationMs + rest.addedMs;
-	const phase = (((now - end) % 1000) + 1000) % 1000;
-	return 1000 - phase;
+export function restAnchor(rest: RestState): number {
+	return rest.startedAt + rest.durationMs + rest.addedMs;
+}
+
+/** The progress bar as one CSS animation from empty to full over the rest's whole length. */
+export interface RestBar {
+	/** Its whole length with every addition, ms. */
+	durationMs: number;
+	/** Minus how much of it has passed: the animation starts there. */
+	delayMs: number;
+	/** Whether it moves: a paused rest holds the bar where it stopped. */
+	running: boolean;
+}
+
+/**
+ * The bar of `rest` read at `now`, for an animation that starts then: the compositor fills it
+ * from there with no JavaScript per frame, a paused one stands still, and one that is over is full.
+ */
+export function restBar(rest: RestState, now: number): RestBar {
+	const durationMs = rest.durationMs + rest.addedMs;
+	return {
+		durationMs,
+		// remaining - whole, never -0: at the start the delay is 0.
+		delayMs: restRemaining(rest, now) - durationMs,
+		running: rest.pausedAt === null && !restDone(rest, now)
+	};
 }
 
 /**

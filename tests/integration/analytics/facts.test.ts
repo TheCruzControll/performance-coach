@@ -8,6 +8,7 @@
  * Each test seeds the dataset in its own transaction, so the integration setup also proves the
  * loader and the seed send one query at a time.
  */
+import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
 import { addDays, mondayOf } from '../../../src/lib/domain/calendar';
@@ -207,6 +208,37 @@ describe('plans and prescriptions', () => {
 				const total = run.segments.reduce((sum, s) => sum + s.distanceMetres!, 0);
 				expect(total).toBeCloseTo(run.metres!, 6);
 			}
+		});
+	});
+
+	it('leaves a planned conditioning session out of the planned runs, though it stays planned', async () => {
+		await withRollback(async (db) => {
+			const data = await seedDataset(db);
+			const repo = createAnalyticsRepository(db);
+			const before = await repo.planned(data.owner, WEEK_ONE, LAST_DAY);
+			// Planned rows are history and never change, so two new ones go into the week of the first
+			// planned run: an easy run, and a zone 2 bike session (running discipline, conditioning, no
+			// segments).
+			const { lineage: anchor, date } = before.runs[0]!;
+			const { rows } = await db.execute<{ weekId: string }>(
+				sql`select week_id as "weekId" from planned_sessions where lineage_id = ${anchor} limit 1`
+			);
+			const insert = async (sessionType: string, title: string, orderInDay: number) => {
+				const lineage = randomUUID();
+				await db.execute(
+					sql`insert into planned_sessions (week_id, lineage_id, scheduled_on, order_in_day, discipline, session_type, title, est_minutes, intensity, target_rpe, source) values (${rows[0]!.weekId}, ${lineage}, ${date}, ${orderInDay}, 'running', ${sessionType}, ${title}, 30, 'easy', 4.5, 'generator')`
+				);
+				return lineage;
+			};
+			const easy = await insert('easy_run', 'Easy run', 9);
+			const bike = await insert('conditioning', 'Zone 2 bike', 10);
+
+			const after = await repo.planned(data.owner, WEEK_ONE, LAST_DAY);
+			const runLineages = after.runs.map((r) => r.lineage);
+			expect(runLineages).toContain(easy);
+			expect(runLineages).not.toContain(bike);
+			expect(after.runs).toHaveLength(before.runs.length + 1);
+			expect(after.planned.filter((s) => s.lineage === bike)).toHaveLength(1);
 		});
 	});
 
