@@ -1,7 +1,8 @@
 /**
- * prepare (m7-stage-list): today the identity with no periodisation; and what M3's generator and
- * M6's next block do with what it returns: every stage reads its input, the draft starts with its
- * periodisation, and the title and the fingerprint keep the original input.
+ * prepare (m7-stage-list, generator-season): what M3's generator and M6's next block do with what
+ * it returns: every stage reads its input, the draft starts with its periodisation, and the title
+ * and the fingerprint keep the original input. Its own season, order and modes are tested in
+ * ../generate-season.test.ts.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CATALOGUE } from '../../exercises/index';
@@ -19,24 +20,25 @@ import * as stages from './prepare';
 
 const OPTIONS = { startsOn: SCENARIO_START, firstPlannedDay: SCENARIO_START };
 const inputOf = () => buildProgrammingInput(SCENARIOS.hybrid(), { catalogue: CATALOGUE });
-/** A periodisation no stage reads yet: prepare's to hand on, whatever it holds. */
-const PERIODISATION = {
-	season: { blocks: [], dosesByWeek: [], decisions: [] },
-	prioritiesByWeek: [],
-	dosesByWeek: []
-} satisfies Periodisation;
+const realPrepare = stages.prepare;
 
-/** prepare returning a copy of the input with its goals renamed, and PERIODISATION. */
+/** prepare as it is, but returning a copy of its input with the goals renamed. */
 function prepareRenaming() {
 	const given: ProgrammingInput[] = [];
 	const returned: ProgrammingInput[] = [];
-	vi.spyOn(stages, 'prepare').mockImplementation((input) => {
+	const periodisations: (Periodisation | null)[] = [];
+	vi.spyOn(stages, 'prepare').mockImplementation((input, options, log) => {
 		given.push(input);
-		const prepared = { ...input, goals: input.goals.map((g) => ({ ...g, title: 'Renamed' })) };
+		const real = realPrepare(input, options, log);
+		const prepared = {
+			...real.input,
+			goals: real.input.goals.map((g) => ({ ...g, title: 'Renamed' }))
+		};
 		returned.push(prepared);
-		return { input: prepared, periodisation: PERIODISATION };
+		periodisations.push(real.periodisation);
+		return { input: prepared, periodisation: real.periodisation };
 	});
-	return { given, returned };
+	return { given, returned, periodisations };
 }
 
 /** Every stage's draft and context, as `list` runs them. */
@@ -57,30 +59,37 @@ afterEach(() => {
 });
 
 describe('prepare', () => {
-	it('is the identity for now, with no periodisation', () => {
+	it('is the identity, with no periodisation and no decision, when no goal shapes the plan', () => {
 		const input = inputOf();
-		expect(stages.prepare(input, OPTIONS, new DecisionLog())).toEqual({
-			input,
-			periodisation: null
-		});
+		const none = {
+			...input,
+			goals: [],
+			paused: [],
+			refs: { ...input.refs, goals: [], paused: [] }
+		};
+		const log = new DecisionLog();
+		expect(stages.prepare(none, OPTIONS, log)).toEqual({ input: none, periodisation: null });
+		expect(log.list()).toEqual([]);
 	});
 });
 
 describe('generateProgram with prepare', () => {
 	it('runs every stage on the input prepare returns, from a draft with its periodisation', () => {
-		const { given, returned } = prepareRenaming();
+		const { given, returned, periodisations } = prepareRenaming();
 		const seen = watch(STAGES);
 		const input = inputOf();
 		const plan = generateProgram(input, OPTIONS);
 		expect(given).toEqual([input]);
 		expect(seen).toHaveLength(STAGES.length);
 		for (const { context } of seen) expect(context.input).toBe(returned[0]);
-		expect(seen[0]!.draft).toEqual({ demand: null, blocks: [], periodisation: PERIODISATION });
+		expect(periodisations[0]).not.toBeNull();
+		expect(seen[0]!.draft).toEqual({ demand: null, blocks: [], periodisation: periodisations[0] });
 		// The title keeps the original input's goals.
 		expect(plan.title).toBe(input.goals.map((g) => g.title).join(' · '));
 	});
 
 	it('starts from a draft with no periodisation key while none is planned', () => {
+		vi.spyOn(stages, 'prepare').mockImplementation((input) => ({ input, periodisation: null }));
 		const seen = watch(STAGES);
 		generateProgram(inputOf(), OPTIONS);
 		expect(Object.keys(seen[0]!.draft)).toEqual(['demand', 'blocks']);
@@ -122,7 +131,7 @@ describe('generateNextBlock with prepare', () => {
 	it('runs its stages on the input prepare returns, and fingerprints the original input', () => {
 		const { next, options } = arguments_();
 		const plain = generateNextBlock(next, options);
-		const { given, returned } = prepareRenaming();
+		const { given, returned, periodisations } = prepareRenaming();
 		const run = vi.spyOn(
 			STAGES.find((s) => s.name === 'demand')!,
 			'run'
@@ -132,7 +141,7 @@ describe('generateNextBlock with prepare', () => {
 		expect(run).toHaveBeenCalledOnce();
 		const [draft, context] = run.mock.calls[0]!;
 		expect(context.input).toBe(returned[0]);
-		expect(draft).toEqual({ demand: null, blocks: [], periodisation: PERIODISATION });
+		expect(draft).toEqual({ demand: null, blocks: [], periodisation: periodisations[0] });
 		expect(prepared.fingerprint).toBe(plain.fingerprint);
 	});
 });

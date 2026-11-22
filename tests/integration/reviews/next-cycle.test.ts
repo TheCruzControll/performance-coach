@@ -192,7 +192,7 @@ describe('deciding the next cycle', () => {
 				id: decided.outcome === 'applied' ? decided.versionId : null,
 				created_by: 'rules',
 				summary: `Next block: ${shown.block.name}`,
-				generator: 'next-block/1+perfo-programming/1',
+				generator: 'next-block/1+perfo-programming/2',
 				input_fingerprint: shown.fingerprint
 			});
 			expect(v2row!.catalogue_digest).toMatch(/^[0-9a-f]{16}$/);
