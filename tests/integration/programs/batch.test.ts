@@ -7,7 +7,7 @@
  * The plan runs Monday 9 to Sunday 29 November 2026, three weeks alike, and each call says which
  * day is today.
  */
-import { asc, eq, inArray } from 'drizzle-orm';
+import { asc, eq, inArray, sql } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
 import { addDays } from '../../../src/lib/domain/calendar';
 import type {
@@ -19,7 +19,15 @@ import type {
 } from '../../../src/lib/domain/training/types';
 import type { Executor } from '../../../src/lib/server/db';
 import { programmingDecisions, programWeeks } from '../../../src/lib/server/db/schema/programs';
+import { findErrorsByRequestId } from '../../../src/lib/server/services/errors';
 import { resolveKeys } from '../../../src/lib/server/services/exercises/index';
+import {
+	createContextCache,
+	readContext,
+	type ContextCache,
+	type ContextReader
+} from '../../../src/lib/server/services/periodisation/context';
+import { getAthleteProfile } from '../../../src/lib/server/services/profile/index';
 import {
 	applyProgramEdits,
 	OPS_OVERLAP,
@@ -27,6 +35,7 @@ import {
 } from '../../../src/lib/server/services/programs/batch';
 import {
 	adjustPrescription,
+	checkMove,
 	createProgramFromPlan,
 	getProgramVersion,
 	getVersionHistory,
@@ -43,6 +52,7 @@ import {
 	FIXTURE_COMMITMENT,
 	FIXTURE_GOAL
 } from '../../../src/lib/server/test-support/program-fixtures';
+import { takeOverlaps } from '../one-query-per-client';
 import { withRollback } from '../helpers';
 import { makeOwner } from '../profile/fixtures';
 
@@ -640,6 +650,126 @@ describe('applyProgramEdits', () => {
 			expect(errors).toEqual({ 'ops.1.sessionLineage': 'This session has passed' });
 			expect(await listExercisePreferences(owner, { db })).toEqual([]);
 			expect(await versionNumbers(db, owner)).toEqual([1]);
+		});
+	});
+});
+
+// ---- the moves' context (m7/23 move-evaluation) ---------------------------------------------
+
+describe("applyProgramEdits with M7's context", () => {
+	/** Wide enough for real-data reads on a loaded CI runner. */
+	const SLOW_OK = 10_000;
+
+	/** An owner whose profile row exists, as it does for anyone with a program. */
+	async function ownerWithProfile(db: Executor) {
+		const owner = await makeOwner(db);
+		await getAthleteProfile(owner, { db });
+		return owner;
+	}
+
+	/**
+	 * Twelve ops: three moves in week 1 (the easy run to Wednesday, Lower B to Friday the day
+	 * before Muay Thai, Lower A to Sunday), and nine adjustments across the three weeks.
+	 */
+	function twelveOps(v1: ProgramVersion) {
+		const of = (title: string) => (w: number) => titled(v1, w, title);
+		const [run, lowerA, lowerB, fight] = [
+			of('Easy run'),
+			of('Lower A'),
+			of('Lower B'),
+			of('Muay Thai')
+		];
+		const sets = (session: StoredSession) => ({
+			op: 'adjust_set',
+			sessionLineage: session.lineage,
+			plannedExerciseLineage: squatOf(session).lineage,
+			position: 2,
+			sets: 4
+		});
+		const later = (w: number) => [
+			sets(lowerA(w)),
+			sets(lowerB(w)),
+			{ op: 'adjust_details', sessionLineage: fight(w).lineage, durationMinutes: 60 },
+			{
+				op: 'adjust_run_segment',
+				sessionLineage: run(w).lineage,
+				position: 1,
+				durationSeconds: 900
+			}
+		];
+		return [
+			{ op: 'move', sessionLineage: run(0).lineage, toDate: WED },
+			{ op: 'move', sessionLineage: lowerB(0).lineage, toDate: day(4) },
+			{ op: 'move', sessionLineage: lowerA(0).lineage, toDate: day(6) },
+			{ op: 'adjust_details', sessionLineage: fight(0).lineage, durationMinutes: 60 },
+			...later(1),
+			...later(2)
+		];
+	}
+
+	it('reads the context once for a 12-op batch, and still applies one version', async () => {
+		await withRollback(async (db) => {
+			const owner = await ownerWithProfile(db);
+			const programId = await store(db, owner);
+			const v1 = await versionOf(db, owner, programId, 1);
+			let reads = 0;
+			const contexts = createContextCache(owner, {
+				db,
+				statementTimeoutMs: SLOW_OK,
+				reader: (tx, ownerId, at, deps) => {
+					reads += 1;
+					return readContext(tx, ownerId, at, deps);
+				}
+			});
+
+			const ops = twelveOps(v1);
+			expect(ops).toHaveLength(12);
+			const revised = await applyProgramEdits(owner, batchOf(ops), { db, contexts });
+			expect(revised).toMatchObject({ programId, number: 2 });
+			expect(await versionNumbers(db, owner)).toEqual([2, 1]);
+			expect(reads).toBe(1);
+			const v2 = await versionOf(db, owner, programId, 2);
+			expect(v2.decisions).toHaveLength(12);
+			expect(titled(v2, 0, 'Lower B').date).toBe(day(4));
+		});
+	});
+
+	it('with the context’s reads stalled inside the caller’s transaction, applies with M3’s warnings and records it', async () => {
+		await withRollback(async (db) => {
+			const owner = await ownerWithProfile(db);
+			const programId = await store(db, owner);
+			const v1 = await versionOf(db, owner, programId, 1);
+			const requestId = crypto.randomUUID();
+			const stall: ContextReader = async (tx) => {
+				await tx.execute(sql`select pg_sleep(1)`);
+				return null;
+			};
+			const contexts = createContextCache(owner, {
+				db,
+				reader: stall,
+				origin: { requestId, method: 'POST', path: '/coach', routeId: null, appVersion: 'test' }
+			});
+			const lowerB = titled(v1, 0, 'Lower B');
+			const move = { sessionLineage: lowerB.lineage, toDate: day(4) };
+			const none = { get: async () => null } as unknown as ContextCache;
+			const m3 = await checkMove(owner, move, { version: 1, today: MON }, { db, contexts: none });
+			expect(m3.map((w) => w.rule)).toEqual(['heavy_lower_before_hard', 'hard_days_apart']);
+
+			const revised = await applyProgramEdits(owner, batchOf([{ op: 'move', ...move }]), {
+				db,
+				contexts
+			});
+			expect(revised.number).toBe(2);
+			expect(takeOverlaps()).toEqual([]);
+			const [evidence] = await db
+				.select({ evidence: programmingDecisions.evidence })
+				.from(programmingDecisions)
+				.where(eq(programmingDecisions.versionId, revised.versionId));
+			expect(evidence!.evidence).toMatchObject({ warnings: m3.length });
+			const errors = await findErrorsByRequestId(requestId, { db });
+			expect(errors.map((e) => e.context)).toEqual([
+				expect.objectContaining({ part: 'evaluation-context', code: '57014' })
+			]);
 		});
 	});
 });

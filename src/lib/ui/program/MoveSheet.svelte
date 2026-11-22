@@ -3,7 +3,9 @@
   Move a planned session to another day of its week, inside EditSheetHost, which loads it when
   the sheet opens. The days it can reach are one choice of cards, each with what is already
   planned that day; days that have passed and its own day are left out, because ChoiceGroup has
-  no disabled option. Picking a day checks it against the rest of the week (?/checkMove) and
+  no disabled option. The day the scheduler would pick says it clears the week's clash, and each
+  day a move would bring a clash to is one calm line under the days, its reason in a native
+  <details> (the choice cards are whole hit areas, so nothing inside them can open). Picking a day checks it against the rest of the week (?/checkMove) and
   shows the interference rules it would break before anything is saved: a warning never blocks
   the move, and is recorded in its decision with the owner's optional reason. With no day left,
   it says so and offers Skip instead. Validation (zod) loads with the sheet, never the screen.
@@ -57,8 +59,14 @@
 	checker.catch(() => {});
 
 	const options = $derived(
-		targets.map((t) => ({ value: t.date, label: t.label, hint: t.planned }))
+		targets.map((t) => ({
+			value: t.date,
+			label: t.label,
+			hint: t.clears ? `${t.planned} · ${t.clears}` : t.planned
+		}))
 	);
+	/** The days a move would bring a clash to, each with the rule's reason. */
+	const headsUps = $derived(targets.filter((t) => t.warning));
 
 	let toDate = $state<string | null>(null);
 	let reason = $state<string | null>('');
@@ -173,6 +181,18 @@
 			data-testid="move-days"
 		/>
 
+		{#if headsUps.length}
+			<div class="heads-ups" data-testid="move-day-warnings">
+				<p class="lead">Heads-up before you pick</p>
+				{#each headsUps as t (t.date)}
+					<details class="heads-up">
+						<summary>{t.day.slice(0, 3)} · {t.warning?.headline}</summary>
+						<p>{t.warning?.why}</p>
+					</details>
+				{/each}
+			</div>
+		{/if}
+
 		{#if conflict}
 			<div use:reveal>
 				<Notice tone="warning" title="Your plan changed" data-testid="move-conflict">
@@ -280,5 +300,39 @@
 
 	.reload {
 		margin-top: var(--space-3);
+	}
+
+	.heads-ups {
+		display: grid;
+		font-size: var(--text-sm);
+		color: var(--color-text-secondary);
+	}
+
+	.lead {
+		margin: 0 0 var(--space-1);
+		font-weight: var(--weight-medium);
+	}
+
+	.heads-up summary {
+		display: flex;
+		align-items: center;
+		min-height: var(--touch-target);
+		border-radius: var(--radius-sm);
+		cursor: pointer;
+	}
+
+	@media (hover: hover) and (pointer: fine) {
+		.heads-up summary:hover {
+			color: var(--color-text);
+		}
+	}
+
+	.heads-up summary:focus-visible {
+		outline: 2px solid var(--color-accent-ring);
+		outline-offset: 2px;
+	}
+
+	.heads-up p {
+		margin: 0 0 var(--space-2);
 	}
 </style>
