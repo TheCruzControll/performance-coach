@@ -627,7 +627,7 @@ ship the standard one too (see the glass note in `docs/design-system.md`). It al
   (its content loads on demand: `src/routes/error-page.ts`, #394). The start entry must import
   exactly one chunk, `payload`, which imports nothing.
 
-M6: /progress (overview, strength, running, general), an exercise detail, and a weekly and a cycle review are in `e2e/perf.e2e.ts` (main thread: 200 ms target, 250 ms guard, CLS ≤ 0.01) and Lighthouse (mobile and desktop). `e2e/progress-timing.serial.e2e.ts` guards server time (total and 'analytics', 300 ms) and `__data.json` (≤ 32 KB gzip). `pnpm budgets` fails on a chart body (`pc-chart-body`) in a route's initial JS or render CSS ('Chart bodies') and on uncounted CSS from a load-imported view ('Load-imported views'; `scripts/lib/budget-guards.ts`).
+M6: /progress (overview, strength, running, general), an exercise detail, and a weekly and a cycle review are in `e2e/perf-progress-load.e2e.ts` (main thread: 200 ms target, 250 ms guard, CLS ≤ 0.01) and Lighthouse (mobile and desktop). `e2e/progress-timing.serial.e2e.ts` guards server time (total and 'analytics', 300 ms) and `__data.json` (≤ 32 KB gzip). `pnpm budgets` fails on a chart body (`pc-chart-body`) in a route's initial JS or render CSS ('Chart bodies') and on uncounted CSS from a load-imported view ('Load-imported views'; `scripts/lib/budget-guards.ts`).
 
 ### Measured (`pnpm build && pnpm budgets`)
 
@@ -860,7 +860,7 @@ Desktop LCP is 245–454 ms with no blocking time; mobile LCP is 903–1205 ms w
 
 The seeded twelve-weeks Overview audit measured a median TBT of 370 ms (runs 256, 298, 434, 370, 378) in CI run [43359524677](https://github.com/TheCruzControll/performance-coach/actions/runs/43359524677), against the 300 ms gate. Five chart bodies far below the first screen mounted after hydration (the first plot sits at about y 3470 px on an 823 px phone viewport), and their three late stylesheets forced a style recalculation. Four post-hydration tasks added 291 of the 370 ms.
 
-Overview's chart frames are now `deferred` (`src/lib/ui/charts/ChartFrame.svelte`): each body loads once its plot box is within one screen of the viewport, and the plot box keeps its reserved height, so layout shift stays at 0. The after number is to be recorded from the first green run of this change.
+Overview's chart frames are now `deferred` (`src/lib/ui/charts/ChartFrame.svelte`): each body loads once its plot box is within one screen of the viewport, and the plot box keeps its reserved height, so layout shift stays at 0. The mount now happens on scroll, where no guard measures it; the same bar and line bodies still mount on load, measured, on the Strength, Running and General views.
 
 ## Targets
 
