@@ -7,6 +7,7 @@ import {
 	preloadRunningTrends,
 	preloadStrengthTrends,
 	preloadTrends,
+	reviewPrompt,
 	servedGeneralTrends,
 	servedRunningTrends,
 	servedStrengthTrends,
@@ -35,8 +36,12 @@ const AWAITED_TRENDS = {
 
 /** Each loaded view's data with its own component, so the page passes it the props it takes. */
 type WithView<D> = D extends { failed: false; view: infer V extends ProgressView }
-	? D & { View: Awaited<ReturnType<(typeof VIEWS)[V]>>['default']; served: string | undefined }
-	: D & { View: null; served: undefined };
+	? D & {
+			View: Awaited<ReturnType<(typeof VIEWS)[V]>>['default'];
+			served: string | undefined;
+			prompt: string | undefined;
+		}
+	: D & { View: null; served: undefined; prompt: undefined };
 
 /**
  * Whether the next load hydrates the server's HTML: only the first one in a document opened on
@@ -50,17 +55,22 @@ let hydrating = browser && location.pathname === resolve('/(app)/progress');
 export const load: PageLoad = async ({ data }) => {
 	const kept = hydrating;
 	hydrating = false;
-	if (data.failed) return { ...data, View: null, served: undefined } as WithView<typeof data>;
-	// Strength's, Running's and General's trends start with the view's own import: any load but
-	// the hydrating one waits for both, as it does for the view, so the view arrives whole
-	// (trends.ts).
+	if (data.failed)
+		return { ...data, View: null, served: undefined, prompt: undefined } as WithView<typeof data>;
+	// Strength's, Running's and General's trends, and Overview's review prompt when it has one,
+	// start with the view's own import: any load but the hydrating one waits for both, as it does
+	// for the view, so the view arrives whole (trends.ts).
 	const trends = browser && data.view !== 'overview' ? AWAITED_TRENDS[data.view]() : undefined;
+	const prompt = data.view === 'overview' ? data.overview.review : null;
+	const promptCode = browser && prompt ? reviewPrompt.preload() : undefined;
 	const View = (await VIEWS[data.view]()).default;
 	if (browser) {
 		if (trends && !kept) await trends;
+		if (promptCode && !kept) await promptCode;
 		// Started, never awaited: a failed import shows Retry in place of Overview's trends.
 		if (data.view === 'overview') void preloadTrends();
-		return { ...data, View, served: kept ? SERVED_IN_PLACE : undefined } as WithView<typeof data>;
+		const served = kept ? SERVED_IN_PLACE : undefined;
+		return { ...data, View, served, prompt: prompt ? served : undefined } as WithView<typeof data>;
 	}
 	const served =
 		data.view === 'strength'
@@ -70,5 +80,6 @@ export const load: PageLoad = async ({ data }) => {
 				: data.view === 'general'
 					? await servedGeneralTrends({ general: data.general })
 					: await servedTrends({ overview: data.overview });
-	return { ...data, View, served } as WithView<typeof data>;
+	const promptMarkup = prompt ? await reviewPrompt.served({ review: prompt }) : undefined;
+	return { ...data, View, served, prompt: promptMarkup } as WithView<typeof data>;
 };

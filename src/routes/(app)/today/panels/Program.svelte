@@ -15,7 +15,8 @@
   create the device's database (coming-kits.ts). Last, Ask the coach opens Coach with 'What should
   I focus on next week?' (a link: ui/ask-link.ts). In a bridge week between blocks, 'Between
   blocks' names the day the next block starts, with 'Log something else', in place of the week.
-  Code-split behind PanelLoader.
+  When a week or a block completes, its review prompt leads (ReviewPrompt: create and open it, or
+  'See your review'). Code-split behind PanelLoader.
 -->
 <script lang="ts">
 	import { invalidateAll } from '$app/navigation';
@@ -23,6 +24,7 @@
 	import { navigating } from '$app/state';
 	import { deviceWorkout } from '#lib/client/workout/device-workout.svelte.ts';
 	import type { IsoDate } from '#lib/domain/calendar.ts';
+	import ReviewPrompt from '#lib/ui/analytics/ReviewPrompt.svelte';
 	import { ASK_QUESTIONS, askHref } from '#lib/ui/ask-link.ts';
 	import Badge from '#lib/ui/components/Badge.svelte';
 	import Button from '#lib/ui/components/Button.svelte';
@@ -31,7 +33,6 @@
 	import ListRow from '#lib/ui/components/ListRow.svelte';
 	import Section from '#lib/ui/components/Section.svelte';
 	import Skeleton from '#lib/ui/components/Skeleton.svelte';
-	import StatusSlot from '#lib/ui/components/StatusSlot.svelte';
 	import Surface from '#lib/ui/components/Surface.svelte';
 	import SessionCard from '#lib/ui/program/SessionCard.svelte';
 	import { leadLineage, resumeLink } from '#lib/ui/program/start-link.ts';
@@ -156,6 +157,10 @@
 				</EmptyState>
 			</Card>
 		{:else}
+			{#if view.review}
+				<ReviewPrompt review={view.review} />
+			{/if}
+
 			{#if view.starts}
 				<Card tone="accent" padding="lg" data-testid="today-starts">
 					<div class="note">
@@ -213,10 +218,6 @@
 				{@const selected = chosen ?? week.selected}
 				{@const day = week.days.find((d) => d.date === selected) ?? week.days[0]!}
 				{@const isToday = day.date === week.today}
-				<!-- At most a key per discipline and one for the skipped ring (week-legend.ts). -->
-				{@const keys = new Set(
-					week.strip.flatMap((d) => d.dots.flatMap((t) => (t.skipped ? [t.tone, null] : [t.tone])))
-				).size}
 				{@const lead = isToday
 					? leadLineage(
 							day.cards.map((c) => ({
@@ -233,17 +234,6 @@
 					onselect={(date) => (chosen = date)}
 					data-testid="week-strip"
 				/>
-				<!-- Graphite 2004's legend for the strip (WeekLegend.svelte); nothing on today's design.
-				     Its room: rows of three keys, 1.25rem each with 0.25rem between (graphite.css). -->
-				<StatusSlot
-					load={() => import('./WeekLegend.svelte')}
-					props={{ days: week.strip }}
-					room={`${Math.max(0, Math.ceil(keys / 3) * 1.5 - 0.25)}rem`}
-				/>
-				{#if week.today}
-					<!-- Graphite 2004's Status Display (TodayStatus.svelte); nothing on today's design. -->
-					<StatusSlot load={() => import('./TodayStatus.svelte')} props={{ week }} room="9.5rem" />
-				{/if}
 				<Section
 					title={isToday ? (day.cards.length ? 'Today’s sessions' : 'Today') : day.heading}
 					titleHidden={isToday}

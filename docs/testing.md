@@ -11,6 +11,7 @@ database, then unit tests for calculations. Never claim a suite passed without r
 | Budgets     | `pnpm budgets`          | `scripts/check-budgets.ts` | initial JS / CSS / font preloads + CSS prefix guard from the build |
 | Drift       | `pnpm db:drift`         | drizzle-kit + git          | fails when the schema changed without a committed migration        |
 | Lighthouse  | `pnpm lighthouse`       | `scripts/lighthouse.ts`    | mobile and desktop audits of the local production server           |
+| Live coach  | `pnpm test:live`        | Vitest (`live`)            | `tests/live/**` — the real model, opt-in, never in CI              |
 
 ## Unit tests
 
@@ -155,10 +156,9 @@ others and checks every server signs both engines' states in. Within a world the
 still run one at a time. Every other run, serial·webkit and local runs included, keeps one world.
 
 CI runs the suite as separate legs, one per group and engine (`e2e/projects.ts`,
-`.github/workflows/ci.yml`). The `perf` project is the `alone` group: its own leg on Chromium,
-split in 2 shards (alone·chromium 1/2 and 2/2), each on a runner of its own with nothing else
-running. `exclusive` is a leg of its own beside them, also Chromium only. It runs in
-parallel with the other legs in CI; only a local run starts it after `perf`.
+`scripts/ci-legs.ts`), in a scheduled or manual run. The `perf` project is the `alone` group, which
+no CI leg runs (performance is not tested in CI). Locally it runs with `E2E_GROUP=alone`, alone on
+the machine. `exclusive` is a leg of its own in CI, Chromium only, and runs without `perf`.
 
 ### Authentication
 
@@ -310,8 +310,8 @@ Specs:
   of 5 cold loads; target ≤ 200 ms, fails above 250 ms (docs/performance.md).
   `perf-workout-load.e2e.ts` holds the workout screens to the same budget (docs/testing.md,
   "Workouts (M4)" → Performance). The `perf` project runs alone, with one worker, after the
-  functional suite, so parallel specs cannot skew it; in CI that is the alone·chromium leg, in 2
-  shards. App
+  functional suite, so parallel specs cannot skew it; CI does not run it (performance is not tested
+  in CI). App
   screens load signed in, `/` signed out. The program screens are seeded through the fixture
   route: Train, the week's longest strength session and History on the hybrid program this week,
   Today in its Build-card state (onboarding complete, no program) and its program state (the
@@ -718,8 +718,9 @@ hybrid, injured shoulder, dumbbells only, the journey, the minimal onboarding pr
   commitment days; free days never go below 0, and commitments on 4 days with 3 a week give a
   `days.commitments_fill` decision; a running club counts toward runs and a strength class toward
   strength days; free days fill each goal's fewest by priority, then spare days go by turns up to
-  each goal's most, then to mobility; a second session sits on a commitment day only with two
-  distinct preferred times (not 'it varies') and sessions ≤ 90 min, otherwise the lowest-priority
+  each goal's most, then to mobility; a second session sits on a commitment day only at a second
+  time (two distinct preferred times, or, with no time set, the other end of the day from a class
+  with a set time) and sessions ≤ 90 min, otherwise the lowest-priority
   session is dropped (`session_dropped`) and a goal ranked between others gets a
   `priority_tradeoff`; empty availability means any day.
 - **First block** (`blocks.test.ts`): no event gives baseline + 3 accumulation + deload, week 1 at
@@ -1107,7 +1108,7 @@ the server builds exactly those kits, so change both together.
   AA after Z; Up next naming the partner.
 - **Substitution rules and copy** (`substitution.test.ts`, `copy.test.ts`): only a confirmed
   dislike writes a preference; machine unavailable ranks alternatives needing none of the slot's
-  equipment first; This hurts offers Stop first and End the workout when severe; every string in
+  equipment first; This hurts offers Stop first and End the workout when severe (in a run or a class, End alone); every string in
   `copy.ts` is scanned for push-through phrases and diagnosis words.
 - **Schemas** (`schemas.test.ts`): `DB_CHECKED_BAD_VALUES` (also refused by Postgres CHECKs,
   replayed through the repositories by `sync.test.ts`) and `SCHEMA_ONLY_BAD_VALUES` (open
@@ -1149,7 +1150,8 @@ unit project excludes `*.svelte.test.ts`. Tab-channel tests open
 second owner needs the singleton rule lifted inside it: `secondOwner`); `structure.test.ts`,
 `pain.test.ts`, `runs-other.test.ts` and `custom-exercises.test.ts` cover each handler family:
 applied once, duplicate on replay, deferred until its target arrives, refused at its path, and a
-situational swap that writes no preference or version.
+situational swap that writes no preference or version. `pain.test.ts` also takes a run's and a
+class's report, which names no exercise, and refuses a strength report without one.
 
 ### Workout reads
 
@@ -1162,6 +1164,8 @@ and `history-load.test.ts` in `tests/integration/workouts/`. 'workout-day'
 `scripts/vercel-headers.test.ts` keeps `vercel.json` equal to `STATIC_PAGE_HEADERS` for every
 prerendered page; `scripts/icon-sprite.test.ts` keeps the sprite equal to a fresh
 `pnpm icons:sprite`; `e2e/icons.e2e.ts` checks every icon draws from it, offline too.
+`src/lib/server/security-headers.test.ts` pins `SECURITY_HEADERS`, the default cache-control
+rule and the failed-guard response.
 
 ### Workout screen
 
@@ -1213,8 +1217,8 @@ functional projects ignore them): 20 sets over five fresh loads at 4× CPU, set-
 100 ms, INP p75 of 200 ms or less from Event Timing and web-vitals, no layout shift while
 logging, INP on `/workout/run` and `/workout/session`, and the main thread on a service-worker
 reload. `e2e/perf-workout-load.e2e.ts` holds the active workout pages and History to the
-page-load budget in `e2e/load-budget.ts`, as `e2e/perf.e2e.ts` does the other screens. In CI the
-`perf` project is the alone·chromium leg, in 2 shards. `pnpm lighthouse --seed` audits History
+page-load budget in `e2e/load-budget.ts`, as `e2e/perf.e2e.ts` does the other screens. CI does not
+run the `perf` project (performance is not tested in CI). `pnpm lighthouse --seed` audits History
 and the active workout. Numbers: docs/performance.md, "M4 (workout)".
 
 ### Journeys
@@ -1256,21 +1260,154 @@ Captured into `test-results/screens/<project>/`, the desktop ones under `desktop
 - The journeys: `strength-*` (top set to History, the pain and dislike journey, the generated
   week), `journey-run-*`, `journey-thai-*` and `journey-history-*`, with desktop copies.
 
+## Advanced coaching (M7)
+
+One paragraph per M7 slice, each replaced by its own slice only; docs-m7 turns them into its test
+inventory.
+
+m7/04 train-week-findings: the periodisation-week fixture
+(`src/lib/server/test-support/analytics-fixtures/periodisation-week.ts`): a clean hybrid week, the
+owner's move of Lower A to the day before Tuesday's hard Muay Thai next week, a past week, this
+week's passed clash, a clean week and outline weeks.
+`tests/integration/periodisation/evaluate.test.ts`. `e2e/train-findings.serial.e2e.ts` and
+`e2e/periodisation-support.ts` (`weekEvaluation(weekStart, today)`: the SQL-side oracle that runs
+domain `evaluateWeek` over the stored week with the service's open dates).
+
 ## The LLM in tests
 
-Milestone 5 adds the coach behind `LlmProvider`. Tests use the deterministic `mock` provider by
-default (`LLM_PROVIDER=mock`); real-model integration tests will be opt-in and skipped without a
-key. No key exists in CI today.
+## Coach (M5)
+
+Every coach test but the live suite uses the deterministic MockProvider
+(`src/lib/server/agent/provider/mock.ts`). It refuses every request the 2026-10-21 Messages API
+would refuse (`provider/validate.ts`), plays scripts from `provider/mock-scripts/` (one file per
+tool group, plus `general.ts`, `reviews.ts`, `summaries.ts`, the pain and grounding scripts in
+`safety.ts` and the coach's states in the browser ('slow' and 'perf-stream' among them) in
+`test.ts`) and never calls the real API. No key exists in CI but the bundle-scan canary.
+
+### Domain and agent (unit)
+
+- **Contract** (`src/lib/domain/coach/*.test.ts`, `scripts/coach-index-imports.test.ts`): the
+  answer grammar and SSE events give identical results split at every character and byte and in
+  1-, 7- and 64-byte chunks; unlabelled text is a note; a frame over 64 KB is refused, even while
+  it is arriving. Every source type maps to an app link, the exercise-history sheet or nothing,
+  never an absolute, protocol-relative or traversing URL. `domain/coach/index.ts` reaches no
+  package and no server-only module.
+- **Catalogue, activity, pricing, budgets**: 24 sorted tools in five groups with exactly three
+  drafting tools; chip words never show an id or key; prices exact in micro-dollars, a missing
+  model's cap price never below its cost; turn limits proved at 180 s and at the 60 s fallback.
+- **Safety** (`safety.test.ts`, `copy-scan.test.ts`, `statements.test.ts`): every banned pattern's
+  longest match is ≤ `MAX_PATTERN_CHARS` (80); M4's workout copy is scanned in a pain context;
+  statements use a fixture matcher.
+- **Markdown** (`markdown.test.ts`): every construct of the subset; HTML, `javascript:`, `data:`
+  and external links stay literal; 200 seeded hostile texts stay within the bounds.
+- **Tool framework** (`src/lib/server/agent/tools/*.test.ts`): strict JSON Schema from zod with
+  owner-named properties refused; canonical outputs capped at 8 KB; every call answered in order
+  in one message; three tools at a time on the pool, one on a transaction; reading tools stop at
+  10 s, drafting tools at 85 s (25 s at 60 s), never past the turn. `registry-complete.test.ts`:
+  all 24 tools registered once, in their group's file, with an output schema.
+- **Prompt** (`src/lib/server/agent/prompt/*.test.ts`): a pinned prompt hash; the prefix is
+  append-only across turns, tool steps and a version bump (a mock cache read on turn 2); planted
+  instructions reach the model only as `untrusted_text`.
+- **Providers**: `provider/anthropic.test.ts` runs the real SDK on a fake fetch over hand-written
+  SSE and error fixtures (`tests/fixtures/anthropic/`); `select.test.ts` covers every row of
+  docs/environment.md's resolution table; `proposals/draft.test.ts` covers the drafter.
+- **Browser** (`src/lib/client/coach/*.test.ts`): the stream reader and the turn state.
+- **Docs**: `scripts/coach-tools-doc.test.ts` keeps docs/coach-tools.md equal to the registry;
+  `scripts/client-secret-scan.test.ts` and `scripts/anthropic-sdk-imports.test.ts` prove the key
+  and SDK guards on planted input.
+
+### Integration (`tests/integration/coach/`, real Postgres)
+
+- **Schema**: `conversations-schema.test.ts` and `proposals-schema.test.ts` pin every CHECK and
+  guard by SQLSTATE and name (insert-only transcripts, run lifecycle, one running run per thread,
+  forward-only proposals, DELETE refused).
+- **Services**: `threads.test.ts` (messages stored once per client id, also under a race; gapless
+  seq), `runs.test.ts` (roll-ups, stale expiry, the cancel flag, the day's spend in the owner's
+  zone, unpriced-model cap pricing), `proposals.test.ts` (every kind, de-duplication, revision,
+  accept by id, a second accept writes nothing, foreign owner `not_found`),
+  `apply-program.test.ts`, `apply-profile.test.ts`, `apply-session.test.ts` and
+  `tests/integration/programs/batch.test.ts` (one version per proposal, one decision per op).
+- **Memory and summaries**: `memory-profile.test.ts` (≤ 9 queries), `memory-records.test.ts`,
+  `review-memory.test.ts`, `summaries.test.ts` (a segment rolls at its message or token limit or
+  on a new prompt version, and the next request replays nothing of it).
+- **One test per tool group, through `runTurn`**: `tools-history.test.ts`,
+  `tools-programming-reads.test.ts`, `tools-analytics.test.ts`, `tools-workout.test.ts`,
+  `tools-preferences.test.ts` and `tools-programming-proposals.test.ts`. Each validates real outputs
+  against the output schemas and runs a random owner id against the seeded owner's ids: nothing
+  read, nothing written.
+- **The turn**: `turn.test.ts`, `turn-endpoint.test.ts`, `policy.test.ts` (the output gate),
+  `direct.test.ts` (lookups without a model call), `first-words.test.ts`, and the endpoints
+  (`threads-endpoint`, `runs-endpoint`, `memory-endpoint`, `proposal-actions`), the screen loads
+  (`screen-load`, `screen-proposals`, `inbox-load`) and `test-support.test.ts`.
+- `tests/integration/analytics/analytics.test.ts` and
+  `tests/integration/coach/analytics-parity.test.ts`: the coach's weekly summary, load and trends
+  equal the screens' numbers.
+
+### End to end
+
+Coach specs use `e2e/coach-support.ts`: `resetCoach(request)` before each test; `seedCoach(request,
+fixture)` seeds bench-month, split-squat-week, run-weeks, long-thread, knee-pain,
+archived-threads or unpriced-run at the server's dates; `setCoachFault(request, fault, options)`
+sets a fault or a script. The route answers 404 unless test routes are enabled. The serial specs run on
+Chromium and Linux WebKit at the iPhone viewport; each screen's spec repeats its states in a
+1440 × 900 window and runs axe in both themes (`e2e/coach-a11y.ts`).
+
+- `design-coach.e2e.ts`, `design-coach.desktop.e2e.ts`: every answer state on /design → Coach.
+- `coach-screen.serial.e2e.ts`: suggestions, Recent conversations, the empty state, each
+  unavailable notice, the 404, loading and load-failed states.
+- `coach-stream.serial.e2e.ts`: 'Thinking…', activity chips, streamed blocks, Stop, a dropped
+  stream, leaving mid-answer; the stream client loads on demand.
+- `coach-states.serial.e2e.ts`: every failed-turn state (provider, rate-limit countdown, budget,
+  unavailable with a direct answer, refused, timeout, busy, offline), Retry leaving one owner
+  message; the stream client failing once and twice.
+- `coach-proposals.serial.e2e.ts` and `coach-proposal-decisions.serial.e2e.ts`: cards inline,
+  Accept → version N in Train, a double tap → one version, a tampered request ignored, an owner
+  edit → superseded; reject with a reason, Ask for changes, 500 then Retry, offline, chunk
+  failures.
+- `coach-inbox.serial.e2e.ts`: the Proposals inbox (order, decisions, filters, empty and failed
+  states, the desktop split).
+- `coach-threads.serial.e2e.ts`: rename, archive with Undo, Archived conversations, read-only
+  archived threads, Unarchive.
+- `coach-memory-panel.serial.e2e.ts`: 'What the coach knows'; a dislike persists into a new
+  conversation through structured memory, not chat.
+- `coach-usage.serial.e2e.ts`, `coach-exercise-sheet.serial.e2e.ts`, `coach-entry.serial.e2e.ts`
+  (Ask the coach from a workout, a history sheet and Today), `coach-support.serial.e2e.ts`.
+- `coach-degrade.serial.e2e.ts`: with the coach failing, unavailable and not launched, a whole
+  workout runs and no workout page, Today, Train or History sends a coach request.
+- `coach-journey.serial.e2e.ts`: the eight M5 journeys and the screenshot set. After a CI run,
+  `node scripts/coach-screens-index.ts <merged screens artifact dir>` writes `coach-index.html`, the
+  owner's contact sheet, and exits 1 if any screen in `e2e/coach-screens.ts` is missing.
+- Performance (`perf` project): `perf-coach.e2e.ts` (a 60-message conversation and a streamed
+  3,000-token answer) and `perf-coach-load.e2e.ts` (the long conversation and the inbox). Seeding
+  a coach fixture blanks the training profile, which each test puts back after its loads.
+
+### Live (`pnpm test:live`, opt-in, never in CI)
+
+`tests/live/coach.live.test.ts` runs six named conversations against the real model and
+`first-words.live.test.ts` records how soon the first words come. Start Postgres, run
+`pnpm db:setup` once, then `LIVE_LLM=1 ANTHROPIC_API_KEY=<key> pnpm test:live`. It drops and
+re-migrates `TEST_DATABASE_URL` (default `coach_test`) and fails past `LIVE_COST_CAP_MICROS` ($1);
+`LIVE_LLM_DRY=1 pnpm test:live` plays the same conversations on the mock. Known flake risks:
+conversation 2 assumes the model drafts a proposal rather than calling `substitute_exercise`, and
+conversation 1 that the answer quotes the month's top bench set. Not yet run against the real
+model.
 
 ## CI
 
-`.github/workflows/ci.yml` runs lint, type-check, the migration drift check, unit + integration
-(postgres:18 service), both builds + budgets, Playwright (Chromium + WebKit) and an asserted
-Lighthouse run on every PR and push to `main`. After the mobile run, `pnpm lighthouse --desktop`
-audits the same screens with Lighthouse's desktop preset (desktop throttling, no CPU slowdown) at
-1440 × 900 and 1x (`scripts/lib/lighthouse-config.ts`), writes to `lighthouse-reports/desktop` and
-applies the same `--assert` thresholds, as a step that never fails the job; its table is in the
-step summary (docs/performance.md, "Lighthouse (desktop)").
+`.github/workflows/ci.yml` runs on every pull request and every push to `main`: lint, type-check, the
+migration drift check, unit tests, the integration tests (postgres:18 service), both builds with the
+budgets, and one e2e job that runs the PRD journeys on Chromium. A scheduled or manual run
+(`workflow_dispatch`) also runs every Chromium e2e leg (main, serial and exclusive, as shards) and the
+journeys on WebKit, the only WebKit run in CI. Each event's legs are listed in `scripts/ci-legs.ts`.
+Performance is not tested in CI, by the owner's decision, to keep CI simple and cheap: Lighthouse and
+the `perf` project run locally only (`pnpm lighthouse`, `E2E_GROUP=alone pnpm test:e2e`).
+
+The run's first job, `Scope of the run`, runs `scripts/ci-scope.ts`. A change that touches only
+`docs/`, `plan/`, agent tooling (`.claude/`, `.agents/`, `.codex/`, `.pi/`), root Markdown or
+`.env.example`, and a merge to `main`, onto the previous tip, whose tree its pull request already
+tested, is a light run: it skips the integration tests and the e2e legs. Lint, type-check, unit tests
+(which include the docs guards) and the build always run. A nightly scheduled run tests `main`'s
+full set, since most runs on `main` are light.
 
 `.github/workflows/post-deploy-smoke.yml` checks production from outside after every production
 deploy (health with the database up, the sign-in screen, deny by default, security headers on

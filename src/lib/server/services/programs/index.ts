@@ -11,6 +11,12 @@ export {
 	type ProgramOrigin
 } from './store';
 export {
+	archiveProgram,
+	ProgramArchiveConflictError,
+	type ArchivedProgram,
+	type ProgramArchiveConflictReason
+} from './archive';
+export {
 	getCurrentProgram,
 	getPlannedSession,
 	getTodayPlan,
@@ -65,6 +71,7 @@ export {
 	type SwapOptions
 } from './edits';
 export { APPEND, planBlock, type BlockPlanning, type ShiftedBlock } from './next-block';
+export { weekChanges, type WeekAtVersion, type WeekChanges } from './week-changes';
 export type {
 	ProgramVersion,
 	StoredBlock,

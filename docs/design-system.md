@@ -30,66 +30,6 @@ keeps listening to `prefers-color-scheme` while open, so when iOS switches appea
 automatic dark mode at sunset) the theme-color and status-bar metas follow the CSS (e2e-tested).
 **Browser baseline:** `light-dark()` needs Safari 17.5+ / Chrome 123+.
 
-### Designs
-
-Two designs, chosen per device: today's (the default for everyone) and **Graphite 2004**, a
-preview of the proposed design (graphite and silver, Aqua in place of volt, Source Sans 3, 3–10 px
-corners). Profile → Appearance → Design switches between them, as does `?design=graphite` or
-`?design=current` (saved too; handy for screenshots). The choice is stored in localStorage
-(`pc:design:v1`, kept across sign-out) and applied before first paint by the head script in
-`src/app.html`, which sets `data-design="graphite"` on `<html>`, links
-`src/lib/ui/styles/graphite.css` (render-blocking) and preloads Source Sans 3.
-
-- `graphite.css` is a build asset of its own, in no route's CSS: today's design ships none of it
-  and the service worker precaches none of it (it caches it once a device uses it).
-- Its token rule overrides tokens under `:root[data-design='graphite']`, so components restyle
-  without edits; colour stops alone sit in `light-dark()`. It adds the material roles (`--strip`,
-  `--plastic`, `--gel`, `--select`, `--bar`, `--lcd` and their edges and inks) for components to
-  adopt.
-- **Controls:** the core components carry a stable `data-ui` hook (`button`, `segmented`,
-  `choices`, `stepper`, `field`, `toggle`, `chip`, `badge`, `surface`, `card-head`, `section`,
-  `list-row`, `notice`, `toaster`, `sheet`), which only `graphite.css` reads, every selector
-  inside the Graphite scope. There: the gel primary button, plastic secondary and danger keys,
-  plain Aqua-text ghost; connected plastic segments and choices with the chosen one in the
-  selection well; fields and the stepper in inset wells behind a ≥ 3:1 border; the ON/OFF switch
-  inside the 44 px Toggle row; 3 px tags; boxes whose Card header is the silver strip; toasts and
-  sheets with 10 px corners on the spring; and focus as a 2 px Aqua-ink outline 2 px out (inset
-  −3 px inside the segmented control and the stepper). No route styles a hook, and the hooks are
-  only on these components (`components/graphite-hooks.test.ts`).
-- **Shell:** AppNav (`nav`) below 1024 px is the glossy graphite tab bar at today's
-  `--nav-height`, the current tab in the selection well with its glyph filled; from 1024 px the
-  rail is the source list (`--rail-width: 14.5rem` in Graphite only; rows of icon and label, the
-  current one in the well), a CSS-only change. PageHeader (`page-header`) sets the 34 px large
-  title and hides the eyebrow, except a date (`dated`, Today), which becomes the subtitle under
-  it. The resume bar (`resume-slot`) is drawn in the bar material.
-- **Status Display:** `StatusDisplay.svelte` (`status`; a line, the big numeral or a name, a dim
-  line, an elapsed/total bar, a footer) on Today (`today/panels/TodayStatus.svelte`: the week,
-  today's session, sessions done, the connection) and the run view (`RunStatus.svelte`: the run's
-  pace), each composed from the data the screen already shows. `StatusSlot.svelte` (`status-room`)
-  is the only switch today's design carries: it loads the display with a dynamic import only on a
-  page showing Graphite, holding its room from first paint so nothing moves. The rest timer
-  (`rest`) becomes the display in CSS alone: the time left as the big numeral, its controls on a
-  strip beneath the glass.
-- **Screens:** each screen's own parts, the look only, from an element the screen already renders
-  (its test id, or two class names of one component), so today's design ships not a byte more;
-  `graphite.test.ts` fails when a test id or class it names leaves the markup. Workout: the RPE
-  grid as two connected rows of plastic keys, the answer in the selection well; the set states as
-  rows of one box, Now in the Aqua wash, a done set's number in green; below 1024 px Complete set
-  (the gel) on a band of the bar material; the pain sheet's choices as rows under a silver strip.
-  Today: the week strip as one box with full day names, today's in Aqua and bold, the chosen date
-  in the well, and under it a legend (`today/panels/WeekLegend.svelte`, `week-legend` hook, loaded
-  through StatusSlot like a Status Display, in rows of three so its room is known); today's session
-  card and its Start workout in one box. Progress: the view tabs and the period control as one kind
-  of connected segmented control; in a chart of estimates the line is dashed, and a measured value
-  is a square labelled 'measured'. Coach: below 1024 px the composer docks full-bleed on the tab bar
-  in the bar material, its writing well taking the focus ring; the proposal card's header is the
-  silver strip, without the accent side stripe. Profile: the preferences as rows split by
-  hairlines. Onboarding: the step progress as a recessed track filled with gel, What we'll ask as
-  a grouped box.
-- `graphite.test.ts` holds it to the chart palette checks and 4.5:1 text contrast in both themes;
-  `e2e/design-switch*.e2e.ts` run axe on it and check no flash, no layout shift and no Graphite
-  request on today's design. The screen gallery shoots every screen in both designs.
-
 ## Colour
 
 | Token                    | Dark      | Light     | Use                                                |
@@ -201,6 +141,22 @@ as data.
 - **Motion.** Marks do not animate in. Hover and scrub feedback uses `--duration-fast`, a
   refetch keeps the previous frame at reduced opacity with `aria-busy`, and under
   `prefers-reduced-motion` nothing moves.
+- **HTML marks** ([ADR 0016](adr/0016-hand-built-charts.md)). The SVG draws only lines, areas and
+  bands: a 0–100 viewBox stretched to the plot box, 2 px `non-scaling-stroke` lines. Every mark
+  with a pixel size is an HTML box placed in percent and sized in CSS (`ui/charts/marks.css`), so
+  it reads the same at 320 px and at 1440 px: columns at most 24 px wide with a 4 px rounded data
+  end, square at the baseline; a 2 px surface gap between stacked parts; 8 px markers with a 2 px
+  ring; hit areas at least 24 px; tick labels. Nothing measures the window, and hover rules sit
+  inside `(hover: hover) and (pointer: fine)`.
+- **Every mark is reachable.** A line chart is one tab stop whose arrow keys move the week, read
+  by a polite live region; a bar chart's marks and a row chart's rows (`RowList`, each row a 44 px
+  button) take the tab stop in turn (roving), with Home, End and Escape. A tap, hover or focus
+  shows the same words as the mark's name, in a tooltip kept inside the plot.
+- **Forced colours.** Marks become `CanvasText`; stacked parts alternate 45° and 135° hatches,
+  which the legend repeats; sides and statuses stay in words.
+- **'So far' everywhere.** The week in progress is never in a total, a mean or a verdict: tiles
+  give it as 'This week so far' against the same days of last week, charts as a dashed ring or an
+  outlined column, and table twins as a row marked 'so far'.
 
 ## Typography
 
@@ -465,6 +421,12 @@ later-pass screen).
 - **Progress** (`/progress`): wide (`data-layout="wide"` on its root). From 1024 px the view nav
   and the period picker share one row over the view; the overview's five trend tiles keep one row,
   and its discipline cards and chart frames pair up from a 44 rem column (a container query).
+- **Reviews** (`/progress/reviews/[[key]]`): split. From 1024 px the reviews list (the block to
+  review, the cycle reviews, then every week, a Create button on each one not yet reviewed)
+  beside the review shown (`aria-current`), or beside 'Pick a review'; every section of a review
+  shows in full, with nothing to open. Below 1024 px the list and a review are separate screens,
+  with 'All reviews' back to the list, opening a review focuses its title, and each section
+  collapses to its verdict line.
 - **Exercise detail** (`/progress/exercises/[id]`): wide. From a 44 rem column (a container
   query) the e1RM tile sits beside its context, the e1RM chart beside the rep-max table, and the
   PRs beside the top sets and RPE; the recent sessions fill rows of cards. From 1024 px the period
@@ -659,41 +621,127 @@ workout pages and is audited on `/design` → Workout, one state at a time.
 
 ### Workout components
 
-| Component                        | Highlights                                                                                                                                                                                             |
-| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `SetRow`                         | `src/lib/ui/workout`, like the next eight. One set: number, target or what was done, its state in words (to do, now, done, missed, skipped, extra, not saved); a logged one is a button to its editor. |
-| `SetLogger`                      | The set at hand: big steppers for exactly the fields its exercise records (weight, added weight, assistance; reps, time, distance), `RpeChips`, Missed reps, Skip set, Complete set (the one accent).  |
-| `RpeChips`                       | RPE 6–10 in halves and 'No RPE', two rows of native radios in a fieldset: one Tab stop, arrows move the choice, a tick beside the ring.                                                                |
-| `RestTimer`                      | Time left in big tabular numerals over a bar, exact after a reload; Pause, Reset, +30 s, Skip; paused: Resume; over: 'Rest over · 0:42 ago' in the accent with +30 s and Dismiss.                      |
-| `Stopwatch`                      | The workout's running time (a `timer`, not announced each second); the time is the Pause button; paused, it dims and opens Resume and Reset.                                                           |
-| `SyncPill`                       | Saved, Saving…, Offline · N pending, Retrying in n s, N need attention, Sign in to sync, Finish adding your passkey: icon and words, a fixed box, a 44 px button to the sync sheet.                    |
-| `UpNext`                         | The next exercise and its first target, the superset partner inside a round; between exercises Start, once all is done Finish workout; Add exercise; where the flow went, said politely.               |
-| `ExerciseCard`                   | The current exercise: place, A1/A2, name (a button to its history), prescription lines, load, rest, last time (or why there is none), its slot's state and what it replaced, Options, the set rows.    |
-| `ExerciseHistorySheet`           | An exercise's best e1RM (estimated), rep PRs and last performances a page at a time; offline the session this device holds; failed: Retry. Code-split, a centred dialog from 1024 px.                  |
-| `ExerciseList`                   | `src/routes/workout`, like the rest. The side column from 1024 px: each exercise with its label and sets done, `aria-current`, one Tab stop moved by the arrows, Add exercise after the last.          |
-| `WorkoutHeader`                  | Minimise with the sync pill, the title, the stopwatch and More: two rows on a phone, one row spanning the page from 1024 px; applies `--safe-top`.                                                     |
-| `ExerciseActionsSheet`           | Machine unavailable, Suggest an alternative, I don't like this exercise (confirmed first), This hurts, Skip exercise; alternatives as `AlternativeList` buttons with why each fits.                    |
-| `PainSheet`                      | Where, how bad and a note, all optional; then Stop this exercise, gentler options, or End the workout here; Profile → Injuries and a professional pointed to, never a diagnosis.                       |
-| `ExercisePicker`                 | Add exercise: the cached library searched by name and alias, arrows and Enter; offline with none cached, why and Try again; Add my own exercise under the list.                                        |
-| `CustomExerciseSheet`            | The owner's own exercise: name, measure, load, pattern, then muscles and equipment behind a disclosure; a name clash shows before anything is sent.                                                    |
-| `PlateSheet`                     | The plate calculator from a set row, at that set's weight and unit, with this device's bar and plates; focus returns to the row's plate button.                                                        |
-| `SetEditSheet`                   | A logged set's fields, missed reps, RPE and warm-up; Save sends every value, Delete asks first; reused as the Fix editor for set changes.                                                              |
-| `WorkoutMenu`                    | More: Finish workout, Settings (`SettingsSheet`: rest per exercise type, rest on completion, tone, vibration, screen awake, kept on the device at once) and Discard, which says what it does first.    |
-| `FinishSheet`                    | Open planned sets asked about first; then the `Summary` with the duration, session RPE and notes; Done finishes, and the page shows the completed state, offline too.                                  |
-| `StartConflictSheet`             | Another workout in progress: Resume it, or Discard it (what that does said first) and start the new one.                                                                                               |
-| `SyncIssuesSheet`                | Every change still on the device, in words: Needs attention with why, Fix (the registry's editors and Fix sheets), Try again and Discard (counted first); then Waiting to sync.                        |
-| `RunFixSheet`                    | `src/routes/workout/fix`, like the next two. A refused segment or run log: why first, then its values as `SegmentFields` asks for them (and its RPE and notes); Save re-queues it under the same id.   |
-| `OtherFixSheet`                  | A refused session log: why first, then `SessionFields` with the server's errors at their fields; a metric its plan lacks can be removed; Save re-queues it under the same id.                          |
-| `SubstituteFixSheet`             | A refused swap: the slot's alternatives again, ranked for the swap's reason, under why; choosing one re-queues the swap under the same id.                                                             |
-| `StartFlow`                      | Getting your session ready (a skeleton, aria-busy), the conflict sheet, signed out, or unreachable with no kit and a session of the owner's own instead; at the readable width.                        |
-| `EmptyWorkout`, `SignedOutState` | No workout on this device: Today, or a strength, run or other session of the owner's own. After a 401: no workout details, the changes waiting and Sign in.                                            |
-| `SegmentRow`                     | `src/routes/workout/run`. A run's segment: number, what it is, its target or what was run with the pace, its state in words; a 44 px button, the arrows move between rows.                             |
-| `RunView`, `SegmentFields`       | The run: the current segment's distance, time and heart rate (nudged or typed, the pace worked out as they change), Log segment, the segments, the totals, RPE and notes.                              |
-| `OtherView`, `SessionFields`     | `src/routes/workout/session`. What the plan asked for, then type, duration, RPE chips, each metric's control (`MetricField`) and notes; a draft on the device until Save.                              |
-| `WorkoutList`                    | `src/routes/(app)/progress/workouts`. History, newest first: waiting to sync (not links), then each workout's dot, title, date, duration and key number; one 44 px link, `aria-current`.               |
-| `WorkoutDetail`                  | One workout in words: its numbers, PRs, sets with RPE and states, a run's segments (`RunDetail`) or a session's metrics (`OtherDetail`); a name opens its history sheet.                               |
-| `ResumeBar`                      | `src/routes/(app)`. Resume workout · title with the time and the sync pill, or N changes waiting to sync; screen chrome over the column that raises `--resume-inset`, so it covers nothing.            |
-| `HeldScreen`                     | `src/routes/(app)`. While another screen loads: its last copy in this page, else the tab's skeleton (aria-busy, 'Loading Train'); inert, fixed over the column under the nav.                          |
+| Component                        | Highlights                                                                                                                                                                                                                        |
+| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SetRow`                         | `src/lib/ui/workout`, like the next eight. One set: number, target or what was done, its state in words (to do, now, done, missed, skipped, extra, not saved); a logged one is a button to its editor.                            |
+| `SetLogger`                      | The set at hand: big steppers for exactly the fields its exercise records (weight, added weight, assistance; reps, time, distance), `RpeChips`, Missed reps, Skip set, Complete set (the one accent).                             |
+| `RpeChips`                       | RPE 6–10 in halves and 'No RPE', two rows of native radios in a fieldset: one Tab stop, arrows move the choice, a tick beside the ring.                                                                                           |
+| `RestTimer`                      | Time left in big tabular numerals over a bar, exact after a reload; Pause, Reset, +30 s, Skip; paused: Resume; over: 'Rest over · 0:42 ago' in the accent with +30 s and Dismiss.                                                 |
+| `Stopwatch`                      | The workout's running time (a `timer`, not announced each second); the time is the Pause button; paused, it dims and opens Resume and Reset.                                                                                      |
+| `SyncPill`                       | Saved, Saving…, Offline · N pending, Retrying in n s, N need attention, Sign in to sync, Finish adding your passkey: icon and words, a fixed box, a 44 px button to the sync sheet.                                               |
+| `UpNext`                         | The next exercise and its first target, the superset partner inside a round; between exercises Start, once all is done Finish workout; Add exercise; where the flow went, said politely.                                          |
+| `ExerciseCard`                   | The current exercise: place, A1/A2, name (a button to its history), prescription lines, load, rest, last time (or why there is none), its slot's state and what it replaced, Options, the set rows.                               |
+| `ExerciseHistorySheet`           | An exercise's best e1RM (estimated), rep PRs and last performances a page at a time; offline the session this device holds; failed: Retry. Code-split, a centred dialog from 1024 px.                                             |
+| `ExerciseList`                   | `src/routes/workout`, like the rest. The side column from 1024 px: each exercise with its label and sets done, `aria-current`, one Tab stop moved by the arrows, Add exercise after the last.                                     |
+| `WorkoutHeader`                  | Minimise with the sync pill, the title, the stopwatch and More: two rows on a phone, one row spanning the page from 1024 px; applies `--safe-top`.                                                                                |
+| `ExerciseActionsSheet`           | Machine unavailable, Suggest an alternative, I don't like this exercise (confirmed first), This hurts, Skip exercise; alternatives as `AlternativeList` buttons with why each fits.                                               |
+| `PainSheet`                      | Where, how bad and a note, all optional; then Stop this exercise, gentler options, or End the workout here; Profile → Injuries and a professional pointed to, never a diagnosis. In a run or a class, End the workout here alone. |
+| `SessionActionsSheet`            | A run's or a class's Options: This hurts (the pain sheet, ending the session) and, in a run, Skip this segment; Ask the coach.                                                                                                    |
+| `ExercisePicker`                 | Add exercise: the cached library searched by name and alias, arrows and Enter; offline with none cached, why and Try again; Add my own exercise under the list.                                                                   |
+| `CustomExerciseSheet`            | The owner's own exercise: name, measure, load, pattern, then muscles and equipment behind a disclosure; a name clash shows before anything is sent.                                                                               |
+| `PlateSheet`                     | The plate calculator from a set row, at that set's weight and unit, with this device's bar and plates; focus returns to the row's plate button.                                                                                   |
+| `SetEditSheet`                   | A logged set's fields, missed reps, RPE and warm-up; Save sends every value, Delete asks first; reused as the Fix editor for set changes.                                                                                         |
+| `WorkoutMenu`                    | More: Finish workout, Settings (`SettingsSheet`: rest per exercise type, rest on completion, tone, vibration, screen awake, kept on the device at once) and Discard, which says what it does first.                               |
+| `FinishSheet`                    | Open planned sets asked about first; then the `Summary` with the duration, session RPE and notes; Done finishes, and the page shows the completed state, offline too.                                                             |
+| `StartConflictSheet`             | Another workout in progress: Resume it, or Discard it (what that does said first) and start the new one.                                                                                                                          |
+| `SyncIssuesSheet`                | Every change still on the device, in words: Needs attention with why, Fix (the registry's editors and Fix sheets), Try again and Discard (counted first); then Waiting to sync.                                                   |
+| `RunFixSheet`                    | `src/routes/workout/fix`, like the next two. A refused segment or run log: why first, then its values as `SegmentFields` asks for them (and its RPE and notes); Save re-queues it under the same id.                              |
+| `OtherFixSheet`                  | A refused session log: why first, then `SessionFields` with the server's errors at their fields; a metric its plan lacks can be removed; Save re-queues it under the same id.                                                     |
+| `SubstituteFixSheet`             | A refused swap: the slot's alternatives again, ranked for the swap's reason, under why; choosing one re-queues the swap under the same id.                                                                                        |
+| `StartFlow`                      | Getting your session ready (a skeleton, aria-busy), the conflict sheet, signed out, or unreachable with no kit and a session of the owner's own instead; at the readable width.                                                   |
+| `EmptyWorkout`, `SignedOutState` | No workout on this device: Today, or a strength, run or other session of the owner's own. After a 401: no workout details, the changes waiting and Sign in.                                                                       |
+| `SegmentRow`                     | `src/routes/workout/run`. A run's segment: number, what it is, its target or what was run with the pace, its state in words; a 44 px button, the arrows move between rows.                                                        |
+| `RunView`, `SegmentFields`       | The run: the current segment's distance, time and heart rate (nudged or typed, the pace worked out as they change), Log segment, the segments, the totals, RPE and notes. Options (the run's quick actions) beside Log segment.   |
+| `OtherView`, `SessionFields`     | `src/routes/workout/session`. What the plan asked for, then type, duration, RPE chips, each metric's control (`MetricField`) and notes, and Options (the session's quick actions); a draft on the device until Save.              |
+| `WorkoutList`                    | `src/routes/(app)/progress/workouts`. History, newest first: waiting to sync (not links), then each workout's dot, title, date, duration and key number; one 44 px link, `aria-current`.                                          |
+| `WorkoutDetail`                  | One workout in words: its numbers, PRs, sets with RPE and states, a run's segments (`RunDetail`) or a session's metrics (`OtherDetail`); a name opens its history sheet.                                                          |
+| `ResumeBar`                      | `src/routes/(app)`. Resume workout · title with the time and the sync pill, or N changes waiting to sync; screen chrome over the column that raises `--resume-inset`, so it covers nothing.                                       |
+| `HeldScreen`                     | `src/routes/(app)`. While another screen loads: its last copy in this page, else the tab's skeleton (aria-busy, 'Loading Train'); inert, fixed over the column under the nav.                                                     |
+
+## The coach (M5)
+
+A conversation in the readable column (Responsive layout → Screens), with the composer as screen
+chrome; the Proposals inbox is a split screen from 1024 px. Every state has its own words, and
+words carry it, never colour alone. All of them are on `/design` → Coach and in the screenshot set
+(`e2e/coach-screens.ts`: 55 states, each at 393 × 659 and 1440 × 900).
+
+| Component                         | Highlights                                                                                                                                                                                                                                  |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `AnswerBlocks`                    | `src/lib/ui/coach`, like the next ten rows. An answer's blocks, each labelled in words (Fact, Calculated, Recommendation, Safety, Note); a metric's method behind a disclosure; 'Not checked against your data'; dated sources; 'Show all'. |
+| `RichText`                        | A block's words as elements from the server's tree, never `{@html}`; a link only for an app path.                                                                                                                                           |
+| `ActivityChip`                    | One step of a turn in words ('Looking at your last 6 bench sessions…', then what it found or that it could not); a spinner, check or alert only repeats it.                                                                                 |
+| `ThinkingIndicator`               | 'Thinking…' between Send and the first step or words: three dots in CSS that hold still under reduced motion.                                                                                                                               |
+| `LiveAnnouncer`                   | A polite log: each completed block once, then 'Answer complete'; never tokens.                                                                                                                                                              |
+| `Composer`                        | 'Message your coach', up to 4,000 characters over eight lines; Send becomes Stop; Enter sends on a fine pointer, Return adds a line on a phone; disabled, it says why in its placeholder.                                                   |
+| `CoachNotice`                     | Every state the coach cannot answer in: not launched, switched off, misconfigured, each way a turn ends, chunk-failed, load-failed, action-failed and empty; Retry where it can work; a rate limit counts down.                             |
+| `LoadingRows`                     | Skeleton rows the shape of conversations or messages, `aria-busy` with words for screen readers.                                                                                                                                            |
+| `MockBadge`                       | 'Practice coach' on every answer the mock wrote.                                                                                                                                                                                            |
+| `ProposalCard`, `DiffRows`        | What changes (from … to …, 'Added', 'Removed'), why and the impact; Accept, Reject, 'Ask for changes'; busy while deciding; 'Couldn’t save' with Retry; offline says why; then 'Applied as version N'. Loaded with the first card.          |
+| `RejectSheet`                     | Lazy: an optional reason (reject) or what should change (revise).                                                                                                                                                                           |
+| `Thread`                          | `src/routes/(app)/coach/[[thread]]`, like the rest. The conversation, oldest first, with live turns, notices in place of a failed answer, and cards after the answer that made them.                                                        |
+| `ThreadList`, `ManageSheet`       | Recent conversations with 'Show older'; rename, and archive with an Undo toast.                                                                                                                                                             |
+| `ArchivedSheet`, `ArchivedBanner` | Archived conversations, a page at a time, with Unarchive; an archived conversation opens read-only under 'Archived · Unarchive to continue'.                                                                                                |
+| `KnowsSheet`, `UsageSheet`        | 'What the coach knows' from structured memory, section by section; usage as cards on a phone and a table in a `wide` dialog (`BottomSheet`'s `wide`: 56rem, centred, from 1024 px). Both loaded on the first press.                         |
+| `Suggestions`, `ContextChip`      | PRD §12's questions, two columns from 1024 px, disabled and dashed while the coach cannot answer; where a prefilled question came from.                                                                                                     |
+| `InboxList`, `Detail`             | `src/routes/(app)/coach/proposals/[[id]]`. Waiting for you, then Decided; the opened proposal beside the list from 1024 px, with the same card and decisions.                                                                               |
+
+Designed states, by name: Thinking (`ThinkingIndicator`), loading (`LoadingRows`, the inbox's
+`Pending`), chunk-failed ('Couldn’t load this part of the coach': a toast or notice with Retry, and
+a second failure while online reloads the page), action-failed ('That didn’t go through': in place
+on the card, row or sheet, with Retry), Archived (`ArchivedBanner`) and not-launched ('Answers
+grounded in your own training data are on their way', the composer disabled and the suggestions
+dashed).
+
+**The screenshot review.** `coach-journey.serial.e2e.ts` captures the set, and
+`scripts/coach-screens-index.ts` turns a CI run's screens into the owner's contact sheet. The
+launch (#449) merged on 2026-11-12 and the coach is live in production, so the owner's review is
+no longer its merge gate; it is still open as a review after launch (#405). Outcome: not yet
+recorded; its follow-ups go here once it is. Known from the M5 measurements: the coach route was
+0.3 KB over the initial-JS gate on `9ac3521`, before #473 trimmed it under the gate, and the inbox
+has no Lighthouse audit recorded yet; its seeding failure was fixed in 61d467b9 (with #395)
+(docs/performance.md, "M5 (coach)").
+
+## Progress and reviews (M6)
+
+Every number comes from the server in context: its period, its comparison, its verdict with the
+weeks it read, and whether it is estimated or measured. A screen never shows a ghost chart: before
+the data exists it says what appears and when. Charts follow Data visualisation above; the chart
+kit and the analytics components are on `/design` → Charts.
+
+**Screenshots** (CI artifacts, `test-results/screens/<project>/<name>.png`, each at 393 × 659 and
+1440 × 900): `progress-{overview,strength,running,general,exercise}-{phone,desktop}`
+(`e2e/progress*.serial.e2e.ts`), `reviews-*`, `review-sections-*`, `review-next-week-*`,
+`review-write-up*`, `review-entry-*`, `review-proposal-*`, `cycle-review-*`, `next-cycle-*`,
+`train-review-notice-*` and `bridge-week-*` (their `e2e/*.serial.e2e.ts` specs), and the kit's
+`design-charts-*` and `design-tiles-*` (`e2e/design-charts*.e2e.ts`: 320 px, 393 px, 1440 px,
+both themes, hover, tap, scrub, forced colours, loading and failed). The screen gallery
+(`e2e/gallery.gallery.ts`) shoots Progress's screens in its `history` group and the reviews in its
+`reviews` group, in both themes.
+
+| Component                      | Highlights                                                                                                                                                                                                                                                                                                                                                                     |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `ChartFrame`                   | `src/lib/ui/charts`, like the next six rows. Every chart's frame, server-rendered: title, context caption, one-sentence summary and the table twin, the plot box reserved at full height. The body fades in after hydration; a failed body is a Notice with Retry; without JavaScript the plot says so; `availability` ('Available after 6 weeks') takes the plot's place.     |
+| `ChartTable`                   | The table twin behind 'Show as table': scoped headers with units, 'No data' for a gap, the week in progress marked 'so far'. It never computes.                                                                                                                                                                                                                                |
+| `LineChart`                    | Up to four series, legend from two, direct end labels with leaders (numbers under 18 rem); estimates as hollow rings, measurements as square diamonds; scrubbing snaps a crosshair to the nearest week (`touch-action: pan-y`).                                                                                                                                                |
+| `BarChart`                     | A column a week, stacked by discipline in `STACK_ORDER` with a rect-key legend and each stack's total on its cap where it fits; a dashed planned outline; the week in progress outlined, not filled.                                                                                                                                                                           |
+| `RangeBars`                    | Muscle-group volume against its target range: a bar a group in one hue, largest first, the range as a bracket (open past the axis), a tick for the plan, and 'Below range', 'Within range' or 'Above range' in words with an icon.                                                                                                                                             |
+| `DivergingBars`                | Actual minus target RPE a row an exercise, from a zero in the middle: easier in `--chart-diverge-cool`, harder in `--chart-diverge-warm`, within ±0.5 in the hueless mid, each side said in words ('Easier', 'On target', 'Harder').                                                                                                                                           |
+| `RowList`                      | The rows the two horizontal bodies draw: a legend in words, each row a 44 px button named by its words, a value axis, and a tooltip beside the row.                                                                                                                                                                                                                            |
+| `TrendTile`                    | `src/lib/ui/analytics`, like the next four rows. One metric at a glance: value and unit, Estimated or Measured, the change against the named previous period (icon and word, neutral on normal variation), 'This week so far', a static server-computed sparkline and the verdict with its window; one sentence to a screen reader; `data-value` holds the canonical number.   |
+| `VerdictBadge`                 | 'Real improvement', 'Real decline', 'Normal variation' or 'Not enough data yet · 2 of 6 weeks', plus 'over the last 12 weeks' when it reads other weeks; words first, tone only reinforces, free to wrap at 320 px.                                                                                                                                                            |
+| `MetricContext`                | One line of context (period, comparison, trend window, what counts as good), then a disclosure with how the figure is worked out and its caveat, in the catalogue's words.                                                                                                                                                                                                     |
+| `PeriodPicker`                 | Five real links to `?period=` (4w, 12w, 26w, 52w, All), each ≥ 44 px at 320 px and a history entry; while another period loads the figures hold their frame dimmed, inert and `aria-busy`, never a skeleton.                                                                                                                                                                   |
+| `ReviewPrompt`                 | 'Your week in review is ready' or 'Block complete — review it and plan the next' at the top of Today and Overview: Create review (a form that works without JavaScript; pending, not reviewable yet, failed with Retry, offline), or 'See your review'.                                                                                                                        |
+| Progress views                 | `src/routes/(app)/progress`: Overview (a verdict card per discipline, then the tiles and headline charts), Strength, Running and General (an intro, then their trends), each served whole by the server; their trends load after hydration in place (`TrendsLoader`, `SectionLoader`), and a failed chunk says 'Couldn’t load your trends' with Retry while the verdicts stay. |
+| Exercise detail                | `progress/exercises/[id]`: the e1RM verdict in the header, then the best estimated 1RM with the profile's maxes as their own marks, the e1RM chart beside the 1–10 rep-max table, PRs, top sets, RPE against target and recent sessions linking to their workouts.                                                                                                             |
+| `ReviewList`                   | `src/routes/(app)/progress/reviews/[[key]]`, like the rest. Reviews newest first, each a ≥ 44 px link with its summary; a week or block with no review has Create, with the same four states as `ReviewPrompt`.                                                                                                                                                                |
+| `ReviewHero`                   | The weekly and cycle review's shared hero: period, title (focused on a phone), one-sentence summary and the adherence meter in words.                                                                                                                                                                                                                                          |
+| `ReviewSections`, `ReviewBody` | The review's trends and sections (RPE, volume and intensity, running, Muay Thai, recovery and fatigue, conflicts, PRs; for a block, goals, progression, fatigue and exercise effectiveness), each a disclosure with its verdict line; each chart's room reserved, its table without JavaScript.                                                                                |
+| `NextWeekCard`, `KeepSheet`    | Next week's changes, each with before → after, its why, a checkbox and a half step; a passed one struck through ('Monday has passed'); 'Generate next week' and 'Keep next week as planned' with an optional reason; pending, offline and failed with Retry; then what was decided, with the version in History.                                                               |
+| `NextCycleCard`                | The next block: 'This week' or 'Next Monday', each with its own preview (phase, weeks, dates, a bridge's unplanned weeks, weeks lost before a race, week 1, what changes and why, starting loads labelled estimated); Adjust (keep an exercise, move or skip the deload); 'Start next block'.                                                                                  |
+| `CoachWriteUp`, `WriteUpLive`  | The coach's write-up after the figures, in a box reserved at six lines: written, 'Your coach is writing this up…', or why there is none (not launched, switched off, budget, rate limited, offline, failed) with Retry; 'Discuss with your coach'.                                                                                                                             |
+| Bridge weeks                   | A late start's unplanned weeks: Train's state card ('Unplanned week · between blocks', with the day the next block starts and the week's workouts marked Off-plan), History's notice, Today's 'Between blocks', and `BlockTimeline`'s hatched block with its weeks 'Unplanned'.                                                                                                |
+| Train's review notice          | On a week a review changed: who decided it, each change with its why, and a link to the review (`services/programs/week-changes.ts`).                                                                                                                                                                                                                                          |
 
 ## Accessibility checklist (applies to every new component)
 
@@ -723,7 +771,7 @@ workout pages and is audited on `/design` → Workout, one state at a time.
 
 One line per M7 UI slice, each replaced by its own slice only; docs-m7 turns them into rows.
 
-m7/04 train-week-findings: not built yet.
+m7/04 train-week-findings: a week finding is one line right under its `SessionCard` (outside the card's link): the summary of a native `<details>` whose body is the why, so it opens without JavaScript, with a 44 px summary, the focus ring and a brighter colour on hover. A CSS glyph (a ring, filled in `--color-warning` for `caution`) and the words carry the meaning, label first: 'Heads-up' (an avoid finding nothing explains, or the owner's own move; caution), 'Your move' (advice) or 'Trade-off, explained' (kept for a stated reason); never the danger tone. Its markup and CSS live in Train's page, not in `SessionCard`, so Today and History load none of it (Train's 0.15 KB allowance); /design → Plan shows a copy. `ProgramHeader` shows the week line under the position, in its style, hidden while empty: '1 heads-up this week', 'No clashes ahead this week' (the current week counts only what is ahead) or 'No clashes this week'; Train leaves it empty on past, outline and bridge weeks and on 'First block complete'.
 
 m7/14 placement-why: not built yet.
 

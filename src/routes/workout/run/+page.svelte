@@ -24,9 +24,9 @@
 </svelte:head>
 
 <Shell {table} {ready}>
-	{#snippet children(snapshot, _load, active)}
+	{#snippet children(snapshot, load, active)}
 		{#if RunView}
-			<RunView {snapshot} {active} />
+			<RunView {snapshot} {load} {active} />
 		{/if}
 	{/snippet}
 </Shell>

@@ -1,10 +1,10 @@
 /**
- * The structure family, strength only: exercise.skip, exercise.substitute, exercise.dislike and
- * pain.report, and what they make of a slot. substitution.ts says what each quick action means.
+ * The structure family, strength only: exercise.skip, exercise.substitute and exercise.dislike, and
+ * what they make of a slot. substitution.ts says what each quick action means.
  * - exercise.skip creates a skipped set for each client id it names, as set.skip does.
  * - exercise.substitute and exercise.dislike create today's substitution under their client id; a
  *   dislike's has reason dislike, and its note belongs to the preference, which no row here holds.
- * - pain.report creates the report under its client id, at the mutation's time.
+ * - pain.report's reducer is core.ts's `pain`; the slot still reads its reports.
  * - A create of a known id (a tombstone included) changes nothing, so a replay never does.
  *
  * structureSlot reads each slot from its live rows, whatever order they came in:
@@ -47,18 +47,11 @@ function substituted(
 }
 
 export const structure: MutationReducers<
-	'exercise.skip' | 'exercise.substitute' | 'exercise.dislike' | 'pain.report'
+	'exercise.skip' | 'exercise.substitute' | 'exercise.dislike'
 > = {
 	'exercise.skip': onRows(skipped),
 	'exercise.substitute': onRows((rows, m) => substituted(rows, m)),
-	'exercise.dislike': onRows((rows, m) => substituted(rows, m)),
-	'pain.report': onRows((rows, { entityId: id, at, payload: p }) => {
-		if (rows.pain.some((r) => r.id === id)) return rows;
-		const { position, plannedLineage, exerciseId, area, severity, action } = p;
-		const report = { position, plannedLineage, exerciseId, area, severity, action };
-		const row = { id, ...report, substitutionId: p.substitutionId, note: p.note };
-		return { ...rows, pain: [...rows.pain, { ...row, reportedAt: at, deletedAt: null }] };
-	})
+	'exercise.dislike': onRows((rows, m) => substituted(rows, m))
 };
 
 /** The last of a slot's substitutions, followed from the exercise it started with. */

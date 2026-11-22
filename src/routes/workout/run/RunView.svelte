@@ -10,19 +10,24 @@
     opens one after the others.
   - The run's RPE (1 to 10) and notes are a run.log each, sent when they change.
   - A change this device could not save says so, with Retry.
+  - Options opens the run's quick actions (SessionActionsSheet.svelte, loaded on its first intent):
+    This hurts, and Skip this segment while another is still to log.
   Below 1024 px one column: the entry, the segments, the totals, the effort. From 1024 px the
   segments sit beside the rest (the Shell's columns), the list sticky. Every control has hover
   and :focus-visible states; the list's rows move focus with the arrow keys.
 -->
 <script lang="ts">
-	import type { ActiveSnapshot, ActiveWorkout } from '#lib/client/workout/active.svelte.ts';
+	import type {
+		ActiveSnapshot,
+		ActiveWorkout,
+		ChunkLoad
+	} from '#lib/client/workout/active.svelte.ts';
 	import type { RunSegmentKind } from '#lib/domain/training/vocabulary.ts';
 	import { formatDuration } from '#lib/domain/units.ts';
 	import type { LocalAction, Mutation } from '#lib/domain/workout/index.ts';
 	import Button from '#lib/ui/components/Button.svelte';
 	import ChoiceGroup from '#lib/ui/components/ChoiceGroup.svelte';
 	import Notice from '#lib/ui/components/Notice.svelte';
-	import StatusSlot from '#lib/ui/components/StatusSlot.svelte';
 	import Stat from '#lib/ui/components/Stat.svelte';
 	import TextArea from '#lib/ui/components/TextArea.svelte';
 	import RpeChips from '#lib/ui/workout/RpeChips.svelte';
@@ -32,6 +37,7 @@
 		entryError,
 		freeItem,
 		nextFreePosition,
+		nextToLog,
 		normalized,
 		paceText,
 		prefillOf,
@@ -47,17 +53,21 @@
 	} from './run-log.ts';
 	import SegmentFields from './SegmentFields.svelte';
 	import SegmentRow from './SegmentRow.svelte';
+	import type SessionActionsSheet from '../SessionActionsSheet.svelte';
 
 	interface Props {
 		snapshot: ActiveSnapshot;
+		/** The page's chunk loader, for the quick actions. */
+		load: ChunkLoad;
 		active: ActiveWorkout;
 	}
 
-	let { snapshot, active }: Props = $props();
+	let { snapshot, load, active }: Props = $props();
 	const view = $derived(snapshot.view);
 	const unit = $derived(view.kit?.units.distance ?? 'km');
 	const items = $derived(segmentItems(view));
 	const position = $derived(view.device.position);
+	const skipTo = $derived(nextToLog(items, position));
 	let freeKind = $state<RunSegmentKind | null>('easy');
 	const planned = $derived(items.find((i) => i.position === position));
 	const item = $derived(planned ?? freeItem(position, freeKind ?? 'easy'));
@@ -110,6 +120,20 @@
 
 	const run = $derived(view.run);
 	const done = $derived(items.filter((i) => i.logged).length);
+
+	// The quick actions: fetched on the Options button's first intent, opened on each tap.
+	let Actions = $state.raw<typeof SessionActionsSheet | null>(null);
+	let acting = $state.raw<object | null>(null);
+	function prefetchActions() {
+		void load(() => import('../SessionActionsSheet.svelte')).then((module) => {
+			if (module) Actions = module.default;
+		});
+	}
+	function openActions(event: MouseEvent) {
+		(event.currentTarget as HTMLElement).focus();
+		prefetchActions();
+		acting = {};
+	}
 </script>
 
 <nav class="side" aria-label="Segments" data-testid="run-side">
@@ -137,20 +161,23 @@
 </nav>
 
 <div class="main" data-testid="run-main">
-	<!-- Graphite 2004's Status Display (RunStatus.svelte), first in both layouts; nothing on today's
-	     design, where the entry's header, Totals and the segment list say the same. -->
-	<StatusSlot
-		load={() => import('./RunStatus.svelte')}
-		props={{ input: { items, item, planned: !!planned, totals: run, unit } }}
-		room="9rem"
-	/>
 	<section class="card entry" aria-labelledby="segment-name" data-testid="run-entry">
 		<header class="head">
-			<p class="place">
-				{planned ? `Segment ${item.position} of ${items.length}` : 'A segment of your own'}
-			</p>
-			<h2 id="segment-name">{segmentTitle(item)}</h2>
-			<p class="target">{targetText(item.target, unit)}</p>
+			<div class="words">
+				<p class="place">
+					{planned ? `Segment ${item.position} of ${items.length}` : 'A segment of your own'}
+				</p>
+				<h2 id="segment-name">{segmentTitle(item)}</h2>
+				<p class="target">{targetText(item.target, unit)}</p>
+			</div>
+			<Button
+				variant="secondary"
+				icon="refresh"
+				onpointerdown={prefetchActions}
+				onclick={openActions}
+				aria-label="Run options"
+				data-testid="session-actions">Options</Button
+			>
 		</header>
 		{#if !planned}
 			<ChoiceGroup legend="Segment type" options={kinds} bind:value={freeKind} />
@@ -212,6 +239,17 @@
 	</section>
 </div>
 
+{#if Actions && acting && active.store}
+	<Actions
+		{view}
+		request={acting}
+		store={active.store}
+		{load}
+		{skipTo}
+		onfinish={() => (active.finishing = true)}
+	/>
+{/if}
+
 <style>
 	ol {
 		display: grid;
@@ -250,8 +288,16 @@
 	}
 
 	.head {
+		display: flex;
+		align-items: flex-start;
+		justify-content: space-between;
+		gap: var(--space-3);
+	}
+
+	.words {
 		display: grid;
 		gap: var(--space-1);
+		min-width: 0;
 	}
 
 	.place,

@@ -5,6 +5,7 @@
  */
 import type { Lifecycle } from './lifecycle.ts';
 import { PROPOSAL } from './training/lifecycles.ts';
+import { PROGRAM } from './training/program-lifecycle.ts';
 import { WORKOUT } from './workout/lifecycles.ts';
 
-export const LIFECYCLES: readonly Lifecycle<string, string>[] = [WORKOUT, PROPOSAL];
+export const LIFECYCLES: readonly Lifecycle<string, string>[] = [WORKOUT, PROPOSAL, PROGRAM];

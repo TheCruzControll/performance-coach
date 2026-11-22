@@ -150,7 +150,7 @@ describe('Train’s load', () => {
 				id: 'train-block-complete',
 				description:
 					'You trained through every planned week, Mon 9 Nov – Sun 15 Nov. Your next block is planned from how this one went, starting with Accumulation.',
-				next: { title: 'Look back at week 1', to: { week: 1 } }
+				next: { title: 'Review this block', to: { href: '/progress/reviews' } }
 			});
 			// Asked for by number, a past week is just that week, and an outline week is not
 			// planned yet: only the current view says the block is complete.

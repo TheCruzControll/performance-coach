@@ -24,9 +24,9 @@
 </svelte:head>
 
 <Shell {table} {ready}>
-	{#snippet children(snapshot, _load, active)}
+	{#snippet children(snapshot, load, active)}
 		{#if OtherView}
-			<OtherView {snapshot} {active} />
+			<OtherView {snapshot} {load} {active} />
 		{/if}
 	{/snippet}
 </Shell>

@@ -14,6 +14,7 @@
  *   the server already applied it to (its answer not yet stored), after the updates before it,
  *   so it sets its values again. The server's ledger answers that replay 'duplicate'; here the
  *   finish time it ended the rows at stands in for its id.
+ * - pain (pain.report) is in every kind's table too, with a create of a known id changing nothing.
  */
 import { canEnd } from '../ends.ts';
 import type { MutationOf, WorkoutFields } from '../mutations.ts';
@@ -90,6 +91,17 @@ export const core: MutationReducers<
 			? withWorkout(rows, { status: 'abandoned', finishedAt: m.at })
 			: rows
 	)
+};
+
+/** pain.report, in every kind's table: the report under its client id, at the mutation's time. */
+export const pain: MutationReducers<'pain.report'> = {
+	'pain.report': onRows((rows, { entityId: id, at, payload: p }) => {
+		if (rows.pain.some((r) => r.id === id)) return rows;
+		const { position, plannedLineage, exerciseId, area, severity, action } = p;
+		const report = { position, plannedLineage, exerciseId, area, severity, action };
+		const row = { id, ...report, substitutionId: p.substitutionId, note: p.note };
+		return { ...rows, pain: [...rows.pain, { ...row, reportedAt: at, deletedAt: null }] };
+	})
 };
 
 export const customExercises: MutationReducers<'exercise.create'> = {

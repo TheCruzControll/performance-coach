@@ -1,13 +1,15 @@
 /**
- * The run rules in .github/workflows/ci.yml. Every merge to `main` gets a complete run: only a
- * newer push to the same pull request cancels a run. Artifact uploads keep the hidden files they
+ * The run rules in .github/workflows/ci.yml. Every merge to `main` gets a run of its own: only a
+ * newer push to the same pull request cancels a run. A run's scope job decides whether its heavy
+ * jobs run. Artifact uploads keep the hidden files they
  * list, such as the e2e production servers' `.e2e-server*.log`: upload-artifact skips dot-files
  * unless `include-hidden-files` is set.
  */
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { ENGINES, GROUPS, LEGS } from '../e2e/projects.ts';
+import { ENGINES, LEGS } from '../e2e/projects.ts';
+import { CHROMIUM_LEGS, JOURNEYS_CHROMIUM, JOURNEYS_WEBKIT, type Leg, legsFor } from './ci-legs.ts';
 import { KEY_PATTERN, MIN_SCANNED_KEY_LENGTH } from './client-secret-scan.ts';
 import { CEILING_MINUTES } from './e2e-timing.ts';
 
@@ -139,12 +141,22 @@ function run(event: string, ref: string, runId: string, headRef = ''): Context {
 const merge = (runId: string) => concurrencyOf(run('push', 'refs/heads/main', runId));
 const manualRun = (runId: string) =>
 	concurrencyOf(run('workflow_dispatch', 'refs/heads/main', runId));
+const nightlyRun = (runId: string) => concurrencyOf(run('schedule', 'refs/heads/main', runId));
 const pullRequestPush = (pr: number, runId: string) =>
 	concurrencyOf(run('pull_request', `refs/pull/${pr}/merge`, runId, `branch-${pr}`));
 
 // GitHub runs one run per concurrency group and keeps one more waiting. A newer run replaces the
 // waiting one whatever cancel-in-progress says, and with it also cancels the running one.
 describe('CI concurrency', () => {
+	it('runs main nightly, each run in a group of its own', () => {
+		expect(under(ci, 'on').map((line) => line.text)).toContain('schedule:');
+		expect(nightlyRun('1')).toEqual({
+			group: expect.stringContaining('-1'),
+			cancelInProgress: false
+		});
+		expect(nightlyRun('1').group).not.toBe(nightlyRun('2').group);
+	});
+
 	it('gives each merge to main and each manual run a group of its own', () => {
 		const runs = [merge('101'), merge('102'), merge('103'), manualRun('104')];
 		const groups = new Set(runs.map((r) => r.group));
@@ -159,6 +171,61 @@ describe('CI concurrency', () => {
 		expect(pullRequestPush(8, '203').group, 'another pull request').not.toBe(older.group);
 		expect(merge('204').cancelInProgress, 'a merge to main').toBe(false);
 		expect(manualRun('205').cancelInProgress, 'a manual run').toBe(false);
+	});
+});
+
+/** The `if` of every job that waits for the scope job: it runs only on a full run. */
+const FULL_ONLY = "${{ needs.changes.outputs.scope == 'full' }}";
+/** The jobs that wait for the scope job: the heavy ones, which a light run skips, and the two aggregate checks. */
+const HEAVY = ['integration', 'e2e-legs'];
+const AGGREGATES = ['test', 'e2e'];
+/** The results a `needs` context can hold, and the run scopes the scope job can answer. */
+const RESULTS = ['success', 'failure', 'cancelled', 'skipped'];
+const SCOPES = ['full', 'light', ''];
+
+/** The job ids a job's `needs` lists. */
+const needsOf = (job: Line[]) =>
+	(value(job, 'needs') ?? '')
+		.replace(/[[\]]/g, '')
+		.split(/[\s,]+/)
+		.filter(Boolean);
+
+describe('CI scope', () => {
+	it('decides the scope in its own first job, from the full history and the event', () => {
+		const jobs = under(ci, 'jobs');
+		expect(jobs[0]!.text).toBe('changes:');
+		const job = under(jobs, 'changes');
+		expect(value(under(job, 'outputs'), 'scope')).toBe('${{ steps.scope.outputs.scope }}');
+		expect(value(under(job, 'outputs'), 'legs')).toBe('${{ steps.scope.outputs.legs }}');
+		const steps = stepsOf(job);
+		const checkout = steps.find((fields) => value(fields, 'uses')?.startsWith('actions/checkout@'));
+		expect(value(under(checkout!, 'with'), 'fetch-depth')).toBe('0');
+		const scope = steps.find((fields) => value(fields, 'id') === 'scope')!;
+		expect(value(scope, 'run')).toBe('node scripts/ci-scope.ts >> "$GITHUB_OUTPUT"');
+		const env = under(scope, 'env');
+		expect(value(env, 'EVENT_NAME')).toBe('${{ github.event_name }}');
+		expect(value(env, 'BASE_SHA')).toBe('${{ github.event.pull_request.base.sha }}');
+		expect(value(env, 'HEAD_SHA')).toBe('${{ github.event.pull_request.head.sha }}');
+		expect(value(env, 'BEFORE_SHA')).toBe('${{ github.event.before }}');
+		expect(value(env, 'SHA')).toBe('${{ github.sha }}');
+	});
+
+	it('runs the heavy jobs only on a full run, after the scope job, and no other job', () => {
+		const jobs = under(ci, 'jobs');
+		for (const id of HEAVY) {
+			const job = under(jobs, id);
+			expect(value(job, 'needs'), id).toBe('[changes]');
+			expect(value(job, 'if'), id).toBe(FULL_ONLY);
+		}
+		for (const id of ['quality', 'unit', 'build']) {
+			const job = under(jobs, id);
+			expect(value(job, 'needs'), id).toBeUndefined();
+			expect(value(job, 'if'), id).toBeUndefined();
+		}
+		const waiting = jobs
+			.filter((job) => needsOf(job.children).includes('changes'))
+			.map((job) => job.text.replace(/:$/, ''));
+		expect(waiting.sort()).toEqual([...AGGREGATES, ...HEAVY].sort());
 	});
 });
 
@@ -205,15 +272,17 @@ describe('CI artifacts', () => {
 
 const legsJob = () => under(under(ci, 'jobs'), 'e2e-legs');
 
-/** A matrix's entries (the e2e legs' by default): each `- { key: value, … }` line under `include`. */
-function entries(job = legsJob()): Record<string, string>[] {
-	const include = under(under(under(job, 'strategy'), 'matrix'), 'include');
-	return include.map((line) => {
-		const flow = /^- \{(.*)\}$/.exec(line.text)?.[1];
-		if (flow === undefined) throw new Error(`not a one-line entry: ${line.text}`);
-		return Object.fromEntries(flow.split(',').map((pair) => pair.split(':').map((s) => s.trim())));
-	});
-}
+/** A leg's fields as the matrix entry Actions expands `${{ matrix.x }}` from (`only` when set). */
+const asEntry = (leg: Leg): Record<string, string> =>
+	Object.fromEntries(Object.entries(leg).map(([key, field]) => [key, String(field)]));
+
+/** The legs of each kind of run: a scheduled run's, and a pull request's. */
+const RUNS = [legsFor('schedule'), legsFor('pull_request')];
+/** Every leg any run can get, for the checks that hold for each leg whatever its event. */
+const EVERY_LEG = [...CHROMIUM_LEGS, JOURNEYS_WEBKIT, JOURNEYS_CHROMIUM];
+
+/** `<group>/<engine>` of a leg, as e2e/projects.ts names its legs. */
+const legKey = (leg: { group: string; engine: string }) => `${leg.group}/${leg.engine}`;
 
 /** A legs step's fields, found by its name. */
 function legStep(name: string): Line[] {
@@ -234,43 +303,40 @@ const fill = (template: string, entry: Record<string, string>) =>
 const PLAYWRIGHT = 'Playwright (global setup builds and starts the production Node server)';
 
 describe('CI e2e legs', () => {
-	it('cover every leg of e2e/projects.ts, with contiguous, well-formed shards', () => {
-		const legs = new Map<string, Record<string, string>[]>();
-		for (const entry of entries()) {
-			expect(GROUPS, JSON.stringify(entry)).toContain(entry.group);
-			expect(ENGINES, JSON.stringify(entry)).toContain(entry.engine);
-			for (const key of ['shard', 'of', 'minutes']) {
-				expect(entry[key], `${key} in ${JSON.stringify(entry)}`).toMatch(/^[1-9]\d*$/);
-			}
-			const leg = `${entry.group}/${entry.engine}`;
-			legs.set(leg, [...(legs.get(leg) ?? []), entry]);
-		}
-		expect([...legs.keys()].sort()).toEqual(LEGS.map((l) => `${l.group}/${l.engine}`).sort());
-		for (const [leg, shards] of legs) {
-			const of = Number(shards[0]!.of);
-			expect(
-				shards.map((s) => s.of),
-				leg
-			).toEqual(shards.map(() => String(of)));
-			expect(
-				shards.map((s) => Number(s.shard)).sort((a, b) => a - b),
-				leg
-			).toEqual(Array.from({ length: of }, (_, i) => i + 1));
-		}
+	it('take their matrix from scripts/ci-legs.ts, through the scope job', () => {
+		const strategy = under(legsJob(), 'strategy');
+		expect(value(strategy, 'fail-fast')).toBe('false');
+		expect(value(strategy, 'matrix')).toBe('${{ fromJSON(needs.changes.outputs.legs) }}');
 	});
 
-	it('run every entry to the end and each leg’s projects and shard', () => {
-		expect(value(under(legsJob(), 'strategy'), 'fail-fast')).toBe('false');
+	it('cover every Chromium group of e2e/projects.ts but alone, and WebKit only through the journeys', () => {
+		// Performance is not tested in CI, by the owner's decision: the `alone` group (perf) runs
+		// locally only (E2E_GROUP=alone pnpm test:e2e), and so does pnpm lighthouse.
+		const covered = [...new Set(CHROMIUM_LEGS.map(legKey))].sort();
+		const expected = LEGS.filter((leg) => leg.engine === 'chromium' && leg.group !== 'alone')
+			.map(legKey)
+			.sort();
+		expect(covered).toEqual(expected);
+		expect(legsFor('schedule').filter((leg) => leg.engine === 'webkit')).toEqual([JOURNEYS_WEBKIT]);
+	});
+
+	it('run each leg to the end: its projects and shard, or its file filter unsharded', () => {
 		const step = legStep(PLAYWRIGHT);
 		const env = under(step, 'env');
 		expect(value(env, 'E2E_ENGINE')).toBe('${{ matrix.engine }}');
 		expect(value(env, 'E2E_GROUP')).toBe('${{ matrix.group }}');
 		expect(value(env, 'E2E_SHARD')).toBe('${{ matrix.shard }}/${{ matrix.of }}');
-		// the shard's spec files from scripts/e2e-shards.ts, read before Playwright starts so a
-		// planner failure fails the step (bash -e) instead of running the whole leg
+		expect(value(env, 'E2E_ONLY')).toBe('${{ matrix.only }}');
+		// A file-filtered leg (the journeys) runs those specs. Any other runs the shard's spec files
+		// from scripts/e2e-shards.ts, read before Playwright starts so a planner failure fails the step
+		// (bash -e) instead of running the whole leg.
 		expect(value(step, 'run')).toBe(
-			'shard_args=$(node scripts/e2e-shards.ts "$RUNNER_TEMP/e2e-shard-tests.txt")\n' +
-				'pnpm test:e2e $shard_args'
+			'if [ -n "$E2E_ONLY" ]; then\n' +
+				'pnpm test:e2e "$E2E_ONLY"\n' +
+				'else\n' +
+				'shard_args=$(node scripts/e2e-shards.ts "$RUNNER_TEMP/e2e-shard-tests.txt")\n' +
+				'pnpm test:e2e $shard_args\n' +
+				'fi'
 		);
 		expect(value(step, 'run')).not.toMatch(/--shard/);
 		const timing = legStep('Where the minutes went');
@@ -284,11 +350,9 @@ describe('CI e2e legs', () => {
 		);
 	});
 
-	it('bound each entry by its measured minutes, inside the job with room for the installs', () => {
+	it('bound each leg by its Playwright timeout, inside the job with room for the installs', () => {
 		const step = legStep(PLAYWRIGHT);
 		expect(value(step, 'timeout-minutes')).toBe('${{ matrix.minutes }}');
-		const minutes = entries().map((entry) => Number(entry.minutes));
-		for (const m of minutes) expect(m).toBeLessThanOrEqual(Math.ceil(1.5 * CEILING_MINUTES));
 		const installs = ['Install Playwright system dependencies', 'Install Playwright browsers'].map(
 			(name) => Number(value(legStep(name), 'timeout-minutes'))
 		);
@@ -326,7 +390,7 @@ describe('CI e2e legs', () => {
 		expect(value(cache, 'path')).toBe('~/.cache/apt-playwright');
 		const key = value(cache, 'key')!;
 		const restore = value(cache, 'restore-keys')!;
-		const engines = [...new Set(entries().map((entry) => entry.engine!))].sort();
+		const engines = [...new Set(EVERY_LEG.map((leg) => leg.engine))].sort();
 		expect(engines).toEqual([...ENGINES].sort());
 		for (const engine of engines) {
 			// Chromium legs launch only Chromium; WebKit legs also run the Chromium owner setup.
@@ -356,15 +420,26 @@ describe('CI e2e legs', () => {
 		expect(direct, 'no install-deps outside the cached install').toEqual([]);
 	});
 
-	it('upload each entry’s files under a name of its own, hidden files included', () => {
+	it('upload each run’s files under a name of its own, hidden files included', () => {
 		const inputs = under(legStep('Upload screenshots and report'), 'with');
 		expect(value(inputs, 'include-hidden-files')).toBe('true');
 		const template = value(inputs, 'name')!;
-		const names = entries().map((entry) => fill(template, entry));
-		expect(new Set(names).size, names.join(', ')).toBe(names.length);
+		// The names are unique within each run (scripts/ci-legs.ts); two runs may share one.
+		for (const legs of RUNS) {
+			const names = legs.map((leg) => fill(template, asEntry(leg)));
+			expect(new Set(names).size, names.join(', ')).toBe(names.length);
+		}
 		expect(fill(template, { group: 'main', engine: 'webkit', shard: '2' })).toBe(
 			'playwright-42-main-webkit-2'
 		);
+	});
+
+	it('never installs system packages from a live mirror outside the cached install', () => {
+		const direct = under(ci, 'jobs')
+			.flatMap((job) => stepsOf(job.children))
+			.map((fields) => value(fields, 'run') ?? '')
+			.filter((run) => run.includes('playwright install-deps') || run.includes('apt-get'));
+		expect(direct).toEqual([]);
 	});
 
 	it('report through one check, under its old name, that passes only when every leg did', () => {
@@ -374,17 +449,35 @@ describe('CI e2e legs', () => {
 		);
 		expect(checks.map((job) => job.text)).toEqual(['e2e:']);
 		const aggregate = checks[0]!.children;
-		expect(value(aggregate, 'needs')).toBe('[e2e-legs]');
+		expect(value(aggregate, 'needs')).toBe('[changes, e2e-legs]');
 		// A required check that is skipped counts as passed, so on a pull request it must run after a
 		// failed leg too. Required checks gate only pull requests, so pushes and manual runs skip it
 		// rather than queue a 3-second job behind every pull request's jobs.
 		expect(value(aggregate, 'if')).toBe("${{ always() && github.event_name == 'pull_request' }}");
-		// The legs themselves still run on every event, so a merge to main still fails on a failed leg.
-		expect(value(legsJob(), 'if')).toBeUndefined();
+		// The legs run on every full run, so a merge to main still fails on a failed leg.
+		expect(value(legsJob(), 'if')).toBe(FULL_ONLY);
 		const step = under(aggregate, 'steps')[0]!;
 		const fields = [step, ...step.children];
-		expect(value(under(fields, 'env'), 'LEGS')).toBe('${{ needs.e2e-legs.result }}');
-		expect(value(fields, 'run')).toMatch(/^if \[ "\$LEGS" != success \]; then\n.*\n\s*exit 1\n/);
+		const env = under(fields, 'env');
+		expect(value(env, 'CHANGES')).toBe('${{ needs.changes.result }}');
+		expect(value(env, 'SCOPE')).toBe('${{ needs.changes.outputs.scope }}');
+		expect(value(env, 'LEGS')).toBe('${{ needs.e2e-legs.result }}');
+		const script = value(fields, 'run')!;
+		for (const changes of RESULTS) {
+			for (const legs of RESULTS) {
+				for (const scope of SCOPES) {
+					// Passes only when the scope job succeeded and the legs either passed or were
+					// skipped by a light run.
+					const passed =
+						changes === 'success' &&
+						(legs === 'success' || (legs === 'skipped' && scope === 'light'));
+					expect(
+						exitCode(script, { CHANGES: changes, LEGS: legs, SCOPE: scope }),
+						`scope job ${changes}, legs ${legs}, run scope '${scope}'`
+					).toBe(passed ? 0 : 1);
+				}
+			}
+		}
 	});
 });
 
@@ -408,176 +501,8 @@ describe('CI client-secret canary', () => {
 	});
 });
 
-const shardsJob = () => under(under(ci, 'jobs'), 'lighthouse-shards');
-
-/** A Lighthouse shard step's fields, found by its name. */
-function shardStep(name: string): Line[] {
-	const step = under(shardsJob(), 'steps').find((s) => value([s, ...s.children], 'name') === name);
-	if (!step) throw new Error(`no step "${name}"`);
-	return [step, ...step.children];
-}
-
-const MOBILE = 'Lighthouse (median of 5 runs, asserted)';
-
-/** The commands a job's steps run that start with `pnpm lighthouse`. */
-const lighthouseCommands = (id: string) =>
-	under(under(under(ci, 'jobs'), id), 'steps')
-		.map((step) => value([step, ...step.children], 'run'))
-		.filter((run): run is string => run?.startsWith('pnpm lighthouse') ?? false);
-
-const MOBILE_CHECK = 'Lighthouse (mobile)';
-
-describe('CI Lighthouse', () => {
-	it('runs contiguous, well-formed shards to the end', () => {
-		expect(value(under(shardsJob(), 'strategy'), 'fail-fast')).toBe('false');
-		const shards = entries(shardsJob());
-		for (const entry of shards) {
-			expect(Object.keys(entry).sort(), JSON.stringify(entry)).toEqual(['of', 'shard']);
-			expect(entry.of, JSON.stringify(entry)).toBe(String(shards.length));
-		}
-		expect(shards.map((s) => Number(s.shard)).sort((a, b) => a - b)).toEqual(
-			Array.from({ length: shards.length }, (_, i) => i + 1)
-		);
-		expect(shards.length, 'parallel shards').toBeGreaterThan(1);
-	});
-
-	it('audits each shard’s share of every route', () => {
-		expect(value(shardStep(MOBILE), 'run')).toMatch(
-			/^pnpm lighthouse .* --shard \$\{\{ matrix\.shard \}\}\/\$\{\{ matrix\.of \}\}$/
-		);
-	});
-
-	it('bounds each shard by a measured step timeout, inside the job with room for the installs', () => {
-		const step = Number(value(shardStep(MOBILE), 'timeout-minutes'));
-		expect(step).toBeGreaterThan(0);
-		expect(step).toBeLessThanOrEqual(Math.ceil(1.5 * CEILING_MINUTES));
-		const installs = ['Install Chromium system dependencies', 'Install Chromium'].map((name) =>
-			Number(value(shardStep(name), 'timeout-minutes'))
-		);
-		expect(installs).toEqual([12, 8]);
-		const job = Number(value(shardsJob(), 'timeout-minutes'));
-		expect(job).toBeGreaterThanOrEqual(step + 12 + 8);
-	});
-
-	it('uploads each shard’s reports under a name of its own', () => {
-		const template = value(under(shardStep('Upload Lighthouse reports'), 'with'), 'name')!;
-		const names = entries(shardsJob()).map((entry) => fill(template, entry));
-		expect(new Set(names).size, names.join(', ')).toBe(names.length);
-		expect(fill(template, { shard: '2', of: '2' })).toBe('lighthouse-42-shard-2');
-	});
-
-	it('reports through one check, under its old name, that passes only when every shard did', () => {
-		const checks = under(ci, 'jobs').filter((job) => value(job.children, 'name') === MOBILE_CHECK);
-		expect(checks.map((job) => job.text)).toEqual(['lighthouse:']);
-		const aggregate = checks[0]!.children;
-		expect(value(aggregate, 'needs')).toBe('[lighthouse-shards]');
-		expect(value(aggregate, 'if')).toBe('${{ always() }}');
-		const step = under(aggregate, 'steps')[0]!;
-		const fields = [step, ...step.children];
-		expect(value(under(fields, 'env'), 'SHARDS')).toBe('${{ needs.lighthouse-shards.result }}');
-		expect(value(fields, 'run')).toMatch(/^if \[ "\$SHARDS" != success \]; then\n.*\n\s*exit 1\n/);
-	});
-
-	it('asserts the median of an odd run count in every audit, mobile and desktop', () => {
-		const commands = [
-			...lighthouseCommands('lighthouse-shards'),
-			...lighthouseCommands('lighthouse-desktop')
-		];
-		// Every asserted audit takes the median of an odd run count, so a strict majority decides it.
-		expect(commands.length).toBeGreaterThan(0);
-		for (const command of commands) {
-			expect(command).toMatch(/ --assert(?: |$)/);
-			expect(Number(/ --runs (\d+)/.exec(command)?.[1]) % 2).toBe(1);
-		}
-	});
-
-	it('gives the required mobile check exactly its one audit: 5 runs and the documented thresholds', () => {
-		const job = under(under(ci, 'jobs'), 'lighthouse');
-		expect(value(job, 'name')).toBe(MOBILE_CHECK);
-		// The check itself only gathers its shards, each of which runs the one mobile audit on its
-		// share of the routes. scripts/lighthouse.ts may decide a route in 3 of the 5 planned runs.
-		expect(lighthouseCommands('lighthouse')).toEqual([]);
-		expect(lighthouseCommands('lighthouse-shards')).toEqual([
-			'pnpm lighthouse --runs 5 --assert --min-perf 0.9 --max-tbt 300 --shard ${{ matrix.shard }}/${{ matrix.of }}'
-		]);
-	});
-
-	it('measures desktop in a job of its own, on every event, without gating', () => {
-		const jobs = under(ci, 'jobs');
-		const job = under(jobs, 'lighthouse-desktop');
-		expect(lighthouseCommands('lighthouse-desktop')).toEqual([
-			'pnpm lighthouse --desktop --seed --runs 3 --assert'
-		]);
-		const step = stepsOf(job).find((fields) =>
-			value(fields, 'run')?.startsWith('pnpm lighthouse')
-		)!;
-		expect(value(step, 'continue-on-error')).toBe('true');
-		expect(value(step, 'timeout-minutes')).toBe('8');
-		// Not the required check, and nothing waits on it: a desktop miss never blocks a merge.
-		expect(value(job, 'name')).toBe('Lighthouse desktop (measured, not gating)');
-		expect(value(job, 'name')).not.toBe(MOBILE_CHECK);
-		expect(
-			jobs.filter((j) => value(j.children, 'name') === MOBILE_CHECK).map((j) => j.text)
-		).toEqual(['lighthouse:']);
-		expect(jobs.flatMap((j) => value(j.children, 'needs') ?? '').join(' ')).not.toMatch(
-			/lighthouse-desktop/
-		);
-		expect(value(job, 'if')).toBeUndefined();
-		// The same production Node build, served where the Lighthouse script looks for it.
-		const build = stepsOf(job).find((fields) => value(fields, 'run') === 'pnpm build:node')!;
-		expect(value(under(build, 'env'), 'ORIGIN')).toBe('https://localhost:4174');
-		// Its reports under a name of its own, beside the mobile job's.
-		const upload = stepsOf(job).find((fields) =>
-			value(fields, 'uses')?.startsWith('actions/upload-artifact@')
-		)!;
-		const inputs = under(upload, 'with');
-		expect(value(inputs, 'name')).toBe('lighthouse-desktop-${{ github.run_id }}');
-		expect(value(inputs, 'path')).toBe('lighthouse-reports/desktop/');
-		expect(value(upload, 'if')).toBe('${{ !cancelled() }}');
-	});
-
-	it('installs Chromium’s system packages from the e2e legs’ cache, never from a live mirror', () => {
-		const cache = under(legStep('Cache Playwright system packages'), 'with');
-		for (const id of ['lighthouse-shards', 'lighthouse-desktop']) {
-			const job = under(under(ci, 'jobs'), id);
-			// The legs' runner image, so the image-keyed caches they saved restore here.
-			expect(value(job, 'runs-on'), id).toBe(value(legsJob(), 'runs-on'));
-			const steps = stepsOf(job);
-			const named = (name: string) => {
-				const at = steps.findIndex((fields) => value(fields, 'name') === name);
-				expect(at, `${id}: no step "${name}"`).toBeGreaterThanOrEqual(0);
-				return { at, fields: steps[at]! };
-			};
-			const image = named('Runner image');
-			const key = named('Playwright system packages');
-			const restore = named('Cache Playwright system packages');
-			const install = named('Install Chromium system dependencies');
-			expect([image.at, key.at, restore.at, install.at], id).toEqual(
-				[image.at, key.at, restore.at, install.at].sort((a, b) => a - b)
-			);
-			expect(new Set([image.at, key.at, restore.at, install.at]).size, id).toBe(4);
-			expect(value(key.fields, 'id'), id).toBe('apt');
-			expect(value(key.fields, 'run'), id).toBe(
-				'./scripts/ci-playwright-deps.sh key chromium >> "$GITHUB_OUTPUT"'
-			);
-			// The legs' key, prefix and path, on the legs' image: the very cache they saved.
-			const inputs = under(restore.fields, 'with');
-			for (const field of ['path', 'key', 'restore-keys']) {
-				expect(value(inputs, field), `${id} ${field}`).toBe(value(cache, field));
-			}
-			expect(value(install.fields, 'run'), id).toBe(
-				'./scripts/ci-playwright-deps.sh install ~/.cache/apt-playwright chromium'
-			);
-			expect(value(install.fields, 'timeout-minutes'), id).toBe('12');
-		}
-		// No job anywhere goes to the mirror outside the cached install.
-		const direct = under(ci, 'jobs')
-			.flatMap((job) => stepsOf(job.children))
-			.map((fields) => value(fields, 'run') ?? '')
-			.filter((run) => run.includes('playwright install-deps') || run.includes('apt-get'));
-		expect(direct).toEqual([]);
-	});
-
+describe('scripts/lighthouse.ts', () => {
+	// Lighthouse is not a CI job (the owner's decision), but `pnpm lighthouse` still runs locally.
 	it('skips the full-page screenshot, which only the HTML report thumbnails use', () => {
 		const script = readFileSync(new URL('./lighthouse.ts', import.meta.url), 'utf8');
 		expect(script).toMatch(/^\s*disableFullPageScreenshot: true,$/m);
@@ -602,12 +527,7 @@ const START =
 describe('CI Postgres', () => {
 	it('is started by every job that runs db:setup, in the background, right after checkout', () => {
 		const jobs = databaseJobs();
-		expect(jobs.map((job) => job.id).sort()).toEqual([
-			'e2e-legs',
-			'integration',
-			'lighthouse-desktop',
-			'lighthouse-shards'
-		]);
+		expect(jobs.map((job) => job.id).sort()).toEqual(['e2e-legs', 'integration']);
 		for (const job of jobs) {
 			const checkout = job.steps.findIndex((f) =>
 				value(f, 'uses')?.startsWith('actions/checkout@')
@@ -695,9 +615,11 @@ describe('CI unit and integration tests', () => {
 		] as const) {
 			expect(value(job(id), 'name'), id).toBe(name);
 			expect(value(job(id), 'timeout-minutes'), id).toBe('15');
-			// Every event runs them, so a merge to main still fails on a failed test.
-			expect(value(job(id), 'if'), id).toBeUndefined();
 		}
+		// Unit tests run on every event, so a merge to main still fails on a failed test.
+		expect(value(job('unit'), 'if'), 'unit').toBeUndefined();
+		// Integration tests run on a full run only (the scope job, see CI scope).
+		expect(value(job('integration'), 'if'), 'integration').toBe(FULL_ONLY);
 	});
 
 	it('report through one check, under its old name, that passes only when both jobs did', () => {
@@ -706,24 +628,40 @@ describe('CI unit and integration tests', () => {
 		);
 		expect(checks.map((job) => job.text)).toEqual(['test:']);
 		const gate = checks[0]!.children;
-		expect(value(gate, 'needs')).toBe('[unit, integration]');
+		expect(value(gate, 'needs')).toBe('[changes, unit, integration]');
 		// A skipped required check counts as passed, so on a pull request it runs after a failure
 		// or a cancellation too (always(), not !cancelled()).
 		expect(value(gate, 'if')).toBe("${{ always() && github.event_name == 'pull_request' }}");
 		const steps = stepsOf(gate);
 		expect(steps).toHaveLength(1);
 		const step = steps[0]!;
-		expect(value(under(step, 'env'), 'UNIT')).toBe('${{ needs.unit.result }}');
-		expect(value(under(step, 'env'), 'INTEGRATION')).toBe('${{ needs.integration.result }}');
+		const env = under(step, 'env');
+		expect(value(env, 'CHANGES')).toBe('${{ needs.changes.result }}');
+		expect(value(env, 'SCOPE')).toBe('${{ needs.changes.outputs.scope }}');
+		expect(value(env, 'UNIT')).toBe('${{ needs.unit.result }}');
+		expect(value(env, 'INTEGRATION')).toBe('${{ needs.integration.result }}');
 		const script = value(step, 'run')!;
-		const results = ['success', 'failure', 'cancelled', 'skipped'];
-		for (const unit of results) {
-			for (const integration of results) {
-				const passed = unit === 'success' && integration === 'success';
-				expect(
-					exitCode(script, { UNIT: unit, INTEGRATION: integration }),
-					`unit ${unit}, integration ${integration}`
-				).toBe(passed ? 0 : 1);
+		for (const changes of RESULTS) {
+			for (const unit of RESULTS) {
+				for (const integration of RESULTS) {
+					for (const scope of SCOPES) {
+						// Passes only when the scope job and unit tests succeeded and the integration
+						// tests either passed or were skipped by a light run.
+						const passed =
+							changes === 'success' &&
+							unit === 'success' &&
+							(integration === 'success' || (integration === 'skipped' && scope === 'light'));
+						expect(
+							exitCode(script, {
+								CHANGES: changes,
+								UNIT: unit,
+								INTEGRATION: integration,
+								SCOPE: scope
+							}),
+							`scope job ${changes}, unit ${unit}, integration ${integration}, run scope '${scope}'`
+						).toBe(passed ? 0 : 1);
+					}
+				}
 			}
 		}
 	});

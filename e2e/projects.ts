@@ -33,8 +33,8 @@ export type Group = (typeof GROUPS)[number];
 const CHROMIUM_ONLY: readonly Group[] = ['alone', 'exclusive'];
 
 /**
- * The legs CI runs (.github/workflows/ci.yml): every group on both engines, `alone` and
- * `exclusive` on Chromium.
+ * Every leg the suite can run in: every group on both engines, `alone` and `exclusive` on
+ * Chromium. CI runs a subset of them (scripts/ci-legs.ts); the rest run locally.
  * `sweeps` has no leg until a *.sweep.e2e.ts spec exists: its legs would run only the setup the
  * other legs already run. The legs' --list union test (scripts/e2e-projects.test.ts) fails the
  * day a sweep spec lands without them.

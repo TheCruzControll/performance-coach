@@ -117,7 +117,7 @@ function gh(args: string[]): string {
 function main(): void {
 	const ids = process.argv.slice(2).map(Number);
 	if (ids.length === 0 || ids.some((id) => !Number.isSafeInteger(id) || id <= 0)) {
-		console.error('usage: pnpm e2e:timings <run-id>…  (green CI runs of main)');
+		console.error('usage: pnpm e2e:timings <run-id>…  (green full CI runs of a pull request head)');
 		process.exitCode = 1;
 		return;
 	}

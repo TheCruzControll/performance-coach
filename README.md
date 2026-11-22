@@ -26,6 +26,15 @@ log every set and talk to the coach.
 > finish and History, on the phone and in a desktop window. Sign-out flushes unsynced changes
 > and asks before deleting them. Open: the owner's screenshot review
 > ([docs/milestones.md](docs/milestones.md)).
+>
+> **Milestone 5 — AI performance coach is in progress**: every slice is built. Ask the coach on
+> Coach or from a workout, Today or an exercise's history; answers stream with labelled facts,
+> metrics and recommendations grounded in your own records, from 24 tools over the app's services.
+> Every change it suggests is a proposal you accept or reject; pain never gets 'push through'.
+> The launch (#449) merged on 2026-11-12 and the real coach is live in production; #500 fixed the
+> 400s that failed every production turn. The owner's screenshot review (#405) is still open, as a
+> review after launch rather than a merge gate; `LLM_PROVIDER=off` switches the coach off again
+> ([docs/environment.md](docs/environment.md)).
 
 ## Stack
 
@@ -73,7 +82,7 @@ pnpm dev                         # http://localhost:5173
 src/lib/domain            pure training math (units, e1RM, RPE, plates, load)
 src/lib/server/db         Drizzle schema, pool, repositories, migrations helper
 src/lib/server/services   use-cases shared by routes and the coach
-src/lib/server/agent      AI coach (M5) — provider interface, tools, memory
+src/lib/server/agent      AI coach (M5) — providers, the agent loop, tools, output gate
 src/lib/server/auth       passkey auth: SimpleWebAuthn, sessions, recovery, deny-by-default guard
 src/lib/client            browser-only: RUM, preferences, offline store (M4)
 src/lib/ui                design system: tokens, fonts, icons, components
@@ -92,7 +101,7 @@ e2e/ · tests/integration  Playwright and integration tests
 - [Deployment](docs/deployment.md) (Vercel + Neon + Cloudflare, production deploys and rollback, owner setup, lost passkeys, backups)
 - [Performance](docs/performance.md) (budgets + measured baseline)
 - [Design system](docs/design-system.md) · live at `/design`
-- [Agent architecture](docs/agent-architecture.md) (plan for the coach)
+- [Agent architecture](docs/agent-architecture.md) (the coach as built)
 - [Milestones](docs/milestones.md) (acceptance criteria and status)
 
 ## Privacy

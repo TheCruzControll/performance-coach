@@ -394,12 +394,14 @@ async function sectionsOf(
 		cycle_review: program?.blocks[0]?.endsOn ?? null
 	};
 	// PRs and e1RM lines are ready once logged; a planned session dates them, never readies them.
-	// Verdicts are dated by the calendar but ready only once one has a trend (a lapsed or sparse
+	// The rest are dated by the calendar but ready only once something is logged: with nothing
+	// logged, the first week's Sunday is today's week's, so a new owner would otherwise see their
+	// first weekly review "ready" every Sunday. Verdicts also need a trend (a lapsed or sparse
 	// history passes the date with nothing to judge).
 	const ready = (section: OverviewSection, day: IsoDate | null) =>
 		section === 'prs' || section === 'e1rm'
 			? logged[section] !== undefined
-			: day !== null && day <= today && (section !== 'verdicts' || judgedAny);
+			: first !== null && day !== null && day <= today && (section !== 'verdicts' || judgedAny);
 	const entry = (section: OverviewSection): SectionAvailability => {
 		const day = on[section];
 		return { section, ...SECTION_RULES[section], on: day, ready: ready(section, day) };

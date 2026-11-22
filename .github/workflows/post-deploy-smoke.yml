@@ -81,6 +81,9 @@ jobs:
           body=$(head -c 300 "$dir/health.body")
           [ "$status" = 200 ] && jq -e '.ok == true and .db == "up"' "$dir/health.body" > /dev/null
           check "GET /api/health → 200 with db up (got $status: $body)" $?
+          value=$(header health cache-control)
+          [ "$value" = no-store ]
+          check "GET /api/health cache-control: no-store (got '${value}')" $?
 
           # 2. The sign-in screen, rendered for this domain (passkeys available here).
           status=$(fetch signin "$APP_ORIGIN/")
@@ -108,6 +111,7 @@ jobs:
           expect_header referrer-policy strict-origin-when-cross-origin
           expect_header permissions-policy "camera=()"
           expect_header cross-origin-opener-policy same-origin
+          expect_header cross-origin-resource-policy same-origin
           expect_header x-robots-tag noindex
           expect_header cache-control private
 
@@ -151,8 +155,9 @@ jobs:
           x-content-type-options: nosniff
           x-frame-options: DENY
           referrer-policy: strict-origin-when-cross-origin
-          permissions-policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()
+          permissions-policy: camera=(), microphone=(), geolocation=(), payment=(), usb=(), display-capture=(), browsing-topics=(), hid=(), serial=(), bluetooth=(), midi=(), screen-wake-lock=(self)
           cross-origin-opener-policy: same-origin
+          cross-origin-resource-policy: same-origin
           strict-transport-security: max-age=63072000; includeSubDomains
           x-robots-tag: noindex, nofollow
           content-security-policy: frame-ancestors 'none'
