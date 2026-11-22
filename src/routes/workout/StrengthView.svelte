@@ -22,8 +22,9 @@
   - The rest timer (RestTimer.svelte), while the workout holds a rest: a completed set starts it
     (log.ts, through workout-flow). Below 1024 px it is a pill in the thumb zone just above the
     logger, stuck there on every exercise, so it stays in view while browsing; from 1024 px it
-    docks at the top of the main column, under the header, over nothing. It is first in the DOM,
-    so the keyboard reaches it first on a desktop. Its controls are device actions; Skip and
+    docks at the top of the main column, under the header, over nothing, in a place of its own
+    height that Start rest, or 'After your first set', holds when there is no rest. It is first
+    in the DOM, so the keyboard reaches it first on a desktop. Its controls are device actions; Skip and
     Dismiss clear it. With no rest, once the exercise has a set done, Start rest in its place
     starts the exercise's (flow.ts restAt): for a device that leaves the rest to the owner, or
     another after Skip. A tap on its controls before the store is open waits for it, with the time
@@ -44,6 +45,8 @@
     with no exercise yet (an ad-hoc strength one) says so, with Add exercise in the card's place.
   - The card's exercise name opens its history (ExerciseHistorySheet.svelte, loaded on intent);
     offline, it shows the previous session this device holds and says so.
+  - Nothing jumps: when the exercise, its logger, the rest or Start rest changes, the blocks that
+    move slide from where they were (flip.ts), unless motion is reduced.
   - Each render keeps the card's words on the device (prepaint.ts), so the next load paints the
     current exercise before the app starts (Prepaint.svelte).
 -->
@@ -75,12 +78,13 @@
 		SET_STATE_WORDS,
 		setRows
 	} from '#lib/ui/workout/set-words.ts';
-	import { onMount, tick, untrack, type ComponentProps } from 'svelte';
+	import { flushSync, onMount, tick, untrack, type ComponentProps } from 'svelte';
 	import type { HistoryRequest } from '#lib/client/workout/exercise-history.ts';
 	import type ExerciseHistorySheet from '#lib/ui/workout/ExerciseHistorySheet.svelte';
 	import type ExerciseActionsSheet from './ExerciseActionsSheet.svelte';
 	import type ExercisePicker from './ExercisePicker.svelte';
 	import ExerciseList from './ExerciseList.svelte';
+	import { glide, places } from './flip.ts';
 	import { afterPaint } from './lazy.ts';
 	import { keepLoggerSpace, readLoggerSpace } from './logger-space.ts';
 	import type LoggerView from './Logger.svelte';
@@ -442,6 +446,41 @@
 		};
 	});
 
+	// Nothing jumps (flip.ts): when the exercise, its logger, the rest or Start rest changes, the
+	// card, its navigation, the rest pill and the logger are read where they are before the screen
+	// changes, and those that moved slide from there once it is written, in the same task, before
+	// it paints: a scroll or a tap waiting for the next frame would be read as a move, and a slide
+	// starting after it would carry the blocks from where they were on the screen before. The
+	// logger's height is read again then, so the pill above it slides to its final place at once.
+	// Only a change after the first render: as the screen first takes its places (the column bound,
+	// the logger's space kept, the pill fixed above it), nothing slides into them.
+	let before: Map<HTMLElement, number> | null = null;
+	let watched: string | null = null;
+	$effect.pre(() => {
+		const changes = [current?.position, current?.open, rest === null, rest === null && startable];
+		const key = `${changes.join()}:${Logger !== null}`;
+		const column = main;
+		if (!column || before) return;
+		const last = watched;
+		watched = key;
+		if (last === null || last === key) return;
+		const blocks = () =>
+			column.querySelectorAll<HTMLElement>(
+				':scope > .rest > .pill, :scope > .swipe, :scope > .navigation, :scope > [data-testid="set-logger"]'
+			);
+		before = untrack(() => places(blocks()));
+		void tick().then(() => {
+			const from = before!;
+			before = null;
+			const logger = column.querySelector<HTMLElement>(':scope > [data-testid="set-logger"]');
+			if (logger && logger.offsetHeight !== loggerHeight) {
+				loggerHeight = logger.offsetHeight;
+				flushSync();
+			}
+			glide(from, (block) => block === logger && getComputedStyle(block).position === 'sticky');
+		});
+	});
+
 	// Only a logger stuck to the foot (below 1024 px, SetLogger's CSS): from there it sits in the
 	// column, under the rows, and none is kept.
 	$effect(() => {
@@ -517,6 +556,12 @@
 				>
 			</div>
 		</div>
+	{:else if current}
+		<!-- From 1024 px the timer's place, kept before there is a set to rest from. -->
+		<p class="rest-slot" data-testid="rest-slot">
+			<span class="eyebrow">Rest</span>
+			<span>After your first set</span>
+		</p>
 	{/if}
 	{#if view.slots.length === 0}
 		<EmptyState
@@ -635,6 +680,11 @@
 		justify-content: flex-end;
 	}
 
+	/* The rest timer's place is kept from 1024 px, where it docks above the card. */
+	.rest-slot {
+		display: none;
+	}
+
 	/* The logger's place while it loads, below 1024 px: SetLogger's box, stuck to the foot, empty. */
 	.logger-space {
 		display: none;
@@ -671,6 +721,37 @@
 		align-content: start;
 		gap: var(--space-4);
 		min-height: 13rem;
+	}
+
+	/*
+	 * From 1024 px the timer docks above the card, in a place of its own height (RestTimer's
+	 * padding, border, eyebrow and time, gap and bar), held by Start rest and, before a set is
+	 * done, by a quiet line: the timer coming, going or ending never moves the card.
+	 */
+	@media (width >= 64rem) {
+		.rest,
+		.rest-slot {
+			min-height: calc(
+				2 * var(--space-3) + 2px + var(--text-2xs) * var(--leading-normal) + var(--text-3xl) *
+					var(--leading-tight) + var(--space-2) + 4px
+			);
+		}
+
+		.start {
+			display: grid;
+			align-content: center;
+		}
+
+		.rest-slot {
+			display: flex;
+			align-items: center;
+			gap: var(--space-2);
+			padding: var(--space-3);
+			border-radius: var(--radius-lg);
+			border: 1px solid var(--color-hairline);
+			color: var(--color-text-secondary);
+			font-size: var(--text-sm);
+		}
 	}
 
 	/*

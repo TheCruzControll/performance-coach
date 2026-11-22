@@ -2,12 +2,20 @@
  * Moving between exercises in a desktop window (1440 × 900): the side list is one tab stop whose
  * arrows move the focus and whose Enter makes an exercise current, focus staying put; Previous and
  * Next work by Tab and Enter; every list row and both buttons have hover and focus states; a mouse
- * drag moves the card with the pointer.
+ * drag moves the card with the pointer; Previous and Next slide to their place under a card of
+ * another height, never jumping.
  */
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { expectNoSideScroll } from './desktop';
 import { captureScreen } from './support';
-import { gotoWorkout, readOutbox, seedWorkout, workoutDay } from './workout-support';
+import {
+	gotoWorkout,
+	readOutbox,
+	seedWorkout,
+	watchMove,
+	workoutDay,
+	type WatchedMove
+} from './workout-support';
 
 async function open(page: Page) {
 	const { strength } = await workoutDay();
@@ -143,6 +151,21 @@ test.describe('moving between exercises on a desktop', () => {
 		await expect
 			.poll(() => card.evaluate((el) => new DOMMatrix(getComputedStyle(el).transform).m41))
 			.toBe(0);
+	});
+
+	test('under a taller or shorter card, Previous and Next slide to their place, never jumping', async ({
+		page
+	}) => {
+		await open(page);
+		const moves: WatchedMove[] = [];
+		while (await next(page).isEnabled()) {
+			const move = await watchMove(page, 'exercise-next');
+			expect(Math.abs(move.first - move.before), JSON.stringify(move)).toBeLessThanOrEqual(1);
+			moves.push(move);
+		}
+		const moved = moves.filter((move) => Math.abs(move.after - move.before) > 1);
+		expect(moved.length, 'the fixture has cards of different heights').toBeGreaterThan(0);
+		for (const move of moved) expect(move.sliding, JSON.stringify(move)).toBe(1);
 	});
 
 	test('every list row and both buttons have hover and focus-visible states', async ({ page }) => {
