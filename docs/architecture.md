@@ -411,8 +411,8 @@ normalises the M2 profile; `generateProgram(input, { startsOn, firstPlannedDay }
 stages in `STAGES` (`generate.ts`) on one draft, each recording its choices through a
 `DecisionLog`:
 
-demand → blocks → commitments → strength → running → other → placement → volume → loads →
-progression → timefit
+a `prepare` hook, then demand → blocks → commitments → strength → running → other → placement →
+phasing → volume → loads → progression → timefit → schedule
 
 - Numbers live in one file per area, `rules/{days,blocks,strength,running,volume,loads,defaults}.ts`,
   and the interference thresholds in `interference.ts` (`INTERFERENCE`, `INTERFERENCE_RULES`,
