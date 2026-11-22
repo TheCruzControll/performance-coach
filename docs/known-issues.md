@@ -14,6 +14,10 @@ Last reviewed: 2026-11-21, against `main` at the merge of #501.
 - A zone 2 bike session counts in the planned running volume. The generator sizes the week's run
   volume before some easy runs become bike sessions, so the next block's run volume may start lower
   than planned. Unconfirmed.
+- A run swapped to the zone 2 bike counts as two workouts in the week's count. The bike's minutes
+  count as running training time and load, as planned zone 2 bikes do, never as running distance.
+- Swap to the bike is offered whatever equipment the owner has: the device does not hold the
+  equipment list.
 
 ## Stale documentation
 
@@ -52,6 +56,12 @@ Last reviewed: 2026-11-21, against `main` at the merge of #501.
 - **A move does not see an unsynced offline workout.** A workout started offline from a start kit
   of the old version, and not yet synced, is not counted when a move checks for logged workouts.
   After the move it syncs against a session the current version no longer has.
+
+- **A swap can end the run without starting the bike.** If the app is killed between the two
+  saves, or the bike's save fails, the run is finished and no bike session exists. Nothing logged
+  is lost; start a session by hand.
+- **A bike taken over on a second device has no planned minutes.** It is pinned to the run's
+  planned session, so the other device loads the run's kit.
 
 ## Working on this repo
 

@@ -1116,8 +1116,14 @@ the server builds exactly those kits, so change both together.
   AA after Z; Up next naming the partner.
 - **Substitution rules and copy** (`substitution.test.ts`, `copy.test.ts`): only a confirmed
   dislike writes a preference; machine unavailable ranks alternatives needing none of the slot's
-  equipment first; This hurts offers Stop first and End the workout when severe (in a run or a class, End alone); every string in
+  equipment first; This hurts offers Stop first and End the workout when severe (in a run or a class, End alone); `lighterKinds` offers a Muay Thai class only its lighter formats; every string in
   `copy.ts` is scanned for push-through phrases and diagnosis words.
+- **Run and class actions** (`src/routes/workout/session-actions.test.ts`,
+  `src/routes/workout/run/run-log.test.ts`): `swapOptions` offers a run its zone 2 bike and a class
+  its lighter format; `runEnd` finishes a run that ran anything and abandons one that did not;
+  `bikeStart` pins the bike to the run's planned session, or to none when the run was unplanned;
+  `minutesToRun` gives the bike the unlogged segments' minutes. `src/lib/domain/programming/swap-parity.test.ts`
+  holds the swap's copies of ZONE2_BIKE and MUAY_THAI to the generator's.
 - **Schemas** (`schemas.test.ts`): `DB_CHECKED_BAD_VALUES` (also refused by Postgres CHECKs,
   replayed through the repositories by `sync.test.ts`) and `SCHEMA_ONLY_BAD_VALUES` (open
   vocabularies) are each refused at their path.
@@ -1160,6 +1166,9 @@ second owner needs the singleton rule lifted inside it: `secondOwner`); `structu
 applied once, duplicate on replay, deferred until its target arrives, refused at its path, and a
 situational swap that writes no preference or version. `pain.test.ts` also takes a run's and a
 class's report, which names no exercise, and refuses a strength report without one.
+`swap.test.ts` is the contract guard for Swap in a run: the run's end and its zone 2 bike, sent in
+two batches, pinned to one planned run; the week's summary counts the run's distance once and both
+workouts, and replaying both batches applies nothing twice.
 
 ### Workout reads
 

@@ -129,6 +129,17 @@ export function prefillOf({ logged, target }: SegmentItem): SegmentValues {
 	return { distanceMetres: distance, durationSeconds: duration, avgHr: null };
 }
 
+/**
+ * The minutes the plan's segments not logged yet would take, by their targets (prefillOf): what
+ * Swap's bike starts from. Null when none is left or none says how long.
+ */
+export function minutesToRun(items: readonly SegmentItem[]): number | null {
+	const seconds = items
+		.filter((i) => i.logged === null && i.target !== null)
+		.reduce((sum, i) => sum + (prefillOf(i).durationSeconds ?? 0), 0);
+	return seconds > 0 ? Math.max(1, Math.round(seconds / 60)) : null;
+}
+
 /** 0 leaves a value out: a stepper has no blank. */
 export const normalized = (v: SegmentValues): SegmentValues => ({
 	distanceMetres: v.distanceMetres ? v.distanceMetres : null,

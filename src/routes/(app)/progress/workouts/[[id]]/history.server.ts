@@ -288,6 +288,8 @@ export function detailView(detail: WorkoutDetail, { timeZone }: Context): Workou
 			label: name(a.exerciseId),
 			value: `Added · ${count(a.done, 'set')}`
 		}));
+		// A class logged as another type reads 'Done as' that type; a bike swapped in for a run
+		// reads 'Done as' its title.
 		const session = planned.other
 			? [
 					{
@@ -295,7 +297,10 @@ export function detailView(detail: WorkoutDetail, { timeZone }: Context): Workou
 						label: OTHER_SESSION_KIND_LABEL[planned.other.kind],
 						value: [
 							`${planned.other.durationMinutes} min`,
-							planned.other.targetRpe !== null && `RPE ${planned.other.targetRpe}`
+							planned.other.targetRpe !== null && `RPE ${planned.other.targetRpe}`,
+							canonical.other &&
+								canonical.other.kind !== planned.other.kind &&
+								`Done as ${OTHER_SESSION_KIND_LABEL[canonical.other.kind]}`
 						]
 							.filter(Boolean)
 							.join(' · ')
@@ -306,7 +311,12 @@ export function detailView(detail: WorkoutDetail, { timeZone }: Context): Workou
 						{
 							key: 'run',
 							label: 'Run',
-							value: count(expandSegments(planned.run.segments).length, 'segment')
+							value: [
+								count(expandSegments(planned.run.segments).length, 'segment'),
+								workout.kind === 'other' && `Done as ${workout.title}`
+							]
+								.filter(Boolean)
+								.join(' · ')
 						}
 					]
 				: [];

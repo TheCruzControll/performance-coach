@@ -306,7 +306,8 @@ describe('Train’s load with the findings', () => {
 					await loadTrainWeek(
 						owner,
 						{ now: NOW, week: String(FIXTURE_WEEKS.moved), origin: request },
-						{ db, errorsDb: db, periodisation: { db: broken.db } }
+						// The why (m7/14) reads on its own: only the evaluation fails here.
+						{ db, errorsDb: db, periodisation: { db: broken.db, why: { db } } }
 					)
 				);
 				expect(data.week).toMatchObject({ planned: true, startsOn: seeded.mondays.moved });

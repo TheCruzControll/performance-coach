@@ -81,6 +81,18 @@ async function owner(db: Executor) {
 	return id;
 }
 
+/** The workout-day program stored, and its planned run and class (the week's first). */
+async function workoutDay(db: Executor, me: string) {
+	const plan = programFixture('workout-day', { monday: '2026-11-09', today: '2026-11-11' });
+	const { programId } = await createProgramFromPlan(me, plan, { source: 'rules' }, { db });
+	const v1 = await getProgramVersion(me, programId, 1, { db });
+	const sessions = v1.blocks[0]!.weeks[0]!.sessions as StoredSession[];
+	const pinned = (s: StoredSession) => ({ sessionId: s.id, lineageId: s.lineage, programId });
+	const run = sessions.find((s) => s.kind === 'run')!;
+	const cls = sessions.find((s) => s.kind === 'other') as Extract<StoredSession, { kind: 'other' }>;
+	return { run: pinned(run), cls: pinned(cls), classPlan: cls.details };
+}
+
 describe('workout History', () => {
 	it('with nothing finished, the first page is empty and there is no detail', async () => {
 		await withRollback(async (db) => {
@@ -287,6 +299,55 @@ describe('workout History', () => {
 			const ran = (await ready(load(db, me, await clientIdOf(db, runId)))).detail!;
 			// Warm-up, 6 × (interval + recovery), cool-down.
 			expect(ran.planned!.lines).toEqual([{ key: 'run', label: 'Run', value: '14 segments' }]);
+		});
+	});
+
+	it('a planned class logged as another type reads Done as that type; logged as the plan’s, it does not', async () => {
+		await withRollback(async (db) => {
+			const me = await owner(db);
+			const { cls, classPlan } = await workoutDay(db, me);
+			const plannedLine = `${classPlan.durationMinutes} min · RPE ${classPlan.targetRpe}`;
+
+			const technical = await logOther(db, me, {
+				startedAt: utc('2026-11-11', '18:00'),
+				title: 'Muay Thai class',
+				kind: 'technical',
+				planned: cls
+			});
+			const asTechnical = (await ready(load(db, me, await clientIdOf(db, technical)))).detail!;
+			expect(asTechnical.planned!.lines).toEqual([
+				{ key: 'other', label: 'Class', value: `${plannedLine} · Done as Technical` }
+			]);
+
+			const asPlanned = await logOther(db, me, {
+				startedAt: utc('2026-11-11', '19:30'),
+				title: 'Muay Thai class',
+				kind: 'class',
+				planned: cls
+			});
+			const same = (await ready(load(db, me, await clientIdOf(db, asPlanned)))).detail!;
+			expect(same.planned!.lines).toEqual([{ key: 'other', label: 'Class', value: plannedLine }]);
+		});
+	});
+
+	it("a zone 2 bike that replaced a planned run reads Done as its title, on the run's line", async () => {
+		await withRollback(async (db) => {
+			const me = await owner(db);
+			const { run } = await workoutDay(db, me);
+			const bikeId = await logOther(db, me, {
+				startedAt: utc('2026-11-11', '07:12'),
+				title: 'Zone 2 bike',
+				kind: 'conditioning',
+				minutes: 20,
+				discipline: 'running',
+				sessionType: 'conditioning',
+				planned: run
+			});
+			const bike = (await ready(load(db, me, await clientIdOf(db, bikeId)))).detail!;
+			// The planned interval run's fourteen segments, read as the plan's line.
+			expect(bike.planned!.lines).toEqual([
+				{ key: 'run', label: 'Run', value: '14 segments · Done as Zone 2 bike' }
+			]);
 		});
 	});
 

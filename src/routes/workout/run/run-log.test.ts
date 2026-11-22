@@ -12,6 +12,7 @@ import {
 	entryError,
 	freeItem,
 	HEART_RATE,
+	minutesToRun,
 	nextFreePosition,
 	nextToLog,
 	paceOf,
@@ -268,5 +269,25 @@ describe('nextToLog', () => {
 
 	it('gives the first segment to log from a free segment beyond the plan', () => {
 		expect(nextToLog(itemsOf(started()), 15)).toBe(1);
+	});
+});
+
+describe('minutesToRun', () => {
+	it("is the rounded minutes the plan's unlogged segments' targets take, from prefillOf", () => {
+		const items = segmentItems(viewIn(started()));
+		const seconds = items.reduce((sum, i) => sum + (prefillOf(i).durationSeconds ?? 0), 0);
+		expect(minutesToRun(items)).toBe(Math.round(seconds / 60));
+	});
+
+	it('is null once every planned segment is logged', () => {
+		let state = started();
+		for (const item of segmentItems(viewIn(state))) {
+			state = log(state, item.position, prefillOf(item)).state;
+		}
+		expect(minutesToRun(segmentItems(viewIn(state)))).toBeNull();
+	});
+
+	it('is null for an ad-hoc run, which plans no segments', () => {
+		expect(minutesToRun(segmentItems(viewIn(started(AD_HOC))))).toBeNull();
 	});
 });
