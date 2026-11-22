@@ -31,41 +31,42 @@ cell means none.
 
 Recorded on 2026-11-21 from GitHub. "Checks" is the count of failed checks at that time; the loop
 re-reads the live state before acting, so treat it as a starting hint. All of these target `main`.
-M7 rows are in slice order, which is the order to land them in unless a PR says otherwise.
+The M7 rows are parked. On 2026-11-22 they were re-sliced into the `m7r/` rows under Next work
+(`plan/m7-reslice.md`). Leave the pull requests open until their slices merge.
 
-| Id                              | Branch                            | PR     | Status    | Checks       | Slice                                                                                      |
-| ------------------------------- | --------------------------------- | ------ | --------- | ------------ | ------------------------------------------------------------------------------------------ |
-| m5-61-docs-m5-status            | `m5/61-docs-m5-status`            | PR 468 | `merged`  | 13 failed    | docs(m5): record how the coach runs, what it costs and where M5 stands                     |
-| m6-62-docs-m6-architecture      | `m6/62-docs-m6-architecture`      | PR 482 | `merged`  | 11 failed    | docs(m6): record the analytics engine, charts, reviews and replanning as built             |
-| m7-04-train-week-findings       | `m7/04-train-week-findings`       | PR 417 | `merged`  | 13 failed    | feat(train): flag sessions that clash in the week, with a note on each card and a count in |
-| m7-05-m7-stage-list             | `m7/05-m7-stage-list`             | PR 416 | `pr-open` | none failing | refactor(programming): make room for M7's season stages without changing any plan          |
-| m7-14-placement-why             | `m7/14-placement-why`             | PR 455 | `pr-open` | 14 failed    | feat(train): say why each session sits on its day, from the program's own decisions        |
-| m7-22-evaluation-context        | `m7/22-evaluation-context`        | PR 462 | `pr-open` | 14 failed    | feat(periodisation): judge the week with what you actually did, your priorities and events |
-| m7-23-move-evaluation           | `m7/23-move-evaluation`           | PR 497 | `pr-open` | 10 failed    | feat(programs): judge a move with M7's rules and show why, plus the day that clears the cl |
-| m7-24-review-conflicts-engine   | `m7/24-review-conflicts-engine`   | PR 481 | `pr-open` | 12 failed    | feat(reviews): judge the weekly review and its proposed moves with M7's evaluator, on the  |
-| m7-28-generator-season          | `m7/28-generator-season`          | PR 418 | `pr-open` | none failing | feat(programming): plan new programs by effective goal priority and the season             |
-| m7-29-generator-schedule        | `m7/29-generator-schedule`        | PR 419 | `pr-open` | none failing | feat(programming): repair every planned week so no clash stands unexplained                |
-| m7-30-generator-phasing         | `m7/30-generator-phasing`         | PR 421 | `pr-open` | none failing | feat(programming): each week's prescriptions follow its block type: phase rep schemes, hyp |
-| m7-31-periodised-targets        | `m7/31-periodised-targets`        | PR 423 | `pr-open` | none failing | fix(analytics): judge M7 weeks by the targets their plan actually set                      |
-| m7-32-generator-running         | `m7/32-generator-running`         | PR 422 | `pr-open` | none failing | feat(programming): plan runs from current fitness, with VDOT paces, safe long-run steps an |
-| m7-33-generator-combat          | `m7/33-generator-combat`          | PR 426 | `pr-open` | none failing | feat(programming): Muay Thai follows the fight camp: capped sparring, conditioning rounds  |
-| m7-34-next-cycle-periodised     | `m7/34-next-cycle-periodised`     | PR 434 | `pr-open` | none failing | feat(reviews): the cycle review plans the next block from the season: block type, week tar |
-| m7-36-hr-zones                  | `m7/36-hr-zones`                  | PR 435 | `pr-open` | none failing | feat(programming): show heart-rate zones in bpm when a heart rate is told                  |
-| m7-37-road-view                 | `m7/37-road-view`                 | PR 476 | `pr-open` | 11 failed    | feat(periodisation): the road view: blocks, goal modes, events, deloads and tapers from to |
-| m7-38-week-kind-indicators      | `m7/38-week-kind-indicators`      | PR 487 | `pr-open` | 14 failed    | feat(train): mark light and special weeks with why they are lighter, and a countdown       |
-| m7-39-periodisation-timeline    | `m7/39-periodisation-timeline`    | PR 499 | `pr-open` | none failing | feat(train): see the season — each block's goals, deloads and events on the plan timeline  |
-| m7-40-replan-domain             | `m7/40-replan-domain`             | PR 461 | `pr-open` | none failing | feat(programming): re-plan mid-cycle from a Monday by regenerating, tapering or deloading  |
-| m7-41-replan-store              | `m7/41-replan-store`              | PR 469 | `pr-open` | none failing | feat(programs): store a re-plan as a new version, so history stays untouched               |
-| m7-42-replan-preview            | `m7/42-replan-preview`            | PR 467 | `pr-open` | 15 failed    | feat(periodisation): preview a re-plan week by week before accepting it                    |
-| m7-43-replan-proposals          | `m7/43-replan-proposals`          | PR 486 | `pr-open` | 13 failed    | feat(coach): re-plans become proposals the owner confirms, re-checked and applied once     |
-| m7-44-priority-replan-trigger   | `m7/44-priority-replan-trigger`   | PR 498 | `pr-open` | 11 failed    | feat(profile): changing goal priorities proposes a re-plan, never blocking the save        |
-| m7-45-reactive-deload           | `m7/45-reactive-deload`           | PR 493 | `pr-open` | 10 failed    | feat(reviews): a weekly review that finds high fatigue or declining performance deloads th |
-| m7-46-tools-periodisation-reads | `m7/46-tools-periodisation-reads` | PR 488 | `pr-open` | none failing | feat(coach): let the coach check a week's interference and explain its schedule trade-offs |
-| m7-52-hr-fields-ui              | `m7/52-hr-fields-ui`              | PR 443 | `pr-open` | 14 failed    | feat(profile): enter max, resting and threshold heart rate, and see run zones in bpm       |
-| perf-workout-layout-motion      | `perf/workout-layout-motion`      | PR 454 | `merged`  | none failing | perf(workout): no jumps between exercises, a smooth rest bar and aligned clocks            |
-| ci-alone-third-shard            | `ci/alone-third-shard`            | PR 494 | `merged`  | none failing | ci(e2e): a third shard for the alone·chromium perf leg, so it stays well inside its timeou |
-| feat-program-start-date         | `feat/program-start-date`         | PR 496 | `owner`   | none failing | feat(programming): a program starts only after setup, and its start date can be moved      |
-| claude-quirky-bohr-h9l613       | `claude/quirky-bohr-h9l613`       | PR 502 | `merged`  | none failing | feat(programming): move some easy runs to a zone 2 bike when the owner has one             |
+| Id                              | Branch                            | PR     | Status   | Checks                            | Slice                                                                                      |
+| ------------------------------- | --------------------------------- | ------ | -------- | --------------------------------- | ------------------------------------------------------------------------------------------ |
+| m5-61-docs-m5-status            | `m5/61-docs-m5-status`            | PR 468 | `merged` | 13 failed                         | docs(m5): record how the coach runs, what it costs and where M5 stands                     |
+| m6-62-docs-m6-architecture      | `m6/62-docs-m6-architecture`      | PR 482 | `merged` | 11 failed                         | docs(m6): record the analytics engine, charts, reviews and replanning as built             |
+| m7-04-train-week-findings       | `m7/04-train-week-findings`       | PR 417 | `merged` | 13 failed                         | feat(train): flag sessions that clash in the week, with a note on each card and a count in |
+| m7-05-m7-stage-list             | `m7/05-m7-stage-list`             | PR 416 | `parked` | re-sliced, see plan/m7-reslice.md | refactor(programming): make room for M7's season stages without changing any plan          |
+| m7-14-placement-why             | `m7/14-placement-why`             | PR 455 | `parked` | re-sliced, see plan/m7-reslice.md | feat(train): say why each session sits on its day, from the program's own decisions        |
+| m7-22-evaluation-context        | `m7/22-evaluation-context`        | PR 462 | `parked` | re-sliced, see plan/m7-reslice.md | feat(periodisation): judge the week with what you actually did, your priorities and events |
+| m7-23-move-evaluation           | `m7/23-move-evaluation`           | PR 497 | `parked` | re-sliced, see plan/m7-reslice.md | feat(programs): judge a move with M7's rules and show why, plus the day that clears the cl |
+| m7-24-review-conflicts-engine   | `m7/24-review-conflicts-engine`   | PR 481 | `parked` | re-sliced, see plan/m7-reslice.md | feat(reviews): judge the weekly review and its proposed moves with M7's evaluator, on the  |
+| m7-28-generator-season          | `m7/28-generator-season`          | PR 418 | `parked` | re-sliced, see plan/m7-reslice.md | feat(programming): plan new programs by effective goal priority and the season             |
+| m7-29-generator-schedule        | `m7/29-generator-schedule`        | PR 419 | `parked` | re-sliced, see plan/m7-reslice.md | feat(programming): repair every planned week so no clash stands unexplained                |
+| m7-30-generator-phasing         | `m7/30-generator-phasing`         | PR 421 | `parked` | re-sliced, see plan/m7-reslice.md | feat(programming): each week's prescriptions follow its block type: phase rep schemes, hyp |
+| m7-31-periodised-targets        | `m7/31-periodised-targets`        | PR 423 | `parked` | re-sliced, see plan/m7-reslice.md | fix(analytics): judge M7 weeks by the targets their plan actually set                      |
+| m7-32-generator-running         | `m7/32-generator-running`         | PR 422 | `parked` | re-sliced, see plan/m7-reslice.md | feat(programming): plan runs from current fitness, with VDOT paces, safe long-run steps an |
+| m7-33-generator-combat          | `m7/33-generator-combat`          | PR 426 | `parked` | re-sliced, see plan/m7-reslice.md | feat(programming): Muay Thai follows the fight camp: capped sparring, conditioning rounds  |
+| m7-34-next-cycle-periodised     | `m7/34-next-cycle-periodised`     | PR 434 | `parked` | re-sliced, see plan/m7-reslice.md | feat(reviews): the cycle review plans the next block from the season: block type, week tar |
+| m7-36-hr-zones                  | `m7/36-hr-zones`                  | PR 435 | `parked` | re-sliced, see plan/m7-reslice.md | feat(programming): show heart-rate zones in bpm when a heart rate is told                  |
+| m7-37-road-view                 | `m7/37-road-view`                 | PR 476 | `parked` | re-sliced, see plan/m7-reslice.md | feat(periodisation): the road view: blocks, goal modes, events, deloads and tapers from to |
+| m7-38-week-kind-indicators      | `m7/38-week-kind-indicators`      | PR 487 | `parked` | re-sliced, see plan/m7-reslice.md | feat(train): mark light and special weeks with why they are lighter, and a countdown       |
+| m7-39-periodisation-timeline    | `m7/39-periodisation-timeline`    | PR 499 | `parked` | re-sliced, see plan/m7-reslice.md | feat(train): see the season — each block's goals, deloads and events on the plan timeline  |
+| m7-40-replan-domain             | `m7/40-replan-domain`             | PR 461 | `parked` | re-sliced, see plan/m7-reslice.md | feat(programming): re-plan mid-cycle from a Monday by regenerating, tapering or deloading  |
+| m7-41-replan-store              | `m7/41-replan-store`              | PR 469 | `parked` | re-sliced, see plan/m7-reslice.md | feat(programs): store a re-plan as a new version, so history stays untouched               |
+| m7-42-replan-preview            | `m7/42-replan-preview`            | PR 467 | `parked` | re-sliced, see plan/m7-reslice.md | feat(periodisation): preview a re-plan week by week before accepting it                    |
+| m7-43-replan-proposals          | `m7/43-replan-proposals`          | PR 486 | `parked` | re-sliced, see plan/m7-reslice.md | feat(coach): re-plans become proposals the owner confirms, re-checked and applied once     |
+| m7-44-priority-replan-trigger   | `m7/44-priority-replan-trigger`   | PR 498 | `parked` | re-sliced, see plan/m7-reslice.md | feat(profile): changing goal priorities proposes a re-plan, never blocking the save        |
+| m7-45-reactive-deload           | `m7/45-reactive-deload`           | PR 493 | `parked` | re-sliced, see plan/m7-reslice.md | feat(reviews): a weekly review that finds high fatigue or declining performance deloads th |
+| m7-46-tools-periodisation-reads | `m7/46-tools-periodisation-reads` | PR 488 | `parked` | re-sliced, see plan/m7-reslice.md | feat(coach): let the coach check a week's interference and explain its schedule trade-offs |
+| m7-52-hr-fields-ui              | `m7/52-hr-fields-ui`              | PR 443 | `parked` | re-sliced, see plan/m7-reslice.md | feat(profile): enter max, resting and threshold heart rate, and see run zones in bpm       |
+| perf-workout-layout-motion      | `perf/workout-layout-motion`      | PR 454 | `merged` | none failing                      | perf(workout): no jumps between exercises, a smooth rest bar and aligned clocks            |
+| ci-alone-third-shard            | `ci/alone-third-shard`            | PR 494 | `merged` | none failing                      | ci(e2e): a third shard for the alone·chromium perf leg, so it stays well inside its timeou |
+| feat-program-start-date         | `feat/program-start-date`         | PR 496 | `owner`  | none failing                      | feat(programming): a program starts only after setup, and its start date can be moved      |
+| claude-quirky-bohr-h9l613       | `claude/quirky-bohr-h9l613`       | PR 502 | `merged` | none failing                      | feat(programming): move some easy runs to a zone 2 bike when the owner has one             |
 
 ## Next work
 
@@ -151,17 +152,57 @@ changing the same files in the local stage applies.
 
 ### M7: advanced coaching
 
-The M7 plan's slices that are neither merged nor in an open pull request, without its test-only slices.
+The `m7r/` rows rebuild the parked M7 pull requests (PR 416 to PR 499) as small slices that each
+land on today's `main` by themselves. `plan/m7-reslice.md` gives each one its source commits,
+its size, its risk and the test that proves it. Rows marked Screen or Plans in that file change
+the live app, or the next plan it makes, as soon as they merge. After them come the M7 plan's
+slices that no old pull request covered, without its test-only slices.
 
-| Id                                  | Slice                                                                                                 | Depends on                                         | Status  | Spec                            | Size |
-| ----------------------------------- | ----------------------------------------------------------------------------------------------------- | -------------------------------------------------- | ------- | ------------------------------- | ---- |
-| m7/47-tools-periodisation-proposals | The coach can propose a block, a deload or a taper                                                    | PR 488, PR 486, PR 493                             | `ready` | M7 plan, slice of the same name | M    |
-| m7/48-coach-periodisation-context   | The coach knows this week's clashes, the block it is in and what lies ahead                           | m7/47, PR 476, PR 462                              | `ready` | M7 plan, slice of the same name | M    |
-| m7/49-replan-notice-ui              | After goal priorities change, Profile and Train show the re-plan waiting                              | PR 498, PR 499                                     | `ready` | M7 plan, slice of the same name | M    |
-| m7/50-replan-proposal-card          | Re-plan proposals say where they came from, what changes week by week, and why a stale one is refused | PR 486, PR 498, PR 493                             | `ready` | M7 plan, slice of the same name | M    |
-| m7/51-deload-review-ui              | The weekly review proposes a deload in plain words, with the signals that led to it                   | PR 493, PR 487                                     | `ready` | M7 plan, slice of the same name | M    |
-| m7/58-rules-reference               | A rules reference generated from the registry: every rule, its values and its why                     | PR 426, PR 435, PR 461, PR 493, PR 423             | `ready` | M7 plan, slice of the same name | S    |
-| m7/59-docs-m7                       | M7's docs: the periodisation ADR accepted, the test inventory, measured performance, milestone status | m7/51, m7/58, m6/63-docs-m6-status, PR 443, PR 482 | `ready` | M7 plan, slice of the same name | M    |
+| Id                                  | Slice                                                                                                 | Depends on                                         | Status       | Spec                                          | Size |
+| ----------------------------------- | ----------------------------------------------------------------------------------------------------- | -------------------------------------------------- | ------------ | --------------------------------------------- | ---- |
+| m7r/01-stage-list                   | The generator's stages live in their own files with a prepare hook; every plan stays byte for byte    |                                                    | `needs-spec` | `plan/m7-reslice.md`, m7r/01 (PR 416)         | S    |
+| m7r/02-generator-season             | New programs are planned by effective goal priority and the season                                    | m7r/01                                             | `needs-spec` | `plan/m7-reslice.md`, m7r/02 (PR 418)         | M    |
+| m7r/03-generator-schedule           | Every planned week is repaired by the scheduler, so no clash stands unexplained                       | m7r/02                                             | `needs-spec` | `plan/m7-reslice.md`, m7r/03 (PR 419)         | M    |
+| m7r/04-phasing-strength             | Each week's strength prescriptions follow its block type: rep schemes and dose bands                  | m7r/03                                             | `needs-spec` | `plan/m7-reslice.md`, m7r/04 (PR 421)         | S    |
+| m7r/05-phasing-hypertrophy          | Hypertrophy weeks set sets per muscle group from the block                                            | m7r/04                                             | `needs-spec` | `plan/m7-reslice.md`, m7r/05 (PR 421)         | S    |
+| m7r/06-periodised-targets           | Progress and the reviews judge an M7 week by the targets its own plan set                             | m7r/05                                             | `needs-spec` | `plan/m7-reslice.md`, m7r/06 (PR 423)         | S    |
+| m7r/07-running-paces                | Runs are paced from current fitness: VDOT paces and marathon pace on steady segments                  | m7r/05                                             | `needs-spec` | `plan/m7-reslice.md`, m7r/07 (PR 422)         | S    |
+| m7r/08-running-long-runs            | Marathon and half blocks get safe long-run steps, cutback weeks and race-specific work                | m7r/07                                             | `needs-spec` | `plan/m7-reslice.md`, m7r/08 (PR 422)         | S    |
+| m7r/09-combat-camp                  | Muay Thai follows the fight camp: capped sparring, conditioning rounds and a sharpening fight week    | m7r/08                                             | `needs-spec` | `plan/m7-reslice.md`, m7r/09 (PR 426)         | M    |
+| m7r/10-hr-zones                     | The owner enters max, resting and threshold heart rate, and a run session shows its zones in bpm      | m7r/08                                             | `needs-spec` | `plan/m7-reslice.md`, m7r/10 (PR 435, PR 443) | S    |
+| m7r/11-next-cycle-season            | The cycle review plans the next block from the season: block type, week targets, deloads and tapers   | m7r/02                                             | `needs-spec` | `plan/m7-reslice.md`, m7r/11 (PR 434)         | S    |
+| m7r/12-placement-why                | A read of why each session sits on its day, from the program's own decisions                          |                                                    | `needs-spec` | `plan/m7-reslice.md`, m7r/12 (PR 455)         | S    |
+| m7r/13-why-this-day                 | Train shows "Why this day?" under each session card, without JavaScript                               | m7r/12                                             | `needs-spec` | `plan/m7-reslice.md`, m7r/13 (PR 455)         | S    |
+| m7r/14-evaluation-context           | The week evaluator can be given what was done, the goal priorities, the week's kind and the events    | m7r/12                                             | `needs-spec` | `plan/m7-reslice.md`, m7r/14 (PR 462)         | S    |
+| m7r/15-evaluation-wiring            | Train's week findings are judged with that context and suggest a fix                                  | m7r/13, m7r/14                                     | `needs-spec` | `plan/m7-reslice.md`, m7r/15 (PR 462)         | S    |
+| m7r/16-move-evaluation              | A move is judged by M7's rules; the Move sheet shows each day's heads-up and the day that clears it   | m7r/15                                             | `needs-spec` | `plan/m7-reslice.md`, m7r/16 (PR 497)         | M    |
+| m7r/17-review-evaluator             | Domain: judge a reviewed week and next week's changes with M7's evaluator                             | m7r/15                                             | `needs-spec` | `plan/m7-reslice.md`, m7r/17 (PR 481)         | M    |
+| m7r/18-review-wiring                | The weekly review uses that evaluator on the load that was logged                                     | m7r/14, m7r/17                                     | `needs-spec` | `plan/m7-reslice.md`, m7r/18 (PR 481)         | S    |
+| m7r/19-road-view                    | A road view read: blocks, goal modes, events, deloads and tapers from today to the last event         | m7r/02, m7r/12                                     | `needs-spec` | `plan/m7-reslice.md`, m7r/19 (PR 476)         | S    |
+| m7r/20-week-kind-marks              | Train and Today mark light and special weeks, with why they are lighter and a countdown               | m7r/19                                             | `needs-spec` | `plan/m7-reslice.md`, m7r/20 (PR 487)         | M    |
+| m7r/21-season-model                 | Train's server load carries the season: road faults, season rows and week rows                        | m7r/20                                             | `needs-spec` | `plan/m7-reslice.md`, m7r/21 (PR 499)         | S    |
+| m7r/22-season-timeline              | The plan sheet shows the season: each block's goals, deloads and events                               | m7r/21                                             | `needs-spec` | `plan/m7-reslice.md`, m7r/22 (PR 499)         | S    |
+| m7r/23-tool-interference            | The coach can check a week's interference, and propose moves without a draft                          | m7r/15, m7r/19                                     | `needs-spec` | `plan/m7-reslice.md`, m7r/23 (PR 488)         | M    |
+| m7r/24-tool-tradeoffs               | The coach can explain the schedule's trade-offs from the program's decisions                          | m7r/23                                             | `needs-spec` | `plan/m7-reslice.md`, m7r/24 (PR 488)         | S    |
+| m7r/25-replan-rules                 | Domain: a re-plan's rules, types and skeleton, and where it starts                                    | m7r/11                                             | `needs-spec` | `plan/m7-reslice.md`, m7r/25 (PR 461)         | M    |
+| m7r/26-replan-regenerate            | Domain: a re-plan from a Monday regenerates the rest of the block                                     | m7r/25                                             | `needs-spec` | `plan/m7-reslice.md`, m7r/26 (PR 461)         | S    |
+| m7r/27-replan-taper-deload          | Domain: a re-plan can splice in a taper or deload one week in place                                   | m7r/26                                             | `needs-spec` | `plan/m7-reslice.md`, m7r/27 (PR 461)         | S    |
+| m7r/28-replan-store                 | A re-plan is stored as a new version, cut or replaced at a Monday, with history untouched             | m7r/27                                             | `needs-spec` | `plan/m7-reslice.md`, m7r/28 (PR 469)         | M    |
+| m7r/29-replan-store-deload          | A one-week deload is stored in place, and a cut block gets no cycle review                            | m7r/28                                             | `needs-spec` | `plan/m7-reslice.md`, m7r/29 (PR 469)         | S    |
+| m7r/30-replan-preview               | Preview a re-plan week by week, inside the caller's transaction                                       | m7r/14, m7r/27                                     | `needs-spec` | `plan/m7-reslice.md`, m7r/30 (PR 467)         | M    |
+| m7r/31-replan-proposal-kind         | A `replan` proposal kind, with the reasons a stale one is refused (migration 0034)                    | m7r/30                                             | `needs-spec` | `plan/m7-reslice.md`, m7r/31 (PR 486)         | S    |
+| m7r/32-replan-apply                 | An accepted re-plan is checked again and applied once; nothing proposes one yet                       | m7r/29, m7r/31                                     | `needs-spec` | `plan/m7-reslice.md`, m7r/32 (PR 486)         | S    |
+| m7r/33-replan-propose               | The coach can propose a re-plan, and its card says what changes                                       | m7r/32                                             | `needs-spec` | `plan/m7-reslice.md`, m7r/33 (PR 486)         | S    |
+| m7r/34-priority-replan              | Changing goal priorities proposes a re-plan, and never blocks the save                                | m7r/33                                             | `needs-spec` | `plan/m7-reslice.md`, m7r/34 (PR 498)         | S    |
+| m7r/35-deload-assess                | The weekly snapshot can record a deload, and a reactive deload can be assessed                        | m7r/18, m7r/33                                     | `needs-spec` | `plan/m7-reslice.md`, m7r/35 (PR 493)         | S    |
+| m7r/36-deload-in-review             | A weekly review that finds high fatigue or declining performance proposes a deload for the next week  | m7r/35                                             | `needs-spec` | `plan/m7-reslice.md`, m7r/36 (PR 493)         | S    |
+| m7/47-tools-periodisation-proposals | The coach can propose a block, a deload or a taper                                                    | m7r/24, m7r/33, m7r/36                             | `ready`      | M7 plan, slice of the same name               | M    |
+| m7/48-coach-periodisation-context   | The coach knows this week's clashes, the block it is in and what lies ahead                           | m7/47, m7r/19, m7r/15                              | `ready`      | M7 plan, slice of the same name               | M    |
+| m7/49-replan-notice-ui              | After goal priorities change, Profile and Train show the re-plan waiting                              | m7r/34, m7r/22                                     | `ready`      | M7 plan, slice of the same name               | M    |
+| m7/50-replan-proposal-card          | Re-plan proposals say where they came from, what changes week by week, and why a stale one is refused | m7r/33, m7r/34, m7r/36                             | `ready`      | M7 plan, slice of the same name               | M    |
+| m7/51-deload-review-ui              | The weekly review proposes a deload in plain words, with the signals that led to it                   | m7r/36, m7r/20                                     | `ready`      | M7 plan, slice of the same name               | M    |
+| m7/58-rules-reference               | A rules reference generated from the registry: every rule, its values and its why                     | m7r/06, m7r/09, m7r/10, m7r/27, m7r/36             | `ready`      | M7 plan, slice of the same name               | S    |
+| m7/59-docs-m7                       | M7's docs: the periodisation ADR accepted, the test inventory, measured performance, milestone status | m7/51, m7/58, m6/63-docs-m6-status, m7r/10, PR 482 | `ready`      | M7 plan, slice of the same name               | M    |
 
 ### Gaps outside the plans, and milestone verification
 
@@ -228,6 +269,7 @@ or skill file, in its own pull request, and removes the lines.
 
 ## Log
 
+- 2026-11-22: re-sliced the M7 stack (PR 416 to PR 499) into 36 `m7r/` rows of about 400 lines each, in `plan/m7-reslice.md`. The old rows are parked and their pull requests stay open.
 - 2026-11-22: merged train PR 520 (PR 517, PR 519), train PR 523 (PR 454, PR 522), PR 502. PR 496 and PR 521 are green and wait on the owner. ui/01 parked: Paper Desktop was not running.
 - 2026-11-22: owner decisions. CI is simple and cheap: each change runs lint, type-check, unit and integration tests, the build and the PRD journeys on Chromium (8 jobs); the rest nightly; no performance testing. 40 test-heavy rows removed. More parallel rows, and merges in trains of up to six.
 - 2026-11-22: merged PR 505, PR 468, PR 506, train PR 508 (PR 507, PR 494, PR 482), PR 510, PR 512, train PR 514 (PR 511, PR 417), train PR 518 (PR 513, PR 515, PR 516). Closed PR 413 (performance), PR 509 (folded into PR 511). m9/30 was already done on `main`.
