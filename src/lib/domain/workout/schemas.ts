@@ -163,7 +163,7 @@ export const PAYLOAD_SCHEMAS = {
 	'pain.report': z
 		.object({
 			...slot,
-			exerciseId: logged.exerciseId,
+			exerciseId: z.nullable(logged.exerciseId),
 			area: painDetail(BODY_AREAS, 'Pick where it hurts'),
 			severity: painDetail(SEVERITIES, 'Pick how much it hurts'),
 			action: z.enum(PAIN_ACTIONS, 'Pick what you did'),
@@ -175,6 +175,10 @@ export const PAYLOAD_SCHEMAS = {
 				// A gentler option is the substitution the report names; nothing else names one.
 				if ((p.action === 'substituted') !== (p.substitutionId !== null)) {
 					fail(['substitutionId'], 'A substitution goes with a gentler option');
+				}
+				// A run or a class names no exercise, so it has no gentler one to switch to.
+				if (p.exerciseId === null && p.action === 'substituted') {
+					fail(['action'], 'A gentler option needs an exercise');
 				}
 			})
 		),

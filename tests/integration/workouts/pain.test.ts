@@ -459,3 +459,126 @@ describe('pain.report', () => {
 		});
 	});
 });
+
+// ---- A run or a class: no exercise -----------------------------------------------------------
+
+const START = {
+	run: { kind: 'run', title: 'Intervals', sessionType: 'interval_run', discipline: 'running' },
+	other: {
+		kind: 'other',
+		title: 'Muay Thai class',
+		sessionType: 'muay_thai',
+		discipline: 'muay_thai'
+	}
+} as const;
+
+/** An ad-hoc run or class of the owner's, started through the sync dispatcher: its client id. */
+async function startAdHoc(db: Executor, owner: string, kind: keyof typeof START) {
+	const workoutId = crypto.randomUUID();
+	const start = createMutation('workout.start', {
+		workoutId,
+		at: at(),
+		payload: { ...START[kind], plannedSessionId: null, plannedLineage: null, programId: null }
+	});
+	expect(statuses((await sync(db, owner, [start])).results)).toEqual(['applied']);
+	return workoutId;
+}
+
+/** The report a run's segment or a class (position 1) sends: no exercise, the session ends. */
+const sessionReportOf = (
+	workoutId: string,
+	position: number,
+	over: Partial<MutationPayloads['pain.report']> = {}
+) =>
+	createMutation('pain.report', {
+		workoutId,
+		at: at(25),
+		payload: {
+			position,
+			plannedLineage: null,
+			exerciseId: null,
+			area: 'shin_calf',
+			severity: 'moderate',
+			action: 'ended_workout',
+			substitutionId: null,
+			note: null,
+			...over
+		}
+	});
+
+describe('in a run or a class, which name no exercise', () => {
+	it('a run records its report at the segment on screen, naming no exercise, and no preference', async () => {
+		await withRollback(async (db) => {
+			const owner = await makeOwner(db);
+			const workoutId = await startAdHoc(db, owner, 'run');
+			const report = sessionReportOf(workoutId, 3);
+
+			const { results } = await sync(db, owner, [report]);
+
+			expect(statuses(results)).toEqual(['applied']);
+			expect(await reportsOf(db, owner)).toMatchObject([
+				{ exerciseId: null, position: 3, action: 'ended_workout' }
+			]);
+			const canonical = await getCanonicalWorkout(owner, workoutId, { db });
+			expect(canonical?.pain[0]?.exerciseId).toBeNull();
+			expect(await preferenceCount(db, owner)).toBe(0);
+		});
+	});
+
+	it('a class records its report at position 1, with no exercise', async () => {
+		await withRollback(async (db) => {
+			const owner = await makeOwner(db);
+			const workoutId = await startAdHoc(db, owner, 'other');
+			const report = sessionReportOf(workoutId, 1);
+
+			const { results } = await sync(db, owner, [report]);
+
+			expect(statuses(results)).toEqual(['applied']);
+			expect(await reportsOf(db, owner)).toMatchObject([
+				{ exerciseId: null, position: 1, action: 'ended_workout' }
+			]);
+		});
+	});
+
+	it('a strength report naming no exercise is rejected at payload.exerciseId, with no row', async () => {
+		await withRollback(async (db) => {
+			const s = await seed(db);
+			const report = reportOf(s, { exerciseId: null });
+
+			const { results } = await sync(db, s.owner, [report]);
+
+			expect(results).toEqual([
+				{
+					id: report.id,
+					status: 'rejected',
+					code: 'invalid',
+					errors: { 'payload.exerciseId': 'Pick the exercise that hurt' }
+				}
+			]);
+			expect(await reportsOf(db, s.owner)).toEqual([]);
+		});
+	});
+
+	it('a run naming a library exercise is rejected at payload.exerciseId, with no row', async () => {
+		await withRollback(async (db) => {
+			const owner = await makeOwner(db);
+			const found = await resolveKeys(['romanian_deadlift'] as const, { db });
+			const workoutId = await startAdHoc(db, owner, 'run');
+			const report = sessionReportOf(workoutId, 3, {
+				exerciseId: found.get('romanian_deadlift')!.id
+			});
+
+			const { results } = await sync(db, owner, [report]);
+
+			expect(results).toEqual([
+				{
+					id: report.id,
+					status: 'rejected',
+					code: 'invalid',
+					errors: { 'payload.exerciseId': 'A run or a class names no exercise' }
+				}
+			]);
+			expect(await reportsOf(db, owner)).toEqual([]);
+		});
+	});
+});

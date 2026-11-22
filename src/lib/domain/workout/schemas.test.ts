@@ -305,6 +305,20 @@ describe('M4’s own fields', () => {
 		expect(errorsOf(make('pain.report', unsure))).toEqual({});
 	});
 
+	it('takes a pain report naming no exercise, never with a gentler option', () => {
+		const ended = { ...PAYLOADS['pain.report'], exerciseId: null, action: 'ended_workout' };
+		expect(errorsOf(make('pain.report', ended))).toEqual({});
+		const swapped = {
+			...PAYLOADS['pain.report'],
+			exerciseId: null,
+			action: 'substituted',
+			substitutionId: SWAP
+		};
+		expect(errorsOf(make('pain.report', swapped))).toEqual({
+			'payload.action': 'A gentler option needs an exercise'
+		});
+	});
+
 	it('takes a run’s fields one at a time, and a segment with a distance or a duration', () => {
 		expect(errorsOf(make('run.log', {}))).toEqual({});
 		expect(errorsOf(make('run.log', { distanceMetres: 500_001 }))).toEqual({

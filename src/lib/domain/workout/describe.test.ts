@@ -117,6 +117,12 @@ describe('describeMutation', () => {
 		);
 	});
 
+	it('words a pain report naming no exercise as the session’s', () => {
+		const session = { ...PAYLOADS['pain.report'], exerciseId: null };
+		const report = createMutation('pain.report', { workoutId: W, at, payload: session });
+		expect(describeMutation(report, known)).toBe('Pain during the session');
+	});
+
 	it('words each measure and load', () => {
 		const none = { reps: null, seconds: null, metres: null, weight: null, assistance: null };
 		expect(setValues({ ...none, reps: 8, unit: 'kg' })).toBe('8 reps');
