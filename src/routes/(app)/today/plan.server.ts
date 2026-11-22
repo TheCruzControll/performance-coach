@@ -17,11 +17,15 @@
  * before the start) is known at once: the plan and that week are read together, each service on
  * its own pool connection (docs/architecture.md). So its `db` is the pool, never a transaction.
  * The review prompt is read once the plan is in, so a plan that fails records only its own error.
+ * So is a light or special week's kind line, beside the prompt, as Train's header has it (m7/38,
+ * services/periodisation/week-line.ts): a read that fails is recorded and the plan shows without.
  */
 import { daysBetween, weekdayOf, type IsoDate } from '#lib/domain/calendar.ts';
 import { WEEKDAY_INFO } from '#lib/domain/profile/catalog.ts';
 import type { SessionView } from '#lib/domain/training/types.ts';
 import { recordServerError } from '#lib/server/services/errors.ts';
+import { getWeekLine } from '#lib/server/services/periodisation/week-line.ts';
+import { listGoals } from '#lib/server/services/profile/index.ts';
 import {
 	getTodayPlan,
 	getTrainingWeek,
@@ -96,6 +100,11 @@ export interface ReadyPlan {
 	 * top; null with none, or when its read failed (recorded: the plan shows without it).
 	 */
 	review: ReviewPromptView | null;
+	/**
+	 * The week's kind and why, with any countdown in the why ('Deload week', 'Deload in week 4 ·
+	 * Marathon in 18 days'); null for a week of another kind, or when its read failed (recorded).
+	 */
+	weekKind: { label: string; why: string } | null;
 }
 
 export type TodayPlanView = { failed: true } | ReadyPlan;
@@ -119,7 +128,7 @@ async function readPlan(
 	today: IsoDate,
 	program: CurrentProgram,
 	db: SetupDeps['db']
-): Promise<Omit<ReadyPlan, 'review'>> {
+): Promise<Omit<ReadyPlan, 'review' | 'weekKind'>> {
 	const upNextOf = (plan: TodayPlan) =>
 		plan.upNext.map((s) => {
 			const when = dayWords(s.date, today);
@@ -201,28 +210,59 @@ async function readPlan(
 	};
 }
 
+/** The kind line of the week shown, in words: its why, then any countdown. */
+async function readWeekKind(
+	ownerId: string,
+	{ today, program, week }: { today: IsoDate; program: CurrentProgram; week: PlanWeek },
+	{ db, line }: { db: SetupDeps['db']; line: typeof getWeekLine }
+): Promise<ReadyPlan['weekKind']> {
+	const goals = await listGoals(ownerId, { db });
+	const at = { programId: program.id, version: program.version.number, today, goals };
+	const view = await line(ownerId, { ...at, weekStartsOn: week.days[0]!.date }, { db });
+	if (!view.line) return null;
+	const { label, why, countdown } = view.line;
+	return { label, why: countdown ? `${why} · ${countdown}` : why };
+}
+
 /**
  * Today's plan at the owner's `today` (ownerToday, read once per request by loadTodayProgram),
- * from the `program` it found, for load.server.ts to stream, with the review prompt read after
- * it. Never rejects: a failed prompt read is recorded and the plan shows without it.
+ * from the `program` it found, for load.server.ts to stream, with the review prompt and the
+ * week's kind line read together after it. Never rejects: a failed prompt or line read is
+ * recorded and the plan shows without it.
  */
 export function loadTodayPlan(
 	ownerId: string,
 	{ today, program, origin }: { today: IsoDate; program: CurrentProgram; origin: SetupOrigin },
-	{ db, errorsDb, prompt = loadReviewPrompt }: SetupDeps & { prompt?: typeof loadReviewPrompt } = {}
+	{
+		db,
+		errorsDb,
+		prompt = loadReviewPrompt,
+		line = getWeekLine
+	}: SetupDeps & { prompt?: typeof loadReviewPrompt; line?: typeof getWeekLine } = {}
 ): Promise<TodayPlanView> {
-	const record = (error: unknown, kind: 'todayPlan' | 'todayReviewPrompt') =>
+	const record = (error: unknown, kind: 'todayPlan' | 'todayReviewPrompt' | 'todayWeekLine') =>
 		recordServerError(
 			{ error, kind: 'streamed', status: 500, ...origin, context: { load: kind } },
 			{ db: errorsDb }
 		);
 	return readPlan(ownerId, today, program, db).then(
 		async (plan) => {
-			const review = await prompt(ownerId, today, { db }).catch(async (error: unknown) => {
-				await record(error, 'todayReviewPrompt');
-				return null;
-			});
-			return { ...plan, review };
+			// Each on its own pool connection, as the plan's reads are.
+			const [review, weekKind] = await Promise.all([
+				prompt(ownerId, today, { db }).catch(async (error: unknown) => {
+					await record(error, 'todayReviewPrompt');
+					return null;
+				}),
+				plan.week
+					? readWeekKind(ownerId, { today, program, week: plan.week }, { db, line }).catch(
+							async (error: unknown) => {
+								await record(error, 'todayWeekLine');
+								return null;
+							}
+						)
+					: null
+			]);
+			return { ...plan, review, weekKind };
 		},
 		async (error: unknown) => {
 			await record(error, 'todayPlan');
