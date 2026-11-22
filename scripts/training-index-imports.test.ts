@@ -17,7 +17,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { chains, ROOT as root } from './import-graph.ts';
 
 const training = (file: string) => path.join(root, 'src/lib/domain/training', file);
-const VALIDATORS = [training('schemas.ts'), training('edits.ts')];
+const VALIDATORS = [training('schemas.ts'), training('edits.ts'), training('replan.ts')];
 const isZod = (specifier: string) => specifier === 'zod' || specifier.startsWith('zod/');
 
 /** Every chain of runtime imports from `entry` to a validator, the modules and the packages. */
