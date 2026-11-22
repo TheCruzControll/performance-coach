@@ -6,6 +6,7 @@
  */
 import { createAppErrorsRepository, getDb, type AppErrorRow, type Executor } from '../db';
 import { logger, serializeError } from '../observability/logger';
+import { MAX_STACK, pathOnly, redactText, redactValue } from '../observability/redact';
 
 export interface ServerErrorInput {
 	error: unknown;
@@ -49,12 +50,13 @@ export async function recordServerError(
 			status: input.status,
 			requestId: input.requestId ?? null,
 			method: input.method ?? null,
-			path: input.path ?? null,
+			path: input.path === undefined ? null : pathOnly(input.path),
 			routeId: input.routeId ?? null,
-			message: String(serialized.message ?? 'Unknown error'),
-			stack: typeof serialized.stack === 'string' ? serialized.stack : null,
+			message: redactText(String(serialized.message ?? 'Unknown error')),
+			stack: typeof serialized.stack === 'string' ? redactText(serialized.stack, MAX_STACK) : null,
 			appVersion: input.appVersion ?? null,
-			context: Object.keys(context).length > 0 ? context : null
+			context:
+				Object.keys(context).length > 0 ? (redactValue(context) as Record<string, unknown>) : null
 		});
 	} catch (err) {
 		logger.error('failed to persist server error', { err, requestId: input.requestId });
