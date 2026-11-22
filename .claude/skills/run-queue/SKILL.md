@@ -71,9 +71,11 @@ request when the merges changed what it says.
 - Look for a train in flight: the state file, and on GitHub
   `gh pr list --state open --limit 100 --json headRefName,number --jq '.[] | select(.headRefName | startswith("train/"))'`.
   If that lists one, a train is in flight.
-- Check `main`'s newest nightly run (`gh run list --workflow CI --event schedule --limit 1`). If it
-  failed, start `ci-triage` on it and build no train until the cause is known: a train on a
-  broken `main` fails for a reason none of its rows caused.
+- Check `main`'s newest finished nightly run (`gh run list --workflow CI --event schedule
+  --status completed --limit 1`). If it failed, start `ci-triage` on it. Until a later full run
+  of `main` passes (the next nightly, or one started with `gh workflow run CI --ref main`), the
+  only train to build is one holding the row that fixes the failure: a train on a broken `main`
+  fails for a reason none of its rows caused.
 - Check production: the newest `Post-deploy smoke` run should be complete and passing
   (`gh run list --workflow "Post-deploy smoke" --limit 3`). If the last one failed, stop here and
   tell the owner. Nothing merges on top of a broken production.
@@ -90,12 +92,13 @@ First read each waiting row's checks (`gh pr checks <number>`).
 - **Still running:** leave it.
 - **A check failed:** start a `ci-triage` agent for it in the background (`feature-slice` step 7)
   and move on. A `REAL` verdict turns into a fix round, which needs a local slot.
-- **All green:** the row is ready to board when all of these hold, and then its head
+- **All green, or only `PRE-EXISTING` failures:** the row is ready to board when all of these hold, and then its head
   (`gh pr view <number> --json headRefOid`) is its boarding SHA, recorded in the state file:
   - its head is the commit its last review approved, or a clean rebase or merge of `main` into it
     with no other change;
-  - its checks passed on that head, or every failure ci-triage called `PRE-EXISTING` is fixed by
-    a row on the same train or already on `main` (the train's run then proves both);
+  - its checks passed on that head; or every failed check on that head has a `ci-triage` verdict
+    of `PRE-EXISTING` (none `REAL`, `FLAKE` or `UNCLEAR`), and each is fixed by a row on the same
+    train or already on `main`. The train's run then proves both;
   - its pull request's base is `main`. A stacked row (base is another row's branch) does not
     board: once the row beneath it has merged, retarget it (`gh pr edit <number> --base main`),
     bring it up to date, and review the result before it boards;

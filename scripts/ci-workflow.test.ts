@@ -148,7 +148,7 @@ const pullRequestPush = (pr: number, runId: string) =>
 // GitHub runs one run per concurrency group and keeps one more waiting. A newer run replaces the
 // waiting one whatever cancel-in-progress says, and with it also cancels the running one.
 describe('CI concurrency', () => {
-	it('runs main nightly in a group of its own, never cancelled by another run', () => {
+	it('runs main nightly, each run in a group of its own', () => {
 		expect(under(ci, 'on').map((line) => line.text)).toContain('schedule:');
 		expect(nightlyRun('1')).toEqual({
 			group: expect.stringContaining('-1'),

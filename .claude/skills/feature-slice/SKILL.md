@@ -173,7 +173,7 @@ Confirm that the journey from step 5 was among it:
 
 Under `run-queue`, rows merge as a train (that skill's step 2). A row boards only when every line
 below that concerns the row holds for its boarding head: its review, its queue status, the
-stop-for-the-owner cases and `plan/queue.md`. Its own checks must be green, but its branch need
+stop-for-the-owner cases and `plan/queue.md`. Its own checks must be green, or fail only where `run-queue` step 2 allows, but its branch need
 not contain `main`. The lines about checks, `main`, the proof and deploys are then checked on the
 train's branch and its run. Run alone, the whole gate applies to the slice's own pull request.
 
