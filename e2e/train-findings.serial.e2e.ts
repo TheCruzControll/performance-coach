@@ -84,6 +84,8 @@ test.describe('the periodisation week', () => {
 		await noteOf(page, 'Lower A').locator('summary').click();
 		await expect(why).toBeVisible();
 		await expect(noteOf(page, 'Lower A')).toContainText('You moved Lower A here from Friday.');
+		// The scheduler's dry-run fix (m7/22) may move the owner's own session back.
+		await expect(noteOf(page, 'Lower A')).toContainText('Moving Lower A to Friday clears this.');
 		await expectNoSideScroll(page);
 		await auditBothThemes(page, 'Train findings, the owner-move week');
 		await captureScreen(page, testInfo, 'train-findings-phone');

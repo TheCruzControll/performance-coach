@@ -72,6 +72,11 @@ Last reviewed: 2026-11-21, against `main` at the merge of #501.
   a season deload in week 1 as well, which gives two. A deload the owner moved to week 1 is
   explained with the rules' "fatigue to clear" wording.
 
+- **M7 adds sequential reads to Train's load.** The week's findings and its evaluation context
+  read the program, the profile, 49 days of facts and the planned sessions one after another. On
+  CI's two-year dataset that adds about 60 ms to the median (`db:explain` prints it). On Neon,
+  where each read is a round trip, expect more. It is not gated, since performance is not tested.
+
 ## Working on this repo
 
 - **The repo needs Node 22 and refuses anything else.** `.npmrc` sets `engine-strict`, so a pnpm

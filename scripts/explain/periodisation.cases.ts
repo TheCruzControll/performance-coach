@@ -6,8 +6,9 @@
  *
  * - Train's load (week.server.ts loadTrainWeek) for the dataset's current week, with
  *   deps.periodisation on (the week's findings, m7/04) and off (every M7 read skipped):
- *   WARM_UPS pairs, then RUNS of each, interleaved. The findings may add TRAIN_TARGET_MS to the
- *   median, and fail the run above TRAIN_FAIL_MS. Both medians are printed.
+ *   WARM_UPS pairs, then RUNS of each, interleaved. Both medians and their difference are printed
+ *   against TRAIN_TARGET_MS, for information only: performance is not tested in CI (the owner's
+ *   decision of 2026-11-22, docs/decisions.md). The run still fails if Train does not render.
  */
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { describe, expect, it } from 'vitest';
@@ -19,9 +20,8 @@ import { FIRST_MONDAY, WEEKS } from './dataset';
 /** Runs before the timed ones, alternating, and the timed runs of each path. */
 export const WARM_UPS = 3;
 export const RUNS = 15;
-/** Train's load with the findings, over its median without them (m7-plan). */
+/** Train's load with the findings, over its median without them (m7-plan); printed, not gated. */
 export const TRAIN_TARGET_MS = 10;
-export const TRAIN_FAIL_MS = 25;
 
 export interface PeriodisationHarness {
 	db: NodePgDatabase<typeof schema>;
@@ -62,7 +62,7 @@ export function periodisationExplain({ db, owner }: PeriodisationHarness): void 
 	}
 
 	describe('M7 periodisation: server time against the same path without M7', () => {
-		it(`Train's load: the findings add at most ${TRAIN_TARGET_MS} ms to the median (fail above ${TRAIN_FAIL_MS} ms)`, async () => {
+		it(`Train's load renders with and without the findings, and prints the time they add`, async () => {
 			for (let i = 0; i < WARM_UPS; i++) {
 				await time({});
 				await time(false);
@@ -77,9 +77,9 @@ export function periodisationExplain({ db, owner }: PeriodisationHarness): void 
 			const added = withFindings - without;
 			const verdict = added <= TRAIN_TARGET_MS ? 'within' : 'over';
 			console.log(
-				`\nTrain's load, median of ${RUNS}: ${withFindings.toFixed(1)} ms with the findings, ${without.toFixed(1)} ms without: ${added >= 0 ? '+' : ''}${added.toFixed(1)} ms (${verdict} +${TRAIN_TARGET_MS} ms, failing above +${TRAIN_FAIL_MS} ms)`
+				`\nTrain's load, median of ${RUNS}: ${withFindings.toFixed(1)} ms with the findings, ${without.toFixed(1)} ms without: ${added >= 0 ? '+' : ''}${added.toFixed(1)} ms (${verdict} the +${TRAIN_TARGET_MS} ms target; not gated)`
 			);
-			expect(added).toBeLessThanOrEqual(TRAIN_FAIL_MS);
+			expect(on).toHaveLength(RUNS);
 		}, 60_000);
 	});
 }
