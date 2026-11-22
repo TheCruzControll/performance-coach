@@ -166,7 +166,7 @@ index (a migration, newest in the journal), and record the plan before and after
 
 - **`Invalid environment configuration`** at startup: the message lists each bad variable.
 - **Integration tests cannot connect**: start Postgres and run `pnpm db:setup`.
-- **`role coach_runtime does not exist, and coach cannot create it`** (42501, hint `run pnpm db:setup`) from `pnpm db:migrate` or the integration tests: run `pnpm db:setup` once.
+- **`runtime grants skipped: coach_runtime is missing and this role cannot create it`** (a warning from `pnpm db:migrate`; `pnpm db:grants` exits 1 on it): run `pnpm db:setup` once.
 - **`something is already serving http://localhost:4173`** in e2e: stop the other server or set
   `E2E_PORT`.
 - **"Cross-site request refused" from a local Node build**: it was built without (or with a

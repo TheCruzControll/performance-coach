@@ -232,15 +232,23 @@ live in `src/lib/server/db/runtime-grants.ts`. They are re-applied by:
 - `scripts/restore-backup.sh`;
 - `pnpm db:grants`.
 
-On a new Neon project or database where `coach_runtime` is missing and the owner lacks CREATEROLE, run `CREATE ROLE coach_runtime NOLOGIN;` in the Neon SQL Editor as the owner, then redeploy.
+**If `coach_runtime` is missing** and the database owner cannot create it (no CREATEROLE), the deploy
+logs a warning (`runtime grants skipped: coach_runtime is missing ...`) and continues: the grants
+are not applied, and the app keeps running on its current `DATABASE_URL`. Create the role once,
+with `CREATE ROLE coach_runtime NOLOGIN;` in the Neon SQL Editor (branch `production`, database
+`neondb`, role `neondb_owner`), before the production switch below. `pnpm db:grants` and
+`pnpm backup:restore` are explicit requests for the grants, so a skip is a non-zero exit there.
 
 **The production switch** is the owner's steps after merge. The loop cannot do them.
 
-1. **Create the login with SQL, not the Console.** Console roles get `neon_superuser`. Generate the
-   password locally with `openssl rand -hex 24` (hex needs no URL encoding and meets Neon's entropy
-   rule). In Neon → SQL Editor, branch `production`, database `neondb`, role `neondb_owner`:
+1. **Confirm the runtime role exists, then create the login with SQL, not the Console.** Console
+   roles get `neon_superuser`. Generate the password locally with `openssl rand -hex 24` (hex needs
+   no URL encoding and meets Neon's entropy rule). In Neon → SQL Editor, branch `production`,
+   database `neondb`, role `neondb_owner`:
 
    ```sql
+   SELECT 1 FROM pg_roles WHERE rolname = 'coach_runtime';   -- expect one row
+   -- no row: CREATE ROLE coach_runtime NOLOGIN;  (then re-run the query above)
    CREATE ROLE coach_app_prod LOGIN PASSWORD '<password>' IN ROLE coach_runtime;
    SELECT has_table_privilege('coach_app_prod', 'public.owners', 'SELECT') AS can_read,
           has_table_privilege('coach_app_prod', 'public.owners', 'TRUNCATE') AS can_empty,
@@ -250,8 +258,6 @@ On a new Neon project or database where `coach_runtime` is missing and the owner
    ```
 
    If any value is not as expected, stop and do not switch.
-
-   If `coach_runtime` is missing, the first deploy of this change has not run yet. Wait for it.
 
 2. **Test the pooled login:**
    `psql 'postgresql://coach_app_prod:<password>@<production -pooler host>/neondb?sslmode=require' -c 'select current_user'`

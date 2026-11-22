@@ -59,8 +59,9 @@ export interface MigrateOptions {
 
 /**
  * Apply all pending SQL migrations from ./drizzle using a direct (non-pooled) connection, then
- * re-applies the runtime role's grants (runtime-grants.ts), then seeds the exercise catalogue
- * under the same lock, so every migrated database has the library the code was built with.
+ * re-applies the runtime role's grants (runtime-grants.ts; a role this login cannot create only
+ * warns, and the migration still completes), then seeds the exercise catalogue under the same
+ * lock, so every migrated database has the library the code was built with.
  */
 export async function runMigrations(
 	url: string,

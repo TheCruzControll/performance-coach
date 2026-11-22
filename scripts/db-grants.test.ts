@@ -1,18 +1,120 @@
 /**
  * `pnpm db:grants` (scripts/db-grants.ts) and the runtime role's URL check, with no database: the
  * runtime-role refusal runs before any connection, the restore script re-applies the grants after
- * pg_restore, and the package script is the one the docs name.
+ * pg_restore, the package script is the one the docs name, and the grants' result (applied, or a
+ * skip with its warning) is handled the same way by the CLI and by the restore.
  */
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
-import { isRuntimeRoleUrl } from '../src/lib/server/db/runtime-grants.ts';
+import type { ClientBase } from 'pg';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { grantsOutcome } from './db-grants.ts';
+import {
+	RUNTIME_ROLE,
+	SETUP_HINT,
+	applyRuntimeGrants,
+	isRuntimeRoleUrl,
+	runtimeGrantsSql
+} from '../src/lib/server/db/runtime-grants.ts';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 
 /** Builds a fixture URL from parts, so the secrets scan does not read it as a credential. */
 const pg = (user: string, rest: string) => ['postgres://', user, rest].join('');
+
+/** A client that records each statement and throws the error `fail` picks for it. */
+function fakeClient(fail: (sql: string) => Error | undefined = () => undefined) {
+	const sent: string[] = [];
+	const client = {
+		query: async (sql: string) => {
+			sent.push(sql);
+			const error = fail(sql);
+			if (error) throw error;
+			return { rows: [] };
+		}
+	};
+	return { client: client as unknown as ClientBase, sent };
+}
+
+/** The refusal runtimeGrantsSql raises when the role is missing and this login cannot create it. */
+const missingRole = () =>
+	Object.assign(new Error('role coach_runtime does not exist, and coach cannot create it'), {
+		code: '42501',
+		hint: SETUP_HINT
+	});
+
+afterEach(() => {
+	vi.restoreAllMocks();
+});
+
+describe('grantsOutcome', () => {
+	it('exits 0 and names the database when the grants are applied', () => {
+		expect(grantsOutcome({ applied: true }, 'postgres://u:***@h/d')).toEqual({
+			exitCode: 0,
+			line: `db:grants: ${RUNTIME_ROLE} grants applied on postgres://u:***@h/d`
+		});
+	});
+
+	it('exits 1 on a skip, so an explicit request fails loudly', () => {
+		const outcome = grantsOutcome(
+			{ applied: false, reason: 'no-createrole' },
+			'postgres://u:***@h/d'
+		);
+		expect(outcome.exitCode).toBe(1);
+		expect(outcome.line).toContain('NOT applied on postgres://u:***@h/d');
+	});
+});
+
+describe('applyRuntimeGrants', () => {
+	it('runs the transaction in order and reports applied', async () => {
+		const { client, sent } = fakeClient();
+		await expect(applyRuntimeGrants(client)).resolves.toEqual({ applied: true });
+		expect(sent).toEqual([
+			'BEGIN',
+			'SELECT pg_advisory_xact_lock($1)',
+			runtimeGrantsSql(),
+			'COMMIT'
+		]);
+	});
+
+	it('rolls back, warns once and reports a skip when the role is missing and cannot be created', async () => {
+		const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+		const { client, sent } = fakeClient((sql) =>
+			sql.startsWith('DO $$') ? missingRole() : undefined
+		);
+		await expect(applyRuntimeGrants(client)).resolves.toEqual({
+			applied: false,
+			reason: 'no-createrole'
+		});
+		expect(sent.at(-1)).toBe('ROLLBACK');
+		expect(sent).not.toContain('COMMIT');
+		expect(warn).toHaveBeenCalledTimes(1);
+		expect(warn).toHaveBeenCalledWith(
+			`runtime grants skipped: ${RUNTIME_ROLE} is missing and this role cannot create it; ${SETUP_HINT}`
+		);
+	});
+
+	it('rethrows a 42501 without the missing-role hint, such as a GRANT refused', async () => {
+		const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+		const refused = Object.assign(new Error('permission denied for schema public'), {
+			code: '42501'
+		});
+		const { client, sent } = fakeClient((sql) => (sql.startsWith('DO $$') ? refused : undefined));
+		await expect(applyRuntimeGrants(client)).rejects.toBe(refused);
+		expect(sent.at(-1)).toBe('ROLLBACK');
+		expect(warn).not.toHaveBeenCalled();
+	});
+
+	it('rethrows any other error', async () => {
+		const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+		const lost = Object.assign(new Error('connection terminated'), { code: '08006' });
+		const { client, sent } = fakeClient((sql) => (sql.startsWith('DO $$') ? lost : undefined));
+		await expect(applyRuntimeGrants(client)).rejects.toBe(lost);
+		expect(sent.at(-1)).toBe('ROLLBACK');
+		expect(warn).not.toHaveBeenCalled();
+	});
+});
 
 describe('isRuntimeRoleUrl', () => {
 	it.each([

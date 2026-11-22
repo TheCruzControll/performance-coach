@@ -3,11 +3,15 @@
  * own login (coach_app, a member of coach_runtime) and the owner: row access on every public
  * table and sequence and nothing more, real DML and the backup export as that login, every
  * bypass refused with 42501, grants that reach a later table, and grants that re-apply to the
- * same state. Runs on the test database, which global setup has already migrated.
+ * same state, and a skip (not a throw) when the role is missing and this login cannot create it.
+ * Runs on the test database, which global setup has already migrated.
  */
+import { spawnSync } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import { buffer } from 'node:stream/consumers';
+import { fileURLToPath } from 'node:url';
 import pg from 'pg';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { ArchiveWriter } from '../../../src/lib/server/backup/archive';
 import { exportDatabase } from '../../../src/lib/server/db/backup/export';
 import { connectionConfig } from '../../../src/lib/server/db/connection';
@@ -16,6 +20,9 @@ import { applyRuntimeGrants, SETUP_HINT } from '../../../src/lib/server/db/runti
 import { runtimeUrl } from '../helpers';
 
 const url = process.env.TEST_DATABASE_URL || LOCAL_DATABASE_URLS.test;
+
+/** A role name that never exists: the grants see the runtime role as missing. */
+const ABSENT_ROLE = 'coach_runtime_absent_probe';
 
 let owner: pg.Client;
 let app: pg.Client;
@@ -169,19 +176,72 @@ describe('the runtime role', () => {
 		expect(await snapshot()).toEqual(first);
 	});
 
-	it('names the setup step when the role is missing and the owner cannot create it', async (ctx) => {
+	it('skips, without throwing, when the role is missing and this login cannot create it', async (ctx) => {
+		// coach_app is the app's login, made NOCREATEROLE by pnpm db:setup. It runs the grants
+		// with a role name that does not exist, so the CREATE ROLE it attempts must be refused.
 		const { rows } = await owner.query<{ rolcreaterole: boolean }>(
-			'SELECT rolcreaterole FROM pg_roles WHERE rolname = current_user'
+			"SELECT rolcreaterole FROM pg_roles WHERE rolname = 'coach_app'"
 		);
 		if (rows[0]!.rolcreaterole) ctx.skip();
 
-		await expect(applyRuntimeGrants(owner, 'coach_runtime_absent_probe')).rejects.toMatchObject({
-			code: '42501',
-			hint: SETUP_HINT
-		});
+		const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+		try {
+			await expect(applyRuntimeGrants(app, ABSENT_ROLE)).resolves.toEqual({
+				applied: false,
+				reason: 'no-createrole'
+			});
+			expect(warn).toHaveBeenCalledTimes(1);
+			expect(warn).toHaveBeenCalledWith(
+				`runtime grants skipped: ${ABSENT_ROLE} is missing and this role cannot create it; ${SETUP_HINT}`
+			);
+		} finally {
+			warn.mockRestore();
+		}
+
+		// The refusal rolled back, so the same session still works and no role was created.
+		await expect(app.query('SELECT 1 AS one')).resolves.toMatchObject({ rows: [{ one: 1 }] });
 		const { rows: found } = await owner.query<{ n: number }>(
-			"SELECT count(*)::int AS n FROM pg_roles WHERE rolname = 'coach_runtime_absent_probe'"
+			'SELECT count(*)::int AS n FROM pg_roles WHERE rolname = $1',
+			[ABSENT_ROLE]
 		);
 		expect(found[0]!.n).toBe(0);
+	});
+});
+
+describe('pnpm db:grants as a login without CREATEROLE', () => {
+	const repo = fileURLToPath(new URL('../../../', import.meta.url));
+	const script = fileURLToPath(new URL('../../../scripts/db-grants.ts', import.meta.url));
+
+	it('exits 1 when this login cannot apply the grants', async (ctx) => {
+		// Needs an admin connection to create the throwaway login (CI sets PGADMIN_URL). The CLI
+		// refuses the app's own logins, so the login is a plain one with no CREATEROLE.
+		const admin = process.env.PGADMIN_URL;
+		if (!admin) ctx.skip();
+
+		const name = `grants_probe_${randomBytes(4).toString('hex')}`;
+		const secret = randomBytes(16).toString('hex');
+		const adminClient = new pg.Client(connectionConfig(admin!));
+		await adminClient.connect();
+		try {
+			await adminClient.query(
+				`CREATE ROLE ${pg.escapeIdentifier(name)} LOGIN PASSWORD ${pg.escapeLiteral(secret)} NOSUPERUSER NOCREATEROLE NOCREATEDB`
+			);
+			const probe = new URL(url);
+			probe.username = name;
+			probe.password = secret;
+
+			const result = spawnSync(process.execPath, [script, probe.toString()], {
+				cwd: repo,
+				env: { PATH: process.env.PATH ?? '' },
+				encoding: 'utf8',
+				timeout: 60_000
+			});
+			expect(result.status).toBe(1);
+			expect(result.stderr).toContain('db:grants: failed on');
+			expect(`${result.stdout}${result.stderr}`).not.toContain(secret);
+		} finally {
+			await adminClient.query(`DROP ROLE IF EXISTS ${pg.escapeIdentifier(name)}`).catch(() => {});
+			await adminClient.end();
+		}
 	});
 });

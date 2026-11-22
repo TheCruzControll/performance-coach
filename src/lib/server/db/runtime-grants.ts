@@ -5,7 +5,9 @@
  * sequences, and read the migration journal. It cannot empty a table, change a table's shape,
  * create or drop anything, own anything, or touch the backup restore log. Grants are re-applied
  * idempotently by runMigrations (so every deploy build), scripts/backup-restore.ts and
- * scripts/db-grants.ts, so no restore can leave a database without them.
+ * scripts/db-grants.ts, so no restore can leave a database without them. When the role is missing
+ * and the login cannot create it, applyRuntimeGrants reports a skip with a warning; runMigrations
+ * carries on, and the explicit callers (restore, db:grants) treat the skip as a failure.
  *
  * Plain Node: imports only pg, so scripts and the migration runner load it without a bundler.
  */
@@ -55,20 +57,43 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO ${
 }
 
 /**
+ * What applyRuntimeGrants did: `applied`, or `skipped` because the role is missing and this login
+ * cannot create it (the skip is also logged as a warning, with SETUP_HINT).
+ */
+export type RuntimeGrantsResult = { applied: true } | { applied: false; reason: 'no-createrole' };
+
+/**
+ * True for the refusal runtimeGrantsSql raises when it cannot create a missing role. That is the
+ * only raise that sets SETUP_HINT, so a 42501 from a GRANT still counts as a real error.
+ */
+function isMissingRoleRefusal(error: unknown): boolean {
+	if (typeof error !== 'object' || error === null) return false;
+	const { code, hint } = error as { code?: unknown; hint?: unknown };
+	return code === '42501' && hint === SETUP_HINT;
+}
+
+/**
  * Apply the runtime role's grants on `client`'s database, in one transaction under an advisory
- * lock. Rolls back and rethrows on any error. The caller must not have a transaction open.
+ * lock. When the role is missing and this login cannot create it, rolls back, logs one warning and
+ * returns `{ applied: false, reason: 'no-createrole' }`. Any other error rolls back and rethrows.
+ * The caller must not have a transaction open.
  */
 export async function applyRuntimeGrants(
 	client: ClientBase,
 	role: string = RUNTIME_ROLE
-): Promise<void> {
+): Promise<RuntimeGrantsResult> {
 	try {
 		await client.query('BEGIN');
 		await client.query('SELECT pg_advisory_xact_lock($1)', [RUNTIME_GRANTS_LOCK_KEY]);
 		await client.query(runtimeGrantsSql(role));
 		await client.query('COMMIT');
+		return { applied: true };
 	} catch (error) {
 		await client.query('ROLLBACK').catch(() => {});
-		throw error;
+		if (!isMissingRoleRefusal(error)) throw error;
+		console.warn(
+			`runtime grants skipped: ${role} is missing and this role cannot create it; ${SETUP_HINT}`
+		);
+		return { applied: false, reason: 'no-createrole' };
 	}
 }

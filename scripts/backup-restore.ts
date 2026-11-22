@@ -20,7 +20,8 @@
  *    (scripts/backup/target.ts and restore.ts, one verified transaction), and the forward
  *    migration unless --no-forward-migrate.
  * 4b. Re-applies the runtime role's grants on every successful or already-restored run, then
- *    forward-migrates.
+ *    forward-migrates. If the role is missing and this login cannot create it, the run stops with
+ *    exit 5 after the rows are restored; a rerun finishes the grants and the migration.
  * 5. A markdown table of each phase's UTC start and end, for the drill record.
  *
  * A rerun of the same backup changes no row (already_restored); it still forward-migrates, so a
@@ -358,7 +359,13 @@ export async function main(
 				: `Already restored at ${loaded.restoredAt.toISOString()}: no row was written.`;
 		}
 		console.log(done);
-		await applyRuntimeGrants(client);
+		const grants = await applyRuntimeGrants(client);
+		if (!grants.applied) {
+			console.error(
+				`Restore failed (runtime_grants_skipped): the rows above are restored, but ${RUNTIME_ROLE} is missing and this login cannot create it, so the grants and the forward migration did not run. Create the role (the warning above has the SQL), then run this command again: the backup is already restored, so it finishes the grants and the migration.`
+			);
+			return EXIT.failed;
+		}
 		console.log(`Grants:   ${RUNTIME_ROLE} re-applied.`);
 		if (!flags['no-forward-migrate']) {
 			const forward = await timed(phases, 'forward migration', () => runMigrations(url));
