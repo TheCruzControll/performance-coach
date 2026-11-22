@@ -48,7 +48,7 @@ change that makes them out of date.
 
 Work comes from `plan/queue.md`. Three skills carry a slice from there to production:
 
-- `run-queue` keeps several rows of the queue moving at once and merges them one at a time. It is
+- `run-queue` keeps several rows of the queue moving at once and merges them in trains of up to four, one train at a time. It is
   the command to give `/loop`.
 - `feature-slice` takes one slice from spec to a merged pull request, using the `builder`,
   `reviewer` and `ci-triage` agents.
@@ -65,7 +65,7 @@ Limits that apply to every session here:
   `pnpm exec vitest run --project unit <file>`), push, and read the result from the pull request.
   Run a full suite, a build or Playwright locally only to reproduce a CI failure, one at a time.
 - Several slices are built at once, each in its own git worktree under `../pc-wt/`. Do not edit
-  tracked files in the main checkout; other sessions share it. Merges happen one at a time.
+  tracked files in the main checkout; other sessions share it. Merges happen one at a time: a train of up to four slices is tested and merged as one.
 
 ## Commands
 

@@ -6,7 +6,7 @@ description: Work through the build queue in plan/queue.md, several slices at a 
 # Run the queue
 
 `plan/queue.md` is the list of work. This skill is the dispatcher: it keeps several rows moving at
-once, each in its own git worktree, and merges them one at a time as they pass. Called under
+once, each in its own git worktree, and merges them in small trains, one train at a time, as they pass. Called under
 `/loop`, it keeps going until nothing is left that it can act on.
 
 You, the session running this skill, own every row. The `builder`, `reviewer` and `ci-triage`
@@ -20,7 +20,7 @@ here.
 | -------------------------------------- | ------- | ----------------------------------------------------- |
 | Local: spec, build, review, fix rounds | 3 rows  | Your attention and context, not the machine           |
 | Waiting on CI                          | 6 rows  | GitHub's runner queue, and rebases after each merge   |
-| Merge and deploy                       | 1 row   | Each merge is a production deploy that must be checked |
+| Merge and deploy                       | 1 train | Each merge is a production deploy that must be checked |
 
 Agents are light: the model runs in the cloud. What is heavy is a full suite, a build or
 Playwright, and none of those run on this machine (see `feature-slice`). So three rows in the
@@ -71,28 +71,56 @@ request when the merges changed what it says.
   (`gh run list --workflow "Post-deploy smoke" --limit 3`). If the last one failed, stop here and
   tell the owner. Nothing merges on top of a broken production.
 
-### 2. Merge what is ready
+### 2. Merge what is ready, as a train
 
-Go through the rows waiting on CI, oldest first, and read each one's checks
-(`gh pr checks <number>`).
+A merge needs CI to have passed on the tree that lands, and a full run is 28 jobs. Merging rows
+one by one costs a rebase and a full run per row. So rows merge together: a train is one branch
+that holds several ready rows on top of the current `main`, tested once and merged once. One
+train is one CI run, one deploy and one post-deploy check, for up to four rows.
+
+First read each waiting row's checks (`gh pr checks <number>`).
 
 - **Still running:** leave it.
 - **A check failed:** start a `ci-triage` agent for it in the background (`feature-slice` step 7)
-  and move on. Its verdict comes back as a notification; a `REAL` verdict turns into a fix round,
-  which needs a local slot.
-- **All green:** follow `feature-slice` steps 8 to 10: confirm the proof, pass the merge gate,
-  merge, and wait for the post-deploy check. Merge one row, wait for its deploy to be confirmed,
-  then the next. Never queue two merges.
+  and move on. A `REAL` verdict turns into a fix round, which needs a local slot.
+- **All green on its own head:** the row is ready for a train, if its last review approved that
+  head. It does not need to be up to date with `main`; the train's run proves that.
 
-  The gate only passes a branch whose checks ran on the current `main`. So after any merge, the
-  next green row is one rebase and one CI run away from merging: rebase it, push, and use the wait
-  for other work. Take rows in the order they went green, and do not rebase the ones further back
-  until their turn, or every merge would restart CI for all of them.
+Then, when no train is in flight and at least one row is ready:
 
-After a merge, the other rows in flight are behind `main`. Rebase a row straight away only if the
-merge touched files that row also changes (`gh pr diff <number> --name-only` against the merged
-files), so a conflict surfaces early; push it and let CI run again. A row whose files the merge did
-not touch waits for its turn at the gate.
+1. **Build it.** In a worktree of its own (`../pc-wt/loop-train`), create `train/<date>-<n>` from
+   `origin/main`. Merge the ready rows into it in queue order, at most four, each with
+   `git merge --no-ff origin/<branch> -m "Merge <PR title> (#<number>)"`. Stacked rows go in stack
+   order. If a merge conflicts, abort that merge and leave the row out: it goes back to the local
+   stage to be brought up to date and reviewed again. Never resolve a conflict on the train.
+2. **Open it.** Push the branch and open a pull request titled `train: #<a>, #<b>, #<c>`, whose
+   description lists each row with its pull request, its reviewer verdict and its journey.
+   A train of one row is that row's own pull request instead: bring the branch up to date with
+   `main` and push, as before.
+3. **Wait for its run,** using the time for other work. A train is not reviewed again: it holds
+   only reviewed heads and clean merges.
+4. **If a check fails,** triage it. A flake is re-run. A real failure belongs to a row: close the
+   train's pull request, send that row back for a fix round, and build the next train from the
+   rest. If triage cannot tell which row, split the train in two and run each half.
+5. **When it is green,** apply `feature-slice` steps 8 to 10 to the train: confirm in the train's
+   run that every row's journey ran and passed, check the gate for the train's branch, and merge it
+   with `gh pr merge <train> --merge --subject "Merge train: #<a>, #<b>, #<c> (#<train>)"`. GitHub
+   marks each row's pull request merged, because `main` now contains its head. Confirm that
+   (`gh pr view <number> --json state`), wait for `Post-deploy smoke`, and only then build the
+   next train.
+
+While a train is in flight, rows that become ready wait for the next one. Do not add to a train
+after its run has started, and do not push to a branch that is on a train.
+
+After a train merges, rows still in flight are behind `main`. Bring a row up to date straight away
+only if the train touched files that row also changes (`gh pr diff <number> --name-only` against
+the merged files), so a conflict surfaces early. Otherwise leave it: its next train handles it.
+
+**Keep CI runs few.** Every push of a code change starts a full run, and about 20 jobs run at
+once across all pull requests. Push a row once per review round, never to see what CI says about
+unfinished work. Before pushing, check the runner queue (`gh run list --status queued --limit 20`):
+when more than two full runs are waiting, do local work first. Cancel a run that can no longer
+matter (`gh run cancel <id>`): a closed pull request's, or one on a head you are about to replace.
 
 ### 3. Fill the local slots
 
@@ -193,7 +221,9 @@ minute: what merged, what was parked and why, and what is waiting on them.
 ## What this skill never does
 
 - Merge outside `feature-slice`'s gate, push to `main`, or force-push `main`.
-- Merge two rows without confirming the first one's deploy in between.
+- Merge two trains without confirming the first one's deploy in between, or put more than four
+  rows on one train.
+- Resolve a conflict on a train, or push to a branch that is on a train.
 - Roll back production, change environment variables, or touch Neon or Vercel settings.
 - Run a full suite, a build or Playwright on this machine.
 - Put two rows that change the same files in the local stage together.

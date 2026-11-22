@@ -171,6 +171,10 @@ Confirm that the journey from step 5 was among it:
 
 ## 9. Merge
 
+Under `run-queue`, rows merge as a train (that skill's step 2): the gate below is then checked on
+the train's branch and its run, and each row needs only an approved review and green checks on its
+own head to board. Run alone, the gate applies to the slice's own pull request.
+
 Merge only when every line below is true on the PR's latest head. If any is false, do not merge;
 fix it or park the slice.
 
@@ -191,7 +195,7 @@ fix it or park the slice.
 - The slice is not one of the "stop for the owner" cases above, and its queue row is not `hold` or
   `owner`.
 - The branch does not change `plan/queue.md`, unless it is the queue's own housekeeping change.
-- No earlier merge is still deploying. One merge at a time, however many slices are in flight.
+- No earlier merge is still deploying. One merge at a time, a row or a train, however many slices are in flight.
 
 Merge the way this repo's history does, as a merge commit titled `Merge <PR title> (#<number>)`:
 
