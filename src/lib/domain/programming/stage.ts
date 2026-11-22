@@ -9,6 +9,8 @@ import type { BlockPlan } from '../training/types.ts';
 import type { DecisionLog } from './decisions.ts';
 import type { WeekDemand } from './demand.ts';
 import type { ProgrammingInput } from './input.ts';
+import type { SeasonPlan } from './periodisation/season.ts';
+import type { GoalPriority } from './priority/weights.ts';
 
 export interface GenerateOptions {
 	/** The Monday of week 1. */
@@ -23,12 +25,23 @@ export interface StageContext {
 	readonly log: DecisionLog;
 }
 
+/** The season a block is planned in, set by prepare (./stages/prepare.ts) when one is planned. */
+export interface Periodisation {
+	season: SeasonPlan;
+	/** Each goal's effective priority, the leader first, by week of the block. */
+	prioritiesByWeek: { startsOn: IsoDate; priorities: GoalPriority[] }[];
+	/** The doses of the goals held at maintenance, by week of the block. */
+	dosesByWeek: SeasonPlan['dosesByWeek'];
+}
+
 /** The plan so far. */
 export interface Draft {
 	/** The week's days and each goal's sessions: set by the demand stage. */
 	demand: WeekDemand | null;
 	/** The first block's weeks, then the outline: set by the blocks stage, filled by the rest. */
 	blocks: BlockPlan[];
+	/** The season, priorities and doses: seeded from prepare, absent while none is planned. */
+	periodisation?: Periodisation;
 }
 
 export type Stage = (draft: Draft, context: StageContext) => Draft;

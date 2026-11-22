@@ -22,10 +22,22 @@ export {
 } from './build';
 export {
 	DEFAULT_PROGRAM_START,
+	PICK_A_DAY,
 	PROGRAM_STARTS,
 	START_OPTIONS,
 	startDates,
+	type NamedStart,
 	type PreviewRequest,
 	type ProgramStart,
 	type StartDates
 } from './start';
+export {
+	ALREADY_THEN,
+	getStartMove,
+	moveProgramStart,
+	NOT_OFFERED,
+	StartMoveError,
+	type MovedStart,
+	type MoveRequest,
+	type StartMove
+} from './move';

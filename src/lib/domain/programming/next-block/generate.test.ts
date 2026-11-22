@@ -29,6 +29,7 @@ import { decideFromResults } from '../results';
 import { SCENARIO_START, SCENARIOS, scenarioDay } from '../scenarios';
 import type { ScenarioKey } from '../scenarios';
 import type { CycleDirectives } from '../review/directives';
+import { fnv1a64, GENERATOR_ID as M3_GENERATOR_ID } from '../random';
 import { exerciseOf } from '../selection';
 import { estimateMinutes } from '../timefit';
 import { nextBlockDates } from './dates';
@@ -164,14 +165,28 @@ describe('the stage list', () => {
 			'running',
 			'other',
 			'placement',
+			'phasing',
 			'volume',
 			'carryover',
 			'loads',
 			'progression',
 			'results',
-			'timefit'
+			'timefit',
+			'schedule'
 		]);
-		expect(GENERATOR_ID).toBe('next-block/1');
+	});
+
+	it('inherits M7’s stages by name: phasing before volume, and schedule last', () => {
+		const { next, options } = scenario({ key: 'hybrid' });
+		const names = nextStages(next, options).map((s) => s.name);
+		expect(names.indexOf('phasing')).toBeGreaterThan(names.indexOf('placement'));
+		expect(names.indexOf('phasing')).toBeLessThan(names.indexOf('volume'));
+		expect(names.at(-1)).toBe('schedule');
+	});
+
+	it('stores an id that carries M3’s GENERATOR_ID, so an M3 or M7 bump changes the fingerprint', () => {
+		expect(GENERATOR_ID).toBe(`next-block/1+${M3_GENERATOR_ID}`);
+		expect(GENERATOR_ID).toBe('next-block/1+perfo-programming/1');
 	});
 });
 
@@ -589,5 +604,43 @@ describe('structure', () => {
 		}
 		expect([...seen].sort()).toEqual(Object.keys(kinds).sort());
 		expect(SIGNIFICANT).toEqual({ loadPct: 5, hardSets: 2, runVolume: 0.1 });
+	});
+});
+
+/**
+ * The next block, its bridge, decisions and significant changes as JSON, hashed before
+ * m7-stage-list ran prepare and the phasing and schedule stages in it. Only the fingerprint may
+ * change with a stage list or GENERATOR_ID change; these bytes change only with a plan change.
+ */
+const GOLDEN_CASES: [string, Case, string][] = [
+	['a beginner on time', { key: 'beginner' }, 'd9ff51f2529b32dc'],
+	[
+		'a powerlifter from next Monday',
+		{ key: 'powerlifter', start: 'next_monday' },
+		'0f587813d394f360'
+	],
+	[
+		'a hybrid with results and a last-week deload',
+		{
+			key: 'hybrid',
+			results: [
+				{ exercise: 'back_squat', exposures: EASY, trend: null },
+				{ exercise: 'bench_press', exposures: EASY, trend: null }
+			],
+			directives: { deload: 'last' }
+		},
+		'de62ab44bcc36475'
+	],
+	[
+		'the journey two weeks late',
+		{ key: 'journey', today: addDays(ON_TIME, 14) },
+		'fc4f6cb48ac87fb9'
+	]
+];
+
+describe('byte-identical blocks', () => {
+	it.each(GOLDEN_CASES)('%s: the block is byte for byte the one from before', (_, c, hash) => {
+		const { fingerprint: _fingerprint, ...block } = scenario(c).result;
+		expect(fnv1a64(JSON.stringify(block))).toBe(hash);
 	});
 });

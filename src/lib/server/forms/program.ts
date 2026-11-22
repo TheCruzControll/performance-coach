@@ -9,7 +9,7 @@
  * - TrainingNotFoundError → `fail(404, { message })`
  * Anything else is rethrown, for handleError to record as the server's error.
  */
-import { fail } from '@sveltejs/kit';
+import { error, fail } from '@sveltejs/kit';
 import {
 	ConflictError,
 	TrainingInputError,
@@ -38,6 +38,24 @@ async function attempt<T>(change: () => Promise<T>) {
 		}
 		throw err;
 	}
+}
+
+/**
+ * A program screen's action whose form posts plain fields (no `payload`), so it works before
+ * JavaScript runs: run `change` with them, then return its result or the failure.
+ */
+export function programFieldsAction<T>(change: (owner: string, form: FormData) => Promise<T>) {
+	return async ({ locals, request }: FormEvent) => {
+		const owner = ownerId(locals);
+		let form: FormData;
+		try {
+			form = await request.formData();
+		} catch {
+			error(400, 'The form could not be read. Reload and try again.');
+		}
+		const result = await attempt(() => change(owner, form));
+		return result.ok ? result.value : result.failure;
+	};
 }
 
 /** A program screen's action: run `change`, then return its result or the failure. */

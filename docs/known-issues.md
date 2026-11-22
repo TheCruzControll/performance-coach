@@ -49,6 +49,10 @@ Last reviewed: 2026-11-21, against `main` at the merge of #501.
   `coach_app_prod` (docs/deployment.md, 'Least-privilege runtime role'). The owner's direct URL
   also stays in Vercel's runtime environment. Closes on the switch, for the first part.
 
+- **A move does not see an unsynced offline workout.** A workout started offline from a start kit
+  of the old version, and not yet synced, is not counted when a move checks for logged workouts.
+  After the move it syncs against a session the current version no longer has.
+
 ## Working on this repo
 
 - **The repo needs Node 22 and refuses anything else.** `.npmrc` sets `engine-strict`, so a pnpm

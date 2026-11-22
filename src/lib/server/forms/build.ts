@@ -16,6 +16,7 @@
  */
 import type { IsoDate } from '../../domain/calendar';
 import { canonicalTimeZone, localDay } from '../../domain/dates';
+import { latestStart } from '../../domain/programming/start-move';
 import { getAthleteProfile, saveBasics } from '../services/profile';
 import {
 	buildProgram,
@@ -23,6 +24,7 @@ import {
 	previewProgram,
 	START_OPTIONS,
 	startDates,
+	type NamedStart,
 	type ProgrammingDeps,
 	type ProgramStart,
 	type StartDates
@@ -34,10 +36,12 @@ export type BuildDeps = Pick<ProgrammingDeps, 'db' | 'now' | 'catalogue'>;
 /** What ?/preview returns: the preview, the day and start it was made for, and each start's dates. */
 export interface PreviewResult {
 	today: IsoDate;
-	/** The start asked for, or DEFAULT_PROGRAM_START when none was. */
+	/** The start asked for, or DEFAULT_PROGRAM_START when none was: a named start, or a day. */
 	start: ProgramStart;
-	/** The starts the screen offers, with week 1's dates for each. */
-	starts: Partial<Record<ProgramStart, StartDates>>;
+	/** The named starts the screen offers, with week 1's dates for each. */
+	starts: Partial<Record<NamedStart, StartDates>>;
+	/** The last day the date field offers: latestStart(today). */
+	latestStart: IsoDate;
 	preview: Awaited<ReturnType<typeof previewProgram>>;
 }
 
@@ -69,7 +73,13 @@ export function buildActions(deps: BuildDeps = {}) {
 			const request = { start: DEFAULT_PROGRAM_START, ...requestFor(payload, today) };
 			const preview = await previewProgram(owner, request, deps);
 			const starts = Object.fromEntries(START_OPTIONS.map((s) => [s, startDates(today, s)]));
-			return { today, start: request.start as ProgramStart, starts, preview };
+			return {
+				today,
+				start: request.start as ProgramStart,
+				starts,
+				latestStart: latestStart(today),
+				preview
+			};
 		}),
 		/** Store the previewed program as version 1, then record the device's zone. */
 		build: programAction(async (owner, payload) => {
