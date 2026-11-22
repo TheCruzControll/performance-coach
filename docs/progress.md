@@ -31,6 +31,7 @@ runs the criteria and updates milestones.md.
 
 ## Recently merged
 
+- A least-privilege database role for the app, re-granted by every migration and restore. Production switches to it in an owner step.
 - During a run or a class, This hurts records the pain and ends the session; a run can skip a segment.
 - End a plan and build a new one, keeping every logged workout (#501).
 - The coach answers again, and programs can lift and run beside timed classes (#500).

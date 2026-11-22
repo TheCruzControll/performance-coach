@@ -42,6 +42,9 @@ Last reviewed: 2026-11-21, against `main` at the merge of #501.
 - **Performance is measured in the lab only.** Lighthouse and the main-thread budgets pass, but
   there are no real-device or RUM p75 numbers yet. M8's criterion on Core Web Vitals depends on
   them.
+- **Production still connects as `neondb_owner`** until the owner switches `DATABASE_URL` to
+  `coach_app_prod` (docs/deployment.md, 'Least-privilege runtime role'). The owner's direct URL
+  also stays in Vercel's runtime environment. Closes on the switch, for the first part.
 
 ## Working on this repo
 

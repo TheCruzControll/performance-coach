@@ -19,6 +19,8 @@
  * 4. --force drops the drizzle and public schemas first. Then the schema step and the row step
  *    (scripts/backup/target.ts and restore.ts, one verified transaction), and the forward
  *    migration unless --no-forward-migrate.
+ * 4b. Re-applies the runtime role's grants on every successful or already-restored run, then
+ *    forward-migrates.
  * 5. A markdown table of each phase's UTC start and end, for the drill record.
  *
  * A rerun of the same backup changes no row (already_restored); it still forward-migrates, so a
@@ -46,6 +48,7 @@ import {
 	journalMigrations,
 	runMigrations
 } from '../src/lib/server/db/migrate.ts';
+import { RUNTIME_ROLE, applyRuntimeGrants } from '../src/lib/server/db/runtime-grants.ts';
 import {
 	Refusal,
 	confirmTyped,
@@ -355,6 +358,8 @@ export async function main(
 				: `Already restored at ${loaded.restoredAt.toISOString()}: no row was written.`;
 		}
 		console.log(done);
+		await applyRuntimeGrants(client);
+		console.log(`Grants:   ${RUNTIME_ROLE} re-applied.`);
 		if (!flags['no-forward-migrate']) {
 			const forward = await timed(phases, 'forward migration', () => runMigrations(url));
 			console.log(`Migrated: ${forward.applied} applied, ${forward.total} in total.`);

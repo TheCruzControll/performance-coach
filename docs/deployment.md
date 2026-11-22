@@ -94,19 +94,19 @@ Checked against `src/lib/server/env.ts` (validated at start-up: a missing or inv
 stops the server, listing every problem) and `scripts/vercel-build.sh` (a deployed build without
 the direct URL fails):
 
-| Variable                                                                        | Production                                                                 | Preview                                | Why                                                                         |
-| ------------------------------------------------------------------------------- | -------------------------------------------------------------------------- | -------------------------------------- | --------------------------------------------------------------------------- |
-| `DATABASE_URL`                                                                  | **required**: `production` branch, pooled (`-pooler` host)                 | **required**: `preview` branch, pooled | App traffic. Env validation refuses to start without it.                    |
-| `DATABASE_URL_UNPOOLED`                                                         | **required**: `production` branch, direct                                  | **required**: `preview` branch, direct | Migrations in the build: `vercel-build.sh` fails without it.                |
-| `OWNER_SETUP_TOKEN_HASH`                                                        | only during the owner setup (below), sensitive                             | optional: only to set a preview up     | Unset: `/setup` is a 404.                                                   |
-| `ANTHROPIC_API_KEY`                                                             | exists; used once the coach launches (M5)                                  | not set                                | Missing: the coach is unavailable; the app is unaffected.                   |
-| `ENABLE_TEST_ROUTES`                                                            | **must not exist**                                                         | **must not exist**                     | The server refuses to start with it on any Vercel deployment.               |
-| `APP_ENV`                                                                       | unset (or `production`)                                                    | unset (or `preview`)                   | Any other value on production refuses to start; Vercel's `VERCEL_ENV` wins. |
-| `LLM_PROVIDER`, `LOG_LEVEL`, `DB_POOL_MAX`, `DB_QUERY_TIMEOUT_MS`, `SENTRY_DSN` | optional (defaults: unset, `info`, `5`, `10000`, off)                      | optional                               | Validated when set.                                                         |
-| `CRON_SECRET`                                                                   | for backups: `openssl rand -hex 32`, Sensitive                             | not set                                | Unset: the backup cron's route is a 404. "Set up backups" below.            |
-| `BACKUP_ENCRYPTION_KEY`                                                         | for backups: `pnpm backup:keygen`, Sensitive, also in the password manager | not set                                | Unset or invalid: backups are off (the cron answers 503).                   |
-| `BLOB_READ_WRITE_TOKEN`                                                         | for backups: injected by connecting the private store                      | not set                                | Unset: backups are off. Previews never reach the store.                     |
-| `BACKUP_DIR`                                                                    | **must not exist**                                                         | **must not exist**                     | A local folder store for development; refused on Vercel.                    |
+| Variable                                                                        | Production                                                                                                                   | Preview                                | Why                                                                         |
+| ------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- | --------------------------------------------------------------------------- |
+| `DATABASE_URL`                                                                  | **required**: `production` branch, pooled (`-pooler` host), as coach_app_prod once switched ("Least-privilege runtime role") | **required**: `preview` branch, pooled | App traffic. Env validation refuses to start without it.                    |
+| `DATABASE_URL_UNPOOLED`                                                         | **required**: `production` branch, direct, as neondb_owner (migrations and grants need the owner)                            | **required**: `preview` branch, direct | Migrations in the build: `vercel-build.sh` fails without it.                |
+| `OWNER_SETUP_TOKEN_HASH`                                                        | only during the owner setup (below), sensitive                                                                               | optional: only to set a preview up     | Unset: `/setup` is a 404.                                                   |
+| `ANTHROPIC_API_KEY`                                                             | exists; used once the coach launches (M5)                                                                                    | not set                                | Missing: the coach is unavailable; the app is unaffected.                   |
+| `ENABLE_TEST_ROUTES`                                                            | **must not exist**                                                                                                           | **must not exist**                     | The server refuses to start with it on any Vercel deployment.               |
+| `APP_ENV`                                                                       | unset (or `production`)                                                                                                      | unset (or `preview`)                   | Any other value on production refuses to start; Vercel's `VERCEL_ENV` wins. |
+| `LLM_PROVIDER`, `LOG_LEVEL`, `DB_POOL_MAX`, `DB_QUERY_TIMEOUT_MS`, `SENTRY_DSN` | optional (defaults: unset, `info`, `5`, `10000`, off)                                                                        | optional                               | Validated when set.                                                         |
+| `CRON_SECRET`                                                                   | for backups: `openssl rand -hex 32`, Sensitive                                                                               | not set                                | Unset: the backup cron's route is a 404. "Set up backups" below.            |
+| `BACKUP_ENCRYPTION_KEY`                                                         | for backups: `pnpm backup:keygen`, Sensitive, also in the password manager                                                   | not set                                | Unset or invalid: backups are off (the cron answers 503).                   |
+| `BLOB_READ_WRITE_TOKEN`                                                         | for backups: injected by connecting the private store                                                                        | not set                                | Unset: backups are off. Previews never reach the store.                     |
+| `BACKUP_DIR`                                                                    | **must not exist**                                                                                                           | **must not exist**                     | A local folder store for development; refused on Vercel.                    |
 
 Vercel's system variables (`VERCEL`, `VERCEL_ENV`, `VERCEL_URL`, `VERCEL_BRANCH_URL`,
 `VERCEL_GIT_COMMIT_SHA`) must stay exposed (Settings → Environment Variables → "Automatically
@@ -219,6 +219,66 @@ work there (and vice versa).
   reopens first-run setup and writes an `owner.reset` audit event. **The owner row and all
   training data are kept.** Then follow "Owner setup" above with a **new** token (the previous
   link stays refused: each token works for one setup); setup re-attaches to the same owner.
+
+## Least-privilege runtime role
+
+**What it is.** `coach_runtime` (NOLOGIN) holds the app's data rights: DML (select, insert, update,
+delete) on every `public` table, its sequences, and read on `drizzle.__drizzle_migrations`. It has
+no TRUNCATE, no DDL and no ownership. `coach_app_prod` is the login that inherits it. The grants
+live in `src/lib/server/db/runtime-grants.ts`. They are re-applied by:
+
+- `pnpm db:migrate`, so every deploy build;
+- `pnpm backup:restore`;
+- `scripts/restore-backup.sh`;
+- `pnpm db:grants`.
+
+On a new Neon project or database where `coach_runtime` is missing and the owner lacks CREATEROLE, run `CREATE ROLE coach_runtime NOLOGIN;` in the Neon SQL Editor as the owner, then redeploy.
+
+**The production switch** is the owner's steps after merge. The loop cannot do them.
+
+1. **Create the login with SQL, not the Console.** Console roles get `neon_superuser`. Generate the
+   password locally with `openssl rand -hex 24` (hex needs no URL encoding and meets Neon's entropy
+   rule). In Neon → SQL Editor, branch `production`, database `neondb`, role `neondb_owner`:
+
+   ```sql
+   CREATE ROLE coach_app_prod LOGIN PASSWORD '<password>' IN ROLE coach_runtime;
+   SELECT has_table_privilege('coach_app_prod', 'public.owners', 'SELECT') AS can_read,
+          has_table_privilege('coach_app_prod', 'public.owners', 'TRUNCATE') AS can_empty,
+          has_schema_privilege('coach_app_prod', 'public', 'CREATE') AS can_create_in_public,
+          has_parameter_privilege('coach_app_prod', 'session_replication_role', 'SET') AS can_set_replication_role,
+          (SELECT count(*) FROM pg_auth_members WHERE member = 'coach_runtime'::regrole) AS memberships;  -- t, f, f, f, 0
+   ```
+
+   If any value is not as expected, stop and do not switch.
+
+   If `coach_runtime` is missing, the first deploy of this change has not run yet. Wait for it.
+
+2. **Test the pooled login:**
+   `psql 'postgresql://coach_app_prod:<password>@<production -pooler host>/neondb?sslmode=require' -c 'select current_user'`
+3. **Switch it.** Vercel → Project → Settings → Environment Variables → `DATABASE_URL`
+   (Production) → Edit. Set it to the string from step 2, keeping it Sensitive. Leave
+   `DATABASE_URL_UNPOOLED` on `neondb_owner`.
+4. **Redeploy.** Vercel → Deployments → current Production → ⋯ → Redeploy. It migrates as the
+   owner first.
+5. **Check it.**
+   - `/api/health` answers.
+   - The post-deploy smoke check passes.
+   - In the Neon SQL Editor,
+     `SELECT DISTINCT usename FROM pg_stat_activity WHERE application_name = 'performance-coach'`
+     shows `coach_app_prod`.
+   - The next backup cron succeeds.
+6. **Rollback** if anything fails: put the `neondb_owner` pooled string back in `DATABASE_URL`
+   (Neon → Connect, role `neondb_owner`, pooled), then redeploy.
+
+**After a restore:** run `pnpm db:grants "<owner direct URL>"` after any restore not made by
+`pnpm backup:restore` or `scripts/restore-backup.sh`. Check that the target has `coach_app_prod`
+(`SELECT 1 FROM pg_roles WHERE rolname = 'coach_app_prod'`). A branch from `production` carries it.
+If it is missing, as on a new project, create it as in step 1 with a new password, and update
+`DATABASE_URL`.
+
+**Residual risk:** `DATABASE_URL_UNPOOLED`, the owner credential, is still present in the Vercel
+runtime environment, because the build needs it and Vercel has no build-only variables. The server
+never reads it.
 
 ## Backups
 
@@ -348,7 +408,7 @@ BACKUP_PASSPHRASE='…' scripts/restore-backup.sh coach-20261105T032300Z.dump.gp
 
 The script verifies the checksum when the `.sha256` file sits beside the backup (without it, it
 continues unchecked), decrypts into a private temp dir, validates the archive and runs
-`pg_restore --clean --if-exists --single-transaction` after a typed confirmation. Verified locally
+`pg_restore --clean --if-exists --single-transaction` after a typed confirmation. It then re-applies the runtime role's grants (`scripts/db-grants.ts`), because `--no-privileges` drops them. Verified locally
 in M1: dump → encrypt → restore into a fresh database reproduced rows and the migrations table; a
 wrong passphrase fails without touching the target.
 
@@ -492,7 +552,7 @@ by date and SHA-256.
 **Disaster restore:** the same command against a new, empty database on a new branch. Create a
 branch from `production` (or Neon's **Restore** first, if the loss is within the 6-hour window:
 layer 3), add an empty database, restore into it as in steps 3–5, then make that branch the
-default (Neon → Branches → ⋯ → **Set as default**), point Production's `DATABASE_URL` (pooled) and
+default (Neon → Branches → ⋯ → **Set as default**), point Production's `DATABASE_URL` (pooled) (as `coach_app_prod`: check it exists, 'Least-privilege runtime role') and
 `DATABASE_URL_UNPOOLED` (direct) at its new database and redeploy. Every device signs in again,
 because sessions are never backed up. Keep the old branch until the owner has checked the app.
 
