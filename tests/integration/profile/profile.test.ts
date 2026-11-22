@@ -9,6 +9,7 @@ import {
 	advanceOnboarding,
 	completeOnboarding,
 	createGoal,
+	findTrainingProfile,
 	getAthleteProfile,
 	getBody,
 	getOnboarding,
@@ -387,6 +388,24 @@ describe('the full training profile', () => {
 				sql`select count(*)::int as n from athlete_profiles where owner_id = ${owner}`
 			);
 			expect(tables.rows[0]).toEqual({ n: 1 });
+		});
+	});
+
+	it('findTrainingProfile reads the same model, and is null without writing a profile row', async () => {
+		await withRollback(async (db) => {
+			const owner = await makeOwner(db);
+			expect(await findTrainingProfile(owner, { db })).toBeNull();
+			const count = () =>
+				db.execute<{ n: number }>(
+					sql`select count(*)::int as n from athlete_profiles where owner_id = ${owner}`
+				);
+			expect((await count()).rows[0]).toEqual({ n: 0 });
+
+			await saveBasics(owner, { name: 'Niko', weightUnit: 'kg', distanceUnit: 'km' }, { db });
+			expect(await findTrainingProfile(owner, { db })).toEqual(
+				await getTrainingProfile(owner, { db })
+			);
+			expect((await count()).rows[0]).toEqual({ n: 1 });
 		});
 	});
 });

@@ -87,13 +87,13 @@ describe('getWeekEvaluation', () => {
 					tone: 'caution',
 					label: 'Heads-up',
 					text: 'Heads-up · Heavy lower body the day before hard Muay Thai · You moved this here',
-					why: `${WHY} You moved Lower A here from Friday.`
+					why: `${WHY} You moved Lower A here from Friday. Moving Lower A to Friday clears this.`
 				},
 				[hardMuayThai!]: {
 					tone: 'caution',
 					label: 'Heads-up',
 					text: 'Heads-up · Heavy lower body the day before hard Muay Thai · After Lower A the day before',
-					why: `${WHY} You moved Lower A here from Friday.`
+					why: `${WHY} You moved Lower A here from Friday. Moving Lower A to Friday clears this.`
 				}
 			});
 		});
@@ -105,7 +105,8 @@ describe('getWeekEvaluation', () => {
 			expect(await evaluate(db, owner, version.number, seeded.mondays.clean)).toEqual({
 				grade: 'clear',
 				summary: 'No clashes this week',
-				notes: {}
+				notes: {},
+				days: expect.any(Array)
 			});
 			await skipSession(
 				owner,
@@ -117,7 +118,8 @@ describe('getWeekEvaluation', () => {
 			expect(await evaluate(db, owner, skipped.number, seeded.mondays.moved)).toEqual({
 				grade: 'clear',
 				summary: 'No clashes this week',
-				notes: {}
+				notes: {},
+				days: expect.any(Array)
 			});
 		});
 	});
@@ -130,7 +132,8 @@ describe('getWeekEvaluation', () => {
 			expect(await evaluate(db, owner, version.number, seeded.mondays.current)).toEqual({
 				grade: 'clear',
 				summary: 'No clashes ahead this week',
-				notes: {}
+				notes: {},
+				days: expect.any(Array)
 			});
 			// Last week has ended: no week line.
 			const past = await evaluate(db, owner, version.number, seeded.mondays.past);
@@ -139,7 +142,7 @@ describe('getWeekEvaluation', () => {
 		});
 	});
 
-	it('reads the owner’s own exercises’ traits, and shows at most three findings, avoid first', async () => {
+	it('reads the owner’s own exercises’ traits, with the evaluation context’s findings', async () => {
 		await withRollback(async (db) => {
 			const owner = await makeOwner(db);
 			const squat = await createCustomExercise(
@@ -168,7 +171,7 @@ describe('getWeekEvaluation', () => {
 				loadValue: null
 			}));
 			// The same squat after Wednesday's intervals and on Friday, and a class on Saturday:
-			// four avoid findings in all, so one of them is left out.
+			// the evaluation context judges the week with all of them.
 			const sessions = plan.blocks[0]!.weeks[0]!.sessions;
 			const tuesday = sessions[1]!;
 			sessions.push(
@@ -189,12 +192,14 @@ describe('getWeekEvaluation', () => {
 			expect(texts).toContain(
 				'Heads-up · Heavy lower body the day before hard Muay Thai · The day before Muay Thai class'
 			);
+			// With the evaluation context, Monday's squat, Tuesday's class and Wednesday's intervals
+			// read as three hard days in a row, which replaces checkWeek's narrower "day after a very
+			// demanding day" finding.
 			expect(texts).toContain(
-				'Heads-up · Intervals the day after a very demanding day · After Muay Thai class the day before'
+				'Heads-up · Three hard days in a row · After Full body, Muay Thai class and Intervals the day before'
 			);
-			expect(view.summary).toBe('3 heads-ups this week');
-			// Monday, Tuesday, Wednesday's two and Thursday's class: none on Friday or Saturday.
-			expect(Object.keys(view.notes)).toHaveLength(5);
+			expect(view.summary).toBe('2 heads-ups this week');
+			expect(Object.keys(view.notes)).toHaveLength(4);
 		});
 	});
 

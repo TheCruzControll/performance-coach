@@ -22,7 +22,7 @@ import type {
 	Schedule,
 	TrainingProfile
 } from '../../../domain/profile/types';
-import { createProfileRepository, type ProfileRepository } from '../../db';
+import { createProfileRepository, type AthleteProfileRow, type ProfileRepository } from '../../db';
 import { measure } from '../../observability/timing';
 import { listGoals } from './goals';
 import {
@@ -297,8 +297,31 @@ export async function getTrainingProfile(
 	deps: ProfileDeps = {}
 ): Promise<TrainingProfile> {
 	const { db } = resolveDeps(deps);
+	const profileRow = await measure('db', () => createProfileRepository(db).ensureProfile(ownerId));
+	return trainingProfileOf(ownerId, profileRow, deps);
+}
+
+/**
+ * getTrainingProfile without its write: null when the owner has no profile row yet. ensureProfile
+ * would insert one, which a read-only transaction refuses (25006), so this only reads.
+ */
+export async function findTrainingProfile(
+	ownerId: string,
+	deps: ProfileDeps = {}
+): Promise<TrainingProfile | null> {
+	const { db } = resolveDeps(deps);
+	const profileRow = await measure('db', () => createProfileRepository(db).getProfile(ownerId));
+	return profileRow ? trainingProfileOf(ownerId, profileRow, deps) : null;
+}
+
+/** The read model around a profile row: every other section, read in turn. */
+async function trainingProfileOf(
+	ownerId: string,
+	profileRow: AthleteProfileRow,
+	deps: ProfileDeps
+): Promise<TrainingProfile> {
+	const { db } = resolveDeps(deps);
 	const repo = createProfileRepository(db);
-	const profileRow = await measure('db', () => repo.ensureProfile(ownerId));
 	const bodyWeight = await measure('db', () => repo.listBodyWeight(ownerId));
 	const goals = await listGoals(ownerId, deps);
 	const experience = await getExperience(ownerId, deps);

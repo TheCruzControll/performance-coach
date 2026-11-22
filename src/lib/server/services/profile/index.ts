@@ -39,6 +39,7 @@ export {
 export {
 	advanceOnboarding,
 	completeOnboarding,
+	findTrainingProfile,
 	getAthleteProfile,
 	getBody,
 	getOnboarding,

@@ -10,7 +10,9 @@
  *   counts those before today only when logged, names the rest missed, and judges each system
  *   against them while the logs are short). A caller's facts loader (deps.facts) is reused, so
  *   the context adds no fact query to its request.
- * - priorities: effectivePriorities over the owner's profile (M2) at the week's Monday.
+ * - priorities: effectivePriorities over the owner's profile (M2) at the week's Monday. The profile
+ *   is read without a write (findTrainingProfile): an owner with no profile row has no priorities,
+ *   no level and no preferred times, and the context still loads.
  * - Every read is awaited in turn: one query at a time on whichever executor runs them.
  * - A caller's `deps.facts` loader must already have been read, or be built on the same executor,
  *   because it runs outside the bounded reads.
@@ -50,7 +52,7 @@ import { getDb } from '../../db';
 import { createFactsLoader, type FactsLoader } from '../analytics/facts';
 import { recordServerError, type ServerErrorInput } from '../errors';
 import { getExercisesByIds } from '../exercises/index';
-import { getTrainingProfile } from '../profile/index';
+import { findTrainingProfile } from '../profile/index';
 import { toStoredSessions } from '../programs/mapping';
 
 /**
@@ -129,6 +131,12 @@ export interface ContextDeps {
 }
 
 /**
+ * The zone an owner with no profile row reads days in: the zone a new profile row starts with
+ * (the time_zone column's default), so the days match what a profile created later would give.
+ */
+const NO_PROFILE_TIME_ZONE = 'UTC';
+
+/**
  * Decision (m7-plan, concurrent-load-rules' hard-day cap): the level the cap is read at is the
  * owner's experience in the leading goal's first discipline; null with no goal.
  */
@@ -176,11 +184,19 @@ export const readContext: ContextReader = async (db, ownerId, at, deps) => {
 	const repo = createProgramsRepository(db);
 	const week = (await repo.versionWeeks(versionId)).find((w) => w.startsOn === weekStartsOn);
 
-	// An owner with a program has a profile row (its build read it): ensureProfile writes nothing.
-	const profile = await getTrainingProfile(ownerId, { db });
-	const schedule = { ...profile.schedule, daysPerWeek: profile.schedule.daysPerWeek ?? 1 };
-	const input = buildProgrammingInput({ ...profile, schedule }, { catalogue: CATALOGUE });
-	const priorities = effectivePriorities(input, weekStartsOn);
+	// The profile is read, never ensured: a read-only transaction refuses ensureProfile's insert.
+	// An owner with no profile row has no profile-derived fields (no priorities, level or times).
+	const profile = await findTrainingProfile(ownerId, { db });
+	const input =
+		profile &&
+		buildProgrammingInput(
+			{
+				...profile,
+				schedule: { ...profile.schedule, daysPerWeek: profile.schedule.daysPerWeek ?? 1 }
+			},
+			{ catalogue: CATALOGUE }
+		);
+	const priorities = input ? effectivePriorities(input, weekStartsOn) : [];
 
 	// Logged: from the history's first day through today, never past the week.
 	const loggedTo = today < sunday ? today : sunday;
@@ -189,7 +205,7 @@ export const readContext: ContextReader = async (db, ownerId, at, deps) => {
 			? await loggedFacts(
 					db,
 					ownerId,
-					{ from, to: loggedTo, timeZone: profile.profile.timeZone },
+					{ from, to: loggedTo, timeZone: profile?.profile.timeZone ?? NO_PROFILE_TIME_ZONE },
 					deps
 				)
 			: null;
@@ -223,8 +239,8 @@ export const readContext: ContextReader = async (db, ownerId, at, deps) => {
 		priorities,
 		weekKind: week?.kind ?? null,
 		events: eventsOf(priorities, weekStartsOn),
-		level: levelOf(priorities, input.experience),
-		preferredTimes: [...input.preferredTimes],
+		level: levelOf(priorities, input?.experience ?? {}),
+		preferredTimes: [...(input?.preferredTimes ?? [])],
 		traitsOf
 	};
 };
