@@ -12,7 +12,7 @@ import {
 } from '../../../domain/coach/tools.ts';
 import { compareText } from '../../../domain/programming/random.ts';
 import { ANALYTICS_TOOLS } from './analytics.ts';
-import type { CoachTool, StrictToolDefinition } from './define.ts';
+import type { CoachTool, ToolDefinition } from './define.ts';
 import { HISTORY_TOOLS } from './history.ts';
 import { PREFERENCE_TOOLS } from './preferences.ts';
 import { PROGRAMMING_PROPOSAL_TOOLS } from './programming-proposals.ts';
@@ -66,5 +66,4 @@ export const COACH_TOOLS: readonly CoachTool[] = buildRegistry(TOOL_GROUP_FILES)
 const DEFINITIONS = Object.freeze(COACH_TOOLS.map((tool) => tool.definition));
 
 /** The tools every coach request sends: the same frozen, sorted definitions each time. */
-export const toolDefinitionsForRequest = (): readonly Readonly<StrictToolDefinition>[] =>
-	DEFINITIONS;
+export const toolDefinitionsForRequest = (): readonly Readonly<ToolDefinition>[] => DEFINITIONS;

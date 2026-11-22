@@ -5,7 +5,13 @@ import type {
 } from '@anthropic-ai/sdk/resources/beta/messages';
 import { describe, expect, it } from 'vitest';
 import type { ModelRequest } from './types.ts';
-import { MAX_BREAKPOINTS, REQUEST_RULE, validateRequest, type RequestRule } from './validate.ts';
+import {
+	MAX_BREAKPOINTS,
+	REQUEST_RULE,
+	STRICT_LIMITS,
+	validateRequest,
+	type RequestRule
+} from './validate.ts';
 
 const tool = (name: string): BetaTool => ({
 	name,
@@ -125,6 +131,17 @@ const blocks = (request: ModelRequest, index: number) =>
 const toolAt = (request: ModelRequest, index: number) => request.tools![index]!;
 const inputSchema = (request: ModelRequest, index: number) =>
 	toolAt(request, index).input_schema as Record<string, Record<string, Record<string, unknown>>>;
+/** `count` properties outside required (the schema's required names none of them). */
+const optionalProperties = (count: number) =>
+	Object.fromEntries(Array.from({ length: count }, (_, i) => [`p${i}`, { type: 'string' }]));
+/** `count` nullable properties, each an anyOf. */
+const unionProperties = (count: number) =>
+	Object.fromEntries(
+		Array.from({ length: count }, (_, i) => [
+			`p${i}`,
+			{ anyOf: [{ type: 'string' }, { type: 'null' }] }
+		])
+	);
 const mark = (block: unknown) =>
 	void ((block as { cache_control?: object }).cache_control = { type: 'ephemeral' });
 const loose = (request: ModelRequest, fields: Record<string, unknown>) =>
@@ -216,11 +233,29 @@ describe('validateRequest', () => {
 			broken((r) => void r.tools!.push(tool('get_personal_records'))),
 			['tools_unsorted']
 		],
-		['a non-strict tool', broken((r) => void (toolAt(r, 1).strict = false)), ['tool_not_strict']],
 		[
-			'a tool with no strict flag',
-			broken((r) => void delete toolAt(r, 0).strict),
-			['tool_not_strict']
+			'a server tool',
+			broken((r) => void ((toolAt(r, 1) as { type?: string }).type = 'web_search_20260209')),
+			['tool_not_custom']
+		],
+		[
+			'more strict tools than the API compiles',
+			broken((r) => {
+				r.tools = Array.from({ length: STRICT_LIMITS.tools + 1 }, (_, i) =>
+					tool(`tool_${String(i).padStart(2, '0')}`)
+				);
+			}),
+			['too_many_strict_tools', 'too_many_unions']
+		],
+		[
+			'more optional parameters than the API compiles',
+			broken((r) => void (inputSchema(r, 0).properties = optionalProperties(25))),
+			['too_many_optional']
+		],
+		[
+			'more union-typed parameters than the API compiles',
+			broken((r) => void (inputSchema(r, 0).properties = unionProperties(17))),
+			['too_many_unions']
 		],
 		[
 			'an open nested object in a tool schema',
@@ -333,8 +368,10 @@ describe('validateRequest', () => {
 	it('says where each problem is', () => {
 		const prefill = broken((r) => void r.messages.push({ role: 'assistant', content: 'Hi' }));
 		expect(validateRequest(prefill)).toEqual([{ rule: 'prefill', at: 'messages[8]' }]);
-		const open = broken((r) => void (toolAt(r, 1).strict = false));
-		expect(validateRequest(open)).toEqual([{ rule: 'tool_not_strict', at: 'tools[1]' }]);
+		const server = broken(
+			(r) => void ((toolAt(r, 1) as { type?: string }).type = 'web_search_20260209')
+		);
+		expect(validateRequest(server)).toEqual([{ rule: 'tool_not_custom', at: 'tools[1]' }]);
 		const orphan = broken((r) => void blocks(r, 4).pop());
 		expect(validateRequest(orphan)).toEqual([
 			{ rule: 'orphan_tool_use', at: 'messages[3].content[2]' }

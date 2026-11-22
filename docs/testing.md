@@ -718,8 +718,9 @@ hybrid, injured shoulder, dumbbells only, the journey, the minimal onboarding pr
   commitment days; free days never go below 0, and commitments on 4 days with 3 a week give a
   `days.commitments_fill` decision; a running club counts toward runs and a strength class toward
   strength days; free days fill each goal's fewest by priority, then spare days go by turns up to
-  each goal's most, then to mobility; a second session sits on a commitment day only with two
-  distinct preferred times (not 'it varies') and sessions ≤ 90 min, otherwise the lowest-priority
+  each goal's most, then to mobility; a second session sits on a commitment day only at a second
+  time (two distinct preferred times, or, with no time set, the other end of the day from a class
+  with a set time) and sessions ≤ 90 min, otherwise the lowest-priority
   session is dropped (`session_dropped`) and a goal ranked between others gets a
   `priority_tradeoff`; empty availability means any day.
 - **First block** (`blocks.test.ts`): no event gives baseline + 3 accumulation + deload, week 1 at
@@ -1266,11 +1267,18 @@ key. No key exists in CI today.
 
 `.github/workflows/ci.yml` runs lint, type-check, the migration drift check, unit + integration
 (postgres:18 service), both builds + budgets, Playwright (Chromium + WebKit) and an asserted
-Lighthouse run on every PR and push to `main`. After the mobile run, `pnpm lighthouse --desktop`
+Lighthouse run on every full run of a PR or a push to `main` (a light run skips some; see below). After the mobile run, `pnpm lighthouse --desktop`
 audits the same screens with Lighthouse's desktop preset (desktop throttling, no CPU slowdown) at
 1440 × 900 and 1x (`scripts/lib/lighthouse-config.ts`), writes to `lighthouse-reports/desktop` and
 applies the same `--assert` thresholds, as a step that never fails the job; its table is in the
 step summary (docs/performance.md, "Lighthouse (desktop)").
+
+The run's first job, `Scope of the run`, runs `scripts/ci-scope.ts`. A change that touches only
+`docs/`, `plan/`, agent tooling (`.claude/`, `.agents/`, `.codex/`, `.pi/`), root Markdown or
+`.env.example`, and a
+merge to `main` whose tree its pull request already tested, is a light run: it skips the
+integration tests, the e2e legs and Lighthouse. Lint, type-check, unit tests (which include the docs
+guards) and the build always run.
 
 `.github/workflows/post-deploy-smoke.yml` checks production from outside after every production
 deploy (health with the database up, the sign-in screen, deny by default, security headers on

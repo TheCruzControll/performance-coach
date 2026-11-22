@@ -2,21 +2,27 @@
  * The Coach screen's load (src/routes/(app)/coach/[[thread]]/coach.server.ts) on real Postgres:
  * - /coach: the open conversations newest first, a page at a time, each with when it was last
  *   active in the owner's zone; ?before pages on, a malformed cursor is the first page; archived
- *   ones are not listed; the prefill an entry point sent.
+ *   ones are not listed; the prefill an entry point sent; a review's 'Discuss with your coach'
+ *   entry (from weekly_review, ref review:<key>) kept only for the owner's own review, and stored
+ *   on the conversation its first turn starts.
  * - /coach/<id>: the conversation's shown messages in order, through the threads service, and
  *   whether it is archived (read-only until unarchived).
  * - A malformed or unknown id, or someone else's conversation, is the 404 page.
  * - A read that fails is the screen's load-failed state, recorded.
  */
-import { sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { isHttpError } from '@sveltejs/kit';
 import { describe, expect, it } from 'vitest';
-import type { Executor } from '../../../src/lib/server/db';
+import { coachThreads, type Executor } from '../../../src/lib/server/db';
 import { findErrorsByRequestId } from '../../../src/lib/server/services/errors';
 import { saveBasics } from '../../../src/lib/server/services/profile/index';
+import { createWeeklyReview } from '../../../src/lib/server/services/reviews';
+import { atLocal } from '../../../src/lib/server/test-support/analytics-fixtures/dashboards';
+import { seedAnalyticsFixture } from '../../../src/lib/server/test-support/analytics-fixtures/index';
 import {
 	appendTurnStep,
 	archiveThread,
+	listThreads,
 	startOwnerTurn,
 	THREAD_PAGE,
 	unarchiveThread
@@ -133,6 +139,69 @@ describe('the Coach screen', () => {
 
 			const malformed = await ready(load(db, me, undefined, 'before=nope'));
 			expect(malformed.threads.map((t) => t.id)).toEqual(first.threads.map((t) => t.id));
+		});
+	});
+
+	it('keeps a review’s Discuss entry for the owner’s own review, stored by its first turn', async () => {
+		await withRollback(async (db) => {
+			const reviewed = '2026-11-09';
+			const at = atLocal('2026-11-17', '12:00', 'America/Los_Angeles');
+			const me = await makeOwner(db);
+			await seedAnalyticsFixture(
+				me,
+				'week-complete',
+				{ timeZone: 'America/Los_Angeles', now: at },
+				{ db }
+			);
+			await createWeeklyReview(
+				me,
+				{ weekStartsOn: reviewed, today: '2026-11-17' },
+				{ db, now: () => at }
+			);
+			const text = 'Can we go through my weekly review?';
+			const query = (ref: string) =>
+				new URLSearchParams({ ask: text, from: 'weekly_review', ref }).toString();
+			const bare = { text, from: null, label: null, ref: null };
+
+			const prefill = (await ready(load(db, me, undefined, query(`review:w-${reviewed}`)))).prefill;
+			expect(prefill).toEqual({
+				text,
+				from: 'weekly_review',
+				label: 'From your weekly review',
+				ref: { type: 'review', id: `w-${reviewed}` }
+			});
+			const { thread } = await startOwnerTurn(
+				me,
+				{
+					clientMessageId: crypto.randomUUID(),
+					text: prefill!.text,
+					entry: { from: prefill!.from!, ref: prefill!.ref },
+					segment: SEGMENT
+				},
+				{ db, now: () => NOW }
+			);
+			const [stored] = await db.select().from(coachThreads).where(eq(coachThreads.id, thread.id));
+			expect(stored!.entry).toEqual({
+				from: 'weekly_review',
+				ref: { type: 'review', id: `w-${reviewed}` }
+			});
+			// A normal conversation, listed in Recent.
+			expect((await listThreads(me, {}, { db })).threads.map((t) => t.id)).toEqual([thread.id]);
+
+			// Someone else's review (one database holds one owner: anyone else's id owns none), a
+			// week with no review, an unknown cycle review: the question alone.
+			const someone = await load(db, crypto.randomUUID(), undefined, query(`review:w-${reviewed}`));
+			expect(someone.prefill).toEqual(bare);
+			expect((await ready(load(db, me, undefined, query('review:w-2026-11-02')))).prefill).toEqual(
+				bare
+			);
+			const cycle = query(`review:c-${crypto.randomUUID()}`);
+			expect((await ready(load(db, me, undefined, cycle))).prefill).toEqual(bare);
+			// A review's entry with no ref, or with a ref that is not a review: the question alone.
+			const noRef = new URLSearchParams({ ask: text, from: 'cycle_review' }).toString();
+			expect((await ready(load(db, me, undefined, noRef))).prefill).toEqual(bare);
+			const workout = query(`workout:${crypto.randomUUID()}`);
+			expect((await ready(load(db, me, undefined, workout))).prefill).toEqual(bare);
 		});
 	});
 

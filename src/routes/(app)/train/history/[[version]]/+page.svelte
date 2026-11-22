@@ -96,11 +96,7 @@
 	<a class="back" href={HISTORY} data-testid="back-to-history">
 		<Icon name="chevron-left" size={18} /> History
 	</a>
-	<PageHeader
-		title={`Version ${version.number}`}
-		eyebrow={`${version.when} · ${version.by}`}
-		dated
-	/>
+	<PageHeader title={`Version ${version.number}`} eyebrow={`${version.when} · ${version.by}`} />
 
 	<!-- Split from 1024 px (docs/design-system.md, Responsive layout → Screens): the list beside
 	     the version, which stays in the URL. A phone shows the version alone. -->

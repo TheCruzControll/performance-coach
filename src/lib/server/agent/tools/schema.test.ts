@@ -227,18 +227,21 @@ describe('defineTool', () => {
 		run
 	} as const;
 
-	it('sends a strict, eagerly streamed definition the API accepts', () => {
+	it('sends an eagerly streamed definition the API accepts, strict unless the tool only reads', () => {
 		const tool = defineTool(spec);
 		expect(tool.definition).toEqual({
 			name: 'get_exercise_history',
 			description: 'The owner’s sets of one exercise.',
 			input_schema: toStrictJsonSchema(FIXTURE),
-			strict: true,
+			strict: false,
 			eager_input_streaming: true
 		});
 		expect(tool.entry).toEqual({ group: 'history', effect: 'read', drafts: false });
 		expect(requestWith([tool.definition])).toEqual([]);
 		expect(Object.isFrozen(tool.definition.input_schema.properties)).toBe(true);
+		const proposing = { ...spec, name: 'update_workout' } as const;
+		expect(defineTool(proposing).definition.strict).toBe(true);
+		expect(defineTool({ ...proposing, strict: false }).definition.strict).toBe(false);
 	});
 
 	it('is byte-identical every time it is defined', () => {

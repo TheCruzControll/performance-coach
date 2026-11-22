@@ -12,6 +12,9 @@
  *   planned yet and the dated goals the plan leads to (timeline.ts).
  * - A bridge week (unplanned, between blocks: M6's late start) is a state card with the day the
  *   next block starts, never seven rest days, and lists what was logged in it as off-plan.
+ * - A planned week a weekly review changed carries the notice's words (week-changes.ts): each
+ *   change and its why, the version that applied it and the review. 'First block complete' leads
+ *   to the last planned block's cycle review, or to the reviews list that creates it.
  * - With no program, whether the training profile is complete picks the empty state's next step.
  * - It fails soft: a read that fails is recorded as a server error (kind 'load') and Train shows
  *   its designed error with Retry, inside the shell, instead of the 500 page.
@@ -24,9 +27,11 @@ import { getOnboarding, listGoals } from '#lib/server/services/profile/index.ts'
 import {
 	getCurrentProgram,
 	getTrainingWeek,
+	weekChanges,
 	type CurrentProgram,
 	type TrainingWeek
 } from '#lib/server/services/programs/index.ts';
+import { getLiveCycleReview } from '#lib/server/services/reviews/index.ts';
 import { getSessionsInRange } from '#lib/server/services/training/history.ts';
 import type { TrainingDeps } from '#lib/server/services/training/shared.ts';
 import { timelineView, type TimelineBlock } from '#lib/ui/program/timeline.ts';
@@ -39,7 +44,9 @@ import {
 	noProgramCard,
 	notPlannedCard,
 	offPlanCard,
+	reviewNotice,
 	weekWords,
+	type AsidePanel,
 	type NextBlock,
 	type OffPlanWorkout,
 	type StateCard,
@@ -73,8 +80,8 @@ export type TrainWeekData =
 			/** The week in words, Monday first (both empty for a week that is not planned). */
 			strip: StripDayView[];
 			days: TrainDay[];
-			/** Week 1's brief, in a baseline week only. */
-			brief: typeof BASELINE_BRIEF | null;
+			/** The side column: week 1's brief in a baseline week, then what a review changed. */
+			aside: AsidePanel[];
 			/** In place of the week's sessions: first block complete, not planned yet, or a bridge. */
 			card: StateCard | null;
 			/** A bridge week's logged workouts, oldest first (none in any other week). */
@@ -108,6 +115,13 @@ const weekNumber = (program: CurrentProgram, monday: IsoDate) =>
 function nextBlockOf(program: CurrentProgram, startsOn: IsoDate): NextBlock {
 	const name = program.blocks.find((b) => b.startsOn === startsOn)?.name ?? 'Next block';
 	return { startsOn, name, week: weekNumber(program, startsOn) };
+}
+
+/** The key of the live cycle review of the program's last planned block, or null. */
+async function cycleReviewKey(ownerId: string, program: CurrentProgram, db: TrainingDeps['db']) {
+	const block = program.blocks.findLast((b) => b.plannedWeeks > 0);
+	const review = block && (await getLiveCycleReview(ownerId, program.id, block.lineage, { db }));
+	return review ? `c-${review.id}` : null;
 }
 
 /** The completed workouts logged in `week`, none of them on a plan (a bridge plans nothing). */
@@ -153,6 +167,9 @@ export async function loadTrainWeek(
 				? nextBlockOf(program, shown.nextBlockStartsOn)
 				: null;
 		const offPlan = bridge ? await offPlanIn(ownerId, shown, db) : [];
+		const at = shown.planned && !bridge && { programId: program.id, weekLineage: shown.lineage };
+		const changes =
+			at && (await weekChanges(ownerId, { ...at, version: shown.version.number }, { db }));
 		return {
 			state: 'program',
 			today,
@@ -168,13 +185,16 @@ export async function loadTrainWeek(
 					: `Week ${number} · Not planned yet`,
 			status: program.notStarted ? `Starts ${shortDate(program.firstPlannedDay)}` : null,
 			...(shown.planned && !bridge ? weekWords(shown, today) : { strip: [], days: [] }),
-			brief: shown.planned && shown.kind === 'baseline' ? BASELINE_BRIEF : null,
+			aside: [
+				...(shown.planned && shown.kind === 'baseline' ? [BASELINE_BRIEF] : []),
+				...(changes ? [reviewNotice(changes)] : [])
+			],
 			card: bridge
 				? bridgeCard(bridge)
 				: shown.planned
 					? null
 					: complete
-						? blockCompleteCard(program, shown.phase)
+						? blockCompleteCard(program, shown.phase, await cycleReviewKey(ownerId, program, db))
 						: notPlannedCard(number, shown.phase),
 			offPlan,
 			plan: timelineView(program, { today, goals: await listGoals(ownerId, { db }) })
