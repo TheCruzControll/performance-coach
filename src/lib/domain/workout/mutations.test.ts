@@ -362,6 +362,7 @@ describe('types', () => {
 			| 'workout.abandon'
 			| 'run.log'
 			| 'run.segment'
+			| 'pain.report'
 		>();
 
 		function family(m: Mutation): string {
