@@ -1,23 +1,26 @@
 /**
- * The coach's periodisation read (M7, tools-periodisation-reads): the engine's own view of a
- * week, so the coach explains with its numbers instead of guessing. It only reads, owner-scoped
- * by the session's owner (someone else's ids read as nothing), and capOutput holds its result to
+ * The coach's periodisation reads (M7, tools-periodisation-reads): the engine's own view of a
+ * week, so the coach explains with its numbers instead of guessing. Both only read, owner-scoped
+ * by the session's owner (someone else's ids read as nothing), and capOutput holds each result to
  * TURN_LIMITS.toolOutputBytes.
  *
  * - evaluate_week_interference: evaluateWeek over the week as stored, with up to WHAT_IF_MAX
  *   what-if moves applied in memory only: the score and grade (metric), the findings with their
- *   rule, reason and resolution, and the week's load by body system (metric). suggestedRepair is
- *   the scheduler's repair of the stored week (repairWeek with keepOwnerMoves false), its moves of
- *   still-ahead sessions as M3 move ops, exactly the ops propose_program_adjustment stores without
- *   a draft, with what they clear and what the week keeps (a recommendation). The what-if moves
- *   never reach the repair: its ops name the week as it is stored, so the proposal accept applies
- *   is the one judged.
+ *   rule, reason and resolution and the decisions that explain them, and the week's load by body
+ *   system (metric). suggestedRepair is the scheduler's repair of the stored week (repairWeek with
+ *   keepOwnerMoves false), its moves of still-ahead sessions as M3 move ops, exactly the ops
+ *   propose_program_adjustment stores without a draft, with what they clear and what the week
+ *   keeps (a recommendation). The what-if moves never reach the repair: its ops name the week as
+ *   it is stored, so the proposal accept applies is the one judged.
+ * - explain_schedule_tradeoffs: the goals' effective priorities at the week's Monday (their rank
+ *   weight as a metric, with the mode and its reason), the stored decisions that put the week's
+ *   sessions, or one session's, on their days (facts with their ids), the maintenance doses among
+ *   them, the clashes the week keeps and why, and the road (facts). The road is read from today,
+ *   as the timeline shows it: it holds every later week, and its "Now" and weeks-away stay true.
  *
- * The week is read through the existing services: the active program (getCurrentProgram), its
- * version (getProgramVersion), the evaluation context (services/periodisation/context.ts, read in
- * its own bounded read-only transaction) and the week's priority trade-offs (getPlacementWhy, the
- * same read Train's 'Why this day?' uses). Without the context (its reads failed, recorded) the
- * week is judged by checkWeek alone, with no loads or priorities, and `checked` says 'basic'.
+ * The week's context (services/periodisation/context.ts) is read in its own bounded read-only
+ * transaction. Without it (its reads failed, recorded) the week is judged by checkWeek alone,
+ * with no loads, priorities or doses, and `checked` says 'basic'.
  */
 import * as z from 'zod/mini';
 import { addDays, mondayOf, type IsoDate } from '../../../domain/calendar.ts';
@@ -33,16 +36,22 @@ import {
 import { evaluateWeek } from '../../../domain/programming/evaluate/week.ts';
 import { loadModel, weekSummary } from '../../../domain/programming/load/fatigue.ts';
 import { SCORE_WEIGHTS } from '../../../domain/programming/rules/evaluation.ts';
+import { RANK_WEIGHTS } from '../../../domain/programming/rules/priority.ts';
 import { repairWeek } from '../../../domain/programming/schedule/repair.ts';
-import { WEEK_KINDS } from '../../../domain/training/vocabulary.ts';
+import { DECIDERS, DECISION_KINDS, WEEK_KINDS } from '../../../domain/training/vocabulary.ts';
 import type { ResolvedCoachDeps } from '../../services/coach/shared.ts';
 import { tradeoffHints } from '../../services/periodisation/evaluate.ts';
-import { getPlacementWhy } from '../../services/periodisation/explain.ts';
+import {
+	getScheduleTradeoffs,
+	MAX_TRADEOFF_DECISIONS,
+	type ScheduleDecision
+} from '../../services/periodisation/explain.ts';
 import {
 	evaluationContext,
 	weekContextOf,
 	type EvaluationContext
 } from '../../services/periodisation/context.ts';
+import { getRoadView, serialiseRoad } from '../../services/periodisation/road-view.ts';
 import {
 	getCurrentProgram,
 	getProgramVersion,
@@ -51,6 +60,8 @@ import {
 import type { ToolContext } from './context.ts';
 import { defineTool, type CoachTool } from './define.ts';
 import {
+	fact,
+	factSchema,
 	metric,
 	metricSchema,
 	sourceRefSchema,
@@ -61,12 +72,16 @@ import {
 
 /** Decision (m7-plan, tools-periodisation-reads): the most what-if moves one evaluation applies. */
 export const WHAT_IF_MAX = 4;
+/** Decision: the most decisions one finding cites, the owner's moves first. */
+export const FINDING_DECISIONS_MAX = 3;
 
 /** How the week's score is computed, as its metric states it. */
 export const SCORE_METHOD = `100 less ${SCORE_WEIGHTS.avoid} per avoid and ${SCORE_WEIGHTS.prefer} per prefer finding, by the harmed goal's weight; a kept one at ${SCORE_WEIGHTS.resolved}×`;
 /** How a system's weekly load is computed, as its metric states it. */
 export const LOAD_METHOD =
 	'Sum of minutes × RPE by body system over the week, logged sessions replacing planned ones';
+/** How a goal's weight is set, as its metric states it. */
+export const PRIORITY_METHOD = `Rank weight by your goal order (${RANK_WEIGHTS.join(', ')}); an event in its lead window leads`;
 
 type Ctx = ToolContext<ResolvedCoachDeps>;
 const deps = (ctx: Ctx) => ({ db: ctx.deps.db });
@@ -90,8 +105,9 @@ const sessionRef = (s: { lineage: string; date: string }): SourceRef => ({
 	id: s.lineage,
 	date: s.date
 });
+const decisionRef = (d: ScheduleDecision): SourceRef => ({ type: 'decision', id: d.id });
 
-/** The week the coach named, read once: the active version's sessions, context and trade-offs. */
+/** The week the coach named, read once: the active version's sessions, context and decisions. */
 interface WeekRead {
 	programId: string;
 	version: number;
@@ -101,6 +117,8 @@ interface WeekRead {
 	/** The week's sessions and the Sunday before it (a clash can cross the weekend). */
 	sessions: StoredSession[];
 	context: EvaluationContext | null;
+	/** The stored decisions behind the sessions, the owner's first (getScheduleTradeoffs). */
+	decisions: ScheduleDecision[];
 	/** The priority trade-offs the week keeps, as the judge's hints (evaluate.ts). */
 	hints: ReturnType<typeof tradeoffHints>;
 	/** The dates a session could still go on: the week's from today. */
@@ -108,8 +126,8 @@ interface WeekRead {
 	completed: Set<string>;
 }
 
-/** The week `week` names (today's by default). */
-async function readWeek(ctx: Ctx, { week }: { week?: string }) {
+/** The week `week` names (today's by default), or the week holding `session`. */
+async function readWeek(ctx: Ctx, { week, session }: { week?: string; session?: string }) {
 	const today = ctx.today as IsoDate;
 	const current = await getCurrentProgram(ctx.ownerId, today, deps(ctx));
 	if (!current) throw toolError('NOT_FOUND', 'You have no active program');
@@ -118,17 +136,22 @@ async function readWeek(ctx: Ctx, { week }: { week?: string }) {
 	const weeks = version.blocks.flatMap((b) => b.weeks);
 	const all = weeks.flatMap((w) => w.sessions);
 	let monday = mondayOf(today);
-	if (week === 'next') monday = addDays(monday, 7);
+	if (session !== undefined) {
+		const found = all.find((s) => s.lineage === session);
+		if (!found)
+			throw toolError('NOT_FOUND', 'Your program has no session with that id', { session });
+		monday = mondayOf(found.date);
+	} else if (week === 'next') monday = addDays(monday, 7);
 	else if (week !== undefined && week !== 'current') monday = mondayOf(week as IsoDate);
 	const plan = weeks.find((w) => w.startsOn === monday);
 	if (!plan) throw toolError('NOT_FOUND', 'That week is not planned yet', { week: monday });
 	const sunday = addDays(monday, -1);
 	const sessions = all.filter((s) => s.date >= sunday && s.date <= plan.endsOn);
 
-	// One query at a time: the context's own transaction, then the trade-offs.
+	// One query at a time: the context's own transaction, then the decisions.
 	const at = { versionId: version.version.id, weekStartsOn: monday, today };
 	const context = await evaluationContext(ctx.ownerId, at, deps(ctx));
-	const placed = await getPlacementWhy(
+	const explained = await getScheduleTradeoffs(
 		ctx.ownerId,
 		{
 			programId: current.id,
@@ -147,7 +170,8 @@ async function readWeek(ctx: Ctx, { week }: { week?: string }) {
 		kind: plan.kind,
 		sessions,
 		context,
-		hints: tradeoffHints(placed.tradeoffs),
+		decisions: explained.decisions,
+		hints: tradeoffHints(explained.tradeoffs),
 		openDates: Array.from({ length: 7 }, (_, i) => addDays(monday, i)).filter((d) => d >= today),
 		completed
 	} satisfies WeekRead;
@@ -260,12 +284,16 @@ const findingSchema = z.object({
 	actionable: z.boolean(),
 	days: z.array(isoDate),
 	sessions: z.array(z.object({ title: untrustedSchema, date: isoDate })),
-	/** The sessions it names, then the week it is judged in. */
+	/** The sessions it names, the stored decisions that explain them, then the week it is judged in. */
 	sources: z.array(sourceRefSchema)
 });
 type FindingOut = z.input<typeof findingSchema>;
 
 function findingOut(f: Finding, read: WeekRead): FindingOut {
+	const named = f.sessions.flatMap((s) => (s.lineage ? [s.lineage] : []));
+	const decisions = read.decisions
+		.filter((d) => d.sessions.some((lineage) => named.includes(lineage)))
+		.slice(0, FINDING_DECISIONS_MAX);
 	return {
 		rule: f.rule,
 		severity: f.severity,
@@ -282,6 +310,7 @@ function findingOut(f: Finding, read: WeekRead): FindingOut {
 			...f.sessions.flatMap((s) =>
 				s.lineage ? [sessionRef({ lineage: s.lineage, date: s.date })] : []
 			),
+			...decisions.map(decisionRef),
 			weekRef(read.monday)
 		]
 	};
@@ -398,7 +427,7 @@ function suggestedRepair(read: WeekRead, today: IsoDate) {
 
 const evaluateWeekInterferenceTool = defineTool({
 	name: 'evaluate_week_interference',
-	description: `Judge a week of the owner's active program with the app's scheduling engine: its 0–100 score and grade, every rule it breaks (findings, each with its rule, why the rule exists and why the week keeps it, citing the sessions it names), and its load by body system. week is current (default), next or any date in the week. moves (up to ${WHAT_IF_MAX}) are what-ifs: sessions still ahead moved to another day of the same week from today on, judged in memory and never saved. suggestedRepair is the engine's own fix for the week as stored: pass its ops unchanged to propose_program_adjustment's ops to propose it; null when nothing ahead needs moving, when a repair would need an ease or a drop or more than ${MAX_PROPOSAL_OPS} moves, or when checked is basic. checked is basic when the engine could not read the owner's load and goals, so only the basic rules ran.`,
+	description: `Judge a week of the owner's active program with the app's scheduling engine: its 0–100 score and grade, every rule it breaks (findings, each with its rule, why the rule exists and why the week keeps it, citing the sessions it names and the stored decisions that explain them), and its load by body system. week is current (default), next or any date in the week. moves (up to ${WHAT_IF_MAX}) are what-ifs: sessions still ahead moved to another day of the same week from today on, judged in memory and never saved. suggestedRepair is the engine's own fix for the week as stored: pass its ops unchanged to propose_program_adjustment's ops to propose it; null when nothing ahead needs moving, when a repair would need an ease or a drop or more than ${MAX_PROPOSAL_OPS} moves, or when checked is basic. checked is basic when the engine could not read the owner's load and goals, so only the basic rules ran.`,
 	input: z.object({
 		week: weekInput,
 		moves: z.optional(
@@ -473,4 +502,113 @@ const evaluateWeekInterferenceTool = defineTool({
 	}
 });
 
-export const PERIODISATION_TOOLS: readonly CoachTool[] = [evaluateWeekInterferenceTool];
+// ---- explain_schedule_tradeoffs -----------------------------------------------------------
+
+const decisionSchema = z.object({
+	source: sourceRefSchema,
+	kind: z.enum(DECISION_KINDS),
+	ruleKey: z.nullable(z.string()),
+	summary: untrustedSchema,
+	why: untrustedSchema,
+	decidedBy: z.enum(DECIDERS),
+	version: z.int()
+});
+
+const explainOutput = z.object({
+	week: weekSchema,
+	checked: checkedSchema,
+	/** The session asked about, when one was. */
+	session: z.nullable(sourceRefSchema),
+	priorities: z.array(
+		z.object({
+			goal: sourceRefSchema,
+			title: untrustedSchema,
+			mode: z.enum(['primary', 'secondary', 'maintenance']),
+			reason: untrustedSchema,
+			weight: metricSchema
+		})
+	),
+	decisions: z.array(factSchema(decisionSchema)),
+	/** The maintenance doses among the decisions, by id. */
+	doses: z.array(sourceRefSchema),
+	/** The clashes the week keeps, each with why. */
+	keptConflicts: z.array(
+		z.object({
+			rule: z.string(),
+			headline: z.string(),
+			why: untrustedSchema,
+			sources: z.array(sourceRefSchema)
+		})
+	),
+	road: z.nullable(factSchema(untrustedSchema)),
+	truncated: z.optional(z.literal(true))
+});
+
+const explainScheduleTradeoffsTool = defineTool({
+	name: 'explain_schedule_tradeoffs',
+	description:
+		"Why a week of the owner's active program is shaped as it is, from the engine and the stored record: each goal's priority that week (primary, secondary or maintenance, with the reason and its rank weight), the stored decisions that put its sessions on their days (kind, summary, why, who decided and the version, each citable by id), the maintenance doses among them, the clashes the week keeps and why, and the road of blocks, events, deloads and tapers around it. Give week (current by default, next, or any date in the week) or session (a session's lineage) to explain only that session. Quote a decision's why rather than rewording it.",
+	input: z.object({ week: weekInput, session: z.optional(uuid) }),
+	output: explainOutput,
+	run: async ({ week, session }, ctx: Ctx) => {
+		const today = ctx.today as IsoDate;
+		const read = await readWeek(ctx, { week, session });
+		const about = (lineages: readonly string[]) =>
+			session === undefined || lineages.includes(session);
+		const decisions = read.decisions
+			.filter((d) => about(d.sessions))
+			.slice(0, MAX_TRADEOFF_DECISIONS);
+		const kept = judge(read, read.sessions, today).findings.filter(
+			(f) => f.resolution && about(f.sessions.flatMap((s) => (s.lineage ? [s.lineage] : [])))
+		);
+		const road = await getRoadView(ctx.ownerId, today, deps(ctx));
+		const target =
+			session === undefined ? undefined : read.sessions.find((s) => s.lineage === session);
+		return {
+			week: weekOut(read),
+			checked: read.context ? ('full' as const) : ('basic' as const),
+			session: target ? sessionRef(target) : null,
+			priorities: (read.context?.priorities ?? []).map((p) => {
+				const goal: SourceRef = { type: 'goal', id: p.goalId };
+				return {
+					goal,
+					title: untrusted(p.title),
+					mode: p.mode,
+					reason: untrusted(p.why),
+					weight: metric({ value: p.weight, unit: null, method: PRIORITY_METHOD, sources: [goal] })
+				};
+			}),
+			decisions: decisions.map((d) =>
+				fact(
+					{
+						source: decisionRef(d),
+						kind: d.kind,
+						ruleKey: d.ruleKey,
+						summary: untrusted(d.summary),
+						why: untrusted(d.why),
+						decidedBy: d.decidedBy,
+						version: d.version
+					},
+					decisionRef(d),
+					versionRef(d.version)
+				)
+			),
+			doses: decisions.filter((d) => d.kind === 'maintenance_dose').map(decisionRef),
+			keptConflicts: kept.map((f) => {
+				const out = findingOut(f, read);
+				return {
+					rule: f.rule,
+					headline: f.headline,
+					why: out.resolution!.text,
+					sources: out.sources
+				};
+			}),
+			road: road ? fact(untrusted(serialiseRoad(road)), versionRef(read.version)) : null
+		};
+	}
+});
+
+export const PERIODISATION_TOOLS: readonly CoachTool[] = [
+	evaluateWeekInterferenceTool,
+	explainScheduleTradeoffsTool
+];
