@@ -15,21 +15,21 @@ You edit nothing. The caller updates `docs/milestones.md` and `docs/progress.md`
 ## How to work
 
 1. Read the milestone's section in `docs/milestones.md`: its scope and its numbered acceptance criteria. Read `docs/testing.md` where a criterion names a test suite, to find the command and the spec files that cover it.
-2. For each criterion, find what proves it. Usually that is a test: locate the spec that exercises the behaviour and run it. Where a criterion asks for a measurement, a document or an artifact, find it and check it says what the criterion requires.
-3. Run the proof and record the result. Use the narrowest command that covers the criterion (one spec file, one Vitest project) before a whole suite.
+2. For each criterion, find what proves it. Usually that is a test: locate the spec that exercises the behaviour. Where a criterion asks for a measurement, a document or an artifact, find it and check it says what the criterion requires.
+3. Get the proof and record the result. Prefer CI: the suites run on GitHub for every pull request and every push to `main`, so for a criterion a suite covers, find the latest CI run on `main` (`gh run list --branch main --workflow CI --limit 5`), confirm it is for the current commit, and read that test's result from the run (`gh run view <id> --log`, or the `playwright-*` artifacts for e2e). Quote the run id. Run a proof locally only when CI does not cover it, and then the narrowest command that does: one spec file or one test file, never a whole suite on this machine.
 
-Commands you will need: `pnpm check`, `pnpm lint`, `pnpm test:unit`, `pnpm test:integration`, `pnpm test:e2e`, `pnpm budgets`, `pnpm build`, `pnpm build:node`. Integration and e2e tests need local Postgres (`pnpm db:setup`, `pnpm db:migrate`). Run one heavy command at a time; this machine is short on memory.
+For a local proof: `pnpm exec vitest run --project unit <file>`, `pnpm exec vitest run --project integration <file>` (needs local Postgres), or the `verify-coach` skill for one journey. Run one at a time; this machine is short on memory.
 
 Do not run anything that touches production or spends money: no deploys, no `pnpm test:live` without `LIVE_LLM_DRY=1`, no backup or restore commands, no `auth:reset-owner`. If a criterion can only be proven that way, or on a real device, mark it as not verifiable here and say what would prove it.
 
 ## Judging a criterion
 
-- **Pass**: you ran the proof and it passed, or you read the artifact and it meets the criterion. Quote the command and the result line.
+- **Pass**: the proof passed in a CI run on the current commit, or you ran it and it passed, or you read the artifact and it meets the criterion. Quote the run id or the command, and the result line.
 - **Fail**: you ran it and it failed, or the thing the criterion names does not exist. Quote the failure.
 - **Partial**: some of what the criterion lists is proven and some is not. Say which parts.
 - **Not verified**: you could not run the proof. Say why (no database, needs a device, needs a secret).
 
-A test that exists but that you did not run is "not verified", not "pass". Do not infer a pass from a PR title, a commit message or the status table.
+A test that exists but that neither you nor a CI run on the current commit ran is "not verified", not "pass". Do not infer a pass from a PR title, a commit message or the status table.
 
 ## Report
 

@@ -29,7 +29,7 @@ In order of importance:
 
 Skip style unless it hides a bug; Prettier and ESLint own style here.
 
-Run `pnpm check`, `pnpm lint` and `pnpm test:unit` when the code is checked out, one at a time, and include failures the change caused.
+Do not run the suites. CI on GitHub runs type-check, lint, unit, integration, build and e2e on the pull request, and this machine is too small to run them alongside you. Read the code instead. To confirm one specific finding you may run a single test file (`pnpm exec vitest run --project unit <file>`).
 
 ## Verify before you report
 
@@ -40,7 +40,7 @@ Confirm each finding against the code before you list it. Open the file, follow 
 ```
 VERDICT: APPROVE or CHANGES
 Intent: <one line>
-Checks: <what you ran and the result>
+Checks: <any single test you ran to confirm a finding, or "left to CI">
 
 R1 [blocker|should|nit] <file>:<line> <what is wrong and how it fails>. Fix: <the smallest change that resolves it>
 R2 ...

@@ -24,15 +24,19 @@ If the spec asks for tests, write ones that fail without your change. Do not edi
 
 ## Before you report
 
-Run these and fix what they find in your own changes:
+The full suites run in CI on GitHub once the pull request is open, because this machine is too
+small to run them alongside an agent. Run only the narrow checks on what you touched, and fix
+what they find in your own changes:
 
 ```sh
-pnpm check
-pnpm lint
-pnpm test:unit
+pnpm exec prettier --check <files you changed>
+pnpm exec eslint <files you changed>
+pnpm exec vitest run --project unit <test files you wrote or changed>
 ```
 
-Run `pnpm test:integration` as well when you changed anything under `src/lib/server/db`, `src/lib/server/services`, or `drizzle/`. It needs the local Postgres test database. Run one heavy command at a time; this machine does not have memory to spare for several.
+Do not run `pnpm check`, `pnpm lint`, `pnpm test:unit`, `pnpm test:integration`, `pnpm build` or
+Playwright. If your change needs an integration or e2e test, write it and say in the report that
+CI has to prove it.
 
 If a check fails for a reason outside your change, leave it alone and say so in the report.
 

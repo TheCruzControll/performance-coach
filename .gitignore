@@ -42,3 +42,6 @@ vite.config.ts.timestamp-*
 
 # Model checker downloads (verification/*/check.sh)
 /verification/*/.cache
+
+# Evidence kept by the verify-coach skill (.claude/skills/verify-coach)
+/verify-evidence

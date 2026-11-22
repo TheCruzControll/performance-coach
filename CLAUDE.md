@@ -44,6 +44,28 @@ captured verbatim, so do not reformat or reword it.
 Keep `docs/progress.md`, `docs/decisions.md` and `docs/known-issues.md` current as part of the
 change that makes them out of date.
 
+## Building features
+
+Work comes from `plan/queue.md`. Three skills carry a slice from there to production:
+
+- `run-queue` takes the next row from the queue and records the result. It is the command to give
+  `/loop`.
+- `feature-slice` takes one slice from spec to a merged pull request, using the `builder`,
+  `reviewer` and `ci-triage` agents.
+- `verify-coach` drives the real app and keeps the evidence. `verify-workout-sync` model-checks
+  offline sync. A slice is not done until the verification that covers it passes, and each slice
+  adds to the verifications for what it built.
+
+Limits that apply to every session here:
+
+- A merge to `main` deploys production and migrates its database. Merge only through
+  `feature-slice`'s gate. Never push to `main` directly and never force-push.
+- This machine has 8 GB of memory, so heavy checks run in CI on GitHub, not here. Locally, run
+  narrow checks on the files in hand (`pnpm exec prettier --check`, `pnpm exec eslint`,
+  `pnpm exec vitest run --project unit <file>`), push, and read the result from the pull request.
+  Run a full suite, a build or Playwright locally only to reproduce a CI failure, one at a time.
+- One slice is built at a time. Any number of pull requests can wait on CI meanwhile.
+
 ## Commands
 
 ```sh
@@ -123,6 +145,7 @@ docs/                requirements, architecture, operations, and:
   decisions.md       decision log, pointing into adr/
   known-issues.md    open problems, stale docs, unverified claims
 plan/
+  queue.md          the build queue the run-queue skill works through
   trace-evals/       the plan and research for the coach run trace and evals
 static/              fonts, PWA icons, manifest
 .github/workflows/   CI, the nightly backup, the post-deploy smoke check, the production
