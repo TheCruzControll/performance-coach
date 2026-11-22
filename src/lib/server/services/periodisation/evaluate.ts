@@ -297,10 +297,11 @@ export async function getWeekEvaluation(
 		// What the owner can still act on: its sessions ahead that are not done, avoid first.
 		const byLineage = new Map(ahead.filter((s) => !done.has(s.lineage)).map((s) => [s.lineage, s]));
 		const actable = (f: Finding) => f.sessions.filter((s) => s.lineage && byLineage.has(s.lineage));
+		// Ranked, avoid first. At most MAX_SHOWN of them place a note: a finding whose cards already
+		// carry one places nothing and takes no slot.
 		const shown = evaluation.findings
 			.filter((f) => actable(f).length > 0)
-			.sort((a, b) => Number(a.severity !== 'avoid') - Number(b.severity !== 'avoid'))
-			.slice(0, MAX_SHOWN);
+			.sort((a, b) => Number(a.severity !== 'avoid') - Number(b.severity !== 'avoid'));
 		const suggestions =
 			context && shown.some((f) => f.severity === 'avoid')
 				? suggestionsOf(sessions, context, { open: openDates, today, done, traitsOf }, weekStartsOn)
@@ -315,6 +316,7 @@ export async function getWeekEvaluation(
 		// The week line counts only the findings that put a note on a card (a card keeps one).
 		const placed: Finding[] = [];
 		for (const finding of shown) {
+			if (placed.length === MAX_SHOWN) break;
 			for (const { lineage } of actable(finding)) {
 				if (notes[lineage!]) continue;
 				if (placed.at(-1) !== finding) placed.push(finding);

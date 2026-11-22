@@ -142,7 +142,7 @@ describe('getWeekEvaluation', () => {
 		});
 	});
 
-	it('reads the owner’s own exercises’ traits, with the evaluation context’s findings', async () => {
+	it('reads the owner’s own exercises’ traits, and shows at most three findings, avoid first', async () => {
 		await withRollback(async (db) => {
 			const owner = await makeOwner(db);
 			const squat = await createCustomExercise(
@@ -198,8 +198,10 @@ describe('getWeekEvaluation', () => {
 			expect(texts).toContain(
 				'Heads-up · Three hard days in a row · After Full body, Muay Thai class and Intervals the day before'
 			);
-			expect(view.summary).toBe('2 heads-ups this week');
-			expect(Object.keys(view.notes)).toHaveLength(4);
+			expect(view.summary).toBe('3 heads-ups this week');
+			// Monday, Tuesday, Wednesday's two and Thursday's class: none on Friday or Saturday. A
+			// finding whose cards already carry a note takes no slot of the three.
+			expect(Object.keys(view.notes)).toHaveLength(5);
 		});
 	});
 
