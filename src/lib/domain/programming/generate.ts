@@ -12,7 +12,9 @@
  *   the contract is a GeneratedPlanError here, never a stored version or a coach's tool result.
  *
  * The full stage list lives here from m3/13. Each stage slice replaces only its own stub in
- * ./stages/, and only m3/28 edits this file again (output validation and program_purpose).
+ * ./stages/. m7-stage-list made M7's only edit: prepare (./stages/prepare.ts) runs before the
+ * stages, which read the input it returns, while the title keeps the original input; phasing runs
+ * before volume, which counts the main lifts' hard sets it sets, and schedule runs last.
  */
 import { daysBetween, mondayOf, weekdayOf } from '../calendar.ts';
 import { WEEKDAY_INFO } from '../profile/catalog.ts';
@@ -20,32 +22,27 @@ import { programPlanSchema } from '../training/schemas.ts';
 import type { BlockPlan, ProgramPlan } from '../training/types.ts';
 import { validate } from '../validation.ts';
 import type { FieldErrors } from '../validation.ts';
-import { planFirstBlock } from './blocks.ts';
 import { inWords } from './commitments.ts';
 import { DecisionLog } from './decisions.ts';
-import { allocateWeek, clip, weekBudget } from './demand.ts';
+import { clip } from './demand.ts';
 import type { ProgrammingInput } from './input.ts';
 import { eachMain } from './loads.ts';
 import type { Draft, GenerateOptions, Stage } from './stage.ts';
+import { blocks } from './stages/blocks.ts';
 import { commitments } from './stages/commitments.ts';
+import { demand } from './stages/demand.ts';
 import { loads } from './stages/loads.ts';
 import { other } from './stages/other.ts';
+import { phasing } from './stages/phasing.ts';
 import { placement } from './stages/placement.ts';
+import { prepare } from './stages/prepare.ts';
+import type { Prepared } from './stages/prepare.ts';
 import { progression } from './stages/progression.ts';
 import { running } from './stages/running.ts';
+import { schedule } from './stages/schedule.ts';
 import { strength } from './stages/strength.ts';
 import { timefit } from './stages/timefit.ts';
 import { volume } from './stages/volume.ts';
-
-const demand: Stage = (draft, { input, log }) => {
-	const budget = weekBudget(input);
-	return { ...draft, demand: { budget, allocation: allocateWeek(input, budget, log) } };
-};
-
-const blocks: Stage = (draft, { input, options, log }) => ({
-	...draft,
-	blocks: planFirstBlock(input, options.startsOn, log)
-});
 
 /** Every stage, in the order they run. */
 export const STAGES: readonly { name: string; run: Stage }[] = [
@@ -56,11 +53,20 @@ export const STAGES: readonly { name: string; run: Stage }[] = [
 	{ name: 'running', run: running },
 	{ name: 'other', run: other },
 	{ name: 'placement', run: placement },
+	{ name: 'phasing', run: phasing },
 	{ name: 'volume', run: volume },
 	{ name: 'loads', run: loads },
 	{ name: 'progression', run: progression },
-	{ name: 'timefit', run: timefit }
+	{ name: 'timefit', run: timefit },
+	{ name: 'schedule', run: schedule }
 ];
+
+/** The draft every stage list starts from, with prepare's periodisation when it planned one. */
+export const firstDraft = ({ periodisation }: Prepared): Draft => ({
+	demand: null,
+	blocks: [],
+	...(periodisation && { periodisation })
+});
 
 /**
  * What week 1 is for, in the program_purpose decision's words, so rewording it is an edit here:
@@ -150,10 +156,12 @@ export function generateProgram(input: ProgrammingInput, options: GenerateOption
 	const offset = daysBetween(startsOn, firstPlannedDay);
 	if (offset < 0 || offset > 6) throw new RangeError(`Not a day of week 1: ${firstPlannedDay}`);
 
-	const context = { input, options, log: new DecisionLog() };
-	let draft: Draft = { demand: null, blocks: [] };
+	const log = new DecisionLog();
+	const prepared = prepare(input, options, log);
+	const context = { input: prepared.input, options, log };
+	let draft = firstDraft(prepared);
 	for (const stage of STAGES) draft = stage.run(draft, context);
-	const facts = purposeFacts(draft.blocks, input, options);
+	const facts = purposeFacts(draft.blocks, prepared.input, options);
 	context.log.add('program_purpose', 'program.baseline_week', ['blocks.0.weeks.0'], facts);
 	const goals = input.maintenance ? input.paused : input.goals;
 	const title = goals.map((g) => g.title).join(' · ') || 'Training';
