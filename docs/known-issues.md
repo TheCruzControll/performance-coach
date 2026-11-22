@@ -62,6 +62,10 @@ Last reviewed: 2026-11-21, against `main` at the merge of #501.
   is lost; start a session by hand.
 - **A bike taken over on a second device has no planned minutes.** It is pinned to the run's
   planned session, so the other device loads the run's kit.
+- **A meet's taper outline marks the wrong week.** Inside a meet's taper outline block, the
+  season marks the week before the meet as `taper`. The generator places the actual one-week taper
+  in the meet week. Outline blocks hold no stored weeks yet, so nothing is shown wrong today. It may
+  matter when the next block fills that outline in.
 
 ## Working on this repo
 
