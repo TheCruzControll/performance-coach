@@ -718,8 +718,9 @@ hybrid, injured shoulder, dumbbells only, the journey, the minimal onboarding pr
   commitment days; free days never go below 0, and commitments on 4 days with 3 a week give a
   `days.commitments_fill` decision; a running club counts toward runs and a strength class toward
   strength days; free days fill each goal's fewest by priority, then spare days go by turns up to
-  each goal's most, then to mobility; a second session sits on a commitment day only with two
-  distinct preferred times (not 'it varies') and sessions ≤ 90 min, otherwise the lowest-priority
+  each goal's most, then to mobility; a second session sits on a commitment day only at a second
+  time (two distinct preferred times, or, with no time set, the other end of the day from a class
+  with a set time) and sessions ≤ 90 min, otherwise the lowest-priority
   session is dropped (`session_dropped`) and a goal ranked between others gets a
   `priority_tradeoff`; empty availability means any day.
 - **First block** (`blocks.test.ts`): no event gives baseline + 3 accumulation + deload, week 1 at

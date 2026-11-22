@@ -211,6 +211,36 @@ test.describe('a program this week', () => {
 			await captureScreen(page, testInfo, 'train-plan-desktop');
 		});
 	});
+
+	test('End this plan asks first, then archives it and lands on Build my program', async ({
+		page
+	}, testInfo) => {
+		const errors = trackConsoleErrors(page);
+		await gotoHydrated(page, '/train');
+		await openPlan(page);
+		await sheet(page).getByTestId('end-plan').click();
+		const ask = page.getByRole('dialog', { name: 'End this plan?' });
+		await expect(ask).toBeVisible();
+		await expect(ask).toContainText('Your logged workouts stay in History.');
+		await captureScreen(page, testInfo, 'train-plan-end');
+
+		// Keep my plan goes back to the plan, and nothing changed.
+		await ask.getByTestId('end-plan-keep').click();
+		await expect(sheet(page).getByTestId('block-timeline')).toBeVisible();
+		await sheet(page).getByTestId('end-plan').click();
+
+		await ask.getByTestId('end-plan-confirm-button').click();
+		await expect(page).toHaveURL(/\/today$/);
+		// No plan on Today: the next one is built from there (the fixture's owner has not finished
+		// onboarding, so Today asks for that first; a set-up owner sees Build my program).
+		await expect(page.getByTestId('today-setup').or(page.getByTestId('today-build'))).toBeVisible();
+		await expect(page.getByTestId('today-plan')).toHaveCount(0);
+		const [row] = await query<{ status: string }>('select status from programs where id = $1', [
+			seeded.programId
+		]);
+		expect(row?.status).toBe('archived');
+		expect(errors).toEqual([]);
+	});
 });
 
 test('an outline leads to the event date: its weeks are not planned yet, and never links', async ({

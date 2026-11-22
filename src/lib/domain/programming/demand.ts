@@ -10,7 +10,7 @@ import { WEEKDAYS } from '../profile/catalog.ts';
 import type { Weekday } from '../profile/catalog.ts';
 import type { DecisionLog } from './decisions.ts';
 import type { InputCommitment, InputGoal, ProgrammingInput } from './input.ts';
-import { COMMITMENT_QUOTA, DOUBLES, SESSIONS_WANTED } from './rules/days.ts';
+import { COMMITMENT_QUOTA, DOUBLES, doubleTime, SESSIONS_WANTED } from './rules/days.ts';
 import type { Quota, Stream } from './rules/days.ts';
 
 export interface WeekBudget {
@@ -23,8 +23,10 @@ export interface WeekBudget {
 	commitmentDays: number;
 	/** The training days the commitments leave; never below 0. */
 	freeDays: number;
-	/** Whether a commitment day may also hold a generated session (DOUBLES). */
+	/** Whether any commitment day may also hold a generated session (DOUBLES). */
 	doublesAllowed: boolean;
+	/** The commitment days that may: one commitment, with a time left for a second session. */
+	doubleDays: Weekday[];
 }
 
 /** What one goal's stream gets a week. */
@@ -66,15 +68,21 @@ export function weekBudget(input: ProgrammingInput): WeekBudget {
 		(d) => input.availableDays.includes(d) || commitmentWeekdays.includes(d)
 	);
 	const trainingDays = Math.min(input.daysPerWeek, days.length);
+	const doubleDays =
+		input.sessionMinutes > DOUBLES.maxSessionMinutes
+			? []
+			: commitmentWeekdays.filter((d) => {
+					const here = input.commitments.filter((c) => c.days.includes(d));
+					return here.length === 1 && doubleTime(here[0]!.timeOfDay, input.preferredTimes) !== null;
+				});
 	return {
 		days,
 		commitmentWeekdays,
 		trainingDays,
 		commitmentDays: commitmentWeekdays.length,
 		freeDays: Math.max(0, trainingDays - commitmentWeekdays.length),
-		doublesAllowed:
-			input.preferredTimes.length >= DOUBLES.distinctTimes &&
-			input.sessionMinutes <= DOUBLES.maxSessionMinutes
+		doublesAllowed: doubleDays.length > 0,
+		doubleDays
 	};
 }
 
@@ -128,10 +136,7 @@ export function allocateWeek(
 	// 1. The free days.
 	let free = toTheFewest(budget.freeDays);
 	// 2. Still short: a second session on each commitment day that holds one, if allowed.
-	const single = budget.commitmentWeekdays.filter(
-		(d) => input.commitments.filter((c) => c.days.includes(d)).length === 1
-	);
-	const slots = budget.doublesAllowed ? single.length : 0;
+	const slots = budget.doubleDays.length;
 	const doubles = slots - toTheFewest(slots);
 	// 3. Spare days by turns, by priority, up to each stream's most.
 	for (let gave = true; free > 0 && gave;) {
@@ -201,7 +206,7 @@ function recordAllocation(
 	const [top, ...rest] = streams;
 	for (const s of rest.filter((s) => total(s) < s.min)) {
 		const missing = `${s.min - total(s)} of ${sessions(s.min, s.stream, s.goal)}`;
-		if (s === rest.at(-1)) {
+		if (s === rest.at(-1) || s.goal === top!.goal) {
 			log.add('session_dropped', 'days.dropped', [], {
 				session: missing,
 				reason: budget.doublesAllowed

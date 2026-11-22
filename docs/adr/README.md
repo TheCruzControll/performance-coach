@@ -17,8 +17,8 @@ Status values: Proposed · Accepted · Superseded.
 | [0010](0010-program-versioning.md)       | Immutable program versions with copy-on-write membership      | Accepted |
 | [0011](0011-email-sign-in-link.md)       | Email sign-in link: one-time links to the owner's address     | Accepted |
 | [0012](0012-offline-workout-sync.md)     | Offline workout sync: device inputs, one projection, a ledger | Accepted |
-| [0013](0013-coach-agent-loop.md)         | Coach agent loop: a manual loop, streamed as labelled blocks  | Proposed |
-| [0014](0014-coach-memory-proposals.md)   | Coach memory from records; changes only as proposals          | Proposed |
+| [0013](0013-coach-agent-loop.md)         | Coach agent loop: a manual loop, streamed as labelled blocks  | Accepted |
+| [0014](0014-coach-memory-proposals.md)   | Coach memory from records; changes only as proposals          | Accepted |
 | [NNNN](NNNN-trend-classification.md)     | Trend vs noise: Theil–Sen, Mann–Kendall p, a minimal change   | Proposed |
 | [NNNN](NNNN-encrypted-backups.md)        | App-level encrypted backups: a daily cron to a private Blob   | Proposed |
 | [NNNN](NNNN-hand-built-charts.md)        | Hand-built charts: lazy SVG lines, HTML marks, one registry   | Proposed |
