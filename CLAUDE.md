@@ -48,8 +48,8 @@ change that makes them out of date.
 
 Work comes from `plan/queue.md`. Three skills carry a slice from there to production:
 
-- `run-queue` takes the next row from the queue and records the result. It is the command to give
-  `/loop`.
+- `run-queue` keeps several rows of the queue moving at once and merges them one at a time. It is
+  the command to give `/loop`.
 - `feature-slice` takes one slice from spec to a merged pull request, using the `builder`,
   `reviewer` and `ci-triage` agents.
 - `verify-coach` drives the real app and keeps the evidence. `verify-workout-sync` model-checks
@@ -64,7 +64,8 @@ Limits that apply to every session here:
   narrow checks on the files in hand (`pnpm exec prettier --check`, `pnpm exec eslint`,
   `pnpm exec vitest run --project unit <file>`), push, and read the result from the pull request.
   Run a full suite, a build or Playwright locally only to reproduce a CI failure, one at a time.
-- One slice is built at a time. Any number of pull requests can wait on CI meanwhile.
+- Several slices are built at once, each in its own git worktree under `../pc-wt/`. Do not edit
+  tracked files in the main checkout; other sessions share it. Merges happen one at a time.
 
 ## Commands
 

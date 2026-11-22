@@ -23,8 +23,9 @@ The path uses plain `Agent` calls, so it works in any Claude Code harness.
   Chromium and WebKit, and Lighthouse, on every pull request. Do not run `pnpm check`,
   `pnpm lint`, `pnpm test:unit`, `pnpm test:integration`, `pnpm build` or `pnpm test:e2e`
   locally. Run narrow checks on the files in hand, push, and let CI be the judge.
-- **One slice in the local stage at a time.** Do not start a second builder. Any number of pull
-  requests can wait on CI meanwhile.
+- **One worktree per slice.** Several slices can be in progress at once under `run-queue`, each in
+  its own git worktree, so they never share a working copy. Everything you and the agents do for a
+  slice happens in that slice's worktree. Never edit the main checkout: other sessions use it.
 - **Two fix rounds, then stop.** If the reviewer or CI still finds a real problem after two rounds
   of fixes, park the slice and report where it stands. A third round usually means the spec is
   wrong, and that is yours to fix, not the builder's.
@@ -35,14 +36,18 @@ The path uses plain `Agent` calls, so it works in any Claude Code harness.
 
 - Check `node -v` is 22. The repo refuses other versions (`engine-strict`); switch with `nvm use`
   if needed.
-- New slice: `git fetch origin`, then a new branch from `origin/main`, or from the branch of the
-  slice it depends on when that one is not merged yet. Follow the branch names already in use
-  (`m7/45-reactive-deload`, `feat/program-start-date`, `fix/train-history-desktop`).
-- Existing pull request: check out its branch and bring it up to date with its base. Read the PR
+- `git fetch origin`, then give the slice its own worktree beside the others, from the main
+  checkout: `git worktree add ../pc-wt/loop-<slug> -b <branch> origin/main` for a new slice, or
+  `git worktree add ../pc-wt/loop-<slug> <branch>` for an existing pull request's branch. When
+  `run-queue` started this slice, it has already done this; use the worktree it names.
+- New slice: branch from `origin/main`, or from the branch of the slice it depends on when that
+  one is not merged yet. Follow the branch names already in use (`m7/45-reactive-deload`,
+  `feat/program-start-date`, `fix/train-history-desktop`).
+- Existing pull request: bring its branch up to date with its base in the worktree. Read the PR
   description and the diff; they are the spec. Skip to step 4.
-- If the lockfile changed since the last install, run `pnpm install --frozen-lockfile`.
-- If the working tree has changes that are not part of this slice, stop and ask. Do not stash or
-  discard them.
+- Run `pnpm install --frozen-lockfile` in the worktree.
+- Put the worktree's absolute path at the top of every agent brief for this slice, and tell the
+  agent to work only there.
 
 ## 2. Write the spec
 
@@ -129,9 +134,9 @@ proves the slice. Opening the pull request is what starts the real checks.
 
 ## 7. Let CI run, and fix what it finds
 
-CI takes a while, and waiting costs nothing here. When this skill runs under `run-queue`, hand the
-slice back as waiting on CI and let the loop start the next one; it returns here when CI
-finishes. Run alone, watch the PR with the `babysit-pr` skill.
+CI takes a while, and waiting costs nothing here. When this skill runs under `run-queue`, the slice
+now leaves the local stage: record it as waiting on CI and go back to the dispatcher, which
+returns here when CI finishes. Run alone, watch the PR with the `babysit-pr` skill.
 
 For each failed check, start one `Agent` with `subagent_type: "ci-triage"`, giving it the PR
 number and the failed check. It reads the log so you do not have to.
@@ -171,7 +176,8 @@ fix it or park the slice.
   step 5 passed.
 - The slice is not one of the "stop for the owner" cases above, and its queue row is not `hold` or
   `owner`.
-- No earlier merge is still deploying. One merge at a time.
+- The branch does not change `plan/queue.md`, unless it is the queue's own housekeeping change.
+- No earlier merge is still deploying. One merge at a time, however many slices are in flight.
 
 Merge the way this repo's history does, as a merge commit titled `Merge <PR title> (#<number>)`:
 

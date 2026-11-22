@@ -1,8 +1,12 @@
 # Queue
 
 The work the build loop takes from. One row per slice. The `run-queue` skill
-(`.claude/skills/run-queue/SKILL.md`) reads this file, takes the first row it can act on, runs it,
-and writes the result back. Edit it by hand to add, reorder, or hold work.
+(`.claude/skills/run-queue/SKILL.md`) reads this file and keeps several rows moving at once, top
+to bottom. Edit it by hand to add, reorder, or hold work.
+
+This file is the plan, not the live state. While rows are in flight, their progress is on GitHub
+(the pull request) and in the loop's git-ignored state file. The loop writes results back here in
+a housekeeping pull request when it stops and after every ten merges.
 
 Pull requests are written as `PR 499`, without a hash sign, so the docs checks that look for
 merged-PR citations ignore this file.
