@@ -16,7 +16,8 @@
  * - layout shift 0 while logging: every shift from the steppers, the chips, Complete set and what
  *   they change (the rows, the logger's next set, Up next after an exercise's last set), input or
  *   not, each one's sources in the message. Starting the next exercise, the swipes, the sheet and
- *   the rest timer change the screen by design: measured apart and annotated;
+ *   the rest timer change the screen by design: measured apart and annotated, in sum and kind by
+ *   kind with what moved;
  * - /workout/run and /workout/session, a shorter run each (steppers, chips or switches, and their
  *   log or save): INP ≤ 200 ms from Event Timing and from web-vitals' row for the route;
  * - /workout's main-thread blocking on a reload the service worker controls, with the workout
@@ -45,7 +46,7 @@ import { framesFrom, longFrames } from './frames';
 import { attribute, inp, percentile, type Tag } from './inp';
 import { resetPrograms } from './program-support';
 import { query } from './support';
-import { gotoWorkout, seedWorkout, workoutDay } from './workout-support';
+import { gotoWorkout, seedWorkout, slidesEnded, workoutDay } from './workout-support';
 
 /** Tap to the frame that shows the set done (M4 criterion 3). */
 const CONFIRM_P95_MS = 100;
@@ -303,15 +304,25 @@ interface MotionFrames {
 	from?: number;
 }
 
+/** What changes the screen by design, measured apart: its shifts are annotated by kind. */
+type Apart = Motion | 'start';
+interface ApartWindow {
+	from: number;
+	to: number;
+	kind: Apart;
+}
+
 /**
- * Runs `action` and records when, painted before and after, so its shifts are told apart. With
+ * Runs `action` (of `kind`) and records when, painted before and after, so its shifts are told
+ * apart. With
  * `motion`, also records its animation frames into `frames`, for the dropped-frame gate, from
  * `watchMs` before the window opens, or else with the time the action began (`from`), so the
  * gate can watch it from its first tap.
  */
 async function apart(
 	page: Page,
-	windows: [number, number][],
+	windows: ApartWindow[],
+	kind: Apart,
 	action: () => Promise<void>,
 	motion?: { kind: Motion; frames: MotionFrames[]; watchMs?: number }
 ) {
@@ -333,7 +344,7 @@ async function apart(
 			...(motion.watchMs ? {} : { from })
 		});
 	}
-	windows.push([from, await now(page)]);
+	windows.push({ from, to: await now(page), kind });
 }
 
 /**
@@ -370,8 +381,13 @@ const armSheetSettled = (page: Page, motion: 'open' | 'close') =>
 const sheetSettled = (page: Page) =>
 	page.evaluate(() => (window as unknown as { __sheetSettled: Promise<void> }).__sheetSettled);
 
-/** A mouse drag across the card's name, in steps, as a hand would (workout-navigation.e2e.ts). */
+/**
+ * A mouse drag across the card's name, in steps, as a hand would (workout-navigation.e2e.ts),
+ * once the blocks a change moved have slid to their place (flip.ts): the rest pill rising with a
+ * taller logger passes over the name on a short screen.
+ */
 async function swipe(page: Page, dx: number) {
+	await slidesEnded(page);
 	const box = (await heading(page).boundingBox())!;
 	const x = box.x + box.width / 2;
 	const y = box.y + box.height / 2;
@@ -473,6 +489,8 @@ test.describe('workout screen at 4× CPU', () => {
 		const kinds: string[] = [];
 		const loggingShifts: Shift[] = [];
 		let apartShift = 0;
+		/** The apart shifts by kind, and what moved in each. */
+		const apartBy = new Map<Apart, { value: number; sources: Set<string> }>();
 		/** Per load: its slowest interaction and what it was; and the taps nothing named. */
 		const slowest: { kind: Kind; duration: number }[] = [];
 		const unattributed: string[] = [];
@@ -498,7 +516,7 @@ test.describe('workout screen at 4× CPU', () => {
 			// Every tap: the INP denominator, since the observer omits the fast ones.
 			let taps = 0;
 			// What changes the screen by design: navigation, a sheet, the rest timer.
-			const windows: [number, number][] = [];
+			const windows: ApartWindow[] = [];
 			// The sheet's, the swipes' and the rest bar's animation frames.
 			const frames: MotionFrames[] = [];
 
@@ -508,6 +526,7 @@ test.describe('workout screen at 4× CPU', () => {
 			await apart(
 				current,
 				windows,
+				'swipe',
 				async () => {
 					await swipe(current, last ? SWIPE_PX : -SWIPE_PX);
 					await expect(heading(current)).not.toHaveText(name);
@@ -523,7 +542,7 @@ test.describe('workout screen at 4× CPU', () => {
 				.entries()) {
 				if (set.start) {
 					const next = set.start;
-					await apart(current, windows, async () => {
+					await apart(current, windows, 'start', async () => {
 						await current
 							.getByTestId('up-next')
 							.getByRole('button', { name: `Start ${next}` })
@@ -538,6 +557,7 @@ test.describe('workout screen at 4× CPU', () => {
 					await apart(
 						current,
 						windows,
+						'sheet',
 						async () => {
 							await armSheetSettled(current, 'open');
 							await card(current).getByTestId('exercise-actions').click();
@@ -561,6 +581,7 @@ test.describe('workout screen at 4× CPU', () => {
 					await apart(
 						current,
 						windows,
+						'rest',
 						async () => {
 							for (const control of ['+30 s', 'Pause rest', 'Resume rest', 'Skip']) {
 								await pill(current).getByRole('button', { name: control, exact: true }).click();
@@ -623,9 +644,17 @@ test.describe('workout screen at 4× CPU', () => {
 					})
 					.join(', ')
 			);
-			const inWindow = (s: Shift) => windows.some(([from, to]) => s.at >= from && s.at <= to);
-			loggingShifts.push(...shifts.filter((s) => !inWindow(s)));
-			apartShift += shifts.filter(inWindow).reduce((sum, s) => sum + s.value, 0);
+			const windowOf = (s: Shift) => windows.find(({ from, to }) => s.at >= from && s.at <= to);
+			loggingShifts.push(...shifts.filter((s) => !windowOf(s)));
+			for (const s of shifts) {
+				const kind = windowOf(s)?.kind;
+				if (!kind) continue;
+				apartShift += s.value;
+				const by = apartBy.get(kind) ?? { value: 0, sources: new Set<string>() };
+				by.value += s.value;
+				for (const source of s.sources) by.sources.add(source);
+				apartBy.set(kind, by);
+			}
 
 			await hide(current);
 			const longest = Math.max(0, ...interactions.map((i) => i.duration));
@@ -692,6 +721,17 @@ test.describe('workout screen at 4× CPU', () => {
 		testInfo.annotations.push({
 			type: 'layout shift',
 			description: `${shifted} while logging${what && ` (${what})`} · ${apartShift} starting exercises, swiping, the sheet and the rest timer`
+		});
+		// What starting exercises, the swipes, the sheet and the rest timer moved, kind by kind.
+		testInfo.annotations.push({
+			type: 'layout shift apart',
+			description:
+				[...apartBy]
+					.map(
+						([kind, { value, sources }]) =>
+							`${kind} ${value.toFixed(4)} (${[...sources].slice(0, 8).join(' · ')})`
+					)
+					.join(' | ') || 'none'
 		});
 
 		expect(p95, `set confirmed: ${samples.map(round).join(', ')} ms`).toBeLessThan(CONFIRM_P95_MS);
