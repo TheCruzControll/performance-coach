@@ -1164,6 +1164,8 @@ and `history-load.test.ts` in `tests/integration/workouts/`. 'workout-day'
 `scripts/vercel-headers.test.ts` keeps `vercel.json` equal to `STATIC_PAGE_HEADERS` for every
 prerendered page; `scripts/icon-sprite.test.ts` keeps the sprite equal to a fresh
 `pnpm icons:sprite`; `e2e/icons.e2e.ts` checks every icon draws from it, offline too.
+`src/lib/server/security-headers.test.ts` pins `SECURITY_HEADERS`, the default cache-control
+rule and the failed-guard response.
 
 ### Workout screen
 

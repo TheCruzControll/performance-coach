@@ -450,25 +450,25 @@ for a refused request (`bad_request`) includes the API's reason. A failure's `er
 
 ## Self-review (OWASP ASVS 4.0, level 2, the relevant chapters)
 
-| ASVS                                         | Status  | Evidence                                                                                             |
-| -------------------------------------------- | ------- | ---------------------------------------------------------------------------------------------------- |
-| V2.1 Password security                       | N/A     | No passwords exist.                                                                                  |
-| V2.2 General authenticator (anti-automation) | Met     | DB rate limits on every auth endpoint (`rate-limit.test.ts`); failures audited.                      |
-| V2.5 Credential recovery                     | Met     | Single-use 80-bit codes, hashed, burned atomically; recovery forces a new passkey; regeneration.     |
-| V2.6 Look-up secrets                         | Met     | Codes random (CSPRNG), single use, stored hashed (SHA-256 is adequate at 80 bits of entropy).        |
-| V2.7/2.8 Out-of-band / OTP                   | N/A     | Not used.                                                                                            |
-| V2.9 Cryptographic authenticators            | Met     | WebAuthn via SimpleWebAuthn; UV required; counters enforced; origin and RP ID verified.              |
-| V3.1/3.2 Session binding & generation        | Met     | 256-bit CSPRNG tokens; new token on authentication; hash at rest.                                    |
-| V3.3 Session termination                     | Met     | Sign-out, revoke one / all others; idle 30 d + absolute 90 d; revocation immediate (tests).          |
-| V3.4 Cookie-based sessions                   | Met     | `__Host-` prefix, Secure, HttpOnly, SameSite=Lax, Path=/ (unit + e2e).                               |
-| V3.5 Token-based sessions                    | N/A     | Cookie sessions only.                                                                                |
-| V3.7 Defenses against session exploits       | Met     | Step-up: a recent passkey assertion (5 min) before passkey, recovery-code or device changes (tests). |
-| V4.1/4.2 Access control                      | Met     | Deny by default with a typed, tested route map; single owner, no IDOR surface.                       |
-| V4.2.2 CSRF                                  | Met     | Origin check on all unsafe methods + SvelteKit form check + SameSite (e2e).                          |
-| V7 Logging                                   | Met     | Audit log for auth events; no secrets or query strings in app logs.                                  |
-| V8.3 Sensitive private data                  | Partial | Pages `private, no-cache`; sign-out clears device data, unsynced sets if agreed. Neon encrypts DB.   |
-| V13 API                                      | Met     | JSON endpoints validate input (zod), cap body size, answer `no-store`.                               |
-| V14.4 HTTP security headers                  | Met     | CSP, HSTS, nosniff, frame-ancestors none, referrer policy (e2e).                                     |
+| ASVS                                         | Status  | Evidence                                                                                                                           |
+| -------------------------------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| V2.1 Password security                       | N/A     | No passwords exist.                                                                                                                |
+| V2.2 General authenticator (anti-automation) | Met     | DB rate limits on every auth endpoint (`rate-limit.test.ts`); failures audited.                                                    |
+| V2.5 Credential recovery                     | Met     | Single-use 80-bit codes, hashed, burned atomically; recovery forces a new passkey; regeneration.                                   |
+| V2.6 Look-up secrets                         | Met     | Codes random (CSPRNG), single use, stored hashed (SHA-256 is adequate at 80 bits of entropy).                                      |
+| V2.7/2.8 Out-of-band / OTP                   | N/A     | Not used.                                                                                                                          |
+| V2.9 Cryptographic authenticators            | Met     | WebAuthn via SimpleWebAuthn; UV required; counters enforced; origin and RP ID verified.                                            |
+| V3.1/3.2 Session binding & generation        | Met     | 256-bit CSPRNG tokens; new token on authentication; hash at rest.                                                                  |
+| V3.3 Session termination                     | Met     | Sign-out, revoke one / all others; idle 30 d + absolute 90 d; revocation immediate (tests).                                        |
+| V3.4 Cookie-based sessions                   | Met     | `__Host-` prefix, Secure, HttpOnly, SameSite=Lax, Path=/ (unit + e2e).                                                             |
+| V3.5 Token-based sessions                    | N/A     | Cookie sessions only.                                                                                                              |
+| V3.7 Defenses against session exploits       | Met     | Step-up: a recent passkey assertion (5 min) before passkey, recovery-code or device changes (tests).                               |
+| V4.1/4.2 Access control                      | Met     | Deny by default with a typed, tested route map; single owner, no IDOR surface.                                                     |
+| V4.2.2 CSRF                                  | Met     | Origin check on all unsafe methods + SvelteKit form check + SameSite (e2e).                                                        |
+| V7 Logging                                   | Met     | Audit log for auth events; no secrets or query strings in app logs.                                                                |
+| V8.3 Sensitive private data                  | Partial | Pages `private, no-cache`, `/api/*` `no-store` by default; sign-out clears device data, unsynced sets if agreed. Neon encrypts DB. |
+| V13 API                                      | Met     | JSON endpoints validate input (zod), cap body size, answer `no-store`.                                                             |
+| V14.4 HTTP security headers                  | Met     | CSP, HSTS, nosniff, frame-ancestors none, referrer and permissions policies, COOP, CORP same-origin (e2e, unit).                   |
 
 Open items: WebKit runs only on the test-minted session in e2e, so passkey ceremonies on iOS
 Safari (sign-in, setup, step-up) are verified on a real device (docs/testing.md checklist) rather
