@@ -108,10 +108,13 @@ export const PROGRAM_OPS = [
 ] as const;
 export type ProgramOpKind = (typeof PROGRAM_OPS)[number];
 
+/** A move of one session to another day: the op the scheduler's repairs are made of. */
+export const moveOpSchema = op('move', moveSessionSchema);
+
 export const programOpSchema = z.discriminatedUnion(
 	'op',
 	[
-		op('move', moveSessionSchema),
+		moveOpSchema,
 		op('skip', skipSessionSchema),
 		op('swap', swapSchema),
 		op('adjust_set', adjustSetSchema),

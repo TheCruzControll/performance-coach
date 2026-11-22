@@ -1,12 +1,12 @@
 /**
- * The coach's 24 tools, each named once (PRD §4, the M5 brief): its group, its effect and whether
+ * The coach's 25 tools, each named once (PRD §4, the M5 brief): its group, its effect and whether
  * it drafts. The registry (server/agent/tools) defines one tool per entry, the activity chips
  * word them (activity.ts), the per-tool deadlines read `drafts` (budgets.ts) and diagnostics
  * group by them, so a tool that is not here cannot run.
  *
  * They are the brief's 21 plus get_program_history, get_exercise_alternatives and
- * get_coach_proposals. Every get_* tool only reads. Six tools only propose: they store a
- * coach_proposals row that changes nothing until the owner accepts it. The two that write are the
+ * get_coach_proposals, and M7's engine read, evaluate_week_interference. Every get_* tool only
+ * reads, and so does that one. Six tools only propose: they store a coach_proposals row that changes nothing until the owner accepts it. The two that write are the
  * brief's only direct writes: the coach's own workout analysis, and a preference the owner stated
  * explicitly in this turn. Three proposing tools draft their payload with a structured-output
  * call, so their deadline includes the draft's time.
@@ -55,6 +55,8 @@ const CATALOGUE = {
 	get_training_schedule: read('programming'),
 	get_program_history: read('programming'),
 	get_coach_proposals: read('programming'),
+	/** M7: the engine's judgement of a week, what-if moves and the scheduler's repair; writes nothing. */
+	evaluate_week_interference: read('programming'),
 	propose_program_adjustment: propose('programming', true),
 	/** M3's previewProgram builds it deterministically: no draft. */
 	create_training_program: propose('programming'),
