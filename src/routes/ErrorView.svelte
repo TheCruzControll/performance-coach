@@ -41,6 +41,10 @@
 
 	let { kind, status, message, requestId, screen, inShell = false }: Props = $props();
 
+	// In the shell the page title sits at the left of the column, so the state lines up with it;
+	// alone (no title above it) the state is centred in the window.
+	const align = $derived(inShell ? 'start' : 'center');
+
 	const title = $derived(
 		kind === 'offline' ? 'Offline' : kind === 'not-found' ? 'Not found' : 'Error'
 	);
@@ -49,11 +53,11 @@
 	// captive portal, outage) while navigator.onLine still reads true. Say which once known; until
 	// then (server render, the prerendered /offline document) assume the common case: no network.
 	let deviceOnline: boolean | null = $state(null);
-	const offlineTitle = $derived(deviceOnline ? "Can't reach the server" : "You're offline");
+	const offlineTitle = $derived(deviceOnline ? 'Can’t reach the server' : 'You’re offline');
 	const offlineDescription = $derived(
 		deviceOnline
 			? 'Your connection looks up, but the server is not answering. This screen keeps retrying and loads by itself when it can.'
-			: "This screen needs a connection. It loads by itself as soon as you're back online."
+			: 'This screen needs a connection. It loads by itself as soon as you’re back online.'
 	);
 
 	// Recovery belongs to the screen at this URL: a navigation the user starts stops it, so its
@@ -115,6 +119,7 @@
 
 	{#if kind === 'offline'}
 		<EmptyState
+			{align}
 			icon="wifi-off"
 			tone="neutral"
 			title={offlineTitle}
@@ -127,6 +132,7 @@
 		</EmptyState>
 	{:else if kind === 'not-found'}
 		<EmptyState
+			{align}
 			icon="target"
 			tone="neutral"
 			title="Nothing here"
@@ -138,6 +144,7 @@
 		</EmptyState>
 	{:else}
 		<EmptyState
+			{align}
 			icon="alert"
 			tone="combat"
 			title="Something went wrong"
@@ -185,10 +192,14 @@
 		margin-inline: auto;
 	}
 
-	/* Inside the shell: centred in the space between the header and the tab bar. */
+	/* Inside the shell: under the page title and lined up with it, never centred under a title
+	   that starts at the left of the column. */
 	.error-view.in-shell {
+		place-content: start stretch;
+		justify-items: stretch;
 		min-height: auto;
 		padding: var(--space-6) 0 var(--space-4);
+		text-align: start;
 	}
 
 	.code {

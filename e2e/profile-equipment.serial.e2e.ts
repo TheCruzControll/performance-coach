@@ -191,7 +191,7 @@ test.describe('with the network in the test’s hands', () => {
 		).toHaveCount(0);
 
 		await page.unroute(chunk);
-		await page.getByRole('button', { name: 'Retry' }).click();
+		await page.getByRole('button', { name: 'Try again' }).click();
 		await editorReady(page);
 		await expect(place(page, 'Commercial gym')).toBeVisible();
 		await expect(page.getByTestId('save-section')).toBeEnabled();

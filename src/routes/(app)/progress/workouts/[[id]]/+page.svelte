@@ -122,7 +122,7 @@
 						icon="refresh"
 						loading={reloading}
 						onclick={reload}
-						data-testid="history-retry">Retry</Button
+						data-testid="history-retry">Try again</Button
 					>
 				{/snippet}
 			</EmptyState>
@@ -164,7 +164,7 @@
 			{/if}
 			{#if olderFailed}
 				<Notice tone="danger" title="Couldn’t load older workouts" data-testid="older-failed">
-					<Button variant="ghost" size="sm" onclick={showOlder}>Retry</Button>
+					<Button variant="ghost" size="sm" onclick={showOlder}>Try again</Button>
 				</Notice>
 			{/if}
 		</section>

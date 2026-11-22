@@ -126,8 +126,8 @@
 						icon={state?.kind === 'failed' ? 'refresh' : undefined}
 						loading={state?.kind === 'pending'}
 						disabled={!online}
-						aria-label="{state?.kind === 'failed' ? 'Retry' : 'Create review'} · {row.title}"
-						>{state?.kind === 'failed' ? 'Retry' : 'Create review'}</Button
+						aria-label="{state?.kind === 'failed' ? 'Try again' : 'Create review'} · {row.title}"
+						>{state?.kind === 'failed' ? 'Try again' : 'Create review'}</Button
 					>
 					{#if !online}
 						<p class="note" data-testid="create-offline">

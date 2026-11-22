@@ -86,7 +86,7 @@
 				<Notice tone="danger" title="Couldn’t load this chart">
 					The numbers are in the table below.
 				</Notice>
-				<Button variant="secondary" icon="refresh" onclick={load}>Retry</Button>
+				<Button variant="secondary" icon="refresh" onclick={load}>Try again</Button>
 			</div>
 		{:else}
 			<div class="grid" aria-hidden="true"></div>

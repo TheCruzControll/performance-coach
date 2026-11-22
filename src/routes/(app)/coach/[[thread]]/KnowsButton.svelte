@@ -32,7 +32,7 @@
 				toast.show(SCREEN_FAILURE_LABEL.chunk_failed, {
 					tone: 'danger',
 					duration: 0,
-					action: { label: 'Retry', onclick: show }
+					action: { label: 'Try again', onclick: show }
 				});
 			}
 		);

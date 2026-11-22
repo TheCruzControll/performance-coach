@@ -144,10 +144,12 @@ describe('a bridge week', () => {
 		});
 	});
 
+	// Today reads the plan and its week together, each on its own connection: on the shared pool.
 	it('Today names the next block’s start in place of the week, and Up next is Build', async () => {
 		await withCommitted(async (db) => {
 			const { owner } = await seeded(db, WEDNESDAY);
-			const program = (await getCurrentProgram(owner, WEDNESDAY, { db }))!;
+			const program = await getCurrentProgram(owner, WEDNESDAY, { db });
+			if (!program) throw new Error('no active program');
 			const view = await loadTodayPlan(
 				owner,
 				{ today: WEDNESDAY, program, origin: origin('/today') },

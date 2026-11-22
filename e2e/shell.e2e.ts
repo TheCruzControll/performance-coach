@@ -214,6 +214,54 @@ test.describe('app shell on an iPhone viewport', () => {
 		expect(midTransition, 'one shot, taken after the tab change ended').toEqual([false]);
 	});
 
+	// A navigation that starts before the last cross-fade is ready (Back then Forward, or a second
+	// tap) skips it, and the browser rejects that cross-fade's `ready`: expected, so never an
+	// unhandled rejection. Each cross-fade is held for two seconds, before or after its update, so
+	// the second tap certainly lands in that window. The tap is dispatched, not clicked: a click
+	// waits for animation frames, which the browser pauses while a cross-fade's update runs.
+	for (const when of ['before', 'after'] as const) {
+		test(`a tab change made while the last cross-fade is held ${when} its update reports no error`, async ({
+			page
+		}) => {
+			await page.addInitScript((when) => {
+				const start = document.startViewTransition?.bind(document);
+				const held = { active: 0, overtaken: 0 };
+				Object.assign(window, { __held: held });
+				if (!start) return;
+				const hold = async () => {
+					held.active += 1;
+					await new Promise((resolve) => setTimeout(resolve, 2000));
+					held.active -= 1;
+				};
+				document.startViewTransition = ((update: () => unknown) => {
+					if (held.active) held.overtaken += 1;
+					return start(async () => {
+						if (when === 'before') await hold();
+						await update();
+						if (when === 'after') await hold();
+					});
+				}) as typeof document.startViewTransition;
+			}, when);
+			const errors = trackConsoleErrors(page);
+			const held = () =>
+				page.evaluate(
+					() => (window as unknown as { __held: { active: number; overtaken: number } }).__held
+				);
+			await gotoHydrated(page, '/today');
+			const nav = page.getByRole('navigation', { name: 'Primary' });
+			await nav.getByRole('link', { name: 'Train' }).click();
+			if (when === 'after') {
+				await expect(page.getByRole('heading', { level: 1, name: 'Train' })).toBeVisible();
+			}
+			await expect.poll(async () => (await held()).active, 'Train’s cross-fade is held').toBe(1);
+			await nav.getByRole('link', { name: 'Progress' }).dispatchEvent('click');
+			await expect(page.getByRole('heading', { level: 1, name: 'Progress' })).toBeVisible();
+			await expect.poll(() => page.evaluate(() => !document.activeViewTransition)).toBe(true);
+			expect((await held()).overtaken, 'Progress’s cross-fade started during the hold').toBe(1);
+			expect(errors).toEqual([]);
+		});
+	}
+
 	test('no console errors on any screen, including interactive ones', async ({ page }) => {
 		const errors = trackConsoleErrors(page);
 		for (const path of [...TABS.map((t) => t.path), '/profile/security', '/design', '/offline']) {
@@ -753,7 +801,7 @@ test.describe('the root error page, loaded on demand', () => {
 		await onErrorPageChunk(page, (_pass, abort) => abort());
 		await gotoHydrated(page, '/today');
 		await failProfileData(page);
-		await expect(page.getByRole('heading', { level: 1, name: "You're offline" })).toBeVisible();
+		await expect(page.getByRole('heading', { level: 1, name: 'You’re offline' })).toBeVisible();
 		const retry = page.getByRole('link', { name: 'Try again' });
 		await expect(retry).toHaveAttribute('href', '/profile');
 		expect((await retry.boundingBox())?.height).toBeGreaterThanOrEqual(44);

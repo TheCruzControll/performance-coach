@@ -103,7 +103,7 @@
 					loading={ui.pending === 'decide'}
 					disabled={!online}
 					data-testid="review-next-generate"
-					>{ui.failed === 'decide' ? 'Retry' : 'Generate next week'}</Button
+					>{ui.failed === 'decide' ? 'Try again' : 'Generate next week'}</Button
 				>
 				<Button
 					type="submit"

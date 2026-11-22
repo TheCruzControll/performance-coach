@@ -166,7 +166,7 @@ test.describe('/design → Charts, while the body loads', () => {
 			fixtureFrame(page).getByRole('heading', { name: 'Hard sets a week' })
 		).toBeVisible();
 		await expect(fixtureFrame(page).getByText('Show as table')).toBeVisible();
-		const retry = failed.getByRole('button', { name: 'Retry' });
+		const retry = failed.getByRole('button', { name: 'Try again' });
 		const box = await boxOf(retry);
 		expect(box.height).toBeGreaterThanOrEqual(44);
 		expect(box.width).toBeGreaterThanOrEqual(44);

@@ -26,7 +26,7 @@ export type NarrationView =
 	| { state: 'written'; text: string; blocks: CompletedBlock[] }
 	/** ask: this page requests it (POST); otherwise another request runs it and the page polls. */
 	| { state: 'writing'; ask: boolean }
-	/** action: the button that asks again ('Retry'), or null when asking cannot help. */
+	/** action: the button that asks again ('Try again'), or null when asking cannot help. */
 	| { state: 'notice'; title: string; detail: string; action: string | null };
 
 /** POST /api/reviews/narrate's answer (agent/reviews/narrate.ts NarrationOutcome, on the wire). */
@@ -61,10 +61,10 @@ const NOTICES: Record<string, [title: string, detail: string, action: string | n
 	rate_limited: [
 		'Too many questions in a short time',
 		`${COMPLETE} Try again in a minute.`,
-		'Retry'
+		'Try again'
 	],
-	offline: ['You’re offline', `${COMPLETE} Try again once you’re back online.`, 'Retry'],
-	failed: ['Couldn’t write this up', `${COMPLETE} Try again in a moment.`, 'Retry'],
+	offline: ['You’re offline', `${COMPLETE} Try again once you’re back online.`, 'Try again'],
+	failed: ['Couldn’t write this up', `${COMPLETE} Try again in a moment.`, 'Try again'],
 	/** Refreshed elsewhere since this page loaded: asking again about this revision cannot help. */
 	superseded: [
 		'This review has been refreshed',

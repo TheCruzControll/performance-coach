@@ -52,10 +52,12 @@ import { ensureCertificate } from './scripts/e2e-tls/cert';
  * E2E_GALLERY=1 (.github/workflows/screen-gallery.yml) runs nothing but the owner setups and the
  * screen gallery (e2e/gallery.gallery.ts) on one worker (e2e/projects.ts galleryProjects).
  *
- * A serial CI leg (E2E_GROUP=serial) runs its specs on SERIAL_WORLDS workers, each with an owner
- * world of its own: a database and a production server (e2e/worlds.ts). Global setup starts them,
- * routeWorker points each worker at its own before anything reads E2E_PORT or E2E_DATABASE_URL,
- * and `setup-worlds` copies the world the owner setup made into the others before any serial spec.
+ * A serial CI leg (E2E_GROUP=serial) runs its specs on its engine's SERIAL_WORKERS workers
+ * (e2e/serial-workers.ts: 2 on Chromium, 1 on WebKit, and why), each with an owner world of its
+ * own: a database and a production server (e2e/worlds.ts). With more than one, global setup starts
+ * them, routeWorker points each worker at its own before anything reads E2E_PORT or
+ * E2E_DATABASE_URL, and `setup-worlds` copies the world the owner setup made into the others
+ * before any serial spec.
  */
 // Before baseURL: in a worker of a run with more than one world, E2E_PORT and E2E_DATABASE_URL
 // become its own world's.
@@ -173,7 +175,7 @@ if (worlds > 1) {
 
 // One spec at a time per owner world, after the functional suites: they reset and change the
 // owner's training profile, which every browser and worker of a world shares. One world (every
-// run but a serial CI leg) is one spec at a time.
+// run but a serial·chromium CI leg) is one spec at a time.
 projects.push({
 	name: 'serial-chromium',
 	testMatch: SERIAL,
@@ -241,8 +243,8 @@ export default defineConfig({
 	forbidOnly: Boolean(process.env.CI),
 	retries: process.env.CI ? 1 : 0,
 	// CI main legs run whole files side by side on 2 workers, as local runs do (auth.setup.ts
-	// registers a passkey per worker). serial legs run one worker per owner world (e2e/worlds.ts);
-	// alone, exclusive and sweeps legs keep 1.
+	// registers a passkey per worker). serial legs run one worker per owner world
+	// (e2e/serial-workers.ts: 2 on Chromium, 1 on WebKit); alone, exclusive and sweeps legs keep 1.
 	// The gallery reseeds the one owner screen by screen: one worker, wherever it runs.
 	workers: gallery ? 1 : worlds > 1 ? worlds : process.env.CI && group !== 'main' ? 1 : 2,
 	timeout: 30_000,

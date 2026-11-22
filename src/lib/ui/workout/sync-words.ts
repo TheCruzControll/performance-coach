@@ -10,6 +10,11 @@ export interface SyncWords {
 	text: string;
 	/** Needs the owner: a refusal, a stuck change, a lost session. */
 	alert: boolean;
+	/**
+	 * All is well (Saved): said as quiet text with its check, with no pill around it, so the
+	 * header shows no empty field the width of the longest words.
+	 */
+	quiet?: true;
 }
 
 /** A count as the pill says it: past 999, "999+", so the reserved width holds every count. */
@@ -19,7 +24,7 @@ export function syncWords(status: OutboxStatus): SyncWords {
 	const words = (icon: IconName, text: string, alert = false) => ({ icon, text, alert });
 	switch (status.state) {
 		case 'synced':
-			return words('check', 'Saved');
+			return { icon: 'check', text: 'Saved', alert: false, quiet: true };
 		case 'saving':
 			return words('refresh', 'Saving…');
 		case 'offline':

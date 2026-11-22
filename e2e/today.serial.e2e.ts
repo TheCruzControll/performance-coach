@@ -379,14 +379,14 @@ test('a This week read that fails is a designed error with Retry, and Retry reco
 		const failed = page.getByTestId('today-week-error');
 		await expect(failed).toContainText('Couldn’t load this week’s numbers.');
 		await expect(goals(page)).toHaveCount(3);
-		const retry = failed.getByRole('button', { name: 'Retry' });
+		const retry = failed.getByRole('button', { name: 'Try again' });
 		expect((await retry.boundingBox())!.height).toBeGreaterThanOrEqual(44);
 		expect(await audit(page), 'dark').toEqual([]);
 		await captureScreen(page, testInfo, 'today-this-week-error');
 	} finally {
 		await query('alter table run_records_away rename to run_records');
 	}
-	await page.getByTestId('today-week-error').getByRole('button', { name: 'Retry' }).click();
+	await page.getByTestId('today-week-error').getByRole('button', { name: 'Try again' }).click();
 	await expect(page.getByTestId('today-week-error')).toHaveCount(0);
 	await expect(thisWeek(page).getByTestId('context-line')).toHaveText(
 		'Your week fills in as you log sessions.'
@@ -454,7 +454,7 @@ test('a setup read that fails is a designed error with Retry inside the shell, a
 		// This week was not read either: it says so, never that the week is empty.
 		await expect(page.getByTestId('today-week-error')).toBeVisible();
 		await expect(thisWeek(page)).not.toContainText('Your week fills in as you log sessions.');
-		const retry = failed.getByRole('button', { name: 'Retry' });
+		const retry = failed.getByRole('button', { name: 'Try again' });
 		const target = (await retry.boundingBox())!;
 		expect(target.height).toBeGreaterThanOrEqual(44);
 		await captureScreen(page, testInfo, 'today-setup-error');
@@ -466,7 +466,7 @@ test('a setup read that fails is a designed error with Retry inside the shell, a
 	} finally {
 		await query('alter table athlete_profiles_away rename to athlete_profiles');
 	}
-	await page.getByTestId('today-setup-error').getByRole('button', { name: 'Retry' }).click();
+	await page.getByTestId('today-setup-error').getByRole('button', { name: 'Try again' }).click();
 	await expect(count(page)).toHaveText('0 of 10 steps done');
 	await expect(page.getByTestId('today-setup-error')).toHaveCount(0);
 });

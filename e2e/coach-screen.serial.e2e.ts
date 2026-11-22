@@ -226,7 +226,7 @@ test.describe('when the coach cannot answer', () => {
 		await gotoHydrated(page, '/coach');
 		const notice = page.getByTestId('coach-unavailable');
 		await expect(notice).toContainText('Your coach is getting ready');
-		await expect(notice.getByRole('button', { name: 'Retry' })).toHaveCount(0);
+		await expect(notice.getByRole('button', { name: 'Try again' })).toHaveCount(0);
 		await expect(page.getByTestId('mock-badge')).toHaveCount(0);
 		await expect(composer(page).getByRole('textbox', { name: 'Message' })).toBeDisabled();
 		await expect(page.locator('.prompt')).toHaveCount(4);
@@ -321,7 +321,7 @@ test.describe('with the network in the test’s hands', () => {
 		await expect(threadRows(page)).toHaveCount(20);
 
 		const release = await hold(page, isOlder);
-		await failed.getByRole('button', { name: 'Retry' }).click();
+		await failed.getByRole('button', { name: 'Try again' }).click();
 		await expect(older).toHaveAttribute('aria-busy', 'true');
 		await expect(page.getByRole('status').filter({ hasText: 'Loading older' })).toHaveCount(1);
 		release();
@@ -363,7 +363,7 @@ test.describe('with the network in the test’s hands', () => {
 		await expectNoSideScroll(page);
 		await captureScreen(page, testInfo, 'coach-load-failed');
 
-		await failed.getByRole('button', { name: 'Retry' }).click();
+		await failed.getByRole('button', { name: 'Try again' }).click();
 		await expect(page.getByTestId('owner-message')).toHaveText(new RegExp(BENCH_QUESTION));
 		await expect(failed).toHaveCount(0);
 	});

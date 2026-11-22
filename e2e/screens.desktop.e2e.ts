@@ -157,6 +157,25 @@ test.describe('signed in', () => {
 		});
 	}
 
+	test('a missing page in the shell lines its state up with its title, not centred under it', async ({
+		page
+	}) => {
+		const response = await page.goto('/today/unknown');
+		expect(response?.status()).toBe(404);
+		const title = await boxOf(page.getByRole('heading', { level: 1, name: 'Not found' }));
+		const view = page.getByTestId('error-view');
+		for (const part of [
+			view.getByRole('heading', { level: 2, name: 'Nothing here' }),
+			view.getByText('This page does not exist.'),
+			view.getByRole('link', { name: 'Back to Today' })
+		]) {
+			const box = await boxOf(part);
+			expect(Math.abs(box.x - title.x), `${part} starts where the title does`).toBeLessThanOrEqual(
+				1
+			);
+		}
+	});
+
 	test('/design, every component group', async ({ page }, testInfo) => {
 		const errors = trackConsoleErrors(page);
 		await page.goto('/design');

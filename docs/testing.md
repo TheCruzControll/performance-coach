@@ -131,13 +131,20 @@ Every UI slice is verified at the iPhone viewport (393 × 659) and at 1440 × 90
 `test.use(DESKTOP)` from `e2e/desktop.ts` or a `*.desktop.e2e.ts` spec, and its PR attaches both
 screenshots (docs/design-system.md, Responsive layout → Verification).
 
-Workers: 2 locally and in CI's main legs (whole files side by side), 2 in its serial legs (one per
-owner world, below), 1 in its other legs.
+Workers: 2 locally and in CI's main legs (whole files side by side); in its serial legs, one per
+owner world (below): 2 on Chromium and 1 on WebKit (`e2e/serial-workers.ts`, the one place they
+are set); 1 in its other legs.
 
-**Owner worlds (CI's serial legs).** The app has one owner, and the serial specs reset and change
-that owner's training profile, so two of them never share a database and a server. A serial leg
-(`E2E_GROUP=serial` in CI) therefore runs 2 workers, each in an owner world of its own
-(`e2e/worlds.ts`): world 0 is the usual `E2E_PORT` and `coach_e2e`; world 1 serves on
+Why per engine: two workers share the CI runner's 4 vCPUs. With 2, a serial·chromium spec file took
+1.15× its 1-worker time, which halves the leg for little; a serial·webkit one took 1.39×, and its
+heaviest tests (`workout-run.serial.e2e.ts`, the axe test of `adjust-skip.serial.e2e.ts`) went
+past their 30 s timeout, attempt and retry, where they take ~13 s alone. So serial·webkit runs 1
+worker and takes more shards instead.
+
+**Owner worlds (CI's serial·chromium legs).** The app has one owner, and the serial specs reset and
+change that owner's training profile, so two of them never share a database and a server. A serial
+leg (`E2E_GROUP=serial` in CI) with more than one worker therefore runs each in an owner world of
+its own (`e2e/worlds.ts`): world 0 is the usual `E2E_PORT` and `coach_e2e`; world 1 serves on
 `E2E_PORT + 1` from `coach_w1_e2e` (`<name>_w<n>_e2e`, created with `PGADMIN_URL` when missing).
 Global setup resets every world's database and starts one production server per world, each from
 a copy of the one build made for its origin (`build-w<n>/`: adapter-node bakes its origin in), with
@@ -146,7 +153,7 @@ its own log (`.e2e-server-w<n>.log`) and backups folder. Each worker serves the 
 `E2E_DATABASE_URL` at it). The owner setups run once, in one world, and the `setup-worlds` project
 (`e2e/worlds.setup.ts`) then copies that world's database (owner, passkeys, sessions) into the
 others and checks every server signs both engines' states in. Within a world the serial specs
-still run one at a time. Every other run, local runs included, keeps one world.
+still run one at a time. Every other run, serial·webkit and local runs included, keeps one world.
 
 CI runs the suite as separate legs, one per group and engine (`e2e/projects.ts`,
 `.github/workflows/ci.yml`). The `perf` project is the `alone` group: its own leg on Chromium,
@@ -712,8 +719,9 @@ hybrid, injured shoulder, dumbbells only, the journey, the minimal onboarding pr
   commitment days; free days never go below 0, and commitments on 4 days with 3 a week give a
   `days.commitments_fill` decision; a running club counts toward runs and a strength class toward
   strength days; free days fill each goal's fewest by priority, then spare days go by turns up to
-  each goal's most, then to mobility; a second session sits on a commitment day only with two
-  distinct preferred times (not 'it varies') and sessions ≤ 90 min, otherwise the lowest-priority
+  each goal's most, then to mobility; a second session sits on a commitment day only at a second
+  time (two distinct preferred times, or, with no time set, the other end of the day from a class
+  with a set time) and sessions ≤ 90 min, otherwise the lowest-priority
   session is dropped (`session_dropped`) and a goal ranked between others gets a
   `priority_tradeoff`; empty availability means any day.
 - **First block** (`blocks.test.ts`): no event gives baseline + 3 accumulation + deload, week 1 at
@@ -1369,11 +1377,18 @@ model.
 
 `.github/workflows/ci.yml` runs lint, type-check, the migration drift check, unit + integration
 (postgres:18 service), both builds + budgets, Playwright (Chromium + WebKit) and an asserted
-Lighthouse run on every PR and push to `main`. After the mobile run, `pnpm lighthouse --desktop`
+Lighthouse run on every full run of a PR or a push to `main` (a light run skips some; see below). After the mobile run, `pnpm lighthouse --desktop`
 audits the same screens with Lighthouse's desktop preset (desktop throttling, no CPU slowdown) at
 1440 × 900 and 1x (`scripts/lib/lighthouse-config.ts`), writes to `lighthouse-reports/desktop` and
 applies the same `--assert` thresholds, as a step that never fails the job; its table is in the
 step summary (docs/performance.md, "Lighthouse (desktop)").
+
+The run's first job, `Scope of the run`, runs `scripts/ci-scope.ts`. A change that touches only
+`docs/`, `plan/`, agent tooling (`.claude/`, `.agents/`, `.codex/`, `.pi/`), root Markdown or
+`.env.example`, and a
+merge to `main` whose tree its pull request already tested, is a light run: it skips the
+integration tests, the e2e legs and Lighthouse. Lint, type-check, unit tests (which include the docs
+guards) and the build always run.
 
 `.github/workflows/post-deploy-smoke.yml` checks production from outside after every production
 deploy (health with the database up, the sign-in screen, deny by default, security headers on

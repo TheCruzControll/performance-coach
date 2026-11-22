@@ -11,9 +11,7 @@
   - A container-query grid: the cards pair up once the column is wide enough.
   - When a week or a block completes, its review prompt leads (ReviewPrompt, in a chunk of its
     own, trends.ts): create and open the review, or 'See your review'. The server's markup of it
-    (a working form) stays until its code arrives, and stays if that fails. If its code fails
-    after a client navigation, the page's Reviews row (+page.svelte) leads to the screen that
-    creates it.
+    (a working form) stays until its code arrives, and stays if that fails.
 -->
 <script lang="ts">
 	import { onMount, type Component } from 'svelte';
@@ -82,6 +80,14 @@
 			<Prompt review={overview.review} />
 		{:else if prompt}
 			<Served markup={prompt} />
+		{:else if Prompt}
+			<!-- Its code failed to load after a client navigation: the review, or the screen that creates it. -->
+			{@const href = overview.review.href ?? overview.review.create?.action.split('?')[0]}
+			<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- app paths from review-prompt.server.ts -->
+			<a class="card" {href} data-testid="review-prompt-link">
+				<h3>{overview.review.title}</h3>
+				<span class="context">{overview.review.summary}</span>
+			</a>
 		{/if}
 	{/if}
 	{#if overview.stage === 'history'}
@@ -112,7 +118,11 @@
 						<ul class="evidence">
 							{#each card.evidence as item, i (i)}
 								<li>
-									<span class="subject">{item.subject}</span>
+									<span class="subject"
+										>{item.subject}{#if item.hint}<span class="visually-hidden">: </span><span
+												class="hint">{item.hint}</span
+											>{/if}</span
+									>
 									<VerdictBadge verdict={item.verdict} />
 								</li>
 							{/each}
@@ -259,8 +269,16 @@
 	}
 
 	.subject {
+		display: grid;
+		gap: var(--space-0-5);
 		font-size: var(--text-sm);
 		color: var(--color-text-secondary);
+	}
+
+	/* What a jargon measure means, under its name. */
+	.hint {
+		font-size: var(--text-xs);
+		color: var(--color-text-tertiary);
 	}
 
 	/* A wide column (a desktop window): the cards pair up. */

@@ -311,7 +311,7 @@ test('the card’s code failing to load is the chunk-failed notice, whose Retry 
 	// In place on WebKit; on Chromium, which keeps the failed fetch, through a reload of the
 	// conversation.
 	await page.unroute(chunk);
-	await failed.getByRole('button', { name: 'Retry' }).click();
+	await failed.getByRole('button', { name: 'Try again' }).click();
 	await expect(card(page)).toBeVisible();
 	await expect(accept(page)).toBeEnabled();
 	await expect(page.getByTestId('proposal-failed')).toHaveCount(0);

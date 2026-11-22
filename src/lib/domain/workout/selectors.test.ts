@@ -7,6 +7,7 @@ import { strengthTable } from './reducers/tables';
 import { otherTable } from './reducers/other';
 import {
 	currentExercise,
+	hasLoggedSet,
 	nextExercise,
 	pairBySetIndex,
 	plannedVsLogged,
@@ -249,6 +250,20 @@ describe('progress', () => {
 			{ type: 'exercise.add', exercise: { position: 6, exercise: KEG, addedAt: at(1) } }
 		);
 		expect(progress(kegLogged).exercises).toStrictEqual({ total: 6, done: 1 });
+	});
+});
+
+describe('hasLoggedSet', () => {
+	it('is true once a set is logged, never for skipped or deleted sets alone', () => {
+		expect(hasLoggedSet(view([START]))).toBe(false);
+		expect(hasLoggedSet(view([START, skip('s1', 1, 1), skip('s2', 1, 2)]))).toBe(false);
+		expect(
+			hasLoggedSet(
+				view([START, log('gone', 1, 1), make('set.delete', { entityId: 'gone', payload: {} })])
+			)
+		).toBe(false);
+		expect(hasLoggedSet(view([START, skip('s1', 1, 1), log('l1', 2, 1)]))).toBe(true);
+		expect(hasLoggedSet(view([START, log('w1', 3, 1, { isWarmup: true })]))).toBe(true);
 	});
 });
 

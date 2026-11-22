@@ -10,7 +10,14 @@
   discardInProgress, the start conflict's Discard). A BottomSheet: a centred dialog from 1024 px,
   Escape closes it and focus returns. Every action is a primitive Button (44 px, hover and
   :focus-visible states).
+  Once a set is logged, a visible Finish (HeaderFinish.svelte, exported from here so it loads with
+  the menu) sits at the end of the title's line too, so finishing never means hunting through the
+  menu; the menu keeps Finish workout.
 -->
+<script module lang="ts">
+	export { default as HeaderFinish } from './HeaderFinish.svelte';
+</script>
+
 <script lang="ts">
 	import type { InProgress } from '#lib/client/workout/start.ts';
 	import type { WorkoutStore } from '#lib/client/workout/store.ts';

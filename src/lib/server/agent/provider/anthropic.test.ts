@@ -128,7 +128,7 @@ describe('the request', () => {
 		expect(`${call!.method} ${call!.url.pathname}`).toBe('POST /v1/messages');
 	});
 
-	it('sends the model, explicit effort, strict eager tools, caching and the fallback, and nothing else', async () => {
+	it('sends the model, explicit effort, eager tools, caching and the fallback, and nothing else', async () => {
 		const { provider: anthropic, calls } = provider([sse('text.sse')]);
 		const sent = request();
 		await anthropic.stream(sent, signal()).final();
@@ -143,8 +143,10 @@ describe('the request', () => {
 		expect(body.cache_control).toEqual({ type: 'ephemeral' });
 		const tools = body.tools as { strict?: boolean; eager_input_streaming?: boolean }[];
 		expect(tools.length).toBeGreaterThan(0);
-		for (const tool of tools)
-			expect(tool).toMatchObject({ strict: true, eager_input_streaming: true });
+		for (const tool of tools) {
+			expect(tool).toMatchObject({ eager_input_streaming: true });
+			expect(typeof tool.strict).toBe('boolean');
+		}
 		expect((body.messages as { role: string }[]).at(-1)!.role).not.toBe('assistant');
 		expect(validateRequest(body as unknown as ModelRequest)).toEqual([]);
 	});

@@ -8,7 +8,7 @@
  * INSERT (chunked only past ROWS_PER_INSERT) and nothing needs RETURNING. A revision copies a
  * week's subtree with one INSERT … SELECT per table instead, its changes written in as it goes.
  */
-import { and, asc, desc, eq, getTableColumns, lte, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, getTableColumns, isNull, lte, sql, type SQL } from 'drizzle-orm';
 import { alias, type PgColumn, type PgTable } from 'drizzle-orm/pg-core';
 import type { IsoDate } from '../../../domain/calendar';
 import {
@@ -42,7 +42,8 @@ import {
 	programVersions,
 	programVersionWeeks,
 	programWeeks,
-	setPrescriptions
+	setPrescriptions,
+	workouts
 } from '../schema';
 import type { Executor } from '../types';
 
@@ -263,6 +264,32 @@ export function createProgramsRepository(db: Executor) {
 				.where(and(eq(programs.ownerId, ownerId), eq(programs.status, 'active')))
 				.for('update');
 			return row ?? null;
+		},
+
+		/** Archive the active program `programId` at `at`; false when it is no longer active. */
+		async archiveProgram(programId: string, at: Date): Promise<boolean> {
+			const archived = await db
+				.update(programs)
+				.set({ status: 'archived', archivedAt: at })
+				.where(and(eq(programs.id, programId), eq(programs.status, 'active')))
+				.returning({ id: programs.id });
+			return archived.length === 1;
+		},
+
+		/** How many of the program's workouts are still in progress on the server. */
+		async workoutsInProgress(ownerId: string, programId: string): Promise<number> {
+			const [row] = await db
+				.select({ n: sql<number>`count(*)::int` })
+				.from(workouts)
+				.where(
+					and(
+						eq(workouts.ownerId, ownerId),
+						eq(workouts.programId, programId),
+						eq(workouts.status, 'in_progress'),
+						isNull(workouts.deletedAt)
+					)
+				);
+			return row?.n ?? 0;
 		},
 
 		/** Move the head from `from` to `to`, only while it still points at `from`. */

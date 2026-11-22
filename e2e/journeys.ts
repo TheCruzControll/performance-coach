@@ -102,7 +102,6 @@ const WEEKLY_AGED = {
 	title:
 		'review-aged: decided late in the week › the passed changes are struck through, the rest are applied, and Train lists only those'
 };
-
 /** coach-journeys' journeys (the M5 brief's list), each a test on an iPhone and on a desktop window. */
 const COACH_JOURNEYS = [
 	'journey 1: how has my bench progressed: the facts and their sources are the sets Postgres holds',

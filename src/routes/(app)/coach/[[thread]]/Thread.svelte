@@ -354,7 +354,7 @@
 				toast.show(SCREEN_FAILURE_LABEL.chunk_failed, {
 					tone: 'danger',
 					duration: 0,
-					action: { label: 'Retry', onclick: () => openExercise(exerciseId) }
+					action: { label: 'Try again', onclick: () => openExercise(exerciseId) }
 				});
 			}
 		);
@@ -423,7 +423,7 @@
 		<Badge tone="warning" icon="alert" data-testid="answer-ended">{label}</Badge>
 		{#if question && live}
 			<Button variant="secondary" size="sm" onclick={() => live.retry(question, threadId)}
-				>Retry</Button
+				>Try again</Button
 			>
 		{/if}
 	</p>

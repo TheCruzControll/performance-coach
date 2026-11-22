@@ -360,7 +360,7 @@ test.describe('in a desktop window', () => {
 			await page.goto('/profile/equipment');
 			const error = page.getByTestId('editor-error');
 			await expect(error).toContainText('This section didn’t load');
-			const retry = page.getByRole('button', { name: 'Retry' });
+			const retry = page.getByRole('button', { name: 'Try again' });
 			await expectWithin(page, error);
 			await expectWithin(page, retry);
 			await expect(save(page)).toBeDisabled();

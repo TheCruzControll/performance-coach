@@ -8,7 +8,7 @@
  *   their designed empty states.
  * - 'Ask for changes' opens the conversation the proposal came from, with its sheet.
  * - On a desktop window it is a split screen: the list beside the proposal, which sits in the
- *   readable column. Opening another is busy until it renders; a failed load offers Retry.
+ *   readable column. Opening another is busy until it renders; a failed load offers Try again.
  *
  * The split-squat-week fixture plans Bulgarian split squats: 'I hate Bulgarian split squats, so
  * replace them' proposes swapping them, and 'Plan my next cycle' drafts the next block, each in a
@@ -246,7 +246,7 @@ test('an unknown or malformed proposal is the 404 page', async ({ page }) => {
 	}
 });
 
-test('the proposal’s code failing to load says so, and its Retry opens the proposal', async ({
+test('the proposal’s code failing to load says so, and its Try again opens the proposal', async ({
 	page,
 	request
 }, testInfo) => {
@@ -265,7 +265,7 @@ test('the proposal’s code failing to load says so, and its Retry opens the pro
 	// In place on WebKit; on Chromium, which keeps the failed fetch, through a reload of the
 	// proposal's page.
 	await page.unroute(chunk);
-	await failed.getByRole('button', { name: 'Retry' }).click();
+	await failed.getByRole('button', { name: 'Try again' }).click();
 	await expect(detail(page).getByTestId('proposal-card')).toContainText(cycle.title);
 	await expect(page.getByTestId('detail-failed')).toHaveCount(0);
 	await expect(page).toHaveURL(new RegExp(`/coach/proposals/${cycle.id}$`));
@@ -295,6 +295,17 @@ test.describe('on a desktop window', () => {
 		await expect(waiting(page).nth(1)).toHaveAttribute('aria-current', 'page');
 		await expect(page.getByTestId('all-proposals')).toBeHidden();
 
+		// The other proposal's data is held from before its row is hovered: the body preloads a
+		// link's data once the pointer rests on it for 20 ms (data-sveltekit-preload-data="hover",
+		// src/app.html), and Enter then opens it from that preload without a request of its own.
+		// Held only from the Enter, the open finished at once whenever the hover had preloaded it.
+		let release!: () => void;
+		const held = new Promise<void>((done) => (release = done));
+		await page.route(`**/coach/proposals/${cycle.id}/__data.json*`, async (route) => {
+			await held;
+			await route.continue();
+		});
+
 		const row = waiting(page).first();
 		const border = () => row.evaluate((el) => getComputedStyle(el).borderColor);
 		const resting = await border();
@@ -312,12 +323,6 @@ test.describe('on a desktop window', () => {
 		await auditThemes(page, 'desktop');
 
 		// Opening the other proposal: the one shown stays, dimmed and busy, until it renders.
-		let release!: () => void;
-		const held = new Promise<void>((done) => (release = done));
-		await page.route(`**/coach/proposals/${cycle.id}/__data.json*`, async (route) => {
-			await held;
-			await route.continue();
-		});
 		await page.keyboard.press('Enter');
 		await expect(page.getByTestId('inbox-pane')).toHaveAttribute('aria-busy', 'true');
 		await expect(row).toHaveAttribute('aria-busy', 'true');
@@ -337,7 +342,7 @@ test.describe('on a desktop window', () => {
 	// recorded as a 500 (app_errors) but answered with the load's soft failure, never an HTTP 500
 	// (inbox.server.ts), so this sends that: a 200 whose page data is
 	// { canAsk, state: 'failed', filter } (devalue's flattened form).
-	test('a load that fails shows Couldn’t load your proposals, and Retry loads them', async ({
+	test('a load that fails shows Couldn’t load your proposals, and Try again loads them', async ({
 		page,
 		request
 	}, testInfo) => {
@@ -361,7 +366,7 @@ test.describe('on a desktop window', () => {
 		await captureScreen(page, testInfo, 'coach-inbox-failed-desktop');
 		await auditThemes(page, 'failed');
 
-		await failed.getByRole('button', { name: 'Retry' }).click();
+		await failed.getByRole('button', { name: 'Try again' }).click();
 		await expect(detail(page).getByTestId('proposal-card')).toContainText(cycle.title);
 		await expect(failed).toHaveCount(0);
 	});

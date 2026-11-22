@@ -248,6 +248,13 @@ test('setup: the week across the top, the setup card beside This week', async ({
 	expect(Math.abs(week.x + week.width - (sideBox.x + sideBox.width))).toBeLessThanOrEqual(1);
 
 	await expectBeside(card, side(page));
+	// As tall as what it says: no empty band between its words and its progress.
+	const words = await boxOf(card.getByText('About five minutes'));
+	const count = await boxOf(page.getByTestId('today-setup-count'));
+	expect(
+		count.y - (words.y + words.height),
+		'the progress follows the words, with no dead space'
+	).toBeLessThanOrEqual(await tokenPx(page, '--space-4'));
 	await expect(side(page).getByRole('heading', { name: 'This week' })).toBeVisible();
 	await expect(page.getByRole('link', { name: /Plate calculator/ })).toHaveCount(0);
 	const cta = page.getByTestId('today-setup-continue');
@@ -396,7 +403,7 @@ test.describe('a program with sessions today', () => {
 			);
 			expect(Math.abs(box.x - title.x), 'the notice starts at the content’s edge').toBeLessThan(1);
 			await expect(side(page).getByTestId('today-goals')).toBeVisible();
-			const retry = failed.getByRole('button', { name: 'Retry' });
+			const retry = failed.getByRole('button', { name: 'Try again' });
 			await expectInView(page, retry);
 			await expectHoverAndFocus(page, retry, 'background');
 			await expectWideFrame(page);
@@ -704,7 +711,7 @@ test.describe('Build my program', () => {
 			await buildCta(page).click();
 			const failed = page.getByTestId('build-preview-error');
 			await expect(failed).toContainText('Couldn’t plan week 1');
-			const retry = failed.getByRole('button', { name: 'Retry' });
+			const retry = failed.getByRole('button', { name: 'Try again' });
 			await expectInView(page, retry);
 			await expect(rail(page)).toBeVisible();
 			await expectWideFrame(page);
@@ -726,7 +733,7 @@ test.describe('Build my program', () => {
 			await buildCta(page).click();
 			const offline = page.getByTestId('build-preview-error');
 			await expect(offline).toContainText('You’re offline');
-			const retry = offline.getByRole('button', { name: 'Retry' });
+			const retry = offline.getByRole('button', { name: 'Try again' });
 			await expectInView(page, retry);
 			await expectWideFrame(page);
 			await auditBothThemes(page, testInfo, 'preview-offline');
@@ -751,14 +758,14 @@ test.describe('Build my program', () => {
 			const readable = await tokenPx(page, '--content-readable');
 			expect(box.width, 'the notice keeps to the main column').toBeLessThanOrEqual(readable + 1);
 			expect(Math.abs(box.x - title.x), 'the notice starts at the content’s edge').toBeLessThan(1);
-			await expectInView(page, failed.getByRole('button', { name: 'Retry' }));
+			await expectInView(page, failed.getByRole('button', { name: 'Try again' }));
 			await expectWideFrame(page);
 			await auditBothThemes(page, testInfo, 'preview-retry');
 
 			// WebKit imports the chunk again in place; Chromium reloads Today, where the Build card
 			// opens the preview again.
 			failing = false;
-			await failed.getByRole('button', { name: 'Retry' }).click();
+			await failed.getByRole('button', { name: 'Try again' }).click();
 			const shown = ready(page).or(buildCard(page)).filter({ visible: true });
 			await expect(shown).toBeVisible({ timeout: 15_000 });
 			if (await buildCard(page).isVisible()) await buildCta(page).click();

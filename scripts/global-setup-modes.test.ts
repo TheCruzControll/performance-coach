@@ -18,7 +18,8 @@ import {
 	runGlobalSetup,
 	type SetupEffects
 } from '../e2e/global-setup.ts';
-import { SERIAL_WORLDS, world, worlds } from '../e2e/worlds.ts';
+import { SERIAL_WORKERS } from '../e2e/serial-workers.ts';
+import { world, worlds } from '../e2e/worlds.ts';
 
 const BASE_URL = 'http://localhost:5999';
 const TLS_URL = 'https://localhost:5999';
@@ -261,10 +262,11 @@ describe('global setup modes', () => {
 	});
 });
 
-describe('global setup for a serial CI leg (owner worlds, e2e/worlds.ts)', () => {
+describe('global setup for a serial·chromium CI leg (owner worlds, e2e/worlds.ts)', () => {
 	const serialLeg = (): NodeJS.ProcessEnv => ({
 		CI: '1',
 		E2E_GROUP: 'serial',
+		E2E_ENGINE: 'chromium',
 		E2E_PORT: '5999',
 		E2E_DATABASE_URL
 	});
@@ -273,7 +275,7 @@ describe('global setup for a serial CI leg (owner worlds, e2e/worlds.ts)', () =>
 		const { io, calls, polled, servers, spawnedEnvs, spawnedFiles } = fakes();
 		const env = serialLeg();
 		const other = world(1, env);
-		expect(worlds(env)).toHaveLength(SERIAL_WORLDS);
+		expect(worlds(env)).toHaveLength(SERIAL_WORKERS.chromium);
 		expect(other.origin).toBe('http://localhost:6000');
 		expect(other.databaseUrl).toMatch(/_w1_e2e$/);
 		const teardown = await runGlobalSetup(BASE_URL, env, io);

@@ -323,6 +323,24 @@ function judge(evidence: Evidence): JudgedEvidence {
 	return { ...evidence, call, words: `${evidence.subject}: ${words}` };
 }
 
+/**
+ * The measures with a real trend but no better way, by name: 'Strain is rising, neither better
+ * nor worse on its own'; 'Strain and Training load are changing, neither better nor worse on
+ * their own'.
+ */
+function movingWords(moving: readonly JudgedEvidence[]): string {
+	if (moving.length === 1) {
+		const [only] = moving as [JudgedEvidence];
+		const { result } = only.trend;
+		const way =
+			result.verdict === 'real_trend' && result.direction === 'down' ? 'falling' : 'rising';
+		return `${only.subject} is ${way}, neither better nor worse on its own`;
+	}
+	const names = moving.map((item) => item.subject);
+	const list = `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`;
+	return `${list} are changing, neither better nor worse on their own`;
+}
+
 const order = (a: Evidence, b: Evidence) =>
 	a.subject < b.subject ? -1 : a.subject > b.subject ? 1 : a.trend.metric < b.trend.metric ? -1 : 0;
 
@@ -368,7 +386,7 @@ export function disciplineVerdict(
 				: `Not enough data yet for a verdict on your ${many}`
 	};
 	const notes = [
-		...(moving > 0 ? [`${moving} moving, not judged better or worse`] : []),
+		...(moving > 0 ? [movingWords(judged.filter((item) => item.call === 'moving'))] : []),
 		...(insufficient > 0 && n + moving > 0 ? [`${insufficient} without enough data yet`] : [])
 	];
 	return {

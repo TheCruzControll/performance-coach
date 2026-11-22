@@ -269,7 +269,7 @@ test.describe('twelve weeks', () => {
 
 			// Where the browser keeps the failed fetch (Chromium), Retry reloads Progress.
 			await page.unrouteAll({ behavior: 'wait' });
-			await failed.getByRole('button', { name: 'Retry' }).click();
+			await failed.getByRole('button', { name: 'Try again' }).click();
 			await expect(failed).toHaveCount(0);
 			await expectBestE1rms(page, seeded, 12);
 		});

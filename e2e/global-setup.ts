@@ -20,11 +20,12 @@
  * ORIGIN=https://localhost:<E2E_PORT>, and a TLS proxy that applies vercel.json's headers
  * (scripts/e2e-tls) listens on E2E_PORT in front of it.
  *
- * A serial CI leg serves more than one owner world (e2e/worlds.ts), in `local` mode only: every
- * world's database is created if missing and reset, and every world gets a server of its own, on
- * its own port and database, from a copy of the one build made for its origin (build-w<n>/),
- * logging to .e2e-server-w<n>.log and backing up to test-results/backups-w<n>. World 0 is the
- * run's usual database, build, server and log.
+ * A serial CI leg with more than one worker (serial·chromium, e2e/serial-workers.ts) serves an
+ * owner world per worker (e2e/worlds.ts), in `local` mode only: every world's database is created
+ * if missing and reset, and every world gets a server of its own, on its own port and database,
+ * from a copy of the one build made for its origin (build-w<n>/), logging to .e2e-server-w<n>.log
+ * and backing up to test-results/backups-w<n>. World 0 is the run's usual database, build, server
+ * and log.
  */
 import { execSync, spawn, type ChildProcess } from 'node:child_process';
 import { once } from 'node:events';
@@ -259,7 +260,7 @@ export async function runGlobalSetup(
 	const others: World[] = worlds(env).slice(1);
 	if (others.length > 0 && (mode !== 'local' || tlsEnabled(env))) {
 		throw new Error(
-			`[e2e] ${worldCount(env)} owner worlds (E2E_GROUP=serial in CI) start plain-HTTP servers of their own: local mode only, without E2E_TLS`
+			`[e2e] ${worldCount(env)} owner worlds (a serial·chromium CI leg) start plain-HTTP servers of their own: local mode only, without E2E_TLS`
 		);
 	}
 

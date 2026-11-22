@@ -383,7 +383,7 @@ test.describe('a program that starts next week', () => {
 			// In place on WebKit; on Chromium, which keeps the failed fetch, through a reload of
 			// the screen that opens the sheet once its code arrives.
 			await page.unroute(chunk);
-			await failed.getByRole('button', { name: 'Retry' }).click();
+			await failed.getByRole('button', { name: 'Try again' }).click();
 			await expect(day(page, addDays(seeded.weekStart, 2))).toBeVisible();
 			await expect(save(page)).toHaveText('Move');
 
@@ -409,7 +409,7 @@ test.describe('a program that starts next week', () => {
 
 			// In place on WebKit; on Chromium, through a reload that opens the sheet.
 			await page.unroute(chunk);
-			await failed.getByRole('button', { name: 'Retry' }).click();
+			await failed.getByRole('button', { name: 'Try again' }).click();
 			await expect(day(page, addDays(seeded.weekStart, 2))).toBeVisible();
 			await page.keyboard.press('Escape');
 			await expect(moveButton(page)).toBeFocused();

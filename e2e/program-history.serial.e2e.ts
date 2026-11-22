@@ -425,7 +425,7 @@ test.describe('a program that starts next week', () => {
 			await expect(versions(page)).toHaveCount(20);
 			await expect(page.getByTestId('show-older')).toBeEnabled();
 
-			await failed.getByRole('button', { name: 'Retry' }).click();
+			await failed.getByRole('button', { name: 'Try again' }).click();
 			await expect(versions(page)).toHaveCount(22);
 			await expect(failed).toHaveCount(0);
 		});

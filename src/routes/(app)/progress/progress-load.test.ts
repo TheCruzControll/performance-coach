@@ -4,6 +4,7 @@
  * data, and a failed read recorded and turned into the load-failed state.
  */
 import { describe, expect, it, vi } from 'vitest';
+import { METRICS } from '#lib/domain/analytics/metrics.ts';
 import { periodWindow, trendWindow, type Period } from '#lib/domain/analytics/periods.ts';
 import type { TrendResult } from '#lib/domain/analytics/trend.ts';
 import type { SeriesPoint } from '#lib/domain/analytics/types.ts';
@@ -267,10 +268,37 @@ describe('overviewData', () => {
 			sentence: '1 of 2 main lifts trending up',
 			window: 'Trend over the last 12 weeks',
 			evidence: [
-				{ subject: 'Back squat', verdict: { verdict: 'real_trend', direction: 'up', good: true } },
-				{ subject: 'Bench press', verdict: { verdict: 'normal_variation' } }
+				{
+					subject: 'Back squat',
+					verdict: { verdict: 'real_trend', direction: 'up', good: true },
+					hint: null
+				},
+				{ subject: 'Bench press', verdict: { verdict: 'normal_variation' }, hint: null }
 			]
 		});
+	});
+
+	it('says under a jargon measure’s name what it means, in plain words', () => {
+		const input = trained();
+		const [verdict] = input.verdicts;
+		const [first] = verdict!.evidence;
+		const measures = (['srpe_load', 'muay_thai_load', 'monotony', 'strain'] as const).map(
+			(metric) => ({
+				...first!,
+				subject: METRICS[metric].label,
+				trend: { ...first!.trend, metric }
+			})
+		);
+		const [card] = overviewData({
+			...input,
+			verdicts: [{ ...verdict!, area: 'general', evidence: measures }]
+		}).cards;
+		expect(card!.evidence.map(({ subject, hint }) => [subject, hint])).toEqual([
+			['Training load', 'Minutes × how hard each session felt, added up'],
+			['Muay Thai load', 'Minutes × how hard each class felt, added up'],
+			['Monotony', 'How alike your days are; lower means more varied'],
+			['Strain', 'Load × monotony; high when a big week has no easy days']
+		]);
 	});
 
 	it('charts each key lift in the profile units, the week in progress as its last slot', () => {

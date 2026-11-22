@@ -33,6 +33,22 @@ describe('syncWords', () => {
 		]);
 	});
 
+	it('says only Saved quietly, with no pill, and never an alert quietly', () => {
+		const statuses = [
+			{ state: 'synced' },
+			{ state: 'saving', pending: 2 },
+			{ state: 'offline', pending: 3 },
+			{ state: 'unreachable', waiting: 2 },
+			{ state: 'retrying', seconds: 4, pending: 1 },
+			{ state: 'attention', count: 1 },
+			{ state: 'signed-out', waiting: 2 },
+			{ state: 'passkey', waiting: 2 }
+		] as const;
+		// No other words carry the flag at all.
+		const quiet = statuses.map((status) => syncWords(status)).filter((words) => 'quiet' in words);
+		expect(quiet).toEqual([{ icon: 'check', text: 'Saved', alert: false, quiet: true }]);
+	});
+
 	it('says no count past 999, so the longest words stay the reserved ones', () => {
 		expect(
 			[999, 1000, 25_000].map((n) => [

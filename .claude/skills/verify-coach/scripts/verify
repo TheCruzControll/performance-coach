@@ -1,0 +1,90 @@
+#!/usr/bin/env bash
+# Drives the real app through the repo's Playwright harness and keeps the evidence.
+#   verify doctor                  read-only: can this machine run a verification right now?
+#   verify list                    the journeys and specs that can be run
+#   verify run <spec>...           run specs (paths under e2e/), keep evidence in verify-evidence/
+#   verify cleanup                 stop a server this harness left behind
+#   verify prune [n]               keep the newest n evidence folders (default 5), delete older ones
+# Exit status of `run` is Playwright's: 0 only when every test passed.
+set -euo pipefail
+
+repo=$(git -C "$(dirname "$0")" rev-parse --show-toplevel)
+cd "$repo"
+port=${E2E_PORT:-4173}
+db=${E2E_DATABASE_URL:-postgres://coach:coach@localhost:5432/coach_e2e}
+pidfile="$repo/test-results/.verify-server-pids"
+
+say() { printf '%-12s %s\n' "$1" "$2"; }
+
+listener() { lsof -nP -iTCP:"$port" -sTCP:LISTEN -t 2>/dev/null | head -1 || true; }
+
+doctor() {
+	local bad=0 v
+	v=$(node -v 2>/dev/null || echo none)
+	if [[ $v == v22.* ]]; then say "node" "ok ($v)"; else say "node" "FAIL: $v, the repo needs 22 (nvm use)"; bad=1; fi
+	if [[ node_modules/.modules.yaml -nt pnpm-lock.yaml ]]; then say "deps" "ok"; else say "deps" "FAIL: run pnpm install --frozen-lockfile"; bad=1; fi
+	if psql "$db" -Atc 'select 1' >/dev/null 2>&1; then say "postgres" "ok (${db##*/})"; else say "postgres" "FAIL: cannot reach ${db##*/}; start Postgres, then pnpm db:setup"; bad=1; fi
+	if pnpm exec playwright --version >/dev/null 2>&1; then say "playwright" "ok ($(pnpm exec playwright --version 2>/dev/null))"; else say "playwright" "FAIL: pnpm exec playwright install chromium"; bad=1; fi
+	local pid; pid=$(listener)
+	if [[ -z $pid ]]; then say "port $port" "ok (free)"; else say "port $port" "FAIL: pid $pid is listening; another run or dev server owns it"; bad=1; fi
+	return $bad
+}
+
+run() {
+	[[ $# -gt 0 ]] || { echo "usage: verify run <spec under e2e/>..." >&2; exit 2; }
+	local serial=0 plain=0 spec
+	for spec in "$@"; do
+		[[ -f $spec ]] || { echo "no such spec: $spec" >&2; exit 2; }
+		if [[ $spec == *.serial.e2e.ts ]]; then serial=1; else plain=1; fi
+	done
+	if [[ $serial == 1 && $plain == 1 ]]; then
+		echo "serial and non-serial specs run in different projects; run them separately" >&2; exit 2
+	fi
+	local project=iphone-chromium
+	[[ $serial == 1 ]] && { project=serial-chromium; export E2E_SERIAL_ALONE=1; }
+
+	local name stamp out status=0
+	name=$(basename "$1" | sed 's/\..*//')
+	stamp=$(date +%Y%m%d-%H%M%S)
+	out="$repo/verify-evidence/$stamp-$name"
+	mkdir -p "$out"
+
+	pnpm exec playwright test "$@" --project="$project" --trace on 2>&1 | tee "$out/playwright.log" || status=${PIPESTATUS[0]}
+
+	# Playwright empties test-results/ at the start of the next run, so copy the proof out now.
+	[[ -d test-results/screens ]] && cp -R test-results/screens "$out/screens"
+	find test-results -name trace.zip -print0 2>/dev/null | while IFS= read -r -d '' t; do
+		mkdir -p "$out/traces/$(basename "$(dirname "$t")")" && cp "$t" "$out/traces/$(basename "$(dirname "$t")")/"
+	done
+	[[ -f .e2e-server.log ]] && cp .e2e-server.log "$out/server.log"
+	{
+		echo "commit:  $(git rev-parse --short HEAD)$(git diff --quiet || echo ' (uncommitted changes)')"
+		echo "specs:   $*"
+		echo "project: $project"
+		echo "result:  $([[ $status == 0 ]] && echo PASS || echo "FAIL (exit $status)")"
+		grep -E '^\s+[0-9]+ (passed|failed|skipped|flaky)' "$out/playwright.log" || true
+	} > "$out/summary.txt"
+	cat "$out/summary.txt"
+	echo "evidence: $out"
+	return $status
+}
+
+cleanup() {
+	# Playwright's global teardown stops the server it started. This only handles a run that was
+	# killed before teardown, and only a `node build/index.js` listening on the harness port.
+	local pid; pid=$(listener)
+	if [[ -z $pid ]]; then echo "nothing listening on $port"; return 0; fi
+	if ps -o command= -p "$pid" | grep -q 'build.*index.js'; then kill "$pid" && echo "stopped e2e server pid $pid"
+	else echo "pid $pid on $port is not the e2e server; left alone"; return 1; fi
+}
+
+case ${1:-help} in
+	doctor) doctor ;;
+	list) ls e2e/*journey*.e2e.ts e2e/smoke/*.e2e.ts; echo; echo "every spec: ls e2e/*.e2e.ts" ;;
+	run) shift; run "$@" ;;
+	cleanup) cleanup ;;
+	prune)
+		keep=${2:-5}
+		ls -1d verify-evidence/*/ 2>/dev/null | sort -r | tail -n +$((keep + 1)) | while read -r d; do rm -rf "$d" && echo "removed $d"; done ;;
+	*) sed -n 2,8p "$0" ;;
+esac

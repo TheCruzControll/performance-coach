@@ -70,8 +70,8 @@ const card = (page: Page) => page.getByTestId('proposal-card');
 const cardButton = (page: Page, name: string) => card(page).getByRole('button', { name });
 const cardState = (page: Page) => card(page).getByTestId('proposal-state');
 const knows = (page: Page) => page.getByTestId('knows-sheet');
-const sources = (block: ReturnType<Page['getByTestId']>) =>
-	block.getByRole('list', { name: 'Sources' }).getByRole('link');
+const sourceRows = (block: ReturnType<Page['getByTestId']>) =>
+	block.getByRole('list', { name: 'Sources' }).getByRole('listitem');
 
 /** Send `text` from the composer and wait for the whole answer. */
 async function ask(page: Page, text: string) {
@@ -90,7 +90,7 @@ const threadOf = (page: Page) => new URL(page.url()).pathname.split('/').at(-1)!
 /** 'What the coach knows', opened from Coach. */
 async function openKnows(page: Page) {
 	await gotoHydrated(page, '/coach');
-	await page.getByRole('button', { name: 'What the coach knows' }).click();
+	await page.getByRole('button', { name: 'What it knows' }).click();
 	await expect(knows(page)).toBeVisible();
 }
 
@@ -175,6 +175,25 @@ async function benchDays(exerciseId: string) {
 	);
 }
 
+/**
+ * Each set the coach's stored answers cite, in order, with the block citing it: its day in the
+ * owner's zone, weight and workout as Postgres holds them (null for an id it does not hold).
+ */
+async function citedSets() {
+	return query<{ kind: string; day: string | null; weight: number | null; workout: string | null }>(
+		`select b.block->>'kind' as kind,
+			to_char(s.performed_at at time zone $1, 'YYYY-MM-DD') as day,
+			s.weight::float8 as weight, s.workout_id::text as workout
+		from coach_messages m
+		cross join lateral jsonb_array_elements(m.display->'blocks') with ordinality as b(block, n)
+		cross join lateral jsonb_array_elements(b.block->'sources') with ordinality as r(ref, k)
+		left join set_records s on s.id::text = r.ref->>'id'
+		where m.role = 'assistant' and m.display ? 'blocks' and r.ref->>'type' = 'set'
+		order by m.seq, b.n, r.k`,
+		[COACH_TZ]
+	);
+}
+
 /** The swap's proposal, asked for as the composer would, open in its conversation. */
 async function proposed(page: Page, request: APIRequestContext) {
 	const turn = await postTurn(request, REPLACE);
@@ -204,26 +223,33 @@ function journeys() {
 		await expect(facts).toHaveCount(2);
 		await expect(facts.first()).toContainText(`${first.day}: top set ${first.top} kg × 5`);
 		await expect(facts.last()).toContainText(`${last.day}: top set ${last.top} kg × 5`);
-		// Each fact cites the workout its set was logged in, and the estimate one Postgres holds.
-		await expect(sources(facts.first())).toHaveAttribute(
-			'href',
-			`/progress/workouts/${first.workout}`
+		// Each fact shows one source, the set it read: the day's top set Postgres holds, in the
+		// workout it was logged in. The estimate cites sets of those workouts. A ref the answer
+		// cites carries no workout, so a set's source is a row, not a link (sources.ts).
+		await expect(sourceRows(facts.first())).toHaveCount(1);
+		await expect(sourceRows(facts.last())).toHaveCount(1);
+		const cited = await citedSets();
+		const citedFacts = cited.filter((c) => c.kind === 'fact');
+		expect(citedFacts).toHaveLength(2);
+		expect(citedFacts[0]).toEqual({
+			kind: 'fact',
+			day: first.day,
+			weight: first.top,
+			workout: first.workout
+		});
+		expect(citedFacts[1]).toEqual({
+			kind: 'fact',
+			day: last.day,
+			weight: last.top,
+			workout: last.workout
+		});
+		const citedMetric = cited.filter((c) => c.kind === 'metric');
+		expect(citedMetric.length).toBeGreaterThan(0);
+		for (const set of citedMetric) expect(days.map((d) => d.workout)).toContain(set.workout);
+		await expect(sourceRows(blocks.filter({ hasText: /^\s*Calculated/ }))).toHaveCount(
+			citedMetric.length
 		);
-		await expect(sources(facts.last())).toHaveAttribute(
-			'href',
-			`/progress/workouts/${last.workout}`
-		);
-		const metric = blocks.filter({ hasText: /^\s*Calculated/ });
-		const cited = await sources(metric).evaluateAll((links) =>
-			links.map((a) => a.getAttribute('href'))
-		);
-		expect(cited.length).toBeGreaterThan(0);
-		for (const href of cited)
-			expect(days.map((d) => `/progress/workouts/${d.workout}`)).toContain(href);
 		await shoot(page, testInfo, 'journey-bench');
-
-		await sources(facts.last()).click();
-		await expect(page).toHaveURL(`/progress/workouts/${last.workout}`);
 		expect(errors).toEqual([]);
 	});
 
@@ -377,7 +403,8 @@ function journeys() {
 
 		await page.reload();
 		await expect(page.getByTestId('owner-message')).toHaveText(new RegExp(REPLACE));
-		await expect(page.getByTestId('coach-message')).toContainText('Noted that you dislike');
+		// Stored, the answer that made the proposal is its card, the note a footnote under it.
+		await expect(page.getByTestId('answer-footnote')).toContainText('Noted that you dislike');
 		await expect(card(page).getByRole('heading', { level: 3 })).toHaveText(stored!.title);
 		await expect(cardButton(page, 'Accept')).toBeEnabled();
 		await shoot(page, testInfo, 'journey-reloaded-thread');
@@ -467,6 +494,14 @@ function journeys() {
 			await shoot(page, testInfo, 'journey-unavailable');
 
 			await gotoWorkout(page, 'strength', { sync: 'real' });
+			// The kit invents no weight (the squat is set by RPE), so the set needs the one used.
+			const load = page
+				.getByTestId('set-logger')
+				.getByTestId('logger-load')
+				.getByRole('spinbutton');
+			await load.click();
+			await load.fill('100');
+			await load.press('Enter');
 			await page.getByTestId('set-logger').getByTestId('complete-set').click();
 			await expect(page.getByTestId('workout-main').getByTestId('set').first()).toHaveAttribute(
 				'data-state',
@@ -568,14 +603,14 @@ test.describe('on a desktop window', () => {
 			await expect(page.getByTestId('coach-empty')).toContainText('No conversations yet');
 			await shoot(page, testInfo, 'coach-empty', { light: false });
 
-			await page.getByRole('button', { name: 'What the coach knows' }).click();
+			await page.getByRole('button', { name: 'What it knows' }).click();
 			await expect(page.getByTestId('knows-empty')).toContainText(
 				'The coach doesn’t know much yet'
 			);
 			await shoot(page, testInfo, 'memory-empty', { light: false });
 
 			await gotoHydrated(page, '/coach');
-			await page.getByRole('button', { name: 'Coach usage' }).click();
+			await page.getByRole('button', { name: 'Usage', exact: true }).click();
 			await expect(page.getByTestId('usage-empty')).toContainText('No coach runs yet');
 			await shoot(page, testInfo, 'usage-empty', { light: false });
 
@@ -661,13 +696,13 @@ test.describe('on a desktop window', () => {
 			[
 				'What the coach knows',
 				'**/api/coach/memory',
-				(page: Page) => page.getByRole('button', { name: 'What the coach knows' }).click(),
+				(page: Page) => page.getByRole('button', { name: 'What it knows' }).click(),
 				'knows'
 			],
 			[
 				'Usage',
 				'**/api/coach/runs*',
-				(page: Page) => page.getByRole('button', { name: 'Coach usage' }).click(),
+				(page: Page) => page.getByRole('button', { name: 'Usage', exact: true }).click(),
 				'usage'
 			],
 			[
@@ -688,7 +723,7 @@ test.describe('on a desktop window', () => {
 				await shoot(page, testInfo, loading, { light: false });
 				release();
 				const notice = page.getByTestId(`${prefix}-failed`);
-				await expect(notice.getByRole('button', { name: 'Retry' })).toBeVisible();
+				await expect(notice.getByRole('button', { name: 'Try again' })).toBeVisible();
 				await shoot(page, testInfo, failed, { light: false });
 			});
 		}

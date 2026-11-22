@@ -45,10 +45,15 @@ interface Seeded {
 	lineages: { pending?: string; benchMonday: string; benchThursday: string };
 }
 
-/** Reset, then seed `fixture` (journey-week.ts, or review-aged.ts's review-aged). */
+/**
+ * Reset, then seed `fixture` (journey-week.ts, or review-aged.ts's review-aged), with onboarding
+ * complete: Today shows the plan only then, and no earlier spec is relied on to have done it.
+ */
 async function seed(request: APIRequestContext, fixture: 'journey-week' | 'review-aged') {
 	await resetReviews(request);
-	return (await seedAnalytics(request, fixture)) as unknown as Seeded;
+	const seeded = (await seedAnalytics(request, fixture)) as unknown as Seeded;
+	await query('update athlete_profiles set onboarding_completed_at = now()');
+	return seeded;
 }
 
 test.afterAll(async ({ request }) => {
@@ -239,8 +244,9 @@ async function weeklyJourney(page: Page, request: APIRequestContext, testInfo: T
 
 		await gotoHydrated(page, '/train/history/2');
 		await expect(page.getByTestId('current-version')).toBeVisible();
+		const changes = page.getByTestId('version-changes');
 		for (const d of decisions) {
-			await expect(page.getByTestId('decision').filter({ hasText: d.why }).first()).toBeVisible();
+			await expect(changes.getByTestId('decision').filter({ hasText: d.why })).toBeVisible();
 		}
 		await gotoHydrated(page, '/train/history/1');
 		await expect(page.getByTestId('older-version')).toBeVisible();

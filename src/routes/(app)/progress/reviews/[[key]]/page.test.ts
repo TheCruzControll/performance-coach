@@ -81,6 +81,22 @@ describe("the reviews screen's universal load", () => {
 		await expect(run(load, data)).resolves.toMatchObject({ Body, served: undefined });
 	});
 
+	it('a cycle review awaits its own view, and never the weekly body', async () => {
+		const cycle = { ...data, key: 'c-1', selected: { kind: 'cycle', key: 'c-1' } };
+		for (const load of [
+			await loadModule({ browser: false }),
+			await loadModule({ browser: true, pathname: '/progress/reviews/c-1' })
+		]) {
+			await expect(run(load, cycle)).resolves.toEqual({
+				...cycle,
+				...none,
+				View: expect.any(Function)
+			});
+		}
+		expect(importBody).not.toHaveBeenCalled();
+		expect(servedBody).not.toHaveBeenCalled();
+	});
+
 	it('imports nothing for the list alone or a failed load', async () => {
 		const load = await loadModule({ browser: false });
 		const list = { failed: false, key: null, rows: [], empty: true, selected: null };

@@ -294,7 +294,7 @@ test('an Accept the server failed shows Couldn’t save; Retry sends the same id
 	await captureScreen(page, testInfo, 'coach-proposal-save-failed');
 	await auditThemes(page, 'save failed');
 
-	await failure.getByRole('button', { name: 'Retry' }).click();
+	await failure.getByRole('button', { name: 'Try again' }).click();
 	await expect(state(page)).toContainText('Applied as version 2');
 	await expect(card(page).getByTestId('proposal-failure')).toHaveCount(0);
 	expect(posted).toEqual([
@@ -334,7 +334,7 @@ test('an Accept cut off after the server applied it: Retry shows it applied, wit
 	expect(applied.versions).toBe(2);
 	expect((await proposals())[0]!.status).toBe('applied');
 
-	await failure.getByRole('button', { name: 'Retry' }).click();
+	await failure.getByRole('button', { name: 'Try again' }).click();
 	await expect(state(page)).toContainText('Applied as version 2');
 	expect(calls).toBe(2);
 	expect(await versions()).toEqual(applied);
@@ -379,7 +379,7 @@ test('the sheet’s code failing to load is the chunk-failed notice, whose Retry
 	// In place on WebKit; on Chromium, which keeps the failed fetch, through a reload of the
 	// conversation that opens the sheet.
 	await page.unroute(chunk);
-	await failed.getByRole('button', { name: 'Retry' }).click();
+	await failed.getByRole('button', { name: 'Try again' }).click();
 	await expect(sheet(page, 'Reject this change')).toBeVisible();
 	await expect(page.getByTestId('decision-sheet-failed')).toHaveCount(0);
 	await expect(page).not.toHaveURL(/[?&]reject=/);
