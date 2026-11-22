@@ -29,7 +29,7 @@ log every set and talk to the coach.
 >
 > **Milestone 5 — AI performance coach is in progress**: every slice is built. Ask the coach on
 > Coach or from a workout, Today or an exercise's history; answers stream with labelled facts,
-> metrics and recommendations grounded in your own records, from 24 tools over the app's services.
+> metrics and recommendations grounded in your own records, from 25 tools over the app's services.
 > Every change it suggests is a proposal you accept or reject; pain never gets 'push through'.
 > The launch (#449) merged on 2026-11-12 and the real coach is live in production; #500 fixed the
 > 400s that failed every production turn. The owner's screenshot review (#405) is still open, as a

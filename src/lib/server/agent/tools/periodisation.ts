@@ -21,9 +21,9 @@
  */
 import * as z from 'zod/mini';
 import { addDays, mondayOf, type IsoDate } from '../../../domain/calendar.ts';
-import { MAX_PROPOSAL_OPS } from '../../../domain/coach/proposals.ts';
+import { MAX_PROPOSAL_OPS, moveOpSchema } from '../../../domain/coach/proposals.ts';
 import type { SourceRef } from '../../../domain/coach/sources.ts';
-import { TIMES_OF_DAY } from '../../../domain/profile/catalog.ts';
+import { TIMES_OF_DAY, type TimeOfDay } from '../../../domain/profile/catalog.ts';
 import {
 	SYSTEM_LABEL,
 	SYSTEMS,
@@ -108,8 +108,8 @@ interface WeekRead {
 	completed: Set<string>;
 }
 
-/** The week `week` names (today's by default), or the week holding `session`. */
-async function readWeek(ctx: Ctx, { week, session }: { week?: string; session?: string }) {
+/** The week `week` names (today's by default). */
+async function readWeek(ctx: Ctx, { week }: { week?: string }) {
 	const today = ctx.today as IsoDate;
 	const current = await getCurrentProgram(ctx.ownerId, today, deps(ctx));
 	if (!current) throw toolError('NOT_FOUND', 'You have no active program');
@@ -118,12 +118,7 @@ async function readWeek(ctx: Ctx, { week, session }: { week?: string; session?: 
 	const weeks = version.blocks.flatMap((b) => b.weeks);
 	const all = weeks.flatMap((w) => w.sessions);
 	let monday = mondayOf(today);
-	if (session !== undefined) {
-		const found = all.find((s) => s.lineage === session);
-		if (!found)
-			throw toolError('NOT_FOUND', 'Your program has no session with that id', { session });
-		monday = mondayOf(found.date);
-	} else if (week === 'next') monday = addDays(monday, 7);
+	if (week === 'next') monday = addDays(monday, 7);
 	else if (week !== undefined && week !== 'current') monday = mondayOf(week as IsoDate);
 	const plan = weeks.find((w) => w.startsOn === monday);
 	if (!plan) throw toolError('NOT_FOUND', 'That week is not planned yet', { week: monday });
@@ -181,6 +176,54 @@ function movedContext(
 		traitsOf: context.traitsOf
 	});
 	return { ...context, load: { ...context.load, days } };
+}
+
+/** The fields a what-if move reads and writes: where a session is, and how it is planned. */
+export type PlacedSession = Pick<
+	StoredSession,
+	'lineage' | 'date' | 'timeOfDay' | 'orderInDay' | 'status' | 'movedFrom'
+>;
+
+/** A time of day's place in the day, as planMove ranks it; none for no time or 'varies'. */
+const timeRank = (time: TimeOfDay | null) =>
+	time === null || time === 'varies' ? null : TIMES_OF_DAY.indexOf(time);
+
+/**
+ * A what-if move applied to `sessions` the way a real move is (planMove, services/programs/
+ * edits.ts), mirrored here because planMove also prices the move against the database's target
+ * and returns copy changes, not the week. On its new day the session goes before the first
+ * session there with a later time of day, or last when it has no time of day (or none is later),
+ * and that day is numbered again from 1. Back on the day it was planned for, it is planned again;
+ * otherwise it is moved, with the day of its first move as movedFrom.
+ */
+export function applyWhatIf<S extends PlacedSession>(
+	sessions: readonly S[],
+	session: S,
+	toDate: IsoDate,
+	timeOfDay: TimeOfDay | null
+): S[] {
+	const rank = timeRank(timeOfDay);
+	const day = sessions.filter((s) => s.date === toDate && s.lineage !== session.lineage);
+	const later = day.findIndex((s) => rank !== null && (timeRank(s.timeOfDay) ?? -1) > rank);
+	const place = later === -1 ? day.length : later;
+	const order = new Map<string, number>();
+	[...day.slice(0, place), session, ...day.slice(place)].forEach((s, n) => {
+		order.set(s.lineage, n + 1);
+	});
+	const firstDay = session.movedFrom ?? session.date;
+	const back = toDate === firstDay;
+	return sessions.map((s): S => {
+		const orderInDay = order.get(s.lineage) ?? s.orderInDay;
+		if (s.lineage !== session.lineage) return { ...s, orderInDay };
+		return {
+			...s,
+			date: toDate,
+			timeOfDay,
+			orderInDay,
+			status: back ? 'planned' : 'moved',
+			movedFrom: back ? null : firstDay
+		};
+	});
 }
 
 /** evaluateWeek over `sessions` with everything `context` knows. */
@@ -259,13 +302,6 @@ const weekOut = (read: WeekRead) => ({
 /** full: judged with the context's load, priorities and events; basic: by checkWeek alone. */
 const checkedSchema = z.enum(['full', 'basic']);
 
-const moveOpSchema = z.object({
-	op: z.literal('move'),
-	sessionLineage: uuid,
-	toDate: isoDate,
-	timeOfDay: z.optional(z.nullable(z.enum(TIMES_OF_DAY)))
-});
-
 const evaluateOutput = z.object({
 	week: weekSchema,
 	checked: checkedSchema,
@@ -323,7 +359,9 @@ function suggestedRepair(read: WeekRead, today: IsoDate) {
 		priorities: context.priorities,
 		load: {
 			from: context.load.from,
-			planned: context.load.planned.filter((s) => s.date < read.monday),
+			// Planned before the Sunday before the week: that Sunday's sessions are in read.sessions,
+			// and repairWeek adds those to the load itself (as clearingMoves does).
+			planned: context.load.planned.filter((s) => s.date < addDays(read.monday, -1)),
 			logged: context.load.logged
 		},
 		...(context.weekKind && { week: { kind: context.weekKind } }),
@@ -360,7 +398,7 @@ function suggestedRepair(read: WeekRead, today: IsoDate) {
 
 const evaluateWeekInterferenceTool = defineTool({
 	name: 'evaluate_week_interference',
-	description: `Judge a week of the owner's active program with the app's scheduling engine: its 0–100 score and grade, every rule it breaks (findings, each with its rule, why the rule exists and why the week keeps it, citing the sessions it names), and its load by body system. week is current (default), next or any date in the week. moves (up to ${WHAT_IF_MAX}) are what-ifs: sessions still ahead moved to another day of the same week from today on, judged in memory and never saved. suggestedRepair is the engine's own fix for the week as stored: pass its ops unchanged to propose_program_adjustment's ops to propose it; null when nothing ahead needs moving or checked is basic. checked is basic when the engine could not read the owner's load and goals, so only the basic rules ran.`,
+	description: `Judge a week of the owner's active program with the app's scheduling engine: its 0–100 score and grade, every rule it breaks (findings, each with its rule, why the rule exists and why the week keeps it, citing the sessions it names), and its load by body system. week is current (default), next or any date in the week. moves (up to ${WHAT_IF_MAX}) are what-ifs: sessions still ahead moved to another day of the same week from today on, judged in memory and never saved. suggestedRepair is the engine's own fix for the week as stored: pass its ops unchanged to propose_program_adjustment's ops to propose it; null when nothing ahead needs moving, when a repair would need an ease or a drop or more than ${MAX_PROPOSAL_OPS} moves, or when checked is basic. checked is basic when the engine could not read the owner's load and goals, so only the basic rules ran.`,
 	input: z.object({
 		week: weekInput,
 		moves: z.optional(
@@ -394,11 +432,8 @@ const evaluateWeekInterferenceTool = defineTool({
 					toDate
 				});
 			whatIf.push({ session: move.session, from: target.date, toDate });
-			sessions = sessions.map((s) =>
-				s === target
-					? { ...s, date: toDate, ...(move.timeOfDay && { timeOfDay: move.timeOfDay }) }
-					: s
-			);
+			const timeOfDay = move.timeOfDay === undefined ? target.timeOfDay : move.timeOfDay;
+			sessions = applyWhatIf(sessions, target, toDate, timeOfDay);
 		}
 		const context = moves.length ? movedContext(read, sessions, today) : read.context;
 		const evaluation = judge(read, sessions, today, context);

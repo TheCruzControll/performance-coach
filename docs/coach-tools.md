@@ -86,7 +86,7 @@ Propose the owner's first program, built by the app's program generator from the
 - **Effect:** read: changes nothing
 - **Drafts:** no
 
-Judge a week of the owner's active program with the app's scheduling engine: its 0–100 score and grade, every rule it breaks (findings, each with its rule, why the rule exists and why the week keeps it, citing the sessions it names), and its load by body system. week is current (default), next or any date in the week. moves (up to 4) are what-ifs: sessions still ahead moved to another day of the same week from today on, judged in memory and never saved. suggestedRepair is the engine's own fix for the week as stored: pass its ops unchanged to propose\_program\_adjustment's ops to propose it; null when nothing ahead needs moving or checked is basic. checked is basic when the engine could not read the owner's load and goals, so only the basic rules ran.
+Judge a week of the owner's active program with the app's scheduling engine: its 0–100 score and grade, every rule it breaks (findings, each with its rule, why the rule exists and why the week keeps it, citing the sessions it names), and its load by body system. week is current (default), next or any date in the week. moves (up to 4) are what-ifs: sessions still ahead moved to another day of the same week from today on, judged in memory and never saved. suggestedRepair is the engine's own fix for the week as stored: pass its ops unchanged to propose\_program\_adjustment's ops to propose it; null when nothing ahead needs moving, when a repair would need an ease or a drop or more than 12 moves, or when checked is basic. checked is basic when the engine could not read the owner's load and goals, so only the basic rules ran.
 
 ### Input
 
@@ -170,6 +170,7 @@ Judge a week of the owner's active program with the app's scheduling engine: its
     - `sessionLineage` (string (uuid), required)
     - `toDate` (string (date), required)
     - `timeOfDay` (`"early_morning"` | `"morning"` | `"midday"` | `"afternoon"` | `"evening"` | `"varies"` | null)
+    - `reason` (string): {maxLength: 200}
   - `clears` (array of object, required)
     - `rule` (string, required)
     - `headline` (string, required)

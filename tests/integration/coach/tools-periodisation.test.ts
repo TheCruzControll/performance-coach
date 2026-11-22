@@ -12,6 +12,8 @@
  * - suggestedRepair moves Lower A back with one move op, which propose_program_adjustment stores
  *   byte for byte (canonical JSON) without a draft: no structured-output call, and checkProposal
  *   still ran (a move into the past is refused, storing nothing)
+ * - with a hard session on the Sunday before the week, every finding the suggested repair clears
+ *   is one the week shows: the Sunday's load is counted once, in the repair's model too
  * - propose_program_adjustment's ops take moves only: a skip in ops is INVALID_INPUT, storing
  *   nothing
  * - a random ownerId given the seeded owner's lineages is NOT_FOUND and reads nothing of theirs
@@ -20,7 +22,7 @@
 import { count, eq } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
 import * as z from 'zod/mini';
-import { addDays } from '../../../src/lib/domain/calendar';
+import { addDays, type IsoDate } from '../../../src/lib/domain/calendar';
 import { TURN_LIMITS } from '../../../src/lib/domain/coach/budgets';
 import { canonicalJson, programOpSchema } from '../../../src/lib/domain/coach/proposals';
 import { CATALOGUE } from '../../../src/lib/domain/exercises/index';
@@ -39,7 +41,8 @@ import { LOAD_METHOD, SCORE_METHOD } from '../../../src/lib/server/agent/tools/p
 import { COACH_TOOLS } from '../../../src/lib/server/agent/tools/registry';
 import { agentToolCalls, coachProposals, type Executor } from '../../../src/lib/server/db';
 import { createAppErrorsRepository } from '../../../src/lib/server/db/repositories/app-errors';
-import { programVersions } from '../../../src/lib/server/db/schema/programs';
+import { plannedSessionDetails } from '../../../src/lib/server/db/schema/prescriptions';
+import { plannedSessions, programVersions } from '../../../src/lib/server/db/schema/programs';
 import { toolRuntime, type ResolvedCoachDeps } from '../../../src/lib/server/services/coach/shared';
 import {
 	createGoal,
@@ -76,6 +79,7 @@ interface Evaluated {
 	whatIf: { session: string; from: string; toDate: string }[];
 	findings: {
 		rule: string;
+		headline: string;
 		severity: string;
 		resolution: { kind: string } | null;
 		sources: Ref[];
@@ -87,7 +91,7 @@ interface Evaluated {
 	}[];
 	suggestedRepair: {
 		ops: { op: string; sessionLineage: string; toDate: string }[];
-		clears: { rule: string }[];
+		clears: { rule: string; headline: string }[];
 	} | null;
 	truncated?: true;
 }
@@ -101,6 +105,42 @@ async function seed(db: Executor) {
 		{ db }
 	)) as unknown as PeriodisationWeekResult;
 	return { owner, seeded };
+}
+
+/**
+ * A hard session the owner plans on `date`, in the evening after the week's easy run: Muay Thai
+ * sparring at 45 minutes and RPE 8, written as the generator writes one, in the week it is in.
+ * Returns its lineage.
+ */
+async function planSparring(db: Executor, date: IsoDate) {
+	const [run] = await db
+		.select({ weekId: plannedSessions.weekId })
+		.from(plannedSessions)
+		.where(eq(plannedSessions.scheduledOn, date));
+	const [row] = await db
+		.insert(plannedSessions)
+		.values({
+			weekId: run!.weekId,
+			scheduledOn: date,
+			timeOfDay: 'evening',
+			orderInDay: 2,
+			discipline: 'muay_thai',
+			sessionType: 'muay_thai',
+			title: 'Sparring',
+			estMinutes: 45,
+			estLoad: 360,
+			intensity: 'hard',
+			targetRpe: 8,
+			source: 'generator'
+		})
+		.returning({ id: plannedSessions.id, lineageId: plannedSessions.lineageId });
+	await db.insert(plannedSessionDetails).values({
+		sessionId: row!.id,
+		kind: 'sparring',
+		durationMinutes: 45,
+		targetRpe: 8
+	});
+	return row!.lineageId;
 }
 
 /** The ids of the evaluation-context errors recorded so far (the context's failures, app_errors). */
@@ -211,6 +251,25 @@ describe('evaluate_week_interference', () => {
 			// This week breaks nothing ahead: nothing to suggest.
 			const now = await output<Evaluated>(db, owner, 'evaluate_week_interference', {});
 			expect(now.suggestedRepair).toBeNull();
+		});
+	});
+
+	it('clears only findings the week itself shows, with a hard session on the Sunday before it', async () => {
+		await withRollback(async (db) => {
+			const { owner, seeded } = await seed(db);
+			// The Sunday before next week. At 45 minutes of RPE 8 the week's own load shows no residual
+			// fatigue, but counted twice, as the repair's load model would count it, it does: the repair
+			// would then clear a finding the week does not show.
+			await planSparring(db, addDays(seeded.mondays.moved, -1));
+			const r = await output<Evaluated>(db, owner, 'evaluate_week_interference', { week: 'next' });
+			const clears = r.suggestedRepair?.clears ?? [];
+			expect(clears.length).toBeGreaterThan(0);
+			for (const clear of clears) {
+				expect(
+					r.findings.some((f) => f.rule === clear.rule && f.headline === clear.headline),
+					`${clear.rule}: ${clear.headline}`
+				).toBe(true);
+			}
 		});
 	});
 
