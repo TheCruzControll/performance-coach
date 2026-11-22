@@ -8,6 +8,7 @@ import type { ReplanMechanism } from '../replan.ts';
 import type { RuleDefinition } from './types.ts';
 
 const FILE = 'src/lib/domain/programming/rules/replan.ts';
+const ENGINE = 'src/lib/domain/programming/periodisation/replan.ts';
 
 const mechanism = (id: ReplanMechanism, statement: string): RuleDefinition => ({
 	id: `replan.${id}`,
@@ -66,5 +67,14 @@ export const rules: readonly RuleDefinition[] = [
 		rationale: REFUSALS.why,
 		source: `${FILE}#REFUSALS`,
 		values: REFUSALS
+	},
+	{
+		id: 'replan.apply',
+		kind: 'behaviour',
+		statement:
+			'Each re-plan is one new version: the past and every event date stay, and the new weeks are checked against the plan contract.',
+		rationale:
+			'A version you can compare and go back to is how every change to your plan is kept, so a re-plan is never an edit you cannot see.',
+		source: `${ENGINE}#generateReplan`
 	}
 ];
