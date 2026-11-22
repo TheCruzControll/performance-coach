@@ -16,10 +16,10 @@ Last reviewed: 2026-11-21, against `main` at the merge of #501.
   [progress.md](progress.md).
 - **The README repository map marks the coach as "(M5)" and the offline store as "(M4)"**, as if
   both were still to come. Both folders hold shipped code.
-- **Six ADRs are still named `NNNN-` and Proposed**: trend classification, encrypted backups,
-  hand-built charts, the periodisation engine, planning later blocks, and lifecycles as data.
-  Work under several of them has merged. Closes when the docs slice numbers them and sets their
-  status.
+- **Three ADRs are still named `NNNN-` and Proposed**: encrypted backups, the periodisation
+  engine, and lifecycles as data. Work under several of them has merged. Closes when the docs
+  slice numbers them and sets their status. M6's three (trend classification, hand-built charts,
+  planning later blocks) are accepted as 0015 to 0017.
 - **ADR 0011 (email sign-in link) is still Accepted**, while milestones.md records that the owner
   dropped the emailed link on 2026-11-07. Not checked against the code. Closes when the ADR is
   marked Superseded or the note in milestones.md is corrected.
