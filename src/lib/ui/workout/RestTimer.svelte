@@ -53,7 +53,9 @@
 	let returns = $state(0);
 	$effect(() => {
 		const back = () => {
-			if (document.visibilityState === 'visible') returns += 1;
+			if (document.visibilityState !== 'visible') return;
+			now = Date.now();
+			returns += 1;
 		};
 		document.addEventListener('visibilitychange', back);
 		return () => document.removeEventListener('visibilitychange', back);
