@@ -162,9 +162,9 @@ describe('the Weight view', () => {
 				['2026-11-01', 82],
 				['2026-12-15', 80]
 			]);
-			// Past milestone: hit or missed; upcoming one: judged on the path.
-			expect(view.goal?.milestones[0]!.status).toMatch(/^(hit|missed)$/);
-			expect(view.goal?.milestones[1]!.status).toMatch(/^(ahead|on_track|behind)$/);
+			// The past milestone is missed: the trend on 1 November was 82.72, outside the 0.5 kg
+			// tolerance around 82. The upcoming one is on track against its path today.
+			expect(view.goal?.milestones.map((m) => m.status)).toEqual(['missed', 'on_track']);
 			expect(view.goalHistory.map((g) => [g.id, g.status, g.endedReason])).toEqual([
 				[active.id, 'active', null],
 				[old.id, 'ended', 'replaced']
@@ -182,6 +182,10 @@ describe('the Weight view', () => {
 			expect(view.unit).toBe('lb');
 			expect(view.stats.latest).toEqual({ day: '2026-11-20', weight: lb(80.6) });
 			expect(view.goal).toMatchObject({ startWeight: lb(84), targetWeight: lb(78) });
+			expect(view.goal?.milestones.map((m) => [m.day, m.weight])).toEqual([
+				['2026-11-01', lb(82)],
+				['2026-12-15', lb(80)]
+			]);
 		});
 	});
 
