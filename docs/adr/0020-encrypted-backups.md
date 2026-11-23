@@ -1,8 +1,9 @@
-# NNNN — App-level encrypted backups: a daily cron, a sealed line archive, a private Blob
+# 0020 — App-level encrypted backups: a daily cron, a sealed line archive, a private Blob
 
-- **Status:** Proposed (M9). Numbered at merge, like a migration slot, so M9's slices refer to it
-  by its title, "the app-level encrypted backups ADR". docs-m9 completes it with the measured
-  sizes, durations and the restore drill's record.
+- **Status:** Accepted (M9, 2026-11-23). Implemented as decided below by M9's backup slices,
+  from the format (#149) and the envelope (#160) to the daily cron (#229) and
+  `pnpm backup:restore` (#247), with the operator steps in docs/deployment.md (#252). M9's slices
+  cite it by its title, "the app-level encrypted backups ADR", from before it had a number.
 - **Context:** The owner's data must survive losing the database (PRD §9, §13; M9 criterion 2).
   Production is on Vercel Hobby and Neon's free plan, and M9 adds no paid service. Neon's free
   plan has no scheduled snapshots, only a 6-hour point-in-time window. The tooling that builds

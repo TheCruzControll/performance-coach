@@ -1,8 +1,9 @@
 # 0011 — Email sign-in link: one-time links to the owner's address, off until configured
 
-- **Status:** Accepted (M2X). Built across M2X's email slices. Production keeps it off until the
-  owner follows docs/deployment.md's "Email sign-in link" steps, which land with the email
-  section of docs/security.md.
+- **Status:** Superseded (2026-11-07) by the owner's decision to drop the emailed sign-in link
+  (docs/decisions.md, "Drop the emailed sign-in link"); no ADR replaces it. It was built across
+  M2X's email slices, and that code stays merged and switched off (docs/milestones.md, M2X), so
+  this record keeps the design should the link come back.
 - **Context:** The owner asked for a second way in, next to passkeys (PRD §13, 2026-11-06):
   "Email me a sign-in link". The gap is a desktop browser that holds no passkey, such as a laptop
   outside the owner's iCloud Keychain, where today the only way in is a recovery code, which is

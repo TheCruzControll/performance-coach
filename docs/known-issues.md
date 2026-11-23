@@ -93,13 +93,6 @@ Last reviewed: 2026-11-23, against `main` at the merge of #634.
   table is updated.
 - **The README repository map marks the coach as "(M5)" and the offline store as "(M4)"**, as if
   both were still to come. Both folders hold shipped code.
-- **Two ADRs are still named `NNNN-` and Proposed**: encrypted backups and lifecycles as data.
-  Work under both has merged. Closes when the docs slice numbers them and sets their status. M6's
-  three (trend classification, hand-built charts, planning later blocks) are accepted as 0015 to
-  0017, and M7's two (the periodisation engine, re-plans as versions) as 0018 and 0019.
-- **ADR 0011 (email sign-in link) is still Accepted**, while milestones.md records that the owner
-  dropped the emailed link on 2026-11-07. Not checked against the code. Closes when the ADR is
-  marked Superseded or the note in milestones.md is corrected.
 - **The app icons and favicon still use the old lime.** `static/favicon.svg`,
   `static/icons/*.svg` and the PNGs in `static/icons/` carry the volt lime `#c8f031`. Their canvas
   `#0a0a0b` matches Instrument v2's canvas again, as the theme colour and manifest do. The in-app

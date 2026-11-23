@@ -81,26 +81,26 @@ the old row and add a new one that says what replaced it.
 
 Summaries only. Status is as recorded in [adr/README.md](adr/README.md).
 
-| ADR                                          | Decision                                                          | Status   |
-| -------------------------------------------- | ----------------------------------------------------------------- | -------- |
-| [0001](adr/0001-single-sveltekit-app.md)     | One SvelteKit 3 app, TypeScript strict, pnpm                      | Accepted |
-| [0002](adr/0002-vercel-hosting.md)           | Vercel on the Node runtime, Cloudflare DNS                        | Accepted |
-| [0003](adr/0003-postgres-neon-drizzle.md)    | PostgreSQL on Neon, Drizzle, a node-postgres pool                 | Accepted |
-| [0004](adr/0004-layered-modules.md)          | Layered modules with lint-enforced import boundaries              | Accepted |
-| [0005](adr/0005-hand-built-design-system.md) | A hand-built design system on CSS custom properties               | Accepted |
-| [0006](adr/0006-in-app-passkey-auth.md)      | In-app passkey authentication                                     | Accepted |
-| [0007](adr/0007-observability.md)            | Built-in observability: Server-Timing, JSON logs, a RUM table     | Accepted |
-| [0008](adr/0008-testing-strategy.md)         | Playwright e2e and integration tests on real Postgres             | Accepted |
-| [0009](adr/0009-llm-provider-interface.md)   | The LLM behind a provider interface with a deterministic mock     | Accepted |
-| [0010](adr/0010-program-versioning.md)       | Immutable program versions with copy-on-write membership          | Accepted |
-| [0011](adr/0011-email-sign-in-link.md)       | One-time sign-in links to the owner's address                     | Accepted |
-| [0012](adr/0012-offline-workout-sync.md)     | Offline workout sync: device inputs, one projection, a ledger     | Accepted |
-| [0013](adr/0013-coach-agent-loop.md)         | A manual coach agent loop, streamed as labelled blocks            | Accepted |
-| [0014](adr/0014-coach-memory-proposals.md)   | Coach memory from records; changes only as proposals              | Accepted |
-| [0015](adr/0015-trend-classification.md)     | Trend vs noise: Theil–Sen, Mann–Kendall, a minimal change         | Accepted |
-| [0016](adr/0016-hand-built-charts.md)        | Hand-built charts: lazy SVG lines, HTML marks, one registry       | Accepted |
-| [0017](adr/0017-planning-later-blocks.md)    | Planning later blocks: a new version, a bridge, no past days      | Accepted |
-| [0018](adr/0018-periodisation-engine.md)     | Periodisation: rules as data, one evaluator, one load model       | Accepted |
-| [0019](adr/0019-replans-as-versions.md)      | Re-plans as versions: four directives, three mechanisms           | Accepted |
-| [NNNN](adr/NNNN-encrypted-backups.md)        | App-level encrypted backups: a daily cron to a private Blob store | Proposed |
-| [NNNN](adr/NNNN-lifecycles-as-data.md)       | Lifecycles as data: a typed transition table per status list      | Proposed |
+| ADR                                          | Decision                                                          | Status     |
+| -------------------------------------------- | ----------------------------------------------------------------- | ---------- |
+| [0001](adr/0001-single-sveltekit-app.md)     | One SvelteKit 3 app, TypeScript strict, pnpm                      | Accepted   |
+| [0002](adr/0002-vercel-hosting.md)           | Vercel on the Node runtime, Cloudflare DNS                        | Accepted   |
+| [0003](adr/0003-postgres-neon-drizzle.md)    | PostgreSQL on Neon, Drizzle, a node-postgres pool                 | Accepted   |
+| [0004](adr/0004-layered-modules.md)          | Layered modules with lint-enforced import boundaries              | Accepted   |
+| [0005](adr/0005-hand-built-design-system.md) | A hand-built design system on CSS custom properties               | Accepted   |
+| [0006](adr/0006-in-app-passkey-auth.md)      | In-app passkey authentication                                     | Accepted   |
+| [0007](adr/0007-observability.md)            | Built-in observability: Server-Timing, JSON logs, a RUM table     | Accepted   |
+| [0008](adr/0008-testing-strategy.md)         | Playwright e2e and integration tests on real Postgres             | Accepted   |
+| [0009](adr/0009-llm-provider-interface.md)   | The LLM behind a provider interface with a deterministic mock     | Accepted   |
+| [0010](adr/0010-program-versioning.md)       | Immutable program versions with copy-on-write membership          | Accepted   |
+| [0011](adr/0011-email-sign-in-link.md)       | One-time sign-in links to the owner's address                     | Superseded |
+| [0012](adr/0012-offline-workout-sync.md)     | Offline workout sync: device inputs, one projection, a ledger     | Accepted   |
+| [0013](adr/0013-coach-agent-loop.md)         | A manual coach agent loop, streamed as labelled blocks            | Accepted   |
+| [0014](adr/0014-coach-memory-proposals.md)   | Coach memory from records; changes only as proposals              | Accepted   |
+| [0015](adr/0015-trend-classification.md)     | Trend vs noise: Theil–Sen, Mann–Kendall, a minimal change         | Accepted   |
+| [0016](adr/0016-hand-built-charts.md)        | Hand-built charts: lazy SVG lines, HTML marks, one registry       | Accepted   |
+| [0017](adr/0017-planning-later-blocks.md)    | Planning later blocks: a new version, a bridge, no past days      | Accepted   |
+| [0018](adr/0018-periodisation-engine.md)     | Periodisation: rules as data, one evaluator, one load model       | Accepted   |
+| [0019](adr/0019-replans-as-versions.md)      | Re-plans as versions: four directives, three mechanisms           | Accepted   |
+| [0020](adr/0020-encrypted-backups.md)        | App-level encrypted backups: a daily cron to a private Blob store | Accepted   |
+| [0021](adr/0021-lifecycles-as-data.md)       | Lifecycles as data: a typed transition table per status list      | Accepted   |
