@@ -1,12 +1,13 @@
 /**
- * The coach's 26 tools, each named once (PRD §4, the M5 brief): its group, its effect and whether
+ * The coach's 29 tools, each named once (PRD §4, the M5 brief): its group, its effect and whether
  * it drafts. The registry (server/agent/tools) defines one tool per entry, the activity chips
  * word them (activity.ts), the per-tool deadlines read `drafts` (budgets.ts) and diagnostics
  * group by them, so a tool that is not here cannot run.
  *
  * They are the brief's 21 plus get_program_history, get_exercise_alternatives and
- * get_coach_proposals, and M7's two engine reads, evaluate_week_interference and
- * explain_schedule_tradeoffs. Every get_* tool only reads, and so do those two. Six tools only
+ * get_coach_proposals, M7's two engine reads, evaluate_week_interference and
+ * explain_schedule_tradeoffs, and M7's three re-plan proposals, plan_block, schedule_deload and
+ * plan_taper. Every get_* tool only reads, and so do the two engine reads. Nine tools only
  * propose: they store a coach_proposals row that changes nothing until the owner accepts it. The
  * two that write are the brief's only direct writes: the coach's own workout analysis, and a
  * preference the owner stated explicitly in this turn. Three proposing tools draft their payload
@@ -60,6 +61,12 @@ const CATALOGUE = {
 	evaluate_week_interference: read('programming'),
 	/** M7: the priorities, decisions, doses and road behind a week's shape. */
 	explain_schedule_tradeoffs: read('programming'),
+	/** M7: a re-plan of the next block as a planned phase; a replan proposal only. */
+	plan_block: propose('programming'),
+	/** M7: an owner-requested deload of this week or next; a replan proposal only. */
+	schedule_deload: propose('programming'),
+	/** M7: a taper for an event goal, a mini or a full one; a replan proposal only. */
+	plan_taper: propose('programming'),
 	propose_program_adjustment: propose('programming', true),
 	/** M3's previewProgram builds it deterministically: no draft. */
 	create_training_program: propose('programming'),

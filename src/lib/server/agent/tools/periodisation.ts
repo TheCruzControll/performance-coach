@@ -21,9 +21,21 @@
  * The week's context (services/periodisation/context.ts) is read in its own bounded read-only
  * transaction. Without it (its reads failed, recorded) the week is judged by checkWeek alone,
  * with no loads, priorities or doses, and `checked` says 'basic'.
+ *
+ * The three re-plan proposals (M7, tools-periodisation-proposals) store a replan proposal and
+ * change nothing until the owner accepts it (services/periodisation/propose.ts):
+ * - plan_block: the next block re-planned as a chosen phase, maintenance included (a block
+ *   directive, regenerated from the next Monday).
+ * - schedule_deload: this week's or next week's deload, in place, asked by the owner (a deload
+ *   directive with trigger coach): this_week changes only the sessions still ahead.
+ * - plan_taper: an event goal's taper, a full one or a mini (a taper directive, spliced in). Left
+ *   without a kind, its form follows the goal's priority (BY_PRIORITY).
+ * A refusal or an unchanged plan is a tool error carrying the engine's sentence, nothing stored.
+ * Each result is capped at MAX_PROPOSAL_OPS rows, never the whole plan.
  */
 import * as z from 'zod/mini';
 import { addDays, mondayOf, type IsoDate } from '../../../domain/calendar.ts';
+import type { DiffRow } from '../../../domain/coach/diff.ts';
 import { MAX_PROPOSAL_OPS, moveOpSchema } from '../../../domain/coach/proposals.ts';
 import type { SourceRef } from '../../../domain/coach/sources.ts';
 import { TIMES_OF_DAY, type TimeOfDay } from '../../../domain/profile/catalog.ts';
@@ -35,11 +47,21 @@ import {
 } from '../../../domain/programming/evaluate/types.ts';
 import { evaluateWeek } from '../../../domain/programming/evaluate/week.ts';
 import { loadModel, weekSummary } from '../../../domain/programming/load/fatigue.ts';
+import { effectivePriorities } from '../../../domain/programming/priority/weights.ts';
 import { SCORE_WEIGHTS } from '../../../domain/programming/rules/evaluation.ts';
 import { RANK_WEIGHTS } from '../../../domain/programming/rules/priority.ts';
+import { REFUSALS } from '../../../domain/programming/rules/replan.ts';
+import { BY_PRIORITY } from '../../../domain/programming/rules/taper.ts';
 import { repairWeek } from '../../../domain/programming/schedule/repair.ts';
+import {
+	REPLAN_BLOCK_WEEKS,
+	REPLAN_PHASES,
+	REPLAN_REASONS,
+	TAPER_FORMS
+} from '../../../domain/training/replan.ts';
 import { DECIDERS, DECISION_KINDS, WEEK_KINDS } from '../../../domain/training/vocabulary.ts';
 import type { ResolvedCoachDeps } from '../../services/coach/shared.ts';
+import { proposeDeload } from '../../services/periodisation/deload.ts';
 import { tradeoffHints } from '../../services/periodisation/evaluate.ts';
 import {
 	getScheduleTradeoffs,
@@ -51,7 +73,13 @@ import {
 	weekContextOf,
 	type EvaluationContext
 } from '../../services/periodisation/context.ts';
+import {
+	proposeReplan,
+	type ProposedReplan,
+	type ReplanCoach
+} from '../../services/periodisation/propose.ts';
 import { getRoadView, serialiseRoad } from '../../services/periodisation/road-view.ts';
+import { programmingInputFor } from '../../services/programs/alternatives.ts';
 import {
 	getCurrentProgram,
 	getProgramVersion,
@@ -608,7 +636,197 @@ const explainScheduleTradeoffsTool = defineTool({
 	}
 });
 
+// ---- plan_block, schedule_deload, plan_taper ------------------------------------------------
+
+/** Decision (tools-periodisation-proposals): plan_block's weeks when the coach names none. */
+export const PLAN_BLOCK_WEEKS = 4;
+
+/** The sentence an answer gives when the re-plan would change nothing: nothing was stored. */
+const UNCHANGED_WHY = 'That would change nothing in your plan, so nothing was proposed.';
+
+const text = (max: number) => z.string().check(z.trim(), z.minLength(1), z.maxLength(max));
+const weeksInput = z
+	.int()
+	.check(z.minimum(REPLAN_BLOCK_WEEKS.min), z.maximum(REPLAN_BLOCK_WEEKS.max));
+
+/** The conversation, run and tool call a coach's re-plan names: every one carries them. */
+function coachOf(ctx: Ctx): ReplanCoach {
+	if (!ctx.toolUseId) throw new Error('A coach re-plan is proposed inside a tool call');
+	return { threadId: ctx.threadId, runId: ctx.runId, toolUseId: ctx.toolUseId };
+}
+const proposing = (ctx: Ctx) => ({ db: ctx.deps.db, now: ctx.deps.now });
+
+const rowSchema = z.object({
+	area: z.string(),
+	label: untrustedSchema,
+	before: z.nullable(untrustedSchema),
+	after: z.nullable(untrustedSchema),
+	date: z.nullable(isoDate),
+	link: z.nullable(sourceRefSchema)
+});
+const replanOutput = z.object({
+	/** The card the turn shows and the call links to (turn.ts reads output.proposal), as the others. */
+	proposal: z.object({
+		id: uuid,
+		kind: z.string(),
+		title: z.string(),
+		status: z.string(),
+		duplicate: z.boolean()
+	}),
+	proposalId: uuid,
+	title: untrustedSchema,
+	summaryLines: z.array(untrustedSchema),
+	/** The changed rows, at most MAX_PROPOSAL_OPS: the first of them, when more change. */
+	rows: z.array(rowSchema).check(z.maxLength(MAX_PROPOSAL_OPS)),
+	/** The first day the new version may differ on: a Monday. */
+	from: isoDate,
+	truncated: z.optional(z.literal(true))
+});
+
+const rowOut = (row: DiffRow) => ({
+	area: row.area,
+	label: untrusted(row.label),
+	before: row.before === null ? null : untrusted(row.before),
+	after: row.after === null ? null : untrusted(row.after),
+	date: row.date,
+	link: row.link
+});
+
+/**
+ * The stored replan as the tool answers it, or the engine's refusal as an error the coach can
+ * explain. Nothing was stored for either.
+ */
+function replanOut(shown: ProposedReplan) {
+	if (shown.status === 'refused') throw toolError('REFUSED', shown.why, { reason: shown.why });
+	if (shown.status === 'unchanged')
+		throw toolError('UNCHANGED', UNCHANGED_WHY, { reason: UNCHANGED_WHY });
+	const { proposal, from, duplicate } = shown;
+	return {
+		proposal: {
+			id: proposal.id,
+			kind: proposal.kind,
+			title: proposal.title,
+			status: proposal.status,
+			duplicate
+		},
+		proposalId: proposal.id,
+		title: untrusted(proposal.title),
+		summaryLines: proposal.summaryLines.map((line) => untrusted(line)),
+		rows: proposal.rows.slice(0, MAX_PROPOSAL_OPS).map(rowOut),
+		from
+	};
+}
+
+const planBlockTool = defineTool({
+	name: 'plan_block',
+	description: `Propose re-planning the owner's next block as one phase: ${REPLAN_PHASES.join(', ')}, for ${REPLAN_BLOCK_WEEKS.min} to ${REPLAN_BLOCK_WEEKS.max} weeks (weeks, default ${PLAN_BLOCK_WEEKS}). For a deload week or a taper use schedule_deload or plan_taper. focusGoal (a goal's id, from explain_schedule_tradeoffs) puts that goal first in it. It is planned again from the next clean Monday and stored as a proposal the owner accepts or rejects: nothing changes until they do. A refusal (REFUSED) carries the engine's reason; say it to the owner. The result lists the changed rows, at most ${MAX_PROPOSAL_OPS}, never the whole plan. Only one re-plan is open at a time: this replaces any open re-plan proposal, the weekly review's included.`,
+	input: z.object({
+		phase: z.enum(REPLAN_PHASES),
+		weeks: z.optional(weeksInput),
+		focusGoal: z.optional(uuid)
+	}),
+	output: replanOutput,
+	run: async ({ phase, weeks = PLAN_BLOCK_WEEKS, focusGoal }, ctx: Ctx) =>
+		replanOut(
+			await proposeReplan(
+				ctx.ownerId,
+				{
+					today: ctx.today as IsoDate,
+					source: 'coach',
+					coach: coachOf(ctx),
+					directive: {
+						kind: 'block',
+						phase,
+						weeks,
+						...(focusGoal !== undefined && { focusGoalRef: focusGoal })
+					}
+				},
+				proposing(ctx)
+			)
+		)
+});
+
+const scheduleDeloadTool = defineTool({
+	name: 'schedule_deload',
+	description: `Propose a deload the owner asked for: one lighter week, in place, with the same sessions on the same days. when is this_week or next_week (default next_week). this_week deloads only the sessions still ahead of today; a session done, begun or skipped stays as it is. reason (up to ${REPLAN_REASONS.length} characters, from the owner's words) is kept with the proposal; left out, none is invented. It is stored as a proposal the owner accepts or rejects. A refusal (REFUSED) carries the engine's reason. Only one re-plan is open at a time: this replaces any open re-plan proposal, the weekly review's included.`,
+	input: z.object({
+		when: z.optional(z.enum(['this_week', 'next_week'])),
+		reason: z.optional(text(REPLAN_REASONS.length))
+	}),
+	output: replanOutput,
+	run: async ({ when = 'next_week', reason }, ctx: Ctx) => {
+		const today = ctx.today as IsoDate;
+		const week = when === 'this_week' ? mondayOf(today) : addDays(mondayOf(today), 7);
+		return replanOut(
+			await proposeDeload(
+				ctx.ownerId,
+				{
+					today,
+					week,
+					reasons: reason === undefined ? [] : [reason],
+					source: 'coach',
+					coach: coachOf(ctx)
+				},
+				proposing(ctx)
+			)
+		);
+	}
+});
+
+/** The sentence a maintenance goal's taper is refused with, after the engine's standard one. */
+const MAINTENANCE_TAPER_WHY =
+	'A goal held at maintenance is trained through, so it has no taper to plan.';
+
+/**
+ * The form a taper takes when the coach leaves its kind out: BY_PRIORITY's rule for the goal's
+ * priority this week, read as explain_schedule_tradeoffs reads it. The leader's event gets its full
+ * taper and a secondary event its mini. The engine's splice takes a form and has no 'none', so a
+ * goal held at maintenance (BY_PRIORITY's train_through) is refused here, storing nothing. A goal
+ * that is not an event still ahead is refused by the engine with its sentence before it reads the
+ * form, so 'full' is passed for it and never used.
+ */
+async function taperFormOf(ctx: Ctx, goal: string): Promise<(typeof TAPER_FORMS)[number]> {
+	const today = ctx.today as IsoDate;
+	const input = await programmingInputFor(ctx.ownerId, deps(ctx));
+	const priority = effectivePriorities(input, mondayOf(today)).find((p) => p.goalId === goal);
+	if (!priority?.eventDate || priority.eventDate < today) return 'full';
+	const rule = BY_PRIORITY[priority.mode];
+	if (rule === 'train_through') {
+		const why = `${REFUSALS.not_applicable} ${MAINTENANCE_TAPER_WHY}`;
+		throw toolError('REFUSED', why, { reason: why });
+	}
+	return rule === 'full' ? 'full' : 'mini';
+}
+
+const planTaperTool = defineTool({
+	name: 'plan_taper',
+	description: `Propose a taper for one of the owner's event goals (goal, its id from explain_schedule_tradeoffs): only an event still ahead can be tapered for. kind is full (the event's full taper) or mini (a few days before it); full only for the leading goal, mini for a secondary event; leave kind out to follow your goals' priorities. Asking for full upgrades a mini or a trained-through taper, if the engine allows it. It is spliced into the weeks before the event, and stored as a proposal the owner accepts or rejects. A refusal (REFUSED) carries the engine's reason, such as an event that is too close or a goal that has no event; say it to the owner. Only one re-plan is open at a time: this replaces any open re-plan proposal, the weekly review's included.`,
+	input: z.object({
+		goal: uuid,
+		kind: z.optional(z.enum(TAPER_FORMS))
+	}),
+	output: replanOutput,
+	run: async ({ goal, kind }, ctx: Ctx) => {
+		const form = kind ?? (await taperFormOf(ctx, goal));
+		return replanOut(
+			await proposeReplan(
+				ctx.ownerId,
+				{
+					today: ctx.today as IsoDate,
+					source: 'coach',
+					coach: coachOf(ctx),
+					directive: { kind: 'taper', goalRef: goal, form }
+				},
+				proposing(ctx)
+			)
+		);
+	}
+});
+
 export const PERIODISATION_TOOLS: readonly CoachTool[] = [
 	evaluateWeekInterferenceTool,
-	explainScheduleTradeoffsTool
+	explainScheduleTradeoffsTool,
+	planBlockTool,
+	scheduleDeloadTool,
+	planTaperTool
 ];

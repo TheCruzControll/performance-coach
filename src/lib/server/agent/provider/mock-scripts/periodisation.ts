@@ -9,6 +9,11 @@
  *   passing suggestedRepair.ops to propose_program_adjustment: nothing is drafted.
  * - 'Why is my week shaped like this?' reads the priorities, the decisions behind the week and
  *   the road, quoting each decision's why as stored.
+ * - 'Plan the block …' proposes a block (plan_block), 'deload' a deload (schedule_deload), and
+ *   'taper' a taper for the event goal the owner names by its title (plan_taper, its goal read
+ *   from explain_schedule_tradeoffs). Each answer says what was proposed, and nothing is done yet.
+ * - 'Plan the block … focus …' names a goal the owner is not training for: the engine refuses it,
+ *   and the answer gives its sentence.
  */
 import type { MockContext, MockScript } from '../mock.ts';
 
@@ -16,6 +21,12 @@ const CLASH = /\b(clash|clashes|conflicts?)\b/i;
 const REPAIR = /\b(fix|repair)\b.*\b(week|schedule)\b/i;
 const SHAPE = /\bwhy\b.*\b(week|schedule)\b.*\b(shaped|laid out|arranged)\b/i;
 const NEXT = /\bnext week\b/i;
+const BLOCK = /\bplan (?:the |my )?block\b/i;
+const BLOCK_FOCUS = /\bplan (?:the |my )?block\b.*\bfocus\b/i;
+const DELOAD = /\bdeload\b/i;
+const TAPER = /\btaper\b/i;
+/** A goal the owner is not training for: the engine refuses a focus on it. */
+const NOT_MY_GOAL = 'f47ac10b-58cc-4372-a567-0e02b2c3d479';
 
 interface Wrapped {
 	untrusted_text: string;
@@ -111,6 +122,39 @@ function shapeAnswer(context: MockContext): string {
 		: '[note] Nothing recorded explains this week’s shape yet.';
 }
 
+interface Proposed {
+	title: Wrapped;
+	from: string;
+}
+
+/** What a re-plan tool answered: its stored proposal, or the engine's refusal. */
+function proposedAnswer(context: MockContext, name: string, what: string): string {
+	const result = context.results.findLast((r) => r.name === name);
+	if (!result || result.isError) {
+		const reason = (result?.content as { reason?: string } | undefined)?.reason ?? '';
+		return `[note] I could not propose ${what}. ${reason}`.trimEnd();
+	}
+	const r = result.content as Proposed;
+	return `[note] I’ve proposed ${what}: ${r.title.untrusted_text}. It starts on ${r.from}. Accept it in your proposals to change the plan; nothing changes until you do.`;
+}
+
+const blockAnswer = (context: MockContext) => proposedAnswer(context, 'plan_block', 'a block');
+const deloadAnswer = (context: MockContext) =>
+	proposedAnswer(context, 'schedule_deload', 'a deload week');
+const taperAnswer = (context: MockContext) => proposedAnswer(context, 'plan_taper', 'a taper');
+
+/**
+ * The goal the owner names by its title, among the priorities the week reads (the first when the
+ * owner names none): an event's taper needs its goal's id, which only the engine's read gives.
+ */
+function goalNamed(context: MockContext) {
+	const { priorities } = context.result('explain_schedule_tradeoffs') as ExplainResult;
+	const named = priorities.find((p) =>
+		context.ownerText.toLowerCase().includes(p.title.untrusted_text.toLowerCase())
+	);
+	return (named ?? priorities[0])?.goal.id;
+}
+
 export const periodisationScripts: readonly MockScript[] = [
 	{
 		name: 'week-repair',
@@ -149,6 +193,75 @@ export const periodisationScripts: readonly MockScript[] = [
 		steps: [
 			{ tools: [{ name: 'explain_schedule_tradeoffs', input: weekInput }] },
 			{ text: shapeAnswer }
+		]
+	},
+	{
+		name: 'block-refused',
+		matches: (text) => BLOCK_FOCUS.test(text),
+		steps: [
+			{
+				tools: [
+					{
+						name: 'plan_block',
+						input: { phase: 'accumulation', weeks: 4, focusGoal: NOT_MY_GOAL }
+					}
+				]
+			},
+			{ text: blockAnswer }
+		]
+	},
+	{
+		name: 'block-plan',
+		matches: (text) => BLOCK.test(text),
+		steps: [
+			{
+				tools: [
+					{
+						name: 'plan_block',
+						input: (context) => ({
+							phase: /\bmaintenance\b/i.test(context.ownerText) ? 'maintenance' : 'accumulation',
+							weeks: 4
+						})
+					}
+				]
+			},
+			{ text: blockAnswer }
+		]
+	},
+	{
+		name: 'deload-week',
+		matches: (text) => DELOAD.test(text),
+		steps: [
+			{
+				tools: [
+					{
+						name: 'schedule_deload',
+						input: (context) => ({
+							when: /\bthis week\b/i.test(context.ownerText) ? 'this_week' : 'next_week'
+						})
+					}
+				]
+			},
+			{ text: deloadAnswer }
+		]
+	},
+	{
+		name: 'taper-plan',
+		matches: (text) => TAPER.test(text),
+		steps: [
+			{ tools: [{ name: 'explain_schedule_tradeoffs', input: { week: 'current' } }] },
+			{
+				tools: [
+					{
+						name: 'plan_taper',
+						input: (context) => ({
+							goal: goalNamed(context),
+							kind: /\bmini\b/i.test(context.ownerText) ? 'mini' : 'full'
+						})
+					}
+				]
+			},
+			{ text: taperAnswer }
 		]
 	}
 ];
