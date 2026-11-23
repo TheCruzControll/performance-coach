@@ -242,6 +242,13 @@ milestones.md.
   keeps its title, one quiet line and its saved sessions, or says it isn't saved on this device,
   with Log something else as a row. The shell's offline notice is that quiet line. Phone layouts
   and the e2e run are CI's to prove.
+- **Instrument v2 toasts and inline states (`v2/24a`).** A toast is one line 10 px above the tab
+  bar and the resume line (at the column's foot from 1024 px, as wide as its words), one at a
+  time, with a × only when it stays; the composer lifts it, a profile section's Save bar does
+  through a stop-gap selector, and the workout keeps it at the top until `v2/10`. `EmptyState` is
+  one sentence, a line and one action, and `Notice` a plain line (an error's in red), neither with
+  a glyph or a box. The held screen dims its last copy and shows short bars, not cards. The
+  sign-out confirm asks with the count in its question. The e2e run is CI's to prove.
 - **Adding a session to a program.** The builder, the storage
   (`src/lib/server/services/programs/add.ts`), Train's Add session sheet and the coach's proposal
   are built: `propose_program_adjustment` takes an `add_session` op, and accepting it is one new

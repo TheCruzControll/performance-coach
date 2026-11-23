@@ -63,12 +63,12 @@ const PAYLOAD = /[\\/]@sveltejs[\\/]kit[\\/]src[\\/]runtime[\\/]client[\\/]paylo
  * The app's code every page loads first, in the framework chunk (see its group): the client hooks
  * with error reporting and the leaving state (leaving.ts is also imported alone by lazy code: the
  * workout sync engine), the root error page's loader (src/routes/error-page.ts), the root layout
- * with what it starts (RUM visits, the toasts and their Toaster), the screen memory the (app)
- * layout keeps (also imported by sign-out, which any page can load), afterPaint
+ * with what it starts (RUM visits, the toasts, their Toaster and its Toast lines), the screen
+ * memory the (app) layout keeps (also imported by sign-out, which any page can load), afterPaint
  * (workout/lazy.ts: the (app) shell's and the workout pages') and Icon, which every screen draws.
  */
 const BOOT =
-	/src[\\/](hooks\.client\.ts|routes[\\/](\+layout\.svelte|error-page\.ts|workout[\\/]lazy\.ts)|lib[\\/]client[\\/](errors|leaving|visits|screen-memory)\.ts|lib[\\/]ui[\\/](toast\.svelte\.ts|components[\\/](Icon|Toaster)\.svelte))$/;
+	/src[\\/](hooks\.client\.ts|routes[\\/](\+layout\.svelte|error-page\.ts|workout[\\/]lazy\.ts)|lib[\\/]client[\\/](errors|leaving|visits|screen-memory)\.ts|lib[\\/]ui[\\/](toast\.svelte\.ts|components[\\/](Icon|Toast|Toaster)\.svelte))$/;
 /** The (app) layout and its shell, which every app screen loads (see the `AppShell` group). */
 const APP_SHELL =
 	/src[\\/](routes[\\/]\(app\)[\\/](\+layout\.svelte|AppShell\.svelte|nav\.ts)|lib[\\/]ui[\\/]components[\\/](AppNav|PageHeader)\.svelte|lib[\\/]client[\\/]connectivity\.svelte\.ts)$/;

@@ -35,7 +35,8 @@ test('asks before deleting unsynced workout changes', async ({ page, context }) 
 	const sheet = page.getByTestId('signout-pending-sheet');
 	await page.getByTestId('sign-out').click();
 	await expect(sheet).toBeVisible();
-	await expect(sheet).toContainText('1 workout change on this device hasn’t reached the server.');
+	await expect(sheet).toContainText('Sign out and delete 1 workout change?');
+	await expect(sheet).toContainText('It hasn’t reached the server yet.');
 
 	await page.getByTestId('signout-stay').click();
 	await expect(sheet).toBeHidden();
@@ -48,10 +49,11 @@ test('asks before deleting unsynced workout changes', async ({ page, context }) 
 	// second change is seeded, and the sheet opened with the count of one.
 	await page.getByTestId('sign-out').click();
 	await expect(sheet).toBeVisible();
-	await expect(sheet).toContainText('1 workout change on this device hasn’t reached the server.');
+	await expect(sheet).toContainText('Sign out and delete 1 workout change?');
+	await expect(sheet).toContainText('It hasn’t reached the server yet.');
 	await seedWorkout(page, strength);
 	await page.getByTestId('signout-delete').click();
-	await expect(sheet).toContainText('2 workout changes on this device haven’t reached the server.');
+	await expect(sheet).toContainText('Sign out and delete 2 workout changes?');
 	expect(await readOutbox(page)).toHaveLength(2);
 
 	await page.getByTestId('signout-delete').click();
@@ -102,7 +104,8 @@ test('the recovery screen asks too, after its sync is refused', async ({ page, c
 			page.getByTestId('recover-cancel').click()
 		]);
 		expect(refused.status()).toBe(403);
-		await expect(sheet).toContainText('1 workout change on this device hasn’t reached the server.');
+		await expect(sheet).toContainText('Sign out and delete 1 workout change?');
+		await expect(sheet).toContainText('It hasn’t reached the server yet.');
 
 		await page.getByTestId('signout-stay').click();
 		await expect(sheet).toBeHidden();

@@ -32,4 +32,28 @@ describe('toast', () => {
 		vi.advanceTimersByTime(1);
 		expect(ids()).toEqual([]);
 	});
+
+	it('shows one at a time: a new toast takes the place of the one on screen', () => {
+		const first = toast.show('Set logged');
+		toast.appeared(first);
+		const second = toast.show('Upper body moved to Saturday', {
+			action: { label: 'Undo', onclick: () => {} }
+		});
+		expect(ids()).toEqual([second]);
+		// The first one's timer is gone with it: it cannot dismiss the second.
+		vi.advanceTimersByTime(4_000);
+		expect(ids()).toEqual([second]);
+	});
+
+	it('keeps a toast with no duration until it is dismissed or replaced', () => {
+		const sticky = toast.show('Couldn’t load this part of the coach', {
+			tone: 'danger',
+			duration: 0
+		});
+		toast.appeared(sticky);
+		vi.advanceTimersByTime(120_000);
+		expect(ids()).toEqual([sticky]);
+		const next = toast.show('Saved', { tone: 'positive' });
+		expect(ids()).toEqual([next]);
+	});
 });

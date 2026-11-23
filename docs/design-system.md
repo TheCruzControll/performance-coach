@@ -16,6 +16,7 @@ Dark-first, iPhone-first, built by hand on CSS custom properties (ADR 0005). Liv
 4. **Motion explains.** Short, spring-eased transitions that show where things came from; all
    motion collapses under `prefers-reduced-motion`.
 5. **Every state is designed.** Empty, loading (skeletons, streamed data), error, offline.
+   Each says one thing and offers at most one thing to do.
 
 ## Theming
 
@@ -384,9 +385,9 @@ brighten the text and the underline to `--color-text`, on a fine pointer only.
   of the column, at most one action, and on Today the avatar; while offline a screen that still
   works shows one quiet line, 'Offline. Your sets are saved on this device.'
 - Large titles (`PageHeader`): eyebrow + 32 px display title, iOS-style.
-- Toasts appear at the top (clear of the thumb zone and nav); sheets rise from the bottom, and
-  open as centred dialogs or right-hand panels from 1024 px (Responsive layout → Dialogs &
-  toasts).
+- Toasts appear at the foot: one line 10 px above the tab bar (and the resume line), at the
+  column's foot from 1024 px; sheets rise from the bottom, and open as centred dialogs or
+  right-hand panels from 1024 px (Responsive layout → Dialogs & toasts).
 
 ## Responsive layout
 
@@ -499,11 +500,14 @@ itself read it.
 
 - **Screen chrome** belongs to a whole readable screen (Coach's composer; a section's Save bar
   below 1024 px) or to the app (toasts). It is `position: fixed` at
-  `bottom: var(--nav-inset-bottom)` (toasts keep their top inset), centred with
+  `bottom: var(--nav-inset-bottom)`, centred with
   `left: calc(50% + var(--nav-inset-left) / 2)` and `translateX(-50%)`, and at most
   `var(--content-column)` wide. From 1024 px in the shell it starts with the column instead:
   `left: calc(var(--column-start) + var(--column-width) / 2)`, as `<main>` is no longer centred
   once the column is capped. Only readable screens have it at the bottom.
+- **Toasts** sit above all of it: `bottom` is `--nav-inset-bottom` plus `--toast-lift` plus
+  10 px. A screen with chrome at its foot sets `--toast-lift` on `:root` through `:has()` (the
+  composer: 70 px). The workout keeps its toasts at the top until v2/10.
 - **Column chrome** belongs to one column of a wide or split screen (an editor's Save bar, Build's
   "Start week 1", a session's actions). From 1024 px it is `position: sticky` at
   `bottom: var(--nav-inset-bottom)`, the last child of its column, with no left offset and no
@@ -582,9 +586,15 @@ type scale is the same at every width, because a 1024–1366 px window can be a 
   holds focus, and is the only one Escape closes; focus then returns into the one below. When the
   button that opened a dialog cannot take focus back (it was disabled while it worked), focus
   returns to the dialog underneath.
-- Toasts stay at the top until `v2/24`: v2 draws them 10 px above the tab bar (at the column's
-  foot from 1024 px), where they would cover the resume line, the composer and the logger. From
-  1024 px they sit over the column, as other screen chrome does.
+- A toast is one line 10 px over the tab bar (and the resume line), above any chrome a screen
+  keeps at its foot (`--toast-lift`). Below 1024 px it is 52 px tall with 16 px corners and as
+  wide as the column, a plain line's words centred; from 1024 px in the shell it is 48 px with
+  14 px corners, at the column's text edge 40 px over the window's foot, and as wide as its words.
+  One at a time: a new toast takes the place of the one on screen. The × only on a toast that
+  stays (`duration: 0`); a tap on its words reaches the screen under it. It rises 16 px into
+  place (falls from the top in the workout). Below 1024 px, while a `BottomSheet` is open, it stays
+  at the top too and falls from there: the sheet is a top-layer dialog, so the toast sits under its
+  scrim, not above it.
 
 ### Screens
 
@@ -720,8 +730,8 @@ later-pass screen).
 | `AppNav`            | Primary navigation (real links, preload on tap): four tabs, 24 px icons and 12 px labels, current in text colour and 600 with no pill, on a canvas bar with a hairline; from 1024 px a left rail on the canvas with a hairline at its right and no brand mark, the tabs 28 px apart and the avatar link to Profile at its foot; one `<nav>`, so the links, their order and `aria-current` match at every width (Responsive layout → Shell).                                                                                                                              |
 | `.avatar-link`      | Global (layout.css). `.avatar-link`: Profile's 32 px surface-2 avatar link with a 44 px hit area, current with a 1.5 px text ring. `.back-link`: a detail page's way back, the parent's name after a 16 px chevron, 15 px secondary, 44 px tall (Responsive layout → Shell).                                                                                                                                                                                                                                                                                             |
 | `Skeleton`          | Shimmer placeholder (static under reduced motion); pair with `aria-busy` on the region.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| `EmptyState`        | Medallion glyph (tone-tinted), title, guidance, optional actions; `compact` variant.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| `Toaster` + `toast` | Polite live region; `neutral · positive · danger`; optional action; auto-dismiss. A surface-2 line of 52 px with 16 px corners; only `danger` has a leading alert icon; an action is a strong text link (Undo); a 44 px quiet dismiss. Screen chrome at the top, centred over the column (beside the rail from 1024 px), or in the window outside the shell.                                                                                                                                                                                                             |
+| `EmptyState`        | One sentence (Hubot 26/32; 17 px 600 when `compact`), a 17/26 line on what to do (15/22 compact), at most one action; lined up with the text above it, `align="center"` when alone. No glyph: `icon` and `tone` are deprecated, accepted and not drawn.                                                                                                                                                                                                                                                                                                                  |
+| `Toaster` + `toast` | Polite live region; `neutral · positive · danger`; optional action, a strong text link (Undo); auto-dismiss. One surface-2 line at a time, a new one taking the place of the one on screen: 10 px over the tab bar and the resume line, plus `--toast-lift`; 52 px, 16 px corners, as wide as the column; from 1024 px in the shell 48 px, 14 px corners, at the column's text edge 40 px over the window's foot, as wide as its words. Only `danger` has a leading alert icon; a 44 px × only on a toast that stays (`duration: 0`).                                    |
 | `PageHeader`        | Eyebrow + large title + trailing slot; a `badge` sits on the eyebrow line, clear of the title.                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | `BrandMark`         | The performance-gauge mark (also the PWA icon).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | `Stat`              | Legacy in v2: the one metric tile, with no fill or outline and its padding kept: label, big value + inline unit, optional rating (word + dot), caption. `level 1` on the canvas (26 px value), `level 2` nested in a card (24 px). No value → a dash announced as "No data yet", never a made-up number.                                                                                                                                                                                                                                                                 |
@@ -755,7 +765,7 @@ later-pass screen).
 | `DayPicker`         | Monday-first row of seven round toggles: an unpicked day is a surface-2 disc, a picked one the inverse fill (never amber) and ticked. Native checkboxes named with the full day, value always in week order, hit areas reaching into the gaps so each stays ≥ 44 × 44 px inside a padded card at 393 px; an error draws the danger border.                                                                                                                                                                                                                               |
 | `Toggle`            | On/off row: a native checkbox with `role="switch"` covering the whole row (the hit area, ≥ 44 px), the title as its name and the description as `aria-describedby`; Space flips it. On is the inverse fill, never amber; the thumb's side says on or off.                                                                                                                                                                                                                                                                                                                |
 | `TagInput`          | Short free-text list: Add or Return adds the trimmed text, a repeat in any case is refused, `maxlength` and `max` hold; its field is a v2 field; removable quiet surface-2 pills (44 px remove buttons), one-tap suggestions, every change and refusal announced politely.                                                                                                                                                                                                                                                                                               |
-| `Notice`            | Inline state message: `danger` (role `alert`) · `positive` · `warning` · `neutral` (role `status`); tinted, icon + words.                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `Notice`            | Inline line: `danger` is one red line (`role="alert"`); `positive`, `warning`, `neutral` plain words (`role="status"`). No box, no glyph (`icon` deprecated).                                                                                                                                                                                                                                                                                                                                                                                                            |
 | `RecoveryCodes`     | One-time display of recovery codes: numbered list (one per row on a phone, two columns when the container allows), copy and download, required acknowledgement checkbox.                                                                                                                                                                                                                                                                                                                                                                                                 |
 | `ChartFrame`        | `ui/charts`. A chart's `<figure>`: title, context and summary server-rendered; the plot box reserved with a hairline grid; the body from a `CHART_BODIES` loader after hydration; a failed chunk: `Notice` and Retry; no JS: 'Chart needs JavaScript'; an `availability` slot.                                                                                                                                                                                                                                                                                           |
 | `ChartTable`        | `ui/charts`. The table twin: `<details>` 'Show as table' (≥ 44 px), a keyboard-scrollable table with scoped headers, units, every value ('No data' when missing), the week in progress marked 'so far'.                                                                                                                                                                                                                                                                                                                                                                  |
@@ -865,7 +875,7 @@ workout pages and is audited on `/design` → Workout, one state at a time.
 | `WorkoutList`                    | `src/routes/(app)/progress/workouts`. History, newest first: waiting to sync (not links), then each workout's dot, title, date, duration and key number; one 44 px link, `aria-current`.                                          |
 | `WorkoutDetail`                  | One workout in words: its numbers, PRs, sets with RPE and states, a run's segments (`RunDetail`) or a session's metrics (`OtherDetail`); a name opens its history sheet.                                                          |
 | `ResumeBar`                      | `src/routes/(app)`. One plain line on the tab bar: Resume {title} with the time, the sync pill and a chevron, N changes waiting to sync, or Continue here on Today; it raises `--resume-inset`, so it covers nothing.             |
-| `HeldScreen`                     | `src/routes/(app)`. While another screen loads: its last copy in this page, else the tab's skeleton (aria-busy, 'Loading Train'); inert, fixed over the column under the nav.                                                     |
+| `HeldScreen`                     | `src/routes/(app)`. While another screen loads: its last copy dimmed to 40 %, else the tab's title and four short bars (aria-busy, 'Loading Train'); inert, fixed over the column under the nav.                                  |
 
 ## The coach (M5)
 

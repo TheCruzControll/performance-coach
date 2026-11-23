@@ -187,6 +187,7 @@ describe('the start-up chunk groups', () => {
 			src('lib/client/screen-memory.ts'),
 			src('lib/ui/toast.svelte.ts'),
 			src('lib/ui/components/Icon.svelte'),
+			src('lib/ui/components/Toast.svelte'),
 			src('lib/ui/components/Toaster.svelte'),
 			src('routes/+layout.svelte'),
 			src('routes/error-page.ts'),

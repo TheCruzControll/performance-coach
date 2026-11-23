@@ -151,6 +151,14 @@ for (const theme of ['dark', 'light'] as const) {
 			expect(styles.color).toBe(c.text);
 			expect(styles.boxShadow).toBe('none');
 			expect((await paint(line.locator('.message'))).fontSize).toBe('15px');
+			// At the foot, 10 px over it (outside the shell, no tab bar): a timed line, centred, no ×.
+			await line.evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished)));
+			const box = (await line.boundingBox())!;
+			expect(Math.abs(page.viewportSize()!.height - box.y - box.height - 10)).toBeLessThanOrEqual(
+				1
+			);
+			await expect(line.locator('.message')).toHaveCSS('text-align', 'center');
+			await expect(line.getByRole('button')).toHaveCount(0);
 		});
 
 		test('a danger toast’s first svg is the alert in the danger colour', async ({ page }) => {

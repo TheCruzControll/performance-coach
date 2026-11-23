@@ -32,8 +32,11 @@ class ToastQueue {
 			action: options.action,
 			duration: options.duration ?? 4000
 		};
-		// Keep at most three; the oldest leaves first.
-		this.items = [...this.items.slice(-2), item];
+		// One line at a time (Instrument v2, 10 · States): a new toast takes the place of the one
+		// on screen, which leaves.
+		for (const old of this.items) clearTimeout(this.#timers.get(old.id));
+		this.#timers.clear();
+		this.items = [item];
 		if (item.duration > 0) this.#schedule(id, PENDING_LIMIT);
 		return id;
 	}
