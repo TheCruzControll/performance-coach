@@ -92,7 +92,7 @@ export function naiveDates(
 // ---- Paces ----------------------------------------------------------------------------------
 
 /** 10K paces in seconds per km, one for easy running and one for quality work; null: unknown. */
-interface Paces {
+export interface Paces {
 	easy: number | null;
 	quality: number | null;
 	source: string;
@@ -107,7 +107,7 @@ const raceName = (metres: number) => {
 	return label.replace(/^[A-Z](?=[a-z])/, (c) => c.toLowerCase());
 };
 
-function pacesOf(running: InputRunning | null): Paces {
+export function pacesOf(running: InputRunning | null): Paces {
 	const told = running?.easyPaceSecondsPerKm ?? null;
 	// The latest race; one with no date counts as the oldest.
 	const [race] = [...(running?.races ?? [])].sort((a, b) =>
@@ -141,7 +141,7 @@ function pacesOf(running: InputRunning | null): Paces {
 	};
 }
 
-function segment(
+export function segment(
 	kind: keyof typeof R.EFFORTS,
 	tenK: number | null,
 	size: { metres?: number; minutes?: number },

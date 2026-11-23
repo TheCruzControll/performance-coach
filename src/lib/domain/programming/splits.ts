@@ -84,6 +84,26 @@ export function chooseSplit(input: ProgrammingInput, count: number): Split {
 	};
 }
 
+/**
+ * The split of one strength session added to a week (added.ts): a single day of the discipline's
+ * own layout, or of full body, that rotates through the layout's days as the week's `n` strength
+ * sessions grow. The day is titled by its name, unlettered.
+ */
+export function addedSplit(discipline: Discipline, n: number): Split {
+	const layout: LayoutKey = OWN_LAYOUT[discipline] ?? 'full_body';
+	const row = LAYOUTS[layout].byCount.at(-1)!;
+	const day = DAYS[row[n % row.length]!];
+	const { style, ...rest } = STYLE_OF[discipline] ?? GENERAL_STYLE;
+	return {
+		...rest,
+		layout,
+		discipline,
+		maintenance: false,
+		prescription: STYLES[style],
+		days: [{ ...day, title: day.name }]
+	};
+}
+
 /** The split_chosen decision's facts; `classes` is the strength classes a week, if any. */
 export function splitFacts(split: Split, input: ProgrammingInput, classes: number) {
 	const goal = input.maintenance ? 'your paused goals' : clip(input.goals[0]?.title ?? '', 40);

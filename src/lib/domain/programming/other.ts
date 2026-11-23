@@ -35,7 +35,7 @@ type Fields = Pick<OtherSessionPlan, 'type' | 'title' | 'discipline' | 'customDi
 	metrics: CustomMetric[];
 };
 
-function otherSession(f: Fields, date: IsoDate, orderInDay: number, rpeCap: number) {
+export function otherSession(f: Fields, date: IsoDate, orderInDay: number, rpeCap: number) {
 	const targetRpe = Math.min(f.rpe, rpeCap);
 	return {
 		kind: 'other',
@@ -74,6 +74,30 @@ function muayThaiKinds(input: ProgrammingInput, week: WeekPlan, count: number) {
 	);
 }
 
+/** A Muay Thai session of `kind` and `minutes`: its title, RPE, intensity and round metrics. */
+export function muayThaiFields(
+	kind: 'technical' | 'pad_work' | 'sparring',
+	minutes: number
+): Fields {
+	return {
+		...MUAY_THAI[kind],
+		kind,
+		type: 'muay_thai',
+		discipline: 'muay_thai',
+		customDiscipline: null,
+		minutes,
+		metrics: [
+			{ key: 'rounds', label: 'Rounds', unit: null, value: MUAY_THAI[kind].rounds },
+			{
+				key: 'round_length',
+				label: 'Round length',
+				unit: 'min',
+				value: MUAY_THAI.roundMinutes
+			}
+		]
+	};
+}
+
 /** The planned weeks' Muay Thai, custom-discipline and mobility sessions, around those placed. */
 export function planOther(
 	blocks: readonly BlockPlan[],
@@ -106,25 +130,7 @@ export function planOther(
 				});
 			};
 			const mt = muayThaiKinds(input, week, generatedFor(allocation, 'muay_thai'));
-			add(
-				mt.map((kind): Fields => ({
-					...MUAY_THAI[kind],
-					kind,
-					type: 'muay_thai',
-					discipline: 'muay_thai',
-					customDiscipline: null,
-					minutes,
-					metrics: [
-						{ key: 'rounds', label: 'Rounds', unit: null, value: MUAY_THAI[kind].rounds },
-						{
-							key: 'round_length',
-							label: 'Round length',
-							unit: 'min',
-							value: MUAY_THAI.roundMinutes
-						}
-					]
-				}))
-			);
+			add(mt.map((kind) => muayThaiFields(kind, minutes)));
 			const own: Fields = {
 				kind: 'custom',
 				type: 'custom',
