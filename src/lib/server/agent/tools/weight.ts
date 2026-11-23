@@ -270,7 +270,7 @@ const loggedOutput = z.object({
 	outcome: z.literal('recorded'),
 	/** The weigh-in as it now stands: its day, its value and unit, and the source that opens it. */
 	entry: z.object({ ref: sourceRefSchema, measuredOn: day, value: z.number(), unit: loggedUnit }),
-	/** The entry the day held before this write, which Undo puts back; null when the day was empty. */
+	/** The entry Undo puts back: what the day held before this run; null when it was empty. */
 	replaced: z.nullable(z.object({ value: z.number(), unit: loggedUnit, source: z.string() })),
 	/** The entry this run wrote: Undo takes it back, or restores `replaced`, when given this runId. */
 	undo: z.object({ entryId: z.int(), runId: z.string() })

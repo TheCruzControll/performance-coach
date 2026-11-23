@@ -94,7 +94,7 @@ describe('parseWeightStatement', () => {
 
 	it('states a weight followed only by its day, “now”, “on the scale” or punctuation', () => {
 		expect(stated('I weighed 82.4 on the scale')).toEqual([{ value: 82.4, unit: null, day: null }]);
-		expect(stated('I’m at 82.4 kg now.')).toEqual([{ value: 82.4, unit: 'kg', day: null }]);
+		expect(stated('I’m at 82.4 kg now.')).toEqual([{ value: 82.4, unit: 'kg', day: 'today' }]);
 		expect(stated('I weighed 82.4 this morning, down from 83')).toEqual([
 			{ value: 82.4, unit: null, day: 'today' }
 		]);
@@ -134,5 +134,54 @@ describe('parseWeightStatement', () => {
 		expect(stated('Yesterday I was 82.4 kg, and I weighed 82, not today.')).toEqual([
 			{ value: 82.4, unit: 'kg', day: 'yesterday' }
 		]);
+	});
+
+	it('states nothing for a sentence about a past time, a doubt or either day', () => {
+		expect(stated('Two years ago I was 95 kg')).toEqual([]);
+		expect(stated('Last month I was 90 kg')).toEqual([]);
+		expect(stated('In 2020 I weighed 90 kg')).toEqual([]);
+		expect(stated('On Monday I weighed 82.4 kg')).toEqual([]);
+		expect(stated('When I started I was 95 kg')).toEqual([]);
+		expect(stated('Back in college I weighed 70 kg')).toEqual([]);
+		expect(stated('Last week I was 83 kg, today I’m 82.4 kg')).toEqual([]);
+		expect(stated('When I started the program I weighed 95 kg, and today I’m 82.4 kg')).toEqual([]);
+		expect(stated('I weighed 82.4 kg, last Monday')).toEqual([]);
+		expect(stated('I weighed 90 kg, 2 years ago')).toEqual([]);
+		expect(stated('I weighed 90 kg, before the diet')).toEqual([]);
+		expect(stated('I wish I was 78 kg')).toEqual([]);
+		expect(stated('I don’t think I’m 82 kg')).toEqual([]);
+		expect(stated('I thought I was 82 kg')).toEqual([]);
+		expect(stated('I was told I’m 82 kg')).toEqual([]);
+		expect(stated('I weighed 82 today or yesterday')).toEqual([]);
+	});
+
+	it('still states a weigh-in that names today, this morning, now or yesterday', () => {
+		expect(stated('I weighed 82.4 this morning')).toEqual([
+			{ value: 82.4, unit: null, day: 'today' }
+		]);
+		expect(stated('82.4kg')).toEqual([{ value: 82.4, unit: 'kg', day: null }]);
+		expect(stated('I’m 82.4 kg, aiming for 78')).toEqual([{ value: 82.4, unit: 'kg', day: null }]);
+		expect(stated('weighed in at 82.4 kg yesterday')).toEqual([
+			{ value: 82.4, unit: 'kg', day: 'yesterday' }
+		]);
+		expect(stated('my weight is 82')).toEqual([{ value: 82, unit: null, day: null }]);
+	});
+
+	it('reads a weight with its own day when the sentence holds several weights', () => {
+		expect(stated('I was 84 kg, but 82.0 today')).toEqual([
+			{ value: 82, unit: null, day: 'today' }
+		]);
+		expect(stated('I was 84 kg but now 82.4')).toEqual([{ value: 82.4, unit: null, day: 'today' }]);
+		expect(stated('I’m 82 kg though 80 kg yesterday')).toEqual([
+			{ value: 80, unit: 'kg', day: 'yesterday' }
+		]);
+		expect(stated('I’m 100 kg, 120 kg yesterday')).toEqual([
+			{ value: 120, unit: 'kg', day: 'yesterday' }
+		]);
+	});
+
+	it('states nothing for “and I” after another person’s subject with a comma or semicolon', () => {
+		expect(stated('my wife, and I weigh 82')).toEqual([]);
+		expect(stated('my wife; and I weigh 82')).toEqual([]);
 	});
 });
