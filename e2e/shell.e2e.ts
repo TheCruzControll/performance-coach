@@ -4,6 +4,7 @@ import {
 	captureScreen,
 	gotoHydrated,
 	openProfile,
+	profileEntry,
 	SCREENS,
 	signedOut,
 	TABS,
@@ -156,13 +157,14 @@ test.describe('app shell on an iPhone viewport', () => {
 			expect(background, 'no accent fill in the tab bar').not.toBe('rgb(255, 176, 46)');
 		}
 
-		// Pinned to the bottom edge, full width, every target at least 44px tall.
+		// Pinned to the bottom edge, full width, every tab 64 px wide and at least 44px tall.
 		const box = await nav.boundingBox();
 		expect(box).not.toBeNull();
 		expect(Math.round(box!.y + box!.height)).toBe(viewport!.height);
 		expect(Math.round(box!.width)).toBe(viewport!.width);
 		for (const link of await nav.getByRole('link').all()) {
 			const b = await link.boundingBox();
+			expect(Math.round(b!.width)).toBe(64);
 			expect(b!.height).toBeGreaterThanOrEqual(44);
 		}
 
@@ -816,15 +818,15 @@ test.describe('the root error page, loaded on demand', () => {
 
 	/**
 	 * Profile's data request fails as a dropped connection: SvelteKit renders the root error page.
-	 * Called on Today, so the avatar is the way in (openProfile would wait for Profile's heading,
-	 * which the error page does not show).
+	 * Called on Today, so the avatar (the rail's on desktop) is the way in (openProfile would wait
+	 * for Profile's heading, which the error page does not show).
 	 */
 	async function failProfileData(page: Page) {
 		await page.route(
 			(url) => url.pathname === '/profile/__data.json',
 			(route) => route.abort('connectionrefused')
 		);
-		await page.getByTestId('today-avatar').click();
+		await profileEntry(page).click();
 	}
 
 	test('a server-rendered error page hydrates the markup the server sent', async ({ page }) => {

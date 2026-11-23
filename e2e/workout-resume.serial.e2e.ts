@@ -239,6 +239,8 @@ test.describe('a workout in progress on this device', () => {
 		}
 		// Profile is the last screen of the walk: opened from Today's avatar, as the owner does.
 		await openProfile(page);
+		await expect(bar(page)).toBeVisible();
+		await expectClearOfBar(page, 'Profile');
 
 		// A reload, and a new page in the same context, still show it.
 		await page.reload();

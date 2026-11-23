@@ -231,8 +231,8 @@ Specs:
   keeps every change. A signed-out URL without the one-shot marker keeps only unsynced changes
   and offers to delete them.
 
-- `shell.e2e.ts` — the sign-in screen is the landing page (signed in, `/` goes to Today); bottom nav pinned to the bottom with ≥ 44 px targets and a
-  computed `backdrop-filter` blur; navigation across all five tabs with `aria-current`; no console
+- `shell.e2e.ts` — the sign-in screen is the landing page (signed in, `/` goes to Today); bottom nav pinned to the bottom with ≥ 44 px targets, each tab
+  64 px wide; a canvas bar with no blur; four tabs, current in text colour and 600; no console
   errors on any screen; plate calculator sheet (stepper; Escape while typing cancels the edit
   without closing the sheet; a target below the bar is explained and the stepper's minimum is the
   bar; the kg/lb switch stays local to the calculator; Close returns focus); theme applied before
@@ -343,14 +343,15 @@ proven by `desktop-helpers.desktop.e2e.ts` on `page.setContent` fixtures with no
 The desktop specs (most also run axe and take screenshots in both themes):
 
 - `shell.desktop.e2e.ts`: from 1024 px the Primary navigation is a solid full-height rail
-  (`--rail-width`, no blur, nothing fixed to the bottom edge) with the five destinations in order,
-  one `aria-current`, links at least 44 × 44 px and a hover tint. The document order is skip link
+  (`--rail-width`, no blur, nothing fixed to the bottom edge) with the four tabs and Profile's avatar
+  in order, one `aria-current`, tabs at least 44 × 44 px, a hover that lifts the text, and the
+  32 px avatar with a hit area 5 px past its edge. The document order is skip link
   → rail → content; Tab follows it with a ring of at least 2 px on every stop, and the skip link
   lands in `<main>`. The brand mark matches `--color-surface-1`, `--color-accent` and
   `--color-text` at 18% in both themes and adds only its two precached SVGs. `<main>` is the
   readable column centred beside the rail, and `data-layout` wide or split widens it to
   `--content-wide`. Coach's composer and Security's offline sign-out toast are centred over it,
-  and /design's toast in the window. No tab scrolls sideways at 1024–1920 px, the glass bar is
+  and /design's toast in the window. No tab scrolls sideways at 1024–1920 px, the bar is
   back at 1023 px, every tab gets the readable column at 800 px, and Coach reloads offline from
   the precache with the mark and a working rail.
 - `screens.desktop.e2e.ts`: the sweep that misses no main screen. Each loads without moving,

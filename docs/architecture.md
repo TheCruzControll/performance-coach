@@ -866,7 +866,7 @@ flowchart TD
 - Mobile-first shell (`src/routes/(app)/+layout.svelte`) with a fixed bottom navigation,
   safe-area insets and `viewport-fit=cover`. Dark is the designed default; light and "auto"
   are supported (`docs/design-system.md`).
-- Responsive in CSS only (docs/design-system.md, "Responsive layout"): one `AppNav` is the glass
+- Responsive in CSS only (docs/design-system.md, "Responsive layout"): one `AppNav` is the canvas
   bottom bar below 1024 px and a left rail from there, with `<main>` centred beside it at the
   width a screen declares with `data-layout` (readable, wide or split). The page-agnostic rules,
   those widths and the rail's brand mark, live in `src/lib/ui/styles/layout.css`, so the shell's

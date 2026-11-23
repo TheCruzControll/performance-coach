@@ -254,7 +254,10 @@
 	   (workout/Shell.svelte). */
 	--gutter: var(--space-7);
 	--content-max: 34rem;
+	/* The tab bar: 58 px of tabs (12 above the 46 px items), then its foot, 12 px or the home
+	   indicator's room, whichever is more, then the 1 px hairline above it all. */
 	--nav-height: 3.625rem;
+	--nav-foot: max(var(--space-3), var(--safe-bottom));
 	--touch-target: 2.75rem; /* 44px minimum (Apple HIG) */
 
 	/*
@@ -267,7 +270,7 @@
 	--content-readable: 40rem; /* forms, text, settings, conversations */
 	--content-wide: 72rem; /* dashboards and grids */
 	--content-list: 20rem; /* the list beside its editor on a split screen */
-	/* The rail, from 1024 px, is labelled under each icon (not a sidebar): the five labels are
+	/* The rail, from 1024 px, is labelled under each icon (not a sidebar): the four labels are
 	   short, and it leaves the most width at 1024 px. A sidebar is a CSS-only change. */
 	--rail-width: 5.5rem;
 	--rail-mark: 2.25rem; /* the brand mark atop the rail (layout.css) */
@@ -289,10 +292,11 @@
 	}
 }
 
-/* In the shell: the bottom bar and the home indicator below 1024 px; from there the rail and
-   the left safe area at the left, and the home indicator alone at the bottom. */
+/* In the shell: the whole bottom bar below 1024 px (its tabs, its foot, which holds the home
+   indicator, and its 1 px hairline); from there the rail and the left safe area at the left, and
+   the home indicator alone at the bottom. */
 :root:has(.app-nav) {
-	--nav-inset-bottom: calc(var(--nav-height) + var(--safe-bottom) + var(--resume-inset));
+	--nav-inset-bottom: calc(var(--nav-height) + var(--nav-foot) + 1px + var(--resume-inset));
 }
 
 @media (width >= 64rem) {

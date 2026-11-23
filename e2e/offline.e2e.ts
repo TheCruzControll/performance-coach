@@ -41,14 +41,18 @@ test.describe('offline behaviour (service worker)', () => {
 
 		// Profile first: it opens from Today's avatar, and offline Today (the designed state, with
 		// no avatar) replaces the page below. Profile needs server data: a designed offline state
-		// inside the shell, never a 500. No tab is current: Profile is not one.
+		// inside the shell, never a 500. No tab is current: Profile is not one. From 1024 px the
+		// rail's avatar is Profile's link, current there; a phone's nav has no Profile link.
+		const current = isDesktopPage(page) ? 1 : 0;
 		await openProfile(page);
 		await expect(page.getByTestId('offline-state')).toBeVisible();
 		await expect(page).toHaveURL(/\/profile$/);
 		await expect(page).toHaveTitle('Offline · Performance Coach');
 		await expect(page.locator('body')).not.toContainText(/500|internal error/i);
 		await expect(page.getByTestId('offline-notice')).toHaveCount(0); // no duplicate notice
-		await expect(nav.locator('[aria-current]:visible')).toHaveCount(0);
+		await expect(nav.locator('[aria-current]:visible')).toHaveCount(current);
+		if (current)
+			await expect(nav.getByTestId('rail-avatar')).toHaveAttribute('aria-current', 'page');
 
 		// A full page load offline gets the precached offline screen, still in the shell, worded
 		// for a device that is offline (not "can't reach the server").
@@ -57,7 +61,9 @@ test.describe('offline behaviour (service worker)', () => {
 		await expect(page.getByTestId('offline-state')).toBeVisible();
 		await expect(page.getByTestId('offline-state')).toContainText('You’re offline');
 		await expect(nav).toBeVisible();
-		await expect(nav.locator('[aria-current]:visible')).toHaveCount(0);
+		await expect(nav.locator('[aria-current]:visible')).toHaveCount(current);
+		if (current)
+			await expect(nav.getByTestId('rail-avatar')).toHaveAttribute('aria-current', 'page');
 
 		// Screens without server data render from the precached build.
 		for (const tab of SCREENS.filter((t) => !DATA_SCREENS.includes(t.path))) {
@@ -118,7 +124,7 @@ test.describe('offline behaviour (service worker)', () => {
 		await expect(page.getByTestId('offline-state')).toHaveCount(0, { timeout: 15_000 });
 		await expect(page.getByTestId('progress-period')).toBeVisible();
 		await nav.getByRole('link', { name: 'Today' }).click();
-		await expect(page.getByTestId('today-avatar')).toBeVisible();
+		await expect(page.getByRole('heading', { level: 1, name: 'Today' })).toBeVisible();
 		await context.setOffline(true);
 		await openProfile(page);
 		await expect(page.getByTestId('offline-state')).toBeVisible();

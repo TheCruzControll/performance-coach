@@ -121,11 +121,25 @@ test.describe('the rail from 1024 px', () => {
 		const rail = railOf(page);
 		const links = rail.getByRole('link');
 		await expect(links).toHaveText([...TABS, PROFILE].map((tab) => tab.label));
-		for (const link of await links.all()) {
-			const box = await boxOf(link);
+		for (const tab of TABS) {
+			const box = await boxOf(rail.getByRole('link', { name: tab.label }));
 			expect(box.width).toBeGreaterThanOrEqual(44);
 			expect(box.height).toBeGreaterThanOrEqual(44);
 		}
+		// The avatar is a 32 px circle; its ::after reaches 6 px past the edge, so a point 5 px
+		// outside the circle still lands on the link (a 44 px hit area).
+		const avatar = rail.getByTestId('rail-avatar');
+		const circle = await boxOf(avatar);
+		expect(Math.round(circle.width)).toBe(32);
+		expect(Math.round(circle.height)).toBe(32);
+		const hit = await avatar.evaluate(
+			(link, { x, y }) => {
+				const at = document.elementFromPoint(x, y);
+				return at !== null && link.contains(at);
+			},
+			{ x: circle.x + circle.width + 5, y: circle.y + circle.height / 2 }
+		);
+		expect(hit, 'a point 5 px outside the avatar hits its link').toBe(true);
 		await expect(rail.locator('[aria-current="page"]')).toHaveCount(1);
 
 		for (const tab of [...TABS.slice(1), TABS[0]]) {

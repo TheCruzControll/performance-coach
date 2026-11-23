@@ -368,7 +368,9 @@ brighten the text and the underline to `--color-text`, on a fine pointer only.
 
 - App shell: content column `--content-column` (34 rem on a phone, 40 rem from 640 px) with
   safe-area-aware gutters; fixed **bottom navigation** (Today · Train · Progress · Coach), a
-  canvas bar with a hairline above it, 58 px tall plus the home indicator; Profile opens from the
+  canvas bar with a hairline above it: 12 px, then the 46 px tabs (`--nav-height`, 58 px), then a
+  foot of 12 px or the home indicator's room, whichever is more (`--nav-foot`), and the 1 px
+  hairline (71 px with no home indicator, 93 px with a 34 px one); Profile opens from the
   avatar on Today (the rail's foot from 1024 px); detail pages have a back link; a left rail from
   1024 px (Responsive layout → Shell); `aria-current="page"` on the active tab; tabs cross-fade with the
   View Transitions API (the `root` snapshot fades while the named nav stays put).
@@ -417,8 +419,10 @@ that specs verify the rest with.
   - `--rail-mark` 2.25 rem: the brand mark atop the rail.
   - `--content-column`: the shell's column, which screen chrome is centred over: `--content-max`,
     and `--content-readable` from 640 px.
-  - `--nav-inset-bottom`: what fixed chrome clears at the bottom: in the shell, the bottom bar and
-    the home indicator (`--nav-height` + `--safe-bottom`), and the home indicator alone from
+  - `--nav-foot`: the bottom bar's foot, `max(--space-3, --safe-bottom)`: 12 px, or the home
+    indicator's room where that is more.
+  - `--nav-inset-bottom`: what fixed chrome clears at the bottom: in the shell, the whole bottom
+    bar (`--nav-height` + `--nav-foot` + its 1 px hairline), and the home indicator alone from
     1024 px; `0px` outside the shell (set under `:root:has(.app-nav)`).
   - `--nav-inset-left`: what it clears at the left: `0px`, and in the shell the rail and the left
     safe area from 1024 px.

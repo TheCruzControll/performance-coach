@@ -84,7 +84,6 @@
 			<a
 				href={profile.href}
 				class="avatar-link"
-				aria-label={profile.label}
 				aria-current={profileActive ? 'page' : undefined}
 				data-sveltekit-preload-data="tap"
 				data-testid="rail-avatar"
@@ -109,8 +108,9 @@
 		left: 0;
 		right: 0;
 		bottom: 0;
-		padding: var(--space-3) max(var(--space-7), var(--safe-right))
-			max(var(--space-3), var(--safe-bottom)) max(var(--space-7), var(--safe-left));
+		/* The foot is in --nav-inset-bottom with the tabs and the hairline (tokens.css). */
+		padding: var(--space-3) max(var(--space-7), var(--safe-right)) var(--nav-foot)
+			max(var(--space-7), var(--safe-left));
 		background: var(--color-canvas);
 		border-top: 1px solid var(--color-hairline);
 	}
@@ -172,8 +172,8 @@
 			top: 0;
 			right: auto;
 			width: calc(var(--rail-width) + var(--safe-left));
-			padding: calc(var(--safe-top) + var(--rail-mark) + 2 * var(--space-6)) 0 var(--safe-bottom)
-				var(--safe-left);
+			padding: calc(var(--safe-top) + var(--rail-mark) + 2 * var(--space-6)) 0
+				calc(var(--safe-bottom) + var(--space-8)) var(--safe-left);
 			background: var(--color-surface-1);
 			border-top: 0;
 			border-right: 1px solid var(--color-hairline);
@@ -183,7 +183,9 @@
 			height: 100%;
 			flex-direction: column;
 			justify-content: flex-start;
-			gap: var(--space-1);
+			/* Each item and the avatar on the rail's centre line, not at its left edge. */
+			align-items: center;
+			gap: var(--space-7);
 			max-width: none;
 		}
 

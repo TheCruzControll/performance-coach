@@ -4,6 +4,7 @@ import {
 	expect,
 	type APIRequestContext,
 	type ConsoleMessage,
+	type Locator,
 	type Page,
 	type TestInfo
 } from '@playwright/test';
@@ -47,12 +48,22 @@ export const PROFILE = { label: 'Profile', path: '/profile', heading: 'Profile' 
 export const SCREENS = [...TABS, PROFILE] as const;
 
 /**
+ * Profile's way in at this window's width: the rail's avatar from 1024 px, Today's avatar below
+ * (which shows only on Today, and is hidden from 1024 px).
+ */
+export function profileEntry(page: Page): Locator {
+	return page.getByTestId(
+		(page.viewportSize()?.width ?? 0) >= 1024 ? 'rail-avatar' : 'today-avatar'
+	);
+}
+
+/**
  * Opens Profile from any app screen and waits for its heading: through Today's avatar on a phone
  * (the tab bar goes to Today first), through the rail's avatar from 1024 px.
  */
 export async function openProfile(page: Page): Promise<void> {
 	if ((page.viewportSize()?.width ?? 0) >= 1024) {
-		await page.getByTestId('rail-avatar').click();
+		await profileEntry(page).click();
 	} else {
 		if (new URL(page.url()).pathname !== '/today') {
 			await page
@@ -61,7 +72,7 @@ export async function openProfile(page: Page): Promise<void> {
 				.click();
 			await expect(page).toHaveURL(/\/today$/);
 		}
-		await page.getByTestId('today-avatar').click();
+		await profileEntry(page).click();
 	}
 	await expect(page.getByRole('heading', { level: 1, name: 'Profile' })).toBeVisible();
 }

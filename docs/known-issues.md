@@ -65,6 +65,10 @@ Last reviewed: 2026-11-23, against `main` at the merge of #618.
 - **Toasts are at the top; v2 puts them above the tab bar (`v2/03`).** `v2/02c` restyled them and
   kept them at the top: above the tab bar they would cover the resume bar, the composer and the
   logger. Closes when `v2/03` moves them with the shell.
+- **On a phone, Profile cannot be reached while Today shows its offline or error state.** Profile
+  is not a tab; below 1024 px its only way in is the avatar in Today's header, and those states
+  replace the header, so there is no avatar. Closes in `v2/06`
+  (Today's full screen) or `v2/24` (states and toasts), whichever draws the avatar in those states.
 - **A taper splice's deload is judged by the tail's first range.** A taper spliced into a block
   (`splice` in `src/lib/domain/programming/periodisation/replan.ts`) gives the tail a new lineage,
   so the Strength view, the weekly review and the cycle review read the tail's own bands: its
