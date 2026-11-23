@@ -33,7 +33,7 @@ export function naiveDays({ days, commitmentWeekdays }: WeekBudget, n: number): 
 	return [...spread(free, n), ...spread(commitmentWeekdays, n - free.length)];
 }
 
-function sessionOn(
+export function sessionOn(
 	date: IsoDate,
 	{ day, exercises }: DaySelection,
 	split: Split,

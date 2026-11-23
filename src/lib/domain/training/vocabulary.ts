@@ -406,6 +406,7 @@ export const DECISION_KIND_LABEL = {
 	start_moved: 'Start moved',
 	session_moved: 'Session moved',
 	session_skipped: 'Session skipped',
+	session_added: 'Session added',
 	exercise_swapped: 'Exercise swapped',
 	prescription_adjusted: 'Prescription adjusted',
 	preference_recorded: 'Preference recorded',

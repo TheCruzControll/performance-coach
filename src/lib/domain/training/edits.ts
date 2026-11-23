@@ -108,3 +108,29 @@ export const adjustDetailsSchema = z.object({
 	reason
 });
 export type AdjustDetailsInput = z.output<typeof adjustDetailsSchema>;
+
+/** The kinds of session an owner or the coach can add to a planned week (added.ts builds each). */
+export const ADDED_KINDS = ['strength', 'hypertrophy', 'run', 'muay_thai', 'conditioning'] as const;
+export type AddedKind = (typeof ADDED_KINDS)[number];
+
+/** How hard an added session is meant to be: easy, moderate or hard. */
+export const ADD_INTENTS = ['easy', 'moderate', 'hard'] as const;
+export type AddIntent = (typeof ADD_INTENTS)[number];
+
+const wholeBetween = (min: number, max: number, message: string) =>
+	z.int(message).check(z.minimum(min, message), z.maximum(max, message));
+
+/**
+ * Add one session on a day of the active program: its kind, its time of day (left out, the session
+ * stays open), its intent and its length. Only the kind and the day are required, and no field is
+ * nullable: an omitted intent or length takes its default in the builder (programming/added.ts).
+ */
+export const addSessionSchema = z.object({
+	date: z.iso.date('Pick a day'),
+	kind: z.enum(ADDED_KINDS, 'Pick a kind of session'),
+	timeOfDay: z.optional(z.enum(TIMES_OF_DAY, 'Pick a time')),
+	intent: z.optional(z.enum(ADD_INTENTS, 'Easy, moderate or hard?')),
+	durationMinutes: z.optional(wholeBetween(10, 300, 'Between 10 and 300 minutes')),
+	reason
+});
+export type AddSessionInput = z.output<typeof addSessionSchema>;
