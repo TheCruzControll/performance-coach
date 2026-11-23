@@ -227,7 +227,9 @@ export function cardState(card: ProposalCardView): CardState {
 			};
 		case 'superseded': {
 			const reason = card.supersededReason;
-			const link = reason && SUPERSEDED_LINK_WORDS[reason];
+			// A deload (a replan) has nothing left to finish in the review once its sessions passed.
+			const finishable = !(reason === 'sessions_passed' && card.kind === 'replan');
+			const link = reason && finishable && SUPERSEDED_LINK_WORDS[reason];
 			return {
 				kind: 'superseded',
 				words: reason ? SUPERSEDED_REASON_LABEL[reason] : 'Replaced since it was proposed',

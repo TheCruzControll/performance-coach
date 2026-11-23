@@ -5,7 +5,8 @@
  * the card shows. The service stays the authority and checks every choice again.
  *
  * The form: `reviewId`; each ticked change as an `item` (its id); a change's choice as
- * `choice:<id>`, 'proposed' or 'half_step' (proposed when absent); Keep's optional `note`.
+ * `choice:<id>`, 'proposed' or 'half_step' (proposed when absent); Keep's optional `note`; and
+ * `accept` on a deload's card (taken whole, no items; the service refuses it on a change list).
  * - applied → { outcome: 'applied', words, href }: the toast, and Train at the week that holds
  *   next week; Keep on a review applied meanwhile → { outcome: 'applied' }: the card, reloaded
  * - rejected, too_late, superseded → { outcome }: the card, reloaded, shows it
@@ -93,10 +94,13 @@ export async function decideReview(
 	deps: DecideReviewDeps = {}
 ) {
 	const { reviewId, items, note } = choicesOf(form);
-	if (mode === 'decide' && items.length === 0)
+	// A deload (a replan head) is taken whole: its card's Accept posts `accept`, with no change ticked.
+	const accept = mode === 'decide' && form.has('accept');
+	if (mode === 'decide' && !accept && items.length === 0)
 		return fail(400, { reason: 'invalid' as const, message: NOTHING_TICKED });
 	try {
-		const input = mode === 'keep' ? { items: [], note } : { items };
+		const input =
+			mode === 'keep' ? { items: [], note } : { items, ...(accept && { accept: true }) };
 		const result = await decideNextWeek(ownerId, reviewId, input, deps);
 		// Keep on a review applied meanwhile (another tab, M5's inbox): the card reloads to say so.
 		if (result.outcome !== 'applied' || mode === 'keep') return { outcome: result.outcome };

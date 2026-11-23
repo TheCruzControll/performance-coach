@@ -231,12 +231,15 @@ export function performedSessions(
 /** A finding's verdict: its level and words. */
 export type Call = readonly [FindingLevel, string];
 
+/** The words trendCall gives a trend going down: a deload reads a lift's decline from them. */
+export const TRENDING_DOWN = 'Trending down';
+
 /** A trend verdict as a finding's level and words. */
 export function trendCall(result: TrendResult): Call {
 	if (result.verdict === 'insufficient_data')
 		return ['not_enough_data', `Not enough data yet: ${plural(result.needs.points, 'more week')}`];
 	if (result.verdict === 'normal_variation') return ['neutral', 'Within normal variation'];
-	const way = result.direction === 'up' ? 'Trending up' : 'Trending down';
+	const way = result.direction === 'up' ? 'Trending up' : TRENDING_DOWN;
 	if (result.good === null) return ['neutral', way];
 	return result.good ? ['good', `${way}, improving`] : ['watch', `${way}, declining`];
 }
