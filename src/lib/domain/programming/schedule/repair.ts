@@ -24,7 +24,13 @@ import type { MoveSessionInput } from '../../training/edits.ts';
 import { render, TEMPLATES } from '../decisions.ts';
 import type { FactsFor } from '../decisions.ts';
 import { clip } from '../demand.ts';
-import { checkConcurrent, goalOf, hasContext, weightFor } from '../evaluate/concurrent.ts';
+import {
+	checkConcurrent,
+	goalOf,
+	hasContext,
+	rankedApart,
+	weightFor
+} from '../evaluate/concurrent.ts';
 import type { ContextEvent, WeekContext } from '../evaluate/concurrent.ts';
 import type { Finding, WeekEvaluation } from '../evaluate/types.ts';
 import { evaluateWeek } from '../evaluate/week.ts';
@@ -299,14 +305,22 @@ export function repairWeek<S extends EvaluatedSession>(
 
 	/**
 	 * The findings of a candidate week, as evaluateWeek finds them (M3's checkWeek, the concurrent
-	 * rules with a context, same_day_order replaced with priorities, in its order), each with the
-	 * harmed goal's weight, without the words and the fingerprint only the reported weeks need.
+	 * rules with a context, same_day_order replaced with priorities for a pair they rank apart, in
+	 * its order), each with the harmed goal's weight, without the words and the fingerprint only the
+	 * reported weeks need.
 	 */
 	const clashesOf = (week: readonly S[]): Clash[] => {
 		const happening = week.filter((s) => s.status !== 'skipped');
 		const context = contextOf(happening);
 		const m3 = checkWeek(happening, { traitsOf, openDates: ctx.open })
-			.filter((v) => !(priorities && v.rule === 'same_day_order'))
+			.filter(
+				(v) =>
+					!(
+						priorities &&
+						v.rule === 'same_day_order' &&
+						rankedApart(weight, v.sessions[0]!, v.sessions.at(-1)!)
+					)
+			)
 			.map((v) => ({
 				rule: `placement.${v.rule}`,
 				severity: v.severity,
