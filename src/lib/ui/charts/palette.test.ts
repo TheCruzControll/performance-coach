@@ -130,6 +130,23 @@ describe('the checks fail by name', () => {
 		expect(failing(m1Dark)).toEqual([at('series lightness band', 'dark')]);
 	});
 
+	it('on a danger that sits next to a dark discipline step', () => {
+		const m1Dark = withTokens({
+			...Object.fromEntries(
+				STACK_ORDER.map((tone) => {
+					const light = colourOf(TOKENS, `--color-${tone}`, 'light');
+					const dark = colourOf(TOKENS, `--color-${tone}`, 'dark');
+					return [SERIES_TOKEN[tone], `light-dark(${light}, ${dark})`];
+				})
+			),
+			'--color-danger': 'light-dark(#bb2c28, #ff6b57)'
+		});
+		expect(failing(m1Dark)).toEqual([
+			at('series lightness band', 'dark'),
+			at('status vs series', 'dark')
+		]);
+	});
+
 	it('on strength next to combat (deuteranopia ΔE 2.3)', () => {
 		// Every other neighbour in this order passes: only the strength–combat pair fails.
 		const order = ['hypertrophy', 'conditioning', 'strength', 'combat', 'running'] as const;

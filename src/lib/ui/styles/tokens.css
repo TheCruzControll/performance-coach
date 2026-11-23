@@ -38,7 +38,7 @@
 	--color-text-secondary: light-dark(#55555c, #a3a3a8);
 	/* Tertiary is below AA on surface-3 (4.4:1 in both themes): never put it there. */
 	--color-text-tertiary: light-dark(#66666e, #86868e);
-	/* Canvas only: the letter of a day with nothing planned. Below 4.5:1 on any surface. */
+	/* Canvas only: the letter of a day with nothing planned. Below 4.5:1 on surface-2, surface-3 and dark surface-1. */
 	--color-text-quiet: light-dark(#6e6e76, #7a7a82);
 	--color-text-disabled: light-dark(#a9a9af, #55555c);
 	--color-text-inverse: light-dark(#f2f2ee, #111113);

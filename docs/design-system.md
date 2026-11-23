@@ -84,7 +84,7 @@ label and placeholder, so the text meets WCAG 1.4.11. The outline itself is fain
 Text, measured on the canvas (dark / light, WCAG): text 17.6 / 17.1; secondary 7.9 / 6.7; tertiary
 5.5 / 5.2, and 4.9 / 4.8 on surface-2. Tertiary is 4.4 / 4.4 on surface-3, below AA, as it was
 before #581, so it is never set on surface-3. `--color-text-quiet` (4.7 / 4.6 on the canvas) is
-below 4.5:1 on any surface, so it is for the canvas only.
+below 4.5:1 on surface-2 and surface-3, and on dark surface-1, so it is for the canvas only.
 
 Discipline colours (signals only — never large fills):
 
@@ -139,8 +139,8 @@ not ship. The order and roles live in `src/lib/ui/charts/palette.ts`.
   order and leaves them out. Strength and combat collapse under deuteranopia (ΔE 2.3), so they
   are never neighbours in the order, and every series is labelled in words.
 - A series colour is never a status colour (each pair at least ΔE 2 apart; status always carries
-  an icon and a word). M1's dark strength sat ΔE 2.3 from the old amber warning, near the floor of
-  2, one more reason charts use their own steps.
+  an icon and a word). M1's dark strength is ΔE 2.25 from warning, just above the floor of 2,
+  one more reason charts use their own steps.
 
 **Diverging pair**, for a signed difference from a target (actual minus target RPE): cool below,
 warm above, a grey with no hue at zero, so on target reads as nothing to see.
