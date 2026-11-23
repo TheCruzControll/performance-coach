@@ -3,11 +3,13 @@
  * asked for, built by the generator's own builders from the owner's profile. The coach never
  * writes its content. Its RPEs are capped at the week's RPE cap, and its length is the one asked
  * for, or the kind's own, trimmed to fit where it can be:
- * - run: one easy run; or a moderate run of tempo, or a hard one of intervals (QUALITY's repeats),
- *   each with a warm-up and cool-down, which needs QUALITY's minimum main set (else a refusal)
+ * - run: one easy run; or a moderate run of tempo (at most QUALITY's tempo minutes), or a hard one
+ *   of intervals (QUALITY's repeats), each with a warm-up and cool-down, which needs QUALITY's
+ *   minimum main set (else a refusal)
  * - muay_thai: the Muay Thai format of its intent (other.ts), pad work for a hard one when the
- *   owner does no sparring
- * - conditioning: a conditioning session at its intent's RPE (rules/added.ts)
+ *   owner does no sparring or the week is not a sparring week (muayThaiKinds in other.ts)
+ * - conditioning: a conditioning session at its intent's RPE (rules/added.ts), of 30 minutes or the
+ *   session length, whichever is less, unless the owner asks for a length
  * - strength, hypertrophy: one day of a split of its own (splits.ts) with exercises from the
  *   selection (selection.ts), fitted to its length (timefit.ts)
  *
@@ -87,9 +89,10 @@ function runSegments(
 	];
 	const main = length - warm - cool;
 	if (intent === 'moderate') {
+		const tempo = Math.min(R.QUALITY.tempo.minutes, main);
 		return {
-			minutes: length,
-			segments: ends([segment('tempo', paces.quality, { minutes: main })])
+			minutes: warm + tempo + cool,
+			segments: ends([segment('tempo', paces.quality, { minutes: tempo })])
 		};
 	}
 	const { workMinutes: work, recoveryMinutes: jog } = intervals;
@@ -126,6 +129,7 @@ function runOf(
 			title: SESSION_TYPE_LABEL[type],
 			discipline: input.disciplines.includes('distance_running') ? 'distance_running' : 'running',
 			customDiscipline: null,
+			// 'hard' as the generator stores a tempo run: interference reads intensity; intent is in the evidence.
 			intensity: R.RUNS[type].intensity,
 			estMinutes: minutes,
 			estLoad: sessionLoadOf({ estMinutes: minutes, targetRpe }),
@@ -143,16 +147,22 @@ function runOf(
 function muayThaiOf(
 	req: AddSessionInput,
 	intent: AddIntent,
+	week: WeekPlan,
+	input: ProgrammingInput
+): SessionPlan {
+	const spars =
+		(input.muayThai?.sparringPerWeek ?? 0) > 0 && R.MUAY_THAI.sparringWeeks.includes(week.kind);
+	const kind = intent === 'hard' && !spars ? 'pad_work' : MUAY_THAI_KIND[intent];
+	const minutes = req.durationMinutes ?? input.sessionMinutes;
+	return placed(otherSession(muayThaiFields(kind, minutes), req.date, 1, week.targets.rpeCap), req);
+}
+
+function conditioningOf(
+	req: AddSessionInput,
+	intent: AddIntent,
 	cap: number,
 	input: ProgrammingInput
 ): SessionPlan {
-	const sparring = (input.muayThai?.sparringPerWeek ?? 0) > 0;
-	const kind = intent === 'hard' && !sparring ? 'pad_work' : MUAY_THAI_KIND[intent];
-	const minutes = req.durationMinutes ?? input.sessionMinutes;
-	return placed(otherSession(muayThaiFields(kind, minutes), req.date, 1, cap), req);
-}
-
-function conditioningOf(req: AddSessionInput, intent: AddIntent, cap: number): SessionPlan {
 	return placed(
 		otherSession(
 			{
@@ -162,7 +172,7 @@ function conditioningOf(req: AddSessionInput, intent: AddIntent, cap: number): S
 				discipline: 'athletic',
 				customDiscipline: null,
 				intensity: intent,
-				minutes: req.durationMinutes ?? CONDITIONING.minutes,
+				minutes: req.durationMinutes ?? Math.min(CONDITIONING.minutes, input.sessionMinutes),
 				rpe: CONDITIONING.rpe[intent],
 				metrics: []
 			},
@@ -218,9 +228,9 @@ export function buildAddedSession(
 		req.kind === 'run'
 			? runOf(req, intent, cap, input)
 			: req.kind === 'muay_thai'
-				? muayThaiOf(req, intent, cap, input)
+				? muayThaiOf(req, intent, week, input)
 				: req.kind === 'conditioning'
-					? conditioningOf(req, intent, cap)
+					? conditioningOf(req, intent, cap, input)
 					: strengthOf(req, intent, week, input);
 	const checked = validate(sessionPlanSchema, session);
 	if (!checked.ok) {

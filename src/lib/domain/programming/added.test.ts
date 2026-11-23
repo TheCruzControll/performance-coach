@@ -114,8 +114,12 @@ describe('buildAddedSession', () => {
 		const easy = build(request({ kind: 'run', intent: 'easy', durationMinutes: 40 }));
 		expect(easy).toMatchObject({ estMinutes: 40 });
 		expect(build(request({ kind: 'run', intent: 'easy' }))).toMatchObject({ estMinutes: 30 });
+		// A moderate run's tempo is QUALITY's tempo minutes at most: 10 + 20 + 10, not the 45 asked.
 		expect(build(request({ kind: 'run', intent: 'moderate', durationMinutes: 45 }))).toMatchObject({
-			estMinutes: 45
+			estMinutes: 40
+		});
+		expect(build(request({ kind: 'run', intent: 'moderate', durationMinutes: 30 }))).toMatchObject({
+			estMinutes: 30
 		});
 		expect(build(request({ kind: 'muay_thai', durationMinutes: 50 }))).toMatchObject({
 			estMinutes: 50,
@@ -125,6 +129,12 @@ describe('buildAddedSession', () => {
 			estMinutes: 20
 		});
 		expect(build(request({ kind: 'conditioning' }))).toMatchObject({ estMinutes: 30 });
+		// A conditioning session takes the session length when that is shorter than its 30 minutes.
+		const short = { ...minimal, sessionMinutes: 20 };
+		expect(build(request({ kind: 'conditioning' }), short)).toMatchObject({ estMinutes: 20 });
+		expect(build(request({ kind: 'conditioning', durationMinutes: 25 }), short)).toMatchObject({
+			estMinutes: 25
+		});
 		const strength = build(request({ kind: 'strength', intent: 'hard', durationMinutes: 25 }));
 		expect(strength.kind === 'strength' && strength.estMinutes <= 25).toBe(true);
 		const usual = build(request({ kind: 'strength', intent: 'hard' }));
@@ -159,12 +169,25 @@ describe('buildAddedSession', () => {
 		expect(easy.kind === 'run' && easy.segments.map((s) => s.kind)).toEqual(['easy']);
 
 		const tempo = build(request({ kind: 'run', intent: 'moderate', durationMinutes: 45 }), hybrid);
-		expect(tempo).toMatchObject({ kind: 'run', type: 'tempo_run', discipline: 'distance_running' });
+		expect(tempo).toMatchObject({
+			kind: 'run',
+			type: 'tempo_run',
+			discipline: 'distance_running',
+			intensity: 'hard'
+		});
 		expect(tempo.kind === 'run' && tempo.segments.map((s) => s.kind)).toEqual([
 			'warm_up',
 			'tempo',
 			'cool_down'
 		]);
+		if (tempo.kind !== 'run') throw new Error('a run');
+		expect(tempo.segments[1]?.durationSeconds).toBe(20 * 60);
+		const trimmed = build(
+			request({ kind: 'run', intent: 'moderate', durationMinutes: 30 }),
+			hybrid
+		);
+		if (trimmed.kind !== 'run') throw new Error('a run');
+		expect(trimmed.segments[1]?.durationSeconds).toBe(10 * 60);
 
 		const hard = build(request({ kind: 'run', intent: 'hard', durationMinutes: 40 }), minimal);
 		expect(hard).toMatchObject({ kind: 'run', type: 'interval_run', discipline: 'running' });
@@ -271,6 +294,18 @@ describe('buildAddedSession', () => {
 		expect(titleOf('hard', 2)).toBe('sparring');
 		expect(titleOf('hard', 0)).toBe('pad_work');
 		expect(titleOf('hard', null)).toBe('pad_work');
+	});
+
+	it('gives pad work for a hard Muay Thai session in a week with no sparring, a deload one', () => {
+		const deload = { ...weekAt(), kind: 'deload' as const };
+		const hard = buildAddedSession(
+			request({ kind: 'muay_thai', intent: 'hard' }),
+			deload,
+			withMuayThai(2)
+		);
+		expect(hard.kind === 'other' && hard.details.kind).toBe('pad_work');
+		const accumulation = build(request({ kind: 'muay_thai', intent: 'hard' }), withMuayThai(2));
+		expect(accumulation.kind === 'other' && accumulation.details.kind).toBe('sparring');
 	});
 
 	it('defaults the intent to easy for a run and moderate for every other kind', () => {
