@@ -68,7 +68,8 @@ const RULES: Record<Rule, { broke: string; fix: string; section: string }> = {
 		broke: 'reads --nav-height, which is wrong once the nav is a rail at the left',
 		fix:
 			'use var(--nav-inset-bottom) (the bar and the home indicator), and centre fixed chrome ' +
-			'with left: calc(50% + var(--nav-inset-left) / 2)',
+			'with left: calc(50% + var(--nav-inset-left) / 2), and from 1024 px ' +
+			'left: calc(var(--column-start) + var(--column-width) / 2)',
 		section: 'Fixed and sticky chrome'
 	},
 	'js-layout': {

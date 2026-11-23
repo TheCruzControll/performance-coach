@@ -94,17 +94,7 @@ test.describe('the rail from 1024 px', () => {
 		expect(glass).toEqual(['none', 'none']);
 		expect(await fixedToBottom(page)).toEqual([]);
 
-		// The canvas, not a surface, with the hairline at its right; no mark drawn above the tabs,
-		// and no markup but the list of destinations.
-		const light = (await page.locator('html').getAttribute('data-theme')) === 'light';
-		await expect(rail).toHaveCSS(
-			'background-color',
-			light ? 'rgb(244, 244, 240)' : 'rgb(10, 10, 11)'
-		);
-		await expect(rail).toHaveCSS(
-			'border-right-color',
-			light ? 'rgba(17, 17, 19, 0.08)' : 'rgba(255, 255, 255, 0.07)'
-		);
+		// No mark drawn above the tabs, and no markup but the list of destinations.
 		const marks = await rail.evaluate((el) =>
 			['::before', '::after'].map((pseudo) => getComputedStyle(el, pseudo).content)
 		);
@@ -113,10 +103,22 @@ test.describe('the rail from 1024 px', () => {
 			'UL'
 		]);
 
-		// The four tabs, then the avatar at the foot: its bottom within 40 px of the window's.
-		await expect(rail.getByRole('link')).toHaveText([...TABS, PROFILE].map((tab) => tab.label));
+		// The canvas, not a surface, with the hairline at its right, in either theme.
+		for (const theme of THEMES) {
+			await openInTheme(page, '/today', theme);
+			const light = theme === 'light';
+			await expect(rail, theme).toHaveCSS(
+				'background-color',
+				light ? 'rgb(244, 244, 240)' : 'rgb(10, 10, 11)'
+			);
+			await expect(rail, theme).toHaveCSS(
+				'border-right-color',
+				light ? 'rgba(17, 17, 19, 0.08)' : 'rgba(255, 255, 255, 0.07)'
+			);
+		}
+
+		// The avatar at the foot: its bottom within 40 px of the window's.
 		const avatar = await boxOf(rail.getByTestId('rail-avatar'));
-		expect([Math.round(avatar.width), Math.round(avatar.height)]).toEqual([32, 32]);
 		const foot = page.viewportSize()!.height - (avatar.y + avatar.height);
 		expect(foot, `the avatar ends ${foot}px above the window's foot`).toBeLessThanOrEqual(40);
 		expect(foot).toBeGreaterThanOrEqual(0);

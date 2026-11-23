@@ -370,7 +370,9 @@ The desktop specs (most also run axe and take screenshots in both themes):
   SQL, so no code is burned. `auth.setup.ts` checks setup and its recovery codes at that size by
   resizing the same page, then asserts the iPhone viewport is back.
 - `primitives.desktop.e2e.ts`: `BottomSheet` as a centred dialog from 1024 px (Escape, backdrop,
-  focus return, no mouse drag, 1024 × 700); Tab order and a ring of at least 2 px in dark, light
+  focus return, no mouse drag, 1024 × 700); a `desktop="panel"` sheet as a 496 px full-height
+  right panel over a clear backdrop, closed by Escape or a click beside it, focus returned; Tab
+  order and a ring of at least 2 px in dark, light
   and forced colours; hover on every primitive; no hover and 44 px targets on a 1180 × 820 touch
   screen; a phone swipe; and Security's stacked step-up over Remove passkey.
 - `main-screens.desktop.e2e.ts`: Progress wide, its view nav and period picker in one row over

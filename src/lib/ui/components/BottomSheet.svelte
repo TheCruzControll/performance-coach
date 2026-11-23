@@ -359,7 +359,7 @@
 
 	/* A desktop window: a 480 px dialog centred in the window that fades in as it rises 8 px, with
 	   no handle; its content scrolls inside. A finger still swipes it down: a wide screen can be a
-	   touch screen. Paper, "Security, removing a passkey": surface-1, 28 px corners, 40 px in. */
+	   touch screen. Paper, "Security, removing a passkey": surface-1, 28 px corners, 40 px at the sides. */
 	@media (width >= 64rem) {
 		.sheet {
 			inset: 0;
@@ -390,8 +390,11 @@
 			display: none;
 		}
 
+		/* Paper's room, less 8 px on top so the plate calculator fits a 1024 x 700 window whole: 24 px
+		   above the header, 40 at the sides, 16 between the header and the body, 24 under the body.
+		   A footer adds 12 above its buttons and keeps 40 under them. */
 		.grab-zone {
-			padding: var(--space-10) var(--space-10) 0;
+			padding: var(--space-6) var(--space-10) 0;
 		}
 
 		.body {
@@ -403,7 +406,7 @@
 		}
 
 		.body:last-child {
-			padding-bottom: var(--space-10);
+			padding-bottom: var(--space-6);
 		}
 
 		/*

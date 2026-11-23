@@ -565,9 +565,11 @@ type scale is the same at every width, because a 1024–1366 px window can be a 
   ghost.
 - From 1024 px the same `<dialog>` opens centred in the window: `min(100% − 2 gutters, 30rem)`
   (480 px) wide, at most `min(85dvh, 48rem)` tall with its content scrolling inside under the
-  title, on `--color-surface-1` with a `--color-border` edge, 28 px corners and 40 px in (24 under
-  a list), over the `--color-overlay` backdrop. It fades in as it rises 8 px, and has no handle.
-  The focus trap and Escape are the platform's; the backdrop and focus return work as on a phone.
+  title, on `--color-surface-1` with a `--color-border` edge and 28 px corners, over the
+  `--color-overlay` backdrop. It has 24 px above the header, 40 px at the sides, 16 px between the
+  header and the content, and 24 px under the body, whether the dialog's edge or a footer comes
+  next; a footer adds 12 px above its buttons and keeps 40 px under them. It fades in as it rises
+  8 px, and has no handle. The focus trap and Escape are the platform's; the backdrop and focus return work as on a phone.
 - With `desktop="panel"` it opens instead as a right-hand panel: 31 rem (496 px) wide, the
   window's full height, on the canvas with a hairline at its left, 48 px down and 56 px in, its
   title Hubot 32/38, sliding 24 px in from the right as it fades. The backdrop is clear, so the
