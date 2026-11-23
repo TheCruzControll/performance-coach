@@ -4,7 +4,7 @@ Open problems, stale docs and claims nobody has verified. Add an entry when you 
 delete it in the change that fixes it. Each entry says what is wrong, how it was found, and what
 would close it.
 
-Last reviewed: 2026-11-23, against `main` at the merge of #618.
+Last reviewed: 2026-11-23, against `main` at the merge of #634.
 
 ## Product limits
 
@@ -83,18 +83,16 @@ Last reviewed: 2026-11-23, against `main` at the merge of #618.
 
 ## Stale documentation
 
-- **milestones.md lists M7 to M9 as Planned.** M6's row and criteria are updated. The git history
-  holds merged slices for M7 and M9, and some M7 pull requests are open; the current counts are in
-  [progress.md](progress.md). No evidence is recorded against those milestones' criteria. Closes
-  when each milestone's criteria are run and the table is updated.
-- **The README status block stops at Milestone 6.** It says nothing of the periodisation work (M7)
-  that has merged. Closes when the README status is rewritten from [progress.md](progress.md).
+- **milestones.md lists M8 and M9 as Planned.** M6's and M7's rows and criteria are updated. The
+  git history holds merged slices for M9; the current counts are in [progress.md](progress.md). No
+  evidence is recorded against M9's criteria. Closes when each milestone's criteria are run and the
+  table is updated.
 - **The README repository map marks the coach as "(M5)" and the offline store as "(M4)"**, as if
   both were still to come. Both folders hold shipped code.
-- **Three ADRs are still named `NNNN-` and Proposed**: encrypted backups, the periodisation
-  engine, and lifecycles as data. Work under several of them has merged. Closes when the docs
-  slice numbers them and sets their status. M6's three (trend classification, hand-built charts,
-  planning later blocks) are accepted as 0015 to 0017.
+- **Two ADRs are still named `NNNN-` and Proposed**: encrypted backups and lifecycles as data.
+  Work under both has merged. Closes when the docs slice numbers them and sets their status. M6's
+  three (trend classification, hand-built charts, planning later blocks) are accepted as 0015 to
+  0017, and M7's two (the periodisation engine, re-plans as versions) as 0018 and 0019.
 - **ADR 0011 (email sign-in link) is still Accepted**, while milestones.md records that the owner
   dropped the emailed link on 2026-11-07. Not checked against the code. Closes when the ADR is
   marked Superseded or the note in milestones.md is corrected.
@@ -151,8 +149,29 @@ Last reviewed: 2026-11-23, against `main` at the merge of #618.
 
 - **M7 adds sequential reads to Train's load.** The week's findings and its evaluation context
   read the program, the profile, 49 days of facts and the planned sessions one after another. On
-  CI's two-year dataset that adds about 60 ms to the median (`db:explain` prints it). On Neon,
-  where each read is a round trip, expect more. It is not gated, since performance is not tested.
+  CI's two-year dataset that adds 134.7 ms to the median of Train's load (142.3 ms with M7, 7.7 ms
+  without) on run 45247017050, the run of #634, and from 126.7 ms to 187.2 ms on three other runs
+  that day (docs/performance.md, "M7 (advanced coaching)"). The plan's target was +10 ms.
+  On Neon, where each read is a round trip, expect more. It is not gated, since performance is not
+  tested. Closes when the reads run together or the owner accepts the cost.
+
+- **No Playwright journey runs M7 across disciplines.** M7's criterion 2 asks for one: onboarding
+  with several goals, a rule-respecting program, its warnings, a priority change, a re-plan
+  proposal, Accept and a new version. The plan's slice for it (m7/57) was never built or queued;
+  the parts are covered separately (docs/milestones.md, M7). Found writing M7's status. Closes when
+  an `e2e/journey-*.serial.e2e.ts` runs the chain on the iPhone and in a desktop window.
+
+- **The coach's scenario tests cover one of the three PRD §5 examples.** Only the squats before
+  hard Muay Thai runs through `runTurn` with the MockProvider
+  (`tests/integration/coach/tools-periodisation.test.ts`); the long run and the intervals are
+  tested as domain rules only. Found writing M7's status. Closes when the coach's scripted turns
+  cover those two as well.
+
+- **M7's e2e specs have not run on the current head.** `e2e/train-findings.serial.e2e.ts`,
+  `e2e/design-program.e2e.ts` and `e2e/reviews-sections.serial.e2e.ts` are not journeys, so only a
+  scheduled or manual CI run runs them. The last scheduled run, 45051537354 on `1ba0f61e`
+  (2026-11-22), predates the `m7r/` merges, and no manual run has run since. Found reading CI's
+  runs for M7's status. Closes when a scheduled or manual run passes on a head with every M7 slice.
 
 - **A deload's review still points at the stale proposal after Propose again.** The review keeps
   naming the proposal it was made from, so going back shows "This deload is out of date" for as long as
@@ -183,8 +202,9 @@ Last reviewed: 2026-11-23, against `main` at the merge of #618.
 
 - **The `/progress` overview at 'all' misses its 150 ms page-load target.** Its median is 192.0 ms
   (p95 204.9 ms) on the explain run 45220282661, which is under the 300 ms gate. Found by that run,
-  recorded in docs/performance.md ("M6 (analytics and reviews)"). Closes when a measured head puts
-  the median under 150 ms, or the owner changes the target.
+  recorded in docs/performance.md ("M6 (analytics and reviews)"). On run 45247017050, the run of
+  #634, it was 171.0 ms (p95 182.4 ms). Closes when a measured head puts the median under 150 ms,
+  or the owner changes the target.
 
 - **Chart chunk sizes are not measured.** `pnpm budgets` reports each route's totals and not its
   chart chunks, so no chart's gzip size is recorded. Closes when the budget output or

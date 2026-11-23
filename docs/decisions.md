@@ -99,6 +99,7 @@ Summaries only. Status is as recorded in [adr/README.md](adr/README.md).
 | [0015](adr/0015-trend-classification.md)     | Trend vs noise: Theil–Sen, Mann–Kendall, a minimal change         | Accepted |
 | [0016](adr/0016-hand-built-charts.md)        | Hand-built charts: lazy SVG lines, HTML marks, one registry       | Accepted |
 | [0017](adr/0017-planning-later-blocks.md)    | Planning later blocks: a new version, a bridge, no past days      | Accepted |
+| [0018](adr/0018-periodisation-engine.md)     | Periodisation: rules as data, one evaluator, one load model       | Accepted |
+| [0019](adr/0019-replans-as-versions.md)      | Re-plans as versions: four directives, three mechanisms           | Accepted |
 | [NNNN](adr/NNNN-encrypted-backups.md)        | App-level encrypted backups: a daily cron to a private Blob store | Proposed |
-| [NNNN](adr/NNNN-periodisation-engine.md)     | Periodisation: rules as data, one evaluator, one load model       | Proposed |
 | [NNNN](adr/NNNN-lifecycles-as-data.md)       | Lifecycles as data: a typed transition table per status list      | Proposed |

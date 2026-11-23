@@ -1332,35 +1332,122 @@ Captured into `test-results/screens/<project>/`, the desktop ones under `desktop
 
 ## Advanced coaching (M7)
 
-One paragraph per M7 slice, each replaced by its own slice only; docs-m7 turns them into its test
-inventory.
+This is the M7 test inventory, by layer, so each claim in milestones.md can be traced to a file.
+Counts are test files. The PRD's examples are the scenarios S1 to S12 in
+`src/lib/domain/programming/periodisation/coverage.ts` (`PRD_EXAMPLES`), each a profile and a
+training history in `periodisation/scenarios.ts` and `histories.ts`. Performance is not in CI (see
+"CI"), so M7 has no performance test on `main`; the numbers in docs/performance.md come from the
+runs it names. Since the re-slice (`plan/m7-reslice.md`), the owner's rule allows no e2e spec
+beyond the PRD journeys, so M7's only new spec is m7/04's `train-findings`; its screens are covered
+by integration tests and the three e2e specs below.
 
-m7/04 train-week-findings: the periodisation-week fixture
-(`src/lib/server/test-support/analytics-fixtures/periodisation-week.ts`): a clean hybrid week, the
-owner's move of Lower A to the day before Tuesday's hard Muay Thai next week, a past week, this
-week's passed clash, a clean week and outline weeks.
-`tests/integration/periodisation/evaluate.test.ts`. `e2e/train-findings.serial.e2e.ts` and
-`e2e/periodisation-support.ts` (`weekEvaluation(weekStart, today)`: the SQL-side oracle that runs
-domain `evaluateWeek` over the stored week with the service's open dates).
+### Domain and components (unit)
 
-m7r/06 periodised-targets: `src/lib/domain/programming/planned-targets.test.ts`: hypertrophy
-weeks by their own setsPerGroup, unscaled, and the deload by the first range × 0.6; a maintenance
-block and a fight camp by the dose (cut on a cut); a secondary strength goal by the lower half of
-its band, from the goals as prepare ranked them; a fight-only camp shows no target; M3's
-generators and a plan with no season keep M6's rule. `rules/registry/targets.test.ts`.
-`tests/integration/analytics/targets.test.ts` (M7 weeks through the service, with
-`fixtures/m7-programs.ts`), `reviews/cycle.test.ts` (a hypertrophy block's ramp weeks and its
-average RPE against the block's caps) and `reviews/weekly.test.ts` (a maintenance week against
-its dose). `review/weekly.test.ts`: `avgRpeCall`.
+- `src/lib/domain/programming/periodisation/*.test.ts` (13 files): the season planner and the plan
+  budget, the season windows (paused goals too), each block kind (strength phases, hypertrophy
+  blocks, marathon and half blocks, fight camps, the maintenance block), deloads with their
+  triggers (the declining history, S7), tapers (one short strength session a week in an endurance
+  taper, none within 4 days of the race), the re-plan engine (regenerate for new priorities, S8; a
+  deload in place; a taper spliced in), and `M7_SCENARIOS`, whose coverage test names S1 to S12
+  with their PRD sentences.
+- `src/lib/domain/programming/evaluate/*.test.ts` (2 files): `evaluateWeek` on the PRD §5
+  conflicts, each finding with its why and resolution (an owner's move, a commitment, a priority
+  kept, no room), its score and grade, and the concurrent rules: hard Muay Thai adds fatigue (S10),
+  high running volume against leg recovery (S9), hard-day spacing, event protection and the
+  sparring cap.
+- `src/lib/domain/programming/schedule/*.test.ts` (2 files): `repairWeek` clears the PRD §5
+  conflicts, keeps the owner's moves, never moves a commitment or a past session, never raises the
+  cost, and is idempotent.
+- `src/lib/domain/programming/load/*.test.ts` (3 files) and `priority/*.test.ts` (2 files): the
+  five-system load split, which sums by day as M6's `dailyLoads` does; the fatigue model on the
+  PRD histories; which goal leads, by rank and event proximity (S1 in fight camp: the fight leads,
+  the marathon is secondary, the rest are held); and the maintenance doses through `doseBand`.
+- `src/lib/domain/programming/rules/registry/*.test.ts` (11 files): every rule key is unique and
+  dotted, each area's constants are registered live, a superseded rule names its replacement, and
+  M3's, M4's and M6's rules are registered too. `scripts/rule-keys.test.ts` finds every rule key
+  the code cites, and `scripts/programming-rules-doc.test.ts` keeps
+  `docs/programming-rules.md` equal to a fresh render of the registry (`pnpm docs:rules` rewrites
+  it), with every export of `src/lib/domain/programming/rules/` a registered rule or a listed
+  non-rule and every cited key an active rule.
+- `src/lib/domain/programming/generate-{season,schedule,phasing,running,combat}.test.ts` (5 files):
+  the season-aware generator. multiGoal (S1) leads its blocks to each event; every avoid finding a
+  generated week keeps is explained by a priority trade-off or a kept schedule; hypertrophy volume
+  rises week on week until the deload (S6); runs are paced from current fitness; and a fight camp
+  caps its sparring.
+- `hr-zones.test.ts`, `planned-targets.test.ts` and `next-block/periodised.test.ts` in
+  `src/lib/domain/programming/`: heart-rate zones in the plan (threshold, then heart-rate reserve,
+  then max), each M7 week judged by the targets its plan set, and the next block from the season.
+  `interference.test.ts` keeps M3's four §5 rules, and `scenarios.test.ts` M3's scenarios, under
+  the M7 rules.
+- `src/lib/domain/training/replan.test.ts` and `src/lib/domain/programming/replan/changes.test.ts`:
+  the four directives and the week-by-week description of a re-plan's change.
+- `src/lib/server/services/periodisation/*.test.ts` (4 files): the deload's target week, a deload
+  assessed over a weekly review (S7), the road serialised within 1.5 KB, and its read fault.
+- The coach: `src/lib/server/agent/tools/periodisation.test.ts` (a what-if move),
+  `src/lib/server/agent/prompt/layout.test.ts` (the week block: its findings as untrusted text, and
+  the next deload and taper), and `src/lib/domain/coach/cards.test.ts`, `diff.test.ts`,
+  `proposal-rules.test.ts` and `proposals.test.ts` (the replan payload, its rules and its card).
+- The screens: `src/lib/ui/program/season.test.ts` and `block-timeline.test.ts` (the season over the
+  timeline), `src/lib/ui/profile/ReplanNotice.test.ts`, `replan-notice.test.ts` and
+  `GoalsEditor.test.ts` (the notice by state), `src/lib/ui/profile/specifics.test.ts` and
+  `src/lib/domain/profile/schemas.test.ts` (heart rate), `src/lib/ui/program/session-words.test.ts`
+  (run efforts in heart-rate zones), `src/lib/ui/coach/ProposalCard.propose-again.test.ts` and
+  `src/routes/(app)/progress/reviews/[[key]]/next-week.test.ts` (a stale re-plan, and the deload
+  card). Train's findings, 'Why Monday?' and the week kinds have no component test; the integration
+  and e2e tests below cover them.
 
-m7/58 rules-reference: `scripts/programming-rules-doc.test.ts` keeps `docs/programming-rules.md`
-equal to a fresh render of the rules registry (`pnpm docs:rules` rewrites it); every export of
-`src/lib/domain/programming/rules/` is a registered rule or a listed non-rule, and the constants
-the M7 plan's drift list names outside it are registered; every rule key the programming code,
-its services and M3's and M7's scenario plans cite resolves to an active rule; a changed value
-changes the render, a superseded rule names its replacement, and a value JSON cannot print
-throws. `rules/registry/m3.test.ts` and `m6.test.ts` also scan the build, start-move and
-review-applier services.
+### Integration (real Postgres)
+
+- `tests/integration/periodisation/` (11 files): the week's evaluation and Train's notes
+  (`evaluate`), why each session sits on its day (`explain`), the light weeks' line and countdown
+  (`week-line`), the evaluation context with logged and planned load and a stalled read under the
+  one-query guard (`context`), the re-plan preview, a priority swap on the hybrid among them (S8,
+  `preview`), a change of priorities on Profile → Goals (`priority-replan`), the reactive deload
+  (S7, `reactive-deload`), the road (`road-view`, `train-road`), Train's re-plan line
+  (`train-replan-note`) and Train's page data (`train-page-data`, docs/performance.md, "M7
+  (advanced coaching)").
+- `tests/integration/coach/tools-periodisation.test.ts`: `evaluate_week_interference`,
+  `explain_schedule_tradeoffs`, `propose_program_adjustment` with ops, and `plan_block`,
+  `schedule_deload` and `plan_taper`, on the periodisation-week fixture, where the owner moved
+  Lower A to the day before Tuesday's hard Muay Thai (S2). Its scripted turns run `runTurn` with the
+  MockProvider: the week-repair script proposes the engine's repair exactly as computed; 'Does next
+  week clash?' and 'Why is my week shaped like this?' are answered with grounded metrics and facts.
+  `replan-proposals.test.ts`, `propose-again.test.ts` and `propose-again-action.test.ts`: the replan
+  proposal's lifecycle, staleness at accept and Propose again. `turn.test.ts` ("the week block")
+  carries the week's block into every turn.
+- `tests/integration/reviews/weekly-conflicts.test.ts` (hard sparring logged Monday, then heavy
+  squats Tuesday, listed as residual fatigue with its why) and `deload-propose-again.test.ts`.
+  `cycle.test.ts`, `weekly.test.ts` and `next-cycle.test.ts` judge M7 hypertrophy and maintenance
+  weeks and plan the next block from the season.
+- `tests/integration/programs/replan-store.test.ts`: a re-plan stored as a new version, by
+  regenerating, splicing or in place, with history untouched. `batch.test.ts` and
+  `tests/integration/training/edit-move-skip.test.ts`: a move judged with M7's rules.
+- `tests/integration/profile/running-hr.test.ts` (heart rate on the running profile and in
+  onboarding) and `replan-action.test.ts` (Profile → Goals' re-plan action and its Try again).
+  `tests/integration/analytics/targets.test.ts`: the muscle-group targets of M7 weeks.
+
+### End to end (Playwright, serial)
+
+- `e2e/train-findings.serial.e2e.ts`: the periodisation week on Train. The heads-up on the moved
+  card and on Tuesday's matches the evaluation computed in SQL (`e2e/periodisation-support.ts`,
+  `weekEvaluation`), 'No clashes this week' shows when there are none, and it works without
+  JavaScript. It runs on the iPhone, and one test in a desktop window (`DESKTOP`).
+- `e2e/design-program.e2e.ts`: the week finding and 'Why Saturday?' on `/design` → Plan.
+- `e2e/reviews-sections.serial.e2e.ts`: the hard sparring's conflict in a weekly review shows its
+  why, judged by M7's evaluator.
+- No e2e covers the season timeline, the re-plan notice or proposal, the deload card or the
+  heart-rate fields, and no journey runs the multi-discipline chain from onboarding to an accepted
+  re-plan (milestones.md, M7). These specs are not journeys, so pull requests and pushes do not run
+  them; only a scheduled or manual run does ("CI").
+
+### Query plans and budgets
+
+- `scripts/explain/periodisation.cases.ts`, run by `pnpm db:explain`: Train's load with M7's reads
+  on and off, printed and not gated (`TRAIN_TARGET_MS`, 10 ms).
+- `tests/integration/periodisation/train-page-data.test.ts`, against
+  `scripts/explain/baselines/train-m7.json`: Train's page data grows only by the allowances of the
+  M7 slices that are on, within 64 B.
+- `pnpm budgets` checks each M7 route's initial JS and route CSS (docs/performance.md, "Budgets").
 
 ## The LLM in tests
 
@@ -1671,8 +1758,34 @@ a preview deployment (Vercel Authentication on):
     start it. In airplane mode, Start next block says 'You’re offline. Start it once you’re back
     online.'
 
+18. Train (M7), the week's findings and 'Why Monday?' on the iPhone: on Train, open a week with a
+    clash. The line under the position counts it ('1 heads-up this week'). Tap the line under the
+    session card: its why opens, and a second tap closes it. Tap 'Why Monday?' (the card's day) under
+    a card: the decisions that put the session there open as a list, the owner's moves first; tap
+    again to close. Nothing opens by itself, and the page does not jump.
+19. Train (M7), the season at 320 px in both themes: on the phone at its zoomed width (Settings → Display &
+    Brightness → Display Zoom), and at 320 px in desktop Chrome's device toolbar, which is not a
+    device check, tap Plan on Train while the season is still loading, then
+    once it has loaded, in dark and in light (Profile → Appearance). Each block from this one on
+    lists its goals' roles, the leader first; deload, taper and recovery weeks carry their word
+    after the number; nothing scrolls sideways, and the list does not shift when the season lands.
+20. Profile (M7), a priority change and its re-plan: on Profile → Goals, drag a goal (or use its
+    arrows) to change the order. The list moves at once, and a calm line under it then says what
+    happened, for example that a re-plan is ready, with a link. Train shows 'A re-plan for your new
+    priorities is ready · Review'. Open it: the proposal says 'From your goal change' and lists what
+    changes week by week. Accept it: it applies as a new version, which Train then shows.
+21. Progress (M7), a deload card on Monday and mid-week: open a weekly review that proposes a
+    deload. On a Monday its headline reads 'This week becomes a deload week from today' or 'Next week
+    becomes a deload week'; mid-week, only the sessions still ahead are listed under 'What changes'.
+    'Why' lists the signals. Tap 'Accept the deload' or 'Keep the plan' and check Train's week.
+22. Onboarding and Profile (M7), heart rate: in onboarding's 'Running & Muay Thai' step, and in
+    Profile → Running & Muay Thai, enter max, resting and threshold heart rate on the numeric
+    keypad; an out-of-range or out-of-order value shows its error at the field. Save, build or
+    regenerate a plan, and open a run session: its segments read 'Zone 2 · 134–148 bpm' style
+    ranges.
+
 Record device, iOS version, date and screenshots in the PR.
 
 Last pass: 2026-11-06, the owner's iPhone 16 Pro Max, iOS 27.0.1, Chrome for iOS, right
 after the owner setup (docs/deployment.md, "Owner setup"); recorded in M2's docs PR. Items 8 to
-17 have not been run on a device yet.
+22 have not been run on a device yet.

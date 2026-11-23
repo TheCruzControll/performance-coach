@@ -22,7 +22,7 @@ Status values: Proposed · Accepted · Superseded.
 | [0015](0015-trend-classification.md)     | Trend vs noise: Theil–Sen, Mann–Kendall p, a minimal change   | Accepted |
 | [0016](0016-hand-built-charts.md)        | Hand-built charts: lazy SVG lines, HTML marks, one registry   | Accepted |
 | [0017](0017-planning-later-blocks.md)    | Planning later blocks: a new version, a bridge, no past days  | Accepted |
+| [0018](0018-periodisation-engine.md)     | Periodisation: rules as data, one evaluator, one load model   | Accepted |
+| [0019](0019-replans-as-versions.md)      | Re-plans as versions: four directives, three mechanisms       | Accepted |
 | [NNNN](NNNN-encrypted-backups.md)        | App-level encrypted backups: a daily cron to a private Blob   | Proposed |
-| [NNNN](NNNN-periodisation-engine.md)     | Periodisation: rules as data, one evaluator, one load model   | Proposed |
 | [NNNN](NNNN-lifecycles-as-data.md)       | Lifecycles as data: a typed transition table per status list  | Proposed |
-| [NNNN](NNNN-replans-as-versions.md)      | Re-plans as versions: four directives, three mechanisms       | Proposed |

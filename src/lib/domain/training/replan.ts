@@ -1,5 +1,5 @@
 /**
- * The re-plan contract (M7, PRD §5; docs/adr/NNNN-replans-as-versions.md): what a re-plan is asked
+ * The re-plan contract (M7, PRD §5; docs/adr/0019-replans-as-versions.md): what a re-plan is asked
  * for, and the payload an M5 proposal of kind replan stores. The change itself is re-derived from
  * the payload at accept, so the payload holds only the request and the hashes that tell whether
  * the profile or the plan moved since.
