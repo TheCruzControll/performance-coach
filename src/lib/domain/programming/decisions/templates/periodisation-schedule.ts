@@ -12,5 +12,9 @@ export const periodisationSchedule = {
 	load_eased: {
 		summary: '{session} eased to RPE {rpe}',
 		why: '{conflict}, and no day of the week avoids it, so {session} is eased to RPE {rpe}. {reason}'
+	},
+	schedule_kept: {
+		summary: 'Kept: {headline}',
+		why: '{reason}'
 	}
 } as const satisfies Templates;

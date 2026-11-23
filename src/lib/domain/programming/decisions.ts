@@ -75,6 +75,20 @@ export function render(text: string, facts: Facts, kind: DecisionKind): string {
 	});
 }
 
+/**
+ * The rules whose decisions say a clash a planned week keeps on purpose, by the rule's key
+ * (`ruleKey`, not the kind): a priority trade-off of placement, of schedule repair, or of the
+ * generator over a session no goal trains, and each schedule_kept. A clash one of them cites is
+ * explained, and Train and the coach show it as kept. A trade-off of any other rule, such as a
+ * session moved for a priority or a long run's length, explains no clash.
+ */
+export const CLASH_KEPT_RULES: readonly string[] = [
+	'placement.priority_kept',
+	'schedule.priority_kept',
+	'schedule.kept',
+	'generator.kept_over_ungoaled'
+];
+
 /** The decisions one generation or edit makes, all by the same decider. */
 export class DecisionLog {
 	readonly #decidedBy: Decider;

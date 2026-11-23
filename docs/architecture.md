@@ -424,6 +424,15 @@ phasing → volume → loads → progression → timefit → schedule
   sessions; the commercial-gym preset; a commitment at moderate intensity for 60 minutes (90
   for Muay Thai); new to each discipline; time-based runs with no running specifics; technical
   Muay Thai sessions; maintenance when every goal is paused.
+- The schedule stage (`stages/schedule.ts`) repairs every planned week with the week scheduler. A
+  block's building weeks share the days of its hardest week, and each later week plans against that
+  pattern shifted back a week, so a Sunday the block repeats counts before the Monday after it. Once
+  the plan is final, every week is judged again against the week before it as planned, and an avoid
+  finding it keeps that no clash-keeping decision (`CLASH_KEPT_RULES`) already explains becomes a
+  `schedule_kept` decision citing its session, found against that week before and kept because the
+  block shares its days, or, for a week of its own (`OWN_WEEKS`: deload, taper, event and so on),
+  because that week keeps its own days. Repair does not search again for these, so every clash a
+  generated week shows is gone or explained.
 - Session length: `timefit` runs last, so the sets volume and progression add are checked in
   every week. Every generated session fits `sessionMinutes` except the long run
   (`BEYOND_SESSION_LENGTH`; `LONG_RUN_EXCEEDS_SESSION` caps it too when false), which says so in

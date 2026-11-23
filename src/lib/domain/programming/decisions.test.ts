@@ -91,6 +91,14 @@ const M7_FACTS = {
 		summary: 'Lower A eased to RPE 6',
 		why: `Heavy squats the day before sparring, and no day of the week avoids it, so Lower A is eased to RPE 6. ${BECAUSE}`
 	},
+	schedule_kept: {
+		facts: {
+			headline: 'Tempo run and Muay Thai class on Thursday, then Long run on Saturday',
+			reason: BECAUSE
+		},
+		summary: 'Kept: Tempo run and Muay Thai class on Thursday, then Long run on Saturday',
+		why: BECAUSE
+	},
 	block_type_chosen: {
 		facts: {
 			block: 'Camp for Fight night',
