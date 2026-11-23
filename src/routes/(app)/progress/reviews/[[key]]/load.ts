@@ -180,6 +180,8 @@ export interface NextWeekItemView {
  * What next week's card shows, from the review's decision (its proposal chain's head):
  * - open: undecided; partly_past: decided late or superseded from M5's inbox, with what is left;
  *   all_past: every change's session has passed
+ * - deload: a proposed deload (a replan head) undecided, taken whole with Accept or kept;
+ *   late_deload: a deload whose week had passed when it was accepted
  * - no_ops, no_program, boundary, late: nothing was proposed, and why
  * - applied (from here or M5's inbox), rejected, superseded (the plan changed), waiting
  */
@@ -188,6 +190,8 @@ export interface NextWeekView {
 		| 'open'
 		| 'partly_past'
 		| 'all_past'
+		| 'deload'
+		| 'late_deload'
 		| 'no_ops'
 		| 'no_program'
 		| 'boundary'
@@ -355,6 +359,8 @@ export const NEXT_WEEK_TITLES: Record<NextWeekView['state'], string> = {
 	open: 'Next week’s changes',
 	partly_past: 'Some sessions have passed — apply the rest?',
 	all_past: 'Too late to change next week',
+	deload: 'A deload is proposed',
+	late_deload: 'Too late to deload that week',
 	no_ops: 'Next week stays as planned',
 	no_program: 'Build a program to get adjustments',
 	boundary: 'Next week starts a new block',
@@ -366,6 +372,9 @@ export const NEXT_WEEK_TITLES: Record<NextWeekView['state'], string> = {
 };
 
 const NO_PROPOSAL_STATE = { no_changes: 'no_ops', boundary: 'boundary', late: 'late' } as const;
+
+/** A deload whose week passed before it was accepted: nothing is left of it to take. */
+const DELOAD_PASSED_WORDS = 'That deload’s week has passed.';
 
 /** The card's own words with no program: the stored ones can name the cycle review instead. */
 const NO_PROGRAM_WORDS =
@@ -412,13 +421,17 @@ export function nextWeekView(
 ): NextWeekView | null {
 	if (view.legacy) return null;
 	const { decision, proposal } = view;
+	// A deload (a replan head) is taken or kept whole: its rows would only restate that it replaces them.
+	const replan = proposal?.kind === 'replan';
 	const card = (state: NextWeekView['state'], words: string | null, more = {}): NextWeekView => ({
 		...{ state, title: NEXT_WEEK_TITLES[state], words, items: [] },
-		notProposed: view.notProposed.map((f) => ({
-			id: f.id,
-			label: f.label,
-			words: f.verdict.words
-		})),
+		notProposed: replan
+			? []
+			: view.notProposed.map((f) => ({
+					id: f.id,
+					label: f.label,
+					words: f.verdict.words
+				})),
 		link: null,
 		...more
 	});
@@ -449,6 +462,15 @@ export function nextWeekView(
 		case 'accepted_waiting':
 			return card('waiting', 'Your plan is being updated.');
 		default: {
+			// Undecided or late (its week passed before accept): the deload's own card, no list.
+			if (replan) {
+				if (decision.state === 'late') return card('late_deload', DELOAD_PASSED_WORDS);
+				const week = view.snapshot?.deload?.week ?? null;
+				const finding = view.snapshot?.brief.findings.find((f) => f.id === 'next:deload');
+				return card('deload', finding?.verdict.words ?? null, {
+					...(week && { title: `Deload · ${titleOf(week)}` })
+				});
+			}
 			const rows = proposal?.rows ?? [];
 			const items = offers.map((o, i): NextWeekItemView => {
 				const row = rows[i];

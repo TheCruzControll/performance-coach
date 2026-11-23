@@ -9,6 +9,7 @@ import { decisionOf, stale } from './store';
 
 const head = (more: Partial<ProposalHeadRow>): ProposalHeadRow => ({
 	id: 'p-2',
+	kind: 'program_adjustment',
 	status: 'proposed',
 	supersededReason: null,
 	appliedVersionId: null,
@@ -43,6 +44,21 @@ describe('decisionOf', () => {
 			proposalId: 'p-2',
 			reason: 'revised'
 		});
+	});
+
+	it("reads a replan head (M7's deload) superseded as sessions_passed as late, its other states as M6's", () => {
+		const replan = (more: Partial<ProposalHeadRow>) => head({ kind: 'replan', ...more });
+		expect(
+			decisionOf(replan({ status: 'superseded', supersededReason: 'sessions_passed' }))
+		).toEqual({ state: 'late', proposalId: 'p-2' });
+		expect(decisionOf(replan({}))).toEqual({ state: 'undecided', proposalId: 'p-2' });
+		expect(decisionOf(replan({ status: 'rejected' }))).toEqual({
+			state: 'rejected',
+			proposalId: 'p-2'
+		});
+		expect(
+			decisionOf(replan({ status: 'superseded', supersededReason: 'review_refreshed' }))
+		).toEqual({ state: 'superseded', proposalId: 'p-2', reason: 'review_refreshed' });
 	});
 });
 

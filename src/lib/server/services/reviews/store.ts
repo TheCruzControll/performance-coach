@@ -104,10 +104,17 @@ export type StoredCycleReview = CycleReviewRow & {
 };
 export type StoredReview = StoredWeeklyReview | StoredCycleReview;
 
-/** What the owner decided on a review's proposal, read from its chain's head. */
+/**
+ * What the owner decided on a review's proposal, read from its chain's head. 'late' (M7) is a
+ * replan head (a deload) whose week had no session still ahead at accept (sessions_passed): unlike
+ * a program_adjustment's partly past head, nothing is left of it to decide.
+ */
 export type DecisionState =
 	| { state: 'none' }
-	| { state: 'undecided' | 'rejected' | 'partly_past' | 'accepted_waiting'; proposalId: string }
+	| {
+			state: 'undecided' | 'rejected' | 'partly_past' | 'accepted_waiting' | 'late';
+			proposalId: string;
+	  }
 	| { state: 'applied'; proposalId: string; versionId: string | null; versionNumber: number | null }
 	| { state: 'superseded'; proposalId: string; reason: string };
 
@@ -385,6 +392,8 @@ export function decisionOf(head: ProposalHeadRow | null): DecisionState {
 				versionNumber: head.appliedVersionNumber
 			};
 		case 'superseded':
+			if (head.supersededReason === PARTLY_PAST_REASON && head.kind === 'replan')
+				return { state: 'late', proposalId };
 			return head.supersededReason === PARTLY_PAST_REASON
 				? { state: 'partly_past', proposalId }
 				: { state: 'superseded', proposalId, reason: head.supersededReason ?? 'unknown' };

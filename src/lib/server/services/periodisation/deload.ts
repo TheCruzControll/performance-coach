@@ -30,6 +30,7 @@ import {
 	type LiftTrend
 } from '../../../domain/programming/periodisation/deload';
 import type { WeeklyReviewSnapshot } from '../../../domain/programming/review/snapshot';
+import { TRENDING_DOWN } from '../../../domain/programming/review/weekly';
 import { REPLAN_REASONS } from '../../../domain/training/replan';
 import type { EvaluationContext } from './context';
 import {
@@ -87,7 +88,7 @@ export function liftTrendsOf(snapshot: WeeklyReviewSnapshot): LiftTrend[] {
 		.map((f) => ({
 			name: f.label.replace(/ estimated 1RM$/, ''),
 			trend:
-				f.verdict.level === 'watch' && f.verdict.words.startsWith('Trending down')
+				f.verdict.level === 'watch' && f.verdict.words.startsWith(TRENDING_DOWN)
 					? declining(f.figures[0]?.value ?? null)
 					: null
 		}));

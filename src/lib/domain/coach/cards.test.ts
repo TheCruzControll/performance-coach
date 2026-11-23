@@ -192,6 +192,19 @@ describe("M6's reviews on the card", () => {
 		});
 	});
 
+	it('labels a deload whose sessions passed, with no link: there is nothing left to finish', () => {
+		const deload = {
+			...weekly,
+			kind: 'replan',
+			status: 'superseded',
+			supersededReason: 'sessions_passed'
+		} as const;
+		expect(cardState(cardOf(deload))).toEqual({
+			kind: 'superseded',
+			words: 'Some sessions have passed'
+		});
+	});
+
 	it('leaves the coach’s own superseded reasons unlinked', () => {
 		const revised = { ...weekly, status: 'superseded', supersededReason: 'revised' } as const;
 		expect(cardState(cardOf(revised))).toEqual({

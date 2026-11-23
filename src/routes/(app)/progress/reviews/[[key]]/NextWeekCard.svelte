@@ -11,6 +11,9 @@
   - 'Keep next week as planned' (?/keep, the same form) opens a sheet with an optional reason.
   - Pending: the form is aria-busy and a second tap posts nothing. Offline (the shell says so):
     the actions are disabled and the choices kept. A failure says why, and Retry resends it.
+  - A proposed deload (state 'deload') has no changes to tick: 'Accept the deload' posts the same
+    ?/decide with `accept`, and 'Keep the plan' posts ?/keep. A late deload (state 'late_deload')
+    says its week has passed, with no action.
   - Otherwise the card says what was decided (with the version in History) or why there is
     nothing to decide, linking to the build or the cycle review where that is the next step.
 
@@ -113,6 +116,35 @@
 					data-testid="review-next-keep">Keep next week as planned</Button
 				>
 			{/if}
+		</form>
+	{/if}
+
+	{#if next.state === 'deload'}
+		<form
+			method="POST"
+			action="?/decide"
+			onsubmit={act}
+			aria-busy={ui.pending ? 'true' : undefined}
+		>
+			<input type="hidden" name="reviewId" value={reviewId} />
+			<input type="hidden" name="accept" value="deload" />
+			{#if ui.failed === 'decide'}
+				<Notice tone="danger" data-testid="review-next-failure">{ui.failure}</Notice>
+			{/if}
+			<Button
+				type="submit"
+				loading={ui.pending === 'decide'}
+				disabled={!online}
+				data-testid="review-next-accept"
+				>{ui.failed === 'decide' ? 'Try again' : 'Accept the deload'}</Button
+			>
+			<Button
+				type="submit"
+				variant="secondary"
+				formaction="?/keep"
+				disabled={!online || !!ui.pending}
+				data-testid="review-next-keep">Keep the plan</Button
+			>
 		</form>
 	{/if}
 
