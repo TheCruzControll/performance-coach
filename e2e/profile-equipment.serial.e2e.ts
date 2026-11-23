@@ -56,9 +56,7 @@ test('Profile lists the equipment section, and it opens the editor', async ({ pa
 	await expect(page.getByTestId('security-link')).toBeVisible();
 	await expect(page.getByTestId('theme-control')).toBeVisible();
 
-	const row = page
-		.getByRole('region', { name: 'Training profile' })
-		.getByRole('link', { name: /Equipment/ });
+	const row = page.getByTestId('section-equipment');
 	await expect(row).toHaveAttribute('href', '/profile/equipment');
 	await row.click();
 	await expect(page).toHaveURL('/profile/equipment');

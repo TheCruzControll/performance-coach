@@ -83,13 +83,13 @@ test('Profile lists the section, and running and Muay Thai goals bring both part
 	const errors = trackConsoleErrors(page);
 	await seedGoals('distance_running', 'muay_thai');
 	await gotoHydrated(page, '/profile');
-	const row = page
-		.getByRole('region', { name: 'Training profile' })
-		.getByRole('link', { name: /Running & Muay Thai/ });
+	const row = page.getByTestId('section-specifics');
 	await expect(row).toHaveAttribute('href', '/profile/specifics');
 	await row.click();
 	await expect(page).toHaveURL('/profile/specifics');
-	await expect(page.getByRole('heading', { level: 1, name: 'Running & Muay Thai' })).toBeVisible();
+	await expect(
+		page.getByRole('heading', { level: 1, name: 'Running and Muay Thai' })
+	).toBeVisible();
 	await editorReady(page);
 	await expect(part(page, 'Running')).toBeVisible();
 	await expect(part(page, 'Muay Thai')).toBeVisible();

@@ -43,9 +43,7 @@ test('“I don’t know my 1RMs” shows the week-one explainer and stores no li
 }, testInfo) => {
 	const errors = trackConsoleErrors(page);
 	await gotoHydrated(page, '/profile');
-	const row = page
-		.getByRole('region', { name: 'Training profile' })
-		.getByRole('link', { name: /Strength/ });
+	const row = page.getByTestId('section-strength');
 	await expect(row).toHaveAttribute('href', '/profile/strength');
 	await row.click();
 	await expect(page).toHaveURL('/profile/strength');

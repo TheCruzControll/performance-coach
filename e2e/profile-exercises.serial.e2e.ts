@@ -53,12 +53,11 @@ test('likes from a suggestion and typed in, and a dislike, save and are there af
 }, testInfo) => {
 	const errors = trackConsoleErrors(page);
 	await gotoHydrated(page, '/profile');
-	await page
-		.getByRole('region', { name: 'Training profile' })
-		.getByRole('link', { name: /Exercises/ })
-		.click();
+	await page.getByTestId('section-exercises').click();
 	await expect(page).toHaveURL('/profile/exercises');
-	await expect(page.getByRole('heading', { level: 1, name: 'Exercises' })).toBeVisible();
+	await expect(
+		page.getByRole('heading', { level: 1, name: 'Exercises you like and avoid' })
+	).toBeVisible();
 	await editorReady(page);
 	await expect(pills(page, LIKES)).toHaveCount(0);
 	await expect(pills(page, DISLIKES)).toHaveCount(0);

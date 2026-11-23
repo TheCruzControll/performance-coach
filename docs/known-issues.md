@@ -66,6 +66,9 @@ Last reviewed: 2026-11-23, against `main` at the merge of #634.
   is not a tab; below 1024 px its only way in is the avatar in Today's header, and those states
   replace the header, so there is no avatar. Closes in `v2/06`
   (Today's full screen) or `v2/24` (states and toasts), whichever draws the avatar in those states.
+- **Profile has no 'What the coach knows' or 'About this app' row yet (Paper draws both).** The
+  coach's knowledge opens from Coach (`v2/20`), and About this app's contents stay on Profile, as
+  a group of status rows, until `v2/22`. Found building `v2/21a`.
 - **A taper splice's deload is judged by the tail's first range.** A taper spliced into a block
   (`splice` in `src/lib/domain/programming/periodisation/replan.ts`) gives the tail a new lineage,
   so the Strength view, the weekly review and the cycle review read the tail's own bands: its

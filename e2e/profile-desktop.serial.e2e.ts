@@ -1,6 +1,6 @@
 /**
  * Profile in a desktop window (docs/design-system.md, Responsive layout → Screens): Profile in two
- * columns, and each training-profile section's editor beside the section list, its Save bar
+ * columns, and each training-profile section's editor beside Profile's list, its Save bar
  * column chrome at the editor column's foot. Every designed state of the editor is checked in the
  * split layout, with a screenshot and axe in both themes; the phone keeps its list → editor →
  * back flow. Serial (one test at a time, after the functional suites): every test starts from a
@@ -46,7 +46,7 @@ function chunkOf(source: string): string {
 
 const THEMES = ['dark', 'light'] as const;
 
-const list = (page: Page) => page.getByRole('navigation', { name: 'Training profile' });
+const list = (page: Page) => page.getByRole('navigation', { name: 'Profile' });
 const column = (page: Page) => page.getByTestId('section-column');
 const editor = (page: Page) => page.getByTestId('section-editor');
 const saveBar = (page: Page) => page.getByTestId('save-bar');
@@ -106,7 +106,7 @@ test.beforeEach(async () => {
 test.describe('in a desktop window', () => {
 	test.use(DESKTOP);
 
-	test('Profile shows the training profile beside the account and the system', async ({
+	test('Profile shows its list beside this device and the app’s status', async ({
 		page
 	}, testInfo) => {
 		const errors = trackConsoleErrors(page);
@@ -115,18 +115,18 @@ test.describe('in a desktop window', () => {
 		await expectMainCentred(page, await tokenPx(page, '--content-wide'));
 		await expectNoSideScroll(page);
 
-		const training = await boxOf(page.getByRole('region', { name: 'Training profile' }));
+		const profileList = page.getByTestId('profile-list');
+		const listBox = await boxOf(profileList);
 		const preferences = await boxOf(page.getByRole('region', { name: 'Preferences' }));
 		const system = await boxOf(page.getByTestId('system-card'));
-		// Two columns: the training profile right of the account, the system under the account.
-		expect(training.x).toBeGreaterThanOrEqual(preferences.x + preferences.width);
+		// Two columns: the list on the left; the preferences and the app's status right of it, the
+		// status under the preferences.
+		expect(preferences.x).toBeGreaterThanOrEqual(listBox.x + listBox.width);
 		expect(Math.abs(system.x - preferences.x)).toBeLessThanOrEqual(1);
 		expect(system.y).toBeGreaterThan(preferences.y + preferences.height);
-		expect(system.y).toBeLessThan(training.y + training.height);
-		// Nothing is open on Profile itself: no section row is current.
-		const region = page.getByRole('region', { name: 'Training profile' });
-		await expect(region.getByRole('link', { name: /Equipment/ })).toBeVisible();
-		await expect(region.locator('[aria-current]')).toHaveCount(0);
+		// Nothing is open on Profile itself: no row is current.
+		await expect(profileList.getByRole('link', { name: /Equipment/ })).toBeVisible();
+		await expect(profileList.locator('[aria-current]')).toHaveCount(0);
 		await auditBothThemes(page, testInfo, 'profile-desktop');
 		expect(errors).toEqual([]);
 	});
@@ -144,7 +144,8 @@ test.describe('in a desktop window', () => {
 		const current = list(page).getByRole('link', { name: /Equipment/ });
 		await expect(current).toHaveAttribute('aria-current', 'page');
 		await expect(list(page).locator('[aria-current]')).toHaveCount(1);
-		await expect(list(page).getByRole('link')).toHaveCount(SECTIONS.length);
+		// Every section, and Passkeys and recovery.
+		await expect(list(page).getByRole('link')).toHaveCount(SECTIONS.length + 1);
 		const [nav, editorColumn] = [await boxOf(list(page)), await boxOf(column(page))];
 		expect(editorColumn.x).toBeGreaterThanOrEqual(nav.x + nav.width);
 		expect(Math.abs(editorColumn.width - (await tokenPx(page, '--content-readable')))).toBeLessThan(

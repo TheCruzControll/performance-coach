@@ -46,13 +46,11 @@ test('a new name and lb, mi save and stay; Profile is headed by the name and the
 	await picked(page, 'Units', 'kg');
 	await picked(page, 'Distance', 'km');
 
-	const row = page
-		.getByRole('region', { name: 'Training profile' })
-		.getByRole('link', { name: /Name & units/ });
+	const row = page.getByTestId('section-basics');
 	await expect(row).toHaveAttribute('href', '/profile/basics');
 	await row.click();
 	await expect(page).toHaveURL('/profile/basics');
-	await expect(page.getByRole('heading', { level: 1, name: 'Name & units' })).toBeVisible();
+	await expect(page.getByRole('heading', { level: 1, name: 'Name and units' })).toBeVisible();
 	await editorReady(page);
 	await expect(nameField(page)).toHaveValue('Niko Cruz');
 	await picked(page, 'Weights in', 'kg');

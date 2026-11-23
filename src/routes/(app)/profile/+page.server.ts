@@ -32,7 +32,7 @@ export const load: PageServerLoad = async ({ locals, request, url, route }) => {
 		return null;
 	};
 	const vitals = getVitalsSummary(7).catch(failSoft('getVitalsSummary'));
-	// Until onboarding is complete, Training profile offers to continue it at the furthest step
+	// Until onboarding is complete, Profile offers to continue it at the furthest step
 	// advanced (as Today's setup card does), named here so the page ships no step table.
 	const setup = getOnboarding(ownerId(locals))
 		.then(({ complete, resume }) =>
@@ -47,8 +47,8 @@ export const load: PageServerLoad = async ({ locals, request, url, route }) => {
 		? readBackupLog().catch(failSoft('readBackupLog'))
 		: Promise.resolve(null);
 	logWhenSettled(route.id, [health, vitals, setup, backupLog]);
-	// The name the coach uses (Profile → Name & units) heads the screen; the passkey's owner name
-	// is what it starts from.
+	// The name the coach uses (Profile → Name and units) sits under the title; the passkey's owner
+	// name is what it starts from.
 	const athlete = await getAthleteProfile(ownerId(locals));
 
 	return {

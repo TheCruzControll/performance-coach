@@ -61,10 +61,7 @@ test('the goals’ disciplines are listed already, and a card without a level st
 	const errors = trackConsoleErrors(page);
 	await seedGoals('muay_thai', 'powerlifting');
 	await gotoHydrated(page, '/profile');
-	await page
-		.getByRole('region', { name: 'Training profile' })
-		.getByRole('link', { name: /Experience/ })
-		.click();
+	await page.getByTestId('section-experience').click();
 	await expect(page).toHaveURL('/profile/experience');
 	await expect(page.getByRole('heading', { level: 1, name: 'Experience' })).toBeVisible();
 	await editorReady(page);
