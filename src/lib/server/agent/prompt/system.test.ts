@@ -12,7 +12,7 @@ import { CONTRACT_CLAUSES, PROMPT_VERSION, promptVersion, SYSTEM_PROMPT } from '
  * Pinned: an edit to the prompt must be deliberate, because it changes PROMPT_VERSION and so
  * starts a new segment for every thread. Update this hash in the same commit as the edit.
  */
-const PINNED_SHA256 = 'b76204462b30f9dd0d87114991d6462995c7fdab38b66dfa31e2766f0357eb18';
+const PINNED_SHA256 = '6c7e5ad138c2fa64b10277357c3483eb7311d7ace57a25d28c83bf94889e8c88';
 
 const sha256 = (text: string) => createHash('sha256').update(text).digest('hex');
 
@@ -50,6 +50,13 @@ describe('SYSTEM_PROMPT', () => {
 				'painMode'
 			],
 			goals: ['goal priorities', 'higher-ranked', 'interference'],
+			schedule_engine: [
+				'call evaluate_week_interference',
+				'explain_schedule_tradeoffs',
+				'Name the rule and its reason',
+				'[metric method=…]',
+				'[fact]'
+			],
 			proposals_only: [
 				'You change nothing directly',
 				'propose tool',

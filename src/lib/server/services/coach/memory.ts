@@ -36,6 +36,7 @@ import {
 	type MemoryEquipmentRow
 } from '../../db/repositories/coach-memory';
 import { TREND_WEEKS, trendsOf, type Trend } from '../analytics/index';
+import type { RoadView } from '../periodisation/road-view';
 import { getCurrentProgram } from '../programs';
 import { getSessionsInRange, type SessionsInRange } from '../training/history';
 import { loadMemoryRecords, MEMORY_RECORDS_QUERIES } from './memory-records';
@@ -103,15 +104,20 @@ function equipmentOf(row: MemoryEquipmentRow | null) {
 		}));
 }
 
-/** The coaching memory as of `today`, the owner's local day. */
+/**
+ * The coaching memory as of `today`, the owner's local day. `road` is the periodisation road the
+ * turn already read (turn-facts.ts): it gives each goal's mode and the block's label. Without it
+ * (the memory endpoint) those fields are left out.
+ */
 export async function getCoachingMemory(
 	ownerId: string,
-	{ today }: { today: IsoDate },
+	{ today, road = null }: { today: IsoDate; road?: RoadView | null },
 	deps: CoachDeps = {}
 ): Promise<MemorySnapshot> {
 	const { db } = resolveDeps(deps);
 	const profile = await createCoachMemoryRepository(db).profileSections(ownerId);
 	const program = await getCurrentProgram(ownerId, today, { db });
+	const block = road?.current ? road.blocks[road.current.block] : undefined;
 	// One read for both: the trend weeks reach further back than the recent days.
 	const trendTo = addDays(mondayOf(today), -1);
 	const trendFrom = addDays(trendTo, 1 - 7 * TREND_WEEKS);
@@ -132,18 +138,23 @@ export async function getCoachingMemory(
 	return {
 		asOf: today,
 		profile: {
-			goals: (profile?.goals ?? []).map((g) => ({
-				rank: g.priority,
-				title: g.title,
-				targetDate: g.targetDate ?? g.eventDate,
-				source: { type: 'goal', id: g.id }
-			})),
+			goals: (profile?.goals ?? []).map((g) => {
+				const mode = block?.goals.find((goal) => goal.ref === g.id)?.mode;
+				return {
+					rank: g.priority,
+					title: g.title,
+					targetDate: g.targetDate ?? g.eventDate,
+					...(mode && { mode }),
+					source: { type: 'goal', id: g.id }
+				};
+			}),
 			program: program && {
 				name: program.title,
 				versionNumber: program.version.number,
 				week: program.currentWeek,
 				weeks: program.plannedWeeks,
 				phase: program.blocks.find((b) => b.startsOn <= today && today <= b.endsOn)?.phase ?? null,
+				...(block && { blockType: block.label }),
 				source: { type: 'version', id: String(program.version.number) }
 			},
 			recentDays: recentDays(sessions, recentFrom),

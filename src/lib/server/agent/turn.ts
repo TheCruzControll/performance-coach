@@ -4,7 +4,8 @@
  *
  * 1. A coach that is switched off or not launched refuses the turn before anything is written.
  * 2. The day's facts (services/coach/turn-facts.ts): date, time and zone, the active version and
- *    its week through M3's program reads.
+ *    its week through M3's program reads, then the week's block from the periodisation road and
+ *    its findings: bounded by statement timeouts on the pool, and left out (never fatal) on failure.
  * 3. A new send rolls the thread to a new segment when its prompt version changed or the segment
  *    grew past SEGMENT's limits (rollover.ts): the old segment is first summarised into a note, in
  *    its own run, outside the transaction. A message that opens a segment stores the memory
@@ -81,7 +82,7 @@ import {
 	type TurnStep
 } from '../services/coach/threads.ts';
 import { listDecidedSince } from '../services/coach/proposals.ts';
-import { loadTurnFacts } from '../services/coach/turn-facts.ts';
+import { loadTurnFacts, type WeekBlockReads } from '../services/coach/turn-facts.ts';
 import { directAnswer, DIRECT_RUN } from './direct.ts';
 import type { TurnHooks } from './hooks.ts';
 import { loadMemory } from './memory/load.ts';
@@ -148,6 +149,8 @@ export interface TurnOptions {
 	 * none is started.
 	 */
 	after?: (work: Promise<void>) => void;
+	/** The week block's reads (turn-facts.ts): the live ones unless a test fails or stalls them. */
+	weekReads?: WeekBlockReads;
 }
 
 /** What a call to a tool the turn did not offer answers. */
@@ -385,7 +388,7 @@ async function turn(
 	);
 	const definitions = offered.map((tool) => tool.definition);
 	const version = promptVersion({ system: SYSTEM_PROMPT, tools: definitions, model: COACH_MODEL });
-	const day = await loadTurnFacts(ownerId, deps);
+	const day = await loadTurnFacts(ownerId, deps, options.weekReads);
 	const activeVersion = day.program?.versionId ?? null;
 	// A summary is a model call: made before the transaction, so none is held open across it.
 	const plan: RolloverPlan | null = input.threadId
@@ -428,7 +431,7 @@ async function turn(
 			}
 			if (opens)
 				preamble = segmentPreamble(
-					await loadMemory({ ownerId, today: day.today, deps }),
+					await loadMemory({ ownerId, today: day.today, deps, road: day.road }),
 					summary
 				).content;
 		}
@@ -530,15 +533,18 @@ async function turn(
 		todaysSessions: day.program?.todaysSessions ?? [],
 		week:
 			day.program?.week != null
-				? weekSummary(
-						{
-							...day.program.week,
-							versionId: day.program.versionId,
-							versionNumber: day.program.versionNumber,
-							segmentVersionId: thread.segmentProgramVersionId
-						},
-						day.today
-					)
+				? {
+						...weekSummary(
+							{
+								...day.program.week,
+								versionId: day.program.versionId,
+								versionNumber: day.program.versionNumber,
+								segmentVersionId: thread.segmentProgramVersionId
+							},
+							day.today
+						),
+						...(day.program.block && { block: day.program.block })
+					}
 				: null,
 		entry,
 		painMode: pain.reported,

@@ -24,6 +24,7 @@ import { parseRef } from '../../../domain/coach/sources.ts';
 import { WEEKDAY_INFO } from '../../../domain/profile/catalog.ts';
 import { canonicalJson } from '../../../domain/programming/random.ts';
 import type { ProposalStatus } from '../../../domain/training/vocabulary.ts';
+import type { WeekBlock } from '../../services/coach/turn-facts.ts';
 import type { TurnEntry } from '../tools/context.ts';
 import { untrusted, UNTRUSTED_MAX } from '../tools/output.ts';
 
@@ -52,7 +53,12 @@ export interface WeekSummary {
 	versionNumber: number;
 	/** True when the active version is not the one the segment started on. */
 	changedSinceSegmentStart: boolean;
+	/** The week's block and its findings (services/coach/turn-facts.ts); absent when not read. */
+	block?: WeekBlock;
 }
+
+/** The most findings a turn context carries (the findings' own limit, MAX_SHOWN). */
+const MAX_BLOCK_FINDINGS = 3;
 
 export interface DecidedProposal {
 	id: string;
@@ -137,6 +143,15 @@ const count = (value: number, what: string, min = 0) => {
 
 const title = (text: string) => untrusted(text, UNTRUSTED_MAX);
 
+/** The week's block: its vocabulary as tokens, its findings as untrusted_text, its dates checked. */
+const blockOf = (block: WeekBlock) => ({
+	phase: check(block.phase, TOKEN, 'the block phase'),
+	kind: check(block.kind, TOKEN, 'the week kind'),
+	findings: block.findings.slice(0, MAX_BLOCK_FINDINGS).map(title),
+	...(block.nextDeload && { nextDeload: checkDate(block.nextDeload, 'the next deload') }),
+	...(block.nextTaper && { nextTaper: checkDate(block.nextTaper, 'the next taper') })
+});
+
 /**
  * The turn's context message. Only the listed facts reach it, rebuilt field by field, so an extra
  * property on the input (a proposal's note) cannot; a value that is not a fact throws.
@@ -159,7 +174,8 @@ export function turnContext(facts: TurnFacts): BetaSystemMessageParam {
 				title: title(session.title)
 			})),
 			versionNumber: count(week.versionNumber, 'the version number', 1),
-			changedSinceSegmentStart: week.changedSinceSegmentStart === true
+			changedSinceSegmentStart: week.changedSinceSegmentStart === true,
+			...(week.block && { block: blockOf(week.block) })
 		},
 		entry: entry && {
 			from: check(entry.from, TOKEN, 'the entry'),
