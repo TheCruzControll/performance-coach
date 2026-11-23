@@ -227,9 +227,14 @@
 		}
 	}
 
+	/*
+	 * The words come first: never narrower than 120 px ("Resume" and the title's first letters,
+	 * then an ellipsis), and all the room the time, the pill and the chevron leave. 120 px still
+	 * fits a 320 px phone beside a four-digit time, where the pill gives way instead.
+	 */
 	.main {
 		display: flex;
-		flex: 1;
+		flex: 1 0 7.5rem;
 		align-items: center;
 		min-width: 0;
 		min-height: var(--touch-target);
@@ -270,9 +275,32 @@
 		color: var(--color-text-secondary);
 	}
 
+	/*
+	 * The pill is as wide as its words now, not as its longest words (SyncPill reserves those for
+	 * the workout header, where nothing beside it gives way): here they would leave the line's own
+	 * words no room. When even its words do not fit, it shrinks and clips, and the words keep theirs.
+	 */
 	.resume-bar :global(.sync) {
-		flex: none;
+		flex: 0 1 auto;
+		min-width: 0;
 		margin-left: 0;
+		overflow: hidden;
+	}
+
+	.resume-bar :global(.pill) {
+		min-width: 0;
+		justify-items: stretch;
+	}
+
+	.resume-bar :global(.pill)::before,
+	.resume-bar :global(.pill)::after {
+		content: none;
+	}
+
+	.resume-bar :global(.pill .words) {
+		min-width: 0;
+		overflow: hidden;
+		white-space: nowrap;
 	}
 
 	@media (hover: hover) and (pointer: fine) {

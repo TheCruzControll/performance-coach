@@ -222,6 +222,13 @@ test.describe('a workout in progress on this device', () => {
 		await expect(bar(page)).toBeVisible({ timeout: 10_000 });
 		await expect(bar(page)).toContainText(`Resume ${kit.title}`);
 		await expect(page.getByTestId('resume-title')).toHaveText(kit.title);
+		// The words come first: the time, the pill and the chevron never squeeze them out.
+		await expect(resumeLink(page)).toBeVisible();
+		await expect(page.getByTestId('resume-title')).toBeVisible();
+		expect(
+			(await boxOf(resumeLink(page))).width,
+			'the words keep their room'
+		).toBeGreaterThanOrEqual(120);
 		// One plain line on the canvas, no card, sitting on the tab bar's hairline.
 		await expect(bar(page)).toHaveCSS('border-top-width', '0px');
 		await expect(bar(page)).toHaveCSS('border-radius', '0px');
