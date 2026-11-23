@@ -199,7 +199,7 @@
 	}
 
 	/* An underlined action in running text's place. No padding, so it is as wide as its words;
-	   the ::after still gives it a 44 px hit area. Running text uses .text-link (base.css). */
+	   the ::after still gives it a 44 px hit area each way. Running text uses .text-link (base.css). */
 	.btn[data-variant='link'] {
 		--btn-pad: 0;
 		background: transparent;
@@ -207,6 +207,10 @@
 		font: var(--type-secondary);
 		text-decoration: underline 1px var(--color-text-disabled);
 		text-underline-offset: 4px;
+	}
+	/* Short words still get 44 px across: the hit area widens only when the words are narrower. */
+	.btn[data-variant='link']::after {
+		inset-inline: min(0px, calc(50% - var(--touch-target) / 2));
 	}
 	.btn[data-variant='link']:active:not(:disabled) {
 		color: var(--color-text);
