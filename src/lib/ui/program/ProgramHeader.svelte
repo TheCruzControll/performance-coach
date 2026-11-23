@@ -13,6 +13,10 @@
   `pending` names is busy while it loads. Pills scroll sideways inside their row when a plan has
   more weeks than fit; the screen itself never does. Every target is ≥ 44 px.
 
+  `replan`, a re-plan the goal priorities asked for and that waits to be reviewed, is one line
+  under the status: 'A re-plan for your new priorities is ready · Review', the link is the
+  caller's (its proposal). Left out when there is none.
+
   `actions`, a row under the titles, holds the program's own screens and sheets ('Plan', then
   'History', and 'Start date' until it has started): each a `.action` the caller renders (a button or a link), styled here alike, and
   busy (`aria-busy`) while what it opens is on its way.
@@ -49,6 +53,8 @@
 		kind?: { label: string; why: string } | null;
 		/** The actions row: `.action` buttons or links, and any notice about them. */
 		actions?: Snippet;
+		/** A re-plan waiting for review, and the proposal it links to; null when there is none. */
+		replan?: { href: string } | null;
 	}
 
 	let {
@@ -63,7 +69,8 @@
 		status,
 		line,
 		kind,
-		actions
+		actions,
+		replan = null
 	}: Props = $props();
 	const id = $props.id();
 </script>
@@ -90,6 +97,12 @@
 		<p class="position kind" data-testid="week-kind" data-tag={kind?.label}>{kind?.why}</p>
 		{#if status}
 			<p class="status"><Badge icon="clock" data-testid="program-status">{status}</Badge></p>
+		{/if}
+		{#if replan}
+			<p class="replan" data-testid="replan-note">
+				A re-plan for your new priorities is ready ·
+				<a class="review" href={replan.href} data-testid="replan-review">Review</a>
+			</p>
 		{/if}
 	</div>
 	{#if actions}<div class="actions">{@render actions()}</div>{/if}
@@ -196,6 +209,22 @@
 
 	.status {
 		margin-top: var(--space-1);
+	}
+
+	/* One calm line in the secondary text, its link the accent with a 44 px hit area. */
+	.replan {
+		font-size: var(--text-sm);
+		line-height: var(--leading-normal);
+		color: var(--color-text-secondary);
+	}
+
+	.review {
+		display: inline-flex;
+		align-items: center;
+		min-height: var(--touch-target);
+		color: var(--color-accent-text);
+		text-decoration: underline;
+		text-underline-offset: 2px;
 	}
 
 	.actions {

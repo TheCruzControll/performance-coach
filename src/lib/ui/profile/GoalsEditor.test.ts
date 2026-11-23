@@ -46,3 +46,11 @@ describe('the goals editor with no goal yet', () => {
 		expect(headings(empty('Your goals'))).toEqual([QUESTION]);
 	});
 });
+
+describe('the re-plan notice', () => {
+	it('is on Profile, and never on onboarding, which has no program to re-plan', () => {
+		const profile = render(GoalsEditor, { props: { value: [], context, manage: true } }).body;
+		expect(profile).toContain('data-testid="replan-notice"');
+		expect(empty()).not.toContain('data-testid="replan-notice"');
+	});
+});

@@ -208,6 +208,9 @@
 			status={view.status}
 			line={view.weekLine}
 			kind={view.weekKind}
+			replan={view.replanNote
+				? { href: resolve('/(app)/coach/proposals/[[id]]', { id: view.replanNote.proposalId }) }
+				: null}
 		>
 			{#snippet actions()}
 				<button
