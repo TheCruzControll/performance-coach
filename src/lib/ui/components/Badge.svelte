@@ -1,8 +1,9 @@
 <!--
   @component
-  Small status pill: "Soon", "First step", "Good". The words carry the meaning; colour only
-  reinforces it (never the other way round). `neutral` is the default and the only tone for
-  "Soon"; `accent` marks the next step and is used sparingly.
+  A status word on its line: "Soon", "First step", "Good". The words carry the meaning; colour
+  only reinforces it (never the other way round). `neutral` is the default and the only tone for
+  "Soon"; `accent` marks the next step and is used sparingly. Legacy in v2: no pill, no tint, no
+  outline; screen rows remove it where their screen has none.
 -->
 <script lang="ts">
 	import type { Snippet } from 'svelte';
@@ -20,14 +21,13 @@
 </script>
 
 <span class="badge" data-ui="badge" class:with-icon={icon} data-tone={tone} {...rest}>
-	{#if icon}<Icon name={icon} size={14} strokeWidth={2} />{/if}
+	{#if icon}<Icon name={icon} size={12} strokeWidth={2} />{/if}
 	{@render children()}
 </span>
 
 <style>
 	.badge {
-		--badge-text: var(--color-text-secondary);
-		--badge-bg: var(--color-surface-2);
+		--badge-text: var(--color-text-tertiary);
 		display: inline-flex;
 		flex: none;
 		/* Never stretch as a grid item: a badge is as wide as its words. */
@@ -36,48 +36,28 @@
 		gap: var(--space-1);
 		min-height: 1.375rem;
 		padding: 0 var(--space-2);
-		border-radius: var(--radius-full);
-		background: var(--badge-bg);
-		box-shadow: inset 0 0 0 1px var(--color-border);
 		color: var(--badge-text);
-		font-size: var(--text-2xs);
+		font: var(--type-caption);
 		font-weight: var(--weight-semibold);
-		line-height: 1;
 		white-space: nowrap;
 	}
 
+	/* Kept so an icon badge keeps its width and its box. Legacy: goes with the pill. */
 	.with-icon {
 		padding-left: var(--space-1-5);
 	}
 
+	/* The status words use the status tokens, which are text-safe on canvas and surfaces. */
 	.badge[data-tone='accent'] {
 		--badge-text: var(--color-accent-text);
-		--badge-bg: var(--color-accent-subtle);
 	}
-	/*
-	 * Status text sits on its own tint, which costs contrast in the light theme: there the text
-	 * is darkened (≥ 5.2:1 on every surface, axe-checked); the dark theme's status colours are
-	 * already bright enough.
-	 */
 	.badge[data-tone='positive'] {
-		--badge-text: light-dark(
-			color-mix(in srgb, var(--color-positive) 82%, #000),
-			var(--color-positive)
-		);
-		--badge-bg: color-mix(in srgb, var(--color-positive) 12%, transparent);
+		--badge-text: var(--color-positive);
 	}
 	.badge[data-tone='warning'] {
-		--badge-text: light-dark(
-			color-mix(in srgb, var(--color-warning) 82%, #000),
-			var(--color-warning)
-		);
-		--badge-bg: color-mix(in srgb, var(--color-warning) 12%, transparent);
+		--badge-text: var(--color-warning);
 	}
 	.badge[data-tone='danger'] {
-		--badge-text: light-dark(
-			color-mix(in srgb, var(--color-danger) 82%, #000),
-			var(--color-danger)
-		);
-		--badge-bg: var(--color-danger-subtle);
+		--badge-text: var(--color-danger);
 	}
 </style>

@@ -6,6 +6,9 @@
   "no data yet"), never an invented number (PRD §12).
 
   A rating is a word plus a coloured dot: the word carries the meaning, the dot reinforces it.
+
+  Legacy in v2: no new use; screen rows remove it. It keeps its padding and loses its fill,
+  outline and shadow.
 -->
 <script lang="ts">
 	interface Props {
@@ -60,35 +63,35 @@
 </svelte:element>
 
 <style>
+	/* No fill, outline or radius. The transparent 1 px border keeps the box where it was. */
 	.stat {
 		display: grid;
 		align-content: start;
 		gap: var(--space-1);
 		min-width: 0;
 		padding: var(--space-4);
-		border-radius: var(--radius-lg);
-		border: 1px solid var(--color-border);
-		background: var(--color-surface-1);
-		box-shadow: var(--elevation-1);
+		border: 1px solid transparent;
+		border-radius: 0;
+		background: transparent;
+		box-shadow: none;
 	}
 
 	.stat[data-level='2'] {
 		padding: var(--space-3);
-		border-radius: var(--radius-md);
-		background: var(--color-surface-2);
-		box-shadow: none;
 	}
 
+	/* The line box keeps its pre-v2 height (13 px × 1.53), so the tile does not grow. */
 	.label {
-		font-size: var(--text-xs);
-		font-weight: var(--weight-medium);
-		color: var(--color-text-secondary);
+		font: var(--type-secondary);
+		line-height: calc(var(--text-xs) * var(--leading-normal));
+		color: var(--color-text-tertiary);
 	}
 
 	.value {
 		margin-top: var(--space-1);
 		font-size: var(--text-2xl);
-		font-weight: var(--weight-bold);
+		font-weight: var(--weight-semibold);
+		font-variant-numeric: tabular-nums;
 		line-height: 1;
 		color: var(--color-text);
 		white-space: nowrap;

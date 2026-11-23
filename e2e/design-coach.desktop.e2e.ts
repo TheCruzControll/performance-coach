@@ -48,8 +48,8 @@ test.describe('/design → Coach on a desktop', () => {
 			expect(panel.width, 'never wider than the readable column').toBeLessThanOrEqual(
 				await tokenPx(page, '--content-readable')
 			);
-			// The Cards & tones column sits beside it, so the page is not one stretched column.
-			const cards = await boxOf(page.getByRole('heading', { name: 'Cards & tones' }));
+			// The legacy cards column sits beside it, so the page is not one stretched column.
+			const cards = await boxOf(page.getByRole('heading', { name: 'Legacy: cards (v2 has none)' }));
 			expect(cards.x, 'the next group is beside the panel').toBeGreaterThan(panel.x + panel.width);
 			for (const block of await answer(page).getByTestId('answer-block').all()) {
 				const box = await boxOf(block);

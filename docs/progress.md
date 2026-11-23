@@ -160,6 +160,11 @@ updates milestones.md.
   an inset), and a quiet ghost close.
   Toasts are a surface-2 line that stays at the top until `v2/03`. The `/design` Data and Feedback
   tabs and `docs/design-system.md` show them. Phone layouts and sheet heights are CI’s to prove.
+- **Instrument v2 legacy components (`v2/02d`), which completes `v2/02`.** Cards, chips, badges,
+  segmented controls, stat tiles, tabs and section headings lose their pills, fills, tint and amber
+  and keep their padding and sizes, so no screen moves. A card keeps a hairline outline until its
+  screen row. Each is marked legacy in its component comment; `/design`'s Data tab and its legacy
+  card show them. Phone layouts and the e2e run are CI's to prove.
 - **Adding a session to a program.** The builder, the storage
   (`src/lib/server/services/programs/add.ts`), Train's Add session sheet and the coach's proposal
   are built: `propose_program_adjustment` takes an `add_session` op, and accepting it is one new

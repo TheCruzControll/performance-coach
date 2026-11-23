@@ -2,6 +2,7 @@
   @component
   Accessible tabs (WAI-ARIA tablist): roving focus, arrow/Home/End keys, automatic
   activation, animated indicator. Renders only the active panel via the `panel` snippet.
+  Legacy in v2: no new use; screen rows remove it. The indicator is the text colour, not amber.
 -->
 <script lang="ts" generics="T extends string">
 	import type { Snippet } from 'svelte';
@@ -116,9 +117,8 @@
 		justify-content: center;
 		min-height: var(--touch-target);
 		padding: 0 var(--space-2);
-		font-size: var(--text-sm);
-		font-weight: var(--weight-semibold);
-		color: var(--color-text-tertiary);
+		font: var(--type-secondary);
+		color: var(--color-text-secondary);
 		transition:
 			color var(--duration-base) var(--ease-standard),
 			background-color var(--duration-fast) var(--ease-standard);
@@ -126,6 +126,7 @@
 
 	.tab[aria-selected='true'] {
 		color: var(--color-text);
+		font-weight: var(--weight-semibold);
 	}
 
 	/* The pill is the moving box, centred under the active tab, stepped in tab widths of the list
@@ -138,7 +139,7 @@
 		width: 32px;
 		height: 2px;
 		border-radius: var(--radius-full);
-		background: var(--color-accent);
+		background: var(--color-text);
 		transform: translateX(calc(var(--index) * 100cqi / var(--count)));
 		transition: transform var(--duration-slow) var(--ease-spring);
 		/* Decoration: a tap on the tab's bottom edge must reach the tab. */

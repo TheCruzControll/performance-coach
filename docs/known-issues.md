@@ -50,6 +50,12 @@ Last reviewed: 2026-11-23, against `main` at the merge of #618.
 - **`ListRow` still takes `icon` and `tone`, and draws neither.** v2 rows have no icon tiles, so
   both props are deprecated and accepted for the screens that still pass them.
   Closes when the last screen row drops them and `src/lib/ui/components/ListRow.svelte` removes them.
+- **Cards, stat tiles, chips and segmented controls remain on screens until their v2 screen rows.**
+  `v2/02d` flattened them and the tabs and badges too: no fill, pill, tint or amber, with their
+  padding, borders and line boxes held, so no screen moves. v2 draws none of them, so each screen row
+  removes the ones its screen does not need. `Badge` keeps its icon-side padding (`.with-icon`) so an
+  icon badge keeps its width; the row that drops the pill drops it too. Closes when the screen rows
+  have removed them.
 - **On Train, the Rest timer row gains a hairline on its first hover.** Prefetch mounts the sheet's
   dialog as a sibling of the row, so the row's `:last-child` rule breaks. It stays until the Train
   screen row.

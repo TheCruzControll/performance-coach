@@ -232,13 +232,11 @@
 	</section>
 
 	<section class="section">
-		<h2 class="h">Cards & tones</h2>
+		<h2 class="h">Legacy: cards (v2 has none)</h2>
 		<div class="grid">
-			{#each ['strength', 'running', 'combat', 'hypertrophy', 'conditioning'] as const as tone (tone)}
-				<Card {tone} eyebrow={tone} title="Discipline surface" padding="md">
-					<p class="muted">Tones tint a surface; they never shout.</p>
-				</Card>
-			{/each}
+			<Card eyebrow="Legacy in v2" title="Discipline surface" padding="md">
+				<p class="muted">A hairline outline and no fill. Tones no longer tint a card.</p>
+			</Card>
 		</div>
 	</section>
 
