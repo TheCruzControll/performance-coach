@@ -58,6 +58,15 @@ export function getDb(): Database {
 	return instance.db;
 }
 
+/**
+ * The shared application pool itself, for a repository that takes a pg client
+ * (db/backup/runs.ts): one connection of it, with its own transaction and timeouts.
+ */
+export function getPool(): pg.Pool {
+	getDb();
+	return instance!.pool;
+}
+
 /** Close the shared pool (graceful shutdown, tests). */
 export async function closeDb(): Promise<void> {
 	const current = instance;

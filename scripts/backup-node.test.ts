@@ -177,7 +177,8 @@ describe('src/lib/server/backup under plain Node', () => {
 			expect.arrayContaining([
 				'src/lib/server/services/backups/run.ts',
 				'src/lib/server/observability/logger.ts',
-				'src/lib/server/db/backup/export.ts'
+				'src/lib/server/db/backup/export.ts',
+				'src/lib/server/db/backup/runs.ts'
 			])
 		);
 		// The app's database module (env, drizzle schema) stays out of an operator's process.

@@ -331,7 +331,7 @@ One run (`src/lib/server/services/backups/run.ts`):
 | Contents  | Every table in `public` except `auth_sessions`, `webauthn_challenges`, `auth_rate_limits`, `email_sign_in_links` and `backup_runs`, each with its reason in `EXCLUDED_TABLES` (`src/lib/server/db/backup/tables.ts`). The owner, passkeys, recovery-code hashes, the audit trail and telemetry are included; sessions are not, so after a restore every device signs in again.                                                                             |
 | Size      | 2.48 MB sealed for the two-year `db:explain` dataset (41,434 rows in 53 tables; CI run [42447028500](https://github.com/TheCruzControll/performance-coach/actions/runs/42447028500)), exported in 1.1 s and read back in 0.1 s, against budgets of 30 s and 10 s (`scripts/explain/backup.explain.ts`).                                                                                                                                                    |
 
-**The run log.** The table `backup_runs` (`src/lib/server/db/schema/backups.ts`, created by `drizzle/0037_backup_runs.sql`, with its guards in `drizzle/0038_backup_runs_guards.sql`) holds one row per run: it opens as `running` and finishes once as `succeeded`, `failed` or `skipped`, and a run still running 15 minutes after it started is expired as `failed` with the code `abandoned`. Each row holds codes and counts only (`error_code` matches `^[a-z_]{1,64}$`), never a message or a value. A finished row never changes, and a row is deleted only once it is older than 400 days. The repository is `src/lib/server/db/backup/runs.ts`. The run itself does not write to it yet: the cron, the CLI and the Profile status are wired in m9/52.
+**The run log.** The table `backup_runs` (`src/lib/server/db/schema/backups.ts`, created by `drizzle/0037_backup_runs.sql`, with its guards in `drizzle/0038_backup_runs_guards.sql`) holds one row per run: it opens as `running` and finishes once as `succeeded`, `failed` or `skipped`, and a run still running 15 minutes after it started is expired as `failed` with the code `abandoned`. Each row holds codes and counts only (`error_code` matches `^[a-z_]{1,64}$`), never a message or a value. A finished row never changes, and a row is deleted only once it is older than 400 days. The repository is `src/lib/server/db/backup/runs.ts`. Each run writes it (`src/lib/server/services/backups/run.ts`): the cron and `pnpm backup:run --blob` log their runs, `--out` and a run with backups off do not. A failure to write the log is a `backup run log failed` warning in the function's logs and never fails the backup. Profile → Backups reads it: `Not set up`, `6 h ago · 2.5 MB`, or a warning (`None since Tue 3 Nov`, `Last one failed`, `None yet`) when no backup has succeeded in 36 hours, the newest run failed or none has run.
 
 **The Hobby arithmetic** (Vercel's published Blob allowance, checked 2026-11-08: 1 GB storage,
 2,000 advanced and 10,000 simple operations, 10 GB data transfer a month, shared by the whole
@@ -458,8 +458,9 @@ issue or shell history.
 4. **Redeploy** production (Deployments → the current production deployment → ⋯ → Redeploy):
    the variables are read when the server starts. Then run it once by hand
    (`vercel crons run /api/cron/backup`): its runtime log shows 200, and
-   `pnpm backup:list` shows the file. The post-deploy smoke check keeps checking that the route
-   refuses a caller without the bearer.
+   `pnpm backup:list` shows the file. Profile → Backups then reads `just now · 2.5 MB` (before the
+   first run it reads `None yet`, in amber). The post-deploy smoke check keeps checking that the
+   route refuses a caller without the bearer.
 5. **Confirm the first scheduled run.** The next day after 11:00 UTC, the runtime logs (Settings
    → Cron Jobs → **View Logs**, filtered to `requestPath:/api/cron/backup`) show an invocation
    between 10:00 and 10:59 UTC answered 200, and `pnpm backup:list` shows that day's file. This proves the scheduled call reaches the

@@ -3,7 +3,8 @@
   A tappable row for tools and destinations (Instrument v2): a title, one line of supporting
   text, an optional trailing value and a chevron (or a `trailing` snippet such as a "Soon"
   badge). A hairline sits under each row but a list's last. Renders a link with `href`, a button
-  with `onclick`, or a static row when `disabled` (not yet available). `danger` draws the title in
+  with `onclick`, a static row when `disabled` (not yet available), or a status row with `static`
+  (a fact, "Backups · 6 h ago": no chevron, full contrast). `danger` draws the title in
   the danger colour with no chevron ("Sign out"). Full-width, at least 60 px tall: an easy thumb
   target.
 -->
@@ -26,6 +27,10 @@
 		tone?: Tone;
 		/** The trailing value text ("kg, km", "3"), before the chevron. */
 		value?: string;
+		/** `warning` draws the value in the warning colour; its words must say why on their own. */
+		valueTone?: 'warning';
+		/** A status row: no action and no chevron, at full contrast (unlike `disabled`). */
+		static?: boolean;
 		/** The title in the danger colour, with no chevron ("Sign out"). */
 		danger?: boolean;
 		href?: string;
@@ -37,6 +42,8 @@
 		onpointerenter?: (event: PointerEvent) => void;
 		/** The destination open beside a list of rows (a section beside its editor). */
 		'aria-current'?: 'page';
+		/** A status row whose value is still loading (a Skeleton in `trailing`). */
+		'aria-busy'?: boolean;
 		'data-testid'?: string;
 	}
 
@@ -46,6 +53,8 @@
 		icon: _icon,
 		tone: _tone,
 		value,
+		valueTone,
+		static: isStatic = false,
 		danger = false,
 		href,
 		onclick,
@@ -60,14 +69,19 @@
 		<span class="title">{title}</span>
 		{#if subtitle}<span class="subtitle">{subtitle}</span>{/if}
 	</span>
-	{#if value}<span class="value">{value}</span>{/if}
-	{#if trailing}{@render trailing()}{:else if !disabled && !danger}<span class="chevron"
-			><Icon name="chevron-right" size={14} /></span
+	{#if value}<span class="value" data-tone={valueTone}>{value}</span>{/if}
+	{#if trailing}{@render trailing()}{:else if !(disabled || danger || isStatic)}<span
+			class="chevron"><Icon name="chevron-right" size={14} /></span
 		>{/if}
 {/snippet}
 
-{#if disabled}
-	<div class="row" aria-disabled="true" data-danger={danger ? '' : undefined} {...rest}>
+{#if disabled || isStatic}
+	<div
+		class="row"
+		aria-disabled={disabled ? 'true' : undefined}
+		data-danger={danger ? '' : undefined}
+		{...rest}
+	>
 		{@render body()}
 	</div>
 {:else if href}
@@ -164,6 +178,10 @@
 		font: var(--type-secondary);
 		color: var(--color-text-secondary);
 		font-variant-numeric: tabular-nums;
+	}
+
+	.value[data-tone='warning'] {
+		color: var(--color-warning);
 	}
 
 	.chevron {

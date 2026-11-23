@@ -169,7 +169,9 @@ services, not CHECKed, so a new key needs no migration.
   per run (`running`, then `succeeded`, `failed` or `skipped`), with codes and counts only. A
   finished row never changes, and a row is deleted only once it is older than 400 days
   (`drizzle/0038_backup_runs_guards.sql`). It is excluded from the backups it describes
-  (`src/lib/server/db/backup/tables.ts`).
+  (`src/lib/server/db/backup/tables.ts`). Every backup run writes it
+  (`src/lib/server/services/backups/run.ts`), and Profile's Backups row reads it
+  (`src/lib/server/services/backups/status.ts`).
 - `training_goals`: event or general goals with their disciplines. `priority` ranks the open
   (active or paused) goals, unique and contiguous from 1, and is null once a goal is achieved or
   dropped.

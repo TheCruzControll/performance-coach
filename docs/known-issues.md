@@ -191,6 +191,21 @@ Last reviewed: 2026-11-23, against `main` at the merge of #618.
   chart chunks, so no chart's gzip size is recorded. Closes when the budget output or
   docs/performance.md lists each chart body's size.
 
+- **Profile's Backups row is unverified in a browser.** Its pending state's height (no layout
+  shift), its warning colour's contrast in both themes and its 320 px fit are reasoned, not
+  measured: m9/52 added no e2e (owner's CI-cost rule). The e2e server has backups configured
+  (`e2e/global-setup.ts`), so the row there reads the run log's state, not `Not set up`.
+  Its words also depend on the log: `e2e/cron.e2e.ts` writes a succeeded run, so the row reads
+  "6 h ago" only when that spec ran first in the same database, and the screen gallery, a run of
+  its own, reads whatever `backup_runs` holds. Closes when the a11y sweep or the gallery seeds a
+  warning state, or the owner checks it on the phone.
+  (`src/routes/(app)/profile/+page.svelte`)
+- **A ListRow with no action is a no-op button.** Progress's trend rows (`RunningTrends.svelte`,
+  `GeneralTrends.svelte`) pass neither `href` nor `onclick`, so `ListRow`
+  (`src/lib/ui/components/ListRow.svelte`) renders a focusable button that does nothing, with a
+  chevron. Found building m9/52, which added `static` for its own row. Closes when those rows pass
+  `static`. Not fixed here: it changes Progress's roles and screenshots.
+
 ## Working on this repo
 
 - **The repo needs Node 22 and refuses anything else.** `.npmrc` sets `engine-strict`, so a pnpm

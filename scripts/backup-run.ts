@@ -15,7 +15,8 @@
  * arguments, so shell history and the process list do not keep them.
  *
  * --out runs the backup into a private temporary folder store (read back and verified there),
- * then copies the file to <file>, refusing an existing one.
+ * then copies the file to <file>, refusing an existing one. Only --blob is logged in the
+ * database's backup_runs (trigger `manual`), so Profile's backup row counts only the store.
  */
 import { randomUUID } from 'node:crypto';
 import { constants, existsSync, readFileSync } from 'node:fs';
@@ -122,7 +123,9 @@ export async function main(
 			{
 				// The app records into app_errors; an operator sees the failure here instead.
 				record: async ({ error, context }) =>
-					logger.error('backup run failed', { code: context?.code, err: error })
+					logger.error('backup run failed', { code: context?.code, err: error }),
+				// Only a backup in the store is logged: a local --out file is not one the cron keeps.
+				log: out === null
 			}
 		);
 		if (out !== null)
