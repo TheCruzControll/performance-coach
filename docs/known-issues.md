@@ -26,6 +26,14 @@ Last reviewed: 2026-11-21, against `main` at the merge of #501.
   first week is repaired and judged. Found reading the stage for m7r/03. The previous block is
   `previous.block` in `src/lib/domain/programming/next-block/generate.ts`. Closes when that week is
   passed into the stage as the week before, and a next block's first week is judged against it.
+- **The schedule stage is not a fixed point on journeyHybrid's dosed plan.** Its lapse search
+  (`src/lib/domain/programming/stages/schedule.ts`, the `candidates` and `pass` loop) stops at the
+  first candidate week with no lapses. A second run starts from the first run's repaired sessions,
+  so it can pick a different week, and the schedule changes. Found when the strength cap at RPE 8
+  moved journeyHybrid's week 4 (m7r/04), which made the run-twice check in
+  `src/lib/domain/programming/generate-schedule.test.ts` fail. That check leaves journeyHybrid out
+  until this closes. Closes when the search is a fixed point, so a second run changes no session,
+  and journeyHybrid goes back into the check.
 
 ## Stale documentation
 

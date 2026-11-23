@@ -254,9 +254,9 @@ describe('the next block from the season', () => {
 		expect(swapped.modes[idOf(swapped.profile, 'Get stronger')]).toBe('primary');
 	});
 
-	it('leaves M3’s generateProgram byte-identical', () => {
-		// Hashes of M3's plan for three scenarios, taken on origin/m7r/02-generator-season before
-		// this change: the season planner moved them from the old base's, and this change leaves them.
+	it('pins generateProgram for three M7 scenarios, without the schedule stage', () => {
+		// Hashes of the plan for three scenarios, first taken when the season planner landed; the
+		// comment by the hashes says which later change moved them.
 		// M3's stages alone: the schedule stage (generator-schedule) is M7's, so it is left out here,
 		// as generate.test.ts leaves it out for the same hashes.
 		const schedule = vi.spyOn(
@@ -270,7 +270,10 @@ describe('the next block from the season', () => {
 			return fnv1a64(canonicalJson(generateProgram(input, options)));
 		});
 		schedule.mockRestore();
-		expect(hashes).toEqual(['0345b59dcc02ce27', 'd42123cacb5212c3', '313bf3d8930c995d']);
+		// generator-phasing (perfo-programming/4) moved two of them: journeyHybrid's week 4 cap is held
+		// to the dose's RPE 8, and hypertrophyBlock's compounds take their reps and top RPE per phase.
+		// multiGoal's hash is unchanged.
+		expect(hashes).toEqual(['af1ce66232fc9f7f', 'd42123cacb5212c3', '16ccc273a364db40']);
 	});
 });
 

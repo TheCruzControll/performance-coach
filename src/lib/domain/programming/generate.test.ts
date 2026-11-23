@@ -269,7 +269,9 @@ const GOLDEN: Record<ScenarioKey, readonly [monday: string, thursday: string]> =
 /**
  * The same plans with the season (generator-season) and every week repaired by the schedule stage
  * (generator-schedule, GENERATOR_ID 'perfo-programming/3', and each block's week before across its
- * boundary, which changed hybrid's); a later GENERATOR_ID bump changes them, and its PR lists each.
+ * boundary, which changed hybrid's). generator-phasing ('perfo-programming/4') left them as they
+ * were: no M3 scenario's first block carries mainLifts, and journey's dosed weeks already sit at or
+ * under the dose's cap. A later GENERATOR_ID bump changes them, and its PR lists each.
  */
 const GOLDEN_SEASON: Record<ScenarioKey, readonly [monday: string, thursday: string]> = {
 	beginner: ['40ac8a97f8ac8304', 'afbafd92042977bf'],

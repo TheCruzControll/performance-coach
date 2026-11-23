@@ -37,6 +37,13 @@ import type { LoadRules } from './rules/loads.ts';
 import { estimateMinutes } from './timefit.ts';
 
 /**
+ * The RPE a week's main lifts are loaded at: its RPE cap, or its mainLifts' top RPE when its phase
+ * sets a lower one (M7's phasing stage prescribes the top set at it).
+ */
+export const mainRpe = ({ rpeCap, mainLifts }: WeekTargets) =>
+	Math.min(rpeCap, mainLifts?.topRpe ?? rpeCap);
+
+/**
  * The share of a known 1RM a top set of `reps` is in the last week of `weeks` (their targets, the
  * block's first week first). Null off M1's table.
  */
@@ -47,10 +54,11 @@ export function knownShare(
 	rules: LoadRules = LOAD_RULES
 ): number | null {
 	const [first, ...later] = weeks;
-	let share = first ? baselineShare(reps, first.rpeCap, basis, rules) : null;
+	let share = first ? baselineShare(reps, mainRpe(first), basis, rules) : null;
 	const discount = basis === 'estimated' ? rules.estimateDiscount : 0;
-	for (const { rpeCap, loadStep } of later) {
-		const table = percentOfOneRepMax(reps, rpeCap);
+	for (const targets of later) {
+		const { loadStep } = targets;
+		const table = percentOfOneRepMax(reps, mainRpe(targets));
 		if (share === null || table === null) return null;
 		share = roundShare(Math.min(share + loadStep, table - discount), rules);
 	}
@@ -133,13 +141,12 @@ export function loadLater(
 	rules: LoadRules
 ): PlannedExercisePlan {
 	const reps = topReps(planned);
-	const { rpeCap } = weeks.at(-1)!;
 	const share =
 		reps === null
 			? null
 			: main.oneRepMax
 				? knownShare(reps, main.oneRepMax.kind, weeks, rules)
-				: percentOfOneRepMax(reps, rpeCap);
+				: percentOfOneRepMax(reps, mainRpe(weeks.at(-1)!));
 	return share === null ? planned : loadMain(planned, main, share, false, rules);
 }
 
@@ -155,7 +162,7 @@ export function progressWeeks(
 		const load = (planned: PlannedExercisePlan, main: MainLift) =>
 			main.oneRepMax || seen.has(main.lift)
 				? loadLater(planned, main, targets, rules)
-				: loadBaseline(planned, main, week.targets.rpeCap, rules);
+				: loadBaseline(planned, main, mainRpe(week.targets), rules);
 		const built =
 			week.kind === 'baseline' ? week : withVolume(eachMain(week, input, load), input, rules);
 		for (const lift of liftsIn(week, input)) seen.add(lift);
