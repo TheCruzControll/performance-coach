@@ -17,6 +17,8 @@
  * - The current version's session carries its way into the workout (start-link.ts): Start
  *   workout, or Done · View to its newest workout's History detail; none once skipped. The screen
  *   swaps in Resume when it is the workout in progress on the device.
+ * - A run's segments read their effort in the owner's heart-rate zones, 'Zone 2 · 134–148 bpm',
+ *   from the running profile's heart rates through heartRateZones; 'Zone 2' with none told.
  * - A strength session that can still change also streams what Swap offers for each exercise
  *   (`swaps`, alternativesForExercises): the screen renders without waiting for it. A failure
  *   there is recorded and streams null, which the Swap sheet shows with Retry.
@@ -24,12 +26,13 @@
 import { error } from '@sveltejs/kit';
 import type { DisciplineTone } from '#lib/domain/profile/catalog.ts';
 import type { AthleteProfile } from '#lib/domain/profile/types.ts';
+import { heartRateZones } from '#lib/domain/programming/paces.ts';
 import { describeSegments, type RunStep } from '#lib/domain/training/describe.ts';
 import type { SessionKind } from '#lib/domain/training/types.ts';
 import { sessionTone, type SessionStatus } from '#lib/domain/training/vocabulary.ts';
 import { ownerToday } from '#lib/server/local-date.ts';
 import { recordServerError, type ServerErrorInput } from '#lib/server/services/errors.ts';
-import { getAthleteProfile } from '#lib/server/services/profile/index.ts';
+import { getAthleteProfile, getHeartRate } from '#lib/server/services/profile/index.ts';
 import { completedWorkoutIds } from '#lib/server/services/workouts/history.ts';
 import {
 	alternativesForExercises,
@@ -47,6 +50,7 @@ import {
 	EDITS_LOCKED,
 	exerciseViews,
 	moveOption,
+	stepsInZones,
 	SWAPPED_ONCE,
 	whenWords,
 	type AdjustValues,
@@ -54,7 +58,8 @@ import {
 	type DetailsView,
 	type SessionEdits,
 	type SessionExerciseView,
-	type SwapOptions
+	type SwapOptions,
+	type ZoneBands
 } from '#lib/ui/program/session-words.ts';
 import { startLink, type StartLink } from '#lib/ui/program/start-link.ts';
 import { statusWords } from '#lib/ui/program/words.ts';
@@ -128,7 +133,8 @@ export interface SessionLoadDeps extends Pick<TrainingDeps, 'db'> {
 /** The session in words, in the owner's units. */
 function screenOf(
 	session: PlannedSession,
-	{ weightUnit, distanceUnit }: Pick<AthleteProfile, 'weightUnit' | 'distanceUnit'>
+	{ weightUnit, distanceUnit }: Pick<AthleteProfile, 'weightUnit' | 'distanceUnit'>,
+	zones: ZoneBands | null
 ): Omit<SessionScreen, 'edits' | 'adjust' | 'swaps' | 'start'> {
 	const { version, week } = session;
 	return {
@@ -155,10 +161,25 @@ function screenOf(
 						}
 					)
 				: [],
-		steps: session.kind === 'run' ? describeSegments(session.segments, { distanceUnit }) : [],
+		steps:
+			session.kind === 'run'
+				? stepsInZones(
+						describeSegments(session.segments, { distanceUnit }),
+						session.segments,
+						zones
+					)
+				: [],
 		instructions: session.instructions,
 		notes: session.notes ?? (session.kind === 'other' ? session.details.notes : null)
 	};
+}
+
+/** The owner's heart-rate zones in bpm; null with none told, or rates that cannot all be right. */
+async function zonesOf(ownerId: string, db: TrainingDeps['db']): Promise<ZoneBands | null> {
+	const hr = await getHeartRate(ownerId, { db });
+	if (!hr) return null;
+	const rates = { maxHr: hr.max, restingHr: hr.resting, thresholdHr: hr.threshold };
+	return heartRateZones(rates)?.zones ?? null;
 }
 
 /**
@@ -234,6 +255,7 @@ export async function loadSessionDetail(
 		const asked = version === null ? undefined : Number(version);
 		const session = await getPlannedSession(ownerId, key, { version: asked }, { db });
 		const profile = await getAthleteProfile(ownerId, { db });
+		const zones = session.kind === 'run' ? await zonesOf(ownerId, db) : null;
 		const edits = session.version.current ? await editsOf(ownerId, session, now, db) : null;
 		const start = edits ? await startOf(ownerId, session, db) : null;
 		// Started last, once the load's own reads are done: it runs while the screen streams.
@@ -242,7 +264,7 @@ export async function loadSessionDetail(
 				? swapOptions(ownerId, session.exercises, origin, { db, errorsDb })
 				: null;
 		const adjust = edits && !edits.locked ? adjustValues(session, profile) : null;
-		return { state: 'session', ...screenOf(session, profile), start, edits, adjust, swaps };
+		return { state: 'session', ...screenOf(session, profile, zones), start, edits, adjust, swaps };
 	} catch (err) {
 		if (err instanceof TrainingNotFoundError) error(404, 'Not found');
 		await recordServerError(

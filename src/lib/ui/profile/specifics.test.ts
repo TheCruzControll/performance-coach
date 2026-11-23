@@ -211,6 +211,8 @@ describe('specificsDraft', () => {
 				runsPerWeek: 4,
 				longestRun: 18,
 				easyPace: '5:45',
+				heartRate: { max: null, resting: null, threshold: null },
+				heartRateSaved: false,
 				races: [
 					{
 						key: 'race-10k',
@@ -280,6 +282,71 @@ describe('specificsDraft', () => {
 		expect(specificsPayload({ running: null, muayThai: null })).toEqual({
 			running: null,
 			muayThai: null
+		});
+	});
+});
+
+describe('heart rate', () => {
+	const told = { ...running, heartRate: { max: 190, resting: 50, threshold: null } };
+
+	it('edits what was saved, blank where none is told', () => {
+		expect(runningDraft(told, 'km')).toMatchObject({
+			heartRate: { max: 190, resting: 50, threshold: null },
+			heartRateSaved: true
+		});
+		expect(runningDraft(running, 'km')).toMatchObject({
+			heartRate: { max: null, resting: null, threshold: null },
+			heartRateSaved: false
+		});
+	});
+
+	it('posts the three rates, a blank one as null, and saves straight back', () => {
+		const payload = runningPayload(
+			draft({ heartRate: { max: 188, resting: null, threshold: 172 } })
+		);
+		expect(payload.heartRate).toEqual({ max: 188, resting: null, threshold: 172 });
+		const result = posted({ running: payload, muayThai: null });
+		expect(result.ok && result.data.running?.heartRate).toEqual({
+			max: 188,
+			resting: null,
+			threshold: 172
+		});
+		const back = posted(
+			specificsPayload(specificsDraft({ running: told, muayThai: null }, inPlay()))
+		);
+		expect(back.ok && back.data.running?.heartRate).toEqual(told.heartRate);
+	});
+
+	it('leaves heart rate out when all three are blank, so a save keeps what is stored', () => {
+		const payload = runningPayload(draft());
+		expect(payload.heartRate).toBeUndefined();
+		expect(JSON.stringify(payload)).not.toContain('heartRate');
+		const result = posted({ running: payload, muayThai: null });
+		expect(result.ok && 'heartRate' in result.data.running!).toBe(false);
+	});
+
+	it('clears saved heart rates once all three are blanked', () => {
+		const editing = runningDraft(told, 'km');
+		editing.heartRate = { max: null, resting: null, threshold: null };
+		expect(runningPayload(editing).heartRate).toBeNull();
+		const result = posted({ running: runningPayload(editing), muayThai: null });
+		expect(result.ok && result.data.running?.heartRate).toBeNull();
+	});
+
+	it('reports rates out of range or out of order at their own fields', () => {
+		const at = (heartRate: RunningDraft['heartRate']) => {
+			const result = posted({ running: runningPayload(draft({ heartRate })), muayThai: null });
+			return result.ok ? {} : result.errors;
+		};
+		expect(at({ max: 600, resting: 20, threshold: null })).toEqual({
+			'running.heartRate.max': 'Max heart rate between 120 and 230',
+			'running.heartRate.resting': 'Resting heart rate between 30 and 110'
+		});
+		expect(at({ max: 170, resting: 60, threshold: 180 })).toEqual({
+			'running.heartRate.threshold': 'Threshold heart rate must be below your max'
+		});
+		expect(at({ max: null, resting: 105, threshold: 100 })).toEqual({
+			'running.heartRate.resting': 'Resting heart rate must be below your threshold'
 		});
 	});
 });

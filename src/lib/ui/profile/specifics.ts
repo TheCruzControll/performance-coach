@@ -12,7 +12,12 @@ import {
 	type Discipline,
 	type RaceDistance
 } from '#lib/domain/profile/catalog.ts';
-import type { MuayThaiProfile, RaceResult, RunningProfile } from '#lib/domain/profile/types.ts';
+import type {
+	HeartRate,
+	MuayThaiProfile,
+	RaceResult,
+	RunningProfile
+} from '#lib/domain/profile/types.ts';
 import { formatDuration, parseDuration } from '#lib/domain/units.ts';
 
 type Unit = RunningProfile['unit'];
@@ -38,6 +43,10 @@ export interface RunningDraft {
 	longestRun: number | null;
 	/** Per unit, as typed ("5.45") or as saved ("5:45"). */
 	easyPace: string;
+	/** Max, resting and threshold heart rate in whole bpm, each null while blank. */
+	heartRate: HeartRate;
+	/** Whether a heart rate was saved when editing began: blanking all three then clears them. */
+	heartRateSaved: boolean;
 	races: RaceDraft[];
 	/** Not edited on this screen, but kept. */
 	notes: string | null;
@@ -112,6 +121,8 @@ export function runningDraft(saved: RunningProfile | null, unit: Unit): RunningD
 		runsPerWeek: saved?.runsPerWeek ?? null,
 		longestRun: saved?.longestRun ?? null,
 		easyPace: saved?.easyPaceSeconds == null ? '' : formatDuration(saved.easyPaceSeconds),
+		heartRate: { ...(saved?.heartRate ?? { max: null, resting: null, threshold: null }) },
+		heartRateSaved: !!saved?.heartRate,
 		races: (saved?.races ?? []).map(raceDraft),
 		notes: saved?.notes ?? null
 	};
@@ -141,7 +152,9 @@ export function specificsDraft(
 /**
  * Running as the schema takes it: times in seconds, a distance of its own only for an "Other"
  * race, no keys. Races keep their places, so an error the schema reports
- * (`running.races.2.timeSeconds`) is about the race in that place when it came back.
+ * (`running.races.2.timeSeconds`) is about the race in that place when it came back. Heart rate
+ * goes when one is told; all blank leaves it out of the JSON (undefined), which keeps what is
+ * stored, or posts null to clear the rates saved when editing began.
  */
 export function runningPayload(running: RunningDraft) {
 	return {
@@ -150,6 +163,11 @@ export function runningPayload(running: RunningDraft) {
 		runsPerWeek: running.runsPerWeek,
 		longestRun: running.longestRun,
 		easyPaceSeconds: timeSeconds(running.easyPace),
+		heartRate: Object.values(running.heartRate).some((bpm) => bpm !== null)
+			? running.heartRate
+			: running.heartRateSaved
+				? null
+				: undefined,
 		races: running.races.map((race) => ({
 			distance: race.distance,
 			customDistance: race.distance === 'other' ? race.customDistance : null,

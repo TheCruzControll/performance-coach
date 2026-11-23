@@ -24,6 +24,7 @@ export {
 	getEquipment,
 	getExercisePreferences,
 	getExperience,
+	getHeartRate,
 	getInjuries,
 	getSchedule,
 	getSpecifics,

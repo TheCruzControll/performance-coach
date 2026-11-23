@@ -2,8 +2,9 @@
   @component
   Profile → Running & Muay Thai: running volume, easy pace and recent race times; Muay Thai
   sessions, sparring and fights. Each part is shown while its discipline is in play or something
-  about it is saved, and either can be added here. Every number is optional; a race needs its
-  distance and time. Times go in on the phone's decimal keypad: "1.45.30" reads as 1:45:30.
+  about it is saved, and either can be added here. Every number is optional, heart rate included
+  (any one of max, resting and threshold sets the run zones in bpm); a race needs its distance and
+  time. Times go in on the phone's decimal keypad: "1.45.30" reads as 1:45:30.
 -->
 <script lang="ts">
 	import { tick, untrack } from 'svelte';
@@ -135,6 +136,35 @@
 				</div>
 			</Card>
 		</div>
+
+		<Section title="Heart rate" gap="md">
+			<p class="lede">Any one of these sets your run zones in beats per minute.</p>
+			<div class="fields">
+				<NumberField
+					label="Max heart rate"
+					unit="bpm"
+					integer
+					bind:value={run.heartRate.max}
+					error={errors['running.heartRate.max']}
+					enterkeyhint="next"
+				/>
+				<NumberField
+					label="Resting heart rate"
+					unit="bpm"
+					integer
+					bind:value={run.heartRate.resting}
+					error={errors['running.heartRate.resting']}
+					enterkeyhint="next"
+				/>
+				<NumberField
+					label="Threshold heart rate"
+					unit="bpm"
+					integer
+					bind:value={run.heartRate.threshold}
+					error={errors['running.heartRate.threshold']}
+				/>
+			</div>
+		</Section>
 
 		<Section title="Recent races" gap="md">
 			{#each run.races as race, i (race.key)}

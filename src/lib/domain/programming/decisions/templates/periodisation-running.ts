@@ -11,6 +11,6 @@ export const periodisationRunning = {
 	},
 	hr_zones_set: {
 		summary: 'Heart-rate zones from your {source}',
-		why: 'Run segments’ heart-rate zones come from your {source} of {value}. {reason}'
+		why: '{zones}, from your {basis}. {reason} Each run keeps its zone number.'
 	}
 } as const satisfies Templates;
