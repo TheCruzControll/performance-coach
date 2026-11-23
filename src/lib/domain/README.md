@@ -603,7 +603,8 @@ What a stored review is, defined once before anything composes or stores one.
   row: version 0 (written before M6) or any unknown version → `{ legacy: true, summary }`; a
   current-version snapshot that breaks the schema throws `SnapshotError` with its dotted `path`.
   `readVersioned(schema, version, row)` is the same read for the cycle snapshot. Any change to
-  either shape bumps `SNAPSHOT_VERSION`, and older rows then read as legacy.
+  either shape bumps `SNAPSHOT_VERSION`, and older rows then read as legacy, except an additive
+  optional field that older rows already satisfy by leaving it out (M7's `deload`).
 - `digest.ts`: `inputsDigest({ facts, workouts }, analyticsVersion = ANALYTICS_VERSION)` →
   16 hex digits, M3's `fnv1a64` over `canonicalJson` of the sorted facts (kind, id, updated_at)
   and each workout's status. Load order never changes it; an edited fact, a workout completed or
@@ -655,7 +656,7 @@ given (`ReviewEvaluation`, `review/evaluation.ts`), and with `checkWeek` alone w
 
 - Lines: `decideFromResults` per working line, the op in the line's own load kind. Fatigue `high`
   deloads the main lifts (`DELOAD`: sets × 0.6, RPE ≤ 6) with no progression; in a week already
-  light (`LIGHT_WEEK_KINDS`: deload, taper, event) it only caps RPE and sets `cycleFlag`.
+  light (`LIGHT_WEEK_KINDS`: deload, taper, event, recovery) it only caps RPE and sets `cycleFlag`.
 - Running: `adaptRunning`. A missed long run is repeated on its longest segment; the week is held
   to +10 % by shortening easy, steady and long segments (`CAPPED_SEGMENTS`) in proportion.
 - Conflicts: with `ctx.evaluation`, an `avoid` finding of M7's `evaluateWeek` is resolved by
@@ -670,6 +671,12 @@ given (`ReviewEvaluation`, `review/evaluation.ts`), and with `checkWeek` alone w
 - Only a generated session dated today or later with no workout is touched. `stillAhead(items,
 today, workouts)` is that filter for decide time. Next week outside the block → `boundary:
 'cycle'`; next week ended → `late`.
+- `ctx.deload` (M7): the review proposes a deload of next week instead, with boundary `'deload'`,
+  no ops, and every other change listed as not proposed with reason `'deload'`.
+- Cutback weeks (M7): a cutback is light for running only, so it keeps M6's strength changes and
+  takes no running change (`LIGHT_RUNNING_KINDS`).
+- `snapshot.deload` (M7, optional): `{ week, reasons }` when the review proposed a deload, absent
+  on every other review and on every row stored before M7.
 
 ### Cycle review (`programming/review/cycle.ts`, `cycle-snapshot.ts`)
 

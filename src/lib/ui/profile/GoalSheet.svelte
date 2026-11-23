@@ -6,7 +6,8 @@
   requirements; a general goal adds what to improve, how it is measured and a target date.
   Switching kind keeps what was typed for the other, but only the chosen kind's fields are
   saved. Checked with the shared schema, then saved through the route's `?/saveGoal` action,
-  which answers with the ranking. On Profile (`manage`) a stored goal's status changes here too.
+  which answers with the ranking and the priority trigger's re-plan (GoalsEditor shows it). On
+  Profile (`manage`) a stored goal's status changes here too.
   A stored goal is deleted through `?/deleteGoal`, after a second tap that says it is for good.
 -->
 <script lang="ts">
@@ -29,6 +30,7 @@
 	import TextArea from '../components/TextArea.svelte';
 	import TextField from '../components/TextField.svelte';
 	import type { GoalDraft } from './goals';
+	import type { ReplanResult } from './replan-notice.ts';
 
 	interface Props {
 		open: boolean;
@@ -36,10 +38,10 @@
 		draft: GoalDraft;
 		/** Profile: a stored goal's status can change too. */
 		manage?: boolean;
-		/** Saved: the goals as the services rank them. */
-		onsaved: (goals: Goal[]) => void;
-		/** Deleted: the goals left, as the services rank them. */
-		ondeleted: (goals: Goal[]) => void;
+		/** Saved: the goals as the services rank them, and the trigger's re-plan. */
+		onsaved: (goals: Goal[], replan?: ReplanResult) => void;
+		/** Deleted: the goals left, as the services rank them, and the trigger's re-plan. */
+		ondeleted: (goals: Goal[], replan?: ReplanResult) => void;
 	}
 
 	let { open = $bindable(), draft, manage = false, onsaved, ondeleted }: Props = $props();
@@ -84,11 +86,15 @@
 		failed = null;
 		// Posted as a JSON copy: `$state.snapshot` would add its helper to every route's runtime.
 		const payload = JSON.parse(JSON.stringify(goal)) as GoalDraft;
-		const outcome = await save<{ goals: Goal[] }>('?/saveGoal', payload, 'goal');
+		const outcome = await save<{ goals: Goal[]; replan?: ReplanResult }>(
+			'?/saveGoal',
+			payload,
+			'goal'
+		);
 		busy = false;
 		errors = outcome.errors;
 		if (outcome.ok) {
-			if (outcome.data) onsaved(outcome.data.goals);
+			if (outcome.data) onsaved(outcome.data.goals, outcome.data.replan);
 			return;
 		}
 		const invalid = Object.keys(errors).length > 0;
@@ -108,10 +114,12 @@
 		const button = event.currentTarget as HTMLElement;
 		deleting = true;
 		failed = null;
-		const outcome = await save<{ goals: Goal[] }>('?/deleteGoal', { id: goal.id });
+		const outcome = await save<{ goals: Goal[]; replan?: ReplanResult }>('?/deleteGoal', {
+			id: goal.id
+		});
 		deleting = false;
 		if (outcome.ok) {
-			if (outcome.data) ondeleted(outcome.data.goals);
+			if (outcome.data) ondeleted(outcome.data.goals, outcome.data.replan);
 			return;
 		}
 		failed = outcome.failed ?? 'That didn’t delete. Try again.';

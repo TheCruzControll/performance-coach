@@ -32,6 +32,9 @@
  *   A program exists only once onboarding is complete (the build refuses it before), so a running
  *   program never shows before the owner's setup is done.
  * - Until its first planned day has passed, the header offers Start date (/train/start).
+ * - An open re-plan that the goal priorities asked for (source goal_priority) is named by
+ *   `replanNote`: its proposal's id, for the one line under the header that links to it. Never the
+ *   plan. A read that fails is recorded (part 'replanNote') and the week renders without it.
  * - It fails soft: a read that fails is recorded as a server error (kind 'load') and Train shows
  *   its designed error with Retry, inside the shell, instead of the 500 page.
  */
@@ -51,6 +54,7 @@ import {
 	type PlacementAt,
 	type PlacementWhyView
 } from '#lib/server/services/periodisation/explain.ts';
+import { getOpenReplan } from '#lib/server/services/periodisation/propose.ts';
 import {
 	getWeekLine,
 	type WeekLineAt,
@@ -135,6 +139,8 @@ export type TrainWeekData =
 			plan: TimelineBlock[];
 			/** The goals the season gives a lane in each block (laneCount), reserved while it streams. */
 			openGoals: number;
+			/** The open re-plan the goal priorities asked for, by its proposal id; null otherwise. */
+			replanNote: { proposalId: string } | null;
 	  };
 
 export interface TrainRequest {
@@ -148,6 +154,8 @@ export interface TrainRequest {
 export interface TrainLoadDeps extends Pick<TrainingDeps, 'db'> {
 	/** Where a failure is recorded (app_errors): the app's database unless given. */
 	errorsDb?: TrainingDeps['db'];
+	/** The open re-plan read behind `replanNote`, from `db` unless given its own (a test's fault). */
+	replanNote?: Pick<TrainingDeps, 'db'>;
 	/**
 	 * The week's findings and why: on by default, read from `db` unless given its own (and the why
 	 * from `why.db` when given). false skips every M7 read: only the explain harness turns it off,
@@ -253,6 +261,15 @@ const whyOf = (
 const lineOf = (ownerId: string, at: WeekLineAt, deps: PartDeps): Promise<WeekLineView | null> =>
 	softly('weekLine', () => getWeekLine(ownerId, at, { db: deps.db }), deps);
 
+/**
+ * The open re-plan a goal priority proposed, named by its id (Train's one line), or null. The
+ * owner's newest open replan is the only one read; any other source is not Train's note.
+ */
+const replanNoteOf = async (ownerId: string, db: TrainingDeps['db']) => {
+	const open = await getOpenReplan(ownerId, { db });
+	return open?.origin?.kind === 'goal_priority' ? { proposalId: open.id } : null;
+};
+
 /** The kind line in words: its why, then any countdown. */
 const kindWords = ({ label, why, countdown }: NonNullable<WeekLineView['line']>) => ({
 	label,
@@ -281,7 +298,7 @@ function withNotes(
 export async function loadTrainWeek(
 	ownerId: string,
 	{ now, week, origin }: TrainRequest,
-	{ db, errorsDb, periodisation = {} }: TrainLoadDeps = {}
+	{ db, errorsDb, periodisation = {}, replanNote: replanDeps }: TrainLoadDeps = {}
 ): Promise<TrainWeekData> {
 	try {
 		const today = await ownerToday(ownerId, now, { db });
@@ -377,7 +394,12 @@ export async function loadTrainWeek(
 						: notPlannedCard(number, shown.phase),
 			offPlan,
 			plan: timelineView(program, { today, goals }),
-			openGoals: laneCount(goals)
+			openGoals: laneCount(goals),
+			replanNote: await softly('replanNote', () => replanNoteOf(ownerId, replanDeps?.db ?? db), {
+				db,
+				errorsDb,
+				origin
+			})
 		};
 	} catch (error) {
 		await recordServerError(
