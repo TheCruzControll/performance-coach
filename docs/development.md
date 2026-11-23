@@ -45,29 +45,30 @@ one setup).
 
 ## Everyday commands
 
-| Command                 | What it does                                                                  |
-| ----------------------- | ----------------------------------------------------------------------------- |
-| `pnpm dev`              | Vite dev server with HMR                                                      |
-| `pnpm check`            | `svelte-kit sync` + `svelte-check` (fails on warnings) + service-worker `tsc` |
-| `pnpm lint`             | Prettier check + ESLint (including import boundaries)                         |
-| `pnpm format`           | Prettier write                                                                |
-| `pnpm test:unit`        | Vitest unit project (`src/**/*.test.ts`)                                      |
-| `pnpm test:integration` | Vitest integration project against `coach_test`                               |
-| `pnpm test:e2e`         | Playwright against the production Node build                                  |
-| `pnpm test`             | all three test suites                                                         |
-| `pnpm test:live`        | the live coach suite (opt-in, billed, never in CI): see below                 |
-| `pnpm build`            | production build for Vercel (`.vercel/output`)                                |
-| `pnpm build:node`       | production build for Node (`build/`), used by e2e/Lighthouse                  |
-| `pnpm start`            | run `build/index.js` with `.env` (set `ORIGIN`/`PORT` as needed)              |
-| `pnpm budgets`          | enforce JS/CSS/font budgets on the last build                                 |
-| `pnpm lighthouse`       | Lighthouse mobile against a local production server                           |
-| `pnpm db:generate`      | generate a SQL migration from schema changes                                  |
-| `pnpm db:migrate`       | apply migrations (`DATABASE_URL_UNPOOLED` → `DATABASE_URL` → local dev)       |
-| `pnpm db:reset:test`    | drop + re-migrate `coach_test` (guarded: only `_test`/`_e2e` names)           |
-| `pnpm db:studio`        | Drizzle Studio                                                                |
-| `pnpm db:explain`       | query plans on a two-year dataset in `coach_explain`, gated (see below)       |
-| `pnpm icons`            | re-render PNG icons from `static/icons/*.svg`                                 |
-| `pnpm icons:sprite`     | regenerate the icon sprite and names from `src/lib/ui/icons/icons.ts`         |
+| Command                 | What it does                                                                     |
+| ----------------------- | -------------------------------------------------------------------------------- |
+| `pnpm dev`              | Vite dev server with HMR                                                         |
+| `pnpm check`            | `svelte-kit sync` + `svelte-check` (fails on warnings) + service-worker `tsc`    |
+| `pnpm check:files`      | `tsc` on the named `.ts` files and their imports only (`scripts/check-files.sh`) |
+| `pnpm lint`             | Prettier check + ESLint (including import boundaries)                            |
+| `pnpm format`           | Prettier write                                                                   |
+| `pnpm test:unit`        | Vitest unit project (`src/**/*.test.ts`)                                         |
+| `pnpm test:integration` | Vitest integration project against `coach_test`                                  |
+| `pnpm test:e2e`         | Playwright against the production Node build                                     |
+| `pnpm test`             | all three test suites                                                            |
+| `pnpm test:live`        | the live coach suite (opt-in, billed, never in CI): see below                    |
+| `pnpm build`            | production build for Vercel (`.vercel/output`)                                   |
+| `pnpm build:node`       | production build for Node (`build/`), used by e2e/Lighthouse                     |
+| `pnpm start`            | run `build/index.js` with `.env` (set `ORIGIN`/`PORT` as needed)                 |
+| `pnpm budgets`          | enforce JS/CSS/font budgets on the last build                                    |
+| `pnpm lighthouse`       | Lighthouse mobile against a local production server                              |
+| `pnpm db:generate`      | generate a SQL migration from schema changes                                     |
+| `pnpm db:migrate`       | apply migrations (`DATABASE_URL_UNPOOLED` → `DATABASE_URL` → local dev)          |
+| `pnpm db:reset:test`    | drop + re-migrate `coach_test` (guarded: only `_test`/`_e2e` names)              |
+| `pnpm db:studio`        | Drizzle Studio                                                                   |
+| `pnpm db:explain`       | query plans on a two-year dataset in `coach_explain`, gated (see below)          |
+| `pnpm icons`            | re-render PNG icons from `static/icons/*.svg`                                    |
+| `pnpm icons:sprite`     | regenerate the icon sprite and names from `src/lib/ui/icons/icons.ts`            |
 
 ### The live coach suite (`pnpm test:live`)
 

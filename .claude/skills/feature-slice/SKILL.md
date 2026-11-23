@@ -112,6 +112,7 @@ Run only what is cheap, on the files the slice changed:
 pnpm exec prettier --check <changed files>
 pnpm exec eslint <changed files>
 pnpm exec vitest run --project unit <changed or new test files>
+pnpm check:files <changed .ts files>   # types, which vitest does not check
 pnpm security:scan
 git add -A && git diff --quiet   # nothing left unstaged before the commit
 ```

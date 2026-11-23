@@ -32,14 +32,19 @@ what they find in your own changes:
 pnpm exec prettier --check <files you changed>
 pnpm exec eslint <files you changed>
 pnpm exec vitest run --project unit <test files you wrote or changed>
+pnpm check:files <.ts files you changed>
 pnpm security:scan
 ```
+
+`pnpm check:files` type-checks the files you name and what they import. Vitest does not
+type-check, so without it a type error waits for CI. It skips `.svelte` files, so say in the report
+when you changed one.
 
 The secrets scan reads any Postgres URL that carries a password, fixtures included, as a
 credential. Build fixture URLs from parts (scheme, user and the rest joined at runtime, as
 `scripts/db-grants.test.ts` does) rather than allowlisting them.
 
-Do not run `pnpm check`, `pnpm lint`, `pnpm test:unit`, `pnpm test:integration`, `pnpm build` or
+Do not run the full `pnpm check`, `pnpm lint`, `pnpm test:unit`, `pnpm test:integration`, `pnpm build` or
 Playwright. If your change needs an integration or e2e test, write it and say in the report that
 CI has to prove it.
 
