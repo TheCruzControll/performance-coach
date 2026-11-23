@@ -79,13 +79,14 @@ const same = (a: readonly [number, number], b: readonly [number, number]) =>
 
 /**
  * The input the stages read when `origin` planned `block`, and whether prepare planned a season:
- * at M6's next block's own start and phase when the block does not start on the version's week 1
- * Monday (a next block, a re-plan's next block), else at that Monday, as generateProgram calls it.
+ * from the block's own start when it does not start on the version's week 1 Monday (a next block,
+ * a re-plan's next block), else from that Monday, as generateProgram calls it; at the block's own
+ * phase and last day in both cases, so a block chosen from the start is judged by its chosen phase.
  */
 function preparedFor(origin: BlockOrigin, block: TargetBlock) {
 	const own = block.startsOn !== origin.startsOn;
 	const startsOn = own ? block.startsOn : origin.startsOn;
-	const planned = own ? { phase: block.phase, endsOn: block.endsOn } : undefined;
+	const planned = { phase: block.phase, endsOn: block.endsOn };
 	const options = { startsOn, firstPlannedDay: startsOn };
 	return prepare(origin.input, options, new DecisionLog(), planned);
 }

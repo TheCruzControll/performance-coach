@@ -131,6 +131,24 @@ describe('the band an M7 week was planned to', () => {
 		});
 	});
 
+	it('is the cut dose for a maintenance block chosen from the start on a cut, not the uncut 4–10', () => {
+		// The season's first block is a strength block; a re-plan chose maintenance from the start,
+		// so its weeks are judged by the phase it was chosen at, held on a cut.
+		const profile = M7_SCENARIOS.runnerLifter();
+		profile.profile.nutritionPhase = 'cut';
+		const input = inputOf(profile);
+		const plan = generateProgram(input, OPTIONS);
+		const block = { ...plan.blocks[0]!, phase: 'maintenance' as const };
+		const bands = blockBands({ input, generator: GENERATOR_ID, startsOn: SCENARIO_START }, block);
+		expect(bands!.held.keep).toBe(0.8);
+		for (const week of weeksOf(block, bands!)) expect(week.range).not.toEqual([4, 10]);
+		expect(weekBand(block.weeks[0]!.targets, bands!)).toMatchObject({
+			range: [3.2, 8],
+			scale: 1,
+			source: 'dose'
+		});
+	});
+
 	it('is none for a fight camp with no strength goal, whatever dose its weeks store', () => {
 		const multi = M7_SCENARIOS.multiGoal();
 		const fightOnly = { ...multi, goals: multi.goals.filter((g) => g.priority === 1) };

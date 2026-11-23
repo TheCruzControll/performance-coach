@@ -634,10 +634,11 @@ with their statuses and kind; next week's state and kind; the facts of the week 
 - `verdicts`: `classifyTrend` per key lift's weekly best e1RM, tonnage, mileage and load over the
   9 weeks; a `baseline` week has only 'Baseline established'.
 - `rpe`: the average, judged by `avgRpeCall`: against the week's own RPE cap when its plan sets the
-  main lifts, otherwise 6–8.5; and each lift's deviation with `consistency` over its last 3 sessions.
+  main lifts (good from min(6, cap − 1) to max(8.5, cap), so 6–8.5 for a cap from 7 to 8.5), otherwise
+  6–8.5; and each lift's deviation with `consistency` over its last 3 sessions.
 - `volume`: tonnage, the mean % of each lift's best e1RM, and hard sets per group against the
   block's band × the week's volume factor (`scaledTargets`: a deload at 0.6 makes 10–20 into
-  6–12), with the planned line.
+  6–12), with the planned line; for an M7 week, the band its plan set (`programming/planned-targets.ts`): a full-volume week's own range unscaled, a lighter week's block first range × its factor.
 - `running`: distance against the plan (`MILEAGE_ON_PLAN`) and the week before, pace by type, and
   the long run. `muay_thai`: sessions, load and rounds. `recovery`: the notes' means.
 - `fatigue`: the ACWR with its caveat, and `fatigueLevel`'s level and reasons.
