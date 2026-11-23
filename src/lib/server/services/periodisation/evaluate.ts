@@ -273,9 +273,21 @@ async function traitsFor(ownerId: string, sessions: readonly StoredSession[], de
 /** The week `at` names judged, in Train's words. TrainingNotFoundError: no such version. */
 export async function getWeekEvaluation(
 	ownerId: string,
-	{ version, weekStartsOn, today, tradeoffs = [] }: WeekAt,
+	at: WeekAt,
 	deps: EvaluationDeps = {}
 ): Promise<WeekFindingsView> {
+	return (await getWeekFindings(ownerId, at, deps)).view;
+}
+
+/**
+ * getWeekEvaluation's view, and the headlines of the findings its notes place (avoid first, at
+ * most MAX_SHOWN): what the coach's week block says (turn-facts.ts).
+ */
+export async function getWeekFindings(
+	ownerId: string,
+	{ version, weekStartsOn, today, tradeoffs = [] }: WeekAt,
+	deps: EvaluationDeps = {}
+): Promise<{ view: WeekFindingsView; headlines: string[] }> {
 	const { db } = resolveDeps(deps);
 	const contexts = deps.contexts ?? createContextCache(ownerId, { ...deps, db });
 	return measure('periodisation', async () => {
@@ -350,10 +362,13 @@ export async function getWeekEvaluation(
 			}
 		}
 		return {
-			grade: evaluation.grade,
-			summary: weekEnd < today ? null : summaryOf(placed, weekStartsOn <= today),
-			notes,
-			days: context ? daysOf(context.load.days, weekStartsOn) : []
+			view: {
+				grade: evaluation.grade,
+				summary: weekEnd < today ? null : summaryOf(placed, weekStartsOn <= today),
+				notes,
+				days: context ? daysOf(context.load.days, weekStartsOn) : []
+			},
+			headlines: placed.map((finding) => finding.headline)
 		};
 	});
 }

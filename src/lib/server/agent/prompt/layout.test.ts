@@ -95,6 +95,14 @@ function snapshot(overrides: Partial<MemorySnapshot['records']> = {}): MemorySna
 	};
 }
 
+type WeekBlockFacts = NonNullable<NonNullable<TurnFacts['week']>['block']>;
+
+/** The same turn facts with the week's block read. */
+const withBlock = (turn: TurnFacts, block: WeekBlockFacts): TurnFacts => ({
+	...turn,
+	week: { ...turn.week!, block }
+});
+
 function facts(overrides: Partial<TurnFacts> = {}): TurnFacts {
 	return {
 		date: '2026-11-03',
@@ -253,6 +261,45 @@ describe('turnContext', () => {
 				todaysSessions: [{ title: PLANTED }],
 				week: { ...facts().week!, remaining: [{ date: '2026-11-05', title: PLANTED }] }
 			})
+		);
+		const data = dataOf(message);
+		expect(JSON.stringify(data)).toContain(PLANTED);
+		expect(exposed(data, PLANTED)).toEqual([]);
+	});
+
+	it('carries the week block: its findings as untrusted_text, and the next deload and taper', () => {
+		const block: WeekBlockFacts = {
+			phase: 'accumulation',
+			kind: 'intensification',
+			findings: ['Heavy squats the day before sparring'],
+			nextDeload: '2026-11-16',
+			nextTaper: '2026-12-07'
+		};
+		const data = dataOf(turnContext(withBlock(facts(), block))) as { week: { block: unknown } };
+		expect(data.week.block).toEqual({
+			phase: 'accumulation',
+			kind: 'intensification',
+			findings: [{ untrusted_text: 'Heavy squats the day before sparring' }],
+			nextDeload: '2026-11-16',
+			nextTaper: '2026-12-07'
+		});
+	});
+
+	it('shows at most three findings, and no block when none was read', () => {
+		const four = ['One', 'Two', 'Three', 'Four'];
+		const data = dataOf(
+			turnContext(
+				withBlock(facts(), { phase: 'accumulation', kind: 'accumulation', findings: four })
+			)
+		) as { week: { block: { findings: unknown[] } } };
+		expect(data.week.block.findings).toHaveLength(3);
+		const plain = dataOf(turnContext(facts())) as { week: object };
+		expect(plain.week).not.toHaveProperty('block');
+	});
+
+	it('keeps a planted note in a finding inside untrusted_text', () => {
+		const message = turnContext(
+			withBlock(facts(), { phase: 'accumulation', kind: 'accumulation', findings: [PLANTED] })
 		);
 		const data = dataOf(message);
 		expect(JSON.stringify(data)).toContain(PLANTED);
@@ -610,6 +657,30 @@ describe('the layout across turns', () => {
 		expect(second.messages.filter((message) => message.role === 'system')).toHaveLength(1);
 		const step2 = await call(second);
 		expect(step2.message.usage.cache_read_input_tokens).toBe(totalInput(step1));
+	});
+
+	it('keeps the prefix when the week block changes: turn 2 replays turn 1’s context and its block stays out of the system prompt', async () => {
+		const findings = ['Lower A the day before sparring'];
+		const context1 = turnContext(
+			withBlock(tuesday(), {
+				phase: 'accumulation',
+				kind: 'accumulation',
+				findings,
+				nextDeload: '2026-11-16'
+			})
+		);
+		const first = build({ preamble, transcript: [owner('How is my week?')], context: context1 });
+		const answer1 = await coach([{ text: '[fact] Your week is on track.' }])(first);
+
+		const transcript = [owner('How is my week?'), context1, stored(answer1), owner('And now?')];
+		const context2 = turnContext(
+			withBlock(thursday(), { phase: 'accumulation', kind: 'intensification', findings: [] })
+		);
+		const second = build({ preamble, transcript, context: context2 });
+		expectPrefix(first, second);
+		expect(bytes(second.messages[second.messages.length - 1])).toBe(bytes(context2));
+		expect(validateRequest(second)).toEqual([]);
+		expect(bytes(second.system)).not.toContain(findings[0]);
 	});
 
 	it('lets a planted instruction in stored text appear only inside untrusted_text', async () => {

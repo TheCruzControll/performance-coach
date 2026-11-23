@@ -9,7 +9,7 @@
  *   missing provider and the daily cap each end the turn as they should
  * - every stored segment stays a request the API accepts (validateRequest)
  */
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
 import * as z from 'zod/mini';
 import { addDays } from '../../../src/lib/domain/calendar';
@@ -22,6 +22,7 @@ import {
 	agentModelCalls,
 	agentRuns,
 	agentToolCalls,
+	appErrors,
 	coachMessages,
 	coachThreads,
 	type Executor
@@ -33,6 +34,8 @@ import {
 	startRun
 } from '../../../src/lib/server/services/coach/runs';
 import type { ResolvedCoachDeps } from '../../../src/lib/server/services/coach/shared';
+import type { WeekBlockReads } from '../../../src/lib/server/services/coach/turn-facts';
+import { getRoadView } from '../../../src/lib/server/services/periodisation/road-view';
 import { startOwnerTurn } from '../../../src/lib/server/services/coach/threads';
 import {
 	createProgramFromPlan,
@@ -40,7 +43,7 @@ import {
 	skipSession
 } from '../../../src/lib/server/services/programs/index';
 import { programFixture } from '../../../src/lib/server/test-support/program-fixtures';
-import { withRollback } from '../helpers';
+import { withCommitted, withRollback } from '../helpers';
 import { makeOwner } from '../profile/fixtures';
 import { recording, runScripted, segmentIssues, storedRows, TURN_NOW } from './harness';
 
@@ -696,6 +699,120 @@ describe('runTurn', () => {
 				error: 'daily_cap',
 				modelCalls: 0
 			});
+		});
+	});
+});
+
+describe('the week block', () => {
+	const notReached = async (): Promise<never> => {
+		throw new Error('the evaluation is not reached');
+	};
+	/** The turn context message as stored: its header line, then its canonical JSON. */
+	const blockKeys = (rows: readonly { kind: string; content: unknown }[]) =>
+		String(rows.find((row) => row.kind === 'context')!.content);
+	/** The newest error row's id: rows left by earlier runs sit at or below it. */
+	const errorMark = async (db: Executor) =>
+		Math.max(0, ...(await db.select({ id: appErrors.id }).from(appErrors)).map((row) => row.id));
+	const weekBlockErrors = async (db: Executor, after: number) =>
+		(await db.select().from(appErrors)).filter(
+			(row) => row.id > after && (row.context as { part?: unknown } | null)?.part === 'week-block'
+		);
+
+	it('builds the block from the live reads on committed data, and records no failure', async () => {
+		await withCommitted(async (db) => {
+			const owner = await makeOwner(db);
+			await storeProgram(db, owner);
+			const mark = await errorMark(db);
+			const turn = await runScripted(answering(), { db, owner });
+
+			expect(turn.done).toEqual({ type: 'done', status: 'completed' });
+			const context = blockKeys(await storedRows(db, turn.threadId!));
+			// Canonical JSON: the keys sorted, the findings as untrusted_text.
+			expect(context).toContain('"block":{"findings":[{"untrusted_text":');
+			expect(context).toContain('"nextDeload":"2026-12-07"');
+			// The road reaches the coaching memory: the block's label in the segment's program section.
+			const rows = await storedRows(db, turn.threadId!);
+			const preamble = rows.find((row) => row.kind === 'segment_preamble')!;
+			expect(JSON.stringify(preamble.content)).toContain('blockType');
+			expect(await weekBlockErrors(db, mark)).toEqual([]);
+		});
+	});
+
+	it('leaves the block out when the road read fails, records it, and answers as before', async () => {
+		await withRollback(async (db) => {
+			const owner = await makeOwner(db);
+			await storeProgram(db, owner);
+			const weekReads: WeekBlockReads = {
+				road: async () => {
+					throw new Error('test fault: the road read failed');
+				},
+				evaluation: notReached
+			};
+			const mark = await errorMark(db);
+			const turn = await runScripted(answering(), { db, owner, weekReads });
+
+			expect(types(turn.events)).toEqual([
+				'run_started',
+				'block_started',
+				'text_delta',
+				'block_completed',
+				'answer_completed',
+				'done'
+			]);
+			expect(turn.done).toEqual({ type: 'done', status: 'completed' });
+			const rows = await storedRows(db, turn.threadId!);
+			expect(kinds(rows)).toEqual(['segment_preamble', 'owner_message', 'context', 'assistant']);
+			expect(blockKeys(rows)).toContain('"week"');
+			expect(blockKeys(rows)).not.toContain('"block"');
+			const [recorded] = await weekBlockErrors(db, mark);
+			expect(recorded).toMatchObject({ kind: 'load', status: 500 });
+			expect(recorded!.message).toContain('road read failed');
+		});
+	});
+
+	it('leaves the block out when the evaluation read fails, records it, and answers as before', async () => {
+		await withRollback(async (db) => {
+			const owner = await makeOwner(db);
+			await storeProgram(db, owner);
+			const weekReads: WeekBlockReads = {
+				road: async (executor, ownerId, today) => getRoadView(ownerId, today, { db: executor }),
+				evaluation: async () => {
+					throw new Error('test fault: the evaluation read failed');
+				}
+			};
+			const mark = await errorMark(db);
+			const turn = await runScripted(answering(), { db, owner, weekReads });
+
+			expect(turn.done).toEqual({ type: 'done', status: 'completed' });
+			expect(errorOf(turn.events)).toBeUndefined();
+			const rows = await storedRows(db, turn.threadId!);
+			expect(blockKeys(rows)).not.toContain('"block"');
+			const [recorded] = await weekBlockErrors(db, mark);
+			expect(recorded!.message).toContain('evaluation read failed');
+		});
+	});
+
+	it('cancels a stalled read at its statement timeout, and the turn goes on without the block', async () => {
+		await withRollback(async (db) => {
+			const owner = await makeOwner(db);
+			await storeProgram(db, owner);
+			const weekReads: WeekBlockReads = {
+				road: async (executor) => {
+					// The block's own transaction: Postgres cancels this at 250 ms (SQLSTATE 57014).
+					await executor.execute(sql`select pg_sleep(5)`);
+					return null;
+				},
+				evaluation: notReached
+			};
+			const mark = await errorMark(db);
+			const turn = await runScripted(answering(), { db, owner, weekReads });
+
+			expect(turn.done).toEqual({ type: 'done', status: 'completed' });
+			expect(types(turn.events)).toContain('answer_completed');
+			const rows = await storedRows(db, turn.threadId!);
+			expect(blockKeys(rows)).not.toContain('"block"');
+			const [recorded] = await weekBlockErrors(db, mark);
+			expect(recorded!.context).toMatchObject({ part: 'week-block', code: '57014' });
 		});
 	});
 });

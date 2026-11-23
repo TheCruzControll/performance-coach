@@ -8,6 +8,7 @@
  * plain; the server wraps every stored string as untrusted text when it serialises the snapshot
  * for the model (domain/coach/memory-format.ts).
  */
+import type { GoalMode } from '../programming/evaluate/types.ts';
 import type { BaselineKind, Severity } from '../profile/catalog.ts';
 import type { Decider, PreferenceSource, ProposalStatus } from '../training/vocabulary.ts';
 import type { SourceRef } from './sources.ts';
@@ -40,13 +41,21 @@ type Sourced<T> = T & { source: SourceRef };
 
 // ---- Profile sections -----------------------------------------------------------------------
 
-export type MemoryGoal = Sourced<{ rank: number; title: string; targetDate: string | null }>;
+/** A goal's mode in the block the owner is in today (primary leads), when the road is read. */
+export type MemoryGoal = Sourced<{
+	rank: number;
+	title: string;
+	targetDate: string | null;
+	mode?: GoalMode;
+}>;
 export type MemoryProgram = Sourced<{
 	name: string;
 	versionNumber: number;
 	week: number | null;
 	weeks: number | null;
 	phase: string | null;
+	/** The block today's road names (its label, in words), when the road is read. */
+	blockType?: string;
 }>;
 export type MemoryPlanned = Sourced<{ title: string }>;
 /** One of the last 14 days, planned against done. */

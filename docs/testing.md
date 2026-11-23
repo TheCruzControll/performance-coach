@@ -1356,6 +1356,9 @@ tool group, plus `general.ts`, `reviews.ts`, `summaries.ts`, the pain and ground
   `direct.test.ts` (lookups without a model call), `first-words.test.ts`, and the endpoints
   (`threads-endpoint`, `runs-endpoint`, `memory-endpoint`, `proposal-actions`), the screen loads
   (`screen-load`, `screen-proposals`, `inbox-load`) and `test-support.test.ts`.
+- **The week block** (`turn.test.ts`, 'the week block'; `prompt/layout.test.ts`): a failed road or
+  evaluation read, and a stalled one cancelled by Postgres at 250 ms, leave the block out and record
+  an app_errors row while the turn answers; committed data builds the block and its label reaches the memory.
 - `tests/integration/analytics/analytics.test.ts` and
   `tests/integration/coach/analytics-parity.test.ts`: the coach's weekly summary, load and trends
   equal the screens' numbers.

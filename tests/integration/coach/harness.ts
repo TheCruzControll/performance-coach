@@ -43,6 +43,8 @@ export interface Scripted {
 	onEvent?: (event: CoachEvent) => void | Promise<void>;
 	/** Receives the turn's work after its last event (TurnOptions.after); none without it. */
 	after?: TurnOptions['after'];
+	/** The week block's reads (TurnOptions.weekReads): the live ones unless a test swaps one. */
+	weekReads?: TurnOptions['weekReads'];
 }
 
 export interface ScriptedTurn {
@@ -96,7 +98,8 @@ export async function runScripted(script: MockScript, options: Scripted): Promis
 			provider,
 			deps: { db: options.db, now: options.now ?? (() => new Date(TURN_NOW)) },
 			...(tools && { tools }),
-			...(options.after && { after: options.after })
+			...(options.after && { after: options.after }),
+			...(options.weekReads && { weekReads: options.weekReads })
 		}
 	);
 	for await (const event of stream) {
