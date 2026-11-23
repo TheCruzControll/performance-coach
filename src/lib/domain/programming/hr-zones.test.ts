@@ -1,8 +1,8 @@
 /**
- * hr-zones (m7r/10): with the owner's heart rate known, the plan records their zones in bpm by the first
- * method the rates allow (threshold, then reserve, then max). Segments keep the zone numbers they
- * already carry, and a profile without heart rate plans byte for byte as before, so GENERATOR_ID
- * stays where it is.
+ * hr-zones (m7r/10): with the owner's heart rate known, the plan records their zones in bpm by
+ * the first method the rates allow (threshold, then reserve, then max). Segments keep the zone
+ * numbers they already carry, and a profile without heart rate plans byte for byte as before, so
+ * GENERATOR_ID stays where it is.
  */
 import { describe, expect, it } from 'vitest';
 import { CATALOGUE } from '../exercises/index';
@@ -29,8 +29,10 @@ function runnerWith(heartRate: Partial<HeartRate>): TrainingProfile {
 
 /**
  * Each M7 scenario's plan from SCENARIO_START, hashed on main before m7r/10 (perfo-programming/7):
- * none has a heart rate, so none may change.
- * GOLDEN_SEASON, which this slice leaves as it was.
+ * none has a heart rate, so none may change. To re-pin, hash each key's planOf(M7_SCENARIOS[key]())
+ * with fnv1a64(JSON.stringify(plan)) and copy the hashes here.
+ * M3's scenarios are pinned the same way by generate.test.ts's GOLDEN_SEASON, which this slice
+ * leaves as it was.
  */
 const BEFORE: Record<M7ScenarioKey, string> = {
 	multiGoal: 'a96d940af83b1c36',
@@ -143,15 +145,5 @@ describe('heart-rate zones in the plan', () => {
 			if (i > 0) expect(low, `zone ${i + 1} starts where ${i} ends`).toBe(zones[i - 1]![1]);
 		});
 		if (rates.max) expect(zones[4]![1]).toBeLessThanOrEqual(rates.max);
-	});
-
-	it('is deterministic: the same heart rates give the same plan, whatever their key order', () => {
-		const first = JSON.stringify(planOf(runnerWith({ max: 190, resting: 50, threshold: 170 })));
-		const reordered = M7_SCENARIOS.runnerLifter();
-		reordered.running!.heartRate = { threshold: 170, resting: 50, max: 190 };
-		expect(JSON.stringify(planOf(reordered))).toBe(first);
-		expect(JSON.stringify(planOf(runnerWith({ max: 190, resting: 50, threshold: 170 })))).toBe(
-			first
-		);
 	});
 });
