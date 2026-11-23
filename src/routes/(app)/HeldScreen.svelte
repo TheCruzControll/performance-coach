@@ -127,5 +127,12 @@
 			--main-max: var(--content-wide);
 			max-width: var(--content-wide);
 		}
+
+		/* Profile's measure, as on <main> (layout.css): after the split rule, which it overrides at
+		   the same specificity. */
+		.column:has(:global([data-measure='profile'])) {
+			--main-max: var(--content-profile);
+			max-width: var(--content-profile);
+		}
 	}
 </style>

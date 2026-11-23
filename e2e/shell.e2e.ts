@@ -667,17 +667,16 @@ test.describe('app shell on an iPhone viewport', () => {
 		}
 	});
 
-	test('segmented controls keep a 44px hit area', async ({ page }) => {
-		// No app screen keeps one (Appearance's theme is a choice list): /design → Inputs shows one.
-		await page.goto('/design');
-		// The tabs only switch once the page has hydrated; network idle stands in for that.
-		await page.waitForLoadState('networkidle');
-		await page.getByRole('tab', { name: 'Inputs' }).click();
-		const range = page.getByRole('radiogroup', { name: 'Range' });
-		const options = range.getByRole('radio');
+	test('compact segmented controls keep a 44px hit area', async ({ page }) => {
+		// The plate calculator's "Bar" is one (PlateCalculator and PlateInventory use size="sm").
+		await gotoHydrated(page, '/train');
+		await openMore(page);
+		await page.getByTestId('open-plates').click();
+		const bar = page.getByRole('radiogroup', { name: 'Bar' });
+		const options = bar.getByRole('radio');
 		await expect(options).toHaveCount(3);
 		// Measure in the middle of the screen, clear of the fixed tab bar.
-		await range.evaluate((el) => el.scrollIntoView({ block: 'center' }));
+		await bar.evaluate((el) => el.scrollIntoView({ block: 'center' }));
 		for (const option of await options.all()) {
 			const box = (await option.boundingBox())!;
 			const x = box.x + box.width / 2;

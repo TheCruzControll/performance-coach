@@ -421,7 +421,8 @@ that specs verify the rest with.
   - `--content-wide` 72 rem: a wide screen's content.
   - `--content-list` 20 rem: the list beside its editor on a split screen.
   - `--content-profile` 68 rem, from 1024 px: Profile's split (`data-measure="profile"`), its list
-    400 px wide, 56 px, then the open screen 576 px wide behind a hairline, inside the gutters.
+    400 px wide (narrower windows narrow it, to 320 px at least), 56 px, then the open screen
+    576 px wide behind a hairline, inside the gutters.
   - `--rail-width` 5.5 rem: the navigation rail from 1024 px.
   - `--column-offset-max`: from 1024 px, the most `<main>` sits right of the rail, 200 px less the
     gutter, so a screen's text starts at most 200 px from the rail.
@@ -450,8 +451,8 @@ A screen declares its width with `data-layout` on its root element:
   is `--content-readable` from 640 px; the phone column stays `--content-max`.
 - **wide**: dashboards and grids, up to `--content-wide`.
 - **split**: a list and its editor, `--content-list` beside a readable detail. Profile's screens
-  add `data-measure="profile"`: `--content-profile` in all, a 400 px list, then a 576 px detail
-  behind a hairline with 56 px inside it.
+  add `data-measure="profile"`: `--content-profile` in all, a 400 px list (320 px at least in a
+  narrower window), then a 576 px detail behind a hairline with 56 px inside it.
 - Never a single text column wider than `--content-readable`.
 - From 1024 px `<main>` is centred right of the rail, at most 200 px from it to the text: a
   readable screen at 1440 px is 560 px of text starting 200 px from the rail, and a wide one is
@@ -658,8 +659,8 @@ later-pass screen).
   `--content-readable`.
 - **Profile** (`/profile`): one list in groups (You, Training, App, Security), each row with its
   answer, then About this app (Backups first, then database, version, environment) and the
-  real-user performance card. From 1024 px the list 400 px wide (44 px rows, no chevrons, answers
-  in tertiary) and the open screen beside it behind a hairline, `--content-profile` (68 rem) in
+  real-user performance card. From 1024 px the list up to 400 px wide (44 px rows, no chevrons,
+  answers in tertiary) and the open screen beside it behind a hairline, `--content-profile` (68 rem) in
   all, centred right of the rail; on Profile itself the open side is About this app, and the
   owner's name sits above the title.
 - **Appearance** (`/profile/appearance`): the theme as a choice list (Dark, Light, Match my

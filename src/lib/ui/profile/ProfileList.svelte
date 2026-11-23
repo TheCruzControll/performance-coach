@@ -4,7 +4,7 @@
   Training, then App's Appearance and Security's Passkeys and recovery. Each is a `ListRow` link
   with its answer at its end ("kg, km", "Dark", "2 passkeys"), streamed from the Profile layout's
   load (./answers.ts), or this device's theme once the page has mounted; until then a row shows its
-  title alone. From 1024 px (Paper, 14 · "Profile, goals") the list is 400 px of 44 px rows with no
+  title alone. From 1024 px (Paper, 14 · "Profile, goals") the list is up to 400 px of 44 px rows with no
   chevrons, no visible group headings and its answers in tertiary, beside the open screen, the open
   row `aria-current`. Words only (./sections.ts), never the editor registry, so no route carries
   an editor in its initial JavaScript.
@@ -102,7 +102,9 @@
 			white-space: nowrap;
 		}
 
-		.profile-list :global(.row) {
+		/* Through .group, so (0,3,0) beats ListRow's own .row padding whatever order the
+		   stylesheets load in. */
+		.profile-list .group :global(.row) {
 			min-height: var(--touch-target);
 			padding-block: 0;
 		}

@@ -26,8 +26,8 @@
 		align-items: start;
 	}
 
-	/* Profile's measure (Paper, 14 · "Profile, goals"): its list 400 px wide, 56 px, then the open
-	   screen 576 px wide behind a hairline, its own 56 px inside it. After the wide and split rules,
+	/* Profile's measure (Paper, 14 · "Profile, goals"): its list 400 px wide (a narrower window
+	   narrows it, to 320 px at least), 56 px, then the open screen 576 px wide behind a hairline, its own 56 px inside it. After the wide and split rules,
 	   which it overrides at the same specificity. */
 	#main:has([data-measure='profile']) {
 		--main-max: var(--content-profile);
@@ -39,7 +39,7 @@
 	}
 
 	[data-measure='profile'] {
-		grid-template-columns: 25rem minmax(0, 36rem);
+		grid-template-columns: clamp(20rem, 100% - 36rem - var(--space-14), 25rem) minmax(0, 36rem);
 		column-gap: var(--space-14);
 	}
 
