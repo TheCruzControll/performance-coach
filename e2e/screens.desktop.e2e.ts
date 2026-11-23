@@ -12,7 +12,8 @@ import {
 	expectMainCentred,
 	expectNoShift,
 	expectNoSideScroll,
-	layoutWidth
+	layoutWidth,
+	tokenPx
 } from './desktop';
 import { captureScreen, signedOut, trackConsoleErrors } from './support';
 
@@ -25,7 +26,7 @@ interface Screen {
 	name: string;
 	path: string;
 	heading: string | RegExp;
-	/** The heading's level, when the screen's title is not an h1 (an error page's is an h2). */
+	/** The heading's level, when the screen's title is not an h1. */
 	level?: 1 | 2;
 	/** The document's HTTP status, when it is not 200: a 404 page's own load is not an error. */
 	status?: 404;
@@ -54,7 +55,7 @@ const SIGNED_IN: Screen[] = [
 		name: 'not-found-in-shell',
 		path: '/today/unknown',
 		heading: 'Nothing here',
-		level: 2,
+		level: 1,
 		status: 404,
 		shell: true
 	},
@@ -62,7 +63,7 @@ const SIGNED_IN: Screen[] = [
 		name: 'not-found',
 		path: '/nothing-here',
 		heading: 'Nothing here',
-		level: 2,
+		level: 1,
 		status: 404,
 		shell: false
 	}
@@ -157,22 +158,22 @@ test.describe('signed in', () => {
 		});
 	}
 
-	test('a missing page in the shell lines its state up with its title, not centred under it', async ({
-		page
-	}) => {
+	test('a missing page in the shell lines its state up with the column', async ({ page }) => {
 		const response = await page.goto('/today/unknown');
 		expect(response?.status()).toBe(404);
-		const title = await boxOf(page.getByRole('heading', { level: 1, name: 'Not found' }));
+		// The column's content box: main's left edge plus its gutter.
+		const start = (await boxOf(page.locator('main#main'))).x + (await tokenPx(page, '--gutter'));
 		const view = page.getByTestId('error-view');
 		for (const part of [
-			view.getByRole('heading', { level: 2, name: 'Nothing here' }),
-			view.getByText('This page does not exist.'),
+			view.getByRole('heading', { level: 1, name: 'Nothing here' }),
+			view.getByText('This page doesn’t exist.'),
 			view.getByRole('link', { name: 'Back to Today' })
 		]) {
 			const box = await boxOf(part);
-			expect(Math.abs(box.x - title.x), `${part} starts where the title does`).toBeLessThanOrEqual(
-				1
-			);
+			expect(
+				Math.abs(box.x - start),
+				`${part} starts at the column's text edge`
+			).toBeLessThanOrEqual(1);
 		}
 	});
 

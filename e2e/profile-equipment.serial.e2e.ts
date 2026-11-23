@@ -384,6 +384,6 @@ test('only the listed sections exist: any other key is the 404 page', async ({ p
 		const response = await page.goto(`/profile/${key}`);
 		expect(response?.status(), key).toBe(404);
 		await expect(page.getByTestId('error-view')).toHaveAttribute('data-kind', 'not-found');
-		await expect(page.getByRole('heading', { level: 1, name: 'Not found' })).toBeVisible();
+		await expect(page.getByRole('heading', { level: 1, name: 'Nothing here' })).toBeVisible();
 	}
 });

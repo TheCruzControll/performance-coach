@@ -445,7 +445,7 @@ test.describe('every width and state', () => {
 		await page.reload();
 		await page.waitForLoadState('networkidle');
 		const notice = page.getByTestId('offline-state');
-		await expect(notice).toContainText('You’re offline');
+		await expect(notice).toContainText('Coach needs a connection');
 		const main = await boxOf(mainOf(page));
 		const box = await boxOf(notice);
 		expect(box.x).toBeGreaterThanOrEqual(main.x - 1);

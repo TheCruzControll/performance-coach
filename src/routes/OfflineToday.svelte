@@ -4,10 +4,10 @@
   from the kits Today and Train saved on this device (client/workout/coming-kits.ts), so a launch without a
   workout in progress can still start today's workout: each session's card with Start workout
   (/workout?start=, which starts from the saved kit offline), Resume for the workout in progress
-  here, or Done once completed here. With none saved for today, a designed note says how to keep
-  them ready and offers an ad-hoc workout, which needs no kit. It reads IndexedDB once mounted,
-  never creating the database (probe.ts), and shows nothing until that read settles: a few
-  milliseconds, so no skeleton flashes.
+  here, or Done once completed here. With none saved for today, it says so and how to keep them
+  ready next time (Paper, 10 · States). Either way one row offers an ad-hoc workout, which needs
+  no kit. It reads IndexedDB once mounted, never creating the database (probe.ts), and shows
+  nothing until that read settles: a few milliseconds, so no skeleton flashes.
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
@@ -15,9 +15,8 @@
 	import { savedToday, type OfflineSession } from '#lib/client/workout/today-kits.ts';
 	import Badge from '#lib/ui/components/Badge.svelte';
 	import Button from '#lib/ui/components/Button.svelte';
-	import EmptyState from '#lib/ui/components/EmptyState.svelte';
+	import ListRow from '#lib/ui/components/ListRow.svelte';
 	import Section from '#lib/ui/components/Section.svelte';
-	import Surface from '#lib/ui/components/Surface.svelte';
 	import SessionCard from '#lib/ui/program/SessionCard.svelte';
 
 	let sessions = $state<OfflineSession[]>();
@@ -60,25 +59,20 @@
 					{/if}
 				</div>
 			{:else}
-				<Surface padding="none" radius="lg">
-					<EmptyState
-						compact
-						icon="today"
-						tone="neutral"
-						title="No sessions saved for today"
-						description="Open Today or Train with a connection, the day before or on the day, and its sessions are kept here, ready to start with no signal."
-						data-testid="offline-today-empty"
-					/>
-				</Surface>
+				<!-- Paper, 10 · States, "Offline nothing saved": why, and how to have them next time. -->
+				<div class="none" data-testid="offline-today-empty">
+					<h2 class="statement">Today isn’t saved on this device</h2>
+					<p class="body">
+						Open Today with signal the day before and its sessions wait here, ready to start.
+					</p>
+				</div>
 			{/each}
-			<Button
-				variant="ghost"
-				icon="plus"
+			<!-- The one other thing to do: a plain row, never a second button. -->
+			<ListRow
+				title="Log something else"
 				href={resolve('/workout')}
 				data-testid="offline-log-other"
-			>
-				Log something else
-			</Button>
+			/>
 		</Section>
 	</div>
 {/if}
@@ -92,5 +86,21 @@
 	.session {
 		display: grid;
 		gap: var(--space-2);
+	}
+
+	.none {
+		display: grid;
+		gap: var(--space-4);
+		padding-bottom: var(--space-6);
+	}
+
+	.statement {
+		font: var(--type-statement);
+		letter-spacing: var(--tracking-statement);
+	}
+
+	.body {
+		font: var(--type-body);
+		color: var(--color-text-secondary);
 	}
 </style>

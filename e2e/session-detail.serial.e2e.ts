@@ -309,7 +309,7 @@ test.describe('a program that starts next week', () => {
 			const error = page.getByTestId('error-view');
 			await expect(error).toBeVisible();
 			await expect(error).toContainText('Something went wrong');
-			await expect(page.getByRole('heading', { level: 1, name: 'Train' })).toBeVisible();
+			await expect(page).toHaveURL(/\/train\/session\//);
 			await expect(page.getByRole('navigation', { name: 'Primary' })).toBeVisible();
 			await captureScreen(page, testInfo, 'session-error');
 

@@ -379,8 +379,10 @@ brighten the text and the underline to `--color-text`, on a fine pointer only.
 - Every app screen fits a 393 × 659 iPhone viewport without sideways scrolling, and nothing
   important sits under fixed chrome at rest (Coach suggestions end above the composer; both
   landing CTAs are above the fold). `e2e/shell.e2e.ts` asserts all three.
-- Failure states keep the shell: offline and error screens render inside it with the screen's
-  title (`src/routes/ErrorView.svelte`), and a connectivity notice appears while offline.
+- Failure states keep the shell: offline and error screens render inside it
+  (`src/routes/ErrorView.svelte`, words in `src/routes/error-copy.ts`): one sentence at the foot
+  of the column, at most one action, and on Today the avatar; while offline a screen that still
+  works shows one quiet line, 'Offline. Your sets are saved on this device.'
 - Large titles (`PageHeader`): eyebrow + 32 px display title, iOS-style.
 - Toasts appear at the top (clear of the thumb zone and nav); sheets rise from the bottom, and
   open as centred dialogs or right-hand panels from 1024 px (Responsive layout → Dialogs &
@@ -632,8 +634,14 @@ later-pass screen).
   groups in pairs (Color beside Type, Components beside Legacy: cards, Charts beside Workout), each
   about a phone column wide so no specimen stretches; the header and the icon grid span both, with
   larger cells.
-- **Error and offline states** (`ErrorView`): inside the shell they stay in the readable column;
-  outside it they are centred in the window at `--content-readable`.
+- **Error and offline states** (`ErrorView`): inside the shell, at the foot of the readable column
+  (48 px over the tab bar; 72 px over the window's foot from 1024 px), the sentence in Hubot 32/38
+  (40/44 from 1024 px, in 520 px), 'Nothing here' at 56/60; an error adds one red line above it
+  and the reference under its button. 'Needs a connection' and 'the server isn’t answering' offer
+  nothing: they open by themselves. Offline at the start URL, Today keeps its title and avatar,
+  the quiet line, and the sessions saved on this device or 'Today isn’t saved on this device'
+  with 'Log something else'. Outside the shell the same block is centred in the window at
+  `--content-readable`.
 - **Profile** (`/profile`): one list in groups (You, Training, Security), each row with its
   answer, then This device (the preferences) and About this app (Backups first, then database,
   version, environment) and the real-user performance card. From 1024 px the list beside the

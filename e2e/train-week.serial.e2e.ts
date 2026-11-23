@@ -263,7 +263,7 @@ test.describe('a program this week', () => {
 			await press(page.getByTestId('next-week'));
 			const error = page.getByTestId('error-view');
 			await expect(error).toBeVisible();
-			await expect(page.getByRole('heading', { level: 1, name: 'Train' })).toBeVisible();
+			await expect(page).toHaveURL(/\/train\?week=2$/);
 			await expect(error).toContainText('Something went wrong');
 			await expect(page.getByRole('navigation', { name: 'Primary' })).toBeVisible();
 

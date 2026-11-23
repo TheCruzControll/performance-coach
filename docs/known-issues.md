@@ -62,10 +62,6 @@ Last reviewed: 2026-11-23, against `main` at the merge of #634.
   Today; `v2/06` moves both into Today's hero.** Paper draws the line for waiting changes only
   (3 · Today), so its active and remote states are derived from it until then. Closes when Today
   claims them (`src/routes/(app)/resume-state.svelte.ts`).
-- **On a phone, Profile cannot be reached while Today shows its offline or error state.** Profile
-  is not a tab; below 1024 px its only way in is the avatar in Today's header, and those states
-  replace the header, so there is no avatar. Closes in `v2/06`
-  (Today's full screen) or `v2/24` (states and toasts), whichever draws the avatar in those states.
 - **Profile has no 'What the coach knows' or 'About this app' row yet (Paper draws both).** The
   coach's knowledge opens from Coach (`v2/20`), and About this app's contents stay on Profile, as
   a group of status rows, until `v2/22`. Found building `v2/21a`.
