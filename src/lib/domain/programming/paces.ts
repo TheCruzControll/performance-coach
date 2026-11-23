@@ -6,7 +6,7 @@
  * - the five training paces as ranges, the pace each run segment kind runs at, and a race time
  *   predicted from a VDOT
  * - heart-rate zones from threshold, reserve or max heart rate, whichever the owner gave
- * Unused by the generator until generator-running.
+ * The running stage (running.ts) and an added run (added.ts) are paced from currentPaces.
  *
  * Pure: no clock, no randomness, no I/O.
  */

@@ -28,6 +28,7 @@ import { validate } from '../validation.ts';
 import { DecisionLog } from './decisions.ts';
 import { muayThaiFields, otherSession } from './other.ts';
 import type { ProgrammingInput } from './input.ts';
+import type { TrainingPaces } from './paces.ts';
 import {
 	CONDITIONING,
 	DEFAULT_INTENT,
@@ -35,9 +36,8 @@ import {
 	RUN_TYPE,
 	STRENGTH_RPE
 } from './rules/added.ts';
-import * as R from './rules/running.ts';
 import { pacesOf, segment } from './running.ts';
-import type { Paces } from './running.ts';
+import * as R from './rules/running.ts';
 import { selectWeek } from './selection.ts';
 import { addedSplit, strengthDiscipline } from './splits.ts';
 import { sessionOn } from './stages/strength.ts';
@@ -70,10 +70,10 @@ const placed = (session: SessionPlan, req: AddSessionInput): SessionPlan => ({
 function runSegments(
 	intent: AddIntent,
 	length: number,
-	paces: Paces
+	paces: TrainingPaces | null
 ): { minutes: number; segments: RunSegment[] } {
 	if (intent === 'easy') {
-		return { minutes: length, segments: [segment('easy', paces.easy, { minutes: length })] };
+		return { minutes: length, segments: [segment('easy', paces, { minutes: length })] };
 	}
 	if (length < RUN_MIN_MINUTES) {
 		throw new AddRefusal(
@@ -83,16 +83,16 @@ function runSegments(
 	}
 	const { warmUpMinutes: warm, coolDownMinutes: cool, intervals } = R.QUALITY;
 	const ends = (middle: RunSegment[]) => [
-		segment('warm_up', paces.easy, { minutes: warm }),
+		segment('warm_up', paces, { minutes: warm }),
 		...middle,
-		segment('cool_down', paces.easy, { minutes: cool })
+		segment('cool_down', paces, { minutes: cool })
 	];
 	const main = length - warm - cool;
 	if (intent === 'moderate') {
 		const tempo = Math.min(R.QUALITY.tempo.minutes, main);
 		return {
 			minutes: warm + tempo + cool,
-			segments: ends([segment('tempo', paces.quality, { minutes: tempo })])
+			segments: ends([segment('tempo', paces, { minutes: tempo })])
 		};
 	}
 	const { workMinutes: work, recoveryMinutes: jog } = intervals;
@@ -100,7 +100,7 @@ function runSegments(
 	return {
 		minutes: warm + reps * (work + jog) + cool,
 		segments: ends([
-			segment('interval', paces.quality, { minutes: work }, reps),
+			segment('interval', paces, { minutes: work }, reps),
 			segment('recovery', null, { minutes: jog }, reps)
 		])
 	};
@@ -117,7 +117,7 @@ function runOf(
 		intent === 'easy'
 			? (req.durationMinutes ?? R.TIME_BASED_WEEK.easyMinutes)
 			: (req.durationMinutes ?? input.sessionMinutes);
-	const { minutes, segments } = runSegments(intent, length, pacesOf(input.running));
+	const { minutes, segments } = runSegments(intent, length, pacesOf(input.running, req.date).paces);
 	const targetRpe = Math.min(R.RUNS[type].sessionRpe, cap);
 	return placed(
 		{

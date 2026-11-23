@@ -869,13 +869,20 @@ Commitments, running, interference rules and placement across disciplines. Unit 
   a week too small for each run to reach 2 km plans fewer runs and says so; the long run stays
   within 30 % of the week and 10 % over the longest run before it, and may outrun the session length
   with a `priority_tradeoff` decision while every other run keeps to it; interval paces come from a
-  10K, or by Riegel a 5K, time as ranges, else RPE and HR zone, with a `run_pace_source` decision;
-  with both told, easy paces come from the easy pace and quality paces from the race; there is no
+  10K's, or a 5K's, VDOT as ranges, else RPE and HR zone, with a `run_pace_source` decision;
+  with both told, every pace comes from the race; there is no
   quality session when a hard club run is one already, the week has fewer than 3 runs, or no week
   has room for one; a run stays off a running-club day while another day has none; a partial week 1
   drops easy runs first and says so, counting club runs before the first planned day; a marathon 20
   weeks out leads through build, peak and taper outline phases ending on race day, each block
   carrying its `MARATHON_HOOKS`.
+- **Running paces** (`src/lib/domain/programming/generate-running.test.ts`): hybrid's paces from its
+  told easy pace's VDOT; runnerLifter's every pace, warm-up included, from its 10K's VDOT ahead of
+  the told pace; the best recent race over the latest; only undated races give race paces worded as
+  a rough guide; a race 26–52 weeks old is a rough guide and an older one gives effort paces; an
+  added run takes the same paces; a marathon build's long runs close with a steady segment at M
+  pace, its share rising from 20 % to 40 %, 40 % in peak, 20 % in the taper and none in the race
+  week; a first program has no marathon-pace work.
 - **Other sessions** (`other.test.ts`): a custom-discipline goal gets sessions titled with its name
   at RPE 6 for the session length, with a `default_assumed` decision citing them; Muay Thai is
   technique at RPE 6 with no class or profile, alternates technique and pad work when the profile is
