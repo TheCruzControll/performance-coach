@@ -11,13 +11,19 @@
  *   not changed, and the next tap (Retry) posts the same form again. Keep's say so in its sheet.
  * - Keep opens its sheet (KeepSheet, fetched and mounted here), whose optional reason goes with
  *   ?/keep
+ * - Propose again (a stale or late deload) posts ?/proposeAgain (proposeAgain below): a fresh
+ *   proposal opens its inbox page (/coach/proposals/<id>), any other answer is its note, and a
+ *   failure is Try again
  */
 import { mount } from 'svelte';
 import { deserialize } from '$app/forms';
+import { resolve } from '$app/paths';
 import { goto, invalidateAll } from '$app/navigation';
+import { proposeAgainRequest } from '#lib/client/coach/proposals.ts';
+import { PROPOSE_AGAIN_FAILED, proposeNote } from '#lib/domain/coach/propose-again.ts';
 import { toast } from '#lib/ui/toast.svelte.ts';
 
-type Mode = 'decide' | 'keep' | 'startCycle';
+type Mode = 'decide' | 'keep' | 'startCycle' | 'proposeAgain';
 
 /** The card's state, which these change. */
 export interface NextWeekUi {
@@ -26,6 +32,8 @@ export interface NextWeekUi {
 	failure: string | null;
 	/** The post `failure` is about, shown on the card (decide) or in Keep's sheet. */
 	failed: Mode | null;
+	/** Propose again's answer when it made no proposal: the engine's sentence, or the reason. */
+	note?: string | null;
 }
 
 /** Keep's sheet, once mounted: whether it is open and the reason typed so far. */
@@ -101,6 +109,32 @@ export async function send(
 		} else [ui.failure, ui.failed] = [FAILED, mode];
 	} catch {
 		[ui.failure, ui.failed] = [FAILED, mode];
+	} finally {
+		ui.pending = null;
+	}
+}
+
+/**
+ * 'Propose again' on a stale or late deload: the request is proposeAgainRequest (the same one m7/50's
+ * proposal card sends). A fresh proposal opens its inbox page (the review still points at the stale
+ * one, so it is not reloaded); any other answer is its note on the card; a failure says so with
+ * Try again, which sends the same request again. A second tap meanwhile sends nothing.
+ */
+export async function proposeAgain(ui: NextWeekUi): Promise<void> {
+	if (ui.pending || !navigator.onLine) return;
+	ui.pending = 'proposeAgain';
+	ui.failure = ui.failed = ui.note = null;
+	try {
+		const outcome = await proposeAgainRequest();
+		if (outcome.status === 'failed')
+			[ui.failure, ui.failed] = [PROPOSE_AGAIN_FAILED, 'proposeAgain'];
+		else if (outcome.status === 'proposed')
+			// The fresh proposal's inbox page, as m7/50's Detail opens it. The finally below resets the
+			// busy state even when the navigation fails.
+			await goto(resolve('/(app)/coach/proposals/[[id]]', { id: outcome.id }));
+		else ui.note = proposeNote(outcome);
+	} catch {
+		[ui.failure, ui.failed] = [PROPOSE_AGAIN_FAILED, 'proposeAgain'];
 	} finally {
 		ui.pending = null;
 	}
