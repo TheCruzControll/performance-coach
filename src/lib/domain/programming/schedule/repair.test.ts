@@ -386,6 +386,25 @@ describe('repairWeek: invariants', () => {
 		]);
 	});
 
+	it('an empty priorities list is no priorities: M3’s same_day_order is still a clash to repair', () => {
+		// Heavy lower body in the morning, then hard Muay Thai in the evening: M3's wrong order.
+		const week = [
+			lowerA(0, { timeOfDay: 'morning', orderInDay: 1 }),
+			sparring(0, { timeOfDay: 'evening', orderInDay: 2 })
+		];
+		const none = repairWeek(week, CTX);
+		const empty = repairWeek(week, { ...CTX, priorities: [] });
+		expect(none.before.evaluation.findings.map((f) => f.rule)).toContain(
+			'placement.same_day_order'
+		);
+		expect(empty.before.evaluation.findings.map((f) => f.rule)).toContain(
+			'placement.same_day_order'
+		);
+		expect(empty.before.cost).toBe(none.before.cost);
+		expect(empty.actions).toEqual(none.actions);
+		expect(empty.actions.length).toBeGreaterThan(0);
+	});
+
 	it('a clean week returns unchanged, with no decisions', () => {
 		const week = PRD_WEEKS.clean_hybrid_week();
 		const r = repairWeek(week, CTX);

@@ -341,7 +341,7 @@ function sameDayPairs(rows: readonly Row[]): [Row, Row][] {
 }
 
 const sameDayPriorityOrder: Rule = (rows, { priorities }, weight) => {
-	if (!priorities) return [];
+	if (!priorities?.length) return [];
 	return sameDayPairs(rows.filter((r) => r.demand.hard)).flatMap(([a, b]) => {
 		if (weight(b.session) <= weight(a.session)) return [];
 		const message = `${a.session.title}, then ${b.session.title}, on ${dayName(a.session.date)}; ${b.session.title}’s goal ranks higher, so it goes first.`;
@@ -487,7 +487,7 @@ export function goalOf(
 /** The weight a finding harming `session`'s goal costs: 1 without priorities. */
 export const weightFor =
 	(priorities: readonly GoalPriority[] | undefined) => (session: { discipline: Discipline }) =>
-		priorities ? weightOfSession(session, priorities) : 1;
+		priorities?.length ? weightOfSession(session, priorities) : 1;
 
 /**
  * The concurrent rules `sessions` break in `context`: by first day, then in CONCURRENT_RULES'
