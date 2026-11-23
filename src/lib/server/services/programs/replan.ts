@@ -1,5 +1,5 @@
 /**
- * Storing a re-plan (M7, PRD §5; ADR 0010 and docs/adr/NNNN-replans-as-versions.md): each
+ * Storing a re-plan (M7, PRD §5; ADR 0010 and docs/adr/0019-replans-as-versions.md): each
  * mechanism of periodisation/replan.ts as one new version, copy-on-write, with every guarantee
  * M3's edits and M6's next block give. Imported by path.
  *

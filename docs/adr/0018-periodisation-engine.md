@@ -1,7 +1,13 @@
-# NNNN — Periodisation engine: rules as data, one evaluator, one load model
+# 0018 — Periodisation engine: rules as data, one evaluator, one load model
 
-- **Status:** Proposed (M7). Numbered at merge, like a migration slot, so M7's slices refer to it
-  by its title, "the periodisation engine ADR". docs-m7 accepts it.
+- **Status:** Accepted (M7, 2026-11-23). Implemented as decided below: the registry in
+  `src/lib/domain/programming/rules/registry/`, rendered to
+  [programming-rules.md](../programming-rules.md) by `pnpm docs:rules`; the evaluator in `src/lib/domain/programming/evaluate/week.ts`
+  (`evaluateWeek`); the load model in `src/lib/domain/programming/load/`; the scheduler in
+  `src/lib/domain/programming/schedule/repair.ts` (`repairWeek`); and the bounded context reads in
+  `src/lib/server/services/periodisation/context.ts`, whose stall test is
+  `tests/integration/periodisation/context.test.ts`. M7's slices cite it by its title, "the
+  periodisation engine ADR", from before it had a number.
 - **Context:** M7 plans a season of block types (strength, hypertrophy, marathon and half, fight
   camp, recovery and maintenance) around several goals at once, judges every week for
   concurrent-training clashes and fatigue, and re-plans as priorities and fatigue change (PRD §2,

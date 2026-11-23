@@ -1,5 +1,5 @@
 /**
- * Re-plans (m7-plan replan-domain; PRD §5; docs/adr/NNNN-replans-as-versions.md): each directive
+ * Re-plans (m7-plan replan-domain; PRD §5; docs/adr/0019-replans-as-versions.md): each directive
  * as one deterministic change, by one of three mechanisms (rules/replan.ts MECHANISMS):
  * - regenerate (priorities, block): the blocks from `from` are planned again. A block running
  *   across `from` is cut on the Sunday before; one starting on or after it is replaced, never cut

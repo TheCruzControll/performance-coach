@@ -44,6 +44,16 @@ log every set and talk to the coach.
 > target, and the performance slice was closed unmerged, so Progress and the reviews have no
 > main-thread or Lighthouse budget yet ([docs/milestones.md](docs/milestones.md),
 > [docs/performance.md](docs/performance.md)).
+>
+> **Milestone 7 — Advanced coaching is in progress**: merged as 67 slice PRs (#259 to #634). The
+> generator plans a season around several goals at once, with strength, hypertrophy, marathon and
+> half, fight-camp and maintenance blocks, deloads and tapers, and judges every week for
+> concurrent-training clashes. Train shows each clash with its why, why each session sits on its
+> day, light weeks and the season's timeline. A change of goal priorities, a weekly review that
+> finds high fatigue, or the coach proposes a re-plan, which you accept as a new version. Every
+> rule and its values are in [docs/programming-rules.md](docs/programming-rules.md). Open: the
+> multi-discipline Playwright journey, the real-device checks, and the 135 ms M7 adds to Train's
+> server time ([docs/milestones.md](docs/milestones.md), [docs/performance.md](docs/performance.md)).
 
 ## Stack
 

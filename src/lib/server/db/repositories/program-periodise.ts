@@ -1,5 +1,5 @@
 /**
- * Re-plans (M7; ADR 0010 and docs/adr/NNNN-replans-as-versions.md): the writes and reads a re-plan
+ * Re-plans (M7; ADR 0010 and docs/adr/0019-replans-as-versions.md): the writes and reads a re-plan
  * adds to M3's repository (./programs.ts) and M6's (./program-replan.ts), which keep theirs. A
  * re-planned version shares every block before `from` and, after a taper, every block after the
  * event (M6's insertVersionSharing); what this file adds:

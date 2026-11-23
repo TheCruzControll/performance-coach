@@ -1,9 +1,13 @@
-# NNNN — Re-plans as versions: four directives, three mechanisms, never the past
+# 0019 — Re-plans as versions: four directives, three mechanisms, never the past
 
-- **Status:** Proposed (M7). Extends [ADR 0010](0010-program-versioning.md) and the planning
-  later blocks ADR ([0017](0017-planning-later-blocks.md)). Numbered at merge; M7's docs slice
-  accepts it. The rules and the contract land first (m7r/25); the mechanisms below arrive in
-  m7r/26 onward (`plan/m7-reslice.md`).
+- **Status:** Accepted (M7, 2026-11-23). Extends [ADR 0010](0010-program-versioning.md) and
+  [ADR 0017](0017-planning-later-blocks.md). Implemented as decided below: the contract in
+  `src/lib/domain/training/replan.ts`, the rules in `src/lib/domain/programming/rules/replan.ts`,
+  the three mechanisms in `src/lib/domain/programming/periodisation/replan.ts`, the stored version
+  in `src/lib/server/services/programs/replan.ts`, the preview in
+  `src/lib/server/services/periodisation/preview.ts`, and the proposal and its accept in
+  `src/lib/server/services/periodisation/propose.ts` and
+  `src/lib/server/services/coach/apply/replan.ts` (m7r/25 to m7r/34, `plan/m7-reslice.md`).
 - **Context:** M7's goals change while a program runs: a reorder or a paused goal, a block the
   owner or coach picks, an event that needs its taper, fatigue that needs a deload now (PRD §2,
   §5). Rewriting the stored plan would lose what judged the weeks already trained (ADR 0010), and

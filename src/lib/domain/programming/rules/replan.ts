@@ -1,5 +1,5 @@
 /**
- * Re-plans (M7, PRD §5; docs/adr/NNNN-replans-as-versions.md): where a re-plan starts, which of
+ * Re-plans (M7, PRD §5; docs/adr/0019-replans-as-versions.md): where a re-plan starts, which of
  * three mechanisms each directive uses, when a deload keeps M6's lighter path, and the refusals in
  * the owner's words. periodisation/replan.ts applies these; the rules registry (registry/replan.ts)
  * lists each with its why. The numbers and sentences are defaults the owner can change here;

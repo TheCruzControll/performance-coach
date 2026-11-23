@@ -3,7 +3,7 @@
 What is built, what is in flight, and what is next. Acceptance criteria and evidence stay in
 [milestones.md](milestones.md). Update this file in the change that moves a line.
 
-Last updated: 2026-11-23, from `main` at the merge of #633.
+Last updated: 2026-11-23, from `main` at the merge of #634.
 
 ## Milestones
 
@@ -19,7 +19,7 @@ work has landed even though the milestone has not been signed off.
 | M4  | Workout application             | In progress: owner screenshot review pending                            | 55                  |
 | M5  | AI performance coach            | In progress: launched; screenshot review and first live-suite run open  | 55                  |
 | M6  | Analytics & reviews             | In progress: 61 slice PRs merged; the performance slice closed unmerged | 61                  |
-| M7  | Advanced coaching               | Planned                                                                 | 17                  |
+| M7  | Advanced coaching               | In progress: 67 slice PRs merged; the journey and real-device pass open | 67                  |
 | M8  | Performance & design refinement | Planned                                                                 | none                |
 | M9  | Final QA & production release   | Planned                                                                 | 19                  |
 
@@ -28,9 +28,13 @@ real-device checklist's workout item. M5 has evidence recorded per criterion; it
 and first live-suite run are open. M6 has evidence recorded per criterion, with its numbers in
 docs/performance.md; it is in progress because its performance slice was closed unmerged and one
 page load misses its target. Its merged-slice count is its 61 merged PRs, which the branch names in
-the history undercount. M7 and M9 have substantial merged work but no recorded verification against
-their acceptance criteria. Treat them as built and unverified until someone runs the criteria and
-updates milestones.md.
+the history undercount. M7 has evidence recorded per criterion, with its numbers in
+docs/performance.md: the PRD §5 examples are tested as domain rules, and one of them through the
+coach's mock provider. It is in progress because the multi-discipline journey was never built and
+the real-device checklist's M7 items have not been run. Its count is its 67 merged PRs, `m7/` and
+`m7r/`. M9 has substantial merged work but no recorded verification against its acceptance
+criteria. Treat it as built and unverified until someone runs the criteria and updates
+milestones.md.
 
 ## Recently merged
 
@@ -155,8 +159,9 @@ updates milestones.md.
   rate on Profile and run sessions in bpm, and Muay Thai that follows the fight camp's sessions,
   sparring cap, conditioning rounds and fight week. m7r/03b too: the schedule stage is a fixed point,
   so a second run changes no session. m7/58 too: every programming rule, its values and its why, in
-  `docs/programming-rules.md`, generated from the registry. m7/59 builds on them. The old M7 pull
-  requests stay open until their rows merge.
+  `docs/programming-rules.md`, generated from the registry. m7/59 records where M7 stands
+  (docs/milestones.md, M7) and accepts ADRs 0018 and 0019. Every re-slice row has merged; the 24 old
+  M7 pull requests, PR 416 to PR 499, are still open.
 - **Instrument v2 tokens (`v2/01a`).** The colours, surfaces, borders, spacing, radii and the theme
   colour follow Instrument v2 in `src/lib/ui/styles/tokens.css`, in dark and
   light; `docs/design-system.md` and `/design` show them. The 28 px gutter arrived with `v2/03a`;

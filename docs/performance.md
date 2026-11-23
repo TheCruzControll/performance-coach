@@ -581,21 +581,6 @@ through one barrel from every component, so a runtime helper only one screen use
 framework chunk. The toasts stay in the initial JS and the router keeps its modulepreload hints,
 for the reasons above.
 
-## Advanced coaching (M7)
-
-One paragraph per M7 slice, each replaced by its own slice only; docs-m7 turns them into its
-measured section.
-
-m7/04 train-week-findings: Train page data is committed in
-`scripts/explain/baselines/train-m7.json` (gzip bytes of JSON of `loadTrainWeek`, a proxy for
-`/train/__data.json`, for periodisation-week's current and owner-move weeks on its pinned clock,
-±64 B) and gated by `tests/integration/periodisation/train-page-data.test.ts` against `ALLOWANCES`
-(findings 0.6, why 1.5, week kinds 0.1, timeline 0.7, re-plan note 0.1 KB); findings measured
-+207 B. Train's load with `deps.periodisation` on vs off in `pnpm db:explain`
-(`scripts/explain/periodisation.cases.ts`): ≤ +10 ms median target, failing above +25 ms
-(measured +6.8 ms locally). `/(app)/train` +137 B initial JS, +151 B route CSS; every other route
-within ±2 B.
-
 ## M5 (coach) — measured 2026-11-11
 
 These numbers were measured on `9ac3521`, before the shared-JS trim (#473) recorded in "Shared JS
@@ -824,6 +809,134 @@ none failing.
 - `pnpm build && pnpm budgets`, for the route table and the runways.
 - `pnpm db:setup && pnpm db:explain`, which needs a local Postgres and writes the M6 section of
   `test-results/explain.md`. The page-load gate is the same as in CI.
+
+## M7 (advanced coaching) — measured 2026-11-23
+
+Every number here comes from a CI run, the budget script's output, or the explain report and job
+log that CI keeps for a pull request run, each named below. Nothing was measured for this section:
+performance is not tested in CI (docs/testing.md, "CI"), so the M7 numbers are the ones CI already
+prints. None of M7's timings is gated; the budgets, the page-data test and the explain report's
+300 ms page-load bar are. Each figure is for the head
+named with it.
+
+- **Budgets** (`pnpm build && pnpm budgets`): the "Build (Vercel + Node) & budgets" job of push run
+  [45249036737](https://github.com/TheCruzControll/performance-coach/actions/runs/45249036737), job
+  137953409889, on `e2412395`, which is `main` at the merge of #634. It ended at 19:27 UTC on
+  2026-11-23. Its route table is the same, line for line, as the one on `0553ac11` (push run
+  45246855754, the merge of #633).
+- **Page loads, Train's M7 server time and Train's page data**: pull request run
+  [45247017050](https://github.com/TheCruzControll/performance-coach/actions/runs/45247017050), the
+  run of #634, job 137946423098 ("Integration tests & query plans") and its `explain-45247017050`
+  artifact. The run tested commit `bdd09a2`, GitHub's merge of `ddd732c3` into `0553ac11`. Those are
+  the parents of `e2412395`, and the merge has the same tree (`9d5f3eef`), so these numbers are for
+  `main` at the merge of #634, like the budgets. It ran from 19:15 to 19:26 UTC on 2026-11-23 on
+  CI's runner (AMD EPYC 9V45 96-Core Processor × 4, Linux) against Postgres 18.7. The push run on
+  `e2412395` skipped the query-plan job as a light run, so no explain run exists for `main` itself.
+
+### Route budgets
+
+The routes M7 changed, from the run above:
+
+| Route                             | What M7 added                                                          | Initial JS (gzip) | Route CSS (gzip) | Status |
+| --------------------------------- | ---------------------------------------------------------------------- | ----------------: | ---------------: | :----: |
+| `/(app)/progress/reviews/[[key]]` | the deload card                                                        |           61.0 KB |          12.1 KB |  pass  |
+| `/(app)/train`                    | week findings, 'Why Monday?', week kinds, the season, the re-plan line |           59.5 KB |          12.4 KB |  pass  |
+| `/(app)/coach/[[thread]]`         | re-plan, block, deload and taper proposal cards                        |           58.6 KB |          12.7 KB |  pass  |
+| `/(app)/train/session/[key]`      | heart-rate zones in bpm (server text)                                  |           57.1 KB |          10.4 KB |  pass  |
+| `/(app)/today`                    | the week-kind line                                                     |           56.8 KB |          13.8 KB |  pass  |
+| `/(app)/profile/[section]`        | the re-plan notice and heart-rate fields, in editors loaded on demand  |           54.0 KB |           7.8 KB |  pass  |
+| `/(app)/coach/proposals/[[id]]`   | the re-plan card's source line and Propose again                       |           53.7 KB |           8.6 KB |  pass  |
+| `/onboarding/[[step]]`            | the heart-rate fields, in an editor loaded on demand                   |           52.0 KB |           7.1 KB |  pass  |
+
+Limits: initial JS ≤ 62 KB, route CSS ≤ 14.5 KB, preloaded fonts ≤ 2.
+
+- The heaviest route's initial JS is `/(app)/progress/reviews/[[key]]` at 61.0 KB, 1.0 KB under the
+  limit. m7/51's deload card took it over the old 60 KB limit, which the owner raised to 62 KB on
+  2026-11-22 ("Budgets (enforced)" below).
+- Train, the screen M7 changed most, is at 59.5 KB of initial JS and 12.4 KB of route CSS.
+- The heaviest route CSS is `/(app)/progress` at 14.0 KB, 0.5 KB under the limit.
+- The whole build's CSS is 90.5 KB across 162 files, and no route loads all of it. The service
+  worker's precache is 280 files, 1,073.6 KB decoded (475.5 KB gzip), within 300 files and 1,100 KB.
+- Every route passes, and the script ends with "budgets: all within budget".
+
+### Train's page data
+
+`tests/integration/periodisation/train-page-data.test.ts` gzips Train's load as JSON for the
+periodisation-week fixture on its pinned clock (a proxy for `/train/__data.json`) and fails when it
+grows past the allowances of the M7 slices that are on (findings, why, week kinds and timeline:
+2,970 B in all) against the bytes committed before M7 in `scripts/explain/baselines/train-m7.json`.
+From job 137946423098's log:
+
+| Week           | Before M7 |     Now | Growth |        The why |  Week kinds |   The season |
+| -------------- | --------: | ------: | -----: | -------------: | ----------: | -----------: |
+| Current week   |   1,786 B | 2,048 B | +262 B |   0 of 1,536 B | 14 of 102 B | 138 of 717 B |
+| The moved week |   1,868 B | 2,584 B | +716 B | 249 of 1,536 B | 14 of 102 B | 134 of 717 B |
+
+Both weeks pass. The re-plan note's 0.1 KB allowance is not turned on in the test.
+
+### Train's server time with and without M7
+
+`scripts/explain/periodisation.cases.ts` times Train's load (`loadTrainWeek`) on M3's two-year
+dataset with M7's reads on and off, 3 warm-up pairs and then 15 runs of each, interleaved. It
+prints the two medians and is not gated. Job 137946423098's log:
+
+> Train's load, median of 15: 142.3 ms with the findings, 7.7 ms without: +134.7 ms (over the +10 ms
+> target; not gated)
+
+M7 adds 134.7 ms to the median of Train's load on CI's runner, against the plan's +10 ms target.
+The same line read from +126.7 ms to +187.2 ms on three other pull request runs that day:
+45242115229 (#630), 45238420370 (#629) and 45244242897 (the train of #633). The reads run one
+after another (docs/known-issues.md, "M7 adds sequential reads to Train's load").
+
+### Page loads on the main screens
+
+Copied from the `## Main screens` section of the `explain-45247017050` artifact, which expires on
+2026-12-07. The analytics owner, onboarded, with today 2026-10-14, on a pool of 5: 3 warm-ups,
+then the median and p95 of 15 runs, serialisation included. A median over 300 ms fails; the
+simulated round trip is reported only.
+
+| Load                                                             |   Median |      p95 | Against 150 ms | Statements | Page data, gzip (raw) | Gate     |
+| ---------------------------------------------------------------- | -------: | -------: | :------------: | ---------: | --------------------: | -------- |
+| `/today`, with its streamed plan                                 |  50.3 ms |  60.4 ms |     within     |         82 |       2.2 KB (6.0 KB) | pass     |
+| `/today`, with its streamed plan, at a simulated 2 ms round trip | 174.8 ms | 181.2 ms |      over      |         82 |       2.2 KB (6.0 KB) | reported |
+| `/train`                                                         |  82.6 ms |  89.7 ms |     within     |         56 |      3.4 KB (10.7 KB) | pass     |
+| `/train/session/[key]`, today's strength session, with its swaps | 126.5 ms | 156.5 ms |     within     |         67 |      3.4 KB (10.2 KB) | pass     |
+| `/progress/workouts` (History)                                   |   1.8 ms |   3.1 ms |     within     |          2 |       1.1 KB (2.7 KB) | pass     |
+| `/progress/workouts/[id]`, the latest strength workout           |  13.1 ms |  16.9 ms |     within     |         19 |       2.8 KB (7.4 KB) | pass     |
+| `GET /api/workouts/kit`, today's strength session                |  24.4 ms |  30.9 ms |     within     |         27 |    13.3 KB (105.3 KB) | pass     |
+| `POST /api/workouts/sync`, a new workout's start and 24 sets     |  69.8 ms |  77.8 ms |     within     |        205 |       2.0 KB (9.8 KB) | pass     |
+| `/coach`                                                         |   1.9 ms |   2.6 ms |     within     |          2 |       0.9 KB (2.3 KB) | pass     |
+| `/coach/[thread]`, the longest conversation                      |   3.3 ms |   8.7 ms |     within     |          4 |      2.1 KB (10.7 KB) | pass     |
+
+- `/train`, with M7's reads, has a median of 82.6 ms, within the 150 ms target, in 56 statements.
+- Every gated load is within the 150 ms target and the 300 ms bar; only the simulated round trip on
+  `/today`, which is reported and not gated, is over 150 ms.
+- The report has 147 passing gates and none failing.
+
+### Query plans
+
+M7 adds no query of its own to `pnpm db:explain`. Train's evaluation context reads M6's facts
+through M6's loader (`src/lib/server/services/periodisation/context.ts`), so those plans are the M6
+analytics queries, in "M6 (analytics and reviews)" above and in the same artifact.
+
+### Not measured on `main`
+
+- Main-thread blocking at 4× CPU, and Lighthouse on mobile and desktop, for Train with the
+  findings, the season timeline, the Move sheet, the re-plan and deload cards, and the heart-rate
+  fields. The perf project and Lighthouse run locally only, and the M7 performance slice (m7/56)
+  was never built.
+- Train's server time on Neon, where each of the sequential reads is a round trip.
+- The plan's same-run timing pairs for the coach's periodisation tools and the re-plan preview
+  (m7/55 and m7/56 in the M7 plan): no M7 explain case other than Train's exists.
+- Real-user numbers for the M7 routes: none is recorded in this section.
+
+### How to reproduce
+
+- `pnpm build && pnpm budgets`, for the route table.
+- `pnpm db:setup && pnpm db:explain`, which needs a local Postgres. It writes the main screens to
+  `test-results/explain.md` and prints Train's M7 pair to the console.
+- `pnpm test:integration tests/integration/periodisation/train-page-data.test.ts`, for Train's
+  page data, which it prints.
 
 ## Budgets (enforced)
 

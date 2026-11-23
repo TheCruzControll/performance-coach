@@ -12,7 +12,7 @@ acceptance criteria were verified by running them — compiling is not done.
 | M4  | Workout application             | **In progress**: the workout app merged, #87 to #410; the owner's screenshot review pending                                                                         |
 | M5  | AI performance coach            | **In progress**: every slice built, #101 to #463; launched (#449) and live in production; the screenshot review (#405) and the first live-suite run are open        |
 | M6  | Analytics & reviews             | **In progress**: 61 slice PRs merged, #119 to #482; the performance slice was closed unmerged, and the criteria are verified only at merge, not on the current head |
-| M7  | Advanced coaching               | Planned                                                                                                                                                             |
+| M7  | Advanced coaching               | **In progress**: 67 slice PRs merged, #259 to #634; the multi-discipline journey and the real-device pass are open                                                  |
 | M8  | Performance & design refinement | Planned                                                                                                                                                             |
 | M9  | Final QA & production release   | Planned                                                                                                                                                             |
 
@@ -397,6 +397,55 @@ Acceptance criteria:
 
 1. Scenario tests (mock provider + domain rules) for the PRD §5 conflict examples.
 2. Multiple concurrent disciplines journey in Playwright.
+
+Status: **in progress**. 67 slice PRs are merged to `main`, from #259 (m7/01, the periodisation
+contract) to #634 (m7/58, the rules reference). 22 are the first M7 slices (m7/01 to m7/35); on
+2026-11-22 the open rest was re-sliced (`plan/m7-reslice.md`) into 39 `m7r/` PRs (#526 to #630)
+and m7/47 to m7/51 (#570 to #578). The plan's scenario-suite, coach-scenario, explain, performance
+and journey slices (m7/53 to m7/57) were never built or queued. The engine is in ADR 0018 (the
+periodisation engine) and ADR 0019 (re-plans as versions), its rules in docs/programming-rules.md,
+the tests in docs/testing.md ("Advanced coaching (M7)") and the numbers in docs/performance.md ("M7
+(advanced coaching)"). Evidence per criterion:
+
+- Criterion 1, the domain rules: all three PRD §5 examples are tested as rules and as scenarios.
+  The PRD's examples are S1 to S12 (`src/lib/domain/programming/periodisation/coverage.ts`), each a
+  profile and a history. Heavy squats before hard Muay Thai (S2): `interference.test.ts`,
+  `evaluate/week.test.ts` (one avoid finding naming Monday and Tuesday, with its why),
+  `schedule/repair.test.ts` and `generate-schedule.test.ts`. High-volume legs before a long run (S3):
+  `interference.test.ts`, `evaluate/week.test.ts` and `schedule/repair.test.ts`. Intervals after a
+  very demanding day (S4): `interference.test.ts` (after a long run, a hard class or a day of two
+  hard sessions, and across a week boundary) and `evaluate/week.test.ts`. On real Postgres, hard
+  sparring logged Monday makes Tuesday's heavy squats a finding with its fix
+  (`tests/integration/periodisation/context.test.ts`,
+  `tests/integration/reviews/weekly-conflicts.test.ts`). The Unit tests job passed on `main` at
+  `e2412395` (CI run 45249036737: 453 files, 8,131 passing tests), and the integration job on the same tree
+  in run 45247017050 (175 files, 1,908 passing tests).
+- Criterion 1, the mock provider: one of the three examples. On the periodisation-week fixture,
+  where the owner moved Lower A to the day before Tuesday's hard Muay Thai (S2), the coach's
+  scripted turns run `runTurn` with the MockProvider: it proposes the engine's repair exactly as
+  computed, and answers 'Does next week clash?' and 'Why is my week shaped like this?' with grounded
+  metrics and facts (`tests/integration/coach/tools-periodisation.test.ts`, #552, #555). No
+  MockProvider test covers the long-run or the intervals example.
+- Criterion 2: no Playwright journey runs several disciplines from onboarding to a rule-respecting
+  program, its warnings, a priority change, a re-plan proposal, Accept and a new version. Parts of
+  the chain are covered: `e2e/program-journey.serial.e2e.ts` (M3: onboarding with a fight and a
+  marathon to a built program), `e2e/train-findings.serial.e2e.ts` (the week's heads-up against the
+  evaluation in SQL, iPhone and `DESKTOP`, #417) and `e2e/profile-goals.serial.e2e.ts` (a reorder,
+  with no re-plan asserted). The re-plan from a priority change is tested on real Postgres
+  (`tests/integration/periodisation/priority-replan.test.ts`, #568), not in a browser.
+
+Still open:
+
+- Criterion 2: the multi-discipline journey (m7/57 in the M7 plan) was never built or queued.
+- Criterion 1: the long-run and intervals examples through the MockProvider.
+- The M7 items of the real-device checklist (docs/testing.md, items 18 to 22) have not been run on
+  a device.
+- M7's e2e specs (`train-findings`, `design-program`, `reviews-sections`) run only in a scheduled
+  or manual CI run. The last one, run 45051537354 on `1ba0f61e` (2026-11-22), predates the `m7r/`
+  merges, so no CI run has run them on the current head.
+- Train's load: M7's reads add 134.7 ms to its median on CI's runner, against the plan's +10 ms
+  target (docs/performance.md, "M7 (advanced coaching)", run 45247017050). It is not gated.
+- Main-thread blocking and Lighthouse for Train and the M7 screens are not measured on `main`.
 
 ## M8 — Performance & design refinement [§15–17]
 
