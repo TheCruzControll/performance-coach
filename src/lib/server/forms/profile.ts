@@ -39,8 +39,11 @@ export { ownerId, type FormEvent };
 /** A service function that saves one section, e.g. `saveEquipment`. */
 export type SaveSection = (owner: string, payload: unknown, deps: ProfileDeps) => Promise<unknown>;
 
-/** Run a save; the owner's input errors and missing records become form failures. */
-async function attempt<T>(save: () => Promise<T>) {
+/**
+ * Run a save; the owner's input errors and missing records become form failures. Shared with the
+ * weight forms (weight.ts), whose services throw the same two errors.
+ */
+export async function attempt<T>(save: () => Promise<T>) {
 	try {
 		return { ok: true as const, value: await save() };
 	} catch (err) {

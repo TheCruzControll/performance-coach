@@ -33,3 +33,4 @@ export {
 	type WeightGoalResult,
 	type WeightTarget
 } from './goals';
+export { goalView, milestoneView, weighInView } from './views';
