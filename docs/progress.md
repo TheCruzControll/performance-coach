@@ -31,6 +31,10 @@ runs the criteria and updates milestones.md.
 
 ## Recently merged
 
+- The app's look starts following the Paper redesign: an amber accent, new type and square corners
+  (#581). The owner has since queued Instrument v2, which replaces it.
+- Each planned week is repaired across the week boundary, so a hard Sunday leads to an easier
+  Monday, and a clash the planner keeps says why (#591).
 - The coach can propose a block, a deload or a taper, and knows this week's block in every turn.
 - Re-plan proposals say where they came from and what changes; a stale one, or a stale deload on
   the weekly review, can be proposed again.
@@ -73,6 +77,10 @@ runs the criteria and updates milestones.md.
   built: each block's day pattern is planned across week boundaries, and every clash a generated
   week keeps is recorded as explained (a priority trade-off or a schedule_kept decision). m7r/04 to
   m7r/10, m7/58 and m7/59 build on it. The old M7 pull requests stay open until their rows merge.
+- **The Paper redesign, Instrument v2.** Queued by the owner in `plan/queue.md`; the first
+  Instrument rows after its tokens are on hold.
+- **Adding a session to a program.** Specified and queued: the generator builds the session, Train
+  gets an Add session sheet, and the coach can propose one.
 - **Coach run trace and self-improving evals.** Planned, nothing built. The plan is eight PRs in
   `plan/trace-evals/plan.md`, written 738 commits ago, so its file pointers need re-checking
   against `main` before anyone builds from it. The owner must provide three secrets before the
