@@ -70,21 +70,20 @@
 		align-items: baseline;
 		justify-content: space-between;
 		gap: var(--space-2);
-		font-size: var(--text-sm);
-		font-weight: var(--weight-medium);
+		font: var(--type-secondary);
 		color: var(--color-text-secondary);
 	}
 
+	/* Instrument v2: 14 px corners, no border, the body's 17/26 text (≥ 16 px: no iOS zoom). */
 	.input {
 		width: 100%;
 		min-height: 5.5rem;
-		padding: var(--space-3) var(--space-4);
-		border-radius: var(--radius-md);
-		border: 1px solid var(--color-border);
+		padding: var(--space-4) var(--space-4-5);
+		border: 1px solid transparent;
+		border-radius: var(--radius-sm);
 		background: var(--color-surface-2);
-		box-shadow: inset 0 1px 0 0 var(--color-highlight);
-		/* ≥ 16px: iOS Safari zooms into smaller inputs on focus. */
-		font-size: max(1rem, var(--text-base));
+		color: var(--color-text);
+		font: var(--type-body);
 		resize: vertical;
 		field-sizing: content;
 	}
@@ -96,20 +95,17 @@
 	.input:focus-visible {
 		/* The ring is the shadow; forced colours drop shadows and draw this outline instead. */
 		outline: 2px solid transparent;
-		border-color: var(--color-accent);
 		box-shadow: 0 0 0 3px var(--color-accent-ring);
 	}
 
-	.invalid .input {
-		border-color: var(--color-danger);
-	}
-
+	/* The error replaces the hint: one red line under the field, no red border. */
 	.message {
-		font-size: var(--text-xs);
+		font: var(--type-secondary);
 		color: var(--color-text-tertiary);
 	}
 
 	.error {
+		padding-top: var(--space-0-5);
 		color: var(--color-danger);
 	}
 </style>

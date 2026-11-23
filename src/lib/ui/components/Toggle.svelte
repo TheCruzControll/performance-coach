@@ -110,10 +110,11 @@
 		transition: transform var(--duration-slow) var(--ease-spring);
 	}
 
+	/* On is the inverse fill, never amber: the thumb takes the surface colour. */
 	.input:checked + .track {
-		background: var(--color-accent);
+		background: var(--color-surface-inverse);
 		border-color: transparent;
-		color: var(--color-on-accent);
+		color: var(--color-surface-1);
 	}
 
 	.input:checked + .track::before {
@@ -131,7 +132,7 @@
 		}
 
 		.input:checked:hover + .track {
-			background: var(--color-accent-hover);
+			background: color-mix(in srgb, var(--color-surface-inverse), var(--color-canvas) 12%);
 		}
 	}
 </style>

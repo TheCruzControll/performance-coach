@@ -39,7 +39,9 @@ Last reviewed: 2026-11-21, against `main` at the merge of #501.
   and the set edit sheet (`src/routes/workout/SetEditSheet.svelte`) pin their controls at 56 px,
   because a phone has no room to grow the logger: it has broken CI three times. The phone test
   "the logger keeps 56 px controls" in `e2e/workout-log.e2e.ts` holds the pin. Closes when v2/10
-  redesigns the set screen and removes both pins and that test's 56 px expectation.
+  redesigns the set screen and removes both pins and that test's 56 px expectation. The steppers'
+  text is pinned there too, at its pre-v2 size: the label at 13 px and the value at 56 px. Below a
+  22 rem row (a 390 px phone), the v2 value would stack 12 px taller and the logger would grow.
 - **Thirteen files still style their own underlined links; screen rows move them to `.text-link`.**
   The links in running text are styled by each file: ProposalCard, RichText, Notice, Toaster,
   ReplanNotice, ProgramHeader, ArchivedSheet, KnowsSheet, ThreadList, the proposal detail, and the
@@ -71,9 +73,6 @@ Last reviewed: 2026-11-21, against `main` at the merge of #501.
 - **ADR 0011 (email sign-in link) is still Accepted**, while milestones.md records that the owner
   dropped the emailed link on 2026-11-07. Not checked against the code. Closes when the ADR is
   marked Superseded or the note in milestones.md is corrected.
-- **environment.md has seven accepted gaps**, listed in `scripts/docs-known-gaps.json`: five
-  variables without a row and two rows that are not schema keys. The docs tests stay lenient
-  until these are closed.
 - **The app icons and favicon still use the old lime.** `static/favicon.svg`,
   `static/icons/*.svg` and the PNGs in `static/icons/` carry the volt lime `#c8f031`. Their canvas
   `#0a0a0b` matches Instrument v2's canvas again, as the theme colour and manifest do. The in-app

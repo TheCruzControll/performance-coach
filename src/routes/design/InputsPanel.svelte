@@ -1,6 +1,6 @@
 <!-- /design: input primitives (loaded when its tab opens, keeping /design's initial JS small). -->
 <script lang="ts">
-	import type { Weekday } from '#lib/domain/profile/catalog.ts';
+	import { WEEKDAYS, WEEKDAY_INFO, type Weekday } from '#lib/domain/profile/catalog.ts';
 	import ChoiceGroup from '#lib/ui/components/ChoiceGroup.svelte';
 	import DayPicker from '#lib/ui/components/DayPicker.svelte';
 	import NumberField from '#lib/ui/components/NumberField.svelte';
@@ -54,6 +54,17 @@
 	const overlap = $derived(
 		dislikes.some((d) => likes.some((l) => l.toLowerCase() === d.toLowerCase()))
 	);
+
+	// Instrument v2 samples: a text field in each state, the "Changing a number" stepper, and the
+	// choice list (a card with hints under the label, one with short hints at the row's end, and
+	// the days of the week as several).
+	let fieldFilled = $state('Romanian deadlift');
+	let fieldHint = $state('');
+	let setWeight = $state(102.5);
+	let setRepetitions = $state(5);
+	let years = $state<'under-year' | 'few-years' | 'several-years' | 'decade' | null>('few-years');
+	let yearsShort = $state<'under-year' | 'few-years' | 'several-years' | 'decade' | null>(null);
+	let planDays = $state<Weekday[]>(['mon', 'wed', 'fri']);
 </script>
 
 {#snippet readout(testId: string, value: unknown)}
@@ -294,6 +305,84 @@
 					hint="Swapped for an equivalent."
 					error={overlap ? 'Each exercise once: it can’t be liked and skipped' : null}
 					data-testid="tags-skip"
+				/>
+			</div>
+		</Surface>
+	</Section>
+
+	<Section title="Text field, Instrument v2">
+		<Surface padding="lg" radius="xl">
+			<div class="fields">
+				<TextField
+					label="Name, empty"
+					placeholder="Name, or short name like RDL"
+					data-testid="field-empty"
+				/>
+				<TextField label="Name, filled" bind:value={fieldFilled} />
+				<TextField label="Name, with a hint" bind:value={fieldHint} hint="Shown under the field." />
+				<TextField label="Name, with an error" error="Give the exercise a name" />
+				<TextField label="Name, disabled" value="Set by the plan" disabled />
+			</div>
+		</Surface>
+	</Section>
+
+	<Section title="Changing a number">
+		<Surface padding="lg" radius="xl">
+			<div class="fields">
+				<NumberStepper bind:value={setWeight} label="Weight" unit="kg" step={2.5} chars={5} />
+				<NumberStepper bind:value={setRepetitions} label="Repetitions" min={1} max={50} />
+			</div>
+		</Surface>
+	</Section>
+
+	<Section title="Choice list, Instrument v2">
+		<Surface padding="lg" radius="xl">
+			<div class="fields">
+				<ChoiceGroup
+					legend="How long have you been lifting?"
+					variant="card"
+					bind:value={years}
+					options={[
+						{
+							value: 'under-year',
+							label: 'Under a year',
+							hint: 'Still learning the lifts and the rhythm of a week.'
+						},
+						{
+							value: 'few-years',
+							label: 'One to three years',
+							hint: 'Know the basics, and what a hard set feels like.'
+						},
+						{
+							value: 'several-years',
+							label: 'Three to five years',
+							hint: 'Plan a block and adjust it when it goes wrong.'
+						},
+						{
+							value: 'decade',
+							label: 'Five years or more',
+							hint: 'Run your own program and judge it week by week.'
+						}
+					]}
+				/>
+				<ChoiceGroup
+					legend="Years running, with short hints"
+					variant="card"
+					hintPlacement="end"
+					bind:value={yearsShort}
+					options={[
+						{ value: 'under-year', label: 'Under a year', hint: 'Just starting out' },
+						{ value: 'few-years', label: 'One to three years', hint: 'A season or two' },
+						{ value: 'several-years', label: 'Three to five years', hint: 'Several years' },
+						{ value: 'decade', label: 'Five years or more', hint: 'A decade' }
+					]}
+				/>
+				<ChoiceGroup
+					legend="Days in the plan"
+					variant="card"
+					multiple
+					bind:values={planDays}
+					options={WEEKDAYS.map((day) => ({ value: day, label: WEEKDAY_INFO[day].label }))}
 				/>
 			</div>
 		</Surface>

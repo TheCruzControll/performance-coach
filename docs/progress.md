@@ -3,7 +3,7 @@
 What is built, what is in flight, and what is next. Acceptance criteria and evidence stay in
 [milestones.md](milestones.md). Update this file in the change that moves a line.
 
-Last updated: 2026-11-23, from `main` at the merge of #610.
+Last updated: 2026-11-23, from `main` at the merge of #615.
 
 ## Milestones
 
@@ -125,6 +125,14 @@ runs the criteria and updates milestones.md.
   logger and the set edit sheet keep their 56 px controls until `v2/10` (known-issues). The
   `/design` Buttons tab and `docs/design-system.md` show them; PR 586's ghost-hover specs are carried
   over. Phone layouts and the axe run are CI's to prove.
+- **Instrument v2 fields, steppers and choice lists (`v2/02b`).** A field is 56 px on surface-2 with
+  14 px corners and no border; an error is one red line under it. The stepper's ± are the round 60 px
+  controls around a 64 px numeral. `ChoiceGroup`'s `card` is the v2 choice list (60 px hairline rows,
+  the picked row in 600 with a check, `hintPlacement` for a short hint at the row's end), and its
+  pills take the inverse fill. DayPicker and Toggle drop amber for the inverse fill. The `/design`
+  Inputs tab and `docs/design-system.md` show them. The logger and the set edit sheet keep their
+  pre-v2 stepper text and 56 px controls until `v2/10` (known-issues). Phone layouts and the axe run
+  are CI's to prove.
 - **Adding a session to a program.** The builder, the storage
   (`src/lib/server/services/programs/add.ts`), Train's Add session sheet and the coach's proposal
   are built: `propose_program_adjustment` takes an `add_session` op, and accepting it is one new
