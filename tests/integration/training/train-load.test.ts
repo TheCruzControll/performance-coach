@@ -98,6 +98,7 @@ describe('Train’s load', () => {
 				['Sun', 'Rest', 'ahead', null]
 			]);
 			expect(data.lines[0]!.name).toBe('Monday 16 November, Full body, 60 min');
+			expect(data.lines[2]!.name).toBe('Today, Wednesday 18 November, Intervals, 45 min');
 			expect(data.lines[5]!.name).toBe('Friday 20 November, rest');
 		});
 	});

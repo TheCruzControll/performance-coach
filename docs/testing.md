@@ -1435,9 +1435,9 @@ by integration tests and the three e2e specs below.
 ### End to end (Playwright, serial)
 
 - `e2e/train-findings.serial.e2e.ts`: the periodisation week on Train. The heads-up on the moved
-  session and on Tuesday's, behind the week's one line, matches the evaluation computed in SQL
-  (`e2e/periodisation-support.ts`, `weekEvaluation`), 'No clashes this week' shows when there are
-  none, and it works without JavaScript. It runs on the iPhone, and one test in a desktop window (`DESKTOP`).
+  session and on Tuesday's, listed once behind the week's one line, matches the evaluation computed
+  in SQL (`e2e/periodisation-support.ts`, `weekEvaluation`), 'No clashes this week' shows when there
+  are none, and it works without JavaScript. It runs on the iPhone, and one test in a desktop window (`DESKTOP`).
 - `e2e/design-program.e2e.ts`: the week finding and 'Why Saturday?' on `/design` → Plan.
 - `e2e/reviews-sections.serial.e2e.ts`: the hard sparring's conflict in a weekly review shows its
   why, judged by M7's evaluator.

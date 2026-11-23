@@ -28,9 +28,16 @@ import { localDay } from '../src/lib/domain/dates';
 import { WEEKDAY_INFO } from '../src/lib/domain/profile/catalog';
 import { BASELINE_INSTRUCTION } from '../src/lib/domain/training/describe';
 import { BASELINE_CALLOUT } from '../src/lib/ui/program/session-words';
-import { longDate, shortDate } from '../src/lib/ui/program/words';
+import { shortDate } from '../src/lib/ui/program/words';
 import { DESKTOP, expectMainCentred, expectNoSideScroll } from './desktop';
-import { dayLines, openMore, PROGRAM_TZ, sessionLine, weekViolations } from './program-support';
+import {
+	dayLines,
+	lineDay,
+	openMore,
+	PROGRAM_TZ,
+	sessionLine,
+	weekViolations
+} from './program-support';
 import {
 	captureScreen,
 	gotoHydrated,
@@ -353,7 +360,10 @@ test('blank 1RMs: onboarding, a week-1 baseline program built from Today, a move
 			if (planned.length === 0) {
 				await expect(lines).toHaveCount(1);
 				await expect(lines).toHaveAttribute('data-testid', 'rest-day');
-				await expect(lines).toHaveAttribute('aria-label', `${longDate(date)}, rest`);
+				await expect(lines).toHaveAttribute(
+					'aria-label',
+					`${lineDay(date, localDay(new Date(), PROGRAM_TZ))}, rest`
+				);
 			} else {
 				await expect(lines.locator('.title')).toHaveText(planned.map((s) => s.title));
 				for (const [i, s] of planned.entries())

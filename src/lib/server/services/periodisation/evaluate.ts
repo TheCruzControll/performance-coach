@@ -42,6 +42,8 @@ export interface FindingNote {
 	/** caution only for an avoid finding nobody explained, or the owner's own move. */
 	tone: 'neutral' | 'caution';
 	label: string;
+	/** The finding's own words, the same on every card it names: 'Heavy lower body … hard Muay Thai'. */
+	headline: string;
 	/** The line as the card shows it, label first: 'Heads-up · Heavy lower body … · You moved this here'. */
 	text: string;
 	/** The rule's reason, then why the week keeps it, when it does. */
@@ -354,6 +356,7 @@ export async function getWeekFindings(
 				notes[lineage!] = {
 					tone,
 					label,
+					headline: finding.headline,
 					text: `${label} · ${finding.headline} · ${whereOf(finding, lineage!, moved)}`,
 					why: [finding.why, finding.resolution?.text, suggestionOf(finding)]
 						.filter(Boolean)

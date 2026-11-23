@@ -14,11 +14,16 @@ import { LOCAL_DATABASE_URLS } from '../src/lib/server/db/migrate';
 import { createProgramsRepository } from '../src/lib/server/db/repositories/programs';
 import { toStoredSessions } from '../src/lib/server/services/programs/mapping';
 import type { ProgramFixture } from '../src/lib/server/test-support/program-fixtures';
+import { longDate } from '../src/lib/ui/program/words';
 import { query, SAME_ORIGIN } from './support';
 
 /** A day's lines on Train (or a version's week): its sessions, or its rest line. */
 export const dayLines = (page: Page, date: string) =>
 	page.locator(`[data-testid="week-lines"] [data-date="${date}"]`);
+
+/** How a week line's name starts: 'Monday 9 November', or 'Today, Monday 9 November' on today's. */
+export const lineDay = (date: string, today: string) =>
+	date === today ? `Today, ${longDate(date)}` : longDate(date);
 
 /** A session's line on Train by its title, optionally on a day. */
 export const sessionLine = (page: Page, title: string, date?: string) =>

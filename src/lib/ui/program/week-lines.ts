@@ -56,7 +56,7 @@ export interface WeekLine {
 	session?: { lineage: string; status: SessionStatus };
 	/** What ends the line: a tick once done, 'Skipped', the length; nothing on a rest day. */
 	end: { done: true } | { text: string } | null;
-	/** Its accessible name: 'Monday 9 November, Lower body, done'. */
+	/** Its accessible name: 'Monday 9 November, Lower body, done'; today's starts 'Today, '. */
 	name: string;
 }
 
@@ -69,9 +69,11 @@ export const lineWhen = (date: IsoDate, today: IsoDate): WeekLine['when'] =>
 export function weekLines(days: readonly LineDay[], today: IsoDate): WeekLine[] {
 	return days.flatMap((d): WeekLine[] => {
 		const label = d.date === today ? 'Today' : WEEKDAY_INFO[d.weekday].short;
+		// Today's name holds the 'Today' its line shows (WCAG 2.5.3, label in name).
+		const named = d.date === today ? `Today, ${longDate(d.date)}` : longDate(d.date);
 		const base = { date: d.date, when: lineWhen(d.date, today) };
 		if (d.sessions.length === 0)
-			return [{ ...base, day: label, title: 'Rest', end: null, name: `${longDate(d.date)}, rest` }];
+			return [{ ...base, day: label, title: 'Rest', end: null, name: `${named}, rest` }];
 		return d.sessions.map((s, i) => {
 			const end =
 				s.status === 'completed'
@@ -89,7 +91,7 @@ export function weekLines(days: readonly LineDay[], today: IsoDate): WeekLine[] 
 				title: s.title,
 				session: { lineage: s.lineage, status: s.status },
 				end,
-				name: `${longDate(d.date)}, ${s.title}, ${state}`
+				name: `${named}, ${s.title}, ${state}`
 			};
 		});
 	});
@@ -159,17 +161,23 @@ export function weekNote(p: WeekNoteParts): { text: string; opens: boolean } | n
 	return text ? { text, opens } : null;
 }
 
-/** The distinct findings among the cards' notes, in the week's order: two cards may share one. */
-export function headsUps<T extends { text: string }>(
+/**
+ * The distinct findings among the cards' notes, in the week's order. A finding on two cards gives
+ * each its own note, worded from where that card sits ('You moved this here'); the week's note
+ * lists it once, as its label and headline ('Heads-up · Heavy legs before intervals'), which no
+ * longer point at a card.
+ */
+export function headsUps<T extends { label: string; headline: string; text: string }>(
 	notes: Readonly<Record<string, T>>,
 	order: readonly string[]
 ): T[] {
 	const seen = new Set<string>();
 	return order.flatMap((lineage) => {
 		const note = notes[lineage];
-		if (!note || seen.has(note.text)) return [];
-		seen.add(note.text);
-		return [note];
+		const text = note && `${note.label} · ${note.headline}`;
+		if (!note || !text || seen.has(text)) return [];
+		seen.add(text);
+		return [{ ...note, text }];
 	});
 }
 

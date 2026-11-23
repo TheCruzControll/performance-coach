@@ -511,7 +511,7 @@ describe('on Train', () => {
 			const finding = data.noteParts.findings.find((f) => f.why.includes('Lower A'));
 			expect(finding).toMatchObject({
 				label: 'Heads-up',
-				text: expect.stringMatching(/^Heads-up · A hard session on an overloaded system · /),
+				text: 'Heads-up · A hard session on an overloaded system',
 				why: expect.stringMatching(/Moving Lower A to \w+day clears this\.$/)
 			});
 		});

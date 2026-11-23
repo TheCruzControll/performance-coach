@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount, type ComponentProps } from 'svelte';
-	import { goto, invalidateAll, replaceState } from '$app/navigation';
+	import { afterNavigate, goto, invalidateAll, replaceState } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { navigating, page } from '$app/state';
 	import { preferences } from '#lib/client/preferences.svelte.ts';
@@ -148,9 +148,19 @@
 		// eslint-disable-next-line svelte/no-navigation-without-resolve -- resolve() + a query
 		goto(weekHref(week), { replace: true, reset: false });
 
-	/** More's list is open: on a tap, or on arrival asking for one of its tools (`?tool=`), so the
-	 * tool's row is there to return the focus to, and to hold its notice if it fails to load. */
-	let moreOpen = $state(false);
+	/** More's disclosure. It opens on a tap, or on arrival asking for one of its tools (`?tool=`),
+	 * so the tool's row is there to return the focus to, and to hold its notice if it fails to
+	 * load. Set once mounted, never bound: a disclosure opened before hydration stays open. */
+	let moreEl = $state<HTMLDetailsElement>();
+
+	/** Back to this week was followed: once there, the focus it held goes to More, in its place. */
+	let backed = false;
+	afterNavigate(() => {
+		if (!backed) return;
+		backed = false;
+		const lost = !document.activeElement || document.activeElement === document.body;
+		if (lost) document.querySelector<HTMLElement>('[data-testid="open-more"]')?.focus();
+	});
 
 	/** The notice can appear under the bottom navigation: bring it into view. */
 	const reveal = (node: HTMLElement) => node.scrollIntoView({ block: 'nearest' });
@@ -158,7 +168,7 @@
 	onMount(() => {
 		preferences.load();
 		const tool = page.url.searchParams.get('tool');
-		if (tool && ['plates', 'rest', 'plan', 'add'].includes(tool)) moreOpen = true;
+		if (tool && ['plates', 'rest', 'plan', 'add'].includes(tool) && moreEl) moreEl.open = true;
 		if (tool === 'plates') plates.show();
 		if (tool === 'plan' && view) plan.show();
 		if (tool === 'add' && view) addSession.show();
@@ -384,15 +394,17 @@
 			data-sveltekit-replacestate
 			data-sveltekit-reset="false"
 			data-testid="back-to-this-week"
+			onclick={() => (backed = true)}
 		>
 			<span>Back to this week</span>{@render chevron()}
 		</a>
 	{:else}
-		<details class="more" bind:open={moreOpen}>
+		<details class="more" bind:this={moreEl}>
 			<summary class="quiet" data-testid="open-more"><span>More</span>{@render chevron()}</summary>
-			<div class="rows" data-testid="more-tools">
+			<!-- Each row in its own item, so each keeps its hairline, a failed tool's notice under it. -->
+			<ul class="rows" role="list" data-testid="more-tools">
 				{#if view}
-					<div class="tool" aria-busy={plan.busy}>
+					<li class="tool" aria-busy={plan.busy}>
 						<ListRow
 							title="See the whole plan"
 							onpointerdown={plan.prefetch}
@@ -406,15 +418,17 @@
 								>
 							</Notice>
 						{/if}
-					</div>
-					<ListRow
-						title="See what has changed"
-						href={HISTORY_HREF}
-						aria-busy={navigating.to?.url.pathname === HISTORY_HREF}
-						data-testid="open-history"
-					/>
+					</li>
+					<li class="tool">
+						<ListRow
+							title="See what has changed"
+							href={HISTORY_HREF}
+							aria-busy={navigating.to?.url.pathname === HISTORY_HREF}
+							data-testid="open-history"
+						/>
+					</li>
 				{/if}
-				<div class="tool" aria-busy={plates.busy}>
+				<li class="tool" aria-busy={plates.busy}>
 					<ListRow
 						title="Work out the plates for a bar"
 						onpointerdown={plates.prefetch}
@@ -428,8 +442,8 @@
 							>
 						</Notice>
 					{/if}
-				</div>
-				<div class="tool" aria-busy={restTimer.busy}>
+				</li>
+				<li class="tool" aria-busy={restTimer.busy}>
 					<ListRow
 						title="Start a rest timer"
 						onpointerdown={restTimer.prefetch}
@@ -444,14 +458,16 @@
 							>
 						</Notice>
 					{/if}
-				</div>
-				<ListRow
-					title="Log a session that isn’t on the plan"
-					href={resolve('/workout')}
-					data-testid="log-a-session"
-				/>
+				</li>
+				<li class="tool">
+					<ListRow
+						title="Log a session that isn’t on the plan"
+						href={resolve('/workout')}
+						data-testid="log-a-session"
+					/>
+				</li>
 				{#if view?.addable.length}
-					<div class="tool" aria-busy={addSession.busy}>
+					<li class="tool" aria-busy={addSession.busy}>
 						<ListRow
 							title="Add a session to this week"
 							onpointerdown={addSession.prefetch}
@@ -465,17 +481,19 @@
 								>
 							</Notice>
 						{/if}
-					</div>
+					</li>
 				{/if}
 				{#if view?.movable}
-					<ListRow
-						title="Change when the plan starts"
-						href={START_HREF}
-						aria-busy={navigating.to?.url.pathname === START_HREF}
-						data-testid="open-start"
-					/>
+					<li class="tool">
+						<ListRow
+							title="Change when the plan starts"
+							href={START_HREF}
+							aria-busy={navigating.to?.url.pathname === START_HREF}
+							data-testid="open-start"
+						/>
+					</li>
 				{/if}
-			</div>
+			</ul>
 		</details>
 	{/if}
 </div>
@@ -746,6 +764,7 @@
 
 	.rows {
 		display: grid;
+		list-style: none;
 	}
 
 	@media (width >= 64rem) {
@@ -782,7 +801,7 @@
 		content: '';
 		position: absolute;
 		top: 50%;
-		right: calc(var(--space-4) + 1px);
+		right: 0;
 		width: 20px;
 		height: 20px;
 		margin-top: -10px;
@@ -790,8 +809,8 @@
 		border-top-color: currentColor;
 		border-radius: var(--radius-full);
 		color: var(--color-text-tertiary);
-		background: var(--color-surface-1);
-		box-shadow: 0 0 0 4px var(--color-surface-1);
+		background: var(--color-canvas);
+		box-shadow: 0 0 0 4px var(--color-canvas);
 		opacity: 0;
 		animation:
 			spin 0.8s linear infinite,

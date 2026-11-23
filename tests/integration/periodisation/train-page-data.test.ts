@@ -78,10 +78,8 @@ describe('Train’s page data', () => {
 				// bytes, held to its own row.
 				const size = (value: unknown) => gzipSync(JSON.stringify(value)).length;
 				const why = bytes - size({ ...data, noteParts: { ...data.noteParts, why: [] } });
-				// The same data without the week-kind line and the weeks' words: their own bytes.
-				const { marks: _marks, ...unmarked } = data;
-				const weekKinds =
-					bytes - size({ ...unmarked, noteParts: { ...data.noteParts, kind: null } });
+				// The same data without the week-kind line: its own bytes.
+				const weekKinds = bytes - size({ ...data, noteParts: { ...data.noteParts, kind: null } });
 				// The same data without the season and its lanes' count: the timeline's own bytes.
 				const { road: _road, openGoals: _lanes, ...flat } = data;
 				const timeline = bytes - gzipSync(JSON.stringify(flat)).length;

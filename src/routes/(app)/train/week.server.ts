@@ -26,9 +26,8 @@
  *   priority trade-offs from it. A read that fails is recorded (part 'why') and the week renders
  *   its findings without the why.
  * - A deload, taper, event, recovery, cutback or maintenance week still ahead names its kind
- *   with one line of why and any event's countdown, and each planned week's kind has its word
- *   (`marks`; m7/38, services/periodisation/week-line.ts). A read that fails is recorded (part
- *   'weekLine') and the week renders without them.
+ *   with one line of why and any event's countdown (m7/38, services/periodisation/week-line.ts).
+ *   A read that fails is recorded (part 'weekLine') and the week renders without it.
  * - The number of goals the season's lanes list (m7/39), so the plan sheet reserves their room
  *   while the season streams (road.server.ts, from +page.server.ts).
  * - With no program, whether the training profile is complete picks the empty state's next step.
@@ -145,8 +144,6 @@ export type TrainWeekData =
 			note: { text: string; opens: boolean } | null;
 			/** What the week's note holds, each part present or empty. */
 			noteParts: NoteParts;
-			/** The planned weeks' kind words, by number: { 4: 'Deload' }. */
-			marks: Record<number, string>;
 			/** In place of the week's sessions: first block complete, not planned yet, or a bridge. */
 			card: StateCard | null;
 			/** A bridge week's logged workouts as lines, oldest first (none in any other week). */
@@ -210,7 +207,7 @@ export interface TrainLoadDeps extends Pick<TrainingDeps, 'db'> {
 		| false
 		| (Pick<TrainingDeps, 'db'> & {
 				why?: Pick<TrainingDeps, 'db'>;
-				/** The week-kind line and the pills' words (m7/38). */
+				/** The week-kind line (m7/38). */
 				line?: Pick<TrainingDeps, 'db'>;
 				/** The evaluation context's reads (context.ts), for a test to fail or stall. */
 				context?: Pick<ContextDeps, 'repository' | 'reader' | 'statementTimeoutMs'>;
@@ -303,7 +300,7 @@ const whyOf = (
 ): Promise<PlacementWhyView | null> =>
 	softly('why', () => getPlacementWhy(ownerId, at, { db: deps.db }), deps);
 
-/** The week's kind line and the pills' words, or null when reading them failed: recorded. */
+/** The week's kind line, or null when reading it failed: recorded. */
 const lineOf = (ownerId: string, at: WeekLineAt, deps: PartDeps): Promise<WeekLineView | null> =>
 	softly('weekLine', () => getWeekLine(ownerId, at, { db: deps.db }), deps);
 
@@ -380,20 +377,21 @@ export async function loadTrainWeek(
 			at && m7 && shown.endsOn >= today ? await findingsOf(ownerId, ahead, m7) : null;
 		const goals = await listGoals(ownerId, { db });
 		const lineAt = { programId: program.id, version: shown.version.number, today, goals };
-		// Only a week still ahead shows its line: a past one reads only the pills' words.
-		const withLine = Boolean(at) && shown.endsOn >= today;
-		const kinds = m7
-			? await lineOf(
-					ownerId,
-					{ ...lineAt, weekStartsOn: shown.startsOn, withLine },
-					{ ...m7, db: periodisation.line?.db ?? m7.db }
-				)
-			: null;
+		// Only a planned week still ahead shows its kind line: any other reads none.
+		const kinds =
+			at && m7 && shown.endsOn >= today
+				? await lineOf(
+						ownerId,
+						{ ...lineAt, weekStartsOn: shown.startsOn },
+						{ ...m7, db: periodisation.line?.db ?? m7.db }
+					)
+				: null;
 		const line = kinds?.line;
 		const planned = shown.planned && !bridge ? shown : null;
 		const totalWeeks = (daysBetween(program.startsOn, lastDay) + 1) / 7;
 		const lastBlock = program.blocks.findLast((b) => b.plannedWeeks > 0)?.name ?? 'last block';
-		const lineages = planned ? planned.days.flatMap((d) => d.sessions.map((s) => s.lineage)) : [];
+		const sessions = planned ? planned.days.flatMap((d) => d.sessions) : [];
+		const lineages = sessions.map((s) => s.lineage);
 		const replan = await softly('replanNote', () => replanNoteOf(ownerId, replanDeps?.db ?? db), {
 			db,
 			errorsDb,
@@ -407,7 +405,7 @@ export async function loadTrainWeek(
 			review: changes ? reviewNotice(changes) : null,
 			baseline: planned?.kind === 'baseline' ? BASELINE_BRIEF : null,
 			replan: replan && { href: `/coach/proposals/${replan.proposalId}` },
-			why: lineages.flatMap((l) => (reasons[l] ? [whyWords(reasons[l])] : []))
+			why: sessions.flatMap((s) => (reasons[s.lineage] ? [whyWords(reasons[s.lineage]!, s)] : []))
 		};
 		return {
 			state: 'program',
@@ -442,7 +440,6 @@ export async function loadTrainWeek(
 				why: noteParts.why.length > 0
 			}),
 			noteParts,
-			marks: kinds?.marks ?? {},
 			card: bridge
 				? bridgeCard(bridge)
 				: shown.planned

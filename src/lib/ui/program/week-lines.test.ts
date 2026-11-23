@@ -53,6 +53,7 @@ describe('weekLines', () => {
 		expect(lines[4]!.session).toBeUndefined();
 		expect(lines[0]!.name).toBe('Monday 16 November, Lower body, done');
 		expect(lines[4]!.name).toBe('Friday 20 November, rest');
+		expect(lines[5]!.name).toBe('Today, Saturday 21 November, Long run, 45 min');
 		expect(lines[6]!.name).toBe('Sunday 22 November, Upper body, 50 min');
 	});
 
@@ -68,6 +69,15 @@ describe('weekLines', () => {
 			['', 'Easy run', '2026-11-17']
 		]);
 		expect(lines).toHaveLength(8);
+	});
+
+	it('names today’s line Today, as it shows, rest day or not', () => {
+		expect(weekLines(week([], [s('Squat')]), '2026-11-16')[0]!.name).toBe(
+			'Today, Monday 16 November, rest'
+		);
+		expect(weekLines(week([], [s('Squat')]), '2026-11-17')[1]!.name).toBe(
+			'Today, Tuesday 17 November, Squat, 60 min'
+		);
 	});
 });
 
@@ -173,11 +183,36 @@ describe('weekNote', () => {
 
 describe('headsUps', () => {
 	it('lists each finding once, in the week’s order', () => {
-		const a = { text: 'Heads-up · Heavy legs before intervals', why: 'x' };
-		const b = { text: 'Trade-off · Two sessions on Sunday', why: 'y' };
+		const a = { label: 'Heads-up', headline: 'Heavy legs before intervals', why: 'x' };
+		const b = { label: 'Trade-off', headline: 'Two sessions on Sunday', why: 'y' };
+		const notes = {
+			long: { ...b, text: 'Trade-off · Two sessions on Sunday · The day before Squat' },
+			squat: { ...a, text: 'Heads-up · Heavy legs before intervals · You moved this here' },
+			intervals: {
+				...a,
+				text: 'Heads-up · Heavy legs before intervals · After Squat the day before'
+			}
+		};
+		expect(headsUps(notes, ['long', 'squat', 'intervals', 'rest'])).toEqual([
+			{ ...b, text: 'Trade-off · Two sessions on Sunday' },
+			{ ...a, text: 'Heads-up · Heavy legs before intervals' }
+		]);
+	});
+
+	it('keeps two findings that share a headline under different labels', () => {
+		const note = { headline: 'Heavy legs before intervals', why: 'x' };
 		expect(
-			headsUps({ squat: a, intervals: a, long: b }, ['long', 'squat', 'intervals', 'rest'])
-		).toEqual([b, a]);
+			headsUps(
+				{
+					squat: { ...note, label: 'Heads-up', text: 'Heads-up · … · You moved this here' },
+					run: { ...note, label: 'Trade-off', text: 'Trade-off · … · The day before Squat' }
+				},
+				['squat', 'run']
+			).map((n) => n.text)
+		).toEqual([
+			'Heads-up · Heavy legs before intervals',
+			'Trade-off · Heavy legs before intervals'
+		]);
 	});
 });
 

@@ -86,12 +86,14 @@ describe('getWeekEvaluation', () => {
 				[moved!]: {
 					tone: 'caution',
 					label: 'Heads-up',
+					headline: 'Heavy lower body the day before hard Muay Thai',
 					text: 'Heads-up · Heavy lower body the day before hard Muay Thai · You moved this here',
 					why: `${WHY} You moved Lower A here from Friday. Moving Lower A to Friday clears this.`
 				},
 				[hardMuayThai!]: {
 					tone: 'caution',
 					label: 'Heads-up',
+					headline: 'Heavy lower body the day before hard Muay Thai',
 					text: 'Heads-up · Heavy lower body the day before hard Muay Thai · After Lower A the day before',
 					why: `${WHY} You moved Lower A here from Friday. Moving Lower A to Friday clears this.`
 				}
@@ -280,9 +282,9 @@ describe('getWeekEvaluation', () => {
 });
 
 describe('Train’s load with the findings', () => {
-	it('puts each note in the week’s note, and the week line on planned weeks still ahead', async () => {
+	it('puts each finding once in the week’s note, and the week line on planned weeks still ahead', async () => {
 		await withRollback(async (db) => {
-			const { owner, seeded } = await seed(db);
+			const { owner } = await seed(db);
 			const load = (week: number | null) =>
 				loadTrainWeek(
 					owner,
@@ -292,13 +294,12 @@ describe('Train’s load with the findings', () => {
 			const moved = await load(FIXTURE_WEEKS.moved);
 			expect(moved.noteParts.summary).toBe('1 heads-up this week');
 			expect(moved.note).toEqual({ text: '1 heads-up this week', opens: true });
-			// Each session's note in the week's order (v2/07): the moved one first, then the class.
-			const order = moved.lines.flatMap((l) => (l.session ? [l.session.lineage] : []));
-			expect(order.indexOf(seeded.lineages.moved!)).toBeLessThan(
-				order.indexOf(seeded.lineages.hardMuayThai!)
-			);
-			expect(moved.noteParts.findings.map((f) => f.label)).toEqual(['Heads-up', 'Heads-up']);
-			expect(moved.noteParts.findings[0]!.text).toMatch(/ · You moved this here$/);
+			// The finding once (v2/07), though it names the moved session and the class, without the
+			// words that place it on either.
+			expect(moved.noteParts.findings).toMatchObject([
+				{ label: 'Heads-up', text: 'Heads-up · Heavy lower body the day before hard Muay Thai' }
+			]);
+			expect(moved.noteParts.findings[0]!.why).toMatch(/You moved Lower A here from Friday\./);
 			const line = async (week: number | null) => (await load(week)).noteParts.summary;
 			expect(await line(null)).toBe('No clashes ahead this week');
 			expect(await line(FIXTURE_WEEKS.clean)).toBe('No clashes this week');

@@ -141,15 +141,23 @@ export interface TrainDay {
 	rest: string | null;
 }
 
-/** 'Why Tuesday?' under a card: its title and one plain line per decision (m7/14, lever 3). */
+/** 'Why Lower A on Tuesday?' in the week's note: its title and one plain line per decision (m7/14,
+ * lever 3). */
 export interface CardWhy {
 	title: string;
 	lines: string[];
 }
 
-/** 'Session moved (You, version 2): You moved Lower A from Friday to Monday. …' */
-export const whyWords = ({ title, items }: PlacementWhy): CardWhy => ({
-	title,
+/**
+ * Why `session` is on its day, titled by the session and its day, as the week's note lists every
+ * day's together: 'Why Lower A on Monday?', then 'Session moved (You, version 2): You moved Lower
+ * A from Friday to Monday. …'
+ */
+export const whyWords = (
+	{ items }: PlacementWhy,
+	session: { title: string; date: IsoDate }
+): CardWhy => ({
+	title: `Why ${session.title} on ${WEEKDAY_INFO[weekdayOf(session.date)].label}?`,
 	lines: items.map((i) => `${i.kind} (${i.decidedBy}, version ${i.version}): ${i.why}`)
 });
 

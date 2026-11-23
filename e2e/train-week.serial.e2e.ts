@@ -21,6 +21,7 @@ import {
 } from './desktop';
 import {
 	dayLines,
+	lineDay,
 	openMore,
 	PROGRAM_TZ,
 	seedProgram,
@@ -107,15 +108,17 @@ test.describe('a program this week', () => {
 		// line's day blank, and a day with none is one Rest line.
 		await expect(lines(page)).toHaveAttribute('aria-label', 'Week 1');
 		const week = Array.from({ length: 7 }, (_, i) => addDays(seeded.weekStart, i));
+		// Today's line's name holds the 'Today' it shows.
+		const day = (i: number) => lineDay(week[i]!, seeded.today);
 		expect(await lineNames(page)).toEqual([
-			`${longDate(week[0]!)}, Full body, 60 min`,
-			`${longDate(week[1]!)}, Muay Thai class, 90 min`,
-			`${longDate(week[2]!)}, Intervals, 45 min`,
-			`${longDate(week[3]!)}, Easy run, 30 min`,
-			`${longDate(week[3]!)}, Muay Thai class, 90 min`,
-			`${longDate(week[4]!)}, rest`,
-			`${longDate(week[5]!)}, rest`,
-			`${longDate(week[6]!)}, rest`
+			`${day(0)}, Full body, 60 min`,
+			`${day(1)}, Muay Thai class, 90 min`,
+			`${day(2)}, Intervals, 45 min`,
+			`${day(3)}, Easy run, 30 min`,
+			`${day(3)}, Muay Thai class, 90 min`,
+			`${day(4)}, rest`,
+			`${day(5)}, rest`,
+			`${day(6)}, rest`
 		]);
 		await expect(dayLines(page, week[3]!)).toHaveCount(2);
 		await expect(dayLines(page, week[3]!).nth(1).locator('.day')).toHaveText('');
@@ -204,7 +207,9 @@ test.describe('a program this week', () => {
 		await page.getByTestId('back-to-this-week').click();
 		await expect(page).toHaveURL(/\/train$/);
 		await expect(title(page)).toHaveText('This week');
+		// The link has gone with the week it ended: More, in its place, takes the focus.
 		await expect(page.getByTestId('open-more')).toBeVisible();
+		await expect(page.getByTestId('open-more')).toBeFocused();
 	});
 
 	test.describe('with the network in the test’s hands', () => {

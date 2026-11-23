@@ -47,14 +47,8 @@ Last reviewed: 2026-11-23, against `main` at the merge of #634.
   Closes when v2/08 builds the session's page and its desktop column.
 - **Train's week note and More open in place, not as sheets, until `v2/07a2`.** The one line
   under the week and the More row are native disclosures in the column (`src/routes/(app)/train/+page.svelte`);
-  Paper draws both as sheets (a right-hand panel from 1024 px). A rest timer's Skip moves the focus
-  to its row only while More is open. Closes when `v2/07a2` adds the More sheet and the week-note
-  sheet.
-- **A finding on two sessions is listed once per session in Train's week note.** `headsUps`
-  (`src/lib/ui/program/week-lines.ts`) keeps one note per distinct text, and the evaluation words
-  each session's note with where it sits ('You moved this here', 'After Lower A the day before'),
-  so the line says '1 heads-up' over two notes. Found building `v2/07a1`. Closes when the note
-  lists a finding once, with the sessions it names.
+  Paper draws both as sheets (a right-hand panel from 1024 px). Closes when `v2/07a2` adds the More
+  sheet and the week-note sheet.
 - **`ListRow` still takes `icon` and `tone`, and draws neither.** v2 rows have no icon tiles, so
   both props are deprecated and accepted for the screens that still pass them.
   Closes when the last screen row drops them and `src/lib/ui/components/ListRow.svelte` removes them.

@@ -331,7 +331,8 @@ test.describe('platform: health, PWA, observability', () => {
 			};
 			document.addEventListener('click', block, { capture: true, once: true });
 		});
-		await page.getByRole('heading', { level: 1, name: 'Train' }).click();
+		// A visible, inert element: Train's h1 is visually hidden (v2/07a1).
+		await page.getByTestId('train-week').getByRole('heading', { level: 2 }).click();
 		await page.waitForTimeout(500); // the event-timing entry is dispatched after paint
 		await page.evaluate(() => {
 			Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });

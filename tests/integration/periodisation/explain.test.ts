@@ -325,9 +325,7 @@ describe('a priority trade-off', () => {
 			const { noteParts } = program(data);
 			expect(noteParts.findings[0]).toMatchObject({
 				label: 'Trade-off, explained',
-				text: expect.stringMatching(
-					/^Trade-off, explained · Heavy lower body the day before hard Muay Thai · /
-				),
+				text: 'Trade-off, explained · Heavy lower body the day before hard Muay Thai',
 				why: expect.stringMatching(
 					/Your strength goal ranks above Muay Thai, so its Full body keeps Monday\.$/
 				)
@@ -336,7 +334,7 @@ describe('a priority trade-off', () => {
 			// row, which shares the Monday trade-off's sentence.
 			expect(noteParts.summary).toMatch(/2 trade-offs, explained$/);
 			expect(noteParts.why[0]).toEqual({
-				title: 'Why Monday?',
+				title: 'Why Full body on Monday?',
 				lines: [
 					'Priority trade-off (Programming rules, version 1): Your strength goal ranks above Muay Thai, so its Full body keeps Monday.'
 				]
@@ -355,11 +353,11 @@ describe('a priority trade-off', () => {
 			const { noteParts } = program(data);
 			expect(noteParts.findings[0]).toMatchObject({
 				label: 'Heads-up',
-				text: expect.stringMatching(/^Heads-up · Heavy lower body the day before hard Muay Thai · /)
+				text: 'Heads-up · Heavy lower body the day before hard Muay Thai'
 			});
 			expect(noteParts.summary).not.toMatch(/trade-off/);
 			// It still says why, in the week's note.
-			const mondayWhy = noteParts.why.find((w) => w.title === 'Why Monday?');
+			const mondayWhy = noteParts.why.find((w) => w.title === 'Why Full body on Monday?');
 			expect(mondayWhy?.lines).toEqual([expect.stringMatching(/^Priority trade-off /)]);
 		});
 	});
@@ -375,9 +373,9 @@ describe('a priority trade-off', () => {
 			const { noteParts } = program(data);
 			expect(noteParts.findings[0]).toMatchObject({
 				label: 'Heads-up',
-				text: expect.stringMatching(/^Heads-up · Heavy lower body the day before hard Muay Thai · /)
+				text: 'Heads-up · Heavy lower body the day before hard Muay Thai'
 			});
-			expect(noteParts.why.find((w) => w.title === 'Why Monday?')).toBeUndefined();
+			expect(noteParts.why.find((w) => w.title === 'Why Full body on Monday?')).toBeUndefined();
 			expect(noteParts.summary).not.toMatch(/trade-off/);
 		});
 	});
@@ -399,7 +397,7 @@ describe('Train’s load with the why', () => {
 			expect(data.noteParts.why).toHaveLength(3);
 			expect(data.lines[0]!.session?.lineage).toBe(seeded.lineages.moved);
 			const [moved] = data.noteParts.why;
-			expect(moved!.title).toBe('Why Monday?');
+			expect(moved!.title).toBe('Why Lower A on Monday?');
 			expect(moved!.lines).toEqual([
 				expect.stringMatching(new RegExp(`^Session moved \\(You, version 2\\): ${MOVED_WHY}`)),
 				`Interference avoided (Programming rules, version 1): ${RULE_WHY}`
@@ -424,9 +422,11 @@ describe('Train’s load with the why', () => {
 				);
 				expect(data.noteParts.why).toEqual([]);
 				expect(data.noteParts.summary).toBe('1 heads-up this week');
-				// The moved session's note and the class's, in the week's order.
-				expect(data.noteParts.findings).toHaveLength(2);
-				expect(data.noteParts.findings[0]!.text).toMatch(/ · You moved this here$/);
+				// The one finding on the moved session and the class, listed once.
+				expect(data.noteParts.findings).toHaveLength(1);
+				expect(data.noteParts.findings[0]!.text).toBe(
+					'Heads-up · Heavy lower body the day before hard Muay Thai'
+				);
 				expect(data.lines.map((l) => l.session?.lineage)).toEqual(
 					expect.arrayContaining([seeded.lineages.moved, seeded.lineages.hardMuayThai])
 				);

@@ -361,16 +361,14 @@ describe('Train’s load', () => {
 				why: `${M7_DELOAD} · 10K race ${RACE_IN}`
 			});
 			expect(current.note?.opens).toBe(true);
-			expect(current.marks).toEqual({ 2: 'Deload', 4: 'Taper', 5: 'Event' });
 			const { kind, ...parts } = current.noteParts;
 			const flat = { ...current, noteParts: parts, kind };
-			expect(addedBy(flat, ['kind', 'marks'])).toBeLessThanOrEqual(PAGE_DATA_B);
+			expect(addedBy(flat, ['kind'])).toBeLessThanOrEqual(PAGE_DATA_B);
 			expect((await load(KIND_WEEKS.taper)).noteParts.kind?.label).toBe('Taper');
 			expect((await load(KIND_WEEKS.next)).noteParts.kind).toBeNull();
-			// A week later the deload has passed: no line on it, and it keeps its word.
+			// A week later the deload has passed: no line on it.
 			const later = await load(KIND_WEEKS.deload, new Date(NOW.getTime() + 7 * 86_400_000));
 			expect(later.noteParts.kind).toBeNull();
-			expect(later.marks).toEqual(current.marks);
 		});
 	});
 
@@ -386,7 +384,6 @@ describe('Train’s load', () => {
 				)
 			);
 			expect(data.noteParts.kind).toBeNull();
-			expect(data.marks).toEqual({});
 			expect(data.lines.filter((l) => l.session).length).toBeGreaterThan(0);
 			const recorded = await findErrorsByRequestId(request.requestId, { db });
 			expect(recorded).toHaveLength(1);

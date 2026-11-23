@@ -2,8 +2,8 @@
  * Train's week findings (m7/04 train-week-findings), seeded with the periodisation-week fixture:
  * next week the owner moved Lower A from Friday to Monday, the day before Tuesday's hard Muay
  * Thai. The week's one line under its lines counts what is still ahead ('1 heads-up this week')
- * and opens, in place and even without JavaScript, one calm note per session the finding names
- * ('Heads-up · …') with its why. The week after reads 'No clashes this week'; this week's clash
+ * and opens, in place and even without JavaScript, the finding once, as its label and headline
+ * ('Heads-up · …'), with its why. The week after reads 'No clashes this week'; this week's clash
  * has passed, so it shows nothing and reads 'No clashes ahead this week'; a past week and an
  * outline week show no findings line, a bridge week and 'First block complete' no line at all.
  * The findings match domain evaluateWeek over the week as Postgres holds it
@@ -36,8 +36,8 @@ const WEEK = { past: 1, current: 2, moved: 3, clean: 4, outline: 5 } as const;
 type Seeded = SeededAnalytics & { mondays: Record<keyof typeof WEEK, string> };
 
 const HEADLINE = 'Heavy lower body the day before hard Muay Thai';
-const MOVED_NOTE = `Heads-up · ${HEADLINE} · You moved this here`;
-const TUESDAY_NOTE = `Heads-up · ${HEADLINE} · After Lower A the day before`;
+/** The finding on the moved session and Tuesday's class, listed once in the week's note. */
+const NOTE = `Heads-up · ${HEADLINE}`;
 
 const line = (page: Page) => page.getByTestId('week-line');
 const findings = (page: Page) => page.getByTestId('week-findings');
@@ -51,7 +51,7 @@ test.describe('the periodisation week', () => {
 		seeded = (await seedAnalytics(request, 'periodisation-week')) as Seeded;
 	});
 
-	test('the week’s line opens the heads-up on the moved session and Tuesday’s, matching the evaluation in SQL', async ({
+	test('the week’s line opens the one heads-up on the moved session and Tuesday’s, matching the evaluation in SQL', async ({
 		page
 	}, testInfo) => {
 		const evaluation = await weekEvaluation(seeded.mondays.moved, seeded.today);
@@ -75,10 +75,10 @@ test.describe('the periodisation week', () => {
 		await expect(line(page)).toHaveText('1 heads-up this week');
 		await expect(findings(page)).toBeHidden();
 		await line(page).click();
-		// Each session the finding names, in the week's order: Monday's moved Lower A, then
-		// Tuesday's class. Wednesday's Upper A is in no finding.
+		// The finding once, though it names Monday's moved Lower A and Tuesday's class, with no
+		// words that place it on either. Wednesday's Upper A is in no finding.
 		const notes = findings(page).locator('.finding');
-		await expect(notes).toHaveText([MOVED_NOTE, TUESDAY_NOTE]);
+		await expect(notes).toHaveText([NOTE]);
 		await expect(notes.first()).toHaveAttribute('data-tone', 'caution');
 		await expect(findings(page)).not.toContainText('Upper A');
 		await expect(findings(page)).toContainText(evaluation.findings[0]!.why);
@@ -141,7 +141,7 @@ test.describe('the periodisation week', () => {
 			await page.goto(`/train?week=${WEEK.moved}`);
 			await expect(line(page)).toHaveText('1 heads-up this week');
 			await line(page).click();
-			await expect(findings(page).locator('.finding').first()).toHaveText(MOVED_NOTE);
+			await expect(findings(page).locator('.finding')).toHaveText([NOTE]);
 			await expect(findings(page)).toContainText('You moved Lower A here from Friday.');
 		});
 	});

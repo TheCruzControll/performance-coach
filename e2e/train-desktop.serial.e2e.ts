@@ -27,6 +27,7 @@ import {
 } from './desktop';
 import {
 	dayLines,
+	lineDay,
 	openMore,
 	PROGRAM_TZ,
 	seedProgram,
@@ -210,7 +211,7 @@ test.describe('a program this week', () => {
 		await expect(rest).toHaveAttribute('data-testid', 'rest-day');
 		await expect(rest).toHaveAttribute(
 			'aria-label',
-			`${longDate(addDays(seeded.weekStart, 4))}, rest`
+			`${lineDay(addDays(seeded.weekStart, 4), seeded.today)}, rest`
 		);
 		await expectSameLeft([rest, sessionLine(page, 'Full body', seeded.weekStart)]);
 		expect(Math.round((await boxOf(rest)).height)).toBe(60);
