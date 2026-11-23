@@ -35,6 +35,7 @@ import { cleanFloat, convertWeight, type WeightUnit } from '../../../domain/unit
 import {
 	createProfileRepository,
 	createWeightRepository,
+	type AthleteProfileRow,
 	type Executor,
 	type WeightEntryRow,
 	type WeightGoalRow,
@@ -55,7 +56,10 @@ export interface WeightGoalResult {
 export interface WeightTarget {
 	weight: number;
 	unit: WeightUnit;
-	/** The goal-by day; null for a target with no date, which stays on the profile only. */
+	/**
+	 * The goal-by day. Null for a target with no date: it is written to the profile only, and it
+	 * ends the active goal, if there is one (syncWeightTarget).
+	 */
 	date: IsoDate | null;
 }
 
@@ -91,13 +95,60 @@ function startWeightOf(rows: WeightEntryRow[], unit: WeightUnit, today: IsoDate)
 	return trendOn(dailyTrend(weighIns, unit), today)?.trend ?? null;
 }
 
-/** Whether the goal already holds this target (the weight compared in the goal's unit). */
-function sameTarget(goal: WeightGoalRow, target: WeightTarget): boolean {
-	const weight =
-		goal.unit === target.unit
-			? target.weight
-			: cleanFloat(convertWeight(target.weight, target.unit, goal.unit), 2);
-	return goal.targetWeight === weight && goal.targetOn === target.date;
+/**
+ * The body editor shows a target in the profile's unit to one decimal, so a posted target in another
+ * unit is only as exact as that display: it is the same weight when it lies within half a display
+ * step of the stored one. Compared in the stored unit (`storedUnit`), so no rounding of two
+ * converted values can split a target that did not change (78.25 kg reads back as 78.24 kg through
+ * lb). The same unit compares exactly.
+ */
+const HALF_DISPLAY_STEP = 0.05;
+function sameWeight(
+	stored: number,
+	storedUnit: WeightUnit,
+	posted: number,
+	postedUnit: WeightUnit
+): boolean {
+	if (storedUnit === postedUnit) return stored === posted;
+	const tolerance = convertWeight(HALF_DISPLAY_STEP, postedUnit, storedUnit);
+	return Math.abs(stored - convertWeight(posted, postedUnit, storedUnit)) <= tolerance + 1e-9;
+}
+
+/** Whether the active goal already holds this target: the same day and the same weight. */
+function sameGoalTarget(goal: WeightGoalRow, target: WeightTarget): boolean {
+	return (
+		goal.targetOn === target.date &&
+		sameWeight(goal.targetWeight, goal.unit, target.weight, target.unit)
+	);
+}
+
+/** Whether the profile already holds this target as its own stored target (no goal needed). */
+function profileHolds(profile: AthleteProfileRow, target: WeightTarget): boolean {
+	return (
+		profile.targetDate === target.date &&
+		profile.targetWeight !== null &&
+		profile.targetWeightUnit !== null &&
+		sameWeight(profile.targetWeight, profile.targetWeightUnit, target.weight, target.unit)
+	);
+}
+
+/** The target a goal sets on the profile: its own weight, unit and day. */
+function targetOf(goal: WeightGoalRow): WeightTarget {
+	return { weight: goal.targetWeight, unit: goal.unit, date: goal.targetOn };
+}
+
+/**
+ * A goal's refusal under the body form's field names: the goal-by day is `targetDate`, and the
+ * milestone step (the body has none) is `targetWeight`. Anything else is kept as it is.
+ */
+function asBodyErrors(err: unknown): unknown {
+	if (!(err instanceof ProfileInputError)) return err;
+	const errors: FieldErrors = {};
+	for (const [key, message] of Object.entries(err.errors)) {
+		const field = key === 'targetOn' ? 'targetDate' : key === 'step' ? 'targetWeight' : key;
+		errors[field] ??= message;
+	}
+	return new ProfileInputError(errors);
 }
 
 /** The milestone a day and weight name, for comparing rows. */
@@ -128,6 +179,7 @@ function milestoneErrors(issues: MilestoneIssue[], unit: WeightUnit): FieldError
  * goal's unit (the profile's, when left out). The goal-by day must be after today. The milestones
  * are generated at the step (the unit's default when left out). The active goal, if any, ends as
  * 'replaced'. The profile's target is set to this goal. Nothing else changes, the phase included.
+ * The owner's profile row is locked first, so two goal writes run one after the other.
  */
 export async function setWeightGoal(
 	ownerId: string,
@@ -141,6 +193,7 @@ export async function setWeightGoal(
 			const profiles = createProfileRepository(tx);
 			const repo = createWeightRepository(tx);
 			const profile = await profiles.ensureProfile(ownerId);
+			await profiles.lockProfile(ownerId);
 			const today = localDay(at, profile.timeZone);
 			const parsed = parseWith(weightGoalSchema, withUnit(input, profile.weightUnit));
 			if (parsed.targetOn <= today) {
@@ -206,7 +259,8 @@ export async function setWeightGoal(
  * strictly between the goal's start and goal-by day, days are unique and the weights are in range
  * (validateMilestones). A milestone is 'generated' when it is one the goal already had as
  * generated, or the default step gives for its day and weight; otherwise 'edited'. The goal must be
- * the active one, or ProfileNotFoundError.
+ * the active one, or ProfileNotFoundError. The profile row is locked, then the goal is read FOR
+ * UPDATE, so an edit that waited behind a clear or a new goal finds the goal ended and writes nothing.
  */
 export async function editMilestones(
 	ownerId: string,
@@ -217,8 +271,9 @@ export async function editMilestones(
 	const { db, now } = resolveWeightDeps(deps);
 	return measure('db', () =>
 		db.transaction(async (tx) => {
+			await createProfileRepository(tx).lockProfile(ownerId);
 			const repo = createWeightRepository(tx);
-			const active = await repo.getActiveGoal(ownerId);
+			const active = await repo.getActiveGoal(ownerId, { forUpdate: true });
 			if (!active || active.id !== goalId) throw new ProfileNotFoundError('Weight goal');
 			const parsed = parseWith(milestonesSchema, input);
 			const goal = goalOf(active);
@@ -253,7 +308,7 @@ export async function editMilestones(
 /**
  * End the owner's active goal as 'cleared' (it stays in the history) and clear the profile's
  * target. Returns the goal that ended, or null when there was none. The profile target is cleared
- * either way.
+ * either way. The profile row is locked first, like every goal write.
  */
 export async function clearWeightGoal(
 	ownerId: string,
@@ -265,6 +320,7 @@ export async function clearWeightGoal(
 			const at = now();
 			const profiles = createProfileRepository(tx);
 			await profiles.ensureProfile(ownerId);
+			await profiles.lockProfile(ownerId);
 			const ended = await createWeightRepository(tx).endActiveGoal(ownerId, 'cleared', at);
 			await profiles.updateProfile(
 				ownerId,
@@ -304,10 +360,21 @@ export async function setNutritionPhase(
 }
 
 /**
- * The profile's weight target, as the body editor saves it. A cleared target (null) clears the
- * goal (clearWeightGoal). A target with a day sets the goal (setWeightGoal) unless the active goal
- * already holds it, in which case only the profile is written to match. A target with no day stays
- * on the profile only: no goal is made from it, and the active goal, if any, is left as it is.
+ * The profile's weight target, as the body editor saves it. The profile and the active goal never
+ * disagree after it runs:
+ * - No target weight (null) clears the target: the goal, if any, ends as 'cleared' and the
+ *   profile's three target fields are null. A body save with no target weight but a date clears
+ *   the date too, and saveBody passes null here, so the day it was sent with is dropped with it.
+ * - A target with a day, when the active goal already holds it (same day, same weight to the
+ *   editor's precision), keeps the goal and writes the goal's own weight, unit and day to the
+ *   profile. Otherwise it sets a new goal (setWeightGoal), from the caller's source at today's
+ *   trend. Its refusals come back under the body form's fields (targetDate, targetWeight).
+ * - With no active goal, a target the profile already holds is left as it is: no goal is made
+ *   from a target that was on the profile before any goal existed. Any other dated target sets a
+ *   goal, as above.
+ * - A target with no day stays on the profile only. The active goal, if any, ends as 'cleared'
+ *   (an undated target cannot be a goal), and the profile takes the target as given.
+ * The owner's profile row is locked before the goal is read, like every goal write.
  */
 export async function syncWeightTarget(
 	ownerId: string,
@@ -323,20 +390,33 @@ export async function syncWeightTarget(
 				await clearWeightGoal(ownerId, scoped);
 				return;
 			}
+			const profiles = createProfileRepository(tx);
+			const profile = await profiles.ensureProfile(ownerId);
+			await profiles.lockProfile(ownerId);
+			const repo = createWeightRepository(tx);
+			const active = await repo.getActiveGoal(ownerId);
 			if (target.date === null) {
+				await repo.endActiveGoal(ownerId, 'cleared', at);
 				await writeProfileTarget(tx, ownerId, target, at);
 				return;
 			}
-			const active = await createWeightRepository(tx).getActiveGoal(ownerId);
-			if (active && sameTarget(active, target)) {
-				await writeProfileTarget(tx, ownerId, target, at);
+			if (active) {
+				if (sameGoalTarget(active, target)) {
+					await writeProfileTarget(tx, ownerId, targetOf(active), at);
+					return;
+				}
+			} else if (profileHolds(profile, target)) {
 				return;
 			}
-			await setWeightGoal(
-				ownerId,
-				{ unit: target.unit, targetWeight: target.weight, targetOn: target.date },
-				scoped
-			);
+			try {
+				await setWeightGoal(
+					ownerId,
+					{ unit: target.unit, targetWeight: target.weight, targetOn: target.date },
+					scoped
+				);
+			} catch (err) {
+				throw asBodyErrors(err);
+			}
 		})
 	);
 }

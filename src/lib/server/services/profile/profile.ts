@@ -102,8 +102,9 @@ export async function getBody(ownerId: string, deps: ProfileDeps = {}) {
 /**
  * Body weight, nutrition phase and weight target. A body weight is recorded as today's entry
  * in the history (re-saving the same day replaces it); leaving it blank never deletes history.
- * The target goes through the weight goal (services/weight/goals.ts): a dated target sets the
- * goal, a cleared one clears it, and an undated one stays on the profile. "Today" is the owner's
+ * The target goes through the weight goal (services/weight/goals.ts, syncWeightTarget): a dated
+ * target sets the goal, a cleared one clears it, and an undated one ends the goal it had and stays
+ * on the profile. "Today" is the owner's
  * calendar day in their time zone, not the UTC one.
  */
 export async function saveBody(ownerId: string, input: unknown, deps: ProfileDeps = {}) {

@@ -104,6 +104,21 @@ export function createProfileRepository(db: Executor) {
 			);
 		},
 
+		/**
+		 * Row-lock the owner's profile until the transaction ends. The weight goal's writers take it
+		 * before they read or write any goal, so their writes run one after the other. It is a row
+		 * lock, not an advisory one, because saveBody writes the profile row before it sets the goal:
+		 * with the advisory lock the two orders would deadlock. No row when the owner has no profile
+		 * yet, which means no goal either.
+		 */
+		async lockProfile(ownerId: string): Promise<void> {
+			await db
+				.select({ ownerId: athleteProfiles.ownerId })
+				.from(athleteProfiles)
+				.where(eq(athleteProfiles.ownerId, ownerId))
+				.for('update');
+		},
+
 		async updateProfile(ownerId: string, patch: ProfilePatch, now: Date) {
 			const [row] = await db
 				.update(athleteProfiles)

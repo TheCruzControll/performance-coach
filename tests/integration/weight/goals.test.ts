@@ -2,14 +2,16 @@
  * The owner's weight goal through the services on real Postgres: setting a goal (its start at the
  * trend, its generated milestones, the phase it suggests), a new goal ending the old one into the
  * history, editing milestones, clearing the goal, the profile target kept in step with the goal
- * both ways, the nutrition phase, and owner scoping.
+ * both ways (also across a change of the profile's unit), the nutrition phase, owner scoping, and
+ * goal writes that race each other.
  */
 import { describe, expect, it } from 'vitest';
 import { createProfileRepository, createWeightRepository } from '../../../src/lib/server/db';
 import {
 	getAthleteProfile,
 	ProfileNotFoundError,
-	saveBasics
+	saveBasics,
+	saveBody
 } from '../../../src/lib/server/services/profile';
 import {
 	clearWeightGoal,
@@ -20,7 +22,7 @@ import {
 	setWeightGoal,
 	syncWeightTarget
 } from '../../../src/lib/server/services/weight';
-import { withRollback } from '../helpers';
+import { holdTransaction, lockWaiters, withCommitted, withRollback } from '../helpers';
 import { clock, fieldErrors, makeOwner, makeSecondOwner } from '../profile/fixtures';
 
 const kg = (value: number, measuredOn: string) => ({ value, unit: 'kg', measuredOn });
@@ -284,7 +286,7 @@ describe('clearing the goal', () => {
 });
 
 describe('the profile target, kept in step with the goal', () => {
-	it('sets the goal from a dated target, keeps it when the target is the same, and writes an undated target to the profile only', async () => {
+	it('sets the goal from a dated target, keeps it when the target is the same, and ends it when the target has no day', async () => {
 		await withRollback(async (db) => {
 			const time = clock('2026-11-10T08:00:00Z');
 			const owner = await makeOwner(db);
@@ -302,34 +304,43 @@ describe('the profile target, kept in step with the goal', () => {
 			expect((await repo.getActiveGoal(owner))?.id).toBe(first!.id);
 			expect(await repo.listGoals(owner)).toHaveLength(1);
 
-			// An undated target stays on the profile; the goal is left as it was.
+			// An undated target cannot be a goal: the goal ends as cleared, and the profile takes the
+			// target as given, so the profile and the goal never disagree.
+			time.advanceDays(1);
 			await syncWeightTarget(owner, { weight: 77, unit: 'kg', date: null }, at);
 			expect(await profiles.getProfile(owner)).toMatchObject({
 				targetWeight: 77,
+				targetWeightUnit: 'kg',
 				targetDate: null
 			});
-			expect(await repo.getActiveGoal(owner)).toMatchObject({
-				id: first!.id,
-				targetWeight: 78,
-				targetOn: '2027-01-31'
-			});
+			expect(await repo.getActiveGoal(owner)).toBeNull();
+			expect(await repo.listGoals(owner)).toMatchObject([
+				{ id: first!.id, status: 'ended', endedReason: 'cleared' }
+			]);
 
-			// The dated target again writes the profile back to match the goal.
+			// A dated target again starts a goal, and the profile is written to match it.
+			time.advanceDays(1);
 			await syncWeightTarget(owner, { weight: 78, unit: 'kg', date: '2027-01-31' }, at);
+			const second = await repo.getActiveGoal(owner);
+			expect(second).toMatchObject({ targetWeight: 78, targetOn: '2027-01-31' });
+			expect(second!.id).not.toBe(first!.id);
 			expect(await profiles.getProfile(owner)).toMatchObject({
 				targetWeight: 78,
 				targetWeightUnit: 'kg',
 				targetDate: '2027-01-31'
 			});
-			expect((await repo.getActiveGoal(owner))?.id).toBe(first!.id);
 
 			// A different dated target starts a new goal, and the old one is replaced.
 			time.advanceDays(1);
 			await syncWeightTarget(owner, { weight: 76, unit: 'kg', date: '2027-03-31' }, at);
-			const second = await repo.getActiveGoal(owner);
-			expect(second).toMatchObject({ targetWeight: 76, targetOn: '2027-03-31' });
-			expect(second!.id).not.toBe(first!.id);
-			expect((await repo.listGoals(owner)).map((g) => g.endedReason)).toEqual([null, 'replaced']);
+			const third = await repo.getActiveGoal(owner);
+			expect(third).toMatchObject({ targetWeight: 76, targetOn: '2027-03-31' });
+			expect(third!.id).not.toBe(second!.id);
+			expect((await repo.listGoals(owner)).map((g) => g.endedReason)).toEqual([
+				null,
+				'replaced',
+				'cleared'
+			]);
 
 			// A cleared target clears the goal and the profile.
 			await syncWeightTarget(owner, null, at);
@@ -355,29 +366,158 @@ describe('the profile target, kept in step with the goal', () => {
 		});
 	});
 
-	it('sets the profile target in the goal’s unit when the target is given in lb', async () => {
+	it('keeps the goal and its edited milestones after the profile changes to the other unit, and sets the profile to the goal’s own target', async () => {
 		await withRollback(async (db) => {
 			const time = clock('2026-11-10T08:00:00Z');
 			const owner = await makeOwner(db);
-			await saveBasics(owner, { name: 'Niko', weightUnit: 'lb', distanceUnit: 'mi' }, { db });
-			await logWeight(
+			const at = { db, now: time.now };
+			const repo = createWeightRepository(db);
+			await saveBasics(owner, { name: 'Niko', weightUnit: 'lb', distanceUnit: 'mi' }, at);
+			await logWeight(owner, kg(82.4, '2026-11-10'), at);
+			// A goal in lb, set while the profile is in lb.
+			const { goal } = await setWeightGoal(
 				owner,
-				{ value: 180, unit: 'lb', measuredOn: '2026-11-10' },
-				{ db, now: time.now }
+				{ targetWeight: 170, targetOn: '2027-01-31' },
+				at
 			);
-			await syncWeightTarget(
-				owner,
-				{ weight: 170, unit: 'lb', date: '2027-01-31' },
-				{ db, now: time.now }
-			);
-			expect(await getAthleteProfile(owner, { db })).toMatchObject({
+			expect(await createProfileRepository(db).getProfile(owner)).toMatchObject({
+				weightUnit: 'lb',
 				targetWeight: 170,
+				targetWeightUnit: 'lb',
 				targetDate: '2027-01-31'
 			});
-			expect(await createWeightRepository(db).getActiveGoal(owner)).toMatchObject({
+			await editMilestones(
+				owner,
+				goal.id,
+				{ milestones: [{ day: '2026-12-20', weight: 176 }] },
+				at
+			);
+
+			// The owner switches the profile to kg. The body form shows 170 lb as 77.1 kg, and Save
+			// posts that back unchanged.
+			await saveBasics(owner, { name: 'Niko', weightUnit: 'kg', distanceUnit: 'mi' }, at);
+			await saveBody(
+				owner,
+				{
+					weightUnit: 'kg',
+					bodyWeight: null,
+					nutritionPhase: null,
+					targetWeight: 77.1,
+					targetDate: '2027-01-31'
+				},
+				at
+			);
+
+			// The same goal, its edited milestone kept, and no second goal.
+			expect(await repo.getActiveGoal(owner)).toMatchObject({
+				id: goal.id,
 				unit: 'lb',
 				targetWeight: 170
 			});
+			expect(await repo.listGoals(owner)).toHaveLength(1);
+			expect(
+				(await repo.listMilestones(owner, goal.id)).map((m) => [m.onDate, m.weight, m.source])
+			).toEqual([['2026-12-20', 176, 'edited']]);
+			// The profile takes the goal's own target (170 lb), not the 77.1 kg the form posted.
+			expect(await createProfileRepository(db).getProfile(owner)).toMatchObject({
+				weightUnit: 'kg',
+				targetWeight: 170,
+				targetWeightUnit: 'lb',
+				targetDate: '2027-01-31'
+			});
+		});
+	});
+
+	it('reads a target within half a display step of the goal’s as the same target, and a tenth of a pound more as a new one', async () => {
+		await withRollback(async (db) => {
+			const time = clock('2026-11-10T08:00:00Z');
+			const owner = await makeOwner(db);
+			const at = { db, now: time.now };
+			const repo = createWeightRepository(db);
+			await logWeight(owner, kg(82.4, '2026-11-10'), at);
+			await saveBasics(owner, { name: 'Niko', weightUnit: 'lb', distanceUnit: 'mi' }, at);
+			// 78.25 kg is 172.511 lb, which the lb form shows as 172.5. Read back, 172.5 lb is 78.2446 kg.
+			const { goal } = await setWeightGoal(
+				owner,
+				{ unit: 'kg', targetWeight: 78.25, targetOn: '2027-01-31' },
+				at
+			);
+
+			await syncWeightTarget(owner, { weight: 172.5, unit: 'lb', date: '2027-01-31' }, at);
+			expect(await repo.getActiveGoal(owner)).toMatchObject({ id: goal.id, targetWeight: 78.25 });
+			expect(await createProfileRepository(db).getProfile(owner)).toMatchObject({
+				targetWeight: 78.25,
+				targetWeightUnit: 'kg'
+			});
+
+			// 172.6 lb is 78.2896 kg: a real change, so the goal is replaced.
+			await syncWeightTarget(owner, { weight: 172.6, unit: 'lb', date: '2027-01-31' }, at);
+			expect((await repo.getActiveGoal(owner))?.id).not.toBe(goal.id);
+			expect(await repo.listGoals(owner)).toHaveLength(2);
+		});
+	});
+});
+
+describe('goal writes one at a time', () => {
+	it('two goals set at once: both succeed, and exactly one stays active', async () => {
+		await withCommitted(async (db) => {
+			const time = clock('2026-11-10T08:00:00Z');
+			const owner = await makeOwner(db);
+			await logWeight(owner, kg(82.4, '2026-11-10'), { db, now: time.now });
+
+			// The first holds its transaction open, so the second waits for the owner's profile row.
+			const first = await holdTransaction((tx) =>
+				setWeightGoal(owner, GOAL, { db: tx, now: time.now })
+			);
+			const second = setWeightGoal(
+				owner,
+				{ targetWeight: 76, targetOn: '2027-03-31' },
+				{ db, now: time.now }
+			).then(
+				(result) => result,
+				(error: unknown) => error
+			);
+			await lockWaiters(1);
+			await first.commit();
+
+			expect(await second).toMatchObject({ goal: { targetWeight: 76, status: 'active' } });
+			const repo = createWeightRepository(db);
+			const goals = await repo.listGoals(owner);
+			expect(goals.filter((g) => g.status === 'active').map((g) => g.targetWeight)).toEqual([76]);
+			expect(goals.filter((g) => g.endedReason === 'replaced').map((g) => g.targetWeight)).toEqual([
+				78
+			]);
+		});
+	});
+
+	it('an edit that waited behind a clear is refused, and writes no milestones', async () => {
+		await withCommitted(async (db) => {
+			const time = clock('2026-11-10T08:00:00Z');
+			const owner = await makeOwner(db);
+			await logWeight(owner, kg(82.4, '2026-11-10'), { db, now: time.now });
+			const { goal } = await setWeightGoal(owner, GOAL, { db, now: time.now });
+
+			const clearing = await holdTransaction((tx) =>
+				clearWeightGoal(owner, { db: tx, now: time.now })
+			);
+			const edit = editMilestones(
+				owner,
+				goal.id,
+				{ milestones: [{ day: '2026-12-20', weight: 79.5 }] },
+				{ db, now: time.now }
+			).then(
+				(result) => result,
+				(error: unknown) => error
+			);
+			await lockWaiters(1);
+			await clearing.commit();
+
+			expect(await edit).toBeInstanceOf(ProfileNotFoundError);
+			const milestones = await createWeightRepository(db).listMilestones(owner, goal.id);
+			expect(milestones.map((m) => [m.onDate, m.weight, m.source])).toEqual([
+				['2026-11-17', 82, 'generated'],
+				['2026-12-25', 80, 'generated']
+			]);
 		});
 	});
 });
