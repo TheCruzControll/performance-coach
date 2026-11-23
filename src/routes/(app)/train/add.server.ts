@@ -29,11 +29,12 @@ async function editAt(owner: string, payload: unknown, { db, now }: AddDeps): Pr
 /** The sheet's add actions, on the app's database unless `deps` names another. */
 export function addActions(deps: AddDeps = {}) {
 	return {
-		/** Add a session to a planned week: the new version's number and the week's new findings. */
+		/** Add a session to a planned week: the new version's number, its title and the week's findings. */
 		addSession: programAction(async (owner, payload) => {
 			const added = await addSession(owner, payload, await editAt(owner, payload, deps), deps);
 			return {
 				version: added.number,
+				title: added.title,
 				warnings: added.warnings.map(({ severity, message }) => ({ severity, message }))
 			};
 		})

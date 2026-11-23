@@ -60,6 +60,8 @@ Last reviewed: 2026-11-21, against `main` at the merge of #501.
 
 ## Verification gaps
 
+- The Add session sheet has no e2e or verify-coach coverage yet.
+
 - **The new fonts' CLS is not re-measured.** Geist and Geist Mono, with their metric-matched
   fallbacks, replace Mona Sans and Hubot Sans. The CLS of the audited routes has not been measured
   on them, so the expected value of about 0 is unproven. Closes when the routes in

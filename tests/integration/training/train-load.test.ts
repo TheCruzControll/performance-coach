@@ -15,7 +15,7 @@ import {
 	createGoal,
 	saveSchedule
 } from '../../../src/lib/server/services/profile/index';
-import { createProgramFromPlan } from '../../../src/lib/server/services/programs/index';
+import { addSession, createProgramFromPlan } from '../../../src/lib/server/services/programs/index';
 import {
 	programFixture,
 	type ProgramFixture
@@ -91,6 +91,35 @@ describe('Train’s load', () => {
 			expect(data.days[4]!.rest).toBe(
 				'Recovery is part of the plan. Nothing else is planned this week.'
 			);
+		});
+	});
+
+	it('offers an add on the days of a planned week from today on, not a full day', async () => {
+		await withRollback(async (db) => {
+			const owner = await withProgram(db);
+			// Wednesday 18 is today: Monday and Tuesday have passed, so the week offers Wednesday on.
+			const before = program(await load(db, owner, '2026-11-18'));
+			expect(before.addable).toEqual([
+				'2026-11-18',
+				'2026-11-19',
+				'2026-11-20',
+				'2026-11-21',
+				'2026-11-22'
+			]);
+			// Thursday holds two sessions: two adds fill it, and it is no longer offered.
+			let version = before.version;
+			for (let n = 0; n < 2; n++) {
+				const added = await addSession(
+					owner,
+					{ date: '2026-11-19', kind: 'run' },
+					{ version, today: '2026-11-18' },
+					{ db }
+				);
+				version = added.number;
+			}
+			const after = program(await load(db, owner, '2026-11-18'));
+			expect(after.version).toBe(version);
+			expect(after.addable).toEqual(['2026-11-18', '2026-11-20', '2026-11-21', '2026-11-22']);
 		});
 	});
 

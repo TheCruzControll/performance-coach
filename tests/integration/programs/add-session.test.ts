@@ -18,6 +18,7 @@ import {
 	addSession,
 	createProgramFromPlan,
 	getProgramVersion,
+	getTrainingWeek,
 	getVersionHistory,
 	type EditAt,
 	type ProgramVersion
@@ -26,7 +27,12 @@ import {
 	ProgramConflictError,
 	TrainingInputError
 } from '../../../src/lib/server/services/training/shared';
-import { programFixture } from '../../../src/lib/server/test-support/program-fixtures';
+import { seedAnalyticsFixture } from '../../../src/lib/server/test-support/analytics-fixtures/index';
+import { atLocal } from '../../../src/lib/server/test-support/analytics-fixtures/dashboards';
+import {
+	programFixture,
+	type ProgramFixture
+} from '../../../src/lib/server/test-support/program-fixtures';
 import { withRollback } from '../helpers';
 import { makeOwner } from '../profile/fixtures';
 
@@ -42,15 +48,24 @@ const [TUE, WED, THU, FRI, SAT, SUN] = [1, 2, 3, 4, 5, 6].map(day) as [
 	IsoDate,
 	IsoDate
 ];
+/** The bridge fixture's own today: a Wednesday in its last unplanned week, in Los Angeles. */
+const BRIDGE_DAY = '2026-11-18';
+const TZ = 'America/Los_Angeles';
 /** Tuesday 15 December: after the program's fifth week, which ends on Sunday 13 December. */
 const AFTER_THE_PROGRAM = addDays(MONDAY, 7 * 5 + 1);
 
-const plan = (): ProgramPlan => programFixture('hybrid', { monday: MONDAY, today: MONDAY });
+const plan = (fixture: ProgramFixture = 'hybrid'): ProgramPlan =>
+	programFixture(fixture, { monday: MONDAY, today: MONDAY });
 
-/** Store the hybrid plan as the owner's program, in the test's transaction. */
-async function withProgram(db: Executor) {
+/** Store a fixture plan (the hybrid one unless named) as the owner's program, in the test's transaction. */
+async function withProgram(db: Executor, fixture: ProgramFixture = 'hybrid') {
 	const owner = await makeOwner(db);
-	const { programId } = await createProgramFromPlan(owner, plan(), { source: 'rules' }, { db });
+	const { programId } = await createProgramFromPlan(
+		owner,
+		plan(fixture),
+		{ source: 'rules' },
+		{ db }
+	);
 	return { owner, programId };
 }
 
@@ -206,6 +221,34 @@ describe('adding a session to a planned week', () => {
 			const err = await thrown(
 				addSession(owner, { date: AFTER_THE_PROGRAM, kind: 'run' }, at(1), { db })
 			);
+			expect((err as TrainingInputError).errors).toEqual({ date: 'Pick a day in your program' });
+		});
+	});
+
+	it('refuses a day in an outline week, at its date', async () => {
+		await withRollback(async (db) => {
+			// The one-week plan's second block is an outline: its weeks hold no sessions and take no add.
+			const { owner } = await withProgram(db, 'one-week');
+			const err = await thrown(addSession(owner, { date: TUE, kind: 'run' }, at(1), { db }));
+			expect(err).toBeInstanceOf(TrainingInputError);
+			expect((err as TrainingInputError).errors).toEqual({ date: 'Pick a day in your program' });
+		});
+	});
+
+	it('refuses a day in a bridge week, at its date', async () => {
+		await withRollback(async (db) => {
+			// Base, then three unplanned weeks before Build: the 18th is in the last of them.
+			const owner = await makeOwner(db);
+			const now = atLocal(BRIDGE_DAY, '12:00', TZ);
+			await seedAnalyticsFixture(owner, 'bridge-week', { timeZone: TZ, now }, { db });
+			const week = await getTrainingWeek(owner, { date: BRIDGE_DAY }, {}, { db });
+			expect(week).toMatchObject({ planned: true, kind: 'unplanned' });
+			const err = await thrown(
+				addSession(owner, { date: BRIDGE_DAY, kind: 'run' }, at(week!.version.number, BRIDGE_DAY), {
+					db
+				})
+			);
+			expect(err).toBeInstanceOf(TrainingInputError);
 			expect((err as TrainingInputError).errors).toEqual({ date: 'Pick a day in your program' });
 		});
 	});

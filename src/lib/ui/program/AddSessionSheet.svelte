@@ -8,10 +8,11 @@
   the session from the owner's profile and writes the next version.
 
   A refusal is said under its field (a day that has passed, a day outside the program, a full day,
-  a length the session cannot take). A new week finding never blocks the add: the week shows it once
-  Train reloads. A stale version is a conflict, which Reload clears. Validation (zod) runs in the
-  sheet first, as SkipSheet's does; the server checks again.
-  On success the sheet closes and a toast names the session and its version, linking to History.
+  a length the session cannot take). A new week finding never blocks the add: the toast counts it.
+  A stale version is a conflict, which Reload clears. Validation (zod) runs in the sheet first, as
+  SkipSheet's does; the server checks again.
+  On success the sheet closes and a toast names the session and its day, with its version and any
+  findings to look at, and links to History.
 -->
 <script lang="ts">
 	import { untrack } from 'svelte';
@@ -53,12 +54,19 @@
 		onclose: () => void;
 	}
 
+	/** What the server says an add made: its version, the built title and the week's new findings. */
+	interface Added {
+		version: number;
+		title: string;
+		warnings: { severity: string; message: string }[];
+	}
+
 	let { open = $bindable(), version, addable, day, addIntents, onclose }: Props = $props();
 
 	const UNREACHABLE = 'Can’t reach the server. Check your connection, then try again.';
 	const NOT_SAVED = 'That didn’t save. Try again.';
-	/** Field errors shown beside their own input; the others (kind, effort, time) in one notice. */
-	const INLINE = ['date', 'durationMinutes', 'reason'];
+	/** Field errors shown beside their own input; the others (kind, effort) in one notice. */
+	const INLINE = ['date', 'timeOfDay', 'durationMinutes', 'reason'];
 
 	const KIND_LABEL: Record<AddedKind, string> = {
 		strength: 'Strength',
@@ -76,9 +84,13 @@
 	const kindOptions = ADDED_KINDS.map((value) => ({ value, label: KIND_LABEL[value] }));
 	const intentOptions = ADD_INTENTS.map((value) => ({ value, label: INTENT_LABEL[value] }));
 	const dayOptions = $derived(addable.map((value) => ({ value, label: shortDate(value) })));
+	/** 'It varies' is how a plan words a session's time, not a time the owner picks for an add. */
 	const timeOptions = [
 		{ value: 'any', label: 'Any time' },
-		...TIMES_OF_DAY.map((value) => ({ value, label: TIME_OF_DAY_LABEL[value] }))
+		...TIMES_OF_DAY.filter((value) => value !== 'varies').map((value) => ({
+			value,
+			label: TIME_OF_DAY_LABEL[value]
+		}))
 	];
 
 	let kind = $state<AddedKind>('strength');
@@ -95,16 +107,13 @@
 	let busy = $state(false);
 	let fields = $state<HTMLElement>();
 
-	/** The day the add is made on: the one picked, else the first day that can take it. */
-	const chosenDay = $derived(date && addable.includes(date) ? date : (addable[0] ?? null));
-
-	/** Opened: a fresh form, on the day Train shows and the first kind's usual effort. */
+	/** Opened: a fresh form, on the day Train shows (else the first day that can take an add). */
 	$effect(() => {
 		if (!open) return;
 		untrack(() => {
 			kind = 'strength';
 			intent = addIntents.strength;
-			date = day;
+			date = addable.includes(day) ? day : (addable[0] ?? null);
 			time = 'any';
 			minutes = null;
 			reason = '';
@@ -130,7 +139,7 @@
 		if (busy) return;
 		failure = null;
 		const add = {
-			date: chosenDay ?? '',
+			date: date ?? '',
 			kind,
 			intent,
 			timeOfDay: time === 'any' ? undefined : time,
@@ -155,10 +164,11 @@
 		}
 		busy = false;
 		if (result.type === 'success') {
-			const added = result.data as { version: number };
-			const weekday = WEEKDAY_INFO[weekdayOf(add.date)].label;
+			const added = result.data as Added;
+			const weekday = WEEKDAY_INFO[weekdayOf(checked.data.date)].label;
+			const looks = added.warnings.length ? ` · ${added.warnings.length} to look at` : '';
 			open = false;
-			toast.show(`Added ${KIND_LABEL[kind]} on ${weekday} · version ${added.version}`, {
+			toast.show(`Added ${added.title} on ${weekday} · version ${added.version}${looks}`, {
 				tone: 'positive',
 				action: {
 					label: 'History',
@@ -192,11 +202,11 @@
 	data-testid="add-session-sheet"
 >
 	<div class="add" bind:this={fields} data-testid="add-session-form">
-		<SegmentedControl
-			label="Kind of session"
+		<ChoiceGroup
+			legend="Kind of session"
 			options={kindOptions}
 			bind:value={kind}
-			onchange={chooseKind}
+			onchange={() => chooseKind(kind)}
 			data-testid="add-kind"
 		/>
 

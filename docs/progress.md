@@ -84,8 +84,9 @@ runs the criteria and updates milestones.md.
   m7r/10, m7/58 and m7/59 build on it. The old M7 pull requests stay open until their rows merge.
 - **The Paper redesign, Instrument v2.** Queued by the owner in `plan/queue.md`; the first
   Instrument rows after its tokens are on hold.
-- **Adding a session to a program.** Specified and queued: the generator builds the session, Train
-  gets an Add session sheet, and the coach can propose one.
+- **Adding a session to a program.** The builder, the storage
+  (`src/lib/server/services/programs/add.ts`) and Train's Add session sheet are built; the coach's
+  proposal is next.
 - **Coach run trace and self-improving evals.** Planned, nothing built. The plan is eight PRs in
   `plan/trace-evals/plan.md`, written 738 commits ago, so its file pointers need re-checking
   against `main` before anyone builds from it. The owner must provide three secrets before the

@@ -52,9 +52,10 @@ import {
 	TrainingInputError
 } from '../training/shared';
 
-/** The version an add made, the session's lineage and the week's new warnings. */
+/** The version an add made, the session's lineage, its built title and the week's new warnings. */
 export interface AddedSession extends RevisedVersion {
 	lineage: string;
+	title: string;
 	warnings: MoveWarning[];
 }
 
@@ -186,6 +187,11 @@ export async function addSession(
 	at: EditAt,
 	deps: MoveDeps = {}
 ): Promise<AddedSession> {
-	const { warnings, lineage, ...edit } = await addApplier(ownerId, input, at, deps);
-	return { ...(await revise(ownerId, edit, at, deps)), lineage, warnings };
+	const { warnings, lineage, session, ...edit } = await addApplier(ownerId, input, at, deps);
+	return {
+		...(await revise(ownerId, edit, at, deps)),
+		lineage,
+		title: session.title,
+		warnings
+	};
 }
