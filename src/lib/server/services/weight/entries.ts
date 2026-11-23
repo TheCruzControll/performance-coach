@@ -76,6 +76,23 @@ function withDay(input: unknown, today: IsoDate): unknown {
 	return day === undefined || day === null || day === '' ? { ...entry, measuredOn: today } : input;
 }
 
+/** The refusal for moving a weigh-in onto a day that already has one. */
+function dayTaken(): ProfileInputError {
+	return new ProfileInputError({ measuredOn: 'That day already has a weigh-in' });
+}
+
+/**
+ * Whether a write was refused by the one-per-day index. Drizzle wraps the driver's error, which
+ * keeps the SQLSTATE and the constraint name on `cause`.
+ */
+function isDayIndexViolation(err: unknown): boolean {
+	const pg = ((err as { cause?: unknown } | null)?.cause ?? err) as {
+		code?: unknown;
+		constraint?: unknown;
+	} | null;
+	return pg?.code === '23505' && pg.constraint === 'body_weight_entries_owner_day_uq';
+}
+
 /** The entry a day held, as a coach write remembers it for Undo. */
 function replacedOf(row: WeightEntryRow): WeightReplaced {
 	return { value: row.value, unit: row.unit, source: row.source };
@@ -116,14 +133,13 @@ export async function logWeight(
 				at
 			);
 			if (previous === null || source !== 'coach') return { entry, replaced: previous };
-			// Read under the row lock upsertForDay took, so the remembered entry is the one replaced.
-			const remembered = await repo.update(
-				ownerId,
-				entry.id,
-				{ replaced: replacedOf(previous) },
-				at
-			);
-			return { entry: remembered ?? entry, replaced: previous };
+			// A second write in the same run keeps what the run first replaced (null when the day was
+			// empty before the run), so Undo goes back past the whole run, not just one write.
+			const sameRun = previous.source === 'coach' && previous.runId === runId;
+			const remembered = sameRun ? previous.replaced : replacedOf(previous);
+			// The previous row was read under the lock upsertForDay took, so this is what it held.
+			const updated = await repo.update(ownerId, entry.id, { replaced: remembered }, at);
+			return { entry: updated ?? entry, replaced: previous };
 		})
 	);
 }
@@ -153,21 +169,28 @@ export async function editWeight(
 				weigh.measuredOn !== current.measuredOn &&
 				(await repo.listRange(ownerId, weigh.measuredOn, weigh.measuredOn)).length > 0
 			) {
-				throw new ProfileInputError({ measuredOn: 'That day already has a weigh-in' });
+				throw dayTaken();
 			}
-			const row = await repo.update(
-				ownerId,
-				id,
-				{
-					value: weigh.value,
-					unit: weigh.unit,
-					measuredOn: weigh.measuredOn,
-					source,
-					runId: null,
-					replaced: null
-				},
-				at
-			);
+			let row: WeightEntryRow | null;
+			try {
+				row = await repo.update(
+					ownerId,
+					id,
+					{
+						value: weigh.value,
+						unit: weigh.unit,
+						measuredOn: weigh.measuredOn,
+						source,
+						runId: null,
+						replaced: null
+					},
+					at
+				);
+			} catch (err) {
+				// Another write took the day after the check above: the same refusal, not a 500.
+				if (isDayIndexViolation(err)) throw dayTaken();
+				throw err;
+			}
 			if (!row) throw new ProfileNotFoundError('Weigh-in');
 			return row;
 		})
@@ -201,7 +224,9 @@ export async function undoCoachWeight(
 	return measure('db', () =>
 		db.transaction(async (tx) => {
 			const repo = createWeightRepository(tx);
-			const current = await repo.getById(ownerId, id);
+			// Locked until the transaction ends, so a second Undo or an edit of this entry waits and then
+			// sees what this one left.
+			const current = await repo.getById(ownerId, id, { forUpdate: true });
 			if (!current) throw new WeightUndoError('gone');
 			if (current.source !== 'coach' || current.runId !== runId) {
 				throw new WeightUndoError('changed');

@@ -6,7 +6,11 @@
 import { sql } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
 import { createWeightRepository } from '../../../src/lib/server/db';
-import { ProfileNotFoundError, saveBasics } from '../../../src/lib/server/services/profile';
+import {
+	ProfileInputError,
+	ProfileNotFoundError,
+	saveBasics
+} from '../../../src/lib/server/services/profile';
 import {
 	deleteWeight,
 	editWeight,
@@ -14,7 +18,7 @@ import {
 	undoCoachWeight,
 	WeightUndoError
 } from '../../../src/lib/server/services/weight';
-import { withRollback } from '../helpers';
+import { holdTransaction, lockWaiters, withCommitted, withRollback } from '../helpers';
 import { clock, fieldErrors, makeOwner, makeSecondOwner } from '../profile/fixtures';
 
 const kg = (value: number, measuredOn: string) => ({ value, unit: 'kg', measuredOn });
@@ -103,15 +107,35 @@ describe('logging a weigh-in', () => {
 			});
 			expect(coach.replaced).toMatchObject({ id: earlier.entry.id, value: 82.4 });
 
-			// A second coach write on the same day remembers the coach entry it replaced.
+			// A second coach write in the same run keeps the entry the run first replaced, so Undo goes
+			// back past both writes to what the owner had before the run.
 			const again = await logWeight(owner, kg(81.5, '2026-11-10'), {
 				db,
 				source: 'coach',
 				runId: run
 			});
-			expect(again.entry.replaced).toMatchObject({ value: 82, source: 'coach' });
+			expect(again.entry.replaced).toMatchObject({ value: 82.4, unit: 'kg', source: 'log' });
+			expect(await undoCoachWeight(owner, again.entry.id, run, { db })).toMatchObject({
+				entry: { id: earlier.entry.id, value: 82.4, source: 'log', runId: null, replaced: null }
+			});
 
-			const plain = await logWeight(owner, kg(81.5, '2026-11-10'), { db });
+			// On a day the run filled, a second write has nothing to restore: Undo deletes the entry.
+			const filled = await logWeight(owner, kg(80, '2026-11-14'), {
+				db,
+				source: 'coach',
+				runId: run
+			});
+			const refilled = await logWeight(owner, kg(79.5, '2026-11-14'), {
+				db,
+				source: 'coach',
+				runId: run
+			});
+			expect(refilled.entry).toMatchObject({ id: filled.entry.id, replaced: null });
+			expect(await undoCoachWeight(owner, refilled.entry.id, run, { db })).toEqual({ entry: null });
+
+			// Any other source clears the run and the entry it replaced.
+			await logWeight(owner, kg(80, '2026-11-13'), { db, source: 'coach', runId: run });
+			const plain = await logWeight(owner, kg(79.5, '2026-11-13'), { db });
 			expect(plain.entry).toMatchObject({ source: 'log', runId: null, replaced: null });
 		});
 	});
@@ -163,6 +187,33 @@ describe('editing and deleting a weigh-in', () => {
 			).toEqual({ measuredOn: 'That day already has a weigh-in' });
 			const moved = await editWeight(owner, moving.entry.id, kg(82.4, '2026-11-09'), { db });
 			expect(moved.measuredOn).toBe('2026-11-09');
+		});
+	});
+
+	it('a move that loses its day to a write that commits first is refused at that field', async () => {
+		await withCommitted(async (db) => {
+			const owner = await makeOwner(db);
+			const moving = await logWeight(owner, kg(82.4, '2026-11-10'), { db });
+			// Another connection takes 2026-11-12 and holds it uncommitted: the day check does not
+			// see it, so the move reaches the one-per-day index and waits on it.
+			const taker = await holdTransaction((tx) =>
+				logWeight(owner, kg(81, '2026-11-12'), { db: tx })
+			);
+			const move = editWeight(owner, moving.entry.id, kg(82.4, '2026-11-12'), { db }).then(
+				() => null,
+				(err: unknown) => err
+			);
+			await lockWaiters(1);
+			await taker.commit();
+			const refusal = await move;
+			expect(refusal).toBeInstanceOf(ProfileInputError);
+			expect((refusal as ProfileInputError).errors).toEqual({
+				measuredOn: 'That day already has a weigh-in'
+			});
+			expect(await createWeightRepository(db).getById(owner, moving.entry.id)).toMatchObject({
+				measuredOn: '2026-11-10',
+				value: 82.4
+			});
 		});
 	});
 
@@ -270,6 +321,23 @@ describe('undoing a coach write', () => {
 			const second = undoCoachWeight(owner, removed.entry.id, run, { db });
 			await expect(second).rejects.toThrow(WeightUndoError);
 			await expect(second).rejects.toMatchObject({ reason: 'gone' });
+		});
+	});
+
+	it('a second undo after a replace is changed: Undo put back the owner’s own entry', async () => {
+		await withRollback(async (db) => {
+			const owner = await makeOwner(db);
+			const run = crypto.randomUUID();
+			await logWeight(owner, kg(82.4, '2026-11-10'), { db });
+			const coach = await logWeight(owner, kg(82, '2026-11-10'), {
+				db,
+				source: 'coach',
+				runId: run
+			});
+			await undoCoachWeight(owner, coach.entry.id, run, { db });
+			const second = undoCoachWeight(owner, coach.entry.id, run, { db });
+			await expect(second).rejects.toThrow(WeightUndoError);
+			await expect(second).rejects.toMatchObject({ reason: 'changed' });
 		});
 	});
 
