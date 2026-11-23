@@ -374,6 +374,18 @@ describe('hypertrophy volume (S6 hypertrophyBlock)', () => {
 		expect(adjusted.some((d) => d.evidence.over === OVER_IN_SOME)).toBe(true);
 	});
 
+	it('names in its session-length trade-off every group a range gives up, not only the first range’s', () => {
+		// Each range is short of different groups at 30 minutes; the first alone would name three.
+		const short = M7_SCENARIOS.hypertrophyBlock();
+		short.schedule.sessionMinutes = 30;
+		const tradeoffs = generateProgram(inputOf(short), OPTIONS).decisions.filter(
+			(d) => d.ruleKey === 'volume.session_length'
+		);
+		expect(tradeoffs.map((d) => d.summary)).toEqual([
+			'Your 30-minute sessions over more chest, shoulders, hamstrings, back, quads and glutes & hips work'
+		]);
+	});
+
 	it('leaves the stage before volume outside some week’s own range, so the volume stage is what holds it', () => {
 		const { draft } = draftThrough(M7_SCENARIOS.hypertrophyBlock(), 'phasing');
 		const outside = building(draft.blocks[0]!).some((week) =>
@@ -489,6 +501,36 @@ describe('dose bands', () => {
 		expect(target('bulk')).toBe(
 			'the top of 8–11, the lower half of the 8–14 that suits getting stronger'
 		);
+	});
+
+	it('a dosed fight camp on a cut keeps its cut: fewer hard sets a group, and its decision says so', () => {
+		const planOn = (phase: NutritionPhase | null) => {
+			const p = M7_SCENARIOS.multiGoal();
+			p.profile.nutritionPhase = phase;
+			return generateProgram(inputOf(p), OPTIONS);
+		};
+		const [kept, cut] = [planOn(null), planOn('cut')];
+		const campOf = (plan: ProgramPlan) => {
+			const b = plan.blocks.findIndex((block) => block.weeks.some((w) => w.targets.setsPerGroup));
+			return { b, weeks: plan.blocks[b]!.weeks.filter((w) => w.targets.setsPerGroup) };
+		};
+		const [keptCamp, cutCamp] = [campOf(kept), campOf(cut)];
+		expect(cutCamp.weeks.length).toBeGreaterThan(0);
+		const total = (weeks: WeekPlan[]) =>
+			weeks.reduce((n, w) => n + MAJOR.reduce((m, g) => m + hardSets(w, g), 0), 0);
+		expect(total(cutCamp.weeks)).toBeLessThan(total(keptCamp.weeks));
+		for (const [w, week] of cutCamp.weeks.entries()) {
+			for (const g of MAJOR) {
+				expect(hardSets(week, g), `${g} ${week.startsOn}`).toBeLessThanOrEqual(
+					hardSets(keptCamp.weeks[w]!, g)
+				);
+			}
+		}
+		const decisions = cut.decisions.filter(
+			(d) => d.kind === 'volume_adjusted' && d.refs.includes(`blocks.${cutCamp.b}`)
+		);
+		expect(decisions.length).toBeGreaterThan(0);
+		for (const d of decisions) expect(d.evidence.target, d.summary).toContain('on a cut');
 	});
 
 	it('gives heldBand each goal mode’s band, and a primary or unset goal M3’s', () => {

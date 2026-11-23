@@ -16,6 +16,7 @@
  */
 import type {
 	BlockPlan,
+	DecisionPlan,
 	PlanPath,
 	SessionPlan,
 	StrengthSessionPlan,
@@ -23,10 +24,12 @@ import type {
 } from '../../training/types.ts';
 import { DecisionLog } from '../decisions.ts';
 import type { FactsFor } from '../decisions.ts';
+import { clip } from '../demand.ts';
 import type { ProgrammingInput } from '../input.ts';
 import { doseBand } from '../priority/doses.ts';
 import { WORKING_RPE } from '../rules/strength.ts';
 import { VOLUME_WEEK_MIN } from '../rules/volume.ts';
+import { listing } from '../selection.ts';
 import { demandIn } from '../stage.ts';
 import type { Stage } from '../stage.ts';
 import { chooseSplit } from '../splits.ts';
@@ -69,19 +72,16 @@ function halfWords(split: Split, sets: readonly [number, number], keep: number, 
 }
 
 /**
- * The band of weeks that carry `range`, as it stands: in `held`'s words when the block plans only
- * that band (a dosed week's) and no nutrition phase moves `held`, otherwise in words naming the
- * block's range.
+ * The band of weeks that carry `range`. When the block plans only one range and it is held's
+ * (a dosed week's), held as it stands, so a cut or a bulk moves it as it moves the held band, in
+ * held's words, and without trim. Otherwise the range's own words, with no nutrition phase.
  */
 function rangeBand({ min, max }: Range, first: Range, last: Range, held: SetBand): SetBand {
 	const one = first.min === last.min && first.max === last.max;
-	const same = min === held.sets[0] && max === held.sets[1] && held.keep === 1 && !held.toward;
-	const band =
-		one && same
-			? held.band
-			: one
-				? `the ${span(min, max)} the block plans each week`
-				: `each week’s range, from ${span(first.min, first.max)} in its first to ${span(last.min, last.max)} in its last`;
+	if (one && min === held.sets[0] && max === held.sets[1]) return { ...held, trim: false };
+	const band = one
+		? `the ${span(min, max)} the block plans each week`
+		: `each week’s range, from ${span(first.min, first.max)} in its first to ${span(last.min, last.max)} in its last`;
 	return { sets: [min, max], keep: 1, toward: 0, band };
 }
 
@@ -95,10 +95,18 @@ const rangeOf = (sets: string) => {
 export const OVER_IN_SOME =
 	" Its main lifts' back-off sets, and work it shares with other groups, take it over in some weeks.";
 
+/** The groups a session_length trade-off's `given` names, read back from its words. */
+const namesIn = (given: unknown) =>
+	String(given)
+		.replace(/^more /, '')
+		.replace(/ work$/, '')
+		.split(/, | and /);
+
 /**
  * The decisions of `logs` (one per range) in `log`: one volume_adjusted per group, its sets
  * spanning every range it was changed in, with the first reason, and why it goes over: as said
- * when it does in every range, OVER_IN_SOME when only in some; any other decision once per rule.
+ * when it does in every range, OVER_IN_SOME when only in some. Any other decision once per rule,
+ * except volume.session_length, whose `given` lists the groups every range is short of.
  */
 function merge(logs: readonly DecisionLog[], log: DecisionLog) {
 	type Facts = FactsFor<'volume_adjusted'>;
@@ -106,11 +114,21 @@ function merge(logs: readonly DecisionLog[], log: DecisionLog) {
 		string,
 		{ ruleKey: string; refs: PlanPath[]; facts: Facts; over: number }
 	>();
-	const others = new Set<string>();
+	const others = new Map<string, DecisionPlan>();
 	for (const d of logs.flatMap((l) => l.list())) {
 		if (d.kind !== 'volume_adjusted') {
-			if (!others.has(d.ruleKey)) log.add(d.kind, d.ruleKey, d.refs, d.evidence as never);
-			others.add(d.ruleKey);
+			const first = others.get(d.ruleKey);
+			if (!first) others.set(d.ruleKey, d);
+			else if (d.ruleKey === 'volume.session_length') {
+				// Each range names the groups it is short of; the first range's words stand.
+				const names = [
+					...new Set([...namesIn(first.evidence.given), ...namesIn(d.evidence.given)])
+				];
+				others.set(d.ruleKey, {
+					...first,
+					evidence: { ...first.evidence, given: clip(`more ${listing(names)} work`, 120) }
+				});
+			}
 			continue;
 		}
 		const facts = d.evidence as Facts;
@@ -129,6 +147,7 @@ function merge(logs: readonly DecisionLog[], log: DecisionLog) {
 			over: seen.facts.over || facts.over
 		};
 	}
+	for (const d of others.values()) log.add(d.kind, d.ruleKey, d.refs, d.evidence as never);
 	for (const { ruleKey, refs, facts, over } of groups.values()) {
 		const some = over > 0 && over < logs.length;
 		log.add('volume_adjusted', ruleKey, refs, some ? { ...facts, over: OVER_IN_SOME } : facts);
