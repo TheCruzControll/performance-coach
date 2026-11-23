@@ -54,9 +54,10 @@ Last reviewed: 2026-11-23, against `main` at the merge of #634.
 - **On Train, the Rest timer row gains a hairline on its first hover.** Prefetch mounts the sheet's
   dialog as a sibling of the row, so the row's `:last-child` rule breaks. It stays until the Train
   screen row.
-- **Toasts are at the top; v2 puts them above the tab bar (`v2/03`).** `v2/02c` restyled them and
-  kept them at the top: above the tab bar they would cover the resume bar, the composer and the
-  logger. Closes when `v2/03` moves them with the shell.
+- **Toasts are at the top; v2 puts them above the tab bar (`v2/24`).** `v2/02c` restyled them and
+  kept them at the top: above the tab bar they would cover the resume line, the composer and the
+  logger. From 1024 px they sit over the column (`v2/03c`), not yet at its foot as Paper draws
+  them. Closes when `v2/24` moves them.
 - **The resume line still shows a workout in progress on every screen and 'Continue here' on
   Today; `v2/06` moves both into Today's hero.** Paper draws the line for waiting changes only
   (3 · Today), so its active and remote states are derived from it until then. Closes when Today
@@ -95,10 +96,9 @@ Last reviewed: 2026-11-23, against `main` at the merge of #634.
   both were still to come. Both folders hold shipped code.
 - **The app icons and favicon still use the old lime.** `static/favicon.svg`,
   `static/icons/*.svg` and the PNGs in `static/icons/` carry the volt lime `#c8f031`. Their canvas
-  `#0a0a0b` matches Instrument v2's canvas again, as the theme colour and manifest do. The in-app
-  brand mark (`static/brand/mark-arc.svg`, `--color-accent`) is amber, so it no longer matches the
-  lime icons either. Closes when an icons row regenerates them with `pnpm icons` and the mark is
-  decided.
+  `#0a0a0b` matches Instrument v2's canvas again, as the theme colour and manifest do. The rail no
+  longer draws the brand mark (`v2/03c`); its strokes stay in `static/brand/`. Closes when an
+  icons row regenerates them with `pnpm icons`.
 
 ## Verification gaps
 

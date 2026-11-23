@@ -324,6 +324,13 @@
 		outline: none;
 	}
 
+	/* v2/03c: the workout keeps the 640 px readable column from 1024 px (the shell's is 616) until
+	   v2/10 designs its focus mode on a desk. On the root, so --content-column, the header and a
+	   spec's token probe all read the width the workout lays out. */
+	:global(:root:has(main.workout)) {
+		--content-readable: 40rem;
+	}
+
 	/* Below 1024 px the view's main column fills the screen, so its logger reaches the foot. */
 	.body {
 		display: flex;

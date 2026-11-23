@@ -11,6 +11,7 @@
 
 	let sheet = $state(false);
 	let confirm = $state(false);
+	let panel = $state(false);
 </script>
 
 <div class="grid">
@@ -42,6 +43,9 @@
 		>
 		<Button variant="secondary" onclick={() => (confirm = true)} data-testid="open-confirm"
 			>Confirm sheet</Button
+		>
+		<Button variant="secondary" onclick={() => (panel = true)} data-testid="open-panel"
+			>Side panel</Button
 		>
 	</div>
 	<Card eyebrow="Loading" title="Skeleton">
@@ -92,6 +96,28 @@
 			>
 			<Button variant="ghost" block onclick={() => (confirm = false)}>Keep it</Button>
 		</div>
+	{/snippet}
+</BottomSheet>
+
+<!-- From 1024 px a right-hand panel beside the screen (desktop="panel"); a sheet on a phone. -->
+<BottomSheet
+	bind:open={panel}
+	title="Change Thursday"
+	description="Pick what Thursday becomes."
+	desktop="panel"
+	data-testid="panel-sheet"
+>
+	<div class="grid">
+		{#each ['Upper body', 'Easy run', 'Rest'] as option (option)}
+			<Surface padding="md" interactive>
+				<div class="inline between">
+					<span>{option}</span><Icon name="chevron-right" size={18} />
+				</div>
+			</Surface>
+		{/each}
+	</div>
+	{#snippet footer()}
+		<Button block onclick={() => (panel = false)}>Done</Button>
 	{/snippet}
 </BottomSheet>
 

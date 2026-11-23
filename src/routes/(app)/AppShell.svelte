@@ -101,6 +101,20 @@
 		outline: none;
 	}
 
+	/* From 1024 px: centred in the room right of the rail, but never more than
+	   --column-offset-max from it, so a readable screen's text starts 200 px from the rail (Paper,
+	   11 · Desktop). 100% is this content box: no 100vw, so no scrollbar error. */
+	@media (width >= 64rem) {
+		.content {
+			margin-left: clamp(
+				0px,
+				(100% - var(--main-max, var(--content-column))) / 2,
+				var(--column-offset-max)
+			);
+			margin-right: auto;
+		}
+	}
+
 	.offline-notice {
 		display: flex;
 		align-items: center;

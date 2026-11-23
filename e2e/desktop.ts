@@ -317,18 +317,32 @@ export const tokenPx = (page: Page, token: string) =>
 export const layoutWidth = (page: Page) =>
 	page.evaluate(() => document.documentElement.getBoundingClientRect().width);
 
+/** The most room between the rail and a screen's text, in px: Paper's column starts 200 px out. */
+const TEXT_FROM_RAIL_MAX = 200;
+
 /**
- * In the shell from 1024 px, `<main>` is centred in the area right of the rail (both gaps within
- * 1 px), not in the window, and `width` wide: the column the screen declares, read from its
- * token, e.g. `await tokenPx(page, '--content-readable')` for a readable screen. Without `width`,
- * only the centring is checked.
+ * In the shell from 1024 px, `<main>` is centred in the area right of the rail, not in the window,
+ * but never further from the rail than 200 px to its text (`<main>`'s left edge at most 200 px
+ * less the gutter from the rail): its left gap is the smaller of the two, within 1 px. A readable
+ * screen at 1440 px starts at that cap; a wide one is centred until the window is wider still.
+ * `width` is the column the screen declares, read from its token, e.g.
+ * `await tokenPx(page, '--content-readable')` for a readable screen. Without `width`, only the
+ * placement is checked.
  */
 export async function expectMainCentred(page: Page, width?: number): Promise<void> {
 	const rail = await boxOf(page.getByRole('navigation', { name: 'Primary' }));
 	const main = await boxOf(page.locator('main#main'));
-	const left = main.x - (rail.x + rail.width);
-	const right = (await layoutWidth(page)) - (main.x + main.width);
-	expect(Math.abs(left - right), `gaps beside main: ${left} and ${right}`).toBeLessThanOrEqual(1);
+	const railRight = rail.x + rail.width;
+	const left = main.x - railRight;
+	const centred = ((await layoutWidth(page)) - railRight - main.width) / 2;
+	const expected = Math.max(
+		0,
+		Math.min(centred, TEXT_FROM_RAIL_MAX - (await tokenPx(page, '--gutter')))
+	);
+	expect(
+		Math.abs(left - expected),
+		`main starts ${left}px right of the rail, not ${expected}px`
+	).toBeLessThanOrEqual(1);
 	if (width === undefined) return;
 	expect(Math.abs(main.width - width), `main is ${main.width}px wide`).toBeLessThanOrEqual(1);
 }

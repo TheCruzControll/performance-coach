@@ -383,7 +383,8 @@ brighten the text and the underline to `--color-text`, on a fine pointer only.
   title (`src/routes/ErrorView.svelte`), and a connectivity notice appears while offline.
 - Large titles (`PageHeader`): eyebrow + 32 px display title, iOS-style.
 - Toasts appear at the top (clear of the thumb zone and nav); sheets rise from the bottom, and
-  open as centred dialogs from 1024 px (Responsive layout → Dialogs & toasts).
+  open as centred dialogs or right-hand panels from 1024 px (Responsive layout → Dialogs &
+  toasts).
 
 ## Responsive layout
 
@@ -412,11 +413,17 @@ that specs verify the rest with.
   `resize` property.
 - Tokens (`tokens.css`):
   - `--content-max` 34 rem: the phone column.
-  - `--content-readable` 40 rem: the readable column from 640 px.
+  - `--content-readable` 40 rem: the readable column from 640 px; 38.5 rem from 1024 px (560 px
+    of text inside the 28 px gutters). The workout keeps 40 rem until `v2/10` (`workout/Shell.svelte`).
   - `--content-wide` 72 rem: a wide screen's content.
   - `--content-list` 20 rem: the list beside its editor on a split screen.
   - `--rail-width` 5.5 rem: the navigation rail from 1024 px.
-  - `--rail-mark` 2.25 rem: the brand mark atop the rail.
+  - `--column-offset-max`: from 1024 px, the most `<main>` sits right of the rail, 200 px less the
+    gutter, so a screen's text starts at most 200 px from the rail.
+  - `--column-start`, `--column-width`: in the shell from 1024 px, where `<main>` lies (its left
+    edge and its width), for fixed chrome, which has no shell box to measure.
+  - `--main-max`: a wide or split screen's column (`layout.css`), on `#main` and on the root; the
+    shell places `<main>` and fixed chrome by it, `--content-column` without it.
   - `--content-column`: the shell's column, which screen chrome is centred over: `--content-max`,
     and `--content-readable` from 640 px.
   - `--nav-foot`: the bottom bar's foot, `max(--space-3, --safe-bottom)`: 12 px, or the home
@@ -439,6 +446,9 @@ A screen declares its width with `data-layout` on its root element:
 - **wide**: dashboards and grids, up to `--content-wide`.
 - **split**: a list and its editor, `--content-list` beside a readable detail.
 - Never a single text column wider than `--content-readable`.
+- From 1024 px `<main>` is centred right of the rail, at most 200 px from it to the text: a
+  readable screen at 1440 px is 560 px of text starting 200 px from the rail, and a wide one is
+  centred until the window is wider still.
 
 ### Shell
 
@@ -450,10 +460,12 @@ A screen declares its width with `data-layout` on its root element:
   24 px icons and 12 px labels, current in text colour and 600 with no pill, and a hairline above
   it. Profile is not a tab: Today's avatar opens it. On a tablet (640–1023 px) only the column
   widens, from 34 to 40 rem.
-- **From 1024 px** a solid left rail, `--rail-width` (88 px) plus the left safe area, on
-  `--color-surface-1` with a hairline right border and no blur. Items are stacked icon above
-  label, each at least 56 px tall, with the text lifted for fine pointers. Profile's avatar link
-  sits at the rail's foot. Nothing is fixed to the bottom edge. A rail rather than a labelled
+- **From 1024 px** a rail on the canvas with a hairline at its right, `--rail-width` (88 px) plus
+  the left safe area, and no blur: the four tabs 28 px apart from 40 px down, each as on the tab
+  bar (64 × 46, icon above label), with the text lifted for fine pointers, and the avatar at the
+  foot, 32 px up. No brand mark. The readable column is 560 px, starting 200 px right of the rail
+  (centred in the room when the window is narrower); the rest of the window is empty. Nothing is
+  fixed to the bottom edge. A rail rather than a labelled
   sidebar: the labels are short, and it leaves the most width at 1024 px (a sidebar would be CSS
   only).
 - **The avatar** (`layout.css`, `.avatar-link`) is Profile's way in: a 32 px `--color-surface-2`
@@ -464,20 +476,15 @@ A screen declares its width with `data-layout` on its root element:
   a 16 px chevron, 15 px secondary, 44 px tall, with 12 px above it. Each page keeps its own
   desktop behaviour: `SectionScreen` and Profile hide theirs from 1024 px, where the rail is the
   way back.
-- **The brand mark** tops the rail: two masked pseudo-elements of the nav (`layout.css`) fill
-  `static/brand/mark-track.svg` with `--color-text` at 18% and `static/brand/mark-arc.svg` with
-  `--color-accent`. They are the favicon's two strokes on no background, in amber here while the favicon is still lime (see known issues); the favicon's opaque
-  dark tile can be neither a mask nor a themed image. The mark follows the theme with no markup
-  and no script, and the service worker precaches both files with the other static files, so it
-  renders offline.
 - **Order.** The nav comes before `<main>`, after the skip link, so on a desktop window Tab goes
   skip link → rail → content, as the eye reads it, and the skip link skips past the rail into
   the content. On an iPhone nothing moves, but VoiceOver reads the tab bar before the content.
-- **Content.** `<main>` is `--content-column` wide, centred beside the rail; a screen that
-  declares `data-layout="wide"` or `"split"` widens it to `--content-wide` from 1024 px
-  (`layout.css`). Screen chrome follows the column through the insets and `--content-column`,
-  so no screen file needs an edit; outside the shell the insets are `0px`, so a toast on
-  `/design` is centred in the window.
+- **Content.** `<main>` is `--content-column` wide, centred beside the rail but at most
+  `--column-offset-max` from it; a screen that declares `data-layout="wide"` or `"split"` widens
+  it to `--content-wide` from 1024 px (`layout.css`, `--main-max`). Screen chrome follows the
+  column through the insets, `--content-column` and, from 1024 px, `--column-start`, so no screen
+  file needs an edit; outside the shell the insets are `0px`, so a toast on `/design` is centred
+  in the window.
 - **CSS only**, so no route gains initial JS for the layout. The shell's own stylesheet (`AppShell`
   with `AppNav`) is inlined into every app page while it stays under SvelteKit's
   `inlineStyleThreshold` (4,096 characters, `vite.config.ts`). `scripts/check-budgets.ts` fails
@@ -492,7 +499,9 @@ itself read it.
   below 1024 px) or to the app (toasts). It is `position: fixed` at
   `bottom: var(--nav-inset-bottom)` (toasts keep their top inset), centred with
   `left: calc(50% + var(--nav-inset-left) / 2)` and `translateX(-50%)`, and at most
-  `var(--content-column)` wide. Only readable screens have it at the bottom.
+  `var(--content-column)` wide. From 1024 px in the shell it starts with the column instead:
+  `left: calc(var(--column-start) + var(--column-width) / 2)`, as `<main>` is no longer centred
+  once the column is capped. Only readable screens have it at the bottom.
 - **Column chrome** belongs to one column of a wide or split screen (an editor's Save bar, Build's
   "Start week 1", a session's actions). From 1024 px it is `position: sticky` at
   `bottom: var(--nav-inset-bottom)`, the last child of its column, with no left offset and no
@@ -554,16 +563,24 @@ type scale is the same at every width, because a 1024–1366 px window can be a 
   content; the bottom is the home indicator’s inset plus 10 px, at least 16 px in the footer and
   24 px under a body with no footer, so an iPhone with an inset gets 44 px. The close × is a quiet
   ghost.
-- From 1024 px the same `<dialog>` opens centred in the window: `min(100% − 2 gutters, 32rem)`
-  wide, at most `min(85dvh, 48rem)` tall with its content scrolling inside under the title, every
-  corner rounded and bordered all round. It fades in as it rises 8 px, and has no handle. The
-  focus trap and Escape are the platform's; the backdrop and focus return work as on a phone.
+- From 1024 px the same `<dialog>` opens centred in the window: `min(100% − 2 gutters, 30rem)`
+  (480 px) wide, at most `min(85dvh, 48rem)` tall with its content scrolling inside under the
+  title, on `--color-surface-1` with a `--color-border` edge, 28 px corners and 40 px in (24 under
+  a list), over the `--color-overlay` backdrop. It fades in as it rises 8 px, and has no handle.
+  The focus trap and Escape are the platform's; the backdrop and focus return work as on a phone.
+- With `desktop="panel"` it opens instead as a right-hand panel: 31 rem (496 px) wide, the
+  window's full height, on the canvas with a hairline at its left, 48 px down and 56 px in, its
+  title Hubot 32/38, sliding 24 px in from the right as it fades. The backdrop is clear, so the
+  screen stays in view beside it, but it is still a modal dialog: a click beside it closes it.
+  `desktop="panel"` is for a sheet used beside the screen (Change, More); the dialog for a
+  decision or a pick-one.
 - Stacked dialogs (Security's step-up over Remove passkey) stay usable: the top one is on top,
   holds focus, and is the only one Escape closes; focus then returns into the one below. When the
   button that opened a dialog cannot take focus back (it was disabled while it worked), focus
   returns to the dialog underneath.
-- Toasts stay at the top until `v2/03`: v2 draws them 10 px above the tab bar, where they would
-  cover the resume bar, the composer and the logger until the shell moves.
+- Toasts stay at the top until `v2/24`: v2 draws them 10 px above the tab bar (at the column's
+  foot from 1024 px), where they would cover the resume line, the composer and the logger. From
+  1024 px they sit over the column, as other screen chrome does.
 
 ### Screens
 
@@ -672,7 +689,9 @@ later-pass screen).
   boxes, with an annotation.
 - A screen in the shell checks `<main>` against the rail, never the window, at the width its
   `data-layout` declares, read from the token rather than written as a number:
-  `expectMainCentred(page, await tokenPx(page, '--content-readable'))` (or `--content-wide`).
+  `expectMainCentred(page, await tokenPx(page, '--content-readable'))` (or `--content-wide`). It
+  expects `<main>` centred right of the rail, or 200 px less the gutter from it where centring
+  would put it further.
 - `*.desktop.e2e.ts` specs run in the `desktop-chromium` project (1440 × 900), not in the iPhone
   projects; a serial spec's desktop cases use `test.use(DESKTOP)` and run on Chromium and WebKit.
   There is no desktop WebKit project (the owner's desktop browser is Chrome; docs/testing.md).
@@ -686,10 +705,10 @@ later-pass screen).
 | `Icon`              | Inline SVG set (`src/lib/ui/icons/icons.ts`, 24 px grid, 1.75 px round strokes); decorative unless `label`.                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | `Surface` / `Card`  | Legacy in v2: padding kept; a hairline outline, no fill, tint or shadow; every radius is 20 px; `level` and `tone` are accepted and draw nothing; `interactive`/`href` take the list-row tint (surface-2) on hover and press, with no scale. `Card` adds eyebrow/title/action header (`aria-labelledby`); its title is 17 px semibold.                                                                                                                                                                                                                                   |
 | `NumberStepper`     | One-handed −/+: round 60 px surface-3 controls (`IconButton` lg) around a 64 px Mona numeral, tabular; the label sits left above it at 15 px. Press-and-hold accelerating repeat, tap-to-type (`inputmode=decimal`), `role=spinbutton` with ArrowUp/Down, PageUp/Down, Home/End; `error` replaces `hint` (`aria-invalid`, `role=alert`). The workout logger and the set edit sheet keep their pre-v2 text and 56 px controls until v2/10.                                                                                                                                |
-| `BottomSheet`       | Native `<dialog>` + `showModal()` (platform focus trap, inert background), Escape/backdrop close, focus returns to opener, touch swipe-to-dismiss (distance or velocity), content mounted only while open. The title (Hubot 26/32) and the quiet ghost × are v2 at every width. Only the spacing and the handle are phone-only: a 36 × 4 handle with 28 px under it, 16 px before the content, and a bottom of the home indicator’s inset plus 10 px (at least 16 or 24 px; an iPhone with an inset gets 44). A centred dialog from 1024 px, with its spacing unchanged. |
+| `BottomSheet`       | Native `<dialog>` + `showModal()` (platform focus trap, inert background), Escape/backdrop close, focus returns to opener, touch swipe-to-dismiss (distance or velocity), content mounted only while open. The title (Hubot 26/32) and the quiet ghost × at every width; on a phone a 36 × 4 handle with 28 px under it and a bottom of the home inset plus 10 px. From 1024 px a 480 px dialog (surface-1, 28 px corners, 40 px in), or with `desktop="panel"` a full-height 496 px panel at the right, on the canvas over a clear backdrop, so the page stays in view. |
 | `SegmentedControl`  | Legacy in v2: `radiogroup` with roving tabindex and arrow keys; an inverse thumb on a surface-2 track, no outline; `sm` (36 px track) options extend their hit area to 44 px.                                                                                                                                                                                                                                                                                                                                                                                            |
 | `Tabs`              | Legacy in v2: WAI-ARIA tabs (automatic activation, arrows/Home/End), an animated text-coloured indicator (never amber), renders active panel.                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| `AppNav`            | Primary navigation (real links, preload on tap): four tabs, 24 px icons and 12 px labels, current in text colour and 600 with no pill, on a canvas bar with a hairline; from 1024 px a solid left rail under the brand mark, with the avatar link to Profile at its foot; one `<nav>`, so the links, their order and `aria-current` match at every width (Responsive layout → Shell).                                                                                                                                                                                    |
+| `AppNav`            | Primary navigation (real links, preload on tap): four tabs, 24 px icons and 12 px labels, current in text colour and 600 with no pill, on a canvas bar with a hairline; from 1024 px a left rail on the canvas with a hairline at its right and no brand mark, the tabs 28 px apart and the avatar link to Profile at its foot; one `<nav>`, so the links, their order and `aria-current` match at every width (Responsive layout → Shell).                                                                                                                              |
 | `.avatar-link`      | Global (layout.css). `.avatar-link`: Profile's 32 px surface-2 avatar link with a 44 px hit area, current with a 1.5 px text ring. `.back-link`: a detail page's way back, the parent's name after a 16 px chevron, 15 px secondary, 44 px tall (Responsive layout → Shell).                                                                                                                                                                                                                                                                                             |
 | `Skeleton`          | Shimmer placeholder (static under reduced motion); pair with `aria-busy` on the region.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | `EmptyState`        | Medallion glyph (tone-tinted), title, guidance, optional actions; `compact` variant.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
@@ -788,7 +807,8 @@ workout pages and is audited on `/design` → Workout, one state at a time.
 
 - **Columns.** From 1024 px the header spans the page; under it the side column
   (`--content-list`) holds the session's list (exercises with sets done and A1/A2 labels, or a
-  run's segments) beside the main column at the readable width (Responsive layout → Screens).
+  run's segments) beside the main column at the readable width (Responsive layout → Screens),
+  which stays 40 rem here (the shell's is 38.5 rem) until `v2/10`.
 - **The docked timer.** The rest timer docks at the top of the main column under the header, never
   over content; the logger is a card under the set rows, not stuck to the window.
 - **History.** The list beside the picked workout's detail, 'Pick a workout' when none is picked.
