@@ -20,9 +20,8 @@ import type {
 	StrengthSessionPlan,
 	WeekPlan
 } from '../training/types';
-import { CLASH_KEPT_RULES } from '../training/vocabulary';
 import { validate } from '../validation';
-import { DecisionLog } from './decisions';
+import { CLASH_KEPT_RULES, DecisionLog } from './decisions';
 import { evaluateWeek } from './evaluate/week';
 import { demandOf, catalogueTraits } from './interference';
 import { loadModel } from './load/fatigue';
