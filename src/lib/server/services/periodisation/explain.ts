@@ -51,6 +51,23 @@ export const CLASH_KEPT_RULES: readonly string[] = [
 	'schedule.kept'
 ];
 
+/** The clash-keeping decisions among `rows`, each with its kind, sentence and sessions. */
+function clashTradeoffs(
+	rows: readonly {
+		kind: DecisionKind;
+		ruleKey: string | null;
+		why: string;
+		affected: readonly string[];
+	}[]
+): TradeoffDecision[] {
+	return rows.flatMap((row) =>
+		(row.kind === 'priority_tradeoff' || row.kind === 'schedule_kept') &&
+		CLASH_KEPT_RULES.includes(row.ruleKey ?? '')
+			? [{ kind: row.kind, why: row.why, affected: row.affected }]
+			: []
+	);
+}
+
 /**
  * Decision (m7-plan, placement-why): the most decisions one session's disclosure lists. Older
  * ones stay in the program's History.
@@ -125,13 +142,7 @@ export async function getPlacementWhy(
 			byLineage[lineage] = { title: `Why ${WEEKDAY_INFO[weekdayOf(date)].label}?`, items };
 		}
 	}
-	const tradeoffs = rows
-		.filter(
-			(row) =>
-				(row.kind === 'priority_tradeoff' || row.kind === 'schedule_kept') &&
-				CLASH_KEPT_RULES.includes(row.ruleKey ?? '')
-		)
-		.map(({ why, affected }) => ({ why, affected }));
+	const tradeoffs = clashTradeoffs(rows);
 	return { byLineage, tradeoffs };
 }
 
@@ -193,12 +204,6 @@ export async function getScheduleTradeoffs(
 			version: row.version,
 			sessions: lineages.filter((lineage) => row.affected.includes(lineage))
 		}));
-	const tradeoffs = rows
-		.filter(
-			(row) =>
-				(row.kind === 'priority_tradeoff' || row.kind === 'schedule_kept') &&
-				CLASH_KEPT_RULES.includes(row.ruleKey ?? '')
-		)
-		.map(({ why, affected }) => ({ why, affected }));
+	const tradeoffs = clashTradeoffs(rows);
 	return { decisions, tradeoffs };
 }
