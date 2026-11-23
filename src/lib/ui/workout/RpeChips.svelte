@@ -63,6 +63,7 @@
 	}
 
 	.chips {
+		container-type: inline-size;
 		display: grid;
 		grid-template-columns: repeat(5, minmax(0, 1fr));
 		gap: var(--space-2);
@@ -99,11 +100,10 @@
 		border: 1px solid var(--color-border);
 		background: var(--color-surface-2);
 		color: var(--color-text-secondary);
-		/* 13 px on one line: "No RPE" in Mona Sans fits a fifth of a 390 px phone's logger, so the
+		/* 13 px: "No RPE" in Mona Sans fits a fifth of a phone's logger on one line (below), so the
 		   chips keep two rows and the logger stays below the exercise header. */
 		font-size: var(--text-xs);
 		font-weight: var(--weight-semibold);
-		white-space: nowrap;
 		text-align: center;
 		transition:
 			background-color var(--duration-fast) var(--ease-standard),
@@ -155,6 +155,13 @@
 		.input:not(:checked):hover + .face {
 			border-color: var(--color-border-strong);
 			background: var(--color-surface-3);
+		}
+	}
+
+	/* One line only where the row has room; enlarged text wraps inside the chip, which grows. */
+	@container (width >= 20rem) {
+		.face {
+			white-space: nowrap;
 		}
 	}
 </style>

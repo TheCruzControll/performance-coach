@@ -212,7 +212,8 @@ as data.
 
 Mona Sans sets all text and every numeral. Hubot Sans sets the one display line on a screen (the
 display, title, statement and sheet-title roles below), and never a numeral. There is no mono type
-and no uppercase: no `text-transform` appears on the page.
+and no uppercase: no `text-transform` appears on the page, except the recovery-code input, which
+uppercases what is typed.
 
 | Role                          | Family     | Size / line-height (px)     | Weight           | Tracking |
 | ----------------------------- | ---------- | --------------------------- | ---------------- | -------- |
@@ -253,7 +254,8 @@ line height from their role token.
 
 Weights: `--weight-regular 400`, `--weight-medium 500` (numeral M and pace), `--weight-semibold 600`
 (every display, title, statement and sheet title; button labels; numerals XL and L; the active tab
-and today). `bold 700` and `black 800` are unused.
+and today). `black 800` is unused. `bold 700` stays on a few titles and numerals (`PageHeader`,
+`WorkoutHeader`, `NumberStepper`, `ExerciseCard`) until their screen rows move them to 600.
 
 Tracking: `--tracking-hero -0.04em` (numerals XL and L), `--tracking-display-lg -0.035em` (the 56 px
 display line and numeral M), `--tracking-display -0.03em` (40 px titles and pace),
@@ -359,7 +361,7 @@ caption role in tertiary.
   landing CTAs are above the fold). `e2e/shell.e2e.ts` asserts all three.
 - Failure states keep the shell: offline and error screens render inside it with the screen's
   title (`src/routes/ErrorView.svelte`), and a connectivity notice appears while offline.
-- Large titles (`PageHeader`): eyebrow + 34 px display title, iOS-style.
+- Large titles (`PageHeader`): eyebrow + 32 px display title, iOS-style.
 - Toasts appear at the top (clear of the thumb zone and nav); sheets rise from the bottom, and
   open as centred dialogs from 1024 px (Responsive layout → Dialogs & toasts).
 
@@ -649,7 +651,7 @@ later-pass screen).
 | `Toaster` + `toast` | Polite live region; `neutral · positive · danger`; optional action; auto-dismiss. Screen chrome at the top, centred over the column (beside the rail from 1024 px), or in the window outside the shell.                                                                            |
 | `PageHeader`        | Eyebrow + large title + trailing slot; a `badge` sits on the eyebrow line, clear of the title.                                                                                                                                                                                     |
 | `BrandMark`         | The performance-gauge mark (also the PWA icon).                                                                                                                                                                                                                                    |
-| `Stat`              | The one metric tile: label, big value + inline unit, optional rating (word + dot), caption. `level 1` on the canvas (22 px value), `level 2` nested in a card (20 px). No value → a dash announced as "No data yet", never a made-up number.                                       |
+| `Stat`              | The one metric tile: label, big value + inline unit, optional rating (word + dot), caption. `level 1` on the canvas (26 px value), `level 2` nested in a card (24 px). No value → a dash announced as "No data yet", never a made-up number.                                       |
 | `Badge`             | Status pill: `neutral` (default; the only tone for "Soon"), `accent` (the next step, sparingly), `positive · warning · danger`; optional icon. Words carry the meaning.                                                                                                            |
 | `Chip`              | Quiet outlined label (e.g. a discipline) with an optional discipline-colour dot; static, not a control.                                                                                                                                                                            |
 | `ListRow`           | Tool/destination row: tinted icon tile, title, subtitle, chevron or `trailing` snippet; renders a link (`href`), a button (`onclick`) or a dashed, non-interactive row (`disabled`, for "Soon").                                                                                   |

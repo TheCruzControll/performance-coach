@@ -131,7 +131,7 @@
 	--weight-regular: 400;
 	--weight-medium: 500; /* numeral M and pace */
 	--weight-semibold: 600; /* display, titles, statements, sheet titles, button labels, numerals XL and L */
-	--weight-bold: 700; /* unused */
+	--weight-bold: 700; /* a few titles and numerals, until their v2 screen rows */
 	--weight-black: 800; /* unused */
 
 	--tracking-hero: -0.04em; /* numerals XL and L */

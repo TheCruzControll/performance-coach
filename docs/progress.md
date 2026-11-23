@@ -92,7 +92,7 @@ runs the criteria and updates milestones.md.
 - **Instrument v2 tokens (`v2/01a`).** The colours, surfaces, borders, spacing, radii and the theme
   colour follow Instrument v2 in `src/lib/ui/styles/tokens.css`, in dark and
   light; `docs/design-system.md` and `/design` show them. The 28 px gutter moves with the shell in `v2/03`: at 28 px the workout's
-  logger wraps its effort chips and grows over the exercise header, which `v2/10` redesigns. The rest of
+  logger grew over the exercise header, so v2/03 re-measures it (the effort chips now keep one line). The rest of
   the Instrument v2 rows are queued in `plan/queue.md` and wait on the tokens.
 - **Instrument v2 type (`v2/01b`).** Mona Sans sets all text and every numeral, Hubot Sans the one
   display line on a screen, and the mono and uppercase labels are gone (`src/lib/ui/styles/tokens.css`,
