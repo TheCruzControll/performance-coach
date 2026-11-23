@@ -294,26 +294,47 @@ describe('the line', () => {
 	const waiting: Resume = { type: 'waiting', pending: 3 };
 
 	it('says how many changes wait, resumes the workout by name, and names the other device’s', () => {
-		expect(lineFor({ type: 'waiting', pending: 1 }).text).toBe('1 change waiting to sync');
+		expect(lineFor({ type: 'waiting', pending: 1 }).before).toBe('1 change waiting to sync');
 		expect(lineFor(waiting)).toEqual({
-			text: '3 changes waiting to sync',
-			danger: false,
-			title: null
+			before: '3 changes waiting to sync',
+			title: null,
+			after: '',
+			danger: false
 		});
 		expect(lineFor(active)).toEqual({
-			text: 'Resume Full body',
-			danger: false,
-			title: 'Full body'
+			before: 'Resume ',
+			title: 'Full body',
+			after: '',
+			danger: false
 		});
 		expect(lineFor(elsewhere)).toEqual({
-			text: 'Full body is in progress on another device',
-			danger: false,
-			title: 'Full body'
+			before: '',
+			title: 'Full body',
+			after: ' is in progress on another device',
+			danger: false
 		});
 		expect(lineFor(elsewhere, true)).toEqual({
-			text: 'Couldn’t continue it here',
-			danger: true,
-			title: null
+			before: 'Couldn’t continue it here',
+			title: null,
+			after: '',
+			danger: true
+		});
+	});
+
+	it('keeps the title where the line puts it, even when the title is the line’s own word "Resume"', () => {
+		const resumed: Resume = { type: 'active', workout: { ...workout, title: 'Resume' } };
+		expect(lineFor(resumed)).toEqual({
+			before: 'Resume ',
+			title: 'Resume',
+			after: '',
+			danger: false
+		});
+		const elsewhereResume: Resume = { type: 'remote', workout: { ...remote, title: 'Resume' } };
+		expect(lineFor(elsewhereResume)).toEqual({
+			before: '',
+			title: 'Resume',
+			after: ' is in progress on another device',
+			danger: false
 		});
 	});
 

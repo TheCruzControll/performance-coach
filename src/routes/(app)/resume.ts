@@ -149,33 +149,47 @@ export async function continueHereFlow(
 	return outcome;
 }
 
-/** The resume line's words: the workout's title, where it names one, is a span of `text`. */
+/**
+ * The resume line's words, in three parts: the workout's title, where the line names one, sits
+ * between `before` and `after`. The line draws the title from its position, never by searching
+ * for it, so a title that repeats words of the line (a workout named "Resume") lands where it is.
+ */
 export interface ResumeLine {
-	text: string;
+	/** The words before the title; all of the line where it names no workout. */
+	before: string;
+	/** The workout's title, where the line names one. */
+	title: string | null;
+	/** The words after the title. */
+	after: string;
 	/** The line is the one red on the screen: 'Continue here' failed. */
 	danger: boolean;
-	title: string | null;
 }
 
 /** What the line says for `resume` (none: nothing); `failed` after a failed 'Continue here'. */
 export function lineFor(resume: Resume, failed = false): ResumeLine {
 	switch (resume.type) {
 		case 'active':
-			return { text: `Resume ${resume.workout.title}`, danger: false, title: resume.workout.title };
+			return { before: 'Resume ', title: resume.workout.title, after: '', danger: false };
 		case 'waiting': {
 			const changes = resume.pending === 1 ? 'change' : 'changes';
-			return { text: `${resume.pending} ${changes} waiting to sync`, danger: false, title: null };
+			return {
+				before: `${resume.pending} ${changes} waiting to sync`,
+				title: null,
+				after: '',
+				danger: false
+			};
 		}
 		case 'remote':
 			return failed
-				? { text: 'Couldn’t continue it here', danger: true, title: null }
+				? { before: 'Couldn’t continue it here', title: null, after: '', danger: true }
 				: {
-						text: `${resume.workout.title} is in progress on another device`,
-						danger: false,
-						title: resume.workout.title
+						before: '',
+						title: resume.workout.title,
+						after: ' is in progress on another device',
+						danger: false
 					};
 		default:
-			return { text: '', danger: false, title: null };
+			return { before: '', title: null, after: '', danger: false };
 	}
 }
 

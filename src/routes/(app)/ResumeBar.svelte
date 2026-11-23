@@ -63,8 +63,6 @@
 		)
 	);
 	const line = $derived(lineFor(resume, resumeState.failed));
-	/** Where the workout's title sits in the line: the span the specs read. */
-	const titleAt = $derived(line.title === null ? -1 : line.text.indexOf(line.title));
 
 	/** The screen it last looked for, once it has: what the specs wait for. */
 	let looked = $state<string | null>(null);
@@ -138,11 +136,10 @@
 </script>
 
 {#snippet words()}
-	<span class="text" data-danger={line.danger || undefined}>
-		{#if line.title === null}{line.text}{:else}{line.text.slice(0, titleAt)}<span
-				data-testid="resume-title">{line.title}</span
-			>{line.text.slice(titleAt + line.title.length)}{/if}
-	</span>
+	<span class="text" data-danger={line.danger || undefined}
+		>{line.before}{#if line.title !== null}<span data-testid="resume-title">{line.title}</span
+			>{line.after}{/if}</span
+	>
 {/snippet}
 
 {#snippet chevron()}
@@ -158,11 +155,8 @@
 					workout.stopwatch.startedAt === null
 						? startStopwatch(Date.parse(workout.startedAt))
 						: workout.stopwatch}
-				<a
-					class="main link"
-					href={resolve(workoutPath(workout.kind))}
-					aria-label={`Resume workout: ${workout.title}`}
-					data-testid="resume-link">{@render words()}</a
+				<a class="main link" href={resolve(workoutPath(workout.kind))} data-testid="resume-link"
+					>{@render words()}</a
 				>
 				<!-- Beside the link, not in it: the link's name holds all of its visible text. -->
 				<Stopwatch {stopwatch} />
@@ -243,7 +237,7 @@
 		text-decoration: none;
 	}
 
-	/* The whole row is the link: the chevron too. The time and the pill keep their own taps. */
+	/* The whole row is the link: the time, the pill and the chevron too. */
 	.link::after {
 		content: '';
 		position: absolute;
@@ -271,14 +265,12 @@
 	}
 
 	.resume-bar :global(.clock) {
-		position: relative;
 		flex: none;
 		font: var(--type-secondary);
 		color: var(--color-text-secondary);
 	}
 
 	.resume-bar :global(.sync) {
-		position: relative;
 		flex: none;
 		margin-left: 0;
 	}
