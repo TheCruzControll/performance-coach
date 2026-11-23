@@ -1,7 +1,8 @@
 /**
  * Goals with no goal yet, as the server renders it: the empty state asks "What are you training
  * for?" under its own heading on Profile, and leaves that heading out on onboarding's goals
- * step, whose title already asks it, so the step never shows the question twice.
+ * step, whose title already asks it, so the step never shows the question twice. Profile offers
+ * two ways in, onboarding three.
  */
 import { render } from 'svelte/server';
 import { describe, expect, it } from 'vitest';
@@ -44,6 +45,15 @@ describe('the goals editor with no goal yet', () => {
 
 	it('keeps its heading under a different title', () => {
 		expect(headings(empty('Your goals'))).toEqual([QUESTION]);
+	});
+
+	it('offers an event or a general goal on Profile, where goals are added one by one', () => {
+		const html = render(GoalsEditor, { props: { value: [], context, manage: true } }).body;
+		expect(html).toContain('data-testid="goal-path-event"');
+		expect(html).toContain('data-testid="goal-path-general"');
+		// Several at once stays in onboarding until v2/05; with no goal there is no past one.
+		expect(html).not.toContain('data-testid="goal-path-several"');
+		expect(html).not.toContain('data-testid="past-goals"');
 	});
 });
 

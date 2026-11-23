@@ -72,6 +72,11 @@ Last reviewed: 2026-11-23, against `main` at the merge of #634.
 - **Profile has no 'What the coach knows' or 'About this app' row yet (Paper draws both).** The
   coach's knowledge opens from Coach (`v2/20`), and About this app's contents stay on Profile, as
   a group of status rows, until `v2/22`. Found building `v2/21a`.
+- **Goals keeps the reorder arrows and the drag handle at each row's end, and the goal sheet is the
+  pre-v2 form.** Paper draws neither at rest and reorders by long press; the owner kept the arrows
+  (the keyboard's and VoiceOver's way) and the full form. Paper's goal action sheet and delete
+  confirm wait for `v2/22` (`src/lib/ui/profile/GoalsEditor.svelte`,
+  `src/lib/ui/profile/GoalSheet.svelte`).
 - **A taper splice's deload is judged by the tail's first range.** A taper spliced into a block
   (`splice` in `src/lib/domain/programming/periodisation/replan.ts`) gives the tail a new lineage,
   so the Strength view, the weekly review and the cycle review read the tail's own bands: its

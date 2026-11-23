@@ -1,6 +1,7 @@
 /**
- * Editing state for Profile → Goals, built from what the services return, and the line each goal
- * shows under its title. No Intl: a stored date needs no formatter, and building one is
+ * Editing state for Profile → Goals, built from what the services return, and the words a goal
+ * shows: when it is for on Goals, how it ended on Past goals, and the onboarding review's line
+ * under its title. No Intl: a stored date needs no formatter, and building one is
  * measurable hydration cost on a phone (docs/performance.md).
  */
 import type { Discipline, GoalStatus } from '#lib/domain/profile/catalog.ts';
@@ -94,6 +95,40 @@ export function goalSummary(goal: Goal): string {
 			: [goal.focus, goal.measure, goal.targetDate && `by ${shortIsoDate(goal.targetDate)}`];
 	return parts.filter(Boolean).join(' · ');
 }
+
+const MONTH_NAMES = [
+	'January',
+	'February',
+	'March',
+	'April',
+	'May',
+	'June',
+	'July',
+	'August',
+	'September',
+	'October',
+	'November',
+	'December'
+];
+
+/**
+ * A goal row's value on Goals: when it is for. An event's date, `14 Mar`, with the year when it
+ * is not `today`'s; a general goal's target, `By June` (or `By June 2028`); `Ongoing` without one.
+ * A paused goal says `Paused` instead. Callers pass the device's date after hydration.
+ */
+export function goalWhen(goal: Goal, today: Date): string {
+	if (goal.status === 'paused') return 'Paused';
+	const iso = goal.kind === 'event' ? goal.eventDate : goal.targetDate;
+	if (!iso) return 'Ongoing';
+	const [year, month, day] = iso.split('-').map(Number);
+	const thisYear = year === today.getFullYear();
+	if (goal.kind === 'event') return `${day} ${MONTHS[month! - 1]}${thisYear ? '' : ` ${year}`}`;
+	return `By ${MONTH_NAMES[month! - 1]}${thisYear ? '' : ` ${year}`}`;
+}
+
+/** A past goal's value on Past goals: achieved is done, anything else left is dropped. */
+export const pastWhen = (goal: Pick<Goal, 'status'>): string =>
+	goal.status === 'achieved' ? 'Done' : 'Dropped';
 
 /**
  * Whole weeks from `today` (the device's date) to a stored calendar date, rounded down: 0 in the

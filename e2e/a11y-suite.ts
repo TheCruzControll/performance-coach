@@ -21,6 +21,7 @@ export const SCREENS = [
 	'/profile/security',
 	'/profile/appearance',
 	'/profile/goals',
+	'/profile/goals/past',
 	'/profile/equipment',
 	'/profile/strength',
 	'/profile/experience',

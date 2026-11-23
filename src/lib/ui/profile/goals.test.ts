@@ -1,7 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { SCHEMAS, validate } from '#lib/domain/profile/schemas.ts';
 import type { Goal } from '#lib/domain/profile/types.ts';
-import { goalDraft, goalSummary, newGoal, shortIsoDate, weeksUntil, type GoalDraft } from './goals';
+import {
+	goalDraft,
+	goalSummary,
+	goalWhen,
+	newGoal,
+	pastWhen,
+	shortIsoDate,
+	weeksUntil,
+	type GoalDraft
+} from './goals';
 
 /** A goal as the services return it. */
 const stored = (fields: Partial<Goal> = {}): Goal => ({
@@ -192,6 +201,46 @@ describe('goalSummary', () => {
 			targetDate: '2027-06-30'
 		});
 		expect(goalSummary(general)).toBe('Deadlift strength · e1RM trend · by 30 Jun 2027');
+	});
+});
+
+describe('goalWhen', () => {
+	/** The device's date: 10 January 2027. */
+	const today = new Date(2027, 0, 10);
+	const general = (targetDate: string | null) =>
+		stored({
+			kind: 'general',
+			eventType: null,
+			eventDate: null,
+			weightClass: null,
+			focus: 'Deadlift strength',
+			measure: 'e1RM trend',
+			targetDate
+		});
+
+	it('gives an event’s day and month, and its year only when it is not this year’s', () => {
+		expect(goalWhen(stored({ eventDate: '2027-03-14' }), today)).toBe('14 Mar');
+		expect(goalWhen(stored({ eventDate: '2028-03-14' }), today)).toBe('14 Mar 2028');
+	});
+
+	it('gives a general goal’s target month, with the year only when it is not this year’s', () => {
+		expect(goalWhen(general('2027-06-30'), today)).toBe('By June');
+		expect(goalWhen(general('2028-01-31'), today)).toBe('By January 2028');
+	});
+
+	it('says Ongoing for a general goal without a date', () => {
+		expect(goalWhen(general(null), today)).toBe('Ongoing');
+	});
+
+	it('says Paused for a paused goal, whatever its date', () => {
+		expect(goalWhen(stored({ eventDate: '2027-03-14', status: 'paused' }), today)).toBe('Paused');
+	});
+});
+
+describe('pastWhen', () => {
+	it('says an achieved goal is done and a dropped one dropped', () => {
+		expect(pastWhen({ status: 'achieved' })).toBe('Done');
+		expect(pastWhen({ status: 'dropped' })).toBe('Dropped');
 	});
 });
 

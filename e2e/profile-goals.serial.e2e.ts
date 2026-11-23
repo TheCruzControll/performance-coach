@@ -1,10 +1,11 @@
 /**
- * Profile → Goals: event and general goals ranked by priority, added (one path per kind, or
- * several at once) and edited in a code-split sheet, each saved the moment it changes (the
- * screen has no Save bar); paused, achieved, dropped or deleted from the same sheet; moved up
- * or down the ranking with their arrows, or dragged by their handle. Serial (one test at a
- * time, after the functional suites): every test starts from a blank training profile, which
- * every browser and worker shares.
+ * Profile → Goals: event and general goals ranked by priority, each a row that says when it is
+ * for, added (one path per kind; several at once is onboarding's) and edited in a code-split
+ * sheet, each saved the moment it changes (the screen has no Save bar); paused, achieved,
+ * dropped or deleted from the same sheet, achieved and dropped ones listed on Past goals, one row
+ * away; moved up or down the ranking with their arrows, or dragged by their handle. Serial (one
+ * test at a time, after the functional suites): every test starts from a blank training profile,
+ * which every browser and worker shares.
  */
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -20,6 +21,8 @@ import {
 	toastWith,
 	trackConsoleErrors
 } from './support';
+import type { Goal } from '../src/lib/domain/profile/types';
+import { goalWhen } from '../src/lib/ui/profile/goals';
 
 const CLIENT = path.resolve(import.meta.dirname, '../.svelte-kit/output/client');
 
@@ -63,6 +66,9 @@ const STRENGTH = {
 	focus: 'Hold squat and deadlift',
 	measure: 'Top sets at RPE 8 stay within 5%'
 };
+
+/** What a goal's row says it is for, on today's date: so a 2027 date passes in any year. */
+const when = (goal: object) => goalWhen(goal as Goal, new Date());
 
 /** The editor has loaded in place of the skeleton. */
 async function editorReady(page: Page) {
@@ -133,8 +139,9 @@ test('event goals are added and edited from Profile, ranked, and still there aft
 	const rows = page.getByTestId('goal-row');
 	await expect(rows).toHaveCount(1);
 	await expect(rows.first()).toContainText('First Muay Thai fight');
-	await expect(rows.first()).toContainText('Top priority');
-	await expect(rows.first()).toContainText('Muay Thai fight · 14 Mar 2027 · −71 kg');
+	await expect(rows.first()).toContainText(when(FIGHT));
+	// Add a goal is a text link (Paper), underlined.
+	await expect(page.getByTestId('add-goal')).toHaveCSS('text-decoration-line', 'underline');
 
 	// A second goal is ranked below the first.
 	await page.getByTestId('add-goal').click();
@@ -149,8 +156,7 @@ test('event goals are added and edited from Profile, ranked, and still there aft
 	await expect(sheet).toBeHidden();
 	await expect(rows).toHaveCount(2);
 	await expect(rows.nth(1)).toContainText('Valencia marathon');
-	await expect(rows.nth(1)).toContainText('Marathon · 5 Dec 2027');
-	await expect(rows.nth(1)).not.toContainText('Top priority');
+	await expect(rows.nth(1)).toContainText(when(MARATHON));
 	await expect(rows.nth(0)).toHaveAccessibleName(/^Priority 1: First Muay Thai fight/);
 	await expect(rows.nth(1)).toHaveAccessibleName(/^Priority 2: Valencia marathon/);
 
@@ -167,7 +173,6 @@ test('event goals are added and edited from Profile, ranked, and still there aft
 	await sheet.getByRole('button', { name: 'Save goal' }).click();
 	await expect(sheet).toBeHidden();
 	await expect(rows.first()).toContainText('A-class Muay Thai fight');
-	await expect(rows.first()).toContainText('Top priority');
 	// Every change saved itself, so leaving asks nothing.
 	await page.getByTestId('back-to-profile').click();
 	await expect(page).toHaveURL('/profile');
@@ -212,7 +217,7 @@ test('event goals are added and edited from Profile, ranked, and still there aft
 	await editorReady(page);
 	await expect(rows).toHaveCount(2);
 	await expect(rows.first()).toContainText('A-class Muay Thai fight');
-	await expect(rows.first()).toContainText('Top priority');
+	await expect(rows.first()).toContainText(when(FIGHT));
 	await expect(rows.nth(1)).toContainText('Valencia marathon');
 	await page.evaluate(() => scrollTo(0, 0));
 	await captureScreen(page, testInfo, 'profile-goals');
@@ -229,10 +234,12 @@ test('a general goal saves only once it says what to improve and how it’s meas
 	const errors = trackConsoleErrors(page);
 	await gotoHydrated(page, '/profile/goals');
 	await editorReady(page);
-	// PRD §2's three ways in, each clear of the tab bar at rest.
+	// Two ways in on Profile (several at once is onboarding's), each clear of the tab bar at rest:
+	// the empty state sits at the top, not at the foot as Paper draws it.
 	const empty = page.getByTestId('goals-editor');
+	await expect(page.getByTestId('goal-path-several')).toHaveCount(0);
 	const nav = await page.getByRole('navigation', { name: 'Primary' }).boundingBox();
-	for (const name of [/^A specific event/, /^A general goal/, /^Several goals at once/]) {
+	for (const name of [/^A specific event/, /^A general goal/]) {
 		const way = empty.getByRole('button', { name });
 		await expect(way).toBeVisible();
 		const box = await way.boundingBox();
@@ -279,8 +286,7 @@ test('a general goal saves only once it says what to improve and how it’s meas
 	await expect(sheet).toBeHidden();
 	const row = page.getByTestId('goal-row');
 	await expect(row).toHaveCount(1);
-	await expect(row).toContainText('Top priority');
-	await expect(row).toContainText('Deadlift strength · e1RM trend · by 30 Jun 2027');
+	await expect(row).toContainText(when({ kind: 'general', targetDate: '2027-06-30' }));
 	expect(
 		await query(
 			`select kind, title, priority, focus, measure, target_date::text, event_type, event_date
@@ -349,8 +355,9 @@ test('switching an event goal to general clears its event fields in Postgres', a
 	await save.click();
 	await expect(sheet).toBeHidden();
 	const row = page.getByTestId('goal-row');
-	await expect(row).toContainText('Clinch strength · Sparring rounds without fading');
-	await expect(row).not.toContainText('−71 kg');
+	// No date any more: ongoing.
+	await expect(row).toContainText('Ongoing');
+	await expect(row).not.toContainText(when(FIGHT));
 	expect(
 		await query(
 			`select kind, title, priority, disciplines, focus, measure, target_date, event_type,
@@ -375,10 +382,11 @@ test('switching an event goal to general clears its event fields in Postgres', a
 	]);
 });
 
-test('several goals at once are added one by one and ranked 1 and 2 in the order they were added', async ({
+test('in onboarding, several goals at once are added one by one and ranked 1 and 2 in the order they were added', async ({
 	page
 }, testInfo) => {
-	await gotoHydrated(page, '/profile/goals');
+	// Profile adds one goal, then another (Paper); onboarding keeps the path until v2/05.
+	await gotoHydrated(page, '/onboarding/goals');
 	await editorReady(page);
 	await page.getByTestId('goal-path-several').click();
 	const sheet = sheetOf(page);
@@ -412,11 +420,9 @@ test('several goals at once are added one by one and ranked 1 and 2 in the order
 
 	await expect(rows).toHaveCount(2);
 	await expect(rows.nth(0)).toHaveAccessibleName(/^Priority 1: First Muay Thai fight/);
-	await expect(rows.nth(0)).toContainText('Top priority');
 	await expect(rows.nth(1)).toHaveAccessibleName(/^Priority 2: Keep my strength/);
-	await expect(rows.nth(1)).not.toContainText('Top priority');
 	await expect(page.getByTestId('goals-several-note')).toBeVisible();
-	await captureScreen(page, testInfo, 'profile-goals-several');
+	await captureScreen(page, testInfo, 'onboarding-goals-several');
 	expect(
 		await query(`select title, kind, priority from training_goals order by created_at`)
 	).toEqual([
@@ -480,7 +486,7 @@ test('offline, the sheet says it can’t reach the server and keeps the goal; on
 	await expect(page.getByTestId('goal-row')).toHaveCount(1);
 });
 
-test('a discipline of your own is named, and the goal shows it by that name', async ({ page }) => {
+test('a discipline of your own is named, and the goal keeps it by that name', async ({ page }) => {
 	await gotoHydrated(page, '/profile/goals');
 	await editorReady(page);
 	await page.getByTestId('goal-path-event').click();
@@ -499,9 +505,11 @@ test('a discipline of your own is named, and the goal shows it by that name', as
 	await name.fill('Bouldering');
 	await sheet.getByRole('button', { name: 'Save goal' }).click();
 	await expect(sheet).toBeHidden();
+	// The row says when it is for (no discipline chips); the sheet names it as it was named.
 	const row = page.getByTestId('goal-row').first();
-	await expect(row.getByText('Bouldering', { exact: true })).toBeVisible();
-	await expect(row.getByText('Custom', { exact: true })).toHaveCount(0);
+	await expect(row).toContainText(when({ kind: 'event', eventDate: '2027-05-01' }));
+	await row.click();
+	await expect(textbox(page, 'Name your discipline')).toHaveValue('Bouldering');
 	expect(await query('select disciplines, custom_discipline from training_goals')).toEqual([
 		{ disciplines: ['custom'], custom_discipline: 'Bouldering' }
 	]);
@@ -564,7 +572,7 @@ test('closing the sheet gives focus back to what opened it', async ({ page, requ
 	]);
 });
 
-test('a goal achieved leaves the ranking for Past goals and the rest move up; made active again, it goes last', async ({
+test('a goal achieved leaves the ranking for Past goals, one row away, and the rest move up; made active again there, it goes last', async ({
 	page,
 	request
 }, testInfo) => {
@@ -575,8 +583,8 @@ test('a goal achieved leaves the ranking for Past goals and the rest move up; ma
 	await gotoHydrated(page, '/profile/goals');
 	await editorReady(page);
 	const rows = page.getByTestId('goal-row');
-	const past = page.getByRole('region', { name: 'Past goals' });
-	const pastRows = past.getByTestId('past-goal-row');
+	const past = page.getByTestId('past-goals');
+	const pastRows = page.getByTestId('past-goal-row');
 	await expect(rows).toHaveCount(3);
 	await expect(past).toHaveCount(0);
 
@@ -592,14 +600,12 @@ test('a goal achieved leaves the ranking for Past goals and the rest move up; ma
 	await expect(sheet).toBeHidden();
 	await expect(rows).toHaveCount(2);
 	await expect(rows.nth(0)).toHaveAccessibleName(/^Priority 1: Valencia marathon/);
-	await expect(rows.nth(0)).toContainText('Top priority');
 	await expect(rows.nth(1)).toHaveAccessibleName(/^Priority 2: Keep my strength/);
-	await expect(pastRows).toHaveCount(1);
-	await expect(pastRows.first()).toContainText('First Muay Thai fight');
-	await expect(pastRows.first()).toContainText('Achieved');
-	await expect(pastRows.first()).toContainText('Muay Thai fight · 14 Mar 2027 · −71 kg');
+	// Past goals is a row at the foot of Goals, with how many there are.
+	await expect(past).toContainText('1');
+	await expect(past).toHaveAttribute('href', '/profile/goals/past');
 
-	// Paused keeps its rank, and says so.
+	// Paused keeps its rank, and says so where the row says when it is for.
 	await rows.nth(1).click();
 	await status.getByRole('radio', { name: 'Paused' }).check();
 	await save.click();
@@ -621,21 +627,32 @@ test('a goal achieved leaves the ranking for Past goals and the rest move up; ma
 	await page.reload();
 	await editorReady(page);
 	await expect(rows).toHaveCount(2);
-	await expect(rows.nth(0)).toContainText('Top priority');
+	await expect(rows.nth(0)).toContainText(when(MARATHON));
 	await expect(rows.nth(1)).toContainText('Paused');
+	await expect(past).toContainText('1');
+
+	// Past goals is its own screen: each goal says how it ended.
+	await past.click();
+	await expect(page).toHaveURL('/profile/goals/past');
+	await expect(page.getByRole('heading', { level: 1, name: 'Past goals' })).toBeVisible();
 	await expect(pastRows).toHaveCount(1);
-	await expect(pastRows.first()).toContainText('Achieved');
-	await page.evaluate(() => scrollTo(0, document.body.scrollHeight));
+	await expect(pastRows.first()).toContainText('First Muay Thai fight');
+	await expect(pastRows.first()).toContainText('Done');
 	await captureScreen(page, testInfo, 'profile-goals-past');
 
-	// Active again: back in the ranking, below the goals that stayed in it.
+	// Active again: it leaves Past goals, and is back in the ranking below the goals that stayed.
 	await pastRows.first().click();
 	await expect(sheet.getByRole('heading', { name: 'Edit goal' })).toBeVisible();
 	await expect(status.getByRole('radio', { name: 'Achieved' })).toBeChecked();
 	await status.getByRole('radio', { name: 'Active' }).check();
 	await captureScreen(page, testInfo, 'goal-sheet-status');
 	await save.click();
+	await expect(toastWith(page, 'Goal saved')).toBeVisible();
 	await expect(sheet).toBeHidden();
+	await expect(pastRows).toHaveCount(0);
+	await page.getByTestId('back-to-goals').click();
+	await expect(page).toHaveURL('/profile/goals');
+	await editorReady(page);
 	await expect(rows).toHaveCount(3);
 	await expect(rows.nth(2)).toHaveAccessibleName(/^Priority 3: First Muay Thai fight/);
 	await expect(past).toHaveCount(0);
@@ -734,9 +751,8 @@ test('deleting a goal takes a second tap that says it is for good; the goals bel
 	await expect(sheet).toBeHidden();
 	await expect(rows).toHaveCount(1);
 	await expect(rows.first()).toHaveAccessibleName(/^Priority 1: Valencia marathon/);
-	await expect(rows.first()).toContainText('Top priority');
 	// Deleted is not past: it is gone.
-	await expect(page.getByRole('region', { name: 'Past goals' })).toHaveCount(0);
+	await expect(page.getByTestId('past-goals')).toHaveCount(0);
 
 	await page.reload();
 	await editorReady(page);
@@ -782,8 +798,6 @@ test('a goal moves up the ranking by its arrow: the move is announced, and the o
 	await expect(status).toHaveText('Keep my strength is now priority 2 of 3');
 	await arrow(page, 'Keep my strength', 'up').click();
 	await expect(rows.first()).toHaveAccessibleName(/^Priority 1: Keep my strength/);
-	await expect(rows.first()).toContainText('Top priority');
-	await expect(rows.nth(1)).not.toContainText('Top priority');
 	await expect(status).toHaveText('Keep my strength is now priority 1 of 3');
 	await expect(arrow(page, 'Keep my strength', 'up')).toBeDisabled();
 	await expect(arrow(page, 'First Muay Thai fight', 'up')).toBeEnabled();
@@ -805,7 +819,6 @@ test('a goal moves up the ranking by its arrow: the move is announced, and the o
 	await page.reload();
 	await editorReady(page);
 	await expect(rows.first()).toHaveAccessibleName(/^Priority 1: Keep my strength/);
-	await expect(rows.first()).toContainText('Top priority');
 	await expect(rows.nth(1)).toHaveAccessibleName(/^Priority 2: First Muay Thai fight/);
 	await expect(rows.nth(2)).toHaveAccessibleName(/^Priority 3: Valencia marathon/);
 	expect(errors).toEqual([]);
@@ -922,9 +935,8 @@ test('a goal dragged by its handle up two rows becomes the top priority, and one
 	}
 	await raiseList(page);
 	const [first, second, third] = [await box(0), await box(1), await box(2)];
+	// Each row's step is measured (its height, plus the gap: none between hairline rows).
 	const gap = second.y - first.y - first.height;
-	// The badge and the summaries wrap: the rows are not all one height.
-	expect(Math.abs(first.height - third.height)).toBeGreaterThan(1);
 
 	// Let go less than half a row from where it was picked up: it stays where it was.
 	await lift(2, -20);
@@ -944,9 +956,7 @@ test('a goal dragged by its handle up two rows becomes the top priority, and one
 	await page.mouse.up();
 
 	await expect(rows.first()).toHaveAccessibleName(/^Priority 1: Keep my strength/);
-	await expect(rows.first()).toContainText('Top priority');
 	await expect(rows.nth(1)).toHaveAccessibleName(/^Priority 2: First Muay Thai fight/);
-	await expect(rows.nth(1)).not.toContainText('Top priority');
 	await expect(rows.nth(2)).toHaveAccessibleName(/^Priority 3: Valencia marathon/);
 	await expect(page.getByTestId('goal-order-status')).toHaveText(
 		'Keep my strength is now priority 1 of 3'
@@ -1087,8 +1097,9 @@ test('the page carries none of the editor’s styles: they arrive with the edito
 	await profileAction(request, '/profile/goals?/saveGoal', FIGHT);
 	await gotoHydrated(page, '/profile/goals');
 	await editorReady(page);
+	// Drawn as ListRow draws a row: 60 px at least, which an unstyled button is not.
 	const row = page.getByTestId('goal-row').first();
-	expect(await row.evaluate((el) => getComputedStyle(el).borderTopLeftRadius)).not.toBe('0px');
+	expect(await row.evaluate((el) => getComputedStyle(el).minHeight)).toBe('60px');
 });
 
 test.describe('with the network in the test’s hands', () => {
@@ -1150,7 +1161,6 @@ test.describe('with the network in the test’s hands', () => {
 		await expect(failed).toBeVisible();
 		await expect(failed).toHaveAttribute('data-tone', 'danger');
 		await expect(rows.first()).toHaveAccessibleName(/^Priority 1: First Muay Thai fight/);
-		await expect(rows.first()).toContainText('Top priority');
 		await expect(rows.nth(1)).toHaveAccessibleName(/^Priority 2: Valencia marathon/);
 		await expect(page.getByTestId('goal-order-status')).toHaveText('');
 		expect(await storedRanking()).toEqual([
@@ -1196,7 +1206,7 @@ for (const theme of ['dark', 'light'] as const) {
 		);
 		await gotoHydrated(page, '/profile/goals');
 		await editorReady(page);
-		await expect(page.getByTestId('goal-path-several')).toBeVisible();
+		await expect(page.getByTestId('goal-path-general')).toBeVisible();
 		const audit = async () => {
 			await page.evaluate(() => document.fonts.ready);
 			await page.waitForTimeout(400);
@@ -1218,7 +1228,7 @@ for (const theme of ['dark', 'light'] as const) {
 		await page.reload();
 		await editorReady(page);
 		await expect(page.getByTestId('goal-row')).toHaveCount(2);
-		await expect(page.getByTestId('past-goal-row')).toHaveCount(2);
+		await expect(page.getByTestId('past-goals')).toContainText('2');
 		expect(await audit(), 'list').toEqual([]);
 		await page.getByTestId('goal-row').first().click();
 		const sheet = sheetOf(page);
@@ -1232,5 +1242,13 @@ for (const theme of ['dark', 'light'] as const) {
 		await sheet.getByRole('radio', { name: 'General' }).click();
 		await expect(textbox(page, 'What to improve')).toBeVisible();
 		expect(await audit(), 'general').toEqual([]);
+
+		// Past goals, on its own screen: one done, one dropped.
+		await gotoHydrated(page, '/profile/goals/past');
+		const pastRows = page.getByTestId('past-goal-row');
+		await expect(pastRows).toHaveCount(2);
+		await expect(pastRows.filter({ hasText: 'Keep my strength' })).toContainText('Done');
+		await expect(pastRows.filter({ hasText: 'Spring smoker' })).toContainText('Dropped');
+		expect(await audit(), 'past').toEqual([]);
 	});
 }
