@@ -339,7 +339,7 @@
 		<Surface padding="lg" radius="xl">
 			<div class="fields">
 				<ChoiceGroup
-					legend="How long have you been running?"
+					legend="How long have you been lifting?"
 					variant="card"
 					bind:value={years}
 					options={[

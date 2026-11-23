@@ -281,7 +281,7 @@
 		/* After the shorthand, which resets the numerals' variant. */
 		font-variant-numeric: lining-nums tabular-nums;
 		text-align: center;
-		caret-color: var(--color-accent);
+		caret-color: var(--color-accent-ring);
 	}
 
 	.value:focus-visible {

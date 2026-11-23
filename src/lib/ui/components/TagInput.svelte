@@ -210,6 +210,17 @@
 		overflow-wrap: anywhere;
 	}
 
+	/* The remove button is a ghost, whose hover and press tint is surface-2: on this surface-2 tag
+	   that tint would not show, so it steps to surface-3 instead. */
+	@media (hover: hover) and (pointer: fine) {
+		.tag :global(.icon-btn:hover:not(:disabled)) {
+			background: var(--color-surface-3);
+		}
+	}
+	.tag :global(.icon-btn:active:not(:disabled)) {
+		background: var(--color-surface-3);
+	}
+
 	/* Quieter than the items: text buttons whose labels line up with the field's edge. */
 	.offered {
 		margin-inline-start: calc(var(--space-4) * -1);

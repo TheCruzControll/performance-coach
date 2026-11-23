@@ -314,7 +314,7 @@ test.describe('/design → Inputs: choices and days', () => {
 		await expect(value).toHaveText('value: ["hypertrophy"]');
 	});
 
-	test('a selected card shows a filled mark, and card errors are announced until one is picked', async ({
+	test('a selected card shows a check, and card errors are announced until one is picked', async ({
 		page
 	}, testInfo) => {
 		await openInputs(page);
@@ -867,7 +867,7 @@ for (const theme of ['dark', 'light'] as const) {
 			page
 		}) => {
 			await openInputsIn(page, theme);
-			const list = page.getByRole('group', { name: 'How long have you been running?' });
+			const list = page.getByRole('group', { name: 'How long have you been lifting?' });
 			const faces = list.locator('.face');
 			await expect(faces).toHaveCount(4);
 			const hairline = await tokenColor(page, '--color-hairline');
@@ -906,10 +906,12 @@ for (const theme of ['dark', 'light'] as const) {
 			await expect(tuesday).toBeChecked();
 			expect(await styleOf(faceOf(tuesday), 'backgroundColor')).toBe(c.inverse);
 
+			// Toggled from the keyboard, then polled: the track's colour transitions after the state flips.
 			const home = page.getByRole('switch', { name: 'I also train at home' });
-			await home.click();
+			await home.focus();
+			await page.keyboard.press('Space');
 			await expect(home).toBeChecked();
-			expect(await styleOf(faceOf(home), 'backgroundColor')).toBe(c.inverse);
+			await expect.poll(() => styleOf(faceOf(home), 'backgroundColor')).toBe(c.inverse);
 
 			for (const control of [intermediate, tuesday, home])
 				expect(await styleOf(faceOf(control), 'backgroundColor')).not.toBe(AMBER_FILL);

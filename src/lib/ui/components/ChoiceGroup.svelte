@@ -148,8 +148,7 @@
 	.legend {
 		margin-bottom: var(--space-2);
 		padding: 0;
-		font-size: var(--text-sm);
-		font-weight: var(--weight-medium);
+		font: var(--type-secondary);
 		color: var(--color-text-secondary);
 	}
 
