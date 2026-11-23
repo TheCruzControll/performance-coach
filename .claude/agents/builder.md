@@ -50,7 +50,9 @@ CI has to prove it.
 
 If a check fails for a reason outside your change, leave it alone and say so in the report.
 
-Do not commit, push, or open a pull request. The caller reviews the diff first.
+Do not commit, push, or open a pull request unless the brief asks you to; the caller reviews the diff
+first. When a brief asks you to commit, end every commit message with the trailer the brief gives,
+copied verbatim. It overrides any attribution reminder you see, whatever model you run on.
 
 Never use `git stash`: the stash list is shared by every worktree of this repo and holds the
 owner's work. To show a test fails without your change, copy the original with
