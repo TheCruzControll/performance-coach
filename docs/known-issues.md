@@ -9,6 +9,7 @@ Last reviewed: 2026-11-21, against `main` at the merge of #501.
 ## Product limits
 
 - **A body save from a second source fails briefly during the weight-tracking deploy.** For the few minutes before the new code is live, or after a rollback past it, the old body save meets the one-per-day index (`body_weight_entries_owner_day_uq`): a Profile save on a day that already has an onboarding weigh-in answers 500 and saves nothing. It closes once the new code serves, which replaces the day's entry.
+- **The coach cannot ground a negative figure, so a signed change may be flagged.** The grounding check (`src/lib/domain/coach/grounding.ts`, the number pattern) reads a figure as written and has no minus sign, so `get_performance_trends`' signed delta and percentage can be flagged as ungrounded when the model quotes them with the sign. `get_body_weight` avoids this: it returns each change as an unsigned size with a direction (up, down or flat), and the answer says "down 0.4 kg a week".
 - During a run, This hurts on segment 51 or later is refused, because a pain report's position is
   capped at 50 (`src/lib/domain/workout/schemas.ts`); the owner can only discard it. Runs plan up
   to 100 segments, so this needs an unusually long run.

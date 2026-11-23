@@ -26,6 +26,7 @@ export const SOURCE_TYPE_LABEL = {
 	exercise: 'Exercise',
 	pain_report: 'Pain report',
 	weight: 'Weigh-in',
+	weight_goal: 'Weight goal',
 	date: 'Date'
 };
 export type SourceType = keyof typeof SOURCE_TYPE_LABEL;
@@ -120,9 +121,9 @@ function isReviewKey(id: string): boolean {
 /**
  * Where a source goes: History for logged records, Train for the plan and its versions, Profile
  * for goals, baselines and preferences, the inbox for a proposal, the review's page for a review
- * (by its key, and nothing else), M4's exercise-history sheet for an exercise, and Progress for a
- * weigh-in (its Weight view's own address, ?view=weight, comes with that view). Decisions, notes and
- * dates have no screen of their own (null).
+ * (by its key, and nothing else), M4's exercise-history sheet for an exercise, and Progress's Weight
+ * view (?view=weight) for a weigh-in or the weight goal. Decisions, notes and dates have no screen
+ * of their own (null).
  */
 export function sourceAction(ref: SourceRef): SourceAction | null {
 	const id = segment(ref.id);
@@ -149,7 +150,8 @@ export function sourceAction(ref: SourceRef): SourceAction | null {
 		case 'review':
 			return isReviewKey(ref.id) ? link(`/progress/reviews/${ref.id}`) : null;
 		case 'weight':
-			return link('/progress');
+		case 'weight_goal':
+			return link('/progress?view=weight');
 		case 'exercise':
 			return { kind: 'exercise_history', exerciseId: ref.id };
 		default:

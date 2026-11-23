@@ -268,7 +268,7 @@ Each is `defineTool({name, description, input, output, run})` (`agent/tools/defi
 - Failures are `is_error` results: `UNKNOWN_TOOL`, `INVALID_INPUT` (the tool never runs),
   `TIMEOUT`, `CANCELLED`, `NOT_FOUND`, `CONFLICT`, `TOO_LARGE`, and a logged, generic `INTERNAL`.
 
-`agent/tools/registry.ts` builds `COACH_TOOLS` from one file per group (programming in two),
+`agent/tools/registry.ts` builds `COACH_TOOLS` from one file per group (programming in three files, analytics in two),
 sorted by name; a tool outside the catalogue or its group's file throws, and
 `registry-complete.test.ts` proves all 30 are registered. Three tools draft their payload with a
 structured-output call (`agent/proposals/draft.ts`, effort high, `DRAFTER_PROMPT`), so their

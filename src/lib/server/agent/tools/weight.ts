@@ -103,20 +103,24 @@ const weightOutput = z.union([
 			change: nullableMovement
 		}),
 		logBook: z.array(logRowSchema).check(z.maxLength(FACTS_LOG_ROWS)),
-		goal: z.nullable(goalSchema)
+		goal: z.nullable(goalSchema),
+		/** capOutput may shorten the log book (a top-level list) past the 8 KB cap. */
+		truncated: z.optional(z.literal(true))
 	}),
 	z.object({ status: z.literal('insufficient_data'), reason: z.literal('no_weigh_ins') })
 ]);
 
-/** A weigh-in's source: its day, which the Weight view's log book shows. */
-const weighIn = (on: IsoDate): SourceRef => ({
-	type: 'weight',
-	id: on,
-	date: on,
-	label: `Weigh-in ${on}`
+/**
+ * A weigh-in's source: its id is its day. No label or date, so a weigh-in ref stays short (the
+ * worst case, 14 log rows and 24 milestones, is well under the output cap).
+ */
+const weighIn = (on: IsoDate): SourceRef => ({ type: 'weight', id: on });
+/** The active goal's source: its id is the goal's, and it reads as a weight goal. */
+const goalSource = (id: string): SourceRef => ({
+	type: 'weight_goal',
+	id,
+	label: 'Weight goal'
 });
-/** The active goal's source. */
-const goalSource = (id: string): SourceRef => ({ type: 'weight', id, label: 'Weight goal' });
 
 /** Which way a change went; a change of nothing is flat. */
 const directionOf = (change: number): 'up' | 'down' | 'flat' =>
@@ -243,7 +247,7 @@ export function weightOutputOf(facts: WeightFacts) {
 const getBodyWeightTool = defineTool({
 	name: 'get_body_weight',
 	description:
-		"The owner's body weight, computed by code in their unit (kg or lb): the smoothed trend (each day moves a tenth of the way toward that day's weigh-in, so one odd day barely moves it), the newest weigh-in, whether the trend is stale (no weigh-in for over a week), the trend's change per week over 28 days, the highest, lowest and the change over the last 30 days, the newest 14 weigh-ins with their trend and change, and the active goal: its direction, start, target and target day, the verdict today (on_track; ahead when the trend is further toward the target than the goal line; behind when it is not; each within a tolerance; no_data with too few weigh-ins), the gap to the goal line, the change per week needed and achieved, percent done, distance and days left, the next milestone and every milestone with its status (hit, missed, ahead, on_track, behind). A change is given as its size, never signed, and its direction (up, down or flat): say it in words, such as 'down 0.4 kg a week', never with a minus sign. A computed figure has its value, unit, method (put it in the [metric method=…] tag) and sources; a recorded weigh-in is a fact with its source. Say a rate or a verdict only as the output states it, and never state a figure that is null. status insufficient_data means no weigh-in has been logged: say so, never a zero.",
+		"The owner's body weight, computed by code in their unit (kg or lb): the smoothed trend (each day moves a tenth of the way toward that day's weigh-in, so one odd day barely moves it), the newest weigh-in, whether the trend is stale (no weigh-in for over a week), the trend's change per week over 28 days, the highest, lowest and the change over the last 30 days, the newest 14 weigh-ins with their trend and change, and the active goal: its direction, start, target and target day, the verdict today (on_track; ahead when the trend is further toward the target than the goal line; behind when it is not; each within a tolerance; no_data with too few weigh-ins), the gap to the goal line, the change per week needed and achieved, percent done, distance and days left, the next milestone and every milestone with its status (hit, missed, ahead, on_track, behind, no_data). A change is given as its size, never signed, and its direction (up, down or flat): say it in words, such as 'down 0.4 kg a week', never with a minus sign. A computed figure has its value, unit, method (put it in the [metric method=…] tag) and sources; a recorded weigh-in is a fact with its source. Say a rate or a verdict only as the output states it, and never state a figure that is null. status insufficient_data means no weigh-in has been logged: say so, never a zero.",
 	input: z.object({}),
 	output: weightOutput,
 	run: async (_input, ctx: Ctx) =>

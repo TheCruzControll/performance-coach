@@ -15,12 +15,15 @@
 import { eq } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
 import * as z from 'zod/mini';
+import { addDays } from '../../../src/lib/domain/calendar';
+import { TURN_LIMITS } from '../../../src/lib/domain/coach/budgets';
 import { convertWeight } from '../../../src/lib/domain/units';
 import { weightScripts } from '../../../src/lib/server/agent/provider/mock-scripts/weight';
 import { toolContext } from '../../../src/lib/server/agent/tools/context';
 import type { CoachTool } from '../../../src/lib/server/agent/tools/define';
 import { executeToolCalls } from '../../../src/lib/server/agent/tools/execute';
-import { WEIGHT_TOOLS } from '../../../src/lib/server/agent/tools/weight';
+import { capOutput } from '../../../src/lib/server/agent/tools/output';
+import { WEIGHT_TOOLS, weightOutputOf } from '../../../src/lib/server/agent/tools/weight';
 import { agentToolCalls, createWeightRepository, type Executor } from '../../../src/lib/server/db';
 import { toolRuntime, type ResolvedCoachDeps } from '../../../src/lib/server/services/coach/shared';
 import { saveBasics } from '../../../src/lib/server/services/profile';
@@ -219,7 +222,7 @@ describe('the coach reads the owner’s weight', () => {
 			const status = view.goal!.status;
 			expect(out.goal!.verdict).toBe(status.verdict);
 			expect(out.goal!.milestones).toEqual(view.goal!.milestones);
-			expect(out.goal!.source).toEqual({ type: 'weight', id, label: 'Weight goal' });
+			expect(out.goal!.source).toEqual({ type: 'weight_goal', id, label: 'Weight goal' });
 			if (status.verdict === 'no_data') throw new Error('the goal has weigh-ins');
 			expect(out.goal!.gap?.value).toBe(status.gap);
 			expect(out.goal!.requiredRate).toMatchObject(movementOf(status.requiredRate!));
@@ -238,19 +241,14 @@ describe('the coach reads the owner’s weight', () => {
 			await seed(db, owner);
 			const id = await goal(db, owner);
 			const out = await readWeight(db, owner);
-			const latest = {
-				type: 'weight',
-				id: '2026-11-10',
-				date: '2026-11-10',
-				label: 'Weigh-in 2026-11-10'
-			};
+			const latest = { type: 'weight', id: '2026-11-10' };
 
 			expect(out.latest.source).toEqual(latest);
 			expect(out.trend.method).toMatch(/\S/);
 			expect(out.trend.sources).toEqual([latest]);
 			expect(out.weeklyRate?.sources).toEqual([latest]);
 			expect(out.goal!.gap!.sources).toEqual([
-				{ type: 'weight', id, label: 'Weight goal' },
+				{ type: 'weight_goal', id, label: 'Weight goal' },
 				latest
 			]);
 			const methods = [out.trend, out.weeklyRate, out.stats.change, out.goal!.gap].flatMap((m) =>
@@ -287,6 +285,52 @@ describe('the coach reads the owner’s weight', () => {
 			expect(out.trend.value).toBe(facts.trend);
 			expect(out.goal!.gap!.unit).toBe('lb');
 			expect(out.goal!.startWeight).toBeCloseTo(88 / 0.45359237, 1);
+		});
+	});
+
+	it('stays under the tool output cap in the worst case: an lb owner, 14 log rows and 24 milestones', async () => {
+		await withRollback(async (db) => {
+			const owner = await makeOwner(db);
+			await saveBasics(owner, { name: 'Niko', weightUnit: 'lb', distanceUnit: 'km' }, { db });
+			// Twenty-seven daily weigh-ins in pounds, with two decimals each, so no figure is short.
+			for (let i = 0; i < 27; i++) {
+				const measuredOn = addDays('2026-10-15', i);
+				const value = Math.round((190.5 - i * 0.12 + (i % 3) * 0.37) * 100) / 100;
+				await logWeight(owner, { value, unit: 'lb', measuredOn }, { db, now: NOW });
+			}
+			const repo = createWeightRepository(db);
+			const active = await repo.insertGoal({
+				ownerId: owner,
+				unit: 'lb',
+				startOn: '2026-09-01',
+				startWeight: 200.25,
+				targetOn: '2026-12-31',
+				targetWeight: 180.75,
+				source: 'log',
+				createdAt: new Date('2026-09-01T09:00:00Z'),
+				updatedAt: new Date('2026-09-01T09:00:00Z')
+			});
+			// Twenty-four milestones, one every five days from 6 September, all between start and target.
+			await repo.replaceMilestones(
+				owner,
+				active.id,
+				Array.from({ length: 24 }, (_, k) => ({
+					onDate: addDays('2026-09-06', k * 5),
+					weight: Math.round((199.1 - k * 0.7) * 100) / 100,
+					source: 'generated' as const
+				})),
+				NOW()
+			);
+
+			const facts = await getWeightFacts(owner, TODAY, { db });
+			expect(facts.logBook).toHaveLength(14);
+			expect(facts.goal!.milestones).toHaveLength(24);
+			const output = weightOutputOf(facts);
+			const capped = capOutput(output);
+			const bytes = new TextEncoder().encode(capped.json).length;
+			expect(bytes).toBeLessThan(TURN_LIMITS.toolOutputBytes);
+			expect(capped.truncated).toBe(false);
+			expect(z.safeParse(TOOL.outputSchema, capped.value).success).toBe(true);
 		});
 	});
 

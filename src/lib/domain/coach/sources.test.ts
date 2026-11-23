@@ -26,7 +26,8 @@ const EXPECTED: Record<SourceType, SourceAction | null> = {
 	note: null,
 	exercise: { kind: 'exercise_history', exerciseId: 'w1' },
 	pain_report: { kind: 'link', href: '/progress/workouts/wk9' },
-	weight: { kind: 'link', href: '/progress' },
+	weight: { kind: 'link', href: '/progress?view=weight' },
+	weight_goal: { kind: 'link', href: '/progress?view=weight' },
 	date: null
 };
 
@@ -135,8 +136,11 @@ describe('sourceAction', () => {
 				expect(action.href, `${type} ${JSON.stringify(id)}`).toMatch(/^\/[a-z]/);
 				const url = new URL(action.href, base);
 				expect(url.origin).toBe(base);
-				expect(url.pathname.split('/').slice(0, 3)).toEqual(action.href.split('/').slice(0, 3));
-				expect(url.search + url.hash).toBe('');
+				const path = action.href.split('?')[0]!;
+				expect(url.pathname.split('/').slice(0, 3)).toEqual(path.split('/').slice(0, 3));
+				expect(url.hash).toBe('');
+				// The one query a link may carry is the Weight view's.
+				expect(url.search).toBe(action.href === '/progress?view=weight' ? '?view=weight' : '');
 			}
 		}
 	});
