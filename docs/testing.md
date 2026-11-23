@@ -393,7 +393,8 @@ The desktop specs (most also run axe and take screenshots in both themes):
   taking focus; the review in two columns, its Edit returning to it.
 - `train-desktop.serial.e2e.ts`: Train readable. The top line, the week's lines, its one line
   and More share the column's left edge, nothing right of it; a line's hover and focus ring, Tab
-  from the arrows through each session to the week's line and More; the plan as a centred dialog.
+  from the arrows through each session to the week's line and More; the week's note and More as
+  the right-hand panel, and the plan as a centred dialog over More.
   Every designed state at the column's top: a week loading (`expectNoShift`), a failed load and
   Try again, offline, no program, rest day, not started, beyond the plan, block complete, and both
   lazy chunks failing with Retry under their rows in More.
@@ -985,11 +986,11 @@ The Train week, the plan overview, session detail and the edit sheets.
   aria-disabled); both pass axe in dark and light. `e2e/a11y-suite.ts` audits the Plan tab in both
   themes.
 - **Train week** (`e2e/train-week.serial.e2e.ts`, Chromium + WebKit, `PROGRAM_TZ`, hybrid and
-  one-week fixtures): one line per session on its day, Rest lines, week 1's brief behind the
-  week's one line, the tools behind More, week navigation with ?week and focus kept (arrows, Back
+  one-week fixtures): one line per session on its day, Rest lines, week 1's brief in the sheet the
+  week's one line opens, the tools in More's sheet, week navigation with ?week and focus kept (arrows, Back
   to this week and the state's link), the pending week (aria-busy, dimmed, no layout shift), the shell's error view when a week's data answers 500, offline, ?week=99 and ?week=abc,
   not started, first block complete, no program, 1440 × 900 (the readable column, 60 px lines,
-  More under a hairline), axe dark and light.
+  More under a hairline, More the right-hand panel), axe dark and light.
   `tests/integration/training/train-load.test.ts`: `loadTrainWeek`'s current and asked weeks,
   malformed ?week, not planned, block complete, no program with an incomplete and a complete
   profile, the week's words composed on the server (its place, title, status and lines), the fail-soft error payload recorded as a server
@@ -1435,9 +1436,11 @@ by integration tests and the three e2e specs below.
 ### End to end (Playwright, serial)
 
 - `e2e/train-findings.serial.e2e.ts`: the periodisation week on Train. The heads-up on the moved
-  session and on Tuesday's, listed once behind the week's one line, matches the evaluation computed
-  in SQL (`e2e/periodisation-support.ts`, `weekEvaluation`), 'No clashes this week' shows when there
-  are none, and it works without JavaScript. It runs on the iPhone, and one test in a desktop window (`DESKTOP`).
+  session and on Tuesday's, listed once in the week's note (the sheet its one line opens), matches
+  the evaluation computed in SQL (`e2e/periodisation-support.ts`, `weekEvaluation`), 'No clashes
+  this week' shows as a plain line when there are none, and the line renders without JavaScript
+  (the note needs it). It runs on the iPhone, and one test in a desktop window (`DESKTOP`), where
+  the note is the right-hand panel.
 - `e2e/design-program.e2e.ts`: the week finding and 'Why Saturday?' on `/design` → Plan.
 - `e2e/reviews-sections.serial.e2e.ts`: the hard sparring's conflict in a weekly review shows its
   why, judged by M7's evaluator.

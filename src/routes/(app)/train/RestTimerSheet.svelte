@@ -65,7 +65,7 @@
 	};
 
 	/** Skip, or Dismiss once over: the focus moves on to what starts the next rest, or to More when
-	 * its list, which holds that row, is closed. */
+	 * its sheet, which holds that row, is closed. */
 	async function clear() {
 		keep(null);
 		await tick();

@@ -45,10 +45,6 @@ Last reviewed: 2026-11-23, against `main` at the merge of #634.
 - **Train on desktop shows the week alone.** Paper's board 11 puts the picked session in a column
   at the right of the week; `v2/07a1` leaves that column out, so a session opens on its own page.
   Closes when v2/08 builds the session's page and its desktop column.
-- **Train's week note and More open in place, not as sheets, until `v2/07a2`.** The one line
-  under the week and the More row are native disclosures in the column (`src/routes/(app)/train/+page.svelte`);
-  Paper draws both as sheets (a right-hand panel from 1024 px). Closes when `v2/07a2` adds the More
-  sheet and the week-note sheet.
 - **`ListRow` still takes `icon` and `tone`, and draws neither.** v2 rows have no icon tiles, so
   both props are deprecated and accepted for the screens that still pass them.
   Closes when the last screen row drops them and `src/lib/ui/components/ListRow.svelte` removes them.

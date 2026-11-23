@@ -226,6 +226,9 @@ milestones.md.
   `desktop="panel"` as a full-height 496 px panel at the right (no caller yet; `/design` →
   Feedback shows one). The workout keeps its 640 px column until `v2/10`. The e2e run is CI's to
   prove.
+- **Instrument v2 Train More and week note (`v2/07a2`).** More and the week's one line open lazy
+  sheets (`MoreSheet`, `WeekNoteSheet`; the right-hand panel from 1024 px) in place of 07a1's
+  in-place disclosures, each tool opening over More; the e2e run is CI's to prove.
 - **Instrument v2 Train week (`v2/07a1`).** Train shows the week's place ("Week 3 of 14 ·
   Build") with two arrows, its title ("This week") and what is done, then one 60 px line per
   session from `WeekLines` (a day off says Rest), each linking to its session. The week's one line

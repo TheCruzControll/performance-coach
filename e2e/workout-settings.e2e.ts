@@ -14,7 +14,7 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import type { StrengthKit } from '../src/lib/domain/workout';
-import { openMore } from './program-support';
+import { moreSheet, openMore } from './program-support';
 import { captureScreen } from './support';
 import { gotoWorkout, seedWorkout, workoutDay } from './workout-support';
 
@@ -265,7 +265,7 @@ test.describe("Train's rest timer", () => {
 		await expect(sheet(page).getByTestId('rest-time')).toHaveText('1:10');
 		expect(await stored(page, 'pc:rest:v1')).toMatchObject({ durationMs: 90_000, pausedAt: null });
 
-		// Closed, it runs on Train, below More.
+		// Closed, it runs on Train, below More (whose sheet stays open over it until closed).
 		await page.keyboard.press('Escape');
 		await expect(sheet(page)).toBeHidden();
 		await expect(inline(page).getByTestId('rest-time')).toHaveText('1:10');
@@ -293,9 +293,20 @@ test.describe("Train's rest timer", () => {
 		await expect(inline(page).getByTestId('rest-time')).toHaveText('1:00');
 		expect(new URL(page.url()).pathname).toBe('/train');
 
+		// More, which the timer opened over, closes too; then Skip on Train hands the focus to
+		// More, whose sheet holds the timer's row.
+		await page.keyboard.press('Escape');
+		await expect(moreSheet(page)).toBeHidden();
+		// Chromium closes More itself on this second Escape (no activation since the first, so its
+		// cancel cannot be prevented): the sheet still lets the page scroll again.
+		await expect
+			.poll(() => page.evaluate(() => document.documentElement.style.overflow), {
+				message: 'the page scrolls again'
+			})
+			.toBe('');
 		await inline(page).getByRole('button', { name: 'Skip' }).click();
 		await expect(inline(page)).toHaveCount(0);
-		await expect(row(page)).toBeFocused();
+		await expect(page.getByTestId('open-more')).toBeFocused();
 		expect(await stored(page, 'pc:rest:v1')).toBeNull();
 		await page.reload();
 		await page.waitForLoadState('networkidle');
@@ -343,7 +354,11 @@ test.describe("Train's rest timer", () => {
 			if (theme === 'dark') await captureScreen(page, testInfo, 'train-rest-timer');
 			await page.keyboard.press('Escape');
 			await expect(inline(page)).toBeVisible();
-			expect(await audit(page), 'under its row').toEqual([]);
+			expect(await audit(page), 'under its row, More open').toEqual([]);
+			await page.keyboard.press('Escape');
+			await expect(moreSheet(page)).toBeHidden();
+			await expect(inline(page)).toBeVisible();
+			expect(await audit(page), 'on Train, under More').toEqual([]);
 		});
 	}
 });

@@ -4,7 +4,8 @@
  * session, the week's one line and More stand in the 560 px column, 200 px from the rail, and every
  * designed state keeps that frame at the column's top: a week loading, a failed load, offline, no
  * program, a rest day, not started, beyond the plan, the first block complete, and the plate
- * calculator's and plan's chunks failing (their notices under their rows in More). The picked
+ * calculator's and plan's chunks failing (their notices under their rows in More). The week's note
+ * and More open as the right-hand panel, and a tool as a centred dialog over it. The picked
  * session's column at the right arrives with v2/08. Serial: programs are the one owner's
  * (e2e/program-support.ts).
  */
@@ -27,11 +28,14 @@ import {
 } from './desktop';
 import {
 	dayLines,
+	expectRightPanel,
 	lineDay,
+	moreSheet,
 	openMore,
 	PROGRAM_TZ,
 	seedProgram,
 	sessionLine,
+	sheetPanel,
 	type SeededProgram
 } from './program-support';
 import {
@@ -196,11 +200,22 @@ test.describe('a program this week', () => {
 		await page.setViewportSize(DESKTOP.viewport);
 		await auditBothThemes(page, testInfo, 'week');
 
-		// More opens its rows in the column; the plan overview opens as a centred dialog.
+		// The week's line opens its note as the right-hand panel, the week in view beside it.
+		await page.getByTestId('week-line').click();
+		await expectRightPanel(page.getByTestId('week-note'));
+		await page.keyboard.press('Escape');
+		await expect(page.getByTestId('week-note')).toBeHidden();
+
+		// More is the right-hand panel too; the plan overview opens over it as a centred dialog.
 		await openMore(page);
-		await expectSameLeft([lines(page), page.getByTestId('more-tools')]);
-		await page.getByTestId('open-plan').click();
+		await expectRightPanel(moreSheet(page));
+		expect((await boxOf(sheetPanel(moreSheet(page)))).x, 'the week in view').toBeGreaterThanOrEqual(
+			(await boxOf(lines(page))).x + (await boxOf(lines(page))).width - 1
+		);
+		await captureScreen(page, testInfo, 'train-desktop-more');
+		await moreSheet(page).getByTestId('open-plan').click();
 		await expectCentredDialog(page, page.getByRole('dialog', { name: 'Your plan' }));
+		await expect(moreSheet(page)).toBeVisible();
 		await captureScreen(page, testInfo, 'train-desktop-plan');
 		expect(errors).toEqual([]);
 	});
@@ -422,12 +437,12 @@ test.describe('the lazy sheets’ chunks failing', () => {
 		await page.unrouteAll({ behavior: 'ignoreErrors' });
 	});
 
-	/** The notice lies under `row`, inside More's list. */
+	/** The notice lies under `row`, inside More's panel. */
 	async function expectUnder(page: Page, notice: Locator, row: Locator) {
 		const [box, opener, list] = [
 			await boxOf(notice),
 			await boxOf(row),
-			await boxOf(page.getByTestId('more-tools'))
+			await boxOf(sheetPanel(moreSheet(page)))
 		];
 		expect(box.y, `under ${row}`).toBeGreaterThanOrEqual(opener.y + opener.height - 1);
 		expect(box.x).toBeGreaterThanOrEqual(list.x - 1);
@@ -451,6 +466,7 @@ test.describe('the lazy sheets’ chunks failing', () => {
 		failing = true;
 
 		await openMore(page);
+		await expectRightPanel(moreSheet(page));
 		await page.getByTestId('open-plates').click();
 		const notice = page
 			.getByRole('alert')
@@ -460,10 +476,12 @@ test.describe('the lazy sheets’ chunks failing', () => {
 		await expectNoSideScroll(page);
 		await auditBothThemes(page, testInfo, 'plates-retry');
 
-		// Back online, Retry opens the sheet (in place, or by reloading with ?tool=plates).
+		// Back online, Retry opens the sheet (in place, or by reloading with ?tool=plates, which
+		// opens More too), a centred dialog over More's panel.
 		failing = false;
 		await notice.getByRole('button', { name: 'Try again' }).click();
 		await expectCentredDialog(page, page.getByRole('dialog', { name: 'Plate calculator' }));
+		await expect(moreSheet(page)).toBeVisible();
 	});
 
 	test('the plan’s Retry notice sits under its row in More; Retry opens a centred dialog', async ({
@@ -493,5 +511,6 @@ test.describe('the lazy sheets’ chunks failing', () => {
 		await page.unroute(chunk);
 		await notice.getByRole('button', { name: 'Try again' }).click();
 		await expectCentredDialog(page, page.getByRole('dialog', { name: 'Your plan' }));
+		await expect(moreSheet(page)).toBeVisible();
 	});
 });

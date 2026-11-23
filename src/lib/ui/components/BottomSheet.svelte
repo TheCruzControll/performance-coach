@@ -58,6 +58,8 @@
 	let dragging = $state(false);
 	let opener: HTMLElement | null = null;
 	let releaseScroll: (() => void) | null = null;
+	/** Torn down: a close the browser reports late must not reach a parent that has moved on. */
+	let gone = false;
 
 	$effect(() => {
 		if (open) show();
@@ -78,6 +80,7 @@
 	// Teardown while open (e.g. navigating Back with the sheet up): hide() never runs, so
 	// release the page scroll lock and close the dialog here.
 	onDestroy(() => {
+		gone = true;
 		releaseScroll?.();
 		releaseScroll = null;
 		if (dialog?.open) dialog.close();
@@ -105,22 +108,40 @@
 		// Held across the wait: a sheet closed as the page navigates (End this plan) can be torn
 		// down before its transition ends, which nulls `dialog`; onDestroy has closed it by then.
 		const closing = dialog;
-		if (!closing?.open) return;
+		if (!closing) return;
 		visible = false;
-		await transitionDone();
-		if (closing.open) closing.close();
+		// Already closed by the browser itself (a second Escape with no user activation between,
+		// which Chromium lets no one prevent): no transition to wait for, but the same cleanup.
+		if (closing.open) {
+			await transitionDone();
+			if (closing.open) closing.close();
+		}
+		settle();
+	}
+
+	/** Unmount the content, release the page and give the focus back: once per opening, so a
+	 * second hide() releases nothing twice and moves no focus. */
+	function settle() {
+		if (!mounted && !releaseScroll) return;
 		mounted = false;
 		releaseScroll?.();
 		releaseScroll = null;
 		dragY = 0;
+		const back = opener;
+		opener = null;
 		// Again on the next frames while WebKit refuses it (focus-return.ts), unless this sheet has
 		// opened again or focus is somewhere outside it.
-		if (opener?.isConnected) {
-			returnFocus(opener, () => {
+		if (back?.isConnected) {
+			returnFocus(back, () => {
 				const at = document.activeElement;
 				return !dialog?.open && (!at || at === document.body || !!dialog?.contains(at));
 			});
 		}
+	}
+
+	/** The browser closed the dialog itself, not through `open`: tell the parent, which then hides. */
+	function closed() {
+		if (!gone && open && !dialog?.open) requestClose();
 	}
 
 	function transitionDone(): Promise<void> {
@@ -187,6 +208,7 @@
 		e.preventDefault();
 		requestClose();
 	}}
+	onclose={closed}
 >
 	<div class="scrim" aria-hidden="true" onclick={requestClose}></div>
 	<div

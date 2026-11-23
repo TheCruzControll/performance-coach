@@ -67,7 +67,7 @@ const card = (page: Page) => page.getByTestId('review-next-week');
 const items = (page: Page) => page.getByTestId('review-next-item');
 const passedItems = (page: Page) => items(page).filter({ has: page.locator('input:disabled') });
 const notice = (page: Page) => page.getByTestId('review-notice');
-/** Train's week note, opened from the week's one line, holding the review's notice. */
+/** Train's week note, the sheet the week's one line opens, holding the review's notice. */
 async function openNotice(page: Page) {
 	if (!(await notice(page).isVisible())) await page.getByTestId('week-line').click();
 	await expect(notice(page)).toBeVisible();
@@ -220,7 +220,7 @@ async function weeklyJourney(page: Page, request: APIRequestContext, testInfo: T
 		const { changes, review } = await applied(s);
 		expect(changes).toHaveLength(total - 1);
 		await openNotice(page);
-		await expect(page.locator('details.note')).toContainText('Updated from your weekly review');
+		await expect(page.getByTestId('week-note')).toContainText('Updated from your weekly review');
 		await expect(notice(page)).toContainText(review.why);
 		await expect(notice(page).getByRole('listitem')).toHaveCount(changes.length);
 		for (const change of changes) await expect(notice(page)).toContainText(change.why);

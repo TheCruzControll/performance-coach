@@ -7,7 +7,7 @@
  * - Use the dates seedProgram returns. Never compute a date in the browser or the spec: the
  *   server's today is the one the screens show, on any weekday and in any machine zone.
  */
-import { expect, type APIRequestContext, type Page } from '@playwright/test';
+import { expect, type APIRequestContext, type Locator, type Page } from '@playwright/test';
 import { checkWeek, type Violation } from '../src/lib/domain/programming/interference';
 import { createDatabase, createPool } from '../src/lib/server/db/client';
 import { LOCAL_DATABASE_URLS } from '../src/lib/server/db/migrate';
@@ -29,14 +29,42 @@ export const lineDay = (date: string, today: string) =>
 export const sessionLine = (page: Page, title: string, date?: string) =>
 	(date ? dayLines(page, date) : page.getByTestId('session-card')).filter({ hasText: title });
 
+/** Train's More sheet (a bottom sheet; from 1024 px the right-hand panel). */
+export const moreSheet = (page: Page) => page.getByTestId('more-sheet');
+
 /**
- * Open Train's More row and wait for its list: the plan, history and tools (v2/07a1 opens them
- * in place; once open, a second call leaves it open).
+ * Open Train's More sheet and wait for it: the plan, history and tools (v2/07a2). Once open, a
+ * second call leaves it open. More needs JavaScript: a tap that lands before Train hydrates does
+ * nothing, so the tap is made again until the sheet shows.
  */
 export async function openMore(page: Page) {
-	const tools = page.getByTestId('more-tools');
-	if (!(await tools.isVisible())) await page.getByTestId('open-more').click();
-	await expect(tools).toBeVisible();
+	const sheet = moreSheet(page);
+	await expect(async () => {
+		if (!(await sheet.isVisible())) await page.getByTestId('open-more').click({ timeout: 2_000 });
+		await expect(sheet).toBeVisible({ timeout: 2_000 });
+	}).toPass();
+}
+
+/** The visible part of a sheet's dialog: the phone's sheet, a desktop dialog or the panel. */
+export const sheetPanel = (dialog: Locator) => dialog.locator('.sheet');
+
+/**
+ * From 1024 px, More and the week's note are the right-hand panel (BottomSheet `desktop="panel"`):
+ * 496 px wide, as tall as the window, its right edge the window's.
+ */
+export async function expectRightPanel(dialog: Locator) {
+	await expect(dialog).toBeVisible();
+	const panel = sheetPanel(dialog);
+	await expect
+		.poll(() => panel.evaluate((el) => el.getAnimations().length), { message: 'opened' })
+		.toBe(0);
+	const [box, window] = [(await panel.boundingBox())!, (await dialog.boundingBox())!];
+	expect(Math.abs(box.width - 31 * 16), `${box.width}px wide`).toBeLessThanOrEqual(1);
+	expect(
+		Math.abs(box.x + box.width - (window.x + window.width)),
+		'its right edge is the window’s'
+	).toBeLessThanOrEqual(1);
+	expect(Math.abs(box.height - window.height), 'as tall as the window').toBeLessThanOrEqual(1);
 }
 
 /** The owner's time zone in program specs: a zone with daylight saving, so neither UTC nor fixed. */

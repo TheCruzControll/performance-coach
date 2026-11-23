@@ -4,11 +4,12 @@
  * before it arrives still opens the sheet, and that a failed fetch has a designed Retry state
  * that recovers: in place, or through a reload of Train when the failure persists online. The
  * shell spec covers the calculator itself (stepper, units, Escape, focus return, ?tool=plates).
- * Its row is in Train's More, which ?tool=plates opens too, so a failure there shows under it.
+ * Its row is in Train's More sheet, which ?tool=plates opens too (the calculator over it), so a
+ * failure there shows under it.
  */
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type APIResponse, type Page, type Route } from '@playwright/test';
-import { openMore } from './program-support';
+import { moreSheet, openMore } from './program-support';
 import { captureScreen } from './support';
 
 // Every script then comes from the page itself, as on a first visit: no service worker
@@ -258,6 +259,9 @@ test('leaving Train while a Retry is on its way never brings the owner back', as
 	await notice.getByRole('button', { name: 'Try again' }).click();
 	await expect(page.getByTestId('open-plates').locator('..')).toHaveAttribute('aria-busy', 'true');
 
+	// More is a modal sheet: closed first, so the tab bar takes the tap.
+	await page.keyboard.press('Escape');
+	await expect(moreSheet(page)).toBeHidden();
 	await page
 		.getByRole('navigation', { name: 'Primary' })
 		.getByRole('link', { name: 'Today' })

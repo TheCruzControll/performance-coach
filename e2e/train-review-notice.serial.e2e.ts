@@ -3,13 +3,13 @@
  * and 'First block complete' leading to the cycle review.
  *
  * - review-ahead: generating next week from the review lands on Train's next week, whose one
- *   line under the week opens the notice, 'Updated from your weekly review', with every applied
- *   decision's why (the version's decisions, read in SQL); its links open the version in History
- *   and the review; the week before shows none. After a modified decision (one change at its half step, the rest left
- *   out), it lists only that change.
+ *   line under the week opens the week's note holding the notice, 'Updated from your weekly
+ *   review', with every applied decision's why (the version's decisions, read in SQL); its links
+ *   open the version in History and the review; the week before shows none. After a modified
+ *   decision (one change at its half step, the rest left out), it lists only that change.
  * - block-end-late: the block is over and nothing is planned since, so Train's 'First block
  *   complete' leads to the reviews list, which creates the cycle review; then straight to it.
- * - axe in both themes; the notice at 393 × 659 and, under the week in its column, at 1440 × 900.
+ * - axe in both themes; the notice at 393 × 659 and, in the right-hand panel, at 1440 × 900.
  *
  * Serial: the history is the one owner's, which every browser and worker shares.
  */
@@ -17,6 +17,7 @@ import { expect, test, type APIRequestContext, type Page } from '@playwright/tes
 import { seedAnalytics } from './analytics-support';
 import { DESKTOP, expectNoSideScroll } from './desktop';
 import { cycleReviews, programVersions } from './oracles/reviews';
+import { expectRightPanel, sheetPanel } from './program-support';
 import {
 	ANALYTICS_TZ,
 	auditBothThemes,
@@ -43,13 +44,17 @@ async function seedAhead(request: APIRequestContext) {
 
 const notice = (page: Page) => page.getByTestId('review-notice');
 
+/** The week's note: the sheet the week's one line opens. */
+const note = (page: Page) => page.getByTestId('week-note');
+
 /** Open the week's note from its one line (a finding's count, if any, names the line first). */
 async function openNote(page: Page) {
 	const line = page.getByTestId('week-line');
 	await expect(line).toHaveText(/Updated from your weekly review|heads-up|trade-off/);
 	await line.click();
-	await expect(notice(page)).toBeVisible();
-	await expect(page.locator('details.note')).toContainText('Updated from your weekly review');
+	await expect(note(page)).toBeVisible();
+	await expect(note(page).getByTestId('review-notice')).toBeVisible();
+	await expect(note(page)).toContainText('Updated from your weekly review');
 }
 const items = (page: Page) => page.getByTestId('review-next-item');
 const reviewPage = (s: Seeded) => `${LIST}/w-${s.review.weekStartsOn}`;
@@ -143,17 +148,18 @@ test.describe('review-ahead: next week generated from the review', () => {
 	test.describe('in a desktop window', () => {
 		test.use({ ...DESKTOP });
 
-		test('the notice opens under the week, in its column, nothing scrolls sideways', async ({
+		test('the notice opens in the right-hand panel, the week in view beside it, nothing scrolls sideways', async ({
 			page
 		}, testInfo) => {
 			await generate(page, seeded);
 			await openNote(page);
+			await expectRightPanel(note(page));
 			const week = (await page.getByTestId('week-lines').boundingBox())!;
-			const main = (await page.locator('main#main').boundingBox())!;
+			const panel = (await sheetPanel(note(page)).boundingBox())!;
 			const box = (await notice(page).boundingBox())!;
-			expect(Math.abs(box.x - week.x)).toBeLessThanOrEqual(1);
-			expect(box.y).toBeGreaterThanOrEqual(week.y + week.height - 1);
-			expect(box.x + box.width).toBeLessThanOrEqual(main.x + main.width + 1);
+			expect(panel.x, 'the week stays in view').toBeGreaterThanOrEqual(week.x + week.width - 1);
+			expect(box.x).toBeGreaterThanOrEqual(panel.x - 1);
+			expect(box.x + box.width, 'inside the panel').toBeLessThanOrEqual(panel.x + panel.width + 1);
 			await expectNoSideScroll(page);
 			await notice(page).getByTestId('review-notice-version').hover();
 			await captureScreen(page, testInfo, 'train-review-notice-desktop');

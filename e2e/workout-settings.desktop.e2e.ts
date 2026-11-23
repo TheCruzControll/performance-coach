@@ -5,7 +5,7 @@
  */
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { boxOf, expectNoSideScroll, layoutWidth } from './desktop';
-import { openMore } from './program-support';
+import { expectRightPanel, moreSheet, openMore, sheetPanel } from './program-support';
 import { captureScreen } from './support';
 import { gotoWorkout, seedWorkout, workoutDay } from './workout-support';
 
@@ -111,7 +111,9 @@ test.describe("Train's rest timer on a desktop", () => {
 		await page.waitForLoadState('networkidle');
 		await openMore(page);
 		const row = page.getByTestId('open-rest-timer');
-		const tools = page.getByTestId('more-tools');
+		// More is the right-hand panel; its rows sit inside it.
+		await expectRightPanel(moreSheet(page));
+		const tools = sheetPanel(moreSheet(page));
 		const plates = await boxOf(page.getByTestId('open-plates'));
 		const box = await boxOf(row);
 		expect(Math.abs(box.x - plates.x), 'under the plate calculator').toBeLessThanOrEqual(1);
@@ -142,10 +144,14 @@ test.describe("Train's rest timer on a desktop", () => {
 		await page.keyboard.press('Escape');
 		await expect(sheet).toBeHidden();
 		await expect(row).toBeFocused();
+		await expect(moreSheet(page), 'More stays open beneath the timer').toBeVisible();
+		// The running rest shows on Train, in its column, left of the panel.
 		const timer = page.getByTestId('train-rest');
 		await expect(timer).toBeVisible();
 		const inline = await boxOf(timer);
-		expect(inline.x + inline.width).toBeLessThanOrEqual(column.x + column.width + 1);
+		const main = await boxOf(page.locator('main#main'));
+		expect(inline.x + inline.width).toBeLessThanOrEqual(main.x + main.width + 1);
+		expect(inline.x + inline.width).toBeLessThanOrEqual(column.x + 1);
 		await expectNoSideScroll(page);
 	});
 });
