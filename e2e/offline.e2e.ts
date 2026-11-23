@@ -4,8 +4,11 @@ import { ACTIVE_WORKOUT_KEY } from '../src/lib/client/workout/active-flag';
 import { DATA_TIMEOUT_MS } from '../src/lib/client/sw-network';
 import { ACTIVE_LAUNCH_TIMEOUT_MS, START_URL } from '../src/lib/client/workout/launch';
 import { expectNoSideScroll, isDesktopPage } from './desktop';
-import { openProfile, SCREENS } from './support';
+import { openProfile, profileEntry, SCREENS } from './support';
 import { readOutbox, seedKits, seedWorkout, workoutDay } from './workout-support';
+
+/** The offline state's words: a screen that needs a connection, or Today's quiet line. */
+const OFFLINE = /needs a connection|Offline\. Your sets are saved/;
 
 /** Tabs whose screen loads server data, so offline they show the designed offline state. */
 const DATA_SCREENS: string[] = ['/today', '/train', '/progress', '/profile'];
@@ -39,8 +42,8 @@ test.describe('offline behaviour (service worker)', () => {
 		await context.setOffline(true);
 		await expect(page.getByTestId('offline-notice')).toBeVisible();
 
-		// Profile first: it opens from Today's avatar, and offline Today (the designed state, with
-		// no avatar) replaces the page below. Profile needs server data: a designed offline state
+		// Profile first, from Today's avatar while Today's page is still the one drawn (offline
+		// Today keeps the avatar too: checked below). Profile needs server data: a designed offline state
 		// inside the shell, never a 500. No tab is current: Profile is not one. From 1024 px the
 		// rail's avatar is Profile's link, current there; a phone's nav has no Profile link.
 		const current = isDesktopPage(page) ? 1 : 0;
@@ -59,7 +62,7 @@ test.describe('offline behaviour (service worker)', () => {
 		await page.reload();
 		await expect(page).toHaveURL(/\/profile$/);
 		await expect(page.getByTestId('offline-state')).toBeVisible();
-		await expect(page.getByTestId('offline-state')).toContainText('You’re offline');
+		await expect(page.getByTestId('offline-state')).toContainText(OFFLINE);
 		await expect(nav).toBeVisible();
 		await expect(nav.locator('[aria-current]:visible')).toHaveCount(current);
 		if (current)
@@ -78,6 +81,14 @@ test.describe('offline behaviour (service worker)', () => {
 		await expect(page.getByTestId('offline-state')).toBeVisible();
 		await expect(page.getByRole('heading', { level: 1, name: 'Today' })).toBeVisible();
 		await expect(page.locator('body')).not.toContainText(/500|internal error/i);
+		// On a phone, Today's avatar is Profile's way in: offline Today keeps it (from 1024 px the
+		// rail's avatar is, checked above).
+		if (!isDesktopPage(page)) {
+			await expect(profileEntry(page)).toBeVisible();
+			await profileEntry(page).click();
+			await expect(page).toHaveURL(/\/profile$/);
+			await expect(page.getByTestId('offline-state')).toBeVisible();
+		}
 
 		// Train needs server data (the program's week): the designed offline state in the shell.
 		await nav.getByRole('link', { name: 'Train' }).click();
@@ -112,7 +123,7 @@ test.describe('offline behaviour (service worker)', () => {
 		await expect(page.getByTestId('offline-state')).toBeVisible();
 		await page.reload();
 		await expect(page).toHaveURL(/\/progress$/);
-		await expect(page.getByTestId('offline-state')).toContainText('You’re offline');
+		await expect(page.getByTestId('offline-state')).toContainText(OFFLINE);
 		await expect(nav.getByRole('link', { name: 'Progress' })).toHaveAttribute(
 			'aria-current',
 			'page'
@@ -148,10 +159,10 @@ test.describe('offline behaviour (service worker)', () => {
 		await context.route('**/__data.json*', unreachable);
 		await context.route('**/api/health', unreachable);
 
-		await openProfile(page);
+		await profileEntry(page).click();
 		const state = page.getByTestId('offline-state');
 		await expect(state).toBeVisible();
-		await expect(state).toContainText('Can’t reach the server');
+		await expect(state).toContainText('The server isn’t answering');
 		expect(await page.evaluate(() => navigator.onLine)).toBe(true);
 
 		// The server comes back: with no `online` event to wait for, the screen's own retry
@@ -175,15 +186,14 @@ test.describe('offline behaviour (service worker)', () => {
 		await context.route('**/__data.json*', hang);
 		await context.route('**/api/health', hang);
 		const asked = Date.now();
-		await openProfile(page);
+		await profileEntry(page).click();
 		const state = page.getByTestId('offline-state');
 		// The worker's bounded wait, not the minute or more a hung request takes.
-		await expect(state).toContainText('Can’t reach the server', {
+		await expect(state).toContainText('The server isn’t answering', {
 			timeout: DATA_TIMEOUT_MS + 4_000
 		});
 		expect(Date.now() - asked).toBeGreaterThanOrEqual(DATA_TIMEOUT_MS - 500);
 		await expect(page).toHaveURL(/\/profile$/);
-		await expect(page.getByRole('heading', { level: 1, name: 'Profile' })).toBeVisible();
 		await expect(page.locator('body')).not.toContainText(/500|503|internal error/i);
 		await context.unrouteAll({ behavior: 'ignoreErrors' });
 	});
@@ -212,7 +222,7 @@ test.describe('offline behaviour (service worker)', () => {
 		// Healthy server: the recovery probe would succeed, and reloading /offline lands on the
 		// offline screen again, so it must not probe or reload there at all.
 		await page.goto('/offline');
-		await expect(page.getByTestId('offline-state')).toContainText('You’re offline');
+		await expect(page.getByTestId('offline-state')).toContainText(OFFLINE);
 		await page.evaluate(() => Object.assign(window, { __sameDocument: true }));
 		const probes: string[] = [];
 		page.on('request', (r) => r.url().endsWith('/api/health') && probes.push(r.url()));
@@ -266,7 +276,7 @@ test.describe('offline behaviour (service worker)', () => {
 		// Any other screen reloaded offline keeps its designed offline state, in the shell.
 		await page.goto('/progress').catch(() => {});
 		await expect(page).toHaveURL(/\/progress$/);
-		await expect(page.getByTestId('offline-state')).toContainText('You’re offline');
+		await expect(page.getByTestId('offline-state')).toContainText(OFFLINE);
 		await expect(page.getByRole('navigation', { name: 'Primary' })).toBeVisible();
 	});
 
@@ -311,7 +321,8 @@ test.describe('offline behaviour (service worker)', () => {
 		await context.setOffline(true);
 		await page.goto(START_URL).catch(() => {});
 		await expect(page).toHaveURL(/\/today$/);
-		await expect(page.getByTestId('offline-state')).toContainText('You’re offline');
+		await expect(page.getByTestId('offline-state')).toContainText(OFFLINE);
+		if (!isDesktopPage(page)) await expect(profileEntry(page)).toBeVisible();
 	});
 
 	/** Today on the page's clock: the day the offline screen lists saved kits for. */
@@ -355,7 +366,7 @@ test.describe('offline behaviour (service worker)', () => {
 		await context.setOffline(true);
 		await page.goto(START_URL);
 		await expect(page).toHaveURL(/\/today$/);
-		await expect(page.getByTestId('offline-state')).toContainText('You’re offline');
+		await expect(page.getByTestId('offline-state')).toContainText(OFFLINE);
 		const sessions = page.getByTestId('offline-today').getByTestId('offline-session');
 		// Today's, in the order Today saved them; another day's kit is left out.
 		await expect(sessions).toHaveCount(3);
@@ -396,9 +407,9 @@ test.describe('offline behaviour (service worker)', () => {
 
 		await context.setOffline(true);
 		await page.goto(START_URL);
-		await expect(page.getByTestId('offline-state')).toContainText('You’re offline');
+		await expect(page.getByTestId('offline-state')).toContainText(OFFLINE);
 		await expect(page.getByTestId('offline-today-empty')).toContainText(
-			'No sessions saved for today'
+			'Today isn’t saved on this device'
 		);
 		await expect(page.getByTestId('offline-session')).toHaveCount(0);
 		// An ad-hoc workout needs no kit: still offered.

@@ -513,7 +513,7 @@ test.describe('platform: health, PWA, observability', () => {
 			);
 			await page.goBack();
 			await expect(page.getByTestId('error-view')).toBeVisible();
-			await expect(page.getByRole('heading', { level: 1, name: 'Profile' })).toBeVisible();
+			await expect(page).toHaveURL(/\/profile$/);
 		});
 	});
 

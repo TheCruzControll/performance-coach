@@ -16,7 +16,6 @@
 	import { navigating } from '$app/state';
 	import { connectivity } from '#lib/client/connectivity.svelte.ts';
 	import AppNav from '#lib/ui/components/AppNav.svelte';
-	import Icon from '#lib/ui/components/Icon.svelte';
 	import { afterPaint } from '../workout/lazy.ts';
 	import { activePath, APP_NAV, PROFILE } from './nav';
 
@@ -57,8 +56,7 @@
 		<div class="notice-region" role="status">
 			{#if !connectivity.online && !hideOfflineNotice}
 				<p class="offline-notice" data-testid="offline-notice">
-					<Icon name="wifi-off" size={16} />
-					<span><strong>Offline</strong> · Some screens need a connection</span>
+					Offline. Your sets are saved on this device.
 				</p>
 			{/if}
 		</div>
@@ -115,27 +113,11 @@
 		}
 	}
 
+	/* One quiet line (Paper, 10 · States, "No signal"): nothing else on the screen changes. */
 	.offline-notice {
-		display: flex;
-		align-items: center;
-		gap: var(--space-2);
 		margin-top: var(--space-3);
-		padding: var(--space-2) var(--space-3);
-		border-radius: var(--radius-full);
-		background: var(--color-surface-2);
-		border: 1px solid var(--color-border);
-		font-size: var(--text-xs);
-		color: var(--color-text-secondary);
-	}
-
-	.offline-notice :global(.icon) {
-		flex: none;
-		color: var(--color-warning);
-	}
-
-	.offline-notice strong {
-		font-weight: var(--weight-semibold);
-		color: var(--color-text);
+		font: var(--type-secondary);
+		color: var(--color-text-tertiary);
 	}
 
 	/*

@@ -6,7 +6,8 @@
 	import { page } from '$app/state';
 	import AppShell from './(app)/AppShell.svelte';
 	import { isAppPath, screenName } from './(app)/nav';
-	import ErrorView, { errorKind } from './ErrorView.svelte';
+	import { errorKind } from './error-copy.ts';
+	import ErrorView from './ErrorView.svelte';
 
 	// Errors that escape the (app) error boundary land here, e.g. a screen whose data could not
 	// be fetched during client-side navigation (offline). App URLs keep the shell and the nav.
@@ -20,8 +21,6 @@
 	<AppShell pathname={page.url.pathname} hideOfflineNotice>
 		<ErrorView
 			{kind}
-			status={page.status}
-			message={page.error?.message}
 			requestId={page.error?.requestId}
 			screen={screenName(page.url.pathname)}
 			inShell
@@ -29,11 +28,6 @@
 	</AppShell>
 {:else}
 	<main id="main">
-		<ErrorView
-			{kind}
-			status={page.status}
-			message={page.error?.message}
-			requestId={page.error?.requestId}
-		/>
+		<ErrorView {kind} requestId={page.error?.requestId} />
 	</main>
 {/if}

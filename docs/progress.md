@@ -224,6 +224,15 @@ milestones.md.
   and keep their padding and sizes, so no screen moves. A card keeps a hairline outline until its
   screen row. Each is marked legacy in its component comment; `/design`'s Data tab and its legacy
   card show them. Phone layouts and the e2e run are CI's to prove.
+- **Instrument v2 failure and offline states (`v2/24b`).** Offline, server unreachable, not found
+  and an unexpected error each say one sentence at the foot of the column (centred in the window
+  outside the shell) and offer at most one action: none for a screen that needs a connection or a
+  quiet server, as they open by themselves; Back to Today when not found; Try again, under one red
+  line, for an error, with the reference. The words are in `src/routes/error-copy.ts`. Today's
+  states keep the avatar, so Profile opens from them on a phone. Offline at the start URL, Today
+  keeps its title, one quiet line and its saved sessions, or says it isn't saved on this device,
+  with Log something else as a row. The shell's offline notice is that quiet line. Phone layouts
+  and the e2e run are CI's to prove.
 - **Adding a session to a program.** The builder, the storage
   (`src/lib/server/services/programs/add.ts`), Train's Add session sheet and the coach's proposal
   are built: `propose_program_adjustment` takes an `add_session` op, and accepting it is one new

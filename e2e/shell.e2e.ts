@@ -943,7 +943,7 @@ test.describe('the root error page, loaded on demand', () => {
 		release();
 		await expect(page.getByTestId('error-view')).toBeVisible();
 		await expect(page.getByTestId('offline-state')).toBeVisible();
-		await expect(page.getByRole('heading', { level: 1, name: 'Profile' })).toBeVisible();
+		await expect(page).toHaveURL(/\/profile$/);
 		expect(chunk.served()).toBe(true);
 	});
 

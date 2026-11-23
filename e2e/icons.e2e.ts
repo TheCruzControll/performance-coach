@@ -294,7 +294,7 @@ test.describe('icons', () => {
 
 		await context.setOffline(true);
 		// Profile first: its avatar is on Today, which is still on screen. Offline, Today's own page
-		// is replaced by the offline state, which has no avatar.
+		// is replaced by the offline state, which keeps the avatar on a phone.
 		await openProfile(page);
 		await expectEveryIconDrawn(page);
 		const nav = page.getByRole('navigation', { name: 'Primary' });
