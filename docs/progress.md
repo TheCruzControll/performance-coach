@@ -3,7 +3,7 @@
 What is built, what is in flight, and what is next. Acceptance criteria and evidence stay in
 [milestones.md](milestones.md). Update this file in the change that moves a line.
 
-Last updated: 2026-11-23, from `main` at the merge of #615.
+Last updated: 2026-11-23, from `main` at the merge of #618.
 
 ## Milestones
 
@@ -36,7 +36,7 @@ runs the criteria and updates milestones.md.
   has no long run, and each week's quality sessions are its phase's race work up to its hooks' count
   (marathon pace in the long run and a threshold run in a marathon build and peak, only the
   marathon-pace long run in its taper, a threshold run and 10K-pace intervals in a half's build and
-  peak). A half reads its own hooks. A running goal that trains alongside the leader holds its dose:
+  peak). A half reads its own hooks. A running goal that trains alongside the leader holds its dose in distance mode:
   65 % of recent volume, one quality run, the long run no longer than the recent longest.
 - Runs are paced from current fitness: the best race of the last 26 weeks sets every pace by its
   VDOT (Daniels' formula); a race 26 to 52 weeks old, or an undated one when no race has a date, is

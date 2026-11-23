@@ -147,7 +147,7 @@ export const rules: readonly RuleDefinition[] = [
 		id: 'generator.run_dose',
 		kind: 'behaviour',
 		statement:
-			'A running goal that trains alongside the leader or is held at maintenance runs 65 % of your recent weekly volume every week (less only in a light week), at most one quality session, with the long run never longer than your recent longest.',
+			'A running goal that trains alongside the leader or is held at maintenance runs 65 % of your recent weekly volume every week (less in a light week or when the week asks for less), at most one quality session, with the long run never longer than your recent longest.',
 		rationale:
 			'Aerobic fitness holds on 60–70 % of your recent mileage, so running more would only take recovery from the goal that leads.',
 		source: `${PROGRAMMING}/running.ts#planRuns`

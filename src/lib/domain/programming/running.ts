@@ -544,8 +544,9 @@ export function planRuns(
 	};
 	/**
 	 * A dosed week against week 1: a light week's own factor, else the full week. Its volume is
-	 * MAINTENANCE_BLOCK's share of that, which a maintenance week's own factor already is, and its
-	 * long run keeps its share of the full week, so the long run holds and the easy runs give way.
+	 * MAINTENANCE_BLOCK's share of that, which a maintenance week's own factor already is, and never
+	 * more than the week's own runVolumeFactor, so a week that asks for less gets less. Its long run
+	 * keeps its share of the full week, so the long run holds and the easy runs give way.
 	 */
 	const lightFactor = ({ kind, targets }: WeekPlan) =>
 		(LIGHT_WEEK_KINDS as readonly WeekKind[]).includes(kind) ? targets.runVolumeFactor : 1;
@@ -580,7 +581,7 @@ export function planRuns(
 				? weekQualities(works, week.kind, phaseHooks?.qualityPerWeek)
 				: undefined;
 			const volume = plan.dosed
-				? week1 * dosedFactor(week)
+				? week1 * Math.min(dosedFactor(week), week.targets.runVolumeFactor)
 				: k === 0
 					? week1
 					: week1 * week.targets.runVolumeFactor;
@@ -768,6 +769,18 @@ function recordRuns(plan: Plan, o: Outcome, goal: InputGoal, log: DecisionLog) {
 		: o.raceWeeks
 			? 'generator.block_runs'
 			: `running.${mode}_week`;
+	// Week 1's own notes, each a whole sentence, in the order they read.
+	const sentences = [
+		mode === 'distance' && !justified && o.planned < R.UNDER_VOLUME * o.week1
+			? ` The long run is held to ${Math.round(o.longShare * 100)} % of the week and no other run outgrows it or your ${minutes}-minute sessions, so week 1 holds ${km(o.planned)}.`
+			: '',
+		o.week1Runs < plan.runs
+			? ` A run under ${mode === 'distance' ? km(R.MIN_RUN.metres) : `${R.MIN_RUN.minutes} min`} isn’t worth planning, so week 1 has ${o.week1Runs} of your ${plan.runs} runs, and a small week fewer.`
+			: '',
+		o.dropped
+			? ` Week 1 starts on ${o.from}, so ${o.dropped} of its runs ${o.dropped === 1 ? 'has' : 'have'} no day left.`
+			: ''
+	];
 	log.add('run_volume', volumeKey, ['blocks.0.weeks.0'], {
 		volume: `${mode === 'distance' ? km(o.planned) : `${Math.round(o.planned)} min`} over ${o.week1Runs + plan.committedRuns} runs`,
 		basis: clip(
@@ -778,18 +791,15 @@ function recordRuns(plan: Plan, o: Outcome, goal: InputGoal, log: DecisionLog) {
 		),
 		step: `${R.RUN_WEEKLY_INCREASE_MAX * 100} %`,
 		// The dose or the race plan explains the volume, ahead of week 1's own notes; with either, the
-		// long-run share's note gives way, since they set the weeks' sizes.
+		// long-run share's note gives way, since they set the weeks' sizes. Once the dose or the race
+		// plan is told, a later sentence is added only whole, and one that does not fit is left out.
 		notes: clip(
-			justified +
-				(mode === 'distance' && !justified && o.planned < R.UNDER_VOLUME * o.week1
-					? ` The long run is held to ${Math.round(o.longShare * 100)} % of the week and no other run outgrows it or your ${minutes}-minute sessions, so week 1 holds ${km(o.planned)}.`
-					: '') +
-				(o.week1Runs < plan.runs
-					? ` A run under ${mode === 'distance' ? km(R.MIN_RUN.metres) : `${R.MIN_RUN.minutes} min`} isn’t worth planning, so week 1 has ${o.week1Runs} of your ${plan.runs} runs, and a small week fewer.`
-					: '') +
-				(o.dropped
-					? ` Week 1 starts on ${o.from}, so ${o.dropped} of its runs ${o.dropped === 1 ? 'has' : 'have'} no day left.`
-					: ''),
+			justified
+				? sentences.reduce(
+						(text, sentence) => ((text + sentence).length <= 200 ? text + sentence : text),
+						justified
+					)
+				: sentences.join(''),
 			200
 		),
 		mode,

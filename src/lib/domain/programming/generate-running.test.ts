@@ -15,6 +15,7 @@ import { addDays } from '../calendar';
 import { CATALOGUE } from '../exercises/index';
 import type { TrainingProfile } from '../profile/types';
 import type { BlockPlan, ProgramPlan, RunSessionPlan, WeekPlan } from '../training/types';
+import type { Phase } from '../training/vocabulary';
 import { buildAddedSession } from './added';
 import { DecisionLog } from './decisions';
 import { firstDraft, generateProgram, STAGES } from './generate';
@@ -81,26 +82,8 @@ function halfRunner(longestKm = 26) {
 	return profile;
 }
 
-/**
- * runnerLifter's marathon `phase` weeks as periodisation/endurance.ts plans them from week 1 (55 km
- * a week, its longest run `longestKm`), run through the running stage as the first block.
- */
-function marathonBlock(
-	phase: 'marathon_build' | 'marathon_peak' | 'marathon_taper',
-	longestKm = 26
-) {
-	const profile = M7_SCENARIOS.runnerLifter();
-	profile.running!.longestRun = longestKm;
-	const weeks = enduranceWeeks('marathon', {
-		startsOn: SCENARIO_START,
-		raceOn: profile.goals[0]!.eventDate!,
-		startVolume: 55_000,
-		longestRun: longestKm * 1000,
-		level: null,
-		paces: TEN_K_PACES
-	}).filter((w) => w.phase === phase);
-	const startsOn = weeks[0]!.startsOn;
-	const options = optionsOn(startsOn);
+/** The running stage over `block` for `profile`, after the stages before it, as generate runs them. */
+function runningOver(profile: TrainingProfile, options: GenerateOptions, block: BlockPlan) {
 	const log = new DecisionLog();
 	const prepared = prepare(inputOf(profile), options, log);
 	const context: StageContext = { input: prepared.input, options, log };
@@ -108,10 +91,36 @@ function marathonBlock(
 	for (const stage of STAGES.slice(0, STAGES.findIndex((s) => s.name === 'commitments') + 1)) {
 		draft = stage.run(draft, context);
 	}
+	const own = new DecisionLog();
+	const after = running({ ...draft, blocks: [block] }, { ...context, log: own });
+	return { block: after.blocks[0]!, decisions: own.list() };
+}
+
+/**
+ * `race`'s `phase` weeks as periodisation/endurance.ts plans them from week 1 (55 km a week, its
+ * longest run `longestKm`), run through the running stage as the first block.
+ */
+function enduranceBlock(
+	race: 'marathon' | 'half',
+	phase: Phase,
+	longestKm = 26,
+	startsOn = SCENARIO_START
+) {
+	const profile = race === 'marathon' ? M7_SCENARIOS.runnerLifter() : halfRunner(longestKm);
+	profile.running!.longestRun = longestKm;
+	const weeks = enduranceWeeks(race, {
+		startsOn,
+		raceOn: profile.goals[0]!.eventDate!,
+		startVolume: 55_000,
+		longestRun: longestKm * 1000,
+		level: null,
+		paces: TEN_K_PACES
+	}).filter((w) => w.phase === phase);
+	const first = weeks[0]!.startsOn;
 	const block: BlockPlan = {
 		phase,
 		name: phase,
-		startsOn,
+		startsOn: first,
 		endsOn: addDays(weeks.at(-1)!.startsOn, 6),
 		outline: false,
 		goalRefs: [],
@@ -124,10 +133,14 @@ function marathonBlock(
 			sessions: []
 		}))
 	};
-	const own = new DecisionLog();
-	const after = running({ ...draft, blocks: [block] }, { ...context, log: own });
-	return { block: after.blocks[0]!, decisions: own.list() };
+	return runningOver(profile, optionsOn(first), block);
 }
+
+const marathonBlock = (phase: Phase, longestKm = 26) =>
+	enduranceBlock('marathon', phase, longestKm);
+/** A half's weeks start in scenario week 9, so the runway to race day is one a half's plan fits. */
+const halfBlock = (phase: Phase, longestKm = 26) =>
+	enduranceBlock('half', phase, longestKm, m7Day(9, 0));
 
 describe('paces from current fitness', () => {
 	it('falls back to the told easy pace’s VDOT on hybrid, which has no race', () => {
@@ -395,6 +408,18 @@ describe('the long run in a race plan', () => {
 		});
 	});
 
+	it('lets a marathon peak’s long run take more than 30 % of a week, within its target', () => {
+		const { block } = marathonBlock('marathon_peak');
+		const week = block.weeks.find((w) => {
+			const long = longRunOf(w);
+			return long !== undefined && metresOf(long) > 0.3 * weekMetres(w);
+		});
+		expect(week).toBeDefined();
+		const target = week!.targets.running!.longRunMetres;
+		expect(target).not.toBeNull();
+		expect(metresOf(longRunOf(week!)!)).toBeLessThanOrEqual(target!);
+	});
+
 	it('leaves the long run out of the race week', () => {
 		const { block } = marathonBlock('marathon_taper');
 		const race = block.weeks.find((w) => w.kind === 'event')!;
@@ -482,6 +507,23 @@ describe('race-specific work', () => {
 	});
 });
 
+describe('a half taper', () => {
+	it('gives every taper week one tempo run, and the race week no long run', () => {
+		const { block } = halfBlock('half_taper');
+		const race = block.weeks.find((w) => w.kind === 'event');
+		expect(race).toBeDefined();
+		expect(longRunOf(race!)).toBeUndefined();
+		const taper = block.weeks.filter((w) => w.kind !== 'event');
+		expect(taper.length).toBeGreaterThan(0);
+		for (const week of taper) {
+			expect(
+				qualityIn(week).map((r) => r.type),
+				week.startsOn
+			).toEqual(['tempo_run']);
+		}
+	});
+});
+
 describe('cutback weeks', () => {
 	it('holds a cutback week to 80 % of the biggest week before it', () => {
 		const plan = generateProgram(inputOf(halfRunner()), optionsOn(m7Day(9, 0)));
@@ -522,5 +564,37 @@ describe('a running goal that does not lead', () => {
 		const plan = generateProgram(inputOf(SCENARIOS.journey()), OPTIONS);
 		expect(decisionOf(plan, 'priority_resolved').why).toContain('Marathon trains alongside');
 		expect(decisionOf(plan, 'run_volume').ruleKey).toBe('running.time_week');
+	});
+
+	it('plans a week no bigger than its own runVolumeFactor, when that is below the dose', () => {
+		const profile = M7_SCENARIOS.multiGoal();
+		const planned = generateProgram(inputOf(profile), OPTIONS).blocks[0]!;
+		// Three normal weeks; the middle one asks for 60 % of week 1, under the dose's 65 %.
+		const weeks = planned.weeks.slice(0, 3).map((w, i) => ({
+			kind: 'accumulation' as const,
+			startsOn: w.startsOn,
+			endsOn: w.endsOn,
+			targets: { ...w.targets, runVolumeFactor: i === 1 ? 0.6 : 1 },
+			sessions: []
+		}));
+		const { block } = runningOver(profile, OPTIONS, { ...planned, weeks });
+		const recent = profile.running!.weeklyDistance! * 1000;
+		expect(weekMetres(block.weeks[1]!)).toBeLessThanOrEqual(0.6 * recent);
+	});
+
+	it('ends a dosed week’s notes on a whole sentence, with a 40-character goal title and a mid-week start', () => {
+		const profile = M7_SCENARIOS.multiGoal();
+		const title = 'My marathon run alongside the fight camp';
+		expect(title).toHaveLength(40);
+		Object.assign(profile.goals[1]!, { title });
+		// A Saturday start: week 1's runs have too few days left, a sentence that no longer fits.
+		const plan = generateProgram(inputOf(profile), {
+			startsOn: SCENARIO_START,
+			firstPlannedDay: m7Day(1, 5)
+		});
+		const { why } = decisionOf(plan, 'run_volume');
+		expect(why).toContain('doesn’t lead now');
+		expect(why).not.toContain('…');
+		expect(why.endsWith('.')).toBe(true);
 	});
 });
