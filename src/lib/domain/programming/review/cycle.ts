@@ -54,7 +54,7 @@ import type {
 import { inputsDigest } from './digest.ts';
 import type { DigestFacts } from './digest.ts';
 import { LIGHT_WEEK_KINDS } from './next-week.ts';
-import { clip, plural, scaledTargets, trendCall } from './weekly.ts';
+import { avgRpeCall, clip, plural, scaledTargets, trendCall } from './weekly.ts';
 import type {
 	Call,
 	PrescribedExercise,
@@ -113,6 +113,8 @@ export interface CycleWeek {
 	startsOn: IsoDate;
 	kind: v.WeekKind | null;
 	targets: VolumeTargets;
+	/** The week's RPE cap where its plan sets the main lifts (M7's mainLifts); else null. */
+	rpeCap?: number | null;
 }
 
 /** An M2 goal, as far as the review reads it. */
@@ -505,7 +507,10 @@ export function evaluateCycle(input: CycleReviewInput): CycleReview {
 		);
 	}
 	const rpe = strength.rpeSummary(sets);
-	const avg = goodness('avg_rpe', rpe.mean);
+	const avg = avgRpeCall(
+		rpe.mean,
+		block.weeks.flatMap((w) => w.rpeCap ?? [])
+	);
 	if (avg)
 		add(
 			'volume:intensity',

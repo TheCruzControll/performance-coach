@@ -45,6 +45,13 @@ Last reviewed: 2026-11-21, against `main` at the merge of #501.
   ReplanNotice, ProgramHeader, ArchivedSheet, KnowsSheet, ThreadList, the proposal detail, and the
   three Train pages.
   Closes when each screen row adopts `.text-link` (or `Button variant="link"` for a standalone action).
+- **A taper splice's deload is judged by the tail's first range.** A taper spliced into a block
+  (`splice` in `src/lib/domain/programming/periodisation/replan.ts`) gives the tail a new lineage,
+  so the Strength view, the weekly review and the cycle review read the tail's own bands: its
+  deload is judged by the tail's first range × the deload's factor, not by the range the block it
+  was cut from set. Found in m7r/06 reading `blockBands` in
+  `src/lib/domain/programming/planned-targets.ts`. Closes when a deload in a spliced tail is judged
+  by the range its block set, or a test pins the first range as the intended judgement.
 
 ## Stale documentation
 

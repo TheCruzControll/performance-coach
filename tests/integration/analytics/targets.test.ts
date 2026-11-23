@@ -1,7 +1,10 @@
 /**
  * Muscle-group targets (src/lib/server/services/analytics/targets.ts) on the M6 dataset: each
  * week's range comes from the input that generated its block, scaled by its volume factor, beside
- * the week's planned hard sets; today's profile never rewrites a past week.
+ * the week's planned hard sets; today's profile never rewrites a past week. An M7 week
+ * (periodised-targets) reads the band the generator used: its own setsPerGroup, or the volume
+ * stage's band for the strength goal's mode from the goals as prepare ranked them; a block from a
+ * generator before M7's keeps M6's rule.
  */
 import { and, eq, sql } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
@@ -13,10 +16,20 @@ import {
 	type ExerciseMuscles
 } from '../../../src/lib/domain/training/metrics';
 import type { WeekPlan } from '../../../src/lib/domain/training/types';
+import { M7_SCENARIOS } from '../../../src/lib/domain/programming/periodisation/scenarios';
+import type { M7ScenarioKey } from '../../../src/lib/domain/programming/periodisation/scenarios';
+import { SCENARIO_START } from '../../../src/lib/domain/programming/scenarios';
+import type { TrainingProfile } from '../../../src/lib/domain/profile/types';
+import type { DecisionPlan } from '../../../src/lib/domain/training/types';
+import type { Executor } from '../../../src/lib/server/db';
 import {
 	defaultLabel,
+	doseLabel,
 	getMuscleTargets,
 	NO_STORED_TARGET,
+	NO_STRENGTH_TARGET,
+	ownRangeLabel,
+	secondaryLabel,
 	STORED_TARGET,
 	type WeekTarget
 } from '../../../src/lib/server/services/analytics/targets';
@@ -30,6 +43,7 @@ import { programFixture } from '../../../src/lib/server/test-support/program-fix
 import { withRollback } from '../helpers';
 import { makeOwner } from '../profile/fixtures';
 import { LAST_DAY, seedDataset, WEEK_ONE, weekOf } from './fixtures/dataset';
+import { storeM7Program } from './fixtures/m7-programs';
 
 const MUSCLES = new Map<string, ExerciseMuscles>(
 	CATALOGUE.map((e) => [exerciseRefKey({ key: e.key }), e])
@@ -195,4 +209,162 @@ describe('muscle-group targets', () => {
 			expect(Object.keys(weeks[0]!.planned!.groups).length).toBeGreaterThan(0);
 		});
 	});
+});
+
+/** S9's runner-lifter with its ranks swapped: strength first, the week-16 marathon second. */
+const strengthFirst = () => {
+	const profile = M7_SCENARIOS.runnerLifter();
+	return { ...profile, goals: profile.goals.map((g) => ({ ...g, priority: 3 - g.priority! })) };
+};
+
+/** The M7 program of `profile` stored for a new owner, and its first block's week targets. */
+async function m7Targets(db: Executor, profile: TrainingProfile, generator?: string) {
+	const owner = await makeOwner(db);
+	const stored = await storeM7Program(db, owner, profile, SCENARIO_START, generator);
+	const block = stored.version.blocks[0]!;
+	const range = { from: block.startsOn, to: block.endsOn };
+	const weeks = await getMuscleTargets(owner, range, { db });
+	return { ...stored, block, weeks };
+}
+
+const chestOf = (weeks: WeekTarget[]) => weeks.map((w) => w.targets.chest);
+/** The [lo, hi] of 'N–M hard sets' in a maintenance_dose decision's dose words. */
+const doseSets = (d: DecisionPlan) => {
+	const [, lo, hi] = /(\d+)–(\d+) hard sets/.exec(String(d.evidence.dose))!;
+	return [Number(lo), Number(hi)];
+};
+
+describe('muscle-group targets of M7 weeks', () => {
+	it("read a hypertrophy block's own rising range, unscaled, and its deload's scaled", async () => {
+		await withRollback(async (db) => {
+			const { weeks } = await m7Targets(db, M7_SCENARIOS.hypertrophyBlock());
+			expect(chestOf(weeks)).toEqual([
+				[10, 12],
+				[12, 14],
+				[14, 16],
+				[16, 18],
+				[6, 7.2]
+			]);
+			expect(weeks[1]).toMatchObject({
+				source: 'block',
+				label: ownRangeLabel([12, 14]),
+				volumeFactor: 1,
+				band: 'the 12–14 this block plans for the week'
+			});
+			expect(weeks[1]!.label).toBe('From this block’s plan: 12–14 sets');
+			expect(Object.keys(weeks[1]!.targets).sort()).toEqual(
+				['back', 'chest', 'hamstrings', 'hips', 'quads', 'shoulders'].sort()
+			);
+		});
+	});
+
+	it("read a maintenance week by M3's maintenance band for strength, as a dose", async () => {
+		await withRollback(async (db) => {
+			const { weeks } = await m7Targets(db, M7_SCENARIOS.offSeason());
+			expect(weeks).toHaveLength(5);
+			for (const week of weeks) {
+				expect(week.targets.quads).toEqual([4, 10]);
+				expect(week.label).toBe(doseLabel([4, 10]));
+				expect(week.label).toBe('Maintenance dose: 4–10 sets');
+			}
+		});
+	});
+
+	it("read a secondary strength goal's weeks by the lower half of its band", async () => {
+		await withRollback(async (db) => {
+			const { weeks, block } = await m7Targets(db, M7_SCENARIOS.runnerLifter());
+			expect(block.weeks.every((w) => w.targets.setsPerGroup === undefined)).toBe(true);
+			expect(weeks.map((w) => w.volumeFactor)).toEqual([1, 1, 1, 1.1, 0.6]);
+			expect(chestOf(weeks)).toEqual([
+				[8, 11],
+				[8, 11],
+				[8, 11],
+				[8.8, 12.1],
+				[4.8, 6.6]
+			]);
+			expect(weeks[0]).toMatchObject({
+				label: secondaryLabel([8, 11]),
+				band: '8–11, the lower half of the 8–14 that suits getting stronger'
+			});
+		});
+	});
+
+	it('read the split the generator chose from the goals as prepare ranked them', async () => {
+		await withRollback(async (db) => {
+			// Strength is ranked first, but the marathon is inside its lead window and leads, so the
+			// generator held strength as secondary: 8–11, not the 8–14 the profile's order chooses.
+			const { weeks, plan } = await m7Targets(db, strengthFirst());
+			const led = plan.decisions.find((d) => d.kind === 'priority_resolved')!;
+			expect(led.evidence).toMatchObject({ leader: 'Marathon', mode: 'primary' });
+			expect(weeks[0]!.targets.back).toEqual([8, 11]);
+			expect(weeks[0]!.label).toBe(secondaryLabel([8, 11]));
+		});
+	});
+
+	it("keep M6's rule for a block a generator before M7 built", async () => {
+		await withRollback(async (db) => {
+			const { weeks } = await m7Targets(db, strengthFirst(), 'perfo-programming/1');
+			expect(weeks[0]).toMatchObject({ label: STORED_TARGET, volumeFactor: 1 });
+			expect(weeks[0]!.targets.back).toEqual([8, 14]);
+			expect(weeks[3]!.targets.back).toEqual([8.8, 15.4]);
+		});
+	});
+
+	it("read a fight week by the camp's dose scaled to its volume, as the generator balanced it", async () => {
+		await withRollback(async (db) => {
+			const { weeks, block } = await m7Targets(db, M7_SCENARIOS.multiGoal());
+			const fight = block.weeks.at(-1)!;
+			expect(fight.targets).toMatchObject({ volumeFactor: 0.4, setsPerGroup: { min: 4, max: 10 } });
+			expect(weeks.at(-1)).toMatchObject({ volumeFactor: 0.4, label: doseLabel([1.6, 4]) });
+			expect(weeks.at(-1)!.targets.quads).toEqual([1.6, 4]);
+		});
+	});
+
+	it('show no target for a fight camp with no strength goal, whatever dose its weeks store', async () => {
+		await withRollback(async (db) => {
+			const multi = M7_SCENARIOS.multiGoal();
+			const fightOnly = { ...multi, goals: multi.goals.filter((g) => g.priority === 1) };
+			const { weeks, block } = await m7Targets(db, fightOnly);
+			expect(block.weeks.every((w) => w.targets.setsPerGroup !== undefined)).toBe(true);
+			for (const week of weeks) {
+				expect(week).toMatchObject({ source: 'none', label: NO_STRENGTH_TARGET, targets: {} });
+			}
+		});
+	});
+
+	it.each(['hypertrophyBlock', 'multiGoal', 'offSeason', 'allPaused'] satisfies M7ScenarioKey[])(
+		"%s: every week's band is the one the generator wrote in its decisions",
+		async (key) => {
+			await withRollback(async (db) => {
+				const { weeks, block, plan } = await m7Targets(db, M7_SCENARIOS[key]());
+				const inFirst = plan.decisions.filter((d) => d.refs.includes('blocks.0'));
+				const ramp = inFirst.find((d) => d.kind === 'volume_progressed');
+				const dose = inFirst.find(
+					(d) =>
+						d.kind === 'maintenance_dose' &&
+						(d.evidence.stream === 'strength' || d.evidence.stream === 'hypertrophy')
+				);
+				expect(ramp ?? dose, 'a band in the decisions').toBeDefined();
+				expect(weeks).toHaveLength(block.weeks.length);
+				const building: number[] = [];
+				// As balancePhased balances them: a full week to its own range, any other week to the
+				// block's first range (or the dose without one) scaled by its volume factor.
+				const full = (w: (typeof block.weeks)[number]) => w.targets.volumeFactor >= 1;
+				const first = block.weeks.find((w) => w.targets.setsPerGroup && full(w));
+				for (const [i, week] of block.weeks.entries()) {
+					const own = week.targets.setsPerGroup;
+					const read = weeks[i]!.targets;
+					const scale = own && full(week) ? 1 : week.targets.volumeFactor;
+					expect(weeks[i]!.volumeFactor).toBe(scale);
+					const base = own && full(week) ? own : (first?.targets.setsPerGroup ?? null);
+					const [lo, hi] = base ? [base.min, base.max] : doseSets(dose!);
+					expect(read.chest![0]).toBeCloseTo(lo! * scale, 2);
+					expect(read.chest![1]).toBeCloseTo(hi! * scale, 2);
+					if (ramp && !['deload', 'taper', 'event', 'recovery'].includes(week.kind))
+						building.push(read.chest![0]);
+				}
+				if (ramp) expect(building.join(', ')).toBe(ramp.evidence.ramp);
+			});
+		}
+	);
 });
