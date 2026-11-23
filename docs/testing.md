@@ -793,7 +793,8 @@ hybrid, injured shoulder, dumbbells only, the journey, the minimal onboarding pr
   the real week before, without a clash-keeping decision citing it (one whose rule is in
   `CLASH_KEPT_RULES`, from `src/lib/domain/programming/decisions.ts`); every decision's kind is in
   `DECISION_KINDS` and has a rationale; the `program_purpose` words. The same holds for the
-  scenarios planned from other Mondays (`generate-schedule.test.ts`).
+  scenarios planned from other Mondays (`generate-schedule.test.ts`). The schedule stage run again
+  on its own plan changes no session and records only clash-keeping decisions, for every scenario.
 - **Composition** (`generate.test.ts`, `index.test.ts`): the stages run once each in the documented
   order; every scenario composes into a plan `programPlanSchema` accepts, parsed before it is
   returned, and the same input gives byte-identical JSON; week 1 starts on a Monday and the first
