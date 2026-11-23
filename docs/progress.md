@@ -61,7 +61,9 @@ runs the criteria and updates milestones.md.
   per owner per day and the weight goal and milestone tables. The owner's weigh-ins are logged,
   replaced, edited, deleted and undone (a coach write) in `src/lib/server/services/weight/entries.ts`,
   and the Weight view, Today's figures and the coach's facts are read in
-  `src/lib/server/services/weight/read.ts`. Goals, the coach and the screens come next.
+  `src/lib/server/services/weight/read.ts`. The one weight goal is set, edited, cleared and kept as
+  history in `src/lib/server/services/weight/goals.ts`, and the profile's target follows it. The
+  coach and the screens come next.
 - **M7, re-sliced.** On 2026-11-22 the parked M7 pull requests were re-sliced into 38 `m7r/`
   rows in `plan/m7-reslice.md`. By the end of that day every row that does not wait on m7r/03
   had merged, along with m7/47 to m7/51. That covers the generator's stages and season, Train's
