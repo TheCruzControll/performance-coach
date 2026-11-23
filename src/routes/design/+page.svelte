@@ -36,7 +36,8 @@
 
 	const colors = [
 		['canvas', 'surface-1', 'surface-2', 'surface-3'],
-		['text', 'text-secondary', 'text-tertiary', 'accent'],
+		['text', 'text-secondary', 'text-tertiary', 'text-quiet', 'accent'],
+		['hairline', 'border', 'track', 'handle'],
 		['strength', 'running', 'combat', 'hypertrophy', 'conditioning'],
 		['positive', 'warning', 'danger', 'info']
 	];

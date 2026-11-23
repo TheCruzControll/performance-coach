@@ -14,48 +14,55 @@
 
 	/* ---- Color: neutrals ------------------------------------------------------------ */
 	/*
-	 * The "Instrument" palette (Paper, page "Instrument · all screens"): warm, flat, no gradients
-	 * or shadows. Light is a warm paper canvas on the same hue (docs/design-system.md#colour).
+	 * The Instrument v2 palette (Paper, page "Instrument v2 · all screens"): hueless greys, flat, no
+	 * gradients or shadows. Surfaces step up in tone, and the bottom sheet is the only raised plane
+	 * (docs/design-system.md#colour). Light is designed too (board 15), on the same greys.
 	 */
-	--color-canvas: light-dark(#f5f2ea, #0c0b09);
-	--color-surface-1: light-dark(#ffffff, #1b1814);
-	--color-surface-2: light-dark(#ebe6da, #24201b);
-	--color-surface-3: light-dark(#e0dacb, #2d2822);
-	--color-surface-inverse: light-dark(#1b1814, #ece6d8);
-	--color-overlay: light-dark(rgb(27 24 20 / 0.32), rgb(5 5 4 / 0.7));
-	--color-glass: light-dark(rgb(245 242 234 / 0.92), rgb(12 11 9 / 0.92));
+	--color-canvas: light-dark(#f4f4f0, #0a0a0b);
+	--color-surface-1: light-dark(#ffffff, #151517);
+	--color-surface-2: light-dark(#ecece7, #19191c);
+	--color-surface-3: light-dark(#e2e2dc, #222226);
+	--color-surface-inverse: light-dark(#111113, #f2f2ee);
+	--color-overlay: light-dark(rgb(244 244 240 / 0.7), rgb(10 10 11 / 0.7));
+	--color-glass: light-dark(rgb(244 244 240 / 0.92), rgb(10 10 11 / 0.92));
 
-	--color-border: light-dark(rgb(27 24 20 / 0.14), rgb(255 236 200 / 0.14));
-	--color-border-strong: light-dark(rgb(27 24 20 / 0.24), rgb(255 236 200 / 0.2));
-	--color-hairline: light-dark(rgb(27 24 20 / 0.1), rgb(255 236 200 / 0.1));
+	--color-border: light-dark(rgb(17 17 19 / 0.08), rgb(255 255 255 / 0.08));
+	--color-border-strong: light-dark(rgb(17 17 19 / 0.12), rgb(255 255 255 / 0.1));
+	--color-hairline: light-dark(rgb(17 17 19 / 0.08), rgb(255 255 255 / 0.07));
 	--color-highlight: transparent;
+	/* The grab handle of a sheet, and the unfilled part of a progress line (and a chart's baseline). */
+	--color-handle: light-dark(#c9c9c3, #3a3a3f);
+	--color-track: light-dark(#d4d4ce, #2a2a2e);
 
-	--color-text: light-dark(#1a1712, #ece6d8);
-	--color-text-secondary: light-dark(#5c5547, #a39c8c);
-	/* Tertiary is #908878 on dark, not the design's #7d7667, which fails AA (5.60 on canvas). */
-	--color-text-tertiary: light-dark(#655d4e, #908878);
-	--color-text-disabled: light-dark(#a8a194, #57514a);
-	--color-text-inverse: light-dark(#f5f2ea, #0c0b09);
+	--color-text: light-dark(#111113, #f2f2ee);
+	--color-text-secondary: light-dark(#55555c, #a3a3a8);
+	/* Tertiary is below AA on surface-3 (4.4:1 in both themes): never put it there. */
+	--color-text-tertiary: light-dark(#66666e, #86868e);
+	/* Canvas only: the letter of a day with nothing planned. Below 4.5:1 on any surface. */
+	--color-text-quiet: light-dark(#6e6e76, #7a7a82);
+	--color-text-disabled: light-dark(#a9a9af, #55555c);
+	--color-text-inverse: light-dark(#f2f2ee, #111113);
 
 	/* ---- Color: the one accent (amber) --------------------------------------------- */
-	--color-accent: #ffb224;
-	--color-accent-hover: #ffc04d;
-	--color-accent-pressed: #e89e12;
-	--color-on-accent: #0c0b09;
-	/* Secondary text on an accent fill (the selected day's letter): 7.61:1 on #ffb224. */
+	/* One amber in both themes: primary fills and the "today" dot. Its label is #1a1200 (10.2:1). */
+	--color-accent: #ffb02e;
+	--color-accent-hover: #ffbe55;
+	--color-accent-pressed: #e89c1c;
+	--color-on-accent: #1a1200;
+	/* Secondary text on an accent fill (the selected day's letter): 7.5:1 on the accent. */
 	--color-on-accent-muted: #3d2a00;
-	/* Amber as text is 10.91:1 on dark; in light it darkens to bronze: 6.43:1 on canvas, 4.94:1 on the accent tint over surface-2. */
-	--color-accent-text: light-dark(#7a4e00, #ffb224);
-	--color-accent-subtle: light-dark(rgb(135 86 0 / 0.12), rgb(255 178 36 / 0.12));
+	/* Amber is never set as text in v2 ("Amber means the next thing to do"); this stays for the existing uses. */
+	--color-accent-text: light-dark(#7a4e00, #ffb02e);
+	--color-accent-subtle: light-dark(rgb(135 86 0 / 0.12), rgb(255 176 46 / 0.12));
 	/* Focus ring: ≥ 3:1 against the canvas and every surface in both themes (focus-ring.test.ts). */
-	--color-accent-ring: light-dark(#9a6400, #ffb224);
+	--color-accent-ring: light-dark(#9a6400, #ffb02e);
 
 	/* ---- Color: status (text-safe: ≥ 4.5:1 on canvas, surface-1 and surface-2) ------- */
 	--color-positive: light-dark(#1b7340, #7fd49a);
 	/* Its own token even though it equals the accent in dark: the design's only warning is amber. */
-	--color-warning: light-dark(#7a4e00, #ffb224);
-	--color-danger: light-dark(#b3361c, #ff6b57);
-	--color-danger-subtle: light-dark(rgb(179 54 28 / 0.1), rgb(255 107 87 / 0.14));
+	--color-warning: light-dark(#7a4e00, #ffb02e);
+	--color-danger: light-dark(#bb2c28, #ff5a52);
+	--color-danger-subtle: light-dark(rgb(187 44 40 / 0.1), rgb(255 90 82 / 0.14));
 	--color-info: light-dark(#1b66b3, #6cb6ff);
 
 	/* ---- Color: disciplines (use sparingly: tags, dots, chart series) ---------------- */
@@ -81,10 +88,10 @@
 	/* Furniture: a context series (≥ 3:1), then greys that recede and never reach 3:1. */
 	--chart-surface: var(--color-surface-1);
 	--chart-muted: light-dark(#8b8b85, #6b6b71);
-	--chart-grid: light-dark(#ebebe6, rgb(255 236 200 / 0.08));
-	--chart-axis: light-dark(#d4d4ce, #2e2b24);
+	--chart-grid: light-dark(#ebebe6, #1f1f23);
+	--chart-axis: light-dark(#d4d4ce, #2a2a2e);
 	--chart-baseline: light-dark(#a3a39d, #55555c);
-	--chart-band: light-dark(#f4f4f0, #221e19);
+	--chart-band: light-dark(#f4f4f0, #19191c);
 
 	/* ---- Typography ---------------------------------------------------------------- */
 	/* Geist for all UI text and titles (titles are weight 500, not a second family). */
@@ -128,28 +135,41 @@
 	/* Retired: labels are lowercase, not tracked caps. Kept at 0 so existing uses still compile. */
 	--tracking-caps: 0;
 
-	/* ---- Spacing (4px grid) -------------------------------------------------------- */
+	/* ---- Spacing (4px grid, with the Instrument v2 steps between) ------------------- */
 	--space-0-5: 0.125rem;
 	--space-1: 0.25rem;
 	--space-1-5: 0.375rem;
 	--space-2: 0.5rem;
+	--space-2-5: 0.625rem; /* 10: a numeral and its unit; a week-strip letter and its dot */
 	--space-3: 0.75rem;
+	--space-3-5: 0.875rem; /* 14: a chat bubble's block padding; a set's segments to the numeral */
 	--space-4: 1rem;
+	--space-4-5: 1.125rem; /* 18: a field's, a bubble's and a toast's inline padding */
 	--space-5: 1.25rem;
 	--space-6: 1.5rem;
+	--space-7: 1.75rem; /* 28: the page gutter, a sheet's padding, a paragraph's block padding */
 	--space-8: 2rem;
+	--space-9: 2.25rem; /* 36: between groups */
 	--space-10: 2.5rem;
+	--space-11: 2.75rem; /* 44: a sheet's bottom padding */
 	--space-12: 3rem;
+	--space-14: 3.5rem; /* 56: the desktop column's inner padding */
 	--space-16: 4rem;
 	--space-20: 5rem;
 
 	/* ---- Radii --------------------------------------------------------------------- */
-	/* One radius for every card, control and sheet (4px); 2px for switch thumbs and the grab handle. */
+	/*
+	 * Instrument v2 (docs/design-system.md#space-shape-depth-motion): 2 the grab handle, the set's
+	 * segments and the switch thumb; 14 fields; 16 buttons and toasts; 18 the workout's Done; 20
+	 * chat bubbles; 28 a sheet's top corners and the composer; full for avatars, day dots and
+	 * round controls. There are no cards.
+	 */
 	--radius-xs: 2px;
-	--radius-sm: 4px;
-	--radius-md: 4px;
-	--radius-lg: 4px;
-	--radius-xl: 4px;
+	--radius-sm: 14px;
+	--radius-md: 16px;
+	--radius-lg: 20px;
+	--radius-xl: 28px;
+	--radius-action-lg: 18px;
 	--radius-full: 999px;
 
 	/*
@@ -202,7 +222,7 @@
 	--safe-right: env(safe-area-inset-right, 0px);
 	--safe-bottom: env(safe-area-inset-bottom, 0px);
 	--safe-left: env(safe-area-inset-left, 0px);
-	--gutter: 1.25rem;
+	--gutter: var(--space-7); /* 28px: every phone board pads its content this far */
 	--content-max: 34rem;
 	--nav-height: 3.625rem;
 	--touch-target: 2.75rem; /* 44px minimum (Apple HIG) */

@@ -7,10 +7,12 @@ Dark-first, iPhone-first, built by hand on CSS custom properties (ADR 0005). Liv
 
 1. **Glanceable under load.** Mid-set, sweaty, one hand: big numerals, high contrast, ≥ 44 px
    targets, primary actions in the thumb zone.
-2. **Quiet surfaces, one loud accent.** Warm near-black layers, hairline borders, a single amber
-   accent for the next action. Discipline colours appear only as small signals (dots, tags, series).
-3. **Flat, from tone.** No shadows and no gradients: depth comes from the surface tones and the
-   hairline borders, and the design's type does the rest (the "Instrument" design).
+2. **Quiet neutral surfaces, one amber accent for the next thing to do.** Hueless greys, hairline
+   borders, and amber on the one action that comes next. Discipline colours appear only as small
+   signals (dots, tags, series).
+3. **No boxes.** Space groups first, then a hairline between rows; a surface only for a sheet, a
+   field, a chat bubble, a toast or a round control. No shadows and no gradients: depth comes from
+   the tones (Instrument v2).
 4. **Motion explains.** Short, spring-eased transitions that show where things came from; all
    motion collapses under `prefers-reduced-motion`.
 5. **Every state is designed.** Empty, loading (skeletons, streamed data), error, offline.
@@ -26,40 +28,63 @@ Dark-first, iPhone-first, built by hand on CSS custom properties (ADR 0005). Liv
 | `data-theme="system"` | follows `prefers-color-scheme` |
 
 The choice (Profile → Appearance) is stored per device and applied before first paint by an inline
-script in `src/app.html`, which also updates `<meta name="theme-color">`. With **Auto**, the app
+script in `src/app.html`, which also updates `<meta name="theme-color">`: `#0a0a0b` in dark and
+`#f4f4f0` in light, the canvas of each theme. The manifest's `background_color` and `theme_color` are
+`#0a0a0b`. With **Auto**, the app
 keeps listening to `prefers-color-scheme` while open, so when iOS switches appearance (e.g.
 automatic dark mode at sunset) the theme-color and status-bar metas follow the CSS (e2e-tested).
 **Browser baseline:** `light-dark()` needs Safari 17.5+ / Chrome 123+.
 
 ## Colour
 
-| Token                     | Dark      | Light     | Use                                                                          |
-| ------------------------- | --------- | --------- | ---------------------------------------------------------------------------- |
-| `--color-canvas`          | `#0c0b09` | `#f5f2ea` | page background                                                              |
-| `--color-surface-1`       | `#1b1814` | `#ffffff` | cards, sheets, the workout panel                                             |
-| `--color-surface-2`       | `#24201b` | `#ebe6da` | nested surfaces, one step beyond surface-1                                   |
-| `--color-surface-3`       | `#2d2822` | `#e0dacb` | pressed states                                                               |
-| `--color-text`            | `#ece6d8` | `#1a1712` | page titles, row titles, values                                              |
-| `--color-text-secondary`  | `#a39c8c` | `#5c5547` | subtitles, body copy, text links                                             |
-| `--color-text-tertiary`   | `#908878` | `#655d4e` | labels, units, placeholders (≥ 4.5:1 on canvas/surface-1/2)                  |
-| `--color-accent`          | `#ffb224` | `#ffb224` | **the** accent (amber): primary CTA, selected state, active tab              |
-| `--color-accent-text`     | `#ffb224` | `#7a4e00` | accent used as text (bronze in light; 4.94:1 on its own tint over surface-2) |
-| `--color-accent-ring`     | `#ffb224` | `#9a6400` | keyboard focus ring (≥ 3:1 on every surface)                                 |
-| `--color-on-accent`       | `#0c0b09` | `#0c0b09` | text on accent (10.9:1)                                                      |
-| `--color-on-accent-muted` | `#3d2a00` | `#3d2a00` | secondary text on an accent fill, e.g. the selected day's letter (7.6:1)     |
+| Token                     | Dark                      | Light                     | Use                                                                 |
+| ------------------------- | ------------------------- | ------------------------- | ------------------------------------------------------------------- |
+| `--color-canvas`          | `#0a0a0b`                 | `#f4f4f0`                 | the page background on every board                                  |
+| `--color-surface-1`       | `#151517`                 | `#ffffff`                 | the bottom sheet and dialogs; charts (see Data visualisation)       |
+| `--color-surface-2`       | `#19191c`                 | `#ecece7`                 | fields, chat bubbles, toasts, the avatar, a quiet button in a sheet |
+| `--color-surface-3`       | `#222226`                 | `#e2e2dc`                 | a control on a surface: the composer's send button, a stepper       |
+| `--color-surface-inverse` | `#f2f2ee`                 | `#111113`                 | an inverted fill, with `--color-text-inverse` on it                 |
+| `--color-overlay`         | `rgb(10 10 11 / 0.7)`     | `rgb(244 244 240 / 0.7)`  | the scrim behind a sheet                                            |
+| `--color-glass`           | `rgb(10 10 11 / 0.92)`    | `rgb(244 244 240 / 0.92)` | the glass tab bar and the composer                                  |
+| `--color-hairline`        | `rgb(255 255 255 / 0.07)` | `rgb(17 17 19 / 0.08)`    | between list rows, above the tab bar, the rail's right edge         |
+| `--color-border`          | `rgb(255 255 255 / 0.08)` | `rgb(17 17 19 / 0.08)`    | a sheet's top edge                                                  |
+| `--color-border-strong`   | `rgb(255 255 255 / 0.1)`  | `rgb(17 17 19 / 0.12)`    | focusable outlines; v2 has no bordered control                      |
+| `--color-highlight`       | `transparent`             | `transparent`             | unchanged                                                           |
+| `--color-text`            | `#f2f2ee`                 | `#111113`                 | titles, body, values, the active tab                                |
+| `--color-text-secondary`  | `#a3a3a8`                 | `#55555c`                 | the date line, back links, text links, field labels                 |
+| `--color-text-tertiary`   | `#86868e`                 | `#66666e`                 | inactive tabs, units, table heads, the composer's placeholder       |
+| `--color-text-quiet`      | `#7a7a82`                 | `#6e6e76`                 | the letter of a day with nothing planned; canvas only               |
+| `--color-text-disabled`   | `#55555c`                 | `#a9a9af`                 | the planned-day ring on the week strip; never readable text         |
+| `--color-text-inverse`    | `#111113`                 | `#f2f2ee`                 | text on `--color-surface-inverse`                                   |
+| `--color-accent`          | `#ffb02e`                 | `#ffb02e`                 | the one amber: primary fills and the "today" dot                    |
+| `--color-on-accent`       | `#1a1200`                 | `#1a1200`                 | labels on an accent fill: Start, Done, Accept, Save                 |
+| `--color-on-accent-muted` | `#3d2a00`                 | `#3d2a00`                 | secondary text on an accent fill, e.g. the selected day's letter    |
+| `--color-accent-hover`    | `#ffbe55`                 | `#ffbe55`                 | hover on a fill (derived: the design draws no hover)                |
+| `--color-accent-pressed`  | `#e89c1c`                 | `#e89c1c`                 | pressed (derived)                                                   |
+| `--color-accent-text`     | `#ffb02e`                 | `#7a4e00`                 | amber as text; v2 never sets it, the token stays for existing uses  |
+| `--color-accent-subtle`   | `rgb(255 176 46 / 0.12)`  | `rgb(135 86 0 / 0.12)`    | the tint behind an accent state                                     |
+| `--color-accent-ring`     | `#ffb02e`                 | `#9a6400`                 | keyboard focus ring (≥ 3:1 on every surface)                        |
+| `--color-positive`        | `#7fd49a`                 | `#1b7340`                 | not used in v2; kept                                                |
+| `--color-warning`         | `#ffb02e`                 | `#7a4e00`                 | amber, always with a word                                           |
+| `--color-danger`          | `#ff5a52`                 | `#bb2c28`                 | the field error line, the error toast's icon, Discard workout       |
+| `--color-danger-subtle`   | `rgb(255 90 82 / 0.14)`   | `rgb(187 44 40 / 0.1)`    | the tint behind a danger state                                      |
+| `--color-info`            | `#6cb6ff`                 | `#1b66b3`                 | not used in v2; kept                                                |
 
-Neutrals are warm: every border is a cream alpha on dark (`--color-border` 14%,
-`--color-border-strong` 20%, `--color-hairline` 10%) and an ink alpha on light. The light theme is
-proposed, not in the design: a warm paper canvas on the same hue, with accent text darkened to bronze
-so it stays readable.
+Neutrals are hueless greys (`#0a0a0b` to `#f2f2ee`). Borders are white alphas on dark and ink
+(`#111113`) alphas on light: hairline 7% and 8%, border 8% and 8%, border-strong 10% and 12%. Light
+is designed (board 15), not proposed.
 
 Two contrast limits are accepted, not met, and the design draws them the same way. The accent
-fill is about 1.6:1 against the light canvas: amber cannot reach 3:1 on a light ground and stay
-amber. Primary buttons carry their own label at 10.9:1, and selected segments sit inside a bordered
+fill is 1.66:1 against the light canvas: amber cannot reach 3:1 on a light ground and stay amber.
+Primary buttons carry their own label at 10.2:1, and selected segments sit inside a bordered
 group, so the state is never carried by fill alone. Control borders (`--color-border-strong`) are
-about 1.7:1 against the canvas in both themes, as the design draws them: inputs and secondary
-buttons are identified by their label and placeholder, so the text meets WCAG 1.4.11. The outline
-itself is faint.
+about 1.3:1 against the canvas in both themes: inputs and secondary buttons are identified by their
+label and placeholder, so the text meets WCAG 1.4.11. The outline itself is faint.
+
+Text, measured on the canvas (dark / light, WCAG): text 17.6 / 17.1; secondary 7.9 / 6.7; tertiary
+5.5 / 5.2, and 4.9 / 4.8 on surface-2. Tertiary is 4.4 / 4.4 on surface-3, below AA, as it was
+before #581, so it is never set on surface-3. `--color-text-quiet` (4.7 / 4.6 on the canvas) is
+below 4.5:1 on any surface, so it is for the canvas only.
 
 Discipline colours (signals only — never large fills):
 
@@ -71,13 +96,20 @@ Discipline colours (signals only — never large fills):
 | `--color-hypertrophy`  | `#b28dff` | `#7a4bd6` |
 | `--color-conditioning` | `#3fd6b5` | `#0e9b7c` |
 
+v2 shows no discipline colours: every chart is one series in `--color-text`, and `v2/14` decides
+the charts' future.
+
 Status: `--color-positive`, `--color-warning`, `--color-danger` (+ `-subtle`), `--color-info`.
 All four are text-safe: ≥ 4.5:1 on canvas, surface-1 and surface-2 in both themes. Dark is
-positive `#7fd49a`, warning `#ffb224`, danger `#ff6b57`, info `#6cb6ff`; light is positive
-`#1b7340`, warning `#7a4e00`, danger `#b3361c`, info `#1b66b3`. Warning is its own token even
+positive `#7fd49a`, warning `#ffb02e`, danger `#ff5a52`, info `#6cb6ff`; light is positive
+`#1b7340`, warning `#7a4e00`, danger `#bb2c28`, info `#1b66b3`. Warning is its own token even
 though it equals the accent in dark: the design's only warning is amber, and it is always paired
 with a text label. On their own 12% tint (badges) the light theme darkens the text a further 18%.
 Plate colours in the plate calculator follow the physical IWF convention on purpose.
+
+`--color-track` (the unfilled part of a progress line, and a chart's baseline: `#2a2a2e` dark,
+`#d4d4ce` light) and `--color-handle` (a sheet's grab handle, 36 × 4: `#3a3a3f` dark, `#c9c9c3`
+light) are the two neutrals v2 adds.
 
 ## Data visualisation
 
@@ -107,8 +139,8 @@ not ship. The order and roles live in `src/lib/ui/charts/palette.ts`.
   order and leaves them out. Strength and combat collapse under deuteranopia (ΔE 2.3), so they
   are never neighbours in the order, and every series is labelled in words.
 - A series colour is never a status colour (each pair at least ΔE 2 apart; status always carries
-  an icon and a word). M1's dark strength sits ΔE 0.7 from warning, one more reason charts use
-  their own steps.
+  an icon and a word). M1's dark strength sat ΔE 2.3 from the old amber warning, near the floor of
+  2, one more reason charts use their own steps.
 
 **Diverging pair**, for a signed difference from a target (actual minus target RPE): cool below,
 warm above, a grey with no hue at zero, so on target reads as nothing to see.
@@ -120,21 +152,21 @@ warm above, a grey with no hue at zero, so on target reads as nothing to see.
 | `--chart-diverge-mid`  | `#74747a` | `#86867f` |
 
 - The poles: ≥ 3:1, normal-vision ΔE 27.7 light and 26.6 dark, CVD 19.9 and 17.3 (floors 15 and
-  8). The midpoint: chroma < 0.02, 3.66:1 light and 4.03:1 dark.
+  8). The midpoint: chroma < 0.02, 3.66:1 light and 3.93:1 dark.
 - Each pole is at least ΔE 8 from every status and series colour (closest: light warm against
   danger, 8.6; dark warm against combat, 9.6). The pair never shares a chart with discipline
   series, and a status shown beside it is labelled in words.
 
 **Furniture** (everything that is not data):
 
-| Token              | Dark                      | Light     | Use                                                    |
-| ------------------ | ------------------------- | --------- | ------------------------------------------------------ |
-| `--chart-surface`  | surface-1                 | surface-1 | what every chart sits on                               |
-| `--chart-muted`    | `#6b6b71`                 | `#8b8b85` | a context series beside the one in colour (≥ 3:1)      |
-| `--chart-grid`     | `rgb(255 236 200 / 0.08)` | `#ebebe6` | hairline gridlines                                     |
-| `--chart-axis`     | `#2e2b24`                 | `#d4d4ce` | axis rules and ticks                                   |
-| `--chart-baseline` | `#55555c`                 | `#a3a39d` | the zero line marks stand on                           |
-| `--chart-band`     | `#221e19`                 | `#f4f4f0` | the fill behind a target range or a highlighted period |
+| Token              | Dark      | Light     | Use                                                    |
+| ------------------ | --------- | --------- | ------------------------------------------------------ |
+| `--chart-surface`  | surface-1 | surface-1 | what every chart sits on                               |
+| `--chart-muted`    | `#6b6b71` | `#8b8b85` | a context series beside the one in colour (≥ 3:1)      |
+| `--chart-grid`     | `#1f1f23` | `#ebebe6` | hairline gridlines                                     |
+| `--chart-axis`     | `#2a2a2e` | `#d4d4ce` | axis rules and ticks                                   |
+| `--chart-baseline` | `#55555c` | `#a3a39d` | the zero line marks stand on                           |
+| `--chart-band`     | `#19191c` | `#f4f4f0` | the fill behind a target range or a highlighted period |
 
 All greys. Grid, axis and baseline stand out in that order and stay below 3:1, so they never read
 as data.
@@ -153,8 +185,9 @@ as data.
   JavaScript' and the table still reads.
 - **Text never wears a series colour.** Values, labels, legends and tick labels use the text
   tokens; a coloured mark beside them carries identity.
-- **Surfaces.** Charts sit on surface-1 (`--chart-surface`), never surface-2: light conditioning
-  is 2.95:1 there.
+- **Surfaces.** Charts sit on surface-1 (`--chart-surface`: `#151517` dark, `#ffffff` light), never
+  surface-2: light conditioning is 2.95:1 on surface-2. v2 draws its charts on the canvas; moving
+  them is open (`v2/14`, which re-runs the palette checks).
 - **Motion.** Marks do not animate in. Hover and scrub feedback uses `--duration-fast`, a
   refetch keeps the previous frame at reduced opacity with `aria-busy`, and under
   `prefers-reduced-motion` nothing moves.
@@ -239,12 +272,13 @@ Fallback` → local Menlo/Courier New (`size-adjust` 99.7%, `ascent-override` 10
 
 ## Space, shape, depth, motion
 
-- **Spacing** (4 px grid): `--space-0-5` 2 · `1` 4 · `1-5` 6 · `2` 8 · `3` 12 · `4` 16 · `5` 20 ·
-  `6` 24 · `8` 32 · `10` 40 · `12` 48 · `16` 64 · `20` 80 px. Page gutter `--gutter` 20 px.
-- **Radii:** one radius for every card, button, input, chip, segmented control, checkbox and sheet:
-  `sm`, `md`, `lg` and `xl` are all 4 px. `xs` is 2 px (the switch thumb and the sheet grab handle).
-  Inner fills that touch a 4 px parent use 3 px on the touching corners. `full` is unused: there are
-  no pills and no circles.
+- **Spacing** (4 px grid): `--space-0-5` 2 · `1` 4 · `1-5` 6 · `2` 8 · `2-5` 10 · `3` 12 · `3-5` 14 ·
+  `4` 16 · `4-5` 18 · `5` 20 · `6` 24 · `7` 28 · `8` 32 · `9` 36 · `10` 40 · `11` 44 · `12` 48 ·
+  `14` 56 · `16` 64 · `20` 80 px. Page gutter `--gutter` 28 px: every phone board pads its content
+  that far.
+- **Radii:** 2 handle and segments · 14 fields · 16 buttons and toasts · 18 the workout's Done ·
+  20 bubbles · 28 sheets and the composer · full avatar and dots; no card radius, v2 has no cards.
+  The tokens are `--radius-xs`, `-sm`, `-md`, `-lg`, `-xl`, `-action-lg` and `-full`.
 - **Elevation:** flat. `--elevation-1/2/3` and `--glow-accent` are transparent zero shadows
   (`0 0 0 0 transparent`), so components can list them in a longer `box-shadow`. Depth comes from the
   surface tones and the hairline borders; the primary CTA has no glow.
