@@ -1,7 +1,16 @@
 import { version } from '$app/env';
 import { testRoutesEnabled } from '#lib/server/env.ts';
 import { ownerId } from '#lib/server/forms/read.ts';
-import type { PageServerLoad } from './$types';
+import {
+	clearGoalAction,
+	deleteWeightAction,
+	editMilestonesAction,
+	editWeightAction,
+	logWeightAction,
+	setGoalAction,
+	setPhaseAction
+} from '#lib/server/forms/weight.ts';
+import type { Actions, PageServerLoad } from './$types';
 import { loadProgress, type ProgressDeps } from './load';
 import { progressParams } from './params';
 
@@ -40,3 +49,17 @@ export const load: PageServerLoad = async ({ cookies, locals, request, route, ur
 			: {}
 	);
 };
+
+/**
+ * The Weight view's form actions (forms/weight.ts): log, edit and delete a weigh-in, set the goal,
+ * edit its milestones, clear it, and set the nutrition phase.
+ */
+export const actions = {
+	logWeight: logWeightAction,
+	editWeight: editWeightAction,
+	deleteWeight: deleteWeightAction,
+	setGoal: setGoalAction,
+	editMilestones: editMilestonesAction,
+	clearGoal: clearGoalAction,
+	setPhase: setPhaseAction
+} satisfies Actions;

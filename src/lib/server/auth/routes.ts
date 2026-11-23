@@ -95,6 +95,9 @@ export const ROUTE_ACCESS = {
 	// memory
 	'/api/coach/memory': 'owner',
 
+	// weights: Undo of a weigh-in the coach logged
+	'/api/coach/weights/[id]/undo': 'owner',
+
 	// Reviews (M6): a review's write-up, one coach turn (owner-only, Origin-checked, rate-limited)
 	'/api/reviews/narrate': 'owner',
 
