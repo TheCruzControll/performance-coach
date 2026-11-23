@@ -3,7 +3,7 @@
 What is built, what is in flight, and what is next. Acceptance criteria and evidence stay in
 [milestones.md](milestones.md). Update this file in the change that moves a line.
 
-Last updated: 2026-11-23, from `main` at the merge of #615.
+Last updated: 2026-11-23, from `main` at the merge of #619.
 
 ## Milestones
 
@@ -31,6 +31,13 @@ runs the criteria and updates milestones.md.
 
 ## Recently merged
 
+- Marathon and half blocks are built to their race plan: the long run takes its planned length and
+  grows at most 1.5 km a week, a cutback week holds at most 80 % of the biggest week, the race week
+  has no long run, and each week's quality sessions are its phase's race work up to its hooks' count
+  (marathon pace in the long run and a threshold run in a marathon build and peak, only the
+  marathon-pace long run in its taper, a threshold run and 10K-pace intervals in a half's build and
+  peak). A half reads its own hooks. A running goal that trains alongside the leader holds its dose in distance mode:
+  65 % of recent volume, one quality run, the long run no longer than the recent longest.
 - Runs are paced from current fitness: the best race of the last 26 weeks sets every pace by its
   VDOT (Daniels' formula); a race 26 to 52 weeks old, or an undated one when no race has a date, is
   a rough guide; else the told easy pace's VDOT. A run the coach adds is paced the same way. In a
@@ -107,8 +114,9 @@ runs the criteria and updates milestones.md.
   their own sets per muscle group, and a secondary strength goal the lower half of its band. m7r/06
   too: Progress and the reviews judge M7 weeks by their own targets. m7r/07 too: runs are paced from
   the VDOT of the best recent race or the told easy pace, and a marathon block's long run closes at
-  marathon pace. m7r/08 to m7r/10, m7/58 and m7/59 build on them. The old M7 pull requests stay open
-  until their rows merge.
+  marathon pace. m7r/08 too: marathon and half blocks follow their race plan's long runs, cutbacks
+  and race work, and a running goal that does not lead holds its dose. m7r/09, m7r/10, m7/58 and
+  m7/59 build on them. The old M7 pull requests stay open until their rows merge.
 - **Instrument v2 tokens (`v2/01a`).** The colours, surfaces, borders, spacing, radii and the theme
   colour follow Instrument v2 in `src/lib/ui/styles/tokens.css`, in dark and
   light; `docs/design-system.md` and `/design` show them. The 28 px gutter moves with the shell in `v2/03`: at 28 px the workout's
@@ -155,7 +163,8 @@ runs the criteria and updates milestones.md.
 - Land or close the 32 open pull requests.
 - Finish M4: the owner's screenshot review and the real-device workout check.
 - Finish M5: the owner's screenshot review (#405), the first live-suite run, an inbox Lighthouse
-  number, and a coach item on the real-device checklist.
+  number, and the owner's run of the coach items on the real-device checklist (docs/testing.md,
+  items 9 to 13).
 - Verify M6 against its acceptance criteria and record the evidence in milestones.md.
 - M8: the performance and design councils, which fill the skeletons in `docs/reports/`.
 - M9: security review, the restore drill, and owner sign-off on the deployed app.
