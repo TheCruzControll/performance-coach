@@ -68,7 +68,7 @@ import { estimateMinutes } from '../../../domain/programming/timefit';
 import { PROPOSAL } from '../../../domain/training/lifecycles';
 import type { ExerciseRef } from '../../../domain/training/types';
 import { cleanFloat } from '../../../domain/units';
-import { getDb, type Executor } from '../../db';
+import { createWeightRepository, getDb, type Executor } from '../../db';
 import { createCoachProposalsRepository } from '../../db/repositories/coach-proposals';
 import { createProgramsRepository } from '../../db/repositories/programs';
 import { createReviewsRepository } from '../../db/repositories/reviews';
@@ -200,21 +200,36 @@ function nextStateOf(
 	return { state: 'planned', kind: next.week.kind };
 }
 
+/** The body weight a review reads for its digest: the window's weigh-ins and the active goal. */
+export interface WeightDigest {
+	entries: readonly { id: number; updatedAt: Date }[];
+	goal: { id: string; updatedAt: Date } | null;
+}
+
 /**
  * The digest facts: every set, workout and check-in of the weeks read, with when each last
  * changed. The sets before the window, read only to judge PRs, are left out on purpose: reading
- * all of them on every view would cost more than an older set's edit is worth.
+ * all of them on every view would cost more than an older set's edit is worth. The weigh-ins of
+ * the window and the active goal are facts too (PR 10), so an edited weigh-in makes a review
+ * stale; with none, the digest is the one it was before.
  */
 export function digestOf(
 	sets: readonly { id: string; updatedAt: Date }[],
 	sessions: readonly DatedSession[],
-	recovery: readonly { id: string; updatedAt: Date }[]
+	recovery: readonly { id: string; updatedAt: Date }[],
+	weight: WeightDigest = { entries: [], goal: null }
 ): DigestFacts {
 	return {
 		facts: [
 			...sets.map((s) => ({ kind: 'set', id: s.id, updatedAt: s.updatedAt })),
 			...sessions.map((s) => ({ kind: 'session', id: s.id, updatedAt: s.updatedAt })),
-			...recovery.map((r) => ({ kind: 'recovery', id: r.id, updatedAt: r.updatedAt }))
+			...recovery.map((r) => ({ kind: 'recovery', id: r.id, updatedAt: r.updatedAt })),
+			...weight.entries.map((e) => ({
+				kind: 'body_weight',
+				id: String(e.id),
+				updatedAt: e.updatedAt
+			})),
+			...(weight.goal ? [{ kind: 'weight_goal', ...weight.goal }] : [])
 		],
 		// The facts are counted workouts only: completed and not deleted.
 		workouts: sessions.map((s) => ({ id: s.id, status: 'completed' as const }))
@@ -223,6 +238,35 @@ export function digestOf(
 
 /** The first day the review reads: the TRAILING_WEEKS complete weeks before the reviewed one. */
 const windowFrom = (monday: IsoDate) => addDays(monday, -7 * TRAILING_WEEKS);
+
+/**
+ * The body weight a review of `monday` reads (PR 10): every weigh-in up to its Sunday, since the
+ * trend on that Sunday runs over the whole history (`entries`), the active goal with its milestones,
+ * and what the digest needs of them: the weigh-ins of the window and the goal's id and last change.
+ * An edit to a weigh-in before the window moves that trend a little without making the review stale.
+ */
+async function weightOf(db: Executor, ownerId: string, monday: IsoDate) {
+	const repo = createWeightRepository(db);
+	const rows = await repo.listRange(ownerId, null, addDays(monday, 6));
+	const goal = await repo.getActiveGoal(ownerId);
+	const milestones = goal ? await repo.listMilestones(ownerId, goal.id) : [];
+	const from = windowFrom(monday);
+	return {
+		entries: rows.map(({ measuredOn, value, unit }) => ({ measuredOn, value, unit })),
+		window: rows
+			.filter((row) => row.measuredOn >= from)
+			.map(({ id, updatedAt }) => ({ id, updatedAt })),
+		goal: goal && {
+			unit: goal.unit,
+			startOn: goal.startOn,
+			startWeight: goal.startWeight,
+			targetOn: goal.targetOn,
+			targetWeight: goal.targetWeight
+		},
+		milestones: milestones.map(({ onDate, weight }) => ({ day: onDate, weight })),
+		goalFact: goal && { id: goal.id, updatedAt: goal.updatedAt }
+	};
+}
 
 /** The facts of the weeks a review of `monday` reads, and their digest. */
 async function weekFacts(db: Executor, ownerId: string, monday: IsoDate, timeZone: string) {
@@ -236,7 +280,12 @@ async function weekFacts(db: Executor, ownerId: string, monday: IsoDate, timeZon
 	const sets = await facts.sets();
 	const sessions = await facts.sessions();
 	const recovery = await facts.recovery();
-	return { facts, queue, sets, sessions, recovery, digest: digestOf(sets, sessions, recovery) };
+	const weight = await weightOf(db, ownerId, monday);
+	const digest = digestOf(sets, sessions, recovery, {
+		entries: weight.window,
+		goal: weight.goalFact
+	});
+	return { facts, queue, sets, sessions, recovery, weight, digest };
 }
 
 /** A week's targets as the reviews read them: the band unscaled by the week's volume factor. */
@@ -265,7 +314,7 @@ async function readWeek(db: Executor, ownerId: string, monday: IsoDate, today: I
 	const sunday = addDays(monday, 6);
 	const plan = await currentPlan(db, ownerId);
 	const read = await weekFacts(db, ownerId, monday, timeZone);
-	const { facts, sessions, recovery } = read;
+	const { facts, sessions, recovery, weight } = read;
 	// PRs are judged against every earlier set, so the sets before the window are read too.
 	const first = await facts.firstActivity();
 	const earlier =
@@ -325,7 +374,13 @@ async function readWeek(db: Executor, ownerId: string, monday: IsoDate, today: I
 		exercises: defs as ReadonlyMap<string, ReviewExercise>,
 		targets: volumeTargetsOf(target!),
 		digest: read.digest,
-		format: formatIn(displayUnits(profile))
+		format: formatIn(displayUnits(profile)),
+		bodyWeight: {
+			entries: weight.entries,
+			goal: weight.goal,
+			milestones: weight.milestones,
+			unit: profile.weightUnit
+		}
 	};
 	return { input, plan, defs, runs, weekSessions, profile, facts };
 }
@@ -894,10 +949,19 @@ export async function getWeeklyReviewView(
 	const head = await proposalHead(ownerId, review, { db });
 	const proposal = head ? await getProposalView(ownerId, head.id, { db }) : null;
 	const { timeZone } = await getAthleteProfile(ownerId, { db });
-	const { sets, sessions, recovery, digest } = await weekFacts(db, ownerId, weekStartsOn, timeZone);
-	const changed = [...sets, ...sessions, ...recovery].filter(
-		(f) => f.updatedAt > review.createdAt
-	).length;
+	const { sets, sessions, recovery, weight, digest } = await weekFacts(
+		db,
+		ownerId,
+		weekStartsOn,
+		timeZone
+	);
+	const changed = [
+		...sets,
+		...sessions,
+		...recovery,
+		...weight.window,
+		...(weight.goalFact ? [weight.goalFact] : [])
+	].filter((f) => f.updatedAt > review.createdAt).length;
 	const isStale = stale(review, inputsDigest(digest));
 	const snapshot = review.read.legacy ? null : review.read.snapshot;
 	const findings = snapshot?.brief.findings ?? [];

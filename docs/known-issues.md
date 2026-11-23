@@ -106,6 +106,16 @@ Last reviewed: 2026-11-21, against `main` at the merge of #501.
   (`src/routes/(app)/progress/reviews/[[key]]/next-week-actions.svelte.ts`). Closes when the review
   names the proposal that replaced its stale one, or the card reads that one.
 
+- **The weekly review's body-weight finding is not on the review page.** The page draws only the
+  sections in `SECTION_IDS` (`src/routes/(app)/progress/reviews/[[key]]/sections.ts`), so `goals` is
+  stored and read by the coach but not shown. Closes when the page draws it.
+
+- **An edited weigh-in older than the review's eight weeks does not make the review stale.** The
+  Sunday trend runs over every weigh-in, but the digest covers the window's weigh-ins and the goal,
+  so such an edit can move the trend slightly without the review saying so. The review also reads
+  the active goal when it is computed, not the goal in force on its Sunday. Closes when the digest
+  covers every weigh-in up to the Sunday and the review reads the goal in force then.
+
 ## Working on this repo
 
 - **The repo needs Node 22 and refuses anything else.** `.npmrc` sets `engine-strict`, so a pnpm

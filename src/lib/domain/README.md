@@ -636,10 +636,14 @@ with their statuses and kind; next week's state and kind; the facts of the week 
   segments, an other session with its kind, a strength session with a line per set done (its RPE
   as the target), the intensity from the session RPE (`PERFORMED_INTENSITY`) and the source from
   the planned session it completed.
+- `goals`: with `input.bodyWeight` only, the trend on the reviewed Sunday and its change since the
+  Sunday before (`dailyTrend`, `trendOn`), judged on that Sunday by `goalStatus`: on track or ahead
+  good, behind watch, neutral with no goal, not enough data with no weigh-ins. A goal that starts
+  after the week is no goal for it.
 - `prs`, then `next`: next week's kind, or the boundary the cycle review takes over.
 
-The summary (at most `SUMMARY_MAX`) leads with adherence, then fatigue, conflicts, PRs and the
-boundary. `noProposal` is `boundary` when next week is not planned
+The summary (at most `SUMMARY_MAX`) leads with adherence, then fatigue, conflicts, the weight with a
+goal, PRs and the boundary. `noProposal` is `boundary` when next week is not planned
 in this block, `no_program` with no plan at all, and `late` once next week has ended. An early
 review counts the week's remaining days as rest. `exposures` are what next week's rules read.
 
