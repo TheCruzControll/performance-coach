@@ -42,6 +42,7 @@ import {
 	SENTIMENTS,
 	SEVERITIES,
 	SIDES,
+	WEIGHT_SOURCES,
 	type BaselineKind,
 	type BaselineSource,
 	type BodyArea,
@@ -59,7 +60,8 @@ import {
 	type Severity,
 	type Side,
 	type TimeOfDay,
-	type Weekday
+	type Weekday,
+	type WeightSource
 } from '../../../domain/profile/catalog';
 import type { OnboardingStep } from '../../../domain/profile/onboarding';
 import { PREFERENCE_SOURCES, type PreferenceSource } from '../../../domain/training/vocabulary';
@@ -130,14 +132,32 @@ export const bodyWeightEntries = pgTable(
 		value: weight('value').notNull(),
 		unit: text('unit').$type<'kg' | 'lb'>().notNull(),
 		measuredOn: date('measured_on', { mode: 'string' }).notNull(),
-		/** Where it came from: onboarding, profile, coach, … */
-		source: text('source').notNull(),
-		createdAt: createdAt()
+		/** Where it came from: onboarding, profile, log or coach. */
+		source: text('source').$type<WeightSource>().notNull(),
+		/** The coach run that recorded it (coach rows only). No foreign key: the run log may go. */
+		runId: uuid('run_id'),
+		/** The entry the day held before the coach recorded this one, to restore on Undo. */
+		replaced: jsonb('replaced').$type<{
+			value: number;
+			unit: 'kg' | 'lb';
+			source: string;
+		} | null>(),
+		createdAt: createdAt(),
+		updatedAt: updatedAt()
 	},
 	(t) => [
-		index('body_weight_entries_owner_idx').on(t.ownerId, t.measuredOn.desc(), t.id.desc()),
+		// One weigh-in per owner per day: a save on the same day replaces it.
+		uniqueIndex('body_weight_entries_owner_day_uq').on(t.ownerId, t.measuredOn),
+		index('body_weight_entries_run_idx')
+			.on(t.runId)
+			.where(sql`${t.runId} is not null`),
 		check('body_weight_entries_value_ck', sql`${t.value} > 0`),
-		check('body_weight_entries_unit_ck', inList('unit', WEIGHT_UNIT_VALUES))
+		check('body_weight_entries_unit_ck', inList('unit', WEIGHT_UNIT_VALUES)),
+		check('body_weight_entries_source_ck', inList('source', WEIGHT_SOURCES)),
+		check(
+			'body_weight_entries_run_ck',
+			sql`(${t.runId} is null or ${t.source} = 'coach') and (${t.replaced} is null or ${t.runId} is not null)`
+		)
 	]
 );
 

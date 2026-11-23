@@ -388,6 +388,10 @@ export const NUTRITION_PHASE_INFO: Record<NutritionPhase, { label: string; hint:
 export const WEIGHT_UNITS = ['kg', 'lb'] as const;
 export const DISTANCE_UNITS = ['km', 'mi'] as const;
 
+/** Who recorded a weigh-in (body_weight_entries.source) or set a weight goal. */
+export const WEIGHT_SOURCES = ['onboarding', 'profile', 'log', 'coach'] as const;
+export type WeightSource = (typeof WEIGHT_SOURCES)[number];
+
 /** Label for a stored discipline (custom ones carry their own name). */
 export function disciplineLabel(discipline: Discipline, customLabel?: string | null): string {
 	return discipline === 'custom' && customLabel ? customLabel : DISCIPLINE_INFO[discipline].label;

@@ -133,8 +133,10 @@ const STEPS: OnboardingStep[] = [
 	'review'
 ];
 
-/** The training-profile tables, children first; none references another. */
+/** The training-profile tables, children first (a goal's milestones before the goal). */
 const PROFILE_TABLES = [
+	'weight_goal_milestones',
+	'weight_goals',
 	'body_weight_entries',
 	'training_goal_events',
 	'training_goals',
