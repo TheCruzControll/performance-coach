@@ -10,6 +10,8 @@
  * shares, an eased session's loads, and a goal's session kept over one no goal trains.
  *
  * generator-phasing (m7r/04): each week's main lifts by its phase, the accessories peak and taper weeks shed, and the dose's top-set cap.
+ *
+ * generator-volume (m7r/05): the hard-set band each week is balanced to.
  */
 import { HALVED_ACCESSORY_PHASES } from '../../stages/phasing.ts';
 import { HARDEST_BY, OWN_WEEKS } from '../../stages/schedule.ts';
@@ -119,6 +121,15 @@ export const rules: readonly RuleDefinition[] = [
 		rationale:
 			'A dose is the least that keeps strength; a harder top set would cost the goal that leads the recovery it needs.',
 		source: `${PROGRAMMING}/stages/phasing.ts#phaseWeek`
+	},
+	{
+		id: 'generator.week_band',
+		kind: 'behaviour',
+		statement:
+			'A week that plans its own hard sets per muscle group is balanced to that range, a rising range week by week from the week before; any other week to the band its goal’s mode gives: the maintenance band, the lower half of its own band when it trains alongside the leader, or its own band when it leads.',
+		rationale:
+			'The week’s targets are what your reviews judge it by, so the sessions must be built to them, and a goal that does not lead gets only the volume its mode allows.',
+		source: `${PROGRAMMING}/stages/volume.ts#balancePhased`
 	}
 ];
 

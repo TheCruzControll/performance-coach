@@ -774,7 +774,8 @@ hybrid, injured shoulder, dumbbells only, the journey, the minimal onboarding pr
   `plannedHardSets`, a week above full volume against its ceiling × volume factor), pull ≥ push by
   movement pattern, the cut and bulk adjustments with their decisions, the `priority_tradeoff` when
   the session length keeps the range out, and the dumbbells-only and injured-shoulder rules for the
-  work it adds.
+  work it adds. The hypertrophy cases plan without a season (`m3Plan`), where M3's band still
+  applies; M7's own week ranges are tested in `generate-phasing.test.ts`.
 - **Scenarios** (`scenarios.test.ts`, through `programming/index.ts`): the brief's five scenarios,
   the journey and the minimal profile, with assertions pinned to rules, never to exercise names.
   Beginner: 3 full-body sessions on non-consecutive days, RPE-based main lifts with the recording
@@ -799,12 +800,16 @@ hybrid, injured shoulder, dumbbells only, the journey, the minimal onboarding pr
   planned day falls in it; a stage that plans before a 'This week' start's first day or outside its
   week throws `GeneratedPlanError` with every dotted path. The public entry point exports exactly
   the generator, its input, the fingerprint and the checks.
-- **Phasing** (`src/lib/domain/programming/generate-phasing.test.ts`): the phasing stage and the dose's RPE 8
+- **Phasing and week bands** (`src/lib/domain/programming/generate-phasing.test.ts`): the phasing stage and the dose's RPE 8
   cap. A plan with no season comes back as it was, a dose that does not bite rewrites nothing,
   back-offs never go below RPE 5, the meet week is singles at RPE 7, and hypertrophyBlock's main
   lifts reach their top RPE. meetPrep's main lifts take each phase's reps and top RPE (accumulation, intensification,
   realization, taper), with measured, estimated and blank 1RMs loaded distinctly; realization and
-  taper weeks halve the accessories. runnerLifter's strength at maintenance in a marathon peak stays
+  taper weeks halve the accessories. hypertrophyBlock's building weeks sit in their own setsPerGroup,
+  rising until the deload, keeping the week before's exercises, with one decision per group naming
+  the ramp. runnerLifter's strength as a secondary goal stays within the lower half of its band, with
+  words that name the band on a cut and a bulk, and `heldBand` gives each mode doseBand's band.
+  runnerLifter's strength at maintenance in a marathon peak stays
   within 4–10 on the maintenance split. Timefit still fits, plans are deterministic, and longSeason
   stays within PLAN_BUDGET.
 - **Preview and build** (`tests/integration/training/programming.test.ts`): the brief chain through

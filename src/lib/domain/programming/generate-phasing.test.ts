@@ -3,9 +3,12 @@
  * gives the main lifts each strength phase's reps and top RPE (loaded through M1's table at that
  * RPE, measured, estimated and blank 1RMs each as M3 loads them), halves the accessories of
  * realization and taper weeks, and holds a strength goal at maintenance to its dose's top-set RPE.
+ * The volume stage holds a hypertrophy week to its own setsPerGroup and a dosed or secondary
+ * strength goal to doseBand's band.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CATALOGUE } from '../exercises/index';
+import type { NutritionPhase } from '../profile/catalog';
 import type { TrainingProfile } from '../profile/types';
 import { percentOfOneRepMax } from '../rpe';
 import { BASELINE_INSTRUCTION } from '../training/describe';
@@ -39,7 +42,9 @@ import type { Draft, GenerateOptions, StageContext } from './stage';
 import * as stages from './stages/prepare';
 import type { PlannedBlock } from './stages/prepare';
 import { phaseWeek, phasing, strengthMode } from './stages/phasing';
+import { heldBand, OVER_IN_SOME, volume } from './stages/volume';
 import { estimateMinutes } from './timefit';
+import { balanceBlock, hardSetBand } from './volume';
 
 const MAJOR: MuscleGroup[] = ['chest', 'back', 'shoulders', 'quads', 'hamstrings', 'hips'];
 const MUSCLES = new Map(CATALOGUE.map((e) => [e.key, e]));
@@ -304,6 +309,84 @@ describe('hypertrophy main lifts (S6 hypertrophyBlock)', () => {
 	});
 });
 
+describe('hypertrophy volume (S6 hypertrophyBlock)', () => {
+	const plan = generateProgram(inputOf(M7_SCENARIOS.hypertrophyBlock()), OPTIONS);
+	const block = plan.blocks[0]!;
+	const weeks = building(block);
+
+	it('plans every building week’s hard sets per group in its own setsPerGroup', () => {
+		expect(weeks.length).toBeGreaterThanOrEqual(4);
+		const ranges = weeks.map((w) => w.targets.setsPerGroup!.min);
+		expect(new Set(ranges).size).toBe(weeks.length);
+		const within: MuscleGroup[] = [];
+		for (const group of MAJOR) {
+			const over = Boolean(volumeOf(plan.decisions, group)?.evidence.over);
+			for (const week of weeks) {
+				const { min, max } = week.targets.setsPerGroup!;
+				const sets = hardSets(week, group);
+				expect(sets, `${group} ${week.startsOn}`).toBeGreaterThanOrEqual(min);
+				// A group pulling keeps level with, or whose compounds take it over, says so.
+				if (!over) expect(sets, `${group} ${week.startsOn}`).toBeLessThanOrEqual(max);
+			}
+			if (!over) within.push(group);
+		}
+		expect(within).toEqual(expect.arrayContaining(['chest', 'quads', 'hamstrings']));
+	});
+
+	it('rises week on week and never falls until the deload, which drops below the first week', () => {
+		const deload = block.weeks.at(-1)!;
+		expect(deload.kind).toBe('deload');
+		for (const group of MAJOR) {
+			const counts = weeks.map((w) => hardSets(w, group));
+			counts
+				.slice(1)
+				.forEach((n, i) => expect(n, `${group} week ${i + 2}`).toBeGreaterThanOrEqual(counts[i]!));
+			expect(counts.at(-1)!, group).toBeGreaterThan(counts[0]!);
+			expect(hardSets(deload, group), group).toBeLessThan(counts[0]!);
+		}
+	});
+
+	it('keeps every exercise of a week in the weeks after it, and the deload on the first week’s', () => {
+		const keys = (w: WeekPlan) =>
+			Object.fromEntries(strengthIn(w).map((s) => [s.title, s.exercises.map(keyOf)]));
+		weeks.slice(1).forEach((week, i) => {
+			for (const [title, before] of Object.entries(keys(weeks[i]!))) {
+				expect(keys(week)[title]!.slice(0, before.length), `${title} ${week.startsOn}`).toEqual(
+					before
+				);
+			}
+		});
+		expect(keys(block.weeks.at(-1)!)).toEqual(keys(weeks[0]!));
+	});
+
+	it('records one volume_adjusted per group for the block, naming the weekly ramp', () => {
+		const adjusted = plan.decisions.filter((d) => d.kind === 'volume_adjusted');
+		const groups = adjusted.map((d) => d.evidence.group);
+		expect(new Set(groups).size).toBe(groups.length);
+		const first = weeks[0]!.targets.setsPerGroup!;
+		const last = weeks.at(-1)!.targets.setsPerGroup!;
+		for (const d of adjusted.filter((x) => x.ruleKey !== 'volume.push_pull')) {
+			expect(d.evidence.target).toBe(
+				`each week’s range, from ${first.min}–${first.max} in its first to ${last.min}–${last.max} in its last`
+			);
+			expect(d.refs).toEqual(['blocks.0']);
+		}
+		expect(adjusted.some((d) => d.evidence.over === OVER_IN_SOME)).toBe(true);
+	});
+
+	it('leaves the stage before volume outside some week’s own range, so the volume stage is what holds it', () => {
+		const { draft } = draftThrough(M7_SCENARIOS.hypertrophyBlock(), 'phasing');
+		const outside = building(draft.blocks[0]!).some((week) =>
+			MAJOR.some((group) => {
+				const { min, max } = week.targets.setsPerGroup!;
+				const sets = hardSets(week, group);
+				return sets < min || sets > max;
+			})
+		);
+		expect(outside).toBe(true);
+	});
+});
+
 describe('dose bands', () => {
 	it('S11: strength at maintenance in a marathon peak stays within M3’s 4–10, on its maintenance split', () => {
 		const profile = M7_SCENARIOS.runnerLifter();
@@ -343,6 +426,94 @@ describe('dose bands', () => {
 				if (!over) expect(sets, `${group} ${week.startsOn}`).toBeLessThanOrEqual(hi);
 			}
 		}
+	});
+
+	/**
+	 * runnerLifter's volume stage on its own draft, its strength goal secondary; and the same
+	 * draft balanced as M3 balances it, to the whole of its style's band.
+	 */
+	function secondaryAndWhole(phase: NutritionPhase | null = null) {
+		const through = draftThrough(M7_SCENARIOS.runnerLifter(), 'phasing');
+		const { draft } = through;
+		const input = { ...through.context.input, nutritionPhase: phase };
+		const context = { ...through.context, input };
+		const ref = input.refs.goals[input.goals.findIndex((g) => g.title === 'Get stronger')]!;
+		expect(input.modes?.[ref]).toBe('secondary');
+		const log = new DecisionLog();
+		const secondary = { block: volume(draft, { ...context, log }).blocks[0]!, log: log.list() };
+		const split = chooseSplit(input, 2);
+		const whole = new DecisionLog();
+		const block = balanceBlock(draft.blocks[0]!, 0, split, input, whole);
+		return { secondary, whole: { block, log: whole.list() } };
+	}
+
+	it('holds a secondary strength goal to the lower half of its band, under what it gets leading', () => {
+		const [lo, hi] = HARD_SET_RANGES.strength.sets;
+		const half = [lo, lo + Math.floor((hi - lo) / 2)];
+		expect(half).toEqual([8, 11]);
+		const { secondary, whole: primary } = secondaryAndWhole();
+		const total = (w: WeekPlan) => MAJOR.reduce((n, g) => n + hardSets(w, g), 0);
+		const [held, led] = [building(secondary.block), building(primary.block)];
+		held.forEach((week, w) => expect(total(week)).toBeLessThanOrEqual(total(led[w]!)));
+		expect(held.reduce((n, w) => n + total(w), 0)).toBeLessThan(
+			led.reduce((n, w) => n + total(w), 0)
+		);
+		const checked = MAJOR.filter((group) => {
+			const d = volumeOf(secondary.log, group);
+			expect(d?.evidence.target, group).toBe(
+				'8–11, the lower half of the 8–14 that suits getting stronger'
+			);
+			// The floor holds in the lightest week, unless M3's own balance leaves it short there too.
+			const lightest = (weeks: WeekPlan[]) => Math.min(...weeks.map((w) => hardSets(w, group)));
+			expect(lightest(held), group).toBeGreaterThanOrEqual(Math.min(half[0]!, lightest(led)));
+			if (d?.evidence.over) return false;
+			for (const week of held) {
+				expect(hardSets(week, group), `${group} ${week.startsOn}`).toBeLessThanOrEqual(
+					half[1]! * Math.max(1, week.targets.volumeFactor)
+				);
+			}
+			return true;
+		});
+		expect(checked.length).toBeGreaterThan(0);
+		expect(volumeOf(primary.log, 'chest')?.evidence.target).toBe(
+			'the 8–14 that suits getting stronger'
+		);
+	});
+
+	it('names the band a secondary goal is balanced to on a cut and on a bulk', () => {
+		const target = (phase: NutritionPhase) =>
+			volumeOf(secondaryAndWhole(phase).secondary.log, 'chest')?.evidence.target;
+		expect(target('cut')).toBe(
+			'6.5–9 on a cut, from 8–11, the lower half of the 8–14 that suits getting stronger'
+		);
+		expect(target('bulk')).toBe(
+			'the top of 8–11, the lower half of the 8–14 that suits getting stronger'
+		);
+	});
+
+	it('gives heldBand each goal mode’s band, and a primary or unset goal M3’s', () => {
+		const { context } = draftThrough(M7_SCENARIOS.runnerLifter(), 'placement');
+		const input = context.input;
+		const ref = input.refs.goals[input.goals.findIndex((g) => g.title === 'Get stronger')]!;
+		const split = chooseSplit(input, 2);
+		const withMode = (mode: 'primary' | 'secondary' | 'maintenance') => ({
+			...input,
+			modes: { ...input.modes, [ref]: mode }
+		});
+		const m3 = hardSetBand(split, null);
+		expect(heldBand(split, withMode('primary'))).toMatchObject({
+			sets: m3.sets,
+			band: m3.band,
+			trim: false
+		});
+		expect(heldBand(split, withMode('secondary'))).toMatchObject({ sets: [8, 11], trim: true });
+		const held = heldBand(split, withMode('maintenance'));
+		expect(held).toMatchObject({ sets: [4, 10], trim: true });
+		expect(held.band).toBe(hardSetBand({ ...split, maintenance: true }, null).band);
+		expect(heldBand(split, { ...input, modes: undefined })).toMatchObject({
+			sets: m3.sets,
+			trim: false
+		});
 	});
 });
 

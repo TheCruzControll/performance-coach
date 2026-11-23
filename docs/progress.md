@@ -3,7 +3,7 @@
 What is built, what is in flight, and what is next. Acceptance criteria and evidence stay in
 [milestones.md](milestones.md). Update this file in the change that moves a line.
 
-Last updated: 2026-11-23, from `main` at the merge of #602.
+Last updated: 2026-11-23, from `main` at the merge of #604.
 
 ## Milestones
 
@@ -31,6 +31,10 @@ runs the criteria and updates milestones.md.
 
 ## Recently merged
 
+- Hypertrophy weeks are built to their own sets per muscle group, rising week on week until the
+  deload, and each week keeps the exercises of the week before. A strength goal that trains
+  alongside the leader gets the lower half of its band (8–11 hard sets a group), and one held at
+  maintenance 4–10.
 - Each week's main lifts follow its block's phase: sets of 6–8, then 3–5, 1–3 and 1–2 toward a
   meet. Peak and taper weeks keep half the accessories. A strength goal held at maintenance tops out
   at RPE 8.
@@ -87,8 +91,9 @@ runs the criteria and updates milestones.md.
   the coach's block, deload and taper proposals with this week's block in every turn. m7r/03 is
   built: each block's day pattern is planned across week boundaries, and every clash a generated
   week keeps is recorded as explained (a priority trade-off or a schedule_kept decision). m7r/04 is
-  built too: each week's main lifts follow its block's phase. m7r/05 to m7r/10, m7/58 and m7/59
-  build on both. The old M7 pull requests stay open until their rows merge.
+  built too: each week's main lifts follow its block's phase. m7r/05 too: hypertrophy weeks get
+  their own sets per muscle group, and a secondary strength goal the lower half of its band. m7r/06
+  to m7r/10, m7/58 and m7/59 build on both. The old M7 pull requests stay open until their rows merge.
 - **Instrument v2 tokens (`v2/01a`).** The colours, surfaces, borders, spacing, radii and the theme
   colour follow Instrument v2 in `src/lib/ui/styles/tokens.css`, in dark and
   light; `docs/design-system.md` and `/design` show them. The 28 px gutter moves with the shell in `v2/03`: at 28 px the workout's

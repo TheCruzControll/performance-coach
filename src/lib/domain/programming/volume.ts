@@ -206,13 +206,29 @@ export function hardSetBand(split: Split, phaseKey: NutritionPhase | null) {
 	return { style, sets: [lo, hi] as const, keep, toward, band };
 }
 
-/** Block `b`'s strength sessions balanced; the block as it is when no week is at full volume. */
+/**
+ * The band a block is balanced to, as hardSetBand gives it, less the style; `trim` when its
+ * ceiling holds as firmly as its floor, so a main lift's back-offs may come off to keep under it.
+ */
+export type SetBand = Omit<ReturnType<typeof hardSetBand>, 'style' | 'sets'> & {
+	sets: readonly [lo: number, hi: number];
+	trim?: boolean;
+};
+
+/**
+ * Block `b`'s strength sessions balanced; the block as it is when no week is at full volume.
+ * `band`, when given, replaces hardSetBand's range and words (M7's volume stage: a week's own
+ * setsPerGroup, or doseBand for the goal's mode); with `trim`, sets then come off, a main lift's
+ * back-offs among them, as a cut takes them, toward its ceiling. A week that carries
+ * setsPerGroup is judged against it as it stands, not scaled by its volume factor.
+ */
 export function balanceBlock(
 	block: BlockPlan,
 	b: number,
 	split: Split,
 	input: ProgrammingInput,
-	log: DecisionLog
+	log: DecisionLog,
+	band?: SetBand
 ): BlockPlan {
 	const titles = [
 		...new Set(block.weeks.flatMap((w) => w.sessions.filter(isStrength).map((s) => s.title)))
@@ -225,7 +241,7 @@ export function balanceBlock(
 	if (!weeks.length) return block;
 
 	const minutes = input.sessionMinutes;
-	const scales = weeks.map((w) => w.targets.volumeFactor);
+	const scales = weeks.map((w) => (w.targets.setsPerGroup ? 1 : w.targets.volumeFactor));
 	const muscles = new Map(libraryOf(input).map((e) => [e.key, e]));
 	const ex = (key: ExerciseKey) => exerciseOf(input, key)!;
 	const keyOf = (e: PlannedExercisePlan) => toExerciseKey(e.exercise);
@@ -384,8 +400,8 @@ export function balanceBlock(
 		sets: [lo, hi],
 		keep,
 		toward,
-		band
-	} = hardSetBand(split, phaseKey);
+		band: bandWords
+	} = { ...hardSetBand(split, phaseKey), ...band };
 	const targetsBy = (target: (g: MajorGroup) => Targets[MajorGroup]) =>
 		Object.fromEntries(GROUPS.map((g) => [g, target(g)])) as Targets;
 	// A bulk raises the floor only as far as the heaviest week stays in the range.
@@ -397,6 +413,7 @@ export function balanceBlock(
 		ceiling: hi
 	}));
 	search(targets);
+	if (band?.trim) search(targets, true);
 	if (keep < 1) {
 		// The cut keeps `keep` of what the goal's sets came to, lightest and heaviest weeks alike.
 		const planned = GROUPS.map((g) => [
@@ -461,7 +478,7 @@ export function balanceBlock(
 		log.add('volume_adjusted', phase ? `volume.${phaseKey}` : `volume.${style}`, refs, {
 			group: MUSCLE_GROUP_LABEL[g],
 			sets: words(after),
-			target: band,
+			target: bandWords,
 			reason: because((d) => d.groups[g]),
 			over: why()
 		});
@@ -483,7 +500,7 @@ export function balanceBlock(
 			kept: `Your ${minutes}-minute sessions`,
 			given: clip(`more ${listing(named)} work`, 120),
 			reason: clip(
-				`Reaching ${band} would take more sets than your ${minutes}-minute sessions hold, so the session length comes first.`,
+				`Reaching ${bandWords} would take more sets than your ${minutes}-minute sessions hold, so the session length comes first.`,
 				200
 			)
 		});
