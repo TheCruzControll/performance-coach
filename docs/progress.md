@@ -137,7 +137,8 @@ runs the criteria and updates milestones.md.
 - **Instrument v2 rows, sheets and toasts (`v2/02c`).** `ListRow` is the v2 list row: 60 px, a
   hairline under each row but a list's last, an optional trailing `value`, a `danger` title, and
   no icon tile (its `icon` and `tone` are accepted and not drawn). Sheets have a 36 × 4 handle, a
-  Hubot 26/32 title, a 44 px bottom with the home indicator inside it, and a quiet ghost close.
+  Hubot 26/32 title, a bottom of the home indicator's inset plus 10 px (44 px on an iPhone with
+  an inset), and a quiet ghost close.
   Toasts are a surface-2 line that stays at the top until `v2/03`. The `/design` Data and Feedback
   tabs and `docs/design-system.md` show them. Phone layouts and sheet heights are CI’s to prove.
 - **Adding a session to a program.** The builder, the storage

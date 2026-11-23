@@ -397,16 +397,18 @@ test.describe('on a desktop window', () => {
 			expect(box.y + box.height).toBeLessThanOrEqual(bar.y);
 		}
 
-		// A conversation row takes a visible focus ring, and its edge strengthens under a fine pointer.
+		// A conversation row takes a visible focus ring, and it tints under a fine pointer.
 		const row = threadRows(page).first();
 		await row.focus();
 		await expect
 			.poll(() => row.evaluate((el) => getComputedStyle(el).outlineStyle))
 			.not.toBe('none');
 		await row.blur();
-		const edge = await row.evaluate((el) => getComputedStyle(el).borderColor);
+		const rest = await row.evaluate((el) => getComputedStyle(el).backgroundColor);
 		await row.hover();
-		await expect.poll(() => row.evaluate((el) => getComputedStyle(el).borderColor)).not.toBe(edge);
+		await expect
+			.poll(() => row.evaluate((el) => getComputedStyle(el).backgroundColor))
+			.not.toBe(rest);
 		await expectNoSideScroll(page);
 		await captureScreen(page, testInfo, 'coach-desktop');
 

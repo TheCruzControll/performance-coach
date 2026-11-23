@@ -50,6 +50,9 @@ Last reviewed: 2026-11-21, against `main` at the merge of #501.
 - **`ListRow` still takes `icon` and `tone`, and draws neither.** v2 rows have no icon tiles, so
   both props are deprecated and accepted for the screens that still pass them.
   Closes when the last screen row drops them and `src/lib/ui/components/ListRow.svelte` removes them.
+- **On Train, the Rest timer row gains a hairline on its first hover.** Prefetch mounts the sheet's
+  dialog as a sibling of the row, so the row's `:last-child` rule breaks. It stays until the Train
+  screen row.
 - **Toasts are at the top; v2 puts them above the tab bar (`v2/03`).** `v2/02c` restyled them and
   kept them at the top: above the tab bar they would cover the resume bar, the composer and the
   logger. Closes when `v2/03` moves them with the shell.

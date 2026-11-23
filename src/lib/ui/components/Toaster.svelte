@@ -125,6 +125,7 @@
 		min-height: var(--touch-target);
 		padding: 0 var(--space-2);
 		font: var(--type-secondary);
+		font-weight: var(--weight-semibold);
 	}
 
 	.dismiss {

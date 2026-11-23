@@ -336,15 +336,16 @@
 		outline-offset: -2px;
 	}
 
-	/* The bottom is 44 px with the home indicator's inset inside it (34 px on an iPhone). */
+	/* The bottom is the home indicator's inset plus 10 px, at least 16 px (footer) or 24 px (body):
+	   an iPhone with an inset (34 px) gets 44 px. */
 	.footer {
 		flex: none;
 		padding: var(--space-3) var(--gutter)
-			max(var(--space-11), calc(var(--safe-bottom) + var(--space-2-5)));
+			max(var(--space-4), calc(var(--safe-bottom) + var(--space-2-5)));
 	}
 
 	.body:last-child {
-		padding-bottom: max(var(--space-11), calc(var(--safe-bottom) + var(--space-2-5)));
+		padding-bottom: max(var(--space-6), calc(var(--safe-bottom) + var(--space-2-5)));
 	}
 
 	/* A desktop window: a dialog centred in the window that fades in as it rises 8 px, with no
