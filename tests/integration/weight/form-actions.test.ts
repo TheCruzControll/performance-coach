@@ -33,7 +33,7 @@ import {
 } from '../../../src/lib/server/services/weight';
 import { POST as undo } from '../../../src/routes/api/coach/weights/[id]/undo/+server';
 import { withCommitted, withRollback } from '../helpers';
-import { clock, makeOwner } from '../profile/fixtures';
+import { clock, makeOwner, makeSecondOwner } from '../profile/fixtures';
 
 const ORIGIN = 'http://localhost:5173';
 const NOW = '2026-11-10T08:00:00Z';
@@ -94,13 +94,13 @@ describe('logging a weigh-in', () => {
 				at
 			);
 			expect(result).toEqual({
-				entry: expect.objectContaining({
+				entry: {
+					id: expect.any(Number),
+					measuredOn: TODAY,
 					value: 82.4,
 					unit: 'kg',
-					measuredOn: TODAY,
-					source: 'log',
-					runId: null
-				}),
+					source: 'log'
+				},
 				replaced: null
 			});
 		});
@@ -218,6 +218,47 @@ describe('editing a weigh-in', () => {
 			expect(refused(result, 404).message).toBe('That no longer exists. Reload to see the latest.');
 		});
 	});
+
+	it('keeps the day when the edit names none', async () => {
+		await withRollback(async (db) => {
+			const owner = await makeOwner(db);
+			const { entry } = await logWeight(owner, kg(82.4, '2026-11-09'), deps(db));
+			const result = await editWeightAction(
+				{ locals: session(owner), request: post({ id: entry.id, value: 81.9, unit: 'kg' }) },
+				deps(db)
+			);
+			expect(result).toEqual({
+				entry: { id: entry.id, measuredOn: '2026-11-09', value: 81.9, unit: 'kg', source: 'log' }
+			});
+		});
+	});
+
+	it('answers 404 for a missing id before it checks the body', async () => {
+		await withRollback(async (db) => {
+			const owner = await makeOwner(db);
+			const result = await editWeightAction(
+				{ locals: session(owner), request: post({ id: 999_999, value: 900, unit: 'kg' }) },
+				{ db }
+			);
+			expect(refused(result, 404).message).toBe('That no longer exists. Reload to see the latest.');
+		});
+	});
+
+	it('answers 404 for another owner’s id, and leaves the entry as it is', async () => {
+		await withRollback(async (db) => {
+			const owner = await makeOwner(db);
+			const { entry } = await logWeight(owner, kg(82.4, '2026-11-09'), deps(db));
+			const other = await makeSecondOwner(db);
+			const result = await editWeightAction(
+				{ locals: session(other), request: post({ id: entry.id, ...kg(81.9, '2026-11-09') }) },
+				{ db }
+			);
+			expect(refused(result, 404).message).toBe('That no longer exists. Reload to see the latest.');
+			expect(await createWeightRepository(db).getById(owner, entry.id)).toMatchObject({
+				value: 82.4
+			});
+		});
+	});
 });
 
 describe('deleting a weigh-in', () => {
@@ -245,7 +286,7 @@ describe('deleting a weigh-in', () => {
 		});
 	});
 
-	it('answers 404 once the entry is gone, and for another owner’s id', async () => {
+	it('answers 404 once the entry is gone', async () => {
 		await withRollback(async (db) => {
 			const owner = await makeOwner(db);
 			const { entry } = await logWeight(owner, kg(82.4, TODAY), deps(db));
@@ -257,6 +298,20 @@ describe('deleting a weigh-in', () => {
 			);
 		});
 	});
+
+	it('answers 404 for another owner’s id, and keeps the entry', async () => {
+		await withRollback(async (db) => {
+			const owner = await makeOwner(db);
+			const { entry } = await logWeight(owner, kg(82.4, TODAY), deps(db));
+			const other = await makeSecondOwner(db);
+			const result = await deleteWeightAction(
+				{ locals: session(other), request: post({ id: entry.id }) },
+				{ db }
+			);
+			expect(refused(result, 404).message).toBe('That no longer exists. Reload to see the latest.');
+			expect(await createWeightRepository(db).getById(owner, entry.id)).not.toBeNull();
+		});
+	});
 });
 
 describe('setting the goal', () => {
@@ -266,14 +321,14 @@ describe('setting the goal', () => {
 			await logWeight(owner, kg(82.4, TODAY), deps(db));
 			const result = await setGoalAction({ locals: session(owner), request: post(GOAL) }, deps(db));
 			expect(result).toEqual({
-				goal: expect.objectContaining({
-					status: 'active',
+				goal: {
+					id: expect.any(String),
+					unit: 'kg',
 					startOn: TODAY,
 					startWeight: 82.4,
-					targetWeight: 78,
 					targetOn: GOAL.targetOn,
-					source: 'log'
-				}),
+					targetWeight: 78
+				},
 				phasePrompt: 'cut'
 			});
 		});
@@ -342,8 +397,8 @@ describe('editing the milestones', () => {
 			);
 			expect(result).toEqual({
 				milestones: [
-					expect.objectContaining({ onDate: '2026-11-20', weight: 81.5, source: 'edited' }),
-					expect.objectContaining({ onDate: '2027-01-10', weight: 79, source: 'edited' })
+					{ id: expect.any(Number), day: '2026-11-20', weight: 81.5, source: 'edited' },
+					{ id: expect.any(Number), day: '2027-01-10', weight: 79, source: 'edited' }
 				]
 			});
 		});
@@ -389,11 +444,10 @@ describe('clearing the goal', () => {
 		await withRollback(async (db) => {
 			const owner = await makeOwner(db);
 			await logWeight(owner, kg(82.4, TODAY), deps(db));
-			await setWeightGoal(owner, GOAL, deps(db));
+			const { goal } = await setWeightGoal(owner, GOAL, deps(db));
 			const result = await clearGoalAction({ locals: session(owner), request: post({}) }, { db });
-			expect(result).toEqual({
-				goal: expect.objectContaining({ status: 'ended', endedReason: 'cleared' })
-			});
+			expect(result).toEqual({ goal: { id: goal.id } });
+			expect(await createWeightRepository(db).getActiveGoal(owner)).toBeNull();
 			expect((await getAthleteProfile(owner, { db })).targetWeight).toBeNull();
 		});
 	});
@@ -578,6 +632,21 @@ describe('Undo a coach weigh-in', () => {
 			expect(notRun.status).toBe(400);
 			expect(await notRun.json()).toMatchObject({ error: 'invalid_request', field: 'runId' });
 			expect(await createWeightRepository(db).getById(owner, entry.id)).not.toBeNull();
+		});
+	});
+
+	it('answers 404 to another owner’s Undo, and leaves the coach’s entry standing', async () => {
+		await withCommitted(async (db) => {
+			const owner = await makeOwner(db);
+			const { entry } = await coachLogs(db, owner, 82.4, RUN);
+			// makeSecondOwner drops the one-owner index for good on the shared pool, and this endpoint
+			// reads only that pool, so the other session is an owner with no weigh-ins at all.
+			const response = await undoing(crypto.randomUUID(), String(entry.id), { runId: RUN });
+			expect(response.status).toBe(404);
+			expect(await createWeightRepository(db).getById(owner, entry.id)).toMatchObject({
+				value: 82.4,
+				source: 'coach'
+			});
 		});
 	});
 

@@ -10,6 +10,10 @@
  *
  * Every write is the owner's own, so it is recorded with source 'log' (WeightSource), never
  * 'coach': the coach's writes come through its tools and Undo, not these forms.
+ *
+ * What an action answers is a view (weighInView, goalView, milestoneView from the services), not the
+ * service's row: only the fields the screens and the Undo endpoint use, so the owner's run and
+ * replaced fields stay on the server.
  */
 import { ProfileInputError } from '../services/profile';
 import {
@@ -17,9 +21,12 @@ import {
 	deleteWeight,
 	editMilestones,
 	editWeight,
+	goalView,
 	logWeight,
+	milestoneView,
 	setNutritionPhase,
 	setWeightGoal,
+	weighInView,
 	type WeightDeps
 } from '../services/weight';
 import { attempt } from './profile';
@@ -47,20 +54,22 @@ function weighInId(id: unknown): number {
 /**
  * Today's log card, and the Weight view's log form: record the weigh-in for its day (today unless
  * the payload names another). A day that already has one is replaced; the answer is the entry as
- * stored and the one it replaced, if any.
+ * stored (weighInView) and the one it replaced, if any.
  */
 export async function logWeightAction(event: FormEvent, deps: WeightFormDeps = {}) {
 	const owner = ownerId(event.locals);
 	const { payload } = await readForm(event.request);
 	const result = await attempt(() => logWeight(owner, payload, logged(deps)));
 	if (!result.ok) return result.failure;
-	return { entry: result.value.entry, replaced: result.value.replaced };
+	const { entry, replaced } = result.value;
+	return { entry: weighInView(entry), replaced: replaced ? weighInView(replaced) : null };
 }
 
 /**
  * The Weight view's edit form: change the weigh-in the payload's `id` names. Its day may move,
- * onto a day with no weigh-in (a day that has one is a 400 at `measuredOn`). The answer is the
- * entry as stored. An id that names no weigh-in of the owner's is a 404.
+ * onto a day with no weigh-in (a day that has one is a 400 at `measuredOn`); a payload with no day
+ * keeps the entry's own. The answer is the entry as stored (weighInView). An id that names no
+ * weigh-in of the owner's is a 404.
  */
 export async function editWeightAction(event: FormEvent, deps: WeightFormDeps = {}) {
 	const owner = ownerId(event.locals);
@@ -68,7 +77,7 @@ export async function editWeightAction(event: FormEvent, deps: WeightFormDeps = 
 	const { id, ...fields } = fieldsOf(payload);
 	const result = await attempt(() => editWeight(owner, weighInId(id), fields, logged(deps)));
 	if (!result.ok) return result.failure;
-	return { entry: result.value };
+	return { entry: weighInView(result.value) };
 }
 
 /**
@@ -88,21 +97,23 @@ export async function deleteWeightAction(event: FormEvent, deps: WeightFormDeps 
 
 /**
  * The goal sheet's save: set the owner's one goal (the target, its goal-by day, and optionally the
- * unit and the step between milestones). A new goal ends the active one. The answer is the goal as
- * stored, and the nutrition phase it suggests: 'cut' for a loss, 'bulk' for a gain, or null.
+ * unit and the step between milestones). A new goal ends the active one. The answer is the goal
+ * (its id, unit, start and target, as goalView takes them) and the nutrition phase it suggests:
+ * 'cut' for a loss, 'bulk' for a gain, or null.
  */
 export async function setGoalAction(event: FormEvent, deps: WeightFormDeps = {}) {
 	const owner = ownerId(event.locals);
 	const { payload } = await readForm(event.request);
 	const result = await attempt(() => setWeightGoal(owner, payload, logged(deps)));
 	if (!result.ok) return result.failure;
-	return { goal: result.value.goal, phasePrompt: result.value.phasePrompt };
+	return { goal: goalView(result.value.goal), phasePrompt: result.value.phasePrompt };
 }
 
 /**
  * The goal sheet's milestone editor: replace the milestones of the active goal the payload's
- * `goalId` names, with its `milestones` list. A goal that is not the active one (ended, or never
- * the owner's) is a 404, and a milestone outside the goal's days, or out of range, is a 400.
+ * `goalId` names, with its `milestones` list. The answer is the list as stored (milestoneView). A
+ * goal that is not the active one (ended, or never the owner's) is a 404, and a milestone outside
+ * the goal's days, or out of range, is a 400.
  */
 export async function editMilestonesAction(event: FormEvent, deps: WeightFormDeps = {}) {
 	const owner = ownerId(event.locals);
@@ -112,17 +123,18 @@ export async function editMilestonesAction(event: FormEvent, deps: WeightFormDep
 		editMilestones(owner, typeof goalId === 'string' ? goalId : '', list, logged(deps))
 	);
 	if (!result.ok) return result.failure;
-	return { milestones: result.value };
+	return { milestones: result.value.map(milestoneView) };
 }
 
 /**
  * The goal sheet's clear: end the active goal as 'cleared' (it stays in the history) and clear the
- * profile's target. With no goal it still clears the profile's target, and answers `goal: null`.
+ * profile's target. The answer is the goal that ended, by id, or `goal: null` when there was none
+ * (the profile's target is cleared either way).
  */
 export async function clearGoalAction(event: FormEvent, deps: WeightFormDeps = {}) {
 	const owner = ownerId(event.locals);
-	const goal = await clearWeightGoal(owner, logged(deps));
-	return { goal };
+	const ended = await clearWeightGoal(owner, logged(deps));
+	return { goal: ended ? { id: ended.id } : null };
 }
 
 /**
