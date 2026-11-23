@@ -148,7 +148,8 @@ runs the criteria and updates milestones.md.
 - Land or close the 32 open pull requests.
 - Finish M4: the owner's screenshot review and the real-device workout check.
 - Finish M5: the owner's screenshot review (#405), the first live-suite run, an inbox Lighthouse
-  number, and a coach item on the real-device checklist.
+  number, and the owner's run of the coach items on the real-device checklist (docs/testing.md,
+  items 9 to 13).
 - Verify M6 against its acceptance criteria and record the evidence in milestones.md.
 - M8: the performance and design councils, which fill the skeletons in `docs/reports/`.
 - M9: security review, the restore drill, and owner sign-off on the deployed app.

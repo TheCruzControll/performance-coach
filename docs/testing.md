@@ -1507,8 +1507,66 @@ a preview deployment (Vercel Authentication on):
    restores the workout, and back online the sync pill reads Saved; installed to the home
    screen (Safari), the workout header sits under the status bar and the logger and the rest
    pill above the home indicator.
+9. Coach (M5), a streamed answer and Stop, on the iPhone: on the Coach tab, ask a question about
+   your training. The question appears at once with 'Thinking…'; activity chips name the tools as
+   they run, and the words arrive block by block while the page follows them down until you scroll
+   up. Tap Stop (the square that replaces Send while an answer runs): the answer ends with the words
+   already shown, marked 'Stopped' with Try again, and a reload keeps that mark. Then lock the phone
+   during a streamed answer for about 30 seconds and unlock: the answer has either finished, or it
+   reads 'Interrupted' with Try again. Either way the answer is not drawn twice.
+10. Coach (M5), the keyboard and the safe areas: installed to the home screen as in item 2, open the
+    Coach tab and tap the message box. The keyboard rises, the box stays above it, and the thread
+    scrolls above the box, not under it. On the phone Return adds a new line and does not send; Send
+    sends. With the keyboard down, the box sits above the home indicator and clear of the bottom bar,
+    and scrolling to the last message stops above it, so nothing hides under the box.
+11. Coach (M5), Accept on a proposal: ask the coach for a change to next week's plan. A proposal card
+    follows its answer, with what changes, why, and the impact on each week, and with Accept, Reject
+    and Ask for changes. Nothing changes until Accept. Tap Accept: the card reads 'Applied as version
+    N' with 'View in Train', and that link opens the version in Train. Reject opens a sheet with an
+    optional reason, for a proposal you do not want.
+12. Coach (M5), the offline notice: turn on airplane mode and ask the coach a question. The turn ends
+    in the notice 'You’re offline' with 'The coach needs a connection. Try again once you’re back
+    online.' and Try again. With a proposal card on screen, Accept, Reject and Ask for changes are
+    disabled, and the card says 'You’re offline. Decide once you’re back online.' Turn airplane mode
+    off and tap Try again: the answer streams.
+13. Coach (M5), a logged weigh-in and Undo: ask "I weighed 82.4 kg this morning". The answer says it
+    logged the weight, and a card after it reads 'Logged 82.4 kg for today' with an Undo button. Tap
+    Undo: the button is busy, then the card reads 'Undone'. After a reload the card is gone, because
+    the write has been taken back.
+14. Progress (M6), the charts on the iPhone and with VoiceOver: on Progress, open Overview, Strength,
+    Running and General in turn. Each chart shows its title, a context line (period · comparison ·
+    estimated or measured · trend window) and one sentence of summary, and it draws in its box
+    without the page jumping. Drag a finger across a line chart: a crosshair snaps to the nearest week,
+    and one tooltip lists every series, kept inside the plot. Tap 'Show as table' under a chart: the
+    table scrolls sideways in its own region, its headers carry the units, and the week in progress
+    is marked 'so far'. With VoiceOver on, swipe through a chart and its table: the title and summary
+    are read, and the table gives the same numbers as the plot. Note what VoiceOver says for a line
+    chart's group, since its label mentions the arrow keys, which a phone does not have.
+15. Progress (M6), offline on the iPhone: on Overview, turn on airplane mode, tap Strength, then
+    'Last 26 weeks' in the period picker. Both switches are cancelled, the numbers on screen stay,
+    and 'You’re offline — showing 12 weeks' appears above the views. Turn airplane mode off: the
+    notice clears and the switch works.
+16. Progress (M6), a weekly review on the iPhone: open Progress, then Reviews, then a reviewed week
+    under 'Weekly reviews' (newest first). Its hero shows the week, the one-sentence summary and the
+    adherence meter, and planned against completed reads in words. The next-week card offers its
+    action for that week, 'Generate next week' or 'Keep next week as planned' (which opens a sheet
+    with an optional reason). The coach's write-up, or why there is none, sits under 'Your coach’s
+    write-up', with 'Discuss with your coach'. Tap 'Create review' on a week with no review; a week
+    not yet reviewable says when it will be. On the phone 'All reviews' returns to the list. In
+    airplane mode, Create is disabled and says you are offline, and the next-week card says 'You’re
+    offline. Decide once you’re back online.'
+17. Progress (M6), a cycle review on the iPhone: open Progress, then Reviews, then a finished block
+    under 'Cycle reviews'. The hero shows the block, its dates, the summary, the adherence meter, and
+    the planned, completed, skipped and missed sessions in one line. Below it come goal progress,
+    strength and endurance lines labelled estimated, accumulated fatigue, volume and intensity,
+    exercise effectiveness (Keep or Rotate), and adherence with the deload need. On the phone each
+    section shows its verdict line until you open it. If a next block is planned, its card shows its
+    title and words before its code loads: tap Not now to leave it, and Start next block only to
+    start it. In airplane mode, Start next block says 'You’re offline. Start it once you’re back
+    online.'
 
 Record device, iOS version, date and screenshots in the PR.
 
 Last pass: 2026-11-06, the owner's iPhone 16 Pro Max, iOS 27.0.1, Chrome for iOS, right
-after the owner setup (docs/deployment.md, "Owner setup"); recorded in M2's docs PR.
+after the owner setup (docs/deployment.md, "Owner setup"); recorded in M2's docs PR. Items 8 to
+17 have not been run on a device yet.
