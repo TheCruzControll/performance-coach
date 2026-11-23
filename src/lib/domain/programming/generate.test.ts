@@ -268,13 +268,13 @@ const GOLDEN: Record<ScenarioKey, readonly [monday: string, thursday: string]> =
 
 /**
  * The same plans with the season (generator-season) and every week repaired by the schedule stage
- * (generator-schedule, GENERATOR_ID 'perfo-programming/3', which changed hybrid's); a later
- * GENERATOR_ID bump changes them, and its PR lists each.
+ * (generator-schedule, GENERATOR_ID 'perfo-programming/3', and each block's week before across its
+ * boundary, which changed hybrid's); a later GENERATOR_ID bump changes them, and its PR lists each.
  */
 const GOLDEN_SEASON: Record<ScenarioKey, readonly [monday: string, thursday: string]> = {
 	beginner: ['40ac8a97f8ac8304', 'afbafd92042977bf'],
 	powerlifter: ['53368325fc4eeb18', '7cce2ec2cd815ba0'],
-	hybrid: ['099390e333863200', 'ad475e56564811ac'],
+	hybrid: ['099390e333863200', 'd3c8cae4c343abcb'],
 	injuredShoulder: ['a8f751370762b759', '1133ba47aeda08ec'],
 	dumbbellsOnly: ['4bb8ea19bb964a13', '6573125a5c871f5e'],
 	journey: ['6dfb9ed84d822de2', '20b093bc6e3734a0'],

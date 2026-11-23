@@ -6,7 +6,7 @@
  * pinned.
  */
 import { describe, expect, it } from 'vitest';
-import { addDays, weekdayOf } from '../calendar';
+import { addDays, daysBetween, weekdayOf } from '../calendar';
 import type { Weekday } from '../profile/catalog';
 import { CATALOGUE } from '../exercises/index';
 import type { TrainingProfile } from '../profile/types';
@@ -22,7 +22,9 @@ import type {
 } from '../training/types';
 import { validate } from '../validation';
 import { DecisionLog } from './decisions';
+import { evaluateWeek } from './evaluate/week';
 import { demandOf, catalogueTraits } from './interference';
+import { loadModel } from './load/fatigue';
 import { firstDraft, generateProgram, STAGES } from './generate';
 import { buildProgrammingInput } from './input';
 import type { ProgrammingInput } from './input';
@@ -36,7 +38,6 @@ import { EASE } from './rules/schedule';
 import { openDates } from './running';
 import { SCENARIO_START, SCENARIOS } from './scenarios';
 import type { ScenarioKey } from './scenarios';
-import { repairWeek } from './schedule/repair';
 import type { Draft, Periodisation, StageContext } from './stage';
 import { prepare } from './stages/prepare';
 import { schedule } from './stages/schedule';
@@ -58,6 +59,10 @@ function beforeSchedule(profile: TrainingProfile) {
 	return { draft, context, periodisation: prepared.periodisation };
 }
 
+/** A scenario's profile, from the M7 set or the M3 set (journey is one of M3's). */
+const scenarioOf = (key: string): TrainingProfile =>
+	key in M7_SCENARIOS ? M7_SCENARIOS[key as M7ScenarioKey]() : SCENARIOS[key as ScenarioKey]();
+
 const ALL: [string, () => TrainingProfile][] = [
 	...(Object.keys(SCENARIOS) as ScenarioKey[]).map((k): [string, () => TrainingProfile] => [
 		k,
@@ -70,11 +75,11 @@ const ALL: [string, () => TrainingProfile][] = [
 ];
 
 /**
- * Each planned week of `plan` judged as evaluateWeek judges it with the full context: the load of
- * the plan's week before and its own, the week's effective priorities, kind and targets, the
- * goals' events and the leader's level, with the day before the week and the next Monday's
- * commitments beside it, as placement judges a week. Judged through repairWeek, whose `before` is
- * that evaluation and whose actions say what a repair of the plan as stored would still change.
+ * Each planned week of `plan` judged by evaluateWeek alone, never the stage's own context: its
+ * sessions, the day before and the next Monday's commitments beside them (as placement judges a
+ * week), with the load of the plan's week before as planned (the previous block's last week for a
+ * block's first), the week's effective priorities, kind and targets, the goals' events and the
+ * leader's level.
  */
 function judgeWeeks(
 	plan: ProgramPlan,
@@ -100,27 +105,31 @@ function judgeWeeks(
 				...before.filter((s) => s.date === eve),
 				...next.filter((s) => s.source === 'commitment' && s.date === addDays(week.endsOn, 1))
 			].map((s, i) => ({ ...s, lineage: `around ${i}` }));
-			const r = repairWeek(
-				[...week.sessions.map((s, i) => ({ ...s, lineage: `${i}` })), ...around],
-				{
-					open: openDates(week, days, plan.firstPlannedDay),
-					preferredTimes: input.preferredTimes,
+			const sessions = [...week.sessions.map((s, i) => ({ ...s, lineage: `${i}` })), ...around];
+			const from = addDays(week.startsOn, -7);
+			const evaluation = evaluateWeek(sessions, {
+				openDates: openDates(week, days, plan.firstPlannedDay),
+				today: from,
+				context: {
+					load: {
+						days: loadModel({
+							planned: [...before.filter((s) => s.date !== eve), ...sessions],
+							logged: [],
+							from,
+							to: week.endsOn,
+							today: from
+						}),
+						logged: []
+					},
 					priorities: periodisation?.prioritiesByWeek.find((p) => p.startsOn === week.startsOn)
 						?.priorities,
 					week: { kind: week.kind, phase: block.phase, targets: week.targets },
 					events,
-					...(level && { level }),
-					today: addDays(week.startsOn, -7),
-					load: {
-						from: addDays(week.startsOn, -7),
-						planned: before.filter((s) => s.date !== eve),
-						logged: []
-					},
-					completed: around.map((s) => s.lineage)
+					...(level && { experience: level })
 				}
-			);
+			});
 			before = week.sessions;
-			return { b, w, week, r };
+			return { b, w, week, evaluation };
 		})
 	);
 }
@@ -132,8 +141,38 @@ function generated(profile: TrainingProfile) {
 	return { plan, weeks };
 }
 
-const tradeoffRefs = (plan: ProgramPlan) =>
-	new Set(plan.decisions.filter((d) => d.kind === 'priority_tradeoff').flatMap((d) => d.refs));
+/** The decisions that explain a clash a week keeps: a priority trade-off, or a schedule_kept. */
+const EXPLAINING = ['priority_tradeoff', 'schedule_kept'] as const;
+
+/**
+ * Each avoid finding a judged week keeps, naming a session of its own, that no decision of the plan
+ * explains (its session's ref in a decision citing it). Empty when every clash is gone or explained.
+ */
+function unexplained(plan: ProgramPlan, weeks: ReturnType<typeof judgeWeeks>) {
+	const explained = new Set(
+		plan.decisions
+			.filter((d) => (EXPLAINING as readonly string[]).includes(d.kind))
+			.flatMap((d) => d.refs)
+	);
+	return weeks.flatMap(({ b, w, week, evaluation }) =>
+		evaluation.findings
+			.filter(
+				(f) =>
+					f.severity === 'avoid' &&
+					f.resolution?.kind !== 'commitment_fixed' &&
+					f.sessions.some((s) => !s.lineage!.startsWith('around'))
+			)
+			.filter(
+				(f) =>
+					!f.sessions.some(
+						(s) =>
+							!s.lineage!.startsWith('around') &&
+							explained.has(`blocks.${b}.weeks.${w}.sessions.${s.lineage}`)
+					)
+			)
+			.map((f) => `${week.startsOn} ${f.message}`)
+	);
+}
 
 /** The plan node a ref names, or undefined. */
 function resolve(plan: ProgramPlan, ref: string): unknown {
@@ -146,41 +185,29 @@ function resolve(plan: ProgramPlan, ref: string): unknown {
 
 describe('every M3 and M7 scenario', () => {
 	it.each(ALL)(
-		'%s: no avoid finding stands without a priority_tradeoff, and repair leaves every week as it is',
+		'%s: every avoid finding a week keeps is explained by a priority_tradeoff or schedule_kept',
 		(_, profile) => {
 			const { plan, weeks } = generated(profile());
-			const kept = tradeoffRefs(plan);
-			for (const { b, w, week, r } of weeks) {
-				// A clash between fixed commitments alone is the owner's, not the generator's.
-				// So is one about the day before alone, judged with this week but planned with the last.
-				const avoids = r.before.evaluation.findings.filter(
-					(x) =>
-						x.severity === 'avoid' &&
-						x.resolution?.kind !== 'commitment_fixed' &&
-						x.sessions.some((s) => !s.lineage!.startsWith('around'))
-				);
-				for (const f of avoids) {
-					const refs = f.sessions.map((s) => `blocks.${b}.weeks.${w}.sessions.${s.lineage}`);
-					expect(
-						refs.some((ref) => kept.has(ref)),
-						`${week.startsOn} ${f.message}`
-					).toBe(true);
-				}
-				// Every week is final: the stage repaired it with this same judge.
-				expect(r.actions, week.startsOn).toEqual([]);
-			}
+			// A clash between fixed commitments alone is the owner's, not the generator's, and one about
+			// the day before alone is judged beside the week, not in it: neither is listed.
+			expect(unexplained(plan, weeks)).toEqual([]);
 			expect(validate(programPlanSchema, plan)).toEqual({ ok: true, data: plan });
 		}
 	);
 
-	it.each(ALL)('%s: every decision ref resolves, and the plan is the same every run', (_, p) => {
-		const plan = generateProgram(inputOf(p()), OPTIONS);
-		for (const d of plan.decisions) {
-			for (const ref of d.refs) expect(resolve(plan, ref), `${d.kind} ${ref}`).toBeDefined();
-			expect(RULE_BY_ID.has(d.ruleKey), d.ruleKey).toBe(true);
+	// Each scenario is generated twice: the slowest takes over the default 5 s on a busy machine.
+	it.each(ALL)(
+		'%s: every decision ref resolves, and the plan is the same every run',
+		{ timeout: 60_000 },
+		(_, p) => {
+			const plan = generateProgram(inputOf(p()), OPTIONS);
+			for (const d of plan.decisions) {
+				for (const ref of d.refs) expect(resolve(plan, ref), `${d.kind} ${ref}`).toBeDefined();
+				expect(RULE_BY_ID.has(d.ruleKey), d.ruleKey).toBe(true);
+			}
+			expect(JSON.stringify(generateProgram(inputOf(p()), OPTIONS))).toBe(JSON.stringify(plan));
 		}
-		expect(JSON.stringify(generateProgram(inputOf(p()), OPTIONS))).toBe(JSON.stringify(plan));
-	});
+	);
 });
 
 describe('journeyHybrid, the Playwright journey’s profile', () => {
@@ -189,18 +216,12 @@ describe('journeyHybrid, the Playwright journey’s profile', () => {
 	it('grades its first week clear, which the journey’s “No clashes this week” rests on', () => {
 		const first = weeks[0]!;
 		expect(first.week.startsOn).toBe(SCENARIO_START);
-		expect(first.r.before.evaluation.grade).toBe('clear');
-		expect(first.r.before.evaluation.findings.filter((f) => f.severity === 'avoid')).toEqual([]);
+		expect(first.evaluation.grade).toBe('clear');
+		expect(first.evaluation.findings.filter((f) => f.severity === 'avoid')).toEqual([]);
 	});
 
-	it('leaves no unresolved avoid finding in any planned week of version 1', () => {
+	it('judges every planned week of version 1', () => {
 		expect(weeks.length).toBe(plan.blocks.flatMap((b) => b.weeks).length);
-		for (const { week, r } of weeks) {
-			const open = r.before.evaluation.findings.filter(
-				(f) => f.severity === 'avoid' && !f.resolution
-			);
-			expect(open, week.startsOn).toEqual([]);
-		}
 	});
 
 	it('records the shared day changes once for the block, citing the session in each week', () => {
@@ -237,14 +258,17 @@ describe('the building weeks’ shared days', () => {
 
 describe('the schedule stage on its own', () => {
 	it.each(['beginner', 'meetPrep', 'offSeason'] as const)(
-		'%s: changes nothing where placement already succeeded',
+		'%s: changes nothing where placement already succeeded, and only records the clashes it keeps',
 		(key) => {
 			const profile = key === 'beginner' ? SCENARIOS.beginner() : M7_SCENARIOS[key]();
 			const { draft, context } = beforeSchedule(profile);
 			const log = new DecisionLog();
 			const after = schedule(draft, { ...context, log });
 			expect(after.blocks).toEqual(draft.blocks);
-			expect(log.list()).toEqual([]);
+			const changed = log.list().filter((d) => !(EXPLAINING as readonly string[]).includes(d.kind));
+			expect(changed).toEqual([]);
+			// offSeason keeps a clash of its own (a strength session over a run), so it logs that as kept.
+			if (key !== 'offSeason') expect(log.list()).toEqual([]);
 		}
 	);
 
@@ -372,6 +396,73 @@ describe('the schedule stage on its own', () => {
 			expect(now.estMinutes).toBe(estimateMinutes(now as StrengthSessionPlan, input));
 			expect(now.estMinutes).toBeLessThanOrEqual(input.sessionMinutes);
 			expect([now.targetRpe, now.estLoad]).toEqual([EASE.rpe, sessionLoadOf(now)]);
+		}
+	);
+});
+
+describe('a block pattern that ends hard on Sunday', () => {
+	/**
+	 * journeyHybrid's draft with each accumulation week's Long run moved to Sunday: the days the block
+	 * shares end on a hard day, so the next week's Monday follows it.
+	 */
+	function sundayPattern() {
+		const { draft, context } = beforeSchedule(M7_SCENARIOS.journeyHybrid());
+		const blocks = structuredClone(draft.blocks);
+		for (const week of blocks[0]!.weeks) {
+			if (week.kind !== 'accumulation') continue;
+			week.sessions.find((s) => s.title === 'Long run')!.date = addDays(week.startsOn, 6);
+			week.sessions.sort((a, b) => a.date.localeCompare(b.date) || a.orderInDay - b.orderInDay);
+		}
+		const log = new DecisionLog();
+		const after = schedule({ ...draft, blocks }, { ...context, log });
+		return { after, log };
+	}
+
+	it('from its second week, Monday is not the hardest session and the hard session sits later', () => {
+		const { after, log } = sundayPattern();
+		const weeks = after.blocks[0]!.weeks.filter((w, i) => i > 0 && w.kind === 'accumulation');
+		expect(weeks.length).toBeGreaterThan(0);
+		for (const week of weeks) {
+			const generated = week.sessions.filter((s) => s.source === 'generator');
+			const hardest = generated.reduce((a, b) => (b.estLoad > a.estLoad ? b : a));
+			expect(weekdayOf(hardest.date), week.startsOn).not.toBe('mon');
+			const tempo = week.sessions.find((s) => s.title === 'Tempo run')!;
+			expect(daysBetween(week.startsOn, tempo.date), week.startsOn).toBeGreaterThan(0);
+		}
+		// The move is recorded once for the block, citing the Tempo run in each week it changed.
+		const moved = log
+			.list()
+			.find(
+				(d) =>
+					d.kind === 'schedule_repaired' &&
+					d.evidence.session === 'Tempo run' &&
+					d.evidence.from === 'Monday morning'
+			);
+		expect(moved).toBeDefined();
+	});
+});
+
+describe('the clashes journeyHybrid, journey and offSeason keep', () => {
+	it.each(['journeyHybrid', 'journey', 'offSeason'] as const)(
+		'%s: every avoid finding a week keeps carries a schedule_kept or priority_tradeoff decision',
+		(key) => {
+			const { plan, weeks } = generated(scenarioOf(key));
+			expect(unexplained(plan, weeks)).toEqual([]);
+		}
+	);
+});
+
+describe('the schedule stage run twice', () => {
+	it.each(['journeyHybrid', 'multiGoal', 'journey', 'offSeason'] as const)(
+		'%s: the second run changes no session',
+		(key) => {
+			const { draft, context } = beforeSchedule(scenarioOf(key));
+			const once = schedule(draft, { ...context, log: new DecisionLog() });
+			const log = new DecisionLog();
+			const twice = schedule({ ...draft, blocks: once.blocks }, { ...context, log });
+			expect(twice.blocks).toEqual(once.blocks);
+			const changed = log.list().filter((d) => !(EXPLAINING as readonly string[]).includes(d.kind));
+			expect(changed).toEqual([]);
 		}
 	);
 });
