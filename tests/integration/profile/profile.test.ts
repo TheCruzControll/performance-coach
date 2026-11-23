@@ -112,6 +112,38 @@ describe('athlete profile', () => {
 		});
 	});
 
+	it('saving the same day from another source replaces that day’s weigh-in', async () => {
+		await withRollback(async (db) => {
+			const time = clock('2026-11-01T08:00:00Z');
+			const owner = await makeOwner(db);
+			const body = { weightUnit: 'kg', nutritionPhase: null };
+			const first = await saveBody(
+				owner,
+				{ ...body, bodyWeight: 74.6 },
+				{ db, now: time.now, source: 'onboarding' }
+			);
+			const again = await saveBody(
+				owner,
+				{ ...body, bodyWeight: 74.2 },
+				{ db, now: time.now, source: 'profile' }
+			);
+			// One row for the day: the same entry, now the profile's and at the new value.
+			expect(again.bodyWeight).toEqual([
+				{
+					id: first.bodyWeight[0]!.id,
+					value: 74.2,
+					unit: 'kg',
+					measuredOn: '2026-11-01',
+					source: 'profile'
+				}
+			]);
+			const rows = await db.execute<{ n: number }>(
+				sql`select count(*)::int as n from body_weight_entries where owner_id = ${owner}`
+			);
+			expect(rows.rows[0]).toEqual({ n: 1 });
+		});
+	});
+
 	it('dates body weight by the owner’s local day, not the UTC one', async () => {
 		await withRollback(async (db) => {
 			const owner = await makeOwner(db);

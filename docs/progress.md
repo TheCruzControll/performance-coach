@@ -58,8 +58,10 @@ runs the criteria and updates milestones.md.
 - **Weight tracking, started.** The trend, weekly rate, stats and log book are in the domain
   (`src/lib/domain/analytics/weight.ts`), and the goal line, milestones, verdicts and phase
   suggestion are in `src/lib/domain/analytics/weight-goal.ts`. The data slice adds one weigh-in
-  per owner per day and the weight goal and milestone tables; no service, screen or coach tool
-  reads them yet. The service, coach and screen slices come next.
+  per owner per day and the weight goal and milestone tables. The owner's weigh-ins are logged,
+  replaced, edited, deleted and undone (a coach write) in `src/lib/server/services/weight/entries.ts`,
+  and the Weight view, Today's figures and the coach's facts are read in
+  `src/lib/server/services/weight/read.ts`. Goals, the coach and the screens come next.
 - **M7, re-sliced.** On 2026-11-22 the parked M7 pull requests were re-sliced into 38 `m7r/`
   rows in `plan/m7-reslice.md`. By the end of that day every row that does not wait on m7r/03
   had merged, along with m7/47 to m7/51. That covers the generator's stages and season, Train's
