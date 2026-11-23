@@ -3,26 +3,26 @@
 Short records of significant decisions: context, decision, alternatives, consequences.
 Status values: Proposed · Accepted · Superseded.
 
-| #                                        | Decision                                                      | Status   |
-| ---------------------------------------- | ------------------------------------------------------------- | -------- |
-| [0001](0001-single-sveltekit-app.md)     | One SvelteKit 3 app (Svelte 5, TypeScript strict, Vite, pnpm) | Accepted |
-| [0002](0002-vercel-hosting.md)           | Vercel (Node runtime, Fluid compute) + Cloudflare DNS         | Accepted |
-| [0003](0003-postgres-neon-drizzle.md)    | PostgreSQL on Neon, Drizzle ORM, node-postgres pool           | Accepted |
-| [0004](0004-layered-modules.md)          | Layered modules with lint-enforced import boundaries          | Accepted |
-| [0005](0005-hand-built-design-system.md) | Hand-built design system on CSS custom properties             | Accepted |
-| [0006](0006-in-app-passkey-auth.md)      | In-app passkey (WebAuthn) authentication (SimpleWebAuthn)     | Accepted |
-| [0007](0007-observability.md)            | Built-in observability: Server-Timing, JSON logs, RUM table   | Accepted |
-| [0008](0008-testing-strategy.md)         | Testing pyramid: Playwright e2e, real-Postgres integration    | Accepted |
-| [0009](0009-llm-provider-interface.md)   | LLM behind a provider interface with a deterministic mock     | Accepted |
-| [0010](0010-program-versioning.md)       | Immutable program versions with copy-on-write membership      | Accepted |
-| [0011](0011-email-sign-in-link.md)       | Email sign-in link: one-time links to the owner's address     | Accepted |
-| [0012](0012-offline-workout-sync.md)     | Offline workout sync: device inputs, one projection, a ledger | Accepted |
-| [0013](0013-coach-agent-loop.md)         | Coach agent loop: a manual loop, streamed as labelled blocks  | Accepted |
-| [0014](0014-coach-memory-proposals.md)   | Coach memory from records; changes only as proposals          | Accepted |
-| [0015](0015-trend-classification.md)     | Trend vs noise: Theil–Sen, Mann–Kendall p, a minimal change   | Accepted |
-| [0016](0016-hand-built-charts.md)        | Hand-built charts: lazy SVG lines, HTML marks, one registry   | Accepted |
-| [0017](0017-planning-later-blocks.md)    | Planning later blocks: a new version, a bridge, no past days  | Accepted |
-| [0018](0018-periodisation-engine.md)     | Periodisation: rules as data, one evaluator, one load model   | Accepted |
-| [0019](0019-replans-as-versions.md)      | Re-plans as versions: four directives, three mechanisms       | Accepted |
-| [NNNN](NNNN-encrypted-backups.md)        | App-level encrypted backups: a daily cron to a private Blob   | Proposed |
-| [NNNN](NNNN-lifecycles-as-data.md)       | Lifecycles as data: a typed transition table per status list  | Proposed |
+| #                                        | Decision                                                      | Status     |
+| ---------------------------------------- | ------------------------------------------------------------- | ---------- |
+| [0001](0001-single-sveltekit-app.md)     | One SvelteKit 3 app (Svelte 5, TypeScript strict, Vite, pnpm) | Accepted   |
+| [0002](0002-vercel-hosting.md)           | Vercel (Node runtime, Fluid compute) + Cloudflare DNS         | Accepted   |
+| [0003](0003-postgres-neon-drizzle.md)    | PostgreSQL on Neon, Drizzle ORM, node-postgres pool           | Accepted   |
+| [0004](0004-layered-modules.md)          | Layered modules with lint-enforced import boundaries          | Accepted   |
+| [0005](0005-hand-built-design-system.md) | Hand-built design system on CSS custom properties             | Accepted   |
+| [0006](0006-in-app-passkey-auth.md)      | In-app passkey (WebAuthn) authentication (SimpleWebAuthn)     | Accepted   |
+| [0007](0007-observability.md)            | Built-in observability: Server-Timing, JSON logs, RUM table   | Accepted   |
+| [0008](0008-testing-strategy.md)         | Testing pyramid: Playwright e2e, real-Postgres integration    | Accepted   |
+| [0009](0009-llm-provider-interface.md)   | LLM behind a provider interface with a deterministic mock     | Accepted   |
+| [0010](0010-program-versioning.md)       | Immutable program versions with copy-on-write membership      | Accepted   |
+| [0011](0011-email-sign-in-link.md)       | Email sign-in link: one-time links to the owner's address     | Superseded |
+| [0012](0012-offline-workout-sync.md)     | Offline workout sync: device inputs, one projection, a ledger | Accepted   |
+| [0013](0013-coach-agent-loop.md)         | Coach agent loop: a manual loop, streamed as labelled blocks  | Accepted   |
+| [0014](0014-coach-memory-proposals.md)   | Coach memory from records; changes only as proposals          | Accepted   |
+| [0015](0015-trend-classification.md)     | Trend vs noise: Theil–Sen, Mann–Kendall p, a minimal change   | Accepted   |
+| [0016](0016-hand-built-charts.md)        | Hand-built charts: lazy SVG lines, HTML marks, one registry   | Accepted   |
+| [0017](0017-planning-later-blocks.md)    | Planning later blocks: a new version, a bridge, no past days  | Accepted   |
+| [0018](0018-periodisation-engine.md)     | Periodisation: rules as data, one evaluator, one load model   | Accepted   |
+| [0019](0019-replans-as-versions.md)      | Re-plans as versions: four directives, three mechanisms       | Accepted   |
+| [0020](0020-encrypted-backups.md)        | App-level encrypted backups: a daily cron to a private Blob   | Accepted   |
+| [0021](0021-lifecycles-as-data.md)       | Lifecycles as data: a typed transition table per status list  | Accepted   |

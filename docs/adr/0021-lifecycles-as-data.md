@@ -1,7 +1,8 @@
-# NNNN — Lifecycles as data: a typed transition table next to each status list
+# 0021 — Lifecycles as data: a typed transition table next to each status list
 
-- **Status:** Proposed. Numbered at merge, like a migration slot, so the follow-on PRs refer to it
-  by its title, "the lifecycles as data ADR".
+- **Status:** Accepted (2026-11-23). Implemented as decided below: step 0 in #353, the P0 fixes
+  in #415 (D1), #452 (D2, D5) and #367 (D3), and the observe pilot on `PROPOSAL` in #470. The
+  follow-on PRs cite it by its title, "the lifecycles as data ADR", from before it had a number.
 - **Context:** No single place says which states a workout or a coach proposal can be in, or what
   may follow what. The rules are spread across if-chains and status strings. A workout has no
   rule at all: `finishWorkout` (`src/lib/server/services/training/log.ts`) writes whatever end
