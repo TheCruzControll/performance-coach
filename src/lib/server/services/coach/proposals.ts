@@ -13,7 +13,9 @@
  * - acceptProposal takes only the id: it locks the row, re-parses the stored payload, supersedes
  *   it if its program has moved on ('program_changed'), checks it again against today and runs
  *   its kind's applier (./apply) in the same transaction. A proposal already decided returns as
- *   stored and nothing is written.
+ *   stored and nothing is written. A replan whose start or week has passed is superseded, never
+ *   refused, and a superseded replan carries proposeAgain on every accept that finds it stale, a
+ *   repeat included, but never one the owner revised.
  * - rejectProposal stores the owner's optional reason; rejecting twice changes nothing.
  * - listProposals and getProposalView read one view model, from the stored rows only; a card's
  *   view (a decision's answer, getProposalView, listThreadProposals) also names the cycle review a
@@ -80,6 +82,7 @@ import { listActiveWorkouts } from '../workouts/canonical';
 import { transition } from '../lifecycle-guard';
 import { APPLIERS, type Applier, type ApplyOutcome } from './apply';
 import { cycleReviewHref, refuseReviewNextCycle } from './apply/next-cycle';
+import { replanEnded } from './apply/replan';
 import { SESSION_ENDED, substitutionEnded } from './apply/session';
 import {
 	CoachInputError,
@@ -110,7 +113,8 @@ const ON_PROGRAM: ReadonlySet<ProposalKind> = new Set([
 	'program_adjustment',
 	'workout_update',
 	'session_substitution',
-	'next_cycle'
+	'next_cycle',
+	'replan'
 ]);
 
 /** The proposal fails its schema or today's rules: nothing was written. */
@@ -451,10 +455,12 @@ async function checkAgainstToday(
 	const version = found
 		? await getProgramVersion(ownerId, found.program.id, found.version.number, { db })
 		: null;
-	const goals = kind === 'goal_update' ? await listGoals(ownerId, { db }) : [];
+	const goals = kind === 'goal_update' || kind === 'replan' ? await listGoals(ownerId, { db }) : [];
 	const preferences = await listExercisePreferences(ownerId, { db });
 	const programming =
-		version && ON_PROGRAM.has(kind) ? await programmingInputFor(ownerId, { db }) : null;
+		version && ON_PROGRAM.has(kind) && kind !== 'replan'
+			? await programmingInputFor(ownerId, { db })
+			: null;
 
 	const sessions = (version?.blocks ?? [])
 		.flatMap((b) => b.weeks)
@@ -681,6 +687,8 @@ export interface DecidedProposal {
 	superseded?: { reason: typeof SESSIONS_PASSED; href: string };
 	/** Where a next_cycle went when a cycle review took it in (the outcome's href). */
 	href?: string;
+	/** A replan found stale at an accept (this one or an earlier): it can be proposed again. */
+	proposeAgain?: true;
 }
 
 /** A session the version does not hold: kept, so today's check refuses it as it would. */
@@ -756,6 +764,14 @@ export async function acceptProposal(
 	id: string,
 	deps: CoachDeps = {}
 ): Promise<DecidedProposal> {
+	const decided = await acceptOnce(ownerId, id, deps);
+	const { kind, status, supersededReason } = decided.proposal;
+	// Any accept of a stale replan, this one or a repeat; never one the owner revised.
+	const again = kind === 'replan' && status === 'superseded' && supersededReason !== 'revised';
+	return again ? { ...decided, proposeAgain: true } : decided;
+}
+
+async function acceptOnce(ownerId: string, id: string, deps: CoachDeps): Promise<DecidedProposal> {
 	return inTransaction(deps, async (resolved) => {
 		const repo = createCoachProposalsRepository(resolved.db);
 		const row = await lockOwn(repo, ownerId, id);
@@ -809,17 +825,24 @@ export async function acceptProposal(
 		};
 		// One context read for the check and the applier's moves (M7's rules), in this transaction.
 		const contexts = createContextCache(ownerId, { db: resolved.db });
+		let ended: SupersededReason = SESSION_ENDED;
 		const checked = await checkAgainstToday(ownerId, stored, resolved, contexts).catch(
 			async (error) => {
-				// A refused substitution whose workout or session is over is superseded instead.
+				// A refused substitution whose workout or session is over is superseded instead, and so
+				// is a replan whose start or week has passed.
 				const parsed = validate(proposalSchema, stored);
 				if (!(error instanceof ProposalRefusedError) || !parsed.ok) throw error;
+				const late = replanEnded(parsed.data, error.errors);
+				if (late) {
+					ended = late;
+					return null;
+				}
 				if (!(await substitutionEnded(ownerId, parsed.data, resolved.db))) throw error;
 				return null;
 			}
 		);
 		if (!checked) {
-			const superseded = { supersededReason: SESSION_ENDED, closedAt: at };
+			const superseded = { supersededReason: ended, closedAt: at };
 			const t = transition(PROPOSAL, row.status, 'supersede');
 			await repo.decide(ownerId, row.id, t, { ...superseded, updatedAt: at });
 			return { proposal: await view(resolved.db, ownerId, row.id), changed: true };
