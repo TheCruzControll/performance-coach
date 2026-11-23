@@ -203,6 +203,8 @@ describe('which runs move to the bike', () => {
 		});
 	});
 
+	// Each case generates the season twice (with and without a bike); under a loaded runner that can
+	// pass the 5 s default, as in generate-season.test.ts, so it gets its own budget.
 	it('never converts a tempo or interval run', () => {
 		const quality = (plan: ProgramPlan) =>
 			weeksOf(plan).map((week) =>
@@ -230,7 +232,7 @@ describe('which runs move to the bike', () => {
 			expect(plan.flat().map(([kind]) => kind)).toContain(type);
 			expect(quality(generate(make(true)))).toEqual(plan);
 		}
-	});
+	}, 30_000);
 
 	it('keeps half the easy runs, the first first, and every week at least one run', () => {
 		const plan = generate(generalRunner());

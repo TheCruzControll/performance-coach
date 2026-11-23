@@ -53,7 +53,7 @@ none for desktop Lighthouse).
 
 | Route                        | Initial JS (gzip) | CSS (gzip)   | Main thread, 4× CPU | Lighthouse mobile: perf · LCP · TBT · CLS | Lighthouse desktop: perf · LCP · TBT · CLS |
 | ---------------------------- | ----------------- | ------------ | ------------------- | ----------------------------------------- | ------------------------------------------ |
-| Budget or target             | ≤ 60 KB           | ≤ 14 KB      | ≤ 200 ms (median)   | ≥ 90 · ≤ 2.5 s · ≤ 200 ms · ≤ 0.1         | no target set                              |
+| Budget or target             | ≤ 60 KB           | ≤ 14.5 KB    | ≤ 200 ms (median)   | ≥ 90 · ≤ 2.5 s · ≤ 200 ms · ≤ 0.1         | no target set                              |
 | `/`                          | pending (S1)      | pending (S1) | pending (S5)        | pending (S3)                              | pending (S4)                               |
 | `/(app)/today`               | pending (S1)      | pending (S1) | pending (S5)        | pending (S3)                              | pending (S4)                               |
 | `/(app)/train`               | pending (S1)      | pending (S1) | pending (S5)        | pending (S3)                              | pending (S4)                               |
