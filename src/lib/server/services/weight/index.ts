@@ -1,6 +1,6 @@
 /**
- * Weight-tracking use-cases: the owner's weigh-ins (entries.ts) and the reads behind the Weight
- * view, Today's card and the coach (read.ts). Goals arrive with goals.ts.
+ * Weight-tracking use-cases: the owner's weigh-ins (entries.ts), the one weight goal and its
+ * milestones (goals.ts), and the reads behind the Weight view, Today's card and the coach (read.ts).
  */
 export {
 	deleteWeight,
@@ -24,3 +24,12 @@ export {
 	type WeightToday,
 	type WeightView
 } from './read';
+export {
+	clearWeightGoal,
+	editMilestones,
+	setNutritionPhase,
+	setWeightGoal,
+	syncWeightTarget,
+	type WeightGoalResult,
+	type WeightTarget
+} from './goals';

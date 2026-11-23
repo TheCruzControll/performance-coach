@@ -48,14 +48,14 @@ export class WeightUndoError extends Error {
 	}
 }
 
-interface Resolved {
+export interface Resolved {
 	db: Executor;
 	now: () => Date;
 	source: WeightSource;
 	runId: string | null;
 }
 
-function resolve(deps: WeightDeps): Resolved {
+export function resolveWeightDeps(deps: WeightDeps): Resolved {
 	return {
 		db: deps.db ?? getDb(),
 		now: deps.now ?? (() => new Date()),
@@ -109,7 +109,7 @@ export async function logWeight(
 	input: unknown,
 	deps: WeightDeps = {}
 ): Promise<{ entry: WeightEntryRow; replaced: WeightEntryRow | null }> {
-	const { db, now, source, runId } = resolve(deps);
+	const { db, now, source, runId } = resolveWeightDeps(deps);
 	if (source === 'coach' && runId === null) {
 		throw new Error('A coach weigh-in needs the run that made it');
 	}
@@ -155,7 +155,7 @@ export async function editWeight(
 	input: unknown,
 	deps: WeightDeps = {}
 ): Promise<WeightEntryRow> {
-	const { db, now, source } = resolve(deps);
+	const { db, now, source } = resolveWeightDeps(deps);
 	return measure('db', () =>
 		db.transaction(async (tx) => {
 			const at = now();
@@ -203,7 +203,7 @@ export async function deleteWeight(
 	id: number,
 	deps: WeightDeps = {}
 ): Promise<void> {
-	const { db } = resolve(deps);
+	const { db } = resolveWeightDeps(deps);
 	const row = await measure('db', () => createWeightRepository(db).delete(ownerId, id));
 	if (!row) throw new ProfileNotFoundError('Weigh-in');
 }
@@ -220,7 +220,7 @@ export async function undoCoachWeight(
 	runId: string,
 	deps: WeightDeps = {}
 ): Promise<{ entry: WeightEntryRow | null }> {
-	const { db, now } = resolve(deps);
+	const { db, now } = resolveWeightDeps(deps);
 	return measure('db', () =>
 		db.transaction(async (tx) => {
 			const repo = createWeightRepository(tx);
