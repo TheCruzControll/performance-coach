@@ -5,10 +5,12 @@ import {
 	goalSchema,
 	heartRateSchema,
 	injurySchema,
+	milestonesSchema,
 	raceResultSchema,
 	runningSchema,
 	validate,
-	weightEntrySchema
+	weightEntrySchema,
+	weightGoalSchema
 } from './schemas';
 
 /** Each optional date with a valid record around it, so only the date decides the outcome. */
@@ -234,5 +236,79 @@ describe('body weight and target', () => {
 				targetWeight: 'Use at most 2 decimals'
 			}
 		});
+	});
+});
+
+describe('weight goal', () => {
+	const goal = (overrides: Record<string, unknown> = {}) => ({
+		unit: 'kg',
+		targetWeight: 78,
+		targetOn: '2027-01-31',
+		...overrides
+	});
+
+	it('takes a target within the unit’s range, a goal-by day and a step left out or in range', () => {
+		expect(validate(weightGoalSchema, goal())).toMatchObject({
+			ok: true,
+			data: { unit: 'kg', targetWeight: 78, targetOn: '2027-01-31', step: null }
+		});
+		expect(
+			validate(weightGoalSchema, goal({ unit: 'lb', targetWeight: 170, step: 5 }))
+		).toMatchObject({
+			ok: true,
+			data: { step: 5 }
+		});
+	});
+
+	it('keeps a milestone step at least 0.1 kg, or 0.2 lb, so the list cannot run away', () => {
+		expect(validate(weightGoalSchema, goal({ step: 0.05 }))).toEqual({
+			ok: false,
+			errors: { step: 'At least 0.1 kg between milestones' }
+		});
+		expect(validate(weightGoalSchema, goal({ unit: 'lb', targetWeight: 170, step: 0.15 }))).toEqual(
+			{
+				ok: false,
+				errors: { step: 'At least 0.2 lb between milestones' }
+			}
+		);
+		expect(validate(weightGoalSchema, goal({ step: 0.1 }))).toMatchObject({ ok: true });
+	});
+
+	it('bounds the target by the unit and to 2 decimals, and names the goal-by day and the unit', () => {
+		expect(validate(weightGoalSchema, goal({ targetWeight: 10 }))).toEqual({
+			ok: false,
+			errors: { targetWeight: 'Between 25 and 350 kg' }
+		});
+		expect(validate(weightGoalSchema, goal({ targetWeight: 78.005 }))).toEqual({
+			ok: false,
+			errors: { targetWeight: 'Use at most 2 decimals' }
+		});
+		expect(validate(weightGoalSchema, goal({ targetOn: 'soon', unit: 'stone' }))).toEqual({
+			ok: false,
+			errors: { unit: 'Pick kg or lb', targetOn: 'Pick the goal-by date' }
+		});
+	});
+});
+
+describe('milestones', () => {
+	it('takes a list of days and weights, to 2 decimals', () => {
+		expect(
+			validate(milestonesSchema, {
+				milestones: [
+					{ day: '2026-12-25', weight: 80 },
+					{ day: '2027-01-10', weight: 79.5 }
+				]
+			})
+		).toMatchObject({ ok: true });
+		expect(validate(milestonesSchema, { milestones: [] })).toMatchObject({ ok: true });
+	});
+
+	it('refuses a day that is not a date, and a weight with a third decimal, at that field', () => {
+		expect(validate(milestonesSchema, { milestones: [{ day: '2026-02-30', weight: 80 }] })).toEqual(
+			{ ok: false, errors: { 'milestones.0.day': 'Use a real date' } }
+		);
+		expect(
+			validate(milestonesSchema, { milestones: [{ day: '2026-12-25', weight: 80.123 }] })
+		).toEqual({ ok: false, errors: { 'milestones.0.weight': 'Use at most 2 decimals' } });
 	});
 });

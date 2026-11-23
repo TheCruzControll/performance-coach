@@ -641,6 +641,85 @@ export const weightEntrySchema = (today: string) =>
 export type WeightEntryInput = z.input<ReturnType<typeof weightEntrySchema>>;
 export type WeightEntryData = z.output<ReturnType<typeof weightEntrySchema>>;
 
+// ---- weight goal -----------------------------------------------------------------------------
+
+/**
+ * The smallest milestone step per unit: 0.1 kg or 0.2 lb. A step below it would generate a list
+ * too long to read, and generation refuses far more steps than that anyway (weight-goal.ts).
+ */
+export const MILESTONE_STEP_MIN: Record<'kg' | 'lb', number> = { kg: 0.1, lb: 0.2 };
+
+/**
+ * A weight goal as the owner sets it: the unit it is entered in, the target weight, the goal-by
+ * day and, optionally, the weight between milestones. The start (today, at the trend) is the
+ * services' to set, so it is not here. The caller fills in the unit when the owner leaves it out
+ * (the profile's unit), before this schema runs.
+ */
+export const weightGoalSchema = z
+	.object({
+		unit: z.enum(WEIGHT_UNITS, 'Pick kg or lb'),
+		targetWeight: z.number('Enter a target weight'),
+		targetOn: isoDate('Pick the goal-by date'),
+		step: opt(z.number('Enter a milestone step'))
+	})
+	.check(
+		z.superRefine((goal, ctx) => {
+			const unit: unknown = goal.unit;
+			const target: unknown = goal.targetWeight;
+			const step: unknown = goal.step;
+			const range = typeof unit === 'string' ? BODY_WEIGHT_RANGE[unit] : undefined;
+			if (typeof target === 'number' && range) {
+				const [min, max] = range;
+				if (target < min || target > max) {
+					ctx.addIssue({
+						code: 'custom',
+						message: `Between ${min} and ${max} ${unit}`,
+						path: ['targetWeight'],
+						input: target
+					});
+				} else if (!atMostTwoDecimals(target)) {
+					ctx.addIssue({
+						code: 'custom',
+						message: 'Use at most 2 decimals',
+						path: ['targetWeight'],
+						input: target
+					});
+				}
+			}
+			if (typeof step === 'number' && typeof unit === 'string' && unit in MILESTONE_STEP_MIN) {
+				const min = MILESTONE_STEP_MIN[unit as 'kg' | 'lb'];
+				if (step < min) {
+					ctx.addIssue({
+						code: 'custom',
+						message: `At least ${min} ${unit} between milestones`,
+						path: ['step'],
+						input: step
+					});
+				}
+			}
+		}, always)
+	);
+export type WeightGoalInput = z.input<typeof weightGoalSchema>;
+export type WeightGoalData = z.output<typeof weightGoalSchema>;
+
+/**
+ * An edited milestone list: each milestone's day and weight, in the goal's unit. Whether each day
+ * falls strictly inside the goal, days are unique and each weight is in range is the domain's to
+ * say (validateMilestones), because only the goal knows its dates and unit.
+ */
+export const milestonesSchema = z.object({
+	milestones: z.array(
+		z.object({
+			day: isoDate('Use a real date'),
+			weight: z
+				.number('Enter a weight')
+				.check(z.refine(atMostTwoDecimals, 'Use at most 2 decimals'))
+		})
+	)
+});
+export type MilestonesInput = z.input<typeof milestonesSchema>;
+export type MilestonesData = z.output<typeof milestonesSchema>;
+
 // ---- results ---------------------------------------------------------------------------------
 
 // validate() lives in ../validation.ts, shared with the training schemas; re-exported here so

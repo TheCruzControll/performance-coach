@@ -5,12 +5,7 @@
  */
 import { eq } from 'drizzle-orm';
 import { createMutation } from '../../../src/lib/domain/workout/index';
-import {
-	createAppErrorsRepository,
-	createWeightRepository,
-	workouts,
-	type Executor
-} from '../../../src/lib/server/db';
+import { createAppErrorsRepository, workouts, type Executor } from '../../../src/lib/server/db';
 import { MockProvider } from '../../../src/lib/server/agent/provider/mock';
 import { runTurn } from '../../../src/lib/server/agent/turn';
 import { recordCoachDecision } from '../../../src/lib/server/services/coach/notes';
@@ -35,6 +30,7 @@ import {
 	recordSubstitution
 } from '../../../src/lib/server/services/training/log';
 import { recordVitals } from '../../../src/lib/server/services/vitals';
+import { editMilestones, setWeightGoal } from '../../../src/lib/server/services/weight';
 import { applyMutation } from '../../../src/lib/server/services/workouts/sync';
 
 export interface EveryTableContext {
@@ -137,22 +133,18 @@ export async function seedEveryTable(db: Executor, ctx: EveryTableContext): Prom
 		deps
 	);
 
-	// A weight goal and one of its milestones, written through the repository (no service writes goals yet).
-	const weight = createWeightRepository(db);
-	const goal = await weight.insertGoal({
+	// A weight goal from the weigh-in above, and one of its milestones edited (the goal's start is
+	// that day's trend), both through the weight service.
+	const { goal } = await setWeightGoal(
 		ownerId,
-		unit: 'kg',
-		startOn: '2026-11-01',
-		startWeight: 80,
-		targetWeight: 75,
-		targetOn: '2027-01-31',
-		source: 'profile'
-	});
-	await weight.replaceMilestones(
+		{ targetWeight: 75, targetOn: '2027-01-31', unit: 'kg' },
+		deps
+	);
+	await editMilestones(
 		ownerId,
 		goal.id,
-		[{ onDate: '2026-12-15', weight: 77.5, source: 'generated' }],
-		ctx.now()
+		{ milestones: [{ day: '2026-12-15', weight: 77.5 }] },
+		deps
 	);
 
 	// Training log.

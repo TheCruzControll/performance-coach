@@ -146,12 +146,19 @@ export function createWeightRepository(db: Executor) {
 			return row!;
 		},
 
-		/** The owner's one active goal, or null when there is none. */
-		async getActiveGoal(ownerId: string): Promise<WeightGoalRow | null> {
-			const [row] = await db
+		/**
+		 * The owner's one active goal, or null when there is none. `forUpdate` locks it until the
+		 * transaction ends, so a write to its milestones cannot overtake its ending.
+		 */
+		async getActiveGoal(
+			ownerId: string,
+			{ forUpdate = false }: { forUpdate?: boolean } = {}
+		): Promise<WeightGoalRow | null> {
+			const query = db
 				.select()
 				.from(weightGoals)
 				.where(and(eq(weightGoals.ownerId, ownerId), eq(weightGoals.status, 'active')));
+			const [row] = await (forUpdate ? query.for('update') : query);
 			return row ?? null;
 		},
 

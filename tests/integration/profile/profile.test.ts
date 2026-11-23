@@ -5,6 +5,7 @@
 import { sql } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
 import { ONBOARDING_STEPS, STEP_INFO } from '../../../src/lib/domain/profile/onboarding';
+import { createProfileRepository, createWeightRepository } from '../../../src/lib/server/db';
 import {
 	advanceOnboarding,
 	completeOnboarding,
@@ -85,6 +86,16 @@ describe('athlete profile', () => {
 					source: 'onboarding'
 				}
 			]);
+			// The dated target is the goal, started at that day's weigh-in and from the same source.
+			const repo = createWeightRepository(db);
+			const goal = await repo.getActiveGoal(owner);
+			expect(goal).toMatchObject({
+				startOn: '2026-11-01',
+				startWeight: 74.6,
+				targetWeight: 71,
+				targetOn: '2027-03-13',
+				source: 'onboarding'
+			});
 
 			// Same day again replaces that day's entry; a later day adds to the history.
 			await saveBody(
@@ -101,6 +112,13 @@ describe('athlete profile', () => {
 			expect(later.bodyWeight.map((w) => [w.measuredOn, w.value])).toEqual([
 				['2026-11-08', 73.9],
 				['2026-11-01', 74.4]
+			]);
+			// The target was saved without a date: it is on the profile only, so the goal it had ends as
+			// cleared, and the profile and the goal never disagree.
+			expect(later.profile).toMatchObject({ targetWeight: 71, targetDate: null });
+			expect(await repo.getActiveGoal(owner)).toBeNull();
+			expect(await repo.listGoals(owner)).toMatchObject([
+				{ id: goal!.id, status: 'ended', endedReason: 'cleared' }
 			]);
 			// Leaving the weight blank never deletes history.
 			await saveBody(
@@ -141,6 +159,141 @@ describe('athlete profile', () => {
 				sql`select count(*)::int as n from body_weight_entries where owner_id = ${owner}`
 			);
 			expect(rows.rows[0]).toEqual({ n: 1 });
+		});
+	});
+
+	it('a legacy target on the profile whose day has passed, with no goal, does not block a save of another field', async () => {
+		await withRollback(async (db) => {
+			const time = clock('2026-11-10T08:00:00Z');
+			const owner = await makeOwner(db);
+			// A target the profile held before any goal existed. Its day has passed.
+			const profiles = createProfileRepository(db);
+			await profiles.ensureProfile(owner);
+			await profiles.updateProfile(
+				owner,
+				{ targetWeight: 78, targetWeightUnit: 'kg', targetDate: '2026-10-01' },
+				time.now()
+			);
+			const at = { db, now: time.now };
+			const body = {
+				weightUnit: 'kg',
+				bodyWeight: null,
+				nutritionPhase: null,
+				targetWeight: 78,
+				targetDate: '2026-10-01'
+			};
+
+			await saveBody(owner, { ...body, birthYear: 1995 }, at);
+			const phase = await saveBody(owner, { ...body, birthYear: 1995, nutritionPhase: 'cut' }, at);
+			expect(phase.profile).toMatchObject({
+				birthYear: 1995,
+				nutritionPhase: 'cut',
+				targetWeight: 78,
+				targetDate: '2026-10-01'
+			});
+			expect(await createWeightRepository(db).getActiveGoal(owner)).toBeNull();
+		});
+	});
+
+	it('an unchanged legacy target with a day to come is not turned into a goal, and a changed one is', async () => {
+		await withRollback(async (db) => {
+			const time = clock('2026-11-10T08:00:00Z');
+			const owner = await makeOwner(db);
+			const at = { db, now: time.now };
+			const profiles = createProfileRepository(db);
+			await profiles.ensureProfile(owner);
+			await profiles.updateProfile(
+				owner,
+				{ targetWeight: 78, targetWeightUnit: 'kg', targetDate: '2027-01-31' },
+				time.now()
+			);
+			const body = {
+				weightUnit: 'kg',
+				nutritionPhase: null,
+				targetWeight: 78,
+				targetDate: '2027-01-31'
+			};
+
+			// A weigh-in exists, so a goal could start: the unchanged target still makes none.
+			await saveBody(owner, { ...body, bodyWeight: 82.4 }, at);
+			const repo = createWeightRepository(db);
+			expect(await repo.listGoals(owner)).toHaveLength(0);
+			expect(await getAthleteProfile(owner, { db })).toMatchObject({
+				targetWeight: 78,
+				targetDate: '2027-01-31'
+			});
+
+			// A changed target does make a goal, from the weigh-in.
+			await saveBody(owner, { ...body, bodyWeight: null, targetWeight: 77 }, at);
+			expect(await repo.getActiveGoal(owner)).toMatchObject({
+				startWeight: 82.4,
+				targetWeight: 77,
+				targetOn: '2027-01-31'
+			});
+		});
+	});
+
+	it('refuses a target day that has passed at the body form’s targetDate field, and saves nothing else', async () => {
+		await withRollback(async (db) => {
+			const time = clock('2026-11-10T08:00:00Z');
+			const owner = await makeOwner(db);
+			const at = { db, now: time.now };
+			await saveBody(owner, { weightUnit: 'kg', bodyWeight: 82.4, nutritionPhase: null }, at);
+
+			expect(
+				await fieldErrors(
+					saveBody(
+						owner,
+						{
+							weightUnit: 'kg',
+							bodyWeight: null,
+							nutritionPhase: 'cut',
+							targetWeight: 78,
+							targetDate: '2026-11-01'
+						},
+						at
+					)
+				)
+			).toEqual({ targetDate: 'Pick a day after today' });
+			expect(await getAthleteProfile(owner, { db })).toMatchObject({
+				nutritionPhase: null,
+				targetWeight: null
+			});
+			expect(await createWeightRepository(db).listGoals(owner)).toHaveLength(0);
+		});
+	});
+
+	it('a body save with no target weight clears the target and its date, and ends the goal', async () => {
+		await withRollback(async (db) => {
+			const time = clock('2026-11-10T08:00:00Z');
+			const owner = await makeOwner(db);
+			const at = { db, now: time.now };
+			const repo = createWeightRepository(db);
+			await saveBody(
+				owner,
+				{
+					weightUnit: 'kg',
+					bodyWeight: 82.4,
+					nutritionPhase: null,
+					targetWeight: 78,
+					targetDate: '2027-01-31'
+				},
+				at
+			);
+			const goal = await repo.getActiveGoal(owner);
+			expect(goal).not.toBeNull();
+
+			// A date with no weight is dropped with the weight: the target is cleared.
+			const saved = await saveBody(
+				owner,
+				{ weightUnit: 'kg', bodyWeight: null, nutritionPhase: null, targetDate: '2027-01-31' },
+				at
+			);
+			expect(saved.profile).toMatchObject({ targetWeight: null, targetDate: null });
+			expect(await repo.getActiveGoal(owner)).toBeNull();
+			expect(await repo.listGoals(owner)).toMatchObject([
+				{ id: goal!.id, status: 'ended', endedReason: 'cleared' }
+			]);
 		});
 	});
 
@@ -197,7 +350,7 @@ describe('athlete profile', () => {
 	it('stores a blank target date (an empty date input) as no date', async () => {
 		await withRollback(async (db) => {
 			const owner = await makeOwner(db);
-			const body = { weightUnit: 'kg', nutritionPhase: 'cut', targetWeight: 71 };
+			const body = { weightUnit: 'kg', bodyWeight: 74.6, nutritionPhase: 'cut', targetWeight: 71 };
 			await saveBody(owner, { ...body, targetDate: '2027-03-13' }, { db });
 			const cleared = await saveBody(owner, { ...body, targetDate: '' }, { db });
 			expect(cleared.profile.targetDate).toBeNull();
@@ -205,6 +358,42 @@ describe('athlete profile', () => {
 				sql`select target_date from athlete_profiles where owner_id = ${owner}`
 			);
 			expect(stored.rows).toEqual([{ target_date: null }]);
+		});
+	});
+
+	it('starts the goal from a dated target, keeps it when re-saved, and clears it with the target', async () => {
+		await withRollback(async (db) => {
+			const time = clock('2026-11-01T08:00:00Z');
+			const owner = await makeOwner(db);
+			const repo = createWeightRepository(db);
+			const body = {
+				weightUnit: 'kg',
+				nutritionPhase: null,
+				targetWeight: 71,
+				targetDate: '2027-03-13'
+			};
+
+			// A goal starts from a weigh-in: with none, the target is refused at its field.
+			expect(await fieldErrors(saveBody(owner, body, { db, now: time.now }))).toEqual({
+				targetWeight: 'Log your weight first, so the goal has a start'
+			});
+
+			await saveBody(owner, { ...body, bodyWeight: 74.6 }, { db, now: time.now });
+			const goal = await repo.getActiveGoal(owner);
+			expect(goal).toMatchObject({ startWeight: 74.6, targetWeight: 71, targetOn: '2027-03-13' });
+
+			// Saving the same target a week on keeps that goal: it does not start a new one.
+			time.advanceDays(7);
+			await saveBody(owner, { ...body, bodyWeight: 73.9 }, { db, now: time.now });
+			expect((await repo.getActiveGoal(owner))?.id).toBe(goal!.id);
+			expect(await repo.listGoals(owner)).toHaveLength(1);
+
+			// No target at all clears the goal and the profile's target.
+			await saveBody(owner, { weightUnit: 'kg', nutritionPhase: null }, { db, now: time.now });
+			expect(await repo.getActiveGoal(owner)).toBeNull();
+			expect(await getBody(owner, { db })).toMatchObject({
+				profile: { targetWeight: null, targetDate: null }
+			});
 		});
 	});
 
