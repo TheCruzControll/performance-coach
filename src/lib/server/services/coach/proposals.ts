@@ -31,6 +31,7 @@ import {
 	type DiffRow,
 	type WeekImpact
 } from '../../../domain/coach/diff';
+import { capLine, isStaleReplan } from '../../../domain/coach/cards';
 import {
 	checkProposal,
 	RULE_MESSAGES,
@@ -638,10 +639,9 @@ function capRows(
 ): { rows: DiffRow[]; lines: string[] } {
 	const more = rows.length - MAX_PROPOSAL_OPS;
 	if (proposal.kind !== 'replan' || more <= 0) return { rows, lines };
-	const words = more === 1 ? 'change' : 'changes';
 	return {
 		rows: rows.slice(0, MAX_PROPOSAL_OPS),
-		lines: [...lines, `${more} more ${words} not listed`]
+		lines: [...lines, capLine(more)]
 	};
 }
 
@@ -848,8 +848,8 @@ export async function acceptProposal(
 	if (decided.changed && kind === 'goal_update' && status === 'applied') {
 		await replanForPriorities(ownerId, { cause: 'goal_update' }, deps);
 	}
-	// Any accept of a stale replan, this one or a repeat; never one the owner revised.
-	const again = kind === 'replan' && status === 'superseded' && supersededReason !== 'revised';
+	// Any accept of a stale replan, this one or a repeat: the same test the card uses (cards.ts).
+	const again = isStaleReplan(kind, status, supersededReason);
 	return again ? { ...decided, proposeAgain: true } : decided;
 }
 

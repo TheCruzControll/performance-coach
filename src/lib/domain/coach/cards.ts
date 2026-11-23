@@ -41,6 +41,12 @@ export interface ProposalCardView {
 	reviewHref?: string;
 	/** The review's own next cycle: its start is chosen at reviewHref, so it has no Accept. */
 	chooseStart?: true;
+	/** A stale re-plan (isStaleReplan): 'Propose again' asks for it again from today. */
+	proposeAgain?: true;
+	/** A re-plan whose rows were capped: '12 more changes not listed', under its rows. */
+	moreRows?: string;
+	/** A deload re-plan's week, as stored when it was made: 'Week of 16 Nov becomes a deload week'. */
+	deloadLine?: string;
 }
 
 /** Where a review's proposal came from (services/coach/proposals.ts ProposalOrigin). */
@@ -68,9 +74,15 @@ export interface ProposalCardSource {
 	cycleReview?: { href: string } | null;
 	/** Set on the review's own open next cycle: the review that chooses its start. */
 	chooseStart?: { href: string } | null;
+	/** The conversation a coach proposed it in (a coach re-plan's 'From your coach'). */
+	threadId?: string | null;
+	/** The stored summary lines: a re-plan's last line says how many more changes there are. */
+	summaryLines?: readonly string[];
 }
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const dayMonth = (date: IsoDate) =>
+	`${Number(date.slice(8))} ${MONTHS[Number(date.slice(5, 7)) - 1]}`;
 
 /** Where an M7 re-plan the rules made came from, in words. */
 const ENGINE_WORDS = {
@@ -78,18 +90,65 @@ const ENGINE_WORDS = {
 	fatigue: 'From your training load'
 } as const;
 
+/** A re-plan the coach proposed in a conversation, with no review or engine behind it. */
+export const COACH_ORIGIN_WORDS = 'From your coach';
+
 /** 'From your weekly review · Week of 2 Nov', 'From your cycle review', or an engine's words. */
 function originWords({ kind, weekStartsOn }: CardOrigin): string {
 	if (kind === 'goal_priority' || kind === 'fatigue') return ENGINE_WORDS[kind];
 	if (kind === 'cycle_review') return 'From your cycle review';
 	if (!weekStartsOn) return 'From your weekly review';
-	const day = `${Number(weekStartsOn.slice(8))} ${MONTHS[Number(weekStartsOn.slice(5, 7)) - 1]}`;
-	return `From your weekly review · Week of ${day}`;
+	return `From your weekly review · Week of ${dayMonth(weekStartsOn)}`;
 }
+
+/**
+ * The superseded reasons a stale re-plan carries: its stored plan no longer fits today (M7's
+ * replan staleness at accept). 'Propose again' is offered for these, and only these; acceptProposal
+ * and the card both ask isStaleReplan, so they cannot disagree.
+ */
+export const STALE_REPLAN_REASONS = [
+	'profile_changed',
+	'plan_changed',
+	'start_passed',
+	'sessions_passed',
+	'program_changed'
+] as const satisfies readonly SupersededReason[];
+
+/** A superseded re-plan that went stale, so it can be proposed again. */
+export function isStaleReplan(kind: string, status: string, reason: string | null): boolean {
+	return (
+		kind === 'replan' &&
+		status === 'superseded' &&
+		reason !== null &&
+		(STALE_REPLAN_REASONS as readonly string[]).includes(reason)
+	);
+}
+
+/**
+ * The line a re-plan's summary ends with when its rows were capped at 12 (services/coach/
+ * proposals.ts capRows): '3 more changes not listed'.
+ */
+export const capLine = (more: number) =>
+	`${more} more ${more === 1 ? 'change' : 'changes'} not listed`;
+const CAP_LINE = /^\d+ more changes? not listed$/;
+
+/**
+ * A deload re-plan's line: its week by date, never 'this week' or 'next week', so it reads the
+ * same days later. The proposal stores it in its summary lines when it is made (summaryLines in
+ * domain/coach/diff.ts).
+ */
+export function deloadWords(week: IsoDate): string {
+	return `Week of ${dayMonth(week)} becomes a deload week`;
+}
+const DELOAD_LINE = / becomes a deload week$/;
 
 /** The card's fields of a view, and nothing else (no links, notes or dates go to the page). */
 export function cardOf(view: ProposalCardSource): ProposalCardView {
 	const reviewHref = view.chooseStart?.href ?? view.cycleReview?.href ?? view.origin?.href;
+	const lines = view.summaryLines ?? [];
+	const last = lines.at(-1);
+	const deload = lines.find((line) => DELOAD_LINE.test(line));
+	const threadId = view.kind === 'replan' ? view.threadId : null;
 	return {
 		id: view.id,
 		kind: view.kind,
@@ -102,8 +161,13 @@ export function cardOf(view: ProposalCardSource): ProposalCardView {
 		appliedVersion: view.appliedVersion?.number ?? null,
 		supersededReason: view.supersededReason,
 		...(view.origin && { origin: { words: originWords(view.origin), href: view.origin.href } }),
+		...(!view.origin &&
+			threadId && { origin: { words: COACH_ORIGIN_WORDS, href: `/coach/${threadId}` } }),
 		...(reviewHref && { reviewHref }),
-		...(view.chooseStart && { chooseStart: true })
+		...(view.chooseStart && { chooseStart: true }),
+		...(view.kind === 'replan' && last !== undefined && CAP_LINE.test(last) && { moreRows: last }),
+		...(deload && { deloadLine: deload }),
+		...(isStaleReplan(view.kind, view.status, view.supersededReason) && { proposeAgain: true })
 	};
 }
 
