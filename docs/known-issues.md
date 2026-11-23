@@ -57,7 +57,6 @@ Last reviewed: 2026-11-23, against `main` at the merge of #634.
 - **Some screens still offer two actions in one `EmptyState`.** `SpecificsEditor.svelte:265`,
   `ReviewPrompt.svelte:58`, `KnowsSheet.svelte:68`, `StartFlow.svelte:128`,
   `EmptyWorkout.svelte:18`. Each closes with its screen row (v2/22, v2/14, v2/20, v2/10).
-- **`EmptyState`'s `class:start` is kept for `error-view.test.ts` until v2/24b merges; drop it and its comment then.**
 - **Cards, stat tiles, chips and segmented controls remain on screens until their v2 screen rows.**
   `v2/02d` flattened them and the tabs and badges too: no fill, pill, tint or amber, with their
   padding, borders and line boxes held, so no screen moves. v2 draws none of them, so each screen row

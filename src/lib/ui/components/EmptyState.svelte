@@ -42,14 +42,7 @@
 	}: Props = $props();
 </script>
 
-<!-- `start` draws nothing (it is the default); src/routes/error-view.test.ts reads it until v2/24b. -->
-<div
-	class="empty"
-	class:compact
-	class:center={align === 'center'}
-	class:start={align === 'start'}
-	data-testid={testId}
->
+<div class="empty" class:compact class:center={align === 'center'} data-testid={testId}>
 	{#if title}<h2 class="title">{title}</h2>{/if}
 	{#if description}<p class="description">{description}</p>{/if}
 	{#if actions}<div class="actions">{@render actions()}</div>{/if}
