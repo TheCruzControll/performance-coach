@@ -19,7 +19,7 @@
  * - new_program and next_cycle are ./program-create.ts's.
  */
 import type { IsoDate } from '../../../../domain/calendar';
-import type { ProgramOp, Proposal } from '../../../../domain/coach/proposals';
+import type { AdjustmentOp, Proposal } from '../../../../domain/coach/proposals';
 import { render, TEMPLATES } from '../../../../domain/programming/decisions';
 import { createCoachProposalsRepository } from '../../../db/repositories/coach-proposals';
 import { createProgramsRepository } from '../../../db/repositories/programs';
@@ -46,7 +46,7 @@ const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : 
 /** How a weekly review's proposal applies: who decided, the version's summary, review_applied. */
 function fromReview(
 	source: unknown,
-	ops: readonly ProgramOp[]
+	ops: readonly AdjustmentOp[]
 ): Partial<Pick<ProgramEditBatch, 'title' | 'decidedBy' | 'decision'>> {
 	const review = source as Partial<RulesProvenance> | null;
 	if (review?.kind !== 'weekly_review' || !review.weekStartsOn || !review.reviewId) return {};
@@ -69,7 +69,10 @@ function fromReview(
 			ruleKey: REVIEW_APPLIED_RULE,
 			summary: render(template.summary, facts, 'review_applied'),
 			why: render(template.why, facts, 'review_applied'),
-			affected: [...new Set(ops.map((op) => op.sessionLineage))],
+			// A review's ops are edits of its sessions; an add names a day, not a session.
+			affected: [
+				...new Set(ops.flatMap((op) => (op.op === 'add_session' ? [] : [op.sessionLineage])))
+			],
 			evidence: { reviewId: review.reviewId, revision: review.revision ?? 1, trimmed }
 		}
 	};

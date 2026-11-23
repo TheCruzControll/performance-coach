@@ -3,7 +3,8 @@
  * the propose tools, the cards, the inbox and get_coach_proposals create, read and decide them.
  *
  * - createProposal parses the proposal, checks it against the owner's data today
- *   (checkProposal, and checkMove's refusals and warnings for each move), and stores it with its
+ *   (checkProposal, and checkMove's refusals and warnings for each move, and addApplier's for each
+ *   add, whose warnings the card shows as the diff's warnings), and stores it with its
  *   card rows, impact, summary lines, base version, payload version and hash. summary is the
  *   first summary line (≤ 200 characters), and program_id is set whenever base_version_id is.
  *   An identical open proposal on the same base is returned instead of a second row (creates
@@ -42,6 +43,7 @@ import {
 	PAYLOAD_VERSION,
 	payloadHash,
 	proposalSchema,
+	type AdjustmentOp,
 	type ProgramOp,
 	type Proposal,
 	type ProposalKind
@@ -76,7 +78,7 @@ import { createContextCache, type ContextCache } from '../periodisation/context'
 import { previewReplan, type ReplanPreview } from '../periodisation/preview';
 import { replanForPriorities } from '../periodisation/priority';
 import { getAthleteProfile, listGoals } from '../profile';
-import { checkMove, getProgramVersion, type StoredSession } from '../programs';
+import { addApplier, checkMove, getProgramVersion, type StoredSession } from '../programs';
 import { programmingInputFor } from '../programs/alternatives';
 import { runMinutes } from '../programs/edits';
 import { listExercisePreferences } from '../training/preferences';
@@ -405,10 +407,12 @@ const ADDRESS = new Set(['op', 'sessionLineage', 'plannedExerciseLineage', 'posi
  * invalid prescription (repsMin over repsMax), is refused at its op. Adjustments apply in
  * order, so each one is checked on top of the ones before it.
  */
-function adjustmentErrors(ops: readonly ProgramOp[], sessions: readonly StoredSession[]) {
+function adjustmentErrors(ops: readonly AdjustmentOp[], sessions: readonly StoredSession[]) {
 	const errors: FieldErrors = {};
 	const after = new Map<string, object>();
 	for (const [i, op] of ops.entries()) {
+		// An add names no session of the program: services/programs/add.ts checks it when it runs.
+		if (op.op === 'add_session') continue;
 		const session = sessions.find((s) => s.lineage === op.sessionLineage);
 		let target: [key: string, before: object | undefined, missing: [string, string]];
 		let check: (value: unknown) => { ok: true; data: object } | { ok: false; errors: FieldErrors };
@@ -553,16 +557,29 @@ async function checkAgainstToday(
 	}
 	if (found && !Object.keys(errors).length && 'ops' in proposal.payload) {
 		for (const [i, op] of proposal.payload.ops.entries()) {
-			if (op.op !== 'move') continue;
-			const { op: _move, ...move } = op;
-			const at = { version: found.version.number, today };
-			try {
-				for (const w of await checkMove(ownerId, move, at, { db, contexts }))
-					warnings.push(w.message);
-			} catch (error) {
-				if (!(error instanceof TrainingInputError)) throw error;
-				for (const [path, m] of Object.entries(error.errors))
-					errors[`payload.ops.${i}.${path}`] ??= m;
+			if (op.op === 'move') {
+				const { op: _move, ...move } = op;
+				const at = { version: found.version.number, today };
+				try {
+					for (const w of await checkMove(ownerId, move, at, { db, contexts }))
+						warnings.push(w.message);
+				} catch (error) {
+					if (!(error instanceof TrainingInputError)) throw error;
+					for (const [path, m] of Object.entries(error.errors))
+						errors[`payload.ops.${i}.${path}`] ??= m;
+				}
+			} else if (op.op === 'add_session') {
+				// What the add brings up in its week: its findings warn, and never block it.
+				const { op: _add, ...add } = op;
+				const at = { version: found.version.number, today };
+				try {
+					const edit = await addApplier(ownerId, add, at, { db, contexts });
+					for (const w of edit.warnings) warnings.push(w.message);
+				} catch (error) {
+					if (!(error instanceof TrainingInputError)) throw error;
+					for (const [path, m] of Object.entries(error.errors))
+						errors[`payload.ops.${i}.${path}`] ??= m;
+				}
 			}
 		}
 	}

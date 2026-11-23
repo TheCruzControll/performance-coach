@@ -12,7 +12,7 @@ import { CONTRACT_CLAUSES, PROMPT_VERSION, promptVersion, SYSTEM_PROMPT } from '
  * Pinned: an edit to the prompt must be deliberate, because it changes PROMPT_VERSION and so
  * starts a new segment for every thread. Update this hash in the same commit as the edit.
  */
-const PINNED_SHA256 = 'c1fbc5763f22f88bae12f19a890df7ffa25f1bf71d15c6f9229a6e3c55cc3a22';
+const PINNED_SHA256 = '4985d2f2a6285682897213af87bccdb94a5348f62b956013da1bcca4be295339';
 
 const sha256 = (text: string) => createHash('sha256').update(text).digest('hex');
 

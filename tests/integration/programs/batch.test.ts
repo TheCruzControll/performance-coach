@@ -479,6 +479,67 @@ describe('applyProgramEdits', () => {
 		});
 	});
 
+	it('adds a session beside a skip elsewhere as one version, and refuses an add and a move to one day as OPS_OVERLAP', async () => {
+		await withRollback(async (db) => {
+			const owner = await makeOwner(db);
+			const programId = await store(db, owner);
+			const v1 = await versionOf(db, owner, programId, 1);
+			const run = titled(v1, 0, 'Easy run');
+			const lowerB = titled(v1, 0, 'Lower B');
+			const add = {
+				op: 'add_session',
+				date: WED,
+				kind: 'run',
+				intent: 'easy',
+				durationMinutes: 30
+			};
+			const runsOn = (v: ProgramVersion, date: string) =>
+				v.blocks
+					.flatMap((b) => b.weeks.flatMap((w) => w.sessions))
+					.filter((s) => s.date === date && s.kind === 'run');
+
+			// An add and a move to one day, in either order: the later op is refused.
+			expect(
+				await fieldErrors(
+					applyProgramEdits(
+						owner,
+						batchOf([add, { op: 'move', sessionLineage: lowerB.lineage, toDate: WED }]),
+						{ db }
+					)
+				)
+			).toEqual({ 'ops.1': OPS_OVERLAP });
+			expect(
+				await fieldErrors(
+					applyProgramEdits(
+						owner,
+						batchOf([{ op: 'move', sessionLineage: lowerB.lineage, toDate: WED }, add]),
+						{ db }
+					)
+				)
+			).toEqual({ 'ops.1': OPS_OVERLAP });
+			// Two adds to one day.
+			expect(
+				await fieldErrors(
+					applyProgramEdits(owner, batchOf([add, { ...add, kind: 'hypertrophy' }]), { db })
+				)
+			).toEqual({ 'ops.1': OPS_OVERLAP });
+			expect(await versionNumbers(db, owner)).toEqual([1]);
+
+			// An add beside a skip elsewhere: one version, the add's decision first, with the rationale.
+			const revised = await applyProgramEdits(
+				owner,
+				batchOf([add, { op: 'skip', sessionLineage: run.lineage }]),
+				{ db }
+			);
+			expect(revised).toMatchObject({ programId, number: 2 });
+			expect(await versionNumbers(db, owner)).toEqual([2, 1]);
+			const v2 = await versionOf(db, owner, programId, 2);
+			expect(v2.decisions.map((d) => d.kind)).toEqual(['session_added', 'session_skipped']);
+			expect(v2.decisions[0]).toMatchObject({ why: RATIONALE, decidedBy: 'coach' });
+			expect(runsOn(v2, WED)).toHaveLength(runsOn(v1, WED).length + 1);
+		});
+	});
+
 	it('composes adjustments of one session, its estimate worked out from all of them', async () => {
 		const setOps = (lowerA: StoredSession) => {
 			const squat = {
