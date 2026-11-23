@@ -5,7 +5,7 @@ import { proposalDraftSchema } from '../../../domain/coach/proposals.ts';
 import { BLOCK, EXERCISE, FIXTURES } from '../../../../../tests/fixtures/coach-proposals.ts';
 import { DRAFTER_PROMPT } from '../prompt/drafter.ts';
 import { MockProvider, type MockStep } from '../provider/mock.ts';
-import { COACH_MODEL, type LlmProvider } from '../provider/types.ts';
+import { COACH_MODEL, type LlmProvider, type ModelRequest } from '../provider/types.ts';
 import { validateRequest } from '../provider/validate.ts';
 import { toolContext } from '../tools/context.ts';
 import { defineTool } from '../tools/define.ts';
@@ -15,6 +15,7 @@ import {
 	DRAFT_KINDS,
 	draftInTool,
 	draftProposal,
+	draftRequest,
 	DraftError,
 	type DraftCallRecord,
 	type DraftContext,
@@ -266,4 +267,20 @@ describe('draftInTool', () => {
 		expect(structured).toHaveBeenCalledOnce();
 		expect(calls).toHaveLength(1);
 	});
+});
+
+describe('the drafter’s format', () => {
+	it.each(DRAFT_KINDS)(
+		'is sent within the strict-schema limits, with the %s kind’s schema',
+		(kind) => {
+			const request = {
+				...draftRequest(kind, INTENT),
+				output_config: {
+					effort: 'high',
+					format: { type: 'json_schema', schema: toStrictJsonSchema(proposalDraftSchema(kind)) }
+				}
+			} as ModelRequest;
+			expect(validateRequest(request)).toEqual([]);
+		}
+	);
 });

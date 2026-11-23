@@ -3,7 +3,8 @@
  * owner's data. createProposal runs them before storing, and accept runs them again against the
  * owner's today, so a proposal that has gone stale is refused rather than applied.
  *
- * - No op lands in the past: its session is today or later, and so is a move's new day.
+ * - No op lands in the past: its session is today or later, and so are a move's new day and an
+ *   add's day.
  * - A swap, a substitution or a rotation never targets an exercise the owner dislikes, or one
  *   that is not eligible for them (equipment, injuries); eligibility arrives as data.
  * - A workout_update touches one session. (At most MAX_PROPOSAL_OPS ops is the schema's.)
@@ -16,7 +17,7 @@
  */
 import { addDays, mondayOf, type IsoDate } from '../calendar.ts';
 import { validate, type FieldErrors, type Validated } from '../validation.ts';
-import { proposalSchema, type ProgramOp, type Proposal } from './proposals.ts';
+import { proposalSchema, type AdjustmentOp, type Proposal } from './proposals.ts';
 
 /** A session of the active program, by lineage, with its planned exercises' lineages. */
 export interface ProposalSession {
@@ -86,7 +87,12 @@ function proposalErrors(proposal: Proposal, context: ProposalContext): FieldErro
 		if (!goals.has(id)) fail(path, M.unknownGoal);
 	};
 
-	const programOp = (op: ProgramOp, at: string) => {
+	const programOp = (op: AdjustmentOp, at: string) => {
+		// An add names a day, not a session: it is built from today on (services/programs/add.ts).
+		if (op.op === 'add_session') {
+			if (op.date < context.today) fail(`${at}.date`, M.pastDay);
+			return;
+		}
 		const found = session(op.sessionLineage, `${at}.sessionLineage`);
 		if (op.op === 'move' && op.toDate < context.today) fail(`${at}.toDate`, M.pastDay);
 		if (op.op === 'swap' || op.op === 'adjust_set') {

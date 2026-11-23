@@ -33,6 +33,7 @@ import {
 	goalSchema
 } from '../profile/schemas.ts';
 import {
+	addSessionSchema,
 	adjustDetailsSchema,
 	adjustRunSegmentSchema,
 	adjustSetSchema,
@@ -115,22 +116,37 @@ export type ProgramOpKind = (typeof PROGRAM_OPS)[number];
 /** A move of one session to another day: the op the scheduler's repairs are made of. */
 export const moveOpSchema = op('move', moveSessionSchema);
 
-export const programOpSchema = z.discriminatedUnion(
-	'op',
-	[
-		moveOpSchema,
-		op('skip', skipSessionSchema),
-		op('swap', swapSchema),
-		op('adjust_set', adjustSetSchema),
-		op('adjust_run_segment', adjustRunSegmentSchema),
-		op('adjust_details', adjustDetailsSchema)
-	],
-	'Pick a change'
-);
+const PROGRAM_OP_SCHEMAS = [
+	moveOpSchema,
+	op('skip', skipSessionSchema),
+	op('swap', swapSchema),
+	op('adjust_set', adjustSetSchema),
+	op('adjust_run_segment', adjustRunSegmentSchema),
+	op('adjust_details', adjustDetailsSchema)
+] as const;
+
+export const programOpSchema = z.discriminatedUnion('op', PROGRAM_OP_SCHEMAS, 'Pick a change');
 export type ProgramOp = z.output<typeof programOpSchema>;
 
+/**
+ * A new session on a day of the active program, built by the app from the owner's profile
+ * (services/programs/add.ts): the coach names its kind, day and options and never its content.
+ */
+export const addSessionOpSchema = op('add_session', addSessionSchema);
+
+/** The ops a coach proposes to the active program: the six edits, and an add_session. */
+export const ADJUSTMENT_OPS = [...PROGRAM_OPS, 'add_session'] as const;
+export type AdjustmentOpKind = (typeof ADJUSTMENT_OPS)[number];
+
+export const adjustmentOpSchema = z.discriminatedUnion(
+	'op',
+	[...PROGRAM_OP_SCHEMAS, addSessionOpSchema],
+	'Pick a change'
+);
+export type AdjustmentOp = z.output<typeof adjustmentOpSchema>;
+
 /** Changes to the active program, from its base version; one version when accepted. */
-const programAdjustment = closed({ ops: ops(programOpSchema) });
+const programAdjustment = closed({ ops: ops(adjustmentOpSchema) });
 /** Today's workout before it starts: the same ops, on one session (proposal-rules). */
 const workoutUpdate = closed({ ops: ops(programOpSchema) });
 
@@ -315,18 +331,32 @@ export const PAYLOAD_SCHEMAS = {
 type Payloads = typeof PAYLOAD_SCHEMAS;
 export type ProposalPayload<K extends ProposalKind = ProposalKind> = z.output<Payloads[K]>;
 
+/**
+ * What the drafter writes for each kind, where it differs from the stored payload. The drafter
+ * writes program_adjustment with the six edits only: its format with an add_session would have
+ * 26 optional parameters, past the 24 a request may carry (validate.ts STRICT_LIMITS; 22 today).
+ * An add comes from a propose tool's ops, built by the app, never from the drafter.
+ */
+const DRAFT_PAYLOADS = {
+	...PAYLOAD_SCHEMAS,
+	program_adjustment: closed({ ops: ops(programOpSchema) })
+} as const;
+
 const title = text(TITLE_MAX, 'Give it a title');
 const rationale = text(RATIONALE_MAX, 'Say why');
 
 const draft = <K extends ProposalKind>(kind: K) =>
 	closed({ title, rationale, payload: PAYLOAD_SCHEMAS[kind] });
 
-/** What the drafter writes, or a propose tool takes, for a kind it already knows. */
+const draftOf = <K extends ProposalKind>(kind: K) =>
+	closed({ title, rationale, payload: DRAFT_PAYLOADS[kind] });
+
+/** What the drafter writes, or a propose tool takes, for a kind it already knows (DRAFT_PAYLOADS). */
 export function proposalDraftSchema<K extends ProposalKind>(kind: K) {
-	return draft(kind);
+	return draftOf(kind);
 }
 export type ProposalDraft<K extends ProposalKind = ProposalKind> = z.output<
-	ReturnType<typeof draft<K>>
+	ReturnType<typeof draftOf<K>>
 >;
 
 const proposal = <K extends ProposalKind>(kind: K) =>

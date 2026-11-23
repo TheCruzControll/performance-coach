@@ -37,6 +37,7 @@ import {
 	type ExerciseMuscles
 } from '../training/metrics.ts';
 import { PRESCRIPTION_LIMITS } from '../training/schemas.ts';
+import type { AddedKind, AddIntent } from '../training/edits.ts';
 import type {
 	BaselineLift,
 	ExerciseRef,
@@ -57,7 +58,7 @@ import {
 } from '../training/vocabulary.ts';
 import type { MuscleGroup } from '../training/vocabulary.ts';
 import { cleanFloat, fromMetres, type WeightUnit } from '../units.ts';
-import type { GoalOp, ProgramOp, Proposal } from './proposals.ts';
+import type { AdjustmentOp, GoalOp, Proposal } from './proposals.ts';
 import type { SourceRef } from './sources.ts';
 
 // ---- The context ----------------------------------------------------------------------------
@@ -196,6 +197,31 @@ const segmentWords = (s: RunSegment, distanceUnit: ProfileDistanceUnit) => {
 	const line = words(w.headline, w.pace, w.target);
 	return s.repeats === null ? line : `${s.repeats} × ${line}`;
 };
+/** An added session's kind, as the add sheet names it. */
+const ADDED_KIND_WORDS: Record<AddedKind, string> = {
+	strength: 'Strength',
+	hypertrophy: 'Hypertrophy',
+	run: 'Run',
+	muay_thai: 'Muay Thai',
+	conditioning: 'Conditioning'
+};
+const INTENT_WORDS: Record<AddIntent, string> = {
+	easy: 'Easy',
+	moderate: 'Moderate',
+	hard: 'Hard'
+};
+/**
+ * The intent an add takes when none is named: the builder's DEFAULT_INTENT (programming/rules/
+ * added.ts). Copied here because this module never imports domain/programming; a test pins the two.
+ */
+export const DEFAULT_ADDED_INTENT: Record<AddedKind, AddIntent> = {
+	run: 'easy',
+	strength: 'moderate',
+	hypertrophy: 'moderate',
+	muay_thai: 'moderate',
+	conditioning: 'moderate'
+};
+
 const detailWords = ({ details }: OtherSessionPlan) =>
 	details.targetRpe === null
 		? `${details.durationMinutes} min`
@@ -277,6 +303,23 @@ const given = <T>(op: object) =>
 		Object.entries(op).filter(([key, v]) => v !== undefined && !ADDRESS.has(key))
 	) as Partial<T>;
 
+/**
+ * An add as one row: the session it would be, on its day, with no link (it is not yet a session).
+ * The impact leaves it out (v1), so the plan's weeks never hold it.
+ */
+function addedRow(op: Extract<AdjustmentOp, { op: 'add_session' }>): DiffRow {
+	const intent = op.intent ?? DEFAULT_ADDED_INTENT[op.kind];
+	const length =
+		op.durationMinutes === undefined ? 'your usual length' : `${op.durationMinutes} min`;
+	const after = [
+		ADDED_KIND_WORDS[op.kind],
+		INTENT_WORDS[intent],
+		length,
+		when({ date: op.date, timeOfDay: op.timeOfDay ?? null })
+	].join(' · ');
+	return diffRow('session', 'New session', 'Not planned', after, op.date);
+}
+
 class Plan {
 	readonly weeks: DiffWeek[];
 	readonly skipped = new Set<string>();
@@ -313,8 +356,9 @@ class Plan {
 		session.estLoad = sessionLoadOf(session);
 	}
 
-	apply(op: ProgramOp): DiffRow {
+	apply(op: AdjustmentOp): DiffRow {
 		const { unit, distanceUnit } = this.context;
+		if (op.op === 'add_session') return addedRow(op);
 		const session = this.session(op.sessionLineage);
 		const row = (area: DiffArea, label: string, before: string, after: string) =>
 			diffRow(area, label, before, after, session.date, sessionLink(session));

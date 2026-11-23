@@ -42,6 +42,7 @@ import {
 	PAYLOAD_VERSION,
 	payloadHash,
 	proposalSchema,
+	type AdjustmentOp,
 	type ProgramOp,
 	type Proposal,
 	type ProposalKind
@@ -405,10 +406,12 @@ const ADDRESS = new Set(['op', 'sessionLineage', 'plannedExerciseLineage', 'posi
  * invalid prescription (repsMin over repsMax), is refused at its op. Adjustments apply in
  * order, so each one is checked on top of the ones before it.
  */
-function adjustmentErrors(ops: readonly ProgramOp[], sessions: readonly StoredSession[]) {
+function adjustmentErrors(ops: readonly AdjustmentOp[], sessions: readonly StoredSession[]) {
 	const errors: FieldErrors = {};
 	const after = new Map<string, object>();
 	for (const [i, op] of ops.entries()) {
+		// An add names no session of the program: services/programs/add.ts checks it when it runs.
+		if (op.op === 'add_session') continue;
 		const session = sessions.find((s) => s.lineage === op.sessionLineage);
 		let target: [key: string, before: object | undefined, missing: [string, string]];
 		let check: (value: unknown) => { ok: true; data: object } | { ok: false; errors: FieldErrors };

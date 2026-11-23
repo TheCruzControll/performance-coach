@@ -11,10 +11,12 @@ import {
 	PLANNED,
 	SESSION
 } from '../../../../tests/fixtures/coach-proposals';
+import { DEFAULT_INTENT } from '../programming/rules/added';
 import { describeChanges, type PlanChanges } from '../programming/replan/changes';
 import { plannedHardSets, sessionLoadOf } from '../training/metrics';
 import type { ProgramPlan, SessionPlan, SetPrescription } from '../training/types';
 import {
+	DEFAULT_ADDED_INTENT,
 	describeImpact,
 	describeProposal,
 	LOAD_WORDS,
@@ -465,6 +467,44 @@ describe('describeProposal rows', () => {
 		expect(rowsOf(fixture('preference_update'))).toEqual([
 			{ label: 'Split squat', before: 'Like', after: 'Dislike' }
 		]);
+	});
+
+	it('shows an add as a new session on its day, with no link, and leaves the impact out', () => {
+		const { rows, impact } = describeProposal(
+			adjustment(
+				{ op: 'add_session', date: '2026-11-12', kind: 'run', intent: 'easy', durationMinutes: 30 },
+				{ op: 'add_session', date: '2026-11-13', kind: 'muay_thai', timeOfDay: 'evening' }
+			),
+			CONTEXT
+		);
+		expect(rows).toEqual([
+			{
+				area: 'session',
+				label: 'New session',
+				before: 'Not planned',
+				after: 'Run · Easy · 30 min · Thu 12 Nov',
+				date: '2026-11-12',
+				link: null
+			},
+			{
+				area: 'session',
+				label: 'New session',
+				before: 'Not planned',
+				after: 'Muay Thai · Moderate · your usual length · Fri 13 Nov, Evening',
+				date: '2026-11-13',
+				link: null
+			}
+		]);
+		expect(impact).toEqual([]);
+	});
+
+	it('takes the builder’s default intent when an add names none', () => {
+		expect(DEFAULT_ADDED_INTENT).toEqual(DEFAULT_INTENT);
+		const { rows } = describeProposal(
+			adjustment({ op: 'add_session', date: '2026-11-12', kind: 'run' }),
+			CONTEXT
+		);
+		expect(rows[0]!.after).toBe('Run · Easy · your usual length · Thu 12 Nov');
 	});
 
 	it('refuses an id the context lacks rather than guessing', () => {

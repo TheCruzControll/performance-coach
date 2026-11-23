@@ -88,8 +88,9 @@ runs the criteria and updates milestones.md.
 - **The Paper redesign, Instrument v2.** Queued by the owner in `plan/queue.md`; the first
   Instrument rows after its tokens are on hold.
 - **Adding a session to a program.** The builder, the storage
-  (`src/lib/server/services/programs/add.ts`) and Train's Add session sheet are built; the coach's
-  proposal is next.
+  (`src/lib/server/services/programs/add.ts`), Train's Add session sheet and the coach's proposal
+  are built: `propose_program_adjustment` takes an `add_session` op, and accepting it is one new
+  version.
 - **Coach run trace and self-improving evals.** Planned, nothing built. The plan is eight PRs in
   `plan/trace-evals/plan.md`, written 738 commits ago, so its file pointers need re-checking
   against `main` before anyone builds from it. The owner must provide three secrets before the

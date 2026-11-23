@@ -13,8 +13,8 @@
  *   still ran (a move into the past is refused, storing nothing)
  * - with a hard session on the Sunday before the week, every finding the suggested repair clears
  *   is one the week shows: the Sunday's load is counted once, in the repair's model too
- * - propose_program_adjustment's ops take moves only: a skip in ops is INVALID_INPUT, storing
- *   nothing
+ * - propose_program_adjustment's ops take moves and adds only: a skip in ops is INVALID_INPUT,
+ *   storing nothing
  * - explain_schedule_tradeoffs: the goal's priority as a metric, the decisions with their ids,
  *   the owner's first, the kept clash and the road; for one session, only its decisions
  * - the scripted answers' [metric] and [fact] blocks are grounded, and the chips read as listed

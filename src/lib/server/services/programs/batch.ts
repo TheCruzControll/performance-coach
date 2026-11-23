@@ -4,8 +4,9 @@
  * edits unchanged: each op is planned by its edit's applier (./edits.ts) on the base version,
  * exactly as the owner's own edit would be, and reviseProgram writes them all as one version.
  *
- * - Every op is validated with M3's schemas (programOpSchema wraps them). An op that is invalid,
- *   or that its edit refuses, fails the whole batch: its field errors come back under `ops.n`,
+ * - Every op is validated with M3's schemas (adjustmentOpSchema wraps them; an add_session is
+ *   planned by ./add.ts). An op that is invalid, or that its edit refuses, fails the whole batch:
+ *   its field errors come back under `ops.n`,
  *   counted from 0 as zod paths are, and nothing is written.
  * - Each affected week is copied once, however many ops change it; every other week is shared.
  * - One decision per op, in order, decided by the coach, each with the proposal's rationale as
@@ -16,7 +17,7 @@
  * - A base that is no longer the current version is a ProgramConflictError.
  *
  * The ops are planned independently on the base, so two of them may not set the same field of
- * the same row to different values, nor move two sessions to the same day (each would number
+ * the same row to different values, nor move or add a session to the same day (each would number
  * that day on its own): the later op is refused with OPS_OVERLAP. Adjustments of one session
  * compose: after each, the session's rows with every change so far are checked whole (a row the
  * op makes invalid is refused at that op) and its estimate and load are worked out again.
@@ -24,9 +25,9 @@
 import * as z from 'zod/mini';
 import type { IsoDate } from '../../../domain/calendar';
 import {
+	adjustmentOpSchema,
 	MAX_PROPOSAL_OPS,
-	programOpSchema,
-	type ProgramOpKind
+	type AdjustmentOpKind
 } from '../../../domain/coach/proposals';
 import { decisionPlanSchema } from '../../../domain/training/schemas';
 import type { Decider } from '../../../domain/training/vocabulary';
@@ -37,6 +38,7 @@ import {
 	TrainingInputError,
 	TrainingNotFoundError
 } from '../training/shared';
+import { addApplier } from './add';
 import {
 	detailsApplier,
 	moveApplier,
@@ -67,8 +69,9 @@ const APPLIERS = {
 		swapApplier(ownerId, input, at, deps, { preferenceSource: 'coach' }),
 	adjust_set: setApplier,
 	adjust_run_segment: runSegmentApplier,
-	adjust_details: detailsApplier
-} satisfies Record<ProgramOpKind, EditApplier>;
+	adjust_details: detailsApplier,
+	add_session: addApplier
+} satisfies Record<AdjustmentOpKind, EditApplier>;
 
 /** Not-found errors about the program itself, not an op: they stay not found. */
 const PROGRAM_LEVEL = new Set(['program', 'program version']);
@@ -78,7 +81,7 @@ export interface ProgramEditBatch {
 	baseVersion: number;
 	/** The owner's local today: nothing before it can be edited. */
 	today: IsoDate;
-	/** programOpSchema ops, 1 to MAX_PROPOSAL_OPS. */
+	/** adjustmentOpSchema ops, 1 to MAX_PROPOSAL_OPS. */
 	ops: readonly unknown[];
 	/** The new version's summary in History: the proposal's title. */
 	title: string;
@@ -177,17 +180,23 @@ export async function applyProgramEdits(
 
 	const edits: PlannedEdit[] = [];
 	let changes: CopyChanges = {};
-	const movedTo = new Set<string>();
+	// The days a move or an add has taken: two of them on one day would each number it alone.
+	const daysTaken = new Set<string>();
 	for (const [n, raw] of ops.entries()) {
 		// One op at a time: each applier reads through the same handle.
 		const edit = await atOp(n, async () => {
-			const { op, ...input } = parseWith(programOpSchema, raw);
+			const { op, ...input } = parseWith(adjustmentOpSchema, raw);
 			const planned = await APPLIERS[op](ownerId, input, at, coach);
-			const day = op === 'move' ? (input as { toDate: IsoDate }).toDate : null;
-			if ((day && movedTo.has(day)) || !merge(changes, planned.changes)) {
+			const day =
+				op === 'move'
+					? (input as { toDate: IsoDate }).toDate
+					: op === 'add_session'
+						? (input as { date: IsoDate }).date
+						: null;
+			if ((day && daysTaken.has(day)) || !merge(changes, planned.changes)) {
 				throw new TrainingInputError({ '': OPS_OVERLAP });
 			}
-			if (day) movedTo.add(day);
+			if (day) daysTaken.add(day);
 			changes = settled(changes, planned);
 			return planned;
 		});
@@ -220,6 +229,7 @@ export async function applyProgramEdits(
 				for (const edit of edits) await edit.write?.(tx);
 				return changes;
 			},
+			added: edits.flatMap((e) => e.added ?? []),
 			summary: title,
 			decision: first!,
 			moreDecisions: more

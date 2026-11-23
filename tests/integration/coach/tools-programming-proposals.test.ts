@@ -61,7 +61,9 @@ import { runScripted, storedRows, TURN_NOW } from './harness';
 
 const MONDAY = '2026-11-09';
 const TODAY = '2026-11-11';
+const THURSDAY = '2026-11-12';
 const FRIDAY = '2026-11-13';
+const ADD_TEXT = 'add an easy 30-minute run Thursday';
 const NOW = new Date(TURN_NOW);
 const GYM = ['barbell', 'squat_rack', 'bench', 'dumbbells', 'kettlebells', 'cables', 'machines'];
 const CYCLE_DRAFT_MS = 40_000;
@@ -211,7 +213,67 @@ async function turn(
 	return { ...played, calls, drafts };
 }
 
+/** The coach's turn for “add an easy 30-minute run Thursday”: it proposes the add, and no draft. */
+const addScript = (op: object): MockScript => ({
+	name: 'add-easy-run',
+	matches: (text) => text === ADD_TEXT,
+	steps: [
+		{ tools: [{ name: 'propose_program_adjustment', input: { request: ADD_TEXT, ops: [op] } }] },
+		{ text: '[note] I have proposed the run for Thursday, so it is yours to accept.' }
+	]
+});
+
 describe('propose_program_adjustment', () => {
+	it('stores “add an easy 30-minute run Thursday” as an add_session with what it brings up, and drafts nothing', async () => {
+		await withRollback(async (db) => {
+			const s = await seed(db);
+			const before = await rows(db);
+			const add = {
+				op: 'add_session',
+				date: THURSDAY,
+				kind: 'run',
+				intent: 'easy',
+				durationMinutes: 30
+			};
+			const t = await turn(db, s.owner, ADD_TEXT, [addScript(add)]);
+			const call = t.calls.find((c) => c.name === 'propose_program_adjustment')!;
+			expect(call).toMatchObject({
+				status: 'succeeded',
+				input: { ops: [add] },
+				output: {
+					added: [
+						{
+							date: THURSDAY,
+							title: { untrusted_text: expect.any(String) },
+							warnings: expect.any(Array)
+						}
+					]
+				}
+			});
+			expect(t.drafts).toEqual([]);
+
+			const [proposal] = await proposalsOf(db, s.owner);
+			expect(proposal).toMatchObject({
+				kind: 'program_adjustment',
+				status: 'proposed',
+				toolUseId: call.toolUseId,
+				programId: s.programId,
+				baseVersionId: s.version.version.id,
+				appliedVersionId: null
+			});
+			expect(proposal!.payload).toEqual({ ops: [add] });
+			expect(proposal!.title).toMatch(/^Add .+ on Thursday$/);
+			expect(await rows(db)).toEqual({
+				proposals: before.proposals + 1,
+				versions: before.versions
+			});
+
+			const accepted = await acceptProposal(s.owner, proposal!.id, { db, now: () => NOW });
+			expect(accepted.proposal).toMatchObject({ status: 'applied', appliedVersion: { number: 2 } });
+			expect((await rows(db)).versions).toBe(before.versions + 1);
+		});
+	});
+
 	it('stores “Move my intervals to Friday” with its provenance, summary and program, and no version until accepted', async () => {
 		await withRollback(async (db) => {
 			const s = await seed(db);

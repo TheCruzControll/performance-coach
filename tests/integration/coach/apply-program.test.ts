@@ -40,6 +40,7 @@ import { withRollback } from '../helpers';
 import { makeOwner } from '../profile/fixtures';
 
 const MONDAY = '2026-11-09';
+const THURSDAY = '2026-11-12';
 const FRIDAY = '2026-11-13';
 const RATIONALE = 'Your squat is moving well and the week is crowded.';
 
@@ -361,4 +362,65 @@ describe('accepting a workout_update', () => {
 			});
 		});
 	}
+});
+
+describe('accepting an add_session', () => {
+	const ADD = {
+		op: 'add_session',
+		date: THURSDAY,
+		kind: 'run',
+		intent: 'easy',
+		durationMinutes: 30
+	};
+	/** The sessions of a version on the Thursday. */
+	const onThursday = (v: ProgramVersion) =>
+		v.blocks.flatMap((b) => b.weeks.flatMap((w) => w.sessions)).filter((s) => s.date === THURSDAY);
+
+	it('makes one new version with the run on its day, under a lineage of its own, and one session_added decision', async () => {
+		await withRollback(async (db) => {
+			const f = await withProgram(db);
+			const id = await propose(f, 'program_adjustment', [ADD]);
+			const { proposal, changed } = await acceptProposal(f.ownerId, id, f.deps);
+			expect(changed).toBe(true);
+			expect(proposal).toMatchObject({ status: 'applied', appliedVersion: { number: 2 } });
+			expect(await versionCount(db, f.programId)).toBe(2);
+
+			const v2 = await getProgramVersion(f.ownerId, f.programId, 2, { db });
+			expect(v2.decisions.map((d) => d.kind)).toEqual(['session_added']);
+			expect(v2.decisions[0]).toMatchObject({
+				why: RATIONALE,
+				decidedBy: 'coach',
+				evidence: expect.objectContaining({ proposalId: id })
+			});
+			const before = onThursday(f.v1);
+			const after = onThursday(v2);
+			expect(after).toHaveLength(before.length + 1);
+			const [added] = after.filter((s) => !before.some((b) => b.lineage === s.lineage));
+			expect(added).toMatchObject({ kind: 'run', source: 'generator', status: 'planned' });
+			expect(await storedProposal(db, id)).toMatchObject({ appliedVersionId: v2.version.id });
+		});
+	});
+
+	it('is superseded when the owner edited the program in between, and adds nothing', async () => {
+		await withRollback(async (db) => {
+			const f = await withProgram(db);
+			const id = await propose(f, 'program_adjustment', [ADD]);
+			await skipSession(
+				f.ownerId,
+				{ sessionLineage: f.intervals.lineage },
+				{ version: 1, today: MONDAY },
+				{ db }
+			);
+			const { proposal } = await acceptProposal(f.ownerId, id, f.deps);
+			expect(proposal).toMatchObject({
+				status: 'superseded',
+				supersededReason: 'program_changed',
+				appliedVersion: null
+			});
+			expect(await versionCount(db, f.programId)).toBe(2);
+			const v2 = await getProgramVersion(f.ownerId, f.programId, 2, { db });
+			expect(v2.decisions.some((d) => d.kind === 'session_added')).toBe(false);
+			expect(onThursday(v2)).toHaveLength(onThursday(f.v1).length);
+		});
+	});
 });

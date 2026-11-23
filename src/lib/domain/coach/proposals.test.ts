@@ -20,6 +20,7 @@ import {
 	SESSION
 } from '../../../../tests/fixtures/coach-proposals';
 import {
+	ADJUSTMENT_OPS,
 	MAX_PROPOSAL_OPS,
 	PAYLOAD_SCHEMAS,
 	PROGRAM_OPS,
@@ -328,5 +329,62 @@ describe('the JSON Schema of each kind', () => {
 		const found = objects(z.toJSONSchema(proposalSchema, { io: 'input' }));
 		expect(found.length).toBeGreaterThan(PROPOSAL_KINDS.length * 2);
 		for (const [at, node] of found) expect(node.additionalProperties, at).toBe(false);
+	});
+});
+
+describe('add_session', () => {
+	const add = {
+		op: 'add_session',
+		date: '2026-11-12',
+		kind: 'run',
+		intent: 'easy',
+		durationMinutes: 30
+	};
+	const adjustment = (ops: object[]) => ({ ...FIXTURES.program_adjustment, payload: { ops } });
+
+	it('is one of the program adjustment’s ops, and not of a workout update’s', () => {
+		expect(ADJUSTMENT_OPS).toEqual([...PROGRAM_OPS, 'add_session']);
+		expect(validate(proposalSchema, adjustment([add]))).toMatchObject({
+			ok: true,
+			data: { payload: { ops: [add] } }
+		});
+		expect(
+			validate(proposalSchema, { ...FIXTURES.workout_update, payload: { ops: [add] } })
+		).toEqual({ ok: false, errors: { 'payload.ops.0.op': 'Pick a change' } });
+	});
+
+	it('takes its fields left out, and refuses a length out of range, a kind it does not know and a key it does not name', () => {
+		const { intent: _intent, durationMinutes: _minutes, ...bare } = add;
+		expect(validate(proposalSchema, adjustment([bare]))).toMatchObject({ ok: true });
+		expect(validate(proposalSchema, adjustment([{ ...add, durationMinutes: 9 }]))).toEqual({
+			ok: false,
+			errors: { 'payload.ops.0.durationMinutes': 'Between 10 and 300 minutes' }
+		});
+		expect(validate(proposalSchema, adjustment([{ ...add, kind: 'yoga' }]))).toEqual({
+			ok: false,
+			errors: { 'payload.ops.0.kind': 'Pick a kind of session' }
+		});
+		expect(validate(proposalSchema, adjustment([{ ...add, timeOfDay: null }]))).toEqual({
+			ok: false,
+			errors: { 'payload.ops.0.timeOfDay': 'Pick a time' }
+		});
+		expect(validate(proposalSchema, adjustment([{ ...add, sessionLineage: SESSION }]))).toEqual({
+			ok: false,
+			errors: { 'payload.ops.0': 'Unknown field: sessionLineage' }
+		});
+	});
+
+	it('is not in the drafter’s format, which keeps the six edits', () => {
+		const format = JSON.stringify(
+			z.toJSONSchema(proposalDraftSchema('program_adjustment'), { io: 'input' })
+		);
+		expect(format).toContain('adjust_details');
+		expect(format).not.toContain('add_session');
+		expect(
+			validate(proposalDraftSchema('program_adjustment'), {
+				...FIXTURES.program_adjustment,
+				payload: { ops: [add] }
+			})
+		).toMatchObject({ ok: false });
 	});
 });

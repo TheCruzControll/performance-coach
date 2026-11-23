@@ -67,6 +67,16 @@ describe('checkProposal', () => {
 		).toEqual({ 'payload.firstPlannedDay': M.pastDay });
 	});
 
+	it('refuses an add on a day already past, and takes one from today on', () => {
+		const add = (date: string) => ({ op: 'add_session', date, kind: 'run' });
+		expect(errorsOf(withPayload('program_adjustment', { ops: [add('2026-11-08')] }))).toEqual({
+			'payload.ops.0.date': M.pastDay
+		});
+		expect(
+			errorsOf(withPayload('program_adjustment', { ops: [add('2026-11-09'), add('2026-11-20')] }))
+		).toEqual({});
+	});
+
 	it('never targets a disliked or ineligible exercise', () => {
 		const swap = (toExerciseId: string) => ({
 			op: 'swap',
